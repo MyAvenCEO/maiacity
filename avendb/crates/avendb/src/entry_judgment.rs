@@ -141,8 +141,9 @@ fn get_touch(r: &mut WireReader<'_>) -> Option<Touch> {
         _ => return None,
     })
 }
-fn put_judgment(shown: &Shown) -> Option<Vec<u8>> {
-    put_judgment_parts(&shown.history, &shown.after)
+fn put_judgment(shown: &Shown, store: &Store) -> Option<Vec<u8>> {
+    // Proposal labels are content: metadata-only history is not sufficient.
+    put_judgment_parts(shown.history_in(store)?, &shown.after)
 }
 fn put_judgment_parts(history: &History, after: &After) -> Option<Vec<u8>> {
     let mut b = Vec::new();
@@ -384,7 +385,7 @@ impl Lab {
         let basis = states[0].basis.clone();
         let store = self.held(on);
         let shown = store.shown.get(&entry).ok_or(Refusal::NotAccepted)?;
-        let metadata = put_judgment(shown).ok_or(Refusal::NotAccepted)?;
+        let metadata = put_judgment(shown, store).ok_or(Refusal::NotAccepted)?;
         get_judgment(&metadata, entry, on).ok_or(Refusal::NotAccepted)?;
         let key = store
             .replay
@@ -512,7 +513,7 @@ impl Lab {
         // is implemented; never compare merely JSON or trust the claim over held facts.
         if compare_held && stated.basis.iter().all(|id| store.log.ids().contains(id)) {
             let shown = store.shown.get(&entry)?;
-            if put_judgment(shown)? != metadata
+            if put_judgment(shown, store)? != metadata
                 || put_anchor_metadata(store, entry)? != policy_bytes
             {
                 return None;
@@ -535,6 +536,39 @@ impl Lab {
 mod tests {
     use super::*;
     use crate::cast::{document, human_on};
+    #[test]
+    fn warm_reopen_publishes_judged_base_with_proposal_labels() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Warm publisher");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        let heads = lab.history(mac, entry).unwrap().heads(MAIN);
+        let proposal = lab.propose(mac, vault, entry, &heads, "Retain this proposal label").unwrap();
+        lab.sync(mac, phone);
+        let expected = put_judgment(&lab.held(mac).shown[&entry], lab.held(mac)).unwrap();
+        let backup = lab.backup(mac);
+        let n = backup.signed.len();
+        let receipt = lab.capture_warm_current(mac, n, Some([27; 40])).unwrap().encode();
+        let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
+        lab.warmed(mac, receipt);
+        lab.restore_warm(mac, backup, Some(([27; 40], n)), &warm);
+        assert!(lab.held(mac).deferred_bodies.contains_key(&proposal));
+        // Projection/base publication can use current snapshots without an empty
+        // fallback; judged publication must also demand the proposal label.
+        assert!(lab.draft_entry_projection(mac, &[owner], entry).is_ok());
+        let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        assert_eq!(put_judgment(&lab.held(mac).shown[&entry], lab.held(mac)).unwrap(), expected);
+        assert!(lab.held(mac).deferred_bodies[&proposal].content_ready());
+        let snapshot = lab.complete(mac, draft, &[]).unwrap();
+        lab.sync(mac, phone);
+        let restored = lab.restore_owner_judgment(phone, snapshot, entry, &sealed).unwrap();
+        assert_eq!(put_judgment_parts(&restored.history, &restored.after).unwrap(), expected,
+            "full holder accepts identical judgment including proposal labels");
+        assert!(restored.history.get(proposal).unwrap().body.as_ref().is_some_and(|label| !label.is_empty()));
+    }
+
     #[test]
     fn owner_judgment_restores_partial_history_metadata_without_changing_kernel() {
         let mut lab = Lab::new();
@@ -597,7 +631,7 @@ mod tests {
                 );
             }
         }
-        let expected = put_judgment(original).unwrap();
+        let expected = put_judgment(original, lab.held(mac)).unwrap();
         assert_eq!(
             put_judgment_parts(&restored.history, &restored.after).unwrap(),
             expected,
@@ -701,7 +735,7 @@ mod tests {
         lab.edit(me, vault, entry, |item| item.set_text(2, "base"))
             .unwrap();
         let original = lab.held(me).shown.get(&entry).unwrap();
-        let bytes = put_judgment(original).unwrap();
+        let bytes = put_judgment(original, lab.held(me)).unwrap();
         let restored = get_judgment(&bytes, entry, me).unwrap();
         let full_history = original.history.clone();
         let full_scratch = original.after.scratch.as_ref().map(Scratch::fork);

@@ -6541,7 +6541,7 @@ fn show_items(d: SignerId, store: &mut Store) {
             s.tip.lane = tip.lane;
             if !reshow && s.tip == tip && !opened.contains_key(&en.id) {
                 s.print = print(en, &groups_print);
-                debug_assert!(same_shown(s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
+                debug_assert!(same_shown_in(s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
             }
         }
         let kept = old.get_mut(&en.id).filter(|s| s.tip == tip && !opened.contains_key(&en.id));
@@ -6607,7 +6607,7 @@ fn show_items(d: SignerId, store: &mut Store) {
         let materialize_at = Perf::start();
         let s = j.shown_on(d, print, tip, items);
         store.perf.add("show: materialize", materialize_at);
-        debug_assert!(from == 0 || same_shown(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
+        debug_assert!(from == 0 || same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
         retain_recent_shown(&mut old, &mut recent, en.id, s);
     }
     // only the entries judged last keep their scratch items
@@ -6652,10 +6652,17 @@ fn judged_anew(
 }
 
 /// Two showings of an entry show the same: the same writes, judged alike, and the same record on each line.
-fn same_shown(a: &Shown, b: &Shown) -> bool {
-    a.history.changes() == b.history.changes()
-        && a.items().keys().eq(b.items().keys())
-        && a.items().iter().zip(b.items()).all(|((_, x), (_, y))| x.record() == y.record())
+#[cfg(test)]
+fn same_shown(a: &Shown, b: &Shown) -> bool { same_shown_in(a, b, None) }
+fn same_shown_in(a: &Shown, b: &Shown, store: Option<&Store>) -> bool {
+    let histories = match store {
+        Some(store) => a.history_in(store).zip(b.history_in(store)),
+        None if a.history_bodies.is_empty() && b.history_bodies.is_empty() => Some((&a.history, &b.history)),
+        None => None,
+    };
+    histories.is_some_and(|(a, b)| a.changes() == b.changes())
+        && a.items_in(store).keys().eq(b.items_in(store).keys())
+        && a.items_in(store).iter().zip(b.items_in(store)).all(|((_, x), (_, y))| x.record() == y.record())
 }
 
 /// The writes of one entry as a device judges them, one after the other in the order they were accepted, each on what

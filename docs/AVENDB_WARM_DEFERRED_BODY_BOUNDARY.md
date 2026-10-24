@@ -79,3 +79,14 @@ missing current keys after hydration; stale-frontier fallback; corrupt snapshot
 canonical reconstruction. `cargo test -p avendb deferred_body::tests` additionally
 covers eager dependency exclusion and content authentication failures. These are
 added, not yet run. Existing warm-reopen/capability/revocation tests are required.
+
+### Publication integration correction
+
+Checkpoint and projection publication use Store-aware current-key item access.
+Judgment serialization demands entry history so proposal labels are preserved;
+policy metadata serialization uses the authenticated metadata accessor without
+copying discarded content. Debug canonical comparisons also resolve the explicit
+content boundary instead of treating deferred bodies as absent. The regression
+`warm_reopen_publishes_judged_base_with_proposal_labels` covers warm reopening,
+publication and exact judgment acceptance by a full holder. Parser checks passed;
+Cargo execution remains queued, not claimed passed.
