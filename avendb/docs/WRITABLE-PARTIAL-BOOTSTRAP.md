@@ -493,3 +493,7 @@ measured native/PWA persistence and UI latency. Root's warm-path owner is handli
 these reconstruction gates independently. Shared/capability/proposal bootstrap,
 export format support, runtime publication/adoption and physical-device validation
 remain open. No privileged hosted peer or global kernel replacement was introduced.
+
+Implementation: [a6930f38](https://github.com/MyAvenCEO/maiacity/commit/a6930f38d).
+The commit is pushed to `codex/checkpoint-demand-delivery`; integration and Rust
+validation remain pending. Do not interpret source completion as runtime delivery.
