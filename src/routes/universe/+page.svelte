@@ -7,7 +7,7 @@
 	import { base } from '$app/paths';
 	import { shaped } from '$lib/app/shapes.js';
 	import { CHANNELS, isDoc, postHref } from '$lib/universe/posts.js';
-	import { authorOf, loadFeed, loadMore, stream } from '$lib/universe/stream.svelte.js';
+	import { authorOf, faceOf, loadFeed, loadMore, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
 
 	onMount(() => {
@@ -96,7 +96,7 @@
 					<h2>Voices</h2>
 					<ul>
 						{#each voices as a (a.handle)}
-							<li class="voice"><span class="avatar sm" style:background={a.color} style={shaped(a.kind)}>{a.initials}</span>{a.name}</li>
+							<li class="voice"><span class="avatar sm" style:background={a.color} style={shaped(a.kind)}>{#if faceOf(a.vault)}<img src={faceOf(a.vault)} alt="" />{:else}{a.initials}{/if}</span>{a.name}</li>
 						{/each}
 					</ul>
 				</section>
@@ -105,7 +105,7 @@
 				{#if stream.feed === 'loading'}
 					Taking in what was published in avenDB…
 				{:else if stream.feed === 'failed'}
-					avenDB's feed can't be reached right now.
+					Waiting for local avenDB. Open your device and let background sync finish.
 				{:else}
 					Every post here is an article published in avenDB, for everyone.
 				{/if}
@@ -115,6 +115,7 @@
 </div>
 
 <style>
+	.avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 	.more {
 		display: flex;
 		flex-direction: column;

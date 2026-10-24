@@ -165,7 +165,11 @@ export function startFilm({ base = '' } = {}) {
 		.catch(() => null);
 
 	const mounted = async () => {
-		while (!world()?.film) await sleep(100);
+		// A connected camera is not a finished mount: recipes may still be arriving.
+		while (!world()?.film || w.__filmMountPending) {
+			if (w.__filmMountError) throw new Error(w.__filmMountError);
+			await sleep(100);
+		}
 		if (!pipe) {
 			pipe = createPipeline(world().renderer);
 			for (const l of looks.splice(0)) pipe.look(l);
@@ -255,7 +259,7 @@ export function startFilm({ base = '' } = {}) {
 		const held = v.film.holds({ ...spec.world, views });
 		// staged here already: a world that streams by view shows what this shot sees (another shot from the same stand
 		// may see other domes)
-		if (key === staged && held) return void (v.film.streams && v.film.move({ ...spec.world, name: spec.meta?.name, views }));
+		if (key === staged && held && settledFor.has(key) && streaming !== key) return void (v.film.streams && v.film.move({ ...spec.world, name: spec.meta?.name, views }));
 		const known = held && settledFor.has(key);
 		// the walker leaves the shot staged last: no frame of that shot is drawn until it stands there again
 		staged = '';
@@ -468,6 +472,36 @@ export function startFilm({ base = '' } = {}) {
 		return out;
 	}
 
+	// Warm the actual camera path as well as the initial scene. Light/shadow variants can change
+	// inside a shot, and a hidden tent warmed at dawn is not its daylight shader.
+	const rehearsed = new Set();
+	async function rehearse(/** @type {Spec} */ spec) {
+		const key = printOf(spec);
+		if (rehearsed.has(key)) return;
+		const v = await mounted();
+		await stage(spec);
+		const n = Math.max(1, Math.ceil(spec.seconds * 4));
+		let k = 0, lighting = '';
+		await doing(() => ({ label: 'Preparing camera moves and lighting', done: k, total: n + 1 }), async () => {
+			clock.enter();
+			for (; k <= n; k++) {
+				if (rolling) return; // the user explicitly chose Play now
+				linear(v, spec, Math.min(spec.seconds, k * spec.seconds / n), spec.aspect, 128, 72, false, true);
+				const lights = /** @type {string[]} */ ([]);
+				v.scene.traverseVisible((/** @type {any} */ light) => {
+					if (light.isLight && light.layers.test(v.camera.layers)) lights.push(`${light.type}:${light.castShadow ? 1 : 0}`);
+				});
+				const variant = `lights:${lights.sort().join(',')}`;
+				if (variant !== lighting) {
+					await /** @type {ReturnType<typeof createWarmer>} */ (warmer).all(v.scene, v.camera, true, variant);
+					lighting = variant;
+				}
+				if (k % 8 === 0) await sleep(0);
+			}
+		});
+		if (!rolling) rehearsed.add(key);
+	}
+
 	/** The exposure the live viewer knows for a shot without metering it: its own, metered here, or remembered. */
 	const knownExposure = (/** @type {Spec} */ spec) => {
 		if (spec.exposure.ev !== undefined && spec.exposure.meter !== 'ramp') return spec.exposure.ev;
@@ -537,6 +571,7 @@ export function startFilm({ base = '' } = {}) {
 					for (const s of all) {
 						if (yields()) return false;
 						if (!live || knownExposure(s) === undefined) await exposureOf(s);
+						if (!live) await rehearse(s);
 					}
 				return true;
 			});

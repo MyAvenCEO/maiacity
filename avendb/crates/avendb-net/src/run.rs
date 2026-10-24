@@ -144,7 +144,10 @@ impl Node {
         };
         let result = self.shared.demands.lock().expect("demands").replace(scope.to_ascii_lowercase(), revision, entries, Instant::now());
         match result {
-            Ok(accepted) => json!({"ok": {"accepted": accepted, "lease_ms": crate::demand::LEASE.as_millis() as u64}}),
+            Ok(accepted) => {
+                if accepted { self.shared.size.send_modify(|_| {}); }
+                json!({"ok": {"accepted": accepted, "lease_ms": crate::demand::LEASE.as_millis() as u64}})
+            },
             Err(why) => bad(why),
         }
     }
@@ -159,7 +162,11 @@ impl Node {
             return Ok((Refused::Rule(Refusal::NoCap).to_json(), None));
         }
         let from = range.start;
-        let bytes = self.read_file(root, range).await?;
+        let bytes = if op.get("local").and_then(Value::as_bool) == Some(true) {
+            self.read_local_file(root, range).await?
+        } else {
+            self.read_file(root, range).await?
+        };
         let (hash, len) = (BlobId(root.hash).to_hex(), bytes.len() as u64);
         Ok((json!({ "ok": { "root": hash, "from": from, "to": from + len, "len": len } }), Some(bytes)))
     }

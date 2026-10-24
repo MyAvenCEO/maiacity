@@ -4931,6 +4931,18 @@ impl Lab {
         files.into_iter().collect()
     }
 
+    /// Files needed by active local views. Demand grants nothing: both current keep selection and
+    /// readable file keys must permit each file. Opened/light devices hydrate these in background.
+    pub fn demanded_files(&self, d: SignerId, entries: &[EntryId]) -> Vec<FileRoot> {
+        let st = self.latest(d);
+        let files: BTreeSet<FileRoot> = entries.iter()
+            .filter(|entry| st.entry(**entry).is_some_and(|en| st.wants(d, en)))
+            .flat_map(|entry| self.entry_files(d, *entry))
+            .filter_map(|(root, len)| len.map(|_| root))
+            .collect();
+        files.into_iter().collect()
+    }
+
     /// The files the writes of entry `entry` bring, as device `d` holds them, in the order it took them, each once:
     /// each with its plaintext length where `d` opens it (`file`), else `None`.
     pub fn entry_files(&self, d: SignerId, entry: EntryId) -> Vec<(FileRoot, Option<u64>)> {

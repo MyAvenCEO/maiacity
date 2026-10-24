@@ -15,6 +15,7 @@
 -->
 <script>
 	import { tick } from 'svelte';
+	import { localMedia } from '$lib/avendb/local-media.svelte.js';
 	import { base } from '$app/paths';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -117,8 +118,8 @@
 		</button>
 	{/if}
 	<button bind:this={trigger} class="item identity" class:on={open} onclick={toggle} aria-expanded={open} aria-haspopup="menu" aria-controls={menuId} aria-label={identityLabel + (elsewhere ? `, ${elsewhere} waiting in your other vaults` : '')} title={identityLabel}>
-		{#if acting}<span class="avatar {acting.shape ?? 'human'}" aria-hidden="true" style="background:{acting.colour}; color:#fff; {shaped(acting.shape)}">{acting.text}</span>
-		{:else if here}<span class="avatar {here.shape ?? 'human'}" aria-hidden="true" style="background:{here.colour}; color:#fff; {shaped(here.shape)}">{here.text}</span>
+		{#if acting}<span class="avatar {acting.shape ?? 'human'}" aria-hidden="true" style="background:{acting.colour}; color:#fff; {shaped(acting.shape)}">{#if localMedia(acting.id, 'profile.jpg')}<img src={localMedia(acting.id, 'profile.jpg')} alt="" />{:else}{acting.text}{/if}</span>
+		{:else if here}<span class="avatar {here.shape ?? 'human'}" aria-hidden="true" style="background:{here.colour}; color:#fff; {shaped(here.shape)}">{#if localMedia(here.id, 'profile.jpg')}<img src={localMedia(here.id, 'profile.jpg')} alt="" />{:else}{here.text}{/if}</span>
 		{:else}<span class="avatar" aria-hidden="true">{initials}</span>{/if}
 		{#if elsewhere}<span class="bubble" title="{elsewhere} waiting in your other vaults">{elsewhere}</span>{/if}
 	</button>
@@ -129,7 +130,7 @@
 				<p class="group">{pill.context.title}</p>
 				{#each pill.context.list as a (a.id)}
 					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.context.current} onclick={() => (pill.context?.pick(a.id), close(true))}>
-						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
+						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{#if localMedia(a.id, 'profile.jpg')}<img src={localMedia(a.id, 'profile.jpg')} alt="" />{:else}{a.text}{/if}</span>
 						<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
 						{#if a.badge}<span class="bubble" title="{a.badge} waiting">{a.badge}</span>{/if}
 						{#if a.id === pill.context.current}<span class="tick" aria-hidden="true">✓</span>{/if}
@@ -144,7 +145,7 @@
 				<p class="group">{pill.accounts.title}</p>
 				{#each pill.accounts.list as a (a.id)}
 					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.accounts.current} onclick={() => (pill.accounts?.pick(a.id), close(true))}>
-						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
+						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{#if localMedia(a.id, 'profile.jpg')}<img src={localMedia(a.id, 'profile.jpg')} alt="" />{:else}{a.text}{/if}</span>
 						<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
 					{#if a.badge}<span class="bubble" title="{a.badge} waiting">{a.badge}</span>{/if}
 						{#if a.id === pill.accounts.current}<span class="tick" aria-hidden="true">✓</span>{/if}
@@ -159,6 +160,7 @@
 </nav>
 
 <style>
+	.avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 	/* centred, as wide as its items, never wider than the screen (clear of its edges and the notch), at --nav-foot */
 	.pill {
 		position: fixed;

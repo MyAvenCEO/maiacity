@@ -4,7 +4,7 @@
 // (./vaults.js `serverCity`).
 // Run: bun test src/lib/avendb/capgroups.test.js
 import { describe, expect, test } from 'bun:test';
-import { ADMIN, AGENT, AGENT_GROUP, CAP_GROUPS, CITIZEN, TRAVELER, agentOps, capGroupOps, groupHolders, heldGroups, holdsAgent, moveOps } from './capgroups.js';
+import { ADMIN, AGENT, AGENT_GROUP, CAP_GROUPS, CITIZEN, TRAVELER, agentOps, capGroupOps, travelerDemoOps, groupHolders, heldGroups, holdsAgent, moveOps } from './capgroups.js';
 import { refs } from './ops.js';
 import { seedCity, serverCity } from './vaults.js';
 
@@ -39,9 +39,10 @@ describe('the seed defines', () => {
 	test('nothing in a vault that holds them all', () =>
 		expect(capGroupOps([...groups, { entry: '3'.repeat(64), name: ADMIN, caps: [], includes: [C] }], CITY)).toEqual([]));
 
-	test('a Traveler reads the games, the recipes, the code and the settings; a Citizen all of MaiaCity V1 besides; an Admin all of it', () => {
-		expect(CAP_GROUPS[0].caps).toEqual([{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic', 'config'] } }]);
-		expect(CAP_GROUPS[1].caps).toEqual([{ op: 'read', where: { tag: 'game:maiacity-v1' } }]);
+	test('a Traveler gets Sandbox 4 only; Citizen retains all game types and both city versions', () => {
+		expect(CAP_GROUPS[0].caps).toEqual([{ op: 'read', where: { tag: 'game:sandbox-4' } }]);
+		expect(CAP_GROUPS[1].caps).toContainEqual({ op: 'read', where: { tag: 'game:maiacity-v1' } });
+		expect(CAP_GROUPS[1].caps).toContainEqual({ op: 'read', where: { tag: 'game:maiacity-v2' } });
 		expect(CAP_GROUPS[2]).toEqual({ name: ADMIN, caps: [{ op: 'read' }], includes: [CITIZEN] });
 	});
 });
@@ -173,4 +174,19 @@ describe("the coop's aven's Agent group", () => {
 		// a Suggester's share given since goes again
 		expect(agentOps(CITY, AVEN, have, [...done, old[0]])).toEqual([{ op: 'revoke', share: 's', as: CITY }]);
 	});
+});
+
+test('migrates only the legacy Traveler grant, Citizen first, without changing public shares', () => {
+ const old = { ...groups[0], caps: [{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic', 'config'] } }] };
+ const ops = travelerDemoOps([old, groups[1]]);
+ expect(ops.map(o => o.entry)).toEqual([C, T]);
+ expect(ops[1].group.caps).toEqual(CAP_GROUPS[0].caps);
+ expect(ops.every(o => o.op === 'redefine_group')).toBe(true);
+ expect(travelerDemoOps([{ ...old, caps: CAP_GROUPS[0].caps }, groups[1]])).toEqual([]);
+ expect(travelerDemoOps([{ ...old, caps: [{ op: 'read' }] }])).toEqual([]);
+});
+
+test('migrates the older live Traveler grant without config', () => {
+ const old = { ...groups[0], caps: [{op:'read',where:{type:['game','recipe','view','logic']}}] };
+ expect(travelerDemoOps([old,groups[1]]).at(-1).group.caps).toEqual(CAP_GROUPS[0].caps);
 });

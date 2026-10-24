@@ -46,7 +46,7 @@
 	</div>
 {:else}
 	<div class="gate" role="status">
-		<p class="soft">{state.waiting ? "Waiting for avenDB's server to answer, to load the asset recipes…" : 'Loading the asset recipes from the Maia City vault…'}</p>
+		<p class="soft">{state.waiting ? "Waiting for recipes to sync into local avenDB…" : 'Loading the asset recipes from the Maia City vault…'}</p>
 	</div>
 {/if}
 {#if told.length}

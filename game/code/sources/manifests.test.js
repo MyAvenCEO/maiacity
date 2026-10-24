@@ -57,12 +57,12 @@ test('a device brings what the manifests declare a priority at a time, then what
 	const d = {
 		run: async (op) => {
 			if (op.op === 'query' && op.where?.type?.[0] === 'manifest') return { ok: { rows: [kernel, world, game].map((record) => ({ record })) } };
-			if (op.op === 'query') return { ok: { rows: [{ entry: id(3), type: 'capgroup', tags: [] }] } };
+			if (op.op === 'query') return { ok: { rows: [{ entry: id(3), type: 'capgroup', tags: [] }, { entry: id(2), type: 'view', tags: ['game:x'], created: 1 }] } };
 			if (op.op === 'get') return { ok: { record: records[op.entry] ?? null } };
 			return { ok: {} };
 		}
 	};
-	const fetch = async () => new Response(JSON.stringify({ entries: [{ entry: id(2), type: 'view', tags: ['game:x'], created: 1 }] }));
+	const fetch = async () => { throw new Error('Manifest discovery must not use HTTP'); };
 	const got = await bringDeclared('/app/games/x/', { device: d, bring: async (ids) => asked.push(ids), fetch });
 	expect(asked).toEqual([[id(3)], [id(7), id(2)], [id(8)]]);
 	expect(got).toEqual([id(3), id(7), id(2), id(8)]);
@@ -120,4 +120,28 @@ test('an abandoned view issues no later priority batch or reference reads', asyn
 	await expect(bringDeclared('/', { device: d, signal: controller.signal, fetch: null, bring: async (ids) => { brings.push(ids); controller.abort(); } })).rejects.toThrow();
 	expect(brings).toEqual([[id(1)]]);
 	expect(reads.filter((o) => o.op === 'get')).toEqual([]);
+});
+
+test('film shot references participate in manifest dependency traversal', () => {
+ expect(namedBy({ timeline: JSON.stringify({ clips: [{ shot: `shot:${id(5)}` }] }) })).toEqual([id(5)]);
+});
+test('missing manifests never fall back to HTTP discovery', async () => {
+ let fetched = false;
+ const result = await bringDeclared('/app/studio/', { device: { run: async () => ({ ok: { rows: [] } }) }, bring: async () => {}, fetch: async () => { fetched = true; } });
+ expect(result).toEqual([]);
+ expect(fetched).toBe(false);
+});
+
+
+test('following a timeline prioritizes audio file entries named by aven roots', async () => {
+	const root = 'a'.repeat(64);
+	const timeline = id(10), audio = id(11);
+	const d = { run: async op => {
+		if (op.op === 'query') return { ok: { rows: [{ record: m({ id: 'film', routes: ['/studio/'], parts: [{ entry: timeline, follow: 1 }] }) }] } };
+		if (op.op === 'get') return { ok: { record: { clips: JSON.stringify([{ hash: `aven:${root}:100:84:audio%2Fmpeg` }]) } } };
+		if (op.op === 'world') return { ok: { entries: [{ entry: audio, files: [{ root }] }] } };
+	} };
+	const brought = [];
+	await bringDeclared('/studio/', { device: d, bring: async ids => brought.push(...ids) });
+	expect(brought).toEqual([timeline, audio]);
 });

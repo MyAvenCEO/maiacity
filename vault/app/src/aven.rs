@@ -63,7 +63,7 @@ pub async fn world(app: &AppHandle) -> Result<Value, String> {
 /// until a page has opened the device, the host's own `run` answers, the bytes beside as they are.
 pub async fn read(app: &AppHandle, f: &File, from: u64, to: u64) -> Result<Vec<u8>, String> {
     use avendb_net::{NoBytes, NoCeremony};
-    let op = json!({ "op": "read_file", "root": f.root, "size": f.size, "from": from, "to": to });
+    let op = json!({ "op": "read_file", "root": f.root, "size": f.size, "from": from, "to": to, "local": true });
     if let Some(node) = crate::avendb::node(app).await? {
         let (out, bytes) = node.run(op, None::<NoBytes>, None::<&NoCeremony>).await.map_err(|e| format!("{e:#}"))?;
         answer(out)?;

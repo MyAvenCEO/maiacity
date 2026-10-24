@@ -7,7 +7,7 @@
 import { base } from '$app/paths';
 import { FIRST, latestOf, versionsOf, type Change, type Version } from '$lib/app/versions.js';
 import { holdsGroup } from '$lib/app/access.svelte.js';
-import { ADMIN, CITIZEN, TRAVELER } from '$lib/avendb/capgroups.js';
+import { ADMIN, CITIZEN, TRAVELER, TRAVELER_GAME } from '$lib/avendb/capgroups.js';
 import { gameOfRoute } from '../../../game/games.js';
 
 export type Place = {
@@ -25,11 +25,11 @@ export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media'
 // (AIPs), which live only here, never on a game's own screens (Samuel 2026-10-17), the chat, and the Universe.
 // Every sandbox draws the same ones.
 export const APPS: Place[] = [
-	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your HEARTS and MINDs, every rent and pay day, every transaction' },
-	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'The three COOPs: treasuries, holders, assets, rents' },
+	{ href: `${base}/app/ledger/`, needs: CITIZEN, label: 'Ledger', icon: 'ledger', note: 'Your HEARTS and MINDs, every rent and pay day, every transaction' },
+	{ href: `${base}/app/coops/`, needs: CITIZEN, label: 'Coops', icon: 'coops', note: 'The three COOPs: treasuries, holders, assets, rents' },
 	// chat rooms on avenDB: notes to self, DMs, groups and a coop's channels, every signed-in person's
-	{ href: `${base}/app/chat/`, label: 'Chat', icon: 'chat', note: 'Notes to self, direct messages, groups and channels, end to end encrypted' },
-	{ href: `${base}/app/aips/`, label: 'Proposals', icon: 'proposals', note: 'Every game’s proposals: ideas, proposed, applied or rejected' },
+	{ href: `${base}/app/chat/`, needs: CITIZEN, label: 'Chat', icon: 'chat', note: 'Notes to self, direct messages, groups and channels, end to end encrypted' },
+	{ href: `${base}/app/aips/`, needs: CITIZEN, label: 'Proposals', icon: 'proposals', note: 'Every game’s proposals: ideas, proposed, applied or rejected' },
 	// the Universe stream, on the public site (the navbar's Universe tab): the journal and Inspire me are its channels
 	{ href: `${base}/universe/`, label: 'Universe', icon: 'universe', note: 'What happens in maiaCITY, as it happens' }
 ];
@@ -43,7 +43,7 @@ const HISTORY: Record<string, (Change & { build?: string })[]> = {
 const withVersions = (list: Place[]): Place[] =>
 	list.map((p) => {
 		const versions = versionsOf(p.href, HISTORY[p.href]);
-		return { ...p, versions, version: latestOf(versions), needs: TRAVELER, ...gameOf(p) };
+		return { ...p, versions, version: latestOf(versions), needs: gameOf(p).game === TRAVELER_GAME ? TRAVELER : CITIZEN, ...gameOf(p) };
 	});
 /** a game's id, from its address */
 const gameOf = (p: Place) => {
@@ -85,14 +85,14 @@ export const opens = (p: Place) => !p.needs || holdsGroup(p.needs);
 
 /** The game, world, game asset or admin's page a path is in, if any: closed to whoever doesn't hold what opens it. */
 export const gameAt = (path: string) =>
-	[...CITY, ...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ?? PAGES.find((p) => path.startsWith(p.href));
+	[...CITY, ...PLAY, ...WORLDS, ...APPS].find((p) => path.startsWith(p.href)) ?? PAGES.find((p) => path.startsWith(p.href));
 /** the Worlds grid and the game assets' own pages (the Buildings, the Factories, the Biomes): every Traveler's; the
  *  The studio, the Postgres window and avenDB's own page: the admins'. One gate for every page, this one: no
  *  page asks the API's Postgres roles any more. The studio works on avenDB alone (its cuts, the vaults' Library, its
  *  jobs), by the person's own shares; the Postgres window's rows open by the same Admin group, as avenDB's server
  *  tells the API of the pass the page's device signs (api/src/standing.ts) */
 const PAGES: Place[] = [
-	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', needs: TRAVELER },
+	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', needs: CITIZEN },
 	{ href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', needs: TRAVELER },
 	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', needs: TRAVELER },
 	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', needs: TRAVELER },

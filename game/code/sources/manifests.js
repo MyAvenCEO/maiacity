@@ -123,7 +123,7 @@ export function entriesOf(leaves, rows) {
 }
 
 const HEX = /[0-9a-f]{64}/;
-const REF = /vault:[0-9a-f]{64}\/([0-9a-f]{64})/g;
+const REF = /(?:vault:[0-9a-f]{64}\/|shot:)([0-9a-f]{64})/g;
 
 /**
  * The entries a record names: each `{ entry }` pin at any depth, and each `vault:<vault>/<entry>` ref in its text, JSON
@@ -155,40 +155,15 @@ export function namedBy(record) {
 	return [...out];
 }
 
-/** avenDB's feed of the entries everyone may read (avendb-server `feed`). */
-export const ENTRIES_FEED = 'https://avendb.maia.city/feed/entries';
-
-/** The rows of the feed `url` asks for, or [] where it can't be read. */
-async function feedRows(url, get, signal) {
-	signal?.throwIfAborted();
-	try {
-		const r = await get(url, { headers: { accept: 'application/json' }, signal });
-		if (!r.ok) return [];
-		const { entries } = await r.json();
-		return Array.isArray(entries) ? entries : [];
-	} catch {
-		return [];
-	}
-}
-
-/**
- * The manifests of vault `vault`: off device `d` where it holds any, else off the feed. @returns {Promise<any[]>}
- */
-export async function manifestsOf(d, { vault = MAIA_CITY, fetch: get = globalThis.fetch, signal } = {}) {
-	signal?.throwIfAborted();
-	if (d) {
-		try {
-			const got = await d.run({ op: 'query', vault, where: { type: ['manifest'] } });
-			const rows = got?.ok?.rows ?? [];
-			signal?.throwIfAborted();
-			if (rows.length) return rows.map((r) => r.record).filter(Boolean);
-		} catch {
-			// the feed then
-		}
-	}
-	if (!get) return [];
-	const rows = await feedRows(`${ENTRIES_FEED}?seed=1&vault=${vault}&type=manifest`, get, signal);
-	return rows.map((r) => r.record).filter(Boolean);
+/** Manifests are verified local records. The device discovers and syncs them from peers in the background. */
+export async function manifestsOf(d, { vault = MAIA_CITY, signal } = {}) {
+ signal?.throwIfAborted();
+ if (!d) return [];
+ try {
+  const got = await d.run({ op: 'query', vault, where: { type: ['manifest'] } });
+  signal?.throwIfAborted();
+  return (got?.ok?.rows ?? []).map(r => r.record).filter(Boolean);
+ } catch (e) { signal?.throwIfAborted(); return []; }
 }
 
 /**
@@ -247,15 +222,14 @@ async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
 	if (!queries.length) return [];
 	const typed = queries.every((q) => q.type?.length);
 	const types = [...new Set(queries.flatMap((q) => q.type ?? []))];
-	const kinds = typed ? `&type=${types.join(',')}` : '';
-	const rows = get ? await feedRows(`${ENTRIES_FEED}?seed=1&vault=${vault}&bare=1${kinds}`, get, signal) : [];
+	const rows = [];
 	signal?.throwIfAborted();
 	if (d) {
 		try {
 			const got = await d.run({ op: 'query', vault, ...(typed ? { where: { type: types } } : {}), select: [] });
 			rows.push(...(got?.ok?.rows ?? []));
 		} catch {
-			// the feed's alone
+			// Nothing local yet; the native sync loop continues.
 		}
 	}
 	return rows;
@@ -264,10 +238,17 @@ async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
 /** The entries the records of entries `ids` name, as device `d` holds them. */
 async function namedOn(d, ids) {
 	const out = new Set();
+	let files;
+
 	for (const entry of ids) {
 		try {
 			const got = await d.run({ op: 'get', entry });
 			for (const e of namedBy(got?.ok?.record)) out.add(e);
+			const roots = [...JSON.stringify(got?.ok?.record ?? {}).matchAll(/aven:([a-f0-9]{64}):/g)].map(m => m[1]);
+			if (roots.length) {
+				files ??= (await d.run({ op: 'world' }))?.ok?.entries ?? [];
+				for (const file of files) if (!file.deleted && file.files?.some(f => roots.includes(f.root))) out.add(file.entry);
+			}
 		} catch {
 			// not held yet
 		}

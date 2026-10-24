@@ -1,4 +1,4 @@
-//! Ephemeral view demand, local to a node. It orders missing entry logs but grants no access and changes no vault.
+//! Ephemeral view demand, local to a node. It orders missing entry logs and hydrates permitted files, but grants no access and changes no vault.
 //! Leases keep a crashed tab from retaining priority forever; revisions reject delayed updates after replacement.
 
 use std::collections::{BTreeMap, BTreeSet};

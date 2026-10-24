@@ -6,8 +6,8 @@
  * ends that one alone (avendb/spec/AvenDB/Gate.lean, avendb/docs/ARCHITECTURE.md §8). An invite is such a share to a
  * one-time key, which the newcomer's vault claims at sign-up with no owner signing ($lib/app/entry.js).
  *
- *   Traveler   every invited human: reads the games, the asset recipes and the code the sandboxes and worlds run, so
- *              they open every sandbox, world and game asset, read only
+ *   Traveler   every invited human: Sandbox 4 demo only. Public assets and Universe posts remain public;
+ *              the person owns their own profile independently of this group
  *   Citizen    a Traveler who plays MaiaCity V1 too (to become the paid one later), and reads all of V1, its proposals
  *              among it; V1's moves still run on maiaCITY's API, so no write of them is a cap yet. Nobody is invited
  *              a citizen (Samuel 2026-10-19): travelers become citizens by other means, later
@@ -41,17 +41,17 @@ export const AGENT = 'Agent';
 
 /** MaiaCity V1's tag in the Maia City vault, which every entry of it carries (game/games.js `gameTag`). */
 const V1 = 'game:maiacity-v1';
+export const TRAVELER_GAME = 'sandbox-4';
+const GAME_READS = [{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic', 'config'] } }];
 
 /**
- * Each group the seed defines, in order, a group it includes named by its name: a Traveler reads the games' entries
- * (`game`), the asset recipes (`recipe`), the views and logic modules (`view`, `logic`) and the games' settings (`config`),
- * which Maia City also shares with everyone for the server's feeds (./seed.js `CODE_TYPES`, `RECIPE_TYPES`,
- * `CONFIG_TYPES`); a Citizen reads all of V1 besides; an Admin all of Maia City.
+ * Traveler grants the demo's game tag only. Public recipes and posts are read through
+ * their existing public shares, not a blanket recipe grant. Citizen retains all game code.
  * @type {{ name: string, caps: { op: string, where?: object }[], includes: string[] }[]}
  */
 export const CAP_GROUPS = [
-	{ name: TRAVELER, caps: [{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic', 'config'] } }], includes: [] },
-	{ name: CITIZEN, caps: [{ op: 'read', where: { tag: V1 } }], includes: [TRAVELER] },
+	{ name: TRAVELER, caps: [{ op: 'read', where: { tag: `game:${TRAVELER_GAME}` } }], includes: [] },
+	{ name: CITIZEN, caps: [...GAME_READS, { op: 'read', where: { tag: V1 } }, { op: 'read', where: { tag: 'game:maiacity-v2' } }], includes: [TRAVELER] },
 	{ name: ADMIN, caps: [{ op: 'read' }], includes: [CITIZEN] }
 ];
 
@@ -187,3 +187,22 @@ export const holdsAgent = (city, aven, groups, shares) => {
 	const group = groups.find((g) => g.name === AGENT)?.entry;
 	return !!group && shares.some((c) => c.over === city && c.who === aven && c.capGroup === group);
 };
+
+/** Migrate only the known original grants, preserving custom owner policies. Citizen first keeps existing access.
+ * Public shares and the person's own vault are independent of these Maia City grants.
+ * @param {CapGroup[]} have
+ */
+export function travelerDemoOps(have) {
+ const traveler = have.find(g => g.name === TRAVELER);
+ const citizen = have.find(g => g.name === CITIZEN);
+ const legacy = [GAME_READS, [{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic'] } }]];
+ if (!traveler || !legacy.some(caps => JSON.stringify(traveler.caps) === JSON.stringify(caps)) || traveler.includes.length) return [];
+ const ops = [];
+ if (citizen) {
+  const caps = [...citizen.caps];
+  for (const cap of CAP_GROUPS[1].caps) if (!caps.some(c => JSON.stringify(c) === JSON.stringify(cap))) caps.push(cap);
+  ops.push({ op: 'redefine_group', entry: citizen.entry, group: { name: citizen.name, caps, includes: citizen.includes } });
+ }
+ ops.push({ op: 'redefine_group', entry: traveler.entry, group: { name: TRAVELER, caps: CAP_GROUPS[0].caps, includes: [] } });
+ return ops;
+}

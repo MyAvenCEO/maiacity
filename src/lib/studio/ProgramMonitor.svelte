@@ -401,6 +401,16 @@
 					</div>
 				</div>
 			</div>
+		{:else if inWorld && !live && (s.world.state === 'loading' || s.world.state === 'unavailable')}
+			<div class="loading" role="status" aria-live="polite">
+				<div class="lcard">
+					<span class="lkick">Preparing the world</span>
+					<p class="lstep">{s.world.state === 'unavailable' ? "The world isn’t ready yet" : "Loading the 3D world"}</p>
+					<p class="ldetail">{s.world.error || s.world.loadingLabel || 'Loading assets and preparing the scene…'}</p>
+					<div class="lbar busy"><i style:width="0%"></i></div>
+					<div class="lacts"><button onclick={() => s.world.retry()}>Retry world</button></div>
+				</div>
+			</div>
 		{/if}
 	</div>
 	<!-- full screen: play and pause, and the playhead to move by hand -->

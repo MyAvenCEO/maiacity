@@ -1,14 +1,10 @@
 // @ts-nocheck — plain JS, kept loose on purpose
-// The stream held in memory and shared by the feed and the post pages: every post published in avenDB that everyone
-// may read, its author the vault that published it. A page at a time, newest first (Samuel 2026-10-21: "a Maia universe
-// doesn't need all posts at the same time"): the newest `PAGE` first (`loadFeed`), the next as its person scrolls
-// (`loadMore`), each off the page's own avenDB device where one is open (avendb's `posts` op), else off avenDB's server
-// (`FEED?limit=…&after=…`). The device brings the posts the server shows that it lacks, those alone, so the next look
-// reads them off it. A post page that names a post the pages haven't reached reads the whole feed (`loadAll`).
-import { ENTRIES, FEED, authorsOf, fromFeed, pictureUrl } from './posts.js';
+import { localDevice } from '$lib/avendb/local.js';
+// Shared Universe state. Every page reads local avenDB; manifests and background sync supply missing records.
+import { authorsOf, fromFeed, pictureUrl } from './posts.js';
 import { PICTURE } from '$lib/avendb/picture.js';
 import { inspireOf } from './inspire.js';
-import { ANSWER, bringEntries, deviceOf } from '../../../game/code/sources/device.js';
+import { ANSWER, deviceOf } from '../../../game/code/sources/device.js';
 
 /** How many posts the stream takes in at a time: the newest first, then as many more each time its person scrolls. */
 export const PAGE = 20;
@@ -24,7 +20,7 @@ export const stream = $state({
 	// whether more posts come after the last one taken in, and whether they are being taken in now
 	more: false,
 	loadingMore: false,
-	// where the posts shown came from: 'this device' or 'the server'
+	// Local provenance for every page.
 	from: ''
 });
 
@@ -35,19 +31,7 @@ export const authorOf = (p) => stream.authors[p.author];
 // each vault's profile picture as avenDB's server serves it to everyone ($lib/avendb/picture.js): its address once it
 // loaded, '' where it has none, asked for once per vault whatever number of cards show it
 // (`asked` plain, as a card asks while it renders, where no state may change)
-const faces = $state({});
-const asked = new Set();
-export function faceOf(vault) {
-	if (!vault || typeof Image === 'undefined') return '';
-	if (!asked.has(vault)) {
-		asked.add(vault);
-		const src = pictureUrl(vault, PICTURE);
-		const img = new Image();
-		img.onload = () => (faces[vault] = src);
-		img.src = src;
-	}
-	return faces[vault] ?? '';
-}
+export const faceOf = (vault) => pictureUrl(vault, PICTURE);
 
 export function like(p) {
 	p.liked = !p.liked;
@@ -90,41 +74,28 @@ function within(p, ms) {
 	return Promise.race([p.catch(() => null), late]).finally(() => clearTimeout(t));
 }
 
-const json = { headers: { accept: 'application/json' } };
 
 /** A page of posts off the page's own device: `{ posts, more }`, or null where none is open or it can't answer. */
 async function devicePage(after) {
-	const d = deviceOf();
+	const d = deviceOf() || await localDevice();
 	if (!d) return null;
 	const got = await within(d.run({ op: 'posts', limit: PAGE, ...(after ? { after } : {}) }), ANSWER);
 	return Array.isArray(got?.ok?.posts) ? got.ok : null;
 }
 
-/** A page of posts off avenDB's server: `{ posts, more }`; throws where it can't be reached. */
-async function serverPage(after) {
-	const r = await fetch(`${FEED}?limit=${PAGE}${after ? `&after=${after}` : ''}`, json);
-	if (!r.ok) throw new Error(`avenDB's feed answers ${r.status}`);
-	const page = await r.json();
-	return { posts: Array.isArray(page.posts) ? page.posts : [], more: !!page.more };
-}
-
-/** The other public entries a post's layout draws on: a nicety, a post still shows without them. */
+/** Supplementary post records are already in the local world after manifest sync. */
 async function loadEntries() {
-	const more = await fetch(ENTRIES, json).catch(() => null);
-	const { entries } = more?.ok ? await more.json().catch(() => ({})) : {};
-	if (Array.isArray(entries)) stream.entries = new Map(entries.map((e) => [e.entry, e]));
+	const d = deviceOf() || await localDevice();
+	if (!d) return;
+	const got = await within(d.run({ op: 'world' }), ANSWER);
+	const entries = got?.ok?.entries;
+	if (Array.isArray(entries)) stream.entries = new Map(entries.map(e => [e.entry ?? e.id, e]));
 }
 
-/**
- * A page of posts, newest first after post `after` (none: the newest): off the page's device, which needs no server,
- * where it holds any; else off avenDB's server, the device bringing the posts it shows that the device lacks.
- */
 async function pageOf(after) {
 	const local = await devicePage(after);
-	if (local?.posts.length) return { ...local, from: 'this device' };
-	const page = await serverPage(after);
-	if (deviceOf()) void bringEntries(page.posts.map((p) => p.entry));
-	return { ...page, from: 'the server' };
+	if (!local) throw new Error('Waiting for the local avenDB instance');
+	return { ...local, from: 'this device' };
 }
 
 let loading = null;
@@ -160,8 +131,7 @@ export function loadMore() {
 		try {
 			const last = stream.posts.at(-1)?.entry ?? null;
 			let page = await pageOf(last);
-			// a device that holds fewer than the server: the server's next ones
-			if (!page.posts.length && page.from === 'this device') page = { ...(await serverPage(last)), from: 'the server' };
+
 			take(page.posts, { top: false });
 			stream.more = page.more;
 		} catch (e) {
@@ -182,12 +152,17 @@ export function loadAll() {
 	all ??= (async () => {
 		if (stream.feed !== 'done') stream.feed = 'loading';
 		try {
-			const [r] = await Promise.all([fetch(FEED, json), stream.entries.size ? null : loadEntries()]);
-			if (!r.ok) throw new Error(`avenDB's feed answers ${r.status}`);
-			const { posts } = await r.json();
-			take(Array.isArray(posts) ? posts : [], { top: true });
-			stream.more = false;
-			stream.from = 'the server';
+			await loadEntries();
+			let after = null;
+			for (let n = 0; n < 10; n++) {
+				const page = await pageOf(after);
+				take(page.posts, { top: n === 0 });
+				stream.more = page.more;
+				const next = page.posts.at(-1)?.entry;
+				if (!page.more || !next || next === after) break;
+				after = next;
+			}
+			stream.from = 'this device';
 			stream.feed = 'done';
 		} catch (e) {
 			console.warn('Maia Universe:', e);

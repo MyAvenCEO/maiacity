@@ -48,7 +48,9 @@ export function drawsNothing(camera, material) {
 /** @param {THREE.WebGLRenderer} renderer */
 export function createWarmer(renderer) {
 	/** each renderable as it was warmed: its geometry and its material(s) @type {WeakMap<THREE.Object3D, [unknown, unknown]>} */
-	const done = new WeakMap();
+	let done = new WeakMap();
+	/** @type {Map<string, WeakMap<THREE.Object3D, [unknown, unknown]>>} */
+	const variants = new Map([['', done]]);
 	/** the materials whose shaders were set compiling @type {WeakSet<THREE.Material>} */
 	const compiling = new WeakSet();
 	/** what the warming sent the GPU so far: things drawn, the bytes of their buffers (each geometry once) and of their
@@ -244,9 +246,12 @@ export function createWarmer(renderer) {
 		 * Everything the world holds that is not warmed yet: every shader compiled (beside the page where the GPU can),
 		 * then all of it drawn once. Before a timeline plays.
 		 * @param {THREE.Scene} scene @param {THREE.Camera} camera @param {boolean} [hidden] what the world keeps hidden too
+		 * @param {string} [variant] the visible light/shadow configuration
 		 * @returns {Promise<number>} how many were drawn
 		 */
-		async all(scene, camera, hidden = true) {
+		async all(scene, camera, hidden = true, variant = '') {
+			if (!variants.has(variant)) variants.set(variant, new WeakMap());
+			done = /** @type {WeakMap<THREE.Object3D, [unknown, unknown]>} */ (variants.get(variant));
 			await renderer.compileAsync(scene, camera);
 			found = [];
 			ripe = [];

@@ -655,14 +655,29 @@ export class Studio {
 		const id = this.current?.id;
 		// one shot that can't be read (avenDB not open yet as the app starts, a shot gone) leaves the others to load: a
 		// rejected Promise.all here left the world off and every world clip a stand-in
-		const got = await Promise.allSettled(this.worldClips.map((c) => (c.shot ? shotAt(c.shot, c.shotVersion) : null)));
+		const clips = [...this.worldClips];
+		const publish = () => {
+			if (this.current?.id !== id) return;
+			this.shotRev++;
+			this.wantWorld = clips.some((c) => {
+				const spec = cached(c.shot, c.shotVersion)?.spec;
+				return !!spec && shootable(spec);
+			});
+		};
+		publish();
+		const got = await Promise.allSettled(clips.map(async (c) => {
+			try { return c.shot ? await shotAt(c.shot, c.shotVersion) : null; }
+			finally { publish(); }
+		}));
+		// A previous timeline finishing its reads cannot start or stop this timeline's world.
+		if (this.current?.id !== id) return;
 		const failed = got.find((r) => r.status === 'rejected');
 		if (failed) console.warn(`studio: a world shot could not be read: ${/** @type {any} */ (failed).reason?.message ?? failed}`);
 		this.shotRev++;
 		for (const q of this.cueClips) if (q.hash) void this.source(q.hash).catch(() => null);
 		// the world: started as soon as the timeline has a world clip in a world it can be shot in, and let go (its
 		// WebGL and memory with it) for a timeline with none — its world clips (if any) play from their proxies
-		this.wantWorld = this.worldClips.some((c) => shootable(cached(c.shot, c.shotVersion)?.spec));
+		publish();
 		const lost = this.worldClips.filter((c) => !cached(c.shot, c.shotVersion));
 		if (lost.length) console.warn(`studio: ${lost.length} of ${this.worldClips.length} world clips have no shot on this Mac (${lost[0].shot}@${lost[0].shotVersion}…)`);
 		// asked again a few times: avenDB opens a moment after the studio, and its shots come with it
