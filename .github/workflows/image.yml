@@ -44,6 +44,5 @@ jobs:
           push: true
           cache-from: type=gha,scope=${{ inputs.component }}
           cache-to: type=gha,scope=${{ inputs.component }},mode=max
-          tags: |
-            ${{ steps.meta.outputs.image }}:${{ github.sha }}
-            ${{ steps.meta.outputs.image }}:latest
+          # Parallel builds are candidates; never advance a mutable release tag before validation.
+          tags: ${{ steps.meta.outputs.image }}:${{ github.sha }}
