@@ -27,3 +27,9 @@ test('generic windows expose independent completeness and clear stale scope evid
  const delayed=view.read({op:'query',wait:true});expect(view.completeness.response).toBe('unavailable');
  view.clear();resolve({ok:{rows:[{checkpoint:{partial:true}}]}});expect(await delayed).toBeNull();expect(view.completeness.history).toBe('unverified');view.close();
 });
+
+test('empty or paged-out checkpoint results retain query-level partial evidence',()=>{
+ const state=readCompleteness({ok:{rows:[],count:0,readiness:{checkpointPartial:true,unresolvedCandidates:1,authoritativeEmpty:false}}});
+ expect(state.history).toBe('checkpoint-partial');expect(state.authoritativeEmpty).toBe(false);
+ expect(state.discovery).toBe('unverified');
+});

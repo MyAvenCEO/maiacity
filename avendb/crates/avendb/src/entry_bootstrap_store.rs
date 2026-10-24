@@ -702,6 +702,10 @@ mod tests {
         assert_eq!(get["ok"]["readOnly"],true);
         let query=crate::engine::read(&lab,phone,&serde_json::json!({"op":"query","schema":"stored","where":{"type":["doc"]}}));
         assert_eq!(query["ok"]["rows"][0]["readOnly"],true);
+        let empty_page=crate::engine::read(&lab,phone,&serde_json::json!({"op":"query","schema":"stored","where":{"type":["doc"]},"limit":0}));
+        assert_eq!(empty_page["ok"]["rows"],serde_json::json!([]));
+        assert_eq!(empty_page["ok"]["readiness"]["checkpointPartial"],true);
+        assert_eq!(empty_page["ok"]["readiness"]["authoritativeEmpty"],false);
         let before=lab.item(phone,entry).unwrap().record();
         assert!(lab.edit(phone,vault,entry,|item| { item.edit_document_v0(|d| d.title="Forbidden while incomplete".into()); }).is_err());
         let suffix=lab.edit(mac,vault,entry,|item| { item.edit_document_v0(|d| d.title="Latest".into()); }).unwrap();

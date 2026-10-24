@@ -950,3 +950,21 @@ parser/diff checks passed. Rust execution is explicitly queued with the root; th
 slice is not part of the frozen release and must not be described as deployed.
 
 Proposal causal-body fallback: [81e43133](https://github.com/MyAvenCEO/maiacity/commit/81e43133). Rust regression execution remains pending; no release deployment claim.
+
+### Query-level uncertainty survives empty results
+
+Universal query previously silently skipped known label-matching entries whose
+records could not be opened/translated, returning only `rows: []` and `count: 0`.
+The generic JS wrapper already avoided an authoritative-empty claim, but raw/native
+results did not carry this distinction, and row-only checkpoint evidence vanished
+on an empty page. Query now includes `readiness`: discovery remains unverified,
+`authoritativeEmpty` stays false, `unresolvedCandidates` counts known metadata
+candidates lacking a usable requested record, and `checkpointPartial` is computed
+before pagination. An unresolved candidate may need content OR schema translation;
+it does not prove the entry matches a record predicate. These are read observations,
+not authorization, full discovery, history completeness or file availability.
+
+Generic JS completeness retains query-level checkpoint evidence on empty pages.
+Four JS regressions and the focused `QueryReadiness.lean` model pass. Rust parser
+checks pass; new raw query and checkpoint-empty-page regression execution remains
+queued, with no Cargo run competing against the shared compiler.
