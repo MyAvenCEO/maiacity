@@ -1,15 +1,15 @@
 # Active canonical entry collections — task 5 draft slice
 
 Base: merged release `720922e0570433a0e5c6663f6f15f91e7631d176`.
-This slice is not deployed or a completed task 5. Native/WASM validation and physical-device acceptance are still required.
+This slice is not deployed or a completed task 5. The initial native and WASM jobs passed; the scoped follow-up still requires exact-head CI and physical-device acceptance.
 
 ## Problem and scope
 
 The existing targeted `get`/`room` observer can update before a background world summary. Actual Todos still derived its rows from `world.entries`; local writes waited for that expensive summary, and remote changes also faced an unconditional `max(150ms, 2 × previous refresh duration)` delay. The existing generic-status browser fixture used a targeted `get`, so it did not cover the real collection view.
 
-The new `entry_views` read takes a required `vault` and optional array `types`. It returns `{ok:{rows:[...]}}`, or the ordinary refusal/null result. Rows use the same landed entries, device-visible meanings, and **single canonical EntryView JSON projection** as full world. Unknown/empty vaults return no rows. Types filter only labels already known to the device. Sealed metadata stays sealed. The operation never grants authority or synthesizes a record from a mutation request.
+The new `entry_views` read takes a required `vault` and optional array `types`, canonical `kind`, and metadata actor `as`. It returns `{ok:{rows:[...],totalEntries,readableEntries}}`, or the ordinary refusal/null result. Rows use the same landed entries, device-visible meanings, and **single canonical EntryView JSON projection** as full world. Unknown/empty vaults return no rows. Types filter only labels already known to the device. Kind filters match the canonical world classification, including custom-labeled todos. Counts preserve empty/unreadable-vault semantics without opening unrelated record bodies; `as` selects metadata only and grants no authority. Sealed metadata stays sealed. The operation never grants authority or synthesizes a record from a mutation request.
 
-Every entry field remains identical to world: readers, writers, sharers, levels, authors, record/lens presentation, deletion state, files and entry/file `syncedTo`. The node supplies the same holdings projection. The Rust differential regression compares selected rows to full world before/after sharing, revocation and deletion, across owner, unrelated and relay devices, with nonempty entry/file holders. Malformed vault/types and unknown fields are refused.
+Every entry field remains identical to world: readers, writers, sharers, levels, authors, record/lens presentation, deletion state, files and entry/file `syncedTo`. The node supplies the same holdings projection, copying and iterating only selected logs/files. Shared reach is an immutable Arc snapshot, not a copied authorization cache. Owned row JSON encoding runs outside Lab on a separately bounded collection lane. The Rust differential regression compares selected rows to full world before/after sharing, revocation and deletion, across owner, unrelated and relay devices, with nonempty entry/file holders. Malformed vault/types and unknown fields are refused.
 
 Todos mounts one existing `api.observe` subscription for its selected vault. It receives authoritative rows independently of full-world pacing; it clears failed/refused results and disposes with the component. Existing query/device/context scope handling suppresses stale answers. Vault/share navigation metadata still comes from world. This adds no persistent cache, optimistic success state, chat-specific path, server authority, or new write semantics.
 
@@ -24,14 +24,20 @@ Todos mounts one existing `api.observe` subscription for its selected vault. It 
 - Existing Chromium/WebKit local-write, refusal, targeted remote-read, serialized engine priority, single-world-reader and device-retirement fixture remains green.
 - 30 focused JS tests pass with 191 assertions: local-write, reactive-read, world-reader and query-window.
 - Lean LocalWrite checks pass. Rust source parser checks pass; these are not Rust compilation or execution.
-- Svelte check initially found two new callback annotations, now corrected. The unrelated base-file `src/lib/media/ref.test.js` import typing error has the existing narrow fix cherry-picked from `b66372058a6434b5897a802f26babd85186ce013`; final full check is pending.
+- Initial full Svelte check passed with 0 errors / 28 existing warnings after the narrow media test typing fix from `b66372058a6434b5897a802f26babd85186ce013`.
 
 ## Remaining gates and limits
 
-1. Run native differential regression and existing core/net suite after the combined Mac build releases the Cargo slot. No Rust/WASM build was run for this slice yet.
+1. Initial native differential/core/net/device/Lean CI passed in [run 40093901534](https://github.com/MyAvenCEO/maiacity/actions/runs/40093901534), source d57ad997. Initial WASM was generated by CI commit b78b31f0470dc22433055a3286511744fad3556d. The scoped follow-up requires a new exact-head pass; no local heavy build competes with the combined Mac build.
 2. Build matching WASM, run native/browser parity and exact-head CI. UI-only deployment with an older engine does not support the new read and must not ship.
 3. Reconcile with the combined studio branch's changes, especially `.github/workflows/kernel.yml` and session publication hooks. This branch does not touch that checkout or build.
 4. Validate on physical Mac/iPhone/iPad: generic local writes, remote visibility under backlog, offline write and reconnect; collect revision evidence and timing distributions. No <50ms or internet-bandwidth claim follows from synthetic fixtures.
 5. Migrate other active world-dependent consumers through the shared mechanism as separate bounded slices; Sparks, Artifacts, Story/Note and other world-entry consumers remain. Do not mark every generic UI path complete from Todos alone.
 
-The global world watcher retains its pacing to avoid starving background/UI work. `entry_views` bypasses its encoding mutex, but the node's holdings computation still scans logs/files, and scoped JSON construction still runs under the Lab read lock. A large selected vault can therefore remain expensive. These costs and already-running replay/engine work need measurements and further bounded optimization; this slice removes one proven dependency rather than guaranteeing instant behavior.
+The global world watcher retains its pacing to avoid starving background/UI work. The collection has its own bounded encoding admission; canonical capture remains under Lab and JSON is encoded outside it. Scoped holdings copy only selected log/file frontiers, retaining the same peer reach, durability and holder rules. `own_logs()` may still refresh the global truthful frontier after changes; vault entry enumeration, metadata levels, selected history and entry-file discovery still cost work. This does not establish a <50ms bound.
+
+## Scoped follow-up implementation correspondence
+
+Todos asks for canonical kind `todo`, not entry type `todo`: a custom-labeled todo must remain visible. The conservative candidate check rejects only primitive stored kind contradictions before materializing unrelated bodies. This relies on `Item::as_todo` calling the shipped `View::todo_v1`, whose `BUILT_IN` view is `View::plain` and whose schema requires constant kind `todo` without a default. Missing/container kinds fall through. Final classification and File → Note → Todo precedence remain canonical; the single `What::kind` helper also supplies world JSON. No lane/query lens semantics change.
+
+Lean models metadata count bounds and the required no-false-negative candidate implication. Native tests add exact kind/actor/count parity, custom entry labels, primitive contradictions with an unrelated 1MiB field, and a real Node collection read while world encoding is held. These are behavioral tests, not complete latency benchmarks. The actual Todos Chromium/WebKit regression now deliberately uses a custom label; local/remote/revocation remains green. Thirty focused JS tests (191 assertions), Lean, parser checks and full Svelte check (0 errors / 28 existing warnings) pass for the scoped follow-up. Native execution and rebuilt final WASM remain gates.

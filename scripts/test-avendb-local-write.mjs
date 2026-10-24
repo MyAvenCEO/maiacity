@@ -18,7 +18,7 @@ let serial = Promise.resolve();
 window.fixtureOperations = [];
 const counts = window.fixtureCounts = { brings: 0, writes: 0, worlds: 0, activeWorlds:0, maxWorlds:0 };
 const world = { mine, vaults:[{id:mine,name:'Fixture',kind:'human',acting:{as:mine},devices:[]}],
- shares:[], groups:[], entries:[{entry:'c'.repeat(64),vault:mine,by:mine,authors:[mine],type:'todo',kind:'todo',title:'Generic collection acceptance',status:'open',tags:[],readers:[mine],writers:[mine],sharers:[mine],levels:{[mine]:'owner'}},{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
+ shares:[], groups:[], entries:[{entry:'c'.repeat(64),vault:mine,by:mine,authors:[mine],type:'custom-task-label',kind:'todo',title:'Generic collection acceptance',status:'open',tags:[],readers:[mine],writers:[mine],sharers:[mine],levels:{[mine]:'owner'}},{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
 const wake = () => { revision++; if(!window.fixtureMuteWake) for(const resolve of waiters.splice(0)) resolve(true); };
 window.fixtureRemoteStatus = next => {status=next;world.entries[0].status=next;wake();};
 window.fixtureRevokeTodo = () => {world.entries[0].readers=[];world.entries[0].writers=[];wake();};
@@ -45,7 +45,10 @@ export class Device {
  }
  async runNow(op){
   if(op.op==='world'){counts.worlds++;counts.activeWorlds++;counts.maxWorlds=Math.max(counts.maxWorlds,counts.activeWorlds);try{const snapshot={...structuredClone(world),marker:window.fixtureWorldVersion??0};if(window.fixtureHoldWorld)await new Promise(r=>(window.worldWaiters??=[]).push(r));return {ok:snapshot};}finally{counts.activeWorlds--;}}
-  if(op.op==='entry_views')return {ok:{rows:structuredClone(world.entries.filter(e=>e.vault===op.vault && (!op.types || op.types.includes(e.type))))}};
+  if(op.op==='entry_views'){
+   const all=world.entries.filter(e=>e.vault===op.vault), actor=op.as??op.vault;
+   return {ok:{rows:structuredClone(all.filter(e=>(!op.types || op.types.includes(e.type)) && (!op.kind || e.kind===op.kind))),totalEntries:all.length,readableEntries:all.filter(e=>e.public || e.readers?.includes(actor)).length}};
+  }
   if(op.op==='room')return {ok:{entry,room:{kind:'room',look:'self',name:'Fixture',messages:structuredClone(messages)},count:messages.length}};
   if(op.op==='bring'){counts.brings++;return new Promise(()=>{});}
   if(op.op==='get')return {ok:{status}};

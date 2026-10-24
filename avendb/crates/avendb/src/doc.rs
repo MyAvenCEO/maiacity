@@ -175,6 +175,15 @@ impl Item {
         view.get(&self.record())
     }
 
+    /// Conservative candidate check for the shipped todo schema's required kind constant.
+    /// A primitive contradiction cannot read as a todo; unknown shapes still use the canonical projection.
+    pub(crate) fn may_be_todo(&self) -> bool {
+        match self.root().get("kind") {
+            Some(ValueOrContainer::Value(value)) => value.to_json_value().as_str() == View::todo_v1().schema().kind(),
+            _ => true,
+        }
+    }
+
     /// An edit through `view`: the app's view of the item is now `new`. Only what changed is written, tagged with the
     /// view's schema; nothing at all if `new` is the view as it was. False, writing nothing, if `new` isn't a view of
     /// the app's schema.
@@ -906,6 +915,19 @@ mod tests {
 
     fn block(id: u64, r#type: TypeV1, text: &str) -> BlockV1 {
         BlockV1 { id, r#type, level: None, checked: None, lang: None, text: text.into() }
+    }
+
+    #[test]
+    fn todo_candidate_rejects_primitive_contradictions_without_reading_the_body() {
+        let todo = Item::todo("candidate", ALICE);
+        assert!(todo.may_be_todo());
+        assert!(todo.as_todo().is_some());
+        let note = welcome(ALICE);
+        note.root().insert("unrelated", "x".repeat(1024 * 1024)).unwrap();
+        assert!(!note.may_be_todo());
+        assert!(note.as_todo().is_none());
+        note.root().delete("kind").unwrap();
+        assert!(note.may_be_todo());
     }
 
     /// A heading (block 1) and a paragraph (block 2), made on `signer`'s device.

@@ -164,7 +164,7 @@ fn bad(why: impl Into<String>) -> Refused {
 /// The fields of each op beside `op`: a field it doesn't take is a mistake, never ignored.
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
-        "entry_views" => &["vault", "types"],
+        "entry_views" => &["vault", "types", "as", "kind"],
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
@@ -823,17 +823,32 @@ fn open_link(
 /// Scoped canonical entry summaries, with current node holdings supplied by any
 /// peer. The normal core read has no transport holdings, exactly like `world`.
 pub fn entry_views(lab: &Lab, me: SignerId, op: &Value, synced: &SyncedTo) -> Value {
-    let result = op_of(op).and_then(|(name, o)| {
-        if name != "entry_views" { return Err(bad("expected entry_views")); }
-        entry_views_inner(lab, me, o, synced)
-    });
-    match result { Ok(rows) => json!({ "ok": rows }), Err(why) => why.to_json() }
+    match entry_views_snapshot(lab, me, op) {
+        Ok(snapshot) => json!({ "ok": snapshot.map(|snapshot| snapshot.into_json(synced)) }),
+        Err(why) => why.to_json(),
+    }
+}
+
+/// Capture the authoritative collection under Lab; encode its owned rows outside.
+pub fn entry_views_snapshot(lab: &Lab, me: SignerId, op: &Value) -> Result<Option<world::EntryViews>, Refused> {
+    let (name, o) = op_of(op)?;
+    if name != "entry_views" { return Err(bad("expected entry_views")); }
+    entry_views_capture(lab, me, o)
+}
+
+fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Option<world::EntryViews>, Refused> {
+    let vault = vault_of(o, "vault")?;
+    let actor = o.get("as").map(|_| vault_of(o, "as")).transpose()?.unwrap_or(vault);
+    let types = o.get("types").map(|_| texts_of(o, "types")).transpose()?;
+    let kind = o.get("kind").map(|value| value.as_str().ok_or_else(|| bad("kind must be text"))).transpose()?;
+    if kind.is_some_and(|kind| !["note", "todo", "file", "schema", "lens", "record", "sealed"].contains(&kind)) {
+        return Err(bad("unknown entry kind"));
+    }
+    Ok(world::entry_views(lab, me, vault, actor, types.as_deref(), kind))
 }
 
 fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &SyncedTo) -> Result<Value, Refused> {
-    let vault = vault_of(o, "vault")?;
-    let types = o.get("types").map(|_| texts_of(o, "types")).transpose()?;
-    Ok(world::entry_views(lab, me, vault, types.as_deref(), synced).unwrap_or(Value::Null))
+    Ok(entry_views_capture(lab, me, o)?.map(|snapshot| snapshot.into_json(synced)).unwrap_or(Value::Null))
 }
 
 /// `{"op": "query", "vault"?, "where"?, "schema"?, "select"?, "order"?, "limit"?, "offset"?, "depth"?, "follow"?}`:

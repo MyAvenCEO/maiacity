@@ -47,6 +47,7 @@ structure SummaryRow where
   entry : Nat
   vault : Nat
   canonicalFields : Nat
+  readable : Bool
   deriving DecidableEq
 
 def collection (vault : Nat) (authorized : List SummaryRow) : List SummaryRow :=
@@ -62,5 +63,19 @@ def collectionResult (vault : Nat) (authorized : List SummaryRow) (_summaryReady
 theorem collection_independent_of_summary (vault : Nat) (authorized : List SummaryRow)
     (summaryReadyA summaryReadyB : Bool) :
     collectionResult vault authorized summaryReadyA = collectionResult vault authorized summaryReadyB := rfl
+
+-- Counts use only canonical metadata, not opening each record body.
+def metadataCount (rows : List SummaryRow) : Nat := rows.length
+def readableCount (rows : List SummaryRow) : Nat := (rows.filter (fun row => row.readable)).length
+
+theorem readable_count_bounded (rows : List SummaryRow) : readableCount rows ≤ metadataCount rows := by
+  exact List.length_filter_le _ _
+
+-- A conservative prefilter is allowed only when every canonical match passes it.
+-- Rust's todo discriminator corresponds to the shipped plain schema's required kind constant.
+theorem safe_candidate_filter (candidate selected : SummaryRow → Bool)
+    (safe : ∀ row, selected row = true → candidate row = true) (row : SummaryRow)
+    (h : selected row = true) : candidate row && selected row = true := by
+  simp [safe row h, h]
 
 end AvenDB.LocalWrite

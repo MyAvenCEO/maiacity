@@ -2093,6 +2093,8 @@ fn entry_views_are_exact_scoped_world_rows_before_and_after_revocation() {
     use avendb::world::{Holder, SyncedTo};
     let mut w = cast::world();
     let l = cast::library(&mut w);
+    let custom = w.lab.create(w.mac_a, w.alice, w.alice, "custom-task-label", &[],
+        avendb::doc::Item::todo("Custom labeled todo", w.mac_a)).unwrap();
     let key = avendb::sealed::FileKey::from_bytes([9; 32]);
     let plain = b"canonical entry collection file";
     let brought = avendb::sealed::Brought::new(avendb::hash::hash("entry collection file", &avendb::sealed::seal(&key, plain)), key, plain.len() as u64);
@@ -2111,6 +2113,22 @@ fn entry_views_are_exact_scoped_world_rows_before_and_after_revocation() {
             .cloned().collect();
         let actual = ok(engine::entry_views(&w.lab, me, &op, &synced));
         assert_eq!(actual["rows"], json!(expected));
+        let vault_rows: Vec<_> = all["entries"].as_array().unwrap().iter().filter(|row| row["vault"] == vault.to_hex()).collect();
+        assert_eq!(actual["totalEntries"], json!(vault_rows.len()));
+        let readable = vault_rows.iter().filter(|row| row["public"] == true || row["readers"].as_array().unwrap().contains(&json!(vault.to_hex()))).count();
+        assert_eq!(actual["readableEntries"], json!(readable));
+        for actor in [w.bob, VaultId([0; 32])] {
+            let mut as_other = op.clone(); as_other["as"] = json!(actor.to_hex());
+            let readable = vault_rows.iter().filter(|row| row["public"] == true || row["readers"].as_array().unwrap().contains(&json!(actor.to_hex()))).count();
+            let actual = ok(engine::entry_views(&w.lab, me, &as_other, &synced));
+            assert_eq!(actual["readableEntries"], json!(readable));
+            assert_eq!(actual["rows"], json!(expected), "actor metadata cannot grant or suppress device access");
+        }
+        for kind in ["todo", "note", "file", "record", "sealed", "schema", "lens"] {
+            let mut selected = op.clone(); selected["kind"] = json!(kind);
+            let rows: Vec<_> = expected.iter().filter(|row| row["kind"] == kind).cloned().collect();
+            assert_eq!(ok(engine::entry_views(&w.lab, me, &selected, &synced))["rows"], json!(rows));
+        }
     };
     w.lab.sync_all(0);
     for me in [w.mac_a, w.mac_b, w.server] {
@@ -2120,6 +2138,8 @@ fn entry_views_are_exact_scoped_world_rows_before_and_after_revocation() {
             compare(&w, me, vault, Some(vec![]));
         }
     }
+    let selected = ok(engine::entry_views(&w.lab, w.mac_a, &json!({"op":"entry_views", "vault":w.alice.to_hex(), "kind":"todo"}), &synced));
+    assert!(selected["rows"].as_array().unwrap().iter().any(|row| row["entry"] == custom.to_hex()), "kind selection preserves a custom entry label");
     let share = w.lab.issue(w.mac_a, &[w.mac_a], cast::share(w.alice, cast::vault(w.bob), Level::Read, cast::by_id(l.door))).unwrap();
     w.lab.sync_all(1);
     compare(&w, w.mac_b, w.alice, None);
@@ -2134,4 +2154,7 @@ fn entry_views_are_exact_scoped_world_rows_before_and_after_revocation() {
     assert!(engine::read(&w.lab, mac, &json!({ "op": "entry_views", "vault": "not-a-vault" })).get("refused").is_some());
     assert!(engine::read(&w.lab, mac, &json!({ "op": "entry_views", "vault": w.alice.to_hex(), "types": "todo" })).get("refused").is_some());
     assert!(engine::read(&w.lab, mac, &json!({ "op": "entry_views", "vault": w.alice.to_hex(), "unknown": true })).get("refused").is_some());
+    for kind in [json!("unknown"), json!(7)] {
+        assert!(engine::read(&w.lab, mac, &json!({"op":"entry_views", "vault":w.alice.to_hex(), "kind":kind})).get("refused").is_some());
+    }
 }

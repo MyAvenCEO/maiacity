@@ -282,6 +282,16 @@ pub enum What {
     Sealed,
 }
 
+impl What {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Note { .. } => "note", Self::Todo { .. } => "todo", Self::File { .. } => "file",
+            Self::Lane { lens, .. } => if *lens { "lens" } else { "schema" },
+            Self::Record { .. } => "record", Self::Sealed => "sealed",
+        }
+    }
+}
+
 impl World {
     /// The world as device `me`'s page reads it: ids in 64 hex digits, kinds, levels and statuses by their lowercase
     /// names, a share's slice as the core writes it (`{name, where, ops, above}`, `slice::Slice::to_json`), `null`
@@ -522,14 +532,38 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
 /// A scoped collection of exactly the canonical world-entry rows. No full world,
 /// share inventory or audience inventory is materialized. Sealed metadata remains
 /// sealed; filtering by type can use only meaning this device already knows.
-pub fn entry_views(lab: &Lab, me: SignerId, vault: VaultId, types: Option<&[String]>, synced: &SyncedTo) -> Option<Value> {
+pub struct EntryViews {
+    pub entries: Vec<EntryView>,
+    pub total_entries: usize,
+    pub readable_entries: usize,
+}
+
+impl EntryViews {
+    pub fn into_json(self, synced: &SyncedTo) -> Value {
+        json!({ "rows": self.entries.iter().map(|row| entry_json(row, synced)).collect::<Vec<_>>(),
+            "totalEntries": self.total_entries, "readableEntries": self.readable_entries })
+    }
+}
+
+pub fn entry_views(lab: &Lab, me: SignerId, vault: VaultId, actor: VaultId, types: Option<&[String]>, kind: Option<&str>) -> Option<EntryViews> {
     lab.vault_of(me)?;
-    let rows = lab.state(me).entries().iter()
-        .filter(|en| en.vault == vault && lab.landed(me, en.id))
-        .filter(|en| types.is_none_or(|types| lab.meaning(me, en.id).is_some_and(|m| types.iter().any(|ty| ty == m.attrs.ty.as_str()))))
-        .map(|en| entry_json(&entry(lab, me, en), synced))
-        .collect::<Vec<_>>();
-    Some(json!({ "rows": rows }))
+    let st = lab.state(me);
+    let mut snapshot = EntryViews { entries: vec![], total_entries: 0, readable_entries: 0 };
+    for en in st.entries().iter().filter(|en| en.vault == vault && lab.landed(me, en.id)) {
+        snapshot.total_entries += 1;
+        // The same public/level metadata as EntryView, without opening any record.
+        let readable = st.public_key(KeyFam::Audience(vault, en.audience()))
+            || levels(st, vault, en.audience()).iter().any(|(v, level)| *v == actor && level.allows(Level::Read));
+        snapshot.readable_entries += usize::from(readable);
+        if types.is_none_or(|types| lab.meaning(me, en.id).is_some_and(|m| types.iter().any(|ty| ty == m.attrs.ty.as_str()))) {
+            // The todo schema requires its kind constant. Reject unrelated bodies before opening them,
+            // while preserving custom entry labels and exact File/Note/Todo classification precedence.
+            if kind == Some("todo") && lab.item(me, en.id).is_some_and(|item| !item.may_be_todo()) { continue; }
+            let row = entry(lab, me, en);
+            if kind.is_none_or(|kind| row.what.kind() == kind) { snapshot.entries.push(row); }
+        }
+    }
+    Some(snapshot)
 }
 
 /// The single projection shared by full-world and active collection reads.
@@ -547,13 +581,13 @@ fn entry_json(i: &EntryView, synced: &SyncedTo) -> Value {
         })
     };
 
-    let (kind, title, text, status) = match &i.what {
-        What::Note { title, text, .. } => ("note", Some(title), Some(text), None),
-        What::Todo { title, status } => ("todo", Some(title), None, Some(status_name(*status))),
-        What::File { title, .. } => ("file", Some(title), None, None),
-        What::Lane { title, lens } => (if *lens { "lens" } else { "schema" }, Some(title), None, None),
-        What::Record { title, text, .. } => ("record", Some(title), text.as_ref(), None),
-        What::Sealed => ("sealed", None, None, None),
+    let (title, text, status) = match &i.what {
+        What::Note { title, text, .. } => (Some(title), Some(text), None),
+        What::Todo { title, status } => (Some(title), None, Some(status_name(*status))),
+        What::File { title, .. } => (Some(title), None, None),
+        What::Lane { title, .. } => (Some(title), None, None),
+        What::Record { title, text, .. } => (Some(title), text.as_ref(), None),
+        What::Sealed => (None, None, None),
     };
     let (fork_of, deleted, edits, (proposals, variants), media) = match &i.what {
         What::Note { fork_of, deleted, edits, proposals, variants, .. } => {
@@ -585,7 +619,7 @@ fn entry_json(i: &EntryView, synced: &SyncedTo) -> Value {
         "readers": hexes(readers),
         "writers": hexes(writers),
         "sharers": hexes(sharers),
-        "kind": kind,
+        "kind": i.what.kind(),
         "title": title,
         "text": text,
         "status": status,

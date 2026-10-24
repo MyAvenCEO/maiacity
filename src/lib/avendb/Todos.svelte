@@ -41,14 +41,24 @@
 	// source for vault/share navigation, never the barrier for accepted todo edits.
 	let collection = $state(/** @type {import('./vaults.js').EntryView[]} */ ([]));
 	let collectionError = $state('');
+	let totalEntries = $state(0);
+	let readableEntries = $state(0);
 	$effect(() => {
 		const selected = vault;
+		const asActor = actor;
 		collection = [];
+		totalEntries = readableEntries = 0;
 		collectionError = '';
-		return api.observe(() => ({ op: 'entry_views', vault: selected }), (/** @type {any} */ out) => {
-			try { collection = answer(out)?.rows ?? []; collectionError = ''; }
-			catch (error) { collection = []; collectionError = String(error); }
-		}, (/** @type {Error} */ error) => { collection = []; collectionError = error.message; });
+		return api.observe(() => ({ op: 'entry_views', vault: selected, kind: 'todo', as: asActor }), (/** @type {any} */ out) => {
+			try {
+				const got = answer(out);
+				collection = got?.rows ?? [];
+				totalEntries = got?.totalEntries ?? 0;
+				readableEntries = got?.readableEntries ?? 0;
+				collectionError = '';
+			}
+			catch (error) { collection = []; totalEntries = readableEntries = 0; collectionError = String(error); }
+		}, (/** @type {Error} */ error) => { collection = []; totalEntries = readableEntries = 0; collectionError = error.message; });
 	});
 	const entries = $derived(collection);
 	const seen = $derived(entries.filter((e) => reads(e, actor)));
@@ -149,10 +159,10 @@
 		{#if collectionError}<p role="alert">{collectionError}</p>{/if}
 		{#if todos.length}<p class="head"><span class="chip">{left} of {count(todos.length, 'todo')} left</span></p>{/if}
 
-		{#if !seen.length && vault !== actor}
+		{#if !readableEntries && vault !== actor}
 			<div class="empty">
 				<p>
-					{nameOf(as)} can't see {entries.length ? `the ${count(entries.length, 'entry', 'entries')}` : 'anything'} in
+					{nameOf(as)} can't see {totalEntries ? `the ${count(totalEntries, 'entry', 'entries')}` : 'anything'} in
 					{nameOf(here)}. A vault that owns it can share its todos with {nameOf(as)}, all of them or those tagged one way, in
 					<button class="link" onclick={onaccess}>Sharing</button>.
 				</p>
@@ -215,8 +225,8 @@
 					</li>
 				{/if}
 			</ul>
-			{#if entries.length > seen.length}
-				<p class="soft">{count(entries.length - seen.length, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
+			{#if totalEntries > readableEntries}
+				<p class="soft">{count(totalEntries - readableEntries, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
 			{/if}
 		{/if}
 	</section>
