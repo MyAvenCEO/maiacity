@@ -1,7 +1,7 @@
-/** Bounded, in-memory timings. Records operation names only, never vault data or IDs. */
-const OPS = new Set(['status', 'world', 'entries', 'entry', 'query', 'get', 'history', 'read_file', 'synced', 'cap_groups', 'bring', 'bring_entries']);
-/** @param {() => number} [now] */
-export function createLocalTimings(now = () => performance.now()) {
+import { latencyJournal, TIMED_OPS as OPS } from './latency-journal.js';
+/** Bounded timings. Only allowlisted operation names and durations enter the durable journal. */
+/** @param {() => number} [now] @param {(op: string, ms: number, outcome: 'ok' | 'refused' | 'failed') => void} [record] */
+export function createLocalTimings(now = () => performance.now(), record = () => {}) {
  /** @type {Map<string, { samples: number[], failed: number, pending: Map<number, number> }>} */
  const rows = new Map();
  let sequence = 0;
@@ -13,15 +13,18 @@ export function createLocalTimings(now = () => performance.now()) {
    if (!row) rows.set(op, row = { samples: [], failed: 0, pending: new Map() });
    const id = ++sequence, start = now();
    row.pending.set(id, start);
+   /** @type {'ok' | 'refused' | 'failed'} */ let outcome = 'ok';
    try {
     const result = await work();
-    if (result && typeof result === 'object' && 'refused' in result) row.failed++;
+    if (result && typeof result === 'object' && 'refused' in result) { row.failed++; outcome = 'refused'; }
     return result;
    }
-   catch (error) { row.failed++; throw error; }
+   catch (error) { row.failed++; outcome = 'failed'; throw error; }
    finally {
     row.pending.delete(id);
-    row.samples.push(Math.max(0, now() - start));
+    const ms = Math.max(0, now() - start);
+    row.samples.push(ms);
+    record(op, ms, outcome);
     if (row.samples.length > 100) row.samples.shift();
    }
   },
@@ -35,4 +38,4 @@ export function createLocalTimings(now = () => performance.now()) {
   }
  };
 }
-export const localTimings = createLocalTimings();
+export const localTimings = createLocalTimings(undefined, (op, ms, outcome) => latencyJournal.record(`call.${op}`, ms, outcome));
