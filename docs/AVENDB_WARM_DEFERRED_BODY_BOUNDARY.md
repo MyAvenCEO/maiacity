@@ -1,8 +1,7 @@
 # Working-set-first warm restore: staged explicit body readiness
 
-Status: representation stage implemented, **runtime activation still open**.
-This stage is not a measured startup improvement and must not be reported as
-completion of working-set-first restoration.
+Status: runtime candidate implemented in the isolated branch; **compilation and
+regressions pending the shared Cargo slot**. No measured device speedup is claimed.
 
 `deferred_body::DeferredBody` keeps separate types for certified body metadata
 and demand-opened content. Metadata does not become a `Body` with a valid empty
@@ -15,18 +14,16 @@ bodies are excluded because authorization requires those eagerly. Own-receipt
 verification and authorization remain caller prerequisites, not powers conferred
 by constructing this internal value.
 
-The new module is compiled but not called by the runtime yet. It is an explicit
-safe integration boundary: current eager behavior remains until all following
-steps are implemented together:
+The runtime candidate adds the following integration (not yet validated):
 
-1. Extend the encrypted engine/exact-log own receipt with bounded metadata for
+1. Extends the encrypted engine/exact-log own receipt with bounded metadata for
    each eligible ordinary write, including tags/proofs/answers/files. Authenticate
    before constructing `BodyMetadata`; check all current entry keys and current
    policy. Keep schema/lens/capgroup dependencies eager.
-2. Restore metadata Readings without installing empty-content Body objects into
+2. Restores metadata Readings without installing empty-content Body objects into
    `Store.bodies`. Add a separate deferred map. `read` distinguishes held metadata
    from opened content and invalid ciphertext.
-3. Give Shown separate metadata history and demanded full history. Current public
+3. Gives Shown separate metadata history and demanded full history. Current public
    `Lab::history` and internal `shown` return `&History`; both must hydrate with
    current keys before exposing any historical-content API. `Shown::items` may use
    the validated own snapshot, but its corrupt-snapshot fallback must hydrate
@@ -47,3 +44,38 @@ rustfmt. Crypto regressions added for metadata-only access, demand content,
 wrong current key after hydration, changed basis, tampered ciphertext/context,
 metadata mismatch, and valid empty content. Full Cargo execution pending shared
 compiler slot: `cargo test -p avendb deferred_body::tests`.
+
+
+## Candidate integration and conservative limits
+
+An optional bounded metadata section follows the existing own-receipt basis.
+Old receipts without it still decode and take canonical eager body loading.
+Metadata is installed only after the own encrypted receipt opens, its full log
+matches, and current entry keys open. Schema/lens/capability definitions remain
+eager; entries with retained owner-bootstrap anchors are excluded from this fast
+path because their separate counted-history/durability gates must run unchanged.
+
+Store retains deferred bodies separately from opened bodies. Readings, stewardship
+and file metadata read the explicit metadata projection. Shown keeps counted
+metadata history separately from demanded full history. Ordinary item reads use
+validated snapshots without opening historical bodies. Public history reads and
+successor mutation checks hydrate through current keys; missing keys cannot reuse
+previously hydrated content. Bad snapshots reconstruct from canonical demanded
+history. A rejected warm entry retires its metadata and retries canonical decode.
+Any changed log currently drops all deferred assumptions and returns to canonical
+decoding; this is deliberately conservative, so catch-up and writes may still
+cause broader work. Lock discards deferred maps. Saving leaves untouched content
+deferred and preserves the receipt metadata.
+
+Existing receipt bounds remain 256 entries / 8192 writes / 32 MiB. Entries beyond
+those bounds still reconstruct eagerly. Further progressive paging and per-entry
+invalidation remain necessary for fully working-set-proportional startup at
+arbitrary store sizes. This change cannot honestly close that entire objective.
+
+New Rust tests (`cargo test -p avendb warm_metadata_`) cover offline first-view
+snapshot use without unrelated body decoding; selective historical hydration;
+saving untouched entries; successor writes; invalid encrypted receipt fallback;
+missing current keys after hydration; stale-frontier fallback; corrupt snapshot
+canonical reconstruction. `cargo test -p avendb deferred_body::tests` additionally
+covers eager dependency exclusion and content authentication failures. These are
+added, not yet run. Existing warm-reopen/capability/revocation tests are required.

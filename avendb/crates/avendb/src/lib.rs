@@ -52,8 +52,7 @@ pub mod batch;
 pub mod cast;
 pub mod data;
 pub mod doc;
-// Staged warm-start representation; runtime activation awaits demand hydration.
-#[allow(dead_code)]
+// Own warm metadata/content readiness, never a peer admission path.
 mod deferred_body;
 pub mod encode;
 pub mod engine;

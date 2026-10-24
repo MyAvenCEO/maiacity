@@ -1,6 +1,6 @@
 //! Explicit metadata/content boundary for an authenticated own warm receipt.
-//! Not a peer admission path. Runtime activation requires demand-scoped history
-//! hydration; until then the ordinary canonical read path remains eager.
+//! Not a peer admission path. Warm restore uses this only after authenticating
+//! its own exact-basis receipt; ordinary history reads hydrate through current keys.
 use std::sync::{Arc, OnceLock};
 use crate::{keys::{self, Secret}, policy::LogRevision, slice::Body, wire::Wire};
 
@@ -13,6 +13,17 @@ pub(crate) struct BodyMetadata {
     body: Body,
 }
 impl BodyMetadata {
+    pub(crate) fn fields(&self) -> &Body { &self.body }
+    pub(crate) fn bytes(&self) -> Vec<u8> { self.body.to_wire() }
+    pub(crate) fn decode(bytes: &[u8]) -> Option<Self> {
+        let body = Body::from_wire(bytes).ok()?;
+        if !body.content.is_empty() { return None; }
+        Some(Self { body })
+    }
+    pub(crate) fn ordinary(&self) -> bool {
+        self.body.defines.is_none() && self.body.header.as_ref().is_none_or(|h|
+            !h.ty.of_lane() && h.ty.as_str() != crate::slice::CAP_GROUP_TYPE)
+    }
     pub(crate) fn of(body: &Body) -> Self {
         Self { body: Body { header: body.header.clone(), tags: body.tags.clone(),
             answers: body.answers.clone(), content: Vec::new(), proof: body.proof.clone(),
@@ -37,20 +48,22 @@ impl DeferredBody {
     pub(crate) fn from_own_receipt(
         basis: LogRevision, metadata: BodyMetadata, ciphertext: Arc<[u8]>, context: Vec<u8>,
     ) -> Option<Self> {
-        if metadata.body.defines.is_some()
-            || metadata.body.header.as_ref().is_some_and(|h| h.ty.of_lane() || h.ty.as_str() == crate::slice::CAP_GROUP_TYPE)
-            || keys::edit_key(&ciphertext).is_none() { return None; }
+        if !metadata.ordinary() || keys::edit_key(&ciphertext).is_none() { return None; }
         Some(Self { basis, metadata, ciphertext, context, opened: OnceLock::new() })
     }
     pub(crate) fn metadata(&self, current: &LogRevision) -> Result<&BodyMetadata, OpenError> {
         if self.basis != *current { return Err(OpenError::StaleBasis); }
         Ok(&self.metadata)
     }
+    pub(crate) fn permits(&self, current: &LogRevision, key: &Secret) -> Result<(), OpenError> {
+        self.metadata(current)?;
+        if keys::edit_key(&self.ciphertext) != Some(key.id()) { return Err(OpenError::WrongKey); }
+        Ok(())
+    }
     /// Check basis and the current key even if content was opened previously.
     /// A missing/revoked key cannot be replaced by the memoized plaintext.
     pub(crate) fn open(&self, current: &LogRevision, key: &Secret) -> Result<&Body, OpenError> {
-        self.metadata(current)?;
-        if keys::edit_key(&self.ciphertext) != Some(key.id()) { return Err(OpenError::WrongKey); }
+        self.permits(current, key)?;
         self.opened.get_or_init(|| {
             let plain = keys::open_edit(key, &self.ciphertext, &self.context).ok_or(OpenError::InvalidContent)?;
             let body = Body::from_wire(&plain).map_err(|_| OpenError::InvalidContent)?;
@@ -88,6 +101,15 @@ mod tests {
         assert!(body.content_ready());
         assert_eq!(body.open(&basis, &Secret::from_bytes([8;32])).unwrap_err(), OpenError::WrongKey);
         assert_eq!(body.open(&Log::new().revision(), &key).unwrap_err(), OpenError::StaleBasis);
+    }
+    #[test]
+    fn authorization_dependency_metadata_is_never_deferred() {
+        for ty in [crate::slice::SCHEMA_TYPE, crate::slice::LENS_TYPE, crate::slice::CAP_GROUP_TYPE] {
+            let (body, basis, _key) = fixture(vec![]);
+            let metadata = BodyMetadata::of(&Body { header: Some(crate::slice::Header {
+                ty: ty.into(), created:0 }), ..Body::default() });
+            assert!(DeferredBody::from_own_receipt(basis,metadata,body.ciphertext,body.context).is_none());
+        }
     }
     #[test]
     fn invalid_ciphertext_is_not_a_valid_empty_update() {

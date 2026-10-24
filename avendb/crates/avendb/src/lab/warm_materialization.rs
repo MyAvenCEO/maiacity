@@ -10,6 +10,8 @@ const MAGIC: &[u8] = b"avenDB own materialization 1\n";
 const LIMIT: usize = 32 * 1024 * 1024;
 const MAX_ENTRIES: usize = 256;
 const MAX_WRITES: usize = 8192;
+const WITH_METADATA: u32 = u32::MAX - 1;
+use crate::deferred_body::{BodyMetadata, DeferredBody};
 
 enum CapturedLine {
     Materialized(Item),
@@ -26,6 +28,7 @@ pub(super) struct Capture {
         Vec<(EditId, bool, bool, Option<Vec<Touch>>, Vec<Loc>)>,
         BTreeMap<Line, CapturedLine>,
         BTreeSet<BlobId>,
+        Vec<(EditId, BodyMetadata)>,
     )>,
 }
 fn basis(store: &Store) -> [u8; 32] {
@@ -96,6 +99,11 @@ impl Capture {
                     .collect(),
                 items,
                 s.after.asked.clone(),
+                s.history.changes().iter().map(|c| {
+                    let body = store.body_metadata(c.write.edit)?;
+                    let metadata = BodyMetadata::of(body);
+                    metadata.ordinary().then_some((c.write.edit, metadata))
+                }).collect::<Option<Vec<_>>>().unwrap_or_default(),
             ));
         }
         Self {
@@ -109,7 +117,7 @@ impl Capture {
         self.basis.encode(&mut out);
         let mut entries = Vec::new();
         let mut count = 0u32;
-        'entries: for (entry, print, changes, items, asked) in self.entries {
+        'entries: for (entry, print, changes, items, asked, metadata) in self.entries {
             let mut encoded = Vec::new();
             entry.encode(&mut encoded);
             print.encode(&mut encoded);
@@ -127,6 +135,12 @@ impl Capture {
                 .collect::<Vec<_>>()
                 .as_slice()
                 .encode(&mut encoded);
+            (metadata.len() as u32).encode(&mut encoded);
+            for (id, body) in metadata {
+                id.encode(&mut encoded);
+                body.bytes().encode(&mut encoded);
+                if entries.len().saturating_add(encoded.len()) > LIMIT { continue 'entries; }
+            }
             (items.len() as u32).encode(&mut encoded);
             for (line, item) in items {
                 line.encode(&mut encoded);
@@ -153,6 +167,7 @@ impl Capture {
             entries.extend(encoded);
             count += 1;
         }
+        WITH_METADATA.encode(&mut out);
         count.encode(&mut out);
         out.extend(entries);
         out
@@ -166,7 +181,7 @@ pub(super) fn unwrap(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
     let (view, extra) = rest.split_at_checked(u32::from_be_bytes(*n) as usize)?;
     Some((
         view,
-        if extra.len() <= LIMIT + 36 {
+        if extra.len() <= LIMIT + 40 {
             extra
         } else {
             &[]
@@ -180,17 +195,46 @@ pub(super) fn matching(extra: &[u8], store: &Store) -> bool {
 /// revision checked at restore. This avoids hashing all log IDs a second time
 /// when show_items consumes it. Bytes and revision cannot be changed separately.
 pub(super) struct Validated {
-    bytes: Vec<u8>,
+    saved: BTreeMap<EntryId, Saved>,
     revision: crate::policy::LogRevision,
 }
 impl Validated {
     pub(super) fn check(extra: &[u8], store: &Store) -> Option<Self> {
-        matching(extra, store).then(|| Self {
-            bytes: extra.to_vec(), revision: store.log.revision(),
-        })
+        if !matching(extra, store) { return None; }
+        Some(Self { saved: decode(extra)?, revision: store.log.revision() })
     }
-    pub(super) fn consume(self, store: &Store) -> Option<Vec<u8>> {
-        (self.revision == store.log.revision()).then_some(self.bytes)
+    pub(super) fn consume(self, store: &Store) -> Option<BTreeMap<EntryId, Saved>> {
+        (self.revision == store.log.revision()).then_some(self.saved)
+    }
+    pub(super) fn deferred(&self, store: &Store) -> HashMap<EditId, Arc<DeferredBody>> {
+        if self.revision != store.log.revision() { return HashMap::new(); }
+        let mut out = HashMap::new();
+        let mut retained_bytes = 0usize;
+        let edits: HashMap<_, _> = store.log.ids().iter().copied().zip(store.log.edits()).collect();
+        for (entry, saved) in &self.saved {
+            // Partial owner-bootstrap overlays have their own counted-history
+            // and durability gates; do not substitute warm metadata for them.
+            if store.bootstrap_bases.contains_key(entry) { continue; }
+            if saved.metadata.len() != saved.changes.len() { continue; }
+            let mut pending = Vec::new();
+            let mut entry_bytes = 0usize;
+            for (id, metadata) in &saved.metadata {
+                let Some(edit) = edits.get(id) else { pending.clear(); break; };
+                let Action::Write { entry, stay, epoch, body, .. } = &edit.action else { pending.clear(); break; };
+                entry_bytes = entry_bytes.saturating_add(body.len());
+                if retained_bytes.saturating_add(entry_bytes) > LIMIT { pending.clear(); break; }
+                let Some(keyid) = keys::edit_key(body) else { pending.clear(); break; };
+                if store.keys.get(&keyid, KeyName::Entry(*entry, *stay, *epoch)).is_none() { pending.clear(); break; }
+                let Some(body) = DeferredBody::from_own_receipt(self.revision.clone(), metadata.clone(),
+                    body.clone().into(), write_context(edit)) else { pending.clear(); break; };
+                pending.push((*id, Arc::new(body)));
+            }
+            if pending.len() == saved.changes.len() {
+                retained_bytes += entry_bytes;
+                out.extend(pending);
+            }
+        }
+        out
     }
 }
 pub(super) struct Saved {
@@ -198,13 +242,16 @@ pub(super) struct Saved {
     changes: Vec<(EditId, bool, bool, Option<Vec<Touch>>, Vec<Loc>)>,
     items: Vec<(Line, Vec<u8>)>,
     asked: BTreeSet<BlobId>,
+    metadata: Vec<(EditId, BodyMetadata)>,
 }
 pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
-    if extra.len() > LIMIT + 36 {
+    if extra.len() > LIMIT + 40 {
         return None;
     }
     let mut rd = Reader::new(extra.get(32..)?);
-    let n = rd.count(37).ok()?;
+    let marker = u32::decode(&mut rd).ok()?;
+    let with_metadata = marker == WITH_METADATA;
+    let n = if with_metadata { rd.count(37).ok()? } else { marker as usize };
     if n > MAX_ENTRIES {
         return None;
     }
@@ -238,6 +285,18 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
             .ok()?
             .into_iter()
             .collect();
+        let mut body_metadata = Vec::new();
+        if with_metadata {
+            let count = rd.count(36).ok()?;
+            if count > changes.len() { return None; }
+            for i in 0..count {
+                let id = EditId::decode(&mut rd).ok()?;
+                if id != changes[i].0 { return None; }
+                let body = BodyMetadata::decode(&rd.bytes().ok()?)?;
+                if !body.ordinary() { return None; }
+                body_metadata.push((id, body));
+            }
+        }
         let mut items = Vec::new();
         let lines = rd.count(5).ok()?;
         if lines > changes.len() + 1 {
@@ -254,6 +313,7 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
                     changes,
                     items,
                     asked,
+                    metadata: body_metadata,
                 },
             )
             .is_some()
@@ -269,7 +329,7 @@ impl Saved {
         d: SignerId,
         st: &State,
         r: &Readings,
-        bodies: &HashMap<EditId, Body>,
+        store: &Store,
         en: &Entry,
         print: [u8; 32],
         tip: Tip,
@@ -287,10 +347,11 @@ impl Saved {
             if w.edit != id {
                 return None;
             }
-            let body = bodies.get(&id);
+            let body = store.body_metadata(id);
+            let content = store.bodies.get(&id);
             changes.push(Change {
                     write: w.clone(),
-                    body: body.map(|b| b.content.clone()),
+                    body: content.map(|b| b.content.clone()),
                     fits,
                     counted,
                     touches,
@@ -316,8 +377,12 @@ impl Saved {
             }
         }
         let mine = history.mine();
+        let history_bodies = history.changes().iter().filter(|c| store.deferred_bodies.contains_key(&c.write.edit))
+            .map(|c| c.write.edit).collect();
         Some(Shown {
             history,
+            history_bodies,
+            hydrated_history: OnceLock::new(),
             items: OnceLock::new(),
             deferred: std::sync::Mutex::new(Some((d, items))),
             print,
@@ -437,6 +502,92 @@ fn bounded_seq<T: Decode>(r: &mut Reader<'_>, min: usize, max: usize) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn warmed_notes() -> (Lab, SignerId, VaultId, Vec<EntryId>, Backup, Warm) {
+        use crate::cast::{document, human_on};
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Deferred warm bodies");
+        let device = lab.device_of(owner, "Mac");
+        let vault = human_on(&mut lab, owner, &[device]);
+        let entries: Vec<_> = (0..3).map(|n| lab.create(device, vault, vault, "note", &[],
+            document(&format!("Entry {n}"), "held content", device)).unwrap()).collect();
+        let backup = lab.backup(device);
+        let n = backup.signed.len();
+        let receipt = lab.capture_warm_current(device, n, Some([19;40])).unwrap().encode();
+        let warm = Warm {keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect()};
+        lab.warmed(device, receipt);
+        (lab, device, vault, entries, backup, warm)
+    }
+
+    #[test]
+    fn warm_metadata_restores_first_view_without_decoding_unrelated_bodies() {
+        let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
+        let expected: Vec<_> = entries.iter().map(|e| lab.item(device,*e).unwrap().record()).collect();
+        let n = backup.signed.len();
+        lab.set_online(device, false);
+        lab.restore_warm(device, backup, Some(([19;40],n)), &warm);
+        let ids: Vec<_> = entries.iter().map(|e| lab.held(device).view().entry(*e).unwrap().creation).collect();
+        assert!(ids.iter().all(|id| lab.held(device).deferred_bodies.contains_key(id)));
+        assert!(ids.iter().all(|id| !lab.held(device).bodies.contains_key(id)));
+        assert_eq!(lab.item(device,entries[0]).unwrap().record(), expected[0]);
+        assert!(ids.iter().all(|id| !lab.held(device).deferred_bodies[id].content_ready()),
+            "a validated current snapshot must not decrypt historical bodies");
+        assert!(lab.history(device,entries[0]).unwrap().changes().iter().all(|c| c.body.is_some()));
+        assert!(lab.held(device).deferred_bodies[&ids[0]].content_ready());
+        assert!(!lab.held(device).deferred_bodies[&ids[1]].content_ready());
+        let saved = Capture::take(lab.held(device)).encode(Vec::new());
+        assert!(decode(unwrap(&saved).unwrap().1).is_some());
+        assert!(!lab.held(device).deferred_bodies[&ids[1]].content_ready(), "saving must not hydrate unrelated content");
+        lab.edit(device,vault,entries[0],|item| { item.edit_document(|d| d.title="Successor".into()); }).unwrap();
+        assert_eq!(lab.item(device,entries[1]).unwrap().record(),expected[1]);
+        assert!(lab.held(device).deferred_bodies.is_empty(), "changed log conservatively restores canonical decoding");
+    }
+
+    #[test]
+    fn warm_metadata_bad_receipt_and_missing_current_key_fail_closed() {
+        let (mut lab, device, _vault, entries, backup, warm) = warmed_notes();
+        let expected = lab.item(device,entries[0]).unwrap().record();
+        let n = backup.signed.len();
+        let mut broken = warm.clone(); *broken.views[0].last_mut().unwrap() ^= 1;
+        lab.restore_warm(device,backup.clone(),Some(([19;40],n)),&broken);
+        assert!(lab.held(device).deferred_bodies.is_empty());
+        assert_eq!(lab.item(device,entries[0]).unwrap().record(),expected);
+        lab.restore_warm(device,backup,Some(([19;40],n)),&warm);
+        assert!(lab.history(device,entries[0]).is_some());
+        // Even previously hydrated history cannot substitute for current keys.
+        lab.stores.get_mut(&device).unwrap().keys = Keyring::default();
+        assert!(lab.history(device,entries[0]).is_none());
+        assert!(lab.item(device,entries[0]).is_none(), "cached snapshots cannot replace current keys");
+        lab.stores.get_mut(&device).unwrap().forget();
+        assert!(lab.held(device).deferred_bodies.is_empty());
+    }
+
+    #[test]
+    fn warm_metadata_stale_basis_uses_canonical_suffix_not_deferred_content() {
+        let (mut lab, device, vault, entries, _backup, warm) = warmed_notes();
+        lab.edit(device,vault,entries[0],|item| { item.edit_document(|d| d.title="New frontier".into()); }).unwrap();
+        let expected = lab.item(device,entries[0]).unwrap().record();
+        let backup = lab.backup(device);
+        let n = backup.signed.len();
+        lab.restore_warm(device,backup,Some(([19;40],n)),&warm);
+        assert!(lab.held(device).deferred_bodies.is_empty());
+        assert_eq!(lab.item(device,entries[0]).unwrap().record(),expected);
+    }
+
+    #[test]
+    fn warm_metadata_corrupt_snapshot_rebuilds_from_demanded_canonical_content() {
+        let (mut lab, device, _vault, entries, backup, warm) = warmed_notes();
+        let expected = lab.item(device,entries[0]).unwrap().record();
+        let n = backup.signed.len();
+        lab.restore_warm(device,backup,Some(([19;40],n)),&warm);
+        let store = lab.stores.get_mut(&device).unwrap();
+        let shown = store.shown.get_mut(&entries[0]).unwrap();
+        assert!(shown.items.get().is_none());
+        shown.deferred.lock().unwrap().as_mut().unwrap().1.insert(MAIN,vec![0,1,2]);
+        assert_eq!(lab.item(device,entries[0]).unwrap().record(),expected);
+        let other = lab.held(device).view().entry(entries[1]).unwrap().creation;
+        assert!(!lab.held(device).deferred_bodies[&other].content_ready());
+    }
+
     #[test]
     fn validated_warm_receipt_requires_unchanged_log_revision() {
         use crate::cast::{document, human_on};
@@ -447,7 +598,7 @@ mod tests {
         let encoded = Capture::take(lab.held(device)).encode(Vec::new());
         let extra = unwrap(&encoded).unwrap().1;
         assert_eq!(Validated::check(extra, lab.held(device)).unwrap()
-            .consume(lab.held(device)).unwrap(), extra);
+            .consume(lab.held(device)).unwrap().len(), decode(extra).unwrap().len());
         let mut corrupt = extra.to_vec();
         corrupt[0] ^= 1;
         assert!(Validated::check(&corrupt, lab.held(device)).is_none());
@@ -491,7 +642,7 @@ mod tests {
             let current = &store.shown[entry];
             let state = store.view();
             let restored = saved.remove(entry).unwrap().restore(device, state, &store.readings,
-                &store.bodies, state.entry(*entry).unwrap(), current.print, current.tip).unwrap();
+                store, state.entry(*entry).unwrap(), current.print, current.tip).unwrap();
             assert!(restored.items.get().is_none());
             (*entry, restored)
         }).collect();
@@ -509,7 +660,7 @@ mod tests {
             let current = &store.shown[entry];
             let state = store.view();
             let restored = saved.remove(entry).unwrap().restore(device, state, &store.readings,
-                &store.bodies, state.entry(*entry).unwrap(), current.print, current.tip).unwrap();
+                store, state.entry(*entry).unwrap(), current.print, current.tip).unwrap();
             assert_eq!(restored.deferred.lock().unwrap().as_ref().unwrap().1, bytes,
                 "untouched snapshot bytes survive saving exactly");
             assert!(restored.items.get().is_none());
