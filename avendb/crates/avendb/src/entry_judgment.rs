@@ -438,6 +438,13 @@ impl Lab {
         entry: EntryId,
         sealed: &[u8],
     ) -> Option<RestoredOwnerJudgment> {
+        self.decode_owner_judgment(on, snapshot, entry, sealed, true)
+    }
+
+    // Retirement separately reconstructs canonical judgment from every held body.
+    // Parsing owner-authenticated metadata does not install or authorize a state.
+    fn decode_owner_judgment(&self, on: SignerId, snapshot: EditId, entry: EntryId,
+        sealed: &[u8], compare_held: bool) -> Option<RestoredOwnerJudgment> {
         if sealed.len() > MAX_BYTES + 128 {
             return None;
         }
@@ -503,7 +510,7 @@ impl Lab {
         // Full holders compare owner claims to the canonical current cut. Historical
         // cuts after later local writes deliberately fall back until prefix restoration
         // is implemented; never compare merely JSON or trust the claim over held facts.
-        if stated.basis.iter().all(|id| store.log.ids().contains(id)) {
+        if compare_held && stated.basis.iter().all(|id| store.log.ids().contains(id)) {
             let shown = store.shown.get(&entry)?;
             if put_judgment(shown)? != metadata
                 || put_anchor_metadata(store, entry)? != policy_bytes

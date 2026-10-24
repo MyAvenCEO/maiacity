@@ -39,3 +39,13 @@ theorem lane_demand_needs_authority (l a w : Bool) (h : laneDemand l a w = true)
   simp [laneDemand, Bool.and_eq_true] at h
   exact h.1.2
 end AvenDB.BootstrapDependencies
+
+namespace AvenDB.BootstrapDependencies
+-- Retirement is a separate canonical proof, never merely frontier ID presence.
+def retire (bodiesComplete judgmentsAgree mainUsable noParked : Bool) : Bool :=
+  bodiesComplete && judgmentsAgree && mainUsable && noParked
+theorem missing_bodies_prevent_retirement (j m p : Bool) : retire false j m p = false := by simp [retire]
+theorem retirement_needs_matching_judgments (b j m p : Bool) (h : retire b j m p = true) : j = true := by
+  simp [retire, Bool.and_eq_true] at h
+  exact h.1.1.2
+end AvenDB.BootstrapDependencies
