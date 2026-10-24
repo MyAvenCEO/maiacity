@@ -35,6 +35,9 @@ export function queryEntries(op) {
  * This is only a scheduling hint: the complete original query still runs locally.
  * Negation, predicates, projections and acting identities are never sent to peers. */
 export function queryDiscovery(op) {
+	if (op?.op === 'database' || op?.op === 'entry_views') {
+		return normalizeDiscovery([{ types: op.types, ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
+	}
 	if (op?.op !== 'query') return [];
 	const types = new Set(), pending = [op.where];
 	for (let visited = 0; pending.length && visited < 512 && types.size < 8; visited++) {

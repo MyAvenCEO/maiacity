@@ -38,6 +38,15 @@ test('discovery extracts only bounded positive types and never widens an invalid
 	expect(queryDiscovery({ op: 'query', where: cycle })).toEqual([{ types: ['note'] }]);
 });
 
+test('typed inventory reads publish only explicit bounded types within their vault', () => {
+	for (const op of ['database', 'entry_views']) {
+		expect(queryDiscovery({ op, vault: id(9), types: ['recipe', 'recipe'], where: { type: ['private'] } })).toEqual([{ types: ['recipe'], vault: id(9) }]);
+		expect(queryDiscovery({ op, vault: 'invalid', types: ['recipe'] })).toEqual([]);
+		expect(queryDiscovery({ op })).toEqual([]);
+		expect(queryDiscovery({ op, types: Array.from({ length: 20 }, (_, i) => `type-${i}`) })[0].types.length).toBe(8);
+	}
+});
+
 test('replacing a query aborts its old read, replaces its scope, and rejects late priorities', async () => {
 	const d = node(), pending = [];
 	const view = createReadWindow({ device: () => d, read: (_, op, signal) => {

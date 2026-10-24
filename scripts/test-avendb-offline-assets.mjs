@@ -19,6 +19,7 @@ try {
  await page.goto(origin+'/__offline-assets#assets');
  await page.getByText('No locally available recipe entry',{exact:false}).waitFor();
  assert.deepEqual(await page.evaluate(()=>window.fixtureCalls.map(o=>[o.op,o.types])),[['database',['recipe']],['entry_views',['recipe']]]);
+ assert((await page.evaluate(()=>window.fixtureDemand)).some(o=>o.queries?.some(q=>q.types[0]==='recipe'&&q.vault==='b'.repeat(64))));
  await page.evaluate(()=>window.fixtureChange('failed'));
  await page.getByText('Reading the vault’s entries failed: Fixture local read failed',{exact:true}).waitFor();
  await page.evaluate(()=>window.fixtureChange('row'));
@@ -28,5 +29,9 @@ try {
  assert.equal(await page.locator('details.refused').count(),0);
  assert.deepEqual(errors,[]);
  assert((await page.evaluate(()=>window.fixtureCalls)).every(o=>['database','entry_views'].includes(o.op)&&o.types[0]==='recipe'));
- console.log('PASS '+engine+': real Assets renders from metadata-only world, revision updates errors/rows/removal, no world/bring/network read');
+ await page.evaluate(()=>window.fixtureChange('unmount'));
+ await page.getByText('No locally available recipe entry',{exact:false}).waitFor({state:'detached'});
+ const demands=await page.evaluate(()=>window.fixtureDemand);
+ for(const scope of new Set(demands.map(o=>o.scope))){const last=demands.filter(o=>o.scope===scope).at(-1);assert.deepEqual(last.entries,[]);assert.equal(last.queries,undefined);}
+ console.log('PASS '+engine+': real Assets renders from metadata-only world, keeps recipe discovery active, revision updates errors/rows/removal, releases demand on unmount, no world/bring/network read');
 } finally {await browser?.close();await server?.close();}

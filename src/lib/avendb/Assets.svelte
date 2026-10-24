@@ -35,10 +35,13 @@
 	let { world, vault, actor, api, entry = '', recipe = '' } = $props();
 
 	let noteWindow = $state.raw(/** @type {any} */ (null));
+	let inventoryWindow = $state.raw(/** @type {any} */ (null));
 	$effect(() => {
 		const window = api.window?.();
+		const inventory = api.window?.();
 		noteWindow = window;
-		return () => window?.close();
+		inventoryWindow = inventory;
+		return () => { window?.close(); inventory?.close(); };
 	});
 
 	/** the parts list, with the stage's own `Parts` of an asset's parts, loaded with the stage */
@@ -55,8 +58,10 @@
 	$effect(() => {
 		void session.revision;
 		const v = vault;
+		if (api.window && !inventoryWindow) return;
+		const window = inventoryWindow;
 		let gone = false;
-		readAssetInventory(api, v).then(
+		readAssetInventory(api, v, window).then(
 			(result) => {
 				if (!gone) { db = result.db; inventory = {vault: v, entries: result.entries}; failed = ''; }
 			},
@@ -66,6 +71,7 @@
 		);
 		return () => {
 			gone = true;
+			window?.clear();
 		};
 	});
 
