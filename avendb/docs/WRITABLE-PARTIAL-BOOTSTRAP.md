@@ -358,3 +358,7 @@ authorization computation. No such proof protocol exists here. Selectively signe
 alone is not that mechanism. The owner-attested route preserves entry IDs and history as an
 asserted baseline; replacing old edits with newly authored writes is a different migration
 and must not be silently presented as historical equivalence.
+
+Provenance audit and checked model:
+[`c6215f94`](https://github.com/MyAvenCEO/maiacity/commit/c6215f94). This resolves the
+mechanism choice; it does not mark full writable bootstrap implemented or verified.
