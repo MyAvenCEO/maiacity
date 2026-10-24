@@ -115,3 +115,27 @@ Still eager: canonical policy/key/body preparation and History/Mine/After metada
 entries outside the bounded saved receipt; capability-group reconstruction; and
 consumers requesting a full world. Deferring these requires authenticated metadata
 read dependencies and canonical admission to be disentangled from item access.
+
+
+## Unchanged reopen: consume a previously validated receipt without rehashing history
+
+The encrypted local adjunct's ordered-log basis is checked once when the persisted
+view is opened. A private `Validated` receipt then retains the immutable bytes and
+that log's process-local revision. `show_items` consumes it only if the revision
+still matches, avoiding a second complete ordered-log hash. Appends, withdrawals,
+and newly reconstructed logs invalidate the token; neither log length nor a peer
+assertion is sufficient. No token is persisted or transmitted. Current policy,
+keys, body availability, and per-entry fingerprints are still independently checked.
+Malformed adjunct decoding retains the canonical fallback.
+
+The Lean implication explicitly assumes the existing LogRevision invariant: equal
+revision means equal ordered log contents. The Rust regression covers unchanged
+consumption, corrupt basis, a new write, reconstructed equal-length log, and
+withdrawal. Lean passed; Rust execution is pending the parent's shared build queue:
+
+`cargo test -p avendb validated_warm_receipt_requires_unchanged_log_revision`
+
+This removes one redundant O(log length) hash only. Initial log verification and
+basis hashing, policy replay restoration, key/body preparation, entry fingerprint
+work and uncaptured-entry reconstruction remain. This is not full working-set-only
+startup and has no physical-device latency claim.

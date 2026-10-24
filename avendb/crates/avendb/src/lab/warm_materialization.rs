@@ -176,6 +176,23 @@ pub(super) fn unwrap(bytes: &[u8]) -> Option<(&[u8], &[u8])> {
 pub(super) fn matching(extra: &[u8], store: &Store) -> bool {
     extra.get(..32) == Some(basis(store).as_slice())
 }
+/// An already authenticated own adjunct, bound to the exact process-local log
+/// revision checked at restore. This avoids hashing all log IDs a second time
+/// when show_items consumes it. Bytes and revision cannot be changed separately.
+pub(super) struct Validated {
+    bytes: Vec<u8>,
+    revision: crate::policy::LogRevision,
+}
+impl Validated {
+    pub(super) fn check(extra: &[u8], store: &Store) -> Option<Self> {
+        matching(extra, store).then(|| Self {
+            bytes: extra.to_vec(), revision: store.log.revision(),
+        })
+    }
+    pub(super) fn consume(self, store: &Store) -> Option<Vec<u8>> {
+        (self.revision == store.log.revision()).then_some(self.bytes)
+    }
+}
 pub(super) struct Saved {
     print: [u8; 32],
     changes: Vec<(EditId, bool, bool, Option<Vec<Touch>>, Vec<Loc>)>,
@@ -421,6 +438,43 @@ fn bounded_seq<T: Decode>(r: &mut Reader<'_>, min: usize, max: usize) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn validated_warm_receipt_requires_unchanged_log_revision() {
+        use crate::cast::{document, human_on};
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Receipt revision");
+        let device = lab.device_of(owner, "Mac");
+        let vault = human_on(&mut lab, owner, &[device]);
+        let encoded = Capture::take(lab.held(device)).encode(Vec::new());
+        let extra = unwrap(&encoded).unwrap().1;
+        assert_eq!(Validated::check(extra, lab.held(device)).unwrap()
+            .consume(lab.held(device)).unwrap(), extra);
+        let mut corrupt = extra.to_vec();
+        corrupt[0] ^= 1;
+        assert!(Validated::check(&corrupt, lab.held(device)).is_none());
+        let before_write = Validated::check(extra, lab.held(device)).unwrap();
+        lab.create(device, vault, vault, "note", &[],
+            document("Changed", "new canonical write", device)).unwrap();
+        assert!(before_write.consume(lab.held(device)).is_none());
+        assert!(Validated::check(extra, lab.held(device)).is_none());
+
+        let encoded = Capture::take(lab.held(device)).encode(Vec::new());
+        let extra = unwrap(&encoded).unwrap().1;
+        let before_replacement = Validated::check(extra, lab.held(device)).unwrap();
+        // Even an equal-length freshly reconstructed log cannot reuse the
+        // process-local validation token (conservatively, even equal contents).
+        let edits = lab.held(device).log.edits().to_vec();
+        let mut replacement = crate::policy::Log::new();
+        replacement.receive(edits);
+        assert_eq!(replacement.ids().len(), lab.held(device).log.ids().len());
+        lab.stores.get_mut(&device).unwrap().log = replacement;
+        assert!(before_replacement.consume(lab.held(device)).is_none());
+        let before_withdrawal = Validated::check(extra, lab.held(device)).unwrap();
+        let last = *lab.held(device).log.ids().last().unwrap();
+        lab.stores.get_mut(&device).unwrap().log.let_go(&[last].into_iter().collect());
+        assert!(before_withdrawal.consume(lab.held(device)).is_none());
+    }
+
     #[test]
     fn recapturing_untouched_warm_entries_preserves_lazy_items_and_snapshots() {
         use crate::cast::{document, human_on};

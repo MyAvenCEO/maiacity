@@ -62,4 +62,14 @@ def recapture (line : CaptureLine α) : CaptureLine α := line
 theorem untouched_snapshot_preserved (bytes : List UInt8) :
     recapture (CaptureLine.snapshot (α := α) bytes) = CaptureLine.snapshot bytes := rfl
 
+-- The process-local revision must imply exact ordered-log equality; this
+-- implication is an implementation invariant, not a cryptographic assumption.
+-- Current authorization and entry fingerprints remain independently checked.
+theorem checked_revision_preserves_basis (oldLog newLog : α) (oldRev newRev : β)
+    (revisionSound : oldRev = newRev → oldLog = newLog)
+    (sameRevision : oldRev = newRev) (valid : α → Prop) (checked : valid oldLog) :
+    valid newLog := by
+  rw [← revisionSound sameRevision]
+  exact checked
+
 end AvenDB.WarmMaterialization
