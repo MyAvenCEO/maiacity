@@ -184,3 +184,23 @@ test('known view dependencies are prioritized while unrelated query history is w
  expect(brought).toEqual([]);
  expect(hints).toEqual([id(71)]);
 });
+
+test('an unacknowledged demand lease cannot block canonical local query discovery', async () => {
+ let queried;
+ const discovered = new Promise(resolve => { queried = resolve; });
+ let acknowledge;
+ const waiting = new Promise(resolve => { acknowledge = resolve; });
+ const manifest = m({ id: 'ack', routes: ['*'], parts: [{ entry: id(91) }, { query: { type: ['note'] } }] });
+ const d = { run: async op => {
+  if (op.where?.type?.[0] === 'manifest') return { ok: { rows: [{ record: manifest }] } };
+  queried();
+  return { ok: { rows: [{ entry: id(92), type: 'note' }] } };
+ } };
+ const brought = [];
+ const done = bringDeclared('/ack/', { device: d, prioritize: () => waiting, bring: async ids => brought.push(...ids) });
+ try {
+  await Promise.race([discovered, new Promise((_, reject) => setTimeout(() => reject(new Error('query waited for demand acknowledgement')), 100))]);
+  expect(await done).toEqual([id(91), id(92)]);
+  expect(brought).toEqual([id(91), id(92)]);
+ } finally { acknowledge(); }
+});

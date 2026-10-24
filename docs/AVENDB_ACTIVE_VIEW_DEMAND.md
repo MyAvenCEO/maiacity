@@ -23,3 +23,7 @@ These are deterministic dependency-order tests with a 100 ms failure watchdog, n
 ## Remaining work
 
 A genuinely fresh device without a local manifest or known entry IDs still relies on generic peer discovery. Query-only unknown IDs, native query/materialization lock contention, follow traversal's broad-world file-root lookup, and sequential transfer waits are not removed by this slice. Published demand only prioritizes logs the existing scheduler can discover; it does not make an incomplete local result globally complete. Physical fresh-device usefulness, warm unlock and remote propagation distributions remain pending. No native build, installation, live-store change or reset was performed.
+
+## Review hardening
+
+Explicit manifest requirements now precede older learned hints within the same 512-ID lease, preserving the remaining hints rather than clearing the scope. Scheduling acknowledgement is not awaited by manifest query discovery. Two additional regressions fail on the initial implementation and pass after this repair: a full 512-ID learned lease retains the explicit target plus 511 prior hints, and a permanently pending lease acknowledgement does not prevent local query discovery. Total focused validation is **30 tests / 158 assertions**; the Lean model also proves that an explicit first requirement precedes learned hints. The diagnostic and physical-measurement limitations above remain unchanged.
