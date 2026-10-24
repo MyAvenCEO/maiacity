@@ -12,6 +12,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   impact:
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-latest
     outputs:
       site: ${{ steps.paths.outputs.site }}
@@ -31,9 +34,13 @@ jobs:
           bun-version-file: .bun-version
       - id: paths
         env:
+          GH_TOKEN: ${{ github.token }}
           CI_BASE: ${{ github.event.before }}
           CI_HEAD: ${{ github.sha }}
-        run: bun scripts/ci/impact.mjs
+        run: |
+          CI_BASE=$(bun scripts/ci/release-base.mjs)
+          export CI_BASE
+          bun scripts/ci/impact.mjs
   site-build:
     needs: impact
     if: needs.impact.outputs.site == 'true'

@@ -83,3 +83,13 @@ test('kernel aggregate requires every selected application and security job', ()
  expect(run.status).toBe(0);
  expect(run.stdout.trim().split('\n').map(JSON.parse)).toEqual(cases.map(c=>c.expected));
 });
+
+import { releasedBase } from './release-base.mjs';
+test('a queued, superseded, failed or unknown predecessor forces a full release', () => {
+ const base='a'.repeat(40);
+ expect(releasedBase(base,[{head_sha:base,status:'completed',conclusion:'success'}])).toBe(base);
+ for(const run of [null,{head_sha:'b'.repeat(40),status:'completed',conclusion:'success'},{head_sha:base,status:'in_progress',conclusion:null},{head_sha:base,status:'completed',conclusion:'failure'},{head_sha:base,status:'completed',conclusion:'cancelled'}]) {
+  expect(releasedBase(base,run?[run]:[])).toBe('');
+ }
+ expect(releasedBase('0'.repeat(40),[])).toBe('');
+});
