@@ -4159,6 +4159,13 @@ impl Lab {
         &self.held(d).replay
     }
 
+    /// Already-recorded timers and counters only. Unlike `perf`, this does not
+    /// inspect history, compute vouching, or resolve authorization. Use it when
+    /// measuring startup so the observation does not add diagnostic replay work.
+    pub fn work_metrics(&self, d: SignerId) -> Value {
+        self.held(d).perf.to_json()
+    }
+
     /// What device `d`'s work cost since it started (`perf`), and how much it holds: its edits, the bodies it opened,
     /// the entries it shows and the blobs it keeps.
     pub fn perf(&self, d: SignerId) -> Value {
