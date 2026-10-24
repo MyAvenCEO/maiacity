@@ -856,3 +856,4 @@ resolver, retaining all assertions. `bun run check` passes with zero errors (27
 existing CSS warnings) using the candidate dependency tree and bundled Node PATH;
 25 focused manifest/file/completeness tests pass. No Cargo or runtime authorization
 changes were involved.
+Application type repair: [48b24ce3](https://github.com/MyAvenCEO/maiacity/commit/48b24ce3), committed and pushed; full application type check and 25 focused tests passed locally.
