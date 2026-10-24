@@ -22,7 +22,7 @@ export function createDemand(run, { scope = crypto.randomUUID().replaceAll('-', 
 			// Older native apps may know no demand op. Ordinary bring remains the compatibility path.
 			capable = typeof got?.ok?.accepted === 'boolean';
 			if (current === revision) discoverySupported = got?.ok?.discovery_supported === true;
-			if (got?.refused === 'BadOp' || (got?.ok && typeof got.ok.accepted !== 'boolean')) supported = false;
+			if (current === revision && (got?.refused === 'BadOp' || (got?.ok && typeof got.ok.accepted !== 'boolean'))) supported = false;
 		} catch { /* retry the lease, without blocking the view's local reads */ }
 		if (current === revision) schedule();
 		return capable;

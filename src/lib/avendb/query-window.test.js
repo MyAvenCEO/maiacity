@@ -181,3 +181,37 @@ test('an effect clears a borrowed window without closing its component lifetime'
 	expect(await request.result).toBe(42); request.close();
 	expect(cleared).toBe(1); expect(closed).toBe(0);
 });
+
+test('identical empty reactive reads keep discovery in flight on the same revision', async () => {
+	const pending = deferred(), calls = [];
+	const d = { run: (op) => { calls.push(op); return pending.promise; } };
+	const view = createReadWindow({ device: () => d, read: async () => ({ ok: { rows: [] } }) });
+	const op = { op: 'query', where: { type: ['note'] }, select: [] };
+	try {
+		for (let i = 0; i < 12; i++) { await view.read(structuredClone(op)); await flush(); }
+		expect(calls.length).toBe(1);
+		expect(calls[0].revision).toBe(1);
+		expect(calls[0].queries).toEqual([{ types: ['note'] }]);
+		view.clear(); await flush();
+		expect(calls.at(-1).queries).toBeUndefined();
+		expect(calls.at(-1).revision).toBe(2);
+	} finally { view.close(); pending.resolve({ ok: { accepted: true } }); await flush(); }
+});
+
+test('reactive results replace old row hints and changed predicates clear them before reading', async () => {
+	const d = node(); let rows = [id(1)], block = null;
+	const view = createReadWindow({ device: () => d, read: async () => block ? block.promise : ({ ok: { rows: rows.map(entry => ({ entry })) } }) });
+	const op = { op: 'query', where: { type: ['note'] }, select: [] };
+	try {
+		await view.read(op); await flush();
+		const before = d.calls.length;
+		await view.read(structuredClone(op)); await flush();
+		expect(d.calls.length).toBe(before);
+		rows = [id(2)]; await view.read(op); await flush();
+		expect(d.calls.at(-1).entries).toEqual([id(2)]);
+		block = deferred();
+		const next = view.read({ ...op, where: { type: ['note'], tag: ['another'] } }); await flush();
+		expect(d.calls.at(-1).entries).toEqual([]);
+		block.resolve({ ok: { rows: [] } }); await next;
+	} finally { view.close(); }
+});

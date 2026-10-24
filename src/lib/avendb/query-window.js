@@ -54,13 +54,15 @@ export function queryDiscovery(op) {
  * @param {{ device: () => any, read: (device: any, op: any, signal: AbortSignal, demand: ReturnType<typeof createDemand>) => Promise<any> }} options
  */
 export function createReadWindow({ device, read }) {
-	let current = null, held = null, closed = false;
+	let current = null, held = null, closed = false, queryKey = null;
 	const clear = () => {
+		queryKey = null;
 		current?.controller.abort();
 		current = null;
 		void held?.demand.replace([]);
 	};
 	const release = () => {
+		queryKey = null;
 		current?.controller.abort();
 		current = null;
 		held?.demand.close();
@@ -69,10 +71,11 @@ export function createReadWindow({ device, read }) {
 	return {
 		async read(op) {
 			if (closed) return null;
-			clear();
+			current?.controller.abort();
+			current = null;
 			const d = device();
 			if (held && held.device !== d) release();
-			if (!d) return null;
+			if (!d) { clear(); return null; }
 			// One scope per mounted window, with revisions on replacement: frequent reactive reads do not
 			// accumulate closed scopes on the node. A device change starts an independent scope there.
 			held ??= { device: d, demand: createDemand((o) => d.run(o)) };
@@ -81,11 +84,17 @@ export function createReadWindow({ device, read }) {
 			const request = { controller, device: d };
 			current = request;
 			const active = () => current === request && !controller.signal.aborted && device() === d;
-			void demand.replace(queryEntries(op), queryDiscovery(op));
+			const entries = queryEntries(op), selectors = queryDiscovery(op);
+			// Re-reading an unchanged view must not invalidate its peer discovery in flight.
+			// Compare the full operation so changing a predicate also drops obsolete row hints.
+			let nextKey;
+			try { nextKey = JSON.stringify(op); } catch { nextKey = null; }
+			if (nextKey === null || nextKey !== queryKey) void demand.replace(entries, selectors);
+			queryKey = nextKey;
 			try {
 				const got = await read(d, op, controller.signal, demand);
 				if (!active()) return null;
-				void demand.add(replyEntries(got));
+				void demand.replace([...entries, ...replyEntries(got)], selectors);
 				return got;
 			} catch (error) {
 				if (!active()) return null;

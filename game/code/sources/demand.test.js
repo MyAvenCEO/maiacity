@@ -87,3 +87,21 @@ test('query replacements carry monotonically newer demand even when acknowledgem
 	expect(calls.at(-1).revision).toBe(4);
 	replies.at(-1)({ ok: { accepted: true } });
 });
+
+test('a stale unsupported reply cannot disable the current accepted demand or its release', async () => {
+	const calls = [], replies = [];
+	const demand = createDemand((op) => { calls.push(op); return new Promise(resolve => replies.push(resolve)); });
+	try {
+		const first = demand.replace([id(1)]); await tick();
+		const second = demand.replace([id(2)], [{ types: ['note'] }]); await tick();
+		replies[1]({ ok: { accepted: true, discovery_supported: true } }); await second;
+		replies[0]({ refused: 'BadOp' }); await first;
+		expect(demand.discovery().supported).toBe(true);
+		const third = demand.replace([id(3)]); await tick();
+		expect(calls.at(-1).entries).toEqual([id(3)]);
+		replies[2]({ ok: { accepted: true } }); await third;
+		demand.close(); await tick();
+		expect(calls.at(-1).entries).toEqual([]);
+		expect(calls.at(-1).revision).toBe(4);
+	} finally { demand.close(); for (const reply of replies) reply({ ok: { accepted: true } }); }
+});
