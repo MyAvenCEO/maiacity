@@ -76,6 +76,7 @@ jobs:
           ./src/lib/assets/worlds.test.js
           ./src/lib/assets/params.test.js
           ./src/lib/code/
+          ./game/code/sources/proof-worker.test.js
           ./src/lib/render/lint.test.js
           ./src/lib/markdown/
           ./src/lib/avendb/
@@ -106,6 +107,7 @@ jobs:
       - run: node scripts/test-avendb-store.mjs
       - run: bun scripts/test-avendb-session.mjs --browser chromium
       - run: bun scripts/test-avendb-local-write.mjs --browser chromium
+      - run: bun scripts/test-proof-worker.mjs --browser chromium
 
       - run: node scripts/probes.mjs
 
@@ -131,6 +133,7 @@ jobs:
       - run: bunx playwright install --with-deps webkit
       - run: bun scripts/test-avendb-session.mjs --browser webkit
       - run: bun scripts/test-avendb-local-write.mjs --browser webkit
+      - run: bun scripts/test-proof-worker.mjs --browser webkit
 
       # the probes as in Chromium; a way out WebKit itself lacks is named in the log, refused and green
       - run: node scripts/probes.mjs --browser webkit

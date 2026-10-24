@@ -58,3 +58,5 @@ import AvenDB.ConnectionSelection
 import AvenDB.LocalWrite
 
 import AvenDB.WorldReads
+
+import AvenDB.ProofWorker
