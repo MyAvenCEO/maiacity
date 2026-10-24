@@ -2269,6 +2269,7 @@ impl Shared {
                 let before = lab.log(shared.me).revision();
                 let bootstrap_before = lab.owner_bases_pending(shared.me);
                 let missing_before = lab.owner_base_missing(shared.me);
+                let keys_before = lab.owner_base_key_waits(shared.me);
                 let anchors_before = lab.bootstrap_stamp(shared.me);
                 let out = f(&mut lab, me);
                 let now = lab.size(shared.me);
@@ -2284,12 +2285,15 @@ impl Shared {
                 });
                 let missing_after=lab.owner_base_missing(shared.me);
                 let missing_changed=missing_before!=missing_after;
+                let keys_after=lab.owner_base_key_waits(shared.me);
+                let keys_changed=keys_before!=keys_after;
+                if keys_changed { shared.bootstrap_due.notify_one(); }
                 if (lab.owner_bases_pending(shared.me) && (!bootstrap_before || grew || revised))
                     || (!missing_after.is_empty() && (missing_changed || grew || revised)) {
                     shared.bootstrap_due.notify_one();
                 }
                 // Key/body restoration may change only the materialized prefix, not log size.
-                if missing_changed { shared.size.send_modify(|_| {}); }
+                if missing_changed || keys_changed { shared.size.send_modify(|_| {}); }
                 // what it worked out, as a replay or a key it opened, wakes the saver too, once as it comes to
                 let warm = !lab.locked(shared.me) && lab.warm_due(shared.me);
                 if grew {
@@ -2875,7 +2879,8 @@ impl Shared {
                 tokio::task::yield_now().await;
             } else {
                 let missing=self.fetch_owner_dependencies().await;
-                if missing {
+                let key_wait=self.prioritize_owner_keys().await;
+                if missing || key_wait {
                     // Network failure is an explicit wait, not a tight reconstruction loop.
                     tokio::select! {
                         _=self.bootstrap_due.notified()=>{},
@@ -3204,10 +3209,13 @@ impl Shared {
         let mut left = self.differ(peer.device).await;
         let mut new = 0;
         let asked = loop {
+            let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
             let logs = {
                 let mut wanted = self.wanted.lock().expect("wanted");
                 let active = self.demands.lock().expect("demands").entries(Instant::now());
-                let logs = next_demand_logs(&mut left, &wanted, &active, LOGS_AT_ONCE);
+                let mut priority = bootstrap_dependencies::key_logs(&active, &key_waits);
+                priority.extend(active);
+                let logs = next_demand_logs(&mut left, &wanted, &priority, LOGS_AT_ONCE);
                 wanted.retain(|l| !logs.contains(l));
                 logs
             };

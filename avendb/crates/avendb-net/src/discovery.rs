@@ -143,6 +143,7 @@ impl Shared {
                             let Ok(ids) = response(&bytes) else { break };
                             if !shared.demands.lock().expect("demands").discovered(&scope, revision, &ids, Instant::now()) { break; }
                             shared.size.send_modify(|_| {});
+                            shared.bootstrap_due.notify_one();
                             // A bounded working-set checkpoint precedes ordinary history for this view.
                             // Unsupported/unauthorized/oversized offers fall through to signed-log sync.
                             for id in ids.iter().take(if checkpoints_supported { 8 } else { 0 }) {

@@ -633,6 +633,7 @@ mod tests {
         for device in [phone, watcher] {
             lab.receive(device, vec![signed.clone()], vec![]);
             assert_eq!(lab.owner_base_wait_reason(device, entry), Some("missing-entry-key"));
+            assert_eq!(lab.owner_base_key_waits(device), vec![entry]);
             assert!(!lab.owner_bases_pending(device));
             assert!(lab.owner_base_missing(device).is_empty(), "held ciphertext is not a missing edit");
             assert!(lab.item(device, entry).is_some());
@@ -642,11 +643,13 @@ mod tests {
         let removal = lab.signed_edit(mac, revoke).unwrap().clone();
         lab.receive(watcher, vec![removal], vec![]);
         assert!(lab.owner_base_wait_reason(watcher, entry).is_none());
+        assert!(lab.owner_base_key_waits(watcher).is_empty());
         assert!(lab.active_owner_base(watcher, entry).is_none());
         lab.stores.get_mut(&phone).unwrap().keys.insert(name, alternate);
         lab.refresh(phone, &[]);
         assert!(lab.active_owner_base(phone, entry).is_some(), "new family key must not invalidate old envelope key");
         assert!(lab.owner_base_wait_reason(phone, entry).is_none());
+        assert!(lab.owner_base_key_waits(phone).is_empty());
         assert_eq!(lab.owner_base_pending(phone, entry), 0);
         assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
     }
