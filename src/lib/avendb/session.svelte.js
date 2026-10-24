@@ -42,6 +42,7 @@
  * for no ceremony, as one cut short, goes on by itself.
  */
 
+import { tick } from 'svelte';
 import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
@@ -641,9 +642,18 @@ async function refresh() {
 	if (d) await refreshDevice(d);
 }
 
-/** Accepted local writes do not wait for their requested summary. */
+/** Accepted local writes do not wait for their requested summary. Let Svelte
+ * dispatch targeted observer reads first: otherwise a synchronous world dispatch
+ * reaches the serialized native/WASM engine before those effects can run. Explicit
+ * refresh() remains an immediate freshness barrier. */
+const queuedSummaries = new WeakSet();
 function queueRefresh(/** @type {any} */ d) {
-	if (d) void refreshDevice(d).catch((/** @type {Error} */ e) => {
+	if (!d || queuedSummaries.has(d)) return;
+	queuedSummaries.add(d);
+	void tick().then(() => {
+		queuedSummaries.delete(d);
+		if (device === d && !retiredWorlds.has(d)) return refreshDevice(d);
+	}).catch((/** @type {Error} */ e) => {
 		if (device === d) error = `Showing local changes failed: ${e.message}`;
 	});
 }

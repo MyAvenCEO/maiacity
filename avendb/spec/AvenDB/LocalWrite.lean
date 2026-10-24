@@ -32,4 +32,12 @@ theorem refusal_never_succeeds (summary : Bool) : acceptedResult false summary =
 theorem acceptance_independent_of_summary (accepted a b : Bool) :
     acceptedResult accepted a = acceptedResult accepted b := rfl
 
+-- Background summaries wait for the reactive dispatch turn. Explicit refresh
+-- barriers are separate. This models scheduling only, not OS or engine latency.
+def backgroundMayDispatch (reactiveTurnComplete : Bool) : Bool := reactiveTurnComplete
+
+theorem background_waits_for_reactive_turn : backgroundMayDispatch false = false := rfl
+
+theorem background_after_reactive_turn : backgroundMayDispatch true = true := rfl
+
 end AvenDB.LocalWrite
