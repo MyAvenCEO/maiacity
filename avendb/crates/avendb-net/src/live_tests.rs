@@ -304,7 +304,7 @@ fn ineligible_announcements_are_unchanged_without_consuming_witnesses() {
     }
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() {
     let mut w = world();
     let coop = handbook_ready(&mut w);
@@ -314,7 +314,11 @@ async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() 
     // Drive the production scheduling boundary explicitly, without a periodic retry
     // or unrelated peer task consuming its notification. This is not wire timing.
     let tasks: Vec<_> = node.tasks.lock().unwrap().drain(..).collect();
-    for task in tasks { task.abort(); let _ = task.await; }
+    // Node::spawn returns immediately after spawning these tasks. On this
+    // current-thread runtime, abort every task before yielding so the initial
+    // announcer cannot start detached tells and seed unrelated failure backoff.
+    for task in &tasks { task.abort(); }
+    for task in tasks { let _ = task.await; }
     let mut news = node.shared.news((usize::MAX, 0), None).await.unwrap();
     node.shared.own_logs().await;
     let before = node.shared.own.lock().unwrap().holdings.clone();
@@ -332,9 +336,11 @@ async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() 
     assert_eq!(news.reach.len(), 1);
     while time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_ok() {}
     // Multiple passes consume the mutation's wake while the first tell is held.
+    assert!(node.shared.unreached.lock().unwrap().due(&receiver), "the fixture peer is eligible, without startup backoff");
     node.shared.announce(&news);
     node.shared.announce(&news);
     assert_eq!(node.shared.telling.lock().unwrap().len(), 1);
+    assert_eq!(node.shared.telling.lock().unwrap().get(&receiver), Some(&true), "the held tell owes the new frontier");
     node.shared.finish_tell(receiver, true);
     time::timeout(Duration::from_millis(100), node.shared.changed.notified()).await
         .expect("successful held tell must release the coalesced frontier wake before the 60s retry");
