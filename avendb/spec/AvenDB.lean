@@ -116,3 +116,5 @@ import AvenDB.UnchangedOverlay
 import AvenDB.AnchorProvenance
 
 import AvenDB.BootstrapBatch
+
+import AvenDB.BootstrapDependency

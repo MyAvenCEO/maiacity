@@ -217,6 +217,15 @@ pub struct Described {
 
 impl History {
 
+    /// Exact dependency-cut bodies that must be imported beyond the eligible scratch.
+    /// IDs identify signed edits with inline authenticated ciphertext, not blob roots.
+    pub(crate) fn missing_dependency_bodies(&self, deps: &[EditId], scratch: Option<&Scratch>) -> Vec<EditId> {
+        let scratch = scratch.filter(|s| s.within_version(self, deps));
+        self.version(deps).iter().filter(|c| c.counted && c.body.is_none()
+            && scratch.is_none_or(|s| !s.holds.contains(&c.write.edit)))
+            .map(|c| c.write.edit).collect()
+    }
+
     /// Hydrate omitted bodies only from locally authenticated opened edits.
     pub(crate) fn restore_held_bodies(&mut self, bodies: &HashMap<EditId, crate::slice::Body>) {
         for change in &mut self.changes {
