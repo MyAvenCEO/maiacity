@@ -129,3 +129,5 @@ import AvenDB.EntrySuffixIndex
 import AvenDB.CeremonyCancellation
 
 import AvenDB.IndexedHistoryAdmission
+
+import AvenDB.DeferredBodyReadiness
