@@ -152,7 +152,7 @@ impl Lab {
         Ok(PreparedEntryProjection { draft, root, sealed })
     }
 
-    fn projection_authority(&self, on: SignerId, snapshot: EditId, entry: EntryId) -> Option<(VaultId, &crate::policy::Stated, KeyName)> {
+    pub(super) fn projection_authority(&self, on: SignerId, snapshot: EditId, entry: EntryId) -> Option<(VaultId, &crate::policy::Stated, KeyName)> {
         let store = self.held(on);
         if store.replayed != store.log.edits().len() { return None; }
         let st = &store.replay.state;
