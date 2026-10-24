@@ -71,3 +71,5 @@ import AvenDB.WorldSnapshot
 
 import AvenDB.EntryFilesBatch
 import AvenDB.LatestReplay
+
+import AvenDB.WarmCapture

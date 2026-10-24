@@ -533,6 +533,36 @@ pub struct Warming {
     view_wholes: u64,
 }
 
+/// Immutable snapshot inputs, owned independently of Lab. Encoding consumes the keys
+/// and private RNG; dropping an unencoded capture acknowledges nothing.
+pub struct WarmCapture {
+    key: ShelfKey,
+    rng: SeededRng,
+    opened: Option<Vec<([u8; 32], Secret)>>,
+    replay: Option<crate::policy::ViewCapture>,
+    receipt: Warming,
+}
+impl WarmCapture {
+    pub fn encode(mut self) -> Warming {
+        if let Some(opened) = self.opened.take() {
+            let checked = self.receipt.keys_of.and_then(|(checked, _)| checked);
+            let mut bytes = Zeroizing::new(match checked {
+                Some(checked) => [&[1][..], &checked].concat(),
+                None => vec![0],
+            });
+            for (box_id, key) in opened {
+                bytes.extend(box_id.iter().copied().chain(key.bytes()));
+            }
+            self.receipt.keys = Some(self.key.lock("keys", &bytes, b"stored keys", &mut self.rng));
+        }
+        if let Some(replay) = self.replay.take() {
+            let bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
+            self.receipt.view = Some(self.key.lock("view", &bytes, ENGINE.as_bytes(), &mut self.rng));
+        }
+        self.receipt
+    }
+}
+
 /// The most askers and askings a device keeps what it worked out for (`Answers`): past them it starts over.
 const ANSWERS_KEPT: usize = 256;
 
@@ -5256,33 +5286,32 @@ impl Lab {
     /// `None` while it is locked, and where its shelf lacks nothing. It holds them given only once the shelf took them
     /// (`warmed`), so a save cut short gives them again.
     pub fn warming(&mut self, d: SignerId, held: usize, checked: Option<Checked>) -> Option<Warming> {
+        self.capture_warm(d, held, checked).map(WarmCapture::encode)
+    }
+
+    /// Capture only inputs needed by the canonical snapshot encoder. No history serialization,
+    /// history hashing or bulk encryption occurs here. Copies IDs/bits/acts/key handles; no edit bodies.
+    /// The caller must release Lab before encoding. The existing receipt fence is retained.
+    pub fn capture_warm(&mut self, d: SignerId, held: usize, checked: Option<Checked>) -> Option<WarmCapture> {
         let key = self.shelf_key(d)?;
         let store = self.stores.get(&d)?;
         let (keys_due, view_due) = (store.keys_due(checked), store.view_due() && store.replayed <= held);
-        if !keys_due && !view_due {
-            return None;
-        }
+        if !keys_due && !view_due { return None; }
         let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
-        let keys = keys_of.map(|(checked, _)| {
-            let opened = store.opened_before.iter().chain(store.opened_since.iter().map(|(b, k)| (b, k)));
-            let mut bytes: Zeroizing<Vec<u8>> = Zeroizing::new(match checked {
-                Some(checked) => [&[1][..], &checked].concat(),
-                None => vec![0],
-            });
-            opened.for_each(|(b, k)| bytes.extend(b.iter().copied().chain(k.bytes())));
-            key.lock("keys", &bytes, b"stored keys", &mut self.rng)
-        });
-        let (view_of, view_wholes) = if view_due { (store.replayed, store.wholes) } else { (0, 0) };
-        let view = view_due.then(|| key.lock("view", &store.replay.to_view(view_of), ENGINE.as_bytes(), &mut self.rng));
-        Some(Warming {
-            keys,
-            view,
-            revision: store.warm_revision.clone(),
-            lineage: store.log.lineage(),
-            keys_of,
-            view_of,
-            view_wholes,
-        })
+        let opened = keys_due.then(|| store.opened_before.iter()
+            .chain(store.opened_since.iter().map(|(b, k)| (b, k)))
+            .map(|(b, k)| (*b, k.clone())).collect());
+        let replay = view_due.then(|| store.replay.capture_view());
+        let receipt = Warming {
+            keys: None, view: None,
+            revision: store.warm_revision.clone(), lineage: store.log.lineage(), keys_of,
+            view_of: if view_due { store.replayed } else { 0 },
+            view_wholes: if view_due { store.wholes } else { 0 },
+        };
+        let mut seed = Zeroizing::new([0u8; 32]);
+        self.rng.fill_bytes(&mut *seed);
+        let rng = SeededRng::new("warm snapshot encryption", &*seed);
+        Some(WarmCapture { key, rng, opened, replay, receipt })
     }
 
     /// Whether device `d`'s shelf lacks something of `Warm` (`warming`), as cheaply as it tells: the node's saver is
