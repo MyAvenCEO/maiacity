@@ -770,3 +770,31 @@ fn a_measurer_of_the_vault_measures_an_aip_and_its_author_never_does() {
     let o = g.aip(g.mac, &aip)["objective"].clone();
     assert_eq!((&o["metrics"][0]["met"], &o["met"]), (&json!(true), &json!(2)));
 }
+
+/// A cinematic bundle keeps its individual audio and caption entries, beyond V1's 64-head cap.
+#[test]
+fn large_bundle_can_be_revised_and_accepted_whole() {
+    let mut g = gate();
+    let mut lines = Vec::new();
+    for i in 0..97 {
+        let e = g.create("note", note());
+        let l = g.propose(&e, "Individual part", vec![json!({"op":"set", "path":["title"], "value":format!("Part {i}")})]);
+        lines.push((e, l));
+    }
+    let refs: Vec<_> = lines.iter().map(|(e,l)| (e.as_str(),l.as_str())).collect();
+    let (aip, _) = g.open("97 individual parts", &refs);
+    g.promote(g.mac, &aip, g.aven);
+    g.review(&aip, "revise", "Correct objective");
+    assert_eq!(g.aip(g.mac, &aip)["stage"], "objective");
+    g.promote(g.mac, &aip, g.aven);
+    let answer = g.review(&aip, "accepted", "Ready");
+    assert_eq!(list(&answer["accepts"]).len(), 97);
+    assert_eq!(list(&answer["merges"]).len(), 97);
+    g.sync(2);
+    for d in g.readers {
+        let read = g.aip(d, &aip);
+        assert_eq!(read["stage"], "archived");
+        assert!(list(&read["lines"]).iter().all(|l| l["merged"] == true));
+        assert!(list(&read["reviews"]).iter().any(|r| r["verdict"] == "accepted" && r["current"] == true));
+    }
+}

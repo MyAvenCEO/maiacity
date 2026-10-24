@@ -582,7 +582,7 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "recipe" => Named::Id(lens::RECIPE_V1.id()),
             "view" => Named::Id(lens::VIEW_V2.id()),
             "logic" => Named::Id(lens::LOGIC_V1.id()),
-            "review" => Named::Id(lens::REVIEW_V1.id()),
+            "review" => Named::Id(lens::REVIEW_V2.id()),
             "bundle" => Named::Id(lens::BUNDLE_V1.id()),
             "policy" => Named::Id(lens::POLICY_V1.id()),
             "aip" => Named::Id(lens::AIP_V2.id()),
