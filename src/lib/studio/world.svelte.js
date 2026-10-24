@@ -1,3 +1,4 @@
+import { playbackMetrics } from './playback-metrics.js';
 import { currentWorldPage, waitForWorld } from './world-loading.js';
 import { FramePacer } from './frame-pacer.js';
 // The world viewer: a live sandbox in film mode (contract C3), in an iframe of the same origin, slaved to the
@@ -375,12 +376,14 @@ export class WorldViewer {
 	 */
 	plays(on) {
 		this.rolling = on;
+		if (!on) playbackMetrics.resetClock();
 		void Promise.resolve(this.film?.plays?.(on)).catch(() => {});
 	}
 	/** whether the timeline plays, as last said (`plays`) */
 	rolling = false;
 
 	detach() {
+		playbackMetrics.resetClock();
 		++this.loadGeneration;
 		this.queued = null;
 		this.busy = false;
@@ -615,10 +618,11 @@ export class WorldViewer {
 		Promise.resolve().then(() => current() ? film.show({ ...o, width: w, height: h }) : false)
 			.then((drew) => {
 				if (drew === false || !current()) return;
+				if (o.meter === false) playbackMetrics.frame(performance.now(), performance.now() - t0, wholeKey(o.spec));
 				this.drawn = specKey(o.spec);
 				this.drawnAt = performance.now();
 			})
-			.catch((/** @type {Error} */ e) => { if (current()) this.error = `show: ${e instanceof Error ? e.message : String(e)}`; })
+			.catch((/** @type {Error} */ e) => { if (current()) { playbackMetrics.failed(); this.error = `show: ${e instanceof Error ? e.message : String(e)}`; } })
 			.finally(() => {
 				if (!current()) return;
 				// the resolution steps (1, ¾, ½, ⅓) on the slower tenth of recent frames: each step reallocates the targets,

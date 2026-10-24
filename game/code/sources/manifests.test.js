@@ -145,3 +145,13 @@ test('following a timeline prioritizes audio file entries named by aven roots', 
 	await bringDeclared('/studio/', { device: d, bring: async ids => brought.push(...ids) });
 	expect(brought).toEqual([timeline, audio]);
 });
+
+test('manifest diagnostics report scheduling without claiming delivery or retaining IDs', async () => {
+ const { manifestDiagnostics } = await import('./manifests.js');
+ await bringDeclared('/private/route/', { device: { run: async () => ({ ok: { rows: [] } }) }, bring: async () => {} });
+ const state = manifestDiagnostics();
+ expect(state.pending).toBe(0);
+ expect(state.runs.at(-1).state).toBe('scheduled');
+ expect(state.runs.at(-1).requested).toBe(0);
+ expect(JSON.stringify(state)).not.toContain('/private/route/');
+});
