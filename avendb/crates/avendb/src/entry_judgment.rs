@@ -555,6 +555,9 @@ mod tests {
         let proposal = lab.propose(mac, vault, entry, &heads, "Retain this proposal label").unwrap();
         lab.sync(mac, phone);
         let expected = put_judgment(&lab.held(mac).shown[&entry], lab.held(mac)).unwrap();
+        lab.stores.get_mut(&mac).unwrap().shown.get_mut(&entry).unwrap().after.scratch = None;
+        assert_eq!(put_judgment(&lab.held(mac).shown[&entry], lab.held(mac)).unwrap(), expected,
+            "ephemeral scratch eviction cannot alter published causal judgment");
         let backup = lab.backup(mac);
         let n = backup.signed.len();
         let receipt = lab.capture_warm_current(mac, n, Some([27; 40])).unwrap().encode();

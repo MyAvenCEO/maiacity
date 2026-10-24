@@ -111,3 +111,11 @@ MAIN item and counted MAIN history, with stable `tip=None`, independent of warm
 reopening or last-32 scratch retention. The same full causal snapshot is retained;
 this does not replace history checks with JSON equality. These final corrections
 are awaiting the next serialized test slot.
+
+Normalization invariants: no publication without current entry-key authorization;
+MAIN must exist and have no parked updates; every retained MAIN change must be
+counted; scratch holds exactly those edit IDs and the item's authored schemas;
+the optional execution-only last-write tip is cleared. No peer receives new
+authority, and both receiver causal reconstruction and current owner approval
+remain required. The publication regression explicitly evicts the transient
+scratch before warm capture and requires byte-identical judgment serialization.
