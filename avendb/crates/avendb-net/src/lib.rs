@@ -732,6 +732,7 @@ impl Node {
             peers: Mutex::default(),
             dialing: Mutex::default(),
             logs: Mutex::default(),
+            world_encoding: Arc::default(),
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
             held: Mutex::default(),
@@ -2020,6 +2021,8 @@ struct Shared {
     dialing: Mutex<HashMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
     /// Its device's edits by their logs, as they were when they were last worked out.
     logs: Mutex<Option<Arc<Logs>>>,
+    /// One owned world snapshot/conversion at a time; targeted reads and writes bypass it.
+    world_encoding: Arc<tokio::sync::Mutex<()>>,
     /// What its device holds for good.
     own: Mutex<Own>,
     /// Each device it may tell, by its device's view, and what of its holdings it tells it.
