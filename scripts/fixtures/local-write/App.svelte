@@ -20,7 +20,7 @@
 </script>
 <button onclick={() => session.unlock()}>Unlock fixture</button>
 <p data-testid="phase">{session.phase}</p>
-{#if session.phase === 'open' && session.world}
+{#if session.phase === 'open' && (session.world || new URLSearchParams(location.search).has('cold-chat'))}
  {#if detailView === 'story'}
  <Story world={session.world} actor={'b'.repeat(64)} api={session.api} busy={!!session.doing} entry={fixtureEntry} step='published' />
  {:else if detailView === 'note'}

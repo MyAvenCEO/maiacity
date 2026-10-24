@@ -62,3 +62,7 @@ test('a room tagged deleted is left out, and deleting one tags it so', () => {
 	expect(roomsOf(world).map((r) => r.entry)).toEqual(['b']);
 	expect(deletingRoom('a', 'V')).toEqual({ op: 'tag', entry: 'a', add: ['avendb:deleted'], as: 'V' });
 });
+
+test('an unnamed room has an honest fallback before vault names arrive', () => {
+ expect(titleOf({vault:'v',readers:['v','other']},{look:'dm'},null,v=>v?.name??'')).toBe('Direct message');
+});

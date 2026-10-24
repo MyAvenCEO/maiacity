@@ -20,38 +20,48 @@
 	import Composer from './Composer.svelte';
 	import Message from './Message.svelte';
 	import * as R from './rooms.js';
+	import { entryDetail } from '$lib/avendb/entry-detail.svelte.js';
+	import { entryCollection } from '$lib/avendb/entry-collection.svelte.js';
 
 	/** the device the view reads and changes through: the tab's (../avendb/session.svelte.js), or one a test gives */
 	let { api = session } = $props();
 
 	const world = $derived(api.world);
 	const byId = $derived(new Map((world?.vaults ?? []).map((v) => [v.id, v])));
-	const rooms = $derived(R.roomsOf(world));
+	// Discovery is an authorized local query, independent of the broad world summary.
+	// The page bounds rows/demand; the core query may still scan/materialize before limiting.
+	let offset = $state(0);
+	const discovery = entryDetail(() => api, () => ({ op: 'query', where: { type: ['room'] },
+		select: [], order: [['created', 'desc']], offset, limit: 50 }));
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let open = $state(q.get('room') ?? '');
 	let side = $state('');
+	const ids = $derived(JSON.stringify([...new Set([
+		...(discovery.value?.rows ?? []).map(r => r.entry), ...(open ? [open] : [])
+	])].sort()));
+	const metadata = entryCollection(() => api, () => ({ op: 'entry_views', entries: JSON.parse(ids), types: ['room'] }));
+	const rooms = $derived(R.roomsOf({ entries: metadata.rows }));
 
 	/** each room's head, its record with its last message, and how many it holds: `{ [entry]: answer }`, `null` where
-	 *  the read was refused; a room not in it is still being read. Each head shows as it comes, so one slow room never
-	 *  holds the others back, and a head read before stays until its new one comes. */
+	 *  the read was refused; a room not in it is still being read. Each head shows as it comes. Replacing the selected page or API closes the old observers
+	 *  and clears their results; a refusal clears that head. */
 	let heads = $state({});
 	$effect(() => {
-		const list = rooms;
-		void world;
-		let gone = false;
-		// a room this device holds nothing of yet is brought first by the read itself (../avendb/session.svelte.js `near`)
-		for (const r of list)
-			api.ask({ op: 'room', entry: r.entry, last: 1 }).then(
-				(a) => !gone && (heads = { ...heads, [r.entry]: a?.ok ?? (heads[r.entry] || null) }),
-				() => !gone && !(r.entry in heads) && (heads = { ...heads, [r.entry]: null })
-			);
-		return () => (gone = true);
+		const owner = api, entries = JSON.parse(ids);
+		heads = {};
+		const stop = entries.map(entry => owner.observe(() => ({ op: 'room', entry, last: 1 }),
+			a => heads = { ...heads, [entry]: a?.ok ?? null },
+			() => heads = { ...heads, [entry]: null }));
+		return () => stop.forEach(close => close());
 	});
-	/** room `r`'s record as the person reads it: its head's, else the one the device's world holds */
+	/** Room `r`'s record from its targeted head, else its canonical scoped metadata. */
 	const recordOf = (r) => heads[r.entry]?.room ?? r.record ?? null;
-	/** whether every room's kind is known, so the list knows each room's kind (a note to self among them) */
-	const known = $derived(rooms.every((r) => recordOf(r)?.look));
+	// Absence on a paginated sidebar does not prove that a note to self does not exist.
+	const selfRoom = entryDetail(() => api, () => world?.mine ? { op: 'query', vault: world.mine,
+		where: { all: [{ type: ['room'] }, { path: ['look'], eq: 'self' }, { not: { tag: R.GONE } }] },
+		select: [], limit: 1 } : null);
+	const known = $derived(!!world?.mine && selfRoom.phase === 'ready' && !!selfRoom.value);
 	let seen = $state(R.seenAll());
 	const unread = (entry) => Math.max(0, (heads[entry]?.count ?? 0) - (seen[entry] ?? 0));
 
@@ -70,7 +80,7 @@
 	let why = $state('');
 	// The shared avenDB subscription reads this view directly from accepted local
 	// state. Full-world rendering and peer catch-up are independent.
-	onMount(() => api.observe(() => here?.entry ? { op: 'room', entry: open, last: shown } : null,
+	$effect(() => api.observe(() => here?.entry ? { op: 'room', entry: open, last: shown } : null,
 		(answer) => {
 			read = answer?.ok ?? null;
 			why = answer?.ok ? '' : (answer?.why ?? 'This room doesn’t open on this device yet.');
@@ -112,23 +122,25 @@
 	}
 
 	const title = (r) => R.titleOf(r, recordOf(r), world, (v) => (v ? nameOf(v) : ''));
-	const readers = $derived((here?.readers ?? []).map((v) => byId.get(v)).filter(Boolean));
+	const readers = $derived((here?.readers ?? []).map((v) => byId.get(v) ?? { id: v, name: `Vault ${v.slice(0, 8)}…`, kind: 'unknown' }));
 	const mentionable = $derived(readers.filter((v) => v.id !== world?.mine).map((v) => ({ id: v.id, name: v.name ?? '' })));
 	const mine = (m) => !!m?.by && (m.by.vault === world?.mine || m.actor === actor);
 
 	// changes
 	async function send(text, mentions, threadOf = null) {
+		if (!actor) return false;
 		const op = R.posting({ room: open, actor, text, thread: threadOf, mentions });
 		stuck = true;
 		return !!(await api.run('Sending', op));
 	}
 	const react = (path, key, minePrev) =>
-		api.run(
+		actor && api.run(
 			minePrev != null ? 'Taking the reaction back' : 'Reacting',
 			minePrev != null ? R.unreacting(open, actor, path, minePrev) : R.reacting(open, actor, path, key)
 		);
-	const edit = (path, text) => api.runAll('Saving the edit', R.editing(open, actor, path, text));
+	const edit = (path, text) => actor && api.runAll('Saving the edit', R.editing(open, actor, path, text));
 	function remove(path) {
+		if (!actor) return;
 		if (confirm('Delete this message for everyone in the room? It stays in the room’s signed history.'))
 			api.runAll('Deleting', R.deleting(open, actor, path));
 	}
@@ -155,6 +167,7 @@
 	const people = $derived(R.people(world).sort((a, b) => nameOf(a).localeCompare(nameOf(b))));
 	const coops = $derived(R.channelVaults(world));
 	function start(kind) {
+		if (!world?.mine) return;
 		[making, name, topic, chosen] = [kind, '', '', []];
 		where = coops[0]?.id ?? '';
 		side = '';
@@ -163,9 +176,9 @@
 	async function make() {
 		const self = making === 'self';
 		// one note to self: an existing one opens, and none is made while the rooms' kinds are still being read
-		if (self && groups.self.length) return pick(groups.self[0].entry);
-		if (busy || (self && !known)) return;
-		const vault = making === 'channel' ? where : world.mine;
+		if (self && selfRoom.value?.rows?.length) return pick(selfRoom.value.rows[0].entry);
+		if (!world?.mine || busy || (self && !known)) return;
+		const vault = making === 'channel' ? where : world?.mine;
 		const members = self ? [] : chosen;
 		if (making === 'dm' && members.length !== 1) return;
 		if (making === 'channel' && !vault) return;
@@ -177,13 +190,14 @@
 	}
 	/** an existing DM with `who`, opened instead of making a second */
 	function dmWith(who) {
-		const dm = groups.dm.find((r) => r.readers.includes(who));
+		const dm = groups.dm.find((r) => (r.readers ?? []).includes(who));
 		if (dm) pick(dm.entry);
 		else (chosen = [who]), void make();
 	}
 
 	// deleting the open room: off every reader's list, its signed history kept
 	async function drop() {
+		if (!actor || !here) return;
 		const n = read?.count ?? 0;
 		if (!confirm(`Delete “${title(here)}”${n ? ` and its ${n} ${n === 1 ? 'message' : 'messages'}` : ''} for everyone in it? It stays in the vault’s signed history.`)) return;
 		if (await api.run('Deleting the room', R.deletingRoom(open, actor))) pick('');
@@ -192,7 +206,7 @@
 	// adding people to the open room
 	let adding = $state('');
 	async function add() {
-		if (!adding) return;
+		if (!adding || !actor || !here) return;
 		if (await api.run('Adding them to the room', R.adding(here.vault, open, adding, actor))) adding = '';
 	}
 
@@ -221,10 +235,10 @@
 	{#snippet nav()}
 		<input class="nav-search chat-search" placeholder="Find a room  ⌘K" bind:value={filter} aria-label="Find a room" />
 		<div class="new">
-			<button class="nav-item" data-pick onclick={() => start('dm')}><Icon name="users" /><span>New message</span></button>
-			<button class="nav-item" data-pick onclick={() => start('group')}><Icon name="plus" /><span>New group</span></button>
+			<button class="nav-item" data-pick disabled={!world?.mine} onclick={() => start('dm')}><Icon name="users" /><span>New message</span></button>
+			<button class="nav-item" data-pick disabled={!world?.mine} onclick={() => start('group')}><Icon name="plus" /><span>New group</span></button>
 			{#if coops.length}<button class="nav-item" data-pick onclick={() => start('channel')}><Icon name="plus" /><span>New channel</span></button>{/if}
-			{#if known && !groups.self.length}<button class="nav-item" data-pick onclick={() => ((making = 'self'), make())}><Icon name="note" /><span>Note to self</span></button>{/if}
+			{#if known && !selfRoom.value.rows.length}<button class="nav-item" data-pick onclick={() => ((making = 'self'), make())}><Icon name="note" /><span>Note to self</span></button>{/if}
 		</div>
 		{#each SECTIONS as [look, label] (look)}
 			{#if groups[look].some(matches)}
@@ -238,7 +252,13 @@
 				{/each}
 			{/if}
 		{/each}
-		{#if !rooms.length}<p class="hint empty">No rooms yet. Start a message, a group or a note to self.</p>{/if}
+		{#if discovery.phase === 'error' || metadata.phase === 'error'}
+			<p class="hint" role="alert">Rooms could not be read on this device.</p>
+		{:else if discovery.phase === 'loading' || metadata.phase === 'loading'}
+			<p class="hint">Opening local rooms…</p>
+		{:else if !rooms.length}<p class="hint empty">No rooms held on this device yet.</p>{/if}
+		{#if offset > 0}<button class="link" onclick={() => offset = Math.max(0, offset - 50)}>Previous rooms</button>{/if}
+		{#if offset + 50 < (discovery.value?.count ?? 0)}<button class="link" onclick={() => offset += 50}>More rooms</button>{/if}
 	{/snippet}
 
 	{#snippet aside()}
@@ -248,18 +268,18 @@
 					<h3>Thread</h3>
 					<button class="link" onclick={() => (thread = null)}>Close</button>
 				</header>
-				<Message m={parent} me={world.mine} {byId} mine={mine(parent)} deletable={owner} inThread
+				<Message m={parent} me={world?.mine} {byId} mine={mine(parent)} deletable={owner} inThread
 					onreact={(k, p) => react(R.pathOf(parent.id), k, p)}
 					onedit={(t) => edit(R.pathOf(parent.id), t)}
 					ondelete={() => remove(R.pathOf(parent.id))} />
 				<p class="count">{parent.thread?.length ? `${parent.thread.length} ${parent.thread.length === 1 ? 'reply' : 'replies'}` : 'No replies yet'}</p>
 				{#each parent.thread ?? [] as r (r.id)}
-					<Message m={r} me={world.mine} {byId} mine={mine(r)} deletable={owner} inThread
+					<Message m={r} me={world?.mine} {byId} mine={mine(r)} deletable={owner} inThread
 						onreact={(k, p) => react(R.pathOf(r.id, parent.id), k, p)}
 						onedit={(t) => edit(R.pathOf(r.id, parent.id), t)}
 						ondelete={() => remove(R.pathOf(r.id, parent.id))} />
 				{/each}
-				<Composer place="{open}:{parent.id}" people={mentionable} label="Reply" onsend={(t, ms) => send(t, ms, parent.id)} />
+				<Composer place="{open}:{parent.id}" people={mentionable} label="Reply" disabled={!actor} onsend={(t, ms) => send(t, ms, parent.id)} />
 			</div>
 		{:else if here && record}
 			<div class="details">
@@ -267,12 +287,13 @@
 				<h3>{title(here)}</h3>
 				{#if record.topic}<p>{record.topic}</p>{/if}
 				<h4>Who reads it <small>{readers.length}</small></h4>
+				{#if !world}<p class="hint">Reader names are still loading. Vault identifiers are shown below.</p>{/if}
 				<ul class="readers">
 					{#each readers as v (v.id)}
-						<li>{nameOf(v)} <small>{v.id === world.mine ? 'you' : v.id === here.vault ? 'its vault' : KINDS[v.kind]}</small></li>
+						<li>{nameOf(v)} <small>{v.id === world?.mine ? 'you' : v.id === here.vault ? 'its vault' : KINDS[v.kind]}</small></li>
 					{/each}
 				</ul>
-				<p class="hint">Everyone listed opens every message, its whole history included. Messages are encrypted to them alone; avenDB’s server keeps them sealed.</p>
+				<p class="hint">Everyone listed opens every message, its whole history included. Messages are encrypted to them alone; Peers store them encrypted.</p>
 				{#if owner && record.look !== 'self' && record.look !== 'dm'}
 					<h4>Add someone</h4>
 					<div class="row">
@@ -326,7 +347,7 @@
 			<header class="room-head">
 				<h2>{title(here)}</h2>
 				<button class="readers-line" onclick={() => ((thread = null), (side = 'aside'))}
-					>{record ? `${R.LOOKS[record.look] ?? 'Room'} · ` : ''}read by {readers.map((v) => (v.id === world.mine ? 'you' : nameOf(v))).join(', ')}</button
+					>{record ? `${R.LOOKS[record.look] ?? 'Room'} · ` : ''}read by {readers.map((v) => (v.id === world?.mine ? 'you' : nameOf(v))).join(', ')}</button
 				>
 			</header>
 			<div class="timeline" bind:this={timeline} {onscroll}>
@@ -337,7 +358,7 @@
 					{#if l.dayStart}<div class="day"><span>{R.dayWords(l.m.at)}</span></div>{/if}
 					<Message
 						m={l.m}
-						me={world.mine}
+						me={world?.mine}
 						{byId}
 						head={l.head || l.dayStart}
 						mine={mine(l.m)}
@@ -354,15 +375,16 @@
 				{/each}
 			</div>
 			<div class="compose">
-				<Composer place={open} people={mentionable} label="Message {title(here)}" onsend={(t, ms) => send(t, ms)} onup={upEdit} disabled={!record} />
+				{#if !actor}<p class="hint">Checking which vault you can act for…</p>{/if}
+				<Composer place={open} people={mentionable} label="Message {title(here)}" onsend={(t, ms) => send(t, ms)} onup={upEdit} disabled={!record || !actor} />
 			</div>
 		{:else}
 			<section class="welcome">
 				<h2>Chat</h2>
 				<p>Talk with the people in your vaults: direct messages, groups, a coop’s channels and notes to yourself. Every message is signed and encrypted end to end, and only the people a room names read it.</p>
 				<div class="row">
-					<button class="btn" onclick={() => start('dm')}>New message</button>
-					<button class="link" onclick={() => start('group')}>New group</button>
+					<button class="btn" disabled={!world?.mine} onclick={() => start('dm')}>New message</button>
+					<button class="link" disabled={!world?.mine} onclick={() => start('group')}>New group</button>
 				</div>
 			</section>
 		{/if}
