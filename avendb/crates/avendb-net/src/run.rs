@@ -144,7 +144,10 @@ impl Node {
         };
         let result = self.shared.demands.lock().expect("demands").replace(scope.to_ascii_lowercase(), revision, entries, Instant::now());
         match result {
-            Ok(accepted) => json!({"ok": {"accepted": accepted, "lease_ms": crate::demand::LEASE.as_millis() as u64}}),
+            Ok(accepted) => {
+                if accepted { self.shared.size.send_modify(|_| {}); }
+                json!({"ok": {"accepted": accepted, "lease_ms": crate::demand::LEASE.as_millis() as u64}})
+            },
             Err(why) => bad(why),
         }
     }

@@ -446,7 +446,16 @@ impl Shared {
         let keep = self.opts.keep;
         loop {
             let Ok(activity) = self.admit() else { return };
-            let (files, whole) = self.read(move |lab, me| (lab.files(me), lab.kept_files(me, keep))).await;
+            let entries = self.demands.lock().expect("demands").entries(time::Instant::now())
+                .into_iter().filter_map(|log| match log {
+                    avendb::sync::LogId::Entry(entry) => Some(entry),
+                    _ => None,
+                }).collect::<Vec<_>>();
+            let (files, whole) = self.read(move |lab, me| {
+                let mut whole = lab.kept_files(me, keep);
+                whole.extend(lab.demanded_files(me, &entries));
+                (lab.files(me), whole)
+            }).await;
             let mut whole: HashSet<FileRoot> = whole.into_iter().collect();
             // a server's limits (`Node::limit`): of the files to keep whole that it doesn't hold whole yet, those that
             // would take their person past their backup's limit, or that are larger than one file may be, it keeps

@@ -4,7 +4,7 @@ The native and browser device adapters both apply `localOperation` to file reads
 
 Code, recipes, manifest discovery, Universe posts, named profile images and legacy media hashes read this device. Missing local data is a pending/error state, never permission to read a remote feed or media gateway. Profile pictures share the resolver with other media and update as the local world changes.
 
-Manifests and learned view dependencies prioritize background synchronization. Timeline traversal resolves shot references and aven file roots to local entry metadata. Peer transports continue operating in the background. PostgreSQL API operations remain separate and unchanged.
+Manifests and learned view dependencies prioritize background synchronization. Timeline traversal resolves shot references and aven file roots to local entry metadata. Active entry demand also wakes the native file keeper: light/opened devices hydrate readable files for those entries in the background, subject to the same native keep selection. Demand grants no capability and cannot override a never rule. Peer transports continue operating in the background. PostgreSQL API operations remain separate and unchanged.
 
 A manifest describes dependencies; it does not grant network authority to a renderer. A missing manifest or missing file cannot weaken the local-read policy. AIP-34 declares the V2 gameplay/film dependency routes; the live entry was confirmed applied on 2026-10-24.
 
