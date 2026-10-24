@@ -704,3 +704,5 @@ splitting, restores only the baseline into the initial provider, and gives a dis
 authorized replacement peer the full copy. Real empty-then-late fetch, peer-loss,
 replacement fetch and unrelated-entry exclusion assertions remain intact. Source
 syntax/diff checks passed; rerun remains with the root compiler queue.
+Fixture correction: [02f86fc2](https://github.com/MyAvenCEO/maiacity/commit/02f86fc2e),
+committed and pushed; no claim of a passing rerun yet.
