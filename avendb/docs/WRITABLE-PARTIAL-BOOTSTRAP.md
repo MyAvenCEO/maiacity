@@ -182,3 +182,15 @@ all decoder allocation or CPU. No stable bounded preflight is available through 
 metadata API. Keep v2 dormant and non-writable until a bounded decoder/preflight or isolated
 resource budget exists. This does not affect the current v1 JSON projection receiver. The
 stage-one helper does not install an Item, but it does perform internal oplog decoding.
+
+### Revocation regression fixture correction
+
+The v2 core CI regression originally called ordinary `Lab::sync` after removing the phone.
+That sender computes outgoing logs using **current** authorization, so it need not send the
+former vault's policy to the removed device. The final rejection assertion therefore had not
+established that the reader held the revocation. The fixture now delivers the actual signed
+removal through ordinary `Lab::receive` (as the existing v1 revocation regression does), and
+asserts the removal is held and the reader no longer lists that device before asserting
+`authenticate_entry_base` rejects. No authorization guard or rejection assertion is weakened;
+unknown-revocation freshness remains an explicit architectural limitation. Rust rerun pending
+integration; no separate Cargo build was started.
