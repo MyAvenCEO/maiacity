@@ -3400,7 +3400,7 @@ mod tests {
         let dependency=lab.edit(mac,vault,entry,|i|i.set_text(2,"dependency")).unwrap();
         let dependency_signed=lab.signed_edit(mac,dependency).unwrap().clone();
         lab.sync(mac,phone);
-        let concurrent=lab.edit(phone,vault,entry,|i|i.edit_document(|d|d.title="concurrent".into())).unwrap();
+        let concurrent=lab.edit(phone,vault,entry,|i|{i.edit_document(|d|d.title="concurrent".into());}).unwrap();
         let signed=lab.signed_edit(phone,concurrent).unwrap().clone();
         lab.edit(mac,vault,entry,|i|i.set_text(2,"checkpoint")).unwrap();
         let prepared=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
