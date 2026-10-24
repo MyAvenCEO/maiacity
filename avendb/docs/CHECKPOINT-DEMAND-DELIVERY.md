@@ -116,3 +116,8 @@ unchecked-policy, and revoked-reader refusal proofs pass. The new disposable-dis
 reopens with history still withheld and no connected peers, issues a type-only demand, checks
 the exact current read-only record, and rejects a corrupted pin and a subsequent revocation.
 This follow-up does not establish physical mobile latency or complete app manifest coverage.
+
+Offline follow-up implementation: [`5a13b4ea`](https://github.com/MyAvenCEO/maiacity/commit/5a13b4ea).
+Rust gate remains pending integration: `cargo test -p avendb-net --lib persisted_checkpoint_reopens_offline_and_rejects_bad_pin_and_revocation -- --nocapture`,
+then the existing `checkpoint` and core `entry_projection` filters. Loopback permission is
+needed for the disposable node endpoints even though the reopen assertion has no peers.
