@@ -251,3 +251,12 @@ test('same-turn effect cleanup and reread preserve discovery; leaving still rele
 		expect(d.calls.at(-1).entries).toEqual([]);
 	} finally { view.close(); }
 });
+
+test('AIP discovery preserves explicit vault scope and does not send private selectors', () => {
+	expect(queryDiscovery({op:'aips',vault:id(2),as:id(8),private:'secret'})).toEqual([{types:['aip','review'],vault:id(2)}]);
+	expect(queryDiscovery({op:'aips',vault:'invalid'})).toEqual([]);
+});
+
+ test('opened AIP replies prioritize explicit referenced line entries', () => {
+ expect(replyEntries({ok:{entry:id(1),lines:[{entry:id(2),record:{entry:id(3)}},{entry:'invalid'}]}})).toEqual([id(1),id(2)]);
+ });
