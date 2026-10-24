@@ -139,3 +139,33 @@ JSON document.
 Implementation should land as a separate versioned change after the current read-only delivery.
 The current safe guard must remain until this base/suffix model, validator and differential
 acceptance gates are implemented. None of the tasks in this document is marked complete.
+
+## Stage 1 implementation ledger
+
+Implemented, Rust validation pending the coordinated integration build:
+
+- `entry_base.rs` now defines a separate version-two envelope and private-field
+  `AuthenticatedEntryBaseEnvelope`. `draft_entry_base` prepares the existing owner Snapshot
+  ceremony over full per-line Loro snapshots, canonical version vectors, and signed EditId
+  frontiers. `authenticate_entry_base` checks current ordinary authorization, signed root,
+  AEAD context, engine/version, line/frontier limits, full-snapshot metadata and vector match.
+- The API authenticates **an owner's bounded claim**. It does not import a Loro document,
+  install a History, change canonical data, expose a writable Item, or claim honest-start
+  equivalence. `is_writable()` is always false. No Node operation or v2 automatic publication
+  is enabled. Existing JSON-only projection and mutation guards remain unchanged.
+- Snapshot metadata inspection rejects Updates, shallow modes, malformed vectors, wrong
+  context, excess payload/line/frontier sizes and excessive declared operations/changes.
+  Owner-side full snapshot export occurs before its encoded-size check; this stage does not
+  claim bounded export CPU/memory for arbitrary preexisting canonical documents.
+- `EntryBaseFormat.lean` makes owner/current-policy/AEAD checks explicit input assumptions,
+  proves mismatch/refusal properties, and proves this stage cannot grant write readiness.
+  Standalone Lean passed. This is not a cryptographic or CRDT convergence proof.
+- Negative Rust tests are under the `entry_base` filter: owner approval required; fresh
+  partial reader authenticity without canonical installation; malformed/foreign ciphertext;
+  wrong entry; outsider; revocation; Updates/shallow mode; vector mismatch; wrong basis;
+  trailing/truncated/oversized payload; unsupported version and duplicate frontier IDs.
+
+Next: counted-history metadata and a verified base/suffix model (design steps 1/4), then
+one shared local/remote suffix validator, differential full-versus-partial history tests,
+version negotiation, durable suffix recovery, and device measurements. No writable partial
+bootstrap milestone is marked done by this representation stage.

@@ -74,6 +74,10 @@
 //! device reads off those of them the vault created itself and the device counts (`lane_of`): what it reads and judges
 //! the vault's entries by.
 
+#[path = "entry_base.rs"]
+mod entry_base;
+pub use entry_base::{AuthenticatedEntryBaseEnvelope, PreparedEntryBase};
+
 #[path = "entry_projection.rs"]
 mod entry_projection;
 pub use entry_projection::{EntryProjectionOffer, PreparedEntryProjection, VerifiedEntryProjection};

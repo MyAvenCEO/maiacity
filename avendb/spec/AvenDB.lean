@@ -93,3 +93,5 @@ import AvenDB.WarmRestoreNoop
 import AvenDB.ScratchRetention
 
 import AvenDB.PeerReceipt
+
+import AvenDB.EntryBaseFormat
