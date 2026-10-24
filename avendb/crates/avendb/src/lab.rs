@@ -384,6 +384,61 @@ impl Keyring {
     }
 }
 
+/// An immutable incoming page and the signature checks it needs at capture time. No authorization is
+/// captured. The fields are private so callers cannot substitute bytes after verification.
+pub struct ReceivePreparation {
+    edits: Vec<Signed>,
+    checking: Vec<usize>,
+}
+
+/// Signature results bound to the owned incoming page. Only the completing verification methods of `ReceivePreparation` create one.
+pub struct PreparedReceive {
+    edits: Vec<Signed>,
+    signatures: HashMap<EditId, bool>,
+    perf: Perf,
+}
+
+impl ReceivePreparation {
+    /// Verify at most eight edits per turn, yielding between unfinished turns. The caller must
+    /// supply an actual event-loop task yield (not a ready future or a microtask). No partial
+    /// result is exposed; dropping this future discards the uncommitted owned page.
+    pub async fn check_cooperatively<F, Y>(self, mut yield_turn: F) -> PreparedReceive
+    where
+        F: FnMut() -> Y,
+        Y: std::future::Future<Output = ()>,
+    {
+        let mut signatures = HashMap::new();
+        let mut perf = Perf::default();
+        let mut chunks = self.checking.chunks(8).peekable();
+        while let Some(chunk) = chunks.next() {
+            let at = Perf::start();
+            for &i in chunk {
+                let signed = &self.edits[i];
+                signatures.insert(signed.edit.id(), signed.verify().is_ok());
+            }
+            perf.add("prepared signature check", at);
+            perf.count("prepared signatures", chunk.len() as u64);
+            if chunks.peek().is_some() {
+                perf.count("prepared verification yields", 1);
+                yield_turn().await;
+            }
+        }
+        PreparedReceive { edits: self.edits, signatures, perf }
+    }
+
+    /// Expensive pure cryptography, deliberately independent of the Lab and its current policy.
+    pub fn check(self) -> PreparedReceive {
+        let at = Perf::start();
+        let checking: Vec<_> = self.checking.iter().map(|&i| self.edits[i].clone()).collect();
+        let signatures = checking.iter().zip(checked_all(&checking))
+            .map(|(signed, valid)| (signed.edit.id(), valid)).collect();
+        let mut perf = Perf::default();
+        perf.add("prepared signature check", at);
+        perf.count("prepared signatures", checking.len() as u64);
+        PreparedReceive { edits: self.edits, signatures, perf }
+    }
+}
+
 /// Whether each of `signed`'s signatures check out, in order: on every core the machine has, as each check stands
 /// alone (a restore of Maia City's 18,955 edits spent 11.2 s of its 13.5 s checking them on one core, 2026-10-20); on
 /// one in a browser, which has no threads to spare.
@@ -2504,8 +2559,12 @@ impl Lab {
 
     /// `fresh`, timed on device `to` (`perf`).
     fn checked(&mut self, to: SignerId, edits: Vec<Signed>) -> Vec<Signed> {
+        self.checked_prepared(to, edits, &HashMap::new())
+    }
+
+    fn checked_prepared(&mut self, to: SignerId, edits: Vec<Signed>, prepared: &HashMap<EditId, bool>) -> Vec<Signed> {
         let (at, offered) = (Perf::start(), edits.len() as u64);
-        let fresh = self.fresh(to, edits, &HashSet::new());
+        let fresh = self.fresh_prepared(to, edits, &HashSet::new(), prepared);
         if let Some(store) = self.stores.get_mut(&self.at(to)) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
@@ -2518,7 +2577,11 @@ impl Lab {
     /// whose signatures check out (`gate::takes`), the vault it serves its device vault's one owner; nothing of them if
     /// it takes nothing.
     fn take(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs) -> bool {
-        let mut fresh = self.checked(to, edits);
+        self.take_prepared(to, edits, blobs, &HashMap::new())
+    }
+
+    fn take_prepared(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs, prepared: &HashMap<EditId, bool>) -> bool {
+        let mut fresh = self.checked_prepared(to, edits, prepared);
         if let Some(home) = self.home(to).filter(|_| !fresh.is_empty()) {
             let store = self.held(to);
             let batch = fresh.iter().map(|s| s.edit.clone()).collect();
@@ -2534,6 +2597,10 @@ impl Lab {
     /// among `edits` covers comes unchecked, on that checkpoint's word, its signatures or none: its replay lets go of
     /// it unless one that stands vouches for it (`refresh`).
     fn fresh(&self, to: SignerId, edits: Vec<Signed>, vouched: &HashSet<EditId>) -> Vec<Signed> {
+        self.fresh_prepared(to, edits, vouched, &HashMap::new())
+    }
+
+    fn fresh_prepared(&self, to: SignerId, edits: Vec<Signed>, vouched: &HashSet<EditId>, prepared: &HashMap<EditId, bool>) -> Vec<Signed> {
         let Some(store) = self.stores.get(&self.at(to)) else {
             return vec![];
         };
@@ -2554,8 +2621,15 @@ impl Lab {
             (0..rest.len()).partition(|&i| vouched.contains(&rest[i].edit.id()));
         let mut ok = vec![false; rest.len()];
         sealed.into_iter().for_each(|i| ok[i] = true);
-        let to_check: Vec<Signed> = unsealed.iter().map(|&i| rest[i].clone()).collect();
-        for (i, fine) in unsealed.into_iter().zip(checked_all(&to_check)) {
+        let mut unchecked = Vec::new();
+        for i in unsealed {
+            match prepared.get(&rest[i].edit.id()) {
+                Some(&valid) => ok[i] = valid,
+                None => unchecked.push(i),
+            }
+        }
+        let to_check: Vec<Signed> = unchecked.iter().map(|&i| rest[i].clone()).collect();
+        for (i, fine) in unchecked.into_iter().zip(checked_all(&to_check)) {
             ok[i] = fine;
         }
         bare.into_iter().chain(rest.into_iter().zip(ok).filter_map(|(s, ok)| ok.then_some(s))).collect()
@@ -5127,9 +5201,13 @@ impl Lab {
     /// `receive` that does): a pull's pages from far behind each sort before what the replay last stepped over, and each
     /// would replay the whole log (2026-10-21, an iPhone catching up a page of 4 MB at a time). How many edits were new.
     fn receive_now(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool) -> usize {
+        self.receive_now_prepared(d, edits, blobs, now, &HashMap::new())
+    }
+
+    fn receive_now_prepared(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool, prepared: &HashMap<EditId, bool>) -> usize {
         let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
         let before = self.held(d).signed.len();
-        let mut changed = self.take(d, edits, &blobs);
+        let mut changed = self.take_prepared(d, edits, &blobs, prepared);
         // Edit-only pages have no late-arriving keys to match. Taking their edits and flushing a deferred
         // replay still happen normally; only the otherwise unused full-history blob-name scan is omitted.
         if !blobs.is_empty() {
@@ -5183,11 +5261,38 @@ impl Lab {
         blobs: Vec<Arc<[u8]>>,
         now: bool,
     ) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
+        self.receive_whose_prepared_inner(d, edits, blobs, now, &HashMap::new())
+    }
+
+    /// Captures only which immutable signatures need checking. A state change after capture is safe:
+    /// reception still deduplicates, resolves checkpoint coverage and applies the CURRENT gate.
+    pub fn prepare_receive(&self, d: SignerId, edits: Vec<Signed>) -> ReceivePreparation {
+        let store = self.held(d);
+        let mut seen = HashSet::new();
+        let fresh: Vec<_> = edits.iter().enumerate().filter(|(_, signed)| {
+            let id = signed.edit.id();
+            !store.signed.contains_key(&id) && seen.insert(id)
+        }).collect();
+        let batch = covered(fresh.iter().map(|(_, signed)| &signed.edit));
+        let checking = fresh.into_iter().filter_map(|(i, signed)| {
+            let id = signed.edit.id();
+            (!store.covers.contains(&id) && !batch.contains(&id)).then_some(i)
+        }).collect();
+        ReceivePreparation { edits, checking }
+    }
+
+    /// Takes a cryptographically prepared page through ordinary CURRENT-state admission.
+    pub fn receive_prepared(&mut self, d: SignerId, prepared: PreparedReceive, now: bool) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
+        self.stores.get_mut(&self.at(d)).expect("a device").perf.merge(prepared.perf);
+        self.receive_whose_prepared_inner(d, prepared.edits, Vec::new(), now, &prepared.signatures)
+    }
+
+    fn receive_whose_prepared_inner(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool, prepared: &HashMap<EditId, bool>) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
         let held = &self.held(d).signed;
         let ids = edits.iter().map(|s| (s.edit.id(), &s.edit));
         let fresh: Vec<(EditId, Option<LogId>)> =
             ids.filter(|(id, _)| !held.contains_key(id)).map(|(id, e)| (id, log_of(e, id))).collect();
-        let new = self.receive_now(d, edits, blobs, now);
+        let new = self.receive_now_prepared(d, edits, blobs, now, prepared);
         let taken = fresh.into_iter().filter(|(id, _)| self.held(d).signed.contains_key(id));
         let whose = taken.filter_map(|(_, log)| self.whose_log(d, log?)).collect();
         (new, whose)
@@ -6536,3 +6641,7 @@ mod latest_replay_tests;
 #[cfg(test)]
 #[path = "upkeep_family_tests.rs"]
 mod upkeep_family_tests;
+
+#[cfg(test)]
+#[path = "prepared_receive_tests.rs"]
+mod prepared_receive_tests;

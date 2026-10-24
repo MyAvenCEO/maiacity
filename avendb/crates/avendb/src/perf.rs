@@ -39,6 +39,17 @@ impl Perf {
         t.max_us = t.max_us.max(us);
     }
 
+    /// Accumulate completed work measured outside the device's mutable state.
+    pub(crate) fn merge(&mut self, other: Self) {
+        for (name, timer) in other.timers {
+            let current = self.timers.entry(name).or_default();
+            current.count += timer.count;
+            current.total_us += timer.total_us;
+            current.max_us = current.max_us.max(timer.max_us);
+        }
+        for (name, count) in other.counts { self.count(name, count); }
+    }
+
     /// `n` more of `what`.
     pub fn count(&mut self, what: &'static str, n: u64) {
         *self.counts.entry(what).or_default() += n;

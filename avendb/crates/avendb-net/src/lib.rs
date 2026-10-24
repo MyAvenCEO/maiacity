@@ -734,6 +734,7 @@ impl Node {
             logs: Mutex::default(),
             world_encoding: Arc::default(),
             entry_encoding: Arc::default(),
+            receive_checking: Arc::default(),
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
             held: Mutex::default(),
@@ -2025,6 +2026,8 @@ struct Shared {
     /// One owned world snapshot/conversion at a time; targeted reads and writes bypass it.
     world_encoding: Arc<tokio::sync::Mutex<()>>,
     entry_encoding: Arc<tokio::sync::Mutex<()>>,
+    /// One page's signature checker at a time, independent of interactive Lab access.
+    receive_checking: Arc<tokio::sync::Mutex<()>>,
     /// What its device holds for good.
     own: Mutex<Own>,
     /// Each device it may tell, by its device's view, and what of its holdings it tells it.
@@ -2524,12 +2527,18 @@ impl Shared {
             // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
             keys.extend(blobs);
             let take = async {
+                // Native cryptography runs outside the Lab mutex. The owned page/admission survives
+                // cancellation until its blocking checker exits; current-state admission still runs below.
+                #[cfg(not(target_arch = "wasm32"))]
+                let (prepared, permit, activity) = self.prepare_received_page(edits, permit,
+                    #[cfg(test)] None,
+                ).await?;
+                #[cfg(target_arch = "wasm32")]
+                let (prepared, permit, activity) = self.prepare_received_page(edits, permit).await?;
                 let (got, whose) = self
                     .try_lab(move |lab, me| {
-                        // The blocking worker can outlive cancellation. Release only after it consumed the reply,
-                        // before awaiting the next page, which may need every slot for a large legacy reply.
-                        let _permit = permit;
-                        lab.receive_whose_now(me, edits, Vec::new(), false)
+                        let (_permit, _activity) = (permit, activity);
+                        lab.receive_prepared(me, prepared, false)
                     })
                     .await?;
                 // its keys and items brought up to date now and then, not at each page (`CATCH_UP_PACE`)
@@ -2597,6 +2606,42 @@ impl Shared {
             }
         }
         Ok(new)
+    }
+
+    /// Pure signature checks own their page and lifecycle tickets but never the Lab mutex.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn prepare_received_page(
+        self: &Arc<Self>,
+        edits: Vec<Signed>,
+        permit: pulls::Page,
+        #[cfg(test)] before_check: Option<Box<dyn FnOnce() + Send>>,
+    ) -> Result<(avendb::lab::PreparedReceive, pulls::Page, lifecycle::Ticket)> {
+        let activity = self.admit()?;
+        let checking = self.receive_checking.clone().lock_owned().await;
+        let (preparation, permit, activity, checking) = self.read(move |lab, me| {
+            (lab.prepare_receive(me, edits), permit, activity, checking)
+        }).await;
+        tokio::task::spawn_blocking(move || {
+            let _checking = checking;
+            #[cfg(test)]
+            if let Some(before) = before_check { before(); }
+            (preparation.check(), permit, activity)
+        }).await.context("checking incoming signatures")
+    }
+
+    /// The browser has one worker thread: let its event loop service generic operations between
+    /// bounded signature groups. n0_future's zero-duration sleep uses setTimeout, not a microtask.
+    #[cfg(target_arch = "wasm32")]
+    async fn prepare_received_page(
+        self: &Arc<Self>,
+        edits: Vec<Signed>,
+        permit: pulls::Page,
+    ) -> Result<(avendb::lab::PreparedReceive, pulls::Page, lifecycle::Ticket)> {
+        let activity = self.admit()?;
+        let _checking = self.receive_checking.clone().lock_owned().await;
+        let preparation = self.read(move |lab, me| lab.prepare_receive(me, edits)).await;
+        let prepared = preparation.check_cooperatively(|| time::sleep(Duration::ZERO)).await;
+        Ok((prepared, permit, activity))
     }
 
     /// Prefer supplemental batch proofs where this device can persist their admissions. The enclosed
@@ -3284,3 +3329,7 @@ mod admission_tests {
         assert!(unclaimed.honours_with(&stranger, None), "while nobody has claimed the server, any");
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "prepared_receive_tests.rs"]
+mod prepared_receive_tests;
