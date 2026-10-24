@@ -1,3 +1,4 @@
+// @ts-nocheck — Bun runtime fixtures, matching adjacent tests.
 import {expect,test} from 'bun:test';
 import {createReactiveObservation} from './reactive-observation.js';
 const id=n=>n.toString(16).padStart(64,'0');
