@@ -129,3 +129,19 @@ implementation sequence. Current projections are JSON records; enabling writes r
 versioned authenticated Loro base plus counted avenDB history metadata and a shared base/suffix
 validator. Removing `ReadOnly` or constructing a new CRDT from the displayed JSON is unsafe.
 That design is not an implementation or a completed convergence proof.
+
+## Durable pin ordering repair
+
+Implemented, Rust gate pending integration: owner publication and received-checkpoint saves
+now share one serialized tag-write gate. After obtaining the gate, the candidate must still
+be the newest currently authorized standing snapshot for the entry, with the exact signed
+root. The guard is held through tag I/O. Thus a delayed older save cannot overwrite a newer
+durable pin, including after RAM has already accepted the newer state. A newly accepted
+snapshot during an older write can publish only after that write. This does not claim an
+atomic policy+disk transaction or bounded provider log-scan CPU.
+
+Regression: `checkpoint_pin_waiter_cannot_overwrite_newer_accepted_frontier` holds the save
+gate, starts an older save, receives a newer owner checkpoint, and releases both saves. It
+requires the old save to report no pin, the newer root to remain durable, and a late explicit
+old pin attempt to be rejected. No sleep decides ordering. Validation is pending the shared
+integration compiler; no live data is used.

@@ -456,6 +456,21 @@ impl Lab {
 
     /// A persisted content pin only locates bytes. Select its signed checkpoint under
     /// current ordinary policy; ciphertext must still pass `retain_entry_projection`.
+    /// A disk tag may advance only to the newest currently authorized standing snapshot.
+    /// Call under the node's checkpoint pin serialization gate; ordinary policy remains
+    /// checked here and no in-memory cache hint is treated as authority.
+    pub fn entry_projection_pin_is_current(&self, me: SignerId, entry: EntryId, snapshot: EditId, root: FileRoot) -> bool {
+        let Some((_, stated, _)) = self.projection_authority(me, snapshot, entry) else { return false; };
+        if stated.slice != root { return false; }
+        let log = &self.held(me).log;
+        let Some(selected) = log.edits().iter().find(|edit| edit.id() == snapshot) else { return false; };
+        !log.edits().iter().any(|edit| {
+            (edit.depth, edit.id()) > (selected.depth, snapshot)
+                && matches!(&edit.action, Action::Snapshot { states, .. } if states.iter().any(|state| state.entry == entry))
+                && self.projection_authority(me, edit.id(), entry).is_some()
+        })
+    }
+
     pub fn entry_projection_restore_point(&self, me: SignerId, entry: EntryId, hash: [u8; 32]) -> Option<(EditId, FileRoot)> {
         let store = self.held(me);
         if store.replayed != store.log.edits().len() { return None; }

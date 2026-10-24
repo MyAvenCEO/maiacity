@@ -47,3 +47,15 @@ theorem unchecked_policy_no_rehydrate (g : PersistedGates) (h : g.policyRechecke
 theorem revoked_no_rehydrate (g : PersistedGates) (h : g.gates.readerAuthorized = false) :
     rehydrate g = false := by simp [rehydrate, deliver, h]
 end AvenDB.CheckpointDemand
+
+/- Serialized tag publication checks the candidate against held current policy's selected
+frontier after obtaining the writer gate. This does not model disk crash atomicity. -/
+namespace AvenDB.CheckpointDemand.PinOrder
+def publish (selected candidate stored : Nat) : Nat :=
+  if candidate = selected then candidate else stored
+
+theorem obsolete_save_preserves_pin (selected candidate stored : Nat) (h : candidate ≠ selected) :
+    publish selected candidate stored = stored := by simp [publish, h]
+theorem late_old_save_cannot_replace_selected (selected old stored : Nat) (h : old ≠ selected) :
+    publish selected old (publish selected selected stored) = selected := by simp [publish, h]
+end AvenDB.CheckpointDemand.PinOrder

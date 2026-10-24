@@ -52,8 +52,10 @@ fn bounded_basis(ids: &[EditId]) -> bool {
     !ids.is_empty() && ids.len() <= MAX_BASIS && ids.windows(2).all(|pair| pair[0] < pair[1])
 }
 
-// Metadata inspection only, never import. Full snapshots preserve pre-cut proposal
-// ancestry; shallow snapshots and ordinary Updates cannot masquerade as this format.
+// Metadata inspection does not install an Item, but Loro internally decodes an oplog
+// before these count checks. MAX_BYTES bounds wire size, not decoder CPU/allocations.
+// This dormant representation must not enter live receive until preflight/isolation
+// bounds that work. Full snapshots preserve pre-cut proposal ancestry.
 fn snapshot_version(bytes: &[u8]) -> Option<Vec<u8>> {
     if bytes.len() > MAX_BYTES { return None; }
     let meta = LoroDoc::decode_import_blob_meta(bytes, true).ok()?;

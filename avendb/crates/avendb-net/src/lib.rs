@@ -738,6 +738,7 @@ impl Node {
             logs: Mutex::default(),
             world_encoding: Arc::default(),
             entry_encoding: Arc::default(),
+            checkpoint_pins: Arc::default(),
             receive_checking: Arc::default(),
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
@@ -2045,6 +2046,8 @@ struct Shared {
     /// One owned world snapshot/conversion at a time; targeted reads and writes bypass it.
     world_encoding: Arc<tokio::sync::Mutex<()>>,
     entry_encoding: Arc<tokio::sync::Mutex<()>>,
+    /// Serialize durable checkpoint tag changes; a queued old save cannot replace a newer pin.
+    checkpoint_pins: Arc<tokio::sync::Mutex<()>>,
     /// One page's signature checker at a time, independent of interactive Lab access.
     receive_checking: Arc<tokio::sync::Mutex<()>>,
     /// What its device holds for good.

@@ -142,29 +142,25 @@ impl Node {
             Ok(answer) => answer,
             Err(why) => return Ok(why.to_json()),
         };
-        self.shared
-            .store
-            .tags()
-            .set(
-                tag(entry),
-                HashAndFormat::new(temporary.hash(), BlobFormat::Raw),
-            )
-            .await?;
+        let snapshot = answer["edit"].as_str().and_then(EditId::from_hex)
+            .ok_or_else(|| anyhow::anyhow!("checkpoint approval returned no edit ID"))?;
+        let pinned = self.shared.pin_checkpoint(entry, snapshot, root).await?;
         self.shared.changed.notify_one();
         Ok(
             json!({"ok": {"edit": answer["edit"], "entry": entry.to_hex(), "checkpoint": true,
-            "root": Hash::from_bytes(root.hash).to_string(), "size": root.size}}),
+            "root": Hash::from_bytes(root.hash).to_string(), "size": root.size, "pinned": pinned}}),
         )
     }
 }
 
 impl Shared {
     async fn store_checkpoint(
-        &self,
+        self: &Arc<Self>,
         entry: EntryId,
+        snapshot: EditId,
         root: FileRoot,
         sealed: Vec<u8>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         ensure!(
             sealed.len() <= CIPHER_LIMIT
                 && root.size == sealed.len() as u64
@@ -180,14 +176,18 @@ impl Shared {
             temporary.hash().as_bytes() == &root.hash,
             "stored checkpoint hash"
         );
-        self.store
-            .tags()
-            .set(
-                tag(entry),
-                HashAndFormat::new(temporary.hash(), BlobFormat::Raw),
-            )
-            .await?;
-        Ok(())
+        self.pin_checkpoint(entry, snapshot, root).await
+    }
+
+    async fn pin_checkpoint(self: &Arc<Self>, entry: EntryId, snapshot: EditId, root: FileRoot) -> Result<bool> {
+        // Keep this gate through the tag write. A newer accepted snapshot may appear
+        // during I/O, but its pin then follows this write, never preceding a stale one.
+        let _serial = self.checkpoint_pins.clone().lock_owned().await;
+        if !self.read(move |lab, me| lab.entry_projection_pin_is_current(me, entry, snapshot, root)).await {
+            return Ok(false);
+        }
+        self.store.tags().set(tag(entry), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await?;
+        Ok(true)
     }
 }
 
@@ -376,7 +376,7 @@ impl Shared {
             // rendering behind disk I/O, or lose the notification if persistence reports failure.
             self.size.send_modify(|_| {});
             self.changed.notify_one();
-            self.store_checkpoint(entry, root, sealed).await?;
+            self.store_checkpoint(entry, snapshot, root, sealed).await?;
         }
         drop(retained_permit);
         Ok(kept)
@@ -665,7 +665,7 @@ mod tests {
         let shelf = crate::disk::open(&folder).unwrap();
         let node = Node::spawn(w.lab.split(receiver, &[], [151;32]), receiver,
             Options { shelf: Some(shelf.clone()), ..Options::local() }).await.unwrap();
-        node.shared.store_checkpoint(entry, root, sealed.clone()).await.unwrap();
+        assert!(node.shared.store_checkpoint(entry, snapshot, root, sealed.clone()).await.unwrap());
         node.shutdown().await.unwrap();
         drop(node);
         // A new Lab/Node holds the same device keys; its shelf supplies the retained edits.
@@ -709,6 +709,40 @@ mod tests {
         node.shutdown().await.unwrap();
         drop(node);
         std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn checkpoint_pin_waiter_cannot_overwrite_newer_accepted_frontier() {
+        let mut w = world();
+        let (sender, receiver, owner, vault) = (w.mac_a, w.phone_a, w.passkey_a, w.alice);
+        w.lab.sync(sender, receiver);
+        let entry = w.lab.create(sender, vault, vault, "pin-race", &[], document("Checkpoint", "old", sender)).unwrap();
+        let old = w.lab.draft_entry_projection(sender, &[owner], entry).unwrap();
+        let old_id = w.lab.complete(sender, old.draft, &[]).unwrap();
+        let evidence = w.lab.entry_projection_offer(sender, receiver, entry).unwrap().evidence;
+        w.lab.receive(receiver, evidence, vec![]);
+        let node = Node::spawn(w.lab.split(receiver, &[], [155;32]), receiver, Options::local()).await.unwrap();
+        // A deterministic save gate, not a timing sleep: the old writer starts before
+        // the newer owner state arrives, but cannot publish its tag until released.
+        let gate = node.shared.checkpoint_pins.clone().lock_owned().await;
+        let mut old_save = Box::pin(node.shared.store_checkpoint(entry, old_id, old.root, old.sealed));
+        assert!(future::poll_once(&mut old_save).await.is_none());
+        w.lab.edit(sender, vault, entry, |item| item.set_text(2, "new")).unwrap();
+        let new = w.lab.draft_entry_projection(sender, &[owner], entry).unwrap();
+        let new_id = w.lab.complete(sender, new.draft, &[]).unwrap();
+        let evidence = w.lab.entry_projection_offer(sender, receiver, entry).unwrap().evidence;
+        node.try_act(move |lab, me| lab.receive(me, evidence, vec![])).await.unwrap();
+        let new_save = node.shared.store_checkpoint(entry, new_id, new.root, new.sealed);
+        drop(gate);
+        let (old_saved, new_saved) = tokio::join!(old_save, new_save);
+        assert!(!old_saved.unwrap(), "obsolete queued write cannot publish a durable tag");
+        assert!(new_saved.unwrap());
+        let pin = node.shared.store.tags().get(tag(entry)).await.unwrap().unwrap();
+        assert_eq!(pin.hash, Hash::from_bytes(new.root.hash));
+        // Even an old completion arriving after the new tag is present remains fenced.
+        assert!(!node.shared.pin_checkpoint(entry, old_id, old.root).await.unwrap());
+        assert_eq!(node.shared.store.tags().get(tag(entry)).await.unwrap().unwrap().hash, pin.hash);
+        node.shutdown().await.unwrap();
     }
 
 }
