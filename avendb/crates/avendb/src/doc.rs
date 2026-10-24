@@ -155,6 +155,11 @@ impl Item {
         Item::made(example::todo_v0(), &todo.to_value(), signer).expect("a v0 todo")
     }
 
+    /// A fork drops parked Loro updates; reuse is valid only when none remain.
+    pub(crate) fn has_parked_updates(&self) -> bool {
+        !self.parked.is_empty()
+    }
+
     /// The same item as another device holds it, whose edits from now on are that device's.
     pub fn fork_as(&self, signer: SignerId) -> Item {
         self.fork_on(signer, None)
@@ -1240,10 +1245,11 @@ mod tests {
         // Carol gets Bob's edit first: it waits, then lands with Alice's, which it builds on
         let mut carols = base.fork_as(CAROL);
         carols.import(&from_bob, BOB).unwrap();
+        assert!(carols.has_parked_updates(), "a fork must not discard pending dependencies");
         assert_eq!(carols.as_document(), base.as_document());
         carols.import(&from_alice, ALICE).unwrap();
         assert_eq!(carols.as_document(), bobs.as_document());
-        assert!(carols.parked.is_empty());
+        assert!(!carols.has_parked_updates());
     }
 
     #[test]

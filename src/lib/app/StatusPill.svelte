@@ -31,7 +31,7 @@
 
 	/** what the page waits for now: avenDB syncing, the server answering again, or its files */
 	const peers = $derived(peerStatus(sync));
-	const now = $derived(peers.active ? 'sync' : files.waiting > 0 ? 'wait' : files.reading > 0 ? 'files' : '');
+	const now = $derived(peers.active ? 'sync' : files.waiting > 0 ? 'wait' : files.reading > 0 ? 'files' : session.phase === 'open' ? 'sync' : '');
 	/** what the pill shows: `now`, once it held for `SHOW` (or nothing once nothing held for `HIDE`) */
 	let shown = $state('');
 	$effect(() => {
@@ -47,15 +47,15 @@
 
 	const n = (/** @type {number} */ x) => x.toLocaleString('en');
 	const label = $derived(
-		shown === 'sync' ? peers.label : shown === 'wait' ? "Waiting for avenDB's server" : `Loading ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'}`
+		shown === 'sync' ? peers.label : shown === 'wait' ? "Waiting for local files" : `Loading ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'}`
 	);
 	const details = $derived(
 		[
 			...peers.details,
-			files.reading > 0 && `This page: ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'} on the way${files.waiting ? `, ${n(files.waiting)} waiting for avenDB's server to answer again` : ''}`
+			files.reading > 0 && `This page: ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'} on the way${files.waiting ? `, ${n(files.waiting)} waiting to become available locally` : ''}`
 		].filter(Boolean)
 	);
-	const fraction = $derived(shown === 'sync' && sync.behind > 0 ? peers.fraction : null);
+	const fraction = $derived(peers.active || files.reading > 0 || files.waiting > 0 ? null : 0);
 	/** the ring: how far the sync is, or a turning arc while it can't say */
 	const R = 7;
 	const ROUND = 2 * Math.PI * R;

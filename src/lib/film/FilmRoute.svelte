@@ -8,8 +8,12 @@
 	import Moved from '$lib/app/Moved.svelte';
 	import { onMount } from 'svelte';
 	import FilmWorld from './FilmWorld.svelte';
+	import { recipeStatus } from './recipe-status.js';
 	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
+	import { useView } from '../../../game/code/sources/device.js';
 	import { localDevice } from '$lib/avendb/local.js';
+	import { watchRecipes } from '$lib/assets/vault.js';
+	import { forwardConsole } from '$lib/native';
 	import { WORLDS } from '../../../game/film/worlds.js';
 
 	/**
@@ -32,7 +36,28 @@
 		if (!q.has('film')) return void (film = false);
 		// the person's own avenDB first: the Mac's world renderer is a window of its own (vault/app/src/world.rs), whose
 		// page finds the app's device only once it asks
-		void localDevice().then(() => (film = true));
+		forwardConsole(window, 'film bootstrap');
+		const w = /** @type {any} */ (window);
+		w.__filmLoadLabel = 'Connecting to local avenDB…';
+		let active = true, recipeError = '';
+		const unwatch = watchRecipes((/** @type {any} */ r) => {
+			const status = recipeStatus(r);
+			// Clear only our own recovered catalog error; never hide a world mount failure.
+			if (recipeError && w.__filmMountError === recipeError) w.__filmMountError = '';
+			recipeError = status.error;
+			if (recipeError) w.__filmMountError = recipeError;
+			if (status.label) w.__filmLoadLabel = status.label;
+		});
+		void localDevice().then((device) => {
+			if (!active) return;
+			if (!device) throw new Error('Local avenDB is not connected. Unlock this device and retry the world.');
+			void useView(WORLDS[sandbox]?.route ?? location.pathname);
+			film = true;
+		}).catch((e) => {
+			if (!active) return;
+			w.__filmMountError = `Connecting to avenDB failed: ${e.message ?? e}`;
+		});
+		return () => { active = false; unwatch(); };
 	});
 	const known = $derived(!area || !!WORLDS[sandbox]?.areas?.includes(area));
 </script>

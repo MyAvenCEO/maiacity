@@ -21,6 +21,7 @@ import AvenDB.Checkpoint
 import AvenDB.Batches
 import AvenDB.BatchDurability
 import AvenDB.Snapshot
+import AvenDB.EntryProjection
 import AvenDB.PagedView
 import AvenDB.TransportEpoch
 import AvenDB.Wraps
@@ -75,3 +76,19 @@ import AvenDB.LatestReplay
 import AvenDB.LocalDiscovery
 import AvenDB.WorkMetrics
 import AvenDB.WarmCapture
+import AvenDB.ViewDemand
+
+import AvenDB.UpkeepFamilies
+
+import AvenDB.PreparedReceive
+
+import AvenDB.CooperativeReceive
+
+import AvenDB.QueryDiscovery
+import AvenDB.ShownScratch
+
+import AvenDB.WarmRestoreNoop
+
+import AvenDB.ScratchRetention
+
+import AvenDB.PeerReceipt

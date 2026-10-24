@@ -1,50 +1,18 @@
 // @ts-nocheck — plain JS, kept loose on purpose
-/**
- * THIS DEVICE'S avenDB AS THE SOURCE OF CODE (Samuel 2026-10-20: "all games and sandboxes should load always from local
- * avenDB! Also the asset viewers"). Once a page holds the person's avenDB open, the code it runs is read off the
- * device's own copy of the coop Maia City: the views, logic modules and configs (./avendb.js `loadCode`) and the asset
- * recipes ($lib/assets/vault.js). The feed of avenDB's server (./feed.js) is read only where no device is open (signed
- * out, the API), or where the device can't answer yet.
- *
- * The device checked every signed edit, every signature and rule, as it took it from its peers, so what it reads back
- * needs no proof (H2 is the feed's, ./feed.js `provenRows`). Its rows are the feed's to the letter (avendb's `code` op,
- * `world::public_entries`: the public entries of Maia City that its vault landed), so every reader takes them as it takes
- * the feed's, and runs only what everyone may read, as before.
- *
- * Local first (Samuel 2026-10-20: "everything should be offline / local first loading … ensure our whole app respects
- * this local first pattern"): what the device holds of Maia City is read at once, whether its peers can be reached or
- * not, and the device asks them for what they hold meanwhile (avendb's `bring` op, before anything else it syncs), so
- * the next page reads that; theOS's device keeps syncing anyway. A device that holds none of the vault yet (a first
- * sync) is read from the feed this time, and brings the entries the feed named, those alone (`bringRows`, Samuel
- * 2026-10-21: a device syncs first what its pages need), so the next page reads them off the device. A device whose
- * avenDB is older than the ops is read from the feed too. (Until 2026-10-20 every page waited for the
- * bring first, and a server that hung sent it to the feed, which hung as well: the village's live world never stood
- * while avenDB's server restarted.)
- *
- * A page of ours framed by another (the studio's world, /games/<world>/?film) opens no avenDB of its own: it reads its
- * parent's device (`deviceOf`), the same person's, on the same origin. A frame of another origin, or none, reads none.
+/** The renderer reads only this device's avenDB, including same-origin Studio frames.
+ * Manifests and learned dependencies prioritize independent background sync; absent local data
+ * stays pending. No empty, slow or locked local read authorizes an HTTP/peer fallback.
  */
 import { MAIA_CITY } from './anchor.js';
 import { bringDeclared } from './manifests.js';
 import { createDemand } from './demand.js';
+import { createLocalFileReads } from './local-file-read.js';
 
-/**
- * How long a page waits for its device to bring Maia City from its peers before it reads the feed instead (ms): a
- * device that synced before brings what changed since in a moment; a new device takes longer the first time.
- */
+/** Background bring scheduling budget; never a renderer network fallback. */
 export const BRING = 8000;
-
-/**
- * How long a page waits for its device to read a recipe's file before it asks the feed for it too (ms): the device
- * reads on beside the feed, and the first to hand it over is read ($lib/assets/vault.js `eitherOf`), so a light copy
- * still bringing the file's pieces from its peers is never given up on.
- */
+/** Local recipe read deadline; background sync may make a later retry succeed. */
 export const READ = 6000;
-
-/**
- * How long a page waits for its device to read back what it holds of a vault (ms): a local read answers in a moment,
- * and one that doesn't (a device stuck) sends the page to the feed rather than leave it waiting.
- */
+/** Local metadata response deadline. */
 export const ANSWER = 5000;
 
 /** How many bytes a page asks its device for at a time, as the Library reads a file ($lib/avendb/files.js). */
@@ -63,7 +31,7 @@ let brought = new WeakMap();
 /** where a page leaves its device for the pages it frames (`deviceOf`) */
 const SHARED = Symbol.for('maiacity.avendb.device');
 
-/** The device the page holds open now, or `null` to read the feed again; each vault is brought again once. A device
+/** The device the page holds open now, or `null` while local data is unavailable; each vault is brought again once. A device
  * opened brings first what the manifests of Maia City declare for this page (./manifests.js `bringDeclared`), then the
  * entries this page read before (`learned`), before anything else it syncs. */
 let activeView = null;
@@ -95,8 +63,15 @@ export function useView(path) {
 	const view = { device: opened, path, controller, demand, done: null };
 	activeView = view;
 	view.done = (async () => {
+		// Learned IDs are scheduling hints, not trusted records. Do not wait for an
+		// unrelated manifest query before telling the node what this view needs.
+		if (before.length) void demand.add(before.slice(0, AT_ONCE));
 		const declared = await bringDeclared(path, {
 			device: opened, signal,
+			prioritize: (ids, queries) => {
+				signal.throwIfAborted();
+				return demand.prioritize(ids, queries);
+			},
 			bring: async (ids) => {
 				const scoped = await demand.add(ids);
 				return bringEntries(ids, opened, { signal, path, prioritize: !scoped });
@@ -333,32 +308,19 @@ export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING, answe
 		void bringOf(d, vault).catch(() => null);
 		return held;
 	}
-	// none held yet: a bring of the entries a page read before (`bringRows`) first, then what it brought; else the
-	// feed this time, and the page has the device bring the entries the feed named (`bringRows`), never the whole vault
-	const before = broughtBy(d).get(vault);
-	if (!before || !(await within(before, wait))?.ok) return null;
-	return code();
+	// An empty local catalog is returned immediately. Sync never blocks a frontend read.
+	return null;
 }
+
+const readLocalFile = createLocalFileReads({ window: WINDOW });
 
 /**
  * File `file` of a row the device read (`{ root, size, len }`), whole, as bytes, read off the device a window at a
- * time: from its own store, or else fetched from a peer that may hand it over and kept. Null where no device is open,
- * it can't read it, or it takes longer than `wait` (the reader has asked the feed meanwhile, after `READ`).
+ * time, exclusively from its local store. Peer synchronization runs separately. Null where no device is open,
+ * it cannot read the bytes locally, or the local read exceeds `wait`.
  * @param {{ root: string, size: number, len: number }} file @param {{ wait?: number }} [o]
  * @returns {Promise<Uint8Array | null>}
  */
 export async function deviceFile(file, { wait = READ } = {}) {
-	const d = deviceOf();
-	if (!d || typeof file?.len !== 'number') return null;
-	const read = async () => {
-		const out = new Uint8Array(file.len);
-		for (let at = 0; at < file.len; ) {
-			const got = await d.read(file.root, file.size, at, Math.min(file.len, at + WINDOW));
-			if (!got?.length) throw new Error('the file ends early');
-			out.set(got, at);
-			at += got.length;
-		}
-		return out;
-	};
-	return within(read(), wait);
+ return readLocalFile(deviceOf(), file, wait);
 }

@@ -58,9 +58,16 @@ try {
 			store.call = (op, ...args) => call(op, ...args).catch(error => { throw new Error(`${source} ${op}: ${error.message}`); });
 			try {
 				await store.hold();
-				await store.put('journal/0001', new Uint8Array([31, 41, 59]));
+				const journal = new Uint8Array([31, 41, 59]);
+				await store.put('journal/0001', journal);
+				if (journal.byteLength !== 0) throw new Error('whole journal buffer was copied instead of transferred');
 				const view = Uint8Array.from({ length: 256 * 1024 }, (_, i) => i % 251);
 				await store.keep('slots/view-0', view);
+				if (view.byteLength !== 0) throw new Error('whole snapshot buffer was copied instead of transferred');
+				const parent = new Uint8Array([10, 20, 30, 40]);
+				await store.put('journal/partial', parent.subarray(1, 3));
+				await store.keep('slots/partial', parent.subarray(1, 3));
+				if (parent.byteLength !== 4 || parent[3] !== 40) throw new Error('subarray consumed unrelated backing bytes');
 				await store.keep('slots/view-1', new Uint8Array([9, 2, 6]));
 				let refused = false;
 				try { await store.keep('journal/0001', new Uint8Array([0])); } catch { refused = true; }
@@ -77,6 +84,7 @@ try {
 			const same = (got, want) => got?.length === want.length && want.every((b, i) => got[i] === b);
 			try {
 				await store.hold();
+				if (!same(await store.get('journal/partial'), [20, 30]) || !same(await store.get('slots/partial'), [20, 30])) throw new Error('partial buffer bytes changed across reopen');
 				const view = await store.get('slots/view-0');
 				if (view?.length !== 256 * 1024 || !view.every((b, i) => b === i % 251)) throw new Error('acknowledged view changed across reopen');
 				if (!same(await store.get('slots/view-1'), [9, 2, 6])) throw new Error('second slot did not survive');

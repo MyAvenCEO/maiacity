@@ -4,6 +4,22 @@ import { createDemand } from './demand.js';
 const id = (n) => n.toString(16).padStart(64, '0');
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
+test('selector-only leases renew, retain selectors when rows arrive, and do not infer support from old acknowledgements', async () => {
+	const calls = [];
+	const demand = createDemand(async (op) => { calls.push(op); return { ok: { accepted: true } }; }, { renew: 1 });
+	try {
+		await demand.replace([], [{ types: ['note'], predicate: 'never forwarded' }]);
+		await tick();
+		expect(calls.length).toBeGreaterThan(1);
+		expect(calls[0].queries).toEqual([{ types: ['note'] }]);
+		expect(demand.discovery()).toEqual({ supported: false, complete: false });
+		await demand.add([id(1)]);
+		expect(calls.at(-1).queries).toEqual([{ types: ['note'] }]);
+		await demand.replace([]);
+		expect(calls.at(-1).queries).toBeUndefined();
+	} finally { demand.close(); }
+});
+
 test('view demand coalesces entries and releases its own scope with a newer revision', async () => {
 	const calls = [];
 	const demand = createDemand(async (op) => { calls.push(op); return { ok: { accepted: true } }; }, { scope: 'a'.repeat(32) });
@@ -70,4 +86,22 @@ test('query replacements carry monotonically newer demand even when acknowledgem
 	demand.close(); await tick();
 	expect(calls.at(-1).revision).toBe(4);
 	replies.at(-1)({ ok: { accepted: true } });
+});
+
+test('a stale unsupported reply cannot disable the current accepted demand or its release', async () => {
+	const calls = [], replies = [];
+	const demand = createDemand((op) => { calls.push(op); return new Promise(resolve => replies.push(resolve)); });
+	try {
+		const first = demand.replace([id(1)]); await tick();
+		const second = demand.replace([id(2)], [{ types: ['note'] }]); await tick();
+		replies[1]({ ok: { accepted: true, discovery_supported: true } }); await second;
+		replies[0]({ refused: 'BadOp' }); await first;
+		expect(demand.discovery().supported).toBe(true);
+		const third = demand.replace([id(3)]); await tick();
+		expect(calls.at(-1).entries).toEqual([id(3)]);
+		replies[2]({ ok: { accepted: true } }); await third;
+		demand.close(); await tick();
+		expect(calls.at(-1).entries).toEqual([]);
+		expect(calls.at(-1).revision).toBe(4);
+	} finally { demand.close(); for (const reply of replies) reply({ ok: { accepted: true } }); }
 });

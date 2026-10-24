@@ -23,7 +23,7 @@ export const gameManifest = (g) => ({
 	id: `game-${g.id}`,
 	title: g.label,
 	note: `What ${g.label} reads: its views, logic and settings, and the worlds and recipes they name.`,
-	routes: [g.route],
+	routes: [g.route, `/games/${g.id}/`],
 	priority: 'medium',
 	parts: [{ manifest: KERNEL.id }, { query: { tags: [gameTag(g.id)] }, follow: 2 }]
 });

@@ -1,7 +1,6 @@
-// Where the site loads a media file from. Every file is known by its BLAKE3 hash (64 hex), the one the old media vault
-// named it by; there are no paths. The manifest is the site's files by hash, with their titles, descriptions and tags
-// (for sorting, never for finding a file). The bytes come from avenDB's feed of Maia City's public files, behind
-// api.maia.city/vault/files (with Range; deploy/Caddyfile), in theOS too.
+import { localMedia } from './local-resolver.js';
+import { MAIA_CITY } from '../../../game/code/sources/anchor.js';
+// Published media references resolve through the shared local avenDB reader.
 import published from './manifest.json';
 import { parseMediaRef } from './ref.js';
 
@@ -12,15 +11,19 @@ const known = published as Record<string, MediaEntry>;
 
 /** Is this file in the vault (named by its hash)? */
 export const inVault = (ref: string | undefined | null) => parseMediaRef(ref)?.kind === 'public';
-/** Maia City's public files from avenDB's feed, behind api.maia.city: every file by its hash, with Range. */
-export const GATEWAY = 'https://api.maia.city/vault/files';
+// Media bytes are served by the local avenDB instance, never a gateway.
 
-/** The address of a file: by its hash, from the gateway. A full URL, or anything else, is left as it is. */
+/** Local media by hash or imported URL; bundled paths and local object URLs remain usable. */
 export function asset(ref: string): string;
 export function asset(ref: string | undefined | null): string | undefined;
 export function asset(ref: string | undefined | null) {
 	if (!ref) return undefined;
-	if (parseMediaRef(ref)?.kind === 'public') return `${GATEWAY}/${ref}`;
+	const parsed = parseMediaRef(ref);
+	if (parsed?.kind === 'public') return localMedia(MAIA_CITY, parsed.hash);
+	if (/^https?:\/\//i.test(ref)) {
+		const legacy = /\/vault\/files\/([a-f0-9]{64})(?:\.[a-z0-9]+)?(?:[?#]|$)/i.exec(ref);
+		return localMedia(MAIA_CITY, legacy?.[1] || ref);
+	}
 	return ref;
 }
 

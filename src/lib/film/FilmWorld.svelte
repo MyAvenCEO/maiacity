@@ -25,14 +25,20 @@
 	let status = $state('Loading the world…');
 
 	onMount(async () => {
-		startFilm({ base });
+		/** @type {any} */ (window).__filmMountPending = true;
 		try {
-			const w = await mount(/** @type {HTMLDivElement} */ (stage), (label) => (status = label === 'ready' ? '' : `${label}…`));
+			startFilm({ base });
+			const w = await mount(/** @type {HTMLDivElement} */ (stage), (label) => {
+				status = label === 'ready' ? '' : `${label}…`;
+				/** @type {any} */ (window).__filmLoadLabel = status;
+			});
 			if (destroyed) return w.dispose();
 			world = w;
 			status = '';
+			/** @type {any} */ (window).__filmMountPending = false;
 		} catch (e) {
 			status = `The world did not come up: ${/** @type {Error} */ (e).message}`;
+			/** @type {any} */ (window).__filmMountError = status;
 		}
 	});
 	onDestroy(() => {

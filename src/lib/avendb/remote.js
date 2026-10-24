@@ -1,4 +1,6 @@
 // @ts-nocheck — plain JS, trusted: the page's side of its avenDB device's worker (./remote.worker.js)
+import { localTimings } from './local-timings.js';
+import { localOperation } from '../../../game/code/sources/local-policy.js';
 /*
  * THE DEVICE, SEEN FROM THE PAGE — the page's avenDB device runs in a worker of its own (./remote.worker.js), so that
  * its long work never holds the page's thread; this is what the page holds of it: the module's calls as the page made
@@ -223,7 +225,7 @@ export class Device {
 	}
 
 	run(op, ceremony, read) {
-		return this.#call('run', [op, ceremony, read]);
+		return localTimings.measure(op?.op, () => this.#call('run', [localOperation(op), ceremony, read]));
 	}
 
 	size() {

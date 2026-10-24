@@ -11,6 +11,7 @@ import { join, resolve, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import assert from 'node:assert/strict';
+import { fixturePath } from './avendb-browser-fixture-path.mjs';
 const { chromium } = await import(process.env.AVENDB_TEST_PLAYWRIGHT || 'playwright');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = process.env.AVENDB_PKG;
@@ -35,14 +36,7 @@ const server = createServer(async (req, res) => {
         const path = new URL(req.url, 'http://localhost').pathname;
         if (path === '/') { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><title>Disposable avenDB transport test</title>'); return; }
         if (path === '/device') { res.setHeader('Content-Type', 'text/html'); res.end(`<!doctype html><script>${probe}</script><script type="module" src="/fixture.js"></script>`); return; }
-        if (path.includes('..')) throw new Error('invalid path');
-        let file;
-        if (path === '/fixture.js') file = join(root, 'avendb/crates/avendb-browser/tests/transports/device.js');
-        else if (path === '/passkey.js') file = join(root, 'avendb/crates/avendb-browser/js/passkey.js');
-        else if (path.startsWith('/client/device/avendb_browser')) file = join(pkg, path.slice('/client/device/'.length));
-        else if (path.startsWith('/client/device/snippets/')) file = join(pkg, path.slice('/client/device/'.length));
-        else if (path.startsWith('/client/')) file = join(root, 'src/lib/avendb', path.slice('/client/'.length));
-        else throw new Error('not found');
+        const file = fixturePath(path, root, pkg);
         let body = await readFile(file);
         if (path.endsWith('/transports/config.js')) {
             // Serve the same explicit opt-in as VITE_AVENDB_BROWSER_CARRIERS=true; production defaults stay off.
@@ -74,7 +68,7 @@ const server = createServer(async (req, res) => {
         }
         res.setHeader('Content-Type', extname(file) === '.wasm' ? 'application/wasm' : 'text/javascript');
         res.end(body);
-    } catch { res.writeHead(404); res.end(); }
+    } catch (error) { process.stderr.write(`fixture request failed: ${req.url}: ${error.message}\n`); res.writeHead(404); res.end(); }
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://localhost:${server.address().port}`;

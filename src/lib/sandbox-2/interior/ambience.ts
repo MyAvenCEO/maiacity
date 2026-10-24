@@ -58,7 +58,9 @@ export function ambience(): Ambience {
 		filter.frequency.value = 20000
 		filter.connect(ctx.destination)
 		for (const name of Object.keys(FILES) as SoundName[]) {
-			const el = new Audio(asset(FILES[name]))
+			const el = new Audio()
+			const src = asset(FILES[name])
+			if (src) el.src = src
 			el.loop = true
 			el.preload = 'auto'
 			el.crossOrigin = 'anonymous'
@@ -76,7 +78,9 @@ export function ambience(): Ambience {
 	const apply = () => {
 		if (!ctx || !filter) return
 		const now = ctx.currentTime
-		for (const [name, { gain }] of tracks) {
+		for (const [name, { el, gain }] of tracks) {
+			const src = asset(FILES[name])
+			if (src && el.getAttribute('src') !== src) { el.src = src; void el.play().catch(() => {}) }
 			const v = (wanted[name] ?? 0) * LOUDEST[name] * (LEVEL[name] ?? 1) * (underGlass && !['forest', 'inside', 'factory', 'machine', 'lift'].includes(name) ? 0.5 : 1)
 			// a slow glide, so nothing ever switches on or off
 			gain.gain.setTargetAtTime(v, now, 0.6)

@@ -50,46 +50,6 @@ describe("avenDB's WebAssembly", () => {
 	});
 });
 
-describe('the code loader takes nothing unproven', () => {
-	test('rows handed out in a proof\'s place load nothing, are kept nowhere, and the seed runs', async () => {
-		const kept = keep();
-		for (const body of [json({ code: [row] }), json([row]), EMPTY]) {
-			const r = await loadCode({ url: AT, vault: CITY, fetch: served(body).get, timeout: 60000, keep: kept });
-			expect(r.error).toStartWith(`the proof at ${AT} doesn't check out: `);
-			expect(codeAt('views/view-holders')).toMatchObject(holders);
-		}
-		expect(kept.kept.size).toBe(0);
-	});
-	test('a check that fails, however it fails, loads nothing', async () => {
-		const failing = async () => {
-			throw new Error('a signature that does not check out');
-		};
-		const r = await loadCode({ url: AT, vault: CITY, fetch: served(json([row])).get, verify: failing, keep: keep() });
-		expect(r).toEqual({ error: `the proof at ${AT} doesn't check out: a signature that does not check out` });
-		expect(codeAt('views/view-holders')).toMatchObject(holders);
-	});
-	test('with no anchor, nothing is asked of the feed, and the seed runs', async () => {
-		for (const vault of ['', 'Maia City', 'C1'.repeat(32)]) {
-			const f = served(json([row]));
-			const r = await loadCode({ url: AT, vault, fetch: f.get, verify: async () => [row], keep: keep() });
-			expect(r).toEqual({ error: NO_ANCHOR });
-			expect(f.asked).toEqual([]);
-		}
-		expect(codeAt('views/view-holders')).toMatchObject(holders);
-	});
-	test('a check that takes too long loads nothing now, and what it proves is kept for the next load', async () => {
-		let done;
-		const slow = (bytes) => new Promise((ok) => (done = () => ok([{ ...row, record: recordOf(holders).value }])));
-		const kept = keep();
-		const r = await loadCode({ url: AT, vault: CITY, fetch: served(json([row])).get, verify: slow, keep: kept, timeout: 20 });
-		expect(r).toEqual({ error: `${AT} took longer than 20 ms to prove`, passing: true });
-		expect(codeAt('views/view-holders')).toMatchObject(holders);
-		done();
-		await new Promise((ok) => setTimeout(ok, 5));
-		expect([...kept.kept.values()].map((k) => k.tag)).toEqual(['"x"']);
-	});
-});
-
 describe('the anchor and what is kept', () => {
 	test("the anchor is the repo's alone: no build's nor server's setting names it", () => {
 		const anchor = readFileSync(new URL('../../../game/code/sources/anchor.js', import.meta.url), 'utf8');

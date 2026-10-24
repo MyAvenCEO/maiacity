@@ -9,6 +9,7 @@
  * line in its kind below.
  */
 import { elderWoman } from './elder-woman.js';
+import { elderWomanV2 } from './elder-woman-v2.js';
 import { prepare } from './build';
 import { CASTS } from './casts';
 import { HEIGHT, LOOK, human, type Look } from './human';
@@ -43,6 +44,7 @@ const GEESE_V1: Actor[] = GOOSE_BREEDS.map((id) => ({ id: `goose-${id}`, label: 
 
 /** the kinds' older versions, by id, each with its frozen variants (the rest are at v1) */
 const HISTORY: Record<string, (Change & { build?: Actor[] })[]> = {
+ 'elder-woman': [{ ...FIRST, build: [{ id: 'elder-woman', label: 'Third settler', note: 'Original silver-blonde bun', make: elderWoman }] }, { v: 2, date: '2026-10-23', note: 'Warm blonde hair with darker roots, a swept side part, sculpted locks and a fuller silhouette; the same face, stature and animated rig' }],
 	'stand-in': [
 		{ ...FIRST, build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v1: bald, dark slits for eyes, a beak of a nose', make: () => humanV1() }] },
 		{ v: 2, date: '2026-10-13', note: 'A face and hair: eyes with their whites, irises, pupils and a glint, lids over them, a nose with a bridge and a tip, two lips, a finer skull; and hair (short, long, a bun, or none) in its own colour', build: [{ id: 'stand-in', label: 'Stand-in', note: 'as at v2: an egg of a skull, a small jaw ball under it', make: () => humanV2() }] },
@@ -83,7 +85,7 @@ function lookOf(given: string[]): Partial<Look> {
 }
 
 const LIST: Omit<Family, 'versions' | 'version'>[] = [
-	{ id: 'elder-woman', label: 'Elder woman', note: 'An older white woman, silver-blonde hair in a bun, a friendly gaze; 1.64 m', from: 'MaiaCity V2', variants: [{ id: 'elder-woman', label: 'Third settler', note: 'Trailer 3', make: elderWoman }] },
+	{ id: 'elder-woman', label: 'Elder woman', note: 'An older white woman, silver-blonde hair in a bun, a friendly gaze; 1.64 m', from: 'MaiaCity V2', variants: [{ id: 'elder-woman', label: 'Third settler', note: 'Trailer 3', make: elderWomanV2 }] },
 	{
 		id: 'stand-in',
 		label: 'Stand-in',

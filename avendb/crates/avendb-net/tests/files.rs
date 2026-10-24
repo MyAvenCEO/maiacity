@@ -159,8 +159,10 @@ async fn files_follow_their_edits_over_iroh() {
         carol.read(move |lab, me| lab.file(me, &photo_root).is_some()).await
     })
     .await;
+    assert!(carol.read_local_file(photo_root, 70_000..70_010).await.is_err(), "a local read must not fetch from the connected peer");
     let got = carol.read_file(photo_root, 70_000..70_010).await.expect("Carol's Mac reads ten bytes of the photo");
     assert_eq!(got, bytes(1, 70_000, 70_010), "the very bytes");
+    assert_eq!(carol.read_local_file(photo_root, 70_000..70_010).await.unwrap(), got, "after sync/fetch, the local bytes are readable");
     assert!(!carol.holds_file(photo_root).await, "having fetched one segment, not the photo");
     let across = carol.read_file(photo_root, 65_000..140_000).await.expect("a range across three segments");
     assert_eq!(across, bytes(1, 65_000, 140_000));
@@ -192,7 +194,16 @@ async fn files_follow_their_edits_over_iroh() {
     assert!(server.holds_file(photo_root).await && server.holds_file(scan_root).await, "both still on its shelf");
     carol.know(server.addr());
     carol.sync_with(server.id()).await.expect("Carol's Mac reaches the server again");
-    let all = carol.read_file(photo_root, 0..u64::MAX).await.expect("Carol's Mac reads the whole photo");
+    let demand = carol.op(serde_json::json!({
+        "op": "demand", "scope": "0123456789abcdef0123456789abcdef", "revision": 1,
+        "entries": [welcome.to_hex(), onboarding.to_hex()]
+    })).await.expect("an active local view requests its dependencies");
+    assert!(demand.get("ok").is_some(), "{demand}");
+    until("background sync hydrates the light device's demanded file", || async {
+        carol.holds_file(photo_root).await
+    }).await;
+    assert!(!carol.holds_file(scan_root).await, "demand cannot grant access to the private scan");
+    let all = carol.read_local_file(photo_root, 0..u64::MAX).await.expect("the frontend reads the whole photo locally");
     assert_eq!(all, bytes(1, 0, photo_len), "every byte");
     assert!(carol.holds_file(photo_root).await, "and holds it whole now");
     for n in [carol, dave, stranger, server] {

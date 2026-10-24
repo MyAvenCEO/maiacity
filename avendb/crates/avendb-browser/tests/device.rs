@@ -571,9 +571,9 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     let held = run(&first, database).await.expect("its database");
     let both = (ids(&held["schemas"]), ids(&held["lenses"]));
     assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
-    let own = "its own kinds, the article's, the spark's, the function's, the view's and the AIP's two versions, and the \
+    let own = "its own kinds, the article's, the spark's, the function's, the view's, the AIP's and the review's two versions, and the \
         lenses between";
-    assert_eq!((both.0.len(), both.1.len()), (30, 7), "{own}");
+    assert_eq!((both.0.len(), both.1.len()), (31, 8), "{own}");
     let public = |w: &Value| -> usize {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
@@ -1185,11 +1185,14 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
         .map(|s| s["id"].as_str().unwrap_or_default().to_string())
         .collect();
     let own = "documents, todos, articles (v1 and v2), flows, functions (v1 and v2), recipes, views (v1 and v2), logic, \
-        reviews, bundles, policies, AIPs (v1 and v2), posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, \
+        reviews (v1 and v2), bundles, policies, AIPs (v1 and v2), posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, \
         artworks, cap groups, rooms";
-    assert_eq!(schemas.len(), 30, "{own}");
+    assert_eq!(schemas.len(), 31, "{own}");
     let lenses = db["builtIn"]["lenses"].as_array().map(Vec::len);
-    assert_eq!(lenses, Some(7), "the lenses from article, spark, function, view, post, story and AIP v1 to v2");
+    assert_eq!(lenses, Some(8), "the lenses from article, spark, function, view, post, story, AIP and review v1 to v2");
+    assert!(schemas.contains(&avendb::lens::REVIEW_V1.id().to_hex()), "historical reviews remain readable");
+    assert!(schemas.contains(&avendb::lens::REVIEW_V2.id().to_hex()), "current review schema is listed");
+    assert_ne!(avendb::lens::REVIEW_V1.id(), avendb::lens::REVIEW_V2.id());
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
     assert_eq!(plan["authored"], json!([avendb::lens::DOCUMENT_V1.id().to_hex()]), "written under document v1");
     assert!(schemas.contains(&avendb::lens::DOCUMENT_V1.id().to_hex()));
@@ -1214,10 +1217,13 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
         .into_iter()
         .chain([&avendb::lens::VIEW_LENS, &avendb::lens::POST_LENS, &avendb::lens::STORY_LENS, &avendb::lens::AIP_LENS])
         .map(|l| ends(l))
+        .chain(std::iter::once(ends(&avendb::lens::Lens::parse(
+            avendb::lens::blobs::REVIEW_LENS.as_bytes(),
+        ).expect("the shipped review lens parses"))))
         .collect::<Vec<_>>();
     let hex = |l: &Value, end: &str| l[end].as_str().unwrap_or_default().to_string();
     let got: Vec<_> = lenses.iter().map(|l| (hex(l, "from"), hex(l, "to"))).collect();
-    assert_eq!(got, shipped, "the lenses avenDB ships, from article, spark, function, view and post v1 to v2");
+    assert_eq!(got, shipped, "the lenses avenDB ships, including the historical review v1 to current review v2 bridge");
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her
     // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted and ML-DSA-65 signed
     let log = run(&first, json!({ "op": "log" })).await.expect("its log");

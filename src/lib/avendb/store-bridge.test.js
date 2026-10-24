@@ -8,21 +8,32 @@ import { Store as Canonical } from '../../../avendb/crates/avendb-browser/js/sto
 import { Store as Shipped } from './device/store.js';
 
 for (const [name, Store] of [['canonical', Canonical], ['shipped', Shipped]]) {
+ test(`${name}: synchronous transfer failure drops its pending receipt and permits retry`, async () => {
+  const error = new DOMException('fixture detached buffer', 'DataCloneError');
+  const worker = { postMessage() { throw error; } };
+  const store = new Store(worker);
+  await expect(store.keep('slots/view-0', new Uint8Array([1]))).rejects.toBe(error);
+  expect(store.calls.size).toBe(0);
+  worker.postMessage = ({ id }) => queueMicrotask(() => worker.onmessage({ data: { id, ok: true } }));
+  await expect(store.keep('slots/view-0', new Uint8Array([2]))).resolves.toBe(true);
+  expect(store.calls.size).toBe(0);
+ });
+
 	test(`${name}: keeping a view slot waits for the worker and preserves its opaque bytes`, async () => {
 		const sent = [];
-		const worker = { postMessage: (message) => sent.push(structuredClone(message)) };
+		const worker = { postMessage: (message, transfer) => sent.push(structuredClone(message, { transfer })) };
 		const store = new Store(worker);
 		const bytes = new Uint8Array([0, 255, 17, 8, 0]);
 		let settled = false;
 		const kept = store.keep('slots/view-0', bytes).then(() => { settled = true; });
 		await Promise.resolve();
 		expect(settled).toBe(false);
-		expect(sent).toEqual([{ id: 0, op: 'keep', args: ['slots/view-0', bytes] }]);
+		expect(sent).toEqual([{ id: 0, op: 'keep', args: ['slots/view-0', new Uint8Array([0, 255, 17, 8, 0])] }]);
 		worker.onmessage({ data: { id: 0, ok: undefined } });
 		await kept;
 		expect(settled).toBe(true);
 		expect(store.calls.size).toBe(0);
-		expect([...bytes]).toEqual([0, 255, 17, 8, 0]);
+		expect(bytes.byteLength).toBe(0); // ownership moved; the durable receipt still waits for the worker
 	});
 
 	test(`${name}: failed Keep rejects its receipt, and a later retry can succeed`, async () => {

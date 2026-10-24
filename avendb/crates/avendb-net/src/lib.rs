@@ -110,6 +110,7 @@ mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
 mod demand;
+mod discovery;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk;
 #[cfg(not(target_arch = "wasm32"))]
@@ -128,6 +129,8 @@ mod limits;
 pub mod paged_views;
 mod progress;
 mod proofs;
+mod peer_receipts;
+mod receipt_tracker;
 mod pulls;
 mod live;
 mod ranges;
@@ -734,17 +737,21 @@ impl Node {
             logs: Mutex::default(),
             world_encoding: Arc::default(),
             entry_encoding: Arc::default(),
+            receive_checking: Arc::default(),
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
             held: Mutex::default(),
             told: Mutex::default(),
             statements: Mutex::default(),
+            receipts: peer_receipts::Receipts::default(),
             telling: Mutex::default(),
             unreached: Mutex::default(),
             asking: Mutex::default(),
             owed: Mutex::default(),
             wanted: Mutex::default(),
             demands: Mutex::default(),
+            discovery_running: Mutex::default(),
+            discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
             offered: Mutex::default(),
             shelf,
             blob_peers: Mutex::default(),
@@ -1404,8 +1411,19 @@ impl Node {
         &self,
         f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static,
     ) -> Result<T> {
-        let out = self.shared.try_lab(f).await?;
+        let sampled = self.shared.receipts.enabled();
+        let (out, edit) = self.shared.try_lab(move |lab, me| {
+            let before = if sampled { lab.log(me).ids().len() } else { 0 };
+            let out = f(lab, me);
+            let edit = if sampled && lab.log(me).ids().len() > before {
+                lab.log(me).edits().iter().zip(lab.log(me).ids()).skip(before).rev()
+                    .find_map(|(edit, id)| matches!(avendb::sync::log_of(edit, *id), Some(avendb::sync::LogId::Entry(_))).then_some(*id))
+            } else { None };
+            (out, edit)
+        }).await?;
+        let completed = Instant::now();
         self.shared.changed.notify_one();
+        if let Some(edit) = edit { self.shared.observe_edit(edit, completed); }
         Ok(out)
     }
 
@@ -1711,6 +1729,7 @@ impl Node {
             .collect();
         json!({
             "served": s.traffic.served_json(),
+            "policy_observations": s.receipts.json(),
             "me": { "endpoint": me.id.to_string(), "relays": relays, "direct": direct },
             "peers": peers,
             "gone": gone,
@@ -2025,6 +2044,8 @@ struct Shared {
     /// One owned world snapshot/conversion at a time; targeted reads and writes bypass it.
     world_encoding: Arc<tokio::sync::Mutex<()>>,
     entry_encoding: Arc<tokio::sync::Mutex<()>>,
+    /// One page's signature checker at a time, independent of interactive Lab access.
+    receive_checking: Arc<tokio::sync::Mutex<()>>,
     /// What its device holds for good.
     own: Mutex<Own>,
     /// Each device it may tell, by its device's view, and what of its holdings it tells it.
@@ -2035,6 +2056,7 @@ struct Shared {
     told: Mutex<HashMap<SignerId, (usize, Holdings)>>,
     /// The signed statements of holdings it keeps, signs and passes on (H2, `statements`).
     statements: Mutex<statements::Statements>,
+    receipts: peer_receipts::Receipts,
     /// Peers being told now, with one coalesced obligation to recompute after success.
     telling: Mutex<HashMap<SignerId, bool>>,
     /// The peers it couldn't tell, and when to try each again.
@@ -2047,6 +2069,8 @@ struct Shared {
     wanted: Mutex<BTreeSet<LogId>>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
     demands: Mutex<demand::Demands>,
+    discovery_running: Mutex<HashMap<String, bool>>,
+    discovery_answer: Arc<tokio::sync::Semaphore>,
     /// The McEliece keys in the blob store, by hash and by id.
     offered: Mutex<blobs::Offered>,
     /// Its blob store over its shelf, if it keeps one (`shelf`): what the shelf holds whole.
@@ -2524,12 +2548,18 @@ impl Shared {
             // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
             keys.extend(blobs);
             let take = async {
+                // Native cryptography runs outside the Lab mutex. The owned page/admission survives
+                // cancellation until its blocking checker exits; current-state admission still runs below.
+                #[cfg(not(target_arch = "wasm32"))]
+                let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, (),
+                    #[cfg(test)] None,
+                ).await?;
+                #[cfg(target_arch = "wasm32")]
+                let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, ()).await?;
                 let (got, whose) = self
                     .try_lab(move |lab, me| {
-                        // The blocking worker can outlive cancellation. Release only after it consumed the reply,
-                        // before awaiting the next page, which may need every slot for a large legacy reply.
-                        let _permit = permit;
-                        lab.receive_whose_now(me, edits, Vec::new(), false)
+                        let (_permit, _activity) = (permit, activity);
+                        lab.receive_prepared(me, prepared, false)
                     })
                     .await?;
                 // its keys and items brought up to date now and then, not at each page (`CATCH_UP_PACE`)
@@ -2597,6 +2627,46 @@ impl Shared {
             }
         }
         Ok(new)
+    }
+
+    /// Pure signature checks own their page, lifecycle ticket and caller context but never the Lab
+    /// mutex. Moving the context through both workers preserves range admission and accepted-count
+    /// ownership even if an asynchronous waiter is cancelled during capture or checking.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn prepare_received_page<O: Send + 'static>(
+        self: &Arc<Self>,
+        edits: Vec<Signed>,
+        permit: pulls::Page,
+        owner: O,
+        #[cfg(test)] before_check: Option<Box<dyn FnOnce() + Send>>,
+    ) -> Result<(avendb::lab::PreparedReceive, pulls::Page, lifecycle::Ticket, O)> {
+        let activity = self.admit()?;
+        let checking = self.receive_checking.clone().lock_owned().await;
+        let (preparation, permit, activity, checking, owner) = self.read(move |lab, me| {
+            (lab.prepare_receive(me, edits), permit, activity, checking, owner)
+        }).await;
+        tokio::task::spawn_blocking(move || {
+            let _checking = checking;
+            #[cfg(test)]
+            if let Some(before) = before_check { before(); }
+            (preparation.check(), permit, activity, owner)
+        }).await.context("checking incoming signatures")
+    }
+
+    /// The browser has one worker thread: let its event loop service generic operations between
+    /// bounded signature groups. n0_future's zero-duration sleep uses setTimeout, not a microtask.
+    #[cfg(target_arch = "wasm32")]
+    async fn prepare_received_page<O: Send + 'static>(
+        self: &Arc<Self>,
+        edits: Vec<Signed>,
+        permit: pulls::Page,
+        owner: O,
+    ) -> Result<(avendb::lab::PreparedReceive, pulls::Page, lifecycle::Ticket, O)> {
+        let activity = self.admit()?;
+        let _checking = self.receive_checking.clone().lock_owned().await;
+        let preparation = self.read(move |lab, me| lab.prepare_receive(me, edits)).await;
+        let prepared = preparation.check_cooperatively(|| time::sleep(Duration::ZERO)).await;
+        Ok((prepared, permit, activity, owner))
     }
 
     /// Prefer supplemental batch proofs where this device can persist their admissions. The enclosed
@@ -3284,3 +3354,7 @@ mod admission_tests {
         assert!(unclaimed.honours_with(&stranger, None), "while nobody has claimed the server, any");
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "prepared_receive_tests.rs"]
+mod prepared_receive_tests;
