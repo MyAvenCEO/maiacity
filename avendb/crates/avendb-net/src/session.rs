@@ -277,7 +277,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
         crate::edit_ranges::KIND => crate::edit_ranges::CONTROL_BYTES,
         crate::discovery::KIND => crate::discovery::REQUEST_LIMIT,
         crate::checkpoint_delivery::KIND => crate::checkpoint_delivery::REQUEST_LIMIT,
-        crate::peer_receipts::KIND => crate::peer_receipts::REQUEST_LIMIT,
+        crate::peer_receipts::KIND | crate::peer_receipts::UI_KIND => crate::peer_receipts::REQUEST_LIMIT,
         _ => MESSAGE_LIMIT - 1,
     };
     let deadline = if range.is_some() { crate::edit_transfer::DEADLINE } else if checkpoint.is_some() { crate::checkpoint_delivery::DEADLINE } else { PAGE_WAIT };
@@ -305,6 +305,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         crate::discovery::KIND => crate::discovery::answer(shared, peer, body).await,
         crate::checkpoint_delivery::KIND => crate::checkpoint_delivery::answer(shared, peer, body, checkpoint.context("missing checkpoint response admission")?).await,
         crate::peer_receipts::KIND => crate::peer_receipts::answer(shared, peer, body).await,
+        crate::peer_receipts::UI_KIND => crate::peer_receipts::answer_ui(shared, peer, body).await,
         REQUEST | ASK_LOGS | ASK_VAULTS => {
             let reply = authorized_reply(shared, peer, kind, body).await?;
             let n = reply.edits.len();

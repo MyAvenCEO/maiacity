@@ -77,9 +77,9 @@ export async function measureLatency(stage, work, journal = latencyJournal, now 
 
 /** Redacted snapshot of nonce-correlated engine policy observations, not transport RTT.
  * @param {any} network */
-export function policyObservations(network) {
+export function policyObservations(network, stage = 'local-completion-to-peer-policy-observation') {
  const observed = network?.policy_observations;
- if (observed?.stage !== 'local-completion-to-peer-policy-observation') return null;
+ if (!['local-completion-to-peer-policy-observation', 'local-completion-to-peer-reactive-consumer'].includes(stage) || observed?.stage !== stage) return null;
  /** @type {any[]} */
  const samples = Array.isArray(observed.samples) ? observed.samples : [];
  return { stage: observed.stage,

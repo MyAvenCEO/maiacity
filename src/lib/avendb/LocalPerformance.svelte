@@ -7,6 +7,7 @@
  import { session } from './session.svelte.js';
  import { sync } from './sync.svelte.js';
  import { lifecycle } from './lifecycle.js';
+ import { reactiveObservation } from './reactive-observation.js';
  let manifests = $state(manifestDiagnostics());
  let playback = $state(playbackMetrics.snapshot());
  let measuring = $state(false), result = $state('');
@@ -16,6 +17,21 @@
  let scenario = $state('already-synced');
  /** @type {ReturnType<typeof policyObservations>} */
  let policy = $state(null);
+ /** @type {ReturnType<typeof policyObservations>} */
+ let reactive = $state(null);
+ async function armReactive() {
+  if (measuring || session.phase !== 'open') return;
+  measuring = true;
+  try {
+   const owner = session.device;
+   const answer = await session.ask({op:'measure_peer_visibility'});
+   if (answer?.ok?.enabled && owner === session.device) {
+    reactiveObservation.arm(owner, op => owner.run(op));
+    result = 'Observe on both devices, then make an ordinary edit in the current subscribed view. Captures consumer delivery, not paint; exact main-head matches only.';
+   } else result = 'Reactive observation is unavailable on this build.';
+  } catch { result = 'Reactive observation is unavailable.'; }
+  finally { measuring = false; }
+ }
  async function armPolicy() {
   if (measuring || session.phase !== 'open') return;
   measuring = true;
@@ -33,6 +49,7 @@
    const answer = await session.ask({ op: 'network' });
    const count = recordPeerTimings(answer?.ok);
    policy = policyObservations(answer?.ok);
+   reactive = policyObservations({policy_observations: answer?.ok?.reactive_observations}, 'local-completion-to-peer-reactive-consumer');
    result = `Captured ${count} transport RTT estimates and ${policy?.samples.length ?? 0} policy observations.`;
    evidence = latencyJournal.snapshot();
   } catch { result = 'Peer connection timings are unavailable.'; }
@@ -41,7 +58,7 @@
  function exportReport() {
   latencyJournal.flush();
   evidence = latencyJournal.snapshot();
-  exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(), policyObservations: policy, studioPlayback: playbackMetrics.snapshot(),
+  exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(), policyObservations: policy, reactiveObservations: reactive, studioPlayback: playbackMetrics.snapshot(),
    scenario: { declared: scenario, source: 'user-selected', firstViewReadiness: 'unmeasured' },
    peerLogCoverage: sync.known ? { peers: sync.peers, logs: sync.logs, behind: sync.behind, pulling: sync.pulling } : null,
    lifecycle: lifecycle()?.snapshot() ?? null,
@@ -72,6 +89,7 @@
  <label>Test scenario <select bind:value={scenario}><option value="already-synced">Already-synced peers</option><option value="fresh-catching-up">Fresh / catching-up peer</option></select></label>
  <p>This is your test label, not a completeness claim. Run the observation on connected devices, make an ordinary edit, then capture and export. Fresh-device first-view readiness: unmeasured.</p>
  <button onclick={exportReport}>Export latency and restart report</button>
+ <button onclick={armReactive} disabled={measuring || session.phase !== 'open'}>Observe reactive delivery for 2 minutes</button>
  <button onclick={armPolicy} disabled={measuring || session.phase !== 'open'}>Observe entry propagation for 2 minutes</button>
  <button onclick={measurePeers} disabled={measuring || session.phase !== 'open'}>Capture peer propagation and RTT</button>
  <p>{evidence.samples.length} retained samples. {evidence.storageAvailable ? 'Available here before unlock.' : 'Persistent storage unavailable; these samples may be lost on reload.'}</p>
@@ -80,6 +98,7 @@
  <table><thead><tr><th>Recent stage</th><th>Duration</th><th>Result</th></tr></thead><tbody>
  {#each evidence.samples.slice(-12).reverse() as sample}<tr><td>{sample.stage}</td><td>{ms(sample.ms)}</td><td>{sample.outcome}</td></tr>{/each}
  </tbody></table>{/if}
+ {#if reactive}<p>{reactive.samples.length} reactive consumer acknowledgements. Includes network and polling delay; excludes paint and durable-save acknowledgement. Checkpoint or superseded frontiers may remain unmeasured.</p>{/if}
  {#if policy}<p>{policy.samples.length} policy observations captured. Local completion to authenticated peer policy observation includes sync, replay and up to 500 ms polling delay. A standing edit is not proof of rendered UI or durable storage.</p>{/if}
  <p>Local call completion is not a rendered frame or remote acknowledgement. Transport RTT is the connection estimate, not write propagation. Unlock totals include authentication time. View readiness and rendered-frame latency are not measured here.</p>
  <h3>Studio playback · target 30 FPS</h3>
