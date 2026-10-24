@@ -131,3 +131,17 @@ test('an older node gets the original bring shape after rejecting demand', async
 		expect(calls.filter((op) => op.op === 'bring')).toEqual([{ op: 'bring', entries: [id(8)] }]);
 	} finally { delete globalThis.location; }
 });
+
+
+test('an empty local catalog does not wait for an unfinished background bring', async () => {
+	const { deviceRows, bringRows } = await import('./device.js');
+	let finish;
+	const blocked = new Promise(resolve => { finish = resolve; });
+	const d = { run: async op => op.op === 'code' ? { ok: [] } : op.op === 'bring' ? blocked : { ok: {} } };
+	useDevice(d);
+	const sync = bringRows([{ entry: id(91) }]);
+	const result = await Promise.race([deviceRows(['recipe']), new Promise(resolve => setTimeout(() => resolve('blocked'), 100))]);
+	finish({ ok: { new: 1 } });
+	await sync;
+	expect(result).toBeNull();
+});

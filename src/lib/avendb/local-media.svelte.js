@@ -1,5 +1,7 @@
 // @ts-nocheck
 // One local media resolver for profiles, posts and legacy content hashes. No HTTP fallback.
+import { deviceOf, learn } from '../../../game/code/sources/device.js';
+import { localFile } from '$lib/media/local-file.js';
 import { useLocalMedia } from '$lib/media/local-resolver.js';
 import { localDevice } from './local.js';
 import { native } from '$lib/native';
@@ -12,9 +14,11 @@ let timer;
 let owner;
 let streaming;
 let snapshot;
+let snapshotDevice;
 // Reuse the session's world snapshot; no separate metadata fetch on every profile render.
 export function localMediaWorld(world) {
 	snapshot = world;
+	snapshotDevice = deviceOf();
 	void refreshLocalMedia();
 }
 
@@ -34,16 +38,15 @@ export function refreshLocalMedia() {
 		const d = await localDevice();
 		if (d !== owner) {
 			for (const key of Object.keys(urls)) { if (urls[key]?.startsWith('blob:')) URL.revokeObjectURL(urls[key]); delete urls[key]; }
-			for (const item of wanted.values()) delete item.root;
+			for (const item of wanted.values()) { delete item.root; delete item.entry; }
 			streaming?.stop(); streaming = null; owner = d;
 		}
 		if (!d) return;
-		const world = snapshot || (await d.run({ op: 'world' }))?.ok;
+		const world = (snapshotDevice === d && snapshot) || (await d.run({ op: 'world' }))?.ok;
 		const entries = world?.entries || [];
 		for (const [key, request] of wanted) {
-			const entry = entries.find(e => !e.deleted && e.type === 'file' &&
-				(!request.vault || e.vault === request.vault) &&
-				(e.title === request.name || (/^[a-f0-9]{64}$/.test(request.name) && e.title?.startsWith(request.name + '.')) || e.files?.some(f => f.root === request.name)));
+			const entry = localFile(entries, request.vault, request.name);
+			if (entry && request.entry !== entry.entry) { learn([entry.entry]); request.entry = entry.entry; }
 			const file = entry?.files?.[0];
 			if (!file || file.len == null) {
 				if (urls[key]?.startsWith('blob:')) URL.revokeObjectURL(urls[key]);

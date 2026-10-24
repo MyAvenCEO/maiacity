@@ -2,8 +2,8 @@
 /*
  * Who opens what of Maia City (Samuel 2026-10-19: the sandboxes, worlds, game assets and games "purely behind avenDB
  * native caps", "Not depending on PG"): the Maia City COOP vault's cap groups the person holds, read from their own
- * avenDB ($lib/avendb/capgroups.js). A Traveler, as every invited human is, opens every sandbox, world and game asset,
- * read only; a Citizen plays MaiaCity V1 too; whoever acts for Maia City itself, as its owners' devices do, or holds
+ * avenDB ($lib/avendb/capgroups.js). A Traveler opens the Sandbox 4 demo and public assets;
+ * a Citizen opens the other games too; whoever acts for Maia City itself, as its owners' devices do, or holds
  * its Admin group, opens everything, and invites. There is no draft stage: what a group opens, it opens.
  *
  * Maia City is the coop of the seed whose aven is the server the person's vault is kept by, as their own avenDB shows
@@ -18,6 +18,7 @@ import { ADMIN, heldGroups } from '$lib/avendb/capgroups.js';
 import { session } from '$lib/avendb/session.svelte.js';
 import { seedCity, serverCity } from '$lib/avendb/vaults.js';
 import { native } from '$lib/native';
+import { travelerSyncOps } from '$lib/avendb/traveler-sync.js';
 
 export const access = $state({
 	/** the Maia City vault's id, '' while unknown */
@@ -53,8 +54,12 @@ export function readAccess() {
 			const got = v ? await session.ask({ op: 'cap_groups', vault: city }).catch(() => null) : null;
 			const list = got?.ok ?? [];
 			Object.assign(access, { city, owner: v?.acting?.as === city, groups: heldGroups(w, city, list), list, known: true });
+			for (const op of travelerSyncOps(w, city, access.groups, access.owner)) {
+				const result = await session.ask(op);
+				if (result?.refused) throw new Error(result.why || result.refused);
+			}
 		} while (again);
-	})().finally(() => (reading = null));
+	})().catch(e => { session.error = `Updating demo sync rules: ${e.message}`; }).finally(() => (reading = null));
 }
 
 /** Whether the person opens what cap group `name` opens: they hold it, or Admin, or act for Maia City. @param {string} name */

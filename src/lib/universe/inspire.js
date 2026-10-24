@@ -82,7 +82,7 @@ export function inspireOf(post, entries) {
 		quote: report.quote?.text ?? '',
 		quoteBy: report.quote?.by || by.name || '',
 		language: report.language || source.language || '',
-		thumbnails: id ? youtubePictures(id) : [],
+		thumbnails: id ? youtubePictures(id).map(asset).filter(Boolean) : [],
 		sections: sectionsOf(report.text || story.text || ''),
 		sourceHtml: words.length ? toHtml(words.join('\n\n')) : null,
 		sourceWords: words.join(' ').split(/\s+/).filter(Boolean).length
