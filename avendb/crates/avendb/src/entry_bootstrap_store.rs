@@ -10,6 +10,7 @@ pub(crate) struct BootstrapProgress {
     policy: crate::policy::Slice,
     base_scratch: Option<Scratch>,
     pending: std::collections::VecDeque<Edit>,
+    missing: Vec<EditId>,
 }
 
 
@@ -57,7 +58,15 @@ pub(crate) struct RetainedOverlay {
 impl Lab {
 
     pub fn owner_bases_pending(&self, on: SignerId) -> bool {
-        !self.locked(on) && self.held(on).bootstrap_progress.values().any(|p| !p.pending.is_empty())
+        !self.locked(on) && self.held(on).bootstrap_progress.values().any(|p| !p.pending.is_empty() && p.missing.is_empty())
+    }
+    /// Missing authenticated historical bodies of the selected dependency cut.
+    /// Current owner authorization gates this local scheduling hint; it grants no
+    /// remote access. Held encrypted edits may instead need ordinary key recovery.
+    pub fn owner_base_missing(&self, on: SignerId) -> Vec<(EntryId, Vec<EditId>)> {
+        self.held(on).bootstrap_progress.iter()
+            .filter(|(entry, p)| !p.missing.is_empty() && self.active_owner_base(on, **entry).is_some())
+            .map(|(entry, p)| (*entry, p.missing.clone())).collect()
     }
     /// Remaining authenticated-log work, not complete history or file availability.
     pub fn owner_base_pending(&self, on: SignerId, entry: EntryId) -> usize {
@@ -67,9 +76,9 @@ impl Lab {
     /// A changed input basis restarts from the owner-attested base, never a stale cursor.
     pub fn advance_owner_bases(&mut self, on: SignerId) -> bool {
         let at = self.at(on);
-        if self.locked(at) || self.held(at).bootstrap_progress.values().all(|p| p.pending.is_empty()) { return false; }
+        if self.locked(at) || !self.owner_bases_pending(at) { return false; }
         self.rebuild_owner_bases(at);
-        !self.held(at).bootstrap_progress.values().all(|p| p.pending.is_empty())
+        self.owner_bases_pending(at)
     }
     /// Authorized provenance of a currently adopted owner base. A hint is neither
     /// global completeness nor permission to skip ordinary write admission.
@@ -231,9 +240,10 @@ impl Lab {
                     (std::collections::VecDeque::from(crate::policy::order(&suffix)), original_scratch)
                 }
             };
-            let suffix: Vec<_> = pending.drain(..pending.len().min(SUFFIX_BATCH)).collect();
+            let mut missing = Vec::new();
             let mut opened_suffix = Vec::new();
-            for edit in suffix {
+            for _ in 0..SUFFIX_BATCH {
+                let Some(edit) = pending.pop_front() else { break; };
                 let id = edit.id();
                 // Only normal verified signed-log entries, never owner-invented signatures.
                 if !store.signed.get(&id).is_some_and(|s| s.verify().is_ok()) {
@@ -266,14 +276,6 @@ impl Lab {
                 else {
                     continue 'anchor;
                 };
-                if view.step_mut(&edit, id).is_err() {
-                    continue 'anchor;
-                }
-                if let Some(p) = &opened.proof {
-                    readings.proofs.insert(id, p.clone());
-                }
-                readings.tags.insert(id, opened.tags.clone());
-                let bodies = HashMap::from([(id, opened.clone())]);
                 if judging
                     .scratch
                     .as_ref()
@@ -284,6 +286,21 @@ impl Lab {
                         .filter(|s| s.within_version(&judging.history, &w.deps))
                         .map(Scratch::fork);
                 }
+                if !opened.content.is_empty() {
+                    missing = judging.history.missing_dependency_bodies(&w.deps, judging.scratch.as_ref());
+                    if !missing.is_empty() {
+                        pending.push_front(edit);
+                        break;
+                    }
+                }
+                if view.step_mut(&edit, id).is_err() {
+                    continue 'anchor;
+                }
+                if let Some(p) = &opened.proof {
+                    readings.proofs.insert(id, p.clone());
+                }
+                readings.tags.insert(id, opened.tags.clone());
+                let bodies = HashMap::from([(id, opened.clone())]);
                 if !judging.judge(on, &view, (&readings, &bodies), &w, &readings.groups) {
                     continue 'anchor;
                 }
@@ -310,7 +327,7 @@ impl Lab {
                 let basis = OverlayBasis::of(store);
                 store.bootstrap_progress.insert(entry, BootstrapProgress {
                     basis, policy: view.slice_of(entry),
-                    base_scratch, pending,
+                    base_scratch, pending, missing,
                 });
             }
 
@@ -552,6 +569,52 @@ mod tests {
         let basis = OverlayBasis::of(&store);
         store.forget();
         assert!(!basis.matches(&store), "lock forgets reusable secret-derived state");
+    }
+
+    #[test]
+    fn owner_bootstrap_waits_for_exact_dependency_body_then_converges() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Dependency owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let pad = lab.device_of(owner, "Pad");
+        let watcher = lab.device_of(owner, "Watcher");
+        let vault = human_on(&mut lab, owner, &[mac, phone, pad, watcher]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        for device in [phone, pad, watcher] { lab.sync(mac, device); }
+        let dependency = lab.edit(mac, vault, entry, |i| i.set_text(2, "dependency")).unwrap();
+        let dependency_signed = lab.signed_edit(mac, dependency).unwrap().clone();
+        lab.sync(mac, phone);
+        let concurrent = lab.edit(phone, vault, entry, |i| {
+            i.edit_document(|d| d.title = "concurrent".into());
+        }).unwrap();
+        let concurrent_signed = lab.signed_edit(phone, concurrent).unwrap().clone();
+        lab.edit(mac, vault, entry, |i| i.set_text(2, "checkpoint")).unwrap();
+        let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, draft, &[]).unwrap();
+        for device in [pad, watcher] {
+            let offer = lab.entry_projection_offer(mac, device, entry).unwrap();
+            lab.receive(device, offer.evidence, vec![]);
+            lab.receive(device, vec![concurrent_signed.clone()], vec![]);
+            assert!(lab.adopt_owner_entry_base(device, snapshot, entry, sealed.clone()));
+            assert_eq!(lab.owner_base_missing(device), vec![(entry, vec![dependency])]);
+            assert!(!lab.owner_bases_pending(device), "missing body does not spin the materializer");
+            assert_eq!(lab.owner_base_pending(device, entry), 1);
+            assert!(lab.item(device, entry).is_some(), "validated prefix remains visible");
+            assert!(lab.edit(device, vault, entry, |i| i.set_text(2, "premature")).is_err());
+        }
+        let revocation = lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device {
+            vault, device: watcher, keep: vec![],
+        })).unwrap();
+        let signed = lab.signed_edit(mac, revocation).unwrap().clone();
+        lab.receive(watcher, vec![signed], vec![]);
+        assert!(lab.owner_base_missing(watcher).is_empty(), "revoked demand disappears");
+        assert!(lab.active_owner_base(watcher, entry).is_none());
+        lab.receive(pad, vec![dependency_signed], vec![]);
+        assert!(lab.owner_base_missing(pad).is_empty());
+        assert_eq!(lab.owner_base_pending(pad, entry), 0);
+        lab.receive(mac, vec![concurrent_signed], vec![]);
+        assert_eq!(lab.item(pad, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
     }
 
     #[test]
