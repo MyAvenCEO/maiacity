@@ -1,13 +1,13 @@
 // avenDB, for this Mac's scripts: the agent device agentScripts, a device of the coop's aven (avenMAIA for Maia City)
 // as Claude's agentClaude is, acting with avenMAIA's rights and no more (by default a Suggester on Maia City). It is
-// theOS app's `avendb-device agent scripts`, spoken to as an MCP server over stdio (initialize, then tools/call) —
+// theOS app's `maiacity-studio agent scripts`, spoken to as an MCP server over stdio (initialize, then tools/call) —
 // the same tools Claude has: avendb_vaults, avendb_ask, avendb_run, avendb_read_file.
 //
 // The first run asks its person: they open theOS app on this Mac, where avenDB shows agentScripts' request, and
 // approve it with one touch of their passkey. Until then every call answers that it is waiting; `tool` waits for the
 // answer (AVENDB_WAIT seconds, 300 by default), saying so once, and fails clearly when they said no.
 //
-//   AVENDB_DEVICE   the binary (default: theOS app's, ~/Applications/theOS.app/Contents/MacOS/avendb-device)
+//   AVENDB_DEVICE   the binary (default: theOS app's, ~/Applications/theOS.app/Contents/MacOS/maiacity-studio)
 //   AVENDB_DIR      the app's avenDB folder (default ~/avenDB/mac)
 import { spawn as spawnChild } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -17,7 +17,7 @@ import { createInterface } from 'node:readline';
 
 export const HARNESS = 'scripts';
 // (a Mac not yet rebuilt since the app lost its space still holds it as "The OS.app")
-const app = (name) => join(homedir(), 'Applications', name, 'Contents', 'MacOS', 'avendb-device');
+const app = (name) => join(homedir(), 'Applications', name, 'Contents', 'MacOS', 'maiacity-studio');
 export const DEVICE = process.env.AVENDB_DEVICE ?? [app('theOS.app'), app('The OS.app')].find(existsSync) ?? app('theOS.app');
 export const DIR = process.env.AVENDB_DIR ?? join(homedir(), 'avenDB', 'mac');
 const PROTOCOL = '2025-06-18';
@@ -77,9 +77,9 @@ export function connect(o = {}) {
 		pending.clear();
 	};
 	child.on('error', (/** @type {any} */ e) =>
-		fail(new Error(e?.code === 'ENOENT' ? `no avendb-device at ${DEVICE}: install theOS app, or set AVENDB_DEVICE` : `avendb-device: ${e.message}`))
+		fail(new Error(e?.code === 'ENOENT' ? `no agent executable at ${DEVICE}: install theOS app, or set AVENDB_DEVICE` : `avenDB agent: ${e.message}`))
 	);
-	child.on('exit', (/** @type {number | null} */ code) => fail(new Error(`avendb-device ended (${code})`)));
+	child.on('exit', (/** @type {number | null} */ code) => fail(new Error(`avenDB agent ended (${code})`)));
 	createInterface({ input: child.stdout }).on('line', (line) => {
 		let m;
 		try {

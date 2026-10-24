@@ -20,7 +20,7 @@ export function device(named = process.env.AVENDB_DEVICE) {
 	} catch {
 		// no Claude Code config here
 	}
-	throw new Error('no agent device: give --device <theOS app’s avendb-device>, or add it to Claude Code (claude mcp add --scope user avendb -- <avendb-device> agent claude)');
+	throw new Error('no agent device: give --device <theOS app’s maiacity-studio>, or add it to Claude Code (claude mcp add --scope user avendb -- <maiacity-studio> agent claude)');
 }
 
 /** an MCP session with the agent (`env`, where given, its environment): `call(tool, args)` answers its tool's text,

@@ -10,7 +10,7 @@
 <script>
 	import { evaluate, shotAt, toKeys } from './shots.js';
 	import { lanesOf } from './lanes.js';
-	import { isAven } from './avenref.js';
+	import { isAven } from '../media/ref.js';
 	import CurveLane from './CurveLane.svelte';
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { cueEnd, cuesOf } from './analysis.js';

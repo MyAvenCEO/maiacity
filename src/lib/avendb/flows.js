@@ -340,6 +340,7 @@ const profileOf = (world, vault) =>
 export async function moving(world, actor, e, flow, to, withPictures = true) {
 	const [from, stage] = [stageOf(e, flow), flow.stages.find((s) => s.key === to)];
 	if (!stage) return { ops: [], errors: [`${flow.name} has no stage ${to}`] };
+	if (from && from.key !== to && !from.next.includes(to)) return { ops: [], errors: [`${flow.name} cannot move from ${from.key} to ${to}`] };
 	/** @type {object[]} */
 	const ops = [];
 	const tag = stageTag(flow.key, to);
@@ -374,6 +375,10 @@ export async function moving(world, actor, e, flow, to, withPictures = true) {
 		const made = bound(asked, e.vault, actor, [e.entry, ...posts, ...pictures], ops.length);
 		if (typeof made === 'string') errors.push(`${f.name}: ${made}`);
 		else ops.push(...made);
+	}
+	if (errors.length) return { ops: [], errors };
+	if (e.type === POST && stage.public && !e.record?.published) {
+		ops.push({ op: 'set', entry: e.entry, path: ['published'], value: new Date().toISOString().slice(0, 10), as: actor });
 	}
 	return { ops, errors };
 }

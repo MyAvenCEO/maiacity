@@ -80,6 +80,9 @@ jobs:
           ./src/lib/render/lint.test.js
           ./src/lib/markdown/
           ./src/lib/avendb/
+          ./src/lib/media/
+          ./src/lib/studio/aven.test.js
+          ./scripts/film/avendb.test.mjs
           ./scripts/diagnostics/network-probe.test.mjs
           ./api/test/
 

@@ -48,3 +48,26 @@ Both user-provided runs completed in standalone mode on deployed revision2328640
 | iPhone |196.08Mbps|71.32Mbps|105.35Mbps|19ms|
 
 Each Maia request received8MiB with HTTP206; download32MiB and upload8MiB completed. Cloudflare and Maia are different paths/protocols/sample sizes, so their rates are not interchangeable maxima. Small-entry10–20second delays are not explained by these HTTP capacity samples alone. Actual accepted unique-edit throughput and end-to-end latency remain unmeasured. Short diagnostic completion proves the panel is usable on both devices, not that the repeated iPhone unlock symptom is permanently resolved.
+
+## Hosted runtime and bounded network sample — 24 October 2026, 12:41 CEST
+
+[Audit run 40086908338](https://github.com/MyAvenCEO/maiacity/actions/runs/40086908338) completed from source `a06022dcc392774492f68e0366c2559b1754fede`. This identifies the diagnostic scripts, **not the running peer version**. All guest collectors completed without errors. The existing workflow used pinned SSH trust, performed read-only guest/provider checks and bounded synthetic transfers, and did not deploy, restart services, or open application payloads. Sanitized evidence: [hosted measurements](evidence/avendb-hosted-audit-2026-10-24.json). Raw artifact SHA-256 values are retained; process IDs are removed. No credentials, account/vault content, or private addresses are included.
+
+| Actual path | Payload | Total request time | End-to-end Mbps | MiB/s |
+| --- | ---: | ---: | ---: | ---: |
+| Cloudflare → hosted peer machine | 67,108,864 bytes | 0.493496 s | 1087.89 | 129.69 |
+| Hosted peer machine → Cloudflare | 16,777,216 bytes | 0.299704 s | 447.83 | 53.39 |
+
+Both transfers completed with HTTP 200 and verified TLS. Three fresh empty requests took 117.563 / 111.668 / 102.789 ms including DNS/TCP/TLS/HTTP; these are not ICMP RTTs. Download body-only rate was 1608.27 Mbps, which excludes request setup and must not replace the end-to-end figure. These single-stream bounded samples do not measure avenDB useful-byte throughput or utilization. Aggregate provider traffic likewise cannot determine sync efficiency.
+
+The hosted avenDB container was running with image ID `sha256:86478a8ff7bc4bf95e68a4c5d9a0c42d8837f054142da12f0c8031664812026f`. Its OCI revision label was null, so its actual source commit remains **unknown**. The internal feed health endpoint answered: uptime 15,862 seconds, no current recorded panic, zero starts during the last hour. Docker's lifetime restart counter was 6; OOMKilled was false. This does not establish external relay availability, bucket-write readiness, or application sync convergence; backup completeness was unknown.
+
+At this instant the machine had 3.73 GiB physical RAM, 1.21 GiB available, no swap, and 16.47 GiB disk available. avenDB RSS was 1.315 GiB; container usage was 1.342 GiB; API Docker usage was 628.7 MiB. Short interval CPU samples were 91% and 96% idle with zero iowait; load averages were 0.53 / 0.34 / 0.28. avenDB's reported 4 GiB limit exceeds host physical RAM and is not a guaranteed usable allowance while other processes share the host.
+
+Historical pressure remains relevant: cumulative host `oom_kill=95`; the previous recorded avenDB run ended `killed`, last reporting zero machine-free memory and approximately 2.65 GiB RSS. Neither counter identifies a current OOM, nor does it attribute all 95 historical kills to avenDB. Current run OOM kills were 0.
+
+### Image provenance limits
+
+The API container's raw OCI revision label is `744846f844374847c902b5e7fd59b4342a51ef99`, distinct from the last successful deployment workflow SHA `23286402ee4b88dfdb36441fdd1123a9a48cac36`. **Do not report the label as the API application's actual commit.** Direct source inspection at both `23286402` and the current integration shows that `api/Dockerfile` starts from `oven/bun:1.4.2-alpine` and sets no project revision LABEL; `.github/workflows/api.yml` tags with `${github.sha}` but supplies no revision labels. An inherited base-image label is possible, but its origin was not independently checked. Likewise `avendb/Dockerfile.server` and `.github/workflows/avendb.yml` set no revision label; the missing label therefore provides no deployment-failure evidence. The diagnostic only collects image ID and OCI label, not Config.Image/tag. Resolve image tag/digest provenance through trusted inspection before claiming a deployed source revision.
+
+Remaining: final-release exact image/source identity, external health and bucket readiness, actual useful avenDB bytes and entry latency on Mac/iPhone/iPad, preserved data through offline/reconnect, and physical iPhone reload stability. This audit closes the current host capacity/headroom observation only.

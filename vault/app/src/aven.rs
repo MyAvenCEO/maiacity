@@ -16,6 +16,8 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter as _, State};
 use tauri_plugin_dialog::DialogExt as _;
 use vault_media::{ByteSource, Source};
+pub use crate::media_ref::File;
+use crate::media_ref::MediaRef;
 
 /// How many bytes a read asks the device for at a time: AVFoundation reads in small pieces, mostly in order.
 const WINDOW: u64 = 4 << 20;
@@ -26,22 +28,13 @@ const DELETED: &str = "avendb:deleted";
 /// How many bytes of a file on this Mac go to the device in one chunk (as the page's, src/lib/avendb/native.js).
 const CHUNK: usize = 1 << 20;
 
-/// A file of an entry, as the device's world shows it (`FileView`): its root and sealed size, which name it, and its
-/// plain length, which only a device that may open it knows.
-#[derive(Clone, Debug)]
-pub struct File {
-    pub root: String,
-    pub size: u64,
-    pub len: u64,
-}
-
 impl File {
     /// The file `v` names (`{root, size, len}`), or why it can't be read here.
     pub fn of(v: &Value) -> Result<Self, String> {
         let root = v["root"].as_str().ok_or("the file names no root")?.to_string();
         let size = v["size"].as_u64().ok_or("the file has no sealed size")?;
         let len = v["len"].as_u64().ok_or("this Mac can't open the file's bytes")?;
-        Ok(Self { root, size, len })
+        Self::new(root, size, len)
     }
 }
 
@@ -144,30 +137,8 @@ pub fn init(app: &AppHandle) {
     APP.set(app.clone()).ok();
 }
 
-/// How the page names an avenDB file where the legacy studio names a vault file by its hash (a clip's file, the
-/// player's `files`): `aven:<root>:<sealed size>:<length>`.
-pub fn ref_of(f: &File) -> String {
-    format!("aven:{}:{}:{}", f.root, f.size, f.len)
-}
-
-/// The file reference `r` names, if it names an avenDB file (`ref_of`); `None` for a legacy vault hash.
-pub fn file_of_ref(r: &str) -> Option<Result<File, String>> {
-    let rest = r.strip_prefix("aven:")?;
-    let mut parts = rest.split(':');
-    let (Some(root), Some(size), Some(len)) = (parts.next(), parts.next(), parts.next()) else {
-        return Some(Err(format!("{r} names no avenDB file")));
-    };
-    Some(match (size.parse(), len.parse()) {
-        (Ok(size), Ok(len)) => Ok(File { root: root.to_string(), size, len }),
-        _ => Err(format!("{r} names no avenDB file")),
-    })
-}
-
-/// The source reference `r` names when it is an avenDB file (`ref_of`), read in place; `None` for a legacy vault hash,
-/// which the caller reads from the legacy vault as before.
-pub fn source_of_ref(r: &str, name: &str) -> Option<Result<Source, String>> {
-    let file = file_of_ref(r)?;
-    Some(file.and_then(|f| Ok(source(APP.get().ok_or("the app isn't up yet")?, f, name))))
+pub fn source_of_ref(r: &str, name: &str) -> Result<Source, String> {
+    source_on(&tokio::runtime::Handle::current(), r, name)
 }
 
 /// File `f` of avenDB as a source read in place (`name`'s extension says what it is: AVFoundation tells a movie by its
@@ -177,8 +148,9 @@ pub fn source(app: &AppHandle, f: File, name: &str) -> Source {
 }
 
 /// The same, its reads run on runtime `rt` (for a reader on a thread of its own, as the render's library is).
-pub fn source_on(rt: &tokio::runtime::Handle, f: File, name: &str) -> Result<Source, String> {
-    Ok(source_with(APP.get().ok_or("the app isn't up yet")?, rt, f, name))
+pub fn source_on(rt: &tokio::runtime::Handle, reference: &str, name: &str) -> Result<Source, String> {
+    let parsed = MediaRef::parse(reference)?;
+    Ok(source_with(APP.get().ok_or("the app isn't up yet")?, rt, parsed.file, name))
 }
 
 fn source_with(app: &AppHandle, rt: &tokio::runtime::Handle, f: File, name: &str) -> Source {
@@ -187,15 +159,10 @@ fn source_with(app: &AppHandle, rt: &tokio::runtime::Handle, f: File, name: &str
     Source::blob(Arc::new(AvenBytes { app: app.clone(), file: f, rt: rt.clone(), held: Mutex::new((0, Arc::new(vec![]))) }), at)
 }
 
-/// File `f`'s reference as the page writes it, its media type with it (src/lib/studio/avenref.js `avenRef`): a
+/// File `f`'s reference as the page writes it, its media type with it (src/lib/media/ref.js `avenRef`): a
 /// delivery named so in the render's report is the same item the studio's library lists.
 pub fn media_ref(f: &File, media: &str) -> String {
-    // encodeURIComponent: all but letters, digits and -_.!~*'() escaped
-    let enc: String = media
-        .bytes()
-        .map(|b| if b.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
-        .collect();
-    format!("{}:{enc}", ref_of(f))
+    MediaRef::encode(f, media)
 }
 
 /// Brings the file at `path` into avenDB with `put_file` op `op` (its `len` set here): it is read once for the device
@@ -1228,14 +1195,15 @@ pub async fn serve(app: AppHandle, request: tauri::http::Request<Vec<u8>>) -> ta
         .unwrap_or("")
         .split('&')
         .filter_map(|kv| kv.split_once('='))
-        .map(|(k, v)| (k.to_string(), v.replace("%2F", "/").replace("%2f", "/")))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-    let num = |k: &str| query.get(k).and_then(|v| v.parse::<u64>().ok());
-    let (Some(size), Some(len)) = (num("size"), num("len")) else { return reply(StatusCode::BAD_REQUEST, "size and len, please") };
-    if root.len() != 64 || !root.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return reply(StatusCode::BAD_REQUEST, "not a root");
-    }
-    let media = served_as(query.get("media").map(String::as_str).unwrap_or(""));
+    let field = |key: &str| query.get(key).map(String::as_str).unwrap_or("");
+    let parsed = match MediaRef::parse(&format!("aven:{root}:{}:{}:{}", field("size"), field("len"), field("media"))) {
+        Ok(parsed) => parsed,
+        Err(error) => return reply(StatusCode::BAD_REQUEST, &error),
+    };
+    let len = parsed.file.len;
+    let media = served_as(&parsed.media);
     // only the app's own pages may read the bytes back (a film drawn on a canvas, a JSON file fetched); a tag shows
     // them without asking
     let origin = request.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok()).filter(|o| own_origin(o)).map(str::to_string);
@@ -1269,7 +1237,7 @@ pub async fn serve(app: AppHandle, request: tauri::http::Request<Vec<u8>>) -> ta
     let body = if len == 0 {
         vec![]
     } else {
-        match read(&app, &File { root, size, len }, start, end + 1).await {
+        match read(&app, &parsed.file, start, end + 1).await {
             Ok(b) => b,
             Err(e) => return reply(StatusCode::NOT_FOUND, &e),
         }

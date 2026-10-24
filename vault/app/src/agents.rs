@@ -1,5 +1,5 @@
 //! The agents' processes running on this Mac, for avenDB's Settings (Samuel 2026-10-21: "kick all legacy old
-//! agents"): each `avendb-device agent <harness>` a harness session started, its pid, when it started, the binary it
+//! agents"): each `maiacity-studio agent <harness>` or legacy `avendb-device agent <harness>`, its pid, when it started, the binary it
 //! runs and whether that is an old build, one no longer on disk (as "The OS.app" after the app became theOS.app) or not
 //! this app's own; and one stopped on the person's press (`agent_stop`), only ever a process this list names.
 
@@ -9,7 +9,7 @@ use std::process::Command;
 /// One agent process: `{ pid, started, exe, harness, old }`.
 fn processes() -> Result<Vec<serde_json::Value>, String> {
     let out = Command::new("ps").args(["-axww", "-o", "pid=,lstart=,command="]).output().map_err(|e| format!("ps: {e}"))?;
-    let ours = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("avendb-device")));
+    let ours = std::env::current_exe().ok();
     Ok(String::from_utf8_lossy(&out.stdout).lines().filter_map(|line| parse(line, ours.as_deref())).collect())
 }
 
@@ -21,7 +21,7 @@ fn parse(line: &str, ours: Option<&Path>) -> Option<serde_json::Value> {
     let started: Vec<&str> = words.by_ref().take(5).collect();
     let command = words.collect::<Vec<_>>().join(" ");
     let (exe, rest) = command.split_once(" agent ")?;
-    if !exe.ends_with("avendb-device") {
+    if !matches!(Path::new(exe).file_name().and_then(|name| name.to_str()), Some("maiacity-studio" | "avendb-device")) {
         return None;
     }
     let harness = rest.split_whitespace().next().unwrap_or_default();
@@ -65,7 +65,7 @@ mod tests {
 
     #[test]
     fn an_agent_line_reads_and_one_from_a_binary_gone_or_not_ours_is_old() {
-        let ours = Path::new("/Applications/theOS.app/Contents/MacOS/avendb-device");
+        let ours = Path::new("/Applications/theOS.app/Contents/MacOS/maiacity-studio");
         let gone = parse(
             "2156 Tue Oct 21 11:40:02 2026 /Users/s/Applications/The OS.app/Contents/MacOS/avendb-device agent claude --dir /Users/s/avenDB/mac",
             Some(ours),
@@ -79,5 +79,17 @@ mod tests {
         assert_eq!(gone["old"], true);
         assert!(parse("12 Tue Oct 21 11:40:02 2026 /usr/bin/vim agent notes", Some(ours)).is_none());
         assert!(parse("13 Tue Oct 21 11:40:02 2026 /bin/zsh", Some(ours)).is_none());
+    }
+
+    #[test]
+    fn embedded_agents_are_listed_but_gui_and_lookalike_processes_are_not() {
+        let executable = "/Applications/The OS.app/Contents/MacOS/maiacity-studio";
+        let line = format!("23 Tue Oct 21 11:40:02 2026 {executable} agent codex --dir /Users/s/avenDB/mac");
+        let agent = parse(&line, Some(Path::new(executable))).unwrap();
+        assert_eq!(agent["exe"], executable);
+        assert_eq!(agent["harness"], "codex");
+        assert_eq!(agent["old"], agent["gone"]);
+        assert!(parse(&format!("23 Tue Oct 21 11:40:02 2026 {executable}"), None).is_none());
+        assert!(parse("23 Tue Oct 21 11:40:02 2026 /tmp/not-avendb-device agent codex", None).is_none());
     }
 }

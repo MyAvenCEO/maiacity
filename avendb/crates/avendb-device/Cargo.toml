@@ -7,8 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# Built by vault/app/build.rs into the app as its sidecar, in avenDB's own workspace and versions: avendb-net alone,
-# so its TLS is aws-lc-rs with X25519MLKEM768 only (`avendb_net::pq_provider`), never ring
+# Embedded by the app as a library; also buildable as a standalone device in this workspace.
 [dependencies]
 avendb = { path = "../avendb" }
 avendb-net = { path = "../avendb-net" }

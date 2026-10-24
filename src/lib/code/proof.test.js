@@ -36,7 +36,7 @@ const keep = () => {
 	return { get: (k) => kept.get(k), put: (k, v) => kept.set(k, v), kept };
 };
 
-afterEach(() => avendb.use([], viewOfEntry));
+afterEach(() => avendb.reset());
 
 describe("avenDB's WebAssembly", () => {
 	test('takes the rows a feed hands out as JSON for no proof', async () => {

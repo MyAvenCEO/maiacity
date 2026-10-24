@@ -1,7 +1,7 @@
 name: theOS on macOS
 
 # theOS (vault/app, Tauri) compiled on a Mac runner for every pull request that touches it or the avenDB device it
-# bundles (build.rs builds avendb-device as its sidecar), so a thread learns whether its Rust compiles here instead of
+# embeds as a library, so a thread learns whether its Rust compiles here instead of
 # queueing behind Samuel's Mac, where one Rust build runs at a time. A check only: it signs nothing and ships nothing;
 # theOS itself is still built on the Mac (scripts/watch-main.mjs). The repository is public, so the runner is free.
 # The Secure Enclave bridge needs macOS 26's SDK: where the runner's is older, build.rs builds without it and says so.
@@ -49,12 +49,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      # both workspaces: the app's, and avenDB's, where build.rs builds the sidecar (avendb/target)
+      # The app workspace compiles the embedded avenDB crates into its own target directory.
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            vault -> target
-            avendb -> target
+          workspaces: vault -> target
           cache-on-failure: true
 
       # tauri::generate_context! reads the site's build folder (tauri.conf.json frontendDist): the check needs it there,
@@ -64,3 +62,8 @@ jobs:
       - name: cargo check
         working-directory: vault
         run: cargo check --locked -p maiacity-studio
+
+      - name: Media reference contract
+        run: |
+          rustc --edition=2024 --test vault/app/src/media_ref.rs -o "$RUNNER_TEMP/media-ref-tests"
+          "$RUNNER_TEMP/media-ref-tests"
