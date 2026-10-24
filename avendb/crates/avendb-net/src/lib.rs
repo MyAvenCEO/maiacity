@@ -2268,6 +2268,7 @@ impl Shared {
                 lab.set_now(unix_now());
                 let before = lab.log(shared.me).revision();
                 let bootstrap_before = lab.owner_bases_pending(shared.me);
+                let missing_before = lab.owner_base_missing(shared.me);
                 let anchors_before = lab.bootstrap_stamp(shared.me);
                 let out = f(&mut lab, me);
                 let now = lab.size(shared.me);
@@ -2281,9 +2282,14 @@ impl Shared {
                     *size = now;
                     true
                 });
-                if lab.owner_bases_pending(shared.me) && (!bootstrap_before || grew || revised) {
+                let missing_after=lab.owner_base_missing(shared.me);
+                let missing_changed=missing_before!=missing_after;
+                if (lab.owner_bases_pending(shared.me) && (!bootstrap_before || grew || revised))
+                    || (!missing_after.is_empty() && (missing_changed || grew || revised)) {
                     shared.bootstrap_due.notify_one();
                 }
+                // Key/body restoration may change only the materialized prefix, not log size.
+                if missing_changed { shared.size.send_modify(|_| {}); }
                 // what it worked out, as a replay or a key it opened, wakes the saver too, once as it comes to
                 let warm = !lab.locked(shared.me) && lab.warm_due(shared.me);
                 if grew {
@@ -3380,6 +3386,37 @@ mod tests {
             }
         }).await.expect("background pump advances without foreground mutation");
         assert_eq!(node.read(move |lab, me| lab.item(me, entry).unwrap().record()).await, expected);
+        node.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(flavor="multi_thread",worker_threads=2)]
+    async fn bootstrap_missing_body_transition_wakes_idle_dependency_pump() {
+        use avendb::cast::{document,human_on};
+        let mut lab=Lab::new();let owner=lab.passkey("Wake owner");
+        let mac=lab.device_of(owner,"Mac");let phone=lab.device_of(owner,"Phone");let pad=lab.device_of(owner,"Pad");
+        let vault=human_on(&mut lab,owner,&[mac,phone,pad]);
+        let entry=lab.create(mac,vault,vault,"note",&[],document("Base","old",mac)).unwrap();
+        lab.sync(mac,phone);lab.sync(mac,pad);
+        let dependency=lab.edit(mac,vault,entry,|i|i.set_text(2,"dependency")).unwrap();
+        let dependency_signed=lab.signed_edit(mac,dependency).unwrap().clone();
+        lab.sync(mac,phone);
+        let concurrent=lab.edit(phone,vault,entry,|i|i.edit_document(|d|d.title="concurrent".into())).unwrap();
+        let signed=lab.signed_edit(phone,concurrent).unwrap().clone();
+        lab.edit(mac,vault,entry,|i|i.set_text(2,"checkpoint")).unwrap();
+        let prepared=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,prepared.draft,&[]).unwrap();
+        let offer=lab.entry_projection_offer(mac,pad,entry).unwrap();
+        lab.receive(pad,offer.evidence,vec![]);lab.receive(pad,vec![signed],vec![]);
+        let node=Node::spawn(lab.split(pad,&[owner],[41;32]),pad,Options::local()).await.unwrap();
+        node.tasks.lock().unwrap().iter().for_each(|task|task.abort());
+        while tokio::time::timeout(Duration::ZERO,node.shared.bootstrap_due.notified()).await.is_ok() {}
+        assert!(node.act(move|lab,me|lab.adopt_owner_entry_base(me,snapshot,entry,prepared.sealed)).await);
+        assert!(!node.read(|lab,me|lab.owner_bases_pending(me)).await,"dependency wait is not runnable replay");
+        tokio::time::timeout(Duration::from_millis(100),node.shared.bootstrap_due.notified()).await.expect("new dependency wait must wake the network pump");
+        let mut changed=node.shared.size.subscribe();changed.borrow_and_update();
+        node.act(move|lab,me|lab.receive(me,vec![dependency_signed],vec![])).await;
+        assert!(node.read(|lab,me|lab.owner_base_missing(me).is_empty()).await);
+        tokio::time::timeout(Duration::from_millis(100),changed.changed()).await.unwrap().unwrap();
         node.shutdown().await.unwrap();
     }
 
