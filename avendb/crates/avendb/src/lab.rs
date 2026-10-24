@@ -5441,14 +5441,17 @@ impl Lab {
                 let view = key.unlock("view", b, ENGINE.as_bytes())?;
                 let (replay, extra) = warm_materialization::unwrap(&view)?;
                 let (replay, held) = Replay::from_view(replay, edits, ids)?;
-                Some((replay, held, extra.to_vec()))
+                // A stale prefix can still accelerate policy replay, but its
+                // adjunct cannot be used. Do not allocate another up-to-32-MiB
+                // buffer merely to reject it immediately after this closure.
+                let extra = (held == ids.len() && warm_materialization::matching(extra, store))
+                    .then(|| extra.to_vec());
+                Some((replay, held, extra))
             });
             match found {
                 Some((replay, held, extra)) => {
-                    let materialized = held == ids.len() && warm_materialization::matching(&extra, store);
-                    if materialized {
-                        store.warm_materialization = Some(extra);
-                    }
+                    let materialized = extra.is_some();
+                    store.warm_materialization = extra;
                     store.replay = replay;
                     store.replayed = held;
                     // Upgrade a legacy policy-only view, or repair a malformed adjunct,
