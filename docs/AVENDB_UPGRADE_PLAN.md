@@ -568,3 +568,17 @@ Sanitized structured evidence: [final-core copied-store rehearsal](evidence/aven
 - Priorities **3 and 4 remain Doing**: finish verified deployment/Mac replacement and final installed no-reset offline/assets/reconnect acceptance. Priority **5 is deferred** while this release is completed; generic physical latency and slow unlock are not declared solved. The intermittent iPhone return-to-unlock remains unresolved independently of successful compatibility or network tests.
 
 - Deployment-check repair committed as [b66372058a6434b5897a802f26babd85186ce013](https://github.com/MyAvenCEO/maiacity/commit/b66372058a6434b5897a802f26babd85186ce013): suppress only the unavailable `bun:test` import declaration in the media reference test, retaining checking everywhere else. All 32 media regressions / 1,008 assertions pass; full local Svelte validation subsequently passed with zero errors and 28 warnings in 11 files (exit 0).
+
+
+## PR1255 hosted deployment — verified
+
+PR1255 merged at 2026-10-24 12:03:40 UTC as `720922e0570433a0e5c6663f6f15f91e7631d176`, after all 12 exact-head checks passed. Local installation checkout remained pinned at `a5e6d025`.
+
+- API run [40092379462](https://github.com/MyAvenCEO/maiacity/actions/runs/40092379462) succeeded; logs confirm internal health and external `https://api.maia.city` health success.
+- Hosted run [40092379491](https://github.com/MyAvenCEO/maiacity/actions/runs/40092379491) succeeded, including all merge-SHA Rust/Lean tests and graceful-close delivery gates. Activation logs record verified graceful close before and after settings validation, new startup offer, sealed existing bucket configured, internal and external PQ relay health, feed response, and browser relay HTTP101. No forced shutdown or identity-guard bypass.
+- Published immutable image `ghcr.io/myavenceo/maiacity-avendb:720922e0570433a0e5c6663f6f15f91e7631d176` has digest `sha256:c120716483eba42406679114129515c41081806048f211499b391948853c22ba`.
+- Post-deploy trusted diagnostic run [40093102553](https://github.com/MyAvenCEO/maiacity/actions/runs/40093102553), observed 12:14:32 UTC, reports exactly that Docker.Image digest. Container running, zero container restarts, no panic/OOM, one expected start in last hour; prior run ended `stopped`. This verifies actual running artifact identity rather than relying on absent OCI revision labels.
+- Site run [40092379489](https://github.com/MyAvenCEO/maiacity/actions/runs/40092379489) failed its typecheck before publishing: `src/lib/media/ref.test.js` cannot find `bun:test` declarations. Website fix is prepared in [PR #1259](https://github.com/MyAvenCEO/maiacity/pull/1259); local full Svelte validation passes with zero errors and 28 warnings, and the 32 media tests / 1,008 assertions pass. It has not yet been merged/deployed at this checkpoint; no new site version is claimed.
+
+Mac app installation and installed offline/assets/reconnect acceptance remain separate from passed copied-store tests. No physical-device instant-sync or iPhone stability claim follows from hosted deployment.
+
