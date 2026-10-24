@@ -8,6 +8,10 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 
 ### Current release and separate follow-up status — 24 October 2026
 
+
+**Latest integration and Mac observation (25 October):** [ef126549](https://github.com/MyAvenCEO/maiacity/commit/ef126549) connects active checkpoint schema/lens waits to bounded authorized discovery. [98b049dc](https://github.com/MyAvenCEO/maiacity/commit/98b049dc) retires retained anchors only after independent canonical reconstruction with attested judgment and signed/opened-body checks. Combined Lean passed118jobs; the final core rerun is in progress. Net and native validation remain pending. After the user reported Touch ID approval, the installed711fcebe app still displayed “Waiting for your passkey3025.2s”; this is an unresolved authentication wait, not a passed reconnect or measured replay. The integrated timeout/cancellation repair is not installed yet. PR1271 remains draft and these changes are not deployed.
+
+
 **Lane fence validated:** full core at `bbcde1d1` passed **254/254, zero failures** in 18.90 seconds, including the missing-schema/legacy/re-publication regression. The earlier 9 bootstrap net and 7 checkpoint delivery passes precede this lane change and must be rerun on the final combined candidate. Active-view schema dependency priority and safe retirement of obsolete read-only anchors after verified canonical history arrives are the remaining related fixes before the next validation/build freeze. Native timeout/drop/queue source is integrated; Swift race/queue checks and Lean passed, but native Rust/app compilation and physical reconnect remain open. Draft PR1271 remains unmerged; installed/deployed release remains711fcebe.
 
 
