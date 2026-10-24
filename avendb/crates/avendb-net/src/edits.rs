@@ -1146,8 +1146,8 @@ mod tests {
         let vault = human_on(&mut lab, passkey, &[me]);
         let entry = lab.create(me, vault, vault, "note", &[], document("Recent", "before", me)).unwrap();
         lab.restore_from(me, lab.backup(me));
-        let writer = crate::disk::open(&folder).unwrap().writer().unwrap();
-        let shelf = writer.shelf();
+        // Node::spawn owns the writer lease; do not pre-claim a second writer.
+        let shelf = crate::disk::open(&folder).unwrap();
         let opts = Options { shelf: Some(shelf.clone()), ..Options::local() };
         let node = Node::spawn(lab.split(me, &[passkey], [91;32]), me, opts).await.unwrap();
         node.shared.save().await.unwrap();
@@ -1171,7 +1171,6 @@ mod tests {
             "a second unchanged close does not export another snapshot");
         drop(reopened);
         drop(node);
-        drop(writer);
         std::fs::remove_dir_all(folder).ok();
     }
 
