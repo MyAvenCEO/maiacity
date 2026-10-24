@@ -1,6 +1,6 @@
 # Device latency evidence
 
-The global top-right diagnostics button exposes **Device latency report** before and after unlock. Select iPhone, iPad or Mac, then export a JSON report after exercising that device. Measurements are local to the actual device; desktop or automated-browser results do not substitute for physical iPhone/iPad measurements.
+The global top-left diagnostics button exposes **Device latency report** before and after unlock. Select iPhone, iPad or Mac, then export a JSON report after exercising that device. Measurements are local to the actual device; desktop or automated-browser results do not substitute for physical iPhone/iPad measurements.
 
 The device retains at most 120 samples in `avendb:latency:v1`, including generic engine reads and mutations. Writes to browser storage are coalesced every two seconds and flushed on page exit/export. Unlock completion/failure flushes once immediately, before its promise returns, so that boundary survives a document restart without an exit event. A sudden process kill may lose that final interval. A storage-denied browser reports that persistence is unavailable. Stored and exported fields are fixed stage names, numeric durations/timestamps and fixed outcomes; no operation arguments, account identifiers, keys, peer addresses or error text are retained. Imported stored records are validated and projected onto those fields.
 
@@ -44,3 +44,14 @@ The **Observe entry propagation for 2 minutes** diagnostics button explicitly ar
 Lean `PeerReceipt.lean` proves the small identity/freshness/current-permission and non-authority contract. The tracker tests exercise wrong identity/connection/nonce/edit, duplicates, expiry, cancellation, reorder and bounds. Validation: core `peer_policy_observation_requires_current_replay_and_current_permission` passed (1/1); net `receipt` filter passed (5/5), including a real hello-authenticated two-peer ordinary entry write. The initial net run was denied ephemeral socket binding by the sandbox; rerunning the same compiled binary with socket permission passed all five in 8.40 seconds. JS journal/export tests passed (8/8, 31 assertions); Svelte compilation reported no warnings. Core receipt validation preceded the final unrelated projection-query edits; net validation compiled those final sources too. These are host tests, not physical iPhone/iPad timings.
 
 Implementation: [91065a9b](https://github.com/MyAvenCEO/maiacity/commit/91065a9b), with sender-side current-permission checks before every probe in [6d019c4d](https://github.com/MyAvenCEO/maiacity/commit/6d019c4d). Deployment and actual-device runs remain separate release gates. No physical iPhone/iPad result is claimed by this implementation.
+
+
+## Compare already-synced and fresh peers
+
+Use the same Diagnostics panel on the actual iPhone and iPad. The scenario label is supplied by the operator; it is not a completeness certificate. Export each device separately and preserve its observed coverage and missing-file status.
+
+1. Already-synced peers: open the same authorized view on both, arm entry-propagation observation, make an ordinary permitted edit, then capture connection/observation metrics and export. Do not create hidden diagnostic records in user vaults. Report local call latency, peer-policy observation and connection RTT separately; none alone proves remote rendering or durable storage.
+2. Fresh/catching-up peer: use a genuinely new device or account instance without clearing the existing production stores. Select this scenario, unlock and open the requested view while history is incomplete. Export from that device and an existing peer. Measure first useful view separately; until instrumented, report it as unmeasured rather than deriving it from coverage or RTT.
+3. Restarting iPhone: after the unexpected return to unlock, open Diagnostics before unlocking again and export the restart evidence. Compare with the stable iPad. Missing exit/worker errors do not prove memory exhaustion. An app-requested reload, document startup, and same-document lock transition must remain distinct observations.
+
+The network throughput test establishes available transfer capacity; it does not measure database replay, authorization, view materialization, or update-to-render latency. Avoid comparing Mbps to an edit count without actual payload-byte and elapsed-time measurements.
