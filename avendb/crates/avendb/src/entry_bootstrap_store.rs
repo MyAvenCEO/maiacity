@@ -615,7 +615,13 @@ mod tests {
         // Model a legitimate alternate same-family key arriving after its ciphertext.
         // Inject a validated key into the core keyring; transport authentication is separate.
         let name = lab.held(mac).view().entry_key(entry).unwrap();
-        let alternate = Secret::generate(&mut lab.rng);
+        let original_id = lab.held(mac).keys.first(name).unwrap().id();
+        // Deterministically exercise the bug: this arrival changes keys.first(name),
+        // but must not change which retained key opens the signed checkpoint.
+        let alternate = loop {
+            let key = Secret::generate(&mut lab.rng);
+            if key.id() < original_id { break key; }
+        };
         let key_id = alternate.id();
         let store = lab.stores.get_mut(&mac).unwrap();
         store.keys.insert(name, alternate.clone());
@@ -639,6 +645,7 @@ mod tests {
         assert!(lab.active_owner_base(watcher, entry).is_none());
         lab.stores.get_mut(&phone).unwrap().keys.insert(name, alternate);
         lab.refresh(phone, &[]);
+        assert!(lab.active_owner_base(phone, entry).is_some(), "new family key must not invalidate old envelope key");
         assert!(lab.owner_base_wait_reason(phone, entry).is_none());
         assert_eq!(lab.owner_base_pending(phone, entry), 0);
         assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());

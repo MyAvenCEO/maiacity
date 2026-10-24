@@ -21,3 +21,13 @@ validated alternate same-family key withheld until after its ciphertext, no-spin
 read-only retention, late keyring insertion and revocation while waiting. This
 fixture models already validated key insertion; network key authentication is
 not claimed tested. Cargo execution pending coordinator queue.
+
+## Exact envelope key repair
+
+Full-suite execution exposed a real key-selection bug: restoration selected the
+smallest key in the authorized family, so a newly arrived smaller-ID key stopped
+an existing checkpoint from opening. Owner-judgment, full-base and JSON-projection
+readers now select the key ID named inside the signed/hash-bound ciphertext while
+still requiring the current authorized KeyName/epoch. The late-arrival regression
+now deliberately chooses a smaller-ID alternative and requires adoption to remain
+active. No assertion was removed. Focused runtime revalidation is required.

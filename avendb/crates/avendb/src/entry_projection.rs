@@ -189,7 +189,7 @@ impl Lab {
         let (vault, stated, name) = self.projection_authority(on, snapshot, entry)?;
         if stated.slice.size != sealed.len() as u64 || stated.slice.hash != crate::hash::content(sealed) { return None; }
         let store = self.held(on);
-        let key = store.keys.first(name)?;
+        let key = store.keys.get(&keys::edit_key(sealed)?, name)?;
         let bytes = keys::open_edit(key, sealed, &context(vault, entry))?;
         let lines = decode(&bytes, vault, entry, &stated.basis, on)?;
         // A full holder does not take even an owner's incorrect record on faith. Compare
