@@ -706,3 +706,12 @@ replacement fetch and unrelated-entry exclusion assertions remain intact. Source
 syntax/diff checks passed; rerun remains with the root compiler queue.
 Fixture correction: [02f86fc2](https://github.com/MyAvenCEO/maiacity/commit/02f86fc2e),
 committed and pushed; no claim of a passing rerun yet.
+
+Further retry review: recompute the authorized missing cut and unheld signed IDs
+before **each** peer attempt, not just once per multi-peer sweep. A reply from the
+first peer now removes those IDs from the next peer's request; changed/revoked or
+resolved demand ends that attempt instead of reusing a stale batch. The real Node
+missing-cut fixture checks the planned request before late-body receipt and no
+request after it. Syntax/diff checks passed; root owns Rust execution. Remaining
+architecture gap is ordinary key recovery for already-held ciphertext, which this
+exact Signed-edit protocol intentionally does not misrepresent as a missing body.
