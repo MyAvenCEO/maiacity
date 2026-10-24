@@ -4,7 +4,79 @@ use super::*;
 
 pub(crate) type Anchors = BTreeMap<EntryId, (EditId, Vec<u8>)>;
 
+// Process-local identity of immutable inputs, never persisted or accepted from a peer.
+// Bodies/blobs/signed entries are content-addressed and append-only between forgets;
+// key insertions and anchor replacement have explicit allocation-identity revisions.
+pub(crate) struct OverlayBasis {
+    log: crate::policy::LogRevision,
+    keys: Arc<()>,
+    anchors: Arc<()>,
+    warm: Arc<()>,
+    bodies: usize,
+    blobs: usize,
+    signed: usize,
+    follow: Vec<VaultId>,
+    depth: usize,
+    gate: bool,
+}
+impl OverlayBasis {
+    fn of(store: &Store) -> Self {
+        Self { log: store.log.revision(), keys: store.keys.revision.clone(),
+            anchors: store.bootstrap_revision.clone(), warm: store.warm_revision.clone(),
+            bodies: store.bodies.len(), blobs: store.blobs.len(), signed: store.signed.len(),
+            follow: store.follow.clone(), depth: store.query_depth, gate: store.gate }
+    }
+    fn matches(&self, store: &Store) -> bool {
+        self.log == store.log.revision() && Arc::ptr_eq(&self.keys, &store.keys.revision)
+            && Arc::ptr_eq(&self.anchors, &store.bootstrap_revision)
+            && Arc::ptr_eq(&self.warm, &store.warm_revision)
+            && self.bodies == store.bodies.len() && self.blobs == store.blobs.len()
+            && self.signed == store.signed.len() && self.follow == store.follow
+            && self.depth == store.query_depth && self.gate == store.gate
+    }
+}
+// Move, rather than clone, the current derived entries through a canonical refresh.
+// There is no second long-lived item/history cache and no skipped policy replay.
+pub(crate) struct RetainedOverlay {
+    basis: OverlayBasis,
+    state: State,
+    shown: HashMap<EntryId, Shown>,
+    active: HashSet<EntryId>,
+    readings: Readings,
+}
+
 impl Lab {
+    pub(crate) fn take_owner_overlay(&mut self, on: SignerId) -> Option<RetainedOverlay> {
+        let store = self.stores.get_mut(&on)?;
+        let basis = store.bootstrap_basis.take()?;
+        if store.reshow || !basis.matches(store) || store.bootstrap_active.is_empty() { return None; }
+        let state = store.bootstrap_state.take()?;
+        let active = std::mem::take(&mut store.bootstrap_active);
+        let shown = active.iter().filter_map(|e| store.shown.remove(e).map(|s| (*e, s))).collect();
+        let readings = std::mem::take(&mut store.readings);
+        store.readings.groups = readings.groups.clone();
+        Some(RetainedOverlay { basis, state, shown, active, readings })
+    }
+
+    pub(crate) fn restore_owner_overlay(&mut self, on: SignerId, retained: Option<RetainedOverlay>) -> bool {
+        let Some(retained) = retained else { return false; };
+        if !retained.basis.matches(self.held(on)) { return false; }
+        // Recheck current recipient entitlement even though the signed log is unchanged.
+        for entry in &retained.active {
+            let Some((snapshot, _)) = self.held(on).bootstrap_bases.get(entry) else { return false; };
+            if self.projection_authority(on, *snapshot, *entry).is_none() { return false; }
+        }
+        let store = self.stores.get_mut(&on).expect("device");
+        store.shown.extend(retained.shown);
+        store.readings = retained.readings;
+        store.latest = OnceLock::from(retained.state.clone());
+        store.bootstrap_state = Some(retained.state);
+        store.bootstrap_active = retained.active;
+        store.bootstrap_basis = Some(retained.basis);
+        store.perf.count("bootstrap: unchanged overlay reused", 1);
+        true
+    }
+
     pub fn adopt_owner_entry_base(
         &mut self,
         on: SignerId,
@@ -23,6 +95,8 @@ impl Lab {
         if !store.bootstrap_bases.contains_key(&entry) && store.bootstrap_bases.len() >= 16 {
             return false;
         }
+        store.bootstrap_revision = Arc::new(());
+        store.bootstrap_basis = None;
         store.bootstrap_bases.insert(entry, (snapshot, sealed));
         self.rebuild_owner_bases(at);
         self.held(at).bootstrap_active.contains(&entry)
@@ -43,6 +117,7 @@ impl Lab {
         let store = self.stores.get_mut(&at).expect("device");
         store.bootstrap_state = None;
         store.bootstrap_active.clear();
+        store.bootstrap_basis = None;
         if restored.is_empty() {
             return;
         }
@@ -182,6 +257,7 @@ impl Lab {
         if !store.bootstrap_active.is_empty() {
             store.latest = OnceLock::from(state.clone());
             store.bootstrap_state = Some(state);
+            store.bootstrap_basis = Some(OverlayBasis::of(store));
         }
     }
 }
@@ -292,6 +368,24 @@ mod tests {
     }
 
     #[test]
+    fn overlay_reuse_requires_exact_process_local_revisions() {
+        let mut store = Store::default();
+        let basis = OverlayBasis::of(&store);
+        assert!(basis.matches(&store));
+        store.log = crate::policy::Log::default();
+        assert!(!basis.matches(&store), "same-length replacement is not the same signed-log revision");
+        let basis = OverlayBasis::of(&store);
+        store.keys.revision = Arc::new(());
+        assert!(!basis.matches(&store), "key invalidation is not inferred from cardinality");
+        let basis = OverlayBasis::of(&store);
+        store.bootstrap_revision = Arc::new(());
+        assert!(!basis.matches(&store), "same-entry anchor replacement invalidates derived judgment");
+        let basis = OverlayBasis::of(&store);
+        store.forget();
+        assert!(!basis.matches(&store), "lock forgets reusable secret-derived state");
+    }
+
+    #[test]
     fn owner_bootstrap_includes_concurrent_writes_older_than_snapshot() {
         let mut lab = Lab::new();
         let owner = lab.passkey("Concurrent owner");
@@ -393,6 +487,11 @@ mod tests {
                 lab.item(device, entry).unwrap().record(),
                 lab.item(mac, entry).unwrap().record()
             );
+            let before = lab.perf(device)["counts"]["bootstrap: unchanged overlay reused"].as_u64().unwrap_or(0);
+            for _ in 0..3 { lab.refresh(device, &[]); }
+            assert_eq!(lab.perf(device)["counts"]["bootstrap: unchanged overlay reused"].as_u64().unwrap_or(0), before + 3,
+                "unchanged refresh moves the already verified materialization without decrypt/import/reverification");
+            assert_eq!(lab.item(device, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
         }
         let a = lab
             .edit(phone, vault, entry, |item| item.set_text(2, "phone suffix"))
