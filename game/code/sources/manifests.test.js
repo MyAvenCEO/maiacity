@@ -4,6 +4,7 @@
 import { expect, test } from 'bun:test';
 import { MANIFEST_V1, bringDeclared, covers, entriesOf, leavesFor, namedBy } from './manifests.js';
 import { MANIFESTS } from '../../../src/lib/avendb/manifests.js';
+import { MAIA_CITY } from './anchor.js';
 
 const id = (i) => i.toString(16).padStart(64, '0');
 const m = (o) => ({ kind: 'manifest', title: o.id, ...o });
@@ -161,7 +162,7 @@ test('known view dependencies are prioritized while unrelated query history is w
  let release, hinted;
  const withheld = new Promise(resolve => { release = resolve; });
  const published = new Promise(resolve => { hinted = resolve; });
- const hints = [], brought = [];
+ const hints = [], brought = [], selectors = [];
  const manifest = m({ id: 'partial', routes: ['*'], parts: [{ entry: id(71) }, { query: { type: ['note'] } }] });
  const device = { run: async op => {
   if (op.op === 'query' && op.where?.type?.[0] === 'manifest') return { ok: { rows: [{ record: manifest }] } };
@@ -170,9 +171,10 @@ test('known view dependencies are prioritized while unrelated query history is w
   throw new Error('Unexpected broad or remote read');
  } };
  const running = bringDeclared('/partial/', { device, signal: controller.signal,
-  prioritize: async ids => { hints.push(...ids); hinted(); }, bring: async ids => brought.push(...ids) });
+  prioritize: async (ids, queries) => { hints.push(...ids); selectors.push(...queries); hinted(); }, bring: async ids => brought.push(...ids) });
  await Promise.race([published, new Promise((_, reject) => setTimeout(() => reject(new Error('demand blocked by unrelated history')), 100))]);
  expect(hints).toEqual([id(71)]);
+ expect(selectors).toEqual([{ types: ['note'], vault: MAIA_CITY }]);
  expect((await device.run({ op: 'get', entry: id(71) })).ok.record.title).toBe('Useful local view');
  // Scheduling is not a claim of complete discovery or peer delivery.
  expect(brought).toEqual([]);
