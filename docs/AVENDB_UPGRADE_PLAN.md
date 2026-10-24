@@ -4,6 +4,14 @@ This is the maintained task ledger for the avenDB performance upgrade. Read this
 
 Last maintained: 2026-10-24. Current execution order: keep three subagents plus the coordinator progressing authorized Doing and Open work in parallel; finish each increment with validation, a focused pushed implementation commit and this ledger updated. Serialize heavyweight local builds. The overall upgrade is **incomplete**. A delivered compact release is not completion of all original M3–M7 integration. Do not infer completion from a module existing, a successful compile, or a merged PR alone.
 
+## Latest delivery and follow-up checkpoint — 24 October 2026, evening
+
+PR [#1268](https://github.com/MyAvenCEO/maiacity/pull/1268) merged as [b8da1b8c](https://github.com/MyAvenCEO/maiacity/commit/b8da1b8c348482b3fef9aa6444d1e3149b93b6be) after all applicable PR gates passed. The live maia.city release manifest now reports this exact commit, and its site deployment job passed in [release run40124036129](https://github.com/MyAvenCEO/maiacity/actions/runs/40124036129). API deployment also passed. Hosted-peer health returns200, but health alone is not image-identity proof; final hosted deployment acceptance remains separate. No newer Mac app was installed by this release.
+
+Three follow-up implementation branches are being integrated separately: authorized checkpoint delivery, own persisted materialization with clean-close publication, and fair foreground/background Lab scheduling. These are not part of b8da1b8c and remain Doing until final combined validation. The checkpoint path uses explicit owner approval and read-only projection; the warm path does not yet implement fully lazy working-set-first loading; the scheduler cannot interrupt a single atomic core refresh. Physical iPhone reload stability and iPhone/iPad latency remain unverified.
+
+Build coordination: one coordinator owns compilation; source review proceeds in parallel. Follow-up changes are combined before the final focused Rust build to avoid rebuilding dependencies for each worktree. A commit records implementation, not a claim that pending tests passed.
+
 ## Current release checkpoint — 24 October 2026
 
 This checkpoint supersedes older release-status notes below. The delivered release wave and installed no-reset acceptance (tasks 3–4) are complete; task 5 remains separate work.

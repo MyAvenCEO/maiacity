@@ -39,8 +39,8 @@
  function exportReport() {
   latencyJournal.flush();
   evidence = latencyJournal.snapshot();
-  exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(), policyObservations: policy,
-   semantics: { calls: 'Local engine response including queue and any signing ceremony; not rendered or remotely replicated.', unlock: 'User unlock request to completion; includes authentication interaction.', view: 'View readiness and rendered frames are not instrumented by this report.', peer: 'Authenticated connection transport RTT estimate; not edit acceptance or remote visibility.' } }, null, 2);
+  exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(), policyObservations: policy, studioPlayback: playbackMetrics.snapshot(),
+   semantics: { calls: 'Local engine response including queue and any signing ceremony; not rendered or remotely replicated.', unlock: 'User unlock request to completion; includes authentication interaction.', view: 'General app-view readiness is not instrumented by this report.', studioPlayback: 'Completed Studio preview frames only; not native video presentation; totals since reset, percentiles bounded to latest 300 samples.', peer: 'Authenticated connection transport RTT estimate; not edit acceptance or remote visibility.' } }, null, 2);
   const url = URL.createObjectURL(new Blob([exported], { type: 'application/json' }));
   const link = document.createElement('a'); link.href = url; link.download = `maia-latency-${deviceLabel.replace(/ /g, '-')}-${Date.now()}.json`;
   link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
