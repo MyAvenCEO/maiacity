@@ -172,3 +172,13 @@ bootstrap milestone is marked done by this representation stage.
 
 Stage-one code: [`41498df3`](https://github.com/MyAvenCEO/maiacity/commit/41498df3).
 Pending Rust command: `cargo test -p avendb --lib entry_base -- --nocapture`.
+
+### V2 decoder resource boundary (review correction)
+
+Installed Loro 1.16.2 `encoding/fast_snapshot.rs::decode_snapshot_blob_meta` creates a LoroDoc
+and invokes `decode_change_store` before it returns metadata. Therefore the envelope byte
+cap bounds wire input, but the subsequent change/peer/operation checks do **not** pre-bound
+all decoder allocation or CPU. No stable bounded preflight is available through this public
+metadata API. Keep v2 dormant and non-writable until a bounded decoder/preflight or isolated
+resource budget exists. This does not affect the current v1 JSON projection receiver. The
+stage-one helper does not install an Item, but it does perform internal oplog decoding.
