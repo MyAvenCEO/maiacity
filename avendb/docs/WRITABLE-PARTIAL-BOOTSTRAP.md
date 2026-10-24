@@ -845,3 +845,14 @@ an ordinary signed update through the custom document-v0 schema/lens, withholds
 those lane entries while delivering the target body, refuses retirement, then
 supplies the authorized lane evidence and compares canonical results. Lean gate
 lemma and parser/diff checks passed; Rust execution pending root queue.
+
+### Application type-check release repair
+
+Added explicit JSDoc device responses, manifest/leaf/query rows, options and traversal
+callback types to the manifest planner and scoped file inventory. Removed the misplaced
+manifest `ts-nocheck` comment rather than disabling validation. The completeness
+regression now uses Node-compatible typed test/assert imports and an initialized
+resolver, retaining all assertions. `bun run check` passes with zero errors (27
+existing CSS warnings) using the candidate dependency tree and bundled Node PATH;
+25 focused manifest/file/completeness tests pass. No Cargo or runtime authorization
+changes were involved.
