@@ -38,6 +38,17 @@ webkit`; both run in kernel CI. Unit tests are `local-write.test.js` and
 The Lean model covers scheduling branch/acceptance independence only, not
 extracted JavaScript, Svelte, OS timing, engine authorization or durability.
 
+## Serialized engine scheduling
+
+The fixture also serializes device operations, suppresses the independent change
+notification, and accepts a generic `set`. A held world read would block every
+subsequent operation. The non-chat `get` must dispatch and render before that
+world read. Old scheduling fails with `set, world, room, get`; the repair lets
+Svelte dispatch targeted effects before coalesced background world refreshes.
+Explicit `refresh()` remains immediate and retains its existing freshness contract.
+This scheduling rule is modeled in `LocalWrite.lean`; the browser test, rather
+than that abstract model, checks actual Svelte effect ordering.
+
 ## Remaining limits
 
 These tests prove a removed scheduling dependency, not a physical-device <50ms

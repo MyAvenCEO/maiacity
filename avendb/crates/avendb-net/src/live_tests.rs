@@ -5,6 +5,8 @@ use crate::{Node, Options};
 use avendb::cast::{document, handbook_ready, world};
 use avendb::wire::Wire;
 use n0_future::future;
+use std::time::Instant;
+use tokio::sync::watch;
 
 async fn wait_for(mut condition: impl AsyncFnMut() -> bool) {
     time::timeout(Duration::from_secs(20), async {
@@ -87,41 +89,46 @@ async fn a_live_edit_reaches_an_authorized_peer_while_its_background_pages_are_s
             .await
     );
 
-    let mut updates = phone.stirs();
-    let chat = mac
+    // All times share one monotonic process clock. Setup, key generation and initial
+    // catch-up are excluded. Both reactive consumers subscribe before the mutation.
+    let local_updates = mac.stirs();
+    let remote_updates = phone.stirs();
+    let began = Instant::now();
+    let (entry, mutation_completed) = mac
         .act(move |lab, me| {
-            lab.create(
-                me,
-                coop,
-                coop,
-                "doc",
-                &[],
-                document("Live chat", "sent during backlog", me),
-            )
-            .unwrap()
+            let entry = lab.create(me, coop, coop, "doc", &[],
+                document("Live generic entry", "sent during backlog", me)).unwrap();
+            (entry, began.elapsed())
         })
         .await;
-    let delivered = time::timeout(Duration::from_secs(20), async {
-        loop {
-            updates.borrow_and_update();
-            if phone
-                .read(move |lab, me| lab.item(me, chat).is_some())
-                .await
-            {
-                break;
+    let mutation_returned = began.elapsed();
+    let observe = async |node: &Node, mut updates: watch::Receiver<u64>| {
+        time::timeout(Duration::from_secs(20), async {
+            loop {
+                updates.borrow_and_update();
+                if let Some(body) = node.read(move |lab, me| lab.item(me, entry)
+                    .and_then(|item| item.read(avendb::lens::View::document_v1()))).await {
+                    break (began.elapsed(), body);
+                }
+                updates.changed().await.expect("live view notifications remain open");
             }
-            updates
-                .changed()
-                .await
-                .expect("live view notifications remain open");
-        }
-    })
-    .await;
-    delivered.expect("a reactive consumer sees the live edit without polling");
-    let sender_body = mac.read(move |lab, me| lab.item(me, chat).and_then(|item| item.read(avendb::lens::View::document_v1()))).await;
-    let receiver_body = phone.read(move |lab, me| lab.item(me, chat).and_then(|item| item.read(avendb::lens::View::document_v1()))).await;
-    assert!(sender_body.is_some());
+        }).await.expect("a reactive consumer reads the live edit without polling")
+    };
+    let ((local_readable, sender_body), (remote_readable, receiver_body)) =
+        tokio::join!(observe(&mac, local_updates), observe(&phone, remote_updates));
     assert_eq!(receiver_body, sender_body, "the exact live body is decrypted");
+    // The observations are upper bounds that include task scheduling and targeted
+    // reads; they are not a wire receive timestamp or a browser DOM paint time.
+    eprintln!("LIVE_LATENCY {}", serde_json::json!({
+        "fixture": "authenticated-loopback-generic-document",
+        "background_slots_held": stalled.len(),
+        "mutation_completed_ms": mutation_completed.as_secs_f64() * 1000.0,
+        "mutation_returned_ms": mutation_returned.as_secs_f64() * 1000.0,
+        "local_readable_ms": local_readable.as_secs_f64() * 1000.0,
+        "receiver_readable_ms": remote_readable.as_secs_f64() * 1000.0,
+        "durable_ms": null, "remote_accept_ms": null,
+        "durability": "in-memory fixture; no disk fence measured"
+    }));
     assert!(phone.read(move |lab, me| lab.item(me, backlog_first).is_some()).await,
         "the first creation is the required audience-key witness");
     let unrelated = backlog[1..].to_vec();
@@ -295,4 +302,59 @@ fn ineligible_announcements_are_unchanged_without_consuming_witnesses() {
         assert_eq!(announce, before);
         assert_eq!(Announce::from_wire(&announce.to_wire()), Ok(announce));
     }
+}
+
+#[tokio::test]
+async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let node = Node::spawn(w.lab.split(sender, &[], [93; 32]), sender,
+        Options { lazy: true, retry: Duration::from_secs(60), ..Options::local() }).await.unwrap();
+    // Drive the production scheduling boundary explicitly, without a periodic retry
+    // or unrelated peer task consuming its notification. This is not wire timing.
+    let tasks: Vec<_> = node.tasks.lock().unwrap().drain(..).collect();
+    // Node::spawn returns immediately after spawning these tasks. On this
+    // current-thread runtime, abort every task before yielding so the initial
+    // announcer cannot start detached tells and seed unrelated failure backoff.
+    for task in &tasks { task.abort(); }
+    for task in tasks { let _ = task.await; }
+    let mut news = node.shared.news((usize::MAX, 0), None).await.unwrap();
+    node.shared.own_logs().await;
+    let before = node.shared.own.lock().unwrap().holdings.clone();
+    assert!(node.shared.begin_tell(receiver), "hold the first announcement slot");
+    node.act(move |lab, me| {
+        lab.create(me, coop, coop, "doc", &[], document("Generic live entry", "second frontier", me)).unwrap();
+    }).await;
+    news = node.shared.news(news.size, news.revision.clone()).await.unwrap();
+    node.shared.own_logs().await;
+    assert_ne!(before, node.shared.own.lock().unwrap().holdings);
+    let reach = news.reach.get(&receiver).unwrap();
+    news.reach = Arc::new(std::collections::BTreeMap::from([(receiver, crate::Reach {
+        endpoint: reach.endpoint, files: reach.files.clone(), logs: reach.logs.clone(),
+    })]));
+    assert_eq!(news.reach.len(), 1);
+    while time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_ok() {}
+    // Multiple passes consume the mutation's wake while the first tell is held.
+    assert!(node.shared.unreached.lock().unwrap().due(&receiver), "the fixture peer is eligible, without startup backoff");
+    node.shared.announce(&news);
+    node.shared.announce(&news);
+    assert_eq!(node.shared.telling.lock().unwrap().len(), 1);
+    assert_eq!(node.shared.telling.lock().unwrap().get(&receiver), Some(&true), "the held tell owes the new frontier");
+    node.shared.finish_tell(receiver, true);
+    time::timeout(Duration::from_millis(100), node.shared.changed.notified()).await
+        .expect("successful held tell must release the coalesced frontier wake before the 60s retry");
+    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err(), "one coalesced wake");
+    // A success with no intervening demand must not manufacture an announce loop.
+    assert!(node.shared.begin_tell(receiver));
+    node.shared.finish_tell(receiver, true);
+    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err());
+    // Failed work keeps the existing backoff even when another pass was skipped.
+    assert!(node.shared.begin_tell(receiver));
+    assert!(!node.shared.begin_tell(receiver));
+    node.shared.finish_tell(receiver, false);
+    assert!(!node.shared.unreached.lock().unwrap().due(&receiver));
+    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err());
+    assert!(node.shared.telling.lock().unwrap().is_empty());
+    node.shutdown().await.unwrap();
 }

@@ -179,3 +179,27 @@ For actual native offline evidence, an already proved process-local network sand
 - **Mac:** safely close the candidate before reinstalling the saved old app/binary, only when that binary can read the current store. Keep `~/avenDB` and Keychain unchanged; if close fails or compatibility is unknown, hold and investigate rather than forcing rollback.
 - **Backup proof:** `.github/workflows/avendb-backups.yml` PR jobs may be green after notices with no S3 recovery. Require a non-PR main/manual run on the selected commit whose actual `Back up, check, rehearse and restore against the test bucket` step executed and passed. This tests isolated bucket data, not the live snapshots. Live `/feed/health.backups` is separate evidence of the latest scheduled live-folder check. Neither permits overwriting a live store.
 - **Done:** exact site bytes + exact server image (if changed) + exact native binary accounted for; same identities/configuration; clean durable restarts; existing query/file/offline/reconnect smoke checks with their limits stated; exact-head CI and real recovery steps passed. Missing gates remain open rather than being inferred from a green deploy or faster timing.
+
+### Separate startup from authentication and inventory work
+
+The copied-store rehearsal emits `REHEARSAL_AUTH` for the one explicit Touch ID
+ceremony, then `REHEARSAL_STARTUP` for cold, warm-1, warm-2 and recovery opens.
+`open_ms` excludes the ceremony and inventory observation. Existing progress steps
+separate key preparation, restore, node setup and membership checking. Capturing
+metrics is separately timed and excluded from `open_ms`.
+
+Each independent open reports its own aggregate counters: stored-view hit/miss,
+whole-replay reasons, key reuse and refresh rounds. It also reports the existing
+check/open-view/replay/open-keys/read/show/upkeep/refresh timers. These timers nest;
+do not sum them as wall time. `REHEARSAL_OBSERVE` reports inventory wall time and
+only the additional timer/count work since the immediately preceding snapshot on
+that same device. Never subtract counters across independent reopens. Decreasing
+counters produce null deltas rather than a misleading zero.
+
+Both same-build warm opens must use a persisted view and preserve inventory. A
+cold miss followed by warm hits can reflect an engine-version upgrade; repeated
+misses or whole-replay fallback reasons need further investigation. A warm hit
+with expensive read/show/open-key work identifies derived reconstruction rather
+than signature replay. This instrumentation does not prove physical iOS memory
+pressure or resolve foreground reloads. It changes no authorization or persistence
+rules and never prints entry contents, identifiers, key material or paths.

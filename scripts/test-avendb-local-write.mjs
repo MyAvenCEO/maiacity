@@ -13,10 +13,12 @@ const entry = 'a'.repeat(64), mine = 'b'.repeat(64);
 const messages = [], waiters = [];
 let status='open';
 let revision = 0;
+let serial = Promise.resolve();
+window.fixtureOperations = [];
 const counts = window.fixtureCounts = { brings: 0, writes: 0, worlds: 0, activeWorlds:0, maxWorlds:0 };
 const world = { mine, vaults:[{id:mine,name:'Fixture',kind:'human',acting:{as:mine},devices:[]}],
  entries:[{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
-const wake = () => { revision++; for(const resolve of waiters.splice(0)) resolve(true); };
+const wake = () => { revision++; if(!window.fixtureMuteWake) for(const resolve of waiters.splice(0)) resolve(true); };
 window.fixtureRemote = text => { messages.push({id:messages.length+1,text,at:Date.now(),by:{vault:mine},actor:mine});wake(); };
 window.fixtureHoldWorld = false;
 window.fixtureReleaseWorld = () => { window.fixtureHoldWorld = false; for(const resolve of (window.worldWaiters ?? []).splice(0)) resolve(); };
@@ -32,6 +34,13 @@ export class Device {
  async changed(edits){return edits!==revision?true:new Promise(r=>waiters.push(r));}
  async moving(){return null;}
  async run(op){
+  if(!window.fixtureSerial)return this.runNow(op);
+  window.fixtureOperations.push(op.op);
+  const result=serial.then(()=>this.runNow(op));
+  serial=result.catch(()=>{});
+  return result;
+ }
+ async runNow(op){
   if(op.op==='world'){counts.worlds++;counts.activeWorlds++;counts.maxWorlds=Math.max(counts.maxWorlds,counts.activeWorlds);try{const snapshot={...structuredClone(world),marker:window.fixtureWorldVersion??0};if(window.fixtureHoldWorld)await new Promise(r=>(window.worldWaiters??=[]).push(r));return {ok:snapshot};}finally{counts.activeWorlds--;}}
   if(op.op==='room')return {ok:{entry,room:{kind:'room',look:'self',name:'Fixture',messages:structuredClone(messages)},count:messages.length}};
   if(op.op==='bring'){counts.brings++;return new Promise(()=>{});}
@@ -121,6 +130,29 @@ try {
  await page.evaluate(async()=>{window.fixtureReleaseWorld();await Promise.all([window.oldWorldRead,window.newWorldRead]);});
  assert.equal(await page.evaluate(()=>window.fixtureSession.world.marker),2);
  assert.equal(await page.evaluate(()=>window.fixtureCounts.maxWorlds),1);
+ // A serialized engine cannot run a targeted read behind a held world query.
+ // Suppress the independent remote-change wake: this exercises local acceptance's
+ // own invalidation even when the engine change notification has not arrived yet.
+ await page.evaluate(async()=>{await window.fixtureSession.refresh();});
+ await page.waitForTimeout(400);
+ await page.evaluate(()=>{
+  window.fixtureSerial=true;window.fixtureMuteWake=true;
+  window.fixtureOperations=[];window.fixtureHoldWorld=true;
+  window.priorityWrite=window.fixtureSession.run('Update generic status',
+   {op:'set',entry:'c'.repeat(64),path:['status'],value:'priority'});
+ });
+ try {
+  await page.getByTestId('todo-status').filter({hasText:'priority'}).waitFor({timeout:1500});
+ } catch(error) {
+  console.error('Serialized operation dispatch order:',await page.evaluate(()=>window.fixtureOperations));
+  throw error;
+ }
+ await page.waitForFunction(()=>window.fixtureOperations.includes('world'));
+ const dispatch=await page.evaluate(()=>window.fixtureOperations);
+ assert(dispatch.indexOf('get')>=0 && dispatch.indexOf('get')<dispatch.indexOf('world'),
+  'generic targeted read must dispatch before background world: '+JSON.stringify(dispatch));
+ assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+ await page.evaluate(async()=>{window.fixtureReleaseWorld();await window.priorityWrite;await window.fixtureSession.refresh();window.fixtureSerial=false;window.fixtureMuteWake=false;});
  // A captured-device explicit barrier must fail rather than let follow-up work
  // use a different account's world after a lock/replacement.
  await page.evaluate(()=>{

@@ -732,6 +732,7 @@ impl Node {
             peers: Mutex::default(),
             dialing: Mutex::default(),
             logs: Mutex::default(),
+            world_encoding: Arc::default(),
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
             held: Mutex::default(),
@@ -2020,6 +2021,8 @@ struct Shared {
     dialing: Mutex<HashMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
     /// Its device's edits by their logs, as they were when they were last worked out.
     logs: Mutex<Option<Arc<Logs>>>,
+    /// One owned world snapshot/conversion at a time; targeted reads and writes bypass it.
+    world_encoding: Arc<tokio::sync::Mutex<()>>,
     /// What its device holds for good.
     own: Mutex<Own>,
     /// Each device it may tell, by its device's view, and what of its holdings it tells it.
@@ -2030,8 +2033,8 @@ struct Shared {
     told: Mutex<HashMap<SignerId, (usize, Holdings)>>,
     /// The signed statements of holdings it keeps, signs and passes on (H2, `statements`).
     statements: Mutex<statements::Statements>,
-    /// The peers being told now.
-    telling: Mutex<HashSet<SignerId>>,
+    /// Peers being told now, with one coalesced obligation to recompute after success.
+    telling: Mutex<HashMap<SignerId, bool>>,
     /// The peers it couldn't tell, and when to try each again.
     unreached: Mutex<Backoff<SignerId>>,
     /// The peers being asked, each with whether to ask it again once done.
@@ -2871,23 +2874,39 @@ impl Shared {
                 continue;
             }
             let Ok(activity) = self.admit() else { return };
-            if !self.telling.lock().expect("telling").insert(*device) {
+            if !self.begin_tell(*device) {
                 continue;
             }
             let (shared, device, endpoint) = (self.clone(), *device, reach.endpoint);
             task::spawn(async move {
                 let _activity = activity;
                 let told = shared.tell(device, endpoint, want).await.is_ok();
-                let mut unreached = shared.unreached.lock().expect("unreached");
-                if told {
-                    unreached.reached(&device)
-                } else {
-                    unreached.failed(device, shared.opts.retry)
-                };
-                drop(unreached);
-                shared.telling.lock().expect("telling").remove(&device);
+                shared.finish_tell(device, told);
             });
         }
+    }
+
+    fn begin_tell(&self, device: SignerId) -> bool {
+        let mut telling = self.telling.lock().expect("telling");
+        if let Some(owed) = telling.get_mut(&device) {
+            *owed = true;
+            false
+        } else {
+            telling.insert(device, false);
+            true
+        }
+    }
+
+    fn finish_tell(&self, device: SignerId, success: bool) {
+        let mut unreached = self.unreached.lock().expect("unreached");
+        if success { unreached.reached(&device); }
+        else { unreached.failed(device, self.opts.retry); }
+        drop(unreached);
+        let owed = self.telling.lock().expect("telling").remove(&device).unwrap_or(false);
+        // A wake consumed while this peer was busy must survive successful completion.
+        // Re-enter normal news/holdings computation; never retry a cached authorization snapshot.
+        // Failures remain governed by backoff, not a self-sustaining immediate retry loop.
+        if success && owed { self.changed.notify_one(); }
     }
 
     /// Tells `device`, at `endpoint`, that it holds `want`: all of it on a connection it told nothing yet, else what

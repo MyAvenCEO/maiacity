@@ -81,7 +81,7 @@ use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
 use crate::world::{self, FORK, SyncedTo, authors, authors_json, fork_mark};
 
-pub use vaults::{approve, approved, follow_standing, passkey_of, world, Approval, Prepared, Then};
+pub use vaults::{approve, approved, follow_standing, passkey_of, world, world_snapshot, WorldSnapshot, Approval, Prepared, Then};
 
 /// The most writes of one entry whose changes `history` shows, the latest: each version is made from scratch from the
 /// updates it holds.
