@@ -1,10 +1,53 @@
-# Writable partial bootstrap: implementation design and remaining model work
+# Writable partial bootstrap: current status and implementation history
 
-Status: **design only; not implemented or proved**. This document follows the delivered
-read-only checkpoint path (`CHECKPOINT-DEMAND-DELIVERY.md`). It records the exact remaining
-engineering boundary so another agent does not mistake a removed `ReadOnly` check for a fix.
+## Current status — working-set candidate, 2026-10-25
 
-## What the current code actually does
+**Implemented in the candidate, with incomplete delivery/acceptance.** The original
+"design only" description below is historical. Owner-approved judged bases now
+have real publication, authorized peer retrieval, durable adoption and restricted
+local mutation paths. This is not a claim that the entire generic partial-bootstrap
+plan is complete or that the working-set candidate has been deployed.
+
+| State | Current scope |
+| --- | --- |
+| Implemented | Distinct owner-attested Loro/judgment payload; JSON projections remain read-only. Current owner/key/policy and signed scope checks apply equally to every peer. |
+| Implemented | Explicit publication, format-aware discovery/fetch, retained encrypted anchors, native/PWA companion persistence and save wakeup. |
+| Implemented | Owner-held partial MAIN writes from supported causal state; ordinary signature, schema, dependency, row ownership and admission checks remain mandatory. |
+| Implemented | Bounded suffix turns and retained read-only waits for missing bodies, keys or schema/lens inputs; active-view authorized dependency scheduling. |
+| Implemented | Exact durable frontier verification and conservative canonical retirement once actual held history/bodies and suffix judgments justify it. |
+| Implemented; combined validation pending | Received group-free shared suffixes on owner-held bases, plus proposal receive through exact causal-body fallback and ordinary owner-accept/merge checks. |
+| Implemented; final correction validation pending | Own warm metadata/deferred history integration with Store-aware publication and stable MAIN scratch normalization. |
+| Open | Non-owner shared-holder adoption/local authoring, historical cap-group-dependent grants, and local proposal authoring from partial state. |
+| Open | Compact per-line/cut bootstrap avoiding selected-history hydration; general rejected/unsupported suffix recovery; full manifest coverage and physical-device latency/stability acceptance. |
+
+### Evidence and delivery boundary
+
+The isolated core run at `e1400c15` completed **266 passed / 2 failed**: all five
+warm-metadata tests and warmed counted-base comparison passed. Its two failures
+required a Store-aware fixture access and normalization of ephemeral checkpoint
+scratch state. The correction is [84cb91c4](https://github.com/MyAvenCEO/maiacity/commit/84cb91c4);
+its final combined rerun is pending at this document update. Do not turn the
+partial run into a claim that the whole candidate passed. Individual ledgers below
+record their own Lean/parser/test evidence; later corrections supersede earlier
+pending statements only where an actual result is recorded.
+
+The shared-main and proposal slices are
+[5445d85a](https://github.com/MyAvenCEO/maiacity/commit/5445d85a) and
+[81e43133](https://github.com/MyAvenCEO/maiacity/commit/81e43133). Their added signed
+regressions must remain in the combined gate; this status page does not claim
+physical iPhone/iPad verification, a deployment, or completion of the full plan.
+Proposal receive may fetch the selected entry's causal history before building a
+line. It does not wait for unrelated world history, but it is not compact per-line
+state transfer. Missing/invalid inputs never gain authority from a hosted peer.
+
+## Historical starting point — before judged-base implementation
+
+The following analysis and numbered sequence describe the original gap and the
+constraints that guided subsequent implementation. They are retained for rationale,
+not as a current "not implemented" task list. The dated implementation ledgers
+below supersede their historical scope and activation statements.
+
+### Original read-only projection boundary
 
 - `crates/avendb/src/entry_projection.rs` encodes version 1 as bounded JSON records per line,
   signed `Stated.basis` IDs, and an encrypted content root. It deliberately has no Loro
@@ -31,7 +74,7 @@ engineering boundary so another agent does not mistake a removed `ReadOnly` chec
   Lean file itself says the general theorem that every honest start is right for every
   history remains to be proved. Existing Boolean gate lemmas do not fill that gap.
 
-## Safe near-term behavior without changing the mutation model
+### Original safe near-term behavior
 
 Keep read readiness independent of write readiness. Show the verified projection immediately;
 prioritize the active entry's signed history and its schema/access dependencies ahead of unrelated
@@ -41,7 +84,7 @@ view must not advertise successful committed edits while it is still read-only. 
 user intent must be explicit pending intent, never an already-signed edit or a silently rebuilt
 JSON document.
 
-## Concrete implementation sequence for genuinely writable bases
+### Original implementation sequence (partially realized; see current status)
 
 1. **Specify a base plus suffix model before changing guards.** Extend
    `spec/AvenDB/Snapshot.lean`, with the history/line model in `Proposals.lean` and `Doc.lean`.
@@ -136,11 +179,11 @@ JSON document.
   on Mac/iPhone/iPad while unrelated history is withheld. The physical-device measurements
   remain necessary; model proofs do not establish timing.
 
-Implementation should land as a separate versioned change after the current read-only delivery.
+Historical delivery requirement: implement as a separate versioned change after the read-only delivery; the judged-base path above now provides that distinction.
 The current safe guard must remain until this base/suffix model, validator and differential
 acceptance gates are implemented. None of the tasks in this document is marked complete.
 
-## Stage 1 implementation ledger
+## Historical implementation ledger (later entries supersede earlier stages)
 
 Implemented, Rust validation pending the coordinated integration build:
 
