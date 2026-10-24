@@ -270,7 +270,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
         crate::transports::control::KIND => crate::transports::control::LIMIT,
         crate::edit_ranges::KIND => crate::edit_ranges::CONTROL_BYTES,
         crate::discovery::KIND => crate::discovery::REQUEST_LIMIT,
-        crate::peer_receipts::KIND => crate::peer_receipts::REQUEST_LIMIT,
+        crate::peer_receipts::KIND | crate::peer_receipts::UI_KIND => crate::peer_receipts::REQUEST_LIMIT,
         _ => MESSAGE_LIMIT - 1,
     };
     let deadline = if range.is_some() { crate::edit_transfer::DEADLINE } else { PAGE_WAIT };
@@ -294,6 +294,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
     match kind {
         crate::discovery::KIND => crate::discovery::answer(shared, peer, body).await,
         crate::peer_receipts::KIND => crate::peer_receipts::answer(shared, peer, body).await,
+        crate::peer_receipts::UI_KIND => crate::peer_receipts::answer_ui(shared, peer, body).await,
         REQUEST | ASK_LOGS | ASK_VAULTS => {
             let reply = authorized_reply(shared, peer, kind, body).await?;
             let n = reply.edits.len();

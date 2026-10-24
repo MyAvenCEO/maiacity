@@ -21,3 +21,16 @@ theorem bounded (allowed requested : Bool) (heads : List Nat) :
 def completeness (_emitted : Bool) (verified : Bool) := verified
  theorem emission_is_not_completeness : completeness true false = false := rfl
 end AvenDB.ReactiveObservation
+
+namespace AvenDB.ReactiveObservation
+-- Peer policy standing alone is insufficient: require a fresh consumer event and
+-- current permission on the authenticated connection. This models the gate, not
+-- honesty of an instrumented UI or elapsed network time.
+def acknowledge (allowed standing emitted fresh : Bool) := allowed && standing && emitted && fresh
+ theorem no_consumer_no_ack (allowed standing fresh : Bool) :
+    acknowledge allowed standing false fresh = false := by simp [acknowledge]
+ theorem revoked_no_ack (standing emitted fresh : Bool) :
+    acknowledge false standing emitted fresh = false := by simp [acknowledge]
+ theorem expired_no_ack (allowed standing emitted : Bool) :
+    acknowledge allowed standing emitted false = false := by simp [acknowledge]
+end AvenDB.ReactiveObservation

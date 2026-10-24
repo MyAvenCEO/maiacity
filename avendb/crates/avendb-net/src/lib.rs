@@ -746,6 +746,7 @@ impl Node {
             told: Mutex::default(),
             statements: Mutex::default(),
             receipts: peer_receipts::Receipts::default(),
+            ui_receipts: peer_receipts::Receipts::for_ui(),
             telling: Mutex::default(),
             unreached: Mutex::default(),
             asking: Mutex::default(),
@@ -1732,6 +1733,7 @@ impl Node {
         json!({
             "served": s.traffic.served_json(),
             "policy_observations": s.receipts.json(),
+            "reactive_observations": s.ui_receipts.json(),
             "me": { "endpoint": me.id.to_string(), "relays": relays, "direct": direct },
             "peers": peers,
             "gone": gone,
@@ -2060,6 +2062,7 @@ struct Shared {
     /// The signed statements of holdings it keeps, signs and passes on (H2, `statements`).
     statements: Mutex<statements::Statements>,
     receipts: peer_receipts::Receipts,
+    ui_receipts: peer_receipts::Receipts,
     /// Peers being told now, with one coalesced obligation to recompute after success.
     telling: Mutex<HashMap<SignerId, bool>>,
     /// The peers it couldn't tell, and when to try each again.

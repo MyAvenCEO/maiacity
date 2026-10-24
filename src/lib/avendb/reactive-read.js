@@ -1,6 +1,7 @@
 import { reads } from './ops.js';
 import { beginReactiveTiming } from './reactive-latency.js';
 import { observedRevisions } from './observed-revisions.js';
+import { reactiveObservation } from './reactive-observation.js';
 
 /** Targeted authorized reads shared by every avenDB consumer. Revisions coalesce
  * without invalidating in-flight answers. Query/owner changes abort the previous
@@ -21,9 +22,10 @@ export function createReactiveRead({ read, take, failed = () => {}, timing = beg
 				s.again = false;
 				try {
 					if (!reads(s.query)) throw new Error('An avenDB observer accepts read operations only.');
-					const answer = await read(s.owner, s.query, s.controller.signal);
+					const answer = await read(s.owner, reactiveObservation.query(s.owner, s.query), s.controller.signal);
 					if (scope === s && !closed) {
 						take(answer); s.emitted(answer);
+						reactiveObservation.emitted(s.owner, answer);
 						if (s.query?.observeRevision === true) {
 							// Diagnostic plumbing must not turn successful UI delivery into failure.
 							try { observed(observedRevisions(answer)); } catch {}
