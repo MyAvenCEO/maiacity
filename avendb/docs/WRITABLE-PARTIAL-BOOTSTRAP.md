@@ -609,3 +609,8 @@ not discard a partial view at the next suffix. The reconstruction owner is handl
 that gate. Shared/proposal/capability cases are still refused, not supported by this
 owner-only slice. Physical iPhone/iPad responsiveness, cancellation/revocation while
 awaiting persistence and old-peer timeout behavior still need integrated execution.
+
+Runtime source implementation:
+[1bdda96d](https://github.com/MyAvenCEO/maiacity/commit/1bdda96d), pushed on
+`codex/checkpoint-runtime-delivery`; combined execution and remaining semantic gates
+are outstanding. This is not a deployment receipt.
