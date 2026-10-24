@@ -12,6 +12,7 @@
  let evidence = $state(latencyJournal.snapshot());
  let exported = $state('');
  let deviceLabel = $state('This device');
+ /** @type {ReturnType<typeof policyObservations>} */
  let policy = $state(null);
  async function armPolicy() {
   if (measuring || session.phase !== 'open') return;

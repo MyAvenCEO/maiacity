@@ -159,6 +159,15 @@ impl Shared {
                         if !shared.receipts.enabled() {
                             return Ok::<(), anyhow::Error>(());
                         }
+                        // Opaque edit IDs remain scoped data. Recheck current disclosure
+                        // permission on every probe, including revocation during polling.
+                        let who = peer.device;
+                        if !shared
+                            .try_lab(move |lab, me| lab.peer_edit_outcome(me, who, id).is_some())
+                            .await?
+                        {
+                            return Ok(());
+                        }
                         let got =
                             session::exchange(&peer.conn, KIND, &body, RESPONSE_LIMIT).await?;
                         ensure!(
