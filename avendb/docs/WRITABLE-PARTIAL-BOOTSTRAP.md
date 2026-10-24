@@ -630,3 +630,8 @@ permitted local mutation. Rust execution remains pending; syntax/diff checks pas
 
 Compatibility correction committed and pushed:
 [1f139e73](https://github.com/MyAvenCEO/maiacity/commit/1f139e737).
+
+Integration API: `owner_base_durability_pending` is the boolean journal receipt gate;
+`owner_base_pending` in the bounded reconstruction work is a suffix count. They are
+independent reasons for read-only status and must both be zero/false before mutation
+readiness. Runtime tests use the durable-specific name to avoid conflating them.
