@@ -12,9 +12,10 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
+	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
-	import { RENTED, SUBLET, COOPS, DAY_MS, act, newGame, MINDS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth } from '../../../game/maiacity-v2/engine.js';
+	import { RENTED, SUBLET, COOPS, DAY_MS, act, newGame, MINDS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, nextWaterAt, price, quote, signaturesOf, supply, timeOfMonth } from '../../../game/maiacity-v2/engine.js';
 	import { loadGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
@@ -57,7 +58,7 @@
 	let swapTo = $state('VILLAGE');
 	let swapAmount = $state(1);
 	let labels = $state({});
-	let canvas;
+	let canvas = $state();
 	let world;
 
 	const now = $derived(tick + skew);
@@ -85,14 +86,11 @@
 		world?.update(v, h);
 	});
 	// the players' first trees as they stand on the game clock now, each named after its planter
-	// (an admin's growth preview, Samuel 2026-10-14: my tree shown at any number of watered months, for testing; nothing
-	// is saved, and the game's own tree comes back when it ends)
-	let growth = $state(null);
 	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree || view.players[s].spot).map((s) => {
 		const p = view.players[s];
         if (!p.tree) return {seat:s, name:p.name, ...treeNow(view, {...p.spot, plant:p.seedling || 'apple', name:p.name, grown:0}, now), markerOnly:true, label:'Planting spot · not planted'};
         const t = p.tree;
-		return { seat: s, name: t.name, ...treeNow(view, s === seat && growth != null ? { ...t, grown: growth } : t, now) };
+		return { seat: s, name: t.name, ...treeNow(view, t, now) };
 	}) : []);
 	$effect(() => {
 		const t = trees;
@@ -109,7 +107,7 @@
 		const where = worldStage(view, seat, steps, tour ? tourAt : -1);
 		world.set(where.set);
 		world.touring(!!tour);
-		if (where.place) world.focus(growth != null && !tour ? `tree:${seat}` : where.place);
+		if (where.place) world.focus(where.place);
 	});
 	// the arrival plays by itself the first time; its caption shows over it, with a way to skip
 	let playing = $state(''); // the moment the world plays: 'intro', 'drive', 'load'
@@ -157,14 +155,12 @@
 	}
 	const plantIt = () => doMove({ type: 'plant', v: plantOf(player.seedling)?.version });
 	const myTree = $derived(trees.find((x) => x.seat === seat));
-	const shownMonths = $derived(growth ?? player?.tree?.grown ?? 0);
-	const stepPreview = (d) => (growth = Math.max(0, Math.min(400, shownMonths + d)));
-	const growthOf = $derived(`${seat}:${game?.started ?? 0}`);
-	$effect(() => void (growthOf, (growth = null))); // a new seat or game ends the preview
-	const carryingWater = $derived(game?.water?.carriedBy === seat);
+	const waterCountdown = $derived(player?.tree ? dur(Math.max(0, nextWaterAt(view, player.tree) - now)) : '');
+	const carryingWater = $derived(view?.water?.carriedBy === seat);
  const waterNear = $derived(roamNow.waterNear ?? false);
  const treeNear = $derived(roamNow.treeNear ?? false);
- const waterMove = (type) => doMove({type, ...world.position(), tree:seat});
+ const waterMove = (type) => world && doMove({type, ...world.position(), tree:seat});
+ const goToWater = () => world?.walkTo(view.water.x, view.water.z);
  async function waterIt() {
   if (!world || playing || !myTree?.due || !carryingWater || !treeNear) return;
   // Only a successful server move grows the tree; a failed request never plays fake growth.
@@ -241,10 +237,14 @@
 		tick = Date.now();
 	}
 
+	let moveRevision = 0;
 	async function refresh() {
 		if (demo) return; // a demo plays on its own copy of the game
 		try {
-			take(await loadGame());
+			const revision = moveRevision;
+			const result = await loadGame();
+			if (revision !== moveRevision || busy) return;
+			take(result);
 			error = '';
 		} catch (e) {
 			error = e?.message ?? String(e);
@@ -254,6 +254,7 @@
 	async function run(fn) {
 		if (busy) return false;
 		busy = true;
+		moveRevision++;
 		error = '';
 		try {
 			take(await fn());
@@ -516,6 +517,9 @@
 
 <div class="v1" class:cinema={!!playing}>
 	<canvas class="stage" bind:this={canvas}></canvas>
+	{#if canMove && !tour && !playing && !wallet && !panel && !tools}
+		<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} look={(dx, dy) => world?.look(dx, dy)} stage={canvas} taps="button, a, [role='button']" />
+	{/if}
 	{#if demo}<div class="demo panel" role="status">Test run · {view?.players[seat].name}’s journey, nothing is saved <button class="link" onclick={endDemo}>End</button></div>
 {/if}
 
@@ -565,32 +569,29 @@
 			<div class="walkbar">
 				{#if walking && (roamNow.near || roamNow.driving)}<button class="walkbtn" onclick={() => world?.board(!roamNow.driving)}>{roamNow.driving ? 'Get out' : 'Get in the pickup'}</button>{/if}
 			</div>
-			{#if walking}<p class="walkhint">Tap the ground to {roamNow.driving ? 'drive' : 'walk'} there, or use the arrow keys</p>{/if}
 		{/if}
 		{#if canMove && !tour && !playing}
-   <div class="water-care panel" aria-label="Tree care">
-    <span>💧 {game?.water?.litres ?? 10} / 10 L</span>
-    {#if carryingWater}
-     <button disabled={busy} onclick={() => waterMove('putWater')}>Put down canister</button>
-     {#if myTree?.due && treeNear}<button class="primary" disabled={busy || game.water.litres < 1} onclick={waterIt}>Water my tree · 1 L</button>
-     {:else if myTree?.due}<span>Walk to your tree to water it.</span>
-     {:else}<span>Your tree has had its water. Return after 24 hours.</span>{/if}
-    {:else if waterNear && !game?.water?.carriedBy}<button disabled={busy} onclick={() => waterMove('takeWater')}>Pick up canister</button>
-    {:else}<span>{game?.water?.carriedBy ? `${game.players[game.water.carriedBy].name} is carrying the canister.` : 'The canister is beside the power equipment. Walk over to pick it up.'}</span>{/if}
-   </div>
-  {/if}
-		{#if admin && canMove && !tour && !playing && player.tree}
-			<!-- the admin's growth preview: step my tree through its watered months (a test; nothing is saved) -->
-			<div class="growth panel" role="group" aria-label="Growth preview" title="Admin only: how {myTree?.name ?? 'your tree'} grows, a game month of growth for each watering. A preview, nothing is saved.">
-				<span class="what">Growth preview</span>
-				<button aria-label="A year back" disabled={shownMonths <= 0} onclick={() => stepPreview(-13)}>«</button>
-				<button aria-label="A month back" disabled={shownMonths <= 0} onclick={() => stepPreview(-1)}>‹</button>
-				<b>{shownMonths} {shownMonths === 1 ? 'watering' : 'waterings'}</b>
-				<button aria-label="A month on" onclick={() => stepPreview(1)}>›</button>
-				<button aria-label="A year on" onclick={() => stepPreview(13)}>»</button>
-				<small>{myTree?.now ?? ''}</small>
-				{#if growth != null}<button class="link" onclick={() => (growth = null)}>End</button>{/if}
-			</div>
+			<section class="water-care panel" aria-label="Plant care">
+				<div class="care-heading">
+					<strong>{player.tree ? (myTree?.due ? 'Time to water your plant' : `Water again in ${waterCountdown}`) : 'Plant your first seed'}</strong>
+					<span class="water-level" aria-label="Canister water">💧 {view.water.litres} / {view.water.capacityLitres} L</span>
+				</div>
+				<div class="care-actions">
+					{#if roamNow.driving}
+						<span>Get out of the pickup to care for your plant.</span>
+					{:else if carryingWater}
+						{#if myTree?.due && treeNear}<button class="primary" disabled={busy || view.water.litres < 1} onclick={waterIt}>{view.water.litres < 1 ? 'Canister empty' : 'Water plant · 1 L'}</button>
+						{:else if myTree?.due}<button disabled={busy} onclick={() => world?.walkTo(myTree.x, myTree.z)}>Go to plant</button>{/if}
+						<button disabled={busy} onclick={() => waterMove('putWater')}>Put down</button>
+					{:else if view.water.carriedBy}
+						<span>{view.players[view.water.carriedBy].name} has the canister.</span>
+					{:else if waterNear}
+						<button disabled={busy} onclick={() => waterMove('takeWater')}>Pick up canister</button>
+					{:else}
+						<button disabled={busy} onclick={goToWater}>Go to canister{roamNow.waterDistance != null ? ` · ${roamNow.waterDistance} m` : ''}</button>
+					{/if}
+				</div>
+			</section>
 		{/if}
 		{#if ended}<div class="fade-in end" aria-hidden="true"></div>{/if}
 		{#if playing}
@@ -1082,46 +1083,6 @@
 	@keyframes fadeto {
 		to { opacity: 1; }
 	}
-	/* the admin's growth preview, under the numbers at the top */
-	.growth {
-		position: absolute;
-		z-index: 7;
-		top: 4.2rem;
-		left: 50%;
-		transform: translateX(-50%);
-		display: flex;
-		align-items: center;
-		gap: 0.3rem;
-		padding: 0.3rem 0.5rem;
-		border-radius: 999px;
-		font-size: 0.85rem;
-		white-space: nowrap;
-	}
-	.growth .what {
-		margin: 0 0.3rem;
-		color: #6b7a6f;
-	}
-	.growth button:not(.link) {
-		width: 1.9rem;
-		height: 1.9rem;
-		border: 0;
-		border-radius: 50%;
-		background: rgb(36 69 47 / 0.1);
-		font: inherit;
-		cursor: pointer;
-	}
-	.growth button:disabled {
-		opacity: 0.35;
-		cursor: default;
-	}
-	.growth b {
-		min-width: 6.5rem;
-		text-align: center;
-	}
-	.growth small {
-		margin-left: 0.2rem;
-		color: #6b7a6f;
-	}
 	/* the walk's buttons, stacked bottom up: beside the tools down the left, clear of them and of the mint button */
 	.walkbar {
 		position: absolute;
@@ -1143,25 +1104,6 @@
 		font-weight: 600;
 		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
 		cursor: pointer;
-	}
-	.walkhint {
-		position: absolute;
-		z-index: 7;
-		left: 50%;
-		top: 4.5rem;
-		transform: translateX(-50%);
-		margin: 0;
-		padding: 0.4rem 0.9rem;
-		border-radius: 999px;
-		background: rgb(250 248 242 / 0.9);
-		color: #3a4a3f;
-		font-size: 0.85rem;
-		white-space: nowrap;
-		pointer-events: none;
-	}
-	.mintbar.waterbar {
-		bottom: calc(var(--nav-room, 4rem) + 4.2rem);
-		background: #2c5a72;
 	}
 	.title {
 		position: absolute;
@@ -2006,5 +1948,30 @@
 			transform: translateX(100%);
 		}
 	}
-	.water-care { position:absolute; bottom:6.5rem; left:1rem; display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; max-width:min(36rem,calc(100% - 2rem)); padding:.7rem; font-size:.8rem; }
+	.water-care {
+		position: absolute; z-index: 3; top: calc(4.2rem + env(safe-area-inset-top, 0px));
+		left: 50%; transform: translateX(-50%); width: min(26rem, calc(100% - 1rem));
+		box-sizing: border-box; padding: .65rem .8rem; border-radius: 16px; font-size: .8rem;
+	}
+	.care-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+	.care-heading strong { min-width: 0; font-variant-numeric: tabular-nums; }
+	.water-level { flex-shrink: 0; font-size: .72rem; white-space: nowrap; }
+	.care-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
+	.care-actions button { min-height: 44px; padding: .4rem .7rem; border-radius: 12px; font: inherit; }
+	.care-actions span { font-size: .75rem; }
+	@media (max-width: 720px), (max-height: 500px) {
+		.topstats { display: none; }
+		.walkbar { left: auto; right: .5rem; bottom: calc(var(--nav-room, 4rem) + 4rem); }
+		.tag small { display: none; }
+		.tag.tree small:first-of-type { display: block; }
+		.water-care { top: calc(3.4rem + env(safe-area-inset-top, 0px)); }
+	}
+	@media (max-width: 720px), (max-height: 500px) {
+		.v1 :global(.stick) { bottom: calc(var(--nav-room, 4rem) + 4.2rem); }
+	}
+	@media (max-height: 500px) {
+		.v1 :global(.stick) { bottom: var(--nav-room, 4rem); --stick-size: 5rem; }
+		.water-care { left: max(.5rem, env(safe-area-inset-left, 0px)); transform: none; width: min(23rem, calc(100% - 1rem)); }
+	}
+
 </style>

@@ -31,7 +31,7 @@ import { blend } from '$lib/assets/clips.js';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan, seeThrough, wearFace } from './van.js';
-import { PLOT, SEATS } from '../../../game/maiacity-v2/engine.js';
+import { PLOT, SEATS, WATER_REACH } from '../../../game/maiacity-v2/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, WALK_CYCLE, stakeRef, standInRef, tentWork } from './things.js';
 import { createDrawn } from './drawn.js';
@@ -3027,7 +3027,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const me = people[stage.me];
 		if (busy || !me) return;
 		const S = { x, z };
-        if (roam && !tourOn) { roamTo = wayTo(me, spotAt(S)(0,0,-.62)); return; }
+        if (roam && !tourOn) { if (driving || boarding) return; boardNext = false; roamTo = wayTo(me, spotAt(S)(0,0,-.62)); return; }
 		seatOut(me);
 		me.visible = true;
 		wear(me, true); // out of the tent with them, for the seed and the bottle
@@ -3046,6 +3046,25 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (!on && roam) walk(false);
 	}
 	const keys = new Set();
+	const stick = { x: 0, y: 0, hurry: false };
+	function move(x, y, hurry) {
+		if ((x || y) && (!wantRoam || busy || (!roam && !walk(true)))) return;
+		Object.assign(stick, { x, y, hurry });
+		if (x || y) { roamTo = []; boardNext = false; driveTo = null; }
+	}
+	function look(dx, dy) {
+		if (!roam || busy) return;
+		goal = null;
+		drift = false;
+		const offset = camera.position.clone().sub(controls.target);
+		const spherical = new THREE.Spherical().setFromVector3(offset);
+		spherical.theta -= dx * .0065;
+		spherical.phi = Math.max(.12, Math.min(Math.PI / 2 - .04, spherical.phi - dy * .0065));
+		camera.position.copy(controls.target).add(offset.setFromSpherical(spherical));
+		controls.update();
+	}
+	const stopInput = () => { keys.clear(); Object.assign(stick, { x: 0, y: 0, hurry: false }); };
+	window.addEventListener('blur', stopInput);
 	const KEYS = { ArrowUp: [0, 1], KeyW: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
 	const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName ?? '') || e.target?.isContentEditable;
 	const onKey = (e) => {
@@ -3066,7 +3085,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		roamTo = [];
 		if (inTent) lensOut();
 		inTent = false;
-		keys.clear();
+		stopInput();
 		errand = null;
 		if (roam) {
 			const sat = me.parent === truck ? me.userData.seat : null;
@@ -3188,10 +3207,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the free drive, a frame of it: on along the keys, or on to where they tapped, slowing as it comes and as it turns */
 	function drivingStep(step) {
 		let throttle = 0, turn = 0;
-		if (keys.size) {
+		if (keys.size || stick.x || stick.y) {
 			const k = [...keys].reduce((a, c) => [a[0] + KEYS[c][0], a[1] + KEYS[c][1]], [0, 0]);
-			throttle = Math.sign(k[1]);
-			turn = -Math.sign(k[0]); // left (+x, the driver's side) turns it left
+			throttle = Math.max(-1, Math.min(1, k[1] + stick.y));
+			turn = -Math.max(-1, Math.min(1, k[0] + stick.x)); // left (+x, the driver's side) turns it left
 			driveTo = null;
 		} else if (driveTo) {
 			const dx = driveTo.x - truck.position.x, dz = driveTo.z - truck.position.z, dist = Math.hypot(dx, dz);
@@ -3351,14 +3370,16 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (!me || me.parent !== world) return;
 		const was = me.position.clone();
 		let dir = null;
-		if (keys.size) {
+		if (keys.size || stick.x || stick.y) {
 			const ahead = controls.target.clone().sub(camera.position).setY(0).normalize(), right = V(-ahead.z, 0, ahead.x);
 			const k = [...keys].reduce((a, c) => [a[0] + KEYS[c][0], a[1] + KEYS[c][1]], [0, 0]);
-			dir = ahead.multiplyScalar(k[1]).addScaledVector(right, k[0]);
+			dir = ahead.multiplyScalar(k[1] + stick.y).addScaledVector(right, k[0] + stick.x);
 		} else if (roamTo.length) dir = roamTo[0].clone().sub(me.position).setY(0);
 		const left = dir?.length() ?? 0;
 		if (left > 0.05) {
-			const d = Math.min(keys.size ? Infinity : left, ROAM * step);
+			const manual = keys.size || stick.x || stick.y;
+			const pace = keys.size ? 1 : manual ? Math.min(1, left) * (stick.hurry ? 1 : .5) : 1;
+			const d = Math.min(manual ? Infinity : left, ROAM * pace * step);
 			dir.normalize();
 			me.position.copy(walkable(was, me.position.clone().addScaledVector(dir, d)));
 			me.rotation.y = Math.atan2(dir.x, dir.z);
@@ -3485,6 +3506,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// a machine, a thing or a tree tapped shows what it is, as before; the ground, the tent and the buildings are
 			// walked to
 			const thing = ray.intersectObjects(world.children, true).find((h) => h.object.visible && /^(asset|tree):/.test(h.object.name) && !/^asset:(tent|busStop|gasStation|shed)$/.test(h.object.name));
+			if (thing?.object.name === 'asset:water-canister' && sharedWater && !sharedWater.carriedBy) {
+				boardNext = false;
+				walkTo(sharedWater.x, sharedWater.z);
+				return;
+			}
 			if (thing) return void onPick(thing.object.name);
 			boardNext = false;
 			if (at) roamTo = wayTo(people[stage.me], at);
@@ -3498,6 +3524,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const hit = ray.intersectObjects(world.children, true).find((h) => h.object.name && h.object.visible);
 		onPick(hit ? hit.object.name : null);
 	};
+	// TouchStick owns touch camera gestures; OrbitControls and tap-to-walk must not also consume them.
+	const touchPointer = (e) => {
+		if (e.pointerType === 'touch' && wantRoam && !tourOn && !film) e.stopImmediatePropagation();
+	};
+	for (const event of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) canvas.addEventListener(event, touchPointer, true);
 	canvas.addEventListener('pointerdown', onDown);
 	canvas.addEventListener('pointerup', onUp);
 
@@ -3590,9 +3621,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const at = people[stage.me].getWorldPosition(V());
    const mine=trees[stage.me];
    const r = { on: roam, near: byPickup(), driving: driving || !!boarding?.into,
-    waterNear: !!sharedWater && Math.hypot(at.x-sharedWater.x,at.z-sharedWater.z)<2.5,
-    treeNear: !!mine && Math.hypot(at.x-mine.position.x,at.z-mine.position.z)<2.5 };
-			if (r.on !== roamSeen.on || r.near !== roamSeen.near || r.driving !== roamSeen.driving || r.waterNear !== roamSeen.waterNear || r.treeNear !== roamSeen.treeNear) ((roamSeen = r), onRoam(r));
+    waterNear: !!sharedWater && Math.hypot(at.x-sharedWater.x,at.z-sharedWater.z) <= WATER_REACH,
+    waterDistance: sharedWater ? Math.ceil(Math.hypot(at.x-sharedWater.x,at.z-sharedWater.z)) : null,
+    treeNear: !!mine && Math.hypot(at.x-mine.position.x,at.z-mine.position.z) <= WATER_REACH };
+			if (r.on !== roamSeen.on || r.near !== roamSeen.near || r.driving !== roamSeen.driving || r.waterNear !== roamSeen.waterNear || r.waterDistance !== roamSeen.waterDistance || r.treeNear !== roamSeen.treeNear) ((roamSeen = r), onRoam(r));
 		}
 	}
 	if (own) loop();
@@ -3676,6 +3708,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		sticks: markIt,
 		sow,
 		water: waterTree,
+		move,
+		look,
 		position: () => { const p=people[stage.me].getWorldPosition(V()); return {x:p.x,z:p.z}; },
 		skip,
 		get busy() {
@@ -3696,6 +3730,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			cancelAnimationFrame(raf);
 			drawn.dispose();
 			ro.disconnect();
+			window.removeEventListener('blur', stopInput);
+			for (const event of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) canvas.removeEventListener(event, touchPointer, true);
 			canvas.removeEventListener('pointerdown', onDown);
 			canvas.removeEventListener('pointerup', onUp);
 			window.removeEventListener('keydown', onKey);
