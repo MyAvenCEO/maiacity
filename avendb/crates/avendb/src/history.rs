@@ -216,6 +216,17 @@ pub struct Described {
 }
 
 impl History {
+
+    /// Hydrate omitted bodies only from locally authenticated opened edits.
+    pub(crate) fn restore_held_bodies(&mut self, bodies: &HashMap<EditId, crate::slice::Body>) {
+        for change in &mut self.changes {
+            if change.body.is_none() {
+                if let Some(body) = bodies.get(&change.write.edit) {
+                    change.body = Some(body.content.clone());
+                }
+            }
+        }
+    }
     /// Add the next accepted write. Refused, as the rules refuse it, if it builds on a write the history doesn't
     /// hold or, on a proposal, on neither the proposal's start nor another write on it.
     pub fn push(&mut self, c: Change) -> Result<(), Refusal> {
