@@ -95,7 +95,7 @@ impl Lab {
                 .edits()
                 .iter()
                 .filter(|e| {
-                    base.history.get(e.id()).is_none()
+                    judging.history.get(e.id()).is_none()
                         && matches!(e.action,Action::Write{entry:eid,..}if eid==entry)
                 })
                 .take(513)
@@ -282,6 +282,29 @@ mod tests {
         lab.stores.get_mut(&phone).unwrap().signed.remove(&concurrent);
         lab.refresh(phone, &[]);
         assert!(!lab.held(phone).bootstrap_active.contains(&entry), "an unverifiable required suffix cannot be skipped while claiming writable completeness");
+    }
+
+    #[test]
+    fn owner_bootstrap_refuses_an_unsupported_proposal_suffix() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Proposal owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        lab.sync(mac, phone);
+        lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint")).unwrap();
+        let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, draft, &[]).unwrap();
+        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        lab.receive(phone, offer.evidence, vec![]);
+        assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed.clone()));
+        let heads = lab.held(mac).shown.get(&entry).unwrap().history.heads(MAIN);
+        let proposal = lab.propose(mac, vault, entry, &heads, "Unsupported partial proposal").unwrap();
+        let signed = lab.backup(mac).signed().iter().find(|s| s.edit.id() == proposal).unwrap().clone();
+        lab.receive(phone, vec![signed], vec![]);
+        assert!(!lab.held(phone).bootstrap_active.contains(&entry), "the main-only overlay cannot silently omit a held proposal");
+        assert!(!lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
     }
 
     #[test]
