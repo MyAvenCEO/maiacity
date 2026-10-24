@@ -73,3 +73,4 @@ import AvenDB.EntryFilesBatch
 import AvenDB.LatestReplay
 
 import AvenDB.LocalDiscovery
+import AvenDB.WorkMetrics
