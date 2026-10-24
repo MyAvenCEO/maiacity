@@ -183,15 +183,20 @@ mod tests {
         let target = w.lab.create(w.mac_a, w.alice, w.alice, "private-note", &[],
             document("Private", "Current permission", w.mac_a)).unwrap();
         let query = Query { types: vec!["private-note".into()], vault: None };
+        // split moves the device store, so author the future governance batch while it is
+        // still held here, then restore only the provider's earlier state for the race.
+        let before_revocation = w.lab.backup(w.mac_a);
+        w.lab.submit(w.mac_a, &[w.passkey_a], Action::Revoke(Revoking::Device {
+            vault: w.alice, device: w.phone_a, keep: vec![],
+        })).unwrap();
+        let revoked = w.lab.backup(w.mac_a).signed().to_vec();
         let mut provider = w.lab.split(w.mac_a, &[], [123; 32]);
+        provider.restore_from(w.mac_a, before_revocation);
         let prepared_revision = provider.log(w.mac_a).revision();
         assert_eq!(hints(&provider, w.mac_a, w.phone_a, &query), vec![target.to_hex()]);
         let body = serde_json::to_vec(&json!({"version":1,"complete":false,"entries":[target.to_hex()]})).unwrap();
         assert!(finish(&provider, w.mac_a, prepared_revision.clone(), body.clone()).is_ok());
-        w.lab.submit(w.mac_a, &[w.passkey_a], Action::Revoke(Revoking::Device {
-            vault: w.alice, device: w.phone_a, keep: vec![],
-        })).unwrap();
-        provider.receive_whose_now(w.mac_a, w.lab.backup(w.mac_a).signed().to_vec(), vec![], false);
+        provider.receive_whose_now(w.mac_a, revoked, vec![], false);
         assert_ne!(provider.log(w.mac_a).revision(), prepared_revision,
             "prepared response fails the transmission fence");
         assert!(finish(&provider, w.mac_a, prepared_revision, body).is_err(),
