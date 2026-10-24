@@ -1196,9 +1196,10 @@ mod tests {
         let me = lab.device_of(passkey, "Mac");
         let vault = human_on(&mut lab, passkey, &[me]);
         let entry = lab.create(me, vault, vault, "note", &[], document("Note", "Before", me)).unwrap();
-        let writer = crate::disk::open(&folder).unwrap().writer().unwrap();
+        // Node::spawn acquires the single writer; do not pre-acquire another owner.
+        let shelf = crate::disk::open(&folder).unwrap();
         let node = Node::spawn(lab.split(me, &[passkey], [71; 32]), me,
-            Options { shelf: Some(writer.shelf()), ..Options::local() }).await.unwrap();
+            Options { shelf: Some(shelf), ..Options::local() }).await.unwrap();
         node.shared.save().await.unwrap();
         let book = node.shared.edits.as_ref().unwrap().book.lock().await;
         node.act(|lab, me| { let backup = lab.backup(me); lab.restore_backup(me, &backup); }).await;
