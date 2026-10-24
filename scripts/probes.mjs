@@ -19,7 +19,8 @@
  *   script reads the doc as drawn for anything outside MathML Core and the Markdown engine's tags. Every check must pass.
  *
  * The site is the dev server's, with the repo's own recipes standing in for the Maia City vault's feed
- * (VITE_RECIPE_FEED=dev), so nothing here needs avenDB's server; the app's sign-in is answered here (/api/me).
+ * (VITE_RECIPE_FEED=dev). The harness preloads those rows/files into a disposable local-device adapter; the renderer
+ * still reads through its local-only avenDB contract. No real store or peer is used; app sign-in is answered here (/api/me).
  *
  *   node scripts/probes.mjs                                            starts its own dev server
  *   BASE=http://localhost:5173 node scripts/probes.mjs                 a running one (VITE_RECIPE_FEED=dev bun run dev)
@@ -416,9 +417,49 @@ async function mathProbe() {
 	await page.close();
 }
 
+/** The box probe has no signed-in real device. Seed a disposable in-memory device
+ * before rendering, instead of relying on a renderer HTTP fallback. All fixture
+ * bytes are fetched before useDevice; recipe reads themselves are local-only. */
+async function connectBoxFixture(page) {
+	await page.evaluate(async () => {
+		const listing = await fetch('/__recipe-feed/code');
+		if (!listing.ok) throw new Error('the box fixture catalog is unavailable');
+		const { code: rows } = await listing.json();
+		if (!Array.isArray(rows) || !rows.length) throw new Error('the box fixture catalog is empty');
+		const files = new Map();
+		let next = 0;
+		await Promise.all(Array.from({ length: 6 }, async () => {
+			while (next < rows.length) {
+				const row = rows[next++];
+				const file = row.files.at(-1);
+				const response = await fetch(`/__recipe-feed/entry/${row.vault}/${row.entry}/file`);
+				if (!response.ok) throw new Error('the box fixture file is unavailable');
+				const bytes = new Uint8Array(await response.arrayBuffer());
+				if (bytes.length !== file.len) throw new Error('the box fixture file is truncated');
+				files.set(file.root, { bytes, size: file.size });
+			}
+		}));
+		const { useDevice } = await import('/game/code/sources/device.js');
+		useDevice({ run: async (op) => {
+			if (op.op === 'code') return { ok: rows.filter((row) => row.vault === op.vault && op.type.includes(row.type)) };
+			if (op.op === 'read_file') {
+				const file = files.get(op.root);
+				if (op.local !== true || !file || op.size !== file.size || !Number.isSafeInteger(op.from) ||
+					!Number.isSafeInteger(op.to) || op.from < 0 || op.to < op.from || op.to > file.bytes.length)
+					throw new Error('the box fixture refuses a nonlocal or invalid file read');
+				return { bytes: file.bytes.slice(op.from, op.to) };
+			}
+			return { refused: true, why: 'the disposable box fixture supports only local recipe reads' };
+		} });
+		const { loadRecipes } = await import('/src/lib/assets/vault.js');
+		await loadRecipes({ vault: rows[0].vault });
+	});
+}
+
 async function boxLab() {
 	const page = await signedIn();
 	await page.goto(`${base}/app/assets/box/`, { waitUntil: 'domcontentloaded' });
+	await connectBoxFixture(page);
 	const shown = await driver.waitFor(page, 'button.chip.run:not([disabled])', 120000).catch(() => null);
 	if (!shown) return check('the box lab opens', false, (await page.evaluate(() => document.body.innerText).catch(() => '')).replace(/\s+/g, ' ').slice(0, 300));
 	// a page the dev server reloads (a dependency it found late) loses its run: a failure says so
