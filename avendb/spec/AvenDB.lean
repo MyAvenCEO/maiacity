@@ -68,3 +68,5 @@ import AvenDB.ListenerRelease
 import AvenDB.AnnounceOwed
 
 import AvenDB.WorldSnapshot
+
+import AvenDB.EntryFilesBatch

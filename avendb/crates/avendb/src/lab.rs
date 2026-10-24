@@ -4940,6 +4940,20 @@ impl Lab {
         files.map(|f| (f, self.file(d, &f).map(|b| b.len))).collect()
     }
 
+    /// The same held-log projection as `entry_files`, grouped in one history pass for
+    /// a full-world snapshot. The caller supplies its already selected entries; this
+    /// transient map adds no authority or persisted cache. Lengths still use `file`.
+    pub(crate) fn entry_files_batch(
+        &self, d: SignerId, entries: impl IntoIterator<Item = EntryId>,
+    ) -> BTreeMap<EntryId, Vec<(FileRoot, Option<u64>)>> {
+        grouped_file_roots(entries, self.held(d).log.edits().iter())
+            .into_iter()
+            .map(|(entry, roots)| (entry, roots.into_iter().map(|root| {
+                (root, self.file(d, &root).map(|file| file.len))
+            }).collect()))
+            .collect()
+    }
+
     /// The files the writes of line `line` of entry `entry` bring that device `d` counts as the entry's, in the order
     /// the line's history holds them, oldest first, each once, with its plaintext length where `d` opens it (`file`):
     /// of the writes it counts on that line's history (`History::history`), those that create the entry, act for its
@@ -6422,3 +6436,26 @@ mod receive_empty_tests;
 #[cfg(test)]
 #[path = "request_basis_tests.rs"]
 mod request_basis_tests;
+
+/// Preserve receipt order and first occurrence, exactly as the per-entry scan does.
+/// Keeping iteration generic lets the regression count actual history visits.
+fn grouped_file_roots<'a>(
+    entries: impl IntoIterator<Item = EntryId>,
+    edits: impl IntoIterator<Item = &'a Edit>,
+) -> BTreeMap<EntryId, Vec<FileRoot>> {
+    let mut groups: BTreeMap<_, (BTreeSet<FileRoot>, Vec<FileRoot>)> = entries.into_iter()
+        .map(|entry| (entry, (BTreeSet::new(), vec![]))).collect();
+    if !groups.is_empty() {
+        for edit in edits {
+            let Some((seen, roots)) = edit.entry().and_then(|entry| groups.get_mut(&entry)) else { continue };
+            for &root in edit.files() {
+                if seen.insert(root) { roots.push(root); }
+            }
+        }
+    }
+    groups.into_iter().map(|(entry, (_, roots))| (entry, roots)).collect()
+}
+
+#[cfg(test)]
+#[path = "entry_files_batch_tests.rs"]
+mod entry_files_batch_tests;
