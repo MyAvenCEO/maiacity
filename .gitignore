@@ -10,7 +10,7 @@ node_modules
 /vault/target/
 /avendb/target/
 /vault/app/gen/
-# avenDB's native device, the app's sidecar, as vault/app/build.rs builds it
+# Leftover generated sidecars from older app builds
 /vault/app/binaries/
 
 # OS

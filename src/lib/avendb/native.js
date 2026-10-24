@@ -1,4 +1,4 @@
-// avenDB's device in the Mac app, maiaCITY Studio: run natively beside the app as its sidecar (avendb/crates/
+// avenDB's device in the Mac app, maiaCITY Studio: hosted in the app's process (avendb/crates/
 // avendb-device, vault/app/src/avendb.rs), not in this page's WebAssembly. Its node reaches the person's other devices
 // directly, over UDP sockets of its own, and keeps their vault in a folder on the Mac, not in the page's store; it runs
 // on while the app does, whichever page is open. Each ceremony of the person's passkey it asks for runs in the app's
@@ -51,8 +51,7 @@ async function readFile(op) {
 
 /**
  * What the app's folder holds: `meta`, what opens the device there (its name, relay, salt's own bytes, and its
- * passkey's credential and key), and the device, if it is open. It fails if the app can't run avenDB natively, as when
- * its device didn't build with the app.
+ * passkey's credential and key), and the device, if it is open. It fails if the embedded native host cannot start.
  * @returns {Promise<{ meta: any, open: boolean, device: any }>}
  */
 export const status = () => call('status');

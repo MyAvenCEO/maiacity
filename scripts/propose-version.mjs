@@ -44,7 +44,7 @@ function device() {
 	} catch {
 		// no Claude Code config here
 	}
-	throw new Error('no agent device: give --device <theOS app’s avendb-device>, or add it to Claude Code (claude mcp add --scope user avendb -- <avendb-device> agent claude)');
+	throw new Error('no agent device: give --device <theOS app’s maiacity-studio>, or add it to Claude Code (claude mcp add --scope user avendb -- <maiacity-studio> agent claude)');
 }
 
 /** an MCP session with the agent device on its stdio: `call(tool, args)` answers its tool's text, read as JSON */
