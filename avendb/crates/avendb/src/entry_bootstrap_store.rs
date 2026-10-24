@@ -4,6 +4,15 @@ use super::*;
 
 pub(crate) type Anchors = BTreeMap<EntryId, (EditId, Vec<u8>)>;
 
+const SUFFIX_BATCH: usize = 32;
+pub(crate) struct BootstrapProgress {
+    basis: OverlayBasis,
+    policy: crate::policy::Slice,
+    base_scratch: Option<Scratch>,
+    pending: std::collections::VecDeque<Edit>,
+}
+
+
 // Process-local identity of immutable inputs, never persisted or accepted from a peer.
 // Bodies/blobs/signed entries are content-addressed and append-only between forgets;
 // key insertions and anchor replacement have explicit allocation-identity revisions.
@@ -46,6 +55,19 @@ pub(crate) struct RetainedOverlay {
 }
 
 impl Lab {
+
+    /// Remaining authenticated-log work, not complete history or file availability.
+    pub fn owner_base_pending(&self, on: SignerId, entry: EntryId) -> usize {
+        self.held(on).bootstrap_progress.get(&entry).map_or(0, |p| p.pending.len())
+    }
+    /// One bounded materialization turn. The Node pump must yield between turns.
+    /// A changed input basis restarts from the owner-attested base, never a stale cursor.
+    pub fn advance_owner_bases(&mut self, on: SignerId) -> bool {
+        let at = self.at(on);
+        if self.locked(at) || self.held(at).bootstrap_progress.values().all(|p| p.pending.is_empty()) { return false; }
+        self.rebuild_owner_bases(at);
+        !self.held(at).bootstrap_progress.values().all(|p| p.pending.is_empty())
+    }
     /// Authorized provenance of a currently adopted owner base. A hint is neither
     /// global completeness nor permission to skip ordinary write admission.
     pub fn active_owner_base(&self, on: SignerId, entry: EntryId) -> Option<(EditId, Vec<EditId>)> {
@@ -118,23 +140,40 @@ impl Lab {
     /// stays in the ordinary log; only the entry's derived view is overlaid.
     pub(crate) fn rebuild_owner_bases(&mut self, on: SignerId) {
         let anchors = self.held(on).bootstrap_bases.clone();
-        let restored: Vec<_> = anchors
-            .iter()
-            .filter_map(|(entry, (snap, sealed))| {
-                self.restore_owner_judgment(on, *snap, *entry, sealed)
-                    .map(|base| (*snap, base))
-            })
-            .collect();
+        let mut restored = Vec::new();
+        for (entry, (snapshot, sealed)) in &anchors {
+            let reusable = self.held(on).bootstrap_progress.get(entry)
+                .is_some_and(|p| p.basis.matches(self.held(on)))
+                && self.active_owner_base(on, *entry).is_some();
+            if reusable {
+                let at = self.at(on);
+                let store = self.stores.get_mut(&at).expect("device");
+                let progress = store.bootstrap_progress.remove(entry).expect("progress");
+                if let Some(shown) = store.shown.remove(entry) {
+                    let base = RestoredOwnerJudgment { entry: *entry, history: shown.history,
+                        after: shown.after, items: shown.items.into_inner().unwrap_or_default(),
+                        policy: progress.policy, bodies: HashMap::new() };
+                    restored.push((*snapshot, base, Some((progress.pending, progress.base_scratch))));
+                    continue;
+                }
+            }
+            let at = self.at(on);
+            self.stores.get_mut(&at).expect("device").bootstrap_progress.remove(entry);
+            if let Some(base) = self.restore_owner_judgment(on, *snapshot, *entry, sealed) {
+                restored.push((*snapshot, base, None));
+            }
+        }
         let at = self.at(on);
         let store = self.stores.get_mut(&at).expect("device");
         store.bootstrap_state = None;
+        store.latest = OnceLock::from(store.replay.state.clone());
         store.bootstrap_active.clear();
         store.bootstrap_basis = None;
         if restored.is_empty() {
             return;
         }
         let mut state = store.replay.state.clone();
-        'anchor: for (_snapshot, mut base) in restored {
+        'anchor: for (_snapshot, mut base, resumed) in restored {
             let entry = base.entry;
             let Some(en) = base.policy.entries.first() else {
                 continue;
@@ -172,26 +211,23 @@ impl Lab {
             }
             let lane = Lane::with_built_ins(view.lane_of(vault, &readings));
             let en = view.entry(entry).expect("scoped entry").clone();
-            let base_scratch =
+            let original_scratch = if resumed.is_none() {
                 base.items.get(&MAIN).cloned().and_then(|item| {
                     Scratch::from_attested_item(item, &base.history.history(MAIN))
-                });
-            let mut judging = Judging::resume(&en, &readings, &lane, base.history, base.after);
-            let mut suffix: Vec<_> = store
-                .log
-                .edits()
-                .iter()
-                .filter(|e| {
-                    judging.history.get(e.id()).is_none()
-                        && matches!(e.action,Action::Write{entry:eid,..}if eid==entry)
                 })
-                .take(513)
-                .cloned()
-                .collect();
-            if suffix.len() > 512 {
-                continue;
-            }
-            suffix = crate::policy::order(&suffix);
+            } else { None };
+            let mut judging = Judging::resume(&en, &readings, &lane, base.history, base.after);
+            let (mut pending, base_scratch) = match resumed {
+                Some(saved) => saved,
+                None => {
+                    let suffix: Vec<_> = store.log.edits().iter()
+                        .filter(|e| judging.history.get(e.id()).is_none()
+                            && matches!(e.action,Action::Write{entry:eid,..}if eid==entry))
+                        .cloned().collect();
+                    (std::collections::VecDeque::from(crate::policy::order(&suffix)), original_scratch)
+                }
+            };
+            let suffix: Vec<_> = pending.drain(..pending.len().min(SUFFIX_BATCH)).collect();
             let mut opened_suffix = Vec::new();
             for edit in suffix {
                 let id = edit.id();
@@ -264,12 +300,25 @@ impl Lab {
                 .expect("entry projections")
                 .remove(&(on, entry));
             store.bootstrap_active.insert(entry);
+            {
+                store.bootstrap_progress.insert(entry, BootstrapProgress {
+                    basis: OverlayBasis::of(store), policy: view.slice_of(entry),
+                    base_scratch, pending,
+                });
+            }
+
             state = view;
         }
         if !store.bootstrap_active.is_empty() {
             store.latest = OnceLock::from(state.clone());
             store.bootstrap_state = Some(state);
             store.bootstrap_basis = Some(OverlayBasis::of(store));
+            let entries: Vec<_> = store.bootstrap_progress.keys().copied().collect();
+            for entry in entries {
+                let basis = OverlayBasis::of(store);
+                store.bootstrap_progress.get_mut(&entry).expect("progress").basis = basis;
+            }
+
         }
     }
 }
@@ -573,6 +622,45 @@ mod tests {
         assert!(lab.active_owner_base(phone, entry).is_none());
         assert!(!lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
         assert_eq!(lab.held(phone).view().slice_of(entry), canonical, "historical stays/seals cannot overwrite the current policy");
+    }
+
+    #[test]
+    fn owner_bootstrap_batches_over_512_and_restarts_without_losing_suffix() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        lab.sync(mac, phone);
+        lab.edit(mac, vault, entry, |i| i.set_text(2, "base")).unwrap();
+        let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, draft, &[]).unwrap();
+        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        lab.receive(phone, offer.evidence, vec![]);
+        assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
+        let mut suffix = Vec::new();
+        for n in 0..513 {
+            let id = lab.edit(mac, vault, entry, |i| i.set_text(2, &format!("suffix {n}"))).unwrap();
+            suffix.push(lab.signed_edit(mac, id).unwrap().clone());
+        }
+        lab.receive(phone, suffix, vec![]);
+        assert_eq!(lab.owner_base_pending(phone, entry), 513 - SUFFIX_BATCH);
+        assert!(lab.item(phone, entry).is_some(), "validated prefix remains useful");
+        assert!(lab.edit(phone, vault, entry, |i| i.set_text(2, "premature")).is_err());
+        let saved = lab.backup(phone);
+        lab.restore_backup(phone, &saved);
+        assert_eq!(lab.owner_base_pending(phone, entry), 513 - SUFFIX_BATCH);
+        let mut turns = 0;
+        while lab.owner_base_pending(phone, entry) > 0 {
+            let before = lab.owner_base_pending(phone, entry);
+            lab.advance_owner_bases(phone);
+            assert_eq!(lab.owner_base_pending(phone, entry), before.saturating_sub(SUFFIX_BATCH));
+            turns += 1;
+            assert!(turns < 20);
+        }
+        assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
+        assert!(lab.edit(phone, vault, entry, |i| i.set_text(2, "ready")).is_ok());
     }
 
     #[test]
