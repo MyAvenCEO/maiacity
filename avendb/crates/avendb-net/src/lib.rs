@@ -111,6 +111,7 @@ mod blobs;
 pub mod bucket;
 mod demand;
 mod authority_stage;
+mod authority_classes;
 mod discovery;
 mod checkpoint_delivery;
 mod bootstrap_dependencies;
@@ -3125,6 +3126,10 @@ impl Shared {
     /// `device` told the node `announce` of its holdings, on a connection whose hello proved it: what it holds from
     /// now on, as `Holdings::take` says. A device that claims to hold more than `MOST` logs or files claims nothing.
     fn hear(self: &Arc<Self>, device: SignerId, announce: Announce) {
+        self.hear_from(device, None, announce);
+    }
+
+    fn hear_from(self: &Arc<Self>, device: SignerId, connection: Option<usize>, announce: Announce) {
         let full = announce.full;
         let mut held = self.held.lock().expect("held");
         let holdings = held.entry(device).or_default();
@@ -3132,7 +3137,10 @@ impl Shared {
         // Always take the holdings lock before the range cache: complete range rounds use the same order, so a
         // legacy update cannot race between checking a root and publishing its replacement.
         let mut ranges = self.ranges.lock().expect("ranges");
-        ranges.observe(device, &announce);
+        match connection {
+            Some(connection) => ranges.observe_on(connection, device, &announce),
+            None => ranges.observe(device, &announce),
+        }
         holdings.take(announce);
         if holdings.logs.len() > MOST || holdings.files.len() > MOST {
             held.remove(&device);

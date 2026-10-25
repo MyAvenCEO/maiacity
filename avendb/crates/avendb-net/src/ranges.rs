@@ -658,6 +658,9 @@ impl Completed {
 pub(crate) struct Cache {
     offered: HashMap<SignerId, Tree>,
     received: HashMap<SignerId, Tree>,
+    /// Complete inventory roots proved on this authenticated connection. Retained
+    /// trees from an earlier connection are useful baselines, not fresh receipts.
+    received_on: HashMap<SignerId, usize>,
     incoming: HashMap<usize, Incoming>,
     unsupported: HashSet<usize>,
     retained: Arc<AtomicUsize>,
@@ -668,7 +671,22 @@ pub(crate) struct Cache {
     announced: usize,
 }
 
+/// Opaque identity of a complete log inventory; fields cannot be supplied by a
+/// transport caller or reconstructed from a partial holdings map.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct InventoryReceipt(Summary);
+
 impl Cache {
+    pub(crate) fn complete_inventory(&self, connection: usize, device: SignerId) -> Option<InventoryReceipt> {
+        (self.received_on.get(&device) == Some(&connection))
+            .then(|| self.received.get(&device).map(|tree| InventoryReceipt(tree.0.summary))).flatten()
+    }
+
+    pub(crate) fn observe_on(&mut self, connection: usize, device: SignerId, announce: &Announce) {
+        let established = announce.full || self.received_on.get(&device) == Some(&connection);
+        self.observe(device, announce);
+        if established && self.received.contains_key(&device) { self.received_on.insert(device, connection); }
+    }
     pub(crate) fn has_offered(&self, device: SignerId) -> bool {
         self.offered.contains_key(&device)
     }
@@ -677,6 +695,7 @@ impl Cache {
         if offered {
             self.offered.remove(&device)
         } else {
+            self.received_on.remove(&device);
             self.received.remove(&device)
         }
     }
@@ -696,6 +715,7 @@ impl Cache {
                 self.offered.remove(&old);
             } else {
                 self.received.remove(&old);
+                self.received_on.remove(&old);
             }
         }
         // Only this locked Cache adds charges; independently dropped snapshots can only subtract them.
@@ -739,6 +759,7 @@ impl Cache {
     pub(crate) fn gone(&mut self, connection: usize, device: SignerId, forget: bool) {
         self.incoming.remove(&connection);
         self.unsupported.remove(&connection);
+        if self.received_on.get(&device) == Some(&connection) { self.received_on.remove(&device); }
         if forget {
             // There can be an older concurrent connection of an unknown device. Once its complete claim is
             // forgotten, no candidate based on that claim may commit a sparse patch into now-empty holdings.
@@ -890,6 +911,7 @@ impl Cache {
         debug_assert_eq!(incoming.tree.0.summary, expected);
         drop(incoming.base);
         self.remember(false, device, incoming.tree);
+        if self.received.contains_key(&device) { self.received_on.insert(device, connection); }
         #[cfg(test)]
         {
             self.completed += 1;
@@ -936,6 +958,29 @@ mod tests {
             files: BTreeMap::new(),
         }
     }
+    #[test]
+    fn partial_or_old_connection_inventory_cannot_classify_negative_scope() {
+        let device = SignerId::from_u64(701);
+        let mut cache = Cache::default();
+        let full = holdings(4).since(None).unwrap();
+        let mut delta = full.clone();
+        delta.full = false;
+        cache.observe_on(1, device, &delta);
+        assert_eq!(cache.complete_inventory(1, device), None);
+        cache.observe_on(1, device, &full);
+        let receipt = cache.complete_inventory(1, device).expect("full authenticated inventory");
+        assert_eq!(cache.complete_inventory(2, device), None);
+        cache.observe_on(2, device, &delta);
+        assert_eq!(cache.complete_inventory(2, device), None, "old cached baseline is not a fresh connection receipt");
+        cache.observe_on(2, device, &full);
+        assert_eq!(cache.complete_inventory(2, device), Some(receipt));
+        let changed = Announce { full: false, logs: vec![(log(0), frontier(88))], files: vec![] };
+        cache.observe_on(2, device, &changed);
+        assert_ne!(cache.complete_inventory(2, device), Some(receipt));
+        cache.gone(2, device, false);
+        assert_eq!(cache.complete_inventory(2, device), None);
+    }
+
     fn observed(cache: &mut Cache, holdings: &Holdings) {
         cache.observe(device(), &holdings.since(None).unwrap());
     }

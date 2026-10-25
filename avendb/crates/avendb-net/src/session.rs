@@ -355,7 +355,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
             // of the device whose hello proved it on this connection, and of no other
             let announce = Announce::from_wire(body)?;
             let full = announce.full;
-            shared.hear(device, announce);
+            shared.hear_from(device, Some(peer.conn.stable_id()), announce);
             if full { shared.schedule_discoveries(); }
             shared.ask_soon(peer.endpoint);
             Ok(Vec::new())

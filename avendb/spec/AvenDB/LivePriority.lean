@@ -209,4 +209,38 @@ theorem new_inventory_requires_reclassification (classified ready : Bool) :
     classifiedScopeReady classified false ready = false := by
   simp [classifiedScopeReady]
 
+/-- Preconditions for the bounded owner-write slice. The Rust policy-read audit
+must establish the dependency closure; these laws prove refusal composition,
+not equivalence of every kernel policy read to the collected scope. -/
+structure OwnerScopeEvidence where
+  currentCompleteInventory : Bool
+  closedOwnerEntryCut : Bool
+  independentAuthority : Bool
+  allGrantsClassified : Bool
+
+def ownerScopeRelease (e : OwnerScopeEvidence) (frontiersReady valid authorized : Bool) : Bool :=
+  stageVisible (e.currentCompleteInventory && e.closedOwnerEntryCut &&
+    e.independentAuthority && e.allGrantsClassified && frontiersReady) valid authorized
+
+theorem owner_scope_refuses_bare_authority (e : OwnerScopeEvidence)
+    (h : e.independentAuthority = false) (ready valid authorized : Bool) :
+    ownerScopeRelease e ready valid authorized = false := by
+  simp [ownerScopeRelease, h, stageVisible, accepted]
+
+theorem owner_scope_refuses_partial_inventory (e : OwnerScopeEvidence)
+    (h : e.currentCompleteInventory = false) (ready valid authorized : Bool) :
+    ownerScopeRelease e ready valid authorized = false := by
+  simp [ownerScopeRelease, h, stageVisible, accepted]
+
+theorem owner_scope_preserves_policy_refusal (e : OwnerScopeEvidence) (ready valid : Bool) :
+    ownerScopeRelease e ready valid false = false := by
+  simp [ownerScopeRelease, stageVisible, accepted]
+
+/-- Scheduling a related key-log fetch is not evidence that the transfer has
+finished. The frontier must actually match before the staged entry can release. -/
+theorem owner_scope_waits_for_requested_dependencies (e : OwnerScopeEvidence)
+    (valid authorized : Bool) :
+    ownerScopeRelease e false valid authorized = false := by
+  simp [ownerScopeRelease, stageVisible, accepted]
+
 end AvenDB.LivePriority

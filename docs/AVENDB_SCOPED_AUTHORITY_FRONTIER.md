@@ -191,3 +191,39 @@ On the isolated branch after `c16e709b4`:
 
 These checks validate bounded staging and the negative closure examples, not full
 scoped-authority release or physical-device latency.
+
+### Bounded direct-owner closure candidate (not yet delivered)
+
+The candidate classifies every share ID in a complete, connection-bound holdings
+inventory by its independently verified creation. Unknown, unsigned,
+checkpoint-covered-only, oversized, or changed inventories retain the conservative
+path. The direct-owner case traces owning and reader vault/device ancestry, wide
+read grants and their current parents/revocations, and the owning audience key
+frontier. It does not trust remote metadata labels or change core admission.
+
+The first real-peer regression exposed an actual scheduling omission: creating
+the room after the receiver's prior sync introduces a new owning `Audience` key
+log. The stage correctly refused it, but originally waited for broad background
+authority sync instead of requesting this known related dependency. Diagnostic
+output established complete inventory, current root, valid owner-entry shape,
+and complete grant classification; the only missing authority was this audience
+and the deliberately withheld unrelated coop. The fix requests known owning,
+via-vault and audience dependencies through ordinary scoped transfer before
+attempting the existing admission fence. The regression must prove the related
+key log arrives while the unrelated coop and entry remain absent.
+
+The scheduling correction compiled, and the real-peer first-visible-room plus
+subsequent live-delta regression passed with unrelated coop authority and entry
+history deliberately absent. Five classifier/stage unit tests also passed. The
+old staging negative assumed related authority would never be fetched; it is now
+explicitly a legacy/incomplete-inventory fallback test, preserving its refusal
+assertion. That updated negative and a new actual signed grant-revocation test
+await their final focused run. `LivePriority.lean` and
+`OwnerAuthorityScope.lean` both pass.
+
+The candidate remains limited to at most 64 independently signed owner writes,
+unchanged empty explicit audience, bounded authority metadata, and no Aven
+global-cardinality or checkpoint-standing dependencies. Shared/cap-group writes,
+long target histories, authenticated checkpoint-standing closure, and general
+recursive missing-dependency fetching remain open. This is not a claim that the
+physical fresh-phone problem is fully solved.
