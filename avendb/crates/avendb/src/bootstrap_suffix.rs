@@ -3,7 +3,7 @@ use super::*;
 
 /// Constructed only by current local projection authority. Network callers use
 /// this metadata for dependency planning, not to install a policy kernel.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct OwnerBaseScope {
     snapshot: EditId,
     basis: Vec<EditId>,
