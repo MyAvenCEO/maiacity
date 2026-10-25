@@ -83,3 +83,19 @@ theorem unqueuedRetainsFallback [DecidableEq α] (requested queued : List α)
     entry ∈ fallback requested queued := by
   simp [fallback, h, hq]
 end AvenDB.SuffixQueue
+
+namespace AvenDB.CheckpointProvenance
+structure Witness where
+  replayCurrent : Bool
+  coveredStands : Bool
+  checkpointStands : Bool
+  checkpointSigned : Bool
+  orderedBefore : Bool
+  historicalActs : Bool
+def valid (w : Witness) : Bool := w.replayCurrent && w.coveredStands &&
+  w.checkpointStands && w.checkpointSigned && w.orderedBefore && w.historicalActs
+theorem revokedRefused (w : Witness) (h : w.checkpointStands = false) : valid w = false := by
+  simp [valid, h]
+theorem bareCycleRefused (w : Witness) (h : w.checkpointSigned = false) : valid w = false := by
+  simp [valid, h]
+end AvenDB.CheckpointProvenance

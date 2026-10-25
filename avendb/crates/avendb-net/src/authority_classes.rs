@@ -18,6 +18,7 @@ pub(crate) struct GrantClass {
     pub parent: Option<ShareId>,
     pub group: Option<EntryId>,
     pub via: Vec<VaultId>,
+    covered: bool,
 }
 
 impl GrantClass {
@@ -33,7 +34,7 @@ impl GrantClass {
         let Action::Share(Sharing::Grant(grant, via)) = &edit.action else { return None };
         if via.len() > MAX_VIA || !edit.parents.is_empty() { return None; }
         Some(Self { over: grant.over, issuer: grant.issuer, who: grant.who, level: grant.level, wide: grant.wide,
-            parent: grant.parent, group: grant.group, via: via.clone() })
+            parent: grant.parent, group: grant.group, via: via.clone(), covered: false })
     }
 }
 
@@ -107,6 +108,16 @@ mod tests {
         assert!(scope.contains(&LogId::Vault(w.bob)), "wide reader devices affect the target key epoch");
         assert!(scope.contains(&LogId::Share(grant)));
         assert!(!scope.contains(&LogId::Vault(w.carol)));
+        // A checkpoint-backed negative classifier must be revalidated on every
+        // admission, even when its immutable descriptor says "unrelated".
+        classes.0.get_mut(&grant).unwrap().covered=true;
+        assert!(classes.owner_scope_provenance(&shape, all, log.ids(), &local, &announced,
+            |id| if id==EditId(grant.0) {None} else {Some(vec![])}).is_none());
+        let provenance_scope=classes.owner_scope_provenance(&shape, all, log.ids(), &local, &announced,
+            |id| Some(if id==EditId(grant.0) {vec![w.bob]} else {vec![]})).unwrap();
+        assert!(provenance_scope.contains(&LogId::Vault(w.bob)));
+        classes.0.get_mut(&grant).unwrap().covered=false;
+
         assert!(classes.owner_scope(&shape, all, log.ids(), &local, &announced, |_| false).is_none(),
             "matching frontiers do not replace independent authority provenance");
         local.of.remove(&LogId::Vault(w.bob));
@@ -334,12 +345,30 @@ impl GrantClasses {
         dependencies.missing.is_empty().then_some(dependencies.required)
     }
 
+    pub(crate) fn owner_scope_provenance(
+        &self, owner: &OwnerEntry, edits: &[avendb::policy::Edit], ids: &[avendb::id::EditId],
+        logs: &crate::holdings::Logs, announced: &crate::Holdings,
+        provenance: impl Fn(avendb::id::EditId) -> Option<Vec<VaultId>>,
+    ) -> Option<BTreeSet<avendb::sync::LogId>> {
+        let dependencies=self.owner_dependencies_provenance(owner,edits,ids,logs,announced,provenance)?;
+        dependencies.missing.is_empty().then_some(dependencies.required)
+    }
+
     /// Missing current frontiers are transfer hints only. Their contents must be
     /// received normally before we can walk any deeper dependencies or admit.
     pub(crate) fn owner_dependencies(
         &self, owner: &OwnerEntry, edits: &[avendb::policy::Edit], ids: &[avendb::id::EditId],
         logs: &crate::holdings::Logs, announced: &crate::Holdings,
         independent: impl Fn(avendb::id::EditId) -> bool,
+    ) -> Option<OwnerDependencies> {
+        self.owner_dependencies_provenance(owner,edits,ids,logs,announced,
+            |id| independent(id).then(Vec::new))
+    }
+
+    pub(crate) fn owner_dependencies_provenance(
+        &self, owner: &OwnerEntry, edits: &[avendb::policy::Edit], ids: &[avendb::id::EditId],
+        logs: &crate::holdings::Logs, announced: &crate::Holdings,
+        provenance: impl Fn(avendb::id::EditId) -> Option<Vec<VaultId>>,
     ) -> Option<OwnerDependencies> {
         use avendb::{id::AudienceId, policy::{Kind, Principal, Revoking}, sync::LogId};
         let inventory: BTreeSet<_> = announced.logs.keys().filter_map(|log| match log { LogId::Share(id) => Some(*id), _ => None }).collect();
@@ -353,6 +382,10 @@ impl GrantClasses {
         shares.extend(owner.named_shares.iter().copied());
         let mut vaults = owner.via.clone();
         vaults.insert(owner.vault);
+        // Covered negative classifiers are revalidated, including unrelated IDs.
+        for id in &inventory {
+            if self.0[id].covered { vaults.extend(provenance(avendb::id::EditId(id.0))?); }
+        }
         let mut required = BTreeSet::new();
         let mut missing = BTreeSet::new();
         let mut seen_shares = BTreeSet::new();
@@ -363,6 +396,20 @@ impl GrantClasses {
             if !remote.waiting.is_empty() { return None; }
             Some(logs.of.get(&id).filter(|local| local.frontier == *remote))
         };
+        for shares in &owner.audiences {
+        let audience = LogId::Audience(owner.vault, AudienceId::of(owner.vault, shares));
+        if announced.logs.contains_key(&audience) {
+            required.insert(audience);
+            if let Some(held) = held(audience)? {
+                let positions = &held.edits;
+                inspected = inspected.checked_add(positions.len())?;
+                if inspected > 2048 { return None; }
+                for &at in positions {
+                    vaults.extend(provenance(*ids.get(at)?)?);
+                }
+            } else { missing.insert(audience); }
+        }
+        }
         loop {
             if required.len() > MAX_CLASSES || vaults.len() > MAX_CLASSES || shares.len() > MAX_CLASSES { return None; }
             if let Some(id) = shares.difference(&seen_shares).next().copied() {
@@ -383,7 +430,7 @@ impl GrantClasses {
                 if inspected > 2048 { return None; }
                 for &at in positions {
                     let edit = edits.get(at)?;
-                    if !independent(*ids.get(at)?) { return None; }
+                    vaults.extend(provenance(*ids.get(at)?)?);
                     match &edit.action {
                         Action::Share(Sharing::Grant(_, _)) | Action::Keys { .. } => {}
                         Action::Revoke(Revoking::Grant { actor, via, .. }) => {
@@ -411,7 +458,7 @@ impl GrantClasses {
                 if inspected > 2048 { return None; }
                 for &at in positions {
                     let edit = edits.get(at)?;
-                    if !independent(*ids.get(at)?) { return None; }
+                    vaults.extend(provenance(*ids.get(at)?)?);
                     match &edit.action {
                         Action::Genesis { kind, owners, .. } => {
                             // Aven admission has a global one-aven-per-owner
@@ -426,10 +473,9 @@ impl GrantClasses {
                         | Action::Revoke(Revoking::Owner { owner: Principal::Vault(v), .. }) => { vaults.insert(*v); }
                         // A signed Snapshot only checks this vault's approval;
                         // unlike Checkpoint it never substitutes for signatures.
-                        Action::Snapshot { .. } | Action::Settings { .. } | Action::Share(Sharing::Owner { .. } | Sharing::Device { .. })
+                        Action::Checkpoint { .. } | Action::Snapshot { .. } | Action::Settings { .. } | Action::Share(Sharing::Owner { .. } | Sharing::Device { .. })
                         | Action::Revoke(Revoking::Owner { .. } | Revoking::Device { .. }) | Action::Keys { .. } => {}
-                        // Checkpoint standing/coverage introduces another
-                        // dependency surface; leave it conservative for now.
+                        // Unknown governance shapes remain conservative.
                         _ => return None,
                     }
                 }
@@ -438,20 +484,6 @@ impl GrantClasses {
                 continue;
             }
             break;
-        }
-        for shares in &owner.audiences {
-        let audience = LogId::Audience(owner.vault, AudienceId::of(owner.vault, shares));
-        if announced.logs.contains_key(&audience) {
-            required.insert(audience);
-            if let Some(held) = held(audience)? {
-                let positions = &held.edits;
-                inspected = inspected.checked_add(positions.len())?;
-                if inspected > 2048 { return None; }
-                for &at in positions {
-                    if !independent(*ids.get(at)?) { return None; }
-                }
-            } else { missing.insert(audience); }
-        }
         }
         (required.len() <= MAX_CLASSES).then_some(OwnerDependencies { required, missing })
     }
@@ -470,9 +502,9 @@ impl crate::Shared {
             let mut classes = GrantClasses::default();
             for id in wanted {
                 let edit_id = EditId(id.0);
-                // Checkpoint-covered bare bodies do not establish a classifier.
-                if !lab.independently_verified_edit(me, edit_id) { continue; }
-                if let Some(class) = lab.signed_edit(me, edit_id).and_then(|s| GrantClass::from_verified(id, &s.edit)) {
+                if lab.authority_edit_dependencies(me, edit_id).is_none() { continue; }
+                if let Some(mut class) = lab.signed_edit(me, edit_id).and_then(|s| GrantClass::from_verified(id, &s.edit)) {
+                    class.covered = !lab.independently_verified_edit(me, edit_id);
                     classes.0.insert(id, class);
                 }
             }

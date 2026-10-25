@@ -317,8 +317,8 @@ impl crate::Shared {
                     .and_then(|current| stage.owner.as_ref().zip(stage.classes.as_ref()).and_then(|(owner, classes)| {
                         let log = lab.log(me);
                         let indexed = shared.logs_of(lab, me);
-                        classes.owner_dependencies(owner, log.edits(), log.ids(), &indexed, current,
-                            |id| lab.independently_verified_edit(me, id)).map(|dependencies| dependencies.missing)
+                        classes.owner_dependencies_provenance(owner, log.edits(), log.ids(), &indexed, current,
+                            |id| lab.authority_edit_dependencies(me, id)).map(|dependencies| dependencies.missing)
                     }));
                 (stage, missing)
             }).await;
@@ -362,8 +362,8 @@ impl crate::Shared {
                     let scoped = root_current && stage.owner.as_ref().zip(stage.classes.as_ref()).is_some_and(|(owner, classes)| {
                         let log = lab.log(me);
                         let indexed = shared.logs_of(lab, me);
-                        classes.owner_scope(owner, log.edits(), log.ids(), &indexed, current,
-                            |id| lab.independently_verified_edit(me, id)).is_some()
+                        classes.owner_scope_provenance(owner, log.edits(), log.ids(), &indexed, current,
+                            |id| lab.authority_edit_dependencies(me, id)).is_some()
                     });
                     if !scoped {
                         return Admission::Waiting(stage, prepared);
