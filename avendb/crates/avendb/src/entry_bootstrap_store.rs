@@ -63,7 +63,8 @@ fn canonical_owner_replacement(on: SignerId, store: &Store, base: &RestoredOwner
     let state=&store.replay.state;
     if store.replayed != store.log.edits().len() { return None; }
     let en=state.entry(base.entry)?;
-    if !state.acts_for(on,en.vault) { return None; }
+    // Caller has independently rechecked owner approval and current recipient entitlement.
+    // Canonical reconstruction does not require the recipient to own the publishing vault.
     let held=|id: EditId| store.signed.contains_key(&id) && store.bodies.contains_key(&id);
     if !base.history.changes().iter().all(|c| held(c.write.edit))
         || !state.entry_writes(base.entry).all(|w| held(w.edit)) { return None; }
@@ -94,6 +95,13 @@ fn bootstrap_share_proof(state: &State, vault: VaultId, write: &Write, proof: Op
 }
 
 impl Lab {
+    /// A partial holder may use only the same complete immutable proof accepted
+    /// by receive. This supplements ordinary operation/row/schema authorization.
+    pub(crate) fn partial_holder_proof(&self, on: SignerId, view: &State, w: &Write, proof: &Proof) -> bool {
+        if !self.held(on).bootstrap_active.contains(&w.entry) { return true; }
+        let Some(en)=view.entry(w.entry) else { return false; };
+        bootstrap_share_proof(view,en.vault,w,Some(proof))
+    }
 
     pub fn owner_bases_pending(&self, on: SignerId) -> bool {
         !self.locked(on) && self.held(on).bootstrap_progress.values().any(|p| !p.pending.is_empty() && p.missing.is_empty() && p.wait_reason.is_none())
@@ -130,8 +138,7 @@ impl Lab {
         if !store.bootstrap_active.contains(&entry)
             || store.replayed != store.log.edits().len() { return None; }
         let (snapshot, _) = store.bootstrap_bases.get(&entry)?;
-        let (vault, stated, _) = self.projection_authority(on, *snapshot, entry)?;
-        if !store.replay.state.acts_for(on, vault) { return None; }
+        let (_, stated, _) = self.projection_authority(on, *snapshot, entry)?;
         Some((*snapshot, stated.basis.clone()))
     }
 
@@ -278,9 +285,9 @@ impl Lab {
             if attrs.ty.of_lane() || attrs.ty.is_cap_group() {
                 continue;
             }
-            if !state.acts_for(on, vault) {
-                continue;
-            }
+            // restore_owner_judgment already checked owner approval, current recipient
+            // entitlement and the entry key. Recipient ownership is not required;
+            // every local/remote write still passes ordinary admission below.
             let mut view = state.with_slice(entry, &base.policy);
             let mut readings = store.readings.clone();
             for (id, body) in &base.bodies {
@@ -503,6 +510,45 @@ impl Backup {
 mod tests {
     use super::*;
     use crate::cast::{document, human_on};
+    #[test]
+    fn shared_holder_local_write_matches_full_holder_without_acquiring_owner_authority() {
+        use crate::policy::{Who,Level,Revoking};
+        for level in [Level::Write,Level::Read] {
+            let mut lab=Lab::new(); let owner=lab.passkey("Publisher"); let mac=lab.device_of(owner,"Owner Mac");
+            let vault=human_on(&mut lab,owner,&[mac]);
+            let guest=lab.passkey("Shared holder"); let full=lab.device_of(guest,"Guest full"); let partial=lab.device_of(guest,"Guest partial");
+            let guest_vault=human_on(&mut lab,guest,&[full,partial]);
+            lab.share_contact(full,mac,guest_vault); lab.share_contact(mac,full,vault);
+            lab.share_contact(full,partial,guest_vault); lab.share_contact(mac,partial,vault);
+            let share=lab.issue(mac,&[owner],crate::cast::share(vault,Who::Vault(guest_vault),level,crate::cast::of_type("note"))).unwrap();
+            lab.sync(mac,full); lab.sync(mac,partial);
+            let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
+            let withheld=lab.edit(mac,vault,entry,|i|i.set_text(2,"Attested")).unwrap();
+            let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+            let snapshot=lab.complete(mac,draft,&[]).unwrap();
+            lab.sync(mac,full);
+            let offer=lab.entry_projection_offer(mac,partial,entry).unwrap();
+            lab.receive(partial,offer.evidence,vec![]);
+            assert!(lab.adopt_owner_entry_base(partial,snapshot,entry,sealed));
+            assert!(!lab.held(partial).replay.state.acts_for(partial,vault));
+            assert!(!lab.held(partial).log.ids().contains(&withheld));
+            assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(full,entry).unwrap().record());
+            let write=lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Shared local update"));
+            if level==Level::Write {
+                let id=write.unwrap(); let signed=lab.signed_edit(partial,id).unwrap().clone();
+                lab.receive(full,vec![signed.clone()],vec![]); lab.receive(mac,vec![signed],vec![]);
+                assert!(lab.history(mac,entry).unwrap().get(id).unwrap().counted);
+                assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+                assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(full,entry).unwrap().record());
+            } else { assert!(write.is_err(),"read access must never grant mutation"); }
+            assert!(lab.draft_judged_entry_base(partial,&[guest],entry).is_err(),"recipient cannot publish as owner");
+            let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
+            let signed=lab.signed_edit(mac,revoked).unwrap().clone(); lab.receive(partial,vec![signed],vec![]);
+            assert!(lab.active_owner_base(partial,entry).is_none());
+            assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Revoked")).is_err());
+        }
+    }
+
     #[test]
     fn owner_partial_base_receives_group_free_shared_main_and_rechecks_revocation() {
         use crate::policy::{Who,Level,Revoking};

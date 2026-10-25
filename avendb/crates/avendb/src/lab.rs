@@ -3384,10 +3384,10 @@ impl Lab {
                 return Err(Refusal::NotAView);
             }
         }
-        if let Action::Write { entry, vault, actor, proposal, deps, .. } = &action {
+        if let Action::Write { entry, proposal, deps, .. } = &action {
             if self.held(on).bootstrap_pending.contains(entry) || self.owner_base_wait_reason(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
             if self.held(on).bootstrap_active.contains(entry)
-                && (self.owner_base_pending(on, *entry) > 0 || self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
+                && (self.owner_base_pending(on, *entry) > 0 || self.held(on).replayed != self.held(on).log.edits().len() || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
                 return Err(Refusal::ReadOnly);
             }
             if self.entry_projection(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
@@ -3416,7 +3416,7 @@ impl Lab {
         let store = self.held(on);
         let at = At { attrs, place: view.place(w.edit), groups: &store.readings.groups };
         let proofs = w.shares.iter().filter_map(|c| Some(Proof { share: *c, grants: store.slices.get(c)?.grants() }));
-        let mut proofs = proofs.filter(|p| view.lets(w, Some(p), touches, asks, at));
+        let mut proofs = proofs.filter(|p| self.partial_holder_proof(on, view, w, p) && view.lets(w, Some(p), touches, asks, at));
         proofs.next().map(Some).ok_or(Refusal::NotAllowed)
     }
 

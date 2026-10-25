@@ -1015,3 +1015,27 @@ Log: `/private/tmp/avendb-shared-fixture-stable.log`. An earlier run compiled th
 fixture tree and is not validation of these edits. No production admission rules
 changed in this repair; full combined/release and physical-device acceptance remain
 separate gates.
+
+### Isolated shared-holder adoption/local MAIN candidate (not deployed)
+
+The owner remains the snapshot publisher. A recipient with ordinary current
+`projection_authority` (standing owner-signed scope, current audience/entry key,
+entitlement and wants) may retain the judged state without also owning that vault.
+Canonical retirement likewise does not require recipient ownership after the caller
+has revalidated that authority. This removes no owner approval or signature check.
+
+Local shared MAIN authoring is allowed only on a durable/ready exact frontier;
+ordinary `accepted_write`, `proven`, `History::admit`, schema, row ownership and
+operation checks remain. The local proof selection additionally applies the same
+complete fixed/group-free grant commitment check as received suffixes. Read access
+alone cannot authorize a write, and recipient keys cannot publish as the owner.
+Cap-group-dependent grants and local partial proposal/merge authoring remain refused.
+
+The new differential regression
+`shared_holder_local_write_matches_full_holder_without_acquiring_owner_authority`
+compares a partial guest's local update against both full guest and owner, tests
+Read-only grant refusal, publication ownership and revocation, with old entry
+history withheld. `SharedHolderBootstrap.lean` explicitly separates publisher
+approval, current recipient authority and per-write admission. Lean and parser/diff
+checks pass. Rust execution and independent review are pending; this isolated
+candidate must not be treated as closing the shared-holder task or as deployed.
