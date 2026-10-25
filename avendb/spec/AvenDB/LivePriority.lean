@@ -184,5 +184,23 @@ def discoverySchedule (lanes checkpoints : List Nat) : List Nat := lanes ++ chec
 theorem discovery_is_schedule_prefix (lanes checkpoints : List Nat) :
     (discoverySchedule lanes checkpoints).take lanes.length = lanes := by
   simp [discoverySchedule]
+/-- Staged bytes are not a visible replay update. Release only permits ordinary
+signature/current-policy admission; it never itself grants readability. -/
+def stageRelease (samePeer sameFrontier authorityCurrent : Bool) : Bool :=
+  samePeer && sameFrontier && authorityCurrent
+
+def stageVisible (released valid authorized : Bool) := accepted released valid authorized
+
+theorem changed_stage_frontier_stays_hidden (peer current valid authorized : Bool) :
+    stageVisible (stageRelease peer false current) valid authorized = false := by
+  simp [stageVisible, stageRelease, accepted]
+
+theorem missing_stage_authority_stays_hidden (peer frontier valid authorized : Bool) :
+    stageVisible (stageRelease peer frontier false) valid authorized = false := by
+  simp [stageVisible, stageRelease, accepted]
+
+theorem released_stage_does_not_override_revocation (peer frontier current valid : Bool) :
+    stageVisible (stageRelease peer frontier current) valid false = false := by
+  simp [stageVisible, accepted]
 
 end AvenDB.LivePriority

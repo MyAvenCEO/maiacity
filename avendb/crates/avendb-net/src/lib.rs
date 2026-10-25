@@ -110,6 +110,7 @@ mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
 mod demand;
+mod authority_stage;
 mod discovery;
 mod checkpoint_delivery;
 mod bootstrap_dependencies;

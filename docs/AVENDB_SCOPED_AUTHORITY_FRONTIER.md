@@ -74,3 +74,33 @@ validation remain in force. This changes ordering, not access or completeness.
 Lean `discovery_is_schedule_prefix` passes. Combined native discovery/room and
 demand tests passed at987946f9; the later mutation scheduling change passed all
 four scheduler regressions. Physical devices and final release remain pending.
+## Implemented staging foundation (not enabled in transport yet)
+
+`avendb-net/src/authority_stage.rs` now provides a separate two-slot staging
+budget. Each slot owns at most 480 KiB of encoded input / 64 decoded signed edits
+for one entry, with no auxiliary blobs. Its receipt copies at most 128 authority
+logs plus that entry's frontier, with at most 512 frontier IDs. Capacity failure
+leaves ordinary reconciliation as the fallback. Dropping a stage returns capacity;
+it does not retain receive-page permits that authority catch-up needs.
+
+Stages do not enter `Lab`, trigger replay, persist an apparent completed log, or
+expose a record. Release requires the same authenticated peer, exact unchanged
+announced authority/entry frontiers, and exact local agreement for every required
+authority log. An omitted owning-vault log is rejected at capture. Changed, removed
+or newly announced authority logs invalidate the old receipt. Released bytes must
+still pass ordinary signature checking and current-policy admission.
+
+The integration must take these inputs from authenticated holdings and fence
+snapshot changes through admission. This helper alone does not provide cross-lock
+atomicity, persist staged pages, or establish that a peer knows every revocation.
+It is deliberately not hooked into live transport yet: doing so without the
+admission fence would falsely imply the safety boundary was complete. The initial
+required set conservatively includes **all announced non-entry logs**. Narrowing
+it awaits actual policy dependency tracking including cross-vault group reads.
+
+Lean stage release/currentness/refusal laws pass. Rust parsing passes. Added
+adversarial tests for missing ownership evidence, stale/new/omitted authority
+frontiers, identity replacement, bounded capacity and cancellation. Rust crate
+compilation/runtime remain pending the coordinated compiler slot. Full task B
+(scoped closure, admission-fenced integration, then elimination of unrelated
+authority waits) is **open**, not completed by this foundation.
