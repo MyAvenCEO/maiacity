@@ -36,8 +36,10 @@ const SHARED = Symbol.for('maiacity.avendb.device');
  * opened brings first what the manifests of Maia City declare for this page (./manifests.js `bringDeclared`), then the
  * entries this page read before (`learned`), before anything else it syncs. */
 let activeView = null;
+let viewContext = {};
 
 export function useDevice(d) {
+	if (device !== (d ?? null)) viewContext = {};
 	clearTimeout(activeView?.timer);
 	activeView?.controller.abort();
 	activeView?.demand.close();
@@ -51,9 +53,14 @@ export function useDevice(d) {
 
 /** Replace this page's demand on navigation. Already issued legacy bring operations may finish, but no stale
  * manifest walk, reference traversal or subsequent batch is issued after the view/device changes. */
-export function useView(path) {
+export function useView(path, options) {
+	if (options !== undefined) viewContext = options;
+	const vault = /^[0-9a-f]{64}$/.test(viewContext.vault ?? '') ? viewContext.vault : null;
+	const context = typeof viewContext.context === 'string' ? viewContext.context : '';
+	const explicit = [...new Set((viewContext.entries ?? []).filter(id => typeof id === 'string' && /^[0-9a-f]{64}$/.test(id)))].slice(0,512);
+	const key = JSON.stringify([path, vault, context, explicit]);
 	const opened = deviceOf();
-	if (activeView?.device === opened && activeView.path === path) return activeView.done;
+	if (activeView?.device === opened && activeView.key === key) return activeView.done;
 	clearTimeout(activeView?.timer);
 	activeView?.controller.abort();
 	activeView?.demand.close();
@@ -61,9 +68,10 @@ export function useView(path) {
 	if (!opened) return Promise.resolve([]);
 	const controller = new AbortController();
 	const signal = controller.signal;
-	const before = learned(path);
+	// Historical pathname hints cannot describe a changed vault/page selection.
+	const before = vault || context ? [] : learned(path);
 	const demand = createDemand((op) => opened.run(op));
-	const view = { device: opened, path, controller, demand, done: null, walking: false, dirty: false, timer: null, run: null };
+	const view = { device: opened, path, key, controller, demand, done: null, walking: false, dirty: false, timer: null, run: null };
 	activeView = view;
 	// Demand already schedules authorized discovery and transfer. Awaiting a
 	// second legacy pull here blocks later manifest ranks on whole-history sync
@@ -74,10 +82,12 @@ export function useView(path) {
 		learn(ids, path, { prioritize: false });
 		if (demand.legacy()) return bringEntries(ids, opened, { signal, path });
 	};
-	const manifestQuery = { types: ['manifest'], vault: MAIA_CITY };
+	const catalogs = [...new Set([MAIA_CITY, ...(vault ? [vault] : [])])];
+	const selectors = new Map(catalogs.map(vault => [vault, [{ types: ['manifest'], vault }]]));
+	const allSelectors = () => [...selectors.values()].flat();
 	// A cold device must discover route manifests before it can name their entries.
 	// This is an authorized type hint, never a world scan.
-	void demand.prioritize([], [manifestQuery]);
+	void demand.prioritize(explicit, allSelectors());
 	view.run = () => {
 		view.walking = true;
 		view.dirty = false;
@@ -85,14 +95,18 @@ export function useView(path) {
 			// Learned IDs are scheduling hints, not trusted records. Do not wait for an
 			// unrelated manifest query before telling the node what this view needs.
 			if (before.length) void demand.add(before.slice(0, AT_ONCE));
-			const declared = await bringDeclared(path, {
-				device: opened, signal,
+			// Shared game/app declarations keep their owning vault. A selected
+			// vault can independently supply its own authorized route manifests.
+			const plans = await Promise.all(catalogs.map(catalog => bringDeclared(path, {
+				device: opened, signal, vault: catalog,
 				prioritize: (ids, queries) => {
 					signal.throwIfAborted();
-					return demand.prioritize(ids, [manifestQuery, ...queries]);
+					selectors.set(catalog, [{ types: ['manifest'], vault: catalog }, ...queries]);
+					return demand.prioritize([...explicit, ...ids], allSelectors());
 				},
 				bring: request
-			});
+			})));
+			const declared = [...new Set([...explicit, ...plans.flat()])];
 			signal.throwIfAborted();
 			const rest = before.filter((e) => !declared.includes(e));
 			if (rest.length) {
