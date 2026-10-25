@@ -450,9 +450,23 @@ impl Backup {
     /// Durable companion to the existing signed-log backup. Ciphertext only; decoding
     /// grants no authority and restore rechecks its signed root and current policy.
     pub fn bootstrap_bytes(&self) -> Option<Vec<u8>> {
-        encode_anchors(&self.bootstrap_bases, self.signed.iter())
+        semantic_companion(encode_anchors(&self.bootstrap_bases, self.signed.iter())?, &self.semantic_pending)
     }
     pub fn with_bootstrap_bytes(mut self, bytes: &[u8]) -> Option<Self> {
+        if bytes.starts_with(b"AVSEM001") {
+            if bytes.len()<16 {return None;}
+            let count=u32::from_le_bytes(bytes[8..12].try_into().ok()?) as usize;
+            let size=u32::from_le_bytes(bytes[12..16].try_into().ok()?) as usize;
+            if count>4096 || bytes.len()!=16+count*32+size {return None;}
+            let ids=&bytes[16..16+count*32];
+            let pending:HashSet<_>=ids.chunks_exact(32).map(|id|EntryId(id.try_into().unwrap())).collect();
+            if pending.len()!=count {return None;}
+            let inner=&bytes[16+count*32..];
+            if inner.starts_with(b"AVSEM001") {return None;}
+            self=self.with_bootstrap_bytes(inner)?;
+            self.semantic_pending=pending;
+            return Some(self);
+        }
         if bytes.is_empty() {
             self.bootstrap_bases.clear();
             return Some(self);
@@ -1410,19 +1424,23 @@ fn encode_anchors<'a>(
 impl Lab {
     /// Small identity stamp; the signed snapshot fixes its ciphertext root.
     pub fn bootstrap_stamp(&self, on: SignerId) -> Vec<(EntryId, EditId)> {
-        self.held(on)
-            .bootstrap_bases
-            .iter()
-            .map(|(e, (s, _))| (*e, *s))
-            .collect()
+        let store=self.held(on);
+        let mut stamp:Vec<_>=store.bootstrap_bases.iter().map(|(e,(s,_))|(*e,*s)).collect();
+        if !store.semantic_pending.is_empty() {
+            let pending:BTreeSet<_>=store.semantic_pending.iter().copied().collect();
+            let mut hash=blake3::Hasher::new();hash.update(b"semantic-pending-v1");
+            for entry in pending {hash.update(&entry.0);}
+            stamp.push((EntryId([0;32]),EditId(*hash.finalize().as_bytes())));
+        }
+        stamp
     }
     /// Capture ciphertext anchors with the same held signed frontier as a journal save.
     pub fn bootstrap_bytes(&self, on: SignerId) -> Option<Vec<u8>> {
         let store = self.held(on);
-        encode_anchors(
+        semantic_companion(encode_anchors(
             &store.bootstrap_bases,
             store.log.ids().iter().map(|id| &store.signed[id]),
-        )
+        )?, &store.semantic_pending)
     }
 }
 
@@ -1444,4 +1462,13 @@ impl Lab {
         store.bootstrap_pending.clear();
         changed
     }
+}
+
+fn semantic_companion(inner:Vec<u8>, pending:&HashSet<EntryId>)->Option<Vec<u8>> {
+    if pending.is_empty() {return Some(inner);}
+    if pending.len()>4096 || inner.len()>u32::MAX as usize {return None;}
+    let mut bytes=b"AVSEM001".to_vec();
+    bytes.extend((pending.len() as u32).to_le_bytes());bytes.extend((inner.len() as u32).to_le_bytes());
+    for entry in pending.iter().copied().collect::<BTreeSet<_>>() {bytes.extend(entry.0);}
+    bytes.extend(inner);Some(bytes)
 }
