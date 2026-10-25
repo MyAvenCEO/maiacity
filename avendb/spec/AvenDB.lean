@@ -143,3 +143,5 @@ import AvenDB.FillingReadFallback
 import AvenDB.TypedGlobalInventory
 
 import AvenDB.QueryCandidates
+
+import AvenDB.ContentRefresh
