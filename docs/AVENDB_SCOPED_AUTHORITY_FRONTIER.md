@@ -303,3 +303,25 @@ announcement-driven live pulls and would not exercise this production path.
 Chat's sidebar collection no longer needs the broad world summary; actor/vault
 labels and note-to-self lookup still use world identity metadata. This Rust
 fixture does not claim browser paint or physical-device acceptance.
+## Owner-authored shared audience / move closure (source candidate)
+
+The next slice records every creation and `Mark` audience, named keep grant,
+owner `via` path and stay reference in the bounded complete target cut. It keeps
+historical audiences after a move, closes their explicit shares in addition to
+wide readers, and requests each corresponding audience key frontier. Target-only
+`Wraps`/entry-key links retain their signed stay dependencies; foreign-key links
+remain unsupported. Existing `acts_via`, `audience_ok`, `may_box`, `sealed`,
+signature, counted-write and current-policy checks remain in core admission.
+
+This follows actual policy reads: `Mark` checks its owning vault, steward path,
+canonical named audience and the named keep shares' vault/level/wide properties;
+owner writes do not use a foreign actor's capability/group operations. Therefore
+this slice still rejects non-owner-authored writes, proposals, checkpoints and
+cuts exceeding the existing bounds. It is not the general shared-writer closure.
+
+Source regressions cover a room moved by ordinary stewardship into a non-wide
+share audience after the receiver snapshot, useful room content followed by a
+live owner edit while unrelated authority/history stay absent, historical-audience
+retention, omitted signed stays and a foreign-actor write. These Rust tests are
+pending compiler-slot validation. The actual-policy owner lemmas and new Lean
+historical/keep dependency retention lemmas pass.

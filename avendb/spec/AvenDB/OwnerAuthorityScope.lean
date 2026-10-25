@@ -35,3 +35,22 @@ theorem missingNeverAdmits (unknown : Bool) (head : α) (tail : List α) :
 theorem unknownNeverAdmits (missing : List α) :
     admissible true missing = false := by simp [admissible]
 end OwnerDependencyScheduling
+
+namespace AvenDB.OwnerAudienceClosure
+/-- Every historical audience and named keep grant remains a required dependency.
+A later move does not erase the authority needed to rejudge earlier writes. -/
+def requiredShares (audiences : List Audience) (keeps : List ShareId) : List ShareId :=
+  audiences.flatten ++ keeps
+
+theorem historicalShareRetained (before after : List Audience) (keeps : List ShareId)
+    (share : ShareId) (h : share ∈ before.flatten) :
+    share ∈ requiredShares (before ++ after) keeps := by
+  simp only [requiredShares, List.flatten_append, List.mem_append]
+  exact Or.inl (Or.inl h)
+
+theorem keepShareRetained (audiences : List Audience) (keeps : List ShareId)
+    (share : ShareId) (h : share ∈ keeps) :
+    share ∈ requiredShares audiences keeps := by
+  simp only [requiredShares, List.mem_append]
+  exact Or.inr h
+end AvenDB.OwnerAudienceClosure

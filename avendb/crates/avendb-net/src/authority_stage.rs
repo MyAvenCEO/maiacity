@@ -234,7 +234,7 @@ impl crate::Shared {
             // authority backlog here would defeat scoped admission.
             let mut required = owner.via.iter().copied().map(LogId::Vault).collect::<std::collections::BTreeSet<_>>();
             required.insert(LogId::Vault(owner.vault));
-            required.insert(LogId::Audience(owner.vault, avendb::id::AudienceId::of(owner.vault, &[])));
+            required.extend(owner.audiences.iter().map(|shares| LogId::Audience(owner.vault, avendb::id::AudienceId::of(owner.vault, shares))));
             let missing = self.differ(device).await;
             required.retain(|id| stage.announced.contains_key(id) && missing.contains(id));
             if !required.is_empty() {
@@ -416,6 +416,47 @@ mod transport_tests {
         until(async || phone.read(move |lab, me| text(lab, me, entry, 2).as_deref() == Some("first")).await).await;
         assert!(!phone.shared.differ(sender).await.contains(&target_audience), "normal scoped transfer supplies the actual related key frontier");
         assert!(!phone.shared.differ(sender).await.contains(&LogId::Vault(related_reader)), "scoped dependency transfer supplies the reader's new authority without broad catch-up");
+        assert!(phone.shared.differ(sender).await.contains(&LogId::Vault(unrelated_vault)));
+        assert!(phone.read(move |lab, me| lab.item(me, history).is_none()).await);
+        let written = mac.act(move |lab, me| lab.edit(me, vault, entry, |item| item.set_text(2, "live"))).await.unwrap();
+        until(async || phone.holdings_of(sender).is_some_and(|h| h.logs.get(&LogId::Entry(entry)).is_some_and(|f| f.heads.contains(&written)))).await;
+        phone.shared.stage_live_entries(mac.id(), sender, [LogId::Entry(entry)].into_iter().collect());
+        until(async || phone.read(move |lab, me| text(lab, me, entry, 2).as_deref() == Some("live")).await).await;
+        assert!(phone.shared.differ(sender).await.contains(&LogId::Vault(unrelated_vault)));
+        assert!(phone.read(move |lab, me| lab.item(me, history).is_none()).await);
+        mac.shutdown().await.unwrap(); phone.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn moved_shared_audience_room_and_live_owner_edit_skip_unrelated_history() {
+        use avendb::{cast::{handbook, text, share, by_id}, policy::{Action, Setting, Who, Level}};
+        let mut w = world();
+        let handbook = handbook(&mut w);
+        let (sender, receiver, vault) = (w.mac_a, w.phone_a, w.alice);
+        let phone_lab = w.lab.split(receiver, &[], [161; 32]);
+        let entry = w.lab.create(sender, vault, vault, "room", &[], document("Shared room", "first", sender)).unwrap();
+        let audience_share = w.lab.issue(sender, &[sender], share(vault, Who::Vault(w.bob), Level::Read, by_id(entry))).unwrap();
+        // Ordinary stewardship must really have moved this room; the fixture
+        // does not fabricate an audience label or preseed any target evidence.
+        assert!(w.lab.log(sender).edits().iter().any(|edit| matches!(&edit.action,
+            Action::Mark { entry: e, caps: Some(caps), .. } if *e == entry && caps.contains(&audience_share))));
+        let history = w.lab.create(sender, vault, vault, "doc", &[], document("Unrelated", "withheld", sender)).unwrap();
+        let unrelated_vault = handbook.coop;
+        w.lab.submit(sender, &[w.passkey_a, w.passkey_b], Action::Settings {
+            vault: unrelated_vault, set: Setting::Threshold(1),
+        }).unwrap();
+        let opts = || Options { lazy: true, ..Options::local() };
+        let mac = Node::spawn(w.lab.split(sender, &[], [162; 32]), sender, opts()).await.unwrap();
+        let phone = Node::spawn(phone_lab, receiver, opts()).await.unwrap();
+        phone.know(mac.addr()); mac.know(phone.addr());
+        phone.shared.connection(mac.id()).await.unwrap();
+        until(async || phone.holdings_of(sender).is_some_and(|h| h.logs.contains_key(&LogId::Entry(entry)))).await;
+        let before = phone.shared.differ(sender).await;
+        assert!(before.contains(&LogId::Share(audience_share)));
+        assert!(before.contains(&LogId::Vault(unrelated_vault)));
+        phone.shared.stage_live_entries(mac.id(), sender, [LogId::Entry(entry)].into_iter().collect());
+        until(async || phone.read(move |lab, me| text(lab, me, entry, 2).as_deref() == Some("first")).await).await;
+        assert!(!phone.shared.differ(sender).await.contains(&LogId::Share(audience_share)));
         assert!(phone.shared.differ(sender).await.contains(&LogId::Vault(unrelated_vault)));
         assert!(phone.read(move |lab, me| lab.item(me, history).is_none()).await);
         let written = mac.act(move |lab, me| lab.edit(me, vault, entry, |item| item.set_text(2, "live"))).await.unwrap();
