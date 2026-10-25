@@ -88,6 +88,7 @@ impl Shared {
         let Some(endpoint) = self.endpoint_of(device) else {
             return;
         };
+        if !full { self.schedule_owner_suffixes(endpoint, device, logs); }
         let Some(mut work) = self.pulls.live_announced(device, full, logs) else {
             return;
         };
@@ -160,14 +161,12 @@ impl Shared {
     async fn pull_live_origin(self: &Arc<Self>, endpoint: EndpointId, device: SignerId,
         hints: BTreeSet<LogId>, origin: Option<crate::demand::Origin>) -> anyhow::Result<()> {
         if origin.as_ref().is_some_and(|o| !o.active()) { return Ok(()); }
+        // Accepted views use the independent bounded suffix lane. The ordinary
+        // background scheduler still downloads history and reports its coverage.
         let mut hints = hints;
-        if let Some(peer) = self.live(endpoint).filter(|p| p.device == device) {
-            for log in hints.clone().into_iter().take(pulls::LIVE_LOGS) {
-                if let LogId::Entry(entry) = log {
-                    if matches!(self.try_owner_base_suffix(&peer, entry).await, Ok(true)) { hints.remove(&log); }
-                }
-            }
-        }
+        let entries: Vec<_> = hints.iter().filter_map(|log| match log { LogId::Entry(e) => Some(*e), _ => None }).collect();
+        let based = self.read(move |lab,me| entries.into_iter().filter(|e|lab.owner_base_scope(me,*e).is_some()).collect::<Vec<_>>()).await;
+        for entry in based { hints.remove(&LogId::Entry(entry)); }
         let mut missing = self.differ(device).await;
         let rules: BTreeSet<_> = missing
             .iter()

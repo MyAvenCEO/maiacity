@@ -397,3 +397,12 @@ ordinary bounded staging. Legacy checkpoint-covered authority still needs a
 traced checkpoint-standing provenance closure; its signatures are not assumed
 independently verified. Full generic shared-writer/checkpoint authorization task B
 remains open. No deployment or device-latency acceptance is claimed.
+
+A follow-up scheduling guard gives accepted-base suffixes two independent request
+slots, while reusing the existing bounded page/signature budgets. Repeated hints
+for the same entry coalesce and retry a changed frontier within four turns.
+This matters because a live history worker can already be waiting for ordinary
+pull admission when a checkpoint arrives. Accepted-base entries leave that
+foreground history lane; background history still advances and reports real
+coverage. The >64 public-demand fixture intentionally holds all ordinary pull
+permits, so it tests this separation instead of relying on a shorter timeout.

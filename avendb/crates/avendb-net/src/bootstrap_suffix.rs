@@ -30,6 +30,33 @@ pub(crate) async fn answer(shared: &Arc<Shared>, peer: &Peer, bytes: &[u8],
     Ok(bytes)
 }
 impl Shared {
+    /// A small independent lane keeps accepted views reactive while ordinary
+    /// history callers wait for pull admission. Same-entry hints coalesce.
+    pub(crate) fn schedule_owner_suffixes(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, logs: &[LogId]) {
+        for log in logs.iter().take(pulls::LIVE_LOGS) {
+            let LogId::Entry(entry) = *log else { continue };
+            let key = (device, entry);
+            let mut running = self.owner_suffix_running.lock().expect("owner suffixes");
+            if let Some(dirty) = running.get_mut(&key) { *dirty = true; continue; }
+            let Ok(permit) = self.owner_suffixes.clone().try_acquire_owned() else { break };
+            let Ok(activity) = self.admit() else { break };
+            running.insert(key, false);
+            drop(running);
+            let shared = self.clone();
+            task::spawn(async move {
+                let (_permit, _activity) = (permit, activity);
+                for _ in 0..4 {
+                    if let Some(peer) = shared.live(endpoint).filter(|p| p.device == device) {
+                        let _ = time::timeout(Duration::from_secs(4), shared.try_owner_base_suffix(&peer, entry)).await;
+                    }
+                    let mut running = shared.owner_suffix_running.lock().expect("owner suffixes");
+                    if running.get(&key) == Some(&true) { running.insert(key, false); }
+                    else { running.remove(&key); return; }
+                }
+                shared.owner_suffix_running.lock().expect("owner suffixes").remove(&key);
+            });
+        }
+    }
     pub(crate) async fn try_owner_base_suffix(self: &Arc<Self>, peer: &Peer, entry: EntryId) -> Result<bool> {
         let shared = self.clone();
         let base = self.read(move |lab, me| {
