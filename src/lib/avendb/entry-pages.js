@@ -5,7 +5,8 @@ export const MAX_ENTRY_PAGES = 8;
 
 /** Progressively mount bounded local reads. Keep each mounted page reactive so
  * revocation or a removed row replaces that page, rather than retaining stale data.
- * Only one new page starts per browser turn, after its predecessor first settles.
+ * Only one new page starts per browser turn, without waiting for an earlier read.
+ * A missing or slow page stays incomplete but cannot hide later held dependencies.
  * @param {(query: () => any, take: (out: any) => void, failed: (error: Error) => void) => () => void} observe
  * @param {object[]} queries
  * @param {(state: {rows: any[], phase: 'loading'|'ready'|'error', error: string}) => void} update
@@ -36,9 +37,7 @@ export function observeEntryPages(observe, queries, update) {
  /** @param {number} index */
  const finish = index => {
   if (!live) return;
-  const first = !settled.has(index);
   settled.add(index); publish();
-  if (first) advance();
  };
  const start = () => {
   if (!live || next >= active.length) return;
@@ -60,6 +59,7 @@ export function observeEntryPages(observe, queries, update) {
    }, failed);
    if (live) stops.push(stop); else stop();
   } catch (error) { failed(error instanceof Error ? error : new Error(String(error))); }
+  advance();
  };
  publish(); start();
  return () => {

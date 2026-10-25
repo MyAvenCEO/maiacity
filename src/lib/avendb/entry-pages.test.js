@@ -17,7 +17,7 @@ test('dependency beyond first512 resolves progressively and stays reactive until
  assert.equal(observers[0].op.entries.length,512);
  observers[0].take({ok:{rows:[]}});
  assert.equal(observers.length,1,'next page yields to browser turn');
- await turn(); assert.equal(observers.length,2);
+ await turn(); assert.ok(observers.length>=2 && observers.length<=3);
  const target={entry:ids[700],kind:'file'};
  observers[1].take({ok:{rows:[target]}});
  await turn(); assert.equal(observers.length,3);
@@ -63,4 +63,20 @@ test('active leases stay bounded and selected family can move beyond previous wi
  end(); assert.equal(stopped,8);
  const selected=ids[5999];
  assert.equal(libraryRelatedQueries(tasks,actor,selected)[0].entries[0],selected);
+});
+test('a pending earlier dependency cannot block later authorized local pages', async()=>{
+ /** @type {((out:any)=>void)[]} */ const replies=[];
+ /** @type {any} */ let latest;
+ const close=observeEntryPages((_query,take)=>{replies.push(take);return()=>{};},
+  [{entries:['missing']},{entries:['held']}],state=>{latest=state;});
+ await turn();
+ assert.equal(replies.length,2,'later page starts without an earlier response');
+ replies[1]({ok:{rows:[{entry:'held'}]}});
+ assert.deepEqual(latest.rows,[{entry:'held'}]);
+ assert.equal(latest.phase,'loading','pending page never counts as complete');
+ replies[0]({ok:null});
+ assert.equal(latest.phase,'loading');
+ replies[0]({ok:{rows:[]}});
+ assert.equal(latest.phase,'ready');
+ close();
 });

@@ -26,6 +26,10 @@ Branch `codex/scoped-view-timing` integrates scoped Story board [bb6a4b3c](https
 
 Shared-holder negative expansion passed its focused four-grant regression (fixed Write, Read, title-only touch, dynamic cap-group), asserting denied writes add no signed log entry. Selector exclusion remains to be added/validated; this candidate is not integrated yet. Warm ordinary-suffix runtime suite is now running separately. Physical mobile latency/stability remains unverified.
 
+### Bounded dependency-page progress
+
+The shared page observer now registers one page per browser turn without awaiting the previous page's result. Previously a pending first page stranded later already-held dependencies indefinitely. The first response being unavailable still leaves overall state `loading`; it never becomes an authoritative empty result. Existing eight-lease bound, actor authorization, reactive row removal and disposal remain. Lean `ReadCompleteness.pending_page_does_not_block` and `page_registration_bounded` passed before implementation. A withheld-first-page regression failed on the previous implementation and passed after repair; seven related Library/page tests pass. The old test's expectation of exactly two observers after10ms was adjusted because multiple browser turns may now legitimately register the third bounded page. Automatic coverage beyond4096 IDs remains open.
+
 ### Historical implementation and validation snapshots
 
 The following sections preserve the development trail, not current deployment status. Their “current”, “running” and “pending” labels refer to their original observation time. Use the current section above and linked live checks for present state.
