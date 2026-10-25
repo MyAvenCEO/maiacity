@@ -445,3 +445,4 @@ img {
  .screen-stats > .screen-slot-theme { flex-wrap: nowrap; flex: 0 0 auto; max-width: none; }
  .screen-chrome .tb-wd { display: none; }
 }
+.screen-chrome .tb-loc { display: inline !important; }
