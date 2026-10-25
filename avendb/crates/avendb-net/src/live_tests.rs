@@ -474,36 +474,69 @@ async fn cold_room_demand_renders_with_unrelated_authority_frontiers_withheld() 
         let Some(page) = future::poll_once(&mut page).await else { break };
         stalled.push(page.unwrap());
     }
-    assert!(!stalled.is_empty());
-    phone.know(mac.addr()); mac.know(phone.addr());
-    phone.shared.connection(mac.id()).await.unwrap();
-    wait_for(async || phone.holdings_of(sender).is_some_and(|held|
-        held.logs.contains_key(&LogId::Entry(target)))).await;
-    let before = phone.shared.differ(sender).await;
-    assert!(unrelated_grants.iter().all(|id| before.contains(&LogId::Share(*id))));
-    assert!(before.iter().filter(|log| !matches!(log, LogId::Entry(_))).count() > pulls::LIVE_LOGS);
-    let query = serde_json::json!({"op":"query", "vault":vault.to_hex(),
-        "where":{"type":["room"]}, "select":[], "limit":50});
-    assert_eq!(phone.op(query.clone()).await.unwrap()["ok"]["rows"], serde_json::json!([]));
-    let ack = phone.op(serde_json::json!({"op":"demand", "scope":"dc".repeat(16),
-        "revision":1, "entries":[], "queries":[{"vault":vault.to_hex(), "types":["room"]}]})).await.unwrap();
-    assert_eq!(ack["ok"]["accepted"], true);
-    let useful = time::timeout(Duration::from_secs(20), async {
-        loop {
-            let rows = phone.op(query.clone()).await.unwrap();
-            if rows["ok"]["rows"].as_array().is_some_and(|rows| rows.iter()
-                .any(|row| row["entry"].as_str() == Some(target.to_hex().as_str()))) {
-                if phone.read(move |lab, me| text(lab, me, target, 2).as_deref() == Some("first useful view")).await { break; }
-            }
-            time::sleep(Duration::from_millis(10)).await;
+    // No peer addresses are installed until every background permit is held,
+    // so eager startup cannot race an unrelated pull ahead of this fixture.
+    let outcome = time::timeout(Duration::from_secs(65), async {
+        anyhow::ensure!(!stalled.is_empty(), "background admission must be held");
+        phone.know(mac.addr()); mac.know(phone.addr());
+        phone.shared.connection(mac.id()).await?;
+        while !phone.holdings_of(sender).is_some_and(|held|
+            held.logs.contains_key(&LogId::Entry(target))) {
+            time::sleep(Duration::from_millis(5)).await;
         }
-    }).await.is_ok();
-    let after = phone.shared.differ(sender).await;
-    let untouched_authority = unrelated_grants.iter().all(|id| after.contains(&LogId::Share(*id)));
-    let untouched_payload = phone.read(move |lab, me| lab.item(me, unrelated).is_none()).await;
+        let before = phone.shared.differ(sender).await;
+        anyhow::ensure!(unrelated_grants.iter().all(|id| before.contains(&LogId::Share(*id))), "fixture authority frontiers must start missing");
+        anyhow::ensure!(before.iter().filter(|log| !matches!(log, LogId::Entry(_))).count() > pulls::LIVE_LOGS, "fixture must exceed the bounded live authority lane");
+        let query = serde_json::json!({"op":"query", "vault":vault.to_hex(),
+            "where":{"type":["room"]}, "select":[], "limit":50});
+        anyhow::ensure!(phone.op(query.clone()).await?["ok"]["rows"] == serde_json::json!([]), "cold query starts empty");
+        let demand = serde_json::json!({"op":"demand", "scope":"dc".repeat(16),
+            "revision":1, "entries":[], "queries":[{"vault":vault.to_hex(), "types":["room"]}]});
+        let ack = phone.op(demand.clone()).await?;
+        anyhow::ensure!(ack["ok"]["accepted"] == true, "view demand accepted");
+        time::timeout(Duration::from_secs(20), async {
+            loop {
+                let rows = phone.op(query.clone()).await?;
+                if rows["ok"]["rows"].as_array().is_some_and(|rows| rows.iter()
+                    .any(|row| row["entry"].as_str() == Some(target.to_hex().as_str()))) {
+                    if phone.read(move |lab, me| text(lab, me, target, 2).as_deref() == Some("first useful view")).await { break; }
+                }
+                time::sleep(Duration::from_millis(10)).await;
+            }
+            Ok::<(), anyhow::Error>(())
+        }).await.map_err(|_| anyhow::anyhow!("cold query did not render before unrelated catch-up"))??;
+        let after_first = phone.shared.differ(sender).await;
+        anyhow::ensure!(unrelated_grants.iter().all(|id| after_first.contains(&LogId::Share(*id))), "initial view reconciled unrelated authority");
+        anyhow::ensure!(phone.read(move |lab, me| lab.item(me, unrelated).is_none()).await, "initial view pulled unrelated payload");
+
+        // Renew the same public lease as a mounted view does. No target ID or
+        // transfer/staging call is supplied; ordinary live announcement must
+        // update the discovered entry while ALL background slots stay held.
+        phone.op(demand).await?;
+        let mut updates = phone.stirs();
+        mac.act(move |lab, me| lab.edit(me, vault, target,
+            |item| item.set_text(2, "live update before unrelated authority"))).await?;
+        time::timeout(Duration::from_secs(20), async {
+            loop {
+                updates.borrow_and_update();
+                if phone.read(move |lab, me| text(lab, me, target, 2).as_deref()
+                    == Some("live update before unrelated authority")).await { break; }
+                updates.changed().await?;
+            }
+            Ok::<(), anyhow::Error>(())
+        }).await.map_err(|_| anyhow::anyhow!("live update did not render before unrelated catch-up"))??;
+        let after_live = phone.shared.differ(sender).await;
+        anyhow::ensure!(unrelated_grants.iter().all(|id| after_live.contains(&LogId::Share(*id))), "live update reconciled unrelated revocation frontiers");
+        anyhow::ensure!(phone.read(move |lab, me| lab.item(me, unrelated).is_none()).await, "live update pulled unrelated payload");
+        Ok::<(), anyhow::Error>(())
+    }).await;
+    // Every ordinary failure/timeout reaches cleanup before assertions. Both
+    // shutdowns are attempted, and neither may hang this regression forever.
     drop(stalled);
-    phone.shutdown().await.unwrap(); mac.shutdown().await.unwrap();
-    assert!(useful, "a cold active query must render without unrelated authority catch-up");
-    assert!(untouched_authority, "discovery must not reconcile unrelated revocation logs just to render a room");
-    assert!(untouched_payload, "unrelated entry history remains withheld");
+    let (phone_stopped, mac_stopped) = tokio::join!(
+        time::timeout(Duration::from_secs(20), phone.shutdown()),
+        time::timeout(Duration::from_secs(20), mac.shutdown()));
+    assert!(matches!(outcome, Ok(Ok(()))), "cold-demand/live-update regression: {outcome:?}");
+    assert!(matches!(phone_stopped, Ok(Ok(()))), "receiver shutdown: {phone_stopped:?}");
+    assert!(matches!(mac_stopped, Ok(Ok(()))), "sender shutdown: {mac_stopped:?}");
 }

@@ -275,3 +275,12 @@ announcement-driven live pulls and would not exercise this production path.
 Chat's sidebar collection no longer needs the broad world summary; actor/vault
 labels and note-to-self lookup still use world identity metadata. This Rust
 fixture does not claim browser paint or physical-device acceptance.
+
+The cold-demand fixture also renews the same public view lease, writes a live
+update on the source, and waits through the receiver's reactive notification
+channel for the new payload. All background permits remain held; all seventeen
+unrelated revocation frontiers and the unrelated entry must remain missing both
+after first view and after the live update. Neither phase invokes target staging
+or an explicit transfer. Addresses are installed only after the background slots
+are reserved. Phase/overall timeouts and error returns run both bounded shutdowns
+before final assertions, so a failed view test does not leave peer tasks running.
