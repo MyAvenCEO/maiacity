@@ -503,12 +503,16 @@ mod tests {
 
     #[test]
     fn silent_newer_probes_reserve_legacy_fallback_time() {
-        let total = Duration::from_secs(3);
-        let v3 = probe_budget(total, 3);
-        let after_v3 = total - v3;
-        let v2 = probe_budget(after_v3, 2);
-        let v1 = probe_budget(after_v3 - v2, 1);
-        assert_eq!([v3, v2, v1], [Duration::from_secs(1); 3]);
+        let total = DEADLINE;
+        let mut remaining = total;
+        let mut budgets = Vec::new();
+        for version in [4, 3, 2, 1] {
+            let budget = probe_budget(remaining, version);
+            budgets.push(budget);
+            remaining -= budget;
+        }
+        assert_eq!(budgets, vec![total / 4; 4]);
+        assert_eq!(remaining, Duration::ZERO);
         assert_eq!(probe_budget(total, 1), total);
         assert_eq!(probe_budget(Duration::ZERO, 3), Duration::ZERO);
     }

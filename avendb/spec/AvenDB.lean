@@ -158,3 +158,4 @@ import AvenDB.ScopedDiscoveryManifest
 import AvenDB.SharedHolderBootstrap
 
 import AvenDB.StagedMaterialization
+import AvenDB.EntryKeyRecovery
