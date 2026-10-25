@@ -10,6 +10,7 @@ import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { session } from '$lib/avendb/session.svelte.js';
 import { refreshQueue } from './refresh.js';
+import { watchStudioCollections } from './collection-demand.js';
 import { MediaSources } from './media-sources.js';
 import { invalidateWorld } from './cuts.js';
 import { untrack } from 'svelte';
@@ -523,7 +524,11 @@ export class Studio {
 
 
 	// ── loading ──────────────────────────────────────────────────────────────
+	/** @type {(() => void) | null} */
+	stopCollectionDemand = null;
 	async load() {
+		if (this.disposed) return;
+		this.stopCollectionDemand ??= watchStudioCollections(session);
 		// no gate of its own: the app's opens the studio to Maia City's admins ($lib/app/places.ts), and everything it
 		// reads and writes is avenDB's, by the person's own shares
 		try {
@@ -1267,6 +1272,8 @@ export class Studio {
 
 	destroy() {
 		this.disposed = true;
+		this.stopCollectionDemand?.();
+		this.stopCollectionDemand = null;
 		this.stopVault?.();
 		this.stopVault = null;
 		this.vaultRefresh?.close();
