@@ -203,4 +203,18 @@ theorem released_stage_does_not_override_revocation (peer frontier current valid
     stageVisible (stageRelease peer frontier current) valid false = false := by
   simp [stageVisible, accepted]
 
+/-- A negative scope query (for example all wide grants over a vault) needs
+classification of the entire authenticated inventory, not just known positive
+members. This is a protocol requirement, not a claim that today's wire meets it. -/
+def classifiedScopeReady (inventoryClassified receiptCurrent dependenciesReady : Bool) : Bool :=
+  inventoryClassified && receiptCurrent && dependenciesReady
+
+theorem unknown_grant_is_not_unrelated (current ready : Bool) :
+    classifiedScopeReady false current ready = false := by
+  simp [classifiedScopeReady]
+
+theorem new_inventory_requires_reclassification (classified ready : Bool) :
+    classifiedScopeReady classified false ready = false := by
+  simp [classifiedScopeReady]
+
 end AvenDB.LivePriority

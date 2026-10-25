@@ -132,3 +132,61 @@ its runtime regression **remain uncompiled/unrun** pending the shared compiler
 slot. This enables transfer/authority overlap, but all announced non-entry
 frontiers remain conservative prerequisites. Full scoped dependency tracking and
 removal of unrelated authority waits remain open.
+
+## Exact remaining dependency gap (2026-10-25)
+
+The staged transport integration above is committed as `d467f136a`. It does not
+remove the conservative authority gate. The following are actual policy reads,
+not assumptions about which peers or vaults are normally related:
+
+| Policy read | Evidence required before narrowing |
+| --- | --- |
+| `State::acts_via`, `acts_for`, `approves` | Current and historical owner/device/root changes of every traversed vault, including negative membership reads. |
+| `State::read_shares`, `readers`, `public_key`, `targets` | All applicable wide grants as well as explicit audience members; complete grant ancestry and revocation frontiers. |
+| `State::stale_keys` | Ownership/device authority of readers too: removing a reader's device can rotate another vault's audience key. |
+| `State::group_at`, `groups_of`, `ops_on` | Defining cap-group entry cuts, recursive includes, and their own admission/decryption dependencies. |
+| `Counter::judge` | The entry's causal writes, schema-fit readings, group versions at each write, and removal decisions. |
+
+In particular, an empty audience is **not** an authority-independent private
+entry. `read_shares` includes wide shares without putting them in the audience's
+explicit share list. Revoking such a share, or a device of its reader vault,
+changes the target audience's key epoch through `stale_keys`. The added `keys.rs`
+regressions distinguish genuinely unrelated Carol authority from Bob authority
+that becomes relevant through a wide read grant. An owner-only shortcut was
+therefore rejected; no such bypass was implemented.
+
+The current authenticated holdings inventory identifies share logs only by opaque
+`ShareId`. A receiver missing the grant creation cannot tell which vault the log
+is over, its parent, its recipient, or its cap group. Treating absent metadata as
+an unrelated log would turn absence of evidence into authorization evidence.
+The hash-identified, signature-verified grant creation can supply that classifier;
+its current frontier must still be fenced through admission. This is the next
+evidence dependency, not something existing checkpoint entry cuts already establish.
+It need not add a wire message: existing scoped `ASK_LOGS` can request a share
+log from its empty frontier, obtaining its signed creation through normal peer
+disclosure. A bounded verified-creation index is still needed; held but not yet
+materialized grant metadata must not be mistaken for accepted authority.
+
+Required next implementation:
+
+1. Fetch bounded signed grant-creation descriptors for announced share IDs; verify
+   signatures and the creation hash against each requested ID. Unknown descriptors
+   remain pending. Bind classification to the complete authenticated inventory
+   revision, including additions/removals.
+2. Trace actual owner/device, audience, grant-parent and cap-group reads during
+   scoped replay. Record collection reads such as *all wide grants over V*, not
+   just the positive share IDs that happen to be present. Retain historical reads
+   because removals rejudge earlier writes.
+3. Close the recorded queries against that classified inventory, recursively
+   adding reader-owner and group dependencies. Missing/ambiguous or over-budget
+   closure retains the existing conservative path.
+4. Compare every required frontier at the existing atomic holdings/Lab fence;
+   admit through unchanged signature and policy checks. Only then exclude
+   classified unrelated authority logs.
+5. Exercise a real peer with unrelated vault authority withheld while the scoped
+   entry becomes visible, plus omitted-grant, wide-grant revocation, reader-device
+   revocation, stale receipt and cap-group dependency counterexamples.
+
+`classifiedScopeReady` in `LivePriority.lean` makes unknown classification and
+changed inventory fail closed. Those abstract laws do not prove that the future
+classifier/trace implementation is complete. Full task B remains **open**.

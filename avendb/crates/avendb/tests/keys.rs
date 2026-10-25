@@ -509,3 +509,49 @@ fn a_broken_curve_signs_nothing() {
     assert_eq!(text(&w.lab, w.mac_c, h.welcome, 2), None);
     keys_follow_shares(&w, "the curves fell");
 }
+
+/// Dependency-closure counterexample: no explicit audience shares does not mean
+/// no authority dependency on other vaults. Wide shares do not enter that list.
+#[test]
+fn empty_audience_depends_on_wide_reader_device_authority() {
+    let mut c = cast();
+    let (alice, bob, carol) = (c.alice, c.bob, c.carol);
+    c.create(MAC_A, alice, DIARY, alice, &[], "note", &[]).unwrap();
+    c.issue(MAC_A, &[], alice, Who::Vault(bob), Level::Read, Selector::All).unwrap();
+    let family = audience_of(alice, &[]);
+    let before = c.log.view();
+    assert_eq!(before.entry(DIARY).unwrap().audience(), AudienceId::of(alice, &[]));
+    assert!(before.entitled(MAC_B, family));
+    let epoch = before.epoch(family);
+    // Truly unrelated authority does not change this family's epoch.
+    c.log.append(PASSKEY_C, &[], Action::Revoke(Revoking::Device {
+        vault: carol, device: MAC_C, keep: vec![],
+    })).unwrap();
+    assert_eq!(c.log.view().epoch(family), epoch);
+    // Bob is not the entry's owner, actor, explicit audience member or author.
+    // Nevertheless his device revocation must be in its authority closure.
+    c.log.append(PASSKEY_B, &[], Action::Revoke(Revoking::Device {
+        vault: bob, device: MAC_B, keep: vec![],
+    })).unwrap();
+    let after = c.log.view();
+    assert!(!after.entitled(MAC_B, family));
+    assert!(after.epoch(family) > epoch);
+    assert!(after.entitled(MAC_A, family));
+}
+
+#[test]
+fn an_opaque_wide_share_log_changes_empty_audience_key_epoch() {
+    let mut c = cast();
+    let (alice, bob) = (c.alice, c.bob);
+    c.create(MAC_A, alice, DIARY, alice, &[], "note", &[]).unwrap();
+    let share = c.issue(MAC_A, &[], alice, Who::Vault(bob), Level::Read, Selector::All).unwrap();
+    let family = audience_of(alice, &[]);
+    let epoch = c.log.view().epoch(family);
+    let removal = c.log.append(MAC_A, &[], Action::Revoke(Revoking::Grant {
+        share, actor: alice, keep: vec![], via: vec![],
+    })).unwrap();
+    let edit = c.log.edits().iter().find(|e| e.id() == removal).unwrap();
+    assert_eq!(avendb::sync::log_of(edit, removal), Some(avendb::sync::LogId::Share(share)));
+    assert!(c.log.view().epoch(family) > epoch);
+    assert_eq!(c.log.view().entry(DIARY).unwrap().audience(), AudienceId::of(alice, &[]));
+}
