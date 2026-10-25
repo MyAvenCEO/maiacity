@@ -37,6 +37,11 @@ measured fresh-device behavior.
 
 ### Latest authoritative validation — supersedes intermediate pending labels above
 
+**Warm query pagination and suffix pacing integrated:** [18f81a2d](https://github.com/MyAvenCEO/maiacity/commit/18f81a2d) adds authenticated visibility/schema receipts bound to own saved snapshot, entry print and current keys. Eligible label-only queries classify/page before importing unrelated snapshots; payload/unsupported schema/depth paths retain canonical fallback. Optional warm-view capture is deferred while judgments remain incomplete. [fe553941](https://github.com/MyAvenCEO/maiacity/commit/fe553941) moves suffix materialization outside admission locks. Focused combined warm tests are compiling; these additions are not included in the earlier296-test pass.
+
+**Network compile correction:** the combined net build exposed two private Backup-field accesses in the new key-receive fixture; [a8a3ace6](https://github.com/MyAvenCEO/maiacity/commit/a8a3ace6) uses existing public blob/signed APIs. No net runtime pass is claimed yet. Checkpoint authority provenance remains a separate candidate awaiting batching and a withheld-history fixture; repeated lane/cap-group preparation on unchanged catch-up slices is under investigation.
+
+
 **Combined core gate passed:** all **296 core tests passed**, zero failures, in43.15s at source `237b36d0` (subsequent handoff-only commit `bc79f374`). Includes all four judgment-slice regressions and the new accepted-base suffix/revocation test. The retained-prefix correction is confirmed. Combined network binary compilation is now running; peer runtime, matching WASM, deployment and physical-device acceptance are not yet established.
 
 
