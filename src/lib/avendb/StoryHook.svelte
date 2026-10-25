@@ -9,6 +9,9 @@
 	right. Each change is one op on its main line, as the device allows it.
 -->
 <script>
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { hookArtworkQuery, hookRenderQuery, loadHookCover } from './story-hook-query.js';
+	import { reads } from './vaults.js';
 	import { entryOf } from './artifacts.js';
 	import { artworksOf } from './artworks.js';
 	import Icon from './Icon.svelte';
@@ -44,19 +47,15 @@
 	/** the words on the card: the image title, else the hook */
 	const words = $derived((record.image_title ?? []).filter(Boolean).join('\n') || chosen?.text?.trim() || record.title || '');
 	/** the 16:9 card as rendered on the Thumbnail step, once it is: what YouTube shows */
-	const rendered = $derived.by(() => {
-		const card = artworksOf(world, entry).find((c) => /** @type {any} */ (c.record)?.shape === '16x9' && !c.forkOf);
-		const id = entryOf(/** @type {any} */ (card?.record)?.render);
-		return (id && world.entries.find((e) => e.entry === id)) || null;
-	});
+	const artwork = entryCollection(() => api, () => hookArtworkQuery(actor));
+	const card = $derived(artworksOf({ ...world, entries: artwork.rows.filter(e => reads(e, actor)) }, entry)
+		.find(c => /** @type {any} */ (c.record)?.shape === '16x9' && !c.forkOf));
+	const renderedRows = entryCollection(() => api, () => hookRenderQuery(actor, entryOf(/** @type {any} */ (card?.record)?.render)));
+	const rendered = $derived(renderedRows.rows.find(e => e.entry === entryOf(/** @type {any} */ (card?.record)?.render) && reads(e, actor)));
 	let cover = $state(/** @type {string | null} */ (null));
 	$effect(() => {
-		let gone = false;
-		if (rendered) pictureOf(api, rendered).then((u) => !gone && (cover = u));
-		else cover = null;
-		return () => {
-			gone = true;
-		};
+		void actor; void entry;
+		return loadHookCover(api, rendered, pictureOf, value => cover = value);
 	});
 
 	/** the hooks each proposal adds or rewrites, not on the main line yet */
@@ -321,7 +320,7 @@
 		<div class="frame">
 			{#if cover}<img src={cover} alt="The 16:9 card" />{:else}<div class="stand-in"><b>{words}</b></div>{/if}
 		</div>
-		<p class="cardnote soft">{cover ? 'The 16:9 card, as rendered on the Thumbnail step.' : 'A stand-in until the 16:9 card is rendered on the Thumbnail step.'}</p>
+		<p class="cardnote soft">{cover ? 'The 16:9 card, as rendered on the Thumbnail step.' : artwork.phase === 'error' || renderedRows.phase === 'error' ? 'The card could not be read locally.' : 'A stand-in while the card or its image is unavailable locally.'}</p>
 		<h3>{title}</h3>
 		<p class="chan soft">maiaCITY</p>
 		{#if record.intro}<p class="intro">{record.intro}</p>{/if}
