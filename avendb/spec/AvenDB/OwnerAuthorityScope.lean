@@ -25,3 +25,13 @@ theorem owner_counts_reduce (st : State) (en : Entry) (deps : List EditId)
   simp [counts]
 
 end AvenDB.OwnerAuthorityScope
+
+namespace OwnerDependencyScheduling
+-- A missing frontier is only a normal-transfer request; it never licenses
+-- admission. Admission still requires every discovered frontier to be current.
+def admissible (unknown : Bool) (missing : List α) : Bool := !unknown && missing.isEmpty
+theorem missingNeverAdmits (unknown : Bool) (head : α) (tail : List α) :
+    admissible unknown (head :: tail) = false := by simp [admissible]
+theorem unknownNeverAdmits (missing : List α) :
+    admissible true missing = false := by simp [admissible]
+end OwnerDependencyScheduling
