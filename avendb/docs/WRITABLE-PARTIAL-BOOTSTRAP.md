@@ -1218,3 +1218,28 @@ build now checks the module rather than relying on a separate one-off invocation
 Full Lean build passed (127 jobs). Updated the fallback budget regression to the
 actual v4/v3/v2/v1 negotiation and two-second total. Focused Rust recovery and
 transport execution remain pending at this commit; no deployment is claimed.
+
+### Canonical frontier boundary and read-only fallback
+
+The resumed core run at `19d0009b` compiled and executed nine recovery tests:
+**8 passed, 1 failed**. Exact signed-key/current-revocation validation passed.
+The failed case withheld a historical dependency of the received frontier Write;
+canonical replay therefore correctly refused to admit that frontier. A direct
+four-mode shared-holder run also failed during checkpoint decoding because the
+decoder incorrectly treated frontier-ID presence as complete local history.
+
+The decoder now performs full canonical comparison only when all owner-attested
+historical edits and decoded bodies are locally held. Original signatures,
+current owner/recipient authority, content-root authentication and bounded
+attestation validation remain mandatory. A frontier signature alone does not
+establish whole-history completeness.
+
+Recovery deliberately retains its stricter canonical-admission gate. A v4 package
+whose frontier dependencies are missing provides a durable read-only view with
+`checkpoint-key-recovery-incomplete`; it cannot authorize a local write. Tests
+now explicitly cover that fallback without fetching the withheld history. The
+separate recovery-save test uses an already canonically admissible frontier to
+exercise exact-key persistence and the stale-receipt fence. General writable
+cold bootstrap with absent signed causal evidence remains **open**; no overlay
+or owner attestation is substituted for canonical Entry-key authorization.
+These decoder/fallback changes await the combined Rust rerun and are not deployed.

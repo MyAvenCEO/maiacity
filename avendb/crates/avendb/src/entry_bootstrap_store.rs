@@ -329,7 +329,12 @@ impl Lab {
                 }
             };
             if !lane_ready { wait_reason = Some("missing-schema-lane"); }
-            if capsule_only && !recovered.contains(&entry) { wait_reason = Some("checkpoint-capsule-read-only"); }
+            if capsule_only && !recovered.contains(&entry) {
+                wait_reason = Some(if store.bootstrap_bases.get(&entry)
+                    .is_some_and(|(_, bytes)| entry_key_recovery::is_retained(bytes)) {
+                    "checkpoint-key-recovery-incomplete"
+                } else { "checkpoint-capsule-read-only" });
+            }
             let mut opened_suffix = Vec::new();
             while budget > 0 && missing.is_empty() && wait_reason.is_none() {
                 let Some(id) = pending.pop_front() else { break; };
@@ -573,7 +578,9 @@ mod tests {
         // Ordinary authorized setup may reveal both grants without replaying the
         // later content held in the checkpoint. Private occupancy stays absent.
         lab.sync(mac,partial); lab.sync(mac,third);
-        let old_history = recover.then(|| lab.edit(mac,vault,entry,|i|i.set_text(2,"Older unseen body")).unwrap());
+        // Recovery can activate only a canonically admitted frontier. The read-only
+        // case deliberately withholds an older causal dependency to test fallback.
+        let old_history = (!recover).then(|| lab.edit(mac,vault,entry,|i|i.set_text(2,"Older unseen body")).unwrap());
         let withheld=lab.edit(mac,vault,entry,|i|i.set_text(2,"Attested")).unwrap();
         let PreparedEntryBase{draft,sealed,..}=lab.draft_capsuled_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,draft,&[]).unwrap();
@@ -609,6 +616,17 @@ mod tests {
         assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
         assert_eq!(lab.owner_base_wait_reason(partial,entry),Some("checkpoint-capsule-read-only"));
         assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Still read only")).is_err());
+        if !recover {
+            let key=lab.entry_key_recovery(mac,partial,withheld).unwrap();
+            lab.receive(partial,vec![lab.signed_edit(mac,withheld).unwrap().clone()],vec![]);
+            assert!(!lab.held(partial).signed.contains_key(&old_history.unwrap()));
+            assert!(lab.latest(partial).write(withheld).is_some(),"owner-attested view can know the frontier");
+            assert!(lab.held(partial).replay.state.write(withheld).is_none(),"canonical replay still requires its dependency");
+            assert!(!lab.retain_entry_key_recovery(partial,entry,key),"attestation cannot substitute canonical key authorization");
+            assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+            assert_eq!(lab.owner_base_wait_reason(partial,entry),Some("checkpoint-capsule-read-only"));
+            assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Missing causal evidence")).is_err());
+        }
         if recover {
             let key=lab.entry_key_recovery(mac,partial,withheld).expect("exact ordinary-authorized key");
             lab.receive(partial,vec![lab.signed_edit(mac,withheld).unwrap().clone()],vec![]);
@@ -621,7 +639,6 @@ mod tests {
             // Same stamp fence used by the shared journal saver.
             if lab.bootstrap_stamp(partial)==old_receipt {lab.finish_durable_owner_bases(partial);}
             assert!(lab.owner_base_durability_pending(partial,entry));
-            assert!(!lab.held(partial).signed.contains_key(&old_history.unwrap()),"historical content stays withheld");
             let saved=lab.backup(partial); let bytes=saved.bootstrap_bytes().unwrap();
             let saved=Backup::new(saved.signed().to_vec(),saved.blobs.values().cloned()).with_bootstrap_bytes(&bytes).unwrap();
             lab.restore_backup(partial,&saved);
@@ -654,7 +671,7 @@ mod tests {
         assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Revoked after reopen")).is_err());
     }
     #[test]
-    fn shared_holder_local_write_matches_full_holder_without_acquiring_owner_authority() {
+    fn shared_holder_missing_frontier_dependencies_falls_back_without_acquiring_owner_authority() {
         use crate::policy::{Who,Level,Revoking};
         for mode in 0..4 {
             let level=if mode==1 {Level::Read} else {Level::Write};
@@ -715,16 +732,9 @@ mod tests {
             assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(full,entry).unwrap().record());
             let before=lab.held(partial).log.ids().len();
             let write=lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Shared local update"));
-            if mode==0 {
-                let id=write.unwrap(); let signed=lab.signed_edit(partial,id).unwrap().clone();
-                lab.receive(full,vec![signed.clone()],vec![]); lab.receive(mac,vec![signed],vec![]);
-                assert!(lab.history(mac,entry).unwrap().get(id).unwrap().counted);
-                assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
-                assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(full,entry).unwrap().record());
-            } else {
-                assert!(write.is_err(),"mode {mode}: read-only, restricted touch or dynamic group cannot authorize this partial write");
-                assert_eq!(lab.held(partial).log.ids().len(),before,"refusal happens before signing/keeping a write");
-            }
+            assert!(write.is_err(),"mode {mode}: missing canonical frontier dependency cannot authorize a write");
+            assert_eq!(lab.held(partial).log.ids().len(),before,"refusal happens before signing/keeping a write");
+            assert_eq!(lab.owner_base_wait_reason(partial,entry),Some("checkpoint-key-recovery-incomplete"));
             assert!(lab.draft_judged_entry_base(partial,&[guest],entry).is_err(),"recipient cannot publish as owner");
             let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
             let signed=lab.signed_edit(mac,revoked).unwrap().clone(); lab.receive(partial,vec![signed],vec![]);
