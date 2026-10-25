@@ -1900,7 +1900,7 @@ fn restore(
         let backup = Backup::new(signed, keys);
         let backup = if anchors.is_empty() { backup } else {
             // Invalid companion never invalidates or discards the ordinary signed log.
-            backup.clone().with_bootstrap_bytes(&anchors).unwrap_or(backup)
+            backup.clone().with_bootstrap_bytes(&anchors).unwrap_or_else(||backup.defer_unverified_semantics())
         };
         lab.restore_warm(me, backup, started, warm);
     }

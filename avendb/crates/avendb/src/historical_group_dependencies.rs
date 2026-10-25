@@ -172,6 +172,29 @@ impl Lab {
         w.lab.edit(w.mac_a,w.alice,entry,|item|item.set_text(2,"offline update")).unwrap();
         assert_eq!(crate::cast::text(&w.lab,w.mac_a,entry,2).as_deref(),Some("offline update"));
     }
+    #[test] fn semantic_save_stamp_tracks_insert_and_clear() {
+        let mut w=crate::cast::world();
+        let entry=w.lab.create(w.mac_a,w.alice,w.alice,"doc",&[],crate::cast::document("Local","kept",w.mac_a)).unwrap();
+        let initial=w.lab.bootstrap_stamp(w.mac_a);
+        w.lab.defer_semantic_marks(w.mac_a,entry);
+        assert_ne!(initial,w.lab.bootstrap_stamp(w.mac_a));
+        // This complete local world is the test's trusted current cut.
+        assert!(w.lab.complete_semantic_cut(w.mac_a,entry));
+        assert_eq!(initial,w.lab.bootstrap_stamp(w.mac_a));
+        let backup=w.lab.backup(w.mac_a);
+        w.lab.restore_backup(w.mac_a,&backup);
+        assert!(w.lab.semantic_group_dependencies(w.mac_a,entry).unwrap().1);
+    }
+    #[test] fn malformed_companion_recovery_preserves_content_but_not_semantic_certainty() {
+        let mut w=crate::cast::world();
+        let entry=w.lab.create(w.mac_a,w.alice,w.alice,"doc",&[],crate::cast::document("Local","kept",w.mac_a)).unwrap();
+        let backup=w.lab.backup(w.mac_a);
+        assert!(backup.clone().with_bootstrap_bytes(b"AVSEM001bad").is_none());
+        w.lab.restore_backup(w.mac_a,&backup.defer_unverified_semantics());
+        assert!(w.lab.item(w.mac_a,entry).is_some());
+        assert!(!w.lab.semantic_group_dependencies(w.mac_a,entry).unwrap().1);
+        assert!(w.lab.mark_now(w.mac_a,entry).unwrap().is_none());
+    }
     #[test] fn incomplete_semantic_cut_stays_pending_after_backup_reopen() {
         let mut w=crate::cast::world();
         let entry=w.lab.create(w.mac_a,w.alice,w.alice,"doc",&[],crate::cast::document("Local","kept",w.mac_a)).unwrap();

@@ -452,6 +452,18 @@ impl Backup {
     pub fn bootstrap_bytes(&self) -> Option<Vec<u8>> {
         semantic_companion(encode_anchors(&self.bootstrap_bases, self.signed.iter())?, &self.semantic_pending)
     }
+    /// Corrupt optional evidence must not erase an outstanding semantic guard.
+    /// Preserve ordinary historical reads and local writes; only automatic
+    /// audience changes wait for a newly verified cut in this recovery path.
+    pub fn defer_unverified_semantics(mut self) -> Self {
+        self.semantic_pending.extend(self.signed.iter().filter_map(|signed| {
+            match crate::sync::log_of(&signed.edit, signed.edit.id()) {
+                Some(crate::sync::LogId::Entry(entry)) => Some(entry),
+                _ => None,
+            }
+        }));
+        self
+    }
     pub fn with_bootstrap_bytes(mut self, bytes: &[u8]) -> Option<Self> {
         if bytes.starts_with(b"AVSEM001") {
             if bytes.len()<16 {return None;}
