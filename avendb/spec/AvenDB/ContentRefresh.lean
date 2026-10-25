@@ -31,3 +31,17 @@ theorem freshEntryDoesNotChangeOtherJudgments (judge : C → E → R)
     (before after : C) (sameContext : before = after) (entry : E) :
     judge before entry = judge after entry := by rw [sameContext]
 end AvenDB.ContentRefresh
+
+namespace AvenDB.ContentRefresh
+-- Received fast tails go through the ordinary signature/current admission gate
+-- before decryption; source/provider deployment role is not an input.
+def receivedTail (verified currentPermission strictTail currentKey : Bool) : Bool :=
+  verified && currentPermission && strictTail && currentKey
+
+theorem receivedRequiresVerification (permission tail key : Bool) :
+    receivedTail false permission tail key = false := by simp [receivedTail]
+theorem receivedRequiresCurrentPermission (verified tail key : Bool) :
+    receivedTail verified false tail key = false := by simp [receivedTail]
+theorem receivedRequiresCurrentKey (verified permission tail : Bool) :
+    receivedTail verified permission tail false = false := by simp [receivedTail]
+end AvenDB.ContentRefresh

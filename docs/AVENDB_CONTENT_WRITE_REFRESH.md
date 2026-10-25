@@ -85,3 +85,24 @@ asks, revocation, group references/redefinition and canonical cold reconstructio
 The target's prior History and hydrated Body buffers move into the active working
 set; they are not cloned. Received ordinary tails still use the old global catch-up
 path and are the next separate integration point.
+
+## Verified received live tail (next slice; Rust validation pending)
+
+A single fresh ordinary MAIN content edit now reuses the same target-only
+materialization after ordinary signature verification and current gate admission.
+The receiver must already be settled, currently entitled, and hold the exact
+current entry stay/epoch key. The immutable prior log revision and length fence
+must describe a strict one-edit append. Shared history, deferred receipts, policy,
+metadata and stewardship safeguards are identical to local edits. This runs even
+when a transport requests deferred page catch-up, so an eligible live tail need
+not wait for a later global refresh. Multiple edits, stale ordering, missing keys,
+blobs, checkpoint coverage and governance changes retain the canonical path.
+
+Lean `ContentRefresh` additionally proves the received-tail predicate requires
+verified signatures, current permission and current keys. Source regressions
+exercise four received tails against forced full refresh, rejected signatures,
+and retained multi-edit batching. No Rust run or physical latency result is
+claimed for this slice yet: run `content_refresh::tests` and
+`prepared_receive_tests` on the combined integration checkout. The earlier
+received-tail limitation above describes the previous commit only. Bulk catch-up
+and unsupported single-tail cases still incur their existing reconstruction work.
