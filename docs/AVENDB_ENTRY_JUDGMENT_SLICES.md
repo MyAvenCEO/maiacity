@@ -2,7 +2,7 @@
 
 Implementation: [f64394f6](https://github.com/MyAvenCEO/maiacity/commit/f64394f6).
 
-Status: source implemented, Lean and Rust syntax checks passed; canonical runtime validation pending. No deployment. This is a cooperative boundary around ordinary entry judgment, not a claim that all catch-up computation is bounded or sub-100 ms.
+Status: integrated core implementation and Lean passed. All four judgment regressions passed within the combined296-test core run (zero failures,43.15s). Network integration and measured device latency remain pending. No deployment. This is a cooperative boundary around ordinary entry judgment, not a claim that all catch-up computation is bounded or sub-100 ms.
 
 ## The blocking path
 

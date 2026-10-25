@@ -37,6 +37,9 @@ measured fresh-device behavior.
 
 ### Latest authoritative validation — supersedes intermediate pending labels above
 
+**Combined core gate passed:** all **296 core tests passed**, zero failures, in43.15s at source `237b36d0` (subsequent handoff-only commit `bc79f374`). Includes all four judgment-slice regressions and the new accepted-base suffix/revocation test. The retained-prefix correction is confirmed. Combined network binary compilation is now running; peer runtime, matching WASM, deployment and physical-device acceptance are not yet established.
+
+
 **Receive and suffix integration:** [67d667b3](https://github.com/MyAvenCEO/maiacity/commit/67d667b3) defers key/staged-entry materialization until admission locks release. Accepted-base suffix transfer is integrated at [d1b3a4ee](https://github.com/MyAvenCEO/maiacity/commit/d1b3a4ee), [c980686d](https://github.com/MyAvenCEO/maiacity/commit/c980686d), [377af962](https://github.com/MyAvenCEO/maiacity/commit/377af962), [55ede1c5](https://github.com/MyAvenCEO/maiacity/commit/55ede1c5), and [237b36d0](https://github.com/MyAvenCEO/maiacity/commit/237b36d0). The final queue is bounded/fair, preserves ordinary fallback on overflow, and carries demand cancellation through admission. These changes await combined Rust validation; no deployment claim.
 
 **First judgment runtime:** 3/4 passed (demand churn, invalid-warm retry, lock cleanup). The remaining assertion used an absolute cursor despite an existing judged prefix; [f0690502](https://github.com/MyAvenCEO/maiacity/commit/f0690502) measures newly advanced work against that prefix, preserving the32-write bound. Full combined core suite now running. Query hydration before pagination and checkpoint-covered authority provenance remain unresolved engineering work.
