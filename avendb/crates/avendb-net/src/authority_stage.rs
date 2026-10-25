@@ -318,8 +318,9 @@ impl crate::Shared {
                         let log = lab.log(me);
                         let indexed = shared.logs_of(lab, me);
                         let provenance = lab.authority_provenance(me);
-                        classes.owner_dependencies_provenance(owner, log.edits(), log.ids(), &indexed, current,
-                            |id| provenance.get(&id).cloned()).map(|dependencies| dependencies.missing)
+                        classes.owner_dependencies_grouped(owner, log.edits(), log.ids(), &indexed, current,
+                            |id| provenance.get(&id).cloned(),
+                            |group| lab.historical_group_dependencies(me,owner.vault,group)).map(|dependencies| dependencies.missing)
                     }));
                 (stage, missing)
             }).await;
@@ -328,6 +329,7 @@ impl crate::Shared {
             if previous_missing.as_ref() == Some(&missing) { break; }
             previous_missing = Some(missing.clone());
             self.pull_expected(peer.endpoint, crate::Scope::Logs(missing), false, None, Some(device)).await?;
+            self.catch_up_paced(true).await;
         }
         #[cfg(test)]
         self.authority_stages.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -364,8 +366,9 @@ impl crate::Shared {
                         let log = lab.log(me);
                         let indexed = shared.logs_of(lab, me);
                         let provenance = lab.authority_provenance(me);
-                        classes.owner_scope_provenance(owner, log.edits(), log.ids(), &indexed, current,
-                            |id| provenance.get(&id).cloned()).is_some()
+                        classes.owner_dependencies_grouped(owner, log.edits(), log.ids(), &indexed, current,
+                            |id| provenance.get(&id).cloned(),
+                            |group| lab.historical_group_dependencies(me,owner.vault,group)).is_some_and(|d|d.missing.is_empty())
                     });
                     if !scoped {
                         return Admission::Waiting(stage, prepared);

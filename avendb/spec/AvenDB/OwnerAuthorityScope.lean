@@ -137,3 +137,11 @@ theorem missingActorRejected (actors held : List Nat) (a : Nat)
   intro h
   exact missing (h.1 a member)
 end MixedActorPlainScope
+
+namespace AvenDB.GroupClosure
+/-- Missing group histories never become an admission result. Normal replay
+still judges every write at its own place after dependency closure succeeds. -/
+def ready (missing : List α) (authorityClosed : Bool) : Bool := missing.isEmpty && authorityClosed
+theorem missingHistoryBlocks (group : α) (rest : List α) (authorityClosed : Bool) :
+    ready (group :: rest) authorityClosed = false := by simp [ready]
+end AvenDB.GroupClosure

@@ -544,6 +544,13 @@ async fn cold_room_demand_renders_with_unrelated_authority_frontiers_withheld() 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn mixed_author_chat_demand_receives_participant_rows_before_unrelated_history() {
+    mixed_chat_demand(false).await;
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn grouped_participant_chat_preserves_historical_includes_before_unrelated_history() {
+    mixed_chat_demand(true).await;
+}
+async fn mixed_chat_demand(grouped: bool) {
     use avendb::{cast::{share, of_type, by_id}, policy::{Action, Level, Revoking, Who}};
     let mut w = world();
     let (bob, bob_vault) = (w.mac_b, w.bob);
@@ -564,7 +571,19 @@ async fn mixed_author_chat_demand_receives_participant_rows_before_unrelated_his
         &serde_json::json!({"kind":"room", "name":"Shared Chat", "look":"group",
             "messages":[{"id":1,"text":"owner first message"}]}), sender).unwrap();
     let target = w.lab.create(sender, vault, vault, "room", &[], room).unwrap();
-    w.lab.issue(sender, &[sender], share(vault, Who::Vault(bob_vault), Level::Member, by_id(target))).unwrap();
+    let caps=|| Level::Write.ops().into_iter().map(|op|avendb::rules::Cap {op,slice:by_id(target)}).collect();
+    let group_history=if grouped {
+        let child=w.lab.define_group(sender,vault,avendb::rules::CapGroup{name:"Historical writer".into(),caps:caps(),includes:vec![]}).unwrap();
+        let root=w.lab.define_group(sender,vault,avendb::rules::CapGroup{name:"Participants".into(),caps:vec![],includes:vec![child]}).unwrap();
+        w.lab.issue_group(sender,&[sender],avendb::lab::GroupShare {
+            over:vault,who:Who::Vault(bob_vault),name:"Participants".into(),select:by_id(target),group:root,
+            level:Level::Write,parent:None,issuer:vault,
+        }).unwrap();
+        Some((root,child))
+    } else {
+        w.lab.issue(sender, &[sender], share(vault, Who::Vault(bob_vault), Level::Write, by_id(target))).unwrap();
+        None
+    };
     w.lab.sync_all(0);
     w.lab.edit(bob,bob_vault,target,|item| {
         let mut record=item.record();
@@ -574,6 +593,12 @@ async fn mixed_author_chat_demand_receives_participant_rows_before_unrelated_his
     w.lab.sync(bob,sender);
     assert!(w.lab.item(sender,target).unwrap().record()["messages"].as_array().unwrap().iter()
         .any(|m|m["id"]==2), "fixture participant write must actually count");
+    if let Some((root,_))=group_history {
+        w.lab.redefine_group(sender,vault,root,avendb::rules::CapGroup {
+            name:"Participants".into(),caps:caps(),includes:vec![],
+        }).unwrap();
+        w.lab.sync(sender,bob);
+    }
     let bob_node = Node::spawn(w.lab.split(bob, &[], [183;32]), bob, Options::local()).await.unwrap();
     let unrelated = w.lab.create(sender, vault, vault, "background-document", &[],
         document("Unrelated", "withheld payload", sender)).unwrap();
@@ -616,6 +641,10 @@ async fn mixed_author_chat_demand_receives_participant_rows_before_unrelated_his
             }
             Ok::<(), anyhow::Error>(())
         }).await.map_err(|_| anyhow::anyhow!("cold query did not render before unrelated catch-up"))??;
+        if let Some((root,child))=group_history {
+            anyhow::ensure!(phone.read(move|lab,me|lab.group(me,vault,root).is_some_and(|g|g.includes.is_empty())
+                && lab.group(me,vault,child).is_some()).await,"historical included group must arrive despite absence from latest root");
+        }
         let after_first = phone.shared.differ(sender).await;
         anyhow::ensure!(unrelated_grants.iter().all(|id| after_first.contains(&LogId::Share(*id))), "initial view reconciled unrelated authority");
         anyhow::ensure!(phone.read(move |lab, me| lab.item(me, unrelated).is_none()).await, "initial view pulled unrelated payload");
