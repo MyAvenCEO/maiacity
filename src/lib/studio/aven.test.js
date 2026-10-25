@@ -2,7 +2,7 @@
 // The studio's avenDB footage (./aven.js): originals with what the rules made of them, as library items.
 // Run: bun test src/lib/studio/aven.test.js
 import { expect, test } from 'bun:test';
-import { avenUrl, isAven, libraryOf, withGraded } from './aven.js';
+import { avenUrl, isAven, libraryOf, libraryFromDevice, withGraded } from './aven.js';
 
 const V = 'aa'.repeat(32);
 const f = (id, media, tags, root, len = 100) => ({ entry: id, vault: V, type: 'file', title: `${id}.mov`, media, tags, created: 1, deleted: false, record: { media }, files: [{ root, size: len + 16, len }] });
@@ -73,4 +73,28 @@ test("a cut's graded still is its file's preview; its renders' films and hero fr
 	expect(lib.find((m) => m.hash === 'ff'.repeat(32)).meta.preview).toBe(lib.find((m) => m.meta.aven?.entry === 'gl').hash);
 	expect(lib.find((m) => m.class === 'delivery').meta.timeline).toBe('cut:cut1');
 	expect(lib.find((m) => m.meta.role === 'frame').meta.shape).toBe('16:9');
+});
+
+
+test('device library uses bounded file/task collections with the same derived outputs', async () => {
+ const entries = [
+  f('original', 'video/mp4', ['media:original'], 'a'.repeat(64)),
+  f('proxy', 'video/mp4', ['media:proxy'], 'b'.repeat(64)),
+  task('probe', 'probe', 'original', {seconds: 12}),
+  task('proxy-task', 'proxy', 'original', {}, ['proxy']),
+  {entry:'unrelated-room', type:'room', record:{}}
+ ];
+ const calls = [];
+ const call = async (_, op) => {
+  calls.push(op);
+  if (op.op === 'query') {
+   const rows = entries.filter(e => op.where.type.includes(e.type));
+   return {ok:{count:rows.length, rows:rows.slice(op.offset, op.offset + op.limit)}};
+  }
+  if (op.op === 'entry_views') return {ok:{rows:entries.filter(e => op.entries.includes(e.entry))}};
+  throw Error('Unrelated world materialization must not run');
+ };
+ expect(await libraryFromDevice(call)).toEqual(libraryOf({entries}));
+ expect(calls.filter(op => op.op === 'query').map(op => op.where.type)).toEqual([['file'], ['task']]);
+ expect(calls.every(op => op.op !== 'entry_views' || !op.entries.includes('unrelated-room'))).toBe(true);
 });

@@ -9,6 +9,7 @@
  */
 
 import { madeIndex, tasksOf } from './jobs/tasks.js';
+import { collectionEntries } from './collection-entries.js';
 
 export { avenRef, avenUrl, isAven } from '../media/ref.js';
 import { avenRef, avenUrl } from '../media/ref.js';
@@ -189,10 +190,10 @@ function valueIn(ref) {
  * file; none off the Mac app or while avenDB isn't open.
  */
 export async function avenLibrary() {
-	const { device, worldOf } = await import('./cuts.js');
+	const { device } = await import('./cuts.js');
 	const call = await device();
 	if (!call) return [];
-	const items = libraryOf(await worldOf(call));
+	const items = await libraryFromDevice(call);
 	await Promise.all(
 		items.flatMap((m) =>
 			['transcript', 'analysis'].map(async (k) => {
@@ -204,4 +205,15 @@ export async function avenLibrary() {
 		)
 	);
 	return items;
+}
+
+/** Materialize only the two collections consumed by libraryOf. Unrelated
+ * rooms, assets and stories must never gate the footage library. Each
+ * collection yields between bounded query/metadata pages.
+ * @param {(command: string, op: any) => Promise<any>} call
+ */
+export async function libraryFromDevice(call) {
+	const files = await collectionEntries(call, 'file');
+	const tasks = await collectionEntries(call, 'task');
+	return libraryOf(/** @type {import('../avendb/vaults.js').WorldView} */ ({ entries: [...files, ...tasks] }));
 }
