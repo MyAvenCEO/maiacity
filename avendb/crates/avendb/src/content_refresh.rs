@@ -198,7 +198,11 @@ impl Lab {
         // A changed admission/meaning must never suppress a steward mark. Foreign
         // asks/proposals are excluded above; any computed mark falls back here.
         if store.replay.state.meaning_landed(entry, &store.readings, landed_in(store, entry))
-            .is_none_or(|meaning| meaning.mark.is_some()) {
+            .is_none_or(|meaning| meaning.mark.is_some_and(|(caps, wants)|
+                // Match upkeep -> steward exactly: a partial reader cannot issue
+                // a mark on another vault's behalf. A legal mark still falls back.
+                st.acts_for(d, en.vault) && store.reads_shares(st, en.vault)
+                    && (caps.is_some() || (wants.is_some() && store.reads_keeps(st, en.vault))))) {
             store.perf.count("refresh: content stewardship fallback", 1);
             store.reshow = true;
             return false;
@@ -233,6 +237,7 @@ mod tests {
         w.lab.sync_all(0);
         let d = w.mac_b;
         let before = w.lab.held(d).perf.to_json()["counts"]["refresh: received content only"].as_u64().unwrap_or(0);
+        assert!(!w.lab.held(d).replay.state.acts_for(d, w.alice), "fixture must be a reader, not Alice's steward");
         for n in 0..4 {
             let id = w.lab.edit(w.mac_a, w.alice, todos.door, |item| item.set_text(1, &format!("remote {n}"))).unwrap();
             let signed = w.lab.signed_edit(w.mac_a, id).unwrap().clone();
@@ -462,6 +467,16 @@ mod tests {
         assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: content stewardship fallback"].as_u64(), Some(before+1));
         assert!(w.lab.meaning(d, entry).unwrap().mark.is_none(), "full refresh completes the required mark");
         assert!(w.lab.held(d).replay.state.entry(entry).unwrap().stay().is_some(), "a real signed audience move was retained");
+        assert!(w.lab.held(d).replay.state.acts_for(d, w.alice));
+        assert!(w.lab.held(d).reads_shares(&w.lab.held(d).replay.state, w.alice));
+        let record = w.lab.item(d, entry).unwrap().record();
+        let history = w.lab.history(d, entry).unwrap().changes().to_vec();
+        let signed = w.lab.size(d).0;
+        w.lab.stores.get_mut(&d).unwrap().reshow = true;
+        w.lab.refresh(d, &[]);
+        assert_eq!(w.lab.item(d, entry).unwrap().record(), record);
+        assert_eq!(w.lab.history(d, entry).unwrap().changes(), history);
+        assert_eq!(w.lab.size(d).0, signed, "required stewardship was completed exactly once");
     }
 
     #[test]
