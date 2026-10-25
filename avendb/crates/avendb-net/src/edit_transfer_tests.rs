@@ -702,3 +702,49 @@ async fn cancelled_range_signature_check_retains_admission_and_count_until_worke
     assert!(admission_alive.upgrade().is_none());
     node.shutdown().await.unwrap();
 }
+
+#[tokio::test(flavor="multi_thread",worker_threads=2)]
+async fn bounded_admission_cancel_counts_only_completed_chunk_and_retry_finishes() {
+    let mut w=avendb::cast::world(); let me=w.phone_a;
+    let node=Arc::new(Node::spawn(w.lab.split(me,&[],[225;32]),me,
+        Options {lazy:true,..Options::local()}).await.unwrap());
+    let mut incoming=Vec::new();
+    w.lab.together(|lab|for n in 0..300 {
+        let entry=lab.create(w.mac_a,w.alice,w.alice,avendb::world::NOTE,&[],
+            avendb::cast::document(&format!("Batch {n}"),"body",w.mac_a)).unwrap();
+        let id=lab.state(w.mac_a).entry(entry).unwrap().creation;
+        incoming.push(lab.signed_edit(w.mac_a,id).unwrap().clone());
+    });
+    let ids:Vec<_>=incoming.iter().map(|s|s.edit.id()).collect();
+    let permit=node.shared.pulls.page(false,true).await.unwrap();
+    let (prepared,permit,activity,())=node.shared.prepare_received_page(incoming.clone(),permit,(),None).await.unwrap();
+    struct Owner {accepted:Arc<Accepted>,entered:std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+        gate:std::sync::Mutex<std::sync::mpsc::Receiver<()>>}
+    let (send,entered)=tokio::sync::oneshot::channel();let (release,gate)=std::sync::mpsc::channel();
+    let (accepted,reported)=Accepted::channel();
+    let owner=Arc::new(Owner {accepted,entered:std::sync::Mutex::new(Some(send)),gate:std::sync::Mutex::new(gate)});
+    let shared=node.shared.clone();let held=owner.clone();
+    let task=tokio::spawn(async move {shared.admit_received_batches(prepared,permit,activity,held,
+        crate::lab_schedule::Class::Background,|owner,new| {
+            owner.accepted.new.fetch_add(new,Ordering::Relaxed);
+            if let Some(send)=owner.entered.lock().unwrap().take() {
+                let _=send.send(());owner.gate.lock().unwrap().recv().unwrap();
+            }
+        }).await});
+    entered.await.unwrap(); task.abort();
+    assert!(n0_future::time::timeout(Duration::from_millis(30),node.shared.pulls.page(true,false)).await.is_err());
+    release.send(()).unwrap();
+    let check=ids.clone();
+    let held=node.read(move|lab,me|check.iter().filter(|id|lab.signed_edit(me,**id).is_some()).count()).await;
+    assert_eq!(held,128);assert_eq!(owner.accepted.new.load(Ordering::Relaxed),128);
+    drop(owner);
+    assert_eq!(n0_future::time::timeout(Duration::from_secs(10),reported).await.unwrap().unwrap(),128,
+        "range completion waits for last admitted owner and reports only accepted prefix");
+    let permit=node.shared.pulls.page(false,true).await.unwrap();
+    let (prepared,permit,activity,())=node.shared.prepare_received_page(incoming,permit,(),None).await.unwrap();
+    let (new,_,())=node.shared.admit_received_batches(prepared,permit,activity,(),
+        crate::lab_schedule::Class::Background,|_,_|{}).await.unwrap();
+    assert_eq!(new,172,"retry counts only newly admitted edits");
+    assert!(node.read(move|lab,me|ids.iter().all(|id|lab.signed_edit(me,*id).is_some())).await);
+    node.shutdown().await.unwrap();
+}
