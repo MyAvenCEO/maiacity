@@ -22,7 +22,8 @@
 	import { onDestroy, untrack } from 'svelte';
 	import Frame from './Frame.svelte';
 	import { entryCollection } from './entry-collection.svelte.js';
-	import { libraryFilesQuery, libraryTasksQuery, libraryRelatedQuery } from './library-query.js';
+	import { entryCollectionPages } from './entry-pages.svelte.js';
+	import { libraryFilesQuery, libraryTasksQuery, libraryRelatedQueries } from './library-query.js';
 	import Icon from './Icon.svelte';
 	import { DENY } from '../sandbox/policy.js';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
@@ -93,7 +94,7 @@
 	const as = $derived(byId.get(actor));
 	const inventory = entryCollection(() => api, () => libraryFilesQuery(vault, actor));
 	const jobs = entryCollection(() => api, () => libraryTasksQuery(vault, actor));
-	const related = entryCollection(() => api, () => libraryRelatedQuery(jobs.rows.filter((e) => reads(e, actor)), actor));
+	const related = entryCollectionPages(() => api, () => libraryRelatedQueries(jobs.rows.filter((e) => reads(e, actor)), actor, open));
 	const entries = $derived(inventory.rows.filter((e) => e.vault === vault));
 	const seen = $derived(entries.filter((e) => reads(e, actor)));
 	const files = $derived(seen.filter((e) => e.kind === 'file'));
@@ -615,7 +616,7 @@
 				</section>
 			{/if}
 
-			<p class="soft" role="status">Showing files available locally; discovery and downloaded bytes may still be incomplete.{jobs.phase === 'error' || related.phase === 'error' ? ' Derived-file details are unavailable.' : jobs.phase === 'loading' || related.phase === 'loading' ? ' Loading local derived-file details…' : ''}</p>
+			<p class="soft" role="status">Showing files available locally; discovery and downloaded bytes may still be incomplete.{jobs.phase === 'error' || related.phase === 'error' ? ` Derived-file details are incomplete: ${related.error || jobs.error}` : jobs.phase === 'loading' || related.phase === 'loading' ? ' Loading local derived-file details…' : ''}</p>
 			{#if binned}
 				<p class="soft binned">Deleted files keep their bytes. Open one to bring it back.</p>
 			{/if}
