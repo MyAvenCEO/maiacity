@@ -4366,6 +4366,14 @@ impl Lab {
 
     /// What entry `entry` means to device `d`, by what it reads (`policy::State::meaning`): its type, its author, its
     /// tags now, its audience, and where a steward would move it. `None` if it doesn't read the entry's header.
+    /// A type scheduling/filter hint from already opened header metadata. This
+    /// does not establish landed/read authorization and never hydrates a draft.
+    pub(crate) fn entry_type_hint(&self, d: SignerId, entry: EntryId) -> Option<&str> {
+        let store = self.held(d);
+        let creation = store.view().entry(entry)?.creation;
+        Some(store.readings.headers.get(&creation)?.ty.as_str())
+    }
+
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
         if !self.sees(d, entry) {
             return None;

@@ -2228,3 +2228,30 @@ fn typed_database_rows_preserve_canonical_versions_without_unrelated_rows() {
     let empty = ok(run(&mut w, mac, json!({"op":"database","vault":vault,"types":[]})));
     assert!(list(&empty["rows"]).is_empty());
 }
+
+#[test]
+fn global_entry_views_require_explicit_types_and_current_actor_read_access() {
+    let mut w = cast::world();
+    w.lab.create(w.mac_a, w.alice, w.alice, "task", &[], avendb::doc::Item::todo("Alice task", w.mac_a)).unwrap();
+    w.lab.create(w.mac_b, w.bob, w.bob, "task", &[], avendb::doc::Item::todo("Bob task", w.mac_b)).unwrap();
+    w.lab.issue(w.mac_b, &[w.mac_b], cast::share(w.bob, avendb::policy::Who::Vault(w.alice), Level::Read, cast::of_type("task"))).unwrap();
+    w.lab.sync_all(0);
+    let synced = world::SyncedTo::default();
+    for me in [w.mac_a, w.mac_b] {
+        let all = ok(engine::world(&w.lab, me, &synced));
+        for actor in [w.alice, w.bob, VaultId([0;32])] {
+            let expected: Vec<_> = all["entries"].as_array().unwrap().iter().filter(|row|
+                row["type"] == "task" && (row["public"] == true || row["readers"].as_array().unwrap().contains(&json!(actor.to_hex())))).cloned().collect();
+            let actual = ok(engine::read(&w.lab, me, &json!({"op":"entry_views","types":["task"],"as":actor.to_hex()})));
+            assert_eq!(actual["rows"], json!(expected));
+            if me == w.mac_a && actor == w.alice { assert_eq!(expected.len(), 2, "authorized cross-vault tasks remain discoverable"); }
+            assert_eq!(actual["totalEntries"], json!(expected.len()));
+            assert_eq!(actual["readableEntries"], json!(expected.len()));
+        }
+    }
+    for types in [json!([]), json!([""]), json!(vec!["task";9])] {
+        assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"entry_views","types":types})).get("refused").is_some());
+    }
+    assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"entry_views"})).get("refused").is_some());
+    assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"entry_views","vault":w.alice.to_hex(),"entries":[],"types":["task"]})).get("refused").is_some());
+}

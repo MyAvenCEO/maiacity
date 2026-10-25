@@ -12,7 +12,7 @@ test('Library preserves semantic file kind and actor while prioritizing ordinary
  const query=libraryFilesQuery(vault,actor);
  assert.deepEqual(query,{op:'entry_views',vault,as:actor,kind:'file'});
  assert.deepEqual(queryDiscovery(query),[{types:['file'],vault}]);
- assert.deepEqual(queryDiscovery(libraryTasksQuery(vault,actor)),[{types:['task'],vault}]);
+ assert.deepEqual(queryDiscovery(libraryTasksQuery(vault,actor)),[{types:['task']}]);
  assert.equal(summaryView('/app/','#library'),true);
  assert.equal(needsWorldEntries({entriesComplete:false},'library'),false);
  assert.equal(readCompleteness({ok:{rows:[]}}).authoritativeEmpty,false);
