@@ -2,6 +2,7 @@
 //! It is not an assertion that unknown peers have no newer state. Ordinary
 //! entry/manifest authorization and canonical owner Snapshot approval apply.
 use super::*;
+use serde_json::json;
 
 const VERSION: &str = "avendb-scoped-discovery-v1";
 const MAX_MEMBERS: usize = 512;
