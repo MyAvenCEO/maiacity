@@ -133,7 +133,9 @@ impl Refused {
                 return out;
             }
         };
-        json!({ "refused": name, "why": why })
+        let mut out = json!({ "refused": name, "why": why });
+        if matches!(self, Refused::Rule(Refusal::Materializing)) { out["retryable"] = true.into(); }
+        out
     }
 }
 
@@ -148,6 +150,7 @@ fn rule(r: &Refusal) -> String {
         Refusal::NotLanded => "the entry is a draft its vault hasn't taken into main: only the vault lands a draft",
         Refusal::BadCap => "a share has a name, at least one op, and a selector and a chain within bounds",
         Refusal::NotActing => "the device doesn't act for that vault",
+        Refusal::Materializing => "this entry is still being reconstructed; retry when its view is ready; no write was committed",
         Refusal::ReadOnly => "the entry opens read-only: no lens reaches every schema it was written under",
         Refusal::NotAView => "the record would not fit its schema",
         Refusal::Locked => "the device is locked",
@@ -995,9 +998,11 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     let mut lanes: HashMap<VaultId, Lane> = HashMap::new();
     let mut rows = vec![];
     let (mut unresolved_candidates, mut checkpoint_partial) = (0usize, false);
+    let mut materializing = 0usize;
     for entry in lab.entries(me) {
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
         let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
+        if lab.materialization_pending(me, entry) { materializing += 1; unresolved_candidates += 1; continue; }
         let checkpoint = lab.entry_projection(me, entry);
         checkpoint_partial |= checkpoint.is_some() || lab.active_owner_base(me, entry).is_some();
         let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
@@ -1076,7 +1081,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     }
     let mut result = json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
         "readiness": { "discovery": "unverified", "authoritativeEmpty": false,
-            "unresolvedCandidates": unresolved_candidates, "checkpointPartial": checkpoint_partial } });
+            "unresolvedCandidates": unresolved_candidates, "checkpointPartial": checkpoint_partial, "materializing": materializing } });
     // Only an exact positive type scope can select a matching attested cut.
     // The cut adds demand, never rows or an assertion that this query is complete.
     if let (Some(vault), Some(actor), Some(where_)) = (vault, lab.vault_of(me), o.get("where").and_then(Value::as_object)) {
@@ -1135,6 +1140,7 @@ fn owner_base_provenance(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Valu
 
 fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let (entry, line, schema) = (entry_of(o)?, line_of(o, "line")?, named(o)?);
+    if lab.materialization_pending(me, entry) { return Err(Refusal::Materializing.into()); }
     if !o.contains_key("at") && !o.contains_key("version") {
         if let Some(checkpoint) = lab.entry_projection(me, entry) {
             if let Some(stored) = checkpoint.record(line) {
@@ -1822,6 +1828,15 @@ pub fn verdict(lab: &mut Lab, me: SignerId, v: &Value) -> Value {
 
 /// Step `s`, acting for `actor`, on device `me`.
 fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, Refused> {
+    let entry = match &s {
+        Step::Create { .. } | Step::AddSchema { .. } | Step::AipOpen { .. } => None,
+        Step::Edits { entry, .. } | Step::Tag { entry, .. } | Step::Propose { entry, .. }
+        | Step::Variant { entry, .. } | Step::Merge { entry, .. } | Step::Review { entry, .. }
+        | Step::AipObjective { entry, .. } | Step::AipMeasure { entry, .. } | Step::AipPromote { entry }
+        | Step::AipWithdraw { entry, .. } | Step::AipReview { entry, .. }
+        | Step::Restore { entry, .. } | Step::Undo { entry, .. } | Step::Fork { entry, .. } => Some(*entry),
+    };
+    if entry.is_some_and(|e| lab.materialization_pending(me, e)) { return Err(Refusal::Materializing.into()); }
     match s {
         Step::Create { vault, ty, tags, schema, value, draft, file } => {
             // its file's bytes come beside the op, which a node reads; a dry run checks the creation alone, as the

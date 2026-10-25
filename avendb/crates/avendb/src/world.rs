@@ -590,6 +590,7 @@ pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Opt
             && (issued.share.who == Who::Vault(actor) || issued.share.who == Who::Everyone)));
     let mut metadata_known = owns_domain;
     let mut bodies_open = true;
+    let mut materializing = 0usize;
     // Explicit IDs use the canonical policy index, including cross-vault targets; no body scan.
     let selected: Vec<_> = match ids {
         Some(ids) => ids.iter().filter_map(|id| st.entry(*id)).collect(),
@@ -626,15 +627,16 @@ pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Opt
             // The todo schema requires its kind constant. Reject unrelated bodies before opening them,
             // while preserving custom entry labels and exact File/Note/Todo classification precedence.
             if !projected && kind == Some("todo") && lab.item(me, en.id).is_some_and(|item| !item.may_be_todo()) { continue; }
+            if lab.materialization_pending(me, en.id) { materializing += 1; }
             let row = entry(lab, me, en);
             if matches!(row.what, What::Sealed) || row.checkpoint.is_some() { bodies_open = false; }
             if kind.is_none_or(|kind| row.what.kind() == kind) { snapshot.entries.push(row); }
         }
     }
-    if tag.is_some() || vault.is_some() {
+    if tag.is_some() || vault.is_some() || materializing > 0 {
         let replayed = lab.local_inventory_replayed(me);
         snapshot.scope = Some(json!({"tag":tag,"basis":"current-readable-held-state",
-            "localComplete":replayed && metadata_known && bodies_open,
+            "localComplete":replayed && metadata_known && bodies_open, "materializing":materializing,
             "remoteComplete":false,"vault":vault.map(|id|id.to_hex())}));
     }
     Some(snapshot)

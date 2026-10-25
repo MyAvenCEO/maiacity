@@ -697,6 +697,8 @@ impl Write {
 /// Why a peer refused an edit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refusal {
+    /// A Node is still reconstructing this entry; no write was committed. Retry when ready.
+    Materializing,
     /// A signature doesn't verify, or covers other bytes (checked before any rule).
     BadSignature,
     /// Already accepted.
