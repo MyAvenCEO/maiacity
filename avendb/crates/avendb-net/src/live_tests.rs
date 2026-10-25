@@ -362,14 +362,14 @@ async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() 
 /// Every remote entry predates the first authenticated announcement. No target ID is supplied
 /// to the receiving application; discovery must hydrate its view while background work is held.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_active_type_query_discovers_existing_entries_without_unrelated_history() {
+async fn an_active_room_query_discovers_and_updates_without_unrelated_history() {
     let mut w = world();
     let coop = handbook_ready(&mut w);
     let (sender, receiver) = (w.mac_a, w.phone_a);
     // The receiver has valid identity/governance/schema state, but no target or unrelated payloads.
     let phone_lab = w.lab.split(receiver, &[], [121; 32]);
-    let target = w.lab.create(sender, coop, coop, "active-document", &[],
-        document("Useful existing entry", "active view", sender)).unwrap();
+    let target = w.lab.create(sender, coop, coop, "room", &[],
+        document("Useful existing room", "initial room state", sender)).unwrap();
     let unrelated = (0..pulls::LIVE_LOGS + 1).map(|i| {
         w.lab.create(sender, coop, coop, "background-document", &[],
             document(&format!("Unrelated {i}"), "withheld history", sender)).unwrap()
@@ -390,14 +390,14 @@ async fn an_active_type_query_discovers_existing_entries_without_unrelated_histo
     wait_for(async || phone.shared.held.lock().unwrap().get(&sender)
         .is_some_and(|held| held.logs.contains_key(&LogId::Entry(target)))).await;
     let query = serde_json::json!({"op":"query", "vault":coop.to_hex(),
-        "where":{"type":["active-document"]}, "select":[]});
+        "where":{"type":["room"]}, "select":[]});
     let initial = phone.op(query.clone()).await.unwrap();
     assert_eq!(initial["ok"]["rows"], serde_json::json!([]));
     // Local capability and lease acceptance are distinct; remote discovery is always incomplete.
     // Requester identity must be bound by the connection, never selected by this payload.
     let ack = phone.op(serde_json::json!({"op":"demand", "scope":"ab".repeat(16),
         "revision":1, "entries":[],
-        "queries":[{"vault":coop.to_hex(), "types":["active-document"]}]})).await.unwrap();
+        "queries":[{"vault":coop.to_hex(), "types":["room"]}]})).await.unwrap();
     assert_eq!(ack["ok"]["discovery_supported"], true);
     assert_eq!(ack["ok"]["discovery_complete"], false);
     let useful = time::timeout(Duration::from_secs(2), async {
@@ -408,6 +408,26 @@ async fn an_active_type_query_discovers_existing_entries_without_unrelated_histo
             time::sleep(Duration::from_millis(5)).await;
         }
     }).await.is_ok();
+    // Keep every background slot occupied while a second ordinary signed write
+    // changes the discovered entry. Observe through the reactive notification
+    // channel, not a full sync or polling of the unrelated world.
+    let updated = if useful {
+        let mut updates = phone.stirs();
+        mac.act(move |lab, me| lab.edit(me, coop, target,
+            |item| item.set_text(2, "live room update during cold catch-up"))).await.unwrap();
+        let expected = mac.read(move |lab, me| lab.item(me, target)
+            .and_then(|item| item.read(avendb::lens::View::document_v1()))).await;
+        assert!(expected.is_some(), "sender holds the updated exact record");
+        time::timeout(Duration::from_secs(20), async {
+            loop {
+                updates.borrow_and_update();
+                let actual = phone.read(move |lab, me| lab.item(me, target)
+                    .and_then(|item| item.read(avendb::lens::View::document_v1()))).await;
+                if actual == expected { break; }
+                updates.changed().await.expect("view notification channel stays open");
+            }
+        }).await.is_ok()
+    } else { false };
     let unrelated_absent = phone.read(move |lab, me|
         unrelated.iter().all(|entry| lab.item(me, *entry).is_none())).await;
     let incomplete = phone.synced().await;
@@ -418,5 +438,6 @@ async fn an_active_type_query_discovers_existing_entries_without_unrelated_histo
     assert!(unrelated_absent, "active discovery must not require unrelated payloads");
     assert!(incomplete["behind"].as_u64().is_some_and(|behind| behind > 0),
         "a useful local result is not whole-device completeness: {incomplete}");
-    assert!(useful, "an authenticated type-only active query must discover its existing entry before background admission is released");
+    assert!(useful, "an authenticated type-only room query must discover its existing entry before background admission is released");
+    assert!(updated, "the discovered room must receive a live edit while unrelated entry history stays withheld");
 }
