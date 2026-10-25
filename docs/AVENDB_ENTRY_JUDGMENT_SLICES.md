@@ -132,3 +132,23 @@ A focused classifier regression checks missing actor authority and grouped-grant
 refusal. Standalone MixedActorPlainScope Lean proof and Rust parser checks pass;
 Rust execution is pending the canonical combined build. This is a scoped
 increment, not completion of arbitrary shared bootstrap.
+
+### Continuing an accepted owner base after participant writes
+
+The current owner-base dependency summary now retains every actor in its bounded
+main-line history, including already canonically judged participant writes. It
+still requires an owner-created entry, exact current overlay basis and existing
+write/actor/path bounds. This metadata remains only a transfer plan. The existing
+suffix interpreter still requires current actor authority, valid signatures,
+complete group-free commitment proofs, canonical per-operation judgment and
+current revocation checks; no grouped-proof or proposal relaxation is introduced.
+
+The existing malformed-proof/revocation regression now requests the real bounded
+suffix response, admits it with deferred presentation, completes paced canonical
+judgment, then uses the advanced mixed-actor base for a second participant suffix.
+Both results must equal the fully replayed peer while the attested prefix stays
+withheld. Its malformed proof and revoked participant assertions remain intact.
+The net OwnerEntry::from_base actor propagation is coordinated in the grouped
+collector agent's separate patch; this core API patch must be integrated with
+that bridge. Standalone MixedOwnerBaseSuffix Lean and Rust parsing passed; Rust
+runtime validation remains pending.

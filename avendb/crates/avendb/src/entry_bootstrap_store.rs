@@ -555,15 +555,40 @@ mod tests {
         assert!(lab.history(bad,entry).unwrap().get(bad_id).is_none());
         // Independent concurrent owner suffix has the same checkpoint cut.
         let own=lab.edit(mac,vault,entry,|item|item.set_text(1,"Owner title")).unwrap();
-        let own_signed=lab.signed_edit(mac,own).unwrap().clone();
-        lab.receive(phone,vec![own_signed,signed.clone()],vec![]);
         lab.receive(mac,vec![signed.clone()],vec![]);
+        let before_scope=lab.owner_base_scope(phone,entry).expect("base schedules owner suffix");
+        assert_eq!(before_scope.actors(), &BTreeSet::from([vault]));
+        let reply=lab.owner_base_suffix_reply(mac,phone,entry,snapshot,&[]).expect("ordinary authorized mixed suffix reply");
+        assert!(!reply.more && reply.blobs.is_empty());
+        let reply_ids: BTreeSet<_>=reply.edits.iter().map(|s|s.edit.id()).collect();
+        assert!(reply_ids.contains(&own) && reply_ids.contains(&shared));
+        assert!(!reply_ids.contains(&withheld), "suffix transfer must not fetch the attested prefix");
+        let prepared=lab.prepare_receive(phone,reply.edits).check();
+        lab.receive_prepared(phone,prepared,false);
+        assert!(lab.owner_base_scope(phone,entry).is_none(), "old overlay is fenced until canonical refresh");
+        let mut turns=0;
+        while lab.catch_up_step(phone,&[entry]).1 { turns+=1; assert!(turns<32); }
+        let after_scope=lab.owner_base_scope(phone,entry).expect("mixed overlay remains usable as next suffix cursor");
+        assert_eq!(after_scope.actors(), &BTreeSet::from([vault,guest_vault]));
+        assert!(after_scope != before_scope, "current scope fence includes participant writers");
         assert!(lab.active_owner_base(phone,entry).is_some());
         assert_eq!(lab.owner_base_pending(phone,entry),0);
         assert!(lab.history(phone,entry).unwrap().get(shared).unwrap().counted);
         assert_eq!(lab.item(phone,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
         assert!(!lab.held(phone).log.ids().contains(&withheld),
             "retained pre-snapshot content remains withheld");
+        let next=lab.edit(guest_device,guest_vault,entry,|item|item.set_text(2,"Guest again")).unwrap();
+        lab.receive(mac,vec![lab.signed_edit(guest_device,next).unwrap().clone()],vec![]);
+        let next_reply=lab.owner_base_suffix_reply(mac,phone,entry,snapshot,&[own,shared]).unwrap();
+        assert!(!next_reply.more);
+        assert_eq!(next_reply.edits.iter().map(|s|s.edit.id()).collect::<Vec<_>>(),vec![next]);
+        let prepared=lab.prepare_receive(phone,next_reply.edits).check();
+        lab.receive_prepared(phone,prepared,false);
+        let mut turns=0;
+        while lab.catch_up_step(phone,&[entry]).1 { turns+=1; assert!(turns<32); }
+        assert_eq!(lab.item(phone,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+        assert!(lab.owner_base_scope(phone,entry).unwrap().actors().contains(&guest_vault));
+        assert!(!lab.held(phone).log.ids().contains(&withheld));
         let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
         let removal=lab.signed_edit(mac,revoked).unwrap().clone();
         // Current removal arrives before the old shared suffix on the second partial peer.

@@ -129,3 +129,13 @@ theorem missingActorRejected (actors held : List Nat) (a : Nat)
   intro h
   exact missing (h.1 a member)
 end MixedActorPlainScope
+
+namespace MixedOwnerBaseSuffix
+-- An accepted base's writer summary grows monotonically with admitted suffixes.
+-- It schedules actor authority; it never substitutes for grant/proof judgment.
+def extend (base suffix : List Nat) := base ++ suffix
+theorem retainsBaseActor (base suffix : List Nat) (actor : Nat) (h : actor ∈ base) :
+    actor ∈ extend base suffix := List.mem_append.mpr (Or.inl h)
+theorem retainsSuffixActor (base suffix : List Nat) (actor : Nat) (h : actor ∈ suffix) :
+    actor ∈ extend base suffix := List.mem_append.mpr (Or.inr h)
+end MixedOwnerBaseSuffix
