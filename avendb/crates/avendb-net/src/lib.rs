@@ -758,6 +758,7 @@ impl Node {
             owed: Mutex::default(),
             wanted: Mutex::default(),
             demands: Mutex::default(),
+            authority_stages: authority_stage::EntryStages::default(),
             discovery_running: Mutex::default(),
             discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
             offered: Mutex::default(),
@@ -2090,6 +2091,7 @@ struct Shared {
     wanted: Mutex<BTreeSet<LogId>>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
     demands: Mutex<demand::Demands>,
+    authority_stages: authority_stage::EntryStages,
     discovery_running: Mutex<HashMap<String, bool>>,
     discovery_answer: Arc<tokio::sync::Semaphore>,
     /// The McEliece keys in the blob store, by hash and by id.

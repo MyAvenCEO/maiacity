@@ -9,16 +9,16 @@ use avendb::{id::{EntryId, SignerId}, sign::Signed, sync::{log_of, LogId}, wire:
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use crate::Holdings;
 
-const MAX_BYTES: usize = 480 << 10;
+pub(crate) const MAX_BYTES: usize = 480 << 10;
 const MAX_EDITS: usize = 64;
 const MAX_AUTHORITY_LOGS: usize = 128;
 const MAX_FRONTIER_IDS: usize = 512;
 
 /// A separate two-page staging budget. Never retain the live/background page
 /// permit here: authority catch-up must retain admission while these wait.
-pub(crate) struct EntryStages(Arc<Semaphore>);
+pub(crate) struct EntryStages(Arc<Semaphore>, #[cfg(test)] std::sync::atomic::AtomicUsize);
 impl Default for EntryStages {
-    fn default() -> Self { Self(Arc::new(Semaphore::new(2))) }
+    fn default() -> Self { Self(Arc::new(Semaphore::new(2)), #[cfg(test)] std::sync::atomic::AtomicUsize::new(0)) }
 }
 
 pub(crate) struct StagedEntry {
@@ -37,7 +37,15 @@ impl EntryStages {
     /// `announced` must come from this peer's authenticated, complete holdings
     /// snapshot. The caller, not the network payload, supplies that binding.
     pub(crate) fn stage(&self, peer: SignerId, entry: EntryId, announced: &Holdings, bytes: &[u8]) -> Result<StagedEntry> {
-        let permit = self.0.clone().try_acquire_owned().context("entry staging full")?;
+        let permit = self.reserve()?;
+        self.stage_reserved(permit, peer, entry, announced, bytes)
+    }
+
+    pub(crate) fn reserve(&self) -> Result<OwnedSemaphorePermit> {
+        self.0.clone().try_acquire_owned().context("entry staging full")
+    }
+
+    pub(crate) fn stage_reserved(&self, permit: OwnedSemaphorePermit, peer: SignerId, entry: EntryId, announced: &Holdings, bytes: &[u8]) -> Result<StagedEntry> {
         ensure!(bytes.len() <= MAX_BYTES, "staged entry byte limit");
         ensure!(announced.logs.contains_key(&LogId::Entry(entry)), "entry not announced");
         let selected: Vec<_> = announced.logs.iter().filter(|(log, _)| relevant(log, entry)).collect();
@@ -65,11 +73,19 @@ impl StagedEntry {
     /// revocation. Any newly announced, removed or changed authority log rejects
     /// this stage. Exact local equality deliberately rejects ambiguous supersets.
     pub(crate) fn ready(&self, peer: SignerId, announced: &Holdings, local: &Holdings) -> bool {
-        peer == self.peer
-            && announced.logs.iter().filter(|(log, _)| relevant(log, self.entry))
-                .eq(self.announced.iter())
+        self.current(peer, announced)
             && self.announced.iter().filter(|(log, _)| !matches!(log, LogId::Entry(_)))
                 .all(|(log, frontier)| local.logs.get(log) == Some(frontier))
+    }
+
+    pub(crate) fn current(&self, peer: SignerId, announced: &Holdings) -> bool {
+        peer == self.peer && announced.logs.iter().filter(|(log, _)| relevant(log, self.entry)).eq(self.announced.iter())
+    }
+
+    // Signature checking owns the immutable bytes; the receipt and staging permit
+    // remain alive until the final in-Lab admission fence.
+    pub(crate) fn take_for_verification(&mut self) -> Vec<Signed> {
+        std::mem::take(&mut self.edits)
     }
 
     /// The integration must fence these snapshots against updates through the
@@ -129,5 +145,143 @@ mod tests {
         drop(two);
         assert!(stages.stage(peer, EntryId([3; 32]), &announced, &bytes).is_err());
         assert!(stages.stage(peer, entry, &announced, &vec![0; MAX_BYTES + 1]).is_err());
+    }
+}
+
+enum Admission {
+    Waiting(StagedEntry, avendb::lab::PreparedReceive),
+    Applied,
+    Discarded,
+}
+
+impl crate::Shared {
+    pub(crate) fn stage_live_entries(self: &Arc<Self>, endpoint: iroh::EndpointId, device: SignerId, hints: std::collections::BTreeSet<LogId>) {
+        let Some(peer) = self.live(endpoint).filter(|peer| peer.device == device) else { return };
+        for log in hints {
+            let LogId::Entry(entry) = log else { continue };
+            let announced = {
+                let held = self.held.lock().expect("held");
+                let Some(current) = held.get(&device) else { break };
+                let selected: Vec<_> = current.logs.iter().filter(|(log, _)| relevant(log, entry)).take(MAX_AUTHORITY_LOGS + 2).collect();
+                if selected.len() > MAX_AUTHORITY_LOGS + 1 || !current.logs.contains_key(&LogId::Entry(entry)) { continue; }
+                let count = selected.iter().try_fold(0usize, |n, (_, f)| n.checked_add(f.heads.len())?.checked_add(f.waiting.len()));
+                if count.is_none_or(|n| n > MAX_FRONTIER_IDS) { continue; }
+                Holdings { logs: selected.into_iter().map(|(l,f)|(*l,f.clone())).collect(), files: Default::default() }
+            };
+            let Ok(permit) = self.authority_stages.reserve() else { break };
+            let Ok(activity) = self.admit() else { break };
+            let (shared, peer) = (self.clone(), peer.clone());
+            n0_future::task::spawn(async move {
+                let _activity = activity;
+                let attempted = n0_future::time::timeout(std::time::Duration::from_secs(15),
+                    shared.stage_live_entry(peer, entry, announced, permit)).await;
+                if !matches!(attempted, Ok(Ok(()))) {
+                    tracing::debug!(?attempted, "staged entry continues through ordinary reconciliation");
+                }
+            });
+        }
+    }
+
+    async fn stage_live_entry(self: &Arc<Self>, peer: crate::Peer, entry: EntryId, announced: Holdings, stage_permit: OwnedSemaphorePermit) -> Result<()> {
+        let device = peer.device;
+        let logs = [LogId::Entry(entry)].into_iter().collect();
+        let request = self.read(move |lab, me| {
+            let mut request = crate::session::only(lab, me, lab.request(me, device), &logs);
+            // Auxiliary key blobs remain on normal authority reconciliation.
+            request.wants.clear();
+            request.to_wire()
+        }).await;
+        ensure!(request.len() < crate::session::MESSAGE_LIMIT, "staged request too large");
+        let page = self.pulls.page(false, false).await?;
+        let (reply, _) = self.reply_to(&peer, crate::session::ASK_LOGS, &request, MAX_BYTES).await?;
+        let mut stage = self.authority_stages.stage_reserved(stage_permit, device, entry, &announced, &reply.to_wire())?;
+        drop(reply); // do not retain a duplicate decoded page during authority wait
+        let edits = stage.take_for_verification();
+        #[cfg(not(target_arch = "wasm32"))]
+        let (prepared, page, activity, mut stage) = self.prepare_received_page(edits, page, stage,
+            #[cfg(test)] None,
+        ).await?;
+        #[cfg(target_arch = "wasm32")]
+        let (prepared, page, activity, mut stage) = self.prepare_received_page(edits, page, stage).await?;
+        // Dedicated staging capacity remains held, but authority page admission
+        // and signature-check admission are free while the local frontier catches up.
+        drop(page);
+        #[cfg(test)]
+        self.authority_stages.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let _activity = activity;
+        let mut prepared = prepared;
+        let mut changes = self.jobs.stirs();
+        loop {
+            changes.borrow_and_update();
+            ensure!(peer.conn.close_reason().is_none(), "staged peer disconnected");
+            let shared = self.clone();
+            let returned = self.try_lab(move |lab, me| {
+                // All network holdings writes use this mutex. Hold it THROUGH
+                // admission while Lab itself is locked; no await occurs here.
+                let held = shared.held.lock().expect("held");
+                let Some(current) = held.get(&device) else { return Admission::Discarded };
+                if !stage.current(device, current) { return Admission::Discarded; }
+                let local = Holdings { logs: shared.logs_of(lab, me).frontiers(), files: Default::default() };
+                if !stage.ready(device, current, &local) { return Admission::Waiting(stage, prepared); }
+                // Signature and current policy admission are unchanged. The stage
+                // receipt grants no authorization even when its frontier matches.
+                lab.receive_prepared(me, prepared, true);
+                Admission::Applied
+            }).await?;
+            match returned {
+                Admission::Applied => { self.jobs.stir(); return Ok(()); }
+                Admission::Discarded => return Ok(()),
+                Admission::Waiting(held_stage, held_prepared) => {
+                    stage = held_stage;
+                    prepared = held_prepared;
+                }
+            }
+            changes.changed().await.context("staged entry change subscription closed")?;
+        }
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use avendb::cast::{document, world};
+    use crate::{Node, Options};
+    use n0_future::time::{self, Duration};
+
+    async fn until(mut check: impl AsyncFnMut() -> bool) {
+        time::timeout(Duration::from_secs(20), async {
+            while !check().await { time::sleep(Duration::from_millis(5)).await; }
+        }).await.expect("staged transport progresses");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn fetched_entry_stays_outside_replay_until_authority_receipt_matches() {
+        let mut w = world();
+        let (sender, receiver, vault) = (w.mac_a, w.phone_a, w.alice);
+        let phone_lab = w.lab.split(receiver, &[], [151; 32]);
+        // A real signed authority edit is missing on the receiver, not a mocked
+        // completeness flag. Entry content is transferred over the real peer link.
+        w.lab.submit(sender, &[w.passkey_a], avendb::policy::Action::Settings {
+            vault, set: avendb::policy::Setting::Threshold(1),
+        }).unwrap();
+        let entry = w.lab.create(sender, vault, vault, "room", &[], document("Staged room", "visible after authority", sender)).unwrap();
+        let authority: Vec<_> = w.lab.log(sender).edits().iter().filter(|edit|
+            log_of(edit, edit.id()).is_some_and(|log| !matches!(log, LogId::Entry(_))))
+            .map(|edit| w.lab.signed_edit(sender, edit.id()).unwrap().clone()).collect();
+        let opts = || Options { lazy: true, ..Options::local() };
+        let mac = Node::spawn(w.lab.split(sender, &[], [152; 32]), sender, opts()).await.unwrap();
+        let phone = Node::spawn(phone_lab, receiver, opts()).await.unwrap();
+        phone.know(mac.addr()); mac.know(phone.addr());
+        phone.shared.connection(mac.id()).await.unwrap();
+        until(async || phone.holdings_of(sender).is_some_and(|h| h.logs.contains_key(&LogId::Entry(entry)))).await;
+        phone.shared.stage_live_entries(mac.id(), sender, [LogId::Entry(entry)].into_iter().collect());
+        until(async || phone.shared.authority_stages.1.load(std::sync::atomic::Ordering::SeqCst) > 0).await;
+        assert!(!phone.read(move |lab, me| lab.log(me).edits().iter().any(|edit| log_of(edit,edit.id()) == Some(LogId::Entry(entry)))).await,
+            "verified staged bytes do not enter the signed log or visible replay");
+        // Simulate completion of ordinary signed authority receive; no entry edits
+        // are supplied here. The stage must be the only source of the room bytes.
+        phone.act(move |lab, me| lab.receive(me, authority, vec![])).await;
+        until(async || phone.read(move |lab, me| lab.log(me).edits().iter().any(|edit| log_of(edit,edit.id()) == Some(LogId::Entry(entry)))).await).await;
+        mac.shutdown().await.unwrap(); phone.shutdown().await.unwrap();
     }
 }
