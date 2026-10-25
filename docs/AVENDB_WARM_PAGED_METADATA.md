@@ -11,7 +11,7 @@ Mounted generic query windows retain bounded opaque entry-ID hints for the curre
 - `WarmMetadataPages.lean`: authorization and bounded-receipt invariants; standalone proof passed.
 - Query-window and hint regressions: 21 tests passed, including route change, unmount persistence, invalid IDs, storage failure and the 256-hint cap.
 - Rust warm-materialization suite: **15 passed, 0 failed** (2.67 seconds). New regression creates 300 entries, requests a metadata-only entry, asserts unrelated bodies remain closed, then saves/reopens while retaining unchanged durable slots and compares canonical data. Malformed/duplicate/excess pages fail closed.
-- Full application typecheck: 0 errors, 27 existing warnings. Common native/PWA Rust compilation remains pending.
+- Full application typecheck: 0 errors, 27 existing warnings. `cargo check -p avendb-browser -p avendb-device --tests` passed, including the changed common startup signatures. Matching deployed WASM/native artifacts and physical-device acceptance remain pending.
 
 ## Remaining limits
 
