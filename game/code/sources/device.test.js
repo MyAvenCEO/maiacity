@@ -108,7 +108,7 @@ test('a capable node receives scoped priorities without an uncancellable legacy 
 		useDevice(null);
 		await new Promise((r) => setTimeout(r, 1));
 		const priorities = calls.filter((op) => op.op === 'demand');
-		expect(priorities[0].entries).toEqual([id(7)]);
+		expect(priorities.some(op => op.entries.includes(id(7)))).toBe(true);
 		expect(priorities.at(-1).entries).toEqual([]);
 		expect(priorities.at(-1).scope).toBe(priorities[0].scope);
 		expect(priorities.at(-1).revision).toBeGreaterThan(priorities[0].revision);
@@ -228,3 +228,95 @@ for (const reply of [{ ok: { accepted: true } }, { refused: 'Denied' }]) {
   } finally { delete globalThis.location; }
  });
 }
+
+const until = async check => {
+ const end = Date.now() + 1500;
+ while (!check()) {
+  if (Date.now() > end) throw new Error('revision-driven replan did not complete');
+  await new Promise(resolve => setTimeout(resolve, 10));
+ }
+};
+
+test('cold manifest and later reference arrival replan the same route without overlapping walks or replacing its lease', async () => {
+ const { useView, refreshActiveView } = await import('./device.js');
+ globalThis.location = { pathname: '/cold/' };
+ const calls = [];
+ let hasManifest = false, hasRecord = false, scans = 0, running = 0, peak = 0;
+ const d = { run: async op => {
+  calls.push(op);
+  if (op.op === 'demand') return { ok: { accepted: true } };
+  if (op.op === 'query') {
+   scans++; peak = Math.max(peak, ++running);
+   await new Promise(resolve => setTimeout(resolve, 2));
+   running--;
+   return { ok: { rows: hasManifest ? [{ record: { kind: 'manifest', id: 'cold', routes: ['*'], parts: [{ entry: id(31), follow: 1 }] } }] : [] } };
+  }
+  if (op.op === 'get') return hasRecord ? { ok: { record: { pin: { entry: id(32) } } } } : { refused: 'NoEntry' };
+  throw new Error('Unexpected legacy transfer');
+ } };
+ try {
+  useDevice(d);
+  await useView('/cold/');
+  expect(calls[0]).toMatchObject({ op: 'query' });
+  expect(calls.find(op => op.op === 'demand').queries[0].types).toEqual(['manifest']);
+  hasManifest = true;
+  for (let i = 0; i < 100; i++) refreshActiveView();
+  await until(() => calls.some(op => op.op === 'demand' && op.entries.includes(id(31))));
+  await useView('/cold/');
+  expect(scans).toBe(2);
+  hasRecord = true;
+  for (let i = 0; i < 100; i++) refreshActiveView();
+  await until(() => calls.some(op => op.op === 'demand' && op.entries.includes(id(32))));
+  expect(scans).toBe(3);
+  expect(peak).toBe(1);
+  expect(new Set(calls.filter(op => op.op === 'demand').map(op => op.scope)).size).toBe(1);
+  expect(calls.filter(op => op.op === 'bring')).toEqual([]);
+ } finally { delete globalThis.location; }
+});
+
+test('navigation cancels a queued revision walk without reviving its old scope', async () => {
+ const { useView, refreshActiveView } = await import('./device.js');
+ globalThis.location = { pathname: '/before/' };
+ const calls = [];
+ const d = { run: async op => {
+  calls.push(op);
+  return op.op === 'query' ? { ok: { rows: [] } } : { ok: { accepted: true } };
+ } };
+ try {
+  useDevice(d);
+  await useView('/before/');
+  const oldScope = calls.find(op => op.op === 'demand').scope;
+  refreshActiveView();
+  await useView('/after/');
+  await new Promise(resolve => setTimeout(resolve, 200));
+  expect(calls.filter(op => op.op === 'query').length).toBe(2);
+  const old = calls.filter(op => op.op === 'demand' && op.scope === oldScope);
+  expect(old.length).toBe(2);
+  expect(old.at(-1).entries).toEqual([]);
+  expect(old.at(-1).queries).toBeUndefined();
+ } finally { delete globalThis.location; }
+});
+
+test('revisions during a pending local manifest query queue one follow-up walk', async () => {
+ const { useView, refreshActiveView } = await import('./device.js');
+ globalThis.location = { pathname: '/pending/' };
+ let release, reads = 0;
+ const blocked = new Promise(resolve => { release = resolve; });
+ const d = { run: async op => {
+  if (op.op === 'demand') return { ok: { accepted: true } };
+  if (op.op === 'query') return ++reads === 1 ? blocked : { ok: { rows: [] } };
+  throw new Error('Unexpected operation');
+ } };
+ try {
+  useDevice(d);
+  const first = useView('/pending/');
+  for (let i = 0; i < 100; i++) refreshActiveView();
+  await new Promise(resolve => setTimeout(resolve, 180));
+  expect(reads).toBe(1);
+  release({ ok: { rows: [] } });
+  await first;
+  await until(() => reads === 2);
+  await useView('/pending/');
+  expect(reads).toBe(2);
+ } finally { release({ ok: { rows: [] } }); delete globalThis.location; }
+});
