@@ -216,3 +216,10 @@ unbounded canonical oracle. Standalone ColdQuerySlices Lean and parsing passed;
 Rust execution remains pending. Ready-record scans, individual Loro imports,
 checkpoint record decoding and metadata preparation are not wall-time bounded
 by this increment.
+
+Cold-query progress correction: nonhydrating current meaning and selector checks
+precede record admission. Missing semantic groups or inaccessible deferred bodies
+are unresolved, not retryable hydration; a candidate consumes one slot per turn
+even when classification and projection both touch it. The missing-group
+regression keeps four candidates unresolved while eight other cold records finish
+and compares the final response with the canonical oracle. Rust remains pending.
