@@ -22,3 +22,11 @@ The authenticated adjunct is still loaded as one bounded container. There is no 
 Capture now checks the remaining write budget before walking the entry's history, acquiring its deferred snapshot lock, or constructing metadata. Existing body-byte accounting also runs before metadata encoding. Metadata collection stops at the first byte overflow instead of encoding every later body and discarding the full collection. A skipped adjunct still falls back to signed-history reconstruction; no canonical admission or authorization rule changes.
 
 Lean admission-bound proofs passed. The exact extracted Rust collector and its regression passed standalone (1 test): over-budget histories never invoke metadata construction, byte overflow stops the next body, and exact-budget input remains accepted. The full Cargo warm suite for this follow-up awaits the shared compiler slot. A single metadata body's encoding remains indivisible; this is not a hard wall-clock or single-allocation bound.
+
+## Borrowed restore decoding
+
+Paged warm restore now decodes each page directly from the authenticated envelope through a borrowed `Reader`. It no longer constructs a new basis/marker/page buffer or an intermediate result map for every page. Body-metadata parsing also borrows the encoded slice instead of first copying it into a temporary `Vec`.
+
+One shared decode budget enforces the same aggregate write/detail/snapshot limits before allocating subsequent entries. Each page still checks its count and exact end; the envelope still checks its total length and exact end; duplicate entries fail closed. Item snapshot bytes remain owned because they must survive release of the decrypted envelope. This changes no receipt format, encryption, key validation, canonical fingerprint check or fallback behavior.
+
+The new regression accepts exactly 256 snapshots across borrowed pages, rejects 257 globally, and verifies retained snapshot bytes after the input envelope is dropped. Existing malformed/truncated/duplicate-page and canonical restore tests remain applicable. Rust parsing, diff checks and the existing Lean budget invariants passed; full warm regression execution is pending the shared compiler. No claim is made that envelope decryption itself is streamed or allocation-free.

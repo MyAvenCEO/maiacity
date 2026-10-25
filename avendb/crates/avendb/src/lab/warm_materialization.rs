@@ -301,67 +301,61 @@ pub(super) struct Saved {
     asked: BTreeSet<BlobId>,
     metadata: Vec<(EditId, BodyMetadata)>,
 }
+#[derive(Default)]
+struct DecodeBudget {writes:usize,details:usize,snapshots:usize}
+
 pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
-    if extra.len() > LIMIT + 40 {
-        return None;
-    }
-    let mut rd = Reader::new(extra.get(32..)?);
-    let marker = u32::decode(&mut rd).ok()?;
-    if marker == WITH_PAGES {
-        let count = rd.count(4).ok()?;
-        if count > MAX_PAGES { return None; }
-        let mut out = BTreeMap::new();
-        let (mut writes, mut details, mut snapshots) = (0usize, 0usize, 0usize);
+    if extra.len()>LIMIT+40 {return None;}
+    let mut rd=Reader::new(extra.get(32..)?);
+    let marker=u32::decode(&mut rd).ok()?;
+    let (mut budget,mut out)=(DecodeBudget::default(),BTreeMap::new());
+    if marker==WITH_PAGES {
+        let count=rd.count(4).ok()?;
+        if count>MAX_PAGES {return None;}
         for _ in 0..count {
-            let bytes = rd.count(1).ok()?;
-            let page = rd.take(bytes).ok()?;
-            // Reuse the strict legacy page decoder, including per-entry ordering,
-            // metadata/content separation, duplicate and per-page size checks.
-            let mut wrapped = extra[..32].to_vec();
-            WITH_METADATA.encode(&mut wrapped); wrapped.extend_from_slice(page);
-            let decoded = decode(&wrapped)?;
-            for (entry, saved) in decoded {
-                writes = writes.checked_add(saved.changes.len())?;
-                snapshots += usize::from(!saved.items.is_empty());
-                details = details.checked_add(saved.changes.iter().map(|c|
-                    c.3.as_ref().map_or(0,Vec::len) + c.4.len()).sum::<usize>())?;
-                if writes > MAX_WRITES || details > 65536 || snapshots > MAX_ENTRIES || out.insert(entry,saved).is_some() { return None; }
-            }
+            let size=rd.count(1).ok()?;
+            let mut page=Reader::new(rd.take(size).ok()?);
+            let count=page.count(37).ok()?;
+            decode_entries(&mut page,true,count,&mut budget,&mut out)?;
+            if !page.done() {return None;}
         }
-        return rd.done().then_some(out);
+    } else {
+        let metadata=marker==WITH_METADATA;
+        let count=if metadata {rd.count(37).ok()?} else {marker as usize};
+        decode_entries(&mut rd,metadata,count,&mut budget,&mut out)?;
     }
-    let with_metadata = marker == WITH_METADATA;
-    let n = if with_metadata { rd.count(37).ok()? } else { marker as usize };
-    if n > MAX_ENTRIES {
-        return None;
-    }
-    let (mut writes, mut metadata) = (0usize, 0usize);
-    let mut out = BTreeMap::new();
+    rd.done().then_some(out)
+}
+// Borrow each authenticated page directly. Only data that must survive release
+// of the decrypted envelope is owned; no reconstructed page wrapper or second map.
+fn decode_entries(rd:&mut Reader<'_>,with_metadata:bool,n:usize,
+    budget:&mut DecodeBudget,out:&mut BTreeMap<EntryId,Saved>)->Option<()> {
+    if n>MAX_ENTRIES {return None;}
     for _ in 0..n {
-        let entry = EntryId::decode(&mut rd).ok()?;
-        let print = <[u8; 32]>::decode(&mut rd).ok()?;
+        let entry = EntryId::decode(rd).ok()?;
+        let print = <[u8; 32]>::decode(rd).ok()?;
         let mut changes = Vec::new();
         let n = rd.count(39).ok()?;
-        writes = writes.checked_add(n)?;
-        if writes > MAX_WRITES {
+        budget.writes = budget.writes.checked_add(n)?;
+        if budget.writes > MAX_WRITES {
             return None;
         }
         for _ in 0..n {
-            let edit = EditId::decode(&mut rd).ok()?;
-            let fits = bool::decode(&mut rd).ok()?;
-            let counted = bool::decode(&mut rd).ok()?;
-            let remaining = 65536usize.checked_sub(metadata)?;
+            let edit = EditId::decode(rd).ok()?;
+            let fits = bool::decode(rd).ok()?;
+            let counted = bool::decode(rd).ok()?;
+            let remaining = 65536usize.checked_sub(budget.details)?;
             let touches = match rd.u8().ok()? {
                 0 => None,
-                1 => Some(bounded_seq::<Touch>(&mut rd, 1, MAX_WRITES.min(remaining)).ok()?),
+                1 => Some(bounded_seq::<Touch>(rd, 1, MAX_WRITES.min(remaining)).ok()?),
                 _ => return None,
             };
-            metadata += touches.as_ref().map_or(0, Vec::len);
-            let adds = bounded_seq::<Loc>(&mut rd, 4, MAX_WRITES.min(65536 - metadata)).ok()?;
-            metadata += adds.len();
+            budget.details += touches.as_ref().map_or(0, Vec::len);
+            let adds = bounded_seq::<Loc>(rd, 4, MAX_WRITES.min(65536 - budget.details)).ok()?;
+            budget.details += adds.len();
             changes.push((edit, fits, counted, touches, adds));
         }
-        let asked = bounded_seq::<BlobId>(&mut rd, 32, MAX_WRITES)
+        let asked = bounded_seq::<BlobId>(rd, 32, MAX_WRITES)
             .ok()?
             .into_iter()
             .collect();
@@ -370,9 +364,10 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
             let count = rd.count(36).ok()?;
             if count > changes.len() { return None; }
             for i in 0..count {
-                let id = EditId::decode(&mut rd).ok()?;
+                let id = EditId::decode(rd).ok()?;
                 if id != changes[i].0 { return None; }
-                let body = BodyMetadata::decode(&rd.bytes().ok()?)?;
+                let bytes=rd.count(1).ok()?;
+                let body = BodyMetadata::decode(rd.take(bytes).ok()?)?;
                 if !body.ordinary() { return None; }
                 body_metadata.push((id, body));
             }
@@ -382,6 +377,8 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
         if lines > changes.len() + 1 {
             return None;
         }
+        budget.snapshots+=usize::from(lines>0);
+        if budget.snapshots>MAX_ENTRIES {return None;}
         for _ in 0..lines {
             items.push((rd.option().ok()?, rd.bytes().ok()?));
         }
@@ -401,8 +398,9 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
             return None;
         }
     }
-    rd.done().then_some(out)
+    Some(())
 }
+
 impl Saved {
     pub(super) fn restore(
         self,
@@ -657,6 +655,33 @@ mod tests {
         }
         lab.restore_backup(device,&backup);
         assert_eq!(lab.item(device,wanted).unwrap().record(),expected);
+    }
+
+    #[test]
+    fn borrowed_pages_enforce_global_snapshot_budget_and_own_retained_items() {
+        fn page(first:u64,count:u32)->Vec<u8> {
+            let mut out=Vec::new();count.encode(&mut out);
+            for n in first..first+u64::from(count) {
+                EntryId::from_u64(n).encode(&mut out);[0u8;32].encode(&mut out);
+                0u32.encode(&mut out); // judgment changes
+                0u32.encode(&mut out); // asked blobs
+                0u32.encode(&mut out); // ordinary body metadata
+                1u32.encode(&mut out); // one saved item
+                Option::<EditId>::None.encode(&mut out);vec![7u8,8,9].encode(&mut out);
+            }
+            out
+        }
+        let retained={
+            let mut extra=vec![0u8;32];WITH_PAGES.encode(&mut extra);2u32.encode(&mut extra);
+            page(1,128).encode(&mut extra);page(129,128).encode(&mut extra);
+            let decoded=decode(&extra).unwrap();
+            let mut overflow=vec![0u8;32];WITH_PAGES.encode(&mut overflow);2u32.encode(&mut overflow);
+            page(1,256).encode(&mut overflow);page(257,1).encode(&mut overflow);
+            assert!(decode(&overflow).is_none(),"snapshot budget spans borrowed pages");
+            decoded
+        }; // authenticated input envelope can be released here
+        assert_eq!(retained.len(),256);
+        assert_eq!(retained[&EntryId::from_u64(256)].items[0].1,vec![7u8,8,9]);
     }
 
     #[test]
