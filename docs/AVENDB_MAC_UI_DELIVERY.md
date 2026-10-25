@@ -2,12 +2,12 @@
 
 ## Installed artifact
 
-- Built source: `6799187d0cdbc50a9a634127afa09bd526952127`, branch `codex/mac-ui-studio-delivery`.
-- Composition: deployed main `7dc7c57a`, Studio's focused `21e076b1` world-error diagnostics, reviewed UI/manifest/lifecycle/CSP fixes, final `278e09a8` report integration. The old Studio branch ancestry was **not** merged: its historical native/WASM differences would regress current main. Native code matches main; native configuration adds only the exact `https://speed.cloudflare.com` diagnostics host.
+- Built source: `02e0e61e4f558064290d6ce546a159bbccd7522d`, branch `codex/mac-ui-studio-delivery`.
+- Composition: deployed main `7dc7c57a`, Studio's focused `21e076b1` world-error diagnostics, reviewed UI/manifest/lifecycle/CSP fixes, final `278e09a8` report integration, and focused Studio `f78f528f` cross-realm device response cloning. The old Studio branch ancestry was **not** merged: its historical native/WASM differences would regress current main. Native code matches main; native configuration adds only the exact `https://speed.cloudflare.com` diagnostics host.
 - Installed bundle: `/Users/samuelandert/Applications/theOS.app`.
-- Executable SHA-256: `5b2bdddfdd8067be8392517982aac432fa9726a372dc5dd2f3508d8014c4a6eb`.
+- Executable SHA-256: `9c6af982cc0322d9d26a9cda040bab13b9403d04ecd162880624c222cc6b9868`.
 - Ad-hoc development signature, identifier `city.maia.studio`; `codesign --verify --deep --strict` passed after installation. ARM64 executable; existing Touch ID bridge built successfully. No notarized/formal release requested.
-- Launched GUI PID at verification: `43869`. Fresh stdout/stderr: `/private/tmp/avendb-mac-ui-install/launch.log`.
+- Launched GUI PID at verification: `51544`. Fresh stdout/stderr: `/private/tmp/avendb-mac-ui-install/launch-realm.log`.
 
 ## Validation and preservation
 
@@ -36,3 +36,9 @@ The dedicated launch agent was temporarily unloaded with `launchctl bootout gui/
 ## Not yet established by this delivery
 
 Launching is verified; existing-account unlock, visible-data acceptance and offline/reconnect checks require the coordinator/user's normal passkey ceremony. No claim of completed physical-device acceptance follows from a successful build. Broader Rust checkpoint/bootstrap work is not part of this Mac UI delivery.
+
+## Studio realm correction follow-up
+
+Source commit [02e0e61e](https://github.com/MyAvenCEO/maiacity/commit/02e0e61e4f558064290d6ce546a159bbccd7522d) incorporates Studio's focused cross-realm response correction. Seventeen realm/device tests passed (59 assertions), the frontend build passed, and the complete Svelte check reports 0 errors / 28 existing warnings. Cached native embedding completed in 1m52s. Native log: `/private/tmp/avendb-mac-realm-native-authorized.log`.
+
+GUI 43869 quit normally before replacement. The previously verified 6799187d bundle is retained at `~/Applications/theOS-before-realm-6799187d.app`; the earlier backups remain. New GUI 51544 launched with the exact executable hash recorded above. The store directory inode remains 355961656. Automatic rebuilding remains unloaded pending coordinator reconciliation. Physical unlock/Studio acceptance remains with the coordinator; installing this focused fix does not establish latency acceptance.
