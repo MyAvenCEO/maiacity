@@ -223,11 +223,16 @@ impl crate::Shared {
             let (shared, peer, origin) = (self.clone(), peer.clone(), origin.clone());
             n0_future::task::spawn(async move {
                 let _activity = activity;
+                let semantic_peer=peer.clone();
                 let work = n0_future::time::timeout(std::time::Duration::from_secs(15),
                     shared.stage_live_entry_origin(peer, entry, announced, inventory, permit, origin.clone()));
                 let attempted = match &origin { Some(origin) => origin.run(work).await, None => Some(work.await) };
                 if !matches!(attempted, Some(Ok(Ok(())))) {
                     tracing::debug!(?attempted, "staged entry continues through ordinary reconciliation");
+                } else {
+                    let finish=n0_future::time::timeout(std::time::Duration::from_secs(15),
+                        shared.finish_pending_semantics(semantic_peer,entry,origin.clone()));
+                    if let Some(origin)=&origin {let _=origin.run(finish).await;} else {let _=finish.await;}
                 }
             });
         }
