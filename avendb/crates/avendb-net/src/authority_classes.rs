@@ -152,6 +152,30 @@ mod tests {
     }
 
     #[test]
+    fn moved_owner_cut_retains_historical_audiences_and_rejects_missing_stays() {
+        use avendb::{cast::{document, by_id}, sync::{log_of, LogId}};
+        let mut w = world();
+        let entry = w.lab.create(w.mac_a, w.alice, w.alice, "room", &[], document("Shared", "body", w.mac_a)).unwrap();
+        let grant = w.lab.issue(w.mac_a, &[w.mac_a], share(w.alice, Who::Vault(w.bob), Level::Read, by_id(entry))).unwrap();
+        w.lab.edit(w.mac_a, w.alice, entry, |item| item.set_text(2, "after move")).unwrap();
+        let log = w.lab.log(w.mac_a);
+        let indexed = crate::holdings::Logs::of(log.edits(), log.ids(), w.lab.size(w.mac_a));
+        let frontier = &indexed.frontiers()[&LogId::Entry(entry)];
+        let target: Vec<_> = log.edits().iter().filter(|e| log_of(e,e.id()) == Some(LogId::Entry(entry)))
+            .map(|e| w.lab.signed_edit(w.mac_a,e.id()).unwrap().clone()).collect();
+        let owner = OwnerEntry::complete(entry, &target, frontier).expect("owner writes with authenticated move history");
+        assert!(owner.audiences.contains(&vec![]));
+        assert!(owner.audiences.contains(&vec![grant]));
+        assert!(owner.named_shares.contains(&grant));
+        let without_marks: Vec<_> = target.iter().filter(|s| !matches!(s.edit.action, Action::Mark { .. })).cloned().collect();
+        assert!(OwnerEntry::complete(entry, &without_marks, frontier).is_none(), "a stay's signed move cannot be omitted");
+        let mut foreign = target.clone();
+        let write = foreign.iter_mut().find(|s| matches!(s.edit.action, Action::Write { create: None, .. })).unwrap();
+        if let Action::Write { actor, .. } = &mut write.edit.action { *actor = w.bob; }
+        assert!(OwnerEntry::complete(entry, &foreign, frontier).is_none(), "non-owner writes need their own capability/group closure");
+    }
+
+    #[test]
     fn unknown_inventory_members_never_become_an_empty_scope_result() {
         let mut w = world();
         let id = w.lab.issue(w.mac_a, &[w.mac_a], share(w.alice, Who::Vault(w.bob), Level::Read, Selector::All)).unwrap();
@@ -169,12 +193,14 @@ mod tests {
     }
 }
 
-/// A bounded, complete entry whose policy writes all act for its owning vault,
-/// without audience moves. This is a deliberately narrower case than shared
-/// writes: those need cap-group/readings dependency tracing before release.
+/// A bounded complete target cut whose writes act for the owning vault.
+/// Historical audience moves and target-only key links retain every named
+/// dependency. Non-owner writes still require cap-group/readings tracing.
 pub(crate) struct OwnerEntry {
     pub vault: VaultId,
     pub via: BTreeSet<VaultId>,
+    pub audiences: BTreeSet<Vec<ShareId>>,
+    pub named_shares: BTreeSet<ShareId>,
 }
 impl OwnerEntry {
     pub(crate) fn complete(entry: EntryId, edits: &[Signed], frontier: &avendb::wire::Frontier) -> Option<Self> {
@@ -182,32 +208,78 @@ impl OwnerEntry {
     }
 
     pub(crate) fn from_parts<'a>(entry: EntryId, edits: impl IntoIterator<Item = (avendb::id::EditId, &'a avendb::policy::Edit)>, frontier: &avendb::wire::Frontier) -> Option<Self> {
-        use avendb::policy::Proposal;
+        use avendb::{id::EditId, policy::Proposal, keys::KeyName};
         if !frontier.waiting.is_empty() { return None; }
         let mut vault = None;
         let mut via = BTreeSet::new();
         let mut creation = false;
+        let mut audiences = BTreeSet::new();
+        let mut named_shares = BTreeSet::new();
+        let mut stays = BTreeSet::new();
+        let mut used_stays = BTreeSet::new();
         let mut graph = BTreeMap::new();
         let mut dependencies = BTreeSet::new();
         let mut links = 0usize;
         for (id, edit) in edits {
             if graph.contains_key(&id) { continue; }
             if graph.len() >= 64 { return None; }
-            let Action::Write { vault: v, entry: e, actor, stay, via: path, create, proposal, deps, .. } = &edit.action else { return None };
-            if *e != entry || actor != v || stay.is_some() || *proposal != Proposal::Main || path.len() > MAX_VIA { return None; }
-            if vault.replace(*v).is_some_and(|old| old != *v) { return None; }
-            via.extend(path.iter().copied());
-            if via.len() > MAX_CLASSES { return None; }
-            if let Some(create) = create {
-                if creation || !create.audience.is_empty() || !deps.is_empty() { return None; }
-                creation = true;
+            let mut path: &[VaultId] = &[];
+            let mut deps: &[EditId] = &[];
+            let mut declared_vault = None;
+            let mut remember_stay = |name: KeyName| -> Option<()> {
+                let KeyName::Entry(e, stay, _) = name else { return None };
+                if e != entry { return None; }
+                if let Some(stay) = stay { used_stays.insert(stay); }
+                Some(())
+            };
+            match &edit.action {
+                Action::Write { vault: v, entry: e, actor, stay, via: via_path, create, proposal, deps: dependencies, .. } => {
+                    if *e != entry || actor != v || *proposal != Proposal::Main { return None; }
+                    declared_vault = Some(*v); path = via_path; deps = dependencies;
+                    if let Some(stay) = stay { used_stays.insert(*stay); }
+                    if let Some(create) = create {
+                        if creation || stay.is_some() || !deps.is_empty() { return None; }
+                        if create.audience.len() > MAX_CLASSES || !create.audience.windows(2).all(|w| w[0] < w[1]) { return None; }
+                        audiences.insert(create.audience.clone());
+                        named_shares.extend(create.audience.iter().copied());
+                        creation = true;
+                    }
+                }
+                Action::Mark { vault: v, entry: e, caps, wants, keep, via: via_path } => {
+                    if *e != entry { return None; }
+                    declared_vault = Some(*v); path = via_path; deps = keep;
+                    if let Some(caps) = caps {
+                        if caps.len() > MAX_CLASSES || !caps.windows(2).all(|w| w[0] < w[1]) { return None; }
+                        audiences.insert(caps.clone()); named_shares.extend(caps.iter().copied()); stays.insert(id);
+                    }
+                    if let Some(wants) = wants {
+                        if wants.len() > MAX_CLASSES { return None; }
+                        named_shares.extend(wants.iter().copied());
+                    }
+                }
+                Action::Wraps { entry: e, wraps } => {
+                    if *e != entry || wraps.len() > 64 { return None; }
+                    for wrap in wraps { remember_stay(wrap.name)?; remember_stay(wrap.boxed.to.name())?; }
+                }
+                Action::Keys { name, boxes, .. } => {
+                    if boxes.len() > 64 { return None; }
+                    remember_stay(*name)?;
+                    for boxed in boxes { remember_stay(boxed.to.name())?; }
+                }
+                _ => return None,
             }
+            if let Some(v) = declared_vault {
+                if vault.replace(v).is_some_and(|old| old != v) { return None; }
+            }
+            if path.len() > MAX_VIA { return None; }
+            via.extend(path.iter().copied());
+            if via.len() > MAX_CLASSES || audiences.len() > 64 || named_shares.len() > MAX_CLASSES { return None; }
             links = links.checked_add(edit.parents.len())?.checked_add(deps.len())?;
             if links > 1024 { return None; }
             dependencies.extend(deps.iter().copied());
             graph.insert(id, edit.parents.clone());
         }
-        if !creation { return None; }
+        if !creation || !used_stays.is_subset(&stays) { return None; }
         let ids: BTreeSet<_> = graph.keys().copied().collect();
         let parents: BTreeSet<_> = graph.values().flatten().copied().collect();
         if !parents.is_subset(&ids) || !dependencies.is_subset(&ids) { return None; }
@@ -218,7 +290,7 @@ impl OwnerEntry {
         if closed != ids { return None; }
         let heads: Vec<_> = ids.difference(&parents).copied().collect();
         if heads != frontier.heads { return None; }
-        Some(Self { vault: vault?, via })
+        Some(Self { vault: vault?, via, audiences, named_shares })
     }
 
 }
@@ -229,10 +301,10 @@ pub(crate) struct OwnerDependencies {
 }
 
 impl GrantClasses {
-    /// Close a direct-owner/unchanged-audience entry's authority reads against
+    /// Close a direct-owner entry's historical authority reads against
     /// an already classified authenticated inventory. No policy checks are
     /// skipped: the result only replaces unrelated log waits at the admission
-    /// fence. Shared-write and moved-audience shapes never reach this function.
+    /// fence. Non-owner write and checkpoint shapes never reach this function.
     pub(crate) fn owner_scope(
         &self,
         owner: &OwnerEntry,
@@ -262,6 +334,7 @@ impl GrantClasses {
             let c = &self.0[id];
             c.over == owner.vault && c.wide && c.level.allows(Level::Read)
         }).copied().collect();
+        shares.extend(owner.named_shares.iter().copied());
         let mut vaults = owner.via.clone();
         vaults.insert(owner.vault);
         let mut required = BTreeSet::new();
@@ -348,7 +421,8 @@ impl GrantClasses {
             }
             break;
         }
-        let audience = LogId::Audience(owner.vault, AudienceId::of(owner.vault, &[]));
+        for shares in &owner.audiences {
+        let audience = LogId::Audience(owner.vault, AudienceId::of(owner.vault, shares));
         if announced.logs.contains_key(&audience) {
             required.insert(audience);
             if let Some(held) = held(audience)? {
@@ -359,6 +433,7 @@ impl GrantClasses {
                     if !independent(*ids.get(at)?) { return None; }
                 }
             } else { missing.insert(audience); }
+        }
         }
         (required.len() <= MAX_CLASSES).then_some(OwnerDependencies { required, missing })
     }
