@@ -20,6 +20,12 @@ Separate, not yet integrated: shared-holder partial local-authoring candidate cf
 
 Scoped-view timing [8583d565](https://github.com/MyAvenCEO/maiacity/commit/8583d565) now records both first valid result (including empty) and first nonempty result for `entry_views` as well as universal `query`. These are local subscription-to-consumer durations, not rendered frames, manifest-start latency, complete-view readiness or cross-device clock measurements. Fixed stage names and durations only are retained. Fourteen focused latency/journal tests passed, including stale consumer exclusion and persistence across reload.
 
+### Next combined implementation (separate from deployed release)
+
+Branch `codex/scoped-view-timing` integrates scoped Story board [bb6a4b3c](https://github.com/MyAvenCEO/maiacity/commit/bb6a4b3c), Hook/Journey detail [d3b23b63](https://github.com/MyAvenCEO/maiacity/commit/d3b23b63), Writing detail [77832d91](https://github.com/MyAvenCEO/maiacity/commit/77832d91), and measurement [8583d565](https://github.com/MyAvenCEO/maiacity/commit/8583d565). Combined focused execution passed23tests/70assertions after making existing Svelte dependencies available in this checkout; the first attempt lacked `svelte/compiler` and is not counted as a pass. Hook/Story transitions still retain their unresolved workflow dependency gate. Other stages and complete mutation dependency coverage remain work in progress.
+
+Shared-holder negative expansion passed its focused four-grant regression (fixed Write, Read, title-only touch, dynamic cap-group), asserting denied writes add no signed log entry. Selector exclusion remains to be added/validated; this candidate is not integrated yet. Warm ordinary-suffix runtime suite is now running separately. Physical mobile latency/stability remains unverified.
+
 ### Historical implementation and validation snapshots
 
 The following sections preserve the development trail, not current deployment status. Their “current”, “running” and “pending” labels refer to their original observation time. Use the current section above and linked live checks for present state.
