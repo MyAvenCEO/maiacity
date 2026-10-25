@@ -52,7 +52,7 @@ impl Lab {
 impl Store {
     /// Required current semantic group locations and whether every known read is
     /// materialized. A proven nonmatching selector chain needs no group bodies.
-    fn semantic_groups(&self, st: &State, id: EntryId) -> Option<(BTreeSet<EntryId>,bool)> {
+    pub(super) fn semantic_groups(&self, st: &State, id: EntryId) -> Option<(BTreeSet<EntryId>,bool)> {
         let en=st.entry(id)?;let r=&self.readings;
         let mut attrs=st.first_attrs(en,r)?;
         for edit in &en.retags {attrs.tags=r.tags.get(edit)?.apply(&attrs.tags);}
