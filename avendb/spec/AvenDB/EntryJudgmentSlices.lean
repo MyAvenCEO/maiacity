@@ -63,3 +63,22 @@ theorem deferredSuffixInvalidates (generation : Nat) :
 theorem canonicalRebuildRestores (generation : Nat) :
     current generation generation := rfl
 end OwnerSuffixPacing
+
+namespace PreparedJudgmentReuse
+structure Context where
+  log : Nat
+  keys : Nat
+  deriving DecidableEq
+def reuse (saved current : Context) (reshow opened : Bool) : Bool :=
+  decide (saved = current) && !reshow && !opened
+theorem changedContextRejects (saved current : Context) (h : saved ≠ current)
+    (reshow opened : Bool) : reuse saved current reshow opened = false := by
+  simp [reuse, h]
+theorem newBodyRejects (saved current : Context) (reshow : Bool) :
+    reuse saved current reshow true = false := by simp [reuse]
+-- Reuse keeps the entire sequence of historical group definitions, not only
+-- the final group version, because each ordinary write uses its replay place.
+def retainedHistory (history : List Nat) := history
+theorem preservesEveryHistoricalVersion (history : List Nat) :
+    retainedHistory history = history := rfl
+end PreparedJudgmentReuse
