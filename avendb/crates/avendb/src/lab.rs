@@ -4364,6 +4364,23 @@ impl Lab {
         ids.filter(|&e| self.sees(d, e)).collect()
     }
 
+    /// Canonical creation-order query candidates without reconstructing entry histories.
+    /// Immutable creation labels can reject unrelated entries before `meaning` opens
+    /// their landed history. Full current labels, authorization and records are checked
+    /// by the query after this conservative prefilter; missing headers were unreadable
+    /// to `meaning` too. No row limit applies here: exact counts/readiness need all matches.
+    pub(crate) fn query_candidates(&self, d: SignerId, vault: Option<VaultId>, plan: &Selector) -> Vec<EntryId> {
+        let store = self.held(d);
+        let state = store.view();
+        let creation = plan.creation_plan();
+        state.entries().iter()
+            .filter(|entry| vault.is_none_or(|vault| entry.vault == vault))
+            .filter(|entry| self.sees(d, entry.id))
+            .filter(|entry| matches!(&creation, Selector::All) || state.first_attrs(entry, &store.readings)
+                .is_some_and(|attrs| creation.matches(&attrs)))
+            .map(|entry| entry.id).collect()
+    }
+
     /// What entry `entry` means to device `d`, by what it reads (`policy::State::meaning`): its type, its author, its
     /// tags now, its audience, and where a steward would move it. `None` if it doesn't read the entry's header.
     /// A type scheduling/filter hint from already opened header metadata. This

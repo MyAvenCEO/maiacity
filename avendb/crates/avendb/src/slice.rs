@@ -176,6 +176,23 @@ impl Selector {
         }
     }
 
+    /// A conservative local-query prefilter using only immutable creation labels.
+    /// Current tags may differ from creation tags, so every tag predicate is omitted.
+    /// This is not an authorization selector: the full plan must still be evaluated.
+    pub(crate) fn creation_plan(&self) -> Self {
+        match self {
+            Self::All => Self::All,
+            Self::AnyOf(clauses) => {
+                let clauses: Vec<Vec<Atom>> = clauses.iter().map(|clause| {
+                    clause.iter().filter(|atom| matches!(atom,
+                        Atom::TypeIn(_) | Atom::AuthorIn(_) | Atom::EntryIn(_) | Atom::CreatedIn(_, _)
+                    )).cloned().collect()
+                }).collect();
+                if clauses.iter().any(Vec::is_empty) { Self::All } else { Self::AnyOf(clauses) }
+            },
+        }
+    }
+
     /// Within the bounds a peer accepts (`MAX_CONJUNCTIONS`, `MAX_TESTS`, `MAX_IDS`).
     pub fn bounded(&self) -> bool {
         let atom = |t: &Atom| match t {
@@ -397,5 +414,37 @@ mod tests {
         let d = TagDelta { add: s(&["b", "c", "c", "d"]), remove: s(&["a", "d"]) };
         assert_eq!(d.apply(&s(&["a", "b"])), s(&["b", "c", "d"]));
         assert_eq!(TagDelta::default().apply(&s(&["x"])), s(&["x"]));
+    }
+}
+
+#[cfg(test)]
+mod query_creation_plan_tests {
+    use super::*;
+    #[test]
+    fn creation_prefilter_never_rejects_a_current_tag_match() {
+        let id = EntryId([1;32]);
+        let author = VaultId([2;32]);
+        let plans = [
+            Selector::All,
+            Selector::AnyOf(vec![]),
+            Selector::AnyOf(vec![vec![Atom::TypeIn(vec!["todo".into()]), Atom::TagHas("work".into())]]),
+            Selector::AnyOf(vec![vec![Atom::EntryIn(vec![id]),Atom::TagNone(vec!["home".into()])]]),
+            Selector::AnyOf(vec![vec![Atom::AuthorIn(vec![author]),Atom::CreatedIn(0,10),Atom::TagsWithin(vec!["work".into()])]]),
+            Selector::AnyOf(vec![vec![Atom::TypeIn(vec!["todo".into()])],vec![Atom::TagHas("work".into())]]),
+        ];
+        let tags = [vec![],vec![Sym::new("work")],vec![Sym::new("home")],vec![Sym::new("work"),Sym::new("home")]];
+        for plan in plans {
+            for ty in ["todo","note"] {
+                for before in &tags {
+                    for now in &tags {
+                        let creation = Attrs {ty:ty.into(),author,entry:id,created:5,tags:before.clone()};
+                        let current = Attrs {tags:now.clone(),..creation.clone()};
+                        if plan.matches(&current) {
+                            assert!(plan.creation_plan().matches(&creation), "{plan:?} must not depend on stale creation tags");
+                        }
+                    }
+                }
+            }
+        }
     }
 }

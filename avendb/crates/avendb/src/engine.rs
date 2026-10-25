@@ -78,7 +78,7 @@ use crate::sign;
 use crate::wire::Wire as _;
 use crate::words;
 use crate::sealed::{Brought, FileRoot};
-use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
+use crate::slice::{Attrs, Selector, Sym, LENS_TYPE, SCHEMA_TYPE};
 use crate::world::{self, FORK, SyncedTo, authors, authors_json, fork_mark};
 
 pub use vaults::{approve, approved, follow_standing, passkey_of, world, world_snapshot, WorldSnapshot, Approval, Prepared, Then};
@@ -894,6 +894,14 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// level of `depth`, so a cycle of links ends there (`Deep`). `count` is how many rows there are in all, and `depth`
 /// how deep each was read.
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    query_candidates_from(lab, me, o, Lab::query_candidates)
+}
+
+// The test oracle supplies the former full collection; all downstream semantics stay shared.
+fn query_candidates_from(
+    lab: &Lab, me: SignerId, o: &Map<String, Value>,
+    candidates: impl FnOnce(&Lab, SignerId, Option<VaultId>, &Selector) -> Vec<EntryId>,
+) -> Result<Value, Refused> {
     let observe_revision = match o.get("observeRevision") {
         None => false,
         Some(Value::Bool(value)) => *value,
@@ -911,7 +919,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     let mut lanes: HashMap<VaultId, Lane> = HashMap::new();
     let mut rows = vec![];
     let (mut unresolved_candidates, mut checkpoint_partial) = (0usize, false);
-    for entry in lab.entries(me) {
+    for entry in candidates(lab, me, vault, &plan) {
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
         let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
         let checkpoint = lab.entry_projection(me, entry);
@@ -2002,5 +2010,51 @@ mod query_readiness_tests {
         assert_eq!(missing["ok"]["count"],0);
         assert_eq!(missing["ok"]["readiness"]["unresolvedCandidates"],1);
         assert_eq!(missing["ok"]["readiness"]["authoritativeEmpty"],false);
+    }
+}
+
+#[cfg(test)]
+mod creation_candidate_regressions {
+    use super::*;
+    use crate::{cast, doc::Item};
+
+    #[test]
+    fn typed_query_prefilter_matches_full_scan_with_large_unrelated_store_and_retags() {
+        let mut w = cast::world();
+        let library = cast::library(&mut w);
+        let (me, vault) = (w.mac_a, w.alice);
+        for n in 0..96 {
+            w.lab.create(me, vault, vault, "unrelated", &[], Item::document(&format!("Noise {n}"), me)).unwrap();
+        }
+        w.lab.tag(me, vault, library.seeds, &["work"], &["home"]).unwrap();
+        let plan = Where::of_json(&json!({"type":["todo"]})).unwrap().plan();
+        assert!(w.lab.entries(me).len() >= 101);
+        assert_eq!(w.lab.query_candidates(me, Some(vault), &plan).len(), 3,
+            "only matching creation metadata reaches meaning/materialization");
+        let cases = [
+            json!({"type":["todo"]}),
+            json!({"all":[{"type":["todo"]},{"tag":"work"}]}),
+            json!({"any":[{"type":["todo"]},{"tag":"work"}]}),
+            json!({"noTag":["home"]}),
+            json!({"onlyTags":["work"]}),
+            json!({"not":{"type":["todo"]}}),
+            json!({"entry":[library.seeds.to_hex()]}),
+            json!({"all":[{"type":["todo"]},{"path":["status"],"eq":"open"}]}),
+        ];
+        for where_ in cases {
+            for order in [json!([]), json!([[["title"],"desc"]])] {
+                let op = json!({"where":where_,"vault":vault.to_hex(),"order":order,"limit":2,"offset":1});
+                let object = op.as_object().unwrap();
+                let actual = query(&w.lab, me, object).unwrap();
+                let previous = query_candidates_from(&w.lab, me, object, |lab, d, _, _| lab.entries(d)).unwrap();
+                assert_eq!(actual, previous, "query {op}: rows/count/readiness/order must match exactly");
+            }
+        }
+        w.lab.sync_all(0);
+        let op = json!({"where":{"type":["todo"]},"vault":vault.to_hex()});
+        let object = op.as_object().unwrap();
+        assert_eq!(query(&w.lab,w.mac_b,object).unwrap(),
+            query_candidates_from(&w.lab,w.mac_b,object,|lab,d,_,_|lab.entries(d)).unwrap());
+        assert_eq!(query(&w.lab,w.mac_b,object).unwrap()["count"],0);
     }
 }
