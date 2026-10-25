@@ -204,9 +204,11 @@ impl Shared {
                             shared.try_owner_base_suffix(&peer, work.entry, work.origin.clone()),
                         );
                         if let Some(origin) = &work.origin {
-                            let _ = origin.run(attempt).await;
+                            let outcome = origin.run(attempt).await;
+                            #[cfg(test)] eprintln!("owner suffix demand attempt: {outcome:?}");
                         } else {
-                            let _ = attempt.await;
+                            let outcome = attempt.await;
+                            #[cfg(test)] eprintln!("owner suffix live attempt: {outcome:?}");
                         }
                     }
                     shared
@@ -262,6 +264,7 @@ impl Shared {
                 .complete_inventory(connection, device)
         };
         if inventory.is_none() {
+            #[cfg(test)] eprintln!("owner suffix lacks inventory receipt");
             return Ok(false);
         }
         let snapshot = base.snapshot();
@@ -324,6 +327,7 @@ impl Shared {
             })
             .unwrap_or_default();
         let Some(classes) = self.grant_classes(peer, grant_ids).await else {
+            #[cfg(test)] eprintln!("owner suffix lacks grant classifiers");
             return Ok(false);
         };
         let (owner, classes) = (Arc::new(owner), Arc::new(classes));
@@ -357,12 +361,14 @@ impl Shared {
                 })
                 .await;
             let Some(missing) = missing else {
+                #[cfg(test)] eprintln!("owner suffix dependency closure unavailable");
                 return Ok(false);
             };
             if missing.is_empty() || missing == previous {
                 break;
             }
             previous = missing.clone();
+            #[cfg(test)] eprintln!("owner suffix waits for dependency frontiers: {missing:?}");
             self.pull_expected(
                 peer.endpoint,
                 Scope::Logs(missing),
