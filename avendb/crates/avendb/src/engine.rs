@@ -57,6 +57,8 @@
 
 mod aips;
 mod vaults;
+mod guards;
+pub use guards::ReadGuard;
 
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, HashMap};
@@ -164,6 +166,8 @@ fn bad(why: impl Into<String>) -> Refused {
 /// The fields of each op beside `op`: a field it doesn't take is a mistake, never ignored.
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
+        "read_guard" => &["query"],
+        "guarded" => &["checks", "change"],
         "entry_views" => &["vault", "entries", "types", "as", "kind", "tag"],
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],
         "get" => &["entry", "schema", "line", "at", "version"],
@@ -230,7 +234,8 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 36] = [
+const READS: [&str; 37] = [
+    "read_guard",
     "entry_views",
     "query",
     "objective_check",
@@ -300,6 +305,7 @@ pub fn reads(v: &Value) -> bool {
 /// Lab alone knows no peers.
 pub fn removes(v: &Value) -> bool {
     match op_of(v) {
+        Ok(("guarded", o)) => o.get("change").is_some_and(removes),
         Ok(("revoke", _)) => true,
         Ok(("settings", o)) => o.contains_key("root"),
         Ok(("batch", o)) => o.get("ops").and_then(Value::as_array).is_some_and(|ops| ops.iter().any(removes)),
@@ -350,6 +356,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         return world(lab, me, &SyncedTo::default());
     }
     let out = op_of(v).and_then(|(name, o)| match name {
+        "read_guard" => guards::capture(lab, me, o.get("query").ok_or_else(||bad("read_guard requires query"))?),
         "entry_views" => entry_views_inner(lab, me, o, &SyncedTo::default()),
         "query" => query(lab, me, o),
         "get" => get(lab, me, o),
@@ -408,6 +415,21 @@ fn ask(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
 pub fn prepare(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Prepared, Refused> {
     let (name, o) = op_of(v)?;
     match name {
+        "guarded" => {
+            let mut checks=guards::parse(me,o.get("checks").ok_or_else(||bad("guarded requires checks"))?)?;
+            let change=o.get("change").ok_or_else(||bad("guarded requires change"))?;
+            if self::name(change)==Some("guarded") || reads(change) || asks(change) || brings(change) {
+                return Err(bad("guarded wraps one ordinary change, not reads, nested guards or file uploads"));
+            }
+            guards::validate(lab,me,&checks)?;
+            let mut result=prepare(lab,me,change)?;
+            if let Prepared::Approve(approval)=&mut result {
+                let challenge=approval.challenge();
+                for guard in &mut checks { guard.approval_challenge=Some(challenge); }
+                approval.guards=checks;
+            }
+            Ok(result)
+        },
         "may" => Err(bad("may asks about change ops, not about may")),
         _ if READS.contains(&name) || ASKS.contains(&name) => {
             Err(bad(format!("{name} only reads: read it, don't run it")))

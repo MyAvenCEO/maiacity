@@ -55,6 +55,7 @@ pub struct Approval {
     pub signers: Vec<SignerId>,
     pub drafts: Vec<Unsigned>,
     pub then: Then,
+    pub guards: Vec<super::ReadGuard>,
 }
 
 /// What an approved op answers once its edits are kept: its edit (`{"edit": id}`), the share it issued (`{"share":
@@ -103,6 +104,10 @@ impl Approval {
 /// op's answer; an owner add a request asks for signed in part, or finished (`Then::Part`, `Then::Finish`).
 /// `BadSignature` if the ceremony isn't the passkey's over that challenge.
 pub fn approve(lab: &mut Lab, me: SignerId, a: Approval, ceremony: &Ceremony) -> Result<Value, Refused> {
+    if a.guards.iter().any(|guard| guard.approval_challenge != Some(a.challenge())) {
+        return Err(bad("read guard approval differs from the prepared change"));
+    }
+    super::guards::validate(lab,me,&a.guards)?;
     let Approval { passkey, mut drafts, then, .. } = a;
     let ceremonies = [(passkey, ceremony)];
     match (then, drafts.len()) {
@@ -223,7 +228,7 @@ fn approval(
     let root = refused == Refusal::NotRoot || owner;
     let Some((passkey, signers)) = approvers(lab, me, newcomer, root) else { return Err(refused.into()) };
     let drafts = vec![draft(lab, &signers)?];
-    Ok(Prepared::Approve(Approval { passkey, signers, drafts, then }))
+    Ok(Prepared::Approve(Approval { passkey, signers, drafts, then, guards:vec![] }))
 }
 
 /// Governance edit `action` on device `me`: made alone where the device may, as one leaving its vault, else drafted
@@ -1048,7 +1053,7 @@ fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
         made.push(VaultId::from(drafting.draft(&signers, genesis)?));
     }
     let (drafts, then) = (drafting.done(), Then::Found(new.into_iter().map(|(_, name, _)| name).collect()));
-    Ok(Prepared::Approve(Approval { passkey, signers, drafts, then }))
+    Ok(Prepared::Approve(Approval { passkey, signers, drafts, then, guards:vec![] }))
 }
 
 /// `{"op": "put_file", "vault", "name", "media"?, "tags"?, "len", "as"?}` and the file's bytes, `brought` into the
@@ -1249,7 +1254,7 @@ fn owning(
             (passkey, Then::Finish(part.sigs.clone()), lab.parted(me, &part))
         }
     };
-    Ok(Prepared::Approve(Approval { passkey, signers: vec![passkey], drafts: vec![draft], then }))
+    Ok(Prepared::Approve(Approval { passkey, signers: vec![passkey], drafts: vec![draft], then, guards:vec![] }))
 }
 
 /// Request `entry` granted on device `me` acting for `by`, the vault it asks: the passkey's part of `draft`, the owner

@@ -117,6 +117,7 @@ impl Node {
                     signers: vec![passkey],
                     drafts: vec![draft],
                     then: Then::Edit,
+                    guards: vec![],
                 };
                 Ok::<_, avendb::policy::Refusal>((approval, keys, root, sealed))
             })

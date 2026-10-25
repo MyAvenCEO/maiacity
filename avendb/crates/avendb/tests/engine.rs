@@ -2278,3 +2278,49 @@ fn tag_inventory_is_current_actor_scoped_and_reports_only_local_basis() {
         assert!(engine::read(&w.lab,w.mac_a,&bad).get("refused").is_some());
     }
 }
+
+#[test]
+fn guarded_change_refuses_stale_dependencies_without_emitting_an_edit() {
+    let mut w=cast::world();
+    let entry=w.lab.create(w.mac_a,w.alice,w.alice,"note",&[],avendb::doc::Item::todo("original",w.mac_a)).unwrap();
+    let query=json!({"op":"entry_views","entries":[entry.to_hex()],"as":w.alice.to_hex()});
+    let receipt=ok(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":query})));
+    let change=json!({"op":"tag","entry":entry.to_hex(),"as":w.alice.to_hex(),"add":["planned"]});
+    w.lab.tag(w.mac_a,w.alice,entry,&["changed"],&[]).unwrap();
+    let before=w.lab.log(w.mac_a).edits().len();
+    let out=engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":[receipt["guard"]],"change":change}));
+    assert!(out["refused"].as_str().unwrap().contains("stale"));
+    assert_eq!(w.lab.log(w.mac_a).edits().len(),before);
+    let fresh=ok(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":query})));
+    ok(engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":[fresh["guard"]],"change":change})));
+    assert!(w.lab.log(w.mac_a).edits().len()>before);
+}
+
+#[test]
+fn guarded_owner_approval_rechecks_after_the_ceremony_before_signing() {
+    let mut w=cast::world();
+    let entry=w.lab.create(w.mac_a,w.alice,w.alice,"note",&[],avendb::doc::Item::todo("original",w.mac_a)).unwrap();
+    let query=json!({"op":"entry_views","entries":[entry.to_hex()],"as":w.alice.to_hex()});
+    let receipt=ok(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":query})));
+    let op=json!({"op":"guarded","checks":[receipt["guard"]],"change":{"op":"settings","vault":w.alice.to_hex(),"threshold":1}});
+    let engine::Prepared::Approve(approval)=engine::prepare(&mut w.lab,w.mac_a,&op).unwrap() else {panic!("owner approval required")};
+    let ceremony=w.lab.ceremony(w.passkey_a,approval.challenge()).unwrap();
+    w.lab.tag(w.mac_a,w.alice,entry,&["changed-during-approval"],&[]).unwrap();
+    let before=w.lab.log(w.mac_a).edits().len();
+    let why=engine::approve(&mut w.lab,w.mac_a,approval,&ceremony).unwrap_err();
+    assert!(why.to_json()["refused"].as_str().unwrap().contains("stale"));
+    assert_eq!(w.lab.log(w.mac_a).edits().len(),before,"stale approved plan signs/keeps no extra edit");
+}
+
+#[test]
+fn read_guard_rejects_nonlocal_recursive_and_unbounded_contracts() {
+    let mut w=cast::world();
+    for query in [json!({"op":"read_guard","query":{"op":"schemas","vault":w.alice.to_hex()}}),json!({"op":"bring","vault":w.alice.to_hex()}),json!({"op":"perf"}),json!({"op":"world"})] {
+        assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":query})).get("refused").is_some());
+    }
+    let change=json!({"op":"tag","entry":EntryId([0;32]).to_hex(),"add":["x"]});
+    for checks in [json!([]),json!(vec![json!({});17])] {
+        assert!(engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":checks,"change":change})).get("refused").is_some());
+    }
+    assert!(engine::removes(&json!({"op":"guarded","checks":[],"change":{"op":"revoke","share":BlobId([0;32]).to_hex()}})));
+}
