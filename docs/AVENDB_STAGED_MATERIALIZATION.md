@@ -14,9 +14,14 @@ The existing Node background pump advances one entry by at most 32 ordinary
 `Judging::judge` calls, rotating between entries. At most four continuations have begun judgment;
 other queued entries retain empty history shells and share their vault lane. Each call uses unchanged canonical
 judgment. Intermediate state is never installed in `Shown`. Publication occurs
-only after all selected writes are judged. Changed log identity, key generation,
-warm generation, newly opened bodies, or explicit reshow cancels prior staging;
-the continuation cannot expose old-authority reads.
+only after all selected writes are judged. Key generation, warm generation,
+newly opened bodies of that entry, or explicit reshow cancels prior staging.
+A newer log revision can retain a prefix only after `show_items` recomputes the
+entry's full accepted-write/body/lane/group print and tip and finds both unchanged.
+Every write must still be owner-authored MAIN with no shares: `State::lets` then
+has no share-policy dependency. The strict revision fence in the advancement
+method remains; only the validation boundary can rebind it. Unrelated live edits
+therefore do not repeatedly erase a valid cold prefix.
 
 Pending mutations return `Materializing` with `retryable: true`; no signed write is
 committed. `get` and generic query first serve a currently authorized read-only
@@ -33,9 +38,10 @@ budget, unrelated write publication/invalidation, exact final record equality,
 synchronous later local edits, key-generation cancellation, and lock disposal.
 
 Remaining limits: final Loro construction/import, canonical replay, body decoding,
-lane/group preparation and upkeep remain atomic. Generation-wide invalidation is
-conservative: sustained unrelated revisions can restart cold reconstruction. This
-slice does not claim universal starvation freedom or a wall-time bound. It does
+lane/group preparation and upkeep remain atomic. Generation-wide key/warm changes
+and policy removals remain conservative invalidations. Rebinding scans the entry's
+accepted writes to verify its full print; it is not a constant-time guarantee.
+This slice does not claim universal starvation freedom or a wall-time bound. It does
 not introduce a cache authority, discard signed history, or grant a hosted node
 special privileges.
 
@@ -49,3 +55,13 @@ keeps old canonical history staged while a newer owner-approved checkpoint is
 available, checks read-only get/query visibility, and verifies mutation refusal.
 The focused Rust filter is `staged_materialization`; its runtime result remains
 pending the coordinator's exclusive compiler slot.
+
+## Validated rebind contract
+
+Lean `rebind_requires_inputs` requires unchanged print, tip, key and warm generations
+and owner-only judgment before a newer-log rebind; its proof passed before the
+implementation. The implementation retains strict log equality during advancement.
+Additional runtime regressions cover sustained unrelated writes between each turn,
+policy removal invalidation, and preservation of staging mode and working-set hints
+when `start_handed` replaces its Store. These new Rust regressions remain pending
+runtime validation; no deployment or physical-device timing claim is made.

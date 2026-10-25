@@ -5949,7 +5949,8 @@ impl Lab {
         let first: Vec<Signed> = ids.iter().filter_map(|id| first.remove(id)).collect();
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
+        let (staged_mode, warm_working_set) = (held.staged_mode, held.warm_working_set.clone());
+        self.stores.insert(d, Store { follow, query_depth, gate, perf, staged_mode, warm_working_set, ..Store::default() });
         let offered = (first.len() + rest.len()) as u64;
         let fresh = self.fresh(d, first.into_iter().chain(rest).collect(), &of);
         let Some(store) = self.stores.get_mut(&d) else {
@@ -6593,9 +6594,8 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
 fn show_items(d: SignerId, store: &mut Store) {
     // A generation change must never publish a prefix judged under old authority.
-    let revision = store.log.revision();
-    let stale = store.staged.values().any(|p| store.reshow || !store.opened.is_empty()
-        || !p.current(&revision, &store.keys.revision, &store.warm_revision));
+    let stale = store.staged.values().any(|p| store.reshow
+        || !p.generations_current(&store.keys.revision, &store.warm_revision));
     if stale { store.staged.clear(); store.reshow = true; }
     let materialization = store.warm_materialization.take()
         .and_then(|receipt| receipt.consume(store));
@@ -6703,7 +6703,8 @@ fn show_items(d: SignerId, store: &mut Store) {
     let todo: Vec<&Entry> = if grew {
         let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
         let mut es: Vec<EntryId> =
-            all[n..].iter().map(|w| w.entry).chain(opened.keys().copied()).chain(changed).collect();
+            all[n..].iter().map(|w| w.entry).chain(opened.keys().copied()).chain(changed)
+                .chain(store.staged.keys().copied()).collect();
         es.sort();
         es.dedup();
         es.into_iter().filter_map(|e| st.entry(e)).collect()
@@ -6718,8 +6719,12 @@ fn show_items(d: SignerId, store: &mut Store) {
             continue;
         }
         let tip = tip(en);
-        if let Some(p) = store.staged.get(&en.id) {
-            if p.tip_matches(tip) { continue; }
+        if let Some(p) = store.staged.get_mut(&en.id) {
+            let owner_only = st.entry_writes(en.id)
+                .all(|w| w.actor == en.vault && w.proposal == Proposal::Main && w.shares.is_empty());
+            if !opened.contains_key(&en.id)
+                && p.rebind(store.log.revision(), print(en, &groups_print), tip,
+                    &store.keys.revision, &store.warm_revision, owner_only) { continue; }
             store.staged.remove(&en.id);
         }
         // judged under the lane before it gained schemas none of its writes name: as if under this one
@@ -6786,7 +6791,7 @@ fn show_items(d: SignerId, store: &mut Store) {
             && !store.bootstrap_active.contains(&en.id)
             && !st.is_draft(en.id)
             && !r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane())
-            && writes.iter().all(|w| w.actor == en.vault && w.proposal == Proposal::Main)
+            && writes.iter().all(|w| w.actor == en.vault && w.proposal == Proposal::Main && w.shares.is_empty())
         {
             let j = Judging::new(st, en, r, lane(en.vault));
             store.staged.insert(en.id, staged_materialization::Pending::new(

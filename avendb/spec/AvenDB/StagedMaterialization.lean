@@ -13,4 +13,16 @@ theorem resumed_fold (f : σ → α → σ) (s : σ) (a b : List α) :
 def mutate (pending : Bool) (before : List α) (write : α) :=
   if pending then before else before ++ [write]
 theorem pending_no_commit (s : List α) (w : α) : mutate true s w = s := rfl
+-- Rebinding to a newer log is permitted only after recomputing all inputs of
+-- an owner-only MAIN judgment. Empty shares make State.lets independent of
+-- share-policy changes; exact print/tip covers admitted edits, bodies and lane.
+-- These Booleans are implementation obligations, not hash-collision proofs.
+def rebind (samePrint sameTip sameKeys sameWarm ownerOnly : Bool) :=
+  samePrint && sameTip && sameKeys && sameWarm && ownerOnly
+theorem rebind_requires_inputs (p t k w o : Bool) (h : rebind p t k w o = true) :
+    p = true ∧ t = true ∧ k = true ∧ w = true ∧ o = true := by
+  cases p <;> cases t <;> cases k <;> cases w <;> cases o <;> simp_all [rebind]
+-- A validated rebind preserves the actual judged prefix, rather than restarting it.
+def retainPrefix (valid : Bool) (prior : List α) := if valid then prior else []
+theorem unrelated_rebind_retains_prefix (p : List α) : retainPrefix true p = p := rfl
 end AvenDB.StagedMaterialization
