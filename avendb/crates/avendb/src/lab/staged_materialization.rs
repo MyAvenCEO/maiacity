@@ -1,6 +1,7 @@
 //! Node-only canonical judgment continuations. Standalone Lab stays synchronous.
 use super::*;
 pub(super) const BATCH: usize = 32;
+const ACTIVE_ENTRIES: usize = 4;
 
 pub(super) struct Pending {
     history: History,
@@ -51,8 +52,12 @@ impl Lab {
         if self.locked(at) { return false; }
         self.catch_up(at);
         let store = self.stores.get_mut(&at).expect("known device");
-        let entry = store.staged.keys().copied().find(|e| store.staged_cursor.is_none_or(|c| *e > c))
-            .or_else(|| store.staged.keys().next().copied());
+        // Queued entries own no Scratch until selected. Bound concurrent partial
+        // documents instead of retaining one materialized prefix for every log.
+        let room = store.staged.values().filter(|p| p.next > 0).count() < ACTIVE_ENTRIES;
+        let runnable = |p: &Pending| room || p.next > 0;
+        let entry = store.staged.iter().find(|(e, p)| runnable(p) && store.staged_cursor.is_none_or(|c| **e > c))
+            .or_else(|| store.staged.iter().find(|(_, p)| runnable(p))).map(|(e, _)| *e);
         let Some(entry) = entry else { return false; };
         store.staged_cursor = Some(entry);
         let mut p = store.staged.remove(&entry).expect("selected pending entry");
@@ -124,6 +129,33 @@ mod tests {
         assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
         lab.edit(phone, vault, entry, |i| i.set_text(2, "local now")).unwrap();
         assert!(!lab.materialization_pending(phone, entry), "incremental local publication is synchronous");
+    }
+
+    #[test]
+    fn staged_retention_limits_active_entries_without_starving_queued_entries() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("bounded staging");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        lab.sync(mac, phone);
+        let mut entries = Vec::new();
+        for _ in 0..5 {
+            let e = lab.create(mac, vault, vault, "note", &[], document("Title", "start", mac)).unwrap();
+            for n in 0..65 { lab.edit(mac, vault, e, |i| i.set_text(2, &format!("body {n}"))).unwrap(); }
+            entries.push(e);
+        }
+        lab.enable_staged_materialization(phone);
+        lab.sync(mac, phone);
+        for _ in 0..4 { lab.advance_materialization(phone); }
+        assert_eq!(lab.held(phone).staged.values().filter(|p| p.next > 0).count(), ACTIVE_ENTRIES);
+        for _ in 0..32 {
+            if !lab.materializations_pending(phone) { break; }
+            lab.advance_materialization(phone);
+            assert!(lab.held(phone).staged.values().filter(|p| p.next > 0).count() <= ACTIVE_ENTRIES);
+        }
+        assert!(!lab.materializations_pending(phone));
+        for e in entries { assert_eq!(lab.item(phone,e).unwrap().record(), lab.item(mac,e).unwrap().record()); }
     }
 
     #[test]
