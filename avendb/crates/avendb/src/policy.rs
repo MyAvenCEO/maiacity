@@ -4368,6 +4368,30 @@ impl Log {
             }).map(|((_, _, id), _)| *id).collect()
     }
 
+    /// Bounded preparation of the same canonical indexed suffix. `after` is valid
+    /// only for this unchanged LogRevision; the caller owns that invalidation fence.
+    /// Returns at most `limit` inspected candidates, including already-judged ones.
+    pub(crate) fn entry_suffix_page(&self, entry: EntryId, judged: &HashSet<EditId>,
+        after: Option<(u64,u8,EditId)>, limit: usize)
+        -> (Vec<EditId>, Option<(u64,u8,EditId)>, usize) {
+        use std::ops::Bound::{Excluded,Unbounded};
+        let Some(index)=self.entry_order.get(&entry) else { return (Vec::new(),after,0); };
+        let mut cursor=after; let mut inspected=0; let mut out=Vec::new();
+        for (key,at) in index.range((after.map_or(Unbounded,Excluded),Unbounded)).take(limit) {
+            inspected+=1; cursor=Some(*key);
+            let id=key.2; if judged.contains(&id) {continue;}
+            let edit=&self.edits[*at];
+            if edit.parents.iter().all(|parent| judged.contains(parent) || self.write_at.get(parent)
+                .map(|at|&self.edits[*at])
+                .filter(|p|matches!(p.action,Action::Write {entry:e,..} if e==entry))
+                .is_none_or(|p|p.depth<edit.depth)) {out.push(id);}
+        }
+        (out,cursor,inspected)
+    }
+    pub(crate) fn entry_write_candidates(&self, entry: EntryId) -> usize {
+        self.entry_order.get(&entry).map_or(0,BTreeMap::len)
+    }
+
     /// Immutable signed-log input; callers still verify signatures and admission.
     pub fn entry_write(&self, id: EditId) -> Option<&Edit> {
         self.write_at.get(&id).map(|at| &self.edits[*at])
@@ -4625,6 +4649,15 @@ mod tests {
                     && !judged.contains(&e.id())).cloned().collect();
             let expected: Vec<_> = order(&selected).iter().map(Edit::id).collect();
             assert_eq!(log.entry_suffix_ids(entry, judged), expected);
+            for limit in [1,7,128] {
+                let (mut after,mut inspected,mut paged)=(None,0,Vec::new());
+                while inspected<log.entry_write_candidates(entry) {
+                    let (ids,next,n)=log.entry_suffix_page(entry,judged,after,limit);
+                    assert!(n>0 && n<=limit); assert!(ids.len()<=n);
+                    inspected+=n; after=next; paged.extend(ids);
+                }
+                assert_eq!(paged,expected,"paging preserves canonical filtered order");
+            }
             for id in expected { assert_eq!(log.entry_write(id).unwrap().id(), id); }
         }
         let entry = EntryId::from_u64(1);
@@ -4648,6 +4681,10 @@ mod tests {
         log.let_go(&HashSet::from([parent.id()]));
         assert!(log.entry_write(parent.id()).is_none());
         check(&log, entry, &HashSet::new());
+        // Many already-judged candidates still consume bounded preparation work.
+        log.receive((200..800).map(|n|write(entry,n,vec![])));
+        let many_judged=log.entry_suffix_ids(entry,&HashSet::new()).into_iter().take(500).collect();
+        check(&log,entry,&many_judged);
         let replacement = Log::from_edits(vec![write(entry, 50, vec![])]);
         check(&replacement, entry, &HashSet::new());
         assert!(replacement.entry_write(child.id()).is_none());
