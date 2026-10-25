@@ -88,7 +88,7 @@ impl Shared {
         let Some(endpoint) = self.endpoint_of(device) else {
             return;
         };
-        if !full { self.schedule_owner_suffixes(endpoint, device, logs); }
+        if !full { self.schedule_owner_suffixes(endpoint, device, logs, None); }
         let Some(mut work) = self.pulls.live_announced(device, full, logs) else {
             return;
         };
@@ -120,6 +120,7 @@ impl Shared {
     pub(crate) fn live_demand(self: &Arc<Self>, device: SignerId, logs: &[LogId], origin: crate::demand::Origin) {
         if self.opts.lazy || !origin.active() { return; }
         let Some(endpoint) = self.endpoint_of(device) else { return; };
+        self.schedule_owner_suffixes(endpoint, device, logs, Some(origin.clone()));
         let Some(mut work) = self.pulls.live_demand(device, logs, &origin) else { return; };
         let Ok(activity) = self.admit() else { return };
         let shared = self.clone();
@@ -166,7 +167,9 @@ impl Shared {
         let mut hints = hints;
         let entries: Vec<_> = hints.iter().filter_map(|log| match log { LogId::Entry(e) => Some(*e), _ => None }).collect();
         let based = self.read(move |lab,me| entries.into_iter().filter(|e|lab.owner_base_scope(me,*e).is_some()).collect::<Vec<_>>()).await;
-        for entry in based { hints.remove(&LogId::Entry(entry)); }
+        let base_logs=based.iter().copied().map(LogId::Entry).collect::<Vec<_>>();
+        let scheduled=self.schedule_owner_suffixes(endpoint,device,&base_logs,origin.clone());
+        for entry in scheduled { hints.remove(&LogId::Entry(entry)); }
         let mut missing = self.differ(device).await;
         let rules: BTreeSet<_> = missing
             .iter()
