@@ -106,3 +106,15 @@ claimed for this slice yet: run `content_refresh::tests` and
 `prepared_receive_tests` on the combined integration checkout. The earlier
 received-tail limitation above describes the previous commit only. Bulk catch-up
 and unsupported single-tail cases still incur their existing reconstruction work.
+
+### Receiver regression correction
+
+Combined validation identified a real overconservative fallback: a non-steward
+receiver calculated a mark from its partial selector knowledge and unnecessarily
+ran global upkeep. The correction mirrors the canonical `upkeep -> steward`
+conditions: the device must act for the vault, read all its share selectors, and
+have a capability mark or a keep mark whose keep selectors it can read. Missing
+meaning remains a fallback. Owner-required marks still execute the full path;
+the regression checks an actual signed audience move and exact canonical state.
+Lean proves a foreign reader cannot require stewardship and legal capability/
+readable keep marks remain required. Rust revalidation is pending integration.

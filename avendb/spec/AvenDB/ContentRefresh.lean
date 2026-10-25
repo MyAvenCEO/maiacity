@@ -45,3 +45,17 @@ theorem receivedRequiresCurrentPermission (verified tail key : Bool) :
 theorem receivedRequiresCurrentKey (verified permission tail : Bool) :
     receivedTail verified permission tail false = false := by simp [receivedTail]
 end AvenDB.ContentRefresh
+
+namespace ContentRefreshSteward
+-- The canonical upkeep schedules marks only for a device acting for the vault,
+-- with all share selectors read. Keep marks additionally require keep selectors.
+def needsMark (actsFor readsShares caps wants readsKeeps : Bool) : Bool :=
+  actsFor && readsShares && (caps || (wants && readsKeeps))
+theorem noForeignSteward (readsShares caps wants readsKeeps : Bool) :
+    needsMark false readsShares caps wants readsKeeps = false := by
+  simp [needsMark]
+theorem capsPreserved : needsMark true true true wants readsKeeps = true := by
+  simp [needsMark]
+theorem readableKeepPreserved : needsMark true true caps true true = true := by
+  simp [needsMark]
+end ContentRefreshSteward
