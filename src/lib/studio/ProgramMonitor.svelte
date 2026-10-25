@@ -326,7 +326,7 @@
 	<div class="badges">
 		{#if fileNote && (s.tab !== 'grade' || fileNote.startsWith('no proxy'))}<span class="b" class:warn={fileNote.startsWith('no proxy') || fileNote.includes('outside')}>{fileNote}</span>{/if}
 		{#if worldNote}<span class="b world">{worldNote}</span>{/if}
-		{#if isWorld(pic) && s.world.error}<span class="b warn" title={s.world.error}>world: {s.world.error}</span>{/if}
+		{#if isWorld(pic) && s.world.error}<details class="b warn world-error"><summary>World loading error</summary><p>{s.world.error}</p></details>{/if}
 		{#if gl && plan?.note && pic}<span class="b warn" title={plan.note}>{plan.note}</span>{/if}
 		{#if !gl}<span class="b warn">No WebGL2: colour not managed</span>{/if}
 	</div>
@@ -496,6 +496,15 @@
 		background: var(--warn-bg);
 		color: var(--warn);
 	}
+
+	.world-error[open] {
+		white-space: normal;
+		max-width: min(38rem, 100%);
+		border-radius: 0.5rem;
+		padding: 0.5rem;
+	}
+	.world-error summary { cursor: pointer; }
+	.world-error p { margin: 0.4rem 0 0; overflow-wrap: anywhere; user-select: text; }
 
 	.b.world {
 		background: var(--info-bg);
@@ -776,6 +785,11 @@
 	}
 
 	.ldetail {
+		white-space: normal;
+		overflow-wrap: anywhere;
+		user-select: text;
+		max-height: 10rem;
+		overflow: auto;
 		min-height: 1.2em;
 		font-size: 0.74rem;
 		color: var(--dim);

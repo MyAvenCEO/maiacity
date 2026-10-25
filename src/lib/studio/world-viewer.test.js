@@ -71,3 +71,18 @@ test('footage playback does not enter world preparation, even with future world 
   await subject.preparePlayback();
  }
 });
+
+test('a bootstrap failure is logged as well as displayed', async () => {
+ const previous = globalThis.location, warn = console.warn, messages = [];
+ globalThis.location = { href: 'tauri://localhost/app/studio/' };
+ console.warn = (...args) => messages.push(args.join(' '));
+ try {
+  const v = new WorldViewer(), url = filmPath(spec.world);
+  const iframe = { contentWindow: { location: { href: 'tauri://localhost' + url }, __filmMountError: 'Local device unavailable' }, getAttribute: () => url };
+  await v.attach(iframe, url, 10, 100);
+  expect(v.state).toBe('unavailable');
+  expect(v.error).toBe('Local device unavailable');
+  expect(messages.join('\n')).toContain('Local device unavailable');
+  expect(messages.join('\n')).toContain(url);
+ } finally { globalThis.location = previous; console.warn = warn; }
+});

@@ -212,7 +212,10 @@ export class WorldViewer {
 				if (!currentWorldPage(win, url, location.href)) {
 					if (performance.now() - t0 > wait) {
 						this.state = 'unavailable';
-						this.error = 'The requested world page has not opened yet.';
+						const actual = win?.location?.href || 'no document';
+						const message = `World navigation did not finish: requested ${new URL(url, location.href).href}, current ${actual}${win?.__lost ? ' (outgoing document)' : ''}`;
+						if (this.error !== message) console.warn(message);
+						this.error = message;
 					}
 					await new Promise((r) => setTimeout(r, 100));
 					continue;
@@ -221,6 +224,7 @@ export class WorldViewer {
 				const failure = /** @type {any} */ (win)?.__filmMountError;
 				if (failure) {
 					this.error = failure;
+					console.warn(`world bootstrap at ${url}: ${failure}`);
 					this.state = 'unavailable';
 					return;
 				}
