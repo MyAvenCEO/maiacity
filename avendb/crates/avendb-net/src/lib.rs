@@ -129,6 +129,7 @@ mod jobs;
 pub mod kx;
 mod lifecycle;
 mod lab_schedule;
+mod lab_timing;
 mod limits;
 pub mod paged_views;
 mod progress;
@@ -729,6 +730,7 @@ impl Node {
             me,
             lab: Mutex::new(lab),
             lab_schedule: Arc::default(),
+            lab_timings: lab_timing::Timings::default(),
             edits,
             signers,
             endpoint: endpoint.clone(),
@@ -1742,6 +1744,7 @@ impl Node {
             "served": s.traffic.served_json(),
             "policy_observations": s.receipts.json(),
             "reactive_observations": s.ui_receipts.json(),
+            "lab_work": s.lab_timings.json(),
             "me": { "endpoint": me.id.to_string(), "relays": relays, "direct": direct },
             "peers": peers,
             "gone": gone,
@@ -2041,6 +2044,7 @@ struct Shared {
     me: SignerId,
     lab: Mutex<Lab>,
     lab_schedule: Arc<lab_schedule::Schedule>,
+    lab_timings: lab_timing::Timings,
     /// Its device's edits on its shelf, if it keeps one.
     edits: Option<edits::Edits>,
     /// Durable supplemental signer roots; unsupported shelves keep ordinary signatures only.
@@ -2261,12 +2265,19 @@ impl Shared {
         // work; immediately-ready Rust futures alone cannot yield the worker event loop.
         #[cfg(target_arch = "wasm32")]
         if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
+        let queued = Instant::now();
         let turn = self.lab_schedule.acquire(class).await;
+        let queue_time = queued.elapsed();
+        let dispatched = Instant::now();
         let shared = self.clone();
         let me = acting().unwrap_or(self.me);
         let work = move || {
             let (_operation, _turn) = (operation, turn);
+            let dispatch_time = dispatched.elapsed();
+            let locking = Instant::now();
             let mut lab = shared.locked_lab();
+            let lock_time = locking.elapsed();
+            let executing = Instant::now();
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
                 let before = lab.log(shared.me).revision();
@@ -2316,6 +2327,7 @@ impl Shared {
                 out
             }));
             drop(lab);
+            if ran.is_ok() { shared.lab_timings.record(class, [queue_time, dispatch_time, lock_time, executing.elapsed()]); }
             ran.unwrap_or_else(|panic| {
                 let why = panic.downcast_ref::<&str>().copied().or(panic.downcast_ref::<String>().map(String::as_str));
                 tracing::error!("avendb: a call on the Lab panicked, and fails alone: {}", why.unwrap_or("no message"));
@@ -2344,10 +2356,24 @@ impl Shared {
     ) -> T {
         #[cfg(target_arch = "wasm32")]
         if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
+        let queued = Instant::now();
         let turn = self.lab_schedule.acquire(class).await;
+        let queue_time = queued.elapsed();
+        let dispatched = Instant::now();
         let shared = self.clone();
         let me = acting().unwrap_or(self.me);
-        let work = move || { let _turn = turn; f(&shared.locked_lab(), me) };
+        let work = move || {
+            let _turn = turn;
+            let dispatch_time = dispatched.elapsed();
+            let locking = Instant::now();
+            let lab = shared.locked_lab();
+            let lock_time = locking.elapsed();
+            let executing = Instant::now();
+            let result = f(&lab, me);
+            drop(lab);
+            shared.lab_timings.record(class, [queue_time, dispatch_time, lock_time, executing.elapsed()]);
+            result
+        };
         #[cfg(not(target_arch = "wasm32"))]
         return tokio::task::spawn_blocking(work).await.expect("the Lab's read task");
         #[cfg(target_arch = "wasm32")]

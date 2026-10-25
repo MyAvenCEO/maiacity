@@ -8,7 +8,7 @@ export function peerDiagnostics(network, perf) {
  return { transportRttMs: peers.flatMap(peer => (Array.isArray(peer.paths) ? peer.paths : []).slice(0, 8)
    .filter(path => path.selected && number(path.rtt_ms) !== null).map(path => path.rtt_ms)),
   policy: policyObservations(network), reactive: policyObservations({ policy_observations: network?.reactive_observations }, 'local-completion-to-peer-reactive-consumer'),
-  receiveWork: receiveWork(perf), localWork: localWork(perf) };
+  receiveWork: receiveWork(perf), localWork: localWork(perf), labWork: labWork(network?.lab_work) };
 }
 /** Existing sources already redact lifecycle and stage names; bound their final report too.
  * @param {{phase: string, journal: any, lifecycle: any, calls?: any[], manifests: any, sync: any, playback: any, device: string, build?: string}} options */
@@ -122,4 +122,22 @@ function localWork(perf) {
  }));
  return {status: Object.keys(timers).length ? 'captured' : 'unavailable', timers,
   semantics: 'Cumulative node-lifetime core phases, including startup, receive and local mutations. Nested phases overlap; do not sum them or interpret maxima as one write. Queue wait, signing and paint are not isolated here.'};
+}
+
+/** Only fixed aggregate dimensions leave the engine; never copy arbitrary labels or samples. */
+function labWork(input) {
+ const classes={};
+ for (const kind of ['mutation','foreground','background']) {
+  const phases={};
+  for (const name of ['queue','dispatch','lock_wait','operation']) {
+   const t=input?.[kind]?.[name];
+   if (t && Number.isSafeInteger(t.count) && t.count>=0
+    && [t.total_ms,t.mean_ms,t.max_ms].every(v=>Number.isFinite(v)&&v>=0)) {
+    phases[name]={count:t.count,total_ms:t.total_ms,mean_ms:t.mean_ms,max_ms:t.max_ms};
+   }
+  }
+  if(Object.keys(phases).length)classes[kind]=phases;
+ }
+ return {status:Object.keys(classes).length?'captured':'unavailable',classes,
+  semantics:'Cumulative completed Lab operations by scheduling class. Queue is scheduler admission; dispatch is worker/thread-pool delay; lock_wait is mutex acquisition; operation is work while holding the Lab lock, including bookkeeping. Cancelled or panicked operations are excluded. These aggregates are not per-write paint latency; maxima across phases need not belong to the same call.'};
 }

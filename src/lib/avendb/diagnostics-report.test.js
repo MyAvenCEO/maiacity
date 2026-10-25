@@ -52,3 +52,16 @@ test('copied core phases preserve slow refresh evidence but exclude arbitrary la
  expect(JSON.stringify(report)).not.toContain('private');
  expect(peerDiagnostics({},null).localWork.status).toBe('unavailable');
 });
+
+
+test('copied Lab scheduling timings retain fixed aggregate dimensions and exclude private payloads',()=>{
+ const timer={count:2,total_ms:12,mean_ms:6,max_ms:10,secret:'entry content'};
+ const out=peerDiagnostics({lab_work:{mutation:{queue:timer,operation:timer,private:timer},foreground:{lock_wait:{...timer,total_ms:NaN}},background:{dispatch:timer},private:{queue:timer}}},{});
+ expect(out.labWork.status).toBe('captured');
+ expect(out.labWork.classes.mutation.queue).toEqual({count:2,total_ms:12,mean_ms:6,max_ms:10});
+ expect(out.labWork.classes.foreground).toBeUndefined();
+ expect(Object.keys(out.labWork.classes)).toEqual(['mutation','background']);
+ expect(JSON.stringify(out.labWork)).not.toContain('secret');
+ expect(JSON.stringify(out.labWork)).not.toContain('private');
+ expect(peerDiagnostics({},{}).labWork.status).toBe('unavailable');
+});
