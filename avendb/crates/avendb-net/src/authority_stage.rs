@@ -380,6 +380,23 @@ impl crate::Shared {
                 // receipt grants no authorization even when its frontier matches.
                 lab.defer_semantic_marks(me,entry);
                 lab.receive_prepared(me, prepared, false);
+                // A complete current authority cut plus exact current semantic
+                // group frontiers can finish this guard immediately. Scoped
+                // admission alone cannot: unseen selectors/groups stay pending.
+                let local = Holdings { logs: shared.logs_of(lab, me).frontiers(), files: Default::default() };
+                let receipt_current = stage.inventory.is_some()
+                    && stage.inventory == shared.ranges.lock().expect("ranges")
+                        .complete_inventory(connection, device);
+                if receipt_current && stage.ready(device, current, &local) {
+                    if let Some((groups, _)) = lab.semantic_group_dependencies(me,entry) {
+                        let groups_current=groups.iter().all(|group| {
+                            let key=LogId::Entry(*group);
+                            current.logs.get(&key).is_some_and(|frontier|
+                                frontier.waiting.is_empty() && local.logs.get(&key)==Some(frontier))
+                        });
+                        if groups_current { lab.complete_semantic_cut(me,entry); }
+                    }
+                }
                 Admission::Applied
             }).await?;
             match returned {
