@@ -320,3 +320,56 @@ test('revisions during a pending local manifest query queue one follow-up walk',
   expect(reads).toBe(2);
  } finally { release({ ok: { rows: [] } }); delete globalThis.location; }
 });
+
+test('same-path selected vault changes close the old scope and preserve shared plus owned catalogs',async()=>{
+ const {useView}=await import('./device.js');
+ const {MAIA_CITY}=await import('./anchor.js');
+ globalThis.location={pathname:'/context/'};
+ const calls=[];let release;let held=false;
+ const pending=new Promise(resolve=>release=resolve);
+ const catalog=(entry)=>({ok:{rows:[{record:{kind:'manifest',id:'context',routes:['/context/'],parts:[{entry}]}}]}});
+ const firstVault=id(500),secondVault=id(501),firstEntry=id(502),secondEntry=id(503),sharedEntry=id(504),selected=id(505);
+ const d={run:async op=>{
+  calls.push(op);
+  if(op.op==='demand')return{ok:{accepted:true,discovery_supported:true}};
+  if(op.op==='query'){
+   if(op.vault===firstVault){held=true;return pending;}
+   return catalog(op.vault===secondVault?secondEntry:sharedEntry);
+  }
+  throw Error('Unexpected unscoped bring');
+ }};
+ try{
+  useDevice(d);await useView('/context/');calls.length=0;
+  const old=useView('/context/',{vault:firstVault,context:'?private-search=old',entries:[firstEntry]});
+  await Promise.resolve();expect(held).toBe(true);
+  await useView('/context/',{vault:secondVault,context:'?private-search=new',entries:[selected]});
+  release(catalog(firstEntry));await old;await new Promise(resolve=>setTimeout(resolve,0));
+  const queried=new Set(calls.filter(op=>op.op==='query').map(op=>op.vault));
+  expect([...queried]).toContain(MAIA_CITY);expect([...queried]).toContain(firstVault);expect([...queried]).toContain(secondVault);
+  const demands=calls.filter(op=>op.op==='demand');
+  const latest=demands.findLast(op=>op.entries.includes(selected));
+  expect(latest.entries).toContain(sharedEntry);expect(latest.entries).toContain(secondEntry);
+  expect(latest.entries).not.toContain(firstEntry);
+  const oldScope=demands.find(op=>op.entries.includes(firstEntry)).scope;
+  expect(demands.filter(op=>op.scope===oldScope).at(-1).entries).toEqual([]);
+  expect(JSON.stringify(calls)).not.toContain('private-search');
+ }finally{delete globalThis.location;}
+});
+
+test('same pathname URL selection replaces explicit demand while unchanged semantic context reuses scope',async()=>{
+ const {useView}=await import('./device.js');
+ globalThis.location={pathname:'/app/studio/'};const calls=[];
+ const d={run:async op=>{calls.push(op);return op.op==='query'?{ok:{rows:[]}}:{ok:{accepted:true,discovery_supported:true}};}};
+ try{
+  useDevice(d);await useView('/app/studio/');calls.length=0;
+  await useView('/app/studio/',{context:'?timeline=cut:'+id(600),entries:[id(600)]});
+  await useView('/app/studio/',{context:'?timeline=cut:'+id(601),entries:[id(601)]});
+  const before=calls.length;
+  await useView('/app/studio/',{context:'?timeline=cut:'+id(601),entries:[id(601)]});
+  expect(calls.length).toBe(before);
+  const demands=calls.filter(op=>op.op==='demand');
+  const first=demands.find(op=>op.entries.includes(id(600))).scope;
+  expect(demands.filter(op=>op.scope===first).at(-1).entries).toEqual([]);
+  expect(demands.at(-1).entries).toEqual([id(601)]);
+ }finally{delete globalThis.location;}
+});
