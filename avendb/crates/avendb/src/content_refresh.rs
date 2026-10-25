@@ -46,7 +46,7 @@ impl Lab {
             && st.entry_writes(*entry).all(|w| w.proposal == Proposal::Main &&
                 (w.actor == *vault || w.first || metadata(w.edit).is_some_and(|body| body.tags.is_empty())))
             && body.header.is_none() && body.tags.is_empty() && body.answers.is_empty() && body.defines.is_none()
-            && !store.behind && !store.reshow && store.replayed == held
+            && (!store.behind || store.presentation_only_pending()) && !store.reshow && store.replayed == held
             && store.bare.is_empty() && store.bootstrap_bases.is_empty() && store.bootstrap_state.is_none()
             && store.bootstrap_active.is_empty() && store.bootstrap_pending.is_empty()
             && deferred_refresh_ready_at(store, &revision) && store.warm_materialization.is_none()
@@ -106,7 +106,7 @@ impl Lab {
             && store.keys.first(KeyName::Scoped(family, *epoch)).is_some()
             && store.shown_lanes.contains_key(vault)
             && body.answers.is_empty() && body.defines.is_none() && body.files.is_empty() && files.is_empty()
-            && !store.behind && !store.reshow && store.replayed == store.log.edits().len()
+            && (!store.behind || store.presentation_only_pending()) && !store.reshow && store.replayed == store.log.edits().len()
             && store.bare.is_empty() && store.bootstrap_bases.is_empty() && store.bootstrap_state.is_none()
             && store.bootstrap_active.is_empty() && store.bootstrap_pending.is_empty()
             && deferred_refresh_ready(store) && store.warm_materialization.is_none()
@@ -241,7 +241,13 @@ impl Lab {
             store.scratched.remove(&evict);
             if let Some(s) = store.shown.get_mut(&evict) { s.after.clear_scratch(); }
         }
-        store.behind = false;
+        // An ordinary append preserves authority, but invalidates exact-basis
+        // pending jobs. Restart those private cursors; ready entries stay live.
+        if !store.judgment_pending.is_empty() {
+            store.judgment_jobs.clear();
+            store.judgment_epoch=Some((store.log.revision(),store.keys.revision.clone()));
+        }
+        store.behind = !store.judgment_pending.is_empty();
         if creating { store.perf.count("refresh: owner creation", 1); }
         store.perf.count("refresh: owner content only", 1);
         store.perf.add("refresh: owner content only", start);
