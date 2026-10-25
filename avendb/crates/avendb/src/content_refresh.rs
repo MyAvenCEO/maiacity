@@ -122,18 +122,23 @@ impl Lab {
         if edit.id() != id { return false; }
         let Action::Write { entry, ref create, .. } = edit.action else { return false; };
         let creating = create.is_some();
+        let prior = store.replay.state.clone();
+        let incoming = edit.clone();
         let was = std::mem::replace(&mut store.replay, replay(&[]));
         let (next, why) = replay_on_why(was, store.log.edits(), store.replayed);
         store.replay = next;
         store.replayed = store.log.edits().len();
         store.latest = OnceLock::from(store.replay.state.clone());
         store.perf.count(why_counted(why), 1);
-        if !matches!(why, Why::Stepped) {
+        let equivalent_tail = matches!(why, Why::Tail) && prior.step(&incoming).is_ok_and(|expected|
+            expected.same_entry_histories_and_context(&store.replay.state, id));
+        if !matches!(why, Why::Stepped) && !equivalent_tail {
             store.wholes += matches!(why, Why::Whole(_)) as u64;
             store.reshow = true;
             return false;
         }
-        // Strict tail replay plus the unchanged key/authority guards preserve
+        if equivalent_tail { store.perf.count("refresh: equivalent content tail", 1); }
+        // Strict or context-equivalent tail replay plus the unchanged key/authority guards preserve
         // old immutable bodies. Advance their shared exact basis once, without
         // visiting unrelated histories. Every demand still checks basis and key.
         if let Some(basis) = &store.deferred_basis {
@@ -272,6 +277,39 @@ mod tests {
             assert_eq!(w.lab.size(d).0, signed_count, "no stewardship was omitted");
         }
         assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: received content only"].as_u64(), Some(before+4));
+    }
+
+    #[test]
+    fn received_content_ignores_unrelated_private_history_depth() {
+        let mut w = world();
+        let todos = todos_on(&mut w);
+        w.lab.sync_all(0);
+        let d = w.mac_b;
+        let private = w.lab.create(d, w.bob, w.bob, "todo", &[], Item::todo("Bob private", d)).unwrap();
+        for n in 0..8 {
+            w.lab.edit(d, w.bob, private, |item| item.set_text(1, &format!("private {n}"))).unwrap();
+        }
+        let private_record = w.lab.item(d, private).unwrap().record();
+        let private_history = w.lab.history(d, private).unwrap().changes().to_vec();
+        let id = w.lab.edit(w.mac_a, w.alice, todos.door, |item| item.set_text(1, "live while Bob is busy")).unwrap();
+        let signed = w.lab.signed_edit(w.mac_a, id).unwrap().clone();
+        assert!(w.lab.log(d).edits().iter().any(|e| e.depth >= signed.edit.depth), "fixture must force bounded Tail replay");
+        let before = w.lab.held(d).perf.to_json()["counts"]["refresh: equivalent content tail"].as_u64().unwrap_or(0);
+        let checked = w.lab.prepare_receive(d, vec![signed]).check();
+        assert_eq!(w.lab.receive_prepared(d, checked, false).0, 1);
+        assert!(!w.lab.held(d).behind, "unrelated private history must not force global refresh");
+        assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: equivalent content tail"].as_u64(), Some(before+1));
+        let record = w.lab.item(d, todos.door).unwrap().record();
+        assert_eq!(record, w.lab.item(w.mac_a, todos.door).unwrap().record());
+        let history = w.lab.history(d, todos.door).unwrap().changes().to_vec();
+        let count = w.lab.size(d).0;
+        w.lab.stores.get_mut(&d).unwrap().reshow = true;
+        w.lab.refresh(d, &[]);
+        assert_eq!(w.lab.item(d, todos.door).unwrap().record(), record);
+        assert_eq!(w.lab.history(d, todos.door).unwrap().changes(), history);
+        assert_eq!(w.lab.item(d, private).unwrap().record(), private_record);
+        assert_eq!(w.lab.history(d, private).unwrap().changes(), private_history);
+        assert_eq!(w.lab.size(d).0, count);
     }
 
     #[test]

@@ -2142,6 +2142,27 @@ impl State {
 
     /* Steps */
 
+    /// Exact state equivalence except the physical interleaving of different
+    /// entries' accepted writes for one inserted write only. The global order of
+    /// all older writes must remain exact (cap groups depend on relative order).
+    /// Every entry's ordered writes and every other
+    /// state field (including authority, epochs, seals and marks) must match.
+    /// Used only after canonical replay, never to accept an unverified edit.
+    pub(crate) fn same_entry_histories_and_context(&self, other: &Self, inserted: EditId) -> bool {
+        if self.writes.len() != other.writes.len() || self.by_entry.len() != other.by_entry.len()
+            || !self.writes.iter().filter(|w| w.edit != inserted).eq(other.writes.iter().filter(|w| w.edit != inserted))
+            || self.by_entry.keys().any(|entry| !self.entry_writes(*entry).eq(other.entry_writes(*entry))) {
+            return false;
+        }
+        // Substituting only validated write storage retains derive(Eq)'s coverage
+        // of all remaining fields, including future policy/key fields.
+        let mut normalized = self.clone();
+        normalized.writes = other.writes.clone();
+        normalized.write_at = other.write_at.clone();
+        normalized.by_entry = other.by_entry.clone();
+        normalized == *other
+    }
+
     /// Apply one edit, then rotate, seal and link keys: the new state, or why the edit is refused. Each rule is the
     /// model's (`step` in `Step.lean`), checked in the same order.
     pub fn step(&self, edit: &Edit) -> Result<State, Refusal> {
@@ -4733,5 +4754,38 @@ mod indexed_admission_regression {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod content_context_equivalence_tests {
+    use super::*;
+    #[test]
+    fn accepts_only_global_interleaving_not_changed_histories_or_authority() {
+        let mut w = crate::cast::world();
+        let todos = crate::cast::todos_on(&mut w);
+        let inserted = w.lab.edit(w.mac_a, w.alice, todos.door, |item| item.set_text(1, "second door write")).unwrap();
+        let original = w.lab.state(w.mac_a).clone();
+        let mut grouped = original.clone();
+        grouped.writes = Arc::default(); grouped.write_at = Arc::default(); grouped.by_entry = Arc::default();
+        let mut interleaved = original.writes.as_ref().clone();
+        let at = interleaved.iter().position(|w| w.edit == inserted).unwrap();
+        let write = interleaved.remove(at);
+        let after = interleaved.iter().rposition(|w| w.entry == todos.door).unwrap()+1;
+        interleaved.insert(after, write);
+        for write in interleaved { grouped.add_write(write); }
+        assert!(original.same_entry_histories_and_context(&grouped, inserted));
+        let mut reordered = grouped.clone();
+        Arc::make_mut(&mut reordered.by_entry).get_mut(&todos.door).unwrap().reverse();
+        assert!(!original.same_entry_histories_and_context(&reordered, inserted), "per-entry order is semantic");
+        let mut key_changed = grouped.clone();
+        Arc::make_mut(&mut key_changed.epochs).insert(KeyFam::Seed(w.alice), 999);
+        assert!(!original.same_entry_histories_and_context(&key_changed, inserted), "key epochs are never normalized");
+        let mut altered = grouped.clone();
+        Arc::make_mut(&mut altered.writes)[0].author = w.stranger;
+        assert!(!original.same_entry_histories_and_context(&altered, inserted), "accepted write identity and content are exact");
+        let mut revoked = grouped.clone();
+        Arc::make_mut(&mut revoked.revoked).push(todos.bob_write);
+        assert!(!original.same_entry_histories_and_context(&revoked, inserted), "current authority is exact");
     }
 }

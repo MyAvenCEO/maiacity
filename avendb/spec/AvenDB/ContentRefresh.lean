@@ -59,3 +59,16 @@ theorem capsPreserved : needsMark true true true wants readsKeeps = true := by
 theorem readableKeepPreserved : needsMark true true caps true true = true := by
   simp [needsMark]
 end ContentRefreshSteward
+
+namespace ContentRefreshInterleaving
+-- Only global storage interleaving may differ. Exact current authority/key
+-- context and every entry's ordered accepted writes remain equal.
+structure View (C E W : Type) where
+  context : C
+  histories : E → List W
+
+theorem sameJudgment (judge : C → List W → R) (a b : View C E W)
+    (context : a.context = b.context) (histories : a.histories = b.histories)
+    (entry : E) : judge a.context (a.histories entry) = judge b.context (b.histories entry) := by
+  rw [context, histories]
+end ContentRefreshInterleaving
