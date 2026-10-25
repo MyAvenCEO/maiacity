@@ -26,6 +26,9 @@ pub(crate) struct StagedEntry {
     entry: EntryId,
     announced: BTreeMap<LogId, Frontier>,
     edits: Vec<Signed>,
+    owner: Option<crate::authority_classes::OwnerEntry>,
+    classes: Option<crate::authority_classes::GrantClasses>,
+    inventory: Option<crate::ranges::InventoryReceipt>,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -64,7 +67,7 @@ impl EntryStages {
         ensure!(!vaults.is_empty() && vaults.iter().all(|vault| announced.logs.contains_key(&LogId::Vault(*vault))), "staged owning authority missing");
         Ok(StagedEntry { peer, entry,
             announced: selected.into_iter().map(|(log, frontier)| (*log, frontier.clone())).collect(),
-            edits: reply.edits, _permit: permit })
+            edits: reply.edits, owner: None, classes: None, inventory: None, _permit: permit })
     }
 }
 
@@ -159,14 +162,15 @@ impl crate::Shared {
         let Some(peer) = self.live(endpoint).filter(|peer| peer.device == device) else { return };
         for log in hints {
             let LogId::Entry(entry) = log else { continue };
-            let announced = {
+            let (announced, inventory) = {
                 let held = self.held.lock().expect("held");
                 let Some(current) = held.get(&device) else { break };
                 let selected: Vec<_> = current.logs.iter().filter(|(log, _)| relevant(log, entry)).take(MAX_AUTHORITY_LOGS + 2).collect();
                 if selected.len() > MAX_AUTHORITY_LOGS + 1 || !current.logs.contains_key(&LogId::Entry(entry)) { continue; }
                 let count = selected.iter().try_fold(0usize, |n, (_, f)| n.checked_add(f.heads.len())?.checked_add(f.waiting.len()));
                 if count.is_none_or(|n| n > MAX_FRONTIER_IDS) { continue; }
-                Holdings { logs: selected.into_iter().map(|(l,f)|(*l,f.clone())).collect(), files: Default::default() }
+                let inventory = self.ranges.lock().expect("ranges").complete_inventory(peer.conn.stable_id(), device);
+                (Holdings { logs: selected.into_iter().map(|(l,f)|(*l,f.clone())).collect(), files: Default::default() }, inventory)
             };
             let Ok(permit) = self.authority_stages.reserve() else { break };
             let Ok(activity) = self.admit() else { break };
@@ -174,7 +178,7 @@ impl crate::Shared {
             n0_future::task::spawn(async move {
                 let _activity = activity;
                 let attempted = n0_future::time::timeout(std::time::Duration::from_secs(15),
-                    shared.stage_live_entry(peer, entry, announced, permit)).await;
+                    shared.stage_live_entry(peer, entry, announced, inventory, permit)).await;
                 if !matches!(attempted, Ok(Ok(()))) {
                     tracing::debug!(?attempted, "staged entry continues through ordinary reconciliation");
                 }
@@ -182,7 +186,7 @@ impl crate::Shared {
         }
     }
 
-    async fn stage_live_entry(self: &Arc<Self>, peer: crate::Peer, entry: EntryId, announced: Holdings, stage_permit: OwnedSemaphorePermit) -> Result<()> {
+    async fn stage_live_entry(self: &Arc<Self>, peer: crate::Peer, entry: EntryId, announced: Holdings, inventory: Option<crate::ranges::InventoryReceipt>, stage_permit: OwnedSemaphorePermit) -> Result<()> {
         let device = peer.device;
         let logs = [LogId::Entry(entry)].into_iter().collect();
         let request = self.read(move |lab, me| {
@@ -196,6 +200,23 @@ impl crate::Shared {
         let (reply, _) = self.reply_to(&peer, crate::session::ASK_LOGS, &request, MAX_BYTES).await?;
         let mut stage = self.authority_stages.stage_reserved(stage_permit, device, entry, &announced, &reply.to_wire())?;
         drop(reply); // do not retain a duplicate decoded page during authority wait
+        stage.inventory = inventory;
+        let shared = self.clone();
+        let mut stage = self.read(move |lab, me| {
+            if stage.inventory.is_some() {
+                let indexed = shared.logs_of(lab, me);
+                let places = indexed.of.get(&LogId::Entry(entry)).map(|l| l.edits.as_slice()).unwrap_or(&[]);
+                let log = lab.log(me);
+                if places.len() <= 64 && places.iter().all(|&at| lab.independently_verified_edit(me, log.ids()[at])) {
+                    // Existing target metadata plus the delta closes the cut;
+                    // no body clone or whole-target redownload is needed.
+                    let local = places.iter().map(|&at| (log.ids()[at], &log.edits()[at]));
+                    let incoming = stage.edits.iter().map(|s| (s.edit.id(), &s.edit));
+                    stage.owner = crate::authority_classes::OwnerEntry::from_parts(entry, local.chain(incoming), &stage.announced[&LogId::Entry(entry)]);
+                }
+            }
+            stage
+        }).await;
         let edits = stage.take_for_verification();
         #[cfg(not(target_arch = "wasm32"))]
         let (prepared, page, activity, mut stage) = self.prepare_received_page(edits, page, stage,
@@ -206,6 +227,24 @@ impl crate::Shared {
         // Dedicated staging capacity remains held, but authority page admission
         // and signature-check admission are free while the local frontier catches up.
         drop(page);
+        if let Some(owner) = &stage.owner {
+            // Entry creation can introduce its audience-key log after the
+            // receiver's prior sync. Fetch these directly known dependencies
+            // through ordinary validated transfer; waiting for the broad
+            // authority backlog here would defeat scoped admission.
+            let mut required = owner.via.iter().copied().map(LogId::Vault).collect::<std::collections::BTreeSet<_>>();
+            required.insert(LogId::Vault(owner.vault));
+            required.insert(LogId::Audience(owner.vault, avendb::id::AudienceId::of(owner.vault, &[])));
+            let missing = self.differ(device).await;
+            required.retain(|id| stage.announced.contains_key(id) && missing.contains(id));
+            if !required.is_empty() {
+                self.pull_expected(peer.endpoint, crate::Scope::Logs(required), false, None, Some(device)).await?;
+            }
+        }
+        if stage.owner.is_some() {
+            let inventory = stage.announced.keys().filter_map(|log| match log { LogId::Share(id) => Some(*id), _ => None }).collect();
+            stage.classes = self.grant_classes(&peer, inventory).await;
+        }
         #[cfg(test)]
         self.authority_stages.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _activity = activity;
@@ -215,6 +254,7 @@ impl crate::Shared {
             changes.borrow_and_update();
             ensure!(peer.conn.close_reason().is_none(), "staged peer disconnected");
             let shared = self.clone();
+            let connection = peer.conn.stable_id();
             let returned = self.try_lab(move |lab, me| {
                 // All network holdings writes use this mutex. Hold it THROUGH
                 // admission while Lab itself is locked; no await occurs here.
@@ -222,7 +262,24 @@ impl crate::Shared {
                 let Some(current) = held.get(&device) else { return Admission::Discarded };
                 if !stage.current(device, current) { return Admission::Discarded; }
                 let local = Holdings { logs: shared.logs_of(lab, me).frontiers(), files: Default::default() };
-                if !stage.ready(device, current, &local) { return Admission::Waiting(stage, prepared); }
+                if !stage.ready(device, current, &local) {
+                    // Negative classification is valid only for the complete
+                    // inventory bound to this exact authenticated connection.
+                    let ranges = shared.ranges.lock().expect("ranges");
+                    let root_current = stage.inventory.is_some()
+                        && stage.inventory == ranges.complete_inventory(connection, device);
+                    let scoped = root_current && stage.owner.as_ref().zip(stage.classes.as_ref()).is_some_and(|(owner, classes)| {
+                        let log = lab.log(me);
+                        let indexed = shared.logs_of(lab, me);
+                        classes.owner_scope(owner, log.edits(), log.ids(), &indexed, current,
+                            |id| lab.independently_verified_edit(me, id)).is_some()
+                    });
+                    if !scoped {
+                        return Admission::Waiting(stage, prepared);
+                    }
+                    // held remains locked through receive below; neither the
+                    // current root nor any required frontier can change here.
+                }
                 // Signature and current policy admission are unchanged. The stage
                 // receipt grants no authorization even when its frontier matches.
                 lab.receive_prepared(me, prepared, true);
@@ -255,7 +312,7 @@ mod transport_tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn fetched_entry_stays_outside_replay_until_authority_receipt_matches() {
+    async fn incomplete_inventory_keeps_entry_outside_replay_until_authority_receipt_matches() {
         let mut w = world();
         let (sender, receiver, vault) = (w.mac_a, w.phone_a, w.alice);
         let phone_lab = w.lab.split(receiver, &[], [151; 32]);
@@ -274,7 +331,14 @@ mod transport_tests {
         phone.know(mac.addr()); mac.know(phone.addr());
         phone.shared.connection(mac.id()).await.unwrap();
         until(async || phone.holdings_of(sender).is_some_and(|h| h.logs.contains_key(&LogId::Entry(entry)))).await;
-        phone.shared.stage_live_entries(mac.id(), sender, [LogId::Entry(entry)].into_iter().collect());
+        // A legacy/incomplete inventory cannot establish a negative scope.
+        // Exercise the real transfer with no complete receipt: it must keep
+        // the original all-authority fence even for an otherwise owner entry.
+        let peer = phone.shared.live(mac.id()).expect("authenticated peer");
+        let announced = phone.holdings_of(sender).expect("announced holdings");
+        let permit = phone.shared.authority_stages.reserve().unwrap();
+        let shared = phone.shared.clone();
+        let staged = tokio::spawn(async move { shared.stage_live_entry(peer, entry, announced, None, permit).await });
         until(async || phone.shared.authority_stages.1.load(std::sync::atomic::Ordering::SeqCst) > 0).await;
         assert!(!phone.read(move |lab, me| lab.log(me).edits().iter().any(|edit| log_of(edit,edit.id()) == Some(LogId::Entry(entry)))).await,
             "verified staged bytes do not enter the signed log or visible replay");
@@ -282,6 +346,46 @@ mod transport_tests {
         // are supplied here. The stage must be the only source of the room bytes.
         phone.act(move |lab, me| lab.receive(me, authority, vec![])).await;
         until(async || phone.read(move |lab, me| lab.log(me).edits().iter().any(|edit| log_of(edit,edit.id()) == Some(LogId::Entry(entry)))).await).await;
+        staged.await.unwrap().unwrap();
         mac.shutdown().await.unwrap(); phone.shutdown().await.unwrap();
     }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn owner_room_and_live_delta_render_while_unrelated_authority_and_history_are_withheld() {
+        use avendb::{cast::{handbook, text}, policy::{Action, Setting}};
+        let mut w = world();
+        let handbook = handbook(&mut w);
+        let (sender, receiver, vault) = (w.mac_a, w.phone_a, w.alice);
+        let phone_lab = w.lab.split(receiver, &[], [155; 32]);
+        let entry = w.lab.create(sender, vault, vault, "room", &[], document("Scoped room", "first", sender)).unwrap();
+        let history = w.lab.create(sender, vault, vault, "doc", &[], document("Unrelated", "withheld", sender)).unwrap();
+        // The receiver may know this coop's authority, but the personal room's
+        // authorization does not depend on it. Keep its newest edit withheld.
+        let unrelated_vault = handbook.coop;
+        w.lab.submit(sender, &[w.passkey_a, w.passkey_b], Action::Settings {
+            vault: unrelated_vault, set: Setting::Threshold(1),
+        }).unwrap();
+        let opts = || Options { lazy: true, ..Options::local() };
+        let mac = Node::spawn(w.lab.split(sender, &[], [156; 32]), sender, opts()).await.unwrap();
+        let phone = Node::spawn(phone_lab, receiver, opts()).await.unwrap();
+        phone.know(mac.addr()); mac.know(phone.addr());
+        phone.shared.connection(mac.id()).await.unwrap();
+        until(async || phone.holdings_of(sender).is_some_and(|h| h.logs.contains_key(&LogId::Entry(entry)))).await;
+        let initial_missing = phone.shared.differ(sender).await;
+        assert!(initial_missing.contains(&LogId::Vault(unrelated_vault)));
+        let target_audience = LogId::Audience(vault, avendb::id::AudienceId::of(vault, &[]));
+        assert!(initial_missing.contains(&target_audience), "creation introduces a related key dependency; do not preseed it");
+        phone.shared.stage_live_entries(mac.id(), sender, [LogId::Entry(entry)].into_iter().collect());
+        until(async || phone.read(move |lab, me| text(lab, me, entry, 2).as_deref() == Some("first")).await).await;
+        assert!(!phone.shared.differ(sender).await.contains(&target_audience), "normal scoped transfer supplies the actual related key frontier");
+        assert!(phone.shared.differ(sender).await.contains(&LogId::Vault(unrelated_vault)));
+        assert!(phone.read(move |lab, me| lab.item(me, history).is_none()).await);
+        let written = mac.act(move |lab, me| lab.edit(me, vault, entry, |item| item.set_text(2, "live"))).await.unwrap();
+        until(async || phone.holdings_of(sender).is_some_and(|h| h.logs.get(&LogId::Entry(entry)).is_some_and(|f| f.heads.contains(&written)))).await;
+        phone.shared.stage_live_entries(mac.id(), sender, [LogId::Entry(entry)].into_iter().collect());
+        until(async || phone.read(move |lab, me| text(lab, me, entry, 2).as_deref() == Some("live")).await).await;
+        assert!(phone.shared.differ(sender).await.contains(&LogId::Vault(unrelated_vault)));
+        assert!(phone.read(move |lab, me| lab.item(me, history).is_none()).await);
+        mac.shutdown().await.unwrap(); phone.shutdown().await.unwrap();
+    }
+
 }

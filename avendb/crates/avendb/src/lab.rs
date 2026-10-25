@@ -4603,6 +4603,15 @@ impl Lab {
         self.held(d).signed.get(&edit)
     }
 
+    /// The held edit was independently signature-checked, rather than accepted
+    /// only on a covering checkpoint's word. This is provenance, not permission:
+    /// ordinary current policy can still reject or revoke the edit. Scoped
+    /// authority discovery uses it to refuse untraced checkpoint dependencies.
+    pub fn independently_verified_edit(&self, d: SignerId, edit: EditId) -> bool {
+        let store = self.held(d);
+        store.signed.contains_key(&edit) && !store.bare.contains(&edit)
+    }
+
     /// Diagnostic policy observation only: no authority, persistence or rendered-state claim.
     /// Unknown/unauthorized/not-yet-replayed all have the same unavailable result.
     pub fn peer_edit_outcome(&self, d: SignerId, peer: SignerId, id: EditId) -> Option<bool> {
