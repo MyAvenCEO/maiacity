@@ -43,6 +43,12 @@ measured fresh-device behavior.
 - Received tail reuse across unrelated deeper private history [1bfc9fd2](https://github.com/MyAvenCEO/maiacity/commit/1bfc9fd2) requires exact canonical state, per-entry history and old global-order equivalence. Its new runtime regression is pending.
 - Scoped dependency candidate `556a9445` has passed the real owner-room plus live-update case with unrelated authority/history withheld. Final incomplete-inventory/revocation negatives remain under validation on its isolated branch. Direct-owner-only scope is not completion of shared Chat bootstrap; missing indirect dependencies are being connected to priority transfer separately.
 
+### Latest result after lazy import and private-history receive integration
+
+Combined core completed **290 passed, one failed**. Immediate receive, deeper-private-history receive, warm target-only import and unrelated-body preservation all passed. The remaining long-entry failure occurs after re-saving/reopening: incremental availability fingerprint excluded deferred bodies while canonical reconstruction includes them. Correction [75355753](https://github.com/MyAvenCEO/maiacity/commit/75355753) uses the identical canonical definition; focused unchanged regression is running.
+
+Scoped foundation [2cc70c47](https://github.com/MyAvenCEO/maiacity/commit/2cc70c47) and passing isolated evidence [56585447](https://github.com/MyAvenCEO/maiacity/commit/56585447) are integrated. Recursive known-dependency fetching [4e020ba7](https://github.com/MyAvenCEO/maiacity/commit/4e020ba7) and production query-demand regression [72aa24fe](https://github.com/MyAvenCEO/maiacity/commit/72aa24fe) are integrated but await combined runtime validation. The latter supplies neither target IDs nor direct stage calls; it withholds 17 unrelated authority frontiers and unrelated payload. These remain code/validation progress, not deployed or device-accepted outcomes.
+
 Current phone evidence:24b frontend,375/2899 logs, all10 recorded manifest runs
 held zero manifest records. Provider read found13 manifests, so catalog exists
 but was not held by this phone. Local query p95 was2897ms with visible foreground
