@@ -27,3 +27,20 @@ def upkeepAllowed (pending : List Job) : Prop := pending = []
 theorem pending_blocks_upkeep (job : Job) (rest : List Job) :
     ¬ upkeepAllowed (job :: rest) := by simp [upkeepAllowed]
 end AvenDB.EntryJudgmentSlices
+
+namespace AvenDB.EntryJudgmentSlices
+-- The caller establishes unchanged target, key, lane and group context through
+-- the strict ordinary-content transition; a generic log change cannot rebase.
+def preserve (job : Job) (before after : Nat) (unchanged : Bool) : Option Job :=
+  if job.basis = before ∧ unchanged = true then some {job with basis := after} else none
+
+theorem changed_context_cancels (job : Job) (before after : Nat) :
+    preserve job before after false = none := by simp [preserve]
+
+theorem preservation_keeps_progress (job result : Job) (before after : Nat) (unchanged : Bool)
+    (h : preserve job before after unchanged = some result) : result.cursor = job.cursor := by
+  simp only [preserve] at h
+  split at h
+  · cases h; rfl
+  · contradiction
+end AvenDB.EntryJudgmentSlices

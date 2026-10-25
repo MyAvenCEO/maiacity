@@ -3450,6 +3450,7 @@ impl Lab {
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
         if let Action::Write { entry, proposal, deps, create, files, .. } = &action {
             let store = self.held(on);
+            if store.judgment_pending.contains(entry) { return Err(Refusal::ReadOnly); }
             // An own authenticated exact scratch already validates this cut.
             // Checking availability must not decrypt the whole retained history
             // before the ordinary proof/admission path reads the new update.
@@ -6878,12 +6879,21 @@ mod judgment_slice_tests {
         assert!(cursor>0 && cursor<=32);
         lab.edit(device,vault,ready,|item|item.edit_document(|d|d.title="Foreground".into())).unwrap();
         assert!(lab.judgment_pending(device)>0,"foreground mutation must not synchronously drain background judgment");
-        assert!(lab.held(device).judgment_jobs.is_empty(),"changed exact basis cancels saved cursors");
+        assert_eq!(lab.held(device).judgment_jobs[&large].cursor,cursor,
+            "strict unrelated append preserves exact private progress");
+        assert!(lab.edit(device,vault,large,|item|item.edit_document(|d|d.title="must not publish".into())).is_err(),
+            "unfinished target cannot accept a mutation from an empty visible history");
         let mut turns=0;
         while lab.judgment_pending(device)>0 {
             lab.catch_up_step(device,&[large]);
             assert!(lab.item(device,ready).is_some());
-            turns+=1; assert!(turns<256,"background work must progress");
+            if lab.judgment_pending(device)>0 {
+                let cursor=lab.held(device).judgment_jobs[&large].cursor;
+                lab.edit(device,vault,ready,|item|item.edit_document(|d|d.title=format!("Foreground {turns}"))).unwrap();
+                assert_eq!(lab.held(device).judgment_jobs[&large].cursor,cursor,
+                    "continuous unrelated foreground writes must not reset background work");
+            }
+            turns+=1; assert!(turns<256,"background work must progress despite a write every turn");
         }
         assert_eq!(lab.item(device,large).unwrap().record(),expected);
         let foreground=lab.item(device,ready).unwrap().record();
