@@ -31,6 +31,19 @@ impl Demands {
         Ok(true)
     }
 
+    /// Renewing an unchanged query must not discard peer-discovered entry priorities
+    /// while their authority/history is still arriving. Hints remain non-authoritative
+    /// and bounded; changed queries, release and expiry discard them.
+    pub(crate) fn replace_query(&mut self, scope: String, revision: u64, entries: Vec<LogId>, queries: Vec<crate::discovery::Query>, now: Instant) -> Result<bool, &'static str> {
+        let retained = self.0.get(&scope)
+            .filter(|held| held.until > now && !queries.is_empty() && held.queries == queries)
+            .map(|held| held.discovered.clone()).unwrap_or_default();
+        if !self.replace(scope.clone(), revision, entries, now)? { return Ok(false); }
+        self.set_queries(&scope, queries);
+        self.discovered(&scope, revision, &retained, now);
+        Ok(true)
+    }
+
     pub(crate) fn set_queries(&mut self, scope: &str, queries: Vec<crate::discovery::Query>) {
         if let Some(held) = self.0.get_mut(scope) { held.queries = queries; }
     }
@@ -154,5 +167,51 @@ mod query_tests {
         assert!(d.entries(now).is_empty());
         d.set_queries("view", vec![Query { types: vec!["note".into()], vault: None }]);
         assert!(d.working_set("view", now + LEASE).is_none());
+    }
+}
+
+#[cfg(test)]
+mod renewal_tests {
+    use super::*;
+    fn log(n: u8) -> LogId { LogId::Entry(avendb::id::EntryId([n; 32])) }
+    fn query(ty: &str) -> Vec<crate::discovery::Query> {
+        vec![crate::discovery::Query { types: vec![ty.into()], vault: None }]
+    }
+
+    #[test]
+    fn cold_manifest_hints_survive_renewal_and_learned_entries_until_materialized() {
+        let now = Instant::now();
+        let mut d = Demands::default();
+        d.replace_query("view".into(), 1, vec![], query("manifest"), now).unwrap();
+        assert!(d.discovered("view", 1, &[log(1), log(2)], now));
+        // The local catalog still has zero rows; a timer renews the same selector.
+        d.replace_query("view".into(), 2, vec![], query("manifest"), now + Duration::from_secs(30)).unwrap();
+        assert_eq!(d.entries(now + Duration::from_secs(30)), vec![log(1), log(2)]);
+        // A different local read learns an explicit dependency on the same view.
+        d.replace_query("view".into(), 3, vec![log(3)], query("manifest"), now + Duration::from_secs(31)).unwrap();
+        assert_eq!(d.entries(now + Duration::from_secs(31)), vec![log(3), log(1), log(2)]);
+        assert!(!d.discovered("view", 2, &[log(4)], now + Duration::from_secs(31)), "old work remains cancelled");
+        assert!(!d.replace_query("view".into(), 2, vec![], query("room"), now + Duration::from_secs(31)).unwrap());
+        assert_eq!(d.entries(now + Duration::from_secs(31)), vec![log(3), log(1), log(2)]);
+    }
+
+    #[test]
+    fn replacement_release_expiry_and_capacity_bound_retained_hints() {
+        let now = Instant::now();
+        let mut d = Demands::default();
+        d.replace_query("view".into(), 1, vec![], query("manifest"), now).unwrap();
+        d.discovered("view", 1, &[log(1), log(2)], now);
+        d.replace_query("view".into(), 2, vec![], query("room"), now).unwrap();
+        assert!(d.entries(now).is_empty());
+        d.discovered("view", 2, &[log(3)], now);
+        d.replace_query("view".into(), 3, vec![], vec![], now).unwrap();
+        assert!(d.entries(now).is_empty());
+        d.replace_query("view".into(), 4, vec![], query("room"), now).unwrap();
+        d.discovered("view", 4, &[log(3)], now);
+        d.replace_query("view".into(), 5, vec![], query("room"), now + LEASE).unwrap();
+        assert!(d.entries(now + LEASE).is_empty());
+        d.discovered("view", 5, &[log(3)], now + LEASE);
+        d.replace_query("view".into(), 6, vec![log(4); MOST_ENTRIES], query("room"), now + LEASE).unwrap();
+        assert!(!d.entries(now + LEASE).contains(&log(3)), "retained hints share the explicit-entry bound");
     }
 }
