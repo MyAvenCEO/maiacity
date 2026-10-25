@@ -15,3 +15,13 @@ theorem execution_requires_current_cut (a : Bool) (e c : Nat) (h : mayExecute a 
   · exact same
   · simp [mayExecute, same] at h
 end GuardedMutation
+
+namespace GuardedMutation
+-- A continuation failure must preserve the previously accepted result.
+def continuation (accepted : Nat) (refresh : Option Nat) : Nat × Bool :=
+  (accepted, refresh.isSome)
+theorem failed_refresh_preserves_acceptance (accepted : Nat) :
+    (continuation accepted none).1 = accepted := rfl
+theorem failed_refresh_stops_plan (accepted : Nat) :
+    (continuation accepted none).2 = false := rfl
+end GuardedMutation
