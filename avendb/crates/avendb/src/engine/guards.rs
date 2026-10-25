@@ -13,6 +13,7 @@ pub struct ReadGuard {
     pub(crate) device: SignerId,
     pub(crate) query: Value,
     pub(crate) digest: String,
+    pub(crate) require_complete: bool,
     pub(crate) approval_challenge: Option<[u8;32]>,
 }
 
@@ -38,31 +39,33 @@ fn query_ok(query: &Value) -> Result<(), Refused> {
         _ => Err(bad("read guard requires a deterministic scoped local inventory, schemas or navigation summary")),
     }
 }
-fn read(lab: &Lab, me: SignerId, query: &Value) -> Result<Value, Refused> {
+fn read(lab: &Lab, me: SignerId, query: &Value, require_complete: bool) -> Result<Value, Refused> {
     query_ok(query)?;
     let out=super::read(lab,me,query);
     if out.get("ok").is_none_or(Value::is_null) { return Err(bad("read guard dependency is unavailable")); }
-    if out["ok"].get("scope").is_some_and(|scope| scope.get("localComplete") != Some(&Value::Bool(true))) {
+    if (require_complete || query.get("tag").is_some()) && out["ok"].get("scope").is_some_and(|scope| scope.get("localComplete") != Some(&Value::Bool(true))) {
         return Err(bad("read guard dependency domain is incomplete"));
     }
     Ok(out)
 }
-pub(super) fn capture(lab:&Lab,me:SignerId,query:&Value)->Result<Value,Refused> {
-    let out=read(lab,me,query)?;
+pub(super) fn capture(lab:&Lab,me:SignerId,query:&Value,require_complete:bool)->Result<Value,Refused> {
+    let require_complete = require_complete || query.get("tag").is_some();
+    let out=read(lab,me,query,require_complete)?;
     let hash=digest(&out,MAX_RESULT)?;
-    Ok(json!({"value":out["ok"],"guard":{"query":query,"digest":hash}}))
+    Ok(json!({"value":out["ok"],"guard":{"query":query,"digest":hash,"requireComplete":require_complete}}))
 }
 pub(super) fn parse(me:SignerId,checks:&Value)->Result<Vec<ReadGuard>,Refused> {
     let checks=checks.as_array().ok_or_else(||bad("guarded change requires checks array"))?;
     if checks.is_empty() || checks.len()>MAX_CHECKS { return Err(bad("guarded change requires 1 to 16 checks")); }
     checks.iter().map(|check| {
         let object=check.as_object().ok_or_else(||bad("read guard is an object"))?;
-        if object.keys().any(|key|key!="query"&&key!="digest") { return Err(bad("unknown read guard field")); }
+        if object.keys().any(|key|key!="query"&&key!="digest"&&key!="requireComplete") { return Err(bad("unknown read guard field")); }
         let query=object.get("query").ok_or_else(||bad("read guard requires query"))?;
         query_ok(query)?;
         let hash=object.get("digest").and_then(Value::as_str).ok_or_else(||bad("read guard requires digest"))?;
         BlobId::from_hex(hash).ok_or_else(||bad("read guard digest must be 32 bytes of hex"))?;
-        Ok(ReadGuard{device:me,query:query.clone(),digest:hash.to_owned(),approval_challenge:None})
+        let require_complete=object.get("requireComplete").map(|value|value.as_bool().ok_or_else(||bad("requireComplete must be boolean"))).transpose()?.unwrap_or(true) || query.get("tag").is_some();
+        Ok(ReadGuard{device:me,query:query.clone(),digest:hash.to_owned(),require_complete,approval_challenge:None})
     }).collect()
 }
 pub(super) fn validate(lab:&Lab,me:SignerId,checks:&[ReadGuard])->Result<(),Refused> {
@@ -70,7 +73,7 @@ pub(super) fn validate(lab:&Lab,me:SignerId,checks:&[ReadGuard])->Result<(),Refu
     let mut remaining=MAX_RESULT;
     for guard in checks {
         if guard.device!=me { return Err(bad("read guard belongs to another device")); }
-        let out=read(lab,me,&guard.query)?;
+        let out=read(lab,me,&guard.query,guard.require_complete)?;
         let mut writer=Hasher{hash:blake3::Hasher::new(),remaining};
         writer.hash.update(b"avendb-local-read-guard-v1");
         serde_json::to_writer(&mut writer,&out).map_err(|_|bad("combined read guard results exceed their bound"))?;
@@ -87,13 +90,13 @@ pub(super) fn continued(lab: &Lab, me: SignerId, checks: &[ReadGuard], value: Va
         let mut remaining = MAX_RESULT;
         let mut receipts = Vec::with_capacity(checks.len());
         for guard in checks {
-            let out = read(lab, me, &guard.query)?;
+            let out = read(lab, me, &guard.query, guard.require_complete)?;
             let mut writer = Hasher { hash: blake3::Hasher::new(), remaining };
             writer.hash.update(b"avendb-local-read-guard-v1");
             serde_json::to_writer(&mut writer, &out)
                 .map_err(|_| bad("combined read guard results exceed their bound"))?;
             remaining = writer.remaining;
-            receipts.push(json!({"query": guard.query, "digest": writer.hash.finalize().to_hex().to_string()}));
+            receipts.push(json!({"query": guard.query, "digest": writer.hash.finalize().to_hex().to_string(), "requireComplete": guard.require_complete}));
         }
         Ok(receipts)
     };

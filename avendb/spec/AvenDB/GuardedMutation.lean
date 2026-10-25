@@ -25,3 +25,16 @@ theorem failed_refresh_preserves_acceptance (accepted : Nat) :
 theorem failed_refresh_stops_plan (accepted : Nat) :
     (continuation accepted none).2 = false := rfl
 end GuardedMutation
+
+namespace GuardedMutation
+-- Positive dependencies require authorized unchanged reads; only negative
+-- decisions additionally require complete local domain evidence.
+def dependencyReady (authorized unchanged negative complete : Bool) :=
+  authorized && unchanged && (!negative || complete)
+theorem positive_does_not_require_absence (a u c : Bool) :
+    dependencyReady a u false c = (a && u) := by
+  cases a <;> cases u <;> cases c <;> rfl
+theorem negative_incomplete_refused (a u : Bool) :
+    dependencyReady a u true false = false := by
+  cases a <;> cases u <;> rfl
+end GuardedMutation
