@@ -505,13 +505,17 @@ mod transport_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn moved_shared_audience_room_and_live_owner_edit_skip_unrelated_history() {
-        shared_audience_withheld_history(false).await;
+        shared_audience_withheld_history(false,false).await;
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn checkpoint_covered_shared_authority_closes_without_unrelated_history() {
-        shared_audience_withheld_history(true).await;
+        shared_audience_withheld_history(true,false).await;
     }
-    async fn shared_audience_withheld_history(checkpoint: bool) {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn checkpoint_witness_outside_grant_ancestry_is_fetched_without_unrelated_authority() {
+        shared_audience_withheld_history(true,true).await;
+    }
+    async fn shared_audience_withheld_history(checkpoint: bool, outside: bool) {
         use avendb::{cast::{handbook, text, share, by_id}, policy::{Action, Setting, Who, Level}};
         let mut w = world();
         let handbook = handbook(&mut w);
@@ -523,17 +527,19 @@ mod transport_tests {
         // does not fabricate an audience label or preseed any target evidence.
         assert!(w.lab.log(sender).edits().iter().any(|edit| matches!(&edit.action,
             Action::Mark { entry: e, caps: Some(caps), .. } if *e == entry && caps.contains(&audience_share))));
+        let checkpoint_vault=if outside {handbook.coop} else {vault};
         if checkpoint {
             // Normal signed checkpoint publication makes the grant creation
             // checkpoint-covered; no fabricated classifier or preseeded receiver.
-            w.lab.submit(sender,&[w.passkey_a],Action::Checkpoint {
-                vault,covers:vec![avendb::id::EditId(audience_share.0)],
+            w.lab.submit(sender,&if outside {vec![w.passkey_a,w.passkey_b]} else {vec![w.passkey_a]},Action::Checkpoint {
+                vault:checkpoint_vault,covers:vec![avendb::id::EditId(audience_share.0)],
             }).unwrap();
             assert!(!w.lab.independently_verified_edit(sender,avendb::id::EditId(audience_share.0)));
         }
         let history = w.lab.create(sender, vault, vault, "doc", &[], document("Unrelated", "withheld", sender)).unwrap();
-        let unrelated_vault = handbook.coop;
-        w.lab.submit(sender, &[w.passkey_a, w.passkey_b], Action::Settings {
+        let unrelated_vault = if outside {w.carol} else {handbook.coop};
+        let unrelated_signers=if outside {vec![w.passkey_c]} else {vec![w.passkey_a,w.passkey_b]};
+        w.lab.submit(sender, &unrelated_signers, Action::Settings {
             vault: unrelated_vault, set: Setting::Threshold(1),
         }).unwrap();
         let opts = || Options { lazy: true, ..Options::local() };
@@ -550,7 +556,7 @@ mod transport_tests {
         assert!(!phone.shared.differ(sender).await.contains(&LogId::Share(audience_share)));
         if checkpoint {
             assert!(phone.read(move |lab,me| !lab.independently_verified_edit(me,avendb::id::EditId(audience_share.0))
-                && lab.authority_edit_dependencies(me,avendb::id::EditId(audience_share.0))==Some(vec![vault])).await,
+                && lab.authority_edit_dependencies(me,avendb::id::EditId(audience_share.0))==Some(vec![checkpoint_vault])).await,
                 "actual received authority uses a currently standing checkpoint witness");
         }
 

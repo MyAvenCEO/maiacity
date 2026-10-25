@@ -106,3 +106,10 @@ def classify (verifiedSignature currentProvenance : Bool) : Bool :=
   verifiedSignature || currentProvenance
 theorem hintAloneCannotClassify : classify false false = false := rfl
 end AvenDB.GrantRecovery
+
+namespace AvenDB.WitnessLocation
+/-- A remote location only changes requested work. Admission still requires the
+locally reconstructed current provenance, even if the location is authenticated. -/
+def admitted (_hintReceived : Bool) (locallyVerified : Bool) : Bool := locallyVerified
+theorem locationAddsNoAuthority (hint : Bool) : admitted hint false = false := rfl
+end AvenDB.WitnessLocation

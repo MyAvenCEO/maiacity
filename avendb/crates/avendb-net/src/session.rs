@@ -269,7 +269,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
     let range = if kind == crate::edit_ranges::KIND { Some(shared.edit_transfer.serving()?) } else { None };
     // Hold checkpoint response memory admission until write_all completes, including a slow
     // reader. Acquiring before body allocation prevents queued peers retaining response buffers.
-    let checkpoint = if matches!(kind,crate::checkpoint_delivery::KIND | crate::bootstrap_dependencies::KIND | crate::bootstrap_suffix::KIND) {
+    let checkpoint = if matches!(kind,crate::checkpoint_delivery::KIND | crate::bootstrap_dependencies::KIND | crate::bootstrap_suffix::KIND | crate::authority_witness::KIND) {
         Some(Arc::new(shared.discovery_answer.clone().try_acquire_owned().context("checkpoint provider busy")?))
     } else { None };
     let limit = match kind {
@@ -279,6 +279,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
         crate::checkpoint_delivery::KIND => crate::checkpoint_delivery::REQUEST_LIMIT,
         crate::bootstrap_dependencies::KIND => crate::bootstrap_dependencies::LIMIT,
         crate::bootstrap_suffix::KIND => crate::bootstrap_suffix::LIMIT,
+        crate::authority_witness::KIND => crate::authority_witness::LIMIT,
         crate::peer_receipts::KIND | crate::peer_receipts::UI_KIND => crate::peer_receipts::REQUEST_LIMIT,
         _ => MESSAGE_LIMIT - 1,
     };
@@ -308,6 +309,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         crate::checkpoint_delivery::KIND => crate::checkpoint_delivery::answer(shared, peer, body, checkpoint.context("missing checkpoint response admission")?).await,
         crate::bootstrap_dependencies::KIND => crate::bootstrap_dependencies::answer(shared,peer,body,checkpoint.context("missing dependency response admission")?).await,
         crate::bootstrap_suffix::KIND => crate::bootstrap_suffix::answer(shared,peer,body,checkpoint.context("missing suffix response admission")?).await,
+        crate::authority_witness::KIND => crate::authority_witness::answer(shared,peer,body,checkpoint.context("missing witness response admission")?).await,
         crate::peer_receipts::KIND => crate::peer_receipts::answer(shared, peer, body).await,
         crate::peer_receipts::UI_KIND => crate::peer_receipts::answer_ui(shared, peer, body).await,
         REQUEST | ASK_LOGS | ASK_VAULTS => {
