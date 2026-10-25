@@ -188,3 +188,17 @@ broader Editor/Write operation set. Plain Member still has wire authority level
 Write; Member is an operation group, not a Rust Level enum. Each public response
 must report success and received row assertions remain unchanged. Parser passed;
 runtime rerun pending.
+
+### Verified group prerequisites share the bounded dependency lane
+
+A separate opaque GroupDependencies token from the authenticated grouped closure
+can now admit its named missing group Entry logs. The collector excludes the
+original target and bounds the set to32; the transport verifies every requested
+Entry is in that token. Ordinary authority calls still reject every Entry log.
+Mixed token+unverified target requests are rejected, and response edits remain
+limited to the exact requested logs. Group and authority requests share the same
+two active slots, four queue tickets and existing common byte/page budgets.
+The collector token/callsite is delivered by the coordinated grouped-closure
+patch; neither patch is standalone. Parser and standalone VerifiedGroupAdmission
+Lean passed; focused shared-capacity and unverified-entry rejection tests await
+Rust execution.

@@ -277,3 +277,16 @@ def buffered (pages pageLimit : Nat) : Prop := pages ≤ pageLimit
 theorem sharedPageBound (pages limit : Nat) (h : buffered pages limit) :
     pages ≤ limit := h
 end ScopedDependencyAdmission
+
+namespace VerifiedGroupAdmission
+-- The verified collector supplies dependency IDs, excluding the target. This
+-- token changes scheduling only: ordinary replay still checks every edit.
+def within (requested verified : List Nat) : Prop := ∀ id ∈ requested, id ∈ verified
+theorem cannotAddTarget (requested verified : List Nat) (target : Nat)
+    (proof : within requested verified) (excluded : target ∉ verified) :
+    target ∉ requested := by
+  intro member
+  exact excluded (proof target member)
+def fits (active pages : Nat) : Prop := active ≤ 2 ∧ pages ≤ 2
+theorem sharesOperationBound (active pages : Nat) (h : fits active pages) : active ≤ 2 := h.1
+end VerifiedGroupAdmission
