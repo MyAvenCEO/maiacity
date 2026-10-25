@@ -902,6 +902,13 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     query_candidates_impl(lab, me, o, Lab::query_candidates, true)
 }
 
+#[cfg(test)]
+pub(crate) fn full_query_oracle(lab: &Lab, me: SignerId, op: &Value) -> Value {
+    let result = query_candidates_from(lab, me, op.as_object().expect("query object"),
+        |lab, me, _, _| lab.entries(me)).expect("valid oracle query");
+    json!({ "ok": result })
+}
+
 // The test oracle supplies the former full collection; all downstream semantics stay shared.
 fn query_candidates_from(
     lab: &Lab, me: SignerId, o: &Map<String, Value>,
