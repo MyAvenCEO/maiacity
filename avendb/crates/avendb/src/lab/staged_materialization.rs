@@ -227,10 +227,12 @@ mod tests {
         lab.sync(mac, phone);
         lab.advance_materialization(phone);
         let prior = lab.stores.get_mut(&phone).unwrap().staged.remove(&entry).unwrap();
-        lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device {
+        let revoked = lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device {
             vault, device: phone, keep: vec![],
         })).unwrap();
-        lab.sync(mac, phone);
+        let signed = lab.signed_edit(mac, revoked).unwrap().clone();
+        lab.receive(phone, vec![signed], vec![]);
+        assert!(!lab.latest(phone).acts_for(phone, vault));
         // Even an obsolete internal pending record must not become a status
         // oracle between policy acceptance and the next reconstruction turn.
         lab.stores.get_mut(&phone).unwrap().staged.insert(entry, prior);
