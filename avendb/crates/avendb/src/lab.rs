@@ -6158,9 +6158,10 @@ fn read(d: SignerId, store: &mut Store) {
     let wanted: Vec<EditId> =
         wanted.filter(|id| !store.bodies.contains_key(id) && !store.deferred_bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
     if !wanted.is_empty() {
-        let edits: HashMap<EditId, &Edit> = store.replay.ids.iter().copied().zip(&store.replay.edits).collect();
         for id in wanted {
-            let Some(edit) = edits.get(&id) else { continue };
+            // `wanted` comes from current canonical State. The existing write
+            // index resolves those immutable IDs without copying the whole log.
+            let Some(edit) = store.log.entry_write(id) else { continue };
             let Action::Write { entry, stay, epoch, body, .. } = &edit.action else {
                 continue;
             };
