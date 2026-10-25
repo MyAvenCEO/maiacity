@@ -29,3 +29,17 @@ test('a pending earlier root page cannot block another held root page',async()=>
  await tick();expect(leases).toHaveLength(2);
  leases[1].take({ok:{rows:[{entry:id(512)}]}});expect(states.at(-1).rows.map(r=>r.entry)).toEqual([id(512)]);expect(states.at(-1).phase).toBe('loading');close();
 });
+
+test('duplicate and missing fanout cannot multiply the held traversal queue',async()=>{
+ const states=[],leases=[];
+ const close=observeReferenceClosure((q,t)=>{leases.push({q:q(),t});return()=>{}},[id(1),id(2)],id(9),()=>true,s=>states.push(s));
+ const fanout=Array.from({length:10000},(_,n)=>({ref:{entry:n%2?id(2):id(999)}}));
+ leases[0].t({ok:{rows:[{entry:id(1),record:{items:fanout}},{entry:id(2),record:{items:fanout}}]}});await tick();
+ expect(states.at(-1).rows.map(r=>r.entry).sort()).toEqual([id(1),id(2)]);
+ expect(leases[1].q.entries).toEqual([id(999)]);close();
+});
+test('reference depth beyond eight discovery waves is explicit limited state',async()=>{
+ const states=[];let calls=0;
+ const close=observeReferenceClosure((q,t)=>{const entry=q().entries[0];calls++;queueMicrotask(()=>t({ok:{rows:[{entry,record:{files:[id(parseInt(entry,16)+1)]}}]}}));return()=>{}},[id(1)],id(9),()=>true,s=>states.push(s));
+ for(let i=0;i<20;i++)await tick();expect(calls).toBe(8);expect(states.at(-1).limited).toBe(true);close();
+});

@@ -13,6 +13,7 @@
 	once it is let go of.
 -->
 <script>
+	import { libraryFilesQuery } from './library-query.js';
 	import { entryCollection } from './entry-collection.svelte.js';
 	import { entryReferenceClosure } from './entry-reference-closure.svelte.js';
 	import { hookArtworkQuery } from './story-hook-query.js';
@@ -49,7 +50,7 @@
 	const artwork = entryCollection(() => api, () => hookArtworkQuery(actor));
 	const relevant = $derived(artworksOf({ ...baseWorld, entries: artwork.rows.filter(e=>reads(e,actor)) }, item.entry));
 	const references = entryReferenceClosure(() => api, () => [...relevant.map(e=>e.entry), ...(/** @type {any} */ (item.record)?.sparks ?? [])], () => actor);
-	const inventory = entryCollection(() => api, () => picking ? { op:'entry_views', vault:item.vault, as:actor, types:['file'] } : {op:'entry_views', entries:[], as:actor});
+	const inventory = entryCollection(() => api, () => picking ? libraryFilesQuery(item.vault, actor) : {op:'entry_views', entries:[], as:actor});
 	const world = $derived({ ...baseWorld, entries: [...new Map([...relevant, ...references.rows, ...inventory.rows.filter(e=>reads(e,actor))].map(e=>[e.entry,e])).values()], entriesComplete:false });
 
 	const story = $derived(/** @type {any} */ (item.record) ?? {});
