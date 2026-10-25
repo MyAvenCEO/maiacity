@@ -11,6 +11,17 @@ pub(crate) const REQUEST_LIMIT: usize = 4096;
 pub(crate) const RESPONSE_LIMIT: usize = 8192;
 pub(crate) const HINTS: usize = 64;
 
+// Reserve a share of the remaining total budget for each untried peer. This
+// changes scheduling only; requests and signed receive keep their existing gates.
+fn peer_deadline(now: Instant, overall: Instant, remaining_peers: usize) -> Instant {
+    now + overall.saturating_duration_since(now) / remaining_peers.max(1) as u32
+}
+
+async fn queued_before_checkpoint<T>(queue: impl FnOnce(), checkpoint: impl std::future::Future<Output = T>) -> T {
+    queue();
+    checkpoint.await
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Query {
     pub types: Vec<String>,
@@ -157,8 +168,10 @@ impl Shared {
                     // Snapshot values before awaiting; no demand/peer mutex spans I/O.
                     let peers: Vec<_> = shared.peers.lock().expect("peers").values()
                         .filter(|p| p.conn.close_reason().is_none()).take(4).cloned().collect();
-                    let deadline = Instant::now() + Duration::from_secs(10);
-                    for peer in peers {
+                    let overall = Instant::now() + Duration::from_secs(10);
+                    let peer_count = peers.len();
+                    for (peer_index, peer) in peers.into_iter().enumerate() {
+                        let deadline = peer_deadline(Instant::now(), overall, peer_count - peer_index);
                         let mut checkpoints_supported = true;
                         // Explicit active-view IDs also bootstrap without waiting for collection discovery.
                         for id in entries.iter().take(if dependency_count > 0 { 0 } else { 8 }) {
@@ -176,20 +189,22 @@ impl Shared {
                             if !shared.demands.lock().expect("demands").discovered(&scope, revision, &ids, Instant::now()) { break; }
                             shared.size.send_modify(|_| {});
                             shared.bootstrap_due.notify_one();
-                            // A bounded working-set checkpoint precedes ordinary history for this view.
-                            // Unsupported/unauthorized/oversized offers fall through to signed-log sync.
-                            for id in ids.iter().take(if checkpoints_supported && query_index >= dependency_count { 8 } else { 0 }) {
-                                if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
-                                if let LogId::Entry(entry) = id {
-                                    if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
+                            // Queue ordinary authorized reconciliation before optional checkpoint I/O.
+                            // A slow/absent checkpoint must not hold discovered entry IDs hostage.
+                            // Live pulls still wait for authority readiness; hints grant no access.
+                            queued_before_checkpoint(|| {
+                                for chunk in ids.chunks(crate::pulls::LIVE_LOGS) {
+                                    if !shared.discovery_current(&scope, revision) { break; }
+                                    shared.live_announced(peer.device, false, chunk);
                                 }
-                            }
-                            // Retain all hints in demand: the bounded live lane may coalesce only its first batch.
-                            // Existing authenticated holdings, authority-first pulls and signed receive remain the gate.
-                            for chunk in ids.chunks(crate::pulls::LIVE_LOGS) {
-                                if !shared.discovery_current(&scope, revision) { break; }
-                                shared.live_announced(peer.device, false, chunk);
-                            }
+                            }, async {
+                                for id in ids.iter().take(if checkpoints_supported && query_index >= dependency_count { 8 } else { 0 }) {
+                                    if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
+                                    if let LogId::Entry(entry) = id {
+                                        if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
+                                    }
+                                }
+                            }).await;
                         }
                     }
                 }
@@ -209,6 +224,29 @@ impl Shared {
 mod tests {
     use super::*;
     use avendb::cast::{world, document};
+    #[tokio::test]
+    async fn discovered_ids_queue_while_checkpoint_never_completes() {
+        let queued = std::sync::atomic::AtomicBool::new(false);
+        let work = queued_before_checkpoint(
+            || queued.store(true, std::sync::atomic::Ordering::SeqCst),
+            std::future::pending::<()>(),
+        );
+        assert!(time::timeout(Duration::from_millis(10), work).await.is_err());
+        assert!(queued.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn slow_first_peer_leaves_budget_for_other_peers() {
+        let now = Instant::now();
+        let overall = now + Duration::from_secs(10);
+        let first = peer_deadline(now, overall, 4);
+        assert_eq!(first - now, Duration::from_millis(2500));
+        let second = peer_deadline(first, overall, 3);
+        assert_eq!(second - first, Duration::from_millis(2500));
+        assert!(second < overall);
+        assert_eq!(peer_deadline(second, overall, 1), overall);
+    }
+
     #[test]
     fn positive_selectors_are_bounded_and_cannot_choose_an_identity() {
         assert!(request(br#"{"version":1,"query":{"types":["note"]},"requester":"forged"}"#).is_err());
