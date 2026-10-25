@@ -1,3 +1,4 @@
+import { screenSlot } from '../app/screen-slots.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createControls, createRenderer } from '$lib/render/core.js';
@@ -45,7 +46,7 @@ export async function mountLab(root: HTMLElement): Promise<() => void> {
   const presets = [...scenarios(), shedScenario(), brickHouseScenario(), metalShedScenario(), domeScenario(), standScenario(), industrialHallScenario(), germanHouseScenario()];
   root.classList.add('physical-lab');
   root.innerHTML = `
-    <header><div><small>PHYSICAL WORLD / ASSEMBLY SANDBOX</small><h1>From parts to buildings</h1></div><span class="tag">RIGID BODY LABORATORY</span></header>
+    <span id="lab-title">Sandbox 7</span>
     <div class="layout"><aside class="left"><h2>Choose an experiment</h2><nav id="scenario-list" aria-label="Experiments"></nav><section id="dome-controls" hidden aria-label="Dome dimensions"><h2>Dome size</h2>
       <form id="dome-size-form"><label for="dome-diameter">Frame diameter · m</label><input id="dome-diameter" type="number" min="${MIN_DOME_DIAMETER}" step="any" value="${DEFAULT_DOME_DIAMETER}" required>
       <label for="dome-cell-size">Target cell size · m</label><input id="dome-cell-size" type="number" min="0.1" step="any" value="2.5" required>
@@ -84,6 +85,10 @@ export async function mountLab(root: HTMLElement): Promise<() => void> {
     <details id="setup-details"><summary>Setup / start a new run</summary><p class="note">Edits apply to the selected part. Dimensions and density determine mass. Applying resets all bodies and time.</p><form id="setup-form">
       <label>Dimensions X Y Z (m)<input id="dimensions" required></label><label>Position X Y Z (m)<input id="position" required></label><label>Rotation about Z (degrees)<input id="angle" type="number" step="any" required></label><label>Density (kg/m³)<input id="density" type="number" min="1" max="30000" step="any" required></label><label>Friction coefficient<input id="friction" type="number" min="0" max="2" step="any" required></label><button type="submit">Apply and reset</button><p id="setup-error" class="error" role="alert"></p></form><p class="note">Setup is a laboratory fixture. Overlapping starting boxes are rejected. These controls do not represent a person's ability to move a part.</p></details></aside></div>`;
   const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  const titleSlot = screenSlot(el('lab-title'), 'title');
+  const toolbar = root.querySelector<HTMLElement>('.toolbar')!;
+  toolbar.classList.add('lab-controls');
+  const controlSlot = screenSlot(toolbar, 'center');
   const shedNote = el('build-note').textContent!;
   const viewport = el('viewport');
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x20372b);
@@ -414,6 +419,7 @@ export async function mountLab(root: HTMLElement): Promise<() => void> {
     if(galleryActive)gallery.render(renderer);else {controls.update(); renderer.render(scene, camera);}
   });
   return () => {
+    titleSlot.destroy(); controlSlot.destroy();
     renderer.setAnimationLoop(null); resizing.disconnect(); document.removeEventListener('visibilitychange', resume);
     client.dispose(); controls.dispose(); gallery.controls.dispose();
     scene.traverse(object => { const mesh = object as THREE.Mesh; mesh.geometry?.dispose(); for (const m of [mesh.material].flat()) (m as THREE.Material | undefined)?.dispose(); });

@@ -9,6 +9,7 @@
 	$lib/touch/TouchStick never takes them for looking round; the slider is the browser's own.
 -->
 <script>
+	import { screenSlot } from '$lib/app/screen-slots.js';
 	import { gameClock } from '../../../game/time';
 	import { automatic, manual, skyTime } from './skyTime.svelte.js';
 
@@ -63,7 +64,7 @@
 	const own = (/** @type {TouchEvent} */ e) => e.stopPropagation();
 </script>
 
-<div class="sky-control {cls}" class:manual={!skyTime.auto} role="group" aria-label="Time of day">
+<div use:screenSlot={'center'} class="sky-control {cls}" class:manual={!skyTime.auto} role="group" aria-label="Time of day">
 	<div class="modes">
 		<button bind:this={autoButton} class:on={skyTime.auto} aria-pressed={skyTime.auto} title={worldClock ? 'The sky follows the in-game clock' : 'The sky follows the in-game clock: a game hour every two real minutes'} onclick={() => click(true)}>Auto</button>
 		<button bind:this={handButton} class:on={!skyTime.auto} aria-pressed={!skyTime.auto} title="Set the time of day by hand" onclick={() => click(false)}>Manual</button>
@@ -100,14 +101,14 @@
 	.sky-control {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.35rem;
 		padding: 0.3rem 0.75rem 0.3rem 0.3rem;
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.55);
+		background: var(--overlay-paper, var(--overlay-paper, rgb(250 248 242 / .75)));
 		border: 1px solid rgb(255 255 255 / 0.35);
 		-webkit-backdrop-filter: blur(12px) saturate(1.2);
 		backdrop-filter: blur(12px) saturate(1.2);
-		font-size: 0.85rem;
+		font-size: 0.75rem;
 		color: #1f2a23;
 		white-space: nowrap;
 	}
@@ -148,7 +149,7 @@
 		stroke-linejoin: round;
 	}
 	input[type='range'] {
-		width: 8.5rem;
+		width: 6rem;
 		accent-color: #f0a47c;
 		touch-action: none;
 	}

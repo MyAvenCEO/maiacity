@@ -56,7 +56,7 @@
 	/* the host: the page, under the nav pill; the runtime fills it with its canvas and HUD (.fs-root, hud.css) */
 	.factory {
 		position: fixed;
-		inset: 0;
+		inset: var(--screen-head-room, 0px) 0 0;
 		background: #ece6da;
 	}
 	.bad {

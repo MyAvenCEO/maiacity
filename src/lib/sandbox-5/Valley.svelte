@@ -714,7 +714,7 @@
 	.tools button,
 	.toast,
 	.hint {
-		background: rgb(250 248 242 / 0.86);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		border: 1px solid rgb(255 255 255 / 0.5);
 		-webkit-backdrop-filter: blur(14px) saturate(1.2);
 		backdrop-filter: blur(14px) saturate(1.2);
@@ -1151,7 +1151,7 @@
 		display: flex;
 		align-items: stretch;
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.9);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		border: 1px solid rgb(255 255 255 / 0.5);
 		box-shadow: 0 4px 18px rgb(0 0 0 / 0.12);
 		color: #1f2a23;
@@ -1225,7 +1225,7 @@
 		overflow: auto;
 		padding: 0.7rem 0.9rem 0.8rem;
 		border-radius: 16px;
-		background: rgb(250 248 242 / 0.96);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		border: 1px solid rgb(255 255 255 / 0.5);
 		box-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
 		color: #1f2a23;
@@ -1447,7 +1447,7 @@
 		z-index: 1;
 		margin: 0.7rem -0.8rem 0;
 		padding: 0.55rem 0.8rem 0.7rem;
-		background: rgb(250 248 242 / 0.97);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		border-top: 1px solid rgb(31 42 35 / 0.08);
 	}
 	.panel:has(> .actions.foot) {
@@ -1592,7 +1592,7 @@
 			padding: 0;
 			border: 1px solid rgb(255 255 255 / 0.5);
 			border-radius: 999px;
-			background: rgb(250 248 242 / 0.94);
+			background: var(--overlay-paper, rgb(250 248 242 / .75));
 			box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
 			-webkit-backdrop-filter: blur(10px);
 			backdrop-filter: blur(10px);

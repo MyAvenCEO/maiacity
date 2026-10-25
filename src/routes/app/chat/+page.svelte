@@ -39,7 +39,7 @@
 		/* pinned to the screen, so the page under it (the app's room for the nav pill at its foot) never scrolls or
 		   bounces: only the rooms list, the timeline and the side panel scroll, each on its own */
 		position: fixed;
-		inset: 0;
+		inset: var(--screen-head-room, 0px) 0 0;
 		overflow: hidden;
 		overscroll-behavior: none;
 		background: var(--paper);

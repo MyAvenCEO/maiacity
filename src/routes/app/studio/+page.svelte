@@ -16,6 +16,8 @@
 	there), its jobs in avenDB's Jobs app; the legacy Data, Library and Jobs tabs are gone, and the Deliverables placeholder too (a film's posts are made in the story's Movie tab).
 -->
 <script lang="ts">
+	import { screenSlot } from '$lib/app/screen-slots.js';
+
 	import { onDestroy, onMount } from 'svelte';
 	import Deliveries from '$lib/studio/Deliveries.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
@@ -139,7 +141,7 @@
 		<header class="bar" data-tauri-drag-region>
 			<div class="row" data-tauri-drag-region>
 				<div class="side" data-tauri-drag-region>
-					<strong>Studio</strong>
+					<strong use:screenSlot={'title'}>Studio</strong>
 				</div>
 				<div class="title" data-tauri-drag-region>
 					{#if s.current}
@@ -202,8 +204,8 @@
 		<!-- the stories and their timelines, on every tab -->
 		<StoryNav {s} />
 		<CueCard {s} />
-		<!-- the working steps, along the window's bottom edge -->
-		<footer class="tabs"><StageBar {s} /></footer>
+		<!-- The shared header owns the workspace switcher. -->
+		<div class="workspace-tabs" use:screenSlot={'center'}><StageBar {s} /></div>
 	</section>
 {/if}
 
@@ -259,20 +261,19 @@
 		--violet: #6a4fb2;
 		--violet-bg: rgb(130 100 210 / 0.14);
 		position: fixed;
-		inset: 0;
+		inset: var(--screen-head-room, 0px) 0 0;
 		z-index: 200;
 		/* on a phone: clear of the notch; at the foot, of the app's nav pill and the home bar under it (--nav-room,
 		   src/app.css), so the working steps along the bottom edge stay in view */
-		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) var(--nav-room) env(safe-area-inset-left, 0px);
+		padding: 0 env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
 		display: grid;
 		grid-template-columns: 11rem 19rem 1fr 17rem;
-		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, auto) auto;
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, auto);
 		grid-template-areas:
 			'bar bar bar bar'
 			'nav bin monitor inspector'
 			'nav bin transport transport'
-			'nav bin timeline timeline'
-			'tabs tabs tabs tabs';
+			'nav bin timeline timeline';
 		gap: 1px;
 		background: var(--edge);
 		color: var(--ink);
@@ -283,13 +284,12 @@
 	/* Grade: the picture, the transport and the layers' lanes; beside them, the full height, the chosen layer's controls */
 	.studio.tab-grade {
 		grid-template-columns: 11rem minmax(0, 1fr) 22rem;
-		grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+		grid-template-rows: auto minmax(0, 1fr) auto auto;
 		grid-template-areas:
 			'bar bar bar'
 			'nav monitor aside'
 			'nav transport aside'
-			'nav timeline aside'
-			'tabs tabs tabs';
+			'nav timeline aside';
 	}
 
 	.studio.tab-render {
@@ -304,8 +304,7 @@
 			'bar bar bar'
 			'nav monitor inspector'
 			'nav transport transport'
-			'nav timeline timeline'
-			'tabs tabs tabs';
+			'nav timeline timeline';
 	}
 
 	/* Script: the script (left half), the program (right half), the timeline full width under them */
@@ -315,29 +314,21 @@
 			'bar bar bar'
 			'nav bin monitor'
 			'nav transport transport'
-			'nav timeline timeline'
-			'tabs tabs tabs';
+			'nav timeline timeline';
 	}
 
 	/* Audio: the program and, beside it, the selected clip (its EQ) over the sound tracks, which carry the levels */
 	.studio.tab-audio {
 		grid-template-columns: 11rem 1fr 19rem;
-		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, auto) auto;
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, auto);
 		grid-template-areas:
 			'bar bar bar'
 			'nav monitor inspector'
 			'nav transport transport'
-			'nav timeline timeline'
-			'tabs tabs tabs';
+			'nav timeline timeline';
 	}
 
 
-	/* the working steps, centred along the bottom edge */
-	.tabs {
-		grid-area: tabs;
-		padding: 0.35rem 1rem 0.45rem;
-		background: var(--chrome);
-	}
 
 	.bar {
 		grid-area: bar;
@@ -345,7 +336,7 @@
 		flex-direction: column;
 		gap: 0.3rem;
 		/* the window's title bar is ours (overlay): the traffic lights sit at its top left */
-		padding: 0.45rem 1rem 0.4rem 5.4rem;
+		padding: 0.45rem 1rem;
 		background: var(--chrome);
 	}
 
@@ -592,19 +583,19 @@
 		.studio,
 		.studio.tab-render {
 			grid-template-columns: 1fr;
-			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 30vh auto;
-			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'bin' 'tabs';
+			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 30vh;
+			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'bin';
 		}
 
 		.studio.tab-grade {
 			grid-template-columns: 1fr;
-			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 40vh auto;
-			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'aside' 'tabs';
+			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 40vh;
+			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'aside';
 		}
 
 		/* source above program */
 		.studio:has(.monitors.split) {
-			grid-template-rows: auto 64vh auto minmax(10rem, 1fr) 30vh auto;
+			grid-template-rows: auto 64vh auto minmax(10rem, 1fr) 30vh;
 		}
 
 		.monitors.split {

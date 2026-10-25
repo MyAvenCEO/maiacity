@@ -36,7 +36,7 @@ export const DASHBOARD = {
 	note: 'What the dashboard reads: the games it lists.',
 	routes: ['/app/'],
 	priority: 'medium',
-	parts: [{ manifest: KERNEL.id }, { query: { type: ['game'] } }]
+	parts: [{ manifest: KERNEL.id }, { query: { type: ['game'] } }, { query: { type: ['file'], tags: ['dashboard:cover'] } }]
 };
 
 /** The Maia Universe: the kernel, then its newest page of stories and posts. */

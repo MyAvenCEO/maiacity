@@ -26,6 +26,7 @@
 	form that asks it (./Ask.svelte) in a drawer.
 -->
 <script>
+	import { screenSlot } from '$lib/app/screen-slots.js';
 	import { setContext } from 'svelte';
     import { needsWorldEntries, localNavigation } from './startup-summary.js';
 	import { foot, FOOT } from '$lib/app/foot.js';
@@ -273,6 +274,7 @@
 </script>
 
 <svelte:window onhashchange={navigated} />
+<div use:screenSlot={'title'}>{PAGES.find(([id]) => id === tab)?.[1] ?? 'You'}</div>
 
 {#snippet head()}
 	<header class="main-head">
@@ -404,8 +406,7 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: minmax(0, 1fr);
-		height: 100vh;
-		height: 100dvh;
+		height: calc(100dvh - var(--screen-head-room, 0px));
 		overflow: hidden;
 	}
 

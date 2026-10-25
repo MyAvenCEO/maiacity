@@ -44,26 +44,28 @@
 	.tabs {
 		display: flex;
 		padding: 2px;
-		border: 1px solid var(--edge);
+		border: 1px solid var(--line, #d9d1bf);
 		border-radius: 999px;
-		background: var(--bg);
+		background: var(--overlay-paper);
 	}
 
 	.tabs button {
-		min-width: 5.2rem;
-		padding: 0.28rem 0.9rem;
+		min-width: 0;
+		min-height: 36px;
+		padding: 0.28rem 0.7rem;
 		border: 0;
 		border-radius: 999px;
 		background: none;
 		font: inherit;
 		font-size: 0.8rem;
 		font-weight: 600;
-		color: var(--dim);
+		color: #647266;
 		cursor: pointer;
 	}
 
 	.tabs button.on {
-		background: var(--sel);
+		background: #d8e3cb;
 		color: var(--ink);
 	}
+ @media (max-width: 540px) { .tabs button { padding: .25rem .6rem; font-size: .75rem; } }
 </style>
