@@ -22,7 +22,7 @@ The UI increments its local revision after the bridge operation returns, then
 its reactive query requires another database turn. Running background closures
 cannot currently be preempted by priority.
 
-## Implemented queue correction, validation pending
+## Implemented queue correction, targeted validation passed
 
 Local `try_act` mutations now have a dedicated bounded admission queue. They may
 overtake two queued reads; then a waiting read receives a turn. All foreground
@@ -32,7 +32,9 @@ notifications are unchanged. This does not shorten one already-running operation
 
 Lean `reads_after_write_burst` and `mutation_cannot_extend_foreground_budget`
 passed. Added a Rust test covering older queued reads, multiple writes, cancelled
-writes and background progress; compilation/runtime pending the native build.
+writes and background progress; all four scheduler regressions passed on the combined branch (including the new
+mutation-priority test). Full application check also passed with0errors and28
+existing warnings. Implementation: [973bb39e](https://github.com/MyAvenCEO/maiacity/commit/973bb39e).
 
 ## Remaining work
 

@@ -27,8 +27,9 @@ transport rather than the chat UI or browser paint timing. No target ID is passe
 in the initial demand. This does not test absent authority or physical iOS timing.
 
 The existing type-discovery fixture was extended, rather than duplicating its
-expensive peer setup. Rust syntax parsing passed; compilation/runtime are pending
-the coordinated compiler slot. No pass is claimed until the test actually runs.
+expensive peer setup. The real-peer regression passed on the combined branch:1test,0failures,8.74s
+including setup/shutdown. It proves unrelated entry-history independence under
+preheld governance; it does not prove authority-history independence.
 
 ## Minimal safe scoped release contract
 
@@ -70,4 +71,6 @@ All active selectors now queue their discovered entry IDs first. Up to eight
 unique checkpoint candidates are retained for the subsequent optional phase.
 The same per-peer deadline, demand cancellation, authorization and checkpoint
 validation remain in force. This changes ordering, not access or completeness.
-Lean `discovery_is_schedule_prefix` passes; combined Rust validation is pending.
+Lean `discovery_is_schedule_prefix` passes. Combined native discovery/room and
+demand tests passed at987946f9; the later mutation scheduling change passed all
+four scheduler regressions. Physical devices and final release remain pending.
