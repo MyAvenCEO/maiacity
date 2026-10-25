@@ -88,3 +88,18 @@ test('scoped first-result and useful-result timings survive restart', () => {
  f.journal.flush();
  expect(createLatencyJournal({storage:f.storage}).snapshot().samples.map(s=>s.stage)).toEqual(['entry_views.first-result-emission','entry_views.first-nonempty-emission','entry_views.first-nonempty-emission.readonly','query.first-result-emission']);
 });
+
+test('busy catch-up cannot evict the latest unlock evidence before diagnostics export', () => {
+ const f = fixture();
+ f.journal.record('unlock.total', 12000);
+ for (let n = 0; n < 300; n++) f.journal.record('call.status', n);
+ f.journal.flush();
+ const samples = createLatencyJournal({ storage: f.storage }).snapshot().samples;
+ expect(samples).toHaveLength(120);
+ expect(samples.filter(s => s.stage === 'unlock.total')).toEqual([
+  {stage:'unlock.total', ms:12000, at:101, outcome:'ok'}
+ ]);
+ expect(samples.at(-1).ms).toBe(299);
+ f.journal.clear();
+ expect(f.journal.snapshot().samples).toEqual([]);
+});

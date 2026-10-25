@@ -36,7 +36,13 @@ export function createLatencyJournal({ storage = () => undefined, now = Date.now
   record(stage, ms, outcome = 'ok') {
    const sample = { stage, ms, at: now(), outcome };
    if (!valid(sample)) return;
-   load(); samples.push(sample); if (samples.length > LIMIT) samples.shift();
+   load(); samples.push(sample);
+   if (samples.length > LIMIT) {
+    // Keep the latest unlock boundary through high-frequency catch-up calls.
+    // It is often the only evidence left after an abrupt mobile restart.
+    const latestUnlock = samples.findLastIndex(s => s.stage === 'unlock.total');
+    samples.splice(latestUnlock === 0 ? 1 : 0, 1);
+   }
    if (!scheduled) { scheduled = true; schedule(flush); }
   },
   snapshot() { load(); return { version: 1, storageAvailable: available, samples: samples.map(s => ({ ...s })) }; },
