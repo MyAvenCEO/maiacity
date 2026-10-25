@@ -386,6 +386,7 @@ async fn run() -> Result<()> {
             progress: Progress::new(),
             recovery: None,
             on_node: None,
+            working_set: Vec::new(),
         })
     };
     let began = Instant::now();

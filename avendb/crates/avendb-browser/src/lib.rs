@@ -193,6 +193,18 @@ pub struct Start {
     /// Called synchronously after spawn, before another startup await. The host
     /// transfers ownership on publication, or awaits close before releasing it.
     pub on_node: Option<Arc<dyn Fn(Arc<Node>) + Send + Sync>>,
+    /// Bounded local view hint; never authority or a network discovery restriction.
+    pub working_set: Vec<avendb::id::EntryId>,
+}
+
+/// Parse untrusted optional startup hints without making unlock depend on them.
+/// Invalid/oversized hints fall back to ordinary local discovery.
+pub fn working_set_ids(text: &str) -> Vec<avendb::id::EntryId> {
+    if text.len()>20000 { return Vec::new(); }
+    let Ok(values)=serde_json::from_str::<Vec<String>>(text) else {return Vec::new();};
+    let mut seen=std::collections::HashSet::new();
+    values.into_iter().filter_map(|value|avendb::id::EntryId::from_hex(&value))
+        .filter(|entry|seen.insert(*entry)).take(256).collect()
 }
 
 impl Start {
@@ -774,7 +786,7 @@ impl Device {
         let (direct, relay, shelf, progress) =
             (start.direct, Some(start.relay.clone()), start.shelf.clone(), start.progress.clone());
         let opts = Options { bind: None, direct, relay, relay_passes, shelf, progress, ..Options::local() };
-        let node = Arc::new(Node::spawn(lab, me, opts).await?);
+        let node = Arc::new(Node::spawn_with_working_set(lab, me, opts, &start.working_set).await?);
         if let Some(retain) = &start.on_node { retain(node.clone()); }
         Ok(node)
     }
@@ -1419,13 +1431,14 @@ impl PageDevice {
     /// The device the page made before, opened again from the shelf of the page's `store`, by what the shelf keeps to
     /// open it (`Meta`, `storeMeta`) and the unlock, a ceremony the page made itself over the device's salt, so the
     /// steps it is shown begin after it (`Device::open`).
-    pub async fn open(unlock: JsValue, steps: Option<Function>, store: JsValue) -> Result<PageDevice, JsError> {
+    pub async fn open(unlock: JsValue, steps: Option<Function>, store: JsValue, working_set: Option<String>) -> Result<PageDevice, JsError> {
         hold(&store).await?;
         let shelf = shelf_of(store.clone());
         let open = async {
             let meta = Meta::load(&shelf).await.map_err(js_error)?;
             let meta = meta.ok_or_else(|| JsError::new("this browser holds no avenDB account"))?;
-            let start = starting(meta.name.clone(), &meta.relay, steps, shelf)?;
+            let mut start = starting(meta.name.clone(), &meta.relay, steps, shelf)?;
+            start.working_set = working_set.as_deref().map(working_set_ids).unwrap_or_default();
             let _ending = start.progress.ending();
             Device::open(start, &meta, unlocked(&unlock)?).await.map_err(js_error)
         };
@@ -1889,7 +1902,7 @@ fn starting(name: String, relay: &str, steps: Option<Function>, shelf: Shelf) ->
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
     let (progress, shelf, recovery) = (shown(steps), Some(shelf), Start::recovery());
-    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery, on_node: None })
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery, on_node: None, working_set: Vec::new() })
 }
 
 /// Holds the page's `store` for this page alone, until the device on it closes (`PageDevice::close`): refused while
@@ -2093,7 +2106,7 @@ mod tests {
         let relay = "http://localhost:3340".parse().expect("a relay's URL");
         let (name, progress) = ("Eve's browser".into(), Progress::new());
         let (entropy, recovery) = ([7; 32], None);
-        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery, on_node: None };
+        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery, on_node: None, working_set: Vec::new() };
         // its own secret, kept masked by the PRF output on its salt
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);

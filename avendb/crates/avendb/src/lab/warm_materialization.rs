@@ -12,6 +12,8 @@ const LIMIT: usize = 32 * 1024 * 1024;
 const MAX_ENTRIES: usize = 256;
 const MAX_WRITES: usize = 8192;
 const WITH_METADATA: u32 = u32::MAX - 1;
+const WITH_PAGES: u32 = u32::MAX - 2;
+const MAX_PAGES: usize = MAX_WRITES.div_ceil(MAX_ENTRIES);
 use crate::deferred_body::{BodyMetadata, DeferredBody};
 
 enum CapturedLine {
@@ -29,7 +31,7 @@ pub(super) struct Capture {
         Vec<(EditId, bool, bool, Option<Vec<Touch>>, Vec<Loc>)>,
         BTreeMap<Line, CapturedLine>,
         BTreeSet<BlobId>,
-        Vec<(EditId, BodyMetadata)>,
+        Vec<(EditId, Vec<u8>)>,
     )>,
 }
 fn basis(store: &Store) -> [u8; 32] { basis_ids(store.log.ids()) }
@@ -44,34 +46,43 @@ impl Capture {
     pub(super) fn take(store: &Store) -> Self {
         // Bound forked documents and judgment metadata before encoding. Prefer the
         // entries most recently worked on; uncaptured entries reconstruct normally.
-        let order = store
-            .shown
-            .iter()
-            .filter(|(e, _)| store.scratched.contains(e))
-            .chain(
-                store
-                    .shown
-                    .iter()
-                    .filter(|(e, _)| !store.scratched.contains(e)),
-            );
+        let requested: HashSet<_> = store.warm_working_set.iter().copied().collect();
+        let order = store.shown.iter().filter(|(e,_)| requested.contains(e))
+            .chain(store.shown.iter().filter(|(e,_)| !requested.contains(e) && store.scratched.contains(e)))
+            .chain(store.shown.iter().filter(|(e,_)| !requested.contains(e) && !store.scratched.contains(e)));
         let (mut entries, mut writes, mut source_bytes) = (Vec::new(), 0usize, 0usize);
         for (e, s) in order {
-            if entries.len() == MAX_ENTRIES {
-                break;
-            }
             let n = s.history.changes().len();
-            let bytes: usize = s
+            if n == 0 { continue; }
+            // A metadata-only receipt has neither materialized items nor a saved
+            // snapshot. Recapture its judgment instead of dropping it merely
+            // because its new iteration position is within the snapshot budget.
+            let keep_snapshot = entries.len() < MAX_ENTRIES
+                && (s.items.get().is_some()
+                    || s.deferred.lock().expect("deferred items lock").is_some());
+            let metadata = s.history.changes().iter().map(|c| {
+                let body = store.body_metadata(c.write.edit)?;
+                let metadata = BodyMetadata::of(body);
+                metadata.ordinary().then(|| (c.write.edit, metadata.bytes()))
+            }).collect::<Option<Vec<_>>>().unwrap_or_default();
+            // Uncovered authorization/lane bodies reconstruct normally. Beyond
+            // the snapshot budget retain only complete ordinary judgments.
+            if !keep_snapshot && metadata.len() != n { continue; }
+            let bytes: usize = if !keep_snapshot { 0 } else { s
                 .history
                 .changes()
                 .iter()
                 .map(|c| c.body.as_ref().map_or(0, Vec::len))
-                .sum();
+                .sum::<usize>() };
+            let bytes = bytes.saturating_add(metadata.iter().fold(0usize, |sum, (_,body)|
+                sum.saturating_add(body.len())));
             if writes.saturating_add(n) > MAX_WRITES
                 || source_bytes.saturating_add(bytes) > LIMIT
             {
                 continue;
             }
-            let (items, snapshot_bytes) = if let Some(items) = s.items.get() {
+            let (items, snapshot_bytes) = if !keep_snapshot { (BTreeMap::new(), 0) }
+            else if let Some(items) = s.items.get() {
                 if items.values().any(Item::has_parked_updates) { continue; }
                 (items.iter().map(|(line, item)| (*line, CapturedLine::Materialized(item.clone()))).collect(), 0)
             } else {
@@ -101,11 +112,7 @@ impl Capture {
                     .collect(),
                 items,
                 s.after.asked.clone(),
-                s.history.changes().iter().map(|c| {
-                    let body = store.body_metadata(c.write.edit)?;
-                    let metadata = BodyMetadata::of(body);
-                    metadata.ordinary().then_some((c.write.edit, metadata))
-                }).collect::<Option<Vec<_>>>().unwrap_or_default(),
+                metadata,
             ));
         }
         Self {
@@ -119,6 +126,8 @@ impl Capture {
         self.basis.encode(&mut out);
         let mut entries = Vec::new();
         let mut count = 0u32;
+        let mut pages: Vec<Vec<u8>> = Vec::new();
+        let mut total_bytes = 0usize;
         'entries: for (entry, print, changes, items, asked, metadata) in self.entries {
             let mut encoded = Vec::new();
             entry.encode(&mut encoded);
@@ -140,8 +149,8 @@ impl Capture {
             (metadata.len() as u32).encode(&mut encoded);
             for (id, body) in metadata {
                 id.encode(&mut encoded);
-                body.bytes().encode(&mut encoded);
-                if entries.len().saturating_add(encoded.len()) > LIMIT { continue 'entries; }
+                body.encode(&mut encoded);
+                if total_bytes.saturating_add(entries.len()).saturating_add(encoded.len()) > LIMIT { continue 'entries; }
             }
             (items.len() as u32).encode(&mut encoded);
             for (line, item) in items {
@@ -152,8 +161,8 @@ impl Capture {
                     CapturedLine::Materialized(item) => item.bytes(),
                     CapturedLine::Deferred(bytes) => bytes,
                 };
-                if entries
-                    .len()
+                if total_bytes
+                    .saturating_add(entries.len())
                     .saturating_add(encoded.len())
                     .saturating_add(snapshot.len())
                     .saturating_add(4)
@@ -163,15 +172,28 @@ impl Capture {
                 }
                 snapshot.encode(&mut encoded);
             }
-            if entries.len().saturating_add(encoded.len()) > LIMIT {
+            if total_bytes.saturating_add(entries.len()).saturating_add(encoded.len()) > LIMIT {
                 break;
             }
             entries.extend(encoded);
             count += 1;
+            if count as usize == MAX_ENTRIES {
+                let mut page = Vec::new(); count.encode(&mut page); page.append(&mut entries);
+                total_bytes += page.len() + 4; pages.push(page); count = 0;
+            }
         }
-        WITH_METADATA.encode(&mut out);
-        count.encode(&mut out);
-        out.extend(entries);
+        if count > 0 {
+            let mut page = Vec::new(); count.encode(&mut page); page.extend(entries); pages.push(page);
+        }
+        // Bytes and writes stay globally bounded; pages only separate optional
+        // working-set snapshots from metadata-only ordinary-entry receipts.
+        WITH_PAGES.encode(&mut out);
+        (pages.len() as u32).encode(&mut out);
+        for page in pages { page.encode(&mut out); }
+        if out.len().saturating_sub(MAGIC.len() + 4 + replay.len()) > LIMIT + 40 {
+            // Never persist an over-budget adjunct. Its policy view remains valid.
+            let mut only = MAGIC.to_vec(); replay.encode(&mut only); return only;
+        }
         out
     }
 }
@@ -210,10 +232,11 @@ impl Validated {
     /// schema lane or cap groups. Never reuse the entries those writes target.
     pub(super) fn check_prefix(extra: &[u8], store: &Store, held: usize) -> Option<Self> {
         if held == store.log.ids().len() { return Self::check(extra, store); }
+        let suffix = store.log.edits().get(held..)?;
+        if suffix.len() > MAX_WRITES || suffix.iter().any(|edit|
+            !matches!(edit.action,Action::Write {create:None,proposal:Proposal::Main,..})) { return None; }
         let prefix = store.log.ids().get(..held)?;
         if extra.get(..32) != Some(basis_ids(prefix).as_slice()) { return None; }
-        let suffix = store.log.edits().get(held..)?;
-        if suffix.len() > MAX_WRITES { return None; }
         let mut saved = decode(extra)?;
         let mut touched = HashSet::new();
         for edit in suffix {
@@ -278,6 +301,29 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
     }
     let mut rd = Reader::new(extra.get(32..)?);
     let marker = u32::decode(&mut rd).ok()?;
+    if marker == WITH_PAGES {
+        let count = rd.count(4).ok()?;
+        if count > MAX_PAGES { return None; }
+        let mut out = BTreeMap::new();
+        let (mut writes, mut details, mut snapshots) = (0usize, 0usize, 0usize);
+        for _ in 0..count {
+            let bytes = rd.count(1).ok()?;
+            let page = rd.take(bytes).ok()?;
+            // Reuse the strict legacy page decoder, including per-entry ordering,
+            // metadata/content separation, duplicate and per-page size checks.
+            let mut wrapped = extra[..32].to_vec();
+            WITH_METADATA.encode(&mut wrapped); wrapped.extend_from_slice(page);
+            let decoded = decode(&wrapped)?;
+            for (entry, saved) in decoded {
+                writes = writes.checked_add(saved.changes.len())?;
+                snapshots += usize::from(!saved.items.is_empty());
+                details = details.checked_add(saved.changes.iter().map(|c|
+                    c.3.as_ref().map_or(0,Vec::len) + c.4.len()).sum::<usize>())?;
+                if writes > MAX_WRITES || details > 65536 || snapshots > MAX_ENTRIES || out.insert(entry,saved).is_some() { return None; }
+            }
+        }
+        return rd.done().then_some(out);
+    }
     let with_metadata = marker == WITH_METADATA;
     let n = if with_metadata { rd.count(37).ok()? } else { marker as usize };
     if n > MAX_ENTRIES {
@@ -544,6 +590,70 @@ mod tests {
         let warm = Warm {keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect()};
         lab.warmed(device, receipt);
         (lab, device, vault, entries, backup, warm)
+    }
+
+    #[test]
+    fn paged_metadata_restores_beyond_snapshot_budget_without_unrelated_content() {
+        use crate::cast::{document,human_on};
+        let mut lab=Lab::new(); let owner=lab.passkey("Metadata pages");
+        let device=lab.device_of(owner,"Mac"); let vault=human_on(&mut lab,owner,&[device]);
+        let entries:Vec<_>=lab.together(|lab| (0..300).map(|n|
+            lab.create(device,vault,vault,"note",&[],document(&format!("Note {n}"),"body",device)).unwrap()).collect());
+        lab.set_warm_working_set(device,&[entries[299]]);
+        let encoded=Capture::take(lab.held(device)).encode(Vec::new());
+        let saved=decode(unwrap(&encoded).unwrap().1).unwrap();
+        assert!(saved.len()>MAX_ENTRIES);
+        assert!(saved.values().filter(|entry|!entry.items.is_empty()).count()<=MAX_ENTRIES);
+        assert!(!saved[&entries[299]].items.is_empty(),"requested snapshot gets priority");
+        let wanted=*entries.iter().find(|entry|saved[*entry].items.is_empty()).unwrap();
+        let expected=lab.item(device,wanted).unwrap().record();
+        let backup=lab.backup(device); let n=backup.signed.len();
+        let receipt=lab.capture_warm_current(device,n,Some([31;40])).unwrap().encode();
+        let warm=Warm {keys:receipt.keys.into_iter().collect(),views:receipt.view.into_iter().collect()};
+        lab.restore_warm_working_set(device,backup.clone(),Some(([31;40],n)),&warm,&[wanted]);
+        assert_eq!(lab.item(device,wanted).unwrap().record(),expected);
+        let selected=lab.held(device).view().entry(wanted).unwrap().creation;
+        assert!(lab.held(device).deferred_bodies[&selected].content_ready(),"metadata-only selected entry hydrates its own content");
+        for entry in entries.iter().filter(|entry|**entry!=wanted) {
+            let id=lab.held(device).view().entry(*entry).unwrap().creation;
+            assert!(lab.held(device).deferred_bodies.contains_key(&id),"all covered ordinary metadata retained");
+            assert!(!lab.held(device).deferred_bodies[&id].content_ready(),"unrelated historical content stays closed");
+            assert!(lab.held(device).shown[entry].items.get().is_none());
+        }
+        // Saving a hydrated target must not force unrelated deferred content,
+        // and the resulting receipt must remain usable on the next reopen.
+        let receipt=lab.capture_warm_current(device,n,Some([32;40])).unwrap().encode();
+        let warm=Warm {keys:receipt.keys.into_iter().collect(),views:receipt.view.into_iter().collect()};
+        lab.restore_warm_working_set(device,backup.clone(),Some(([32;40],n)),&warm,&[wanted]);
+        assert_eq!(lab.item(device,wanted).unwrap().record(),expected);
+        for entry in entries.iter().filter(|entry|**entry!=wanted) {
+            let id=lab.held(device).view().entry(*entry).unwrap().creation;
+            assert!(!lab.held(device).deferred_bodies[&id].content_ready());
+            assert!(lab.held(device).shown[entry].items.get().is_none());
+        }
+        lab.restore_backup(device,&backup);
+        assert_eq!(lab.item(device,wanted).unwrap().record(),expected);
+    }
+
+    #[test]
+    fn paged_metadata_rejects_duplicate_truncated_and_excess_pages() {
+        let (lab,device,_,_,_,_)=warmed_notes();
+        let encoded=Capture::take(lab.held(device)).encode(Vec::new());
+        let extra=unwrap(&encoded).unwrap().1;
+        let mut reader=Reader::new(&extra[32..]);
+        assert_eq!(u32::decode(&mut reader).unwrap(),WITH_PAGES);
+        assert_eq!(reader.count(4).unwrap(),1);
+        let page=reader.bytes().unwrap();
+        let mut duplicate=extra[..32].to_vec(); WITH_PAGES.encode(&mut duplicate);
+        2u32.encode(&mut duplicate); page.encode(&mut duplicate); page.encode(&mut duplicate);
+        assert!(decode(&duplicate).is_none());
+        assert!(decode(&extra[..extra.len()-1]).is_none());
+        let mut excess=extra[..32].to_vec(); WITH_PAGES.encode(&mut excess);
+        ((MAX_PAGES+1) as u32).encode(&mut excess); excess.resize(40+(MAX_PAGES+1)*4,0);
+        assert!(decode(&excess).is_none());
+        // Old WITH_METADATA pages still decode unchanged for persisted upgrades.
+        let mut legacy=extra[..32].to_vec(); WITH_METADATA.encode(&mut legacy); legacy.extend(page);
+        assert!(decode(&legacy).is_some());
     }
 
     #[test]

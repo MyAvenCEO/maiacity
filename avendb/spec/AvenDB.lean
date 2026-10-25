@@ -150,3 +150,5 @@ import AvenDB.PrivateStoryTransition
 import AvenDB.ScopedTagInventory
 
 import AvenDB.GuardedMutation
+
+import AvenDB.WarmMetadataPages

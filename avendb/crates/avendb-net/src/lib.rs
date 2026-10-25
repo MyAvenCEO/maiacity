@@ -620,6 +620,14 @@ impl Node {
         Self::spawn_owned(lab, me, opts, writer).await
     }
 
+    /// Start with an explicitly selected local view. This scheduling hint is
+    /// bounded by Lab and grants no access; ordinary signed/key checks remain.
+    pub async fn spawn_with_working_set(mut lab: Lab, me: SignerId, opts: Options,
+        entries: &[avendb::id::EntryId]) -> Result<Node> {
+        lab.set_warm_working_set(me,entries);
+        Self::spawn(lab,me,opts).await
+    }
+
     /// Startup already owns the shelf before writing identity or restoring state.
     pub(crate) async fn spawn_owned(lab: Lab, me: SignerId, mut opts: Options, writer: Option<Writer>) -> Result<Node> {
         let lifecycle = writer.as_ref().map_or_else(lifecycle::Lifecycle::new, Writer::lifecycle);
