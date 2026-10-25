@@ -241,11 +241,22 @@ impl Lab {
             store.scratched.remove(&evict);
             if let Some(s) = store.shown.get_mut(&evict) { s.after.clear_scratch(); }
         }
-        // An ordinary append preserves authority, but invalidates exact-basis
-        // pending jobs. Restart those private cursors; ready entries stay live.
+        // Only this proven strict ordinary-content transition may preserve an
+        // unrelated private cursor. New keys/creation, target, lane or group
+        // changes cancel it; arbitrary receive/policy revisions never rebase it.
         if !store.judgment_pending.is_empty() {
-            store.judgment_jobs.clear();
-            store.judgment_epoch=Some((store.log.revision(),store.keys.revision.clone()));
+            let revision=store.log.revision();
+            store.judgment_jobs.retain(|target,job| {
+                let valid=!creating && *target!=entry && before.is_some_and(|r|job.revision==*r)
+                    && Arc::ptr_eq(&job.keys,&store.keys.revision)
+                    && store.replay.state.entry(*target).is_some_and(|en|
+                        store.replay.state.entry_tip(*target)==(job.tip.writes,job.tip.last)
+                            && store.shown_lanes.get(&en.vault).is_some_and(|lane|lane.0==job.tip.lane)
+                            && store.shown_groups==job.tip.groups);
+                if valid {job.revision=revision.clone();}
+                valid
+            });
+            store.judgment_epoch=Some((revision,store.keys.revision.clone()));
         }
         store.behind = !store.judgment_pending.is_empty();
         if creating { store.perf.count("refresh: owner creation", 1); }
