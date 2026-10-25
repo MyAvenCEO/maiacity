@@ -86,18 +86,23 @@ mod tests {
         }
         // A non-default depth intentionally cannot use default-depth visibility
         // receipts; these candidates must actually be classified after restore.
-        for query in [
+        let queries = [
             serde_json::json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]},
                 "depth":1,"select":[],"limit":1,"offset":2}),
             serde_json::json!({"op":"query","vault":vault.to_hex(),"where":{"all":[{"type":["note"]},{"path":["title"],"eq":"Note 07"}]},
                 "depth":1,"select":["title"],"limit":3,"order":[["created","desc"]]}),
-        ] {
-            let expected=crate::engine::full_query_oracle(&lab,device,&query);
-            let backup=lab.backup(device); let count=backup.signed.len();
-            let receipt=lab.warming(device,count,Some([91;40])).unwrap();
-            let warm=Warm{keys:receipt.keys.clone().into_iter().collect(),views:receipt.view.clone().into_iter().collect()};
-            lab.warmed(device,receipt);
-            lab.restore_warm(device,backup,Some(([91;40],count)),&warm);
+        ];
+        let expected:Vec<_>=queries.iter().map(|q|crate::engine::full_query_oracle(&lab,device,q)).collect();
+        let backup=lab.backup(device); let count=backup.signed.len();
+        let receipt=lab.warming(device,count,Some([91;40])).unwrap();
+        assert!(receipt.view.is_some(),"fixture must retain the actual materialized warm view");
+        let warm=Warm{keys:receipt.keys.clone().into_iter().collect(),views:receipt.view.clone().into_iter().collect()};
+        lab.warmed(device,receipt);
+        for (query,expected) in queries.into_iter().zip(expected) {
+            // A successful warm save acknowledges the view. A second capture
+            // without edits legitimately omits it; reuse the persisted image,
+            // rather than constructing an empty on-disk fixture on iteration 2.
+            lab.restore_warm(device,backup.clone(),Some(([91;40],count)),&warm);
             assert_eq!(entries.iter().filter(|e|lab.query_needs_hydration(device,**e)).count(),16);
             let first=crate::engine::read(&lab,device,&query);
             assert!(first["ok"]["readiness"]["deferredCandidates"].as_u64().unwrap()>0);
