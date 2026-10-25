@@ -144,3 +144,5 @@ import AvenDB.TypedGlobalInventory
 
 import AvenDB.WarmOrdinarySuffix
 import AvenDB.ScopedReferenceRead
+
+import AvenDB.PrivateStoryTransition

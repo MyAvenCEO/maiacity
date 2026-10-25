@@ -229,3 +229,16 @@ describe('whose functions run', () => {
 		expect(functionsOf(w, ME, 'content').map((f) => f.name)).toEqual(FUNCTIONS.map((f) => f.name));
 	});
 });
+
+test('private Story plan is identical with scoped flow/function/post inputs', async () => {
+ const privateFlow={key:'story-private',name:'Private',stages:[{id:1,key:'idea',name:'Idea',public:false,next:['writing']},{id:2,key:'writing',name:'Writing',public:false,next:[]}]};
+ const w=world();
+ const story=entry({entry:NOTE,type:'story',tags:['story-private:idea'],record:{title:'Story'}});
+ w.entries.push(story,entry({entry:id('8'),type:'post',record:{about:NOTE}}),entry({entry:id('9'),type:'function',record:{kind:'function',name:'Use related post',flow:'story-private',on:'enter',stage:'writing',enabled:true,code:'export function run(e) { return e.posts.map(entry => ({op:"tag",entry,add:["ready"]})); }'}}));
+ const scoped={...w,entries:w.entries.filter(e=>['flow','function','post'].includes(e.type))};
+ const full=await moving(w,ME,story,privateFlow,'writing',false);
+ const partial=await moving(scoped,ME,story,privateFlow,'writing',false);
+ expect(full.errors).toEqual([]);expect(partial).toEqual(full);
+ expect(partial.ops.some(op=>op.op==='tag'&&op.entry===id('8'))).toBe(true);
+ expect(partial.ops.some(op=>op.op==='share')).toBe(false);
+});
