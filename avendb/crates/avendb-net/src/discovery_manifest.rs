@@ -38,7 +38,7 @@ impl Node {
         let request=json!({"op":"checkpoint_view","entry":entry.to_hex()});
         // Carrier creation has already succeeded. Preserve it in every outcome;
         // no automatic retry, no implied rollback, and no inferred public share.
-        match self.publish_checkpoint(&request,authenticator).await {
+        match self.publish_checkpoint(&request,Some(authenticator)).await {
             Ok(answer) if answer.get("ok").is_some()=>Ok(json!({"ok":{"entry":entry.to_hex(),"published":answer["ok"]["pinned"]==true,"approved":true,"checkpoint":answer["ok"],"shared":false}})),
             Ok(answer)=>Ok(json!({"ok":{"entry":entry.to_hex(),"published":false,"checkpointResponse":answer,"resume":request,"shared":false}})),
             Err(error)=>Ok(json!({"ok":{"entry":entry.to_hex(),"published":false,"checkpointError":error.to_string(),"resume":request,"shared":false}})),
