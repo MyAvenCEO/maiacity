@@ -2,14 +2,14 @@
  * can use an incomplete world. Unknown/legacy routes retain the complete path.
  * @param {string} pathname @param {string} [hash] */
 export function summaryView(pathname, hash = '') {
- return (/\/app\/?$/.test(pathname) && (!hash || hash === '#home' || (/^#(?:stories|articles)\/?$/.test(hash) || /^#stories\/[a-f0-9]{64}\/(?:hook|journey|writing|derivatives)\/?$/.test(hash)) || /^#(?:assets|docs|models|code|library)(?:\/|$)/.test(hash))) || /\/app\/chat\/?$/.test(pathname);
+ return (/\/app\/?$/.test(pathname) && (!hash || hash === '#home' || (/^#(?:stories|articles)\/?$/.test(hash) || /^#stories\/[a-f0-9]{64}(?:\/(?:idea|hook|thumbnail|journey|writing|movie|derivatives))?\/?$/.test(hash)) || /^#(?:assets|docs|models|code|library)(?:\/|$)/.test(hash))) || /\/app\/chat\/?$/.test(pathname);
 }
 /** @param {import('./vaults.js').WorldView | null | undefined} world */
 export const completeEntries = world => !!world && world.entriesComplete !== false;
 
 /** Legacy consumers need a complete world; Assets, Docs and package pages own scoped inventories.
  * @param {any} world @param {string} tab @param {boolean} [detail] @param {string} [step] */
-export const needsWorldEntries = (world, tab, detail = false, step = '') => !(tab === 'stories' && (!detail || ['hook', 'journey', 'writing', 'derivatives'].includes(step))) && world?.entriesComplete === false && !['home', 'assets', 'docs', 'models', 'code', 'library'].includes(tab);
+export const needsWorldEntries = (world, tab, detail = false, step = '') => !(tab === 'stories' && (!detail || !step || ['idea', 'hook', 'thumbnail', 'journey', 'writing', 'movie', 'derivatives'].includes(step))) && world?.entriesComplete === false && !['home', 'assets', 'docs', 'models', 'code', 'library'].includes(tab);
 
 /** Native hash changes can bypass router page-state notification. Publish the
  * route immediately, then ask the local reader; never await a peer or this read.

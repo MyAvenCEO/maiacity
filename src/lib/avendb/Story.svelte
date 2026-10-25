@@ -86,7 +86,7 @@
 	const stage = $derived(item ? stageOf(item, flow) : null);
 	const onward = $derived(stage ? flow.stages.filter((s) => stage.next.includes(s.key)) : flow.stages);
 	/** the stage whose tab shows: the one its address names, else the one it is in */
-	const tab = $derived((world.entriesComplete === false && ['hook', 'journey', 'writing', 'derivatives'].includes(step ?? '') && step) || (flow.stages.some((s) => s.key === step) && step) || stage?.key || flow.stages[0].key);
+	const tab = $derived((world.entriesComplete === false && ['idea', 'hook', 'thumbnail', 'journey', 'writing', 'movie', 'derivatives'].includes(step ?? '') && step) || (flow.stages.some((s) => s.key === step) && step) || stage?.key || flow.stages[0].key);
 	let problem = $state('');
 
 	/** @typedef {import('svelte').ComponentProps<typeof Lines>} LinesProps a line and an edit, as the `note` op reads them

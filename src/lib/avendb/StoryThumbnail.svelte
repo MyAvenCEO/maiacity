@@ -13,6 +13,10 @@
 	once it is let go of.
 -->
 <script>
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { entryReferenceClosure } from './entry-reference-closure.svelte.js';
+	import { hookArtworkQuery } from './story-hook-query.js';
+	import { reads } from './vaults.js';
 	import Card from '$lib/stories/Card.svelte';
 	import { renderCard } from '$lib/stories/card.js';
 	import { entryOf } from './artifacts.js';
@@ -41,7 +45,12 @@
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean,
 	 *   item: import('./vaults.js').EntryView, writes: boolean }}
 	 */
-	let { world, actor, api, busy, item, writes } = $props();
+	let { world: baseWorld, actor, api, busy, item, writes } = $props();
+	const artwork = entryCollection(() => api, () => hookArtworkQuery(actor));
+	const relevant = $derived(artworksOf({ ...baseWorld, entries: artwork.rows.filter(e=>reads(e,actor)) }, item.entry));
+	const references = entryReferenceClosure(() => api, () => [...relevant.map(e=>e.entry), ...(/** @type {any} */ (item.record)?.sparks ?? [])], () => actor);
+	const inventory = entryCollection(() => api, () => picking ? { op:'entry_views', vault:item.vault, as:actor, types:['file'] } : {op:'entry_views', entries:[], as:actor});
+	const world = $derived({ ...baseWorld, entries: [...new Map([...relevant, ...references.rows, ...inventory.rows.filter(e=>reads(e,actor))].map(e=>[e.entry,e])).values()], entriesComplete:false });
 
 	const story = $derived(/** @type {any} */ (item.record) ?? {});
 	const byId = $derived(new Map(world.entries.map((e) => [e.entry, e])));
@@ -123,10 +132,12 @@
 	$effect(() => {
 		let gone = false;
 		const wanted = [...layers.map((l) => entryOf(l.file)), entryOf(record.render), ...offered.map((f) => f.entry)];
+		const retained = Object.entries(pics).filter(([id]) => wanted.includes(id) && byId.has(id));
+		if (retained.length !== Object.keys(pics).length) pics = Object.fromEntries(retained);
 		for (const id of new Set(wanted.filter(Boolean))) {
 			const f = byId.get(id);
 			if (!f || pics[id]) continue;
-			pictureOf(api, f).then((u) => !gone && u && (pics = { ...pics, [id]: u }));
+			pictureOf(api, f).then((u) => !gone && u && (pics = { ...pics, [id]: u })).catch(() => {});
 		}
 		return () => {
 			gone = true;
@@ -198,6 +209,7 @@
 
 	/** Makes a card of each shape in `shapes`, its picture and its words the story's. @param {string[]} shapes */
 	async function make(shapes) {
+		if (artwork.phase !== 'ready') return;
 		if (!makes) return;
 		const first = storyPictures(world, item)[0];
 		const ops = shapes.map((s) => ({ ...addingArtwork(item.vault, cardRecord(item, s, first), makes ?? []), as: actor }));
@@ -296,6 +308,9 @@
 	const COLORS = ['white', 'gold', 'ink'];
 	const FILLS = ['gold', 'alert', 'ink', 'white'];
 </script>
+{#if artwork.phase !== 'ready' || references.phase !== 'ready'}<p class="soft">Reading locally available cards and their picture references…</p>{/if}
+{#if references.limited}<p class="soft">This card’s reference graph is larger than this bounded view. Open its linked source to continue.</p>{/if}
+<p class="soft">Cards and pictures shown here are locally available; missing entries may arrive later.</p>
 
 <div class="art">
 	{#if cards.length}

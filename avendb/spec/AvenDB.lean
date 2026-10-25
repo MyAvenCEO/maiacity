@@ -143,3 +143,4 @@ import AvenDB.FillingReadFallback
 import AvenDB.TypedGlobalInventory
 
 import AvenDB.WarmOrdinarySuffix
+import AvenDB.ScopedReferenceRead

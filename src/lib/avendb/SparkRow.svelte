@@ -31,6 +31,7 @@
 	);
 	/** where it grows into: the stories that name it among their sparks, and the sparks that hold it */
 	const grows = $derived.by(() => {
+		if (world.entriesComplete === false) return '';
 		const all = grownFrom(world, item.entry);
 		const stories = all.filter((e) => e.type === 'story').length;
 		const sparks = all.length - stories;
