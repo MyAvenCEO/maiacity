@@ -267,7 +267,6 @@ impl Validated {
         if self.revision != store.log.revision() { return HashMap::new(); }
         let mut out = HashMap::new();
         let mut retained_bytes = 0usize;
-        let edits: HashMap<_, _> = store.log.ids().iter().copied().zip(store.log.edits()).collect();
         for (entry, saved) in &self.saved {
             // Partial owner-bootstrap overlays have their own counted-history
             // and durability gates; do not substitute warm metadata for them.
@@ -276,7 +275,7 @@ impl Validated {
             let mut pending = Vec::new();
             let mut entry_bytes = 0usize;
             for (id, metadata) in &saved.metadata {
-                let Some(edit) = edits.get(id) else { pending.clear(); break; };
+                let Some(edit) = store.log.entry_write(*id) else { pending.clear(); break; };
                 let Action::Write { entry, stay, epoch, body, .. } = &edit.action else { pending.clear(); break; };
                 entry_bytes = entry_bytes.saturating_add(body.len());
                 if retained_bytes.saturating_add(entry_bytes) > LIMIT { pending.clear(); break; }
