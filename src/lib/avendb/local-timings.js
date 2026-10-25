@@ -1,6 +1,6 @@
 import { latencyJournal, TIMED_OPS as OPS } from './latency-journal.js';
 /** Bounded timings. Only allowlisted operation names and durations enter the durable journal. */
-/** @param {() => number} [now] @param {(op: string, ms: number, outcome: 'ok' | 'refused' | 'failed') => void} [record] */
+/** @param {() => number} [now] @param {(op: string, ms: number, outcome: 'ok' | 'refused' | 'failed', reason?: string) => void} [record] */
 export function createLocalTimings(now = () => performance.now(), record = () => {}) {
  /** @type {Map<string, { samples: number[], failed: number, pending: Map<number, number> }>} */
  const rows = new Map();
@@ -14,17 +14,18 @@ export function createLocalTimings(now = () => performance.now(), record = () =>
    const id = ++sequence, start = now();
    row.pending.set(id, start);
    /** @type {'ok' | 'refused' | 'failed'} */ let outcome = 'ok';
+   /** @type {string | undefined} */ let reason;
    try {
     const result = await work();
-    if (result && typeof result === 'object' && 'refused' in result) { row.failed++; outcome = 'refused'; }
+    if (result && typeof result === 'object' && 'refused' in result) { row.failed++; outcome = 'refused'; reason = failureClass(result.refused); }
     return result;
    }
-   catch (error) { row.failed++; outcome = 'failed'; throw error; }
+   catch (error) { row.failed++; outcome = 'failed'; reason = failureClass(error); throw error; }
    finally {
     row.pending.delete(id);
     const ms = Math.max(0, now() - start);
     row.samples.push(ms);
-    record(op, ms, outcome);
+    record(op, ms, outcome, reason);
     if (row.samples.length > 100) row.samples.shift();
    }
   },
@@ -38,4 +39,11 @@ export function createLocalTimings(now = () => performance.now(), record = () =>
   }
  };
 }
-export const localTimings = createLocalTimings(undefined, (op, ms, outcome) => latencyJournal.record(`call.${op}`, ms, outcome));
+export const localTimings = createLocalTimings(undefined, (op, ms, outcome, reason) => latencyJournal.record(`call.${op}`, ms, outcome, reason));
+
+/** Only fixed error tags leave the process; never retain error text. */
+/** @param {any} value */
+export function failureClass(value) {
+ const tag = typeof value === 'string' ? value : value?.name ?? value?.kind;
+ return (/** @type {Record<string,string>} */ ({TimeoutError:'timeout',AbortError:'cancelled',Locked:'locked',NoEntry:'not-found',NotFound:'not-found',Materializing:'not-ready',NotAllowed:'not-allowed'}))[tag] ?? 'failed';
+}

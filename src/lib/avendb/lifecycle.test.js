@@ -97,3 +97,12 @@ describe('persistent restart event history', () => {
   expect(f.snapshot()).toMatchObject({journalAvailable:false,current:{phase:'open'}});
  });
 });
+test('startup and unlock landmarks survive busy navigation and the next document',()=>{
+ const f=fixture();f.recorder.note('unlocking');f.recorder.note('passkey-finished');f.recorder.note('open');
+ for(let i=0;i<200;i++)f.recorder.note('route-navigation');
+ const next=fixture(f.kept).recorder.snapshot();
+ expect(next.landmarks.some(e=>e.document===1&&e.event==='document-start')).toBe(true);
+ expect(next.landmarks.some(e=>e.document===1&&e.event==='open')).toBe(true);
+ expect(next.events.some(e=>e.document===1&&e.event==='open')).toBe(false);
+ expect(f.kept.get('avendb:lifecycle-events:v1').length).toBeLessThan(16384);
+});

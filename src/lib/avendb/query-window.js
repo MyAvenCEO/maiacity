@@ -1,3 +1,4 @@
+import { viewReadiness } from './view-readiness.js';
 // @ts-nocheck — plain JS
 import { readCompleteness } from './read-completeness.js';
 import { createDemand, normalizeDiscovery } from '../../../game/code/sources/demand.js';
@@ -117,6 +118,7 @@ export function createReadWindow({ device, read }) {
 				const got = await read(d, op, controller.signal, demand);
 				if (!active()) return null;
 				completeness = readCompleteness(got);
+                viewReadiness.record(completeness, got);
 				void demand.replace([...entries, ...replyEntries(got)], selectors);
 				return got;
 			} catch (error) {

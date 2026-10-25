@@ -3,7 +3,10 @@ const KEY = 'avendb:latency:v1';
 export const TIMED_OPS = new Set(['status', 'world', 'entries', 'entry', 'entry_views', 'query', 'get', 'room', 'history', 'read_file', 'synced', 'cap_groups', 'bring', 'bring_entries', 'network', 'create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'merge', 'review', 'put_file']);
 const STAGES = new Set(['unlock.total', 'peer.transport-rtt', 'query.first-nonempty-emission', 'query.first-nonempty-emission.readonly', ...[...TIMED_OPS].map(op => `call.${op}`)]);
 const LIMIT = 120;
-/** @typedef {{ stage: string, ms: number, at: number, outcome: 'ok' | 'refused' | 'failed' }} Sample */
+const REASONS = new Set(['timeout', 'cancelled', 'locked', 'not-found', 'not-ready', 'not-allowed', 'refused', 'failed']);
+/** @param {any} s */
+const clean = s => ({ stage: s.stage, ms: s.ms, at: s.at, outcome: s.outcome, ...(REASONS.has(s.reason) ? {reason:s.reason} : {}) });
+/** @typedef {{ stage: string, ms: number, at: number, outcome: 'ok' | 'refused' | 'failed', reason?: string }} Sample */
 /** @param {unknown} value @returns {value is Sample} */
 function valid(value) {
  const v = /** @type {any} */ (value);
@@ -12,6 +15,7 @@ function valid(value) {
 /** @param {{storage?: () => Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined, now?: () => number, schedule?: (f: () => void) => unknown}} [options] */
 export function createLatencyJournal({ storage = () => undefined, now = Date.now, schedule = f => setTimeout(f, 2000) } = {}) {
  /** @type {Sample[]} */ let samples = [];
+ /** @type {Sample[]} */ let milestones = [];
  let loaded = false, scheduled = false, available = true;
  function load() {
   if (loaded) return;
@@ -22,26 +26,34 @@ export function createLatencyJournal({ storage = () => undefined, now = Date.now
    const text = shelf.getItem(KEY);
    if (!text || text.length > 32768) return;
    const saved = JSON.parse(text);
-   if (saved?.version === 1 && Array.isArray(saved.samples)) samples = saved.samples.filter(valid).slice(-LIMIT).map((/** @type {Sample} */ s) => ({ stage: s.stage, ms: s.ms, at: s.at, outcome: s.outcome }));
+   if (saved?.version === 1 && Array.isArray(saved.samples)) samples = saved.samples.filter(valid).slice(-LIMIT).map((/** @type {Sample} */ s) => clean(s));
+   milestones = (Array.isArray(saved?.milestones) ? saved.milestones : samples).filter((/** @type {any} */ s) => valid(s) && s.stage === 'unlock.total').slice(-8).map(clean);
   } catch { available = false; }
  }
  function flush() {
   scheduled = false;
   load();
-  try { const shelf = storage(); if (!shelf) { available = false; return; } shelf.setItem(KEY, JSON.stringify({ version: 1, samples })); available = true; }
+  try { const shelf = storage(); if (!shelf) { available = false; return; } shelf.setItem(KEY, JSON.stringify({ version: 1, samples, milestones })); available = true; }
   catch { available = false; }
  }
  return {
-  /** @param {string} stage @param {number} ms @param {'ok' | 'refused' | 'failed'} [outcome] */
-  record(stage, ms, outcome = 'ok') {
-   const sample = { stage, ms, at: now(), outcome };
+  /** @param {string} stage @param {number} ms @param {'ok' | 'refused' | 'failed'} [outcome] @param {string | undefined} [reason] */
+  record(stage, ms, outcome = 'ok', reason = undefined) {
+   const sample = clean({ stage, ms, at: now(), outcome, reason });
    if (!valid(sample)) return;
-   load(); samples.push(sample); if (samples.length > LIMIT) samples.shift();
+   load(); samples.push(sample);
+   if (stage === 'unlock.total') { milestones.push(sample); if(milestones.length > 8) milestones.splice(1,1); }
+   if (samples.length > LIMIT) {
+    // Keep the latest unlock boundary through high-frequency catch-up calls.
+    // It is often the only evidence left after an abrupt mobile restart.
+    const latestUnlock = samples.findLastIndex(s => s.stage === 'unlock.total');
+    samples.splice(latestUnlock === 0 ? 1 : 0, 1);
+   }
    if (!scheduled) { scheduled = true; schedule(flush); }
   },
-  snapshot() { load(); return { version: 1, storageAvailable: available, samples: samples.map(s => ({ ...s })) }; },
+  snapshot() { load(); return { version: 1, storageAvailable: available, samples: samples.map(s => ({ ...s })), milestones: milestones.map(s => ({...s})) }; },
   flush,
-  clear() { load(); samples = []; flush(); }
+  clear() { load(); samples = []; milestones = []; flush(); }
  };
 }
 export const latencyJournal = createLatencyJournal({ storage: () => typeof window === 'undefined' ? undefined : window.localStorage });
