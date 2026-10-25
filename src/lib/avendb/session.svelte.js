@@ -1,3 +1,4 @@
+import { completeQuery } from '../../../game/code/sources/query-continuation.js';
 import { summaryView } from './startup-summary.js';
 import { observedWindow } from './observed-window.js';
 /*
@@ -684,7 +685,10 @@ function queueRefresh(/** @type {any} */ d) {
 async function send(op, read) {
 	const d = device;
 	if (!d) throw new Error('avenDB isn’t open on this page yet');
-	if (reads(op)) return near(d, op);
+	if (reads(op)) return op?.op === 'query' ? completeQuery(() => {
+        if (device !== d) throw new DOMException('The query owner changed', 'AbortError');
+        return near(d, op);
+    }) : near(d, op);
 	await current(d, op);
 	if (APPROVED.includes(op?.op) && doing) {
 		const [verdict] = (await d.run({ op: 'may', ops: [op] }))?.ok ?? [];

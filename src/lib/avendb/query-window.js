@@ -123,7 +123,10 @@ export function createReadWindow({ device, read }) {
 			if (nextKey === null || nextKey !== queryKey) void demand.replace(entries, selectors);
 			queryKey = nextKey;
 			try {
-				const got = await completeQuery(() => read(d, op, controller.signal, demand), {
+				const got = await completeQuery(() => {
+                    if (!active()) throw new DOMException('The query owner changed', 'AbortError');
+                    return read(d, op, controller.signal, demand);
+                }, {
                     signal: controller.signal,
                     progress(answer) {
                         if (!active()) return;

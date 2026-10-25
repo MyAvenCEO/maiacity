@@ -64,3 +64,9 @@ test('bounded local continuation stays pending and close cancels its next turn',
  assert.equal(view.completeness.deferredCandidates,4);assert.equal(view.completeness.pageComplete,false);
  view.close();assert.equal(await pending,null);assert.equal(calls,1);
 });
+test('owner replacement between yielded slices prevents another old-device call',async()=>{
+ let owner={};let calls=0;
+ const view=createReadWindow({device:()=>owner,read:async()=>{calls++;return {ok:{rows:[],readiness:{deferredCandidates:2}}};}});
+ const pending=view.read({op:'query'});await new Promise(r=>setTimeout(r,1));owner={};
+ assert.equal(await pending,null);assert.equal(calls,1);view.close();
+});

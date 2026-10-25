@@ -1,4 +1,5 @@
 // @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($lib/avendb/functions.js)
+import { completeQuery } from '../../../game/code/sources/query-continuation.js';
 // Measuring an AIP (avendb/docs/ARCHITECTURE.md §8, "AIPs", N2): an AIP's objective names the measuring logic that
 // measures it (`def sim : Measure := logic "valley-sim"`, avendb/spec/AvenDB/Objective.lean), a logic module on the
 // main line of the AIP's vault, which its owners accepted, so trusted code, tagged `ref:logic/measures/<name>`, that
@@ -84,7 +85,8 @@ const short = (s) => seedOf(s).toString(16).padStart(8, '0');
  */
 export async function logicOf(ask, vault, name) {
 	const tag = tagOf(name);
-	const found = await ask({ op: 'query', vault, where: { all: [{ type: ['logic'] }, { tag }] } });
+	const {ok:found} = await completeQuery(async () => ({ok: await ask({ op: 'query', vault, where: { all: [{ type: ['logic'] }, { tag }] } })}));
+	if (found?.countExact === false || found?.pageComplete === false) return {error: 'Measuring logic discovery is incomplete; try again after its dependencies arrive.'};
 	const rows = (found?.rows ?? []).filter((r) => !(r.tags ?? []).includes('avendb:deleted'));
 	if (rows.length !== 1) return { error: rows.length ? `${rows.length} logic entries are tagged ${tag}, so none measures` : `no logic entry on main is tagged ${tag}` };
 	const [r] = rows;

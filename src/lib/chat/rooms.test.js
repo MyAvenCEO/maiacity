@@ -89,3 +89,11 @@ test('a DM whose metadata disappears during lookup does not establish absence', 
   ? {ok:{rows:[{entry:'a'.repeat(64)}],count:1}}
   : {ok:{rows:[]}},'target')).rejects.toThrow('Room access changed');
 });
+test('DM lookup cannot prove absence from a provisional or unresolved count',async()=>{
+ let n=0;
+ expect(await directRoom(async()=>++n===1
+  ?{ok:{rows:[],count:0,countExact:false,pageComplete:false,readiness:{deferredCandidates:2}}}
+  :{ok:{rows:[],count:0,countExact:true,pageComplete:true}},'target')).toBe(null);
+ expect(n).toBe(2);
+ await expect(directRoom(async()=>({ok:{rows:[],count:0,countExact:false,pageComplete:true,readiness:{unresolvedCandidates:1}}}),'target')).rejects.toThrow('did not complete');
+});
