@@ -579,3 +579,7 @@ and invalidated on refresh, avoiding repeated whole-share scans per UI read.
 Connected-inventory semantic completion/fetch integration is still pending; this
 increment intentionally does not clear a pending target based on local absence.
 Runtime validation remains canonical-only and pending.
+
+### Verified group transfer scheduling
+
+The public mixed-participant room regression exposed an admission deadlock: historical cap-group root/child Entry dependencies were requested through ordinary background pulls while that background admission was occupied by unrelated history. The grouped dependency collector now produces an opaque scheduling token only for its verified grant/historical include walk (at most32 entries, never the requested target). The staged path fetches authority prerequisites first and these group entries through a separate bounded dependency admission sharing the existing page budget. Ordinary signature and canonical authorization checks remain unchanged; the final connected-inventory/frontier fence is still required. The corresponding lane implementation is coordinated with the receive agent. Lean scheduling non-authorization proof passed; combined Rust/public-demand regression remains pending canonical validation.

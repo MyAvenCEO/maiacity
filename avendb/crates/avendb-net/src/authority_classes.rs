@@ -223,6 +223,7 @@ mod tests {
 /// unresolved until historical cap-group dependencies can be closed.
 #[derive(Clone)]
 pub(crate) struct OwnerEntry {
+    entry: EntryId,
     pub vault: VaultId,
     pub actors: BTreeSet<VaultId>,
     pub via: BTreeSet<VaultId>,
@@ -245,7 +246,7 @@ impl OwnerEntry {
             via.extend(path.iter().copied());actors.insert(*actor);
         }
         if via.len() > MAX_CLASSES || actors.len()>MAX_CLASSES { return None; }
-        Some(Self { vault: base.vault(), actors, via, audiences: base.audiences().clone(), named_shares: base.shares().clone() })
+        Some(Self { entry, vault: base.vault(), actors, via, audiences: base.audiences().clone(), named_shares: base.shares().clone() })
     }
     pub(crate) fn complete(entry: EntryId, edits: &[Signed], frontier: &avendb::wire::Frontier) -> Option<Self> {
         Self::from_parts(entry, edits.iter().map(|signed| (signed.edit.id(), &signed.edit)), frontier)
@@ -337,12 +338,27 @@ impl OwnerEntry {
         if closed != ids { return None; }
         let heads: Vec<_> = ids.difference(&parents).copied().collect();
         if heads != frontier.heads { return None; }
-        Some(Self { vault: vault?, actors, via, audiences, named_shares })
+        Some(Self { entry, vault: vault?, actors, via, audiences, named_shares })
     }
 
 }
 
+/// Scheduling-only references obtained by the verified historical group walk.
+/// Private construction prevents ordinary entry demand from taking this lane.
+#[derive(Clone, Default)]
+pub(crate) struct GroupDependencies(BTreeSet<EntryId>);
+impl GroupDependencies {
+    fn from_required(target:EntryId, required:&BTreeSet<avendb::sync::LogId>)->Option<Self> {
+        let entries:BTreeSet<_>=required.iter().filter_map(|log|match log {
+            avendb::sync::LogId::Entry(id)=>Some(*id),_=>None,
+        }).collect();
+        (entries.len()<=32 && !entries.contains(&target)).then_some(Self(entries))
+    }
+    pub(crate) fn entries(&self)->&BTreeSet<EntryId> {&self.0}
+}
+
 pub(crate) struct OwnerDependencies {
+    pub groups: GroupDependencies,
     pub required: BTreeSet<avendb::sync::LogId>,
     pub missing: BTreeSet<avendb::sync::LogId>,
 }
@@ -456,9 +472,10 @@ impl GrantClasses {
             if let Some(authority)=self.owner_dependencies_ready(&combined,edits,ids,logs,announced,&provenance,true) {
                 required.extend(authority.required);missing.extend(authority.missing);
             }
-            return Some(OwnerDependencies{required,missing});
+            return Some(OwnerDependencies{groups:GroupDependencies::from_required(owner.entry,&required)?,required,missing});
         }
         let mut authority=self.owner_dependencies_ready(&combined,edits,ids,logs,announced,provenance,true)?;
+        authority.groups=GroupDependencies::from_required(owner.entry,&required)?;
         authority.required.extend(required);Some(authority)
     }
 
@@ -589,7 +606,7 @@ impl GrantClasses {
             }
             break;
         }
-        (required.len() <= MAX_CLASSES).then_some(OwnerDependencies { required, missing })
+        (required.len() <= MAX_CLASSES).then_some(OwnerDependencies { groups:GroupDependencies::default(), required, missing })
     }
 }
 
@@ -691,5 +708,21 @@ impl crate::Shared {
         }
         classes.over(&inventory, VaultId([0; 32]))?;
         Some(classes)
+    }
+}
+
+#[cfg(test)] mod group_lane_tests {
+    use super::*;
+    use avendb::sync::LogId;
+    #[test] fn group_dependency_token_excludes_target_and_bounds_history_work() {
+        let target=EntryId([250;32]);
+        assert!(GroupDependencies::from_required(target,&[LogId::Entry(target)].into_iter().collect()).is_none());
+        let many=(0..33u8).map(|n|LogId::Entry(EntryId([n;32]))).collect();
+        assert!(GroupDependencies::from_required(target,&many).is_none());
+        let group=EntryId([3;32]);
+        let required=[LogId::Entry(group),LogId::Vault(VaultId([4;32]))].into_iter().collect();
+        let token=GroupDependencies::from_required(target,&required).unwrap();
+        assert_eq!(token.entries(),&[group].into_iter().collect());
+        assert!(!token.entries().contains(&target));
     }
 }

@@ -320,16 +320,24 @@ impl crate::Shared {
                         let provenance = lab.authority_provenance(me);
                         classes.owner_dependencies_grouped(owner, log.edits(), log.ids(), &indexed, current,
                             |id| provenance.get(&id).cloned(),
-                            |group| lab.historical_group_dependencies(me,owner.vault,group)).map(|dependencies| dependencies.missing)
+                            |group| lab.historical_group_dependencies(me,owner.vault,group))
                     }));
                 (stage, missing)
             }).await;
             stage = returned;
-            let Some(missing) = missing.filter(|missing| !missing.is_empty()) else { break };
-            if previous_missing.as_ref() == Some(&missing) { break; }
-            previous_missing = Some(missing.clone());
-            self.pull_expected(peer.endpoint, crate::Scope::Logs(missing), false, None, Some(device)).await?;
-            self.catch_up_paced(true).await;
+            let Some(dependencies) = missing.filter(|dependencies| !dependencies.missing.is_empty()) else { break };
+            if previous_missing.as_ref() == Some(&dependencies.missing) { break; }
+            previous_missing = Some(dependencies.missing.clone());
+            let (groups,authority): (std::collections::BTreeSet<_>,std::collections::BTreeSet<_>)=
+                dependencies.missing.into_iter().partition(|log| matches!(log,LogId::Entry(_)));
+            if !authority.is_empty() {
+                self.pull_dependency(peer.endpoint,authority,device).await?;
+                self.catch_up_paced(true).await;
+            }
+            if !groups.is_empty() {
+                self.pull_group_dependency(peer.endpoint,groups,device,dependencies.groups).await?;
+                self.catch_up_paced(true).await;
+            }
         }
         #[cfg(test)]
         self.authority_stages.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
