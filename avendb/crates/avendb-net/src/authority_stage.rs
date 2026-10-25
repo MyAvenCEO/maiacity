@@ -519,6 +519,7 @@ mod transport_tests {
         use avendb::{cast::{handbook, text, share, by_id}, policy::{Action, Setting, Who, Level}};
         let mut w = world();
         let handbook = handbook(&mut w);
+        let unrelated_coop=if outside {let v=avendb::cast::coop_on(&mut w);w.lab.sync_all(0);v} else {handbook.coop};
         let (sender, receiver, vault) = (w.mac_a, w.phone_a, w.alice);
         let phone_lab = w.lab.split(receiver, &[], [161; 32]);
         let entry = w.lab.create(sender, vault, vault, "room", &[], document("Shared room", "first", sender)).unwrap();
@@ -537,8 +538,8 @@ mod transport_tests {
             assert!(!w.lab.independently_verified_edit(sender,avendb::id::EditId(audience_share.0)));
         }
         let history = w.lab.create(sender, vault, vault, "doc", &[], document("Unrelated", "withheld", sender)).unwrap();
-        let unrelated_vault = if outside {w.carol} else {handbook.coop};
-        let unrelated_signers=if outside {vec![w.passkey_c]} else {vec![w.passkey_a,w.passkey_b]};
+        let unrelated_vault = unrelated_coop;
+        let unrelated_signers=vec![w.passkey_a,w.passkey_b];
         w.lab.submit(sender, &unrelated_signers, Action::Settings {
             vault: unrelated_vault, set: Setting::Threshold(1),
         }).unwrap();
