@@ -1,3 +1,4 @@
+// @ts-nocheck — Bun fixtures intentionally inject browser and engine boundaries.
 import {test,expect} from 'bun:test';
 import {createDiagnosticRunner,peerDiagnostics,diagnosticSnapshot} from './diagnostics-report.js';
 import {runNetworkDiagnostics} from './network-diagnostics.js';

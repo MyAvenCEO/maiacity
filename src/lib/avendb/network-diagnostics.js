@@ -1,6 +1,7 @@
 // @ts-nocheck
 /** Same bounded streaming probes as the standalone network check. No credentials,
- * account payloads, full response buffers or arbitrary error strings are exported. */
+ * account payloads, full response buffers or arbitrary error strings are exported.
+ * @param {{signal?: AbortSignal, fetcher?: typeof fetch, origin?: string, now?: () => number, random?: Crypto, transferMs?: number}} [options] */
 export async function runNetworkDiagnostics({ signal, fetcher = fetch, origin = location.origin, now = () => performance.now(), random = crypto, transferMs = 8000 } = {}) {
  const results = [], MiB = 1048576;
  async function request(kind, url, bytes, { upload, manifest = false } = {}) {

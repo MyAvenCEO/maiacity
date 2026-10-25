@@ -10,7 +10,8 @@ export function peerDiagnostics(network, perf) {
   policy: policyObservations(network), reactive: policyObservations({ policy_observations: network?.reactive_observations }, 'local-completion-to-peer-reactive-consumer'),
   receiveWork: receiveWork(perf) };
 }
-/** Existing sources already redact lifecycle and stage names; bound their final report too. */
+/** Existing sources already redact lifecycle and stage names; bound their final report too.
+ * @param {{phase: string, journal: any, lifecycle: any, calls?: any[], manifests: any, sync: any, playback: any, device: string, build?: string}} options */
 export function diagnosticSnapshot({ phase, journal, lifecycle, calls = [], manifests, sync, playback, device, build }) {
  return { version: 2, kind: 'maia-unified-diagnostics', capturedAt: Date.now(),
   build: {frontend: /^[a-f0-9]{40}$/.test(build ?? '') ? build : 'unavailable', nativeEngine: 'unavailable'},

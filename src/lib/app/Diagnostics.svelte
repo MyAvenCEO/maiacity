@@ -47,7 +47,7 @@
   catch { showText = true; copied = 'Clipboard unavailable. The report is selected below for copying.'; await tick(); fallback?.focus(); fallback?.select(); }
  }
  onMount(() => {
-  runner = createDiagnosticRunner({ ask: (op: unknown) => session.ask(op), currentOwner: () => session.device, isOpen: () => session.phase === 'open', snapshot,
+  runner = createDiagnosticRunner({ ask: (op: object) => session.ask(op), currentOwner: () => session.device, isOpen: () => session.phase === 'open', snapshot,
    network: (signal: AbortSignal) => runNetworkDiagnostics({ signal }),
    armReactive: (owner: any) => reactiveObservation.arm(owner, (op: unknown) => owner.run(op)), onUpdate: refresh });
   const captureTimer = setInterval(() => {
