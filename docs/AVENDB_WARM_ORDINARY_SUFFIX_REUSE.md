@@ -29,3 +29,10 @@ Limits remain: live post-unlock log changes still conservatively invalidate all
 deferred bodies; ordinary changes to uncovered entries still rebuild; captures
 remain bounded to256 entries/8192 writes; this does not claim constant-time
 restore, skip governance replay, or solve general incremental materialization.
+
+Focused runtime validation completed: `cargo test -p avendb --lib
+warm_materialization -- --nocapture` passed all 13 tests, zero failures, in
+2.87s (264 filtered out). Initial compilation identified two new fixture
+closures returning `bool`; they now explicitly return unit. Production source
+remained unchanged during the successful run. No whole-suite or physical-device
+latency claim is implied. Compiler slot was released after terminal exit0.

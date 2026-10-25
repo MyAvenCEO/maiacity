@@ -655,7 +655,7 @@ mod tests {
         let held = backup.signed.len();
         let encoded = Capture::take(lab.held(device)).encode(Vec::new());
         let extra = unwrap(&encoded).unwrap().1;
-        lab.edit(device,vault,entries[0],|item| item.edit_document(|d| d.title="suffix".into())).unwrap();
+        lab.edit(device,vault,entries[0],|item| { item.edit_document(|d| d.title="suffix".into()); }).unwrap();
         assert!(Validated::check_prefix(extra,lab.held(device),held).is_some());
         let mut corrupt = extra.to_vec(); corrupt[0] ^= 1;
         assert!(Validated::check_prefix(&corrupt,lab.held(device),held).is_none());
@@ -692,7 +692,7 @@ mod tests {
     fn prefix_reuse_does_not_admit_a_tampered_signed_suffix() {
         let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
         let held=backup.signed.len();
-        lab.edit(device,vault,entries[0],|item| item.edit_document(|d|d.title="Not signed like this".into())).unwrap();
+        lab.edit(device,vault,entries[0],|item| { item.edit_document(|d|d.title="Not signed like this".into()); }).unwrap();
         let mut changed=lab.backup(device);
         let signed=changed.signed.iter_mut().rev().find(|signed|
             matches!(signed.edit.action,Action::Write{entry,..} if entry==entries[0])).unwrap();
