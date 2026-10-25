@@ -94,7 +94,7 @@ impl Lab {
         // The device authors the CRDT update, with the owner co-signing its exact ciphertext.
         let mut edit=self.held(on).log.draft_on(&view,on,&[owner],action);
         let w=view.accepted_write(&edit,edit.id())?.ok_or(Refusal::NotAccepted)?;
-        let mut item=Item::new(on); item.put_record(&record);
+        let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&record,on).ok_or(Refusal::NotAView)?;
         let content=item.export(&Version::default());
         let tags=TagDelta::default();
         let proof=self.proven(on,&view,(vault,&History::default()),&w,(&content,&tags),&[],Some(&attrs))?;
@@ -253,7 +253,7 @@ mod tests {
         let note=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();
         let scope=DiscoveryScope::Tag("selected".into());
         let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope.clone()).unwrap();
-        let mut item=Item::new(w.mac_a);item.put_record(&record);
+        let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&record,w.mac_a).unwrap();
         let carrier=w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap();
         assert!(w.lab.draft_entry_projection(w.mac_a,&[w.mac_a],carrier).is_err());
         let prepared=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],carrier).unwrap();
@@ -299,7 +299,7 @@ mod tests {
         let note=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();
         let scope=DiscoveryScope::Tag("selected".into());
         let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope.clone()).unwrap();
-        let mut item=Item::new(w.mac_a);item.put_record(&record);
+        let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&record,w.mac_a).unwrap();
         let carrier=w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap();
         let prepared=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],carrier).unwrap();
         let snapshot=w.lab.complete(w.mac_a,prepared.draft,&[]).unwrap();
@@ -318,7 +318,7 @@ mod tests {
         assert_eq!(w.lab.discovery_manifest_members(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]));
         let mut malformed=record;
         malformed["members"][0]["unexpected"]=json!(true);
-        let mut item=Item::new(w.mac_a);item.put_record(&malformed);
+        let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&malformed,w.mac_a).unwrap();
         let bad=w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap();
         let prepared=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],bad).unwrap();
         let snapshot=w.lab.complete(w.mac_a,prepared.draft,&[]).unwrap();
@@ -332,7 +332,7 @@ mod tests {
         let note=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();
         let scope=DiscoveryScope::Tag("selected".into());
         let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope.clone()).unwrap();
-        let mut item=Item::new(w.mac_a);item.put_record(&record);
+        let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&record,w.mac_a).unwrap();
         let carrier=w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap();
         let selected=w.lab.issue(w.mac_a,&[w.mac_a],cast::share(w.alice,cast::vault(w.bob),Level::Read,cast::by_id(note))).unwrap();
         w.lab.issue(w.mac_a,&[w.mac_a],cast::share(w.alice,cast::vault(w.bob),Level::Read,cast::by_id(carrier))).unwrap();
@@ -393,7 +393,7 @@ mod tests {
         let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope.clone()).unwrap();
         let mut carriers=Vec::new();
         for _ in 0..2 {
-            let mut item=Item::new(w.mac_a);item.put_record(&record);
+            let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&record,w.mac_a).unwrap();
             carriers.push(w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap());
         }
         carriers.sort();
