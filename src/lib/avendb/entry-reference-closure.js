@@ -13,7 +13,8 @@ export function sparkReferences(row) {
 }
 /** Bounded reactive closure of explicit entry references. Pages remain observed for
  * revocation; old replies cannot revive a closed context. One new page per turn.
- * Local presence is not global completeness. Previously discovered IDs are retained
+ * Partly filled pages expand in place with generation guards, so graph depth does
+ * not consume one observer per edge. Local presence is not global completeness. Previously discovered IDs are retained
  * within this bounded context, but unreachable rows are never published.
  * @param {any} observe @param {string[]} roots @param {string} actor
  * @param {(row:any)=>boolean} readable @param {(state:any)=>void} take */
@@ -23,6 +24,8 @@ export function observeReferenceClosure(observe, roots, actor, readable, take) {
  /** @type {(()=>void)[]} */ const stops=[];
  const rootIds=roots.slice(0,4096).filter(id=>ID.test(id));
  const wanted=new Set(rootIds), requested=new Set(), pages=new Map(), settled=new Set(), errors=new Map();
+ /** @type {string[][]} */ const pageIds=[];
+ /** @type {number[]} */ const generations=[];
  const rows=()=>new Map([...pages.values()].flat().map(row=>[row.entry,row]));
  const reachable=()=>{
   const held=rows(), seen=new Set(), result=[];
@@ -32,18 +35,25 @@ export function observeReferenceClosure(observe, roots, actor, readable, take) {
   while(queue.length){const id=queue.pop();const row=held.get(id);result.push(row);for(const ref of sparkReferences(row))enqueue(ref);}
   return result;
  };
- const publish=()=>{if(!closed)take({rows:reachable(),phase:errors.size?'error':settled.size<next||[...wanted].some(id=>!requested.has(id))&&next<8?'loading':'ready',error:[...errors.values()].join('; '),limited});};
+ const publish=()=>{if(!closed)take({rows:reachable(),phase:errors.size?'error':settled.size<next||[...wanted].some(id=>!requested.has(id))&&(next<8||(pageIds[next-1]?.length??512)<512)?'loading':'ready',error:[...errors.values()].join('; '),limited});};
  const schedule=()=>{if(closed||timer!==undefined)return;timer=setTimeout(()=>{timer=undefined;start()},0)};
  const start=()=>{
   if(closed)return;
-  const ids=[...wanted].filter(id=>!requested.has(id)).slice(0,512);
-  if(!ids.length){publish();return;}
-  if(next>=8){limited=true;publish();return;}
-  const index=next++;for(const id of ids)requested.add(id);publish();
-  const fail=(/** @type {any} */ error)=>{if(closed)return;pages.delete(index);errors.set(index,String(error.message??error));settled.add(index);publish();schedule()};
+  const pending=[...wanted].filter(id=>!requested.has(id));
+  if(!pending.length){publish();return;}
+  const reuse=next>0 && pageIds[next-1].length<512;
+  if(!reuse && next>=8){limited=true;publish();return;}
+  const index=reuse?next-1:next++;
+  const previous=pageIds[index]??[];
+  const added=pending.slice(0,512-previous.length), ids=[...previous,...added];
+  pageIds[index]=ids;for(const id of added)requested.add(id);
+  const generation=(generations[index]??0)+1;generations[index]=generation;
+  const active=()=>!closed && generations[index]===generation;
+  stops[index]?.();settled.delete(index);publish();
+  const fail=(/** @type {any} */ error)=>{if(!active())return;pages.delete(index);errors.set(index,String(error.message??error));settled.add(index);publish();schedule()};
   try{
    const stop=observe(()=>({op:'entry_views',entries:ids,as:actor}),(/** @type {any} */ out)=>{
-    if(closed)return;
+    if(!active())return;
     try{const got=answer(out);if(!got){pages.delete(index);settled.delete(index);publish();return;}
      if(!Array.isArray(got.rows))throw Error('Reference read did not return rows');
      const valid=got.rows.filter((/** @type {any} */ row)=>ids.includes(row.entry)&&readable(row));pages.set(index,valid);errors.delete(index);settled.add(index);
@@ -51,7 +61,7 @@ export function observeReferenceClosure(observe, roots, actor, readable, take) {
      publish();schedule();
     }catch(error){fail(error)}
    },fail);
-   if(closed)stop();else {stops.push(stop);schedule();}
+   if(!active())stop();else {stops[index]=stop;schedule();}
   }catch(error){fail(error)}
  };
  publish();start();
