@@ -452,3 +452,14 @@ bounded (32,768 held replay edits, 2,048 IDs per checkpoint), but repeated looku
 cost requires measurement/indexing before physical latency claims. Independently
 verified grant descriptors fetched directly from peers remain supported; missing
 bare evidence still requires normal authenticated transfer and may fall back.
+
+The provenance follow-up removes per-ID replay scans: each closure builds one
+bounded index of independently held IDs and currently vouched bare IDs, then
+looks up all dependency/classifier IDs in that map. Final admission constructs a
+fresh index under its state lock. Total covered-ID visits are capped at 65,536;
+exceeding the cap leaves remaining IDs unresolved. The real peer shared-room
+fixture now has a checkpoint variant: grant creation becomes bare by ordinary
+checkpoint publication after the receiver split; the room and subsequent live
+owner edit must render while unrelated coop authority and document history stay
+withheld. It asserts received provenance is genuinely checkpoint-backed. This
+fixture is source-ready and still awaits canonical runtime validation.

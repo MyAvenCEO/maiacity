@@ -317,8 +317,9 @@ impl crate::Shared {
                     .and_then(|current| stage.owner.as_ref().zip(stage.classes.as_ref()).and_then(|(owner, classes)| {
                         let log = lab.log(me);
                         let indexed = shared.logs_of(lab, me);
+                        let provenance = lab.authority_provenance(me);
                         classes.owner_dependencies_provenance(owner, log.edits(), log.ids(), &indexed, current,
-                            |id| lab.authority_edit_dependencies(me, id)).map(|dependencies| dependencies.missing)
+                            |id| provenance.get(&id).cloned()).map(|dependencies| dependencies.missing)
                     }));
                 (stage, missing)
             }).await;
@@ -362,8 +363,9 @@ impl crate::Shared {
                     let scoped = root_current && stage.owner.as_ref().zip(stage.classes.as_ref()).is_some_and(|(owner, classes)| {
                         let log = lab.log(me);
                         let indexed = shared.logs_of(lab, me);
+                        let provenance = lab.authority_provenance(me);
                         classes.owner_scope_provenance(owner, log.edits(), log.ids(), &indexed, current,
-                            |id| lab.authority_edit_dependencies(me, id)).is_some()
+                            |id| provenance.get(&id).cloned()).is_some()
                     });
                     if !scoped {
                         return Admission::Waiting(stage, prepared);
@@ -492,6 +494,13 @@ mod transport_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn moved_shared_audience_room_and_live_owner_edit_skip_unrelated_history() {
+        shared_audience_withheld_history(false).await;
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn checkpoint_covered_shared_authority_closes_without_unrelated_history() {
+        shared_audience_withheld_history(true).await;
+    }
+    async fn shared_audience_withheld_history(checkpoint: bool) {
         use avendb::{cast::{handbook, text, share, by_id}, policy::{Action, Setting, Who, Level}};
         let mut w = world();
         let handbook = handbook(&mut w);
@@ -503,6 +512,14 @@ mod transport_tests {
         // does not fabricate an audience label or preseed any target evidence.
         assert!(w.lab.log(sender).edits().iter().any(|edit| matches!(&edit.action,
             Action::Mark { entry: e, caps: Some(caps), .. } if *e == entry && caps.contains(&audience_share))));
+        if checkpoint {
+            // Normal signed checkpoint publication makes the grant creation
+            // checkpoint-covered; no fabricated classifier or preseeded receiver.
+            w.lab.submit(sender,&[w.passkey_a],Action::Checkpoint {
+                vault,covers:vec![avendb::id::EditId(audience_share.0)],
+            }).unwrap();
+            assert!(!w.lab.independently_verified_edit(sender,avendb::id::EditId(audience_share.0)));
+        }
         let history = w.lab.create(sender, vault, vault, "doc", &[], document("Unrelated", "withheld", sender)).unwrap();
         let unrelated_vault = handbook.coop;
         w.lab.submit(sender, &[w.passkey_a, w.passkey_b], Action::Settings {
@@ -520,6 +537,12 @@ mod transport_tests {
         phone.shared.stage_live_entries(mac.id(), sender, [LogId::Entry(entry)].into_iter().collect());
         until(async || phone.read(move |lab, me| text(lab, me, entry, 2).as_deref() == Some("first")).await).await;
         assert!(!phone.shared.differ(sender).await.contains(&LogId::Share(audience_share)));
+        if checkpoint {
+            assert!(phone.read(move |lab,me| !lab.independently_verified_edit(me,avendb::id::EditId(audience_share.0))
+                && lab.authority_edit_dependencies(me,avendb::id::EditId(audience_share.0))==Some(vec![vault])).await,
+                "actual received authority uses a currently standing checkpoint witness");
+        }
+
         assert!(phone.shared.differ(sender).await.contains(&LogId::Vault(unrelated_vault)));
         assert!(phone.read(move |lab, me| lab.item(me, history).is_none()).await);
         let written = mac.act(move |lab, me| lab.edit(me, vault, entry, |item| item.set_text(2, "live"))).await.unwrap();

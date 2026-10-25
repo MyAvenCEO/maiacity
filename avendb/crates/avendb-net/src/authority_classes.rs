@@ -500,9 +500,10 @@ impl crate::Shared {
         let wanted = inventory.clone();
         let mut classes = self.read(move |lab, me| {
             let mut classes = GrantClasses::default();
+            let provenance=lab.authority_provenance(me);
             for id in wanted {
                 let edit_id = EditId(id.0);
-                if lab.authority_edit_dependencies(me, edit_id).is_none() { continue; }
+                if !provenance.contains_key(&edit_id) { continue; }
                 if let Some(mut class) = lab.signed_edit(me, edit_id).and_then(|s| GrantClass::from_verified(id, &s.edit)) {
                     class.covered = !lab.independently_verified_edit(me, edit_id);
                     classes.0.insert(id, class);
