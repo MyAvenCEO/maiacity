@@ -114,6 +114,31 @@ impl Shared {
         });
     }
 
+    /// View-origin hints keep their lease identity separate from real live
+    /// announcements, even when both name the same peer and entry.
+    pub(crate) fn live_demand(self: &Arc<Self>, device: SignerId, logs: &[LogId], origin: crate::demand::Origin) {
+        if self.opts.lazy || !origin.active() { return; }
+        let Some(endpoint) = self.endpoint_of(device) else { return; };
+        let Some(mut work) = self.pulls.live_demand(device, logs, &origin) else { return; };
+        let Ok(activity) = self.admit() else { return };
+        let shared = self.clone();
+        task::spawn(async move {
+            let _activity = activity;
+            let attempt = origin.run(time::timeout(LIVE_WAIT, async {
+                while let Some(logs) = work.next() {
+                    if !origin.active() { break; }
+                    shared.pull_live_origin(endpoint, device, logs, Some(origin.clone())).await?;
+                }
+                Ok::<(), anyhow::Error>(())
+            })).await;
+            // Release the obsolete queue immediately. Already received durable
+            // data remains available; background materialization may retain it.
+            drop(work);
+            if attempt.is_some() && origin.active() { shared.materialize_live().await; }
+            else { shared.jobs.stir(); }
+        });
+    }
+
     async fn materialize_live(self: &Arc<Self>) {
         self.catch_up_paced(true).await;
         // Receive can wake a subscriber before replay. pull_expected may then apply that replay before this
@@ -128,6 +153,12 @@ impl Shared {
         device: SignerId,
         hints: BTreeSet<LogId>,
     ) -> anyhow::Result<()> {
+        self.pull_live_origin(endpoint, device, hints, None).await
+    }
+
+    async fn pull_live_origin(self: &Arc<Self>, endpoint: EndpointId, device: SignerId,
+        hints: BTreeSet<LogId>, origin: Option<crate::demand::Origin>) -> anyhow::Result<()> {
+        if origin.as_ref().is_some_and(|o| !o.active()) { return Ok(()); }
         let mut missing = self.differ(device).await;
         let rules: BTreeSet<_> = missing
             .iter()
@@ -138,7 +169,7 @@ impl Shared {
         if !rules.is_empty() {
             // Overlap bounded entry transfer with authority catch-up, without
             // admitting these bytes to replay until its conservative fence passes.
-            self.stage_live_entries(endpoint, device, hints.intersection(&missing).copied().collect());
+            self.stage_entries_origin(endpoint, device, hints.intersection(&missing).copied().collect(), origin.clone());
         }
         // A large authorization catch-up belongs to the existing authority-first backlog scheduler. Never skip
         // it to prioritize a chat or treat the peer's hints as permission to materialize its entry.

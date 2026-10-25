@@ -15,6 +15,32 @@ struct Scope {
     queries: Vec<crate::discovery::Query>,
     discovered: Vec<LogId>,
     until: Instant,
+    cancel: tokio::sync::watch::Sender<()>,
+}
+
+/// Immutable view-origin identity. Dropping its scope sender wakes all queued
+/// or waiting work immediately; the deadline also cancels a crashed tab's lease.
+#[derive(Clone)]
+pub(crate) struct Origin {
+    pub scope: String,
+    pub revision: u64,
+    until: Instant,
+    cancel: tokio::sync::watch::Receiver<()>,
+}
+impl Origin {
+    pub(crate) fn active(&self) -> bool {
+        self.until > Instant::now() && self.cancel.has_changed().is_ok()
+    }
+    pub(crate) async fn run<F: std::future::Future>(&self, future: F) -> Option<F::Output> {
+        if !self.active() { return None; }
+        let mut cancel = self.cancel.clone();
+        tokio::select! {
+            biased;
+            _ = cancel.changed() => None,
+            _ = n0_future::time::sleep(self.until.saturating_duration_since(Instant::now())) => None,
+            value = future => Some(value),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -27,7 +53,8 @@ impl Demands {
         if !self.0.contains_key(&scope) && self.0.len() >= MOST_SCOPES { return Err("too many active view demands"); }
         if entries.len() > MOST_ENTRIES { return Err("a view demand names at most 512 entries"); }
         // An empty scope is a tombstone too: a delayed earlier update must not revive a closed view.
-        self.0.insert(scope, Scope { revision, entries, queries: vec![], discovered: vec![], until: now + LEASE });
+        self.0.insert(scope, Scope { revision, entries, queries: vec![], discovered: vec![], until: now + LEASE,
+            cancel: tokio::sync::watch::channel(()).0 });
         Ok(true)
     }
 
@@ -46,6 +73,11 @@ impl Demands {
 
     pub(crate) fn set_queries(&mut self, scope: &str, queries: Vec<crate::discovery::Query>) {
         if let Some(held) = self.0.get_mut(scope) { held.queries = queries; }
+    }
+    pub(crate) fn origin(&self, scope: &str, revision: u64, now: Instant) -> Option<Origin> {
+        if !self.current(scope, revision, now) { return None; }
+        let held = self.0.get(scope)?;
+        Some(Origin { scope: scope.into(), revision, until: held.until, cancel: held.cancel.subscribe() })
     }
     pub(crate) fn current(&self, scope: &str, revision: u64, now: Instant) -> bool {
         self.0.get(scope).is_some_and(|s| s.until > now && s.revision == revision
@@ -106,6 +138,24 @@ mod tests {
     use super::*;
     use avendb::id::EntryId;
     fn entry(n: u8) -> LogId { LogId::Entry(EntryId([n; 32])) }
+
+    #[tokio::test]
+    async fn cancelling_view_work_does_not_cancel_real_live_announcement() {
+        let mut demands = Demands::default();
+        let now = Instant::now();
+        demands.replace("view".into(), 1, vec![entry(1)], now).unwrap();
+        let origin = demands.origin("view", 1, now).unwrap();
+        let budget = crate::pulls::Budget::default();
+        let peer = avendb::id::SignerId::from_u64(471);
+        let mut real = budget.live_announced(peer, false, &[entry(1)]).unwrap();
+        let view = budget.live_demand(peer, &[entry(1)], &origin).unwrap();
+        demands.replace("view".into(), 2, vec![], now).unwrap();
+        let cancelled = origin.run(async move { let _view = view; std::future::pending::<()>().await }).await;
+        assert!(cancelled.is_none());
+        assert_eq!(real.next(), Some([entry(1)].into_iter().collect()), "actual live work has independent provenance");
+        assert!(real.next().is_none());
+        assert!(budget.live_demand(peer, &[entry(1)], &origin).is_none(), "stale work cannot requeue");
+    }
 
     #[test]
     fn explicit_checkpoint_working_set_is_cancelled_replaced_and_expired() {

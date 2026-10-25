@@ -252,3 +252,12 @@ theorem owner_scope_waits_for_requested_dependencies (e : OwnerScopeEvidence)
   simp [ownerScopeRelease, stageVisible, accepted]
 
 end AvenDB.LivePriority
+
+namespace DemandStageCancellation
+-- Ordinary live announcements have no view token; cancelling a view cannot
+-- cancel them. View-origin work requires its exact live revision at admission.
+def permitted (viewOrigin currentRevision : Bool) : Bool := !viewOrigin || currentRevision
+theorem closedViewCannotAdmit : permitted true false = false := rfl
+theorem liveAnnouncementUnaffected (current : Bool) : permitted false current = true := by
+  simp [permitted]
+end DemandStageCancellation
