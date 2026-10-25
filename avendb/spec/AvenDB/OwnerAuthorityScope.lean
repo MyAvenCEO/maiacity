@@ -73,3 +73,13 @@ theorem missingAuthorityRefused (e : Evidence) (h : e.currentAuthority = false) 
 theorem requestingSuffixDoesNotInventHistory (e : Evidence) :
     historyCoverageAfterRequest e = e.localHistory := rfl
 end AvenDB.AcceptedBaseSuffix
+
+namespace AvenDB.SuffixQueue
+/-- Overflow preserves the ordinary request; only retained work leaves fallback. -/
+def fallback (requested queued : List α) [DecidableEq α] : List α :=
+  requested.filter (fun entry => !queued.contains entry)
+theorem unqueuedRetainsFallback [DecidableEq α] (requested queued : List α)
+    (entry : α) (h : entry ∈ requested) (hq : entry ∉ queued) :
+    entry ∈ fallback requested queued := by
+  simp [fallback, h, hq]
+end AvenDB.SuffixQueue

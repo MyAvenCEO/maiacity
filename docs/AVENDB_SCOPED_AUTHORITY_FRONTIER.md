@@ -406,3 +406,25 @@ pull admission when a checkpoint arrives. Accepted-base entries leave that
 foreground history lane; background history still advances and reports real
 coverage. The >64 public-demand fixture intentionally holds all ordinary pull
 permits, so it tests this separation instead of relying on a shorter timeout.
+
+
+### Accepted-base suffix queue and demand cancellation
+
+Source follow-up to the accepted-base suffix bridge: the two dedicated workers
+now drain a bounded FIFO rather than dropping hints when both permits are busy.
+The queue retains at most 32 jobs (at most 16 view-origin jobs), coalesces repeated
+hints, and puts a repeated running entry behind older waiting entries. Only
+successfully queued IDs leave ordinary transfer hints; overflow retains fallback.
+A queue lock covers final worker-permit release so concurrent enqueue cannot
+strand work at worker exit. Demand-origin suffix requests start directly from
+`live_demand`, cancel on replacement/release/expiry, and recheck the exact demand
+revision under the demand lock immediately before normal admission. Independent
+live announcements retain separate jobs and survive view cancellation.
+
+Validation: Lean `OwnerAuthorityScope.lean` passes, including fallback retention;
+Rust syntax formatted and `git diff --check` passed. Four focused Rust regressions
+cover worker saturation, fair coalescing, overflow, and cancellation isolation.
+These new Rust regressions await canonical combined compilation; no isolated
+Cargo build was started. Existing accepted-base authority, inventory, signature,
+and full-overlay fences remain unchanged. Queueing alone does not establish
+successful transfer, physical-device latency, or broader writable bootstrap.

@@ -764,7 +764,7 @@ impl Node {
             demands: Mutex::default(),
             authority_stages: authority_stage::EntryStages::default(),
             owner_suffixes: Arc::new(tokio::sync::Semaphore::new(2)),
-            owner_suffix_running: Mutex::default(),
+            owner_suffix_queue: Mutex::default(),
             discovery_running: Mutex::default(),
             discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
             offered: Mutex::default(),
@@ -2101,7 +2101,7 @@ struct Shared {
     demands: Mutex<demand::Demands>,
     authority_stages: authority_stage::EntryStages,
     owner_suffixes: Arc<tokio::sync::Semaphore>,
-    owner_suffix_running: Mutex<BTreeMap<(SignerId, avendb::id::EntryId), bool>>,
+    owner_suffix_queue: Mutex<bootstrap_suffix::SuffixQueue>,
     discovery_running: Mutex<HashMap<String, bool>>,
     discovery_answer: Arc<tokio::sync::Semaphore>,
     /// The McEliece keys in the blob store, by hash and by id.
