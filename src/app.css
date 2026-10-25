@@ -99,7 +99,7 @@ body {
    the nav pill, one above the other (lower `order` nearer the pill), so none covers another. Under the nav pill's menu. */
 .app-dock {
  position: fixed;
- bottom: max(var(--nav-foot), env(safe-area-inset-bottom, 0px));
+ bottom: var(--nav-foot);
  left: max(8px, env(safe-area-inset-left, 0px));
  right: max(8px, env(safe-area-inset-right, 0px));
  z-index: 50;
