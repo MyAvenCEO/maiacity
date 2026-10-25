@@ -42,6 +42,21 @@ fn basis_ids(ids: &[EditId]) -> [u8; 32] {
     }
     h.finalize()
 }
+// Reject before constructing metadata if writes cannot fit; stop before the
+// next encoding once the remaining byte budget is exhausted.
+fn capture_metadata<I>(n: usize, writes: usize, bytes: usize,
+    make: impl FnOnce() -> I) -> Result<(Vec<(EditId, Vec<u8>)>, usize), ()>
+where I: IntoIterator<Item = Option<(EditId, Vec<u8>)>> {
+    if n == 0 || n > MAX_WRITES.saturating_sub(writes) { return Err(()); }
+    let (mut out, mut used) = (Vec::new(), 0usize);
+    for value in make() {
+        let Some((id, body)) = value else { return Ok((Vec::new(), 0)); };
+        used = used.checked_add(body.len()).ok_or(())?;
+        if used > bytes { return Err(()); }
+        out.push((id,body));
+    }
+    Ok((out,used))
+}
 impl Capture {
     pub(super) fn take(store: &Store) -> Self {
         // Bound forked documents and judgment metadata before encoding. Prefer the
@@ -53,34 +68,25 @@ impl Capture {
         let (mut entries, mut writes, mut source_bytes) = (Vec::new(), 0usize, 0usize);
         for (e, s) in order {
             let n = s.history.changes().len();
-            if n == 0 { continue; }
+            if n == 0 || n > MAX_WRITES.saturating_sub(writes) { continue; }
             // A metadata-only receipt has neither materialized items nor a saved
             // snapshot. Recapture its judgment instead of dropping it merely
             // because its new iteration position is within the snapshot budget.
             let keep_snapshot = entries.len() < MAX_ENTRIES
                 && (s.items.get().is_some()
                     || s.deferred.lock().expect("deferred items lock").is_some());
-            let metadata = s.history.changes().iter().map(|c| {
-                let body = store.body_metadata(c.write.edit)?;
-                let metadata = BodyMetadata::of(body);
-                metadata.ordinary().then(|| (c.write.edit, metadata.bytes()))
-            }).collect::<Option<Vec<_>>>().unwrap_or_default();
-            // Uncovered authorization/lane bodies reconstruct normally. Beyond
-            // the snapshot budget retain only complete ordinary judgments.
+            let body_bytes = if !keep_snapshot { 0 } else { s.history.changes().iter()
+                .try_fold(0usize, |sum,c| sum.checked_add(c.body.as_ref().map_or(0,Vec::len)))
+                .unwrap_or(usize::MAX) };
+            let Some(available) = LIMIT.checked_sub(source_bytes).and_then(|b| b.checked_sub(body_bytes)) else { continue; };
+            let Ok((metadata, metadata_bytes)) = capture_metadata(n,writes,available, ||
+                s.history.changes().iter().map(|c| {
+                    let body = store.body_metadata(c.write.edit)?;
+                    let metadata = BodyMetadata::of(body);
+                    metadata.ordinary().then(|| (c.write.edit, metadata.bytes()))
+                })) else { continue; };
             if !keep_snapshot && metadata.len() != n { continue; }
-            let bytes: usize = if !keep_snapshot { 0 } else { s
-                .history
-                .changes()
-                .iter()
-                .map(|c| c.body.as_ref().map_or(0, Vec::len))
-                .sum::<usize>() };
-            let bytes = bytes.saturating_add(metadata.iter().fold(0usize, |sum, (_,body)|
-                sum.saturating_add(body.len())));
-            if writes.saturating_add(n) > MAX_WRITES
-                || source_bytes.saturating_add(bytes) > LIMIT
-            {
-                continue;
-            }
+            let bytes = body_bytes + metadata_bytes;
             let (items, snapshot_bytes) = if !keep_snapshot { (BTreeMap::new(), 0) }
             else if let Some(items) = s.items.get() {
                 if items.values().any(Item::has_parked_updates) { continue; }
@@ -590,6 +596,22 @@ mod tests {
         let warm = Warm {keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect()};
         lab.warmed(device, receipt);
         (lab, device, vault, entries, backup, warm)
+    }
+
+    #[test]
+    fn capture_prechecks_write_budget_and_stops_metadata_at_byte_budget() {
+        let calls = std::cell::Cell::new(0);
+        let result = capture_metadata(2,MAX_WRITES-1,LIMIT, || {
+            calls.set(calls.get()+1);
+            std::iter::empty::<Option<(EditId,Vec<u8>)>>()
+        });
+        assert!(result.is_err()); assert_eq!(calls.get(),0);
+        let result = capture_metadata(3,0,3, || (0..3).map(|_| {
+            calls.set(calls.get()+1); Some((EditId([0;32]),vec![0;2]))
+        }));
+        assert!(result.is_err()); assert_eq!(calls.get(),2,"third body never encoded");
+        let result = capture_metadata(1,0,2, || [Some((EditId([0;32]),vec![0;2]))]);
+        assert_eq!(result.unwrap().1,2,"exact budget remains admitted");
     }
 
     #[test]
