@@ -104,6 +104,9 @@ mod tests {
         assert_eq!(lab.log(phone).ids(),before,"requesting a suffix does not claim base history");
         lab.receive(phone,reply.edits,vec![]);
         assert_eq!(text(&lab,phone,entry,2).as_deref(),Some("latest suffix"));
+        let advanced = lab.owner_base_scope(phone,entry).expect("base remains active after suffix");
+        assert_eq!(advanced.snapshot(), scope.snapshot());
+        assert!(advanced != scope, "a retained snapshot ID cannot stand in for the current dependency summary");
         assert!(lab.log(phone).edits().iter().filter(|e|crate::sync::log_of(e,e.id())==Some(LogId::Entry(entry))).count()<64);
         let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Device{vault,device:phone,keep:vec![]})).unwrap();
         assert!(lab.owner_base_suffix_reply(mac,phone,entry,snapshot,&[]).is_none());
