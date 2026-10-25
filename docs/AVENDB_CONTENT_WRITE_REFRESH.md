@@ -118,3 +118,29 @@ meaning remains a fallback. Owner-required marks still execute the full path;
 the regression checks an actual signed audience move and exact canonical state.
 Lean proves a foreign reader cannot require stewardship and legal capability/
 readable keep marks remain required. Rust revalidation is pending integration.
+
+## Unrelated private history depth (source complete; Rust validation pending)
+
+A receiver may hold private edits deeper than a newly arriving shared edit. The
+canonical replay then uses its bounded tail, even though the shared entry's own
+history only gained its next edit. A new fixture creates eight private Bob edits,
+then receives Alice's next shared edit without syncing Bob's private work away.
+It requires immediate visibility, an actual tail-reuse hit, unchanged private
+content/history, and equality after a forced canonical full refresh.
+
+Tail reuse is not unconditional. Current-state `step` must authorize the new edit;
+its resulting state must equal the actual canonical replay in every non-write
+field, including keys, epochs, authority, seals and marks. Every entry's ordered
+accepted writes must match exactly. All older writes must retain their complete
+global relative order, because cap-group versions depend on that order. Only the
+new write's position between unrelated entries can differ. The existing target
+judgment still requires it to be the last write of its entry. Changed policies,
+old admissions/order, metadata, or keys retain the full path. This adds linear
+state comparisons to bounded tail replay; it does not claim constant time or a
+physical device latency bound.
+
+Lean establishes judgment equality under exact context and per-entry history
+equality. Rust filters to run in the primary checkout: `content_refresh::tests`
+and `content_context_equivalence_tests`; no Rust validation has run for this
+follow-on yet. The predicate regression rejects changed per-entry order, author,
+key epoch and revocation while accepting only a new-write interleaving.
