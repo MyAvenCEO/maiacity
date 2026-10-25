@@ -4673,27 +4673,38 @@ impl Lab {
         store.signed.contains_key(&edit) && !store.bare.contains(&edit)
     }
 
-    /// Current provenance for a scoped authority body. Empty means independently
-    /// verified; one vault means a standing independently signed checkpoint.
-    /// Callers must close that vault's current owner/device history and recheck
-    /// this witness atomically at admission. This is never permission by itself.
-    pub fn authority_edit_dependencies(&self, d: SignerId, edit: EditId) -> Option<Vec<VaultId>> {
-        if self.independently_verified_edit(d, edit) { return Some(vec![]); }
-        let store = self.held(d);
-        if store.replayed != store.log.edits().len() || !store.bare.contains(&edit) { return None; }
-        let replay = &store.replay;
-        let at = replay.ids.iter().position(|id| *id == edit)?;
-        if !replay.stood[at] { return None; }
-        // Bound witness search. No bare-to-bare chain or optimistic cycle.
-        if replay.edits.len() > 32768 { return None; }
-        for (j, checkpoint) in replay.edits.iter().enumerate().skip(at + 1) {
-            let Action::Checkpoint { vault, covers } = &checkpoint.action else { continue };
-            if covers.len() > 2048 || !replay.stood[j] || !covers.contains(&edit)
-                || !replay.acts.contains(&(edit, *vault))
-                || !self.independently_verified_edit(d, replay.ids[j]) { continue; }
-            return Some(vec![*vault]);
+    /// Build one bounded provenance index per scoped closure, under the caller's
+    /// current-state lock. Rebuild at final admission; never retain across awaits.
+    pub fn authority_provenance(&self, d: SignerId) -> BTreeMap<EditId, Vec<VaultId>> {
+        let store=self.held(d);
+        let mut out=BTreeMap::new();
+        if store.log.edits().len()>32768 {return out;}
+        for id in store.log.ids() {
+            if store.signed.contains_key(id) && !store.bare.contains(id) {out.insert(*id,vec![]);}
         }
-        None
+        if store.replayed!=store.log.edits().len() {return out;}
+        let replay=&store.replay;
+        let positions: HashMap<_,_>=replay.ids.iter().enumerate().map(|(at,id)|(*id,at)).collect();
+        let mut examined=0usize;
+        for (j,checkpoint) in replay.edits.iter().enumerate() {
+            let Action::Checkpoint{vault,covers}=&checkpoint.action else {continue};
+            if !replay.stood[j] || !self.independently_verified_edit(d,replay.ids[j]) {continue;}
+            examined=examined.saturating_add(covers.len());
+            if examined>65536 {break;}
+            if covers.len()>2048 {continue;}
+            for id in covers {
+                if out.contains_key(id) || !store.bare.contains(id) {continue;}
+                if positions.get(id).is_some_and(|&at|at<j && replay.stood[at])
+                    && replay.acts.contains(&(*id,*vault)) {out.insert(*id,vec![*vault]);}
+            }
+        }
+        out
+    }
+
+    /// Current provenance only, not permission. The named checkpoint vault must
+    /// join recursive current authority closure; empty means independently signed.
+    pub fn authority_edit_dependencies(&self, d: SignerId, edit: EditId) -> Option<Vec<VaultId>> {
+        self.authority_provenance(d).remove(&edit)
     }
 
     /// Diagnostic policy observation only: no authority, persistence or rendered-state claim.
@@ -7349,12 +7360,11 @@ mod authority_checkpoint_provenance_tests {
         let target=w.lab.submit(w.mac_a,&[w.passkey_a],Action::Settings {
             vault:w.alice,set:crate::policy::Setting::Threshold(1),
         }).unwrap();
+        assert_eq!(w.lab.authority_edit_dependencies(w.mac_a,target),Some(vec![]));
         let checkpoint=w.lab.submit(w.mac_a,&[w.passkey_a],Action::Checkpoint {
             vault:w.alice,covers:vec![target],
         }).unwrap();
-        assert_eq!(w.lab.authority_edit_dependencies(w.mac_a,target),Some(vec![]));
-        // Exercise the same retained bare marker used after signature retirement.
-        w.lab.stores.get_mut(&w.mac_a).unwrap().bare.insert(target);
+        assert!(!w.lab.independently_verified_edit(w.mac_a,target), "normal checkpoint admission retires covered provenance");
         assert_eq!(w.lab.authority_edit_dependencies(w.mac_a,target),Some(vec![w.alice]));
         w.lab.stores.get_mut(&w.mac_a).unwrap().bare.insert(checkpoint);
         assert!(w.lab.authority_edit_dependencies(w.mac_a,target).is_none(),"bare chains cannot authenticate themselves");

@@ -343,6 +343,7 @@ impl Shared {
                     }
                     let log = lab.log(me);
                     let indexed = shared.logs_of(lab, me);
+                        let provenance = lab.authority_provenance(me);
                     classes
                         .owner_dependencies_provenance(
                             &owner,
@@ -350,7 +351,7 @@ impl Shared {
                             log.ids(),
                             &indexed,
                             current,
-                            |id| lab.authority_edit_dependencies(me, id),
+                            |id| provenance.get(&id).cloned(),
                         )
                         .map(|d| d.missing)
                 })
@@ -409,9 +410,10 @@ impl Shared {
                 }
                 let log = lab.log(me);
                 let indexed = shared.logs_of(lab, me);
+                        let provenance = lab.authority_provenance(me);
                 if classes
                     .owner_scope_provenance(&owner, log.edits(), log.ids(), &indexed, current, |id| {
-                        lab.authority_edit_dependencies(me, id)
+                        provenance.get(&id).cloned()
                     })
                     .is_none()
                 {
