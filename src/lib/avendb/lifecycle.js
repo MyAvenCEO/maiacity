@@ -41,7 +41,8 @@ export function createLifecycle({ storage, page, doc, navigation = () => 'naviga
  let available = true, journalAvailable = true, kind = 'navigate', began = 0;
  /** @type {LifecycleEvent[]} */ let events = [];
  /** @type {LifecycleEvent[]} */ let landmarks = [];
- let documentNumber = 1;
+ let documentNumber = 1, hiddenMs = 0;
+ /** @type {number | null} */ let hiddenSince = null;
  const event = (/** @type {string} */ name) => {
   if (!current || !EVENTS.has(name)) return;
   let elapsed = 0; try { elapsed = Math.floor(now() - began); } catch {}
@@ -71,7 +72,12 @@ export function createLifecycle({ storage, page, doc, navigation = () => 'naviga
   try { began = now(); } catch { began = 0; }
   current = { documents: Math.min((previous?.documents ?? 0) + 1, 9999), phase: 'starting',
    visibility: visibility(), exit: 'none', workerFailures: 0 };
-  doc.addEventListener('visibilitychange', () => { if (current) { current.visibility = visibility(); save(); event(`visibility-${current.visibility}`); } });
+  hiddenSince = current.visibility === 'hidden' ? began : null;
+  doc.addEventListener('visibilitychange', () => { if (current) {
+   const at = now(), next = visibility();
+   if (next === 'hidden' && hiddenSince === null) hiddenSince = at;
+   if (next !== 'hidden' && hiddenSince !== null) { hiddenMs += Math.max(0, at-hiddenSince); hiddenSince=null; }
+   current.visibility = next; save(); event(`visibility-${current.visibility}`); } });
   page.addEventListener('pagehide', (hidden) => {
    if (!current) return;
    current.visibility = visibility(); current.exit = /** @type {PageTransitionEvent} */ (hidden).persisted ? 'pagehide-persisted' : 'pagehide'; save(); event(current.exit);
@@ -110,7 +116,8 @@ export function createLifecycle({ storage, page, doc, navigation = () => 'naviga
    save();
    recordEvent(event);
   },
-  snapshot() { start(); return { storageAvailable: available, navigation: kind, current: { .../** @type {LifecycleState} */ (current) }, previous: previous && { ...previous }, journalAvailable, events: events.map(e => ({ ...e })), landmarks: landmarks.map(e=>({...e})) }; }
+  timingContext() { start(); const at=now(); return {document:documentNumber, sessionDocument:current?.documents ?? 0, elapsedMs:Math.max(0,at-began), hiddenTotalMs:hiddenMs+(hiddenSince===null?0:Math.max(0,at-hiddenSince)), visibility:current?.visibility ?? 'unknown'}; },
+  snapshot() { start(); return { document:documentNumber, sessionDocuments:current?.documents ?? 0, numbering:'document is this retained journal sequence; sessionDocuments/current.documents count this sessionStorage lifetime, not total restarts', storageAvailable: available, navigation: kind, current: { .../** @type {LifecycleState} */ (current) }, previous: previous && { ...previous }, journalAvailable, events: events.map(e => ({ ...e })), landmarks: landmarks.map(e=>({...e})) }; }
  };
 }
 

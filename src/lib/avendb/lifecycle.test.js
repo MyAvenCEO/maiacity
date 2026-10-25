@@ -106,3 +106,14 @@ test('startup and unlock landmarks survive busy navigation and the next document
  expect(next.events.some(e=>e.document===1&&e.event==='open')).toBe(false);
  expect(f.kept.get('avendb:lifecycle-events:v1').length).toBeLessThan(16384);
 });
+test('session numbering is distinguished from retained document sequence and hidden elapsed is measured',()=>{
+ const durable=new Map(), page=new EventTarget(),doc=Object.assign(new EventTarget(),{visibilityState:'visible'});let now=0;
+ const shelf=map=>()=>({getItem:k=>map.get(k),setItem:(k,v)=>map.set(k,v)});
+ const a=createLifecycle({storage:shelf(new Map()),journalStorage:shelf(durable),page,doc,now:()=>now});a.start();
+ const b=createLifecycle({storage:shelf(new Map()),journalStorage:shelf(durable),page:new EventTarget(),doc,now:()=>now});b.start();
+ expect(b.snapshot()).toMatchObject({document:2,sessionDocuments:1,current:{documents:1}});
+ now=10;doc.visibilityState='hidden';doc.dispatchEvent(new Event('visibilitychange'));now=140;
+ expect(b.timingContext().hiddenTotalMs).toBe(130);
+ doc.visibilityState='visible';doc.dispatchEvent(new Event('visibilitychange'));now=160;
+ expect(b.timingContext()).toMatchObject({document:2,elapsedMs:160,hiddenTotalMs:130,visibility:'visible'});
+});
