@@ -148,3 +148,5 @@ import AvenDB.ScopedReferenceRead
 import AvenDB.PrivateStoryTransition
 
 import AvenDB.ScopedTagInventory
+
+import AvenDB.GuardedMutation
