@@ -11,7 +11,8 @@ export function readCompleteness(answer) {
  const partialFiles = value?.filesComplete === false || rows.some((/** @type {any} */ row) => row?.filesComplete === false);
  return {
   response: present ? 'local' : 'unavailable',
-  discovery: 'unverified',
+  discovery: value?.scope?.basis === 'owner-attested-cut'
+   ? (value.scope.completeAtOwnerCut === true ? 'owner-cut-ready' : 'owner-cut-pending') : 'unverified',
   history: checkpoint ? 'checkpoint-partial' : 'unverified',
   fileInventory: partialFiles ? 'partial' : 'unverified',
   fileBytes: 'unverified',

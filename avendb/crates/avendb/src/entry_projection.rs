@@ -582,12 +582,21 @@ impl Lab {
     /// Normal entry reads still prefer canonical history. Never accepts an
     /// ordinary carrier write as owner approval or bypasses current entitlement.
     pub(crate) fn attested_entry_projection(&self, on: SignerId, snapshot: EditId, entry: EntryId) -> Option<VerifiedEntryProjection> {
-        let sealed = {
-            let cache = self.held(on).projections.lock().ok()?;
-            let cached = cache.get(&(on, entry))?;
-            if cached.snapshot != snapshot { return None; }
-            cached.sealed.clone()
-        };
-        self.open_entry_projection(on, snapshot, entry, &sealed)
+        let store=self.held(on);
+        if store.replayed!=store.log.edits().len() || !self.sees(on,entry) {return None;}
+        let revision=store.log.revision();
+        let mut cache=store.projections.lock().ok()?;
+        let cached=cache.get_mut(&(on,entry))?;
+        if cached.snapshot!=snapshot {return None;}
+        // Ciphertext and owner snapshot were fully authenticated at retention.
+        // Recheck current policy on revision changes, without cloning/decrypting
+        // the envelope again on every reactive read. Lock clears this cache.
+        if cached.revision!=revision {
+            let valid=self.projection_authority(on,snapshot,entry)
+                .is_some_and(|(_,stated,key)|key==cached.value.key&&stated.basis==cached.value.basis);
+            if !valid {cache.remove(&(on,entry));return None;}
+            cached.revision=revision;
+        }
+        Some(cached.value.clone())
     }
 }

@@ -54,3 +54,37 @@ ScopedDiscoveryManifest Lean proofs pass. Rust syntax parses. Native tests are
 added for owner approval, exact scope, query/guard cut labels, and invalidation by
 an added member; they remain unrun while the parent owns the Cargo queue.
 Run `cargo test -p avendb --lib discovery_manifest` after integration.
+
+## Publication, pending discovery and durable restore wiring
+
+`checkpoint_scope {vault,types|tag}` now explicitly creates a normal private carrier
+on a fully reconstructed owner node and invokes the existing `checkpoint_view`
+owner-approval/blob-pin path. It does not infer any sharing. If approval is absent,
+cancelled, refused or storage fails after creation, the response retains the
+created carrier and reports `published:false` with a resumable checkpoint request;
+it never claims the creation rolled back. Native Node publication is implemented;
+matching browser-local publication remains unimplemented.
+
+An authenticated carrier can disclose its bounded selected IDs for scheduling
+without claiming each member is currently readable. Pending `entry_views` results
+expose those IDs only as owner-cut scheduling hints, with no content rows and
+`completeAtOwnerCut:false`. Query windows prioritize the carrier itself, then
+those pending IDs through the existing scoped demand path. Actual peer delivery
+still checks ordinary authorization. Missing/currently revoked members never
+become readable or complete merely because the owner disclosed their IDs.
+
+The carrier's ciphertext already uses durable checkpoint pins. Query demand
+restores its exact signed root from local blob storage before peer work after a
+restart or in-memory eviction. The attestation accessor remains usable after
+normal carrier history materializes, and revalidates owner Snapshot/policy/key
+at each changed log revision without recloning/decrypting ciphertext each query.
+The decoder now enforces the builder's total-head budget of 4096 and rejects
+unknown fields, duplicate IDs, duplicate heads and malformed owner payloads.
+
+Added native regressions cover malformed attestation, selected-entry revocation,
+unknown-member discovery without content readiness, full-history cache eviction,
+and a real Node shutdown/reopen/offline pin restore. Explicit publication without
+an authenticator must preserve an unpublished private carrier and approval request.
+These tests are pending the granted native run; JS demand/completeness tests pass.
+Automatic background republishing and automatic carrier-sharing policy are still
+absent; no implicit standing owner consent has been added.

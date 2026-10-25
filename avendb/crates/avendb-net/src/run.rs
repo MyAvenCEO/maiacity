@@ -108,6 +108,7 @@ impl Node {
             }
             Some("entry_views") => self.entry_views_encoded(op).await?,
             Some("checkpoint_view" | "checkpoint_entry_base") => self.publish_checkpoint(&op, authenticator).await?,
+            Some("checkpoint_scope") => self.publish_scope_manifest(&op, authenticator).await?,
             Some("read_file") => return self.read_bytes(&op).await,
             _ if engine::brings(&op) => self.put(op, bytes).await?,
             Some("jobs") => json!({ "ok": self.jobs().to_json_for(crate::acting()) }),
