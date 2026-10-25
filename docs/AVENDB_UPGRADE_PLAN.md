@@ -4,6 +4,16 @@ This is the maintained task ledger for the avenDB performance upgrade. Read this
 
 Last maintained: 2026-10-25. Current execution order: keep three subagents plus the coordinator progressing authorized Doing and Open work in parallel; finish each increment with validation, a focused pushed implementation commit and this ledger updated. Serialize heavyweight local builds. The overall upgrade is **incomplete**. A delivered compact release is not completion of all original M3–M7 integration. Do not infer completion from a module existing, a successful compile, or a merged PR alone.
 
+## Resumed implementation — 25 October 2026
+
+Temporary working folders and compiler output were unavailable on resumption; committed branches remain intact. Restored isolated checkouts are `/private/tmp/avendb-resume-integration` (root), `avendb-resume-checkpoint`, `avendb-resume-warm`, and `avendb-resume-receive`. These paths are convenience only: reconstruct from the referenced commits when absent. Do not overwrite the unrelated dirty primary checkout. Only checkpoint validation owns the Rust compiler until explicitly released.
+
+- **Implemented, native validation pending:** [a5d66cab](https://github.com/MyAvenCEO/maiacity/commit/a5d66cab8706c1233eaed3a0f92c8aa33be6e07a) connects vault-scoped universal-query demand to authorized manifest discovery. Exact positive `where.type` queries attach matching owner-attested missing-member hints; ordinary local rows and completeness semantics remain unchanged. Pagination does not re-demand already materialized members. Complex predicates still receive ordinary type discovery but do not yet attach an automatic manifest result. Query/window, Writing, Stories and Library tests pass **36/36**; the extended QueryDiscovery Lean model passes. The new Rust regression is present but has not run. This is not deployment or physical-device acceptance.
+- **Doing:** checkpoint exact Entry-key recovery validation (starting from b412b9bb), including stale save receipts, reopen, withheld historical bodies and convergence. The aggregate Lean module omitted EntryKeyRecovery and is being repaired.
+- **Doing:** new manifest carrier publication/reading through separately encrypted checkpoint capsules; retain the immutable authorized owner cut after full history arrives, and verify cold twelve-member discovery without importing withheld history.
+- **Doing:** staged materialization compile repairs, authorization-filtered pending counts, and checkpoint-first reads during catch-up. StagedMaterialization aggregate proof registration is being repaired; focused Rust validation follows the current compiler owner.
+- **Still open:** matching combined artifacts, final deployment/Mac installation and physical iPhone/iPad stability/latency acceptance. No store has been reset. A UI reporting 100% announced incoming logs does not establish outgoing acknowledgment, durable saves or required-file completeness.
+
 ## Latest delivery and follow-up checkpoint — 24 October 2026, evening
 
 ### Current release and follow-up status — 25 October
