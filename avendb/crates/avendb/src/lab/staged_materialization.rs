@@ -61,7 +61,7 @@ impl Lab {
     }
     pub(super) fn require_materialized(&self, on: SignerId, entry: EntryId) -> Result<(), Refusal> {
         if !self.held(on).staged.contains_key(&entry) { return Ok(()); }
-        Err(if self.sees(on, entry) { Refusal::Materializing } else { Refusal::NotAllowed })
+        Err(if self.materialization_pending(on, entry) { Refusal::Materializing } else { Refusal::NotAllowed })
     }
     /// One fair entry turn, at most BATCH ordinary canonical judgments. Final
     /// Loro item construction is still atomic; this is not a wall-time bound.
@@ -175,6 +175,37 @@ mod tests {
         }
         assert!(!lab.materialization_pending(phone, entry));
         assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
+    }
+
+    #[test]
+    fn revoked_recipient_cannot_observe_pending_materialization() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("pending status entitlement");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        lab.sync(mac, phone);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Private", "start", mac)).unwrap();
+        for n in 0..65 { lab.edit(mac, vault, entry, |i| i.set_text(2, &format!("body {n}"))).unwrap(); }
+        lab.enable_staged_materialization(phone);
+        lab.sync(mac, phone);
+        lab.advance_materialization(phone);
+        let prior = lab.stores.get_mut(&phone).unwrap().staged.remove(&entry).unwrap();
+        lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device {
+            vault, device: phone, keep: vec![],
+        })).unwrap();
+        lab.sync(mac, phone);
+        // Even an obsolete internal pending record must not become a status
+        // oracle between policy acceptance and the next reconstruction turn.
+        lab.stores.get_mut(&phone).unwrap().staged.insert(entry, prior);
+        assert!(!lab.materialization_pending(phone, entry));
+        assert_eq!(lab.require_materialized(phone, entry), Err(Refusal::NotAllowed));
+        let get = crate::engine::read(&lab, phone, &serde_json::json!({
+            "op":"get", "entry":entry.to_hex(), "schema":"stored" }));
+        assert_ne!(get["refused"], "Materializing");
+        let query = crate::engine::read(&lab, phone, &serde_json::json!({
+            "op":"query", "schema":"stored", "where":{"type":["note"]} }));
+        assert_eq!(query["ok"]["readiness"]["materializing"], 0);
     }
 
     #[test]
