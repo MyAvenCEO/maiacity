@@ -10,6 +10,13 @@ This section supersedes delivery/status statements in older snapshots below.
 
 ### Latest integration: manifest windows and shared-writer closure
 
+Newest follow-up:
+- [5762f9d9](https://github.com/MyAvenCEO/maiacity/commit/5762f9d9) gives mounted Studio typed collection demand before initial loading, including selected-vault cut scope and unmount cancellation. Combined frontend check passed with0errors/45warnings. [41d1a3a3](https://github.com/MyAvenCEO/maiacity/commit/41d1a3a3) replaces route demand on vault/hash/explicit entry changes while retaining shared catalog scope. Integrated route/manifest/Studio demand suites passed44tests/233assertions.
+- Corrected outside-ancestry checkpoint witness test **passed6.73s** at Rust2f310466. Mixed Chat fixture failed before transfer because direct Item construction omitted public schema completion; [2aa0c2a6](https://github.com/MyAvenCEO/maiacity/commit/2aa0c2a6) and [6b832325](https://github.com/MyAvenCEO/maiacity/commit/6b832325) now exercise real Chat public create/insert operations and exact Member capabilities. Runtime rerun remains required.
+- [8fba0e06](https://github.com/MyAvenCEO/maiacity/commit/8fba0e06) reserves bounded authority-prerequisite admission sharing existing page/byte limits; original long-base timeout and starvation regression await rerun. [ec24d036](https://github.com/MyAvenCEO/maiacity/commit/ec24d036) avoids unrelated group payload dependencies.
+- [5470a36d](https://github.com/MyAvenCEO/maiacity/commit/5470a36d) prevents semantic removal Marks when matching group data is missing. **Remaining correctness gate:** bind semantic readiness to complete authenticated peer inventory, including announced-but-not-yet-held grant creations, and retain the unresolved guard across restart. Historical-write closure alone is not current semantic completeness. Work is active; no release claim.
+
+
 Latest follow-up (supersedes pending-source statements below):
 - [56060b27](https://github.com/MyAvenCEO/maiacity/commit/56060b27): fresh mounted asset recipe views retain reactive typed discovery instead of stopping on an empty first local catalog. Integrated recipe/query-window suites:21 passed/90 assertions. Deployment remains open.
 - [842e06e4](https://github.com/MyAvenCEO/maiacity/commit/842e06e4) retains participant actors across accepted-base suffix cursors; [2f310466](https://github.com/MyAvenCEO/maiacity/commit/2f310466) integrates recursive historical group closure and the network participant bridge. Combined Lean passed; combined Rust compile/runtime is pending. The earlier mixed-author fixture used nonexistent Level::Member; this integration corrects it to the actual Write policy level.
