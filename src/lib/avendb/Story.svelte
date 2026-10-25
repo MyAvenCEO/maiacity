@@ -30,7 +30,8 @@
 	import StorySparks from './StorySparks.svelte';
 	import StoryThumbnail from './StoryThumbnail.svelte';
 	import StoryWriting from './StoryWriting.svelte';
-	import { storyTransitionQuery, storyTransitionDefaults, privateTransitionReady } from './story-transition-query.js';
+	import { storyTransitionQuery, storyTransitionDefaults } from './story-transition-query.js';
+	import { guardedStoryTransition } from './story-guarded-transition.js';
 	import { count, nameOf, short, seedCity, reads } from './vaults.js';
 
 	/** `step` the stage whose tab shows, as its address names it, where it isn't the one it is in
@@ -128,16 +129,14 @@
 	}
 
 	/** Moves it to stage `to` of its flow, with the functions the flow runs then. @param {string} to */
-	const canMove = (/** @type {string} */ to) => world.entriesComplete !== false || privateTransitionReady(stage, flow.stages.find(s=>s.key===to), workflows.phase, defaults.phase);
+	const canMove = (/** @type {string} */ to) => writes && !!flow.stages.find(s => s.key === to);
 	async function move(/** @type {string} */ to) {
-		if (!canMove(to)) return;
-		if (!item) return;
-		const { ops, errors } = await moving(world.entriesComplete === false ? flowWorld : world, actor, item, flow, to, false);
-		problem = errors.join(' · ');
-		if (errors.length) return;
-		const moved = await api.runAll(`Moving it to ${flow.stages.find((s) => s.key === to)?.name ?? to}`, ops);
-		// the tab of the stage it is in now shows
-		if (moved && step) location.hash = `stories/${entry}`;
+		if (!canMove(to) || !item) return;
+		const selected = entry, acting = actor;
+		const result = await guardedStoryTransition({ api, actor: acting, entry: selected, to,
+			current: () => entry === selected && actor === acting });
+		problem = result.complete ? '' : `${result.reason}${result.done.length ? ` (${result.done.length} steps accepted; remaining steps stopped)` : ''}`;
+		if (result.complete && step && entry === selected && actor === acting) location.hash = `stories/${entry}`;
 	}
 
 	/** Merges proposal `line` into its main line. @param {string} line */
@@ -249,7 +248,7 @@
 					{/each}
 				</span>
 			{/if}
-			{#if world.entriesComplete === false}<p class="soft">Private stage changes use their local workflow dependencies. Public transitions need complete picture-sharing evidence.</p>{/if}
+			{#if world.entriesComplete === false}<p class="soft">Stage changes validate their scoped local dependencies when you act. Missing dependencies stop the change without waiting for unrelated views.</p>{/if}
 			{#if problem}<p class="bad">{problem}</p>{/if}
 		{:else}
 			<p class="soft">This device holds no story {short(entry)}.</p>

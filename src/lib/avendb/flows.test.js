@@ -242,3 +242,45 @@ test('private Story plan is identical with scoped flow/function/post inputs', as
  expect(partial.ops.some(op=>op.op==='tag'&&op.entry===id('8'))).toBe(true);
  expect(partial.ops.some(op=>op.op==='share')).toBe(false);
 });
+
+test('leaving public compares resolved picture identities within the source vault', async () => {
+ const w=world({post:{tags:[PUBLISHED]}});
+ w.entries[1].tags=[PUBLISHED];
+ w.entries.push(entry({entry:id('5'),vault:ALICE,type:'note',tags:[PUBLISHED],text:`![same name](${PICTURE})`}));
+ w.entries.push(entry({entry:id('6'),vault:ALICE,type:'file',title:PICTURE,files:[{}]}));
+ const different=await moving(w,ME,w.entries[0],CONTENT,'draft');
+ expect(different.ops).toContainEqual({op:'tag',entry:PIC,remove:[PUBLISHED],as:ME});
+ w.entries.push(entry({entry:id('7'),vault:CITY,type:'note',tags:[PUBLISHED],text:`![same file](${PICTURE})`}));
+ const shared=await moving(w,ME,w.entries[0],CONTENT,'draft');
+ expect(shared.ops.some(op=>op.entry===PIC&&op.remove?.includes(PUBLISHED))).toBe(false);
+});
+
+test('scoped Story transition captures dependencies and uses guarded canonical changes', async () => {
+ const {guardedStoryTransition}=await import('./story-guarded-transition.js');
+ const w=world();
+ const story={...w.entries[0],type:'story',tags:['story:idea']};
+ const captures=[],changes=[];
+ const api={ask:async op=>{
+  captures.push(op.query);
+  const q=op.query;
+  const value=q.op==='world_summary'?{...w,entries:[],entriesComplete:false}:
+   {rows:q.entries?[story]:w.entries.filter(row=>row.vault===q.vault&&q.types.includes(row.type)),scope:{localComplete:true}};
+  return {ok:{value,guard:{query:q,digest:'receipt'}}};
+ },run:async(_what,op)=>{changes.push(op);return {value:{edit:'accepted'},guards:op.checks,canContinue:true};}};
+ const result=await guardedStoryTransition({api,actor:ME,entry:POST,to:'hook',current:()=>true});
+ expect(result.complete).toBe(true);expect(changes.length).toBeGreaterThan(0);
+ expect(changes.every(op=>op.op==='guarded')).toBe(true);
+ expect(captures.some(q=>q.op==='world')).toBe(false);
+ expect(captures.some(q=>q.types?.includes('function'))).toBe(true);
+});
+
+test('scoped post publication includes picture changes without a full world', async () => {
+ const {guardedStoryTransition}=await import('./story-guarded-transition.js');
+ const w=world(), calls=[];
+ const api={ask:async({query:q})=>({ok:{guard:{query:q,digest:'receipt'},value:q.op==='world_summary'?{...w,entries:[]}:
+ {rows:q.entries?[w.entries[0]]:w.entries.filter(e=>e.vault===q.vault&&q.types.includes(e.type)),scope:{localComplete:true}}}}),
+ run:async(_what,op)=>{calls.push(op.change);return {value:{edit:'accepted'},guards:op.checks,canContinue:true};}};
+ const result=await guardedStoryTransition({api,actor:ME,entry:POST,to:'published',about:'post',current:()=>true});
+ expect(result.complete).toBe(true);
+ expect(calls).toContainEqual({op:'tag',entry:PIC,add:[PUBLISHED],as:ME});
+});

@@ -891,8 +891,8 @@ fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resul
     let types = o.get("types").map(|_| texts_of(o, "types")).transpose()?;
     let tag = o.get("tag").map(|value| value.as_str().filter(|tag| !tag.is_empty() && tag.len() <= 256)
         .ok_or_else(|| bad("tag must be nonempty text of at most 256 bytes"))).transpose()?;
-    if tag.is_some() && ["vault", "entries", "types", "kind"].iter().any(|key| o.contains_key(*key)) {
-        return Err(bad("tag inventory is an exact global tag scope; do not combine other filters"));
+    if tag.is_some() && ["entries", "types", "kind"].iter().any(|key| o.contains_key(*key)) {
+        return Err(bad("tag inventory is an exact tag scope, optionally within one vault; do not combine other filters"));
     }
     if vault.is_none() && ids.is_none() && tag.is_none() && types.as_ref().is_none_or(|types|
         types.is_empty() || types.len() > 8 || types.iter().any(|ty| ty.is_empty())) {

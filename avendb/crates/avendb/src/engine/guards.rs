@@ -42,6 +42,9 @@ fn read(lab: &Lab, me: SignerId, query: &Value) -> Result<Value, Refused> {
     query_ok(query)?;
     let out=super::read(lab,me,query);
     if out.get("ok").is_none_or(Value::is_null) { return Err(bad("read guard dependency is unavailable")); }
+    if out["ok"].get("scope").is_some_and(|scope| scope.get("localComplete") != Some(&Value::Bool(true))) {
+        return Err(bad("read guard dependency domain is incomplete"));
+    }
     Ok(out)
 }
 pub(super) fn capture(lab:&Lab,me:SignerId,query:&Value)->Result<Value,Refused> {

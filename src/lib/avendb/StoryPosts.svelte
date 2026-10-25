@@ -13,7 +13,8 @@
 	import { reads, seedCity } from './vaults.js';
 	import ArticleView from './ArticleView.svelte';
 	import { entryOf } from './artifacts.js';
-	import { CONTENT, flowsFor, moving, stageOf, stageTag } from './flows.js';
+	import { CONTENT, flowsFor, stageOf, stageTag } from './flows.js';
+	import { guardedStoryTransition } from './story-guarded-transition.js';
 	import { postTag } from './posttypes.js';
 
 	/**
@@ -112,12 +113,11 @@
 	/** Moves post `p` to its flow's published stage, on the Maia Universe stream, on today for its first time out, or
 	 *  back to a draft, its flow's functions running as it goes. @param {import('./vaults.js').EntryView} p */
 	async function publish(p) {
-		if (world.entriesComplete === false) return;
+		const acting = actor, selectedStory = item.entry;
 		const on = stageOf(p, flow)?.key === 'published';
-		const { ops, errors } = await moving(world, actor, p, flow, on ? 'draft' : 'published');
-		problem = errors.join(' · ');
-		if (errors.length) return;
-		await api.runAll(on ? 'Taking it off the stream' : 'Publishing it on the stream', ops);
+		const result = await guardedStoryTransition({ api, actor: acting, entry: p.entry,
+			to: on ? 'draft' : 'published', about: 'post', current: () => actor === acting && item.entry === selectedStory });
+		problem = result.complete ? '' : `${result.reason}${result.done.length ? ` (${result.done.length} steps accepted; remaining stopped)` : ''}`;
 	}
 </script>
 
@@ -151,7 +151,7 @@
 						<span class="soft">{live ? `On the stream${/** @type {any} */ (p.record)?.published ? ` since ${/** @type {any} */ (p.record).published}` : ''}` : 'Not published'}</span>
 					</button>
 					{#if (p.writers ?? []).includes(actor)}
-						<button class="btn quiet" disabled={busy || world.entriesComplete === false} onclick={() => publish(p)}>{live ? 'Take it off' : 'Publish'}</button>
+						<button class="btn quiet" disabled={busy} onclick={() => publish(p)}>{live ? 'Take it off' : 'Publish'}</button>
 					{/if}
 				</div>
 				{#if shown && shown.entry === p.entry}

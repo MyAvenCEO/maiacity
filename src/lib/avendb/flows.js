@@ -264,10 +264,10 @@ export const privatePictures = (world, e, actor) =>
  */
 function picturesOnlyIt(world, e, tag) {
 	const others = world.entries.filter(
-		(x) => x.entry !== e.entry && x.type !== POST && !x.deleted && (x.tags ?? []).includes(tag)
+		(x) => x.entry !== e.entry && x.vault === e.vault && x.type !== POST && !x.deleted && (x.tags ?? []).includes(tag)
 	);
-	const shown = new Set(others.flatMap((x) => pictures(x.text ?? '')));
-	return picturesOf(world, e).filter((f) => (f.tags ?? []).includes(tag) && !shown.has(f.title ?? ''));
+	const shown = new Set(others.flatMap((x) => picturesOf(world, x).map((file) => file.entry)));
+	return picturesOf(world, e).filter((f) => (f.tags ?? []).includes(tag) && !shown.has(f.entry));
 }
 
 /** What a function may ask for: changes of entries, and Public shares of them. */

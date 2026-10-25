@@ -52,3 +52,33 @@ Transitions entering or leaving public stages still require complete picture-sha
 ## Reference depth correction
 
 The next combined implementation expands a partly filled page in place instead of spending a new observer for every discovered edge. A small twelve-deep graph now resolves with one live observer, while512 IDs per page,8 live observers and4096 total IDs remain bounded. Replaced observers carry a generation guard, so delayed replies cannot revive old rows; revocation/current readability and graph reachability still filter published rows. Five focused graph regressions pass, including deep graph, late prior-generation reply, fanout, bounds and revocation. Earlier eight-wave limits above describe the superseded implementation. This does not make a graph beyond4096 IDs complete. Lean scheduling/generation invariants were checked before this change.
+## Guarded Story workflow transitions (continuation slice)
+
+Story stage changes now capture exact canonical local reads rather than requiring
+a complete world: target, navigation/ownership/share summary, own workflow/posts/
+profile/files, trusted workflow defaults, and (when leaving public) source-vault
+tag users. The same queries are checked by the core at each execution and after
+any delayed owner approval. Successful steps return refreshed receipts under the
+same lock; another edit invalidates the next step. Partial success is explicitly
+reported, including transport uncertainty, with no automatic retry.
+
+Negative picture evidence is source-vault scoped because file names resolve in
+the article's vault. Comparisons use resolved file IDs, not global filename text.
+A different vault's same-named picture no longer falsely prevents unsharing;
+another same-vault user of the actual file still preserves it.
+
+A vault inventory cannot assert local completeness without a known actor/owner
+domain relationship, fully replayed local metadata and readable held entries.
+Nonowners receive incomplete regardless of whether hidden entries exist. This is
+conservative and remains a delivery blocker for delegated workflows: writers
+without owner-domain evidence cannot yet execute these scoped workflow plans.
+The old full-world fallback is not enabled because it has no equivalent
+execution-time negative-evidence guard. A canonical full-domain authority proof
+is required before admitting that fallback. It never asserts remote completeness. Core auth and
+owner ceremony remain the final authority for every emitted mutation.
+
+Validation: 45 Bun tests / 139 assertions passed, plus the transport-uncertainty regression, including actual planner and
+picture-identity behavior. ScopedTagInventory Lean passed. Rust parses; native
+runtime regressions pending shared compiler. Full Svelte check pending. Derivatives publishing and withdrawal now use the same guarded capture contract
+with picture dependencies included. Its own canonical post vault defines the
+flow and filename scope; current Story/actor identity cancels obsolete plans.

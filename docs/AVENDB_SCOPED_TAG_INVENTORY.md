@@ -14,3 +14,9 @@ cargo test -p avendb --test engine tag_inventory_
 ```
 
 No data resets, installation changes or physical-device claims.
+
+Vault-scoped tag inventories now accept `vault` alongside `tag`. Their completeness
+is a conservative local owner-domain claim; nonowners always receive incomplete,
+so it cannot act as an oracle for hidden-entry presence. Typed vault inventories
+also report local scope readiness. `read_guard` refuses scoped dependencies whose
+local completeness is false, both initially and when refreshing a continuation.

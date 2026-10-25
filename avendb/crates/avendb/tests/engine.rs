@@ -2342,3 +2342,21 @@ fn guarded_continuation_receipt_tracks_own_change_but_rejects_intervening_edit()
     assert!(refused["refused"].as_str().unwrap().contains("stale"));
     assert_eq!(before,w.lab.log(w.mac_a).edits().len());
 }
+
+#[test]
+fn scoped_tag_guard_refuses_unknown_users_and_never_claims_remote_completeness() {
+    let mut w=cast::world();
+    w.lab.create(w.mac_a,w.alice,w.alice,"note",&["public-stage"],avendb::doc::Item::todo("ours",w.mac_a)).unwrap();
+    w.lab.create(w.mac_b,w.bob,w.bob,"note",&["public-stage"],avendb::doc::Item::todo("private",w.mac_b)).unwrap();
+    w.lab.sync_all(0);
+    let own=json!({"op":"entry_views","vault":w.alice.to_hex(),"as":w.alice.to_hex(),"tag":"public-stage"});
+    let own_rows=ok(engine::read(&w.lab,w.mac_a,&own));
+    assert_eq!(own_rows["scope"]["localComplete"],true);
+    assert_eq!(own_rows["scope"]["remoteComplete"],false);
+    ok(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":own})));
+    let other=json!({"op":"entry_views","vault":w.bob.to_hex(),"as":w.alice.to_hex(),"tag":"public-stage"});
+    let rows=ok(engine::read(&w.lab,w.mac_a,&other));
+    assert_eq!(rows["rows"],json!([]));
+    assert_eq!(rows["scope"]["localComplete"],false);
+    assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":other}))["refused"].as_str().unwrap().contains("incomplete"));
+}

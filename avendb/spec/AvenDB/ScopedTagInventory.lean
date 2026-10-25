@@ -23,3 +23,10 @@ def remoteComplete (_localComplete : Bool) := false
 
 theorem local_never_proves_remote (c : Bool) : remoteComplete c = false := rfl
 end ScopedTagInventory
+
+namespace ScopedTagInventory
+-- Negative reference evidence over a source vault requires every candidate to
+-- be readable; filtered positive discovery alone is not an absence proof.
+def domainComplete (allReadable metadataComplete : Bool) := allReadable && metadataComplete
+theorem unreadable_source_prevents_absence (complete : Bool) : domainComplete false complete = false := rfl
+end ScopedTagInventory
