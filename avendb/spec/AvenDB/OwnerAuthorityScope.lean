@@ -168,3 +168,9 @@ theorem outsideReferenceRejected (requested verified : List α) (id : α)
   exact outside (h id asked)
 theorem schedulingCannotAuthorize (current : Bool) : admit false current = false := by simp [admit]
 end AvenDB.GroupTransferLane
+
+namespace AvenDB.SemanticPendingBound
+def admits (count limit : Nat) : Prop := count < limit
+theorem acceptedRemainsBounded (count limit : Nat) (h : admits count limit) : count + 1 ≤ limit := h
+theorem fullDoesNotGrow (limit : Nat) : ¬ admits limit limit := Nat.lt_irrefl limit
+end AvenDB.SemanticPendingBound

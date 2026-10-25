@@ -105,21 +105,24 @@ impl Lab {
         let store=self.held(on);
         if store.replayed!=store.log.edits().len() {return None;}
         store.semantic_groups(store.view(),entry).map(|(groups,ready)|
-            (groups,ready && !store.semantic_pending.contains(&entry)))
+            (groups,ready && !store.semantic_all_pending && !store.semantic_pending.contains(&entry)))
     }
 
     /// Called before scoped receive/refresh. Historical rendering remains usable;
     /// automatic semantic marking waits for a verified connected inventory cut.
-    pub fn defer_semantic_marks(&mut self,on:SignerId,entry:EntryId) {
+    pub fn defer_semantic_marks(&mut self,on:SignerId,entry:EntryId)->bool {
         let store=self.stores.get_mut(&self.at(on)).expect("device");
-        if store.semantic_pending.insert(entry) {store.bootstrap_revision=Arc::new(());}
+        if store.semantic_all_pending || store.semantic_pending.contains(&entry) {return true;}
+        if store.semantic_pending.len()>=4096 {return false;}
+        store.semantic_pending.insert(entry);store.bootstrap_revision=Arc::new(());
+        true
     }
     /// Caller must hold its current authenticated inventory fence and have closed
     /// selectors/current matching frontiers for that cut. Local readiness is
     /// rechecked here; this method never overrides canonical authorization.
     pub fn complete_semantic_cut(&mut self,on:SignerId,entry:EntryId)->bool {
         let store=self.held(on);
-        if store.replayed!=store.log.edits().len() || !store.reads_shares(store.view(),store.view().entry(entry).map(|e|e.vault).unwrap_or(VaultId([0;32])))
+        if store.semantic_all_pending || store.replayed!=store.log.edits().len() || !store.reads_shares(store.view(),store.view().entry(entry).map(|e|e.vault).unwrap_or(VaultId([0;32])))
             || !store.semantic_groups(store.view(),entry).is_some_and(|(_,ready)|ready) {return false;}
         let store=self.stores.get_mut(&self.at(on)).expect("device");
         if store.semantic_pending.remove(&entry) {store.bootstrap_revision=Arc::new(());}
@@ -171,6 +174,27 @@ impl Lab {
         assert!(w.lab.semantic_group_dependencies(w.mac_a,entry).unwrap().1);
         w.lab.edit(w.mac_a,w.alice,entry,|item|item.set_text(2,"offline update")).unwrap();
         assert_eq!(crate::cast::text(&w.lab,w.mac_a,entry,2).as_deref(),Some("offline update"));
+    }
+    #[test] fn bounded_pending_admission_keeps_existing_store_savable() {
+        let mut w=crate::cast::world();
+        let entry=w.lab.create(w.mac_a,w.alice,w.alice,"doc",&[],crate::cast::document("Local","kept",w.mac_a)).unwrap();
+        for n in 0..4096u32 {
+            let mut id=[0u8;32];id[..4].copy_from_slice(&n.to_le_bytes());
+            assert!(w.lab.defer_semantic_marks(w.mac_a,EntryId(id)));
+        }
+        assert!(!w.lab.defer_semantic_marks(w.mac_a,entry));
+        assert!(w.lab.backup(w.mac_a).bootstrap_bytes().is_some());
+        w.lab.edit(w.mac_a,w.alice,entry,|item|item.set_text(2,"still writable")).unwrap();
+        assert!(w.lab.backup(w.mac_a).bootstrap_bytes().is_some());
+        let corrupt=w.lab.backup(w.mac_a).defer_unverified_semantics();
+        let bytes=corrupt.bootstrap_bytes().unwrap();
+        assert!(bytes.len()<64,"global corruption guard is compact");
+        let restored=Backup::new(corrupt.signed.clone(),corrupt.blobs.values().cloned())
+            .with_bootstrap_bytes(&bytes).unwrap();
+        w.lab.restore_backup(w.mac_a,&restored);
+        assert!(w.lab.item(w.mac_a,entry).is_some());
+        assert!(!w.lab.semantic_group_dependencies(w.mac_a,entry).unwrap().1);
+        assert!(w.lab.backup(w.mac_a).bootstrap_bytes().is_some());
     }
     #[test] fn semantic_save_stamp_tracks_insert_and_clear() {
         let mut w=crate::cast::world();

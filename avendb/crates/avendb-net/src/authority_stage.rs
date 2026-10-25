@@ -386,7 +386,7 @@ impl crate::Shared {
                 }
                 // Signature and current policy admission are unchanged. The stage
                 // receipt grants no authorization even when its frontier matches.
-                lab.defer_semantic_marks(me,entry);
+                if !lab.defer_semantic_marks(me,entry) {return Admission::Waiting(stage,prepared); }
                 lab.receive_prepared(me, prepared, true);
                 // A complete current authority cut plus exact current semantic
                 // group frontiers can finish this guard immediately. Scoped
