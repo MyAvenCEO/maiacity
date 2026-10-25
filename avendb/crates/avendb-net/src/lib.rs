@@ -3613,10 +3613,10 @@ mod receive_boundary_tests {
         }
         let expected = w.lab.item(me, entry).unwrap().record();
         let incoming = w.lab.backup(me);
-        let keys: Vec<_> = incoming.blobs.values().cloned().collect();
+        let keys: Vec<_> = w.lab.blob_ids(me).into_iter().filter_map(|id| w.lab.blob(me, id)).collect();
         assert!(!keys.is_empty(), "fixture must receive real named key blobs");
         w.lab.restore_from(me, before);
-        w.lab.receive_whose_now(me, incoming.signed, Vec::new(), false);
+        w.lab.receive_whose_now(me, incoming.signed().to_vec(), Vec::new(), false);
         assert!(w.lab.item(me, entry).is_none());
         receive_key_blobs_deferred(&mut w.lab, me, keys);
         assert!(w.lab.item(me, entry).is_none(), "key admission cannot synchronously publish unrelated history");
