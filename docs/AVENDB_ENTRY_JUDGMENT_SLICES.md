@@ -29,6 +29,8 @@ The core regression receives 128 actual signed revisions, runs a bounded step, v
 
 ## Review corrections
 
+Follow-ups: [initial demand priority](https://github.com/MyAvenCEO/maiacity/commit/b5fe1886), [strict unrelated-write continuity](https://github.com/MyAvenCEO/maiacity/commit/67f4bc20), [cursor fairness and safe retry boundaries](https://github.com/MyAvenCEO/maiacity/commit/3f8b2d70).
+
 Demand churn previously could replace the sole cursor and repeatedly lose progress. The current cursor now stays first until complete; a two-entry regression alternates demand each turn and requires strictly advancing progress or completion with at most one retained cursor. Invalid warm materialization retry now hides the failed old Shown and defers decoding/retry to the next scheduler turn rather than recursively resetting the slice budget. A dedicated regression requires no decoded body after that yielded turn, then canonical recovery. Finalization after a completed prepared slice also uses its own turn; upkeep-generated writes return for a fresh authority turn instead of starting another bounded refresh round inside the spent call.
 
 The stale-visibility audit found the invalid-warm retry branch as the new exposure risk when yielding: it previously kept the old entry until immediate recursion repaired it. That branch now removes it before returning. Other invalidated/budget-deferred entries are already removed from public Shown; exact context changes cancel private jobs. Runtime validation of these corrections remains pending.
