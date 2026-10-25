@@ -122,7 +122,10 @@ impl Shared {
             let ranges = shared.ranges.lock().expect("ranges");
             if inventory != ranges.complete_inventory(connection, device) { return false; }
             let Some(now) = lab.owner_base_scope(me, entry) else { return false };
-            if now.snapshot() != snapshot || now.basis() != base.basis() { return false; }
+            // A concurrent local move/write can change the accepted overlay
+            // without replacing its original snapshot. Fence the entire bounded
+            // dependency summary, not merely that snapshot ID.
+            if now != base { return false; }
             let log = lab.log(me);
             let indexed = shared.logs_of(lab, me);
             if classes.owner_scope(&owner, log.edits(), log.ids(), &indexed, current,
