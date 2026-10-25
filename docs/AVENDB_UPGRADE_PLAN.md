@@ -4,6 +4,33 @@ This is the maintained task ledger for the avenDB performance upgrade. Read this
 
 Last maintained: 2026-10-25. Current execution order: keep three subagents plus the coordinator progressing authorized Doing and Open work in parallel; finish each increment with validation, a focused pushed implementation commit and this ledger updated. Serialize heavyweight local builds. The overall upgrade is **incomplete**. A delivered compact release is not completion of all original M3–M7 integration. Do not infer completion from a module existing, a successful compile, or a merged PR alone.
 
+## Active-view execution checkpoint — 25 October 2026, morning
+
+This section supersedes delivery/status statements in older snapshots below.
+The full goal remains **incomplete**; do not equate available code with deployed,
+measured fresh-device behavior.
+
+| State | Work and evidence |
+|---|---|
+| Done, deployed frontend | Compact numeric sync and diagnostic stage counts: main [24b8c4af](https://github.com/MyAvenCEO/maiacity/commit/24b8c4af8c175e0957d9727416a2293097077c8a), live release.json verified. |
+| Done, installed; acceptance open | Combined Mac source6799187d installed, signature/hash checked, data preserved. See `AVENDB_MAC_UI_DELIVERY.md` on native delivery branch / commit9ab6b28a. Automatic rebuilder temporarily unloaded because pending24b would overwrite combined Studio build. Restore safely after acceptance; do not blindly load its pending install. |
+| Doing, validation | Metadata-first query candidate filter [e3f18922](https://github.com/MyAvenCEO/maiacity/commit/e3f18922): differential, selector-retag and existing integration query tests passed. Full combined/runtime measurements remain. |
+| Doing, validation | Discovered IDs survive unchanged lease renewals [1b43ebb8](https://github.com/MyAvenCEO/maiacity/commit/1b43ebb8). Lean passed, targeted Rust queued. |
+| Doing, validation | All active discovery selectors precede optional checkpoint I/O [987946f9](https://github.com/MyAvenCEO/maiacity/commit/987946f9); Lean ordering passed. This avoids a slow first checkpoint consuming the next selector's peer deadline. |
+| Done implementation, delivery open | One file inventory per dependency layer [9b806ad1](https://github.com/MyAvenCEO/maiacity/commit/9b806ad1);26 manifest/file tests passed, new layers refresh inventory. |
+| Done implementation, delivery open | Single-line status [7a5db7ff](https://github.com/MyAvenCEO/maiacity/commit/7a5db7ff), Studio cross-frame JSON response normalization [7a3341cb](https://github.com/MyAvenCEO/maiacity/commit/7a3341cb);29 combined JS tests passed. Current installed6799187d lacks the latter Studio fix; updated native bundle is being prepared separately. |
+| Awaiting owner review | AIP-35 adds Chat and corrects nine game selectors in the live vault. Proposed records read back and verified; existing routes/follow depths preserved. Entry87343a6fc5d0cec2ff7603a1ce2864131608e929ce9c7869211af0e7cda1786a; not yet applied. |
+| Doing | Real fresh-peer room discovery + live updates regression with unrelated entry history withheld [9325e62f](https://github.com/MyAvenCEO/maiacity/commit/9325e62f). Rust execution pending. It preholds governance, so does not establish independence from unrelated authority history. |
+| Open / implementation underway | Remove broad authority dependency safely: bounded staging foundation766b2e189 exists separately, not yet integrated; atomic admission fencing and tracked authorization dependencies required. Never bypass revocation gates to make the fixture pass. |
+| Open | Physical iPhone/iPad first-view, restart stability and remote-render latency acceptance after matching native/WASM delivery. |
+
+Current phone evidence:24b frontend,375/2899 logs, all10 recorded manifest runs
+held zero manifest records. Provider read found13 manifests, so catalog exists
+but was not held by this phone. Local query p95 was2897ms with visible foreground
+samples; bounded HTTP download84.2Mbps is not avenDB useful throughput. Mac7dc
+report had world p9516479ms and zero playback frames. See
+`AVENDB_DIAGNOSTICS_0838_2026-10-25.md` for limits and exact observations.
+
 ## Latest delivery and follow-up checkpoint — 24 October 2026, evening
 
 ### Current release and follow-up status — 25 October
