@@ -1,3 +1,4 @@
+import { completeQuery } from './query-continuation.js';
 import { localFileEntries } from './file-entries.js';
 /**
  * MANIFESTS: WHAT A PAGE NEEDS, DECLARED (Samuel 2026-10-21: "a tree-shaking-like pattern … per core and app
@@ -183,9 +184,9 @@ export async function manifestsOf(d, { vault = MAIA_CITY, signal, observe = () =
  signal?.throwIfAborted();
  if (!d) { observe('unavailable'); return []; }
  try {
-  const got = await d.run({ op: 'query', vault, where: { type: ['manifest'] } });
+  const got = await completeQuery(() => d.run({ op: 'query', vault, where: { type: ['manifest'] } }), {signal, progress: answer => { if (answer?.ok?.readiness?.deferredCandidates > 0) observe('loading'); }});
   signal?.throwIfAborted();
-  observe(Array.isArray(got?.ok?.rows) ? 'local' : got?.refused ? 'refused' : 'unavailable');
+  observe(got?.ok?.pageComplete === false || got?.ok?.countExact === false ? 'loading' : Array.isArray(got?.ok?.rows) ? 'local' : got?.refused ? 'refused' : 'unavailable');
   return (got?.ok?.rows ?? []).map(r => /** @type {Manifest} */ (r.record)).filter(Boolean);
  } catch (e) { signal?.throwIfAborted(); observe('failed'); return []; }
 }
@@ -314,13 +315,16 @@ async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
 			const limit = Math.min(128, leaf.limit === undefined ? 128 : leaf.limit - offset);
 			if (limit <= 0) break;
 			try {
-				const got = await d.run({ op: 'query', vault, ...(where ? { where } : {}),
-					select: [], order: [['created', 'desc']], offset, limit });
+				const got = await completeQuery(() => d.run({ op: 'query', vault, ...(where ? { where } : {}),
+					select: [], order: [['created', 'desc']], offset, limit }), {signal});
 				signal?.throwIfAborted();
 				const page = got?.ok?.rows;
 				const count = got?.ok?.count;
 				if (!Array.isArray(page) || !page.length) break;
 				for (const row of page) if (!rows.has(row.entry)) rows.set(row.entry, row);
+				// Known rows still guide transfer when remote dependencies are absent.
+				// Their provisional count is never used to advance an exact page.
+				if (got?.ok?.countExact === false || got?.ok?.pageComplete === false) break;
 				offset += page.length;
 				if ((leaf.limit !== undefined && offset >= leaf.limit)
 					|| typeof count !== 'number' || !Number.isSafeInteger(count) || offset >= count) break;

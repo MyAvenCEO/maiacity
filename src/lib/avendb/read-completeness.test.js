@@ -11,11 +11,11 @@ const expect = (actual) => ({
 });
 test('successful empty results never establish discovery or file completeness',()=>{
  const state=readCompleteness({ok:{rows:[],count:0,complete:true}});
- expect(state).toEqual({pendingJudgments:0,unresolvedCandidates:0,response:'local',discovery:'unverified',history:'unverified',fileInventory:'unverified',fileBytes:'unverified',authoritativeEmpty:false});
+ expect(state).toEqual({deferredCandidates:0,countExact:null,pageComplete:null,pendingJudgments:0,unresolvedCandidates:0,response:'local',discovery:'unverified',history:'unverified',fileInventory:'unverified',fileBytes:'unverified',authoritativeEmpty:false});
  expect(readCompleteness({refused:'NoEntry'}).response).toBe('unavailable');
 });
 test('checkpoint history and partial file inventory remain separate from byte availability',()=>{
- expect(readCompleteness({ok:{rows:[{checkpoint:{partial:true},filesComplete:false,record:{private:'content'}}]}})).toEqual({pendingJudgments:0,unresolvedCandidates:0,response:'local',discovery:'unverified',history:'checkpoint-partial',fileInventory:'partial',fileBytes:'unverified',authoritativeEmpty:false});
+ expect(readCompleteness({ok:{rows:[{checkpoint:{partial:true},filesComplete:false,record:{private:'content'}}]}})).toEqual({deferredCandidates:0,countExact:null,pageComplete:null,pendingJudgments:0,unresolvedCandidates:0,response:'local',discovery:'unverified',history:'checkpoint-partial',fileInventory:'partial',fileBytes:'unverified',authoritativeEmpty:false});
  expect(readCompleteness({ok:{filesComplete:true,files:[{}]}}).fileBytes).toBe('unverified');
 });
 test('generic windows expose independent completeness and clear stale scope evidence',async()=>{
@@ -46,7 +46,7 @@ test('pending or unresolved local responses never report the mounted view as loa
   assert.equal(view.completeness.response,'local');
   assert.equal(view.completeness.pendingJudgments,2);
   assert.equal(snapshot.pending,1);assert.equal(snapshot.local,0);
-  readiness={pendingJudgments:0,unresolvedCandidates:1};
+  readiness={deferredCandidates:0,countExact:null,pageComplete:null,pendingJudgments:0,unresolvedCandidates:1};
   await view.read({op:'query'});
   assert.equal(snapshot.pending,0);assert.equal(snapshot.local,0);
   // Node-wide pending work alone does not block an answered local view.
@@ -54,4 +54,13 @@ test('pending or unresolved local responses never report the mounted view as loa
   await view.read({op:'query'});
   assert.equal(snapshot.local,1);
  } finally {view.close();stop();}
+});
+test('bounded local continuation stays pending and close cancels its next turn',async()=>{
+ let calls=0;
+ const device={run:async()=>({ok:{accepted:true}})};
+ const view=createReadWindow({device:()=>device,read:async()=>{calls++;return {ok:{rows:[],count:0,countExact:false,pageComplete:false,readiness:{deferredCandidates:4}}};}});
+ const pending=view.read({op:'query'});
+ await new Promise(resolve=>setTimeout(resolve,1));
+ assert.equal(view.completeness.deferredCandidates,4);assert.equal(view.completeness.pageComplete,false);
+ view.close();assert.equal(await pending,null);assert.equal(calls,1);
 });

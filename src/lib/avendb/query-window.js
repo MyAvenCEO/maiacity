@@ -1,4 +1,5 @@
 // @ts-nocheck — plain JS
+import { completeQuery } from '../../../game/code/sources/query-continuation.js';
 import { viewReadiness } from './view-readiness.js';
 import { activeRead } from './active-reads.js';
 import { readCompleteness } from './read-completeness.js';
@@ -121,13 +122,23 @@ export function createReadWindow({ device, read }) {
 			if (nextKey === null || nextKey !== queryKey) void demand.replace(entries, selectors);
 			queryKey = nextKey;
 			try {
-				const got = await read(d, op, controller.signal, demand);
+				const got = await completeQuery(() => read(d, op, controller.signal, demand), {
+                    signal: controller.signal,
+                    progress(answer) {
+                        if (!active()) return;
+                        completeness = readCompleteness(answer);
+                        if (completeness.deferredCandidates > 0) {
+                            observed.set('pending');
+                            viewReadiness.record(completeness, answer);
+                        }
+                    }
+                });
 				if (!active()) return null;
 				completeness = readCompleteness(got);
 				viewReadiness.record(completeness, got);
 				// pendingJudgments is node-wide: unrelated catch-up must not mark a
 				// fully answered view pending. Only unresolved candidates affect it.
-				observed.set(completeness.unresolvedCandidates > 0
+				observed.set(completeness.pageComplete === false ? 'unavailable' : completeness.unresolvedCandidates > 0
 					? completeness.pendingJudgments > 0 ? 'pending' : 'unavailable'
 					: completeness.response);
 				void demand.replace([...entries, ...replyEntries(got)], selectors);

@@ -353,3 +353,14 @@ test('unlimited manifest semantics survive local pagination and cross-leaf dedup
  expect(got).toEqual(rows.map(row=>row.entry));
  expect(calls).toEqual([[0,128],[128,128],[256,128],[0,2]]);
 });
+test('cold manifest catalog and leaves continue instead of accepting provisional empty counts',async()=>{
+ const manifest=m({id:'cold',routes:['/cold/'],parts:[{query:{type:['room']},limit:2}]});
+ let catalog=0,leaf=0;const offsets=[];
+ const partial={ok:{rows:[],count:0,countExact:false,pageComplete:false,readiness:{deferredCandidates:2}}};
+ const device={run:async op=>{
+  if(op.where?.type?.[0]==='manifest')return ++catalog===1?partial:{ok:{rows:[{record:manifest}],count:1}};
+  offsets.push(op.offset);return ++leaf===1?partial:{ok:{rows:[{entry:id(1),type:'room',created:1}],count:1,countExact:true,pageComplete:true}};
+ }};
+ expect(await bringDeclared('/cold/',{device,bring:async()=>{}})).toEqual([id(1)]);
+ expect(catalog).toBe(2);expect(offsets).toEqual([0,0]);
+});

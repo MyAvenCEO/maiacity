@@ -23,3 +23,16 @@ test('refused queries and metadata do not become empty collections',async()=>{
 test('concurrent removal cannot make paging spin forever',async()=>{
  await expect(collectionEntries(async()=>({ok:{rows:[],count:2}}),'story')).rejects.toThrow('changed');
 });
+test('provisional zero count never truncates a cold collection',async()=>{
+ let queries=0;const offsets=[];
+ const call=async(_,op)=>{
+  if(op.op==='query') {offsets.push(op.offset);return ++queries===1
+   ?{ok:{rows:[],count:0,countExact:false,pageComplete:false,readiness:{deferredCandidates:3}}}
+   :{ok:{rows:[{entry:'a'}],count:1,countExact:true,pageComplete:true}};}
+  return {ok:{rows:[{entry:'a',type:'file'}]}};
+ };
+ expect(await collectionEntries(call,'file')).toEqual([{entry:'a',type:'file'}]);expect(offsets).toEqual([0,0]);
+});
+test('inexact result without continuable local work is not silently accepted',async()=>{
+ await expect(collectionEntries(async()=>({ok:{rows:[],count:0,countExact:false,pageComplete:false}}),'file')).rejects.toThrow('did not complete');
+});
