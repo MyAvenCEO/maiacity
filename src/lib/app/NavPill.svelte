@@ -14,6 +14,7 @@
 	pages keep what they show at their foot above it with --nav-room.
 -->
 <script>
+	import { foot, FOOT } from './foot.js';
 	import { tick } from 'svelte';
 	import { localMedia } from '$lib/avendb/local-media.svelte.js';
 	import { base } from '$app/paths';
@@ -124,7 +125,7 @@
 		{#if elsewhere}<span class="bubble" title="{elsewhere} waiting in your other vaults">{elsewhere}</span>{/if}
 	</button>
 	{#if open}
-		<div bind:this={menu} id={menuId} class="account" role="menu" aria-label="Profiles and accounts">
+		<div bind:this={menu} id={menuId} class="account" use:foot={FOOT.menu} role="menu" aria-label="Profiles and accounts">
 			<p class="who"><b>{who}</b>{#if founder}<span>Founder {String(founder.number).padStart(3, '0')}</span>{/if}</p>
 			{#if pill.context}
 				<p class="group">{pill.context.title}</p>
@@ -163,10 +164,9 @@
 	.avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 	/* centred, as wide as its items, never wider than the screen (clear of its edges and the notch), at --nav-foot */
 	.pill {
-		position: fixed;
-		bottom: var(--nav-foot);
-		left: max(8px, env(safe-area-inset-left, 0px));
-		right: max(8px, env(safe-area-inset-right, 0px));
+		position: relative;
+		flex-shrink: 0;
+		pointer-events: auto;
 		z-index: 50;
 		display: flex;
 		align-items: center;
@@ -248,13 +248,11 @@
 	}
 
 	.account {
-		position: absolute;
-		right: 0;
-		bottom: calc(100% + 10px);
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		min-width: 13rem;
-		max-height: calc(100dvh - var(--nav-room) - 8px);
+		max-height: 50dvh;
 		overflow-y: auto;
 		padding: 0.5rem;
 		border: 1px solid var(--line);

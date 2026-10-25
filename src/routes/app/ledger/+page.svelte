@@ -7,6 +7,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
+	import { foot, FOOT } from '$lib/app/foot.js';
 	import { base } from '$app/paths';
 	import { COOPS, MINDS, SEATS, TOKEN_COLOUR, TOKEN_LABEL, calendar, dateText, heartsValue, inHearts, mintState, nameOf } from '../../../../game/maiacity-v1/engine.js';
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
@@ -65,7 +66,7 @@
 		</section>
 		{#if me && mint}
 			<!-- the universal mint button, as in the game: always at hand, over the nav pill -->
-			<button class="mintbar" disabled={g.busy || !(mint.amount > 0.005)} onclick={() => g.move(seat, { type: 'mint' })}>
+			<button class="mintbar" use:foot={FOOT.waiting} disabled={g.busy || !(mint.amount > 0.005)} onclick={() => g.move(seat, { type: 'mint' })}>
 				<span class="heart">❤︎</span> {g.busy ? 'Minting…' : 'Mint'} <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
 		{/if}
@@ -200,11 +201,7 @@
 		color: var(--muted);
 	}
 	.mintbar {
-		position: fixed;
-		z-index: 25;
-		left: 50%;
-		bottom: calc(var(--nav-room, 4rem) + 0.4rem);
-		transform: translateX(-50%);
+
 		display: flex;
 		align-items: center;
 		gap: 0.35rem;

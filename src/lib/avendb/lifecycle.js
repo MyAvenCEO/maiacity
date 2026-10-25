@@ -3,6 +3,7 @@
 const KEY = 'avendb:lifecycle:v1';
 const JOURNAL_KEY = 'avendb:lifecycle-events:v1';
 const LIMIT = 64;
+const LANDMARKS = new Set(['document-start','unlocking','passkey-finished','open','locked','worker-failed','app-reload-request','pagehide']);
 const EVENTS = new Set(['navigation-navigate', 'navigation-reload', 'navigation-back_forward', 'navigation-prerender', 'navigation-unknown', 'document-start', 'starting', 'unlocking', 'open', 'locked', 'worker-start', 'worker-failed', 'worker-message-error',
  'passkey-start', 'passkey-finished', 'device-open-start', 'unlock-failed', 'session-lock-request', 'app-reload-request',
  'route-navigation', 'app-navigation-unload', 'visibility-visible', 'visibility-hidden', 'visibility-unknown',
@@ -39,13 +40,15 @@ export function createLifecycle({ storage, page, doc, navigation = () => 'naviga
  /** @type {LifecycleState | null} */ let previous = null;
  let available = true, journalAvailable = true, kind = 'navigate', began = 0;
  /** @type {LifecycleEvent[]} */ let events = [];
+ /** @type {LifecycleEvent[]} */ let landmarks = [];
  let documentNumber = 1;
  const event = (/** @type {string} */ name) => {
   if (!current || !EVENTS.has(name)) return;
   let elapsed = 0; try { elapsed = Math.floor(now() - began); } catch {}
   events.push({document: documentNumber, ms: Number.isFinite(elapsed) ? Math.max(0, Math.min(elapsed, 86400000)) : 0, event: name, phase: current.phase, visibility: current.visibility});
+  if(LANDMARKS.has(name)) { landmarks.push(events[events.length-1]); if(landmarks.length > 24) landmarks.splice(1,1); }
   events = events.slice(-LIMIT);
-  try { journalStorage().setItem(JOURNAL_KEY, JSON.stringify({version: 1, events})); } catch { journalAvailable = false; }
+  try { journalStorage().setItem(JOURNAL_KEY, JSON.stringify({version: 1, events, landmarks})); } catch { journalAvailable = false; }
  };
  const visibility = () => one(doc.visibilityState, VISIBILITY, 'unknown');
  const save = () => {
@@ -62,6 +65,7 @@ export function createLifecycle({ storage, page, doc, navigation = () => 'naviga
    const text = journalStorage().getItem(JOURNAL_KEY);
    const saved = text && text.length <= 16384 ? JSON.parse(text) : null;
    if (saved?.version === 1 && Array.isArray(saved.events)) events = saved.events.slice(-LIMIT).map(cleanEvent).filter(Boolean);
+   landmarks = (Array.isArray(saved?.landmarks) ? saved.landmarks : events).map(cleanEvent).filter((/** @type {LifecycleEvent | null} */ e) => e && LANDMARKS.has(e.event)).slice(-24);
   } catch { journalAvailable = false; }
   documentNumber = Math.min((events.at(-1)?.document ?? 0) + 1, 9999);
   try { began = now(); } catch { began = 0; }
@@ -106,7 +110,7 @@ export function createLifecycle({ storage, page, doc, navigation = () => 'naviga
    save();
    recordEvent(event);
   },
-  snapshot() { start(); return { storageAvailable: available, navigation: kind, current: { .../** @type {LifecycleState} */ (current) }, previous: previous && { ...previous }, journalAvailable, events: events.map(e => ({ ...e })) }; }
+  snapshot() { start(); return { storageAvailable: available, navigation: kind, current: { .../** @type {LifecycleState} */ (current) }, previous: previous && { ...previous }, journalAvailable, events: events.map(e => ({ ...e })), landmarks: landmarks.map(e=>({...e})) }; }
  };
 }
 

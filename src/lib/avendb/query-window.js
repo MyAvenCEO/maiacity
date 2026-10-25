@@ -1,4 +1,6 @@
 // @ts-nocheck — plain JS
+import { viewReadiness } from './view-readiness.js';
+import { activeRead } from './active-reads.js';
 import { readCompleteness } from './read-completeness.js';
 import { createDemand, normalizeDiscovery } from '../../../game/code/sources/demand.js';
 
@@ -65,7 +67,9 @@ export function queryDiscovery(op) {
 export function createReadWindow({ device, read }) {
 	let current = null, held = null, closed = false, queryKey = null, clearing = 0;
 	let completeness = readCompleteness(null);
+	const observed = activeRead();
 	const clear = () => {
+		observed.clear();
 		completeness = readCompleteness(null);
 		current?.controller.abort();
 		current = null;
@@ -79,6 +83,7 @@ export function createReadWindow({ device, read }) {
 		});
 	};
 	const release = () => {
+		observed.clear();
 		completeness = readCompleteness(null);
 		clearing++;
 		queryKey = null;
@@ -105,6 +110,7 @@ export function createReadWindow({ device, read }) {
 			const controller = new AbortController();
 			const request = { controller, device: d };
 			current = request;
+			observed.set('pending');
 			const active = () => current === request && !controller.signal.aborted && device() === d;
 			const entries = queryEntries(op), selectors = queryDiscovery(op);
 			// Re-reading an unchanged view must not invalidate its peer discovery in flight.
@@ -117,11 +123,14 @@ export function createReadWindow({ device, read }) {
 				const got = await read(d, op, controller.signal, demand);
 				if (!active()) return null;
 				completeness = readCompleteness(got);
+				viewReadiness.record(completeness, got);
+				observed.set(completeness.response);
 				void demand.replace([...entries, ...replyEntries(got)], selectors);
 				return got;
 			} catch (error) {
 				if (!active()) return null;
 				clear();
+				observed.set('unavailable');
 				throw error;
 			}
 		},

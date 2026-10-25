@@ -13,6 +13,8 @@
 	import { sync, watchSync } from '$lib/avendb/sync.svelte.js';
 	import { peerStatus } from '$lib/avendb/sync-status.js';
 	import { watchRecipes } from '$lib/assets/vault.js';
+	import { viewStatus } from '$lib/avendb/view-status.js';
+	import { watchActiveReads } from '$lib/avendb/active-reads.js';
 	import { foot, FOOT } from './foot.js';
 
 	/** how long something must take before the pill shows, and how long it stays once nothing does (ms) */
@@ -20,6 +22,8 @@
 	const HIDE = 900;
 
 	/** the asset files the page reads now, and how many of them wait for the server */
+	let reads = $state({ total: 0, pending: 0, local: 0 });
+	$effect(() => watchActiveReads(value => reads = value));
 	let files = $state({ reading: 0, waiting: 0 });
 	$effect(() => watchRecipes((r) => (files = { reading: r.reading ?? 0, waiting: r.waiting ?? 0 })));
 
@@ -46,16 +50,14 @@
 	});
 
 	const n = (/** @type {number} */ x) => x.toLocaleString('en');
-	const label = $derived(
-		shown === 'sync' ? peers.label : shown === 'wait' ? "Waiting for local files" : `Loading ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'}`
-	);
-	const details = $derived(
-		[
-			...peers.details,
-			files.reading > 0 && `This page: ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'} on the way${files.waiting ? `, ${n(files.waiting)} waiting to become available locally` : ''}`
-		].filter(Boolean)
-	);
-	const fraction = $derived(peers.active || files.reading > 0 || files.waiting > 0 ? null : 0);
+	const background = $derived(!sync.known ? 'Background · status unavailable' : !sync.peers ? 'Background · offline' : sync.behind > 0 ? `Background · syncing ${n(sync.behind)} logs` : sync.pulling > 0 ? 'Background · checking updates' : sync.logs > 0 ? 'Background · up to date' : 'Background · checking peers');
+	const view = $derived(viewStatus(reads, files));
+	const label = $derived(view.label);
+	const details = $derived([
+		view.state === 'local' ? 'Current local reads have answered. More content may arrive from peers.' : view.state === 'unavailable' ? 'Some local reads could not return data. Open diagnostics for details.' : 'This view may still be missing data or files.',
+		'Background status covers incoming announced logs, not delivery to other devices. Open diagnostics for sync details.'
+	]);
+	const fraction = $derived(view.state === 'loading' || view.state === 'waiting' ? null : view.state === 'local' ? 1 : 0);
 	/** the ring: how far the sync is, or a turning arc while it can't say */
 	const R = 7;
 	const ROUND = 2 * Math.PI * R;
@@ -73,12 +75,14 @@
 				<circle cx="9" cy="9" r={R} class="track" />
 				<circle cx="9" cy="9" r={R} class="done" stroke-dasharray="{fraction === null ? ROUND / 4 : fraction * ROUND} {ROUND}" />
 			</svg>
-			<span>{label}</span>
+			<span class="labels"><span>{label}</span><small>{background}</small></span>
 		</button>
 	</div>
 {/if}
 
 <style>
+	.labels { display: grid; gap: 2px; }
+	.labels small { font-size: 0.68rem; opacity: 0.75; }
 	/* in the app's foot stack, nearest the nav pill ($lib/app/foot.js) */
 	.status {
 		display: flex;
@@ -107,7 +111,8 @@
 		font: inherit;
 		font-size: 0.74rem;
 		letter-spacing: 0.02em;
-		white-space: nowrap;
+		white-space: normal;
+		text-align: left;
 		cursor: pointer;
 	}
 

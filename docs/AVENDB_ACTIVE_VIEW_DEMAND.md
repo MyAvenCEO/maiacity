@@ -27,3 +27,46 @@ A genuinely fresh device without a local manifest or known entry IDs still relie
 ## Review hardening
 
 Explicit manifest requirements now precede older learned hints within the same 512-ID lease, preserving the remaining hints rather than clearing the scope. Scheduling acknowledgement is not awaited by manifest query discovery. Two additional regressions fail on the initial implementation and pass after this repair: a full 512-ID learned lease retains the explicit target plus 511 prior hints, and a permanently pending lease acknowledgement does not prevent local query discovery. Total focused validation is **30 tests / 158 assertions**; the Lean model also proves that an explicit first requirement precedes learned hints. The diagnostic and physical-measurement limitations above remain unchanged.
+
+## 2026-10-25: remove the duplicate awaited history pull
+
+Implemented: `useView` publishes scoped demand and continues its bounded local
+manifest walk without issuing a second legacy `bring`. Previously every manifest
+rank awaited `bringEntries` even after demand was accepted. Native `bring` first
+pulls authority, then entry history, with a 60-second overall deadline; this
+serialized later ranks behind history and consumed foreground pull slots outside
+the cancellable view scope. The deadline itself remains unchanged. Fire-and-forget
+`near` reads are a separate caller, so a recorded 60-second operation alone does
+not prove a blocked UI thread.
+
+Explicit old-protocol responses still select the legacy compatibility path.
+Policy refusals and transport errors do not authorize an unscoped retry. View
+failure/navigation closes its lease; learned IDs remain scheduling hints only.
+
+Validation: `lake env lean AvenDB/ViewDemand.lean` passes. Two multi-rank regressions
+with indefinitely pending legacy transfers fail against the old `device.js` and
+pass with this change. `bun test game/code/sources/device.test.js
+game/code/sources/demand.test.js game/code/sources/manifests.test.js`: 36 passed.
+
+Remaining: missing local manifests and dependencies that arrive after the initial
+local walk need incremental discovery/re-evaluation. This change does not claim
+cold-device completeness, physical iPhone latency acceptance, or deployment.
+
+### Same-route discovery after partial arrival
+
+Implemented follow-up: each view immediately requests authorized `manifest` type
+discovery in its scoped lease. The existing cheap session revision watcher calls
+`refreshActiveView`; real local changes schedule one walk after 150 ms, with at
+most one walk active and one pending replan. Replanning retains the original lease
+and extends dependencies discovered from newly held records. Navigation and device
+replacement cancel the timer and invalidate the old walk. No polling, broad-world
+materialization, new peer authority, or completeness assertion is introduced.
+
+This closes the frontend once-only walk gap: an initially absent route manifest
+and a referenced record arriving later can now add their requirements on the same
+route. It depends on authenticated peer discovery and local revision delivery;
+physical first-view latency and full coverage remain acceptance work.
+
+Validation: ViewDemand Lean proofs pass; 39 focused device/demand/manifest tests
+pass, including cold manifest arrival, later reference arrival, revision bursts,
+notifications during a blocked local query, and obsolete-navigation cancellation.

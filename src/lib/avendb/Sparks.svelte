@@ -11,6 +11,8 @@
 	holds it, tagged as its slice asks (`creatable`), where its ops allow it (`may`), as Notes adds a note.
 -->
 <script>
+	import { foot, FOOT } from '$lib/app/foot.js';
+
 	import { addingArtifact, ARTIFACT, fromFile, fromLink } from './artifacts.js';
 	import { mediaOf } from './files.js';
 	import Frame from './Frame.svelte';
@@ -261,7 +263,7 @@
 
 <!-- docked just above the app's nav pill: the sparks picked, or one row to capture -->
 {#if pickedNow.length}
-	<div class="dock picked" class:beside={listed} role="region" aria-label="The sparks picked">
+	<div class="dock picked" use:foot={FOOT.waiting} class:beside={listed} role="region" aria-label="The sparks picked">
 		<b>{pickedNow.length} picked</b>
 		<button
 			class="btn primary"
@@ -281,7 +283,7 @@
 	</div>
 {:else if asked}
 	<form
-		class="dock capture"
+		class="dock capture" use:foot={FOOT.waiting}
 		class:beside={listed}
 		class:over
 		aria-label="Capture a spark"
@@ -346,13 +348,8 @@
 {/if}
 
 <style>
-	/* one row docked just above the app's nav pill (--nav-room, src/app.css), over the middle column on a wider screen */
+	/* Shared layout dock owns placement above navigation. */
 	.dock {
-		position: fixed;
-		left: 0.5rem;
-		right: 0.5rem;
-		bottom: var(--nav-room, 5rem);
-		z-index: 20;
 		box-sizing: border-box;
 		max-width: 40rem;
 		margin: 0 auto;
@@ -362,17 +359,6 @@
 		background: rgb(255 255 255 / 0.96);
 		box-shadow: 0 10px 30px rgb(38 56 44 / 0.16);
 		backdrop-filter: blur(10px);
-	}
-
-	@media (min-width: 761px) {
-		.dock {
-			right: 1rem;
-			left: 1rem;
-		}
-
-		.dock.beside {
-			left: calc(15.5rem + 1rem);
-		}
 	}
 
 	.capture.over {

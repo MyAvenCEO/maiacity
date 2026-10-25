@@ -35,4 +35,29 @@ theorem explicit_prefix_before_discovery (explicit discovered : List Nat) :
     (rankWork explicit discovered).take explicit.length = explicit := by
   simp [rankWork]
 
+-- A modern lease schedules transfer independently of the manifest walk. Only
+-- explicit protocol incompatibility permits the legacy awaited transfer path.
+inductive DemandReply where
+  | supported | unavailable | refused
+  deriving DecidableEq
+
+def awaitsLegacy (reply : DemandReply) : Bool := reply == .unavailable
+
+theorem supported_demand_does_not_await_history :
+    awaitsLegacy .supported = false := rfl
+
+theorem refusal_does_not_bypass_scope :
+    awaitsLegacy .refused = false := rfl
+
+-- Revision notifications coalesce into one pending replan while a walk runs.
+def pendingReplan (pending : Bool) (_revision : Nat) : Bool := pending || true
+
+theorem revision_burst_coalesces (pending : Bool) (a b : Nat) :
+    pendingReplan (pendingReplan pending a) b = pendingReplan pending b := by
+  simp [pendingReplan]
+
+theorem obsolete_replan_has_no_hints (current owner : Nat) (known : List Nat)
+    (h : current ≠ owner) : hints current owner known true = [] := by
+  simp [hints, h]
+
 end AvenDB.ViewDemand

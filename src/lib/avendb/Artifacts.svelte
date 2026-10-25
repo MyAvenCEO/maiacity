@@ -10,6 +10,8 @@
 	it, tagged as its slice asks (`creatable`), where its ops allow it (`may`).
 -->
 <script>
+	import { foot, FOOT } from '$lib/app/foot.js';
+
 	import { addingArtifact, ARTIFACT, fromFile, fromLink, isArtifact, LOOKS, lookOf } from './artifacts.js';
 	import { mediaOf } from './files.js';
 	import Frame from './Frame.svelte';
@@ -205,7 +207,7 @@
 
 	<!-- docked just above the app's nav pill: the artifacts picked, or one row to capture -->
 	{#if pickedNow.length}
-		<div class="dock picked" class:beside={narrows} role="region" aria-label="The artifacts picked">
+		<div class="dock picked" use:foot={FOOT.waiting} class:beside={narrows} role="region" aria-label="The artifacts picked">
 			<b>{pickedNow.length} picked</b>
 			<input class="name" bind:value={sparkTitle} placeholder="The spark’s title" aria-label="The spark’s title" />
 			<button
@@ -220,7 +222,7 @@
 		</div>
 	{:else if asked}
 		<form
-			class="dock capture"
+			class="dock capture" use:foot={FOOT.waiting}
 			class:beside={narrows}
 			class:over
 			aria-label="Capture an artifact"
@@ -281,13 +283,8 @@
 </Frame>
 
 <style>
-	/* one row docked just above the app's nav pill (--nav-room, src/app.css), over the pages' column on a wider screen */
+	/* Shared layout dock owns placement above navigation. */
 	.dock {
-		position: fixed;
-		left: 0.5rem;
-		right: 0.5rem;
-		bottom: var(--nav-room, 5rem);
-		z-index: 20;
 		box-sizing: border-box;
 		max-width: 40rem;
 		margin: 0 auto;
@@ -299,13 +296,7 @@
 		backdrop-filter: blur(10px);
 	}
 
-	/* beside the left side of the layout (./Frame.svelte), where it stands */
-	@media (min-width: 761px) {
-		.dock.beside {
-			left: calc(15.5rem + 1rem);
-			right: 1rem;
-		}
-	}
+
 
 	.capture.over {
 		border-color: var(--accent);

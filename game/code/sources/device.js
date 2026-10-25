@@ -37,6 +37,7 @@ const SHARED = Symbol.for('maiacity.avendb.device');
 let activeView = null;
 
 export function useDevice(d) {
+	clearTimeout(activeView?.timer);
 	activeView?.controller.abort();
 	activeView?.demand.close();
 	activeView = null;
@@ -52,6 +53,7 @@ export function useDevice(d) {
 export function useView(path) {
 	const opened = deviceOf();
 	if (activeView?.device === opened && activeView.path === path) return activeView.done;
+	clearTimeout(activeView?.timer);
 	activeView?.controller.abort();
 	activeView?.demand.close();
 	activeView = null;
@@ -60,33 +62,72 @@ export function useView(path) {
 	const signal = controller.signal;
 	const before = learned(path);
 	const demand = createDemand((op) => opened.run(op));
-	const view = { device: opened, path, controller, demand, done: null };
+	const view = { device: opened, path, controller, demand, done: null, walking: false, dirty: false, timer: null, run: null };
 	activeView = view;
-	view.done = (async () => {
-		// Learned IDs are scheduling hints, not trusted records. Do not wait for an
-		// unrelated manifest query before telling the node what this view needs.
-		if (before.length) void demand.add(before.slice(0, AT_ONCE));
-		const declared = await bringDeclared(path, {
-			device: opened, signal,
-			prioritize: (ids, queries) => {
-				signal.throwIfAborted();
-				return demand.prioritize(ids, queries);
-			},
-			bring: async (ids) => {
-				const scoped = await demand.add(ids);
-				return bringEntries(ids, opened, { signal, path, prioritize: !scoped });
-			}
-		});
+	// Demand already schedules authorized discovery and transfer. Awaiting a
+	// second legacy pull here blocks later manifest ranks on whole-history sync
+	// and occupies foreground slots outside the view's cancellable scope.
+	const request = async (ids) => {
+		await demand.add(ids);
 		signal.throwIfAborted();
-		const rest = before.filter((e) => !declared.includes(e));
-		if (rest.length) {
-			const ids = rest.slice(0, AT_ONCE);
-			const scoped = await demand.add(ids);
-			await bringEntries(ids, opened, { signal, path, prioritize: !scoped });
-		}
-		return declared;
-	})().catch(() => []);
-	return view.done;
+		learn(ids, path, { prioritize: false });
+		if (demand.legacy()) return bringEntries(ids, opened, { signal, path });
+	};
+	const manifestQuery = { types: ['manifest'], vault: MAIA_CITY };
+	// A cold device must discover route manifests before it can name their entries.
+	// This is an authorized type hint, never a world scan.
+	void demand.prioritize([], [manifestQuery]);
+	view.run = () => {
+		view.walking = true;
+		view.dirty = false;
+		view.done = (async () => {
+			// Learned IDs are scheduling hints, not trusted records. Do not wait for an
+			// unrelated manifest query before telling the node what this view needs.
+			if (before.length) void demand.add(before.slice(0, AT_ONCE));
+			const declared = await bringDeclared(path, {
+				device: opened, signal,
+				prioritize: (ids, queries) => {
+					signal.throwIfAborted();
+					return demand.prioritize(ids, [manifestQuery, ...queries]);
+				},
+				bring: request
+			});
+			signal.throwIfAborted();
+			const rest = before.filter((e) => !declared.includes(e));
+			if (rest.length) {
+				const ids = rest.slice(0, AT_ONCE);
+				await request(ids);
+			}
+			return declared;
+		})().catch(() => {
+			controller.abort();
+			demand.close();
+			return [];
+		}).finally(() => {
+			view.walking = false;
+			if (view.dirty) scheduleReplan(view);
+		});
+		return view.done;
+	};
+	return view.run();
+}
+
+// Actual local revisions, not polling, trigger a bounded coalesced walk. Retain
+// the same lease so later records extend its dependencies without scope churn.
+function scheduleReplan(view) {
+	if (activeView !== view || view.controller.signal.aborted || view.walking || view.timer) return;
+	view.timer = setTimeout(() => {
+		view.timer = null;
+		if (activeView === view && !view.controller.signal.aborted && view.dirty) void view.run();
+	}, 150);
+	view.timer.unref?.();
+}
+
+export function refreshActiveView() {
+	const view = activeView;
+	if (!view || view.controller.signal.aborted) return;
+	view.dirty = true;
+	scheduleReplan(view);
 }
 
 /** where this browser keeps, per page, the entries it read (`learn`) */

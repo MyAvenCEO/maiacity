@@ -50,6 +50,12 @@ try {
    if(url.pathname==='/src/lib/avendb/device/passkey.js')return route.fulfill({contentType:'text/javascript',body:passkey});
    return route.continue();
  });
+ await context.addInitScript(() => {
+   Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{
+     if(window.fixtureDenyClipboard)throw new DOMException('Fixture denied','NotAllowedError');
+     window.fixtureCopiedLogs=text;
+   }}});
+ });
  const page=await context.newPage();
  page.setDefaultTimeout(20000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -60,10 +66,23 @@ try {
  assert.equal(await diagnostics.evaluate(el=>getComputedStyle(el).position),'fixed');
  await diagnostics.click();
  if(process.env.AVENDB_LIFECYCLE_SCREENSHOT)await page.screenshot({path:process.env.AVENDB_LIFECYCLE_SCREENSHOT});
- await page.getByRole('button',{name:'Network diagnostics',exact:true}).click();
- await page.frameLocator('iframe[title="This device’s network check"]').getByRole('button',{name:'Run connection check'}).waitFor();
+ await page.getByRole('button',{name:'Run diagnostics',exact:true}).waitFor();
+ assert.equal(await page.locator('dialog button').count(),3); // Run, Copy, Close: no nested modes.
+ await page.getByRole('button',{name:'Copy logs',exact:true}).click();
+ await page.waitForFunction(()=>Boolean(window.fixtureCopiedLogs));
+ const lockedReport=await page.evaluate(()=>JSON.parse(window.fixtureCopiedLogs));
+ assert.equal(lockedReport.kind,'maia-unified-diagnostics');
+ assert.equal(lockedReport.lifecycle.current.documents,1);
+ assert.equal(lockedReport.run.reason,'not-run');
  assert.equal(await page.evaluate(()=>window.fixtureSession.phase),'closed');
- assert.deepEqual(probes,[]);
+ assert.deepEqual(probes,[]); // Opening/copying never starts HTTP speed tests.
+ await page.getByRole('button',{name:'Run diagnostics',exact:true}).click();
+ await page.getByRole('button',{name:'Run diagnostics',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Copy logs',exact:true}).click();
+ const checkedReport=await page.evaluate(()=>JSON.parse(window.fixtureCopiedLogs));
+ assert.equal(checkedReport.run.engine.reason,'locked');
+ assert(probes.length>0);
+ assert.equal(await page.evaluate(()=>window.fixtureSession.phase),'closed');
  await page.getByRole('button',{name:'Close diagnostics'}).click();
  assert.equal(await diagnostics.evaluate(el=>document.activeElement===el),true);
  await page.getByRole('button',{name:'Unlock fixture'}).click();
@@ -98,8 +117,15 @@ try {
  assert.equal(restart.current.documents,2); assert.equal(restart.previous.phase,'open');
  assert.equal(restart.navigation,'reload');
  await diagnostics.click();
- await page.getByText('Page restart details',{exact:true}).click();
- await page.getByText('This window has loaded 2 documents. Navigation: reload.',{exact:true}).waitFor();
+ await page.evaluate(()=>{window.fixtureDenyClipboard=true});
+ await page.getByRole('button',{name:'Copy logs',exact:true}).click();
+ const fallback=page.getByRole('textbox',{name:'Diagnostic logs'});
+ await fallback.waitFor();
+ const report=JSON.parse(await fallback.inputValue());
+ assert.equal(report.lifecycle.current.documents,2);
+ assert.equal(report.lifecycle.navigation,'reload');
+ assert.equal(report.lifecycle.previous.phase,'open');
+ assert.equal(await fallback.evaluate(el=>document.activeElement===el && el.selectionStart===0 && el.selectionEnd===el.value.length),true);
  assert.deepEqual(errors,[]);
  console.log('PASS '+engine+': global mobile diagnostics works locked/open without auto probes; close/Escape/outside preserve document; lifecycle distinguishes view/lock/reload and new document stays locked');
 } finally { await browser?.close();await server?.close(); }
