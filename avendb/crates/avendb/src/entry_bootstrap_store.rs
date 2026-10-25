@@ -1608,13 +1608,11 @@ fn encode_anchors<'a>(
 }
 
 impl Lab {
-    /// Small identity stamp; the signed snapshot fixes its ciphertext root.
-    pub fn bootstrap_stamp(&self, on: SignerId) -> Vec<(EntryId, EditId)> {
-        self.held(on)
-            .bootstrap_bases
-            .iter()
-            .map(|(e, (s, _))| (*e, *s))
-            .collect()
+    /// The companion can change while its owner-approved snapshot stays the same.
+    /// A save of an older recipient capsule must not acknowledge added recovery keys.
+    pub fn bootstrap_stamp(&self, on: SignerId) -> BootstrapStamp {
+        let store = self.held(on);
+        BootstrapStamp((!store.bootstrap_bases.is_empty()).then(|| store.bootstrap_revision.clone()))
     }
     /// Capture ciphertext anchors with the same held signed frontier as a journal save.
     pub fn bootstrap_bytes(&self, on: SignerId) -> Option<Vec<u8>> {

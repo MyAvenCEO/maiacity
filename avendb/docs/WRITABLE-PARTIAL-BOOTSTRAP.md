@@ -1197,3 +1197,24 @@ Added a public Node v4 durable-write test; v3 compatibility explicitly requests 
 and still checks core read-only behavior. Rust parse/diff checks passed; none of
 these new protocol or writable tests has executed yet. This is not a deployment
 or end-to-end completion claim.
+
+### Same-snapshot recovery save receipt repair (2026-10-25)
+
+The prior pending-write repair was incomplete: `bootstrap_stamp` still compared
+only entry and signed snapshot IDs. Adding encrypted exact-key recovery to an
+already retained snapshot therefore did not change the save receipt. The common
+saver could miss the new companion or acknowledge it using an older save.
+
+`BootstrapStamp` now retains the existing process-local anchor revision by
+allocation identity. Every anchor replacement changes that revision; comparison
+is constant-time and does not copy or hash checkpoint payloads. The saver and
+save wakeup use this receipt, so the old save remains distinguishable from the
+new recovery companion. This is a persistence fence, never authorization.
+The existing durable recovery regression explicitly checks the same-snapshot
+replacement, refusal before the new receipt, reopen, and full-holder convergence.
+
+Also added `EntryKeyRecovery` to the aggregate Lean imports: the complete Lean
+build now checks the module rather than relying on a separate one-off invocation.
+Full Lean build passed (127 jobs). Updated the fallback budget regression to the
+actual v4/v3/v2/v1 negotiation and two-second total. Focused Rust recovery and
+transport execution remain pending at this commit; no deployment is claimed.

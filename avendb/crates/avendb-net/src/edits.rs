@@ -42,7 +42,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, EntryId, SignerId};
-use avendb::lab::{Checked, Lab, Warm, Warming};
+use avendb::lab::{BootstrapStamp, Checked, Lab, Warm, Warming};
 use avendb::policy::{Log, LogRevision};
 use avendb::sign::Signed;
 use avendb::wire::Wire;
@@ -116,7 +116,7 @@ struct Book {
 struct Kept {
     /// The first `written` edits of the device's log.
     written: usize,
-    anchor_stamp: Vec<(EntryId, EditId)>,
+    anchor_stamp: BootstrapStamp,
     /// The log whose first `written` edits were persisted. Withdrawals and restores start a new lineage, even
     /// when the number of edits stays the same; an in-flight save acknowledges only the lineage it wrote.
     lineage: Option<LogRevision>,
@@ -135,7 +135,7 @@ impl Kept {
 /// of the whole log, up to place `to`, and the McEliece keys the shelf lacks.
 struct Due {
     to: usize,
-    anchor_stamp: Vec<(EntryId, EditId)>,
+    anchor_stamp: BootstrapStamp,
     anchors: Vec<u8>,
     lineage: LogRevision,
     records: Vec<u8>,
@@ -360,7 +360,7 @@ impl Edits {
                 }
             }
         }
-        let kept = Kept { anchor_stamp: Vec::new(), written: 0, lineage: None, keys: keys.keys().copied().collect(), whole: false };
+        let kept = Kept { anchor_stamp: BootstrapStamp::default(), written: 0, lineage: None, keys: keys.keys().copied().collect(), whole: false };
         let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending, anchors: anchors.clone() };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
         let (slots, checked) = (Mutex::new((0, 0)), Mutex::new(None));
@@ -844,7 +844,7 @@ mod tests {
         // Simulate a completed object write whose acknowledgement was lost.
         shelf.put(&journal_name(0), Entry { keys: vec![], records: records.clone(), anchors: anchors.clone() }.to_bytes()).await.unwrap();
         let mut book = edits.book.lock().await;
-        let due = Due { to: 1, lineage: log_lab.log(me).lineage(), records, keys: vec![], whole: false, anchors: anchors.clone(), anchor_stamp: vec![] };
+        let due = Due { to: 1, lineage: log_lab.log(me).lineage(), records, keys: vec![], whole: false, anchors: anchors.clone(), anchor_stamp: BootstrapStamp::default() };
         edits.put(&mut book, due).await.unwrap();
         drop(book);
         let (_, (saved, _, retained)) = Edits::open(shelf.clone()).await.unwrap();
@@ -861,7 +861,7 @@ mod tests {
         let mut book = edits.book.lock().await;
         let mut records = Vec::new();
         record(&mut records, &signed(0));
-        edits.put(&mut book, Due { to: 1, lineage: log_lab.log(me).lineage(), records, keys: vec![], whole: true, anchors: anchors.clone(), anchor_stamp: vec![] }).await.unwrap();
+        edits.put(&mut book, Due { to: 1, lineage: log_lab.log(me).lineage(), records, keys: vec![], whole: true, anchors: anchors.clone(), anchor_stamp: BootstrapStamp::default() }).await.unwrap();
         drop(book);
         let (_, (saved, _, retained)) = Edits::open(shelf.clone()).await.unwrap();
         assert_eq!(saved.len(), 1);
@@ -989,7 +989,7 @@ mod tests {
         let first = signed(0).edit;
         let second = signed(1).edit;
         let mut log = Log::from_edits(vec![first.clone(), second]);
-        let kept = Kept { anchor_stamp: Vec::new(), written: 2, lineage: Some(log.lineage()), keys: HashSet::new(), whole: false };
+        let kept = Kept { anchor_stamp: BootstrapStamp::default(), written: 2, lineage: Some(log.lineage()), keys: HashSet::new(), whole: false };
         assert!(kept.continues(&log));
         log.let_go(&[first.id()].into());
         log.receive([signed(2).edit]);

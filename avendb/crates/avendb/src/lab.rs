@@ -85,6 +85,25 @@ pub use entry_base::{AuthenticatedCountedEntryBase, AuthenticatedEntryBaseEnvelo
 mod entry_projection;
 pub use entry_projection::{EntryProjectionOffer, PreparedEntryProjection, VerifiedEntryProjection};
 
+/// Process-local receipt for the exact retained anchor companion, including
+/// recipient recovery ciphertext added without changing the signed snapshot.
+/// Allocation identity keeps polling constant-time and cannot authorize data.
+#[derive(Clone, Debug, Default)]
+pub struct BootstrapStamp(Option<Arc<()>>);
+impl BootstrapStamp {
+    pub fn is_empty(&self) -> bool { self.0.is_none() }
+}
+impl PartialEq for BootstrapStamp {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+impl Eq for BootstrapStamp {}
+
 #[path = "lab/warm_materialization.rs"]
 mod warm_materialization;
 
