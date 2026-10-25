@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { policyObservations, receiveWork, TIMED_OPS } from './latency-journal.js';
+import { policyObservations, TIMED_OPS } from './latency-journal.js';
 const number = value => Number.isFinite(value) && value >= 0 ? value : null;
 const unavailable = reason => ({ status: 'unavailable', reason });
 /** Strict projection: never spread arbitrary engine responses into copied logs. */
@@ -88,4 +88,19 @@ export function createDiagnosticRunner({ ask, currentOwner, isOpen, snapshot, ne
    }
   }
  };
+}
+
+function receiveWork(perf) {
+ const finite = (/** @type {any} */ value) => Number.isFinite(value) && value >= 0;
+ const names = ['receive: atomic checkpoint admission', 'receive: prepared chunk admission'];
+ const timers = Object.fromEntries(names.flatMap(name => {
+  const t = perf?.timers?.[name];
+  return t && Number.isSafeInteger(t.count) && t.count >= 0 && [t.total_ms,t.mean_ms,t.max_ms].every(finite)
+   ? [[name, {count:t.count,total_ms:t.total_ms,mean_ms:t.mean_ms,max_ms:t.max_ms}]] : [];
+ }));
+ const counts = Object.fromEntries(['receive: atomic checkpoint pages', 'receive: atomic checkpoint page edits'].flatMap(name => {
+  const n = perf?.counts?.[name];
+  return Number.isSafeInteger(n) && n >= 0 ? [[name,n]] : [];
+ }));
+ return {timers,counts};
 }
