@@ -23,7 +23,7 @@ export function diagnosticSnapshot({ phase, journal, lifecycle, calls = [], mani
   sync: sync?.known ? Object.fromEntries(['peers', 'logs', 'behind', 'pulling', 'pages'].map(key => [key, number(sync[key])])) : unavailable('peer-log-coverage-unavailable'),
   playback: playback ? Object.fromEntries(['frames','fps','renderP95','gapP95','cutP95','cuts','maxGap','maxCutGap','longGaps','failures'].map(key => [key, number(playback[key])])) : unavailable('no-playback-observation'),
   acceptance: { outgoingDurability: 'unmeasured', filesComplete: 'unmeasured', renderedRemoteLatency: 'unmeasured', completeFirstView: 'unmeasured', restartCause: 'unknown' },
-  semantics: 'Unlock includes user authentication. Local calls include queue time, not paint or remote delivery. Consumer observations exclude paint/durable save; absent samples are unmeasured. Log coverage does not prove file or outgoing completeness. No account IDs, entry contents, peer addresses or error text are exported.' };
+  semantics: 'Unlock includes user authentication. Local calls include queue time, not paint or remote delivery. Call context separates observed hidden elapsed from visible elapsed; visible elapsed is not CPU time. Old samples without context cannot separate suspension. Consumer observations exclude paint/durable save; absent samples are unmeasured. Log coverage does not prove file or outgoing completeness. No account IDs, entry contents, peer addresses or error text are exported.' };
 }
 /** One bounded read at a time. A timed-out engine call cannot accumulate duplicate retries. */
 export function createDiagnosticRunner({ ask, currentOwner, isOpen, snapshot, network, armReactive, now = () => performance.now(), onUpdate = () => {} }) {
