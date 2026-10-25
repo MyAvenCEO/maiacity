@@ -58,3 +58,10 @@ theorem descendant_preferred (depth delta : Nat) : newerCausalCut depth (depth +
   unfold newerCausalCut
   omega
 end ScopedDiscoveryManifest
+
+namespace ScopedDiscoveryManifest
+def fulfilledMember (visible authorized importedAdvertisedHeads : Bool) :=
+  visible && authorized && importedAdvertisedHeads
+theorem visible_stale_member_not_fulfilled (authorized : Bool) :
+    fulfilledMember true authorized false = false := by cases authorized <;> rfl
+end ScopedDiscoveryManifest

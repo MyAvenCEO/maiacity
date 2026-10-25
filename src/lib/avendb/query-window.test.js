@@ -322,3 +322,15 @@ test('missing manifest members precede 512 existing rows and advance as members 
     expect(d.calls.at(-1).entries).not.toContain(id(1000));
     view.close(); await flush();
 });
+
+test('a visible stale row retains its advertised missing-head priority', async () => {
+    const d = node();
+    const view = createReadWindow({ device: () => d, read: async () => ({ ok: {
+        rows: [{ entry: id(1) }, { entry: id(2) }], scope: { discovery: {
+            basis: 'owner-attested-cut', entry: id(8), snapshot: id(9), pendingEntries: [id(2)]
+        } }
+    } }) });
+    await view.read({ op: 'entry_views', vault: id(7), tag: 'selected' }); await flush();
+    expect(d.calls.at(-1).entries).toEqual([id(2), id(8), id(1)]);
+    view.close(); await flush();
+});
