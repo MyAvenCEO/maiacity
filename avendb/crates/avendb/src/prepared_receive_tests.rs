@@ -212,9 +212,14 @@ fn prepared_chunks_preserve_order_dedup_and_signature_ownership() {
     let mut source=Lab::with_entropy([231;32]);
     let owner=source.passkey_from_in("owner",[232;32],Suite::MlDsa);
     let sender=source.device_with_in("sender",[233;32],Suite::MlDsa);
-    cast::human_on(&mut source,owner,&[sender]);
+    let vault=cast::human_on(&mut source,owner,&[sender]);
     let originals=source.backup(sender).signed;
-    let incoming:Vec<_>=originals.iter().cycle().take(300).cloned().collect();
+    let entry=source.create(sender,vault,vault,world::NOTE,&[],cast::document("Invalid duplicate","body",sender)).unwrap();
+    let id=source.state(sender).entry(entry).unwrap().creation;
+    let valid=source.signed_edit(sender,id).unwrap().clone();
+    let mut invalid=valid.clone();invalid.sigs[0].pq[0]^=1;
+    let mut incoming:Vec<_>=originals.iter().cycle().take(300).cloned().collect();
+    incoming[127]=invalid.clone();incoming[128]=valid;incoming[299]=invalid;
     let (mut chunked,me)=receiver();let (mut whole,_)=receiver();
     let prepared=chunked.prepare_receive(me,incoming.clone()).check();
     let mut seen=Vec::new();let mut new=0;
@@ -226,4 +231,5 @@ fn prepared_chunks_preserve_order_dedup_and_signature_ownership() {
     assert_eq!(seen,incoming);
     assert_eq!(new,whole.receive_whose_now(me,incoming,vec![],false).0);
     assert_eq!(chunked.backup(me).signed,whole.backup(me).signed);
+    assert!(chunked.signed_edit(me,id).is_none(),"negative first-duplicate result survives chunk boundary");
 }

@@ -436,7 +436,7 @@ impl Iterator for PreparedReceiveBatches {
         let edits:Vec<_>=self.edits.by_ref().take(self.batch).collect();
         if edits.is_empty() {return None;}
         let signatures=edits.iter().filter_map(|s| {
-            let id=s.edit.id(); self.signatures.remove(&id).map(|valid|(id,valid))
+            let id=s.edit.id(); self.signatures.get(&id).copied().map(|valid|(id,valid))
         }).collect();
         Some(PreparedReceive {edits,signatures,perf:std::mem::take(&mut self.perf)})
     }
