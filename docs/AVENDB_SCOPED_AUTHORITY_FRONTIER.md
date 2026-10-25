@@ -361,3 +361,39 @@ parser; Cargo/type/runtime checks await the shared primary compilation slot.
 Required filters: `demand::tests`, `pulls::tests`, `authority_stage::tests`, then
 `cold_room_demand_renders_with_unrelated_authority_frontiers_withheld` to confirm
 the full active-view path still completes.
+## Explicit accepted-base suffix bridge (source candidate; Rust unvalidated)
+
+An already authenticated current owner base now supplies an opaque dependency
+summary from its bounded entry Slice (at most 512 writes). This is not a raw
+peer-provided policy state: the local active-base authority, overlay input
+revision, recipient ownership/readability, snapshot standing and key checks run
+again. The summary is used only to plan current authority dependencies. The
+normal signature/current-policy receiver and owner-overlay suffix reconciliation
+remain responsible for accepting each new edit.
+
+Transport kind 22 explicitly names the entry, signed snapshot and up to 32
+actually held suffix IDs. The provider validates the exact snapshot and current
+recipient before selecting at most 64 post-base edits/480 KiB through ordinary
+authorized reply selection. Using the snapshot cut internally to select a
+response never writes it into either peer's holdings or coverage counters.
+Session request limits, bounded response admission and dispatch are registered;
+the live-demand path calls it before historical transfer, and accepting a judged
+checkpoint wakes that live path to catch up from an older published snapshot.
+The existing complete-inventory fence and bounded recursive current authority
+closure apply immediately before suffix admission.
+
+Tests added (not yet run): a core 80-write base transfers only one new edit,
+without inventing held history, then rejects a revoked device; a public-demand
+real-peer fixture uses an 80-write target while ordinary history pulls are held,
+checks first-view restoration, receives a live suffix, keeps actual target-held
+writes below 64 and unrelated history absent, and checks revocation. The explicit
+wire parser bounds its independent cursor. Lean stale-base, missing-authority and
+cursor-versus-history laws pass; Rust files parse with rustfmt.
+
+Limits remain explicit: the accepted metadata envelope is capped at 512, a suffix
+page must be complete within 64 edits, and this first bridge accepts owner-authored
+main-line write suffixes only. New audience changes require a refreshed base or
+ordinary bounded staging. Legacy checkpoint-covered authority still needs a
+traced checkpoint-standing provenance closure; its signatures are not assumed
+independently verified. Full generic shared-writer/checkpoint authorization task B
+remains open. No deployment or device-latency acceptance is claimed.

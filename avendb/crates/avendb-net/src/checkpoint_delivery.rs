@@ -425,6 +425,12 @@ impl Shared {
             // published only by save_on after its exact durable receipt, not this fetch.
         }
         drop(retained_permit);
+        if kept && judged {
+            // A newly accepted base may precede the provider's current head.
+            // Re-enter the live lane, whose explicit suffix request keeps the
+            // owner basis separate from ordinary held-history coverage.
+            self.live_announced(peer.device, false, &[avendb::sync::LogId::Entry(entry)]);
+        }
         Ok(kept)
     }
 }
@@ -567,13 +573,17 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn owner_checkpoint_reaches_a_type_only_view_before_its_history() {
-        owner_checkpoint_public_flow(false).await;
+        owner_checkpoint_public_flow(false, false).await;
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn owner_judged_checkpoint_publication_fetch_and_durable_write() {
-        owner_checkpoint_public_flow(true).await;
+        owner_checkpoint_public_flow(true, false).await;
     }
-    async fn owner_checkpoint_public_flow(judged: bool) {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn long_owner_base_public_demand_receives_live_suffix_without_old_history() {
+        owner_checkpoint_public_flow(true, true).await;
+    }
+    async fn owner_checkpoint_public_flow(judged: bool, long: bool) {
         let mut w = world();
         let (sender, receiver, owner, vault) = (w.mac_a, w.phone_a, w.passkey_a, w.alice);
         let secret = *w.lab.passkey_secret(owner).unwrap();
@@ -589,7 +599,7 @@ mod tests {
                 document("Before", "initial", sender),
             )
             .unwrap();
-        for n in 0..8 {
+        for n in 0..if long { 80 } else { 8 } {
             w.lab
                 .edit(sender, vault, entry, |item| {
                     item.set_text(2, &format!("Latest {n}"))
@@ -717,6 +727,20 @@ mod tests {
         let absent = phone
             .read(move |lab, me| lab.item(me, unrelated).is_none())
             .await;
+        if long {
+            assert!(result.is_ok(), "public demand must restore the >64-write view first");
+            mac.act(move |lab, me| lab.edit(me, vault, entry, |i| i.set_text(2, "remote after base"))).await.unwrap();
+            time::timeout(Duration::from_secs(15), async {
+                loop {
+                    if phone.read(move |lab,me| avendb::cast::text(lab,me,entry,2).as_deref()==Some("remote after base")).await { break; }
+                    time::sleep(Duration::from_millis(5)).await;
+                }
+            }).await.expect("explicit accepted-base suffix bypasses old target history transfer");
+            let held_target = phone.read(move |lab,me| lab.log(me).edits().iter()
+                .filter(|e|avendb::sync::log_of(e,e.id())==Some(avendb::sync::LogId::Entry(entry))).count()).await;
+            assert!(held_target < 64, "accepted basis must never be counted as held target history");
+            assert!(phone.read(move |lab,me|lab.item(me,unrelated).is_none()).await);
+        }
         if judged {
             time::timeout(Duration::from_secs(15),async {
                 loop {
@@ -726,6 +750,19 @@ mod tests {
                 }
             }).await.expect("base must receive a durable save receipt");
             assert!(phone.act(move|lab,me|lab.edit(me,vault,entry,|i|i.set_text(2,"local after durable adoption"))).await.is_ok());
+        }
+        if long {
+            let snapshot=EditId::from_hex(published["ok"]["edit"].as_str().unwrap()).unwrap();
+            let removal=mac.act(move|lab,me| {
+                let id=lab.submit(me,&[owner],avendb::policy::Action::Revoke(avendb::policy::Revoking::Device {
+                    vault,device:receiver,keep:vec![],
+                })).unwrap(); lab.signed_edit(me,id).unwrap().clone()
+            }).await;
+            assert!(mac.act(move|lab,me|lab.owner_base_suffix_reply(me,receiver,entry,snapshot,&[])).await.is_none(),
+                "revoked requester cannot fetch suffix from a still-retained snapshot");
+            phone.act(move|lab,me|lab.receive(me,vec![removal],vec![])).await;
+            assert!(phone.read(move|lab,me|lab.owner_base_scope(me,entry).is_none()).await,
+                "current revocation invalidates the accepted-base scope");
         }
         drop(stalled);
         phone.shutdown().await.unwrap();

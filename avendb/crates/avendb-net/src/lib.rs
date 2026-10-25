@@ -115,6 +115,7 @@ mod authority_classes;
 mod discovery;
 mod checkpoint_delivery;
 mod bootstrap_dependencies;
+mod bootstrap_suffix;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk;
 #[cfg(not(target_arch = "wasm32"))]
