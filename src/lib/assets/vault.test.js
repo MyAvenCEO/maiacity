@@ -642,7 +642,7 @@ test('every page that builds assets waits for the vault\'s recipes before its fi
  });
  test('an empty local vault waits for sync without reading a remote index', async () => {
   const { r, asked } = await loaded({ rows: [] });
-  expect(r.phase).toBe('failed');
+  expect(r.phase).toBe('loading');
   expect(r.error).toContain('sync into local avenDB');
   expect(asked).toEqual([]);
  });

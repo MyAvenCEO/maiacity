@@ -12,7 +12,9 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
-	import { loadRecipes, recipes, reloadRecipes, watchRecipes } from './vault.js';
+	import { page } from '$app/state';
+	import { session } from '$lib/avendb/session.svelte.js';
+	import { recipes, reloadRecipes, watchRecipes, watchRecipeCatalog } from './vault.js';
 
 	/**
 	 * @type {{ children: import('svelte').Snippet, hold?: boolean }} `hold`: the page waits for the recipes and shows
@@ -25,7 +27,10 @@
 	let open = $state(false);
 	onMount(() => watchRecipes((r) => (state = copy(r))));
 	$effect(() => {
-		if (hold) void loadRecipes();
+		if (!hold) return;
+		void session.device;
+		void page.url.pathname;
+		return watchRecipeCatalog(session);
 	});
 
 	const told = $derived(hold ? [...state.missed, ...state.unread, ...state.refused.map((r) => `refused: ${r}`)] : []);

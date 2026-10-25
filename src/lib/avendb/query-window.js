@@ -37,6 +37,7 @@ export function queryEntries(op) {
  * This is only a scheduling hint: the complete original query still runs locally.
  * Negation, predicates, projections and acting identities are never sent to peers. */
 export function queryDiscovery(op) {
+	if (op?.op === 'code') return normalizeDiscovery([{ types: op.type, ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
 	if (op?.op === 'aips') return normalizeDiscovery([{ types: ['aip', 'review'], ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
 	if (op?.op === 'database' || op?.op === 'entry_views') {
 		// A semantic file-kind read also accepts custom schemas. Prioritize the
