@@ -127,3 +127,16 @@ A 512-existing-row regression verifies missing IDs survive truncation and advanc
 after the first eight become visible. Combined JS demand/completeness: 28 passed,
 99 assertions; Lean passes. Native manifest/publication/offline-restore gates remain
 pending the parent-controlled compiler queue.
+
+### Publication ordering correction
+
+Matching retained carriers are ranked by their authenticated Snapshot edit's
+causal depth, then signed snapshot ID for deterministic ties. Random carrier IDs
+cannot cause an older ancestor publication to win indefinitely. Concurrent cuts
+still carry historical accepted-cut labels; this ordering makes no wall-clock or
+unknown-peer freshness claim. Every candidate still passes exact-scope/current
+owner policy and carrier authorization before selection. The bounded carrier set
+is ranked in one pass over existing log metadata, without decoding entry bodies.
+A regression deliberately assigns the larger carrier ID to the older cut and
+adds a member before publishing the smaller-ID newer carrier. It requires the
+new cut/member set. Lean and syntax pass; native execution remains queued.

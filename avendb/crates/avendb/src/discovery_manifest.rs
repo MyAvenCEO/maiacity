@@ -154,12 +154,23 @@ impl Lab {
     /// opt a caller into historical negative evidence.
     pub fn automatic_discovery_hint(&self,on:SignerId,actor:VaultId,vault:VaultId,scope:DiscoveryScope)->Option<Value> {
         let scope=scope.normalized()?;
-        let mut candidates:Vec<_>=self.held(on).projections.lock().ok()?.iter()
-            .filter(|((device,_),_)|*device==on)
-            .map(|((_,entry),_)|*entry).collect();
+        let store=self.held(on);
+        let carriers:Vec<_>=store.projections.lock().ok()?.keys()
+            .filter(|(device,_)|*device==on).map(|(_,entry)|*entry).collect();
+        let mut snapshots:HashMap<EditId,Vec<EntryId>>=HashMap::new();
+        for carrier in carriers {
+            if let Some(snapshot)=self.retained_projection_hint(on,carrier) {
+                snapshots.entry(snapshot).or_default().push(carrier);
+            }
+        }
+        // Log depth is authenticated causal order: a later descendant publication
+        // outranks its ancestor regardless of randomly generated carrier IDs.
+        // Concurrent cuts have no objective "latest"; signed snapshot ID breaks
+        // ties deterministically without claiming remote or wall-clock freshness.
+        let mut candidates:Vec<_>=store.log.ids().iter().zip(store.log.edits()).flat_map(|(id,edit)|
+            snapshots.get(id).into_iter().flatten().map(move|carrier|(edit.depth,*id,*carrier))).collect();
         candidates.sort();
-        for carrier in candidates.into_iter().rev() {
-            let Some(snapshot)=self.retained_projection_hint(on,carrier) else {continue;};
+        for (_,snapshot,carrier) in candidates.into_iter().rev() {
             let Some(targets)=self.discovery_manifest_targets(on,actor,vault,scope.clone(),carrier,snapshot) else {continue;};
             return Some(json!({"basis":"owner-attested-cut","entry":carrier.to_hex(),"snapshot":snapshot.to_hex(),
                 "scope":scope.json(),"pendingEntries":targets.iter().map(EntryId::to_hex).collect::<Vec<_>>(),
@@ -372,6 +383,38 @@ mod tests {
         let before=w.lab.held(w.mac_a).log.ids().len();
         assert!(w.lab.prepare_discovery_manifest(w.mac_a,w.passkey_a,w.alice,DiscoveryScope::Tag("selected".into())).is_err());
         assert_eq!(w.lab.held(w.mac_a).log.ids().len(),before);
+    }
+
+    #[test]
+    fn discovery_manifest_prefers_causal_publication_over_random_carrier_order() {
+        let mut w=cast::world();
+        let first=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("first",w.mac_a)).unwrap();
+        let scope=DiscoveryScope::Tag("selected".into());
+        let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope.clone()).unwrap();
+        let mut carriers=Vec::new();
+        for _ in 0..2 {
+            let mut item=Item::new(w.mac_a);item.put_record(&record);
+            carriers.push(w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap());
+        }
+        carriers.sort();
+        // Force the adverse case independent of RNG: old's EntryId sorts first
+        // under the former reverse-ID selection, but newer has the later cut.
+        let (newer,old)=(carriers[0],carriers[1]);
+        let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],old).unwrap();
+        let old_snapshot=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
+        assert!(w.lab.retain_entry_projection(w.mac_a,old_snapshot,old,p.sealed));
+        let second=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("second",w.mac_a)).unwrap();
+        let current=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope.clone()).unwrap();
+        w.lab.edit(w.mac_a,w.alice,newer,|item|{item.put_record(&current);}).unwrap();
+        let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],newer).unwrap();
+        let new_snapshot=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
+        assert!(w.lab.retain_entry_projection(w.mac_a,new_snapshot,newer,p.sealed));
+        let selected=w.lab.automatic_discovery_hint(w.mac_a,w.alice,w.alice,scope).unwrap();
+        assert_eq!(selected["entry"],newer.to_hex());
+        assert_eq!(selected["snapshot"],new_snapshot.to_hex());
+        let members=selected["pendingEntries"].as_array().unwrap();
+        assert!(members.contains(&json!(first.to_hex()))&&members.contains(&json!(second.to_hex())));
+        assert_eq!(selected["remoteComplete"],false);
     }
 
 }
