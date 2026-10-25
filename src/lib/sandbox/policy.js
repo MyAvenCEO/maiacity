@@ -113,7 +113,7 @@ export const VIEW_SCRIPT = `addEventListener('message', function boot(e) {
  * WebAssembly (avenDB's device in the page, QuickJS in the logic host). Nothing else, and no eval.
  *
  * Everything else starts from our own origin (default-src), and the page talks only to our own servers (CONNECT): the
- * API, avenDB's feed and relay, and in theOS its own bridge and the `aven:` files. Pictures and films may come from
+ * API, avenDB's feed and relay, plus the exact Cloudflare speed-test host for explicit diagnostics, and in theOS its own bridge and the `aven:` files. Pictures and films may come from
  * any https host (a link's preview, a video's still), as they cannot run; frames only from us, a blob: (a PDF) and
  * Bunny's player; no form posts anywhere. The same pages run in theOS (vault/app/tauri.conf.json), so its schemes are
  * named here too: they lead nowhere in a browser. A dev server's page also reaches this machine (`dev`): its API, its
@@ -126,7 +126,7 @@ export const pageCsp = (sha256, { dev = false } = {}) => ({
 	'default-src': ['self'],
 	'script-src': ['self', 'wasm-unsafe-eval', 'blob:', `sha256-${sha256(SHELL_SCRIPT)}`, `sha256-${sha256(VIEW_SCRIPT)}`],
 	'worker-src': ['self', 'blob:'],
-	'connect-src': [...CONNECT, ...(dev ? LOCAL : [])],
+	'connect-src': [...CONNECT, 'https://speed.cloudflare.com', ...(dev ? LOCAL : [])],
 	// Svelte writes style attributes into each prerendered page, and SvelteKit hashes no inline style when this is here
 	'style-src': ['self', 'unsafe-inline'],
 	'img-src': ['self', 'data:', 'blob:', 'https:', 'aven:', ...(dev ? LOCAL : [])],
