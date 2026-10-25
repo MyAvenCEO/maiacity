@@ -31,3 +31,11 @@ theorem cancellation_keeps_admitted (a r : List α) : (retained a r).take a.leng
 theorem chunks_keep_order (a b r : List α) : retained (a ++ b) r = retained a (b ++ r) := by
   simp [retained, List.append_assoc]
 end AvenDB.PreparedReceiveAdmission
+
+namespace AvenDB.CheckpointPageAdmission
+-- Staging never inherits trust merely because a checkpoint occurs in a page.
+def staged (hasCheckpoint independentlyVerified : Bool) := !hasCheckpoint || independentlyVerified
+theorem covered_unknown_stays_atomic : staged true false = false := rfl
+theorem checkpoint_staging_requires_independent (v : Bool) (h : staged true v = true) : v = true := by
+  simpa [staged] using h
+end AvenDB.CheckpointPageAdmission
