@@ -273,6 +273,11 @@ impl Lab {
         if !store.bootstrap_bases.contains_key(&entry) && store.bootstrap_bases.len() >= 16 {
             return false;
         }
+        store.manifest_anchors.remove(&entry);
+        while store.bootstrap_bases.len()+store.manifest_anchors.len()>=16 && !store.bootstrap_bases.contains_key(&entry) {
+            let Some(old)=store.manifest_anchors.keys().next().copied() else {return false;};
+            store.manifest_anchors.remove(&old);
+        }
         store.bootstrap_revision = Arc::new(());
         store.bootstrap_basis = None;
         store.bootstrap_bases.insert(entry, (snapshot, sealed));
@@ -289,6 +294,17 @@ impl Lab {
         }
         let recovered: HashSet<_> = self.held(on).bootstrap_bases.keys().copied()
             .filter(|entry| self.recovered_capsule_frontier(on, *entry)).collect();
+        // Retired manifests retain ciphertext only. Rehydrate their immutable
+        // statements once after unlock; they never reinstall a writable overlay.
+        let manifests:Vec<_>=self.held(on).manifest_anchors.keys().copied().collect();
+        for entry in manifests {
+            let store=self.held(on);
+            if store.attested_manifests.lock().expect("attested manifests").contains_key(&(on,entry)) {continue;}
+            let (snapshot,sealed)=&store.manifest_anchors[&entry];
+            if let Some(record)=self.restore_owner_judgment(on,*snapshot,entry,sealed).and_then(|base|base.record(MAIN)) {
+                self.remember_attested_manifest(on,*snapshot,entry,record);
+            }
+        }
         // Only IDs are copied. Reusable cursors never clone/decrypt sealed anchors.
         let mut entries: Vec<_> = self.held(on).bootstrap_bases.keys().copied().collect();
         if let Some(last) = self.held(on).bootstrap_cursor {
@@ -307,9 +323,13 @@ impl Lab {
                 let sealed=&self.held(on).bootstrap_bases[entry].1;
                 if let Some(base)=self.decode_owner_judgment(on,snapshot,*entry,sealed,false) {
                     if let Some(canonical)=canonical_owner_replacement(on,self.held(on),&base) {
+                        let manifest=base.record(MAIN).filter(|record|record.get("kind").and_then(Value::as_str)==Some("discovery-manifest"));
+                        if let Some(record)=manifest.as_ref() {self.remember_attested_manifest(on,snapshot,*entry,record.clone());}
                         let store=self.stores.get_mut(&on).expect("device");
                         store.shown.insert(*entry,canonical);
-                        store.bootstrap_bases.remove(entry);
+                        if let Some(anchor)=store.bootstrap_bases.remove(entry) {
+                            if manifest.is_some() {store.manifest_anchors.insert(*entry,anchor);}
+                        }
                         store.bootstrap_progress.remove(entry);
                         store.bootstrap_pending.remove(entry);
                         store.bootstrap_active.remove(entry);
@@ -548,7 +568,7 @@ impl Backup {
     /// Durable companion to the existing signed-log backup. Ciphertext only; decoding
     /// grants no authority and restore rechecks its signed root and current policy.
     pub fn bootstrap_bytes(&self) -> Option<Vec<u8>> {
-        encode_anchors(&self.bootstrap_bases, self.signed.iter())
+        encode_anchors(self.bootstrap_bases.iter(), self.signed.iter())
     }
     pub fn with_bootstrap_bytes(mut self, bytes: &[u8]) -> Option<Self> {
         if bytes.is_empty() {
@@ -1725,17 +1745,18 @@ fn anchor_frontier<'a>(
 }
 
 fn encode_anchors<'a>(
-    anchors: &Anchors,
+    anchors: impl Iterator<Item = (&'a EntryId, &'a (EditId, Vec<u8>))> + Clone,
     signed: impl Iterator<Item = &'a crate::sign::Signed> + Clone,
 ) -> Option<Vec<u8>> {
-    if anchors.is_empty() {
+    let count=anchors.clone().count();
+    if count==0 {
         return Some(Vec::new());
     }
-    if anchors.len() > 16 {
+    if count > 16 {
         return None;
     }
     let mut b = b"avenDB bootstrap anchors 2\n".to_vec();
-    (anchors.len() as u32).encode(&mut b);
+    (count as u32).encode(&mut b);
     for (entry, (snapshot, sealed)) in anchors {
         if sealed.len() > MAX_BYTES + 128 || !signed.clone().any(|s| s.edit.id() == *snapshot) {
             return None;
@@ -1765,7 +1786,7 @@ impl Lab {
     pub fn bootstrap_bytes(&self, on: SignerId) -> Option<Vec<u8>> {
         let store = self.held(on);
         encode_anchors(
-            &store.bootstrap_bases,
+            store.bootstrap_bases.iter().chain(&store.manifest_anchors),
             store.log.ids().iter().map(|id| &store.signed[id]),
         )
     }

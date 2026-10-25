@@ -403,6 +403,12 @@ mod tests {
         w.lab.sync(w.mac_a,w.phone_a);
         assert_eq!(w.lab.discovery_manifest_targets(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]),
             "later carrier content cannot rewrite the immutable owner-attested cut");
+        let saved=w.lab.backup(w.phone_a);
+        let bytes=w.lab.bootstrap_bytes(w.phone_a).unwrap();
+        let restored=Backup::new(saved.signed().to_vec(),saved.blobs.values().cloned()).with_bootstrap_bytes(&bytes).unwrap();
+        w.lab.restore_from(w.phone_a,restored);
+        assert_eq!(w.lab.discovery_manifest_targets(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]),
+            "offline reopen restores the exact signed statement after canonical history retired its overlay");
         w.lab.lock(w.phone_a);
         assert!(w.lab.held(w.phone_a).attested_manifests.lock().unwrap().is_empty(),"lock clears attested plaintext");
         let mut malformed=record;

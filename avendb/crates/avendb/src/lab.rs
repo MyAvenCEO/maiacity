@@ -785,6 +785,7 @@ struct Store {
     /// The replay of its edits as it last brought itself up to date: which stand, and what it knows.
     replay: Replay,
     bootstrap_bases: entry_base::Anchors,
+    manifest_anchors: entry_base::Anchors,
     bootstrap_state: Option<State>,
     bootstrap_active: HashSet<EntryId>,
     bootstrap_pending: HashSet<EntryId>,
@@ -886,6 +887,7 @@ impl Default for Store {
             blobs: HashMap::new(),
             replay: replay(&[]),
             bootstrap_bases: BTreeMap::new(),
+            manifest_anchors: BTreeMap::new(),
             bootstrap_state: None,
             bootstrap_active: HashSet::new(),
             bootstrap_pending: HashSet::new(),
@@ -5641,7 +5643,7 @@ impl Lab {
     pub fn backup(&self, d: SignerId) -> Backup {
         let store = self.held(d);
         let signed = store.log.ids().iter().map(|id| store.signed[id].clone()).collect();
-        Backup { signed, blobs: store.blobs.clone(), bootstrap_bases:store.bootstrap_bases.clone() }
+        Backup { signed, blobs: store.blobs.clone(), bootstrap_bases:store.bootstrap_bases.iter().chain(&store.manifest_anchors).map(|(id,base)|(*id,base.clone())).collect() }
     }
 
     /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it

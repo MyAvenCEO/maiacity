@@ -12,8 +12,11 @@ mutable suffix overlay. At adoption it retains only manifest records in a
 recipient-keyed, 16-entry / 4 MiB bounded memory cache (1 MiB per record), so
 canonical-history retirement cannot erase the owner's statement. Every use checks
 current entitlement and actor scope, and locking clears the plaintext. Durable
-reopening still uses the authenticated encrypted checkpoint and ordinary blob
-pins; this cache creates no alternate durable authority.
+reopening retains retired manifest ciphertext in the same bounded bootstrap
+companion, serialized with the ordinary signed frontier. Reopening authenticates
+the owner root and current policy before rebuilding the memory cache, without
+reactivating a retired overlay. Active and retired anchors share the 16-anchor
+bound; this cache creates no alternate durable authority.
 
 Validation added: cold carrier discovery with member history withheld, automatic
 pending-member hint, immutable statement after a later carrier write, plaintext
