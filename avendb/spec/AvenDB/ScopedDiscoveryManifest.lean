@@ -82,3 +82,11 @@ def projectionLocalComplete (_mainAvailable : Bool) := false
 theorem projection_remains_read_only (authorized : Bool) : projectionReadOnly authorized = true := rfl
 theorem projection_does_not_complete_history (available : Bool) : projectionLocalComplete available = false := rfl
 end ScopedDiscoveryManifest
+
+namespace ScopedDiscoveryManifest
+-- A carrier statement is read from its immutable authenticated checkpoint.
+-- Later local overlays are not a substitute for the owner's signed cut.
+def attestedStatement (checkpoint : Nat) (_overlay : Nat) := checkpoint
+theorem overlay_cannot_change_attestation (checkpoint before after : Nat) :
+    attestedStatement checkpoint before = attestedStatement checkpoint after := rfl
+end ScopedDiscoveryManifest

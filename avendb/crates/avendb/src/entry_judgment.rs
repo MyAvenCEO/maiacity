@@ -39,6 +39,10 @@ impl RestoredOwnerJudgment {
     pub fn entry(&self) -> EntryId {
         self.entry
     }
+    /// The immutable record in the authenticated owner cut, before any local suffix.
+    pub fn record(&self, line: Line) -> Option<Value> {
+        self.items.get(&line).map(Item::record)
+    }
     pub fn counted_writes(&self) -> usize {
         self.history.changes().iter().filter(|c| c.counted).count()
     }

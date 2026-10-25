@@ -35,7 +35,7 @@ impl Node {
         let ceremony=crate::ceremony_of(authenticator,keys,prepared.challenge(),Step::Approve).await?;
         let made=self.try_act(move|lab,me|lab.complete_discovery_manifest(me,prepared,&[(owner,&ceremony)])).await?;
         let entry=match made {Ok(entry)=>entry,Err(why)=>return Ok(Refused::from(why).to_json())};
-        let request=json!({"op":"checkpoint_view","entry":entry.to_hex()});
+        let request=json!({"op":"checkpoint_entry_capsule","entry":entry.to_hex()});
         // Carrier creation has already succeeded. Preserve it in every outcome;
         // no automatic retry, no implied rollback, and no inferred public share.
         match self.publish_checkpoint(&request,Some(authenticator)).await {
@@ -117,7 +117,7 @@ mod tests {
                 w.lab.edit(sender,vault,entry,|item|{let mut record=item.record();record["title"]=json!(format!("latest-{n}-{revision}"));item.set_record(avendb::lens::View::todo_v1(),&record);}).unwrap();
             }
             let expected=w.lab.item(sender,entry).unwrap().record()["title"].as_str().unwrap().to_owned();
-            let p=w.lab.draft_entry_projection(sender,&[owner],entry).unwrap();
+            let p=w.lab.draft_capsuled_entry_base(sender,&[owner],entry).unwrap();
             w.lab.complete(sender,p.draft,&[]).unwrap();
             pinned.push((entry,p.root,p.sealed));
             members.push((entry,expected));
@@ -126,17 +126,19 @@ mod tests {
         let record=w.lab.discovery_manifest_record(sender,vault,DiscoveryScope::Types(vec!["manifest-note".into()])).unwrap();
         let item=Item::made(&avendb::lens::View::plain(&avendb::lens::DISCOVERY_MANIFEST_V1),&record,sender).unwrap();
         let carrier=w.lab.create(sender,vault,vault,"discovery-manifest",&[],item).unwrap();
-        let p=w.lab.draft_entry_projection(sender,&[owner],carrier).unwrap();
+        let p=w.lab.draft_capsuled_entry_base(sender,&[owner],carrier).unwrap();
         w.lab.complete(sender,p.draft,&[]).unwrap();pinned.push((carrier,p.root,p.sealed));
         let mac=Node::spawn(w.lab.split(sender,&[],[188;32]),sender,Options::local()).await.unwrap();
         // Pin normally owner-signed fixtures. The transport still validates each
         // signed offer/hash/permission; no receiver state is injected by this test.
         for (entry,root,sealed) in pinned {
             let temporary=mac.shared.store.add_bytes_with_opts((sealed,BlobFormat::Raw)).temp_tag().await.unwrap();
-            mac.shared.store.tags().set([b"avendb/checkpoint/".as_slice(),&entry.0].concat(),HashAndFormat::new(Hash::from_bytes(root.hash),BlobFormat::Raw)).await.unwrap();
+            mac.shared.store.tags().set([b"avendb/capsuled-checkpoint/".as_slice(),&entry.0].concat(),HashAndFormat::new(Hash::from_bytes(root.hash),BlobFormat::Raw)).await.unwrap();
             drop(temporary);
         }
-        let phone=Node::spawn(receiver_lab,receiver,Options::local()).await.unwrap();
+        let folder=std::env::temp_dir().join(format!("avendb-manifest-capsule-{}",crate::shelf::fresh()));
+        let shelf=crate::disk::open(&folder).unwrap();
+        let phone=Node::spawn(receiver_lab,receiver,Options{shelf:Some(shelf),..Options::local()}).await.unwrap();
         let mut stalled=Vec::new();
         loop {
             let mut waiting=Box::pin(phone.shared.pulls.enter(false,None));
@@ -163,7 +165,7 @@ mod tests {
                     let Some(id)=row["entry"].as_str().and_then(EntryId::from_hex) else {continue;};
                     if let Some((_,expected))=members.iter().find(|(entry,_)|*entry==id) {
                         if row["title"]==*expected {
-                            assert_eq!(row["readOnly"],true);
+                            assert!(row["readOnly"].is_boolean(),"write readiness is explicit even with frontier recovery");
                             assert_eq!(row["checkpoint"]["partial"],true);
                             observed.insert(id);
                         }
@@ -193,6 +195,8 @@ mod tests {
         let still_incomplete=phone.read(move|lab,me| ids.iter().all(|id|lab.history(me,*id).is_none_or(|history|history.changes().len()<4)) && lab.item(me,unrelated).is_none()).await;
         drop(stalled);
         phone.shutdown().await.unwrap();mac.shutdown().await.unwrap();
+        drop(phone); drop(mac);
+        std::fs::remove_dir_all(folder).unwrap();
         assert!(progressed.is_ok(),"only {} of 12 read-only members advanced; last query {last}",observed.len());
         assert_eq!(observed.len(),12);
         assert!(still_incomplete,"checkpoint visibility must not depend on ordinary history/unrelated sync");

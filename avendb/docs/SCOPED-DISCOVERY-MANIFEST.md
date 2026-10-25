@@ -1,0 +1,22 @@
+
+## Capsule-backed carrier delivery
+
+New `checkpoint_scope` publication uses `checkpoint_entry_capsule`, preserving
+both owner ceremonies and the existing disclosure check. A fresh receiver can
+read the signed carrier without deriving an ordinary entry key from an incomplete
+private-audience occupancy history. This does not grant access to any member;
+member IDs are scheduling hints and every member still needs current authority.
+
+The manifest consumer reads the immutable authenticated base record, never the
+mutable suffix overlay. At adoption it retains only manifest records in a
+recipient-keyed, 16-entry / 4 MiB bounded memory cache (1 MiB per record), so
+canonical-history retirement cannot erase the owner's statement. Every use checks
+current entitlement and actor scope, and locking clears the plaintext. Durable
+reopening still uses the authenticated encrypted checkpoint and ordinary blob
+pins; this cache creates no alternate durable authority.
+
+Validation added: cold carrier discovery with member history withheld, automatic
+pending-member hint, immutable statement after a later carrier write, plaintext
+clearing on lock, and a twelve-member real peer delivery fixture using capsule
+publication and a durable recipient shelf. Lean `ScopedDiscoveryManifest` passes;
+Rust execution remains pending the shared compiler slot.

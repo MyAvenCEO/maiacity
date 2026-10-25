@@ -776,7 +776,10 @@ fn entry_with_files(lab: &Lab, me: SignerId, en: &Entry, files: Vec<(FileRoot, O
     let projected=projection.as_ref().and_then(|p|p.record(MAIN));
     let checkpoint=projected.as_ref().and_then(|_|projection.as_ref()).map(|p|json!({
         "snapshot":p.snapshot().to_hex(),"basis":p.basis().iter().map(EditId::to_hex).collect::<Vec<_>>(),
-        "partial":true,"freshness":"owner-attested-basis"}));
+        "partial":true,"freshness":"owner-attested-basis"})).or_else(||
+        lab.active_owner_base(me,en.id).map(|(snapshot,basis)|json!({
+            "snapshot":snapshot.to_hex(),"basis":basis.iter().map(EditId::to_hex).collect::<Vec<_>>(),
+            "partial":true,"freshness":"owner-attested-basis"})));
     let what = if let Some(value)=projected { projected_record(value) } else { match lab.item(me, en.id) {
         None => lane(lab, me, en.id, meaning.as_ref().map(|m| m.attrs.ty.as_str())).unwrap_or(What::Sealed),
         Some(item) => match (View::built_in(FILE).and_then(|v| item.read(v)), item.as_markdown(), item.as_todo()) {
@@ -826,7 +829,7 @@ fn entry_with_files(lab: &Lab, me: SignerId, en: &Entry, files: Vec<(FileRoot, O
         levels: levels(st, v, x),
         files,
         what,
-        read_only:checkpoint.is_some() || lab.owner_base_durability_pending(me,en.id) || lab.owner_base_pending(me,en.id)>0 || lab.owner_base_wait_reason(me,en.id).is_some(),
+        read_only:projection.is_some() || lab.owner_base_durability_pending(me,en.id) || lab.owner_base_pending(me,en.id)>0 || lab.owner_base_wait_reason(me,en.id).is_some(),
         checkpoint,
     }
 }

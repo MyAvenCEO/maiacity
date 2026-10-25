@@ -125,7 +125,7 @@ impl Lab {
 }
 
 /// Publication is an explicitly owner-cosigned carrier write followed by the
-/// existing owner-approved entry-projection Snapshot. This builder mutates no data.
+/// existing owner-approved checkpoint Snapshot. This builder mutates no data.
 impl Lab {
     pub fn discovery_manifest_record(&self,on:SignerId,vault:VaultId,scope:DiscoveryScope)->Option<Value> {
         let scope=scope.normalized()?;
@@ -159,11 +159,15 @@ impl Lab {
     pub fn automatic_discovery_hint_for_rows(&self,on:SignerId,actor:VaultId,vault:VaultId,scope:DiscoveryScope,visible:&[EntryId])->Option<Value> {
         let scope=scope.normalized()?;
         let store=self.held(on);
-        let carriers:Vec<_>=store.projections.lock().ok()?.keys()
+        let mut carriers:Vec<_>=store.projections.lock().ok()?.keys()
             .filter(|(device,_)|*device==on).map(|(_,entry)|*entry).collect();
+        carriers.extend(store.bootstrap_bases.keys().copied());
+        carriers.extend(store.attested_manifests.lock().ok()?.keys().filter(|(device,_)|*device==on).map(|(_,entry)|*entry));
+        carriers.sort(); carriers.dedup();
         let mut snapshots:HashMap<EditId,Vec<EntryId>>=HashMap::new();
         for carrier in carriers {
-            if let Some(snapshot)=self.retained_projection_hint(on,carrier) {
+            let retained=self.retained_projection_hint(on,carrier).or_else(||store.attested_manifests.lock().ok()?.get(&(on,carrier)).map(|row|row.0));
+            if let Some(snapshot)=retained {
                 snapshots.entry(snapshot).or_default().push(carrier);
             }
         }
@@ -206,10 +210,41 @@ impl Lab {
         Some(self.discovery_manifest_rows(on,actor,vault,scope,carrier,snapshot)?.into_iter().map(|(id,_)|id).collect())
     }
 
+    pub(crate) fn remember_attested_manifest(&self,on:SignerId,snapshot:EditId,entry:EntryId,record:Value) {
+        if record.get("kind").and_then(Value::as_str)!=Some(KIND) {return;}
+        let Ok(bytes)=serde_json::to_vec(&record) else {return;};
+        let size=bytes.len();
+        if size>1<<20 {return;}
+        let store=self.held(on);
+        let Ok(mut cache)=store.attested_manifests.lock() else {return;};
+        cache.remove(&(on,entry));
+        while cache.len()>=16 || cache.values().map(|row|row.2).sum::<usize>()+size>4<<20 {
+            let Some(key)=cache.keys().next().copied() else {return;}; cache.remove(&key);
+        }
+        cache.insert((on,entry),(snapshot,record,size));
+    }
+
+    fn attested_manifest_record(&self,on:SignerId,snapshot:EditId,carrier:EntryId)->Option<Value> {
+        let store=self.held(on);
+        if store.replayed!=store.log.edits().len() || !self.sees(on,carrier) {return None;}
+        if let Some((at,record,_))=store.attested_manifests.lock().ok()?.get(&(on,carrier)) {
+            if *at==snapshot {
+                self.projection_entitlement(on,snapshot,carrier)?;
+                return Some(record.clone());
+            }
+        }
+        if let Some((at,sealed))=store.bootstrap_bases.get(&carrier) {
+            if *at==snapshot {
+                return self.restore_owner_judgment(on,snapshot,carrier,sealed)?.record(MAIN);
+            }
+        }
+        self.attested_entry_projection(on,snapshot,carrier)?.record(MAIN)
+    }
+
     fn discovery_manifest_rows(&self,on:SignerId,actor:VaultId,vault:VaultId,scope:DiscoveryScope,carrier:EntryId,snapshot:EditId)->Option<Vec<(EntryId,Vec<EditId>)>> {
         let scope=scope.normalized()?;
-        let projection=self.attested_entry_projection(on,snapshot,carrier)?;
-        let record=projection.record(MAIN)?;
+        // Read the signed cut itself, never the mutable overlay after suffix writes.
+        let record=self.attested_manifest_record(on,snapshot,carrier)?;
         let object=record.as_object()?;
         if object.len()!=6 || object.keys().any(|key|!matches!(key.as_str(),"kind"|"vault"|"scope"|"members"|"completeAtOwnerCut"|"remoteComplete")) {return None;}
         if record.get("kind")?.as_str()?!=KIND || record.get("vault")?.as_str()?!=vault.to_hex()
@@ -344,12 +379,14 @@ mod tests {
         let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope.clone()).unwrap();
         let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&record,w.mac_a).unwrap();
         let carrier=w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap();
-        let prepared=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],carrier).unwrap();
+        let prepared=w.lab.draft_capsuled_entry_base(w.mac_a,&[w.passkey_a],carrier).unwrap();
         let snapshot=w.lab.complete(w.mac_a,prepared.draft,&[]).unwrap();
         let offer=w.lab.entry_projection_offer(w.mac_a,w.phone_a,carrier).unwrap();
+        let capsule=w.lab.entry_checkpoint_capsule(w.mac_a,w.phone_a,snapshot,carrier,&prepared.sealed).unwrap();
         w.lab.receive(w.phone_a,offer.evidence,vec![]);
-        assert!(w.lab.retain_entry_projection(w.phone_a,snapshot,carrier,prepared.sealed));
+        assert!(w.lab.adopt_capsuled_owner_entry_base(w.phone_a,snapshot,carrier,prepared.sealed,capsule));
         assert_eq!(w.lab.discovery_manifest_targets(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]));
+        assert_eq!(w.lab.automatic_discovery_hint(w.phone_a,w.alice,w.alice,scope.clone()).unwrap()["pendingEntries"],json!([note.to_hex()]));
         assert!(w.lab.discovery_manifest_members(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot).is_none());
         let query=json!({"op":"entry_views","vault":w.alice.to_hex(),"as":w.alice.to_hex(),"tag":"selected",
             "manifest":{"entry":carrier.to_hex(),"snapshot":snapshot.to_hex()}});
@@ -359,6 +396,15 @@ mod tests {
         assert_eq!(pending["ok"]["scope"]["completeAtOwnerCut"],false);
         w.lab.sync(w.mac_a,w.phone_a);
         assert_eq!(w.lab.discovery_manifest_members(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]));
+        w.lab.edit(w.mac_a,w.alice,carrier,|item| {
+            let mut changed=item.record(); changed["members"]=json!([]);
+            item.set_record(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&changed);
+        }).unwrap();
+        w.lab.sync(w.mac_a,w.phone_a);
+        assert_eq!(w.lab.discovery_manifest_targets(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]),
+            "later carrier content cannot rewrite the immutable owner-attested cut");
+        w.lab.lock(w.phone_a);
+        assert!(w.lab.held(w.phone_a).attested_manifests.lock().unwrap().is_empty(),"lock clears attested plaintext");
         let mut malformed=record;
         malformed["members"][0]["unexpected"]=json!(true);
         let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&malformed,w.mac_a).unwrap();

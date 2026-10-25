@@ -818,6 +818,7 @@ struct Store {
     warm_materialization: Option<warm_materialization::Validated>,
     /// Local scheduling hint only, bounded independently from receipt metadata.
     warm_working_set: Vec<EntryId>,
+    attested_manifests: std::sync::Mutex<BTreeMap<(SignerId, EntryId), (EditId, Value, usize)>>,
     projections: std::sync::Mutex<BTreeMap<(SignerId, EntryId), entry_projection::CachedEntryProjection>>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
@@ -902,6 +903,7 @@ impl Default for Store {
             shown: BTreeMap::new(),
             warm_materialization: None,
             warm_working_set: Vec::new(),
+            attested_manifests: std::sync::Mutex::new(BTreeMap::new()),
             projections: std::sync::Mutex::new(BTreeMap::new()),
             digests: None,
             follow: vec![],
@@ -998,6 +1000,7 @@ impl Store {
         self.bootstrap_basis = None;
         self.bootstrap_progress.clear();
         self.bootstrap_cursor = None;
+        self.attested_manifests.lock().expect("attested manifests").clear();
         self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
@@ -2674,6 +2677,7 @@ impl Lab {
         if let Some(hosted) = self.hosted.remove(&s) {
             self.keys.remove(&s);
             if let Some(store) = self.stores.get(&hosted.host) {
+                store.attested_manifests.lock().expect("attested manifests").retain(|(recipient, _), _| *recipient != s);
                 store.projections.lock().expect("entry projections").retain(|(recipient, _), _| *recipient != s);
             }
         }

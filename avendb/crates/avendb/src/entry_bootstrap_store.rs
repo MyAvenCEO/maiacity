@@ -264,11 +264,9 @@ impl Lab {
         entry: EntryId,
         sealed: Vec<u8>,
     ) -> bool {
-        if self
-            .restore_owner_judgment(on, snapshot, entry, &sealed)
-            .is_none()
-        {
-            return false;
+        let Some(attested)=self.restore_owner_judgment(on, snapshot, entry, &sealed) else {return false;};
+        if let Some(record)=attested.record(MAIN) {
+            self.remember_attested_manifest(on,snapshot,entry,record);
         }
         let at = self.at(on);
         let store = self.stores.get_mut(&at).expect("device");
