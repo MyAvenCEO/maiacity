@@ -31,3 +31,8 @@ test('transport exception never erases earlier accepted steps or retries uncerta
  }});
  expect(calls).toBe(2);expect(result.done).toEqual([{edit:'first'}]);expect(result.reason).toContain('acceptance is unknown');
 });
+
+test('protocol refusal retains code and displays explanatory why', async () => {
+ const result=await guardedPlan({checks:['initial'],ops:[{op:'tag'}],send:async()=>({refused:'BadOp',why:'read guard is stale; read dependencies and plan again'})});
+ expect(result.refusalCode).toBe('BadOp');expect(result.reason).toContain('stale');expect(result.done).toEqual([]);
+});

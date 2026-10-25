@@ -12,7 +12,7 @@ export async function guardedPlan({ send, checks, ops, current = () => true }) {
 		let response;
 		try { response = await send({ op: 'guarded', checks: guards, change: refs(op, done) }); }
 		catch { return { done, complete: false, reason: 'Transport failed; last step acceptance is unknown. Check its state before replanning' }; }
-		if (!response?.ok) return { done, complete: false, reason: response?.refused ?? 'Change was not accepted' };
+		if (!response?.ok) return { done, complete: false, reason: response?.why ?? response?.refused ?? 'Change was not accepted', refusalCode: response?.refused ?? null };
 		const accepted = response.ok;
 		done.push(accepted.value);
 		if (accepted.canContinue !== true || !Array.isArray(accepted.guards)) {

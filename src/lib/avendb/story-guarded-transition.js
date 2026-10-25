@@ -11,7 +11,7 @@ export async function guardedStoryTransition({ api, actor, entry, to, current, a
 	const capture = async (/** @type {any} */ query, requireComplete = false) => {
 		if (!current()) throw new Error('View or actor changed');
 		const out = await api.ask({ op: 'read_guard', query, requireComplete });
-		if (!out?.ok?.guard) throw new Error(out?.refused ?? 'Local dependencies are unavailable');
+		if (!out?.ok?.guard) throw Object.assign(new Error(out?.why ?? out?.refused ?? 'Local dependencies are unavailable'), { refusalCode: out?.refused ?? null });
 		checks.push(out.ok.guard);
 		return out.ok.value;
 	};
@@ -50,6 +50,6 @@ export async function guardedStoryTransition({ api, actor, entry, to, current, a
 			return value == null ? { refused: 'Change not accepted; remaining plan stopped' } : { ok: value };
 		} });
 	} catch (error) {
-		return { done: [], complete: false, reason: error instanceof Error ? error.message : 'Local dependencies unavailable' };
+		return { done: [], complete: false, reason: error instanceof Error ? error.message : 'Local dependencies unavailable', refusalCode: error && typeof error === 'object' && 'refusalCode' in error ? error.refusalCode : null };
 	}
 }
