@@ -428,3 +428,27 @@ These new Rust regressions await canonical combined compilation; no isolated
 Cargo build was started. Existing accepted-base authority, inventory, signature,
 and full-overlay fences remain unchanged. Queueing alone does not establish
 successful transfer, physical-device latency, or broader writable bootstrap.
+
+### Checkpoint-covered authority closure (source, runtime validation pending)
+
+Scoped authority can now use a held bare body only when current replay says the
+body stands, a later independently signed checkpoint stands and names it, and
+historical `acts_for` covers all its signers. The checkpoint vault is added to
+recursive current owner/device closure. Bare checkpoint chains cannot serve as
+the independently signed anchor. Every final admission recomputes provenance
+under the existing current inventory and Lab fences. Checkpoint actions are
+permitted inside closed vault histories; unknown action shapes remain refused.
+
+Covered grant classifiers retain a provenance requirement. Even an unrelated
+negative classifier is revalidated during final closure, so revoking its witness
+while network work is running cannot leave a stale negative classification.
+Audience witness dependencies are collected before recursive vault traversal.
+
+Lean stale/unsigned witness laws and Rust syntax checks pass. Added core tests
+exercise a retained bare authority marker, missing signed anchor, and revoked
+checkpoint; collector tests reject revoked classifier provenance. Rust execution
+and a real withheld-history peer fixture remain pending. The witness lookup is
+bounded (32,768 held replay edits, 2,048 IDs per checkpoint), but repeated lookup
+cost requires measurement/indexing before physical latency claims. Independently
+verified grant descriptors fetched directly from peers remain supported; missing
+bare evidence still requires normal authenticated transfer and may fall back.

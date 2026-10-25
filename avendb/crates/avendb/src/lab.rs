@@ -4615,6 +4615,29 @@ impl Lab {
         store.signed.contains_key(&edit) && !store.bare.contains(&edit)
     }
 
+    /// Current provenance for a scoped authority body. Empty means independently
+    /// verified; one vault means a standing independently signed checkpoint.
+    /// Callers must close that vault's current owner/device history and recheck
+    /// this witness atomically at admission. This is never permission by itself.
+    pub fn authority_edit_dependencies(&self, d: SignerId, edit: EditId) -> Option<Vec<VaultId>> {
+        if self.independently_verified_edit(d, edit) { return Some(vec![]); }
+        let store = self.held(d);
+        if store.replayed != store.log.edits().len() || !store.bare.contains(&edit) { return None; }
+        let replay = &store.replay;
+        let at = replay.ids.iter().position(|id| *id == edit)?;
+        if !replay.stood[at] { return None; }
+        // Bound witness search. No bare-to-bare chain or optimistic cycle.
+        if replay.edits.len() > 32768 { return None; }
+        for (j, checkpoint) in replay.edits.iter().enumerate().skip(at + 1) {
+            let Action::Checkpoint { vault, covers } = &checkpoint.action else { continue };
+            if covers.len() > 2048 || !replay.stood[j] || !covers.contains(&edit)
+                || !replay.acts.contains(&(edit, *vault))
+                || !self.independently_verified_edit(d, replay.ids[j]) { continue; }
+            return Some(vec![*vault]);
+        }
+        None
+    }
+
     /// Diagnostic policy observation only: no authority, persistence or rendered-state claim.
     /// Unknown/unauthorized/not-yet-replayed all have the same unavailable result.
     pub fn peer_edit_outcome(&self, d: SignerId, peer: SignerId, id: EditId) -> Option<bool> {
@@ -7046,3 +7069,29 @@ mod peer_receipt_tests;
 
 #[path = "content_refresh.rs"]
 mod content_refresh;
+
+#[cfg(test)]
+mod authority_checkpoint_provenance_tests {
+    use super::*;
+    #[test]
+    fn bare_authority_requires_standing_signed_ordered_checkpoint() {
+        let mut w=crate::cast::world();
+        let target=w.lab.submit(w.mac_a,&[w.passkey_a],Action::Settings {
+            vault:w.alice,set:crate::policy::Setting::Threshold(1),
+        }).unwrap();
+        let checkpoint=w.lab.submit(w.mac_a,&[w.passkey_a],Action::Checkpoint {
+            vault:w.alice,covers:vec![target],
+        }).unwrap();
+        assert_eq!(w.lab.authority_edit_dependencies(w.mac_a,target),Some(vec![]));
+        // Exercise the same retained bare marker used after signature retirement.
+        w.lab.stores.get_mut(&w.mac_a).unwrap().bare.insert(target);
+        assert_eq!(w.lab.authority_edit_dependencies(w.mac_a,target),Some(vec![w.alice]));
+        w.lab.stores.get_mut(&w.mac_a).unwrap().bare.insert(checkpoint);
+        assert!(w.lab.authority_edit_dependencies(w.mac_a,target).is_none(),"bare chains cannot authenticate themselves");
+        let store=w.lab.stores.get_mut(&w.mac_a).unwrap();
+        store.bare.remove(&checkpoint);
+        let at=store.replay.ids.iter().position(|id|*id==checkpoint).unwrap();
+        store.replay.stood[at]=false;
+        assert!(w.lab.authority_edit_dependencies(w.mac_a,target).is_none(),"revoked checkpoint cannot classify authority");
+    }
+}

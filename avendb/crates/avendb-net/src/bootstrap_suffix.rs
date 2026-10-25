@@ -344,13 +344,13 @@ impl Shared {
                     let log = lab.log(me);
                     let indexed = shared.logs_of(lab, me);
                     classes
-                        .owner_dependencies(
+                        .owner_dependencies_provenance(
                             &owner,
                             log.edits(),
                             log.ids(),
                             &indexed,
                             current,
-                            |id| lab.independently_verified_edit(me, id),
+                            |id| lab.authority_edit_dependencies(me, id),
                         )
                         .map(|d| d.missing)
                 })
@@ -409,8 +409,8 @@ impl Shared {
                 let log = lab.log(me);
                 let indexed = shared.logs_of(lab, me);
                 if classes
-                    .owner_scope(&owner, log.edits(), log.ids(), &indexed, current, |id| {
-                        lab.independently_verified_edit(me, id)
+                    .owner_scope_provenance(&owner, log.edits(), log.ids(), &indexed, current, |id| {
+                        lab.authority_edit_dependencies(me, id)
                     })
                     .is_none()
                 {
