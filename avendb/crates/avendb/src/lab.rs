@@ -3307,10 +3307,10 @@ impl Lab {
     /// signing on it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and
     /// makes the edits its upkeep calls for (`upkeep`). A locked device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
-        self.refresh_budget(d, lent, None);
+        self.refresh_budget(d, lent, None, &[]);
     }
 
-    fn refresh_budget(&mut self, d: SignerId, lent: &[(SignerId, Secret)], budget: Option<usize>) {
+    fn refresh_budget(&mut self, d: SignerId, lent: &[(SignerId, Secret)], budget: Option<usize>, priority: &[EntryId]) {
         // a session's store is its host's, which opens what it holds with its own keys
         let d = self.at(d);
         // Bootstrap overlays have a separate transaction/authority contract;
@@ -3376,7 +3376,7 @@ impl Lab {
             store.perf.add("read", at);
             // what it shows, every write counted or not, before its upkeep: its stewards grant counted asks alone
             let at = Perf::start();
-            show_items_budget(d, store, budget);
+            show_items_priority(d, store, budget, priority);
             store.perf.add("show items", at);
             if !store.judgment_pending.is_empty() {
                 store.behind = true;
@@ -5595,7 +5595,7 @@ impl Lab {
             if !store.judgment_pending.is_empty() {return (true,true)}
             store.judgment_epoch=None;
         }
-        self.refresh_budget(d,&[],Some(32));
+        self.refresh_budget(d,&[],Some(32),priority);
         (true,!self.held(d).judgment_pending.is_empty())
     }
 
@@ -6583,9 +6583,6 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// in force changed: first the cap groups, as the device counts the writes that say them (`State::read_groups`), as
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
-fn show_items_budget(d: SignerId, store: &mut Store, budget: Option<usize>) {
-    show_items_priority(d,store,budget,&[])
-}
 fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, priority: &[EntryId]) {
     let revision=store.log.revision();
     if store.judgment_epoch.as_ref().is_some_and(|(r,k)|*r!=revision || !Arc::ptr_eq(k,&store.keys.revision)) {
@@ -6846,7 +6843,7 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
         for id in ids { store.deferred_bodies.remove(&id); }
         store.reshow = true;
         read(d, store);
-        show_items_budget(d, store, budget);
+        show_items_priority(d, store, budget, priority);
     }
     store.judgment_pending.retain(|e|store.replay.state.entry(*e).is_some() && !store.shown.contains_key(e));
     store.judgment_jobs.retain(|e,_|store.judgment_pending.contains(e));

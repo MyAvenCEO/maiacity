@@ -1,5 +1,7 @@
 # Bounded ordinary-entry judgment during catch-up
 
+Implementation: [f64394f6](https://github.com/MyAvenCEO/maiacity/commit/f64394f6).
+
 Status: source implemented, Lean and Rust syntax checks passed; canonical runtime validation pending. No deployment. This is a cooperative boundary around ordinary entry judgment, not a claim that all catch-up computation is bounded or sub-100 ms.
 
 ## The blocking path
@@ -14,7 +16,7 @@ A slice stops after at most 32 judged writes, or after consuming 256 KiB of upda
 
 Unchanged subsequent slices reuse the already-prepared authority phase. Upkeep runs only once all ordinary judgments complete. Ready ordinary local writes can use the existing strict content-only path while presentation alone is pending. Such a write cancels the old exact-basis cursors and retains the pending entry IDs, rather than draining them synchronously. Policy, key, lane and context changes do not inherit private judgments. Locking drops all private state and keys.
 
-The network scheduler releases both mutex and scheduling permit between slices and performs a real asynchronous yield (including the browser task boundary). Active manifest demand orders entry work. The loop re-registers for scheduling each turn, so foreground work can run between real catch-up slices.
+The network scheduler releases both mutex and scheduling permit between slices and performs a real asynchronous yield (including the browser task boundary). Active manifest demand orders entry work from the first prepared slice, including canonical retry after retiring an invalid warm receipt. The loop re-registers for scheduling each turn, so foreground work can run between real catch-up slices.
 
 ## Remaining limits
 
