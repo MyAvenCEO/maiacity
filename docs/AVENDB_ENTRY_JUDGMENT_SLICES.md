@@ -32,3 +32,36 @@ The core regression receives 128 actual signed revisions, runs a bounded step, v
 Demand churn previously could replace the sole cursor and repeatedly lose progress. The current cursor now stays first until complete; a two-entry regression alternates demand each turn and requires strictly advancing progress or completion with at most one retained cursor. Invalid warm materialization retry now hides the failed old Shown and defers decoding/retry to the next scheduler turn rather than recursively resetting the slice budget. A dedicated regression requires no decoded body after that yielded turn, then canonical recovery. Finalization after a completed prepared slice also uses its own turn; upkeep-generated writes return for a fresh authority turn instead of starting another bounded refresh round inside the spent call.
 
 The stale-visibility audit found the invalid-warm retry branch as the new exposure risk when yielding: it previously kept the old entry until immediate recursion repaired it. That branch now removes it before returning. Other invalidated/budget-deferred entries are already removed from public Shown; exact context changes cancel private jobs. Runtime validation of these corrections remains pending.
+
+## Receive integration boundaries
+
+Fetched key blobs previously called synchronous `Lab::receive`, immediately
+running global refresh under one scheduler/DB turn. Key-byte admission now uses
+normal receive with `now=false`, notifies the existing persistence path, releases
+the Lab guard, and enters `catch_up_paced_class` with the original foreground or
+background class. A focused regression admits 96 real signed revisions, supplies
+real named key blobs, requires the entry to remain unpublished at the admission
+boundary, then requires multiple bounded judgment turns and exact final content.
+
+Staged entry admission likewise uses `receive_prepared(..., false)` under its
+unchanged signature, current authority, inventory and demand fences. Only after
+those locks release does it call paced catch-up. Demand-origin cancellation wraps
+that wait; admitted data is retained and both admission/completion notify viewers.
+Eligible exact ordinary live tails retain their existing immediate fast path.
+Ceremony/contact receives remain synchronous because callers inspect current
+policy in the same turn; they are separate review work, not silently changed here.
+
+New Lean boundary lemmas passed standalone and changed Rust files parsed with
+rustfmt. Rust/runtime validation is pending integration. Run the new
+`receive_boundary_tests` filter plus existing staged transport and cold-demand
+regressions.
+
+### Remaining query hydration work
+
+`engine::query_candidates_from` still imports records for every metadata-matching
+candidate before applying offset/limit. `Shown::items_in` may import own snapshots
+or rebuild a deferred history in that synchronous read. Pending-judgment safety
+does not bound that already-validated warm hydration. A future guarded label-only
+query plan could choose the ordered page before importing records, but only when
+predicates, projection, count and ordering semantics can be preserved. This slice
+makes no query-semantic change and claims no physical-device latency result.

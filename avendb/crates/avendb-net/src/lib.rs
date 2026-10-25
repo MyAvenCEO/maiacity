@@ -2713,8 +2713,12 @@ impl Shared {
             let bytes = got.iter().map(|k| k.len() as u64).sum();
             self.traffic.keys(device, asked, got.len() as u64, bytes, fetching.elapsed().as_millis() as u64);
             if !got.is_empty() {
-                self.try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| lab.receive(me, Vec::new(), got)).await?;
+                let class = if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground };
+                self.try_lab_class(class, move |lab, me| receive_key_blobs_deferred(lab, me, got)).await?;
                 self.changed.notify_one();
+                // Newly unlocked entries use the same bounded scheduler turns as
+                // signed pages; a key reply cannot drain the whole vault here.
+                self.catch_up_paced_class(true, class).await;
             }
         }
         Ok(new)
@@ -3581,3 +3585,45 @@ mod admission_tests {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "prepared_receive_tests.rs"]
 mod prepared_receive_tests;
+
+/// Keep received key bytes under normal admission without synchronous judgment.
+/// Callers schedule catch-up only after releasing the Lab/scheduler guard.
+fn receive_key_blobs_deferred(lab: &mut Lab, me: SignerId, blobs: Vec<Arc<[u8]>>) {
+    lab.receive_whose_now(me, Vec::new(), blobs, false);
+}
+
+#[cfg(test)]
+mod receive_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn key_reply_does_not_drain_pending_unrelated_history_inside_admission() {
+        let mut w = avendb::cast::world();
+        let me = w.mac_a;
+        let before = w.lab.backup(me);
+        let entry = w.lab.create(me, w.alice, w.alice, "note", &[],
+            avendb::cast::document("Pending", "base", me)).unwrap();
+        for n in 0..96 {
+            w.lab.edit(me, w.alice, entry, |item| item.set_text(1, &format!("history {n}"))).unwrap();
+        }
+        let expected = w.lab.item(me, entry).unwrap().record();
+        let incoming = w.lab.backup(me);
+        let keys: Vec<_> = incoming.blobs.values().cloned().collect();
+        assert!(!keys.is_empty(), "fixture must receive real named key blobs");
+        w.lab.restore_from(me, before);
+        w.lab.receive_whose_now(me, incoming.signed, Vec::new(), false);
+        assert!(w.lab.item(me, entry).is_none());
+        receive_key_blobs_deferred(&mut w.lab, me, keys);
+        assert!(w.lab.item(me, entry).is_none(), "key admission cannot synchronously publish unrelated history");
+        assert_eq!(w.lab.judgment_pending(me), 0, "admission has not run a judgment turn");
+        let mut turns = 0;
+        loop {
+            let (_, pending) = w.lab.catch_up_step(me, &[entry]);
+            turns += 1;
+            if !pending { break; }
+            assert!(turns < 256);
+        }
+        assert!(turns > 1, "large entry must yield through scheduled judgment turns");
+        assert_eq!(w.lab.item(me, entry).unwrap().record(), expected);
+    }
+}

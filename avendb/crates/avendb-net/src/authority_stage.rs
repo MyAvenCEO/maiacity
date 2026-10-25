@@ -373,11 +373,22 @@ impl crate::Shared {
                 }
                 // Signature and current policy admission are unchanged. The stage
                 // receipt grants no authorization even when its frontier matches.
-                lab.receive_prepared(me, prepared, true);
+                lab.receive_prepared(me, prepared, false);
                 Admission::Applied
             }).await?;
             match returned {
-                Admission::Applied => { self.jobs.stir(); return Ok(()); }
+                Admission::Applied => {
+                    // Admission/provenance is fenced; admitted bytes remain queued
+                    // for the existing persistence path, even if the view closes.
+                    // Judgment must release Lab, demand and holdings locks first.
+                    self.changed.notify_one();
+                    self.jobs.stir();
+                    if let Some(origin) = &origin {
+                        let _ = origin.run(self.catch_up_paced(true)).await;
+                    } else { self.catch_up_paced(true).await; }
+                    self.jobs.stir();
+                    return Ok(());
+                }
                 Admission::Discarded => return Ok(()),
                 Admission::Waiting(held_stage, held_prepared) => {
                     stage = held_stage;
