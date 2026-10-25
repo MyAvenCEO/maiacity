@@ -35,6 +35,14 @@ measured fresh-device behavior.
 | Pending | Combined native/WASM checks, matching build artifacts and next deployment. Latest website/PWA verification remains24b8c4af; do not equate pushed source with deployment. |
 | Open | Physical iPhone/iPad first-view, restart stability, durable restart and local/remote rendered latency acceptance after matching delivery. |
 
+### Latest combined validation and corrections
+
+- Core suite after initial warm scratch integration: **286 passed, two failed**. The previously failing immediate-receive regression now passes. Failures were `reopened_deferred_store_retains_unrelated_lazy_bodies` and `long_single_entry_warm_append_matches_canonical_restore`: `check_write` still hydrated retained history before the new path. The assertions remain unchanged.
+- Correction [924a2fc1](https://github.com/MyAvenCEO/maiacity/commit/924a2fc1) skips that availability hydration only for an authenticated exact MAIN append cut; ordinary proof/admission and all unsupported-case checks remain. Runtime rerun pending.
+- Lazy scratch import [04bf23fa](https://github.com/MyAvenCEO/maiacity/commit/04bf23fa) retains encoded scratch images through unlock, first view and re-save; authorized target write demand imports the scratch. Runtime rerun pending.
+- Received tail reuse across unrelated deeper private history [1bfc9fd2](https://github.com/MyAvenCEO/maiacity/commit/1bfc9fd2) requires exact canonical state, per-entry history and old global-order equivalence. Its new runtime regression is pending.
+- Scoped dependency candidate `556a9445` has passed the real owner-room plus live-update case with unrelated authority/history withheld. Final incomplete-inventory/revocation negatives remain under validation on its isolated branch. Direct-owner-only scope is not completion of shared Chat bootstrap; missing indirect dependencies are being connected to priority transfer separately.
+
 Current phone evidence:24b frontend,375/2899 logs, all10 recorded manifest runs
 held zero manifest records. Provider read found13 manifests, so catalog exists
 but was not held by this phone. Local query p95 was2897ms with visible foreground
