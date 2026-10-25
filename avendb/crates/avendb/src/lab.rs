@@ -4164,7 +4164,7 @@ impl Lab {
         if self.dry {
             return Ok(edit.id());
         }
-        let content_only = self.content_refresh_ready(on, &edit, &body);
+        let content_only = self.content_refresh_ready(on, &edit, &body) || self.creation_refresh_ready(on, &edit, &body);
         let id = self.seal_write(on, edit, body, x)?;
         if content_only && self.refresh_content(on, id) { return Ok(id); }
         match &mut self.held_back {
