@@ -167,3 +167,14 @@ namespace AvenDB.SemanticGroups
 def mayMark (selectorsKnown matchingGroupsKnown : Bool) : Bool := selectorsKnown && matchingGroupsKnown
 theorem unresolvedGroupCannotMark (known : Bool) : mayMark known false = false := by simp [mayMark]
 end AvenDB.SemanticGroups
+
+namespace AvenDB.GroupTransferLane
+/-- Scheduling evidence selects bounded dependency bytes, never admission. -/
+def allowed (requested verified : List α) : Prop := ∀ id ∈ requested, id ∈ verified
+def admit (canonical current : Bool) : Bool := canonical && current
+theorem outsideReferenceRejected (requested verified : List α) (id : α)
+    (asked : id ∈ requested) (outside : id ∉ verified) : ¬ allowed requested verified := by
+  intro h
+  exact outside (h id asked)
+theorem schedulingCannotAuthorize (current : Bool) : admit false current = false := by simp [admit]
+end AvenDB.GroupTransferLane
