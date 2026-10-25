@@ -14,6 +14,13 @@ use anchor_metadata::{get_anchor_metadata, put_anchor_metadata};
 mod bootstrap_store;
 pub(crate) use bootstrap_store::{Anchors, OverlayBasis, BootstrapProgress};
 
+#[path = "entry_checkpoint_capsule.rs"]
+mod capsule;
+pub use capsule::EntryCheckpointCapsule;
+#[path = "entry_key_recovery.rs"]
+mod entry_key_recovery;
+pub use entry_key_recovery::EntryKeyRecovery;
+
 const JUDGMENT: &[u8] = b"avenDB entry judgment 2\n";
 const MAX_FACTS: usize = 512;
 const MAX_LIST: usize = 1024;
@@ -454,6 +461,10 @@ impl Lab {
     // Parsing owner-authenticated metadata does not install or authorize a state.
     fn decode_owner_judgment(&self, on: SignerId, snapshot: EditId, entry: EntryId,
         sealed: &[u8], compare_held: bool) -> Option<RestoredOwnerJudgment> {
+        if capsule::is_local(sealed) {
+            let (owner, capsule)=capsule::local_parts(sealed)?;
+            return self.decode_capsuled_owner_judgment(on,snapshot,entry,&owner,&capsule,compare_held);
+        }
         if sealed.len() > MAX_BYTES + 128 {
             return None;
         }
@@ -466,6 +477,11 @@ impl Lab {
         let store = self.held(on);
         let key = store.keys.get(&keys::edit_key(sealed)?, name)?;
         let bytes = keys::open_edit(key, sealed, &judgment_context(vault, entry))?;
+        self.decode_owner_judgment_plain(on, entry, vault, stated, &bytes, compare_held)
+    }
+    fn decode_owner_judgment_plain(&self, on: SignerId, entry: EntryId, vault: VaultId,
+        stated: &crate::policy::Stated, bytes: &[u8], compare_held: bool) -> Option<RestoredOwnerJudgment> {
+        let store = self.held(on);
         if bytes.len() > MAX_BYTES {
             return None;
         }

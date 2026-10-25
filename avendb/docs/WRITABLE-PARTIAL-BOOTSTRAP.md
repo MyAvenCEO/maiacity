@@ -1015,3 +1015,185 @@ Log: `/private/tmp/avendb-shared-fixture-stable.log`. An earlier run compiled th
 fixture tree and is not validation of these edits. No production admission rules
 changed in this repair; full combined/release and physical-device acceptance remain
 separate gates.
+
+### Isolated shared-holder adoption/local MAIN candidate (not deployed)
+
+The owner remains the snapshot publisher. A recipient with ordinary current
+`projection_authority` (standing owner-signed scope, current audience/entry key,
+entitlement and wants) may retain the judged state without also owning that vault.
+Canonical retirement likewise does not require recipient ownership after the caller
+has revalidated that authority. This removes no owner approval or signature check.
+
+Local shared MAIN authoring is allowed only on a durable/ready exact frontier;
+ordinary `accepted_write`, `proven`, `History::admit`, schema, row ownership and
+operation checks remain. The local proof selection additionally applies the same
+complete fixed/group-free grant commitment check as received suffixes. Read access
+alone cannot authorize a write, and recipient keys cannot publish as the owner.
+Cap-group-dependent grants and local partial proposal/merge authoring remain refused.
+
+The new differential regression
+`shared_holder_local_write_matches_full_holder_without_acquiring_owner_authority`
+compares a partial guest's local update against both full guest and owner, tests
+Read-only grant refusal, publication ownership and revocation, with old entry
+history withheld. `SharedHolderBootstrap.lean` explicitly separates publisher
+approval, current recipient authority and per-write admission. Lean and parser/diff
+checks pass. Rust execution and independent review are pending; this isolated
+candidate must not be treated as closing the shared-holder task or as deployed.
+
+### Shared-holder private audience reentry blocker (isolated, not delivered)
+
+Strengthened selector/touch/group tests exposed a real partial-policy gap: a prior
+entry is removed from an audience by a private Mark, then a shared note reuses that
+audience. Publisher key epoch is 1; recipient computes epoch 0 because it cannot
+receive the excluded entry. The owner-approved note ciphertext's exact key is
+therefore unavailable. The focused four-mode grant test passed before adding this
+cross-entry case; the cross-entry case still fails. Diagnostic32804 ended exit101
+(`/private/tmp/avendb-shared-holder-keyids.log`), confirming names, not merely timing.
+An attempted ordinary-authorized key dependency closure did not resolve it and
+was removed. No historical entry IDs are disclosed to work around it.
+
+The isolated capsule codec introduces a fresh checkpoint-only data key, with an
+owner recovery wrapper and a recipient-device-encrypted capsule bound to the
+owner-approved root, entry, vault and recipient. Current ordinary policy and
+standing snapshot/revocation checks remain independent; no kernel epoch or
+ordinary Keyring entry is assigned from the capsule. The old format retains its
+exact ordinary-key decoder. Full holders retain canonical judgment comparisons.
+Lean disclosure/revocation/scope/kernel contracts pass; crypto assumptions are
+explicit. New Rust negative tests cover wrong recipient, changed root/capsule,
+revocation and unchanged kernel/keyring. Focused `checkpoint_capsule_reads` Rust test passed (1/1, 2.77 seconds;
+`/private/tmp/avendb-checkpoint-capsule.log`). The source was frozen during
+compilation. Broader shared-holder tests remain blocked as described above.
+
+This codec alone does NOT close shared-holder bootstrap. Durable recipient capsule
+storage, negotiated common peer transfer, active adoption and local shared-write
+key recovery across missing private occupancy history remain required. Do not
+mark this branch deployable until the preserved cross-entry regression passes.
+
+Next isolated stage (focused Rust passed): capsule-origin anchors retain the existing
+signed-log/anchor-companion durability boundary. The persisted companion contains
+only immutable owner ciphertext plus recipient-encrypted capsule. Reconstruction
+keeps locally replayed entry seals and core-enforces
+`checkpoint-capsule-read-only`; neither a successful decrypt nor a UI flag enables
+writes. Publication reserves 8 KiB inside the existing 1 MiB envelope budget for
+its recovery wrapper and bounded recipient companion; near-limit inputs refuse
+rather than producing an unparseable backup. Restart, torn-companion and
+revocation-after-reopen cases extend the focused capsule regression.
+
+Ordinary T15 author-local epochs may permit outbound shared writes without copying
+remote epochs, but bidirectional live suffix/key convergence across missing private
+occupancy history still needs differential evidence. The checkpoint-specific key
+intentionally cannot decrypt arbitrary historical or later entry content.
+
+The durable capsule regression passed 1/1 in 3.54 seconds on frozen source
+(`/private/tmp/avendb-checkpoint-capsule-durable.log`). It verifies useful read-only
+adoption and serialized restoration, refusal before signing, torn companion,
+wrong scope/recipient/root and revocation after reopen. The original cross-entry
+shared **writable** fixture still fails on legacy-key adoption; it is retained as
+the acceptance target and is not claimed fixed. The codec stage is
+[a187fe4d](https://github.com/MyAvenCEO/maiacity/commit/a187fe4d).
+
+### Explicit v3 common peer delivery (isolated, read-only)
+
+`checkpoint_entry_capsule` uses the existing owner approval ceremony and a separate
+format-3 blob pin. Demand probes v3, then v2 and v1; only the negotiated framing is
+decoded. A recipient retains the owner ciphertext plus its encrypted capsule through
+the existing staged anchor/save receipt. Partial holders can rewrap their retained
+checkpoint-only key for another currently authorized recipient; no hosted role is
+special. Ordinary legacy publication remains available with its separate pin.
+
+The full `checkpoint_delivery::tests` suite passed **9/9 in 7.10 seconds** from the
+exact built binary, with local-socket escalation after the sandbox denied bind.
+This includes v3 public owner approval/fetch with ordinary history withheld,
+read-only enforcement, legacy v1/v2 delivery, durable writes, pin fencing and
+revocation. Logs: `/private/tmp/avendb-capsule-v3-net-loopback.log` (passed) and
+`/private/tmp/avendb-capsule-v3-net.log` (sandbox bind denial, not a logic pass).
+The independent-third-grant forwarding core fixture initially failed only because
+the supplied audience IDs were unsorted; the fixture now sorts them canonically,
+but its rerun is pending. Overall shared writable bootstrap is still open.
+
+Durable capsule stage: [7154b07e](https://github.com/MyAvenCEO/maiacity/commit/7154b07e).
+
+### Negotiation timeout correction (after 98c562c5)
+
+The v3/v2/v1 probe loop previously gave each attempt the entire remaining deadline.
+A silent newer-format peer could therefore consume the legacy fallback budget.
+Each attempted version now receives its proportional remaining budget (one third,
+then one half, then the remainder), preserving bounded total work and a chance for
+legacy negotiation. Added a deterministic budget regression. Rust execution is
+pending the compiler queue; this follow-up is not part of the earlier 9/9 result.
+
+### Exact Entry-key recovery: isolated validation stage
+
+`EntryKeyRecovery.lean` specifies that an exact Entry key may travel only where
+ordinary answered-edit reach, provider reach, recipient reach, independently
+replayed current authority and the original signed body all hold. It explicitly
+does not prove unseen-revocation freshness or cryptography. `policy.rs::link`
+(T24) authorizes current readers to read that entry's historical writes without
+handing them former audience keys; it does not authorize unrelated entry keys.
+
+`entry_key_recovery.rs` implements a bounded recipient box for the key of one
+original signed Write. The provider requires the existing ordinary answer set
+and both exact `opens` closures; the receiver requires the held signed edit,
+canonical `accepted_write`, current read/selector entitlement, exact key ID and
+successful original-body AEAD/Body decoding. The validation method returns a
+verified exact `(KeyName, Secret)` internally; it deliberately does not insert it
+or enable writes until encrypted durable recovery and replay are connected.
+
+Added missing-original-body, excluded typed entry, wrong edit/recipient/cipher,
+current revocation and unchanged-keyring/kernel assertions. Lean module checked;
+Rust syntax and diff checks passed. Rust execution, revoke/regrant intervals,
+durable retention and actual shared-holder writable convergence remain pending.
+These changes are separate from transport commit 98c562c5's 9/9 executed tests.
+
+### Durable exact-key recovery wiring (Rust validation pending)
+
+The existing encrypted anchor companion now accepts one versioned nested recovery
+package, bounded to 32 distinct original Write IDs and the existing total byte
+limit. It retains recipient ciphertext only; no family key or epoch is serialized.
+Replacement changes the existing bootstrap dirty stamp, so native/PWA saver and
+receipt behavior remain shared. Reopening revalidates the standing checkpoint,
+current entitlement, complete locally held policy replay, exact signed Write and
+original ciphertext before inserting its Entry key; a changed keyring reruns
+ordinary read/materialization. No remote scheduling state is imported.
+
+The core capsule-only wait is removed only when every attested frontier Write has
+a validated exact-key recovery. Existing schema, suffix, current authority,
+ordinary local-write proof and durable receipt gates still apply. An unsupported
+or oversized recovery remains read-only; this does not promise arbitrary frontier
+sizes or production network key-recovery wiring yet.
+
+Added a separate restart/older-history-withheld shared-write differential against
+a full holder, retaining the original read-only capsule test. Added canonical
+revoke/regrant, revoked-recipient/new-key refusal, and valid-recipient-box/wrong-key
+negative cases. Focused Lean proofs and Rust parse/diff checks passed. All new Rust
+behavior remains unexecuted pending the single compiler queue; it is not part of
+the prior 9/9 transport result. The original cross-entry shared-holder regression
+also remains a required end-to-end acceptance test.
+
+Validation update for 2d667549: core compiles. Forwarding/read-only capsule
+regression passed (1/1, 4.90s), including independent third recipient and revocation.
+The recovery filter passed seven existing tests and failed both new recovery
+cases. Root cause: re-calling `accepted_write` for the already admitted exact Write
+correctly returns `Duplicate`. Recovery now uses that canonical replay's exact
+`State::write` plus `authorized` and standing membership; original signature,
+current reader and ciphertext checks remain. This correction awaits execution;
+no recovery or writable-convergence pass is claimed.
+
+### Negotiated exact-recovery transport (v4, execution pending)
+
+Version 4 uses the same owner-approved capsule root as v3 but explicitly adds the
+original signed frontier Writes and per-recipient exact Entry-key capsules. The
+provider requires ordinary answered reach for every frontier Write and current
+checkpoint authority; inability to supply the complete bounded frontier returns
+no v4 offer and permits v3/2/1 fallback. Root/signature/ciphertext bounds, source
+revision fencing and demand cancellation remain the existing common path. The
+receiver stages encrypted recovery with the owner anchor, and becomes writable
+only after the common saver acknowledges the new companion.
+
+The original four-mode shared-holder regression now follows this actual package
+path, retaining excluded typed data, withheld older history, read-only/touch/group
+negative cases, owner publication refusal, revocation and full-holder convergence.
+Added a public Node v4 durable-write test; v3 compatibility explicitly requests v3
+and still checks core read-only behavior. Rust parse/diff checks passed; none of
+these new protocol or writable tests has executed yet. This is not a deployment
+or end-to-end completion claim.

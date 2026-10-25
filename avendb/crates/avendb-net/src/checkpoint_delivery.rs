@@ -23,12 +23,27 @@ const CIPHER_LIMIT: usize = (1 << 20) + 128;
 const EVIDENCE_LIMIT: usize = 512 << 10;
 const RESPONSE_LIMIT: usize = CIPHER_LIMIT + EVIDENCE_LIMIT + 41;
 
+// Reserve time for each older negotiated format even when a newer probe is silent.
+fn probe_budget(remaining: Duration, version: u8) -> Duration {
+    remaining / u32::from(version.max(1))
+}
+
 fn tag(entry: EntryId) -> Vec<u8> {
     [b"avendb/checkpoint/".as_slice(), &entry.0].concat()
 }
 fn format_tag(entry: EntryId, judged: bool)->Vec<u8> {
     if judged { [b"avendb/judged-checkpoint/".as_slice(), &entry.0].concat() } else { tag(entry) }
 }
+fn version_tag(entry:EntryId,version:u8)->Vec<u8> {
+    if version>=3 { [b"avendb/capsuled-checkpoint/".as_slice(),&entry.0].concat() }
+    else { format_tag(entry,version==2) }
+}
+fn request_version(bytes:&[u8])->Result<(u8,EntryId,Option<EditId>)> {
+    ensure!(matches!(bytes.first(),Some(1|2|3|4)),"unsupported checkpoint request version");
+    let mut common=bytes.to_vec(); common[0]=1;
+    let (entry,known)=request(&common)?; Ok((bytes[0],entry,known))
+}
+#[cfg(test)]
 fn request_format(bytes:&[u8])->Result<(bool,EntryId,Option<EditId>)> {
     ensure!(matches!(bytes.first(),Some(1|2)),"unsupported checkpoint request version");
     let judged=bytes[0]==2;
@@ -92,7 +107,9 @@ impl Node {
         op: &Value,
         authenticator: Option<&A>,
     ) -> Result<Value> {
+        let capsule = op.get("op").and_then(Value::as_str)==Some("checkpoint_entry_capsule");
         let judged = op.get("op").and_then(Value::as_str)==Some("checkpoint_entry_base");
+        let version=if capsule {3} else if judged {2} else {1};
         let entry = op
             .get("entry")
             .and_then(Value::as_str)
@@ -104,7 +121,10 @@ impl Node {
             .try_act(move |lab, me| {
                 let passkey =
                     engine::passkey_of(lab, me).ok_or(avendb::policy::Refusal::BelowThreshold)?;
-                let (draft,root,sealed) = if judged {
+                let (draft,root,sealed) = if capsule {
+                    let PreparedEntryBase {draft,root,sealed}=lab.draft_capsuled_entry_base(me,&[passkey],entry)?;
+                    (draft,root,sealed)
+                } else if judged {
                     let PreparedEntryBase {draft,root,sealed}=lab.draft_judged_entry_base(me,&[passkey],entry)?;
                     (draft,root,sealed)
                 } else {
@@ -158,10 +178,10 @@ impl Node {
         };
         let snapshot = answer["edit"].as_str().and_then(EditId::from_hex)
             .ok_or_else(|| anyhow::anyhow!("checkpoint approval returned no edit ID"))?;
-        let pinned = self.shared.pin_checkpoint_format(entry, snapshot, root, judged).await?;
+        let pinned = self.shared.pin_checkpoint_version(entry, snapshot, root, version).await?;
         self.shared.changed.notify_one();
         Ok(
-            json!({"ok": {"edit": answer["edit"], "entry": entry.to_hex(), "checkpoint": true, "format": if judged { "owner-judgment-2" } else { "projection-1" },
+            json!({"ok": {"edit": answer["edit"], "entry": entry.to_hex(), "checkpoint": true, "format": if capsule { "owner-capsule-3" } else if judged { "owner-judgment-2" } else { "projection-1" },
             "root": Hash::from_bytes(root.hash).to_string(), "size": root.size, "pinned": pinned}}),
         )
     }
@@ -178,6 +198,9 @@ impl Shared {
         self.store_checkpoint_format(entry,snapshot,root,sealed,false).await
     }
     async fn store_checkpoint_format(self:&Arc<Self>,entry:EntryId,snapshot:EditId,root:FileRoot,sealed:Vec<u8>,judged:bool)->Result<bool> {
+        self.store_checkpoint_version(entry,snapshot,root,sealed,if judged {2}else{1}).await
+    }
+    async fn store_checkpoint_version(self:&Arc<Self>,entry:EntryId,snapshot:EditId,root:FileRoot,sealed:Vec<u8>,version:u8)->Result<bool> {
         ensure!(
             sealed.len() <= CIPHER_LIMIT
                 && root.size == sealed.len() as u64
@@ -193,20 +216,23 @@ impl Shared {
             temporary.hash().as_bytes() == &root.hash,
             "stored checkpoint hash"
         );
-        self.pin_checkpoint_format(entry, snapshot, root, judged).await
+        self.pin_checkpoint_version(entry, snapshot, root, version).await
     }
 
     async fn pin_checkpoint(self: &Arc<Self>, entry: EntryId, snapshot: EditId, root: FileRoot) -> Result<bool> {
         self.pin_checkpoint_format(entry,snapshot,root,false).await
     }
     async fn pin_checkpoint_format(self: &Arc<Self>, entry: EntryId, snapshot: EditId, root: FileRoot, judged:bool) -> Result<bool> {
+        self.pin_checkpoint_version(entry,snapshot,root,if judged {2}else{1}).await
+    }
+    async fn pin_checkpoint_version(self:&Arc<Self>,entry:EntryId,snapshot:EditId,root:FileRoot,version:u8)->Result<bool> {
         // Keep this gate through the tag write. A newer accepted snapshot may appear
         // during I/O, but its pin then follows this write, never preceding a stale one.
         let _serial = self.checkpoint_pins.clone().lock_owned().await;
         if !self.read(move |lab, me| lab.entry_projection_pin_is_current(me, entry, snapshot, root)).await {
             return Ok(false);
         }
-        self.store.tags().set(format_tag(entry,judged), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await?;
+        self.store.tags().set(version_tag(entry,version), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await?;
         Ok(true)
     }
 }
@@ -217,9 +243,10 @@ pub(crate) async fn answer(
     bytes: &[u8],
     permit: Arc<tokio::sync::OwnedSemaphorePermit>,
 ) -> Result<Vec<u8>> {
-    let (judged,entry,known)=request_format(bytes)?;
-    let Some(pin)=shared.store.tags().get(format_tag(entry,judged)).await? else {
-        return Ok(vec![if judged {2}else{1},0]);
+    let (version,entry,known)=request_version(bytes)?;
+    let judged=version==2;
+    let Some(pin)=shared.store.tags().get(version_tag(entry,version)).await? else {
+        return Ok(vec![version,0]);
     };
     ensure!(pin.format.is_raw(),"checkpoint pin format");
     let compatible_root=*pin.hash.as_bytes();
@@ -234,8 +261,8 @@ pub(crate) async fn answer(
             )
         })
         .await;
-    let Some(offer) = offer else {
-        return Ok(vec![if judged {2} else {1}, 0]);
+    let Some(mut offer) = offer else {
+        return Ok(vec![version,0]);
     };
     ensure!(offer.root.size <= CIPHER_LIMIT as u64, "checkpoint size");
     // Read at most the signed length plus one, never get_bytes on a potentially oversized blob.
@@ -257,10 +284,28 @@ pub(crate) async fn answer(
     );
     let check=sealed.clone();
     let snapshot=offer.snapshot;
-    let compatible=shared.read(move|lab,me| if judged {
+    let compatible=if version==4 {
+        let packaged=shared.try_lab(move|lab,me| {
+            lab.entry_checkpoint_recovery_package(me,requester,snapshot,entry,check)
+        }).await?;
+        let Some((package,frontier))=packaged else { return Ok(vec![version,0]); };
+        for signed in frontier {
+            if !offer.evidence.iter().any(|old|old.edit.id()==signed.edit.id()) {offer.evidence.push(signed);}
+        }
+        sealed=package;
+        true
+    } else if version==3 {
+        let packaged=shared.try_lab(move|lab,me| {
+            let capsule=lab.entry_checkpoint_capsule(me,requester,snapshot,entry,&check)?;
+            avendb::lab::Lab::pack_entry_checkpoint_capsule(check,capsule)
+        }).await?;
+        let Some(package)=packaged else { return Ok(vec![version,0]); };
+        sealed=package;
+        true
+    } else { shared.read(move|lab,me| if judged {
         lab.restore_owner_judgment(me,snapshot,entry,&check).is_some()
-    } else { lab.open_entry_projection(me,snapshot,entry,&check).is_some() }).await;
-    if !compatible { return Ok(vec![if judged {2}else{1},0]); }
+    } else { lab.open_entry_projection(me,snapshot,entry,&check).is_some() }).await };
+    if !compatible { return Ok(vec![version,0]); }
     let mut body = encode(
         offer.snapshot,
         Reply {
@@ -270,7 +315,7 @@ pub(crate) async fn answer(
         },
         &sealed,
     )?;
-    if judged { body[0]=2; }
+    body[0]=version;
     shared
         .read(move |lab, me| {
             let _permit = permit;
@@ -351,19 +396,18 @@ impl Shared {
         let remaining = deadline.saturating_duration_since(Instant::now());
         ensure!(!remaining.is_zero(), "checkpoint deadline");
         let permit = time::timeout(remaining, self.pulls.page(false, false)).await??;
-        let remaining = remaining.min(deadline.saturating_duration_since(Instant::now()));
-        // v2 is an explicit capability probe, never reinterpret a v1 projection.
-        body[0]=2;
-        let negotiated=time::timeout(remaining,session::exchange(&peer.conn,KIND,&body,RESPONSE_LIMIT)).await;
-        let (mut bytes,judged)=match negotiated {
-            Ok(Ok(bytes)) if bytes.first()==Some(&2) && bytes != [2,0] && self.edits.is_some() => (bytes,true),
-            _ => {
-                body[0]=1;
-                let remaining=deadline.saturating_duration_since(Instant::now());
-                ensure!(!remaining.is_zero(),"checkpoint fallback deadline");
-                (time::timeout(remaining,session::exchange(&peer.conn,KIND,&body,RESPONSE_LIMIT)).await??,false)
+        // Explicit versions: never reinterpret an older projection as a capsule.
+        let mut negotiated=None;
+        for version in [4u8,3,2,1] {
+            if version>1 && self.edits.is_none() { continue; }
+            body[0]=version;
+            let remaining=deadline.saturating_duration_since(Instant::now());
+            ensure!(!remaining.is_zero(),"checkpoint fallback deadline");
+            if let Ok(Ok(bytes))=time::timeout(probe_budget(remaining, version),session::exchange(&peer.conn,KIND,&body,RESPONSE_LIMIT)).await {
+                if bytes.first()==Some(&version) && bytes!=[version,0] { negotiated=Some((bytes,version)); break; }
             }
-        };
+        }
+        let Some((mut bytes,version))=negotiated else { return Ok(false); };
         ensure!(
             self.discovery_current(scope, revision),
             "checkpoint demand expired"
@@ -371,7 +415,7 @@ impl Shared {
         if bytes == [1, 0] {
             return Ok(false);
         }
-        if judged { bytes[0]=1; } // decode common framing after explicit negotiation
+        bytes[0]=1; // decode common framing only after explicit negotiation
         let (snapshot, evidence, sealed) = decode(&bytes)?;
         drop(bytes); // the transport envelope need not survive verification or cache adoption
         // Auxiliary sealing keys stay on ordinary background sync; they must not delay an
@@ -396,9 +440,12 @@ impl Shared {
         let permit = retained_permit.clone();
         let scope = scope.to_owned();
         let shared = self.clone();
+        let owner_sealed=if version>=3 {
+            avendb::lab::Lab::checkpoint_capsule_payload(&sealed).ok_or_else(||anyhow::anyhow!("malformed checkpoint capsule"))?
+        } else { sealed.clone() };
         let root = FileRoot {
-            hash: *Hash::new(&sealed).as_bytes(),
-            size: sealed.len() as u64,
+            hash: *Hash::new(&owner_sealed).as_bytes(),
+            size: owner_sealed.len() as u64,
         };
         let (kept, sealed) = self
             .try_lab(move |lab, me| {
@@ -407,18 +454,19 @@ impl Shared {
                     return (false, sealed);
                 }
                 lab.receive_prepared(me, prepared, true);
-                let kept = if judged {
+                let kept = if version>1 {
                     lab.stage_owner_entry_base(me,snapshot,entry,sealed.clone())
                 } else { lab.retain_entry_projection(me, snapshot, entry, sealed.clone()) };
                 (kept, sealed)
             })
             .await?;
+        drop(sealed);
         if kept {
             // Verified view readiness is independent of blob persistence. Do not delay reactive
             // rendering behind disk I/O, or lose the notification if persistence reports failure.
             self.size.send_modify(|_| {});
             self.changed.notify_one();
-            self.store_checkpoint_format(entry, snapshot, root, sealed, judged).await?;
+            self.store_checkpoint_version(entry, snapshot, root, owner_sealed, version).await?;
             // The saver is already notified by the staged anchor stamp. Readiness is
             // published only by save_on after its exact durable receipt, not this fetch.
         }
@@ -453,6 +501,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn silent_newer_probes_reserve_legacy_fallback_time() {
+        let total = Duration::from_secs(3);
+        let v3 = probe_budget(total, 3);
+        let after_v3 = total - v3;
+        let v2 = probe_budget(after_v3, 2);
+        let v1 = probe_budget(after_v3 - v2, 1);
+        assert_eq!([v3, v2, v1], [Duration::from_secs(1); 3]);
+        assert_eq!(probe_budget(total, 1), total);
+        assert_eq!(probe_budget(Duration::ZERO, 3), Duration::ZERO);
+    }
+
+    #[test]
+    fn capsule_protocol_negotiation_is_explicit_and_bounded() {
+        for version in [1u8,2,3,4] {
+            let mut bytes=vec![version]; bytes.extend_from_slice(&[7;32]);
+            assert_eq!(request_version(&bytes).unwrap().0,version);
+            bytes.push(0); assert!(request_version(&bytes).is_err());
+        }
+        for version in [0u8,5,255] {
+            let mut bytes=vec![version]; bytes.extend_from_slice(&[7;32]);
+            assert!(request_version(&bytes).is_err());
+        }
+        assert_ne!(version_tag(EntryId([7;32]),3),version_tag(EntryId([7;32]),2));
+    }
     #[test]
     fn checkpoint_format_negotiation_rejects_unknown_and_malformed_requests() {
         for version in [1,2] {
@@ -565,13 +638,23 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn owner_checkpoint_reaches_a_type_only_view_before_its_history() {
-        owner_checkpoint_public_flow(false).await;
+        owner_checkpoint_public_flow(1).await;
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn owner_judged_checkpoint_publication_fetch_and_durable_write() {
-        owner_checkpoint_public_flow(true).await;
+        owner_checkpoint_public_flow(2).await;
     }
-    async fn owner_checkpoint_public_flow(judged: bool) {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn owner_capsule_checkpoint_publication_fetch_and_readonly_recovery() {
+        owner_checkpoint_public_flow(3).await;
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn owner_capsule_exact_recovery_fetch_is_durable_and_writable() {
+        owner_checkpoint_public_flow(4).await;
+    }
+    async fn owner_checkpoint_public_flow(version: u8) {
+        let judged=version==2;
+        let capsule=version>=3;
         let mut w = world();
         let (sender, receiver, owner, vault) = (w.mac_a, w.phone_a, w.passkey_a, w.alice);
         let secret = *w.lab.passkey_secret(owner).unwrap();
@@ -614,9 +697,9 @@ mod tests {
         .await
         .unwrap();
         let folder=std::env::temp_dir().join(format!("avendb-runtime-base-{}",crate::shelf::fresh()));
-        let shelf=if judged { Some(crate::disk::open(&folder).unwrap()) } else { None };
+        let shelf=if version>1 { Some(crate::disk::open(&folder).unwrap()) } else { None };
         let phone = Node::spawn(phone_lab, receiver, Options {shelf,..Options::local()}).await.unwrap();
-        let publish = json!({"op":if judged {"checkpoint_entry_base"}else{"checkpoint_view"}, "entry":entry.to_hex()});
+        let publish = json!({"op":if capsule {"checkpoint_entry_capsule"}else if judged {"checkpoint_entry_base"}else{"checkpoint_view"}, "entry":entry.to_hex()});
         let before = mac.read(|lab, me| lab.log(me).ids().len()).await;
         let asked = mac.op(publish.clone()).await.unwrap();
         assert!(
@@ -650,7 +733,7 @@ mod tests {
             "declined ceremony pins nothing"
         );
         let auth = Owner(Mutex::new(Passkey::from_seed(secret)));
-        let legacy_snapshot = if judged {
+        let legacy_snapshot = if version>1 {
             let (legacy,_)=mac.run(json!({"op":"checkpoint_view","entry":entry.to_hex()}),None::<NoBytes>,Some(&auth)).await.unwrap();
             Some(EditId::from_hex(legacy["ok"]["edit"].as_str().unwrap()).unwrap())
         } else { None };
@@ -680,6 +763,18 @@ mod tests {
             assert_eq!(snapshot,legacy_snapshot);
         }
         let scope = "cd".repeat(16);
+        if version==3 {
+            // Exercise an explicitly negotiated v3 reader without silently
+            // upgrading this compatibility assertion to writable v4.
+            let mut req=vec![3];req.extend_from_slice(&entry.0);
+            let mut response=session::exchange(&conn.conn,KIND,&req,RESPONSE_LIMIT).await.unwrap();
+            assert_eq!(response[0],3);response[0]=1;
+            let (snapshot,evidence,sealed)=decode(&response).unwrap();
+            assert!(phone.act(move|lab,me| {
+                lab.receive(me,evidence.edits,evidence.blobs);
+                lab.stage_owner_entry_base(me,snapshot,entry,sealed)
+            }).await);
+        } else {
         let ack = phone
             .op(
                 json!({"op":"demand", "scope":scope,"revision":1,"entries":[],
@@ -688,6 +783,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(ack["ok"]["discovery_supported"], true);
+        }
         let query = json!({"op":"query","schema":"stored","where":{"type":["checkpoint-note"]}});
         let result = time::timeout(Duration::from_secs(15), async {
             loop {
@@ -715,7 +811,7 @@ mod tests {
         let absent = phone
             .read(move |lab, me| lab.item(me, unrelated).is_none())
             .await;
-        if judged {
+        if judged || version==4 {
             time::timeout(Duration::from_secs(15),async {
                 loop {
                     let ready=phone.read(move|lab,me| !lab.owner_base_durability_pending(me,entry) && !lab.bootstrap_stamp(me).is_empty()).await;
@@ -725,10 +821,14 @@ mod tests {
             }).await.expect("base must receive a durable save receipt");
             assert!(phone.act(move|lab,me|lab.edit(me,vault,entry,|i|i.set_text(2,"local after durable adoption"))).await.is_ok());
         }
+        if version==3 {
+            assert_eq!(phone.read(move|lab,me|lab.owner_base_wait_reason(me,entry)).await,Some("checkpoint-capsule-read-only"));
+            assert!(phone.act(move|lab,me|lab.edit(me,vault,entry,|i|i.set_text(2,"forbidden capsule write"))).await.is_err());
+        }
         drop(stalled);
         phone.shutdown().await.unwrap();
         mac.shutdown().await.unwrap();
-        if judged { std::fs::remove_dir_all(folder).ok(); }
+        if version>1 { std::fs::remove_dir_all(folder).ok(); }
         let result = result.expect("scoped owner checkpoint is visible before full history");
         assert_eq!(result["ok"]["rows"][0]["record"], expected);
         assert_eq!(result["ok"]["rows"][0]["readOnly"], true, "raw stored-schema rows are read-only regardless of durable readiness; judged write checked separately");
