@@ -2289,7 +2289,7 @@ fn guarded_change_refuses_stale_dependencies_without_emitting_an_edit() {
     w.lab.tag(w.mac_a,w.alice,entry,&["changed"],&[]).unwrap();
     let before=w.lab.log(w.mac_a).edits().len();
     let out=engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":[receipt["guard"]],"change":change}));
-    assert!(out["refused"].as_str().unwrap().contains("stale"));
+    assert!(out["refused"] == "BadOp" && out["why"].as_str().unwrap().contains("stale"));
     assert_eq!(w.lab.log(w.mac_a).edits().len(),before);
     let fresh=ok(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":query})));
     ok(engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":[fresh["guard"]],"change":change})));
@@ -2308,7 +2308,7 @@ fn guarded_owner_approval_rechecks_after_the_ceremony_before_signing() {
     w.lab.tag(w.mac_a,w.alice,entry,&["changed-during-approval"],&[]).unwrap();
     let before=w.lab.log(w.mac_a).edits().len();
     let why=engine::approve(&mut w.lab,w.mac_a,approval,&ceremony).unwrap_err();
-    assert!(why.to_json()["refused"].as_str().unwrap().contains("stale"));
+    assert!(why.to_json()["refused"] == "BadOp" && why.to_json()["why"].as_str().unwrap().contains("stale"));
     assert_eq!(w.lab.log(w.mac_a).edits().len(),before,"stale approved plan signs/keeps no extra edit");
 }
 
@@ -2339,7 +2339,7 @@ fn guarded_continuation_receipt_tracks_own_change_but_rejects_intervening_edit()
     w.lab.tag(w.mac_a,w.alice,entry,&["intervening"],&[]).unwrap();
     let before=w.lab.log(w.mac_a).edits().len();
     let refused=engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":second["guards"],"change":tag("third")}));
-    assert!(refused["refused"].as_str().unwrap().contains("stale"));
+    assert!(refused["refused"] == "BadOp" && refused["why"].as_str().unwrap().contains("stale"));
     assert_eq!(before,w.lab.log(w.mac_a).edits().len());
 }
 
@@ -2358,5 +2358,7 @@ fn scoped_tag_guard_refuses_unknown_users_and_never_claims_remote_completeness()
     let rows=ok(engine::read(&w.lab,w.mac_a,&other));
     assert_eq!(rows["rows"],json!([]));
     assert_eq!(rows["scope"]["localComplete"],false);
-    assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":other}))["refused"].as_str().unwrap().contains("incomplete"));
+    let refusal = engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":other}));
+    assert_eq!(refusal["refused"], "BadOp");
+    assert!(refusal["why"].as_str().unwrap().contains("incomplete"));
 }
