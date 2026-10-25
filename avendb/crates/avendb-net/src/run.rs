@@ -264,7 +264,11 @@ impl Node {
         };
         job.subject(BlobId(brought.root.hash).to_hex());
         job.stage("making its entry");
-        let made = self.try_act(move |lab, me| engine::put_file(lab, me, &op, brought)).await?;
+        let (made, fence) = self.try_act(move |lab, me| {
+            let made = engine::put_file(lab, me, &op, brought);
+            (made, crate::edits::LocalWriteFence::capture(lab, me))
+        }).await?;
+        if made.get("ok").is_some() { self.shared.acknowledge_local(fence).await?; }
         if let Some(entry) = made["ok"]["entry"].as_str() {
             job.about(vault.into_iter().collect(), [(entry.to_string(), len)].into());
         }
@@ -478,17 +482,25 @@ impl Node {
                 Ok(Prepared::Approve(a)) => lab.keys_of(a.passkey),
                 _ => None,
             };
-            (prepared, keys)
+            (prepared, keys, crate::edits::LocalWriteFence::capture(lab, me))
         };
-        let (prepared, keys) = self.try_act(prepare).await?;
+        let (prepared, keys, fence) = self.try_act(prepare).await?;
         let (approval, authenticator) = match (prepared, authenticator) {
             (Ok(Prepared::Approve(a)), Some(authenticator)) => (a, authenticator),
-            (prepared, _) => return Ok(engine::prepared(prepared)),
+            (prepared, _) => {
+                let answer = engine::prepared(prepared);
+                if answer.get("ok").is_some() { self.shared.acknowledge_local(fence).await?; }
+                return Ok(answer);
+            },
         };
         let ceremony = crate::ceremony_of(authenticator, keys, approval.challenge(), Step::Approve).await?;
-        let approve = move |lab: &mut Lab, me| engine::approve(lab, me, approval, &ceremony);
-        Ok(match self.try_act(approve).await? {
-            Ok(v) => json!({ "ok": v }),
+        let approve = move |lab: &mut Lab, me| {
+            let answer = engine::approve(lab, me, approval, &ceremony);
+            (answer, crate::edits::LocalWriteFence::capture(lab, me))
+        };
+        let (answer, fence) = self.try_act(approve).await?;
+        Ok(match answer {
+            Ok(v) => { self.shared.acknowledge_local(fence).await?; json!({ "ok": v }) },
             Err(why) => why.to_json(),
         })
     }

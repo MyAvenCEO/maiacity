@@ -85,6 +85,8 @@ pub(crate) struct Edits {
     shelf: Shelf,
     /// What the shelf holds, which one save at a time reads and writes.
     book: tokio::sync::Mutex<Book>,
+    /// Optional snapshots never own the authoritative save lane.
+    warm_lane: tokio::sync::Mutex<()>,
     kept: Mutex<Kept>,
     /// The numbers its next keys and its next stored view are kept as, `n` in slot `n % 2` of theirs (`warm`).
     slots: Mutex<(u64, u64)>,
@@ -364,7 +366,7 @@ impl Edits {
         let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending, anchors: anchors.clone() };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
         let (slots, checked) = (Mutex::new((0, 0)), Mutex::new(None));
-        let edits = Edits { shelf, book, kept, slots, started, checked, due: Notify::new() };
+        let edits = Edits { shelf, book, kept, slots, started, checked, due: Notify::new(), warm_lane: tokio::sync::Mutex::new(()) };
         Ok((edits, (signed, bytes, anchors)))
     }
 
@@ -644,6 +646,14 @@ async fn read_pack(shelf: &Shelf, hash: Hash, size: u64) -> Result<Vec<Signed>> 
     Ok(signed)
 }
 
+/// Prefix identity captured under the mutation lock, not inferred from a later read.
+pub(crate) struct LocalWriteFence { lineage: LogRevision, through: usize }
+impl LocalWriteFence {
+    pub(crate) fn capture(lab: &Lab, me: SignerId) -> Self {
+        Self { lineage: lab.log(me).lineage(), through: lab.size(me).0 }
+    }
+}
+
 impl Shared {
     /// The encoder receives only owned inputs after the Lab guard is dropped.
     /// The save lane/book guard and admitted producer remain owned by the caller.
@@ -678,7 +688,25 @@ impl Shared {
         .context("the save task")?
     }
 
-    pub(crate) async fn save_on(self: &Arc<Self>, override_shelf: Option<&Shelf>) -> Result<bool> {
+    /// Cancellation drops only the waiter; the admitted backend producer continues.
+    pub(crate) async fn acknowledge_local(self: &Arc<Self>, fence: LocalWriteFence) -> Result<()> {
+        if self.edits.is_none() { return Ok(()); } // Explicit memory-only node.
+        const UNCONFIRMED: &str = "LocalWritePersistenceUnconfirmed: applied locally, but saving was not confirmed. Do not repeat this write; inspect its local result and retry persistence.";
+        let operation = self.admit().context(UNCONFIRMED)?;
+        let shared = self.clone();
+        let result = n0_future::task::spawn(async move {
+            let _operation = operation;
+            shared.save_authoritative_on(None).await?;
+            let kept = shared.edits.as_ref().expect("persistent node").kept.lock().expect("kept");
+            ensure!(!kept.whole && kept.lineage.as_ref() == Some(&fence.lineage)
+                && kept.written >= fence.through, "local write lineage changed before persistence acknowledgement");
+            Ok::<_, anyhow::Error>(())
+        }).await.context(UNCONFIRMED)?;
+        if result.is_err() { self.edits.as_ref().expect("persistent node").due.notify_one(); }
+        result.context(UNCONFIRMED)
+    }
+
+    async fn save_authoritative_on(self: &Arc<Self>, override_shelf: Option<&Shelf>) -> Result<bool> {
         let Some(edits) = &self.edits else {
             return Ok(false);
         };
@@ -715,6 +743,14 @@ impl Shared {
         if put {
             self.changed.notify_one();
         }
+        Ok(put)
+    }
+
+    pub(crate) async fn save_on(self: &Arc<Self>, override_shelf: Option<&Shelf>) -> Result<bool> {
+        let put = self.save_authoritative_on(override_shelf).await?;
+        let Some(edits) = &self.edits else { return Ok(put) };
+        let on = override_shelf.unwrap_or(&edits.shelf);
+        let _warm = edits.warm_lane.lock().await;
         let shared = self.clone();
         // Only the once-only quiescent finalizer has an override shelf. The normal
         // save lane retains its bounded snapshot interval; authoritative data is already durable.
@@ -1281,6 +1317,152 @@ mod tests {
         node.shutdown().await.unwrap();
         std::fs::remove_dir_all(folder).ok();
         assert!(woke, "durable entry announcement must not wait for optional snapshot I/O");
+    }
+
+    /// All calls forward except the first armed journal write, which awaits the test's decision.
+    fn controlled_journal(shelf: Shelf, armed: Arc<std::sync::atomic::AtomicBool>)
+        -> (Shelf, tokio::sync::oneshot::Receiver<()>, tokio::sync::oneshot::Sender<bool>) {
+        let (proxy, mut calls) = Shelf::new();
+        let (entered, waiting) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let mut pause=Some((entered,released));
+            while let Some(call)=calls.recv().await {
+                match call {
+                    Call::Put { name, bytes, tx } => {
+                        if name.starts_with(JOURNAL) && armed.load(Ordering::Relaxed)
+                            && let Some((entered,released))=pause.take() {
+                            entered.send(()).ok();
+                            if !released.await.unwrap_or(false) {
+                                tx.send(Err(std::io::Error::other("injected journal failure"))).ok();
+                                continue;
+                            }
+                        }
+                        tx.send(shelf.put(&name,bytes).await).ok();
+                    }
+                    Call::Keep {name,bytes,tx} => {tx.send(shelf.keep(&name,bytes).await).ok();}
+                    Call::List(tx) => {tx.send(shelf.list().await).ok();}
+                    Call::Outboard {hash,tx} => {tx.send(shelf.outboard(hash).await).ok();}
+                    Call::Write {name,at,bytes,tx} => {tx.send(shelf.write(&name,at,bytes).await).ok();}
+                    Call::Finish {name,hash,size,outboard,tx} => {tx.send(shelf.finish(&name,hash,size,outboard).await).ok();}
+                    Call::Drop {name,tx} => {tx.send(shelf.drop(&name).await).ok();}
+                    Call::Get {name,tx} => {tx.send(shelf.get(&name).await).ok();}
+                    Call::Read {name,at,len,tx} => {tx.send(shelf.read(&name,at,len).await).ok();}
+                    Call::Names {prefix,tx} => {tx.send(shelf.names(&prefix).await).ok();}
+                }
+            }
+        });
+        (proxy,waiting,release)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_write_ack_waits_for_backend_propagates_failure_and_survives_cancellation() {
+        use crate::{Node, Options};
+        use avendb::cast::human_on;
+        use std::time::Duration;
+        for cancel in [false,true] {
+            let folder=std::env::temp_dir().join(format!("avendb-ack-controlled-{}",crate::shelf::fresh()));
+            let mut lab=Lab::new(); let passkey=lab.passkey("Controlled receipt");
+            let me=lab.device_of(passkey,"local"); let vault=human_on(&mut lab,passkey,&[me]);
+            let writer=crate::disk::open(&folder).unwrap().writer().unwrap();
+            let armed=Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let (proxy,entered,release)=controlled_journal(writer.shelf(),armed.clone());
+            let node=Node::spawn(lab.split(me,&[passkey],[183;32]),me,
+                Options{shelf:Some(proxy.clone()),..Options::local()}).await.unwrap();
+            node.tasks.lock().unwrap().iter().for_each(|task|task.abort());
+            node.shared.save().await.unwrap();
+            armed.store(true,Ordering::Relaxed);
+            let shared=node.shared.clone();
+            let fence=node.act(move |lab,me| {
+                lab.create(me,vault,vault,"note",&[],avendb::cast::document("receipt","body",me)).unwrap();
+                LocalWriteFence::capture(lab,me)
+            }).await;
+            let expected=node.read(|lab,me|lab.log(me).ids().to_vec()).await;
+            let mut saving=tokio::spawn(async move {shared.acknowledge_local(fence).await});
+            tokio::time::timeout(Duration::from_secs(5),entered).await.unwrap().unwrap();
+            assert!(tokio::time::timeout(Duration::from_millis(20),&mut saving).await.is_err(),"no early success");
+            let visible=tokio::time::timeout(Duration::from_secs(1),node.read(|lab,me|lab.log(me).ids().to_vec())).await
+                .expect("local readers must not wait for the persistence receipt");
+            assert_eq!(visible,expected);
+            if cancel {saving.abort();}
+            release.send(cancel).unwrap();
+            if cancel {
+                assert!(saving.await.unwrap_err().is_cancelled());
+                // No saver/finalizer runs here: only the canceled waiter's retained producer can acknowledge.
+                tokio::time::timeout(Duration::from_secs(5),async {
+                    loop {
+                        let held=node.shared.edits.as_ref().unwrap().kept.lock().unwrap().written;
+                        if held>=expected.len() {break;}
+                        tokio::time::sleep(Duration::from_millis(5)).await;
+                    }
+                }).await.expect("persistence producer survives caller cancellation");
+                let (_, (saved,_,_))=Edits::open(proxy).await.unwrap();
+                assert_eq!(saved.iter().map(|s|s.edit.id()).collect::<Vec<_>>(),expected);
+                node.shutdown().await.unwrap();
+            } else {
+                let error=saving.await.unwrap().unwrap_err();
+                assert!(error.to_string().starts_with("LocalWritePersistenceUnconfirmed:"));
+                assert!(error.to_string().contains("Do not repeat this write"));
+                assert!(format!("{error:#}").contains("injected journal failure"));
+                node.shutdown().await.unwrap(); // a later retry may recover; failed receipt was not success
+            }
+            std::fs::remove_dir_all(folder).ok();
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_write_ack_survives_reopen_without_waiting_for_warm_lane() {
+        use crate::{Node, Options};
+        use avendb::cast::human_on;
+        use std::time::Duration;
+        let folder = std::env::temp_dir().join(format!("avendb-local-ack-{}", crate::shelf::fresh()));
+        let mut lab = Lab::new();
+        let passkey = lab.passkey("Local acknowledgement");
+        let me = lab.device_of(passkey, "local peer");
+        let vault = human_on(&mut lab, passkey, &[me]);
+        let shelf = crate::disk::open(&folder).unwrap();
+        let node = Node::spawn(lab.split(me, &[passkey], [181;32]), me,
+            Options { shelf: Some(shelf.clone()), ..Options::local() }).await.unwrap();
+        node.tasks.lock().unwrap().iter().for_each(|task| task.abort());
+        node.shared.save().await.unwrap();
+        let warm = node.shared.edits.as_ref().unwrap().warm_lane.lock().await;
+        let answer = tokio::time::timeout(Duration::from_secs(5), node.op(serde_json::json!({
+            "op":"create", "vault":vault.to_hex(), "type":"note", "schema":"document", "value":{"kind":"document","title":"persist me"}
+        }))).await.expect("optional warming must not hold the journal lane").unwrap();
+        assert!(answer.get("ok").is_some(), "{answer}");
+        let entry = EntryId::from_hex(answer["ok"]["entry"].as_str().unwrap()).unwrap();
+        let expected = node.read(move |lab,me| lab.log(me).ids().to_vec()).await;
+        // Open the journal before shutdown, which must not be needed to make this write durable.
+        let (_, (saved, _, _)) = Edits::open(shelf.clone()).await.unwrap();
+        assert_eq!(saved.iter().map(|s|s.edit.id()).collect::<Vec<_>>(), expected);
+        assert!(saved.iter().any(|s|matches!(s.edit.action, Action::Write { entry:e, .. } if e==entry)));
+        drop(warm);
+        node.shutdown().await.unwrap();
+        std::fs::remove_dir_all(folder).ok();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn local_write_ack_rejects_replaced_lineage_even_at_same_length() {
+        use crate::{Node, Options};
+        use avendb::cast::human_on;
+        let folder = std::env::temp_dir().join(format!("avendb-local-lineage-{}", crate::shelf::fresh()));
+        let mut lab = Lab::new();
+        let passkey = lab.passkey("Lineage acknowledgement");
+        let me = lab.device_of(passkey, "local peer");
+        human_on(&mut lab, passkey, &[me]);
+        let shelf = crate::disk::open(&folder).unwrap();
+        let node = Node::spawn(lab.split(me, &[passkey], [182;32]), me,
+            Options { shelf: Some(shelf), ..Options::local() }).await.unwrap();
+        node.tasks.lock().unwrap().iter().for_each(|task| task.abort());
+        let fence = node.act(|lab,me| {
+            let fence=LocalWriteFence::capture(lab,me);
+            lab.restore_from(me,lab.backup(me));
+            fence
+        }).await;
+        let error=node.shared.acknowledge_local(fence).await.unwrap_err();
+        assert!(format!("{error:#}").contains("lineage changed"), "{error:#}");
+        node.shutdown().await.unwrap();
+        std::fs::remove_dir_all(folder).ok();
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -148,9 +148,11 @@ impl Node {
             temporary.hash().as_bytes() == &root.hash,
             "stored checkpoint hash"
         );
-        let approved = self
-            .try_act(move |lab, me| engine::approve(lab, me, approval, &ceremony))
-            .await?;
+        let (approved, fence) = self
+            .try_act(move |lab, me| {
+                let answer = engine::approve(lab, me, approval, &ceremony);
+                (answer, crate::edits::LocalWriteFence::capture(lab, me))
+            }).await?;
         let answer = match approved {
             Ok(answer) => answer,
             Err(why) => return Ok(why.to_json()),
@@ -158,6 +160,7 @@ impl Node {
         let snapshot = answer["edit"].as_str().and_then(EditId::from_hex)
             .ok_or_else(|| anyhow::anyhow!("checkpoint approval returned no edit ID"))?;
         let pinned = self.shared.pin_checkpoint_format(entry, snapshot, root, judged).await?;
+        self.shared.acknowledge_local(fence).await?;
         self.shared.changed.notify_one();
         Ok(
             json!({"ok": {"edit": answer["edit"], "entry": entry.to_hex(), "checkpoint": true, "format": if judged { "owner-judgment-2" } else { "projection-1" },
