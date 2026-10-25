@@ -79,7 +79,7 @@ mod bootstrap_dependencies;
 
 #[path = "entry_base.rs"]
 mod entry_base;
-pub use entry_base::{AuthenticatedCountedEntryBase, AuthenticatedEntryBaseEnvelope, PreparedEntryBase, RestoredOwnerJudgment, EntryCheckpointCapsule};
+pub use entry_base::{AuthenticatedCountedEntryBase, AuthenticatedEntryBaseEnvelope, PreparedEntryBase, RestoredOwnerJudgment, EntryCheckpointCapsule, EntryKeyRecovery};
 
 #[path = "entry_projection.rs"]
 mod entry_projection;

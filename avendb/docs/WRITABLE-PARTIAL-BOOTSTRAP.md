@@ -1121,3 +1121,26 @@ Each attempted version now receives its proportional remaining budget (one third
 then one half, then the remainder), preserving bounded total work and a chance for
 legacy negotiation. Added a deterministic budget regression. Rust execution is
 pending the compiler queue; this follow-up is not part of the earlier 9/9 result.
+
+### Exact Entry-key recovery: isolated validation stage
+
+`EntryKeyRecovery.lean` specifies that an exact Entry key may travel only where
+ordinary answered-edit reach, provider reach, recipient reach, independently
+replayed current authority and the original signed body all hold. It explicitly
+does not prove unseen-revocation freshness or cryptography. `policy.rs::link`
+(T24) authorizes current readers to read that entry's historical writes without
+handing them former audience keys; it does not authorize unrelated entry keys.
+
+`entry_key_recovery.rs` implements a bounded recipient box for the key of one
+original signed Write. The provider requires the existing ordinary answer set
+and both exact `opens` closures; the receiver requires the held signed edit,
+canonical `accepted_write`, current read/selector entitlement, exact key ID and
+successful original-body AEAD/Body decoding. The validation method returns a
+verified exact `(KeyName, Secret)` internally; it deliberately does not insert it
+or enable writes until encrypted durable recovery and replay are connected.
+
+Added missing-original-body, excluded typed entry, wrong edit/recipient/cipher,
+current revocation and unchanged-keyring/kernel assertions. Lean module checked;
+Rust syntax and diff checks passed. Rust execution, revoke/regrant intervals,
+durable retention and actual shared-holder writable convergence remain pending.
+These changes are separate from transport commit 98c562c5's 9/9 executed tests.

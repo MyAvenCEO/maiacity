@@ -17,6 +17,9 @@ pub(crate) use bootstrap_store::{Anchors, OverlayBasis, BootstrapProgress};
 #[path = "entry_checkpoint_capsule.rs"]
 mod capsule;
 pub use capsule::EntryCheckpointCapsule;
+#[path = "entry_key_recovery.rs"]
+mod entry_key_recovery;
+pub use entry_key_recovery::EntryKeyRecovery;
 
 const JUDGMENT: &[u8] = b"avenDB entry judgment 2\n";
 const MAX_FACTS: usize = 512;
