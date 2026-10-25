@@ -164,9 +164,13 @@ The dedicated regression asserts zero scratch imports after unlock, first view a
 
 ### Admission availability check correction
 
+Implementation: [7132cf4b](https://github.com/MyAvenCEO/maiacity/commit/7132cf4b).
+
 Canonical regression execution exposed one additional eager path: `check_write` called public full-history hydration before the proof phase, even when the exact warm scratch covered the append cut. The availability guard now recognizes only a file-free, non-creation, main-line append whose single dependency equals the validated scratch tip. It uses the same current-key/exact-basis `append_history` check. Every other operation retains the original full-history availability check, and accepted writes still run normal canonical policy acceptance plus proof/schema/admission checks. The two no-decode regression assertions are unchanged. Runtime rerun pending.
 
 
 ### Recapture fingerprint correction
+
+Implementation: [a71dca76](https://github.com/MyAvenCEO/maiacity/commit/a71dca76).
 
 The long-entry regression exposed a second-reopen mismatch: incremental content refresh hashed only decoded bodies while canonical `show_items` hashes decoded **or authenticated deferred** bodies. A newly saved mixed receipt therefore failed its exact fingerprint check and correctly fell back to full replay. Both paths now use the same availability definition. The existing test still requires all old target bodies to remain deferred after recapture/reopen and after the next append; no retained-progress assertion was relaxed. Runtime rerun pending.
