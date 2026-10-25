@@ -240,9 +240,10 @@ mod tests {
         for n in 0..4 {
             let id = w.lab.edit(w.mac_a, w.alice, todos.door, |item| item.set_text(1, &format!("remote {n}"))).unwrap();
             let signed = w.lab.signed_edit(w.mac_a, id).unwrap().clone();
+            assert!(w.lab.prepare_received_content(d, std::slice::from_ref(&signed), true).is_some(), "settled currently entitled receiver must capture a tail");
             let checked = w.lab.prepare_receive(d, vec![signed]).check();
             assert_eq!(w.lab.receive_prepared(d, checked, false).0, 1);
-            assert!(!w.lab.held(d).behind, "an eligible verified tail is visible before catch_up");
+            assert!(!w.lab.held(d).behind, "an eligible verified tail is visible before catch_up: {}", w.lab.held(d).perf.to_json());
             assert_eq!(w.lab.item(d, todos.door).unwrap().record(), w.lab.item(w.mac_a, todos.door).unwrap().record());
             let record = w.lab.item(d, todos.door).unwrap().record();
             let history = w.lab.history(d, todos.door).unwrap().changes().to_vec();
