@@ -384,6 +384,15 @@ mod tests {
         let offer=w.lab.entry_projection_offer(w.mac_a,w.phone_a,carrier).unwrap();
         let capsule=w.lab.entry_checkpoint_capsule(w.mac_a,w.phone_a,snapshot,carrier,&prepared.sealed).unwrap();
         w.lab.receive(w.phone_a,offer.evidence,vec![]);
+        let Action::Snapshot{states,..}=&w.lab.signed_edit(w.mac_a,snapshot).unwrap().edit.action else {panic!("owner snapshot");};
+        let basis=states[0].basis.clone();
+        assert_eq!(basis.len(),1,"the carrier is deliberately a single creation write");
+        assert!(basis.iter().all(|id|w.lab.held(w.phone_a).signed.contains_key(id)),
+            "authorized offer necessarily contains the carrier creation");
+        assert!(basis.iter().any(|id|!w.lab.held(w.phone_a).bodies.contains_key(id)),
+            "signed creation presence does not mean its content is locally materialized");
+        assert!(w.lab.restore_capsuled_owner_judgment(w.phone_a,snapshot,carrier,&prepared.sealed,&capsule).is_some(),
+            "authenticated capsule remains usable when held creation bytes cannot be decrypted yet");
         assert!(w.lab.adopt_capsuled_owner_entry_base(w.phone_a,snapshot,carrier,prepared.sealed,capsule));
         assert_eq!(w.lab.discovery_manifest_targets(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]));
         assert_eq!(w.lab.automatic_discovery_hint(w.phone_a,w.alice,w.alice,scope.clone()).unwrap()["pendingEntries"],json!([note.to_hex()]));
