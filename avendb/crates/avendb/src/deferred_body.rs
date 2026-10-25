@@ -1,7 +1,7 @@
 //! Explicit metadata/content boundary for an authenticated own warm receipt.
 //! Not a peer admission path. Warm restore uses this only after authenticating
 //! its own exact-basis receipt; ordinary history reads hydrate through current keys.
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use crate::{keys::{self, Secret}, policy::LogRevision, slice::Body, wire::Wire};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,11 +31,28 @@ impl BodyMetadata {
     }
 }
 
+/// Shared only by bodies from one authenticated own warm receipt. Its exact
+/// basis advances solely across a guarded strict canonical content append; it
+/// does not hold keys or grant authority. Whole refresh/restore replaces it.
+pub(crate) struct DeferredContext(Mutex<LogRevision>);
+impl DeferredContext {
+    pub(crate) fn new(basis: LogRevision) -> Arc<Self> { Arc::new(Self(Mutex::new(basis))) }
+    pub(crate) fn matches(&self, current: &LogRevision) -> bool {
+        *self.0.lock().expect("deferred context") == *current
+    }
+    pub(crate) fn advance_content_append(&self, before: &LogRevision, after: LogRevision) -> bool {
+        let mut basis=self.0.lock().expect("deferred context");
+        if *basis != *before { return false; }
+        *basis=after;
+        true
+    }
+}
+
 /// Metadata certified by the device's encrypted exact-state receipt, plus the
 /// original ciphertext. No decrypted content and no secret key are retained
 /// until a demand supplies its CURRENT authorized entry key.
 pub(crate) struct DeferredBody {
-    basis: LogRevision,
+    basis: Arc<DeferredContext>,
     metadata: BodyMetadata,
     ciphertext: Arc<[u8]>,
     context: Vec<u8>,
@@ -46,13 +63,13 @@ impl DeferredBody {
     /// Metadata must omit content explicitly; authorization dependencies must not
     /// use this path. This constructor itself does NOT authenticate that receipt.
     pub(crate) fn from_own_receipt(
-        basis: LogRevision, metadata: BodyMetadata, ciphertext: Arc<[u8]>, context: Vec<u8>,
+        basis: Arc<DeferredContext>, metadata: BodyMetadata, ciphertext: Arc<[u8]>, context: Vec<u8>,
     ) -> Option<Self> {
         if !metadata.ordinary() || keys::edit_key(&ciphertext).is_none() { return None; }
         Some(Self { basis, metadata, ciphertext, context, opened: OnceLock::new() })
     }
     pub(crate) fn metadata(&self, current: &LogRevision) -> Result<&BodyMetadata, OpenError> {
-        if self.basis != *current { return Err(OpenError::StaleBasis); }
+        if !self.basis.matches(current) { return Err(OpenError::StaleBasis); }
         Ok(&self.metadata)
     }
     pub(crate) fn permits(&self, current: &LogRevision, key: &Secret) -> Result<(), OpenError> {
@@ -72,14 +89,6 @@ impl DeferredBody {
             if BodyMetadata::of(&body) != self.metadata { return Err(OpenError::InvalidContent); }
             Ok(body)
         }).as_ref().map_err(|e| *e)
-    }
-    /// Only the local content-append path may advance an exclusively owned receipt
-    /// after strict canonical tail replay and unchanged old key/authorization inputs.
-    /// Current key/content validation remains mandatory even for a cached plaintext.
-    pub(crate) fn advance_content_append(&mut self, before: &LogRevision, after: LogRevision) -> bool {
-        if self.basis != *before { return false; }
-        self.basis = after;
-        true
     }
     /// Move validated plaintext into the active working set without a second
     /// content-sized allocation. The caller must own the receipt exclusively.
@@ -102,7 +111,7 @@ mod tests {
         let mut rng = SeededRng::new("deferred body test", b"fixture");
         let ciphertext = keys::seal_edit(&key, &body.to_wire(), &context, &mut rng);
         let basis = Log::new().revision();
-        let deferred = DeferredBody::from_own_receipt(basis.clone(), BodyMetadata::of(&Body::default()), ciphertext.into(), context).unwrap();
+        let deferred = DeferredBody::from_own_receipt(DeferredContext::new(basis.clone()), BodyMetadata::of(&Body::default()), ciphertext.into(), context).unwrap();
         (deferred, basis, key)
     }
     #[test]
@@ -122,7 +131,7 @@ mod tests {
             let (body, basis, _key) = fixture(vec![]);
             let metadata = BodyMetadata::of(&Body { header: Some(crate::slice::Header {
                 ty: ty.into(), created:0 }), ..Body::default() });
-            assert!(DeferredBody::from_own_receipt(basis,metadata,body.ciphertext,body.context).is_none());
+            assert!(DeferredBody::from_own_receipt(DeferredContext::new(basis),metadata,body.ciphertext,body.context).is_none());
         }
     }
     #[test]
@@ -146,13 +155,13 @@ mod tests {
     }
     #[test]
     fn content_append_rebind_preserves_bytes_and_current_key_checks() {
-        let (mut body, before, key) = fixture(vec![42;4096]);
+        let (body, before, key) = fixture(vec![42;4096]);
         let after = Log::new().revision();
-        assert!(!body.advance_content_append(&after, before.clone()));
+        assert!(!body.basis.advance_content_append(&after, before.clone()));
         let ciphertext = body.ciphertext.clone();
         let metadata = body.metadata(&before).unwrap().clone();
         let plaintext = body.open(&before, &key).unwrap() as *const Body;
-        assert!(body.advance_content_append(&before, after.clone()));
+        assert!(body.basis.advance_content_append(&before, after.clone()));
         assert!(Arc::ptr_eq(&ciphertext, &body.ciphertext), "no ciphertext-sized copy");
         assert_eq!(&metadata, body.metadata(&after).unwrap());
         assert_eq!(body.open(&before, &key).unwrap_err(), OpenError::StaleBasis);
@@ -161,6 +170,34 @@ mod tests {
         let allocation = body.open(&after, &key).unwrap().content.as_ptr();
         let owned = body.into_opened(&after, &key).unwrap();
         assert_eq!(owned.content.as_ptr(), allocation, "working-set transfer moves the existing buffer");
+    }
+
+    #[test]
+    fn shared_context_advances_unrelated_immutable_receipts_once() {
+        let (template, before, key) = fixture(vec![42;32]);
+        let context = template.basis.clone();
+        let bodies: Vec<_> = (0..128).map(|_| Arc::new(DeferredBody::from_own_receipt(
+            context.clone(), template.metadata.clone(), template.ciphertext.clone(),
+            template.context.clone()).unwrap())).collect();
+        let externally_held = bodies[0].clone();
+        let plaintext = externally_held.open(&before, &key).unwrap() as *const Body;
+        let after = Log::new().revision();
+        let stale = Log::new().revision();
+        assert!(!context.advance_content_append(&stale, after.clone()));
+        assert!(context.matches(&before));
+        assert!(context.advance_content_append(&before, after.clone()));
+        for body in &bodies {
+            assert!(Arc::ptr_eq(&body.basis, &context));
+            assert!(body.metadata(&after).is_ok());
+            assert_eq!(body.metadata(&before).unwrap_err(), OpenError::StaleBasis);
+            assert_eq!(body.open(&after, &Secret::from_bytes([8;32])).unwrap_err(), OpenError::WrongKey);
+        }
+        assert_eq!(externally_held.open(&after, &key).unwrap() as *const Body, plaintext);
+        assert!(!context.advance_content_append(&before, stale.clone()));
+        assert!(context.matches(&after));
+        let replacement = DeferredContext::new(stale.clone());
+        assert!(replacement.matches(&stale));
+        assert_eq!(externally_held.metadata(&stale).unwrap_err(), OpenError::StaleBasis);
     }
 
 }

@@ -758,7 +758,7 @@ struct Store {
     /// The bodies of the writes it opened, and the writes whose bodies never open: garbled under the key they name.
     bodies: HashMap<EditId, Body>,
     deferred_bodies: HashMap<EditId, Arc<crate::deferred_body::DeferredBody>>,
-    deferred_basis: Option<crate::policy::LogRevision>,
+    deferred_basis: Option<Arc<crate::deferred_body::DeferredContext>>,
     spoilt: HashSet<EditId>,
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
@@ -3296,15 +3296,16 @@ impl Lab {
             store.perf.add("keys: index", at);
             open_keys(store, &ix, &mine);
             store.perf.add("open keys", at);
-            if store.deferred_basis.as_ref().is_some_and(|basis| *basis != store.log.revision()) {
+            if store.deferred_basis.as_ref().is_some_and(|basis| !basis.matches(&store.log.revision())) {
                 store.deferred_bodies.clear();
                 store.deferred_basis = None;
                 store.files_at = OnceLock::new();
                 store.reshow = true;
             }
             if let Some(receipt) = store.warm_materialization.as_ref() {
-                store.deferred_bodies = receipt.deferred(store);
-                if !store.deferred_bodies.is_empty() { store.deferred_basis = Some(store.log.revision()); }
+                let basis = crate::deferred_body::DeferredContext::new(store.log.revision());
+                store.deferred_bodies = receipt.deferred(store, basis.clone());
+                store.deferred_basis = (!store.deferred_bodies.is_empty()).then_some(basis);
             }
             let at = Perf::start();
             read(d, store);
@@ -4165,8 +4166,9 @@ impl Lab {
             return Ok(edit.id());
         }
         let content_only = self.content_refresh_ready(on, &edit, &body) || self.creation_refresh_ready(on, &edit, &body);
+        let deferred_before = content_only.then(|| self.held(on).log.revision());
         let id = self.seal_write(on, edit, body, x)?;
-        if content_only && self.refresh_content(on, id) { return Ok(id); }
+        if content_only && self.refresh_content(on, id, deferred_before.as_ref()) { return Ok(id); }
         match &mut self.held_back {
             Some(devices) => _ = devices.insert(on),
             None => self.refresh(on, &[]),

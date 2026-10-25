@@ -206,8 +206,8 @@ impl Validated {
     pub(super) fn consume(self, store: &Store) -> Option<BTreeMap<EntryId, Saved>> {
         (self.revision == store.log.revision()).then_some(self.saved)
     }
-    pub(super) fn deferred(&self, store: &Store) -> HashMap<EditId, Arc<DeferredBody>> {
-        if self.revision != store.log.revision() { return HashMap::new(); }
+    pub(super) fn deferred(&self, store: &Store, basis: Arc<crate::deferred_body::DeferredContext>) -> HashMap<EditId, Arc<DeferredBody>> {
+        if self.revision != store.log.revision() || !basis.matches(&self.revision) { return HashMap::new(); }
         let mut out = HashMap::new();
         let mut retained_bytes = 0usize;
         let edits: HashMap<_, _> = store.log.ids().iter().copied().zip(store.log.edits()).collect();
@@ -225,7 +225,7 @@ impl Validated {
                 if retained_bytes.saturating_add(entry_bytes) > LIMIT { pending.clear(); break; }
                 let Some(keyid) = keys::edit_key(body) else { pending.clear(); break; };
                 if store.keys.get(&keyid, KeyName::Entry(*entry, *stay, *epoch)).is_none() { pending.clear(); break; }
-                let Some(body) = DeferredBody::from_own_receipt(self.revision.clone(), metadata.clone(),
+                let Some(body) = DeferredBody::from_own_receipt(basis.clone(), metadata.clone(),
                     body.clone().into(), write_context(edit)) else { pending.clear(); break; };
                 pending.push((*id, Arc::new(body)));
             }
@@ -551,7 +551,13 @@ mod tests {
         let saved = Capture::take(lab.held(device)).encode(Vec::new());
         assert!(decode(unwrap(&saved).unwrap().1).is_some());
         assert!(!lab.held(device).deferred_bodies[&ids[1]].content_ready(), "saving must not hydrate unrelated content");
+        let unrelated_receipt = lab.held(device).deferred_bodies[&ids[1]].clone();
+        let retained_before = lab.held(device).perf.to_json()["counts"]["refresh: deferred context retained"].as_u64().unwrap_or(0);
         lab.edit(device,vault,entries[0],|item| { item.edit_document(|d| d.title="Successor".into()); }).unwrap();
+        assert!(Arc::ptr_eq(&unrelated_receipt, &lab.held(device).deferred_bodies[&ids[1]]),
+            "an externally held unrelated receipt does not force full refresh");
+        assert!(unrelated_receipt.metadata(&lab.held(device).log.revision()).is_ok());
+        assert_eq!(lab.held(device).perf.to_json()["counts"]["refresh: deferred context retained"].as_u64(), Some(retained_before+1));
         assert_eq!(lab.item(device,entries[1]).unwrap().record(),expected[1]);
         assert!(lab.held(device).deferred_bodies.contains_key(&ids[1]), "unchanged background content stays deferred after a local ordinary append");
         assert!(!lab.held(device).deferred_bodies[&ids[1]].content_ready(), "local write must not decode unrelated history");
