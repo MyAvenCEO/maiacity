@@ -740,6 +740,7 @@ struct Store {
     replay: Replay,
     bootstrap_bases: entry_base::Anchors,
     semantic_pending: HashSet<EntryId>,
+    semantic_all_pending: bool,
     semantic_group_index: std::sync::Mutex<BTreeMap<VaultId, Vec<ShareId>>>,
     bootstrap_state: Option<State>,
     bootstrap_active: HashSet<EntryId>,
@@ -840,6 +841,7 @@ impl Default for Store {
             replay: replay(&[]),
             bootstrap_bases: BTreeMap::new(),
             semantic_pending: HashSet::new(),
+            semantic_all_pending:false,
             semantic_group_index: std::sync::Mutex::new(BTreeMap::new()),
             bootstrap_state: None,
             bootstrap_active: HashSet::new(),
@@ -1213,13 +1215,14 @@ pub struct Backup {
     blobs: Blobs,
     bootstrap_bases: entry_base::Anchors,
     semantic_pending: HashSet<EntryId>,
+    semantic_all_pending: bool,
 }
 
 impl Backup {
     /// A backup of signed edits, in the order the device took them, and McEliece keys, each under the id it hashes to:
     /// what a node reads back from its store on disk.
     pub fn new(signed: Vec<Signed>, blobs: impl IntoIterator<Item = Arc<[u8]>>) -> Backup {
-        Backup { signed, blobs: blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect(), bootstrap_bases:BTreeMap::new(), semantic_pending:HashSet::new() }
+        Backup { signed, blobs: blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect(), bootstrap_bases:BTreeMap::new(), semantic_pending:HashSet::new(), semantic_all_pending:false }
     }
 
     /// Its signed edits, in the order the device took them.
@@ -4332,7 +4335,7 @@ impl Lab {
         }
         let read = r.headers.contains_key(&en.creation) && en.retags.iter().all(|w| r.tags.contains_key(w));
         if !read || !store.reads_shares(st, v)
-            || store.semantic_pending.contains(&entry)
+            || store.semantic_all_pending || store.semantic_pending.contains(&entry)
             || !store.semantic_groups(st,entry).is_some_and(|(_,ready)|ready) {
             return Ok(None);
         }
@@ -5774,7 +5777,7 @@ impl Lab {
     pub fn backup(&self, d: SignerId) -> Backup {
         let store = self.held(d);
         let signed = store.log.ids().iter().map(|id| store.signed[id].clone()).collect();
-        Backup { signed, blobs: store.blobs.clone(), bootstrap_bases:store.bootstrap_bases.clone(), semantic_pending:store.semantic_pending.clone() }
+        Backup { signed, blobs: store.blobs.clone(), bootstrap_bases:store.bootstrap_bases.clone(), semantic_pending:store.semantic_pending.clone(), semantic_all_pending:store.semantic_all_pending }
     }
 
     /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it
@@ -5801,7 +5804,8 @@ impl Lab {
         // Restore pending cuts before any upkeep; unchanged completed local
         // stores retain normal offline behavior.
         let semantic_pending=backup.semantic_pending.clone();
-        let mut store = Store { follow, query_depth, gate, perf, semantic_pending, bootstrap_bases:backup.bootstrap_bases.clone(), ..Store::default() };
+        let semantic_all_pending=backup.semantic_all_pending;
+        let mut store = Store { follow, query_depth, gate, perf, semantic_pending, semantic_all_pending, bootstrap_bases:backup.bootstrap_bases.clone(), ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
         // Decode and merge one slot at a time. Keeping both complete decoded key
@@ -6034,13 +6038,14 @@ impl Lab {
         }
         // the edits the view is of first, in the order its giver took them, the others after them as they came
         let semantic_pending=backup.semantic_pending.clone();
+        let semantic_all_pending=backup.semantic_all_pending;
         let Backup { signed, blobs, .. } = backup;
         let (first, rest): (Vec<Signed>, Vec<Signed>) = signed.into_iter().partition(|s| of.contains(&s.edit.id()));
         let mut first: HashMap<EditId, Signed> = first.into_iter().map(|s| (s.edit.id(), s)).collect();
         let first: Vec<Signed> = ids.iter().filter_map(|id| first.remove(id)).collect();
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        self.stores.insert(d, Store { follow, query_depth, gate, perf, semantic_pending, ..Store::default() });
+        self.stores.insert(d, Store { follow, query_depth, gate, perf, semantic_pending, semantic_all_pending, ..Store::default() });
         let offered = (first.len() + rest.len()) as u64;
         let fresh = self.fresh(d, first.into_iter().chain(rest).collect(), &of);
         let Some(store) = self.stores.get_mut(&d) else {
@@ -6527,7 +6532,7 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
         if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
             continue;
         }
-        if store.semantic_pending.contains(&en.id) || !store.semantic_groups(st,en.id).is_some_and(|(_,ready)|ready) {continue;}
+        if store.semantic_all_pending || store.semantic_pending.contains(&en.id) || !store.semantic_groups(st,en.id).is_some_and(|(_,ready)|ready) {continue;}
         let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else {
             continue;
         };
