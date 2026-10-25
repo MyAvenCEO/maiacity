@@ -527,18 +527,43 @@ impl crate::Shared {
             let page = self.pulls.page(false, false).await.ok()?;
             let (reply, _) = self.reply_to(peer, crate::session::ASK_LOGS, &request, crate::authority_stage::MAX_BYTES).await.ok()?;
             let candidate = reply.edits.into_iter().find(|signed| ShareId::from(signed.edit.id()) == id)?;
+            // Hash-matched fields are transfer hints only until signatures or
+            // current checkpoint provenance validate this exact creation.
+            let hints = GrantClass::from_verified(id, &candidate.edit).map(|class| {
+                class.via.into_iter().chain([class.issuer,class.over])
+                    .map(LogId::Vault).collect::<BTreeSet<_>>()
+            })?;
             let checking = self.receive_checking.clone().lock_owned().await;
             #[cfg(not(target_arch = "wasm32"))]
             let class = tokio::task::spawn_blocking(move || {
                 let (_page, _checking) = (page, checking);
                 GrantClass::verify(id, &candidate)
-            }).await.ok()??;
+            }).await.ok()?;
             #[cfg(target_arch = "wasm32")]
             let class = {
-                let class = GrantClass::verify(id, &candidate)?;
+                let class = GrantClass::verify(id, &candidate);
                 drop(page); drop(checking);
                 n0_future::time::sleep(std::time::Duration::ZERO).await;
                 class
+            };
+            let class = match class {
+                Some(class) => class,
+                None => {
+                    // A provider legitimately retires covered PQ signatures.
+                    // Pull potential witness authority normally, then the bare
+                    // grant. No raw descriptor enters the classifier map.
+                    if hints.len()>MAX_VIA+2 {return None;}
+                    self.pull_expected(peer.endpoint,crate::Scope::Logs(hints),false,None,Some(device)).await.ok()?;
+                    self.pull_expected(peer.endpoint,crate::Scope::Logs([LogId::Share(id)].into_iter().collect()),false,None,Some(device)).await.ok()?;
+                    self.read(move |lab,me| {
+                        let edit_id=EditId(id.0);
+                        let proof=lab.authority_provenance(me);
+                        proof.get(&edit_id)?;
+                        let mut class=GrantClass::from_verified(id,&lab.signed_edit(me,edit_id)?.edit)?;
+                        class.covered=!lab.independently_verified_edit(me,edit_id);
+                        Some(class)
+                    }).await?
+                }
             };
             classes.0.insert(id, class);
         }

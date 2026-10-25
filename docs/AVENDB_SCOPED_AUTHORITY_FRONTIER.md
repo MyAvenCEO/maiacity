@@ -463,3 +463,17 @@ checkpoint publication after the receiver split; the room and subsequent live
 owner edit must render while unrelated coop authority and document history stay
 withheld. It asserts received provenance is genuinely checkpoint-backed. This
 fixture is source-ready and still awaits canonical runtime validation.
+
+### First covered-classifier recovery
+
+Provider `trust` actually removes covered PQ signature bytes; ordinary replies
+retain the stripped body. A new receiver therefore cannot verify that grant
+before fetching its checkpoint. The classifier fetch now uses only hash-matched
+creation fields as bounded transfer hints, requesting issuer/over/via vaults
+through ordinary authorized transfer, then requesting the share itself. It
+inserts a classifier only after local current provenance validates the exact
+creation. Raw hints never answer negative scope queries or authorize admission.
+The real checkpoint-covered shared-room fixture exercises this stripped-body
+path without preseeded target authority. Covering checkpoint vaults outside the
+hinted ancestry remain unresolved/conservative; no claim of universal witness
+discovery is made by this increment. Rust runtime checks remain pending.
