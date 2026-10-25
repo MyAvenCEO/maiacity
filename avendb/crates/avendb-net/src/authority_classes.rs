@@ -391,7 +391,25 @@ impl GrantClasses {
         logs: &crate::holdings::Logs, announced: &crate::Holdings,
         provenance: impl Fn(avendb::id::EditId) -> Option<Vec<VaultId>>,
     ) -> Option<OwnerDependencies> {
-        self.owner_dependencies_ready(owner,edits,ids,logs,announced,provenance,&BTreeSet::new())
+        self.owner_dependencies_ready(owner,edits,ids,logs,announced,provenance,false)
+    }
+
+    /// Group reads of this historical entry shape only: its named audience /
+    /// keep chains and wide grants. Owner-only writes never interpret group ops.
+    fn used_group_roots(&self, shape: &OwnerEntry) -> Option<BTreeSet<EntryId>> {
+        if shape.actors.iter().all(|actor|*actor==shape.vault) {return Some(BTreeSet::new());}
+        let mut pending=shape.named_shares.clone();
+        pending.extend(self.0.iter().filter(|(_,c)|c.over==shape.vault && c.wide && c.level.allows(Level::Read)).map(|(id,_)|*id));
+        let mut seen=BTreeSet::new();let mut groups=BTreeSet::new();
+        while let Some(id)=pending.pop_first() {
+            if !seen.insert(id) {continue;}
+            if seen.len()>MAX_CLASSES {return None;}
+            let class=self.0.get(&id)?;
+            if class.over!=shape.vault {return None;}
+            if let Some(group)=class.group {groups.insert(group);}
+            if let Some(parent)=class.parent {pending.insert(parent);}
+        }
+        Some(groups)
     }
 
     /// Union full historical group shapes before closing authority. This never
@@ -406,8 +424,7 @@ impl GrantClasses {
         if owner.actors.iter().all(|actor|*actor==owner.vault) {
             return self.owner_dependencies_provenance(owner,edits,ids,logs,announced,provenance);
         }
-        let mut pending:BTreeSet<_>=self.0.values().filter(|c|c.over==owner.vault).filter_map(|c|c.group).collect();
-        let root_groups=pending.clone();
+        let mut pending=self.used_group_roots(owner)?;
         let mut ready=BTreeSet::new();let mut required=BTreeSet::new();let mut missing=BTreeSet::new();
         let mut combined=owner.clone();let mut inspected=0usize;
         while let Some(group)=pending.pop_first() {
@@ -421,6 +438,9 @@ impl GrantClasses {
             let shape=OwnerEntry::from_parts(group,local.edits.iter().map(|&at|(ids[at],&edits[at])),remote)?;
             if shape.vault!=owner.vault {return None;}
             for &at in &local.edits {combined.via.extend(provenance(*ids.get(at)?)?);}
+            // Only a foreign writer of this group can make its counting read
+            // another grant's group. Owner-only group bodies do not widen roots.
+            pending.extend(self.used_group_roots(&shape)?.into_iter().filter(|g|!ready.contains(g)));
             combined.actors.extend(shape.actors);combined.via.extend(shape.via);
             combined.audiences.extend(shape.audiences);combined.named_shares.extend(shape.named_shares);
             if combined.actors.len()>MAX_CLASSES || combined.via.len()>MAX_CLASSES
@@ -433,12 +453,12 @@ impl GrantClasses {
         if !missing.is_empty() {
             // Dependency discovery may run with unresolved groups, but this
             // branch ALWAYS retains missing group work and cannot admit.
-            if let Some(authority)=self.owner_dependencies_ready(&combined,edits,ids,logs,announced,&provenance,&root_groups) {
+            if let Some(authority)=self.owner_dependencies_ready(&combined,edits,ids,logs,announced,&provenance,true) {
                 required.extend(authority.required);missing.extend(authority.missing);
             }
             return Some(OwnerDependencies{required,missing});
         }
-        let mut authority=self.owner_dependencies_ready(&combined,edits,ids,logs,announced,provenance,&ready)?;
+        let mut authority=self.owner_dependencies_ready(&combined,edits,ids,logs,announced,provenance,true)?;
         authority.required.extend(required);Some(authority)
     }
 
@@ -446,7 +466,7 @@ impl GrantClasses {
         &self, owner: &OwnerEntry, edits: &[avendb::policy::Edit], ids: &[avendb::id::EditId],
         logs: &crate::holdings::Logs, announced: &crate::Holdings,
         provenance: impl Fn(avendb::id::EditId) -> Option<Vec<VaultId>>,
-        groups_ready: &BTreeSet<EntryId>,
+        groups_closed: bool,
     ) -> Option<OwnerDependencies> {
         use avendb::{id::AudienceId, policy::{Kind, Principal, Revoking}, sync::LogId};
         let inventory: BTreeSet<_> = announced.logs.keys().filter_map(|log| match log { LogId::Share(id) => Some(*id), _ => None }).collect();
@@ -498,7 +518,7 @@ impl GrantClasses {
                 // Participant judgment may depend on every historical group
                 // version in this chain. Do not substitute its current value or
                 // an owner's shortcut for that missing dependency closure.
-                if mixed && class.group.is_some_and(|g|!groups_ready.contains(&g)) { return None; }
+                if mixed && class.group.is_some() && !groups_closed { return None; }
                 // Real parent chains stay over one vault. A malformed or unknown
                 // cross-vault parent goes through conservative reconciliation.
                 if class.over != owner.vault { return None; }

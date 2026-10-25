@@ -533,3 +533,16 @@ rows while unrelated revocations/history remain withheld. Rust runtime pending.
 This increment also propagates core OwnerBaseScope::actors into suffix metadata;
 it requires the coordinated core commit a0610a7c. Grouped checkpoint suffix
 admission remains guarded by the core's existing plain-proof restriction.
+
+### Narrow group roots to actual historical readers
+
+Group discovery no longer seeds every grouped grant over a vault. Each mixed
+entry contributes only groups named by its historical audience/keep grant chains
+and wide grants, including parents. A referenced group's own historical foreign
+writers recursively contribute their chains; owner-only group writes do not
+cause all other group histories to load merely because all grants select cap
+groups. The union still closes audience/key/grant authority, and each required
+group's complete frontier is checked again at final admission. Missing groups
+remain an unconditional admission blocker. The public grouped fixture now adds
+an unrelated grouped grant and requires its group payload to remain absent.
+Lean and syntax pass; canonical Rust execution remains pending.

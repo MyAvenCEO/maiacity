@@ -155,3 +155,10 @@ def ready (missing : List α) (authorityClosed : Bool) : Bool := missing.isEmpty
 theorem missingHistoryBlocks (group : α) (rest : List α) (authorityClosed : Bool) :
     ready (group :: rest) authorityClosed = false := by simp [ready]
 end AvenDB.GroupClosure
+
+namespace AvenDB.GroupReadScope
+/-- Owner-only group writes never read another grant's group permissions. -/
+def required (foreignWriter : Bool) (referenced : List α) : List α :=
+  if foreignWriter then referenced else []
+theorem ownerDoesNotWiden (groups : List α) : required false groups = [] := rfl
+end AvenDB.GroupReadScope

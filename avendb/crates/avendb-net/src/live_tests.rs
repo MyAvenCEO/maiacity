@@ -584,6 +584,16 @@ async fn mixed_chat_demand(grouped: bool) {
         w.lab.issue(sender, &[sender], share(vault, Who::Vault(bob_vault), Level::Write, by_id(target))).unwrap();
         None
     };
+    let unrelated_group=if grouped {
+        let group=w.lab.define_group(sender,vault,avendb::rules::CapGroup {
+            name:"Unrelated catalog".into(),caps:vec![],includes:vec![],
+        }).unwrap();
+        w.lab.issue_group(sender,&[sender],avendb::lab::GroupShare {
+            over:vault,who:Who::Vault(bob_vault),name:"Unrelated catalog".into(),
+            select:of_type("unrelated-group-kind"),group,level:Level::Read,parent:None,issuer:vault,
+        }).unwrap();
+        Some(group)
+    } else {None};
     w.lab.sync_all(0);
     w.lab.edit(bob,bob_vault,target,|item| {
         let mut record=item.record();
@@ -644,6 +654,10 @@ async fn mixed_chat_demand(grouped: bool) {
         if let Some((root,child))=group_history {
             anyhow::ensure!(phone.read(move|lab,me|lab.group(me,vault,root).is_some_and(|g|g.includes.is_empty())
                 && lab.group(me,vault,child).is_some()).await,"historical included group must arrive despite absence from latest root");
+        }
+        if let Some(group)=unrelated_group {
+            anyhow::ensure!(phone.read(move|lab,me|lab.item(me,group).is_none()).await,
+                "unrelated grouped grant must not pull its group history");
         }
         let after_first = phone.shared.differ(sender).await;
         anyhow::ensure!(unrelated_grants.iter().all(|id| after_first.contains(&LogId::Share(*id))), "initial view reconciled unrelated authority");
