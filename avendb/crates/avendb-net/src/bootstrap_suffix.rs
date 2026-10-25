@@ -204,11 +204,11 @@ impl Shared {
                             shared.try_owner_base_suffix(&peer, work.entry, work.origin.clone()),
                         );
                         if let Some(origin) = &work.origin {
-                            let outcome = origin.run(attempt).await;
-                            #[cfg(test)] eprintln!("owner suffix demand attempt: {outcome:?}");
+                            let _outcome = origin.run(attempt).await;
+                            #[cfg(test)] eprintln!("owner suffix demand attempt: {_outcome:?}");
                         } else {
-                            let outcome = attempt.await;
-                            #[cfg(test)] eprintln!("owner suffix live attempt: {outcome:?}");
+                            let _outcome = attempt.await;
+                            #[cfg(test)] eprintln!("owner suffix live attempt: {_outcome:?}");
                         }
                     }
                     shared
@@ -326,7 +326,7 @@ impl Shared {
                     .collect()
             })
             .unwrap_or_default();
-        let Some(classes) = self.grant_classes(peer, grant_ids).await else {
+        let Some(classes) = self.grant_classes_dependency(peer, grant_ids).await else {
             #[cfg(test)] eprintln!("owner suffix lacks grant classifiers");
             return Ok(false);
         };
@@ -369,13 +369,7 @@ impl Shared {
             }
             previous = missing.clone();
             #[cfg(test)] eprintln!("owner suffix waits for dependency frontiers: {missing:?}");
-            self.pull_expected(
-                peer.endpoint,
-                Scope::Logs(missing),
-                false,
-                None,
-                Some(device),
-            )
+            self.pull_dependency(peer.endpoint, missing, device)
             .await?;
         }
         // Existing current dependency closure is the release gate. Missing

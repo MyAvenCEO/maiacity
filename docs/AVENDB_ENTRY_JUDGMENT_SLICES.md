@@ -152,3 +152,27 @@ The net OwnerEntry::from_base actor propagation is coordinated in the grouped
 collector agent's separate patch; this core API patch must be integrated with
 that bridge. Standalone MixedOwnerBaseSuffix Lean and Rust parsing passed; Rust
 runtime validation remains pending.
+### Authority prerequisites cannot wait behind blocked target history
+
+Accepted-base suffix transfer used separate page admission but still fetched
+missing authority/witness prerequisites through ordinary active pull admission.
+When every history slot is occupied, those prerequisites cannot progress. The
+long-base gate deliberately holds all those slots and exposed this dependency
+cycle; stage diagnostics are retained pending runtime confirmation of its exact
+missing frontier.
+
+The repair gives suffix authority prerequisites two separately bounded active
+slots and four total queue tickets. It reuses the ordinary request/reply,
+signature/current admission, frontier bookkeeping and common page/byte permits.
+Only nonempty sets of at most128 Vault/Share/Audience logs can enter this lane;
+Entry logs and mixed authority+Entry requests are rejected before admission.
+Replies are also rejected if any edit belongs outside the exact requested
+logs. Canonical catch-up remains paced. No unrelated payload history is added to
+the independent lane, and shared pages still bound memory including large replies.
+Only accepted-base suffix dependencies and their grant-classifier witness repair
+select this lane; normal staged and background work retain existing admission.
+
+The focused starvation regression holds every normal slot, admits exactly two
+authority operations, checks bounded waiters/cancellation, refuses target-history
+requests and verifies common page capacity cannot be exceeded. Lean model and
+Rust parsing pass; Rust runtime and the original long-base gate remain pending.

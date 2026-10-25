@@ -261,3 +261,19 @@ theorem closedViewCannotAdmit : permitted true false = false := rfl
 theorem liveAnnouncementUnaffected (current : Bool) : permitted false current = true := by
   simp [permitted]
 end DemandStageCancellation
+
+namespace ScopedDependencyAdmission
+inductive LogKind where
+  | vault | share | audience | entry
+  deriving DecidableEq
+def eligible (logs : List LogKind) : Prop :=
+  logs ≠ [] ∧ logs.length ≤ 128 ∧ LogKind.entry ∉ logs
+theorem targetHistoryRejected (rest : List LogKind) :
+    ¬ eligible (LogKind.entry :: rest) := by simp [eligible]
+def admitted (active capacity : Nat) : Prop := active < capacity
+theorem twoActiveRefuseThird : ¬ admitted 2 2 := by simp [admitted]
+-- Independent operation admission never changes the common page limit.
+def buffered (pages pageLimit : Nat) : Prop := pages ≤ pageLimit
+theorem sharedPageBound (pages limit : Nat) (h : buffered pages limit) :
+    pages ≤ limit := h
+end ScopedDependencyAdmission

@@ -579,6 +579,12 @@ impl crate::Shared {
     /// conservative authority reconciliation. No returned descriptor is admitted
     /// as policy merely because it classifies an immutable log ID.
     pub(crate) async fn grant_classes(self: &std::sync::Arc<Self>, peer: &crate::Peer, inventory: BTreeSet<ShareId>) -> Option<GrantClasses> {
+        self.grant_classes_lane(peer, inventory, false).await
+    }
+    pub(crate) async fn grant_classes_dependency(self: &std::sync::Arc<Self>, peer: &crate::Peer, inventory: BTreeSet<ShareId>) -> Option<GrantClasses> {
+        self.grant_classes_lane(peer, inventory, true).await
+    }
+    async fn grant_classes_lane(self: &std::sync::Arc<Self>, peer: &crate::Peer, inventory: BTreeSet<ShareId>, dependency: bool) -> Option<GrantClasses> {
         use avendb::{id::EditId, sync::LogId, wire::Wire};
         if inventory.len() > MAX_CLASSES { return None; }
         let wanted = inventory.clone();
@@ -643,8 +649,13 @@ impl crate::Shared {
                         hints.extend(extra.into_iter().map(LogId::Vault));
                     }
                     if hints.len()>MAX_VIA+6 {return None;}
-                    self.pull_expected(peer.endpoint,crate::Scope::Logs(hints),false,None,Some(device)).await.ok()?;
-                    self.pull_expected(peer.endpoint,crate::Scope::Logs([LogId::Share(id)].into_iter().collect()),false,None,Some(device)).await.ok()?;
+                    if dependency {
+                        self.pull_dependency(peer.endpoint,hints,device).await.ok()?;
+                        self.pull_dependency(peer.endpoint,[LogId::Share(id)].into_iter().collect(),device).await.ok()?;
+                    } else {
+                        self.pull_expected(peer.endpoint,crate::Scope::Logs(hints),false,None,Some(device)).await.ok()?;
+                        self.pull_expected(peer.endpoint,crate::Scope::Logs([LogId::Share(id)].into_iter().collect()),false,None,Some(device)).await.ok()?;
+                    }
                     self.catch_up_paced(true).await;
                     self.read(move |lab,me| {
                         let edit_id=EditId(id.0);
