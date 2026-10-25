@@ -438,7 +438,9 @@ impl Service {
             "steps" => Ok(self.steps()),
             "found" => self.found(a.text(0)?, a.text(1)?, a.text(2)?, a.get(3).as_bool().unwrap_or(true)).await,
             "link" => self.link(a.text(0)?, a.text(1)?, a.text(2)?).await,
-            "open" => self.open().await,
+            "open" => if a.get(0).is_null() { self.open().await } else {
+                self.open_with_working_set(avendb_browser::working_set_ids(&a.get(0).to_string())).await
+            },
             "forget" => self.forget().await.map(|()| Value::Null),
             "rename" => self.rename(a.text(0)?).await.map(Value::from),
             "qrSvg" => qr_svg(&a.text(0)?, u32::try_from(a.count(1)?)?).map(Value::from),
@@ -635,14 +637,17 @@ impl Service {
     /// The device the folder holds, opened again from its shelf in the unlock's ceremony alone (`Device::open`): by a
     /// touch, where the Mac keeps a Touch ID key (`Device::open_by_touch`), and by its passkey's sheet where it keeps
     /// none or the touch doesn't come; or the device already open.
-    async fn open(self: &Arc<Self>) -> Result<Value> {
+    async fn open(self: &Arc<Self>) -> Result<Value> { self.open_with_working_set(Vec::new()).await }
+
+    async fn open_with_working_set(self: &Arc<Self>, working_set: Vec<avendb::id::EntryId>) -> Result<Value> {
         let _life = self.life.lock().await;
         self.ensure_open()?;
         if let Some(d) = self.device.lock().expect("the device").clone() {
             return Ok(info(&d));
         }
         let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account yet")?;
-        let (start, _ending, starting) = self.start(&meta.name, &meta.relay)?;
+        let (mut start, _ending, starting) = self.start(&meta.name, &meta.relay)?;
+        start.working_set = working_set;
         if let Some(touch) = &meta.touch {
             start.progress.step("touch");
             match self.touch(touch, "open avenDB", random()?).await {
@@ -812,7 +817,7 @@ impl Service {
             provisional.lock().expect("starting nodes").push(node.clone());
             *pending.lock().expect("starting node") = Some(node);
         }) as Arc<dyn Fn(Arc<Node>) + Send + Sync>);
-        Ok((Start { name, relay, entropy, now: now(), direct, shelf, progress, recovery, on_node }, ending, starting))
+        Ok((Start { name, relay, entropy, now: now(), direct, shelf, progress, recovery, on_node, working_set: Vec::new() }, ending, starting))
     }
 
     /// The steps of the start under way, or of the last (`avendb_browser::steps_json`): null before the first.

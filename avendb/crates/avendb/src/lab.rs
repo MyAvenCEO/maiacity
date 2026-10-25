@@ -764,6 +764,8 @@ struct Store {
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
     warm_materialization: Option<warm_materialization::Validated>,
+    /// Local scheduling hint only, bounded independently from receipt metadata.
+    warm_working_set: Vec<EntryId>,
     projections: std::sync::Mutex<BTreeMap<(SignerId, EntryId), entry_projection::CachedEntryProjection>>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
@@ -847,6 +849,7 @@ impl Default for Store {
             readings: Readings::default(),
             shown: BTreeMap::new(),
             warm_materialization: None,
+            warm_working_set: Vec::new(),
             projections: std::sync::Mutex::new(BTreeMap::new()),
             digests: None,
             follow: vec![],
@@ -937,6 +940,7 @@ impl Store {
         self.readings = Readings::default();
         self.shown.clear();
         self.warm_materialization = None;
+        self.warm_working_set.clear();
         self.bootstrap_state=None;
         self.bootstrap_active.clear();
         self.bootstrap_basis = None;
@@ -5549,10 +5553,29 @@ impl Lab {
     /// now (`checked`), their signatures aren't checked again: a device opening again checks only what came after. It
     /// takes the keys it opened from all of them, and its replay from the newest view that opens for this engine and is
     /// of the edits its log starts with.
+    /// Select bounded local entries for early materialization and the next own
+    /// receipt's optional snapshots. This grants no read/write or remote access.
+    pub fn set_warm_working_set(&mut self, d: SignerId, entries: &[EntryId]) {
+        let mut seen = HashSet::new();
+        let selected = entries.iter().copied().filter(|entry| seen.insert(*entry)).take(256).collect();
+        let at = self.at(d);
+        if let Some(store) = self.stores.get_mut(&at) { store.warm_working_set = selected; }
+    }
+
+    /// Common native/PWA startup boundary. All ordinary restore checks still run;
+    /// only requested authorized records materialize ahead of their first query.
+    pub fn restore_warm_working_set(&mut self, d: SignerId, backup: Backup,
+        checked: Option<(Checked, usize)>, warm: &Warm, entries: &[EntryId]) {
+        self.set_warm_working_set(d,entries);
+        self.restore_warm(d,backup,checked,warm);
+    }
+
     pub fn restore_warm(&mut self, d: SignerId, backup: Backup, checked: Option<(Checked, usize)>, warm: &Warm) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        let mut store = Store { follow, query_depth, gate, perf, bootstrap_bases:backup.bootstrap_bases.clone(), ..Store::default() };
+        let warm_working_set = held.warm_working_set.clone();
+        let mut store = Store { follow, query_depth, gate, perf, warm_working_set,
+            bootstrap_bases:backup.bootstrap_bases.clone(), ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
         // Decode and merge one slot at a time. Keeping both complete decoded key
@@ -5612,6 +5635,7 @@ impl Lab {
             store.perf.add("open view", at);
         }
         self.refresh(d, &[]);
+        for entry in self.held(d).warm_working_set.clone() { let _ = self.item(d,entry); }
     }
 
     /// Device `d`'s key for what it seals on its own shelf (`ShelfKey`), derived from its own key: `None` while it is

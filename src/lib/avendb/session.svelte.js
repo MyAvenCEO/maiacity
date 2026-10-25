@@ -1,3 +1,4 @@
+import { warmWorkingSet } from './warm-working-set.js';
 import { summaryView } from './startup-summary.js';
 import { observedWindow } from './observed-window.js';
 /*
@@ -452,7 +453,7 @@ function unlock(at = QUIET) {
 /** Opens the device this browser, or the app, holds, in the unlock alone: it marks its own steps with `step` and hands
  *  the device the function it shows its own by with `device`. @param {Steps} at */
 async function opening({ step, device: shown }) {
-	if (mac) return macOpened(await stepping(shown(), 'open'));
+	if (mac) return macOpened(await stepping(shown(), 'open', warmWorkingSet.initial()));
 	noteLifecycle('unlocking');
 	// the store first, so that a tab that can't open it never asks for the passkey: one tab at a time holds it
 	await store.hold().catch(() => {
@@ -472,7 +473,7 @@ async function opening({ step, device: shown }) {
 		throw e;
 	}
 	noteLifecycle('device-open-start');
-	running(await avendb.Device.open(unlocked, shown(), store));
+	running(await avendb.Device.open(unlocked, shown(), store, JSON.stringify(warmWorkingSet.initial())));
 }
 
 /** The device runs from here on, its shelf keeping what opens it again, even should that fail: it can still show

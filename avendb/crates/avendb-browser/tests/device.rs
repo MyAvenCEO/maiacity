@@ -95,7 +95,7 @@ impl Browser {
 fn start(name: &str, url: &RelayUrl, seed: u8) -> Start {
     let (name, progress) = (name.into(), Progress::new());
     let (relay, recovery) = (url.clone(), None);
-    Start { name, relay, entropy: [seed; 32], now: now(), direct: false, shelf: None, progress, recovery, on_node: None }
+    Start { name, relay, entropy: [seed; 32], now: now(), direct: false, shelf: None, progress, recovery, on_node: None, working_set: Vec::new() }
 }
 
 /// The same, on the shelf in folder `dir`, as a page's device keeps its in OPFS.

@@ -1,4 +1,5 @@
 // @ts-nocheck — plain JS
+import { warmWorkingSet } from './warm-working-set.js';
 import { readCompleteness } from './read-completeness.js';
 import { createDemand, normalizeDiscovery } from '../../../game/code/sources/demand.js';
 
@@ -63,6 +64,7 @@ export function queryDiscovery(op) {
  * @param {{ device: () => any, read: (device: any, op: any, signal: AbortSignal, demand: ReturnType<typeof createDemand>) => Promise<any> }} options
  */
 export function createReadWindow({ device, read }) {
+    const warmScope = Symbol('query working set');
 	let current = null, held = null, closed = false, queryKey = null, clearing = 0;
 	let completeness = readCompleteness(null);
 	const clear = () => {
@@ -79,6 +81,7 @@ export function createReadWindow({ device, read }) {
 		});
 	};
 	const release = () => {
+        warmWorkingSet.release(warmScope);
 		completeness = readCompleteness(null);
 		clearing++;
 		queryKey = null;
@@ -107,6 +110,7 @@ export function createReadWindow({ device, read }) {
 			current = request;
 			const active = () => current === request && !controller.signal.aborted && device() === d;
 			const entries = queryEntries(op), selectors = queryDiscovery(op);
+            warmWorkingSet.remember(warmScope, entries);
 			// Re-reading an unchanged view must not invalidate its peer discovery in flight.
 			// Compare the full operation so changing a predicate also drops obsolete row hints.
 			let nextKey;
@@ -117,6 +121,7 @@ export function createReadWindow({ device, read }) {
 				const got = await read(d, op, controller.signal, demand);
 				if (!active()) return null;
 				completeness = readCompleteness(got);
+                warmWorkingSet.remember(warmScope, [...entries, ...replyEntries(got)]);
 				void demand.replace([...entries, ...replyEntries(got)], selectors);
 				return got;
 			} catch (error) {
@@ -136,6 +141,7 @@ export function createReadWindow({ device, read }) {
  * Keep one scope for its mounted lifetime. A device change releases the old owner's scope and republishes
  * the still-visible entries on the replacement device; no old owner is reached through a new session. */
 export function createEntryWindow({ device }) {
+    const warmScope = Symbol('entry working set');
 	let held = null, entries = [], closed = false;
 	const bind = () => {
 		if (closed) return null;
@@ -147,12 +153,13 @@ export function createEntryWindow({ device }) {
 	const replace = (ids) => {
 		if (closed) return Promise.resolve(false);
 		entries = [...new Set(ids.filter((id) => typeof id === 'string' && /^[0-9a-f]{64}$/.test(id)))].slice(0, 512);
+        warmWorkingSet.remember(warmScope, entries);
 		return bind()?.replace(entries) ?? Promise.resolve(false);
 	};
 	return {
 		replace,
 		clear: () => replace([]),
 		invalidate() { return bind()?.replace(entries) ?? Promise.resolve(false); },
-		close() { closed = true; entries = []; held?.demand.close(); held = null; }
+		close() { closed = true; entries = []; warmWorkingSet.release(warmScope); held?.demand.close(); held = null; }
 	};
 }
