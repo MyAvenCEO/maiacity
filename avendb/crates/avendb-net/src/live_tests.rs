@@ -441,3 +441,69 @@ async fn an_active_room_query_discovers_and_updates_without_unrelated_history() 
     assert!(useful, "an authenticated type-only room query must discover its existing entry before background admission is released");
     assert!(updated, "the discovered room must receive a live edit while unrelated entry history stays withheld");
 }
+
+/// The actual view-demand path, without target IDs or direct staging calls.
+/// Unknown scope never shortcuts authority: the unrelated grant creations are
+/// already classified, but their newer revocation frontiers remain withheld.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cold_room_demand_renders_with_unrelated_authority_frontiers_withheld() {
+    use avendb::{cast::{share, of_type, text}, policy::{Action, Level, Revoking, Who}};
+    let mut w = world();
+    let (sender, receiver, vault) = (w.mac_a, w.phone_a, w.alice);
+    let mut unrelated_grants = Vec::new();
+    for n in 0..=pulls::LIVE_LOGS {
+        unrelated_grants.push(w.lab.issue(sender, &[sender], share(vault, Who::Vault(w.bob),
+            Level::Read, of_type(&format!("unrelated-kind-{n}")))).unwrap());
+    }
+    w.lab.sync_all(0);
+    let phone_lab = w.lab.split(receiver, &[], [161; 32]);
+    for grant in &unrelated_grants {
+        w.lab.submit(sender, &[sender], Action::Revoke(Revoking::Grant {
+            share: *grant, actor: vault, keep: vec![], via: vec![],
+        })).unwrap();
+    }
+    let target = w.lab.create(sender, vault, vault, "room", &[],
+        document("Demand-discovered room", "first useful view", sender)).unwrap();
+    let unrelated = w.lab.create(sender, vault, vault, "background-document", &[],
+        document("Unrelated", "withheld payload", sender)).unwrap();
+    let mac = Node::spawn(w.lab.split(sender, &[], [162; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(phone_lab, receiver, Options::local()).await.unwrap();
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    assert!(!stalled.is_empty());
+    phone.know(mac.addr()); mac.know(phone.addr());
+    phone.shared.connection(mac.id()).await.unwrap();
+    wait_for(async || phone.holdings_of(sender).is_some_and(|held|
+        held.logs.contains_key(&LogId::Entry(target)))).await;
+    let before = phone.shared.differ(sender).await;
+    assert!(unrelated_grants.iter().all(|id| before.contains(&LogId::Share(*id))));
+    assert!(before.iter().filter(|log| !matches!(log, LogId::Entry(_))).count() > pulls::LIVE_LOGS);
+    let query = serde_json::json!({"op":"query", "vault":vault.to_hex(),
+        "where":{"type":["room"]}, "select":[], "limit":50});
+    assert_eq!(phone.op(query.clone()).await.unwrap()["ok"]["rows"], serde_json::json!([]));
+    let ack = phone.op(serde_json::json!({"op":"demand", "scope":"dc".repeat(16),
+        "revision":1, "entries":[], "queries":[{"vault":vault.to_hex(), "types":["room"]}]})).await.unwrap();
+    assert_eq!(ack["ok"]["accepted"], true);
+    let useful = time::timeout(Duration::from_secs(20), async {
+        loop {
+            let rows = phone.op(query.clone()).await.unwrap();
+            if rows["ok"]["rows"].as_array().is_some_and(|rows| rows.iter()
+                .any(|row| row["entry"].as_str() == Some(target.to_hex().as_str()))) {
+                if phone.read(move |lab, me| text(lab, me, target, 2).as_deref() == Some("first useful view")).await { break; }
+            }
+            time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.is_ok();
+    let after = phone.shared.differ(sender).await;
+    let untouched_authority = unrelated_grants.iter().all(|id| after.contains(&LogId::Share(*id)));
+    let untouched_payload = phone.read(move |lab, me| lab.item(me, unrelated).is_none()).await;
+    drop(stalled);
+    phone.shutdown().await.unwrap(); mac.shutdown().await.unwrap();
+    assert!(useful, "a cold active query must render without unrelated authority catch-up");
+    assert!(untouched_authority, "discovery must not reconcile unrelated revocation logs just to render a room");
+    assert!(untouched_payload, "unrelated entry history remains withheld");
+}

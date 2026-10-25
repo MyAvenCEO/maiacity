@@ -254,3 +254,24 @@ separate scheduling a missing reader/grant from admitting it. These new Rust
 checks await the primary checkout compiler slot. New Lean scheduling lemmas
 passed as a standalone extraction; the full imported model was not rebuilt in
 this isolated tree.
+
+## Active-query integration regression (source prepared)
+
+The cold-demand fixture uses the application protocol (`Node::op` query and
+`demand`), supplies no target entry IDs, and never calls staging directly.
+Seventeen unrelated grant creations are already known; their later revocations
+and an unrelated entry are withheld while background transfer permits are held.
+The positive `room` selector must discover and render its payload without
+fetching those authority frontiers. This closes the earlier fixture gap where
+cold discovery started with all authority already current. Rust execution of
+`cold_room_demand_renders_with_unrelated_authority_frontiers_withheld` is pending.
+
+Source trace: Chat's scoped query is observed through `query-window`, which
+publishes discovery before awaiting local results. The demand operation starts
+`discovery`, which queues `live_announced`, whose `pull_live` starts bounded
+entry staging before its broader authority wait. The test uses normal eager
+nodes with background admission held; `lazy` nodes intentionally suppress
+announcement-driven live pulls and would not exercise this production path.
+Chat's sidebar collection no longer needs the broad world summary; actor/vault
+labels and note-to-self lookup still use world identity metadata. This Rust
+fixture does not claim browser paint or physical-device acceptance.
