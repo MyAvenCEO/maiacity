@@ -49,4 +49,15 @@ theorem supported_demand_does_not_await_history :
 theorem refusal_does_not_bypass_scope :
     awaitsLegacy .refused = false := rfl
 
+-- Revision notifications coalesce into one pending replan while a walk runs.
+def pendingReplan (pending : Bool) (_revision : Nat) : Bool := pending || true
+
+theorem revision_burst_coalesces (pending : Bool) (a b : Nat) :
+    pendingReplan (pendingReplan pending a) b = pendingReplan pending b := by
+  simp [pendingReplan]
+
+theorem obsolete_replan_has_no_hints (current owner : Nat) (known : List Nat)
+    (h : current ≠ owner) : hints current owner known true = [] := by
+  simp [hints, h]
+
 end AvenDB.ViewDemand

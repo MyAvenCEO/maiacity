@@ -57,7 +57,7 @@ import { measureLatency } from './latency-journal.js';
 import { createReactiveRead } from './reactive-read.js';
 import { createWorldReader } from './world-reader.js';
 import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
-import { bringEntries, learn, useDevice } from '../../../game/code/sources/device.js';
+import { bringEntries, learn, useDevice, refreshActiveView } from '../../../game/code/sources/device.js';
 import { sync } from './sync.svelte.js';
 
 /** The name of this browser's shelf in OPFS (./device/store.js). */
@@ -587,10 +587,10 @@ function watch() {
 	// full-world rendering/backoff. It never downloads or materializes the world.
 	(async () => {
 		let held = await d.size();
-		if (on()) revision++; // cover changes concurrent with this initial snapshot too
+		if (on()) { revision++; refreshActiveView(); } // cover changes concurrent with this initial snapshot too
 		while (on() && (await d.changed(...held)) && on()) {
 			held = await d.size();
-			if (on()) revision++;
+			if (on()) { revision++; refreshActiveView(); }
 		}
 	})().catch((/** @type {Error} */ e) => on() && (error = `Watching local changes failed: ${e.message}`));
 	(async () => {

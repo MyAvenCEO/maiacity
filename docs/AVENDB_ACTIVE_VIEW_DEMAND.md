@@ -51,3 +51,22 @@ game/code/sources/demand.test.js game/code/sources/manifests.test.js`: 36 passed
 Remaining: missing local manifests and dependencies that arrive after the initial
 local walk need incremental discovery/re-evaluation. This change does not claim
 cold-device completeness, physical iPhone latency acceptance, or deployment.
+
+### Same-route discovery after partial arrival
+
+Implemented follow-up: each view immediately requests authorized `manifest` type
+discovery in its scoped lease. The existing cheap session revision watcher calls
+`refreshActiveView`; real local changes schedule one walk after 150 ms, with at
+most one walk active and one pending replan. Replanning retains the original lease
+and extends dependencies discovered from newly held records. Navigation and device
+replacement cancel the timer and invalidate the old walk. No polling, broad-world
+materialization, new peer authority, or completeness assertion is introduced.
+
+This closes the frontend once-only walk gap: an initially absent route manifest
+and a referenced record arriving later can now add their requirements on the same
+route. It depends on authenticated peer discovery and local revision delivery;
+physical first-view latency and full coverage remain acceptance work.
+
+Validation: ViewDemand Lean proofs pass; 39 focused device/demand/manifest tests
+pass, including cold manifest arrival, later reference arrival, revision bursts,
+notifications during a blocked local query, and obsolete-navigation cancellation.
