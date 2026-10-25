@@ -86,7 +86,7 @@
 	const stage = $derived(item ? stageOf(item, flow) : null);
 	const onward = $derived(stage ? flow.stages.filter((s) => stage.next.includes(s.key)) : flow.stages);
 	/** the stage whose tab shows: the one its address names, else the one it is in */
-	const tab = $derived((world.entriesComplete === false && ['hook', 'journey'].includes(step ?? '') && step) || (flow.stages.some((s) => s.key === step) && step) || stage?.key || flow.stages[0].key);
+	const tab = $derived((world.entriesComplete === false && ['hook', 'journey', 'writing'].includes(step ?? '') && step) || (flow.stages.some((s) => s.key === step) && step) || stage?.key || flow.stages[0].key);
 	let problem = $state('');
 
 	/** @typedef {import('svelte').ComponentProps<typeof Lines>} LinesProps a line and an edit, as the `note` op reads them
@@ -256,6 +256,7 @@
 	</header>
 
 	{#if item}
+		{#key `${actor}:${entry}`}
 		<section class="step" class:filled={['idea', 'hook', 'thumbnail', 'journey', 'writing', 'movie', 'derivatives'].includes(tab)} aria-label={flow.stages.find((s) => s.key === tab)?.name}>
 			<h2>{flow.stages.find((s) => s.key === tab)?.name}</h2>
 			{#if tab === 'idea'}
@@ -286,6 +287,7 @@
 				<p class="soft">A stage of {flow.name}, {nameOf(byId.get(item.vault))}’s own.</p>
 			{/if}
 		</section>
+		{/key}
 	{/if}
 </Frame>
 

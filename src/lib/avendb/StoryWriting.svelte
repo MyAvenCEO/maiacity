@@ -7,6 +7,9 @@
 	beat with the beat's lines under it.
 -->
 <script>
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { storyWritingQuery } from './story-writing-query.js';
+	import { reads } from './vaults.js';
 	import ArticleView from './ArticleView.svelte';
 	import { allowed, may, windowRead } from './ops.js';
 
@@ -23,6 +26,8 @@
 		return () => window?.close();
 	});
 
+	const files = entryCollection(() => api, () => storyWritingQuery(item.vault, actor));
+	const articleWorld = $derived({ ...world, entries: files.rows.filter(e => reads(e, actor)), entriesComplete: false });
 	const story = $derived(/** @type {any} */ (item.record) ?? {});
 	const text = $derived(item.text ?? story.text ?? '');
 
@@ -30,6 +35,7 @@
 	let can = $state(false);
 	$effect(() => {
 		void world;
+		can = false;
 		let gone = false;
 		may(api, actor, [{ op: 'set', entry: item.entry, path: ['title'], value: item.title ?? '' }]).then(([w]) => {
 			if (!gone) can = allowed(w);
@@ -45,9 +51,10 @@
 	$effect(() => {
 		void world;
 		if (api.window && !noteWindow) return;
+		proposals = [];
 		let gone = false;
 		const request = windowRead(api, { op: 'note', entry: item.entry }, null, noteWindow);
-		request.result.then((/** @type {any} */ n) => { if (!gone) proposals = (n?.lines ?? []).slice(1); });
+		request.result.then((/** @type {any} */ n) => { if (!gone) proposals = (n?.lines ?? []).slice(1); }).catch(() => { if (!gone) proposals = []; });
 		return () => { gone = true; request.close(); };
 	});
 
@@ -127,8 +134,10 @@
 		{/if}
 
 		<div class="page">
+			{#if files.phase === 'error'}<p class="soft">The local picture inventory could not be read. The story’s text is still available.</p>
+			{:else if files.phase !== 'ready'}<p class="soft">Reading this story’s local pictures…</p>{/if}
 			<ArticleView
-				{world}
+				world={articleWorld}
 				{api}
 				{item}
 				bind:title={() => title ?? item.title ?? '', (v) => (title = v)}
