@@ -17,3 +17,22 @@ cargo test -p avendb --test vault_ops
 ```
 
 One additive `Approval.guards` field updates normal approval constructors and the checkpoint-delivery constructor (empty checks there). No live account/store/app changes.
+
+## Sequential continuation receipts
+
+After a successful guarded mutation, the core refreshes the exact same queries
+under the same Lab lock, returning `{value, guards, canContinue}`. Owner-approved
+mutations do this only after challenge-bound revalidation and acceptance. A
+refresh failure returns the accepted value plus `canContinue:false`; it never
+claims that the accepted write was refused. The next step uses these receipts,
+so its own preceding edits do not stale the plan, but intervening changes do.
+
+`guardedPlan` preserves accepted results and stops on the first refusal, failed
+refresh, or changed view/actor. It resolves creation references from underlying
+accepted values. This is sequential and partially applied on failure, not atomic.
+The public Story orchestration still needs its complete dependency domain wired
+in; the helper alone does not close that task.
+
+Validation: three Bun behavioral regressions (nine assertions) and the extended
+Lean contract passed. Rust parses; new native continuation regression and previous
+guard regressions remain pending the parent-owned compiler queue.

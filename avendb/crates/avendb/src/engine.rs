@@ -422,13 +422,15 @@ pub fn prepare(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Prepared, Refus
                 return Err(bad("guarded wraps one ordinary change, not reads, nested guards or file uploads"));
             }
             guards::validate(lab,me,&checks)?;
-            let mut result=prepare(lab,me,change)?;
-            if let Prepared::Approve(approval)=&mut result {
-                let challenge=approval.challenge();
-                for guard in &mut checks { guard.approval_challenge=Some(challenge); }
-                approval.guards=checks;
+            match prepare(lab,me,change)? {
+                Prepared::Done(value) => Ok(Prepared::Done(guards::continued(lab,me,&checks,value))),
+                Prepared::Approve(mut approval) => {
+                    let challenge=approval.challenge();
+                    for guard in &mut checks { guard.approval_challenge=Some(challenge); }
+                    approval.guards=checks;
+                    Ok(Prepared::Approve(approval))
+                }
             }
-            Ok(result)
         },
         "may" => Err(bad("may asks about change ops, not about may")),
         _ if READS.contains(&name) || ASKS.contains(&name) => {

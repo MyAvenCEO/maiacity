@@ -108,16 +108,17 @@ pub fn approve(lab: &mut Lab, me: SignerId, a: Approval, ceremony: &Ceremony) ->
         return Err(bad("read guard approval differs from the prepared change"));
     }
     super::guards::validate(lab,me,&a.guards)?;
-    let Approval { passkey, mut drafts, then, .. } = a;
+    let Approval { passkey, mut drafts, then, guards, .. } = a;
     let ceremonies = [(passkey, ceremony)];
-    match (then, drafts.len()) {
+    let result = match (then, drafts.len()) {
         (Then::Part { entry, by }, 1) => granted(lab, me, drafts.remove(0), entry, by, &ceremonies),
         (Then::Finish(sigs), 1) => {
             let part = Signed { edit: drafts[0].edit().clone(), sigs };
             Ok(json!({ "edit": lab.finish(me, part, &ceremonies)?.to_hex() }))
         }
         (then, _) => approve_all(lab, me, passkey, drafts, then, ceremony),
-    }
+    }?;
+    Ok(if guards.is_empty() { result } else { super::guards::continued(lab,me,&guards,result) })
 }
 
 /// Approval's drafts `drafts` signed by the passkey's ceremony `ceremony` and kept on device `me` in order: what

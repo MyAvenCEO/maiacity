@@ -2324,3 +2324,21 @@ fn read_guard_rejects_nonlocal_recursive_and_unbounded_contracts() {
     }
     assert!(engine::removes(&json!({"op":"guarded","checks":[],"change":{"op":"revoke","share":BlobId([0;32]).to_hex()}})));
 }
+
+#[test]
+fn guarded_continuation_receipt_tracks_own_change_but_rejects_intervening_edit() {
+    let mut w=cast::world();
+    let entry=w.lab.create(w.mac_a,w.alice,w.alice,"note",&[],avendb::doc::Item::todo("original",w.mac_a)).unwrap();
+    let query=json!({"op":"entry_views","entries":[entry.to_hex()],"as":w.alice.to_hex()});
+    let receipt=ok(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":query})));
+    let tag=|label:&str|json!({"op":"tag","entry":entry.to_hex(),"as":w.alice.to_hex(),"add":[label]});
+    let first=ok(engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":[receipt["guard"]],"change":tag("first")})));
+    assert_eq!(first["canContinue"],true);
+    assert!(first["value"]["edit"].is_string());
+    let second=ok(engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":first["guards"],"change":tag("second")})));
+    w.lab.tag(w.mac_a,w.alice,entry,&["intervening"],&[]).unwrap();
+    let before=w.lab.log(w.mac_a).edits().len();
+    let refused=engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":second["guards"],"change":tag("third")}));
+    assert!(refused["refused"].as_str().unwrap().contains("stale"));
+    assert_eq!(before,w.lab.log(w.mac_a).edits().len());
+}

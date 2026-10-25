@@ -76,3 +76,27 @@ pub(super) fn validate(lab:&Lab,me:SignerId,checks:&[ReadGuard])->Result<(),Refu
     }
     Ok(())
 }
+
+/// Called under the same Lab lock after the accepted change. Failure here must
+/// never turn an accepted edit into a refusal: callers must stop the remaining plan.
+pub(super) fn continued(lab: &Lab, me: SignerId, checks: &[ReadGuard], value: Value) -> Value {
+    let refresh = || -> Result<Vec<Value>, Refused> {
+        let mut remaining = MAX_RESULT;
+        let mut receipts = Vec::with_capacity(checks.len());
+        for guard in checks {
+            let out = read(lab, me, &guard.query)?;
+            let mut writer = Hasher { hash: blake3::Hasher::new(), remaining };
+            writer.hash.update(b"avendb-local-read-guard-v1");
+            serde_json::to_writer(&mut writer, &out)
+                .map_err(|_| bad("combined read guard results exceed their bound"))?;
+            remaining = writer.remaining;
+            receipts.push(json!({"query": guard.query, "digest": writer.hash.finalize().to_hex().to_string()}));
+        }
+        Ok(receipts)
+    };
+    match refresh() {
+        Ok(guards) => json!({"value": value, "guards": guards, "canContinue": true}),
+        Err(_) => json!({"value": value, "guards": null, "canContinue": false,
+            "continuationError": "Change accepted; dependencies unavailable for the remaining plan"}),
+    }
+}
