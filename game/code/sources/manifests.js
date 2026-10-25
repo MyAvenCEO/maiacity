@@ -30,7 +30,7 @@ export const PRIORITY = { high: 0, medium: 1, low: 2 };
  * @typedef {{kind: string, id: string, priority?: string, routes?: string[], parts?: ManifestPart[]}} Manifest
  * @typedef {{entry: string, type?: string, kind?: string, tags?: string[], created?: number, record?: unknown}} ManifestRow
  * @typedef {{leaf: ManifestPart, rank: number}} RankedLeaf
- * @typedef {{run: (operation: Record<string, unknown>) => Promise<{ok?: {rows?: ManifestRow[], record?: unknown, vaults?: {id:string}[], entriesComplete?: boolean}}>}} ManifestDevice
+ * @typedef {{run: (operation: Record<string, unknown>) => Promise<{ok?: {rows?: ManifestRow[], record?: unknown, vaults?: {id:string}[], entriesComplete?: boolean},refused?: unknown}>}} ManifestDevice
  * @typedef {{device?: ManifestDevice, bring: (ids: string[]) => Promise<unknown>, vault?: string, fetch?: typeof globalThis.fetch, signal?: AbortSignal, prioritize?: (ids: string[], queries: {types: string[], vault?: string}[]) => unknown}} PlanOptions
  */
 
@@ -225,7 +225,7 @@ export async function bringDeclared(path, options) {
  }
 }
 
-/** @param {string} path @param {PlanOptions} options @returns {Promise<string[]>} */
+/** @param {string} path @param {PlanOptions} options @param {{catalog:string, heldManifests:number, matchedLeaves:number, queryLeaves:number, typeDiscoveryHints:number, localRows:number}} observed @returns {Promise<string[]>} */
 async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch, signal, prioritize = () => {} }, observed) {
 	signal?.throwIfAborted();
 	const manifests = await manifestsOf(d, { vault, fetch: get, signal, observe: state => { observed.catalog = state; } });
