@@ -937,11 +937,16 @@ const api = {
 		});
 		return { ...window, get completeness() { return window.completeness; }, close() { dispose(); window.close(); } };
 	},
-	/** A mounted view's visible entries, already materialized locally: scheduling only, without a second read. */
-	demand: () => {
+	/** Scheduling only, without a second read. Optional reactive positive discovery hints.
+	 * @param {null | (() => Array<{types:string[],vault?:string}>)} discovery */
+	demand: (discovery = null) => {
 		const window = createEntryWindow({ device: () => device });
 		const dispose = $effect.root(() => {
-			$effect(() => { void device; void window.invalidate(); });
+			$effect(() => {
+				void device;
+				if (discovery) void window.replace([], discovery());
+				else void window.invalidate();
+			});
 		});
 		return { ...window, close() { dispose(); window.close(); } };
 	},
@@ -1072,5 +1077,6 @@ export const session = {
 	ask: api.ask,
 	initialWorld: api.initialWorld,
 	viewChanged: api.viewChanged,
-	observe: api.observe
+	observe: api.observe,
+	demand: api.demand
 };

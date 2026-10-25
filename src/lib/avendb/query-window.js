@@ -150,23 +150,24 @@ export function createReadWindow({ device, read }) {
  * Keep one scope for its mounted lifetime. A device change releases the old owner's scope and republishes
  * the still-visible entries on the replacement device; no old owner is reached through a new session. */
 export function createEntryWindow({ device }) {
-	let held = null, entries = [], closed = false;
+	let held = null, entries = [], queries = [], closed = false;
 	const bind = () => {
 		if (closed) return null;
 		const d = device();
 		if (held && held.device !== d) { held.demand.close(); held = null; }
-		if (d && !held && entries.length) held = { device: d, demand: createDemand((op) => d.run(op)) };
+		if (d && !held && (entries.length || queries.length)) held = { device: d, demand: createDemand((op) => d.run(op)) };
 		return held?.demand ?? null;
 	};
-	const replace = (ids) => {
+	const replace = (ids, selectors = []) => {
 		if (closed) return Promise.resolve(false);
 		entries = [...new Set(ids.filter((id) => typeof id === 'string' && /^[0-9a-f]{64}$/.test(id)))].slice(0, 512);
-		return bind()?.replace(entries) ?? Promise.resolve(false);
+		queries = normalizeDiscovery(selectors);
+		return bind()?.replace(entries, queries) ?? Promise.resolve(false);
 	};
 	return {
 		replace,
 		clear: () => replace([]),
-		invalidate() { return bind()?.replace(entries) ?? Promise.resolve(false); },
+		invalidate() { return bind()?.replace(entries, queries) ?? Promise.resolve(false); },
 		close() { closed = true; entries = []; held?.demand.close(); held = null; }
 	};
 }
