@@ -1,5 +1,6 @@
 // @ts-nocheck
 import {test,expect} from 'bun:test';
+import {storyPostsQuery} from './story-post-query.js';
 import {storyWritingQuery} from './story-writing-query.js';
 import {createReactiveRead} from './reactive-read.js';
 import {observedWindow} from './observed-window.js';
@@ -21,4 +22,11 @@ test('vault replacement ignores an old picture inventory answer',async()=>{
  reader.update(storyWritingQuery('3'.repeat(64),actor),owner);await flush();
  pending[0].resolve({ok:{rows:[{entry:'old'}]}});await flush();expect(got).toHaveLength(0);
  pending[1].resolve({ok:{rows:[]}});await flush();expect(got).toHaveLength(1);reader.close();
+});
+
+test('Derivatives keeps globally authorized post references and reads before peer response',async()=>{
+ const query=storyPostsQuery(actor),got=[];
+ expect(query).toEqual({op:'entry_views',as:actor,types:['post']});
+ const reader=createReactiveRead({read:observedWindow(async(_,op)=>{expect(op).toEqual(query);return {ok:{rows:[{entry:'post',vault:'different',record:{story:{entry:'target'}}}]}}}),take:out=>got.push(out),timing:()=>()=>{}});
+ reader.update(query,{run:()=>new Promise(()=>{})});await flush();expect(got[0].ok.rows[0].vault).toBe('different');reader.close();
 });

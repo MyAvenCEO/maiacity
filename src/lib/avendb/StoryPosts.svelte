@@ -6,6 +6,11 @@
 	post started from the story's text, its template beside it to fill in.
 -->
 <script>
+	import { storyPostsQuery } from './story-post-query.js';
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { storyFallbackQuery } from './stories-query.js';
+	import { storyWritingQuery } from './story-writing-query.js';
+	import { reads, seedCity } from './vaults.js';
 	import ArticleView from './ArticleView.svelte';
 	import { entryOf } from './artifacts.js';
 	import { CONTENT, flowsFor, moving, stageOf, stageTag } from './flows.js';
@@ -18,13 +23,18 @@
 	let { world, actor, api, busy, item } = $props();
 
 	/** the flow its posts go through, the vault's own or the app's content flow */
-	const flow = $derived(flowsFor(world, item.vault, 'post')[0] ?? CONTENT);
+	const inventory = entryCollection(() => api, () => storyPostsQuery(actor));
+	const workflows = entryCollection(() => api, () => ({ op: 'entry_views', vault: item.vault, as: actor, types: ['flow'] }));
+	const defaults = entryCollection(() => api, () => storyFallbackQuery(item.vault, actor, seedCity(world)?.id));
+	const flowWorld = $derived({ ...world, entries: [...workflows.rows, ...defaults.rows].filter(e => reads(e, actor)) });
+	const flow = $derived(flowsFor(flowWorld, item.vault, 'post')[0] ?? CONTENT);
 	const story = $derived(/** @type {any} */ (item.record) ?? {});
 
 	/** the vault's post types: the newest schema of each `post:` kind, with its channel and its template */
 	let types = $state(/** @type {{ type: string, kind: string, channel: string, template: string }[]} */ ([]));
 	$effect(() => {
 		void world;
+		types = [];
 		let gone = false;
 		api.ask({ op: 'schemas', vault: item.vault }).then((/** @type {any} */ out) => {
 			const lane = out?.ok;
@@ -42,7 +52,7 @@
 				const type = s.kind.slice('post:'.length);
 				return { type, kind: s.kind, channel: json.properties?.channel?.default || type, template: json['x-template'] ?? '' };
 			});
-		});
+		}).catch(() => { if (!gone) types = []; });
 		return () => {
 			gone = true;
 		};
@@ -50,8 +60,8 @@
 
 	/** the posts drawn from this story, the oldest first */
 	const posts = $derived(
-		world.entries
-			.filter((e) => e.type === 'post' && !e.deleted && entryOf(/** @type {any} */ (e.record)?.story) === item.entry)
+		inventory.rows
+			.filter((e) => reads(e, actor) && e.type === 'post' && !e.deleted && entryOf(/** @type {any} */ (e.record)?.story) === item.entry)
 			.sort((a, b) => (a.created ?? 0) - (b.created ?? 0))
 	);
 	/** post `p`'s type, by its record's kind @param {import('./vaults.js').EntryView} p */
@@ -59,6 +69,8 @@
 
 	let open = $state('');
 	const shown = $derived(posts.find((p) => p.entry === open));
+	const pictures = entryCollection(() => api, () => shown ? storyWritingQuery(shown.vault, actor) : { op: 'entry_views', entries: [], as: actor });
+	const articleWorld = $derived({ ...world, entries: pictures.rows.filter(e => reads(e, actor)), entriesComplete: false });
 	/** what the person has written of the post shown and not saved yet */
 	let draft = $state(/** @type {string | undefined} */ (undefined));
 	let title = $state(/** @type {string | undefined} */ (undefined));
@@ -100,6 +112,7 @@
 	/** Moves post `p` to its flow's published stage, on the Maia Universe stream, on today for its first time out, or
 	 *  back to a draft, its flow's functions running as it goes. @param {import('./vaults.js').EntryView} p */
 	async function publish(p) {
+		if (world.entriesComplete === false) return;
 		const on = stageOf(p, flow)?.key === 'published';
 		const { ops, errors } = await moving(world, actor, p, flow, on ? 'draft' : 'published');
 		problem = errors.join(' · ');
@@ -114,6 +127,7 @@
 		it is written from. Each starts from the story’s text.
 	</p>
 
+	{#if inventory.phase === 'error'}<p class="soft">This device could not read the local posts.</p>{:else if inventory.phase !== 'ready'}<p class="soft">Reading local posts…</p>{:else}<p class="soft">Showing locally available posts; more may arrive. Publishing needs the workflow’s complete dependencies.</p>{/if}
 	{#if problem}<p class="soft">{problem}</p>{/if}
 
 	{#each types as t (t.kind)}
@@ -121,7 +135,7 @@
 		<section class="type">
 			<header>
 				<h3>{t.channel} <small>{mine.length} {mine.length === 1 ? 'post' : 'posts'}</small></h3>
-				<button class="btn" disabled={busy} onclick={() => start(t)}>New {t.channel} post</button>
+				<button class="btn" disabled={busy || workflows.phase !== 'ready' || defaults.phase !== 'ready'} onclick={() => start(t)}>New {t.channel} post</button>
 			</header>
 			{#if t.template}
 				<details class="template">
@@ -137,7 +151,7 @@
 						<span class="soft">{live ? `On the stream${/** @type {any} */ (p.record)?.published ? ` since ${/** @type {any} */ (p.record).published}` : ''}` : 'Not published'}</span>
 					</button>
 					{#if (p.writers ?? []).includes(actor)}
-						<button class="btn quiet" disabled={busy} onclick={() => publish(p)}>{live ? 'Take it off' : 'Publish'}</button>
+						<button class="btn quiet" disabled={busy || world.entriesComplete === false} onclick={() => publish(p)}>{live ? 'Take it off' : 'Publish'}</button>
 					{/if}
 				</div>
 				{#if shown && shown.entry === p.entry}
@@ -150,7 +164,7 @@
 					{/if}
 					<div class="page">
 						<ArticleView
-							{world}
+							world={articleWorld}
 							{api}
 							item={shown}
 							bind:title={() => title ?? shown?.title ?? '', (v) => (title = v)}
