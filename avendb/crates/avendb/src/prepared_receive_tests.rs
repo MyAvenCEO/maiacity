@@ -264,3 +264,33 @@ fn independently_verified_checkpoint_page_can_stage_without_coverage_shortcut() 
     chunked.catch_up(me);whole.catch_up(me);
     assert!(chunked.state(me)==whole.state(me));
 }
+
+#[test]
+fn production_preparation_stages_checkpoint_when_covered_edits_are_already_held() {
+    let mut source=Lab::with_entropy([237;32]);
+    let owner=source.passkey_from_in("owner",[238;32],Suite::MlDsa);
+    let sender=source.device_with_in("sender",[239;32],Suite::MlDsa);
+    let vault=cast::human_on(&mut source,owner,&[sender]);
+    let baseline=source.backup(sender).signed;
+    let covers=source.log(sender).ids().to_vec();
+    let checkpoint=source.submit(sender,&[owner],Action::Checkpoint {vault,covers}).unwrap();
+    let entries:Vec<_>=source.together(|lab|(0..300).map(|n|
+        lab.create(sender,vault,vault,world::NOTE,&[],cast::document(&format!("Independent {n}"),"body",sender)).unwrap()).collect());
+    let mut incoming=vec![source.signed_edit(sender,checkpoint).unwrap().clone()];
+    incoming.extend(entries.iter().map(|entry| {
+        let id=source.state(sender).entry(*entry).unwrap().creation;
+        source.signed_edit(sender,id).unwrap().clone()
+    }));
+    let (mut chunked,me)=receiver();let (mut whole,_)=receiver();
+    chunked.receive(me,baseline.clone(),vec![]);whole.receive(me,baseline,vec![]);
+    // Real production preparation, with no manual signature-result replacement.
+    let prepared=chunked.prepare_receive(me,incoming.clone()).check();
+    assert!(prepared.signatures.values().all(|valid|*valid));
+    assert!(!prepared.requires_atomic_checkpoint());
+    let mut count=0;
+    for batch in prepared.into_batches() {count+=1;assert!(batch.edits.len()<=128);chunked.receive_prepared(me,batch,false);}
+    assert_eq!(count,3);
+    whole.receive_whose_now(me,incoming,vec![],false);
+    assert_eq!(chunked.backup(me).signed,whole.backup(me).signed);
+    chunked.catch_up(me);whole.catch_up(me);assert!(chunked.state(me)==whole.state(me));
+}
