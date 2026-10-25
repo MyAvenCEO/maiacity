@@ -153,6 +153,21 @@ impl Scratch {
         Some(Self { item, holds: image.holds.into_iter().collect(), authored: image.authored, tip: image.tip })
     }
 
+    /// An authenticated exact scratch can read the next linear main update
+    /// without importing omitted old bodies. Branches and partial cuts fall back.
+    pub(crate) fn resumes_complete_main(&self, history: &History, write: &Write) -> bool {
+        self.complete_main_tip(history).is_some() && write.proposal == Proposal::Main
+            && write.deps.as_slice() == self.tip.as_slice()
+    }
+
+    pub(crate) fn complete_main_tip(&self, history: &History) -> Option<EditId> {
+        let tip = self.tip?;
+        (history.changes().last().is_some_and(|c| c.write.edit == tip)
+            && self.holds.len() == history.changes().len()
+            && history.changes().iter().all(|c| c.counted
+                && c.write.proposal == Proposal::Main && self.holds.contains(&c.write.edit))).then_some(tip)
+    }
+
     /// The schemas the writes it read were written under: those `Lane::fits` looked up for them.
     pub fn authored(&self) -> &BTreeSet<BlobId> {
         &self.authored
