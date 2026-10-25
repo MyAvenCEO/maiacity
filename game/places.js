@@ -405,6 +405,7 @@ export const PLACES = [
 		label: "Sandbox 7",
 		note: "The physical world lab: buildings assembled from their parts, with rigid-body physics, fixings, wind and damage",
 		navigation: {
+			cover: "283183b9a62cb7806819cf26e285ba73704b3fcad19cebaddb3d0a5b40023f1d.png",
 			group: "PLAY",
 			order: 6,
 			icon: "play",
@@ -418,6 +419,7 @@ export const PLACES = [
 		label: "Sandbox 8",
 		note: "Constructible City: a settlement built by people with their hands, tools and machines, in real weather",
 		navigation: {
+			cover: "2c5ab245e0c841aaee0c3a308b0e2d2f395ba26ad5bc0ff0b533666480fdb537.png",
 			group: "PLAY",
 			order: 7,
 			icon: "play",

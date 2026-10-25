@@ -1,4 +1,5 @@
 <script lang="ts">
+ import { screenSlot } from './screen-slots.js';
  import { viewReadiness } from '$lib/avendb/view-readiness.js';
  import { version } from '$app/environment';
  import { onMount, tick } from 'svelte';
@@ -59,7 +60,7 @@
  });
 </script>
 
-<button bind:this={trigger} class="diagnostics-trigger" aria-label="Open diagnostics" aria-haspopup="dialog" aria-controls={id} onclick={() => { refresh(); dialog.showModal(); capturesRemaining = 24; void runner?.capture(); }}>
+<button use:screenSlot={'diagnostics'} bind:this={trigger} class="diagnostics-trigger" aria-label="Open diagnostics" aria-haspopup="dialog" aria-controls={id} onclick={() => { refresh(); dialog.showModal(); capturesRemaining = 24; void runner?.capture(); }}>
  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4" stroke-linecap="round" stroke-linejoin="round" /></svg>
 </button>
 <dialog bind:this={dialog} {id} aria-labelledby="{id}-title" onpointerdown={outside} onclose={() => { runner?.cancel(); trigger?.focus(); }}>
@@ -76,7 +77,8 @@
 </dialog>
 
 <style>
- .diagnostics-trigger { position: fixed; top: calc(.75rem + env(safe-area-inset-top, 0px)); left: calc(.75rem + env(safe-area-inset-left, 0px)); z-index: 1100; display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid #d9d1bf; border-radius: 50%; color: #263c2e; background: #faf8f0; box-shadow: 0 3px 16px #18271e26; cursor: pointer; }
+ .diagnostics-trigger { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid #d9d1bf; border-radius: 50%; color: #263c2e; background: var(--overlay-paper); box-shadow: 0 3px 16px #18271e26; cursor: pointer; }
+ @media (pointer: coarse) { .diagnostics-trigger { width: 44px; height: 44px; } }
  dialog { box-sizing: border-box; width: min(36rem, calc(100vw - 1.5rem)); max-height: calc(100dvh - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 1.2rem; border: 1px solid #d9d1bf; border-radius: 1.25rem; background: #faf8f0; color: #263c2e; overflow: auto; }
  dialog::backdrop { background: #18271e70; }
  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

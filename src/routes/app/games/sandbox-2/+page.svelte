@@ -6,6 +6,7 @@
 	its cards. Nothing is founded, placed or entered here; it is just the planet.
 -->
 <script lang="ts">
+	import { screenSlot } from '$lib/app/screen-slots.js';
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import { calendar } from '../../../../../game/time';
@@ -71,7 +72,7 @@
 
 	<!-- top left: where you are, and when -->
 	<div class="corner tl">
-		<div class="pill brand">
+		<div class="pill brand" use:screenSlot={'title'}>
 			<strong>avenCITY Sandbox 2</strong>
 			<span class="dim">{calendarLabel}</span>
 		</div>

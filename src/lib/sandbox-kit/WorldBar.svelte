@@ -11,6 +11,7 @@
 	Its buttons sit in `.bar`, so a page's TouchStick takes them with taps=".bar a, .bar button".
 -->
 <script>
+	import { screenSlot } from '$lib/app/screen-slots.js';
 	import SkyControl from './SkyControl.svelte';
 
 	/** without `sky` (a model walked in the viewer, with no sky of its own) the bar has only the name; `clock`, a world's
@@ -20,7 +21,7 @@
 </script>
 
 <div class="bar">
-	<div class="title"><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
+	<div class="title" use:screenSlot={'title'}><strong>{title}</strong>{#if subtitle}<span>{subtitle}</span>{/if}</div>
 	{#if sky}<SkyControl class="time" worldClock={clock} />{/if}
 </div>
 
@@ -41,7 +42,7 @@
 		padding: 0.55rem 0.9rem;
 		border: 1px solid rgb(255 255 255 / 0.35);
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.55);
+		background: var(--overlay-paper, var(--overlay-paper, rgb(250 248 242 / .75)));
 		-webkit-backdrop-filter: blur(12px) saturate(1.2);
 		backdrop-filter: blur(12px) saturate(1.2);
 		font: inherit;
