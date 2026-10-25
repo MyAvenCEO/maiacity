@@ -29,11 +29,11 @@ test('cover changes clear old pixels immediately and ignore prior actor/entry re
  expect(shown.at(-1)).toBeNull();close();
 });
 test('only audited explicit detail stages can open with metadata-only navigation',()=>{
- for(const step of ['hook','journey']){
+ for(const step of ['hook','journey','writing']){
   expect(summaryView('/app/',`#stories/${id(1)}/${step}`)).toBe(true);
   expect(needsWorldEntries({entriesComplete:false},'stories',true,step)).toBe(false);
  }
- for(const step of ['idea','movie','thumbnail','writing','derivatives','']){
+ for(const step of ['idea','movie','thumbnail','derivatives','']){
   expect(summaryView('/app/',`#stories/${id(1)}/${step}`)).toBe(false);
   expect(needsWorldEntries({entriesComplete:false},'stories',true,step)).toBe(true);
  }
