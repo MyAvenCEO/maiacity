@@ -275,3 +275,22 @@ test('shipped cold game and Chat leaves provide typed discovery before local row
   expect(leavesFor(MANIFESTS,path).filter(l=>l.leaf.query).every(l=>l.leaf.query.type?.length>0)).toBe(true);
  }
 });
+
+test('dependency layers share one file inventory and refresh it after transfer', async () => {
+ const first=id(70), second=id(71), audio=id(72), nested=id(73), final=id(74);
+ const root=id(80), laterRoot=id(81);
+ let scans=0, later=false;
+ const brought=[];
+ const manifest=m({id:'layers',routes:['/layers/'],parts:[{entry:first,follow:2},{entry:second,follow:2}]});
+ const device={run:async op=>{
+  if(op.op==='query')return {ok:{rows:[{record:manifest}]}};
+  if(op.op==='get')return {ok:{record:op.entry===audio ? {audio:`aven:${laterRoot}:100:84:audio`} : op.entry===nested ? {} : {audio:`aven:${root}:100:84:audio`,entry:nested}}};
+  if(op.op==='world_summary')return {ok:{vaults:[{id:MAIA_CITY}]}};
+  if(op.op==='entry_views'){scans++;return {ok:{rows:[{entry:audio,files:[{root}]},...(later?[{entry:final,files:[{root:laterRoot}]}]:[])]}};}
+  throw Error('Unexpected operation');
+ }};
+ await bringDeclared('/layers/',{device,bring:async ids=>{brought.push(...ids);if(ids.includes(audio))later=true;}});
+ expect(scans).toBe(2);
+ expect(brought).toContain(final);
+ expect(brought.filter(x=>x===audio)).toHaveLength(1);
+});

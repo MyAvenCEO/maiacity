@@ -268,11 +268,15 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 		const visited = new Map();
 		while (frontier.size && d) {
 			const next = new Map();
+			// One local inventory per dependency layer, discarded before the next bring.
+			// A timeline can name many audio roots; scanning every vault per clip repeats
+			// the same expensive entry_views work while catch-up is competing for reads.
+			const inventory = {};
 			for (const [entry, depth] of frontier) {
 				signal?.throwIfAborted();
 				if ((visited.get(entry) ?? 0) >= depth) continue;
 				visited.set(entry, depth);
-				for (const e of await namedOn(d, [entry], signal)) next.set(e, Math.max(next.get(e) ?? 0, depth - 1));
+				for (const e of await namedOn(d, [entry], signal, inventory)) next.set(e, Math.max(next.get(e) ?? 0, depth - 1));
 			}
 			signal?.throwIfAborted();
 			const missing = [...next.keys()].filter((e) => !asked.has(e));
@@ -309,11 +313,10 @@ async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
 }
 
 /** The entries the records of entries `ids` name, as device `d` holds them. */
-/** @param {ManifestDevice} d @param {string[]} ids @param {AbortSignal | undefined} signal @returns {Promise<string[]>} */
-async function namedOn(d, ids, signal) {
+/** @param {ManifestDevice} d @param {string[]} ids @param {AbortSignal | undefined} signal @param {{files?: Awaited<ReturnType<typeof localFileEntries>>}} inventory @returns {Promise<string[]>} */
+async function namedOn(d, ids, signal, inventory) {
 	/** @type {Set<string>} */
 	const out = new Set();
-	let files;
 
 	for (const entry of ids) {
 		try {
@@ -322,9 +325,9 @@ async function namedOn(d, ids, signal) {
 			for (const e of namedBy(got?.ok?.record)) out.add(e);
 			const roots = [...JSON.stringify(got?.ok?.record ?? {}).matchAll(/aven:([a-f0-9]{64}):/g)].map(m => m[1]);
 			if (roots.length) {
-				files ??= await localFileEntries(d, { signal });
+				inventory.files ??= await localFileEntries(d, { signal });
 				signal?.throwIfAborted();
-				for (const file of files) if (!file.deleted && file.files?.some(f => roots.includes(f.root))) out.add(file.entry);
+				for (const file of inventory.files) if (!file.deleted && file.files?.some(f => roots.includes(f.root))) out.add(file.entry);
 			}
 		} catch {
 			signal?.throwIfAborted();
