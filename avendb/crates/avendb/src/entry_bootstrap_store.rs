@@ -14,6 +14,8 @@ struct PendingSuffix {
     judged: HashSet<EditId>,
     after: Option<(u64,u8,EditId)>,
     unscanned: usize,
+    total: usize,
+    last: Option<(u64,u8,EditId)>,
     ready: std::collections::VecDeque<EditId>,
 }
 impl PendingSuffix {
@@ -22,7 +24,13 @@ impl PendingSuffix {
         let already=judged.iter().filter(|id|log.entry_write(**id)
             .is_some_and(|edit|matches!(edit.action,Action::Write {entry:e,..} if e==entry))).count();
         let unscanned=if already==total {0} else {total};
-        Self {entry,judged,after:None,unscanned,ready:Default::default()}
+        Self {entry,judged,after:None,unscanned,total,last:log.entry_last_order(entry),ready:Default::default()}
+    }
+    fn extend_ordered(&mut self,log:&crate::policy::Log) {
+        let total=log.entry_write_candidates(self.entry);
+        if self.unscanned==0 && self.after.is_none() {self.after=self.last;}
+        self.unscanned+=total.saturating_sub(self.total);
+        self.total=total;self.last=log.entry_last_order(self.entry);
     }
     fn len(&self)->usize {self.unscanned+self.ready.len()}
     fn is_empty(&self)->bool {self.len()==0}
@@ -49,12 +57,18 @@ pub(crate) struct BootstrapProgress {
     wait_reason: Option<&'static str>,
 }
 
+impl BootstrapProgress {
+    fn last_depth_before(&self,depth:u64)->bool {self.pending.last.is_none_or(|last|depth>last.0)}
+}
+
 
 // Process-local identity of immutable inputs, never persisted or accepted from a peer.
 // Bodies/blobs/signed entries are content-addressed and append-only between forgets;
 // key insertions and anchor replacement have explicit allocation-identity revisions.
 pub(crate) struct OverlayBasis {
     log: crate::policy::LogRevision,
+    lineage: crate::policy::LogRevision,
+    held: usize,
     keys: Arc<()>,
     anchors: Arc<()>,
     warm: Arc<()>,
@@ -67,10 +81,29 @@ pub(crate) struct OverlayBasis {
 }
 impl OverlayBasis {
     fn of(store: &Store) -> Self {
-        Self { log: store.log.revision(), keys: store.keys.revision.clone(),
+        Self { log: store.log.revision(), lineage:store.log.lineage(), held:store.log.edits().len(), keys: store.keys.revision.clone(),
             anchors: store.bootstrap_revision.clone(), warm: store.warm_revision.clone(),
             bodies: store.bodies.len(), blobs: store.blobs.len(), signed: store.signed.len(),
             follow: store.follow.clone(), depth: store.query_depth, gate: store.gate }
+    }
+    // Strict optimization only: independently replay current policy first; all
+    // new bodies still pass ordinary accepted_write and Judging below.
+    fn owner_appends(&self,store:&Store,active:&HashSet<EntryId>)->bool {
+        if self.lineage!=store.log.lineage() || !Arc::ptr_eq(&self.keys,&store.keys.revision)
+            || !Arc::ptr_eq(&self.anchors,&store.bootstrap_revision)
+            || !Arc::ptr_eq(&self.warm,&store.warm_revision)
+            || self.follow!=store.follow || self.depth!=store.query_depth || self.gate!=store.gate
+            || self.bodies>store.bodies.len() || self.blobs>store.blobs.len() || self.signed>store.signed.len() {return false;}
+        let Some(added)=store.log.edits().get(self.held..) else {return false;};
+        if added.is_empty() || added.len()>SUFFIX_PREPARATION {return false;}
+        added.iter().all(|edit| {
+            let Action::Write {entry,vault,actor,create:None,proposal:Proposal::Main,..}=&edit.action else {return false;};
+            if actor!=vault || !active.contains(entry) {return false;}
+            let Some(progress)=store.bootstrap_progress.get(entry) else {return false;};
+            progress.wait_reason.is_none() && progress.missing.is_empty()
+                && progress.policy.entries.first().is_some_and(|en|en.vault==*vault)
+                && progress.last_depth_before(edit.depth)
+        })
     }
     fn matches(&self, store: &Store) -> bool {
         self.log == store.log.revision() && Arc::ptr_eq(&self.keys, &store.keys.revision)
@@ -171,7 +204,8 @@ impl Lab {
     pub(crate) fn take_owner_overlay(&mut self, on: SignerId) -> Option<RetainedOverlay> {
         let store = self.stores.get_mut(&on)?;
         let basis = store.bootstrap_basis.take()?;
-        if store.reshow || !basis.matches(store) || store.bootstrap_active.is_empty() { return None; }
+        if store.reshow || store.bootstrap_active.is_empty()
+            || (!basis.matches(store) && !basis.owner_appends(store,&store.bootstrap_active)) { return None; }
         let state = store.bootstrap_state.take()?;
         let active = std::mem::take(&mut store.bootstrap_active);
         let shown = active.iter().filter_map(|e| store.shown.remove(e).map(|s| (*e, s))).collect();
@@ -182,11 +216,20 @@ impl Lab {
 
     pub(crate) fn restore_owner_overlay(&mut self, on: SignerId, retained: Option<RetainedOverlay>) -> bool {
         let Some(retained) = retained else { return false; };
-        if !retained.basis.matches(self.held(on)) { return false; }
+        let appended=!retained.basis.matches(self.held(on));
+        if appended && !retained.basis.owner_appends(self.held(on),&retained.active) {return false;}
         // Recheck current recipient entitlement even though the signed log is unchanged.
         for entry in &retained.active {
             let Some((snapshot, _)) = self.held(on).bootstrap_bases.get(entry) else { return false; };
             if self.projection_authority(on, *snapshot, *entry).is_none() { return false; }
+        }
+        if appended {
+            let store=self.held(on);
+            for entry in &retained.active {
+                let Some(progress)=store.bootstrap_progress.get(entry) else {return false;};
+                let Some(en)=progress.policy.entries.first() else {return false;};
+                if progress.lane_digest!=Some(bootstrap_lane_digest(&store.replay.state,&store.readings,en.vault)) {return false;}
+            }
         }
         let store = self.stores.get_mut(&on).expect("device");
         store.shown.extend(retained.shown);
@@ -195,7 +238,15 @@ impl Lab {
         store.bootstrap_state = Some(retained.state);
         store.bootstrap_active = retained.active;
         store.bootstrap_basis = Some(retained.basis);
-        store.perf.count("bootstrap: unchanged overlay reused", 1);
+        if appended {
+            for entry in &store.bootstrap_active {
+                if let Some(progress)=store.bootstrap_progress.get_mut(entry) {progress.pending.extend_ordered(&store.log);}
+            }
+            let ids:Vec<_>=store.bootstrap_progress.keys().copied().collect();
+            for entry in ids {let basis=OverlayBasis::of(store);store.bootstrap_progress.get_mut(&entry).unwrap().basis=basis;}
+            store.perf.count("bootstrap: ordered owner append resumed",1);
+            self.rebuild_owner_bases(on);
+        } else { store.perf.count("bootstrap: unchanged overlay reused", 1); }
         true
     }
 
@@ -1197,6 +1248,43 @@ mod tests {
         for entry in entries {
             assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
         }
+    }
+
+    #[test]
+    fn owner_bootstrap_live_arrivals_do_not_restart_admitted_prefix() {
+        let mut lab=Lab::new(); let owner=lab.passkey("Owner");
+        let mac=lab.device_of(owner,"Mac");let phone=lab.device_of(owner,"Phone");
+        let vault=human_on(&mut lab,owner,&[mac,phone]);
+        let entry=lab.create(mac,vault,vault,"note",&[],document("Base","old",mac)).unwrap();
+        lab.sync(mac,phone);
+        lab.edit(mac,vault,entry,|i|i.set_text(2,"base")).unwrap();
+        let PreparedEntryBase {draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,draft,&[]).unwrap();
+        let offer=lab.entry_projection_offer(mac,phone,entry).unwrap();
+        lab.receive(phone,offer.evidence,vec![]);
+        assert!(lab.adopt_owner_entry_base(phone,snapshot,entry,sealed));
+        let mut initial=Vec::new();
+        for n in 0..256 {
+            let id=lab.edit(mac,vault,entry,|i|i.set_text(2,&format!("initial {n}"))).unwrap();
+            initial.push(lab.signed_edit(mac,id).unwrap().clone());
+        }
+        lab.receive(phone,initial,vec![]);
+        for n in 0..16 {
+            let before=lab.owner_base_pending(phone,entry);
+            let id=lab.edit(mac,vault,entry,|i|i.set_text(2,&format!("live {n}"))).unwrap();
+            lab.receive(phone,vec![lab.signed_edit(mac,id).unwrap().clone()],vec![]);
+            lab.advance_owner_bases(phone);
+            let after=lab.owner_base_pending(phone,entry);
+            assert!(after<before || before<=SUFFIX_BATCH,
+                "one incoming edit must not reset the admitted prefix: {before} -> {after}");
+        }
+        while lab.owner_bases_pending(phone) {lab.advance_owner_bases(phone);}
+        assert_eq!(lab.item(phone,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+        let revoke=lab.submit(mac,&[owner],Action::Revoke(crate::policy::Revoking::Device {
+            vault,device:phone,keep:vec![]})).unwrap();
+        lab.receive(phone,vec![lab.signed_edit(mac,revoke).unwrap().clone()],vec![]);
+        assert!(!lab.held(phone).bootstrap_active.contains(&entry),"revocation invalidates resumed prefix");
+        assert!(lab.edit(phone,vault,entry,|i|i.set_text(2,"forbidden")).is_err());
     }
 
     #[test]
