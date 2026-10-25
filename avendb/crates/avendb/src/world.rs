@@ -251,6 +251,8 @@ pub struct EntryView {
     /// The files its writes bring, each with its plaintext length where the device opens it (`Lab::entry_files`).
     pub files: Vec<(FileRoot, Option<u64>)>,
     pub what: What,
+    pub checkpoint: Option<Value>,
+    pub read_only: bool,
 }
 
 /// What an entry holds, as a device reads it.
@@ -600,10 +602,10 @@ pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Opt
             if !readable(en) || lab.entry_type_hint(me, en.id).is_none() { metadata_known = false; }
         }
         // Tag queries never inspect bodies or expose counts for an unreadable row.
-        if (global || tag.is_some()) && !readable(en) {
-            // A vault-scoped negative result cannot rule out references in an
-            // unreadable source entry. Do not expose that entry or its count.
-            if tag.is_some() && vault.is_some() { metadata_known = false; }
+        if !readable(en) {
+            // Acting-vault authorization applies before either canonical or
+            // checkpoint content is materialized, including explicit-ID reads.
+            if vault.is_some() { metadata_known = false; }
             continue;
         }
         if global && !selected_type(en) { continue; }
@@ -613,7 +615,8 @@ pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Opt
                 None => { metadata_known = false; continue; },
             }
         }
-        if !lab.landed(me, en.id) { continue; }
+        let projected=lab.projection_main_available(me,en.id);
+        if !lab.landed(me, en.id) && !projected { continue; }
         snapshot.total_entries += 1;
         // The same public/level metadata as EntryView, without opening any record.
         let readable = st.public_key(KeyFam::Audience(en.vault, en.audience()))
@@ -622,9 +625,9 @@ pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Opt
         if types.is_none_or(|types| lab.meaning(me, en.id).is_some_and(|m| types.iter().any(|ty| ty == m.attrs.ty.as_str()))) {
             // The todo schema requires its kind constant. Reject unrelated bodies before opening them,
             // while preserving custom entry labels and exact File/Note/Todo classification precedence.
-            if kind == Some("todo") && lab.item(me, en.id).is_some_and(|item| !item.may_be_todo()) { continue; }
+            if !projected && kind == Some("todo") && lab.item(me, en.id).is_some_and(|item| !item.may_be_todo()) { continue; }
             let row = entry(lab, me, en);
-            if matches!(row.what, What::Sealed) { bodies_open = false; }
+            if matches!(row.what, What::Sealed) || row.checkpoint.is_some() { bodies_open = false; }
             if kind.is_none_or(|kind| row.what.kind() == kind) { snapshot.entries.push(row); }
         }
     }
@@ -691,6 +694,9 @@ fn entry_json(i: &EntryView, synced: &SyncedTo) -> Value {
         "writers": hexes(writers),
         "sharers": hexes(sharers),
         "kind": i.what.kind(),
+        "readOnly": i.read_only,
+        "checkpoint": i.checkpoint,
+        "filesComplete": i.checkpoint.as_ref().map(|_|false),
         "title": title,
         "text": text,
         "status": status,
@@ -766,7 +772,12 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
 
 fn entry_with_files(lab: &Lab, me: SignerId, en: &Entry, files: Vec<(FileRoot, Option<u64>)>) -> EntryView {
     let meaning = lab.meaning(me, en.id);
-    let what = match lab.item(me, en.id) {
+    let projection=lab.entry_projection(me,en.id);
+    let projected=projection.as_ref().and_then(|p|p.record(MAIN));
+    let checkpoint=projected.as_ref().and_then(|_|projection.as_ref()).map(|p|json!({
+        "snapshot":p.snapshot().to_hex(),"basis":p.basis().iter().map(EditId::to_hex).collect::<Vec<_>>(),
+        "partial":true,"freshness":"owner-attested-basis"}));
+    let what = if let Some(value)=projected { projected_record(value) } else { match lab.item(me, en.id) {
         None => lane(lab, me, en.id, meaning.as_ref().map(|m| m.attrs.ty.as_str())).unwrap_or(What::Sealed),
         Some(item) => match (View::built_in(FILE).and_then(|v| item.read(v)), item.as_markdown(), item.as_todo()) {
             (Some(file), ..) => {
@@ -792,7 +803,7 @@ fn entry_with_files(lab: &Lab, me: SignerId, en: &Entry, files: Vec<(FileRoot, O
             (_, None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
             (_, None, None) => record(item.record()),
         },
-    };
+    }};
     let st = lab.state(me);
     let (ty, tags, created) = match &meaning {
         Some(m) => {
@@ -815,7 +826,36 @@ fn entry_with_files(lab: &Lab, me: SignerId, en: &Entry, files: Vec<(FileRoot, O
         levels: levels(st, v, x),
         files,
         what,
+        read_only:checkpoint.is_some() || lab.owner_base_durability_pending(me,en.id) || lab.owner_base_pending(me,en.id)>0 || lab.owner_base_wait_reason(me,en.id).is_some(),
+        checkpoint,
     }
+}
+
+/// Classify an authenticated read-only projection through the same shipped views
+/// without constructing a writable CRDT or claiming its history is locally held.
+fn projected_record(value:Value)->What {
+    let read=|kind:&str|View::built_in(kind).and_then(|view|view.get(&value));
+    if let Some(file)=read(FILE) {
+        let text=|key:&str|file.get(key).and_then(Value::as_str).unwrap_or_default().to_owned();
+        let deleted=file.get("tags").and_then(Value::as_array).is_some_and(|tags|tags.iter().any(|t|t.as_str()==Some(DELETED)));
+        return What::File{title:text("title"),media:text("media"),deleted};
+    }
+    if let Some(doc)=read("document").or_else(||read("spark")).and_then(|v|DocV1::from_value(&v)) {
+        let text=doc.blocks.iter().find(|b|b.id==2).map(|b|b.text.clone()).unwrap_or_default();
+        let deleted=doc.tags.iter().any(|tag|tag==DELETED);
+        return What::Note{title:doc.title.clone(),text,fork_of:fork_of(&doc),deleted,edits:0,proposals:0,variants:0,record:read("spark")};
+    }
+    if let Some(mut article)=read("article") {
+        let title=article.get("title").and_then(Value::as_str).unwrap_or_default().to_owned();
+        let text=article.get("text").and_then(Value::as_str).unwrap_or_default().to_owned();
+        let deleted=article.get("tags").and_then(Value::as_array).is_some_and(|tags|tags.iter().any(|tag|tag.as_str()==Some(DELETED)));
+        if let Some(object)=article.as_object_mut(){object.remove("text");}
+        return What::Note{title,text,fork_of:None,deleted,edits:0,proposals:0,variants:0,record:Some(article)};
+    }
+    if let Some(todo)=read("todo").and_then(|value|crate::lens::TodoV1::from_value(&value)) {
+        return What::Todo{title:todo.title,status:todo.status};
+    }
+    record(value)
 }
 
 /// Record `record`, of no kind the page knows apart, as the page shows it: through the built-in schema of its kind, each

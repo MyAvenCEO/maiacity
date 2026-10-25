@@ -170,3 +170,24 @@ or negative-query evidence. Native tests cover exact basis, unrelated basis,
 wrong actor, and a later different-basis projection. The existing twelve-member
 JS batch regression covers advancement beyond eight; physical native multi-member
 transport progression remains a queued runtime gate, not claimed passed.
+
+### Scoped EntryView checkpoint rendering and native advancement fixture
+
+The scoped inventory previously rendered `lab.item` alone, so an authenticated
+read-only checkpoint could still leave a stale creation row visible. EntryView
+now classifies its currently authorized MAIN projection through shipped views,
+preferring it until canonical history covers the basis. It reports `readOnly`,
+checkpoint snapshot/basis/partial provenance and incomplete file inventory; a
+projected row cannot complete the local scope. Ordinary materialized rendering
+remains the fallback. Actor readability is checked before content rendering for
+vault and explicit-ID inventory reads as well as global/tag reads.
+
+A new native Node fixture publishes twelve signed member checkpoints plus a
+matching manifest, withholds all ordinary/live history permits, connects real
+peers, and feeds ordinary scoped query responses into active demand. It requires
+all twelve latest read-only states to have rendered, while unrelated/history data
+stays withheld and no complete-history/negative proof appears. It exercises the
+real transport and bounded admission, not a simulated JS response. It remains
+**unrun pending the parent-owned Cargo queue**. The fixture asserts progress over
+time; the bounded eight-projection memory store does not promise twelve resident
+checkpoints simultaneously.

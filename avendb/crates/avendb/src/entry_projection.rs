@@ -416,6 +416,10 @@ impl Lab {
         self.with_entry_projection(on,entry,Clone::clone)
     }
 
+    pub(crate) fn projection_main_available(&self,on:SignerId,entry:EntryId)->bool {
+        self.with_entry_projection(on,entry,|projection|projection.lines.contains_key(&MAIN)).unwrap_or(false)
+    }
+
     /// Scheduling fulfillment only: exact authenticated basis and an available
     /// MAIN record, through the same current-authorization gate as ordinary reads.
     pub(super) fn projection_covers_manifest_heads(&self,on:SignerId,entry:EntryId,heads:&[EditId])->bool {
