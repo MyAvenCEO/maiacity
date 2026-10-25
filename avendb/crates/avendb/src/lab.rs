@@ -4164,7 +4164,9 @@ impl Lab {
         if self.dry {
             return Ok(edit.id());
         }
+        let content_only = self.content_refresh_ready(on, &edit, &body);
         let id = self.seal_write(on, edit, body, x)?;
+        if content_only && self.refresh_content(on, id) { return Ok(id); }
         match &mut self.held_back {
             Some(devices) => _ = devices.insert(on),
             None => self.refresh(on, &[]),
@@ -6961,3 +6963,6 @@ mod prepared_receive_tests;
 #[cfg(test)]
 #[path = "peer_receipt_tests.rs"]
 mod peer_receipt_tests;
+
+#[path = "content_refresh.rs"]
+mod content_refresh;
