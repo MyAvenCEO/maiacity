@@ -10,19 +10,23 @@ impl Lab {
         self.query_hydration_needed(d,entry,true)
     }
     fn query_hydration_needed(&self, d: SignerId, entry: EntryId, metadata_only: bool) -> bool {
-        if !self.sees(d, entry) { return false; }
         let store=self.held(d);
         let state=store.view();
-        let Some(en)=state.entry(entry) else {return false};
+        let Some(shown)=store.shown.get(&entry) else {return false;};
+        // A scheduling hint is not an authorization decision. Ready cells need
+        // no hydration slot; avoid rescanning authority chains and every saved
+        // history body here. The actual meaning/item read still checks them.
+        let history=state.is_draft(entry) && !shown.history_bodies.is_empty()
+            && shown.hydrated_history.get().is_none();
+        if !history && (metadata_only || shown.items.get().is_some()) {return false;}
+        if !self.sees(d, entry) {return false;}
+        let Some(en)=state.entry(entry) else {return false;};
         // These candidates cannot progress by hydrating a record. Let ordinary
         // meaning report them unresolved without consuming a continuation slot.
         if state.first_attrs(en,&store.readings).is_none()
             || !store.semantic_groups(state,entry).is_some_and(|(_,ready)|ready) {return false;}
-        let Some(shown)=store.shown.get(&entry) else { return false; };
         if shown.history_bodies.iter().any(|id| !store.bodies.contains_key(id) && !store.deferred_authorized(*id)) {return false;}
-        let history=state.is_draft(entry) && !shown.history_bodies.is_empty()
-            && shown.hydrated_history.get().is_none();
-        history || (!metadata_only && shown.items.get().is_none())
+        true
     }
 }
 
@@ -55,6 +59,7 @@ mod tests {
         let warm=Warm{keys:receipt.keys.clone().into_iter().collect(),views:receipt.view.clone().into_iter().collect()};
         w.lab.warmed(w.mac_a,receipt);
         w.lab.restore_warm(w.mac_a,backup,Some(([93;40],count)),&warm);
+        let groups=w.lab.held(w.mac_a).readings.groups.clone();
         w.lab.stores.get_mut(&w.mac_a).unwrap().readings.groups=crate::policy::Groups::default();
         for entry in &entries[..4] {
             assert!(w.lab.meaning(w.mac_a,*entry).is_none());
@@ -72,6 +77,16 @@ mod tests {
         assert_eq!(result["ok"]["countExact"],false,"missing groups remain explicitly unresolved");
         assert_eq!(result["ok"]["count"],8);
         assert_eq!(result,crate::engine::full_query_oracle(&w.lab,w.mac_a,&query));
+        // Ready-cell scheduling must not turn into an authorization receipt.
+        w.lab.stores.get_mut(&w.mac_a).unwrap().readings.groups=groups;
+        for entry in &entries[..4] {assert!(w.lab.item(w.mac_a,*entry).is_some());}
+        w.lab.stores.get_mut(&w.mac_a).unwrap().readings.groups=crate::policy::Groups::default();
+        for entry in &entries[..4] {
+            assert!(!w.lab.query_needs_hydration(w.mac_a,*entry));
+            assert!(w.lab.meaning(w.mac_a,*entry).is_none());
+        }
+        assert_eq!(crate::engine::read(&w.lab,w.mac_a,&query),result,
+            "ready items cannot bypass current missing semantic authority");
     }
     #[test]
     fn cold_query_count_yields_and_converges_to_exact_canonical_page() {

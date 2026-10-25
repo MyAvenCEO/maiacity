@@ -223,3 +223,12 @@ are unresolved, not retryable hydration; a candidate consumes one slot per turn
 even when classification and projection both touch it. The missing-group
 regression keeps four candidates unresolved while eight other cold records finish
 and compares the final response with the canonical oracle. Rust remains pending.
+
+Ready-cell fast scheduling: before this follow-up, both metadata and record
+admission hints rescanned semantic grant chains and retained history body
+receipts even when the relevant lazy cell was already populated. The hint now
+checks those cells first and immediately returns no work. Actual meaning and
+item authorization remains unchanged; this saves redundant preparation without
+a cached query answer or new index. Exact counting still scans matching ready
+records; a record predicate can still translate every match before pagination.
+No claim that entire ready-record queries now meet a wall-time target.
