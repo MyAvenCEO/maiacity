@@ -188,3 +188,31 @@ broader Editor/Write operation set. Plain Member still has wire authority level
 Write; Member is an operation group, not a Rust Level enum. Each public response
 must report success and received row assertions remain unchanged. Parser passed;
 runtime rerun pending.
+
+### Cold query classification yields before loading every matching record
+
+The label-only query count loop previously called `item` for every uncertified
+candidate before applying limit/offset. A non-default-depth query could therefore
+import every retained record even for `select:[]` and `limit:1`. Record predicates
+had the same issue. Query turns now admit at most four cold candidates, stopping
+after four milliseconds once one has started. Already materialized entries and
+applicable authenticated visibility receipts remain usable. A new nonhydrating
+predicate inspects lazy cells only; ordinary visibility and authorization are
+rechecked on every actual query turn.
+
+Skipped local work is explicit: `ok.readiness.deferredCandidates`,
+`ok.countExact:false` when classification is unfinished, and
+`ok.pageComplete:false` until the page's required local work finishes. A receipt
+can establish an exact count even if selected record projection still waits.
+Deferred candidates are separate from missing/unavailable candidates. Repeating
+the same query after yielding reuses authenticated per-entry lazy cells and
+advances; there is no cached authorization or answer tied to a stale query.
+Consumer continuation is coordinated separately and must ship with this change.
+
+The regression restores sixteen matching entries lazily and exercises metadata
+pagination and record predicates. Each call hydrates at most four, later calls
+make progress without sync events, and the final full response must equal the
+unbounded canonical oracle. Standalone ColdQuerySlices Lean and parsing passed;
+Rust execution remains pending. Ready-record scans, individual Loro imports,
+checkpoint record decoding and metadata preparation are not wall-time bounded
+by this increment.

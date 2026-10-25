@@ -82,3 +82,14 @@ def retainedHistory (history : List Nat) := history
 theorem preservesEveryHistoricalVersion (history : List Nat) :
     retainedHistory history = history := rfl
 end PreparedJudgmentReuse
+
+namespace ColdQuerySlices
+-- A partial query's observed count is not an exact count of its local match set.
+def exactCount (deferred unresolved : Nat) : Bool := deferred == 0 && unresolved == 0
+theorem deferredCountNotExact (n unresolved : Nat) :
+    exactCount (n+1) unresolved = false := by simp [exactCount]
+def pageComplete (deferred : Nat) : Bool := deferred == 0
+theorem deferredPageNotComplete (n : Nat) : pageComplete (n+1) = false := by simp [pageComplete]
+def admitted (used : Nat) : Bool := used < 4
+theorem fourColdCandidatesExhaustTurn : admitted 4 = false := rfl
+end ColdQuerySlices
