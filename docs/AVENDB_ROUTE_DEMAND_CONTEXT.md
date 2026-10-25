@@ -1,5 +1,7 @@
 # Route demand lifetime follows local view context
 
+Implementation: [a2676775](https://github.com/MyAvenCEO/maiacity/commit/a2676775).
+
 `useView` now owns a lease keyed by device, pathname, selected vault, local URL
 context, and explicit selected entry IDs. Changing a hash selection, Studio
 cut/Chat room query parameter, or selected vault closes the old scope and
