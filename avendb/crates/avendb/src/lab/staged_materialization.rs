@@ -20,9 +20,21 @@ impl Pending {
         let (history, after) = suspend(j);
         Self { history, after, lane, print, tip, next: 0, log, keys, warm }
     }
-    pub(super) fn tip_matches(&self, tip: Tip) -> bool { self.tip == tip }
+    pub(super) fn generations_current(&self, keys: &Arc<()>, warm: &Arc<()>) -> bool {
+        Arc::ptr_eq(&self.keys, keys) && Arc::ptr_eq(&self.warm, warm)
+    }
     pub(super) fn current(&self, log: &crate::policy::LogRevision, keys: &Arc<()>, warm: &Arc<()>) -> bool {
-        self.log == *log && Arc::ptr_eq(&self.keys, keys) && Arc::ptr_eq(&self.warm, warm)
+        self.log == *log && self.generations_current(keys, warm)
+    }
+    // Called only by show_items after recomputing the canonical entry's inputs.
+    // An unchanged owner-only MAIN judgment has no share-policy dependency.
+    pub(super) fn rebind(&mut self, log: crate::policy::LogRevision, print: [u8; 32],
+        tip: Tip, keys: &Arc<()>, warm: &Arc<()>, owner_only: bool) -> bool {
+        if !owner_only || self.print != print || self.tip != tip || !self.generations_current(keys, warm) {
+            return false;
+        }
+        self.log = log;
+        true
     }
 }
 fn suspend(j: Judging<'_>) -> (History, After) {
@@ -138,6 +150,54 @@ mod tests {
     }
 
     #[test]
+    fn staged_prefix_survives_sustained_unrelated_owner_writes() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("unrelated live traffic");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let other = lab.create(mac, vault, vault, "note", &[], document("Live", "start", mac)).unwrap();
+        lab.sync(mac, phone);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Cold", "start", mac)).unwrap();
+        for n in 0..120 { lab.edit(mac, vault, entry, |i| i.set_text(2, &format!("body {n}"))).unwrap(); }
+        lab.enable_staged_materialization(phone);
+        lab.sync(mac, phone);
+        assert!(lab.materialization_pending(phone, entry));
+        for turn in 0..8 {
+            if !lab.materialization_pending(phone, entry) { break; }
+            let before = lab.held(phone).staged[&entry].next;
+            lab.edit(mac, vault, other, |i| i.set_text(2, &format!("live {turn}"))).unwrap();
+            lab.sync(mac, phone);
+            assert_eq!(lab.held(phone).staged[&entry].next, before,
+                "unrelated live edits must not erase a validated prefix");
+            lab.advance_materialization(phone);
+            if let Some(p) = lab.held(phone).staged.get(&entry) { assert!(p.next > before); }
+        }
+        assert!(!lab.materialization_pending(phone, entry));
+        assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
+    }
+
+    #[test]
+    fn handed_restore_preserves_node_staging_and_working_set() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("handed staging");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Cold", "start", mac)).unwrap();
+        for n in 0..65 { lab.edit(mac, vault, entry, |i| i.set_text(2, &format!("body {n}"))).unwrap(); }
+        let handed = lab.handing(mac).unwrap();
+        lab.enable_staged_materialization(phone);
+        lab.set_warm_working_set(phone, &[entry]);
+        assert!(lab.start_handed(phone, lab.backup(mac), &handed));
+        assert!(lab.held(phone).staged_mode);
+        assert_eq!(lab.held(phone).warm_working_set, vec![entry]);
+        assert!(lab.materialization_pending(phone, entry));
+        for _ in 0..8 { if !lab.materialization_pending(phone, entry) { break; } lab.advance_materialization(phone); }
+        assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
+    }
+
+    #[test]
     fn staged_history_does_not_hide_a_verified_newer_projection() {
         let mut lab = Lab::new();
         let owner = lab.passkey("staged projection");
@@ -218,6 +278,15 @@ mod tests {
         lab.advance_materialization(phone);
         assert_eq!(lab.held(phone).staged[&entry].next, 0);
         assert!(lab.item(phone, entry).is_none());
+        lab.advance_materialization(phone);
+        assert!(lab.held(phone).staged[&entry].next > 0);
+        // Policy removals force canonical re-evaluation even if a prefix's entry
+        // content itself did not change. An unrelated log rebind cannot bypass it.
+        lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device {
+            vault, device: phone, keep: vec![],
+        })).unwrap();
+        lab.sync(mac, phone);
+        assert!(lab.held(phone).staged.get(&entry).is_none_or(|p| p.next == 0));
         lab.stores.get_mut(&phone).unwrap().forget();
         assert!(lab.held(phone).staged.is_empty());
         assert!(lab.held(phone).shown.is_empty());
