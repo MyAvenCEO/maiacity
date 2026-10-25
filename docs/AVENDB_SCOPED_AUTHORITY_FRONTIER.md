@@ -58,3 +58,16 @@ contract: dependency closure, current epoch and all required evidence verified.
 Proofs show unknown closure or stale epoch cannot release. Independence from
 unrelated history is conditional on those assumptions; the model does not claim
 they are established by today's protocol. The deployed broad authority gate stays.
+
+## Discovery lanes before optional checkpoint I/O
+
+A second scheduling bottleneck existed inside each peer attempt: optional
+checkpoints for explicit IDs ran before any typed query; then checkpoints for
+one query ran before the next query. A slow kernel checkpoint could therefore
+consume the peer's deadline before the room or game selector was sent.
+
+All active selectors now queue their discovered entry IDs first. Up to eight
+unique checkpoint candidates are retained for the subsequent optional phase.
+The same per-peer deadline, demand cancellation, authorization and checkpoint
+validation remain in force. This changes ordering, not access or completeness.
+Lean `discovery_is_schedule_prefix` passes; combined Rust validation is pending.

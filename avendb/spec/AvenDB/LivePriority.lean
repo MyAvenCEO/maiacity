@@ -176,4 +176,13 @@ def scopedRelease (s : ScopedAuthority) (_unrelatedHistory : Nat) := scopedReady
 theorem unrelated_history_does_not_gate_closed_scope (s : ScopedAuthority) (a b : Nat) :
     scopedRelease s a = scopedRelease s b := rfl
 
+/-- All requested discovery lanes precede optional checkpoint fetches. A slow
+checkpoint for one lane therefore cannot delay dispatch of the remaining lanes.
+This specifies ordering, not elapsed-time bounds or Rust execution. -/
+def discoverySchedule (lanes checkpoints : List Nat) : List Nat := lanes ++ checkpoints
+
+theorem discovery_is_schedule_prefix (lanes checkpoints : List Nat) :
+    (discoverySchedule lanes checkpoints).take lanes.length = lanes := by
+  simp [discoverySchedule]
+
 end AvenDB.LivePriority

@@ -172,14 +172,10 @@ impl Shared {
                     let peer_count = peers.len();
                     for (peer_index, peer) in peers.into_iter().enumerate() {
                         let deadline = peer_deadline(Instant::now(), overall, peer_count - peer_index);
-                        let mut checkpoints_supported = true;
-                        // Explicit active-view IDs also bootstrap without waiting for collection discovery.
-                        for id in entries.iter().take(if dependency_count > 0 { 0 } else { 8 }) {
-                            if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
-                            if let LogId::Entry(entry) = id {
-                                if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
-                            }
-                        }
+                        // Discover every active selector before optional checkpoint I/O.
+                        // In particular, a kernel checkpoint must not consume the budget
+                        // before the room/game selector has even been sent.
+                        let mut checkpoint_ids = Vec::new();
                         for (query_index,query) in queries.iter().enumerate() {
                             if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
                             let request = serde_json::to_vec(&json!({"version": 1, "query": query.json()})).expect("discovery JSON");
@@ -198,13 +194,23 @@ impl Shared {
                                     shared.live_announced(peer.device, false, chunk);
                                 }
                             }, async {
-                                for id in ids.iter().take(if checkpoints_supported && query_index >= dependency_count { 8 } else { 0 }) {
-                                    if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
-                                    if let LogId::Entry(entry) = id {
-                                        if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
+                                if query_index >= dependency_count {
+                                    for &id in &ids {
+                                        if checkpoint_ids.len() >= 8 { break; }
+                                        if !checkpoint_ids.contains(&id) { checkpoint_ids.push(id); }
                                     }
                                 }
                             }).await;
+                        }
+                        for id in entries.iter().take(if dependency_count > 0 { 0 } else { 8 }) {
+                            if checkpoint_ids.len() >= 8 { break; }
+                            if !checkpoint_ids.contains(id) { checkpoint_ids.push(*id); }
+                        }
+                        for id in checkpoint_ids {
+                            if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
+                            if let LogId::Entry(entry) = id {
+                                if shared.fetch_view_checkpoint(&peer, entry, &scope, revision, deadline).await.is_err() { break; }
+                            }
                         }
                     }
                 }
