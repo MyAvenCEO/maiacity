@@ -1,3 +1,4 @@
+import { viewReadiness } from './view-readiness.js';
 // @ts-nocheck — plain JS
 import { warmWorkingSet } from './warm-working-set.js';
 import { readCompleteness } from './read-completeness.js';
@@ -142,6 +143,7 @@ export function createReadWindow({ device, read }) {
 				const got = await read(d, op, controller.signal, demand);
 				if (!active()) return null;
 				completeness = readCompleteness(got);
+                viewReadiness.record(completeness, got);
                 warmWorkingSet.remember(warmScope, [...entries, ...replyEntries(got)]);
 				void demand.replace([...entries, ...replyEntries(got)], selectors);
 				return got;
