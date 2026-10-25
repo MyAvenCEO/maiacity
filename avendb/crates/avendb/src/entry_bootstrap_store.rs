@@ -612,11 +612,20 @@ mod tests {
         if recover {
             let key=lab.entry_key_recovery(mac,partial,withheld).expect("exact ordinary-authorized key");
             lab.receive(partial,vec![lab.signed_edit(mac,withheld).unwrap().clone()],vec![]);
+            lab.finish_durable_owner_bases(partial);
+            let old_receipt=lab.bootstrap_stamp(partial);
             assert!(lab.retain_entry_key_recovery(partial,entry,key));
+            assert!(lab.owner_base_durability_pending(partial,entry));
+            assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Too early")).is_err());
+            assert_ne!(lab.bootstrap_stamp(partial),old_receipt,"previous save cannot acknowledge recovery");
+            // Same stamp fence used by the shared journal saver.
+            if lab.bootstrap_stamp(partial)==old_receipt {lab.finish_durable_owner_bases(partial);}
+            assert!(lab.owner_base_durability_pending(partial,entry));
             assert!(!lab.held(partial).signed.contains_key(&old_history.unwrap()),"historical content stays withheld");
             let saved=lab.backup(partial); let bytes=saved.bootstrap_bytes().unwrap();
             let saved=Backup::new(saved.signed().to_vec(),saved.blobs.values().cloned()).with_bootstrap_bytes(&bytes).unwrap();
             lab.restore_backup(partial,&saved);
+            lab.finish_durable_owner_bases(partial); // exact new companion was saved and reopened
             assert_ne!(lab.owner_base_wait_reason(partial,entry),Some("checkpoint-capsule-read-only"));
             assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
             lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Recovered shared write")).expect("canonical shared authoring");

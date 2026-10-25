@@ -171,6 +171,7 @@ impl Lab {
         if bytes.len()>MAX_BYTES+128 {return false;}
         let at=self.at(on);let store=self.stores.get_mut(&at).expect("device");
         store.bootstrap_bases.insert(entry,(snapshot,bytes));
+        store.bootstrap_pending.insert(entry);
         store.bootstrap_revision=Arc::new(());store.bootstrap_basis=None;
         self.refresh(on,&[]);
         true
