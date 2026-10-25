@@ -3409,9 +3409,16 @@ impl Lab {
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
-        if let Action::Write { entry, .. } = &action {
+        if let Action::Write { entry, proposal, deps, create, files, .. } = &action {
             let store = self.held(on);
-            if store.shown.get(entry).is_some_and(|s| s.history_in(store).is_none()) {
+            // An own authenticated exact scratch already validates this cut.
+            // Checking availability must not decrypt the whole retained history
+            // before the ordinary proof/admission path reads the new update.
+            let exact_append = *proposal == Proposal::Main && create.is_none() && files.is_empty()
+                && self.append_history(on, *entry).is_some_and(|history|
+                    store.shown[entry].scratch_in(store).and_then(|s| s.complete_main_tip(history))
+                        .is_some_and(|tip| deps.as_slice() == [tip]));
+            if !exact_append && store.shown.get(entry).is_some_and(|s| s.history_in(store).is_none()) {
                 return Err(Refusal::NotAView);
             }
         }
