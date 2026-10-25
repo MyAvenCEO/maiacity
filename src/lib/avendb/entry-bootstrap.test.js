@@ -93,10 +93,19 @@ afterAll(async () => {
 const activeDemand = calls => [...new Map(calls.map(c => [c.scope, c.entries])).values()].filter(entries => entries.length);
 const settle = async () => { for (let n = 0; n < 12; n++) { ui.flushSync(); await Promise.resolve(); } };
 function fixture(kind, entries, entry) {
-	const calls = [], reads = [], observers = new Set();
+	const calls = [], reads = [], inventoryReads = [], observers = new Set();
 	const d = { run: async (op) => { calls.push(op); return { ok: { accepted: true } }; } };
-	const answer = (op) => op.op === 'note' ? new Promise((resolve) => reads.push({ op, resolve }))
-		: Promise.resolve({ ok: op.op === 'entry_views' ? { rows: entries.filter(e => op.entries.includes(e.entry)), totalEntries: entries.length, readableEntries: entries.length } : {} });
+	const answer = (op) => {
+		if (op.op === 'note') return new Promise((resolve) => reads.push({ op, resolve }));
+		if (op.op !== 'entry_views') return Promise.resolve({ ok: {} });
+		inventoryReads.push(op);
+		// Mirror both canonical scoped modes: explicit IDs for detail views,
+		// selected-vault positive types for collection discovery.
+		if (('entries' in op) === ('vault' in op)) throw new Error('fixture requires one inventory scope');
+		const selected = entries.filter(e => op.entries ? op.entries.includes(e.entry) : e.vault === op.vault);
+		const rows = selected.filter(e => !op.types || op.types.includes(e.type));
+		return Promise.resolve({ ok: { rows, totalEntries: selected.length, readableEntries: selected.length } });
+	};
 	const api = {
 		ask: answer, window: () => createReadWindow({ device: () => d, read: (_, op) => answer(op) }),
 		observe(query, take, failed) {
@@ -107,10 +116,10 @@ function fixture(kind, entries, entry) {
 		}
 	};
 	const target = document.createElement('div'); document.body.append(target);
-	const component = ui.mount(ui.Harness, { target, props: { kind, initial: { world: world(entries), vault, actor: vault, api, busy: false, entry, onaccess() {} } } });
-	return { calls, reads, target, component: { update(next) {
+	const component = ui.mount(ui.Harness, { target, props: { kind, initial: { world: { ...world([]), entriesComplete: false }, vault, actor: vault, api, busy: false, entry, onaccess() {} } } });
+	return { calls, reads, inventoryReads, target, component: { update(next) {
 		if (next.world) entries = next.world.entries;
-		component.update(next);
+		component.update(next.world ? { ...next, world: { ...next.world, entries: [], entriesComplete: false } } : next);
 		if (next.world) for (const refresh of observers) refresh();
 	} }, async close() { await ui.unmount(component); target.remove(); await settle(); } };
 }
@@ -120,7 +129,7 @@ test('an unknown explicit note starts a scoped read and reuses its scope as loca
 	try {
 		await settle();
 		expect(f.reads.map((r) => r.op.entry)).toEqual([id(1)]);
-		expect(f.calls.at(-1).entries).toEqual([id(1)]);
+		expect(activeDemand(f.calls)).toContainEqual([id(1)]);
 		const scopes = new Set(f.calls.map(c => c.scope));
 		expect(scopes.size).toBe(2); // independent metadata and note history leases
 		f.reads[0].resolve({ refused: 'NoEntry' }); await settle();
@@ -137,7 +146,7 @@ for (const existing of [[], [item(id(2), 'Different document')]]) test(`an expli
 	try {
 		await settle();
 		expect(f.reads.map((r) => r.op.entry)).toEqual([id(1)]);
-		expect(f.calls.at(-1).entries).toEqual([id(1)]);
+		expect(activeDemand(f.calls)).toContainEqual([id(1)]);
 		expect(f.target.querySelector('article.doc')).toBeNull();
 		f.reads[0].resolve({ refused: 'NoEntry' }); await settle();
 		expect(f.target.textContent).toContain('hasn’t loaded this document');
@@ -153,6 +162,7 @@ test('Docs still selects the first local document only when no explicit target w
 	try {
 		await settle();
 		expect(f.reads.map((r) => r.op.entry)).toEqual([id(2)]);
+		expect(f.inventoryReads).toContainEqual({ op: 'entry_views', vault, as: vault, types: ['story', 'post'] });
 		f.reads[0].resolve({ ok: { entry: id(2), lines: [], edits: [] } }); await settle();
 		expect(f.target.querySelector('article.doc h1')?.textContent).toBe('Default document');
 	} finally { await f.close(); }
@@ -167,7 +177,7 @@ test('switching the explicit doc clears old data and rejects an abandoned respon
 		f.reads[0].resolve({ ok: { entry: id(1), lines: [{ line: null, record: { text: 'Abandoned text' } }], edits: [] } }); await settle();
 		expect(f.target.textContent).not.toContain('Abandoned text');
 		expect(f.target.querySelector('article.doc h1')?.textContent).toBe('Second');
-		expect(f.calls.at(-1).entries).toEqual([id(2)]);
+		expect(activeDemand(f.calls)).toContainEqual([id(2)]);
 		f.reads[1].resolve({ refused: 'NoEntry' }); await settle();
 	} finally { await f.close(); }
 });
@@ -195,7 +205,7 @@ test('unmount releases an unknown document and a late answer cannot republish it
 	expect(f.reads).toHaveLength(1);
 	await f.close();
 	f.reads[0].resolve({ ok: { entry: id(1), lines: [], edits: [] } }); await settle();
-	expect(f.calls.at(-1).entries).toEqual([]);
+	expect(activeDemand(f.calls)).toEqual([]);
 	expect(f.target.textContent).toBe('');
 });
 
