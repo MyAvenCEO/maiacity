@@ -38,7 +38,7 @@ impl GrantClass {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct GrantClasses(BTreeMap<ShareId, GrantClass>);
 impl GrantClasses {
     /// Only verified classes can enter; callers cannot insert a raw peer label.
@@ -414,6 +414,9 @@ impl GrantClasses {
     /// keep chains and wide grants. Owner-only writes never interpret group ops.
     fn used_group_roots(&self, shape: &OwnerEntry) -> Option<BTreeSet<EntryId>> {
         if shape.actors.iter().all(|actor|*actor==shape.vault) {return Some(BTreeSet::new());}
+        self.group_roots(shape)
+    }
+    fn group_roots(&self,shape:&OwnerEntry)->Option<BTreeSet<EntryId>> {
         let mut pending=shape.named_shares.clone();
         pending.extend(self.0.iter().filter(|(_,c)|c.over==shape.vault && c.wide && c.level.allows(Level::Read)).map(|(id,_)|*id));
         let mut seen=BTreeSet::new();let mut groups=BTreeSet::new();
@@ -436,11 +439,47 @@ impl GrantClasses {
         provenance: impl Fn(avendb::id::EditId) -> Option<Vec<VaultId>>,
         historical: impl Fn(EntryId) -> Option<BTreeSet<EntryId>>,
     ) -> Option<OwnerDependencies> {
+        self.dependencies_with_groups(owner,edits,ids,logs,announced,provenance,historical,false)
+    }
+    /// The connected inventory supplies all candidate IDs. Only canonical
+    /// immutable negative selector evidence removes a candidate from this cut.
+    pub(crate) fn semantic_dependencies(
+        &self,owner:&OwnerEntry,edits:&[avendb::policy::Edit],ids:&[avendb::id::EditId],
+        logs:&crate::holdings::Logs,announced:&crate::Holdings,
+        provenance:impl Fn(avendb::id::EditId)->Option<Vec<VaultId>>,
+        historical:impl Fn(EntryId)->Option<BTreeSet<EntryId>>,
+        matches:impl Fn(ShareId)->Option<bool>,
+    )->Option<(OwnerDependencies,bool)> {
+        let inventory=announced.logs.keys().filter_map(|log|match log {
+            avendb::sync::LogId::Share(id)=>Some(*id),_=>None,
+        }).collect();
+        let mut shape=owner.clone();let mut known=true;
+        for share in self.over(&inventory,owner.vault)? {
+            match matches(share) {
+                Some(false)=>{},
+                Some(true)=>{shape.named_shares.insert(share);},
+                None=>{known=false;shape.named_shares.insert(share);},
+            }
+        }
+        if !known {
+            // First obtain immutable selector evidence; unknown selectors must
+            // not eagerly download unrelated group's history. This result is
+            // scheduling only and explicitly cannot clear semantic pending.
+            return Some((self.owner_dependencies_ready(&shape,edits,ids,logs,announced,provenance,true)?,false));
+        }
+        Some((self.dependencies_with_groups(&shape,edits,ids,logs,announced,provenance,historical,true)?,true))
+    }
+    fn dependencies_with_groups(
+        &self, owner:&OwnerEntry,edits:&[avendb::policy::Edit],ids:&[avendb::id::EditId],
+        logs:&crate::holdings::Logs,announced:&crate::Holdings,
+        provenance:impl Fn(avendb::id::EditId)->Option<Vec<VaultId>>,
+        historical:impl Fn(EntryId)->Option<BTreeSet<EntryId>>,semantic:bool,
+    )->Option<OwnerDependencies> {
         use avendb::sync::LogId;
-        if owner.actors.iter().all(|actor|*actor==owner.vault) {
+        if !semantic && owner.actors.iter().all(|actor|*actor==owner.vault) {
             return self.owner_dependencies_provenance(owner,edits,ids,logs,announced,provenance);
         }
-        let mut pending=self.used_group_roots(owner)?;
+        let mut pending=if semantic {self.group_roots(owner)?}else{self.used_group_roots(owner)?};
         let mut ready=BTreeSet::new();let mut required=BTreeSet::new();let mut missing=BTreeSet::new();
         let mut combined=owner.clone();let mut inspected=0usize;
         while let Some(group)=pending.pop_first() {
@@ -713,5 +752,37 @@ impl crate::Shared {
         let token=GroupDependencies::from_required(target,&required).unwrap();
         assert_eq!(token.entries(),&[group].into_iter().collect());
         assert!(!token.entries().contains(&target));
+    }
+}
+
+#[cfg(test)] mod semantic_cut_tests {
+    use super::*;
+    use avendb::{cast::{world,document,share,of_type},id::EditId,sync::{log_of,LogId}};
+    #[test] fn immutable_negative_selector_omits_unrelated_frontier_but_unknown_does_not() {
+        let mut w=world();
+        let entry=w.lab.create(w.mac_a,w.alice,w.alice,"room",&[],document("Room","kept",w.mac_a)).unwrap();
+        let unrelated=w.lab.issue(w.mac_a,&[w.mac_a],share(w.alice,Who::Vault(w.bob),Level::Read,of_type("not-room"))).unwrap();
+        let log=w.lab.log(w.mac_a);let edits=log.edits();
+        let mut local=crate::holdings::Logs::of(edits,log.ids(),w.lab.size(w.mac_a));
+        let announced=crate::Holdings{logs:local.frontiers(),files:Default::default()};
+        let shape=OwnerEntry::from_parts(entry,edits.iter().filter(|e|log_of(e,e.id())==Some(LogId::Entry(entry)))
+            .map(|e|(e.id(),e)),&announced.logs[&LogId::Entry(entry)]).unwrap();
+        let mut classes=GrantClasses::default();
+        for id in announced.logs.keys().filter_map(|log|match log {LogId::Share(id)=>Some(*id),_=>None}) {
+            assert!(classes.insert(id,w.lab.signed_edit(w.mac_a,EditId(id.0)).unwrap()));
+        }
+        local.of.remove(&LogId::Share(unrelated));
+        let provenance=w.lab.authority_provenance(w.mac_a);
+        let (deps,known)=classes.semantic_dependencies(&shape,edits,log.ids(),&local,&announced,
+            |id|provenance.get(&id).cloned(),|group|w.lab.historical_group_dependencies(w.mac_a,w.alice,group),
+            |id|w.lab.semantic_selector_matches(w.mac_a,entry,id)).unwrap();
+        assert!(known);
+        assert!(!deps.required.contains(&LogId::Share(unrelated)));
+        let (deps,known)=classes.semantic_dependencies(&shape,edits,log.ids(),&local,&announced,
+            |id|provenance.get(&id).cloned(),|group|w.lab.historical_group_dependencies(w.mac_a,w.alice,group),
+            |id|if id==unrelated {None}else{w.lab.semantic_selector_matches(w.mac_a,entry,id)}).unwrap();
+        assert!(!known);
+        assert!(deps.missing.contains(&LogId::Share(unrelated)));
+        assert!(deps.groups.entries().is_empty(),"unknown selectors do not trigger group history fetch");
     }
 }

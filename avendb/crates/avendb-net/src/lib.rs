@@ -111,6 +111,7 @@ mod blobs;
 pub mod bucket;
 mod demand;
 mod authority_stage;
+mod semantic_completion;
 mod authority_classes;
 mod discovery;
 mod checkpoint_delivery;

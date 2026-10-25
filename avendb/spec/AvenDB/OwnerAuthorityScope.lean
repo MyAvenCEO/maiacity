@@ -174,3 +174,14 @@ def admits (count limit : Nat) : Prop := count < limit
 theorem acceptedRemainsBounded (count limit : Nat) (h : admits count limit) : count + 1 ≤ limit := h
 theorem fullDoesNotGrow (limit : Nat) : ¬ admits limit limit := Nat.lt_irrefl limit
 end AvenDB.SemanticPendingBound
+
+namespace AvenDB.SemanticCut
+/-- Unknown selectors cannot establish a negative scope. Admission also requires
+current complete inventory and ordinary canonical group evaluation. -/
+def complete (selectorsKnown dependenciesClosed receiptCurrent canonicalReady : Bool) : Bool :=
+  selectorsKnown && dependenciesClosed && receiptCurrent && canonicalReady
+theorem unknownCannotComplete (dependencies receipt canonical : Bool) :
+    complete false dependencies receipt canonical = false := by simp [complete]
+theorem changedReceiptCannotComplete (selectors dependencies canonical : Bool) :
+    complete selectors dependencies false canonical = false := by simp [complete]
+end AvenDB.SemanticCut

@@ -99,6 +99,37 @@ impl Store {
     }
 }
 impl Lab {
+    /// Immutable selector evidence for one authenticated grant chain. `None`
+    /// means missing decrypted evidence, never a negative match. Liveness is
+    /// deliberately not used: the network must fence matching current grants.
+    pub fn semantic_selector_matches(&self,on:SignerId,entry:EntryId,share:ShareId)->Option<bool> {
+        let store=self.held(on);let st=store.view();let en=st.entry(entry)?;
+        if store.replayed!=store.log.edits().len() {return None;}
+        let mut attrs=st.first_attrs(en,&store.readings)?;
+        for edit in &en.retags {attrs.tags=store.readings.tags.get(edit)?.apply(&attrs.tags);}
+        let cap_group=attrs.ty.is_cap_group() && attrs.author==en.vault;
+        let issued=st.share(share)?;
+        if issued.share.over!=en.vault || issued.chain.len()>128 {return None;}
+        let mut unknown=false;
+        for id in issued.chain.iter() {
+            let link=st.share(*id)?;
+            if link.share.wide || cap_group {continue;}
+            match store.readings.selectors.get(id) {
+                Some(selector) if !selector.matches(&attrs)=>return Some(false),
+                None if store.unreadable.contains(id)=>return Some(false),
+                None=>unknown=true,
+                _=>{},
+            }
+        }
+        (!unknown).then_some(true)
+    }
+    pub fn semantic_pending(&self,on:SignerId,entry:EntryId)->bool {
+        self.held(on).semantic_pending.contains(&entry)
+    }
+    /// Persisted selective work to resume when an active view is requested.
+    pub fn semantic_pending_entries(&self,on:SignerId)->BTreeSet<EntryId> {
+        self.held(on).semantic_pending.iter().copied().collect()
+    }
     /// Explicit semantic readiness, separate from readable historical state.
     /// Returned group IDs are ordinary transfer work, never authority evidence.
     pub fn semantic_group_dependencies(&self,on:SignerId,entry:EntryId)->Option<(BTreeSet<EntryId>,bool)> {

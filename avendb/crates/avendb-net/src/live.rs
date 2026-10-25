@@ -121,6 +121,7 @@ impl Shared {
         if self.opts.lazy || !origin.active() { return; }
         let Some(endpoint) = self.endpoint_of(device) else { return; };
         self.schedule_owner_suffixes(endpoint, device, logs, Some(origin.clone()));
+        let semantic_entries:Vec<_>=logs.iter().filter_map(|log|match log {LogId::Entry(e)=>Some(*e),_=>None}).take(32).collect();
         let Some(mut work) = self.pulls.live_demand(device, logs, &origin) else { return; };
         let Ok(activity) = self.admit() else { return };
         let shared = self.clone();
@@ -138,6 +139,15 @@ impl Shared {
             drop(work);
             if attempt.is_some() && origin.active() {
                 let _ = origin.run(shared.materialize_live()).await;
+                if let Some(peer)=shared.live(endpoint).filter(|p|p.device==device) {
+                    let completion=async {
+                        for entry in semantic_entries {
+                            if !origin.active() {break;}
+                            let _=shared.finish_pending_semantics(peer.clone(),entry,Some(origin.clone())).await;
+                        }
+                    };
+                    let _=origin.run(time::timeout(LIVE_WAIT,completion)).await;
+                }
             } else { shared.jobs.stir(); }
         });
     }
