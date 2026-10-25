@@ -11,7 +11,8 @@ Policy/schema/cap-group entries, shared/proposal histories, and incremental entr
 retain their existing synchronous implementation.
 
 The existing Node background pump advances one entry by at most 32 ordinary
-`Judging::judge` calls, rotating between entries. Each call uses unchanged canonical
+`Judging::judge` calls, rotating between entries. At most four continuations have begun judgment;
+other queued entries retain empty history shells and share their vault lane. Each call uses unchanged canonical
 judgment. Intermediate state is never installed in `Shown`. Publication occurs
 only after all selected writes are judged. Changed log identity, key generation,
 warm generation, newly opened bodies, or explicit reshow cancels prior staging;
