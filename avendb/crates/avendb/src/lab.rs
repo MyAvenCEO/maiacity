@@ -982,6 +982,12 @@ struct Shown {
 }
 
 impl Shown {
+    fn scratch_in(&self, store: &Store) -> Option<&Scratch> {
+        if !self.history_bodies.iter().all(|id| store.bodies.contains_key(id) || store.deferred_authorized(*id)) {
+            return None;
+        }
+        self.after.scratch()
+    }
     fn history_in<'a>(&'a self, store: &Store) -> Option<&'a History> {
         if self.history_bodies.is_empty() { return Some(&self.history); }
         // Recheck current entry keys/basis even when this history was hydrated.
@@ -1031,10 +1037,34 @@ impl Shown {
 #[derive(Default)]
 struct After {
     scratch: Option<Scratch>,
+    deferred_scratch: Option<DeferredScratch>,
     attrs: Option<Attrs>,
     mine: crate::policy::Mine,
     imported: BTreeMap<Line, HashSet<EditId>>,
     asked: BTreeSet<BlobId>,
+}
+
+/// An authenticated own scratch image stays encoded until an authorized target
+/// write needs it. It never imports a Loro snapshot merely to unlock a device.
+struct DeferredScratch {
+    signer: SignerId,
+    image: crate::history::ScratchImage,
+    opened: OnceLock<Option<Scratch>>,
+}
+impl DeferredScratch {
+    fn get(&self) -> Option<&Scratch> {
+        self.opened.get_or_init(|| Scratch::from_owner_image(self.image.clone(), self.signer, MAIN)).as_ref()
+    }
+    fn into_opened(self) -> Option<Scratch> {
+        self.opened.into_inner().unwrap_or_else(|| Scratch::from_owner_image(self.image, self.signer, MAIN))
+    }
+}
+impl After {
+    fn scratch(&self) -> Option<&Scratch> {
+        self.scratch.as_ref().or_else(|| self.deferred_scratch.as_ref()?.get())
+    }
+    fn has_scratch(&self) -> bool { self.scratch.is_some() || self.deferred_scratch.is_some() }
+    fn clear_scratch(&mut self) { self.scratch = None; self.deferred_scratch = None; }
 }
 
 /// How many entries keep their scratch items between refreshes: those judged last, as a device edits a few at a time.
@@ -3449,7 +3479,7 @@ impl Lab {
         let lane = Lane::with_built_ins(view.lane_of(vault, readings));
         // on a copy of the scratch item its showing left, where it holds the version the write builds on
         let shown = self.held(on).shown.get(&w.entry).filter(|_| !w.first);
-        let mut at = shown.and_then(|s| s.after.scratch.as_ref()).map(Scratch::fork);
+        let mut at = shown.and_then(|s| s.scratch_in(self.held(on))).map(Scratch::fork);
         let read = h.reading_on(&mut at, w, Some(content), on, &lane);
         // each set marked own or not as its readers will mark it, by whose each row is (`policy::Mine`)
         let touches = read.touches.as_deref().map(|ts| h.mine().mark(w.actor, &[ts, needs].concat()));
@@ -4126,7 +4156,7 @@ impl Lab {
         let shown = store.shown.get(&entry)?;
         if shown.history_bodies.is_empty()
             || !shown.history_bodies.iter().all(|id| store.deferred_authorized(*id)) { return None; }
-        shown.after.scratch.as_ref()?.complete_main_tip(&shown.history)?;
+        shown.scratch_in(store)?.complete_main_tip(&shown.history)?;
         Some(&shown.history)
     }
 
@@ -4174,7 +4204,7 @@ impl Lab {
         let (edit, w) = self.check_write(on, &view, action)?;
         let history = (w.proposal == Proposal::Main && tags.is_empty() && files.is_empty() && defines.is_none())
             .then(|| self.append_history(on, entry)).flatten()
-            .filter(|h| self.held(on).shown[&entry].after.scratch.as_ref()
+            .filter(|h| self.held(on).shown[&entry].scratch_in(self.held(on))
                 .is_some_and(|scratch| scratch.resumes_complete_main(h, &w)))
             .unwrap_or_else(|| self.shown(on, entry));
         let proof = self.proven(on, &view, (vault, history), &w, (&content, &tags), needs, None)?;
@@ -6467,7 +6497,7 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
     if recent.len() > SCRATCHES {
         let expired = recent[recent.len() - SCRATCHES - 1];
         if let Some(shown) = old.get_mut(&expired) {
-            shown.after.scratch = None;
+            shown.after.clear_scratch();
         }
     }
     old.insert(entry, shown);
@@ -6631,7 +6661,7 @@ fn show_items(d: SignerId, store: &mut Store) {
                 // Deferred content is intentionally not forced by a debug comparison.
                 // Dedicated regressions compare demanded content to canonical replay.
                 store.perf.count("show: own materialization reused", 1);
-                if shown.after.scratch.is_some() {
+                if shown.after.has_scratch() {
                     retain_recent_shown(&mut old, &mut recent, en.id, shown);
                 } else { old.insert(en.id, shown); }
                 continue;
@@ -6684,8 +6714,8 @@ fn show_items(d: SignerId, store: &mut Store) {
     let before: Vec<EntryId> = store.scratched.iter().filter(|e| !keep.contains(e)).take(room).copied().collect();
     keep.extend(before);
     for (e, s) in old.iter_mut() {
-        if s.after.scratch.is_some() && !keep.contains(e) {
-            s.after.scratch = None;
+        if s.after.has_scratch() && !keep.contains(e) {
+            s.after.clear_scratch();
         }
     }
     store.scratched = keep;
@@ -6765,7 +6795,8 @@ impl<'a> Judging<'a> {
     /// Judging on from where judging the writes of `history` left off, `after`.
     fn resume(en: &Entry, r: &Readings, lane: &'a Lane, history: History, after: After) -> Judging<'a> {
         let of_lane = r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane());
-        let After { scratch, attrs, mine, imported, asked } = after;
+        let After { scratch, deferred_scratch, attrs, mine, imported, asked } = after;
+        let scratch = scratch.or_else(|| deferred_scratch.and_then(DeferredScratch::into_opened));
         Judging { vault: en.vault, of_lane, lane, history, scratch, attrs, mine, imported, asked }
     }
 
@@ -6854,7 +6885,7 @@ impl<'a> Judging<'a> {
                 imported.insert(l, changes.iter().map(|c| c.write.edit).collect());
             }
         }
-        Shown { history, history_bodies: Vec::new(), hydrated_history: OnceLock::new(), items: OnceLock::from(items), deferred: std::sync::Mutex::new(None), print, tip, after: After { scratch, attrs, mine, imported, asked } }
+        Shown { history, history_bodies: Vec::new(), hydrated_history: OnceLock::new(), items: OnceLock::from(items), deferred: std::sync::Mutex::new(None), print, tip, after: After { scratch, deferred_scratch: None, attrs, mine, imported, asked } }
     }
 }
 
