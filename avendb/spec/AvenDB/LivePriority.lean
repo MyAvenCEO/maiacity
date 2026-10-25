@@ -149,4 +149,31 @@ theorem discovery_queue_independent_of_checkpoint (ids : List Nat) :
 theorem queued_hint_still_requires_authority (hint missing : Bool) :
     selected hint missing false = false := dependencies_first hint missing
 
+/-- Proposed scoped-authority release contract, NOT a deployed wire mechanism.
+The caller must establish a complete causal/revocation dependency closure and
+its current epoch; listing a few known authority edits alone cannot establish it. -/
+structure ScopedAuthority where
+  required : List Nat
+  verified : List Nat
+  dependencyClosed : Bool
+  currentEpoch : Bool
+
+def scopedReady (s : ScopedAuthority) : Bool :=
+  s.dependencyClosed && s.currentEpoch && s.required.all (s.verified.contains ·)
+
+theorem unclosed_scope_cannot_release (s : ScopedAuthority)
+    (h : s.dependencyClosed = false) : scopedReady s = false := by
+  simp [scopedReady, h]
+
+theorem stale_scope_cannot_release (s : ScopedAuthority)
+    (h : s.currentEpoch = false) : scopedReady s = false := by
+  simp [scopedReady, h]
+
+/-- Unrelated history is not an input after closure/currentness have independently
+been established. This theorem does not establish either assumption. -/
+def scopedRelease (s : ScopedAuthority) (_unrelatedHistory : Nat) := scopedReady s
+
+theorem unrelated_history_does_not_gate_closed_scope (s : ScopedAuthority) (a b : Nat) :
+    scopedRelease s a = scopedRelease s b := rfl
+
 end AvenDB.LivePriority
