@@ -1,5 +1,6 @@
 //! Device-local, engine-bound materialization receipts, never accepted from peers.
-//! The whole ordered log must still match; each entry additionally checks its
+//! The authenticated ordered prefix must match; only covered ordinary suffix
+//! writes may exclude touched entries and retain the rest. Each entry checks its
 //! canonical shown fingerprint after current keys/bodies/lane/groups are rebuilt.
 use super::*;
 use crate::encode::Encode;
@@ -31,9 +32,10 @@ pub(super) struct Capture {
         Vec<(EditId, BodyMetadata)>,
     )>,
 }
-fn basis(store: &Store) -> [u8; 32] {
+fn basis(store: &Store) -> [u8; 32] { basis_ids(store.log.ids()) }
+fn basis_ids(ids: &[EditId]) -> [u8; 32] {
     let mut h = Hasher::new("own materialization log");
-    for id in store.log.ids() {
+    for id in ids {
         h.update(&id.0);
     }
     h.finalize()
@@ -202,6 +204,32 @@ impl Validated {
     pub(super) fn check(extra: &[u8], store: &Store) -> Option<Self> {
         if !matching(extra, store) { return None; }
         Some(Self { saved: decode(extra)?, revision: store.log.revision() })
+    }
+    /// Called only after Replay::from_view authenticated an ordered prefix of
+    /// this exact log. Ordinary writes cannot alter another entry's key/policy,
+    /// schema lane or cap groups. Never reuse the entries those writes target.
+    pub(super) fn check_prefix(extra: &[u8], store: &Store, held: usize) -> Option<Self> {
+        if held == store.log.ids().len() { return Self::check(extra, store); }
+        let prefix = store.log.ids().get(..held)?;
+        if extra.get(..32) != Some(basis_ids(prefix).as_slice()) { return None; }
+        let suffix = store.log.edits().get(held..)?;
+        if suffix.len() > MAX_WRITES { return None; }
+        let mut saved = decode(extra)?;
+        let mut touched = HashSet::new();
+        for edit in suffix {
+            let Action::Write { entry, create: None, proposal: Proposal::Main, .. } = &edit.action else { return None; };
+            let old = saved.get(entry)?;
+            // No new entries or uncovered/schema/lens/group entries. Only own
+            // authenticated complete metadata establishes this classification.
+            if old.changes.is_empty() || old.metadata.len() != old.changes.len()
+                || old.metadata.iter().any(|(_, metadata)| !metadata.ordinary())
+                || !old.metadata.iter().any(|(_, metadata)| metadata.fields().header.is_some()) {
+                return None;
+            }
+            touched.insert(*entry);
+        }
+        saved.retain(|entry, _| !touched.contains(entry));
+        Some(Self { saved, revision: store.log.revision() })
     }
     pub(super) fn consume(self, store: &Store) -> Option<BTreeMap<EntryId, Saved>> {
         (self.revision == store.log.revision()).then_some(self.saved)
@@ -609,8 +637,87 @@ mod tests {
         let backup = lab.backup(device);
         let n = backup.signed.len();
         lab.restore_warm(device,backup,Some(([19;40],n)),&warm);
-        assert!(lab.held(device).deferred_bodies.is_empty());
+        let changed = lab.held(device).view().entry(entries[0]).unwrap().creation;
+        let untouched = lab.held(device).view().entry(entries[1]).unwrap().creation;
+        assert!(!lab.held(device).deferred_bodies.contains_key(&changed));
+        assert!(lab.held(device).deferred_bodies.contains_key(&untouched));
+        assert!(!lab.held(device).deferred_bodies[&untouched].content_ready());
         assert_eq!(lab.item(device,entries[0]).unwrap().record(),expected);
+        let actual: Vec<_> = entries.iter().map(|entry| lab.item(device,*entry).unwrap().record()).collect();
+        let full = lab.backup(device);
+        lab.restore_backup(device, &full);
+        assert_eq!(actual, entries.iter().map(|entry| lab.item(device,*entry).unwrap().record()).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn prefix_reuse_rejects_schema_and_nonprefix_or_corrupt_receipts() {
+        let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
+        let held = backup.signed.len();
+        let encoded = Capture::take(lab.held(device)).encode(Vec::new());
+        let extra = unwrap(&encoded).unwrap().1;
+        lab.edit(device,vault,entries[0],|item| item.edit_document(|d| d.title="suffix".into())).unwrap();
+        assert!(Validated::check_prefix(extra,lab.held(device),held).is_some());
+        let mut corrupt = extra.to_vec(); corrupt[0] ^= 1;
+        assert!(Validated::check_prefix(&corrupt,lab.held(device),held).is_none());
+        assert!(Validated::check_prefix(extra,lab.held(device),held-1).is_none());
+        let mut changed = lab.held(device).log.edits().to_vec(); changed.swap(0,1);
+        let mut reordered = Store::default(); reordered.log = crate::policy::Log::from_edits(changed);
+        assert!(Validated::check_prefix(extra,&reordered,held).is_none());
+        lab.restore_backup(device,&backup);
+        lab.add_schema(device,vault,vault,crate::lens::example::DOCUMENT_V0.bytes()).unwrap();
+        let current = lab.backup(device);
+        assert!(Validated::check_prefix(extra,lab.held(device),held).is_none());
+        let expected: Vec<_> = entries.iter().map(|entry|lab.item(device,*entry).unwrap().record()).collect();
+        lab.restore_warm(device,current,Some(([19;40],held)),&warm);
+        assert!(lab.held(device).deferred_bodies.is_empty());
+        assert_eq!(expected,entries.iter().map(|entry|lab.item(device,*entry).unwrap().record()).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn prefix_reuse_rebuilds_after_share_revocation_and_key_rotation() {
+        let (mut lab, device, vault, entries, backup, warm)=warmed_notes();
+        let held=backup.signed.len();
+        let share=lab.issue(device,&[device],crate::cast::share(vault,crate::policy::Who::Everyone,
+            crate::policy::Level::Read,crate::cast::of_type("note"))).unwrap();
+        lab.submit(device,&[device],Action::Revoke(crate::policy::Revoking::Grant {
+            share,actor:vault,keep:vec![],via:vec![] })).unwrap();
+        let expected:Vec<_>=entries.iter().map(|entry|lab.item(device,*entry).map(Item::record)).collect();
+        let changed=lab.backup(device);
+        lab.restore_warm(device,changed,Some(([19;40],held)),&warm);
+        assert!(lab.held(device).deferred_bodies.is_empty());
+        assert_eq!(expected,entries.iter().map(|entry|lab.item(device,*entry).map(Item::record)).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn prefix_reuse_does_not_admit_a_tampered_signed_suffix() {
+        let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
+        let held=backup.signed.len();
+        lab.edit(device,vault,entries[0],|item| item.edit_document(|d|d.title="Not signed like this".into())).unwrap();
+        let mut changed=lab.backup(device);
+        let signed=changed.signed.iter_mut().rev().find(|signed|
+            matches!(signed.edit.action,Action::Write{entry,..} if entry==entries[0])).unwrap();
+        if let Action::Write{body,..}=&mut signed.edit.action { *body.last_mut().unwrap() ^= 1; }
+        lab.restore_backup(device,&changed);
+        let expected:Vec<_>=entries.iter().map(|entry|lab.item(device,*entry).map(Item::record)).collect();
+        lab.restore_warm(device,changed,Some(([19;40],held)),&warm);
+        assert_eq!(expected,entries.iter().map(|entry|lab.item(device,*entry).map(Item::record)).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn prefix_reuse_rejects_every_nonordinary_suffix_action() {
+        let (lab, device, _vault, _entries, backup, _warm) = warmed_notes();
+        let encoded = Capture::take(lab.held(device)).encode(Vec::new());
+        let extra = unwrap(&encoded).unwrap().1;
+        let held = backup.signed.len();
+        // Classifier must reject even an otherwise matching authenticated prefix
+        // before considering whether these governance/key actions can be accepted.
+        for edit in lab.held(device).log.edits().iter().filter(|edit|
+            !matches!(edit.action,Action::Write { create:None,proposal:Proposal::Main,.. })) {
+            let mut edits=lab.held(device).log.edits().to_vec();
+            let mut suffix=edit.clone(); suffix.depth+=10000; edits.push(suffix);
+            let mut store=Store::default(); store.log=crate::policy::Log::from_edits(edits);
+            assert!(Validated::check_prefix(extra,&store,held).is_none());
+        }
     }
 
     #[test]
