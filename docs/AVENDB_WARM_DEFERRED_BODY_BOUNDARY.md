@@ -129,6 +129,8 @@ No Cargo build was started in this isolated checkout. The coordinator must run t
 
 ## Shared exact basis for deferred receipts (2026-10-25)
 
+Implementation: [b609a850](https://github.com/MyAvenCEO/maiacity/commit/b609a850). Source complete; canonical Rust validation pending.
+
 Ordinary content append previously visited every deferred body twice: to check exclusive ownership/metadata, then to rewrite each receipt's exact revision. The new private `DeferredContext` is shared only by immutable bodies reconstructed from one authenticated own receipt. The store captures the exact log revision before sealing the write. Only the existing settled-content/creation guards plus a strict canonical replay step may advance that context from the captured revision to the new revision. This performs one context transition regardless of unrelated history size. It is not a new authentication or peer admission path.
 
 Every metadata demand still checks the exact current revision. Every content demand additionally checks the currently held entry key, including already decoded content; plaintext must match the authenticated metadata. A non-content history/policy change cannot advance the context and normal refresh drops it and its deferred map. Target-only hydration still checks exclusive ownership before moving buffers, with canonical fallback if a target receipt is shared. Sharing an unrelated immutable receipt no longer invalidates the fast path.
