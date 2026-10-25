@@ -4388,6 +4388,9 @@ impl Log {
         }
         (out,cursor,inspected)
     }
+    pub(crate) fn entry_last_order(&self, entry:EntryId)->Option<(u64,u8,EditId)> {
+        self.entry_order.get(&entry)?.last_key_value().map(|(key,_)|*key)
+    }
     pub(crate) fn entry_write_candidates(&self, entry: EntryId) -> usize {
         self.entry_order.get(&entry).map_or(0,BTreeMap::len)
     }
