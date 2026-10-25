@@ -1,6 +1,7 @@
 // @ts-nocheck
 // Runtime recipes and files come exclusively from this device’s avenDB.
 // Peer synchronization belongs to avenDB, never to the renderer’s HTTP loader.
+import { observeRecipeCatalog } from './recipe-catalog.js';
 import { holds } from '../../../game/hash.js';
 import { idOf, slug } from '$lib/ids.js';
 import { MAIA_CITY, NO_ANCHOR } from '../../../game/code/sources/feed.js';
@@ -82,6 +83,8 @@ function noted(e) {
 
 /** the vault's recipes as ./sources/avendb.js `vaultRecipes` reads them off the index's rows, once they are in */
 let source = null;
+// A newer reactive answer invalidates an older one-shot catalog load.
+let catalogRevision = 0;
 
 
 
@@ -141,6 +144,7 @@ const recipesOf = (rows, read, newest, proven) => {
 
 /** Read only locally verified entries. No remote listing, proof or file fallback. */
 async function load({ kept = KEPT, patience = READ, vault = MAIA_CITY, newest = KEPT_NEWEST } = {}) {
+ const generation = ++catalogRevision;
  source = null;
  fill(null);
  Object.assign(recipes, { phase: 'loading', feed: 'this device', vault, count: 0, error: '', refused: [], missed: [], unread: [] });
@@ -149,7 +153,11 @@ async function load({ kept = KEPT, patience = READ, vault = MAIA_CITY, newest = 
   if (!/^[0-9a-f]{64}$/.test(String(vault))) throw new Error(NO_ANCHOR);
   if (!deviceOf()) throw new Error('Local avenDB is not connected. Unlock or connect this device, then retry.');
   const rows = await deviceRows(['recipe'], { vault });
-  if (!rows?.length) throw new Error('Waiting for asset recipes to sync into local avenDB. Retry after synchronization.');
+  if (generation !== catalogRevision) return recipes;
+  if (!rows?.length) {
+   Object.assign(recipes, {phase:'loading',error:'Waiting for asset recipes to sync into local avenDB.'});
+   tell(); return recipes;
+  }
   const how = { kept, patience };
   const read = recipesOf(rows, readerOf(how), newest, true);
   if (!Object.keys(read.index.recipes).length) throw new Error(`No usable recipes in local avenDB: ${read.refused.join('; ')}`);
@@ -157,6 +165,7 @@ async function load({ kept = KEPT, patience = READ, vault = MAIA_CITY, newest = 
   void fresher(vault, how, newest);
   return result;
  } catch (e) {
+  if (generation !== catalogRevision) return recipes;
   Object.assign(recipes, { phase: 'failed', error: String(e.message ?? e) });
   tell();
   return recipes;
@@ -179,6 +188,39 @@ async function fresher(vault, how, newest) {
 	if (Object.keys(read.index.recipes).length) ready(read, null, String(rows[0]?.vault ?? vault), 'this device');
 }
 
+/** Mounted lifetime owns its reactive query and typed discovery lease. Device
+ * replacement and route cleanup are handled by api.observe's shared read window. */
+export function watchRecipeCatalog(api, { vault = MAIA_CITY, kept = KEPT, patience = READ, newest = KEPT_NEWEST } = {}) {
+ const d=deviceOf();
+ if (loadedWith !== d || recipes.vault !== vault || recipes.phase !== 'ready') {
+  catalogRevision++;
+  source=null;fill(null);
+  Object.assign(recipes,{phase:'loading',count:0,vault,feed:'this device',error:''});tell();
+ }
+ loadedWith=d;
+ // Builds beginning after the first reactive catalog answer reuse that catalog,
+ // rather than restarting the legacy one-shot/full-vault bring path.
+ loading=Promise.resolve(recipes);
+ return observeRecipeCatalog(api, vault, state => {
+  catalogRevision++;
+  if (state.phase !== 'local') {
+   // Do not turn a missing local catalog into a confirmed absence, or retain
+   // recipes from a revoked/locked reader after an unavailable response.
+   source = null; fill(null);
+   Object.assign(recipes, {phase:state.phase === 'waiting' ? 'loading' : 'failed',count:0,
+    vault,feed:'this device',error:state.error ?? 'Waiting for asset recipes to sync into local avenDB.'});
+   tell(); return;
+  }
+  const read=recipesOf(state.rows,readerOf({kept,patience}),newest,true);
+  if (!Object.keys(read.index.recipes).length) {
+   source=null;fill(null);
+   Object.assign(recipes,{phase:'loading',count:0,vault,error:'Waiting for usable recipe records in local avenDB.',refused:[...read.refused]});
+   tell();return;
+  }
+  ready(read,null,vault,'this device');
+ });
+}
+
 /**
  * The recipes `read` in (a ./sources/avendb.js `vaultRecipes`), of vault `vault`, read from `from` (the feed's address,
  * or this device): what the page knows of them now. `proving` proves each before it is built (`proverOf`); none for
@@ -188,7 +230,7 @@ function ready(read, proving, vault, from) {
 	if (!proving) for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
 	source = read;
 	fill(read.index);
-	Object.assign(recipes, { phase: 'ready', feed: from, vault, count: Object.keys(INDEX.recipes).length, refused: [...read.refused] });
+	Object.assign(recipes, { phase: 'ready', error: '', feed: from, vault, count: Object.keys(INDEX.recipes).length, refused: [...read.refused] });
 	for (const r of read.refused) console.error(`asset recipes: refused, ${r}`);
 	tell();
 	return recipes;
