@@ -513,3 +513,23 @@ audience and grant authority, and revalidate under the final admission fence.
 The plain mixed-author increment intentionally refuses grouped chains until that
 collector integration is complete. Lean historical-include retention passes;
 Rust missing-body/redefinition fixture awaits canonical compilation.
+
+### Grouped participant collector integration (pending runtime)
+
+The staged-entry path now recursively collects exact-current full group entry
+logs, unions their complete historical metadata (including foreign actors,
+audiences, owner paths and share dependencies), and follows all historical
+includes via the core helper. Unresolved groups remain missing work; they can
+request authority/key dependencies without ever producing an admission result.
+Final admission repeats the full closure under existing inventory/demand fences.
+Bounds are 32 groups, 2,048 inspected group edits, and existing per-entry shape
+bounds. Canonical policy still judges historical group versions at each write.
+
+The public room-demand fixture has a grouped participant variant: a participant
+writes through an included group, the owner then removes that include in a new
+root version while retaining equivalent current caps, and fresh-device demand
+must fetch the historical child, show earlier participant rows and later live
+rows while unrelated revocations/history remain withheld. Rust runtime pending.
+This increment also propagates core OwnerBaseScope::actors into suffix metadata;
+it requires the coordinated core commit a0610a7c. Grouped checkpoint suffix
+admission remains guarded by the core's existing plain-proof restriction.

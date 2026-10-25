@@ -147,3 +147,11 @@ theorem retainsBaseActor (base suffix : List Nat) (actor : Nat) (h : actor ∈ b
 theorem retainsSuffixActor (base suffix : List Nat) (actor : Nat) (h : actor ∈ suffix) :
     actor ∈ extend base suffix := List.mem_append.mpr (Or.inr h)
 end MixedOwnerBaseSuffix
+
+namespace AvenDB.GroupClosure
+/-- Missing group histories never become an admission result. Normal replay
+still judges every write at its own place after dependency closure succeeds. -/
+def ready (missing : List α) (authorityClosed : Bool) : Bool := missing.isEmpty && authorityClosed
+theorem missingHistoryBlocks (group : α) (rest : List α) (authorityClosed : Bool) :
+    ready (group :: rest) authorityClosed = false := by simp [ready]
+end AvenDB.GroupClosure
