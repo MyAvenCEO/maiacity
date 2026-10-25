@@ -6884,7 +6884,7 @@ mod judgment_slice_tests {
         let large=lab.create(device,vault,vault,"note",&[],document("Large","base",device)).unwrap();
         let before=lab.backup(device);
         for n in 0..128 {
-            lab.edit(device,vault,large,|item|item.edit_document(|d|d.title=format!("Revision {n}"))).unwrap();
+            lab.edit(device,vault,large,|item| { item.edit_document(|d|d.title=format!("Revision {n}")); }).unwrap();
         }
         let expected=lab.item(device,large).unwrap().record();
         let received=lab.backup(device);
@@ -6896,11 +6896,11 @@ mod judgment_slice_tests {
         assert!(lab.item(device,ready).is_some(),"unchanged authorized entry stays readable");
         let cursor=lab.held(device).judgment_jobs[&large].cursor;
         assert!(cursor>0 && cursor<=32);
-        lab.edit(device,vault,ready,|item|item.edit_document(|d|d.title="Foreground".into())).unwrap();
+        lab.edit(device,vault,ready,|item| { item.edit_document(|d|d.title="Foreground".into()); }).unwrap();
         assert!(lab.judgment_pending(device)>0,"foreground mutation must not synchronously drain background judgment");
         assert_eq!(lab.held(device).judgment_jobs[&large].cursor,cursor,
             "strict unrelated append preserves exact private progress");
-        assert!(lab.edit(device,vault,large,|item|item.edit_document(|d|d.title="must not publish".into())).is_err(),
+        assert!(lab.edit(device,vault,large,|item| { item.edit_document(|d|d.title="must not publish".into()); }).is_err(),
             "unfinished target cannot accept a mutation from an empty visible history");
         let mut turns=0;
         while lab.held(device).behind {
@@ -6908,7 +6908,7 @@ mod judgment_slice_tests {
             assert!(lab.item(device,ready).is_some());
             if lab.judgment_pending(device)>0 {
                 let cursor=lab.held(device).judgment_jobs[&large].cursor;
-                lab.edit(device,vault,ready,|item|item.edit_document(|d|d.title=format!("Foreground {turns}"))).unwrap();
+                lab.edit(device,vault,ready,|item| { item.edit_document(|d|d.title=format!("Foreground {turns}")); }).unwrap();
                 assert_eq!(lab.held(device).judgment_jobs[&large].cursor,cursor,
                     "continuous unrelated foreground writes must not reset background work");
             }
@@ -6931,7 +6931,7 @@ mod judgment_slice_tests {
         let b=lab.create(device,vault,vault,"note",&[],document("B","base",device)).unwrap();
         let before=lab.backup(device);
         for n in 0..64 { for entry in [a,b] {
-            lab.edit(device,vault,entry,|item|item.edit_document(|d|d.title=n.to_string())).unwrap();
+            lab.edit(device,vault,entry,|item| { item.edit_document(|d|d.title=n.to_string()); }).unwrap();
         }}
         let expected:Vec<_>=[a,b].iter().map(|e|lab.item(device,*e).unwrap().record()).collect();
         let received=lab.backup(device);
@@ -6990,7 +6990,7 @@ mod judgment_slice_tests {
         let vault=human_on(&mut lab,owner,&[device]);
         let entry=lab.create(device,vault,vault,"note",&[],document("Large","base",device)).unwrap();
         let before=lab.backup(device);
-        for n in 0..64 { lab.edit(device,vault,entry,|item|item.edit_document(|d|d.title=n.to_string())).unwrap(); }
+        for n in 0..64 { lab.edit(device,vault,entry,|item| { item.edit_document(|d|d.title=n.to_string()); }).unwrap(); }
         let received=lab.backup(device);
         lab.restore_from(device,before);
         lab.receive_now(device,received.signed,received.blobs.into_values().collect(),false);
