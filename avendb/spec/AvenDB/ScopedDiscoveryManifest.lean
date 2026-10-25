@@ -40,3 +40,12 @@ def automaticCompleteness (ordinary : Bool) (_hintSelected : Bool) := ordinary
 theorem automatic_hint_does_not_promote_incomplete (selected : Bool) :
     automaticCompleteness false selected = false := rfl
 end ScopedDiscoveryManifest
+
+namespace ScopedDiscoveryManifest
+-- Satisfied dependencies leave the bounded priority prefix. Remaining missing
+-- dependencies keep their relative order; a row list cannot displace them.
+def pendingMembers (members visible : List Nat) := members.filter (fun id => !visible.contains id)
+theorem satisfied_member_not_pending (members visible : List Nat) (id : Nat)
+    (h : id ∈ visible) : id ∉ pendingMembers members visible := by
+  simp [pendingMembers, List.mem_filter, h]
+end ScopedDiscoveryManifest

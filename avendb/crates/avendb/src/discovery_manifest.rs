@@ -253,6 +253,7 @@ mod tests {
         let ordinary=crate::engine::run(&mut w.lab,w.mac_a,&json!({"op":"entry_views","vault":w.alice.to_hex(),"tag":"selected"}));
         assert_eq!(ordinary["ok"]["scope"]["discovery"]["entry"],carrier.to_hex());
         assert_eq!(ordinary["ok"]["scope"]["discovery"]["snapshot"],snapshot.to_hex());
+        assert_eq!(ordinary["ok"]["scope"]["discovery"]["pendingEntries"],json!([]));
         assert!(ordinary["ok"]["scope"].get("completeAtOwnerCut").is_none());
         assert!(w.lab.automatic_discovery_hint(w.mac_a,w.alice,w.alice,DiscoveryScope::Tag("other".into())).is_none());
 
