@@ -363,3 +363,85 @@ img {
 		transform-origin: left center;
 	}
 }
+
+/* One screen header: diagnostic + title, time/workspace controls, sync.
+   Worlds draw edge-to-edge behind it; ordinary views reserve its measured height. */
+:root { --screen-head-room: 80px; }
+.screen-chrome {
+ position: fixed; inset: 0 0 auto; z-index: 1100;
+ display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+ align-items: start; gap: .3rem .65rem;
+ padding: max(.75rem, env(safe-area-inset-top, 0px)) max(.75rem, env(safe-area-inset-right, 0px)) 0 max(.75rem, env(safe-area-inset-left, 0px));
+ pointer-events: none; color: var(--ink, #263c2e);
+}
+.screen-chrome.native-window { padding-top: max(28px, env(safe-area-inset-top, 0px)); }
+.screen-leading { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+.screen-diagnostics { flex: none; }
+.screen-titles { min-width: 0; }
+.screen-title-slot:empty { display: none; }
+.screen-title-slot:not(:empty) + .screen-title-fallback { display: none; }
+.screen-title-slot > :not(:last-child) { display: none !important; }
+.screen-title-slot > *, .screen-title-fallback {
+ display: block; min-width: 0; max-width: 100%; margin: 0;
+ font: 600 .9rem/1.3 var(--font-body, system-ui); text-overflow: ellipsis;
+ overflow: hidden; white-space: nowrap;
+}
+.screen-title-slot > * { padding: .35rem .6rem; border-radius: 999px; }
+.screen-title-fallback { padding: .35rem .6rem; background: rgb(250 248 242 / .9); border-radius: 999px; }
+.screen-center { display: flex; align-items: center; justify-content: center; min-width: 0; min-height: 40px; }
+.screen-right { display: flex; justify-content: flex-end; align-items: center; min-width: 0; min-height: 40px; }
+.screen-chrome [data-screen-slot] {
+ position: relative !important; inset: auto !important; transform: none !important;
+ margin: 0 !important; max-width: 100%; pointer-events: auto;
+}
+.screen-chrome [data-screen-slot='title'] { font-size: .9rem; }
+.screen-chrome [data-screen-slot='center'] { min-width: 0; }
+.screen-content { padding-top: var(--screen-head-room); }
+.screen-content.immersive { padding-top: 0; }
+@media (max-width: 1100px) {
+ .screen-chrome { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .35rem .75rem; }
+ .screen-leading { grid-column: 1; grid-row: 1; }
+ .screen-right { grid-column: 2; grid-row: 1; }
+ .screen-center:not(:empty) { grid-column: 1 / -1; grid-row: 2; min-height: 0; }
+ .screen-center:empty { display: none; }
+}
+@media (max-width: 540px) {
+ .screen-chrome { gap: .35rem; padding-left: max(.5rem, env(safe-area-inset-left, 0px)); padding-right: max(.5rem, env(safe-area-inset-right, 0px)); }
+ .screen-leading { gap: .25rem; }
+ .screen-title-slot > *, .screen-title-fallback { font-size: .78rem; padding: .3rem; }
+}
+/* Embedded Preact games use the same slots without leaking their full-screen theme. */
+.screen-slot-theme.cc-city { position: static; inset: auto; height: auto; overflow: visible; background: transparent; }
+.screen-chrome .screen-slot-theme.cc-city {
+ --ink: #263c2e; --ink-2: #526557; --muted: #647266; --line: #d9d1bf;
+ --glass: #faf8f0; --glass-2: #e8eddf; color-scheme: light;
+ padding: .25rem; border: 1px solid #d9d1bf; border-radius: 999px; background: #faf8f0;
+}
+.screen-chrome .screen-slot-theme .tb-group { border: 0; padding: 0 .35rem; gap: .35rem; min-height: 36px; }
+.screen-center { flex-wrap: wrap; gap: .35rem; }
+.screen-chrome .screen-slot-theme .tb-time > .pill { display: none; }
+
+/* One alpha for floating controls. Never fade labels, icons or descendants. */
+:root {
+ --overlay-alpha: .75;
+ --overlay-paper: rgb(250 248 242 / var(--overlay-alpha));
+ --overlay-green: rgb(36 69 47 / var(--overlay-alpha));
+}
+.screen-chrome .screen-title-fallback,
+.screen-chrome [data-screen-slot='title'],
+.screen-chrome .screen-slot-theme.cc-city { background: var(--overlay-paper); }
+.screen-stats { grid-column: 1 / -1; display: flex; gap: .35rem; flex-wrap: wrap; pointer-events: auto; }
+.screen-stats:empty { display: none; }
+.screen-chrome .screen-slot-theme .tb-group { font-size: .75rem; min-height: 30px; }
+.screen-chrome .screen-slot-theme.cc-city { --glass: var(--overlay-paper); --glass-2: var(--overlay-paper); }
+.screen-chrome .lab-controls { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; padding: .3rem .5rem; border-radius: 999px; background: var(--overlay-paper); font-size: .75rem; }
+.screen-chrome .lab-controls button, .screen-chrome .lab-controls select { font: inherit; color: #263c2e; border: 1px solid #d9d1bf; border-radius: 999px; padding: .3rem .6rem; background: transparent; }
+
+.screen-stats > .screen-slot-theme { display: flex; flex-wrap: wrap; align-items: center; border-radius: 1rem; }
+
+.screen-content .cc-city { --top-h: var(--screen-head-room); }
+@media (max-width: 540px) {
+ .screen-stats { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: thin; }
+ .screen-stats > .screen-slot-theme { flex-wrap: nowrap; flex: 0 0 auto; max-width: none; }
+ .screen-chrome .tb-wd { display: none; }
+}

@@ -1,11 +1,3 @@
-<!--
-	WHAT A PAGE WAITS FOR, centred just above the nav pill (Samuel 2026-10-20: "The loading progress should be above
-	center the navpill"), on every app page, a full-screen world too, clear of the HUD a game draws at its top: avenDB
-	updates announced by its peers ($lib/avendb/sync.svelte.js), with missing log counts; else the asset files the page
-	reads, or that it waits for while avenDB's server doesn't answer ($lib/assets/vault.js `recipes`). It shows once
-	something takes a moment, and fades once nothing does; tapped, it says how far each is. Nothing here is an error: a
-	file still on its way is loading, never missing (the page's own banner tells what really is, ./VaultRecipes.svelte).
--->
 <script>
 	// @ts-nocheck — plain JS
 	import { fade } from 'svelte/transition';
@@ -15,7 +7,7 @@
 	import { watchRecipes } from '$lib/assets/vault.js';
 	import { viewStatus } from '$lib/avendb/view-status.js';
 	import { watchActiveReads } from '$lib/avendb/active-reads.js';
-	import { foot, FOOT } from './foot.js';
+	import { screenSlot } from './screen-slots.js';
 
 	/** how long something must take before the pill shows, and how long it stays once nothing does (ms) */
 	const SHOW = 400;
@@ -66,7 +58,7 @@
 </script>
 
 {#if shown}
-	<div class="status" use:foot={FOOT.status} transition:fade={{ duration: 200 }}>
+	<div class="status" use:screenSlot={'right'} transition:fade={{ duration: 200 }}>
 		{#if open}
 			<ul class="details" role="list">
 				{#each details as d (d)}<li>{d}</li>{/each}
@@ -86,12 +78,13 @@
 	.labels { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.3rem; }
 	.background { opacity: 0.75; }
 	.separator { opacity: 0.4; }
-	/* in the app's foot stack, nearest the nav pill ($lib/app/foot.js) */
+	/* The shared top-right slot owns placement; details open below it. */
 	.status {
 		display: flex;
-		flex-direction: column;
-		align-items: center;
+		flex-direction: column-reverse;
+		align-items: flex-end;
 		gap: 6px;
+		position: relative;
 		pointer-events: none;
 	}
 
@@ -99,7 +92,7 @@
 	.details {
 		pointer-events: auto;
 		border: 1px solid var(--line);
-		background: rgb(250 248 242 / 0.94);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		box-shadow: 0 6px 20px rgb(38 56 44 / 0.16);
 		backdrop-filter: blur(10px);
 		color: var(--ink);
@@ -121,10 +114,14 @@
 	}
 
 	.details {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		width: min(22rem, calc(100vw - 2rem));
 		margin: 0;
 		padding: 0.55rem 0.8rem;
 		border-radius: 12px;
-		font-size: 0.74rem;
+		font-size: 0.7rem;
 		line-height: 1.4;
 		list-style: none;
 		max-width: 22rem;

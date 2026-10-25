@@ -177,7 +177,7 @@
 		padding: 5px;
 		border: 1px solid var(--line);
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.94);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
 		backdrop-filter: blur(10px);
 	}

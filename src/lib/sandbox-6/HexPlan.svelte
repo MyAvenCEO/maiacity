@@ -824,7 +824,7 @@
 		align-items: center;
 		padding: 0.2rem 0.5rem;
 		border-radius: 10px;
-		background: rgb(250 248 242 / 0.82);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		box-shadow: 0 2px 8px rgb(0 0 0 / 0.15);
 		font-size: 0.68rem;
 		line-height: 1.2;
@@ -844,7 +844,7 @@
 		color: #f4f1e8;
 	}
 	.labels :global(.lbl.land) {
-		background: rgb(250 248 242 / 0.7);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		pointer-events: none;
 	}
 	.labels :global(.lbl.land i) {
@@ -860,7 +860,7 @@
 		color: #f4f1e8;
 	}
 	.panel {
-		background: rgb(250 248 242 / 0.9);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		border: 1px solid rgb(255 255 255 / 0.5);
 		-webkit-backdrop-filter: blur(14px) saturate(1.2);
 		backdrop-filter: blur(14px) saturate(1.2);
@@ -1106,7 +1106,7 @@
 		transform: translate(-50%, -50%);
 		padding: 0.6rem 1rem;
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.9);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 	}
 	/* the build-out timeline: a bar over the world's foot, clear of the nav pill */
 	.timeline {
@@ -1230,7 +1230,7 @@
 		padding: 0.45rem 0.8rem;
 		border: 0;
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.92);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
 		font-size: 0.78rem;
 	}

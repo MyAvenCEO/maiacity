@@ -7,6 +7,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
+	import { screenSlot } from '$lib/app/screen-slots.js';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { base } from '$app/paths';
 	import { COOPS, MINDS, SEATS, TOKEN_COLOUR, TOKEN_LABEL, calendar, dateText, heartsValue, inHearts, mintState, nameOf } from '../../../../game/maiacity-v1/engine.js';
@@ -52,7 +53,7 @@
 	{:else}
 		{#if cal}
 			<!-- the game clock, as the game shows it in its top right corner -->
-			<span class="clock" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year}; 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(cal.hour))}:{pad(Math.floor((cal.hour % 1) * 60))}</span>
+			<span use:screenSlot={'center'} class="clock" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year}; 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(cal.hour))}:{pad(Math.floor((cal.hour % 1) * 60))}</span>
 		{/if}
 		<section class="wallet">
 			<div>
