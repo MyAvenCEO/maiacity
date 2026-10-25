@@ -572,7 +572,7 @@ async fn mixed_chat_demand(grouped: bool) {
     let created=avendb::engine::run(&mut w.lab,sender,&serde_json::json!({
         "op":"create","vault":vault.to_hex(),"as":vault.to_hex(),"type":"room","tags":[],
         "value":{"kind":"room","name":"Shared Chat","look":"group","topic":""}}));
-    let target=EntryId::from_hex(created["ok"]["entry"].as_str()
+    let target=avendb::id::EntryId::from_hex(created["ok"]["entry"].as_str()
         .unwrap_or_else(||panic!("room creation refused: {created}"))).unwrap();
     let first=avendb::engine::run(&mut w.lab,sender,&serde_json::json!({
         "op":"insert","entry":target.to_hex(),"as":vault.to_hex(),"path":["messages"],
