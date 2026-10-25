@@ -9,3 +9,11 @@ The JSON includes exact frontend commit when configured, separately identifies t
 For physical acceptance: run on both devices, perform ordinary edits, copy logs on both while the observers are active. Consumer observations are not rendered-frame or durable-save acknowledgements; HTTP Mbps is not avenDB useful throughput or maximum link bandwidth. Missing samples are unmeasured. A reload with no exit event does not establish memory pressure or any other cause. iPhone stability and cross-device latency still require physical testing after deployment.
 
 Validation: focused runner privacy/session/locked/cancel/network-range tests; durable oldest-unlock and lifecycle-landmark regressions; existing query-window/journal/local timing tests; Svelte compilation and strict TypeScript checking of changed telemetry modules. The standalone static network-only tool remains available for older links, but the global dialog never navigates to it.
+
+## Correct interpretation after the first unified iPhone report
+
+The page previously blocked Cloudflare probes by CSP even though the older standalone network page permitted them. Web and native policies now allow only the exact speed.cloudflare.com connection host for the explicit bounded tests, without widening script/frame access. A failed probe is still unavailable, never zero bandwidth.
+
+Lifecycle document numbers have different storage scopes: `document` identifies this document in the retained journal; `sessionDocuments` and legacy `current.documents` count this sessionStorage lifetime. A new PWA session can therefore legitimately be session document1 and retained journal document2. They do not by themselves prove an unexpected reload.
+
+New call samples include document-relative start/end and observed hidden/visible elapsed milliseconds. Visible elapsed still includes queueing and scheduling; it is not CPU time. Old samples cannot be retrospectively separated precisely. Fixed known file and worker failure contexts are classified without retaining exception messages or identifiers. Unknown exceptions stay `failed`. The timing journal remains capped at120 calls plus8 unlock landmarks, with a64KiB storage-read ceiling for the added numeric fields.

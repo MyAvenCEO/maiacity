@@ -33,7 +33,7 @@
         "img-src": "'self' data: blob: https: aven:",
         "media-src": "'self' data: blob: https: aven:",
         "font-src": "'self' data:",
-        "connect-src": "'self' ipc: http://ipc.localhost aven: blob: data: https://api.maia.city https://avendb.maia.city wss://avendb.maia.city",
+        "connect-src": "'self' ipc: http://ipc.localhost aven: blob: data: https://api.maia.city https://avendb.maia.city wss://avendb.maia.city https://speed.cloudflare.com",
         "frame-src": "'self' blob: https://iframe.mediadelivery.net",
         "object-src": "'none'",
         "base-uri": "'self'",

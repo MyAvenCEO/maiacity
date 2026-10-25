@@ -34,3 +34,9 @@ test('explicit run supersedes pending background capture without duplicate engin
  const capture=r.capture();await Promise.resolve();await r.run();await capture;
  expect(net).toBe(1);expect(ops).toEqual(['network']);expect(r.snapshot().run.status).toBe('finished');complete({ok:{}});
 });
+
+test('copied report retains bounded manifest stages without exporting identities',()=>{
+ const report=diagnosticSnapshot({manifests:{pending:0,runs:[{ms:12,requested:0,state:'scheduled',catalog:'local',heldManifests:2,matchedLeaves:1,queryLeaves:1,typeDiscoveryHints:1,localRows:0,route:'private-route',vault:'private-vault'}]}});
+ expect(report.manifests.runs[0]).toMatchObject({requested:0,heldManifests:2,typeDiscoveryHints:1,localRows:0});
+ expect(JSON.stringify(report)).not.toContain('private-');
+});
