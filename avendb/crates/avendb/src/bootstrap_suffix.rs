@@ -8,6 +8,7 @@ pub struct OwnerBaseScope {
     snapshot: EditId,
     basis: Vec<EditId>,
     vault: VaultId,
+    actors: BTreeSet<VaultId>,
     via: BTreeSet<VaultId>,
     audiences: BTreeSet<Vec<ShareId>>,
     shares: BTreeSet<ShareId>,
@@ -18,6 +19,7 @@ impl OwnerBaseScope {
     pub fn snapshot(&self) -> EditId { self.snapshot }
     pub fn basis(&self) -> &[EditId] { &self.basis }
     pub fn vault(&self) -> VaultId { self.vault }
+    pub fn actors(&self) -> &BTreeSet<VaultId> { &self.actors }
     pub fn via(&self) -> &BTreeSet<VaultId> { &self.via }
     pub fn audiences(&self) -> &BTreeSet<Vec<ShareId>> { &self.audiences }
     pub fn shares(&self) -> &BTreeSet<ShareId> { &self.shares }
@@ -34,19 +36,21 @@ impl Lab {
         let slice = store.bootstrap_state.as_ref()?.slice_of(entry);
         if slice.entries.len() != 1 || slice.writes.len() > 512 || slice.audiences.len() > 64 { return None; }
         let en = &slice.entries[0];
-        if en.id != entry || !slice.within(entry, en.vault) { return None; }
+        if en.id != entry || en.creator != en.vault || !slice.within(entry, en.vault) { return None; }
+        let mut actors = BTreeSet::from([en.vault]);
         let mut via = BTreeSet::new();
         let mut writes = BTreeSet::new();
         for write in &slice.writes {
-            if write.actor != en.vault || write.proposal != Proposal::Main || write.via.len() > 32 { return None; }
+            if write.proposal != Proposal::Main || write.via.len() > 32 { return None; }
+            actors.insert(write.actor);
             via.extend(write.via.iter().copied()); writes.insert(write.edit);
         }
         let audiences: BTreeSet<Vec<ShareId>> = slice.audiences.iter().map(|(_, ids)| ids.to_vec()).collect();
         let shares: BTreeSet<_> = audiences.iter().flatten().copied()
             .chain(slice.marks.iter().flat_map(|(_, ids)| ids.iter().copied())).collect();
-        if via.len() > 128 || shares.len() > 128 { return None; }
+        if actors.len() > 128 || via.len() > 128 || shares.len() > 128 { return None; }
         let stays = en.stays.iter().filter_map(|(stay, _)| *stay).collect();
-        Some(OwnerBaseScope { snapshot, basis, vault: en.vault, via, audiences, shares, writes, stays })
+        Some(OwnerBaseScope { snapshot, basis, vault: en.vault, actors, via, audiences, shares, writes, stays })
     }
 
     /// Explicit suffix transfer. `snapshot` is NOT recorded as receiver holdings.

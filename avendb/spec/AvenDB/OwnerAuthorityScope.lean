@@ -137,3 +137,13 @@ theorem earlierIncludeRetained (before after : List (List α)) (entry : α)
   simp only [includes, List.flatten_append, List.mem_append] at *
   exact Or.inl h
 end AvenDB.HistoricalGroups
+
+namespace MixedOwnerBaseSuffix
+-- An accepted base's writer summary grows monotonically with admitted suffixes.
+-- It schedules actor authority; it never substitutes for grant/proof judgment.
+def extend (base suffix : List Nat) := base ++ suffix
+theorem retainsBaseActor (base suffix : List Nat) (actor : Nat) (h : actor ∈ base) :
+    actor ∈ extend base suffix := List.mem_append.mpr (Or.inl h)
+theorem retainsSuffixActor (base suffix : List Nat) (actor : Nat) (h : actor ∈ suffix) :
+    actor ∈ extend base suffix := List.mem_append.mpr (Or.inr h)
+end MixedOwnerBaseSuffix
