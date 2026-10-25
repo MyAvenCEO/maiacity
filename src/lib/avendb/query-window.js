@@ -124,7 +124,11 @@ export function createReadWindow({ device, read }) {
 				if (!active()) return null;
 				completeness = readCompleteness(got);
 				viewReadiness.record(completeness, got);
-				observed.set(completeness.response);
+				// pendingJudgments is node-wide: unrelated catch-up must not mark a
+				// fully answered view pending. Only unresolved candidates affect it.
+				observed.set(completeness.unresolvedCandidates > 0
+					? completeness.pendingJudgments > 0 ? 'pending' : 'unavailable'
+					: completeness.response);
 				void demand.replace([...entries, ...replyEntries(got)], selectors);
 				return got;
 			} catch (error) {
