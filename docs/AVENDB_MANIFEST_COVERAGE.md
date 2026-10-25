@@ -1,0 +1,7 @@
+# Manifest coverage update
+
+The shared game leaf now includes its actual root entry types (`game`, `view`, `logic`, `config`) as well as its game tag. This permits bounded authorized type discovery on a cold peer before any tagged local rows exist. Reference following still discovers assets from those roots. A Chat declaration covers the coop's shared rooms; the existing universal Chat room query separately requests all rooms the device can read across its vaults. Neither hints nor manifests grant access.
+
+Repository declarations alone do not change owner-controlled live entries. `scripts/propose-manifests.mjs --run` now proposes changed fields on existing manifest entries, as well as creating missing manifests. Previously it skipped every existing ID, so a corrected game declaration could never reach an already-created manifest. No seed fallback, direct main-lane mutation, or owner approval bypass is introduced. Duplicate live manifest IDs fail before writes. Without `--run`, nothing is written.
+
+Validation: 20 focused tests pass, including cold empty-row discovery hints for Chat/game, unchanged proposal idempotence, existing-entry update planning, duplicate rejection and retained route cancellation/query semantics. These tests do not prove end-to-end transfer performance. Live owner proposal/acceptance remains outstanding; no live vault mutations were performed by this change.
