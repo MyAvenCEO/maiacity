@@ -1,5 +1,7 @@
 # Manifest query pushdown and local-read readiness
 
+Implementation: [2620eadd](https://github.com/MyAvenCEO/maiacity/commit/2620eadd).
+
 The route planner previously merged every leaf of one priority into an unlimited
 query, then applied tags/newest ordering/limits in JS. Thus a Studio declaration
 of eight cuts or Chat declaration of fifty rooms still imported every matching
