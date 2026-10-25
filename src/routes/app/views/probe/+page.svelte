@@ -15,6 +15,8 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
+
+	import { foot, FOOT } from '$lib/app/foot.js';
 	import { onMount } from 'svelte';
 	import ViewHost from '$lib/sandbox/ViewHost.svelte';
 	import { CLICKS, HEAVY, HTML_TRIES, PAGE_SAYS, SECRET, UNKNOWN_ENGINE, WORKER_TRIES, burnView, heavyView, hostileView, logicViews, spinView, unknownEngineView } from '$lib/sandbox/view/probe.js';
@@ -166,6 +168,8 @@
 			document.cookie = `${SECRET}=; path=/; max-age=0`;
 		};
 	});
+
+	function pin(node, enabled) { if (enabled) return foot(node, FOOT.waiting); }
 </script>
 
 <svelte:head><title>View probe · maiaCITY</title></svelte:head>
@@ -221,7 +225,7 @@
 		<!-- the heavy scene stays in sight (a frame out of sight draws no animation frames), in a corner the runner's
 		     clicks, each in the middle of the window, never land on -->
 		{#each VIEWS as v (v.id)}
-			<figure class:pinned={v === heavy}>
+			<figure class:pinned={v === heavy} use:pin={v === heavy}>
 				<figcaption>{v.title}{#if errors[v.id].length}<small> · {errors[v.id].at(-1).message}</small>{/if}</figcaption>
 				<ViewHost view={v} onevent={v === hostile || v === heavy ? onevent : () => {}} onerror={onerror(v.id)} />
 			</figure>
@@ -303,10 +307,6 @@
 		margin: 0 0 1rem;
 	}
 	figure.pinned {
-		position: fixed;
-		left: 1rem;
-		bottom: 1rem;
-		z-index: 5;
 		width: min(18rem, calc(100vw - 2rem));
 		margin: 0;
 		padding: 0.5rem;

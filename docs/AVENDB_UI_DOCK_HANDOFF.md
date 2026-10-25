@@ -10,3 +10,5 @@ UI-only release, independent of pending Rust bootstrap work.
 Validation: 21 focused Bun regressions passed (query-window lifecycle, status registry, layout-host lifecycle); five modified Svelte components compile. Headless Chrome geometry fixture passed 320×568, 390×844 and 1024×768 with status, long notice and profile menu simultaneously above navigation. Run `bun scripts/checks/app-dock.mjs` (CHROME_PATH optionally overrides installed Chrome).
 
 Remaining: genuine authoritative per-manifest completeness is not supplied by current deployed engine; physical iPhone/iPad acceptance and actual rendered app visual inspection remain delivery checks. Passive recent diagnostic samples are separate from these mounted-window counters.
+
+Follow-up coverage: Sparks/Artifacts picked and capture controls, shared sandbox walking hint and world notices, MaiaCity V1/V2 tour/mint controls and errors, and the probe's pinned preview now use the same host. Existing game cinematic mint-control hiding is preserved explicitly across the portal. Corner HUD controls, joysticks and full-screen modal surfaces are unchanged. Seven changed Svelte components compile.

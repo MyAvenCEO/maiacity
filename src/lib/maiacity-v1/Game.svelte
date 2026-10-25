@@ -532,7 +532,7 @@
 		</nav>{/if}
 		{#if canMove && shows('mint') && !tour && !wallet}
 			<!-- the universal mint button over the nav pill, once the story is done: in it the story mints by its own button (Samuel 2026-10-13) -->
-			<button class="mintbar" class:hint={tour?.hint === 'mintbar'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
+			<button class="mintbar" class:dock-hidden={!!playing} use:foot={FOOT.waiting} class:hint={tour?.hint === 'mintbar'} disabled={busy || mint.amount < 0.001} title={mint.lost > 0.001 ? `${f(mint.lost)} HEARTS grew more than a game month ago and are lost` : 'Mint all that grew since your last mint'} onclick={() => doMove({ type: 'mint' })}>
 				<span class="heart">❤︎</span> Mint <b>{f(mint.amount)}</b>{#if mint.starter}<small>incl. starter pack</small>{/if}
 			</button>
 		{/if}
@@ -546,7 +546,7 @@
 		{/if}
 		{#if canMove && !tour && !playing && myTree?.due}
 			<!-- the first tree waits for its water: once a game month (a real day), a month of its growth each time -->
-			<button class="mintbar waterbar" disabled={busy} title="Water {myTree.name}: a game month of growth" onclick={waterIt}><span class="drop">💧</span> Water <b>{myTree.name}</b></button>
+			<button class="mintbar waterbar" class:dock-hidden={!!playing} use:foot={FOOT.waiting} disabled={busy} title="Water {myTree.name}: a game month of growth" onclick={waterIt}><span class="drop">💧</span> Water <b>{myTree.name}</b></button>
 		{/if}
 		{#if admin && canMove && !tour && !playing && player.tree}
 			<!-- the admin's growth preview: step my tree through its watered months (a test; nothing is saved) -->
@@ -580,7 +580,7 @@
 		{:else if tour && (tour.kind === 'spot' || tour.kind === 'pick' || tour.kind === 'sow')}
 			<!-- the first tree (Samuel 2026-10-14): tap where it grows, outside the circle, and mark it; pick one of the seeds
 			     from your backpack; and, if the planting did not reach the game, plant it -->
-			<div class="tour panel prompt" role="dialog" aria-label={tour.title}>
+			<div class="tour panel prompt" use:foot={FOOT.waiting} role="dialog" aria-label={tour.title}>
 				<b>{tour.title}</b>
 				{#if tour.kind === 'spot'}
 					<p class="small">{chosen ? chosenWhy || 'Here. Mark it with your plant stake.' : 'Tap the ground outside the circle, where the homes will not be built.'}</p>
@@ -601,7 +601,7 @@
 		{:else if tour && (tour.kind === 'invest' || tour.kind === 'mint')}
 			<!-- the story's only stops: a move the player makes, its words already told as the film's voice-over, so only
 			     its title and its button show (Samuel 2026-10-13: as little modal text as possible) -->
-			<div class="tour panel prompt" role="dialog" aria-label={tour.title}>
+			<div class="tour panel prompt" use:foot={FOOT.waiting} role="dialog" aria-label={tour.title}>
 				<b>{tour.title}</b>
 				{#if tour.kind === 'invest'}
 					<div class="goal"><span style="width:{Math.min(100, (tour.have / tour.goal) * 100)}%"></span></div>
@@ -832,6 +832,7 @@
 </div>
 
 <style>
+	.mintbar.dock-hidden { display: none; }
 	.v1 {
 		position: fixed;
 		inset: 0;
@@ -935,11 +936,6 @@
 		white-space: nowrap;
 	}
 	.tour {
-		position: absolute;
-		z-index: 8;
-		left: 50%;
-		bottom: var(--nav-room, 4.5rem); /* just over the nav pill (Samuel 2026-10-13: only a small gap) */
-		transform: translateX(-50%);
 		width: min(22rem, calc(100vw - 32px));
 		padding: 0.9rem 1rem 0.8rem;
 		border-radius: 18px;
@@ -1125,7 +1121,6 @@
 		pointer-events: none;
 	}
 	.mintbar.waterbar {
-		bottom: calc(var(--nav-room, 4rem) + 4.2rem);
 		background: #2c5a72;
 	}
 	.title {
@@ -1210,11 +1205,6 @@
 		50% { box-shadow: 0 0 0 8px rgb(61 122 74 / 0); }
 	}
 	.mintbar {
-		position: absolute;
-		z-index: 7;
-		left: 50%;
-		bottom: calc(var(--nav-room, 4rem) + 0.4rem);
-		transform: translateX(-50%);
 		display: flex;
 		align-items: center;
 		gap: 0.35rem;

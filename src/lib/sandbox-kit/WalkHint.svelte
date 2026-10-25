@@ -4,6 +4,8 @@
 	your world can do with `keys` and `touch`.
 -->
 <script>
+	import { foot, FOOT } from '$lib/app/foot.js';
+
 	/**
 	 * @type {{
 	 *   keys?: string,
@@ -16,18 +18,14 @@
 	} = $props();
 </script>
 
-<p class="walk-hint">
+<p class="walk-hint" use:foot={FOOT.waiting}>
 	<span class="keys">{keys}</span>
 	<span class="touch">{touch}</span>
 </p>
 
 <style>
 	.walk-hint {
-		position: absolute;
 		/* above the app's nav pill (--nav-room, src/app.css) */
-		bottom: calc(1rem + var(--nav-room, env(safe-area-inset-bottom, 0px)));
-		left: 50%;
-		transform: translateX(-50%);
 		margin: 0;
 		padding: 0.5rem 0.9rem;
 		border-radius: 999px;
@@ -48,21 +46,12 @@
 		.touch {
 			display: inline;
 		}
-		.walk-hint {
-			top: calc(4.2rem + env(safe-area-inset-top, 0px));
-			bottom: auto;
-		}
 	}
 	/* a phone: smaller, and just under the slimmer bar (./WorldBar.svelte) */
 	@media (max-width: 640px), (max-height: 500px) {
 		.walk-hint {
 			padding: 0.35rem 0.75rem;
 			font-size: 0.72rem;
-		}
-	}
-	@media (hover: none) and (pointer: coarse) and (max-width: 640px), (hover: none) and (pointer: coarse) and (max-height: 500px) {
-		.walk-hint {
-			top: calc(3rem + env(safe-area-inset-top, 0px));
 		}
 	}
 	@media (max-width: 640px) {

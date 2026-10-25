@@ -10,6 +10,8 @@
 	forest) and the tired land.
 -->
 <script>
+	import { foot, FOOT } from '$lib/app/foot.js';
+
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import WalkHint from './WalkHint.svelte';
@@ -109,7 +111,7 @@
 	<!-- on a phone: the joystick walks, any other finger on the world looks round -->
 	<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} look={(dx, dy) => world?.look(dx, dy)} {stage} {taps} />
 	{@render children?.()}
-	{#if note}<p class="notice">{note}</p>{/if}
+	{#if note}<p class="notice" use:foot={FOOT.toast}>{note}</p>{/if}
 
 	{#if cover && loading}
 		<div class="loading" class:opening={fading} style:background={ground} role="status" aria-live="polite">
@@ -152,10 +154,6 @@
 	}
 	/* at the foot, above the walk hint and the app's nav pill (--nav-room, src/app.css) */
 	.notice {
-		position: absolute;
-		bottom: calc(3.8rem + var(--nav-room));
-		left: 50%;
-		transform: translateX(-50%);
 		margin: 0;
 		padding: 0.45rem 0.9rem;
 		border-radius: 999px;
@@ -246,12 +244,7 @@
 		color: #f0c49a;
 	}
 
-	/* ── on a phone: above the joystick ($lib/touch/TouchStick; --stick-room, src/app.css) ── */
-	@media (hover: none) and (pointer: coarse) {
-		.notice {
-			bottom: calc(var(--stick-room) + 3rem);
-		}
-	}
+
 
 	/* ── a narrow screen ── */
 	@media (max-width: 640px) {
