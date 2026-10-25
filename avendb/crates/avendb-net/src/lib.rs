@@ -1893,6 +1893,7 @@ fn restore(
     started: Option<(Checked, usize)>,
     warm: &Warm,
 ) -> (Lab, Vec<EditId>) {
+    lab.enable_staged_materialization(me);
     let stored = signed.iter().map(|s| s.edit.id()).collect();
     if !signed.is_empty() {
         let backup = Backup::new(signed, keys);
@@ -2275,7 +2276,7 @@ impl Shared {
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
                 let before = lab.log(shared.me).revision();
-                let bootstrap_before = lab.owner_bases_pending(shared.me);
+                let bootstrap_before = lab.owner_bases_pending(shared.me) || lab.materializations_pending(shared.me);
                 let missing_before = lab.owner_base_missing(shared.me);
                 let keys_before = lab.owner_base_key_waits(shared.me);
                 let lanes_before = lab.owner_base_lane_waits(shared.me);
@@ -2298,7 +2299,7 @@ impl Shared {
                 let keys_changed=keys_before!=keys_after;
                 let lanes_changed=lanes_before!=lab.owner_base_lane_waits(shared.me);
                 if keys_changed || lanes_changed { shared.bootstrap_due.notify_one(); }
-                if (lab.owner_bases_pending(shared.me) && (!bootstrap_before || grew || revised))
+                if ((lab.owner_bases_pending(shared.me) || lab.materializations_pending(shared.me)) && (!bootstrap_before || grew || revised))
                     || (!missing_after.is_empty() && (missing_changed || grew || revised)) {
                     shared.bootstrap_due.notify_one();
                 }
@@ -2897,9 +2898,12 @@ impl Shared {
         // Check once at startup for durable partial progress restored before spawn.
         loop {
             let turn = self.try_lab_class(lab_schedule::Class::Background, |lab, me| {
-                if !lab.owner_bases_pending(me) { return (false, false); }
-                let pending = lab.advance_owner_bases(me);
-                (true, pending)
+                let owners = lab.owner_bases_pending(me);
+                let entries = lab.materializations_pending(me);
+                if !owners && !entries { return (false, false); }
+                if owners { lab.advance_owner_bases(me); }
+                if entries { lab.advance_materialization(me); }
+                (true, lab.owner_bases_pending(me) || lab.materializations_pending(me))
             }).await;
             let Ok((ran, pending)) = turn else { break; };
             if ran {

@@ -87,6 +87,8 @@ pub use entry_projection::{EntryProjectionOffer, PreparedEntryProjection, Verifi
 
 #[path = "lab/warm_materialization.rs"]
 mod warm_materialization;
+#[path = "lab/staged_materialization.rs"]
+mod staged_materialization;
 
 use std::borrow::Cow;
 use std::cell::OnceCell;
@@ -811,6 +813,9 @@ struct Store {
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
+    staged_mode: bool,
+    staged: BTreeMap<EntryId, staged_materialization::Pending>,
+    staged_cursor: Option<EntryId>,
     warm_materialization: Option<warm_materialization::Validated>,
     /// Local scheduling hint only, bounded independently from receipt metadata.
     warm_working_set: Vec<EntryId>,
@@ -896,6 +901,7 @@ impl Default for Store {
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
+            staged_mode: false, staged: BTreeMap::new(), staged_cursor: None,
             warm_materialization: None,
             warm_working_set: Vec::new(),
             projections: std::sync::Mutex::new(BTreeMap::new()),
@@ -987,6 +993,8 @@ impl Store {
         self.spoilt.clear();
         self.readings = Readings::default();
         self.shown.clear();
+        self.staged.clear();
+        self.staged_cursor = None;
         self.warm_materialization = None;
         self.warm_working_set.clear();
         self.bootstrap_state=None;
@@ -3431,6 +3439,7 @@ impl Lab {
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
         if let Action::Write { entry, .. } = &action {
+            self.require_materialized(on, *entry)?;
             let store = self.held(on);
             if store.shown.get(entry).is_some_and(|s| s.history_in(store).is_none()) {
                 return Err(Refusal::NotAView);
@@ -3764,6 +3773,7 @@ impl Lab {
             return Err(Refusal::UnknownEntry);
         }
         let (view, record) = (View::built_in(CAP_GROUP_TYPE).expect("a built-in cap group app"), group.record());
+        self.require_materialized(on, entry)?;
         let draft = self.shown(on, entry).edit(MAIN, on, |item| item.set_record(view, &record));
         self.make_bringing(on, vault, entry, draft, TagDelta::default(), (vec![], &[]), Some(group))
     }
@@ -3949,6 +3959,7 @@ impl Lab {
         change: impl FnOnce(&mut Item),
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
+        self.require_materialized(on, entry)?;
         let draft = self.shown(on, entry).edit_on(self.shown_item(on, entry, line), line, on, change);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -3966,6 +3977,7 @@ impl Lab {
         change: impl FnOnce(&mut Item),
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
+        self.require_materialized(on, entry)?;
         let draft = self.shown(on, entry).edit_on(self.shown_item(on, entry, MAIN), MAIN, on, change);
         self.make_bringing(on, actor, entry, draft, TagDelta::default(), (files, &[]), None)
     }
@@ -4001,6 +4013,7 @@ impl Lab {
         change: impl FnOnce(&mut Item),
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
+        self.require_materialized(on, entry)?;
         let draft = self.shown(on, entry).edit(line, on, change);
         self.make_bringing(on, actor, entry, draft, TagDelta::default(), (files, &[whole()]), None)
     }
@@ -4020,6 +4033,7 @@ impl Lab {
         self.unlocked(on)?;
         let syms = |ts: &[&str]| ts.iter().map(|&t| Sym::new(t)).collect();
         let tags = TagDelta { add: syms(add), remove: syms(remove) };
+        self.require_materialized(on, entry)?;
         let deps = self.shown(on, entry).heads(MAIN);
         self.make(on, actor, entry, Draft { proposal: Proposal::Main, deps, body: vec![] }, tags)
     }
@@ -4035,6 +4049,7 @@ impl Lab {
         name: &str,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
+        self.require_materialized(on, entry)?;
         let draft = self.shown(on, entry).propose(from, name);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -4050,6 +4065,7 @@ impl Lab {
         name: &str,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
+        self.require_materialized(on, entry)?;
         let draft = self.shown(on, entry).variant(from, name);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -4065,6 +4081,7 @@ impl Lab {
         if actor != vault {
             return Err(Refusal::NoCap);
         }
+        self.require_materialized(on, entry)?;
         let h = self.shown(on, entry);
         if !h.get(line).is_some_and(|c| c.write.proposal == Proposal::New) {
             return Err(Refusal::NotOnProposal);
@@ -4086,6 +4103,7 @@ impl Lab {
         take: &BTreeSet<merge::Place>,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
+        self.require_materialized(on, entry)?;
         let draft = self.shown(on, entry).merge(from, into, on, take);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -4102,6 +4120,7 @@ impl Lab {
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
         if self.held(on).bootstrap_active.contains(&entry) { return Err(Refusal::ReadOnly); }
+        self.require_materialized(on, entry)?;
         let draft = self.shown(on, entry).restore(line, version, on);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -4118,6 +4137,7 @@ impl Lab {
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
         if self.held(on).bootstrap_active.contains(&entry) { return Err(Refusal::ReadOnly); }
+        self.require_materialized(on, entry)?;
         let draft = self.shown(on, entry).undo(line, edit, on).ok_or(Refusal::UnknownDep)?;
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -4439,7 +4459,7 @@ impl Lab {
     /// This is not remote completeness or a token authorizing a later mutation.
     pub(crate) fn local_inventory_replayed(&self, d: SignerId) -> bool {
         let store = self.held(d);
-        store.replayed == store.log.edits().len() && store.bootstrap_active.is_empty()
+        store.replayed == store.log.edits().len() && store.bootstrap_active.is_empty() && store.staged.is_empty()
     }
 
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
@@ -5655,7 +5675,8 @@ impl Lab {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
         let warm_working_set = held.warm_working_set.clone();
-        let mut store = Store { follow, query_depth, gate, perf, warm_working_set,
+        let staged_mode = held.staged_mode;
+        let mut store = Store { follow, query_depth, gate, perf, warm_working_set, staged_mode,
             bootstrap_bases:backup.bootstrap_bases.clone(), ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
@@ -6384,6 +6405,10 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
     let r = &store.readings;
     let mut out = vec![];
     for en in st.entries().iter().filter(|en| en.vault == v) {
+        if let Some(p) = store.staged.get(&en.id) {
+            if p.tip_matches(tip) { continue; }
+            store.staged.remove(&en.id);
+        }
         if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
             continue;
         }
@@ -6541,6 +6566,11 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
 fn show_items(d: SignerId, store: &mut Store) {
+    // A generation change must never publish a prefix judged under old authority.
+    let revision = store.log.revision();
+    let stale = store.staged.values().any(|p| store.reshow || !store.opened.is_empty()
+        || !p.current(&revision, &store.keys.revision, &store.warm_revision));
+    if stale { store.staged.clear(); store.reshow = true; }
     let materialization = store.warm_materialization.take()
         .and_then(|receipt| receipt.consume(store));
     let mut warm = materialization.unwrap_or_default();
@@ -6614,6 +6644,7 @@ fn show_items(d: SignerId, store: &mut Store) {
     };
     let cap_groups: HashSet<EntryId> = judging.keys().copied().collect();
     let mut recent: Vec<EntryId> = vec![];
+    let mut staged_lanes: HashMap<VaultId, Arc<Lane>> = HashMap::new();
     for (e, j) in judging {
         let en = st.entry(e).expect("an entry");
         old.insert(e, j.shown_on(d, print(en, &groups_print), tip(en), None));
@@ -6661,6 +6692,7 @@ fn show_items(d: SignerId, store: &mut Store) {
             continue;
         }
         let tip = tip(en);
+        if store.staged.contains_key(&en.id) { continue; }
         // judged under the lane before it gained schemas none of its writes name: as if under this one
         if let Some((was, new)) = gained.get(&en.vault)
             && let Some(s) = old.get_mut(&en.id)
@@ -6718,6 +6750,21 @@ fn show_items(d: SignerId, store: &mut Store) {
                 && Some(writes[was.writes - 1].edit) == was.last
                 && opened.get(&en.id).is_none_or(|ids| ids.iter().all(new))
         };
+        // Cold ordinary main-line reconstruction may yield between writes in Node mode.
+        // Incremental/local writes and policy-defining entries retain the synchronous path.
+        if store.staged_mode && !old.contains_key(&en.id)
+            && writes.len() > staged_materialization::BATCH
+            && !store.bootstrap_active.contains(&en.id)
+            && !st.is_draft(en.id)
+            && !r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane())
+            && writes.iter().all(|w| w.actor == en.vault && w.proposal == Proposal::Main)
+        {
+            let j = Judging::new(st, en, r, lane(en.vault));
+            store.staged.insert(en.id, staged_materialization::Pending::new(
+                j, staged_lanes.entry(en.vault).or_insert_with(|| Arc::new(lane(en.vault).clone())).clone(), print, tip, store.log.revision(),
+                store.keys.revision.clone(), store.warm_revision.clone()));
+            continue;
+        }
         let judging_at = Perf::start();
         let (mut j, from, items) = match old.remove(&en.id) {
             Some(s) if resumes(&s) => {
