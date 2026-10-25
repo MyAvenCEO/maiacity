@@ -50,12 +50,12 @@ test('theOS runs the same scripts as the page', () => {
 	expect([...POLICIES['theOS’s']['script-src']].sort()).toEqual([...POLICIES['the page’s']['script-src']].sort());
 });
 
-describe('the page talks only to our own servers, and posts no form', () => {
+describe('the page talks only to named peers and the diagnostic probe host, and posts no form', () => {
 	const page = POLICIES['the page’s'];
 	test('everything starts from our own origin', () => expect(page['default-src']).toEqual(["'self'"]));
 	test('connects only to the hosts it names, no wildcard', () => {
 		for (const s of page['connect-src']) expect(s).not.toMatch(/\*|^(https?|wss?):?$/);
-		expect(page['connect-src'].filter((s) => /^(https|wss):\/\//.test(s)).sort()).toEqual(['https://api.maia.city', 'https://avendb.maia.city', 'wss://avendb.maia.city']);
+		expect(page['connect-src'].filter((s) => /^(https|wss):\/\//.test(s)).sort()).toEqual(['https://api.maia.city', 'https://avendb.maia.city', 'https://speed.cloudflare.com', 'wss://avendb.maia.city']);
 	});
 	test('a build reaches this machine only from a dev server', () => {
 		const dev = pageCsp(sha256, { dev: true })['connect-src'];
@@ -100,4 +100,11 @@ describe('every frame of ours is shut the same way (./policy.js frameCsp)', () =
 	test('a frame may not open what none may', () => {
 		for (const d of NEVER) expect(() => frameCsp({ script: "'none'", open: { [d]: '*' } })).toThrow(/no frame of ours opens/);
 	});
+});
+test('explicit diagnostics probes reach only the exact speed-test host on web and native',()=>{
+ for(const policy of Object.values(POLICIES)) {
+  expect(policy['connect-src']).toContain('https://speed.cloudflare.com');
+  expect(policy['connect-src'].some(s=>s.includes('*')||s==='https:')).toBe(false);
+ }
+ expect(pageCsp(sha256)['script-src']).not.toContain('https://speed.cloudflare.com');
 });
