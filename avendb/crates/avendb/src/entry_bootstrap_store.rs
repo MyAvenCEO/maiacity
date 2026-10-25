@@ -6,12 +6,45 @@ use super::*;
 pub(crate) type Anchors = BTreeMap<EntryId, (EditId, Vec<u8>)>;
 
 const SUFFIX_BATCH: usize = 32;
+const SUFFIX_PREPARATION: usize = 128;
+// Queue only a bounded page. Remaining counts are conservative until already-
+// judged/invalid candidates are inspected; zero always means discovery finished.
+struct PendingSuffix {
+    entry: EntryId,
+    judged: HashSet<EditId>,
+    after: Option<(u64,u8,EditId)>,
+    unscanned: usize,
+    ready: std::collections::VecDeque<EditId>,
+}
+impl PendingSuffix {
+    fn new(entry:EntryId, judged:HashSet<EditId>, log:&crate::policy::Log) -> Self {
+        let total=log.entry_write_candidates(entry);
+        let already=judged.iter().filter(|id|log.entry_write(**id)
+            .is_some_and(|edit|matches!(edit.action,Action::Write {entry:e,..} if e==entry))).count();
+        let unscanned=if already==total {0} else {total};
+        Self {entry,judged,after:None,unscanned,ready:Default::default()}
+    }
+    fn len(&self)->usize {self.unscanned+self.ready.len()}
+    fn is_empty(&self)->bool {self.len()==0}
+    fn push_front(&mut self,id:EditId) {self.ready.push_front(id);}
+    fn pop_front(&mut self,log:&crate::policy::Log,budget:&mut usize)->Option<EditId> {
+        while self.ready.is_empty() && self.unscanned>0 && *budget>0 {
+            let (ids,after,n)=log.entry_suffix_page(self.entry,&self.judged,self.after,*budget);
+            self.after=after; self.unscanned=self.unscanned.saturating_sub(n);
+            *budget-=n; self.ready.extend(ids);
+            // Revision matching makes a missing candidate impossible, but fail
+            // closed instead of claiming completion if that invariant changes.
+            if n==0 {break;}
+        }
+        self.ready.pop_front()
+    }
+}
 pub(crate) struct BootstrapProgress {
     basis: OverlayBasis,
     policy: crate::policy::Slice,
     lane_digest: Option<[u8;32]>,
     base_scratch: Option<Scratch>,
-    pending: std::collections::VecDeque<EditId>,
+    pending: PendingSuffix,
     missing: Vec<EditId>,
     wait_reason: Option<&'static str>,
 }
@@ -256,6 +289,7 @@ impl Lab {
         }
         let mut state = store.replay.state.clone();
         let mut budget = SUFFIX_BATCH;
+        let mut preparation = SUFFIX_PREPARATION;
         'anchor: for (_snapshot, mut base, resumed) in restored {
             let entry = base.entry;
             let Some(en) = base.policy.entries.first() else {
@@ -307,14 +341,16 @@ impl Lab {
                 Some(saved) => saved,
                 None => {
                     let judged: HashSet<_> = judging.history.changes().iter().map(|c| c.write.edit).collect();
-                    let suffix = store.log.entry_suffix_ids(entry, &judged);
-                    (std::collections::VecDeque::from(suffix), original_scratch, Vec::new(), None)
+                    (PendingSuffix::new(entry,judged,&store.log), original_scratch, Vec::new(), None)
                 }
             };
             if !lane_ready { wait_reason = Some("missing-schema-lane"); }
             let mut opened_suffix = Vec::new();
             while budget > 0 && missing.is_empty() && wait_reason.is_none() {
-                let Some(id) = pending.pop_front() else { break; };
+                let before = preparation;
+                let next = pending.pop_front(&store.log,&mut preparation);
+                if preparation != before {store.bootstrap_cursor=Some(entry);}
+                let Some(id) = next else { break; };
                 let Some(edit) = store.log.entry_write(id).cloned() else { continue 'anchor; };
                 budget -= 1;
                 store.bootstrap_cursor = Some(entry);
@@ -503,6 +539,29 @@ impl Backup {
 mod tests {
     use super::*;
     use crate::cast::{document, human_on};
+    #[test]
+    fn suffix_preparation_yields_while_skipping_judged_history_and_preserves_order() {
+        let entry=EntryId::from_u64(91);
+        let edits:Vec<_>=(0..600).map(|depth|Edit {parents:vec![],depth,
+            author:SignerId::from_u64(1),cosigners:vec![],action:Action::Write {
+                vault:VaultId::from_u64(1),entry,actor:VaultId::from_u64(1),stay:None,epoch:0,
+                deps:vec![],proposal:Proposal::Main,via:vec![],create:None,files:vec![],body:vec![]}}).collect();
+        let judged=edits.iter().take(500).map(Edit::id).collect();
+        let log=crate::policy::Log::from_edits(edits);
+        let expected=log.entry_suffix_ids(entry,&judged);
+        let mut pending=PendingSuffix::new(entry,judged,&log);
+        let mut budget=128;
+        assert!(pending.pop_front(&log,&mut budget).is_none());
+        assert_eq!(budget,0); assert!(!pending.is_empty(),"unfinished discovery remains runnable");
+        let mut got=Vec::new();
+        while !pending.is_empty() {
+            let mut budget=128;
+            while let Some(id)=pending.pop_front(&log,&mut budget) {got.push(id);}
+            assert!(pending.ready.len()<=128);
+        }
+        assert_eq!(got,expected);
+        assert_eq!(pending.len(),0);
+    }
     #[test]
     fn owner_partial_base_receives_group_free_shared_main_and_rechecks_revocation() {
         use crate::policy::{Who,Level,Revoking};
