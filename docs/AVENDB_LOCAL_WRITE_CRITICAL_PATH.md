@@ -44,3 +44,13 @@ existing warnings. Implementation: [973bb39e](https://github.com/MyAvenCEO/maiac
 - Measure small write admission, signing, refresh, notification, reactive query
   and paint on Mac/iPhone/iPad during sustained catch-up.
 - Do not declare the100ms target achieved from scheduling tests alone.
+
+## Diagnostic evidence retained
+
+The copied diagnostic report now includes a fixed whitelist of existing core
+phase timers (refresh, replay, key preparation, reading, materialization and
+upkeep), from the perf request it already makes. Previously these measurements
+were discarded from the copied report. Nine diagnostic regressions passed.
+These are cumulative node-lifetime measurements with overlapping phases, not
+single-write timing or proof of durable persistence. Unknown labels and invalid
+numeric values are omitted to avoid exposing entry/account identifiers.

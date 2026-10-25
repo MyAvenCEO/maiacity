@@ -40,3 +40,15 @@ test('copied report retains bounded manifest stages without exporting identities
  expect(report.manifests.runs[0]).toMatchObject({requested:0,heldManifests:2,typeDiscoveryHints:1,localRows:0});
  expect(JSON.stringify(report)).not.toContain('private-');
 });
+
+test('copied core phases preserve slow refresh evidence but exclude arbitrary labels and values',()=>{
+ const sample={count:3,total_ms:9000,mean_ms:3000,max_ms:4500};
+ const report=peerDiagnostics({}, {timers:{refresh:sample,'show: cap groups':sample,
+  'private entry name':sample,upkeep:{...sample,max_ms:Infinity},read:{...sample,count:-1}},
+  held:{secret:'private account'}});
+ expect(report.localWork.status).toBe('captured');
+ expect(report.localWork.timers.refresh).toEqual(sample);
+ expect(Object.keys(report.localWork.timers)).toEqual(['refresh','show: cap groups']);
+ expect(JSON.stringify(report)).not.toContain('private');
+ expect(peerDiagnostics({},null).localWork.status).toBe('unavailable');
+});

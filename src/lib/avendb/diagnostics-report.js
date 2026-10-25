@@ -8,7 +8,7 @@ export function peerDiagnostics(network, perf) {
  return { transportRttMs: peers.flatMap(peer => (Array.isArray(peer.paths) ? peer.paths : []).slice(0, 8)
    .filter(path => path.selected && number(path.rtt_ms) !== null).map(path => path.rtt_ms)),
   policy: policyObservations(network), reactive: policyObservations({ policy_observations: network?.reactive_observations }, 'local-completion-to-peer-reactive-consumer'),
-  receiveWork: receiveWork(perf) };
+  receiveWork: receiveWork(perf), localWork: localWork(perf) };
 }
 /** Existing sources already redact lifecycle and stage names; bound their final report too.
  * @param {{phase: string, journal: any, lifecycle: any, calls?: any[], manifests: any, sync: any, playback: any, device: string, build?: string}} options */
@@ -105,4 +105,21 @@ function receiveWork(perf) {
   return Number.isSafeInteger(n) && n >= 0 ? [[name,n]] : [];
  }));
  return {timers,counts};
+}
+
+/** Existing core measurements, restricted to fixed labels. These are cumulative
+ * node-lifetime totals, not a single write or UI latency sample. No extra engine
+ * request is needed: the diagnostic runner already reads perf. */
+function localWork(perf) {
+ const names = ['check', 'keep', 'refresh', 'replay', 'keys: index', 'open keys',
+  'read', 'show items', 'show: lanes', 'show: cap groups', 'show: entries',
+  'show: judging', 'show: materialize', 'upkeep', 'refresh: owner content only'];
+ const timers = Object.fromEntries(names.flatMap(name => {
+  const t = perf?.timers?.[name];
+  return t && Number.isSafeInteger(t.count) && t.count >= 0
+   && [t.total_ms, t.mean_ms, t.max_ms].every(v => Number.isFinite(v) && v >= 0)
+   ? [[name, {count:t.count,total_ms:t.total_ms,mean_ms:t.mean_ms,max_ms:t.max_ms}]] : [];
+ }));
+ return {status: Object.keys(timers).length ? 'captured' : 'unavailable', timers,
+  semantics: 'Cumulative node-lifetime core phases, including startup, receive and local mutations. Nested phases overlap; do not sum them or interpret maxima as one write. Queue wait, signing and paint are not isolated here.'};
 }
