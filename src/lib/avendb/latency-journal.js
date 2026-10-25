@@ -3,9 +3,11 @@ const KEY = 'avendb:latency:v1';
 export const TIMED_OPS = new Set(['status', 'world', 'entries', 'entry', 'entry_views', 'query', 'get', 'room', 'history', 'read_file', 'synced', 'cap_groups', 'bring', 'bring_entries', 'network', 'create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'merge', 'review', 'put_file']);
 const STAGES = new Set(['unlock.total', 'peer.transport-rtt', 'query.first-nonempty-emission', 'query.first-nonempty-emission.readonly', ...[...TIMED_OPS].map(op => `call.${op}`)]);
 const LIMIT = 120;
-const REASONS = new Set(['timeout', 'cancelled', 'locked', 'not-found', 'not-ready', 'not-allowed', 'refused', 'failed']);
+const REASONS = new Set(['timeout', 'cancelled', 'locked', 'not-found', 'not-ready', 'not-allowed', 'refused', 'failed', 'worker-ended', 'file-not-open', 'file-index-incomplete']);
+/** @param {any} value */
+const timing = value => value && Number.isSafeInteger(value.document) && value.document > 0 && value.document <= 9999 && ['startMs','endMs','hiddenMs','visibleMs'].every(k => Number.isFinite(value[k]) && value[k]>=0 && value[k]<=86400000) ? {document:value.document,startMs:value.startMs,endMs:value.endMs,hiddenMs:value.hiddenMs,visibleMs:value.visibleMs} : undefined;
 /** @param {any} s */
-const clean = s => ({ stage: s.stage, ms: s.ms, at: s.at, outcome: s.outcome, ...(REASONS.has(s.reason) ? {reason:s.reason} : {}) });
+const clean = s => ({ stage: s.stage, ms: s.ms, at: s.at, outcome: s.outcome, ...(REASONS.has(s.reason) ? {reason:s.reason} : {}), ...(timing(s.context) ? {context:timing(s.context)} : {}) });
 /** @typedef {{ stage: string, ms: number, at: number, outcome: 'ok' | 'refused' | 'failed', reason?: string }} Sample */
 /** @param {unknown} value @returns {value is Sample} */
 function valid(value) {
@@ -24,7 +26,7 @@ export function createLatencyJournal({ storage = () => undefined, now = Date.now
    const shelf = storage();
    if (!shelf) { available = false; return; }
    const text = shelf.getItem(KEY);
-   if (!text || text.length > 32768) return;
+   if (!text || text.length > 65536) return;
    const saved = JSON.parse(text);
    if (saved?.version === 1 && Array.isArray(saved.samples)) samples = saved.samples.filter(valid).slice(-LIMIT).map((/** @type {Sample} */ s) => clean(s));
    milestones = (Array.isArray(saved?.milestones) ? saved.milestones : samples).filter((/** @type {any} */ s) => valid(s) && s.stage === 'unlock.total').slice(-8).map(clean);
@@ -37,9 +39,9 @@ export function createLatencyJournal({ storage = () => undefined, now = Date.now
   catch { available = false; }
  }
  return {
-  /** @param {string} stage @param {number} ms @param {'ok' | 'refused' | 'failed'} [outcome] @param {string | undefined} [reason] */
-  record(stage, ms, outcome = 'ok', reason = undefined) {
-   const sample = clean({ stage, ms, at: now(), outcome, reason });
+  /** @param {string} stage @param {number} ms @param {'ok' | 'refused' | 'failed'} [outcome] @param {string | undefined} [reason] @param {any} [context] */
+  record(stage, ms, outcome = 'ok', reason = undefined, context = undefined) {
+   const sample = clean({ stage, ms, at: now(), outcome, reason, context });
    if (!valid(sample)) return;
    load(); samples.push(sample);
    if (stage === 'unlock.total') { milestones.push(sample); if(milestones.length > 8) milestones.splice(1,1); }

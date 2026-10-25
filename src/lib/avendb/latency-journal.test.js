@@ -81,3 +81,10 @@ test('policy observation export bounds and redacts engine records without invent
  expect(JSON.stringify(result)).not.toContain('secret');
  expect(policyObservations({ policy_observations: { ...base, samples: Array.from({ length: 100 }, () => ({ ms: 1, outcome: 'standing' })) } }).samples).toHaveLength(64);
 });
+test('visibility context roundtrips only fixed numeric fields',()=>{
+ const data=new Map(),storage=()=>({getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)});
+ const j=createLatencyJournal({storage,schedule:()=>{}});
+ j.record('call.read_file',177000,'failed','file-not-open',{document:2,startMs:0,endMs:177000,hiddenMs:126889,visibleMs:50111,secret:'never copied'});j.flush();
+ const s=createLatencyJournal({storage}).snapshot().samples[0];
+ expect(s.context.hiddenMs).toBe(126889);expect(s.reason).toBe('file-not-open');expect(JSON.stringify(s)).not.toContain('secret');
+});
