@@ -43,7 +43,12 @@ fn read(lab: &Lab, me: SignerId, query: &Value, require_complete: bool) -> Resul
     query_ok(query)?;
     let out=super::read(lab,me,query);
     if out.get("ok").is_none_or(Value::is_null) { return Err(bad("read guard dependency is unavailable")); }
-    if (require_complete || query.get("tag").is_some()) && out["ok"].get("scope").is_some_and(|scope| scope.get("localComplete") != Some(&Value::Bool(true))) {
+    if (require_complete || query.get("tag").is_some()) && out["ok"].get("scope").is_some_and(|scope| {
+        let accepted_cut=query.get("manifest").and_then(|manifest|manifest.get("snapshot"));
+        scope.get("localComplete") != Some(&Value::Bool(true))
+            && !(scope.get("completeAtOwnerCut")==Some(&Value::Bool(true))
+                && accepted_cut.is_some() && scope.get("snapshot")==accepted_cut)
+    }) {
         return Err(bad("read guard dependency domain is incomplete"));
     }
     Ok(out)

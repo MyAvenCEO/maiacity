@@ -81,6 +81,10 @@ mod bootstrap_dependencies;
 mod entry_base;
 pub use entry_base::{AuthenticatedCountedEntryBase, AuthenticatedEntryBaseEnvelope, PreparedEntryBase, RestoredOwnerJudgment};
 
+#[path = "discovery_manifest.rs"]
+mod discovery_manifest;
+pub use discovery_manifest::DiscoveryScope;
+
 #[path = "entry_projection.rs"]
 mod entry_projection;
 pub use entry_projection::{EntryProjectionOffer, PreparedEntryProjection, VerifiedEntryProjection};

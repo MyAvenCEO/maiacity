@@ -575,3 +575,19 @@ pub(super) fn bounded_offer_edit(signed: &Signed) -> bool {
         _ => false,
     }
 }
+
+impl Lab {
+    /// Owner attestation retained for a consumer of the statement itself (such as
+    /// a scoped discovery manifest), including after carrier history is covered.
+    /// Normal entry reads still prefer canonical history. Never accepts an
+    /// ordinary carrier write as owner approval or bypasses current entitlement.
+    pub(crate) fn attested_entry_projection(&self, on: SignerId, snapshot: EditId, entry: EntryId) -> Option<VerifiedEntryProjection> {
+        let sealed = {
+            let cache = self.held(on).projections.lock().ok()?;
+            let cached = cache.get(&(on, entry))?;
+            if cached.snapshot != snapshot { return None; }
+            cached.sealed.clone()
+        };
+        self.open_entry_projection(on, snapshot, entry, &sealed)
+    }
+}

@@ -167,8 +167,9 @@ fn bad(why: impl Into<String>) -> Refused {
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "read_guard" => &["query", "requireComplete"],
+        "scope_manifest" => &["vault", "types", "tag"],
         "guarded" => &["checks", "change"],
-        "entry_views" => &["vault", "entries", "types", "as", "kind", "tag"],
+        "entry_views" => &["manifest", "vault", "entries", "types", "as", "kind", "tag"],
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
@@ -234,7 +235,8 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 37] = [
+const READS: [&str; 38] = [
+    "scope_manifest",
     "read_guard",
     "entry_views",
     "query",
@@ -357,6 +359,15 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
     }
     let out = op_of(v).and_then(|(name, o)| match name {
         "read_guard" => guards::capture(lab, me, o.get("query").ok_or_else(||bad("read_guard requires query"))?, o.get("requireComplete").map(|value|value.as_bool().ok_or_else(||bad("requireComplete must be boolean"))).transpose()?.unwrap_or(true)),
+        "scope_manifest" => {
+            let vault=vault_of(o,"vault")?;
+            let scope=match (o.get("types"),o.get("tag")) {
+                (Some(_),None)=>crate::lab::DiscoveryScope::Types(texts_of(o,"types")?),
+                (None,Some(tag))=>crate::lab::DiscoveryScope::Tag(tag.as_str().ok_or_else(||bad("tag must be text"))?.to_owned()),
+                _=>Err(bad("scope_manifest requires exactly one types or tag scope"))?,
+            };
+            Ok(lab.discovery_manifest_record(me,vault,scope).unwrap_or(Value::Null))
+        },
         "entry_views" => entry_views_inner(lab, me, o, &SyncedTo::default()),
         "query" => query(lab, me, o),
         "get" => get(lab, me, o),
@@ -903,6 +914,26 @@ fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resul
         return Err(bad("unknown entry kind"));
     }
     let Some(actor) = actor else { return Ok(None); };
+    if let Some(manifest) = o.get("manifest") {
+        let vault=vault.ok_or_else(||bad("manifest discovery requires a vault"))?;
+        if ids.is_some() || kind.is_some() {return Err(bad("manifest discovery requires an exact types or tag scope"));}
+        let scope=match (types.as_ref(),tag) {
+            (Some(types),None)=>crate::lab::DiscoveryScope::Types(types.clone()),
+            (None,Some(tag))=>crate::lab::DiscoveryScope::Tag(tag.to_owned()),
+            _=>return Err(bad("manifest discovery requires exactly one types or tag scope")),
+        };
+        let object=manifest.as_object().ok_or_else(||bad("manifest is an entry and owner snapshot"))?;
+        if object.keys().any(|key|key!="entry"&&key!="snapshot") {return Err(bad("unknown manifest field"));}
+        let carrier=id_of(object.get("entry"),"manifest entry",EntryId::from_hex)?;
+        let snapshot=id_of(object.get("snapshot"),"manifest snapshot",EditId::from_hex)?;
+        let Some(members)=lab.discovery_manifest_members(me,actor,vault,scope,carrier,snapshot) else {return Ok(None);};
+        let Some(mut result)=world::entry_views(lab,me,None,Some(&members),actor,None,None) else {return Ok(None);};
+        let ready=result.entries.len()==members.len() && result.readable_entries==members.len()
+            && result.entries.iter().all(|entry| !matches!(entry.what,world::What::Sealed));
+        result.scope=Some(json!({"basis":"owner-attested-cut","snapshot":snapshot.to_hex(),
+            "completeAtOwnerCut":ready,"localComplete":false,"remoteComplete":false}));
+        return Ok(Some(result));
+    }
     Ok(world::entry_views_tag(lab, me, vault, ids.as_deref(), actor, types.as_deref(), kind, tag))
 }
 
