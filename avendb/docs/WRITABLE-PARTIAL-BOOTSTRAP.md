@@ -1112,3 +1112,12 @@ the supplied audience IDs were unsorted; the fixture now sorts them canonically,
 but its rerun is pending. Overall shared writable bootstrap is still open.
 
 Durable capsule stage: [7154b07e](https://github.com/MyAvenCEO/maiacity/commit/7154b07e).
+
+### Negotiation timeout correction (after 98c562c5)
+
+The v3/v2/v1 probe loop previously gave each attempt the entire remaining deadline.
+A silent newer-format peer could therefore consume the legacy fallback budget.
+Each attempted version now receives its proportional remaining budget (one third,
+then one half, then the remainder), preserving bounded total work and a chance for
+legacy negotiation. Added a deterministic budget regression. Rust execution is
+pending the compiler queue; this follow-up is not part of the earlier 9/9 result.

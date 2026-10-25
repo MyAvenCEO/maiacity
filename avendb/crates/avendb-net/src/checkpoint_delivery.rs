@@ -23,6 +23,11 @@ const CIPHER_LIMIT: usize = (1 << 20) + 128;
 const EVIDENCE_LIMIT: usize = 512 << 10;
 const RESPONSE_LIMIT: usize = CIPHER_LIMIT + EVIDENCE_LIMIT + 41;
 
+// Reserve time for each older negotiated format even when a newer probe is silent.
+fn probe_budget(remaining: Duration, version: u8) -> Duration {
+    remaining / u32::from(version.max(1))
+}
+
 fn tag(entry: EntryId) -> Vec<u8> {
     [b"avendb/checkpoint/".as_slice(), &entry.0].concat()
 }
@@ -387,7 +392,7 @@ impl Shared {
             body[0]=version;
             let remaining=deadline.saturating_duration_since(Instant::now());
             ensure!(!remaining.is_zero(),"checkpoint fallback deadline");
-            if let Ok(Ok(bytes))=time::timeout(remaining,session::exchange(&peer.conn,KIND,&body,RESPONSE_LIMIT)).await {
+            if let Ok(Ok(bytes))=time::timeout(probe_budget(remaining, version),session::exchange(&peer.conn,KIND,&body,RESPONSE_LIMIT)).await {
                 if bytes.first()==Some(&version) && bytes!=[version,0] { negotiated=Some((bytes,version)); break; }
             }
         }
@@ -483,6 +488,18 @@ mod tests {
         async fn ceremony(&self, _: [u8; 32], _: Step) -> Result<Ceremony> {
             anyhow::bail!("owner declined checkpoint approval")
         }
+    }
+
+    #[test]
+    fn silent_newer_probes_reserve_legacy_fallback_time() {
+        let total = Duration::from_secs(3);
+        let v3 = probe_budget(total, 3);
+        let after_v3 = total - v3;
+        let v2 = probe_budget(after_v3, 2);
+        let v1 = probe_budget(after_v3 - v2, 1);
+        assert_eq!([v3, v2, v1], [Duration::from_secs(1); 3]);
+        assert_eq!(probe_budget(total, 1), total);
+        assert_eq!(probe_budget(Duration::ZERO, 3), Duration::ZERO);
     }
 
     #[test]
