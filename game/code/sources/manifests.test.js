@@ -265,3 +265,13 @@ test('a refused catalog is not reported as a successful empty local catalog', as
  await bringDeclared('/private/', { device: { run: async () => ({ refused: 'NoCap' }) }, bring: async () => {} });
  expect(manifestDiagnostics().runs.at(-1)).toMatchObject({ catalog: 'refused', heldManifests: 0, requested: 0 });
 });
+
+test('shipped cold game and Chat leaves provide typed discovery before local rows exist', async () => {
+ for (const path of ['/app/chat/', '/app/games/sandbox-5/']) {
+  const hints=[];
+  const d={run:async op=>({ok:{rows:op.where?.type?.includes('manifest') ? MANIFESTS.map(record=>({record})) : []}})};
+  await bringDeclared(path,{device:d,bring:async()=>{},prioritize:(_ids,queries)=>hints.push(...queries)});
+  expect(hints.some(q=>q.types.includes(path.includes('chat')?'room':'config'))).toBe(true);
+  expect(leavesFor(MANIFESTS,path).filter(l=>l.leaf.query).every(l=>l.leaf.query.type?.length>0)).toBe(true);
+ }
+});

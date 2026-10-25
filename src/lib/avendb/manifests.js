@@ -25,7 +25,7 @@ export const gameManifest = (g) => ({
 	note: `What ${g.label} reads: its views, logic and settings, and the worlds and recipes they name.`,
 	routes: [g.route, `/games/${g.id}/`],
 	priority: 'medium',
-	parts: [{ manifest: KERNEL.id }, { query: { tags: [gameTag(g.id)] }, follow: 2 }]
+	parts: [{ manifest: KERNEL.id }, { query: { type: ['game', 'view', 'logic', 'config'], tags: [gameTag(g.id)] }, follow: 2 }]
 });
 
 /** The dashboard: the kernel, then the games it lists. */
@@ -61,5 +61,14 @@ export const STUDIO = {
 	parts: [{ manifest: KERNEL.id }, { query: { type: ['cut'] }, limit: 8, follow: 2 }]
 };
 
+/** Shared coop rooms. Chat's own universal room query additionally discovers
+ * readable personal/other-vault rooms; this catalog never grants cross-vault access. */
+export const CHAT = {
+ kind: 'manifest', id: 'chat', title: 'Chat',
+ note: 'Shared room discovery and the current room view; personal rooms retain their own scoped query demand.',
+ routes: ['/app/chat/', '/app/chat/*'], priority: 'medium',
+ parts: [{ manifest: KERNEL.id }, { query: { type: ['room'] }, limit: 50 }]
+};
+
 /** Every manifest the repo declares. */
-export const MANIFESTS = [KERNEL, DASHBOARD, UNIVERSE, STUDIO, ...GAMES.map(gameManifest)];
+export const MANIFESTS = [KERNEL, DASHBOARD, UNIVERSE, STUDIO, CHAT, ...GAMES.map(gameManifest)];
