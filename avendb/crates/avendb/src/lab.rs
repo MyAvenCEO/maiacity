@@ -3399,6 +3399,10 @@ impl Lab {
             for w in work {
                 self.work(d, &view, w);
             }
+            if budget.is_some() {
+                self.stores.get_mut(&d).expect("device").behind=true;
+                return; // New upkeep edits require a fresh authority turn.
+            }
         }
     }
 
@@ -5595,9 +5599,12 @@ impl Lab {
             show_items_priority(d,store,Some(32),priority);
             if !store.judgment_pending.is_empty() {return (true,true)}
             store.judgment_epoch=None;
+            // Finalization/upkeep gets its own scheduler turn rather than a new
+            // presentation budget recursively inside this one.
+            return (true,true);
         }
         self.refresh_budget(d,&[],Some(32),priority);
-        (true,!self.held(d).judgment_pending.is_empty())
+        (true,self.held(d).behind)
     }
 
     pub fn judgment_pending(&self, d: SignerId) -> usize { self.held(d).judgment_pending.len() }
@@ -6586,7 +6593,7 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
 fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, priority: &[EntryId]) {
     let revision=store.log.revision();
-    if store.judgment_epoch.as_ref().is_some_and(|(r,k)|*r!=revision || !Arc::ptr_eq(k,&store.keys.revision)) {
+    if store.reshow || store.judgment_epoch.as_ref().is_some_and(|(r,k)|*r!=revision || !Arc::ptr_eq(k,&store.keys.revision)) {
         store.judgment_jobs.clear();
     }
     let started=web_time::Instant::now();
@@ -6709,7 +6716,10 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
     store.shown_lanes = lanes_now;
     store.shown_groups = groups_print;
     let mut todo=todo;
-    todo.sort_by_key(|en| (priority.iter().position(|e|*e==en.id).unwrap_or(usize::MAX), en.id));
+    // Finish the one exact-valid cursor before starting another. Navigation may
+    // reorder unstarted work but cannot repeatedly erase background progress.
+    todo.sort_by_key(|en| (!store.judgment_jobs.contains_key(&en.id),
+        priority.iter().position(|e|*e==en.id).unwrap_or(usize::MAX), en.id));
     for en in todo {
         if cap_groups.contains(&en.id) {
             continue;
@@ -6758,6 +6768,8 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
         if st.entry_writes(en.id).any(|w| deferred.contains_key(&w.edit)) {
             // No validated materialization accepted this entry. Retire its
             // metadata-only bodies and run canonical decoding before exposure.
+            old.remove(&en.id);
+            store.judgment_pending.insert(en.id);
             retry_entries.push(en.id);
             continue;
         }
@@ -6808,9 +6820,9 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
         store.perf.add("show: judging", judging_at);
         if cursor<writes.len() {
             let Judging {history,scratch,attrs,mine,imported,asked,..}=j;
-            // Retain at most one additional Loro scratch. A new active-view
-            // priority may replace it; displaced entries remain queued, not shown.
-            store.judgment_jobs.clear();
+            // Existing cursors run first and a partial step exhausts this turn.
+            // Thus no second private scratch can displace unfinished progress.
+            debug_assert!(store.judgment_jobs.is_empty());
             store.judgment_jobs.insert(en.id,JudgmentJob {revision:revision.clone(),keys:store.keys.revision.clone(),
                 tip,print,history,after:After {scratch,deferred_scratch:None,attrs,mine,imported,asked},items,cursor});
             store.judgment_pending.insert(en.id);
@@ -6839,16 +6851,23 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
     store.shown = old;
     store.readings.groups = groups;
     if !retry_entries.is_empty() {
-        let ids: Vec<_> = retry_entries.into_iter().flat_map(|entry|
-            store.replay.state.entry_writes(entry).map(|w| w.edit)).collect();
+        let ids: Vec<_> = retry_entries.iter().flat_map(|entry|
+            store.replay.state.entry_writes(*entry).map(|w| w.edit)).collect();
         for id in ids { store.deferred_bodies.remove(&id); }
         store.reshow = true;
-        read(d, store);
-        show_items_priority(d, store, budget, priority);
+        if budget.is_none() {
+            read(d, store);
+            show_items_priority(d, store, budget, priority);
+        } else {
+            // The invalid view is already hidden. Canonical decoding/retry must
+            // enter a new scheduler turn, not reset this call's spent budget.
+            store.judgment_pending.extend(retry_entries);
+        }
     }
     store.judgment_pending.retain(|e|store.replay.state.entry(*e).is_some() && !store.shown.contains_key(e));
     store.judgment_jobs.retain(|e,_|store.judgment_pending.contains(e));
-    store.judgment_epoch=(!store.judgment_pending.is_empty()).then(||(store.log.revision(),store.keys.revision.clone()));
+    store.judgment_epoch=(!store.reshow && !store.judgment_pending.is_empty())
+        .then(||(store.log.revision(),store.keys.revision.clone()));
 }
 
 #[cfg(test)]
@@ -6884,7 +6903,7 @@ mod judgment_slice_tests {
         assert!(lab.edit(device,vault,large,|item|item.edit_document(|d|d.title="must not publish".into())).is_err(),
             "unfinished target cannot accept a mutation from an empty visible history");
         let mut turns=0;
-        while lab.judgment_pending(device)>0 {
+        while lab.held(device).behind {
             lab.catch_up_step(device,&[large]);
             assert!(lab.item(device,ready).is_some());
             if lab.judgment_pending(device)>0 {
@@ -6900,6 +6919,67 @@ mod judgment_slice_tests {
         lab.restore_from(device,lab.backup(device));
         assert_eq!(lab.item(device,large).unwrap().record(),expected);
         assert_eq!(lab.item(device,ready).unwrap().record(),foreground);
+    }
+
+    #[test]
+    fn changing_view_priority_cannot_discard_an_unfinished_cursor() {
+        let mut lab=Lab::new();
+        let owner=lab.passkey("Judgment demand churn");
+        let device=lab.device_of(owner,"Mac");
+        let vault=human_on(&mut lab,owner,&[device]);
+        let a=lab.create(device,vault,vault,"note",&[],document("A","base",device)).unwrap();
+        let b=lab.create(device,vault,vault,"note",&[],document("B","base",device)).unwrap();
+        let before=lab.backup(device);
+        for n in 0..64 { for entry in [a,b] {
+            lab.edit(device,vault,entry,|item|item.edit_document(|d|d.title=n.to_string())).unwrap();
+        }}
+        let expected:Vec<_>=[a,b].iter().map(|e|lab.item(device,*e).unwrap().record()).collect();
+        let received=lab.backup(device);
+        lab.restore_from(device,before);
+        lab.receive_now(device,received.signed,received.blobs.into_values().collect(),false);
+        assert!(lab.catch_up_step(device,&[a]).1);
+        let mut turns=0;
+        while lab.held(device).behind {
+            let active=lab.held(device).judgment_jobs.iter().next().map(|(id,j)|(*id,j.cursor));
+            lab.catch_up_step(device,&[if turns%2==0 {b}else{a}]);
+            if let Some((id,cursor))=active {
+                if lab.item(device,id).is_none() {
+                    assert!(lab.held(device).judgment_jobs.get(&id).is_some_and(|j|j.cursor>cursor),
+                        "changing demand cannot replace unfinished exact progress");
+                }
+            }
+            assert!(lab.held(device).judgment_jobs.len()<=1);
+            turns+=1; assert!(turns<256);
+        }
+        for (id,record) in [a,b].iter().zip(expected) {assert_eq!(lab.item(device,*id).unwrap().record(),record);}
+    }
+
+    #[test]
+    fn invalid_warm_retry_hides_old_view_and_yields_before_decoding() {
+        let mut lab=Lab::new();
+        let owner=lab.passkey("Deferred retry boundary");
+        let device=lab.device_of(owner,"Mac");
+        let vault=human_on(&mut lab,owner,&[device]);
+        let entry=lab.create(device,vault,vault,"note",&[],document("Held","base",device)).unwrap();
+        let expected=lab.item(device,entry).unwrap().record();
+        let backup=lab.backup(device); let count=backup.signed.len();
+        let receipt=lab.warming(device,count,Some([83;40])).unwrap();
+        let warm=Warm{keys:receipt.keys.clone().into_iter().collect(),views:receipt.view.clone().into_iter().collect()};
+        lab.warmed(device,receipt);
+        lab.restore_warm(device,backup,Some(([83;40],count)),&warm);
+        let store=lab.stores.get_mut(&device).unwrap();
+        let id=store.view().entry(entry).unwrap().creation;
+        assert!(!store.bodies.contains_key(&id));
+        store.shown.get_mut(&entry).unwrap().print=[0;32];
+        store.reshow=true; store.behind=true;
+        store.judgment_pending.insert(entry);
+        store.judgment_epoch=Some((store.log.revision(),store.keys.revision.clone()));
+        assert!(lab.catch_up_step(device,&[entry]).1);
+        assert!(lab.item(device,entry).is_none(),"failed old warm view must be hidden before yielding");
+        assert!(!lab.held(device).bodies.contains_key(&id),"retry must not decode in the spent turn");
+        let mut turns=0;
+        while lab.held(device).behind {lab.catch_up_step(device,&[entry]);turns+=1;assert!(turns<16);}
+        assert_eq!(lab.item(device,entry).unwrap().record(),expected);
     }
 
     #[test]
