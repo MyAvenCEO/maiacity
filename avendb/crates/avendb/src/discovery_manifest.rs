@@ -269,6 +269,28 @@ mod tests {
     use crate::cast;
 
     #[test]
+    fn universal_query_uses_exact_manifest_scope_without_claiming_completeness() {
+        let mut w=cast::world();
+        let note=w.lab.create(w.mac_a,w.alice,w.alice,"note",&[],Item::todo("member",w.mac_a)).unwrap();
+        let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,DiscoveryScope::Types(vec!["note".into()])).unwrap();
+        let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&record,w.mac_a).unwrap();
+        let carrier=w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap();
+        let prepared=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],carrier).unwrap();
+        let snapshot=w.lab.complete(w.mac_a,prepared.draft,&[]).unwrap();
+        assert!(w.lab.retain_entry_projection(w.mac_a,snapshot,carrier,prepared.sealed));
+        let query=json!({"op":"query","vault":w.alice.to_hex(),"where":{"type":["note"]},"limit":0});
+        let answer=crate::engine::read(&w.lab,w.mac_a,&query);
+        assert_eq!(answer["ok"]["rows"],json!([]));
+        assert_eq!(answer["ok"]["count"],1);
+        assert_eq!(answer["ok"]["scope"]["discovery"]["entry"],carrier.to_hex());
+        assert_eq!(answer["ok"]["scope"]["discovery"]["pendingEntries"],json!([]),"pagination must not re-demand already materialized members");
+        assert_eq!(answer["ok"]["readiness"]["authoritativeEmpty"],false);
+        let other=crate::engine::read(&w.lab,w.mac_a,&json!({"op":"query","vault":w.alice.to_hex(),"where":{"type":["other"]}}));
+        assert!(other["ok"].get("scope").is_none());
+        assert!(w.lab.item(w.mac_a,note).is_some());
+    }
+
+    #[test]
     fn owner_manifest_query_requires_approval_exact_scope_and_unchanged_membership() {
         let mut w=cast::world();
         let note=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();

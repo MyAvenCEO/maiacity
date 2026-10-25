@@ -20,7 +20,7 @@ test('an empty first-view query publishes bounded discovery without waiting for 
 		expect(await view.read(op)).toEqual({ ok: { rows: [] } });
 		await flush();
 		expect(calls[0].entries).toEqual([]);
-		expect(calls[0].queries).toEqual([{ types: ['note'], vault: id(9) }]);
+		expect(calls[0].queries).toEqual([{ types: ['discovery-manifest'], vault: id(9) }, { types: ['note'], vault: id(9) }]);
 		expect(JSON.stringify(calls)).not.toContain('not sent');
 		view.clear(); await flush();
 		expect(calls.at(-1).entries).toEqual([]);
@@ -334,3 +334,16 @@ test('a visible stale row retains its advertised missing-head priority', async (
     expect(d.calls.at(-1).entries).toEqual([id(2), id(8), id(1)]);
     view.close(); await flush();
 });
+
+ test('universal query follows authenticated manifest targets while returning its local rows immediately', async () => {
+    const d = node();
+    const reply = { ok: { rows: [{entry:id(1)}], scope: {discovery: {
+      basis:'owner-attested-cut', entry:id(2), snapshot:id(3), pendingEntries:[id(4)]
+    }}, readiness:{authoritativeEmpty:false} } };
+    const view=createReadWindow({device:()=>d, read:async()=>reply});
+    expect(await view.read({op:'query',vault:id(9),where:{type:['note']}})).toBe(reply);
+    await flush();
+    expect(d.calls.at(-1).entries).toEqual([id(4),id(2),id(1)]);
+    expect(d.calls.at(-1).queries).toEqual([{types:['discovery-manifest'],vault:id(9)},{types:['note'],vault:id(9)}]);
+    view.close(); await flush(); expect(d.calls.at(-1).entries).toEqual([]);
+ });

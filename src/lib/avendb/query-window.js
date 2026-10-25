@@ -71,7 +71,13 @@ export function queryDiscovery(op) {
 		}
 		for (const key of ['all', 'any']) if (Array.isArray(where[key])) pending.push(...where[key].slice(0, Math.max(0, 512 - visited - pending.length)).reverse());
 	}
-	return normalizeDiscovery([{ types: [...types], ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
+	const hints = normalizeDiscovery([{ types: [...types], ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
+	// The carrier is an ordinary authorized discovery request. It conveys no
+	// record predicates, and the core still evaluates the complete local query.
+	if (hints.length && /^[0-9a-f]{64}$/.test(op.vault ?? '')) {
+		hints.unshift({ types: ['discovery-manifest'], vault: op.vault });
+	}
+	return normalizeDiscovery(hints);
 }
 
 /** One component's visible read. Replace the window on each query; keep independent components independent.

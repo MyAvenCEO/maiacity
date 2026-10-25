@@ -12,7 +12,7 @@ const vault='a'.repeat(64), actor='b'.repeat(64), city='c'.repeat(64);
 const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
 test('Stories declares local cards/flows and only existing trusted city fallback',()=>{
  assert.deepEqual(storiesQuery(vault,actor),{op:'entry_views',vault,as:actor,types:['story','flow']});
- assert.deepEqual(queryDiscovery(storiesQuery(vault,actor)),[{vault,types:['story','flow']}]);
+ assert.deepEqual(queryDiscovery(storiesQuery(vault,actor)),[{vault,types:['discovery-manifest']},{vault,types:['story','flow']}]);
  assert.deepEqual(storyFallbackQuery(vault,actor,city),{op:'entry_views',vault:city,as:actor,types:['flow']});
  assert.deepEqual(storyFallbackQuery(vault,actor,vault),{op:'entry_views',entries:[],as:actor});
  assert.deepEqual(storyFallbackQuery(vault,actor,undefined),{op:'entry_views',entries:[],as:actor});

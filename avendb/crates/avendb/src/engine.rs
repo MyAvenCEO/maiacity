@@ -1045,6 +1045,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         order.iter().map(by).find(|o| o.is_ne()).unwrap_or(Ordering::Equal)
     });
     let count = rows.len();
+    let materialized: Vec<_> = rows.iter().map(|(entry, ..)| *entry).collect();
     let page = rows.into_iter().skip(offset).take(limit.unwrap_or(usize::MAX));
     let mut shown = vec![];
     for (entry, v, attrs, seen, cut, checkpoint) in page {
@@ -1073,9 +1074,22 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         if let Some(checkpoint) = checkpoint { row["checkpoint"] = checkpoint; }
         shown.push(row);
     }
-    Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
+    let mut result = json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
         "readiness": { "discovery": "unverified", "authoritativeEmpty": false,
-            "unresolvedCandidates": unresolved_candidates, "checkpointPartial": checkpoint_partial } }))
+            "unresolvedCandidates": unresolved_candidates, "checkpointPartial": checkpoint_partial } });
+    // Only an exact positive type scope can select a matching attested cut.
+    // The cut adds demand, never rows or an assertion that this query is complete.
+    if let (Some(vault), Some(actor), Some(where_)) = (vault, lab.vault_of(me), o.get("where").and_then(Value::as_object)) {
+        if where_.len() == 1 {
+            if let Some(types) = where_.get("type").and_then(Value::as_array)
+                .and_then(|values| values.iter().map(|v| v.as_str().map(str::to_owned)).collect::<Option<Vec<_>>>()) {
+                if let Some(hint) = lab.automatic_discovery_hint_for_rows(me, actor, vault, crate::lab::DiscoveryScope::Types(types), &materialized) {
+                    result["scope"] = json!({ "discovery": hint, "localComplete": false, "remoteComplete": false });
+                }
+            }
+        }
+    }
+    Ok(result)
 }
 
 /// `{"op": "api_pass", "audience"}`: the device's pass to service `audience` (`sign::ApiPass`), made now by its clock,

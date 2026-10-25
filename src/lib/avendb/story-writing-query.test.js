@@ -10,7 +10,7 @@ const vault='1'.repeat(64),actor='2'.repeat(64);
 test('Writing declares only the article vault file dependency and never awaits peer acceptance',async()=>{
  const query=storyWritingQuery(vault,actor),got=[];
  expect(query).toEqual({op:'entry_views',vault,as:actor,types:['file']});
- expect(queryDiscovery(query)).toEqual([{vault,types:['file']}]);
+ expect(queryDiscovery(query)).toEqual([{vault,types:['discovery-manifest']},{vault,types:['file']}]);
  const owner={run:()=>new Promise(()=>{})};
  const reader=createReactiveRead({read:observedWindow(async(_,op)=>{expect(op).toEqual(query);return {ok:{rows:[],totalEntries:0,readableEntries:0}}}),take:out=>got.push(out),timing:()=>()=>{}});
  reader.update(query,owner);await flush();expect(got).toHaveLength(1);reader.close();

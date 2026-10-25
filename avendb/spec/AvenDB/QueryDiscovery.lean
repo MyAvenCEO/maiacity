@@ -52,4 +52,15 @@ theorem typed_demand_bounded (types : List Nat) : (typedDemand types).length ≤
 theorem typed_demand_does_not_invent_types (types : List Nat) (t : Nat)
     (h : t ∈ typedDemand types) : t ∈ types := List.mem_of_mem_take h
 
+-- Manifest carriers are scheduling candidates, not rows or completeness evidence.
+def withCarrier (eligible : Bool) (carrier : Entry) (hints : List Entry) : List Entry :=
+  if eligible then carrier :: hints else hints
+
+theorem carrier_preserves_candidates (eligible : Bool) (carrier e : Entry) (hints : List Entry)
+    (h : e ∈ hints) : e ∈ withCarrier eligible carrier hints := by
+  cases eligible <;> simp_all [withCarrier]
+
+theorem carrier_does_not_confirm_complete (eligible : Bool) (carrier : Entry) (hints : List Entry) :
+    completeFromHint (withCarrier eligible carrier hints) = false := rfl
+
 end AvenDB.QueryDiscovery
