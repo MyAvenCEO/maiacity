@@ -1,5 +1,11 @@
-//! A settled owner content edit changes one item's judgment, not its key schedule.
+//! Settled metadata-free content writes change one item's judgment, not the key schedule.
 use super::*;
+
+fn deferred_refresh_ready(store: &Store) -> bool {
+    store.deferred_bodies.is_empty() || store.deferred_basis.as_ref().is_some_and(|basis|
+        *basis == store.log.revision() && store.deferred_bodies.values().all(|body|
+            Arc::strong_count(body) == 1 && Arc::weak_count(body) == 0 && body.metadata(basis).is_ok()))
+}
 
 impl Lab {
     pub(super) fn content_refresh_ready(&self, on: SignerId, edit: &Edit, body: &Body) -> bool {
@@ -8,17 +14,19 @@ impl Lab {
         let st = &store.replay.state;
         let Some(en) = st.entry(*entry) else { return false; };
         let Some(header) = store.readings.headers.get(&en.creation) else { return false; };
-        // Partial/deferred reconstruction and governance always take the canonical full path.
-        *actor == *vault && en.vault == *vault && st.acts_for(on, *vault) && !header.ty.of_lane() && !header.ty.is_cap_group()
+        // Governance and incomplete reconstruction always take the canonical full path.
+        en.vault == *vault && st.acts_for(on, *actor) && !header.ty.of_lane() && !header.ty.is_cap_group()
             && body.files.is_empty() && files.is_empty()
             && store.keys.first(KeyName::Entry(*entry, *stay, *epoch)).is_some()
             && en.creator == *vault
-            && st.entry_writes(*entry).all(|w| w.actor == *vault && w.proposal == Proposal::Main)
+            && st.entry_writes(*entry).all(|w| w.proposal == Proposal::Main &&
+                (w.actor == *vault || w.first || store.body_metadata(w.edit).is_some_and(|body| body.tags.is_empty())))
             && body.header.is_none() && body.tags.is_empty() && body.answers.is_empty() && body.defines.is_none()
             && !store.behind && !store.reshow && store.replayed == store.log.edits().len()
             && store.bare.is_empty() && store.bootstrap_bases.is_empty() && store.bootstrap_state.is_none()
-            && store.deferred_bodies.is_empty() && store.warm_materialization.is_none()
-            && store.opened.is_empty() && store.shown.contains_key(entry)
+            && store.bootstrap_active.is_empty() && store.bootstrap_pending.is_empty()
+            && deferred_refresh_ready(store) && store.warm_materialization.is_none()
+            && store.opened.is_empty() && store.shown.contains_key(entry) && store.shown_lanes.contains_key(vault)
             && self.held_back.is_none()
     }
 
@@ -38,7 +46,8 @@ impl Lab {
             && body.answers.is_empty() && body.defines.is_none() && body.files.is_empty() && files.is_empty()
             && !store.behind && !store.reshow && store.replayed == store.log.edits().len()
             && store.bare.is_empty() && store.bootstrap_bases.is_empty() && store.bootstrap_state.is_none()
-            && store.deferred_bodies.is_empty() && store.warm_materialization.is_none()
+            && store.bootstrap_active.is_empty() && store.bootstrap_pending.is_empty()
+            && deferred_refresh_ready(store) && store.warm_materialization.is_none()
             && store.opened.is_empty() && self.held_back.is_none()
     }
 
@@ -62,6 +71,30 @@ impl Lab {
             store.reshow = true;
             return false;
         }
+        // The guards and strict append preserve every old ciphertext and policy/key
+        // input. Rebind only exclusively owned exact-basis receipts; cached plaintext
+        // still checks the current key on each read. No background body is decoded.
+        if !store.deferred_bodies.is_empty() {
+            let before = store.deferred_basis.clone().expect("guarded current receipt");
+            let after = store.log.revision();
+            for body in store.deferred_bodies.values_mut() {
+                let body = Arc::get_mut(body).expect("guarded exclusive receipt");
+                assert!(body.advance_content_append(&before, after.clone()));
+            }
+            store.deferred_basis = Some(after);
+            store.perf.count("refresh: deferred context retained", 1);
+        }
+        let target: Vec<_> = store.replay.state.entry_writes(entry).map(|w| w.edit)
+            .filter(|id| store.deferred_bodies.contains_key(id)).collect();
+        if target.iter().any(|id| store.demanded_body(*id).is_none()) { store.reshow = true; return false; }
+        for id in target {
+            let key = store.body_key(id).expect("validated current key").clone();
+            let receipt = store.deferred_bodies.remove(&id).expect("selected deferred body");
+            let Ok(receipt) = Arc::try_unwrap(receipt) else { unreachable!("guarded exclusive receipt") };
+            let body = receipt.into_opened(&store.log.revision(), &key).expect("validated plaintext");
+            store.bodies.insert(id, body);
+        }
+        if store.deferred_bodies.is_empty() { store.deferred_basis = None; }
         let st = &store.replay.state;
         let Some(w) = st.write(id) else { store.reshow = true; return false; };
         let Some(en) = st.entry(entry) else { store.reshow = true; return false; };
@@ -79,7 +112,11 @@ impl Lab {
         let (mut judging, items) = match old {
             Some(old) if !creating && old.tip.writes + 1 == count && last == Some(id) => {
                 old.items_in(Some(store));
-                let history = old.history_in(store).expect("settled history").clone();
+                old.history_in(store).expect("settled history");
+                // We own the previous showing: move its history rather than copying
+                // every historical content buffer on each message/row mutation.
+                let history = if old.history_bodies.is_empty() { old.history }
+                    else { old.hydrated_history.into_inner().flatten().expect("hydrated above") };
                 let items = old.items.into_inner().expect("materialized above");
                 (Judging::resume(en, r, &lane, history, old.after), Some(items))
             }
@@ -182,7 +219,7 @@ mod tests {
         assert!(!w.lab.content_refresh_ready(w.mac_a, &edit, &body));
     }
     #[test]
-    fn foreign_history_and_file_or_missing_key_take_full_refresh() {
+    fn shared_content_is_incremental_but_files_keys_and_tag_asks_are_not() {
         let mut w = world();
         let todos = todos_on(&mut w);
         let d = w.mac_a;
@@ -198,10 +235,26 @@ mod tests {
         w.lab.sync_all(0);
         w.lab.edit(w.mac_b, w.bob, todos.door, |item| item.set_text(1, "foreign edit")).unwrap();
         w.lab.sync_all(0);
-        assert!(!w.lab.content_refresh_ready(d, &edit, &body), "foreign history requires canonical steward pass");
+        assert!(w.lab.content_refresh_ready(d, &edit, &body), "ordinary shared content has no pending tag asks");
         let before = w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0);
         w.lab.edit(d, w.alice, todos.door, |item| item.set_text(1, "owner after foreign edit")).unwrap();
-        assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0), before);
+        assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0), before+1);
+        let record = w.lab.item(d, todos.door).unwrap().record();
+        let history = w.lab.history(d, todos.door).unwrap().changes().to_vec();
+        w.lab.stores.get_mut(&d).unwrap().reshow = true;
+        w.lab.refresh(d, &[]);
+        assert_eq!(w.lab.item(d, todos.door).unwrap().record(), record);
+        assert_eq!(w.lab.history(d, todos.door).unwrap().changes(), history);
+        w.lab.sync_all(0);
+        w.lab.tag(w.mac_b, w.bob, todos.door, &["urgent"], &[]).unwrap();
+        w.lab.sync_all(0);
+        assert!(!w.lab.content_refresh_ready(d, &edit, &body), "foreign tag asks always retain canonical stewardship");
+        w.lab.submit(d, &[d], Action::Revoke(crate::policy::Revoking::Grant {
+            share: todos.bob_write, actor: w.alice, keep: vec![], via: vec![],
+        })).unwrap();
+        w.lab.sync_all(0);
+        assert!(w.lab.edit(w.mac_b, w.bob, todos.door, |item| item.set_text(1, "revoked edit")).is_err(),
+            "the incremental path never bypasses current write authorization");
     }
 
     #[test]
@@ -236,10 +289,29 @@ mod tests {
         }
         assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: owner creation"].as_u64(), Some(baseline + 8));
         eprintln!("eight complete owner creations: {local_us}us; eight additional canonical refreshes: {canonical_us}us");
+        let backup = w.lab.backup(d);
+        let count = backup.signed.len();
+        let marker = [74;40];
+        let saved = w.lab.capture_warm_current(d, count, Some(marker)).unwrap().encode();
+        let warm = Warm { keys: saved.keys.clone().into_iter().collect(), views: saved.view.clone().into_iter().collect() };
+        w.lab.warmed(d, saved);
+        w.lab.restore_warm(d, backup, Some((marker, count)), &warm);
+        let deferred = w.lab.held(d).deferred_bodies.len();
+        assert!(deferred > 512, "exercise a large unrelated warm history");
+        let before = w.lab.held(d).perf.to_json()["counts"]["refresh: owner creation"].as_u64().unwrap_or(0);
+        let start = Instant::now();
+        let entry = w.lab.create(d, w.alice, w.alice, "todo", &[], Item::todo("warm new entry", d)).unwrap();
+        eprintln!("warm creation with {deferred} deferred historical bodies: {}us", start.elapsed().as_micros());
+        assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: owner creation"].as_u64(), Some(before+1));
+        assert_eq!(w.lab.held(d).deferred_bodies.len(), deferred);
+        assert!(w.lab.held(d).deferred_bodies.values().all(|body| !body.content_ready()), "creation opens no unrelated history");
+        let record = w.lab.item(d, entry).unwrap().record();
+        w.lab.restore_from(d, w.lab.backup(d));
+        assert_eq!(w.lab.item(d, entry).unwrap().record(), record);
     }
 
     #[test]
-    fn reopened_deferred_store_does_not_claim_content_fast_path() {
+    fn reopened_deferred_store_retains_unrelated_lazy_bodies() {
         let mut w = world();
         let todos = todos_on(&mut w);
         let d = w.mac_a;
@@ -256,7 +328,9 @@ mod tests {
         let before = w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0);
         w.lab.edit(d, w.alice, todos.door, |item| item.set_text(1, "after reopen")).unwrap();
         let after = w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0);
-        if deferred > 0 { assert_eq!(after, before, "deferred warm stores deliberately fall back"); }
+        assert_eq!(after, before + 1, "a warm ordinary edit takes the same incremental path");
+        assert!(!w.lab.held(d).deferred_bodies.is_empty(), "unrelated warm bodies stay deferred");
+        assert!(w.lab.held(d).deferred_bodies.values().all(|body| !body.content_ready()), "no unrelated decode");
         eprintln!("warm-reopen deferred bodies={deferred}, fast-path hits={}", after-before);
     }
 
@@ -272,6 +346,33 @@ mod tests {
         assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: content stewardship fallback"].as_u64(), Some(before+1));
         assert!(w.lab.meaning(d, entry).unwrap().mark.is_none(), "full refresh completes the required mark");
         assert!(w.lab.held(d).replay.state.entry(entry).unwrap().stay().is_some(), "a real signed audience move was retained");
+    }
+
+    #[test]
+    fn ordinary_reference_does_not_change_groups_but_group_redefinition_does() {
+        let mut w = world();
+        let todos = todos_on(&mut w);
+        let d = w.mac_a;
+        let group = rules::CapGroup { name: "Scoped".into(),
+            caps: vec![rules::Cap { op: rules::Op::Read, slice: crate::cast::by_id(todos.door) }],
+            includes: vec![todos.door] };
+        let id = w.lab.define_group(d, w.alice, group.clone()).unwrap();
+        let groups = w.lab.held(d).readings.groups.clone();
+        w.lab.edit(d, w.alice, todos.door, |item| item.set_text(1, "ordinary referenced content")).unwrap();
+        assert_eq!(w.lab.held(d).readings.groups, groups);
+        w.lab.stores.get_mut(&d).unwrap().reshow = true;
+        w.lab.refresh(d, &[]);
+        assert_eq!(w.lab.held(d).readings.groups, groups, "group includes never reads ordinary entry payloads");
+        let before = w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0);
+        let narrow = rules::CapGroup { caps: vec![], ..group };
+        w.lab.redefine_group(d, w.alice, id, narrow.clone()).unwrap();
+        assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0), before);
+        assert_eq!(w.lab.group(d, w.alice, id), Some(&narrow));
+        w.lab.edit(d, w.alice, todos.door, |item| item.set_text(1, "after policy change")).unwrap();
+        let actual = w.lab.held(d).readings.groups.clone();
+        w.lab.stores.get_mut(&d).unwrap().reshow = true;
+        w.lab.refresh(d, &[]);
+        assert_eq!(w.lab.held(d).readings.groups, actual);
     }
 
 }
