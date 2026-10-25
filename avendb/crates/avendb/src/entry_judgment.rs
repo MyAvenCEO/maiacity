@@ -458,6 +458,10 @@ impl Lab {
     // Parsing owner-authenticated metadata does not install or authorize a state.
     fn decode_owner_judgment(&self, on: SignerId, snapshot: EditId, entry: EntryId,
         sealed: &[u8], compare_held: bool) -> Option<RestoredOwnerJudgment> {
+        if capsule::is_local(sealed) {
+            let (owner, capsule)=capsule::local_parts(sealed)?;
+            return self.decode_capsuled_owner_judgment(on,snapshot,entry,&owner,&capsule,compare_held);
+        }
         if sealed.len() > MAX_BYTES + 128 {
             return None;
         }

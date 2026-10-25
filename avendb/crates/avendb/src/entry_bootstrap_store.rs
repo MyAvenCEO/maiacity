@@ -138,7 +138,7 @@ impl Lab {
         if !store.bootstrap_active.contains(&entry)
             || store.replayed != store.log.edits().len() { return None; }
         let (snapshot, _) = store.bootstrap_bases.get(&entry)?;
-        let (_, stated, _) = self.projection_authority(on, *snapshot, entry)?;
+        let (_, stated, _) = self.owner_anchor_authority(on, *snapshot, entry)?;
         Some((*snapshot, stated.basis.clone()))
     }
 
@@ -160,7 +160,7 @@ impl Lab {
         // Recheck current recipient entitlement even though the signed log is unchanged.
         for entry in &retained.active {
             let Some((snapshot, _)) = self.held(on).bootstrap_bases.get(entry) else { return false; };
-            if self.projection_authority(on, *snapshot, *entry).is_none() { return false; }
+            if self.owner_anchor_authority(on, *snapshot, *entry).is_none() { return false; }
         }
         let store = self.stores.get_mut(&on).expect("device");
         store.shown.extend(retained.shown);
@@ -213,7 +213,7 @@ impl Lab {
             let snapshot = self.held(on).bootstrap_bases[entry].0;
             // Only attempt retirement after the complete attested frontier is locally held.
             // Frontier presence alone never establishes content/judgment completeness.
-            let frontier_held = self.projection_authority(on,snapshot,*entry)
+            let frontier_held = self.owner_anchor_authority(on,snapshot,*entry)
                 .is_some_and(|(_,stated,_)| stated.basis.iter().all(|id| self.held(on).signed.contains_key(id)));
             if frontier_held {
                 let sealed=&self.held(on).bootstrap_bases[entry].1;
@@ -272,6 +272,10 @@ impl Lab {
             // Historical entry slices must not overwrite later audience moves,
             // wants, or key seals. Content writes may extend retags; policy may not.
             let current = state.slice_of(entry);
+            let capsule_only=store.bootstrap_bases.get(&entry).is_some_and(|(_,b)|capsule::is_local(b));
+            // Capsule state is data, never remote key scheduling. Retain the local
+            // entry seals and enforce read-only in core until ordinary recovery.
+            if capsule_only { base.policy.seals=current.seals.clone(); }
             let Some(now) = current.entries.first() else { continue; };
             if now.id != en.id || now.vault != en.vault || now.creator != en.creator
                 || now.creation != en.creation || now.intake != en.intake || now.stays != en.stays
@@ -319,6 +323,7 @@ impl Lab {
                 }
             };
             if !lane_ready { wait_reason = Some("missing-schema-lane"); }
+            if capsule_only { wait_reason = Some("checkpoint-capsule-read-only"); }
             let mut opened_suffix = Vec::new();
             while budget > 0 && missing.is_empty() && wait_reason.is_none() {
                 let Some(id) = pending.pop_front() else { break; };
@@ -559,6 +564,21 @@ mod tests {
         assert_eq!(restored.items[&MAIN].record(),lab.item(mac,entry).unwrap().record());
         assert_eq!(lab.latest(partial).epochs().collect::<Vec<_>>(),epochs);
         assert_eq!(lab.held(partial).keys.by_name,ordinary_keys);
+        assert!(lab.adopt_capsuled_owner_entry_base(partial,snapshot,entry,sealed.clone(),capsule.clone()));
+        assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+        assert_eq!(lab.owner_base_wait_reason(partial,entry),Some("checkpoint-capsule-read-only"));
+        let before=lab.held(partial).log.ids().len();
+        assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Must not sign")).is_err());
+        assert_eq!(lab.held(partial).log.ids().len(),before);
+        let saved=lab.backup(partial); let companion=saved.bootstrap_bytes().unwrap();
+        let disk=Backup::new(saved.signed().to_vec(),saved.blobs.values().cloned()).with_bootstrap_bytes(&companion).unwrap();
+        let mut torn=companion.clone(); torn.pop();
+        assert!(Backup::new(saved.signed().to_vec(),saved.blobs.values().cloned()).with_bootstrap_bytes(&torn).is_none());
+        lab.restore_backup(partial,&disk);
+        assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+        assert_eq!(lab.owner_base_wait_reason(partial,entry),Some("checkpoint-capsule-read-only"));
+        assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Still read only")).is_err());
+        assert!(lab.restore_capsuled_owner_judgment(partial,snapshot,EntryId([91;32]),&sealed,&capsule).is_none());
         assert!(lab.restore_capsuled_owner_judgment(full,snapshot,entry,&sealed,&capsule).is_none());
         let mut corrupt=capsule.clone(); corrupt.bytes[0]^=1;
         assert!(lab.restore_capsuled_owner_judgment(partial,snapshot,entry,&sealed,&corrupt).is_none());
@@ -568,6 +588,10 @@ mod tests {
         let signed=lab.signed_edit(mac,revoked).unwrap().clone();
         lab.receive(partial,vec![signed],vec![]);
         assert!(lab.restore_capsuled_owner_judgment(partial,snapshot,entry,&sealed,&capsule).is_none());
+        let revoked=lab.backup(partial);
+        lab.restore_backup(partial,&revoked);
+        assert!(lab.active_owner_base(partial,entry).is_none());
+        assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Revoked after reopen")).is_err());
     }
     #[test]
     fn shared_holder_local_write_matches_full_holder_without_acquiring_owner_authority() {

@@ -1068,3 +1068,26 @@ This codec alone does NOT close shared-holder bootstrap. Durable recipient capsu
 storage, negotiated common peer transfer, active adoption and local shared-write
 key recovery across missing private occupancy history remain required. Do not
 mark this branch deployable until the preserved cross-entry regression passes.
+
+Next isolated stage (focused Rust passed): capsule-origin anchors retain the existing
+signed-log/anchor-companion durability boundary. The persisted companion contains
+only immutable owner ciphertext plus recipient-encrypted capsule. Reconstruction
+keeps locally replayed entry seals and core-enforces
+`checkpoint-capsule-read-only`; neither a successful decrypt nor a UI flag enables
+writes. Publication reserves 8 KiB inside the existing 1 MiB envelope budget for
+its recovery wrapper and bounded recipient companion; near-limit inputs refuse
+rather than producing an unparseable backup. Restart, torn-companion and
+revocation-after-reopen cases extend the focused capsule regression.
+
+Ordinary T15 author-local epochs may permit outbound shared writes without copying
+remote epochs, but bidirectional live suffix/key convergence across missing private
+occupancy history still needs differential evidence. The checkpoint-specific key
+intentionally cannot decrypt arbitrary historical or later entry content.
+
+The durable capsule regression passed 1/1 in 3.54 seconds on frozen source
+(`/private/tmp/avendb-checkpoint-capsule-durable.log`). It verifies useful read-only
+adoption and serialized restoration, refusal before signing, torn companion,
+wrong scope/recipient/root and revocation after reopen. The original cross-entry
+shared **writable** fixture still fails on legacy-key adoption; it is retained as
+the acceptance target and is not claimed fixed. The codec stage is
+[a187fe4d](https://github.com/MyAvenCEO/maiacity/commit/a187fe4d).

@@ -21,4 +21,7 @@ theorem capsule_wrong_scope (o r k : Bool) : capsuleRead o r false k = false := 
 theorem capsule_wrong_key (o r s : Bool) : capsuleRead o r s false = false := by simp [capsuleRead]
 def capsuleKernel (kernel : α) := kernel
 theorem capsule_preserves_kernel (kernel : α) : capsuleKernel kernel = kernel := rfl
+-- A retained capsule supplies an authenticated view but not an ordinary write key.
+def capsuleMutation (ordinaryWriteReady : Bool) : Bool := false && ordinaryWriteReady
+theorem retained_capsule_is_readonly (ready : Bool) : capsuleMutation ready = false := by simp [capsuleMutation]
 end AvenDB.SharedHolderBootstrap

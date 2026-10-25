@@ -4,6 +4,17 @@ use super::*;
 
 const FORMAT: &[u8] = b"avenDB judged checkpoint capsule 1\n";
 const MAX_CAPSULE: usize = 4096;
+const LOCAL: &[u8] = b"avenDB retained checkpoint capsule 1\n";
+pub(super) fn is_local(bytes: &[u8]) -> bool { bytes.starts_with(LOCAL) }
+pub(super) fn local_parts(bytes: &[u8]) -> Option<(Vec<u8>, EntryCheckpointCapsule)> {
+    if bytes.len()>MAX_BYTES+128 { return None; }
+    let mut r=WireReader::new(bytes);
+    if r.take(LOCAL.len()).ok()?!=LOCAL { return None; }
+    let sealed=r.bytes().ok()?; let recipient=SignerId::decode(&mut r).ok()?;
+    let bytes=r.bytes().ok()?;
+    if bytes.len()>MAX_CAPSULE || !r.done() { return None; }
+    Some((sealed,EntryCheckpointCapsule{recipient,bytes}))
+}
 #[derive(Clone)]
 pub struct EntryCheckpointCapsule {
     pub recipient: SignerId,
@@ -25,6 +36,19 @@ fn parts(bytes: &[u8], vault: VaultId, entry: EntryId) -> Option<(Vec<u8>,Vec<u8
     Some((recovery,payload))
 }
 impl Lab {
+    pub(super) fn owner_anchor_authority(&self,on:SignerId,snapshot:EditId,entry:EntryId)->Option<(VaultId,&crate::policy::Stated,KeyName)> {
+        if self.held(on).bootstrap_bases.get(&entry).is_some_and(|(_,b)|is_local(b)) {
+            self.projection_entitlement(on,snapshot,entry)
+        } else { self.projection_authority(on,snapshot,entry) }
+    }
+    /// Persist only an encrypted recipient capsule beside the immutable owner root
+    /// in the existing anchor companion. It never makes the partial entry writable.
+    pub fn adopt_capsuled_owner_entry_base(&mut self,on:SignerId,snapshot:EditId,entry:EntryId,sealed:Vec<u8>,capsule:EntryCheckpointCapsule)->bool {
+        if self.restore_capsuled_owner_judgment(on,snapshot,entry,&sealed,&capsule).is_none() { return false; }
+        let mut local=LOCAL.to_vec(); sealed.encode(&mut local); capsule.recipient.encode(&mut local); capsule.bytes.encode(&mut local);
+        if local.len()>MAX_BYTES+128 { return false; }
+        self.adopt_owner_entry_base(on,snapshot,entry,local)
+    }
     /// Explicit owner publication of a new format. The fresh key opens only this
     /// root; its recovery wrapper is for existing holders, never sent as a secret.
     pub fn draft_capsuled_entry_base(&mut self,on:SignerId,signers:&[SignerId],entry:EntryId)->Result<PreparedEntryBase,Refusal> {
@@ -38,7 +62,7 @@ impl Lab {
         let recovery=keys::seal_edit(&key,&data.bytes(),&ctx,&mut self.rng);
         let payload=keys::seal_edit(&data,&plain,&ctx,&mut self.rng);
         let mut sealed=ctx; recovery.encode(&mut sealed); payload.encode(&mut sealed);
-        if sealed.len()>MAX_BYTES+128 { return Err(Refusal::NotAccepted); }
+        if sealed.len()>MAX_BYTES-8192 { return Err(Refusal::NotAccepted); }
         let root=FileRoot{hash:crate::hash::content(&sealed),size:sealed.len() as u64};
         let draft=self.draft(on,signers,Action::Snapshot{vault,states:vec![crate::policy::Stated{entry,basis:states[0].basis.clone(),slice:root}]})?;
         Ok(PreparedEntryBase{draft,sealed,root})
@@ -64,6 +88,9 @@ impl Lab {
     /// Validates useful state without mutating policy, ordinary keys, or Store.
     /// Durable adoption and negotiated transport are separate required stages.
     pub fn restore_capsuled_owner_judgment(&self,on:SignerId,snapshot:EditId,entry:EntryId,sealed:&[u8],capsule:&EntryCheckpointCapsule)->Option<RestoredOwnerJudgment> {
+        self.decode_capsuled_owner_judgment(on,snapshot,entry,sealed,capsule,true)
+    }
+    pub(super) fn decode_capsuled_owner_judgment(&self,on:SignerId,snapshot:EditId,entry:EntryId,sealed:&[u8],capsule:&EntryCheckpointCapsule,compare_held:bool)->Option<RestoredOwnerJudgment> {
         if capsule.recipient!=on || capsule.bytes.len()>MAX_CAPSULE { return None; }
         let (vault,stated,_)=self.projection_entitlement(on,snapshot,entry)?;
         if stated.slice.size!=sealed.len() as u64 || stated.slice.hash!=crate::hash::content(sealed) { return None; }
@@ -71,6 +98,6 @@ impl Lab {
         let own=self.keys.get(&on)?.seal_secret()?;
         let key=keys::open(&capsule.bytes,&own,&recipient_context(vault,entry,stated.slice,on))?;
         let plain=keys::open_edit(&key,&payload,&context(vault,entry))?;
-        self.decode_owner_judgment_plain(on,entry,vault,stated,&plain,true)
+        self.decode_owner_judgment_plain(on,entry,vault,stated,&plain,compare_held)
     }
 }
