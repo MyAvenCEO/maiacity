@@ -135,6 +135,11 @@ impl Shared {
             .take(pulls::LIVE_LOGS + 1)
             .copied()
             .collect();
+        if !rules.is_empty() {
+            // Overlap bounded entry transfer with authority catch-up, without
+            // admitting these bytes to replay until its conservative fence passes.
+            self.stage_live_entries(endpoint, device, hints.intersection(&missing).copied().collect());
+        }
         // A large authorization catch-up belongs to the existing authority-first backlog scheduler. Never skip
         // it to prioritize a chat or treat the peer's hints as permission to materialize its entry.
         if rules.len() > pulls::LIVE_LOGS {

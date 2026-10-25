@@ -89,3 +89,31 @@ frontiers, identity replacement, bounded capacity and cancellation. Rust crate
 compilation/runtime remain pending the coordinated compiler slot. Full task B
 (scoped closure, admission-fenced integration, then elimination of unrelated
 authority waits) is **open**, not completed by this foundation.
+
+## Transport integration: overlap without authority bypass
+
+The live path now starts bounded staging when demanded entry hints encounter a
+non-empty authority difference. At most two ordinary `ASK_LOGS` first pages are
+fetched using existing authenticated disclosure. Auxiliary key requests are left
+to ordinary authority reconciliation. Signature checking uses the existing
+native/background or cooperative WASM preparation path. The receive-page permit
+is then released while the dedicated stage permit bounds retained memory.
+
+A stage waits on actual change notifications, with a 15-second lifetime and normal
+reconciliation fallback. Final admission runs inside the Lab transaction while
+holding the authenticated holdings mutex through receipt comparison and
+`receive_prepared(true)`. Both legacy announcements and range-completion updates
+use this mutex, so they cannot change the checked frontier between check and
+admission. Local policy cannot change concurrently because Lab is held. Changed,
+missing or disconnected peer receipts are discarded. Ordinary signature/current
+policy checks still determine which edits are accepted; stage readiness grants no
+access. Duplicate decoded reply buffers are dropped before the authority wait.
+
+Added `fetched_entry_stays_outside_replay_until_authority_receipt_matches`: real
+peers transfer an entry while a real signed authority edit is withheld; the entry
+is absent from the receiver's log after preparation and enters only after ordinary
+signed authority receive completes. Syntax parsing passes; this integration and
+its runtime regression **remain uncompiled/unrun** pending the shared compiler
+slot. This enables transfer/authority overlap, but all announced non-entry
+frontiers remain conservative prerequisites. Full scoped dependency tracking and
+removal of unrelated authority waits remain open.
