@@ -97,25 +97,32 @@ body {
 
 /* The app's foot stack ($lib/app/foot.js): every toast, status pill and waiting note of any page, centred just above
    the nav pill, one above the other (lower `order` nearer the pill), so none covers another. Under the nav pill's menu. */
+.app-dock {
+ position: fixed;
+ bottom: max(var(--nav-foot), env(safe-area-inset-bottom, 0px));
+ left: max(8px, env(safe-area-inset-left, 0px));
+ right: max(8px, env(safe-area-inset-right, 0px));
+ z-index: 50;
+ display: flex;
+ flex-direction: column;
+ align-items: center;
+ gap: 8px;
+ pointer-events: none;
+ max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+}
 .foot-stack {
-	position: fixed;
-	left: 50%;
-	bottom: calc(var(--nav-room) + 2px);
-	z-index: 49;
-	display: flex;
-	flex-direction: column-reverse;
-	align-items: center;
-	gap: 6px;
-	width: max-content;
-	max-width: calc(100vw - 2rem);
-	transform: translateX(-50%);
-	pointer-events: none;
+ display: flex;
+ flex-direction: column-reverse;
+ align-items: center;
+ gap: 6px;
+ width: min(36rem, 100%);
+ min-height: 0;
+ overflow-y: auto;
+ overscroll-behavior: contain;
+ pointer-events: auto;
 }
-
-.foot-stack > * {
-	max-width: 100%;
-	pointer-events: auto;
-}
+.foot-stack:empty { display: none; }
+.foot-stack > * { max-width: 100%; flex-shrink: 0; pointer-events: auto; }
 
 /* Where the joystick sits ($lib/touch/TouchStick.svelte), the one place it is said: in the lower left corner, beside the
    nav pill, as far from the screen's left edge (and the notch, on its side) as from its foot; its size; and the room it

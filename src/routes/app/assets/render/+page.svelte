@@ -13,6 +13,7 @@
 	"Rest" puts every copy back. `?fresh` builds every asset afresh, keeping nothing; `?boxes=n` builds n at a time.
 -->
 <script>
+	import { foot, FOOT } from '$lib/app/foot.js';
 	// @ts-nocheck — plain JS
 	import { onDestroy, onMount } from 'svelte';
 	import * as THREE from 'three';
@@ -208,7 +209,7 @@
 	<WalkHint keys="Drag to look · WASD to walk · Shift to hurry" />
 	<TouchStick move={(x, y, hurry) => walker?.move(x, y, hurry)} look={(dx, dy) => walker?.look(dx, dy)} {stage} taps=".panel button" />
 
-	<aside class="panel" aria-label="What the renderer draws">
+	<aside class="panel" use:foot={FOOT.waiting} aria-label="What the renderer draws">
 		<div class="actions">
 			<button onclick={measure} disabled={loading || measuring}>{measuring ? 'Measuring…' : 'Measure'}</button>
 			<button onclick={toggleCut} disabled={loading} aria-pressed={cut}>{cut ? 'Close the cut' : 'Cut open'}</button>
@@ -271,7 +272,7 @@
 	</aside>
 
 	{#if loading}
-		<div class="loading" role="status" aria-live="polite">
+		<div class="loading" use:foot={FOOT.waiting} role="status" aria-live="polite">
 			<p class="eyebrow">Renderer lab</p>
 			<strong>A thousand assets, built in the box</strong>
 			<div class="progress"><span style:width="{Math.min(100, (done / of) * 100)}%"></span></div>
@@ -292,9 +293,7 @@
 		cursor: grab;
 	}
 	.panel {
-		position: absolute;
-		top: calc(max(0.75rem, env(safe-area-inset-top, 0px)) + 3.6rem);
-		right: 0.75rem;
+		position: relative;
 		z-index: 3;
 		width: min(20rem, calc(100vw - 1.5rem));
 		box-sizing: border-box;
@@ -429,9 +428,7 @@
 		text-align: left;
 	}
 	.loading {
-		position: absolute;
-		left: 50%;
-		top: 42%;
+		position: relative;
 		z-index: 4;
 		display: flex;
 		flex-direction: column;
@@ -441,7 +438,6 @@
 		border-radius: 14px;
 		background: rgb(250 248 242 / 0.9);
 		color: #1f2a23;
-		transform: translateX(-50%);
 		box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
 	}
 	.loading .eyebrow {
@@ -470,10 +466,7 @@
 	/* on a phone: the readout at the foot, short, above the nav pill */
 	@media (max-width: 640px) {
 		.panel {
-			top: auto;
-			bottom: calc(var(--nav-room, 4rem) + 0.5rem);
-			left: 0.75rem;
-			right: 0.75rem;
+
 			width: auto;
 			max-height: 40vh;
 			overflow: auto;

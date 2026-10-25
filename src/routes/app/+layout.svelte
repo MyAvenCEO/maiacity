@@ -25,6 +25,7 @@
 	import { pillVaults, seeded, signerName } from '$lib/avendb/vaults.js';
 	import { remember } from '$lib/app/session';
 	import { forwardConsole, native } from '$lib/native';
+	import { foot, footHost, FOOT } from '$lib/app/foot.js';
 	import NavPill from '$lib/app/NavPill.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, opens } from '$lib/app/places';
@@ -426,26 +427,26 @@
 			</p>
 		</div>
 	{:else}
-		{#if invited}<p class="invite-note" role="status">{invited} <button class="quiet later" onclick={() => (invited = '')}>OK</button></p>
-		{:else if retire.length && session.moving?.behind}<p class="invite-note move-note" role="status">
+		{#if invited}<p class="invite-note" use:foot={FOOT.toast} role="status">{invited} <button class="quiet later" onclick={() => (invited = '')}>OK</button></p>
+		{:else if retire.length && session.moving?.behind}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
 				Your keys moved to ML-DSA-65. Removing the old ones waits until this device holds all your coop’s server holds: it is syncing.
 			</p>
-		{:else if retire.length && moveAsks}<p class="invite-note move-note" role="status">
+		{:else if retire.length && moveAsks}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
 				Your keys moved to ML-DSA-65. Remove the old ones now, {retireWhat}: {moveAsks}.
 				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Removing…' : 'Remove old keys'}</button>
 				{#if moveError}<span class="bad">{moveError}</span>{/if}
 			</p>
-		{:else if session.moving?.checkpoint && moveAsks}<p class="invite-note move-note" role="status">
+		{:else if session.moving?.checkpoint && moveAsks}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
 				Your keys moved to ML-DSA-65. Sign one checkpoint over what your old keys signed, so their old signatures need no checking any more: {moveAsks}.
 				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Signing…' : 'Sign checkpoint'}</button>
 				{#if moveError}<span class="bad">{moveError}</span>{/if}
 			</p>
-		{:else if session.moving && moveAsks}<p class="invite-note move-note" role="status">
+		{:else if session.moving && moveAsks}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
 				{moveWhat} to ML-DSA-65, smaller and faster post-quantum signatures: {moveAsks}.
 				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Moving…' : session.moving.device || !session.moving.avens ? 'Move my keys' : 'Move them'}</button>
 				{#if moveError}<span class="bad">{moveError}</span>{/if}
 			</p>
-		{:else if moved}<p class="invite-note move-note" role="status">
+		{:else if moved}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
 				{#if moved === 'retired'}Your old keys are removed. Your other devices learn it as they sync with this one.
 				{:else if moved === 'checkpoint'}Your checkpoint is signed. Your other devices learn it as they sync with this one.
 				{:else if moved === 'avens'}Your coop’s server and agents moved to ML-DSA-65. Each signs with its new key from its next start.
@@ -456,7 +457,10 @@
 			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>
 		</div>
 	{/if}
-	<NavPill {founder} name={session.name} onsignout={native() ? undefined : leave} />
+	<div class="app-dock">
+		<div class="foot-stack" use:footHost></div>
+		<NavPill {founder} name={session.name} onsignout={native() ? undefined : leave} />
+	</div>
 	<StatusPill />
 {/if}
 <!-- what the passkey's prompt and avenDB's start are doing, step by step, at the way in and as it hands over to the app -->
@@ -523,10 +527,7 @@
 
 	/* why the invite a link brought didn't go through */
 	.invite-note {
-		position: fixed;
-		z-index: 30;
-		top: calc(0.8rem + env(safe-area-inset-top, 0px));
-		left: 50%;
+
 		max-width: min(36rem, calc(100% - 2rem));
 		margin: 0;
 		padding: 0.6rem 1rem;
@@ -535,7 +536,6 @@
 		box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
 		color: var(--terracotta);
 		font-size: 0.9rem;
-		transform: translateX(-50%);
 	}
 
 	/* the key move's one ask (K3b): news, not trouble */
