@@ -240,3 +240,28 @@ test('cancellation during a reference read prevents a subsequent broad file scan
  await expect(bringDeclared('/',{device:d,signal:controller.signal,bring:async()=>{}})).rejects.toThrow();
  expect(world).toBe(false);
 });
+
+test('zero concrete IDs distinguishes missing catalog, unmatched route and active query discovery', async () => {
+ const { manifestDiagnostics } = await import('./manifests.js');
+ const cases = [
+  { rows: [], expected: { catalog: 'local', heldManifests: 0, matchedLeaves: 0, typeDiscoveryHints: 0 } },
+  { rows: [{ record: m({ id: 'other', routes: ['/other/'], parts: [{ query: { type: ['room'] } }] }) }], expected: { catalog: 'local', heldManifests: 1, matchedLeaves: 0, typeDiscoveryHints: 0 } },
+  { rows: [{ record: m({ id: 'current', routes: ['*'], parts: [{ query: { type: ['room'] } }] }) }], expected: { catalog: 'local', heldManifests: 1, matchedLeaves: 1, queryLeaves: 1, typeDiscoveryHints: 1, localRows: 0 } }
+ ];
+ for (const c of cases) {
+  let hints = [];
+  const device = { run: async op => ({ ok: { rows: op.select ? [] : c.rows } }) };
+  expect(await bringDeclared('/current/', { device, bring: async () => { throw new Error('No local IDs'); }, prioritize: (_ids, queries) => { hints = queries; } })).toEqual([]);
+  const last = manifestDiagnostics().runs.at(-1);
+  expect(last).toMatchObject({ requested: 0, state: 'scheduled', ...c.expected });
+  expect(hints.length).toBe(c.expected.typeDiscoveryHints);
+  expect(JSON.stringify(last)).not.toContain('/current/');
+  expect(JSON.stringify(last)).not.toContain('room');
+ }
+});
+
+test('a refused catalog is not reported as a successful empty local catalog', async () => {
+ const { manifestDiagnostics } = await import('./manifests.js');
+ await bringDeclared('/private/', { device: { run: async () => ({ refused: 'NoCap' }) }, bring: async () => {} });
+ expect(manifestDiagnostics().runs.at(-1)).toMatchObject({ catalog: 'refused', heldManifests: 0, requested: 0 });
+});

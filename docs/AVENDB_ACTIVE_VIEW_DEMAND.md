@@ -70,3 +70,25 @@ physical first-view latency and full coverage remain acceptance work.
 Validation: ViewDemand Lean proofs pass; 39 focused device/demand/manifest tests
 pass, including cold manifest arrival, later reference arrival, revision bursts,
 notifications during a blocked local query, and obsolete-navigation cancellation.
+
+### Diagnose zero concrete requests without assuming absent demand
+
+The iPhone export from frontend `7dc7c57a` records 17 completed manifest walks
+with `requested: 0`. That field counted only concrete entry IDs, not discovery
+selectors. The repo declarations are query-based, and cold manifest discovery
+itself is published by `useView`, outside this counter. Therefore the report does
+not establish whether manifests were absent, the route had no matching leaves,
+or type discovery was active while no readable rows existed locally.
+
+Walk observations now distinguish bounded counts of held manifests, matched
+leaves, query leaves, type discovery hints, and local rows. Catalog outcomes
+separately report local/refused/unavailable/failed without error text. No routes,
+IDs, selectors, contents or capability details are exported. These are scheduling
+observations, not completeness or delivery proofs. Tests cover all three zero-ID
+cases and refused catalogs: 41 focused device/demand/manifest tests pass.
+
+Remaining declaration gaps: Chat has its own reactive room discovery but no repo
+Chat manifest; game manifests currently contain tag-only leaves, which cannot
+produce positive type discovery hints. Manifests are owner-AIP records, not seed
+writes; adding declarations in source alone cannot update existing vault records.
+No live owner records were changed by this diagnostic patch.

@@ -176,17 +176,18 @@ export function namedBy(record) {
 
 /** Manifests are verified local records. The device discovers and syncs them from peers in the background. */
 /** @param {ManifestDevice | undefined} d
- * @param {{vault?:string, signal?:AbortSignal, fetch?:typeof globalThis.fetch}} options
+ * @param {{vault?:string, signal?:AbortSignal, fetch?:typeof globalThis.fetch, observe?:(state:string)=>void}} options
  * @returns {Promise<Manifest[]>}
  */
-export async function manifestsOf(d, { vault = MAIA_CITY, signal } = {}) {
+export async function manifestsOf(d, { vault = MAIA_CITY, signal, observe = () => {} } = {}) {
  signal?.throwIfAborted();
- if (!d) return [];
+ if (!d) { observe('unavailable'); return []; }
  try {
   const got = await d.run({ op: 'query', vault, where: { type: ['manifest'] } });
   signal?.throwIfAborted();
+  observe(Array.isArray(got?.ok?.rows) ? 'local' : got?.refused ? 'refused' : 'unavailable');
   return (got?.ok?.rows ?? []).map(r => /** @type {Manifest} */ (r.record)).filter(Boolean);
- } catch (e) { signal?.throwIfAborted(); return []; }
+ } catch (e) { signal?.throwIfAborted(); observe('failed'); return []; }
 }
 
 /**
@@ -198,7 +199,7 @@ export async function manifestsOf(d, { vault = MAIA_CITY, signal } = {}) {
  * @param {string} path @param {{ device?: any, bring: (ids: string[]) => Promise<any>, vault?: string, fetch?: any }} o
  */
 // Diagnostic observations only; no routes, vault IDs or entry contents are retained.
-/** @type {{ms:number, requested:number, state:string}[]} */
+/** @type {{ms:number, requested:number, state:string, catalog:string, heldManifests:number, matchedLeaves:number, queryLeaves:number, typeDiscoveryHints:number, localRows:number}[]} */
 const manifestRuns = [];
 let manifestPending = 0;
 export const manifestDiagnostics = () => ({ pending: manifestPending, runs: manifestRuns.map(x => ({ ...x })) });
@@ -208,8 +209,9 @@ export async function bringDeclared(path, options) {
  const start = performance.now();
  manifestPending++;
  let requested = 0, state = 'failed';
+ const observed = { catalog: 'unavailable', heldManifests: 0, matchedLeaves: 0, queryLeaves: 0, typeDiscoveryHints: 0, localRows: 0 };
  try {
-  const entries = await planDeclared(path, options);
+  const entries = await planDeclared(path, options, observed);
   requested = entries.length;
   state = options.signal?.aborted ? 'cancelled' : 'scheduled';
   return entries;
@@ -218,21 +220,26 @@ export async function bringDeclared(path, options) {
   throw error;
  } finally {
   manifestPending--;
-  manifestRuns.push({ ms: performance.now() - start, requested, state });
+  manifestRuns.push({ ms: performance.now() - start, requested, state, ...observed });
   if (manifestRuns.length > 20) manifestRuns.shift();
  }
 }
 
 /** @param {string} path @param {PlanOptions} options @returns {Promise<string[]>} */
-async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch, signal, prioritize = () => {} }) {
+async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch, signal, prioritize = () => {} }, observed) {
 	signal?.throwIfAborted();
-	const leaves = leavesFor(await manifestsOf(d, { vault, fetch: get, signal }), path);
+	const manifests = await manifestsOf(d, { vault, fetch: get, signal, observe: state => { observed.catalog = state; } });
+	observed.heldManifests = manifests.filter(m => m?.kind === 'manifest' && typeof m.id === 'string').length;
+	const leaves = leavesFor(manifests, path);
+	observed.matchedLeaves = leaves.length;
+	observed.queryLeaves = leaves.filter(({ leaf }) => leaf.query).length;
 	signal?.throwIfAborted();
 	if (!leaves.length) return [];
 	// These IDs are already declared by canonical local manifests. Publish scheduling
 	// hints before unrelated query materialization or transfer; hints grant no access.
 	// Dispatch is independent of acknowledgement: a busy node must not delay local discovery.
 	const queries = normalizeDiscovery(leaves.flatMap(({ leaf }) => leaf.query?.type?.length ? [{ types: leaf.query.type, vault }] : []));
+	observed.typeDiscoveryHints = queries.length;
 	void Promise.resolve(prioritize(entriesOf(leaves.filter(({ leaf }) => leaf.entry), []), queries)).catch(() => {});
 	signal?.throwIfAborted();
 	/** @type {Set<string>} */
@@ -247,6 +254,7 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 		explicit.forEach(e => asked.add(e));
 		signal?.throwIfAborted();
 		const rows = await rowsFor(at, { device: d, vault, fetch: get, signal });
+		observed.localRows += rows.length;
 		const ids = entriesOf(at, rows).filter((e) => !asked.has(e));
 		signal?.throwIfAborted();
 		if (ids.length) await bring(ids);
