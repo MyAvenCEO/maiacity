@@ -1,5 +1,7 @@
 # Remaining catch-up responsiveness: measured Lab phases
 
+Source implemented and pushed: [b1d5b53c](https://github.com/MyAvenCEO/maiacity/commit/b1d5b53c). Lean/JS validation is done; Rust runtime validation and delivery are pending.
+
 ## Finding
 
 `Shared::catch_up_paced_class` calls `Lab::catch_up`, which calls the full `Lab::refresh` transition for held incoming history. The full transition updates policy replay, keys, opened bodies, materialized items, upkeep and checkpoint overlays together. Scheduler priority changes which queued operation starts next; it cannot preempt this transition once it owns the Lab mutex.
