@@ -62,6 +62,15 @@ export function useView(path) {
 	const demand = createDemand((op) => opened.run(op));
 	const view = { device: opened, path, controller, demand, done: null };
 	activeView = view;
+	// Demand already schedules authorized discovery and transfer. Awaiting a
+	// second legacy pull here blocks later manifest ranks on whole-history sync
+	// and occupies foreground slots outside the view's cancellable scope.
+	const request = async (ids) => {
+		await demand.add(ids);
+		signal.throwIfAborted();
+		learn(ids, path, { prioritize: false });
+		if (demand.legacy()) return bringEntries(ids, opened, { signal, path });
+	};
 	view.done = (async () => {
 		// Learned IDs are scheduling hints, not trusted records. Do not wait for an
 		// unrelated manifest query before telling the node what this view needs.
@@ -72,20 +81,19 @@ export function useView(path) {
 				signal.throwIfAborted();
 				return demand.prioritize(ids, queries);
 			},
-			bring: async (ids) => {
-				const scoped = await demand.add(ids);
-				return bringEntries(ids, opened, { signal, path, prioritize: !scoped });
-			}
+			bring: request
 		});
 		signal.throwIfAborted();
 		const rest = before.filter((e) => !declared.includes(e));
 		if (rest.length) {
 			const ids = rest.slice(0, AT_ONCE);
-			const scoped = await demand.add(ids);
-			await bringEntries(ids, opened, { signal, path, prioritize: !scoped });
+			await request(ids);
 		}
 		return declared;
-	})().catch(() => []);
+	})().catch(() => {
+		demand.close();
+		return [];
+	});
 	return view.done;
 }
 

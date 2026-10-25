@@ -104,7 +104,7 @@ test('a capable node receives scoped priorities without an uncancellable legacy 
 	try {
 		useDevice(d);
 		await useView('/active/');
-		expect(calls.filter((op) => op.op === 'bring')).toEqual([{ op: 'bring', entries: [id(7)], prioritize: false }]);
+		expect(calls.filter((op) => op.op === 'bring')).toEqual([]);
 		useDevice(null);
 		await new Promise((r) => setTimeout(r, 1));
 		const priorities = calls.filter((op) => op.op === 'demand');
@@ -201,3 +201,30 @@ test('explicit current-view dependencies precede a full learned lease without cl
   expect(calls.filter(op => op.op === 'demand').at(-1).entries).toEqual([target, ...hints.slice(0, 511)]);
  } finally { delete globalThis.location; }
 });
+
+for (const reply of [{ ok: { accepted: true } }, { refused: 'Denied' }]) {
+ test(`manifest ranks do not await legacy history transfer: ${JSON.stringify(reply)}`, async () => {
+  const { useView } = await import('./device.js');
+  globalThis.localStorage = store();
+  globalThis.location = { pathname: '/ranks/' };
+  const calls = [];
+  const d = { run: async op => {
+   calls.push(op);
+   if (op.op === 'demand') return reply;
+   if (op.op === 'query') return { ok: { rows: [
+    { record: { kind: 'manifest', id: 'first', routes: ['*'], priority: 'high', parts: [{ entry: id(21) }] } },
+    { record: { kind: 'manifest', id: 'last', routes: ['*'], priority: 'low', parts: [{ entry: id(22) }] } }
+   ] } };
+   if (op.op === 'bring') return new Promise(() => {});
+   return { ok: {} };
+  } };
+  try {
+   useDevice(d);
+   const result = await Promise.race([useView('/ranks/'), new Promise(resolve => setTimeout(() => resolve('blocked'), 100))]);
+   expect(result).toEqual([id(21), id(22)]);
+   expect(calls.filter(op => op.op === 'bring')).toEqual([]);
+   expect(learned('/ranks/')).toContain(id(22));
+   expect(calls.filter(op => op.op === 'demand').at(-1).entries).toContain(id(22));
+  } finally { delete globalThis.location; }
+ });
+}
