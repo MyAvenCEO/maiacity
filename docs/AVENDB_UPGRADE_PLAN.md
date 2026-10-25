@@ -1,5 +1,7 @@
 # avenDB upgrade: specification, execution plan, and agent handoff
 
+**Paused at user request, 2026-10-25:** compact current handoff: [AVENDB_OPEN_TASKS.md](AVENDB_OPEN_TASKS.md). Latest network build was intentionally stopped; latest batch remains undeployed.
+
 This is the maintained task ledger for the avenDB performance upgrade. Read this document and `avendb/docs/ARCHITECTURE.md` before continuing. It is designed to stand alone for an agent with repository access; prior chats, Claude sessions, local temporary files, and the original author's machine are not required to understand the objective or completion gates.
 
 Last maintained: 2026-10-25. Current execution order: keep three subagents plus the coordinator progressing authorized Doing and Open work in parallel; finish each increment with validation, a focused pushed implementation commit and this ledger updated. Serialize heavyweight local builds. The overall upgrade is **incomplete**. A delivered compact release is not completion of all original M3–M7 integration. Do not infer completion from a module existing, a successful compile, or a merged PR alone.
