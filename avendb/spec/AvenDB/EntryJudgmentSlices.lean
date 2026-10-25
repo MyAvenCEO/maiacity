@@ -97,4 +97,8 @@ def charge (canProgress alreadyAttempted : Bool) : Nat :=
     if canProgress && !alreadyAttempted then 1 else 0
 theorem unresolvedDoesNotConsumeBudget (seen : Bool) : charge false seen = 0 := by simp [charge]
 theorem candidateChargedOnlyOnce (ready : Bool) : charge ready true = 0 := by simp [charge]
+-- An already-ready record does not need scheduling admission. This result
+-- never replaces the independent authorization of the actual query read.
+def needsWork (ready : Bool) := !ready
+theorem readyDoesNotNeedWork : needsWork true = false := rfl
 end ColdQuerySlices
