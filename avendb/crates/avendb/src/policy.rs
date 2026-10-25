@@ -4389,6 +4389,14 @@ impl Log {
             }).map(|((_, _, id), _)| *id).collect()
     }
 
+    /// All held writes of one entry in canonical order, bounded without a
+    /// whole-log scan. This does not assert that history is complete or counted.
+    pub fn bounded_entry_write_ids(&self, entry: EntryId, limit: usize) -> Option<Vec<EditId>> {
+        let index=self.entry_order.get(&entry)?;
+        if index.len()>limit {return None;}
+        Some(index.keys().map(|(_,_,id)|*id).collect())
+    }
+
     /// Immutable signed-log input; callers still verify signatures and admission.
     pub fn entry_write(&self, id: EditId) -> Option<&Edit> {
         self.write_at.get(&id).map(|at| &self.edits[*at])

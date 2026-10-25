@@ -129,3 +129,11 @@ theorem missingActorRejected (actors held : List Nat) (a : Nat)
   intro h
   exact missing (h.1 a member)
 end MixedActorPlainScope
+namespace AvenDB.HistoricalGroups
+/-- Closure uses all historical definitions, never only the latest version. -/
+def includes (versions : List (List α)) : List α := versions.flatten
+theorem earlierIncludeRetained (before after : List (List α)) (entry : α)
+    (h : entry ∈ includes before) : entry ∈ includes (before ++ after) := by
+  simp only [includes, List.flatten_append, List.mem_append] at *
+  exact Or.inl h
+end AvenDB.HistoricalGroups

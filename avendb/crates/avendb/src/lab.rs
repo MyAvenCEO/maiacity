@@ -74,6 +74,9 @@
 //! device reads off those of them the vault created itself and the device counts (`lane_of`): what it reads and judges
 //! the vault's entries by.
 
+#[path = "historical_group_dependencies.rs"]
+mod historical_group_dependencies;
+
 #[path = "bootstrap_dependencies.rs"]
 mod bootstrap_dependencies;
 #[path = "bootstrap_suffix.rs"]
