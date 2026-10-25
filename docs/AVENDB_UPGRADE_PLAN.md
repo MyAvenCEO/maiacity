@@ -49,6 +49,12 @@ Combined core completed **290 passed, one failed**. Immediate receive, deeper-pr
 
 Scoped foundation [2cc70c47](https://github.com/MyAvenCEO/maiacity/commit/2cc70c47) and passing isolated evidence [56585447](https://github.com/MyAvenCEO/maiacity/commit/56585447) are integrated. Recursive known-dependency fetching [4e020ba7](https://github.com/MyAvenCEO/maiacity/commit/4e020ba7) and production query-demand regression [72aa24fe](https://github.com/MyAvenCEO/maiacity/commit/72aa24fe) are integrated but await combined runtime validation. The latter supplies neither target IDs nor direct stage calls; it withholds 17 unrelated authority frontiers and unrelated payload. These remain code/validation progress, not deployed or device-accepted outcomes.
 
+### Warm recapture acceptance and combined peer validation
+
+The unchanged long-entry regression now **passes** after [75355753](https://github.com/MyAvenCEO/maiacity/commit/75355753): 256 revisions; warm restore 6.742ms, first view 1.327ms, first append **19.971ms**, canonical cold restore 173.012ms. All 257 target bodies and eight unrelated bodies remain deferred through the first append; the regression also checks subsequent append, re-save/reopen/third append, explicit full-history access and exact cold reconstruction equivalence. The earlier comparable append was 191.509ms. These are synthetic test-profile measurements, not device acceptance or durable-public-write timings.
+
+Owner-authored shared audience/Mark closure [d88de811](https://github.com/MyAvenCEO/maiacity/commit/d88de811) and public-demand live-update coverage [e26d6e2f](https://github.com/MyAvenCEO/maiacity/commit/e26d6e2f) are integrated. Combined net test compilation is running in the canonical checkout; no combined runtime pass claimed yet. Non-owner-author writes, long/checkpoint-backed target cuts and physical-device acceptance remain open.
+
 Current phone evidence:24b frontend,375/2899 logs, all10 recorded manifest runs
 held zero manifest records. Provider read found13 manifests, so catalog exists
 but was not held by this phone. Local query p95 was2897ms with visible foreground
