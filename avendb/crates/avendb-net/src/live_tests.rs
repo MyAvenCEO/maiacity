@@ -515,7 +515,8 @@ async fn cold_room_demand_renders_with_unrelated_authority_frontiers_withheld() 
         phone.op(demand).await?;
         let mut updates = phone.stirs();
         mac.act(move |lab, me| lab.edit(me, vault, target,
-            |item| item.set_text(2, "live update before unrelated authority"))).await?;
+            |item| item.set_text(2, "live update before unrelated authority"))).await
+            .map_err(|refusal| anyhow::anyhow!("live source edit refused: {refusal:?}"))?;
         time::timeout(Duration::from_secs(20), async {
             loop {
                 updates.borrow_and_update();
