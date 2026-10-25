@@ -184,6 +184,9 @@ fn prepared_receive_preserves_whole_page_checkpoint_coverage() {
     let (mut prepared, me) = receiver();
     let (mut ordinary, _) = receiver();
     let checked = prepared.prepare_receive(me, incoming.clone()).check();
+    let mut batches=checked.into_batches();
+    let checked=batches.next().unwrap();
+    assert!(batches.next().is_none(),"checkpoint coverage preserves whole-page admission");
     assert_eq!(
         prepared.receive_prepared(me, checked, true),
         ordinary.receive_whose_now(me, incoming, vec![], true)
@@ -202,4 +205,25 @@ fn prepared_receive_preserves_whole_page_checkpoint_coverage() {
     withdrawn.restore_backup(me, &empty);
     assert_eq!(withdrawn.receive_prepared(me, checked, false).0, 0);
     assert!(withdrawn.log(me).ids().is_empty());
+}
+
+#[test]
+fn prepared_chunks_preserve_order_dedup_and_signature_ownership() {
+    let mut source=Lab::with_entropy([231;32]);
+    let owner=source.passkey_from_in("owner",[232;32],Suite::MlDsa);
+    let sender=source.device_with_in("sender",[233;32],Suite::MlDsa);
+    cast::human_on(&mut source,owner,&[sender]);
+    let originals=source.backup(sender).signed;
+    let incoming:Vec<_>=originals.iter().cycle().take(300).cloned().collect();
+    let (mut chunked,me)=receiver();let (mut whole,_)=receiver();
+    let prepared=chunked.prepare_receive(me,incoming.clone()).check();
+    let mut seen=Vec::new();let mut new=0;
+    for batch in prepared.into_batches() {
+        assert!(batch.edits.len()<=128);
+        seen.extend(batch.edits.iter().cloned());
+        new+=chunked.receive_prepared(me,batch,false).0;
+    }
+    assert_eq!(seen,incoming);
+    assert_eq!(new,whole.receive_whose_now(me,incoming,vec![],false).0);
+    assert_eq!(chunked.backup(me).signed,whole.backup(me).signed);
 }

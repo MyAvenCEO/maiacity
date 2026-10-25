@@ -22,3 +22,12 @@ theorem late_order_restarts (authority admitted : Bool) : resume authority false
 theorem resume_requires_admission (authority later : Bool) : resume authority later false = false := by
   cases authority <;> cases later <;> rfl
 end AvenDB.BootstrapSuffixPreparation
+
+namespace AvenDB.PreparedReceiveAdmission
+-- Ownership moves with each admitted prefix; cancellation drops only the suffix.
+def retained (admitted remaining : List α) := admitted ++ remaining
+theorem cancellation_keeps_admitted (a r : List α) : (retained a r).take a.length = a := by
+  simp [retained]
+theorem chunks_keep_order (a b r : List α) : retained (a ++ b) r = retained a (b ++ r) := by
+  simp [retained, List.append_assoc]
+end AvenDB.PreparedReceiveAdmission

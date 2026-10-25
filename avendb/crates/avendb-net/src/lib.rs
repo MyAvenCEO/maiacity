@@ -2625,12 +2625,9 @@ impl Shared {
                 ).await?;
                 #[cfg(target_arch = "wasm32")]
                 let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, ()).await?;
-                let (got, whose) = self
-                    .try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| {
-                        let (_permit, _activity) = (permit, activity);
-                        lab.receive_prepared(me, prepared, false)
-                    })
-                    .await?;
+                let (got, whose, ()) = self.admit_received_batches(prepared,permit,activity,(),
+                    if background {lab_schedule::Class::Background} else {lab_schedule::Class::Foreground},
+                    |_,_| {}).await?;
                 // its keys and items brought up to date now and then, not at each page (`CATCH_UP_PACE`)
                 if next.is_some() {
                     self.catch_up_paced_class(false, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
@@ -2696,6 +2693,32 @@ impl Shared {
             }
         }
         Ok(new)
+    }
+
+    /// One scheduler admission per bounded prepared chunk. The page permit,
+    /// lifecycle ticket and caller accounting move into each actual Lab operation;
+    /// cancellation cannot release them while that operation still owns the input.
+    async fn admit_received_batches<O:Send+'static,F:Fn(&O,usize)+Copy+Send+'static>(
+        self:&Arc<Self>,prepared:avendb::lab::PreparedReceive,mut permit:pulls::Page,
+        mut activity:lifecycle::Ticket,mut owner:O,class:lab_schedule::Class,record:F,
+    )->Result<(usize,Vec<(VaultId,Option<avendb::id::EntryId>)>,O)> {
+        let mut batches=prepared.into_batches().peekable();
+        let (mut total,mut whose)=(0,Vec::new());
+        while let Some(batch)=batches.next() {
+            let (new,seen,p,a,o)=self.try_lab_class(class,move |lab,me| {
+                // A previous deferred page must be replayed before a new chunk
+                // can extend the validated partial prefix.
+                let now=lab.has_partial_entry_bases(me);
+                if now {lab.catch_up(me);}
+                let (new,seen)=lab.receive_prepared(me,batch,now);
+                record(&owner,new);
+                (new,seen,permit,activity,owner)
+            }).await?;
+            total+=new;whose.extend(seen);permit=p;activity=a;owner=o;
+            if batches.peek().is_some() {time::sleep(Duration::ZERO).await;}
+        }
+        drop((permit,activity));
+        Ok((total,whose,owner))
     }
 
     /// Pure signature checks own their page, lifecycle ticket and caller context but never the Lab
