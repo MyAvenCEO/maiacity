@@ -113,3 +113,17 @@ remains outside this exact-scope path.
 
 JS query-window regression: 23 tests passed, 94 assertions. Core automatic-selection
 assertions are added to the native manifest regression and remain pending Cargo.
+
+### Bounded demand liveness correction
+
+Automatic carrier discovery now precedes ordinary type discovery so the native
+first-eight restore budget cannot be consumed entirely by unrelated held rows.
+Missing manifest member hints precede the carrier and ordinary rows before the
+512-ID demand cap. Already usable members are removed by reusing this exact read's
+nonsealed rows (no additional body hydration), allowing later members to enter the
+first-eight checkpoint batch on the next reactive update. This does not assert
+those rows' complete history or turn an accepted old cut into fresh negative proof.
+A 512-existing-row regression verifies missing IDs survive truncation and advance
+after the first eight become visible. Combined JS demand/completeness: 28 passed,
+99 assertions; Lean passes. Native manifest/publication/offline-restore gates remain
+pending the parent-controlled compiler queue.

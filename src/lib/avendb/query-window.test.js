@@ -40,7 +40,7 @@ test('discovery extracts only bounded positive types and never widens an invalid
 
 test('typed inventory reads publish only explicit bounded types within their vault', () => {
 	for (const op of ['database', 'entry_views']) {
-		expect(queryDiscovery({ op, vault: id(9), types: ['recipe', 'recipe'], where: { type: ['private'] } })).toEqual([{ types: ['recipe'], vault: id(9) }, ...(op === 'entry_views' ? [{ types: ['discovery-manifest'], vault: id(9) }] : [])]);
+		expect(queryDiscovery({ op, vault: id(9), types: ['recipe', 'recipe'], where: { type: ['private'] } })).toEqual([...(op === 'entry_views' ? [{ types: ['discovery-manifest'], vault: id(9) }] : []), { types: ['recipe'], vault: id(9) }]);
 		expect(queryDiscovery({ op, vault: 'invalid', types: ['recipe'] })).toEqual([]);
 		expect(queryDiscovery({ op })).toEqual([]);
 		expect(queryDiscovery({ op, types: Array.from({ length: 20 }, (_, i) => `type-${i}`) })[0].types.length).toBe(8);
@@ -290,7 +290,7 @@ test('ordinary view demand discovers approved carriers and follows selected memb
     const window = createReadWindow({ device: () => d, read: async () => answer });
     expect(await window.read({ op: 'entry_views', vault: id(9), tag: 'inbox' })).toBe(answer);
     await flush();
-    expect(d.calls.at(-1).entries).toEqual([id(1), id(2), id(4)]);
+    expect(d.calls.at(-1).entries).toEqual([id(4), id(2), id(1)]);
     expect(d.calls.at(-1).queries).toEqual([{ types: ['discovery-manifest'], vault: id(9) }]);
     expect(answer.ok.scope.localComplete).toBe(false);
     expect(answer.ok.scope.completeAtOwnerCut).toBeUndefined();
@@ -302,4 +302,23 @@ test('unqualified or malformed discovery metadata does not create target hints',
     expect(replyEntries({ ok: { scope: { discovery: { entry: id(2), snapshot: id(3), pendingEntries: [id(4)] } } } })).toEqual([]);
     expect(queryDiscovery({ op: 'entry_views', vault: id(9), entries: [id(1)] })).toEqual([]);
     expect(queryDiscovery({ op: 'entry_views', tag: 'private' })).toEqual([]);
+});
+
+test('missing manifest members precede 512 existing rows and advance as members become visible', async () => {
+    const d = node();
+    let missing = Array.from({ length: 12 }, (_, i) => id(1000 + i));
+    const view = createReadWindow({ device: () => d, read: async () => ({ ok: {
+        rows: Array.from({ length: 512 }, (_, i) => ({ entry: id(i + 1) })),
+        scope: { localComplete: false, discovery: { basis: 'owner-attested-cut', entry: id(900), snapshot: id(901), pendingEntries: missing } }
+    } }) });
+    const op = { op: 'entry_views', vault: id(9), types: ['note'] };
+    await view.read(op); await flush();
+    expect(d.calls.at(-1).entries.slice(0, 12)).toEqual(missing);
+    expect(d.calls.at(-1).entries.length).toBe(512);
+    expect(d.calls.at(-1).queries[0]).toEqual({ types: ['discovery-manifest'], vault: id(9) });
+    missing = missing.slice(8); // The core filters the first batch after its ordinary rows become usable.
+    await view.read(op); await flush();
+    expect(d.calls.at(-1).entries.slice(0, 4)).toEqual(missing);
+    expect(d.calls.at(-1).entries).not.toContain(id(1000));
+    view.close(); await flush();
 });

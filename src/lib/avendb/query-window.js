@@ -11,8 +11,8 @@ export function replyEntries(got) {
 	const automatic = ok.scope?.discovery;
 	const selected = automatic?.basis === 'owner-attested-cut' && /^[0-9a-f]{64}$/.test(automatic?.snapshot ?? '')
 		&& /^[0-9a-f]{64}$/.test(automatic?.entry ?? '')
-		? [{ entry: automatic.entry }, ...(Array.isArray(automatic.pendingEntries) ? automatic.pendingEntries.slice(0, 512).map(entry => ({ entry })) : [])] : [];
-	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items', 'lines'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : []), ...pending, ...selected];
+		? [...(Array.isArray(automatic.pendingEntries) ? automatic.pendingEntries.slice(0, 512).map(entry => ({ entry })) : []), { entry: automatic.entry }] : [];
+	const rows = Array.isArray(ok) ? ok : [...selected, ...pending, ok, ...['rows', 'posts', 'entries', 'items', 'lines'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : [])];
 	return [...new Set(rows.map((r) => r?.entry).filter((e) => typeof e === 'string' && /^[0-9a-f]{64}$/.test(e)))];
 }
 
@@ -54,7 +54,7 @@ export function queryDiscovery(op) {
 		// This requests ordinary authorized discovery only; it never publishes a cut.
 		if (op.op === 'entry_views' && /^[0-9a-f]{64}$/.test(op.vault ?? '') && !op.entries && !op.kind
 			&& ((Array.isArray(op.types) && op.types.length > 0 && op.types.length <= 8) || (typeof op.tag === 'string' && op.tag.length > 0 && op.tag.length <= 256))) {
-			hints.push({ types: ['discovery-manifest'], vault: op.vault });
+			hints.unshift({ types: ['discovery-manifest'], vault: op.vault });
 		}
 		return normalizeDiscovery(hints);
 	}
