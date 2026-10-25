@@ -1,25 +1,29 @@
 // @ts-nocheck
 import {test,expect} from 'bun:test';
 import {watchStudioCollections} from './collection-demand.js';
-import {createReactiveRead} from '../avendb/reactive-read.js';
-import {observedWindow} from '../avendb/observed-window.js';
+import {createEntryWindow} from '../avendb/query-window.js';
 const turn=()=>new Promise(resolve=>setTimeout(resolve,0));
-test('empty Studio collections retain typed demand and selected-vault changes replace cut scope',async()=>{
+test('Studio demand alone replaces vault and device and closes without any content query',async()=>{
  const calls=[],updates=[];
- const device={run:async op=>{calls.push(op);return op.op==='demand'?{ok:{accepted:true,discovery_supported:true}}:{ok:{rows:[],count:0}};}};
- const api={vault:'a'.repeat(64),observe(query,take,failed){
-  const reader=createReactiveRead({read:observedWindow((d,op)=>d.run(op)),take,failed,timing:()=>()=>{}});
-  const update=()=>reader.update(query(),device);updates.push(update);update();return()=>reader.close();
+ const node=name=>({run:async op=>{calls.push({name,...op});if(op.op!=='demand')throw Error('unexpected content read');return {ok:{accepted:true,discovery_supported:true}};}});
+ let device=node('first');
+ const api={vault:'a'.repeat(64),demand(selectors){
+  const scope=createEntryWindow({device:()=>device});
+  const update=()=>scope.replace([],selectors());updates.push(update);update();return scope;
  }};
- const close=watchStudioCollections(api);
- await turn();await turn();
- const selectors=()=>calls.filter(op=>op.op==='demand').flatMap(op=>op.queries??[]);
- expect(selectors().some(q=>q.types.includes('file')&&q.types.includes('task')&&q.types.includes('story')&&!q.vault)).toBe(true);
- expect(selectors().some(q=>q.types.includes('cut')&&q.vault==='a'.repeat(64))).toBe(true);
- api.vault='b'.repeat(64);updates.forEach(update=>update());await turn();await turn();
- expect(selectors().some(q=>q.types.includes('cut')&&q.vault===api.vault)).toBe(true);
- expect(calls.filter(op=>op.op==='query').every(op=>op.limit===1&&op.select.length===0)).toBe(true);
+ const close=watchStudioCollections(api);await turn();
+ expect(calls.at(-1).queries).toEqual([{types:['file','task','story']},{types:['cut'],vault:api.vault}]);
+ const firstScope=calls.at(-1).scope;
+ api.vault='b'.repeat(64);await updates[0]();await turn();
+ expect(calls.at(-1).scope).toBe(firstScope);
+ expect(calls.at(-1).queries[1].vault).toBe(api.vault);
+ device=node('second');await updates[0]();await turn();
+ expect(calls.filter(c=>c.name==='first').at(-1).entries).toEqual([]);
+ expect(calls.filter(c=>c.name==='first').at(-1).queries).toBeUndefined();
+ expect(calls.filter(c=>c.name==='second').at(-1).queries[1].vault).toBe(api.vault);
+ expect(calls.filter(c=>c.name==='second').at(-1).scope).not.toBe(firstScope);
  close();await turn();
- const n=calls.length;updates.forEach(update=>update());await turn();expect(calls.length).toBe(n);
- expect(calls.some(op=>op.op==='world'||op.op==='bring')).toBe(false);
+ expect(calls.at(-1).queries).toBeUndefined();expect(calls.at(-1).entries).toEqual([]);
+ const n=calls.length;await updates[0]();await turn();expect(calls.length).toBe(n);
+ expect(calls.every(op=>op.op==='demand')).toBe(true);
 });
