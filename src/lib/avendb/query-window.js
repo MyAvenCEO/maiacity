@@ -6,14 +6,18 @@ import { createDemand, normalizeDiscovery } from '../../../game/code/sources/dem
 export function replyEntries(got) {
 	const ok = got?.ok;
 	if (!ok || typeof ok !== 'object') return [];
-	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items', 'lines'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : [])];
+	const pending = ok.scope?.basis === 'owner-attested-cut' && /^[0-9a-f]{64}$/.test(ok.scope?.snapshot ?? '') && Array.isArray(ok.scope?.pendingEntries)
+		? ok.scope.pendingEntries.slice(0, 512).map(entry => ({ entry })) : [];
+	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items', 'lines'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : []), ...pending];
 	return [...new Set(rows.map((r) => r?.entry).filter((e) => typeof e === 'string' && /^[0-9a-f]{64}$/.test(e)))];
 }
 
 /** Explicit positive entry filters also matter before an empty local query can return any rows.
  * Bound traversal of user-authored JSON; negated filters cannot identify a visible entry. */
 export function queryEntries(op) {
+	const carrier = op?.manifest?.entry;
 	const entries = new Set(op?.entry && /^[0-9a-f]{64}$/.test(op.entry) ? [op.entry] : []);
+	if (typeof carrier === 'string' && /^[0-9a-f]{64}$/.test(carrier)) entries.add(carrier);
 	if (Array.isArray(op?.entries)) for (const entry of op.entries.slice(0, 512)) {
 		if (typeof entry === 'string' && /^[0-9a-f]{64}$/.test(entry)) entries.add(entry);
 		if (entries.size === 512) break;

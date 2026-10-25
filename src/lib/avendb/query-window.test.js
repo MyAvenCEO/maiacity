@@ -260,3 +260,23 @@ test('AIP discovery preserves explicit vault scope and does not send private sel
  test('opened AIP replies prioritize explicit referenced line entries', () => {
  expect(replyEntries({ok:{entry:id(1),lines:[{entry:id(2),record:{entry:id(3)}},{entry:'invalid'}]}})).toEqual([id(1),id(2)]);
  });
+
+test('owner-cut pending IDs schedule metadata without claiming ready rows', () => {
+ const carrier='a'.repeat(64), member='b'.repeat(64), snapshot='c'.repeat(64);
+ expect(queryEntries({op:'entry_views',vault:'d'.repeat(64),types:['note'],manifest:{entry:carrier,snapshot}})).toEqual([carrier]);
+ expect(replyEntries({ok:{rows:[],scope:{basis:'owner-attested-cut',snapshot,completeAtOwnerCut:false,pendingEntries:[member,'bad',member]}}})).toEqual([member]);
+ expect(replyEntries({ok:{rows:[],scope:{basis:'ordinary',snapshot,pendingEntries:[member]}}})).toEqual([]);
+});
+
+test('manifest pending targets pass through the existing scoped demand and close cleanly', async () => {
+ const calls=[], carrier=id(40), member=id(41), snapshot=id(42);
+ const device={run:async op=>{calls.push(op);return {ok:{accepted:true}};}};
+ const window=createReadWindow({device:()=>device,read:async()=>({ok:{rows:[],scope:{basis:'owner-attested-cut',snapshot,completeAtOwnerCut:false,pendingEntries:[member]}}})});
+ await window.read({op:'entry_views',vault:id(1),types:['note'],manifest:{entry:carrier,snapshot}});
+ await flush();
+ expect(window.completeness.discovery).toBe('owner-cut-pending');
+ expect(window.completeness.authoritativeEmpty).toBe(false);
+ expect(JSON.stringify(calls)).toContain(member);
+ window.close();await flush();
+ expect(calls.at(-1).entries).toEqual([]);
+});

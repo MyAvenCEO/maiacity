@@ -926,7 +926,13 @@ fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resul
         if object.keys().any(|key|key!="entry"&&key!="snapshot") {return Err(bad("unknown manifest field"));}
         let carrier=id_of(object.get("entry"),"manifest entry",EntryId::from_hex)?;
         let snapshot=id_of(object.get("snapshot"),"manifest snapshot",EditId::from_hex)?;
-        let Some(members)=lab.discovery_manifest_members(me,actor,vault,scope,carrier,snapshot) else {return Ok(None);};
+        let Some(targets)=lab.discovery_manifest_targets(me,actor,vault,scope.clone(),carrier,snapshot) else {return Ok(None);};
+        let Some(members)=lab.discovery_manifest_members(me,actor,vault,scope,carrier,snapshot) else {
+            return Ok(Some(world::EntryViews {entries:vec![],total_entries:0,readable_entries:0,
+                scope:Some(json!({"basis":"owner-attested-cut","snapshot":snapshot.to_hex(),
+                    "completeAtOwnerCut":false,"localComplete":false,"remoteComplete":false,
+                    "pendingEntries":targets.iter().map(EntryId::to_hex).collect::<Vec<_>>()}))}));
+        };
         let Some(mut result)=world::entry_views(lab,me,None,Some(&members),actor,None,None) else {return Ok(None);};
         let ready=result.entries.len()==members.len() && result.readable_entries==members.len()
             && result.entries.iter().all(|entry| !matches!(entry.what,world::What::Sealed));
