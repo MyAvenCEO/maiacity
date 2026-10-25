@@ -5588,11 +5588,10 @@ impl Lab {
                 let view = key.unlock("view", b, ENGINE.as_bytes())?;
                 let (replay, extra) = warm_materialization::unwrap(&view)?;
                 let (replay, held) = Replay::from_view(replay, edits, ids)?;
-                // A stale prefix can still accelerate policy replay, but its
-                // adjunct cannot be used. Do not allocate another up-to-32-MiB
-                // buffer merely to reject it immediately after this closure.
-                let extra = (held == ids.len())
-                    .then(|| warm_materialization::Validated::check(extra, store)).flatten();
+                // A verified prefix may retain untouched ordinary entries only.
+                // Governance/key/lane/group changes still reject the adjunct;
+                // touched entries reconstruct canonically with the suffix.
+                let extra = warm_materialization::Validated::check_prefix(extra, store, held);
                 Some((replay, held, extra))
             });
             match found {
