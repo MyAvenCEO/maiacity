@@ -22,6 +22,26 @@ impl Lab {
             && self.held_back.is_none()
     }
 
+    pub(super) fn creation_refresh_ready(&self, on: SignerId, edit: &Edit, body: &Body) -> bool {
+        let Action::Write { entry, actor, vault, proposal: Proposal::Main, create: Some(creation), stay: None, epoch, files, .. } = &edit.action else { return false; };
+        let Some(header) = &body.header else { return false; };
+        let store = self.held(on);
+        let st = &store.replay.state;
+        let audience = AudienceId::of(*vault, &creation.audience);
+        let family = KeyFam::Audience(*vault, audience);
+        // No new epoch/family: only a fresh entry key derived from an already held audience key.
+        *actor == *vault && st.acts_for(on, *vault) && st.entry(*entry).is_none()
+            && !header.ty.of_lane() && !header.ty.is_cap_group()
+            && !st.reenters(*vault, audience) && *epoch == st.epoch(family)
+            && store.keys.first(KeyName::Scoped(family, *epoch)).is_some()
+            && store.shown_lanes.contains_key(vault)
+            && body.answers.is_empty() && body.defines.is_none() && body.files.is_empty() && files.is_empty()
+            && !store.behind && !store.reshow && store.replayed == store.log.edits().len()
+            && store.bare.is_empty() && store.bootstrap_bases.is_empty() && store.bootstrap_state.is_none()
+            && store.deferred_bodies.is_empty() && store.warm_materialization.is_none()
+            && store.opened.is_empty() && self.held_back.is_none()
+    }
+
     pub(super) fn refresh_content(&mut self, on: SignerId, id: EditId) -> bool {
         let d = self.at(on);
         let store = self.stores.get_mut(&d).expect("a device");
@@ -29,7 +49,8 @@ impl Lab {
         let suffix = &store.log.edits()[store.replayed..];
         let [edit] = suffix else { return false; };
         if edit.id() != id { return false; }
-        let Action::Write { entry, .. } = edit.action else { return false; };
+        let Action::Write { entry, ref create, .. } = edit.action else { return false; };
+        let creating = create.is_some();
         let was = std::mem::replace(&mut store.replay, replay(&[]));
         let (next, why) = replay_on_why(was, store.log.edits(), store.replayed);
         store.replay = next;
@@ -46,37 +67,43 @@ impl Lab {
         let Some(en) = st.entry(entry) else { store.reshow = true; return false; };
         let Some(body) = store.bodies.get(&id) else { store.reshow = true; return false; };
         // Exactly the same metadata insertion as read(); every older body/selector is unchanged.
+        if let Some(header) = &body.header { store.readings.headers.insert(id, header.clone()); }
         store.readings.tags.insert(id, body.tags.clone());
         if let Some(proof) = &body.proof { store.readings.proofs.insert(id, proof.clone()); }
         let r = &store.readings;
         let blobs = st.lane_of(en.vault, r);
         let lane = Lane::with_built_ins(blobs.iter().copied());
-        let old = store.shown.remove(&entry).expect("guarded settled item");
+        let old = store.shown.remove(&entry);
         let (count, last) = st.entry_tip(entry);
-        let tip = Tip { writes: count, last, lane: old.tip.lane, groups: old.tip.groups };
-        // A canonical tail append must extend the shown entry exactly once. Otherwise rebuild.
-        if old.tip.writes + 1 != count || last != Some(id) {
-            store.shown.insert(entry, old);
-            store.reshow = true;
-            return false;
-        }
-        old.items_in(Some(store));
-        let history = old.history_in(store).expect("settled history").clone();
-        let items = old.items.into_inner().expect("materialized above");
-        let mut judging = Judging::resume(en, r, &lane, history, old.after);
+        let tip = Tip { writes: count, last, lane: store.shown_lanes[&en.vault].0, groups: store.shown_groups };
+        let (mut judging, items) = match old {
+            Some(old) if !creating && old.tip.writes + 1 == count && last == Some(id) => {
+                old.items_in(Some(store));
+                let history = old.history_in(store).expect("settled history").clone();
+                let items = old.items.into_inner().expect("materialized above");
+                (Judging::resume(en, r, &lane, history, old.after), Some(items))
+            }
+            None if creating && count == 1 && last == Some(id) => (Judging::new(st, en, r, &lane), None),
+            other => {
+                if let Some(old) = other { store.shown.insert(entry, old); }
+                store.reshow = true;
+                return false;
+            }
+        };
         judging.judge(d, st, (r, &store.bodies), w, &r.groups);
         let mut hash = Hasher::new("lab shown");
         for write in st.entry_writes(entry) {
             hash.update(&write.edit.0).update(&[store.bodies.contains_key(&write.edit) as u8]);
         }
         hash.update(&tip.lane).update(&tip.groups);
-        let shown = judging.shown_on(d, hash.finalize(), tip, Some(items));
+        let shown = judging.shown_on(d, hash.finalize(), tip, items);
         debug_assert!(same_shown_in(&shown, &judged_anew(d, st, (r, &store.bodies), &r.groups, en, &lane), Some(store)));
         store.shown.insert(entry, shown);
         // A changed admission/meaning must never suppress a steward mark. Foreign
         // asks/proposals are excluded above; any computed mark falls back here.
         if store.replay.state.meaning_landed(entry, &store.readings, landed_in(store, entry))
             .is_none_or(|meaning| meaning.mark.is_some()) {
+            store.perf.count("refresh: content stewardship fallback", 1);
             store.reshow = true;
             return false;
         }
@@ -90,6 +117,7 @@ impl Lab {
             if let Some(s) = store.shown.get_mut(&evict) { s.after.scratch = None; }
         }
         store.behind = false;
+        if creating { store.perf.count("refresh: owner creation", 1); }
         store.perf.count("refresh: owner content only", 1);
         store.perf.add("refresh: owner content only", start);
         true
@@ -174,6 +202,76 @@ mod tests {
         let before = w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0);
         w.lab.edit(d, w.alice, todos.door, |item| item.set_text(1, "owner after foreign edit")).unwrap();
         assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0), before);
+    }
+
+    #[test]
+    fn owner_creation_in_existing_audience_matches_full_refresh() {
+        let mut w = world();
+        todos_on(&mut w);
+        let d = w.mac_a;
+        for n in 0..128 {
+            let unrelated = w.lab.create(d, w.alice, w.alice, "todo", &[], Item::todo(&format!("unrelated {n}"), d)).unwrap();
+            for revision in 0..8 {
+                w.lab.edit(d, w.alice, unrelated, |item| item.set_text(1, &format!("unrelated {n} revision {revision}"))).unwrap();
+            }
+        }
+        eprintln!("creation differential fixture: {} signed edits", w.lab.held(d).log.edits().len());
+        let baseline = w.lab.held(d).perf.to_json()["counts"]["refresh: owner creation"].as_u64().unwrap_or(0);
+        let mut local_us = 0;
+        let mut canonical_us = 0;
+        for n in 0..8 {
+            let start = Instant::now();
+            let entry = w.lab.create(d, w.alice, w.alice, "todo", &[], Item::todo(&format!("new record {n}"), d)).unwrap();
+            local_us += start.elapsed().as_micros();
+            let record = w.lab.item(d, entry).unwrap().record();
+            let history = w.lab.history(d, entry).unwrap().changes().to_vec();
+            let count = w.lab.held(d).log.edits().len();
+            w.lab.stores.get_mut(&d).unwrap().reshow = true;
+            let start = Instant::now();
+            w.lab.refresh(d, &[]);
+            canonical_us += start.elapsed().as_micros();
+            assert_eq!(w.lab.item(d, entry).unwrap().record(), record);
+            assert_eq!(w.lab.history(d, entry).unwrap().changes(), history);
+            assert_eq!(w.lab.held(d).log.edits().len(), count, "no skipped key publication or steward work");
+        }
+        assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: owner creation"].as_u64(), Some(baseline + 8));
+        eprintln!("eight complete owner creations: {local_us}us; eight additional canonical refreshes: {canonical_us}us");
+    }
+
+    #[test]
+    fn reopened_deferred_store_does_not_claim_content_fast_path() {
+        let mut w = world();
+        let todos = todos_on(&mut w);
+        let d = w.mac_a;
+        w.lab.restore_from(d, w.lab.backup(d));
+        let backup = w.lab.backup(d);
+        let count = backup.signed.len();
+        let marker = [73; 40];
+        let saved = w.lab.warming(d, count, Some(marker)).unwrap();
+        let warm = Warm { keys: saved.keys.clone().into_iter().collect(), views: saved.view.clone().into_iter().collect() };
+        w.lab.warmed(d, saved);
+        w.lab.restore_warm(d, backup, Some((marker, count)), &warm);
+        let deferred = w.lab.held(d).deferred_bodies.len();
+        assert!(deferred > 0, "fixture must exercise actual deferred warm bodies");
+        let before = w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0);
+        w.lab.edit(d, w.alice, todos.door, |item| item.set_text(1, "after reopen")).unwrap();
+        let after = w.lab.held(d).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0);
+        if deferred > 0 { assert_eq!(after, before, "deferred warm stores deliberately fall back"); }
+        eprintln!("warm-reopen deferred bodies={deferred}, fast-path hits={}", after-before);
+    }
+
+    #[test]
+    fn owner_creation_with_new_selector_audience_runs_stewardship() {
+        let mut w = world();
+        todos_on(&mut w);
+        let d = w.mac_a;
+        w.lab.issue(d, &[d], crate::cast::share(w.alice, crate::cast::vault(w.bob), Level::Read,
+            crate::cast::tagged("todo", "new-audience"))).unwrap();
+        let before = w.lab.held(d).perf.to_json()["counts"]["refresh: content stewardship fallback"].as_u64().unwrap_or(0);
+        let entry = w.lab.create_in(d, w.alice, w.alice, vec![], "todo", &["new-audience"], Item::todo("new audience", d)).unwrap();
+        assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: content stewardship fallback"].as_u64(), Some(before+1));
+        assert!(w.lab.meaning(d, entry).unwrap().mark.is_none(), "full refresh completes the required mark");
+        assert!(w.lab.held(d).replay.state.entry(entry).unwrap().stay().is_some(), "a real signed audience move was retained");
     }
 
 }

@@ -36,3 +36,22 @@ foreign-history/new-file/missing-key fallback. Eight signed owner edits took
 the optimized test profile with debug assertions. These are synthetic Mac
 measurements, not physical iPhone acceptance or an equal-total-work speedup.
 Lean ContentRefresh passed before implementation.
+
+## Established-audience creation
+
+The second slice also handles owner MAIN creation of ordinary entries when the
+vault already has a shown lane and the exact current audience key is held. Audience
+reentry, epoch advancement, new files and schema/cap-group creation still fall
+back. The only generated key is derived for the new entry from that held audience
+key. The new header/tags/proof are installed and the new entry is judged normally.
+Any required audience/keep mark invokes full refresh; no steward work is omitted.
+
+All six focused tests passed. In a fixture with 1,194 signed edits, eight complete
+signed new-entry writes took 85.109 ms total (10.64 ms average); eight additional
+canonical refreshes took 54.942 ms. The new-audience test required and verified a
+real signed stewardship move. A warm-reopen fixture retained three deferred bodies
+and recorded zero fast-path hits: this commit intentionally does not solve that
+case. Shared-author histories also remain conservative fallback. These synthetic
+numbers include the write/signing call but not transport, persistence acknowledgment
+or UI paint. The Node currently acknowledges mutations before its asynchronous
+saver's durable frontier; immediate response must not be described as durable save.

@@ -23,3 +23,11 @@ theorem reuseContext (judge : Context P K L G → W → R)
 theorem fallbackPreserves (guard : Bool) (fast full : R) (same : fast = full) :
     (if guard then fast else full) = full := by simp [same]
 end AvenDB.ContentRefresh
+
+namespace AvenDB.ContentRefresh
+-- Creation may add one entry and a locally derived entry key, while retaining
+-- its already-active audience epoch and all global authorization inputs.
+theorem freshEntryDoesNotChangeOtherJudgments (judge : C → E → R)
+    (before after : C) (sameContext : before = after) (entry : E) :
+    judge before entry = judge after entry := by rw [sameContext]
+end AvenDB.ContentRefresh
