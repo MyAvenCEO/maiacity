@@ -711,7 +711,7 @@ mod tests {
                 store.view().entry(entries[0]).unwrap(),old.print,old.tip).unwrap();
             assert!(restored.after.scratch.is_none());
             lab.stores.get_mut(&device).unwrap().shown.insert(entries[0],restored);
-            lab.edit(device,vault,entries[0],|item|item.edit_document(|d|d.title="Fallback".into())).unwrap();
+            lab.edit(device,vault,entries[0],|item| { item.edit_document(|d|d.title="Fallback".into()); }).unwrap();
             let expected=lab.item(device,entries[0]).unwrap().record();
             assert_eq!(lab.held(device).perf.to_json()["counts"]["refresh: warm scratch resumed"].as_u64().unwrap_or(0),0);
             lab.restore_from(device,lab.backup(device));
