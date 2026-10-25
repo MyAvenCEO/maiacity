@@ -88,3 +88,23 @@ single canonical authority or owner-overlay restoration turn is bounded in wall
 time. Owner-overlay restoration and initial authority preparation retain their
 existing guards and budgets. Rust runtime validation is pending integration;
 standalone `OwnerSuffixPacing` Lean model and Rust parser validation passed.
+
+### Reuse preparation between unchanged private judgment slices
+
+A continued private slice now reuses the already judged historical capability
+sequence and recorded vault lane hashes only when its judgment epoch matches the
+exact current log revision and key identity, with no reshow or newly opened body.
+It no longer rejudges all cap-group histories or walks every entry to discover
+all vault lanes on each 32-write continuation. The complete historical group
+sequence is retained; using only the latest group would incorrectly judge older
+writes. Lane objects are built lazily for vaults actually used by this turn.
+
+New policy edits, key replacement, reshow and newly opened bodies force canonical
+preparation. The focused regression uses nine actual cap-group versions alongside
+128 ordinary writes, checks reuse, forces key replacement and a later policy
+edit, then compares the final record, group entry and full group history with an
+unpaced reconstruction from the same signed backup. Rust execution remains
+pending combined validation. The standalone PreparedJudgmentReuse Lean model and
+Rust parser passed. This removes repeated preparation, not every possible long
+operation: building a demanded vault's Lane still uses canonical lane_of, and
+initial preparation retains its existing whole-context work.

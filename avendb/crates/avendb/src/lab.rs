@@ -6644,6 +6644,12 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
 fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, priority: &[EntryId]) {
     let revision=store.log.revision();
+    // Only a continuation of an already prepared exact context may reuse lanes
+    // and the full historical cap-group judgment. New bodies also invalidate it.
+    let prepared = !store.reshow && store.opened.is_empty()
+        && !store.judgment_pending.is_empty()
+        && store.judgment_epoch.as_ref().is_some_and(|(r,k)|
+            *r == revision && Arc::ptr_eq(k, &store.keys.revision));
     if store.reshow || store.judgment_epoch.as_ref().is_some_and(|(r,k)|*r!=revision || !Arc::ptr_eq(k,&store.keys.revision)) {
         store.judgment_jobs.clear();
     }
@@ -6664,21 +6670,31 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
     // and what judges the writes of the vault's entries, made once one of them is shown anew
     let mut lanes: HashMap<VaultId, (Vec<&[u8]>, [u8; 32], OnceCell<Lane>)> = HashMap::new();
     let at = Perf::start();
-    for en in st.entries() {
-        lanes.entry(en.vault).or_insert_with(|| {
-            let blobs = st.lane_of(en.vault, r);
-            let mut h = Hasher::new("lab lane");
-            for b in &blobs {
-                h.update(&BlobId::of(b).0);
-            }
-            (blobs, h.finalize(), OnceCell::new())
-        });
+    if prepared {
+        for (vault, (hash, _)) in &store.shown_lanes {
+            lanes.insert(*vault, (Vec::new(), *hash, OnceCell::new()));
+        }
+        store.perf.count("show: prepared context reused", 1);
+    } else {
+        for en in st.entries() {
+            lanes.entry(en.vault).or_insert_with(|| {
+                let blobs = st.lane_of(en.vault, r);
+                let mut h = Hasher::new("lab lane");
+                for b in &blobs {
+                    h.update(&BlobId::of(b).0);
+                }
+                (blobs, h.finalize(), OnceCell::new())
+            });
+        }
     }
     store.perf.add("show: lanes", at);
     let at = Perf::start();
     let lane = |v: VaultId| {
         let (blobs, _, lane) = &lanes[&v];
-        lane.get_or_init(|| Lane::with_built_ins(blobs.iter().copied()))
+        lane.get_or_init(|| {
+            if prepared { Lane::with_built_ins(st.lane_of(v, r)) }
+            else { Lane::with_built_ins(blobs.iter().copied()) }
+        })
     };
     // what it shows of an entry is new where its writes, what it opened of them, its lane or the cap groups changed
     let print = |en: &Entry, groups: &[u8; 32]| {
@@ -6692,29 +6708,31 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
     // first the cap groups, as the device counts the writes that say them (`policy::State::read_groups`): the writes
     // of every cap group entry one after the other in the order they were accepted, each by the groups in force
     // before it, and where it counts and its vault writes it itself on its main line, what it says is in force past it
-    let mut groups = Groups::default();
+    let mut groups = if prepared { r.groups.clone() } else { Groups::default() };
     let mut judging: HashMap<EntryId, Judging> = HashMap::new();
-    let mut writes: Vec<&Write> = vec![];
-    for en in st.entries().iter().filter(|en| st.is_cap_group(en, r)) {
-        judging.insert(en.id, Judging::new(st, en, r, lane(en.vault)));
-        writes.extend(st.entry_writes(en.id));
-    }
-    writes.sort_by_key(|w| st.place(w.edit));
-    for w in writes {
-        let j = judging.get_mut(&w.entry).expect("a cap group entry");
-        if j.judge(d, st, (r, bodies), w, &groups)
-            && w.actor == j.vault
-            && w.proposal == Proposal::Main
-            && let Some(g) = r.defines.get(&w.edit)
-        {
-            groups.say(w.entry, j.vault, w.edit, g);
+    let groups_print = if prepared { store.shown_groups } else {
+        let mut writes: Vec<&Write> = vec![];
+        for en in st.entries().iter().filter(|en| st.is_cap_group(en, r)) {
+            judging.insert(en.id, Judging::new(st, en, r, lane(en.vault)));
+            writes.extend(st.entry_writes(en.id));
         }
-    }
-    let mut h = Hasher::new("lab groups");
-    for w in groups.writes() {
-        h.update(&w.0);
-    }
-    let groups_print = h.finalize();
+        writes.sort_by_key(|w| st.place(w.edit));
+        for w in writes {
+            let j = judging.get_mut(&w.entry).expect("a cap group entry");
+            if j.judge(d, st, (r, bodies), w, &groups)
+                && w.actor == j.vault
+                && w.proposal == Proposal::Main
+                && let Some(g) = r.defines.get(&w.edit)
+            {
+                groups.say(w.entry, j.vault, w.edit, g);
+            }
+        }
+        let mut h = Hasher::new("lab groups");
+        for w in groups.writes() {
+            h.update(&w.0);
+        }
+        h.finalize()
+    };
     store.perf.add("show: cap groups", at);
     let at = Perf::start();
     let tip = |en: &Entry| {
@@ -6733,7 +6751,8 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
     let all = st.all_writes();
     let ids = |blobs: &[&[u8]]| blobs.iter().map(|b| BlobId::of(b)).collect::<BTreeSet<BlobId>>();
     let lanes_now: BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)> =
-        lanes.iter().map(|(v, (blobs, h, _))| (*v, (*h, ids(blobs)))).collect();
+        if prepared { store.shown_lanes.clone() }
+        else { lanes.iter().map(|(v, (blobs, h, _))| (*v, (*h, ids(blobs)))).collect() };
     // a vault whose lane only gained schemas or lenses since: its old hash and what it gained. A write is judged by
     // the schemas it was written under alone (`Lane::fits`), so it is judged as before where it names none of them.
     let gained: HashMap<VaultId, ([u8; 32], BTreeSet<BlobId>)> = lanes_now
@@ -6772,7 +6791,7 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
     todo.sort_by_key(|en| (!store.judgment_jobs.contains_key(&en.id),
         priority.iter().position(|e|*e==en.id).unwrap_or(usize::MAX), en.id));
     for en in todo {
-        if cap_groups.contains(&en.id) {
+        if cap_groups.contains(&en.id) || (prepared && st.is_cap_group(en, r)) {
             continue;
         }
         let tip = tip(en);
@@ -6925,6 +6944,68 @@ fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, pr
 mod judgment_slice_tests {
     use super::*;
     use crate::cast::{document,human_on};
+    #[test]
+    fn exact_private_slices_reuse_full_group_history_and_invalidate_on_new_policy() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Prepared judgment groups");
+        let device = lab.device_of(owner,"Mac");
+        let vault = human_on(&mut lab,owner,&[device]);
+        let entry = lab.create(device,vault,vault,"note",&[],document("Large","base",device)).unwrap();
+        let group = rules::CapGroup { name: "Historical".into(),
+            caps: vec![rules::Cap { op: rules::Op::Read, slice: crate::cast::by_id(entry) }],
+            includes: vec![] };
+        let group_id = lab.define_group(device,vault,group.clone()).unwrap();
+        let before = lab.backup(device);
+        for n in 0..128 {
+            if n % 16 == 0 {
+                let version = rules::CapGroup { caps: if n % 32 == 0 { vec![] } else { group.caps.clone() }, ..group.clone() };
+                lab.redefine_group(device,vault,group_id,version).unwrap();
+            }
+            lab.edit(device,vault,entry,|i|i.set_text(2,&format!("revision {n}"))).unwrap();
+        }
+        let expected = lab.item(device,entry).unwrap().record();
+        let historical_groups = lab.held(device).readings.groups.clone();
+        assert!(historical_groups.writes().len() >= 9, "fixture includes changing historical definitions");
+        let received = lab.backup(device);
+        let policy_edit = lab.redefine_group(device,vault,group_id,
+            rules::CapGroup { name: "Newest policy".into(), caps: vec![], includes: vec![] }).unwrap();
+        let policy_signed = lab.signed_edit(device,policy_edit).unwrap().clone();
+        let final_backup = lab.backup(device);
+        lab.restore_from(device,before);
+        lab.receive_now(device,received.signed.clone(),received.blobs.values().cloned().collect(),false);
+        assert!(lab.catch_up_step(device,&[entry]).1);
+        let reuses = |lab: &Lab| lab.held(device).perf.to_json()["counts"]["show: prepared context reused"].as_u64().unwrap_or(0);
+        let initial = reuses(&lab);
+        assert!(lab.catch_up_step(device,&[entry]).1);
+        assert_eq!(reuses(&lab), initial+1);
+        assert_eq!(lab.held(device).readings.groups, historical_groups,
+            "reuse preserves every historical definition, not only the final capability set");
+        // A fresh key identity must invalidate the prepared receipt even when
+        // log contents happen to be identical.
+        lab.stores.get_mut(&device).unwrap().keys.revision = Arc::new(());
+        let used = reuses(&lab);
+        lab.catch_up_step(device,&[entry]);
+        assert_eq!(reuses(&lab),used,"key replacement must reprepare group judgments");
+        let used = reuses(&lab);
+        lab.receive_now(device,vec![policy_signed],vec![],false);
+        lab.catch_up_step(device,&[entry]);
+        assert_eq!(reuses(&lab),used,"new cap-group policy must reprepare historical judgments");
+        assert_ne!(lab.held(device).readings.groups,historical_groups);
+        // Rebuild from the final signed history is the canonical unpaced oracle.
+        let mut turns = 0;
+        while lab.held(device).behind {
+            lab.catch_up_step(device,&[entry]);
+            turns += 1; assert!(turns < 256);
+        }
+        assert_eq!(lab.item(device,entry).unwrap().record(), expected);
+        let actual_groups = lab.held(device).readings.groups.clone();
+        let actual_group_item = lab.item(device,group_id).unwrap().record();
+        lab.restore_from(device,final_backup);
+        assert_eq!(lab.held(device).readings.groups, actual_groups);
+        assert_eq!(lab.item(device,group_id).unwrap().record(), actual_group_item);
+        assert_eq!(lab.item(device,entry).unwrap().record(), expected);
+    }
+
     #[test]
     fn real_history_catchup_keeps_ready_reads_and_writes_between_private_slices() {
         let mut lab=Lab::new();
