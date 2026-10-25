@@ -546,3 +546,20 @@ group's complete frontier is checked again at final admission. Missing groups
 remain an unconditional admission blocker. The public grouped fixture now adds
 an unrelated grouped grant and requires its group payload to remain absent.
 Lean and syntax pass; canonical Rust execution remains pending.
+
+### Guard semantic audience updates while group reads are unresolved
+
+`semantic_group_dependencies` now separates known historical content from current
+semantic readiness. Selector chains proven nonmatching need no group bodies;
+matching chains require their current group and includes with retained history
+bodies. Missing matching groups keep `steward` and `mark_now` from emitting an
+incorrect removal Mark, and `Lab::meaning` returns unavailable rather than a
+confirmed empty audience. Bounds are 2,048 selector-chain links and 32 groups.
+Two regressions cover false-removal prevention and nonmatching-selector pruning.
+Lean and parsing passed; runtime validation pending.
+
+This is a local-readiness guard, not a completeness proof for unseen grants.
+Next integration must bind semantic dependencies to the authenticated complete
+connected-peer inventory cut, verify immutable selector negatives and current
+matching-grant frontiers, and schedule bounded group entry dependencies. The
+existing authority-only dependency lane deliberately rejects Entry logs.

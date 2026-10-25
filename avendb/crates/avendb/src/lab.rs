@@ -4323,7 +4323,8 @@ impl Lab {
             return Err(Refusal::NotActing);
         }
         let read = r.headers.contains_key(&en.creation) && en.retags.iter().all(|w| r.tags.contains_key(w));
-        if !read || !store.reads_shares(st, v) {
+        if !read || !store.reads_shares(st, v)
+            || !store.semantic_groups(st,entry).is_some_and(|(_,ready)|ready) {
             return Ok(None);
         }
         let Some((caps, wants)) = st.meaning_landed(entry, r, landed_in(store, entry)).and_then(|m| m.mark) else {
@@ -4523,6 +4524,7 @@ impl Lab {
             return None;
         }
         let store = self.held(d);
+        if !store.semantic_groups(store.view(),entry).is_some_and(|(_,ready)|ready) {return None;}
         store.view().meaning_landed(entry, &store.readings, landed_in(store, entry))
     }
 
@@ -6512,6 +6514,7 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
         if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
             continue;
         }
+        if !store.semantic_groups(st,en.id).is_some_and(|(_,ready)|ready) {continue;}
         let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else {
             continue;
         };
