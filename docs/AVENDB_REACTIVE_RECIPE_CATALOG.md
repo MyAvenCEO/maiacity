@@ -1,5 +1,7 @@
 # Fresh-device recipe catalog progression
 
+Implementation: [c295d7fc](https://github.com/MyAvenCEO/maiacity/commit/c295d7fc).
+
 A fresh empty local recipe catalog used to return an error before registering
 any refresh path. Its later full-vault `fresher` check existed only after an
 already nonempty result, so a newly syncing device could remain at the gate
