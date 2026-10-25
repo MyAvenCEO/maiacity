@@ -1,34 +1,96 @@
 //! Settled metadata-free content writes change one item's judgment, not the key schedule.
 use super::*;
 
+pub(super) struct ReceivedContentPrefix {
+    held: usize,
+    revision: crate::policy::LogRevision,
+    id: EditId,
+}
+
 fn deferred_refresh_ready(store: &Store) -> bool {
+    deferred_refresh_ready_at(store, &store.log.revision())
+}
+
+fn deferred_refresh_ready_at(store: &Store, revision: &crate::policy::LogRevision) -> bool {
     store.deferred_bodies.is_empty() || store.deferred_basis.as_ref().is_some_and(|basis|
-        *basis == store.log.revision() && store.deferred_bodies.values().all(|body|
+        *basis == *revision && store.deferred_bodies.values().all(|body|
             Arc::strong_count(body) == 1 && Arc::weak_count(body) == 0 && body.metadata(basis).is_ok()))
 }
 
 impl Lab {
     pub(super) fn content_refresh_ready(&self, on: SignerId, edit: &Edit, body: &Body) -> bool {
+        self.content_refresh_ready_at(on, on, edit, body, None)
+    }
+
+    fn content_refresh_ready_at(&self, on: SignerId, writer: SignerId, edit: &Edit, body: &Body,
+        prefix: Option<&ReceivedContentPrefix>) -> bool {
         let Action::Write { entry, actor, vault, proposal: Proposal::Main, create: None, stay, epoch, files, .. } = &edit.action else { return false; };
         let store = self.held(on);
+        let held = prefix.map_or(store.log.edits().len(), |prefix| prefix.held);
+        let revision = prefix.map_or_else(|| store.log.revision(), |prefix| prefix.revision.clone());
+        if prefix.is_some_and(|prefix| store.log.edits().len() != held+1
+            || store.log.edits().get(held).is_none_or(|edit| edit.id() != prefix.id)) { return false; }
         let st = &store.replay.state;
+        let metadata = |id: EditId| store.bodies.get(&id).or_else(|| {
+            let deferred = store.deferred_bodies.get(&id)?;
+            deferred.permits(&revision, store.body_key(id)?).ok()?;
+            Some(deferred.metadata(&revision).ok()?.fields())
+        });
         let Some(en) = st.entry(*entry) else { return false; };
         let Some(header) = store.readings.headers.get(&en.creation) else { return false; };
         // Governance and incomplete reconstruction always take the canonical full path.
-        en.vault == *vault && st.acts_for(on, *actor) && !header.ty.of_lane() && !header.ty.is_cap_group()
+        en.vault == *vault && st.acts_for(writer, *actor) && !header.ty.of_lane() && !header.ty.is_cap_group()
             && body.files.is_empty() && files.is_empty()
             && st.entry_key(*entry) == Some(KeyName::Entry(*entry, *stay, *epoch))
             && store.keys.first(KeyName::Entry(*entry, *stay, *epoch)).is_some()
             && en.creator == *vault
             && st.entry_writes(*entry).all(|w| w.proposal == Proposal::Main &&
-                (w.actor == *vault || w.first || store.body_metadata(w.edit).is_some_and(|body| body.tags.is_empty())))
+                (w.actor == *vault || w.first || metadata(w.edit).is_some_and(|body| body.tags.is_empty())))
             && body.header.is_none() && body.tags.is_empty() && body.answers.is_empty() && body.defines.is_none()
-            && !store.behind && !store.reshow && store.replayed == store.log.edits().len()
+            && !store.behind && !store.reshow && store.replayed == held
             && store.bare.is_empty() && store.bootstrap_bases.is_empty() && store.bootstrap_state.is_none()
             && store.bootstrap_active.is_empty() && store.bootstrap_pending.is_empty()
-            && deferred_refresh_ready(store) && store.warm_materialization.is_none()
+            && deferred_refresh_ready_at(store, &revision) && store.warm_materialization.is_none()
             && store.opened.is_empty() && store.shown.contains_key(entry) && store.shown_lanes.contains_key(vault)
             && self.held_back.is_none()
+    }
+
+    /// Capture a settled context before receive admission changes the held log.
+    /// This is only a scheduling hint; the signature and current gate still run.
+    pub(super) fn prepare_received_content(&self, on: SignerId, edits: &[Signed], no_blobs: bool) -> Option<ReceivedContentPrefix> {
+        if !no_blobs || self.locked(self.at(on)) || self.held_back.is_some() { return None; }
+        let [signed] = edits else { return None; };
+        let Action::Write { entry, create: None, proposal: Proposal::Main, stay, epoch, .. } = signed.edit.action else { return None; };
+        let store = self.held(on);
+        let id = signed.edit.id();
+        let st = &store.replay.state;
+        let en = st.entry(entry)?;
+        if store.behind || store.reshow || store.replayed != store.log.edits().len()
+            || store.signed.contains_key(&id) || store.covers.contains(&id) || !store.bare.is_empty()
+            || !st.entitled(self.at(on), KeyFam::Audience(en.vault, en.audience()))
+            || st.entry_key(entry) != Some(KeyName::Entry(entry, stay, epoch)) { return None; }
+        Some(ReceivedContentPrefix { held: store.replayed, revision: store.log.revision(), id })
+    }
+
+    /// Called only after ordinary take_prepared admitted the new signature and gate.
+    pub(super) fn refresh_received_content(&mut self, on: SignerId, prefix: ReceivedContentPrefix) -> bool {
+        let decoded = {
+            let store = self.held(on);
+            let Some(signed) = store.signed.get(&prefix.id) else { return false; };
+            let Action::Write { entry, body, .. } = &signed.edit.action else { return false; };
+            let Some(key) = store.body_key(prefix.id) else { return false; };
+            let Some(plain) = keys::open_edit(key, body, &write_context(&signed.edit)) else { return false; };
+            let Ok(body) = Body::from_wire(&plain) else { return false; };
+            if !self.content_refresh_ready_at(on, signed.edit.author, &signed.edit, &body, Some(&prefix)) { return false; }
+            (*entry, body)
+        };
+        let store = self.stores.get_mut(&self.at(on)).expect("receiving device");
+        store.bodies.insert(prefix.id, decoded.1);
+        store.opened.entry(decoded.0).or_default().push(prefix.id);
+        store.files_at = OnceLock::new();
+        let applied = self.refresh_content(on, prefix.id);
+        if applied { self.stores.get_mut(&self.at(on)).expect("device").perf.count("refresh: received content only", 1); }
+        applied
     }
 
     pub(super) fn creation_refresh_ready(&self, on: SignerId, edit: &Edit, body: &Body) -> bool {
@@ -167,6 +229,56 @@ mod tests {
     use super::*;
     use crate::cast::{world, todos_on};
     use std::time::Instant;
+
+    #[test]
+    fn received_content_is_visible_before_batch_catchup_and_matches_full_refresh() {
+        let mut w = world();
+        let todos = todos_on(&mut w);
+        w.lab.sync_all(0);
+        let d = w.mac_b;
+        let before = w.lab.held(d).perf.to_json()["counts"]["refresh: received content only"].as_u64().unwrap_or(0);
+        for n in 0..4 {
+            let id = w.lab.edit(w.mac_a, w.alice, todos.door, |item| item.set_text(1, &format!("remote {n}"))).unwrap();
+            let signed = w.lab.signed_edit(w.mac_a, id).unwrap().clone();
+            let checked = w.lab.prepare_receive(d, vec![signed]).check();
+            assert_eq!(w.lab.receive_prepared(d, checked, false).0, 1);
+            assert!(!w.lab.held(d).behind, "an eligible verified tail is visible before catch_up");
+            assert_eq!(w.lab.item(d, todos.door).unwrap().record(), w.lab.item(w.mac_a, todos.door).unwrap().record());
+            let record = w.lab.item(d, todos.door).unwrap().record();
+            let history = w.lab.history(d, todos.door).unwrap().changes().to_vec();
+            let signed_count = w.lab.size(d).0;
+            w.lab.stores.get_mut(&d).unwrap().reshow = true;
+            w.lab.refresh(d, &[]);
+            assert_eq!(w.lab.item(d, todos.door).unwrap().record(), record);
+            assert_eq!(w.lab.history(d, todos.door).unwrap().changes(), history);
+            assert_eq!(w.lab.size(d).0, signed_count, "no stewardship was omitted");
+        }
+        assert_eq!(w.lab.held(d).perf.to_json()["counts"]["refresh: received content only"].as_u64(), Some(before+4));
+    }
+
+    #[test]
+    fn received_content_refuses_bad_signature_and_keeps_multi_edit_batching() {
+        let mut w = world();
+        let todos = todos_on(&mut w);
+        w.lab.sync_all(0);
+        let d = w.mac_b;
+        let first = w.lab.edit(w.mac_a, w.alice, todos.door, |item| item.set_text(1, "first")).unwrap();
+        let first = w.lab.signed_edit(w.mac_a, first).unwrap().clone();
+        let mut invalid = first.clone();
+        invalid.sigs[0].pq[0] ^= 1;
+        let record = w.lab.item(d, todos.door).unwrap().record();
+        let checked = w.lab.prepare_receive(d, vec![invalid]).check();
+        assert_eq!(w.lab.receive_prepared(d, checked, false).0, 0);
+        assert_eq!(w.lab.item(d, todos.door).unwrap().record(), record);
+        assert!(!w.lab.held(d).bodies.contains_key(&first.edit.id()));
+        let second = w.lab.edit(w.mac_a, w.alice, todos.door, |item| item.set_text(1, "second")).unwrap();
+        let second = w.lab.signed_edit(w.mac_a, second).unwrap().clone();
+        let checked = w.lab.prepare_receive(d, vec![first, second]).check();
+        assert_eq!(w.lab.receive_prepared(d, checked, false).0, 2);
+        assert!(w.lab.held(d).behind, "ordinary multi-edit catch-up retains its batching");
+        assert!(w.lab.catch_up(d));
+        assert_eq!(w.lab.item(d, todos.door).unwrap().record(), w.lab.item(w.mac_a, todos.door).unwrap().record());
+    }
 
     #[test]
     fn owner_content_refresh_matches_full_refresh_with_unrelated_history() {

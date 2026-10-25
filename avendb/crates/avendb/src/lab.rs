@@ -5432,6 +5432,7 @@ impl Lab {
     fn receive_now_prepared(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool, prepared: &HashMap<EditId, bool>) -> usize {
         let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
         let before = self.held(d).signed.len();
+        let content = self.prepare_received_content(d, &edits, blobs.is_empty());
         let mut changed = self.take_prepared(d, edits, &blobs, prepared);
         // Edit-only pages have no late-arriving keys to match. Taking their edits and flushing a deferred
         // replay still happen normally; only the otherwise unused full-history blob-name scan is omitted.
@@ -5446,6 +5447,9 @@ impl Lab {
             }
         }
         let new = self.held(d).signed.len() - before;
+        if changed && new == 1 && content.is_some_and(|prefix| self.refresh_received_content(d, prefix)) {
+            return new;
+        }
         let store = self.stores.get_mut(&self.at(d)).expect("a device");
         store.behind |= changed;
         if now && store.behind {
