@@ -59,7 +59,9 @@ mod tests {
         let mut w=cast::world();
         w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();
         let vault=w.alice;
-        let node=Node::spawn(w.lab.split(w.mac_a,&[],[181;32]),w.mac_a,Options::local()).await.unwrap();
+        // Keep the owner's credential metadata, as an unlocked owner device does.
+        // No authenticator is supplied to Node::op, so no approval ceremony runs.
+        let node=Node::spawn(w.lab.split(w.mac_a,&[w.passkey_a],[181;32]),w.mac_a,Options::local()).await.unwrap();
         let before=node.read(|lab,me|(lab.state(me).entries().len(),lab.log(me).ids().to_vec())).await;
         for request in [
             json!({"op":"checkpoint_scope","vault":vault.to_hex(),"tag":"selected"}),
