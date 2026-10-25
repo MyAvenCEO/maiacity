@@ -727,13 +727,10 @@ async fn receive_inner(
                 let (prepared, permit, activity, (admitted, accepted)) = shared
                     .prepare_received_page(edits, permit, owner)
                     .await?;
-                shared
-                    .try_lab_class(crate::lab_schedule::Class::Background, move |lab, me| {
-                        let (_permit, _admitted, _activity) = (permit, admitted, activity);
-                        let new = lab.receive_prepared(me, prepared, false).0;
-                        accepted.new.fetch_add(new, Ordering::Relaxed);
-                    })
-                    .await?;
+                shared.admit_received_batches(prepared,permit,activity,(admitted,accepted),
+                    crate::lab_schedule::Class::Background, |(_,accepted),new| {
+                        accepted.new.fetch_add(new,Ordering::Relaxed);
+                    }).await?;
             }
             cursor = next;
         }

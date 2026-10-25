@@ -414,6 +414,34 @@ pub struct PreparedReceive {
     perf: Perf,
 }
 
+/// Owned bounded admission pages; signature outcomes stay bound to their exact
+/// signed edits. Dropping an unfinished iterator drops only unadmitted inputs.
+pub struct PreparedReceiveBatches {
+    batch:usize,
+    edits: std::vec::IntoIter<Signed>,
+    signatures: HashMap<EditId,bool>,
+    perf: Perf,
+}
+impl PreparedReceive {
+    pub fn into_batches(self) -> PreparedReceiveBatches {
+        // Checkpoint-covered bare signatures have page-wide admission semantics.
+        // Preserve that atomic page until a separately proved staged proof path exists.
+        let batch=if self.edits.iter().any(|s|matches!(s.edit.action,Action::Checkpoint {..})) {usize::MAX} else {128};
+        PreparedReceiveBatches {batch,edits:self.edits.into_iter(),signatures:self.signatures,perf:self.perf}
+    }
+}
+impl Iterator for PreparedReceiveBatches {
+    type Item=PreparedReceive;
+    fn next(&mut self)->Option<Self::Item> {
+        let edits:Vec<_>=self.edits.by_ref().take(self.batch).collect();
+        if edits.is_empty() {return None;}
+        let signatures=edits.iter().filter_map(|s| {
+            let id=s.edit.id(); self.signatures.remove(&id).map(|valid|(id,valid))
+        }).collect();
+        Some(PreparedReceive {edits,signatures,perf:std::mem::take(&mut self.perf)})
+    }
+}
+
 impl ReceivePreparation {
     /// Verify at most eight edits per turn, yielding between unfinished turns. The caller must
     /// supply an actual event-loop task yield (not a ready future or a microtask). No partial
@@ -5505,6 +5533,12 @@ impl Lab {
             (!store.covers.contains(&id) && !batch.contains(&id)).then_some(i)
         }).collect();
         ReceivePreparation { edits, checking }
+    }
+
+    /// An existing partial entry needs admission/reconstruction between incoming
+    /// chunks. This is a scheduling hint, never evidence of authorization/readiness.
+    pub fn has_partial_entry_bases(&self,d:SignerId)->bool {
+        !self.locked(d) && !self.held(d).bootstrap_bases.is_empty()
     }
 
     /// Takes a cryptographically prepared page through ordinary CURRENT-state admission.
