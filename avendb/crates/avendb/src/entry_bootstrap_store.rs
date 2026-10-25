@@ -123,6 +123,11 @@ impl Lab {
         self.rebuild_owner_bases(at);
         self.owner_bases_pending(at)
     }
+    pub(crate) fn owner_overlay_current(&self, on: SignerId) -> bool {
+        let store = self.held(on);
+        !store.reshow && store.bootstrap_basis.as_ref().is_some_and(|basis| basis.matches(store))
+    }
+
     /// Authorized provenance of a currently adopted owner base. A hint is neither
     /// global completeness nor permission to skip ordinary write admission.
     pub fn active_owner_base(&self, on: SignerId, entry: EntryId) -> Option<(EditId, Vec<EditId>)> {

@@ -128,6 +128,14 @@ impl Shared {
         device: SignerId,
         hints: BTreeSet<LogId>,
     ) -> anyhow::Result<()> {
+        let mut hints = hints;
+        if let Some(peer) = self.live(endpoint).filter(|p| p.device == device) {
+            for log in hints.clone().into_iter().take(pulls::LIVE_LOGS) {
+                if let LogId::Entry(entry) = log {
+                    if matches!(self.try_owner_base_suffix(&peer, entry).await, Ok(true)) { hints.remove(&log); }
+                }
+            }
+        }
         let mut missing = self.differ(device).await;
         let rules: BTreeSet<_> = missing
             .iter()
