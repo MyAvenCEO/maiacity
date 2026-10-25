@@ -447,7 +447,7 @@ mod tests {
         w.lab.edit(w.mac_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("new");item.put_record(&record);}).unwrap();
         let scope=DiscoveryScope::Tag("selected".into());
         let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope).unwrap();
-        let mut item=Item::new(w.mac_a);item.put_record(&record);
+        let item=Item::made(&crate::lens::View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&record,w.mac_a).unwrap();
         let carrier=w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap();
         let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],carrier).unwrap();
         let snapshot=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
