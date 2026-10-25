@@ -2255,3 +2255,26 @@ fn global_entry_views_require_explicit_types_and_current_actor_read_access() {
     assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"entry_views"})).get("refused").is_some());
     assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"entry_views","vault":w.alice.to_hex(),"entries":[],"types":["task"]})).get("refused").is_some());
 }
+
+#[test]
+fn tag_inventory_is_current_actor_scoped_and_reports_only_local_basis() {
+    let mut w = cast::world();
+    let selected = w.lab.create(w.mac_a,w.alice,w.alice,"note", &["story:public"], avendb::doc::Item::todo("selected",w.mac_a)).unwrap();
+    w.lab.create(w.mac_a,w.alice,w.alice,"note", &[], avendb::doc::Item::todo("unrelated",w.mac_a)).unwrap();
+    w.lab.create(w.mac_b,w.bob,w.bob,"note", &["story:public"], avendb::doc::Item::todo("private Bob",w.mac_b)).unwrap();
+    w.lab.sync_all(0);
+    let query=json!({"op":"entry_views","tag":"story:public","as":w.alice.to_hex()});
+    let first=ok(engine::read(&w.lab,w.mac_a,&query));
+    assert_eq!(first["rows"].as_array().unwrap().len(),1);
+    assert_eq!(first["rows"][0]["entry"],json!(selected.to_hex()));
+    assert_eq!(first["scope"]["remoteComplete"],false);
+    assert_eq!(first["scope"]["localComplete"],true);
+    w.lab.tag(w.mac_a,w.alice,selected,&[],&["story:public"]).unwrap();
+    let after=ok(engine::read(&w.lab,w.mac_a,&query));
+    assert_eq!(after["rows"],json!([]));
+    assert!(first["scope"].get("heldLogDigest").is_none());
+    assert!(first["scope"].get("heldEdits").is_none());
+    for bad in [json!({"op":"entry_views","tag":""}),json!({"op":"entry_views","tag":"x","types":["note"]}),json!({"op":"entry_views","tag":"x","entries":[]})] {
+        assert!(engine::read(&w.lab,w.mac_a,&bad).get("refused").is_some());
+    }
+}

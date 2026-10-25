@@ -4374,6 +4374,22 @@ impl Lab {
         Some(store.readings.headers.get(&creation)?.ty.as_str())
     }
 
+    /// Scheduling/filter metadata only: never a landed or authority proof.
+    pub(crate) fn entry_tag_hint(&self, d: SignerId, entry: EntryId, tag: &str) -> Option<bool> {
+        let store = self.held(d);
+        let en = store.view().entry(entry)?;
+        if en.retags.iter().any(|id| !store.readings.tags.contains_key(id)) { return None; }
+        let meaning = store.view().meaning_landed(entry, &store.readings, false)?;
+        Some(meaning.attrs.tags.iter().any(|known| known.as_str() == tag))
+    }
+
+    /// Whether the current local cut is fully replayed without an owner overlay.
+    /// This is not remote completeness or a token authorizing a later mutation.
+    pub(crate) fn local_inventory_replayed(&self, d: SignerId) -> bool {
+        let store = self.held(d);
+        store.replayed == store.log.edits().len() && store.bootstrap_active.is_empty()
+    }
+
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
         if !self.sees(d, entry) {
             return None;

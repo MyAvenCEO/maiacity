@@ -146,3 +146,5 @@ import AvenDB.WarmOrdinarySuffix
 import AvenDB.ScopedReferenceRead
 
 import AvenDB.PrivateStoryTransition
+
+import AvenDB.ScopedTagInventory
