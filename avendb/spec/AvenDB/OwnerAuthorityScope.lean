@@ -113,3 +113,12 @@ locally reconstructed current provenance, even if the location is authenticated.
 def admitted (_hintReceived : Bool) (locallyVerified : Bool) : Bool := locallyVerified
 theorem locationAddsNoAuthority (hint : Bool) : admitted hint false = false := rfl
 end AvenDB.WitnessLocation
+
+namespace AvenDB.HistoricalGroups
+/-- Closure uses all historical definitions, never only the latest version. -/
+def includes (versions : List (List α)) : List α := versions.flatten
+theorem earlierIncludeRetained (before after : List (List α)) (entry : α)
+    (h : entry ∈ includes before) : entry ∈ includes (before ++ after) := by
+  simp only [includes, List.flatten_append, List.mem_append] at *
+  exact Or.inl h
+end AvenDB.HistoricalGroups

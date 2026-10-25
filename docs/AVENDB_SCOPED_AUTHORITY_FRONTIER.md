@@ -498,3 +498,18 @@ room plus subsequent live edit and actual checkpoint-backed received provenance.
 Wire tests reject wrong target IDs, oversized counts and duplicate hints.
 Runtime validation remains pending canonical Cargo; this commit does not claim
 physical iPhone/iPad acceptance or deployed performance.
+
+### Historical cap-group dependency discovery
+
+`Lab::historical_group_dependencies` returns the union of includes from every
+retained opened write body of a group, rather than its latest counted version.
+It refuses partial bootstrap overlays, stale replay, unknown/non-group entries,
+missing bodies and bounds overflow (512 writes/edges, 128 distinct includes).
+A new per-entry signed-log index accessor avoids scanning unrelated logs.
+Canonical `read_groups` and `group_at` remain the only permission interpretation;
+this helper supplies dependencies only. The collector must still require exact
+announced frontiers for all group entries, recursively close each group's writer,
+audience and grant authority, and revalidate under the final admission fence.
+The plain mixed-author increment intentionally refuses grouped chains until that
+collector integration is complete. Lean historical-include retention passes;
+Rust missing-body/redefinition fixture awaits canonical compilation.
