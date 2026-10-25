@@ -107,6 +107,10 @@
 
 			<button class="quiet" onclick={leave}>Sign out on this device</button>
 		{:else}
+			<div class="returning-citizen">
+				<span>Already a founder?</span>
+				<a href="{base}/app/">Sign in <span aria-hidden="true">→</span></a>
+			</div>
 			<div class="product-hero">
 				<div>
 					<p class="eyebrow">A shared world. An economy we build together.</p>
@@ -147,10 +151,7 @@
 						? 'this invite link is used up or expired. Ask for a new one.'
 						: 'have an invitation? Open your personal invite link to begin.'}
 				</p>
-				<p class="already">
-					Already a founder?
-					<a class="quiet" href="{base}/app/">Sign in</a>
-				</p>
+
 			{:else if !supported}
 				<p class="note bad">
 					This browser cannot create a passkey. Try a current Safari, Chrome or Firefox — on a
@@ -184,10 +185,7 @@
 					means that if you lose every device you have, the account goes with them.
 				</p>
 
-				<p class="already">
-					Already a founder?
-					<a class="quiet" href="{base}/app/">Sign in</a>
-				</p>
+
 			{/if}
 				</div>
 			</section>
@@ -219,6 +217,40 @@
 	article {
 		max-width: 70rem;
 		margin: 0 auto;
+	}
+
+	.returning-citizen {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin-bottom: 1.75rem;
+		color: var(--ink-soft);
+		font-size: 0.95rem;
+	}
+
+	.returning-citizen a {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.65rem;
+		min-height: 44px;
+		padding: 0.55rem 1.2rem;
+		border: 1px solid var(--ink-soft);
+		border-radius: 999px;
+		color: var(--ink);
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.returning-citizen a:hover {
+		background: var(--ink);
+		color: var(--cream);
+	}
+
+	.returning-citizen a:focus-visible {
+		outline: 2px solid var(--terracotta);
+		outline-offset: 4px;
 	}
 
 	h1 {
@@ -362,7 +394,7 @@
 	.price strong { font-size:4.6rem; font-family:var(--font-display, Georgia, serif); font-weight:400; line-height:1; }
 	.price small { font-size:.7rem; color:#d7cdb9; }
 	.citizenship .offer-note { font-size:.76rem; color:#d7cdb9; max-width:28rem; }
-	.citizenship .already, .citizenship .fine, .citizenship .note { color:#e4dbca; }
+	.citizenship .fine, .citizenship .note { color:#e4dbca; }
 	.citizenship a { color:#f4c99e; }
 	.citizenship form { color:var(--ink, #243a2b); }
 	.mission { padding:3rem 0 0; max-width:42rem; }

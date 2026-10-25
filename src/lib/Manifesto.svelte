@@ -5,11 +5,10 @@
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
-	import { asset } from '$lib/media/url';
+	import bannerImage from '$lib/images/manifesto-banner.jpg';
+	import samuelImage from '$lib/images/samuel.jpg';
 	import FounderCounter from '$lib/FounderCounter.svelte';
-	// The dome city's loading artwork (also used by Sandbox 4) and Samuel's portrait, by hash.
-	const BANNER = '9e442ce81d3237243f561780fa6d3aeeeb7f1d83ea8e68f3a166650739c398b2.jpg';
-	const SAMUEL = 'dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg';
+	// Public page artwork ships with the site, independent of a local avenDB session.
 
 	// the banner is optional: without the illustration the headline simply
 	// stands on the page
@@ -38,7 +37,9 @@
 	{#if banner}
 		<header class="banner">
 			<img
-				src={asset(BANNER)}
+				src={bannerImage}
+				width="2400"
+				height="1339"
 				alt="A mother and her son overlooking a green city of domes beside a river at sunset."
 				fetchpriority="high"
 			/>
@@ -157,7 +158,7 @@
 		</p>
 		<p class="creed">when we unite in vision, the impossible becomes possible.</p>
 		<p class="signature">
-			<img src={asset(SAMUEL)} alt="" />
+			<img src={samuelImage} alt="" width="1542" height="1542" loading="lazy" decoding="async" />
 			<span>Samuel Andert</span>
 		</p>
 	</footer>
