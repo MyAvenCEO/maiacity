@@ -99,3 +99,10 @@ theorem revokedRefused (w : Witness) (h : w.checkpointStands = false) : valid w 
 theorem bareCycleRefused (w : Witness) (h : w.checkpointSigned = false) : valid w = false := by
   simp [valid, h]
 end AvenDB.CheckpointProvenance
+
+namespace AvenDB.GrantRecovery
+/-- Unverified fields may select ordinary transfer work but never classify. -/
+def classify (verifiedSignature currentProvenance : Bool) : Bool :=
+  verifiedSignature || currentProvenance
+theorem hintAloneCannotClassify : classify false false = false := rfl
+end AvenDB.GrantRecovery
