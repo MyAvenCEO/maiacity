@@ -41,12 +41,16 @@ impl Lab {
             self.projection_entitlement(on,snapshot,entry)
         } else { self.projection_authority(on,snapshot,entry) }
     }
+    pub fn pack_entry_checkpoint_capsule(sealed:Vec<u8>,capsule:EntryCheckpointCapsule)->Option<Vec<u8>> {
+        let mut local=LOCAL.to_vec(); sealed.encode(&mut local); capsule.recipient.encode(&mut local); capsule.bytes.encode(&mut local);
+        (local.len()<=MAX_BYTES+128).then_some(local)
+    }
+    pub fn checkpoint_capsule_payload(package:&[u8])->Option<Vec<u8>> { local_parts(package).map(|(owner,_)|owner) }
     /// Persist only an encrypted recipient capsule beside the immutable owner root
     /// in the existing anchor companion. It never makes the partial entry writable.
     pub fn adopt_capsuled_owner_entry_base(&mut self,on:SignerId,snapshot:EditId,entry:EntryId,sealed:Vec<u8>,capsule:EntryCheckpointCapsule)->bool {
         if self.restore_capsuled_owner_judgment(on,snapshot,entry,&sealed,&capsule).is_none() { return false; }
-        let mut local=LOCAL.to_vec(); sealed.encode(&mut local); capsule.recipient.encode(&mut local); capsule.bytes.encode(&mut local);
-        if local.len()>MAX_BYTES+128 { return false; }
+        let Some(local)=Self::pack_entry_checkpoint_capsule(sealed,capsule) else { return false; };
         self.adopt_owner_entry_base(on,snapshot,entry,local)
     }
     /// Explicit owner publication of a new format. The fresh key opens only this
@@ -72,12 +76,25 @@ impl Lab {
     pub fn entry_checkpoint_capsule(&mut self,me:SignerId,recipient:SignerId,snapshot:EditId,entry:EntryId,sealed:&[u8])->Option<EntryCheckpointCapsule> {
         let offer=self.entry_projection_offer_for_root(me,recipient,entry,None,crate::hash::content(sealed))?;
         if offer.snapshot!=snapshot || offer.root.size!=sealed.len() as u64 { return None; }
-        let (vault,stated,name)=self.projection_authority(me,snapshot,entry)?;
+        let (vault,stated,name)=self.projection_entitlement(me,snapshot,entry)?;
         let root=stated.slice;
-        let (recovery,_)=parts(sealed,vault,entry)?;
-        let key=self.held(me).keys.get(&keys::edit_key(&recovery)?,name)?;
-        let raw=Zeroizing::new(keys::open_edit(key,&recovery,&context(vault,entry))?);
-        let data=Secret::from_bytes(raw.as_slice().try_into().ok()?);
+        let (recovery,payload)=parts(sealed,vault,entry)?;
+        let retained=self.held(me).bootstrap_bases.get(&entry).and_then(|(at,bytes)| {
+            if *at!=snapshot { return None; }
+            let (owner,capsule)=local_parts(bytes)?;
+            if owner!=sealed || capsule.recipient!=me { return None; }
+            let own=self.keys.get(&me)?.seal_secret()?;
+            keys::open(&capsule.bytes,&own,&recipient_context(vault,entry,root,me))
+        });
+        let data=match retained {
+            Some(key)=>key,
+            None=> {
+                let key=self.held(me).keys.get(&keys::edit_key(&recovery)?,name)?;
+                let raw=Zeroizing::new(keys::open_edit(key,&recovery,&context(vault,entry))?);
+                Secret::from_bytes(raw.as_slice().try_into().ok()?)
+            }
+        };
+        if keys::edit_key(&payload)?!=data.id() { return None; }
         let pk=self.latest(me).seal_key(recipient)?.clone();
         let blob=self.held(me).blobs.get(&pk.mceliece)?.clone();
         if BlobId::of(&blob)!=pk.mceliece { return None; }

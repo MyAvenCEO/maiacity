@@ -168,7 +168,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
-        "checkpoint_view" | "checkpoint_entry_base" => &["entry"],
+        "checkpoint_view" | "checkpoint_entry_base" | "checkpoint_entry_capsule" => &["entry"],
         "history" => &["entry", "limit"],
         "room" => &["entry", "last", "before"],
         "schemas" => &["vault"],

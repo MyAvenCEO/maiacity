@@ -532,11 +532,18 @@ mod tests {
                 let group=lab.define_group(mac,vault,crate::rules::CapGroup{name:"Dynamic writer".into(),caps:Level::Write.ops().into_iter().map(|op|crate::rules::Cap{op,slice:crate::cast::of_type("note")}).collect(),includes:vec![]}).unwrap();
                 lab.issue_group(mac,&[owner],GroupShare{over:vault,who:Who::Vault(guest_vault),name:"Group".into(),select:crate::cast::of_type("note"),group,level:Level::Write,parent:None,issuer:vault}).unwrap()
             } else { lab.issue(mac,&[owner],grant).unwrap() };
-            lab.sync(mac,full); lab.sync(mac,partial);
+            let third_owner=lab.passkey("Independent recipient");
+            let third=lab.device_of(third_owner,"Third device");
+            let third_vault=human_on(&mut lab,third_owner,&[third]);
+            lab.share_contact(third,mac,third_vault); lab.share_contact(mac,third,vault);
+            lab.share_contact(third,partial,third_vault); lab.share_contact(partial,third,guest_vault);
+            let third_share=lab.issue(mac,&[owner],crate::cast::share(vault,Who::Vault(third_vault),Level::Read,crate::cast::of_type("note"))).unwrap();
+            lab.sync(mac,full); lab.sync(mac,partial); lab.sync(mac,third);
+            let mut audience=vec![share,third_share]; audience.sort();
             // Even a Write-level grant only selects note entries. A distinct typed
             // entry and its real owner checkpoint must never become a shared base.
             if mode==0 {
-                let excluded=lab.create_in(mac,vault,vault,vec![share],"private-other",&[],document("Excluded","not a note",mac)).unwrap();
+                let excluded=lab.create_in(mac,vault,vault,audience.clone(),"private-other",&[],document("Excluded","not a note",mac)).unwrap();
                 let PreparedEntryBase{draft,..}=lab.draft_judged_entry_base(mac,&[owner],excluded).unwrap();
                 lab.complete(mac,draft,&[]).unwrap();
                 lab.sync(mac,full); lab.sync(mac,partial);
@@ -549,7 +556,10 @@ mod tests {
             }
 
 
-        let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
+        let entry=lab.create_in(mac,vault,vault,audience.clone(),"note",&[],document("Base","old",mac)).unwrap();
+        // Ordinary authorized setup may reveal both grants without replaying the
+        // later content held in the checkpoint. Private occupancy stays absent.
+        lab.sync(mac,partial); lab.sync(mac,third);
         let withheld=lab.edit(mac,vault,entry,|i|i.set_text(2,"Attested")).unwrap();
         let PreparedEntryBase{draft,sealed,..}=lab.draft_capsuled_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,draft,&[]).unwrap();
@@ -567,6 +577,13 @@ mod tests {
         assert!(lab.adopt_capsuled_owner_entry_base(partial,snapshot,entry,sealed.clone(),capsule.clone()));
         assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
         assert_eq!(lab.owner_base_wait_reason(partial,entry),Some("checkpoint-capsule-read-only"));
+        let forwarded=lab.entry_checkpoint_capsule(partial,third,snapshot,entry,&sealed).unwrap();
+        let third_offer=lab.entry_projection_offer(partial,third,entry).unwrap();
+        lab.receive(third,third_offer.evidence,vec![]);
+        let forwarded_state=lab.restore_capsuled_owner_judgment(third,snapshot,entry,&sealed,&forwarded).unwrap();
+        assert_eq!(forwarded_state.items[&MAIN].record(),lab.item(mac,entry).unwrap().record());
+        let outsider=lab.device("Unauthorized capsule recipient");
+        assert!(lab.entry_checkpoint_capsule(partial,outsider,snapshot,entry,&sealed).is_none());
         let before=lab.held(partial).log.ids().len();
         assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Must not sign")).is_err());
         assert_eq!(lab.held(partial).log.ids().len(),before);
@@ -584,6 +601,11 @@ mod tests {
         assert!(lab.restore_capsuled_owner_judgment(partial,snapshot,entry,&sealed,&corrupt).is_none());
         let mut changed=sealed.clone(); let end=changed.len()-1; changed[end]^=1;
         assert!(lab.restore_capsuled_owner_judgment(partial,snapshot,entry,&changed,&capsule).is_none());
+        let third_revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share:third_share,actor:vault,keep:vec![],via:vec![]})).unwrap();
+        let signed=lab.signed_edit(mac,third_revoked).unwrap().clone();
+        lab.receive(third,vec![signed.clone()],vec![]); lab.receive(partial,vec![signed],vec![]);
+        assert!(lab.restore_capsuled_owner_judgment(third,snapshot,entry,&sealed,&forwarded).is_none());
+        assert!(lab.entry_checkpoint_capsule(partial,third,snapshot,entry,&sealed).is_none());
         let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
         let signed=lab.signed_edit(mac,revoked).unwrap().clone();
         lab.receive(partial,vec![signed],vec![]);

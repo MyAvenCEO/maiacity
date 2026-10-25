@@ -1091,3 +1091,24 @@ wrong scope/recipient/root and revocation after reopen. The original cross-entry
 shared **writable** fixture still fails on legacy-key adoption; it is retained as
 the acceptance target and is not claimed fixed. The codec stage is
 [a187fe4d](https://github.com/MyAvenCEO/maiacity/commit/a187fe4d).
+
+### Explicit v3 common peer delivery (isolated, read-only)
+
+`checkpoint_entry_capsule` uses the existing owner approval ceremony and a separate
+format-3 blob pin. Demand probes v3, then v2 and v1; only the negotiated framing is
+decoded. A recipient retains the owner ciphertext plus its encrypted capsule through
+the existing staged anchor/save receipt. Partial holders can rewrap their retained
+checkpoint-only key for another currently authorized recipient; no hosted role is
+special. Ordinary legacy publication remains available with its separate pin.
+
+The full `checkpoint_delivery::tests` suite passed **9/9 in 7.10 seconds** from the
+exact built binary, with local-socket escalation after the sandbox denied bind.
+This includes v3 public owner approval/fetch with ordinary history withheld,
+read-only enforcement, legacy v1/v2 delivery, durable writes, pin fencing and
+revocation. Logs: `/private/tmp/avendb-capsule-v3-net-loopback.log` (passed) and
+`/private/tmp/avendb-capsule-v3-net.log` (sandbox bind denial, not a logic pass).
+The independent-third-grant forwarding core fixture initially failed only because
+the supplied audience IDs were unsorted; the fixture now sorts them canonically,
+but its rerun is pending. Overall shared writable bootstrap is still open.
+
+Durable capsule stage: [7154b07e](https://github.com/MyAvenCEO/maiacity/commit/7154b07e).
