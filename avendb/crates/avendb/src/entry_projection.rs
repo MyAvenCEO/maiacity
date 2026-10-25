@@ -413,6 +413,20 @@ impl Lab {
     /// Read-only checkpoint only while canonical history has not materialized its signed basis.
     /// Authorization is cached only for the exact immutable log revision and recipient.
     pub(crate) fn entry_projection(&self, on: SignerId, entry: EntryId) -> Option<VerifiedEntryProjection> {
+        self.with_entry_projection(on,entry,Clone::clone)
+    }
+
+    /// Scheduling fulfillment only: exact authenticated basis and an available
+    /// MAIN record, through the same current-authorization gate as ordinary reads.
+    pub(super) fn projection_covers_manifest_heads(&self,on:SignerId,entry:EntryId,heads:&[EditId])->bool {
+        self.with_entry_projection(on,entry,|projection| {
+            let mut basis=projection.basis.clone();basis.sort();basis.dedup();
+            let mut expected=heads.to_vec();expected.sort();expected.dedup();
+            projection.lines.contains_key(&MAIN) && basis==expected
+        }).unwrap_or(false)
+    }
+
+    fn with_entry_projection<R>(&self,on:SignerId,entry:EntryId,read:impl FnOnce(&VerifiedEntryProjection)->R)->Option<R> {
         let store = self.held(on);
         if store.replayed != store.log.edits().len() || !self.sees(on, entry) { return None; }
         let key = (on, entry);
@@ -433,7 +447,7 @@ impl Lab {
             if !authorized { cache.remove(&key); return None; }
             cached.revision = revision;
         }
-        Some(cached.value.clone())
+        Some(read(&cached.value))
     }
 }
 

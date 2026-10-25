@@ -193,6 +193,7 @@ impl Lab {
         let store=self.held(on);
         let Some(en)=store.view().entry(entry) else {return false;};
         if !self.sees(on,entry) || !manifest_readable(store.view(),actor,en) {return false;}
+        if self.projection_covers_manifest_heads(on,entry,heads) {return true;}
         let Some(shown)=store.shown.get(&entry) else {return false;};
         if !shown.items.get().is_some_and(|items|items.contains_key(&MAIN)) {return false;}
         let Some(imported)=shown.after.imported.get(&MAIN) else {return false;};
@@ -464,6 +465,31 @@ mod tests {
         w.lab.edit(w.phone_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("newer");item.put_record(&record);}).unwrap();
         let newer=crate::engine::read(&w.lab,w.phone_a,&query);
         assert_eq!(newer["ok"]["scope"]["discovery"]["pendingEntries"],json!([]));
+    }
+
+    #[test]
+    fn discovery_manifest_read_only_projection_requires_exact_advertised_basis() {
+        let mut w=cast::world();
+        w.lab.sync(w.mac_a,w.phone_a);
+        let note=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("checkpoint",w.mac_a)).unwrap();
+        let heads=w.lab.history(w.mac_a,note).unwrap().heads(MAIN);
+        let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],note).unwrap();
+        let snapshot=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
+        let offer=w.lab.entry_projection_offer(w.mac_a,w.phone_a,note).unwrap();
+        w.lab.receive(w.phone_a,offer.evidence,vec![]);
+        assert!(w.lab.retain_entry_projection(w.phone_a,snapshot,note,p.sealed));
+        assert!(w.lab.item(w.phone_a,note).is_none(),"receiver has only a read-only attestation");
+        assert!(w.lab.materialized_manifest_heads(w.phone_a,w.alice,note,&heads));
+        assert!(!w.lab.materialized_manifest_heads(w.phone_a,w.alice,note,&[EditId([91;32])]));
+        assert!(!w.lab.materialized_manifest_heads(w.phone_a,w.bob,note,&heads));
+        w.lab.edit(w.mac_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("later");item.put_record(&record);}).unwrap();
+        let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],note).unwrap();
+        let newer=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
+        let offer=w.lab.entry_projection_offer(w.mac_a,w.phone_a,note).unwrap();
+        w.lab.receive(w.phone_a,offer.evidence,vec![]);
+        assert!(w.lab.retain_entry_projection(w.phone_a,newer,note,p.sealed));
+        assert!(!w.lab.materialized_manifest_heads(w.phone_a,w.alice,note,&heads),"a different basis without counted ancestry is not proof");
+        assert!(w.lab.materialized_manifest_heads(w.phone_a,w.alice,note,&w.lab.history(w.mac_a,note).unwrap().heads(MAIN)));
     }
 
 }
