@@ -114,7 +114,7 @@ mod tests {
         for n in 0..12 {
             let entry=w.lab.create(sender,vault,vault,"manifest-note",&["selected"],Item::todo("old",sender)).unwrap();
             for revision in 0..3 {
-                w.lab.edit(sender,vault,entry,|item|{let mut record=item.record();record["title"]=json!(format!("latest-{n}-{revision}"));item.put_record(&record);}).unwrap();
+                w.lab.edit(sender,vault,entry,|item|{let mut record=item.record();record["title"]=json!(format!("latest-{n}-{revision}"));item.set_record(avendb::lens::View::todo_v1(),&record);}).unwrap();
             }
             let expected=w.lab.item(sender,entry).unwrap().record()["title"].as_str().unwrap().to_owned();
             let p=w.lab.draft_entry_projection(sender,&[owner],entry).unwrap();
@@ -124,7 +124,7 @@ mod tests {
         }
         let unrelated=w.lab.create(sender,vault,vault,"unrelated",&[],Item::todo("not demanded",sender)).unwrap();
         let record=w.lab.discovery_manifest_record(sender,vault,DiscoveryScope::Types(vec!["manifest-note".into()])).unwrap();
-        let mut item=Item::new(sender);item.put_record(&record);
+        let item=Item::made(&avendb::lens::View::plain(&avendb::lens::DISCOVERY_MANIFEST_V1),&record,sender).unwrap();
         let carrier=w.lab.create(sender,vault,vault,"discovery-manifest",&[],item).unwrap();
         let p=w.lab.draft_entry_projection(sender,&[owner],carrier).unwrap();
         w.lab.complete(sender,p.draft,&[]).unwrap();pinned.push((carrier,p.root,p.sealed));
