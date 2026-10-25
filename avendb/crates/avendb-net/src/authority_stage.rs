@@ -245,6 +245,34 @@ impl crate::Shared {
             let inventory = stage.announced.keys().filter_map(|log| match log { LogId::Share(id) => Some(*id), _ => None }).collect();
             stage.classes = self.grant_classes(&peer, inventory).await;
         }
+        // Discover one bounded layer at a time. A missing reader/ancestor log
+        // cannot be inspected until normal authorized transfer has admitted it.
+        // Fetching is never admission: the final atomic fence below recomputes
+        // the entire closure against the current receipt and current Lab.
+        let mut previous_missing = None;
+        for _ in 0..4 {
+            let shared = self.clone();
+            let connection = peer.conn.stable_id();
+            let (returned, missing) = self.read(move |lab, me| {
+                let held = shared.held.lock().expect("held");
+                let current = held.get(&device);
+                let current_receipt = shared.ranges.lock().expect("ranges").complete_inventory(connection, device);
+                let missing = current.filter(|current| stage.current(device, current))
+                    .filter(|_| stage.inventory.is_some() && stage.inventory == current_receipt)
+                    .and_then(|current| stage.owner.as_ref().zip(stage.classes.as_ref()).and_then(|(owner, classes)| {
+                        let log = lab.log(me);
+                        let indexed = shared.logs_of(lab, me);
+                        classes.owner_dependencies(owner, log.edits(), log.ids(), &indexed, current,
+                            |id| lab.independently_verified_edit(me, id)).map(|dependencies| dependencies.missing)
+                    }));
+                (stage, missing)
+            }).await;
+            stage = returned;
+            let Some(missing) = missing.filter(|missing| !missing.is_empty()) else { break };
+            if previous_missing.as_ref() == Some(&missing) { break; }
+            previous_missing = Some(missing.clone());
+            self.pull_expected(peer.endpoint, crate::Scope::Logs(missing), false, None, Some(device)).await?;
+        }
         #[cfg(test)]
         self.authority_stages.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let _activity = activity;
@@ -355,7 +383,16 @@ mod transport_tests {
         let mut w = world();
         let handbook = handbook(&mut w);
         let (sender, receiver, vault) = (w.mac_a, w.phone_a, w.alice);
+        w.lab.issue(sender, &[sender], avendb::cast::share(vault, avendb::policy::Who::Vault(w.bob),
+            avendb::policy::Level::Read, avendb::slice::Selector::All)).unwrap();
+        w.lab.sync_all(0);
         let phone_lab = w.lab.split(receiver, &[], [155; 32]);
+        // A known wide reader's newly announced authority must be pulled by
+        // dependency scheduling, while unrelated coop authority stays missing.
+        let related_reader = w.bob;
+        w.lab.submit(sender, &[w.passkey_b], Action::Settings {
+            vault: related_reader, set: Setting::Threshold(1),
+        }).unwrap();
         let entry = w.lab.create(sender, vault, vault, "room", &[], document("Scoped room", "first", sender)).unwrap();
         let history = w.lab.create(sender, vault, vault, "doc", &[], document("Unrelated", "withheld", sender)).unwrap();
         // The receiver may know this coop's authority, but the personal room's
@@ -372,11 +409,13 @@ mod transport_tests {
         until(async || phone.holdings_of(sender).is_some_and(|h| h.logs.contains_key(&LogId::Entry(entry)))).await;
         let initial_missing = phone.shared.differ(sender).await;
         assert!(initial_missing.contains(&LogId::Vault(unrelated_vault)));
+        assert!(initial_missing.contains(&LogId::Vault(related_reader)), "related wide reader frontier must start missing");
         let target_audience = LogId::Audience(vault, avendb::id::AudienceId::of(vault, &[]));
         assert!(initial_missing.contains(&target_audience), "creation introduces a related key dependency; do not preseed it");
         phone.shared.stage_live_entries(mac.id(), sender, [LogId::Entry(entry)].into_iter().collect());
         until(async || phone.read(move |lab, me| text(lab, me, entry, 2).as_deref() == Some("first")).await).await;
         assert!(!phone.shared.differ(sender).await.contains(&target_audience), "normal scoped transfer supplies the actual related key frontier");
+        assert!(!phone.shared.differ(sender).await.contains(&LogId::Vault(related_reader)), "scoped dependency transfer supplies the reader's new authority without broad catch-up");
         assert!(phone.shared.differ(sender).await.contains(&LogId::Vault(unrelated_vault)));
         assert!(phone.read(move |lab, me| lab.item(me, history).is_none()).await);
         let written = mac.act(move |lab, me| lab.edit(me, vault, entry, |item| item.set_text(2, "live"))).await.unwrap();

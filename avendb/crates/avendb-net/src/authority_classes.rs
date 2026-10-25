@@ -111,6 +111,15 @@ mod tests {
             "matching frontiers do not replace independent authority provenance");
         local.of.remove(&LogId::Vault(w.bob));
         assert!(classes.owner_scope(&shape, all, log.ids(), &local, &announced, |id| w.lab.independently_verified_edit(w.mac_a, id)).is_none());
+        let missing = classes.owner_dependencies(&shape, all, log.ids(), &local, &announced,
+            |id| w.lab.independently_verified_edit(w.mac_a, id)).expect("known missing dependency yields a transfer hint");
+        assert!(missing.missing.contains(&LogId::Vault(w.bob)));
+        assert!(!missing.missing.contains(&LogId::Vault(w.carol)), "unrelated history is not scheduled");
+        local.of.remove(&LogId::Share(grant));
+        let missing = classes.owner_dependencies(&shape, all, log.ids(), &local, &announced,
+            |id| w.lab.independently_verified_edit(w.mac_a, id)).unwrap();
+        assert!(missing.missing.contains(&LogId::Share(grant)), "a classified creation still requires its current revocation frontier");
+        assert!(classes.owner_scope(&shape, all, log.ids(), &local, &announced, |_| true).is_none());
     }
 
     #[test]
@@ -214,6 +223,11 @@ impl OwnerEntry {
 
 }
 
+pub(crate) struct OwnerDependencies {
+    pub required: BTreeSet<avendb::sync::LogId>,
+    pub missing: BTreeSet<avendb::sync::LogId>,
+}
+
 impl GrantClasses {
     /// Close a direct-owner/unchanged-audience entry's authority reads against
     /// an already classified authenticated inventory. No policy checks are
@@ -228,6 +242,17 @@ impl GrantClasses {
         announced: &crate::Holdings,
         independent: impl Fn(avendb::id::EditId) -> bool,
     ) -> Option<BTreeSet<avendb::sync::LogId>> {
+        let dependencies = self.owner_dependencies(owner, edits, ids, logs, announced, independent)?;
+        dependencies.missing.is_empty().then_some(dependencies.required)
+    }
+
+    /// Missing current frontiers are transfer hints only. Their contents must be
+    /// received normally before we can walk any deeper dependencies or admit.
+    pub(crate) fn owner_dependencies(
+        &self, owner: &OwnerEntry, edits: &[avendb::policy::Edit], ids: &[avendb::id::EditId],
+        logs: &crate::holdings::Logs, announced: &crate::Holdings,
+        independent: impl Fn(avendb::id::EditId) -> bool,
+    ) -> Option<OwnerDependencies> {
         use avendb::{id::AudienceId, policy::{Kind, Principal, Revoking}, sync::LogId};
         let inventory: BTreeSet<_> = announced.logs.keys().filter_map(|log| match log { LogId::Share(id) => Some(*id), _ => None }).collect();
         // This complete negative lookup is essential: unknown ShareIds cannot
@@ -240,13 +265,14 @@ impl GrantClasses {
         let mut vaults = owner.via.clone();
         vaults.insert(owner.vault);
         let mut required = BTreeSet::new();
+        let mut missing = BTreeSet::new();
         let mut seen_shares = BTreeSet::new();
         let mut seen_vaults = BTreeSet::new();
         let mut inspected = 0usize;
-        let held = |id: LogId| {
+        let held = |id: LogId| -> Option<Option<&crate::holdings::Log>> {
             let remote = announced.logs.get(&id)?;
-            let local = logs.of.get(&id)?;
-            (remote.waiting.is_empty() && local.frontier == *remote).then_some(local)
+            if !remote.waiting.is_empty() { return None; }
+            Some(logs.of.get(&id).filter(|local| local.frontier == *remote))
         };
         loop {
             if required.len() > MAX_CLASSES || vaults.len() > MAX_CLASSES || shares.len() > MAX_CLASSES { return None; }
@@ -261,7 +287,9 @@ impl GrantClasses {
                 if let Who::Vault(v) = class.who { vaults.insert(v); }
                 if let Some(parent) = class.parent { shares.insert(parent); }
                 let log = LogId::Share(id);
-                let positions = &held(log)?.edits;
+                required.insert(log);
+                let Some(held) = held(log)? else { missing.insert(log); continue; };
+                let positions = &held.edits;
                 inspected = inspected.checked_add(positions.len())?;
                 if inspected > 2048 { return None; }
                 for &at in positions {
@@ -287,7 +315,9 @@ impl GrantClasses {
                 seen_vaults.insert(v);
                 let log = LogId::Vault(v);
                 let mut genesis = false;
-                let positions = &held(log)?.edits;
+                required.insert(log);
+                let Some(held) = held(log)? else { missing.insert(log); continue; };
+                let positions = &held.edits;
                 inspected = inspected.checked_add(positions.len())?;
                 if inspected > 2048 { return None; }
                 for &at in positions {
@@ -320,15 +350,17 @@ impl GrantClasses {
         }
         let audience = LogId::Audience(owner.vault, AudienceId::of(owner.vault, &[]));
         if announced.logs.contains_key(&audience) {
-            let positions = &held(audience)?.edits;
-            inspected = inspected.checked_add(positions.len())?;
-            if inspected > 2048 { return None; }
-            for &at in positions {
-                if !independent(*ids.get(at)?) { return None; }
-            }
             required.insert(audience);
+            if let Some(held) = held(audience)? {
+                let positions = &held.edits;
+                inspected = inspected.checked_add(positions.len())?;
+                if inspected > 2048 { return None; }
+                for &at in positions {
+                    if !independent(*ids.get(at)?) { return None; }
+                }
+            } else { missing.insert(audience); }
         }
-        (required.len() <= MAX_CLASSES).then_some(required)
+        (required.len() <= MAX_CLASSES).then_some(OwnerDependencies { required, missing })
     }
 }
 

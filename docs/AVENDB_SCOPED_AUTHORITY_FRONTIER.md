@@ -227,3 +227,30 @@ global-cardinality or checkpoint-standing dependencies. Shared/cap-group writes,
 long target histories, authenticated checkpoint-standing closure, and general
 recursive missing-dependency fetching remain open. This is not a claim that the
 physical fresh-phone problem is fully solved.
+
+## Explicit missing dependency scheduling
+
+The collector now distinguishes a known missing current frontier from an
+unclassified dependency. `owner_dependencies` returns bounded `required` and
+`missing` sets; `owner_scope` still requires `missing` to be empty. Unknown grant
+inventory members, unannounced dependencies, waiting frontiers, unsupported
+shapes and missing independent provenance never become a negative result or an
+admission permit.
+
+After classification the stage fetches up to four successive dependency layers
+through ordinary authorized `pull_expected`. This includes a wide reader's
+vault, parent grant and owner ancestry once their preceding verified records
+are available. The exact authenticated connection inventory is rechecked before
+each hint collection. Repeated identical missing sets stop extra requests; the
+existing 15-second stage timeout and log/byte budgets still apply. The final
+atomic current receipt/frontier check remains the only release path. Deeper or
+unavailable closures conservatively continue through ordinary reconciliation.
+
+The real-peer regression now starts with a newer related wide-reader authority
+frontier withheld alongside unrelated coop authority and entry history. It
+requires the reader frontier to be supplied by scoped transfer, the room and
+live delta to render, and unrelated work to remain withheld. Unit assertions
+separate scheduling a missing reader/grant from admitting it. These new Rust
+checks await the primary checkout compiler slot. New Lean scheduling lemmas
+passed as a standalone extraction; the full imported model was not rebuilt in
+this isolated tree.
