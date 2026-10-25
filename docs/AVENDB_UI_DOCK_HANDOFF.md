@@ -12,3 +12,14 @@ Validation: 21 focused Bun regressions passed (query-window lifecycle, status re
 Remaining: genuine authoritative per-manifest completeness is not supplied by current deployed engine; physical iPhone/iPad acceptance and actual rendered app visual inspection remain delivery checks. Passive recent diagnostic samples are separate from these mounted-window counters.
 
 Follow-up coverage: Sparks/Artifacts picked and capture controls, shared sandbox walking hint and world notices, MaiaCity V1/V2 tour/mint controls and errors, and the probe's pinned preview now use the same host. Existing game cinematic mint-control hiding is preserved explicitly across the portal. Corner HUD controls, joysticks and full-screen modal surfaces are unchanged. Seven changed Svelte components compile.
+
+## Delivery record — 2026-10-25
+
+PR #1275 isolates this frontend release from unfinished Rust checkpoint/bootstrap work. Included implementation commits:
+- `fcd25ae7`: cold manifest demand and revision-driven dependency replanning; `d87d44c3`: remove duplicate blocking legacy pulls when scoped demand is supported.
+- `8ef53925`, `39386885`, `f65cf035`, `acb93db8`: unified diagnostics, deployed-engine compatibility, immediate iOS clipboard activation and full-check typing.
+- `1798e83b`, `173f1f1b`, `74229a8e`: shared dock, honest local-view status and remaining capture/game overlays.
+
+Local validation: 51 combined focused regressions and 19 retained timing/lifecycle regressions passed. Production build passed. Full Svelte check passed with zero errors after the final overlay migration. Chrome geometry passed at 320×568, 390×844 and 1024×768. Physical iPhone/iPad acceptance remains open. No new native engine or Mac installation is implied by this website/PWA release.
+
+After deployment, open the top-left diagnostics button, run diagnostics and copy logs. For delivery measurements, run on both devices and make an ordinary edit while the two-minute observers are armed. Do not delete local data to test the UI update. The frontend counters remain local read availability; full authorized manifest completeness and writable partial bootstrap are not completed by this change.
