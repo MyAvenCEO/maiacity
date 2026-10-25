@@ -374,13 +374,14 @@ impl Shared {
         // Existing current dependency closure is the release gate. Missing
         // dependencies remain ordinary authorized work; no base can override it.
         let shared = self.clone();
+        let admission_origin = origin.clone();
         let admitted = self
             .try_lab(move |lab, me| {
                 let _activity = activity;
-                let demands = origin
+                let demands = admission_origin
                     .as_ref()
                     .map(|_| shared.demands.lock().expect("demands"));
-                if origin
+                if admission_origin
                     .as_ref()
                     .zip(demands.as_ref())
                     .is_some_and(|(o, ds)| {
@@ -416,11 +417,20 @@ impl Shared {
                 {
                     return false;
                 }
-                lab.receive_prepared(me, prepared, true);
+                // Current authorization and inventory are checked atomically above.
+                // Canonical judgment belongs to paced turns after these locks release.
+                lab.receive_prepared(me, prepared, false);
                 true
             })
             .await?;
         if admitted {
+            self.changed.notify_one();
+            self.jobs.stir();
+            if let Some(origin) = origin {
+                origin.run(self.catch_up_paced(true)).await;
+            } else {
+                self.catch_up_paced(true).await;
+            }
             self.bootstrap_due.notify_one();
             self.jobs.stir();
         }

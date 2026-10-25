@@ -102,7 +102,20 @@ mod tests {
         assert!(!reply.more);
         assert_eq!(reply.edits.iter().map(|s|s.edit.id()).collect::<Vec<_>>(),vec![suffix]);
         assert_eq!(lab.log(phone).ids(),before,"requesting a suffix does not claim base history");
-        lab.receive(phone,reply.edits,vec![]);
+        // Match network admission: retain verified bytes without synchronously
+        // rebuilding the accepted overlay under the receive lock.
+        let prepared = lab.prepare_receive(phone, reply.edits).check();
+        lab.receive_prepared(phone, prepared, false);
+        assert!(lab.owner_base_scope(phone,entry).is_none(),
+            "the old overlay must not masquerade as current after suffix admission");
+        let mut turns = 0;
+        loop {
+            let (worked, pending) = lab.catch_up_step(phone, &[entry]);
+            turns += 1;
+            assert!(worked, "admitted suffix must schedule canonical work");
+            assert!(turns < 32, "bounded suffix must finish in finite paced turns");
+            if !pending { break; }
+        }
         assert_eq!(text(&lab,phone,entry,2).as_deref(),Some("latest suffix"));
         let advanced = lab.owner_base_scope(phone,entry).expect("base remains active after suffix");
         assert_eq!(advanced.snapshot(), scope.snapshot());
