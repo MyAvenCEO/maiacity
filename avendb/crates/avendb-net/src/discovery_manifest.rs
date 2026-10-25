@@ -75,7 +75,7 @@ mod tests {
         let (sender,receiver,owner,vault)=(w.mac_a,w.phone_a,w.passkey_a,w.alice);
         w.lab.create(sender,vault,vault,"note",&["selected"],Item::todo("member",sender)).unwrap();
         let record=w.lab.discovery_manifest_record(sender,vault,DiscoveryScope::Tag("selected".into())).unwrap();
-        let mut item=Item::new(sender);item.put_record(&record);
+        let item=Item::made(&avendb::lens::View::plain(&avendb::lens::DISCOVERY_MANIFEST_V1),&record,sender).unwrap();
         let carrier=w.lab.create(sender,vault,vault,"discovery-manifest",&[],item).unwrap();
         let PreparedEntryProjection{draft,root,sealed}=w.lab.draft_entry_projection(sender,&[owner],carrier).unwrap();
         let snapshot=w.lab.complete(sender,draft,&[]).unwrap();
