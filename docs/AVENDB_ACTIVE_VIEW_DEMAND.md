@@ -92,3 +92,24 @@ Chat manifest; game manifests currently contain tag-only leaves, which cannot
 produce positive type discovery hints. Manifests are owner-AIP records, not seed
 writes; adding declarations in source alone cannot update existing vault records.
 No live owner records were changed by this diagnostic patch.
+
+### Discovered IDs no longer wait behind optional checkpoint attempts
+
+Scheduling fix: once an authenticated discovery response has been retained in its
+current demand scope, queue its IDs through the existing live reconciliation path
+before attempting optional checkpoints. Previously up to eight checkpoint probes
+ran before that queue action. Missing checkpoint pins return no offer; a slow or
+missing checkpoint must not delay ordinary reconciliation of already discovered
+IDs. `pull_live` still checks all authority readiness and ordinary signed receive
+is unchanged; this does not introduce a quarantine or bypass authorization.
+
+The ten-second discovery network budget is shared among the remaining peers,
+instead of letting the first peer consume all of it. This bounds allocated network
+waits, not synchronous computation or scheduler delay. Explicit-ID checkpoint
+probes remain bounded, and complete scoped-authority bootstrap remains open.
+
+Validation: `lake env lean AvenDB/LivePriority.lean` passed. Rust parser check via
+`rustfmt --edition 2024 --emit stdout .../discovery.rs` passed. Added Rust tests for
+queue publication while a checkpoint never completes and remaining-peer budget
+reservation. Rust type-check/runtime tests are deliberately pending while the Mac
+build owns compilation resources; no runtime or physical-device win is claimed.

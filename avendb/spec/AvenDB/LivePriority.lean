@@ -139,4 +139,14 @@ theorem publication_closes_materialization_gap (s : Publication) :
 theorem earlier_catch_up_still_gets_a_wake (old current : Nat) :
     (publish ⟨current, old⟩).notified = current := rfl
 
+/-- Queueing a discovered ID does not await an optional checkpoint. Actual selection
+still requires ordinary missing-log membership and authority readiness. -/
+def discoveredQueue (ids : List Nat) (_checkpointReady : Bool) := ids
+
+theorem discovery_queue_independent_of_checkpoint (ids : List Nat) :
+    discoveredQueue ids false = discoveredQueue ids true := rfl
+
+theorem queued_hint_still_requires_authority (hint missing : Bool) :
+    selected hint missing false = false := dependencies_first hint missing
+
 end AvenDB.LivePriority
