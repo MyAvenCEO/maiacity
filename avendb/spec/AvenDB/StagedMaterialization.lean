@@ -17,12 +17,18 @@ theorem pending_no_commit (s : List α) (w : α) : mutate true s w = s := rfl
 -- an owner-only MAIN judgment. Empty shares make State.lets independent of
 -- share-policy changes; exact print/tip covers admitted edits, bodies and lane.
 -- These Booleans are implementation obligations, not hash-collision proofs.
-def rebind (samePrint sameTip sameKeys sameWarm ownerOnly : Bool) :=
-  samePrint && sameTip && sameKeys && sameWarm && ownerOnly
+def rebind (samePrint sameTip sameKeys sameStore ownerOnly : Bool) :=
+  samePrint && sameTip && sameKeys && sameStore && ownerOnly
 theorem rebind_requires_inputs (p t k w o : Bool) (h : rebind p t k w o = true) :
     p = true ∧ t = true ∧ k = true ∧ w = true ∧ o = true := by
   cases p <;> cases t <;> cases k <;> cases w <;> cases o <;> simp_all [rebind]
 -- A validated rebind preserves the actual judged prefix, rather than restarting it.
 def retainPrefix (valid : Bool) (prior : List α) := if valid then prior else []
 theorem unrelated_rebind_retains_prefix (p : List α) : retainPrefix true p = p := rfl
+-- Saving rotates only the receipt generation. It does not mutate the judged
+-- inputs or the Store-lifetime generation. Lock/replacement is a separate action.
+def acknowledgeSave (newReceipt : Nat) (state : Nat × σ) : Nat × σ :=
+  (newReceipt, state.2)
+theorem save_preserves_materialization (r : Nat) (s : Nat × σ) :
+    (acknowledgeSave r s).2 = s.2 := rfl
 end AvenDB.StagedMaterialization

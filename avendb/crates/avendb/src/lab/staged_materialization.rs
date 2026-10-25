@@ -12,25 +12,25 @@ pub(super) struct Pending {
     next: usize,
     log: crate::policy::LogRevision,
     keys: Arc<()>,
-    warm: Arc<()>,
+    generation: Arc<()>,
 }
 impl Pending {
     pub(super) fn new(j: Judging<'_>, lane: Arc<Lane>, print: [u8;32], tip: Tip,
-        log: crate::policy::LogRevision, keys: Arc<()>, warm: Arc<()>) -> Self {
+        log: crate::policy::LogRevision, keys: Arc<()>, generation: Arc<()>) -> Self {
         let (history, after) = suspend(j);
-        Self { history, after, lane, print, tip, next: 0, log, keys, warm }
+        Self { history, after, lane, print, tip, next: 0, log, keys, generation }
     }
-    pub(super) fn generations_current(&self, keys: &Arc<()>, warm: &Arc<()>) -> bool {
-        Arc::ptr_eq(&self.keys, keys) && Arc::ptr_eq(&self.warm, warm)
+    pub(super) fn generations_current(&self, keys: &Arc<()>, generation: &Arc<()>) -> bool {
+        Arc::ptr_eq(&self.keys, keys) && Arc::ptr_eq(&self.generation, generation)
     }
-    pub(super) fn current(&self, log: &crate::policy::LogRevision, keys: &Arc<()>, warm: &Arc<()>) -> bool {
-        self.log == *log && self.generations_current(keys, warm)
+    pub(super) fn current(&self, log: &crate::policy::LogRevision, keys: &Arc<()>, generation: &Arc<()>) -> bool {
+        self.log == *log && self.generations_current(keys, generation)
     }
     // Called only by show_items after recomputing the canonical entry's inputs.
     // An unchanged owner-only MAIN judgment has no share-policy dependency.
     pub(super) fn rebind(&mut self, log: crate::policy::LogRevision, print: [u8; 32],
-        tip: Tip, keys: &Arc<()>, warm: &Arc<()>, owner_only: bool) -> bool {
-        if !owner_only || self.print != print || self.tip != tip || !self.generations_current(keys, warm) {
+        tip: Tip, keys: &Arc<()>, generation: &Arc<()>, owner_only: bool) -> bool {
+        if !owner_only || self.print != print || self.tip != tip || !self.generations_current(keys, generation) {
             return false;
         }
         self.log = log;
@@ -79,7 +79,7 @@ impl Lab {
         let Some(entry) = entry else { return false; };
         store.staged_cursor = Some(entry);
         let mut p = store.staged.remove(&entry).expect("selected pending entry");
-        if !p.current(&store.log.revision(), &store.keys.revision, &store.warm_revision) {
+        if !p.current(&store.log.revision(), &store.keys.revision, &store.materialization_revision) {
             store.staged.clear();
             store.reshow = true;
             show_items(at, store);
@@ -173,6 +173,42 @@ mod tests {
             lab.advance_materialization(phone);
             if let Some(p) = lab.held(phone).staged.get(&entry) { assert!(p.next > before); }
         }
+        assert!(!lab.materialization_pending(phone, entry));
+        assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
+    }
+
+    #[test]
+    fn successful_save_acknowledgements_do_not_restart_reconstruction() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("save during catchup");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let other = lab.create(mac, vault, vault, "note", &[], document("Live", "start", mac)).unwrap();
+        lab.sync(mac, phone);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Cold", "start", mac)).unwrap();
+        for n in 0..120 { lab.edit(mac, vault, entry, |i| i.set_text(2, &format!("body {n}"))).unwrap(); }
+        lab.enable_staged_materialization(phone);
+        lab.sync(mac, phone);
+        let generation = lab.held(phone).materialization_revision.clone();
+        let mut saved = 0;
+        for turn in 0..8 {
+            if !lab.materialization_pending(phone, entry) { break; }
+            let before = lab.held(phone).staged[&entry].next;
+            lab.edit(mac, vault, other, |i| i.set_text(2, &format!("live {turn}"))).unwrap();
+            lab.sync(mac, phone);
+            let receipt_generation = lab.held(phone).warm_revision.clone();
+            let held = lab.log(phone).ids().len();
+            let capture = lab.capture_warm_current(phone, held, None).expect("new log has an unsaved warm cut");
+            lab.warmed(phone, capture.encode());
+            saved += 1;
+            assert!(!Arc::ptr_eq(&receipt_generation, &lab.held(phone).warm_revision), "receipt acknowledged");
+            assert!(Arc::ptr_eq(&generation, &lab.held(phone).materialization_revision));
+            assert_eq!(lab.held(phone).staged[&entry].next, before);
+            lab.advance_materialization(phone);
+            if let Some(p) = lab.held(phone).staged.get(&entry) { assert!(p.next > before); }
+        }
+        assert!(saved >= 3, "multiple acknowledged saves occur between reconstruction turns");
         assert!(!lab.materialization_pending(phone, entry));
         assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
     }
@@ -306,6 +342,13 @@ mod tests {
         assert!(lab.held(phone).staged[&entry].next > 0);
         // Equivalent key material with a different generation cannot publish old work.
         lab.stores.get_mut(&phone).unwrap().keys.revision = Arc::new(());
+        lab.advance_materialization(phone);
+        assert_eq!(lab.held(phone).staged[&entry].next, 0);
+        assert!(lab.item(phone, entry).is_none());
+        lab.advance_materialization(phone);
+        assert!(lab.held(phone).staged[&entry].next > 0);
+        // Store-lifetime/rebuild invalidation remains distinct from save receipts.
+        lab.stores.get_mut(&phone).unwrap().materialization_revision = Arc::new(());
         lab.advance_materialization(phone);
         assert_eq!(lab.held(phone).staged[&entry].next, 0);
         assert!(lab.item(phone, entry).is_none());

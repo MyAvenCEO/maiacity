@@ -838,6 +838,9 @@ struct Store {
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
     staged_mode: bool,
+    /// Lifetime fence for owned reconstruction continuations. Save receipts do
+    /// not change judgment inputs; lock and Store replacement invalidate it.
+    materialization_revision: Arc<()>,
     staged: BTreeMap<EntryId, staged_materialization::Pending>,
     staged_cursor: Option<EntryId>,
     warm_materialization: Option<warm_materialization::Validated>,
@@ -927,7 +930,8 @@ impl Default for Store {
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
-            staged_mode: false, staged: BTreeMap::new(), staged_cursor: None,
+            staged_mode: false, materialization_revision: Arc::new(()),
+            staged: BTreeMap::new(), staged_cursor: None,
             warm_materialization: None,
             warm_working_set: Vec::new(),
             attested_manifests: std::sync::Mutex::new(BTreeMap::new()),
@@ -1007,6 +1011,7 @@ impl Store {
 
     /// Forget every key and everything a key opened, as it locks.
     fn forget(&mut self) {
+        self.materialization_revision = Arc::new(());
         self.warm_revision = Arc::new(());
         self.keys = Keyring::default();
         self.derived.clear();
@@ -6595,7 +6600,7 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 fn show_items(d: SignerId, store: &mut Store) {
     // A generation change must never publish a prefix judged under old authority.
     let stale = store.staged.values().any(|p| store.reshow
-        || !p.generations_current(&store.keys.revision, &store.warm_revision));
+        || !p.generations_current(&store.keys.revision, &store.materialization_revision));
     if stale { store.staged.clear(); store.reshow = true; }
     let materialization = store.warm_materialization.take()
         .and_then(|receipt| receipt.consume(store));
@@ -6724,7 +6729,7 @@ fn show_items(d: SignerId, store: &mut Store) {
                 .all(|w| w.actor == en.vault && w.proposal == Proposal::Main && w.shares.is_empty());
             if !opened.contains_key(&en.id)
                 && p.rebind(store.log.revision(), print(en, &groups_print), tip,
-                    &store.keys.revision, &store.warm_revision, owner_only) { continue; }
+                    &store.keys.revision, &store.materialization_revision, owner_only) { continue; }
             store.staged.remove(&en.id);
         }
         // judged under the lane before it gained schemas none of its writes name: as if under this one
@@ -6796,7 +6801,7 @@ fn show_items(d: SignerId, store: &mut Store) {
             let j = Judging::new(st, en, r, lane(en.vault));
             store.staged.insert(en.id, staged_materialization::Pending::new(
                 j, staged_lanes.entry(en.vault).or_insert_with(|| Arc::new(lane(en.vault).clone())).clone(), print, tip, store.log.revision(),
-                store.keys.revision.clone(), store.warm_revision.clone()));
+                store.keys.revision.clone(), store.materialization_revision.clone()));
             continue;
         }
         let judging_at = Perf::start();

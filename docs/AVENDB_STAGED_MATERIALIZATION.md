@@ -14,7 +14,7 @@ The existing Node background pump advances one entry by at most 32 ordinary
 `Judging::judge` calls, rotating between entries. At most four continuations have begun judgment;
 other queued entries retain empty history shells and share their vault lane. Each call uses unchanged canonical
 judgment. Intermediate state is never installed in `Shown`. Publication occurs
-only after all selected writes are judged. Key generation, warm generation,
+only after all selected writes are judged. Key generation, Store-lifetime generation,
 newly opened bodies of that entry, or explicit reshow cancels prior staging.
 A newer log revision can retain a prefix only after `show_items` recomputes the
 entry's full accepted-write/body/lane/group print and tip and finds both unchanged.
@@ -38,7 +38,7 @@ budget, unrelated write publication/invalidation, exact final record equality,
 synchronous later local edits, key-generation cancellation, and lock disposal.
 
 Remaining limits: final Loro construction/import, canonical replay, body decoding,
-lane/group preparation and upkeep remain atomic. Generation-wide key/warm changes
+lane/group preparation and upkeep remain atomic. Generation-wide key/Store-lifetime changes
 and policy removals remain conservative invalidations. Rebinding scans the entry's
 accepted writes to verify its full print; it is not a constant-time guarantee.
 This slice does not claim universal starvation freedom or a wall-time bound. It does
@@ -58,10 +58,28 @@ pending the coordinator's exclusive compiler slot.
 
 ## Validated rebind contract
 
-Lean `rebind_requires_inputs` requires unchanged print, tip, key and warm generations
+Lean `rebind_requires_inputs` requires unchanged print, tip, key and Store-lifetime generations
 and owner-only judgment before a newer-log rebind; its proof passed before the
 implementation. The implementation retains strict log equality during advancement.
 Additional runtime regressions cover sustained unrelated writes between each turn,
 policy removal invalidation, and preservation of staging mode and working-set hints
 when `start_handed` replaces its Store. These new Rust regressions remain pending
 runtime validation; no deployment or physical-device timing claim is made.
+
+## Save acknowledgements preserve judgment progress
+
+`warm_revision` is a receipt generation: `warmed()` rotates it after a successful
+save to prevent acknowledging the same pending save twice. It does not change
+accepted edits, decrypted bodies, keys, lanes, or judgment state. Staging now has
+an independent `materialization_revision`, initialized for each Store and rotated
+on lock/forget. Restore/replacement constructs a new Store and discards its prior
+continuations. Key replacement, explicit reshow, changed entry inputs and the
+strict log revision advancement fence still invalidate stale work.
+
+The Lean save-acknowledgement preservation model passed before implementation.
+A new regression acknowledges a real encoded warm cut between every batch while
+unrelated signed edits arrive, asserts the receipt generation rotates but the
+materialization generation and prefix survive, then compares the final record
+with canonical replay. Existing invalidation coverage now explicitly exercises
+Store-generation replacement as well as key replacement, policy removal and
+lock. Rust runtime validation remains pending the shared compiler slot.
