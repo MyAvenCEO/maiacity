@@ -76,6 +76,9 @@
 
 #[path = "bootstrap_dependencies.rs"]
 mod bootstrap_dependencies;
+#[path = "bootstrap_suffix.rs"]
+mod bootstrap_suffix;
+pub use bootstrap_suffix::OwnerBaseScope;
 
 #[path = "entry_base.rs"]
 mod entry_base;

@@ -203,6 +203,22 @@ pub(crate) struct OwnerEntry {
     pub named_shares: BTreeSet<ShareId>,
 }
 impl OwnerEntry {
+    pub(crate) fn from_base(base: &avendb::lab::OwnerBaseScope, entry: EntryId, suffix: &[Signed]) -> Option<Self> {
+        let mut via = base.via().clone();
+        let mut ids = base.writes().clone();
+        ids.extend(suffix.iter().map(|s| s.edit.id()));
+        if suffix.len() > 64 { return None; }
+        for signed in suffix {
+            let Action::Write { vault, entry: e, actor, create, proposal, stay, deps, via: path, .. } = &signed.edit.action else { return None };
+            if *e != entry || *vault != base.vault() || actor != vault || create.is_some()
+                || *proposal != avendb::policy::Proposal::Main || path.len() > MAX_VIA
+                || stay.is_some_and(|stay| !base.stays().contains(&stay))
+                || deps.iter().any(|id| !ids.contains(id)) { return None; }
+            via.extend(path.iter().copied());
+        }
+        if via.len() > MAX_CLASSES { return None; }
+        Some(Self { vault: base.vault(), via, audiences: base.audiences().clone(), named_shares: base.shares().clone() })
+    }
     pub(crate) fn complete(entry: EntryId, edits: &[Signed], frontier: &avendb::wire::Frontier) -> Option<Self> {
         Self::from_parts(entry, edits.iter().map(|signed| (signed.edit.id(), &signed.edit)), frontier)
     }
@@ -408,7 +424,9 @@ impl GrantClasses {
                         }
                         Action::Share(Sharing::Owner { owner: Principal::Vault(v), .. })
                         | Action::Revoke(Revoking::Owner { owner: Principal::Vault(v), .. }) => { vaults.insert(*v); }
-                        Action::Settings { .. } | Action::Share(Sharing::Owner { .. } | Sharing::Device { .. })
+                        // A signed Snapshot only checks this vault's approval;
+                        // unlike Checkpoint it never substitutes for signatures.
+                        Action::Snapshot { .. } | Action::Settings { .. } | Action::Share(Sharing::Owner { .. } | Sharing::Device { .. })
                         | Action::Revoke(Revoking::Owner { .. } | Revoking::Device { .. }) | Action::Keys { .. } => {}
                         // Checkpoint standing/coverage introduces another
                         // dependency surface; leave it conservative for now.

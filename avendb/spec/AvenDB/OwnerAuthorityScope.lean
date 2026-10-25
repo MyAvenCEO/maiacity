@@ -54,3 +54,22 @@ theorem keepShareRetained (audiences : List Audience) (keeps : List ShareId)
   simp only [requiredShares, List.mem_append]
   exact Or.inr h
 end AvenDB.OwnerAudienceClosure
+
+namespace AvenDB.AcceptedBaseSuffix
+/-- A retained base is only a suffix starting point. It is never held history. -/
+structure Evidence where
+  currentBase : Bool
+  currentAuthority : Bool
+  signaturesValid : Bool
+  localHistory : Nat
+
+def mayReceive (e : Evidence) : Bool := e.currentBase && e.currentAuthority && e.signaturesValid
+def historyCoverageAfterRequest (e : Evidence) : Nat := e.localHistory
+
+theorem staleBaseRefused (e : Evidence) (h : e.currentBase = false) : mayReceive e = false := by
+  simp [mayReceive, h]
+theorem missingAuthorityRefused (e : Evidence) (h : e.currentAuthority = false) : mayReceive e = false := by
+  simp [mayReceive, h]
+theorem requestingSuffixDoesNotInventHistory (e : Evidence) :
+    historyCoverageAfterRequest e = e.localHistory := rfl
+end AvenDB.AcceptedBaseSuffix

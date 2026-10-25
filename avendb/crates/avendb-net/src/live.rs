@@ -160,6 +160,14 @@ impl Shared {
     async fn pull_live_origin(self: &Arc<Self>, endpoint: EndpointId, device: SignerId,
         hints: BTreeSet<LogId>, origin: Option<crate::demand::Origin>) -> anyhow::Result<()> {
         if origin.as_ref().is_some_and(|o| !o.active()) { return Ok(()); }
+        let mut hints = hints;
+        if let Some(peer) = self.live(endpoint).filter(|p| p.device == device) {
+            for log in hints.clone().into_iter().take(pulls::LIVE_LOGS) {
+                if let LogId::Entry(entry) = log {
+                    if matches!(self.try_owner_base_suffix(&peer, entry).await, Ok(true)) { hints.remove(&log); }
+                }
+            }
+        }
         let mut missing = self.differ(device).await;
         let rules: BTreeSet<_> = missing
             .iter()
