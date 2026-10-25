@@ -39,6 +39,7 @@ import { growthFrame } from './tree-camera.js';
 import { aim, filmHoldsSize, poseIn } from '$lib/sandbox-kit/film.js';
 import { frameAt as reelFrame } from '../../../game/film/reel.js';
 import { plantRef } from './plants.js';
+import { orbitTarget } from './watering.js';
 
 /** the hex's radius in metres: 114.75, one and a half times 76.5 again (Samuel 2026-10-13, 17:49) */
 const HEX_R = 114.75;
@@ -1564,7 +1565,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		camera.fov = camera.aspect < 0.8 ? 58 : 42;
 		camera.updateProjectionMatrix();
 		// the orbit picks up from where the camera looks now; what the moment moved stays where it ended, and the page sets the next stage
-		controls.target.copy(camera.position).add(camera.getWorldDirection(V(0, 0, 0)).multiplyScalar(40));
+		controls.target.copy(orbitTarget(camera.position, camera.getWorldDirection(V(0, 0, 0))));
+		controls.minDistance = Math.min(controls.minDistance, camera.position.distanceTo(controls.target));
 		frameView();
 		if (riding) (holdRide(rideHold), (controls.enabled = false));
 		else if (stage.at === 'cruise') ((controls.enabled = false), lensFor(DRIVE_SHOTS[cruiseHold] ?? DRIVE_SHOTS.ots));
@@ -2875,20 +2877,28 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the bottle in the hand, its cap off, tipped over the seed, the water running down, the earth darkening (L: the
 	 *  spot's frame; wet: how wet the earth gets, or none) */
 	function pourAt(L, S, k, bottle, wet, me) {
-		const tip = ease(Math.min(1, k / 0.25));
+		const tip = ease(Math.min(1, k / 0.25)) * (1 - ease(Math.max(0, (k - 0.78) / 0.22)));
+		act(me, 'pour');
+		acting(me, now());
+		me.updateMatrixWorld(true);
 		bottle.userData.cap.visible = false;
-		bottle.position.copy(L(0.04, 0.36, -0.15));
 		bottle.rotation.set(0, spotYaw(S), 0);
 		bottle.rotateX(2.1 * tip);
+		// Hold the middle of the bottle in the palm as it tips, rather than floating it over the soil.
+		const hand = me.userData.cast.rig.bones.handR;
+		const grip = hand ? hand.localToWorld(V(0, -0.04, 0.02)) : L(0.04, 0.48, -0.15);
+		bottle.position.copy(grip).sub(V(0, 0.12, 0).applyQuaternion(bottle.quaternion));
 		bottle.updateMatrixWorld(true);
 		const mouth = bottle.localToWorld(bottle.userData.mouth.clone());
 		pour.visible = tip > 0.9 && k < 0.92;
 		pour.position.copy(mouth);
 		pour.scale.set(1, Math.max(0.01, mouth.y - 0.01), 1);
 		wet?.(Math.min(1, Math.max(0, (k - 0.3) / 0.55)));
-		act(me, 'pour');
-		camera.position.copy(L(0.46, 0.42, 0.2));
-		camera.lookAt(L(0.02, 0.12, -0.05));
+		// A side view includes the kneeling player, bottle and landing water, also on a phone.
+		const target = L(0, 0.65, -0.25);
+		camera.position.copy(L(2.1, 1.5, 1.9)).sub(target).multiplyScalar(camera.aspect < 0.8 ? 1.55 : 1).add(target);
+		controls.target.copy(target);
+		camera.lookAt(target);
 	}
 	/** A locked close-up of the saved before/after growth, built before the camera starts. */
 	async function waterTree(seat, onWatered = () => Promise.resolve()) {
@@ -2902,28 +2912,35 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (before.userData.bounds) bounds.union(before.userData.bounds);
 		g.updateWorldMatrix(true, false);
 		const { eye, target } = growthFrame(bounds, g.matrixWorld, saved.eye, camera.aspect);
-		const hold = () => { camera.position.copy(eye); camera.lookAt(target); };
+		const hold = () => { camera.position.copy(eye); controls.target.copy(target); camera.lookAt(target); };
 		const S = { x: g.position.x, z: g.position.z }, L = spotAt(S);
 		world.attach(waterCan);
 		try {
 			await play([
 				beat(3.2, (s, k) => {
-					waterCan.position.copy(L(0.16, 0.55, -0.15));
+					act(me, 'pour');
+					acting(me, now()); me.updateMatrixWorld(true);
 					waterCan.rotation.set(0, spotYaw(S), 0);
 					waterCan.rotateZ(-1.3 * Math.sin(Math.PI * k));
 					pour.visible = k > 0.2 && k < 0.85;
-					pour.position.copy(L(0, 0.3, 0)); pour.scale.set(1, 0.3, 1);
-					act(me, 'pour'); hold();
+					const hand = me.userData.cast.rig.bones.handR;
+					const grip = hand ? hand.localToWorld(V(0, -0.04, 0.02)) : L(0.16, 0.8, -0.15);
+					waterCan.position.copy(grip).sub(V(0, 0.3845, 0).applyQuaternion(waterCan.quaternion));
+					waterCan.updateMatrixWorld(true);
+					const outlet = waterCan.localToWorld(V(0.159, 0.045, 0));
+					pour.position.copy(outlet); pour.scale.set(1, Math.max(0.01, outlet.y - 0.01), 1);
+					hold();
 				}, () => {
 					lensFor({ fov: 42, near: 0.01 });
-					seatOut(me); me.position.copy(L(0, 0, -0.65)); me.rotation.y = spotYaw(S);
+					seatOut(me); me.visible = true; me.position.copy(L(0, 0, -0.65)); me.rotation.y = spotYaw(S);
 				}),
-				beat(5.5, hold, () => { pour.visible = false; act(me, 'stand'); g.userData.startGrowth?.(); delete g.userData.startGrowth; })
+				beat(5.5, hold, () => { pour.visible = false; waterCan.position.copy(WATER_HOME); waterCan.rotation.set(0, 0, 0); act(me, 'stand'); g.userData.startGrowth?.(); delete g.userData.startGrowth; })
 			]);
 		} finally {
 			// Also reveal the saved stage if the player skipped the close-up.
 			g.userData.startGrowth?.(); delete g.userData.startGrowth;
 			pour.visible = false;
+			world.add(waterCan); waterCan.position.copy(WATER_HOME); waterCan.rotation.set(0, 0, 0);
 			goal = null;
 			camera.position.copy(saved.eye); controls.target.copy(saved.target);
 			camera.fov = saved.fov; camera.near = saved.near; camera.updateProjectionMatrix();

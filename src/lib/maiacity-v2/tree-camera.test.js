@@ -21,3 +21,21 @@ for (const aspect of [16 / 9, 9 / 16]) {
 		});
 	}
 }
+
+for (const aspect of [16 / 9, 9 / 16]) {
+ test(`watering frames the person above ground even from a distant camera (${aspect})`, () => {
+  const bounds = new Box3(new Vector3(-0.02, 0, -0.02), new Vector3(0.02, 0.08, 0.02));
+  const transform = new Matrix4().makeTranslation(20, 0, -10);
+  for (const previous of [new Vector3(2000, -5, 1000), new Vector3(20, 0, -10)]) {
+   const {eye, target} = growthFrame(bounds, transform, previous, aspect);
+   expect(eye.y).toBeGreaterThan(1.9);
+   const camera = new PerspectiveCamera(42, aspect, 0.01, 1000);
+   camera.position.copy(eye); camera.lookAt(target); camera.updateMatrixWorld();
+   for (const x of [-0.55, 0.55]) for (const y of [0, 1.9]) for (const z of [-1.1, 0.4]) {
+    const p = new Vector3(x, y, z).applyMatrix4(transform).project(camera);
+    expect(Math.abs(p.x)).toBeLessThan(1); expect(Math.abs(p.y)).toBeLessThan(1);
+    expect(p.z).toBeGreaterThan(-1); expect(p.z).toBeLessThan(1);
+   }
+  }
+ });
+}
