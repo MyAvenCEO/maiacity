@@ -623,7 +623,9 @@ mod tests {
         // Saving a hydrated target must not force unrelated deferred content,
         // and the resulting receipt must remain usable on the next reopen.
         let receipt=lab.capture_warm_current(device,n,Some([32;40])).unwrap().encode();
-        let warm=Warm {keys:receipt.keys.into_iter().collect(),views:receipt.view.into_iter().collect()};
+        // Saves emit only changed slots; keep the last authenticated view.
+        let warm=Warm {keys:receipt.keys.into_iter().chain(warm.keys).collect(),
+            views:receipt.view.into_iter().chain(warm.views).collect()};
         lab.restore_warm_working_set(device,backup.clone(),Some(([32;40],n)),&warm,&[wanted]);
         assert_eq!(lab.item(device,wanted).unwrap().record(),expected);
         for entry in entries.iter().filter(|entry|**entry!=wanted) {
