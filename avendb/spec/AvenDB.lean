@@ -152,3 +152,5 @@ import AvenDB.DeferredContentAppend
 import AvenDB.LabWorkTiming
 
 import AvenDB.EntryJudgmentSlices
+
+import AvenDB.WarmQueryReceipt
