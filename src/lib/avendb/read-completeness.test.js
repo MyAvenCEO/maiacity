@@ -46,7 +46,7 @@ test('pending or unresolved local responses never report the mounted view as loa
   assert.equal(view.completeness.response,'local');
   assert.equal(view.completeness.pendingJudgments,2);
   assert.equal(snapshot.pending,1);assert.equal(snapshot.local,0);
-  readiness={deferredCandidates:0,countExact:null,pageComplete:null,pendingJudgments:0,unresolvedCandidates:1};
+  readiness={pendingJudgments:0,unresolvedCandidates:1};
   await view.read({op:'query'});
   assert.equal(snapshot.pending,0);assert.equal(snapshot.local,0);
   // Node-wide pending work alone does not block an answered local view.

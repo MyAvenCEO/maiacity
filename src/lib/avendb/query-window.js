@@ -96,6 +96,7 @@ export function createReadWindow({ device, read }) {
 	};
 	return {
 		get completeness() { return { ...completeness }; },
+		/** @param {any} op @param {{partial?:(answer:any)=>void}} options */
 		async read(op, {partial = () => {}} = {}) {
 			completeness = readCompleteness(null);
 			if (closed) return null;

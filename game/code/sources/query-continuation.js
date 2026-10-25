@@ -1,7 +1,12 @@
 // @ts-nocheck — shared browser/native JS
 /** Finish bounded local query work without treating a provisional count as final.
  * Retained node materialization is the cursor; never concatenate provisional pages.
- * Only explicit deferred work is retried, not missing remote dependencies. */
+ * Only explicit deferred work is retried, not missing remote dependencies.
+ * @template T
+ * @param {() => Promise<T>} run
+ * @param {{signal?:AbortSignal, progress?:(answer:T)=>void, pause?:(delay:number, signal?:AbortSignal)=>Promise<void>}} options
+ * @returns {Promise<T>}
+ */
 export async function completeQuery(run, {signal, progress = () => {}, pause = yieldQuery} = {}) {
  let previous = Infinity, delay = 8;
  for (;;) {

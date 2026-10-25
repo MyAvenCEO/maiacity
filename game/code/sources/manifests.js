@@ -31,7 +31,7 @@ export const PRIORITY = { high: 0, medium: 1, low: 2 };
  * @typedef {{kind: string, id: string, priority?: string, routes?: string[], parts?: ManifestPart[]}} Manifest
  * @typedef {{entry: string, type?: string, kind?: string, tags?: string[], created?: number, record?: unknown}} ManifestRow
  * @typedef {{leaf: ManifestPart, rank: number}} RankedLeaf
- * @typedef {{run: (operation: Record<string, unknown>) => Promise<{ok?: {rows?: ManifestRow[], count?: number, record?: unknown, vaults?: {id:string}[], entriesComplete?: boolean},refused?: unknown}>}} ManifestDevice
+ * @typedef {{run: (operation: Record<string, unknown>) => Promise<{ok?: {rows?: ManifestRow[], count?: number, countExact?: boolean, pageComplete?: boolean, readiness?:{deferredCandidates?:number}, record?: unknown, vaults?: {id:string}[], entriesComplete?: boolean},refused?: unknown}>}} ManifestDevice
  * @typedef {{device?: ManifestDevice, bring: (ids: string[]) => Promise<unknown>, vault?: string, fetch?: typeof globalThis.fetch, signal?: AbortSignal, prioritize?: (ids: string[], queries: {types: string[], vault?: string}[]) => unknown}} PlanOptions
  */
 
@@ -184,7 +184,7 @@ export async function manifestsOf(d, { vault = MAIA_CITY, signal, observe = () =
  signal?.throwIfAborted();
  if (!d) { observe('unavailable'); return []; }
  try {
-  const got = await completeQuery(() => d.run({ op: 'query', vault, where: { type: ['manifest'] } }), {signal, progress: answer => { if (answer?.ok?.readiness?.deferredCandidates > 0) observe('loading'); }});
+  const got = await completeQuery(() => d.run({ op: 'query', vault, where: { type: ['manifest'] } }), {signal, progress: answer => { if ((answer?.ok?.readiness?.deferredCandidates ?? 0) > 0) observe('loading'); }});
   signal?.throwIfAborted();
   observe(got?.ok?.pageComplete === false || got?.ok?.countExact === false ? 'loading' : Array.isArray(got?.ok?.rows) ? 'local' : got?.refused ? 'refused' : 'unavailable');
   return (got?.ok?.rows ?? []).map(r => /** @type {Manifest} */ (r.record)).filter(Boolean);
