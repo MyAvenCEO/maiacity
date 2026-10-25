@@ -562,6 +562,69 @@ mod tests {
     }
 
     #[test]
+    fn long_single_entry_warm_append_matches_canonical_restore() {
+        use crate::cast::{document, human_on, paragraph};
+        use std::time::Instant;
+        const REVISIONS: u64 = 256;
+        let mut lab=Lab::new();
+        let owner=lab.passkey("Long entry warm regression");
+        let device=lab.device_of(owner,"local");
+        let vault=human_on(&mut lab,owner,&[device]);
+        let entry=lab.create(device,vault,vault,"note",&[],document("Append-only rows","initial",device)).unwrap();
+        // Generic CRDT row appends: a long single record, not many short entries.
+        for n in 0..REVISIONS {
+            lab.edit(device,vault,entry,|item|item.push_block(paragraph(n+3,&format!("row {n}")))).unwrap();
+        }
+        let others:Vec<_>=(0..8).map(|n|lab.create(device,vault,vault,"note",&[],
+            document(&format!("Unrelated {n}"),"leave deferred",device)).unwrap()).collect();
+        let expected_before=lab.item(device,entry).unwrap().record();
+        let other_records:Vec<_>=others.iter().map(|e|lab.item(device,*e).unwrap().record()).collect();
+        let backup=lab.backup(device);
+        let count=backup.signed.len();
+        let marker=[73;40];
+        let receipt=lab.capture_warm_current(device,count,Some(marker)).unwrap().encode();
+        let warm=Warm{keys:receipt.keys.clone().into_iter().collect(),views:receipt.view.clone().into_iter().collect()};
+        lab.warmed(device,receipt);
+        lab.set_online(device,false);
+        let started=Instant::now();
+        lab.restore_warm(device,backup,Some((marker,count)),&warm);
+        let warm_restore_us=started.elapsed().as_micros();
+        let target_ids:Vec<_>=lab.held(device).view().entry_writes(entry).map(|w|w.edit).collect();
+        let unrelated_ids:Vec<_>=others.iter().map(|e|lab.held(device).view().entry(*e).unwrap().creation).collect();
+        assert_eq!(target_ids.len(),REVISIONS as usize+1);
+        let deferred_before=lab.held(device).deferred_bodies.len();
+        assert!(target_ids.iter().all(|id|lab.held(device).deferred_bodies.contains_key(id)));
+        let started=Instant::now();
+        assert_eq!(lab.item(device,entry).unwrap().record(),expected_before);
+        let first_view_us=started.elapsed().as_micros();
+        assert!(target_ids.iter().all(|id|!lab.held(device).deferred_bodies[id].content_ready()),
+            "first view uses the validated saved item without decoding its long history");
+        let hits_before=lab.held(device).perf.to_json()["counts"]["refresh: owner content only"].as_u64().unwrap_or(0);
+        let started=Instant::now();
+        lab.edit(device,vault,entry,|item|item.push_block(paragraph(REVISIONS+3,"after reopen"))).unwrap();
+        let append_us=started.elapsed().as_micros();
+        let deferred_after=lab.held(device).deferred_bodies.len();
+        let target_deferred_after=target_ids.iter().filter(|id|lab.held(device).deferred_bodies.contains_key(id)).count();
+        let unrelated_deferred_after=unrelated_ids.iter().filter(|id|lab.held(device).deferred_bodies.contains_key(id)).count();
+        assert_eq!(target_deferred_after,0,"first append hydrates the target's retained history");
+        assert_eq!(unrelated_deferred_after,others.len());
+        assert!(unrelated_ids.iter().all(|id|!lab.held(device).deferred_bodies[id].content_ready()));
+        assert_eq!(lab.held(device).perf.to_json()["counts"]["refresh: owner content only"].as_u64(),Some(hits_before+1));
+        let expected=lab.item(device,entry).unwrap().record();
+        let history=lab.history(device,entry).unwrap().changes().to_vec();
+        let final_backup=lab.backup(device);
+        let started=Instant::now();
+        lab.restore_from(device,final_backup);
+        let cold_restore_us=started.elapsed().as_micros();
+        assert_eq!(lab.item(device,entry).unwrap().record(),expected);
+        assert_eq!(lab.history(device,entry).unwrap().changes(),history);
+        for (other,record) in others.iter().zip(other_records) {
+            assert_eq!(lab.item(device,*other).unwrap().record(),record);
+        }
+        eprintln!("long-entry revisions={REVISIONS} warm_restore_us={warm_restore_us} first_view_us={first_view_us} append_us={append_us} canonical_cold_restore_us={cold_restore_us} deferred_before={deferred_before} deferred_after={deferred_after} target_deferred_after={target_deferred_after} unrelated_deferred_after={unrelated_deferred_after}; fixture timings only, not device latency");
+    }
+
+    #[test]
     fn warm_metadata_bad_receipt_and_missing_current_key_fail_closed() {
         let (mut lab, device, _vault, entries, backup, warm) = warmed_notes();
         let expected = lab.item(device,entries[0]).unwrap().record();
