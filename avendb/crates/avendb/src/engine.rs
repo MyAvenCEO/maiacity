@@ -948,15 +948,11 @@ fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resul
             _=>None,
         };
         if let (Some(vault),Some(scope),Some(result))=(vault,exact,result.as_mut()) {
-            if let Some(mut hint)=lab.automatic_discovery_hint(me,actor,vault,scope) {
-                // Reuse rows already materialized by this exact authorized read.
-                // Never reopen every member body just to prepare scheduling hints.
-                let visible:std::collections::BTreeSet<_>=result.entries.iter()
-                    .filter(|entry|!matches!(entry.what,world::What::Sealed))
-                    .map(|entry|entry.entry.to_hex()).collect();
-                if let Some(pending)=hint.get_mut("pendingEntries").and_then(Value::as_array_mut) {
-                    pending.retain(|entry|entry.as_str().is_none_or(|entry|!visible.contains(entry)));
-                }
+            // Existing rows are only candidates for fulfillment. The core also
+            // checks accepted/imported coverage of this manifest's advertised heads.
+            let visible:Vec<_>=result.entries.iter().filter(|entry|!matches!(entry.what,world::What::Sealed))
+                .map(|entry|entry.entry).collect();
+            if let Some(hint)=lab.automatic_discovery_hint_for_rows(me,actor,vault,scope,&visible) {
                 let scope=result.scope.get_or_insert_with(||json!({}));
                 scope["discovery"]=hint;
             }

@@ -153,6 +153,10 @@ impl Lab {
     /// This is a scheduling aid; it does not replace current local query rows or
     /// opt a caller into historical negative evidence.
     pub fn automatic_discovery_hint(&self,on:SignerId,actor:VaultId,vault:VaultId,scope:DiscoveryScope)->Option<Value> {
+        self.automatic_discovery_hint_for_rows(on,actor,vault,scope,&[])
+    }
+
+    pub fn automatic_discovery_hint_for_rows(&self,on:SignerId,actor:VaultId,vault:VaultId,scope:DiscoveryScope,visible:&[EntryId])->Option<Value> {
         let scope=scope.normalized()?;
         let store=self.held(on);
         let carriers:Vec<_>=store.projections.lock().ok()?.keys()
@@ -171,12 +175,28 @@ impl Lab {
             snapshots.get(id).into_iter().flatten().map(move|carrier|(edit.depth,*id,*carrier))).collect();
         candidates.sort();
         for (_,snapshot,carrier) in candidates.into_iter().rev() {
-            let Some(targets)=self.discovery_manifest_targets(on,actor,vault,scope.clone(),carrier,snapshot) else {continue;};
+            let Some(rows)=self.discovery_manifest_rows(on,actor,vault,scope.clone(),carrier,snapshot) else {continue;};
+            let targets:Vec<_>=rows.into_iter().filter_map(|(entry,heads)| {
+                let covered=visible.contains(&entry) && self.materialized_manifest_heads(on,actor,entry,&heads);
+                (!covered).then_some(entry)
+            }).collect();
             return Some(json!({"basis":"owner-attested-cut","entry":carrier.to_hex(),"snapshot":snapshot.to_hex(),
                 "scope":scope.json(),"pendingEntries":targets.iter().map(EntryId::to_hex).collect::<Vec<_>>(),
                 "remoteComplete":false}));
         }
         None
+    }
+
+    /// Inspect current authorized accepted/imported metadata only. A visible old
+    /// row is not evidence that the advertised updates reached its materialization.
+    fn materialized_manifest_heads(&self,on:SignerId,actor:VaultId,entry:EntryId,heads:&[EditId])->bool {
+        let store=self.held(on);
+        let Some(en)=store.view().entry(entry) else {return false;};
+        if !self.sees(on,entry) || !manifest_readable(store.view(),actor,en) {return false;}
+        let Some(shown)=store.shown.get(&entry) else {return false;};
+        if !shown.items.get().is_some_and(|items|items.contains_key(&MAIN)) {return false;}
+        let Some(imported)=shown.after.imported.get(&MAIN) else {return false;};
+        heads.iter().all(|head|imported.contains(head)&&shown.history.get(*head).is_some_and(|change|change.counted))
     }
 
     /// IDs disclosed by the owner-approved carrier. These are scheduling hints,
@@ -415,6 +435,35 @@ mod tests {
         let members=selected["pendingEntries"].as_array().unwrap();
         assert!(members.contains(&json!(first.to_hex()))&&members.contains(&json!(second.to_hex())));
         assert_eq!(selected["remoteComplete"],false);
+    }
+
+    #[test]
+    fn discovery_manifest_keeps_stale_visible_member_priority_until_heads_are_imported() {
+        let mut w=cast::world();
+        let note=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("old",w.mac_a)).unwrap();
+        w.lab.sync(w.mac_a,w.phone_a);
+        assert!(w.lab.item(w.phone_a,note).is_some());
+        w.lab.edit(w.mac_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("new");item.put_record(&record);}).unwrap();
+        let scope=DiscoveryScope::Tag("selected".into());
+        let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope).unwrap();
+        let mut item=Item::new(w.mac_a);item.put_record(&record);
+        let carrier=w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap();
+        let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],carrier).unwrap();
+        let snapshot=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
+        let offer=w.lab.entry_projection_offer(w.mac_a,w.phone_a,carrier).unwrap();
+        w.lab.receive(w.phone_a,offer.evidence,vec![]);
+        assert!(w.lab.retain_entry_projection(w.phone_a,snapshot,carrier,p.sealed));
+        let query=json!({"op":"entry_views","vault":w.alice.to_hex(),"tag":"selected"});
+        let stale=crate::engine::read(&w.lab,w.phone_a,&query);
+        assert!(stale["ok"]["rows"].as_array().unwrap().iter().any(|row|row["entry"]==note.to_hex()));
+        assert_eq!(stale["ok"]["scope"]["discovery"]["pendingEntries"],json!([note.to_hex()]));
+        w.lab.sync(w.mac_a,w.phone_a);
+        let current=crate::engine::read(&w.lab,w.phone_a,&query);
+        assert_eq!(current["ok"]["scope"]["discovery"]["pendingEntries"],json!([]));
+        // A subsequent locally accepted write still covers the advertised heads.
+        w.lab.edit(w.phone_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("newer");item.put_record(&record);}).unwrap();
+        let newer=crate::engine::read(&w.lab,w.phone_a,&query);
+        assert_eq!(newer["ok"]["scope"]["discovery"]["pendingEntries"],json!([]));
     }
 
 }

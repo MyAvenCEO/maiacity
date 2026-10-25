@@ -140,3 +140,19 @@ is ranked in one pass over existing log metadata, without decoding entry bodies.
 A regression deliberately assigns the larger carrier ID to the older cut and
 adds a member before publishing the smaller-ID newer carrier. It requires the
 new cut/member set. Lean and syntax pass; native execution remains queued.
+
+### Advertised frontier fulfillment correction
+
+A nonsealed visible row alone no longer removes a missing-member hint: it can be
+older than the owner's advertised heads. Fulfillment now requires the exact read
+row plus current actor/device readability, an existing MAIN materialization, and
+every advertised head both counted in the authenticated local history metadata
+and present in MAIN's imported-edit set. This accepts later local descendants too.
+It inspects existing metadata, without opening deferred historical bodies. Plain
+read-only projections lacking this counted/imported proof remain conservatively
+pending; deriving equivalent projection coverage is a separate optimization.
+
+A receiver regression retains an old usable row while receiving only the newer
+carrier, requires pending priority, then clears only after receiving the missing
+updates, and stays clear after a later local edit. JS priority/completeness tests:
+29 passed, 100 assertions; Lean passed. Native frontier regression is pending.
