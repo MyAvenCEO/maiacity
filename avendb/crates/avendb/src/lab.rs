@@ -6882,6 +6882,7 @@ mod judgment_slice_tests {
         let vault=human_on(&mut lab,owner,&[device]);
         let ready=lab.create(device,vault,vault,"note",&[],document("Ready","local",device)).unwrap();
         let large=lab.create(device,vault,vault,"note",&[],document("Large","base",device)).unwrap();
+        let already_judged=lab.held(device).shown[&large].tip.writes;
         let before=lab.backup(device);
         for n in 0..128 {
             lab.edit(device,vault,large,|item| { item.edit_document(|d|d.title=format!("Revision {n}")); }).unwrap();
@@ -6895,7 +6896,8 @@ mod judgment_slice_tests {
         assert!(lab.item(device,large).is_none(),"partially judged entry is never published");
         assert!(lab.item(device,ready).is_some(),"unchanged authorized entry stays readable");
         let cursor=lab.held(device).judgment_jobs[&large].cursor;
-        assert!(cursor>0 && cursor<=32);
+        assert!(cursor>already_judged && cursor-already_judged<=32,
+            "one slice advances at most32 writes beyond the already judged prefix: {already_judged} -> {cursor}");
         lab.edit(device,vault,ready,|item| { item.edit_document(|d|d.title="Foreground".into()); }).unwrap();
         assert!(lab.judgment_pending(device)>0,"foreground mutation must not synchronously drain background judgment");
         assert_eq!(lab.held(device).judgment_jobs[&large].cursor,cursor,
