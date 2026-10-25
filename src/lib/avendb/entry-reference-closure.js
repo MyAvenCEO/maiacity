@@ -25,8 +25,11 @@ export function observeReferenceClosure(observe, roots, actor, readable, take) {
  const wanted=new Set(rootIds), requested=new Set(), pages=new Map(), settled=new Set(), errors=new Map();
  const rows=()=>new Map([...pages.values()].flat().map(row=>[row.entry,row]));
  const reachable=()=>{
-  const held=rows(), seen=new Set(), queue=[...rootIds], result=[];
-  while(queue.length){const id=queue.pop();if(seen.has(id))continue;seen.add(id);const row=held.get(id);if(!row)continue;result.push(row);queue.push(...sparkReferences(row));}
+  const held=rows(), seen=new Set(), result=[];
+  /** @type {string[]} */ const queue=[];
+  const enqueue=(/** @type {string} */ id)=>{if(held.has(id)&&!seen.has(id)){seen.add(id);queue.push(id)}};
+  for(const id of rootIds)enqueue(id);
+  while(queue.length){const id=queue.pop();const row=held.get(id);result.push(row);for(const ref of sparkReferences(row))enqueue(ref);}
   return result;
  };
  const publish=()=>{if(!closed)take({rows:reachable(),phase:errors.size?'error':settled.size<next||[...wanted].some(id=>!requested.has(id))&&next<8?'loading':'ready',error:[...errors.values()].join('; '),limited});};
