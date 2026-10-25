@@ -93,6 +93,8 @@ pub use entry_projection::{EntryProjectionOffer, PreparedEntryProjection, Verifi
 
 #[path = "lab/warm_materialization.rs"]
 mod warm_materialization;
+#[path = "lab/query_hydration.rs"]
+mod query_hydration;
 
 use std::borrow::Cow;
 use std::cell::OnceCell;

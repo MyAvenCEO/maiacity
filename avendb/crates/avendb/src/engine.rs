@@ -939,6 +939,23 @@ fn query_candidates_impl(
     let mut lanes: HashMap<VaultId, Lane> = HashMap::new();
     let mut rows = vec![];
     let (mut unresolved_candidates, mut checkpoint_partial) = (0usize, false);
+    let (mut deferred_candidates, mut deferred_classification) = (0usize, 0usize);
+    let mut cold_attempts = 0usize;
+    let began = web_time::Instant::now();
+    // Repeated calls reuse the per-entry authenticated lazy cells; no retained
+    // query answer or authorization result can outlive its current store basis.
+    let mut hydrate = |entry| {
+        if !allow_receipts || !lab.query_needs_hydration(me, entry) { return true; }
+        if cold_attempts >= 4 || (cold_attempts > 0 && began.elapsed().as_millis() >= 4) { return false; }
+        cold_attempts += 1;
+        true
+    };
+    let certified_visibility = |entry| lab.warm_query_receipt(me, entry).and_then(|(own, visible)| match &schema {
+        Named::Stored => Some(true),
+        Named::Own if depth == QUERY_DEPTH => Some(visible),
+        Named::Id(id) if depth == QUERY_DEPTH && own == Some(*id) => Some(visible),
+        _ => None,
+    });
     let mut candidates = candidates(lab, me, vault, &plan);
     let label = |a: &Attrs, l: &str| -> Value {
         match l {
@@ -950,19 +967,17 @@ fn query_candidates_impl(
         && order.iter().all(|(by, _)| matches!(by, By::Label(_))) {
         let mut eligible = Vec::new();
         for entry in candidates {
+            let certified = certified_visibility(entry);
+            if certified.is_none() && !hydrate(entry) {
+                deferred_candidates += 1; deferred_classification += 1;
+                continue;
+            }
             let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
             let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
             let checkpoint = lab.entry_projection(me, entry);
             let partial = checkpoint.is_some() || lab.active_owner_base(me, entry).is_some();
             checkpoint_partial |= partial;
-            let certified = if partial { None } else {
-                lab.warm_query_receipt(me, entry).and_then(|(own, visible)| match &schema {
-                    Named::Stored => Some(true),
-                    Named::Own if depth == QUERY_DEPTH => Some(visible),
-                    Named::Id(id) if depth == QUERY_DEPTH && own == Some(*id) => Some(visible),
-                    _ => None,
-                })
-            };
+            let certified = if partial { None } else { certified };
             let visible = certified.unwrap_or_else(|| {
                 let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
                 if let Some(mut stored) = checkpoint.as_ref().and_then(|p| p.record(MAIN)) {
@@ -984,6 +999,11 @@ fn query_candidates_impl(
         Some(count)
     } else { None };
     for entry in candidates {
+        if !hydrate(entry) {
+            deferred_candidates += 1;
+            if paged_count.is_none() { deferred_classification += 1; }
+            continue;
+        }
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
         let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
         let checkpoint = lab.entry_projection(me, entry);
@@ -1062,8 +1082,11 @@ fn query_candidates_impl(
         shown.push(row);
     }
     Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
+        "countExact": deferred_classification == 0 && unresolved_candidates == 0,
+        "pageComplete": deferred_candidates == 0,
         "readiness": { "discovery": "unverified", "authoritativeEmpty": false,
-            "unresolvedCandidates": unresolved_candidates, "checkpointPartial": checkpoint_partial,
+            "unresolvedCandidates": unresolved_candidates, "deferredCandidates": deferred_candidates,
+            "checkpointPartial": checkpoint_partial,
             "pendingJudgments": lab.judgment_pending(me) } }))
 }
 
