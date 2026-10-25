@@ -51,7 +51,7 @@
 
 	const n = (/** @type {number} */ x) => x.toLocaleString('en');
 	const covered = $derived(Math.max(0, sync.logs - sync.behind));
-	const background = $derived(!sync.known ? 'Sync · checking' : !sync.peers ? 'Sync · offline' : sync.behind > 0 ? `Sync · ${n(covered)} / ${n(sync.logs)} logs` : sync.pulling > 0 ? 'Sync · checking updates' : 'Sync · caught up');
+	const background = $derived(!sync.known ? 'Sync · checking' : !sync.peers ? 'Sync · offline' : sync.behind > 0 ? `Sync · ${n(covered)} / ${n(sync.logs)} logs` : sync.pulling > 0 ? 'Sync · checking updates' : sync.logs > 0 ? 'Sync · caught up' : 'Sync · checking');
 	const view = $derived(viewStatus(reads, files));
 	const label = $derived(view.state === 'local' ? 'View · local' : view.state === 'unknown' ? 'View · checking' : view.state === 'unavailable' ? 'View · unavailable' : files.waiting > 0 ? `View · ${n(files.waiting)} files waiting` : files.reading > 0 ? `View · ${n(files.reading)} files loading` : `View · ${n(reads.pending)} reads loading`);
 	const details = $derived([
@@ -59,7 +59,7 @@
 		`${n(sync.behind)} logs remaining · ${n(files.waiting + files.reading)} files pending`
 	]);
 	const busy = $derived(sync.behind > 0 || sync.pulling > 0 || view.state === 'loading' || view.state === 'waiting');
-	const fraction = $derived(busy ? null : sync.known && sync.peers > 0 ? 1 : 0);
+	const fraction = $derived(busy ? null : sync.known && sync.peers > 0 && sync.logs > 0 ? 1 : 0);
 	/** the ring: how far the sync is, or a turning arc while it can't say */
 	const R = 7;
 	const ROUND = 2 * Math.PI * R;
