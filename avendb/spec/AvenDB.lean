@@ -156,3 +156,5 @@ import AvenDB.WarmMetadataPages
 import AvenDB.BootstrapSuffixPreparation
 import AvenDB.ScopedDiscoveryManifest
 import AvenDB.SharedHolderBootstrap
+
+import AvenDB.StagedMaterialization
