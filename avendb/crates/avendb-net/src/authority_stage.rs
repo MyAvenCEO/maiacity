@@ -136,6 +136,46 @@ mod tests {
         assert!(stage.release(peer, &announced, &announced).is_ok(), "only releases Signed bytes for ordinary admission");
     }
 
+    #[tokio::test]
+    async fn replacing_view_cancels_two_waiting_stages_before_new_view_admission() {
+        use crate::demand::Demands;
+        use n0_future::time::{Duration, Instant, timeout};
+        let stages = EntryStages::default();
+        let mut demands = Demands::default();
+        let scope = "view".to_owned();
+        demands.replace(scope.clone(), 1, vec![LogId::Entry(EntryId([71;32]))], Instant::now()).unwrap();
+        let origin = demands.origin(&scope, 1, Instant::now()).unwrap();
+        let (started, mut starts) = tokio::sync::mpsc::channel(2);
+        let mut workers = Vec::new();
+        for _ in 0..2 {
+            let permit = stages.reserve().unwrap();
+            let origin = origin.clone();
+            let started = started.clone();
+            workers.push(tokio::spawn(async move {
+                origin.run(async move {
+                    let _permit = permit;
+                    started.send(()).await.unwrap();
+                    std::future::pending::<()>().await;
+                }).await
+            }));
+        }
+        timeout(Duration::from_secs(2), async {
+            starts.recv().await.unwrap(); starts.recv().await.unwrap();
+        }).await.expect("both staged waits started");
+        assert!(stages.reserve().is_err(), "both old stages hold the entire bound");
+        demands.replace(scope.clone(), 2, vec![], Instant::now()).unwrap();
+        timeout(Duration::from_secs(2), async {
+            for worker in workers { assert!(worker.await.unwrap().is_none()); }
+        }).await.expect("closing a view wakes waits immediately, not the15-second stage deadline");
+        assert!(!origin.active());
+        assert!(origin.run(async { panic!("obsolete stage must not enter admission") }).await.is_none());
+        demands.replace(scope.clone(), 3, vec![LogId::Entry(EntryId([72;32]))], Instant::now()).unwrap();
+        assert!(demands.origin(&scope, 3, Instant::now()).unwrap().active());
+        let first = stages.reserve().expect("new view takes released capacity");
+        let second = stages.reserve().expect("both obsolete permits were released");
+        drop((first, second));
+    }
+
     #[test]
     fn staging_is_bounded_and_cancellation_reclaims_capacity() {
         let (peer, entry, announced, bytes) = fixture();
@@ -159,6 +199,12 @@ enum Admission {
 
 impl crate::Shared {
     pub(crate) fn stage_live_entries(self: &Arc<Self>, endpoint: iroh::EndpointId, device: SignerId, hints: std::collections::BTreeSet<LogId>) {
+        self.stage_entries_origin(endpoint, device, hints, None);
+    }
+
+    pub(crate) fn stage_entries_origin(self: &Arc<Self>, endpoint: iroh::EndpointId, device: SignerId,
+        hints: std::collections::BTreeSet<LogId>, origin: Option<crate::demand::Origin>) {
+        if origin.as_ref().is_some_and(|o| !o.active()) { return; }
         let Some(peer) = self.live(endpoint).filter(|peer| peer.device == device) else { return };
         for log in hints {
             let LogId::Entry(entry) = log else { continue };
@@ -174,12 +220,13 @@ impl crate::Shared {
             };
             let Ok(permit) = self.authority_stages.reserve() else { break };
             let Ok(activity) = self.admit() else { break };
-            let (shared, peer) = (self.clone(), peer.clone());
+            let (shared, peer, origin) = (self.clone(), peer.clone(), origin.clone());
             n0_future::task::spawn(async move {
                 let _activity = activity;
-                let attempted = n0_future::time::timeout(std::time::Duration::from_secs(15),
-                    shared.stage_live_entry(peer, entry, announced, inventory, permit)).await;
-                if !matches!(attempted, Ok(Ok(()))) {
+                let work = n0_future::time::timeout(std::time::Duration::from_secs(15),
+                    shared.stage_live_entry_origin(peer, entry, announced, inventory, permit, origin.clone()));
+                let attempted = match &origin { Some(origin) => origin.run(work).await, None => Some(work.await) };
+                if !matches!(attempted, Some(Ok(Ok(())))) {
                     tracing::debug!(?attempted, "staged entry continues through ordinary reconciliation");
                 }
             });
@@ -187,6 +234,13 @@ impl crate::Shared {
     }
 
     async fn stage_live_entry(self: &Arc<Self>, peer: crate::Peer, entry: EntryId, announced: Holdings, inventory: Option<crate::ranges::InventoryReceipt>, stage_permit: OwnedSemaphorePermit) -> Result<()> {
+        self.stage_live_entry_origin(peer, entry, announced, inventory, stage_permit, None).await
+    }
+
+    async fn stage_live_entry_origin(self: &Arc<Self>, peer: crate::Peer, entry: EntryId, announced: Holdings,
+        inventory: Option<crate::ranges::InventoryReceipt>, stage_permit: OwnedSemaphorePermit,
+        origin: Option<crate::demand::Origin>) -> Result<()> {
+        ensure!(origin.as_ref().is_none_or(|o| o.active()), "obsolete view stage");
         let device = peer.device;
         let logs = [LogId::Entry(entry)].into_iter().collect();
         let request = self.read(move |lab, me| {
@@ -251,6 +305,7 @@ impl crate::Shared {
         // the entire closure against the current receipt and current Lab.
         let mut previous_missing = None;
         for _ in 0..4 {
+            ensure!(origin.as_ref().is_none_or(|o| o.active()), "obsolete dependency request");
             let shared = self.clone();
             let connection = peer.conn.stable_id();
             let (returned, missing) = self.read(move |lab, me| {
@@ -283,7 +338,15 @@ impl crate::Shared {
             ensure!(peer.conn.close_reason().is_none(), "staged peer disconnected");
             let shared = self.clone();
             let connection = peer.conn.stable_id();
+            let admission_origin = origin.clone();
             let returned = self.try_lab(move |lab, me| {
+                // Keep the lease lock through admission, just like holdings.
+                // Navigation cannot replace the revision between check and use.
+                let demands = admission_origin.as_ref().map(|_| shared.demands.lock().expect("demands"));
+                if admission_origin.as_ref().zip(demands.as_ref()).is_some_and(|(o, demands)|
+                    !demands.current(&o.scope, o.revision, n0_future::time::Instant::now())) {
+                    return Admission::Discarded;
+                }
                 // All network holdings writes use this mutex. Hold it THROUGH
                 // admission while Lab itself is locked; no await occurs here.
                 let held = shared.held.lock().expect("held");

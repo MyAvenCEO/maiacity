@@ -191,7 +191,8 @@ impl Shared {
                             queued_before_checkpoint(|| {
                                 for chunk in ids.chunks(crate::pulls::LIVE_LOGS) {
                                     if !shared.discovery_current(&scope, revision) { break; }
-                                    shared.live_announced(peer.device, false, chunk);
+                                    let origin = shared.demands.lock().expect("demands").origin(&scope, revision, Instant::now());
+                                    if let Some(origin) = origin { shared.live_demand(peer.device, chunk, origin); }
                                 }
                             }, async {
                                 if query_index >= dependency_count {

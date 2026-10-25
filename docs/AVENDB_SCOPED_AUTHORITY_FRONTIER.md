@@ -334,3 +334,30 @@ after first view and after the live update. Neither phase invokes target staging
 or an explicit transfer. Addresses are installed only after the background slots
 are reserved. Phase/overall timeouts and error returns run both bounded shutdowns
 before final assertions, so a failed view test does not leave peer tasks running.
+
+## Demand-origin cancellation
+
+Discovery-origin entry pulls now retain an immutable scope/revision/deadline
+and a watch receiver. Replacing or closing the scope drops its sender, waking
+queued live work and staged authority waits immediately. Lease expiry independently
+cancels the same future. Cancelling drops page/staging permits and stops further
+dependency rounds; bytes already admitted remain local and are not rolled back.
+The final stage admission holds the demand mutex across the current-revision
+check and ordinary receive, alongside the existing current-authority fence.
+A synchronous admission already inside that critical section finishes normally.
+
+Real peer announcements use a separate queue identity and bounded allocation
+from view-origin hints. Closing a view therefore cannot erase an actual live
+announcement for the same peer/entry. Existing background transfer limits and
+the stage's two-page bound remain unchanged. Native signature work already
+running off-lock may finish its bounded current verification batch before its
+owned resources drop; cancellation does not kill a worker mid-crypto.
+
+New source regressions cover two occupied obsolete staging slots released before
+the fifteen-second deadline, immediate capacity for the next view, stale admission
+refusal, and survival of an independently queued real live announcement. New Lean
+cancellation lemmas passed standalone and changed Rust files passed rustfmt's
+parser; Cargo/type/runtime checks await the shared primary compilation slot.
+Required filters: `demand::tests`, `pulls::tests`, `authority_stage::tests`, then
+`cold_room_demand_renders_with_unrelated_authority_frontiers_withheld` to confirm
+the full active-view path still completes.

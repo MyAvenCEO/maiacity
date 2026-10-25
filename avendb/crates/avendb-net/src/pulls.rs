@@ -29,14 +29,14 @@ const LIVE_PEERS: usize = 64;
 #[derive(Default)]
 struct LiveBook {
     next: u64,
-    peers: BTreeMap<SignerId, (u64, BTreeSet<LogId>)>,
+    peers: BTreeMap<(SignerId, Option<(String, u64)>), (u64, BTreeSet<LogId>)>,
 }
 
 /// One coalesced worker per authenticated peer. Dropping a cancelled worker releases its queue entry. Sequence
 /// fencing prevents its drop from removing a replacement queued after an empty `next`.
 pub(crate) struct LiveWork {
     book: Arc<Mutex<LiveBook>>,
-    peer: SignerId,
+    peer: (SignerId, Option<(String, u64)>),
     sequence: u64,
 }
 
@@ -217,7 +217,17 @@ impl Budget {
     /// still intersects these IDs with ordinary authorized differences before asking; a hint grants no access.
     /// Overflow remains on normal reconciliation. Existing workers coalesce up to LIVE_LOGS pending logs.
     pub(crate) fn live_announced(&self, peer: SignerId, full: bool, logs: &[LogId]) -> Option<LiveWork> {
+        self.live_origin(peer, full, logs, None)
+    }
+
+    pub(crate) fn live_demand(&self, peer: SignerId, logs: &[LogId], origin: &crate::demand::Origin) -> Option<LiveWork> {
+        if !origin.active() { return None; }
+        self.live_origin(peer, false, logs, Some((origin.scope.clone(), origin.revision)))
+    }
+
+    fn live_origin(&self, peer: SignerId, full: bool, logs: &[LogId], origin: Option<(String, u64)>) -> Option<LiveWork> {
         if full || logs.is_empty() || logs.len() > LIVE_LOGS { return None; }
+        let peer = (peer, origin);
         let mut book = self.live.lock().expect("live pulls");
         if let Some((_, pending)) = book.peers.get_mut(&peer) {
             for log in logs {
@@ -226,10 +236,10 @@ impl Budget {
             }
             return None;
         }
-        if book.peers.len() >= LIVE_PEERS { return None; }
+        if book.peers.keys().filter(|(_, scope)| scope.is_some() == peer.1.is_some()).count() >= LIVE_PEERS { return None; }
         book.next = book.next.wrapping_add(1);
         let sequence = book.next;
-        book.peers.insert(peer, (sequence, logs.iter().copied().collect()));
+        book.peers.insert(peer.clone(), (sequence, logs.iter().copied().collect()));
         Some(LiveWork { book: self.live.clone(), peer, sequence })
     }
 
