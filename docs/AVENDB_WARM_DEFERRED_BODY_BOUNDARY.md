@@ -142,6 +142,8 @@ Limits: this removes repeated work over unrelated deferred receipts. It does not
 
 ## Exact saved scratch for the first warm append (2026-10-25)
 
+Implementation: [47304f54](https://github.com/MyAvenCEO/maiacity/commit/47304f54).
+
 Source implemented; canonical Rust execution and latency measurement pending. The optional own-materialization adjunct now carries a bounded judgment scratch image, authored-schema set, exact held edits and tip. It is authenticated by the same local encrypted receipt and exact log/entry fingerprint as the other warm state. Existing adjunct formats still decode without a scratch. Invalid, missing, non-linear, uncounted or non-main scratch takes the full canonical path. Restored scratch retention uses the existing 32-entry cap.
 
 Generic ordinary main-line editing can use the metadata history to construct a draft from the validated visible item, and to run the existing proof/admission path against a fork of the exact scratch. It still checks current keys and exact receipt basis. After strict content replay, the new update is judged with that scratch; old omitted bodies remain explicitly listed on `Shown.history_bodies`. Public history requests still decrypt and return complete content, and key loss still prevents both cached item and history access. Branching, authorization/lane changes, files and unsupported metadata remain on canonical reconstruction.
