@@ -360,6 +360,7 @@ fn get_judgment(bytes: &[u8], entry: EntryId, on: SignerId) -> Option<RestoredOw
         history,
         after: After {
             scratch,
+            deferred_scratch: None,
             attrs,
             mine,
             imported,
@@ -783,6 +784,7 @@ mod tests {
             full_history,
             After {
                 scratch: full_scratch,
+                deferred_scratch: None,
                 attrs: full_attrs,
                 mine: full_mine,
                 imported: full_imported,

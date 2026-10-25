@@ -21,6 +21,8 @@ enum CapturedLine {
     Deferred(Vec<u8>),
 }
 
+enum CapturedScratch { Materialized(Scratch), Deferred(crate::history::ScratchImage) }
+
 pub(super) struct Capture {
     basis: [u8; 32],
     entries: Vec<(
@@ -30,7 +32,7 @@ pub(super) struct Capture {
         BTreeMap<Line, CapturedLine>,
         BTreeSet<BlobId>,
         Vec<(EditId, BodyMetadata)>,
-        Option<Scratch>,
+        Option<CapturedScratch>,
     )>,
 }
 fn basis(store: &Store) -> [u8; 32] {
@@ -106,7 +108,8 @@ impl Capture {
                     let metadata = BodyMetadata::of(body);
                     metadata.ordinary().then_some((c.write.edit, metadata))
                 }).collect::<Option<Vec<_>>>().unwrap_or_default(),
-                s.after.scratch.as_ref().map(Scratch::fork),
+                s.after.scratch.as_ref().map(|s| CapturedScratch::Materialized(s.fork()))
+                    .or_else(|| s.after.deferred_scratch.as_ref().map(|s| CapturedScratch::Deferred(s.image.clone()))),
             ));
         }
         Self {
@@ -166,7 +169,7 @@ impl Capture {
             }
             // Scratch encoding remains outside the shared database lock and within
             // the same bounded authenticated own adjunct as the visible snapshots.
-            match scratch.and_then(|s| s.image()) {
+            match scratch.and_then(|s| match s { CapturedScratch::Materialized(s) => s.image(), CapturedScratch::Deferred(image) => Some(image) }) {
                 None => encoded.push(0),
                 Some(image) => {
                     encoded.push(1);
@@ -411,7 +414,7 @@ impl Saved {
         }
         // Only the exact authenticated linear counted-main scratch can avoid
         // historical content reconstruction. Invalid optional scratch falls back.
-        let scratch = self.scratch.and_then(|image| {
+        let deferred_scratch = self.scratch.and_then(|image| {
             let last = history.changes().last()?.write.edit;
             if image.tip != Some(last) || image.holds.len() != history.changes().len()
                 || !history.changes().iter().all(|c| c.counted && c.write.proposal == Proposal::Main && image.holds.contains(&c.write.edit)) {
@@ -422,7 +425,7 @@ impl Saved {
                 if change.write.deps.as_slice() != previous.as_slice() { return None; }
                 previous = Some(change.write.edit);
             }
-            Scratch::from_owner_image(image, d, MAIN)
+            Some(DeferredScratch { signer: d, image, opened: OnceLock::new() })
         });
         let mine = history.mine();
         let history_bodies = history.changes().iter().filter(|c| store.deferred_bodies.contains_key(&c.write.edit))
@@ -436,7 +439,8 @@ impl Saved {
             print,
             tip,
             after: After {
-                scratch,
+                scratch: None,
+                deferred_scratch,
                 attrs,
                 mine,
                 imported,
@@ -616,6 +620,26 @@ mod tests {
     }
 
     #[test]
+    fn warm_scratch_import_waits_for_authorized_target_edit() {
+        let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
+        let n=backup.signed.len();
+        lab.restore_warm(device,backup,Some(([19;40],n)),&warm);
+        let unopened = |lab: &Lab, entry: EntryId| lab.held(device).shown[&entry].after
+            .deferred_scratch.as_ref().is_some_and(|s| s.opened.get().is_none());
+        assert!(entries.iter().all(|e|unopened(&lab,*e)),"unlock imports no scratch snapshots");
+        assert!(lab.item(device,entries[0]).is_some());
+        let saved=Capture::take(lab.held(device)).encode(Vec::new());
+        assert!(decode(unwrap(&saved).unwrap().1).is_some());
+        assert!(entries.iter().all(|e|unopened(&lab,*e)),"view and re-save do not import scratch");
+        lab.edit(device,vault,entries[0],|item|item.edit_document(|d|d.title="Target only".into())).unwrap();
+        assert!(lab.held(device).shown[&entries[0]].after.scratch.is_some());
+        assert!(entries[1..].iter().all(|e|unopened(&lab,*e)));
+        lab.stores.get_mut(&device).unwrap().keys=Keyring::default();
+        assert!(lab.append_history(device,entries[1]).is_none());
+        assert!(entries[1..].iter().all(|e|unopened(&lab,*e)),"missing key cannot trigger scratch import");
+    }
+
+    #[test]
     fn long_single_entry_warm_append_matches_canonical_restore() {
         use crate::cast::{document, human_on, paragraph};
         use std::time::Instant;
@@ -709,7 +733,7 @@ mod tests {
             let old=&store.shown[&entries[0]];
             let restored=saved.restore(device,store.view(),&store.readings,store,
                 store.view().entry(entries[0]).unwrap(),old.print,old.tip).unwrap();
-            assert!(restored.after.scratch.is_none());
+            assert!(restored.after.scratch().is_none());
             lab.stores.get_mut(&device).unwrap().shown.insert(entries[0],restored);
             lab.edit(device,vault,entries[0],|item|item.edit_document(|d|d.title="Fallback".into())).unwrap();
             let expected=lab.item(device,entries[0]).unwrap().record();

@@ -84,3 +84,16 @@ def retainOmissions (missing : List Nat) : List Nat := missing
  theorem scratchReuseRetainsOmissions (missing : List Nat) :
     retainOmissions missing = missing := rfl
 end AvenDB.DeferredContentAppend
+
+namespace AvenDB.DeferredContentAppend
+-- Encoded scratch imports are triggered by a target operation, never merely by
+-- restoring the receipt, and still require current authorization.
+def importScratch (targetDemand currentAuthorization : Bool) : Bool :=
+  targetDemand && currentAuthorization
+
+theorem unlockDoesNotImport (authorized : Bool) : importScratch false authorized = false := by
+  simp [importScratch]
+
+theorem revokedDemandDoesNotImport (demand : Bool) : importScratch demand false = false := by
+  simp [importScratch]
+end AvenDB.DeferredContentAppend

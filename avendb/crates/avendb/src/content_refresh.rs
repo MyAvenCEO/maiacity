@@ -81,7 +81,7 @@ impl Lab {
         let reuse_scratch = store.shown.get(&entry).is_some_and(|shown| {
             !shown.history_bodies.is_empty()
                 && store.replay.state.write(id).is_some_and(|write|
-                    shown.after.scratch.as_ref().is_some_and(|scratch|
+                    shown.scratch_in(store).is_some_and(|scratch|
                         scratch.resumes_complete_main(&shown.history, write)))
                 && shown.history_bodies.iter().all(|id| store.deferred_authorized(*id))
         });
@@ -164,7 +164,7 @@ impl Lab {
         while store.scratched.len() > SCRATCHES {
             let evict = *store.scratched.iter().find(|e| **e != entry).expect("another scratch");
             store.scratched.remove(&evict);
-            if let Some(s) = store.shown.get_mut(&evict) { s.after.scratch = None; }
+            if let Some(s) = store.shown.get_mut(&evict) { s.after.clear_scratch(); }
         }
         store.behind = false;
         if creating { store.perf.count("refresh: owner creation", 1); }
