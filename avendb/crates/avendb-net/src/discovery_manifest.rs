@@ -1,8 +1,8 @@
-//! Explicit owner publication, using ordinary local creation and checkpoint approval.
-//! No sharing is inferred: the carrier remains in its normal source-vault audience.
-use crate::{Authenticator, Node};
+//! Explicit owner-cosigned carrier creation followed by checkpoint approval.
+//! Existing audience disclosure is checked before creation and after the ceremony.
+use crate::{Authenticator, Node, Step};
 use anyhow::Result;
-use avendb::{doc::Item, engine::Refused, id::VaultId, lab::DiscoveryScope};
+use avendb::{doc::Item, engine::{self, Refused}, id::VaultId, lab::DiscoveryScope};
 use serde_json::{Value,json};
 
 impl Node {
@@ -20,13 +20,20 @@ impl Node {
             _=>None,
         }.and_then(DiscoveryScope::normalized);
         let Some(scope)=scope else {return Ok(Refused::BadOp("invalid or unbounded discovery scope".into()).to_json());};
-        // The builder requires owner-domain authority and complete local metadata.
-        // This is an ordinary signed creation, not a fabricated privileged write.
-        let made=self.try_act(move|lab,me| {
-            let record=lab.discovery_manifest_record(me,vault,scope).ok_or(avendb::policy::Refusal::NotAccepted)?;
-            let mut item=Item::new(me);item.put_record(&record);
-            lab.create(me,vault,vault,"discovery-manifest",&[],item)
+        let prepared=self.try_act(move|lab,me| {
+            let owner=engine::passkey_of(lab,me).ok_or(avendb::policy::Refusal::BelowThreshold)?;
+            let prepared=lab.prepare_discovery_manifest(me,owner,vault,scope)?;
+            Ok::<_,avendb::policy::Refusal>((prepared,lab.keys_of(owner)))
         }).await?;
+        let (prepared,keys)=match prepared {Ok(value)=>value,Err(why)=>return Ok(Refused::from(why).to_json())};
+        let owner=prepared.owner();
+        let Some(authenticator)=authenticator else {
+            // No draft export: continuation must re-enter this guarded publication API.
+            // Nothing has been admitted, announced, or pinned.
+            return Ok(json!({"approve":{"signers":[owner.to_hex()],"operation":"checkpoint_scope"}}));
+        };
+        let ceremony=crate::ceremony_of(authenticator,keys,prepared.challenge(),Step::Approve).await?;
+        let made=self.try_act(move|lab,me|lab.complete_discovery_manifest(me,prepared,&[(owner,&ceremony)])).await?;
         let entry=match made {Ok(entry)=>entry,Err(why)=>return Ok(Refused::from(why).to_json())};
         let request=json!({"op":"checkpoint_view","entry":entry.to_hex()});
         // Carrier creation has already succeeded. Preserve it in every outcome;
@@ -48,17 +55,16 @@ mod tests {
     use n0_future::time::Instant;
 
     #[tokio::test(flavor="multi_thread",worker_threads=2)]
-    async fn scope_publication_without_authenticator_retains_private_carrier_not_fake_success() {
+    async fn scope_publication_without_authenticator_keeps_no_carrier() {
         let mut w=cast::world();
         w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();
         let vault=w.alice;
         let node=Node::spawn(w.lab.split(w.mac_a,&[],[181;32]),w.mac_a,Options::local()).await.unwrap();
+        let before=node.read(|lab,me|lab.state(me).entries().len()).await;
         let answer=node.op(json!({"op":"checkpoint_scope","vault":vault.to_hex(),"tag":"selected"})).await.unwrap();
-        assert_eq!(answer["ok"]["published"],false);
-        assert_eq!(answer["ok"]["shared"],false);
-        assert!(answer["ok"]["entry"].is_string());
-        assert!(answer["ok"]["checkpointResponse"].get("approve").is_some());
-        assert_eq!(answer["ok"]["resume"]["op"],"checkpoint_view");
+        assert_eq!(answer["approve"]["operation"],"checkpoint_scope");
+        assert!(answer.get("ok").is_none());
+        assert_eq!(node.read(|lab,me|lab.state(me).entries().len()).await,before);
         node.shutdown().await.unwrap();
     }
 

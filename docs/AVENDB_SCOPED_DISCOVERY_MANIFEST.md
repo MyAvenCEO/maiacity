@@ -36,34 +36,37 @@ explicitly names that exact owner snapshot. Its normal execution and delayed
 approval checks re-run the same proof. No negative proof silently upgrades an
 owner cut into latest global state.
 
-## Current limits and next wiring
+## Publication and disclosure boundary
 
-- This is an opt-in core query path, not automatic owner publication or discovery.
-- Unknown IDs are not yet exposed as a separate authorized discovery/fetch list;
-  content and negative proof remain pending until each member's current authority
-  and frontier is locally available. That split is needed for fresh-device fetch.
-- Projection retention is bounded by the existing eight-entry/four-MiB store.
-  This slice adds no durable manifest registry or background publication loop.
-- No user store is reset, and no hosted-peer privilege is introduced.
-- Carrier sharing must preserve selected-ID disclosure permissions. Do not wire an
-  automatic public carrier publication shortcut.
+`checkpoint_scope {vault,types|tag}` prepares an encrypted carrier in memory.
+The source owner must co-sign its exact creation before any content edit is kept.
+The preparation and same-lock approval continuation check all live potentially
+matching shares, including delegated shares and Everyone, against every selected
+member's current readership. Unknown selectors fail closed; schema-only selectors
+can be excluded using the actual prospective entry attributes. The continuation
+also rechecks owner authority, exact selected membership/frontiers and audience.
+Changed grants or source data require new preparation and a new owner ceremony.
 
-## Evidence
+After the approved carrier creation, existing `checkpoint_view` performs its
+separate owner Snapshot approval and durable pin. Failure at this second stage
+retains the already approved carrier and reports a resumable unpublished result.
+No authenticator at the first stage means no carrier was created. This native
+publication API deliberately exports no unsigned draft for a generic unguarded
+continuation. Browser-local publication and automatic publication/sharing remain
+unimplemented. Later explicit user-authorized sharing uses ordinary policy.
 
-ScopedDiscoveryManifest Lean proofs pass. Rust syntax parses. Native tests are
-added for owner approval, exact scope, query/guard cut labels, and invalidation by
-an added member; they remain unrun while the parent owns the Cargo queue.
-Run `cargo test -p avendb --lib discovery_manifest` after integration.
+## Validation status
 
-## Publication, pending discovery and durable restore wiring
+The first native run finished: one normalization test passed, three tests failed
+at actual carrier creation with `NotAView`. This exposed a production schema gap,
+not a fixture issue. A bounded built-in manifest schema and the guarded creation
+path now address it; corrected native tests are **pending** the serialized build
+slot. Existing JS demand/completeness suite: 73 passed, 239 assertions. Full
+Svelte check: zero errors (27 existing warnings). Lean contract passes.
+Run `cargo test -p avendb --lib discovery_manifest` and
+`cargo test -p avendb-net discovery_manifest` on this exact correction.
 
-`checkpoint_scope {vault,types|tag}` now explicitly creates a normal private carrier
-on a fully reconstructed owner node and invokes the existing `checkpoint_view`
-owner-approval/blob-pin path. It does not infer any sharing. If approval is absent,
-cancelled, refused or storage fails after creation, the response retains the
-created carrier and reports `published:false` with a resumable checkpoint request;
-it never claims the creation rolled back. Native Node publication is implemented;
-matching browser-local publication remains unimplemented.
+## Pending discovery and durable restore wiring
 
 An authenticated carrier can disclose its bounded selected IDs for scheduling
 without claiming each member is currently readable. Pending `entry_views` results
@@ -84,7 +87,7 @@ unknown fields, duplicate IDs, duplicate heads and malformed owner payloads.
 Added native regressions cover malformed attestation, selected-entry revocation,
 unknown-member discovery without content readiness, full-history cache eviction,
 and a real Node shutdown/reopen/offline pin restore. Explicit publication without
-an authenticator must preserve an unpublished private carrier and approval request.
+an authenticator must return an approval requirement without keeping a carrier.
 These tests are pending the granted native run; JS demand/completeness tests pass.
 Automatic background republishing and automatic carrier-sharing policy are still
 absent; no implicit standing owner consent has been added.
