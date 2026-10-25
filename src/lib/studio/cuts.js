@@ -168,12 +168,14 @@ export async function cutsHere() {
 /**
  * Every cut this device holds, newest first, or those of vault `vault` alone (the vault picked in the nav pill: Maia
  * City's in Maia City, a person's own in theirs); none off the Mac app.
- * @param {string | null} [vault] @returns {Promise<Timeline[]>}
+ * @param {string | null} [vault]
+ * @param {{signal?:AbortSignal}} [options]
+ * @returns {Promise<Timeline[]>}
  */
-export async function listCuts(vault = null) {
+export async function listCuts(vault = null, {signal} = {}) {
 	const call = await device();
 	if (!call) return [];
-	const entries = await collectionEntries(call, CUT, vault);
+	const entries = await collectionEntries(call, CUT, vault, {signal});
 	return entries
 		.filter((e) => e.type === CUT && e.record?.kind === CUT && !e.deleted && !(e.tags ?? []).includes(DELETED))
 		.filter((e) => !vault || e.vault === vault)
@@ -184,12 +186,13 @@ export async function listCuts(vault = null) {
 /**
  * Every story this device holds, by title: the stories the studio's timelines belong to (a cut's `story` link) are
  * picked from these; none off the Mac app.
+ * @param {{signal?:AbortSignal}} [options]
  * @returns {Promise<{ id: string, vault: string, title: string }[]>}
  */
-export async function listStories() {
+export async function listStories({signal} = {}) {
 	const call = await device();
 	if (!call) return [];
-	const entries = await collectionEntries(call, 'story');
+	const entries = await collectionEntries(call, 'story', null, {signal});
 	return entries
 		.filter((e) => e.type === 'story' && !e.deleted && !(e.tags ?? []).includes(DELETED))
 		.map((e) => ({ id: e.entry, vault: e.vault, title: String(e.title || /** @type {any} */ (e.record)?.title || 'Untitled') }))

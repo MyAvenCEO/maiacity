@@ -10,6 +10,7 @@ import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { session } from '$lib/avendb/session.svelte.js';
 import { refreshQueue } from './refresh.js';
+import { collectionLifetime } from './collection-lifetime.js';
 import { watchStudioCollections } from './collection-demand.js';
 import { MediaSources } from './media-sources.js';
 import { invalidateWorld } from './cuts.js';
@@ -119,7 +120,8 @@ export const raw = (hash) => (isAven(hash) ? avenUrl(hash) : '');
  * them are Maia City's own cuts now, changed only in the studio (Samuel 2026-10-19: nothing written back over Maia City).
  */
 /** The cuts of the vault picked in the nav pill (Maia City's in Maia City, a person's own in theirs), else all. */
-const listTimelines = async () => listCuts((await import('$lib/avendb/session.svelte.js')).session.vault ?? null);
+/** @param {AbortSignal} signal */
+const listTimelines = async (signal) => listCuts((await import('$lib/avendb/session.svelte.js')).session.vault ?? null, {signal});
 /** @param {Partial<Timeline>} t */
 const createTimeline = createCut;
 const getTimeline = getCut;
@@ -127,7 +129,8 @@ const saveTimeline = saveCut;
 const deleteTimeline = deleteCut;
 
 /** The studio's library: avenDB's footage (./aven.js), the files of every vault this Mac holds. */
-const allMedia = () => avenLibrary().then((aven) => asStudio(withGraded(aven)));
+/** @param {AbortSignal} signal */
+const allMedia = (signal) => avenLibrary({signal}).then((aven) => asStudio(withGraded(aven)));
 /** A cut's renders: its tasks in avenDB (./cuts.js). */
 const listRenders = cutJobs;
 const queueRender = renderCut;
@@ -526,19 +529,21 @@ export class Studio {
 	// ── loading ──────────────────────────────────────────────────────────────
 	/** @type {(() => void) | null} */
 	stopCollectionDemand = null;
+	collectionReads = collectionLifetime();
 	async load() {
 		if (this.disposed) return;
 		this.stopCollectionDemand ??= watchStudioCollections(session);
 		// no gate of its own: the app's opens the studio to Maia City's admins ($lib/app/places.ts), and everything it
 		// reads and writes is avenDB's, by the person's own shares
 		try {
-			const [media, tls, here, stories] = await Promise.all([allMedia(), listTimelines(), cutsHere().catch(() => false), listStories().catch(() => [])]);
+			const [media, tls, here, stories] = await this.collectionReads.run('initial', signal => Promise.all([allMedia(signal), listTimelines(signal), cutsHere().catch(() => false), listStories({signal}).catch(() => [])]));
 			if (this.disposed) return;
 			this.library = media;
 			this.timelines = tls;
 			this.stories = stories;
 			this.avenHere = here;
 		} catch (e) {
+			if (this.disposed) return;
 			this.error = /** @type {Error} */ (e).message;
 		}
 		if (this.disposed) return;
@@ -1071,14 +1076,15 @@ export class Studio {
 	libraryAt = 0;
 	/** The timelines again, as the vault picked in the nav pill changes: only that vault's cuts are listed. */
 	async reloadTimelines() {
-		const tls = await listTimelines().catch(() => null);
+		if (this.disposed) return;
+		const tls = await this.collectionReads.run('timelines', signal => listTimelines(signal)).catch(() => null);
 		if (tls) this.timelines = tls;
 	}
 
 	async reloadLibrary() {
 		if (this.disposed) return;
 		this.libraryAt = Date.now();
-		const library = await allMedia().catch(() => this.library);
+		const library = await this.collectionReads.run('library', signal => allMedia(signal)).catch(() => this.library);
 		if (this.disposed) return;
 		this.library = library;
 		this.retrySounds();
@@ -1272,6 +1278,7 @@ export class Studio {
 
 	destroy() {
 		this.disposed = true;
+		this.collectionReads.close();
 		this.stopCollectionDemand?.();
 		this.stopCollectionDemand = null;
 		this.stopVault?.();
@@ -2101,7 +2108,7 @@ export class Studio {
 		if (ended.length) {
 			this.showRenders = true;
 			if (ended.some((r) => r.status === 'done')) {
-				const library = await allMedia().catch(() => this.library);
+				const library = await this.collectionReads.run('library', signal => allMedia(signal)).catch(() => this.library);
 				if (this.disposed) return;
 				this.library = library;
 				if (this.stage === 'locked' || this.stage === 'graded') this.setMeta({ stage: 'rendered' });
@@ -2165,7 +2172,8 @@ export class Studio {
 		if (!hash) return;
 		let m = this.byHash.get(hash);
 		if (!m) {
-			this.library = await allMedia().catch(() => this.library);
+			this.library = await this.collectionReads.run('library', signal => allMedia(signal)).catch(() => this.library);
+			if (this.disposed) return;
 			m = this.library.find((x) => x.hash === hash);
 		}
 		if (m) this.pick(m);

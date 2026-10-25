@@ -189,17 +189,21 @@ function valueIn(ref) {
  * The library items of the avenDB footage this Mac's device holds now, each long transcript and analysis read from its
  * file; none off the Mac app or while avenDB isn't open.
  */
-export async function avenLibrary() {
+/** @param {{signal?:AbortSignal}} [options] */
+export async function avenLibrary({signal} = {}) {
 	const { device } = await import('./cuts.js');
 	const call = await device();
 	if (!call) return [];
-	const items = await libraryFromDevice(call);
+	signal?.throwIfAborted();
+	const items = await libraryFromDevice(call, {signal});
 	await Promise.all(
 		items.flatMap((m) =>
 			['transcript', 'analysis'].map(async (k) => {
 				const ref = m.meta[`${k}_file`];
 				if (typeof ref !== 'string') return;
+				signal?.throwIfAborted();
 				const v = await valueIn(ref);
+				signal?.throwIfAborted();
 				if (v) m.meta[k] = v;
 			})
 		)
@@ -211,9 +215,10 @@ export async function avenLibrary() {
  * rooms, assets and stories must never gate the footage library. Each
  * collection yields between bounded query/metadata pages.
  * @param {(command: string, op: any) => Promise<any>} call
+ * @param {{signal?:AbortSignal}} [options]
  */
-export async function libraryFromDevice(call) {
-	const files = await collectionEntries(call, 'file');
-	const tasks = await collectionEntries(call, 'task');
+export async function libraryFromDevice(call, {signal} = {}) {
+	const files = await collectionEntries(call, 'file', null, {signal});
+	const tasks = await collectionEntries(call, 'task', null, {signal});
 	return libraryOf(/** @type {import('../avendb/vaults.js').WorldView} */ ({ entries: [...files, ...tasks] }));
 }
