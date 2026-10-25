@@ -2,7 +2,7 @@
  import { manifestDiagnostics } from '../../../game/code/sources/manifests.js';
  import { onMount } from 'svelte';
  import { localTimings } from './local-timings.js';
- import { latencyJournal, recordPeerTimings, policyObservations } from './latency-journal.js';
+ import { latencyJournal, recordPeerTimings, policyObservations, receiveWork } from './latency-journal.js';
  import { playbackMetrics } from '$lib/studio/playback-metrics.js';
  import { session } from './session.svelte.js';
  import { sync } from './sync.svelte.js';
@@ -15,6 +15,7 @@
  let exported = $state('');
  let deviceLabel = $state('This device');
  let scenario = $state('already-synced');
+ let receive = $state(receiveWork(null));
  /** @type {ReturnType<typeof policyObservations>} */
  let policy = $state(null);
  /** @type {ReturnType<typeof policyObservations>} */
@@ -46,7 +47,8 @@
   if (measuring || session.phase !== 'open') return;
   measuring = true;
   try {
-   const answer = await session.ask({ op: 'network' });
+   const [answer, work] = await Promise.all([session.ask({ op: 'network' }), session.ask({ op: 'perf' }).catch(() => null)]);
+   receive = receiveWork(work?.ok);
    const count = recordPeerTimings(answer?.ok);
    policy = policyObservations(answer?.ok);
    reactive = policyObservations({policy_observations: answer?.ok?.reactive_observations}, 'local-completion-to-peer-reactive-consumer');
@@ -58,11 +60,11 @@
  function exportReport() {
   latencyJournal.flush();
   evidence = latencyJournal.snapshot();
-  exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(), policyObservations: policy, reactiveObservations: reactive, studioPlayback: playbackMetrics.snapshot(),
+  exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(), policyObservations: policy, reactiveObservations: reactive, receiveWork: receive, studioPlayback: playbackMetrics.snapshot(),
    scenario: { declared: scenario, source: 'user-selected', firstViewReadiness: 'unmeasured' },
    peerLogCoverage: sync.known ? { peers: sync.peers, logs: sync.logs, behind: sync.behind, pulling: sync.pulling } : null,
    lifecycle: lifecycle()?.snapshot() ?? null,
-   semantics: { calls: 'Local engine response including queue and any signing ceremony; not rendered or remotely replicated.', unlock: 'User unlock request to completion; includes authentication interaction.', view: 'query/entry_views first-result-emission measures the first valid consumer result, including empty; first-nonempty-emission measures the first nonempty consumer callback; not paint, manifest start or complete view readiness.', studioPlayback: 'Completed Studio preview frames only; not native video presentation; totals since reset, percentiles bounded to latest 300 samples.', peer: 'Authenticated connection transport RTT estimate; not edit acceptance or remote visibility.' } }, null, 2);
+   semantics: { calls: 'Local engine response including queue and any signing ceremony; not rendered or remotely replicated.', unlock: 'User unlock request to completion; includes authentication interaction.', view: 'query/entry_views first-result-emission measures the first valid consumer result, including empty; first-nonempty-emission measures the first nonempty consumer callback; not paint, manifest start or complete view readiness.', studioPlayback: 'Completed Studio preview frames only; not native video presentation; totals since reset, percentiles bounded to latest 300 samples.', receiveWork: 'Cumulative local admission timers and atomic checkpoint page counts; not network throughput or rendered latency.', peer: 'Authenticated connection transport RTT estimate; not edit acceptance or remote visibility.' } }, null, 2);
   const url = URL.createObjectURL(new Blob([exported], { type: 'application/json' }));
   const link = document.createElement('a'); link.href = url; link.download = `maia-latency-${deviceLabel.replace(/ /g, '-')}-${Date.now()}.json`;
   link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);

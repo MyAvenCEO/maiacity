@@ -93,3 +93,20 @@ export function policyObservations(network, stage = 'local-completion-to-peer-po
    .filter(s => s && Number.isFinite(s.ms) && s.ms >= 0 && s.ms < 30000 && ['standing', 'not-standing'].includes(s.outcome))
    .map(s => ({ ms: s.ms, outcome: s.outcome })) };
 }
+
+/** Redacted receive work for device comparisons; these totals are not network throughput.
+ * @param {any} perf */
+export function receiveWork(perf) {
+ const finite = (/** @type {any} */ value) => Number.isFinite(value) && value >= 0;
+ const names = ['receive: atomic checkpoint admission', 'receive: prepared chunk admission'];
+ const timers = Object.fromEntries(names.flatMap(name => {
+  const t = perf?.timers?.[name];
+  return t && Number.isSafeInteger(t.count) && t.count >= 0 && [t.total_ms,t.mean_ms,t.max_ms].every(finite)
+   ? [[name, {count:t.count,total_ms:t.total_ms,mean_ms:t.mean_ms,max_ms:t.max_ms}]] : [];
+ }));
+ const counts = Object.fromEntries(['receive: atomic checkpoint pages', 'receive: atomic checkpoint page edits'].flatMap(name => {
+  const n = perf?.counts?.[name];
+  return Number.isSafeInteger(n) && n >= 0 ? [[name,n]] : [];
+ }));
+ return {timers,counts};
+}

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { expect, test } from 'bun:test';
-import { createLatencyJournal, recordPeerTimings, measureLatency, policyObservations } from './latency-journal.js';
+import { createLatencyJournal, recordPeerTimings, measureLatency, policyObservations, receiveWork } from './latency-journal.js';
 import { createLocalTimings } from './local-timings.js';
 function fixture(initial = null) {
  let stored = initial, writes = 0, tick = 100;
@@ -102,4 +102,12 @@ test('busy catch-up cannot evict the latest unlock evidence before diagnostics e
  expect(samples.at(-1).ms).toBe(299);
  f.journal.clear();
  expect(f.journal.snapshot().samples).toEqual([]);
+});
+
+
+test('receive work export keeps only known numeric counters and timers', () => {
+ const work=receiveWork({secret:'PRIVATE',timers:{'receive: prepared chunk admission':{count:2,total_ms:8,mean_ms:4,max_ms:5,entry:'PRIVATE'},'receive: atomic checkpoint admission':{count:1,total_ms:Infinity,mean_ms:0,max_ms:0},private:{count:1}},counts:{'receive: atomic checkpoint pages':3,'receive: atomic checkpoint page edits':-1,private:42}});
+ expect(work).toEqual({timers:{'receive: prepared chunk admission':{count:2,total_ms:8,mean_ms:4,max_ms:5}},counts:{'receive: atomic checkpoint pages':3}});
+ expect(JSON.stringify(work)).not.toContain('PRIVATE');
+ expect(receiveWork(null)).toEqual({timers:{},counts:{}});
 });
