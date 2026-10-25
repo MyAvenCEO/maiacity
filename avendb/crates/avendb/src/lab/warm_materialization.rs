@@ -631,7 +631,7 @@ mod tests {
         let saved=Capture::take(lab.held(device)).encode(Vec::new());
         assert!(decode(unwrap(&saved).unwrap().1).is_some());
         assert!(entries.iter().all(|e|unopened(&lab,*e)),"view and re-save do not import scratch");
-        lab.edit(device,vault,entries[0],|item|item.edit_document(|d|d.title="Target only".into())).unwrap();
+        lab.edit(device,vault,entries[0],|item| { item.edit_document(|d|d.title="Target only".into()); }).unwrap();
         assert!(lab.held(device).shown[&entries[0]].after.scratch.is_some());
         assert!(entries[1..].iter().all(|e|unopened(&lab,*e)));
         lab.stores.get_mut(&device).unwrap().keys=Keyring::default();
