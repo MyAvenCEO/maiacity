@@ -72,7 +72,7 @@
   measuring = true; result = 'Reading the local summary…';
   const start = performance.now();
   try {
-   const answer = await session.ask({ op: 'world' });
+   const answer = await session.ask({ op: 'world_summary' });
    result = answer?.ok ? `Local summary answered in ${Math.round(performance.now() - start)} ms.` : 'Local summary read was refused.';
   } catch { result = 'Local summary read failed.'; }
   finally { measuring = false; }
@@ -84,7 +84,7 @@
 </script>
 <section aria-label="Local loading and peer sync">
  <h3>Device latency report</h3>
- <p>Retains the last 120 measured operations across reloads on this device. Contains only fixed stage names, durations and outcomes; no account data, entry IDs or contents.</p>
+ <p>Retains up to 120 measurements across reloads on this device, including the latest unlock timing. Contains only fixed stage names, durations and outcomes; no account data, entry IDs or contents.</p>
  <label>Device <select bind:value={deviceLabel}><option>This device</option><option>iPhone</option><option>iPad</option><option>Mac</option></select></label>
  <label>Test scenario <select bind:value={scenario}><option value="already-synced">Already-synced peers</option><option value="fresh-catching-up">Fresh / catching-up peer</option></select></label>
  <p>This is your test label, not a completeness claim. Run the observation on connected devices, make an ordinary edit, then capture and export. Fresh-device first-view readiness: unmeasured.</p>
