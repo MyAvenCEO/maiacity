@@ -285,7 +285,7 @@ test('scoped post publication includes picture changes without a full world', as
  expect(calls).toContainEqual({op:'tag',entry:PIC,add:[PUBLISHED],as:ME});
 });
 
-test('selective private transitions accept positive scoped rows; public absence remains strict', async () => {
+test('private fallback and function enumeration still require completeness; exact target does not', async () => {
  const {guardedStoryTransition}=await import('./story-guarded-transition.js');
  const w=world(), captures=[],changes=[];
  let selected={...w.entries[0],type:'story',tags:['story:idea']};
@@ -297,8 +297,11 @@ test('selective private transitions accept positive scoped rows; public absence 
     {rows:q.entries?[selected]:w.entries.filter(e=>e.vault===q.vault&&q.types.includes(e.type)),scope:{localComplete:false}}}};
  },run:async(_what,op)=>{changes.push(op);return {value:{edit:'accepted'},guards:op.checks,canContinue:true};}};
  const privateMove=await guardedStoryTransition({api,actor:ME,entry:POST,to:'hook',current:()=>true});
- expect(privateMove.complete).toBe(true);
- expect(captures.filter(op=>op.query.vault).every(op=>op.requireComplete===false)).toBe(true);
+ expect(privateMove.complete).toBe(false);
+ expect(privateMove.reason).toContain('incomplete');
+ expect(changes).toEqual([]);
+ expect(captures.find(op=>op.query.entries)?.requireComplete).toBe(false);
+ expect(captures.filter(op=>op.query.vault).every(op=>op.requireComplete===true)).toBe(true);
  expect(captures.some(op=>op.query.types?.includes('file'))).toBe(false);
  selected=w.entries[0];changes.length=0;
  const publishing=await guardedStoryTransition({api,actor:ME,entry:POST,to:'published',about:'post',current:()=>true});

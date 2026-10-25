@@ -47,12 +47,26 @@ Tag inventories always force strict mode, including if a caller tampers with a
 receipt to request false. Negative picture-user decisions therefore cannot opt
 out of completeness.
 
-Private workflow plans use positive target/workflow/post inputs and avoid file
-or profile materialization entirely. Public transitions additionally capture
-strict complete dependencies before emitting any change. Selectively delegated
-writers can make private transitions; selectively delegated public changes still
-need evidence covering their actual negative-decision domain.
+Private workflow plans avoid file/profile materialization, but retain strict
+workflow/post inventories: default-flow fallback and function/post enumeration
+are absence decisions. Exact target/summary reads may use positive mode. Public
+transitions additionally capture strict profile/file and tag-user dependencies.
+Selective delegated workflow completion remains open pending a closed dependency
+contract or canonical selector-domain proof.
 
 Validation: Lean dependency distinction proved; 47 Bun tests / 148 assertions
 passed. Native selective-write/forced-strict-tag regression added, not yet run
 because parent owns Cargo. Full Svelte typecheck passed: zero errors, 27 existing warnings.
+
+### Planner review correction
+
+The existing workflow planner is NOT positive-only for private stages: it chooses
+a fallback when no custom flow is seen, enumerates matching functions, and hands
+those functions a complete-looking posts list. Therefore typed workflow/post
+inventories remain strict. Only exact target and summary reads use positive mode.
+The incomplete-private relaxation in 42792e21 is superseded by this correction.
+A genuinely positive private plan requires an explicit closed dependency manifest
+(naming the chosen flow, every active function, and the function's related-post
+domain) or canonical proof covering those selectors; current records expose no
+such closure. Selective delegated workflow completion remains open. Private plans
+still avoid unnecessary file/profile materialization.

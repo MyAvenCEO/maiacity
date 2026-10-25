@@ -86,10 +86,15 @@ authority, not hidden row existence. The native regression grants then revokes
 that share and requires the guard to stop after revocation. Selective delegated
 writers remain blocked pending an equally sound dependency-domain contract.
 
-The selective-private limitation above is now resolved by explicit positive
-read guards: private Story transitions no longer require an owner or whole-vault
-share and do not load files/profiles. They retain current read/write authorization
-and execution-time changed-result rejection. Public transitions retain strict
-local completeness; tag absence cannot be downgraded. This does not claim that
-partial local discovery equals global discovery, or admit selectively delegated
-public negative decisions without sufficient evidence.
+Selective delegated workflows remain open: the positive guard primitive permits
+exact known dependencies, but the current workflow planner falls back on absent
+custom flows and enumerates functions/posts. Those inventories therefore remain
+strict. Private transitions avoid file/profile materialization; public transitions
+retain the additional strict dependency domains.
+
+Correction after planner review: the preceding selective-private completion claim
+is withdrawn. Default-flow fallback and function/post enumeration make absence
+decisions even for private stages; those inventories are strict again. The
+positive guard primitive remains valid for exact known dependencies, but no
+closed workflow dependency contract exists yet. Selective delegated workflow
+completion remains open; ordinary authorization has not been relaxed.

@@ -21,16 +21,18 @@ export async function guardedStoryTransition({ api, actor, entry, to, current, a
 		const item = target.rows?.find((/** @type {any} */ row) => row.entry === entry);
 		if (!item || item.deleted || !(item.writers ?? []).includes(actor)) throw new Error('The story is not locally writable');
 		const ownQuery = { op: 'entry_views', vault: item.vault, as: actor, types: ['flow', 'function', 'post'] };
-		const own = await capture(ownQuery);
+		const own = await capture(ownQuery, true);
 		const city = seedCity(summary)?.id;
 		const trustedQuery = city && city !== item.vault ? { op: 'entry_views', vault: city, as: actor, types: ['flow', 'function'] } : null;
-		const trusted = trustedQuery ? await capture(trustedQuery) : { rows: [] };
+		const trusted = trustedQuery ? await capture(trustedQuery, true) : { rows: [] };
 		let world = { ...summary, entries: [...own.rows, ...trusted.rows, item] };
 		const flow = flowsFor(world, item.vault, about)[0] ?? (about === 'post' ? CONTENT : STORY);
 		const from = stageOf(item, flow);
 		const destination = flow.stages.find(stage => stage.key === to);
-		// Private transitions use positive authorized inputs; public decisions
-		// additionally retain complete local domain evidence through execution.
+		// Flow fallback and function/post enumeration make absence decisions even
+		// for private transitions, so their inventories above remain strict.
+		// Only exact target/summary reads are positive-only. Public transitions
+		// additionally require the profile/file domain.
 		if (from?.public || destination?.public) {
 			const publicInputs = await capture({ ...ownQuery, types: ['flow', 'function', 'post', 'profile', 'file'] }, true);
 			if (trustedQuery) await capture(trustedQuery, true);
