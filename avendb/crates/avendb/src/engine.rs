@@ -940,7 +940,21 @@ fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resul
             "completeAtOwnerCut":ready,"localComplete":false,"remoteComplete":false}));
         return Ok(Some(result));
     }
-    Ok(world::entry_views_tag(lab, me, vault, ids.as_deref(), actor, types.as_deref(), kind, tag))
+    let mut result=world::entry_views_tag(lab, me, vault, ids.as_deref(), actor, types.as_deref(), kind, tag);
+    if ids.is_none() && kind.is_none() {
+        let exact=match(types.as_ref(),tag) {
+            (Some(types),None)=>Some(crate::lab::DiscoveryScope::Types(types.clone())),
+            (None,Some(tag))=>Some(crate::lab::DiscoveryScope::Tag(tag.to_owned())),
+            _=>None,
+        };
+        if let (Some(vault),Some(scope),Some(result))=(vault,exact,result.as_mut()) {
+            if let Some(hint)=lab.automatic_discovery_hint(me,actor,vault,scope) {
+                let scope=result.scope.get_or_insert_with(||json!({}));
+                scope["discovery"]=hint;
+            }
+        }
+    }
+    Ok(result)
 }
 
 fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &SyncedTo) -> Result<Value, Refused> {
