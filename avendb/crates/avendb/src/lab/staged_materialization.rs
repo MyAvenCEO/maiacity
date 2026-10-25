@@ -356,10 +356,14 @@ mod tests {
         assert!(lab.held(phone).staged[&entry].next > 0);
         // Policy removals force canonical re-evaluation even if a prefix's entry
         // content itself did not change. An unrelated log rebind cannot bypass it.
-        lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device {
+        let revoked = lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device {
             vault, device: phone, keep: vec![],
         })).unwrap();
-        lab.sync(mac, phone);
+        // A revoked peer is no longer an ordinary sync recipient. Deliver the
+        // signed revocation explicitly to test invalidation after it is observed.
+        let signed = lab.signed_edit(mac, revoked).unwrap().clone();
+        lab.receive(phone, vec![signed], vec![]);
+        assert!(!lab.latest(phone).acts_for(phone, vault));
         assert!(lab.held(phone).staged.get(&entry).is_none_or(|p| p.next == 0));
         lab.stores.get_mut(&phone).unwrap().forget();
         assert!(lab.held(phone).staged.is_empty());
