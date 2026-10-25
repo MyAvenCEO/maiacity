@@ -4,7 +4,7 @@
 use super::*;
 use serde_json::json;
 
-const VERSION: &str = "avendb-scoped-discovery-v1";
+const KIND: &str = "discovery-manifest";
 const MAX_MEMBERS: usize = 512;
 const MAX_HEADS: usize = 64;
 
@@ -144,7 +144,7 @@ impl Lab {
             members.push((entry.id,heads));
         }
         members.sort_by_key(|(entry,_)|*entry);
-        Some(json!({"kind":VERSION,"vault":vault.to_hex(),"scope":scope.json(),
+        Some(json!({"kind":KIND,"vault":vault.to_hex(),"scope":scope.json(),
             "members":members.into_iter().map(|(entry,heads)|json!({"entry":entry.to_hex(),"heads":heads.iter().map(EditId::to_hex).collect::<Vec<_>>()})).collect::<Vec<_>>(),
             "completeAtOwnerCut":true,"remoteComplete":false}))
     }
@@ -191,7 +191,7 @@ impl Lab {
         let record=projection.record(MAIN)?;
         let object=record.as_object()?;
         if object.len()!=6 || object.keys().any(|key|!matches!(key.as_str(),"kind"|"vault"|"scope"|"members"|"completeAtOwnerCut"|"remoteComplete")) {return None;}
-        if record.get("kind")?.as_str()?!=VERSION || record.get("vault")?.as_str()?!=vault.to_hex()
+        if record.get("kind")?.as_str()?!=KIND || record.get("vault")?.as_str()?!=vault.to_hex()
             || record.get("scope")?!=&scope.json() || record.get("completeAtOwnerCut")?!=&Value::Bool(true)
             || record.get("remoteComplete")?!=&Value::Bool(false) {return None;}
         let st=self.state(on);
@@ -370,7 +370,7 @@ mod tests {
         let prepared=w.lab.prepare_discovery_manifest(w.mac_a,w.passkey_a,w.alice,DiscoveryScope::Tag("selected".into())).unwrap();
         let entry=w.lab.complete_discovery_manifest(w.mac_a,prepared,&[]).unwrap();
         assert!(w.lab.reads(w.mac_a,entry));
-        assert_eq!(w.lab.item(w.mac_a,entry).unwrap().record()["kind"],VERSION);
+        assert_eq!(w.lab.item(w.mac_a,entry).unwrap().record()["kind"],KIND);
     }
 
     #[test]
