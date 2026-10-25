@@ -13,8 +13,8 @@
 	"Rest" puts every copy back. `?fresh` builds every asset afresh, keeping nothing; `?boxes=n` builds n at a time.
 -->
 <script>
-	import { foot, FOOT } from '$lib/app/foot.js';
 	// @ts-nocheck — plain JS
+	import { foot, FOOT } from '$lib/app/foot.js';
 	import { onDestroy, onMount } from 'svelte';
 	import * as THREE from 'three';
 	import { createSky, createStage, createWalker, WalkHint, WorldBar } from '$lib/sandbox-kit';

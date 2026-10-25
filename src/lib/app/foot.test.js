@@ -1,3 +1,4 @@
+// @ts-nocheck — Bun test fixture
 import { test, expect } from 'bun:test';
 import { foot, footHost, FOOT } from './foot.js';
 function element() { return { style: {}, parent: null, children: [], append(child) { child.remove(); this.children.push(child); child.parent = this; }, remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this); this.parent = null; } }; }

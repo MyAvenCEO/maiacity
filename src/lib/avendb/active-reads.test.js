@@ -1,3 +1,4 @@
+// @ts-nocheck — Bun test fixture
 import { test, expect } from 'bun:test';
 import { activeRead, watchActiveReads } from './active-reads.js';
 test('mounted read status does not retain old views after cancel or close', () => {

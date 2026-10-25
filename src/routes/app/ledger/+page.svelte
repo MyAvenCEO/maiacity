@@ -6,8 +6,8 @@
 	view as the game's Ledger card).
 -->
 <script>
-	import { foot, FOOT } from '$lib/app/foot.js';
 	// @ts-nocheck — plain JS
+	import { foot, FOOT } from '$lib/app/foot.js';
 	import { base } from '$app/paths';
 	import { COOPS, MINDS, SEATS, TOKEN_COLOUR, TOKEN_LABEL, calendar, dateText, heartsValue, inHearts, mintState, nameOf } from '../../../../game/maiacity-v1/engine.js';
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';

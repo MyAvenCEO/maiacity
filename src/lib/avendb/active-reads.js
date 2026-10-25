@@ -7,8 +7,10 @@ const emit = () => { const value = snapshot(); for (const listener of listeners)
 export function activeRead() {
  const token = {};
  return {
+  /** @param {'pending' | 'local' | 'unavailable'} state */
   set(state) { windows.set(token, state); emit(); },
   clear() { if (windows.delete(token)) emit(); }
  };
 }
+/** @param {(value: { total: number, pending: number, local: number }) => void} listener */
 export function watchActiveReads(listener) { listeners.add(listener); listener(snapshot()); return () => listeners.delete(listener); }

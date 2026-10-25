@@ -130,6 +130,7 @@ export function createReadWindow({ device, read }) {
 			} catch (error) {
 				if (!active()) return null;
 				clear();
+				observed.set('unavailable');
 				throw error;
 			}
 		},

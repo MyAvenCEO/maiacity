@@ -13,6 +13,7 @@
 	import { sync, watchSync } from '$lib/avendb/sync.svelte.js';
 	import { peerStatus } from '$lib/avendb/sync-status.js';
 	import { watchRecipes } from '$lib/assets/vault.js';
+	import { viewStatus } from '$lib/avendb/view-status.js';
 	import { watchActiveReads } from '$lib/avendb/active-reads.js';
 	import { foot, FOOT } from './foot.js';
 
@@ -50,15 +51,13 @@
 
 	const n = (/** @type {number} */ x) => x.toLocaleString('en');
 	const background = $derived(!sync.known ? 'Background · status unavailable' : !sync.peers ? 'Background · offline' : sync.behind > 0 ? `Background · syncing ${n(sync.behind)} logs` : sync.pulling > 0 ? 'Background · checking updates' : sync.logs > 0 ? 'Background · up to date' : 'Background · checking peers');
-	const label = $derived(files.waiting > 0 ? `View · waiting for ${n(files.waiting)} files` : files.reading > 0 ? `View · loading ${n(files.reading)} files` : reads.pending > 0 ? `Loading this view · ${n(reads.pending)} reads` : 'Checking this view');
-	const details = $derived(
-		[
-			`${reads.local} of ${reads.total} active reads have a local response. View readiness is not yet fully measured. Background log coverage does not establish that the current view or its files are complete.`,
-			...peers.details,
-			files.reading > 0 && `This page: ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'} on the way${files.waiting ? `, ${n(files.waiting)} waiting to become available locally` : ''}`
-		].filter(Boolean)
-	);
-	const fraction = $derived(reads.pending > 0 || files.reading > 0 || files.waiting > 0 ? null : 1);
+	const view = $derived(viewStatus(reads, files));
+	const label = $derived(view.label);
+	const details = $derived([
+		view.state === 'local' ? 'Current local reads have answered. More content may arrive from peers.' : view.state === 'unavailable' ? 'Some local reads could not return data. Open diagnostics for details.' : 'This view may still be missing data or files.',
+		'Background status covers incoming announced logs, not delivery to other devices. Open diagnostics for sync details.'
+	]);
+	const fraction = $derived(view.state === 'loading' || view.state === 'waiting' ? null : view.state === 'local' ? 1 : 0);
 	/** the ring: how far the sync is, or a turning arc while it can't say */
 	const R = 7;
 	const ROUND = 2 * Math.PI * R;
