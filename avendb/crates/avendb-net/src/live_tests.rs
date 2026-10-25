@@ -567,11 +567,18 @@ async fn mixed_chat_demand(grouped: bool) {
             share: *grant, actor: vault, keep: vec![], via: vec![],
         })).unwrap();
     }
-    let room = avendb::doc::Item::made(avendb::lens::View::built_in("room").unwrap(),
-        &serde_json::json!({"kind":"room", "name":"Shared Chat", "look":"group",
-            "messages":[{"id":1,"text":"owner first message"}]}), sender).unwrap();
-    let target = w.lab.create(sender, vault, vault, "room", &[], room).unwrap();
-    let caps=|| Level::Write.ops().into_iter().map(|op|avendb::rules::Cap {op,slice:by_id(target)}).collect();
+    // Use the same public operations as Chat: create fills schema defaults,
+    // and insert tags each authored row with the Room schema.
+    let created=avendb::engine::run(&mut w.lab,sender,&serde_json::json!({
+        "op":"create","vault":vault.to_hex(),"as":vault.to_hex(),"type":"room","tags":[],
+        "value":{"kind":"room","name":"Shared Chat","look":"group","topic":""}}));
+    let target=EntryId::from_hex(created["ok"]["entry"].as_str()
+        .unwrap_or_else(||panic!("room creation refused: {created}"))).unwrap();
+    let first=avendb::engine::run(&mut w.lab,sender,&serde_json::json!({
+        "op":"insert","entry":target.to_hex(),"as":vault.to_hex(),"path":["messages"],
+        "value":{"id":1,"text":"owner first message","at":1,"mentions":[]}}));
+    assert!(first.get("ok").is_some(),"owner Chat insert refused: {first}");
+    let caps=|| avendb::rules::member().into_iter().map(|op|avendb::rules::Cap {op,slice:by_id(target)}).collect();
     let group_history=if grouped {
         let child=w.lab.define_group(sender,vault,avendb::rules::CapGroup{name:"Historical writer".into(),caps:caps(),includes:vec![]}).unwrap();
         let root=w.lab.define_group(sender,vault,avendb::rules::CapGroup{name:"Participants".into(),caps:vec![],includes:vec![child]}).unwrap();
@@ -581,7 +588,9 @@ async fn mixed_chat_demand(grouped: bool) {
         }).unwrap();
         Some((root,child))
     } else {
-        w.lab.issue(sender, &[sender], share(vault, Who::Vault(bob_vault), Level::Write, by_id(target))).unwrap();
+        let mut member=share(vault, Who::Vault(bob_vault), Level::Write, by_id(target));
+        member.name="Member".into(); member.ops=avendb::rules::member();
+        w.lab.issue(sender, &[sender], member).unwrap();
         None
     };
     let unrelated_group=if grouped {
@@ -595,11 +604,10 @@ async fn mixed_chat_demand(grouped: bool) {
         Some(group)
     } else {None};
     w.lab.sync_all(0);
-    w.lab.edit(bob,bob_vault,target,|item| {
-        let mut record=item.record();
-        record["messages"].as_array_mut().unwrap().push(serde_json::json!({"id":2,"text":"participant second message"}));
-        item.put_record(&record);
-    }).unwrap();
+    let second=avendb::engine::run(&mut w.lab,bob,&serde_json::json!({
+        "op":"insert","entry":target.to_hex(),"as":bob_vault.to_hex(),"path":["messages"],
+        "value":{"id":2,"text":"participant second message","at":2,"mentions":[]}}));
+    assert!(second.get("ok").is_some(),"participant Chat insert refused: {second}");
     w.lab.sync(bob,sender);
     assert!(w.lab.item(sender,target).unwrap().record()["messages"].as_array().unwrap().iter()
         .any(|m|m["id"]==2), "fixture participant write must actually count");
@@ -670,11 +678,10 @@ async fn mixed_chat_demand(grouped: bool) {
         let mut updates = phone.stirs();
         bob_node.know(mac.addr()); mac.know(bob_node.addr());
         bob_node.shared.connection(mac.id()).await?;
-        bob_node.act(move |lab, me| lab.edit(me, bob_vault, target, |item| {
-            let mut record=item.record();
-            record["messages"].as_array_mut().unwrap().push(serde_json::json!({"id":3,"text":"participant live message"}));
-            item.put_record(&record);
-        })).await.map_err(|refusal| anyhow::anyhow!("participant live edit refused: {refusal:?}"))?;
+        let third=bob_node.op(serde_json::json!({
+            "op":"insert","entry":target.to_hex(),"as":bob_vault.to_hex(),"path":["messages"],
+            "value":{"id":3,"text":"participant live message","at":3,"mentions":[]}})).await?;
+        anyhow::ensure!(third.get("ok").is_some(),"participant live Chat insert refused: {third}");
         time::timeout(Duration::from_secs(20), async {
             loop {
                 updates.borrow_and_update();

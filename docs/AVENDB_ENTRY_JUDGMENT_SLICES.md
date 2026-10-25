@@ -176,3 +176,15 @@ The focused starvation regression holds every normal slot, admits exactly two
 authority operations, checks bounded waiters/cancellation, refuses target-history
 requests and verifies common page capacity cannot be exceeded. Lean model and
 Rust parsing pass; Rust runtime and the original long-base gate remain pending.
+
+### Chat fixture uses the actual public authoring operations
+
+The first mixed-room runtime failed during fixture construction, before demand:
+`Item::made` was given an incomplete nested view without the public engine's
+schema-default completion. The fixture now follows Chat's actual create and
+insert operations, including timestamps/mentions. Participant permissions use
+`rules::member()` (also for the historical grouped variant), rather than the
+broader Editor/Write operation set. Plain Member still has wire authority level
+Write; Member is an operation group, not a Rust Level enum. Each public response
+must report success and received row assertions remain unchanged. Parser passed;
+runtime rerun pending.
