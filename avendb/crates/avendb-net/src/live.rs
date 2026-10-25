@@ -134,8 +134,9 @@ impl Shared {
             // Release the obsolete queue immediately. Already received durable
             // data remains available; background materialization may retain it.
             drop(work);
-            if attempt.is_some() && origin.active() { shared.materialize_live().await; }
-            else { shared.jobs.stir(); }
+            if attempt.is_some() && origin.active() {
+                let _ = origin.run(shared.materialize_live()).await;
+            } else { shared.jobs.stir(); }
         });
     }
 
