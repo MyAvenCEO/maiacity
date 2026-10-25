@@ -11,6 +11,9 @@ export function readCompleteness(answer) {
  const partialFiles = value?.filesComplete === false || rows.some((/** @type {any} */ row) => row?.filesComplete === false);
  const count = (/** @type {unknown} */ n) => typeof n === 'number' && Number.isSafeInteger(n) && n > 0 ? n : 0;
  return {
+  deferredCandidates: count(value?.readiness?.deferredCandidates),
+  countExact: typeof value?.countExact === 'boolean' ? value.countExact : null,
+  pageComplete: typeof value?.pageComplete === 'boolean' ? value.pageComplete : null,
   pendingJudgments: count(value?.readiness?.pendingJudgments),
   unresolvedCandidates: count(value?.readiness?.unresolvedCandidates),
   response: present ? 'local' : 'unavailable',

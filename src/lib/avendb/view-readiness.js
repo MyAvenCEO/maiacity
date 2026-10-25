@@ -5,6 +5,7 @@ export const viewReadiness={
  record(completeness, answer) {
   const ok=answer?.ok;
   samples.push({at:Date.now(), response:completeness.response, discovery:completeness.discovery, history:completeness.history,
+   deferredCandidates:completeness.deferredCandidates,countExact:completeness.countExact,pageComplete:completeness.pageComplete,
    pendingJudgments:completeness.pendingJudgments, unresolvedCandidates:completeness.unresolvedCandidates,
    rows:Array.isArray(ok?.rows) ? ok.rows.length : null,
    pendingEntries:Array.isArray(ok?.pendingEntries) ? ok.pendingEntries.length : null});
