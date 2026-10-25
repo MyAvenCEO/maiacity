@@ -10,9 +10,11 @@
 <script>
 	import { flowsFor, STORY, stageOf, stageTag } from './flows.js';
 	import Frame from './Frame.svelte';
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { storiesQuery, storyFallbackQuery } from './stories-query.js';
 	import Icon from './Icon.svelte';
 	import { allowed, creatable, may } from './ops.js';
-	import { authorsLine, count, nameOf, reads, why } from './vaults.js';
+	import { authorsLine, count, nameOf, reads, why, seedCity } from './vaults.js';
 
 	/** The type of a story's entry, and the kind of its record. */
 	const TYPE = 'story';
@@ -26,7 +28,9 @@
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
 	const as = $derived(byId.get(actor));
-	const entries = $derived(world.entries.filter((e) => e.vault === vault));
+	const inventory = entryCollection(() => api, () => storiesQuery(vault, actor));
+	const defaults = entryCollection(() => api, () => storyFallbackQuery(vault, actor, seedCity(world)?.id));
+	const entries = $derived(inventory.rows.filter((e) => e.vault === vault));
 	const seen = $derived(entries.filter((e) => reads(e, actor)));
 	const stories = $derived(
 		seen.filter((e) => e.type === TYPE && !e.deleted).sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
@@ -34,7 +38,7 @@
 	const hidden = $derived(entries.length - seen.length);
 
 	/** the flow its stories go through: the vault's own story flow first, else the app's */
-	const flow = $derived(flowsFor(world, vault, TYPE)[0] ?? STORY);
+	const flow = $derived(flowsFor({ ...world, entries: [...entries, ...defaults.rows].filter((e) => reads(e, actor)) }, vault, TYPE)[0] ?? STORY);
 	/** the stories in each stage, and those in none of them (a tag taken off by hand) */
 	const columns = $derived(
 		flow.stages.map((s) => ({ stage: s, stories: stories.filter((e) => stageOf(e, flow)?.key === s.key) }))
@@ -79,7 +83,7 @@
 
 	async function add() {
 		const name = title.trim();
-		if (!name) return;
+		if (!name || inventory.phase !== 'ready' || defaults.phase !== 'ready' || !asked || unadded) return;
 		const made = await api.run(`Starting “${name}”`, { ...adding(name), as: actor });
 		if (made) {
 			title = '';
@@ -117,19 +121,20 @@
 				bind:value={title}
 				placeholder="A new story, its working title"
 				aria-label="The new story's working title"
-				disabled={busy || !!unadded}
+				disabled={busy || !!unadded || inventory.phase !== 'ready' || defaults.phase !== 'ready'}
 			/>
-			<button class="btn primary" disabled={busy || !!unadded || !title.trim()}>Start it as an idea</button>
+			<button class="btn primary" disabled={busy || !!unadded || !title.trim() || inventory.phase !== 'ready' || defaults.phase !== 'ready'}>Start it as an idea</button>
 			{#if unadded}<p class="soft">{nameOf(as)} can’t add a story here: {unadded}.</p>{/if}
 		</form>
 	{/if}
 
-	{#if !boarded}
-		<p class="soft">
-			{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}: none of
-			it is shared with {nameOf(as)}. A vault that owns it can share its stories with {nameOf(as)} in
-			<button class="link" onclick={onaccess}>Sharing</button>.
-		</p>
+	<p class="soft" role="status">Showing stories and workflow stages available locally; discovery may still be incomplete.{defaults.phase === 'loading' ? ' Loading shared workflow definitions…' : defaults.phase === 'error' ? ' Shared workflow definitions are unavailable.' : ''}</p>
+	{#if inventory.phase === 'loading' && !seen.length}
+		<p role="status">Loading local stories…</p>
+	{:else if inventory.phase === 'error'}
+		<p role="alert">Local stories are unavailable: {inventory.error}</p>
+	{:else if !boarded}
+		<p class="soft">No readable stories are available locally yet. This does not establish that nothing is shared with {nameOf(as)}. <button class="link" onclick={onaccess}>Sharing</button>.</p>
 	{:else}
 		<div class="board" bind:this={board} aria-label="{nameOf(here)}'s stories by stage">
 			{#each columns as { stage, stories: in_ } (stage.id)}
@@ -160,7 +165,7 @@
 		{#if !stories.length}
 			<p class="soft empty">
 				<Icon name="story" size={18} />
-				No story in {nameOf(here)}{asked ? ' yet: start one above.' : '.'}
+				No stories are available locally yet in {nameOf(here)}.
 			</p>
 		{/if}
 	{/if}
