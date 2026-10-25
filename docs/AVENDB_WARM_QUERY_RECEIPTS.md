@@ -44,6 +44,8 @@ acknowledged as a complete warm capture.
 
 ## Validation and handoff
 
+Implementation: [92e9cb29](https://github.com/MyAvenCEO/maiacity/commit/92e9cb29).
+
 - Lean WarmQueryReceipt proves stale/unauthorized/payload rejection and page
   equivalence under equal membership decisions. Local module check passed.
 - Rust syntax parsed with rustfmt; diff whitespace check passed.
