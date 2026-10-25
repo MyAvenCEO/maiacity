@@ -101,4 +101,101 @@ mod tests {
         node.shutdown().await.unwrap();drop(node);
         std::fs::remove_dir_all(folder).unwrap();
     }
+    #[tokio::test(flavor="multi_thread",worker_threads=4)]
+    async fn manifest_demand_advances_beyond_eight_read_only_members_with_history_withheld() {
+        use n0_future::{future,time::{self,Duration}};
+        use std::collections::BTreeSet;
+        use avendb::id::EntryId;
+        let mut w=cast::world();
+        let (sender,receiver,owner,vault)=(w.mac_a,w.phone_a,w.passkey_a,w.alice);
+        let receiver_lab=w.lab.split(receiver,&[],[187;32]);
+        let mut members=Vec::new();
+        let mut pinned=Vec::new();
+        for n in 0..12 {
+            let entry=w.lab.create(sender,vault,vault,"manifest-note",&["selected"],Item::todo("old",sender)).unwrap();
+            for revision in 0..3 {
+                w.lab.edit(sender,vault,entry,|item|{let mut record=item.record();record["title"]=json!(format!("latest-{n}-{revision}"));item.put_record(&record);}).unwrap();
+            }
+            let expected=w.lab.item(sender,entry).unwrap().record()["title"].as_str().unwrap().to_owned();
+            let p=w.lab.draft_entry_projection(sender,&[owner],entry).unwrap();
+            w.lab.complete(sender,p.draft,&[]).unwrap();
+            pinned.push((entry,p.root,p.sealed));
+            members.push((entry,expected));
+        }
+        let unrelated=w.lab.create(sender,vault,vault,"unrelated",&[],Item::todo("not demanded",sender)).unwrap();
+        let record=w.lab.discovery_manifest_record(sender,vault,DiscoveryScope::Types(vec!["manifest-note".into()])).unwrap();
+        let mut item=Item::new(sender);item.put_record(&record);
+        let carrier=w.lab.create(sender,vault,vault,"discovery-manifest",&[],item).unwrap();
+        let p=w.lab.draft_entry_projection(sender,&[owner],carrier).unwrap();
+        w.lab.complete(sender,p.draft,&[]).unwrap();pinned.push((carrier,p.root,p.sealed));
+        let mac=Node::spawn(w.lab.split(sender,&[],[188;32]),sender,Options::local()).await.unwrap();
+        // Pin normally owner-signed fixtures. The transport still validates each
+        // signed offer/hash/permission; no receiver state is injected by this test.
+        for (entry,root,sealed) in pinned {
+            let temporary=mac.shared.store.add_bytes_with_opts((sealed,BlobFormat::Raw)).temp_tag().await.unwrap();
+            mac.shared.store.tags().set([b"avendb/checkpoint/".as_slice(),&entry.0].concat(),HashAndFormat::new(Hash::from_bytes(root.hash),BlobFormat::Raw)).await.unwrap();
+            drop(temporary);
+        }
+        let phone=Node::spawn(receiver_lab,receiver,Options::local()).await.unwrap();
+        let mut stalled=Vec::new();
+        loop {
+            let mut waiting=Box::pin(phone.shared.pulls.enter(false,None));
+            let Some(permit)=future::poll_once(&mut waiting).await else {break;};
+            stalled.push(permit.unwrap());
+        }
+        assert!(!stalled.is_empty(),"ordinary and live history are deliberately withheld");
+        phone.know(mac.addr());mac.know(phone.addr());
+        phone.shared.connection(mac.id()).await.unwrap();
+        let lease="e7".repeat(16);
+        let queries=json!([{"vault":vault.to_hex(),"types":["discovery-manifest"]},{"vault":vault.to_hex(),"types":["manifest-note"]}]);
+        let mut revision=1u64;
+        let ack=phone.op(json!({"op":"demand","scope":lease,"revision":revision,"entries":[],"queries":queries})).await.unwrap();
+        assert_eq!(ack["ok"]["discovery_supported"],true);
+        let query=json!({"op":"entry_views","vault":vault.to_hex(),"types":["manifest-note"]});
+        let mut observed=BTreeSet::new();
+        let mut prior=Vec::<String>::new();
+        let mut last=Value::Null;
+        let progressed=time::timeout(Duration::from_secs(40),async {
+            loop {
+                let answer=phone.op(query.clone()).await.unwrap();
+                let rows=answer["ok"]["rows"].as_array().cloned().unwrap_or_default();
+                for row in &rows {
+                    let Some(id)=row["entry"].as_str().and_then(EntryId::from_hex) else {continue;};
+                    if let Some((_,expected))=members.iter().find(|(entry,_)|*entry==id) {
+                        if row["title"]==*expected {
+                            assert_eq!(row["readOnly"],true);
+                            assert_eq!(row["checkpoint"]["partial"],true);
+                            observed.insert(id);
+                        }
+                    }
+                }
+                assert_ne!(answer["ok"]["scope"]["localComplete"],true);
+                assert_ne!(answer["ok"]["scope"]["completeAtOwnerCut"],true);
+                let hint=&answer["ok"]["scope"]["discovery"];
+                let mut wanted=Vec::<String>::new();
+                if hint["basis"]=="owner-attested-cut" {
+                    for id in hint["pendingEntries"].as_array().into_iter().flatten().filter_map(Value::as_str) {wanted.push(id.to_owned());}
+                    if let Some(id)=hint["entry"].as_str(){wanted.push(id.to_owned());}
+                }
+                for row in rows {if let Some(id)=row["entry"].as_str(){if !wanted.iter().any(|old|old==id){wanted.push(id.to_owned());}}}
+                wanted.truncate(512);
+                last=answer;
+                if observed.len()==members.len(){break;}
+                if wanted!=prior {
+                    revision+=1;
+                    phone.op(json!({"op":"demand","scope":lease,"revision":revision,"entries":wanted,"queries":queries})).await.unwrap();
+                    prior=wanted;
+                }
+                time::sleep(Duration::from_millis(20)).await;
+            }
+        }).await;
+        let ids:Vec<_>=members.iter().map(|(id,_)|*id).collect();
+        let still_incomplete=phone.read(move|lab,me| ids.iter().all(|id|lab.history(me,*id).is_none_or(|history|history.changes().len()<4)) && lab.item(me,unrelated).is_none()).await;
+        drop(stalled);
+        phone.shutdown().await.unwrap();mac.shutdown().await.unwrap();
+        assert!(progressed.is_ok(),"only {} of 12 read-only members advanced; last query {last}",observed.len());
+        assert_eq!(observed.len(),12);
+        assert!(still_incomplete,"checkpoint visibility must not depend on ordinary history/unrelated sync");
+    }
+
 }

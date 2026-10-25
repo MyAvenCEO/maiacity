@@ -73,3 +73,12 @@ theorem unrelated_projection_not_fulfilled (authorized available : Bool) :
     projectedFulfillment authorized available false = false := by
   cases authorized <;> cases available <;> rfl
 end ScopedDiscoveryManifest
+
+namespace ScopedDiscoveryManifest
+-- An authenticated projected row may render before history. Its rendering never
+-- supplies local-history completeness or mutation permission.
+def projectionReadOnly (_currentAuthorized : Bool) := true
+def projectionLocalComplete (_mainAvailable : Bool) := false
+theorem projection_remains_read_only (authorized : Bool) : projectionReadOnly authorized = true := rfl
+theorem projection_does_not_complete_history (available : Bool) : projectionLocalComplete available = false := rfl
+end ScopedDiscoveryManifest
