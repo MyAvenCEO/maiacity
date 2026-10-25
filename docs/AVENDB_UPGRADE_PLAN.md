@@ -7,6 +7,16 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 ## Active-view execution checkpoint — 25 October 2026, morning
 
 This section supersedes delivery/status statements in older snapshots below.
+
+### Latest integration: manifest windows and shared-writer closure
+
+- **Done code, pushed; deployment open:** [1e7c95d3](https://github.com/MyAvenCEO/maiacity/commit/1e7c95d3) pushes each manifest leaf's type/tags/newest order/window into the universal query rather than hydrating an unlimited union first. Unlimited declarations page in batches of128. Query-specific unresolved candidates prevent a local-loaded indication; unrelated node-wide pending judgment does not block a fully answered view.
+- **Done code, pushed; deployment open:** [530817fc](https://github.com/MyAvenCEO/maiacity/commit/530817fc) replaces Studio footage's world read with bounded file/task collection queries. Differential regression preserves derived media results and excludes unrelated rooms. This still reads all matching files/tasks and spilled transcript/analysis before returning; progressive first-page rendering remains open.
+- Combined focused JavaScript verification: **57 tests passed, 270 assertions** across manifest, readiness, query-window, footage and collection suites. This does not prove physical-device latency.
+- **Doing, runtime validation pending:** [cf7c7ce2](https://github.com/MyAvenCEO/maiacity/commit/cf7c7ce2) adds owner-created Main histories with participant writes through plain grants, plus an actual Room/Member cold-demand/live-message fixture. [9edad5e0](https://github.com/MyAvenCEO/maiacity/commit/9edad5e0) adds bounded historical group dependency collection. Combined Lean specification passed. Complete group-backed authority closure and mixed-author checkpoint suffix integration remain open.
+- Latest network runtime at Rust source2ebcbc70: **14 authority tests passed, one failed**. The previously failing checkpoint-covered grant discovery now passes. The new outside-ancestry witness fixture failed its *initial withheld-inventory precondition*, before testing transfer; a corrective fixture is prepared but not included in these results. Five suffix queue/cancellation regressions passed. The mixed-author source is in a separate subsequent compile; do not attribute old results to it.
+- Website/PWA, hosted peer and Mac are **not updated to this batch**. Fresh-device shared/group-room proof, responsiveness under heavy catch-up, matching artifacts and physical iPhone/iPad acceptance remain required.
+
 The full goal remains **incomplete**; do not equate available code with deployed,
 measured fresh-device behavior.
 
