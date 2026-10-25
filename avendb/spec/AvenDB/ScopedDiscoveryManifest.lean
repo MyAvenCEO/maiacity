@@ -32,3 +32,11 @@ theorem inherited_reader_must_read_members (carrier members : List Nat)
     (safe : safeDisclosure carrier members) (reader : Nat) (h : reader ∈ carrier) :
     reader ∈ members := safe reader h
 end ScopedDiscoveryManifest
+
+namespace ScopedDiscoveryManifest
+-- Automatic selection changes scheduling only. Negative proof remains an
+-- explicit accepted-cut query; ordinary result completeness is unchanged.
+def automaticCompleteness (ordinary : Bool) (_hintSelected : Bool) := ordinary
+theorem automatic_hint_does_not_promote_incomplete (selected : Bool) :
+    automaticCompleteness false selected = false := rfl
+end ScopedDiscoveryManifest

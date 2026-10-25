@@ -91,3 +91,25 @@ an authenticator must return an approval requirement without keeping a carrier.
 These tests are pending the granted native run; JS demand/completeness tests pass.
 Automatic background republishing and automatic carrier-sharing policy are still
 absent; no implicit standing owner consent has been added.
+
+## Automatic active-view selection (follow-up candidate)
+
+Normal `entry_views` reads with one exact vault/types or vault/tag scope now look
+for an already retained, currently authorized owner-attested carrier matching the
+normalized scope. They attach it as `scope.discovery` and keep all ordinary
+locally readable rows and their existing completeness. This is scheduling evidence,
+not implicit consent to use an old cut for a negative decision. Only an explicitly
+snapshot-bound manifest query can promote strict accepted-cut guard evidence.
+
+Read windows discover ordinary authorized `discovery-manifest` entries alongside
+the view's own types, then prioritize the selected carrier and its disclosed IDs.
+No manual carrier IDs, owner publication, or new privileges are involved. Normal
+navigation/cancellation releases the same scoped demand lease. Selection examines
+only the bounded retained projection set, without decoding unrelated entry bodies.
+If a carrier is not yet retained its ordinary discovery/demand must first restore
+it. Global queries, combined filters and semantic-kind queries do not silently
+choose a narrower manifest. Automatic selection across these broader query forms
+remains outside this exact-scope path.
+
+JS query-window regression: 23 tests passed, 94 assertions. Core automatic-selection
+assertions are added to the native manifest regression and remain pending Cargo.

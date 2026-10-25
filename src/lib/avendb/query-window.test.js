@@ -40,7 +40,7 @@ test('discovery extracts only bounded positive types and never widens an invalid
 
 test('typed inventory reads publish only explicit bounded types within their vault', () => {
 	for (const op of ['database', 'entry_views']) {
-		expect(queryDiscovery({ op, vault: id(9), types: ['recipe', 'recipe'], where: { type: ['private'] } })).toEqual([{ types: ['recipe'], vault: id(9) }]);
+		expect(queryDiscovery({ op, vault: id(9), types: ['recipe', 'recipe'], where: { type: ['private'] } })).toEqual([{ types: ['recipe'], vault: id(9) }, ...(op === 'entry_views' ? [{ types: ['discovery-manifest'], vault: id(9) }] : [])]);
 		expect(queryDiscovery({ op, vault: 'invalid', types: ['recipe'] })).toEqual([]);
 		expect(queryDiscovery({ op })).toEqual([]);
 		expect(queryDiscovery({ op, types: Array.from({ length: 20 }, (_, i) => `type-${i}`) })[0].types.length).toBe(8);
@@ -279,4 +279,27 @@ test('manifest pending targets pass through the existing scoped demand and close
  expect(JSON.stringify(calls)).toContain(member);
  window.close();await flush();
  expect(calls.at(-1).entries).toEqual([]);
+});
+
+
+test('ordinary view demand discovers approved carriers and follows selected members without manual IDs', async () => {
+    const d = node();
+    const answer = { ok: { rows: [{ entry: id(1) }], scope: { localComplete: false, discovery: {
+        basis: 'owner-attested-cut', entry: id(2), snapshot: id(3), pendingEntries: [id(4)], remoteComplete: false
+    } } } };
+    const window = createReadWindow({ device: () => d, read: async () => answer });
+    expect(await window.read({ op: 'entry_views', vault: id(9), tag: 'inbox' })).toBe(answer);
+    await flush();
+    expect(d.calls.at(-1).entries).toEqual([id(1), id(2), id(4)]);
+    expect(d.calls.at(-1).queries).toEqual([{ types: ['discovery-manifest'], vault: id(9) }]);
+    expect(answer.ok.scope.localComplete).toBe(false);
+    expect(answer.ok.scope.completeAtOwnerCut).toBeUndefined();
+    window.close(); await flush();
+    expect(d.calls.at(-1).entries).toEqual([]);
+});
+
+test('unqualified or malformed discovery metadata does not create target hints', () => {
+    expect(replyEntries({ ok: { scope: { discovery: { entry: id(2), snapshot: id(3), pendingEntries: [id(4)] } } } })).toEqual([]);
+    expect(queryDiscovery({ op: 'entry_views', vault: id(9), entries: [id(1)] })).toEqual([]);
+    expect(queryDiscovery({ op: 'entry_views', tag: 'private' })).toEqual([]);
 });

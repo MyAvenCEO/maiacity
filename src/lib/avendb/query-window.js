@@ -9,7 +9,11 @@ export function replyEntries(got) {
 	if (!ok || typeof ok !== 'object') return [];
 	const pending = ok.scope?.basis === 'owner-attested-cut' && /^[0-9a-f]{64}$/.test(ok.scope?.snapshot ?? '') && Array.isArray(ok.scope?.pendingEntries)
 		? ok.scope.pendingEntries.slice(0, 512).map(entry => ({ entry })) : [];
-	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items', 'lines'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : []), ...pending];
+	const automatic = ok.scope?.discovery;
+	const selected = automatic?.basis === 'owner-attested-cut' && /^[0-9a-f]{64}$/.test(automatic?.snapshot ?? '')
+		&& /^[0-9a-f]{64}$/.test(automatic?.entry ?? '')
+		? [{ entry: automatic.entry }, ...(Array.isArray(automatic.pendingEntries) ? automatic.pendingEntries.slice(0, 512).map(entry => ({ entry })) : [])] : [];
+	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items', 'lines'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : []), ...pending, ...selected];
 	return [...new Set(rows.map((r) => r?.entry).filter((e) => typeof e === 'string' && /^[0-9a-f]{64}$/.test(e)))];
 }
 
@@ -46,7 +50,14 @@ export function queryDiscovery(op) {
 		// standard file type without narrowing the canonical local kind query;
 		// this hint is not an exhaustive inventory/completeness claim.
 		const types = op.types ?? (op.op === 'entry_views' && op.kind === 'file' && !op.entries ? ['file'] : undefined);
-		return normalizeDiscovery([{ types, ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
+		const hints = [{ types, ...(op.vault === undefined ? {} : { vault: op.vault }) }];
+		// Already owner-published carriers may identify a view's missing members.
+		// This requests ordinary authorized discovery only; it never publishes a cut.
+		if (op.op === 'entry_views' && /^[0-9a-f]{64}$/.test(op.vault ?? '') && !op.entries && !op.kind
+			&& ((Array.isArray(op.types) && op.types.length > 0 && op.types.length <= 8) || (typeof op.tag === 'string' && op.tag.length > 0 && op.tag.length <= 256))) {
+			hints.push({ types: ['discovery-manifest'], vault: op.vault });
+		}
+		return normalizeDiscovery(hints);
 	}
 	if (op?.op !== 'query') return [];
 	const types = new Set(), pending = [op.where];

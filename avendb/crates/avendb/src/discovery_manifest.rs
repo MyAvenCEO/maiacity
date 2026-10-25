@@ -149,6 +149,25 @@ impl Lab {
             "completeAtOwnerCut":true,"remoteComplete":false}))
     }
 
+    /// Select only already authenticated, currently authorized exact-scope cuts.
+    /// This is a scheduling aid; it does not replace current local query rows or
+    /// opt a caller into historical negative evidence.
+    pub fn automatic_discovery_hint(&self,on:SignerId,actor:VaultId,vault:VaultId,scope:DiscoveryScope)->Option<Value> {
+        let scope=scope.normalized()?;
+        let mut candidates:Vec<_>=self.held(on).projections.lock().ok()?.iter()
+            .filter(|((device,_),_)|*device==on)
+            .map(|((_,entry),_)|*entry).collect();
+        candidates.sort();
+        for carrier in candidates.into_iter().rev() {
+            let Some(snapshot)=self.retained_projection_hint(on,carrier) else {continue;};
+            let Some(targets)=self.discovery_manifest_targets(on,actor,vault,scope.clone(),carrier,snapshot) else {continue;};
+            return Some(json!({"basis":"owner-attested-cut","entry":carrier.to_hex(),"snapshot":snapshot.to_hex(),
+                "scope":scope.json(),"pendingEntries":targets.iter().map(EntryId::to_hex).collect::<Vec<_>>(),
+                "remoteComplete":false}));
+        }
+        None
+    }
+
     /// IDs disclosed by the owner-approved carrier. These are scheduling hints,
     /// never per-entry read authority; unknown/revoked entries remain pending.
     pub fn discovery_manifest_targets(&self,on:SignerId,actor:VaultId,vault:VaultId,scope:DiscoveryScope,carrier:EntryId,snapshot:EditId)->Option<Vec<EntryId>> {
@@ -231,6 +250,12 @@ mod tests {
         let retained=prepared.sealed;
         assert!(w.lab.retain_entry_projection(w.mac_a,snapshot,carrier,retained.clone()));
         assert_eq!(w.lab.discovery_manifest_members(w.mac_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]));
+        let ordinary=crate::engine::run(&mut w.lab,w.mac_a,&json!({"op":"entry_views","vault":w.alice.to_hex(),"tag":"selected"}));
+        assert_eq!(ordinary["ok"]["scope"]["discovery"]["entry"],carrier.to_hex());
+        assert_eq!(ordinary["ok"]["scope"]["discovery"]["snapshot"],snapshot.to_hex());
+        assert!(ordinary["ok"]["scope"].get("completeAtOwnerCut").is_none());
+        assert!(w.lab.automatic_discovery_hint(w.mac_a,w.alice,w.alice,DiscoveryScope::Tag("other".into())).is_none());
+
         w.lab.held(w.mac_a).projections.lock().unwrap().clear();
         assert!(w.lab.discovery_manifest_members(w.mac_a,w.alice,w.alice,scope.clone(),carrier,snapshot).is_none());
         assert!(w.lab.retain_entry_projection(w.mac_a,snapshot,carrier,retained));
