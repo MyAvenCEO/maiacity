@@ -1,4 +1,5 @@
 // @ts-nocheck — plain JS
+import { completeQuery } from '../../../game/code/sources/query-continuation.js';
 import { answer } from '../avendb/ops.js';
 /**
  * Chat rooms on avenDB (avendb/docs/ARCHITECTURE.md §8, "Rooms"; plan /mnt/project-files/chat-rooms/plan.md): a room
@@ -241,10 +242,10 @@ export function dayWords(at) {
  * A refused/cancelled read never proves absence. The caller owns and closes its read window. */
 export async function directRoom(read, who) {
  for (let offset = 0; ; ) {
-  const page = answer(await read({ op: 'query', where: { all: [
+  const page = answer(await completeQuery(() => read({ op: 'query', where: { all: [
    { type: ['room'] }, { path: ['look'], eq: 'dm' }, { not: { tag: GONE } }
-  ] }, select: [], order: [['created', 'desc']], offset, limit: 50 }));
-  if (!page || !Array.isArray(page.rows) || !Number.isSafeInteger(page.count)) throw Error('Room lookup did not complete. Please try again.');
+  ] }, select: [], order: [['created', 'desc']], offset, limit: 50 }))); 
+  if (!page || page.countExact === false || page.pageComplete === false || !Array.isArray(page.rows) || !Number.isSafeInteger(page.count)) throw Error('Room lookup did not complete. Please try again.');
   if (page.rows.length) {
    const metadata = answer(await read({ op: 'entry_views', entries: page.rows.map(r => r.entry), types: ['room'] }));
    if (!metadata || !Array.isArray(metadata.rows)) throw Error('Room lookup did not complete. Please try again.');
