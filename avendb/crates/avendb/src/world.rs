@@ -551,25 +551,35 @@ pub struct EntryViews {
     pub entries: Vec<EntryView>,
     pub total_entries: usize,
     pub readable_entries: usize,
+    pub scope: Option<Value>,
 }
 
 impl EntryViews {
     pub fn into_json(self, synced: &SyncedTo) -> Value {
-        json!({ "rows": self.entries.iter().map(|row| entry_json(row, synced)).collect::<Vec<_>>(),
-            "totalEntries": self.total_entries, "readableEntries": self.readable_entries })
+        let mut out = json!({ "rows": self.entries.iter().map(|row| entry_json(row, synced)).collect::<Vec<_>>(),
+            "totalEntries": self.total_entries, "readableEntries": self.readable_entries });
+        if let Some(scope) = self.scope { out["scope"] = scope; }
+        out
     }
 }
 
 pub fn entry_views(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Option<&[EntryId]>, actor: VaultId, types: Option<&[String]>, kind: Option<&str>) -> Option<EntryViews> {
+    entry_views_tag(lab, me, vault, ids, actor, types, kind, None)
+}
+
+pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Option<&[EntryId]>, actor: VaultId, types: Option<&[String]>, kind: Option<&str>, tag: Option<&str>) -> Option<EntryViews> {
     lab.vault_of(me)?;
     let st = lab.state(me);
     let global = vault.is_none() && ids.is_none();
-    if global && types.is_none_or(|types| types.is_empty() || types.len() > 8 || types.iter().any(String::is_empty)) { return None; }
+    if tag.is_some_and(|tag| tag.is_empty() || tag.len() > 256) || (tag.is_some() && (!global || types.is_some() || kind.is_some())) { return None; }
+    if global && tag.is_none() && types.is_none_or(|types| types.is_empty() || types.len() > 8 || types.iter().any(String::is_empty)) { return None; }
     let readable = |en: &Entry| st.public_key(KeyFam::Audience(en.vault, en.audience()))
         || levels(st, en.vault, en.audience()).iter().any(|(v, level)| *v == actor && level.allows(Level::Read));
     let selected_type = |en: &Entry| types.is_none_or(|types| lab.entry_type_hint(me, en.id)
         .is_some_and(|kind| types.iter().any(|ty| ty == kind)));
-    let mut snapshot = EntryViews { entries: vec![], total_entries: 0, readable_entries: 0 };
+    let mut snapshot = EntryViews { entries: vec![], total_entries: 0, readable_entries: 0, scope: None };
+    let mut metadata_known = true;
+    let mut bodies_open = true;
     // Explicit IDs use the canonical policy index, including cross-vault targets; no body scan.
     let selected: Vec<_> = match ids {
         Some(ids) => ids.iter().filter_map(|id| st.entry(*id)).collect(),
@@ -577,7 +587,17 @@ pub fn entry_views(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Option<
     };
     // Global typed discovery rejects unrelated/unreadable entries before any
     // record materialization or draft-history demand; counts disclose only matches.
-    for en in selected.into_iter().filter(|en| (!global || (readable(en) && selected_type(en))) && lab.landed(me, en.id)) {
+    for en in selected {
+        // Tag queries never inspect bodies or expose counts for an unreadable row.
+        if (global || tag.is_some()) && !readable(en) { continue; }
+        if global && !selected_type(en) { continue; }
+        if let Some(tag) = tag {
+            match lab.entry_tag_hint(me, en.id, tag) {
+                Some(true) => {}, Some(false) => continue,
+                None => { metadata_known = false; continue; },
+            }
+        }
+        if !lab.landed(me, en.id) { continue; }
         snapshot.total_entries += 1;
         // The same public/level metadata as EntryView, without opening any record.
         let readable = st.public_key(KeyFam::Audience(en.vault, en.audience()))
@@ -588,8 +608,15 @@ pub fn entry_views(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Option<
             // while preserving custom entry labels and exact File/Note/Todo classification precedence.
             if kind == Some("todo") && lab.item(me, en.id).is_some_and(|item| !item.may_be_todo()) { continue; }
             let row = entry(lab, me, en);
+            if matches!(row.what, What::Sealed) { bodies_open = false; }
             if kind.is_none_or(|kind| row.what.kind() == kind) { snapshot.entries.push(row); }
         }
+    }
+    if let Some(tag) = tag {
+        let replayed = lab.local_inventory_replayed(me);
+        snapshot.scope = Some(json!({"tag":tag,"basis":"current-readable-held-state",
+            "localComplete":replayed && metadata_known && bodies_open,
+            "remoteComplete":false}));
     }
     Some(snapshot)
 }

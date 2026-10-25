@@ -533,6 +533,29 @@ mod tests {
     }
 
     #[test]
+    fn tag_inventory_does_not_decode_unrelated_warm_entries() {
+        let (mut lab, device, _vault, entries, backup, warm) = warmed_notes();
+        let n = backup.signed.len();
+        lab.restore_warm(device, backup, Some(([19;40],n)), &warm);
+        let out = crate::engine::read(&lab,device,&serde_json::json!({"op":"entry_views","tag":"no-such-tag"}));
+        assert_eq!(out["ok"]["rows"],serde_json::json!([]));
+        assert_eq!(out["ok"]["scope"]["remoteComplete"],false);
+        for entry in entries { assert!(lab.held(device).shown[&entry].items.get().is_none()); }
+    }
+
+    #[test]
+    fn tag_inventory_unknown_header_cannot_claim_complete_local_absence() {
+        let (mut lab, device, _vault, entries, backup, warm) = warmed_notes();
+        let n = backup.signed.len();
+        lab.restore_warm(device, backup, Some(([19;40],n)), &warm);
+        let creation = lab.held(device).view().entry(entries[0]).unwrap().creation;
+        lab.stores.get_mut(&device).unwrap().readings.headers.remove(&creation);
+        let out = crate::engine::read(&lab,device,&serde_json::json!({"op":"entry_views","tag":"no-such-tag"}));
+        assert_eq!(out["ok"]["scope"]["localComplete"],false);
+        assert_eq!(out["ok"]["scope"]["remoteComplete"],false);
+    }
+
+    #[test]
     fn warm_metadata_restores_first_view_without_decoding_unrelated_bodies() {
         let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
         let expected: Vec<_> = entries.iter().map(|e| lab.item(device,*e).unwrap().record()).collect();

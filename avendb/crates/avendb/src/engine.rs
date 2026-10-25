@@ -865,7 +865,12 @@ fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resul
     }).transpose()?;
     let actor = o.get("as").map(|_| vault_of(o, "as")).transpose()?.or(vault).or_else(|| lab.vault_of(me));
     let types = o.get("types").map(|_| texts_of(o, "types")).transpose()?;
-    if vault.is_none() && ids.is_none() && types.as_ref().is_none_or(|types|
+    let tag = o.get("tag").map(|value| value.as_str().filter(|tag| !tag.is_empty() && tag.len() <= 256)
+        .ok_or_else(|| bad("tag must be nonempty text of at most 256 bytes"))).transpose()?;
+    if tag.is_some() && ["vault", "entries", "types", "kind"].iter().any(|key| o.contains_key(*key)) {
+        return Err(bad("tag inventory is an exact global tag scope; do not combine other filters"));
+    }
+    if vault.is_none() && ids.is_none() && tag.is_none() && types.as_ref().is_none_or(|types|
         types.is_empty() || types.len() > 8 || types.iter().any(|ty| ty.is_empty())) {
         return Err(bad("global entry_views requires 1 to 8 explicit nonempty types"));
     }
@@ -874,7 +879,7 @@ fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resul
         return Err(bad("unknown entry kind"));
     }
     let Some(actor) = actor else { return Ok(None); };
-    Ok(world::entry_views(lab, me, vault, ids.as_deref(), actor, types.as_deref(), kind))
+    Ok(world::entry_views_tag(lab, me, vault, ids.as_deref(), actor, types.as_deref(), kind, tag))
 }
 
 fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &SyncedTo) -> Result<Value, Refused> {
