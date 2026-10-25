@@ -1778,7 +1778,7 @@ impl Lab {
     /// A save of an older recipient capsule must not acknowledge added recovery keys.
     pub fn bootstrap_stamp(&self, on: SignerId) -> BootstrapStamp {
         let store = self.held(on);
-        BootstrapStamp((!store.bootstrap_bases.is_empty()).then(|| store.bootstrap_revision.clone()))
+        BootstrapStamp((!store.bootstrap_bases.is_empty() || !store.manifest_anchors.is_empty()).then(|| store.bootstrap_revision.clone()))
     }
     /// Capture ciphertext anchors with the same held signed frontier as a journal save.
     pub fn bootstrap_bytes(&self, on: SignerId) -> Option<Vec<u8>> {

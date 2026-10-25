@@ -403,6 +403,8 @@ mod tests {
         w.lab.sync(w.mac_a,w.phone_a);
         assert_eq!(w.lab.discovery_manifest_targets(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]),
             "later carrier content cannot rewrite the immutable owner-attested cut");
+        assert!(!w.lab.held(w.phone_a).manifest_anchors.is_empty(), "completed canonical history retains the signed manifest companion");
+        assert!(!w.lab.bootstrap_stamp(w.phone_a).is_empty(), "retired manifest ciphertext still requires durable saving");
         let saved=w.lab.backup(w.phone_a);
         let bytes=w.lab.bootstrap_bytes(w.phone_a).unwrap();
         let restored=Backup::new(saved.signed().to_vec(),saved.blobs.values().cloned()).with_bootstrap_bytes(&bytes).unwrap();
