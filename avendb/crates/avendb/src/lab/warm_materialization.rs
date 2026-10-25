@@ -661,6 +661,74 @@ mod tests {
     }
 
     #[test]
+    fn warm_query_scale_exact_page_and_schema_fallback() {
+        use crate::cast::{document, human_on};
+        use web_time::Instant;
+        const ENTRIES: usize = 64;
+        const PAGE: usize = 5;
+        let fixture_started=Instant::now();
+        let mut lab=Lab::new();
+        let owner=lab.passkey("Warm query scale");
+        let device=lab.device_of(owner,"Device");
+        let vault=human_on(&mut lab,owner,&[device]);
+        // A real custom projection, deliberately not an Own kind. It must use
+        // canonical translation even though it can read every document title.
+        let custom=serde_json::json!({"title":"Warm query title projection","type":"object",
+            "properties":{"title":{"type":"string"}},"required":["title"]});
+        let custom_bytes=serde_json::to_vec(&custom).unwrap();
+        let custom_id=Schema::parse(&custom_bytes).unwrap().id();
+        lab.add_schema(device,vault,vault,&custom_bytes).unwrap();
+        let payload="A nontrivial document payload with Unicode leaves 🌿 and retained row text. ".repeat(100);
+        let entries:Vec<_>=(0..ENTRIES).map(|n| {
+            lab.create(device,vault,vault,"note",&[],document(&format!("Document {n:03}"),
+                &format!("{n}: {payload}"),device)).unwrap()
+        }).collect();
+        let backup=lab.backup(device);
+        let count=backup.signed.len();
+        let prepared=Instant::now();
+        let receipt=lab.capture_warm_current(device,count,Some([63;40])).unwrap().encode();
+        let capture_us=prepared.elapsed().as_micros();
+        let warm=Warm{keys:receipt.keys.clone().into_iter().collect(),views:receipt.view.clone().into_iter().collect()};
+        lab.warmed(device,receipt);
+        let fixture_us=fixture_started.elapsed().as_micros();
+        let own=crate::lens::DOCUMENT_V1.id().to_hex();
+        let cases=[("own",None,true,ENTRIES),
+            ("explicit-own",Some(own),true,ENTRIES),
+            ("stored",Some("stored".into()),true,ENTRIES),
+            ("custom-projection",Some(custom_id.to_hex()),false,ENTRIES),
+            ("unsupported-translation",Some("todo".into()),false,0)];
+        for (name,schema,certified,expected_count) in cases {
+            let mut op=serde_json::json!({"op":"query","vault":vault.to_hex(),
+                "where":{"type":["note"]},"order":[["entry","desc"]],"offset":7,"limit":PAGE});
+            if let Some(schema)=schema { op["schema"]=schema.into(); }
+            let started=Instant::now();
+            lab.restore_from(device,backup.clone());
+            let cold_restore_us=started.elapsed().as_micros();
+            let started=Instant::now();
+            let expected=crate::engine::full_query_oracle(&lab,device,&op);
+            let full_query_us=started.elapsed().as_micros();
+            assert_eq!(expected["ok"]["count"],expected_count);
+            let started=Instant::now();
+            lab.restore_warm(device,backup.clone(),Some(([63;40],count)),&warm);
+            let warm_restore_us=started.elapsed().as_micros();
+            assert!(entries.iter().all(|entry|lab.held(device).shown[entry].items.get().is_none()),
+                "warm preparation must not import any note snapshot");
+            assert!(entries.iter().all(|entry|lab.warm_query_receipt(device,*entry).is_some()));
+            let started=Instant::now();
+            let actual=crate::engine::read(&lab,device,&op);
+            let page_query_us=started.elapsed().as_micros();
+            assert_eq!(actual,expected,"exact count/order/rows/schema/readOnly/cut/readiness: {name}");
+            let imported=entries.iter().filter(|entry|lab.held(device).shown[entry].items.get().is_some()).count();
+            assert_eq!(imported,if certified {PAGE}else{ENTRIES},"snapshot import count: {name}");
+            if expected_count==0 {
+                assert_eq!(actual["ok"]["readiness"]["unresolvedCandidates"],ENTRIES);
+                assert_eq!(actual["ok"]["readiness"]["authoritativeEmpty"],false);
+            }
+            eprintln!("warm-query-scale case={name} entries={ENTRIES} payload_bytes={} limit={PAGE} imported={imported} fixture_us={fixture_us} capture_us={capture_us} cold_restore_us={cold_restore_us} full_query_us={full_query_us} warm_restore_us={warm_restore_us} page_query_us={page_query_us}; synthetic fixture timings, not physical-device latency",payload.len());
+        }
+    }
+
+    #[test]
     fn warm_query_receipts_fall_back_after_edit_and_payload_filter() {
         let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
         lab.restore_warm(device, backup.clone(), Some(([19;40], backup.signed.len())), &warm);

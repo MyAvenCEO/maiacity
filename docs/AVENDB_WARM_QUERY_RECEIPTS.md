@@ -60,3 +60,15 @@ Next: integrate this commit into the canonical source, run the new warm query
 and all existing warm materialization/query regressions, then report timing
 separately from semantic equivalence. Broader cold-peer discovery and arbitrary
 payload query costs remain separate work.
+
+## Scale fixture (runtime pending)
+
+`warm_query_scale_exact_page_and_schema_fallback` uses 64 distinct documents,
+each with about 7.5 KiB of paragraph text, and requests five rows after an
+offset of seven. It compares the entire result to the original full-collection
+query oracle after canonical restore. Default Own, explicit matching Own, and
+Stored cases require exactly five imported note snapshots. A registered custom
+title-only schema and an unsupported Todo translation require canonical
+fallback; their exact counts, returned row metadata, and unresolved readiness
+must match. Preparation/capture, cold restore/full query, warm restore/page
+query timings are printed separately with no flaky elapsed-time assertion.
