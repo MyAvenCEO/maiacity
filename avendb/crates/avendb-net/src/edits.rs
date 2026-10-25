@@ -1552,7 +1552,7 @@ mod tests {
             release.send(()).unwrap();
             tokio::time::timeout(Duration::from_secs(15), views.recv()).await.unwrap().unwrap();
             if !unlock_before_receipt {
-                drop(edits.book.lock().await); // acknowledgement is complete
+                drop(edits.warm_lane.lock().await); // optional-view acknowledgement is complete
                 assert!(!node.shared.warm.load(Ordering::Relaxed), "unlock needs a new dirty edge");
                 assert!(node.read(|lab, me| lab.locked(me)).await);
                 assert!(!node.shared.warm.load(Ordering::Relaxed), "a locked read must not consume the unlock edge");
@@ -1567,7 +1567,7 @@ mod tests {
                 .await
                 .expect("pending snapshot work was rescheduled")
                 .expect("a second view reached the shelf");
-            drop(edits.book.lock().await);
+            drop(edits.warm_lane.lock().await);
             assert!(!node.shared.locked_lab().warm_due(me), "the new key prefix and view were acknowledged");
             assert!(!node.shared.warm.load(Ordering::Relaxed));
             node.shutdown().await.unwrap();
