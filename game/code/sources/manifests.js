@@ -30,7 +30,7 @@ export const PRIORITY = { high: 0, medium: 1, low: 2 };
  * @typedef {{kind: string, id: string, priority?: string, routes?: string[], parts?: ManifestPart[]}} Manifest
  * @typedef {{entry: string, type?: string, kind?: string, tags?: string[], created?: number, record?: unknown}} ManifestRow
  * @typedef {{leaf: ManifestPart, rank: number}} RankedLeaf
- * @typedef {{run: (operation: Record<string, unknown>) => Promise<{ok?: {rows?: ManifestRow[], record?: unknown, vaults?: {id:string}[], entriesComplete?: boolean},refused?: unknown}>}} ManifestDevice
+ * @typedef {{run: (operation: Record<string, unknown>) => Promise<{ok?: {rows?: ManifestRow[], count?: number, record?: unknown, vaults?: {id:string}[], entriesComplete?: boolean},refused?: unknown}>}} ManifestDevice
  * @typedef {{device?: ManifestDevice, bring: (ids: string[]) => Promise<unknown>, vault?: string, fetch?: typeof globalThis.fetch, signal?: AbortSignal, prioritize?: (ids: string[], queries: {types: string[], vault?: string}[]) => unknown}} PlanOptions
  */
 
@@ -254,8 +254,8 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 		explicit.forEach(e => asked.add(e));
 		signal?.throwIfAborted();
 		const rows = await rowsFor(at, { device: d, vault, fetch: get, signal });
-		observed.localRows += rows.length;
-		const ids = entriesOf(at, rows).filter((e) => !asked.has(e));
+		observed.localRows += [...rows.values()].reduce((n, page) => n + page.length, 0);
+		const ids = [...new Set(at.flatMap(leaf => entriesOf([leaf], rows.get(leaf) ?? [])))].filter((e) => !asked.has(e));
 		signal?.throwIfAborted();
 		if (ids.length) await bring(ids);
 		ids.forEach((e) => asked.add(e));
@@ -263,7 +263,7 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 		let frontier = new Map();
 		for (const leaf of at) {
 			const depth = Math.min(3, leaf.leaf.follow ?? 0);
-			if (depth > 0) for (const e of entriesOf([leaf], rows)) frontier.set(e, Math.max(frontier.get(e) ?? 0, depth));
+			if (depth > 0) for (const e of entriesOf([leaf], rows.get(leaf) ?? [])) frontier.set(e, Math.max(frontier.get(e) ?? 0, depth));
 		}
 		const visited = new Map();
 		while (frontier.size && d) {
@@ -293,23 +293,46 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
  * The rows device `d` locally holds for queries among `leaves`, without records.
  * A local result is not proof that discovery or peer delivery is complete.
  */
-/** @param {RankedLeaf[]} leaves @param {Pick<PlanOptions,"device"|"vault"|"fetch"|"signal">} options @returns {Promise<ManifestRow[]>} */
+/** @param {RankedLeaf[]} leaves @param {Pick<PlanOptions,"device"|"vault"|"fetch"|"signal">} options @returns {Promise<Map<RankedLeaf, ManifestRow[]>>} */
 async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
-	const queries = leaves.flatMap(({ leaf }) => leaf.query ? [leaf.query] : []);
-	if (!queries.length) return [];
-	const typed = queries.every((q) => q.type?.length);
-	const types = [...new Set(queries.flatMap((q) => q.type ?? []))];
-	const rows = [];
-	signal?.throwIfAborted();
-	if (d) {
-		try {
-			const got = await d.run({ op: 'query', vault, ...(typed ? { where: { type: types } } : {}), select: [] });
-			rows.push(...(got?.ok?.rows ?? []));
-		} catch {
-			// Nothing local yet; the native sync loop continues.
+	const results = new Map();
+	if (!d) return results;
+	for (const ranked of leaves) {
+		const { leaf } = ranked;
+		if (!leaf.query) continue;
+		const rows = new Map();
+		const terms = [
+			...(leaf.query.type?.length ? [{ type: leaf.query.type }] : []),
+			...(leaf.query.tags ?? []).map(tag => ({ tag }))
+		];
+		const where = terms.length === 1 ? terms[0] : terms.length ? { all: terms } : undefined;
+		// Push the exact leaf filter/newest ordering/window into the universal
+		// query. A post-query JS limit still imports every unrelated snapshot.
+		// Unlimited declarations retain their meaning, in bounded local pages.
+		for (let offset = 0; ;) {
+			signal?.throwIfAborted();
+			const limit = Math.min(128, leaf.limit === undefined ? 128 : leaf.limit - offset);
+			if (limit <= 0) break;
+			try {
+				const got = await d.run({ op: 'query', vault, ...(where ? { where } : {}),
+					select: [], order: [['created', 'desc']], offset, limit });
+				signal?.throwIfAborted();
+				const page = got?.ok?.rows;
+				const count = got?.ok?.count;
+				if (!Array.isArray(page) || !page.length) break;
+				for (const row of page) if (!rows.has(row.entry)) rows.set(row.entry, row);
+				offset += page.length;
+				if ((leaf.limit !== undefined && offset >= leaf.limit)
+					|| typeof count !== 'number' || !Number.isSafeInteger(count) || offset >= count) break;
+			} catch {
+				signal?.throwIfAborted();
+				// Local failures do not imply empty remote discovery. Retain other leaves.
+				break;
+			}
 		}
+		results.set(ranked, [...rows.values()]);
 	}
-	return rows;
+	return results;
 }
 
 /** The entries the records of entries `ids` name, as device `d` holds them. */

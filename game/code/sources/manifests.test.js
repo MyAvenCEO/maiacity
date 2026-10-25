@@ -296,3 +296,60 @@ test('dependency layers share one file inventory and refresh it after transfer',
  expect(brought).toContain(final);
  expect(brought.filter(x=>x===audio)).toHaveLength(1);
 });
+
+test('manifest leaves push exact type tags order and bounded limit before materialization',async()=>{
+ const manifest=m({id:'bounded',routes:['/bounded/'],parts:[
+  {query:{type:['cut'],tags:['selected']},limit:8},
+  {query:{type:['room']},limit:50}
+ ]});
+ const rows=Array.from({length:240},(_,n)=>({entry:id(n+1),type:n<120?'cut':'room',tags:n%2?['selected']:[],created:n}));
+ const calls=[];
+ const matches=(row,where)=>!where||where.all?(!where||where.all.every(w=>matches(row,w))):where.type?where.type.includes(row.type):row.tags.includes(where.tag);
+ const device={run:async op=>{
+  if(op.where?.type?.[0]==='manifest')return {ok:{rows:[{record:manifest}]}};
+  calls.push(op);
+  expect(op.limit).toBeLessThanOrEqual(128);
+  const found=rows.filter(row=>matches(row,op.where)).sort((a,b)=>b.created-a.created);
+  return {ok:{count:found.length,rows:found.slice(op.offset,op.offset+op.limit)}};
+ }};
+ const got=await bringDeclared('/bounded/',{device,bring:async()=>{}});
+ expect(got).toEqual(entriesOf(leavesFor([manifest],'/bounded/'),rows));
+ expect(calls).toHaveLength(2);
+ expect(calls[0]).toMatchObject({where:{all:[{type:['cut']},{tag:'selected'}]},order:[['created','desc']],limit:8,offset:0});
+ expect(calls[1]).toMatchObject({where:{type:['room']},limit:50,offset:0});
+});
+
+test('overlapping leaf results keep each canonical tie order before union',async()=>{
+ const manifest=m({id:'ties',routes:['/ties/'],parts:[{query:{tags:['one']},limit:1},{query:{type:['room']},limit:1}]});
+ const first={entry:id(1),type:'room',tags:[],created:1};
+ const second={entry:id(2),type:'room',tags:['one'],created:1};
+ const device={run:async op=>({ok:{rows:op.where?.type?.[0]==='manifest'?[{record:manifest}]:op.where?.tag?[second]:[first],count:1}})};
+ expect(await bringDeclared('/ties/',{device,bring:async()=>{}})).toEqual([second.entry,first.entry]);
+});
+
+test('unlimited manifest leaves use bounded pages and cancellation stops the next page',async()=>{
+ const manifest=m({id:'all',routes:['/all/'],parts:[{query:{type:['schema']}}]});
+ const controller=new AbortController();let pages=0;
+ const device={run:async op=>{
+  if(op.where?.type?.[0]==='manifest')return {ok:{rows:[{record:manifest}]}};
+  pages++;expect(op.limit).toBe(128);
+  controller.abort();
+  return {ok:{count:300,rows:Array.from({length:128},(_,n)=>({entry:id(n+1),type:'schema'}))}};
+ }};
+ await expect(bringDeclared('/all/',{device,signal:controller.signal,bring:async()=>{throw Error('abandoned batch')}})).rejects.toThrow();
+ expect(pages).toBe(1);
+});
+
+test('unlimited manifest semantics survive local pagination and cross-leaf deduplication',async()=>{
+ const manifest=m({id:'pages',routes:['/pages/'],parts:[{query:{type:['schema']}},{query:{type:['schema']},limit:2}]});
+ const rows=Array.from({length:260},(_,n)=>({entry:id(n+1),type:'schema',created:260-n}));
+ const calls=[];
+ const device={run:async op=>{
+  if(op.where?.type?.[0]==='manifest')return {ok:{rows:[{record:manifest}]}};
+  calls.push([op.offset,op.limit]);
+  return {ok:{count:rows.length,rows:rows.slice(op.offset,op.offset+op.limit)}};
+ }};
+ const got=await bringDeclared('/pages/',{device,bring:async()=>{}});
+ expect(got).toEqual(rows.map(row=>row.entry));
+ expect(calls).toEqual([[0,128],[128,128],[256,128],[0,2]]);
+});

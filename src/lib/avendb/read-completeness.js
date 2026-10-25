@@ -9,7 +9,10 @@ export function readCompleteness(answer) {
  const rows = present && Array.isArray(value.rows) ? value.rows : [];
  const checkpoint = value?.readiness?.checkpointPartial === true || value?.checkpoint?.partial === true || rows.some((/** @type {any} */ row) => row?.checkpoint?.partial === true);
  const partialFiles = value?.filesComplete === false || rows.some((/** @type {any} */ row) => row?.filesComplete === false);
+ const count = (/** @type {unknown} */ n) => typeof n === 'number' && Number.isSafeInteger(n) && n > 0 ? n : 0;
  return {
+  pendingJudgments: count(value?.readiness?.pendingJudgments),
+  unresolvedCandidates: count(value?.readiness?.unresolvedCandidates),
   response: present ? 'local' : 'unavailable',
   discovery: 'unverified',
   history: checkpoint ? 'checkpoint-partial' : 'unverified',
