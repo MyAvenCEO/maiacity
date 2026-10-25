@@ -16,16 +16,6 @@ fn deferred_refresh_ready_at(store: &Store, revision: &crate::policy::LogRevisio
         .is_some_and(|basis| basis.matches(revision))
 }
 
-fn deferred_refresh_ready_at(store: &Store, revision: &crate::policy::LogRevision) -> bool {
-    store.deferred_bodies.is_empty() || store.deferred_basis.as_ref().is_some_and(|basis|
-        *basis == *revision && store.deferred_bodies.values().all(|body|
-            Arc::strong_count(body) == 1 && Arc::weak_count(body) == 0 && body.metadata(basis).is_ok()))
-=======
-    store.deferred_bodies.is_empty() || store.deferred_basis.as_ref()
-        .is_some_and(|basis| basis.matches(&store.log.revision()))
->>>>>>> b609a850 (perf(avendb): advance deferred receipt basis once per content append)
-}
-
 impl Lab {
     pub(super) fn content_refresh_ready(&self, on: SignerId, edit: &Edit, body: &Body) -> bool {
         self.content_refresh_ready_at(on, on, edit, body, None)
