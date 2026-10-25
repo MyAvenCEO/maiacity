@@ -108,3 +108,27 @@ pending combined validation. The standalone PreparedJudgmentReuse Lean model and
 Rust parser passed. This removes repeated preparation, not every possible long
 operation: building a demanded vault's Lane still uses canonical lane_of, and
 initial preparation retains its existing whole-context work.
+
+### Mixed-author room cuts through plain grants
+
+Scoped complete-cut discovery now permits participant writes on Main after an
+owner-created entry. It records every actor as well as every via vault and requires
+their current authority frontiers. Existing classified inventory closure still
+includes historical audience shares, wide readers (including wide writers), every
+parent chain, issuer/recipient/owner/device dependency and audience key frontiers.
+The shape is a dependency plan only: signatures, current replay admission,
+proof commitments, schema/row-ownership judgment and revocations remain canonical.
+For any mixed-actor cut, a referenced grouped grant in that closure remains
+unsupported; latest group state cannot replace historical group dependencies.
+Foreign creation, proposals, over-budget or unknown cuts also retain fallback.
+Owner-base suffix optimization remains owner-only in this increment.
+
+The new real-peer fixture uses the actual Room built-in schema and a Member
+participant grant. Public query+demand must expose the owner's first message and
+a participant's second message, then a third live participant message via normal
+peer transport while seventeen unrelated revocation frontiers and a payload
+remain withheld. It never invokes target staging or direct target transfer.
+A focused classifier regression checks missing actor authority and grouped-grant
+refusal. Standalone MixedActorPlainScope Lean proof and Rust parser checks pass;
+Rust execution is pending the canonical combined build. This is a scoped
+increment, not completion of arbitrary shared bootstrap.

@@ -541,3 +541,120 @@ async fn cold_room_demand_renders_with_unrelated_authority_frontiers_withheld() 
     assert!(matches!(phone_stopped, Ok(Ok(()))), "receiver shutdown: {phone_stopped:?}");
     assert!(matches!(mac_stopped, Ok(Ok(()))), "sender shutdown: {mac_stopped:?}");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn mixed_author_chat_demand_receives_participant_rows_before_unrelated_history() {
+    use avendb::{cast::{share, of_type, by_id}, policy::{Action, Level, Revoking, Who}};
+    let mut w = world();
+    let (bob, bob_vault) = (w.mac_b, w.bob);
+    let (sender, receiver, vault) = (w.mac_a, w.phone_a, w.alice);
+    let mut unrelated_grants = Vec::new();
+    for n in 0..=pulls::LIVE_LOGS {
+        unrelated_grants.push(w.lab.issue(sender, &[sender], share(vault, Who::Vault(w.bob),
+            Level::Read, of_type(&format!("unrelated-kind-{n}")))).unwrap());
+    }
+    w.lab.sync_all(0);
+    let phone_lab = w.lab.split(receiver, &[], [161; 32]);
+    for grant in &unrelated_grants {
+        w.lab.submit(sender, &[sender], Action::Revoke(Revoking::Grant {
+            share: *grant, actor: vault, keep: vec![], via: vec![],
+        })).unwrap();
+    }
+    let room = avendb::doc::Item::made(avendb::lens::View::built_in("room").unwrap(),
+        &serde_json::json!({"kind":"room", "name":"Shared Chat", "look":"group",
+            "messages":[{"id":1,"text":"owner first message"}]}), sender).unwrap();
+    let target = w.lab.create(sender, vault, vault, "room", &[], room).unwrap();
+    w.lab.issue(sender, &[sender], share(vault, Who::Vault(bob_vault), Level::Member, by_id(target))).unwrap();
+    w.lab.sync_all(0);
+    w.lab.edit(bob,bob_vault,target,|item| {
+        let mut record=item.record();
+        record["messages"].as_array_mut().unwrap().push(serde_json::json!({"id":2,"text":"participant second message"}));
+        item.put_record(&record);
+    }).unwrap();
+    w.lab.sync(bob,sender);
+    assert!(w.lab.item(sender,target).unwrap().record()["messages"].as_array().unwrap().iter()
+        .any(|m|m["id"]==2), "fixture participant write must actually count");
+    let bob_node = Node::spawn(w.lab.split(bob, &[], [183;32]), bob, Options::local()).await.unwrap();
+    let unrelated = w.lab.create(sender, vault, vault, "background-document", &[],
+        document("Unrelated", "withheld payload", sender)).unwrap();
+    let mac = Node::spawn(w.lab.split(sender, &[], [162; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(phone_lab, receiver, Options::local()).await.unwrap();
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    // No peer addresses are installed until every background permit is held,
+    // so eager startup cannot race an unrelated pull ahead of this fixture.
+    let outcome = time::timeout(Duration::from_secs(65), async {
+        anyhow::ensure!(!stalled.is_empty(), "background admission must be held");
+        phone.know(mac.addr()); mac.know(phone.addr());
+        phone.shared.connection(mac.id()).await?;
+        while !phone.holdings_of(sender).is_some_and(|held|
+            held.logs.contains_key(&LogId::Entry(target))) {
+            time::sleep(Duration::from_millis(5)).await;
+        }
+        let before = phone.shared.differ(sender).await;
+        anyhow::ensure!(unrelated_grants.iter().all(|id| before.contains(&LogId::Share(*id))), "fixture authority frontiers must start missing");
+        anyhow::ensure!(before.iter().filter(|log| !matches!(log, LogId::Entry(_))).count() > pulls::LIVE_LOGS, "fixture must exceed the bounded live authority lane");
+        let query = serde_json::json!({"op":"query", "vault":vault.to_hex(),
+            "where":{"type":["room"]}, "select":[], "limit":50});
+        anyhow::ensure!(phone.op(query.clone()).await?["ok"]["rows"] == serde_json::json!([]), "cold query starts empty");
+        let demand = serde_json::json!({"op":"demand", "scope":"dc".repeat(16),
+            "revision":1, "entries":[], "queries":[{"vault":vault.to_hex(), "types":["room"]}]});
+        let ack = phone.op(demand.clone()).await?;
+        anyhow::ensure!(ack["ok"]["accepted"] == true, "view demand accepted");
+        time::timeout(Duration::from_secs(20), async {
+            loop {
+                let rows = phone.op(query.clone()).await?;
+                if rows["ok"]["rows"].as_array().is_some_and(|rows| rows.iter()
+                    .any(|row| row["entry"].as_str() == Some(target.to_hex().as_str()))) {
+                    if phone.read(move |lab, me| lab.item(me,target).is_some_and(|i|i.record()["messages"].as_array().is_some_and(|ms|ms.iter().any(|m|m["id"]==2)))).await { break; }
+                }
+                time::sleep(Duration::from_millis(10)).await;
+            }
+            Ok::<(), anyhow::Error>(())
+        }).await.map_err(|_| anyhow::anyhow!("cold query did not render before unrelated catch-up"))??;
+        let after_first = phone.shared.differ(sender).await;
+        anyhow::ensure!(unrelated_grants.iter().all(|id| after_first.contains(&LogId::Share(*id))), "initial view reconciled unrelated authority");
+        anyhow::ensure!(phone.read(move |lab, me| lab.item(me, unrelated).is_none()).await, "initial view pulled unrelated payload");
+
+        // Renew the same public lease as a mounted view does. No target ID or
+        // transfer/staging call is supplied; ordinary live announcement must
+        // update the discovered entry while ALL background slots stay held.
+        phone.op(demand).await?;
+        let mut updates = phone.stirs();
+        bob_node.know(mac.addr()); mac.know(bob_node.addr());
+        bob_node.shared.connection(mac.id()).await?;
+        bob_node.act(move |lab, me| lab.edit(me, bob_vault, target, |item| {
+            let mut record=item.record();
+            record["messages"].as_array_mut().unwrap().push(serde_json::json!({"id":3,"text":"participant live message"}));
+            item.put_record(&record);
+        })).await.map_err(|refusal| anyhow::anyhow!("participant live edit refused: {refusal:?}"))?;
+        time::timeout(Duration::from_secs(20), async {
+            loop {
+                updates.borrow_and_update();
+                if phone.read(move |lab, me| lab.item(me,target).is_some_and(|i|i.record()["messages"].as_array()
+                    .is_some_and(|ms|ms.iter().any(|m|m["id"]==3)))).await { break; }
+                updates.changed().await?;
+            }
+            Ok::<(), anyhow::Error>(())
+        }).await.map_err(|_| anyhow::anyhow!("live update did not render before unrelated catch-up"))??;
+        let after_live = phone.shared.differ(sender).await;
+        anyhow::ensure!(unrelated_grants.iter().all(|id| after_live.contains(&LogId::Share(*id))), "live update reconciled unrelated revocation frontiers");
+        anyhow::ensure!(phone.read(move |lab, me| lab.item(me, unrelated).is_none()).await, "live update pulled unrelated payload");
+        Ok::<(), anyhow::Error>(())
+    }).await;
+    // Every ordinary failure/timeout reaches cleanup before assertions. Both
+    // shutdowns are attempted, and neither may hang this regression forever.
+    drop(stalled);
+    let (phone_stopped, mac_stopped, bob_stopped) = tokio::join!(
+        time::timeout(Duration::from_secs(20), phone.shutdown()),
+        time::timeout(Duration::from_secs(20), mac.shutdown()),
+        time::timeout(Duration::from_secs(20), bob_node.shutdown()));
+    assert!(matches!(outcome, Ok(Ok(()))), "cold-demand/live-update regression: {outcome:?}");
+    assert!(matches!(phone_stopped, Ok(Ok(()))), "receiver shutdown: {phone_stopped:?}");
+    assert!(matches!(mac_stopped, Ok(Ok(()))), "sender shutdown: {mac_stopped:?}");
+    assert!(matches!(bob_stopped, Ok(Ok(()))), "participant shutdown: {bob_stopped:?}");
+}
