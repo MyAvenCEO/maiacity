@@ -30,3 +30,13 @@ forms without an authenticator, requires an approval response, verifies unchange
 entry inventory and signed-log IDs, and checks all checkpoint pin prefixes remain
 empty. Supplying an `approved` field is rejected. Registration was checked for
 `checkpoint_view`, `checkpoint_entry_base`, and `checkpoint_entry_capsule` too.
+
+Historical manifest extraction is separate from overlay restoration. Only a
+previously retired encrypted manifest anchor can use the statement-only reader;
+its owner Snapshot, exact root, current read authority and bounded decoder remain
+mandatory. The resulting JSON still passes exact manifest schema/scope checks.
+It never enters canonical materialization or authorizes a write. Current entry
+content remains the later canonical record, and regular checkpoint adoption keeps
+its full-holder contradiction comparisons. Regression coverage clears the memory
+cache, rehydrates the old statement, then performs a durable reopen and checks
+that the latest canonical carrier record stays unchanged.

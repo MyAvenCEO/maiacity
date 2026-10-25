@@ -238,7 +238,8 @@ impl Lab {
                 return self.restore_owner_judgment(on,snapshot,carrier,sealed)?.record(MAIN);
             }
         }
-        self.attested_entry_projection(on,snapshot,carrier)?.record(MAIN)
+        self.retired_manifest_record(on,snapshot,carrier)
+            .or_else(||self.attested_entry_projection(on,snapshot,carrier)?.record(MAIN))
     }
 
     fn discovery_manifest_rows(&self,on:SignerId,actor:VaultId,vault:VaultId,scope:DiscoveryScope,carrier:EntryId,snapshot:EditId)->Option<Vec<(EntryId,Vec<EditId>)>> {
@@ -414,13 +415,23 @@ mod tests {
             "later carrier content cannot rewrite the immutable owner-attested cut");
         assert!(!w.lab.held(w.phone_a).manifest_anchors.is_empty(), "completed canonical history retains the signed manifest companion");
         assert!(!w.lab.bootstrap_stamp(w.phone_a).is_empty(), "retired manifest ciphertext still requires durable saving");
+        let latest=w.lab.item(w.phone_a,carrier).unwrap().record();
+        assert_eq!(latest["members"],json!([]));
+        // Rehydrate the retired statement as unlock does, while the ordinary
+        // current carrier is newer. This must not adopt the old record as state.
+        w.lab.held(w.phone_a).attested_manifests.lock().unwrap().clear();
+        w.lab.rebuild_owner_bases(w.phone_a);
+        assert_eq!(w.lab.discovery_manifest_targets(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]));
+        assert_eq!(w.lab.item(w.phone_a,carrier).unwrap().record(),latest);
         let saved=w.lab.backup(w.phone_a);
         let bytes=w.lab.bootstrap_bytes(w.phone_a).unwrap();
         let restored=Backup::new(saved.signed().to_vec(),saved.blobs.values().cloned()).with_bootstrap_bytes(&bytes).unwrap();
         w.lab.restore_from(w.phone_a,restored);
         assert_eq!(w.lab.discovery_manifest_targets(w.phone_a,w.alice,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]),
             "offline reopen restores the exact signed statement after canonical history retired its overlay");
+        assert_eq!(w.lab.item(w.phone_a,carrier).unwrap().record(),latest,"statement restoration never replaces canonical entry state");
         w.lab.lock(w.phone_a);
+        assert!(w.lab.retired_manifest_record(w.phone_a,snapshot,carrier).is_none(),"locked device cannot extract retired statement plaintext");
         assert!(w.lab.held(w.phone_a).attested_manifests.lock().unwrap().is_empty(),"lock clears attested plaintext");
         let mut malformed=record;
         malformed["members"][0]["unexpected"]=json!(true);

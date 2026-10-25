@@ -461,6 +461,20 @@ impl Lab {
         self.decode_owner_judgment(on, snapshot, entry, sealed, true)
     }
 
+    /// Recover an immutable statement from an already retired manifest anchor.
+    /// This is deliberately not an adoption API: it neither returns a judgment
+    /// nor modifies canonical state, and cannot confer mutation permission.
+    /// The ciphertext/root, owner Snapshot, bounds and current recipient policy
+    /// are still checked by the ordinary decoder. Comparing an old statement to
+    /// a newer canonical record would incorrectly erase the signed old cut.
+    pub(crate) fn retired_manifest_record(&self,on:SignerId,snapshot:EditId,entry:EntryId)->Option<Value> {
+        if self.locked(on) {return None;}
+        let (at,sealed)=self.held(on).manifest_anchors.get(&entry)?;
+        if *at!=snapshot {return None;}
+        let record=self.decode_owner_judgment(on,snapshot,entry,sealed,false)?.record(MAIN)?;
+        (record.get("kind").and_then(Value::as_str)==Some("discovery-manifest")).then_some(record)
+    }
+
     // Retirement separately reconstructs canonical judgment from every held body.
     // Parsing owner-authenticated metadata does not install or authorize a state.
     fn decode_owner_judgment(&self, on: SignerId, snapshot: EditId, entry: EntryId,

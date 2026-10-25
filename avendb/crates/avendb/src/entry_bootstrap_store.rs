@@ -300,9 +300,9 @@ impl Lab {
         for entry in manifests {
             let store=self.held(on);
             if store.attested_manifests.lock().expect("attested manifests").contains_key(&(on,entry)) {continue;}
-            let (snapshot,sealed)=&store.manifest_anchors[&entry];
-            if let Some(record)=self.restore_owner_judgment(on,*snapshot,entry,sealed).and_then(|base|base.record(MAIN)) {
-                self.remember_attested_manifest(on,*snapshot,entry,record);
+            let snapshot=store.manifest_anchors[&entry].0;
+            if let Some(record)=self.retired_manifest_record(on,snapshot,entry) {
+                self.remember_attested_manifest(on,snapshot,entry,record);
             }
         }
         // Only IDs are copied. Reusable cursors never clone/decrypt sealed anchors.
