@@ -201,6 +201,12 @@ impl Lab {
     /// Reauthenticate ciphertext and policy on every reconstruction. The signed suffix
     /// stays in the ordinary log; only the entry's derived view is overlaid.
     pub(crate) fn rebuild_owner_bases(&mut self, on: SignerId) {
+        if self.restore_retained_entry_keys(on) {
+            self.refresh(on, &[]);
+            return;
+        }
+        let recovered: HashSet<_> = self.held(on).bootstrap_bases.keys().copied()
+            .filter(|entry| self.recovered_capsule_frontier(on, *entry)).collect();
         // Only IDs are copied. Reusable cursors never clone/decrypt sealed anchors.
         let mut entries: Vec<_> = self.held(on).bootstrap_bases.keys().copied().collect();
         if let Some(last) = self.held(on).bootstrap_cursor {
@@ -323,7 +329,7 @@ impl Lab {
                 }
             };
             if !lane_ready { wait_reason = Some("missing-schema-lane"); }
-            if capsule_only { wait_reason = Some("checkpoint-capsule-read-only"); }
+            if capsule_only && !recovered.contains(&entry) { wait_reason = Some("checkpoint-capsule-read-only"); }
             let mut opened_suffix = Vec::new();
             while budget > 0 && missing.is_empty() && wait_reason.is_none() {
                 let Some(id) = pending.pop_front() else { break; };
@@ -517,6 +523,13 @@ mod tests {
     use crate::cast::{document, human_on};
     #[test]
     fn checkpoint_capsule_reads_across_private_audience_reentry_without_changing_kernel() {
+        capsule_recovery_scenario(false);
+    }
+    #[test]
+    fn durable_exact_key_recovery_reopens_partial_writes_and_converges() {
+        capsule_recovery_scenario(true);
+    }
+    fn capsule_recovery_scenario(recover: bool) {
         use crate::policy::{Who,Level,Revoking};
         let mode=0;
             let level=if mode==1 {Level::Read} else {Level::Write};
@@ -560,6 +573,7 @@ mod tests {
         // Ordinary authorized setup may reveal both grants without replaying the
         // later content held in the checkpoint. Private occupancy stays absent.
         lab.sync(mac,partial); lab.sync(mac,third);
+        let old_history = recover.then(|| lab.edit(mac,vault,entry,|i|i.set_text(2,"Older unseen body")).unwrap());
         let withheld=lab.edit(mac,vault,entry,|i|i.set_text(2,"Attested")).unwrap();
         let PreparedEntryBase{draft,sealed,..}=lab.draft_capsuled_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,draft,&[]).unwrap();
@@ -595,6 +609,21 @@ mod tests {
         assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
         assert_eq!(lab.owner_base_wait_reason(partial,entry),Some("checkpoint-capsule-read-only"));
         assert!(lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Still read only")).is_err());
+        if recover {
+            let key=lab.entry_key_recovery(mac,partial,withheld).expect("exact ordinary-authorized key");
+            lab.receive(partial,vec![lab.signed_edit(mac,withheld).unwrap().clone()],vec![]);
+            assert!(lab.retain_entry_key_recovery(partial,entry,key));
+            assert!(!lab.held(partial).signed.contains_key(&old_history.unwrap()),"historical content stays withheld");
+            let saved=lab.backup(partial); let bytes=saved.bootstrap_bytes().unwrap();
+            let saved=Backup::new(saved.signed().to_vec(),saved.blobs.values().cloned()).with_bootstrap_bytes(&bytes).unwrap();
+            lab.restore_backup(partial,&saved);
+            assert_ne!(lab.owner_base_wait_reason(partial,entry),Some("checkpoint-capsule-read-only"));
+            assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+            lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Recovered shared write")).expect("canonical shared authoring");
+            lab.sync(mac,full);lab.sync(partial,full);
+            assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(full,entry).unwrap().record(),"full-holder differential");
+        }
+
         assert!(lab.restore_capsuled_owner_judgment(partial,snapshot,EntryId([91;32]),&sealed,&capsule).is_none());
         assert!(lab.restore_capsuled_owner_judgment(full,snapshot,entry,&sealed,&capsule).is_none());
         let mut corrupt=capsule.clone(); corrupt.bytes[0]^=1;

@@ -1144,3 +1144,28 @@ current revocation and unchanged-keyring/kernel assertions. Lean module checked;
 Rust syntax and diff checks passed. Rust execution, revoke/regrant intervals,
 durable retention and actual shared-holder writable convergence remain pending.
 These changes are separate from transport commit 98c562c5's 9/9 executed tests.
+
+### Durable exact-key recovery wiring (Rust validation pending)
+
+The existing encrypted anchor companion now accepts one versioned nested recovery
+package, bounded to 32 distinct original Write IDs and the existing total byte
+limit. It retains recipient ciphertext only; no family key or epoch is serialized.
+Replacement changes the existing bootstrap dirty stamp, so native/PWA saver and
+receipt behavior remain shared. Reopening revalidates the standing checkpoint,
+current entitlement, complete locally held policy replay, exact signed Write and
+original ciphertext before inserting its Entry key; a changed keyring reruns
+ordinary read/materialization. No remote scheduling state is imported.
+
+The core capsule-only wait is removed only when every attested frontier Write has
+a validated exact-key recovery. Existing schema, suffix, current authority,
+ordinary local-write proof and durable receipt gates still apply. An unsupported
+or oversized recovery remains read-only; this does not promise arbitrary frontier
+sizes or production network key-recovery wiring yet.
+
+Added a separate restart/older-history-withheld shared-write differential against
+a full holder, retaining the original read-only capsule test. Added canonical
+revoke/regrant, revoked-recipient/new-key refusal, and valid-recipient-box/wrong-key
+negative cases. Focused Lean proofs and Rust parse/diff checks passed. All new Rust
+behavior remains unexecuted pending the single compiler queue; it is not part of
+the prior 9/9 transport result. The original cross-entry shared-holder regression
+also remains a required end-to-end acceptance test.

@@ -5,8 +5,12 @@ use super::*;
 const FORMAT: &[u8] = b"avenDB judged checkpoint capsule 1\n";
 const MAX_CAPSULE: usize = 4096;
 const LOCAL: &[u8] = b"avenDB retained checkpoint capsule 1\n";
-pub(super) fn is_local(bytes: &[u8]) -> bool { bytes.starts_with(LOCAL) }
+pub(super) fn is_local(bytes: &[u8]) -> bool { bytes.starts_with(LOCAL) || entry_key_recovery::is_retained(bytes) }
 pub(super) fn local_parts(bytes: &[u8]) -> Option<(Vec<u8>, EntryCheckpointCapsule)> {
+    if entry_key_recovery::is_retained(bytes) {
+        let (base,_)=entry_key_recovery::retained_parts(bytes)?;
+        return local_parts(&base);
+    }
     if bytes.len()>MAX_BYTES+128 { return None; }
     let mut r=WireReader::new(bytes);
     if r.take(LOCAL.len()).ok()?!=LOCAL { return None; }

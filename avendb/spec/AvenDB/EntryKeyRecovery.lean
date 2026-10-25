@@ -25,3 +25,15 @@ theorem scoped_family_refused (e : EntryId) (s : Option EditId) (g h : Nat) (k :
 def applyRecovery (st : State) := st
 theorem kernel_unchanged (st : State) : applyRecovery st = st := rfl
 end AvenDB.EntryKeyRecovery
+
+namespace AvenDB.EntryKeyRecovery
+/- Retained ciphertext alone is not authority. Reopen repeats current validation;
+writes still require the existing durable, schema and ordinary admission gates. -/
+def reopened (retained currentValidated : Bool) := retained && currentValidated
+def writable (frontierKeys durable schema ordinaryAdmission : Bool) :=
+ frontierKeys && durable && schema && ordinaryAdmission
+theorem retained_not_authority (r : Bool) : reopened r false = false := by simp [reopened]
+theorem no_missing_frontier_write (d s a : Bool) : writable false d s a = false := by simp [writable]
+theorem no_unpersisted_write (f s a : Bool) : writable f false s a = false := by simp [writable]
+theorem no_schema_bypass (f d a : Bool) : writable f d false a = false := by simp [writable]
+end AvenDB.EntryKeyRecovery
