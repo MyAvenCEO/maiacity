@@ -1169,3 +1169,12 @@ negative cases. Focused Lean proofs and Rust parse/diff checks passed. All new R
 behavior remains unexecuted pending the single compiler queue; it is not part of
 the prior 9/9 transport result. The original cross-entry shared-holder regression
 also remains a required end-to-end acceptance test.
+
+Validation update for 2d667549: core compiles. Forwarding/read-only capsule
+regression passed (1/1, 4.90s), including independent third recipient and revocation.
+The recovery filter passed seven existing tests and failed both new recovery
+cases. Root cause: re-calling `accepted_write` for the already admitted exact Write
+correctly returns `Duplicate`. Recovery now uses that canonical replay's exact
+`State::write` plus `authorized` and standing membership; original signature,
+current reader and ciphertext checks remain. This correction awaits execution;
+no recovery or writable-convergence pass is claimed.

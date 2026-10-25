@@ -48,7 +48,10 @@ impl Lab {
             let state=&store.replay.state;
             let signed=store.signed.get(&capsule.edit)?;
             if signed.verify().is_err() { return None; }
-            let write=state.accepted_write(&signed.edit,capsule.edit).ok()??;
+            // The signed body was already admitted by canonical replay. Calling
+            // accepted_write again would correctly reject it as Duplicate.
+            let write=state.write(capsule.edit)?;
+            if !state.authorized(write) || !store.replay.standing().contains(&capsule.edit) { return None; }
             let entry=state.entry(write.entry)?;
             let family=KeyFam::Audience(entry.vault,entry.audience());
             if !(state.public_key(family)||state.entitled(on,family)) || !state.wants(on,entry) { return None; }
