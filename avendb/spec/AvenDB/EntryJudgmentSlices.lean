@@ -52,3 +52,14 @@ def visible (admitted judged : Bool) : Bool := admitted && judged
 theorem admissionAloneNotVisible : visible true false = false := rfl
 theorem finishedAdmissionVisible : visible true true = true := rfl
 end ReceiveJudgmentBoundary
+
+namespace OwnerSuffixPacing
+-- Admission changes the log generation before its accepted overlay is rebuilt.
+-- A retained owner base is usable only against the exact current generation.
+def current (overlay log : Nat) : Prop := overlay = log
+theorem deferredSuffixInvalidates (generation : Nat) :
+    ¬ current generation (generation + 1) := by
+  simp [current]
+theorem canonicalRebuildRestores (generation : Nat) :
+    current generation generation := rfl
+end OwnerSuffixPacing

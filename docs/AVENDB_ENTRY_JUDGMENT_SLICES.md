@@ -65,3 +65,26 @@ does not bound that already-validated warm hydration. A future guarded label-onl
 query plan could choose the ordered page before importing records, but only when
 predicates, projection, count and ordering semantics can be preserved. This slice
 makes no query-semantic change and claims no physical-device latency result.
+
+### Accepted owner-base suffix reception
+
+Owner-base suffix admission now follows the same split as scoped staged history:
+verify the captured base, current authority/dependency closure, inventory and
+active demand atomically; retain the verified edits with deferred presentation;
+then run paced canonical catch-up outside the admission locks. Old overlay
+metadata is not current after the held log changes: its exact log/key/anchor
+basis must match before use. Navigation cancellation stops the foreground wait,
+not the retained admitted edits. Actual live announcements remain independent.
+
+The long-owner-base suffix regression now exercises prepared deferred reception
+and `catch_up_step`, requires the old base scope to become unavailable before
+reconstruction, then requires the exact latest text and advanced active base.
+The existing public cold-room demand regression still requires both first view
+and a subsequent live edit while all seventeen unrelated grant frontiers and the
+unrelated payload remain withheld. Neither assertion was relaxed.
+
+This split removes an unpaced receive call; it does not prove all work inside a
+single canonical authority or owner-overlay restoration turn is bounded in wall
+time. Owner-overlay restoration and initial authority preparation retain their
+existing guards and budgets. Rust runtime validation is pending integration;
+standalone `OwnerSuffixPacing` Lean model and Rust parser validation passed.
