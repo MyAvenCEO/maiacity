@@ -51,9 +51,9 @@
 
 	const n = (/** @type {number} */ x) => x.toLocaleString('en');
 	const covered = $derived(Math.max(0, sync.logs - sync.behind));
-	const background = $derived(!sync.known ? 'Sync · checking' : !sync.peers ? 'Sync · offline' : sync.behind > 0 ? `Sync · ${n(covered)} / ${n(sync.logs)} logs` : sync.pulling > 0 ? 'Sync · checking updates' : sync.logs > 0 ? 'Sync · caught up' : 'Sync · checking');
+	const background = $derived(!sync.known ? 'Sync · checking' : !sync.peers ? 'Sync · offline' : sync.behind > 0 ? `Sync ${n(covered)}/${n(sync.logs)}` : sync.pulling > 0 ? 'Sync · checking updates' : sync.logs > 0 ? 'Sync current' : 'Sync · checking');
 	const view = $derived(viewStatus(reads, files));
-	const label = $derived(view.state === 'local' ? 'View · local' : view.state === 'unknown' ? 'View · checking' : view.state === 'unavailable' ? 'View · unavailable' : files.waiting > 0 ? `View · ${n(files.waiting)} files waiting` : files.reading > 0 ? `View · ${n(files.reading)} files loading` : `View · ${n(reads.pending)} reads loading`);
+	const label = $derived(view.state === 'local' ? 'Local view' : view.state === 'unknown' ? 'View checking' : view.state === 'unavailable' ? 'View unavailable' : files.waiting > 0 ? `View · ${n(files.waiting)} files waiting` : files.reading > 0 ? `View · ${n(files.reading)} files loading` : `View · ${n(reads.pending)} reads loading`);
 	const details = $derived([
 		`${n(sync.peers)} peers · ${n(sync.pulling)} active transfers`,
 		`${n(sync.behind)} logs remaining · ${n(files.waiting + files.reading)} files pending`
@@ -77,14 +77,15 @@
 				<circle cx="9" cy="9" r={R} class="track" />
 				<circle cx="9" cy="9" r={R} class="done" stroke-dasharray="{fraction === null ? ROUND / 4 : fraction * ROUND} {ROUND}" />
 			</svg>
-			<span class="labels"><span>{label}</span><small>{background}</small></span>
+			<span class="labels"><span>{label}</span><span class="separator" aria-hidden="true">·</span><span class="background">{background}</span></span>
 		</button>
 	</div>
 {/if}
 
 <style>
-	.labels { display: grid; gap: 2px; }
-	.labels small { font-size: 0.68rem; opacity: 0.75; }
+	.labels { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.3rem; }
+	.background { opacity: 0.75; }
+	.separator { opacity: 0.4; }
 	/* in the app's foot stack, nearest the nav pill ($lib/app/foot.js) */
 	.status {
 		display: flex;
@@ -108,10 +109,11 @@
 		display: flex;
 		align-items: center;
 		gap: 0.45rem;
-		padding: 0.32rem 0.8rem 0.32rem 0.55rem;
+		padding: 0.25rem 0.6rem;
+		max-width: calc(100vw - 2rem);
 		border-radius: 999px;
 		font: inherit;
-		font-size: 0.74rem;
+		font-size: 0.68rem;
 		letter-spacing: 0.02em;
 		white-space: normal;
 		text-align: left;
