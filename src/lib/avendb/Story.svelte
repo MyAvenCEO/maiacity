@@ -30,7 +30,7 @@
 	import StorySparks from './StorySparks.svelte';
 	import StoryThumbnail from './StoryThumbnail.svelte';
 	import StoryWriting from './StoryWriting.svelte';
-	import { storyFallbackQuery } from './stories-query.js';
+	import { storyTransitionQuery, storyTransitionDefaults, privateTransitionReady } from './story-transition-query.js';
 	import { count, nameOf, short, seedCity, reads } from './vaults.js';
 
 	/** `step` the stage whose tab shows, as its address names it, where it isn't the one it is in
@@ -78,9 +78,9 @@
 	const writes = $derived(!!item && (item.writers ?? []).includes(actor));
 
 	const workflows = entryCollection(() => api, () => item
-		? { op: 'entry_views', vault: item.vault, as: actor, types: ['flow'] }
+		? storyTransitionQuery(item.vault, actor)
 		: { op: 'entry_views', entries: [], as: actor });
-	const defaults = entryCollection(() => api, () => storyFallbackQuery(item?.vault ?? '', actor, seedCity(world)?.id));
+	const defaults = entryCollection(() => api, () => storyTransitionDefaults(item?.vault ?? '', actor, seedCity(world)?.id));
 	const flowWorld = $derived({ ...world, entries: [...workflows.rows, ...defaults.rows].filter(e => reads(e, actor)) });
 	const flow = $derived(item ? (flowsFor(flowWorld, item.vault, 'story')[0] ?? STORY) : STORY);
 	const stage = $derived(item ? stageOf(item, flow) : null);
@@ -128,10 +128,11 @@
 	}
 
 	/** Moves it to stage `to` of its flow, with the functions the flow runs then. @param {string} to */
-	async function move(to) {
-		if (world.entriesComplete === false) return;
+	const canMove = (/** @type {string} */ to) => world.entriesComplete !== false || privateTransitionReady(stage, flow.stages.find(s=>s.key===to), workflows.phase, defaults.phase);
+	async function move(/** @type {string} */ to) {
+		if (!canMove(to)) return;
 		if (!item) return;
-		const { ops, errors } = await moving(world, actor, item, flow, to, false);
+		const { ops, errors } = await moving(world.entriesComplete === false ? flowWorld : world, actor, item, flow, to, false);
 		problem = errors.join(' · ');
 		if (errors.length) return;
 		const moved = await api.runAll(`Moving it to ${flow.stages.find((s) => s.key === to)?.name ?? to}`, ops);
@@ -244,11 +245,11 @@
 			{#if writes}
 				<span class="moves">
 					{#each onward as s (s.id)}
-						<button class="btn" class:primary={!stage || flow.stages.indexOf(s) > flow.stages.indexOf(stage)} disabled={busy || world.entriesComplete === false} onclick={() => move(s.key)}>{label(s)}</button>
+						<button class="btn" class:primary={!stage || flow.stages.indexOf(s) > flow.stages.indexOf(stage)} disabled={busy || !canMove(s.key)} onclick={() => move(s.key)}>{label(s)}</button>
 					{/each}
 				</span>
 			{/if}
-			{#if world.entriesComplete === false}<p class="soft">Stage transitions need their workflow dependencies; this view’s local content is available now.</p>{/if}
+			{#if world.entriesComplete === false}<p class="soft">Private stage changes use their local workflow dependencies. Public transitions need complete picture-sharing evidence.</p>{/if}
 			{#if problem}<p class="bad">{problem}</p>{/if}
 		{:else}
 			<p class="soft">This device holds no story {short(entry)}.</p>
