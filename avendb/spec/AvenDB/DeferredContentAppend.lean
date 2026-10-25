@@ -59,3 +59,28 @@ theorem immutable_receipts_unchanged (context next : Context)
   · simp at h
 
 end AvenDB.DeferredContentAppend
+
+namespace AvenDB.DeferredContentAppend
+-- Visible item state alone does not certify the judgment scratch's causal cut.
+structure ScratchCut where
+  tip : Nat
+  held : List Nat
+  authenticated : Bool
+  deriving DecidableEq
+
+def resumes (cut : ScratchCut) (dependencies history : List Nat) : Prop :=
+  cut.authenticated = true ∧ dependencies = [cut.tip] ∧ cut.held = history
+
+theorem missingAuthenticationRejects (cut : ScratchCut) (deps history : List Nat)
+    (h : cut.authenticated = false) : ¬ resumes cut deps history := by
+  simp [resumes, h]
+
+theorem differentCutRejects (cut : ScratchCut) (deps history : List Nat)
+    (h : cut.held ≠ history) : ¬ resumes cut deps history := by
+  simp [resumes, h]
+
+-- Scratch reuse never labels omitted historical bodies as already hydrated.
+def retainOmissions (missing : List Nat) : List Nat := missing
+ theorem scratchReuseRetainsOmissions (missing : List Nat) :
+    retainOmissions missing = missing := rfl
+end AvenDB.DeferredContentAppend

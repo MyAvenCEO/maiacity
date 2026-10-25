@@ -3898,7 +3898,10 @@ impl Lab {
         change: impl FnOnce(&mut Item),
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, entry).edit_on(self.shown_item(on, entry, line), line, on, change);
+        let item = self.shown_item(on, entry, line);
+        let history = (line == MAIN && item.is_some()).then(|| self.append_history(on, entry)).flatten()
+            .unwrap_or_else(|| self.shown(on, entry));
+        let draft = history.edit_on(item, line, on, change);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
 
@@ -4113,6 +4116,20 @@ impl Lab {
         self.held(d).shown.get(&entry)?.items_in(Some(self.held(d))).get(&line).cloned()
     }
 
+    /// Metadata-only judgment is usable for a linear append only with the exact
+    /// saved scratch and currently authorized old bodies. Public history still
+    /// goes through history_in and opens its content explicitly.
+    fn append_history(&self, d: SignerId, entry: EntryId) -> Option<&History> {
+        let store = self.held(d);
+        if store.behind || store.reshow || store.replayed != store.log.edits().len()
+            || self.held_back.is_some() || self.hosted.contains_key(&d) { return None; }
+        let shown = store.shown.get(&entry)?;
+        if shown.history_bodies.is_empty()
+            || !shown.history_bodies.iter().all(|id| store.deferred_authorized(*id)) { return None; }
+        shown.after.scratch.as_ref()?.complete_main_tip(&shown.history)?;
+        Some(&shown.history)
+    }
+
     fn shown(&self, d: SignerId, entry: EntryId) -> &History {
         static NONE: std::sync::LazyLock<History> = std::sync::LazyLock::new(History::default);
         self.held(d).shown.get(&entry).and_then(|s| s.history_in(self.held(d))).unwrap_or(&NONE)
@@ -4155,7 +4172,12 @@ impl Lab {
         let action =
             Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files: roots, body: vec![] };
         let (edit, w) = self.check_write(on, &view, action)?;
-        let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, (&content, &tags), needs, None)?;
+        let history = (w.proposal == Proposal::Main && tags.is_empty() && files.is_empty() && defines.is_none())
+            .then(|| self.append_history(on, entry)).flatten()
+            .filter(|h| self.held(on).shown[&entry].after.scratch.as_ref()
+                .is_some_and(|scratch| scratch.resumes_complete_main(h, &w)))
+            .unwrap_or_else(|| self.shown(on, entry));
+        let proof = self.proven(on, &view, (vault, history), &w, (&content, &tags), needs, None)?;
         self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof, files, defines }, x)
     }
 
@@ -6605,7 +6627,9 @@ fn show_items(d: SignerId, store: &mut Store) {
                 // Deferred content is intentionally not forced by a debug comparison.
                 // Dedicated regressions compare demanded content to canonical replay.
                 store.perf.count("show: own materialization reused", 1);
-                old.insert(en.id, shown);
+                if shown.after.scratch.is_some() {
+                    retain_recent_shown(&mut old, &mut recent, en.id, shown);
+                } else { old.insert(en.id, shown); }
                 continue;
             }
             store.view_given = 0; // changed bodies or an invalid item must not retain a stale adjunct

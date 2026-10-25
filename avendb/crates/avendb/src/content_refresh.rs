@@ -78,8 +78,15 @@ impl Lab {
             if !before.is_some_and(|before| basis.advance_content_append(before, store.log.revision())) { store.reshow=true; return false; }
             store.perf.count("refresh: deferred context retained", 1);
         }
+        let reuse_scratch = store.shown.get(&entry).is_some_and(|shown| {
+            !shown.history_bodies.is_empty()
+                && store.replay.state.write(id).is_some_and(|write|
+                    shown.after.scratch.as_ref().is_some_and(|scratch|
+                        scratch.resumes_complete_main(&shown.history, write)))
+                && shown.history_bodies.iter().all(|id| store.deferred_authorized(*id))
+        });
         let target: Vec<_> = store.replay.state.entry_writes(entry).map(|w| w.edit)
-            .filter(|id| store.deferred_bodies.contains_key(id)).collect();
+            .filter(|id| !reuse_scratch && store.deferred_bodies.contains_key(id)).collect();
         if target.iter().any(|id| Arc::strong_count(&store.deferred_bodies[id]) != 1
             || Arc::weak_count(&store.deferred_bodies[id]) != 0 || store.demanded_body(*id).is_none()) {
             store.reshow = true; return false;
@@ -106,13 +113,15 @@ impl Lab {
         let old = store.shown.remove(&entry);
         let (count, last) = st.entry_tip(entry);
         let tip = Tip { writes: count, last, lane: store.shown_lanes[&en.vault].0, groups: store.shown_groups };
+        let mut history_bodies = Vec::new();
         let (mut judging, items) = match old {
             Some(old) if !creating && old.tip.writes + 1 == count && last == Some(id) => {
                 old.items_in(Some(store));
-                old.history_in(store).expect("settled history");
+                if !reuse_scratch { old.history_in(store).expect("settled history"); }
                 // We own the previous showing: move its history rather than copying
                 // every historical content buffer on each message/row mutation.
-                let history = if old.history_bodies.is_empty() { old.history }
+                if reuse_scratch { history_bodies = old.history_bodies.clone(); }
+                let history = if old.history_bodies.is_empty() || reuse_scratch { old.history }
                     else { old.hydrated_history.into_inner().flatten().expect("hydrated above") };
                 let items = old.items.into_inner().expect("materialized above");
                 (Judging::resume(en, r, &lane, history, old.after), Some(items))
@@ -130,8 +139,15 @@ impl Lab {
             hash.update(&write.edit.0).update(&[store.bodies.contains_key(&write.edit) as u8]);
         }
         hash.update(&tip.lane).update(&tip.groups);
-        let shown = judging.shown_on(d, hash.finalize(), tip, items);
-        debug_assert!(same_shown_in(&shown, &judged_anew(d, st, (r, &store.bodies), &r.groups, en, &lane), Some(store)));
+        let mut shown = judging.shown_on(d, hash.finalize(), tip, items);
+        shown.history_bodies = history_bodies;
+        if reuse_scratch { store.perf.count("refresh: warm scratch resumed", 1); }
+        // A full-body differential comparison is performed by regression tests
+        // after measurement. Doing it here would decrypt the deliberately omitted
+        // history on every debug-build append and judge absent bodies as missing.
+        if shown.history_bodies.is_empty() {
+            debug_assert!(same_shown_in(&shown, &judged_anew(d, st, (r, &store.bodies), &r.groups, en, &lane), Some(store)));
+        }
         store.shown.insert(entry, shown);
         // A changed admission/meaning must never suppress a steward mark. Foreign
         // asks/proposals are excluded above; any computed mark falls back here.

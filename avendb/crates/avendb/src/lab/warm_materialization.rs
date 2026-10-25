@@ -11,6 +11,7 @@ const LIMIT: usize = 32 * 1024 * 1024;
 const MAX_ENTRIES: usize = 256;
 const MAX_WRITES: usize = 8192;
 const WITH_METADATA: u32 = u32::MAX - 1;
+const WITH_SCRATCH: u32 = u32::MAX - 2;
 use crate::deferred_body::{BodyMetadata, DeferredBody};
 
 enum CapturedLine {
@@ -29,6 +30,7 @@ pub(super) struct Capture {
         BTreeMap<Line, CapturedLine>,
         BTreeSet<BlobId>,
         Vec<(EditId, BodyMetadata)>,
+        Option<Scratch>,
     )>,
 }
 fn basis(store: &Store) -> [u8; 32] {
@@ -104,6 +106,7 @@ impl Capture {
                     let metadata = BodyMetadata::of(body);
                     metadata.ordinary().then_some((c.write.edit, metadata))
                 }).collect::<Option<Vec<_>>>().unwrap_or_default(),
+                s.after.scratch.as_ref().map(Scratch::fork),
             ));
         }
         Self {
@@ -117,7 +120,7 @@ impl Capture {
         self.basis.encode(&mut out);
         let mut entries = Vec::new();
         let mut count = 0u32;
-        'entries: for (entry, print, changes, items, asked, metadata) in self.entries {
+        'entries: for (entry, print, changes, items, asked, metadata, scratch) in self.entries {
             let mut encoded = Vec::new();
             entry.encode(&mut encoded);
             print.encode(&mut encoded);
@@ -161,13 +164,25 @@ impl Capture {
                 }
                 snapshot.encode(&mut encoded);
             }
+            // Scratch encoding remains outside the shared database lock and within
+            // the same bounded authenticated own adjunct as the visible snapshots.
+            match scratch.and_then(|s| s.image()) {
+                None => encoded.push(0),
+                Some(image) => {
+                    encoded.push(1);
+                    image.snapshot.encode(&mut encoded);
+                    image.holds.into_iter().collect::<Vec<_>>().as_slice().encode(&mut encoded);
+                    image.authored.into_iter().collect::<Vec<_>>().as_slice().encode(&mut encoded);
+                    image.tip.encode(&mut encoded);
+                }
+            }
             if entries.len().saturating_add(encoded.len()) > LIMIT {
                 break;
             }
             entries.extend(encoded);
             count += 1;
         }
-        WITH_METADATA.encode(&mut out);
+        WITH_SCRATCH.encode(&mut out);
         count.encode(&mut out);
         out.extend(entries);
         out
@@ -243,6 +258,7 @@ pub(super) struct Saved {
     items: Vec<(Line, Vec<u8>)>,
     asked: BTreeSet<BlobId>,
     metadata: Vec<(EditId, BodyMetadata)>,
+    scratch: Option<crate::history::ScratchImage>,
 }
 pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
     if extra.len() > LIMIT + 40 {
@@ -250,7 +266,8 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
     }
     let mut rd = Reader::new(extra.get(32..)?);
     let marker = u32::decode(&mut rd).ok()?;
-    let with_metadata = marker == WITH_METADATA;
+    let with_scratch = marker == WITH_SCRATCH;
+    let with_metadata = marker == WITH_METADATA || with_scratch;
     let n = if with_metadata { rd.count(37).ok()? } else { marker as usize };
     if n > MAX_ENTRIES {
         return None;
@@ -305,6 +322,21 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
         for _ in 0..lines {
             items.push((rd.option().ok()?, rd.bytes().ok()?));
         }
+        let scratch = if with_scratch {
+            match rd.u8().ok()? {
+                0 => None,
+                1 => {
+                    let snapshot = rd.bytes().ok()?;
+                    let ids = bounded_seq::<EditId>(&mut rd, 32, MAX_WRITES).ok()?;
+                    let holds: BTreeSet<_> = ids.iter().copied().collect();
+                    if holds.len() != ids.len() { return None; }
+                    let authored = bounded_seq::<BlobId>(&mut rd, 32, MAX_WRITES).ok()?.into_iter().collect();
+                    let tip = rd.option().ok()?;
+                    Some(crate::history::ScratchImage { snapshot, holds, authored, tip })
+                }
+                _ => return None,
+            }
+        } else { None };
         if out
             .insert(
                 entry,
@@ -314,6 +346,7 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
                     items,
                     asked,
                     metadata: body_metadata,
+                    scratch,
                 },
             )
             .is_some()
@@ -376,6 +409,21 @@ impl Saved {
                 return None;
             }
         }
+        // Only the exact authenticated linear counted-main scratch can avoid
+        // historical content reconstruction. Invalid optional scratch falls back.
+        let scratch = self.scratch.and_then(|image| {
+            let last = history.changes().last()?.write.edit;
+            if image.tip != Some(last) || image.holds.len() != history.changes().len()
+                || !history.changes().iter().all(|c| c.counted && c.write.proposal == Proposal::Main && image.holds.contains(&c.write.edit)) {
+                return None;
+            }
+            let mut previous = None;
+            for change in history.changes() {
+                if change.write.deps.as_slice() != previous.as_slice() { return None; }
+                previous = Some(change.write.edit);
+            }
+            Scratch::from_owner_image(image, d, MAIN)
+        });
         let mine = history.mine();
         let history_bodies = history.changes().iter().filter(|c| store.deferred_bodies.contains_key(&c.write.edit))
             .map(|c| c.write.edit).collect();
@@ -388,7 +436,7 @@ impl Saved {
             print,
             tip,
             after: After {
-                scratch: None,
+                scratch,
                 attrs,
                 mine,
                 imported,
@@ -612,12 +660,29 @@ mod tests {
         let deferred_after=lab.held(device).deferred_bodies.len();
         let target_deferred_after=target_ids.iter().filter(|id|lab.held(device).deferred_bodies.contains_key(id)).count();
         let unrelated_deferred_after=unrelated_ids.iter().filter(|id|lab.held(device).deferred_bodies.contains_key(id)).count();
-        assert_eq!(target_deferred_after,0,"first append hydrates the target's retained history");
+        assert_eq!(target_deferred_after,target_ids.len(),"first append preserves omitted target history");
+        assert!(target_ids.iter().all(|id|!lab.held(device).deferred_bodies[id].content_ready()),
+            "saved exact scratch must avoid decoding old target bodies");
+        assert_eq!(lab.held(device).perf.to_json()["counts"]["refresh: warm scratch resumed"].as_u64(),Some(1));
         assert_eq!(unrelated_deferred_after,others.len());
         assert!(unrelated_ids.iter().all(|id|!lab.held(device).deferred_bodies[id].content_ready()));
         assert_eq!(lab.held(device).perf.to_json()["counts"]["refresh: owner content only"].as_u64(),Some(hits_before+1));
+        lab.edit(device,vault,entry,|item|item.push_block(paragraph(REVISIONS+4,"second append"))).unwrap();
+        assert!(target_ids.iter().all(|id|!lab.held(device).deferred_bodies[id].content_ready()));
+        let second_backup=lab.backup(device);
+        let second_count=second_backup.signed.len();
+        let receipt=lab.capture_warm_current(device,second_count,Some([46;40])).unwrap().encode();
+        let second_warm=Warm{keys:receipt.keys.clone().into_iter().collect(),views:receipt.view.clone().into_iter().collect()};
+        lab.warmed(device,receipt);
+        let expected=lab.item(device,entry).unwrap().record();
+        lab.restore_warm(device,second_backup,Some(([46;40],second_count)),&second_warm);
+        assert_eq!(lab.item(device,entry).unwrap().record(),expected);
+        assert!(target_ids.iter().all(|id|!lab.held(device).deferred_bodies[id].content_ready()));
+        lab.edit(device,vault,entry,|item|item.push_block(paragraph(REVISIONS+5,"after second reopen"))).unwrap();
+        assert!(target_ids.iter().all(|id|!lab.held(device).deferred_bodies[id].content_ready()));
         let expected=lab.item(device,entry).unwrap().record();
         let history=lab.history(device,entry).unwrap().changes().to_vec();
+        assert!(history.iter().all(|c|c.body.is_some()),"public history still opens all content");
         let final_backup=lab.backup(device);
         let started=Instant::now();
         lab.restore_from(device,final_backup);
@@ -628,6 +693,30 @@ mod tests {
             assert_eq!(lab.item(device,*other).unwrap().record(),record);
         }
         eprintln!("long-entry revisions={REVISIONS} warm_restore_us={warm_restore_us} first_view_us={first_view_us} append_us={append_us} canonical_cold_restore_us={cold_restore_us} deferred_before={deferred_before} deferred_after={deferred_after} target_deferred_after={target_deferred_after} unrelated_deferred_after={unrelated_deferred_after}; fixture timings only, not device latency");
+    }
+
+    #[test]
+    fn corrupt_or_incomplete_optional_scratch_falls_back_canonically() {
+        for corrupt in [false,true] {
+            let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
+            let n=backup.signed.len();
+            lab.restore_warm(device,backup,Some(([19;40],n)),&warm);
+            let encoded=Capture::take(lab.held(device)).encode(Vec::new());
+            let mut saved=decode(unwrap(&encoded).unwrap().1).unwrap().remove(&entries[0]).unwrap();
+            let image=saved.scratch.as_mut().expect("restored exact scratch retained for recapture");
+            if corrupt { image.snapshot=vec![0,1,2]; } else { image.holds.clear(); }
+            let store=lab.held(device);
+            let old=&store.shown[&entries[0]];
+            let restored=saved.restore(device,store.view(),&store.readings,store,
+                store.view().entry(entries[0]).unwrap(),old.print,old.tip).unwrap();
+            assert!(restored.after.scratch.is_none());
+            lab.stores.get_mut(&device).unwrap().shown.insert(entries[0],restored);
+            lab.edit(device,vault,entries[0],|item|item.edit_document(|d|d.title="Fallback".into())).unwrap();
+            let expected=lab.item(device,entries[0]).unwrap().record();
+            assert_eq!(lab.held(device).perf.to_json()["counts"]["refresh: warm scratch resumed"].as_u64().unwrap_or(0),0);
+            lab.restore_from(device,lab.backup(device));
+            assert_eq!(lab.item(device,entries[0]).unwrap().record(),expected);
+        }
     }
 
     #[test]
