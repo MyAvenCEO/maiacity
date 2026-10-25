@@ -243,9 +243,13 @@ fn independently_verified_checkpoint_page_can_stage_without_coverage_shortcut() 
     let owner=source.passkey_from_in("owner",[235;32],Suite::MlDsa);
     let sender=source.device_with_in("sender",[236;32],Suite::MlDsa);
     let vault=cast::human_on(&mut source,owner,&[sender]);
+    // Preserve the independent signatures before checkpoint upkeep legitimately
+    // trims them from its backup. Bare covered edits belong to the separate
+    // atomic-admission test, not this independently verified fixture.
+    let mut originals=source.backup(sender).signed;
     let covers=source.log(sender).ids().to_vec();
-    source.submit(sender,&[owner],Action::Checkpoint {vault,covers}).unwrap();
-    let originals=source.backup(sender).signed;
+    let checkpoint=source.submit(sender,&[owner],Action::Checkpoint {vault,covers}).unwrap();
+    originals.push(source.signed_edit(sender,checkpoint).unwrap().clone());
     let incoming:Vec<_>=originals.iter().cycle().take(300).cloned().collect();
     let (mut chunked,me)=receiver();let (mut whole,_)=receiver();
     let mut prepared=chunked.prepare_receive(me,incoming.clone()).check();
