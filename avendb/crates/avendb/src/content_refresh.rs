@@ -2,9 +2,8 @@
 use super::*;
 
 fn deferred_refresh_ready(store: &Store) -> bool {
-    store.deferred_bodies.is_empty() || store.deferred_basis.as_ref().is_some_and(|basis|
-        *basis == store.log.revision() && store.deferred_bodies.values().all(|body|
-            Arc::strong_count(body) == 1 && Arc::weak_count(body) == 0 && body.metadata(basis).is_ok()))
+    store.deferred_bodies.is_empty() || store.deferred_basis.as_ref()
+        .is_some_and(|basis| basis.matches(&store.log.revision()))
 }
 
 impl Lab {
@@ -52,7 +51,7 @@ impl Lab {
             && store.opened.is_empty() && self.held_back.is_none()
     }
 
-    pub(super) fn refresh_content(&mut self, on: SignerId, id: EditId) -> bool {
+    pub(super) fn refresh_content(&mut self, on: SignerId, id: EditId, before: Option<&crate::policy::LogRevision>) -> bool {
         let d = self.at(on);
         let store = self.stores.get_mut(&d).expect("a device");
         let start = Perf::start();
@@ -72,22 +71,19 @@ impl Lab {
             store.reshow = true;
             return false;
         }
-        // The guards and strict append preserve every old ciphertext and policy/key
-        // input. Rebind only exclusively owned exact-basis receipts; cached plaintext
-        // still checks the current key on each read. No background body is decoded.
-        if !store.deferred_bodies.is_empty() {
-            let before = store.deferred_basis.clone().expect("guarded current receipt");
-            let after = store.log.revision();
-            for body in store.deferred_bodies.values_mut() {
-                let body = Arc::get_mut(body).expect("guarded exclusive receipt");
-                assert!(body.advance_content_append(&before, after.clone()));
-            }
-            store.deferred_basis = Some(after);
+        // Strict tail replay plus the unchanged key/authority guards preserve
+        // old immutable bodies. Advance their shared exact basis once, without
+        // visiting unrelated histories. Every demand still checks basis and key.
+        if let Some(basis) = &store.deferred_basis {
+            if !before.is_some_and(|before| basis.advance_content_append(before, store.log.revision())) { store.reshow=true; return false; }
             store.perf.count("refresh: deferred context retained", 1);
         }
         let target: Vec<_> = store.replay.state.entry_writes(entry).map(|w| w.edit)
             .filter(|id| store.deferred_bodies.contains_key(id)).collect();
-        if target.iter().any(|id| store.demanded_body(*id).is_none()) { store.reshow = true; return false; }
+        if target.iter().any(|id| Arc::strong_count(&store.deferred_bodies[id]) != 1
+            || Arc::weak_count(&store.deferred_bodies[id]) != 0 || store.demanded_body(*id).is_none()) {
+            store.reshow = true; return false;
+        }
         for id in target {
             let key = store.body_key(id).expect("validated current key").clone();
             let receipt = store.deferred_bodies.remove(&id).expect("selected deferred body");

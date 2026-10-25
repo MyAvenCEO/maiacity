@@ -23,4 +23,39 @@ theorem preservesBytes (saved result : Receipt) (before after : Nat)
   · cases h
     exact ⟨rfl, rfl⟩
   · contradiction
+
+-- Many immutable receipts refer to one exact basis; strict content append updates
+-- that basis once. The implementation must establish unchanged old ciphertext,
+-- authorization and keys before calling this transition.
+structure Context where
+  revision : Nat
+  deriving DecidableEq
+
+def advanceContext (context : Context) (before after : Nat) : Option Context :=
+  if context.revision = before then some ⟨after⟩ else none
+
+theorem context_stale_rejected (context : Context) (before after : Nat)
+    (h : context.revision ≠ before) : advanceContext context before after = none := by
+  simp [advanceContext, h]
+
+def bodyAllowed (context : Context) (current : Nat) (currentKey : Bool) : Prop :=
+  context.revision = current ∧ currentKey = true
+
+theorem advanced_context_still_requires_key (context : Context) (current : Nat) :
+    ¬ bodyAllowed context current false := by simp [bodyAllowed]
+
+def advanceShared (context : Context) (receipts : List Receipt) (before after : Nat) :
+    Option (Context × List Receipt) :=
+  (advanceContext context before after).map fun next => (next, receipts)
+
+theorem immutable_receipts_unchanged (context next : Context)
+    (receipts result : List Receipt) (before after : Nat)
+    (h : advanceShared context receipts before after = some (next, result)) :
+    result = receipts := by
+  simp only [advanceShared, advanceContext] at h
+  split at h
+  · simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+    exact h.2.symm
+  · simp at h
+
 end AvenDB.DeferredContentAppend
