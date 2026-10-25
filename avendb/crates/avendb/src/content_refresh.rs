@@ -17,6 +17,7 @@ impl Lab {
         // Governance and incomplete reconstruction always take the canonical full path.
         en.vault == *vault && st.acts_for(on, *actor) && !header.ty.of_lane() && !header.ty.is_cap_group()
             && body.files.is_empty() && files.is_empty()
+            && st.entry_key(*entry) == Some(KeyName::Entry(*entry, *stay, *epoch))
             && store.keys.first(KeyName::Entry(*entry, *stay, *epoch)).is_some()
             && en.creator == *vault
             && st.entry_writes(*entry).all(|w| w.proposal == Proposal::Main &&
@@ -212,6 +213,12 @@ mod tests {
         body.answers.push(id);
         assert!(!w.lab.content_refresh_ready(w.mac_a, &edit, &body));
         body.answers.clear();
+        let mut stale = edit.clone();
+        if let Action::Write { entry, stay, epoch, .. } = &mut stale.action {
+            *epoch += 1;
+            w.lab.stores.get_mut(&w.mac_a).unwrap().keys.insert(KeyName::Entry(*entry, *stay, *epoch), Secret::from_bytes([91;32]));
+        }
+        assert!(!w.lab.content_refresh_ready(w.mac_a, &stale, &body), "a held key is not enough: the current stay/epoch must match");
         w.lab.stores.get_mut(&w.mac_a).unwrap().behind = true;
         assert!(!w.lab.content_refresh_ready(w.mac_a, &edit, &body));
         w.lab.stores.get_mut(&w.mac_a).unwrap().behind = false;
