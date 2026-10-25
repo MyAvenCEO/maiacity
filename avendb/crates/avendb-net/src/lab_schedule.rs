@@ -17,6 +17,7 @@ tokio::task_local! {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Class {
+    Mutation,
     Foreground,
     Background,
 }
@@ -30,11 +31,14 @@ struct State {
     active: bool,
     next: u64,
     burst: usize,
+    write_burst: usize,
+    mutations: VecDeque<Waiting>,
     foreground: VecDeque<Waiting>,
     background: VecDeque<Waiting>,
 }
 pub(crate) struct Schedule {
     state: Mutex<State>,
+    mutations: Arc<Semaphore>,
     foreground: Arc<Semaphore>,
     background: Arc<Semaphore>,
 }
@@ -42,6 +46,7 @@ impl Default for Schedule {
     fn default() -> Self {
         Self {
             state: Mutex::default(),
+            mutations: Arc::new(Semaphore::new(16)),
             foreground: Arc::new(Semaphore::new(32)),
             background: Arc::new(Semaphore::new(16)),
         }
@@ -63,6 +68,7 @@ struct Registration {
 impl Drop for Registration {
     fn drop(&mut self) {
         let mut s = self.schedule.state.lock().expect("Lab schedule");
+        s.mutations.retain(|w| w.id != self.id);
         s.foreground.retain(|w| w.id != self.id);
         s.background.retain(|w| w.id != self.id);
     }
@@ -70,6 +76,7 @@ impl Drop for Registration {
 impl Schedule {
     pub(crate) async fn acquire(self: &Arc<Self>, class: Class) -> Turn {
         let slots = match class {
+            Class::Mutation => &self.mutations,
             Class::Foreground => &self.foreground,
             Class::Background => &self.background,
         };
@@ -83,7 +90,8 @@ impl Schedule {
             let mut s = self.state.lock().expect("Lab schedule");
             if !s.active {
                 s.active = true;
-                s.burst = usize::from(class == Class::Foreground);
+                s.burst = usize::from(class != Class::Background);
+                s.write_burst = usize::from(class == Class::Mutation);
                 return Turn {
                     schedule: self.clone(),
                     _slot: slot,
@@ -92,6 +100,7 @@ impl Schedule {
             let id = s.next;
             s.next = s.next.wrapping_add(1);
             let queue = match class {
+                Class::Mutation => &mut s.mutations,
                 Class::Foreground => &mut s.foreground,
                 Class::Background => &mut s.background,
             };
@@ -112,9 +121,16 @@ impl Schedule {
     fn release(self: &Arc<Self>) {
         let next = {
             let mut s = self.state.lock().expect("Lab schedule");
-            let next = if !s.foreground.is_empty() && (s.background.is_empty() || s.burst < 3) {
+            let has_foreground = !s.mutations.is_empty() || !s.foreground.is_empty();
+            let next = if has_foreground && (s.background.is_empty() || s.burst < 3) {
                 s.burst = s.burst.saturating_add(1);
-                s.foreground.pop_front()
+                if !s.mutations.is_empty() && (s.foreground.is_empty() || s.write_burst < 2) {
+                    s.write_burst = s.write_burst.saturating_add(1);
+                    s.mutations.pop_front()
+                } else {
+                    s.write_burst = 0;
+                    s.foreground.pop_front()
+                }
             } else if !s.background.is_empty() {
                 s.burst = 0;
                 s.background.pop_front()
@@ -169,6 +185,37 @@ mod tests {
         drop(history);
         assert!(poll_once(&mut readers[3]).await.is_some());
     }
+    #[tokio::test]
+    async fn local_writes_overtake_reads_without_starving_reads_or_history() {
+        let schedule = Arc::new(Schedule::default());
+        let active = schedule.acquire(Class::Background).await;
+        let mut read = Box::pin(schedule.acquire(Class::Foreground));
+        let mut history = Box::pin(schedule.acquire(Class::Background));
+        assert!(poll_once(&mut read).await.is_none());
+        assert!(poll_once(&mut history).await.is_none());
+        let mut writes: Vec<_> = (0..3).map(|_| Box::pin(schedule.acquire(Class::Mutation))).collect();
+        for write in &mut writes { assert!(poll_once(write).await.is_none()); }
+        let mut cancelled = Box::pin(schedule.acquire(Class::Mutation));
+        assert!(poll_once(&mut cancelled).await.is_none());
+        drop(cancelled);
+        drop(active);
+        for write in writes.iter_mut().take(2) {
+            let turn = poll_once(write).await.expect("local mutation overtakes queued read");
+            assert!(poll_once(&mut read).await.is_none());
+            assert!(poll_once(&mut history).await.is_none());
+            drop(turn);
+        }
+        let turn = poll_once(&mut read).await.expect("read after two writes");
+        assert!(poll_once(&mut writes[2]).await.is_none());
+        drop(turn);
+        let turn = poll_once(&mut history).await.expect("history after three foreground grants");
+        assert!(poll_once(&mut writes[2]).await.is_none());
+        drop(turn);
+        drop(poll_once(&mut writes[2]).await.expect("remaining mutation resumes"));
+        assert!(!schedule.state.lock().unwrap().active);
+        assert_eq!(schedule.mutations.available_permits(), 16);
+    }
+
     #[tokio::test]
     async fn registration_acknowledges_this_waiter_with_unrelated_work_queued() {
         let schedule = Arc::new(Schedule::default());

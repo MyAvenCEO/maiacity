@@ -18,4 +18,15 @@ def cooldown (work multiplier : Nat) (_queued : Nat) : Nat := work * multiplier
 
 theorem waiting_does_not_extend_cooldown (work multiplier q1 q2 : Nat) :
     cooldown work multiplier q1 = cooldown work multiplier q2 := rfl
+/-- Writes may overtake queued reads twice, then a waiting read takes a turn.
+Both classes share the existing foreground budget against background work. -/
+def mutation (readWaiting : Bool) (writeBurst : Nat) : Bool :=
+  !readWaiting || decide (writeBurst < 2)
+
+theorem reads_after_write_burst (burst : Nat) (h : 2 ≤ burst) :
+    mutation true burst = false := by simp [mutation, Nat.not_lt.mpr h]
+
+theorem mutation_cannot_extend_foreground_budget (burst : Nat) (h : 3 ≤ burst) :
+    foreground true burst = false := background_after_burst burst h
+
 end AvenDB.LabScheduling

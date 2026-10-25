@@ -1421,7 +1421,7 @@ impl Node {
         f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static,
     ) -> Result<T> {
         let sampled = self.shared.receipts.enabled() || self.shared.ui_receipts.enabled();
-        let (out, edit) = self.shared.try_lab(move |lab, me| {
+        let (out, edit) = self.shared.try_lab_class(lab_schedule::Class::Mutation, move |lab, me| {
             let before = if sampled { lab.log(me).ids().len() } else { 0 };
             let out = f(lab, me);
             let edit = if sampled && lab.log(me).ids().len() > before {
