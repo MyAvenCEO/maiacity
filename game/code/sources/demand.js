@@ -47,6 +47,8 @@ export function createDemand(run, { scope = crypto.randomUUID().replaceAll('-', 
 		prioritize: (ids, selectors = queries) => replace([...ids, ...entries], selectors),
 		replace,
 		// Local selector support never establishes peer support or result completeness.
+		// Transport failures and policy refusals never enable an unscoped retry.
+		legacy: () => !supported,
 		discovery: () => ({ supported: discoverySupported, complete: false }),
 		close() {
 			if (stopped) return;
