@@ -519,6 +519,20 @@ mod tests {
     }
 
     #[test]
+    fn typed_global_inventory_does_not_materialize_unrelated_or_unreadable_entries() {
+        let (mut lab, device, _vault, entries, backup, warm) = warmed_notes();
+        let n = backup.signed.len();
+        lab.restore_warm(device, backup, Some(([19;40],n)), &warm);
+        let out = crate::engine::read(&lab, device, &serde_json::json!({"op":"entry_views","types":["task"]}));
+        assert_eq!(out["ok"]["rows"], serde_json::json!([]));
+        let out = crate::engine::read(&lab, device, &serde_json::json!({"op":"entry_views","types":["note"],"as":VaultId([0;32]).to_hex()}));
+        assert_eq!(out["ok"]["rows"], serde_json::json!([]));
+        for entry in entries {
+            assert!(lab.held(device).shown[&entry].items.get().is_none(), "type/actor gate precedes materialization");
+        }
+    }
+
+    #[test]
     fn warm_metadata_restores_first_view_without_decoding_unrelated_bodies() {
         let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
         let expected: Vec<_> = entries.iter().map(|e| lab.item(device,*e).unwrap().record()).collect();

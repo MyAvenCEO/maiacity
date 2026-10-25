@@ -2,9 +2,9 @@
  * Do not narrow this to type=file: that would omit valid existing Library rows.
  * @param {string} vault @param {string} actor */
 export const libraryFilesQuery = (vault, actor) => ({ op: 'entry_views', vault, as: actor, kind: 'file' });
-/** Derived previews and outputs come from completed task records in this vault.
+/** Derived previews may be produced in any authorized vault. Preserve the old global task scope.
  * @param {string} vault @param {string} actor */
-export const libraryTasksQuery = (vault, actor) => ({ op: 'entry_views', vault, as: actor, types: ['task'] });
+export const libraryTasksQuery = (vault, actor) => ({ op: 'entry_views', as: actor, types: ['task'] });
 /** Explicit related file dependencies, bounded by entry_views' request limit.
  * The read still checks current acting-vault access, including cross-vault files.
  * @param {import('./vaults.js').EntryView[]} rows @param {string} actor */

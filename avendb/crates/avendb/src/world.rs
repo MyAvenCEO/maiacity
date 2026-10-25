@@ -563,13 +563,21 @@ impl EntryViews {
 pub fn entry_views(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Option<&[EntryId]>, actor: VaultId, types: Option<&[String]>, kind: Option<&str>) -> Option<EntryViews> {
     lab.vault_of(me)?;
     let st = lab.state(me);
+    let global = vault.is_none() && ids.is_none();
+    if global && types.is_none_or(|types| types.is_empty() || types.len() > 8 || types.iter().any(String::is_empty)) { return None; }
+    let readable = |en: &Entry| st.public_key(KeyFam::Audience(en.vault, en.audience()))
+        || levels(st, en.vault, en.audience()).iter().any(|(v, level)| *v == actor && level.allows(Level::Read));
+    let selected_type = |en: &Entry| types.is_none_or(|types| lab.entry_type_hint(me, en.id)
+        .is_some_and(|kind| types.iter().any(|ty| ty == kind)));
     let mut snapshot = EntryViews { entries: vec![], total_entries: 0, readable_entries: 0 };
     // Explicit IDs use the canonical policy index, including cross-vault targets; no body scan.
     let selected: Vec<_> = match ids {
         Some(ids) => ids.iter().filter_map(|id| st.entry(*id)).collect(),
-        None => st.entries().iter().filter(|en| Some(en.vault) == vault).collect(),
+        None => st.entries().iter().filter(|en| vault.is_none_or(|vault| en.vault == vault)).collect(),
     };
-    for en in selected.into_iter().filter(|en| lab.landed(me, en.id)) {
+    // Global typed discovery rejects unrelated/unreadable entries before any
+    // record materialization or draft-history demand; counts disclose only matches.
+    for en in selected.into_iter().filter(|en| (!global || (readable(en) && selected_type(en))) && lab.landed(me, en.id)) {
         snapshot.total_entries += 1;
         // The same public/level metadata as EntryView, without opening any record.
         let readable = st.public_key(KeyFam::Audience(en.vault, en.audience()))

@@ -852,8 +852,8 @@ pub fn entry_views_snapshot(lab: &Lab, me: SignerId, op: &Value) -> Result<Optio
 }
 
 fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Option<world::EntryViews>, Refused> {
-    if o.contains_key("vault") == o.contains_key("entries") {
-        return Err(bad("entry_views requires exactly one of vault or entries"));
+    if o.contains_key("vault") && o.contains_key("entries") {
+        return Err(bad("entry_views cannot combine vault and entries"));
     }
     let vault = o.get("vault").map(|_| vault_of(o, "vault")).transpose()?;
     let ids = o.get("entries").map(|value| {
@@ -865,6 +865,10 @@ fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resul
     }).transpose()?;
     let actor = o.get("as").map(|_| vault_of(o, "as")).transpose()?.or(vault).or_else(|| lab.vault_of(me));
     let types = o.get("types").map(|_| texts_of(o, "types")).transpose()?;
+    if vault.is_none() && ids.is_none() && types.as_ref().is_none_or(|types|
+        types.is_empty() || types.len() > 8 || types.iter().any(|ty| ty.is_empty())) {
+        return Err(bad("global entry_views requires 1 to 8 explicit nonempty types"));
+    }
     let kind = o.get("kind").map(|value| value.as_str().ok_or_else(|| bad("kind must be text"))).transpose()?;
     if kind.is_some_and(|kind| !["note", "todo", "file", "schema", "lens", "record", "sealed"].contains(&kind)) {
         return Err(bad("unknown entry kind"));
