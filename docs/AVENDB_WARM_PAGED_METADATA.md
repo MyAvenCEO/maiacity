@@ -30,3 +30,11 @@ Paged warm restore now decodes each page directly from the authenticated envelop
 One shared decode budget enforces the same aggregate write/detail/snapshot limits before allocating subsequent entries. Each page still checks its count and exact end; the envelope still checks its total length and exact end; duplicate entries fail closed. Item snapshot bytes remain owned because they must survive release of the decrypted envelope. This changes no receipt format, encryption, key validation, canonical fingerprint check or fallback behavior.
 
 The new regression accepts exactly 256 snapshots across borrowed pages, rejects 257 globally, and verifies retained snapshot bytes after the input envelope is dropped. Existing malformed/truncated/duplicate-page and canonical restore tests remain applicable. Rust parsing, diff checks and the existing Lean budget invariants passed; full warm regression execution is pending the shared compiler. No claim is made that envelope decryption itself is streamed or allocation-free.
+
+## Key-slot and deferred-index allocation reduction
+
+Warm key-slot parsing now validates and borrows its fixed-width records. Each `Secret` is constructed directly into the existing destination map; the intermediate complete vector of decoded keys is gone. Slots remain processed in the same newest-to-oldest order, malformed slots remain rejected, and the temporary decrypted key bytes are zeroized when that one slot finishes.
+
+Deferred-body setup now uses the existing canonical `Log::entry_write` index. It no longer allocates an all-log ID-to-edit reference map merely to locate the bounded entries covered by the receipt. Current-key checks, ciphertext limits and canonical restoration gates are unchanged.
+
+The exact extracted key-slot parser regression passed (current and legacy formats, borrowed pointer identity, malformed/truncated records). Full warm runtime tests remain pending. Remaining startup allocations are explicit: shelf slot ciphertext copied from `Bytes` into the public `Warm` vector, one AEAD plaintext envelope, owned snapshots retained beyond that envelope, and deferred ciphertext ownership converted from log vectors into `Arc` storage. Removing those requires ownership/API changes; this slice does not claim those buffers disappeared.

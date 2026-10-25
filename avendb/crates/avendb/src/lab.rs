@@ -741,17 +741,33 @@ pub type Checked = [u8; 40];
 /// A device's keys from its shelf (`Warm::keys`), opened: what its shelf named the edits it checked by, if anything
 /// (`Checked`), after a byte that says whether it named any, and the keys it opened from their boxes, each by the box it
 /// opened and the key it opened it with (`opened_box`).
-fn keys_of(bytes: &[u8]) -> Option<(Option<Checked>, Vec<([u8; 32], Secret)>)> {
+// Borrow the validated fixed-width records; restoration constructs each Secret
+// directly in its destination map, without a second complete decoded-key Vec.
+fn keys_of(bytes: &[u8]) -> Option<(Option<Checked>, &[u8])> {
     let (checked, keys) = match bytes.split_first()? {
         (0, keys) => (None, keys),
         (1, rest) => rest.split_first_chunk::<40>().map(|(checked, keys)| (Some(*checked), keys))?,
         _ => return None,
     };
-    let opened = keys.chunks_exact(64).map(|chunk| {
-        let (opened, secret) = chunk.split_at(32);
-        (opened.try_into().expect("32 bytes"), Secret::from_bytes(secret.try_into().expect("32 bytes")))
-    });
-    (keys.len() % 64 == 0).then(|| (checked, opened.collect()))
+    (keys.len()%64==0).then_some((checked,keys))
+}
+
+#[cfg(test)]
+mod key_slot_tests {
+    use super::*;
+    #[test]
+    fn warm_key_slots_borrow_valid_records_and_reject_partial_slots() {
+        let mut plain=vec![1u8];plain.extend([9u8;40]);plain.extend([7u8;64]);
+        let (checked,records)=keys_of(&plain).unwrap();
+        assert_eq!(checked,Some([9u8;40]));
+        assert_eq!(records.as_ptr(),plain[41..].as_ptr(),"records borrow the decrypted slot");
+        assert_eq!(records.len(),64);
+        assert!(keys_of(&plain[..plain.len()-1]).is_none());
+        assert!(keys_of(&plain[..40]).is_none());
+        assert!(keys_of(&[2]).is_none());assert!(keys_of(&[]).is_none());
+        let legacy=[0u8;65];let (checked,records)=keys_of(&legacy).unwrap();
+        assert_eq!(checked,None);assert_eq!(records.as_ptr(),legacy[1..].as_ptr());
+    }
 }
 
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
@@ -5646,16 +5662,21 @@ impl Lab {
         // Decode and merge one slot at a time. Keeping both complete decoded key
         // maps alive until collection finishes needlessly raises the startup peak.
         // Preserve newest-to-oldest order and the existing per-slot validity checks.
-        for (named, keys) in warm.keys.iter().filter_map(|bytes| {
-            keys_of(&key.as_ref()?.unlock("keys", bytes, b"stored keys")?)
-        }) {
+        for bytes in &warm.keys {
+            let Some(key)=key.as_ref() else {break;};
+            let Some(plain)=key.unlock("keys",bytes,b"stored keys") else {continue;};
+            let plain=Zeroizing::new(plain);
+            let Some((named,keys))=keys_of(&plain) else {continue;};
             if let (Some((now, n)), Some(named)) = (checked, named)
                 && now == named
             {
                 vouched.extend(backup.signed.iter().take(n).map(|s| s.edit.id()));
                 store.checked_given = Some(now);
             }
-            store.opened_before.extend(keys);
+            store.opened_before.extend(keys.chunks_exact(64).map(|chunk| {
+                let (opened,secret)=chunk.split_at(32);
+                (opened.try_into().expect("32 bytes"),Secret::from_bytes(secret.try_into().expect("32 bytes")))
+            }));
         }
         self.stores.insert(d, store);
         let (at, offered) = (Perf::start(), backup.signed.len() as u64);
