@@ -477,3 +477,24 @@ The real checkpoint-covered shared-room fixture exercises this stripped-body
 path without preseeded target authority. Covering checkpoint vaults outside the
 hinted ancestry remain unresolved/conservative; no claim of universal witness
 discovery is made by this increment. Rust runtime checks remain pending.
+
+### Witness locations beyond grant ancestry
+
+Protocol kind 23 requests one exact edit ID and returns at most four vault IDs,
+bound to that ID. The serving peer discloses a location only when ordinary
+reply authorization permits both the target and its independently signed,
+standing covering checkpoint. Request/response bounds are 33/162 bytes; serving
+uses existing checkpoint-response admission and a policy-revision fence.
+Receiving locations adds transfer requests only. The ordinary vault/share pulls
+and fresh local provenance remain mandatory. A forced paced catch-up after the
+pulls avoids reading stale replay during its cooldown. Each optional locator
+exchange has a two-second admission/network bound and remains inside the owning
+future, so demand cancellation drops it without spawning detached work.
+
+The new real-peer fixture covers a personal-vault grant with its owning coop's
+checkpoint, outside the grant's issuer/over/via ancestry, while an unrelated
+Carol authority update and document history remain withheld. It requires the
+room plus subsequent live edit and actual checkpoint-backed received provenance.
+Wire tests reject wrong target IDs, oversized counts and duplicate hints.
+Runtime validation remains pending canonical Cargo; this commit does not claim
+physical iPhone/iPad acceptance or deployed performance.

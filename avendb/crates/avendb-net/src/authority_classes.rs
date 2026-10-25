@@ -529,7 +529,7 @@ impl crate::Shared {
             let candidate = reply.edits.into_iter().find(|signed| ShareId::from(signed.edit.id()) == id)?;
             // Hash-matched fields are transfer hints only until signatures or
             // current checkpoint provenance validate this exact creation.
-            let hints = GrantClass::from_verified(id, &candidate.edit).map(|class| {
+            let mut hints = GrantClass::from_verified(id, &candidate.edit).map(|class| {
                 class.via.into_iter().chain([class.issuer,class.over])
                     .map(LogId::Vault).collect::<BTreeSet<_>>()
             })?;
@@ -552,9 +552,16 @@ impl crate::Shared {
                     // A provider legitimately retires covered PQ signatures.
                     // Pull potential witness authority normally, then the bare
                     // grant. No raw descriptor enters the classifier map.
-                    if hints.len()>MAX_VIA+2 {return None;}
+                    // Optional bounded locator; its labels are requests only.
+                    // The subsequent ordinary receive/current witness check is
+                    // still the sole route to a usable classifier.
+                    if let Some(extra)=crate::authority_witness::fetch(self,peer,EditId(id.0)).await {
+                        hints.extend(extra.into_iter().map(LogId::Vault));
+                    }
+                    if hints.len()>MAX_VIA+6 {return None;}
                     self.pull_expected(peer.endpoint,crate::Scope::Logs(hints),false,None,Some(device)).await.ok()?;
                     self.pull_expected(peer.endpoint,crate::Scope::Logs([LogId::Share(id)].into_iter().collect()),false,None,Some(device)).await.ok()?;
+                    self.catch_up_paced(true).await;
                     self.read(move |lab,me| {
                         let edit_id=EditId(id.0);
                         let proof=lab.authority_provenance(me);

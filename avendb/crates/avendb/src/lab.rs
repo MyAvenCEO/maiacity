@@ -4643,6 +4643,26 @@ impl Lab {
         out
     }
 
+    /// Transfer-only witness locations, disclosed only where both the target
+    /// body and checkpoint are ordinary authorized replies to this requester.
+    pub fn authority_witness_hints(&self, d: SignerId, requester: SignerId, target: EditId) -> Vec<VaultId> {
+        let allowed=self.answered(d,requester,&[]);
+        let store=self.held(d);
+        let permitted: HashSet<_>=allowed.iter().filter_map(|&at|store.log.ids().get(at).copied()).collect();
+        if !permitted.contains(&target) {return vec![];}
+        let provenance=self.authority_provenance(d);
+        let Some(vaults)=provenance.get(&target) else {return vec![];};
+        let mut out=BTreeSet::new();
+        for (at,edit) in store.replay.edits.iter().enumerate() {
+            let Action::Checkpoint{vault,covers}=&edit.action else {continue};
+            if vaults.contains(vault) && store.replay.stood[at] && covers.len()<=2048
+                && permitted.contains(&store.replay.ids[at]) && covers.contains(&target)
+                && self.independently_verified_edit(d,store.replay.ids[at]) {out.insert(*vault);}
+            if out.len()==4 {break;}
+        }
+        out.into_iter().collect()
+    }
+
     /// Current provenance only, not permission. The named checkpoint vault must
     /// join recursive current authority closure; empty means independently signed.
     pub fn authority_edit_dependencies(&self, d: SignerId, edit: EditId) -> Option<Vec<VaultId>> {
