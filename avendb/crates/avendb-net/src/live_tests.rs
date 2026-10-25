@@ -659,6 +659,13 @@ async fn mixed_chat_demand(grouped: bool) {
             }
             Ok::<(), anyhow::Error>(())
         }).await.map_err(|_| anyhow::anyhow!("cold query did not render before unrelated catch-up"))??;
+        // Rendering alone is insufficient: current semantic permissions must
+        // finish without consuming the deliberately withheld unrelated logs.
+        time::timeout(Duration::from_secs(20), async {
+            while phone.read(move |lab,me|lab.semantic_pending(me,target)).await {
+                time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.map_err(|_| anyhow::anyhow!("requested Chat semantic cut stayed pending behind unrelated catch-up"))?;
         if let Some((root,child))=group_history {
             anyhow::ensure!(phone.read(move|lab,me|lab.group(me,vault,root).is_some_and(|g|g.includes.is_empty())
                 && lab.group(me,vault,child).is_some()).await,"historical included group must arrive despite absence from latest root");
@@ -691,6 +698,13 @@ async fn mixed_chat_demand(grouped: bool) {
             }
             Ok::<(), anyhow::Error>(())
         }).await.map_err(|_| anyhow::anyhow!("live update did not render before unrelated catch-up"))??;
+        // Rendering alone is insufficient: current semantic permissions must
+        // finish without consuming the deliberately withheld unrelated logs.
+        time::timeout(Duration::from_secs(20), async {
+            while phone.read(move |lab,me|lab.semantic_pending(me,target)).await {
+                time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.map_err(|_| anyhow::anyhow!("requested Chat semantic cut stayed pending behind unrelated catch-up"))?;
         let after_live = phone.shared.differ(sender).await;
         anyhow::ensure!(unrelated_grants.iter().all(|id| after_live.contains(&LogId::Share(*id))), "live update reconciled unrelated revocation frontiers");
         anyhow::ensure!(phone.read(move |lab, me| lab.item(me, unrelated).is_none()).await, "live update pulled unrelated payload");

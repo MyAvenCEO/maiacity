@@ -244,7 +244,7 @@ export async function directRoom(read, who) {
  for (let offset = 0; ; ) {
   const page = answer(await completeQuery(() => read({ op: 'query', where: { all: [
    { type: ['room'] }, { path: ['look'], eq: 'dm' }, { not: { tag: GONE } }
-  ] }, select: [], order: [['created', 'desc']], offset, limit: 50 }))); 
+  ] }, select: [], order: [['created', 'desc']], offset, limit: 50 })));
   if (!page || page.countExact === false || page.pageComplete === false || !Array.isArray(page.rows) || !Number.isSafeInteger(page.count)) throw Error('Room lookup did not complete. Please try again.');
   if (page.rows.length) {
    const metadata = answer(await read({ op: 'entry_views', entries: page.rows.map(r => r.entry), types: ['room'] }));
