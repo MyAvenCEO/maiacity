@@ -81,3 +81,10 @@ test('policy observation export bounds and redacts engine records without invent
  expect(JSON.stringify(result)).not.toContain('secret');
  expect(policyObservations({ policy_observations: { ...base, samples: Array.from({ length: 100 }, () => ({ ms: 1, outcome: 'standing' })) } }).samples).toHaveLength(64);
 });
+
+test('scoped first-result and useful-result timings survive restart', () => {
+ const f=fixture();
+ for (const stage of ['entry_views.first-result-emission','entry_views.first-nonempty-emission','entry_views.first-nonempty-emission.readonly','query.first-result-emission']) f.journal.record(stage,45);
+ f.journal.flush();
+ expect(createLatencyJournal({storage:f.storage}).snapshot().samples.map(s=>s.stage)).toEqual(['entry_views.first-result-emission','entry_views.first-nonempty-emission','entry_views.first-nonempty-emission.readonly','query.first-result-emission']);
+});

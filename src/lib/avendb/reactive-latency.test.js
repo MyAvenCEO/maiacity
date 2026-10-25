@@ -10,7 +10,7 @@ test('clock spans empty and refused replies; readonly useful result is not compl
  emitted({ok:{rows:[]}}); now=200; emitted({refused:'denied'}); now=450;
  emitted({ok:{rows:[{entry:'private',record:{secret:'private'},readOnly:true}]}});
  now=900; emitted({ok:{rows:[{}]}});
- expect(samples).toEqual([['query.first-nonempty-emission',350],['query.first-nonempty-emission.readonly',350]]);
+ expect(samples).toEqual([['query.first-result-emission',0],['query.first-nonempty-emission',350],['query.first-nonempty-emission.readonly',350]]);
  expect(JSON.stringify(samples)).not.toContain('private');
 });
 
@@ -36,3 +36,12 @@ test('non-query operations do not pretend to measure query readiness',()=>{
  beginReactiveTiming({op:'network'},{journal:{record:(...s)=>samples.push(s)}})({ok:{rows:[{}]}});
  expect(samples).toEqual([]);
 });
+
+ test('scoped inventories distinguish initial empty from later useful state and retain no identities',()=>{
+ let now=10; const samples=[];
+ const emit=beginReactiveTiming({op:'entry_views',vault:'private'}, {now:()=>now,journal:{record:(...s)=>samples.push(s)}});
+ emit({refused:'private'}); emit({ok:null}); now=30; emit({ok:{rows:[]}});
+ now=80; emit({ok:{rows:[{entry:'private',readOnly:true}]}}); now=100; emit({ok:{rows:[{}]}});
+ expect(samples).toEqual([['entry_views.first-result-emission',20],['entry_views.first-nonempty-emission',70],['entry_views.first-nonempty-emission.readonly',70]]);
+ expect(JSON.stringify(samples)).not.toContain('private');
+ });
