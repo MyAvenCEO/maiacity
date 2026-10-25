@@ -3,6 +3,7 @@
  * Manifests and learned dependencies prioritize independent background sync; absent local data
  * stays pending. No empty, slow or locked local read authorizes an HTTP/peer fallback.
  */
+import { realmReader } from './realm-reader.js';
 import { MAIA_CITY } from './anchor.js';
 import { bringDeclared } from './manifests.js';
 import { createDemand } from './demand.js';
@@ -188,7 +189,7 @@ export function learn(ids, path = pageNow(), { prioritize = true } = {}) {
 export function deviceOf() {
 	if (device || typeof window === 'undefined') return device;
 	try {
-		return window.parent !== window ? (/** @type {any} */ (window.parent)[SHARED] ?? null) : null;
+		return window.parent !== window ? realmReader(/** @type {any} */ (window.parent)[SHARED] ?? null) : null;
 	} catch {
 		// a parent of another origin: none
 		return null;
