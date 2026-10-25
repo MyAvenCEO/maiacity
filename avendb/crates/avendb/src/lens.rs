@@ -1979,7 +1979,7 @@ pub mod blobs {
       "$schema":"https://json-schema.org/draft/2020-12/schema",
       "title":"Scoped discovery manifest, v1","type":"object",
       "properties":{
-        "kind":{"const":"avendb-scoped-discovery-v1"},
+        "kind":{"const":"discovery-manifest"},
         "vault":{"type":"string"},"scope":{"type":"object"},
         "members":{"type":"array","items":{"type":"object"}},
         "completeAtOwnerCut":{"type":"boolean"},"remoteComplete":{"type":"boolean"}
