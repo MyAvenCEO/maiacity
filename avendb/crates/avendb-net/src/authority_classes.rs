@@ -108,6 +108,18 @@ mod tests {
         assert!(scope.contains(&LogId::Vault(w.bob)), "wide reader devices affect the target key epoch");
         assert!(scope.contains(&LogId::Share(grant)));
         assert!(!scope.contains(&LogId::Vault(w.carol)));
+        let mut mixed = shape;
+        mixed.actors.insert(w.carol);
+        let missing = classes.owner_dependencies(&mixed, all, log.ids(), &local, &announced,
+            |id| w.lab.independently_verified_edit(w.mac_a,id)).unwrap();
+        assert!(missing.missing.contains(&LogId::Vault(w.carol)), "every participant actor needs its own current authority");
+        assert!(classes.owner_scope(&mixed,all,log.ids(),&local,&announced,|_|true).is_none());
+        classes.0.get_mut(&grant).unwrap().group=Some(entry);
+        assert!(classes.owner_dependencies(&mixed,all,log.ids(),&local,&announced,|_|true).is_none(),
+            "a mixed cut cannot ignore a historical group dependency");
+        classes.0.get_mut(&grant).unwrap().group=None;
+        mixed.actors.remove(&w.carol);
+        let shape=mixed;
         // A checkpoint-backed negative classifier must be revalidated on every
         // admission, even when its immutable descriptor says "unrelated".
         classes.0.get_mut(&grant).unwrap().covered=true;
@@ -182,8 +194,10 @@ mod tests {
         assert!(OwnerEntry::complete(entry, &without_marks, frontier).is_none(), "a stay's signed move cannot be omitted");
         let mut foreign = target.clone();
         let write = foreign.iter_mut().find(|s| matches!(s.edit.action, Action::Write { create: None, .. })).unwrap();
-        if let Action::Write { actor, .. } = &mut write.edit.action { *actor = w.bob; }
-        assert!(OwnerEntry::complete(entry, &foreign, frontier).is_none(), "non-owner writes need their own capability/group closure");
+        if let Action::Write { actor, proposal, .. } = &mut write.edit.action {
+            *actor = w.bob; *proposal = avendb::policy::Proposal::New;
+        }
+        assert!(OwnerEntry::complete(entry, &foreign, frontier).is_none(), "proposals need their own history closure");
     }
 
     #[test]
@@ -204,11 +218,12 @@ mod tests {
     }
 }
 
-/// A bounded complete target cut whose writes act for the owning vault.
-/// Historical audience moves and target-only key links retain every named
-/// dependency. Non-owner writes still require cap-group/readings tracing.
+/// A bounded complete owner-created main-line cut. Participant writes require
+/// complete actor authority and plain grant chains; grouped grants remain
+/// unresolved until historical cap-group dependencies can be closed.
 pub(crate) struct OwnerEntry {
     pub vault: VaultId,
+    pub actors: BTreeSet<VaultId>,
     pub via: BTreeSet<VaultId>,
     pub audiences: BTreeSet<Vec<ShareId>>,
     pub named_shares: BTreeSet<ShareId>,
@@ -228,7 +243,7 @@ impl OwnerEntry {
             via.extend(path.iter().copied());
         }
         if via.len() > MAX_CLASSES { return None; }
-        Some(Self { vault: base.vault(), via, audiences: base.audiences().clone(), named_shares: base.shares().clone() })
+        Some(Self { vault: base.vault(), actors: BTreeSet::from([base.vault()]), via, audiences: base.audiences().clone(), named_shares: base.shares().clone() })
     }
     pub(crate) fn complete(entry: EntryId, edits: &[Signed], frontier: &avendb::wire::Frontier) -> Option<Self> {
         Self::from_parts(entry, edits.iter().map(|signed| (signed.edit.id(), &signed.edit)), frontier)
@@ -238,6 +253,7 @@ impl OwnerEntry {
         use avendb::{id::EditId, policy::Proposal, keys::KeyName};
         if !frontier.waiting.is_empty() { return None; }
         let mut vault = None;
+        let mut actors = BTreeSet::new();
         let mut via = BTreeSet::new();
         let mut creation = false;
         let mut audiences = BTreeSet::new();
@@ -261,11 +277,13 @@ impl OwnerEntry {
             };
             match &edit.action {
                 Action::Write { vault: v, entry: e, actor, stay, via: via_path, create, proposal, deps: dependencies, .. } => {
-                    if *e != entry || actor != v || *proposal != Proposal::Main { return None; }
+                    if *e != entry || *proposal != Proposal::Main { return None; }
+                    actors.insert(*actor);
+                    if actors.len() > MAX_CLASSES { return None; }
                     declared_vault = Some(*v); path = via_path; deps = dependencies;
                     if let Some(stay) = stay { used_stays.insert(*stay); }
                     if let Some(create) = create {
-                        if creation || stay.is_some() || !deps.is_empty() { return None; }
+                        if actor != v || creation || stay.is_some() || !deps.is_empty() { return None; }
                         if create.audience.len() > MAX_CLASSES || !create.audience.windows(2).all(|w| w[0] < w[1]) { return None; }
                         audiences.insert(create.audience.clone());
                         named_shares.extend(create.audience.iter().copied());
@@ -317,7 +335,7 @@ impl OwnerEntry {
         if closed != ids { return None; }
         let heads: Vec<_> = ids.difference(&parents).copied().collect();
         if heads != frontier.heads { return None; }
-        Some(Self { vault: vault?, via, audiences, named_shares })
+        Some(Self { vault: vault?, actors, via, audiences, named_shares })
     }
 
 }
@@ -331,7 +349,8 @@ impl GrantClasses {
     /// Close a direct-owner entry's historical authority reads against
     /// an already classified authenticated inventory. No policy checks are
     /// skipped: the result only replaces unrelated log waits at the admission
-    /// fence. Non-owner write and checkpoint shapes never reach this function.
+    /// fence. Participant writes require plain chains and all actor authority;
+    /// proposals, foreign creation and checkpoint shapes remain conservative.
     pub(crate) fn owner_scope(
         &self,
         owner: &OwnerEntry,
@@ -380,7 +399,9 @@ impl GrantClasses {
             c.over == owner.vault && c.wide && c.level.allows(Level::Read)
         }).copied().collect();
         shares.extend(owner.named_shares.iter().copied());
+        let mixed = owner.actors.iter().any(|actor| *actor != owner.vault);
         let mut vaults = owner.via.clone();
+        vaults.extend(owner.actors.iter().copied());
         vaults.insert(owner.vault);
         // Covered negative classifiers are revalidated, including unrelated IDs.
         for id in &inventory {
@@ -415,6 +436,10 @@ impl GrantClasses {
             if let Some(id) = shares.difference(&seen_shares).next().copied() {
                 seen_shares.insert(id);
                 let class = self.0.get(&id)?;
+                // Participant judgment may depend on every historical group
+                // version in this chain. Do not substitute its current value or
+                // an owner's shortcut for that missing dependency closure.
+                if mixed && class.group.is_some() { return None; }
                 // Real parent chains stay over one vault. A malformed or unknown
                 // cross-vault parent goes through conservative reconciliation.
                 if class.over != owner.vault { return None; }
