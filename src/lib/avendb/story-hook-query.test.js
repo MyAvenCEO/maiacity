@@ -28,13 +28,15 @@ test('cover changes clear old pixels immediately and ignore prior actor/entry re
  const close=loadHookCover({},'C',async()=>{throw Error('unavailable')},v=>shown.push(v));await flush();
  expect(shown.at(-1)).toBeNull();close();
 });
-test('only audited explicit detail stages can open with metadata-only navigation',()=>{
- for(const step of ['hook','journey','writing','derivatives']){
+test('only audited detail stages can open with metadata-only navigation',()=>{
+ for(const step of ['idea','hook','thumbnail','journey','writing','movie','derivatives']){
   expect(summaryView('/app/',`#stories/${id(1)}/${step}`)).toBe(true);
   expect(needsWorldEntries({entriesComplete:false},'stories',true,step)).toBe(false);
  }
- for(const step of ['idea','movie','thumbnail','']){
+ for(const step of ['edit','unknown']){
   expect(summaryView('/app/',`#stories/${id(1)}/${step}`)).toBe(false);
   expect(needsWorldEntries({entriesComplete:false},'stories',true,step)).toBe(true);
  }
 });
+
+test('default story detail opens its scoped stage without a broad-world wait',()=>{expect(summaryView('/app/',`#stories/${id(1)}`)).toBe(true);expect(needsWorldEntries({entriesComplete:false},'stories',true,'')).toBe(false)});

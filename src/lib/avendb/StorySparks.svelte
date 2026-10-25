@@ -5,6 +5,8 @@
 	link. Each change is one op on the story's main line, for the acting vault, as the device allows it (`may`).
 -->
 <script>
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { entryReferenceClosure } from './entry-reference-closure.svelte.js';
 	import Icon from './Icon.svelte';
 	import { linkHref } from '$lib/markdown/index.js';
 	import { allowed, creatable, may } from './ops.js';
@@ -21,7 +23,10 @@
 
 	const entry = $derived(item.entry);
 	const as = $derived(world.vaults.find((v) => v.id === actor));
-	const byId = $derived(new Map(world.entries.map((e) => [e.entry, e])));
+	const inventory = entryCollection(() => api, () => ({ op: 'entry_views', vault: item.vault, as: actor, types: ['spark', 'note'] }));
+	const references = entryReferenceClosure(() => api, () => [...new Set([...(/** @type {any} */ (item.record)?.sparks ?? []), ...inventory.rows.filter(e => reads(e, actor)).map(e => e.entry)])], () => actor);
+	const localWorld = $derived({ ...world, entries: references.rows, entriesComplete: false });
+	const byId = $derived(new Map(references.rows.map((e) => [e.entry, e])));
 	const linked = $derived(/** @type {string[]} */ (/** @type {any} */ (item.record)?.sparks ?? []));
 	/** the sparks it names that this browser holds, and how many it doesn't */
 	const sparks = $derived(linked.flatMap((s) => byId.get(s) ?? []));
@@ -45,7 +50,7 @@
 	});
 	/** the sparks of its vault it doesn't grow from yet */
 	const others = $derived(
-		world.entries
+		inventory.rows
 			.filter((e) => e.vault === item.vault && isSpark(e) && !e.deleted && reads(e, actor) && !linked.includes(e.entry))
 			.sort((a, b) => (b.created ?? 0) - (a.created ?? 0))
 	);
@@ -109,6 +114,10 @@
 	}
 </script>
 
+{#if references.phase === 'error'}<p class="soft">Some local source entries could not be read.</p>{:else if references.phase !== 'ready'}<p class="soft">Reading this story’s linked sources…</p>{/if}
+{#if references.limited}<p class="soft">This source graph exceeds the bounded view. Open a linked spark to explore its remaining sources.</p>{/if}
+<p class="soft">Showing sources available locally; missing references may arrive later.</p>
+
 <section class="idea" aria-label="The sparks it grows from">
 	<header>
 		<h3>The sparks it grows from <small class="soft">{linked.length || ''}</small></h3>
@@ -123,7 +132,7 @@
 	{#if sparks.length}
 		<ul class="linked">
 			{#each sparks as s (s.entry)}
-				<SparkRow {world} {api} item={s} onremove={links && !busy ? () => takeOut(s.entry) : undefined} />
+				<SparkRow world={localWorld} {api} item={s} onremove={links && !busy ? () => takeOut(s.entry) : undefined} />
 			{/each}
 		</ul>
 	{:else}

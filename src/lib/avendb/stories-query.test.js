@@ -19,9 +19,9 @@ test('Stories declares local cards/flows and only existing trusted city fallback
 });
 test('only the audited Stories inventory bypasses world readiness; detail subviews retain their guard',()=>{
  for(const hash of ['#stories','#stories/','#articles'])assert.equal(summaryView('/app/',hash),true);
- assert.equal(summaryView('/app/','#stories/'+vault),false);
+ assert.equal(summaryView('/app/','#stories/'+vault),true);
  assert.equal(needsWorldEntries({entriesComplete:false},'stories',false),false);
- assert.equal(needsWorldEntries({entriesComplete:false},'stories',true),true);
+ assert.equal(needsWorldEntries({entriesComplete:false},'stories',true),false);
 });
 test('Stories local inventory does not wait for peers to accept its demand',async()=>{
  let finish;const pending=new Promise(resolve=>finish=resolve);const calls=[],answers=[];

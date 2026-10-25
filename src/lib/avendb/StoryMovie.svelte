@@ -10,6 +10,9 @@
 	here is one op on its main line, as the device allows it.
 -->
 <script>
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { entryReferenceClosure } from './entry-reference-closure.svelte.js';
+	import { reads } from './vaults.js';
 	import { BEAT_LABEL } from '$lib/stories/stories.js';
 	import { CUT, CUT_V1, fieldsOf } from '$lib/studio/cuts.js';
 	import {
@@ -41,7 +44,18 @@
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean,
 	 *   item: import('./vaults.js').EntryView, writes: boolean }}
 	 */
-	let { world, actor, api, busy, item } = $props();
+	let { world: baseWorld, actor, api, busy, item } = $props();
+	const inventory = entryCollection(() => api, () => ({op:'entry_views', as:actor, types:['script','cut','task','post']}));
+	const held = $derived(inventory.rows.filter(e=>reads(e,actor)));
+	const discoveryWorld = $derived({...baseWorld, entries:held, entriesComplete:false});
+	const roots = $derived.by(() => {
+		const scripts = scriptsOf(discoveryWorld,item.entry), cuts = cutsOf(discoveryWorld,item.entry);
+		const ids = new Set(cuts.map(c=>c.entry));
+		const tasks = held.filter(e=>e.type === 'task' && ids.has(/** @type {any} */ (e.record)?.inputs?.[0]?.entry));
+		return [...scripts.map(e=>e.entry),...cuts.map(e=>e.entry),...tasks.map(e=>e.entry)];
+	});
+	const references = entryReferenceClosure(() => api, () => roots, () => actor);
+	const world = $derived({...baseWorld, entries:[...new Map([...held,...references.rows,item].map(e=>[e.entry,e])).values()],entriesComplete:false});
 
 	let noteWindow = $state.raw(/** @type {any} */ (null));
 	$effect(() => {
@@ -126,7 +140,9 @@
 	/** Schema `text` added to the story's vault where it has none of its title. @param {string} text @param {string} what */
 	async function schema(text, what) {
 		const title = JSON.parse(text).title;
-		const has = world.entries.some((e) => e.vault === item.vault && e.type === 'schema' && !e.deleted && e.title === title);
+		const out = await api.ask({op:'schemas',vault:item.vault});
+		if (!out?.ok || !Array.isArray(out.ok.schemas)) throw new Error('The local schema inventory is unavailable');
+		const has = out.ok.schemas.some((/** @type {any} */ schema) => { try { return JSON.parse(schema.json).title === title; } catch { return false; } });
 		if (!has) await api.run(what, { op: 'create', vault: item.vault, type: 'schema', value: text, as: actor });
 	}
 
@@ -208,13 +224,16 @@
 	const minutes = (s) => (s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60 ? `${s % 60} s` : ''}`.trim());
 	const shotCount = $derived(scenes.reduce((n, s) => n + (s.shots?.length ?? 0), 0));
 </script>
+{#if inventory.phase !== 'ready' || references.phase !== 'ready'}<p class="soft">Reading locally available scripts, cuts and their linked outputs…</p>{/if}
+{#if references.limited}<p class="soft">This film’s reference graph exceeds the bounded view; open a linked cut to continue.</p>{/if}
+<p class="soft">Showing film work held locally; missing entries and files may arrive later.</p>
 
 {#if !script}
 	<div class="blank">
 		{#if beats.length}
-			<p>No script yet. The script is the story told as a film: a scene for each beat of its journey, saying what happens there, then the lines said and the shots they need. Its lines can be adapted from the story’s text. Then it is yours and the agents’ to shape.</p>
+			<p>No script is available locally yet. The script is the story told as a film: a scene for each beat of its journey, saying what happens there, then the lines said and the shots they need. Its lines can be adapted from the story’s text. Then it is yours and the agents’ to shape.</p>
 		{:else}
-			<p>No script yet, and the story has no beats. Lay them out in the Journey tab first, or start from one opening scene.</p>
+			<p>No script is available locally yet, and the story has no beats. Lay them out in the Journey tab first, or start from one opening scene.</p>
 		{/if}
 		{#if writer}<button class="add" disabled={busy} onclick={make}>Draw the script from the story</button>{/if}
 	</div>
@@ -237,7 +256,7 @@
 			{#each cuts as c (c.entry)}
 				<a class="cut" href="/app/studio/?timeline=cut:{c.entry}">{c.name} · {c.clips} {c.clips === 1 ? 'clip' : 'clips'}{#if c.script && c.script !== script.entry} · of another script{/if}</a>
 			{:else}
-				<span class="tally">No cut yet. A first cut lays a slate for each shot and a line for each line, timed to be said, for the studio to fill.</span>
+				<span class="tally">No cut is available locally yet. A first cut lays a slate for each shot and a line for each line, timed to be said, for the studio to fill.</span>
 			{/each}
 			{#if writer}<button class="ghost" disabled={busy} onclick={cut}>Make a cut of this script</button>{/if}
 			<span class="tally">The studio opens avenDB cuts in the Mac app.</span>
