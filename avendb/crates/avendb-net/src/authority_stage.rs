@@ -378,6 +378,7 @@ impl crate::Shared {
                 }
                 // Signature and current policy admission are unchanged. The stage
                 // receipt grants no authorization even when its frontier matches.
+                lab.defer_semantic_marks(me,entry);
                 lab.receive_prepared(me, prepared, true);
                 Admission::Applied
             }).await?;

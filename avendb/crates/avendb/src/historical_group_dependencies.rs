@@ -52,13 +52,23 @@ impl Lab {
 impl Store {
     /// Required current semantic group locations and whether every known read is
     /// materialized. A proven nonmatching selector chain needs no group bodies.
-    fn semantic_groups(&self, st: &State, id: EntryId) -> Option<(BTreeSet<EntryId>,bool)> {
+    pub(super) fn semantic_groups(&self, st: &State, id: EntryId) -> Option<(BTreeSet<EntryId>,bool)> {
         let en=st.entry(id)?;let r=&self.readings;
         let mut attrs=st.first_attrs(en,r)?;
         for edit in &en.retags {attrs.tags=r.tags.get(edit)?.apply(&attrs.tags);}
         let cap_group=attrs.ty.is_cap_group() && attrs.author==en.vault;
         let mut pending=BTreeSet::new();let mut chains=0usize;
-        for issued in st.shares_over(en.vault).filter(|c|st.live(c.id) && !c.share.wide && !c.share.level.is_keep()) {
+        // Prepare group-bearing chains once per vault/replay, not a fresh scan
+        // of every share for every entry and every UI meaning read.
+        let candidates={
+            let mut index=self.semantic_group_index.lock().expect("semantic group index");
+            index.entry(en.vault).or_insert_with(||st.shares_over(en.vault)
+                .filter(|c|st.live(c.id) && !c.share.wide && !c.share.level.is_keep()
+                    && c.chain.iter().any(|id|st.share(*id).is_some_and(|x|x.share.group.is_some())))
+                .map(|c|c.id).collect()).clone()
+        };
+        for id in candidates {
+            let issued=st.share(id)?;
             chains=chains.checked_add(issued.chain.len())?;if chains>2048 {return None;}
             let mut matching=true;let mut unknown=false;let mut roots=BTreeSet::new();
             for id in issued.chain.iter() {
@@ -94,7 +104,26 @@ impl Lab {
     pub fn semantic_group_dependencies(&self,on:SignerId,entry:EntryId)->Option<(BTreeSet<EntryId>,bool)> {
         let store=self.held(on);
         if store.replayed!=store.log.edits().len() {return None;}
-        store.semantic_groups(store.view(),entry)
+        store.semantic_groups(store.view(),entry).map(|(groups,ready)|
+            (groups,ready && !store.semantic_pending.contains(&entry)))
+    }
+
+    /// Called before scoped receive/refresh. Historical rendering remains usable;
+    /// automatic semantic marking waits for a verified connected inventory cut.
+    pub fn defer_semantic_marks(&mut self,on:SignerId,entry:EntryId) {
+        let store=self.stores.get_mut(&self.at(on)).expect("device");
+        if store.semantic_pending.insert(entry) {store.bootstrap_revision=Arc::new(());}
+    }
+    /// Caller must hold its current authenticated inventory fence and have closed
+    /// selectors/current matching frontiers for that cut. Local readiness is
+    /// rechecked here; this method never overrides canonical authorization.
+    pub fn complete_semantic_cut(&mut self,on:SignerId,entry:EntryId)->bool {
+        let store=self.held(on);
+        if store.replayed!=store.log.edits().len() || !store.reads_shares(store.view(),store.view().entry(entry).map(|e|e.vault).unwrap_or(VaultId([0;32])))
+            || !store.semantic_groups(store.view(),entry).is_some_and(|(_,ready)|ready) {return false;}
+        let store=self.stores.get_mut(&self.at(on)).expect("device");
+        if store.semantic_pending.remove(&entry) {store.bootstrap_revision=Arc::new(());}
+        true
     }
 }
 
@@ -128,5 +157,31 @@ impl Lab {
         }).unwrap();
         w.lab.stores.get_mut(&w.mac_a).unwrap().readings.groups=crate::policy::Groups::default();
         assert_eq!(w.lab.semantic_group_dependencies(w.mac_a,target),Some((BTreeSet::new(),true)));
+    }
+}
+
+#[cfg(test)] mod restart_tests {
+    use super::*;
+    #[test] fn completed_unchanged_store_keeps_offline_reads_and_writes() {
+        let mut w=crate::cast::world();
+        let entry=w.lab.create(w.mac_a,w.alice,w.alice,"doc",&[],crate::cast::document("Local","kept",w.mac_a)).unwrap();
+        let backup=w.lab.backup(w.mac_a);
+        w.lab.restore_backup(w.mac_a,&backup);
+        assert!(w.lab.item(w.mac_a,entry).is_some());
+        assert!(w.lab.semantic_group_dependencies(w.mac_a,entry).unwrap().1);
+        w.lab.edit(w.mac_a,w.alice,entry,|item|item.set_text(2,"offline update")).unwrap();
+        assert_eq!(crate::cast::text(&w.lab,w.mac_a,entry,2).as_deref(),Some("offline update"));
+    }
+    #[test] fn incomplete_semantic_cut_stays_pending_after_backup_reopen() {
+        let mut w=crate::cast::world();
+        let entry=w.lab.create(w.mac_a,w.alice,w.alice,"doc",&[],crate::cast::document("Local","kept",w.mac_a)).unwrap();
+        w.lab.defer_semantic_marks(w.mac_a,entry);
+        let backup=w.lab.backup(w.mac_a);
+        let companion=backup.bootstrap_bytes().unwrap();
+        let durable=Backup::new(backup.signed.clone(),backup.blobs.values().cloned()).with_bootstrap_bytes(&companion).unwrap();
+        w.lab.restore_backup(w.mac_a,&durable);
+        assert!(w.lab.item(w.mac_a,entry).is_some(),"local historical content remains readable");
+        assert!(!w.lab.semantic_group_dependencies(w.mac_a,entry).unwrap().1);
+        assert!(w.lab.mark_now(w.mac_a,entry).unwrap().is_none());
     }
 }

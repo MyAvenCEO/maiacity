@@ -563,3 +563,19 @@ Next integration must bind semantic dependencies to the authenticated complete
 connected-peer inventory cut, verify immutable selector negatives and current
 matching-grant frontiers, and schedule bounded group entry dependencies. The
 existing authority-only dependency lane deliberately rejects Entry logs.
+
+### Durable scoped semantic-pending guard
+
+Scoped receive marks the target pending before refresh can generate maintenance
+edits. Exact pending entry IDs persist in a bounded AVSEM001 envelope around the
+existing bootstrap companion; old companions remain readable. Save stamps and
+bootstrap revisions include pending transitions. Warm and handed restoration
+restore pending before replay, rather than marking every local entry pending.
+This preserves unchanged offline local reads/writes while restart cannot clear a
+true incomplete-cut guard. Tests cover companion roundtrip with pending state
+and unchanged offline write. Group-bearing share-chain IDs are cached per vault
+and invalidated on refresh, avoiding repeated whole-share scans per UI read.
+
+Connected-inventory semantic completion/fetch integration is still pending; this
+increment intentionally does not clear a pending target based on local absence.
+Runtime validation remains canonical-only and pending.
