@@ -11,7 +11,7 @@ mod suffix;
 pub use suffix::AuthenticatedCountedEntryBase;
 #[path = "entry_judgment.rs"]
 mod judgment;
-pub use judgment::RestoredOwnerJudgment;
+pub use judgment::{RestoredOwnerJudgment, EntryCheckpointCapsule};
 pub(crate) use judgment::{Anchors, OverlayBasis, BootstrapProgress};
 
 const FORMAT: &[u8] = b"avenDB entry base 2\n";

@@ -154,6 +154,13 @@ impl Lab {
     }
 
     pub(super) fn projection_authority(&self, on: SignerId, snapshot: EditId, entry: EntryId) -> Option<(VaultId, &crate::policy::Stated, KeyName)> {
+        let authority = self.projection_entitlement(on, snapshot, entry)?;
+        self.held(on).keys.first(authority.2)?;
+        Some(authority)
+    }
+    // Policy authority and possession of a particular ciphertext key are distinct.
+    // The legacy decoder still requires its exact ordinary entry key.
+    pub(super) fn projection_entitlement(&self, on: SignerId, snapshot: EditId, entry: EntryId) -> Option<(VaultId, &crate::policy::Stated, KeyName)> {
         let store = self.held(on);
         if store.replayed != store.log.edits().len() { return None; }
         let st = &store.replay.state;
@@ -177,7 +184,6 @@ impl Lab {
         let name = st.entry_key(entry)?;
         if !(st.public_key(audience) || st.entitled(on, audience))
             || !opens.contains(&st.current(audience)) || !opens.contains(&name) || !st.wants(on, en) { return None; }
-        store.keys.first(name)?;
         Some((*vault, stated, name))
 
     }

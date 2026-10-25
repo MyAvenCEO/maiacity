@@ -12,4 +12,13 @@ theorem recipient_not_publisher (r k : Bool) : adoption false r k = false := by 
 theorem read_does_not_grant_write (a r p : Bool) : mutation a r false p = false := by simp [mutation]
 theorem pending_refuses_write (a o p : Bool) : mutation a false o p = false := by simp [mutation]
 theorem missing_proof_refuses_write (a r o : Bool) : mutation a r o false = false := by simp [mutation]
+-- No remote epoch assignment or audience-key insertion. Current policy and
+-- owner approval are independently checked; AEAD/key binding is an assumption.
+def capsuleRead (standingOwnerRoot currentRecipient exactScope exactKey : Bool) : Bool :=
+ standingOwnerRoot && currentRecipient && exactScope && exactKey
+theorem capsule_revocation (o s k : Bool) : capsuleRead o false s k = false := by simp [capsuleRead]
+theorem capsule_wrong_scope (o r k : Bool) : capsuleRead o r false k = false := by simp [capsuleRead]
+theorem capsule_wrong_key (o r s : Bool) : capsuleRead o r s false = false := by simp [capsuleRead]
+def capsuleKernel (kernel : α) := kernel
+theorem capsule_preserves_kernel (kernel : α) : capsuleKernel kernel = kernel := rfl
 end AvenDB.SharedHolderBootstrap

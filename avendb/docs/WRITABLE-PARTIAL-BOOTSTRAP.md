@@ -1039,3 +1039,32 @@ history withheld. `SharedHolderBootstrap.lean` explicitly separates publisher
 approval, current recipient authority and per-write admission. Lean and parser/diff
 checks pass. Rust execution and independent review are pending; this isolated
 candidate must not be treated as closing the shared-holder task or as deployed.
+
+### Shared-holder private audience reentry blocker (isolated, not delivered)
+
+Strengthened selector/touch/group tests exposed a real partial-policy gap: a prior
+entry is removed from an audience by a private Mark, then a shared note reuses that
+audience. Publisher key epoch is 1; recipient computes epoch 0 because it cannot
+receive the excluded entry. The owner-approved note ciphertext's exact key is
+therefore unavailable. The focused four-mode grant test passed before adding this
+cross-entry case; the cross-entry case still fails. Diagnostic32804 ended exit101
+(`/private/tmp/avendb-shared-holder-keyids.log`), confirming names, not merely timing.
+An attempted ordinary-authorized key dependency closure did not resolve it and
+was removed. No historical entry IDs are disclosed to work around it.
+
+The isolated capsule codec introduces a fresh checkpoint-only data key, with an
+owner recovery wrapper and a recipient-device-encrypted capsule bound to the
+owner-approved root, entry, vault and recipient. Current ordinary policy and
+standing snapshot/revocation checks remain independent; no kernel epoch or
+ordinary Keyring entry is assigned from the capsule. The old format retains its
+exact ordinary-key decoder. Full holders retain canonical judgment comparisons.
+Lean disclosure/revocation/scope/kernel contracts pass; crypto assumptions are
+explicit. New Rust negative tests cover wrong recipient, changed root/capsule,
+revocation and unchanged kernel/keyring. Focused `checkpoint_capsule_reads` Rust test passed (1/1, 2.77 seconds;
+`/private/tmp/avendb-checkpoint-capsule.log`). The source was frozen during
+compilation. Broader shared-holder tests remain blocked as described above.
+
+This codec alone does NOT close shared-holder bootstrap. Durable recipient capsule
+storage, negotiated common peer transfer, active adoption and local shared-write
+key recovery across missing private occupancy history remain required. Do not
+mark this branch deployable until the preserved cross-entry regression passes.

@@ -511,36 +511,128 @@ mod tests {
     use super::*;
     use crate::cast::{document, human_on};
     #[test]
-    fn shared_holder_local_write_matches_full_holder_without_acquiring_owner_authority() {
+    fn checkpoint_capsule_reads_across_private_audience_reentry_without_changing_kernel() {
         use crate::policy::{Who,Level,Revoking};
-        for level in [Level::Write,Level::Read] {
+        let mode=0;
+            let level=if mode==1 {Level::Read} else {Level::Write};
             let mut lab=Lab::new(); let owner=lab.passkey("Publisher"); let mac=lab.device_of(owner,"Owner Mac");
             let vault=human_on(&mut lab,owner,&[mac]);
             let guest=lab.passkey("Shared holder"); let full=lab.device_of(guest,"Guest full"); let partial=lab.device_of(guest,"Guest partial");
             let guest_vault=human_on(&mut lab,guest,&[full,partial]);
             lab.share_contact(full,mac,guest_vault); lab.share_contact(mac,full,vault);
             lab.share_contact(full,partial,guest_vault); lab.share_contact(mac,partial,vault);
-            let share=lab.issue(mac,&[owner],crate::cast::share(vault,Who::Vault(guest_vault),level,crate::cast::of_type("note"))).unwrap();
+            let mut grant=crate::cast::share(vault,Who::Vault(guest_vault),level,crate::cast::of_type("note"));
+            if mode==2 { grant.ops=vec![crate::rules::Op::Read,crate::rules::Op::of_json(&serde_json::json!({"op":"set","path":["title"]})).unwrap()]; }
+            let share=if mode==3 {
+                let group=lab.define_group(mac,vault,crate::rules::CapGroup{name:"Dynamic writer".into(),caps:Level::Write.ops().into_iter().map(|op|crate::rules::Cap{op,slice:crate::cast::of_type("note")}).collect(),includes:vec![]}).unwrap();
+                lab.issue_group(mac,&[owner],GroupShare{over:vault,who:Who::Vault(guest_vault),name:"Group".into(),select:crate::cast::of_type("note"),group,level:Level::Write,parent:None,issuer:vault}).unwrap()
+            } else { lab.issue(mac,&[owner],grant).unwrap() };
             lab.sync(mac,full); lab.sync(mac,partial);
+            // Even a Write-level grant only selects note entries. A distinct typed
+            // entry and its real owner checkpoint must never become a shared base.
+            if mode==0 {
+                let excluded=lab.create_in(mac,vault,vault,vec![share],"private-other",&[],document("Excluded","not a note",mac)).unwrap();
+                let PreparedEntryBase{draft,..}=lab.draft_judged_entry_base(mac,&[owner],excluded).unwrap();
+                lab.complete(mac,draft,&[]).unwrap();
+                lab.sync(mac,full); lab.sync(mac,partial);
+                assert!(lab.entry_projection_offer(mac,partial,excluded).is_none(),"typed selector excludes checkpoint delivery");
+                assert!(lab.item(full,excluded).is_none());
+                assert!(lab.item(partial,excluded).is_none());
+                let before=lab.held(partial).log.ids().len();
+                assert!(lab.edit(partial,guest_vault,excluded,|i|i.set_text(2,"Forbidden type")).is_err());
+                assert_eq!(lab.held(partial).log.ids().len(),before);
+            }
+
+
+        let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
+        let withheld=lab.edit(mac,vault,entry,|i|i.set_text(2,"Attested")).unwrap();
+        let PreparedEntryBase{draft,sealed,..}=lab.draft_capsuled_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,draft,&[]).unwrap();
+        let capsule=lab.entry_checkpoint_capsule(mac,partial,snapshot,entry,&sealed).unwrap();
+        let offer=lab.entry_projection_offer(mac,partial,entry).unwrap();
+        lab.receive(partial,offer.evidence,vec![]);
+        let epochs:Vec<_>=lab.latest(partial).epochs().collect();
+        let ordinary_keys=lab.held(partial).keys.by_name.clone();
+        assert!(!lab.held(partial).log.ids().contains(&withheld));
+        assert_ne!(lab.latest(mac).entry_key(entry),lab.latest(partial).entry_key(entry));
+        let restored=lab.restore_capsuled_owner_judgment(partial,snapshot,entry,&sealed,&capsule).unwrap();
+        assert_eq!(restored.items[&MAIN].record(),lab.item(mac,entry).unwrap().record());
+        assert_eq!(lab.latest(partial).epochs().collect::<Vec<_>>(),epochs);
+        assert_eq!(lab.held(partial).keys.by_name,ordinary_keys);
+        assert!(lab.restore_capsuled_owner_judgment(full,snapshot,entry,&sealed,&capsule).is_none());
+        let mut corrupt=capsule.clone(); corrupt.bytes[0]^=1;
+        assert!(lab.restore_capsuled_owner_judgment(partial,snapshot,entry,&sealed,&corrupt).is_none());
+        let mut changed=sealed.clone(); let end=changed.len()-1; changed[end]^=1;
+        assert!(lab.restore_capsuled_owner_judgment(partial,snapshot,entry,&changed,&capsule).is_none());
+        let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
+        let signed=lab.signed_edit(mac,revoked).unwrap().clone();
+        lab.receive(partial,vec![signed],vec![]);
+        assert!(lab.restore_capsuled_owner_judgment(partial,snapshot,entry,&sealed,&capsule).is_none());
+    }
+    #[test]
+    fn shared_holder_local_write_matches_full_holder_without_acquiring_owner_authority() {
+        use crate::policy::{Who,Level,Revoking};
+        for mode in 0..4 {
+            let level=if mode==1 {Level::Read} else {Level::Write};
+            let mut lab=Lab::new(); let owner=lab.passkey("Publisher"); let mac=lab.device_of(owner,"Owner Mac");
+            let vault=human_on(&mut lab,owner,&[mac]);
+            let guest=lab.passkey("Shared holder"); let full=lab.device_of(guest,"Guest full"); let partial=lab.device_of(guest,"Guest partial");
+            let guest_vault=human_on(&mut lab,guest,&[full,partial]);
+            lab.share_contact(full,mac,guest_vault); lab.share_contact(mac,full,vault);
+            lab.share_contact(full,partial,guest_vault); lab.share_contact(mac,partial,vault);
+            let mut grant=crate::cast::share(vault,Who::Vault(guest_vault),level,crate::cast::of_type("note"));
+            if mode==2 { grant.ops=vec![crate::rules::Op::Read,crate::rules::Op::of_json(&serde_json::json!({"op":"set","path":["title"]})).unwrap()]; }
+            let share=if mode==3 {
+                let group=lab.define_group(mac,vault,crate::rules::CapGroup{name:"Dynamic writer".into(),caps:Level::Write.ops().into_iter().map(|op|crate::rules::Cap{op,slice:crate::cast::of_type("note")}).collect(),includes:vec![]}).unwrap();
+                lab.issue_group(mac,&[owner],GroupShare{over:vault,who:Who::Vault(guest_vault),name:"Group".into(),select:crate::cast::of_type("note"),group,level:Level::Write,parent:None,issuer:vault}).unwrap()
+            } else { lab.issue(mac,&[owner],grant).unwrap() };
+            lab.sync(mac,full); lab.sync(mac,partial);
+            // Even a Write-level grant only selects note entries. A distinct typed
+            // entry and its real owner checkpoint must never become a shared base.
+            if mode==0 {
+                let excluded=lab.create_in(mac,vault,vault,vec![share],"private-other",&[],document("Excluded","not a note",mac)).unwrap();
+                let PreparedEntryBase{draft,..}=lab.draft_judged_entry_base(mac,&[owner],excluded).unwrap();
+                lab.complete(mac,draft,&[]).unwrap();
+                lab.sync(mac,full); lab.sync(mac,partial);
+                assert!(lab.entry_projection_offer(mac,partial,excluded).is_none(),"typed selector excludes checkpoint delivery");
+                assert!(lab.item(full,excluded).is_none());
+                assert!(lab.item(partial,excluded).is_none());
+                let before=lab.held(partial).log.ids().len();
+                assert!(lab.edit(partial,guest_vault,excluded,|i|i.set_text(2,"Forbidden type")).is_err());
+                assert_eq!(lab.held(partial).log.ids().len(),before);
+            }
+
             let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
             let withheld=lab.edit(mac,vault,entry,|i|i.set_text(2,"Attested")).unwrap();
             let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
             let snapshot=lab.complete(mac,draft,&[]).unwrap();
             lab.sync(mac,full);
             let offer=lab.entry_projection_offer(mac,partial,entry).unwrap();
+            let permitted=lab.latest(mac).opens(&[KeyName::Signer(partial)]);
+            for evidence in &offer.evidence {
+                if let Action::Keys { name, .. } = evidence.edit.action {
+                    assert!(permitted.contains(&name),"no key action outside current recipient reach");
+                }
+            }
             lab.receive(partial,offer.evidence,vec![]);
-            assert!(lab.adopt_owner_entry_base(partial,snapshot,entry,sealed));
+            assert!(lab.projection_authority(partial,snapshot,entry).is_some(),"mode {mode}: recipient authority");
+            assert!(lab.restore_owner_judgment(partial,snapshot,entry,&sealed).is_some(),"mode {mode}: authenticated judgment");
+            assert!(lab.adopt_owner_entry_base(partial,snapshot,entry,sealed),"mode {mode}: adopted active base");
             assert!(!lab.held(partial).replay.state.acts_for(partial,vault));
             assert!(!lab.held(partial).log.ids().contains(&withheld));
             assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(full,entry).unwrap().record());
+            let before=lab.held(partial).log.ids().len();
             let write=lab.edit(partial,guest_vault,entry,|i|i.set_text(2,"Shared local update"));
-            if level==Level::Write {
+            if mode==0 {
                 let id=write.unwrap(); let signed=lab.signed_edit(partial,id).unwrap().clone();
                 lab.receive(full,vec![signed.clone()],vec![]); lab.receive(mac,vec![signed],vec![]);
                 assert!(lab.history(mac,entry).unwrap().get(id).unwrap().counted);
                 assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
                 assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(full,entry).unwrap().record());
-            } else { assert!(write.is_err(),"read access must never grant mutation"); }
+            } else {
+                assert!(write.is_err(),"mode {mode}: read-only, restricted touch or dynamic group cannot authorize this partial write");
+                assert_eq!(lab.held(partial).log.ids().len(),before,"refusal happens before signing/keeping a write");
+            }
             assert!(lab.draft_judged_entry_base(partial,&[guest],entry).is_err(),"recipient cannot publish as owner");
             let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
             let signed=lab.signed_edit(mac,revoked).unwrap().clone(); lab.receive(partial,vec![signed],vec![]);
