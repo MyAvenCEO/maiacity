@@ -113,3 +113,27 @@ Validation: `lake env lean AvenDB/LivePriority.lean` passed. Rust parser check v
 queue publication while a checkpoint never completes and remaining-peer budget
 reservation. Rust type-check/runtime tests are deliberately pending while the Mac
 build owns compilation resources; no runtime or physical-device win is claimed.
+
+### Preserve discovered catalog priorities across lease renewal
+
+The follow-up iPhone report from `24b8c4af` records ten successful local catalog
+reads with zero held manifests. A coordinated read-only check of an existing peer
+found 13 manifest records, so this is a missing local catalog, not proof that the
+provider has no manifests. The export alone still cannot identify all missing
+causal/authority dependencies.
+
+A concrete scheduling loss existed in `view_demand`: every revision called
+`Demands::replace`, which discarded all discovered IDs, then reinstalled selectors.
+A 30-second renewal or unrelated newly learned entry therefore removed discovered
+catalog priorities while their authorization/history could still be arriving.
+
+`replace_query` now retains bounded discovered IDs for the exact same nonempty
+selector on an unexpired scope. Revision advances still invalidate old responses.
+Changed selectors, explicit release, expiry, and capacity rules discard hints as
+before. Entries remain hints only; no permission, checkpoint or replay gate changes.
+
+Validation: ViewDemand Lean retention/expiry laws passed; Rust parsing passed.
+Two Rust regressions cover cold-catalog renewal, learned-entry changes, stale
+responses, selector replacement, release, expiry and shared capacity. Runtime and
+full crate compilation remain pending the coordinated compiler slot. This is an
+actual retention repair, not a claim that the broad authority bootstrap is solved.

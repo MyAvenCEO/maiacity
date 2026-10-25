@@ -179,9 +179,7 @@ impl Node {
         let scope = scope.to_ascii_lowercase();
         let result = {
             let mut demands = self.shared.demands.lock().expect("demands");
-            let result = demands.replace(scope.clone(), revision, entries, Instant::now());
-            if matches!(result, Ok(true)) { demands.set_queries(&scope, queries); }
-            result
+            demands.replace_query(scope.clone(), revision, entries, queries, Instant::now())
         };
         match result {
             Ok(accepted) => {

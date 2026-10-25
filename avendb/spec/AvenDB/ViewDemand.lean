@@ -60,4 +60,17 @@ theorem obsolete_replan_has_no_hints (current owner : Nat) (known : List Nat)
     (h : current ≠ owner) : hints current owner known true = [] := by
   simp [hints, h]
 
+-- Lease renewal retains only scheduling hints for an unchanged live selector.
+def retainedDiscovery (sameSelector live nonempty : Bool) (ids : List Nat) :=
+  if sameSelector && live && nonempty then ids.take 512 else []
+
+theorem renewal_retains_bounded_discovery (ids : List Nat) :
+    retainedDiscovery true true true ids = ids.take 512 := rfl
+
+theorem changed_selector_clears_discovery (live nonempty : Bool) (ids : List Nat) :
+    retainedDiscovery false live nonempty ids = [] := by simp [retainedDiscovery]
+
+theorem expired_selector_clears_discovery (same nonempty : Bool) (ids : List Nat) :
+    retainedDiscovery same false nonempty ids = [] := by simp [retainedDiscovery]
+
 end AvenDB.ViewDemand
