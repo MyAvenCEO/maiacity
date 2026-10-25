@@ -79,6 +79,12 @@ owner ceremony remain the final authority for every emitted mutation.
 
 Validation: 45 Bun tests / 139 assertions passed, plus the transport-uncertainty regression, including actual planner and
 picture-identity behavior. ScopedTagInventory Lean passed. Rust parses; native
-runtime regressions pending shared compiler. Full Svelte check pending. Derivatives publishing and withdrawal now use the same guarded capture contract
+runtime regressions pending shared compiler. Full Svelte check passed with zero errors and 27 pre-existing warnings. Derivatives publishing and withdrawal now use the same guarded capture contract
 with picture dependencies included. Its own canonical post vault defines the
 flow and filename scope; current Story/actor identity cancels obsolete plans.
+
+Whole-vault delegated readers are admitted using canonical live wide Read (or
+stronger) shares, including a public wide share. This condition depends on known
+authority, not hidden row existence. The native regression grants then revokes
+that share and requires the guard to stop after revocation. Selective delegated
+writers remain blocked pending an equally sound dependency-domain contract.

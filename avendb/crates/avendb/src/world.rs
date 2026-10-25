@@ -582,7 +582,10 @@ pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Opt
     // vault evidence. Nonowners always receive incomplete, independent of
     // whether any hidden entry exists; no hidden-entry presence oracle.
     let owns_domain = vault.is_none_or(|vault| actor == vault || st.vault(vault)
-        .is_some_and(|v| v.owners.contains(&Principal::Vault(actor))));
+        .is_some_and(|v| v.owners.contains(&Principal::Vault(actor)))
+        || st.shares_over(vault).any(|issued| st.live(issued.id) && issued.share.wide
+            && issued.share.level.allows(Level::Read)
+            && (issued.share.who == Who::Vault(actor) || issued.share.who == Who::Everyone)));
     let mut metadata_known = owns_domain;
     let mut bodies_open = true;
     // Explicit IDs use the canonical policy index, including cross-vault targets; no body scan.
