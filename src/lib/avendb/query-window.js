@@ -1,5 +1,5 @@
-import { viewReadiness } from './view-readiness.js';
 // @ts-nocheck — plain JS
+import { viewReadiness } from './view-readiness.js';
 import { readCompleteness } from './read-completeness.js';
 import { createDemand, normalizeDiscovery } from '../../../game/code/sources/demand.js';
 
