@@ -787,6 +787,9 @@ struct Store {
     bare: HashSet<EditId>,
     /// It took edits since it last brought its keys and items up to date (`receive_now`, `catch_up`).
     behind: bool,
+    judgment_jobs: HashMap<EntryId, JudgmentJob>,
+    judgment_pending: BTreeSet<EntryId>,
+    judgment_epoch: Option<(crate::policy::LogRevision, Arc<()>)>,
     /// What it shows is to be checked against every entry's writes again (`show_items`): it holds nothing shown yet, a
     /// removal came since, or it let go of edits; else only the entries whose tips moved or that `opened` names.
     reshow: bool,
@@ -858,6 +861,9 @@ impl Default for Store {
             covers: HashSet::new(),
             bare: HashSet::new(),
             behind: false,
+            judgment_jobs: HashMap::new(),
+            judgment_pending: BTreeSet::new(),
+            judgment_epoch: None,
             reshow: true,
             opened: HashMap::new(),
             scratched: HashSet::new(),
@@ -921,6 +927,11 @@ impl Store {
         !self.opened_since.is_empty() || (checked.is_some() && checked != self.checked_given)
     }
 
+    fn presentation_only_pending(&self) -> bool {
+        !self.judgment_pending.is_empty() && self.judgment_epoch.as_ref().is_some_and(|(revision,keys)|
+            *revision==self.log.revision() && Arc::ptr_eq(keys,&self.keys.revision))
+    }
+
     /// Forget every key and everything a key opened, as it locks.
     fn forget(&mut self) {
         self.warm_revision = Arc::new(());
@@ -936,6 +947,9 @@ impl Store {
         self.spoilt.clear();
         self.readings = Readings::default();
         self.shown.clear();
+        self.judgment_jobs.clear();
+        self.judgment_pending.clear();
+        self.judgment_epoch = None;
         self.warm_materialization = None;
         self.bootstrap_state=None;
         self.bootstrap_active.clear();
@@ -1065,6 +1079,19 @@ impl After {
     }
     fn has_scratch(&self) -> bool { self.scratch.is_some() || self.deferred_scratch.is_some() }
     fn clear_scratch(&mut self) { self.scratch = None; self.deferred_scratch = None; }
+}
+
+/// Private progress, never exposed as a partial Shown. Every resumption requires
+/// the exact log/key context and lane/groups/body availability fingerprint.
+struct JudgmentJob {
+    revision: crate::policy::LogRevision,
+    keys: Arc<()>,
+    tip: Tip,
+    print: [u8;32],
+    history: History,
+    after: After,
+    items: Option<BTreeMap<Line, Item>>,
+    cursor: usize,
 }
 
 /// How many entries keep their scratch items between refreshes: those judged last, as a device edits a few at a time.
@@ -3280,8 +3307,15 @@ impl Lab {
     /// signing on it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and
     /// makes the edits its upkeep calls for (`upkeep`). A locked device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
+        self.refresh_budget(d, lent, None);
+    }
+
+    fn refresh_budget(&mut self, d: SignerId, lent: &[(SignerId, Secret)], budget: Option<usize>) {
         // a session's store is its host's, which opens what it holds with its own keys
         let d = self.at(d);
+        // Bootstrap overlays have a separate transaction/authority contract;
+        // retain their canonical refresh until their presentation phase is split.
+        let budget=budget.filter(|_|self.held(d).bootstrap_bases.is_empty());
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.behind = false;
         }
@@ -3342,8 +3376,13 @@ impl Lab {
             store.perf.add("read", at);
             // what it shows, every write counted or not, before its upkeep: its stewards grant counted asks alone
             let at = Perf::start();
-            show_items(d, store);
+            show_items_budget(d, store, budget);
             store.perf.add("show items", at);
+            if !store.judgment_pending.is_empty() {
+                store.behind = true;
+                store.perf.add("refresh", began);
+                return; // Upkeep must never consume incomplete ordinary judgments.
+            }
             let at = Perf::start();
             let work = upkeep(d, store, &ix, &mine, rng, spares);
             store.perf.add("upkeep", at);
@@ -5541,6 +5580,27 @@ impl Lab {
         true
     }
 
+    /// One presentation slice. Initial authority/key preparation stays atomic;
+    /// subsequent slices resume only the exact unchanged context. Returns whether
+    /// work was performed and whether private entry judgments remain pending.
+    pub fn catch_up_step(&mut self, d: SignerId, priority: &[EntryId]) -> (bool, bool) {
+        let d=self.at(d);
+        let Some(store)=self.stores.get_mut(&d) else {return (false,false)};
+        if !store.behind {return (false,false)}
+        let prepared=store.judgment_epoch.as_ref().is_some_and(|(revision,keys)|
+            *revision==store.log.revision() && Arc::ptr_eq(keys,&store.keys.revision));
+        if prepared && !store.judgment_pending.is_empty() {
+            // Demand ordering is local scheduling, never an authority grant.
+            show_items_priority(d,store,Some(32),priority);
+            if !store.judgment_pending.is_empty() {return (true,true)}
+            store.judgment_epoch=None;
+        }
+        self.refresh_budget(d,&[],Some(32));
+        (true,!self.held(d).judgment_pending.is_empty())
+    }
+
+    pub fn judgment_pending(&self, d: SignerId) -> usize { self.held(d).judgment_pending.len() }
+
     /// `receive`, and whose each edit it took is (`whose_log`): what a pull tells its person.
     pub fn receive_whose(
         &mut self,
@@ -6523,7 +6583,17 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// in force changed: first the cap groups, as the device counts the writes that say them (`State::read_groups`), as
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
-fn show_items(d: SignerId, store: &mut Store) {
+fn show_items_budget(d: SignerId, store: &mut Store, budget: Option<usize>) {
+    show_items_priority(d,store,budget,&[])
+}
+fn show_items_priority(d: SignerId, store: &mut Store, budget: Option<usize>, priority: &[EntryId]) {
+    let revision=store.log.revision();
+    if store.judgment_epoch.as_ref().is_some_and(|(r,k)|*r!=revision || !Arc::ptr_eq(k,&store.keys.revision)) {
+        store.judgment_jobs.clear();
+    }
+    let started=web_time::Instant::now();
+    let mut remaining=budget.unwrap_or(usize::MAX);
+    let mut processed_bytes=0usize;
     let materialization = store.warm_materialization.take()
         .and_then(|receipt| receipt.consume(store));
     let mut warm = materialization.unwrap_or_default();
@@ -6629,7 +6699,8 @@ fn show_items(d: SignerId, store: &mut Store) {
     let todo: Vec<&Entry> = if grew {
         let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
         let mut es: Vec<EntryId> =
-            all[n..].iter().map(|w| w.entry).chain(opened.keys().copied()).chain(changed).collect();
+            all[n..].iter().map(|w| w.entry).chain(opened.keys().copied()).chain(changed)
+                .chain(store.judgment_pending.iter().copied()).collect();
         es.sort();
         es.dedup();
         es.into_iter().filter_map(|e| st.entry(e)).collect()
@@ -6639,6 +6710,8 @@ fn show_items(d: SignerId, store: &mut Store) {
     store.shown_writes = (all.len(), all.last().map(|w| w.edit));
     store.shown_lanes = lanes_now;
     store.shown_groups = groups_print;
+    let mut todo=todo;
+    todo.sort_by_key(|en| (priority.iter().position(|e|*e==en.id).unwrap_or(usize::MAX), en.id));
     for en in todo {
         if cap_groups.contains(&en.id) {
             continue;
@@ -6704,7 +6777,19 @@ fn show_items(d: SignerId, store: &mut Store) {
                 && opened.get(&en.id).is_none_or(|ids| ids.iter().all(new))
         };
         let judging_at = Perf::start();
-        let (mut j, from, items) = match old.remove(&en.id) {
+        let job=store.judgment_jobs.remove(&en.id).filter(|job|
+            job.revision==revision && Arc::ptr_eq(&job.keys,&store.keys.revision)
+                && job.tip==tip && job.print==print && job.cursor<=writes.len());
+        if remaining==0 || (budget.is_some_and(|limit|remaining<limit) && (processed_bytes>=256*1024 || started.elapsed().as_millis()>=4)) {
+            old.remove(&en.id);
+            if let Some(job)=job {store.judgment_jobs.insert(en.id,job);}
+            store.judgment_pending.insert(en.id);
+            continue;
+        }
+        let (mut j, from, items) = if let Some(job)=job {
+            old.remove(&en.id);
+            (Judging::resume(en,r,lane(en.vault),job.history,job.after),job.cursor,job.items)
+        } else { match old.remove(&en.id) {
             Some(s) if resumes(&s) => {
                 let from = s.tip.writes;
                 s.items_in(Some(store));
@@ -6713,11 +6798,28 @@ fn show_items(d: SignerId, store: &mut Store) {
                 (Judging::resume(en, r, lane(en.vault), history, s.after), from, Some(items))
             }
             _ => (Judging::new(st, en, r, lane(en.vault)), 0, None),
-        };
+        }};
+        let mut cursor=from;
         for w in &writes[from..] {
             j.judge(d, st, (r, bodies), w, &groups);
+            cursor+=1;
+            remaining=remaining.saturating_sub(1);
+            processed_bytes=processed_bytes.saturating_add(bodies.get(&w.edit).map_or(0,|b|b.content.len()));
+            if budget.is_some() && (remaining==0 || processed_bytes>=256*1024 || started.elapsed().as_millis()>=4) {break;}
         }
         store.perf.add("show: judging", judging_at);
+        if cursor<writes.len() {
+            let Judging {history,scratch,attrs,mine,imported,asked,..}=j;
+            // Retain at most one additional Loro scratch. A new active-view
+            // priority may replace it; displaced entries remain queued, not shown.
+            store.judgment_jobs.clear();
+            store.judgment_jobs.insert(en.id,JudgmentJob {revision:revision.clone(),keys:store.keys.revision.clone(),
+                tip,print,history,after:After {scratch,deferred_scratch:None,attrs,mine,imported,asked},items,cursor});
+            store.judgment_pending.insert(en.id);
+            store.perf.count("show: judgment slices",1);
+            continue;
+        }
+        store.judgment_pending.remove(&en.id);
         let materialize_at = Perf::start();
         let s = j.shown_on(d, print, tip, items);
         store.perf.add("show: materialize", materialize_at);
@@ -6744,7 +6846,72 @@ fn show_items(d: SignerId, store: &mut Store) {
         for id in ids { store.deferred_bodies.remove(&id); }
         store.reshow = true;
         read(d, store);
-        show_items(d, store);
+        show_items_budget(d, store, budget);
+    }
+    store.judgment_pending.retain(|e|store.replay.state.entry(*e).is_some() && !store.shown.contains_key(e));
+    store.judgment_jobs.retain(|e,_|store.judgment_pending.contains(e));
+    store.judgment_epoch=(!store.judgment_pending.is_empty()).then(||(store.log.revision(),store.keys.revision.clone()));
+}
+
+#[cfg(test)]
+mod judgment_slice_tests {
+    use super::*;
+    use crate::cast::{document,human_on};
+    #[test]
+    fn real_history_catchup_keeps_ready_reads_and_writes_between_private_slices() {
+        let mut lab=Lab::new();
+        let owner=lab.passkey("Judgment slices");
+        let device=lab.device_of(owner,"Mac");
+        let vault=human_on(&mut lab,owner,&[device]);
+        let ready=lab.create(device,vault,vault,"note",&[],document("Ready","local",device)).unwrap();
+        let large=lab.create(device,vault,vault,"note",&[],document("Large","base",device)).unwrap();
+        let before=lab.backup(device);
+        for n in 0..128 {
+            lab.edit(device,vault,large,|item|item.edit_document(|d|d.title=format!("Revision {n}"))).unwrap();
+        }
+        let expected=lab.item(device,large).unwrap().record();
+        let received=lab.backup(device);
+        lab.restore_from(device,before);
+        lab.receive_now(device,received.signed,received.blobs.into_values().collect(),false);
+        let (stepped,pending)=lab.catch_up_step(device,&[large]);
+        assert!(stepped && pending,"real entry history exceeds one 32-write slice");
+        assert!(lab.item(device,large).is_none(),"partially judged entry is never published");
+        assert!(lab.item(device,ready).is_some(),"unchanged authorized entry stays readable");
+        let cursor=lab.held(device).judgment_jobs[&large].cursor;
+        assert!(cursor>0 && cursor<=32);
+        lab.edit(device,vault,ready,|item|item.edit_document(|d|d.title="Foreground".into())).unwrap();
+        assert!(lab.judgment_pending(device)>0,"foreground mutation must not synchronously drain background judgment");
+        assert!(lab.held(device).judgment_jobs.is_empty(),"changed exact basis cancels saved cursors");
+        let mut turns=0;
+        while lab.judgment_pending(device)>0 {
+            lab.catch_up_step(device,&[large]);
+            assert!(lab.item(device,ready).is_some());
+            turns+=1; assert!(turns<256,"background work must progress");
+        }
+        assert_eq!(lab.item(device,large).unwrap().record(),expected);
+        let foreground=lab.item(device,ready).unwrap().record();
+        lab.restore_from(device,lab.backup(device));
+        assert_eq!(lab.item(device,large).unwrap().record(),expected);
+        assert_eq!(lab.item(device,ready).unwrap().record(),foreground);
+    }
+
+    #[test]
+    fn locking_discards_private_judgments_and_keys() {
+        let mut lab=Lab::new();
+        let owner=lab.passkey("Cancel judgment");
+        let device=lab.device_of(owner,"Mac");
+        let vault=human_on(&mut lab,owner,&[device]);
+        let entry=lab.create(device,vault,vault,"note",&[],document("Large","base",device)).unwrap();
+        let before=lab.backup(device);
+        for n in 0..64 { lab.edit(device,vault,entry,|item|item.edit_document(|d|d.title=n.to_string())).unwrap(); }
+        let received=lab.backup(device);
+        lab.restore_from(device,before);
+        lab.receive_now(device,received.signed,received.blobs.into_values().collect(),false);
+        assert!(lab.catch_up_step(device,&[entry]).1);
+        lab.stores.get_mut(&device).unwrap().forget();
+        assert!(lab.held(device).judgment_jobs.is_empty());
+        assert_eq!(lab.judgment_pending(device),0);
+        assert!(lab.item(device,entry).is_none());
     }
 }
 

@@ -999,7 +999,8 @@ fn query_candidates_from(
     }
     Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
         "readiness": { "discovery": "unverified", "authoritativeEmpty": false,
-            "unresolvedCandidates": unresolved_candidates, "checkpointPartial": checkpoint_partial } }))
+            "unresolvedCandidates": unresolved_candidates, "checkpointPartial": checkpoint_partial,
+            "pendingJudgments": lab.judgment_pending(me) } }))
 }
 
 /// `{"op": "api_pass", "audience"}`: the device's pass to service `audience` (`sign::ApiPass`), made now by its clock,

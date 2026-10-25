@@ -3282,12 +3282,23 @@ impl Shared {
         if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
             return false;
         }
-        let (caught, work) = self.try_lab_class(class, |lab, me| {
-            // Queue waiting is not computation cost: foreground priority must not
-            // multiply a busy queue into another long background-sync cooldown.
-            let started = Instant::now();
-            (lab.catch_up(me), started.elapsed())
-        }).await.unwrap_or((false, Duration::ZERO));
+        let mut caught=false;
+        let mut work=Duration::ZERO;
+        loop {
+            let priority: Vec<_>=self.demands.lock().expect("demands").entries(Instant::now()).into_iter()
+                .filter_map(|id|match id {LogId::Entry(e)=>Some(e),_=>None}).collect();
+            let ((stepped,pending),elapsed)=self.try_lab_class(class,move |lab,me| {
+                let started=Instant::now();
+                (lab.catch_up_step(me,&priority),started.elapsed())
+            }).await.unwrap_or(((false,false),Duration::ZERO));
+            caught|=stepped;
+            work+=elapsed;
+            if stepped {self.changed.notify_one();}
+            if !pending {break;}
+            // The prior lock AND schedule permit have been released. This real
+            // task boundary admits foreground reads/writes before the next slice.
+            time::sleep(Duration::ZERO).await;
+        }
         if caught {
             *self.paced.lock().expect("paced") = Some(Instant::now() + work * CATCH_UP_PACE);
             self.changed.notify_one();
