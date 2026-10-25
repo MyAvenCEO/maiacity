@@ -203,7 +203,11 @@ impl Lab {
         judging.judge(d, st, (r, &store.bodies), w, &r.groups);
         let mut hash = Hasher::new("lab shown");
         for write in st.entry_writes(entry) {
-            hash.update(&write.edit.0).update(&[store.bodies.contains_key(&write.edit) as u8]);
+            // Match show_items' authenticated availability fingerprint. Deferred
+            // metadata is retained valid state, not an absent body; hashing it as
+            // absent would reject the next saved receipt and force full replay.
+            hash.update(&write.edit.0).update(&[(store.bodies.contains_key(&write.edit)
+                || store.deferred_bodies.contains_key(&write.edit)) as u8]);
         }
         hash.update(&tip.lane).update(&tip.groups);
         let mut shown = judging.shown_on(d, hash.finalize(), tip, items);
