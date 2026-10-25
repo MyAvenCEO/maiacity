@@ -757,6 +757,8 @@ struct Store {
     unopened: HashSet<(KeyId, Recipient, [u8; 32])>,
     /// The bodies of the writes it opened, and the writes whose bodies never open: garbled under the key they name.
     bodies: HashMap<EditId, Body>,
+    deferred_bodies: HashMap<EditId, Arc<crate::deferred_body::DeferredBody>>,
+    deferred_basis: Option<crate::policy::LogRevision>,
     spoilt: HashSet<EditId>,
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
@@ -839,6 +841,8 @@ impl Default for Store {
             unreadable: HashSet::new(),
             unopened: HashSet::new(),
             bodies: HashMap::new(),
+            deferred_bodies: HashMap::new(),
+            deferred_basis: None,
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
@@ -873,6 +877,31 @@ impl Default for Store {
 }
 
 impl Store {
+    fn body_key(&self, id: EditId) -> Option<&Secret> {
+        let edit = &self.signed.get(&id)?.edit;
+        let Action::Write { entry, stay, epoch, body, .. } = &edit.action else { return None; };
+        self.keys.get(&keys::edit_key(body)?, KeyName::Entry(*entry, *stay, *epoch))
+    }
+    fn deferred_authorized(&self, id: EditId) -> bool {
+        self.deferred_bodies.get(&id).is_some_and(|body| self.body_key(id)
+            .is_some_and(|key| body.permits(&self.log.revision(), key).is_ok()))
+    }
+    fn body_metadata(&self, id: EditId) -> Option<&Body> {
+        self.bodies.get(&id).or_else(|| {
+            if !self.deferred_authorized(id) { return None; }
+            self.deferred_bodies.get(&id)?.metadata(&self.log.revision()).ok().map(|m| m.fields())
+        })
+    }
+    fn metadata_bodies(&self) -> impl Iterator<Item = (&EditId, &Body)> {
+        self.bodies.iter().chain(self.deferred_bodies.keys().filter_map(|id| {
+            if self.bodies.contains_key(id) { return None; }
+            Some((id, self.body_metadata(*id)?))
+        }))
+    }
+    fn demanded_body(&self, id: EditId) -> Option<&Body> {
+        if let Some(body) = self.bodies.get(&id) { return Some(body); }
+        self.deferred_bodies.get(&id)?.open(&self.log.revision(), self.body_key(id)?).ok()
+    }
     fn view(&self) -> &State {
         self.bootstrap_state.as_ref().unwrap_or(&self.replay.state)
     }
@@ -901,6 +930,8 @@ impl Store {
         self.unreadable.clear();
         self.unopened.clear();
         self.bodies.clear();
+        self.deferred_bodies.clear();
+        self.deferred_basis = None;
         self.files_at = OnceLock::new();
         self.spoilt.clear();
         self.readings = Readings::default();
@@ -940,6 +971,8 @@ impl Store {
 /// that changes; and its tip, what a refresh that removed nothing checks instead of that hash (`Tip`).
 struct Shown {
     history: History,
+    history_bodies: Vec<EditId>,
+    hydrated_history: OnceLock<Option<History>>,
     items: OnceLock<BTreeMap<Line, Item>>,
     deferred: std::sync::Mutex<Option<(SignerId, BTreeMap<Line, Vec<u8>>)>>,
     print: [u8; 32],
@@ -949,9 +982,30 @@ struct Shown {
 }
 
 impl Shown {
+    fn history_in<'a>(&'a self, store: &Store) -> Option<&'a History> {
+        if self.history_bodies.is_empty() { return Some(&self.history); }
+        // Recheck current entry keys/basis even when this history was hydrated.
+        for id in &self.history_bodies { store.demanded_body(*id)?; }
+        self.hydrated_history.get_or_init(|| {
+            let mut changes = self.history.changes().to_vec();
+            let deferred: HashSet<_> = self.history_bodies.iter().copied().collect();
+            for change in &mut changes {
+                if deferred.contains(&change.write.edit) {
+                    change.body = Some(store.demanded_body(change.write.edit)?.content.clone());
+                }
+            }
+            History::from_changes(changes).ok()
+        }).as_ref()
+    }
     /// Only own, authenticated exact-basis snapshots reach this path. History
-    /// remains eager: authorization, heads and stewardship never depend on reads.
-    fn items(&self) -> &BTreeMap<Line, Item> {
+    /// metadata remains eager; historical content is opened only on demand.
+    fn items(&self) -> &BTreeMap<Line, Item> { self.items_in(None) }
+    fn items_in(&self, store: Option<&Store>) -> &BTreeMap<Line, Item> {
+        static NONE: std::sync::LazyLock<BTreeMap<Line, Item>> = std::sync::LazyLock::new(BTreeMap::new);
+        if !self.history_bodies.is_empty() && store.is_none_or(|store|
+            self.history_bodies.iter().any(|id| !store.bodies.contains_key(id) && !store.deferred_authorized(*id))) {
+            return &NONE;
+        }
         self.items.get_or_init(|| {
             let (signer, mut saved) = self.deferred.lock().expect("deferred items lock")
                 .take().expect("unmaterialized own snapshot");
@@ -960,7 +1014,11 @@ impl Shown {
                 .filter_map(|line| {
                     let item = saved.remove(&line)
                         .and_then(|bytes| Item::from_own_snapshot(&bytes, signer, line))
-                        .or_else(|| crate::history::build_from(&self.history.history(line), signer, line));
+                        .or_else(|| {
+                            let history = if self.history_bodies.is_empty() { &self.history }
+                                else { self.history_in(store?)? };
+                            crate::history::build_from(&history.history(line), signer, line)
+                        });
                     item.map(|item| (line, item))
                 }).collect()
         })
@@ -3238,6 +3296,16 @@ impl Lab {
             store.perf.add("keys: index", at);
             open_keys(store, &ix, &mine);
             store.perf.add("open keys", at);
+            if store.deferred_basis.as_ref().is_some_and(|basis| *basis != store.log.revision()) {
+                store.deferred_bodies.clear();
+                store.deferred_basis = None;
+                store.files_at = OnceLock::new();
+                store.reshow = true;
+            }
+            if let Some(receipt) = store.warm_materialization.as_ref() {
+                store.deferred_bodies = receipt.deferred(store);
+                if !store.deferred_bodies.is_empty() { store.deferred_basis = Some(store.log.revision()); }
+            }
             let at = Perf::start();
             read(d, store);
             store.perf.add("read", at);
@@ -3310,6 +3378,12 @@ impl Lab {
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
+        if let Action::Write { entry, .. } = &action {
+            let store = self.held(on);
+            if store.shown.get(entry).is_some_and(|s| s.history_in(store).is_none()) {
+                return Err(Refusal::NotAView);
+            }
+        }
         if let Action::Write { entry, vault, actor, proposal, deps, .. } = &action {
             if self.held(on).bootstrap_pending.contains(entry) || self.owner_base_wait_reason(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
             if self.held(on).bootstrap_active.contains(entry)
@@ -4035,12 +4109,12 @@ impl Lab {
         if self.hosted.contains_key(&d) {
             return None;
         }
-        self.held(d).shown.get(&entry)?.items().get(&line).cloned()
+        self.held(d).shown.get(&entry)?.items_in(Some(self.held(d))).get(&line).cloned()
     }
 
     fn shown(&self, d: SignerId, entry: EntryId) -> &History {
         static NONE: std::sync::LazyLock<History> = std::sync::LazyLock::new(History::default);
-        self.held(d).shown.get(&entry).map_or(&NONE, |s| &s.history)
+        self.held(d).shown.get(&entry).and_then(|s| s.history_in(self.held(d))).unwrap_or(&NONE)
     }
 
     /// Make the write `draft` describes of entry `entry` on device `on`, acting for `actor`, carrying the tags `tags`,
@@ -4244,7 +4318,7 @@ impl Lab {
         if !self.sees(d, entry) {
             return None;
         }
-        self.held(d).shown.get(&entry)?.items().get(&line)
+        self.held(d).shown.get(&entry)?.items_in(Some(self.held(d))).get(&line)
     }
 
     /// Whether entry `e` has landed, as device `d` shows it (`History::landed`): it is no draft, or its vault took it
@@ -4274,7 +4348,7 @@ impl Lab {
         if !self.sees(d, entry) {
             return None;
         }
-        self.held(d).shown.get(&entry).map(|s| &s.history)
+        self.held(d).shown.get(&entry).and_then(|s| s.history_in(self.held(d)))
     }
 
     /// How many writes of the entry device `d` holds, whether it can decrypt them or not.
@@ -4292,6 +4366,14 @@ impl Lab {
 
     /// What entry `entry` means to device `d`, by what it reads (`policy::State::meaning`): its type, its author, its
     /// tags now, its audience, and where a steward would move it. `None` if it doesn't read the entry's header.
+    /// A type scheduling/filter hint from already opened header metadata. This
+    /// does not establish landed/read authorization and never hydrates a draft.
+    pub(crate) fn entry_type_hint(&self, d: SignerId, entry: EntryId) -> Option<&str> {
+        let store = self.held(d);
+        let creation = store.view().entry(entry)?.creation;
+        Some(store.readings.headers.get(&creation)?.ty.as_str())
+    }
+
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
         if !self.sees(d, entry) {
             return None;
@@ -4495,7 +4577,7 @@ impl Lab {
             out.extend(slice.to_wire());
         }
         for shown in store.shown.values() {
-            for item in shown.items().values() {
+            for item in shown.items_in(Some(store)).values() {
                 out.extend(item.record().to_string().into_bytes());
             }
         }
@@ -5174,9 +5256,12 @@ impl Lab {
     /// readable file keys must permit each file. Opened/light devices hydrate these in background.
     pub fn demanded_files(&self, d: SignerId, entries: &[EntryId]) -> Vec<FileRoot> {
         let st = self.latest(d);
-        let files: BTreeSet<FileRoot> = entries.iter()
-            .filter(|entry| st.entry(**entry).is_some_and(|en| st.wants(d, en)))
-            .flat_map(|entry| self.entry_files(d, *entry))
+        // Many active entries still require just one held-history pass. Selection
+        // precedes grouping; file() inside the projection still checks readable keys.
+        let selected = entries.iter().copied()
+            .filter(|entry| st.entry(*entry).is_some_and(|en| st.wants(d, en)));
+        let files: BTreeSet<FileRoot> = self.entry_files_batch(d, selected)
+            .into_values().flatten()
             .filter_map(|(root, len)| len.map(|_| root))
             .collect();
         files.into_iter().collect()
@@ -5272,12 +5357,12 @@ impl Lab {
                 let f = body.files.iter().find(|f| f.root == *root && named.contains(&f.root) && f.fits())?;
                 self.sees(d, entry).then(|| (*id, f.clone()))
             };
-            return store.bodies.iter().filter_map(brings).min_by_key(|(id, _)| *id).map(|(_, f)| f);
+            return store.metadata_bodies().filter_map(brings).min_by_key(|(id, _)| *id).map(|(_, f)| f);
         }
         // the first write by id that names the file and holds its key, each file once, rather than every body sorted
         // again at every file asked for (an entry list asks for thousands)
         let at = store.files_at.get_or_init(|| {
-            let mut writes: Vec<(&EditId, &Body)> = store.bodies.iter().collect();
+            let mut writes: Vec<(&EditId, &Body)> = store.metadata_bodies().collect();
             writes.sort_by_key(|(id, _)| **id);
             let mut at = HashMap::new();
             for (id, body) in writes {
@@ -5962,7 +6047,7 @@ fn read(d: SignerId, store: &mut Store) {
     let retags = st.entries().iter().flat_map(|en| en.retags.iter().copied());
     let wanted = st.all_writes().iter().map(|w| w.edit).chain(retags);
     let wanted: Vec<EditId> =
-        wanted.filter(|id| !store.bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
+        wanted.filter(|id| !store.bodies.contains_key(id) && !store.deferred_bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
     if !wanted.is_empty() {
         let edits: HashMap<EditId, &Edit> = store.replay.ids.iter().copied().zip(&store.replay.edits).collect();
         for id in wanted {
@@ -5993,7 +6078,7 @@ fn read(d: SignerId, store: &mut Store) {
     for (c, s) in &store.slices {
         r.selectors.insert(*c, s.select.clone());
     }
-    for (id, b) in &store.bodies {
+    for (id, b) in store.metadata_bodies() {
         if let Some(h) = &b.header {
             r.headers.insert(*id, h.clone());
             // a schema or lens entry's creation holds the schema or the lens itself, and fits where it is one of its
@@ -6197,11 +6282,11 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
         };
         let ours = st.entry_writes(en.id).filter(|w| w.actor == v);
         let answered: HashSet<EditId> =
-            ours.filter_map(|w| store.bodies.get(&w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
+            ours.filter_map(|w| store.body_metadata(w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
         let asks: Vec<&Write> = st
             .entry_writes(en.id)
             .filter(|w| w.actor != v && !w.first && !answered.contains(&w.edit))
-            .filter(|w| store.bodies.get(&w.edit).is_some_and(|b| !b.tags.is_empty()))
+            .filter(|w| store.body_metadata(w.edit).is_some_and(|b| !b.tags.is_empty()))
             .collect();
         if asks.is_empty() {
             if let Some((caps, wants)) = m.mark {
@@ -6219,7 +6304,7 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
         for w in &asks {
             let attrs = Attrs { tags: tags.clone(), ..m.attrs.clone() };
             if counted(w) && granted(st, store, w, &attrs) {
-                tags = store.bodies[&w.edit].tags.apply(&tags);
+                tags = store.body_metadata(w.edit).expect("read tag metadata").tags.apply(&tags);
             }
         }
         let add = tags.iter().filter(|t| !m.attrs.tags.contains(t)).cloned().collect();
@@ -6238,7 +6323,7 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
 /// writer still holds that share, with write or more, and its slice holds the entry before the change and after it.
 fn granted(st: &State, store: &Store, w: &Write, attrs: &Attrs) -> bool {
     let r = &store.readings;
-    let after = Attrs { tags: store.bodies[&w.edit].tags.apply(&attrs.tags), ..attrs.clone() };
+    let after = Attrs { tags: store.body_metadata(w.edit).expect("read tag metadata").tags.apply(&attrs.tags), ..attrs.clone() };
     let share = r.proofs.get(&w.edit).and_then(|p| st.share(p.share));
     share.is_some_and(|cp| {
         st.holds(w.actor, cp, Level::Write) && st.eff_selects(cp, attrs, r) && st.eff_selects(cp, &after, r)
@@ -6308,7 +6393,15 @@ fn landed_in(store: &Store, e: EntryId) -> bool {
     if !st.is_draft(e) {
         return true;
     }
-    let shown = store.shown.get(&e).map(|s| &s.history);
+    let shown = match store.shown.get(&e) {
+        Some(shown) => match shown.history_in(store) {
+            Some(history) => Some(history),
+            // Previously opened deferred state that no longer has current keys
+            // cannot fall through to the ciphertext-only relay visibility rule.
+            None => return false,
+        },
+        None => None,
+    };
     if shown.is_some_and(History::landed) {
         return true;
     }
@@ -6340,19 +6433,9 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 fn show_items(d: SignerId, store: &mut Store) {
     let materialization = store.warm_materialization.take()
         .and_then(|receipt| receipt.consume(store));
-    let mut warm = match materialization {
-        Some(bytes) => match warm_materialization::decode(&bytes) {
-            Some(saved) => saved,
-            None => {
-                // Its policy replay remains valid, but regenerate the damaged
-                // optional adjunct on the next save instead of retaining it forever.
-                store.view_given = 0;
-                BTreeMap::new()
-            }
-        },
-        None => BTreeMap::new(),
-    };
-    let (st, r, bodies) = (&store.replay.state, &store.readings, &store.bodies);
+    let mut warm = materialization.unwrap_or_default();
+    let (st, r, bodies, deferred) = (&store.replay.state, &store.readings, &store.bodies, &store.deferred_bodies);
+    let mut retry_entries = Vec::new();
     let (reshow, opened) = (std::mem::take(&mut store.reshow), std::mem::take(&mut store.opened));
     let mut old = std::mem::take(&mut store.shown);
     if reshow {
@@ -6382,7 +6465,7 @@ fn show_items(d: SignerId, store: &mut Store) {
     let print = |en: &Entry, groups: &[u8; 32]| {
         let mut h = Hasher::new("lab shown");
         for w in st.entry_writes(en.id) {
-            h.update(&w.edit.0).update(&[bodies.contains_key(&w.edit) as u8]);
+            h.update(&w.edit.0).update(&[(bodies.contains_key(&w.edit) || deferred.contains_key(&w.edit)) as u8]);
         }
         h.update(&lanes[&en.vault].1).update(groups);
         h.finalize()
@@ -6477,7 +6560,7 @@ fn show_items(d: SignerId, store: &mut Store) {
             s.tip.lane = tip.lane;
             if !reshow && s.tip == tip && !opened.contains_key(&en.id) {
                 s.print = print(en, &groups_print);
-                debug_assert!(same_shown(s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
+                debug_assert!(same_shown_in(s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
             }
         }
         let kept = old.get_mut(&en.id).filter(|s| s.tip == tip && !opened.contains_key(&en.id));
@@ -6497,13 +6580,20 @@ fn show_items(d: SignerId, store: &mut Store) {
             continue;
         }
         if let Some(saved) = warm.remove(&en.id) {
-            if let Some(shown) = saved.restore(d, st, r, bodies, en, print, tip) {
-                debug_assert!(same_shown(&shown, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
+            if let Some(shown) = saved.restore(d, st, r, store, en, print, tip) {
+                // Deferred content is intentionally not forced by a debug comparison.
+                // Dedicated regressions compare demanded content to canonical replay.
                 store.perf.count("show: own materialization reused", 1);
                 old.insert(en.id, shown);
                 continue;
             }
             store.view_given = 0; // changed bodies or an invalid item must not retain a stale adjunct
+        }
+        if st.entry_writes(en.id).any(|w| deferred.contains_key(&w.edit)) {
+            // No validated materialization accepted this entry. Retire its
+            // metadata-only bodies and run canonical decoding before exposure.
+            retry_entries.push(en.id);
+            continue;
         }
         // writes that only came after those it judged, judged on where it left off: what judging all of them makes
         let writes: Vec<&Write> = st.entry_writes(en.id).collect();
@@ -6522,9 +6612,10 @@ fn show_items(d: SignerId, store: &mut Store) {
         let (mut j, from, items) = match old.remove(&en.id) {
             Some(s) if resumes(&s) => {
                 let from = s.tip.writes;
-                s.items(); // materialize the target before moving its validated history
+                s.items_in(Some(store));
+                let history = s.history_in(store).expect("current history before incremental admission").clone();
                 let items = s.items.into_inner().expect("materialized above");
-                (Judging::resume(en, r, lane(en.vault), s.history, s.after), from, Some(items))
+                (Judging::resume(en, r, lane(en.vault), history, s.after), from, Some(items))
             }
             _ => (Judging::new(st, en, r, lane(en.vault)), 0, None),
         };
@@ -6535,7 +6626,7 @@ fn show_items(d: SignerId, store: &mut Store) {
         let materialize_at = Perf::start();
         let s = j.shown_on(d, print, tip, items);
         store.perf.add("show: materialize", materialize_at);
-        debug_assert!(from == 0 || same_shown(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
+        debug_assert!(from == 0 || same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
         retain_recent_shown(&mut old, &mut recent, en.id, s);
     }
     // only the entries judged last keep their scratch items
@@ -6552,6 +6643,14 @@ fn show_items(d: SignerId, store: &mut Store) {
     store.perf.add("show: entries", at);
     store.shown = old;
     store.readings.groups = groups;
+    if !retry_entries.is_empty() {
+        let ids: Vec<_> = retry_entries.into_iter().flat_map(|entry|
+            store.replay.state.entry_writes(entry).map(|w| w.edit)).collect();
+        for id in ids { store.deferred_bodies.remove(&id); }
+        store.reshow = true;
+        read(d, store);
+        show_items(d, store);
+    }
 }
 
 /// Entry `en`'s writes judged anew from its first, on device `d`: what judging on from where it left off must make.
@@ -6572,10 +6671,17 @@ fn judged_anew(
 }
 
 /// Two showings of an entry show the same: the same writes, judged alike, and the same record on each line.
-fn same_shown(a: &Shown, b: &Shown) -> bool {
-    a.history.changes() == b.history.changes()
-        && a.items().keys().eq(b.items().keys())
-        && a.items().iter().zip(b.items()).all(|((_, x), (_, y))| x.record() == y.record())
+#[cfg(test)]
+fn same_shown(a: &Shown, b: &Shown) -> bool { same_shown_in(a, b, None) }
+fn same_shown_in(a: &Shown, b: &Shown, store: Option<&Store>) -> bool {
+    let histories = match store {
+        Some(store) => a.history_in(store).zip(b.history_in(store)),
+        None if a.history_bodies.is_empty() && b.history_bodies.is_empty() => Some((&a.history, &b.history)),
+        None => None,
+    };
+    histories.is_some_and(|(a, b)| a.changes() == b.changes())
+        && a.items_in(store).keys().eq(b.items_in(store).keys())
+        && a.items_in(store).iter().zip(b.items_in(store)).all(|((_, x), (_, y))| x.record() == y.record())
 }
 
 /// The writes of one entry as a device judges them, one after the other in the order they were accepted, each on what
@@ -6699,7 +6805,7 @@ impl<'a> Judging<'a> {
                 imported.insert(l, changes.iter().map(|c| c.write.edit).collect());
             }
         }
-        Shown { history, items: OnceLock::from(items), deferred: std::sync::Mutex::new(None), print, tip, after: After { scratch, attrs, mine, imported, asked } }
+        Shown { history, history_bodies: Vec::new(), hydrated_history: OnceLock::new(), items: OnceLock::from(items), deferred: std::sync::Mutex::new(None), print, tip, after: After { scratch, attrs, mine, imported, asked } }
     }
 }
 

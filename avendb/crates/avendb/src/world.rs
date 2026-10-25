@@ -563,13 +563,21 @@ impl EntryViews {
 pub fn entry_views(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Option<&[EntryId]>, actor: VaultId, types: Option<&[String]>, kind: Option<&str>) -> Option<EntryViews> {
     lab.vault_of(me)?;
     let st = lab.state(me);
+    let global = vault.is_none() && ids.is_none();
+    if global && types.is_none_or(|types| types.is_empty() || types.len() > 8 || types.iter().any(String::is_empty)) { return None; }
+    let readable = |en: &Entry| st.public_key(KeyFam::Audience(en.vault, en.audience()))
+        || levels(st, en.vault, en.audience()).iter().any(|(v, level)| *v == actor && level.allows(Level::Read));
+    let selected_type = |en: &Entry| types.is_none_or(|types| lab.entry_type_hint(me, en.id)
+        .is_some_and(|kind| types.iter().any(|ty| ty == kind)));
     let mut snapshot = EntryViews { entries: vec![], total_entries: 0, readable_entries: 0 };
     // Explicit IDs use the canonical policy index, including cross-vault targets; no body scan.
     let selected: Vec<_> = match ids {
         Some(ids) => ids.iter().filter_map(|id| st.entry(*id)).collect(),
-        None => st.entries().iter().filter(|en| Some(en.vault) == vault).collect(),
+        None => st.entries().iter().filter(|en| vault.is_none_or(|vault| en.vault == vault)).collect(),
     };
-    for en in selected.into_iter().filter(|en| lab.landed(me, en.id)) {
+    // Global typed discovery rejects unrelated/unreadable entries before any
+    // record materialization or draft-history demand; counts disclose only matches.
+    for en in selected.into_iter().filter(|en| (!global || (readable(en) && selected_type(en))) && lab.landed(me, en.id)) {
         snapshot.total_entries += 1;
         // The same public/level metadata as EntryView, without opening any record.
         let readable = st.public_key(KeyFam::Audience(en.vault, en.audience()))
@@ -1257,14 +1265,22 @@ fn files_everyone_reads(
     let mut files = BTreeMap::new();
     let landed = |en: &&Entry| lab.landed(me, en.id);
     let public = st.entries().iter().filter(landed).filter(|en| of(en) && everyone_reads(st, en));
+    let mut candidates = Vec::new();
     for en in public.filter(|en| typed(lab, me, en.id, FILE)) {
         let Some(What::Record { title, record, deleted: false, .. }) = lab.item(me, en.id).map(|i| record(i.record()))
         else {
             continue;
         };
         let media = record.get("media").and_then(Value::as_str).unwrap_or_default().to_string();
-        if let Some((root, len)) = lab.entry_files(me, en.id).into_iter().find_map(|(root, len)| Some((root, len?))) {
-            files.entry((en.vault, title)).or_insert(PublicFile { root, len, media });
+        candidates.push((en.id, en.vault, title, media));
+    }
+    // Keep candidate order (including first-name wins), but scan held history
+    // once for the selected public entries instead of once per file entry.
+    let mut roots = lab.entry_files_batch(me, candidates.iter().map(|(id, ..)| *id));
+    for (entry, vault, title, media) in candidates {
+        if let Some((root, len)) = roots.remove(&entry).into_iter().flatten()
+            .find_map(|(root, len)| Some((root, len?))) {
+            files.entry((vault, title)).or_insert(PublicFile { root, len, media });
         }
     }
     files
@@ -1618,3 +1634,7 @@ pub fn approver(st: &State, v: VaultId) -> Option<SignerId> {
     }
     None
 }
+
+#[cfg(test)]
+#[path = "public_files_batch_tests.rs"]
+mod public_files_batch_tests;

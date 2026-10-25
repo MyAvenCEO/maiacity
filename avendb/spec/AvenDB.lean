@@ -130,4 +130,14 @@ import AvenDB.CeremonyCancellation
 
 import AvenDB.IndexedHistoryAdmission
 
+import AvenDB.DeferredBodyReadiness
+import AvenDB.ScopedDocumentView
+
+import AvenDB.DemandedFilesBatch
+
+import AvenDB.QueryReadiness
+import AvenDB.PublicFilesBatch
+
 import AvenDB.FillingReadFallback
+
+import AvenDB.TypedGlobalInventory

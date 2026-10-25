@@ -37,7 +37,11 @@ export function queryEntries(op) {
 export function queryDiscovery(op) {
 	if (op?.op === 'aips') return normalizeDiscovery([{ types: ['aip', 'review'], ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
 	if (op?.op === 'database' || op?.op === 'entry_views') {
-		return normalizeDiscovery([{ types: op.types, ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
+		// A semantic file-kind read also accepts custom schemas. Prioritize the
+		// standard file type without narrowing the canonical local kind query;
+		// this hint is not an exhaustive inventory/completeness claim.
+		const types = op.types ?? (op.op === 'entry_views' && op.kind === 'file' && !op.entries ? ['file'] : undefined);
+		return normalizeDiscovery([{ types, ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
 	}
 	if (op?.op !== 'query') return [];
 	const types = new Set(), pending = [op.where];

@@ -300,7 +300,7 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
         let started = Instant::now();
         for _ in 0..10 {
             let saved = warm_materialization::decode(extra).unwrap().remove(&entry).unwrap();
-            let restored = saved.restore(d, st, &store.readings, &store.bodies, en, shown.print, shown.tip).unwrap();
+            let restored = saved.restore(d, st, &store.readings, store, en, shown.print, shown.tip).unwrap();
             assert!(restored.items.get().is_none(), "restoring history must not import Loro snapshots");
             assert_eq!(restored.history.changes().len(), shown.history.changes().len());
             assert!(same_shown(shown, &restored));
@@ -310,7 +310,7 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
         }
         eprintln!("own materialization 10x canonical={canonical:?} cached_including_decode={:?}", started.elapsed());
         let damaged = warm_materialization::decode(extra).unwrap().remove(&entry).unwrap()
-            .restore(d, st, &store.readings, &store.bodies, en, shown.print, shown.tip).unwrap();
+            .restore(d, st, &store.readings, store, en, shown.print, shown.tip).unwrap();
         for bytes in damaged.deferred.lock().unwrap().as_mut().unwrap().1.values_mut() {
             *bytes = vec![0xff];
         }
@@ -326,7 +326,8 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
         fingerprint.update(&shown.tip.lane).update(&shown.tip.groups);
         let changed_print = fingerprint.finalize();
         assert_ne!(shown.print, changed_print);
-        assert!(saved.restore(d, st, &store.readings, &fewer_bodies, en, changed_print, shown.tip).is_none(),
+        let fewer = Store { bodies: fewer_bodies, ..Store::default() };
+        assert!(saved.restore(d, st, &store.readings, &fewer, en, changed_print, shown.tip).is_none(),
             "changed current opened-body fingerprint must reject cached materialization");
     }
     let legacy = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", view, ENGINE.as_bytes(), &mut lab.rng)] };
@@ -336,7 +337,7 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
     assert!(after > before, "unchanged restore must actually use materialization");
     let cached = lab.item(d, entry).unwrap().record();
     let version = lab.item(d, entry).unwrap().version();
-    let proposal_version = lab.held(d).shown[&entry].items()[&Some(proposal)].version();
+    let proposal_version = lab.held(d).shown[&entry].items_in(Some(lab.held(d)))[&Some(proposal)].version();
     lab.edit(d, v, entry, |it| it.set_text(2, "successor")).unwrap();
     let successor = lab.item(d, entry).unwrap().record();
     let successor_version = lab.item(d, entry).unwrap().version();
@@ -345,7 +346,7 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
         "legacy policy-only warm state must be eligible for materialization upgrade");
     assert_eq!(lab.item(d, entry).unwrap().record(), cached);
     assert_eq!(lab.item(d, entry).unwrap().version(), version);
-    assert_eq!(lab.held(d).shown[&entry].items()[&Some(proposal)].version(), proposal_version);
+    assert_eq!(lab.held(d).shown[&entry].items_in(Some(lab.held(d)))[&Some(proposal)].version(), proposal_version);
     lab.edit(d, v, entry, |it| it.set_text(2, "successor")).unwrap();
     assert_eq!(lab.item(d, entry).unwrap().record(), successor);
     assert_eq!(lab.item(d, entry).unwrap().version(), successor_version);
@@ -418,7 +419,7 @@ fn startup_summary_preserves_authority_without_importing_ordinary_warm_items() {
         let st = store.view();
         let shown = &store.shown[&entry];
         warm_materialization::decode(extra).unwrap().remove(&entry).unwrap()
-            .restore(d,st,&store.readings,&store.bodies,st.entry(entry).unwrap(),shown.print,shown.tip).unwrap()
+            .restore(d,st,&store.readings,store,st.entry(entry).unwrap(),shown.print,shown.tip).unwrap()
     };
     lab.stores.get_mut(&d).unwrap().shown.insert(entry,deferred);
     let mut summary = crate::engine::read(&lab,d,&serde_json::json!({"op":"world_summary"}))["ok"].clone();

@@ -852,8 +852,8 @@ pub fn entry_views_snapshot(lab: &Lab, me: SignerId, op: &Value) -> Result<Optio
 }
 
 fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Option<world::EntryViews>, Refused> {
-    if o.contains_key("vault") == o.contains_key("entries") {
-        return Err(bad("entry_views requires exactly one of vault or entries"));
+    if o.contains_key("vault") && o.contains_key("entries") {
+        return Err(bad("entry_views cannot combine vault and entries"));
     }
     let vault = o.get("vault").map(|_| vault_of(o, "vault")).transpose()?;
     let ids = o.get("entries").map(|value| {
@@ -865,6 +865,10 @@ fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Resul
     }).transpose()?;
     let actor = o.get("as").map(|_| vault_of(o, "as")).transpose()?.or(vault).or_else(|| lab.vault_of(me));
     let types = o.get("types").map(|_| texts_of(o, "types")).transpose()?;
+    if vault.is_none() && ids.is_none() && types.as_ref().is_none_or(|types|
+        types.is_empty() || types.len() > 8 || types.iter().any(|ty| ty.is_empty())) {
+        return Err(bad("global entry_views requires 1 to 8 explicit nonempty types"));
+    }
     let kind = o.get("kind").map(|value| value.as_str().ok_or_else(|| bad("kind must be text"))).transpose()?;
     if kind.is_some_and(|kind| !["note", "todo", "file", "schema", "lens", "record", "sealed"].contains(&kind)) {
         return Err(bad("unknown entry kind"));
@@ -906,10 +910,12 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     let plan = w.plan();
     let mut lanes: HashMap<VaultId, Lane> = HashMap::new();
     let mut rows = vec![];
+    let (mut unresolved_candidates, mut checkpoint_partial) = (0usize, false);
     for entry in lab.entries(me) {
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
         let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
         let checkpoint = lab.entry_projection(me, entry);
+        checkpoint_partial |= checkpoint.is_some() || lab.active_owner_base(me, entry).is_some();
         let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
         let projected = checkpoint.as_ref().and_then(|p| p.record(MAIN));
         let visible = if let Some(mut stored) = projected {
@@ -922,7 +928,12 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         } else {
             lab.item(me, entry).and_then(|item| see_within(lane, item, &schema, depth))
         };
-        let Some((mut seen, cut)) = visible else { continue };
+        let Some((mut seen, cut)) = visible else {
+            // Known readable metadata matched the label plan, but its record was
+            // absent or could not be translated. This is not a confirmed empty set.
+            unresolved_candidates += 1;
+            continue;
+        };
         seen.read_only |= lab.owner_base_durability_pending(me, entry) || lab.owner_base_pending(me, entry) > 0 || lab.owner_base_wait_reason(me, entry).is_some();
         if w.holds(&m.attrs, &seen.record) {
             let provenance = checkpoint.map(|p| json!({ "snapshot": p.snapshot().to_hex(),
@@ -978,7 +989,9 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         if let Some(checkpoint) = checkpoint { row["checkpoint"] = checkpoint; }
         shown.push(row);
     }
-    Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth }))
+    Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
+        "readiness": { "discovery": "unverified", "authoritativeEmpty": false,
+            "unresolvedCandidates": unresolved_candidates, "checkpointPartial": checkpoint_partial } }))
 }
 
 /// `{"op": "api_pass", "audience"}`: the device's pass to service `audience` (`sign::ApiPass`), made now by its clock,
@@ -1969,4 +1982,25 @@ fn edits(
         })?),
     };
     Ok(json!({ "entry": entry.to_hex(), "line": line_json(line), "edit": edit.map(|e| e.to_hex()) }))
+}
+
+#[cfg(test)]
+mod query_readiness_tests {
+    use super::*;
+    use crate::cast::{document, human_on};
+    #[test]
+    fn local_empty_query_does_not_certify_discovery_or_unresolved_records() {
+        let mut lab=Lab::new(); let owner=lab.passkey("Query owner");
+        let device=lab.device_of(owner,"Device"); let vault=human_on(&mut lab,owner,&[device]);
+        let empty=run(&mut lab,device,&json!({"op":"query","vault":vault.to_hex()}));
+        assert_eq!(empty["ok"]["readiness"]["authoritativeEmpty"],false);
+        assert_eq!(empty["ok"]["readiness"]["discovery"],"unverified");
+        lab.create(device,vault,vault,"note",&[],document("Title","Text",device)).unwrap();
+        // Known label candidate cannot be translated to the requested record schema.
+        // Zero rows must preserve that distinction, not assert an empty collection.
+        let missing=run(&mut lab,device,&json!({"op":"query","vault":vault.to_hex(),"schema":"todo"}));
+        assert_eq!(missing["ok"]["count"],0);
+        assert_eq!(missing["ok"]["readiness"]["unresolvedCandidates"],1);
+        assert_eq!(missing["ok"]["readiness"]["authoritativeEmpty"],false);
+    }
 }

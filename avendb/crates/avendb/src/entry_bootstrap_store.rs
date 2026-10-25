@@ -1,5 +1,6 @@
-//! Narrow Store adoption: ordinary owner-authored main-line append while older content
-//! is absent. Shared/proposal writes wait for canonical history; no kernel privilege.
+//! Owner-held partial Store: main-line append while older content is absent.
+//! Received shared writes require complete group-free grant proofs. Proposal forks
+//! require their exact causal bodies; shared-holder authoring remains unsupported.
 use super::*;
 
 pub(crate) type Anchors = BTreeMap<EntryId, (EditId, Vec<u8>)>;
@@ -78,6 +79,18 @@ fn canonical_owner_replacement(on: SignerId, store: &Store, base: &RestoredOwner
     if !canonical.items().contains_key(&MAIN)
         || canonical.items().values().any(Item::has_parked_updates) { return None; }
     Some(canonical)
+}
+
+// Fixed grant commitments are self-contained; group-based grants require historical
+// group readiness beyond this slice. Ordinary State::lets still checks every op.
+fn bootstrap_share_proof(state: &State, vault: VaultId, write: &Write, proof: Option<&Proof>) -> bool {
+    if write.actor == vault && write.shares.is_empty() { return true; }
+    let Some(proof)=proof.filter(|p| write.shares.contains(&p.share)) else { return false; };
+    let Some(issued)=state.share(proof.share) else { return false; };
+    issued.chain.len()==proof.grants.len() && !issued.chain.is_empty()
+        && issued.chain.iter().zip(&proof.grants).all(|(id,grant)|
+            state.share(*id).is_some_and(|cp| cp.share.group.is_none()
+                && cp.commitment==Some(grant.commitment()) && cp.share.level==grant.level()))
 }
 
 impl Lab {
@@ -312,9 +325,6 @@ impl Lab {
                 let Ok(Some(w)) = view.accepted_write(&edit, id) else {
                     continue 'anchor;
                 };
-                if w.actor != vault || !w.shares.is_empty() || w.proposal != Proposal::Main {
-                    continue 'anchor;
-                }
                 if !w
                     .deps
                     .iter()
@@ -343,6 +353,23 @@ impl Lab {
                     pending.push_front(id);
                     break;
                 };
+                if !bootstrap_share_proof(&view,vault,&w,opened.proof.as_ref()) {
+                    wait_reason=Some("unsupported-share-proof");
+                    pending.push_front(id);
+                    break;
+                }
+                // A new line cannot be built from MAIN's attested snapshot: its
+                // selected causal cut may predate it. Fetch precisely that cut before
+                // ordinary judgment/materialization. Proposal::New content is a name,
+                // so leave interpretation to History::reading_on/import_change.
+                if w.proposal != Proposal::Main {
+                    missing = judging.history.missing_dependency_bodies(&w.deps, None);
+                    if !missing.is_empty() {
+                        pending.push_front(id);
+                        break;
+                    }
+                    judging.scratch = None;
+                }
                 if judging
                     .scratch
                     .as_ref()
@@ -477,6 +504,133 @@ mod tests {
     use super::*;
     use crate::cast::{document, human_on};
     #[test]
+    fn owner_partial_base_receives_group_free_shared_main_and_rechecks_revocation() {
+        use crate::policy::{Who,Level,Revoking};
+        let mut lab=Lab::new(); let owner=lab.passkey("Owner");
+        let mac=lab.device_of(owner,"Mac"); let phone=lab.device_of(owner,"Phone"); let pad=lab.device_of(owner,"Pad");
+        let bad=lab.device_of(owner,"Bad proof receiver");
+        let vault=human_on(&mut lab,owner,&[mac,phone,pad,bad]);
+        let guest=lab.passkey("Guest"); let guest_device=lab.device_of(guest,"Guest device");
+        let guest_vault=human_on(&mut lab,guest,&[guest_device]);
+        lab.share_contact(guest_device,mac,guest_vault);
+        lab.share_contact(mac,guest_device,vault);
+        let share=lab.issue(mac,&[owner],crate::cast::share(vault,Who::Vault(guest_vault),Level::Write,crate::cast::of_type("note"))).unwrap();
+        for device in [phone,pad,bad,guest_device] { lab.sync(mac,device); }
+        let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
+        let withheld=lab.edit(mac,vault,entry,|item|item.set_text(2,"Attested")).unwrap();
+        let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,draft,&[]).unwrap();
+        for device in [phone,pad,bad] {
+            let offer=lab.entry_projection_offer(mac,device,entry).unwrap();
+            lab.receive(device,offer.evidence,vec![]);
+            assert!(lab.adopt_owner_entry_base(device,snapshot,entry,sealed.clone()));
+        }
+        lab.sync(mac,guest_device);
+        let shared=lab.edit(guest_device,guest_vault,entry,|item|item.set_text(2,"Guest update")).unwrap();
+        let signed=lab.signed_edit(guest_device,shared).unwrap().clone();
+        let body=lab.held(guest_device).bodies[&shared].clone();
+        let write=lab.held(guest_device).replay.state.write(shared).unwrap();
+        assert!(bootstrap_share_proof(&lab.held(guest_device).replay.state,vault,write,body.proof.as_ref()));
+        assert!(!bootstrap_share_proof(&lab.held(guest_device).replay.state,vault,write,None));
+        let mut tampered=body.proof.clone().unwrap(); tampered.grants[0].salt[0]^=1;
+        assert!(!bootstrap_share_proof(&lab.held(guest_device).replay.state,vault,write,Some(&tampered)));
+        // A genuinely signed/encrypted malformed proof must retain the prefix
+        // read-only; this exercises receive, rather than just the precheck helper.
+        let mut bad_edit=signed.edit.clone();
+        let mut bad_body=body.clone(); bad_body.proof=Some(tampered);
+        let Action::Write { body: encrypted, .. }=&signed.edit.action else { unreachable!() };
+        let key=lab.held(guest_device).keys.get(&keys::edit_key(encrypted).unwrap(),write.key()).unwrap().clone();
+        let encrypted=keys::seal_edit(&key,&bad_body.to_wire(),&write_context(&bad_edit),&mut lab.rng);
+        if let Action::Write { body, .. }=&mut bad_edit.action { *body=encrypted; }
+        let bad_signed=lab.sign(bad_edit).unwrap(); let bad_id=bad_signed.edit.id();
+        lab.receive(bad,vec![bad_signed],vec![]);
+        assert!(lab.active_owner_base(bad,entry).is_some());
+        assert_eq!(lab.owner_base_wait_reason(bad,entry),Some("unsupported-share-proof"));
+        assert!(lab.owner_base_pending(bad,entry)>0);
+        assert!(lab.history(bad,entry).unwrap().get(bad_id).is_none());
+        // Independent concurrent owner suffix has the same checkpoint cut.
+        let own=lab.edit(mac,vault,entry,|item|item.set_text(1,"Owner title")).unwrap();
+        let own_signed=lab.signed_edit(mac,own).unwrap().clone();
+        lab.receive(phone,vec![own_signed,signed.clone()],vec![]);
+        lab.receive(mac,vec![signed.clone()],vec![]);
+        assert!(lab.active_owner_base(phone,entry).is_some());
+        assert_eq!(lab.owner_base_pending(phone,entry),0);
+        assert!(lab.history(phone,entry).unwrap().get(shared).unwrap().counted);
+        assert_eq!(lab.item(phone,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+        assert!(!lab.held(phone).log.ids().contains(&withheld),
+            "retained pre-snapshot content remains withheld");
+        let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
+        let removal=lab.signed_edit(mac,revoked).unwrap().clone();
+        // Current removal arrives before the old shared suffix on the second partial peer.
+        lab.receive(pad,vec![removal.clone()],vec![]);
+        lab.receive(pad,vec![signed],vec![]);
+        assert!(lab.active_owner_base(pad,entry).is_none());
+        assert!(!lab.adopt_owner_entry_base(pad,snapshot,entry,sealed));
+        lab.receive(phone,vec![removal],vec![]);
+        assert!(lab.active_owner_base(phone,entry).is_none());
+    }
+
+    #[test]
+    fn partial_proposal_fetches_exact_cut_then_preserves_accept_and_merge() {
+        use crate::policy::{Who,Level,Revoking};
+        let mut lab=Lab::new(); let owner=lab.passkey("Proposal owner");
+        let mac=lab.device_of(owner,"Mac"); let phone=lab.device_of(owner,"Phone"); let pad=lab.device_of(owner,"Pad");
+        let vault=human_on(&mut lab,owner,&[mac,phone,pad]);
+        let guest=lab.passkey("Proposal guest"); let device=lab.device_of(guest,"Guest device");
+        let guest_vault=human_on(&mut lab,guest,&[device]);
+        lab.share_contact(device,mac,guest_vault); lab.share_contact(mac,device,vault);
+        let share=lab.issue(mac,&[owner],crate::cast::share(vault,Who::Vault(guest_vault),Level::Write,crate::cast::of_type("note"))).unwrap();
+        for d in [phone,pad,device] {lab.sync(mac,d);}
+        let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
+        lab.edit(mac,vault,entry,|i|i.set_text(2,"Checkpoint")).unwrap();
+        let unrelated=lab.create(mac,vault,vault,"note",&[],document("Unrelated","withheld",mac)).unwrap();
+        let unrelated_creation=lab.held(mac).replay.state.entry(unrelated).unwrap().creation;
+        let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,draft,&[]).unwrap();
+        for d in [phone,pad] {
+            let offer=lab.entry_projection_offer(mac,d,entry).unwrap(); lab.receive(d,offer.evidence,vec![]);
+            assert!(lab.adopt_owner_entry_base(d,snapshot,entry,sealed.clone()));
+        }
+        lab.sync(mac,device);
+        let heads=lab.history(device,entry).unwrap().heads(MAIN);
+        let proposal=lab.propose(device,guest_vault,entry,&heads,"A proposal label, not a CRDT update").unwrap();
+        let changed=lab.edit_on(device,guest_vault,entry,Some(proposal),|i|i.set_text(2,"Proposed")).unwrap();
+        let proposed:Vec<_>=[proposal,changed].into_iter().map(|id|lab.signed_edit(device,id).unwrap().clone()).collect();
+        lab.receive(phone,proposed.clone(),vec![]);
+        assert!(lab.active_owner_base(phone,entry).is_some());
+        assert!(lab.owner_base_pending(phone,entry)>0);
+        let missing=lab.owner_base_missing(phone);
+        assert!(!missing.is_empty());
+        assert!(missing.iter().all(|(e,_)|*e==entry));
+        // Serve only requested signed dependency bodies, not whole-world history.
+        for _ in 0..8 {
+            let ids:Vec<_>=lab.owner_base_missing(phone).into_iter().flat_map(|(_,ids)|ids).collect();
+            if ids.is_empty(){break;}
+            let edits=ids.into_iter().map(|id|lab.signed_edit(mac,id).unwrap().clone()).collect();
+            lab.receive(phone,edits,vec![]);
+        }
+        assert_eq!(lab.owner_base_pending(phone,entry),0);
+        assert_eq!(lab.history(phone,entry).unwrap().name(proposal).as_deref(),Some("A proposal label, not a CRDT update"));
+        assert_eq!(lab.item_on(phone,entry,Some(proposal)).unwrap().record(),lab.item_on(device,entry,Some(proposal)).unwrap().record());
+        assert!(!lab.held(phone).log.ids().contains(&unrelated_creation));
+        lab.receive(mac,proposed.clone(),vec![]);
+        // No collaborator can bypass the vault's accept on the main-line merge.
+        assert!(lab.merge(device,guest_vault,entry,Some(proposal),MAIN,&BTreeSet::new()).is_err());
+        let accepted=lab.accept(mac,vault,entry,proposal).unwrap();
+        let accept=lab.signed_edit(mac,accepted).unwrap().clone();
+        lab.receive(device,vec![accept.clone()],vec![]); lab.receive(phone,vec![accept],vec![]);
+        let merged=lab.merge(device,guest_vault,entry,Some(proposal),MAIN,&BTreeSet::new()).unwrap();
+        let merge=lab.signed_edit(device,merged).unwrap().clone();
+        lab.receive(mac,vec![merge.clone()],vec![]); lab.receive(phone,vec![merge],vec![]);
+        assert_eq!(lab.item(phone,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+        assert!(lab.history(phone,entry).unwrap().get(merged).unwrap().counted);
+        let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
+        let removal=lab.signed_edit(mac,revoked).unwrap().clone();
+        lab.receive(pad,vec![removal],vec![]); lab.receive(pad,proposed,vec![]);
+        assert!(lab.active_owner_base(pad,entry).is_none());
+    }
+
+    #[test]
     fn canonical_retirement_waits_for_suffix_schema_even_with_all_target_bodies() {
         use crate::lens::example::{DOCUMENT_V0,DOCUMENT_LENS};
         let mut lab=Lab::new(); let owner=lab.passkey("Suffix lane owner");
@@ -550,6 +704,10 @@ mod tests {
         assert_eq!(get["ok"]["readOnly"],true);
         let query=crate::engine::read(&lab,phone,&serde_json::json!({"op":"query","schema":"stored","where":{"type":["doc"]}}));
         assert_eq!(query["ok"]["rows"][0]["readOnly"],true);
+        let empty_page=crate::engine::read(&lab,phone,&serde_json::json!({"op":"query","schema":"stored","where":{"type":["doc"]},"limit":0}));
+        assert_eq!(empty_page["ok"]["rows"],serde_json::json!([]));
+        assert_eq!(empty_page["ok"]["readiness"]["checkpointPartial"],true);
+        assert_eq!(empty_page["ok"]["readiness"]["authoritativeEmpty"],false);
         let before=lab.item(phone,entry).unwrap().record();
         assert!(lab.edit(phone,vault,entry,|item| { item.edit_document_v0(|d| d.title="Forbidden while incomplete".into()); }).is_err());
         let suffix=lab.edit(mac,vault,entry,|item| { item.edit_document_v0(|d| d.title="Latest".into()); }).unwrap();
@@ -879,7 +1037,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_bootstrap_refuses_an_unsupported_proposal_suffix() {
+    fn owner_bootstrap_waits_for_proposal_causal_bodies() {
         let mut lab = Lab::new();
         let owner = lab.passkey("Proposal owner");
         let mac = lab.device_of(owner, "Mac");
@@ -894,11 +1052,24 @@ mod tests {
         lab.receive(phone, offer.evidence, vec![]);
         assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed.clone()));
         let heads = lab.held(mac).shown.get(&entry).unwrap().history.heads(MAIN);
-        let proposal = lab.propose(mac, vault, entry, &heads, "Unsupported partial proposal").unwrap();
+        let proposal = lab.propose(mac, vault, entry, &heads, "Partial proposal requiring its cut").unwrap();
         let signed = lab.backup(mac).signed().iter().find(|s| s.edit.id() == proposal).unwrap().clone();
         lab.receive(phone, vec![signed], vec![]);
-        assert!(!lab.held(phone).bootstrap_active.contains(&entry), "the main-only overlay cannot silently omit a held proposal");
-        assert!(!lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
+        assert!(lab.held(phone).bootstrap_active.contains(&entry), "retain the verified prefix during causal-body recovery");
+        assert!(lab.owner_base_pending(phone, entry)>0);
+        assert!(!lab.owner_base_missing(phone).is_empty());
+        assert_eq!(lab.edit(phone,vault,entry,|i|i.set_text(2,"must wait")).unwrap_err(),Refusal::ReadOnly);
+        assert!(lab.history(phone,entry).unwrap().get(proposal).is_none(), "unmaterialized proposal must not count yet");
+        for _ in 0..8 {
+            let ids:Vec<_>=lab.owner_base_missing(phone).into_iter().flat_map(|(_,ids)|ids).collect();
+            if ids.is_empty(){break;}
+            let signed=ids.into_iter().map(|id|lab.signed_edit(mac,id).unwrap().clone()).collect();
+            lab.receive(phone,signed,vec![]);
+        }
+        assert_eq!(lab.owner_base_pending(phone,entry),0);
+        assert!(lab.history(phone,entry).unwrap().get(proposal).unwrap().counted);
+        assert_eq!(lab.history(phone,entry).unwrap().name(proposal),lab.history(mac,entry).unwrap().name(proposal));
+        assert_eq!(lab.item_on(phone,entry,Some(proposal)).unwrap().record(),lab.item_on(mac,entry,Some(proposal)).unwrap().record());
     }
 
     #[test]

@@ -1,10 +1,53 @@
-# Writable partial bootstrap: implementation design and remaining model work
+# Writable partial bootstrap: current status and implementation history
 
-Status: **design only; not implemented or proved**. This document follows the delivered
-read-only checkpoint path (`CHECKPOINT-DEMAND-DELIVERY.md`). It records the exact remaining
-engineering boundary so another agent does not mistake a removed `ReadOnly` check for a fix.
+## Current status — working-set candidate, 2026-10-25
 
-## What the current code actually does
+**Implemented in the candidate, with incomplete delivery/acceptance.** The original
+"design only" description below is historical. Owner-approved judged bases now
+have real publication, authorized peer retrieval, durable adoption and restricted
+local mutation paths. This is not a claim that the entire generic partial-bootstrap
+plan is complete or that the working-set candidate has been deployed.
+
+| State | Current scope |
+| --- | --- |
+| Implemented | Distinct owner-attested Loro/judgment payload; JSON projections remain read-only. Current owner/key/policy and signed scope checks apply equally to every peer. |
+| Implemented | Explicit publication, format-aware discovery/fetch, retained encrypted anchors, native/PWA companion persistence and save wakeup. |
+| Implemented | Owner-held partial MAIN writes from supported causal state; ordinary signature, schema, dependency, row ownership and admission checks remain mandatory. |
+| Implemented | Bounded suffix turns and retained read-only waits for missing bodies, keys or schema/lens inputs; active-view authorized dependency scheduling. |
+| Implemented | Exact durable frontier verification and conservative canonical retirement once actual held history/bodies and suffix judgments justify it. |
+| Implemented; combined validation pending | Received group-free shared suffixes on owner-held bases, plus proposal receive through exact causal-body fallback and ordinary owner-accept/merge checks. |
+| Implemented; final correction validation pending | Own warm metadata/deferred history integration with Store-aware publication and stable MAIN scratch normalization. |
+| Open | Non-owner shared-holder adoption/local authoring, historical cap-group-dependent grants, and local proposal authoring from partial state. |
+| Open | Compact per-line/cut bootstrap avoiding selected-history hydration; general rejected/unsupported suffix recovery; full manifest coverage and physical-device latency/stability acceptance. |
+
+### Evidence and delivery boundary
+
+The isolated core run at `e1400c15` completed **266 passed / 2 failed**: all five
+warm-metadata tests and warmed counted-base comparison passed. Its two failures
+required a Store-aware fixture access and normalization of ephemeral checkpoint
+scratch state. The correction is [84cb91c4](https://github.com/MyAvenCEO/maiacity/commit/84cb91c4);
+its final combined rerun is pending at this document update. Do not turn the
+partial run into a claim that the whole candidate passed. Individual ledgers below
+record their own Lean/parser/test evidence; later corrections supersede earlier
+pending statements only where an actual result is recorded.
+
+The shared-main and proposal slices are
+[5445d85a](https://github.com/MyAvenCEO/maiacity/commit/5445d85a) and
+[81e43133](https://github.com/MyAvenCEO/maiacity/commit/81e43133). Their added signed
+regressions must remain in the combined gate; this status page does not claim
+physical iPhone/iPad verification, a deployment, or completion of the full plan.
+Proposal receive may fetch the selected entry's causal history before building a
+line. It does not wait for unrelated world history, but it is not compact per-line
+state transfer. Missing/invalid inputs never gain authority from a hosted peer.
+
+## Historical starting point — before judged-base implementation
+
+The following analysis and numbered sequence describe the original gap and the
+constraints that guided subsequent implementation. They are retained for rationale,
+not as a current "not implemented" task list. The dated implementation ledgers
+below supersede their historical scope and activation statements.
+
+### Original read-only projection boundary
 
 - `crates/avendb/src/entry_projection.rs` encodes version 1 as bounded JSON records per line,
   signed `Stated.basis` IDs, and an encrypted content root. It deliberately has no Loro
@@ -31,7 +74,7 @@ engineering boundary so another agent does not mistake a removed `ReadOnly` chec
   Lean file itself says the general theorem that every honest start is right for every
   history remains to be proved. Existing Boolean gate lemmas do not fill that gap.
 
-## Safe near-term behavior without changing the mutation model
+### Original safe near-term behavior
 
 Keep read readiness independent of write readiness. Show the verified projection immediately;
 prioritize the active entry's signed history and its schema/access dependencies ahead of unrelated
@@ -41,7 +84,7 @@ view must not advertise successful committed edits while it is still read-only. 
 user intent must be explicit pending intent, never an already-signed edit or a silently rebuilt
 JSON document.
 
-## Concrete implementation sequence for genuinely writable bases
+### Original implementation sequence (partially realized; see current status)
 
 1. **Specify a base plus suffix model before changing guards.** Extend
    `spec/AvenDB/Snapshot.lean`, with the history/line model in `Proposals.lean` and `Doc.lean`.
@@ -136,11 +179,11 @@ JSON document.
   on Mac/iPhone/iPad while unrelated history is withheld. The physical-device measurements
   remain necessary; model proofs do not establish timing.
 
-Implementation should land as a separate versioned change after the current read-only delivery.
+Historical delivery requirement: implement as a separate versioned change after the read-only delivery; the judged-base path above now provides that distinction.
 The current safe guard must remain until this base/suffix model, validator and differential
 acceptance gates are implemented. None of the tasks in this document is marked complete.
 
-## Stage 1 implementation ledger
+## Historical implementation ledger (later entries supersede earlier stages)
 
 Implemented, Rust validation pending the coordinated integration build:
 
@@ -857,6 +900,77 @@ existing CSS warnings) using the candidate dependency tree and bundled Node PATH
 25 focused manifest/file/completeness tests pass. No Cargo or runtime authorization
 changes were involved.
 
+### Next isolated slice: shared main-line receive on owner-held partial state
+
+An owner's partial device may now receive a collaborator's main-line suffix through
+an existing share when the encrypted body supplies a complete fixed grant proof.
+The accepted share must name the proof; every chain link must exist in current
+canonical policy, carry the matching commitment/level, and reference no cap group.
+Ordinary signature verification, `State::accepted_write`, causal body/key and lane
+readiness, `Judging::judge`, row ownership, `State::lets` and `History::admit` remain
+the admission path. The chain gate does not itself grant an operation. Missing,
+changed or group-dependent proof remains a retained read-only wait, rather than
+silently accepting with incomplete authority. Standing removal still invalidates
+the owner-attested base; a peer role never substitutes for a signature or right.
+
+Regression `owner_partial_base_receives_group_free_shared_main_and_rechecks_revocation`
+uses actual owner/guest vaults and signed guest writes while pre-snapshot content is
+withheld, compares concurrent owner+guest results against the full holder, rejects
+absent/tampered grant proof and checks removal arriving before a delayed shared edit.
+Lean gate lemmas and parser/diff checks pass; Rust execution remains pending and
+this branch is separate from the frozen delivery candidate.
+
+Still unsupported: adoption by a non-owner shared writer, local shared authoring
+from partial state, historical cap-group-dependent grants, proposal/merge suffixes,
+and general recovery from a canonically rejected suffix. Before those extensions,
+prove selector/group readiness at each write placement and maintain per-line causal
+scratch/checkpoint state for proposal starts, edits, owner accepts and merges.
+
+Shared-main receive implementation: [5445d85a](https://github.com/MyAvenCEO/maiacity/commit/5445d85a). Lean/parser checks passed; the signed regression still awaits the shared Rust compiler queue. This is not delivery or completion of shared-holder/proposal bootstrap.
+
+### Proposal receive via exact causal-body fallback (isolated, validation pending)
+
+Owner-held partial state can receive proposal starts/edits/accepts through the same
+current policy and fixed group-free grant path. Before judging a non-main write,
+the selected dependency cut must have its actual authenticated decrypted bodies;
+otherwise the existing exact-body request path retains a read-only prefix and waits.
+A MAIN snapshot is not substituted for a fork at an earlier cut. Proposal start
+bytes remain labels through `History::reading_on` and `import_change`, and ordinary
+`History::admit`/`passes` enforce the owner's accept before a collaborator merges.
+This fallback can require the selected entry's full causal history; it does not
+require unrelated entries. Once canonical history is complete the existing safe
+retirement path may replace the overlay. It is not a new compact per-line snapshot
+protocol and does not enable local partial proposal authoring or non-owner adoption.
+
+`partial_proposal_fetches_exact_cut_then_preserves_accept_and_merge` covers the
+missing-body wait, exact dependency hydration without an unrelated entry, encrypted
+label and proposal content, forbidden pre-accept collaborator merge, accepted merge
+correspondence, and removal before a delayed proposal. Lean assumptions and Rust
+parser/diff checks passed. Rust execution is explicitly queued with the root; this
+slice is not part of the frozen release and must not be described as deployed.
+
+Proposal causal-body fallback: [81e43133](https://github.com/MyAvenCEO/maiacity/commit/81e43133). Rust regression execution remains pending; no release deployment claim.
+
+### Query-level uncertainty survives empty results
+
+Universal query previously silently skipped known label-matching entries whose
+records could not be opened/translated, returning only `rows: []` and `count: 0`.
+The generic JS wrapper already avoided an authoritative-empty claim, but raw/native
+results did not carry this distinction, and row-only checkpoint evidence vanished
+on an empty page. Query now includes `readiness`: discovery remains unverified,
+`authoritativeEmpty` stays false, `unresolvedCandidates` counts known metadata
+candidates lacking a usable requested record, and `checkpointPartial` is computed
+before pagination. An unresolved candidate may need content OR schema translation;
+it does not prove the entry matches a record predicate. These are read observations,
+not authorization, full discovery, history completeness or file availability.
+
+Generic JS completeness retains query-level checkpoint evidence on empty pages.
+Four JS regressions and the focused `QueryReadiness.lean` model pass. Rust parser
+checks pass; new raw query and checkpoint-empty-page regression execution remains
+queued, with no Cargo run competing against the shared compiler.
+
+Query uncertainty implementation: [77c4f551](https://github.com/MyAvenCEO/maiacity/commit/77c4f551). Four JS tests and Lean passed; Rust execution pending.
+
 ### Release transport blocker: export racing blob finalization
 
 The real-browser RTC test failed when a range export captured a Filling blob's
@@ -882,3 +996,22 @@ or wrong-length final read. It explicitly assumes the temporary name belongs to
 that blob and makes no cryptographic/content-integrity claim. It supplements the
 implementation after the release blocker was diagnosed; it was not retroactively
 Lean-first. Its focused Lean check passed; Rust/browser validation remains separate.
+
+### Combined shared/proposal fixture repair and execution evidence
+
+The new shared-vault fixtures initially returned `UnknownKey` before reaching any
+bootstrap logic: ordinary sync does not introduce an unrelated recipient's seed
+contact. They now use the public bidirectional `share_contact` handshake before
+issuing a grant. No key or authority is injected directly. The earlier main-only
+proposal refusal regression is superseded by the implemented exact-cut fallback:
+it now requires retained prefix, missing-body wait, no counted proposal and local
+`ReadOnly`, followed by exact-body retrieval and matching counted proposal/name/item.
+
+The frozen corrected tree passed all **15 bootstrap_store tests** (13.43 seconds)
+including shared/proposal receive, malformed proof, owner accept/merge, historical
+revocation, key/schema waits, concurrent suffix, restart and durable bounds.
+Command: `cargo test -p avendb --lib bootstrap_store::tests -- --nocapture`.
+Log: `/private/tmp/avendb-shared-fixture-stable.log`. An earlier run compiled the old
+fixture tree and is not validation of these edits. No production admission rules
+changed in this repair; full combined/release and physical-device acceptance remain
+separate gates.

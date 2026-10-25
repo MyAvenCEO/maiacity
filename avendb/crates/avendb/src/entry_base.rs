@@ -124,7 +124,8 @@ impl Lab {
         let st = &store.replay.state;
         let en = st.entry(entry).ok_or(Refusal::UnknownEntry)?;
         let shown = store.shown.get(&entry).ok_or(Refusal::NotAccepted)?;
-        if !shown.history.landed() || !shown.items().contains_key(&MAIN) || shown.items().len() > MAX_LINES {
+        let items = shown.items_in(Some(store));
+        if !shown.history.landed() || !items.contains_key(&MAIN) || items.len() > MAX_LINES {
             return Err(Refusal::NotAccepted);
         }
         let vault = en.vault;
@@ -132,7 +133,7 @@ impl Lab {
         let mut lines = BTreeMap::new();
         let mut union = BTreeSet::new();
         let mut bytes_used = 0usize;
-        for (&line, item) in shown.items() {
+        for (&line, item) in items {
             let mut basis = shown.history.heads(line);
             basis.sort(); basis.dedup();
             if !bounded_basis(&basis) { return Err(Refusal::NotAccepted); }

@@ -12,13 +12,15 @@
 <script>
 	// @ts-nocheck — plain JS
 	import Frame from './Frame.svelte';
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { packageQuery, missingPackageLabel } from './package-inventory.js';
 	import Icon from './Icon.svelte';
 	import { session } from './session.svelte.js';
 	import { ago, nameOf, reads, short, size } from './vaults.js';
 	import PINS from '$lib/code/packages.json';
 
-	/** @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, entry?: string }} */
-	let { world, vault, actor, entry = '' } = $props();
+	/** @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, entry?: string }} */
+	let { world, vault, actor, api, entry = '' } = $props();
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
@@ -27,10 +29,11 @@
 	/** the package shown: the one the address names, else the first */
 	const shown = $derived(packages.find((p) => p.id === entry) ?? packages[0]);
 
-	/** the vault's file entries by the pin they are tagged with */
+	const inventory = entryCollection(() => api, () => packageQuery(vault, actor));
+	/** the vault's locally discovered file entries by their pins; file bytes may still be absent. */
 	const held = $derived(
 		new Map(
-			world.entries
+			inventory.rows
 				.filter((e) => e.vault === vault && e.type === 'file' && !e.deleted && !(e.tags ?? []).includes('avendb:deleted') && reads(e, actor))
 				.flatMap((e) => (e.tags ?? []).filter((t) => t.startsWith('blake3:')).map((t) => [t.slice(7), e]))
 		)
@@ -133,9 +136,9 @@
 					<strong class="mono">{f.name}</strong>
 					<span class="soft">{size(f.size)}, {size(f.kept)} kept, {system(f)}</span>
 					{#if e}
-						<span class="state ok" title={e.entry}><Icon name="check" size={14} /> In {nameOf(here)}, entry {short(e.entry)}{e.created ? `, ${ago(e.created)}` : ''}</span>
+						<span class="state ok" title={e.entry}><Icon name="check" size={14} /> Entry in {nameOf(here)}, entry {short(e.entry)}{e.created ? `, ${ago(e.created)}` : ''}</span>
 					{:else}
-						<span class="state">Not in {nameOf(here)} yet</span>
+						<span class="state">{missingPackageLabel(inventory.phase)}</span>
 					{/if}
 				</div>
 				<div class="pin mono" title="BLAKE3 of its bytes, its tag in avenDB">BLAKE3 {f.blake3}</div>
@@ -148,15 +151,9 @@
 	</ul>
 
 	{#if count(shown) < shown.files.length}
-		<p class="empty">
-			{#if here?.name === 'Maia City'}
-				The missing files go in as one AIP (<span class="mono">bun scripts/propose-code.mjs --run</span> on the Mac), then
-				land here once an owner accepts it in Proposals.
-			{:else}
-				The code packages are kept in Maia City: pick it in the nav pill.
-			{/if}
-		</p>
+		<p class="empty" role="status">{missingPackageLabel(inventory.phase)}. This local list can grow as authorized entries arrive; it does not establish that files are missing from other peers.</p>
 	{/if}
+	<p class="soft small">Counts describe locally discovered file entries, not downloaded or verified package bytes.</p>
 </Frame>
 
 <style>

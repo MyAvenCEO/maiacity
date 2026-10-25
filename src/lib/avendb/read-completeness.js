@@ -7,7 +7,7 @@ export function readCompleteness(answer) {
  const value = answer?.ok;
  const present = value !== null && typeof value === 'object';
  const rows = present && Array.isArray(value.rows) ? value.rows : [];
- const checkpoint = value?.checkpoint?.partial === true || rows.some((/** @type {any} */ row) => row?.checkpoint?.partial === true);
+ const checkpoint = value?.readiness?.checkpointPartial === true || value?.checkpoint?.partial === true || rows.some((/** @type {any} */ row) => row?.checkpoint?.partial === true);
  const partialFiles = value?.filesComplete === false || rows.some((/** @type {any} */ row) => row?.filesComplete === false);
  return {
   response: present ? 'local' : 'unavailable',
