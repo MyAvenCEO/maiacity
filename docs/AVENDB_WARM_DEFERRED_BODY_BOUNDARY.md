@@ -160,3 +160,8 @@ Implementation: [846accc6](https://github.com/MyAvenCEO/maiacity/commit/846accc6
 Warm restoration retains the authenticated scratch image encoded. It validates the exact linear cut and retention bounds without importing Loro. `Shown::scratch_in` checks current body authorization before the first target proof/edit imports the optional image; the validated result is memoized and moved into the ordinary judgment accumulator after append. First-view reads and re-saving untouched warm state do not import scratch snapshots. Both encoded and materialized scratch slots share the existing 32-entry eviction policy.
 
 The dedicated regression asserts zero scratch imports after unlock, first view and re-save, target-only import after an edit, and no import for a different target after current keys are removed. Rust runtime validation remains pending canonical integration; syntax checks passed. This avoids moving target replay cost into unconditional unlock work.
+
+
+### Admission availability check correction
+
+Canonical regression execution exposed one additional eager path: `check_write` called public full-history hydration before the proof phase, even when the exact warm scratch covered the append cut. The availability guard now recognizes only a file-free, non-creation, main-line append whose single dependency equals the validated scratch tip. It uses the same current-key/exact-basis `append_history` check. Every other operation retains the original full-history availability check, and accepted writes still run normal canonical policy acceptance plus proof/schema/admission checks. The two no-decode regression assertions are unchanged. Runtime rerun pending.
