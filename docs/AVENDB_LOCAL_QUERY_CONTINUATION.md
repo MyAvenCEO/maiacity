@@ -11,3 +11,7 @@ Validation: 60 focused JS regressions passed, including cold empty catalog/leaf 
 ## Studio lifecycle follow-up
 
 Studio now owns collection controllers by initial load, timeline reload and library reload. Replacement cancels the previous same-class read; destruction cancels all active reads. Signals pass through avenLibrary/libraryFromDevice/listCuts/listStories to collectionEntries. No new pages or metadata reads start after cancellation; unavoidable already-issued native calls may finish but cannot publish through the lifecycle owner. Shared transcript promises are not aborted globally because another consumer may own them. Tests exercise actual collection enumeration on destroy and vault replacement, beyond a helper-only timer test.
+
+## Immediate provisional first view
+
+The generic read window forwards each bounded provisional page through observedWindow to the reactive observer while local continuation proceeds. Pages replace prior rows; they are never concatenated. Readiness remains pending and each answer retains countExact/pageComplete/deferredCandidates. Provisional delivery does not advance the fully-observed revision/timing acknowledgment. Query/owner replacement and close guard both provisional and final callbacks. Empty partial entry collections stay loading, while nonempty partial rows are usable with their completeness limits. 35 focused observer/window tests pass, including immediate partial rows, stale callback cancellation, and exact final replacement.

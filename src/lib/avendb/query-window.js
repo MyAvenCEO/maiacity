@@ -96,7 +96,7 @@ export function createReadWindow({ device, read }) {
 	};
 	return {
 		get completeness() { return { ...completeness }; },
-		async read(op) {
+		async read(op, {partial = () => {}} = {}) {
 			completeness = readCompleteness(null);
 			if (closed) return null;
 			clearing++;
@@ -130,6 +130,8 @@ export function createReadWindow({ device, read }) {
                         if (completeness.deferredCandidates > 0) {
                             observed.set('pending');
                             viewReadiness.record(completeness, answer);
+                            partial(answer);
+                            void demand.replace([...entries, ...replyEntries(answer)], selectors);
                         }
                     }
                 });

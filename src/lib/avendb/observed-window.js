@@ -6,7 +6,7 @@ import { createReadWindow } from './query-window.js';
 export function observedWindow(read) {
 	/** @type {WeakMap<AbortSignal, ReturnType<typeof createReadWindow>>} */
 	const windows = new WeakMap();
-	return (/** @type {any} */ owner, /** @type {any} */ query, /** @type {AbortSignal} */ signal) => {
+	return (/** @type {any} */ owner, /** @type {any} */ query, /** @type {AbortSignal} */ signal, /** @type {(answer:any)=>void} */ partial = () => {}) => {
 		if (signal.aborted) return Promise.resolve(null);
 		let window = windows.get(signal);
 		if (!window) {
@@ -15,6 +15,6 @@ export function observedWindow(read) {
 			const held = window;
 			signal.addEventListener('abort', () => { held.close(); windows.delete(signal); }, { once: true });
 		}
-		return window.read(query);
+		return window.read(query, {partial});
 	};
 }

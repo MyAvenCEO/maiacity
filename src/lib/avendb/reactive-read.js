@@ -7,7 +7,7 @@ import { reactiveObservation } from './reactive-observation.js';
  * without invalidating in-flight answers. Query/owner changes abort the previous
  * scope and start independently; old engine work may finish but cannot publish.
  * There is at most one read per scope, without a timeout spawning duplicate work.
- * @param {{ read: (owner: any, query: any, signal: AbortSignal) => Promise<any>,
+ * @param {{ read: (owner: any, query: any, signal: AbortSignal, partial?: (answer:any)=>void) => Promise<any>,
  *   take: (answer: any) => void, failed?: (error: Error) => void, timing?: typeof beginReactiveTiming, observed?: (revisions: ReturnType<typeof observedRevisions>) => void }} options */
 export function createReactiveRead({ read, take, failed = () => {}, timing = beginReactiveTiming, observed = () => {} }) {
 	let closed = false;
@@ -22,7 +22,11 @@ export function createReactiveRead({ read, take, failed = () => {}, timing = beg
 				s.again = false;
 				try {
 					if (!reads(s.query)) throw new Error('An avenDB observer accepts read operations only.');
-					const answer = await read(s.owner, reactiveObservation.query(s.owner, s.query), s.controller.signal);
+					const answer = await read(s.owner, reactiveObservation.query(s.owner, s.query), s.controller.signal, (partial) => {
+                        // Provisional pages replace the displayed page; never append
+                        // them or mark an observed revision as fully consumed.
+                        if (scope === s && !closed && !s.controller.signal.aborted) take(partial);
+                    });
 					if (scope === s && !closed) {
 						take(answer); s.emitted(answer);
 						reactiveObservation.emitted(s.owner, answer);

@@ -36,7 +36,7 @@ export function entryCollection(api, query) {
 				rows = got.rows;
 				totalEntries = got.totalEntries;
 				readableEntries = got.readableEntries;
-				error = ''; phase = 'ready';
+				error = ''; phase = completeness.deferredCandidates > 0 && !rows?.length ? 'loading' : 'ready';
 			} catch (cause) { failed(cause instanceof Error ? cause : new Error(String(cause))); }
 		}, failed);
 	});

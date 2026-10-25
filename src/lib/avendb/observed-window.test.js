@@ -25,3 +25,30 @@ test('observed revisions reuse a lease; abort clears it and suppresses late data
  await flush();expect(calls.at(-1).scope).not.toBe(calls[0].scope);
  resolve({ok:null});await next;replacement.abort();
 });
+test('reactive cold pages render immediately and are replaced, while obsolete continuations cannot publish',async()=>{
+ const {createReactiveRead}=await import('./reactive-read.js');
+ const shown=[];let queries=0;const owner={run:async()=>({ok:{accepted:true}})};
+ const reader=createReactiveRead({
+  read:observedWindow(async(_owner,op)=>{
+   queries++;
+   if(op.tag==='new')return {ok:{rows:[{entry:'new'}],count:1,countExact:true,pageComplete:true}};
+   return {ok:{rows:[{entry:'partial'}],count:1,countExact:false,pageComplete:false,readiness:{deferredCandidates:5}}};
+  }),take:answer=>shown.push(answer),timing:()=>()=>{}
+ });
+ reader.update({op:'query',tag:'old'},owner);
+ await new Promise(r=>setTimeout(r,1));
+ expect(shown[0].ok.rows).toEqual([{entry:'partial'}]);expect(shown[0].ok.pageComplete).toBe(false);
+ reader.update({op:'query',tag:'new'},owner);
+ await new Promise(r=>setTimeout(r,15));
+ expect(shown.map(a=>a.ok.rows)).toEqual([[{entry:'partial'}],[{entry:'new'}]]);
+ expect(queries).toBe(2);reader.close();
+});
+test('provisional pages replace instead of concatenate and the final exact page wins',async()=>{
+ const {createReactiveRead}=await import('./reactive-read.js');
+ const shown=[];let n=0;const owner={run:async()=>({ok:{accepted:true}})};
+ const reader=createReactiveRead({read:observedWindow(async()=>({ok:{rows:[{entry:String(++n)}],count:n,countExact:n===3,pageComplete:n===3,readiness:{deferredCandidates:n<3?3-n:0}}})),take:a=>shown.push(a),timing:()=>()=>{}});
+ reader.update({op:'query'},owner);
+ await new Promise(r=>setTimeout(r,35));reader.close();
+ expect(shown.map(a=>a.ok.rows)).toEqual([[{entry:'1'}],[{entry:'2'}],[{entry:'3'}]]);
+ expect(shown.at(-1).ok.countExact).toBe(true);
+});
