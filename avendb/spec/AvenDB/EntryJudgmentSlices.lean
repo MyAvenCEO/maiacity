@@ -92,4 +92,9 @@ def pageComplete (deferred : Nat) : Bool := deferred == 0
 theorem deferredPageNotComplete (n : Nat) : pageComplete (n+1) = false := by simp [pageComplete]
 def admitted (used : Nat) : Bool := used < 4
 theorem fourColdCandidatesExhaustTurn : admitted 4 = false := rfl
+-- Unavailable semantic dependencies are not work a local hydration can finish.
+def charge (canProgress alreadyAttempted : Bool) : Nat :=
+    if canProgress && !alreadyAttempted then 1 else 0
+theorem unresolvedDoesNotConsumeBudget (seen : Bool) : charge false seen = 0 := by simp [charge]
+theorem candidateChargedOnlyOnce (ready : Bool) : charge ready true = 0 := by simp [charge]
 end ColdQuerySlices

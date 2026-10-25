@@ -941,12 +941,16 @@ fn query_candidates_impl(
     let (mut unresolved_candidates, mut checkpoint_partial) = (0usize, false);
     let (mut deferred_candidates, mut deferred_classification) = (0usize, 0usize);
     let mut cold_attempts = 0usize;
+    let mut attempted = BTreeSet::new();
     let began = web_time::Instant::now();
     // Repeated calls reuse the per-entry authenticated lazy cells; no retained
     // query answer or authorization result can outlive its current store basis.
-    let mut hydrate = |entry| {
-        if !allow_receipts || !lab.query_needs_hydration(me, entry) { return true; }
+    let mut hydrate = |entry, metadata_only| {
+        let needed = if metadata_only { lab.query_metadata_needs_hydration(me,entry) }
+            else { lab.query_needs_hydration(me,entry) };
+        if !allow_receipts || !needed || attempted.contains(&entry) { return true; }
         if cold_attempts >= 4 || (cold_attempts > 0 && began.elapsed().as_millis() >= 4) { return false; }
+        attempted.insert(entry);
         cold_attempts += 1;
         true
     };
@@ -967,13 +971,17 @@ fn query_candidates_impl(
         && order.iter().all(|(by, _)| matches!(by, By::Label(_))) {
         let mut eligible = Vec::new();
         for entry in candidates {
-            let certified = certified_visibility(entry);
-            if certified.is_none() && !hydrate(entry) {
+            if !hydrate(entry, true) {
                 deferred_candidates += 1; deferred_classification += 1;
                 continue;
             }
             let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
-            let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
+            let Some(m) = lab.meaning(me, entry) else { unresolved_candidates += 1; continue };
+            if !plan.matches(&m.attrs) {continue;}
+            let certified = certified_visibility(entry);
+            if certified.is_none() && !hydrate(entry, false) {
+                deferred_candidates += 1; deferred_classification += 1; continue;
+            }
             let checkpoint = lab.entry_projection(me, entry);
             let partial = checkpoint.is_some() || lab.active_owner_base(me, entry).is_some();
             checkpoint_partial |= partial;
@@ -999,13 +1007,19 @@ fn query_candidates_impl(
         Some(count)
     } else { None };
     for entry in candidates {
-        if !hydrate(entry) {
+        if !hydrate(entry, true) {
             deferred_candidates += 1;
             if paged_count.is_none() { deferred_classification += 1; }
             continue;
         }
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
-        let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
+        let Some(m) = lab.meaning(me, entry) else { unresolved_candidates += 1; continue };
+        if !plan.matches(&m.attrs) {continue;}
+        if !hydrate(entry, false) {
+            deferred_candidates += 1;
+            if paged_count.is_none() {deferred_classification += 1;}
+            continue;
+        }
         let checkpoint = lab.entry_projection(me, entry);
         checkpoint_partial |= checkpoint.is_some() || lab.active_owner_base(me, entry).is_some();
         let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));

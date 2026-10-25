@@ -229,3 +229,10 @@ The collector token/callsite is delivered by the coordinated grouped-closure
 patch; neither patch is standalone. Parser and standalone VerifiedGroupAdmission
 Lean passed; focused shared-capacity and unverified-entry rejection tests await
 Rust execution.
+
+Cold-query progress correction: nonhydrating current meaning and selector checks
+precede record admission. Missing semantic groups or inaccessible deferred bodies
+are unresolved, not retryable hydration; a candidate consumes one slot per turn
+even when classification and projection both touch it. The missing-group
+regression keeps four candidates unresolved while eight other cold records finish
+and compares the final response with the canonical oracle. Rust remains pending.
