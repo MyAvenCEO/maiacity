@@ -154,3 +154,5 @@ import AvenDB.GuardedMutation
 import AvenDB.WarmMetadataPages
 
 import AvenDB.BootstrapSuffixPreparation
+
+import AvenDB.StagedMaterialization

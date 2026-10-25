@@ -39,7 +39,13 @@ impl Lab {
         !self.locked(on) && !self.held(on).staged.is_empty()
     }
     pub fn materialization_pending(&self, on: SignerId, entry: EntryId) -> bool {
-        !self.locked(on) && self.sees(on, entry) && self.held(on).staged.contains_key(&entry)
+        if self.locked(on) || !self.sees(on, entry) { return false; }
+        let store = self.held(on);
+        if !store.staged.contains_key(&entry) { return false; }
+        let st = store.view();
+        let Some(en) = st.entry(entry) else { return false; };
+        let audience = KeyFam::Audience(en.vault, en.audience());
+        st.public_key(audience) || st.entitled(on, audience)
     }
     pub(super) fn require_materialized(&self, on: SignerId, entry: EntryId) -> Result<(), Refusal> {
         if !self.held(on).staged.contains_key(&entry) { return Ok(()); }
@@ -129,6 +135,41 @@ mod tests {
         assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
         lab.edit(phone, vault, entry, |i| i.set_text(2, "local now")).unwrap();
         assert!(!lab.materialization_pending(phone, entry), "incremental local publication is synchronous");
+    }
+
+    #[test]
+    fn staged_history_does_not_hide_a_verified_newer_projection() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("staged projection");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Title", "start", mac)).unwrap();
+        lab.sync(mac, phone);
+        for n in 0..65 { lab.edit(mac, vault, entry, |i| i.set_text(2, &format!("body {n}"))).unwrap(); }
+        // Force a cold canonical reconstruction of held history, as on reopen.
+        lab.enable_staged_materialization(phone);
+        lab.stores.get_mut(&phone).unwrap().shown.remove(&entry);
+        lab.sync(mac, phone);
+        assert!(lab.materialization_pending(phone, entry));
+        lab.edit(mac, vault, entry, |i| i.set_text(2, "verified newer state")).unwrap();
+        let prepared = lab.draft_entry_projection(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, prepared.draft, &[]).unwrap();
+        let only_snapshot = lab.backup(mac).signed().iter()
+            .filter(|signed| signed.edit.id() == snapshot).cloned().collect();
+        lab.receive(phone, only_snapshot, vec![]);
+        assert!(lab.materialization_pending(phone, entry));
+        assert!(lab.retain_entry_projection(phone, snapshot, entry, prepared.sealed));
+        let expected = lab.item(mac, entry).unwrap().record();
+        let get = crate::engine::read(&lab, phone, &serde_json::json!({
+            "op":"get", "entry":entry.to_hex(), "schema":"stored" }));
+        assert_eq!(get["ok"]["record"], expected);
+        assert_eq!(get["ok"]["readOnly"], true);
+        let query = crate::engine::read(&lab, phone, &serde_json::json!({
+            "op":"query", "schema":"stored", "where":{"type":["note"]} }));
+        assert_eq!(query["ok"]["rows"][0]["record"], expected);
+        assert_eq!(query["ok"]["readiness"]["materializing"], 1);
+        assert_eq!(lab.edit(phone, vault, entry, |i| i.set_text(2, "refused")), Err(Refusal::Materializing));
     }
 
     #[test]

@@ -6405,10 +6405,7 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
     let r = &store.readings;
     let mut out = vec![];
     for en in st.entries().iter().filter(|en| en.vault == v) {
-        if let Some(p) = store.staged.get(&en.id) {
-            if p.tip_matches(tip) { continue; }
-            store.staged.remove(&en.id);
-        }
+        if store.staged.contains_key(&en.id) { continue; }
         if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
             continue;
         }
@@ -6692,7 +6689,10 @@ fn show_items(d: SignerId, store: &mut Store) {
             continue;
         }
         let tip = tip(en);
-        if store.staged.contains_key(&en.id) { continue; }
+        if let Some(p) = store.staged.get(&en.id) {
+            if p.tip_matches(tip) { continue; }
+            store.staged.remove(&en.id);
+        }
         // judged under the lane before it gained schemas none of its writes name: as if under this one
         if let Some((was, new)) = gained.get(&en.vault)
             && let Some(s) = old.get_mut(&en.id)

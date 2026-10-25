@@ -947,11 +947,16 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     for entry in lab.entries(me) {
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
         let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
-        if lab.materialization_pending(me, entry) { materializing += 1; unresolved_candidates += 1; continue; }
         let checkpoint = lab.entry_projection(me, entry);
+        let projected = checkpoint.as_ref().and_then(|p| p.record(MAIN));
+        let pending = lab.materialization_pending(me, entry);
+        if pending { materializing += 1; }
+        if pending && projected.is_none() {
+            unresolved_candidates += 1;
+            continue;
+        }
         checkpoint_partial |= checkpoint.is_some() || lab.active_owner_base(me, entry).is_some();
         let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
-        let projected = checkpoint.as_ref().and_then(|p| p.record(MAIN));
         let visible = if let Some(mut stored) = projected {
             let below = stored.as_object_mut().map(|r| ops::empty_below(r, depth)).unwrap_or_default();
             seen_of(lane, &stored, &BTreeSet::new(), &schema).map(|mut seen| {
@@ -1071,7 +1076,6 @@ fn owner_base_provenance(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Valu
 
 fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let (entry, line, schema) = (entry_of(o)?, line_of(o, "line")?, named(o)?);
-    if lab.materialization_pending(me, entry) { return Err(Refusal::Materializing.into()); }
     if !o.contains_key("at") && !o.contains_key("version") {
         if let Some(checkpoint) = lab.entry_projection(me, entry) {
             if let Some(stored) = checkpoint.record(line) {
@@ -1094,6 +1098,7 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
             }
         }
     }
+    if lab.materialization_pending(me, entry) { return Err(Refusal::Materializing.into()); }
     let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
     if !h.lines().contains(&line) {
         return Err(Refused::NoEntry);
