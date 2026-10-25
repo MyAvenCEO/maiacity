@@ -152,3 +152,8 @@ def required (foreignWriter : Bool) (referenced : List α) : List α :=
   if foreignWriter then referenced else []
 theorem ownerDoesNotWiden (groups : List α) : required false groups = [] := rfl
 end AvenDB.GroupReadScope
+
+namespace AvenDB.SemanticGroups
+def mayMark (selectorsKnown matchingGroupsKnown : Bool) : Bool := selectorsKnown && matchingGroupsKnown
+theorem unresolvedGroupCannotMark (known : Bool) : mayMark known false = false := by simp [mayMark]
+end AvenDB.SemanticGroups
