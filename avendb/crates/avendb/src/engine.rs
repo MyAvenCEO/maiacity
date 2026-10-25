@@ -170,7 +170,7 @@ fn bad(why: impl Into<String>) -> Refused {
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "read_guard" => &["query", "requireComplete"],
-        "scope_manifest" => &["vault", "types", "tag"],
+        "scope_manifest" | "checkpoint_scope" => &["vault", "types", "tag"],
         "guarded" => &["checks", "change"],
         "entry_views" => &["manifest", "vault", "entries", "types", "as", "kind", "tag"],
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],

@@ -52,7 +52,7 @@ mod tests {
     use crate::Options;
     use avendb::{cast, lab::PreparedEntryProjection};
     use iroh_blobs::{BlobFormat,Hash,HashAndFormat};
-    use n0_future::time::Instant;
+    use n0_future::{time::Instant, StreamExt as _};
 
     #[tokio::test(flavor="multi_thread",worker_threads=2)]
     async fn scope_publication_without_authenticator_keeps_no_carrier() {
@@ -60,11 +60,26 @@ mod tests {
         w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();
         let vault=w.alice;
         let node=Node::spawn(w.lab.split(w.mac_a,&[],[181;32]),w.mac_a,Options::local()).await.unwrap();
-        let before=node.read(|lab,me|lab.state(me).entries().len()).await;
-        let answer=node.op(json!({"op":"checkpoint_scope","vault":vault.to_hex(),"tag":"selected"})).await.unwrap();
-        assert_eq!(answer["approve"]["operation"],"checkpoint_scope");
-        assert!(answer.get("ok").is_none());
-        assert_eq!(node.read(|lab,me|lab.state(me).entries().len()).await,before);
+        let before=node.read(|lab,me|(lab.state(me).entries().len(),lab.log(me).ids().to_vec())).await;
+        for request in [
+            json!({"op":"checkpoint_scope","vault":vault.to_hex(),"tag":"selected"}),
+            json!({"op":"checkpoint_scope","vault":vault.to_hex(),"types":["note"]}),
+        ] {
+            assert_eq!(engine::name(&request),Some("checkpoint_scope"));
+            assert!(!engine::reads(&request),"publication is not an ordinary read operation");
+            let answer=node.op(request).await.unwrap();
+            assert_eq!(answer["approve"]["operation"],"checkpoint_scope");
+            assert!(answer.get("ok").is_none());
+            assert_eq!(node.read(|lab,me|(lab.state(me).entries().len(),lab.log(me).ids().to_vec())).await,before,
+                "asking for approval must not admit a carrier or owner checkpoint");
+        }
+        let malformed=json!({"op":"checkpoint_scope","vault":vault.to_hex(),"tag":"selected","approved":true});
+        assert!(engine::name(&malformed).is_none(),"caller cannot supply approval as data");
+        assert_eq!(node.op(malformed).await.unwrap()["refused"],"BadOp");
+        for prefix in [b"avendb/checkpoint/".as_slice(),b"avendb/judged-checkpoint/".as_slice(),b"avendb/capsuled-checkpoint/".as_slice()] {
+            let mut pins=Box::pin(node.shared.store.tags().list_prefix(prefix).await.unwrap());
+            assert!(pins.next().await.is_none(),"no-auth publication must not pin ciphertext");
+        }
         node.shutdown().await.unwrap();
     }
 

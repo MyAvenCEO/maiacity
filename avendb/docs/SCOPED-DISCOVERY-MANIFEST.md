@@ -23,3 +23,10 @@ pending-member hint, immutable statement after a later carrier write, plaintext
 clearing on lock, and a twelve-member real peer delivery fixture using capsule
 publication and a durable recipient shelf. Lean `ScopedDiscoveryManifest` passes;
 Rust execution remains pending the shared compiler slot.
+
+The public operation registry now recognizes `checkpoint_scope` with only
+`vault`, `types`, and `tag`. The public `Node::op` regression exercises both scope
+forms without an authenticator, requires an approval response, verifies unchanged
+entry inventory and signed-log IDs, and checks all checkpoint pin prefixes remain
+empty. Supplying an `approved` field is rejected. Registration was checked for
+`checkpoint_view`, `checkpoint_entry_base`, and `checkpoint_entry_capsule` too.
