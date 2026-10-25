@@ -216,3 +216,16 @@ unbounded canonical oracle. Standalone ColdQuerySlices Lean and parsing passed;
 Rust execution remains pending. Ready-record scans, individual Loro imports,
 checkpoint record decoding and metadata preparation are not wall-time bounded
 by this increment.
+### Verified group prerequisites share the bounded dependency lane
+
+A separate opaque GroupDependencies token from the authenticated grouped closure
+can now admit its named missing group Entry logs. The collector excludes the
+original target and bounds the set to32; the transport verifies every requested
+Entry is in that token. Ordinary authority calls still reject every Entry log.
+Mixed token+unverified target requests are rejected, and response edits remain
+limited to the exact requested logs. Group and authority requests share the same
+two active slots, four queue tickets and existing common byte/page budgets.
+The collector token/callsite is delivered by the coordinated grouped-closure
+patch; neither patch is standalone. Parser and standalone VerifiedGroupAdmission
+Lean passed; focused shared-capacity and unverified-entry rejection tests await
+Rust execution.

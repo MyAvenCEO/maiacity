@@ -200,9 +200,19 @@ impl Budget {
     /// byte/page permit with normal pulls, but cannot deadlock behind ordinary
     /// history admissions whose useful view depends on these prerequisites.
     pub(crate) async fn enter_dependency(&self, logs: &BTreeSet<LogId>) -> Result<Arc<Admission>> {
-        anyhow::ensure!(!logs.is_empty() && logs.len() <= 128
-            && logs.iter().all(|log| matches!(log, LogId::Vault(_) | LogId::Share(_) | LogId::Audience(..))),
-            "dependency admission requires bounded authority logs only");
+        self.enter_dependency_scope(logs, &BTreeSet::new()).await
+    }
+    pub(crate) async fn enter_group_dependency(&self, logs: &BTreeSet<LogId>,
+        groups: &crate::authority_classes::GroupDependencies) -> Result<Arc<Admission>> {
+        self.enter_dependency_scope(logs, groups.entries()).await
+    }
+    async fn enter_dependency_scope(&self, logs: &BTreeSet<LogId>,
+        groups: &BTreeSet<avendb::id::EntryId>) -> Result<Arc<Admission>> {
+        anyhow::ensure!(!logs.is_empty() && logs.len() <= 128 && groups.len() <= 32
+            && logs.iter().all(|log| match log {
+                LogId::Vault(_) | LogId::Share(_) | LogId::Audience(..) => true,
+                LogId::Entry(entry) => groups.contains(entry),
+            }), "dependency admission requires bounded verified authority/group logs");
         let ticket = self.dependency_queue.clone().try_acquire_owned()
             .map_err(|_| anyhow!("too many pending authority dependencies"))?;
         let active = self.dependency_active.clone().acquire_owned().await?;
@@ -386,6 +396,30 @@ where
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn group_dependency_scope_cannot_add_unverified_entry_or_extra_capacity() {
+        let budget=Budget::new(1,1,1,2,2);
+        let history=budget.enter(false,None).await.unwrap();
+        let group=avendb::id::EntryId([31;32]);
+        let target=avendb::id::EntryId([32;32]);
+        let verified=BTreeSet::from([group]);
+        let allowed=BTreeSet::from([LogId::Entry(group)]);
+        assert!(budget.enter_dependency(&allowed).await.is_err(),"ordinary dependency API cannot accept group IDs");
+        let first=budget.enter_dependency_scope(&allowed,&verified).await.unwrap();
+        let second=budget.enter_dependency(&BTreeSet::from([LogId::Vault(avendb::id::VaultId([3;32]))])).await.unwrap();
+        let mut third=Box::pin(budget.enter_dependency_scope(&allowed,&verified));
+        assert!(future::poll_once(&mut third).await.is_none(),"groups and authority share the same two active slots");
+        let forbidden=BTreeSet::from([LogId::Entry(group),LogId::Entry(target)]);
+        assert!(budget.enter_dependency_scope(&forbidden,&verified).await.is_err(),"a verified group cannot launder target history");
+        let too_many=(0..33).map(|n|avendb::id::EntryId([n;32])).collect();
+        assert!(budget.enter_dependency_scope(&allowed,&too_many).await.is_err());
+        let page=budget.page(false,false).await.unwrap();
+        let mut next_page=Box::pin(budget.page(false,false));
+        assert!(future::poll_once(&mut next_page).await.is_none(),"group pulls share normal byte/page budget");
+        drop(next_page);drop(page);drop(third);drop(first);drop(second);drop(history);
+        assert_eq!(budget.dependency_active.available_permits(),2);
+    }
 
     #[tokio::test]
     async fn authority_dependencies_progress_under_history_stall_but_share_page_limits() {

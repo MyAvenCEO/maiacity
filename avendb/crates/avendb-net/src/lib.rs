@@ -2508,23 +2508,32 @@ impl Shared {
         catch_up: Option<&pulls::CatchUp>,
         expected: Option<SignerId>,
     ) -> Result<usize> {
-        self.pull_expected_lane(endpoint, scope, background, catch_up, expected, false).await
+        self.pull_expected_lane(endpoint, scope, background, catch_up, expected, false, None).await
     }
 
     /// This bounded lane accepts only authority log prerequisites. Entry history
     /// is rejected before operation admission, including any caller mistake.
     async fn pull_dependency(self: &Arc<Self>, endpoint: EndpointId,
         logs: BTreeSet<LogId>, expected: SignerId) -> Result<usize> {
-        self.pull_expected_lane(endpoint, Scope::Logs(logs), false, None, Some(expected), true).await
+        self.pull_expected_lane(endpoint, Scope::Logs(logs), false, None, Some(expected), true, None).await
+    }
+
+    /// Group tokens are minted only by the current authenticated dependency
+    /// collector, which excludes the requested target and bounds group roots.
+    async fn pull_group_dependency(self: &Arc<Self>, endpoint: EndpointId,
+        logs: BTreeSet<LogId>, expected: SignerId,
+        groups: authority_classes::GroupDependencies) -> Result<usize> {
+        self.pull_expected_lane(endpoint,Scope::Logs(logs),false,None,Some(expected),true,Some(groups)).await
     }
 
     async fn pull_expected_lane(self: &Arc<Self>, endpoint: EndpointId, scope: Scope,
         background: bool, catch_up: Option<&pulls::CatchUp>, expected: Option<SignerId>,
-        dependency: bool) -> Result<usize> {
+        dependency: bool, groups: Option<authority_classes::GroupDependencies>) -> Result<usize> {
         let _activity = self.admit()?;
         let admission = if dependency {
             let Scope::Logs(logs) = &scope else { anyhow::bail!("dependency scope required"); };
-            self.pulls.enter_dependency(logs).await?
+            if let Some(groups) = &groups { self.pulls.enter_group_dependency(logs, groups).await? }
+            else { self.pulls.enter_dependency(logs).await? }
         } else { self.pulls.enter(background, catch_up).await? };
         let peer = self.connection(endpoint).await?;
         if expected.is_some_and(|device| device != peer.device) {
