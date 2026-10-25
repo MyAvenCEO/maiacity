@@ -119,3 +119,9 @@ the optional execution-only last-write tip is cleared. No peer receives new
 authority, and both receiver causal reconstruction and current owner approval
 remain required. The publication regression explicitly evicts the transient
 scratch before warm capture and requires byte-identical judgment serialization.
+
+## Long single-entry regression (source ready; runtime pending)
+
+`long_single_entry_warm_append_matches_canonical_restore` covers one generic CRDT document with 256 small row appends, eight unrelated entries, a validated warm reopen, and one further append. It separately prints warm restoration, first-view, append and canonical cold restoration durations, plus deferred-body counts before/after. It checks that the first view does not decode target history, the first append hydrates the target's history without decoding unrelated entries, and the resulting record and history match canonical cold restoration exactly. This supplements the many-short-entry fixture; it does not claim that first append is independent of entry history length or establish physical-device timing.
+
+No Cargo build was started in this isolated checkout. The coordinator must run the named test in the canonical Rust worktree and record its output before marking runtime validation complete.
