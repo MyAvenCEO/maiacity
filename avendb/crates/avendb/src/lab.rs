@@ -83,7 +83,7 @@ pub use entry_base::{AuthenticatedCountedEntryBase, AuthenticatedEntryBaseEnvelo
 
 #[path = "discovery_manifest.rs"]
 mod discovery_manifest;
-pub use discovery_manifest::DiscoveryScope;
+pub use discovery_manifest::{DiscoveryScope, PreparedDiscoveryManifest};
 
 #[path = "entry_projection.rs"]
 mod entry_projection;

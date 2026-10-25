@@ -24,3 +24,11 @@ theorem changed_suffix_refused (a b c d e : Bool) :
 def remoteComplete (_ : Evidence) := false
 theorem no_remote_claim (e : Evidence) : remoteComplete e = false := rfl
 end ScopedDiscoveryManifest
+
+namespace ScopedDiscoveryManifest
+def safeDisclosure (possibleCarrierReaders selectedMemberReaders : List Nat) : Prop :=
+  ∀ reader, reader ∈ possibleCarrierReaders → reader ∈ selectedMemberReaders
+theorem inherited_reader_must_read_members (carrier members : List Nat)
+    (safe : safeDisclosure carrier members) (reader : Nat) (h : reader ∈ carrier) :
+    reader ∈ members := safe reader h
+end ScopedDiscoveryManifest

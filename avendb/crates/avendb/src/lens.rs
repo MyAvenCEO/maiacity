@@ -1337,7 +1337,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. Maia City, the seed's coop, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 31] = [
+    pub const SHIPPED: [&str; 32] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1369,6 +1369,7 @@ pub mod blobs {
         ARTWORK_V1,
         CAPGROUP_V1,
         ROOM_V1,
+        DISCOVERY_MANIFEST_V1,
     ];
 
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
@@ -1973,6 +1974,18 @@ pub mod blobs {
     /// or published (`taken`), its language; the Library files it shows (`files`, links: a picture, a clip, a link's
     /// preview), a video's length in seconds, its chapters and its transcript, each row from second `t`. A Library
     /// file is only bytes; what they are and where they come from is the artifact's.
+    /// Owner-attested discovery metadata; admission still uses the ordinary schema path.
+    pub const DISCOVERY_MANIFEST_V1: &str = r#"{
+      "$schema":"https://json-schema.org/draft/2020-12/schema",
+      "title":"Scoped discovery manifest, v1","type":"object",
+      "properties":{
+        "kind":{"const":"avendb-scoped-discovery-v1"},
+        "vault":{"type":"string"},"scope":{"type":"object"},
+        "members":{"type":"array","items":{"type":"object"}},
+        "completeAtOwnerCut":{"type":"boolean"},"remoteComplete":{"type":"boolean"}
+      }
+    }"#;
+
     pub const ARTIFACT_V1: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Artifact, v1",
@@ -2437,6 +2450,7 @@ pub static STORY_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::
 pub static SPARK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::SPARK_V1));
 pub static SPARK_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::SPARK_V2));
 pub static REQUEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REQUEST_V1));
+pub static DISCOVERY_MANIFEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::DISCOVERY_MANIFEST_V1));
 pub static ARTIFACT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTIFACT_V1));
 pub static ARTWORK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTWORK_V1));
 pub static CAPGROUP_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::CAPGROUP_V1));
@@ -2482,6 +2496,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*ARTWORK_V1,
         &*CAPGROUP_V1,
         &*ROOM_V1,
+        &*DISCOVERY_MANIFEST_V1,
     ];
     shipped.map(|s| (s.kind().expect("a shipped schema names its kind"), View::plain(s))).to_vec()
 });

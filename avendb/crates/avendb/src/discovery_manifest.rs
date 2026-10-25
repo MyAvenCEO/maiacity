@@ -35,7 +35,96 @@ fn manifest_readable(st:&crate::policy::State,actor:VaultId,entry:&crate::policy
         || crate::world::levels(st,entry.vault,entry.audience()).iter().any(|(who,level)|*who==actor&&level.allows(Level::Read))
 }
 
-/// Publication remains an explicit ordinary carrier write followed by the
+/// An encrypted creation held only in memory until its owner ceremony succeeds.
+/// Fields are private so callers cannot substitute the payload or disclosure assumptions.
+pub struct PreparedDiscoveryManifest {
+    draft: Unsigned,
+    on: SignerId,
+    owner: SignerId,
+    vault: VaultId,
+    entry: EntryId,
+    header: Header,
+    audience: Vec<ShareId>,
+    scope: DiscoveryScope,
+    record: Value,
+}
+impl PreparedDiscoveryManifest {
+    pub fn challenge(&self) -> [u8; 32] { self.draft.challenge() }
+    pub fn owner(&self) -> SignerId { self.owner }
+}
+
+impl Lab {
+    fn manifest_disclosure_safe(&self,on:SignerId,vault:VaultId,attrs:&Attrs,record:&Value)->bool {
+        let st=self.state(on);
+        let Some(members)=record.get("members").and_then(Value::as_array) else {return false;};
+        st.shares_over(vault).filter(|issued|st.live(issued.id)&&issued.share.level.allows(Level::Read)).all(|issued| {
+            // Checking every live share also covers delegation chains conservatively:
+            // a child whose parent excludes the carrier may be over-restricted, never leaked.
+            let Some(slice)=self.slice(on,issued.id) else {return false;};
+            if !issued.share.wide && !slice.select.matches(attrs) {return true;}
+            members.iter().all(|row| {
+                let Some(entry)=row.get("entry").and_then(Value::as_str).and_then(EntryId::from_hex).and_then(|id|st.entry(id)) else {return false;};
+                match issued.share.who {
+                    Who::Vault(actor)=>manifest_readable(st,actor,entry),
+                    Who::Everyone=>st.public_key(KeyFam::Audience(entry.vault,entry.audience())),
+                    // Device/invite disclosure needs a separately proved audience relationship.
+                    // Do not infer it from this device possessing the cleartext.
+                    Who::Device(device)=>st.acts_for(device,issued.share.issuer) && manifest_readable(st,issued.share.issuer,entry),
+                    Who::Invite(_)=>false,
+                }
+            })
+        })
+    }
+
+    pub fn prepare_discovery_manifest(&mut self,on:SignerId,owner:SignerId,vault:VaultId,scope:DiscoveryScope)->Result<PreparedDiscoveryManifest,Refusal> {
+        self.unlocked(on)?;
+        if !self.state(on).approves(&[owner],Principal::Vault(vault)) {return Err(Refusal::BelowThreshold);}
+        let scope=scope.normalized().ok_or(Refusal::NotAccepted)?;
+        let record=self.discovery_manifest_record(on,vault,scope.clone()).ok_or(Refusal::NotAccepted)?;
+        let (entry,nonce)=self.new_entry_id(on,vault);
+        let header=Header{ty:Sym::new("discovery-manifest"),created:self.now};
+        let attrs=Attrs{ty:header.ty.clone(),author:vault,entry,created:header.created,tags:vec![]};
+        if !self.manifest_disclosure_safe(on,vault,&attrs,&record) {return Err(Refusal::NotAllowed);}
+        let audience=self.intake(on,vault,vault,entry,&header,&[],true)?;
+        let view=self.latest(on).clone();
+        let x=AudienceId::of(vault,&audience);
+        let epoch=view.epoch(KeyFam::Audience(vault,x))+view.reenters(vault,x) as u64;
+        let action=Action::Write{vault,entry,actor:vault,stay:None,epoch,deps:vec![],proposal:Proposal::Main,via:vec![],
+            create:Some(Creation{audience:audience.clone(),nonce}),files:vec![],body:vec![]};
+        // The device authors the CRDT update, with the owner co-signing its exact ciphertext.
+        let mut edit=self.held(on).log.draft_on(&view,on,&[owner],action);
+        let w=view.accepted_write(&edit,edit.id())?.ok_or(Refusal::NotAccepted)?;
+        let mut item=Item::new(on); item.put_record(&record);
+        let content=item.export(&Version::default());
+        let tags=TagDelta::default();
+        let proof=self.proven(on,&view,(vault,&History::default()),&w,(&content,&tags),&[],Some(&attrs))?;
+        let body=Body{header:Some(header.clone()),tags,answers:vec![],content,proof,files:vec![],defines:None};
+        let at=self.at(on);
+        let Lab{stores,rng,..}=self;
+        let key=entry_key_for(stores.get_mut(&at).expect("device"),rng,vault,x,entry,None,epoch);
+        let sealed=keys::seal_edit(&key,&body.to_wire(),&write_context(&edit),rng);
+        if let Action::Write{body,..}=&mut edit.action {*body=sealed;}
+        let draft=Unsigned{edit,blobs:Blobs::new(),held:self.held(on).log.ids().len(),batch:vec![],pass:None};
+        Ok(PreparedDiscoveryManifest{draft,on,owner,vault,entry,header,audience,scope,record})
+    }
+
+    pub fn complete_discovery_manifest(&mut self,on:SignerId,prepared:PreparedDiscoveryManifest,ceremonies:&[(SignerId,&Ceremony)])->Result<EntryId,Refusal> {
+        self.unlocked(on)?;
+        let p=&prepared;
+        if p.on!=on || !self.state(on).approves(&[p.owner],Principal::Vault(p.vault))
+            || self.discovery_manifest_record(on,p.vault,p.scope.clone()).as_ref()!=Some(&p.record) {
+            return Err(Refusal::NotAccepted);
+        }
+        let attrs=Attrs{ty:p.header.ty.clone(),author:p.vault,entry:p.entry,created:p.header.created,tags:vec![]};
+        if !self.manifest_disclosure_safe(on,p.vault,&attrs,&p.record)
+            || self.intake(on,p.vault,p.vault,p.entry,&p.header,&[],true)?!=p.audience {return Err(Refusal::NotAllowed);}
+        let entry=p.entry;
+        self.complete(on,prepared.draft,ceremonies)?;
+        Ok(entry)
+    }
+}
+
+/// Publication is an explicitly owner-cosigned carrier write followed by the
 /// existing owner-approved entry-projection Snapshot. This builder mutates no data.
 impl Lab {
     pub fn discovery_manifest_record(&self,on:SignerId,vault:VaultId,scope:DiscoveryScope)->Option<Value> {
@@ -216,6 +305,47 @@ mod tests {
         assert_eq!(w.lab.discovery_manifest_members(w.mac_a,w.bob,w.alice,scope.clone(),carrier,snapshot),Some(vec![note]));
         w.lab.submit(w.mac_a,&[w.mac_a],Action::Revoke(crate::policy::Revoking::Grant{share:selected,actor:w.alice,keep:vec![],via:vec![]})).unwrap();
         assert!(w.lab.discovery_manifest_members(w.mac_a,w.bob,w.alice,scope,carrier,snapshot).is_none());
+    }
+
+    #[test]
+    fn discovery_manifest_creation_is_owner_gated_and_rechecks_disclosure() {
+        let mut w=cast::world();
+        w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();
+        let scope=DiscoveryScope::Tag("selected".into());
+        let before=w.lab.held(w.mac_a).log.ids().len();
+        assert!(w.lab.prepare_discovery_manifest(w.mac_a,w.mac_a,w.alice,scope.clone()).is_err());
+        let prepared=w.lab.prepare_discovery_manifest(w.mac_a,w.passkey_a,w.alice,scope.clone()).unwrap();
+        assert_eq!(w.lab.held(w.mac_a).log.ids().len(),before,"preparation must not announce content");
+        // A grant arriving during the owner ceremony must invalidate its preflight.
+        let selector=crate::slice::Selector::AnyOf(vec![vec![crate::slice::Atom::TypeIn(vec![Sym::new("discovery-manifest")])]]);
+        w.lab.issue(w.mac_a,&[w.mac_a],cast::share(w.alice,Who::Everyone,Level::Read,selector)).unwrap();
+        let after_grant=w.lab.held(w.mac_a).log.ids().len();
+        assert!(w.lab.complete_discovery_manifest(w.mac_a,prepared,&[]).is_err());
+        assert_eq!(w.lab.held(w.mac_a).log.ids().len(),after_grant,"failed owner continuation emitted a write");
+        assert!(w.lab.prepare_discovery_manifest(w.mac_a,w.passkey_a,w.alice,scope).is_err());
+    }
+
+    #[test]
+    fn discovery_manifest_preparation_allows_schema_only_grants_and_current_owner() {
+        let mut w=cast::world();
+        w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();
+        w.lab.issue(w.mac_a,&[w.mac_a],cast::share(w.alice,Who::Everyone,Level::Read,crate::slice::Selector::lane())).unwrap();
+        let prepared=w.lab.prepare_discovery_manifest(w.mac_a,w.passkey_a,w.alice,DiscoveryScope::Tag("selected".into())).unwrap();
+        let entry=w.lab.complete_discovery_manifest(w.mac_a,prepared,&[]).unwrap();
+        assert!(w.lab.reads(w.mac_a,entry));
+        assert_eq!(w.lab.item(w.mac_a,entry).unwrap().record()["kind"],VERSION);
+    }
+
+    #[test]
+    fn discovery_manifest_unknown_carrier_selector_fails_without_emitting_content() {
+        let mut w=cast::world();
+        w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("member",w.mac_a)).unwrap();
+        let share=w.lab.issue(w.mac_a,&[w.mac_a],cast::share(w.alice,Who::Everyone,Level::Read,crate::slice::Selector::lane())).unwrap();
+        let at=w.lab.at(w.mac_a);
+        w.lab.stores.get_mut(&at).unwrap().slices.remove(&share);
+        let before=w.lab.held(w.mac_a).log.ids().len();
+        assert!(w.lab.prepare_discovery_manifest(w.mac_a,w.passkey_a,w.alice,DiscoveryScope::Tag("selected".into())).is_err());
+        assert_eq!(w.lab.held(w.mac_a).log.ids().len(),before);
     }
 
 }
