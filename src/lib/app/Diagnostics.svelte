@@ -15,6 +15,7 @@
  let dialog: HTMLDialogElement, trigger: HTMLButtonElement;
  let fallback = $state<HTMLTextAreaElement>();
  let runner: ReturnType<typeof createDiagnosticRunner> | undefined;
+ let capturesRemaining = 0;
  let running = $state(false), copied = $state(''), showText = $state(false), logs = $state('');
  let status = $state('Ready. Retained startup and restart details are included automatically.');
  const id = $props.id();
@@ -40,7 +41,7 @@
   finally { running = false; refresh(); }
  }
  async function copy() {
-  await runner?.capture();
+  // Keep clipboard.writeText inside the click's activation on iOS.
   refresh();
   try { await navigator.clipboard.writeText(logs); copied = 'Logs copied.'; }
   catch { showText = true; copied = 'Clipboard unavailable. The report is selected below for copying.'; await tick(); fallback?.focus(); fallback?.select(); }
@@ -49,13 +50,16 @@
   runner = createDiagnosticRunner({ ask: (op: unknown) => session.ask(op), currentOwner: () => session.device, isOpen: () => session.phase === 'open', snapshot,
    network: (signal: AbortSignal) => runNetworkDiagnostics({ signal }),
    armReactive: (owner: any) => reactiveObservation.arm(owner, (op: unknown) => owner.run(op)), onUpdate: refresh });
+  const captureTimer = setInterval(() => {
+   if (dialog?.open && !document.hidden && !running && capturesRemaining > 0) { capturesRemaining--; void runner?.capture(); }
+  }, 5000);
   const hidden = () => { if (document.hidden) runner?.cancel(); };
   document.addEventListener('visibilitychange', hidden);
-  return () => { runner?.cancel(); document.removeEventListener('visibilitychange', hidden); };
+  return () => { clearInterval(captureTimer); runner?.cancel(); document.removeEventListener('visibilitychange', hidden); };
  });
 </script>
 
-<button bind:this={trigger} class="diagnostics-trigger" aria-label="Open diagnostics" aria-haspopup="dialog" aria-controls={id} onclick={() => { refresh(); dialog.showModal(); }}>
+<button bind:this={trigger} class="diagnostics-trigger" aria-label="Open diagnostics" aria-haspopup="dialog" aria-controls={id} onclick={() => { refresh(); dialog.showModal(); capturesRemaining = 24; void runner?.capture(); }}>
  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4" stroke-linecap="round" stroke-linejoin="round" /></svg>
 </button>
 <dialog bind:this={dialog} {id} aria-labelledby="{id}-title" onpointerdown={outside} onclose={() => { runner?.cancel(); trigger?.focus(); }}>

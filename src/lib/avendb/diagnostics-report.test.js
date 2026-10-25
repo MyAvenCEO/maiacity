@@ -27,3 +27,9 @@ test('oldest unlock landmarks survive noisy calls and reload, failure codes excl
  const j=createLatencyJournal({storage,schedule:()=>{}});for(let i=0;i<12;i++){j.record('unlock.total',i);for(let n=0;n<130;n++)j.record('call.read_file',1,'failed',failureClass(Error('private content')));}j.flush();
  const restored=createLatencyJournal({storage}).snapshot();expect(restored.milestones.length).toBe(8);expect(restored.milestones[0].ms).toBe(0);expect(restored.samples.at(-1).reason).toBe('failed');expect(JSON.stringify(restored)).not.toContain('private content');
 });
+test('explicit run supersedes pending background capture without duplicate engine reads',async()=>{
+ const owner={},ops=[];let complete,net=0;
+ const r=createDiagnosticRunner({ask:o=>{ops.push(o.op);return new Promise(resolve=>complete=resolve)},currentOwner:()=>owner,isOpen:()=>true,snapshot:()=>({}),network:async()=>{net++;return{}},armReactive:()=>{}});
+ const capture=r.capture();await Promise.resolve();await r.run();await capture;
+ expect(net).toBe(1);expect(ops).toEqual(['network']);expect(r.snapshot().run.status).toBe('finished');complete({ok:{}});
+});
