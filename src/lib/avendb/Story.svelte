@@ -30,7 +30,8 @@
 	import StorySparks from './StorySparks.svelte';
 	import StoryThumbnail from './StoryThumbnail.svelte';
 	import StoryWriting from './StoryWriting.svelte';
-	import { count, nameOf, short } from './vaults.js';
+	import { storyFallbackQuery } from './stories-query.js';
+	import { count, nameOf, short, seedCity, reads } from './vaults.js';
 
 	/** `step` the stage whose tab shows, as its address names it, where it isn't the one it is in
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string, step?: string }} */
@@ -76,11 +77,16 @@
 	});
 	const writes = $derived(!!item && (item.writers ?? []).includes(actor));
 
-	const flow = $derived(item ? (flowsFor(world, item.vault, 'story')[0] ?? STORY) : STORY);
+	const workflows = entryCollection(() => api, () => item
+		? { op: 'entry_views', vault: item.vault, as: actor, types: ['flow'] }
+		: { op: 'entry_views', entries: [], as: actor });
+	const defaults = entryCollection(() => api, () => storyFallbackQuery(item?.vault ?? '', actor, seedCity(world)?.id));
+	const flowWorld = $derived({ ...world, entries: [...workflows.rows, ...defaults.rows].filter(e => reads(e, actor)) });
+	const flow = $derived(item ? (flowsFor(flowWorld, item.vault, 'story')[0] ?? STORY) : STORY);
 	const stage = $derived(item ? stageOf(item, flow) : null);
 	const onward = $derived(stage ? flow.stages.filter((s) => stage.next.includes(s.key)) : flow.stages);
 	/** the stage whose tab shows: the one its address names, else the one it is in */
-	const tab = $derived((flow.stages.some((s) => s.key === step) && step) || stage?.key || flow.stages[0].key);
+	const tab = $derived((world.entriesComplete === false && ['hook', 'journey'].includes(step ?? '') && step) || (flow.stages.some((s) => s.key === step) && step) || stage?.key || flow.stages[0].key);
 	let problem = $state('');
 
 	/** @typedef {import('svelte').ComponentProps<typeof Lines>} LinesProps a line and an edit, as the `note` op reads them
@@ -123,6 +129,7 @@
 
 	/** Moves it to stage `to` of its flow, with the functions the flow runs then. @param {string} to */
 	async function move(to) {
+		if (world.entriesComplete === false) return;
 		if (!item) return;
 		const { ops, errors } = await moving(world, actor, item, flow, to, false);
 		problem = errors.join(' · ');
@@ -237,10 +244,11 @@
 			{#if writes}
 				<span class="moves">
 					{#each onward as s (s.id)}
-						<button class="btn" class:primary={!stage || flow.stages.indexOf(s) > flow.stages.indexOf(stage)} disabled={busy} onclick={() => move(s.key)}>{label(s)}</button>
+						<button class="btn" class:primary={!stage || flow.stages.indexOf(s) > flow.stages.indexOf(stage)} disabled={busy || world.entriesComplete === false} onclick={() => move(s.key)}>{label(s)}</button>
 					{/each}
 				</span>
 			{/if}
+			{#if world.entriesComplete === false}<p class="soft">Stage transitions need their workflow dependencies; this view’s local content is available now.</p>{/if}
 			{#if problem}<p class="bad">{problem}</p>{/if}
 		{:else}
 			<p class="soft">This device holds no story {short(entry)}.</p>

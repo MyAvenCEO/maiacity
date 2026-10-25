@@ -295,7 +295,7 @@
 {/snippet}
 
 <div class="shell" class:reading={!!route.entry}>
-    {#if needsWorldEntries(world, tab, !!route.entry)}
+    {#if needsWorldEntries(world, tab, !!route.entry, route.step)}
         <p role="status">Loading this view’s local entries…</p>
     {:else}
 	{#if route.entry}
