@@ -35,11 +35,11 @@ fn format_tag(entry: EntryId, judged: bool)->Vec<u8> {
     if judged { [b"avendb/judged-checkpoint/".as_slice(), &entry.0].concat() } else { tag(entry) }
 }
 fn version_tag(entry:EntryId,version:u8)->Vec<u8> {
-    if version==3 { [b"avendb/capsuled-checkpoint/".as_slice(),&entry.0].concat() }
+    if version>=3 { [b"avendb/capsuled-checkpoint/".as_slice(),&entry.0].concat() }
     else { format_tag(entry,version==2) }
 }
 fn request_version(bytes:&[u8])->Result<(u8,EntryId,Option<EditId>)> {
-    ensure!(matches!(bytes.first(),Some(1|2|3)),"unsupported checkpoint request version");
+    ensure!(matches!(bytes.first(),Some(1|2|3|4)),"unsupported checkpoint request version");
     let mut common=bytes.to_vec(); common[0]=1;
     let (entry,known)=request(&common)?; Ok((bytes[0],entry,known))
 }
@@ -260,7 +260,7 @@ pub(crate) async fn answer(
             )
         })
         .await;
-    let Some(offer) = offer else {
+    let Some(mut offer) = offer else {
         return Ok(vec![version,0]);
     };
     ensure!(offer.root.size <= CIPHER_LIMIT as u64, "checkpoint size");
@@ -283,7 +283,17 @@ pub(crate) async fn answer(
     );
     let check=sealed.clone();
     let snapshot=offer.snapshot;
-    let compatible=if version==3 {
+    let compatible=if version==4 {
+        let packaged=shared.try_lab(move|lab,me| {
+            lab.entry_checkpoint_recovery_package(me,requester,snapshot,entry,check)
+        }).await?;
+        let Some((package,frontier))=packaged else { return Ok(vec![version,0]); };
+        for signed in frontier {
+            if !offer.evidence.iter().any(|old|old.edit.id()==signed.edit.id()) {offer.evidence.push(signed);}
+        }
+        sealed=package;
+        true
+    } else if version==3 {
         let packaged=shared.try_lab(move|lab,me| {
             let capsule=lab.entry_checkpoint_capsule(me,requester,snapshot,entry,&check)?;
             avendb::lab::Lab::pack_entry_checkpoint_capsule(check,capsule)
@@ -387,7 +397,7 @@ impl Shared {
         let permit = time::timeout(remaining, self.pulls.page(false, false)).await??;
         // Explicit versions: never reinterpret an older projection as a capsule.
         let mut negotiated=None;
-        for version in [3u8,2,1] {
+        for version in [4u8,3,2,1] {
             if version>1 && self.edits.is_none() { continue; }
             body[0]=version;
             let remaining=deadline.saturating_duration_since(Instant::now());
@@ -429,7 +439,7 @@ impl Shared {
         let permit = retained_permit.clone();
         let scope = scope.to_owned();
         let shared = self.clone();
-        let owner_sealed=if version==3 {
+        let owner_sealed=if version>=3 {
             avendb::lab::Lab::checkpoint_capsule_payload(&sealed).ok_or_else(||anyhow::anyhow!("malformed checkpoint capsule"))?
         } else { sealed.clone() };
         let root = FileRoot {
@@ -504,12 +514,12 @@ mod tests {
 
     #[test]
     fn capsule_protocol_negotiation_is_explicit_and_bounded() {
-        for version in [1u8,2,3] {
+        for version in [1u8,2,3,4] {
             let mut bytes=vec![version]; bytes.extend_from_slice(&[7;32]);
             assert_eq!(request_version(&bytes).unwrap().0,version);
             bytes.push(0); assert!(request_version(&bytes).is_err());
         }
-        for version in [0u8,4,255] {
+        for version in [0u8,5,255] {
             let mut bytes=vec![version]; bytes.extend_from_slice(&[7;32]);
             assert!(request_version(&bytes).is_err());
         }
@@ -637,9 +647,13 @@ mod tests {
     async fn owner_capsule_checkpoint_publication_fetch_and_readonly_recovery() {
         owner_checkpoint_public_flow(3).await;
     }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn owner_capsule_exact_recovery_fetch_is_durable_and_writable() {
+        owner_checkpoint_public_flow(4).await;
+    }
     async fn owner_checkpoint_public_flow(version: u8) {
         let judged=version==2;
-        let capsule=version==3;
+        let capsule=version>=3;
         let mut w = world();
         let (sender, receiver, owner, vault) = (w.mac_a, w.phone_a, w.passkey_a, w.alice);
         let secret = *w.lab.passkey_secret(owner).unwrap();
@@ -748,6 +762,18 @@ mod tests {
             assert_eq!(snapshot,legacy_snapshot);
         }
         let scope = "cd".repeat(16);
+        if version==3 {
+            // Exercise an explicitly negotiated v3 reader without silently
+            // upgrading this compatibility assertion to writable v4.
+            let mut req=vec![3];req.extend_from_slice(&entry.0);
+            let mut response=session::exchange(&conn.conn,KIND,&req,RESPONSE_LIMIT).await.unwrap();
+            assert_eq!(response[0],3);response[0]=1;
+            let (snapshot,evidence,sealed)=decode(&response).unwrap();
+            assert!(phone.act(move|lab,me| {
+                lab.receive(me,evidence.edits,evidence.blobs);
+                lab.stage_owner_entry_base(me,snapshot,entry,sealed)
+            }).await);
+        } else {
         let ack = phone
             .op(
                 json!({"op":"demand", "scope":scope,"revision":1,"entries":[],
@@ -756,6 +782,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(ack["ok"]["discovery_supported"], true);
+        }
         let query = json!({"op":"query","schema":"stored","where":{"type":["checkpoint-note"]}});
         let result = time::timeout(Duration::from_secs(15), async {
             loop {
@@ -783,7 +810,7 @@ mod tests {
         let absent = phone
             .read(move |lab, me| lab.item(me, unrelated).is_none())
             .await;
-        if judged {
+        if judged || version==4 {
             time::timeout(Duration::from_secs(15),async {
                 loop {
                     let ready=phone.read(move|lab,me| !lab.owner_base_durability_pending(me,entry) && !lab.bootstrap_stamp(me).is_empty()).await;
@@ -793,7 +820,7 @@ mod tests {
             }).await.expect("base must receive a durable save receipt");
             assert!(phone.act(move|lab,me|lab.edit(me,vault,entry,|i|i.set_text(2,"local after durable adoption"))).await.is_ok());
         }
-        if capsule {
+        if version==3 {
             assert_eq!(phone.read(move|lab,me|lab.owner_base_wait_reason(me,entry)).await,Some("checkpoint-capsule-read-only"));
             assert!(phone.act(move|lab,me|lab.edit(me,vault,entry,|i|i.set_text(2,"forbidden capsule write"))).await.is_err());
         }

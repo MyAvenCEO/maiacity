@@ -687,8 +687,9 @@ mod tests {
             }
 
             let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
-            let withheld=lab.edit(mac,vault,entry,|i|i.set_text(2,"Attested")).unwrap();
-            let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+            let withheld=lab.edit(mac,vault,entry,|i|i.set_text(2,"Older withheld history")).unwrap();
+            lab.edit(mac,vault,entry,|i|i.set_text(2,"Attested")).unwrap();
+            let PreparedEntryBase{draft,sealed,..}=lab.draft_capsuled_entry_base(mac,&[owner],entry).unwrap();
             let snapshot=lab.complete(mac,draft,&[]).unwrap();
             lab.sync(mac,full);
             let offer=lab.entry_projection_offer(mac,partial,entry).unwrap();
@@ -698,10 +699,17 @@ mod tests {
                     assert!(permitted.contains(&name),"no key action outside current recipient reach");
                 }
             }
-            lab.receive(partial,offer.evidence,vec![]);
-            assert!(lab.projection_authority(partial,snapshot,entry).is_some(),"mode {mode}: recipient authority");
+            let (sealed,frontier)=lab.entry_checkpoint_recovery_package(mac,partial,snapshot,entry,sealed).unwrap();
+            let mut evidence=offer.evidence;
+            for signed in frontier {if !evidence.iter().any(|s|s.edit.id()==signed.edit.id()) {evidence.push(signed);}}
+            lab.receive(partial,evidence,vec![]);
+            assert!(lab.projection_entitlement(partial,snapshot,entry).is_some(),"mode {mode}: recipient authority");
             assert!(lab.restore_owner_judgment(partial,snapshot,entry,&sealed).is_some(),"mode {mode}: authenticated judgment");
-            assert!(lab.adopt_owner_entry_base(partial,snapshot,entry,sealed),"mode {mode}: adopted active base");
+            assert!(lab.stage_owner_entry_base(partial,snapshot,entry,sealed),"mode {mode}: adopted active base");
+            let saved=lab.backup(partial);let bytes=saved.bootstrap_bytes().unwrap();
+            let saved=Backup::new(saved.signed().to_vec(),saved.blobs.values().cloned()).with_bootstrap_bytes(&bytes).unwrap();
+            lab.restore_backup(partial,&saved);
+            lab.finish_durable_owner_bases(partial);
             assert!(!lab.held(partial).replay.state.acts_for(partial,vault));
             assert!(!lab.held(partial).log.ids().contains(&withheld));
             assert_eq!(lab.item(partial,entry).unwrap().record(),lab.item(full,entry).unwrap().record());

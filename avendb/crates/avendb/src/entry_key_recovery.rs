@@ -204,3 +204,26 @@ impl Lab {
         }))
     }
 }
+
+impl Lab {
+    /// Negotiated v4 reply: the signed checkpoint root still authenticates state;
+    /// only original signed frontier writes and their already-authorized exact
+    /// Entry keys accompany it. A peer unable to provide all falls back to v3.
+    pub fn entry_checkpoint_recovery_package(&mut self,me:SignerId,recipient:SignerId,snapshot:EditId,entry:EntryId,sealed:Vec<u8>)->Option<(Vec<u8>,Vec<Signed>)> {
+        let (_,stated,_)=self.projection_entitlement(me,snapshot,entry)?;
+        let basis=stated.basis.clone();
+        if basis.is_empty() || basis.len()>MAX_RECOVERIES {return None;}
+        let capsule=self.entry_checkpoint_capsule(me,recipient,snapshot,entry,&sealed)?;
+        let base=Self::pack_entry_checkpoint_capsule(sealed,capsule)?;
+        let mut bytes=RETAINED.to_vec();base.encode(&mut bytes);(basis.len() as u64).encode(&mut bytes);
+        let mut evidence=Vec::new();
+        for edit in basis {
+            let key=self.entry_key_recovery(me,recipient,edit)?;
+            let signed=self.signed_edit(me,edit)?.clone();
+            if !matches!(signed.edit.action,Action::Write{entry:e,..} if e==entry) {return None;}
+            key.edit.encode(&mut bytes);key.recipient.encode(&mut bytes);key.bytes.encode(&mut bytes);
+            evidence.push(signed);
+        }
+        (bytes.len()<=MAX_BYTES+128).then_some((bytes,evidence))
+    }
+}

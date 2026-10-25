@@ -1178,3 +1178,22 @@ correctly returns `Duplicate`. Recovery now uses that canonical replay's exact
 `State::write` plus `authorized` and standing membership; original signature,
 current reader and ciphertext checks remain. This correction awaits execution;
 no recovery or writable-convergence pass is claimed.
+
+### Negotiated exact-recovery transport (v4, execution pending)
+
+Version 4 uses the same owner-approved capsule root as v3 but explicitly adds the
+original signed frontier Writes and per-recipient exact Entry-key capsules. The
+provider requires ordinary answered reach for every frontier Write and current
+checkpoint authority; inability to supply the complete bounded frontier returns
+no v4 offer and permits v3/2/1 fallback. Root/signature/ciphertext bounds, source
+revision fencing and demand cancellation remain the existing common path. The
+receiver stages encrypted recovery with the owner anchor, and becomes writable
+only after the common saver acknowledges the new companion.
+
+The original four-mode shared-holder regression now follows this actual package
+path, retaining excluded typed data, withheld older history, read-only/touch/group
+negative cases, owner publication refusal, revocation and full-holder convergence.
+Added a public Node v4 durable-write test; v3 compatibility explicitly requests v3
+and still checks core read-only behavior. Rust parse/diff checks passed; none of
+these new protocol or writable tests has executed yet. This is not a deployment
+or end-to-end completion claim.
