@@ -25,7 +25,7 @@ export const gameManifest = (g) => ({
 	note: `What ${g.label} reads: its views, logic and settings, and the worlds and recipes they name.`,
 	routes: [g.route, `/games/${g.id}/`],
 	priority: 'medium',
-	parts: [{ manifest: KERNEL.id }, { query: { type: ['game', 'view', 'logic', 'config'], tags: [gameTag(g.id)] }, follow: 2 }]
+	parts: [{ manifest: KERNEL.id }, { query: { type: ['game', 'view', 'logic', 'config'], tags: [gameTag(g.id)] }, follow: g.id === 'maiacity-v2' ? 3 : 2 }]
 });
 
 /** The dashboard: the kernel, then the games it lists. */

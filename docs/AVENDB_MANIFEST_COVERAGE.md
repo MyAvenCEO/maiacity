@@ -23,3 +23,11 @@ not a persistent cache or an authority source. Cancellation and normal authorize
 file projections remain unchanged. Newly arriving files are re-enumerated in the
 next layer. A regression checks two roots share one scan while a file arriving
 between layers is still discovered; manifest/file-inventory suite:26 pass.
+
+## Preserve the existing V2 dependency depth
+
+The owner-approved catalog read-back after AIP-35 retained V2 follow depth 3.
+The generic source declaration still used 2, so a future full catalog proposal
+could have reduced its coverage again. The source now preserves 3 for V2 and 2
+for other games; the declaration regression guards that distinction. This is a
+repository correction, not another shared-record publication.

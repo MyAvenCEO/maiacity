@@ -79,6 +79,8 @@ test("the repo's manifests hold the kernel, each held manifest exists, and each 
 	const ids = new Set(MANIFESTS.map((x) => x.id));
 	expect(ids.size).toBe(MANIFESTS.length);
 	expect(MANIFESTS.find((x) => x.id === 'kernel').routes).toEqual(['*']);
+	// Preserve the owner-approved V2 dependency depth when planning later catalog updates.
+	expect(MANIFESTS.find(x => x.id === 'game-maiacity-v2').parts[1].follow).toBe(3);
 	const schema = JSON.parse(MANIFEST_V1);
 	const pattern = new RegExp(schema.properties.id.pattern);
 	for (const x of MANIFESTS) {
