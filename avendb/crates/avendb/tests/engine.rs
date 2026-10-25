@@ -2359,4 +2359,10 @@ fn scoped_tag_guard_refuses_unknown_users_and_never_claims_remote_completeness()
     assert_eq!(rows["rows"],json!([]));
     assert_eq!(rows["scope"]["localComplete"],false);
     assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":other}))["refused"].as_str().unwrap().contains("incomplete"));
+    let share = w.lab.issue(w.mac_b,&[w.mac_b],cast::share(w.bob,cast::vault(w.alice),Level::Read,avendb::slice::Selector::All)).unwrap();
+    w.lab.sync_all(0);
+    ok(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":other})));
+    w.lab.submit(w.mac_b,&[w.mac_b],Action::Revoke(avendb::policy::Revoking::Grant{share,actor:w.bob,keep:vec![],via:vec![]})).unwrap();
+    w.lab.sync_all(0);
+    assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":other})).get("refused").is_some());
 }
