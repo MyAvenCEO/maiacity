@@ -175,3 +175,19 @@ Required next implementation:
 `classifiedScopeReady` in `LivePriority.lean` makes unknown classification and
 changed inventory fail closed. Those abstract laws do not prove that the future
 classifier/trace implementation is complete. Full task B remains **open**.
+
+### Focused runtime evidence
+
+On the isolated branch after `c16e709b4`:
+
+- `cargo test -p avendb-net authority_stage --lib -- --nocapture` compiled
+  successfully. The sandbox blocked socket binding for the transport test; the
+  resulting test binary rerun with localhost socket permission passed all three
+  staging tests, including the real peer transfer/admission fence (7.96 seconds).
+- `cargo test -p avendb --test keys empty_audience -- --nocapture` passed both
+  dependency counterexamples (2/2). This establishes that excluding reader-vault
+  authority based only on the target entry's explicit audience would be wrong.
+- `lake env lean AvenDB/LivePriority.lean` passed.
+
+These checks validate bounded staging and the negative closure examples, not full
+scoped-authority release or physical-device latency.
