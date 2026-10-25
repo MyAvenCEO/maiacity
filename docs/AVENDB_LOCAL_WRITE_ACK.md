@@ -1,5 +1,7 @@
 # Local write persistence acknowledgement
 
+Implementation and focused validation: **done**, [commit 0d7a0082](https://github.com/MyAvenCEO/maiacity/commit/0d7a0082). Integration/deployment and physical-device latency acceptance remain with the coordinator.
+
 ## Problem and implementation
 
 The public mutation response previously followed in-memory validation/application. It woke the asynchronous saver, but callers could receive success before the journal backend accepted the edit. The saver also retained its authoritative book mutex during optional warm snapshot preparation and writes, coupling a subsequent persistence fence to restart acceleration.
