@@ -571,14 +571,19 @@ pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Opt
     lab.vault_of(me)?;
     let st = lab.state(me);
     let global = vault.is_none() && ids.is_none();
-    if tag.is_some_and(|tag| tag.is_empty() || tag.len() > 256) || (tag.is_some() && (!global || types.is_some() || kind.is_some())) { return None; }
+    if tag.is_some_and(|tag| tag.is_empty() || tag.len() > 256) || (tag.is_some() && (ids.is_some() || types.is_some() || kind.is_some())) { return None; }
     if global && tag.is_none() && types.is_none_or(|types| types.is_empty() || types.len() > 8 || types.iter().any(String::is_empty)) { return None; }
     let readable = |en: &Entry| st.public_key(KeyFam::Audience(en.vault, en.audience()))
         || levels(st, en.vault, en.audience()).iter().any(|(v, level)| *v == actor && level.allows(Level::Read));
     let selected_type = |en: &Entry| types.is_none_or(|types| lab.entry_type_hint(me, en.id)
         .is_some_and(|kind| types.iter().any(|ty| ty == kind)));
     let mut snapshot = EntryViews { entries: vec![], total_entries: 0, readable_entries: 0, scope: None };
-    let mut metadata_known = true;
+    // Only a publicly known owner-domain relationship may establish negative
+    // vault evidence. Nonowners always receive incomplete, independent of
+    // whether any hidden entry exists; no hidden-entry presence oracle.
+    let owns_domain = vault.is_none_or(|vault| actor == vault || st.vault(vault)
+        .is_some_and(|v| v.owners.contains(&Principal::Vault(actor))));
+    let mut metadata_known = owns_domain;
     let mut bodies_open = true;
     // Explicit IDs use the canonical policy index, including cross-vault targets; no body scan.
     let selected: Vec<_> = match ids {
@@ -588,8 +593,16 @@ pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Opt
     // Global typed discovery rejects unrelated/unreadable entries before any
     // record materialization or draft-history demand; counts disclose only matches.
     for en in selected {
+        if vault.is_some() {
+            if !readable(en) || lab.entry_type_hint(me, en.id).is_none() { metadata_known = false; }
+        }
         // Tag queries never inspect bodies or expose counts for an unreadable row.
-        if (global || tag.is_some()) && !readable(en) { continue; }
+        if (global || tag.is_some()) && !readable(en) {
+            // A vault-scoped negative result cannot rule out references in an
+            // unreadable source entry. Do not expose that entry or its count.
+            if tag.is_some() && vault.is_some() { metadata_known = false; }
+            continue;
+        }
         if global && !selected_type(en) { continue; }
         if let Some(tag) = tag {
             match lab.entry_tag_hint(me, en.id, tag) {
@@ -612,11 +625,11 @@ pub fn entry_views_tag(lab: &Lab, me: SignerId, vault: Option<VaultId>, ids: Opt
             if kind.is_none_or(|kind| row.what.kind() == kind) { snapshot.entries.push(row); }
         }
     }
-    if let Some(tag) = tag {
+    if tag.is_some() || vault.is_some() {
         let replayed = lab.local_inventory_replayed(me);
         snapshot.scope = Some(json!({"tag":tag,"basis":"current-readable-held-state",
             "localComplete":replayed && metadata_known && bodies_open,
-            "remoteComplete":false}));
+            "remoteComplete":false,"vault":vault.map(|id|id.to_hex())}));
     }
     Some(snapshot)
 }

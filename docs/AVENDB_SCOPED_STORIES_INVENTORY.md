@@ -48,3 +48,34 @@ Review correction: Thumbnail’s picker now reuses `libraryFilesQuery` (`kind: f
 This supersedes the earlier blanket stage-transition restriction: private-to-private Story transitions now use exact local vault `flow/function/post` inputs and the existing trusted seed-city `flow/function` fallback. All required local query responses must be ready. Because `moving(..., withPictures=false)` has neither a public source nor destination, it cannot take its profile/public-share or negative picture-use branches. The same function checker, bounded operation planner and actor-authorized mutation API still run. A real `moving()` regression produces an identical operation plan with the scoped rows and the full fixture, including the custom function’s related-post edit.
 
 Transitions entering or leaving public stages still require complete picture-sharing evidence and remain disabled on incomplete worlds. The scoped private path does not establish global peer completeness or authorize broader sharing. Lean PrivateStoryTransition passed; 39 workflow tests including full/scoped equivalence passed, plus two query/readiness contract tests. No Rust changes or Cargo run.
+
+## Guarded Story workflow transitions (continuation slice)
+
+Story stage changes now capture exact canonical local reads rather than requiring
+a complete world: target, navigation/ownership/share summary, own workflow/posts/
+profile/files, trusted workflow defaults, and (when leaving public) source-vault
+tag users. The same queries are checked by the core at each execution and after
+any delayed owner approval. Successful steps return refreshed receipts under the
+same lock; another edit invalidates the next step. Partial success is explicitly
+reported, including transport uncertainty, with no automatic retry.
+
+Negative picture evidence is source-vault scoped because file names resolve in
+the article's vault. Comparisons use resolved file IDs, not global filename text.
+A different vault's same-named picture no longer falsely prevents unsharing;
+another same-vault user of the actual file still preserves it.
+
+A vault inventory cannot assert local completeness without a known actor/owner
+domain relationship, fully replayed local metadata and readable held entries.
+Nonowners receive incomplete regardless of whether hidden entries exist. This is
+conservative and remains a delivery blocker for delegated workflows: writers
+without owner-domain evidence cannot yet execute these scoped workflow plans.
+The old full-world fallback is not enabled because it has no equivalent
+execution-time negative-evidence guard. A canonical full-domain authority proof
+is required before admitting that fallback. It never asserts remote completeness. Core auth and
+owner ceremony remain the final authority for every emitted mutation.
+
+Validation: 45 Bun tests / 139 assertions passed, plus the transport-uncertainty regression, including actual planner and
+picture-identity behavior. ScopedTagInventory Lean passed. Rust parses; native
+runtime regressions pending shared compiler. Full Svelte check pending. Derivatives publishing and withdrawal now use the same guarded capture contract
+with picture dependencies included. Its own canonical post vault defines the
+flow and filename scope; current Story/actor identity cancels obsolete plans.

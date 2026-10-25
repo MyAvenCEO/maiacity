@@ -22,3 +22,12 @@ test('stale refusal preserves prior accepted work and never retries the old plan
  {ok:{value:{edit:'first'},guards:['refreshed'],canContinue:true}}:{refused:'stale'}});
  expect(calls).toBe(2);expect(result.done).toEqual([{edit:'first'}]);expect(result.reason).toBe('stale');
 });
+
+test('transport exception never erases earlier accepted steps or retries uncertain write', async () => {
+ let calls=0;
+ const result=await guardedPlan({checks:['initial'],ops:[{op:'tag'},{op:'tag'},{op:'tag'}],send:async()=>{
+  if(++calls===2) throw new Error('connection lost');
+  return {ok:{value:{edit:'first'},guards:['next'],canContinue:true}};
+ }});
+ expect(calls).toBe(2);expect(result.done).toEqual([{edit:'first'}]);expect(result.reason).toContain('acceptance is unknown');
+});
