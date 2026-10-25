@@ -26,7 +26,7 @@ export function diagnosticSnapshot({ phase, journal, lifecycle, calls = [], mani
 }
 /** One bounded read at a time. A timed-out engine call cannot accumulate duplicate retries. */
 export function createDiagnosticRunner({ ask, currentOwner, isOpen, snapshot, network, armReactive, now = () => performance.now(), onUpdate = () => {} }) {
- let active = null, engineBusy = false;
+ let active = null, engineBusy = false, captureTask = null;
  let report = null;
  async function engine(op, signal, owner) {
   if (signal.aborted || !isOpen() || owner !== currentOwner()) return unavailable('locked-or-session-changed');
@@ -45,18 +45,19 @@ export function createDiagnosticRunner({ ask, currentOwner, isOpen, snapshot, ne
  return {
   snapshot() { return { ...snapshot(), run: report ?? unavailable('not-run') }; },
   cancel() { active?.abort(); },
-  async capture() {
+  capture() {
    if(active || !isOpen()) return;
    const ctrl = new AbortController(), owner=currentOwner(); active=ctrl;
-   try {
+   captureTask = (async () => { try {
     const connections=await engine('network',ctrl.signal,owner);
     const work=await engine('perf',ctrl.signal,owner);
     report ??= {status:'snapshot-only'};
-    report.engine=connections.answer?.ok ? {status:'captured',...peerDiagnostics(connections.answer.ok,work.answer?.ok)} : unavailable(connections.reason ?? 'network-state-unavailable');
-   } finally {active=null;onUpdate();}
+    report.engine=connections.answer?.ok ? {status:'captured',capturedAt:Date.now(),...peerDiagnostics(connections.answer.ok,work.answer?.ok)} : unavailable(connections.reason ?? 'network-state-unavailable');
+   } finally {active=null;captureTask=null;onUpdate();} })();
+   return captureTask;
   },
   async run() {
-   if (active) return;
+   if (active) { if (!captureTask) return; active.abort(); await captureTask; }
    const ctrl = new AbortController(), owner = currentOwner(); active = ctrl;
    report = { status: 'running', engine: unavailable(isOpen() ? 'collecting' : 'locked'), network: unavailable('collecting'), responsiveness: unavailable('collecting'), observations: unavailable('locked') };
    onUpdate();
@@ -77,7 +78,7 @@ export function createDiagnosticRunner({ ask, currentOwner, isOpen, snapshot, ne
     if (isOpen() && owner === currentOwner()) {
      const connections = await engine('network', ctrl.signal, owner);
      const work = await engine('perf', ctrl.signal, owner);
-     report.engine = connections.answer?.ok ? { status: 'captured', ...peerDiagnostics(connections.answer.ok, work.answer?.ok) } : unavailable(connections.reason ?? 'network-state-unavailable');
+     report.engine = connections.answer?.ok ? { status: 'captured', capturedAt:Date.now(), ...peerDiagnostics(connections.answer.ok, work.answer?.ok) } : unavailable(connections.reason ?? 'network-state-unavailable');
     }
    } finally {
     clearTimeout(deadline); clearInterval(sample);
