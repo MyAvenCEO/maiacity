@@ -44,3 +44,11 @@ theorem preservation_keeps_progress (job result : Job) (before after : Nat) (unc
   · cases h; rfl
   · contradiction
 end AvenDB.EntryJudgmentSlices
+
+namespace ReceiveJudgmentBoundary
+-- Deferred receive keeps the admitted bytes; it does not publish unfinished
+-- judgment. A later scheduled turn may publish only completed judgment.
+def visible (admitted judged : Bool) : Bool := admitted && judged
+theorem admissionAloneNotVisible : visible true false = false := rfl
+theorem finishedAdmissionVisible : visible true true = true := rfl
+end ReceiveJudgmentBoundary
