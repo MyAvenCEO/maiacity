@@ -10,6 +10,13 @@ This section supersedes delivery/status statements in older snapshots below.
 
 ### Latest integration: manifest windows and shared-writer closure
 
+Latest follow-up (supersedes pending-source statements below):
+- [56060b27](https://github.com/MyAvenCEO/maiacity/commit/56060b27): fresh mounted asset recipe views retain reactive typed discovery instead of stopping on an empty first local catalog. Integrated recipe/query-window suites:21 passed/90 assertions. Deployment remains open.
+- [842e06e4](https://github.com/MyAvenCEO/maiacity/commit/842e06e4) retains participant actors across accepted-base suffix cursors; [2f310466](https://github.com/MyAvenCEO/maiacity/commit/2f310466) integrates recursive historical group closure and the network participant bridge. Combined Lean passed; combined Rust compile/runtime is pending. The earlier mixed-author fixture used nonexistent Level::Member; this integration corrects it to the actual Write policy level.
+- [b2c3d043](https://github.com/MyAvenCEO/maiacity/commit/b2c3d043) repairs the outside-ancestry fixture's undisclosed unrelated-vault setup while retaining its withheld-inventory assertions; rerun pending.
+- **Open failing runtime gate:** the long-owner-base public-demand/live-suffix test timed out after20s at source2ebcbc70. Investigation found the fixture occupies all ordinary pull permits while suffix authority dependencies still use ordinary pull admission. Diagnose and fix the actual requested-view dependency path; do not remove authority evidence or weaken withheld-history assertions to obtain a pass.
+
+
 - **Done code, pushed; deployment open:** [1e7c95d3](https://github.com/MyAvenCEO/maiacity/commit/1e7c95d3) pushes each manifest leaf's type/tags/newest order/window into the universal query rather than hydrating an unlimited union first. Unlimited declarations page in batches of128. Query-specific unresolved candidates prevent a local-loaded indication; unrelated node-wide pending judgment does not block a fully answered view.
 - **Done code, pushed; deployment open:** [530817fc](https://github.com/MyAvenCEO/maiacity/commit/530817fc) replaces Studio footage's world read with bounded file/task collection queries. Differential regression preserves derived media results and excludes unrelated rooms. This still reads all matching files/tasks and spilled transcript/analysis before returning; progressive first-page rendering remains open.
 - Combined focused JavaScript verification: **57 tests passed, 270 assertions** across manifest, readiness, query-window, footage and collection suites. This does not prove physical-device latency.
