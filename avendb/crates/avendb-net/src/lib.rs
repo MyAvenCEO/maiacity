@@ -2508,8 +2508,24 @@ impl Shared {
         catch_up: Option<&pulls::CatchUp>,
         expected: Option<SignerId>,
     ) -> Result<usize> {
+        self.pull_expected_lane(endpoint, scope, background, catch_up, expected, false).await
+    }
+
+    /// This bounded lane accepts only authority log prerequisites. Entry history
+    /// is rejected before operation admission, including any caller mistake.
+    async fn pull_dependency(self: &Arc<Self>, endpoint: EndpointId,
+        logs: BTreeSet<LogId>, expected: SignerId) -> Result<usize> {
+        self.pull_expected_lane(endpoint, Scope::Logs(logs), false, None, Some(expected), true).await
+    }
+
+    async fn pull_expected_lane(self: &Arc<Self>, endpoint: EndpointId, scope: Scope,
+        background: bool, catch_up: Option<&pulls::CatchUp>, expected: Option<SignerId>,
+        dependency: bool) -> Result<usize> {
         let _activity = self.admit()?;
-        let admission = self.pulls.enter(background, catch_up).await?;
+        let admission = if dependency {
+            let Scope::Logs(logs) = &scope else { anyhow::bail!("dependency scope required"); };
+            self.pulls.enter_dependency(logs).await?
+        } else { self.pulls.enter(background, catch_up).await? };
         let peer = self.connection(endpoint).await?;
         if expected.is_some_and(|device| device != peer.device) {
             anyhow::bail!("sync peer identity changed before live pull");
@@ -2517,7 +2533,7 @@ impl Shared {
         let mut job = self.jobs.begin("pull", peer.device.to_hex(), String::new(), 0, "edits");
         // an asking of some logs among more to come (`ask_differing`) leaves the last bringing up to date to its caller
         let must = !matches!(scope, Scope::Logs(_));
-        let asked = self.pages(endpoint, peer, scope, &mut job, admission, background).await;
+        let asked = self.pages(endpoint, peer, scope, &mut job, admission, background, dependency).await;
         // what its pages brought, brought up to date once more, however the asking ended
         self.catch_up_paced_class(must, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
         if matches!(asked, Ok(0)) {
@@ -2538,7 +2554,12 @@ impl Shared {
         job: &mut Running,
         admission: Arc<pulls::Admission>,
         background: bool,
+        dependency: bool,
     ) -> Result<usize> {
+        let dependency_logs = if dependency {
+            let Scope::Logs(logs) = &scope else { anyhow::bail!("authority logs required"); };
+            Some(logs.clone())
+        } else { None };
         // Only the authority-first background scheduler uses the optional payload pass. A refusal, unsupported
         // signer, large edit, exhausted quota or stale scope always reaches the original legacy reconciliation.
         // Build that legacy request AFTER this attempt so newly accepted IDs suppress duplicate payloads.
@@ -2630,6 +2651,10 @@ impl Shared {
         let mut coming = ask(None).await;
         loop {
             let (Reply { mut edits, blobs, more }, bytes, wait, permit) = coming?;
+            if let Some(logs) = &dependency_logs {
+                anyhow::ensure!(edits.iter().all(|signed| avendb::sync::log_of(&signed.edit,signed.edit.id())
+                    .is_some_and(|log| logs.contains(&log))), "dependency reply escaped requested authority logs");
+            }
             let (way, sent) = (way_of(&peer.conn), edits.len() as u64);
             let taking = Instant::now();
             self.sized(&mut edits);

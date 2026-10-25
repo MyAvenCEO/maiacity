@@ -65,6 +65,8 @@ pub(crate) struct Budget {
     background: Arc<Semaphore>,
     foreground_queue: Arc<Semaphore>,
     background_queue: Arc<Semaphore>,
+    dependency_active: Arc<Semaphore>,
+    dependency_queue: Arc<Semaphore>,
     pages: Arc<Semaphore>,
     background_pages: Arc<Semaphore>,
     page_slots: u32,
@@ -151,6 +153,8 @@ impl Budget {
             background: Arc::new(Semaphore::new(background)),
             foreground_queue: Arc::new(Semaphore::new(foreground_queue)),
             background_queue: Arc::new(Semaphore::new(background_queue)),
+            dependency_active: Arc::new(Semaphore::new(2)),
+            dependency_queue: Arc::new(Semaphore::new(4)),
             pages: Arc::new(Semaphore::new(pages as usize)),
             background_pages: Arc::new(Semaphore::new(pages.saturating_sub(1).max(1) as usize)),
             page_slots: pages,
@@ -190,6 +194,19 @@ impl Budget {
             _background: background,
             _active: active,
         }))
+    }
+
+    /// Only bounded authority prerequisites may use this lane. It shares every
+    /// byte/page permit with normal pulls, but cannot deadlock behind ordinary
+    /// history admissions whose useful view depends on these prerequisites.
+    pub(crate) async fn enter_dependency(&self, logs: &BTreeSet<LogId>) -> Result<Arc<Admission>> {
+        anyhow::ensure!(!logs.is_empty() && logs.len() <= 128
+            && logs.iter().all(|log| matches!(log, LogId::Vault(_) | LogId::Share(_) | LogId::Audience(..))),
+            "dependency admission requires bounded authority logs only");
+        let ticket = self.dependency_queue.clone().try_acquire_owned()
+            .map_err(|_| anyhow!("too many pending authority dependencies"))?;
+        let active = self.dependency_active.clone().acquire_owned().await?;
+        Ok(Arc::new(Admission { _ticket: ticket, _background: None, _active: active }))
     }
 
     /// No request buffer exists while this waits. Normal pages hold one slot, an exceptional large reply all
@@ -369,6 +386,37 @@ where
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn authority_dependencies_progress_under_history_stall_but_share_page_limits() {
+        let budget=Budget::new(2,1,2,4,4);
+        let history_a=budget.enter(false,None).await.unwrap();
+        let history_b=budget.enter(false,None).await.unwrap();
+        let logs=BTreeSet::from([LogId::Vault(avendb::id::VaultId([7;32]))]);
+        let first=budget.enter_dependency(&logs).await.unwrap();
+        let second=budget.enter_dependency(&logs).await.unwrap();
+        let mut third=Box::pin(budget.enter_dependency(&logs));
+        assert!(future::poll_once(&mut third).await.is_none(),"only two dependency operations may run");
+        let mut fourth=Box::pin(budget.enter_dependency(&logs));
+        assert!(future::poll_once(&mut fourth).await.is_none());
+        assert!(budget.enter_dependency(&logs).await.is_err(),"dependency waiters are bounded too");
+        assert!(budget.enter_dependency(&BTreeSet::from([LogId::Entry(avendb::id::EntryId([8;32]))])).await.is_err(),
+            "the dependency lane must not fetch target history");
+        assert!(budget.enter_dependency(&BTreeSet::new()).await.is_err());
+        assert!(budget.enter_dependency(&BTreeSet::from([
+            LogId::Vault(avendb::id::VaultId([7;32])), LogId::Entry(avendb::id::EntryId([8;32]))])).await.is_err(),
+            "adding one allowed authority log must not launder target history");
+        let page_a=budget.page(false,false).await.unwrap();
+        let page_b=budget.page(false,false).await.unwrap();
+        let mut page_c=Box::pin(budget.page(false,false));
+        assert!(future::poll_once(&mut page_c).await.is_none(),"dependency admission creates no extra page capacity");
+        drop(page_a); drop(page_b); drop(page_c);
+        drop(first);
+        assert!(third.await.is_ok(),"dependency completion releases its slot despite stalled history");
+        drop(fourth); drop(second); drop(history_a); drop(history_b);
+        assert_eq!(budget.dependency_active.available_permits(),2);
+        assert_eq!(budget.dependency_queue.available_permits(),4);
+    }
 
     #[tokio::test]
     async fn admission_bounds_waiters_and_reserves_foreground_then_recovers_on_cancellation() {
