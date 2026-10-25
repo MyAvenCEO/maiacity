@@ -553,7 +553,12 @@ mod tests {
         assert!(!lab.held(device).deferred_bodies[&ids[1]].content_ready(), "saving must not hydrate unrelated content");
         lab.edit(device,vault,entries[0],|item| { item.edit_document(|d| d.title="Successor".into()); }).unwrap();
         assert_eq!(lab.item(device,entries[1]).unwrap().record(),expected[1]);
-        assert!(lab.held(device).deferred_bodies.is_empty(), "changed log conservatively restores canonical decoding");
+        assert!(lab.held(device).deferred_bodies.contains_key(&ids[1]), "unchanged background content stays deferred after a local ordinary append");
+        assert!(!lab.held(device).deferred_bodies[&ids[1]].content_ready(), "local write must not decode unrelated history");
+        let changed = lab.item(device,entries[0]).unwrap().record();
+        lab.restore_from(device, lab.backup(device));
+        assert_eq!(lab.item(device,entries[0]).unwrap().record(), changed, "canonical cold restore matches fast warm append");
+        assert_eq!(lab.item(device,entries[1]).unwrap().record(), expected[1]);
     }
 
     #[test]

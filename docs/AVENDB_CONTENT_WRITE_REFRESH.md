@@ -55,3 +55,33 @@ case. Shared-author histories also remain conservative fallback. These synthetic
 numbers include the write/signing call but not transport, persistence acknowledgment
 or UI paint. The Node currently acknowledges mutations before its asynchronous
 saver's durable frontier; immediate response must not be described as durable save.
+
+## Warm and shared-content continuation (validation pending)
+
+The next slice permits ordinary shared-author MAIN histories when every foreign
+non-creation body is available and has no tag asks. It retains current actor
+checks and the same proof/cap-group/row-ownership judgment. Foreign tag asks,
+proposals and computed stewardship marks remain full-refresh cases. Cap groups
+are functions of their definitions, included cap-group IDs, operation rules and
+entry attributes; they do not execute arbitrary queries against ordinary payloads.
+
+An exact-basis own deferred receipt may advance only across the guarded canonical
+strict append, with unchanged old policy, ciphertext and keys. Every receipt must
+be exclusively owned (no other Arc/Weak owners), preserving the existing plaintext
+memo without copying it. Current-key and decrypted-metadata checks still run on
+every demand. Only the edited entry's deferred bodies are hydrated; unrelated
+history remains deferred. Any policy/removal/key-replacement path retains the
+existing canonical invalidation behavior. These are process-local reuse guards,
+not acceptance of a peer checkpoint or a new authority mechanism.
+
+This follow-on is committed for combined validation in the integration checkout;
+its Rust regressions have **not run yet**. Do not mark it delivered on this commit.
+Run `cargo test -p avendb --features test-fixtures --lib content_refresh::tests`,
+then the `deferred_body::tests` and `warm_materialization::tests` filters. Lean
+DeferredContentAppend and ContentRefresh passed, and git diff whitespace checks
+passed. Tests now cover current-key/revision rejection, zero-copy plaintext
+ownership transfer, retained unrelated warm bodies, shared writes, foreign tag
+asks, revocation, group references/redefinition and canonical cold reconstruction.
+The target's prior History and hydrated Body buffers move into the active working
+set; they are not cloned. Received ordinary tails still use the old global catch-up
+path and are the next separate integration point.
