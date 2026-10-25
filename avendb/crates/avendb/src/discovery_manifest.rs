@@ -426,7 +426,7 @@ mod tests {
         assert!(w.lab.retain_entry_projection(w.mac_a,old_snapshot,old,p.sealed));
         let second=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("second",w.mac_a)).unwrap();
         let current=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope.clone()).unwrap();
-        w.lab.edit(w.mac_a,w.alice,newer,|item|{item.put_record(&current);}).unwrap();
+        w.lab.edit(w.mac_a,w.alice,newer,|item|{item.set_record(&View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&current);}).unwrap();
         let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],newer).unwrap();
         let new_snapshot=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
         assert!(w.lab.retain_entry_projection(w.mac_a,new_snapshot,newer,p.sealed));
@@ -444,10 +444,10 @@ mod tests {
         let note=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("old",w.mac_a)).unwrap();
         w.lab.sync(w.mac_a,w.phone_a);
         assert!(w.lab.item(w.phone_a,note).is_some());
-        w.lab.edit(w.mac_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("new");item.put_record(&record);}).unwrap();
+        w.lab.edit(w.mac_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("new");item.set_record(View::todo_v1(),&record);}).unwrap();
         let scope=DiscoveryScope::Tag("selected".into());
         let record=w.lab.discovery_manifest_record(w.mac_a,w.alice,scope).unwrap();
-        let mut item=Item::new(w.mac_a);item.put_record(&record);
+        let item=Item::made(&View::plain(&crate::lens::DISCOVERY_MANIFEST_V1),&record,w.mac_a).unwrap();
         let carrier=w.lab.create(w.mac_a,w.alice,w.alice,"discovery-manifest",&[],item).unwrap();
         let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],carrier).unwrap();
         let snapshot=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
@@ -462,7 +462,7 @@ mod tests {
         let current=crate::engine::read(&w.lab,w.phone_a,&query);
         assert_eq!(current["ok"]["scope"]["discovery"]["pendingEntries"],json!([]));
         // A subsequent locally accepted write still covers the advertised heads.
-        w.lab.edit(w.phone_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("newer");item.put_record(&record);}).unwrap();
+        w.lab.edit(w.phone_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("newer");item.set_record(View::todo_v1(),&record);}).unwrap();
         let newer=crate::engine::read(&w.lab,w.phone_a,&query);
         assert_eq!(newer["ok"]["scope"]["discovery"]["pendingEntries"],json!([]));
     }
@@ -472,7 +472,7 @@ mod tests {
         let mut w=cast::world();
         w.lab.sync(w.mac_a,w.phone_a);
         let note=w.lab.create(w.mac_a,w.alice,w.alice,"note",&["selected"],Item::todo("checkpoint",w.mac_a)).unwrap();
-        w.lab.edit(w.mac_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("latest checkpoint");item.put_record(&record);}).unwrap();
+        w.lab.edit(w.mac_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("latest checkpoint");item.set_record(View::todo_v1(),&record);}).unwrap();
         let heads=w.lab.history(w.mac_a,note).unwrap().heads(MAIN);
         let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],note).unwrap();
         let snapshot=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
@@ -488,7 +488,7 @@ mod tests {
         assert!(w.lab.materialized_manifest_heads(w.phone_a,w.alice,note,&heads));
         assert!(!w.lab.materialized_manifest_heads(w.phone_a,w.alice,note,&[EditId([91;32])]));
         assert!(!w.lab.materialized_manifest_heads(w.phone_a,w.bob,note,&heads));
-        w.lab.edit(w.mac_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("later");item.put_record(&record);}).unwrap();
+        w.lab.edit(w.mac_a,w.alice,note,|item|{let mut record=item.record();record["title"]=json!("later");item.set_record(View::todo_v1(),&record);}).unwrap();
         let p=w.lab.draft_entry_projection(w.mac_a,&[w.passkey_a],note).unwrap();
         let newer=w.lab.complete(w.mac_a,p.draft,&[]).unwrap();
         let offer=w.lab.entry_projection_offer(w.mac_a,w.phone_a,note).unwrap();
