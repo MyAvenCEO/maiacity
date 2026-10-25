@@ -49,3 +49,12 @@ theorem satisfied_member_not_pending (members visible : List Nat) (id : Nat)
     (h : id ∈ visible) : id ∉ pendingMembers members visible := by
   simp [pendingMembers, List.mem_filter, h]
 end ScopedDiscoveryManifest
+
+namespace ScopedDiscoveryManifest
+-- Authenticated descendant depth strictly increases. Random carrier IDs cannot
+-- reverse a strict causal publication order; equal-depth cuts remain concurrent.
+def newerCausalCut (oldDepth newDepth : Nat) := oldDepth < newDepth
+theorem descendant_preferred (depth delta : Nat) : newerCausalCut depth (depth + delta + 1) := by
+  unfold newerCausalCut
+  omega
+end ScopedDiscoveryManifest
