@@ -166,7 +166,7 @@ fn bad(why: impl Into<String>) -> Refused {
 /// The fields of each op beside `op`: a field it doesn't take is a mistake, never ignored.
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
-        "read_guard" => &["query"],
+        "read_guard" => &["query", "requireComplete"],
         "guarded" => &["checks", "change"],
         "entry_views" => &["vault", "entries", "types", "as", "kind", "tag"],
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],
@@ -356,7 +356,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         return world(lab, me, &SyncedTo::default());
     }
     let out = op_of(v).and_then(|(name, o)| match name {
-        "read_guard" => guards::capture(lab, me, o.get("query").ok_or_else(||bad("read_guard requires query"))?),
+        "read_guard" => guards::capture(lab, me, o.get("query").ok_or_else(||bad("read_guard requires query"))?, o.get("requireComplete").map(|value|value.as_bool().ok_or_else(||bad("requireComplete must be boolean"))).transpose()?.unwrap_or(true)),
         "entry_views" => entry_views_inner(lab, me, o, &SyncedTo::default()),
         "query" => query(lab, me, o),
         "get" => get(lab, me, o),

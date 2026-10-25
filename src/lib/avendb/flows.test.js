@@ -284,3 +284,23 @@ test('scoped post publication includes picture changes without a full world', as
  expect(result.complete).toBe(true);
  expect(calls).toContainEqual({op:'tag',entry:PIC,add:[PUBLISHED],as:ME});
 });
+
+test('selective private transitions accept positive scoped rows; public absence remains strict', async () => {
+ const {guardedStoryTransition}=await import('./story-guarded-transition.js');
+ const w=world(), captures=[],changes=[];
+ let selected={...w.entries[0],type:'story',tags:['story:idea']};
+ const api={ask:async op=>{
+  captures.push(op);
+  if(op.requireComplete&&op.query.vault) return {refused:'read guard dependency domain is incomplete'};
+  const q=op.query;
+  return {ok:{guard:{query:q,digest:'receipt',requireComplete:op.requireComplete},value:q.op==='world_summary'?{...w,entries:[]}:
+    {rows:q.entries?[selected]:w.entries.filter(e=>e.vault===q.vault&&q.types.includes(e.type)),scope:{localComplete:false}}}};
+ },run:async(_what,op)=>{changes.push(op);return {value:{edit:'accepted'},guards:op.checks,canContinue:true};}};
+ const privateMove=await guardedStoryTransition({api,actor:ME,entry:POST,to:'hook',current:()=>true});
+ expect(privateMove.complete).toBe(true);
+ expect(captures.filter(op=>op.query.vault).every(op=>op.requireComplete===false)).toBe(true);
+ expect(captures.some(op=>op.query.types?.includes('file'))).toBe(false);
+ selected=w.entries[0];changes.length=0;
+ const publishing=await guardedStoryTransition({api,actor:ME,entry:POST,to:'published',about:'post',current:()=>true});
+ expect(publishing.complete).toBe(false);expect(publishing.reason).toContain('incomplete');expect(changes).toEqual([]);
+});

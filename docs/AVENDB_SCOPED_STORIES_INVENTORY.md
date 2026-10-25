@@ -88,3 +88,11 @@ stronger) shares, including a public wide share. This condition depends on known
 authority, not hidden row existence. The native regression grants then revokes
 that share and requires the guard to stop after revocation. Selective delegated
 writers remain blocked pending an equally sound dependency-domain contract.
+
+The selective-private limitation above is now resolved by explicit positive
+read guards: private Story transitions no longer require an owner or whole-vault
+share and do not load files/profiles. They retain current read/write authorization
+and execution-time changed-result rejection. Public transitions retain strict
+local completeness; tag absence cannot be downgraded. This does not claim that
+partial local discovery equals global discovery, or admit selectively delegated
+public negative decisions without sufficient evidence.

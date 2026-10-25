@@ -2368,3 +2368,22 @@ fn scoped_tag_guard_refuses_unknown_users_and_never_claims_remote_completeness()
     w.lab.sync_all(0);
     assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":other})).get("refused").is_some());
 }
+
+#[test]
+fn positive_guard_allows_selective_dependencies_without_weakening_tag_absence() {
+    let mut w=cast::world();
+    let selected=w.lab.create(w.mac_b,w.bob,w.bob,"note",&["public-stage"],avendb::doc::Item::todo("selected",w.mac_b)).unwrap();
+    w.lab.create(w.mac_b,w.bob,w.bob,"note",&["public-stage"],avendb::doc::Item::todo("hidden",w.mac_b)).unwrap();
+    w.lab.issue(w.mac_b,&[w.mac_b],cast::share(w.bob,cast::vault(w.alice),Level::Write,cast::by_id(selected))).unwrap();
+    w.lab.sync_all(0);
+    let query=json!({"op":"entry_views","vault":w.bob.to_hex(),"as":w.alice.to_hex(),"types":["note"]});
+    assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":query})).get("refused").is_some());
+    let receipt=ok(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":query,"requireComplete":false})));
+    assert_eq!(receipt["guard"]["requireComplete"],false);
+    let changed=ok(engine::run(&mut w.lab,w.mac_a,&json!({"op":"guarded","checks":[receipt["guard"]],"change":{
+        "op":"tag","entry":selected.to_hex(),"as":w.alice.to_hex(),"add":["private-progress"]}})));
+    assert_eq!(changed["canContinue"],true);
+    assert_eq!(changed["guards"][0]["requireComplete"],false);
+    let negative=json!({"op":"entry_views","vault":w.bob.to_hex(),"as":w.alice.to_hex(),"tag":"public-stage"});
+    assert!(engine::read(&w.lab,w.mac_a,&json!({"op":"read_guard","query":negative,"requireComplete":false})).get("refused").is_some(),"tag absence cannot opt out of completeness");
+}

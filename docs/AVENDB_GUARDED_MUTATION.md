@@ -36,3 +36,23 @@ in; the helper alone does not close that task.
 Validation: three Bun behavioral regressions (nine assertions) and the extended
 Lean contract passed. Rust parses; new native continuation regression and previous
 guard regressions remain pending the parent-owned compiler queue.
+
+## Positive dependencies versus absence evidence
+
+`read_guard.requireComplete` defaults to true. Explicit false captures positive
+local dependencies without claiming the queried domain is complete. The mode is
+retained in the receipt, delayed approval and post-write refresh; all reads still
+use current canonical authorization and any changed result invalidates the plan.
+Tag inventories always force strict mode, including if a caller tampers with a
+receipt to request false. Negative picture-user decisions therefore cannot opt
+out of completeness.
+
+Private workflow plans use positive target/workflow/post inputs and avoid file
+or profile materialization entirely. Public transitions additionally capture
+strict complete dependencies before emitting any change. Selectively delegated
+writers can make private transitions; selectively delegated public changes still
+need evidence covering their actual negative-decision domain.
+
+Validation: Lean dependency distinction proved; 47 Bun tests / 148 assertions
+passed. Native selective-write/forced-strict-tag regression added, not yet run
+because parent owns Cargo. Full Svelte typecheck passed: zero errors, 27 existing warnings.

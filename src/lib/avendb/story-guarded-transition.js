@@ -8,9 +8,9 @@ import { guardedPlan } from './guarded-plan.js';
 export async function guardedStoryTransition({ api, actor, entry, to, current, about = 'story' }) {
 	/** @type {any[]} */
 	const checks = [];
-	const capture = async (/** @type {any} */ query) => {
+	const capture = async (/** @type {any} */ query, requireComplete = false) => {
 		if (!current()) throw new Error('View or actor changed');
-		const out = await api.ask({ op: 'read_guard', query });
+		const out = await api.ask({ op: 'read_guard', query, requireComplete });
 		if (!out?.ok?.guard) throw new Error(out?.refused ?? 'Local dependencies are unavailable');
 		checks.push(out.ok.guard);
 		return out.ok.value;
@@ -20,16 +20,24 @@ export async function guardedStoryTransition({ api, actor, entry, to, current, a
 		const target = await capture({ op: 'entry_views', entries: [entry], as: actor });
 		const item = target.rows?.find((/** @type {any} */ row) => row.entry === entry);
 		if (!item || item.deleted || !(item.writers ?? []).includes(actor)) throw new Error('The story is not locally writable');
-		const own = await capture({ op: 'entry_views', vault: item.vault, as: actor, types: ['flow', 'function', 'post', 'profile', 'file'] });
+		const ownQuery = { op: 'entry_views', vault: item.vault, as: actor, types: ['flow', 'function', 'post'] };
+		const own = await capture(ownQuery);
 		const city = seedCity(summary)?.id;
-		const trusted = city && city !== item.vault
-			? await capture({ op: 'entry_views', vault: city, as: actor, types: ['flow', 'function'] })
-			: { rows: [] };
+		const trustedQuery = city && city !== item.vault ? { op: 'entry_views', vault: city, as: actor, types: ['flow', 'function'] } : null;
+		const trusted = trustedQuery ? await capture(trustedQuery) : { rows: [] };
 		let world = { ...summary, entries: [...own.rows, ...trusted.rows, item] };
 		const flow = flowsFor(world, item.vault, about)[0] ?? (about === 'post' ? CONTENT : STORY);
 		const from = stageOf(item, flow);
+		const destination = flow.stages.find(stage => stage.key === to);
+		// Private transitions use positive authorized inputs; public decisions
+		// additionally retain complete local domain evidence through execution.
+		if (from?.public || destination?.public) {
+			const publicInputs = await capture({ ...ownQuery, types: ['flow', 'function', 'post', 'profile', 'file'] }, true);
+			if (trustedQuery) await capture(trustedQuery, true);
+			world = { ...world, entries: [...new Map([...world.entries, ...publicInputs.rows].map(row => [row.entry, row])).values()] };
+		}
 		if (from?.public) {
-			const users = await capture({ op: 'entry_views', vault: item.vault, tag: stageTag(flow.key, from.key), as: actor });
+			const users = await capture({ op: 'entry_views', vault: item.vault, tag: stageTag(flow.key, from.key), as: actor }, true);
 			const rows = new Map([...world.entries, ...users.rows].map(row => [row.entry, row]));
 			world = { ...world, entries: [...rows.values()] };
 		}
