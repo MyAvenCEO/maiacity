@@ -65,3 +65,11 @@ def fulfilledMember (visible authorized importedAdvertisedHeads : Bool) :=
 theorem visible_stale_member_not_fulfilled (authorized : Bool) :
     fulfilledMember true authorized false = false := by cases authorized <;> rfl
 end ScopedDiscoveryManifest
+
+namespace ScopedDiscoveryManifest
+def projectedFulfillment (currentAuthority mainAvailable exactBasis : Bool) :=
+  currentAuthority && mainAvailable && exactBasis
+theorem unrelated_projection_not_fulfilled (authorized available : Bool) :
+    projectedFulfillment authorized available false = false := by
+  cases authorized <;> cases available <;> rfl
+end ScopedDiscoveryManifest

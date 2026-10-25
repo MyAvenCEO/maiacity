@@ -156,3 +156,17 @@ A receiver regression retains an old usable row while receiving only the newer
 carrier, requires pending priority, then clears only after receiving the missing
 updates, and stays clear after a later local edit. JS priority/completeness tests:
 29 passed, 100 assertions; Lean passed. Native frontier regression is pending.
+
+### Read-only checkpoint fulfillment
+
+Fresh-device read-only projections can now fulfill scheduling hints when their
+currently authorized owner-attested basis is exactly the advertised manifest-head
+set and their MAIN record is available. A mismatching or merely newer projection
+without authenticated counted ancestry remains pending. This uses the identical
+ordinary projection authorization/key/revocation gate and reads its metadata
+under the cache lock; it does not clone/decode the projection's record again.
+It changes priority fulfillment only, not write permission, history completeness
+or negative-query evidence. Native tests cover exact basis, unrelated basis,
+wrong actor, and a later different-basis projection. The existing twelve-member
+JS batch regression covers advancement beyond eight; physical native multi-member
+transport progression remains a queued runtime gate, not claimed passed.
