@@ -656,6 +656,11 @@ fn see(lane: &Lane, item: &Item, schema: &Named) -> Option<Seen> {
 
 /// What `item` stores, `stored`, as an op naming `schema` sees it through `lane`, the item's writes made under the
 /// schemas `authored`.
+pub(crate) fn warm_query_visibility(lane: &Lane, item: &Item) -> (Option<BlobId>, bool) {
+    let own = own(lane, &item.record()).map(|s| s.id());
+    (own, see_within(lane, item, &Named::Own, QUERY_DEPTH).is_some())
+}
+
 fn seen_of(lane: &Lane, stored: &Value, authored: &BTreeSet<BlobId>, schema: &Named) -> Option<Seen> {
     let app = match schema {
         Named::Stored => None,
@@ -894,13 +899,21 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// level of `depth`, so a cycle of links ends there (`Deep`). `count` is how many rows there are in all, and `depth`
 /// how deep each was read.
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
-    query_candidates_from(lab, me, o, Lab::query_candidates)
+    query_candidates_impl(lab, me, o, Lab::query_candidates, true)
 }
 
 // The test oracle supplies the former full collection; all downstream semantics stay shared.
 fn query_candidates_from(
     lab: &Lab, me: SignerId, o: &Map<String, Value>,
     candidates: impl FnOnce(&Lab, SignerId, Option<VaultId>, &Selector) -> Vec<EntryId>,
+) -> Result<Value, Refused> {
+    query_candidates_impl(lab, me, o, candidates, false)
+}
+
+fn query_candidates_impl(
+    lab: &Lab, me: SignerId, o: &Map<String, Value>,
+    candidates: impl FnOnce(&Lab, SignerId, Option<VaultId>, &Selector) -> Vec<EntryId>,
+    allow_receipts: bool,
 ) -> Result<Value, Refused> {
     let observe_revision = match o.get("observeRevision") {
         None => false,
@@ -919,7 +932,51 @@ fn query_candidates_from(
     let mut lanes: HashMap<VaultId, Lane> = HashMap::new();
     let mut rows = vec![];
     let (mut unresolved_candidates, mut checkpoint_partial) = (0usize, false);
-    for entry in candidates(lab, me, vault, &plan) {
+    let mut candidates = candidates(lab, me, vault, &plan);
+    let label = |a: &Attrs, l: &str| -> Value {
+        match l {
+            "type" => a.ty.as_str().into(), "author" => a.author.to_hex().into(),
+            "entry" => a.entry.to_hex().into(), _ => a.created.into(),
+        }
+    };
+    let paged_count = if allow_receipts && w.labels_only()
+        && order.iter().all(|(by, _)| matches!(by, By::Label(_))) {
+        let mut eligible = Vec::new();
+        for entry in candidates {
+            let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
+            let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
+            let checkpoint = lab.entry_projection(me, entry);
+            let partial = checkpoint.is_some() || lab.active_owner_base(me, entry).is_some();
+            checkpoint_partial |= partial;
+            let certified = if partial { None } else {
+                lab.warm_query_receipt(me, entry).and_then(|(own, visible)| match &schema {
+                    Named::Stored => Some(true),
+                    Named::Own if depth == QUERY_DEPTH => Some(visible),
+                    Named::Id(id) if depth == QUERY_DEPTH && own == Some(*id) => Some(visible),
+                    _ => None,
+                })
+            };
+            let visible = certified.unwrap_or_else(|| {
+                let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
+                if let Some(mut stored) = checkpoint.as_ref().and_then(|p| p.record(MAIN)) {
+                    if let Some(record) = stored.as_object_mut() { ops::empty_below(record, depth); }
+                    seen_of(lane, &stored, &BTreeSet::new(), &schema).is_some()
+                } else { lab.item(me, entry).and_then(|item| see_within(lane, item, &schema, depth)).is_some() }
+            });
+            if !visible { unresolved_candidates += 1; continue; }
+            if w.holds(&m.attrs, &Record::new()) { eligible.push((entry, m.attrs)); }
+        }
+        eligible.sort_by(|(_, a), (_, b)| order.iter().find_map(|(by, down)| {
+            let By::Label(key) = by else { unreachable!() };
+            let cmp = compare(Some(&label(a, key)), Some(&label(b, key)));
+            let cmp = if *down { cmp.reverse() } else { cmp };
+            cmp.is_ne().then_some(cmp)
+        }).unwrap_or(Ordering::Equal));
+        let count = eligible.len();
+        candidates = eligible.into_iter().skip(offset).take(limit.unwrap_or(usize::MAX)).map(|(entry, _)| entry).collect();
+        Some(count)
+    } else { None };
+    for entry in candidates {
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
         let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
         let checkpoint = lab.entry_projection(me, entry);
@@ -968,8 +1025,8 @@ fn query_candidates_from(
         };
         order.iter().map(by).find(|o| o.is_ne()).unwrap_or(Ordering::Equal)
     });
-    let count = rows.len();
-    let page = rows.into_iter().skip(offset).take(limit.unwrap_or(usize::MAX));
+    let count = paged_count.unwrap_or(rows.len());
+    let page = rows.into_iter().skip(if paged_count.is_some() { 0 } else { offset }).take(limit.unwrap_or(usize::MAX));
     let mut shown = vec![];
     for (entry, v, attrs, seen, cut, checkpoint) in page {
         let picked = |f: &String| select.as_ref().is_none_or(|fs| fs.contains(f));

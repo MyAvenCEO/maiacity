@@ -921,7 +921,7 @@ impl Store {
         let n = self.replayed;
         let since = n.abs_diff(self.view_given);
         let stale = self.wholes != self.view_wholes || self.view_lineage.as_ref() != Some(&self.log.lineage());
-        n > 0 && n == self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS)
+        self.judgment_pending.is_empty() && n > 0 && n == self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS)
     }
 
     /// Its shelf lacks its keys (`Lab::warming`): it opened a key since its shelf took them, or its shelf names the
@@ -987,6 +987,7 @@ impl Store {
 /// each line where it opens any update, and a hash of which writes it holds and opened, to build it again only once
 /// that changes; and its tip, what a refresh that removed nothing checks instead of that hash (`Tip`).
 struct Shown {
+    query_receipt: Option<warm_materialization::QueryReceipt>,
     history: History,
     history_bodies: Vec<EditId>,
     hydrated_history: OnceLock<Option<History>>,
@@ -4417,6 +4418,19 @@ impl Lab {
         .map(Some)
     }
 
+    /// Own authenticated visibility at the default query depth. Never derives
+    /// peer authority, and never imports a Loro snapshot to classify candidates.
+    pub(crate) fn warm_query_receipt(&self, d: SignerId, entry: EntryId) -> Option<(Option<BlobId>, bool)> {
+        if !self.sees(d, entry) { return None; }
+        let store = self.held(d);
+        if store.judgment_pending.contains(&entry) { return None; }
+        let shown = store.shown.get(&entry)?;
+        let receipt = shown.query_receipt.as_ref().filter(|r| r.print == shown.print)?;
+        if !shown.history.landed() || shown.history_bodies.iter().any(|id|
+            !store.bodies.contains_key(id) && !store.deferred_authorized(*id)) { return None; }
+        Some((receipt.own, receipt.visible))
+    }
+
     /// The item as device `d` shows it on its main line: the writes of the line's history it counts and can decrypt.
     /// `None` if it counts or opens none.
     pub fn item(&self, d: SignerId, entry: EntryId) -> Option<&Item> {
@@ -5815,7 +5829,7 @@ impl Lab {
         let store = self.stores.get(&d)?;
         let close_due = current && store.replayed > 0 && store.replayed == store.log.edits().len()
             && store.replayed != store.view_given;
-        let (keys_due, view_due) = (store.keys_due(checked), (store.view_due() || close_due) && store.replayed <= held);
+        let (keys_due, view_due) = (store.keys_due(checked), (store.view_due() || close_due) && store.replayed <= held && store.judgment_pending.is_empty());
         if !keys_due && !view_due { return None; }
         let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
         let opened = keys_due.then(|| store.opened_before.iter()
@@ -7160,7 +7174,7 @@ impl<'a> Judging<'a> {
                 imported.insert(l, changes.iter().map(|c| c.write.edit).collect());
             }
         }
-        Shown { history, history_bodies: Vec::new(), hydrated_history: OnceLock::new(), items: OnceLock::from(items), deferred: std::sync::Mutex::new(None), print, tip, after: After { scratch, deferred_scratch: None, attrs, mine, imported, asked } }
+        Shown { query_receipt: None, history, history_bodies: Vec::new(), hydrated_history: OnceLock::new(), items: OnceLock::from(items), deferred: std::sync::Mutex::new(None), print, tip, after: After { scratch, deferred_scratch: None, attrs, mine, imported, asked } }
     }
 }
 

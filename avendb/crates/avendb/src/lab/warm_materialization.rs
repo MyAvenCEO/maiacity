@@ -12,6 +12,18 @@ const MAX_ENTRIES: usize = 256;
 const MAX_WRITES: usize = 8192;
 const WITH_METADATA: u32 = u32::MAX - 1;
 const WITH_SCRATCH: u32 = u32::MAX - 2;
+const WITH_QUERY: u32 = u32::MAX - 3;
+
+#[derive(Clone)]
+pub(super) struct QueryReceipt {
+    pub(super) print: [u8; 32],
+    pub(super) snapshot: [u8; 32],
+    pub(super) own: Option<BlobId>,
+    pub(super) visible: bool,
+}
+fn snapshot_hash(bytes: &[u8]) -> [u8;32] {
+    let mut hash = Hasher::new("own query snapshot"); hash.update(bytes); hash.finalize()
+}
 use crate::deferred_body::{BodyMetadata, DeferredBody};
 
 enum CapturedLine {
@@ -25,8 +37,11 @@ enum CapturedScratch { Materialized(Scratch), Deferred(crate::history::ScratchIm
 
 pub(super) struct Capture {
     basis: [u8; 32],
+    lanes: HashMap<VaultId, Vec<Vec<u8>>>,
     entries: Vec<(
         EntryId,
+        VaultId,
+        Option<QueryReceipt>,
         [u8; 32],
         Vec<(EditId, bool, bool, Option<Vec<Touch>>, Vec<Loc>)>,
         BTreeMap<Line, CapturedLine>,
@@ -56,6 +71,8 @@ impl Capture {
                     .iter()
                     .filter(|(e, _)| !store.scratched.contains(e)),
             );
+        let mut lanes = HashMap::new();
+        let mut lane_bytes = 0usize;
         let (mut entries, mut writes, mut source_bytes) = (Vec::new(), 0usize, 0usize);
         for (e, s) in order {
             if entries.len() == MAX_ENTRIES {
@@ -85,8 +102,18 @@ impl Capture {
             };
             writes += n;
             source_bytes += bytes + snapshot_bytes;
+            let Some(en) = store.view().entry(*e) else { continue; };
+            if !lanes.contains_key(&en.vault) {
+                let blobs = store.view().lane_of(en.vault, &store.readings);
+                let bytes = blobs.iter().fold(0usize, |n, blob| n.saturating_add(blob.len()));
+                if lane_bytes.saturating_add(bytes) > LIMIT { continue; }
+                lane_bytes += bytes;
+                lanes.insert(en.vault, blobs.into_iter().map(<[u8]>::to_vec).collect());
+            }
             entries.push((
                 *e,
+                en.vault,
+                s.query_receipt.clone().filter(|r| r.print == s.print),
                 s.print,
                 s.history
                     .changes()
@@ -114,6 +141,7 @@ impl Capture {
         }
         Self {
             basis: basis(store),
+            lanes,
             entries,
         }
     }
@@ -121,9 +149,10 @@ impl Capture {
         let mut out = MAGIC.to_vec();
         replay.encode(&mut out);
         self.basis.encode(&mut out);
+        let lanes: HashMap<_, _> = self.lanes.iter().map(|(v, blobs)| (*v, Lane::with_built_ins(blobs.iter().map(Vec::as_slice)))).collect();
         let mut entries = Vec::new();
         let mut count = 0u32;
-        'entries: for (entry, print, changes, items, asked, metadata, scratch) in self.entries {
+        'entries: for (entry, vault, inherited, print, changes, items, asked, metadata, scratch) in self.entries {
             let mut encoded = Vec::new();
             entry.encode(&mut encoded);
             print.encode(&mut encoded);
@@ -148,13 +177,24 @@ impl Capture {
                 if entries.len().saturating_add(encoded.len()) > LIMIT { continue 'entries; }
             }
             (items.len() as u32).encode(&mut encoded);
+            let mut query = None;
             for (line, item) in items {
                 line.encode(&mut encoded);
                 // Export requires one owned snapshot, but never retain several
                 // oversized snapshots before checking the aggregate adjunct budget.
                 let snapshot = match item {
-                    CapturedLine::Materialized(item) => item.bytes(),
-                    CapturedLine::Deferred(bytes) => bytes,
+                    CapturedLine::Materialized(item) => {
+                        let bytes = item.bytes();
+                        if line == MAIN {
+                            let (own, visible) = crate::engine::warm_query_visibility(&lanes[&vault], &item);
+                            query = Some(QueryReceipt { print, snapshot: snapshot_hash(&bytes), own, visible });
+                        }
+                        bytes
+                    },
+                    CapturedLine::Deferred(bytes) => {
+                        if line == MAIN { query = inherited.clone().filter(|r| r.snapshot == snapshot_hash(&bytes)); }
+                        bytes
+                    },
                 };
                 if entries
                     .len()
@@ -179,13 +219,22 @@ impl Capture {
                     image.tip.encode(&mut encoded);
                 }
             }
+            match query {
+                None => encoded.push(0),
+                Some(query) => {
+                    encoded.push(1);
+                    query.snapshot.encode(&mut encoded);
+                    query.own.encode(&mut encoded);
+                    query.visible.encode(&mut encoded);
+                }
+            }
             if entries.len().saturating_add(encoded.len()) > LIMIT {
                 break;
             }
             entries.extend(encoded);
             count += 1;
         }
-        WITH_SCRATCH.encode(&mut out);
+        WITH_QUERY.encode(&mut out);
         count.encode(&mut out);
         out.extend(entries);
         out
@@ -262,6 +311,7 @@ pub(super) struct Saved {
     asked: BTreeSet<BlobId>,
     metadata: Vec<(EditId, BodyMetadata)>,
     scratch: Option<crate::history::ScratchImage>,
+    query: Option<QueryReceipt>,
 }
 pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
     if extra.len() > LIMIT + 40 {
@@ -269,7 +319,8 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
     }
     let mut rd = Reader::new(extra.get(32..)?);
     let marker = u32::decode(&mut rd).ok()?;
-    let with_scratch = marker == WITH_SCRATCH;
+    let with_query = marker == WITH_QUERY;
+    let with_scratch = marker == WITH_SCRATCH || with_query;
     let with_metadata = marker == WITH_METADATA || with_scratch;
     let n = if with_metadata { rd.count(37).ok()? } else { marker as usize };
     if n > MAX_ENTRIES {
@@ -340,6 +391,20 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
                 _ => return None,
             }
         } else { None };
+        let query = if with_query {
+            match rd.u8().ok()? {
+                0 => None,
+                1 => {
+                    let snapshot = <[u8;32]>::decode(&mut rd).ok()?;
+                    let own = rd.option().ok()?;
+                    let visible = bool::decode(&mut rd).ok()?;
+                    items.iter().find(|(line, _)| *line == MAIN)
+                        .filter(|(_, bytes)| snapshot_hash(bytes) == snapshot)
+                        .map(|_| QueryReceipt { print, snapshot, own, visible })
+                }
+                _ => return None,
+            }
+        } else { None };
         if out
             .insert(
                 entry,
@@ -350,6 +415,7 @@ pub(super) fn decode(extra: &[u8]) -> Option<BTreeMap<EntryId, Saved>> {
                     asked,
                     metadata: body_metadata,
                     scratch,
+                    query,
                 },
             )
             .is_some()
@@ -431,6 +497,7 @@ impl Saved {
         let history_bodies = history.changes().iter().filter(|c| store.deferred_bodies.contains_key(&c.write.edit))
             .map(|c| c.write.edit).collect();
         Some(Shown {
+            query_receipt: self.query,
             history,
             history_bodies,
             hydrated_history: OnceLock::new(),
@@ -568,6 +635,70 @@ mod tests {
         let warm = Warm {keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect()};
         lab.warmed(device, receipt);
         (lab, device, vault, entries, backup, warm)
+    }
+
+    #[test]
+    fn warm_label_query_pages_before_importing_unrelated_snapshots() {
+        let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
+        let ops = [
+            serde_json::json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]},"limit":1,"offset":1}),
+            serde_json::json!({"op":"query","vault":vault.to_hex(),"schema":"stored","order":[["entry","desc"]],"limit":1}),
+            serde_json::json!({"op":"query","vault":vault.to_hex(),"limit":0}),
+        ];
+        for op in ops {
+            lab.restore_from(device, backup.clone());
+            let expected = crate::engine::read(&lab, device, &op);
+            assert!(expected.get("ok").is_some(), "{expected}");
+            lab.restore_warm(device, backup.clone(), Some(([19;40], backup.signed.len())), &warm);
+            assert!(entries.iter().all(|entry| lab.warm_query_receipt(device,*entry).is_some()));
+            assert!(entries.iter().all(|entry| lab.held(device).shown[entry].items.get().is_none()));
+            let actual = crate::engine::read(&lab, device, &op);
+            assert_eq!(actual, expected);
+            let rows=actual["ok"]["rows"].as_array().unwrap();
+            assert_eq!(entries.iter().filter(|entry| lab.held(device).shown[entry].items.get().is_some()).count(),rows.len(),
+                "only actual page imports its snapshot");
+        }
+    }
+
+    #[test]
+    fn warm_query_receipts_fall_back_after_edit_and_payload_filter() {
+        let (mut lab, device, vault, entries, backup, warm) = warmed_notes();
+        lab.restore_warm(device, backup.clone(), Some(([19;40], backup.signed.len())), &warm);
+        lab.edit(device,vault,entries[0],|item| { item.edit_document(|d|d.title="Changed".into()); }).unwrap();
+        assert!(lab.warm_query_receipt(device,entries[0]).is_none(), "changed entry cannot reuse old visibility");
+        let op=serde_json::json!({"op":"query","vault":vault.to_hex(),"where":{"path":["title"],"eq":"Changed"},"limit":1});
+        let actual=crate::engine::read(&lab,device,&op);
+        let backup=lab.backup(device);
+        lab.restore_from(device,backup);
+        assert_eq!(actual,crate::engine::read(&lab,device,&op));
+    }
+
+    #[test]
+    fn warm_query_snapshot_corruption_discards_certificate() {
+        let (lab, device, _, _, _, _) = warmed_notes();
+        let encoded=Capture::take(lab.held(device)).encode(Vec::new());
+        let (_,extra)=unwrap(&encoded).unwrap();
+        let decoded=decode(extra).unwrap();
+        let original=decoded.values().find(|s|s.query.is_some()).unwrap().items.iter().find(|(line,_)|*line==MAIN).unwrap().1.clone();
+        let start=encoded.windows(original.len()).position(|bytes|bytes==original.as_slice()).unwrap();
+        let mut corrupt=encoded; corrupt[start]^=1;
+        let (_,extra)=unwrap(&corrupt).unwrap();
+        let decoded=decode(extra).unwrap();
+        assert!(decoded.values().any(|saved| saved.query.is_none()));
+    }
+
+    #[test]
+    fn incomplete_judgment_never_acknowledges_warm_view_capture() {
+        let (mut lab, device, vault, entries, _, _) = warmed_notes();
+        lab.edit(device,vault,entries[0],|item| { item.edit_document(|d|d.title="New view".into()); }).unwrap();
+        let held=lab.backup(device).signed.len();
+        lab.stores.get_mut(&device).unwrap().judgment_pending.insert(entries[0]);
+        assert!(!lab.held(device).view_due());
+        if let Some(capture)=lab.capture_warm_current(device,held,Some([19;40])) {
+            assert!(capture.encode().view.is_none(), "keys may save independently, but unfinished view cannot be acknowledged");
+        }
+        lab.stores.get_mut(&device).unwrap().judgment_pending.clear();
+        assert!(lab.capture_warm_current(device,held,Some([19;40])).unwrap().encode().view.is_some());
     }
 
     #[test]
@@ -757,6 +888,7 @@ mod tests {
         // Even previously hydrated history cannot substitute for current keys.
         lab.stores.get_mut(&device).unwrap().keys = Keyring::default();
         assert!(lab.history(device,entries[0]).is_none());
+        assert!(lab.warm_query_receipt(device,entries[0]).is_none());
         assert!(lab.item(device,entries[0]).is_none(), "cached snapshots cannot replace current keys");
         lab.stores.get_mut(&device).unwrap().forget();
         assert!(lab.held(device).deferred_bodies.is_empty());
