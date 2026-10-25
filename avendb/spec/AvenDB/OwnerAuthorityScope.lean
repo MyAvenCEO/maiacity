@@ -122,3 +122,18 @@ theorem earlierIncludeRetained (before after : List (List α)) (entry : α)
   simp only [includes, List.flatten_append, List.mem_append] at *
   exact Or.inl h
 end AvenDB.HistoricalGroups
+namespace MixedActorPlainScope
+-- Actor identities enlarge required authority; they do not authorize writes.
+def actorsClosed (actors held : List Nat) : Prop := ∀ a ∈ actors, a ∈ held
+def admissible (actors held : List Nat) (plain current canonical : Bool) : Prop :=
+  actorsClosed actors held ∧ plain = true ∧ current = true ∧ canonical = true
+theorem groupedRejected (actors held : List Nat) (current canonical : Bool) :
+    ¬ admissible actors held false current canonical := by simp [admissible]
+theorem canonicalStillRequired (actors held : List Nat) (plain current : Bool) :
+    ¬ admissible actors held plain current false := by simp [admissible]
+theorem missingActorRejected (actors held : List Nat) (a : Nat)
+    (member : a ∈ actors) (missing : a ∉ held) (plain current canonical : Bool) :
+    ¬ admissible actors held plain current canonical := by
+  intro h
+  exact missing (h.1 a member)
+end MixedActorPlainScope
