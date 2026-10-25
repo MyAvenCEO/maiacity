@@ -423,10 +423,14 @@ pub struct PreparedReceiveBatches {
     perf: Perf,
 }
 impl PreparedReceive {
+    fn requires_atomic_checkpoint(&self)->bool {
+        self.edits.iter().any(|s|matches!(s.edit.action,Action::Checkpoint {..}))
+            && !self.edits.iter().all(|s|self.signatures.get(&s.edit.id())==Some(&true))
+    }
     pub fn into_batches(self) -> PreparedReceiveBatches {
-        // Checkpoint-covered bare signatures have page-wide admission semantics.
-        // Preserve that atomic page until a separately proved staged proof path exists.
-        let batch=if self.edits.iter().any(|s|matches!(s.edit.action,Action::Checkpoint {..})) {usize::MAX} else {128};
+        // Only independently verified signatures may cross a page boundary.
+        // Bare/unknown checkpoint-covered edits retain atomic canonical admission.
+        let batch=if self.requires_atomic_checkpoint() {usize::MAX} else {128};
         PreparedReceiveBatches {batch,edits:self.edits.into_iter(),signatures:self.signatures,perf:self.perf}
     }
 }
@@ -5543,8 +5547,19 @@ impl Lab {
 
     /// Takes a cryptographically prepared page through ordinary CURRENT-state admission.
     pub fn receive_prepared(&mut self, d: SignerId, prepared: PreparedReceive, now: bool) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
-        self.stores.get_mut(&self.at(d)).expect("a device").perf.merge(prepared.perf);
-        self.receive_whose_prepared_inner(d, prepared.edits, Vec::new(), now, &prepared.signatures)
+        let atomic=prepared.requires_atomic_checkpoint();
+        let began=Perf::start();
+        let at=self.at(d);
+        let perf=&mut self.stores.get_mut(&at).expect("a device").perf;
+        if atomic {
+            perf.count("receive: atomic checkpoint pages",1);
+            perf.count("receive: atomic checkpoint page edits",prepared.edits.len() as u64);
+        }
+        perf.merge(prepared.perf);
+        let result=self.receive_whose_prepared_inner(d, prepared.edits, Vec::new(), now, &prepared.signatures);
+        self.stores.get_mut(&at).expect("a device").perf.add(
+            if atomic {"receive: atomic checkpoint admission"} else {"receive: prepared chunk admission"},began);
+        result
     }
 
     fn receive_whose_prepared_inner(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool, prepared: &HashMap<EditId, bool>) -> (usize, Vec<(VaultId, Option<EntryId>)>) {

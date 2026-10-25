@@ -192,6 +192,9 @@ fn prepared_receive_preserves_whole_page_checkpoint_coverage() {
         ordinary.receive_whose_now(me, incoming, vec![], true)
     );
     assert!(prepared.state(me).vault(vault).is_some());
+    let perf=prepared.held(me).perf.to_json();
+    assert_eq!(perf["counts"]["receive: atomic checkpoint pages"],1);
+    assert_eq!(perf["timers"]["receive: atomic checkpoint admission"]["count"],1);
     assert_eq!(prepared.backup(me).signed, ordinary.backup(me).signed);
     assert!(prepared.state(me) == ordinary.state(me));
 
@@ -232,4 +235,32 @@ fn prepared_chunks_preserve_order_dedup_and_signature_ownership() {
     assert_eq!(new,whole.receive_whose_now(me,incoming,vec![],false).0);
     assert_eq!(chunked.backup(me).signed,whole.backup(me).signed);
     assert!(chunked.signed_edit(me,id).is_none(),"negative first-duplicate result survives chunk boundary");
+}
+
+#[test]
+fn independently_verified_checkpoint_page_can_stage_without_coverage_shortcut() {
+    let mut source=Lab::with_entropy([234;32]);
+    let owner=source.passkey_from_in("owner",[235;32],Suite::MlDsa);
+    let sender=source.device_with_in("sender",[236;32],Suite::MlDsa);
+    let vault=cast::human_on(&mut source,owner,&[sender]);
+    let covers=source.log(sender).ids().to_vec();
+    source.submit(sender,&[owner],Action::Checkpoint {vault,covers}).unwrap();
+    let originals=source.backup(sender).signed;
+    let incoming:Vec<_>=originals.iter().cycle().take(300).cloned().collect();
+    let (mut chunked,me)=receiver();let (mut whole,_)=receiver();
+    let mut prepared=chunked.prepare_receive(me,incoming.clone()).check();
+    // Model already-completed independent verification, not checkpoint trust.
+    prepared.signatures=prepared.edits.iter().map(|s|(s.edit.id(),s.verify().is_ok())).collect();
+    assert!(prepared.signatures.values().all(|valid|*valid));
+    assert!(!prepared.requires_atomic_checkpoint());
+    let mut chunks=0;
+    for batch in prepared.into_batches() {
+        chunks+=1;assert!(batch.edits.len()<=128);
+        chunked.receive_prepared(me,batch,false);
+    }
+    assert_eq!(chunks,3);
+    whole.receive_whose_now(me,incoming,vec![],false);
+    assert_eq!(chunked.backup(me).signed,whole.backup(me).signed);
+    chunked.catch_up(me);whole.catch_up(me);
+    assert!(chunked.state(me)==whole.state(me));
 }
