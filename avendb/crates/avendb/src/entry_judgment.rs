@@ -539,7 +539,15 @@ impl Lab {
         // Full holders compare owner claims to the canonical current cut. Historical
         // cuts after later local writes deliberately fall back until prefix restoration
         // is implemented; never compare merely JSON or trust the claim over held facts.
-        if compare_held && stated.basis.iter().all(|id| store.log.ids().contains(id)) {
+        // A delivered frontier signature is not the complete causal history. In
+        // particular, exact-key recovery can bring a frontier before its older
+        // dependencies or decryption keys. Compare the full canonical cut only
+        // when every claimed historical edit and decoded body is actually held.
+        let complete_cut = restored.history.changes().iter().all(|change| {
+            store.signed.contains_key(&change.write.edit)
+                && store.bodies.contains_key(&change.write.edit)
+        });
+        if compare_held && complete_cut && stated.basis.iter().all(|id| store.log.ids().contains(id)) {
             let shown = store.shown.get(&entry)?;
             if put_judgment(shown, store)? != metadata
                 || put_anchor_metadata(store, entry)? != policy_bytes

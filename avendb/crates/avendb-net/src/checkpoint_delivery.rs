@@ -653,7 +653,7 @@ mod tests {
         owner_checkpoint_public_flow(3).await;
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn owner_capsule_exact_recovery_fetch_is_durable_and_writable() {
+    async fn owner_capsule_exact_recovery_fetch_keeps_incomplete_causal_evidence_readonly() {
         owner_checkpoint_public_flow(4).await;
     }
     async fn owner_checkpoint_public_flow(version: u8) {
@@ -823,7 +823,11 @@ mod tests {
                     time::sleep(Duration::from_millis(5)).await;
                 }
             }).await.expect("base must receive a durable save receipt");
-            assert!(phone.act(move|lab,me|lab.edit(me,vault,entry,|i|i.set_text(2,"local after durable adoption"))).await.is_ok());
+            let write=phone.act(move|lab,me|lab.edit(me,vault,entry,|i|i.set_text(2,"local after durable adoption"))).await;
+            if version==4 {
+                assert!(write.is_err(),"durability alone cannot supply missing canonical frontier dependencies");
+                assert_eq!(phone.read(move|lab,me|lab.owner_base_wait_reason(me,entry)).await,Some("checkpoint-key-recovery-incomplete"));
+            } else { assert!(write.is_ok()); }
         }
         if version==3 {
             assert_eq!(phone.read(move|lab,me|lab.owner_base_wait_reason(me,entry)).await,Some("checkpoint-capsule-read-only"));
