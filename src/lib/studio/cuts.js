@@ -13,6 +13,7 @@
  * looks on screen (as the API queued it). The studio reads them as it read the API's render jobs (`cutJobs`).
  */
 
+import { collectionEntries } from './collection-entries.js';
 import { answer, DELETED } from '$lib/avendb/ops.js';
 import { BUILT_IN, held, layered } from './jobs/rules.js';
 import { madeIndex, newTask, pin, retrying, tasksOf } from './jobs/tasks.js';
@@ -107,7 +108,7 @@ export function fieldsOf(t) {
 }
 
 /** The ops that read and change nothing: a world read stays good across them (`worldOf`). */
-const READS = new Set(['world', 'get', 'query', 'history', 'schemas', 'requests', 'aips', 'aip', 'may', 'jobs', 'shares', 'database', 'note', 'read_file', 'creatable', 'taggable']);
+const READS = new Set(['world_summary', 'entry_views', 'world', 'get', 'query', 'history', 'schemas', 'requests', 'aips', 'aip', 'may', 'jobs', 'shares', 'database', 'note', 'read_file', 'creatable', 'taggable']);
 
 /**
  * The world read last and when, shared by every caller for a moment (Samuel 2026-10-18: the whole world as JSON over
@@ -161,7 +162,7 @@ export const asIn = (world, vault) => world.vaults?.find((v) => v.id === vault)?
 /** Whether new cuts go into avenDB here: on the Mac app with avenDB open and a vault to put them in. */
 export async function cutsHere() {
 	const call = await device();
-	return !!call && !!homeOf(await worldOf(call));
+	return !!call && !!homeOf(answer(await call('run', { op: 'world_summary' })) ?? {});
 }
 
 /**
@@ -172,8 +173,8 @@ export async function cutsHere() {
 export async function listCuts(vault = null) {
 	const call = await device();
 	if (!call) return [];
-	const world = await worldOf(call);
-	return world.entries
+	const entries = await collectionEntries(call, CUT, vault);
+	return entries
 		.filter((e) => e.type === CUT && e.record?.kind === CUT && !e.deleted && !(e.tags ?? []).includes(DELETED))
 		.filter((e) => !vault || e.vault === vault)
 		.map(timelineOf)
@@ -188,8 +189,8 @@ export async function listCuts(vault = null) {
 export async function listStories() {
 	const call = await device();
 	if (!call) return [];
-	const world = await worldOf(call);
-	return world.entries
+	const entries = await collectionEntries(call, 'story');
+	return entries
 		.filter((e) => e.type === 'story' && !e.deleted && !(e.tags ?? []).includes(DELETED))
 		.map((e) => ({ id: e.entry, vault: e.vault, title: String(e.title || /** @type {any} */ (e.record)?.title || 'Untitled') }))
 		.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }));
