@@ -13,6 +13,7 @@ import { refreshQueue } from './refresh.js';
 import { MediaSources } from './media-sources.js';
 import { invalidateWorld } from './cuts.js';
 import { untrack } from 'svelte';
+import { bindView, signalView } from '../../../game/code/sources/device.js';
 import { scriptOf } from './screenplay.js';
 import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, transcriptOf } from './transcript.js';
 import { command, native } from '$lib/native';
@@ -523,7 +524,40 @@ export class Studio {
 
 
 	// ── loading ──────────────────────────────────────────────────────────────
+	/** @type {(() => void) | null} */
+	stopInterest = null;
+	/**
+	 * The page's Interest (src/lib/avendb/manifests.js STUDIO): the open timeline is the manifest's `$timeline`, and
+	 * the `playhead` signal puts the files of the clips at and after the playhead first, those behind it last. It moves
+	 * only at a cut (`reelAt`), never every frame.
+	 */
+	watchInterest() {
+		return $effect.root(() => {
+			$effect(() => {
+				const id = this.current?.id;
+				bindView('timeline', isCut(id) ? id.slice(4) : null);
+				return () => bindView('timeline', null);
+			});
+			$effect(() => {
+				void this.reelAt;
+				const clips = this.clips;
+				const time = untrack(() => this.time);
+				/** @type {Map<string, number>} */
+				const by = new Map();
+				for (const c of clips) {
+					const entry = this.byHash.get(c.hash ?? '')?.meta?.aven?.entry;
+					if (!entry) continue;
+					const end = c.start + c.dur;
+					const d = end <= time ? 1e9 + time - end : Math.max(0, c.start - time);
+					by.set(entry, Math.min(by.get(entry) ?? Infinity, d));
+				}
+				signalView('playhead', (entry) => by.get(entry) ?? Infinity);
+				return () => signalView('playhead', null);
+			});
+		});
+	}
 	async load() {
+		this.stopInterest ??= this.watchInterest();
 		// no gate of its own: the app's opens the studio to Maia City's admins ($lib/app/places.ts), and everything it
 		// reads and writes is avenDB's, by the person's own shares
 		try {
@@ -1267,6 +1301,8 @@ export class Studio {
 
 	destroy() {
 		this.disposed = true;
+		this.stopInterest?.();
+		this.stopInterest = null;
 		this.stopVault?.();
 		this.stopVault = null;
 		this.vaultRefresh?.close();

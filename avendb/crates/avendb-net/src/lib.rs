@@ -110,7 +110,7 @@ mod actor;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
-mod demand;
+mod interest;
 mod discovery;
 mod checkpoint_delivery;
 mod bootstrap_dependencies;
@@ -777,7 +777,7 @@ impl Node {
             ui_receipts: peer_receipts::Receipts::for_ui(),
             outreach,
             wanted: Mutex::default(),
-            demands: Mutex::default(),
+            interests: Mutex::default(),
             discovery_running: Mutex::default(),
             discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
             offered: Mutex::default(),
@@ -2110,7 +2110,7 @@ struct Shared {
     /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
     wanted: Mutex<BTreeSet<LogId>>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
-    demands: Mutex<demand::Demands>,
+    interests: Mutex<interest::Interests>,
     discovery_running: Mutex<HashMap<String, bool>>,
     discovery_answer: Arc<tokio::sync::Semaphore>,
     /// The McEliece keys in the blob store, by hash and by id.
@@ -3164,7 +3164,7 @@ impl Shared {
             let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
             let logs = {
                 let mut wanted = self.wanted.lock().expect("wanted");
-                let active = self.demands.lock().expect("demands").entries(Instant::now());
+                let active = self.interests.lock().expect("interests").entries();
                 let mut priority = bootstrap_dependencies::key_logs(&active, &key_waits);
                 priority.extend(active);
                 let logs = next_demand_logs(&mut left, &wanted, &priority, LOGS_AT_ONCE);

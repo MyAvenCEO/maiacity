@@ -56,8 +56,8 @@ import { noteLifecycle } from './lifecycle.js';
 import { measureLatency } from './latency-journal.js';
 import { createReactiveRead } from './reactive-read.js';
 import { createWorldReader } from './world-reader.js';
-import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
-import { bringEntries, learn, useDevice, refreshActiveView } from '../../../game/code/sources/device.js';
+import { createEntryWindow, createReadWindow } from './query-window.js';
+import { useDevice, refreshActiveView, wantNow } from '../../../game/code/sources/device.js';
 import { sync } from './sync.svelte.js';
 
 /** The name of this browser's shelf in OPFS (./device/store.js). */
@@ -493,8 +493,8 @@ function running(d) {
 	phase = 'open';
 	if (!mac) noteLifecycle('open');
 	useDevice({
-		// Demand disposal belongs to this device even while a replacement is opening. Never send stale work to it.
-		run: (/** @type {any} */ op) => op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
+		// Interest disposal belongs to this device even while a replacement is opening. Never send stale work to it.
+		run: (/** @type {any} */ op) => op?.op === 'interest' || op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
 		read: api.readFile
 	});
 	if (holders) watch();
@@ -693,64 +693,19 @@ async function send(op, read) {
 	return d.run(op, mac ? undefined : (await ceremonies(meta.credential)).sign, read);
 }
 
-/** an entry's id: 64 hex digits */
-const ENTRY = /^[0-9a-f]{64}$/;
-
-/** the reads whose answers name the entries a view shows, which the page learns (`learn`): not the device's own
- *  bookkeeping (`world`, `jobs`, `synced`, `log`, `bring`, …), whose answers name everything it holds */
-const VIEWS = new Set(['entry_views', 'query', 'get', 'room', 'history', 'note', 'pin', 'posts', 'code', 'aip', 'aip_records', 'aips', 'database']);
-
-/** The entries answer `got` of a view's read names: its entry, or each row's, shallow. @param {any} got */
-const namedIn = replyEntries;
-
 /**
- * A read, for every app view the same way (Samuel 2026-10-21: query views solved once, for all our views, by the
- * manifests): run on what the device holds; where it names an entry the device holds nothing of yet (`NoEntry`, a new
- * device still syncing), that entry alone is brought from its peers first (`bring`, before anything else it syncs)
- * and read again; and the entries the answer names are learned for this page, which a device opened on it brings
- * first the next time (game/code/sources/device.js `learn`). @param {any} d @param {any} op
- * @param {{ signal?: AbortSignal, scoped?: boolean, demand?: any }} [options]
+ * A read, for every app view the same way: run on what the device holds. Where it names an entry the device holds
+ * nothing of yet (`NoEntry`, a new device still syncing), the entry joins the page's Interest on screen now
+ * (game/code/sources/device.js `wantNow`), and the view reads again once it lands. @param {any} d @param {any} op
  */
-async function near(d, op, { signal, scoped = false, demand } = {}) {
-	const path = typeof location === 'undefined' ? '' : location.pathname;
-	const currentView = () => !signal?.aborted && d === device && path === (typeof location === 'undefined' ? '' : location.pathname);
-	let got = await d.run(op);
-	if (!currentView()) return got;
-	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
-	if (got?.refused === 'NoEntry' && entry) {
-		// Reads return local state immediately. Sync completion refreshes the view separately.
-		void bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }, { signal, path, prioritize: !scoped, learnPriority: !scoped }).catch(() => {});
-	}
-	if (currentView() && VIEWS.has(op?.op)) {
-		const named = [...(entry && got?.ok ? [entry] : []), ...namedIn(got)];
-		learn(named, path, { prioritize: !scoped });
-		if (!scoped) freshen(d, named);
-	}
+async function near(d, op) {
+	const got = await d.run(op);
+	if (got?.refused === 'NoEntry' && /^[0-9a-f]{64}$/.test(String(op?.entry)) && d === device) wantNow([op.entry]);
 	return got;
 }
 
 /** Whether the device is still behind its peers, as the status pill last heard (./sync.svelte.js). */
 const behind = () => sync.known && sync.behind > 0;
-
-/** the entries each device was asked to bring while behind, so each comes once (`freshen`) @type {WeakMap<object, Set<string>>} */
-const freshened = new WeakMap();
-
-/**
- * While the device is still behind its peers, the entries a view's answer names come first, in the background: a
- * device holds an entry it took early at the heads it had then (an AIP still "proposed" that its vault accepted and
- * applied since, Samuel's iPhone 2026-10-22), and the whole vault comes a page at a time behind it. What the view shows
- * is shown at once; once they land, the world changes and the view reads again. Each entry once a device.
- * @param {any} d @param {string[]} named
- */
-function freshen(d, named) {
-	if (!behind() || !named.length) return;
-	let of = freshened.get(d);
-	if (!of) freshened.set(d, (of = new Set()));
-	const ids = named.filter((e) => !of.has(e));
-	if (!ids.length) return;
-	ids.forEach((e) => of.add(e));
-	void bringEntries(ids, { run: (/** @type {any} */ o) => d.run(o) });
-}
 
 /** A head-conditional review retains its freshness guard. Ordinary edits never wait for peers.
  * @param {any} d @param {any} op */
@@ -758,7 +713,7 @@ async function current(d, op) {
 	const what = doing;
 	await beforeLocalWrite(op, {
 		behind: behind(),
-		bring: (entry) => bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }),
+		bring: (entry) => d.run({ op: 'bring', entries: [entry] }),
 		refresh,
 		waiting: (on) => {
 			if (!what || !doing.startsWith(what)) return;
@@ -890,7 +845,7 @@ const api = {
 	/** Subscribe to any targeted local query, independent of the world summary.
 	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] @param {(revisions: any[]) => void} [observed] */
 	observe(query, take, failed, observed) {
-		const reader = createReactiveRead({ read: observedWindow((d, op, signal, demand) => near(d, op, { signal, demand, scoped: true })), take, failed, observed });
+		const reader = createReactiveRead({ read: observedWindow((d, op) => near(d, op)), take, failed, observed });
 		const dispose = $effect.root(() => {
 			$effect(() => {
 				void revision;
@@ -931,7 +886,7 @@ const api = {
 	ask: (op) => send(op),
 	/** A component-owned read window. Replace its query on each read and close it on unmount. */
 	window: () => {
-		const window = createReadWindow({ device: () => device, read: (d, op, signal, demand) => near(d, op, { signal, demand, scoped: true }) });
+		const window = createReadWindow({ device: () => device, read: (d, op) => near(d, op) });
 		const dispose = $effect.root(() => {
 			$effect(() => { void device; window.invalidate(); });
 		});

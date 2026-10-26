@@ -37,7 +37,8 @@
 	import { growth, stageAt } from './grow.js';
 	import { forStage, heroOf, runner, walkOf } from './hero.js';
 	import { boxOf, canonical, liveBoxOf, loadAsset } from './load.js';
-	import { INDEX, buildOf, hashOf, pageOf, recipeAt, refName } from './vault.js';
+	import { INDEX, buildOf, hashOf, pageOf, pinOf, recipeAt, refName } from './vault.js';
+	import { bindView, signalView } from '../../../game/code/sources/device.js';
 	import { parseRef, refOf } from './refs.js';
 	import { soilOf } from './soil.js';
 	import { treeOf } from './tree.js';
@@ -75,6 +76,24 @@
 	/** the recipe of what is chosen, by its hash in the Maia City vault; undefined if only its note was kept, or the vault lacks it */
 	const hash = $derived(INDEX.labels[refOf(group, chosen.id, version, variant?.id)]);
 	const recipe = $derived(hash ? INDEX.recipes[hash] : null);
+	// the page's Interest: the chosen asset's entry is the manifest's `$asset`, its neighbours in the list come next,
+	// nearest first (src/lib/avendb/manifests.js ASSETS)
+	$effect(() => {
+		const entry = hash ? pinOf(hash)?.entry ?? null : null;
+		bindView('asset', entry);
+		return () => bindView('asset', null);
+	});
+	$effect(() => {
+		const at = items.indexOf(chosen);
+		const place = new Map();
+		items.forEach((it, i) => {
+			const h = INDEX.labels[refOf(group, it.id, it.version)];
+			const e = h ? pinOf(h)?.entry : undefined;
+			if (e && !place.has(e)) place.set(e, Math.abs(i - at));
+		});
+		signalView('list', (entry) => place.get(entry) ?? Infinity);
+		return () => signalView('list', null);
+	});
 	/** whether the version chosen is a recipe: kept with a builder of its own, its own or its variants' (./recipe.js `recipesIn`) */
 	const recipeWanted = $derived.by(() => {
 		const at = atOrLatest(chosen.versions, version);

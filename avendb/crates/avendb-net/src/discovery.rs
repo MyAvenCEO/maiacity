@@ -94,20 +94,20 @@ impl Shared {
     pub(crate) async fn prioritize_owner_lanes(self: &Arc<Self>) -> bool {
         let waits=self.read(|lab,me|lab.owner_base_lane_waits(me)).await;
         if waits.is_empty() { return false; }
-        let scopes=self.demands.lock().expect("demands").query_scopes(Instant::now());
+        let scopes=self.interests.lock().expect("interests").query_scopes();
         let mut pending=false;
         for scope in scopes {
             let sources={
-                let mut demands=self.demands.lock().expect("demands");
-                demands.working_set(&scope,Instant::now()).map(|(revision,_,_)|
-                    demands.dependency_entries(&scope,revision,Instant::now())).unwrap_or_default()
+                let demands=self.interests.lock().expect("interests");
+                demands.working_set(&scope).map(|(revision,_,_)|
+                    demands.dependency_entries(&scope,revision)).unwrap_or_default()
             };
             if !lane_queries(&sources,&waits).is_empty() { pending=true; self.schedule_discovery(scope); }
         }
         pending
     }
     pub(crate) fn schedule_discoveries(self: &Arc<Self>) {
-        let scopes = self.demands.lock().expect("demands").query_scopes(Instant::now());
+        let scopes = self.interests.lock().expect("interests").query_scopes();
         for scope in scopes { self.schedule_discovery(scope); }
     }
     pub(crate) fn schedule_discovery(self: &Arc<Self>, scope: String) {
@@ -123,9 +123,9 @@ impl Shared {
         task::spawn(async move {
             let _activity = activity;
             loop {
-                let active = { shared.demands.lock().expect("demands").working_set(&scope, Instant::now()) };
+                let active = { shared.interests.lock().expect("interests").working_set(&scope) };
                 if let Some((revision, entries, mut queries)) = active {
-                    let sources=shared.demands.lock().expect("demands").dependency_entries(&scope,revision,Instant::now());
+                    let sources=shared.interests.lock().expect("interests").dependency_entries(&scope,revision);
                     let waits=shared.read(|lab,me|lab.owner_base_lane_waits(me)).await;
                     let mut dependencies=lane_queries(&sources,&waits);
                     let dependency_count=dependencies.len();
@@ -173,7 +173,7 @@ impl Shared {
                             let reply = time::timeout(Duration::from_secs(3).min(deadline.saturating_duration_since(Instant::now())), session::exchange(&peer.conn, KIND, &request, RESPONSE_LIMIT)).await;
                             let Ok(Ok(bytes)) = reply else { break }; // legacy/refusing peers remain incomplete
                             let Ok(ids) = response(&bytes) else { break };
-                            if !shared.demands.lock().expect("demands").discovered(&scope, revision, &ids, Instant::now()) { break; }
+                            if !shared.interests.lock().expect("interests").discovered(&scope, revision, &ids) { break; }
                             shared.size.send_modify(|_| {});
                             shared.bootstrap_due.notify_one();
                             // A bounded working-set checkpoint precedes ordinary history for this view.
@@ -201,7 +201,7 @@ impl Shared {
     }
     pub(crate) fn discovery_current(self: &Arc<Self>, scope: &str, revision: u64) -> bool {
         if self.admit().is_err() { return false; }
-        self.demands.lock().expect("demands").current(scope, revision, Instant::now())
+        self.interests.lock().expect("interests").current(scope, revision)
     }
 }
 
@@ -283,17 +283,17 @@ mod lane_dependency_tests {
     use super::*;
     #[test]
     fn lane_discovery_stays_vault_scoped_and_follows_lease_revision() {
-        let now=Instant::now(); let entry=EntryId([1;32]); let other=EntryId([2;32]); let vault=VaultId([3;32]);
-        let mut demands=crate::demand::Demands::default();
-        demands.replace("view".into(),1,vec![LogId::Entry(entry)],now).unwrap();
-        let queries=lane_queries(&demands.dependency_entries("view",1,now),&[(entry,vault),(other,VaultId([4;32]))]);
+        let entry=EntryId([1;32]); let other=EntryId([2;32]); let vault=VaultId([3;32]);
+        let mut demands=crate::interest::Interests::default();
+        demands.replace("view".into(),1,vec![crate::interest::Want::now(vec![LogId::Entry(entry)])]).unwrap();
+        let queries=lane_queries(&demands.dependency_entries("view",1),&[(entry,vault),(other,VaultId([4;32]))]);
         assert_eq!(queries.len(),1); assert_eq!(queries[0].vault,Some(vault.to_hex()));
         assert_eq!(queries[0].types,vec![avendb::slice::SCHEMA_TYPE.to_string(),avendb::slice::LENS_TYPE.to_string()]);
-        assert!(demands.discovered("view",1,&[LogId::Entry(other)],now));
-        assert!(demands.entries(now).contains(&LogId::Entry(other)));
-        demands.replace("view".into(),2,vec![],now).unwrap();
-        assert!(demands.dependency_entries("view",1,now).is_empty());
-        assert!(lane_queries(&demands.dependency_entries("view",2,now),&[(entry,vault)]).is_empty());
-        assert!(!demands.discovered("view",1,&[LogId::Entry(other)],now));
+        assert!(demands.discovered("view",1,&[LogId::Entry(other)]));
+        assert!(demands.entries().contains(&LogId::Entry(other)));
+        demands.replace("view".into(),2,vec![]).unwrap();
+        assert!(demands.dependency_entries("view",1).is_empty());
+        assert!(lane_queries(&demands.dependency_entries("view",2),&[(entry,vault)]).is_empty());
+        assert!(!demands.discovered("view",1,&[LogId::Entry(other)]));
     }
 }

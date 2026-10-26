@@ -14,6 +14,8 @@ import {createReactiveRead} from './reactive-read.js';
 import {observedWindow} from './observed-window.js';
 import {summaryView,needsWorldEntries} from './startup-summary.js';
 import {readCompleteness} from './read-completeness.js';
+// an Interest op seen as the one list of entries and selectors it wants (tiers aside)
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((w) => w.queries ?? []) : undefined };
 const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
 test('fresh Docs reads its authorized collection without world entries or peer acknowledgement',async()=>{
  const vault='a'.repeat(64), actor='b'.repeat(64);
@@ -22,7 +24,7 @@ test('fresh Docs reads its authorized collection without world entries or peer a
  /** @type {any[]} */ const reads=[];
  /** @type {(value:any)=>void} */ let finish=()=>{};
  const pending=new Promise(resolve=>{finish=resolve;});
- const owner={run:(/** @type {any} */ op)=>{calls.push(op);return pending;}};
+ const owner={run:(/** @type {any} */ op)=>{calls.push(flat(op));return pending;}};
  const reader=createReactiveRead({read:observedWindow(async(_d,op)=>{reads.push(op);return {ok:{rows:[],totalEntries:0,readableEntries:0}};}),take:out=>answers.push(out),timing:()=>()=>{}});
  try {
   expect(summaryView('/app/','#docs/entry')).toBe(true);
