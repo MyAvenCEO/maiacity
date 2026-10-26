@@ -234,8 +234,9 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
     })
 }
 
-/// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 39] = [
+/// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing. The page's list
+/// (src/lib/avendb/op-names.js) is written from this one and `ASKS` (tests/op_names.rs), never by hand.
+pub const READS: [&str; 39] = [
     "entry_views",
     "query",
     "touched",
@@ -279,7 +280,7 @@ const READS: [&str; 39] = [
 
 /// The ops that change nothing but ask what changes would do, by dry runs (`Lab::dry`): `may`, and `shares`, which
 /// says whether each share may be revoked.
-const ASKS: [&str; 2] = ["may", "shares"];
+pub const ASKS: [&str; 2] = ["may", "shares"];
 
 /// Op `v`'s name and fields, if it is an op the engine runs and carries no field it doesn't take.
 fn op_of(v: &Value) -> Result<(&str, &Map<String, Value>), Refused> {

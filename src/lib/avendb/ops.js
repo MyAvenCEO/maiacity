@@ -5,47 +5,16 @@
 // (`as`), and the rules judge it as they judge any peer's edit; the page only asks beforehand, with `may`.
 
 import { why } from './vaults.js';
+import { READS, ASKS } from './op-names.js';
+export { READS, ASKS };
 
-/** The ops that only read: they run on what the device holds, change nothing, and take no ceremony. */
-export const READS = [
-	'entry_views',
-	'query',
-	'touched',
-	'get',
-	'history',
-	'schemas',
-	'groups',
-	'kinds',
-	'world',
-	'world_summary',
-	'jobs',
-	'shares',
-	'database',
-	'note',
-	'room',
-	'log',
-	'read_file',
-	'creatable',
-	'taggable',
-	'limits',
-	'perf',
-	'requests',
-	'aips',
-	'aip',
-	'objective_check',
-	'may',
-	'cap_groups',
-	'code',
-	'bring',
-	'interest',
-	'demand',
-	'synced',
-	'network',
-	'api_pass'
-];
 
-/** Whether op `op` only reads. @param {any} op */
-export const reads = (op) => READS.includes(op?.op);
+/** Whether op `op` changes nothing: it only reads (`READS`), or asks by dry runs (`ASKS`). Either runs on what the
+ * device holds and takes no ceremony. @param {any} op */
+export const reads = (op) => READS.includes(op?.op) || ASKS.includes(op?.op);
+
+/** Whether op `op` asks what changes would do, by dry runs, as the engine's `asks`. @param {any} op */
+export const asks = (op) => ASKS.includes(op?.op);
 
 /** The changes that act for a vault the op names (`as`); the rest act for their vault, or the device's own. */
 const ACTING = [
