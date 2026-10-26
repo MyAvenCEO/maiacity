@@ -21,6 +21,7 @@
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import Diagnostics from '$lib/app/Diagnostics.svelte';
+	import { sendEvery } from '$lib/avendb/diagnostics-send.js';
 	import ScreenChrome from '$lib/app/ScreenChrome.svelte';
 	import { lifecycle, noteLifecycle } from '$lib/avendb/lifecycle.js';
 	import { pillVaults, seeded } from '$lib/avendb/vaults.js';
@@ -83,6 +84,12 @@
 
 	afterNavigate(() => { if (!native()) noteLifecycle('route-navigation'); });
 	beforeNavigate(({ willUnload }) => { if (!native() && willUnload) noteLifecycle('app-navigation-unload'); });
+
+	// this device's diagnostics, sent for its person every few minutes while it is open, and in theOS read back as files
+	// ($lib/avendb/diagnostics-send.js): nobody copies a report by hand (Samuel 2026-10-26)
+	$effect(() => {
+		if (phase === 'ready') return sendEvery();
+	});
 
 	onMount(async () => {
 		if (!native()) lifecycle()?.start();
