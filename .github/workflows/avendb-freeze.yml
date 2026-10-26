@@ -1,0 +1,87 @@
+name: avenDB freeze off SLH-DSA
+
+# The freeze off SLH-DSA (avendb/crates/avendb/src/legacy.rs, spec/AvenDB/LegacyAnchor.lean), run on the server with
+# Samuel's go (2026-10-26, thread "Drop legacy SLH-DSA from avenDB"). It changes nothing anywhere:
+#
+#   image  – the server's image of this commit, tagged with it and never rolled out
+#   freeze – over SSH: the live server backs up every vault now (SIGUSR1), then a one-off container of that image,
+#            with the live server's environment, reads the newest snapshots (read only), checks every signature again
+#            and prints what `avendb-server freeze` found: the anchor, the counts and each vault's signers by suite.
+#            It runs at low priority under 1 GB of memory, so it can't starve the server; its file stays on the server
+#            in /tmp and its environment file is deleted as it ends.
+#
+# It runs on a push of this file to the fork's branch alone. The log holds counts, short signer ids and vault ids, as
+# `avendb-server snapshots` prints them; no secret leaves the server.
+on:
+  push:
+    branches: [claude/project-thread-ogctxh]
+    paths: ['.github/workflows/avendb-freeze.yml']
+
+concurrency:
+  group: avendb-freeze
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  APP_DIR: /opt/maia-city
+  API_HOST: api.maia.city
+
+jobs:
+  image:
+    uses: ./.github/workflows/image.yml
+    with:
+      component: avendb
+
+  freeze:
+    name: Freeze on the server's snapshots
+    needs: [image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Pull the image of this commit
+        env:
+          IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null"
+          ssh prod "docker pull --quiet '$IMAGE'"
+      - name: Back up every vault now
+        run: |
+          ssh prod 'bash -s' <<'EOS'
+          set -e
+          since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          docker kill -s USR1 maia-city-avendb >/dev/null
+          for i in $(seq 1 120); do
+            done_line=$(docker logs --since "$since" maia-city-avendb 2>&1 | grep 'vaults backed up at' || true)
+            if [ -n "$done_line" ]; then echo "$done_line"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::no backup finished within 20 minutes"; exit 1
+          EOS
+      - name: Freeze
+        env:
+          IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+        run: |
+          ssh prod "IMAGE='$IMAGE' bash -s" <<'EOS'
+          set -e
+          umask 077
+          work=$(mktemp -d /tmp/avendb-freeze.XXXXXX)
+          trap 'rm -f "$work/env"' EXIT
+          docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' maia-city-avendb | grep '^AVENDB_\|^RUST_LOG=' > "$work/env"
+          docker run --rm --name avendb-freeze --env-file "$work/env" --memory 1g --memory-swap 1g --cpus 1 \
+            -v "$work:/out" "$IMAGE" freeze --out /out/frozen.ids > "$work/report.json"
+          echo "file: $work/frozen.ids, $(stat -c %s "$work/frozen.ids") bytes, blake3 by the report's anchor"
+          cat "$work/report.json"
+          EOS
