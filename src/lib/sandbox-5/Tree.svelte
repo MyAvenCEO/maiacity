@@ -107,7 +107,7 @@
 		overflow: auto;
 		padding: 0.7rem 0.8rem;
 		border-radius: 16px;
-		background: rgb(250 248 242 / 0.96);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		border: 1px solid rgb(255 255 255 / 0.5);
 		-webkit-backdrop-filter: blur(14px) saturate(1.2);
 		backdrop-filter: blur(14px) saturate(1.2);

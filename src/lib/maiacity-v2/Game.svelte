@@ -11,6 +11,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
+	import { screenSlot } from '$lib/app/screen-slots.js';
 
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { onMount } from 'svelte';
@@ -540,16 +541,12 @@
 		{/each}
 	{/if}
 
-	{#if !view || shows('brand')}<div class="brand panel">MaiaCity <b>V2</b></div>{/if}
+	{#if !view || shows('brand')}<div class="brand panel" use:screenSlot={'title'}>MaiaCity <b>V2</b></div>{/if}
 
 	{#if view && player}
-		<div class="topstats">
-			{#if shows('clock')}<span class="clock m panel" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year} ({dateText(cal)}). {speed}, 13 months of 28 days.">{cal.weekday} {cal.day} {cal.name} Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
-		</div>
-
-		<div class="topright">
-			{#if shows('clock')}<span class="clock panel" title="The game clock: {speed}, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
-		</div>
+		{#if shows('clock')}
+   <span class="clock panel" use:screenSlot={'center'} title="The game clock: {speed}, 13 months of 28 days">{cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
+  {/if}
 
 		{#if shows('mint')}<nav class="tools" class:open={tools}>
 			{#each allTools.filter(([id]) => shows(id)) as [id, ic, label] (id)}
@@ -573,7 +570,7 @@
 			</div>
 		{/if}
 		{#if canMove && !tour && !playing}
-			<section class="water-care panel" aria-label="Plant care">
+			<section use:foot={FOOT.status} class="water-care panel" aria-label="Plant care">
 				<div class="care-heading">
 					<strong>{player.tree ? (myTree?.due ? 'Time to water your plant' : `Water again in ${waterCountdown}`) : 'Plant your first seed'}</strong>
 					<span class="water-level" aria-label="Canister water">💧 {view.water.litres} / {view.water.capacityLitres} L</span>
@@ -892,7 +889,7 @@
 	.tools button,
 	.tools a,
 	.tag {
-		background: rgb(250 248 242 / 0.86);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		border: 1px solid rgb(255 255 255 / 0.5);
 		-webkit-backdrop-filter: blur(14px) saturate(1.2);
 		backdrop-filter: blur(14px) saturate(1.2);
@@ -1096,7 +1093,7 @@
 		padding: 0.7rem 1.2rem;
 		border: 1px solid rgb(255 255 255 / 0.5);
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.94);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		color: #24452f;
 		font: inherit;
 		font-weight: 600;
@@ -1191,7 +1188,7 @@
 		padding: 0.7rem 1.3rem;
 		border: 0;
 		border-radius: 999px;
-		background: #24452f;
+		background: var(--overlay-green);
 		color: #fff;
 		font: inherit;
 		font-weight: 600;
@@ -1208,12 +1205,13 @@
 		opacity: 0.8;
 	}
 	.mintbar:disabled {
-		background: rgb(250 248 242 / 0.94);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		color: #6b7a6f;
 		cursor: default;
 	}
 	.clock {
-		padding: 0.5rem 0.8rem;
+		padding: 0.35rem 0.65rem;
+		font-size: .75rem;
 		border-radius: 999px;
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
@@ -1221,7 +1219,7 @@
 	.tools {
 		position: absolute;
 		z-index: 2;
-		top: calc(5rem + env(safe-area-inset-top, 0px));
+		top: var(--screen-head-room, 5rem);
 		left: calc(1rem + env(safe-area-inset-left, 0px));
 		display: flex;
 		flex-direction: column;
@@ -1518,7 +1516,7 @@
 		margin: 0.3rem 0;
 	}
 	.toast {
-		background: rgb(250 248 242 / 0.94);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 	}
 	.loading {
 		position: absolute;
@@ -1567,7 +1565,7 @@
 		max-height: min(42rem, calc(100dvh - var(--nav-room, 4rem) - 5rem));
 		margin: 0 auto;
 		border-radius: 22px;
-		background: rgb(250 248 242 / 0.97);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		box-shadow: 0 18px 50px rgb(20 30 24 / 0.28);
 		transform-origin: 50% 100%;
 		animation: pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
@@ -1814,7 +1812,7 @@
 			padding: 0;
 			border: 1px solid rgb(255 255 255 / 0.5);
 			border-radius: 999px;
-			background: rgb(250 248 242 / 0.94);
+			background: var(--overlay-paper, rgb(250 248 242 / .75));
 			box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
 		}
 		.fab svg {
@@ -1866,7 +1864,7 @@
 	/* ── upright: the numbers across under the top bar, the card a sheet from the foot, at most half the screen ── */
 	@media (max-width: 720px) and (min-height: 501px) {
 		.topstats {
-			top: calc(3.6rem + env(safe-area-inset-top, 0px));
+			top: var(--screen-head-room, 5rem);
 			left: 0.5rem;
 			right: 0.5rem;
 			transform: none;
@@ -1903,13 +1901,13 @@
 			left: max(8px, env(safe-area-inset-left, 0px));
 		}
 		.topstats {
-			top: calc(3.2rem + env(safe-area-inset-top, 0px));
+			top: var(--screen-head-room, 5rem);
 			left: calc(0.5rem + env(safe-area-inset-left, 0px));
 			transform: none;
 		}
 		.card,
 		.card.wide {
-			top: calc(3.2rem + env(safe-area-inset-top, 0px));
+			top: var(--screen-head-room, 5rem);
 			right: 0;
 			bottom: 0;
 			width: calc(min(19rem, 50vw - 5.5rem) + env(safe-area-inset-right, 0px));
@@ -1937,29 +1935,37 @@
 		}
 	}
 	.water-care {
-		position: absolute; z-index: 3; top: calc(4.2rem + env(safe-area-inset-top, 0px));
-		left: 50%; transform: translateX(-50%); width: min(26rem, calc(100% - 1rem));
-		box-sizing: border-box; padding: .65rem .8rem; border-radius: 16px; font-size: .8rem;
-	}
-	.care-heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-	.care-heading strong { min-width: 0; font-variant-numeric: tabular-nums; }
-	.water-level { flex-shrink: 0; font-size: .72rem; white-space: nowrap; }
-	.care-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; margin-top: .4rem; }
-	.care-actions button { min-height: 44px; padding: .4rem .7rem; border-radius: 12px; font: inherit; }
-	.care-actions span { font-size: .75rem; }
+  width: min(25rem, 100%); box-sizing: border-box; padding: .8rem 1rem;
+  border: 1px solid #d9d1bf; border-radius: 1.5rem;
+  background: var(--overlay-paper, rgb(250 248 242 / .75)); color: #263c2e;
+  box-shadow: 0 5px 24px #18271e20; backdrop-filter: blur(12px);
+  font-size: .8rem; text-align: center;
+ }
+ .care-heading { display: flex; flex-direction: column; align-items: center; gap: .3rem; }
+ .care-heading strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+ .water-level { font-size: .75rem; color: #526557; }
+ .care-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: .45rem; margin-top: .6rem; }
+ .care-actions button {
+  min-height: 44px; padding: .5rem 1rem; border: 1px solid #b9c9b5; border-radius: 999px;
+  background: #e8eddf; color: #24452f; font: inherit; font-weight: 600; text-align: center; cursor: pointer;
+ }
+ .care-actions button.primary { background: #24452f; color: #faf8f0; border-color: #24452f; }
+ .care-actions button:hover:not(:disabled) { background: #d6e2ca; color: #24452f; }
+ .care-actions button:focus-visible { outline: 3px solid #d99b32; outline-offset: 3px; }
+ .care-actions button:disabled { opacity: .5; cursor: default; }
+ .care-actions span { font-size: .75rem; }
+
 	@media (max-width: 720px), (max-height: 500px) {
 		.topstats { display: none; }
 		.walkbar { left: auto; right: .5rem; bottom: calc(var(--nav-room, 4rem) + 4rem); }
 		.tag small { display: none; }
 		.tag.tree small:first-of-type { display: block; }
-		.water-care { top: calc(3.4rem + env(safe-area-inset-top, 0px)); }
 	}
 	@media (max-width: 720px), (max-height: 500px) {
 		.v1 :global(.stick) { bottom: calc(var(--nav-room, 4rem) + 4.2rem); }
 	}
 	@media (max-height: 500px) {
 		.v1 :global(.stick) { bottom: var(--nav-room, 4rem); --stick-size: 5rem; }
-		.water-care { left: max(.5rem, env(safe-area-inset-left, 0px)); transform: none; width: min(23rem, calc(100% - 1rem)); }
 	}
 
 </style>
