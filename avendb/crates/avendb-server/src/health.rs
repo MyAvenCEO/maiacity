@@ -50,6 +50,9 @@ pub struct Health {
     /// How the last check of the bucket of snapshots went (`checked`): when, and whether every folder was whole, each
     /// null before the first. Counts alone, never a vault's id: the repo is public, and an uptime check reads it.
     backups: Mutex<Value>,
+    /// How this run opened its shelf (`opened`): how long it took, and what it read from the bucket meanwhile, or null
+    /// before it did.
+    opened: Mutex<Value>,
 }
 
 impl Health {
@@ -73,7 +76,8 @@ impl Health {
         });
         let (panic, shelf) = (Mutex::new(Value::Null), Mutex::new(Value::Null));
         let backups = Mutex::new(json!({ "checked_at": null, "whole": null }));
-        let health = Arc::new(Health { file, started, starts, before, panic, shelf, backups });
+        let opened = Mutex::new(Value::Null);
+        let health = Arc::new(Health { file, started, starts, before, panic, shelf, backups, opened });
         health.write(Value::Null);
         health
     }
@@ -117,7 +121,8 @@ impl Health {
 
     /// How it is doing, as `GET /feed/health` says it: this run's start and how long it has run, the memory it holds,
     /// its last panic, how many times it started in the last hour and the last few starts, and how the run before
-    /// ended; what its shelf takes, and how the last check of its snapshots went.
+    /// ended; what its shelf takes, and how the last check of its snapshots went; how it opened its shelf, and what it
+    /// read from its buckets since it started, with the cached parts it found spoiled (`bucket::reads`).
     pub fn json(&self) -> Value {
         let now = now();
         let hour = self.starts.iter().filter(|&&s| now.saturating_sub(s) < 3600).count();
@@ -131,6 +136,8 @@ impl Health {
             "before": self.before,
             "shelf": *self.shelf.lock().unwrap_or_else(|e| e.into_inner()),
             "backups": *self.backups.lock().unwrap_or_else(|e| e.into_inner()),
+            "opened": *self.opened.lock().unwrap_or_else(|e| e.into_inner()),
+            "reads": reads(avendb_net::bucket::reads()),
         })
     }
 
@@ -146,6 +153,11 @@ impl Health {
             None => json!({ "checked_at": at, "whole": false, "vaults": null, "not_whole": null }),
         };
         *self.backups.lock().unwrap_or_else(|e| e.into_inner()) = said;
+    }
+
+    /// Says this run opened its shelf in `ms` milliseconds, reading `read` from the bucket meanwhile.
+    pub fn opened(&self, ms: u64, read: avendb_net::bucket::Reads) {
+        *self.opened.lock().unwrap_or_else(|e| e.into_inner()) = json!({ "ms": ms, "objects": read.gets, "bytes": read.bytes });
     }
 
     /// Says what its shelf takes, as just measured: `{at, bucket: {objects, bytes}, folder: {files, bytes}}`.
@@ -299,4 +311,9 @@ mod tests {
         assert_eq!(third.json()["starts"]["recent"].as_array().map(Vec::len), Some(3));
         std::fs::remove_dir_all(&dir).ok();
     }
+}
+
+/// What the server read from its buckets, as `GET /feed/health` says it.
+fn reads(read: avendb_net::bucket::Reads) -> Value {
+    json!({ "objects": read.gets, "bytes": read.bytes, "spoiled": read.spoiled })
 }

@@ -111,6 +111,8 @@ mod blind;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod claim;
 mod interest;
 mod discovery;
 mod checkpoint_delivery;
@@ -143,6 +145,8 @@ mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
+#[cfg(test)]
+mod shelf_contract;
 mod signers;
 #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
 pub mod sim;
@@ -786,6 +790,7 @@ impl Node {
             wanted: Mutex::default(),
             interests: Mutex::default(),
             discovery_running: Mutex::default(),
+            discovery_mark: Mutex::default(),
             discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
             index: Mutex::default(),
             index_told: Mutex::default(),
@@ -2059,6 +2064,8 @@ struct Shared {
     /// Active app/query windows, replaced or released independently of one-shot brings.
     interests: Mutex<interest::Interests>,
     discovery_running: Mutex<HashMap<String, bool>>,
+    /// The keys and audiences the views' last finds stood on (`Lab::index_mark`): a change finds again.
+    discovery_mark: Mutex<usize>,
     discovery_answer: Arc<tokio::sync::Semaphore>,
     /// The blind index rows it keeps, where it keeps an index (`Options::index`).
     index: Mutex<avendb::index::Rows>,
@@ -3133,7 +3140,7 @@ impl Shared {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
         let mut left = self.differ(peer.device).await;
-        let (mut new, mut keys) = (0, BTreeSet::new());
+        let (mut new, mut keys, mut first) = (0, BTreeSet::new(), true);
         let asked = loop {
             let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
             let logs = {
@@ -3151,6 +3158,21 @@ impl Shared {
             match self.pull_expected(endpoint, Scope::Logs(logs), true, None, None, Some(&mut keys)).await {
                 Ok(got) => new += got,
                 Err(e) => break Err(e),
+            }
+            // the keys the first batch named, on a task of their own while the next batches come: it is the logs no
+            // entry's (who may do what, the audiences' keys), so a new device's views open and find what they want
+            // at once instead of after the last log of a whole catch-up, and no log waits behind a key fetch
+            // (`a_new_humans_keys_hold_no_log_back`); every later batch's keys come after the last log
+            if std::mem::take(&mut first) && !keys.is_empty() {
+                let (now, shared, device) = (std::mem::take(&mut keys), self.clone(), peer.device);
+                if let Ok(activity) = self.admit() {
+                    task::spawn(async move {
+                        let _activity = activity;
+                        if shared.bring_keys(endpoint, device, now, true).await.is_ok() {
+                            shared.catch_up_paced_class(true, lab_schedule::Class::Background).await;
+                        }
+                    });
+                }
             }
         };
         // the keys every log named, after the last log (`bring_keys`); after a failed asking only while its connection
@@ -3184,6 +3206,7 @@ impl Shared {
         if caught {
             *self.paced.lock().expect("paced") = Some(Instant::now() + work * CATCH_UP_PACE);
             self.changed.notify_one();
+            self.find_again_on_new_keys().await;
         }
         caught
     }

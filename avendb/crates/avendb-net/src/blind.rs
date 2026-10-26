@@ -593,4 +593,60 @@ mod tests {
         phone.shutdown().await.unwrap();
         server.shutdown().await.unwrap();
     }
+
+    /// The iPhone's case: a new device that holds no key of the coop yet, whose Chat asks for every room (no vault) the
+    /// moment its page opens, before it met any peer. The server, which reads none of it, names the room from its rows.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_new_phone_asking_for_rooms_before_it_meets_the_server_gets_them_from_its_rows() {
+        use crate::{Node, Options};
+        use avendb::cast::{document, handbook_ready, world};
+        use n0_future::time::Instant;
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (mac_id, phone_id, server_id) = (w.mac_a, w.phone_a, w.server);
+        // the audience in use on the Mac and the server only: the phone holds no key of it
+        w.lab.create(mac_id, coop, coop, "note", &[], document("Note", "x", mac_id)).unwrap();
+        let backlog = 40;
+        for i in 0..backlog {
+            w.lab.create(mac_id, coop, coop, "doc", &[], document(&format!("Doc {i}"), "history", mac_id)).unwrap();
+        }
+        let room = w.lab.create(mac_id, coop, coop, "room", &["chat"], document("Room", "Hi", mac_id)).unwrap();
+        w.lab.sync(mac_id, server_id);
+        w.lab.sync(server_id, mac_id);
+        assert!(w.lab.history(phone_id, room).is_none());
+        let opts = Options::local;
+        let mac = Node::spawn(w.lab.split(mac_id, &[w.passkey_a], [41; 32]), mac_id, opts()).await.unwrap();
+        let server =
+            Node::spawn(w.lab.split(server_id, &[], [42; 32]), server_id, Options { index: true, ..opts() }).await.unwrap();
+        let phone = Node::spawn(w.lab.split(phone_id, &[], [43; 32]), phone_id, opts()).await.unwrap();
+        mac.know(server.addr());
+        server.know(mac.addr());
+        mac.shared.connection(server.id()).await.unwrap();
+        let until = Instant::now() + Duration::from_secs(30);
+        while server.shared.index.lock().unwrap().size().1 < 2 {
+            assert!(Instant::now() < until, "the Mac tells the server its rows");
+            n0_future::time::sleep(Duration::from_millis(20)).await;
+        }
+        mac.shutdown().await.unwrap();
+        let asked = phone
+            .op(serde_json::json!({"op": "interest", "scope": "d".repeat(32), "revision": 1,
+                "wants": [{"tier": "now", "queries": [{"types": ["room"]}]}]}))
+            .await
+            .unwrap();
+        assert_eq!(asked["ok"]["accepted"], true, "{asked}");
+        let start = Instant::now();
+        phone.know(server.addr());
+        phone.shared.connection(server.id()).await.unwrap();
+        let until = start + Duration::from_secs(20);
+        loop {
+            if phone.shared.read(move |lab, me| lab.history(me, room).is_some()).await { break; }
+            assert!(Instant::now() < until, "the room never came");
+            n0_future::time::sleep(Duration::from_millis(20)).await;
+        }
+        let took = start.elapsed();
+        phone.shutdown().await.unwrap();
+        server.shutdown().await.unwrap();
+        assert!(took < Duration::from_secs(2), "the room came after {took:?}");
+    }
+
 }

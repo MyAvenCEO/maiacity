@@ -106,6 +106,10 @@ services:
       AVENDB_FEED_RATE: ${AVENDB_FEED_RATE:-}
       # its STUN responder, where browsers learn the address their network shows to reach each other over WebRTC (P8)
       AVENDB_STUN_BIND: ${AVENDB_STUN_BIND:-0.0.0.0:3478}
+      # its WebTransport listener, a browser's straight link to it (all three or none; none leaves only the relay)
+      AVENDB_WT_BIND: ${AVENDB_WT_BIND:-}
+      AVENDB_WT_URL: ${AVENDB_WT_URL:-}
+      AVENDB_WT_ORIGINS: ${AVENDB_WT_ORIGINS:-}
       RUST_LOG: ${AVENDB_LOG:-info}
       # plain log lines: the deploy reads its offer from them
       NO_COLOR: "1"
@@ -114,6 +118,7 @@ services:
     ports:
       - "7401:7401/udp"
       - "3478:3478/udp"
+      - "7402:7402/udp"
     # it holds every vault's signed edits while it runs: at 1g it was killed as it loaded them, a start every 80 s
     # (2026-10-20, /feed/health); 4g is the whole machine's, so it may take all the rest leave (about 2.9 GB)
     mem_limit: 4g

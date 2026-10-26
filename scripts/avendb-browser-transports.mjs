@@ -39,7 +39,7 @@ const server = createServer(async (req, res) => {
         const file = fixturePath(path, root, pkg);
         let body = await readFile(file);
         if (path.endsWith('/transports/config.js')) {
-            // Serve the same explicit opt-in as VITE_AVENDB_BROWSER_CARRIERS=true; production defaults stay off.
+            // Serve the build flag as true, as production builds take it by default.
             body = Buffer.from(replace(body.toString(), 'import.meta.env?.VITE_AVENDB_BROWSER_CARRIERS', "'true'"));
         }
         if (path.endsWith('/transports/webtransport.js')) {

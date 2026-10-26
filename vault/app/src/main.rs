@@ -10,6 +10,7 @@ mod aven;
 mod avendb;
 mod avendb_shutdown;
 mod blob;
+mod diagnostics;
 mod dialog;
 mod enclave;
 mod files;
@@ -157,6 +158,7 @@ fn main() {
             aven::studio_job,
             page::page_answer,
             log_js,
+            diagnostics::diagnostics_keep,
             activity::activity_log,
             agents::agent_processes,
             agents::agent_stop,

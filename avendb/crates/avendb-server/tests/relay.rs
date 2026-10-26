@@ -568,6 +568,25 @@ async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed
     }
     let (head, _) = fetched(addr, "/feed/pass", None).await;
     assert!(head.starts_with("http/1.1 404"), "{head}");
+    // a diagnostics report Alice's Mac sends with a pass for them: kept for her, and read back with a pass alone
+    let made = ran(&mac, json!({ "op": "api_pass", "audience": "avenDB diagnostics" })).await;
+    let report = json!({ "kind": "maia-unified-diagnostics", "sync": { "peers": 1 } });
+    let (head, said) = posted(addr, "/feed/diagnostics", &json!({ "pass": made["pass"], "report": report })).await;
+    assert!(head.starts_with("http/1.1 200") && head.contains("cache-control: no-store"), "{head}");
+    assert_eq!(serde_json::from_str::<Value>(&said).expect("JSON")["kept"], json!(true));
+    let made = ran(&mac, json!({ "op": "api_pass", "audience": "avenDB diagnostics" })).await;
+    let (_, read) = posted(addr, "/feed/diagnostics", &json!({ "pass": made["pass"] })).await;
+    let read: Value = serde_json::from_str(&read).expect("JSON");
+    assert_eq!(read["reports"][0]["report"], report, "{read}");
+    // a pass for another service is refused, a report that is no object is a bad request, and a GET finds nothing
+    let made = ran(&mac, json!({ "op": "api_pass", "audience": api })).await;
+    let (head, _) = posted(addr, "/feed/diagnostics", &json!({ "pass": made["pass"] })).await;
+    assert!(head.starts_with("http/1.1 403"), "{head}");
+    let made = ran(&mac, json!({ "op": "api_pass", "audience": "avenDB diagnostics" })).await;
+    let (head, _) = posted(addr, "/feed/diagnostics", &json!({ "pass": made["pass"], "report": [1] })).await;
+    assert!(head.starts_with("http/1.1 400"), "{head}");
+    let (head, _) = fetched(addr, "/feed/diagnostics", None).await;
+    assert!(head.starts_with("http/1.1 405"), "{head}");
     mac.shutdown().await.expect("Alice's Mac stops");
     started.shutdown().await.expect("the server stops");
 }

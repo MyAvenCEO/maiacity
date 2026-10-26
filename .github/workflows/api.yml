@@ -283,6 +283,9 @@ jobs:
           AVENDB_ADDRESS=$AVENDB_HOST
           AVENDB_RELAY_URL=https://$AVENDB_HOST
           AVENDB_PUBLIC_ADDR=$HOST:7401
+          AVENDB_WT_BIND=0.0.0.0:7402
+          AVENDB_WT_URL=https://$AVENDB_HOST:7402/wt
+          AVENDB_WT_ORIGINS=["https://maia.city","https://www.maia.city"]
           AVENDB_DATA_PATH=$DATA_MOUNT/avendb
           COMPOSE_PROFILES=\$PROFILES
           EOF2

@@ -74,6 +74,11 @@
 //! is a device of, `{"vault", "used", "limit", "group", "refused", "full"}`, their own alone (Q5), so a page shows
 //! "Backup full: 5 GB of 5 GB, Traveler".
 //!
+//! And a device's diagnostics reports (`POST /feed/diagnostics`, `DIAGNOSTICS`, `crate::reports`): a device posts a pass
+//! it made for `reports::AUDIENCE` and its report, `{"pass", "report"}`, and the server keeps it for the person of the
+//! vault that device is a device of; posted with its pass alone, `{"pass"}`, it answers that person's reports, every
+//! device's, the newest first, `{"vault", "reports"}`. Never anyone else's, and never in a public feed.
+//!
 //! The signed routes, and whether an invite is open, take a while to answer, so each address may ask them only so often
 //! (`Rate`, `AVENDB_FEED_RATE`): its address is the one the proxy in front says it came from (`X-Forwarded-For`), and a
 //! request with none came from inside the server's own network, maiaCITY's API asking about a pass, and is not limited.
@@ -104,6 +109,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 use crate::health::Health;
+use crate::reports::{self, Reports};
 use crate::{Abort, Gate};
 
 /// Where the feed is served.
@@ -156,6 +162,9 @@ pub const RELAY_PASS: &str = "/feed/relay-pass";
 /// Where a device asks what the server keeps for its person (`backup`), by a POST of `{"pass"}`.
 pub const BACKUP: &str = "/feed/backup";
 
+/// Where a device sends its diagnostics reports, and reads its person's back (`diagnostics`).
+pub const DIAGNOSTICS: &str = "/feed/diagnostics";
+
 /// The most bytes a POST of `PASS` brings: a pass is some 5 KiB of keys and signature, in base64url; and of
 /// `RELAY_PASS`, two relay passes, some 31 KB.
 const MOST_POSTED: usize = 64 << 10;
@@ -201,6 +210,8 @@ struct Feeds {
     proofs: Arc<Mutex<BTreeMap<String, Kept<Option<Proven>>>>>,
     /// How often each address may ask the signed routes (`Rate`).
     rate: Arc<std::sync::Mutex<Rate>>,
+    /// The diagnostics reports the devices sent (`diagnostics`).
+    reports: Option<Arc<Reports>>,
 }
 
 /// A proof of a vault's code, as the server worked it out (`proven`): its bytes, one `wire::Reply`, and its tag, the
@@ -239,10 +250,11 @@ impl Feed {
         health: Arc<Health>,
         gate: Arc<Gate>,
         rate: Rate,
+        reports: Arc<Reports>,
     ) -> Result<Feed> {
         let listener = TcpListener::bind(bind).await.with_context(|| format!("the feed on {bind}"))?;
         let addr = listener.local_addr().context("the feed's socket")?;
-        let feeds = Feeds { rate: Arc::new(std::sync::Mutex::new(rate)), ..Feeds::default() };
+        let feeds = Feeds { rate: Arc::new(std::sync::Mutex::new(rate)), reports: Some(reports), ..Feeds::default() };
         let serving = tokio::spawn(async move {
             loop {
                 let stream = match listener.accept().await {
@@ -292,7 +304,7 @@ async fn answer(
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     // the signed routes and an invite's, which take a while, as often as each address may ask them
     let path = request.uri().path();
-    let costly = [PASS, RELAY_PASS, VAULTS, BACKUP].contains(&path) || path.starts_with(INVITE);
+    let costly = [PASS, RELAY_PASS, VAULTS, BACKUP, DIAGNOSTICS].contains(&path) || path.starts_with(INVITE);
     if costly && *request.method() != Method::OPTIONS && !feeds.rate.lock().expect("rate").allows(client(&request)) {
         let busy = no_store(StatusCode::TOO_MANY_REQUESTS, error("asked too often: try again in a minute"));
         return Ok(opened(busy));
@@ -314,6 +326,14 @@ async fn answer(
             Method::POST => backup(request, &node).await,
             Method::OPTIONS => opened(no_store(StatusCode::NO_CONTENT, Bytes::new())),
             _ => opened(no_store(StatusCode::METHOD_NOT_ALLOWED, error("post {\"pass\"}"))),
+        });
+    }
+    // a page sends it from the browser, as it asks for its backup
+    if request.uri().path() == DIAGNOSTICS {
+        return Ok(match (request.method().clone(), feeds.reports.clone()) {
+            (Method::POST, Some(kept)) => diagnostics(request, &node, &kept).await,
+            (Method::OPTIONS, _) => opened(no_store(StatusCode::NO_CONTENT, Bytes::new())),
+            _ => opened(no_store(StatusCode::METHOD_NOT_ALLOWED, error("post {\"pass\", \"report\"}"))),
         });
     }
     // an admin's page asks it from the browser: its POST of JSON is asked about first (OPTIONS), and both are answered
@@ -507,6 +527,47 @@ async fn backup(request: Request<Incoming>, node: &Node) -> Response<Full<Bytes>
             "full": u.full(),
         }),
         None => json!({ "vault": person.to_hex(), "used": null, "limit": null, "group": null, "refused": 0, "full": false }),
+    };
+    opened(no_store(StatusCode::OK, Bytes::from(serde_json::to_vec(&answer).expect("JSON writes"))))
+}
+
+/// The answer to a POST of `DIAGNOSTICS`: of the pass it brings, made for `reports::AUDIENCE`, the person of the vault
+/// its device is a device of (`quota::payer`, else that vault); with a `report`, an object, kept for them under that
+/// device, `{"vault", "kept"}`; with none, that person's reports, `{"vault", "reports"}`. Forbidden for any other pass,
+/// and a bad request for a body that is no pass or a report that is no object.
+async fn diagnostics(request: Request<Incoming>, node: &Node, kept: &Reports) -> Response<Full<Bytes>> {
+    let posted = match Limited::new(request.into_body(), reports::MOST_REPORT + MOST_POSTED).collect().await {
+        Ok(body) => body.to_bytes(),
+        Err(_) => return opened(no_store(StatusCode::PAYLOAD_TOO_LARGE, error("a report takes at most 256 KiB"))),
+    };
+    let mut asked: Value = serde_json::from_slice(&posted).unwrap_or_default();
+    let pass = asked.get("pass").and_then(Value::as_str).and_then(sign::unbase64url);
+    let Some(pass) = pass.and_then(|bytes| ApiPass::from_wire(&bytes).ok()) else {
+        return opened(no_store(StatusCode::BAD_REQUEST, error("post {\"pass\"}, a device's ApiPass in base64url")));
+    };
+    let report = asked.get_mut("report").map(Value::take);
+    if report.as_ref().is_some_and(|r| !r.is_object()) {
+        return opened(no_store(StatusCode::BAD_REQUEST, error("a report is a JSON object")));
+    }
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let standing = node
+        .read(move |lab, me| {
+            let device = pass.device(reports::AUDIENCE, now)?;
+            let (vault, _) = world::pass_standing(lab, me, &pass, reports::AUDIENCE, now)?;
+            Some((avendb::quota::payer(lab.state(me), vault).unwrap_or(vault), device))
+        })
+        .await;
+    let Some((person, device)) = standing else {
+        let refused = error("a pass of a device of a person's vault, made for \"avenDB diagnostics\"");
+        return opened(no_store(StatusCode::FORBIDDEN, refused));
+    };
+    let person = person.to_hex();
+    let answer = match report {
+        Some(report) => {
+            kept.put(&person, &device.to_hex(), now, report);
+            json!({ "vault": person, "kept": true })
+        }
+        None => json!({ "vault": person, "reports": kept.of(&person) }),
     };
     opened(no_store(StatusCode::OK, Bytes::from(serde_json::to_vec(&answer).expect("JSON writes"))))
 }

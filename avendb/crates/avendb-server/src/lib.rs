@@ -32,6 +32,7 @@ pub mod backups;
 pub mod bucket;
 pub mod feed;
 pub mod health;
+pub mod reports;
 mod md5;
 pub mod stun;
 
@@ -49,6 +50,7 @@ use avendb::backup::Keep;
 use avendb::id::{ShareId, SignerId};
 use avendb::sign::{PASS_SKEW, RelayPass};
 use avendb_net::bucket::Sealed;
+use avendb_net::claim::{self, Claim};
 use avendb_net::{Admission, Node, Offer, Options, server, token_passes};
 use data_encoding::HEXLOWER_PERMISSIVE;
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
@@ -337,6 +339,8 @@ pub struct Running {
     pub backups: Option<backups::Backups>,
     /// How it is doing (`health`), said in its folder every few seconds for as long as it runs.
     pub health: Arc<health::Health>,
+    /// Its claim of its bucket, with a bucket (`claim`): the server stops once it is lost.
+    pub claim: Option<Claim>,
     _beat: Abort,
     _measure: Abort,
     _stun: Option<Abort>,
@@ -347,10 +351,14 @@ pub struct Running {
 }
 
 impl Running {
-    /// Stops the node, then the relay.
+    /// Stops the node, then the relay, then lets go of its claim of its bucket, for the next server to take at once.
     pub async fn shutdown(self) -> Result<()> {
         self.node.shutdown().await?;
-        self.relay.shutdown().await
+        self.relay.shutdown().await?;
+        match self.claim {
+            Some(claim) => claim.release().await,
+            None => Ok(()),
+        }
     }
 }
 
@@ -374,12 +382,16 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
     };
     let relay = Relay::spawn_with(config.relay_bind, admission.clone(), config.rates).await?;
     let url = config.relay_url.clone().unwrap_or_else(|| relay.url());
-    let shelf = match &config.bucket {
+    // how long it takes to open its shelf, and what it reads of its bucket meanwhile: a start is a few dozen objects
+    let (opening, before) = (std::time::Instant::now(), avendb_net::bucket::reads());
+    let (shelf, claim) = match &config.bucket {
         Some(b) => {
             let sealed = Sealed::new(bucket::S3::new(b)?, &b.seal);
-            avendb_net::bucket::shelf(sealed, &config.data, config.cache).await?
+            // one server writes a bucket: claimed before its shelf opens (`claim`)
+            let claim = Claim::take(&sealed, &config.data, claim::Timing::default()).await?;
+            (avendb_net::bucket::shelf(sealed, &config.data, config.cache).await?, Some(claim))
         }
-        None => avendb_net::disk::open(&config.data)?,
+        None => (avendb_net::disk::open(&config.data)?, None),
     };
     let own = shelf.clone();
     let opts = Options {
@@ -394,6 +406,10 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         ..Options::local()
     };
     let node = Arc::new(server::open(shelf, opts).await?);
+    let (ms, after) = (opening.elapsed().as_millis() as u64, avendb_net::bucket::reads());
+    let read = avendb_net::bucket::Reads { gets: after.gets - before.gets, bytes: after.bytes - before.bytes, spoiled: after.spoiled - before.spoiled };
+    tracing::info!("avenDB server: opened its shelf in {ms} ms, {} objects read from its bucket ({} bytes)", read.gets, read.bytes);
+    health.opened(ms, read);
     if let Some(config) = &config.webtransport {
         if let Err(error) = node.listen_webtransport(config.clone()).await {
             tracing::warn!("avenDB server: optional WebTransport listener unavailable; relay remains active: {error:#}");
@@ -421,7 +437,8 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         offer.addr = relays.into_iter().fold(addr, EndpointAddr::with_relay_url);
     }
     let rate = feed::Rate::per_minute(config.rates.feed);
-    let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone(), relay.gate.clone(), rate).await?;
+    let reports = reports::Reports::open(&config.data);
+    let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone(), relay.gate.clone(), rate, reports).await?;
     let backups = config.snapshots.as_ref().map(|s| backups::Backups::spawn(node.clone(), own, s, Keep::default(), health.clone()));
     let beat = health.beat();
     let measure = Abort(tokio::spawn(measure(config.clone(), health.clone())));
@@ -430,7 +447,7 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         Some(bind) => Some(Abort(stun::spawn(bind).await?)),
         None => None,
     };
-    Ok(Running { node, relay, feed, backups, health, _beat: beat, _measure: measure, _stun: stun, offer })
+    Ok(Running { node, relay, feed, backups, health, claim, _beat: beat, _measure: measure, _stun: stun, offer })
 }
 
 /// How often the server measures what its shelf takes: its bucket's listing is a request per 1,000 objects.

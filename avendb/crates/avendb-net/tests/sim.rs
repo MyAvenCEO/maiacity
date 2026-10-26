@@ -11,14 +11,15 @@ use std::collections::BTreeSet;
 use std::future::Future;
 use std::time::Duration;
 
-use anyhow::{Result, ensure};
+use anyhow::{Context as _, Result, ensure};
 use avendb::cast::*;
 use avendb::id::{EntryId, SignerId};
 use avendb::lab::Lab;
 use avendb::policy::Level;
 use avendb::slice::Selector;
 use avendb::sync::LogId;
-use avendb_net::sim::{Net, replay, seeds};
+use avendb_net::bucket::{self, Sealed};
+use avendb_net::sim::{Net, Rng, ShelfFaults, faulty, replay, seeds};
 use avendb_net::{Node, Options};
 
 /// Each scenario's seeds by default: enough for CI to see a fault of each kind, few enough for its time.
@@ -256,6 +257,75 @@ async fn a_group_chat_converges_after_a_storm() {
             }
         }
         stop(vec![bobs, phone, mac]).await
+    })
+    .await;
+}
+
+/// How many lives a node lives on its failing shelf in one seed's run.
+const LIVES: u64 = 5;
+
+/// Fleet cycles (storage series item 1, after the harness behind Fly's block device): a node on a bucket, as the
+/// server is, whose shelf fails calls, loses their answers and tears slots as its seed says, and is killed at the
+/// seed's moment while it writes, then started again from its bucket, its folder lost now and then. Each life it
+/// opens, and holds every entry its shelf held before it was killed: a failed call is tried again, nothing names
+/// bytes the bucket lacks, and a torn or lost write leaves nothing it can't start from.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_node_killed_on_a_failing_shelf_starts_again_whole() {
+    seeds("shelf lives", SEEDS, LIMIT, |net| async move {
+        let seed = net.seed();
+        let mut rng = Rng::new(seed);
+        let dir = std::env::temp_dir().join(format!("avendb-lives-{}-{seed}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        let sealed = Sealed::new(bucket::Folder::new(dir.join("objects")), &[7; 32]);
+        let folder = dir.join("folder");
+        let (mut held, mut faults): (Vec<EntryId>, u64) = (Vec::new(), 0);
+        for life in 0..LIVES {
+            if life > 0 && rng.chance(250) {
+                std::fs::remove_dir_all(&folder).ok();
+            }
+            let mut w = world();
+            let coop = handbook_ready(&mut w);
+            let (mac_a, passkey_a) = (w.mac_a, w.passkey_a);
+            let inner = bucket::shelf(sealed.clone(), &folder, 64 << 20).await?;
+            let (shelf, switch) = faulty(inner, seed * 1000 + life);
+            // entropy of its own each life, as a device's: new entries' ids draw on it
+            let lab = w.lab.split(mac_a, &[passkey_a], [life as u8 + 1; 32]);
+            let opts = Options { shelf: Some(shelf), ..Options::local() };
+            let mac = Node::spawn(lab, mac_a, opts).await.with_context(|| format!("life {life}: it opens"))?;
+            for &e in &held {
+                ensure!(holds(&mac, e).await, "life {life}: an entry its shelf held before is back");
+            }
+            let write = |n: u64| {
+                let title = format!("life {life} note {n}");
+                move |lab: &mut Lab, me| lab.create(me, coop, coop, "doc", &[], document(&title, "b", me))
+            };
+            // it writes as its shelf fails, then catches up once the shelf is calm again
+            switch.set(ShelfFaults::of(seed));
+            let mut written = Vec::new();
+            for n in 0..6 {
+                written.push(mac.act(write(n)).await.map_err(|e| anyhow::anyhow!("life {life}: note {n}: {e:?}"))?);
+                tokio::time::sleep(Duration::from_millis(rng.below(50))).await;
+            }
+            switch.set(ShelfFaults::CALM);
+            until("its shelf holds all it wrote", || async { !mac.behind().await })
+                .await
+                .with_context(|| format!("life {life}, {} faults", switch.faults()))?;
+            held.extend(written);
+            // and writes more as its shelf fails, until it is killed
+            switch.set(ShelfFaults::of(seed));
+            for n in 6..6 + rng.below(4) {
+                mac.act(write(n)).await.ok();
+            }
+            tokio::time::sleep(Duration::from_millis(rng.below(200))).await;
+            faults += switch.faults();
+            switch.kill();
+            tokio::time::timeout(Duration::from_secs(20), mac.shutdown()).await.ok();
+            drop(mac);
+        }
+        std::fs::remove_dir_all(dir).ok();
+        ensure!(faults > 0 || ShelfFaults::of(seed) == ShelfFaults::CALM, "its shelf failed it at least once");
+        eprintln!("SIM shelf lives seed {seed}: {} entries held through {LIVES} lives, {faults} faults", held.len());
+        Ok(())
     })
     .await;
 }
