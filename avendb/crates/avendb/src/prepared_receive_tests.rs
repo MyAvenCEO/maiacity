@@ -1,21 +1,21 @@
 //! Immutable signature preparation must preserve ordinary current-state reception.
 use super::*;
-use crate::{cast, sign::Suite};
+use crate::cast;
 use std::time::Instant;
 
 fn receiver() -> (Lab, SignerId) {
     let mut lab = Lab::with_entropy([211; 32]);
-    let me = lab.device_with_in("receiver", [212; 32], Suite::MlDsa);
+    let me = lab.device_with("receiver", [212; 32]);
     (lab, me)
 }
 
 #[test]
 fn prepared_receive_matches_current_admission_and_releases_signature_work() {
     let mut source = Lab::with_entropy([210; 32]);
-    let owner = source.passkey_from_in("owner", [213; 32], Suite::MlDsa);
-    let sender = source.device_with_in("sender", [214; 32], Suite::MlDsa);
+    let owner = source.passkey_from("owner", [213; 32]);
+    let sender = source.device_with("sender", [214; 32]);
     let (_, me) = receiver();
-    source.device_with_in("receiver", [212; 32], Suite::MlDsa);
+    source.device_with("receiver", [212; 32]);
     let vault = cast::human_on(&mut source, owner, &[sender, me]);
     for n in 0..48 {
         source
@@ -113,10 +113,10 @@ fn prepared_signature_never_caches_gate_admission() {
     let mut w = cast::world();
     let me = w.server;
     let mut lab = w.lab.split(me, &[], [215; 32]);
-    let person = w.lab.passkey_from_in("newcomer", [217; 32], Suite::MlDsa);
+    let person = w.lab.passkey_from("newcomer", [217; 32]);
     let device = w
         .lab
-        .device_with_in("newcomer device", [218; 32], Suite::MlDsa);
+        .device_with("newcomer device", [218; 32]);
     let vault = cast::human_on(&mut w.lab, person, &[device]);
     let incoming = w.lab.backup(device).signed;
     let checked = lab.prepare_receive(me, incoming.clone()).check();
@@ -147,8 +147,8 @@ fn prepared_signature_never_caches_gate_admission() {
 #[test]
 fn prepared_receive_preserves_whole_page_checkpoint_coverage() {
     let mut source = Lab::with_entropy([219; 32]);
-    let owner = source.passkey_from_in("checkpoint owner", [220; 32], Suite::MlDsa);
-    let sender = source.device_with_in("checkpoint sender", [221; 32], Suite::MlDsa);
+    let owner = source.passkey_from("checkpoint owner", [220; 32]);
+    let sender = source.device_with("checkpoint sender", [221; 32]);
     let vault = cast::human_on(&mut source, owner, &[sender]);
     let ids = source.log(sender).ids().to_vec();
     source

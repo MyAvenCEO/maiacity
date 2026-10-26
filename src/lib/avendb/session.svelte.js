@@ -36,12 +36,6 @@ import { observedWindow } from './observed-window.js';
  * The phase: `loading` until it knows; `new` where this browser holds no account (set one up or sign in on avenDB's
  * page); `closed` where it holds one, locked, which `unlock` opens in one ceremony; `open`; `broken` where the Mac
  * app's device didn't start, with why in `error`.
- *
- * Once open, the device says what its key move asks of the person (K3b, `moving`): where their passkey or this device,
- * or in the Mac app its Touch ID key, still signs in SLH-DSA, the app asks once more, and `moveKeys` moves them to
- * ML-DSA-65 in one ceremony (and one touch), the device opening again as its next key. The server and the agents of the
- * aven they govern move in the same ceremony (K3c), each opening as its next key from its next start. A move that asks
- * for no ceremony, as one cut short, goes on by itself.
  */
 
 import { tick } from 'svelte';
@@ -50,7 +44,6 @@ import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
-import { createMoveChecks } from './move-checks.js';
 import { beforeLocalWrite } from './local-write.js';
 import { noteLifecycle } from './lifecycle.js';
 import { measureLatency } from './latency-journal.js';
@@ -115,16 +108,6 @@ let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (nu
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
 const context = createVaultContext({ world: () => world, read: () => vault, write: (id) => (vault = id) });
-/** what the key move asks of the person (K3b, avendb-browser's `Moving`), while their passkey, this device or in the
- *  Mac app its Touch ID key still signs in SLH-DSA, or the server or an agent of the aven they govern does (K3c):
- *  whether their passkey signs, whether Touch ID does, whether the device moves, and how many of the aven's devices
- *  move with it; once all of it moved, the earlier keys and the old devices to remove (`retire`), which waits while
- *  this device doesn't hold what the coop's server holds (`behind`); or, nothing left to move, a checkpoint the
- *  person signs alone (`checkpoint`); null once nothing moves.
- *  @type {{ passkey: boolean, touch: boolean, device: boolean, avens?: number,
- *    retire?: { kind: 'root' | 'owner' | 'device', key: string, next?: string, vault?: string }[], behind?: boolean,
- *    checkpoint?: boolean } | null} */
-let moving = $state.raw(null);
 /** what the page is doing for the person, and what went wrong last, where it shows them */
 let doing = $state('');
 let error = $state('');
@@ -495,8 +478,7 @@ async function started(d, nonce, credential, { name, relay }) {
 }
 
 /** Device `d` runs, for every page of the tab, and the pages holding it see what it holds, and read the code they run
- *  off it, the games' and the assets' (game/code/sources/device.js); then it asks what its key move asks of the person
- *  (`checkMove`). @param {any} d */
+ *  off it, the games' and the assets' (game/code/sources/device.js). @param {any} d */
 function running(d) {
 	if (device && device !== d) retireWorld(device);
 	device = d;
@@ -509,7 +491,6 @@ function running(d) {
 	});
 	if (holders) watch();
 	if (!mac) keepStorage();
-	void checkMove(d);
 }
 
 /** Asks the browser to keep this origin's storage for good, the device's shelf in OPFS with it, so that it never clears
@@ -520,63 +501,6 @@ function keepStorage() {
 	s?.persisted?.()
 		.then((kept) => kept || s.persist?.())
 		.catch(() => {});
-}
-
-/** One bounded recheck timer. No-work results are reconsidered as new history or a remote next key arrives;
- *  pending freshness retries sooner. A replaced/locked device's pending answers and timers cannot act on its successor. */
-const moveChecks = createMoveChecks({
-	current: () => phase === 'open' ? device : null,
-	ask: (d) => mac ? mac.call('moving') : d.moving(),
-	show: (asked) => { moving = asked; },
-	move: () => moveKeys(),
-	warn: (e) => console.warn('avenDB: the key move is asked about again in a moment:', e?.message ?? e)
-});
-
-/** What this device's key migration asks now; no work is checked again in three minutes, pending work in thirty seconds.
- *  @param {any} d @param {boolean} [again] */
-const checkMove = (d, again = false) => moveChecks.check(d, again);
-
-/** Moves the person's passkey and this device to ML-DSA-65 (K3b), as `moving` asks: one ceremony of their passkey, and
- *  in the Mac app a touch of its Touch ID key, which moves too, with the drives it hosts. The device opens again as its
- *  next key, with no ceremony, and runs on. Whether it went through, with why not shown. */
-async function moveKeys() {
-	const d = device;
-	if (!d || !moving) return false;
-	const what = moving.retire?.length
-		? 'Removing your old keys'
-		: moving.checkpoint
-			? 'Signing your checkpoint'
-			: 'Moving your keys to ML-DSA-65';
-	const ok = await change(what, async () => {
-		if (mac) return macOpened(await mac.call('moveKeys'));
-		const moved = await d.move_keys((await ceremonies(meta.credential)).sign, null);
-		if (!moved) return;
-		// the store is the new device's: the old one is freed, never closed, which would let go of it
-		watching = null;
-		running(moved);
-		d.free();
-		meta = (await avendb.storeMeta(store)) ?? meta;
-	});
-	// a device that stays as it was, as after its old keys' removal, says what is left: the avens' move, or nothing
-	if (ok && device === d) void checkMove(d);
-	return ok;
-}
-
-/** Signs a checkpoint over every edit the person's key may vouch for now, as they ask for it on the Performance page:
- *  the edits earlier keys signed in SLH-DSA that no checkpoint covers, those of keys that still sign the old way too
- *  (avendb-browser's `sign_checkpoint`), in one ceremony of their passkey or, in the Mac app, one touch of its Touch ID
- *  key. How many edits it covered, or `null` if it didn't go through, with why shown. */
-async function signCheckpoint() {
-	const d = device;
-	if (!d) return null;
-	let covered = 0;
-	const ok = await change('Signing your checkpoint', async () => {
-		covered = mac
-			? ((await mac.call('signCheckpoint'))?.covered ?? 0)
-			: await d.sign_checkpoint((await ceremonies(meta.credential)).sign);
-	});
-	if (ok && device === d) void checkMove(d);
-	return ok ? covered : null;
 }
 
 /** How long a change waits at least before the page reads the world again, so the changes after it come along. */
@@ -815,7 +739,6 @@ async function lock() {
 	if (mac) return;
 	noteLifecycle('session-lock-request');
 	noteLifecycle('locked');
-	moveChecks.stop();
 	const d = device;
 	if (d) retireWorld(d);
 	watching = null;
@@ -828,7 +751,6 @@ async function lock() {
 /** Forgets the account here: the device lets go, and its shelf is put aside, never deleted, and a new one is in use,
  *  in the app's folder or in OPFS; the account is new here, and every page of the tab sees it so. */
 async function forget() {
-	moveChecks.stop();
 	if (device) retireWorld(device);
 	await device?.close();
 	watching = null;
@@ -1017,12 +939,6 @@ export const session = {
 	set doing(what) {
 		doing = what;
 	},
-	/** what the key move asks of the person (K3b, K3c): `{ passkey, touch, device, avens, retire, behind }` while
-	 *  anything of theirs here, or a device of the aven they govern, is to move to ML-DSA-65, or once it all moved, the
-	 *  earlier keys and old devices to remove (`retire`, waiting while `behind`), else null */
-	get moving() {
-		return moving;
-	},
 	/** what went wrong last, in the person's words, or why the device couldn't start */
 	get error() {
 		return error;
@@ -1036,8 +952,6 @@ export const session = {
 	lock,
 	touch,
 	touchState,
-	moveKeys,
-	signCheckpoint,
 	found,
 	link,
 	claim,

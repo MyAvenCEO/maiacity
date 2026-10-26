@@ -3,23 +3,26 @@ name: avenDB freeze off SLH-DSA
 # The freeze off SLH-DSA (avendb/crates/avendb/src/legacy.rs, spec/AvenDB/LegacyAnchor.lean), run on the server with
 # Samuel's go (2026-10-26, thread "Drop legacy SLH-DSA from avenDB"). It changes nothing anywhere:
 #
-#   image  – the server's image of this commit, tagged with it and never rolled out
+#   image  – the server's image of the last commit before the code cut (eee4839, built by run 3 and never rolled
+#            out): the cut checks no SLH-DSA signature any more, so only a pre-cut image can freeze
 #   freeze – over SSH: the live server backs up every vault now (SIGUSR1), then a one-off container of that image,
 #            with the live server's environment, reads the newest snapshots (read only), checks every signature again
 #            and prints what `avendb-server freeze` found: the anchor, the counts and each vault's signers by suite.
 #            It reads one vault at a time and replays only the edits that govern vaults (run 2, 2026-10-26: run 1
 #            restored a whole device and hit the 1 GB cap). It runs under 1 GB of memory, so it can't starve the
-#            server; its environment file is deleted as it ends.
+#            server; its environment file is deleted as it ends. It also prints the live server's device id, as
+#            its log says it, which must be an ML-DSA-65 device of avenMAIA before the fork is deployed.
 #   pin    – the frozen ids (`Frozen::to_bytes`, 32 bytes an edit, nothing else) and the anchor are committed to the
 #            fork's branch as avendb/crates/avendb/legacy/, which the code cut builds in (F3). An edit's id is a hash of
 #            its sealed bytes and says nothing of them.
 #
-# It runs on a push of this file to the fork's branch alone. The log holds counts, short signer ids and vault ids, as
+# It runs only on a push that changes avendb/crates/avendb/legacy/freeze-now on the fork's branch (the final freeze,
+# on Samuel's go), never on a change to this file. The log holds counts, short signer ids and vault ids, as
 # `avendb-server snapshots` prints them; no secret leaves the server.
 on:
   push:
     branches: [claude/project-thread-ogctxh]
-    paths: ['.github/workflows/avendb-freeze.yml']
+    paths: ['avendb/crates/avendb/legacy/freeze-now']
 
 concurrency:
   group: avendb-freeze
@@ -27,21 +30,16 @@ concurrency:
 
 permissions:
   contents: write
-  packages: write
+  packages: read
 
 env:
   APP_DIR: /opt/maia-city
   API_HOST: api.maia.city
+  PRE_CUT: ghcr.io/myavenceo/maiacity-avendb:eee4839080fb845fce84d8dbdd8995089b0376cf
 
 jobs:
-  image:
-    uses: ./.github/workflows/image.yml
-    with:
-      component: avendb
-
   freeze:
     name: Freeze on the server's snapshots
-    needs: [image]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -55,9 +53,9 @@ jobs:
           host: ${{ env.API_HOST }}
           ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
           known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-      - name: Pull the image of this commit
+      - name: Pull the pre-cut image
         env:
-          IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+          IMAGE: ${{ env.PRE_CUT }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
         run: |
@@ -76,9 +74,12 @@ jobs:
           done
           echo "::error::no backup finished within 20 minutes"; exit 1
           EOS
+      - name: The live server's device
+        run: |
+          ssh prod "docker logs maia-city-avendb 2>&1 | grep 'avenDB server: device' | tail -1"
       - name: Freeze
         env:
-          IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+          IMAGE: ${{ env.PRE_CUT }}
         run: |
           ssh prod "IMAGE='$IMAGE' bash -s" <<'EOS'
           set -e

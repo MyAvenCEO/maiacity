@@ -344,7 +344,7 @@ fn closed(name: &str) -> String {
 pub const CLOUD: &str = "cloud";
 
 /// The environment variable a cloud session's agent reads its key from: 66 hex digits, its suite's byte and then its
-/// secret, or the 64 of the secret alone for a key in SLH-DSA, made before the key move (`sign::kept_secret`), as The
+/// secret, or the 64 of the secret alone for a key made before the fork, which opens in ML-DSA-65 (`sign::kept_secret`), as The
 /// OS app showed them once when it added the key to avenMAIA (`add_cloud_agent`), which its person keeps in the
 /// environment's secrets.
 pub const KEY_VAR: &str = "AVENDB_AGENT_KEY";
@@ -455,7 +455,7 @@ impl Cloud {
             o.used = tokio::time::Instant::now();
             return Ok(o.agent.clone());
         }
-        let (secret, suite) = cloud_key(&self.key)?;
+        let secret = cloud_key(&self.key)?;
         let server = Offer::from_text(self.server.trim()).with_context(|| format!("{SERVER_VAR} is no server's offer"))?;
         // a folder of the key's own, by a hash of it that tells nothing of it, so that another key never opens it
         let mark = avendb::hash::hash("a cloud agent's folder", &*secret);
@@ -464,33 +464,24 @@ impl Cloud {
         let shelf = disk::open(&folder)?;
         let relay = server.addr.relay_urls().next().cloned();
         let opts = Options { bind: None, direct: false, relay, proxy: self.proxy, lazy: true, ..Options::local() };
-        let mut node = Arc::new(server::open_agent_with(Some(shelf.clone()), name, &secret, suite, opts.clone()).await?);
-        let at = server.addr.id;
-        // a folder of its own lasts as long as its session's machine: a new one learns from the server's card that its
-        // key moved (K3c), names its next key there, and opens again as it
-        for again in [false, true] {
-            node.try_know(server.addr.clone())?;
-            if !node.on_relay().await {
-                node.shutdown().await.ok();
-                let host = server.addr.relay_urls().next().map_or("the server".into(), |r| r.to_string());
-                bail!(
-                    "{host} doesn't let {name} in: its key may not be a device of avenMAIA yet (its person adds one in \
-                     theOS app, Settings, Agents, Add a cloud agent), or this environment's network doesn't allow \
-                     avendb.maia.city"
-                );
-            }
-            if alone(&node).await
-                && let Ok(Err(e)) = tokio::time::timeout(SYNC, node.contact(at)).await
-            {
-                tracing::warn!("the server's card isn't read: {e:#}");
-            }
-            if again || !server::follow(&node).await {
-                break;
-            }
-            node.shutdown().await.ok();
-            node = Arc::new(server::open_agent_with(Some(shelf.clone()), name, &secret, suite, opts.clone()).await?);
-        }
+        let node = Arc::new(server::open_agent_with(Some(shelf), name, &secret, opts).await?);
         drop(secret);
+        let at = server.addr.id;
+        node.try_know(server.addr.clone())?;
+        if !node.on_relay().await {
+            node.shutdown().await.ok();
+            let host = server.addr.relay_urls().next().map_or("the server".into(), |r| r.to_string());
+            bail!(
+                "{host} doesn't let {name} in: its key may not be a device of avenMAIA yet (its person adds one in \
+                 theOS app, Settings, Agents, Add a cloud agent), or this environment's network doesn't allow \
+                 avendb.maia.city"
+            );
+        }
+        if alone(&node).await
+            && let Ok(Err(e)) = tokio::time::timeout(SYNC, node.contact(at)).await
+        {
+            tracing::warn!("the server's card isn't read: {e:#}");
+        }
         let looking = AbortOnDropHandle::new(tokio::spawn(look_cloud(node.clone(), server)));
         let cloud = Some(Arc::new(Bringing::new(at)));
         let agent = Arc::new(Agent { node, host: folder, name: name.to_string(), cloud, roots: self.roots.clone() });
@@ -500,9 +491,9 @@ impl Cloud {
     }
 }
 
-/// A cloud session's agent's key and its suite, `text` as its environment holds it (`KEY_VAR`): 66 hex digits, or 64
-/// for a key made before the key move (`sign::kept_secret`). Fails, saying where it comes from.
-fn cloud_key(text: &str) -> Result<(zeroize::Zeroizing<[u8; 32]>, avendb::sign::Suite)> {
+/// A cloud session's agent's key, `text` as its environment holds it (`KEY_VAR`): 66 hex digits, or 64 for a key
+/// made before the fork, which opens in ML-DSA-65 (`sign::kept_secret_of`). Fails, saying where it comes from.
+fn cloud_key(text: &str) -> Result<zeroize::Zeroizing<[u8; 32]>> {
     let text = text.trim();
     anyhow::ensure!(
         !text.is_empty(),

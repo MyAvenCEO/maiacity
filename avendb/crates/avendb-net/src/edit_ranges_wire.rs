@@ -475,7 +475,7 @@ mod tests {
     use avendb::id::{EntryId, ShareId, VaultId};
     use avendb::policy::{Action, Creation, Edit, Proposal};
     use avendb::sealed::FileRoot;
-    use avendb::sign::{DeviceKey, Suite};
+    use avendb::sign::{DeviceKey, PQ_SIGNATURE_BYTES, PqKey, Signature, SignerKeys};
     fn key() -> DeviceKey {
         DeviceKey::from_secret([190; 32])
     }
@@ -592,10 +592,22 @@ mod tests {
     }
     #[test]
     fn borrowed_preflight_matches_valid_write_variants_and_refuses_allocating_other_actions() {
-        for suite in [Suite::MlDsa, Suite::SlhDsa] {
-            let key = DeviceKey::from_secret_in([190; 32], suite);
+        // a frozen edit of an SLH-DSA device still travels with its old signature, 17,088 bytes (`legacy`)
+        let slh = SignerKeys::Device { ed25519: [190; 32], pq: PqKey::Slh([191; 32]) };
+        let legacy = |n| {
+            let mut signed = record(&DeviceKey::from_secret([190; 32]), n);
+            signed.edit.author = slh.id();
+            if let Action::Write { vault, entry, create: Some(c), .. } = &mut signed.edit.action {
+                *entry = EntryId::of(*vault, slh.id(), &c.nonce);
+            }
+            avendb::legacy::admit([signed.edit.id()]);
+            let pq = vec![7; PQ_SIGNATURE_BYTES];
+            signed.sigs = vec![Signature { keys: slh, webauthn: None, enclave: None, pq }];
+            signed
+        };
+        for slh in [false, true] {
             for n in [0, 1, 129] {
-                let signed = record(&key, n);
+                let signed = if slh { legacy(n) } else { record(&DeviceKey::from_secret([190; 32]), n) };
                 let bytes = signed.to_wire();
                 write_preflight(&bytes).unwrap();
                 assert_eq!(Signed::from_wire(&bytes).unwrap(), signed);
