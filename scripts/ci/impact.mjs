@@ -1,15 +1,30 @@
 // One conservative dependency map for releases and local/CI selection. Unknown paths select everything.
 import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
-export const components = ['site', 'api', 'avendb', 'server', 'agent', 'infra', 'browser', 'protocol', 'mac', 'native'];
+export const components = ['site', 'api', 'avendb', 'server', 'agent', 'infra', 'browser', 'protocol', 'mac', 'native', 'image'];
+// A workflow that only checks selects the parts it checks; the release workflows and any other select everything.
+const checks = {
+ 'kernel.yml': ['site'],
+ 'avendb-checks.yml': ['avendb', 'native', 'browser', 'protocol', 'image'],
+ 'avendb-wasm.yml': ['avendb', 'native'],
+ 'mac.yml': ['mac'],
+ // these run on their own triggers alone
+ 'avendb-backups.yml': [], 'lean-mac.yml': [], 'site-same.yml': [], 'full-checks.yml': [], 'infra-checks.yml': ['infra'],
+ 'uptime.yml': [], 'network-audit.yml': [], 'old-vault.yml': [], 'founders.yml': [], 'site-media.yml': [],
+};
+// What the server's image build reads beyond the code the tests compile (avendb/Dockerfile.server, cargo-chef's recipe).
+const imageInputs = /^avendb\/(Dockerfile[^/]*|\.dockerignore|Cargo\.(toml|lock)|rust-toolchain[^/]*|\.cargo\/.*|vendor\/.*|crates\/[^/]+\/(Cargo\.toml|build\.rs))$/;
 export function impact(files) {
  const out = Object.fromEntries(components.map(k => [k, false]));
  const set = (...keys) => keys.forEach(k => out[k] = true);
  if (files === null) { set(...components); return out; }
  for (const file of files) {
+  const workflow = /^\.github\/workflows\/([^/]+)$/.exec(file)?.[1];
+  if (workflow && checks[workflow]) { set(...checks[workflow]); continue; }
   if (/^(\.github\/|scripts\/ci\/|package\.json$|bun\.lock|\.bun-version$|\.dockerignore$)/.test(file)) { set(...components); continue; }
   if (/^avendb\//.test(file)) {
    set('avendb');
+   if (imageInputs.test(file)) set('image');
    if (/^avendb\/(docs\/|.*\.md$)/.test(file)) continue;
    if (/^avendb\/spec\//.test(file)) { if (file.includes('/protocol/')) set('protocol'); continue; }
    set('native');

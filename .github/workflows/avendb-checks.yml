@@ -52,10 +52,12 @@ on:
 permissions:
   contents: read
 
-# a pull request's new push replaces its run; a run avendb.yml called is its own (avendb.yml's group holds it)
+# a pull request's new push replaces its run; a run avendb.yml called is its own (avendb.yml's group holds it).
+# CI's own WebAssembly commit (avendb-wasm.yml) waits for the run in progress instead: that run's pass markers then let
+# it skip every job whose files the commit did not touch, where cancelling had started them all again from zero
 concurrency:
   group: avendb-checks-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.actor != 'github-actions[bot]' }}
 
 jobs:
   impact:
@@ -65,6 +67,7 @@ jobs:
       browser: ${{ steps.paths.outputs.browser }}
       protocol: ${{ steps.paths.outputs.protocol }}
       server: ${{ steps.paths.outputs.server }}
+      image: ${{ steps.paths.outputs.image }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: oven-sh/setup-bun@v2.2.0
@@ -78,12 +81,77 @@ jobs:
         run: |
           if [ "$FORCE_FULL" = true ]; then unset CI_BASE; fi
           bun scripts/ci/impact.mjs
+  # Pass markers (scripts/ci/passes.mjs, pull requests only): a job that passed on this PR with the same files is
+  # skipped; `required` saves a marker for each job that passed. The native jobs read avenDB alone; the real browser
+  # also reads the page's avenDB code, but builds its own WebAssembly, so not the committed one
+  passes:
+    runs-on: ubuntu-latest
+    outputs:
+      tests: ${{ steps.tests.outputs.cache-hit }}
+      tests_key: ${{ steps.passes.outputs.tests_key }}
+      image: ${{ steps.image.outputs.cache-hit }}
+      image_key: ${{ steps.passes.outputs.image_key }}
+      spec: ${{ steps.spec.outputs.cache-hit }}
+      spec_key: ${{ steps.passes.outputs.spec_key }}
+      browser: ${{ steps.browser.outputs.cache-hit }}
+      browser_key: ${{ steps.passes.outputs.browser_key }}
+      protocol: ${{ steps.protocol.outputs.cache-hit }}
+      protocol_key: ${{ steps.passes.outputs.protocol_key }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: passes
+        env:
+          SELF: .github/workflows/avendb-checks.yml
+          # what avenDB's crates read from outside avendb/ (include_str!, #[path])
+          OUTSIDE: src/lib/code/packages.json,vault/app/src/avendb_shutdown.rs
+        run: |
+          bun scripts/ci/passes.mjs \
+            "tests=avendb,$OUTSIDE,$SELF" "image=avendb,$SELF" "spec=avendb/spec,$SELF" "protocol=avendb,$SELF" \
+            "browser=avendb,$OUTSIDE,src/lib/avendb,!src/lib/avendb/device,scripts/avendb-browser-transports.mjs,$SELF"
+      - id: tests
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: .pass
+          key: ${{ steps.passes.outputs.tests_key }}
+          lookup-only: true
+      - id: image
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: .pass
+          key: ${{ steps.passes.outputs.image_key }}
+          lookup-only: true
+      - id: spec
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: .pass
+          key: ${{ steps.passes.outputs.spec_key }}
+          lookup-only: true
+      - id: browser
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: .pass
+          key: ${{ steps.passes.outputs.browser_key }}
+          lookup-only: true
+      - id: protocol
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: .pass
+          key: ${{ steps.passes.outputs.protocol_key }}
+          lookup-only: true
   # Not on a draft (Samuel 2026-10-21): a thread's every push to its draft ran all three, ten minutes each. They run
   # once the PR is marked ready, and on every push after; merge only once they are green there
   tests:
-    needs: impact
+    needs: [impact, passes]
     name: avenDB tests (${{ matrix.name }})
-    if: needs.impact.outputs.native == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
+    if: needs.impact.outputs.native == 'true' && needs.passes.outputs.tests != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -125,6 +193,8 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      # mold links the 23 test programs in a fraction of ld's time
+      - uses: rui314/setup-mold@v1
       # Our own crates' tests built at opt-level 1, not dev's 2 (the dependencies keep theirs): each test file took 70
       # to 150 s to build at 2. Locally (2026-10-21) the net and server tests built in 2m47s at 1 and ran as fast as at
       # 2 (220 s against 216 s); here they had taken 6m57s to build.
@@ -138,7 +208,7 @@ jobs:
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
           AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
-        run: cargo nextest run --locked --no-fail-fast --no-tests=fail --features test-fixtures ${{ matrix.args }} ${{ matrix.filter }}
+        run: cargo nextest run --profile ci --locked --no-fail-fast --no-tests=fail --features test-fixtures ${{ matrix.args }} ${{ matrix.filter }}
       # This binary shares immutable 40-seed histories via LazyLock. A process per property rebuilt them 37 times.
       - name: Shared-history properties (all seeds and invariants)
         if: matrix.properties
@@ -156,11 +226,13 @@ jobs:
         run: cargo test --locked --features test-fixtures --doc ${{ matrix.args }}
 
   image:
-    needs: impact
+    needs: [impact, passes]
     name: avenDB server image builds
     # The release patches a local dependency: exercise cargo-chef and the Docker
     # context before merge, without publishing an image or touching production.
-    if: needs.impact.outputs.server == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.draft
+    # Only when what the image build reads beyond the tests' code changes (impact.mjs, imageInputs): the code itself the
+    # tests compile, and main builds the image on every server change
+    if: needs.impact.outputs.image == 'true' && needs.passes.outputs.image != 'true' && github.event_name == 'pull_request' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -175,7 +247,8 @@ jobs:
           cache-to: type=gha,scope=avendb-pr,mode=max
 
   spec:
-    if: ${{ !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    needs: passes
+    if: ${{ needs.passes.outputs.spec != 'true' && !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Lean spec and vectors
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -209,9 +282,9 @@ jobs:
           fi
 
   real-browser:
-    needs: impact
+    needs: [impact, passes]
     name: Disposable real Chromium and WASM
-    if: ${{ !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.real_browser || inputs.real_browser_only || needs.impact.outputs.browser == 'true') }}
+    if: ${{ needs.passes.outputs.browser != 'true' && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.real_browser || inputs.real_browser_only || needs.impact.outputs.browser == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -222,6 +295,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.129
+      - uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: avendb -> target
@@ -236,7 +310,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/avendb-transports"
           bun add --cwd "$RUNNER_TEMP/avendb-transports" --ignore-scripts --exact playwright@1.64.1
-          bun "$RUNNER_TEMP/avendb-transports/node_modules/playwright/cli.js" install --with-deps chromium
+          scripts/ci/browser-deps.sh "$RUNNER_TEMP/avendb-transports/node_modules/playwright/cli.js" chromium
       - name: Real API with disposable localhost identities
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
@@ -265,9 +339,9 @@ jobs:
       - run: bun test ./src/lib/avendb/
 
   protocol:
-    needs: impact
+    needs: [impact, passes]
     name: Protocol models and negative controls
-    if: ${{ !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.protocol || needs.impact.outputs.protocol == 'true') }}
+    if: ${{ needs.passes.outputs.protocol != 'true' && !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.protocol || needs.impact.outputs.protocol == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -287,7 +361,7 @@ jobs:
   required:
     name: avenDB required checks
     if: ${{ always() }}
-    needs: [impact, tests, image, spec, real-browser, protocol, frontend]
+    needs: [impact, passes, tests, image, spec, real-browser, protocol, frontend]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected suite to succeed
@@ -312,7 +386,37 @@ jobs:
                  else [] end) +
                 (if env.BROWSER == "true" or env.BROWSER_ONLY == "true" or $p.browser == "true" then ["real-browser"] else [] end)
                else [] end) +
-              (if env.PR == "true" and env.DRAFT != "true" and $p.server == "true" then ["image"] else [] end)
+              (if env.PR == "true" and env.DRAFT != "true" and $p.image == "true" then ["image"] else [] end)
             ) as $expected |
+            {"tests":"tests","image":"image","spec":"spec","real-browser":"browser","protocol":"protocol"} as $marker |
             all($r[]; .result == "success" or .result == "skipped") and
-            all($expected[]; $r[.].result == "success")'
+            all($expected[]; $r[.].result == "success" or
+              ($r[.].result == "skipped" and env.PR == "true" and $marker[.] != null and $r.passes.outputs[$marker[.]] == "true"))'
+      # each job that passed: the next run of this PR with the same files skips it (scripts/ci/passes.mjs)
+      - if: always() && github.event_name == 'pull_request'
+        run: echo passed > .pass
+      - if: always() && github.event_name == 'pull_request' && needs.tests.result == 'success'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.passes.outputs.tests_key }}
+      - if: always() && github.event_name == 'pull_request' && needs.image.result == 'success'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.passes.outputs.image_key }}
+      - if: always() && github.event_name == 'pull_request' && needs.spec.result == 'success'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.passes.outputs.spec_key }}
+      - if: always() && github.event_name == 'pull_request' && needs.real-browser.result == 'success'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.passes.outputs.browser_key }}
+      - if: always() && github.event_name == 'pull_request' && needs.protocol.result == 'success'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.passes.outputs.protocol_key }}
