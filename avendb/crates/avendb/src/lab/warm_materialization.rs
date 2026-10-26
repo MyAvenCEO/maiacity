@@ -715,7 +715,13 @@ mod tests {
                 "warm preparation must not import any note snapshot");
             assert!(entries.iter().all(|entry|lab.warm_query_receipt(device,*entry).is_some()));
             let started=Instant::now();
-            let actual=crate::engine::read(&lab,device,&op);
+            let mut actual=crate::engine::read(&lab,device,&op);
+            // Cold hydration is bounded per read: continue as clients do
+            // (completeQuery) until the page is complete, then compare exactly.
+            for _ in 0..ENTRIES {
+                if actual["ok"]["pageComplete"]!=false {break;}
+                actual=crate::engine::read(&lab,device,&op);
+            }
             let page_query_us=started.elapsed().as_micros();
             assert_eq!(actual,expected,"exact count/order/rows/schema/readOnly/cut/readiness: {name}");
             let imported=entries.iter().filter(|entry|lab.held(device).shown[entry].items.get().is_some()).count();
