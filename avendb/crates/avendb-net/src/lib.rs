@@ -142,6 +142,8 @@ pub mod server;
 mod session;
 pub mod shelf;
 mod signers;
+#[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+pub mod sim;
 mod statements;
 mod traffic;
 pub mod transports;
@@ -322,6 +324,9 @@ pub struct Options {
     /// Where it marks the steps of its start, its own (`node`, once its store is replayed) and those of founding its
     /// person's vault or linking to it (`Node::found_with`, `Node::link_with`), for its person to watch.
     pub progress: Progress,
+    /// The simulated network it is on (P7, `sim`), in place of every socket and relay: a scenario's own.
+    #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+    pub sim: Option<sim::Net>,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -351,7 +356,15 @@ impl Options {
             relay_passes: Vec::new(),
             page: PAGE,
             progress: Progress::new(),
+            #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+            sim: None,
         }
+    }
+
+    /// A node on simulated network `net` (P7, `sim`): no socket, no relay, every packet through `net`.
+    #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+    pub fn simulated(net: &sim::Net) -> Options {
+        Options { bind: None, sim: Some(net.clone()), ..Options::local() }
     }
 }
 
@@ -699,6 +712,15 @@ impl Node {
         if opts.bind.is_some() || opts.direct || opts.relay.is_none() {
             bail!("a node in a browser binds no socket and needs a relay");
         }
+        // a simulated node reaches its peers through its scenario's network alone
+        #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+        if let Some(net) = &opts.sim {
+            anyhow::ensure!(opts.relay.is_none() && !opts.direct, "a simulated node has no relay and no socket");
+            builder = builder
+                .portmapper_config(PortmapperConfig::Disabled)
+                .clear_ip_transports()
+                .add_custom_transport(net.transport(SecretKey::from_bytes(&secret).public()));
+        }
         if let Some(relay) = &opts.relay {
             builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(relay_config(relay, &opts))));
         }
@@ -839,6 +861,12 @@ impl Node {
     /// its relay.
     pub fn addr(&self) -> EndpointAddr {
         let addr = self.shared.endpoint.addr();
+        // iroh lists no custom address of its own: a simulated node's is its endpoint's on the scenario's network
+        #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+        let addr = match &self.shared.opts.sim {
+            Some(_) => EndpointAddr::from_parts(addr.id, addr.addrs.into_iter().chain([sim::addr(addr.id)])),
+            None => addr,
+        };
         self.shared.opts.relay.iter().cloned().fold(addr, EndpointAddr::with_relay_url)
     }
 
