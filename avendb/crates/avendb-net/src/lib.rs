@@ -3214,7 +3214,11 @@ impl Shared {
                 Err(e) => break Err(e),
             }
         };
-        // the keys every log named, after the last log (`bring_keys`), however the asking ended
+        // the keys every log named, after the last log (`bring_keys`); after a failed asking only while its connection
+        // lives, so no fetch waits out its timeouts on a dead one
+        if asked.is_err() && self.live(endpoint).is_none() {
+            keys.clear();
+        }
         let brought = self.bring_keys(endpoint, peer.device, keys, true).await;
         let asked = asked.and_then(|new| brought.map(|()| new));
         // what every asking brought, brought up to date at last, however it ended
