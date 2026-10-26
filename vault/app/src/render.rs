@@ -10,6 +10,11 @@
 //!           through the clip's whole chain, 1920×1080, a JPEG. Of a world clip or a gap: a hero frame at `at` in a
 //!           shape, a 16-bit PNG.
 //!
+//!   and what an agent asks of a cut (avendb-device's `avendb_task`, as the legacy studio's MCP did): its shots read
+//!           for the base correction (`look_clips`), their scope sheet (`scope_sheet`), balances proposed
+//!           (`propose_balances`), its sound levelled (`level_cut`) and matched (`match_sound`), all proposed, none
+//!           written into the cut.
+//!
 //! Every file is read in place from avenDB (`Footage`); the legacy vault and the old API's render queue are not used.
 //! `vault_render::render` runs on one blocking thread: its GPU and AVFoundation objects are not `Send`. And the
 //! Audio tab's measures (`sound_measure`, `eq_response`).
@@ -206,6 +211,272 @@ pub fn eq_response(eq: Value, n: Option<usize>) -> Res<Value> {
 pub async fn sound_measure(timeline: Value, library: Option<Vec<Value>>) -> Res<Value> {
     crate::gate()?;
     measure_sound(&timeline, library.as_deref().unwrap_or_default()).await
+}
+
+// ── what an agent asks of a cut (aven.rs `studio_job`: the look, scopes, balance, sound, level and sound-match rules) ──
+
+/// The parts of each shot's frame named by hand, by clip id (`{clip: {white, grey, black, skin}}`, each a box
+/// [x0, y0, x1, y1] from the frame's top left, 0…1); none where `v` names none or isn't one.
+pub(crate) fn regions_of(v: &Value) -> HashMap<String, vault_render::look::Regions> {
+    v.as_object().into_iter().flatten().filter_map(|(k, r)| Some((k.clone(), serde_json::from_value(r.clone()).ok()?))).collect()
+}
+
+/// What a V1 clip is called on the sheet: its script's scene and label or description.
+fn clip_label(timeline: &Value, id: &str) -> String {
+    let c = timeline["clips"].as_array().and_then(|cs| cs.iter().find(|c| c["id"].as_str() == Some(id)));
+    let s = |k: &str| c.and_then(|c| c["script"][k].as_str()).filter(|s| !s.is_empty()).map(String::from);
+    let what = s("label").or_else(|| s("description")).unwrap_or_default();
+    let scene = s("scene").unwrap_or_default();
+    [scene, what].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" · ")
+}
+
+/// The V1 picture clips named (in that order), else every one with a file, as the render reads them.
+fn picture_clips(t: &Timeline, ids: &Option<Vec<String>>) -> Res<Vec<Clip>> {
+    let v1: Vec<&Clip> = t.clips.iter().filter(|c| c.track == "V1" && c.hash.is_some() && !c.is_world()).collect();
+    let clips: Vec<Clip> = match ids {
+        Some(ids) => ids.iter().map(|id| v1.iter().find(|c| &c.id == id).map(|c| (*c).clone()).ok_or(format!("no picture clip {id} with a file on this cut"))).collect::<Res<_>>()?,
+        None => v1.into_iter().cloned().collect(),
+    };
+    if clips.is_empty() {
+        return Err("no picture clip with a file to read".into());
+    }
+    Ok(clips)
+}
+
+/// Every clip named of `timeline` read for the base correction (vault_render `look`), its files from avenDB as the
+/// render reads them (`library`): its elements — blacks, whites, the middle, the skin Vision finds (or the regions
+/// named) — as shot and balanced, from its 4K grading still (else its original's frame; never a proxy), through the
+/// ACES 2.0 output; with `looks`, through its grade and looks too. `balances` stand in for clips' own (a proposal read
+/// before it is written). A clip that can't be read comes back as its error.
+pub(crate) async fn look_clips(
+    timeline: &Value,
+    library: &[Value],
+    ids: Option<Vec<String>>,
+    regions: HashMap<String, vault_render::look::Regions>,
+    balances: HashMap<String, vault_render::grade::Balance>,
+    looks: bool,
+) -> Res<Vec<Result<vault_render::look::Look, Value>>> {
+    let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
+    let clips = picture_clips(&t, &ids)?;
+    let lib = Arc::new(Footage::new(library, &t));
+    tauri::async_runtime::spawn_blocking(move || {
+        clips
+            .iter()
+            .map(|c| {
+                let r = regions.get(&c.id).cloned().unwrap_or_default();
+                objc2::rc::autoreleasepool(|_| vault_render::look::look(&t, &*lib, c, odt(), &r, balances.get(&c.id), looks))
+                    .map_err(|e| json!({ "clip": c.id, "error": format!("{e:#}") }))
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(err)
+}
+
+/// The scope sheet of the clips named (the first the reference), after their balances: each shot's picture with its
+/// skin box, its waveform, RGB parade and vectorscope with the skin line — the PNG's bytes and what each row is.
+pub(crate) async fn scope_sheet(timeline: &Value, library: &[Value], ids: Vec<String>, regions: HashMap<String, vault_render::look::Regions>, with_looks: bool) -> Res<(Value, Vec<u8>)> {
+    let looks = look_clips(timeline, library, Some(ids), regions, HashMap::new(), with_looks).await?;
+    let mut rows = Vec::new();
+    let mut ok = Vec::new();
+    for (i, l) in looks.into_iter().enumerate() {
+        match l {
+            Ok(l) => {
+                let b = &l.json["balanced"];
+                let n = |p: &str| b.pointer(p).and_then(Value::as_f64).map(|v| format!("{v}")).unwrap_or_else(|| "–".into());
+                let skin = if b["skin"].is_null() { "no face".to_string() } else { format!("skin {} IRE {}° ({:+}°) sat {}", n("/skin/ire"), n("/skin/hue"), b["skin"]["off_skin_line"].as_f64().unwrap_or(0.0), n("/skin/chroma")) };
+                let text = format!(
+                    "{}{} · {} — blacks {} · mid {} · whites {} IRE · {} · clipped {}%",
+                    if i == 0 { "REFERENCE · " } else { "" },
+                    clip_label(timeline, &l.clip),
+                    &l.clip[..l.clip.len().min(8)],
+                    n("/levels/p1"),
+                    n("/levels/p50"),
+                    n("/levels/p99"),
+                    skin,
+                    n("/clipped_pct"),
+                );
+                rows.push(json!({ "clip": l.clip, "label": text, "balance": l.json["balance"], "from": l.json["from"] }));
+                ok.push((l, text));
+            }
+            Err(e) => rows.push(e),
+        }
+    }
+    if ok.is_empty() {
+        return Err(format!("no shot could be read: {}", json!(rows)));
+    }
+    let png = tauri::async_runtime::spawn_blocking(move || {
+        let refs: Vec<(&vault_render::look::Look, String)> = ok.iter().map(|(l, t)| (l, t.clone())).collect();
+        let (px, w, h) = vault_render::look::scopes(&refs).map_err(err)?;
+        let mut out = Vec::new();
+        let mut enc = png::Encoder::new(&mut out, w, h);
+        enc.set_color(png::ColorType::Rgb);
+        enc.set_depth(png::BitDepth::Eight);
+        enc.write_header().and_then(|mut wr| wr.write_image_data(&px)).map_err(err)?;
+        Ok::<_, String>(out)
+    })
+    .await
+    .map_err(err)??;
+    Ok((json!({ "rows": rows }), png))
+}
+
+/// The base correction's balances (colorist `base-correction.md`), proposed from the shots' elements; the cut changes
+/// only where they are written into its stacks. `neutral`: each clip's own neutrals to grey, then `warmth` stops
+/// warmer (a scene master); else every clip levelled to `reference` as it is balanced now (the scene master), by the
+/// blacks, whites, middle and skin both have (less each clip's `skip`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn propose_balances(
+    timeline: &Value,
+    library: &[Value],
+    ids: Option<Vec<String>>,
+    reference: Option<String>,
+    neutral: bool,
+    warmth: f64,
+    regions: HashMap<String, vault_render::look::Regions>,
+    skip: HashMap<String, Vec<String>>,
+) -> Res<Value> {
+    use vault_render::look::{fit, neutral as to_neutral, predict, target};
+    let out = odt();
+    let r = |b: &vault_render::grade::Balance| serde_json::to_value(b).unwrap_or_default();
+    if neutral {
+        let looks = look_clips(timeline, library, ids, regions, HashMap::new(), false).await?;
+        let shots: Vec<Value> = looks
+            .into_iter()
+            .map(|l| match l {
+                Ok(l) => {
+                    let now: vault_render::grade::Balance = serde_json::from_value(l.json["balance"].clone()).unwrap_or_default();
+                    let (b, used) = to_neutral(&l, out, &now, warmth);
+                    json!({ "clip": l.clip, "balance": r(&b), "neutral_by": used, "warmth": warmth, "as_shot": l.json["as_shot"], "now": l.json["balanced"], "predicted": predict(&l, out, &b) })
+                }
+                Err(e) => e,
+            })
+            .collect();
+        return Ok(json!({ "target": format!("neutral, then {warmth:+} stops warmer"), "shots": shots }));
+    }
+    let reference = reference.ok_or("name the scene's master as the reference: shots are matched to it, never to an average")?;
+    let mut ids = ids.unwrap_or_else(|| {
+        timeline["clips"].as_array().into_iter().flatten().filter(|c| c["track"] == "V1" && c["hash"].is_string() && c["kind"] != "world").filter_map(|c| c["id"].as_str().map(String::from)).collect()
+    });
+    ids.retain(|id| id != &reference);
+    ids.insert(0, reference.clone());
+    let mut looks = look_clips(timeline, library, Some(ids), regions, HashMap::new(), false).await?.into_iter();
+    let master = looks.next().ok_or("the reference wasn't read")?.map_err(|e| format!("the reference can't be read: {e}"))?;
+    let master_balance: vault_render::grade::Balance = serde_json::from_value(master.json["balance"].clone()).unwrap_or_default();
+    let want = target(&master, out, &master_balance);
+    let shots: Vec<Value> = looks
+        .map(|l| match l {
+            Ok(l) => {
+                let (b, used) = fit(&l, &want, out, skip.get(&l.clip).map(Vec::as_slice).unwrap_or(&[]));
+                json!({ "clip": l.clip, "balance": r(&b), "matched_by": used, "as_shot": l.json["as_shot"], "predicted": predict(&l, out, &b) })
+            }
+            Err(e) => e,
+        })
+        .collect();
+    Ok(json!({ "target": format!("clip {reference} as it is balanced now"), "reference": { "clip": reference, "balance": r(&master_balance), "elements": predict(&master, out, &master_balance) }, "shots": shots }))
+}
+
+/// The loudness each kind of sound is levelled to, before the render levels the whole mix to −14 LUFS: the voice
+/// clear on top, the music a bed under it (the render keys it down 6 dB more while the voice speaks), the sounds
+/// and ambience under both.
+pub const SOUND_TARGETS: [(&str, f64); 3] = [("A1", -18.0), ("A2", -26.0), ("A3", -30.0)];
+
+/// Every sound clip levelled to its track's target (or `targets`), its gain within −∞…+12 dB (vol ≤ 4), and fades so
+/// nothing clicks: a voice 0.05 s at least, the music 1 s in and 2.5 s out where the film starts or ends, a sound
+/// 0.3 s. Each clip's change; it writes nothing.
+pub fn level_sound(measured: &Value, clips: &[Value], targets: &[(String, f64)], end: f64) -> Vec<Value> {
+    let target = |track: &str| targets.iter().find(|(t, _)| t == track).map(|(_, v)| *v).or_else(|| SOUND_TARGETS.iter().find(|(t, _)| *t == track).map(|(_, v)| *v));
+    let mut out = Vec::new();
+    for m in measured["clips"].as_array().into_iter().flatten().filter(|m| m.get("error").is_none()) {
+        let (Some(id), Some(track)) = (m["clip"].as_str(), m["track"].as_str()) else { continue };
+        let Some(c) = clips.iter().find(|c| c["id"].as_str() == Some(id)) else { continue };
+        let Some(goal) = target(track) else { continue };
+        let mut change = json!({ "clip": id, "track": track, "name": m["name"] });
+        if let Some(l) = m["lufs"].as_f64() {
+            // the gain that brings it to its target, never more than +12 dB (vol 4); the mix is float, and the render's
+            // master limiter holds the peaks
+            let vol = (10f64.powf((goal - l).min(12.0) / 20.0) * 1000.0).round() / 1000.0;
+            change["vol"] = json!(vol.clamp(0.0, 4.0));
+            change["lufs_before"] = json!(m["lufs_at_vol"]);
+            change["lufs_after"] = json!(((l + 20.0 * vol.max(1e-6).log10()) * 100.0).round() / 100.0);
+        } else {
+            change["note"] = json!("silent: left as it is");
+        }
+        let start = c["start"].as_f64().unwrap_or(0.0);
+        let dur = c["dur"].as_f64().unwrap_or(0.0);
+        let (fin, fout) = (c["fin"].as_f64().unwrap_or(0.0), c["fout"].as_f64().unwrap_or(0.0));
+        let (want_in, want_out) = match track {
+            "A1" => (0.05, 0.05),
+            "A2" => (if start < 0.5 { 1.0 } else { 0.3 }, if (start + dur - end).abs() < 0.5 { 2.5 } else { 0.5 }),
+            _ => (0.3, 0.3),
+        };
+        change["fin"] = json!(fin.max(want_in).min(dur / 2.0));
+        change["fout"] = json!(fout.max(want_out).min(dur / 2.0));
+        out.push(change);
+    }
+    out
+}
+
+/// A cut's sound levelled (the `level` rule): measured, then each clip's change to its track's loudness (`level_sound`),
+/// proposed; and how far the music sat under each voice before.
+pub(crate) async fn level_cut(timeline: &Value, library: &[Value], targets: &[(String, f64)]) -> Res<Value> {
+    let measured = measure_sound(timeline, library).await?;
+    let clips = timeline["clips"].as_array().cloned().ok_or("the cut has no clips")?;
+    let end = clips.iter().map(|c| c["start"].as_f64().unwrap_or(0.0) + c["dur"].as_f64().unwrap_or(0.0)).fold(0.0, f64::max);
+    let changes = level_sound(&measured, &clips, targets, end);
+    Ok(json!({ "changes": changes, "voice_over_music_before": measured["voice_over_music"] }))
+}
+
+/// The tone of sound clips `ids` matched to clip `reference`'s (the `sound-match` rule), as the legacy studio's
+/// audio_match did: each clip's spectrum measured without its EQ and the reference's through its own, and the EQ that
+/// closes `amount` of the difference (a peaking band per octave from `lo` to `hi`, within ±`limit` dB); with `level`,
+/// the gain that makes it play as loud as the reference. Proposed: each clip's `eq` and `vol`, and the spectra.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn match_sound(timeline: &Value, library: &[Value], reference: &str, ids: &[String], lo: f64, hi: f64, limit: f64, amount: f64, level: bool) -> Res<Value> {
+    let all = timeline["clips"].as_array().cloned().ok_or("the cut has no clips")?;
+    let find = |id: &str| all.iter().find(|c| c["id"] == id).cloned().ok_or_else(|| format!("no clip {id}"));
+    let reference_clip = find(reference)?;
+    // one clip and the reference measured at a time: nothing else is read
+    let measure = |clips: Vec<Value>| {
+        let mut one = timeline.clone();
+        one["clips"] = json!(clips);
+        async move { measure_sound(&one, library).await }
+    };
+    let spectrum_of = |m: &Value, id: &str| -> Option<(Vec<f64>, Value)> {
+        let c = m["clips"].as_array()?.iter().find(|c| c["clip"] == id)?;
+        Some((c["spectrum"].as_array()?.iter().filter_map(|p| p[1].as_f64()).collect(), c.clone()))
+    };
+    let bands_json = |s: &[f64]| vault_render::eq::OCTAVES.iter().zip(s).map(|(f, v)| json!([f, v])).collect::<Vec<_>>();
+    let mut out = Vec::new();
+    for id in ids {
+        let mut plain = find(id)?;
+        if !plain["track"].as_str().is_some_and(|tr| tr.starts_with('A')) {
+            return Err(format!("clip {id} is not a sound clip"));
+        }
+        if let Some(o) = plain.as_object_mut() {
+            o.remove("eq");
+        }
+        let m = measure(vec![plain.clone(), reference_clip.clone()]).await?;
+        let (from, _) = spectrum_of(&m, id).ok_or_else(|| format!("clip {id}: silent, or its file is not here"))?;
+        let (to, r) = spectrum_of(&m, reference).ok_or("the reference is silent, or its file is not here")?;
+        let to_scaled: Vec<f64> = from.iter().zip(&to).map(|(f, t)| f + amount * (t - f)).collect();
+        let bands = vault_render::eq::matching(&from, &to_scaled, lo, hi, limit, vault_render::av::RATE as f64);
+        let eq = serde_json::to_value(&bands).map_err(err)?;
+        let mut matched = plain.clone();
+        if !bands.is_empty() {
+            matched["eq"] = eq.clone();
+        }
+        let after = measure(vec![matched]).await?;
+        let (got, c) = spectrum_of(&after, id).ok_or("measuring it again failed")?;
+        let vol = level
+            .then(|| {
+                let g = r["lufs_at_vol"].as_f64()? - c["lufs"].as_f64()?;
+                Some(((10f64.powf(g.clamp(-60.0, 12.0) / 20.0) * 1000.0).round() / 1000.0).clamp(0.0, 4.0))
+            })
+            .flatten();
+        out.push(json!({ "clip": id, "eq": eq, "vol_before": plain["vol"], "vol": vol, "reference_lufs_at_vol": r["lufs_at_vol"],
+            "spectrum_before": bands_json(&from), "spectrum_after": bands_json(&got), "reference_spectrum": bands_json(&to) }));
+    }
+    Ok(json!({ "reference": reference, "clips": out }))
 }
 
 // ── world plates ────────────────────────────────────────────────────────────────────────────────────────────────

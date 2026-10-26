@@ -54,12 +54,14 @@ pub enum Kind {
     Ingest,
     /// a page fetched from the web for a task of avenDB's (a YouTube video's words: aven.rs `youtube`)
     Fetch,
+    /// what an agent asks of a cut's pictures (aven.rs: shots read, a scope sheet, balances, a reference, playback)
+    Check,
 }
 
 impl Kind {
     pub fn lane(self) -> Lane {
         match self {
-            Kind::Proxy | Kind::Still | Kind::WorldProxy | Kind::Render | Kind::Frame => Lane::Gpu,
+            Kind::Proxy | Kind::Still | Kind::WorldProxy | Kind::Render | Kind::Frame | Kind::Check => Lane::Gpu,
             Kind::Transcript => Lane::Speech,
             Kind::Analysis => Lane::Ai,
             Kind::Sound | Kind::Keep | Kind::Ingest | Kind::Fetch => Lane::Io,
@@ -68,7 +70,7 @@ impl Kind {
     /// how urgent: lower first (a film someone waits for before a file's proxy, a proxy before its still)
     fn priority(self) -> i32 {
         match self {
-            Kind::Render | Kind::Frame | Kind::Ingest => 0,
+            Kind::Render | Kind::Frame | Kind::Check | Kind::Ingest => 0,
             Kind::Proxy | Kind::WorldProxy | Kind::Transcript | Kind::Sound | Kind::Keep | Kind::Fetch => 2,
             Kind::Still | Kind::Analysis => 3,
         }

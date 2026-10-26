@@ -8,7 +8,9 @@
 //   keep       a Backup share to avenMAIA's vault, where the vault gives it none yet: the server serves only what
 //              it keeps, so without it the feeds have nothing of the vault's to show; and avenMAIA's default rights
 //              (Samuel 2026-10-18): Suggester on the whole of it, and an AIP author's share on its AIPs, so the aven,
-//              and every agent that is its device, proposes and drafts and opens AIPs, and a human of it merges
+//              and every agent that is its device, proposes and drafts and opens AIPs, and a human of it merges; and a
+//              task asker's share on its tasks, so it asks the Mac's studio worker for what only the Mac computes
+//              (a render, a frame, a scope sheet, a sound measured: avendb-device's `avendb_task`) and reads the answer
 //   code       each view and logic module of code/ (game/code/sources/avendb.js `recordOf`), found by its `ref:` tag,
 //              and one Public share of the vault's views and logic, so the server's code feed serves them
 //   post types each post type, a schema of the vault's own with its template inside (./posttypes.js): journal
@@ -156,7 +158,7 @@ const filled = (o) =>
 const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
- * @typedef {{ key: string, kind: 'keep' | 'aven-suggests' | 'aven-aips' | 'code' | 'share' | 'post-type' | 'journal' | 'inspire' | 'pad' | 'published' |
+ * @typedef {{ key: string, kind: 'keep' | 'aven-suggests' | 'aven-aips' | 'aven-tasks' | 'code' | 'share' | 'post-type' | 'journal' | 'inspire' | 'pad' | 'published' |
  *   'inspire-share' | 'name-share' | 'doc' | 'game-schema' | 'game' | 'recipe-share' | 'recipe', name: string, mark: string, server?: string }} Piece
  */
 
@@ -170,7 +172,8 @@ export function seedPieces(server = null) {
 		? [
 				{ key: 'server-keep', kind: /** @type {const} */ ('keep'), name: 'The server keeps it', mark: '', server },
 				{ key: 'aven-suggests', kind: /** @type {const} */ ('aven-suggests'), name: 'avenMAIA suggests', mark: '', server },
-				{ key: 'aven-aips', kind: /** @type {const} */ ('aven-aips'), name: 'avenMAIA opens AIPs', mark: '', server }
+				{ key: 'aven-aips', kind: /** @type {const} */ ('aven-aips'), name: 'avenMAIA opens AIPs', mark: '', server },
+				{ key: 'aven-tasks', kind: /** @type {const} */ ('aven-tasks'), name: 'avenMAIA asks the Mac', mark: '', server }
 			]
 		: [];
 	const code = Object.values(ENTRIES)
@@ -222,6 +225,16 @@ export const SUGGESTER = 'Suggester';
 /** The group of the share by which the aven opens AIPs over its proposal lines, on the vault's AIPs alone, beside its
  *  Suggester's (avendb-device's `agent::AIP_AUTHOR`). */
 export const AIP_AUTHOR = 'AIP author';
+
+/** The group of the share by which the aven asks the studio's worker for work (avendb-device's `avendb_task`): it
+ *  reads, makes and sets the vault's tasks alone, whose records only the Mac's worker acts on, beside its Suggester's. */
+export const TASK_ASKER = 'Task asker';
+
+/** What a task asker's share gives: a writer's read, adding a task and setting any of its fields (asking one again). */
+export const TASK_ASKER_LEVEL = { name: TASK_ASKER, ops: [{ op: 'read' }, { op: 'create' }, { op: 'set', path: [] }] };
+
+/** What it is on: the vault's tasks, the studio's jobs (../studio/jobs/schemas.js `TASK`). */
+export const TASKS = { type: ['task'] };
 
 /**
  * Whether vault `vault` gives vault `aven` a share of group `group` (`SUGGESTER`, `AIP_AUTHOR`), standing.
@@ -334,6 +347,7 @@ export function unseeded(world, vault, all) {
 		p.kind === 'keep' ? !serverKeeps(world, vault, p.server ?? '') :
 		p.kind === 'aven-suggests' ? !avenHolds(world, vault, p.server ?? '', SUGGESTER) :
 		p.kind === 'aven-aips' ? !avenHolds(world, vault, p.server ?? '', AIP_AUTHOR) :
+		p.kind === 'aven-tasks' ? !avenHolds(world, vault, p.server ?? '', TASK_ASKER) :
 		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) :
 		p.kind === 'recipe-share' ? !codeShared(world, vault, RECIPE_TYPES) :
 		p.kind === 'inspire-share' ? !inspireShared(world, vault) :
@@ -371,6 +385,7 @@ export async function seeding(p, vault) {
 		const level = { name: AIP_AUTHOR, ops: [{ op: 'read' }, { op: 'create' }, { op: 'set', path: [] }] };
 		return [{ op: 'share', over: vault, who: { vault: p.server }, level, what: { type: ['aip'] }, as }];
 	}
+	if (p.kind === 'aven-tasks') return [{ op: 'share', over: vault, who: { vault: p.server }, level: TASK_ASKER_LEVEL, what: TASKS, as }];
 	if (p.kind === 'share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: CODE_TYPES }, as }];
 	if (p.kind === 'recipe-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: RECIPE_TYPES }, as }];
 	if (p.kind === 'recipe') return assetOps(p.name, vault, p.mark);

@@ -538,6 +538,133 @@ pub(crate) async fn program(
 }
 
 
+// ── a playback check, for an agent (aven.rs `studio_job`, the `playback` rule) ───────────────────────────────────
+
+/// What each picture clip of `t` plays, as the studio chooses it from its library of avenDB's footage (`library`,
+/// src/lib/studio/aven.js `libraryOf`): its file's proxy (ACEScct), else, or with `originals`, its original, by its
+/// avenDB reference; and that file's colour profile, a profile set by hand over the one detected.
+fn files_for(t: &vault_render::Timeline, library: &[Value], originals: bool) -> (HashMap<String, String>, HashMap<String, String>) {
+    let (mut files, mut profiles) = (HashMap::new(), HashMap::new());
+    for c in t.clips.iter().filter(|c| c.track == "V1" && !c.is_world()) {
+        let Some(hash) = c.hash.as_deref() else { continue };
+        let item = library.iter().find(|m| m["hash"] == hash);
+        let meta = item.map(|m| &m["meta"]);
+        let proxy = meta.and_then(|m| m["proxy"].as_str()).filter(|_| !originals);
+        let (file, profile) = match proxy {
+            Some(p) => (p.to_string(), "acescct".to_string()),
+            None => {
+                let color = meta.map(|m| &m["color"]);
+                let profile = color.and_then(|c| c["override"].as_str().or(c["profile"].as_str())).unwrap_or("rec709");
+                (hash.to_string(), profile.to_string())
+            }
+        };
+        files.insert(c.id.clone(), file);
+        profiles.insert(c.id.clone(), profile);
+    }
+    (files, profiles)
+}
+
+/// What the Grade tab's playback shows, checked without a screen: the cut's composition as the player plays it
+/// (each picture clip from its proxy, else its original, as the studio chooses: `files_for`), `n` frames from `t`
+/// read through it one after another as AVFoundation hands them to the player, each timed; then the composition
+/// played by an AVPlayer for two seconds and the frames it hands out counted (30 a second is real time). The first
+/// frame as a JPEG (tagged Rec.709, as the Grade viewer's stills are).
+pub(crate) async fn playback_frames(timeline: Value, library: &[Value], t: f64, n: usize, shape: Option<String>, originals: bool) -> Res<(Value, Vec<u8>)> {
+    let tl: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
+    let (files, profiles) = files_for(&tl, library, originals);
+    let shape = shape.unwrap_or_else(|| "16:9".into());
+    let program = program(&tl, &shape, &files, &profiles, Some(1600)).await?;
+    let used: Value = serde_json::json!(files);
+    let n = n.clamp(1, 60);
+    tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<(Value, Vec<u8>)> {
+        let (comp, video) = vault_render::player::composition(program)?;
+        let gpu = vault_render::gpu::Gpu::new()?;
+        let mut times = Vec::new();
+        let mut first = None;
+        // SAFETY: AVFoundation objects we made, used from this thread
+        unsafe {
+            let g = objc2_av_foundation::AVAssetImageGenerator::assetImageGeneratorWithAsset(&comp);
+            g.setVideoComposition(Some(&video));
+            g.setRequestedTimeToleranceBefore(vault_render::av::cmtime(0.0));
+            g.setRequestedTimeToleranceAfter(vault_render::av::cmtime(0.0));
+            for i in 0..n {
+                let at = t + i as f64 / vault_render::timeline::FPS as f64;
+                let t0 = std::time::Instant::now();
+                #[allow(deprecated)]
+                let cg = g.copyCGImageAtTime_actualTime_error(vault_render::av::cmtime(at), std::ptr::null_mut()).map_err(|e| anyhow::anyhow!("no frame at {at:.2} s: {e:?}"))?;
+                times.push(t0.elapsed().as_secs_f64() * 1000.0);
+                if first.is_none() {
+                    first = Some(cg);
+                }
+            }
+        }
+        // real time, the way the Grade tab plays it: an AVPlayer (no screen) plays the composition from t for two
+        // seconds, and the frames it hands out are counted — what it cannot make in time, it drops
+        // SAFETY: AVPlayer and its item made and played on this thread (AVFoundation allows it off the main thread;
+        // objc2 asks for the marker only to be careful), let go before it returns
+        let mut tags: Option<Value> = None;
+        let played = unsafe {
+            let mtm = MainThreadMarker::new_unchecked();
+            let item = AVPlayerItem::playerItemWithAsset(&comp, mtm);
+            item.setVideoComposition(Some(&video));
+            let out = objc2_av_foundation::AVPlayerItemVideoOutput::initWithPixelBufferAttributes(<objc2_av_foundation::AVPlayerItemVideoOutput as objc2::AnyThread>::alloc(), None);
+            item.addOutput(&out);
+            let player = AVPlayer::playerWithPlayerItem(Some(&item), mtm);
+            player.setMuted(true);
+            let ready = std::time::Instant::now();
+            while item.status() != objc2_av_foundation::AVPlayerItemStatus::ReadyToPlay && ready.elapsed().as_secs_f64() < 5.0 {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            let zero = vault_render::av::cmtime(0.0);
+            player.seekToTime_toleranceBefore_toleranceAfter(vault_render::av::cmtime(t), zero, zero);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            player.setRate(1.0);
+            let start = std::time::Instant::now();
+            let (settle, window) = (0.3, 2.0);
+            let mut delivered = 0usize;
+            while start.elapsed().as_secs_f64() < settle + window {
+                let now = item.currentTime();
+                if out.hasNewPixelBufferForItemTime(now) {
+                    let pb = out.copyPixelBufferForItemTime_itemTimeForDisplay(now, std::ptr::null_mut());
+                    if start.elapsed().as_secs_f64() >= settle {
+                        delivered += 1;
+                    }
+                    // what the player's layer is handed: the frame's colour tags, the colour space they name
+                    if tags.is_none()
+                        && let Some(pb) = pb
+                    {
+                        let d = objc2_core_video::CVBuffer::attachments(&pb, objc2_core_video::CVAttachmentMode::ShouldPropagate);
+                        let space = d.as_ref().and_then(|d| objc2_core_video::CVImageBufferCreateColorSpaceFromAttachments(d));
+                        let name = space.as_ref().and_then(|s| objc2_core_graphics::CGColorSpace::name(Some(s))).map(|n| n.to_string());
+                        let fmt = objc2_core_video::CVPixelBufferGetPixelFormatType(&pb);
+                        tags = Some(serde_json::json!({ "attachments": d.map(|d| format!("{d:?}")), "space": name, "pixel_format": String::from_utf8_lossy(&fmt.to_be_bytes()).to_string() }));
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(3));
+            }
+            player.setRate(0.0);
+            player.replaceCurrentItemWithPlayerItem(None);
+            (delivered as f64 / window, tags)
+        };
+        let (played, tags) = played;
+        let cg = first.ok_or_else(|| anyhow::anyhow!("no frame"))?;
+        let img = gpu.cg_image(&cg);
+        let e = vault_render::gpu::Extent::ext(&*img);
+        let jpg = gpu.jpeg_bytes(&img, e.size.width as u32, e.size.height as u32)?;
+        // the first frame pays for the decoder's start and the kernels' compiling: the rest is what playing costs
+        let steady: Vec<f64> = times.iter().skip(1).copied().collect();
+        let mean = if steady.is_empty() { times[0] } else { steady.iter().sum::<f64>() / steady.len() as f64 };
+        let worst = steady.iter().copied().fold(0.0, f64::max);
+        let fps = vault_render::timeline::FPS as f64;
+        Ok((
+            serde_json::json!({ "t": t, "played_fps": (played * 10.0).round() / 10.0, "real_time": played >= fps * 0.95,
+                "grabbed": { "frames": n, "first_ms": (times[0] * 10.0).round() / 10.0, "ms_per_frame": (mean * 10.0).round() / 10.0, "worst_ms": (worst * 10.0).round() / 10.0, "note": "each frame sought and decoded on its own: slower than playing" },
+                "frame_tags": tags, "files": used }),
+            jpg,
+        ))
+    })
+    .await
+
 /// The studio's player, once one is loaded.
 fn driver() -> Option<Arc<Driver>> {
     NATIVE.lock().unwrap().as_ref().map(|n| n.driver.clone())

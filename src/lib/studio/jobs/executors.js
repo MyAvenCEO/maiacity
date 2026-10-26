@@ -6,6 +6,7 @@
 
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+import { CUT_RULES } from './rules.js';
 
 /** How many bytes a read asks for at a time. */
 const STEP = 1 << 20;
@@ -41,8 +42,9 @@ export const EXECUTORS = {
  * A rule the Mac app's Rust does: the task, the entries its inputs name and the files the rules behind its made inputs
  * made, as this device's world shows them, by entry, handed to `studio_job` with the vault the worker acts as and the
  * vault's studio worker, which puts what it makes where this Mac hosts one; it holds
- * the rule's lane while it runs and answers `{ outputs, result }`. A cut's rules (`render`, `frame`) hand it the
- * studio's library items of avenDB's footage too, which the cut's clips name (../aven.js `libraryOf`).
+ * the rule's lane while it runs and answers `{ outputs, result }`. A cut's rules (`CUT_RULES`: `render`, `frame`, and
+ * what an agent asks of a cut) hand it the studio's library items of avenDB's footage too, which the cut's clips name
+ * (../aven.js `libraryOf`).
  * @param {string} rule @returns {import('./worker.js').Executor}
  */
 const native = (rule) => async (task, ctx) => {
@@ -68,7 +70,7 @@ const native = (rule) => async (task, ctx) => {
 	}
 	if (!Object.keys(entries).length) throw new Error('its entry is not on this device');
 	const { command } = await import('$lib/native');
-	const library = rule === 'render' || rule === 'frame' ? (await import('../aven.js')).libraryOf(ctx.world) : null;
+	const library = CUT_RULES.includes(rule) ? (await import('../aven.js')).libraryOf(ctx.world) : null;
 	return command('studio_job', { task, entries, library, actor: ctx.as, worker: ctx.worker ?? null });
 };
 
@@ -93,5 +95,14 @@ export const NATIVE = {
 	render: native('render'),
 	frame: native('frame'),
 	'world-proxy': native('world-proxy'),
-	youtube: native('youtube')
+	youtube: native('youtube'),
+	// what an agent asks of the Mac (avendb-device's `avendb_task`)
+	look: native('look'),
+	scopes: native('scopes'),
+	balance: native('balance'),
+	reference: native('reference'),
+	sound: native('sound'),
+	level: native('level'),
+	'sound-match': native('sound-match'),
+	playback: native('playback')
 };

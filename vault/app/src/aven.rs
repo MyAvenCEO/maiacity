@@ -839,6 +839,8 @@ pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<St
         "frame" => Kind::Frame,
         "world-proxy" => Kind::WorldProxy,
         "youtube" => Kind::Fetch,
+        "look" | "scopes" | "balance" | "reference" | "playback" => Kind::Check,
+        "sound" | "level" | "sound-match" => Kind::Sound,
         other => return Err(format!("no Rust executor for rule {other}")),
     };
     let library = library.unwrap_or_default();
@@ -856,6 +858,14 @@ pub async fn studio_job(app: AppHandle, task: Value, entries: serde_json::Map<St
         "frame" => frame(&job, &id).await,
         "world-proxy" => world_proxy(&job, &id).await,
         "youtube" => youtube(&job).await,
+        "look" => look(&job).await,
+        "scopes" => scopes(&job, &id).await,
+        "balance" => balance(&job).await,
+        "reference" => reference(&job, &name).await,
+        "sound" => sound(&job).await,
+        "level" => level(&job).await,
+        "sound-match" => sound_match(&job).await,
+        "playback" => playback(&job, &id).await,
         _ => unreachable!(),
     };
     let made = match made {
@@ -1015,9 +1025,14 @@ pub async fn cut_api(app: &AppHandle, method: &str, cut: &str, body: Option<Valu
     }
 }
 
-/// A cut of avenDB (src/lib/studio/cuts.js) as the render reads a timeline: its record's fields, and the rest of it
-/// from its JSON text, named `cut:<entry>` as the studio names it.
+/// A cut of avenDB (src/lib/studio/cuts.js) as the render reads a timeline (`cut_value`).
 fn cut_of(e: &Value) -> Result<vault_render::timeline::Timeline, String> {
+    serde_json::from_value(cut_value(e)?).map_err(|err| format!("the cut's timeline: {err}"))
+}
+
+/// A cut of avenDB as the render reads a timeline, as JSON: its record's fields, and the rest of it from its JSON
+/// text, named `cut:<entry>` as the studio names it.
+fn cut_value(e: &Value) -> Result<Value, String> {
     let r = &e["record"];
     let mut t: Value = serde_json::from_str(r["timeline"].as_str().unwrap_or("{}")).map_err(|err| format!("the cut's timeline: {err}"))?;
     if !t.is_object() {
@@ -1029,7 +1044,126 @@ fn cut_of(e: &Value) -> Result<vault_render::timeline::Timeline, String> {
     t["project"] = text("project");
     t["variant"] = text("variant");
     t["version"] = r["version"].as_u64().map_or(json!(1), |v| json!(v));
-    serde_json::from_value(t).map_err(|err| format!("the cut's timeline: {err}"))
+    Ok(t)
+}
+
+// ── what an agent asks of the Mac (avendb-device's `avendb_task`, as the legacy studio's MCP did) ───────────────
+
+/// The texts a list param holds; none where it holds no list.
+fn texts(v: &Value) -> Option<Vec<String>> {
+    v.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+}
+
+/// The `look` rule: a cut's shots (param `clips`, else every picture clip with a file) read for the base correction
+/// from their 4K grading stills through the ACES 2.0 output (render.rs `look_clips`), after each clip's balance, or with
+/// `looks` through its whole grade; parts of a frame named by hand in `regions`. Its value: each shot's reading.
+async fn look(job: &Job<'_>) -> Result<Value, String> {
+    let t = cut_value(job.input("cut")?)?;
+    job.stage("reading the shots", 0.1);
+    let regions = crate::render::regions_of(&job.param("regions"));
+    let read = crate::render::look_clips(&t, job.library, texts(&job.param("clips")), regions, Default::default(), job.param("looks") == json!(true)).await?;
+    let shots: Vec<Value> = read.into_iter().map(|l| l.map(|l| l.json).unwrap_or_else(|e| e)).collect();
+    Ok(json!({ "outputs": [], "result": { "cut": t["id"], "shots": shots } }))
+}
+
+/// The `scopes` rule: the scope sheet of a cut's clips (param `clips`, one row each, the first the reference), after
+/// their balances or with `looks` through their whole grade (render.rs `scope_sheet`): the picture put tagged
+/// `media:scopes`, its rows' numbers its value.
+async fn scopes(job: &Job<'_>, id: &str) -> Result<Value, String> {
+    let t = cut_value(job.input("cut")?)?;
+    let clips = texts(&job.param("clips")).filter(|c| !c.is_empty()).ok_or("name the clips, one row each, the first the reference")?;
+    job.stage("drawing the scopes", 0.1);
+    let regions = crate::render::regions_of(&job.param("regions"));
+    let (rows, png) = crate::render::scope_sheet(&t, job.library, clips, regions, job.param("looks") == json!(true)).await?;
+    let path = work(id)?.join("scopes.png");
+    std::fs::write(&path, &png).map_err(|e| format!("{}: {e}", path.display()))?;
+    job.stage("into avenDB", 0.9);
+    let name = format!("{} · scopes.png", t["name"].as_str().unwrap_or("a cut"));
+    let entry = job.put(&path, &name, "image/png", &["media:scopes"]).await?;
+    Ok(json!({ "outputs": [entry], "result": { "cut": t["id"], "picture": entry, "rows": rows["rows"] } }))
+}
+
+/// The `balance` rule: the base correction's balances, proposed (render.rs `propose_balances`): every clip named
+/// (`clips`) fitted to `reference`, the scene's master as it is balanced now, less each clip's `skip`; or with
+/// `neutral`, each clip's own neutrals to grey and `warmth` stops warmer. It writes nothing into the cut.
+async fn balance(job: &Job<'_>) -> Result<Value, String> {
+    let t = cut_value(job.input("cut")?)?;
+    job.stage("reading the shots", 0.1);
+    let skip: std::collections::HashMap<String, Vec<String>> =
+        job.param("skip").as_object().into_iter().flatten().map(|(k, v)| (k.clone(), texts(v).unwrap_or_default())).collect();
+    let reference = job.param("reference").as_str().map(String::from);
+    let warmth = job.param("warmth").as_f64().unwrap_or(0.0);
+    let regions = crate::render::regions_of(&job.param("regions"));
+    let mut out = crate::render::propose_balances(&t, job.library, texts(&job.param("clips")), reference, job.param("neutral") == json!(true), warmth, regions, skip).await?;
+    out["cut"] = t["id"].clone();
+    Ok(json!({ "outputs": [], "result": out }))
+}
+
+/// The `reference` rule: a reference still of a look (a picture of avenDB, display-referred) read as a shot is read
+/// (vault_render `look::reference`): levels, zones, where its colour lies, saturation, the skin Vision finds.
+async fn reference(job: &Job<'_>, name: &str) -> Result<Value, String> {
+    let src = source(job.app, job.file("picture")?, name);
+    job.stage("reading it", 0.1);
+    let read = tauri::async_runtime::spawn_blocking(move || objc2::rc::autoreleasepool(|_| vault_render::look::reference(src)))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{e:#}"))?;
+    Ok(json!({ "outputs": [], "result": read }))
+}
+
+/// The `sound` rule: a cut's sound measured as the render levels it (render.rs `measure_sound`).
+async fn sound(job: &Job<'_>) -> Result<Value, String> {
+    let t = cut_value(job.input("cut")?)?;
+    job.stage("listening", 0.1);
+    let mut out = crate::render::measure_sound(&t, job.library).await?;
+    out["cut"] = t["id"].clone();
+    Ok(json!({ "outputs": [], "result": out }))
+}
+
+/// The `level` rule: each sound clip's gain and fades to its track's loudness (`targets`, by track, over the
+/// defaults), proposed (render.rs `level_cut`). It writes nothing into the cut.
+async fn level(job: &Job<'_>) -> Result<Value, String> {
+    let t = cut_value(job.input("cut")?)?;
+    let targets: Vec<(String, f64)> = job.param("targets").as_object().into_iter().flatten().filter_map(|(k, v)| Some((k.clone(), v.as_f64()?))).collect();
+    job.stage("listening", 0.1);
+    let mut out = crate::render::level_cut(&t, job.library, &targets).await?;
+    out["cut"] = t["id"].clone();
+    Ok(json!({ "outputs": [], "result": out }))
+}
+
+/// The `sound-match` rule: the EQ, and with `level` (the default) the gain, that bring sound clips `clips` to clip
+/// `reference`'s tone and loudness (render.rs `match_sound`), proposed. It writes nothing into the cut.
+async fn sound_match(job: &Job<'_>) -> Result<Value, String> {
+    let t = cut_value(job.input("cut")?)?;
+    let reference = job.param("reference").as_str().map(String::from).ok_or("name the reference clip")?;
+    let clips = texts(&job.param("clips")).filter(|c| !c.is_empty()).ok_or("name the sound clips to match")?;
+    let num = |k: &str, or: f64| job.param(k).as_f64().unwrap_or(or);
+    let (lo, hi) = (num("lo", 100.0).clamp(20.0, 20000.0), num("hi", 10000.0).clamp(20.0, 20000.0));
+    let (limit, amount) = (num("limit", 6.0).clamp(0.5, 24.0), num("amount", 0.8).clamp(0.0, 1.0));
+    job.stage("listening", 0.1);
+    let mut out = crate::render::match_sound(&t, job.library, &reference, &clips, lo, hi, limit, amount, job.param("level") != json!(false)).await?;
+    out["cut"] = t["id"].clone();
+    Ok(json!({ "outputs": [], "result": out }))
+}
+
+/// The `playback` rule: a cut played as the Grade tab plays it, headless (player.rs `playback_frames`): `frames`
+/// frames from `t` timed, two seconds played and counted; its first frame put tagged `media:check`.
+async fn playback(job: &Job<'_>, id: &str) -> Result<Value, String> {
+    let t = cut_value(job.input("cut")?)?;
+    let at = job.param("t").as_f64().filter(|t| *t >= 0.0).unwrap_or(0.0);
+    let frames = job.param("frames").as_u64().unwrap_or(15) as usize;
+    let shape = job.param("shape").as_str().map(String::from);
+    let name = format!("{} · playback {at:.2} s.jpg", t["name"].as_str().unwrap_or("a cut"));
+    let (cut, originals) = (t["id"].clone(), job.param("originals") == json!(true));
+    job.stage("playing", 0.1);
+    let (mut info, jpg) = crate::player::playback_frames(t, job.library, at, frames, shape, originals).await?;
+    let path = work(id)?.join("playback.jpg");
+    std::fs::write(&path, &jpg).map_err(|e| format!("{}: {e}", path.display()))?;
+    job.stage("into avenDB", 0.9);
+    let entry = job.put(&path, &name, "image/jpeg", &["media:check"]).await?;
+    info["cut"] = cut;
+    info["picture"] = json!(entry);
+    Ok(json!({ "outputs": [entry], "result": info }))
 }
 
 /// The `render` rule (plan J12): a cut into every delivery, or with param `delivery` "youtube-4k" YouTube's 4K master

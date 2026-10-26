@@ -144,8 +144,109 @@ export const BUILT_IN = [
 		makes: [{ type: 'file', tags: ['media:preview'] }],
 		about: "A clip's grading still through its grade, as its file's preview, when a cut changes how it looks; of a world clip or a gap, a hero frame at a time in a shape.",
 		off: false
+	},
+	// what an agent asks of the Mac (avendb-device's `avendb_task`, as the legacy studio's MCP did): each only asked,
+	// its answer its value, a picture a file beside it
+	{
+		key: 'look',
+		name: 'Shots read',
+		version: 1,
+		lane: 'gpu',
+		when: null,
+		inputs: { cut: '$entry' },
+		params: ['clips', 'regions', 'looks'],
+		makes: [{ value: 'look' }],
+		about: "A cut's shots read for the base correction from their 4K grading stills through the ACES 2.0 output: levels, blacks, whites, middle and skin, as shot and balanced.",
+		off: false
+	},
+	{
+		key: 'scopes',
+		name: 'Scope sheet',
+		version: 1,
+		lane: 'gpu',
+		when: null,
+		inputs: { cut: '$entry' },
+		params: ['clips', 'regions', 'looks'],
+		makes: [{ type: 'file', tags: ['media:scopes'] }, { value: 'rows' }],
+		about: "A cut's shots after their balances, each with its waveform, RGB parade and vectorscope, drawn into one picture, the first the reference.",
+		off: false
+	},
+	{
+		key: 'balance',
+		name: 'Balances',
+		version: 1,
+		lane: 'gpu',
+		when: null,
+		inputs: { cut: '$entry' },
+		params: ['clips', 'reference', 'neutral', 'warmth', 'regions', 'skip'],
+		makes: [{ value: 'balances' }],
+		about: "The base correction's balances fitted to a scene master (or each shot's neutrals), proposed: the cut changes only once they are written into its stacks.",
+		off: false
+	},
+	{
+		key: 'reference',
+		name: 'Reference read',
+		version: 1,
+		lane: 'gpu',
+		when: null,
+		inputs: { picture: '$entry' },
+		params: [],
+		makes: [{ value: 'reference' }],
+		about: 'A reference still of a look, read as a shot is read: levels, zones, where its colour lies, saturation, skin.',
+		off: false
+	},
+	{
+		key: 'sound',
+		name: 'Sound measured',
+		version: 1,
+		lane: 'io',
+		when: null,
+		inputs: { cut: '$entry' },
+		params: [],
+		makes: [{ value: 'sound' }],
+		about: "A cut's sound measured as the render levels it: each clip's loudness, true peak and spectrum, and the music under each voice.",
+		off: false
+	},
+	{
+		key: 'level',
+		name: 'Sound levelled',
+		version: 1,
+		lane: 'io',
+		when: null,
+		inputs: { cut: '$entry' },
+		params: ['targets'],
+		makes: [{ value: 'level' }],
+		about: "Each sound clip's gain and fades to its track's loudness, proposed: the cut changes only once they are written into its clips.",
+		off: false
+	},
+	{
+		key: 'sound-match',
+		name: 'Sound matched',
+		version: 1,
+		lane: 'io',
+		when: null,
+		inputs: { cut: '$entry' },
+		params: ['reference', 'clips', 'lo', 'hi', 'limit', 'amount', 'level'],
+		makes: [{ value: 'match' }],
+		about: "The EQ and gain that bring sound clips' tone and loudness to a reference clip's, proposed.",
+		off: false
+	},
+	{
+		key: 'playback',
+		name: 'Playback check',
+		version: 1,
+		lane: 'gpu',
+		when: null,
+		inputs: { cut: '$entry' },
+		params: ['t', 'frames', 'shape', 'originals'],
+		makes: [{ type: 'file', tags: ['media:check'] }, { value: 'playback' }],
+		about: 'A cut played as the Grade tab plays it, headless: its first frame at a time, and how many frames a second it plays.',
+		off: false
 	}
 ];
+
+/** The rules of a cut, whose executors read the studio's library of avenDB's footage too (./executors.js). */
+export const CUT_RULES = ['render', 'frame', 'look', 'scopes', 'balance', 'sound', 'level', 'sound-match', 'playback'];
 
 /**
  * A rule record read into a rule; `null` where it isn't one (a field that doesn't parse).

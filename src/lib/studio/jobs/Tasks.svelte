@@ -62,7 +62,7 @@
 	/** @type {Record<string, string>} each lane, as a person names it; the web's tasks run on the Mac's disk lane */
 	const LANE_NAMES = { gpu: 'GPU', speech: 'Speech', ai: 'AI', io: 'Disk & line', net: 'Web' };
 	/** @type {Record<string, string>} the rule each kind of the Mac's jobs does, as studio_job maps them */
-	const KIND_RULE = { sound: 'probe', proxy: 'proxy', still: 'still', transcript: 'transcript', analysis: 'analysis', render: 'render', frame: 'frame', 'world-proxy': 'world-proxy', fetch: 'youtube' };
+	const KIND_RULE = { sound: 'probe', proxy: 'proxy', still: 'still', transcript: 'transcript', analysis: 'analysis', render: 'render', frame: 'frame', 'world-proxy': 'world-proxy', fetch: 'youtube', check: 'look' };
 	/** The Mac's jobs no rule starts, with what each is. */
 	const OTHER = /** @type {Record<string, { name: string, lane: string, about: string }>} */ ({
 		ingest: { name: 'Imports', lane: 'io', about: 'Files brought into avenDB: dropped on the app, from a card or a drive, or from the old vault.' },
@@ -333,7 +333,7 @@
 		return t.outputs.length ? `${t.outputs.length} made` : 'done';
 	};
 	/** Whether the Mac makes a job no task asked for again itself (jobs.rs `retry`). @param {Job} j */
-	const retriable = (j) => !j.subject.startsWith('aven:') && !['render', 'frame', 'ingest', 'fetch'].includes(j.kind);
+	const retriable = (j) => !j.subject.startsWith('aven:') && !['render', 'frame', 'ingest', 'fetch', 'check'].includes(j.kind);
 
 	/** @type {Map<string, import('./tasks.js').Task>} */
 	const taskBy = $derived(new Map(tasks.map((t) => [t.entry, t])));

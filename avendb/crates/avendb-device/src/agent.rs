@@ -55,6 +55,12 @@
 //! it only suggest, as a Suggester's do, which an agent is on Maia City by its standing rule, it is a draft, and its
 //! file a draft Library file of its own that brings it in its creation, which the vault's owners land by accepting an
 //! AIP the agent opens over them. `avendb_read_file` is `get_file`.
+//!
+//! Studio 2, the film studio, has three tools of its own (`studio`), what the legacy studio's MCP gave: `avendb_studio`
+//! reads its Library, words, shot analyses, cuts, tasks, stories, posts and views; `avendb_studio_edit` changes them
+//! as its aven's shares let it, on proposals where it may only suggest, an AIP opened and promoted over them where
+//! asked; `avendb_task` asks the Mac's studio worker for what only the Mac computes, a task of a rule made by the
+//! aven's task asker's share, and reads its answer.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -82,6 +88,8 @@ use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite, 
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinSet;
+
+mod studio;
 
 /// The MCP version it speaks, unless its client asks for another.
 const PROTOCOL: &str = "2025-06-18";
@@ -682,11 +690,18 @@ impl Agent {
             "tools/list" => json!({ "tools": tools() }),
             "tools/call" => {
                 let name = params["name"].as_str().unwrap_or_default();
-                let (text, error) = match self.call(name, &params["arguments"]).await {
-                    Ok(text) => (text, false),
-                    Err(e) => (format!("{e:#}"), true),
+                let args = &params["arguments"];
+                // a task's answer may bring a picture (a scope sheet, a playback frame), shown inline
+                let joined = self.node.read(|lab, me| lab.vault_of(me)).await.is_some();
+                let called = match name {
+                    "avendb_task" if joined => self.task(args).await,
+                    _ => self.call(name, args).await.map(|text| (text, vec![])),
                 };
-                json!({ "content": [{ "type": "text", "text": text }], "isError": error })
+                let (content, error) = match called {
+                    Ok((text, pictures)) => (studio::content(text, pictures), false),
+                    Err(e) => (json!([{ "type": "text", "text": format!("{e:#}") }]), true),
+                };
+                json!({ "content": content, "isError": error })
             }
             _ => {
                 return Some(
@@ -741,18 +756,28 @@ impl Agent {
              let it add or draft one there. Where it may only suggest, \
              as a Suggester, which an agent is on {coop}, it is a draft, its file a draft Library file of its own: \
              the answer says `draft: true`, and gives its `line` and the `proposals` to name in `aip_open`, then \
-             `aip_promote`; the vault's owners land it by accepting the AIP. Studio 2, the film studio, keeps its \
-             cuts as entries of type cut in {coop}: a cut's record holds its name, project, variant, stage and \
-             version, and its whole timeline as one JSON text, `timeline` (its clips by track, each picture clip's \
-             grade `stacks`, the scenes' looks in `grade`, each sound clip's `vol`, `eq` and fades). Read cuts with \
-             avendb_ask, `world`; propose a timeline edit as any other: `propose` on the cut, then `set` \
-             `[\"timeline\"]` with the whole timeline changed and `[\"at\"]` with the time on its `line`, and an AIP; a \
-             new cut is a draft `create` of type cut. Renders, hero frames, graded stills and proxies are entries of \
-             type task the studio's rules make for the Mac's worker: `render` and `frame` of a cut, `world-proxy` of \
-             a shot version, asked in the studio, and `probe`, `proxy`, `still`, `transcript` and `analysis` of every \
-             file tagged media:original, by themselves; where it may only suggest, its AIP's note names what to \
-             make once it lands, and the person asks it. A done task's `outputs` are file entries, read with \
-             avendb_read_file. For access it lacks, ask its person with avendb_request_access, saying why: they \
+             `aip_promote`; the vault's owners land it by accepting the AIP. Studio 2, the film studio, lives in {coop}: its \
+             Library's originals (files tagged media:original), what the Mac makes of each by itself as tasks (probe, \
+             proxy, grading still, transcript, analysis), its cuts (entries of type cut: a record of name, project, \
+             variant, stage and version, and the whole timeline as one JSON text, `timeline`: its clips by track, each \
+             picture clip's grade `stacks`, the scenes' looks in `grade`, each sound clip's `vol`, `eq` and fades), \
+             its stories, posts and Generated UI views. Read it with avendb_studio (`what`: library, file, \
+             transcript, transcript_search, analysis, find_shots, cuts, cut, stacks, tasks, stories, posts, views, \
+             entry, grade_tools). Change it with avendb_studio_edit (`action`: cut, story_arc, grade_stack, \
+             balances, audio_mix, audio_eq, transcript_edit, record, create, delete, ingest): on main where the \
+             aven may change the entry there, else on a proposal of its own, and with `aip` (`title`, `note`) it \
+             bundles its proposals in an AIP and promotes it at once; a deletion and a transcript's words are always \
+             proposed, for a human to accept. What only the Mac computes is a task of a rule its studio worker does, \
+             asked with avendb_task (`kind`, `entry`, `params`, `wait`): render and frame of a cut (a film, a hero \
+             frame or a graded still), look, scopes and balance of a cut (its shots read for the base correction, a \
+             scope sheet, balances proposed), reference of a picture, sound, level and sound-match of a cut (its \
+             sound measured, levelled and matched, proposed), playback of a cut (its playback checked), world-proxy \
+             of a shot version, and probe, proxy, still, transcript and analysis of an original, asked again with \
+             `again: true`. It makes the task in the entry's vault by the aven's task asker's share, the same ask \
+             one task, waits up to `wait` seconds for the Mac's answer and reads it whole, a picture inline; the Mac \
+             takes tasks up while The OS app is open on it, a round a minute. A proposal a task makes (balances, \
+             levels, EQ) changes the cut only once written with avendb_studio_edit. A done task's `outputs` are \
+             file entries, read with avendb_read_file. For access it lacks, ask its person with avendb_request_access, saying why: they \
              answer in The OS app.",
             name = self.name,
             coop = world::SEED_COOP,
@@ -817,6 +842,8 @@ impl Agent {
                 Ok(self.run(op, beside(args)?).await?.to_string())
             }
             "avendb_add_spark" => self.add_spark(vault, args).await,
+            "avendb_studio" => self.studio(args).await,
+            "avendb_studio_edit" => self.studio_edit(args).await,
             "avendb_add_artifact" => self.add_artifact(vault, args).await,
             "avendb_read_file" => {
                 let named = ["entry", "vault", "name"];
@@ -1584,6 +1611,124 @@ fn tools() -> Value {
                             inline alone. Answers its entry, vault, name, media type, length, path and text. The \
                             same as a get_file op on avendb_run.",
             "inputSchema": file,
+        },
+        {
+            "name": "avendb_studio",
+            "description": "Read Studio 2, the film studio, in its aven's coop, as the legacy studio's MCP read it. what: \
+                            library (each original file tagged media:original, or with all: true every file, filtered by \
+                            tag or media such as video/*: its entry, name, media, length, tags, where its copies are, \
+                            what the Mac made of it: probe in brief, proxy, grading still, preview, words' and analysis' \
+                            state, and its open tasks; with the count and bytes), file (one file whole: its probe, its \
+                            words and analysis in brief), transcript (a file's words with their times and timecodes, \
+                            from/to narrowing it to a clip), transcript_search (a phrase across every transcript: \
+                            where it is said and the sentence around it), analysis (a file's shot analysis: summary, \
+                            tags, segments, cues with timecodes, from/to), find_shots (the best ranges across the \
+                            analysed files by base tags such as {\"shot_size\": [\"CU\"]}, words in query, cue kinds, \
+                            min_confidence), cuts, cut (a cut as a timeline), stacks (a cut's grade as stacks of tools), \
+                            tasks (by entry, rule, status), stories, posts, views (Generated UI), entry (any entry \
+                            whole), grade_tools (every grading tool and its controls). vault narrows it to one vault.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "what": { "type": "string", "enum": ["library", "file", "transcript", "transcript_search", "analysis",
+                        "find_shots", "cuts", "cut", "stacks", "tasks", "stories", "posts", "views", "entry", "grade_tools"] },
+                    "entry": text("The entry it reads: a file, a cut, any entry; for tasks, the entry they are of, or a task"),
+                    "vault": text("Only this vault's"),
+                    "tag": text("library, transcript_search, find_shots: only files carrying this tag"),
+                    "media": text("library: only files of this media type, video/* any video"),
+                    "all": { "type": "boolean", "description": "library: every file, not only the originals" },
+                    "from": { "type": "number", "description": "transcript, analysis: from this second of the file" },
+                    "to": { "type": "number", "description": "transcript, analysis: to this second of the file" },
+                    "phrase": text("transcript_search: the phrase to find"),
+                    "query": text("find_shots: words to find in the cues, what is said, the summaries"),
+                    "tags": { "type": "object", "description": "find_shots: base tags, each one value or a list of any" },
+                    "kinds": { "type": "array", "items": { "type": "string" }, "description": "find_shots: only these cue kinds (highlight, take, emotion, cut, transition, action, problem)" },
+                    "min_confidence": { "type": "number" },
+                    "rule": text("tasks: only this rule's"),
+                    "status": text("tasks: only queued, claimed, done, failed or held"),
+                    "limit": { "type": "integer" },
+                },
+                "required": ["what"],
+            },
+        },
+        {
+            "name": "avendb_studio_edit",
+            "description": "Change Studio 2 as this agent, as its aven's shares allow: on the entry's main line where it \
+                            may change it there, else on a proposal of its own (draft for a new entry), and with aip \
+                            {title, note} its proposals bundled in an AIP and promoted, for a human to accept. action: \
+                            cut (entry, patch: fields of its timeline to set, clips the whole list), story_arc (entry, \
+                            sections: [{section: thumbnail|hook|act1|act2|act3|cliffhanger, start, dur, text, tension: \
+                            [[t, 0-100, feel?]]}]), grade_stack (entry, stack: base|clip|scene|timeline, clip or scene, \
+                            set: {strength?, tools: [{tool, ...controls}]} or null), balances (entry, shots: [{clip, \
+                            balance}] as a balance task proposes them, into each shot's base correction), audio_mix \
+                            (entry, clips: [{clip, gain_db or vol, fin, fout, keys: [[t, dB]], eq}], as a level or \
+                            sound-match task proposes them), audio_eq (entry, eq: [{type: highpass|lowshelf|peaking|notch|\
+                            highshelf|lowpass, f, gain, q}], [] none; clips or track), transcript_edit (entry: the \
+                            original, fixes: [{i: the word's place, w: what was said}], always proposed), record \
+                            (entry, set: {field: value}, tags: the whole list: a story, a post, a view, a file's title), \
+                            create (type: story, post, view, cut…, value, tags, vault), delete (entries, why: always \
+                            proposed, a human accepts), ingest (paths: absolute files of this Mac brought in as \
+                            originals, tags). Answers what it wrote on main, its proposals, and the AIPs.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["cut", "story_arc", "grade_stack", "balances", "audio_mix", "audio_eq",
+                        "transcript_edit", "record", "create", "delete", "ingest"] },
+                    "entry": text("The entry it changes: a cut, an original, any entry"),
+                    "patch": { "type": "object", "description": "cut: the timeline's fields to set" },
+                    "sections": { "type": "array", "items": { "type": "object" } },
+                    "stack": { "type": "string", "enum": ["base", "clip", "scene", "timeline"] },
+                    "clip": text("grade_stack: the shot"),
+                    "scene": text("grade_stack: the scene"),
+                    "set": { "description": "grade_stack: the stack, or null; record: the fields and their values" },
+                    "shots": { "type": "array", "items": { "type": "object" } },
+                    "clips": { "description": "audio_mix: the changes; audio_eq: the clip ids" },
+                    "track": text("audio_eq: every clip with a file on this track, as A1"),
+                    "eq": { "type": "array", "items": { "type": "object" } },
+                    "fixes": { "type": "array", "items": { "type": "object" } },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "type": text("create: the new entry's type"),
+                    "value": { "type": "object", "description": "create: the new entry's record" },
+                    "vault": text("create, ingest: the vault; left out, its aven's coop"),
+                    "entries": { "type": "array", "items": { "type": "string" }, "description": "delete: the entries" },
+                    "why": text("delete: why, for the person"),
+                    "paths": { "type": "array", "items": { "type": "string" }, "description": "ingest: absolute paths on this Mac" },
+                    "aip": { "type": "object", "description": "{title, note}: bundle the proposals in an AIP and promote it",
+                        "properties": { "title": { "type": "string" }, "note": { "type": "string" } } },
+                },
+                "required": ["action"],
+            },
+        },
+        {
+            "name": "avendb_task",
+            "description": "Ask the Mac's studio worker for what only the Mac computes, as the studio's buttons do: a task \
+                            of a rule (kind) on an entry, with params, made in the entry's vault by its aven's task \
+                            asker's share; the same ask is one task. kind: render (a cut into its deliveries; delivery \
+                            youtube-4k for YouTube's 4K master alone), frame (of a cut: clip's graded still, or a hero \
+                            frame at t in shape), look (a cut's shots read for the base correction: clips, regions, \
+                            looks), scopes (a scope sheet: clips, the first the reference; the picture inline), balance \
+                            (balances proposed: clips, reference, or neutral and warmth; regions, skip), reference (a \
+                            reference picture read), sound (a cut's sound measured), level (gains and fades proposed: \
+                            targets by track), sound-match (EQ and gain proposed: reference, clips, lo, hi, limit, \
+                            amount, level), playback (a cut played headless: t, frames, shape, originals; its frame \
+                            inline), world-proxy (of a shot version), probe, proxy, still, transcript, analysis (of an \
+                            original), youtube (of an artifact). again: true asks a done or held one again (a \
+                            transcript heard again, a proxy made again). task reads one asked before. It waits up to \
+                            wait seconds (default 30, at most 600) for the answer and gives its status, its value \
+                            whole and its output files; the Mac takes tasks up while The OS app is open, a round a \
+                            minute.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "kind": { "type": "string", "enum": ["render", "frame", "look", "scopes", "balance", "reference", "sound", "level",
+                        "sound-match", "playback", "world-proxy", "probe", "proxy", "still", "transcript", "analysis", "youtube"] },
+                    "entry": text("The entry the task is of: a cut, an original, a picture, a shot version, an artifact"),
+                    "params": { "type": "object", "description": "The rule's params, as kind lists them" },
+                    "task": text("A task asked before, to read or wait for"),
+                    "again": { "type": "boolean", "description": "Ask a done or held task again from nothing" },
+                    "wait": { "type": "integer", "description": "Seconds to wait for the answer: 0 asks and answers at once" },
+                },
+            },
         },
     ])
 }

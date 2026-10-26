@@ -16,6 +16,8 @@ avendb-browser = { path = "../avendb-browser" }
 anyhow = "1"
 # a file's chunks from the page, for its stream into the blob store
 bytes = "1.12"
+# the studio's task keys, as the page makes them (agent/studio.rs `key_of`)
+blake3 = "1.8.7"
 # the page's bytes in base64, the sheet's in base64url
 data-encoding = "2.11"
 getrandom = "0.4"

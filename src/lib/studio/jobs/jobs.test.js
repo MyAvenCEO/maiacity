@@ -4,7 +4,8 @@
 // Run: bun test src/lib/studio/jobs/jobs.test.js
 import { expect, test } from 'bun:test';
 import { lacking, RULE_V1, TASK_V1 } from './schemas.js';
-import { BUILT_IN, fromRecord, layered, toRecord } from './rules.js';
+import { BUILT_IN, CUT_RULES, fromRecord, layered, toRecord } from './rules.js';
+import { NATIVE } from './executors.js';
 import { asking, claimable, claiming, failing, finishing, holds, keyOf, LEASE, picks, reconcile, tasksOf } from './tasks.js';
 
 const V = 'aa'.repeat(32);
@@ -244,4 +245,24 @@ test('in a vault whose studio worker this Mac hosts, the worker queues, claims a
 	// its shares name only tasks and files, and nothing to share on
 	expect(WORKER_SHARES.flatMap((s) => s.where.type)).toEqual(['task', 'file']);
 	expect(WORKER_SHARES.flatMap((s) => s.ops.map((o) => o.op))).not.toContain('share');
+});
+
+test('what an agent asks of the Mac is only asked, each done by the Mac, a cut\'s with its footage', () => {
+	const asked = ['look', 'scopes', 'balance', 'reference', 'sound', 'level', 'sound-match', 'playback'];
+	for (const key of asked) {
+		expect(rule(key).when).toBeNull();
+		expect(typeof NATIVE[key]).toBe('function');
+	}
+	expect(CUT_RULES.every((k) => rule(k).inputs.cut === '$entry')).toBe(true);
+	expect(rule('reference').inputs).toEqual({ picture: '$entry' });
+	// an agent's ask, as the reconciler never makes one: the params it names, the rest left out
+	const cut = { entry: 'e1', vault: V, type: 'cut', tags: [], deleted: false, edits: 3, record: { kind: 'cut' }, files: [] };
+	expect(reconcile(layered(BUILT_IN), world([cut]), V, V, 1)).toEqual([]);
+	const a = asking(rule('look'), cut, world([cut]), 'aven', V, 5, { clips: ['c1'] });
+	expect(JSON.parse(a.value.params)).toEqual({ clips: ['c1'] });
+	expect(a.value.lane).toBe('gpu');
+	// the key avendb-device's agent makes of the same ask (studio.rs `key_of`): one task, whoever asks
+	expect(a.value.key).toBe('251edfd06035ae72379a7000284f1be31d7979d282547d0be0964ab222fec0e1');
+	const f = asking(rule('frame'), cut, world([cut]), 'aven', V, 5, { t: 2.5, shape: '9:16' });
+	expect(f.value.key).toBe('d1f7fdc27dda750f11b4d158cecc2cb87ee82a38032856a6ae6fa76532c49a27');
 });

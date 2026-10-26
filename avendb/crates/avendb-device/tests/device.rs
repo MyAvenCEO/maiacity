@@ -1645,6 +1645,181 @@ async fn a_suggester_agent_drafts_sparks_and_artifacts_in_her_maia_city_which_la
     server.shutdown().await.expect("the server's node stops");
 }
 
+/// The studio's task schema, as the page adds it to a vault (src/lib/studio/jobs/schemas.js `TASK_V1`).
+const TASK_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Task, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "task" },
+    "rule": { "type": "string", "maxLength": 64 },
+    "version": { "type": "integer", "minimum": 1 },
+    "key": { "type": "string", "maxLength": 64 },
+    "lane": { "enum": ["gpu", "speech", "ai", "io", "net"] },
+    "inputs": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string", "maxLength": 64 },
+          "entry": { "type": "string", "maxLength": 64 },
+          "at": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 64, "default": [] }
+        },
+        "required": ["id", "name", "entry"]
+      }
+    },
+    "params": { "type": "string", "maxLength": 4000, "default": "{}" },
+    "status": { "enum": ["queued", "claimed", "done", "failed", "held"] },
+    "worker": { "type": "string", "maxLength": 64, "default": "" },
+    "lease_until": { "type": "integer", "minimum": 0, "default": 0 },
+    "attempts": { "type": "integer", "minimum": 0, "default": 0 },
+    "error": { "type": "string", "maxLength": 2000, "default": "" },
+    "outputs": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 64, "default": [] },
+    "result": { "type": "string", "maxLength": 20000, "default": "" },
+    "by": { "type": "string", "maxLength": 64, "default": "" },
+    "at": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["kind", "rule", "version", "key", "lane", "status", "at"]
+}
+"#;
+
+/// The studio's cut schema, as the page adds it to a vault (src/lib/studio/cuts.js `CUT_V1`).
+const CUT_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cut, v1",
+  "description": "A film's cut as the studio edits it: its name, stage and version, and its timeline as JSON text.",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "cut" },
+    "name": { "type": "string", "maxLength": 200 },
+    "project": { "type": "string", "maxLength": 200, "default": "" },
+    "variant": { "type": "string", "maxLength": 200, "default": "" },
+    "description": { "type": "string", "maxLength": 4000, "default": "" },
+    "stage": { "type": "string", "maxLength": 32, "default": "edit" },
+    "version": { "type": "integer", "minimum": 1, "default": 1 },
+    "timeline": { "type": "string", "maxLength": 4000000, "default": "{}" },
+    "legacy": { "type": "string", "maxLength": 64, "default": "" },
+    "at": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["kind", "name", "at"]
+}
+"#;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_suggester_agent_reads_and_proposes_studio_edits_and_asks_the_macs_worker_for_tasks() {
+    let folder = Folder::new("agent-studio");
+    let (_relay, url, server) = unclaimed(&folder.0.join("server")).await;
+    let dir = folder.0.join("avendb");
+    let mut app = App::start(&dir, Passkey::from_seed([6; 32]), true);
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    app.asked();
+    let world = world_of(&mut app).await;
+    let (city, maia) = seed_coop_in(&world, &world["mine"]);
+    // avenMAIA's rights on her Maia City, as the repo seed gives them: Suggester, AIP author, and task asker
+    give(&mut app, &city, &maia, "Suggester", &city).await;
+    let author = json!({ "name": "AIP author", "ops": [{ "op": "read" }, { "op": "create" }, { "op": "set", "path": [] }] });
+    run(&mut app, json!({ "op": "share", "over": city, "who": { "vault": maia }, "level": author, "what": { "type": ["aip"] }, "as": city }))
+        .await
+        .expect("an AIP author");
+    let asker = json!({ "name": "Task asker", "ops": [{ "op": "read" }, { "op": "create" }, { "op": "set", "path": [] }] });
+    run(&mut app, json!({ "op": "share", "over": city, "who": { "vault": maia }, "level": asker, "what": { "type": ["task"] }, "as": city }))
+        .await
+        .expect("a task asker");
+    // the studio's schemas, and a cut, as the studio makes them
+    for schema in [TASK_V1, CUT_V1] {
+        run(&mut app, json!({ "op": "create", "vault": city, "type": "schema", "value": schema, "as": city })).await.expect("a schema");
+    }
+    let timeline = json!({ "aspect": "16:9", "clips": [
+        { "id": "v1", "track": "V1", "start": 0, "in": 0, "dur": 4, "hash": "aven:x", "script": { "scene": "desk" } },
+        { "id": "a1", "track": "A1", "start": 0, "in": 0, "dur": 4, "hash": "aven:y", "vol": 1 }
+    ] });
+    let value = json!({ "kind": "cut", "name": "Day 21", "stage": "edit", "version": 1, "timeline": timeline.to_string(), "at": 1 });
+    let cut = run(&mut app, json!({ "op": "create", "vault": city, "type": "cut", "value": value, "as": city })).await.expect("a cut")["entry"].clone();
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let asked = requests(&mut app, 1).await;
+    app.call("grant", json!(["agentClaude", asked[0]["device"], []])).await.expect("granted");
+    let tools = claude.ask("tools/list", json!({})).await.expect("its tools")["tools"].clone();
+    for name in ["avendb_studio", "avendb_studio_edit", "avendb_task"] {
+        assert!(tools.as_array().unwrap().iter().any(|t| t["name"] == name), "{name} among its tools");
+    }
+    // it reads her cuts, once its rights reach it
+    let mut cuts = (String::new(), true);
+    for _ in 0..100 {
+        cuts = once_it_may(&mut claude, "avendb_studio", json!({ "what": "cuts" })).await;
+        if cuts.0.contains(cut.as_str().unwrap()) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!cuts.1 && cuts.0.contains("Day 21"), "{cuts:?}");
+    let (stacks, error) = claude.tool("avendb_studio", json!({ "what": "stacks", "entry": cut })).await;
+    assert!(!error && stacks.contains("\"desk\""), "{stacks}");
+    // a mix change, proposed, as it may only suggest, in an AIP her Maia City accepts
+    let mix = json!({ "action": "audio_mix", "entry": cut, "clips": [{ "clip": "a1", "gain_db": -6.0 }],
+        "aip": { "title": "Quieter voice", "note": "Why: the voice sits 6 dB too loud." } });
+    let (made, error) = claude.tool("avendb_studio_edit", mix).await;
+    assert!(!error, "{made}");
+    let made: Value = serde_json::from_str(&made).unwrap();
+    assert_eq!(made["main"], json!([]), "nothing on main: {made}");
+    assert_eq!(made["proposals"][0]["entry"], cut, "{made}");
+    let aip = made["aips"][0]["entry"].clone();
+    let end = Instant::now() + Duration::from_secs(60);
+    while !run(&mut app, json!({ "op": "aip", "entry": aip })).await.is_ok_and(|r| r["label"] == "AIP-1") {
+        assert!(Instant::now() < end, "the AIP promoted, on her Mac, within 60 s");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    run(&mut app, json!({ "op": "aip_review", "entry": aip, "verdict": "accepted", "text": "Yes", "as": city })).await.expect("accepted");
+    shown(&mut app, &cut, "the mix landed", |e| {
+        let t: Value = serde_json::from_str(e["record"]["timeline"].as_str().unwrap_or("{}")).unwrap_or_default();
+        t["clips"][1]["vol"] == json!(0.501)
+    })
+    .await;
+    // a deletion is always proposed, never written on main
+    let post = json!({ "kind": "post", "title": "Old news", "text": "x", "channel": "", "about": "", "tags": [] });
+    let post = run(&mut app, json!({ "op": "create", "vault": city, "type": "post", "value": post, "as": city })).await.expect("a post")["entry"].clone();
+    shown(&mut app, &post, "the post", |_| true).await;
+    let mut gone = (String::new(), true);
+    for _ in 0..100 {
+        gone = claude.tool("avendb_studio_edit", json!({ "action": "delete", "entries": [post], "why": "a test" })).await;
+        if !gone.0.contains("reads no entry") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let (gone, error) = gone;
+    assert!(!error && gone.contains("\"proposals\"") && gone.contains("\"main\":[]"), "{gone}");
+    // a task asked of the Mac's worker: made in her Maia City by the task asker's share, the same ask one task
+    let ask = json!({ "kind": "sound", "entry": cut, "wait": 0 });
+    let (asked, error) = claude.tool("avendb_task", ask.clone()).await;
+    assert!(!error, "{asked}");
+    let asked: Value = serde_json::from_str(&asked).unwrap();
+    assert_eq!((&asked["status"], &asked["rule"], &asked["known"]), (&json!("queued"), &json!("sound"), &json!(false)), "{asked}");
+    let task = asked["task"].clone();
+    let queued = shown(&mut app, &task, "the task on her Mac", |t| t["record"]["status"] == "queued").await;
+    assert_eq!((&queued["vault"], &queued["record"]["by"]), (&city, &maia), "{queued}");
+    let (again, _) = claude.tool("avendb_task", ask).await;
+    assert!(again.contains(task.as_str().unwrap()) && again.contains("\"known\":true"), "{again}");
+    assert!(claude.tool("avendb_task", json!({ "kind": "sound", "entry": cut, "params": { "nope": 1 } })).await.1, "no such param");
+    // her Mac's worker does it (here by hand), and the agent reads its answer
+    let result = json!({ "clips": [{ "clip": "a1", "lufs": -20.5 }] }).to_string();
+    let done = json!({ "op": "batch", "ops": [
+        { "op": "set", "entry": task, "path": ["status"], "value": "done" },
+        { "op": "set", "entry": task, "path": ["result"], "value": result }
+    ], "as": city });
+    run(&mut app, done).await.expect("done");
+    let (read, error) = claude.tool("avendb_task", json!({ "task": task, "wait": 30 })).await;
+    assert!(!error, "{read}");
+    let read: Value = serde_json::from_str(&read).unwrap();
+    assert_eq!((&read["status"], &read["result"]["clips"][0]["lufs"]), (&json!("done"), &json!(-20.5)), "{read}");
+    let (listed, _) = claude.tool("avendb_studio", json!({ "what": "tasks", "entry": cut })).await;
+    assert!(listed.contains(task.as_str().unwrap()), "{listed}");
+    claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
 /// Whether the description of `avendb_add_spark` among `tools` says a link or a media file goes in as an artifact.
 fn spark_tool_says_artifacts(tools: &Value) -> bool {
     let spark = tools.as_array().into_iter().flatten().find(|t| t["name"] == "avendb_add_spark");
