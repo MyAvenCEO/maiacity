@@ -79,7 +79,7 @@ fn name(slot: u64) -> String {
 fn aad(device: SignerId) -> Vec<u8> {
     let mut aad = AAD.to_vec();
     aad.extend(device.0);
-    aad.extend(avendb::paged_view::engine());
+    aad.extend(avendb::lab::engine());
     aad
 }
 impl Queue {
@@ -197,7 +197,7 @@ mod tests {
             scope: [3; 32],
             history: [4; 40],
             root: [5; 32],
-            engine: avendb::paged_view::engine(),
+            engine: avendb::lab::engine(),
         }
     }
     fn tree(budget: &Budget) -> Tree {
