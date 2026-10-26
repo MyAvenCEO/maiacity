@@ -192,6 +192,9 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: mkdir -p "$RUNNER_TEMP/avendb-opfs" && bun add --cwd "$RUNNER_TEMP/avendb-opfs" --ignore-scripts --exact playwright@1.64.1
+      # the same Azure mirror stall as above; Ubuntu's own HTTPS archive
+      - name: Use Ubuntu's archive for browser dependencies
+        run: sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
       - run: bun "$RUNNER_TEMP/avendb-opfs/node_modules/playwright/cli.js" install --with-deps webkit
       - run: AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" bun scripts/test-avendb-store.mjs --browser webkit
 
