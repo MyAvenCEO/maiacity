@@ -47,7 +47,7 @@ if (args[0] === '--list') {
 		const failed = peers.reduce((n, p) => n + (p.pulled?.failed ?? 0), 0);
 		const speed = (run.network?.results ?? []).filter((r) => r.mbps != null).map((r) => `${r.kind} ${r.mbps.toFixed(1)} Mbit/s`);
 		console.log([
-			`${device} · ${d.device ?? '?'} · build ${String(d.build?.frontend ?? '?').slice(0, 8)} · ${report.page ?? '?'} · ${when(list[0].at)} (${list.length} kept)`,
+			`${device} · ${d.device ?? '?'} · build ${String(d.build?.frontend ?? '?').slice(0, 8)} · ${report.view ?? '?'} (${report.why ?? report.page ?? '?'}) · ${when(list[0].at)} (${list.length} kept)`,
 			`  phase ${d.phase ?? '?'} · sync ${sync.status === 'unavailable' ? 'unknown' : `${sync.peers ?? '?'} peers, ${sync.behind ?? '?'} of ${sync.logs ?? '?'} logs behind, ${sync.pulling ?? 0} pulling`}`,
 			`  peers ${peers.length}: ${peers.map((p) => `${String(p.device).slice(0, 8)} ${p.way}${p.lacks ? `, lacks ${p.lacks}` : ''}`).join('; ') || 'none'}${failed ? ` · ${failed} failed page requests` : ''}`,
 			...(run.status ? [`  last checks: ${run.status}${speed.length ? ` · ${speed.join(', ')}` : ''}${run.responsiveness?.eventLoopDelayP95Ms != null ? ` · page delay p95 ${Math.round(run.responsiveness.eventLoopDelayP95Ms)} ms` : ''}`] : [])
