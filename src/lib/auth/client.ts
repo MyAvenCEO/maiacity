@@ -2,7 +2,7 @@
 // site on the CDN; only these calls reach a server, and only when somebody
 // actually signs up.
 import { dev } from '$app/environment';
-import { startRegistration } from '@simplewebauthn/browser';
+import { register } from './passkey.js';
 import { command, native } from '$lib/native';
 
 /** api.maia.city in production, the local container in development. */
@@ -89,7 +89,7 @@ export async function signUp(name: string, invite = ''): Promise<Founder> {
 		method: 'POST',
 		body: JSON.stringify({ name, invite })
 	});
-	const attestation = await startRegistration({ optionsJSON: forAvenDB(options) });
+	const attestation = await register(forAvenDB(options));
 	return call<Founder>('/api/passkey/register/finish', {
 		method: 'POST',
 		body: JSON.stringify(attestation)

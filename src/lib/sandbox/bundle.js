@@ -33,8 +33,8 @@ const fonts = {
 	resolveId: (id) => (id === 'virtual:view-fonts' ? '\0view-fonts' : undefined),
 	load(id) {
 		if (id !== '\0view-fonts') return;
-		const b64 = (p) => readFileSync(`${ROOT}node_modules/${p}`).toString('base64');
-		return `export const DM_SANS = ${JSON.stringify(b64('@fontsource-variable/dm-sans/files/dm-sans-latin-wght-normal.woff2'))};\nexport const FRAUNCES = ${JSON.stringify(b64('@fontsource-variable/fraunces/files/fraunces-latin-wght-normal.woff2'))};\n`;
+		const b64 = (p) => readFileSync(`${ROOT}src/lib/fonts/${p}`).toString('base64');
+		return `export const DM_SANS = ${JSON.stringify(b64('dm-sans/files/dm-sans-latin-wght-normal.woff2'))};\nexport const FRAUNCES = ${JSON.stringify(b64('fraunces/files/fraunces-latin-wght-normal.woff2'))};\n`;
 	}
 };
 

@@ -23,7 +23,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 
 const webauthn = createRequire(new URL('../api/package.json', import.meta.url))('@simplewebauthn/server');
 
@@ -151,19 +151,20 @@ await new Promise((r) => stand.listen(3100, '127.0.0.1', r));
 
 // ─── the browser ───
 
-const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+/** The first person's browser: the context every tab shares unless it asks for its own. */
+const shared = await browser.newContext();
 /** A tab of the browser, in a context of its own (its own cookies and storage: another person's browser) or the first
  *  one's, with the authenticator `auth` (a new one if none), pointed at the test server. */
 async function tab(auth = null, own = false) {
-	const page = await (own ? await browser.createBrowserContext() : browser.defaultBrowserContext()).newPage();
-	await page.setViewport({ width: 1300, height: 950 });
-	await page.evaluateOnNewDocument(
-		(relay, server) => {
+	const page = await (own ? await browser.newContext() : shared).newPage();
+	await page.setViewportSize({ width: 1300, height: 950 });
+	await page.addInitScript(
+		([relay, server]) => {
 			sessionStorage.setItem('avendb:relay', relay);
 			sessionStorage.setItem('avendb:server', server);
 		},
-		relay,
-		server
+		[relay, server]
 	);
 	page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
 	// an invite made before Maia City holds its groups says so in an alert: dismissed, and tried again
@@ -171,7 +172,7 @@ async function tab(auth = null, own = false) {
 		console.log(`  (a dialog said: ${d.message()})`);
 		void d.dismiss();
 	});
-	const cdp = await page.createCDPSession();
+	const cdp = await page.context().newCDPSession(page);
 	await cdp.send('WebAuthn.enable', { enableUI: false });
 	const options = { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true };
 	const verified = { hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true, hasPrf: true };
@@ -200,15 +201,14 @@ async function until(holds, ms = 90000) {
 const waitText = (page, t, ms) => until(async () => (await words(page)).includes(t), ms);
 async function click(page, t, selector = 'button') {
 	const ok = await page.evaluate(
-		(t, selector) => {
+		([t, selector]) => {
 			const all = [...document.querySelectorAll(selector)];
 			const said = (e) => e.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 			const el = all.find((e) => said(e) === t) ?? all.find((e) => said(e).includes(t));
 			if (el instanceof HTMLElement) el.click();
 			return !!el;
 		},
-		t,
-		selector
+		[t, selector]
 	);
 	if (!ok) check(`there is a “${t}” to click`, false, await words(page));
 	await sleep(300);
@@ -238,10 +238,10 @@ try {
 	await a.page.evaluate(() => (location.hash = '#home'));
 	await sleep(1500);
 	await shot(a.page, '02-avendb-home');
-	await a.page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+	await a.page.setViewportSize({ width: 390, height: 844 });
 	await sleep(600);
 	await shot(a.page, '03-avendb-home-phone');
-	await a.page.setViewport({ width: 1300, height: 950 });
+	await a.page.setViewportSize({ width: 1300, height: 950 });
 
 	// 2. a reload: signed in still, avenDB locked; one ceremony unlocks it
 	await a.page.goto(`${base}/app/`, { waitUntil: 'domcontentloaded' });

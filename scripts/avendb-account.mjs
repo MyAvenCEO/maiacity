@@ -32,7 +32,7 @@
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 
 const arg = (name, fallback) => {
 	const at = process.argv.indexOf(name);
@@ -54,23 +54,23 @@ const check = (what, ok, found = '') => {
 	console.log(`${ok ? '✓' : '✕'} ${what}${ok || !found ? '' : ` (found: ${found})`}`);
 };
 
-const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
 // the app's way in ($lib/app/entry.js) lets this tab on without avenDB, whose own page it walks; the vault founded
 // there is named as the person signed up
-await page.evaluateOnNewDocument(() => {
+await page.addInitScript(() => {
 	sessionStorage.setItem('avendb:later', '1');
 	sessionStorage.setItem('maia:signup', 'Samuel');
 });
 const wide = { width: 1300, height: 1000 };
-await page.setViewport(wide);
+await page.setViewportSize(wide);
 page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
-const cdp = await page.createCDPSession();
+const cdp = await page.context().newCDPSession(page);
 await cdp.send('WebAuthn.enable', { enableUI: false });
 const options = { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true };
 const verified = { hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true, hasPrf: true };
 const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', { options: { ...options, ...verified } });
-// /api/me answers as Samuel, a founder. Only that request is held: Puppeteer's own interception holds every request,
+// /api/me answers as Samuel, a founder. Only that request is held: a page's own request interception holds every request,
 // and the device's module and WebAssembly fetches never come back from it.
 await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/me' }] });
 cdp.on('Fetch.requestPaused', (r) => {
@@ -88,7 +88,7 @@ cdp.on('Fetch.requestPaused', (r) => {
 const text = (selector = 'main.avendb') =>
 	page.evaluate((s) => document.querySelector(s)?.textContent?.replace(/\s+/g, ' ').trim() ?? '', selector);
 /** the sheet that shows a start's steps closed, as it does by itself a little after one that went through */
-const settled = () => page.waitForSelector('.signing', { hidden: true, timeout: 15000 }).then(() => true, () => false);
+const settled = () => page.waitForSelector('.signing', { state: 'hidden', timeout: 15000 }).then(() => true, () => false);
 /** Whether `holds` comes true within `ms`. @param {() => Promise<unknown>} holds */
 async function until(holds, ms = 60000) {
 	const end = Date.now() + ms;
@@ -102,15 +102,14 @@ const waitText = (t, ms = 60000, selector = 'main.avendb') => until(async () => 
 /** Click the `selector` whose words are `t`, else the first whose words include it. */
 async function click(t, selector = 'main.avendb button') {
 	const ok = await page.evaluate(
-		(t, selector) => {
+		([t, selector]) => {
 			const all = [...document.querySelectorAll(selector)];
 			const words = (/** @type {Element} */ e) => e.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 			const el = all.find((e) => words(e) === t) ?? all.find((e) => words(e).includes(t));
 			if (el instanceof HTMLElement) el.click();
 			return !!el;
 		},
-		t,
-		selector
+		[t, selector]
 	);
 	if (!ok) check(`there is a “${t}” to click`, false);
 	await sleep(250);
@@ -119,7 +118,7 @@ async function click(t, selector = 'main.avendb button') {
 /** Pick the option worded `label` of the select `selector`. */
 async function choose(selector, label) {
 	const ok = await page.evaluate(
-		(selector, label) => {
+		([selector, label]) => {
 			const s = document.querySelector(selector);
 			if (!(s instanceof HTMLSelectElement)) return false;
 			const o = [...s.options].find((o) => o.textContent?.trim() === label);
@@ -128,8 +127,7 @@ async function choose(selector, label) {
 			s.dispatchEvent(new Event('change', { bubbles: true }));
 			return true;
 		},
-		selector,
-		label
+		[selector, label]
 	);
 	if (!ok) check(`there is a “${label}” to choose`, false);
 	await sleep(150);
@@ -237,7 +235,7 @@ async function retitle(t) {
  */
 async function onEdit(what, label = '', ins = null) {
 	const ok = await page.evaluate(
-		(what, ins) => {
+		([what, ins]) => {
 			const li = [...document.querySelectorAll('.doc .history li')].find(
 				(l) =>
 					l.querySelector('.what b')?.textContent?.trim() === what &&
@@ -247,8 +245,7 @@ async function onEdit(what, label = '', ins = null) {
 			if (button instanceof HTMLElement) button.click();
 			return !!button;
 		},
-		what,
-		ins
+		[what, ins]
 	);
 	if (!ok) check(`the history has “${what}”`, false);
 	await sleep(250);
@@ -606,7 +603,7 @@ try {
 	await shot('11-coop');
 
 	// a phone: the bar on top, nothing wider than the screen
-	await page.setViewport({ width: 390, height: 844 });
+	await page.setViewportSize({ width: 390, height: 844 });
 	await look('avenALICE');
 	const fits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 	check('on a phone, nothing wider than the screen', fits);
@@ -620,7 +617,7 @@ try {
 	check('a note on a phone: its columns one under another, nothing wider than the screen', phoneNote && (await docText()) === BODY);
 	await shot('12c-phone-note');
 	await back();
-	await page.setViewport(wide);
+	await page.setViewportSize(wide);
 
 	// the store kept it: after a reload it unlocks with one ceremony, every vault there
 	await page.reload({ waitUntil: 'domcontentloaded' });

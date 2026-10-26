@@ -24,7 +24,7 @@
 // shade behind them and nothing else across the picture. A story goes by its name, never a day — but a card may wear
 // a badge, bottom right ("badge": "DAY 1"): dark marine words, tight, on solid gold, as the Thumbnail step
 // draws it (src/lib/stories/Card.svelte). The font (Fraunces) and the frames are embedded (setContent cannot load files).
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -58,8 +58,8 @@ const SHAPES = [
 const LOW = (u) => `linear-gradient(to top, rgba(6,10,8,.9) 0%, rgba(6,10,8,.62) 30%, rgba(6,10,8,0) ${u}%)`;
 
 const image = (f) => `data:image/${f.endsWith('.png') ? 'png' : 'jpeg'};base64,` + readFileSync(f).toString('base64');
-const font = 'data:font/woff2;base64,' + readFileSync('node_modules/@fontsource-variable/fraunces/files/fraunces-latin-wght-normal.woff2').toString('base64');
-const browser = await puppeteer.launch({ executablePath: process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
+const font = 'data:font/woff2;base64,' + readFileSync('src/lib/fonts/fraunces/files/fraunces-latin-wght-normal.woff2').toString('base64');
+const browser = await chromium.launch({ executablePath: process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true });
 const page = await browser.newPage();
 async function draw(s, hook) {
 	const u = (px) => `${Math.round(px * s.unit)}px`;
@@ -67,7 +67,7 @@ async function draw(s, hook) {
 	const top = hook ? (HOOK_TOP[s.tag] ?? s.top) : s.top;
 	const shade = low ? LOW(s.tag === '9x16' ? 50 : 62) : s.shade;
 	const bg = hook ? '' : image(fromVault(frames[s.tag] ?? frame));
-	await page.setViewport({ width: s.w, height: s.h });
+	await page.setViewportSize({ width: s.w, height: s.h });
 	await page.setContent(`<!doctype html><html><head><style>
 @font-face { font-family: F; src: url(${font}) format('woff2'); font-weight: 100 900; }
 html,body{margin:0;width:${s.w}px;height:${s.h}px;overflow:hidden;background:${hook ? 'transparent' : '#111'}}
@@ -102,7 +102,7 @@ async function drawSplit(s) {
 		return `<div class="half ${side}"><div class="bg" style="background-image:url(${image(fromVault(img))})"></div><div class="shade"></div>
 <div class="t">${kicker ? `<div class="k">${kicker}</div>` : ''}<div class="n">${big}</div>${after ? `<div class="x">${after}</div>` : ''}</div></div>`;
 	};
-	await page.setViewport({ width: s.w, height: s.h });
+	await page.setViewportSize({ width: s.w, height: s.h });
 	await page.setContent(`<!doctype html><html><head><style>
 @font-face { font-family: F; src: url(${font}) format('woff2'); font-weight: 100 900; }
 html,body{margin:0;width:${s.w}px;height:${s.h}px;overflow:hidden;background:#111;font-family:F,serif}

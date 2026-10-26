@@ -3,8 +3,8 @@
 	import { base } from '$app/paths';
 	// self-hosted from npm, bundled into the build and served from our own CDN —
 	// no request ever goes to Google
-	import '@fontsource-variable/dm-sans/opsz.css';
-	import '@fontsource-variable/fraunces/opsz.css';
+	import '$lib/fonts/dm-sans/opsz.css';
+	import '$lib/fonts/fraunces/opsz.css';
 	import '../app.css';
 	import { page } from '$app/state';
 	import { useView } from '../../game/code/sources/device.js';

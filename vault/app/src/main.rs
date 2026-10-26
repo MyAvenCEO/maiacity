@@ -10,6 +10,7 @@ mod aven;
 mod avendb;
 mod avendb_shutdown;
 mod blob;
+mod dialog;
 mod enclave;
 mod files;
 mod jobs;
@@ -111,8 +112,7 @@ fn main() {
     // a page whose web process died opens again, never left white (revive.rs)
     #[cfg(target_os = "macos")]
     let app = app.on_page_load(revive::loaded).on_web_content_process_terminate(revive::died);
-    app.plugin(tauri_plugin_dialog::init())
-        .manage(auth::Auth::default())
+    app.manage(auth::Auth::default())
         .manage(avendb::Avendb::default())
         .manage(aven::Picked::default())
         .setup(|app| {
@@ -153,6 +153,7 @@ fn main() {
             enclave::avendb_touch_ready,
             aven::studio_ingest,
             aven::studio_pick,
+            dialog::sure,
             aven::studio_job,
             page::page_answer,
             log_js,
