@@ -1,5 +1,5 @@
 //! What a write touches (`avendb::rules`, `doc::Item::footprint`), as every reader of its entry reads it off the
-//! write's Loro ops on the version it builds on, and judges it by (`spec/AvenDB/Rules.lean`, `docs/ARCHITECTURE.md`
+//! write's Loro ops on the version it builds on, and judges it by (`spec/AvenDB/Rules.lean`, `doc:docs/avendb`
 //! §8): the touches of what apps change name the field, the row by its id and the value set, on the record as it is
 //! stored. On random records, written one after another by two devices, wholesale or by random ops, the places of a
 //! write's touches cover every change it makes to the stored record (`Within`, which C3's `changes_allowed` takes of

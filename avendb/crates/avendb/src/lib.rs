@@ -1,5 +1,5 @@
 //! avenDB: the user-owned, end-to-end encrypted database behind the avenDB page: vaults, shares, keys, Loro documents
-//! and sync by shares, entry by entry and log by log. `avendb/docs/ARCHITECTURE.md` describes the whole design.
+//! and sync by shares, entry by entry and log by log. `doc:docs/avendb` describes the whole design.
 //!
 //! Signers (a person's passkeys and the master recovery key) own human vaults, a passkey as the vault's root, and the
 //! person's devices act for it; human and coop vaults own coop and aven vaults. A vault is a flat library: its entries

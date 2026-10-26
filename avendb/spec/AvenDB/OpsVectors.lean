@@ -6,7 +6,7 @@ import AvenDB.Vectors
 # Ops vectors
 
 `vectors/ops.json`, the cases the Rust engine replays (`crates/avendb/tests/ops.rs`), in the very JSON the page and the
-Mac app send (`avendb/docs/ARCHITECTURE.md` §8):
+Mac app send (`doc:docs/avendb` §8):
 
 - **diffs**: two records and the changes between them (`Doc.diff`): every pair of a few records (among them a list
   with two rows of one id, a field that holds a value where another holds rows, an outline whose rows hold rows five

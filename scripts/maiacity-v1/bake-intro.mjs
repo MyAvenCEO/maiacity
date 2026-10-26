@@ -8,7 +8,7 @@
 //   bun scripts/maiacity-v1/bake-intro.mjs [--base http://localhost:5197] [A] [B]
 //
 // The browser: $CHROME, else Playwright's Chromium (/opt/pw-browsers/chromium), drawing with SwiftShader.
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -18,20 +18,19 @@ const base = at >= 0 ? args[at + 1] : 'http://localhost:5197';
 const seats = args.filter((a, i) => (a === 'A' || a === 'B') && args[i - 1] !== '--base');
 const OUT = join(import.meta.dir, '../../src/lib/maiacity-v1/intro');
 
-const browser = await puppeteer.launch({
+const browser = await chromium.launch({
 	executablePath: process.env.CHROME ?? '/opt/pw-browsers/chromium',
 	headless: true,
-	protocolTimeout: 0,
 	args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--window-size=640,360', '--no-sandbox']
 });
 try {
 	for (const seat of seats.length ? seats : ['A', 'B']) {
 		const page = await browser.newPage();
-		await page.setViewport({ width: 640, height: 360 });
+		await page.setViewportSize({ width: 640, height: 360 });
 		page.on('console', (m) => m.type() === 'error' && console.error(`[${seat}] ${m.text()}`));
 		const t0 = Date.now();
 		await page.goto(`${base}/games/maiacity-v1/?film&area=${seat}&remeasure`, { waitUntil: 'domcontentloaded' });
-		await page.waitForFunction(() => !!window.__world?.intro, { timeout: 0, polling: 500 });
+		await page.waitForFunction(() => !!window.__world?.intro, undefined, { timeout: 0, polling: 500 });
 		const schedule = await page.evaluate(() => window.__world.intro.schedule());
 		writeFileSync(join(OUT, `${seat}.json`), `${JSON.stringify(schedule, null, '\t')}\n`);
 		console.log(`${seat}: ${schedule.steps.length} steps, ${schedule.seconds.toFixed(1)} s, ${schedule.steps.reduce((a, s) => a + s.shots.length, 0)} shots (${((Date.now() - t0) / 1000).toFixed(0)} s to time)`);

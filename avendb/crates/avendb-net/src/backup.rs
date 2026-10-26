@@ -1,4 +1,4 @@
-//! Snapshots of each vault (`docs/BACKUP.md`, `spec/AvenDB/Backup.lean`, avendb's `backup`): a bucket of snapshots of
+//! Snapshots of each vault (`doc:docs/avendb`, `spec/AvenDB/Backup.lean`, avendb's `backup`): a bucket of snapshots of
 //! its own beside the server's (`Snapshots`), with a folder for each vault, `vaults/<vault>/`, laid out as a shelf is
 //! (`shelf`, `bucket::shelf_at`): blobs by their BLAKE3 hash with their outboards, as iroh-blobs keeps them, and named
 //! objects, each put once. Each folder is sealed under a key of its own, derived from the seal the server is given and

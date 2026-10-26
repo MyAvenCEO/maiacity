@@ -1,4 +1,4 @@
-//! Backups of each vault (`spec/AvenDB/Backup.lean`, `docs/BACKUP.md`): a vault's snapshot of what a node holds, how a
+//! Backups of each vault (`spec/AvenDB/Backup.lean`, `doc:docs/avendb`): a vault's snapshot of what a node holds, how a
 //! backup of it builds on the newest snapshot of its folder by that snapshot's frontiers, as a device asks a peer, and
 //! which snapshots a retention keeps, as Time Machine keeps backups. The folders themselves are `avendb-net`'s
 //! (`backup`).

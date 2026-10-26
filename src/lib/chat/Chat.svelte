@@ -8,7 +8,7 @@
 
 	A DM, a group and a note to self live in the person's own vault; a channel in a coop they act for. Every change is
 	one op the device runs and judges ($lib/chat/rooms.js); a member changes only the messages and reactions it added,
-	as every reader of the room decides from its history (avendb/docs/ARCHITECTURE.md §8, "Rooms").
+	as every reader of the room decides from its history (doc:docs/avendb §8, "Rooms").
 -->
 <script>
 	// @ts-nocheck — plain JS

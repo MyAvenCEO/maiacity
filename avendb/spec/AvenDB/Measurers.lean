@@ -4,7 +4,7 @@ import AvenDB.Objective
 /-!
 # Who measures an AIP
 
-`avendb/docs/ARCHITECTURE.md` §8, "AIPs", N2: an AIP's objective (`AvenDB.Objective`) counts a reading as measured
+`doc:docs/avendb` §8, "AIPs", N2: an AIP's objective (`AvenDB.Objective`) counts a reading as measured
 (`measured "x"`) only where a Measurer of the AIP's vault wrote it. Those who accept the vault's AIPs measure them, on
 their own devices, with nothing between them and the vault: the vault itself, as its owners' devices act for it, and
 each vault that owns it. Beside them, a vault holding a share of the vault's cap group named Measurer

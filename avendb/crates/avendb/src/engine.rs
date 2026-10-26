@@ -1,4 +1,4 @@
-//! The ops engine (`docs/ARCHITECTURE.md` §8): every read and every change of a device's entries as one JSON op,
+//! The ops engine (`doc:docs/avendb` §8): every read and every change of a device's entries as one JSON op,
 //! whatever their schema, run on the device's Lab. `ops` is the part on records alone; this is the part on entries.
 //!
 //! - **Records through schemas.** An op sees an entry's record as an app on a schema sees it (`lens::View`): the schema

@@ -590,7 +590,7 @@ fn instructions(name: &str, cloud: bool) -> String {
     format!(
             "{name} is {who}. An aven is a \
              coop's one AI identity, a vault the coop owns; {name} acts as it, with its rights, no more and no less. \
-             Every read and change is one JSON op of avenDB's engine (avendb/docs/ARCHITECTURE.md §8). Call \
+             Every read and change is one JSON op of avenDB's engine (doc:docs/avendb §8). Call \
              avendb_vaults first: it says who {name} is, the aven it acts as, once its person approved it, and which \
              vaults it sees. Read with avendb_ask; change with avendb_run, which acts as the aven by its shares: on a vault \
              where it may only suggest, write on a proposal (`propose`, then ops with its `line`), and its person \

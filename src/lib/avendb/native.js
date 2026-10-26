@@ -6,7 +6,7 @@ import { localOperation } from '../../../game/code/sources/local-policy.js';
 // on while the app does, whichever page is open. Each ceremony of the person's passkey it asks for runs in the app's
 // sign-in sheet, which the app shows for it: the page sees none of it. `NativeDevice` answers the page as the page's
 // own device does (avendb-browser's `PageDevice`): every read and change one op through `run`, each one of the app's
-// calls (avendb/docs/ARCHITECTURE.md §8). A file's bytes cross between the page and the app as they are, never in
+// calls (doc:docs/avendb §8). A file's bytes cross between the page and the app as they are, never in
 // base64 in JSON: a `read_file`'s come back raw (`avendb_read`), a file's chunks go raw (`avendb_chunk`).
 
 import { command } from '$lib/native';
@@ -146,7 +146,7 @@ export class NativeDevice {
 	}
 
 	/**
-	 * Op `op`, any read or change of the database (avendb/docs/ARCHITECTURE.md §8): its answer, `{ ok }` or
+	 * Op `op`, any read or change of the database (doc:docs/avendb §8): its answer, `{ ok }` or
 	 * `{ refused, why }`; the passkey's ceremonies, where its vault's owners approve it, run in the app's sheet, so
 	 * `ceremony` goes unused. The bytes of a `put_file` op's file, or of the file a `create` op brings (its `file`),
 	 * come from `read(at, n)`, a megabyte at a time, each raw to the app's device, which reads them twice, for the

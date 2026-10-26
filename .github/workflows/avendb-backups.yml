@@ -1,6 +1,6 @@
 name: avenDB backups
 
-# avenDB's backups (avendb/docs/BACKUP.md), tested against Hetzner and never against the live server:
+# avenDB's backups (doc:docs/avendb), tested against Hetzner and never against the live server:
 #
 #   buckets  – make sure the bucket of snapshots (SNAPSHOTS, which the server backs up every vault into each day) and
 #              the test bucket (TEST_BUCKET) are there in hel1, beside the server's own bucket, with Object Lock

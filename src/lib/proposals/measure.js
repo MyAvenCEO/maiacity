@@ -1,5 +1,5 @@
 // @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($lib/avendb/functions.js)
-// Measuring an AIP (avendb/docs/ARCHITECTURE.md §8, "AIPs", N2): an AIP's objective names the measuring logic that
+// Measuring an AIP (doc:docs/avendb §8, "AIPs", N2): an AIP's objective names the measuring logic that
 // measures it (`def sim : Measure := logic "valley-sim"`, avendb/spec/AvenDB/Objective.lean), a logic module on the
 // main line of the AIP's vault, which its owners accepted, so trusted code, tagged `ref:logic/measures/<name>`, that
 // exports `measure(input)`. Those who accept the AIP measure it, on their own device, with no server between them and

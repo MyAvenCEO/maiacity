@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS
 /**
- * INTERESTS: WHAT A VIEW WANTS, IN TIERS (step P3 of sync v2, docs/AVENDB_SYNC_V2.md; Lean avendb/spec/AvenDB/Interest.lean).
+ * INTERESTS: WHAT A VIEW WANTS, IN TIERS (step P3 of sync v2, doc:docs/avendb, section 12; Lean avendb/spec/AvenDB/Interest.lean).
  * A mounted view states its Interests once, through one handle (`createInterest`), and its unmount clears them: no
  * lease and no timer. The node (avendb-net interest.rs) brings what the Interests of every mounted view want, the
  * higher tier first: on screen (`now`), one click away (`next`), the rest of the screen's data (`later`), and what the

@@ -3,7 +3,7 @@
 //!
 //! A share is a named group of ops on a slice of its vault (`slice::spec_of_json`): `{"name": "Work todos", "where":
 //! {"all": [{"type": ["todo"]}, {"tag": "work"}]}, "ops": [{"op": "read"}, {"op": "set", "path": ["status"], "to":
-//! ["done"]}]}`, the ops as the docs write them (`rules`, `docs/ARCHITECTURE.md` §8), `where` a query's `where` of
+//! ["done"]}]}`, the ops as the docs write them (`rules`, `doc:docs/avendb` §8), `where` a query's `where` of
 //! labels alone. Its level is the class of its strongest op (`level_name`), which the page reads and never names. A
 //! keep share's level is its mode: `keepWhole`, `keepOpened` or `keepNever`.
 

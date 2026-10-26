@@ -1,4 +1,4 @@
-//! AIPs, Aven Improvement Proposals (`docs/ARCHITECTURE.md` §8, "AIPs"): the one proposal standard of every vault,
+//! AIPs, Aven Improvement Proposals (`doc:docs/avendb` §8, "AIPs"): the one proposal standard of every vault,
 //! for every type of entry, a layer read off what avenDB already holds, proposals, reviews and merges. This module is
 //! the part on records alone, as `ops` is beside `engine`: the readable diff a schema derives of two records (`diff`),
 //! its summary in one line (`summary`, and `summary_new` for a new entry, a draft), an idea's key (`key`) and the

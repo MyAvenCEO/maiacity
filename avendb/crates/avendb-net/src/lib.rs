@@ -38,7 +38,7 @@
 //!   there as they change (`edits`), and starts again from it. What it holds for good, as it tells its peers, is what
 //!   its shelf holds: on the server, what its bucket took. A place puts a shelf aside by starting a new generation
 //!   beside it, and never deletes one: avenDB is never reset (`shelf::FLOOR`).
-//! - **Snapshots** (`backup`, `docs/BACKUP.md`): the server backs up each vault into a folder of its own of a bucket of
+//! - **Snapshots** (`backup`, `doc:docs/avendb`): the server backs up each vault into a folder of its own of a bucket of
 //!   snapshots, by the frontiers of its newest snapshot, as a device asks a peer, each blob once (`Node::back_up`); a
 //!   snapshot restores onto a new shelf as a node's own edits and files (`backup::restore`, `backup::rehearse`), and
 //!   each day's check reads the bucket without restoring (`backup::Folder::check`).

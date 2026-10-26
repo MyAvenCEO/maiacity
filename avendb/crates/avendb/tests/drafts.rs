@@ -1,4 +1,4 @@
-//! The gate of drafts, new entries an AIP proposes (`docs/ARCHITECTURE.md` §8, "Drafts"): a draft is a creation that
+//! The gate of drafts, new entries an AIP proposes (`doc:docs/avendb` §8, "Drafts"): a draft is a creation that
 //! starts its own line, its main line empty until its vault lands it, merging that line; only the vault lands one.
 //! Everything goes through the ops engine (`engine::run`), as the page and an agent send ops, but where a patched app's
 //! writes are made (`Lab::patched`). agentClaude, a device vault of hers with a device of its own, is a Suggester of

@@ -40,7 +40,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 
 const arg = (name, fallback) => {
 	const at = process.argv.indexOf(name);
@@ -166,15 +166,15 @@ class App {
 
 let app = new App();
 
-const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
 // the app's way in ($lib/app/entry.js) lets this tab on without avenDB, whose own page it walks; the vault founded
 // there is named as the person signed up
-await page.evaluateOnNewDocument(() => {
+await page.addInitScript(() => {
 	sessionStorage.setItem('avendb:later', '1');
 	sessionStorage.setItem('maia:signup', 'Samuel');
 });
-await page.setViewport({ width: 1300, height: 1000 });
+await page.setViewportSize({ width: 1300, height: 1000 });
 page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
 // the app's web view: its commands answered here, as the app answers them
 const founder = { id: 'account', number: 1, name: 'Samuel', since: '2026-01-01', role: 'founder', caps: ['media:admin'] };
@@ -190,7 +190,7 @@ await page.exposeFunction('__app', async (/** @type {string} */ cmd, /** @type {
 		return { error: String(e) };
 	}
 });
-await page.evaluateOnNewDocument(() => {
+await page.addInitScript(() => {
 	/** @type {any} */ (window).__TAURI_INTERNALS__ = {
 		invoke: (/** @type {string} */ cmd, /** @type {any} */ args) =>
 			/** @type {any} */ (window).__app(cmd, args ?? {}).then((/** @type {any} */ r) => {
@@ -219,15 +219,14 @@ const waitText = (t, ms = 60000, selector = 'main.avendb') => until(async () => 
 /** Click the `selector` whose words are `t`, else the first whose words include it. */
 async function click(t, selector = 'main.avendb button') {
 	const ok = await page.evaluate(
-		(t, selector) => {
+		([t, selector]) => {
 			const all = [...document.querySelectorAll(selector)];
 			const words = (/** @type {Element} */ e) => e.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 			const el = all.find((e) => words(e) === t) ?? all.find((e) => words(e).includes(t));
 			if (el instanceof HTMLElement) el.click();
 			return !!el;
 		},
-		t,
-		selector
+		[t, selector]
 	);
 	if (!ok) check(`there is a “${t}” to click`, false);
 	await sleep(250);
@@ -252,7 +251,7 @@ const problem = () => page.evaluate(() => document.querySelector('[role=alert]')
 /** the vaults in the bar, by name, the person's own first */
 const bar = () => page.$$eval('.bar .slot[aria-label]:not(.add)', (els) => els.map((e) => e.getAttribute('aria-label')));
 /** the sheet that shows a start's steps closed, as it does by itself a little after one that went through */
-const settled = () => page.waitForSelector('.signing', { hidden: true, timeout: 15000 }).then(() => true, () => false);
+const settled = () => page.waitForSelector('.signing', { state: 'hidden', timeout: 15000 }).then(() => true, () => false);
 /** the device opened, and the sheet of its start closed */
 const opened = () => page.waitForSelector('.shell', { timeout: 180000 }).then(settled, () => false);
 const devices = () => shown('.main .list li b');
@@ -261,7 +260,7 @@ const at = `${base}/app/avendb/?${new URLSearchParams({ relay, server })}`;
 /** Pick the option worded `label` of the select `selector`. */
 async function choose(selector, label) {
 	const ok = await page.evaluate(
-		(selector, label) => {
+		([selector, label]) => {
 			const s = document.querySelector(selector);
 			if (!(s instanceof HTMLSelectElement)) return false;
 			const o = [...s.options].find((o) => o.textContent?.trim() === label);
@@ -270,8 +269,7 @@ async function choose(selector, label) {
 			s.dispatchEvent(new Event('change', { bubbles: true }));
 			return true;
 		},
-		selector,
-		label
+		[selector, label]
 	);
 	if (!ok) check(`there is a “${label}” to choose`, false);
 	await sleep(150);
@@ -343,7 +341,7 @@ async function retitle(t) {
 /** Pick the edit of the history whose words are `what` (and that put in `ins`, if given), then click `label` on it. */
 async function onEdit(what, label = '', ins = null) {
 	const ok = await page.evaluate(
-		(what, ins) => {
+		([what, ins]) => {
 			const li = [...document.querySelectorAll('.doc .history li')].find(
 				(l) =>
 					l.querySelector('.what b')?.textContent?.trim() === what &&
@@ -353,8 +351,7 @@ async function onEdit(what, label = '', ins = null) {
 			if (button instanceof HTMLElement) button.click();
 			return !!button;
 		},
-		what,
-		ins
+		[what, ins]
 	);
 	if (!ok) check(`the history has “${what}”`, false);
 	await sleep(250);
@@ -807,7 +804,7 @@ try {
 	await shot('12-access');
 
 	// the same page in a narrow window: her todos and Access fit it, nothing wider than the screen
-	await page.setViewport({ width: 390, height: 844 });
+	await page.setViewportSize({ width: 390, height: 844 });
 	const fits = () => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 	await look('avenALICE', 'Todos');
 	check('her todos, tags and all, fit a phone’s width', await fits());
@@ -815,7 +812,7 @@ try {
 	await look('avenALICE', 'Access');
 	check('and her Access', await fits());
 	await shot('12c-phone-access');
-	await page.setViewport({ width: 1300, height: 1000 });
+	await page.setViewportSize({ width: 1300, height: 1000 });
 
 	// everyone reads her todos tagged “work”: the Public group, which only reads
 	await look('avenALICE', 'Access');

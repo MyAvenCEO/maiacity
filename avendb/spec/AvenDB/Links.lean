@@ -3,7 +3,7 @@ import AvenDB.Ops
 /-!
 # Links: records that point at records
 
-`avendb/docs/ARCHITECTURE.md` §8. A field holds a record's own rows (inline, `Ops`), or a link: an entry of a vault,
+`doc:docs/avendb` §8. A field holds a record's own rows (inline, `Ops`), or a link: an entry of a vault,
 maybe a row of it, at its newest or at a version it is pinned at. The schema says which, field by field: what lives
 and dies with its record is inline, what has a life of its own, its own shares and keys, is linked.
 

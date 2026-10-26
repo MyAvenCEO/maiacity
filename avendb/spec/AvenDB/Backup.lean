@@ -5,7 +5,7 @@ import AvenDB.SyncLemmas
 
 A node keeps its vaults in one place, its shelf (on the server, its bucket), which holds what is true now. A backup
 keeps each vault apart, as it was at many moments, in a folder of its own of a bucket of snapshots, so a vault comes
-back as it was on any day kept (`docs/BACKUP.md`).
+back as it was on any day kept (`doc:docs/avendb`).
 
 A vault's **snapshot** (`snapshot`) is what the vault needs, of the edits a node holds: the logs of its entries and
 audiences, the logs of every share over it, issued by it or naming it, and of every share those rest on, and the logs of

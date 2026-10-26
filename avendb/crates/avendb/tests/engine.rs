@@ -1,4 +1,4 @@
-//! The ops engine on the Lab (`avendb::engine`, `docs/ARCHITECTURE.md` §8): queries that pick entries by the selector
+//! The ops engine on the Lab (`avendb::engine`, `doc:docs/avendb` §8): queries that pick entries by the selector
 //! of their labels and test what they open; record ops through an app's schema and its lens, which write only what
 //! changed; every write's changes in its entry's history, the same for every reader; batches, proposals, merges,
 //! restores, undos and forks as ops; and every op's write judged as any peer's, by the shares of the vault it acts

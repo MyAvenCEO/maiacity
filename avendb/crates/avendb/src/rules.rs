@@ -1,4 +1,4 @@
-//! Shares are named groups of ops, as in `avendb/spec/AvenDB/Rules.lean` (`docs/ARCHITECTURE.md` §8). A share is a
+//! Shares are named groups of ops, as in `avendb/spec/AvenDB/Rules.lean` (`doc:docs/avendb` §8). A share is a
 //! name and the ops its grantee may make on the slice its selector picks: relay, backup and read (keep, pass on and
 //! open the slice's edits), the write ops (create an entry, set a value, add, delete or move rows, ask for tags, start
 //! a proposal, merge a line, only where all it brings in lies under its path) and share (issue shares resting on it). Its level, which relays and every operational rule

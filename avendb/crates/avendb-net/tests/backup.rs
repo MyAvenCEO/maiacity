@@ -1,4 +1,4 @@
-//! Snapshots of each vault (`backup`, `docs/BACKUP.md`): the server backs up the coop into its folder of a bucket of
+//! Snapshots of each vault (`backup`, `doc:docs/avendb`): the server backs up the coop into its folder of a bucket of
 //! snapshots over a few days, the first day all of it, a quiet day only a manifest, and a busy day one pack of what is
 //! new and the file it brings; every object sealed. Each snapshot rehearsed in a new node of its own comes back as it
 //! was, every edit and every file: Carol's Mac, which may read Welcome, syncs from the newest over iroh and reads both

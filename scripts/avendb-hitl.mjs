@@ -14,7 +14,7 @@
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 
 const arg = (name, fallback) => {
 	const at = process.argv.indexOf(name);
@@ -37,20 +37,20 @@ const check = (what, ok, found = '') => {
 	console.log(`${ok ? '✓' : '✕'} ${what}${ok || !found ? '' : ` (found: ${found})`}`);
 };
 
-const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
 // the app's way in ($lib/app/entry.js) lets this tab on without avenDB, whose own page it walks; the vault founded
 // there is named as the person signed up
-await page.evaluateOnNewDocument(() => {
+await page.addInitScript(() => {
 	sessionStorage.setItem('avendb:later', '1');
 	sessionStorage.setItem('maia:signup', 'Samuel');
 });
 const wide = { width: 1300, height: 1000 };
 // a phone's width: no isMobile, which would load the page again
 const phone = { width: 390, height: 844 };
-await page.setViewport(wide);
+await page.setViewportSize(wide);
 page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
-const cdp = await page.createCDPSession();
+const cdp = await page.context().newCDPSession(page);
 await cdp.send('WebAuthn.enable', { enableUI: false });
 const options = { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true };
 const verified = { hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true, hasPrf: true };
@@ -80,15 +80,14 @@ async function until(holds, ms = 60000) {
 }
 async function click(t, selector) {
 	const ok = await page.evaluate(
-		(t, selector) => {
+		([t, selector]) => {
 			const all = [...document.querySelectorAll(selector)];
 			const words = (e) => e.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 			const el = all.find((e) => words(e) === t) ?? all.find((e) => words(e).includes(t));
 			if (el instanceof HTMLElement) el.click();
 			return !!el;
 		},
-		t,
-		selector
+		[t, selector]
 	);
 	if (!ok) check(`there is a “${t}” to click`, false);
 	await sleep(250);
@@ -101,7 +100,7 @@ const shot = async (name) => {
 const problem = () => page.evaluate(() => document.querySelector('[role=alert]')?.textContent?.trim() ?? '');
 
 /** Op `op` through the page's api, as `what`: what it did, or null. */
-const run = (what, op) => page.evaluate((what, op) => /** @type {any} */ (globalThis).avendb.api.run(what, op), what, op);
+const run = (what, op) => page.evaluate(([what, op]) => /** @type {any} */ (globalThis).avendb.api.run(what, op), [what, op]);
 /** A read through the page's api: the device's answer. */
 const ask = (op) => page.evaluate((op) => /** @type {any} */ (globalThis).avendb.api.ask(op), op);
 const world = () => page.evaluate(() => /** @type {any} */ (globalThis).avendb.world());
@@ -172,7 +171,7 @@ try {
 	});
 	await click('Use my maiaCITY passkey', 'main.avendb button');
 	check('the vault is founded', await page.waitForSelector('.shell', { timeout: 180000 }).then(() => true, () => false), await problem());
-	await page.waitForSelector('.signing', { hidden: true, timeout: 20000 }).catch(() => {});
+	await page.waitForSelector('.signing', { state: 'hidden', timeout: 20000 }).catch(() => {});
 	await until(async () => !!(await page.evaluate(() => /** @type {any} */ (globalThis).avendb?.world())), 10000);
 	const mine = (await world()).mine;
 
@@ -207,9 +206,9 @@ try {
 	check('it shows the change: the new title and words', c.includes('tool shed') && c.includes('every Sunday'), c);
 	check('with the policy: one owner', c.includes('One owner'), c);
 	await shot('1-card');
-	await page.setViewport(phone);
+	await page.setViewportSize(phone);
 	await shot('1-card-phone');
-	await page.setViewport(wide);
+	await page.setViewportSize(wide);
 	await click('Accept', '.stack .answers button');
 	check('accepted: merged into main', await until(async () => (await titleOf(made[0])) === 'Seed library and tool shed', 30000), await titleOf(made[0]));
 	check('and the card is gone', await until(async () => !(await page.$('.stack .card')), 10000));

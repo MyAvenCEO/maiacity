@@ -1,4 +1,4 @@
-//! AIPs, Aven Improvement Proposals (`docs/ARCHITECTURE.md` §8, "AIPs"), as ops: the one proposal standard of every
+//! AIPs, Aven Improvement Proposals (`doc:docs/avendb` §8, "AIPs"), as ops: the one proposal standard of every
 //! vault and every type of entry, a layer read off what avenDB already holds. An AIP is a record of the shipped schema
 //! "AIP, v1" (`lens::blobs::AIP_V1`) in one vault, which names proposal lines of entries of that vault, of any types,
 //! with the text a person reads. Its readers count its writes, its lines' and its reviews' as they count any: nothing

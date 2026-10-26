@@ -2,7 +2,7 @@
 	The one way to share in avenDB, wherever a page offers it (a note, a todo, a vault's Sharing page): opened on one
 	entry, it says first who that entry is shared with now, from the same shares the Sharing page lists. Then it shares
 	a slice of a vault on, as the acting vault: a name, what it picks and the JSON ops its grantee may make there (the
-	`share` op, `{over, who, level, what}`, avendb/docs/ARCHITECTURE.md §8). What it picks is one entry, every note,
+	`share` op, `{over, who, level, what}`, doc:docs/avendb §8). What it picks is one entry, every note,
 	todo or file, or those tagged one way and not another, or the whole vault: a rule, never a list, so an entry tagged
 	to match it later is shared then, one untagged leaves it, and the vault's stewards mark each into the audience of
 	the shares that pick it, under that audience's key. Its ops are a group: a built-in one (Owner, Editor, Suggester,

@@ -31,7 +31,7 @@
 // `--firsts`: what the GPU drew for the first time while it played (each geometry's first draw: the thing, its bytes,
 // into the shadow maps or the frame), by cut: a thing the warming (src/lib/film/warm.js) never saw before its shot, sent
 // to the GPU on the cut's own frame (the hens' rigs at the village's sunrise, 2026-10-21). The world's first window only.
-// Engines: chrome (puppeteer-core; CHROME, by default Google Chrome on a Mac, the container's Chromium elsewhere) or
+// Engines: chrome (Playwright driving Chrome; CHROME, by default Google Chrome on a Mac, the container's Chromium elsewhere) or
 // webkit (Playwright's, the engine of the Mac app; PLAYWRIGHT names the module where it is installed). Timings mean
 // something only on a real GPU: on a Mac, never in a software renderer.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -172,15 +172,15 @@ async function launch() {
 		const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 		return { browser, page };
 	}
-	const { default: puppeteer } = await import('puppeteer-core');
+	const { chromium } = await import('playwright');
 	const mac = process.platform === 'darwin';
-	const chromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-	const executablePath = process.env.CHROME ?? (mac ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : chromium);
+	const bundled = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+	const executablePath = process.env.CHROME ?? (mac ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : bundled);
 	if (!existsSync(executablePath)) throw new Error(`no browser at ${executablePath} (CHROME names one)`);
 	const gl = mac ? ['--use-gl=angle', '--use-angle=metal'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
-	const browser = await puppeteer.launch({ executablePath, headless: true, protocolTimeout: 0, args: [...gl, '--no-sandbox', '--ignore-gpu-blocklist', '--window-size=1280,800', '--autoplay-policy=no-user-gesture-required'] });
+	const browser = await chromium.launch({ executablePath, headless: true, args: [...gl, '--no-sandbox', '--ignore-gpu-blocklist', '--window-size=1280,800', '--autoplay-policy=no-user-gesture-required'] });
 	const page = await browser.newPage();
-	await page.setViewport({ width: 1280, height: 800 });
+	await page.setViewportSize({ width: 1280, height: 800 });
 	return { browser, page };
 }
 
@@ -190,15 +190,15 @@ const { browser, page } = await launch();
 let heap = null, chromeTrace = null;
 const recording = (!!args.heap || !!args.trace) && engine === 'chrome';
 if (recording) {
-	const cdp = args.heap ? await page.createCDPSession() : null;
+	const cdp = args.heap ? await page.context().newCDPSession(page) : null;
 	await page.exposeFunction('__probeRecord', async (/** @type {string} */ what) => {
 		if (what === 'start') {
 			if (cdp) await cdp.send('HeapProfiler.startSampling', { samplingInterval: 16384, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
-			if (args.trace) await page.tracing.start({ categories: TRACED });
+			if (args.trace) await browser.startTracing(page, { categories: TRACED });
 			return;
 		}
 		if (cdp) heap = allocators((await cdp.send('HeapProfiler.stopSampling')).profile);
-		if (args.trace) chromeTrace = tasks(JSON.parse(Buffer.from(/** @type {Uint8Array} */ (await page.tracing.stop())).toString('utf8')).traceEvents);
+		if (args.trace) chromeTrace = tasks(JSON.parse(Buffer.from(/** @type {Uint8Array} */ (await browser.stopTracing())).toString('utf8')).traceEvents);
 	});
 }
 const started = Date.now();

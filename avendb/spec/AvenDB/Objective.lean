@@ -1,7 +1,7 @@
 /-!
 # Objectives: what an AIP must deliver, measured
 
-`avendb/docs/ARCHITECTURE.md` §8, "AIPs", the objective stage: between an idea and its proposal an AIP states its
+`doc:docs/avendb` §8, "AIPs", the objective stage: between an idea and its proposal an AIP states its
 target as one or more metrics, a file of Lean against this module, which `aip_objective` writes on the AIP. While the
 AIP is worked on, its author and its vault record readings on it (`aip_measure`), named numbers, and every reader
 evaluates the metrics against them: whether each is met, and how far the newest readings moved from the first, the

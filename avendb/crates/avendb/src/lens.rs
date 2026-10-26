@@ -1257,7 +1257,7 @@ macro_rules! engine_and_manifest {
     };
 }
 
-/// The schema of a code entry (docs/ARCHITECTURE.md §9): code that one of the hosts runs, with what it needs beside it,
+/// The schema of a code entry (doc:docs/avendb §9): code that one of the hosts runs, with what it needs beside it,
 /// one base for every kind, so one checker, one proposal diff and one review card serve them all. Its title, a note
 /// and tags; its source, a Loro text of at most 200,000 characters; its engine and manifest (`engine_and_manifest!`);
 /// its params, rows of a name, a kind, a range and a default, each a number (a toggle 0 or 1, a choice its option's
@@ -1700,7 +1700,7 @@ pub mod blobs {
 "#;
 
     /// A story: one content piece from its first spark to every platform it goes out on, the spine the rest of it
-    /// points at (docs/ARCHITECTURE.md §9). Its sparks are entry ids; its journey's beats and its hook variants are
+    /// points at (doc:docs/avendb §9). Its sparks are entry ids; its journey's beats and its hook variants are
     /// rows, the chosen hook naming its row's id; a beat's tension is 0 to 100. The stage it is in is a flow's tag.
     pub const STORY_V1: &str = r#"{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2029,7 +2029,7 @@ pub mod blobs {
 }
 "#;
 
-    /// A cap group (docs/ARCHITECTURE.md §5, "Cap groups"): its name, its caps, each an op with the slice it holds on
+    /// A cap group (doc:docs/avendb §5, "Cap groups"): its name, its caps, each an op with the slice it holds on
     /// (`where`, left out for the whole vault), and the groups it includes, by their entries' ids, each one value. The
     /// record shows the group (`rules::CapGroup::record`); what a share of it grants is what the vault's own write on
     /// the main line says beside it (`slice::Body::defines`), which every reader judges the share's writes by.
@@ -2047,7 +2047,7 @@ pub mod blobs {
 }
 "#;
 
-    /// A chat room (docs/ARCHITECTURE.md §5, "Rooms"): a channel, a group, a DM or a note to self, and what it is about
+    /// A chat room (doc:docs/avendb §5, "Rooms"): a channel, a group, a DM or a note to self, and what it is about
     /// (any entry, at its newest), its messages, each with its thread of replies of the same shape, and their
     /// reactions. Who may read it is its shares, never `look`; who wrote a row is the vault of the counted write that
     /// added it, read from the history, so no row names its author. A share at Member adds rows and changes only its
@@ -2272,7 +2272,7 @@ pub mod blobs {
 }
 "#;
 
-    /// An AIP, an Aven Improvement Proposal (docs/ARCHITECTURE.md §8, "AIPs"): the one proposal standard of every
+    /// An AIP, an Aven Improvement Proposal (doc:docs/avendb §8, "AIPs"): the one proposal standard of every
     /// vault, a bundle of proposal lines of any types, all in its own vault (`proposals`, by Bundle's field names),
     /// with the text a person reads (`note`: why, what changes, what we expect). It is named by `key`, eight random
     /// letters and digits, from the idea on, and by `number`, AIP-n, once it is promoted, counted per vault. `stage` is

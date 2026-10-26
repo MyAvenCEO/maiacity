@@ -1,4 +1,4 @@
-//! Rooms (`docs/ARCHITECTURE.md` §5, "Rooms"): a room is an entry of type room, its messages rows, and its members
+//! Rooms (`doc:docs/avendb` §5, "Rooms"): a room is an entry of type room, its messages rows, and its members
 //! the vaults it is shared with at Member. A member adds messages, thread replies and reactions, and changes only the
 //! rows its own counted writes added: every reader decides whose a row is from the room's history, so no write can
 //! claim another's message. Everything goes through the ops engine (`engine::run`), as the page sends ops.
