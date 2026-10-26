@@ -1,5 +1,5 @@
 <script>
- import { manifestDiagnostics } from '../../../game/code/sources/manifests.js';
+ import { manifestDiagnostics } from '../../../game/code/sources/device.js';
  import { onMount } from 'svelte';
  import { localTimings } from './local-timings.js';
  import { latencyJournal, recordPeerTimings, policyObservations } from './latency-journal.js';
@@ -106,7 +106,7 @@
  <p>{playback.frames} measured world frames · {playback.fps === null ? 'FPS unavailable' : `${playback.fps.toFixed(1)} FPS`} · render p95 {ms(playback.renderP95)} · frame gap p95 {ms(playback.gapP95)}.</p>
  <p>{playback.cuts} measured cuts · cut gap p95 {ms(playback.cutP95)} · {playback.longGaps} gaps over 50 ms · {playback.failures} draw failures. Worst frame gap {ms(playback.maxGap)}; worst cut gap {ms(playback.maxCutGap)}. Totals cover the run since reset; percentiles use up to 300 recent samples. Pauses are excluded; these measurements do not cover native video playback.</p>
  <h3>App manifest scheduling</h3>
- <p>{manifests.pending} pending plans. {#if manifests.runs.length}Last plan: {ms(manifests.runs.at(-1)?.ms ?? null)} · {manifests.runs.at(-1)?.requested} requested entries · {manifests.runs.at(-1)?.state}.{:else}No plan measured in this page yet.{/if} Scheduling completion does not prove files have arrived.</p>
+ <p>{manifests.pending} pending plans. {#if manifests.runs.length}Last plan: {ms(manifests.runs.at(-1)?.ms ?? null)} · {manifests.runs.at(-1)?.requested} entries wanted ({manifests.runs.at(-1)?.now ?? 0} now, {manifests.runs.at(-1)?.next ?? 0} next, {manifests.runs.at(-1)?.later ?? 0} later, {manifests.runs.at(-1)?.idle ?? 0} idle) · {manifests.runs.at(-1)?.state}.{:else}No plan measured in this page yet.{/if} Scheduling completion does not prove files have arrived.</p>
  <h3>Local loading and peer sync</h3>
  <button onclick={measure} disabled={measuring || session.phase !== 'open'}>Measure local summary</button>
  {#if result}<p role="status">{result}</p>{/if}

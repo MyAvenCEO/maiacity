@@ -61,16 +61,38 @@ jobs:
       matrix:
         include: ${{ fromJSON(needs.selection.outputs.suites) }}
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: oven-sh/setup-bun@v2.2.0
+      # its pass marker (scripts/ci/passes.mjs, pull requests only): passed on this PR with the same files, it runs nothing
+      - id: pass
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: .pass
+          key: ${{ matrix.key }}
+          lookup-only: true
+      - if: steps.pass.outputs.cache-hit == 'true'
+        run: echo "::notice::${{ matrix.label }} passed before on this PR with these same files"
+      - if: steps.pass.outputs.cache-hit != 'true'
+        uses: actions/checkout@v7.0.1
+      - if: steps.pass.outputs.cache-hit != 'true'
+        uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
-      - run: bun install --frozen-lockfile
-      - run: bunx --bun svelte-kit sync
-      - env:
+      - if: steps.pass.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+      - if: steps.pass.outputs.cache-hit != 'true'
+        run: bunx --bun svelte-kit sync
+      - if: steps.pass.outputs.cache-hit != 'true'
+        env:
           SUITE: ${{ matrix.suite }}
           SHARD: ${{ matrix.shard }}
         run: bun scripts/ci/test.mjs --suite "$SUITE" --shard "$SHARD"
+      - if: github.event_name == 'pull_request' && steps.pass.outputs.cache-hit != 'true'
+        run: echo passed > .pass
+      - if: github.event_name == 'pull_request' && steps.pass.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ matrix.key }}
 
   tests:
     name: The kernel’s tests
@@ -119,28 +141,23 @@ jobs:
         run: bun scripts/ci/test.mjs --gate
 
 
+  # The browser jobs run in Playwright's own image, of the Playwright in package.json (impact.test.mjs holds the tags to
+  # it): its browsers and every system library they need come in it. Installing them on the runner went through Ubuntu's
+  # package mirrors, which hung for 15 to 20 minutes, to the job's limit, five times on 2026-10-26.
   probes:
     name: Every way out, tried in Chromium
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --ipc=host
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version-file: .bun-version
+      # the image has Node and npm but no unzip, which setup-bun needs
+      - run: npm install -g "bun@$(cat .bun-version)"
 
       - run: bun install --frozen-lockfile
-
-      # Playwright's Chromium, the same build the probes run in on a developer's machine (/opt/pw-browsers); the browser
-      # is kept between runs by Playwright's version, the system libraries it needs are installed each time
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-chromium-1.56.1-${{ runner.os }}
-      - name: Use Ubuntu's archive for browser dependencies
-        run: sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
-      - run: bunx --bun playwright@1.56.1 install --with-deps chromium
 
       - run: bun scripts/test-avendb-store.mjs
       - run: bun scripts/test-avendb-session.mjs --browser chromium
@@ -152,27 +169,17 @@ jobs:
   probes-webkit:
     name: Every way out, tried in WebKit
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --ipc=host
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version-file: .bun-version
+      - run: npm install -g "bun@$(cat .bun-version)"
 
       - run: bun install --frozen-lockfile
 
-      # Playwright's WebKit, of the Playwright in package.json (the version the probes drive it with), and the system
-      # libraries it needs; the browser is kept between runs by the lockfile, the libraries are installed each time
-      - uses: actions/cache@v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-webkit-${{ runner.os }}-${{ hashFiles('bun.lock', 'bun.lockb') }}
-      # The Azure mirror can stall package downloads on hosted runners for minutes.
-      # Keep Ubuntu's signed packages and use its canonical HTTPS archive.
-      - name: Use Ubuntu's archive for browser dependencies
-        run: sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
-      - run: bunx --bun playwright install --with-deps webkit
       - run: bun scripts/test-avendb-session.mjs --browser webkit
       - run: bun scripts/test-avendb-local-write.mjs --browser webkit --all
       - run: bun scripts/test-proof-worker.mjs --browser webkit
@@ -183,19 +190,16 @@ jobs:
   opfs-webkit:
     name: Derived views survive WebKit OPFS reopen
     runs-on: ubuntu-latest
+    # Older Playwright WebKit lacks persistent-context OPFS (upstream #41984).
+    # Isolate this test runtime; existing security probes retain their pinned engine.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7.0.1
-      # Older Playwright WebKit lacks persistent-context OPFS (upstream #41984).
-      # Isolate this test runtime; existing security probes retain their pinned engine.
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version-file: .bun-version
+      - run: npm install -g "bun@$(cat .bun-version)"
       - run: mkdir -p "$RUNNER_TEMP/avendb-opfs" && bun add --cwd "$RUNNER_TEMP/avendb-opfs" --ignore-scripts --exact playwright@1.64.1
-      # the same Azure mirror stall as above; Ubuntu's own HTTPS archive
-      - name: Use Ubuntu's archive for browser dependencies
-        run: sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
-      - run: bun "$RUNNER_TEMP/avendb-opfs/node_modules/playwright/cli.js" install --with-deps webkit
       - run: AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" bun scripts/test-avendb-store.mjs --browser webkit
 
   required:

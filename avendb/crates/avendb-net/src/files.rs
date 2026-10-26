@@ -446,7 +446,7 @@ impl Shared {
         let keep = self.opts.keep;
         loop {
             let Ok(activity) = self.admit() else { return };
-            let entries = self.demands.lock().expect("demands").entries(time::Instant::now())
+            let entries = self.interests.lock().expect("interests").entries()
                 .into_iter().filter_map(|log| match log {
                     avendb::sync::LogId::Entry(entry) => Some(entry),
                     _ => None,

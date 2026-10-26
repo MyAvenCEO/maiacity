@@ -2,6 +2,7 @@ import AvenDB.Basic
 import AvenDB.State
 import AvenDB.Step
 import AvenDB.Sync
+import AvenDB.BlindIndex
 import AvenDB.Logs
 import AvenDB.Doc
 import AvenDB.Proposals
@@ -21,6 +22,7 @@ import AvenDB.Checkpoint
 import AvenDB.Batches
 import AvenDB.LegacyAnchor
 import AvenDB.BatchDurability
+import AvenDB.WireBatches
 import AvenDB.Snapshot
 import AvenDB.EntryState
 import AvenDB.EntryProjection
@@ -78,7 +80,7 @@ import AvenDB.LatestReplay
 import AvenDB.LocalDiscovery
 import AvenDB.WorkMetrics
 import AvenDB.WarmCapture
-import AvenDB.ViewDemand
+import AvenDB.Interest
 
 import AvenDB.UpkeepFamilies
 
@@ -86,7 +88,6 @@ import AvenDB.PreparedReceive
 
 import AvenDB.CooperativeReceive
 
-import AvenDB.QueryDiscovery
 import AvenDB.ShownScratch
 
 import AvenDB.WarmRestoreNoop

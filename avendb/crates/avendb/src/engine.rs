@@ -200,7 +200,9 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "code" => &["vault", "type"],
         "posts" => &["limit", "after"],
         "bring" => &["vaults", "entries", "prioritize"],
+        "interest" => &["scope", "revision", "wants", "release"],
         "demand" => &["scope", "revision", "entries", "queries"],
+        "find" => &["vault", "types", "tags", "follow", "bring"],
         "shares" => &["over", "as"],
         "database" => &["vault", "types"],
         "note" => &["entry"],
@@ -230,7 +232,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 36] = [
+const READS: [&str; 38] = [
     "entry_views",
     "query",
     "objective_check",
@@ -260,7 +262,9 @@ const READS: [&str; 36] = [
     "code",
     "posts",
     "bring",
+    "interest",
     "demand",
+    "find",
     "synced",
     "network",
     "measure_peer_policy",
@@ -375,8 +379,10 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "posts" => posts(lab, me, o),
         "read_file" => Err(bad("read_file reads a file's bytes from a node's store: a node runs it (Node::run)")),
         "jobs" => Err(bad("jobs tells what a node does in the background: a node runs it (Node::run)")),
+        "interest" => Err(bad("interest orders what a node brings for its mounted views: a node runs it (Node::run)")),
         "demand" => Err(bad("demand changes a node's local scheduling priorities: a node runs it (Node::run)")),
         "bring" => Err(bad("bring asks a node's peers for vaults or entries: a node runs it (Node::run)")),
+        "find" => Err(bad("find asks a node's peers by the blind index: a node runs it (Node::run)")),
         "synced" => Err(bad("synced tells what a node's peers hold: a node runs it (Node::run)")),
         "measure_peer_policy" | "measure_peer_visibility" | "observe_query_emission" => Err(bad("peer policy measurements require a node (Node::run)")),
         "network" => Err(bad("network tells where a node syncs from and how: a node runs it (Node::run)")),

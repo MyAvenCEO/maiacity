@@ -107,10 +107,11 @@ pub mod backup;
 #[cfg(test)]
 mod bench;
 mod actor;
+mod blind;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
-mod demand;
+mod interest;
 mod discovery;
 mod checkpoint_delivery;
 mod bootstrap_dependencies;
@@ -139,6 +140,7 @@ mod pulls;
 mod live;
 mod ranges;
 mod run;
+mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
@@ -234,7 +236,7 @@ const PAGE_WAIT: Duration = Duration::from_secs(180);
 /// asking a page at a time by the edits' places across every log it names (`sync::place`), and a log counts only once
 /// it is whole, so one asking of every log of a vault (~2,200 of Maia City's) makes nearly none whole until its last
 /// page. Asked so many at a time, each batch of entries comes whole before the next starts.
-const LOGS_AT_ONCE: usize = 256;
+pub(crate) const LOGS_AT_ONCE: usize = 256;
 
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
 /// agrees the keys of every connection along with X25519, and a peer that offers only classical groups finds none in
@@ -328,6 +330,13 @@ pub struct Options {
     /// The simulated network it is on (P7, `sim`), in place of every socket and relay: a scenario's own.
     #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
     pub sim: Option<sim::Net>,
+    /// It keeps the blind index rows the devices it syncs with tell it, on its shelf, and answers `find` from them
+    /// (`blind`, P4 of sync v2): the server's.
+    pub index: bool,
+    /// It takes a peer's edits with paths up to their signer's signed roots in place of their signatures (P8,
+    /// `spec/AvenDB/WireBatches.lean`), each root once a reply: a device's. The server asks for signatures alone for
+    /// one release, so that it serves every edit it holds to an old app, which reads signatures alone.
+    pub paths: bool,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -359,6 +368,8 @@ impl Options {
             progress: Progress::new(),
             #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
             sim: None,
+            index: false,
+            paths: true,
         }
     }
 
@@ -777,15 +788,19 @@ impl Node {
             ui_receipts: peer_receipts::Receipts::for_ui(),
             outreach,
             wanted: Mutex::default(),
-            demands: Mutex::default(),
+            interests: Mutex::default(),
             discovery_running: Mutex::default(),
             discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
+            index: Mutex::default(),
+            index_told: Mutex::default(),
+            index_due: Notify::new(),
             offered: Mutex::default(),
             shelf,
             blob_peers: Mutex::default(),
             follows: Mutex::default(),
             unpacked: Mutex::default(),
             unbatched: Mutex::default(),
+            unstripped: Mutex::default(),
             ranges: Mutex::default(),
             edit_transfer: edit_transfer::Runtime::default(),
             paced: Mutex::default(),
@@ -811,6 +826,8 @@ impl Node {
             task::spawn(shared.clone().keeper()),
             task::spawn(shared.clone().saver()),
             task::spawn(shared.clone().unshelve()),
+            task::spawn(shared.clone().unshelve_index()),
+            task::spawn(shared.clone().index_teller()),
             task::spawn(shared.clone().bootstrap_pump()),
             task::spawn(transports::control::maintain(shared.clone())),
             task::spawn(actor::run(shared.clone(), inbox)),
@@ -2110,9 +2127,15 @@ struct Shared {
     /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
     wanted: Mutex<BTreeSet<LogId>>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
-    demands: Mutex<demand::Demands>,
+    interests: Mutex<interest::Interests>,
     discovery_running: Mutex<HashMap<String, bool>>,
     discovery_answer: Arc<tokio::sync::Semaphore>,
+    /// The blind index rows it keeps, where it keeps an index (`Options::index`).
+    index: Mutex<avendb::index::Rows>,
+    /// Of each peer, the change of the device's entries it was last told the rows of, `None` once it refused them.
+    index_told: Mutex<HashMap<EndpointId, Option<u64>>>,
+    /// A peer connected: tell it the rows (`blind::index_teller`).
+    index_due: Notify,
     /// The McEliece keys in the blob store, by hash and by id.
     offered: Mutex<blobs::Offered>,
     /// Its blob store over its shelf, if it keeps one (`shelf`): what the shelf holds whole.
@@ -2128,6 +2151,9 @@ struct Shared {
     unpacked: Mutex<HashSet<usize>>,
     /// Connections without usable supplemental proofs, independent of their packed-reply support.
     unbatched: Mutex<HashSet<usize>>,
+    /// The connections whose peer didn't answer a proof request of version 2, with paths in place of signatures (P8):
+    /// an older node, or one that couldn't link a root; asked version 1 from then on.
+    unstripped: Mutex<HashSet<usize>>,
     /// Incremental, peer-scoped holdings trees and bounded root-bound receiving rounds.
     ranges: Mutex<ranges::Cache>,
     edit_transfer: edit_transfer::Runtime,
@@ -2456,6 +2482,8 @@ impl Shared {
         transports::control::connected(self, &peer);
         self.told.lock().expect("told").remove(&device);
         self.outreach.send(actor::Msg::Reached { device });
+        self.index_told.lock().expect("index told").remove(&endpoint);
+        self.index_due.notify_one();
         self.changed.notify_one();
         self.jobs.stir();
         peer
@@ -2764,10 +2792,19 @@ impl Shared {
             // Only the authenticated peer's own ledger is exported by this first batch slice.
             // Do not disclose the other signers whose roots this device has observed.
             if batches {
-                let known = signers.known(peer.device).await.map(|n| (peer.device, n)).into_iter().collect();
-                let batch = proofs::Request { kind, request: request.to_vec(), known }.encode()?;
-                // Near-limit legacy requests still fit their original framing, with no capability downgrade.
-                if batch.len() < session::MESSAGE_LIMIT {
+                let known: BTreeMap<_, _> =
+                    signers.known(peer.device).await.map(|n| (peer.device, n)).into_iter().collect();
+                // version 2 first where this node reads paths, version 1 where its peer doesn't know version 2 (P8)
+                let unstripped = self.unstripped.lock().expect("unstripped").contains(&id);
+                let versions: &[bool] = if self.opts.paths && !unstripped { &[true, false] } else { &[false] };
+                let mut asked = false;
+                for &paths in versions {
+                    let batch = proofs::Request { kind, request: request.to_vec(), known: known.clone(), paths }.encode()?;
+                    // Near-limit legacy requests still fit their original framing, with no capability downgrade.
+                    if batch.len() >= session::MESSAGE_LIMIT {
+                        break;
+                    }
+                    asked = true;
                     let result = session::exchange(&peer.conn, proofs::KIND, &batch, limit).await;
                     drop(batch);
                     match result {
@@ -2785,6 +2822,11 @@ impl Shared {
                         Err(error) if session::too_long(&error) => return Err(error),
                         Err(_) => {}
                     }
+                    if paths {
+                        self.unstripped.lock().expect("unstripped").insert(id);
+                    }
+                }
+                if asked {
                     self.unbatched.lock().expect("unbatched").insert(id);
                 }
             }
@@ -3099,6 +3141,7 @@ impl Shared {
         self.follows.lock().expect("follows").remove(&peer.conn.stable_id());
         self.unpacked.lock().expect("unpacked").remove(&peer.conn.stable_id());
         self.unbatched.lock().expect("unbatched").remove(&peer.conn.stable_id());
+        self.unstripped.lock().expect("unstripped").remove(&peer.conn.stable_id());
         let known = self.reach.lock().expect("reach").contains_key(&peer.device);
         let forget = !known && self.live(peer.endpoint).is_none();
         let mut held = self.held.lock().expect("held");
@@ -3164,7 +3207,7 @@ impl Shared {
             let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
             let logs = {
                 let mut wanted = self.wanted.lock().expect("wanted");
-                let active = self.demands.lock().expect("demands").entries(Instant::now());
+                let active = self.interests.lock().expect("interests").entries();
                 let mut priority = bootstrap_dependencies::key_logs(&active, &key_waits);
                 priority.extend(active);
                 let logs = next_demand_logs(&mut left, &wanted, &priority, LOGS_AT_ONCE);

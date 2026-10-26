@@ -8,6 +8,9 @@ import { join, resolve } from 'node:path';
 import { createReadWindow } from './query-window.js';
 import { createReactiveRead } from './reactive-read.js';
 import { observedWindow } from './observed-window.js';
+// an Interest op seen as the one list of entries and selectors it wants (tiers aside)
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 
 const id = (n) => n.toString(16).padStart(64, '0');
 const vault = id(99);
@@ -94,7 +97,7 @@ const activeDemand = calls => [...new Map(calls.map(c => [c.scope, c.entries])).
 const settle = async () => { for (let n = 0; n < 12; n++) { ui.flushSync(); await Promise.resolve(); } };
 function fixture(kind, entries, entry) {
 	const calls = [], reads = [], inventoryReads = [], observers = new Set();
-	const d = { run: async (op) => { calls.push(op); return { ok: { accepted: true } }; } };
+	const d = { run: async (op) => { calls.push(flat(op)); return { ok: { accepted: true } }; } };
 	const answer = (op) => {
 		if (op.op === 'note') return new Promise((resolve) => reads.push({ op, resolve }));
 		if (op.op !== 'entry_views') return Promise.resolve({ ok: {} });

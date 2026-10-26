@@ -1,22 +1,20 @@
 // @ts-nocheck — plain JS, kept loose on purpose
-/** The renderer reads only this device's avenDB, including same-origin Studio frames.
- * Manifests and learned dependencies prioritize independent background sync; absent local data
- * stays pending. No empty, slow or locked local read authorizes an HTTP/peer fallback.
+/** The renderer reads only this device's avenDB, including same-origin Studio frames. What the page wants comes in
+ * by Interests (./interest.js), in tiers, the manifests of its route saying which; absent local data stays pending,
+ * and no empty, slow or locked local read authorizes an HTTP/peer fallback.
  */
 import { MAIA_CITY } from './anchor.js';
-import { bringDeclared } from './manifests.js';
-import { createDemand } from './demand.js';
+import { leavesFor, manifestsOf, plan } from './manifests.js';
+import { createInterest } from './interest.js';
 import { createLocalFileReads } from './local-file-read.js';
 
-/** Background bring scheduling budget; never a renderer network fallback. */
-export const BRING = 8000;
-/** Local recipe read deadline; background sync may make a later retry succeed. */
+/** Local file read deadline; background sync may make a later retry succeed. */
 export const READ = 6000;
-/** Local metadata response deadline. */
-export const ANSWER = 5000;
 
 /** How many bytes a page asks its device for at a time, as the Library reads a file ($lib/avendb/files.js). */
 const WINDOW = 4 << 20;
+
+const HEX = /^[0-9a-f]{64}$/;
 
 /**
  * The device the page holds open, set by its avenDB session ($lib/avendb/session.svelte.js): `run(op)`, which answers
@@ -25,164 +23,169 @@ const WINDOW = 4 << 20;
  */
 let device = null;
 
-/** each device's bring of each vault, asked for once: the answer @type {WeakMap<object, Map<string, Promise<any>>>} */
-let brought = new WeakMap();
-
 /** where a page leaves its device for the pages it frames (`deviceOf`) */
 const SHARED = Symbol.for('maiacity.avendb.device');
 
-/** The device the page holds open now, or `null` while local data is unavailable; each vault is brought again once. A device
- * opened brings first what the manifests of Maia City declare for this page (./manifests.js `bringDeclared`), then the
- * entries this page read before (`learned`), before anything else it syncs. */
+/** The page's view: its path, its bindings and signals, and the one Interest its manifests set. */
 let activeView = null;
+/** what the route binds (`useView`'s options), kept across a device change of the same page */
+let viewContext = {};
+/** what the selection binds (`bindView`) and the signals that order the tiers (`signalView`), the page's own */
+const selected = {};
+const signals = {};
 
 export function useDevice(d) {
-	clearTimeout(activeView?.timer);
-	activeView?.controller.abort();
-	activeView?.demand.close();
-	activeView = null;
+	if (device !== (d ?? null)) viewContext = {};
+	closeView();
 	device = d ?? null;
-	brought = new WeakMap();
-	asked = new WeakMap();
 	if (typeof window !== 'undefined') /** @type {any} */ (window)[SHARED] = device;
 	if (device) void useView(pageNow());
 }
 
-/** Replace this page's demand on navigation. Already issued legacy bring operations may finish, but no stale
- * manifest walk, reference traversal or subsequent batch is issued after the view/device changes. */
-export function useView(path) {
-	const opened = deviceOf();
-	if (activeView?.device === opened && activeView.path === path) return activeView.done;
-	clearTimeout(activeView?.timer);
+function closeView() {
 	activeView?.controller.abort();
-	activeView?.demand.close();
+	activeView?.interest.close();
+	activeView = null;
+}
+
+/**
+ * The page's view at path `path`, the route binding `options` (`{ vault, context, entries, bind }`, from
+ * ./view-context.js `routeDemandContext`): one Interest for its mounted lifetime, set from the manifests of Maia City
+ * and of the selected vault that cover the path, slots bound by the route and the selection. A new path, vault or
+ * binding replaces it; nothing waits on a timer.
+ * @param {string} path @param {{vault?: string, context?: string, entries?: string[], bind?: Record<string, string>}} [options]
+ */
+export function useView(path, options) {
+	if (options !== undefined) viewContext = options;
+	const vault = HEX.test(viewContext.vault ?? '') ? viewContext.vault : null;
+	const explicit = [...new Set((viewContext.entries ?? []).filter((id) => typeof id === 'string' && HEX.test(id)))].slice(0, 512);
+	const env = { ...(viewContext.bind ?? {}), ...selected, ...(vault ? { vault } : {}) };
+	const key = JSON.stringify([path, vault, typeof viewContext.context === 'string' ? viewContext.context : '', explicit, env]);
+	const opened = deviceOf();
+	if (activeView?.device === opened && activeView.key === key) return activeView.done;
+	// the same page and device keep their Interest: a new binding is a new revision of it, not a new scope
+	const kept = activeView?.device === opened && activeView?.path === path ? activeView : null;
+	const interest = kept?.interest ?? null;
+	activeView?.controller.abort();
+	if (!interest) activeView?.interest.close();
 	activeView = null;
 	if (!opened) return Promise.resolve([]);
 	const controller = new AbortController();
-	const signal = controller.signal;
-	const before = learned(path);
-	const demand = createDemand((op) => opened.run(op));
-	const view = { device: opened, path, controller, demand, done: null, walking: false, dirty: false, timer: null, run: null };
-	activeView = view;
-	// Demand already schedules authorized discovery and transfer. Awaiting a
-	// second legacy pull here blocks later manifest ranks on whole-history sync
-	// and occupies foreground slots outside the view's cancellable scope.
-	const request = async (ids) => {
-		await demand.add(ids);
-		signal.throwIfAborted();
-		learn(ids, path, { prioritize: false });
-		if (demand.legacy()) return bringEntries(ids, opened, { signal, path });
+	const view = {
+		device: opened, path, key, controller, interest: interest ?? createInterest((op) => opened.run(op)),
+		done: null, walking: false, dirty: false, run: null, asked: kept?.asked ?? new Set(), wants: kept?.wants ?? []
 	};
-	const manifestQuery = { types: ['manifest'], vault: MAIA_CITY };
-	// A cold device must discover route manifests before it can name their entries.
-	// This is an authorized type hint, never a world scan.
-	void demand.prioritize([], [manifestQuery]);
+	activeView = view;
+	const signal = controller.signal;
+	const catalogs = [...new Set([MAIA_CITY, ...(vault ? [vault] : [])])];
+	// A cold device finds its route manifests first, and what the route names is on screen at once.
+	const base = () => [{ tier: 'now', entries: [...explicit, ...view.asked], queries: catalogs.map((v) => ({ types: ['manifest'], vault: v })) }];
+	view.publish = () => view.interest.set([...base(), ...view.wants.flat()]);
+	if (!interest) void view.publish();
 	view.run = () => {
 		view.walking = true;
 		view.dirty = false;
+		const started = performance.now();
+		const run = { ms: 0, requested: 0, catalog: 'local', heldManifests: 0, matchedLeaves: 0, queryLeaves: 0, typeDiscoveryHints: 0, localRows: 0, state: 'failed', now: 0, next: 0, later: 0, idle: 0 };
+		walks.pending++;
 		view.done = (async () => {
-			// Learned IDs are scheduling hints, not trusted records. Do not wait for an
-			// unrelated manifest query before telling the node what this view needs.
-			if (before.length) void demand.add(before.slice(0, AT_ONCE));
-			const declared = await bringDeclared(path, {
-				device: opened, signal,
-				prioritize: (ids, queries) => {
-					signal.throwIfAborted();
-					return demand.prioritize(ids, [manifestQuery, ...queries]);
-				},
-				bring: request
-			});
+			const parts = await Promise.all(catalogs.map(async (catalog) => {
+				const held = await manifestsOf(opened, { vault: catalog, signal });
+				const leaves = leavesFor(held, path, env);
+				run.heldManifests += held.length;
+				run.matchedLeaves += leaves.length;
+				run.queryLeaves += leaves.filter((l) => !l.want.entry).length;
+				run.typeDiscoveryHints += leaves.filter((l) => l.want.type?.length).length;
+				return { catalog, leaves };
+			}));
 			signal.throwIfAborted();
-			const rest = before.filter((e) => !declared.includes(e));
-			if (rest.length) {
-				const ids = rest.slice(0, AT_ONCE);
-				await request(ids);
-			}
-			return declared;
+			const wants = parts.map(() => []);
+			const publish = () => {
+				signal.throwIfAborted();
+				view.wants = wants;
+				void view.publish();
+			};
+			await Promise.all(parts.map(({ catalog, leaves }, i) => plan(leaves, {
+				device: opened, vault: catalog, signals, signal,
+				publish: (w) => { wants[i] = w; publish(); }
+			})));
+			publish();
+			const now = view.interest.wants;
+			for (const w of now) run[w.tier] = w.entries.length;
+			run.requested = run.localRows = now.reduce((n, w) => n + w.entries.length, 0);
+			run.state = 'scheduled';
+			return now.flatMap((w) => w.entries);
 		})().catch(() => {
-			controller.abort();
-			demand.close();
+			if (signal.aborted) run.state = 'cancelled';
 			return [];
 		}).finally(() => {
+			walks.pending--;
+			run.ms = performance.now() - started;
+			walks.runs.push(run);
+			if (walks.runs.length > 20) walks.runs.shift();
 			view.walking = false;
-			if (view.dirty) scheduleReplan(view);
+			// a revision that came during the walk: one more walk, at once
+			if (view.dirty && activeView === view && !signal.aborted) void view.run();
 		});
 		return view.done;
 	};
 	return view.run();
 }
 
-// Actual local revisions, not polling, trigger a bounded coalesced walk. Retain
-// the same lease so later records extend its dependencies without scope churn.
-function scheduleReplan(view) {
-	if (activeView !== view || view.controller.signal.aborted || view.walking || view.timer) return;
-	view.timer = setTimeout(() => {
-		view.timer = null;
-		if (activeView === view && !view.controller.signal.aborted && view.dirty) void view.run();
-	}, 150);
-	view.timer.unref?.();
-}
+/** The last walks of the page's manifests, for the diagnostics: no route, vault id or entry kept. */
+const walks = { pending: 0, runs: /** @type {any[]} */ ([]) };
+export const manifestDiagnostics = () => ({ pending: walks.pending, runs: walks.runs.map((r) => ({ ...r })) });
 
+/**
+ * The device took new edits: the page's view walks its manifests again, once however many came while it walked,
+ * so records that came in name what they follow. Never polling: only a real revision calls it.
+ */
 export function refreshActiveView() {
 	const view = activeView;
 	if (!view || view.controller.signal.aborted) return;
 	view.dirty = true;
-	scheduleReplan(view);
+	if (!view.walking) void view.run();
 }
 
-/** where this browser keeps, per page, the entries it read (`learn`) */
-const LEARNED = 'maiacity.avendb.read';
-/** the most entries kept per page, and the most pages */
-const MOST_LEARNED = 512;
-const MOST_PAGES = 64;
+/**
+ * Entries `ids` a read of this page found missing (`NoEntry`): on screen now, for as long as the page stays, so the
+ * device brings them first. Kept nowhere else: a new page asks for its own.
+ * @param {string[]} ids
+ */
+export function wantNow(ids) {
+	const view = activeView;
+	if (!view || view.controller.signal.aborted) return;
+	const before = view.asked.size;
+	for (const e of ids ?? []) if (typeof e === 'string' && HEX.test(e) && view.asked.size < 512) view.asked.add(e);
+	if (view.asked.size !== before) void view.publish();
+}
+
+/**
+ * Binds slot `name` (`room`, `timeline`, `asset`, `original`) to entry `entry`, as the person selects it, or unbinds
+ * it with `null`: the page's Interest moves at once, what the slot wants up to its tier.
+ * @param {string} name @param {string | null} entry
+ */
+export function bindView(name, entry) {
+	if (!/^[a-z][a-z0-9-]*$/.test(name)) return;
+	if (typeof entry === 'string' && HEX.test(entry)) selected[name] = entry;
+	else delete selected[name];
+	if (activeView) void useView(activeView.path);
+}
+
+/**
+ * Sets signal `name` (`viewport`, `playhead`, `camera`, `list`): how far each entry is from what the person sees,
+ * which orders a tier's parts that name it (`by`). `null` clears it. A page sets it as the order changes (a new shot
+ * at the playhead, the camera in a new cell), not every frame.
+ * @param {string} name @param {((entry: string) => number) | null} distance
+ */
+export function signalView(name, distance) {
+	if (typeof distance === 'function') signals[name] = distance;
+	else delete signals[name];
+	refreshActiveView();
+}
 
 /** the page an entry is read for: its path, as one address of a game or a world */
 const pageNow = () => (typeof location !== 'undefined' ? location.pathname : '');
-
-/** what this browser kept, `{ [path]: entries }`, newest page last; empty where it keeps nothing @returns {Record<string, string[]>} */
-function kept() {
-	try {
-		const v = JSON.parse(globalThis.localStorage?.getItem(LEARNED) ?? '{}');
-		return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
-	} catch {
-		return {};
-	}
-}
-
-/**
- * The entries page `path` read before on this browser (`learn`), newest first: its learned manifest (Samuel 2026-10-21:
- * a device syncs first what its pages need, as a bundler follows what a page imports). What a page reads is what it
- * names, so a page whose manifest misses an entry still brings it first the next time.
- * @param {string} [path]
- * @returns {string[]}
- */
-export function learned(path = pageNow()) {
-	const at = kept()[path];
-	return Array.isArray(at) ? at.filter((e) => /^[0-9a-f]{64}$/.test(String(e))) : [];
-}
-
-/**
- * Keeps that page `path` read entries `ids` (the newest first, `MOST_LEARNED` at most, `MOST_PAGES` pages, the page
- * last read last), so the next time a device opens on it, it brings them before anything else (`useDevice`). A browser
- * that keeps nothing (private, storage blocked) keeps nothing: the page still reads them, as before.
- * @param {string[]} ids @param {string} [path]
- */
-export function learn(ids, path = pageNow(), { prioritize = true } = {}) {
-	const fresh = (ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e)));
-	if (!path || !fresh.length) return;
-	if (prioritize && activeView?.path === path) void activeView.demand.add(fresh);
-	try {
-		const all = kept();
-		const was = Array.isArray(all[path]) ? all[path] : [];
-		delete all[path];
-		all[path] = [...new Set([...fresh, ...was])].slice(0, MOST_LEARNED);
-		const paths = Object.keys(all);
-		for (const p of paths.slice(0, Math.max(0, paths.length - MOST_PAGES))) delete all[p];
-		globalThis.localStorage?.setItem(LEARNED, JSON.stringify(all));
-	} catch {
-		// nothing kept
-	}
-}
 
 /** The device the page holds open, else the one its parent page holds (a frame of ours, same origin), if any. */
 export function deviceOf() {
@@ -195,162 +198,22 @@ export function deviceOf() {
 	}
 }
 
-/** what device `d` brought or brings of each vault @param {any} d @returns {Map<string, Promise<any>>} */
-function broughtBy(d) {
-	let of = brought.get(d);
-	if (!of) brought.set(d, (of = new Map()));
-	return of;
-}
-
-/** what a bring that asked nothing answers */
-const NONE = { ok: { new: 0, peers: 0, reached: false } };
-
 /**
- * Device `d`'s bring of vault `vault`, asked for once: what changed of it since, for a device that holds what its peers
- * hold (`caughtUp`) or can't say. A device still catching up asks nothing more: a bring of a whole vault pulls every log
- * of it at once, page after page by place across all of them, so none comes whole until its last page, beside the
- * device's own sync, which brings them a batch at a time, a page's entries first (Samuel's iPhone 2026-10-22, three
- * pulls at 11% of Maia City's 2,416 logs). @param {any} d @param {string} vault
+ * The rows of vault `vault`'s public code of kinds `kinds`, as the device the page holds (or its parent page) reads
+ * them now, in the feed's shape (`/feed/code`); `null` where no device is open or it holds none of them yet. What it
+ * lacks comes by the page's Interests; a view that watches them reads again when they land.
+ * @param {string[]} kinds @param {{ vault?: string }} [o]
+ * @returns {Promise<any[] | null>}
  */
-function bringOf(d, vault) {
-	const of = broughtBy(d);
-	if (!of.has(vault)) of.set(vault, caughtUp(d).then((up) => (up === false ? NONE : d.run({ op: 'bring', vaults: [vault] }))));
-	return of.get(vault);
-}
-
-/**
- * Whether device `d` holds all that its live peers hold (avendb's `synced` op): true once one of them told it what it
- * holds and it lacks none of it; false while it lacks some, has no peer to tell it yet, or doesn't answer within
- * `answer` (a device busy taking pages); null for a device whose avenDB knows no `synced`, read as before it did.
- * @param {any} [d] @param {number} [answer]
- * @returns {Promise<boolean | null>}
- */
-export async function caughtUp(d = deviceOf(), answer = ANSWER) {
-	if (!d) return null;
-	const got = await within(Promise.resolve().then(() => d.run({ op: 'synced' })), answer);
-	if (got === null) return false;
-	const ok = got?.ok;
-	if (!ok || typeof ok !== 'object' || Array.isArray(ok) || typeof ok.behind !== 'number') return null;
-	return ok.peers > 0 && ok.behind === 0;
-}
-
-/**
- * The entries rows `theirs` (the feed's) hold that rows `mine` (a device's) don't hold as they do: none of the entry,
- * or the entry at other heads. What a device still syncing lacks of what a page reads.
- * @param {any[]} mine @param {any[]} theirs @returns {string[]}
- */
-export function lacking(mine, theirs) {
-	const headsOf = (r) => (Array.isArray(r?.heads) ? r.heads : String(r?.heads ?? '').split(',')).filter(Boolean).sort().join(',');
-	const held = new Map((mine ?? []).map((r) => [r?.entry, headsOf(r)]));
-	const short = (theirs ?? []).filter((r) => typeof r?.entry === 'string' && held.get(r.entry) !== headsOf(r)).map((r) => r.entry);
-	return [...new Set(short)];
-}
-
-/** How many entries one `bring` names at most (avendb-net's `MOST_BROUGHT`). */
-export const AT_ONCE = 64;
-
-/**
- * Has the device the page reads (`deviceOf`) bring from its peers the entries of rows `rows` (the feed's, read because
- * the device held none of vault `vault`'s code yet), and nothing else of the vault: `{ op: 'bring', entries }`,
- * `AT_ONCE` at a time, one after another. A new device asked for a whole vault takes all of it before any entry is whole
- * (Maia City's ~2,200 logs come a page at a time across all of them), so the entries a page reads come first, and the
- * next page reads them off the device; the rest of the vault comes in the background. Each entry once a device, the first
- * as the vault's bring (`whenBrought` answers it): `{ ok: { new, peers, reached } }`, or null with no device.
- * @param {any[]} rows @param {string} [vault]
- */
-export function bringRows(rows, vault = MAIA_CITY) {
+export async function deviceRows(kinds, { vault = MAIA_CITY } = {}) {
 	const d = deviceOf();
-	if (!d) return Promise.resolve(null);
-	const of = broughtBy(d);
-	const ids = (rows ?? []).map((r) => r?.entry).filter((e) => !askedOf(d).has(e));
-	if (!ids.length) return of.get(vault) ?? Promise.resolve(null);
-	for (const e of ids) askedOf(d).add(e);
-	const all = bringEntries(ids, d);
-	if (!of.has(vault)) of.set(vault, all);
-	return all;
-}
-
-/** the entries each device was asked to bring by the rows a page read off the feed (`bringRows`) @type {WeakMap<object, Set<string>>} */
-let asked = new WeakMap();
-/** @param {any} d */
-function askedOf(d) {
-	let of = asked.get(d);
-	if (!of) asked.set(d, (of = new Set()));
-	return of;
-}
-
-/**
- * Has device `d` (the page's, `deviceOf`) bring the entries `ids` alone from its peers, `AT_ONCE` at a time, one bring
- * after another: `{ ok: { new, peers, reached } }`, or null where there is no device, nothing to bring, or a bring
- * refused (a device whose avenDB knows no `entries` yet). What a view brings for the items it shows (the Maia
- * Universe's newest posts, a world's recipes), and nothing else.
- * @param {string[]} ids @param {any} [d]
- * @param {{ signal?: AbortSignal, path?: string, prioritize?: boolean, learnPriority?: boolean }} [options]
- */
-export async function bringEntries(ids, d = deviceOf(), { signal, path = pageNow(), prioritize = true, learnPriority = true } = {}) {
-	const sorted = [...new Set((ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e))))];
-	if (!d || !sorted.length) return null;
-	if (signal?.aborted) return null;
-	learn(sorted, path, { prioritize: learnPriority });
+	if (!d || !HEX.test(String(vault))) return null;
 	try {
-		const sum = { new: 0, peers: 0, reached: true };
-		for (let i = 0; i < sorted.length; i += AT_ONCE) {
-			if (signal?.aborted) return null;
-			const got = await d.run({ op: 'bring', entries: sorted.slice(i, i + AT_ONCE), ...(!prioritize ? { prioritize: false } : {}) });
-			if (!got?.ok) return null;
-			sum.new += got.ok.new ?? 0;
-			sum.peers = Math.max(sum.peers, got.ok.peers ?? 0);
-			sum.reached &&= !!got.ok.reached;
-		}
-		return { ok: sum };
+		const got = await d.run({ op: 'code', vault, type: kinds });
+		return d === deviceOf() && Array.isArray(got?.ok) && got.ok.length ? got.ok : null;
 	} catch {
 		return null;
 	}
-}
-
-/**
- * What the device the page reads (`deviceOf`) brought of vault `vault` from its peers, once it has: `{ ok: { new, peers,
- * reached } }` (how many edits were new), or null with no device. A page that read the device's rows at once reads them
- * again where it brought something new.
- * @param {string} [vault]
- */
-export async function whenBrought(vault = MAIA_CITY) {
-	const d = deviceOf();
-	return d ? bringOf(d, vault).catch(() => null) : null;
-}
-
-/** `p`, or null once `ms` passed. @param {Promise<any>} p @param {number} ms */
-function within(p, ms) {
-	let t;
-	const late = new Promise((done) => (t = setTimeout(() => done(null), ms)));
-	return Promise.race([p.catch(() => null), late]).finally(() => clearTimeout(t));
-}
-
-/**
- * The rows of vault `vault`'s public code of kinds `kinds`, as the device the page holds (or its parent page) reads
- * them, in the feed's shape (`/feed/code`): at once where it holds the vault's code, its bring going on beside; where
- * it holds none yet, once it brought the vault from its peers (`BRING`). `null` where the feed is read instead: no
- * device is open, it holds none of the vault's code and is still bringing it, or it doesn't know the ops.
- * `wait` is how long it waits for the bring, `answer` how long for the device to read its rows back (`ANSWER`).
- * @param {string[]} kinds @param {{ vault?: string, wait?: number, answer?: number }} [o]
- * @returns {Promise<any[] | null>}
- */
-export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING, answer = ANSWER } = {}) {
-	const d = deviceOf();
-	if (!d || !/^[0-9a-f]{64}$/.test(String(vault))) return null;
-	const code = async () => {
-		const got = await within(d.run({ op: 'code', vault, type: kinds }), answer);
-		return d === deviceOf() && Array.isArray(got?.ok) && got.ok.length ? got.ok : null;
-	};
-	const held = await code();
-	if (held) {
-		learn(held.map((r) => r?.entry));
-		// what changed of the vault since, brought beside
-		void bringOf(d, vault).catch(() => null);
-		return held;
-	}
-	// An empty local catalog is returned immediately. Sync never blocks a frontend read.
-	return null;
 }
 
 const readLocalFile = createLocalFileReads({ window: WINDOW });
@@ -363,5 +226,5 @@ const readLocalFile = createLocalFileReads({ window: WINDOW });
  * @returns {Promise<Uint8Array | null>}
  */
 export async function deviceFile(file, { wait = READ } = {}) {
- return readLocalFile(deviceOf(), file, wait);
+	return readLocalFile(deviceOf(), file, wait);
 }
