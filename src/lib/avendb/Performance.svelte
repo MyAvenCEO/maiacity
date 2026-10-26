@@ -15,8 +15,10 @@
 	and what via relay"): the device's own endpoint, relay and direct addresses, each peer it is connected to with each
 	path of the connection (direct or relayed, the one it sends on, its round trip, the bytes it carried), what it took
 	from each peer page by page and how fast, and its newest pages, as the device's `network` op answers (avendb-net's
-	`Node::network`), read again every few seconds while the page is open. Diagnostics: the report of startup, unlock,
-	sync and connection speed, run and copied ($lib/app/DiagnosticsReport.svelte), once the top-left button.
+	`Node::network`), read again every few seconds while the page is open. Overview (Samuel 2026-10-26: one place for
+	every diagnostic): the build and the device, sync, peers and the server in one card, what needs attention in plain
+	words, and the diagnostics bar ($lib/app/DiagnosticsReport.svelte, once the top-left button): Run checks, whose speed
+	test the Network section shows and whose responsiveness the Work section shows, and Copy all, the whole page as JSON.
 
 	All of it is read on the device, or from the server's public feed, and kept in this page alone: nothing here is
 	written to a vault or sent to a peer. It is read when the page opens and again on Refresh.
@@ -33,6 +35,8 @@
 	import { ago, count, nameOf, short, signerName, size } from './vaults.js';
 	import { session } from './session.svelte.js';
 	import DiagnosticsReport from '$lib/app/DiagnosticsReport.svelte';
+	import { version } from '$app/environment';
+	import { sync } from './sync.svelte.js';
 
 	/** @type {{ api: any, world?: import('./vaults.js').WorldView, section?: string, thisName: string }} */
 	let { api, world, section = '', thisName } = $props();
@@ -44,11 +48,11 @@
 
 	/** the page's sections, in order, as its left side lists them: each its address after `#performance/`, name and icon */
 	const SECTIONS = /** @type {const} */ ([
+		['overview', 'Overview', 'pulse'],
 		['work', 'Work', 'jobs'],
 		['network', 'Network', 'link'],
 		['storage', 'Storage', 'database'],
-		['server', 'Server', 'sync'],
-		['diagnostics', 'Diagnostics', 'pulse']
+		['server', 'Server', 'sync']
 	]);
 	/** Scrolls the page to section `id`. @param {string} id */
 	const scrollTo = (id) => document.getElementById(`performance-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -56,7 +60,7 @@
 		const id = section;
 		if (id) tick().then(() => scrollTo(id));
 	});
-	const at = $derived(SECTIONS.some(([id]) => id === section) ? section : 'work');
+	const at = $derived(SECTIONS.some(([id]) => id === section) ? section : 'overview');
 
 	/** what each timer times, as a person reads it, by the engine's name for it (avendb's `Lab`) */
 	const WORK = /** @type {Record<string, [string, string]>} */ ({
@@ -219,6 +223,35 @@
 	const timer = $derived(perf?.timers?.[picked] ?? null);
 	const counts = $derived(Object.entries(perf?.counts ?? {}));
 	const memory = $derived(health?.memory ?? null);
+	/** the diagnostics report as its bar last made it ($lib/avendb/diagnostics-report.js), its `run` once checks ran */
+	let diag = $state(/** @type {any} */ (null));
+	/** the commit this page was built from, its first digits */
+	const build = /^[0-9a-f]{40}$/.test(version) ? version.slice(0, 8) : version;
+	/** everything the page shows, for Copy all */
+	const everything = () => ({ page: 'performance', build: version, readAt, perf, network, storage, disk, heap, health });
+	/** the speed test's results, as the Network section shows them */
+	const SPEED = /** @type {Record<string, string>} */ ({
+		'http-rtt': 'Round trip to Cloudflare',
+		'maia-download': 'Down from Maia City',
+		download: 'Down from Cloudflare',
+		upload: 'Up to Cloudflare'
+	});
+	const speeds = $derived(/** @type {any[]} */ (diag?.run?.network?.results ?? []).filter((r) => SPEED[r.kind]));
+	const responsive = $derived(diag?.run?.responsiveness?.status === 'measured' ? diag.run.responsiveness : null);
+	/** what needs attention now, as a person reads it: none is good news */
+	const warnings = $derived.by(() => {
+		const out = /** @type {string[]} */ ([]);
+		if (sync.known && !sync.peers) out.push('Offline: no peer connected.');
+		if (sync.behind > 0) out.push(`${sync.behind.toLocaleString()} of ${sync.logs.toLocaleString()} logs still to come.`);
+		for (const p of network?.peers ?? []) if (p.pulled?.failed) out.push(`${count(p.pulled.failed, 'page request')} from ${deviceName(p.device)} failed.`);
+		if (health?.panic) out.push('The server panicked in this run.');
+		if ((health?.starts?.hour ?? 0) > 1) out.push(`The server started ${health.starts.hour}× in the last hour.`);
+		if (health?.before?.ended && health.before.ended.how !== 'stopped') out.push(`The server’s run before ended: ${health.before.ended.how}${health.before.ended.why ? `, ${health.before.ended.why}` : ''}.`);
+		if (memory?.oom_kills) out.push(`The server was killed for memory ${memory.oom_kills}×.`);
+		if (memory?.container && memory?.limit && memory.container / memory.limit > 0.85) out.push(`The server holds ${Math.round((100 * memory.container) / memory.limit)}% of its memory.`);
+		if (healthFailed) out.push(`Couldn’t read the server’s health: ${healthFailed}`);
+		return out;
+	});
 
 	/** A device, as this device knows it: its name, else its id's start. @param {string} id */
 	const deviceName = (id) => (world ? signerName(world, id, true) : `Device ${short(id)}`);
@@ -335,6 +368,24 @@
 				</table>
 			{/if}
 		</article>
+		{#if responsive || diag?.run?.localRead?.ms != null}
+			<article class="card">
+				<h3>Responsiveness</h3>
+				<dl>
+					{#if responsive}
+						<dt>Page delay, p95</dt>
+						<dd>{time(responsive.eventLoopDelayP95Ms)}</dd>
+						<dt>Page delay, at most</dt>
+						<dd>{time(responsive.maxEventLoopDelayMs)}</dd>
+					{/if}
+					{#if diag?.run?.localRead?.ms != null}
+						<dt>A local read</dt>
+						<dd>{time(diag.run.localRead.ms)}</dd>
+					{/if}
+				</dl>
+				<p class="soft note">From the last Run checks.</p>
+			</article>
+		{/if}
 		{#if counts.length}
 			<article class="card">
 				<h3>Counts</h3>
@@ -369,6 +420,18 @@
 				>
 			</div>
 		</article>
+		{#if speeds.length}
+			<article class="card">
+				<h3>Speed test</h3>
+				<dl>
+					{#each speeds as r, i (i)}
+						<dt>{SPEED[r.kind]}</dt>
+						<dd>{r.status !== 'measured' ? 'unavailable' : r.kind === 'http-rtt' ? time(r.ms) : r.mbps != null ? `${r.mbps.toFixed(1)} Mbit/s` : time(r.ms)}</dd>
+					{/each}
+				</dl>
+				<p class="soft note">From the last Run checks: one stream each, not the most the line can carry.</p>
+			</article>
+		{/if}
 		<article class="card">
 			<h3>This device</h3>
 			<dl>
@@ -633,18 +696,44 @@
 	{/if}
 {/snippet}
 
-<!-- the report to run and copy, once the top-left diagnostics button (Samuel 2026-10-26: folded in here) -->
-{#snippet diagnostics()}
-	<article class="card wide"><DiagnosticsReport /></article>
+{#snippet overview()}
+	{@const direct = (network?.peers ?? []).filter((p) => p.way === 'direct').length}
+	<article class="card">
+		<h3>Now</h3>
+		<dl>
+			<dt>Build</dt>
+			<dd>{build}{native() ? ', theOS on this Mac' : ''}</dd>
+			<dt>Device</dt>
+			<dd>{thisName || 'This device'}</dd>
+			<dt>Sync</dt>
+			<dd>{!sync.known ? 'Connecting' : !sync.peers ? 'Offline' : sync.behind > 0 ? `${(sync.logs - sync.behind).toLocaleString()} of ${sync.logs.toLocaleString()} logs` : 'Synced'}</dd>
+			<dt>Peers</dt>
+			<dd>{network ? `${network.peers.length}: ${direct} direct, ${network.peers.length - direct} through a relay` : '–'}</dd>
+			<dt>Server</dt>
+			<dd>{health ? `up ${span(health.up)}, ${count(health.starts?.hour ?? 0, 'start')} this hour` : '–'}</dd>
+		</dl>
+	</article>
+	<article class="card">
+		<h3>Needs attention</h3>
+		{#if warnings.length}
+			<ul class="warnings">{#each warnings as w (w)}<li>{w}</li>{/each}</ul>
+		{:else}
+			<p class="soft">{readAt ? 'Nothing.' : 'Reading…'}</p>
+		{/if}
+	</article>
+	<article class="card wide">
+		<h3>Diagnostics</h3>
+		<DiagnosticsReport bar extra={everything} onreport={(r) => (diag = r)} />
+	</article>
 {/snippet}
 
 <Frame nav={menu} aside={details} navLabel="Performance" navIcon="gauge" asideLabel="The timer picked" asideIcon="info" bind:open>
 	<div class="page">
+		{@render part('overview', overview)}
 		{@render part('work', work)}
 		{@render part('network', net)}
 		{@render part('storage', stored)}
 		{@render part('server', server)}
-		{@render part('diagnostics', diagnostics)}
 	</div>
 </Frame>
 
@@ -674,6 +763,13 @@
 
 	.card.wide {
 		grid-column: 1 / -1;
+	}
+
+	.warnings {
+		margin: 0;
+		padding-left: 1.1rem;
+		font-size: 0.84rem;
+		line-height: 1.5;
 	}
 
 	.again {

@@ -1,7 +1,8 @@
 <!--
 	The diagnostics report: one report for startup, unlock, restarts, sync, responsiveness and connection speed, run and
 	copied from here. The Performance page shows it once the vault is open (Samuel 2026-10-26: the top-left button folded
-	into Performance); before unlock, ./Diagnostics.svelte opens it in a dialog. It captures every 5 s while `active`.
+	into Performance), as a bar (`bar`) whose copy takes the whole page too (`extra`) and whose results the page shows in
+	its sections (`onreport`); before unlock, ./Diagnostics.svelte opens it in a dialog. It captures every 5 s while `active`.
 -->
 <script lang="ts">
  import { viewReadiness } from '$lib/avendb/view-readiness.js';
@@ -17,7 +18,7 @@
  import { playbackMetrics } from '$lib/studio/playback-metrics.js';
  import { createDiagnosticRunner, diagnosticSnapshot } from '$lib/avendb/diagnostics-report.js';
  import { runNetworkDiagnostics } from '$lib/avendb/network-diagnostics.js';
- let { active = true }: { active?: boolean } = $props();
+ let { active = true, bar = false, extra, onreport }: { active?: boolean, bar?: boolean, extra?: () => object, onreport?: (report: any) => void } = $props();
  let fallback = $state<HTMLTextAreaElement>();
  let runner: ReturnType<typeof createDiagnosticRunner> | undefined;
  let capturesRemaining = 0;
@@ -30,7 +31,12 @@
   const device = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad' : /Mac/.test(ua) ? 'Mac' : 'other';
   return {viewReadiness:viewReadiness.snapshot(), ...diagnosticSnapshot({ phase: session.phase, build: version, device, journal: latencyJournal.snapshot(), lifecycle: lifecycle()?.snapshot(), calls: localTimings.snapshot(), manifests: manifestDiagnostics(), sync, playback: playbackMetrics.snapshot() })};
  }
- function refresh() { if (runner) logs = JSON.stringify(runner.snapshot(), null, 2); }
+ function refresh() {
+  if (!runner) return;
+  const report = runner.snapshot();
+  onreport?.(report);
+  logs = JSON.stringify(extra ? { ...extra(), diagnostics: report } : report, null, 2);
+ }
  async function run() {
   if (!runner || running) return;
   running = true; copied = ''; showText = false;
@@ -65,14 +71,14 @@
  });
 </script>
 
-<p>One report for startup, unlock, restarts, sync, responsiveness and connection speed. Available before and after unlock.</p>
+{#if !bar}<p>One report for startup, unlock, restarts, sync, responsiveness and connection speed. Available before and after unlock.</p>{/if}
 <div class="actions">
  <button class="btn" data-pick onclick={run} disabled={running}>{running ? 'Running diagnostics…' : 'Run diagnostics'}</button>
- <button class="btn" onclick={copy}>Copy logs</button>
+ <button class="btn" onclick={copy}>{bar ? 'Copy all' : 'Copy logs'}</button>
 </div>
 <p role="status" aria-live="polite">{copied || status}</p>
-<p class="note">Keep the app open for up to 45 seconds. Connection checks use up to 13 MiB plus a small release lookup, through Maia City and Cloudflare. No messages or other account entries are created.</p>
-<p class="note">For cross-device timing, run diagnostics on both devices, then make an ordinary edit. Compatible peers observe delivery for two minutes. No sample means unmeasured, not instant delivery.</p>
+{#if !bar}<p class="note">Keep the app open for up to 45 seconds. Connection checks use up to 13 MiB plus a small release lookup, through Maia City and Cloudflare. No messages or other account entries are created.</p>
+<p class="note">For cross-device timing, run diagnostics on both devices, then make an ordinary edit. Compatible peers observe delivery for two minutes. No sample means unmeasured, not instant delivery.</p>{/if}
 {#if showText}<textarea bind:this={fallback} aria-label="Diagnostic logs" readonly value={logs} rows="10"></textarea>{/if}
 
 <style>
