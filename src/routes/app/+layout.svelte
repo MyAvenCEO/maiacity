@@ -336,7 +336,8 @@
 </svelte:head>
 
 <ScreenChrome nativeWindow={native()} title={game?.label ?? 'Maia City'} />
-<Diagnostics />
+<!-- once the vault is open, diagnostics live on the Performance page ($lib/avendb/Performance.svelte) -->
+{#if phase !== 'ready'}<Diagnostics />{/if}
 
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
 {#if !(phase === 'ready' && immersive && !closed)}<div class="status-strip" aria-hidden="true"></div>{/if}
