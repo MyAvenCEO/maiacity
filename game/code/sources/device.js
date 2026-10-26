@@ -33,9 +33,10 @@ let viewContext = {};
 /** what the selection binds (`bindView`) and the signals that order the tiers (`signalView`), the page's own */
 const selected = {};
 const signals = {};
-/** The manifests the app ships ($lib/avendb/manifests.js), read where Maia City's vault holds none of that id yet: a
- *  cold device, or a vault the manifests' AIP has not reached, still asks for what its route shows first, never only
- *  the catch-up of every log. The vault's own manifest of an id always wins. */
+/** The manifests the app ships ($lib/avendb/manifests.js), read where Maia City's vault holds no v2 manifest of that id
+ *  yet: a cold device, or a vault the manifests' AIP has not reached, still asks for what its route shows first, never
+ *  only the catch-up of every log. A v1 manifest of the vault gives way to the app's of its id (v1 chat asked for Maia
+ *  City's rooms alone); the vault's v2 manifest of an id always wins. */
 let builtIn = [];
 
 /** Sets the app's own manifests (`MANIFESTS`), read under the vault's. @param {any[]} list */
@@ -44,11 +45,13 @@ export function useBuiltInManifests(list) {
 	refreshActiveView();
 }
 
-/** The manifests of catalog `catalog`: the vault's, and for Maia City the app's own of the ids the vault lacks. */
+/** The manifests of catalog `catalog`: the vault's, and for Maia City the app's own of each id it holds no v2 of. */
 export const withBuiltIn = (held, catalog) => {
 	if (catalog !== MAIA_CITY || !builtIn.length) return held;
-	const ids = new Set(held.map((m) => m?.id));
-	return [...held, ...builtIn.filter((m) => !ids.has(m.id))];
+	const v2 = new Set(held.filter((m) => m?.v === 2).map((m) => m.id));
+	const ours = builtIn.filter((m) => !v2.has(m.id));
+	const replaced = new Set(ours.map((m) => m.id));
+	return [...held.filter((m) => !replaced.has(m?.id)), ...ours];
 };
 
 export function useDevice(d) {

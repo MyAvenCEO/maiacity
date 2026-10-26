@@ -141,15 +141,18 @@ test('deviceRows reads what the device holds now, and brings nothing', async () 
 test('with no manifest of its route in the vault, the app\'s own says what comes now; the vault\'s wins', async () => {
 	globalThis.location = { pathname: '/app/chat/' };
 	useBuiltInManifests([{ ...chat, tiers: { now: [{ want: { type: ['room'], vault: '*' }, part: 'headers' }] } }]);
-	const d = device({ manifests: [], rows: { room: [{ entry: id(3) }] } });
+	// a v1 chat manifest (Maia City's rooms alone) gives way to the app's
+	const v1 = { kind: 'manifest', id: 'chat', title: 'Chat', routes: ['/app/chat/'], priority: 'medium', parts: [{ query: { type: ['room'] }, limit: 50 }] };
+	const d = device({ manifests: [v1], rows: { room: [{ entry: id(3) }] } });
 	useDevice(d);
 	await useView('/app/chat/', {});
 	await settle();
 	const last = d.interests().at(-1).wants;
 	expect(last[0].entries).toContain(id(3));
 	expect(last[0].queries).toContainEqual({ types: ['room'] });
+	expect(last[0].queries).not.toContainEqual({ types: ['room'], vault: MAIA_CITY });
 	useDevice(null);
-	// the vault holds a chat manifest: only its parts go out
+	// the vault holds a v2 chat manifest: only its parts go out
 	const v = device({ manifests: [{ ...chat, tiers: { now: [{ want: { type: ['note'] } }] } }], rows: { room: [{ entry: id(3) }] } });
 	useDevice(v);
 	await useView('/app/chat/', {});
