@@ -2,7 +2,7 @@
 // The page's view (./device.js): one Interest a mounted page, set from the manifests of its route, slots bound by the
 // route and the selection, signals ordering a tier; no learned lists, no brings, no timers.
 import { afterEach, expect, test } from 'bun:test';
-import { bindView, deviceRows, refreshActiveView, signalView, useDevice, useView, wantNow } from './device.js';
+import { bindView, deviceRows, refreshActiveView, signalView, useBuiltInManifests, useDevice, useView, wantNow } from './device.js';
 import { MAIA_CITY } from './anchor.js';
 
 const id = (i) => i.toString(16).padStart(64, '0');
@@ -35,6 +35,7 @@ function device({ manifests = [chat], rows = {}, wait } = {}) {
 }
 
 afterEach(() => {
+	useBuiltInManifests([]);
 	bindView('room', null);
 	signalView('list', null);
 	useDevice(null);
@@ -135,4 +136,25 @@ test('deviceRows reads what the device holds now, and brings nothing', async () 
 	expect(empty.calls.some((c) => c.op === 'bring')).toBe(false);
 	useDevice(null);
 	expect(await deviceRows(['recipe'])).toBeNull();
+});
+
+test('with no manifest of its route in the vault, the app\'s own says what comes now; the vault\'s wins', async () => {
+	globalThis.location = { pathname: '/app/chat/' };
+	useBuiltInManifests([{ ...chat, tiers: { now: [{ want: { type: ['room'], vault: '*' }, part: 'headers' }] } }]);
+	const d = device({ manifests: [], rows: { room: [{ entry: id(3) }] } });
+	useDevice(d);
+	await useView('/app/chat/', {});
+	await settle();
+	const last = d.interests().at(-1).wants;
+	expect(last[0].entries).toContain(id(3));
+	expect(last[0].queries).toContainEqual({ types: ['room'] });
+	useDevice(null);
+	// the vault holds a chat manifest: only its parts go out
+	const v = device({ manifests: [{ ...chat, tiers: { now: [{ want: { type: ['note'] } }] } }], rows: { room: [{ entry: id(3) }] } });
+	useDevice(v);
+	await useView('/app/chat/', {});
+	await settle();
+	const queries = v.interests().at(-1).wants.flatMap((w) => w.queries);
+	expect(queries).toContainEqual({ types: ['note'], vault: MAIA_CITY });
+	expect(queries.some((q) => q.types.includes('room'))).toBe(false);
 });

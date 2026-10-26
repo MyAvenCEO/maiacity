@@ -33,6 +33,23 @@ let viewContext = {};
 /** what the selection binds (`bindView`) and the signals that order the tiers (`signalView`), the page's own */
 const selected = {};
 const signals = {};
+/** The manifests the app ships ($lib/avendb/manifests.js), read where Maia City's vault holds none of that id yet: a
+ *  cold device, or a vault the manifests' AIP has not reached, still asks for what its route shows first, never only
+ *  the catch-up of every log. The vault's own manifest of an id always wins. */
+let builtIn = [];
+
+/** Sets the app's own manifests (`MANIFESTS`), read under the vault's. @param {any[]} list */
+export function useBuiltInManifests(list) {
+	builtIn = Array.isArray(list) ? list : [];
+	refreshActiveView();
+}
+
+/** The manifests of catalog `catalog`: the vault's, and for Maia City the app's own of the ids the vault lacks. */
+export const withBuiltIn = (held, catalog) => {
+	if (catalog !== MAIA_CITY || !builtIn.length) return held;
+	const ids = new Set(held.map((m) => m?.id));
+	return [...held, ...builtIn.filter((m) => !ids.has(m.id))];
+};
 
 export function useDevice(d) {
 	if (device !== (d ?? null)) viewContext = {};
@@ -90,7 +107,7 @@ export function useView(path, options) {
 		walks.pending++;
 		view.done = (async () => {
 			const parts = await Promise.all(catalogs.map(async (catalog) => {
-				const held = await manifestsOf(opened, { vault: catalog, signal });
+				const held = withBuiltIn(await manifestsOf(opened, { vault: catalog, signal }), catalog);
 				const leaves = leavesFor(held, path, env);
 				run.heldManifests += held.length;
 				run.matchedLeaves += leaves.length;
