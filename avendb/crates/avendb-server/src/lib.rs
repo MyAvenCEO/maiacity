@@ -32,6 +32,7 @@ pub mod backups;
 pub mod bucket;
 pub mod feed;
 pub mod health;
+pub mod reports;
 mod md5;
 pub mod stun;
 
@@ -421,7 +422,8 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         offer.addr = relays.into_iter().fold(addr, EndpointAddr::with_relay_url);
     }
     let rate = feed::Rate::per_minute(config.rates.feed);
-    let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone(), relay.gate.clone(), rate).await?;
+    let reports = reports::Reports::open(&config.data);
+    let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone(), relay.gate.clone(), rate, reports).await?;
     let backups = config.snapshots.as_ref().map(|s| backups::Backups::spawn(node.clone(), own, s, Keep::default(), health.clone()));
     let beat = health.beat();
     let measure = Abort(tokio::spawn(measure(config.clone(), health.clone())));
