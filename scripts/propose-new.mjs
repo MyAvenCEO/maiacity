@@ -3,7 +3,8 @@
 // (Samuel 2026-10-19: every change to vault data goes to him as a proposal). Each asset is drafted as its recipe entry
 // (`create` with `draft: true`, the record, tags and file the seed would write: src/lib/avendb/seed.js `versionOf`), so
 // it shows nowhere on the vault's main line until an owner accepts the AIP in the Proposals app (/app/aips/); then it
-// carries its `ref:` tag, and the seed's top-up finds it held and writes nothing. Accept the AIP before the PR that
+// carries its `ref:` tag, and the seed's top-up finds it held and writes nothing. The AIP opens with its objective (Maia
+// City holds each new asset), measured before it and with its drafts. Accept the AIP before the PR that
 // adds the assets merges, or the seed's top-up writes them itself. An asset the vault holds already, or one whose repo
 // history is more than one version with one recipe, is refused (a newer version goes in by scripts/propose-version.mjs).
 // Without --run it only says what it would do.
@@ -157,7 +158,20 @@ try {
 		option('--note') ?? '',
 		made.map((m) => `${m.label}: recipe ${m.value.card.recipe}, ${m.value.card.triangles?.toLocaleString?.('en') ?? '?'} triangles, made for box engine ${m.value.card.engine}.`).join('\n')
 	].filter(Boolean).join('\n\n');
-	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals } });
+	// its objective: Maia City holds each new asset, measured before the AIP (none of them) and with its drafts (all)
+	const objective = [
+		'import AvenDB.Objective',
+		'open AvenDB.Objective',
+		'',
+		`/-- Maia City holds each new asset of this AIP as its recipe entry: ${made.map((m) => m.label).join(', ')}. -/`,
+		`def held : Metric := metric "New assets held in Maia City" (equals (reading "assets") ${made.length})`,
+		'',
+		'def objective : List Metric := [held]',
+		''
+	].join('\n');
+	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals, objective } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'assets', value: 0, note: 'Maia City before this AIP' } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'assets', value: made.length, note: 'with the drafts of this AIP, each its recipe entry and file' } });
 	let promoted = null;
 	try {
 		promoted = await agent.call('avendb_run', { op: { op: 'aip_promote', entry: aip.entry } });

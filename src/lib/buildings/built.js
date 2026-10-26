@@ -1,14 +1,16 @@
 /*
  * THE BUILDINGS BUILT AS ONE OBJECT — the shipping containers fitted out as the crew's kitchen, workshop, power and
  * washroom (Sandbox 1's, $lib/models/containers.js), the wayside of MaiaCity V1 ($lib/models/wayside.js) and, from
- * its v2, the bell tent (./tent.js): each made by a builder that hands back one three.js object, so each is a recipe
- * of the `buildings` group the asset box builds ($lib/assets/groups.js), `buildings/container-kitchen@1`, and the
- * Buildings viewer (/app/buildings/) shows it from the box like any thing or machine. The domes are not here, nor the
- * tent's v1: each is a world in disguise (Sandbox 3's interiors, $lib/sandbox-2/interior, a sky, lamps, animals and a
- * forest of its own), built by that world's code (./inside.js); ./index.js lists them all.
+ * their v2, the bell tent (./tent.js) and the solar factory dome (./factory.js): each made by a builder that hands back
+ * one three.js object, so each is a recipe of the `buildings` group the asset box builds ($lib/assets/groups.js),
+ * `buildings/container-kitchen@1`, and the Buildings viewer (/app/buildings/) shows it from the box like any thing or
+ * machine. The other domes are not here, nor the tent's and the factory's v1: each is a world in disguise (Sandbox 3's
+ * interiors, $lib/sandbox-2/interior, a sky, lamps, animals and a forest of its own), built by that world's code
+ * (./inside.js); ./index.js lists them all.
  *
  * Each has its version and history ($lib/app/versions.js): a changed building goes up a version, its old builder kept
- * in HISTORY below. The tent's v1 has no builder here: it is Sandbox 3's interior, kept as its kind (./index.js).
+ * in HISTORY below. The tent's and the factory's v1 have no builder here: each is Sandbox 3's interior, kept as its
+ * kind (./index.js).
  *
  * The lists are the box's: each asset's recipe is made of its own entry in them (../assets/box/narrow.js), so a new
  * building is one more entry, written out, never a list spread into one (that would move every other one's recipe).
@@ -16,19 +18,24 @@
 import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from '$lib/models/containers.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, villageStore } from '$lib/models/wayside.js';
 import { tentSite } from './tent.js';
+import { factoryDome } from './factory.js';
 import { registerAssets } from '$lib/assets/register.js';
 
 /** @typedef {import('$lib/models').Model} Model */
 
 /**
- * the buildings' older versions, by id, each with its frozen builder (the tent's v1, Sandbox 3's interior, has none
- * here; every other one is at v1)
+ * the buildings' older versions, by id, each with its frozen builder (the tent's and the factory's v1, Sandbox 3's
+ * interiors, have none here; every other one is at v1)
  * @type {Record<string, (import('$lib/app/versions.js').Change & { build?: () => import('three').Object3D })[]>}
  */
 const HISTORY = {
 	'dome-tent': [
 		{ v: 1, date: '2026-10-05', note: 'Sandbox 3’s tent: its interior, raised by that world’s own code (./inside.js)' },
 		{ v: 2, date: '2026-10-17', note: 'Built in the asset box: the Things’ bell tent, pitched, and its fire place lit in front of its door; walked in by its own shape, pitched again, the fire lit or put out' }
+	],
+	'dome-factory': [
+		{ v: 1, date: '2026-10-05', note: 'Sandbox 3’s factory dome: its interior, raised by that world’s own code (./inside.js)' },
+		{ v: 2, date: '2026-10-26', note: 'Built in the asset box, so the Maia City vault can hold it: the same shell, doors and five floors of lines, its machines running, the lift at the ground floor; walked in by its own shape' }
 	]
 };
 
@@ -44,7 +51,8 @@ const CONTAINER_LIST = [
 export const CONTAINERS = registerAssets(CONTAINER_LIST, 'make', HISTORY);
 
 /** the wayside of MaiaCity V1: buildings on the dusty highway and at the village centre, and the places they make
- *  together; and at its end the bell tent from its v2 (./tent.js), which the Buildings list with the domes (./index.js) */
+ *  together; and at its end the bell tent from its v2 (./tent.js) and the solar factory dome from its v2
+ *  (./factory.js), which the Buildings list with the domes (./index.js) */
 /** @type {(Omit<Model, 'versions' | 'version'> & { group: string })[]} */
 const WAYSIDE_LIST = [
 	{ id: 'bus-stop', label: 'Bus stop', group: 'Wayside', note: `${WAYSIDE_INFO.busStop.note}. Where every newcomer steps off`, usedIn: 'MaiaCity V1', make: () => busStop() },
@@ -52,7 +60,8 @@ const WAYSIDE_LIST = [
 	{ id: 'old-shed', label: 'Old shed', group: 'Wayside', note: WAYSIDE_INFO.shed.note, usedIn: 'MaiaCity V1', make: () => oldShed() },
 	{ id: 'maia-centre', label: 'MaiaCity centre', group: 'Places', note: 'the centre of the city plot today, where the sand highway ends: the abandoned gas station at the road’s end, the bus stop, the travel van pulling in. Where the story starts', usedIn: 'MaiaCity V1', make: () => maiaCentre() },
 	{ id: 'village-store', label: 'Village store', group: 'Places', note: "the village centre's future storage area: the broken shed with the powercube inside, the solar row and the battery beside it. All the Village COOP's", usedIn: 'MaiaCity V1', make: () => villageStore() },
-	{ id: 'dome-tent', label: 'Bell tent', group: 'Tents and domes', note: 'the bell tent pitched, its fire place lit in front of its door. Walk in', usedIn: 'Sandbox 3', make: () => tentSite() }
+	{ id: 'dome-tent', label: 'Bell tent', group: 'Tents and domes', note: 'the bell tent pitched, its fire place lit in front of its door. Walk in', usedIn: 'Sandbox 3', make: () => tentSite() },
+	{ id: 'dome-factory', label: 'Solar factory dome', group: 'Tents and domes', note: 'the factory coop that makes the domes’ glass from sand, quartz and copper: five floors of lines round one great lift, its machines running. Walk in', usedIn: 'Sandbox 3', make: () => factoryDome() }
 ];
 /** @type {(Model & { group: string })[]} */
 export const WAYSIDE = registerAssets(WAYSIDE_LIST, 'make', HISTORY);

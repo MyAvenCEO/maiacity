@@ -872,7 +872,7 @@ export function buildFactory(ctx: FactoryCtx): FactoryWalk {
 			const [mx, mz] = polar((inner + outerEnd) / 2, a)
 			machines.push({ x: mx, z: mz, y })
 			// a dev hook for the journal's camera: where every station stands
-			;((window as unknown as { __factoryStations?: object[] }).__factoryStations ??= []).push({ k, a, name: st.name, inner, outer: outerEnd })
+			;((globalThis as unknown as { __factoryStations?: object[] }).__factoryStations ??= []).push({ k, a, name: st.name, inner, outer: outerEnd })
 			const [x, z] = polar(rs, a)
 			const th = a + Math.PI / 2
 			part.group.position.set(x, y, z)
