@@ -346,7 +346,7 @@ impl crate::Shared {
                 // revocations would re-mark the group against the owner's
                 // current marks, and the two would rewrite it forever.
                 let deferred:Vec<EntryId>=groups.iter().filter_map(|log|match log {LogId::Entry(e)=>Some(*e),_=>None}).collect();
-                self.lab({let deferred=deferred.clone();move|lab,me| for group in deferred {lab.defer_semantic_marks(me,group);}}).await;
+                self.try_lab(move|lab,me| for group in deferred {lab.defer_semantic_marks(me,group);}).await?;
                 self.pull_group_dependency(peer.endpoint,groups,device,dependencies.groups).await?;
                 self.catch_up_paced(true).await;
             }
