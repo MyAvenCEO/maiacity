@@ -232,7 +232,7 @@ impl Lab {
                 let progress = store.bootstrap_progress.remove(entry).expect("progress");
                 if let Some(shown) = store.shown.remove(entry) {
                     let base = RestoredOwnerJudgment { entry: *entry, lane_digest: progress.lane_digest, history: shown.history,
-                        after: shown.after, items: shown.items.into_inner().unwrap_or_default(),
+                        after: shown.after, items: shown.items,
                         policy: progress.policy, bodies: HashMap::new() };
                     restored.push((snapshot, base, Some((progress.pending, progress.base_scratch, progress.missing, progress.wait_reason))));
                     continue;

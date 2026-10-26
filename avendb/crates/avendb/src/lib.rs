@@ -53,7 +53,6 @@ pub mod cast;
 pub mod data;
 pub mod doc;
 // Own warm metadata/content readiness, never a peer admission path.
-mod deferred_body;
 pub mod encode;
 pub mod engine;
 pub mod entry_state;

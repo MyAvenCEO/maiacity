@@ -182,10 +182,7 @@ mod tests {
         let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
         lab.warmed(mac, receipt);
         lab.restore_warm(mac, backup, Some(([30;40], n)), &warm);
-        let creation = lab.held(mac).view().entry(entry).unwrap().creation;
-        assert!(lab.held(mac).deferred_bodies.contains_key(&creation));
         assert!(lab.verify_counted_base_equivalence(mac, snapshot, entry, &sealed));
-        assert!(lab.held(mac).deferred_bodies[&creation].content_ready());
         lab.stores.get_mut(&mac).unwrap().keys = Keyring::default();
         assert!(!lab.verify_counted_base_equivalence(mac, snapshot, entry, &sealed));
     }

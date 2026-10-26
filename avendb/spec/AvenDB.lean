@@ -94,7 +94,6 @@ import AvenDB.ScratchRetention
 
 import AvenDB.PeerReceipt
 
-import AvenDB.WarmMaterialization
 import AvenDB.LabScheduling
 import AvenDB.EntryBaseFormat
 
@@ -130,7 +129,6 @@ import AvenDB.CeremonyCancellation
 
 import AvenDB.IndexedHistoryAdmission
 
-import AvenDB.DeferredBodyReadiness
 import AvenDB.ScopedDocumentView
 
 import AvenDB.DemandedFilesBatch

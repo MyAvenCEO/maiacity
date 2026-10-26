@@ -564,13 +564,11 @@ mod tests {
         let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
         lab.warmed(mac, receipt);
         lab.restore_warm(mac, backup, Some(([27; 40], n)), &warm);
-        assert!(lab.held(mac).deferred_bodies.contains_key(&proposal));
         // Projection/base publication can use current snapshots without an empty
         // fallback; judged publication must also demand the proposal label.
         assert!(lab.draft_entry_projection(mac, &[owner], entry).is_ok());
         let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         assert_eq!(put_judgment(&lab.held(mac).shown[&entry], lab.held(mac)).unwrap(), expected);
-        assert!(lab.held(mac).deferred_bodies[&proposal].content_ready());
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
         lab.sync(mac, phone);
         let backup = lab.backup(phone);
@@ -579,7 +577,6 @@ mod tests {
         let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
         lab.warmed(phone, receipt);
         lab.restore_warm(phone, backup, Some(([28; 40], n)), &warm);
-        assert!(lab.held(phone).deferred_bodies.contains_key(&proposal));
         let restored = lab.restore_owner_judgment(phone, snapshot, entry, &sealed).unwrap();
         assert_eq!(put_judgment_parts(&restored.history, &restored.after).unwrap(), expected,
             "full holder accepts identical judgment including proposal labels");
