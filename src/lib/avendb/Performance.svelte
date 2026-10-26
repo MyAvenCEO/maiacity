@@ -15,7 +15,8 @@
 	and what via relay"): the device's own endpoint, relay and direct addresses, each peer it is connected to with each
 	path of the connection (direct or relayed, the one it sends on, its round trip, the bytes it carried), what it took
 	from each peer page by page and how fast, and its newest pages, as the device's `network` op answers (avendb-net's
-	`Node::network`), read again every few seconds while the page is open.
+	`Node::network`), read again every few seconds while the page is open. Diagnostics: the report of startup, unlock,
+	sync and connection speed, run and copied ($lib/app/DiagnosticsReport.svelte), once the top-left button.
 
 	All of it is read on the device, or from the server's public feed, and kept in this page alone: nothing here is
 	written to a vault or sent to a peer. It is read when the page opens and again on Refresh.
@@ -31,6 +32,7 @@
 	import { feed } from './server.js';
 	import { ago, count, nameOf, short, signerName, size } from './vaults.js';
 	import { session } from './session.svelte.js';
+	import DiagnosticsReport from '$lib/app/DiagnosticsReport.svelte';
 
 	/** @type {{ api: any, world?: import('./vaults.js').WorldView, section?: string, thisName: string }} */
 	let { api, world, section = '', thisName } = $props();
@@ -45,7 +47,8 @@
 		['work', 'Work', 'jobs'],
 		['network', 'Network', 'link'],
 		['storage', 'Storage', 'database'],
-		['server', 'Server', 'sync']
+		['server', 'Server', 'sync'],
+		['diagnostics', 'Diagnostics', 'pulse']
 	]);
 	/** Scrolls the page to section `id`. @param {string} id */
 	const scrollTo = (id) => document.getElementById(`performance-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -630,12 +633,18 @@
 	{/if}
 {/snippet}
 
+<!-- the report to run and copy, once the top-left diagnostics button (Samuel 2026-10-26: folded in here) -->
+{#snippet diagnostics()}
+	<article class="card wide"><DiagnosticsReport /></article>
+{/snippet}
+
 <Frame nav={menu} aside={details} navLabel="Performance" navIcon="gauge" asideLabel="The timer picked" asideIcon="info" bind:open>
 	<div class="page">
 		{@render part('work', work)}
 		{@render part('network', net)}
 		{@render part('storage', stored)}
 		{@render part('server', server)}
+		{@render part('diagnostics', diagnostics)}
 	</div>
 </Frame>
 
