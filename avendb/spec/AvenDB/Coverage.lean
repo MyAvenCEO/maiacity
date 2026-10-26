@@ -6,7 +6,7 @@ gives the same answer on a fast Mac, a slow iPhone and a CI runner.
 
 * Each candidate the device holds is classified `shown` (it matches and the device can show it whole), `out` (it
   does not match, or the device may not see it) or `waits` (the device cannot decide yet: its semantic groups, its
-  record, its history or a judgment of it has not arrived). A classification is sound: `shown` and `out` are the
+  record, or its history has not arrived). A classification is sound: `shown` and `out` are the
   truth; only `waits` is unknown.
 * A log a reachable peer announced and the device does not hold up to that announced head is `behind`. `mayMatch` is
   conservative: a log holding a matching entry may match.
@@ -22,7 +22,6 @@ inductive Waiting where
   | semantics
   | record
   | history
-  | judgment
   deriving DecidableEq, Repr
 
 /-- A held candidate, as the device classifies it. -/
