@@ -19,6 +19,7 @@ import AvenDB.HandedView
 import AvenDB.Examples
 import AvenDB.Checkpoint
 import AvenDB.Batches
+import AvenDB.LegacyAnchor
 import AvenDB.BatchDurability
 import AvenDB.Snapshot
 import AvenDB.EntryState

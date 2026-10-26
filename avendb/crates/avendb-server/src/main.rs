@@ -6,10 +6,14 @@
 //! - `avendb-server check [--read-all]`: checks every vault's folder as the daily run does (`backups::check_all`),
 //!   reading the files' blobs due today, or with `--read-all` every one, and fails unless each is whole;
 //! - `avendb-server restore --into <folder> [--at <time>]`: restores every vault into a new, empty folder, a shelf
-//!   for a server started on it to run as the same device; never into the live server's.
+//!   for a server started on it to run as the same device; never into the live server's;
+//! - `avendb-server freeze --out <file> [--at <time>]`: the freeze off SLH-DSA (`avendb::legacy`): every vault's
+//!   newest snapshot, restored into one device in memory that checks every signature again; writes the ids of the
+//!   edits an SLH-DSA signer signed to `<file>`, and says the anchor, the counts and each vault's signers by suite.
 //!
 //! A time is seconds since 1970, or a day, `YYYY-MM-DD`, to its end in UTC: each vault as its newest snapshot then.
-//! `snapshots` and `check` only read the bucket of snapshots, and `restore` writes only into its new folder.
+//! `snapshots`, `check` and `freeze` only read the bucket of snapshots; `restore` writes only into its new folder, and
+//! `freeze` only its file.
 
 use std::process::ExitCode;
 
@@ -57,7 +61,12 @@ async fn by_hand(config: &Config, command: &str, args: &[String], at: Option<u64
             let into = into.context("restore: --into <folder>, a new, empty folder, must be said")?;
             restore(config, at, std::path::Path::new(into)).await.map(|()| ExitCode::SUCCESS)
         }
-        other => bail!("{other}: avendb-server runs the server, or says snapshots, check or restore"),
+        "freeze" => {
+            let out = args.iter().position(|a| a == "--out").and_then(|i| args.get(i + 1));
+            let out = out.context("freeze: --out <file>, where the frozen ids go, must be said")?;
+            freeze(config, at, std::path::Path::new(out)).await.map(|()| ExitCode::SUCCESS)
+        }
+        other => bail!("{other}: avendb-server runs the server, or says snapshots, check, restore or freeze"),
     }
 }
 
@@ -202,4 +211,43 @@ async fn stopped(backups: Option<&backups::Backups>) -> Result<()> {
         let _ = backups;
         Ok(tokio::signal::ctrl_c().await?)
     }
+}
+
+/// The freeze off SLH-DSA (`avendb::legacy`, `spec/AvenDB/LegacyAnchor.lean`): each vault's snapshot as of `at`, the
+/// newest by default, every edit once, sorted by depth so that each comes after what its device had seen, restored
+/// into one device in memory, which checks every signature again and takes only those that check. Writes the ids of
+/// the edits it takes that an SLH-DSA signer signed to `out`, and says what it found as JSON: the anchor, how many
+/// edits it read, took and froze, and each human and coop vault's owners, root and devices by suite.
+async fn freeze(config: &Config, at: Option<u64>, out: &std::path::Path) -> Result<()> {
+    let snapshots = snapshots(config)?;
+    let (mut signed, mut keys, mut seen, mut read) = (Vec::new(), Vec::new(), std::collections::HashSet::new(), vec![]);
+    for v in snapshots.vaults().await? {
+        let folder = snapshots.folder(v).await?;
+        let Some(m) = folder.as_of(at).await? else {
+            read.push(serde_json::json!({ "vault": v.to_hex(), "snapshot": null }));
+            continue;
+        };
+        let (edits, k) = folder.edits_of(&m).await.with_context(|| format!("vault {}", v.to_hex()))?;
+        read.push(serde_json::json!({ "vault": v.to_hex(), "snapshot": when(m.time), "edits": edits.len() }));
+        signed.extend(edits.into_iter().filter(|s| seen.insert(s.edit.id())));
+        keys.extend(k);
+    }
+    signed.sort_by_key(|s| (s.edit.depth, s.edit.id()));
+    let offered = signed.len();
+    let seed = *avendb_net::server::random()?;
+    let survey = tokio::task::spawn_blocking(move || {
+        let mut lab = avendb::lab::Lab::with_entropy(seed);
+        let me = lab.device("the freeze off SLH-DSA");
+        lab.restore_from(me, avendb::lab::Backup::new(signed, keys));
+        avendb::legacy::survey(&lab, me)
+    })
+    .await?;
+    std::fs::write(out, survey.frozen.to_bytes()).with_context(|| format!("writing {}", out.display()))?;
+    let mut report = survey.to_json();
+    report["read"] = serde_json::json!(offered);
+    report["refused_now"] = serde_json::json!(offered - survey.held);
+    report["snapshots"] = serde_json::json!(read);
+    report["file"] = serde_json::json!(out.display().to_string());
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
 }

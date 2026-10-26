@@ -2343,6 +2343,7 @@ The full table, with each theorem's Rust guards, is `spec/README.md`.
 | `Lens.lean`, `Doc.lean`, `Proposals.lean` | Lenses (T9); merge of histories and the three-way merge of records (T10a to T10e); lines of history (T10f to T10h) |
 | `Props.lean`, `Theorems.lean` | The predicates the theorems use; every other theorem's statement, the proofs in the `*Lemmas.lean` files and `Schemas.lean` |
 | `Batches.lean` | Batch-signed logs: each device's tree of the edits it signs, signed roots, paths, what a device checks, wrapping a log as it stands, forks (V5) |
+| `LegacyAnchor.lean` | The hard fork off SLH-DSA: old edits frozen under a pinned anchor, checked by a path to it alone, later SLH-DSA edits refused, the view unchanged (`legacy`) |
 | `Examples.lean`, `Vectors.lean`, `OpsVectors.lean` | The scenarios, checked on every build; the cases the Rust core replays |
 
 Each guarantee and the theorems that state it, in `Theorems.lean` unless the row names another file:

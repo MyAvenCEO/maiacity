@@ -146,6 +146,16 @@ async fn a_vault_comes_back_from_each_snapshot_it_keeps() {
     for (hash, _) in busy.manifest.named() {
         assert_eq!((0..30).filter(|&d| Reading::at(30, day(d)).reads(&hash)).count(), 1, "read on one day of 30");
     }
+    // the freeze off SLH-DSA reads the newest snapshot's edits whole: a device restored from them takes every one, and
+    // freezes none, as every signer here is of ML-DSA-65
+    let newest = folder.newest().await.expect("its manifests").expect("the busy day's");
+    let (edits, keys) = folder.edits_of(&newest).await.expect("its edits");
+    assert_eq!(edits.len() as u64, busy.manifest.edits);
+    let mut lab = avendb::lab::Lab::with_entropy([5; 32]);
+    let me = lab.device("the freeze");
+    lab.restore_from(me, avendb::lab::Backup::new(edits, keys));
+    let survey = avendb::legacy::survey(&lab, me);
+    assert_eq!((survey.held as u64, survey.frozen.len()), (busy.manifest.edits, 0));
 
     // the busy day's snapshot in a new node: every edit, both files, and Carol's Mac reads them from it over iroh
     let (newest_dir, oldest_dir) = (Folder::new("rehearsal-newest"), Folder::new("rehearsal-oldest"));
