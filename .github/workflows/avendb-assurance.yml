@@ -58,7 +58,7 @@ jobs:
       # The Mac app links avenDB's device crates with its own lockfile, so its versions are held to the same list
       - name: The Mac app's lockfile, advisories
         working-directory: vault
-        run: cargo deny --locked check --config ../avendb/deny.toml advisories
+        run: cargo deny --locked --config ../avendb/deny.toml check advisories
 
   coverage:
     if: github.event_name == 'workflow_dispatch' && inputs.measure
