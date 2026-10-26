@@ -458,7 +458,8 @@ pub fn seed_count(default: u64) -> u64 {
     std::env::var("AVENDB_SIM_SEEDS").ok().and_then(|n| n.parse().ok()).unwrap_or(default)
 }
 
-/// Run `scenario` once for each seed (`AVENDB_SIM_SEED` alone, else seeds 1 to `seed_count(default)`), each within
+/// Run `scenario` once for each seed (`AVENDB_SIM_SEED` alone, else `seed_count(default)` seeds from
+/// `AVENDB_SIM_FIRST`, 1 by default), each within
 /// `limit`: a scenario that errs, panics or outlasts its limit fails the test, naming its seed and what its network
 /// saw. A hang counts as a failure, as a scenario has no other way to say it waits forever.
 pub async fn seeds<F, Fut>(name: &str, default: u64, limit: Duration, scenario: F)
@@ -469,9 +470,21 @@ where
     let only = std::env::var("AVENDB_SIM_SEED").ok().and_then(|n| n.parse::<u64>().ok());
     let list: Vec<u64> = match only {
         Some(seed) => vec![seed],
-        None => (1..=seed_count(default)).collect(),
+        None => {
+            let first = std::env::var("AVENDB_SIM_FIRST").ok().and_then(|n| n.parse().ok()).unwrap_or(1);
+            (first..first + seed_count(default)).collect()
+        }
     };
-    for seed in list {
+    replay(name, &list, limit, scenario).await
+}
+
+/// Run `scenario` for these seeds alone, as `seeds` does: a regression test pins the seeds a soak found slow or failing.
+pub async fn replay<F, Fut>(name: &str, list: &[u64], limit: Duration, scenario: F)
+where
+    F: Fn(Net) -> Fut,
+    Fut: Future<Output = anyhow::Result<()>> + Send + 'static,
+{
+    for &seed in list {
         let net = Net::new(seed);
         let began = std::time::Instant::now();
         let run = tokio::spawn(tokio::time::timeout(limit, scenario(net.clone())));
