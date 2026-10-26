@@ -77,7 +77,7 @@ export const MANIFEST_V2 = JSON.stringify({
 /**
  * @typedef {{type?: string[], tags?: string[], entry?: string, vault?: string}} Want
  * @typedef {{manifest?: string, want?: Want, part?: string, files?: string[], window?: {newest?: number, oldest?: boolean}, follow?: number, by?: string}} Part
- * @typedef {{kind: string, id: string, v?: number, routes?: string[], tiers?: Record<string, Part[]>, priority?: string, parts?: any[]}} Manifest
+ * @typedef {{kind: string, id: string, v?: number, title?: string, note?: string, routes?: string[], slots?: string[], tiers?: Record<string, Part[]>, priority?: string, parts?: any[]}} Manifest
  * @typedef {{tier: string, part: Part, want: Want, manifest: string}} Leaf
  * @typedef {{run: (op: Record<string, unknown>) => Promise<any>}} ManifestDevice
  */
@@ -91,13 +91,15 @@ export const covers = (route, path) =>
 export function lift(m) {
 	if (m?.v === 2 || !Array.isArray(m?.parts)) return m;
 	const tier = m.priority === 'low' ? 'later' : 'now';
-	const parts = m.parts.flatMap((p) => {
+	/** @type {(p: any) => Part[]} */
+	const one = (p) => {
 		if (typeof p?.manifest === 'string') return [{ manifest: p.manifest }];
 		if (p?.entry) return [{ want: { entry: p.entry }, ...(p.follow ? { follow: p.follow } : {}) }];
 		if (p?.query) return [{ want: { ...(p.query.type ? { type: p.query.type } : {}), ...(p.query.tags ? { tags: p.query.tags } : {}) },
 			...(p.limit ? { window: { newest: p.limit } } : {}), ...(p.follow ? { follow: p.follow } : {}) }];
 		return [];
-	});
+	};
+	const parts = m.parts.flatMap(one);
 	return { kind: 'manifest', v: 2, id: m.id, title: m.title, routes: m.routes ?? [], tiers: { [tier]: parts } };
 }
 
@@ -197,7 +199,7 @@ const rootsOf = (record) => [...JSON.stringify(record ?? {}).matchAll(/aven:([a-
 /** File entry `file` is one of `files` (tags, or media types ending in `/`), or any file where `files` names none. */
 /** @param {any} file @param {string[] | undefined} files */
 const fileFits = (file, files) =>
-	!files?.length || files.some((f) => (f.endsWith('/') ? (file.files ?? []).some((x) => String(x.media ?? '').startsWith(f)) : (file.tags ?? []).includes(f)));
+	!files?.length || files.some((f) => (f.endsWith('/') ? (file.files ?? []).some((/** @type {any} */ x) => String(x.media ?? '').startsWith(f)) : (file.tags ?? []).includes(f)));
 
 /** The manifests device `d` holds of vault `vault`: verified local records, which it syncs from peers in the background. */
 /** @param {ManifestDevice | undefined} d @param {{vault?: string, signal?: AbortSignal}} [o] @returns {Promise<Manifest[]>} */
@@ -227,19 +229,20 @@ export async function plan(leaves, { device: d, vault = MAIA_CITY, signals = {},
 	/** @type {{entry: string, tier: string, dist: number}[]} */
 	const works = [];
 	/** @type {Map<string, {types: string[], vault?: string}[]>} */
+	/** @type {Map<string, object[]>} */
 	const queries = new Map(TIERS.map((t) => [t, []]));
 	/** @type {{files?: any[]}} */
 	const inventory = {};
 	const wants = () => {
 		const ordered = schedule(works);
-		return TIERS.map((tier) => ({ tier, entries: ordered.filter((w) => w.tier === tier).map((w) => w.entry), queries: queries.get(tier) }))
+		return TIERS.map((tier) => ({ tier, entries: ordered.filter((w) => w.tier === tier).map((w) => w.entry), queries: queries.get(tier) ?? [] }))
 			.filter((w) => w.entries.length || w.queries.length);
 	};
 	for (const leaf of leaves) {
 		signal?.throwIfAborted();
 		const { part, want, tier } = leaf;
 		const at = want.vault === '*' ? undefined : want.vault ?? vault;
-		if (want.type?.length) queries.get(tier).push(...normalizeDiscovery([{ types: want.type, ...(at ? { vault: at } : {}) }]));
+		if (want.type?.length) queries.get(tier)?.push(...normalizeDiscovery([{ types: want.type, ...(at ? { vault: at } : {}) }]));
 		let ids = want.entry ? [want.entry] : d ? await rowsOf(d, want, at, part.window, signal) : [];
 		if (part.window?.oldest) ids = [...ids].reverse();
 		if (d && (part.follow || part.files?.length || part.part === 'files')) {

@@ -3,7 +3,8 @@ import { expect, test } from 'bun:test';
 import { createEntryWindow } from './query-window.js';
 import { visibleEntries } from './visible-entries.js';
 // an Interest op seen as the one list of entries and selectors it wants (tiers aside)
-const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((w) => w.queries ?? []) : undefined };
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 
 const id = (n) => n.toString(16).padStart(64, '0');
 const flush = async () => { for (let n = 0; n < 8; n++) await Promise.resolve(); };

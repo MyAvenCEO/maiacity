@@ -4,7 +4,8 @@ import { readAssetInventory } from './asset-inventory.js';
 import { localNavigation, needsWorldEntries } from './startup-summary.js';
 import { createReadWindow } from './query-window.js';
 // an Interest op seen as the one list of entries and selectors it wants (tiers aside)
-const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((w) => w.queries ?? []) : undefined };
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 test('metadata-only #assets starts independent local recipe reads with world and peers withheld', async () => {
  const world = {entriesComplete:false, entries:[]}, vault='v', calls=[];
  const row = {entry:'recipe', type:'recipe', record:{title:'Fig'}, brought:[{edit:'version', files:[]}]};

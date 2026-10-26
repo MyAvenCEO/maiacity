@@ -9,7 +9,8 @@ import { createReadWindow } from './query-window.js';
 import { createReactiveRead } from './reactive-read.js';
 import { observedWindow } from './observed-window.js';
 // an Interest op seen as the one list of entries and selectors it wants (tiers aside)
-const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((w) => w.queries ?? []) : undefined };
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 
 const id = (n) => n.toString(16).padStart(64, '0');
 const vault = id(99);

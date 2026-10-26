@@ -11,8 +11,8 @@
 	as every reader of the room decides from its history (avendb/docs/ARCHITECTURE.md §8, "Rooms").
 -->
 <script>
-	import { bindView } from '../../../game/code/sources/device.js';
 	// @ts-nocheck — plain JS
+	import { bindView } from '../../../game/code/sources/device.js';
 	import { onMount, tick, untrack } from 'svelte';
 	import Frame from '$lib/avendb/Frame.svelte';
 	import Icon from '$lib/avendb/Icon.svelte';

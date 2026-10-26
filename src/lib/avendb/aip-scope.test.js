@@ -11,7 +11,8 @@ import { createAipScope } from './aip-scope.js';
 import { createReactiveRead } from './reactive-read.js';
 import { observedWindow } from './observed-window.js';
 // an Interest op seen as the one list of entries and selectors it wants (tiers aside)
-const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((w) => w.queries ?? []) : undefined };
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 const flush = async () => { for (let i=0;i<30;i++) await Promise.resolve(); };
 
 test('mounted AIP consumers share a real discovery lease, released only by the last consumer', async () => {

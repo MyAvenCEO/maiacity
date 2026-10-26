@@ -9,7 +9,8 @@ import { observedWindow } from './observed-window.js';
 import { summaryView, needsWorldEntries } from './startup-summary.js';
 import { readCompleteness } from './read-completeness.js';
 // an Interest op seen as the one list of entries and selectors it wants (tiers aside)
-const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((w) => w.queries ?? []) : undefined };
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 
 test('package inventories read local authorized files while peer demand remains unanswered', async () => {

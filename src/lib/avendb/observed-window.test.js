@@ -3,7 +3,8 @@ import { expect, test } from 'bun:test';
 import { observedWindow } from './observed-window.js';
 import { queryEntries } from './query-window.js';
 // an Interest op seen as the one list of entries and selectors it wants (tiers aside)
-const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((w) => w.queries ?? []) : undefined };
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 const id = n => n.toString(16).padStart(64,'0');
 const flush = async () => { for(let i=0;i<12;i++)await Promise.resolve(); };
 test('explicit selected IDs demand history before an empty local result, with bounded hints', () => {

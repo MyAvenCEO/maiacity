@@ -535,7 +535,7 @@ export class Studio {
 		return $effect.root(() => {
 			$effect(() => {
 				const id = this.current?.id;
-				bindView('timeline', isCut(id) ? id.slice(4) : null);
+				bindView('timeline', id && isCut(id) ? id.slice(4) : null);
 				return () => bindView('timeline', null);
 			});
 			$effect(() => {
@@ -545,7 +545,7 @@ export class Studio {
 				/** @type {Map<string, number>} */
 				const by = new Map();
 				for (const c of clips) {
-					const entry = this.byHash.get(c.hash ?? '')?.meta?.aven?.entry;
+					const entry = /** @type {any} */ (this.byHash.get(c.hash ?? '')?.meta)?.aven?.entry;
 					if (!entry) continue;
 					const end = c.start + c.dur;
 					const d = end <= time ? 1e9 + time - end : Math.max(0, c.start - time);
