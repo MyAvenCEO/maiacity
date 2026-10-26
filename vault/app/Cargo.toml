@@ -20,7 +20,6 @@ bytes = "1.12"
 # the app's TLS for whatever names none: aws-lc-rs, as avenDB's (which names its own, post-quantum only)
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
 tauri = { version = "2.12", features = [] }
-tauri-plugin-dialog = "2"
 tokio.workspace = true
 anyhow.workspace = true
 serde.workspace = true
@@ -29,7 +28,6 @@ libc.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 blake3.workspace = true
-trash = "5"
 vault-media = { path = "../crates/vault-media" }
 # speech to text, on-device: Phonon-2 through ONNX Runtime (transcripts.rs)
 vault-asr = { path = "../crates/vault-asr" }
@@ -37,7 +35,6 @@ vault-asr = { path = "../crates/vault-asr" }
 vault-render = { path = "../crates/vault-render" }
 png = "0.18"
 # the API's pause times (analyse/prem.rs)
-chrono = "0.4"
 # the world window's WKWebView and NSWindow, and App Nap (world.rs)
 objc2 = "0.6"
 block2 = "0.6"
@@ -49,9 +46,10 @@ objc2-core-graphics = "0.3"
 objc2-core-foundation = "0.3"
 objc2-core-media = "0.3"
 # avenDB's passkey in a sign-in sheet on maia.city (passkey.rs)
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
 objc2-authentication-services = { version = "0.3", default-features = false, features = ["std", "block2", "ASWebAuthenticationSession", "ASFoundation"] }
 # native-tls = the macOS Security framework
-reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls", "http2", "charset"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "http2", "charset"] }
 
 [features]
 # The app's own pages, embedded (build/): what `tauri build` turns on. Without it the window loads the dev server

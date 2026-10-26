@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { parse } from 'yaml';
+import { YAML } from 'bun';
 
 function probe(env = {}) {
 	const directory = mkdtempSync(join(tmpdir(), 'deploy-probe-'));
@@ -56,7 +56,7 @@ test('DNS/certificate readiness and feed failures remain warnings', () => {
 });
 
 test('independent deployments keep shared SSH, container locking and close ownership', () => {
-	const load = (name) => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
+	const load = (name) => YAML.parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
 	const api = load('api'), avendb = load('avendb'), site = load('deploy');
 	expect(new Set([api, avendb, site].map((workflow) => workflow.concurrency.group)).size).toBe(3);
 	for (const workflow of [api, avendb]) {

@@ -14,7 +14,7 @@
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 
 const arg = (name, fallback) => {
 	const at = process.argv.indexOf(name);
@@ -36,17 +36,17 @@ const check = (what, ok, found = '') => {
 	console.log(`${ok ? '✓' : '✕'} ${what}${ok || !found ? '' : ` (found: ${found})`}`);
 };
 
-const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
 // the app's way in ($lib/app/entry.js) lets this tab on without avenDB, whose own page it walks; the vault founded
 // there is named as the person signed up
-await page.evaluateOnNewDocument(() => {
+await page.addInitScript(() => {
 	sessionStorage.setItem('avendb:later', '1');
 	sessionStorage.setItem('maia:signup', 'Samuel');
 });
-await page.setViewport({ width: 1300, height: 1000 });
+await page.setViewportSize({ width: 1300, height: 1000 });
 page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
-const cdp = await page.createCDPSession();
+const cdp = await page.context().newCDPSession(page);
 await cdp.send('WebAuthn.enable', { enableUI: false });
 const options = { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true };
 const verified = { hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true, hasPrf: true };
@@ -56,7 +56,7 @@ const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
 // sheet's page in a frame over the app. In the sheet's frame: the PRF outputs its ceremony brings are noted (to look for
 // them in what it sends back), it can be made to wait a moment (for a screenshot), and its way back to the app's scheme
 // is caught and handed to the app's page.
-await page.evaluateOnNewDocument(() => {
+await page.addInitScript(() => {
 	if (window === window.top) {
 		const founder = { id: 'account', number: 1, name: 'Samuel', since: '2026-01-01', role: 'founder', caps: ['media:admin'] };
 		/** @param {string} url */
@@ -128,15 +128,14 @@ const waitText = (t, ms = 60000, selector = 'main.avendb') => until(async () => 
 /** Click the `selector` whose words are `t`, else the first whose words include it. */
 async function click(t, selector = 'main.avendb button') {
 	const ok = await page.evaluate(
-		(t, selector) => {
+		([t, selector]) => {
 			const all = [...document.querySelectorAll(selector)];
 			const words = (/** @type {Element} */ e) => e.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 			const el = all.find((e) => words(e) === t) ?? all.find((e) => words(e).includes(t));
 			if (el instanceof HTMLElement) el.click();
 			return !!el;
 		},
-		t,
-		selector
+		[t, selector]
 	);
 	if (!ok) check(`there is a “${t}” to click`, false);
 	await sleep(250);

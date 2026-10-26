@@ -32,6 +32,7 @@ pub mod backups;
 pub mod bucket;
 pub mod feed;
 pub mod health;
+mod md5;
 pub mod stun;
 
 use std::collections::{HashMap, HashSet};

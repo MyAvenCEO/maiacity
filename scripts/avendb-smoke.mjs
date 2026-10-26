@@ -12,7 +12,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 
 const arg = (name, fallback) => {
 	const at = process.argv.indexOf(name);
@@ -42,19 +42,19 @@ const check = (what, ok, found = '') => {
 	console.log(`${ok ? '✓' : '✕'} ${what}${ok || !found ? '' : ` (found: ${found})`}`);
 };
 
-const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
 // the app's way in ($lib/app/entry.js) lets this tab on without avenDB, whose own page it walks; the vault founded
 // there is named as the person signed up
-await page.evaluateOnNewDocument(() => {
+await page.addInitScript(() => {
 	sessionStorage.setItem('avendb:later', '1');
 	sessionStorage.setItem('maia:signup', 'Samuel');
 });
-await page.setViewport({ width: 1300, height: 1000 });
+await page.setViewportSize({ width: 1300, height: 1000 });
 page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
-// /api/me answers as an admin. Only that request is held: Puppeteer's own interception holds every request, and the
+// /api/me answers as an admin. Only that request is held: a page's own request interception holds every request, and the
 // device's module and WebAssembly fetches never come back from it.
-const cdp = await page.createCDPSession();
+const cdp = await page.context().newCDPSession(page);
 await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/me' }] });
 cdp.on('Fetch.requestPaused', (r) => {
 	const founder = { id: 'smoke', number: 1, name: 'Samuel', since: '2026-01-01', role: 'founder', caps: ['media:admin'] };
@@ -98,7 +98,7 @@ try {
 	check('no simulated Lab', !(await page.$('.rail')) && !(await text()).includes('Open the Lab'));
 	await shot('1-account');
 
-	await page.setViewport({ width: 390, height: 844 });
+	await page.setViewportSize({ width: 390, height: 844 });
 	await sleep(300);
 	const fits = await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 	check('on a phone, nothing wider than the screen', fits);

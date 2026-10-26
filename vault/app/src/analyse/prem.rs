@@ -61,14 +61,50 @@ pub fn read(status: u16, body: Value) -> Result<Value, Ask> {
         return Ok(body);
     }
     let why = body["error"].as_str().map(String::from).unwrap_or_else(|| format!("the API answered {status}"));
-    if let Some(at) = body["paused_until"].as_str().and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok()) {
-        let left = (at.with_timezone(&chrono::Utc) - chrono::Utc::now()).to_std().unwrap_or(Duration::ZERO);
+    if let Some(at) = body["paused_until"].as_str().and_then(unix_of) {
+        let left = Duration::try_from_secs_f64(at - now()).unwrap_or(Duration::ZERO);
         return Err(Ask::Wait { reason: why, until: Some(Instant::now() + left) });
     }
     if body["transient"].as_bool() == Some(true) || status == 401 || status == 403 || status == 429 || status >= 500 {
         return Err(wait(why));
     }
     Err(Ask::Fail(why))
+}
+
+/// Seconds since 1970 now.
+fn now() -> f64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+}
+
+/// An RFC 3339 time (`2026-10-26T12:00:00.000Z`, `…+02:00`) → seconds since 1970, or None.
+fn unix_of(t: &str) -> Option<f64> {
+    let num = |s: &str| s.bytes().all(|b| b.is_ascii_digit()).then(|| s.parse::<i64>().ok()).flatten();
+    let (date, rest) = t.split_once(['T', 't', ' '])?;
+    let mut d = date.splitn(3, '-').map(num);
+    let (y, m, day) = (d.next()??, d.next()??, d.next()??);
+    let zone = rest.find(['Z', 'z', '+', '-'])?;
+    let (clock, offset) = rest.split_at(zone);
+    let mut c = clock.splitn(3, ':');
+    let (h, min) = (num(c.next()?)?, num(c.next()?)?);
+    let sec: f64 = c.next()?.parse().ok().filter(|s: &f64| (0.0..61.0).contains(s))?;
+    let off = match offset {
+        "Z" | "z" => 0,
+        o => {
+            let (hh, mm) = o[1..].split_once(':')?;
+            let off = num(hh)? * 3600 + num(mm)? * 60;
+            if o.starts_with('-') { -off } else { off }
+        }
+    };
+    if !(1..=12).contains(&m) || !(1..=31).contains(&day) || h > 23 || min > 59 {
+        return None;
+    }
+    // days from civil (Howard Hinnant's algorithm)
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
+    let days = era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468;
+    Some((days * 86_400 + h * 3600 + min * 60 - off) as f64 + sec)
 }
 
 pub struct Prem;
@@ -112,7 +148,10 @@ mod tests {
     fn what_the_server_says_decides_wait_or_fail() {
         assert_eq!(read(200, json!({ "tags": {} })).unwrap(), json!({ "tags": {} }));
         // paused: the files wait until then
-        let later = (chrono::Utc::now() + chrono::Duration::seconds(90)).to_rfc3339();
+        let at = now() as i64 + 90;
+        let (days, s) = (at.div_euclid(86_400), at.rem_euclid(86_400));
+        let later = format!("1970-01-01T{:02}:{:02}:{:02}.000Z", s / 3600, s / 60 % 60, s % 60);
+        let later = later.replacen("1970-01-01", &civil(days), 1);
         match read(503, json!({ "error": "paused", "paused_until": later })) {
             Err(Ask::Wait { until: Some(u), .. }) => assert!(u > Instant::now() + Duration::from_secs(60)),
             other => panic!("{other:?}"),
@@ -125,5 +164,30 @@ mod tests {
         // the file's own: it fails (a try used up)
         assert_eq!(read(413, json!({ "error": "too large" })), Err(Ask::Fail("too large".into())));
         assert_eq!(read(422, json!({})), Err(Ask::Fail("the API answered 422".into())));
+    }
+
+    /// Days since 1970 → `YYYY-MM-DD` (civil from days, Howard Hinnant's algorithm).
+    fn civil(days: i64) -> String {
+        let z = days + 719_468;
+        let era = z.div_euclid(146_097);
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        format!("{:04}-{m:02}-{d:02}", yoe + era * 400 + i64::from(m <= 2))
+    }
+
+    #[test]
+    fn rfc3339_times_read_as_unix_seconds() {
+        assert_eq!(unix_of("1970-01-01T00:00:00Z"), Some(0.0));
+        assert_eq!(unix_of("2026-10-26T12:00:00.500Z"), Some(1_793_016_000.5));
+        assert_eq!(unix_of("2026-10-26T14:00:00+02:00"), Some(1_793_016_000.0));
+        assert_eq!(unix_of("2000-02-29T00:00:00-01:30"), Some(951_787_800.0));
+        assert_eq!(civil(20_752), "2026-10-26");
+        for bad in ["", "2026-10-26", "2026-13-01T00:00:00Z", "2026-10-26T25:00:00Z", "2026-10-26T12:00:00", "x026-10-26T12:00:00Z"] {
+            assert_eq!(unix_of(bad), None, "{bad}");
+        }
     }
 }

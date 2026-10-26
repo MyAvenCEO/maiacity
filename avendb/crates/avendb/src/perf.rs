@@ -4,7 +4,6 @@
 
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use web_time::Instant;
 
 /// One kind of work: how often it ran, and its time in all and at most, in microseconds.
 #[derive(Clone, Copy, Debug, Default)]
@@ -21,18 +20,39 @@ pub struct Perf {
     counts: BTreeMap<&'static str, u64>,
 }
 
-/// A started piece of work (`Perf::start`), which `Perf::add` stops.
+/// A started piece of work (`Perf::start`), which `Perf::add` stops: the clock's microseconds then.
 #[derive(Clone, Copy, Debug)]
-pub struct Started(Instant);
+pub struct Started(u64);
+
+/// A steady clock in microseconds: the process's `Instant` natively, the page's `performance.now()` in a browser,
+/// where `std::time::Instant` has no clock.
+#[cfg(not(target_arch = "wasm32"))]
+fn now_us() -> u64 {
+    static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    ORIGIN.get_or_init(std::time::Instant::now).elapsed().as_micros() as u64
+}
+
+#[cfg(target_arch = "wasm32")]
+fn now_us() -> u64 {
+    use js_sys::{Function, Reflect, global, wasm_bindgen::JsCast as _, wasm_bindgen::JsValue};
+    let performance = Reflect::get(&global(), &JsValue::from_str("performance")).unwrap_or(JsValue::UNDEFINED);
+    let ms = Reflect::get(&performance, &JsValue::from_str("now"))
+        .ok()
+        .and_then(|now| now.dyn_into::<Function>().ok())
+        .and_then(|now| now.call0(&performance).ok())
+        .and_then(|ms| ms.as_f64())
+        .unwrap_or_else(js_sys::Date::now);
+    (ms * 1000.0) as u64
+}
 
 impl Perf {
     pub fn start() -> Started {
-        Started(Instant::now())
+        Started(now_us())
     }
 
     /// The work `what`, started at `at`, ended now.
     pub fn add(&mut self, what: &'static str, at: Started) {
-        let us = at.0.elapsed().as_micros() as u64;
+        let us = now_us().saturating_sub(at.0);
         let t = self.timers.entry(what).or_default();
         t.count += 1;
         t.total_us += us;

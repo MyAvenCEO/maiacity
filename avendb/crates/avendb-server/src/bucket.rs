@@ -11,7 +11,6 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, bail};
 use avendb_net::bucket::{Bucket, Fut};
 use data_encoding::BASE64;
-use md5::{Digest as _, Md5};
 use reqwest::header::{CONTENT_RANGE, ETAG, IF_MATCH, RANGE};
 use reqwest::{Client, Response, StatusCode, Url};
 use rusty_s3::actions::ListObjectsV2;
@@ -87,7 +86,7 @@ async fn through(response: Response, what: &str) -> Result<Response> {
 impl Bucket for S3 {
     fn put<'a>(&'a self, name: &'a str, bytes: Vec<u8>) -> Fut<'a, ()> {
         Box::pin(async move {
-            let md5 = BASE64.encode(&Md5::digest(&bytes));
+            let md5 = BASE64.encode(&crate::md5::digest(&bytes));
             let mut action = self.bucket.put_object(Some(&self.credentials), name);
             action.headers_mut().insert("content-md5", md5.clone());
             let request = self.client.put(action.sign(SIGNED)).header("content-md5", md5).body(bytes);
