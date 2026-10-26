@@ -23,6 +23,9 @@ What follows:
 - the state, and what a device shows, are functions of the history: two devices whose stored views are right
   (`Device.right`) and that hold the same edits show every entry the same (`shows_same`). A side store that changed
   an answer would break this, so none is allowed.
+- there is one based format, for owners and readers alike: whether a device acts for the entry's vault changes only
+  whether it may write the entry (`writable`), never its state or what it shows (`entryState` takes no owner). A reader shows a
+  based entry read-only (`reader_read_only`); a full entry is written as policy says (`full_writable`).
 -/
 
 namespace AvenDB
@@ -159,6 +162,31 @@ theorem shows_same {d d' : Device} (h : d.right) (h' : d'.right) (he : d.edits =
   refine ⟨?_, by rw [he]⟩
   rw [shows_history h, shows_history h', he]
 
+/-! ## One based format, for owners and readers -/
+
+/-- Whether a device may write entry `e` itself, besides what policy says: a full entry yes; a based entry only when
+    the device acts for its vault (`owner`), since only an owner's write over its owners' slice is judged as the
+    owners would judge it. A device that is still replaying the suffix waits (that is progress, not a state). -/
+def writable (owner : Bool) (edits : List Edit) (e : EntryId) : Bool :=
+  match entryState edits e with
+  | .full => true
+  | .based .. => owner
+
+/-- A reader shows a based entry read-only. -/
+theorem reader_read_only {edits : List Edit} {e : EntryId} {c : Edit} {x : Stated}
+    (h : entryState edits e = .based c x) : writable false edits e = false := by
+  unfold writable; rw [h]
+
+/-- A full entry is never held read-only by its state. -/
+theorem full_writable {edits : List Edit} {e : EntryId} (owner : Bool)
+    (h : entryState edits e = .full) : writable owner edits e = true := by
+  unfold writable; rw [h]
+
+/-- An owner writes a based entry. -/
+theorem owner_writes {edits : List Edit} {e : EntryId} {c : Edit} {x : Stated}
+    (h : entryState edits e = .based c x) : writable true edits e = true := by
+  unfold writable; rw [h]
+
 /-! ## Scenarios (`Snapshot.lean`'s) -/
 
 namespace Examples
@@ -180,6 +208,9 @@ open AvenDB.Examples
 #guard lies sLie == [(50, welcome)] && !startsRight sLie
 -- a slice that reaches past its entry is never a based state
 #guard entryState sWide welcome == .full
+-- a reader shows the snapshot's entry read-only, an owner writes it; with no snapshot both write
+#guard !writable false sSnap welcome && writable true sSnap welcome
+#guard writable false sNote welcome
 -- whatever the state, a start is right on these histories
 #guard [sNote, sSnap, sAfter, sRevoked].all startsRight
 

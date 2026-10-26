@@ -955,34 +955,21 @@ fn query_from(
             continue;
         };
         if !plan.matches(&m.attrs) { continue; }
-        let checkpoint = lab.entry_projection(me, entry);
-        let based = checkpoint.is_some() || lab.active_owner_base(me, entry).is_some();
+        // a based entry, owner's or reader's, shows from its owners' base before the history behind it
+        let based = lab.active_owner_base(me, entry).is_some();
         let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
-        let projected = checkpoint.as_ref().and_then(|p| p.record(MAIN));
-        let has_record = projected.is_some();
-        let visible = if let Some(mut stored) = projected {
-            let below = stored.as_object_mut().map(|r| ops::empty_below(r, depth)).unwrap_or_default();
-            seen_of(lane, &stored, &BTreeSet::new(), &schema).map(|mut seen| {
-                seen.read_only = true;
-                ops::take_out(&mut seen.record, &below);
-                (seen, !below.is_empty())
-            })
-        } else {
-            lab.item(me, entry).and_then(|item| see_within(lane, item, &schema, depth))
-        };
+        let visible = lab.item(me, entry).and_then(|item| see_within(lane, item, &schema, depth));
         let Some((mut seen, cut)) = visible else {
             // A record the device opened that the schema doesn't read is out; one it opened nothing of yet waits.
-            if !has_record && lab.item(me, entry).is_none() { waits.add(entry, coverage::On::Record); }
+            if lab.item(me, entry).is_none() { waits.add(entry, coverage::On::Record); }
             continue;
         };
-        let pending = lab.owner_base_durability_pending(me, entry) || lab.owner_base_pending(me, entry) > 0 || lab.owner_base_wait_reason(me, entry).is_some();
-        seen.read_only |= pending;
+        let read_only = lab.based_read_only(me, entry);
+        seen.read_only |= read_only;
         if w.holds(&m.attrs, &seen.record) {
-            // A row from a snapshot or an owner's base, before the history behind it, shows read-only, and waits.
-            if based || pending { waits.add(entry, coverage::On::History); }
-            let provenance = checkpoint.map(|p| json!({ "snapshot": p.snapshot().to_hex(),
-                "basis": ids(p.basis()), "partial": true, "freshness": "owner-attested-basis" }))
-                .or_else(|| owner_base_provenance(lab, me, entry));
+            // A row from an owners' base, before the history behind it, shows read-only, and waits.
+            if based || read_only { waits.add(entry, coverage::On::History); }
+            let provenance = owner_base_provenance(lab, me, entry);
             rows.push((entry, v, m.attrs, seen, cut, provenance));
         }
     }
@@ -1105,28 +1092,6 @@ fn owner_base_provenance(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Valu
 
 fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let (entry, line, schema) = (entry_of(o)?, line_of(o, "line")?, named(o)?);
-    if !o.contains_key("at") && !o.contains_key("version") {
-        if let Some(checkpoint) = lab.entry_projection(me, entry) {
-            if let Some(stored) = checkpoint.record(line) {
-                let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
-                let m = lab.meaning(me, entry).ok_or(Refused::NoEntry)?;
-                let mut seen = seen_of(&lane(lab, me, vault), &stored, &BTreeSet::new(), &schema)
-                    .ok_or_else(|| unseen(&schema))?;
-                seen.read_only = true;
-                let mut out = row(entry, vault, &m.attrs, &seen, seen.record.clone());
-                out["line"] = line_json(line);
-                out["heads"] = ids(checkpoint.basis()).into();
-                out["at"] = Value::Null;
-                out["version"] = Value::Null;
-                out["authored"] = json!([]);
-                out["files"] = json!([]);
-                out["filesComplete"] = false.into();
-                out["checkpoint"] = json!({ "snapshot": checkpoint.snapshot().to_hex(),
-                    "basis": ids(checkpoint.basis()), "partial": true, "freshness": "owner-attested-basis" });
-                return Ok(out);
-            }
-        }
-    }
     let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
     if !h.lines().contains(&line) {
         return Err(Refused::NoEntry);
@@ -1156,7 +1121,7 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
         None => lab.item_on(me, entry, line).ok_or(Refused::NoEntry)?,
     };
     let mut seen = see(&lane(lab, me, vault), item, &schema).ok_or_else(|| unseen(&schema))?;
-    seen.read_only |= at.is_some() || lab.owner_base_durability_pending(me, entry) || lab.owner_base_pending(me, entry) > 0 || lab.owner_base_wait_reason(me, entry).is_some();
+    seen.read_only |= at.is_some() || lab.based_read_only(me, entry);
     let mut out = row(entry, vault, &m.attrs, &seen, seen.record.clone());
     out["line"] = line_json(line);
     out["heads"] = ids(&h.heads(line)).into();

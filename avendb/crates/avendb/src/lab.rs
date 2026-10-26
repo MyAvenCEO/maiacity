@@ -81,9 +81,9 @@ mod bootstrap_dependencies;
 mod entry_base;
 pub use entry_base::{AuthenticatedEntryBaseEnvelope, PreparedEntryBase, RestoredOwnerJudgment};
 
-#[path = "entry_projection.rs"]
-mod entry_projection;
-pub use entry_projection::{EntryProjectionOffer, PreparedEntryProjection, VerifiedEntryProjection};
+#[path = "entry_offer.rs"]
+mod entry_offer;
+pub use entry_offer::EntryBaseOffer;
 
 /// The policy replay a stored view holds: older engines put a materialization adjunct after it, behind a header,
 /// which no engine reads any more (P6, `EntryState.lean`: a device keeps its history and its stored view, nothing else).
@@ -755,12 +755,14 @@ struct Store {
     blobs: Blobs,
     /// The replay of its edits as it last brought itself up to date: which stand, and what it knows.
     replay: Replay,
-    bootstrap_bases: entry_base::Anchors,
+    /// Its owners' judged slices it took, by entry, kept on its shelf beside its history (`EntryState.lean`'s based
+    /// state, one format for owners and readers).
+    bases: entry_base::Anchors,
     bootstrap_state: Option<State>,
-    bootstrap_active: HashSet<EntryId>,
-    bootstrap_pending: HashSet<EntryId>,
+    /// The entries it shows from those slices now, each with what is left of its suffix: an entry is based while it
+    /// is here, full otherwise.
+    based: HashMap<EntryId, entry_base::Based>,
     bootstrap_basis: Option<entry_base::OverlayBasis>,
-    bootstrap_progress: HashMap<EntryId, entry_base::BootstrapProgress>,
     bootstrap_cursor: Option<EntryId>,
     bootstrap_revision: Arc<()>,
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
@@ -786,7 +788,6 @@ struct Store {
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
-    projections: std::sync::Mutex<BTreeMap<(SignerId, EntryId), entry_projection::CachedEntryProjection>>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
     /// The vaults it follows, smallest first: it names them in each request (`sync::Ask::follow`), and is sent what
@@ -847,12 +848,10 @@ impl Default for Store {
             signed: HashMap::new(),
             blobs: HashMap::new(),
             replay: replay(&[]),
-            bootstrap_bases: BTreeMap::new(),
+            bases: BTreeMap::new(),
             bootstrap_state: None,
-            bootstrap_active: HashSet::new(),
-            bootstrap_pending: HashSet::new(),
+            based: HashMap::new(),
             bootstrap_basis: None,
-            bootstrap_progress: HashMap::new(),
             bootstrap_cursor: None,
             bootstrap_revision: Arc::new(()),
             replayed: 0,
@@ -866,7 +865,6 @@ impl Default for Store {
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
-            projections: std::sync::Mutex::new(BTreeMap::new()),
             digests: None,
             follow: vec![],
             query_depth: lens::CEILING,
@@ -935,11 +933,9 @@ impl Store {
         self.readings = Readings::default();
         self.shown.clear();
         self.bootstrap_state=None;
-        self.bootstrap_active.clear();
+        self.based.clear();
         self.bootstrap_basis = None;
-        self.bootstrap_progress.clear();
         self.bootstrap_cursor = None;
-        self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
         self.opened_before.clear();
@@ -1099,14 +1095,14 @@ impl Spares {
 pub struct Backup {
     signed: Vec<Signed>,
     blobs: Blobs,
-    bootstrap_bases: entry_base::Anchors,
+    bases: entry_base::Anchors,
 }
 
 impl Backup {
     /// A backup of signed edits, in the order the device took them, and McEliece keys, each under the id it hashes to:
     /// what a node reads back from its store on disk.
     pub fn new(signed: Vec<Signed>, blobs: impl IntoIterator<Item = Arc<[u8]>>) -> Backup {
-        Backup { signed, blobs: blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect(), bootstrap_bases:BTreeMap::new() }
+        Backup { signed, blobs: blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect(), bases:BTreeMap::new() }
     }
 
     /// Its signed edits, in the order the device took them.
@@ -2573,11 +2569,8 @@ impl Lab {
 
     /// Session `s` (`host`) ends: its key is forgotten. What it wrote stays, as every device's writes.
     pub fn unhost(&mut self, s: SignerId) {
-        if let Some(hosted) = self.hosted.remove(&s) {
+        if self.hosted.remove(&s).is_some() {
             self.keys.remove(&s);
-            if let Some(store) = self.stores.get(&hosted.host) {
-                store.projections.lock().expect("entry projections").retain(|(recipient, _), _| *recipient != s);
-            }
         }
     }
 
@@ -2732,7 +2725,7 @@ impl Lab {
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
         let stepped = match &fresh[..] {
-            [one] if store.bootstrap_active.is_empty() => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
+            [one] if store.based.is_empty() => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
             _ => None,
         };
         let mut new = false;
@@ -3224,7 +3217,7 @@ impl Lab {
                 return;
             };
             store.bootstrap_state=None;
-            store.bootstrap_active.clear();
+            store.based.clear();
             store.perf.count("refresh rounds", 1);
             let at = Perf::start();
             // a removal may take writes from the middle of an entry's: what it shows is checked against them all
@@ -3327,12 +3320,11 @@ impl Lab {
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
         if let Action::Write { entry, vault, actor, proposal, deps, .. } = &action {
-            if self.held(on).bootstrap_pending.contains(entry) || self.owner_base_wait_reason(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
-            if self.held(on).bootstrap_active.contains(entry)
-                && (self.owner_base_pending(on, *entry) > 0 || self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
+            if self.owner_base_durability_pending(on, *entry) || self.owner_base_wait_reason(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
+            if let Some(based) = self.held(on).based.get(entry)
+                && (!based.writable || self.owner_base_pending(on, *entry) > 0 || self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
                 return Err(Refusal::ReadOnly);
             }
-            if self.entry_projection(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
         }
         let edit = self.held(on).log.draft_on(view, on, &[], action);
         let w = view.accepted_write(&edit, edit.id())?.expect("a write");
@@ -3991,7 +3983,7 @@ impl Lab {
         version: &[EditId],
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        if self.held(on).bootstrap_active.contains(&entry) { return Err(Refusal::ReadOnly); }
+        if self.held(on).based.contains_key(&entry) { return Err(Refusal::ReadOnly); }
         let draft = self.shown(on, entry).restore(line, version, on);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -4007,7 +3999,7 @@ impl Lab {
         edit: EditId,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        if self.held(on).bootstrap_active.contains(&entry) { return Err(Refusal::ReadOnly); }
+        if self.held(on).based.contains_key(&entry) { return Err(Refusal::ReadOnly); }
         let draft = self.shown(on, entry).undo(line, edit, on).ok_or(Refusal::UnknownDep)?;
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -5508,7 +5500,7 @@ impl Lab {
     pub fn backup(&self, d: SignerId) -> Backup {
         let store = self.held(d);
         let signed = store.log.ids().iter().map(|id| store.signed[id].clone()).collect();
-        Backup { signed, blobs: store.blobs.clone(), bootstrap_bases:store.bootstrap_bases.clone() }
+        Backup { signed, blobs: store.blobs.clone(), bases:store.bases.clone() }
     }
 
     /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it
@@ -5532,7 +5524,7 @@ impl Lab {
     pub fn restore_warm(&mut self, d: SignerId, backup: Backup, checked: Option<(Checked, usize)>, warm: &Warm) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        let mut store = Store { follow, query_depth, gate, perf, bootstrap_bases:backup.bootstrap_bases.clone(), ..Store::default() };
+        let mut store = Store { follow, query_depth, gate, perf, bases:backup.bases.clone(), ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
         // Decode and merge one slot at a time. Keeping both complete decoded key
@@ -6872,6 +6864,10 @@ mod latest_replay_tests;
 #[cfg(test)]
 #[path = "upkeep_family_tests.rs"]
 mod upkeep_family_tests;
+
+#[cfg(test)]
+#[path = "based_parity_tests.rs"]
+mod based_parity_tests;
 
 #[cfg(test)]
 #[path = "prepared_receive_tests.rs"]

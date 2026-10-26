@@ -4,7 +4,7 @@ impl Lab {
     /// Only current-authorized retained lane waits; remote discovery still checks access.
     pub fn owner_base_lane_waits(&self, on: SignerId) -> Vec<(EntryId, VaultId)> {
         if self.locked(on) { return vec![]; }
-        self.held(on).bootstrap_bases.keys().copied().filter_map(|entry| {
+        self.held(on).bases.keys().copied().filter_map(|entry| {
             (self.owner_base_wait_reason(on, entry) == Some("missing-schema-lane"))
                 .then(|| self.held(on).replay.state.entry(entry).map(|en| (entry,en.vault))).flatten()
         }).collect()
@@ -14,7 +14,7 @@ impl Lab {
     /// These hints only reorder existing ordinary log requests.
     pub fn owner_base_key_waits(&self, on: SignerId) -> Vec<EntryId> {
         if self.locked(on) { return vec![]; }
-        self.held(on).bootstrap_bases.keys().copied()
+        self.held(on).bases.keys().copied()
             .filter(|entry| self.owner_base_wait_reason(on, *entry) == Some("missing-entry-key"))
             .collect()
     }
@@ -57,7 +57,7 @@ impl Lab {
                 continue;
             }
             let signed = store.signed.get(&id)?;
-            if !entry_projection::bounded_offer_edit(signed) {
+            if !entry_offer::bounded_offer_edit(signed) {
                 continue;
             }
             let n = signed.to_wire().len();

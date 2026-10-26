@@ -1223,7 +1223,7 @@ mod tests {
         lab.edit(mac,vault,entry,|i|i.set_text(2,"new")).unwrap();
         let prepared=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,prepared.draft,&[]).unwrap();
-        let offer=lab.entry_projection_offer(mac,phone,entry).unwrap();
+        let offer=lab.entry_base_offer(mac,phone,entry).unwrap();
         lab.receive(phone,offer.evidence,vec![]);
         let shelf=crate::disk::open(&folder).unwrap();
         let node=Node::spawn(lab.split(phone,&[owner],[73;32]),phone,Options { shelf:Some(shelf.clone()), ..Options::local() }).await.unwrap();
