@@ -1,11 +1,12 @@
-// @ts-nocheck — Window-owned RTC carries opaque inner iroh packets. No public STUN/TURN or media capture.
+// @ts-nocheck — Window-owned RTC carries opaque inner iroh packets. STUN only avenDB's own (`rtcIceServers`), no TURN
+// (the relay is the fallback) and no media capture.
 import { MAX_BYTES, MAX_PACKET, MIN_MTU, packet, packetWriter, reason } from './packets.js';
 const LABEL = 'avendb-iroh-v1';
 const MAX_SIGNALS = 128;
 const MAX_SIGNAL = 16 << 10;
 const MAX_SDP = MAX_SIGNAL;
 
-export function webRtc({ initiator }, { event, receive }, { RTCPeerConnection = globalThis.RTCPeerConnection } = {}) {
+export function webRtc({ initiator }, { event, receive }, { RTCPeerConnection = globalThis.RTCPeerConnection, iceServers = [] } = {}) {
 	let pc, channel, outgoing, stopped = false, settle, opening, drain, signals = 0, candidates = [], input = Promise.resolve(), output = Promise.resolve(), outputCount = 0, outputBytes = 0, inputCount = 0, inputBytes = 0, end;
 	const ready = new Promise((resolve) => { settle = resolve; });
 	const ended = new Promise((resolve) => { end = resolve; });
@@ -57,7 +58,7 @@ export function webRtc({ initiator }, { event, receive }, { RTCPeerConnection = 
 	};
 	try {
 		if (!RTCPeerConnection || typeof initiator !== 'boolean') throw new Error('WebRTC unavailable');
-		pc = new RTCPeerConnection({ iceServers: [], iceCandidatePoolSize: 0, bundlePolicy: 'max-bundle' });
+		pc = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 0, bundlePolicy: 'max-bundle' });
 		opening = setTimeout(() => close('RTC opening timed out'), 15_000);
 		let emitted = 0;
 		pc.onicecandidate = ({ candidate }) => {

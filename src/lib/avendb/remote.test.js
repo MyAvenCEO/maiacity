@@ -24,13 +24,13 @@ test('page wrapper closes Window RTC on device free/crash and never sends old de
 	try {
 		const remote = await import('./remote.js');
 		const opening = remote.Device.open({}, null, null); const first = workers[0];
-		expect(first.sent[0]).toEqual({ $transport: 'capabilities', webrtc: false });
+		expect(first.sent[0]).toEqual({ $transport: 'capabilities', webrtc: true });
 		// Real Workers are EventTargets; exercise the diagnostics listener too.
 		first.dispatchEvent(new Event('messageerror'));
 		expect(first.terminated).not.toBe(true);
 		first.answer({ $device: 0, id: 'device', endpoint: 'endpoint', passkey: 'key', offer: 'offer' }); const device = await opening;
 		const rtc = () => { const { port1, port2 } = new MessageChannel(); ports.push(port1, port2); first.onmessage({ data: { $transport: 'open-rtc', device: 0, route: `route${peers.length}`, epoch: 1, initiator: true, port: port2 } }); };
-		rtc(); await flush(); expect(peers.length).toBe(1); expect(peers[0].config.iceServers).toEqual([]);
+		rtc(); await flush(); expect(peers.length).toBe(1); expect(peers[0].config.iceServers).toEqual([{ urls: ['stun:avendb.maia.city:3478'] }]);
 		device.free(); expect(peers[0].closed).toBe(true); expect(peers[0].channel.closed).toBe(true);
 		first.answer(undefined); await flush();
 		const again = remote.Device.open({}, null, null); first.answer({ $device: 0 }); const oldDevice = await again;

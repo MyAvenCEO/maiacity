@@ -21,6 +21,7 @@ import AvenDB.Examples
 import AvenDB.Checkpoint
 import AvenDB.Batches
 import AvenDB.BatchDurability
+import AvenDB.WireBatches
 import AvenDB.Snapshot
 import AvenDB.EntryState
 import AvenDB.EntryProjection

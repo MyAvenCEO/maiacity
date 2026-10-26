@@ -706,6 +706,10 @@ pub fn verify_adding(signer: SignerId, edit: EditId, sig: &Signature, joins: Opt
     if sig.keys.id() != signer {
         return false;
     }
+    // a device's part held by a path up to a root of its log that it signed, in place of its signature (P8)
+    if matches!(sig.keys, SignerKeys::Device { .. }) && sig.pq.starts_with(crate::batch::PATH_MARK) {
+        return crate::batch::Proof::of(sig).is_some_and(|p| p.shows_once(signer, edit));
+    }
     let present = match (&sig.keys, &sig.webauthn, &sig.enclave) {
         (SignerKeys::Device { .. }, None, None) => true,
         (SignerKeys::Passkey { p256, .. }, Some(WebAuthn::Edit(a)), None) => a.verify(p256, edit),

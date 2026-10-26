@@ -428,6 +428,62 @@ impl Proof {
         let r = &self.root.root;
         r.log == signer && self.path.length == r.length && self.path.climb(edit) == Some(r.hash)
     }
+
+    /// `shows`, with the root's signature checked once for every edit under it however many come (`checked_once`).
+    pub fn shows_once(&self, signer: SignerId, edit: EditId) -> bool {
+        self.climbs(signer, edit) && checked_once(&self.root)
+    }
+
+    /// The proof held in its signer's signature's place on the edit (P8, `WireBatches.Held`): the signer's keys, no
+    /// assertion and no Enclave signature, and the mark and the proof in place of the post-quantum signature
+    /// (`PATH_MARK`). It checks where the signature would (`sign::verify`), again after a restart, and an old app that
+    /// reads signatures alone refuses it, so a device sends it only to a peer that reads paths (`held_by_path`).
+    pub fn held(&self) -> Signature {
+        let mut pq = PATH_MARK.to_vec();
+        self.encode(&mut pq);
+        Signature { keys: self.root.keys, webauthn: None, enclave: None, pq }
+    }
+
+    /// The proof a signature holds in its own place (`held`), if it is one: its root signed with the signature's keys.
+    pub fn of(sig: &Signature) -> Option<Proof> {
+        let rest = sig.pq.strip_prefix(PATH_MARK)?;
+        let proof = Proof::from_wire(rest).ok()?;
+        (proof.root.keys == sig.keys && sig.webauthn.is_none() && sig.enclave.is_none()).then_some(proof)
+    }
+}
+
+/// What a signature held by a path (`Proof::held`) starts with in place of a post-quantum signature: no ML-DSA-65 or
+/// SLH-DSA signature does, as each starts with its key's bytes or its own.
+pub const PATH_MARK: &[u8; 16] = b"avenDB log path\x01";
+
+/// Some signer's part of `signed` is held by a path (`Proof::held`): an old app refuses it (`WireBatches.legacy`).
+pub fn held_by_path(signed: &sign::Signed) -> bool {
+    signed.sigs.iter().any(|s| s.pq.starts_with(PATH_MARK))
+}
+
+/// How many signed roots `checked_once` remembers before it starts again: each a hash, a few hundred KiB at most.
+const CHECKED_ROOTS: usize = 8192;
+
+/// `root` checks out (`SignedRoot::verify`), its ML-DSA-65 signature checked once for every edit under it: a page of
+/// a batch's edits held by paths costs one signature check, not one an edit.
+fn checked_once(root: &SignedRoot) -> bool {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static CHECKED: OnceLock<Mutex<HashSet<Hash>>> = OnceLock::new();
+    let seen = CHECKED.get_or_init(Default::default);
+    let key = hash::hash("log root checked", &root.to_wire());
+    if seen.lock().expect("checked roots").contains(&key) {
+        return true;
+    }
+    if !root.verify() {
+        return false;
+    }
+    let mut seen = seen.lock().expect("checked roots");
+    if seen.len() >= CHECKED_ROOTS {
+        seen.clear();
+    }
+    seen.insert(key);
+    true
 }
 
 impl Encode for Proof {
