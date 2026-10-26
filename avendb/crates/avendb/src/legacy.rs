@@ -15,17 +15,16 @@
 //! An edit's id hashes its sealed bytes, author and signers included, so the anchor pins each frozen edit byte for
 //! byte: one is swapped or added only by a BLAKE3 collision.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde_json::{Value, json};
 
 use crate::batch::{Hash, Path, Tree};
 use crate::id::{EditId, SignerId, VaultId};
 use crate::lab::Lab;
-use crate::policy::{Kind, Principal};
+use crate::policy::{Action, Edit, Kind, Principal, replay};
 use crate::recovery;
-use crate::sign::Suite;
-use crate::sync::{self, LogId};
+use crate::sign::{Signed, Suite};
 use crate::words;
 
 /// The version byte the file of frozen ids starts with (`Frozen::to_bytes`).
@@ -141,83 +140,119 @@ pub fn check(anchor: &Anchor, legacy: bool, edit: EditId, path: Option<&Path>, a
     }
 }
 
-/// What the freeze finds on a device that holds every edit (the server, at the fork): the edits it freezes, and how the
-/// vaults it knows stand, so that whoever forks sees first that each vault that matters is governed in ML-DSA-65 alone.
+/// What the freeze finds among every edit the server holds, at the fork: the edits it freezes, and how the vaults stand,
+/// so that whoever forks sees first that each vault that matters is governed in ML-DSA-65 alone.
 #[derive(Debug)]
 pub struct Survey {
     pub frozen: Frozen,
-    /// How many edits the device holds, every one of which it takes after the fork too.
+    /// How many edits it takes, every one of which it takes after the fork too.
     pub held: usize,
-    /// Of the frozen, those whose signers' suites the device never saw: held bare on a checkpoint's word, by a signer
-    /// that signed nothing else it holds. Frozen all the same, which only keeps them as they are.
-    pub unseen: usize,
-    /// The frozen edits by the vault each is of, most first; `None` for edits of no vault it knows.
+    /// Of those, the ones held bare on a checkpoint's word (`Checkpoint.lean`): their signers' keys and no signature.
+    pub bare: usize,
+    /// The edits whose signatures don't check, which it takes neither now nor after the fork.
+    pub refused: usize,
+    /// The frozen edits by the vault they came under, most first.
     pub by_vault: Vec<(Option<VaultId>, usize)>,
     /// Each human and coop vault: who governs it and acts for it, and in which suite.
     pub vaults: Vec<Value>,
 }
 
-/// The freeze of the edits device `on` of `lab` holds (`freeze`): an edit is frozen where any of its signers is of
-/// SLH-DSA, as the keys `on` saw it sign with say, its own signatures or another edit's; or where `on` never saw one of
-/// its signers sign.
-pub fn survey(lab: &Lab, on: SignerId) -> Survey {
-    let log = lab.log(on);
-    let (ids, edits) = (log.ids(), log.edits());
-    let signers: BTreeSet<SignerId> = edits.iter().flat_map(|e| e.sigs()).collect();
-    let suites: BTreeMap<SignerId, Suite> =
-        lab.signers_seen(on, &signers).into_iter().map(|(s, keys)| (s, keys.suite())).collect();
-    let suite = |s: &SignerId| suites.get(s).copied();
-    let frozen = freeze(ids.iter().zip(edits).map(|(&id, e)| (id, e.sigs())), |s| suite(&s) != Some(Suite::MlDsa));
-    let unseen = ids
-        .iter()
-        .zip(edits)
-        .filter(|(id, e)| frozen.holds(**id) && e.sigs().any(|s| suite(&s).is_none()))
-        .count();
-    let st = lab.state(on);
-    let vault_of = |id: EditId, e: &crate::policy::Edit| match sync::log_of(e, id)? {
-        LogId::Vault(v) | LogId::Audience(v, _) => Some(v),
-        LogId::Entry(en) => st.entry(en).map(|en| en.vault),
-        LogId::Share(c) => st.share(c).map(|cp| cp.share.over),
-    };
-    let mut counts: BTreeMap<Option<VaultId>, usize> = BTreeMap::new();
-    for (&id, e) in ids.iter().zip(edits).filter(|(id, _)| frozen.holds(**id)) {
-        *counts.entry(vault_of(id, e)).or_default() += 1;
+/// The freeze, one edit at a time (`freeze`), so that it never holds more than one vault's signed edits at once: each
+/// edit checked as a device checks what it takes (`Signed::verify`), frozen where any of its signers is of SLH-DSA, its
+/// signers' suites kept from the keys its signatures bring; and of the edits that aren't writes, which alone say who
+/// governs a vault and acts for it, the edit itself, replayed at the end (`finish`).
+#[derive(Default)]
+pub struct Freezing {
+    ids: Vec<EditId>,
+    held: usize,
+    bare: usize,
+    refused: usize,
+    seen: HashSet<EditId>,
+    suites: HashMap<SignerId, Suite>,
+    counts: BTreeMap<Option<VaultId>, usize>,
+    governing: Vec<Edit>,
+}
+
+impl Freezing {
+    /// Edit `signed`, which came under vault `under`'s snapshot. An edit taken twice counts once, under the first.
+    pub fn take(&mut self, signed: &Signed, under: Option<VaultId>) {
+        if !self.seen.insert(signed.edit.id()) {
+            return;
+        }
+        let checks = signed.verify().is_ok();
+        // held bare on a checkpoint's word: its signers' keys, and no signature to check
+        let bare = !checks && signed.sigs.iter().all(|s| s.pq.is_empty() && s.enclave.is_none() && s.webauthn.is_none());
+        if !checks && !bare {
+            self.refused += 1;
+            return;
+        }
+        (self.held, self.bare) = (self.held + 1, self.bare + usize::from(bare));
+        for sig in &signed.sigs {
+            self.suites.insert(sig.keys.id(), sig.keys.suite());
+        }
+        if signed.sigs.iter().any(|s| s.keys.suite() == Suite::SlhDsa) {
+            self.ids.push(signed.edit.id());
+            *self.counts.entry(under).or_default() += 1;
+        }
+        if !matches!(signed.edit.action, Action::Write { .. }) {
+            self.governing.push(signed.edit.clone());
+        }
     }
-    let mut by_vault: Vec<(Option<VaultId>, usize)> = counts.into_iter().collect();
-    by_vault.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-    let master = recovery::master();
-    let signer = |s: SignerId| {
-        let name = suite(&s).map_or("never seen signing", Suite::name);
-        let master = master.as_ref().is_some_and(|m| m.id() == s);
-        json!({ "signer": short(&s.0), "suite": name, "master": master })
-    };
-    let vaults = st
-        .vaults()
-        .iter()
-        .filter(|v| matches!(v.kind, Kind::Human | Kind::Coop))
-        .map(|v| {
-            let owners: Vec<Value> = v
-                .owners
-                .iter()
-                .map(|p| match *p {
-                    Principal::Signer(s) => signer(s),
-                    Principal::Vault(o) => json!({ "vault": short(&o.0) }),
+
+    /// The freeze of every edit taken, and the vaults as the edits that govern them say.
+    pub fn finish(mut self) -> Survey {
+        let frozen = Frozen::new(std::mem::take(&mut self.ids));
+        let held = self.held;
+        self.governing.sort_by_key(|e| (e.depth, e.id()));
+        let st = replay(&self.governing).state;
+        let suite = |s: &SignerId| self.suites.get(s).copied();
+        let master = recovery::master();
+        let signer = |s: SignerId| {
+            let name = suite(&s).map_or("never seen signing", Suite::name);
+            let master = master.as_ref().is_some_and(|m| m.id() == s);
+            json!({ "signer": short(&s.0), "suite": name, "master": master })
+        };
+        let vaults = st
+            .vaults()
+            .iter()
+            .filter(|v| matches!(v.kind, Kind::Human | Kind::Coop))
+            .map(|v| {
+                let owners: Vec<Value> = v
+                    .owners
+                    .iter()
+                    .map(|p| match *p {
+                        Principal::Signer(s) => signer(s),
+                        Principal::Vault(o) => json!({ "vault": short(&o.0) }),
+                    })
+                    .collect();
+                let slh = |s: &SignerId| suite(s) == Some(Suite::SlhDsa);
+                let left = v.owners.iter().filter(|p| matches!(p, Principal::Signer(s) if slh(s))).count()
+                    + v.devices.iter().filter(|s| slh(s)).count();
+                json!({
+                    "vault": words::hex(&v.id.0),
+                    "kind": format!("{:?}", v.kind),
+                    "owners": owners,
+                    "root": v.root.map(signer),
+                    "devices": v.devices.iter().map(|&d| signer(d)).collect::<Vec<_>>(),
+                    "slh_dsa_left": left,
                 })
-                .collect();
-            let slh = |s: &SignerId| suite(s) == Some(Suite::SlhDsa);
-            let left = v.owners.iter().filter(|p| matches!(p, Principal::Signer(s) if slh(s))).count()
-                + v.devices.iter().filter(|s| slh(s)).count();
-            json!({
-                "vault": words::hex(&v.id.0),
-                "kind": format!("{:?}", v.kind),
-                "owners": owners,
-                "root": v.root.map(signer),
-                "devices": v.devices.iter().map(|&d| signer(d)).collect::<Vec<_>>(),
-                "slh_dsa_left": left,
             })
-        })
-        .collect();
-    Survey { frozen, held: ids.len(), unseen, by_vault, vaults }
+            .collect();
+        let mut by_vault: Vec<(Option<VaultId>, usize)> = self.counts.into_iter().collect();
+        by_vault.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        Survey { frozen, held, bare: self.bare, refused: self.refused, by_vault, vaults }
+    }
+}
+
+/// The freeze of the edits device `on` of `lab` holds (`Freezing`).
+pub fn survey(lab: &Lab, on: SignerId) -> Survey {
+    let mut freezing = Freezing::default();
+    for &id in lab.log(on).ids() {
+        if let Some(signed) = lab.signed_edit(on, id) {
+            freezing.take(signed, None);
+        }
+    }
+    freezing.finish()
 }
 
 impl Survey {
@@ -233,7 +268,8 @@ impl Survey {
             "held": self.held,
             "frozen": self.frozen.len(),
             "kept_after_the_fork": self.held,
-            "frozen_of_unseen_signers": self.unseen,
+            "held_bare": self.bare,
+            "refused_now": self.refused,
             "frozen_by_vault": by_vault,
             "vaults": self.vaults,
         })

@@ -214,38 +214,34 @@ async fn stopped(backups: Option<&backups::Backups>) -> Result<()> {
 }
 
 /// The freeze off SLH-DSA (`avendb::legacy`, `spec/AvenDB/LegacyAnchor.lean`): each vault's snapshot as of `at`, the
-/// newest by default, every edit once, sorted by depth so that each comes after what its device had seen, restored
-/// into one device in memory, which checks every signature again and takes only those that check. Writes the ids of
-/// the edits it takes that an SLH-DSA signer signed to `out`, and says what it found as JSON: the anchor, how many
-/// edits it read, took and froze, and each human and coop vault's owners, root and devices by suite.
+/// newest by default, read one vault at a time, each edit checked again as a device checks what it takes
+/// (`legacy::Freezing`), so that it never holds more than one vault's signed edits at once. Writes the ids of the edits
+/// it takes that an SLH-DSA signer signed to `out`, and says what it found as JSON: the anchor, how many edits it read,
+/// took and froze, and each human and coop vault's owners, root and devices by suite.
 async fn freeze(config: &Config, at: Option<u64>, out: &std::path::Path) -> Result<()> {
     let snapshots = snapshots(config)?;
-    let (mut signed, mut keys, mut seen, mut read) = (Vec::new(), Vec::new(), std::collections::HashSet::new(), vec![]);
+    let (mut freezing, mut read, mut offered) = (avendb::legacy::Freezing::default(), vec![], 0);
     for v in snapshots.vaults().await? {
         let folder = snapshots.folder(v).await?;
         let Some(m) = folder.as_of(at).await? else {
             read.push(serde_json::json!({ "vault": v.to_hex(), "snapshot": null }));
             continue;
         };
-        let (edits, k) = folder.edits_of(&m).await.with_context(|| format!("vault {}", v.to_hex()))?;
+        let edits = folder.edits_of(&m).await.with_context(|| format!("vault {}", v.to_hex()))?;
         read.push(serde_json::json!({ "vault": v.to_hex(), "snapshot": when(m.time), "edits": edits.len() }));
-        signed.extend(edits.into_iter().filter(|s| seen.insert(s.edit.id())));
-        keys.extend(k);
+        offered += edits.len();
+        freezing = tokio::task::spawn_blocking(move || {
+            for signed in &edits {
+                freezing.take(signed, Some(v));
+            }
+            freezing
+        })
+        .await?;
     }
-    signed.sort_by_key(|s| (s.edit.depth, s.edit.id()));
-    let offered = signed.len();
-    let seed = *avendb_net::server::random()?;
-    let survey = tokio::task::spawn_blocking(move || {
-        let mut lab = avendb::lab::Lab::with_entropy(seed);
-        let me = lab.device("the freeze off SLH-DSA");
-        lab.restore_from(me, avendb::lab::Backup::new(signed, keys));
-        avendb::legacy::survey(&lab, me)
-    })
-    .await?;
+    let survey = tokio::task::spawn_blocking(move || freezing.finish()).await?;
     std::fs::write(out, survey.frozen.to_bytes()).with_context(|| format!("writing {}", out.display()))?;
     let mut report = survey.to_json();
     report["read"] = serde_json::json!(offered);
-    report["refused_now"] = serde_json::json!(offered - survey.held);
     report["snapshots"] = serde_json::json!(read);
     report["file"] = serde_json::json!(out.display().to_string());
     println!("{}", serde_json::to_string_pretty(&report)?);

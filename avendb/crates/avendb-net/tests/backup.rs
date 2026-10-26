@@ -149,7 +149,8 @@ async fn a_vault_comes_back_from_each_snapshot_it_keeps() {
     // the freeze off SLH-DSA reads the newest snapshot's edits whole: a device restored from them takes every one, and
     // freezes none, as every signer here is of ML-DSA-65
     let newest = folder.newest().await.expect("its manifests").expect("the busy day's");
-    let (edits, keys) = folder.edits_of(&newest).await.expect("its edits");
+    let edits = folder.edits_of(&newest).await.expect("its edits");
+    let keys = folder.keys_of(&newest).await.expect("their keys");
     assert_eq!(edits.len() as u64, busy.manifest.edits);
     let mut lab = avendb::lab::Lab::with_entropy([5; 32]);
     let me = lab.device("the freeze");

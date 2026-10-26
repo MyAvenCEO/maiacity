@@ -123,7 +123,7 @@ fn the_freeze_of_a_lab_takes_the_slh_dsa_edits_and_says_who_is_left() {
     sorted.sort();
     assert_eq!(survey.frozen.ids().collect::<Vec<_>>(), sorted);
     assert!(!survey.frozen.holds(bobs), "Bob's vault is ML-DSA-65 alone");
-    assert_eq!(survey.unseen, 0);
+    assert_eq!((survey.bare, survey.refused), (0, 0));
     let anchor = survey.frozen.anchor();
     for id in slh {
         assert!(anchor.shows(id, &survey.frozen.path(id).expect("frozen")));

@@ -823,21 +823,26 @@ impl Folder {
         Ok(checked)
     }
 
-    /// The edits snapshot `m` of the folder holds, each once, and the McEliece keys they name, read whole from the
-    /// bucket as `check` reads the newest: what a node restored from it would check and take (the freeze off SLH-DSA,
-    /// `avendb::legacy`). Fails unless every pack and key reads whole.
-    pub async fn edits_of(&self, m: &Manifest) -> Result<(Vec<Signed>, Vec<Arc<[u8]>>)> {
+    /// The edits snapshot `m` of the folder holds, each once, read whole from the bucket as `check` reads the newest's:
+    /// what a node restored from it would check and take (the freeze off SLH-DSA, `avendb::legacy`). Fails unless
+    /// every pack reads whole.
+    pub async fn edits_of(&self, m: &Manifest) -> Result<Vec<Signed>> {
         let (mut signed, mut ids) = (Vec::new(), HashSet::new());
         for &pack in &m.packs {
             let bytes = self.read_whole(pack).await?;
             let edits = edits::unpack(&bytes).with_context(|| format!("pack {} is no pack of edits", pack.0))?;
             signed.extend(edits.into_iter().filter(|s| ids.insert(s.edit.id())));
         }
+        Ok(signed)
+    }
+
+    /// The McEliece keys the edits of snapshot `m` name, read whole from the bucket.
+    pub async fn keys_of(&self, m: &Manifest) -> Result<Vec<Arc<[u8]>>> {
         let mut keys = Vec::with_capacity(m.keys.len());
         for &(id, size) in &m.keys {
             keys.push(Arc::<[u8]>::from(self.read_whole((key_blob(id), size)).await?));
         }
-        Ok((signed, keys))
+        Ok(keys)
     }
 
     /// Blob `blob`, read whole from the bucket past the folder's cache (`read_through`).
