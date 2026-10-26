@@ -232,6 +232,9 @@ jobs:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
       # The transport contract requires PQ WebTransport, absent in the older security-probe Chromium.
+      # The Azure mirror can stall package downloads on hosted runners; Ubuntu's own HTTPS archive (as in kernel.yml)
+      - name: Use Ubuntu's archive for browser dependencies
+        run: sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
       - name: Install current disposable transport browser
         run: |
           mkdir -p "$RUNNER_TEMP/avendb-transports"
