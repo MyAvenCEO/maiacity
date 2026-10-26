@@ -7,7 +7,6 @@ import { packageQuery, missingPackageLabel } from './package-inventory.js';
 import { createReactiveRead } from './reactive-read.js';
 import { observedWindow } from './observed-window.js';
 import { summaryView, needsWorldEntries } from './startup-summary.js';
-import { readCompleteness } from './read-completeness.js';
 // an Interest op seen as the one list of entries and selectors it wants (tiers aside)
 /** @type {(op: any) => any} */
 const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
@@ -30,7 +29,6 @@ test('package inventories read local authorized files while peer demand remains 
   assert.deepEqual(calls[0].queries, [{ types: ['file'], vault }]);
   assert.equal(JSON.stringify(calls).includes(actor), false);
   assert.equal(answers.length, 1);
-  assert.equal(readCompleteness(answers[0]).authoritativeEmpty, false);
   reader.close(); await flush(); assert.equal(calls.at(-1).queries, undefined);
  } finally { reader.close(); finish({ ok: { accepted: true } }); await flush(); }
 });

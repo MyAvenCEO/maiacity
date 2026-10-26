@@ -10,6 +10,7 @@ import { why } from './vaults.js';
 export const READS = [
 	'entry_views',
 	'query',
+	'touched',
 	'get',
 	'history',
 	'schemas',

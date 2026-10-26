@@ -140,6 +140,7 @@ impl Node {
                 }).await;
                 json!({"ok":{"registered":self.shared.ui_receipts.emitted(ids)}})
             },
+            Some("query") => self.covered_query(op).await,
             _ if engine::asks(&op) => self.try_dry(move |lab, me| engine::run(lab, me, &op)).await?,
             _ if engine::reads(&op) => self.read(move |lab, me| engine::read(lab, me, &op)).await,
             _ => self.change(op, authenticator).await?,
@@ -151,6 +152,31 @@ impl Node {
     /// answers `approve`.
     pub async fn op(&self, op: Value) -> Result<Value> {
         Ok(self.run(op, None::<NoBytes>, None::<&NoCeremony>).await?.0)
+    }
+
+    /// A query on what the device holds, its coverage with the logs its live peers announced that it lacks and that
+    /// may hold what the query reads (`Coverage.lean` `answer`): an entry's log of the query's vault, or of a vault the
+    /// device can't place yet, that vault's own log, and any share's or audience's, which may change what it sees.
+    /// Complete only once none is behind. No clock: the announcements and the holdings decide.
+    async fn covered_query(&self, op: Value) -> Value {
+        let vault = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex);
+        let mut answer = self.read(move |lab, me| engine::read(lab, me, &op)).await;
+        if !engine::coverage::reads_open(&answer) { return answer; }
+        let live: BTreeSet<_> = {
+            let peers = self.shared.peers.lock().expect("peers");
+            peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| p.device).collect()
+        };
+        let mut behind = BTreeSet::new();
+        for device in live { behind.extend(self.shared.differ(device).await); }
+        let logs = if behind.is_empty() { 0 } else {
+            self.read(move |lab, me| behind.iter().filter(|log| match log {
+                LogId::Entry(e) => lab.vault_of_entry(me, *e).is_none_or(|v| vault.is_none_or(|x| x == v)),
+                LogId::Vault(v) | LogId::Audience(v, _) => vault.is_none_or(|x| x == *v),
+                LogId::Share(_) => true,
+            }).count()).await
+        };
+        engine::coverage::add_logs(&mut answer, logs);
+        answer
     }
 
     /// `interest`: replace one mounted view's Interests (`interest.rs`, Lean `Interest.lean`), or with

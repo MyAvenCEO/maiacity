@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS
 import { viewReadiness } from './view-readiness.js';
 import { activeRead } from './active-reads.js';
-import { readCompleteness } from './read-completeness.js';
+import { coverageOf, readState } from '../../../game/code/sources/coverage.js';
 import { createInterest, normalizeDiscovery } from '../../../game/code/sources/interest.js';
 
 /** Entry IDs shown by a read. Scheduling hints only: no response here establishes completeness or authority. */
@@ -67,11 +67,11 @@ export function queryDiscovery(op) {
  */
 export function createReadWindow({ device, read }) {
 	let current = null, held = null, closed = false, queryKey = null, clearing = 0;
-	let completeness = readCompleteness(null);
+	let coverage = coverageOf(null);
 	const observed = activeRead();
 	const clear = () => {
 		observed.clear();
-		completeness = readCompleteness(null);
+		coverage = coverageOf(null);
 		current?.controller.abort();
 		current = null;
 		const generation = ++clearing;
@@ -85,7 +85,7 @@ export function createReadWindow({ device, read }) {
 	};
 	const release = () => {
 		observed.clear();
-		completeness = readCompleteness(null);
+		coverage = coverageOf(null);
 		clearing++;
 		queryKey = null;
 		current?.controller.abort();
@@ -94,9 +94,9 @@ export function createReadWindow({ device, read }) {
 		held = null;
 	};
 	return {
-		get completeness() { return { ...completeness }; },
+		get coverage() { return { ...coverage }; },
 		async read(op) {
-			completeness = readCompleteness(null);
+			coverage = coverageOf(null);
 			if (closed) return null;
 			clearing++;
 			current?.controller.abort();
@@ -124,9 +124,10 @@ export function createReadWindow({ device, read }) {
 			try {
 				const got = await read(d, op, controller.signal);
 				if (!active()) return null;
-				completeness = readCompleteness(got);
-				viewReadiness.record(completeness, got);
-				observed.set(completeness.response);
+				// One read answers: its coverage says whether it is complete (Coverage.lean).
+				coverage = coverageOf(got);
+				viewReadiness.record(coverage, got);
+				observed.set(readState(coverage));
 				void want([...entries, ...replyEntries(got)]);
 				return got;
 			} catch (error) {

@@ -1,5 +1,5 @@
 import { answer } from './ops.js';
-import { readCompleteness } from './read-completeness.js';
+import { coverageOf } from '../../../game/code/sources/coverage.js';
 
 /** One mounted canonical collection, driven by the shared authorized local observer.
  * Keeps no world fallback: a ready empty result and a failed read are different states.
@@ -13,24 +13,24 @@ export function entryCollection(api, query) {
 	let readableEntries = $state(0);
 	let phase = $state(/** @type {'loading' | 'ready' | 'error'} */ ('loading'));
 	let error = $state('');
-	let completeness = $state(readCompleteness(null));
+	let coverage = $state(coverageOf(null));
 	$effect(() => {
 		const owner = api();
 		const op = query();
 		rows = [];
-		completeness = readCompleteness(null);
+		coverage = coverageOf(null);
 		totalEntries = readableEntries = 0;
 		phase = 'loading';
 		error = '';
 		const failed = (/** @type {Error} */ cause) => {
 			rows = []; totalEntries = readableEntries = 0;
-			completeness = readCompleteness(null);
+			coverage = coverageOf(null);
 			error = cause.message; phase = 'error';
 		};
 		return owner.observe(() => op, (out) => {
 			try {
 				const got = answer(out);
-				completeness = readCompleteness(out);
+				coverage = coverageOf(out);
 				// No identity/view yet is not an authoritative empty collection.
 				if (!got) { rows = []; totalEntries = readableEntries = 0; phase = 'loading'; return; }
 				rows = got.rows;
@@ -41,7 +41,7 @@ export function entryCollection(api, query) {
 		}, failed);
 	});
 	return {
-		get completeness() { return { ...completeness }; },
+		get coverage() { return { ...coverage }; },
 		get rows() { return rows; }, get totalEntries() { return totalEntries; },
 		get readableEntries() { return readableEntries; }, get phase() { return phase; }, get error() { return error; }
 	};
