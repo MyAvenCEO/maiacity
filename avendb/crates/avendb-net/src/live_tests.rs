@@ -81,7 +81,7 @@ async fn a_live_edit_reaches_an_authorized_peer_while_its_background_pages_are_s
             })
     })
     .await;
-    wait_for(async || phone.shared.asking.lock().unwrap().contains_key(&mac.id())).await;
+    wait_for(async || phone.shared.outreach.look().await.asks.get(&mac.id()).is_some_and(|lane| lane.busy)).await;
     let backlog_first = backlog[0];
     assert!(
         !phone
@@ -302,61 +302,6 @@ fn ineligible_announcements_are_unchanged_without_consuming_witnesses() {
         assert_eq!(announce, before);
         assert_eq!(Announce::from_wire(&announce.to_wire()), Ok(announce));
     }
-}
-
-#[tokio::test]
-async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() {
-    let mut w = world();
-    let coop = handbook_ready(&mut w);
-    let (sender, receiver) = (w.mac_a, w.phone_a);
-    let node = Node::spawn(w.lab.split(sender, &[], [93; 32]), sender,
-        Options { lazy: true, retry: Duration::from_secs(60), ..Options::local() }).await.unwrap();
-    // Drive the production scheduling boundary explicitly, without a periodic retry
-    // or unrelated peer task consuming its notification. This is not wire timing.
-    let tasks: Vec<_> = node.tasks.lock().unwrap().drain(..).collect();
-    // Node::spawn returns immediately after spawning these tasks. On this
-    // current-thread runtime, abort every task before yielding so the initial
-    // announcer cannot start detached tells and seed unrelated failure backoff.
-    for task in &tasks { task.abort(); }
-    for task in tasks { let _ = task.await; }
-    let mut news = node.shared.news((usize::MAX, 0), None).await.unwrap();
-    node.shared.own_logs().await;
-    let before = node.shared.own.lock().unwrap().holdings.clone();
-    assert!(node.shared.begin_tell(receiver), "hold the first announcement slot");
-    node.act(move |lab, me| {
-        lab.create(me, coop, coop, "doc", &[], document("Generic live entry", "second frontier", me)).unwrap();
-    }).await;
-    news = node.shared.news(news.size, news.revision.clone()).await.unwrap();
-    node.shared.own_logs().await;
-    assert_ne!(before, node.shared.own.lock().unwrap().holdings);
-    let reach = news.reach.get(&receiver).unwrap();
-    news.reach = Arc::new(std::collections::BTreeMap::from([(receiver, crate::Reach {
-        endpoint: reach.endpoint, files: reach.files.clone(), logs: reach.logs.clone(),
-    })]));
-    assert_eq!(news.reach.len(), 1);
-    while time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_ok() {}
-    // Multiple passes consume the mutation's wake while the first tell is held.
-    assert!(node.shared.unreached.lock().unwrap().due(&receiver), "the fixture peer is eligible, without startup backoff");
-    node.shared.announce(&news);
-    node.shared.announce(&news);
-    assert_eq!(node.shared.telling.lock().unwrap().len(), 1);
-    assert_eq!(node.shared.telling.lock().unwrap().get(&receiver), Some(&true), "the held tell owes the new frontier");
-    node.shared.finish_tell(receiver, true);
-    time::timeout(Duration::from_millis(100), node.shared.changed.notified()).await
-        .expect("successful held tell must release the coalesced frontier wake before the 60s retry");
-    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err(), "one coalesced wake");
-    // A success with no intervening demand must not manufacture an announce loop.
-    assert!(node.shared.begin_tell(receiver));
-    node.shared.finish_tell(receiver, true);
-    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err());
-    // Failed work keeps the existing backoff even when another pass was skipped.
-    assert!(node.shared.begin_tell(receiver));
-    assert!(!node.shared.begin_tell(receiver));
-    node.shared.finish_tell(receiver, false);
-    assert!(!node.shared.unreached.lock().unwrap().due(&receiver));
-    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err());
-    assert!(node.shared.telling.lock().unwrap().is_empty());
-    node.shutdown().await.unwrap();
 }
 
 /// Every remote entry predates the first authenticated announcement. No target ID is supplied

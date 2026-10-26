@@ -106,6 +106,7 @@
 pub mod backup;
 #[cfg(test)]
 mod bench;
+mod actor;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
@@ -142,6 +143,8 @@ pub mod server;
 mod session;
 pub mod shelf;
 mod signers;
+#[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+pub mod sim;
 mod statements;
 mod traffic;
 pub mod transports;
@@ -224,7 +227,7 @@ const IDLE: Duration = Duration::from_secs(30);
 
 /// How long a node waits for a page of edits it asked a peer for (`Shared::pages`): one that never comes, over a
 /// connection kept open, would hold its pull, and the sync bar, for ever (Samuel's iPhone 2026-10-21, "syncing" at 19%
-/// with two pulls running). The asking fails, and the node asks again as it does any it failed (`Backoff`).
+/// with two pulls running). The asking fails, and the node asks again as it does any it failed (`actor`).
 const PAGE_WAIT: Duration = Duration::from_secs(180);
 
 /// The most entry logs one asking of the logs a peer holds more of names (`Shared::ask_differing`). A peer answers an
@@ -322,6 +325,9 @@ pub struct Options {
     /// Where it marks the steps of its start, its own (`node`, once its store is replayed) and those of founding its
     /// person's vault or linking to it (`Node::found_with`, `Node::link_with`), for its person to watch.
     pub progress: Progress,
+    /// The simulated network it is on (P7, `sim`), in place of every socket and relay: a scenario's own.
+    #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+    pub sim: Option<sim::Net>,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -351,7 +357,15 @@ impl Options {
             relay_passes: Vec::new(),
             page: PAGE,
             progress: Progress::new(),
+            #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+            sim: None,
         }
+    }
+
+    /// A node on simulated network `net` (P7, `sim`): no socket, no relay, every packet through `net`.
+    #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+    pub fn simulated(net: &sim::Net) -> Options {
+        Options { bind: None, sim: Some(net.clone()), ..Options::local() }
     }
 }
 
@@ -699,6 +713,15 @@ impl Node {
         if opts.bind.is_some() || opts.direct || opts.relay.is_none() {
             bail!("a node in a browser binds no socket and needs a relay");
         }
+        // a simulated node reaches its peers through its scenario's network alone
+        #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+        if let Some(net) = &opts.sim {
+            anyhow::ensure!(opts.relay.is_none() && !opts.direct, "a simulated node has no relay and no socket");
+            builder = builder
+                .portmapper_config(PortmapperConfig::Disabled)
+                .clear_ip_transports()
+                .add_custom_transport(net.transport(SecretKey::from_bytes(&secret).public()));
+        }
         if let Some(relay) = &opts.relay {
             builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(relay_config(relay, &opts))));
         }
@@ -722,6 +745,7 @@ impl Node {
         let pool = connection_pool::Options { idle_timeout: IDLE, connect_timeout: WAIT, ..Default::default() };
         let pool = ConnectionPool::new(endpoint.clone(), iroh_blobs::ALPN, pool);
         let transport_control = transports::control::Control::new(packets.clone());
+        let (outreach, inbox) = actor::outreach();
         let shared = Arc::new(Shared {
             lifecycle,
             writer: Mutex::new(writer),
@@ -751,10 +775,7 @@ impl Node {
             statements: Mutex::default(),
             receipts: peer_receipts::Receipts::default(),
             ui_receipts: peer_receipts::Receipts::for_ui(),
-            telling: Mutex::default(),
-            unreached: Mutex::default(),
-            asking: Mutex::default(),
-            owed: Mutex::default(),
+            outreach,
             wanted: Mutex::default(),
             demands: Mutex::default(),
             discovery_running: Mutex::default(),
@@ -792,6 +813,7 @@ impl Node {
             task::spawn(shared.clone().unshelve()),
             task::spawn(shared.clone().bootstrap_pump()),
             task::spawn(transports::control::maintain(shared.clone())),
+            task::spawn(actor::run(shared.clone(), inbox)),
         ];
         Ok(Node { shared, router, tasks: Mutex::new(tasks) })
     }
@@ -839,6 +861,12 @@ impl Node {
     /// its relay.
     pub fn addr(&self) -> EndpointAddr {
         let addr = self.shared.endpoint.addr();
+        // iroh lists no custom address of its own: a simulated node's is its endpoint's on the scenario's network
+        #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
+        let addr = match &self.shared.opts.sim {
+            Some(_) => EndpointAddr::from_parts(addr.id, addr.addrs.into_iter().chain([sim::addr(addr.id)])),
+            None => addr,
+        };
         self.shared.opts.relay.iter().cloned().fold(addr, EndpointAddr::with_relay_url)
     }
 
@@ -2077,14 +2105,8 @@ struct Shared {
     statements: Mutex<statements::Statements>,
     receipts: peer_receipts::Receipts,
     ui_receipts: peer_receipts::Receipts,
-    /// Peers being told now, with one coalesced obligation to recompute after success.
-    telling: Mutex<HashMap<SignerId, bool>>,
-    /// The peers it couldn't tell, and when to try each again.
-    unreached: Mutex<Backoff<SignerId>>,
-    /// The peers being asked, each with whether to ask it again once done.
-    asking: Mutex<HashMap<EndpointId, bool>>,
-    /// The peers whose asking failed, and when to ask each again.
-    owed: Mutex<Backoff<EndpointId>>,
+    /// The node actor's handle: the telling of each peer and the asking of each, with their waits (`actor`).
+    outreach: actor::Outreach,
     /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
     wanted: Mutex<BTreeSet<LogId>>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
@@ -2433,7 +2455,7 @@ impl Shared {
         // Control owns peer selection and old-route retirement under its state→peers lock order.
         transports::control::connected(self, &peer);
         self.told.lock().expect("told").remove(&device);
-        self.unreached.lock().expect("unreached").reached(&device);
+        self.outreach.send(actor::Msg::Reached { device });
         self.changed.notify_one();
         self.jobs.stir();
         peer
@@ -2805,58 +2827,14 @@ impl Shared {
         Ok(new)
     }
 
-    /// Asks `endpoint` soon for the logs where the device there holds what this one lacks, by what it told (`differ`),
-    /// and once more after the asking under way if there is one; if the asking fails, again once its wait is over
-    /// (`Backoff`).
+    /// Asks `endpoint` soon for the logs where the device there holds what this one lacks, by what it told (`differ`):
+    /// the node actor starts the asking, or asks once more after the one under way, or once its wait is over if
+    /// asking it failed (`actor::Lane`).
     fn ask_soon(self: &Arc<Self>, endpoint: EndpointId) {
-        let Ok(activity) = self.admit() else { return };
-        if self.opts.lazy || !self.start_asking(endpoint) {
+        if self.opts.lazy || self.admit().is_err() {
             return;
         }
-        let shared = self.clone();
-        task::spawn(async move {
-            let _activity = activity;
-            loop {
-                let asked = shared.ask_differing(endpoint).await.is_ok();
-                let mut owed = shared.owed.lock().expect("owed");
-                if asked {
-                    owed.reached(&endpoint)
-                } else {
-                    owed.failed(endpoint, shared.opts.retry)
-                };
-                drop(owed);
-                if !shared.ask_again(endpoint) {
-                    break;
-                }
-            }
-        });
-    }
-
-    /// Whether to start asking `endpoint`: if an asking is under way, it asks again once done instead.
-    fn start_asking(&self, endpoint: EndpointId) -> bool {
-        let mut asking = self.asking.lock().expect("asking");
-        match asking.get_mut(&endpoint) {
-            Some(again) => {
-                *again = true;
-                false
-            }
-            None => {
-                asking.insert(endpoint, false);
-                true
-            }
-        }
-    }
-
-    /// Whether the asking of `endpoint` goes on, as the peer announced more meanwhile: otherwise it is done.
-    fn ask_again(&self, endpoint: EndpointId) -> bool {
-        let mut asking = self.asking.lock().expect("asking");
-        if asking.get(&endpoint) == Some(&true) {
-            asking.insert(endpoint, false);
-            true
-        } else {
-            asking.remove(&endpoint);
-            false
-        }
+        self.outreach.send(actor::Msg::Ask { endpoint });
     }
 
     /// Finish authenticated suffixes without making foreground requests pump history.
@@ -2894,8 +2872,9 @@ impl Shared {
         }
     }
 
-    /// Tells the peers what changed of its holdings whenever they may have, and every `retry` tries again the peers
-    /// whose wait is over: those it couldn't tell, and those it failed to ask.
+    /// Tells the peers what changed of its holdings whenever they may have, through the node actor, which tries again
+    /// the peers it couldn't tell or failed to ask once their wait is over. It looks again every `retry` for the range
+    /// candidates and transfers to expire.
     async fn announcer(self: Arc<Self>) {
         let mut news = News {
             size: (usize::MAX, 0),
@@ -2916,8 +2895,6 @@ impl Shared {
             self.own_logs().await;
             self.announce(&news);
             self.state(&news.reach);
-            let owed = self.owed.lock().expect("owed").ready();
-            owed.into_iter().for_each(|endpoint| self.ask_soon(endpoint));
             drop(activity);
             time::timeout(self.opts.retry, self.changed.notified()).await.ok();
         }
@@ -3027,10 +3004,9 @@ impl Shared {
         }
     }
 
-    /// Tells each peer what of the node's holdings it may know by the node's view, if that changed since it was last
-    /// told, or it is on a new connection, each on a task of its own, so that a peer out of reach holds up nobody; one
-    /// at a time, so that tasks don't pile up while it stays out of reach; and a peer it couldn't reach, only once its
-    /// wait is over.
+    /// Has the node actor tell each peer what of the node's holdings it may know by the node's view, if that changed
+    /// since it was last told, or it is on a new connection: each on a task of its own, so that a peer out of reach
+    /// holds up nobody; one at a time; and a peer it couldn't reach, only once its wait is over (`actor`).
     fn announce(self: &Arc<Self>, news: &News) {
         let own = self.own.lock().expect("own").holdings.clone();
         let told = self.told.lock().expect("told").clone();
@@ -3038,43 +3014,16 @@ impl Shared {
             let want = own.only(&reach.logs, &reach.files);
             let live = self.live(reach.endpoint).map(|p| p.conn.stable_id());
             let due = told.get(device).is_none_or(|(on, was)| *was != want || live.is_some_and(|id| id != *on));
-            if !due || !self.unreached.lock().expect("unreached").due(device) {
-                continue;
+            if due {
+                self.outreach.send(actor::Msg::Tell { device: *device, endpoint: reach.endpoint });
             }
-            let Ok(activity) = self.admit() else { return };
-            if !self.begin_tell(*device) {
-                continue;
-            }
-            let (shared, device, endpoint) = (self.clone(), *device, reach.endpoint);
-            task::spawn(async move {
-                let _activity = activity;
-                let told = shared.tell(device, endpoint, want).await.is_ok();
-                shared.finish_tell(device, told);
-            });
         }
     }
 
-    fn begin_tell(&self, device: SignerId) -> bool {
-        let mut telling = self.telling.lock().expect("telling");
-        if let Some(owed) = telling.get_mut(&device) {
-            *owed = true;
-            false
-        } else {
-            telling.insert(device, false);
-            true
-        }
-    }
-
-    fn finish_tell(&self, device: SignerId, success: bool) {
-        let mut unreached = self.unreached.lock().expect("unreached");
-        if success { unreached.reached(&device); }
-        else { unreached.failed(device, self.opts.retry); }
-        drop(unreached);
-        let owed = self.telling.lock().expect("telling").remove(&device).unwrap_or(false);
-        // A wake consumed while this peer was busy must survive successful completion.
-        // Re-enter normal news/holdings computation; never retry a cached authorization snapshot.
-        // Failures remain governed by backoff, not a self-sustaining immediate retry loop.
-        if success && owed { self.changed.notify_one(); }
+    /// What of the node's holdings `device` may know by the node's view now, if it may know any (`announce`).
+    fn want_of(&self, device: SignerId) -> Option<Holdings> {
+        let reach = self.reach.lock().expect("reach").get(&device).map(|r| (r.logs.clone(), r.files.clone()))?;
+        Some(self.own.lock().expect("own").holdings.only(&reach.0, &reach.1))
     }
 
     /// Tells `device`, at `endpoint`, that it holds `want`: all of it on a connection it told nothing yet, else what

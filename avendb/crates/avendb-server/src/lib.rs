@@ -390,6 +390,8 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         page: avendb_net::PAGE,
         // its start is nobody's to watch
         progress: avendb_net::Progress::new(),
+        // and a simulation's network, where a test build has one
+        ..Options::local()
     };
     let node = Arc::new(server::open(shelf, opts).await?);
     if let Some(config) = &config.webtransport {
