@@ -14,7 +14,6 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter as _, State};
-use tauri_plugin_dialog::DialogExt as _;
 use vault_media::{ByteSource, Source};
 pub use crate::media_ref::File;
 use crate::media_ref::MediaRef;
@@ -303,14 +302,7 @@ impl Picked {
 #[tauri::command]
 pub async fn studio_pick(app: AppHandle, picked: State<'_, Picked>, folders: bool) -> Result<Vec<String>, String> {
     crate::gate()?;
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let dialog = app.dialog().file();
-    if folders {
-        dialog.pick_folders(move |p| drop(tx.send(p)));
-    } else {
-        dialog.pick_files(move |p| drop(tx.send(p)));
-    }
-    let paths: Vec<PathBuf> = rx.await.ok().flatten().unwrap_or_default().into_iter().filter_map(|p| p.into_path().ok()).collect();
+    let paths = crate::dialog::pick(&app, folders).await;
     picked.add(paths.iter().cloned());
     Ok(paths.iter().map(|p| p.display().to_string()).collect())
 }

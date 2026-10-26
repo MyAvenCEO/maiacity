@@ -10,7 +10,7 @@
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 import { act, newGame } from '../game/maiacity-v1/engine.js';
 
 const arg = (name, fallback) => {
@@ -52,21 +52,21 @@ let signedOut = false;
 const gameRow = (id) => ({ entry: id, vault: 'c'.repeat(64), name: 'Maia City', seed: 'Maia City', type: 'game', tags: ['game', `game:${id}`] });
 const feed = { entries: [gameRow('sandbox-5'), gameRow('maiacity-v1')] };
 
-const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
 // the app's way in ($lib/app/entry.js) lets this tab on without avenDB, whose own page it walks; the vault founded
 // there is named as the person signed up
-await page.evaluateOnNewDocument(() => {
+await page.addInitScript(() => {
 	sessionStorage.setItem('avendb:later', '1');
 	sessionStorage.setItem('maia:signup', 'Samuel');
 });
 const wide = { width: 1300, height: 1000 };
 const phone = { width: 390, height: 844 };
-await page.setViewport(wide);
+await page.setViewportSize(wide);
 page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
 // the game's first-run story told already, so its tools show
-await page.evaluateOnNewDocument((key) => localStorage.setItem(key, JSON.stringify({ off: true })), `v1-story-${game.started}-A`);
-const cdp = await page.createCDPSession();
+await page.addInitScript((key) => localStorage.setItem(key, JSON.stringify({ off: true })), `v1-story-${game.started}-A`);
+const cdp = await page.context().newCDPSession(page);
 await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/*' }, { urlPattern: 'https://avendb.maia.city/feed/entries*' }] });
 cdp.on('Fetch.requestPaused', (r) => {
 	const url = new URL(r.request.url);
@@ -100,26 +100,26 @@ async function until(holds, ms = 30000) {
 	return false;
 }
 async function click(t, selector = 'button, a') {
-	const ok = await page.evaluate((t, selector) => {
+	const ok = await page.evaluate(([t, selector]) => {
 		const words = (e) => e.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 		const all = [...document.querySelectorAll(selector)];
 		const el = all.find((e) => words(e) === t) ?? all.find((e) => words(e).startsWith(t));
 		el?.click();
 		return !!el;
-	}, t, selector);
+	}, [t, selector]);
 	if (!ok) check(`found "${t}" to click`, false);
 	await sleep(400);
 }
 async function shot(name) {
 	await page.screenshot({ path: `${out}/${name}-wide.png`, fullPage: true });
-	await page.setViewport(phone);
+	await page.setViewportSize(phone);
 	await sleep(300);
 	await page.screenshot({ path: `${out}/${name}-phone.png`, fullPage: true });
-	await page.setViewport(wide);
+	await page.setViewportSize(wide);
 	await sleep(300);
 }
 
-await page.goto(`${base}/app/aips/`, { waitUntil: 'networkidle2' });
+await page.goto(`${base}/app/aips/`, { waitUntil: 'networkidle' });
 check('the app opens on the proposed ones of every game', await until(async () => (await text()).includes('Cheaper tent rent')), (await text()).slice(0, 300));
 check('a proposed one shows its signatures so far', (await text()).includes('1 of 2 signatures'));
 await shot('1-proposed');
@@ -146,7 +146,7 @@ check('the V1 game links to the Proposals app', v1page.length > 0, JSON.stringif
 check('the V1 game shows no proposal of its own', !(await page.evaluate(() => document.body.textContent)).includes('Propose and sign as'));
 
 // a payout proposed from a COOP lands in the app on a new proposal, filled in
-await page.goto(`${base}/app/aips/?game=maiacity-v1&new=1&from=coop%3Amaia&to=player%3AA&token=MAIA&amount=1`, { waitUntil: 'networkidle2' });
+await page.goto(`${base}/app/aips/?game=maiacity-v1&new=1&from=coop%3Amaia&to=player%3AA&token=MAIA&amount=1`, { waitUntil: 'networkidle' });
 check('a new V1 proposal opens filled in', await until(async () => (await text()).includes('Propose and sign as Samuel')));
 await shot('3-v1-new');
 await page.evaluate(() => {

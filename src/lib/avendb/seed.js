@@ -27,7 +27,6 @@
 // doc post (`docRecords`), and every newer text of it a proposal on both. The ones an earlier seed wrote stay as they
 // are.
 
-import { parse as parseYaml } from 'yaml';
 import { ENTRIES } from '../../../code/index.js';
 import { recordOf } from '../../../game/code/sources/avendb.js';
 import { stageTag } from './flows.js';
@@ -103,14 +102,57 @@ const CARDS = /** @type {Record<string, () => Promise<{ cards: Record<string, an
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
-/** A Markdown file's frontmatter. @param {string} raw @returns {Record<string, any>} */
+/**
+ * A Markdown file's frontmatter, the small part of YAML our docs use: top-level `key: value` lines, a value plain,
+ * 'single-' or "double-quoted", a `>`/`|` block or a plain value folded over indented lines, or a `- item` list. What
+ * YAML itself refuses (a plain value holding `: `) reads as none, as it always has, so the file's own title stands.
+ * @param {string} raw @returns {Record<string, any>}
+ */
 function frontmatter(raw) {
 	const m = FRONTMATTER.exec(raw);
-	try {
-		return (m ? parseYaml(m[1]) : null) ?? {};
-	} catch {
-		return {};
+	if (!m) return {};
+	/** @type {Record<string, any>} */
+	const out = {};
+	/** the key the indented lines below belong to, and how they join @type {{ key: string, join: string } | null} */
+	let open = null;
+	for (const line of m[1].split(/\r?\n/)) {
+		if (!line.trim() || /^\s*#/.test(line)) continue;
+		if (/^\s/.test(line)) {
+			if (!open) return {};
+			const item = /^\s+-\s+(.*)$/.exec(line);
+			if (item && (out[open.key] === null || Array.isArray(out[open.key]))) {
+				(out[open.key] ??= []).push(item[1].replace(/\s+#.*$/, '').trim());
+			} else if (typeof out[open.key] === 'string' || out[open.key] === null) {
+				const text = line.trim();
+				out[open.key] = out[open.key] ? out[open.key] + open.join + text : text;
+			} else return {};
+			continue;
+		}
+		const kv = /^([A-Za-z0-9_-]+):(?:\s+(.*))?$/.exec(line);
+		if (!kv) return {};
+		const [, key, value = ''] = kv;
+		const v = value.trim();
+		open = null;
+		if (v.startsWith('"')) {
+			try {
+				out[key] = JSON.parse(v);
+			} catch {
+				return {};
+			}
+		} else if (v.startsWith("'")) {
+			if (!/^'(?:[^']|'')*'$/.test(v)) return {};
+			out[key] = v.slice(1, -1).replace(/''/g, "'");
+		} else if (/^[|>][+-]?$/.test(v)) {
+			out[key] = '';
+			open = { key, join: v.startsWith('|') ? '\n' : ' ' };
+		} else {
+			const plain = v.replace(/(^|\s+)#.*$/, '');
+			if (/:\s/.test(plain)) return {};
+			out[key] = plain === '' ? null : plain === 'true' ? true : plain === 'false' ? false : plain;
+			open = { key, join: ' ' };
+		}
 	}
+	return out;
 }
 
 /** A frontmatter value as one trimmed line of text. @param {unknown} v */

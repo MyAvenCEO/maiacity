@@ -18,16 +18,14 @@
 		"test:inventory": "bun scripts/ci/test.mjs --check"
 	},
 	"devDependencies": {
-		"@noble/post-quantum": "0.7.1",
-		"@sveltejs/adapter-auto": "^7.0.1",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.63.0",
 		"@sveltejs/vite-plugin-svelte": "^7.1.2",
 		"@tailwindcss/vite": "^4.3.3",
 		"@tauri-apps/cli": "^2",
 		"@types/node": "^22.20.2",
+		"@types/three": "^0.186.0",
 		"playwright": "1.56.1",
-		"puppeteer-core": "^25.12.0",
 		"svelte": "^5.56.1",
 		"svelte-check": "^4.6.0",
 		"tailwindcss": "^4.3.3",
@@ -36,16 +34,11 @@
 	},
 	"dependencies": {
 		"@dimforge/rapier3d-compat": "0.21.0",
-		"@fontsource-variable/dm-sans": "^5.3.0",
-		"@fontsource-variable/fraunces": "^5.3.0",
 		"@jitl/quickjs-singlefile-browser-release-sync": "^0.32.0",
 		"@modelcontextprotocol/ext-apps": "2.0.3",
 		"@noble/hashes": "2.4.0",
 		"@preact/signals": "2.11.3",
-		"@simplewebauthn/browser": "^14.0.0",
 		"@tauri-apps/api": "^2",
-		"@tauri-apps/plugin-dialog": "^2",
-		"@types/three": "^0.186.0",
 		"acorn": "8.18.0",
 		"d3": "7.9.0",
 		"katex": "0.16.22",
@@ -53,8 +46,7 @@
 		"marked": "^18.0.12",
 		"preact": "11.0.0",
 		"quickjs-emscripten-core": "^0.32.0",
-		"three": "^0.186.0",
-		"yaml": "^2.9.0"
+		"three": "^0.186.0"
 	},
 	"patchedDependencies": {
 		"@sveltejs/kit@2.70.3": "patches/@sveltejs%2Fkit@2.70.3.patch"

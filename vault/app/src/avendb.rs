@@ -211,10 +211,9 @@ pub fn exit_requested(app: &tauri::AppHandle, code: Option<i32>, api: &tauri::Ex
             }
             Err(error) => {
                 tracing::error!("avenDB shutdown failed; the app and store owner remain alive: {error}");
-                use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
-                app.dialog().message(format!("avenDB could not safely close its store. The app has stayed open to protect pending changes.\n\n{error}"))
-                    .title("Maia City could not quit safely")
-                    .kind(MessageDialogKind::Error).show(|_| {});
+                let message = format!("avenDB could not safely close its store. The app has stayed open to protect pending changes.\n\n{error}");
+                let title = Some("Maia City could not quit safely".to_string());
+                crate::dialog::alert(&app, title, message, crate::dialog::Kind::Error, false).await;
             }
         }
     });

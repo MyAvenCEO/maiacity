@@ -3,7 +3,7 @@
 // as window.__world (src/lib/sandbox-kit/film.js: the same contract in every sandbox) — offers window.__film (contract C3 in
 // scripts/film/PLAN.md) to whoever drives it: the studio (an iframe, frame by frame from the timeline's clock), the Mac
 // app's unseen world (vault/app/src/world_driver.js: world shots' proxies and the final render's plates), the shoot
-// CLI (scripts/film/world/render.mjs, through puppeteer) or a person at the console.
+// CLI (scripts/film/world/render.mjs, through Playwright) or a person at the console.
 //
 //   await __film.ready(spec?)                          the world up, the shot's dome and set built, nothing streaming
 //   await __film.prepare(specs)                        every area, dome and set these shots need, built and kept

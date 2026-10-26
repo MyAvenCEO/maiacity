@@ -21,7 +21,7 @@
 // openWorld refuses, so a world job fails with a clear message instead of rendering slowly and differently.
 //
 // Environment: CHROME (the browser, default Google Chrome in /Applications), FILM_HEVC (libx265 | hevc_videotoolbox; by default the first this ffmpeg has, VideoToolbox first).
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdirSync, renameSync, rmSync } from 'node:fs';
@@ -59,18 +59,18 @@ export function hevcEncoder() {
  */
 export async function openWorld({ site, world = {}, log = () => {} }) {
 	assertMac();
-	const browser = await puppeteer.launch({ executablePath: chromePath(), headless: true, protocolTimeout: 0, args: browserArgs() });
+	const browser = await chromium.launch({ executablePath: chromePath(), headless: true, args: browserArgs() });
 	const page = await browser.newPage();
 	page.on('pageerror', (e) => log(`page error: ${e.message}`));
-	page.on('console', (m) => (m.type() === 'error' || m.type() === 'warn') && log(`page ${m.type()}: ${m.text()}`));
-	await page.setViewport({ width: 640, height: 640, deviceScaleFactor: 1 });
+	page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && log(`page ${m.type()}: ${m.text()}`));
+	await page.setViewportSize({ width: 640, height: 640 });
 	let at = '';
 	/** @param {{ sandbox?: string, area?: string }} w */
 	const goTo = async (w) => {
 		const path = filmPath(w);
 		if (path === at) return;
 		await page.goto(`${site.replace(/\/$/, '')}${path}`, { waitUntil: 'domcontentloaded' });
-		await page.waitForFunction(() => window.__film && window.__world, { timeout: 0, polling: 1000 });
+		await page.waitForFunction(() => window.__film && window.__world, undefined, { timeout: 0, polling: 1000 });
 		await page.evaluate(() => window.__film.ready());
 		at = path;
 	};
@@ -208,11 +208,11 @@ export async function renderPlate(o) {
 		try {
 			for (let k = 0; k < frames; k++) {
 				const ask = { spec, t: from + k / fps, shape, width: o.width, height: o.height, oversample: o.oversample ?? 1.5 };
-				await page.evaluate(async (a, url) => {
+				await page.evaluate(async ([a, url]) => {
 					const buf = await window.__film.capture(a);
 					const r = await fetch(url, { method: 'POST', body: buf, headers: { 'content-type': 'application/octet-stream' } });
 					if (!r.ok) throw new Error(`the frame sink said ${r.status}: ${await r.text()}`);
-				}, ask, `${sink.url}/frame/${k}`);
+				}, [ask, `${sink.url}/frame/${k}`]);
 			}
 			await sink.done();
 			await ff.end();

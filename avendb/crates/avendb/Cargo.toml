@@ -37,9 +37,12 @@ rand_core = { version = "0.10.1", default-features = false }
 # the device's secure boundary (P8c): every secret wiped as it is dropped, the hash states that held one among them
 zeroize = "1.8"
 # each item is one Loro document, its updates what gets encrypted and synced; pinned exactly, upgraded on purpose
-loro = "=1.16.2"
+loro = "=1.17.1"
 # the clock of its own timings (perf.rs): std's on a native target, the page's performance.now() in a browser
-web-time = "1.1"
+
+# the page's clock in a browser (perf.rs)
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
 
 [features]
 # Disposable synthetic key cache for tests; never enable in shipped builds.
