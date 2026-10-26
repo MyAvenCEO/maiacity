@@ -94,6 +94,9 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
     rest.get(..u32::from_be_bytes(*n) as usize)
 }
 
+#[path = "lab/blind_index.rs"]
+mod blind_index;
+
 use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
@@ -4336,31 +4339,6 @@ impl Lab {
     /// edit where it never locked (`batched`).
     pub fn signer_log(&self, d: SignerId) -> Option<&SignerLog> {
         self.batches.get(&d)
-    }
-
-    /// Bounded positive-type discovery for an authenticated peer. Current policy (including received
-    /// revocations not yet materialized) authorizes BEFORE any type is inspected. IDs are only hints;
-    /// no empty/truncated result establishes completeness, and normal signed receive remains required.
-    pub fn discover_types(&self, me: SignerId, requester: SignerId, vault: Option<VaultId>, types: &[String]) -> Vec<EntryId> {
-        if types.is_empty() || types.len() > 8 || types.iter().any(|ty| ty.is_empty() || ty.len() > 64) { return vec![]; }
-        let st = self.latest(me);
-        let opens = st.opens(&[KeyName::Signer(requester)]);
-        let selector = crate::ops::Where::of_json(&serde_json::json!({"type": types}))
-            .expect("bounded positive types").plan();
-        let mut audiences = HashMap::new();
-        st.entries().iter().filter(|en| {
-            let audience = KeyFam::Audience(en.vault, en.audience());
-            *audiences.entry(audience).or_insert_with(||
-                (st.public_key(audience) || st.entitled(requester, audience))
-                    && opens.contains(&st.current(audience)))
-                && st.entry_key(en.id).is_some_and(|key| opens.contains(&key))
-                && st.wants(requester, en)
-                && vault.is_none_or(|v| en.vault == v)
-                && self.landed(me, en.id)
-        // The selector contains only immutable creation types. Rebuilding each candidate's
-        // full meaning (retags, shares and stewardship) adds work without changing that match.
-        }).filter(|en| st.first_attrs(en, &self.held(me).readings).is_some_and(|attrs| selector.matches(&attrs)))
-            .take(64).map(|en| en.id).collect()
     }
 
     /// What device `d` currently reads: independently replayed policy, with an explicitly

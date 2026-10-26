@@ -114,6 +114,7 @@ impl Node {
             Some("follow") => self.follow(op).await?,
             Some("bring") => self.bring_vaults(&op).await?,
             Some("interest" | "demand") => self.view_interest(&op),
+            Some("find") => self.find(&op).await?,
             Some("synced") => json!({ "ok": self.synced().await }),
             Some("network") => json!({ "ok": self.network().await }),
             Some("measure_peer_policy") => json!({ "ok": self.shared.receipts.arm() }),
@@ -216,6 +217,55 @@ impl Node {
             },
             Err(why) => bad(why),
         }
+    }
+
+    /// `find {vault, types?, tags?, follow?, bring?}`: the entries of vault `vault` of one of the types `types` or with
+    /// one of the tags `tags`, by the blind index (`blind`, P4 of sync v2): those the device reads, and those each live
+    /// peer names, the server too, which reads none of them. With `bring` (the default), the device then brings the
+    /// logs of those from every peer that holds more of them at once (`scoped`). Answers `{entries, asked, answered,
+    /// new}`: the entries in hex, how many live peers answered of how many it asked, and how many edits it brought.
+    async fn find(&self, op: &Value) -> Result<Value> {
+        let bad = |why: &str| Ok(Refused::BadOp(why.to_string()).to_json());
+        let Some(vault) = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex) else {
+            return bad("find names its vault, 64 hex digits");
+        };
+        let names = |key: &str| -> Option<Vec<String>> {
+            match op.get(key) {
+                None => Some(vec![]),
+                Some(v) => v.as_array()?.iter().map(|x| x.as_str().filter(|s| !s.is_empty() && s.len() <= 128).map(str::to_string)).collect(),
+            }
+        };
+        let (Some(types), Some(tags)) = (names("types"), names("tags")) else {
+            return bad("find's types and tags are lists of names");
+        };
+        let mut labels: Vec<String> = types.iter().map(|t| avendb::index::type_label(t)).collect();
+        labels.extend(tags.iter().map(|t| avendb::index::tag_label(t)));
+        if labels.is_empty() || labels.len() > 64 {
+            return bad("find asks for 1 to 64 types and tags");
+        }
+        let follow = match op.get("follow") {
+            None => vec![],
+            Some(v) => match v.as_array().and_then(|xs| xs.iter().map(|x| x.as_str().and_then(VaultId::from_hex)).collect::<Option<Vec<_>>>()) {
+                Some(f) if f.len() <= 64 => f,
+                _ => return bad("find's follow is a list of at most 64 vault ids"),
+            },
+        };
+        let found = self.shared.find(vault, labels, follow).await;
+        let brought = if op.get("bring").and_then(Value::as_bool) != Some(false) {
+            // the logs no entry's first, which say who may do what, then the found entries' own, from every peer that
+            // holds more of them at once (`scoped`)
+            let named: BTreeMap<LogId, EndpointId> =
+                found.entries.iter().filter_map(|(e, p)| p.map(|p| (LogId::Entry(*e), p))).collect();
+            for peer in named.values().copied().collect::<BTreeSet<_>>() {
+                let _ = time::timeout(BRING, self.bring(peer, BTreeSet::new())).await;
+            }
+            let scope: BTreeSet<LogId> = found.entries.iter().map(|(e, _)| LogId::Entry(*e)).collect();
+            time::timeout(BRING, self.shared.sync_scoped(scope, named)).await.ok().map(|s| s.new)
+        } else {
+            None
+        };
+        let entries: Vec<String> = found.entries.iter().map(|(e, _)| e.to_hex()).collect();
+        Ok(json!({"ok": {"entries": entries, "asked": found.asked, "answered": found.answered, "new": brought}}))
     }
 
     /// `read_file`: the answer, and the bytes beside.

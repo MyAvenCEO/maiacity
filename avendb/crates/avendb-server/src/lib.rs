@@ -377,20 +377,11 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
     let own = shelf.clone();
     let opts = Options {
         bind: Some(config.bind),
-        direct: false,
         relay: Some(url),
-        proxy: false,
-        lazy: false,
-        retry: Duration::from_secs(1),
-        shelf: None,
-        keep: false,
-        card: false,
         admission: Some(admission),
-        relay_passes: Vec::new(),
-        page: avendb_net::PAGE,
-        // its start is nobody's to watch
-        progress: avendb_net::Progress::new(),
-        // and a simulation's network, where a test build has one
+        // it keeps the blind index its devices tell it, so a new device finds its entries here in one round trip
+        index: true,
+        // the rest as a local node's: no shelf of its own here, its start nobody's to watch
         ..Options::local()
     };
     let node = Arc::new(server::open(shelf, opts).await?);

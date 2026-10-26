@@ -199,6 +199,21 @@ impl<'a> Reach<'a> {
     }
 }
 
+/// Which logs device `d`, which follows the vaults `follow`, syncs by view `st` (`syncsLog`): what the blind index's
+/// `find` may name to it (`BlindIndex.find_within_T12`), worked out once for a whole answer.
+pub struct Syncing<'a>(Reach<'a>);
+
+impl<'a> Syncing<'a> {
+    pub fn new(st: &'a State, d: SignerId, follow: &[VaultId]) -> Syncing<'a> {
+        Syncing(Reach::new(st, d, follow))
+    }
+
+    /// It syncs log `l`.
+    pub fn log(&self, l: LogId) -> bool {
+        self.0.log(l)
+    }
+}
+
 /// What a peer holding `edits` sends device `d`, which follows the vaults `follow`: the edits of every entry log `d`
 /// syncs and every audience and share log it may receive, and of the logs of the vaults `d` acts for and that those
 /// edits name, up their owners. A vault it follows adds no log of its own: only what its public edits name.

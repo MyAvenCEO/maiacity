@@ -2,6 +2,7 @@ import AvenDB.Basic
 import AvenDB.State
 import AvenDB.Step
 import AvenDB.Sync
+import AvenDB.BlindIndex
 import AvenDB.Logs
 import AvenDB.Doc
 import AvenDB.Proposals
@@ -85,7 +86,6 @@ import AvenDB.PreparedReceive
 
 import AvenDB.CooperativeReceive
 
-import AvenDB.QueryDiscovery
 import AvenDB.ShownScratch
 
 import AvenDB.WarmRestoreNoop
