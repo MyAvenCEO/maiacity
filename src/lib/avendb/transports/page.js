@@ -2,8 +2,9 @@
 import { packetPort } from './port.js';
 import { webRtc } from './webrtc.js';
 import { MAX_ROUTES } from './packets.js';
+import { rtcIceServers } from './config.js';
 
-export function rtcPageHost({ create = webRtc } = {}) {
+export function rtcPageHost({ create = webRtc, iceServers = rtcIceServers() } = {}) {
 	const routes = new Map(); let stopped = false;
 	const closeDevice = (device) => { for (const route of [...routes.values()]) if (route.device === device) route.close(); };
 	return {
@@ -35,7 +36,7 @@ export function rtcPageHost({ create = webRtc } = {}) {
 					if (value.kind === 'closed') { entry.close(value.reason); return true; }
 					return bridge.event(value);
 				}
-			});
+			}, { iceServers });
 			if (ended) carrier.close();
 			return true;
 		},

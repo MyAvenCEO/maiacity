@@ -227,7 +227,14 @@ fn from_vaults_body(body: &[u8]) -> Result<(BTreeSet<VaultId>, Request)> {
 
 /// The three existing request kinds share the same authorization, follow and pagination path.
 /// Supplemental proofs wrap this result; they never add an unrestricted edit lookup.
-async fn authorized_reply(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8]) -> Result<Reply> {
+/// An old app reads signatures alone (`spec/AvenDB/WireBatches.lean`, `toOld`): of `edits`, those this node holds
+/// every part of as a signature, as a node that asks for signatures is sent them. The server holds no other.
+fn to_old(mut edits: Vec<avendb::sign::Signed>) -> Vec<avendb::sign::Signed> {
+    edits.retain(|signed| !avendb::batch::held_by_path(signed));
+    edits
+}
+
+async fn authorized_reply(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], paths: bool) -> Result<Reply> {
     let (request, scope) = match kind {
         REQUEST => (Request::from_wire(body)?, None),
         ASK_LOGS => {
@@ -248,6 +255,7 @@ async fn authorized_reply(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u
         Some(scope) => lab.reply_in(me, device, &request, page, &scope),
     }).await?;
     let blobs = shared.offer(ids).await?;
+    let edits = if paths { edits } else { to_old(edits) };
     Ok(Reply { edits, blobs, more })
 }
 
@@ -313,7 +321,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         crate::peer_receipts::KIND => crate::peer_receipts::answer(shared, peer, body).await,
         crate::peer_receipts::UI_KIND => crate::peer_receipts::answer_ui(shared, peer, body).await,
         REQUEST | ASK_LOGS | ASK_VAULTS => {
-            let reply = authorized_reply(shared, peer, kind, body).await?;
+            let reply = authorized_reply(shared, peer, kind, body, false).await?;
             let n = reply.edits.len();
             Ok(served(n, replied(reply)))
         }
@@ -321,7 +329,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
             let signers = shared.signers.as_ref().context("supplemental batch roots unavailable")?;
             let request = crate::proofs::Request::decode(body)?;
             anyhow::ensure!(request.known.keys().all(|signer| *signer == shared.me), "unrelated known signer");
-            let reply = authorized_reply(shared, peer, request.kind, &request.request).await?;
+            let reply = authorized_reply(shared, peer, request.kind, &request.request, request.paths).await?;
             let n = reply.edits.len();
             // A persisted signer leaf alone is insufficient: this node must also still hold the
             // complete signed record in its acknowledged legacy prefix. Retain only this reply's IDs.
@@ -332,7 +340,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
                 let held = held_by.edits.as_ref().map_or(0, |edits| edits.held(lab, me));
                 lab.log(me).ids().iter().take(held).filter(|id| ids.contains(id)).copied().collect()
             }).await;
-            let supplemented = crate::proofs::Supplement::attach(reply, signers, &request.known, &durable).await;
+            let supplemented = crate::proofs::Supplement::attach(reply, signers, &request.known, &durable, request.paths).await;
             let wire = supplemented.encode()?;
             // The original maximum remains unchanged. The client can retry the legacy request if
             // proof overhead would prevent a legitimate near-limit indivisible edit from fitting.
@@ -370,7 +378,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
             Ok(Vec::new())
         }
         CARD if shared.opts.card => {
-            let edits = shared.try_lab(|lab, me| lab.card(me)).await?;
+            let edits = to_old(shared.try_lab(|lab, me| lab.card(me)).await?);
             Ok(Reply { edits, ..Reply::default() }.to_wire())
         }
         LINK => {
@@ -584,10 +592,26 @@ mod batch_session_tests {
             }).await;
             let plain = exchange(&peer.conn, kind | PACKED, &body, REPLY_LIMIT).await.unwrap();
             let plain = Packed::from_wire(&plain).unwrap().0;
+            // version 1, as the server asks for one release: the exact authorized legacy reply, every signature in it
+            let v1 = proofs::Request { kind, request: body.clone(), known: Default::default(), paths: false };
+            let v1 = exchange(&peer.conn, proofs::KIND, &v1.encode().unwrap(), REPLY_LIMIT).await.unwrap();
+            let v1 = proofs::Supplement::decode(&v1).unwrap().verify(phone.shared.signers.as_ref().unwrap()).await.unwrap();
+            assert_eq!(v1.to_wire(), plain.to_wire(), "version 1 proofs preserve the exact authorized legacy reply");
+            // version 2, as a device asks (P8): the same edits, the sender's own held by their paths in place of
+            // their signatures, each checking as its signature does, and fewer bytes on the wire
+            let v2 = proofs::Request { kind, request: body.clone(), known: Default::default(), paths: true };
+            let wire = exchange(&peer.conn, proofs::KIND, &v2.encode().unwrap(), REPLY_LIMIT).await.unwrap();
+            let v1_wire = proofs::Request { kind, request: body.clone(), known: Default::default(), paths: false };
+            let v1_wire = exchange(&peer.conn, proofs::KIND, &v1_wire.encode().unwrap(), REPLY_LIMIT).await.unwrap();
+            assert!(wire.len() < v1_wire.len(), "{} bytes with paths, {} with signatures", wire.len(), v1_wire.len());
             let (batch, _) = phone.shared.reply_to(&peer, kind, &body, REPLY_LIMIT).await.unwrap();
-            assert_eq!(batch.to_wire(), plain.to_wire(), "proofs preserve the exact authorized legacy reply");
-            assert!(batch.edits.iter().any(|signed| signed.edit.id() == first_id));
+            let ids = |r: &Reply| r.edits.iter().map(|s| s.edit.id()).collect::<Vec<_>>();
+            assert_eq!(ids(&batch), ids(&plain), "paths preserve the exact authorized edits");
+            assert!(batch.edits.iter().all(|signed| signed.verify().is_ok()));
+            let own = batch.edits.iter().find(|signed| signed.edit.id() == first_id).unwrap();
+            assert!(avendb::batch::held_by_path(own), "the sender's own edit comes by its path");
             assert!(!phone.shared.unbatched.lock().unwrap().contains(&peer.conn.stable_id()));
+            assert!(!phone.shared.unstripped.lock().unwrap().contains(&peer.conn.stable_id()));
         }
         let previous = phone.shared.signers.as_ref().unwrap().known(sender).await.unwrap();
         phone.sync_with(mac.id()).await.unwrap();
@@ -608,6 +632,7 @@ mod batch_session_tests {
             kind: REQUEST,
             request: phone.read(move |lab, me| lab.request(me, sender).to_wire()).await,
             known: [(outsider, 3)].into_iter().collect(),
+            paths: true,
         }.encode().unwrap();
         assert!(exchange(&peer.conn, proofs::KIND, &unrelated, REPLY_LIMIT).await.is_err());
         phone.shutdown().await.unwrap();
@@ -685,9 +710,10 @@ mod batch_session_tests {
                 }
             };
             tokio::time::timeout(Duration::from_secs(10), n0_future::future::or(asking, serving)).await.unwrap();
+            // version 2 first, then version 1 (P8)
             let expected = if mode == 2 {
-                vec![proofs::KIND, REQUEST | PACKED, REQUEST, REQUEST]
-            } else { vec![proofs::KIND, REQUEST | PACKED, REQUEST | PACKED] };
+                vec![proofs::KIND, proofs::KIND, REQUEST | PACKED, REQUEST, REQUEST]
+            } else { vec![proofs::KIND, proofs::KIND, REQUEST | PACKED, REQUEST | PACKED] };
             assert_eq!(*seen.lock().unwrap(), expected, "only the unsupported format is remembered on this connection");
             assert_eq!(phone.shared.unpacked.lock().unwrap().contains(&peer.conn.stable_id()), mode == 2);
             assert!(phone.shared.unbatched.lock().unwrap().contains(&peer.conn.stable_id()));
