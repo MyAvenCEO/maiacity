@@ -15,6 +15,10 @@
 //! parts it read of late are cached in `g<n>/cache/`, up to `CACHE` bytes or as the server is told, the least lately
 //! read let go first. A server whose folder is lost starts again from its bucket alone, as the same device.
 //!
+//! The cache is only ever what the bucket holds: each part is cached beside its BLAKE3 hash (`<n>.b3`), taken of the
+//! bytes as they opened from the bucket, and a part is read from the cache only once its bytes there hash to it, the
+//! first time a server reads it after it starts. A part whose bytes don't (`reads`, `spoiled`) is fetched again.
+//!
 //! One server writes a bucket. It puts a named object only where the bucket holds none, and the bucket keeps every
 //! version of an object for 7 days (Object Lock). Nothing deletes an object but the files a node lets go of
 //! (`Call::Drop`), a blob's outboard first, then its parts.
@@ -26,14 +30,36 @@ use std::io::{self, ErrorKind};
 use std::os::unix::fs::FileExt as _;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::keys::{self, Secret, SeededRng};
+use bao_tree::blake3;
 use bytes::Bytes;
 use iroh_blobs::Hash;
 
 use crate::shelf::{self, Call, FLOOR, Shelf, generation, hash_of};
+
+/// The objects the server's buckets answered with since it started, their bytes, and the cached parts it found
+/// spoiled: changed in its folder since it cached them (`reads`).
+static GETS: AtomicU64 = AtomicU64::new(0);
+static GOT: AtomicU64 = AtomicU64::new(0);
+static SPOILED: AtomicU64 = AtomicU64::new(0);
+
+/// What the server read from its buckets since it started: the objects they answered with, their bytes, and the parts
+/// its folder's cache held spoiled, which it fetched again. A spoiled part is a folder the server can't trust: its disk.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Reads {
+    pub gets: u64,
+    pub bytes: u64,
+    pub spoiled: u64,
+}
+
+/// What the server read from its buckets so far (`Reads`).
+pub fn reads() -> Reads {
+    Reads { gets: GETS.load(Ordering::Relaxed), bytes: GOT.load(Ordering::Relaxed), spoiled: SPOILED.load(Ordering::Relaxed) }
+}
 
 /// What the seal's key is derived for.
 const SEAL: &str = "avenDB bucket seal";
@@ -185,6 +211,8 @@ impl Sealed {
     pub async fn get(&self, name: &str) -> Result<Option<Vec<u8>>> {
         let sealed = self.bucket.get(name).await.with_context(|| format!("getting {name} from the bucket"))?;
         let Some(sealed) = sealed else { return Ok(None) };
+        GETS.fetch_add(1, Ordering::Relaxed);
+        GOT.fetch_add(sealed.len() as u64, Ordering::Relaxed);
         let plain = keys::decrypt(&self.key, &sealed, name.as_bytes());
         Ok(Some(plain.with_context(|| format!("{name} in the bucket doesn't open: another seal's, or changed"))?))
     }
@@ -238,12 +266,14 @@ struct BucketShelf {
     fetching: Mutex<HashMap<(Hash, u64), Arc<tokio::sync::Mutex<()>>>>,
 }
 
-/// The parts in a node's folder's cache, each by its blob and number, with its bytes and when it was read last.
+/// The parts in a node's folder's cache, each by its blob and number, with its bytes and when it was read last, and
+/// those whose bytes it hashed since the server started.
 struct Cached {
     parts: HashMap<(Hash, u64), (u64, u64)>,
     bytes: u64,
     budget: u64,
     reads: u64,
+    checked: HashSet<(Hash, u64)>,
 }
 
 impl Cached {
@@ -259,12 +289,14 @@ impl Cached {
         while self.bytes + bytes > self.budget {
             let Some(oldest) = self.parts.iter().min_by_key(|(_, (_, read))| *read).map(|(p, _)| *p) else { break };
             self.bytes -= self.parts.remove(&oldest).map_or(0, |(b, _)| b);
+            self.checked.remove(&oldest);
             gone.push(oldest);
         }
         gone
     }
 
     fn forget(&mut self, part: (Hash, u64)) {
+        self.checked.remove(&part);
         if let Some((bytes, _)) = self.parts.remove(&part) {
             self.bytes -= bytes;
         }
@@ -299,7 +331,7 @@ pub(crate) fn shelf_at(bucket: Sealed, root: String, local: &Path, budget: u64) 
     }
     fs::create_dir_all(&staging)?;
     fs::create_dir_all(&cache)?;
-    let mut cached = Cached { parts: HashMap::new(), bytes: 0, budget, reads: 0 };
+    let mut cached = Cached { parts: HashMap::new(), bytes: 0, budget, reads: 0, checked: HashSet::new() };
     for blob in fs::read_dir(&cache)? {
         let blob = blob?;
         let Some(hash) = blob.file_name().to_str().and_then(hash_of) else { continue };
@@ -322,7 +354,7 @@ pub(crate) fn shelf_at(bucket: Sealed, root: String, local: &Path, budget: u64) 
     });
     let gone = on.cached.lock().expect("cached").room(0);
     for part in gone {
-        fs::remove_file(on.cached_path(part)).ok();
+        uncache(&on.cached_path(part));
     }
     let (shelf, mut calls) = Shelf::new();
     tokio::spawn(async move {
@@ -504,9 +536,11 @@ impl BucketShelf {
         let (whole, at) = (part.clone(), path.clone());
         let cached = blocking(move || {
             for gone in gone {
-                fs::remove_file(gone).ok();
+                uncache(&gone);
             }
             fs::create_dir_all(at.parent().expect("a blob's folder"))?;
+            // its hash first: a part cached without one is no part, and fetched again
+            fs::write(at.with_extension("b3"), blake3::hash(&whole).as_bytes())?;
             let staged = at.with_extension("part");
             fs::write(&staged, &whole)?;
             fs::rename(staged, at)
@@ -516,6 +550,7 @@ impl BucketShelf {
                 let mut cached = self.cached.lock().expect("cached");
                 cached.bytes += part.len() as u64;
                 cached.parts.insert((hash, n), (part.len() as u64, 0));
+                cached.checked.insert((hash, n));
                 cached.touch((hash, n));
             }
             Err(e) => tracing::warn!("avendb: {name} isn't cached: {e}"),
@@ -525,23 +560,48 @@ impl BucketShelf {
         Ok(part.slice(from as usize..to as usize))
     }
 
-    /// Bytes `range` of cached part `part`, at `path`, if the cache holds it.
+    /// Bytes `range` of cached part `part`, at `path`, if the cache holds it, as it was cached: the first read of it
+    /// since the server started hashes it whole first. A part whose bytes don't hash to what they did when cached, or
+    /// with no hash beside it, goes from the cache, to be fetched again.
     async fn cached_range(&self, part: (Hash, u64), path: &Path, range: std::ops::Range<u64>) -> Option<Bytes> {
-        if !self.cached.lock().expect("cached").touch(part) {
-            return None;
-        }
-        let path = path.to_path_buf();
+        let checked = {
+            let mut cached = self.cached.lock().expect("cached");
+            if !cached.touch(part) {
+                return None;
+            }
+            cached.checked.contains(&part)
+        };
+        let at = path.to_path_buf();
         let read = blocking(move || {
-            let file = fs::File::open(path)?;
-            let end = range.end.min(file.metadata()?.len());
+            let file = fs::File::open(&at)?;
+            let len = file.metadata()?.len();
+            if !checked {
+                let mut whole = vec![0; len as usize];
+                file.read_exact_at(&mut whole, 0)?;
+                let held = fs::read(at.with_extension("b3"))?;
+                if held != blake3::hash(&whole).as_bytes() {
+                    return Err(io::Error::new(ErrorKind::InvalidData, "spoiled"));
+                }
+                let (from, to) = (range.start.min(len), range.end.min(len));
+                return Ok(Bytes::from(whole).slice(from as usize..to as usize));
+            }
+            let end = range.end.min(len);
             let mut bytes = vec![0; end.saturating_sub(range.start) as usize];
             file.read_exact_at(&mut bytes, range.start)?;
             Ok(Bytes::from(bytes))
         });
         match read.await {
-            Ok(bytes) => Some(bytes),
-            Err(_) => {
+            Ok(bytes) => {
+                self.cached.lock().expect("cached").checked.insert(part);
+                Some(bytes)
+            }
+            Err(e) => {
+                if e.kind() == ErrorKind::InvalidData {
+                    SPOILED.fetch_add(1, Ordering::Relaxed);
+                    tracing::warn!("avendb: a cached part of {} was spoiled in the folder; fetched again", part.0);
+                }
                 self.cached.lock().expect("cached").forget(part);
+                uncache(path);
                 None
             }
         }
@@ -603,6 +663,12 @@ impl BucketShelf {
     }
 }
 
+/// Lets go of the cached part at `path`, and its hash.
+fn uncache(path: &Path) {
+    fs::remove_file(path).ok();
+    fs::remove_file(path.with_extension("b3")).ok();
+}
+
 /// The name of part `n` of blob `hash` on the shelf under `root`.
 fn part_name(root: &str, hash: &Hash, n: u64) -> String {
     format!("{root}{BLOBS}{}/{n:06x}", hash.to_hex())
@@ -639,4 +705,45 @@ pub(crate) async fn part_of(bucket: &Sealed, root: &str, hash: &Hash, n: u64) ->
 fn blob_of(name: &str) -> Option<(Hash, u64)> {
     let (hash, size) = name.split_once('-')?;
     Some((hash_of(hash)?, u64::from_str_radix(size, 16).ok()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+
+    /// A part spoiled in the server's folder since it was cached, as by its disk, is found the first time a server
+    /// reads it after it starts, and fetched again from the bucket: the cache is only ever what the bucket holds.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_spoiled_cached_part_is_fetched_again() {
+        let dir = std::env::temp_dir().join(format!("avendb-spoiled-{}", std::process::id()));
+        fs::remove_dir_all(&dir).ok();
+        let (objects, folder) = (dir.join("objects"), dir.join("folder"));
+        let sealed = Sealed::new(Folder::new(&objects), &[7; 32]);
+        let bytes = Bytes::from((0..100_000u32).map(|i| (i % 253) as u8).collect::<Vec<u8>>());
+
+        let shelf = super::shelf(sealed.clone(), &folder, 64 << 20).await.expect("a shelf");
+        let (hash, size) = shelf.put_blob(&bytes).await.expect("put");
+        assert_eq!(shelf.read_blob(hash, size).await.expect("read"), bytes, "read, and cached");
+        let cached = folder.join(format!("g{FLOOR}/cache/{}/000000", hash.to_hex()));
+        assert!(cached.exists() && cached.with_extension("b3").exists(), "cached beside its hash");
+
+        // the server starts again, and its disk changed a byte of the part meanwhile
+        let mut spoiled = fs::read(&cached).expect("the part");
+        spoiled[500] ^= 1;
+        fs::write(&cached, spoiled).expect("spoiled");
+        let before = reads().spoiled;
+        let shelf = super::shelf(sealed.clone(), &folder, 64 << 20).await.expect("a shelf");
+        assert_eq!(shelf.read(&hash.to_hex(), 400, 200).await.expect("read"), bytes.slice(400..600), "the bucket's bytes");
+        assert!(reads().spoiled > before, "counted as spoiled");
+        assert_eq!(fs::read(&cached).expect("cached again"), bytes, "and cached again, whole");
+
+        // a part cached with no hash beside it, as by a server stopped between the two, is no part: fetched again
+        fs::remove_file(cached.with_extension("b3")).expect("its hash gone");
+        let shelf = super::shelf(sealed, &folder, 64 << 20).await.expect("a shelf");
+        assert_eq!(shelf.read_blob(hash, size).await.expect("read"), bytes, "the bucket's bytes");
+        assert!(cached.with_extension("b3").exists(), "cached again with its hash");
+        fs::remove_dir_all(dir).ok();
+    }
 }

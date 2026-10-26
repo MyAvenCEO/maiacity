@@ -111,6 +111,8 @@ mod blind;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod claim;
 mod interest;
 mod discovery;
 mod checkpoint_delivery;
@@ -143,6 +145,8 @@ mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
+#[cfg(test)]
+mod shelf_contract;
 mod signers;
 #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
 pub mod sim;
