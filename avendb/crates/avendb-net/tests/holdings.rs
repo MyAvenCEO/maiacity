@@ -89,7 +89,8 @@ async fn next(conn: &Connection, kind: u8, answer: impl FnOnce(&[u8]) -> Vec<u8>
         let (mut send, mut recv) = conn.accept_bi().await.expect("a message from the node");
         let message = recv.read_to_end(16 << 20).await.expect("its bytes");
         let (&k, body) = message.split_first().expect("a kind");
-        if k == RANGES {
+        // a legacy peer refuses the kinds it doesn't know: ranges, and the blind index's offer (40)
+        if k == RANGES || k == 40 {
             send.reset(iroh::endpoint::VarInt::from_u32(1)).expect("legacy peer refuses the new kind");
             continue;
         }
