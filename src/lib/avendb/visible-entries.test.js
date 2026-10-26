@@ -2,12 +2,15 @@
 import { expect, test } from 'bun:test';
 import { createEntryWindow } from './query-window.js';
 import { visibleEntries } from './visible-entries.js';
+// an Interest op seen as the one list of entries and selectors it wants (tiers aside)
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 
 const id = (n) => n.toString(16).padStart(64, '0');
 const flush = async () => { for (let n = 0; n < 8; n++) await Promise.resolve(); };
 const node = () => {
 	const calls = [];
-	return { calls, run: async (op) => { calls.push(op); return { ok: { accepted: true } }; } };
+	return { calls, run: async (op) => { calls.push(flat(op)); return { ok: { accepted: true } }; } };
 };
 
 test('scrolling releases rows but retains selected files and shared previews until their last consumer leaves', async () => {
@@ -79,11 +82,12 @@ test('rapid viewport replacements reuse one scope, and selected entries remain f
 
 test('older native apps can decline metadata without blocking viewport reads or retrying every scroll', async () => {
 	const calls = [];
-	const d = { run: async (op) => { calls.push(op); return { refused: 'BadOp' }; } };
+	const d = { run: async (op) => { calls.push(flat(op)); return { refused: 'BadOp' }; } };
 	const window = createEntryWindow({ device: () => d });
 	try {
 		expect(await window.replace([id(1)])).toBe(false);
 		expect(await window.replace([id(2)])).toBe(false);
-		expect(calls).toHaveLength(1);
+		// the interest op, then the demand op once: a node that knows neither is sent nothing more
+		expect(calls.map((c) => c.op)).toEqual(['interest', 'demand']);
 	} finally { window.close(); }
 });

@@ -4,7 +4,10 @@ import { localDevice } from '$lib/avendb/local.js';
 import { authorsOf, fromFeed, pictureUrl } from './posts.js';
 import { PICTURE } from '$lib/avendb/picture.js';
 import { inspireOf } from './inspire.js';
-import { ANSWER, deviceOf } from '../../../game/code/sources/device.js';
+import { deviceOf } from '../../../game/code/sources/device.js';
+
+/** How long the stream waits for its device to answer a page of posts. */
+const ANSWER = 5000;
 
 /** How many posts the stream takes in at a time: the newest first, then as many more each time its person scrolls. */
 export const PAGE = 20;

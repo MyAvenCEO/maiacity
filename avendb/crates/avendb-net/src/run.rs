@@ -113,7 +113,7 @@ impl Node {
             Some("jobs") => json!({ "ok": self.jobs().to_json_for(crate::acting()) }),
             Some("follow") => self.follow(op).await?,
             Some("bring") => self.bring_vaults(&op).await?,
-            Some("demand") => self.view_demand(&op),
+            Some("interest" | "demand") => self.view_interest(&op),
             Some("synced") => json!({ "ok": self.synced().await }),
             Some("network") => json!({ "ok": self.network().await }),
             Some("measure_peer_policy") => json!({ "ok": self.shared.receipts.arm() }),
@@ -152,41 +152,67 @@ impl Node {
         Ok(self.run(op, None::<NoBytes>, None::<&NoCeremony>).await?.0)
     }
 
-    /// Replace one local view's entry priorities. This is scheduling metadata, never a signed edit or capability.
-    fn view_demand(&self, op: &Value) -> Value {
+    /// `interest`: replace one mounted view's Interests (`interest.rs`, Lean `Interest.lean`), or with
+    /// `release: "all"` clear every view's, as The OS does when its page loads again. `demand`, the op before it,
+    /// stays one release as one Interest on screen now. Scheduling metadata, never a signed edit or a capability: it
+    /// orders what the node brings, and an unmount (no wants) clears it; no lease, no timer.
+    fn view_interest(&self, op: &Value) -> Value {
         let bad = |why: &str| Refused::BadOp(why.to_string()).to_json();
+        if op.get("release").and_then(Value::as_str) == Some("all") {
+            let released = self.shared.interests.lock().expect("interests").release_all();
+            self.shared.size.send_modify(|_| {});
+            return json!({"ok": {"released": released}});
+        }
         let Some(scope) = op.get("scope").and_then(Value::as_str).filter(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit())) else {
-            return bad("demand scope is a random 32-character hex identifier");
+            return bad("an interest's scope is a random 32-character hex identifier");
         };
         let Some(revision) = op.get("revision").and_then(Value::as_u64).filter(|n| *n > 0 && *n <= 9_007_199_254_740_991) else {
-            return bad("demand revision is a positive safe integer");
+            return bad("an interest's revision is a positive safe integer");
         };
-        let Some(raw) = op.get("entries").and_then(Value::as_array).filter(|a| a.len() <= crate::demand::MOST_ENTRIES) else {
-            return bad("demand entries is an array of at most 512 entry IDs");
+        let ids = |raw: Option<&Value>| -> Option<Vec<LogId>> {
+            match raw {
+                None => Some(vec![]),
+                Some(v) => v.as_array().filter(|a| a.len() <= crate::interest::MOST_ENTRIES)?
+                    .iter().map(|v| v.as_str().and_then(EntryId::from_hex).map(LogId::Entry)).collect(),
+            }
         };
-        let Some(entries) = raw.iter().map(|v| v.as_str().and_then(EntryId::from_hex).map(LogId::Entry)).collect::<Option<Vec<_>>>() else {
-            return bad("demand entries are 64-character hex entry IDs");
+        let queries = |raw: Option<&Value>| -> Option<Vec<crate::discovery::Query>> {
+            match raw {
+                None => Some(vec![]),
+                Some(v) => v.as_array().filter(|rows| rows.len() <= crate::interest::MOST_QUERIES)?
+                    .iter().map(crate::discovery::Query::parse).collect::<Option<Vec<_>>>()
+                    .filter(|qs| qs.iter().all(|q| q.valid())),
+            }
         };
-        let queries = match op.get("queries") {
-            None => vec![],
-            Some(value) => match value.as_array().filter(|rows| rows.len() <= 8)
-                .and_then(|rows| rows.iter().map(crate::discovery::Query::parse).collect::<Option<Vec<_>>>()) {
-                Some(queries) => queries,
-                None => return bad("invalid discovery selectors"),
-            },
+        let wants = if engine::name(op) == Some("demand") {
+            let Some(entries) = ids(op.get("entries")).filter(|_| op.get("entries").is_some()) else {
+                return bad("demand entries is an array of at most 512 64-character hex entry IDs");
+            };
+            let Some(queries) = queries(op.get("queries")) else { return bad("invalid discovery selectors") };
+            vec![crate::interest::Want { tier: crate::interest::Tier::Now, entries, queries }]
+        } else {
+            let Some(raw) = op.get("wants").and_then(Value::as_array).filter(|w| w.len() <= crate::interest::MOST_WANTS) else {
+                return bad("an interest's wants is an array of at most 32 wants");
+            };
+            let mut wants = vec![];
+            for w in raw {
+                let tier = w.get("tier").and_then(Value::as_str).and_then(crate::interest::Tier::parse);
+                let Some(tier) = tier else { return bad("a want's tier is now, next, later or idle") };
+                if w.as_object().is_some_and(|m| m.keys().any(|k| !["tier", "entries", "queries"].contains(&k.as_str()))) {
+                    return bad("a want holds a tier, entries and queries");
+                }
+                let Some(entries) = ids(w.get("entries")) else { return bad("a want's entries are 64-character hex entry IDs") };
+                let Some(queries) = queries(w.get("queries")) else { return bad("a want's queries are bounded positive-type selectors") };
+                wants.push(crate::interest::Want { tier, entries, queries });
+            }
+            wants
         };
-        if queries.len() > 8 || queries.iter().any(|q| !q.valid()) { return bad("discovery names at most eight bounded positive-type selectors"); }
         let scope = scope.to_ascii_lowercase();
-        let result = {
-            let mut demands = self.shared.demands.lock().expect("demands");
-            let result = demands.replace(scope.clone(), revision, entries, Instant::now());
-            if matches!(result, Ok(true)) { demands.set_queries(&scope, queries); }
-            result
-        };
+        let result = self.shared.interests.lock().expect("interests").replace(scope.clone(), revision, wants);
         match result {
             Ok(accepted) => {
                 if accepted { self.shared.size.send_modify(|_| {}); self.shared.bootstrap_due.notify_one(); self.shared.schedule_discovery(scope); }
-                json!({"ok": {"accepted": accepted, "lease_ms": crate::demand::LEASE.as_millis() as u64, "discovery_supported": true, "discovery_complete": false}})
+                json!({"ok": {"accepted": accepted, "discovery_supported": true, "discovery_complete": false}})
             },
             Err(why) => bad(why),
         }

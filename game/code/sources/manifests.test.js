@@ -1,19 +1,24 @@
 // @ts-nocheck — plain JS
-// Manifests (./manifests.js): what a page needs, declared as a composite of manifests whose leaves are entries and
-// queries, walked once per page, the kernel first.
+// Manifests v2 (./manifests.js): trees of Interests in tiers, walked once per page, slots bound by the route or the
+// selection; and the repo's declarations (src/lib/avendb/manifests.js) against the schema.
 import { expect, test } from 'bun:test';
-import { MANIFEST_V1, bringDeclared, covers, entriesOf, leavesFor, namedBy } from './manifests.js';
-import { MANIFESTS } from '../../../src/lib/avendb/manifests.js';
-import { MAIA_CITY } from './anchor.js';
+import { MANIFEST_V2, covers, leavesFor, lift, namedBy, plan, resolve } from './manifests.js';
+import { MANIFESTS, CHAT, STUDIO, ASSETS } from '../../../src/lib/avendb/manifests.js';
+import { rank } from './interest.js';
 
 const id = (i) => i.toString(16).padStart(64, '0');
-const m = (o) => ({ kind: 'manifest', title: o.id, ...o });
+const m = (o) => ({ kind: 'manifest', v: 2, title: o.id, ...o });
 
-const kernel = m({ id: 'kernel', routes: ['*'], priority: 'high', parts: [{ query: { type: ['capgroup'] } }] });
-const world = m({ id: 'world', parts: [{ manifest: 'kernel' }, { entry: id(7), follow: 1 }] });
-const game = m({ id: 'game', routes: ['/app/games/x/'], parts: [{ manifest: 'kernel' }, { manifest: 'world' }, { query: { tags: ['game:x'] }, limit: 1 }] });
+const kernel = m({ id: 'kernel', routes: ['*'], tiers: { now: [{ want: { type: ['capgroup'] } }] } });
+const chat = m({ id: 'chat', routes: ['/app/chat/'], tiers: {
+	now: [{ manifest: 'kernel' }, { want: { type: ['room'] }, part: 'headers' }, { want: { entry: '$room' } }],
+	idle: [{ want: { type: ['room'] } }]
+} });
+// a manifest held lower than its own tiers: its parts come no higher than where it is held
+const extras = m({ id: 'extras', tiers: { now: [{ want: { type: ['story'] } }], later: [{ want: { type: ['post'] } }] } });
+const page = m({ id: 'page', routes: ['/p/'], tiers: { now: [{ want: { type: ['game'] } }], next: [{ manifest: 'extras' }] } });
 // a cycle comes round and ends
-const loop = m({ id: 'loop', routes: ['/loop/*'], parts: [{ manifest: 'loop' }, { entry: id(9) }] });
+const loop = m({ id: 'loop', routes: ['/loop/*'], tiers: { now: [{ manifest: 'loop' }, { want: { entry: id(9) } }] } });
 
 test('a route covers its own path, a path under it with *, and * every path', () => {
 	expect(covers('/app/', '/app/')).toBe(true);
@@ -22,28 +27,39 @@ test('a route covers its own path, a path under it with *, and * every path', ()
 	expect(covers('*', '/anything/')).toBe(true);
 });
 
-test('the walk holds each manifest once, each leaf once at its highest priority, the kernel first', () => {
-	const leaves = leavesFor([kernel, world, game, loop], '/app/games/x/');
-	expect(leaves.map((l) => [l.rank, l.leaf.entry ?? l.leaf.query])).toEqual([
-		[0, { type: ['capgroup'] }],
-		[1, id(7)],
-		[1, { tags: ['game:x'] }]
+test('the walk holds the kernel, binds slots, and lists Interests by tier', () => {
+	const leaves = leavesFor([kernel, chat], '/app/chat/', { room: id(5) });
+	expect(leaves.map((l) => [l.tier, l.want])).toEqual([
+		['now', { type: ['capgroup'] }],
+		['now', { type: ['room'] }],
+		['now', { entry: id(5) }],
+		['idle', { type: ['room'] }]
 	]);
+	// unbound_slot_wants_nothing: no room open, no room wanted, never the whole vault
+	expect(leavesFor([kernel, chat], '/app/chat/').map((l) => l.want.entry ?? 'q')).toEqual(['q', 'q', 'q']);
+	expect(resolve({ entry: '$room' }, {})).toBeNull();
+	expect(resolve({ entry: '$room' }, { room: 'not an id' })).toBeNull();
+	expect(resolve({ type: ['room'], vault: '$vault' }, {})).toBeNull();
+	expect(resolve({}, {})).toBeNull();
 	// another page: the kernel alone
-	expect(leavesFor([kernel, world, game], '/universe/').length).toBe(1);
-	expect(leavesFor([kernel, loop], '/loop/a/').map((l) => l.leaf.entry ?? 'q')).toEqual(['q', id(9)]);
-	// no manifests: nothing
+	expect(leavesFor([kernel, chat], '/universe/').length).toBe(1);
 	expect(leavesFor([], '/app/')).toEqual([]);
+	expect(leavesFor([kernel, loop], '/loop/a/').map((l) => l.want.entry ?? 'q')).toEqual(['q', id(9)]);
 });
 
-test('queries read the rows newest first, at most their limit, and only rows of their types and tags', () => {
-	const rows = [
-		{ entry: id(1), type: 'config', tags: ['game:x'], created: 1 },
-		{ entry: id(2), type: 'view', tags: ['game:x'], created: 3 },
-		{ entry: id(3), type: 'capgroup', tags: [], created: 2 },
-		{ entry: id(4), type: 'view', tags: ['game:y'], created: 9 }
-	];
-	expect(entriesOf(leavesFor([kernel, world, game], '/app/games/x/'), rows)).toEqual([id(3), id(7), id(2)]);
+test('flatten_never_raises: a manifest held at next brings its now parts at next, its later parts at later', () => {
+	const leaves = leavesFor([kernel, page, extras], '/p/');
+	expect(leaves.map((l) => [l.tier, l.want.type?.[0]])).toEqual([
+		['now', 'capgroup'], ['now', 'game'], ['next', 'story'], ['later', 'post']
+	]);
+});
+
+test('a v1 manifest still reads: high and medium parts now, low later, limits as windows', () => {
+	const v1 = { kind: 'manifest', id: 'old', routes: ['/old/'], priority: 'low', parts: [{ manifest: 'kernel' }, { query: { type: ['cut'] }, limit: 8, follow: 2 }, { entry: id(3) }] };
+	expect(lift(v1)).toEqual({ kind: 'manifest', v: 2, id: 'old', title: undefined, routes: ['/old/'], tiers: { later: [
+		{ manifest: 'kernel' }, { want: { type: ['cut'] }, window: { newest: 8 }, follow: 2 }, { want: { entry: id(3) } }] } });
+	// the kernel covers every page itself, so it stays now
+	expect(leavesFor([kernel, v1], '/old/').map((l) => l.tier)).toEqual(['now', 'later', 'later']);
 });
 
 test('a record names the entries of its pins and its vault refs, in JSON held in a string too', () => {
@@ -52,216 +68,101 @@ test('a record names the entries of its pins and its vault refs, in JSON held in
 	expect(namedBy({ entry: 'short' })).toEqual([]);
 });
 
-test('a device brings what the manifests declare a priority at a time, then what the brought records name', async () => {
-	const asked = [];
-	const records = { [id(7)]: { pin: { entry: id(8), at: [] } } };
-	const d = {
+/** a device holding rows (by type), records (by entry) and files */
+function device({ rows = {}, records = {}, files = [] } = {}) {
+	const calls = [];
+	return {
+		calls,
 		run: async (op) => {
-			if (op.op === 'query' && op.where?.type?.[0] === 'manifest') return { ok: { rows: [kernel, world, game].map((record) => ({ record })) } };
-			if (op.op === 'query') return { ok: { rows: [{ entry: id(3), type: 'capgroup', tags: [] }, { entry: id(2), type: 'view', tags: ['game:x'], created: 1 }] } };
-			if (op.op === 'get') return { ok: { record: records[op.entry] ?? null } };
+			calls.push(op);
+			if (op.op === 'query') {
+				const types = op.where?.type ?? op.where?.all?.flatMap((t) => t.type ?? []) ?? [];
+				const out = types.flatMap((t) => rows[t] ?? []);
+				return { ok: { rows: out.slice(0, op.limit ?? 512) } };
+			}
+			if (op.op === 'get') return records[op.entry] ? { ok: { record: records[op.entry] } } : { refused: 'NoEntry' };
+			if (op.op === 'world_summary') return { ok: { vaults: [{ id: id(100) }] } };
+			if (op.op === 'entry_views') return { ok: { rows: files } };
 			return { ok: {} };
 		}
 	};
-	const fetch = async () => { throw new Error('Manifest discovery must not use HTTP'); };
-	const got = await bringDeclared('/app/games/x/', { device: d, bring: async (ids) => asked.push(ids), fetch });
-	expect(asked).toEqual([[id(3)], [id(7)], [id(2)], [id(8)]]);
-	expect(got).toEqual([id(3), id(7), id(2), id(8)]);
+}
+
+test('plan: windows, follows, files by tag and signals, in tiers', async () => {
+	const room = id(1), cut = id(2), shot = id(3);
+	const root = 'a'.repeat(64), root2 = 'b'.repeat(64);
+	const d = device({
+		rows: { room: [{ entry: id(10) }, { entry: id(11) }, { entry: id(12) }], cut: [{ entry: cut }] },
+		records: { [cut]: { shot: { entry: shot } }, [shot]: { clip: `aven:${root}:1:1:video/mp4`, sound: `aven:${root2}:1:1:audio/wav` } },
+		files: [
+			{ entry: id(20), tags: ['media:proxy'], files: [{ root, media: 'video/mp4' }] },
+			{ entry: id(21), tags: ['media:original'], files: [{ root: root2, media: 'audio/wav' }] },
+			{ entry: id(22), tags: ['media:proxy'], files: [{ root: 'c'.repeat(64) }] }
+		]
+	});
+	const leaves = [
+		{ tier: 'now', part: { window: { newest: 2 } }, want: { type: ['room'] } },
+		{ tier: 'now', part: {}, want: { entry: room } },
+		{ tier: 'next', part: { follow: 2 }, want: { entry: cut } },
+		{ tier: 'later', part: { follow: 2, part: 'files', files: ['media:proxy'] }, want: { entry: cut } },
+		{ tier: 'later', part: { follow: 2, part: 'files', files: ['audio/'], by: 'playhead' }, want: { entry: cut } }
+	];
+	const published = [];
+	const wants = await plan(leaves, { device: d, vault: id(100), signals: { playhead: () => 4 }, publish: (w) => published.push(w) });
+	expect(wants).toEqual([
+		{ tier: 'now', entries: [id(10), id(11), room], queries: [{ types: ['room'], vault: id(100) }] },
+		{ tier: 'next', entries: [cut, shot], queries: [] },
+		{ tier: 'later', entries: [id(20), id(21)], queries: [] }
+	]);
+	// what is on screen went out before the slower walks of the lower tiers
+	expect(published[0]).toEqual([{ tier: 'now', entries: [id(10), id(11)], queries: [{ types: ['room'], vault: id(100) }] }]);
+	expect(published.length).toBe(leaves.length);
+	// the window went to the local query, newest first
+	expect(d.calls.find((c) => c.op === 'query')).toMatchObject({ order: [['created', 'desc']], limit: 2 });
 });
 
-test('a vault that holds no manifest brings nothing more', async () => {
-	const d = { run: async () => ({ ok: { rows: [] } }) };
-	const fetch = async () => new Response('{"entries":[]}');
-	expect(await bringDeclared('/app/', { device: d, bring: async () => { throw new Error('nothing to bring'); }, fetch })).toEqual([]);
+test('plan: a signal orders inside a tier, nearest first; no device, the selectors alone', async () => {
+	const d = device({ rows: { recipe: [{ entry: id(1) }, { entry: id(2) }, { entry: id(3) }] } });
+	const far = { [id(1)]: 9, [id(2)]: 1, [id(3)]: 4 };
+	const wants = await plan([{ tier: 'next', part: { by: 'list' }, want: { type: ['recipe'] } }], { device: d, signals: { list: (e) => far[e] } });
+	expect(wants[0].entries).toEqual([id(2), id(3), id(1)]);
+	const cold = await plan([{ tier: 'now', part: {}, want: { type: ['manifest'] } }], { vault: id(7) });
+	expect(cold).toEqual([{ tier: 'now', entries: [], queries: [{ types: ['manifest'], vault: id(7) }] }]);
+	const aborted = new AbortController();
+	aborted.abort();
+	await expect(plan([{ tier: 'now', part: {}, want: { type: ['x'] } }], { device: d, signal: aborted.signal })).rejects.toThrow();
 });
 
-test("the repo's manifests hold the kernel, each held manifest exists, and each fits the schema's shape", () => {
+test('every manifest the repo declares fits the v2 schema, and the three examples hold their tiers', () => {
+	const schema = JSON.parse(MANIFEST_V2);
+	const part = schema.properties.tiers.properties.now.items;
+	const known = new Set(Object.keys(part.properties));
 	const ids = new Set(MANIFESTS.map((x) => x.id));
 	expect(ids.size).toBe(MANIFESTS.length);
-	expect(MANIFESTS.find((x) => x.id === 'kernel').routes).toEqual(['*']);
-	const schema = JSON.parse(MANIFEST_V1);
-	const pattern = new RegExp(schema.properties.id.pattern);
 	for (const x of MANIFESTS) {
-		expect(pattern.test(x.id)).toBe(true);
-		for (const p of x.parts) if (p.manifest) expect(ids.has(p.manifest)).toBe(true);
 		for (const k of schema.required) expect(x[k]).toBeDefined();
+		expect(x.id).toMatch(new RegExp(schema.properties.id.pattern));
+		expect(Object.keys(x.tiers).every((t) => ['now', 'next', 'later', 'idle'].includes(t))).toBe(true);
+		for (const parts of Object.values(x.tiers)) for (const p of parts) {
+			expect(Object.keys(p).every((k) => known.has(k))).toBe(true);
+			if (p.manifest) expect(ids.has(p.manifest)).toBe(true);
+			if (p.want?.entry?.startsWith('$')) expect(x.slots).toContain(p.want.entry.slice(1));
+		}
 	}
-	// every game's page walks to the kernel and its own code
-	const leaves = leavesFor(MANIFESTS, '/app/games/sandbox-5/');
-	expect(leaves[0].leaf.query.type).toContain('capgroup');
-	expect(leaves.some((l) => l.leaf.query?.tags?.[0] === 'game:sandbox-5')).toBe(true);
-});
-
-test('duplicate feed and local rows do not consume a visible query window', () => {
-	const rows = [{ entry: id(1), created: 3 }, { entry: id(1), created: 3 }, { entry: 'invalid', created: 2 }, { entry: id(2), created: 1 }];
-	expect(entriesOf([{ leaf: { query: {}, limit: 2 } }], rows)).toEqual([id(1), id(2)]);
-});
-
-test('each reference root keeps its own follow depth, including already brought shared entries', async () => {
-	const manifest = m({ id: 'depths', routes: ['*'], parts: [{ entry: id(1), follow: 1 }, { entry: id(2), follow: 3 }, { entry: id(5) }] });
-	const links = { 1: 3, 2: 5, 3: 4, 5: 6, 6: 7, 7: 8 };
-	const read = [], brought = [];
-	const d = { run: async (op) => {
-		if (op.op === 'query') return { ok: { rows: [{ record: manifest }] } };
-		read.push(op.entry);
-		return { ok: { record: { entry: id(links[parseInt(op.entry, 16)] ?? 99) } } };
-	} };
-	await bringDeclared('/', { device: d, fetch: null, bring: async (ids) => brought.push(...ids) });
-	expect(brought).toEqual([id(1), id(2), id(5), id(3), id(6), id(7)]);
-	expect(read).not.toContain(id(3));
-	expect(brought).not.toContain(id(8));
-});
-
-test('an abandoned view issues no later priority batch or reference reads', async () => {
-	const controller = new AbortController();
-	const manifest = m({ id: 'first', priority: 'high', routes: ['*'], parts: [{ entry: id(1), follow: 2 }] });
-	const later = m({ id: 'later', routes: ['*'], parts: [{ entry: id(2) }] });
-	const reads = [], brings = [];
-	const d = { run: async (op) => { reads.push(op); return { ok: { rows: [manifest, later].map((record) => ({ record })) } }; } };
-	await expect(bringDeclared('/', { device: d, signal: controller.signal, fetch: null, bring: async (ids) => { brings.push(ids); controller.abort(); } })).rejects.toThrow();
-	expect(brings).toEqual([[id(1)]]);
-	expect(reads.filter((o) => o.op === 'get')).toEqual([]);
-});
-
-test('film shot references participate in manifest dependency traversal', () => {
- expect(namedBy({ timeline: JSON.stringify({ clips: [{ shot: `shot:${id(5)}` }] }) })).toEqual([id(5)]);
-});
-test('missing manifests never fall back to HTTP discovery', async () => {
- let fetched = false;
- const result = await bringDeclared('/app/studio/', { device: { run: async () => ({ ok: { rows: [] } }) }, bring: async () => {}, fetch: async () => { fetched = true; } });
- expect(result).toEqual([]);
- expect(fetched).toBe(false);
-});
-
-
-test('following a timeline prioritizes audio file entries named by aven roots', async () => {
-	const root = 'a'.repeat(64);
-	const timeline = id(10), audio = id(11);
-	const d = { run: async op => {
-		if (op.op === 'query') return { ok: { rows: [{ record: m({ id: 'film', routes: ['/studio/'], parts: [{ entry: timeline, follow: 1 }] }) }] } };
-		if (op.op === 'get') return { ok: { record: { clips: JSON.stringify([{ hash: `aven:${root}:100:84:audio%2Fmpeg` }]) } } };
-		if (op.op === 'world_summary') return { ok: { vaults: [{ id: MAIA_CITY }] } };
-        if (op.op === 'entry_views') {
-            expect(op.types).toEqual(['file']);
-            return { ok: { rows: [{ entry: audio, files: [{ root }] }] } };
-        }
-        throw new Error('Unexpected full-world read');
-	} };
-	const brought = [];
-	await bringDeclared('/studio/', { device: d, bring: async ids => brought.push(...ids) });
-	expect(brought).toEqual([timeline, audio]);
-});
-
-test('manifest diagnostics report scheduling without claiming delivery or retaining IDs', async () => {
- const { manifestDiagnostics } = await import('./manifests.js');
- await bringDeclared('/private/route/', { device: { run: async () => ({ ok: { rows: [] } }) }, bring: async () => {} });
- const state = manifestDiagnostics();
- expect(state.pending).toBe(0);
- expect(state.runs.at(-1).state).toBe('scheduled');
- expect(state.runs.at(-1).requested).toBe(0);
- expect(JSON.stringify(state)).not.toContain('/private/route/');
-});
-
-test('known view dependencies are prioritized while unrelated query history is withheld', async () => {
- const controller = new AbortController();
- let release, hinted;
- const withheld = new Promise(resolve => { release = resolve; });
- const published = new Promise(resolve => { hinted = resolve; });
- const hints = [], brought = [], selectors = [];
- const manifest = m({ id: 'partial', routes: ['*'], parts: [{ entry: id(71) }, { query: { type: ['note'] } }] });
- const device = { run: async op => {
-  if (op.op === 'query' && op.where?.type?.[0] === 'manifest') return { ok: { rows: [{ record: manifest }] } };
-  if (op.op === 'query') return withheld;
-  if (op.op === 'get' && op.entry === id(71)) return { ok: { record: { title: 'Useful local view' } } };
-  throw new Error('Unexpected broad or remote read');
- } };
- const running = bringDeclared('/partial/', { device, signal: controller.signal,
-  prioritize: async (ids, queries) => { hints.push(...ids); selectors.push(...queries); hinted(); }, bring: async ids => brought.push(...ids) });
- await Promise.race([published, new Promise((_, reject) => setTimeout(() => reject(new Error('demand blocked by unrelated history')), 100))]);
- expect(hints).toEqual([id(71)]);
- expect(selectors).toEqual([{ types: ['note'], vault: MAIA_CITY }]);
- expect((await device.run({ op: 'get', entry: id(71) })).ok.record.title).toBe('Useful local view');
- // Scheduling is not a claim of complete discovery or peer delivery.
- expect(brought).toEqual([id(71)]);
- const { manifestDiagnostics } = await import('./manifests.js');
- expect(manifestDiagnostics().pending).toBeGreaterThan(0);
- controller.abort();
- release({ ok: { rows: [{ entry: id(72), type: 'note' }] } });
- await expect(running).rejects.toThrow();
- expect(brought).toEqual([id(71)]);
- expect(hints).toEqual([id(71)]);
-});
-
-test('an unacknowledged demand lease cannot block canonical local query discovery', async () => {
- let queried;
- const discovered = new Promise(resolve => { queried = resolve; });
- let acknowledge;
- const waiting = new Promise(resolve => { acknowledge = resolve; });
- const manifest = m({ id: 'ack', routes: ['*'], parts: [{ entry: id(91) }, { query: { type: ['note'] } }] });
- const d = { run: async op => {
-  if (op.where?.type?.[0] === 'manifest') return { ok: { rows: [{ record: manifest }] } };
-  queried();
-  return { ok: { rows: [{ entry: id(92), type: 'note' }] } };
- } };
- const brought = [];
- const done = bringDeclared('/ack/', { device: d, prioritize: () => waiting, bring: async ids => brought.push(...ids) });
- try {
-  await Promise.race([discovered, new Promise((_, reject) => setTimeout(() => reject(new Error('query waited for demand acknowledgement')), 100))]);
-  expect(await done).toEqual([id(91), id(92)]);
-  expect(brought).toEqual([id(91), id(92)]);
- } finally { acknowledge(); }
-});
-
-
-test('high-rank dependencies finish before any lower-rank collection query starts', async () => {
- const order = [];
- const high = m({ id: 'high', priority: 'high', routes: ['*'], parts: [{ entry: id(1), follow: 1 }] });
- const low = m({ id: 'low', priority: 'low', routes: ['*'], parts: [{ query: { type: ['note'] } }] });
- const controller = new AbortController();
- const d = { run: async op => {
-  if (op.where?.type?.[0] === 'manifest') return { ok: { rows: [high, low].map(record => ({record})) } };
-  if (op.op === 'get') { order.push('follow'); return {ok:{record:{entry:id(2)}}}; }
-  order.push('low-query'); controller.abort(); return {ok:{rows:[{entry:id(3),type:'note'}]}};
- } };
- await expect(bringDeclared('/', {device:d,signal:controller.signal,bring:async ids=>order.push(...ids)})).rejects.toThrow();
- expect(order).toEqual([id(1), 'follow', id(2), 'low-query']);
-});
-
-
-test('cancellation during a reference read prevents a subsequent broad file scan', async () => {
- const controller = new AbortController();
- let world = false;
- const manifest = m({id:'cancel-follow',routes:['*'],parts:[{entry:id(1),follow:1}]});
- const d = {run:async op=>{
-  if(op.op==='query') return {ok:{rows:[{record:manifest}]}};
-  if(op.op==='get') {controller.abort(); return {ok:{record:{audio:`aven:${id(2)}:100:84:audio`}}};}
-  world=true; return {ok:{entries:[]}};
- }};
- await expect(bringDeclared('/',{device:d,signal:controller.signal,bring:async()=>{}})).rejects.toThrow();
- expect(world).toBe(false);
-});
-
-test('zero concrete IDs distinguishes missing catalog, unmatched route and active query discovery', async () => {
- const { manifestDiagnostics } = await import('./manifests.js');
- const cases = [
-  { rows: [], expected: { catalog: 'local', heldManifests: 0, matchedLeaves: 0, typeDiscoveryHints: 0 } },
-  { rows: [{ record: m({ id: 'other', routes: ['/other/'], parts: [{ query: { type: ['room'] } }] }) }], expected: { catalog: 'local', heldManifests: 1, matchedLeaves: 0, typeDiscoveryHints: 0 } },
-  { rows: [{ record: m({ id: 'current', routes: ['*'], parts: [{ query: { type: ['room'] } }] }) }], expected: { catalog: 'local', heldManifests: 1, matchedLeaves: 1, queryLeaves: 1, typeDiscoveryHints: 1, localRows: 0 } }
- ];
- for (const c of cases) {
-  let hints = [];
-  const device = { run: async op => ({ ok: { rows: op.select ? [] : c.rows } }) };
-  expect(await bringDeclared('/current/', { device, bring: async () => { throw new Error('No local IDs'); }, prioritize: (_ids, queries) => { hints = queries; } })).toEqual([]);
-  const last = manifestDiagnostics().runs.at(-1);
-  expect(last).toMatchObject({ requested: 0, state: 'scheduled', ...c.expected });
-  expect(hints.length).toBe(c.expected.typeDiscoveryHints);
-  expect(JSON.stringify(last)).not.toContain('/current/');
-  expect(JSON.stringify(last)).not.toContain('room');
- }
-});
-
-test('a refused catalog is not reported as a successful empty local catalog', async () => {
- const { manifestDiagnostics } = await import('./manifests.js');
- await bringDeclared('/private/', { device: { run: async () => ({ refused: 'NoCap' }) }, bring: async () => {} });
- expect(manifestDiagnostics().runs.at(-1)).toMatchObject({ catalog: 'refused', heldManifests: 0, requested: 0 });
+	// chat: my rooms now, the open room's messages on open, older history idle
+	const chatLeaves = leavesFor(MANIFESTS, '/app/chat/', { room: id(1) });
+	expect(chatLeaves.filter((l) => l.want.entry === id(1)).map((l) => l.tier)).toEqual(['now', 'later', 'later', 'idle']);
+	expect(rank(chatLeaves.find((l) => l.want.type?.includes('room')).tier)).toBe(0);
+	// studio: stills and sound of the open timeline now, proxies next, originals only once one is opened
+	const studio = leavesFor(MANIFESTS, '/app/studio/', { timeline: id(2) });
+	expect(studio.filter((l) => l.part.files?.includes('media:proxy')).map((l) => l.tier)).toEqual(['next']);
+	expect(studio.some((l) => l.part.files?.includes('media:original'))).toBe(false);
+	expect(leavesFor(MANIFESTS, '/app/studio/', { timeline: id(2), original: id(3) }).find((l) => l.want.entry === id(3)).tier).toBe('later');
+	// assets: the list now, the selected one now on select, the neighbours next
+	const assets = leavesFor(MANIFESTS, '/app/buildings/', { asset: id(4) });
+	expect(assets.filter((l) => l.want.entry === id(4)).map((l) => l.tier)).toEqual(['now', 'later']);
+	expect(assets.find((l) => l.part.by === 'list').tier).toBe('next');
+	// Sandbox 4: what the camera sees, nearest first
+	expect(leavesFor(MANIFESTS, '/app/games/sandbox-4/').some((l) => l.part.by === 'camera' && l.tier === 'now')).toBe(true);
+	expect([CHAT, STUDIO, ASSETS].every((x) => x.v === 2)).toBe(true);
 });

@@ -2,7 +2,7 @@
 import { viewReadiness } from './view-readiness.js';
 import { activeRead } from './active-reads.js';
 import { readCompleteness } from './read-completeness.js';
-import { createDemand, normalizeDiscovery } from '../../../game/code/sources/demand.js';
+import { createInterest, normalizeDiscovery } from '../../../game/code/sources/interest.js';
 
 /** Entry IDs shown by a read. Scheduling hints only: no response here establishes completeness or authority. */
 export function replyEntries(got) {
@@ -61,8 +61,9 @@ export function queryDiscovery(op) {
 }
 
 /** One component's visible read. Replace the window on each query; keep independent components independent.
- * Reads stay local-first. Demand registration runs beside them and never delays a local result.
- * @param {{ device: () => any, read: (device: any, op: any, signal: AbortSignal, demand: ReturnType<typeof createDemand>) => Promise<any> }} options
+ * Reads stay local-first. What it shows is its Interest on screen now (../../../game/code/sources/interest.js), set
+ * beside the read and never delaying a local result.
+ * @param {{ device: () => any, read: (device: any, op: any, signal: AbortSignal) => Promise<any> }} options
  */
 export function createReadWindow({ device, read }) {
 	let current = null, held = null, closed = false, queryKey = null, clearing = 0;
@@ -79,7 +80,7 @@ export function createReadWindow({ device, read }) {
 		queueMicrotask(() => {
 			if (generation !== clearing) return;
 			queryKey = null;
-			void held?.demand.replace([]);
+			void held?.interest.clear();
 		});
 	};
 	const release = () => {
@@ -89,7 +90,7 @@ export function createReadWindow({ device, read }) {
 		queryKey = null;
 		current?.controller.abort();
 		current = null;
-		held?.demand.close();
+		held?.interest.close();
 		held = null;
 	};
 	return {
@@ -105,8 +106,9 @@ export function createReadWindow({ device, read }) {
 			if (!d) { clear(); return null; }
 			// One scope per mounted window, with revisions on replacement: frequent reactive reads do not
 			// accumulate closed scopes on the node. A device change starts an independent scope there.
-			held ??= { device: d, demand: createDemand((o) => d.run(o)) };
-			const { demand } = held;
+			held ??= { device: d, interest: createInterest((o) => d.run(o)) };
+			const { interest } = held;
+			const want = (ids) => interest.set([{ tier: 'now', entries: ids, queries: selectors }]);
 			const controller = new AbortController();
 			const request = { controller, device: d };
 			current = request;
@@ -117,15 +119,15 @@ export function createReadWindow({ device, read }) {
 			// Compare the full operation so changing a predicate also drops obsolete row hints.
 			let nextKey;
 			try { nextKey = JSON.stringify(op); } catch { nextKey = null; }
-			if (nextKey === null || nextKey !== queryKey) void demand.replace(entries, selectors);
+			if (nextKey === null || nextKey !== queryKey) void want(entries);
 			queryKey = nextKey;
 			try {
-				const got = await read(d, op, controller.signal, demand);
+				const got = await read(d, op, controller.signal);
 				if (!active()) return null;
 				completeness = readCompleteness(got);
 				viewReadiness.record(completeness, got);
 				observed.set(completeness.response);
-				void demand.replace([...entries, ...replyEntries(got)], selectors);
+				void want([...entries, ...replyEntries(got)]);
 				return got;
 			} catch (error) {
 				if (!active()) return null;
@@ -141,27 +143,28 @@ export function createReadWindow({ device, read }) {
 }
 
 
-/** Scheduling for a view whose rows already came from local state, without issuing another content read.
- * Keep one scope for its mounted lifetime. A device change releases the old owner's scope and republishes
- * the still-visible entries on the replacement device; no old owner is reached through a new session. */
+/** Scheduling for a view whose rows already came from local state, without issuing another content read: its
+ * Interest on screen now, one for its mounted lifetime. A device change clears it on the old device and sets the
+ * still-visible entries on the new one; no old owner is reached through a new session. */
 export function createEntryWindow({ device }) {
 	let held = null, entries = [], closed = false;
 	const bind = () => {
 		if (closed) return null;
 		const d = device();
-		if (held && held.device !== d) { held.demand.close(); held = null; }
-		if (d && !held && entries.length) held = { device: d, demand: createDemand((op) => d.run(op)) };
-		return held?.demand ?? null;
+		if (held && held.device !== d) { held.interest.close(); held = null; }
+		if (d && !held && entries.length) held = { device: d, interest: createInterest((op) => d.run(op)) };
+		return held?.interest ?? null;
 	};
+	const set = () => bind()?.set([{ tier: 'now', entries }]) ?? Promise.resolve(false);
 	const replace = (ids) => {
 		if (closed) return Promise.resolve(false);
 		entries = [...new Set(ids.filter((id) => typeof id === 'string' && /^[0-9a-f]{64}$/.test(id)))].slice(0, 512);
-		return bind()?.replace(entries) ?? Promise.resolve(false);
+		return set();
 	};
 	return {
 		replace,
 		clear: () => replace([]),
-		invalidate() { return bind()?.replace(entries) ?? Promise.resolve(false); },
-		close() { closed = true; entries = []; held?.demand.close(); held = null; }
+		invalidate: set,
+		close() { closed = true; entries = []; held?.interest.close(); held = null; }
 	};
 }

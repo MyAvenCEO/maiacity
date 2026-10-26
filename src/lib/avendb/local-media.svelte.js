@@ -1,7 +1,7 @@
 // @ts-nocheck
 // One local media resolver for profiles, posts and legacy content hashes. No HTTP fallback.
 import { localFileEntries } from '../../../game/code/sources/file-entries.js';
-import { deviceOf, learn } from '../../../game/code/sources/device.js';
+import { deviceOf, wantNow } from '../../../game/code/sources/device.js';
 import { mediaEntry, forgetMedia, resetMedia } from './local-media-state.js';
 import { useLocalMedia } from '$lib/media/local-resolver.js';
 import { localDevice } from './local.js';
@@ -57,7 +57,7 @@ export function refreshLocalMedia() {
 		for (const [key, request] of requests) {
 			const entry = mediaEntry(world, request);
             if (entry === undefined) continue; // an incomplete summary is not a deletion
-			if (entry && request.entry !== entry.entry) { learn([entry.entry]); request.entry = entry.entry; }
+			if (entry && request.entry !== entry.entry) { wantNow([entry.entry]); request.entry = entry.entry; }
 			const file = entry?.files?.[0];
 			if (!file || file.len == null) {
 				forgetMedia(urls, key, request, url => URL.revokeObjectURL(url));

@@ -3,11 +3,14 @@ import { expect, test } from 'bun:test';
 import { readAssetInventory } from './asset-inventory.js';
 import { localNavigation, needsWorldEntries } from './startup-summary.js';
 import { createReadWindow } from './query-window.js';
+// an Interest op seen as the one list of entries and selectors it wants (tiers aside)
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 test('metadata-only #assets starts independent local recipe reads with world and peers withheld', async () => {
  const world = {entriesComplete:false, entries:[]}, vault='v', calls=[];
  const row = {entry:'recipe', type:'recipe', record:{title:'Fig'}, brought:[{edit:'version', files:[]}]};
  const metadata = {entry:'recipe', readers:['actor'], files:[]};
- const api={ask:async op=>{calls.push(op); if(op.op==='database')return {ok:{vault, rows:[row]}};
+ const api={ask:async op=>{calls.push(flat(op)); if(op.op==='database')return {ok:{vault, rows:[row]}};
   if(op.op==='entry_views')return {ok:{rows:[metadata]}};
   throw Error('No world, bring, or network allowed');}};
  let route='home'; localNavigation(()=>{route='assets';},()=>new Promise(()=>{}));
@@ -27,7 +30,7 @@ test('fresh recipe inventory registers demand without waiting for a peer and rel
  const vault='b'.repeat(64), calls=[];
  let finish;
  const blocked=new Promise(resolve=>{finish=resolve;});
- const device={run:op=>{calls.push(op);return blocked;}};
+ const device={run:op=>{calls.push(flat(op));return blocked;}};
  const api={ask:async op=>({ok:op.op==='database'?{vault:op.vault,rows:[]}:{rows:[]}})};
  const window=createReadWindow({device:()=>device,read:(_,op)=>api.ask(op)});
  try {

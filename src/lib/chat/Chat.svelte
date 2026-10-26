@@ -12,6 +12,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
+	import { bindView } from '../../../game/code/sources/device.js';
 	import { onMount, tick, untrack } from 'svelte';
 	import Frame from '$lib/avendb/Frame.svelte';
 	import Icon from '$lib/avendb/Icon.svelte';
@@ -36,6 +37,11 @@
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let open = $state(q.get('room') ?? '');
+	// the open room is the chat manifest's `$room`: its newest messages come now, its history after
+	$effect(() => {
+		bindView('room', open || null);
+		return () => bindView('room', null);
+	});
 	let side = $state('');
 	const ids = $derived(JSON.stringify([...new Set([
 		...(discovery.value?.rows ?? []).map(r => r.entry), ...(open ? [open] : [])

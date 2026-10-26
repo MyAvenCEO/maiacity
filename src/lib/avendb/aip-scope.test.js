@@ -10,13 +10,16 @@ const expect = actual => ({
 import { createAipScope } from './aip-scope.js';
 import { createReactiveRead } from './reactive-read.js';
 import { observedWindow } from './observed-window.js';
+// an Interest op seen as the one list of entries and selectors it wants (tiers aside)
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 const flush = async () => { for (let i=0;i<30;i++) await Promise.resolve(); };
 
 test('mounted AIP consumers share a real discovery lease, released only by the last consumer', async () => {
 	/** @type {any[]} */ const calls=[];
 	/** @type {unknown[]} */ const reads=[];
 	/** @type {unknown[]} */ const answers=[];
-	const owner={run:async (/** @type {any} */ op)=>{calls.push(op);return {ok:{accepted:true}};}};
+	const owner={run:async (/** @type {any} */ op)=>{calls.push(flat(op));return {ok:{accepted:true}};}};
 	let starts=0, stops=0;
 	const scope=createAipScope({
 		observe(query,take,failed) {

@@ -762,8 +762,8 @@ mod tests {
         assert!(node.shared.peers.lock().unwrap().is_empty());
         assert_eq!(node.read(move |lab, me| lab.retained_projection_hint(me, entry)).await, None);
         let scope = "ef".repeat(16);
-        node.shared.demands.lock().unwrap().replace(scope.clone(), 1,
-            vec![avendb::sync::LogId::Entry(entry)], Instant::now()).unwrap();
+        node.shared.interests.lock().unwrap().replace(scope.clone(), 1,
+            vec![crate::interest::Want::now(vec![avendb::sync::LogId::Entry(entry)])]).unwrap();
         // Hold the legitimate blob across the deliberately corrupted tag, so GC cannot
         // turn the authority rejection check into an unrelated missing-file test.
         let preserved = node.shared.store.add_bytes_with_opts((sealed, BlobFormat::Raw)).temp_tag().await.unwrap();

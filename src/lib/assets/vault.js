@@ -4,7 +4,7 @@
 import { holds } from '../../../game/hash.js';
 import { idOf, slug } from '$lib/ids.js';
 import { MAIA_CITY, NO_ANCHOR } from '../../../game/code/sources/feed.js';
-import { READ, deviceFile, deviceOf, deviceRows, whenBrought } from '../../../game/code/sources/device.js';
+import { READ, deviceFile, deviceOf, deviceRows } from '../../../game/code/sources/device.js';
 import { KEPT_NEWEST, fresh } from '../../../game/code/fresh.js';
 import { configAt } from '../../../game/code/index.js';
 import { buildOf } from './builds.js';
@@ -154,7 +154,6 @@ async function load({ kept = KEPT, patience = READ, vault = MAIA_CITY, newest = 
   const read = recipesOf(rows, readerOf(how), newest, true);
   if (!Object.keys(read.index.recipes).length) throw new Error(`No usable recipes in local avenDB: ${read.refused.join('; ')}`);
   const result = ready(read, null, vault, 'this device');
-  void fresher(vault, how, newest);
   return result;
  } catch (e) {
   Object.assign(recipes, { phase: 'failed', error: String(e.message ?? e) });
@@ -163,21 +162,6 @@ async function load({ kept = KEPT, patience = READ, vault = MAIA_CITY, newest = 
  }
 }
 
-/**
- * The recipes read again off the page's device once its peers brought it new edits of vault `vault` (its bring, which
- * goes on while the page reads what the device held): the builds asked for from then on read the vault as they hold it.
- * Nothing where the page has moved on to another source meanwhile.
- * @param {string} vault @param {Parameters<typeof readerOf>[0]} how @param {typeof KEPT_NEWEST} newest
- */
-async function fresher(vault, how, newest) {
-	const was = source;
-	const b = await whenBrought(vault);
-	if (!b?.ok?.new || source !== was) return;
-	const rows = await deviceRows(['recipe'], { vault });
-	if (!rows || source !== was) return;
-	const read = recipesOf(rows, readerOf(how), newest, true);
-	if (Object.keys(read.index.recipes).length) ready(read, null, String(rows[0]?.vault ?? vault), 'this device');
-}
 
 /**
  * The recipes `read` in (a ./sources/avendb.js `vaultRecipes`), of vault `vault`, read from `from` (the feed's address,

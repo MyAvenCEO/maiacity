@@ -2,7 +2,7 @@
  import { viewReadiness } from '$lib/avendb/view-readiness.js';
  import { version } from '$app/environment';
  import { onMount, tick } from 'svelte';
- import { manifestDiagnostics } from '../../../game/code/sources/manifests.js';
+ import { manifestDiagnostics } from '../../../game/code/sources/device.js';
  import { localTimings } from '$lib/avendb/local-timings.js';
  import { latencyJournal } from '$lib/avendb/latency-journal.js';
  import { lifecycle } from '$lib/avendb/lifecycle.js';

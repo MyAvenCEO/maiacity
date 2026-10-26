@@ -77,7 +77,7 @@ import AvenDB.LatestReplay
 import AvenDB.LocalDiscovery
 import AvenDB.WorkMetrics
 import AvenDB.WarmCapture
-import AvenDB.ViewDemand
+import AvenDB.Interest
 
 import AvenDB.UpkeepFamilies
 

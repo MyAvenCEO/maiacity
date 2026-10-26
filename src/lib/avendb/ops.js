@@ -36,6 +36,7 @@ export const READS = [
 	'cap_groups',
 	'code',
 	'bring',
+	'interest',
 	'demand',
 	'synced',
 	'network',
