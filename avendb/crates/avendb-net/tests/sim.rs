@@ -18,7 +18,7 @@ use avendb::lab::Lab;
 use avendb::policy::Level;
 use avendb::slice::Selector;
 use avendb::sync::LogId;
-use avendb_net::sim::{Net, seeds};
+use avendb_net::sim::{Net, replay, seeds};
 use avendb_net::{Node, Options};
 
 /// Each scenario's seeds by default: enough for CI to see a fault of each kind, few enough for its time.
@@ -35,11 +35,21 @@ async fn node(w: &mut World, net: &Net, d: SignerId, with: &[SignerId], seed: u8
 }
 
 /// Waits until `check` holds, `SETTLE` at most, never by a fixed sleep longer than a tick.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) -> Result<()> {
-    let end = tokio::time::Instant::now() + SETTLE;
+async fn until<F: Future<Output = bool>>(what: &str, check: impl FnMut() -> F) -> Result<()> {
+    within(SETTLE, what, check).await
+}
+
+/// `until`, with a bound of its own: a step a regression test holds to a time.
+async fn within<F: Future<Output = bool>>(bound: Duration, what: &str, mut check: impl FnMut() -> F) -> Result<()> {
+    let began = tokio::time::Instant::now();
+    let end = began + bound;
     while !check().await {
-        ensure!(tokio::time::Instant::now() < end, "{what}, within {SETTLE:?}");
+        ensure!(tokio::time::Instant::now() < end, "{what}, within {bound:?}");
         tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    // a slow step is named, for a soak's tail to be read
+    if began.elapsed() > Duration::from_secs(10) {
+        eprintln!("SIM slow: {what} took {:?}", began.elapsed());
     }
     Ok(())
 }
@@ -130,38 +140,48 @@ async fn a_first_device_founds_its_vault_through_the_server_alone() {
 /// and what the agent writes reaches her Mac: under a storm between the Mac and the server.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_lazy_agent_works_through_the_server_alone() {
-    seeds("lazy agent", SEEDS, LIMIT, |net| async move {
-        let mut w = world();
-        let (mac_a, phone_a, server_d, alice) = (w.mac_a, w.phone_a, w.server, w.alice);
-        relay_on(&mut w, alice);
-        w.lab.sync_all(1);
-        let mac = node(&mut w, &net, mac_a, &[], 1, Options::simulated(&net)).await?;
-        let server = node(&mut w, &net, server_d, &[], 2, Options { card: true, ..Options::simulated(&net) }).await?;
-        let agent = node(&mut w, &net, phone_a, &[], 3, Options { lazy: true, ..Options::simulated(&net) }).await?;
-        net.only(agent.id(), &[server.id()]);
-        mac.know(server.addr());
-        server.know(mac.addr());
-        agent.know(server.addr());
-        let beans = move |lab: &mut Lab, me| lab.create(me, alice, alice, "note", &[], document("Beans", "In May.", me));
-        let note = mac.act(beans).await.map_err(|e| anyhow::anyhow!("her note: {e:?}"))?;
-        let storm = tokio::spawn({
-            let (net, ids) = (net.clone(), [mac.id(), server.id()]);
-            async move { net.storm(&ids, Duration::from_secs(3)).await }
-        });
-        until("the server keeps her note, sealed", || keeps(&server, note)).await?;
-        let vaults = BTreeSet::from([alice]);
-        until("the agent brings her vault through the server", || {
-            let (agent, server, vaults) = (&agent, server.id(), vaults.clone());
-            async move { agent.bring(server, vaults).await.is_ok() && holds(agent, note).await }
-        })
-        .await?;
-        let shade = move |lab: &mut Lab, me| lab.create(me, alice, alice, "note", &[], document("Shade", "East beds.", me));
-        let draft = agent.act(shade).await.map_err(|e| anyhow::anyhow!("the agent's note: {e:?}"))?;
-        storm.await?;
-        until("the agent's note reaches the Mac through the server", || holds(&mac, draft)).await?;
-        stop(vec![agent, mac, server]).await
+    seeds("lazy agent", SEEDS, LIMIT, |net| lazy_agent(net, SETTLE)).await;
+}
+
+/// The seeds the 1,000-seed soak found slowest (30-68 s, 2026-10-26): the server's pull of her note's log waited
+/// behind another log's six McEliece keys (~6 MB on a link losing ~14%). With keys brought after the last log, the
+/// server keeps the note in a few seconds.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_new_humans_keys_hold_no_log_back() {
+    replay("lazy agent tail", &[889, 550, 133], LIMIT, |net| lazy_agent(net, Duration::from_secs(20))).await;
+}
+
+/// Alice's Mac writes a note while it and the server weather a storm; the server must keep it within `keep`.
+async fn lazy_agent(net: Net, keep: Duration) -> Result<()> {
+    let mut w = world();
+    let (mac_a, phone_a, server_d, alice) = (w.mac_a, w.phone_a, w.server, w.alice);
+    relay_on(&mut w, alice);
+    w.lab.sync_all(1);
+    let mac = node(&mut w, &net, mac_a, &[], 1, Options::simulated(&net)).await?;
+    let server = node(&mut w, &net, server_d, &[], 2, Options { card: true, ..Options::simulated(&net) }).await?;
+    let agent = node(&mut w, &net, phone_a, &[], 3, Options { lazy: true, ..Options::simulated(&net) }).await?;
+    net.only(agent.id(), &[server.id()]);
+    mac.know(server.addr());
+    server.know(mac.addr());
+    agent.know(server.addr());
+    let beans = move |lab: &mut Lab, me| lab.create(me, alice, alice, "note", &[], document("Beans", "In May.", me));
+    let note = mac.act(beans).await.map_err(|e| anyhow::anyhow!("her note: {e:?}"))?;
+    let storm = tokio::spawn({
+        let (net, ids) = (net.clone(), [mac.id(), server.id()]);
+        async move { net.storm(&ids, Duration::from_secs(3)).await }
+    });
+    within(keep, "the server keeps her note, sealed", || keeps(&server, note)).await?;
+    let vaults = BTreeSet::from([alice]);
+    until("the agent brings her vault through the server", || {
+        let (agent, server, vaults) = (&agent, server.id(), vaults.clone());
+        async move { agent.bring(server, vaults).await.is_ok() && holds(agent, note).await }
     })
-    .await;
+    .await?;
+    let shade = move |lab: &mut Lab, me| lab.create(me, alice, alice, "note", &[], document("Shade", "East beds.", me));
+    let draft = agent.act(shade).await.map_err(|e| anyhow::anyhow!("the agent's note: {e:?}"))?;
+    storm.await?;
+    until("the agent's note reaches the Mac through the server", || holds(&mac, draft)).await?;
+    stop(vec![agent, mac, server]).await
 }
 
 /// Whether the node reads message `id` in room `room`.

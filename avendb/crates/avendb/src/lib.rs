@@ -63,6 +63,7 @@ pub mod id;
 pub mod index;
 pub mod keys;
 pub mod lab;
+pub mod legacy;
 pub mod lens;
 pub mod merge;
 pub mod objective;

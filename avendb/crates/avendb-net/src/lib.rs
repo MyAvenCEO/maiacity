@@ -2509,7 +2509,7 @@ impl Shared {
         background: bool,
         catch_up: Option<&pulls::CatchUp>,
     ) -> Result<usize> {
-        self.pull_expected(endpoint, scope, background, catch_up, None).await
+        self.pull_expected(endpoint, scope, background, catch_up, None, None).await
     }
 
     /// A live hint belongs to the authenticated identity that announced it. Fence that identity before building
@@ -2521,6 +2521,7 @@ impl Shared {
         background: bool,
         catch_up: Option<&pulls::CatchUp>,
         expected: Option<SignerId>,
+        keys: Option<&mut BTreeSet<BlobId>>,
     ) -> Result<usize> {
         let _activity = self.admit()?;
         let admission = self.pulls.enter(background, catch_up).await?;
@@ -2531,7 +2532,14 @@ impl Shared {
         let mut job = self.jobs.begin("pull", peer.device.to_hex(), String::new(), 0, "edits");
         // an asking of some logs among more to come (`ask_differing`) leaves the last bringing up to date to its caller
         let must = !matches!(scope, Scope::Logs(_));
-        let asked = self.pages(endpoint, peer, scope, &mut job, admission, background).await;
+        let device = peer.device;
+        let mut named = BTreeSet::new();
+        let mut asked = self.pages(peer, scope, &mut job, admission, background, keys.unwrap_or(&mut named)).await;
+        if asked.is_ok() {
+            if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
+                asked = Err(error);
+            }
+        }
         // what its pages brought, brought up to date once more, however the asking ended
         self.catch_up_paced_class(must, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
         if matches!(asked, Ok(0)) {
@@ -2542,16 +2550,16 @@ impl Shared {
         asked
     }
 
-    /// `asking` of `peer`, connected at `endpoint`: page after page, each told to `job`, with how many of the edits it
-    /// took are each vault's and each entry's.
+    /// `asking` of `peer`: page after page, each told to `job`, with how many of the edits it took are each vault's and
+    /// each entry's, and the McEliece keys its pages named added to `keys` (`bring_keys`).
     async fn pages(
         self: &Arc<Self>,
-        endpoint: EndpointId,
         peer: Peer,
         scope: Scope,
         job: &mut Running,
         admission: Arc<pulls::Admission>,
         background: bool,
+        keys: &mut BTreeSet<BlobId>,
     ) -> Result<usize> {
         // Only the authority-first background scheduler uses the optional payload pass. A refusal, unsupported
         // signer, large edit, exhausted quota or stale scope always reaches the original legacy reconciliation.
@@ -2636,7 +2644,6 @@ impl Shared {
             }
         };
         let (mut after, mut new, mut pages) = (None, sparse, 0);
-        let mut keys = BTreeSet::<BlobId>::new();
         let (mut vaults, mut entries) = (BTreeMap::<String, u64>::new(), BTreeMap::<String, u64>::new());
         // Include initial admission, request encoding and reply wait in pipeline service time.
         // Starting after this await makes a slow one-page request appear arbitrarily fast.
@@ -2722,7 +2729,16 @@ impl Shared {
                 _ => break,
             }
         }
-        // the keys its pages named that it lacks, in one request at the end
+        Ok(new)
+    }
+
+    /// The McEliece keys a pull's pages named that this device lacks, from `device` at `endpoint` in one request, once
+    /// every page of the asking is taken: an asking of many logs (`ask_differing`) brings them after its last log, so
+    /// no log waits on another's keys (a new human's six keys, ~6 MB, held the next log ~40 s on a lossy link).
+    async fn bring_keys(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, keys: BTreeSet<BlobId>, background: bool) -> Result<()> {
+        if keys.is_empty() {
+            return Ok(());
+        }
         let fetching = Instant::now();
         let lacking =
             move |lab: &Lab, me| -> Vec<BlobId> { keys.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect() };
@@ -2737,7 +2753,7 @@ impl Shared {
                 self.changed.notify_one();
             }
         }
-        Ok(new)
+        Ok(())
     }
 
     /// Pure signature checks own their page, lifecycle ticket and caller context but never the Lab
@@ -3202,7 +3218,7 @@ impl Shared {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
         let mut left = self.differ(peer.device).await;
-        let mut new = 0;
+        let (mut new, mut keys) = (0, BTreeSet::new());
         let asked = loop {
             let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
             let logs = {
@@ -3217,11 +3233,18 @@ impl Shared {
             if logs.is_empty() {
                 break Ok(new);
             }
-            match self.pull(endpoint, Scope::Logs(logs), true, None).await {
+            match self.pull_expected(endpoint, Scope::Logs(logs), true, None, None, Some(&mut keys)).await {
                 Ok(got) => new += got,
                 Err(e) => break Err(e),
             }
         };
+        // the keys every log named, after the last log (`bring_keys`); after a failed asking only while its connection
+        // lives, so no fetch waits out its timeouts on a dead one
+        if asked.is_err() && self.live(endpoint).is_none() {
+            keys.clear();
+        }
+        let brought = self.bring_keys(endpoint, peer.device, keys, true).await;
+        let asked = asked.and_then(|new| brought.map(|()| new));
         // what every asking brought, brought up to date at last, however it ended
         self.catch_up_paced_class(true, lab_schedule::Class::Background).await;
         asked
@@ -3370,7 +3393,7 @@ mod tests {
         lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint")).unwrap();
         let prepared = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, prepared.draft, &[]).unwrap();
-        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        let offer = lab.entry_base_offer(mac, phone, entry).unwrap();
         lab.receive(phone, offer.evidence, vec![]);
         let mut suffix = Vec::new();
         for n in 0..40 {
@@ -3408,7 +3431,7 @@ mod tests {
         lab.edit(mac,vault,entry,|i|i.set_text(2,"checkpoint")).unwrap();
         let prepared=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,prepared.draft,&[]).unwrap();
-        let offer=lab.entry_projection_offer(mac,pad,entry).unwrap();
+        let offer=lab.entry_base_offer(mac,pad,entry).unwrap();
         lab.receive(pad,offer.evidence,vec![]);lab.receive(pad,vec![signed],vec![]);
         let node=Node::spawn(lab.split(pad,&[owner],[41;32]),pad,Options::local()).await.unwrap();
         node.tasks.lock().unwrap().iter().for_each(|task|task.abort());
