@@ -63,7 +63,8 @@
 //!
 //! A Classic McEliece public key travels as a blob beside the edits that name it (`policy::Edit::blobs`): a device
 //! keeps the blobs of the edits it keeps, each only if it hashes to its id, and seals to a key once it holds that key's
-//! blob. Every edit is signed with ML-DSA-65, or SLH-DSA by a signer made before the key move (`sign`), so every
+//! blob. Every edit is signed with ML-DSA-65, or was signed in SLH-DSA before the fork and counts by the legacy anchor
+//! (`legacy`), so every
 //! device counts every edit that stands, and trusts no curve.
 //! Devices sync by what each holds of each log and the vaults each follows (`follow`), gossip one digest per log in
 //! random orders, and go offline and come back; a device restored from a backup forks from what it made since
@@ -111,7 +112,6 @@ use serde_json::Value;
 use zeroize::Zeroizing;
 
 use crate::batch::{self, SignerLog};
-use crate::cast;
 use crate::doc::{Item, Version};
 use crate::encode::{self, box_info, share_context, share_select_info, write_context};
 use crate::gate;
@@ -125,15 +125,14 @@ use crate::ops::Loc;
 use crate::perf::Perf;
 use crate::policy::{
     Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal, Proposal,
-    Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who, Why, Wrap, Write, acting, covered,
+    Readings, Refusal, Replay, Share, Sharing, State, Who, Why, Wrap, Write, covered,
     mk_audience, replay, replay_on, replay_on_why,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
 use crate::sign::{
-    self, ApiPass, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, SUITES, Signature, Signed, SignerKeys,
-    Suite, WebAuthn,
+    self, ApiPass, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, Signed, SignerKeys, WebAuthn,
 };
 use crate::slice::{
     Attrs, Body, CAP_GROUP_TYPE, Header, LENS_TYPE, SCHEMA_TYPE, Select, Selector, Slice, Sym, TagDelta,
@@ -148,9 +147,6 @@ use crate::world;
 /// entries, one to seal the keys of the audiences they moved to and link their history, one to answer what moved, one
 /// to find nothing left. More means an edit the rules refuse, made again and again.
 const ROUNDS: usize = 10;
-
-/// The most edits one checkpoint covers: a key move's covers more as several, each a few hundred kilobytes at most.
-const CHECKPOINT_COVERS: usize = 4096;
 
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
 type Blobs = HashMap<BlobId, Arc<[u8]>>;
@@ -286,16 +282,6 @@ impl Unsigned {
     pub fn challenge(&self) -> [u8; 32] {
         if self.batch.is_empty() { self.edit.id().0 } else { sign::batch_challenge(&self.batch) }
     }
-}
-
-/// The edits of one vault a checkpoint by its person's key may cover (`Lab::vouch`), each in the order its device
-/// holds it.
-struct Vouch {
-    vault: VaultId,
-    /// Those every SLH-DSA signer of which moved to its next key, or acts for the vault no more.
-    ready: Vec<EditId>,
-    /// Those that wait on signers that still act for the vault in SLH-DSA, each with those signers.
-    waiting: Vec<(EditId, Vec<SignerId>)>,
 }
 
 /// Edits drafted on a device one after another, each building on those drafted before it, for its passkeys to sign all
@@ -1321,13 +1307,7 @@ impl Lab {
     /// The passkey a software passkey's secret makes again (`passkey_secret`), as a platform syncs a passkey to another
     /// of its person's devices: a page holding its person's passkey (P8d) brings it into its Lab this way.
     pub fn passkey_from(&mut self, name: &str, secret: [u8; 32]) -> SignerId {
-        self.passkey_from_in(name, secret, sign::SIGNING)
-    }
-
-    /// `passkey_from`, its post-quantum key in suite `suite`: the same passkey in either suite, as its one PRF output
-    /// derives both keys, and so two signers, the second its next key (the key move).
-    pub fn passkey_from_in(&mut self, name: &str, secret: [u8; 32], suite: Suite) -> SignerId {
-        let key = Passkey::from_seed_in(secret, suite);
+        let key = Passkey::from_seed(secret);
         key.seal_secret().prepare();
         let id = key.id();
         self.keys.insert(id, Key::Passkey(key));
@@ -1376,33 +1356,25 @@ impl Lab {
     /// (`sign::device_salt`), or, for a device made since 2026-10-10, a secret of its own that this output masks. It
     /// starts unlocked.
     pub fn device_with(&mut self, name: &str, secret: [u8; 32]) -> SignerId {
-        self.device_with_in(name, secret, sign::SIGNING)
+        self.add_device(DeviceKey::from_secret(secret), name)
     }
 
-    /// `device_with`, its post-quantum key in suite `suite`: from one secret, a device in each suite, the second its
-    /// next key (the key move).
-    pub fn device_with_in(&mut self, name: &str, secret: [u8; 32], suite: Suite) -> SignerId {
-        self.add_device(DeviceKey::from_secret_in(secret, suite), name)
-    }
-
-    /// Device `id`, whose keys come from `secret`, as `device_with` makes it, in whichever suite they are its
-    /// (`DeviceKey::of`): so a device made before the key move opens as itself. `None` if they are another device's.
+    /// Device `id`, whose keys come from `secret`, as `device_with` makes it (`DeviceKey::of`). `None` if they are
+    /// another device's.
     pub fn device_as(&mut self, name: &str, secret: [u8; 32], id: SignerId) -> Option<SignerId> {
         Some(self.add_device(DeviceKey::of(secret, id)?, name))
     }
 
     /// A passkey in the platform's authenticator (P8e), whose P-256 key is `p256`, as a ceremony of it over any
     /// challenge showed it (`sign::Ceremony`): the Lab holds its keys and the public key sealed to it, which the
-    /// ceremony's PRF output derives, and no secret. It signs in ceremonies alone (`complete`). The PRF output derives
-    /// its keys in each suite, and the Lab holds both, so that whichever its vault knows signs (`engine::passkey_of`),
-    /// the other its next key (the key move): their ids, the suite new signers are made in first (`sign::SUITES`).
-    /// `None` unless the ceremony's assertion is that key's.
-    pub fn web_passkey(&mut self, name: &str, p256: [u8; 33], ceremony: &Ceremony) -> Option<[SignerId; 2]> {
+    /// ceremony's PRF output derives, and no secret. It signs in ceremonies alone (`complete`). Its id; `None` unless
+    /// the ceremony's assertion is that key's.
+    pub fn web_passkey(&mut self, name: &str, p256: [u8; 33], ceremony: &Ceremony) -> Option<SignerId> {
         let assertion = ceremony.assertion()?;
         if !ceremony.challenge().is_some_and(|c| assertion.verify(&p256, EditId(c))) {
             return None;
         }
-        Some(SUITES.map(|suite| self.web_key(name, ceremony.keys_in(p256, suite), ceremony)))
+        Some(self.web_key(name, ceremony.keys(p256), ceremony))
     }
 
     /// The owner key whose keys are `keys`, held as `web_passkey` and `web_enclave` hold it, from `ceremony`, its
@@ -1423,23 +1395,21 @@ impl Lab {
     }
 
     /// A Touch ID key in a Mac's Secure Enclave, as a ceremony of it over any challenge showed it (`sign::Ceremony::
-    /// enclave`), held as `web_passkey` holds a passkey: its keys and the public key sealed to it, and no secret, in
-    /// each suite, so that whichever its vault knows signs (the key move). It signs in ceremonies alone (`complete`).
-    /// Its id in the suite new signers are made in. `None` unless it is a Touch ID key's ceremony whose Enclave
+    /// enclave`), held as `web_passkey` holds a passkey: its keys and the public key sealed to it, and no secret. It
+    /// signs in ceremonies alone (`complete`). Its id. `None` unless it is a Touch ID key's ceremony whose Enclave
     /// signature verifies.
     pub fn web_enclave(&mut self, name: &str, ceremony: &Ceremony) -> Option<SignerId> {
         let keys = ceremony.enclave_keys()?;
         let challenge = ceremony.challenge()?;
         ceremony.sign(keys, EditId(challenge))?;
-        let [new, _] = SUITES.map(|suite| self.web_key(name, ceremony.keys_in([0; 33], suite), ceremony));
-        Some(new)
+        Some(self.web_key(name, keys, ceremony))
     }
 
     /// The keys of owner key `s`, held as `web_passkey` and `web_enclave` hold them if the Lab doesn't hold them yet and
     /// `ceremony` is that key's: so a Mac its Touch ID key opened, with no passkey's ceremony, takes its person's passkey
     /// in from the first ceremony it makes, as for a change only the vault's root makes (2026-10-19). A passkey's are
-    /// those of the key its assertion recovers to whose keys hash to `s`, in either suite, as are a Touch ID key's: so
-    /// a device takes in an owner key another device moved to ML-DSA-65 (the key move). `None` if neither is at hand.
+    /// those of the key its assertion recovers to whose keys hash to `s`, as are a Touch ID key's. `None` if neither is at
+    /// hand.
     pub fn take_in(&mut self, s: SignerId, ceremony: &Ceremony) -> Option<SignerKeys> {
         if let Some(keys) = self.keys_of(s) {
             return Some(keys);
@@ -1448,591 +1418,11 @@ impl Lab {
         let challenge = EditId(ceremony.challenge()?);
         let keys = match ceremony.assertion() {
             Some(a) => a.recover().into_iter().find_map(|p256| ceremony.keys_of(p256, s)),
-            None => SUITES.map(|suite| ceremony.keys_in([0; 33], suite)).into_iter().find(|k| k.id() == s),
+            None => ceremony.enclave_keys().filter(|k| k.id() == s),
         }?;
         ceremony.sign(keys, challenge)?;
         self.web_key(&name, keys, ceremony);
         self.keys_of(s)
-    }
-
-    /// Of `keys`, the one the vault device `d` belongs to knows as an owner: so a device that holds its person's
-    /// passkey in each suite (`web_passkey`) acts as one their vault knows (the key move). First one in the suite new
-    /// signers are made in whose approval alone is the vault's, as the move adds it beside the earlier key, which
-    /// stays the root (`draft_move`); then its root; then any owner. `None` if it knows none of them, or the device
-    /// belongs to no vault.
-    pub fn owner_among(&self, d: SignerId, keys: &[SignerId]) -> Option<SignerId> {
-        let id = self.vault_of(d)?;
-        let st = self.state(d);
-        let vault = st.vault(id)?;
-        let owner = |k: &&SignerId| vault.owners.contains(&Principal::Signer(**k));
-        let next = |k: &SignerId| self.keys_of(*k).is_some_and(|x| x.suite() == sign::SIGNING);
-        let alone = keys.iter().filter(owner).find(|&k| next(k) && st.approves(&[*k], Principal::Vault(id)));
-        let root = keys.iter().find(|&&k| vault.root == Some(k));
-        alone.or(root).or_else(|| keys.iter().find(owner)).copied()
-    }
-
-    /// Device `d`, whose keys come from `secret`, in each suite (the key move, K3b), as `web_passkey` holds a passkey:
-    /// the one it signs as now and the other, its next key before the move, or after it the key it moved from, held
-    /// beside it where the Lab doesn't hold them yet, with no store of their own, for the edits that move it to name
-    /// and sign (`draft_move`, `finish_move`). One secret makes both, with the same iroh endpoint and the same key keys
-    /// are sealed to: so the device opens again as its next key on the same shelf (`moved`), and what it wrapped under
-    /// `own_key` opens as before. The Mac holds each drive it hosts so too, to move it beside its own device. Locking a
-    /// device of the Lab forgets them. Their ids, the suite new signers are made in first; `None` if `secret` isn't
-    /// `d`'s.
-    pub fn device_keys(&mut self, d: SignerId, secret: [u8; 32]) -> Option<[SignerId; 2]> {
-        DeviceKey::of(secret, d)?;
-        let name = self.names.get(&d).cloned().unwrap_or_else(|| "a device".into());
-        Some(SUITES.map(|suite| {
-            let key = DeviceKey::from_secret_in(secret, suite);
-            let id = key.id();
-            if !self.keys.contains_key(&id) {
-                key.seal_secret().prepare();
-                self.keys.insert(id, Key::Device(key));
-                self.names.entry(id).or_insert_with(|| name.clone());
-            }
-            id
-        }))
-    }
-
-    /// The next key of signer `s` (the key move, K3b), in the suite new signers are made in, where `s` signs in
-    /// another and the Lab holds both: the same passkey's other key (`web_passkey`), by its P-256 key; the same Touch
-    /// ID key's (`web_enclave`), by its Enclave's key; the same device's (`device_keys`), by its ed25519 key. `None` if
-    /// `s` is in that suite already, or either key isn't at hand.
-    pub fn next_key(&self, s: SignerId) -> Option<SignerId> {
-        self.next_of(self.keys_of(s)?)
-    }
-
-    /// The next key the Lab holds of the signer whose keys are `keys` (`next_key`), whether or not it holds that
-    /// signer.
-    fn next_of(&self, keys: SignerKeys) -> Option<SignerId> {
-        if keys.suite() == sign::SIGNING {
-            return None;
-        }
-        let held = self.keys.values().map(Key::keys).filter(|k| k.suite() == sign::SIGNING && same_key(&keys, k));
-        held.map(|k| k.id()).min()
-    }
-
-    /// The signers among `signers` whose next key is among them too, as device `d` saw them sign or holds them
-    /// (`signers_seen`), each with that key: an earlier key the key move kept beside its next (`draft_move`), the
-    /// same passkey, Touch ID key or device.
-    pub fn earlier_keys(&self, d: SignerId, signers: &BTreeSet<SignerId>) -> BTreeMap<SignerId, SignerId> {
-        let seen = self.signers_seen(d, signers);
-        let next = |keys: &SignerKeys| {
-            let next = seen.values().filter(|k| k.suite() == sign::SIGNING && same_key(keys, k));
-            next.map(|k| k.id()).min()
-        };
-        let earlier = seen.iter().filter(|(_, k)| k.suite() != sign::SIGNING);
-        earlier.filter_map(|(&s, k)| Some((s, next(k)?))).collect()
-    }
-
-    /// What device `on` moves to ML-DSA-65 now (the key move, K3b), each signer with its next key: each owner key of
-    /// the vault it belongs to that signs in SLH-DSA and whose next key is at hand (`next_key`), and the Touch ID key
-    /// whose Enclave's key `touch` names (`sign::enclave_key`), as a touch of it signs as its next key too; the master
-    /// recovery key made before the move, whose next key is the one the Lab adds (`set_recovery`, K4); and each
-    /// device of that vault whose next key the Lab holds (`device_keys`): `on`, or the key `on` moved from, where it
-    /// is in the vault still, and any device `on` runs beside it, as the Mac runs its drives. A signer whose next key
-    /// is in the vault already moved: the move keeps the earlier key beside it (`draft_move`). Nothing once they all
-    /// moved, or if `on` belongs to no vault.
-    pub fn moves(&self, on: SignerId, touch: Option<[u8; 32]>) -> Vec<(SignerId, SignerId)> {
-        let Some(vault) = self.vault_of(on).and_then(|v| self.state(on).vault(v)) else {
-            return vec![];
-        };
-        let owners = vault.owners.iter().filter_map(|p| if let Principal::Signer(s) = *p { Some(s) } else { None });
-        let signers: BTreeSet<SignerId> = owners.chain(vault.devices.iter().copied()).collect();
-        let next = |keys: SignerKeys| match keys {
-            SignerKeys::Enclave { mldsa, slh: Some(_) } if Some(mldsa) == touch => {
-                Some(SignerKeys::Enclave { mldsa, slh: None }.id())
-            }
-            _ => self.next_of(keys),
-        };
-        let seen = self.signers_seen(on, &signers);
-        let next = |keys| next(keys).filter(|n| !signers.contains(n));
-        seen.into_iter().filter_map(|(s, keys)| Some((s, next(keys)?))).collect()
-    }
-
-    /// The devices of each aven or device vault that the vault device `on` belongs to owns, up the chain, that sign in
-    /// another suite than new signers are made in and whose next key isn't a device beside them yet, as `on`'s view and
-    /// the signatures it holds say, each with its endpoint, its ed25519 key: the server and the agents of its person's
-    /// coop's aven, which their own move (`moves`) doesn't reach, as they belong to the aven. `on` asks each for its next
-    /// key (`move_key`) and adds it with theirs (`draft_move`; the key move, K3c). None if `on` belongs to no vault.
-    pub fn aven_devices(&self, on: SignerId) -> Vec<(SignerId, [u8; 32])> {
-        let Some(mine) = self.vault_of(on) else {
-            return vec![];
-        };
-        let st = self.state(on);
-        let governed: Vec<&Vault> = st.vaults().iter().filter(|v| claimable(v.kind) && st.owns(mine, v.id)).collect();
-        let devices: BTreeSet<SignerId> = governed.iter().flat_map(|v| v.devices.iter().copied()).collect();
-        let seen = self.signers_seen(on, &devices);
-        let next = |keys: &SignerKeys| seen.values().any(|k| k.suite() == sign::SIGNING && same_key(keys, k));
-        let mut out = vec![];
-        for (d, keys) in governed.iter().flat_map(|v| &v.devices).filter_map(|d| Some((*d, seen.get(d)?))) {
-            if let SignerKeys::Device { ed25519, .. } = keys
-                && keys.suite() != sign::SIGNING
-                && !next(keys)
-                && !out.iter().any(|&(o, _)| o == d)
-            {
-                out.push((d, *ed25519));
-            }
-        }
-        out
-    }
-
-    /// Every device of each aven or device vault the vault device `on` belongs to governs, up the chain, whichever
-    /// suite it signs in: its person's coop's server and agents (`aven_devices`). None if `on` belongs to no vault.
-    pub fn governed_devices(&self, on: SignerId) -> BTreeSet<SignerId> {
-        let Some(mine) = self.vault_of(on) else {
-            return BTreeSet::new();
-        };
-        let st = self.state(on);
-        let governed = st.vaults().iter().filter(|v| claimable(v.kind) && st.owns(mine, v.id));
-        governed.flat_map(|v| v.devices.iter().copied()).collect()
-    }
-
-    /// The edits that move `moves`' signers to their next keys (`moves`) on device `on`, drafted together for one
-    /// ceremony of each owner key among them (`drafting`): an owner key adds its next key as an owner, which signs too
-    /// (with the root, where an owner's approval alone isn't the vault's), but `by` adds the master recovery key's,
-    /// whose secret is offline and which signs by its standing consent (K4); then the vault's approval, by `by` or its
-    /// next key, adds each device's next key, which signs too, to the vault the device belongs to: `on`'s, or, last,
-    /// an aven or a device vault that approval governs, for its server or an agent, whose next key the device handed
-    /// (`move_key`) and signs in (`claim`, `accept_claim`; K3c). It only adds: every earlier key stays an owner or a
-    /// device beside its next, the root where it was, as one secret makes both and nothing moves away from the person
-    /// (Samuel 2026-10-20, "Add, never remove"). A removal cuts every edit resting on what it removes that its drafter
-    /// doesn't hold (T16), so a move drafted on a device that didn't hold one of the person's vaults yet erased that
-    /// vault on every device it reached; an addition cuts nothing, on whatever view it was drafted. Every step is an
-    /// edit avenDB's Lean model's `keyMove` makes: no edit is signed again, nothing founded again, and the old edits
-    /// keep their signatures. Each step is drafted only where it is still to be made, so a move cut short goes on
-    /// where it stopped, and nothing is drafted once the keys moved. `NotActing` if `on` belongs to no vault;
-    /// otherwise why `on`'s view refuses a step.
-    pub fn draft_move(
-        &self,
-        on: SignerId,
-        moves: &[(SignerId, SignerId)],
-        by: SignerId,
-    ) -> Result<Vec<Unsigned>, Refusal> {
-        let vault = self.vault_of(on).ok_or(Refusal::NotActing)?;
-        let approves = |view: &State, s: &[SignerId]| view.approves(s, Principal::Vault(vault));
-        let owner = |view: &State, s| view.vault(vault).is_some_and(|v| v.owners.contains(&Principal::Signer(s)));
-        let root = |view: &State| view.vault(vault).and_then(|v| v.root);
-        let mut drafting = self.drafting(on);
-        let view = drafting.view();
-        let owners = moves.iter().copied().filter(|&(old, new)| owner(&view, old) && !owner(&view, new));
-        for (old, new) in owners {
-            let adder = if Some(new) == self.recovery() { by } else { old };
-            let mut signers = vec![adder];
-            signers.extend(root(&view).filter(|&r| r != adder && !approves(&view, &[adder])));
-            signers.push(new);
-            let (seal_to, blobs) = self.next_seal(on, &view, old, new);
-            let add = Sharing::Owner { vault, owner: Principal::Signer(new), seal_to };
-            drafting.draft(&signers, Action::Share(add))?;
-            drafting.drafts.last_mut().expect("drafted").blobs.extend(blobs);
-        }
-        let view = drafting.view();
-        let by = moves.iter().find(|&&(old, _)| old == by).map_or(by, |&(_, new)| new);
-        // each device's next key joins the vault the device belongs to: the person's own, or an aven or a device vault
-        // they govern, its server's and its agents' (K3c), after theirs
-        let of = |old| match view.is_device(old, vault) {
-            true => Some(vault),
-            false => view.vaults().iter().find(|v| claimable(v.kind) && v.devices.contains(&old)).map(|v| v.id),
-        };
-        let joining = moves.iter().filter_map(|&(old, new)| Some((old, new, of(old)?)));
-        let mut joining: Vec<_> = joining.filter(|&(_, new, v)| !view.is_device(new, v)).collect();
-        joining.sort_by_key(|&(_, _, v)| v != vault);
-        for (old, new, v) in joining {
-            let (seal_to, blobs) = self.next_seal(on, &view, old, new);
-            drafting.draft(&[by, new], Action::Share(Sharing::Device { vault: v, device: new, seal_to }))?;
-            drafting.drafts.last_mut().expect("drafted").blobs.extend(blobs);
-        }
-        // last, by the next key (never an SLH-DSA key, whose signature it does away with), a checkpoint over each vault
-        // that approval governs: the edits `on` holds that carry
-        // an SLH-DSA signature, whose signers acted for that vault, held from then on without their signatures
-        // (`Checkpoint.lean`), so no device checks an SLH-DSA signature again
-        let next =
-            moves.iter().any(|&(_, new)| new == by) || self.keys_of(by).is_some_and(|k| k.suite() != Suite::SlhDsa);
-        if next {
-            self.draft_checkpoints(on, &mut drafting, by)?;
-        }
-        Ok(drafting.done())
-    }
-
-    /// On top of `drafting`, by `by`, a next key, a checkpoint over each vault `by` approves for, covering what
-    /// `uncovered` finds, in parts of at most `CHECKPOINT_COVERS` edits.
-    fn draft_checkpoints(&self, on: SignerId, drafting: &mut Drafting, by: SignerId) -> Result<(), Refusal> {
-        for (vault, covers) in self.uncovered(on, &drafting, by) {
-            for part in covers.chunks(CHECKPOINT_COVERS) {
-                drafting.draft(&[by], Action::Checkpoint { vault, covers: part.to_vec() })?;
-            }
-        }
-        Ok(())
-    }
-
-    /// Device `on`'s checkpoints alone, signed by `by` (its person's key, moved to ML-DSA-65): over the edits earlier
-    /// keys signed that no checkpoint covers yet (`uncovered`), for a person with nothing left to move or retire whose
-    /// keys moved before a move drafted checkpoints, or whose vaults took such edits since. Without `all`, only those
-    /// no earlier key signs any more (`Vouch::ready`), as each unlock asks: an edit of a key still to move is covered
-    /// at its own move, not by a ceremony at each unlock until then. With `all`, as its person asks for it, every one
-    /// `by` may vouch for, the edits of keys that still sign the old way too (`Vouch::waiting`): the vault's owners
-    /// approve anything it may do, so their word adds no power (`Checkpoint.lean`). Empty if there are none.
-    pub fn draft_checkpoint(&self, on: SignerId, by: SignerId, all: bool) -> Result<Vec<Unsigned>, Refusal> {
-        if self.keys_of(by).is_none_or(|k| k.suite() == Suite::SlhDsa) {
-            return Ok(vec![]);
-        }
-        let mut drafting = self.drafting(on);
-        for Vouch { vault, ready, waiting } in self.vouch(on, &drafting, by) {
-            let mut covers = ready;
-            if all {
-                covers.extend(waiting.into_iter().map(|(id, _)| id));
-            }
-            for part in covers.chunks(CHECKPOINT_COVERS) {
-                drafting.draft(&[by], Action::Checkpoint { vault, covers: part.to_vec() })?;
-            }
-        }
-        Ok(drafting.done())
-    }
-
-    /// For each vault `by` approves on device `on`, the edits a checkpoint by `by` may cover (`uncovered`), in `log`'s
-    /// order: those whose SLH-DSA signers all moved to their next keys or act for the vault no more, and those that
-    /// wait on a signer that still acts for it in SLH-DSA, each with those signers.
-    fn vouch(&self, on: SignerId, drafting: &Drafting, by: SignerId) -> Vec<Vouch> {
-        let store = self.held(on);
-        let view = &drafting.replay.state;
-        let slh = |id: &EditId| -> Vec<SignerId> {
-            let sigs = store.signed.get(id).map(|s| s.sigs.as_slice()).unwrap_or_default();
-            sigs.iter().filter(|x| x.keys.suite() == Suite::SlhDsa).map(|x| x.keys.id()).collect()
-        };
-        let uncovered = self.uncovered(on, drafting, by);
-        let mut signers: BTreeSet<SignerId> = uncovered.iter().flat_map(|(_, ids)| ids.iter().flat_map(slh)).collect();
-        // beside each vault's owners and devices, among which a moved key's next key is
-        for v in uncovered.iter().filter_map(|(v, _)| view.vault(*v)) {
-            signers.extend(v.devices.iter().copied());
-            signers.extend(v.owners.iter().filter_map(|p| match p {
-                Principal::Signer(s) => Some(*s),
-                _ => None,
-            }));
-        }
-        let moved = self.earlier_keys(on, &signers);
-        let mut out = vec![];
-        for (vault, covers) in uncovered {
-            let done = |s: &SignerId| moved.contains_key(s) || !view.acts_for(*s, vault);
-            let (mut ready, mut waiting) = (vec![], vec![]);
-            for id in covers {
-                let held: Vec<SignerId> = slh(&id).into_iter().filter(|s| !done(s)).collect();
-                match held.is_empty() {
-                    true => ready.push(id),
-                    false => waiting.push((id, held)),
-                }
-            }
-            out.push(Vouch { vault, ready, waiting });
-        }
-        out
-    }
-
-    /// Where device `on`'s old signatures stand for a checkpoint, as its Performance page shows it: what one by its
-    /// person's key at hand (`vouching_key`) would cover now, by vault, `ready` as each unlock offers it and `waiting`
-    /// on a key that still signs in SLH-DSA, and those keys, the most edits first, each with what it is of which vault;
-    /// and `others`, the edits no checkpoint of theirs may cover, whose signers never acted for a vault they govern.
-    /// Null while no key of theirs in ML-DSA-65 is at hand.
-    pub fn vouching(&self, on: SignerId) -> Value {
-        let Some(by) = self.vouching_key(on) else {
-            return Value::Null;
-        };
-        let drafting = self.drafting(on);
-        let vouch = self.vouch(on, &drafting, by);
-        let view = &drafting.replay.state;
-        let mut keys: BTreeMap<SignerId, usize> = BTreeMap::new();
-        for (_, held) in vouch.iter().flat_map(|v| &v.waiting) {
-            held.iter().for_each(|s| *keys.entry(*s).or_default() += 1);
-        }
-        let seen = self.signers_seen(on, &keys.keys().copied().collect());
-        let what = |s: SignerId| {
-            let device = view.vaults().iter().find(|v| v.devices.contains(&s)).map(|v| ("device", v.id));
-            let owner =
-                || view.vaults().iter().find(|v| v.owners.contains(&Principal::Signer(s))).map(|v| ("owner", v.id));
-            let recovery = seen.get(&s).is_some_and(|k| self.is_recovery(k));
-            match device.or_else(owner) {
-                Some((_, v)) if recovery => ("recovery", Some(v)),
-                Some((role, v)) => (role, Some(v)),
-                None => (if recovery { "recovery" } else { "signer" }, None),
-            }
-        };
-        let mut keys: Vec<(SignerId, usize)> = keys.into_iter().collect();
-        keys.sort_by_key(|&(s, n)| (std::cmp::Reverse(n), s));
-        let hex = |v: VaultId| crate::words::hex(&v.0);
-        let keys: Vec<Value> = keys
-            .into_iter()
-            .map(|(s, n)| {
-                let (role, of) = what(s);
-                serde_json::json!({ "signer": s.to_hex(), "role": role, "of": of.map(hex), "edits": n })
-            })
-            .collect();
-        let ready: usize = vouch.iter().map(|v| v.ready.len()).sum();
-        let waiting: usize = vouch.iter().map(|v| v.waiting.len()).sum();
-        let vaults: Vec<Value> = vouch
-            .iter()
-            .map(|v| serde_json::json!({ "vault": hex(v.vault), "ready": v.ready.len(), "waiting": v.waiting.len() }))
-            .collect();
-        let others = self.uncovered_count(on).saturating_sub(ready + waiting);
-        serde_json::json!({ "by": by.to_hex(), "ready": ready, "waiting": waiting, "vaults": vaults, "keys": keys, "others": others })
-    }
-
-    /// The key of device `on`'s person a checkpoint of theirs is signed by (`draft_checkpoint`), as the Lab holds
-    /// their keys: an owner key of the vault `on` belongs to, in ML-DSA-65, whose approval alone is the vault's where
-    /// one is (`owner_among`). None while none is at hand.
-    pub fn vouching_key(&self, on: SignerId) -> Option<SignerId> {
-        let next = |k: &SignerId| self.keys_of(*k).is_some_and(|x| x.suite() == sign::SIGNING);
-        let held: Vec<SignerId> = self.keys.keys().copied().filter(next).collect();
-        self.owner_among(on, &held).filter(next)
-    }
-
-    /// How many of device `on`'s edits carry an SLH-DSA signature no checkpoint it holds covers, and so still need
-    /// their signatures checked: none left, on a device holding everything, and its old signature code can go (K6).
-    pub fn uncovered_count(&self, on: SignerId) -> usize {
-        let store = self.held(on);
-        let slh = |s: &Signed| s.sigs.iter().any(|x| x.keys.suite() == Suite::SlhDsa);
-        store.log.ids().iter().filter(|id| !store.covers.contains(id) && store.signed.get(id).is_some_and(slh)).count()
-    }
-
-    /// `uncovered_count` by the vault each edit is of (`sync::log_of`), most first: `{vault, edits}`, the vault's id.
-    pub fn uncovered_by(&self, on: SignerId) -> Vec<Value> {
-        let store = self.held(on);
-        let st = store.view();
-        let slh = |s: &Signed| s.sigs.iter().any(|x| x.keys.suite() == Suite::SlhDsa);
-        let vault = |id: &EditId| {
-            let e = &store.signed.get(id)?.edit;
-            match crate::sync::log_of(e, *id)? {
-                LogId::Vault(v) | LogId::Audience(v, _) => Some(v),
-                LogId::Entry(en) => st.entry(en).map(|en| en.vault),
-                LogId::Share(c) => st.share(c).map(|cp| cp.share.over),
-            }
-        };
-        let mut by: BTreeMap<Option<VaultId>, usize> = BTreeMap::new();
-        for id in store.log.ids().iter().filter(|id| !store.covers.contains(id)) {
-            if store.signed.get(id).is_some_and(slh) {
-                *by.entry(vault(id)).or_default() += 1;
-            }
-        }
-        let mut out: Vec<(Option<VaultId>, usize)> = by.into_iter().collect();
-        out.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-        out.into_iter()
-            .map(|(v, n)| serde_json::json!({ "vault": v.map(|v| crate::words::hex(&v.0)), "edits": n }))
-            .collect()
-    }
-
-    /// For each vault `by` approves in `log`, `on`'s edits, drafted moves among them, a checkpoint over it would cover
-    /// that none covers yet: those that stand and carry an SLH-DSA signature, every signer of which acted for the vault
-    /// just before or just after it (`acting`). Each edit under the first vault, in `log`'s order, that may cover it.
-    fn uncovered(&self, on: SignerId, drafting: &Drafting, by: SignerId) -> Vec<(VaultId, Vec<EditId>)> {
-        let store = self.held(on);
-        let (log, view) = (&drafting.log, &drafting.replay.state);
-        let vaults: Vec<VaultId> =
-            view.vaults().iter().map(|v| v.id).filter(|&v| view.approves(&[by], Principal::Vault(v))).collect();
-        // signed by an SLH-DSA key: as its signatures say, or, for an edit of the move not signed yet, its keys at hand
-        let slh = |id: &EditId, e: &Edit| match store.signed.get(id) {
-            Some(s) => s.sigs.iter().any(|x| x.keys.suite() == Suite::SlhDsa),
-            None => e.sigs().any(|s| self.keys_of(s).is_some_and(|k| k.suite() == Suite::SlhDsa)),
-        };
-        let edits = log.ids().iter().zip(log.edits());
-        let watch: HashMap<EditId, Vec<VaultId>> = edits
-            .filter(|(id, e)| !store.covers.contains(id) && slh(id, e))
-            .map(|(&id, _)| (id, vaults.clone()))
-            .collect();
-        if watch.is_empty() {
-            return vec![];
-        }
-        let acts = acting(log.edits(), &watch);
-        let mut out: Vec<(VaultId, Vec<EditId>)> = vaults.iter().map(|&v| (v, vec![])).collect();
-        for id in log.ids().iter().filter(|id| watch.contains_key(id)) {
-            if let Some((_, covers)) = out.iter_mut().find(|(v, _)| acts.contains(&(*id, *v))) {
-                covers.push(*id);
-            }
-        }
-        out.retain(|(_, covers)| !covers.is_empty());
-        out
-    }
-
-    /// The key to seal to of `new`, the next key of `old` (`draft_move`), for the edit that adds it: its own where
-    /// the Lab holds it, else `old`'s as `view` knows it, the same, as one secret makes both; and the McEliece key it
-    /// names, as the Lab or device `on` holds it.
-    fn next_seal(&self, on: SignerId, view: &State, old: SignerId, new: SignerId) -> (Option<PublicKey>, Blobs) {
-        let (key, blob) = match self.seal_public(new) {
-            Some((key, blob)) => (key, Some(blob)),
-            None => match view.seal_key(old) {
-                Some(key) => (key.clone(), self.blob(on, key.mceliece)),
-                None => return (None, Blobs::new()),
-            },
-        };
-        let blobs = blob.map(|b| (key.mceliece, b)).into_iter().collect();
-        (Some(key), blobs)
-    }
-
-    /// Sign the move's edits (`draft_move`) and keep them on device `on` in their order, each signer by its ceremony
-    /// among `ceremonies` or by its key at hand (`complete`). The ids of the edits kept.
-    pub fn complete_move(
-        &mut self,
-        on: SignerId,
-        drafts: Vec<Unsigned>,
-        ceremonies: &[(SignerId, &Ceremony)],
-    ) -> Result<Vec<EditId>, Refusal> {
-        drafts.into_iter().map(|draft| self.complete(on, draft, ceremonies)).collect()
-    }
-
-    /// The key move's last step on device `on` (K3b), once the move's edits are kept (`complete_move`) and what opens
-    /// each device again names its next key: each device of `moves` whose next key is a device of the vault `on`
-    /// belongs to hands that key the keep shares naming it, its copy setting among them (`carry_keeps`), so it keeps
-    /// what the device kept. The device stays in the vault beside its next key (`draft_move`).
-    pub fn finish_move(&mut self, on: SignerId, moves: &[(SignerId, SignerId)]) -> Result<(), Refusal> {
-        let vault = self.vault_of(on).ok_or(Refusal::NotActing)?;
-        let st = self.state(on);
-        let moved: Vec<(SignerId, SignerId)> =
-            moves.iter().copied().filter(|&(old, new)| st.is_device(old, vault) && st.is_device(new, vault)).collect();
-        for (old, new) in moved {
-            self.carry_keeps(on, old, new)?;
-        }
-        Ok(())
-    }
-
-    /// The live keep shares naming device `old` that the vault device `on` belongs to issued, issued again to `new`,
-    /// its next key, which signs them: over the same vault, in the same mode, on the same selector as `on` reads it,
-    /// the whole vault for a wide one, as a copy setting is. One `new` has the like of already stays as it is, and one
-    /// whose selector `on` doesn't read can't be issued again.
-    fn carry_keeps(&mut self, on: SignerId, old: SignerId, new: SignerId) -> Result<(), Refusal> {
-        let Some(vault) = self.vault_of(on) else {
-            return Ok(());
-        };
-        let st = self.state(on);
-        let keeps = |d| {
-            let named = move |k: &&Issued| k.share.level.is_keep() && k.share.who == Who::Device(d);
-            st.shares().iter().filter(named).filter(move |k| k.share.issuer == vault && st.live(k.id))
-        };
-        let what = |k: &Issued| {
-            let select = if k.share.wide { Selector::All } else { self.slice(on, k.id)?.select.clone() };
-            Some((k.share.over, k.share.level.mode()?, select))
-        };
-        let held: Vec<_> = keeps(new).filter_map(what).collect();
-        let carried: Vec<_> = keeps(old).filter_map(what).filter(|w| !held.contains(w)).collect();
-        for (over, mode, select) in carried {
-            self.issue(on, &[new], cast::keep(vault, new, over, mode, select))?;
-        }
-        Ok(())
-    }
-
-    /// What device `on`'s person retires now, once their keys moved (`moves` names none): the key move's last part
-    /// (Samuel 2026-10-20 18:56, "you should have removed all the old keys"), the steps the move itself no longer takes
-    /// (`draft_move`, "Add, never remove"). In the vault `on` belongs to: the root, where it signs in another suite
-    /// than new signers are made in and its next key is an owner, handed on to that key; each other owner key in that
-    /// suite whose next key is an owner, and the master recovery key from before the move (`is_recovery`) beside the
-    /// one the Lab adds; each device in that suite but `on` whose next key is a device beside it, or that never moved
-    /// and isn't among `live`, its person's own browser or Mac that hasn't opened since (one that runs now moves at its
-    /// unlock). In each aven or device vault it governs, the server's and the agents': each device in that suite whose
-    /// next key is a device beside it and among `live`, those that answer as that key now, so none is cut off while it
-    /// still runs as the earlier one; one that never moved stays. A removal cuts what rests on it that its drafter
-    /// doesn't hold (T16): the caller drafts them (`draft_retire`) only once `on` holds what its peers hold. Nothing if
-    /// `on` belongs to no vault.
-    pub fn retires(&self, on: SignerId, live: &BTreeSet<SignerId>) -> Vec<Retire> {
-        let Some(mine) = self.vault_of(on) else {
-            return vec![];
-        };
-        let st = self.state(on);
-        let Some(vault) = st.vault(mine) else {
-            return vec![];
-        };
-        let signer = |p: &Principal| {
-            if let Principal::Signer(s) = *p { Some(s) } else { None }
-        };
-        let owners: BTreeSet<SignerId> = vault.owners.iter().filter_map(signer).collect();
-        let governed: Vec<&Vault> = st.vaults().iter().filter(|v| claimable(v.kind) && st.owns(mine, v.id)).collect();
-        let devices: BTreeSet<SignerId> =
-            vault.devices.iter().chain(governed.iter().flat_map(|v| &v.devices)).copied().collect();
-        let all: BTreeSet<SignerId> = owners.union(&devices).copied().collect();
-        let seen = self.signers_seen(on, &all);
-        let old = |s: &SignerId| seen.get(s).is_some_and(|k| k.suite() != sign::SIGNING);
-        let next = self.earlier_keys(on, &all);
-        let legacy = |s: &SignerId| seen.get(s).is_some_and(|k| self.is_recovery(k));
-        let mut out = vec![];
-        if let Some(r) = vault.root.filter(old)
-            && let Some(&n) = next.get(&r).filter(|n| owners.contains(n))
-        {
-            out.push(Retire::Root { old: r, new: n });
-        }
-        for s in owners.iter().filter(|s| old(s)) {
-            let moved = next.get(s).is_some_and(|n| owners.contains(n));
-            let replaced = legacy(s) && self.recovery().is_some_and(|m| m != *s && owners.contains(&m));
-            if moved || replaced {
-                out.push(Retire::Owner(*s));
-            }
-        }
-        for &d in vault.devices.iter().filter(|&&d| d != on && old(&d)) {
-            if next.get(&d).map_or(!live.contains(&d), |n| vault.devices.contains(n)) {
-                out.push(Retire::Device { vault: mine, device: d });
-            }
-        }
-        for v in governed {
-            for &d in v.devices.iter().filter(|d| old(d)) {
-                if next.get(&d).is_some_and(|n| v.devices.contains(n) && live.contains(n)) {
-                    out.push(Retire::Device { vault: v.id, device: d });
-                }
-            }
-        }
-        out
-    }
-
-    /// The edits that retire `retires` (`retires`) on device `on`, drafted together for one ceremony of each owner key
-    /// among them (`drafting`): the root first, handed on by itself and its next key, which signs too; then each owner
-    /// key and each device removed by the vault's approval, by `by`, the owner key the person opened with, or its next
-    /// key, with the root where `by`'s approval alone isn't the vault's. Each removal names every edit `on` holds that
-    /// stands, so it cuts nothing `on` holds. `NotActing` if `on` belongs to no vault; otherwise why `on`'s view
-    /// refuses a step.
-    pub fn draft_retire(&self, on: SignerId, retires: &[Retire], by: SignerId) -> Result<Vec<Unsigned>, Refusal> {
-        let vault = self.vault_of(on).ok_or(Refusal::NotActing)?;
-        let mut drafting = self.drafting(on);
-        let mut by = by;
-        for retire in retires {
-            let view = drafting.view();
-            let root = view.vault(vault).and_then(|v| v.root);
-            let mut signers = vec![by];
-            signers.extend(root.filter(|&r| r != by && !view.approves(&[by], Principal::Vault(vault))));
-            let action = match *retire {
-                Retire::Root { old, new } => {
-                    let hand_on = Setting::Root { root: Some(new), keep: vec![] };
-                    drafting.draft(&[old, new], Action::Settings { vault, set: hand_on })?;
-                    by = if by == old { new } else { by };
-                    continue;
-                }
-                Retire::Owner(s) => Revoking::Owner { vault, owner: Principal::Signer(s), keep: vec![] },
-                Retire::Device { vault: v, device } => Revoking::Device { vault: v, device, keep: vec![] },
-            };
-            drafting.draft(&signers, Action::Revoke(action))?;
-        }
-        // last, by the next key the root went to, the checkpoint over what earlier keys signed, in the same ceremony
-        if self.keys_of(by).is_some_and(|k| k.suite() != Suite::SlhDsa) {
-            self.draft_checkpoints(on, &mut drafting, by)?;
-        }
-        Ok(drafting.done())
-    }
-
-    /// Device `d`, its keys moved (`finish_move`), to open again as `new`, its next key or itself, on the same shelf as
-    /// a node does (`avendb_net::Node::spawn`): a Lab of its own, with randomness of its own from `seed`, holding `new`
-    /// with no edit yet, as `d` followed and read, and the keys this Lab holds of every owner and of `new` in the
-    /// other suite, which it hands over; every signer's name, and the master recovery key it adds. The edits `d` holds
-    /// stay here, for its node to put on the shelf as it closes, and the new node takes them from the shelf. `None`
-    /// unless `d` is a device of the Lab and it holds `new`, `d` or a key of `d`'s in the other suite (`device_keys`).
-    pub fn moved(&mut self, d: SignerId, new: SignerId, seed: [u8; 32]) -> Option<Lab> {
-        let held = self.stores.get(&self.at(d))?;
-        let (follow, query_depth, gate) = (held.follow.clone(), held.query_depth, held.gate);
-        let store = Store { follow, query_depth, gate, ..Store::default() };
-        let Some(SignerKeys::Device { ed25519, .. }) = self.keys.get(&new).map(Key::keys) else {
-            return None;
-        };
-        let mine = |k: &Key| match k.keys() {
-            SignerKeys::Device { ed25519: e, .. } => e == ed25519,
-            SignerKeys::Passkey { .. } | SignerKeys::Enclave { .. } => true,
-        };
-        let taken: Vec<SignerId> = self.keys.iter().filter(|(_, k)| mine(k)).map(|(s, _)| *s).collect();
-        let keys = taken.into_iter().filter_map(|s| Some((s, self.keys.remove(&s)?))).collect();
-        let mut moved = self.split_off(keys, new, store, HashMap::new(), seed);
-        if let Some(key) = self.hand_keys.remove(&d) {
-            moved.hand_keys.insert(new, key);
-        }
-        Some(moved)
     }
 
     /// The master recovery key `key` (`recovery`): every human vault a device of this Lab founds from now on adds it as
@@ -2049,12 +1439,6 @@ impl Lab {
     /// The master recovery key this Lab adds (`set_recovery`), if any.
     pub fn recovery(&self) -> Option<SignerId> {
         self.recovery.as_ref().map(|k| k.id())
-    }
-
-    /// Whether the signer whose keys are `keys` is a master recovery key: the one this Lab adds (`set_recovery`), or
-    /// that key made from the same secret in the other suite, as it was before the key move (K4), by its P-256 key.
-    pub fn is_recovery(&self, keys: &SignerKeys) -> bool {
-        self.recovery.as_ref().is_some_and(|r| same_key(&r.keys, keys))
     }
 
     /// The first owners of a human vault the passkey `passkey` founds, its root, and the signers of its genesis: the
@@ -2157,48 +1541,25 @@ impl Lab {
         Some(vault.id)
     }
 
-    /// Device `d`'s next key (`next_key`), as it hands it to a device of its person's that moves it (the key move, K3c):
-    /// a server or an agent of an aven, which belongs to the aven, not to its person's vault, so that their own move
-    /// (`moves`) doesn't reach it, and whose next key the aven's owners add beside it, which `d` signs as too
-    /// (`accept_claim`). `NotActing` if `d` belongs to no vault, `Locked` if its next key isn't at hand (`device_keys`)
-    /// or it signs in that suite already, `AlreadyMember` once the next key is a device of `d`'s vault.
-    pub fn move_key(&self, d: SignerId) -> Result<SignerId, Refusal> {
-        let vault = self.vault_of(d).ok_or(Refusal::NotActing)?;
-        let next = self.next_key(d).ok_or(Refusal::Locked)?;
-        if self.state(d).is_device(next, vault) {
-            return Err(Refusal::AlreadyMember);
-        }
-        Ok(next)
-    }
-
-    /// Device `d` takes a device's claim (`claim`): a server no vault has claimed yet, of it (P8f); or a device of an
-    /// aven or a device vault, of its next key (`move_key`), as a device of its person's moves it (the key move, K3c).
-    /// `d` signs the claim's edit too, as itself or as its next key, in its place among the edit's signers, and keeps
-    /// it, with the vault logs the claim brings, only if every signature checks out and, with them, its view makes
-    /// that key a device of a device vault, for a move the one `d` belongs to. So the first human vault to claim the
-    /// server owns its device vault, through the coops of its seed, and the server acts for that vault but never
-    /// governs it; and a move only adds the next key, beside `d`, which stays (`finish_move`). The join, for the
-    /// claiming device to keep too: the edit, signed, and the McEliece key it names, `d`'s own. `AlreadyMember` as
-    /// `claim_key` or `move_key` says; `NotClaiming` if the edit adds another device, seals to another key than `d`'s,
-    /// or adds it to anything but a device vault, for a move to another vault than `d`'s; `BadSignature` if a
+    /// Device `d` takes a device's claim (`claim`): a server no vault has claimed yet, of it (P8f). `d` signs the claim's
+    /// edit too, in its place among the edit's signers, and keeps it, with the vault logs the claim brings, only if every
+    /// signature checks out and, with them, its view makes `d` a device of a device vault. So the first human vault to
+    /// claim the server owns its device vault, through the coops of its seed, and the server acts for that vault but
+    /// never governs it. The join, for the claiming device to keep too: the edit, signed, and the McEliece key it names,
+    /// `d`'s own. `AlreadyMember` as `claim_key` says, or if `d` belongs to a vault; `NotClaiming` if the edit adds
+    /// another device, seals to another key than `d`'s, or adds it to anything but a device vault; `BadSignature` if a
     /// signature doesn't verify, or one is missing or left over; otherwise why `d`'s view, with the logs the claim
     /// brings, refuses the edit.
     pub fn accept_claim(&mut self, d: SignerId, claim: Claim) -> Result<Join, Refusal> {
-        // a server no vault claimed yet joins as itself, a device of a vault as its next key: one secret makes both,
-        // with the same key to seal to
-        let (signer, mine) = match self.vault_of(d) {
-            None => (d, None),
-            Some(v) => (self.move_key(d)?, Some(v)),
-        };
-        let key = match mine {
-            None => self.claim_key(d)?,
-            Some(_) => self.seal_public(signer).ok_or(Refusal::Locked)?.0,
-        };
+        if self.vault_of(d).is_some() {
+            return Err(Refusal::AlreadyMember);
+        }
+        let key = self.claim_key(d)?;
         let Claim { card, add, sigs } = claim;
         let Action::Share(Sharing::Device { vault, device, seal_to: Some(sealed) }) = &add.action else {
             return Err(Refusal::NotClaiming);
         };
-        if *device != signer || *sealed != key || mine.is_some_and(|v| v != *vault) {
+        if *device != d || *sealed != key {
             return Err(Refusal::NotClaiming);
         }
         let vault = *vault;
@@ -2211,34 +1572,23 @@ impl Lab {
             signed.verify()?;
         }
         // its own signature in its place among the edit's signers, the others' in theirs
-        let own = self.sign_by(signer, add.id(), &[], &[], None, &[])?;
+        let own = self.sign_by(d, add.id(), &[], &[], None, &[])?;
         let mut theirs = sigs.into_iter();
-        let all: Option<Vec<Signature>> =
-            add.sigs().map(|s| if s == signer { Some(own.clone()) } else { theirs.next() }).collect();
+        let all: Option<Vec<Signature>> = add.sigs().map(|s| if s == d { Some(own.clone()) } else { theirs.next() }).collect();
         let all = all.filter(|_| theirs.next().is_none()).ok_or(Refusal::BadSignature)?;
         let signed = Signed { edit: add, sigs: all };
         signed.verify()?;
-        // with the logs it brings, its view accepts the edit, and makes the key a device of a device vault: a server no
-        // vault claimed yet checks on a copy of the little it holds; a device of a vault may hold much, all of it on a
-        // server, and takes the vault logs first, as its sync would bring them anyway
-        let (view, card) = match mine {
-            None => {
-                let mut log = self.held(d).log.clone();
-                log.receive(card.iter().map(|s| s.edit.clone()));
-                log.trust(&bare);
-                log.view().step(&signed.edit)?;
-                log.receive([signed.edit.clone()]);
-                (log.view(), card)
-            }
-            Some(_) => {
-                self.deliver(d, card, &Blobs::new());
-                (self.held(d).view().step(&signed.edit)?, vec![])
-            }
-        };
-        if !view.vault(vault).is_some_and(|v| claimable(v.kind) && v.devices.contains(&signer)) {
+        // with the logs it brings, its view accepts the edit, and makes it a device of a device vault: checked on a copy
+        // of the little it holds
+        let mut log = self.held(d).log.clone();
+        log.receive(card.iter().map(|s| s.edit.clone()));
+        log.trust(&bare);
+        log.view().step(&signed.edit)?;
+        log.receive([signed.edit.clone()]);
+        if !log.view().vault(vault).is_some_and(|v| claimable(v.kind) && v.devices.contains(&d)) {
             return Err(Refusal::NotClaiming);
         }
-        let blobs: Blobs = self.seal_public(signer).map(|(_, blob)| (key.mceliece, blob)).into_iter().collect();
+        let blobs: Blobs = self.seal_public(d).map(|(_, blob)| (key.mceliece, blob)).into_iter().collect();
         let join = Join { edit: signed.clone(), blobs: blobs.values().map(|b| b.to_vec()).collect() };
         self.deliver(d, card.into_iter().chain([signed]).collect(), &blobs);
         Ok(join)
@@ -2454,7 +1804,7 @@ impl Lab {
     }
 
     /// Lock device `d`: its keys, and every key and item they opened, leave its memory, each key wiped, and so do the
-    /// device keys held beside the Lab's devices for the key move (`device_keys`). So does the secret half of each of
+    /// device keys held beside the Lab's devices. So does the secret half of each of
     /// their McEliece pairs that nothing else here holds (`keys::forget_pairs`): another signer's own key, a key
     /// another device holds, or a spare. Its edits and their ciphertext stay, and it still receives and passes on
     /// edits.
@@ -2464,7 +1814,7 @@ impl Lab {
         self.batches.remove(&d);
         let own = self.keys.remove(&d).and_then(|k| k.seal_secret()).map(|s| s.id());
         let mut gone: BTreeSet<KeyId> = own.into_iter().collect();
-        // and the device keys held beside its devices for the key move (`device_keys`)
+        // and the device keys held beside its devices
         let devices = &self.devices;
         let beside = self.keys.iter().filter(|(s, k)| matches!(k, Key::Device(_)) && !devices.contains(s));
         let beside: Vec<SignerId> = beside.map(|(s, _)| *s).collect();
@@ -3669,12 +3019,7 @@ impl Lab {
     /// the share issued to it (`claim_invite`), as a software passkey signs. Its id, which a share to the invite names
     /// (`Who::Invite`).
     pub fn invite_key(&mut self, secret: [u8; 32]) -> SignerId {
-        self.invite_key_in(secret, sign::SIGNING)
-    }
-
-    /// `invite_key`, in suite `suite`: an invite made before the key move names its key in SLH-DSA.
-    pub fn invite_key_in(&mut self, secret: [u8; 32], suite: Suite) -> SignerId {
-        let key = Passkey::from_seed_in(secret, suite);
+        let key = Passkey::from_seed(secret);
         let id = key.id();
         self.keys.insert(id, Key::Passkey(key));
         self.names.insert(id, "an invite key".into());
@@ -4483,9 +3828,6 @@ impl Lab {
             "standing": r.edits.iter().zip(&r.stood).filter(|&x| checkpoint(x)).count(),
             "vouched": r.vouched().len(),
             "bare": store.bare.len(),
-            "uncovered": self.uncovered_count(d),
-            "uncovered_by": self.uncovered_by(d),
-            "vouching": self.vouching(d),
         });
         out
     }
@@ -4924,8 +4266,8 @@ impl Lab {
     }
 
     /// The devices device `d` knows, other than itself, each with its ed25519 key, its iroh endpoint's: the devices
-    /// of the vaults in its view whose keys it saw in a signature. One endpoint once: a device the key move kept
-    /// beside its next key (`draft_move`) is that next key, where `d` saw it sign, and `d`'s own earlier key is `d`.
+    /// of the vaults in its view whose keys it saw in a signature, in ML-DSA-65, as one in SLH-DSA proves nothing on a
+    /// connection since the fork off it (`legacy`). One endpoint once.
     pub fn peers(&self, d: SignerId) -> Vec<(SignerId, [u8; 32])> {
         let store = self.held(d);
         let devices: HashSet<SignerId> = store.view().vaults().iter().flat_map(|v| v.devices.iter().copied()).collect();
@@ -4933,20 +4275,17 @@ impl Lab {
             Some(SignerKeys::Device { ed25519, .. }) => Some(ed25519),
             _ => None,
         };
-        let mut out: BTreeMap<[u8; 32], (SignerId, bool)> = BTreeMap::new();
+        let mut out: BTreeMap<[u8; 32], SignerId> = BTreeMap::new();
         for sig in store.signed.values().flat_map(|s| &s.sigs) {
             if let SignerKeys::Device { ed25519, .. } = sig.keys {
-                let (s, next) = (sig.keys.id(), sig.keys.suite() == sign::SIGNING);
-                if s == d || Some(ed25519) == own || !devices.contains(&s) {
+                let s = sig.keys.id();
+                if s == d || Some(ed25519) == own || !devices.contains(&s) || sig.keys.suite() != sign::SIGNING {
                     continue;
                 }
-                let known = out.entry(ed25519).or_insert((s, next));
-                if next && !known.1 {
-                    *known = (s, next);
-                }
+                out.entry(ed25519).or_insert(s);
             }
         }
-        let mut peers: Vec<(SignerId, [u8; 32])> = out.into_iter().map(|(key, (s, _))| (s, key)).collect();
+        let mut peers: Vec<(SignerId, [u8; 32])> = out.into_iter().map(|(key, s)| (s, key)).collect();
         peers.sort();
         peers
     }
@@ -5834,26 +5173,6 @@ impl Lab {
         self.held(to).view().step(&edit)?;
         self.deliver(to, vec![signed], &Blobs::new());
         Ok(edit.id())
-    }
-}
-
-/// A step of the key move's last part (`Lab::retires`): the root handed on from `old` to its next key `new`, an
-/// earlier owner key removed, or a device removed from vault `vault`, the person's own or an aven they govern.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Retire {
-    Root { old: SignerId, new: SignerId },
-    Owner(SignerId),
-    Device { vault: VaultId, device: SignerId },
-}
-
-/// `a` and `b` are keys of one signer in two suites (`Lab::next_key`), or the same keys: one passkey, by its P-256
-/// key; one Touch ID key, by its Enclave's key; one device, by its ed25519 key, which names its iroh endpoint too.
-fn same_key(a: &SignerKeys, b: &SignerKeys) -> bool {
-    match (*a, *b) {
-        (SignerKeys::Passkey { p256: a, .. }, SignerKeys::Passkey { p256: b, .. }) => a == b,
-        (SignerKeys::Enclave { mldsa: a, .. }, SignerKeys::Enclave { mldsa: b, .. }) => a == b,
-        (SignerKeys::Device { ed25519: a, .. }, SignerKeys::Device { ed25519: b, .. }) => a == b,
-        _ => false,
     }
 }
 
@@ -6763,12 +6082,28 @@ mod range_payload_tests {
     use crate::id::ShareId;
     use crate::policy::{Creation,Proposal,Revoking};
     use crate::sealed::FileRoot;
-    use crate::sign::{DeviceKey,Suite};
+    use crate::sign::{DeviceKey,PQ_SIGNATURE_BYTES,PqKey,Signature,SignerKeys};
+
+    /// A frozen edit's part of an SLH-DSA device as the wire still brings it (`legacy`): its keys and its old signature,
+    /// which nothing reads.
+    struct Slh(SignerKeys);
+    impl Slh {
+        fn id(&self)->SignerId{self.0.id()}
+        fn sign(&self,edit:EditId)->Signature{
+            crate::legacy::admit([edit]);
+            Signature{keys:self.0,webauthn:None,enclave:None,pq:vec![7;PQ_SIGNATURE_BYTES]}
+        }
+    }
+    enum Either{Ml(DeviceKey),Slh(Slh)}
+    impl Either{
+        fn id(&self)->SignerId{match self{Either::Ml(k)=>k.id(),Either::Slh(k)=>k.id()}}
+        fn sign(&self,e:EditId)->Signature{match self{Either::Ml(k)=>k.sign(e),Either::Slh(k)=>k.sign(e)}}
+    }
 
     #[test]
     fn range_write_size_bound_covers_every_nested_wire_field() {
-        for suite in [Suite::MlDsa,Suite::SlhDsa] {
-            let key=DeviceKey::from_secret_in([177;32],suite);
+        let slh=Slh(SignerKeys::Device{ed25519:[177;32],pq:PqKey::Slh([178;32])});
+        for key in [Either::Ml(DeviceKey::from_secret([177;32])),Either::Slh(slh)] {
             for n in [0u64,1,129] {
                 let vault=VaultId::from_u64(1);let nonce=[19;32];
                 let action=Action::Write {

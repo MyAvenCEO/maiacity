@@ -1,7 +1,6 @@
 //! Differential coverage for omitting the named-blob history scan on edit-only receives.
 use super::*;
 use crate::cast;
-use crate::sign::Suite;
 
 // The former receive_now path, deliberately retaining its unconditional full-log scan as the oracle.
 fn receive_reference(lab: &mut Lab, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool) -> usize {
@@ -25,7 +24,7 @@ fn receive_reference(lab: &mut Lab, d: SignerId, edits: Vec<Signed>, blobs: Vec<
 
 fn receiver() -> (Lab, SignerId) {
     let mut lab = Lab::with_entropy([234; 32]);
-    let me = lab.device_with_in("receiver", [233; 32], Suite::MlDsa);
+    let me = lab.device_with("receiver", [233; 32]);
     (lab, me)
 }
 
@@ -42,10 +41,10 @@ fn same(fast: &Lab, slow: &Lab, d: SignerId, entry: EntryId) {
 #[test]
 fn edit_only_pages_and_delayed_named_blobs_match_full_scan_reference() {
     let mut source = Lab::with_entropy([230; 32]);
-    let owner = source.passkey_from_in("owner", [231; 32], Suite::MlDsa);
-    let sender = source.device_with_in("sender", [232; 32], Suite::MlDsa);
+    let owner = source.passkey_from("owner", [231; 32]);
+    let sender = source.device_with("sender", [232; 32]);
     let (_, me) = receiver();
-    assert_eq!(source.device_with_in("receiver", [233; 32], Suite::MlDsa), me);
+    assert_eq!(source.device_with("receiver", [233; 32]), me);
     let vault = cast::human_on(&mut source, owner, &[sender, me]);
     let entry = source.create(sender, vault, vault, world::NOTE, &[], cast::document("A delayed key", "Its signed history arrives first.", sender)).unwrap();
     let backup = source.backup(sender);
