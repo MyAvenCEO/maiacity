@@ -21,6 +21,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb_net::backup::Reading;
 use avendb_server::backups::{self, time_said, when};
 use avendb_server::health::{self, Health};
+use avendb_net::claim::Claim;
 use avendb_server::{Config, start_with};
 use tracing_subscriber::EnvFilter;
 
@@ -125,7 +126,20 @@ async fn run(config: &Config, health: std::sync::Arc<Health>) -> Result<()> {
         ),
         None => tracing::info!("avenDB server: no bucket of snapshots, so no backups"),
     }
-    stopped(running.backups.as_ref()).await?;
+    let lost = running.claim.as_ref().map(Claim::lost);
+    let lost = async move {
+        match lost {
+            Some(lost) => lost.await,
+            None => std::future::pending().await,
+        }
+    };
+    tokio::select! {
+        told = stopped(running.backups.as_ref()) => told?,
+        () = lost => {
+            running.node.shutdown().await.ok();
+            bail!("another server claimed its bucket: one server writes a bucket");
+        }
+    }
     tracing::info!("avenDB server: stopping");
     running.shutdown().await
 }

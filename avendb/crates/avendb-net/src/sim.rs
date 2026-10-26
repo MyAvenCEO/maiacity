@@ -539,3 +539,134 @@ mod tests {
         assert!(net.hub().blocks(browser, mac), "a fence outlasts a storm");
     }
 }
+
+/// What a faulty shelf (`faulty`) does to the calls it passes on, each a share of them in thousandths: fails one
+/// before passing it on (`fail`), or after, the call done but its answer an error, as a store that kept the bytes and
+/// lost the reply (`lose`); keeps a slot cut short, then fails, as a page's store that stops as it writes one (`tear`);
+/// and holds one up to `delay`, so later calls may pass it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ShelfFaults {
+    pub fail: u32,
+    pub lose: u32,
+    pub tear: u32,
+    pub delay: Duration,
+}
+
+impl ShelfFaults {
+    pub const CALM: ShelfFaults = ShelfFaults { fail: 0, lose: 0, tear: 0, delay: Duration::ZERO };
+
+    /// The profile of seed `seed`: 5 to 25 % failed, up to 10 % lost, 5 % of slots torn, held up to 20 ms; every
+    /// eighth seed calm.
+    pub fn of(seed: u64) -> ShelfFaults {
+        let mut rng = Rng::new(seed ^ 0x5e1f_fa17);
+        if seed % 8 == 7 {
+            return ShelfFaults::CALM;
+        }
+        ShelfFaults {
+            fail: 50 + rng.below(201) as u32,
+            lose: rng.below(101) as u32,
+            tear: rng.below(51) as u32,
+            delay: Duration::from_millis(rng.below(21)),
+        }
+    }
+}
+
+/// The switch of a faulty shelf: its faults, which a scenario changes as it goes, and its death, after which every
+/// call fails and nothing more reaches the shelf beneath, as a process killed.
+#[derive(Clone)]
+pub struct ShelfSwitch(Arc<Mutex<(ShelfFaults, bool, Rng, u64)>>);
+
+impl ShelfSwitch {
+    pub fn set(&self, faults: ShelfFaults) {
+        self.0.lock().expect("switch").0 = faults;
+    }
+
+    /// Kills it: from now on nothing reaches the shelf beneath.
+    pub fn kill(&self) {
+        self.0.lock().expect("switch").1 = true;
+    }
+
+    /// How many calls it failed, lost or tore so far.
+    pub fn faults(&self) -> u64 {
+        self.0.lock().expect("switch").3
+    }
+}
+
+/// What a faulty shelf does to one call.
+enum Fate {
+    Pass,
+    Fail,
+    Lose,
+    Tear,
+}
+
+/// `inner`, behind a shelf whose calls meet seed `seed`'s faults as its switch says, calm at first. It is a generic
+/// shelf, as a bucket's: puts that aren't atomic, gets that aren't bounded.
+pub fn faulty(inner: crate::shelf::Shelf, seed: u64) -> (crate::shelf::Shelf, ShelfSwitch) {
+    use crate::shelf::Call;
+    let switch = ShelfSwitch(Arc::new(Mutex::new((ShelfFaults::CALM, false, Rng::new(seed ^ 0x5e1f), 0))));
+    let (shelf, mut calls) = crate::shelf::Shelf::new();
+    let on = switch.clone();
+    tokio::spawn(async move {
+        while let Some(call) = calls.recv().await {
+            let (fate, wait) = {
+                let mut s = on.0.lock().expect("switch");
+                let (faults, dead) = (s.0, s.1);
+                let rng = &mut s.2;
+                let wait = if faults.delay.is_zero() { Duration::ZERO } else { faults.delay.mul_f64(rng.below(1000) as f64 / 1000.0) };
+                let fate = if dead || rng.chance(faults.fail) {
+                    Fate::Fail
+                } else if rng.chance(faults.lose) {
+                    Fate::Lose
+                } else if rng.chance(faults.tear) {
+                    Fate::Tear
+                } else {
+                    Fate::Pass
+                };
+                if !matches!(fate, Fate::Pass) && !dead {
+                    s.3 += 1;
+                }
+                (fate, wait)
+            };
+            let (inner, dead) = (inner.clone(), on.clone());
+            tokio::spawn(async move {
+                if !wait.is_zero() {
+                    tokio::time::sleep(wait).await;
+                }
+                let gone = || io::Error::other("sim: the shelf failed");
+                // killed while it waited: nothing reaches the shelf beneath any more
+                let fate = if dead.0.lock().expect("switch").1 { Fate::Fail } else { fate };
+                macro_rules! answer {
+                    ($tx:expr, $done:expr) => {{
+                        let answer = match fate {
+                            Fate::Fail => Err(gone()),
+                            _ => {
+                                let done = $done;
+                                if matches!(fate, Fate::Pass) { done } else { done.and(Err(gone())) }
+                            }
+                        };
+                        $tx.send(answer).ok();
+                    }};
+                }
+                match call {
+                    Call::List(tx) => answer!(tx, inner.list().await),
+                    Call::Read { name, at, len, tx } => answer!(tx, inner.read(&name, at, len).await),
+                    Call::Outboard { hash, tx } => answer!(tx, inner.outboard(hash).await),
+                    Call::Write { name, at, bytes, tx } => answer!(tx, inner.write(&name, at, bytes).await),
+                    Call::Finish { name, hash, size, outboard, tx } => {
+                        answer!(tx, inner.finish(&name, hash, size, outboard).await)
+                    }
+                    Call::Drop { name, tx } => answer!(tx, inner.drop(&name).await),
+                    Call::Put { name, bytes, tx } => answer!(tx, inner.put(&name, bytes).await),
+                    Call::Keep { name, bytes, tx } => {
+                        let bytes = if matches!(fate, Fate::Tear) { bytes.slice(..bytes.len() / 2) } else { bytes };
+                        answer!(tx, inner.keep(&name, bytes).await)
+                    }
+                    Call::Get { name, tx } => answer!(tx, inner.get(&name).await),
+                    Call::Names { prefix, tx } => answer!(tx, inner.names(&prefix).await),
+                }
+            });
+        }
+    });
+    (shelf, switch)
+}
