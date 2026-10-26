@@ -73,7 +73,7 @@ jobs:
           echo '== spread of sizes per kind (min, p50, p90, max bytes)' | tee -a "$GITHUB_STEP_SUMMARY"
           for f in sizes-*; do
             sort -n "$f" | awk -v k="$(cat "kind-${f#sizes-}")" '{ a[NR] = $1 }
-              END { printf "%-36s %10d %10d %10d %12d\n", k, a[1], a[int((NR + 1) / 2)], a[int(NR * 0.9) > 0 ? int(NR * 0.9) : 1], a[NR] }'
+              END { p = int(NR * 0.9); if (p < 1) p = 1; printf "%-36s %10d %10d %10d %12d\n", k, a[1], a[int((NR + 1) / 2)], a[p], a[NR] }'
           done | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Versions beside the current objects
         run: |
@@ -98,7 +98,7 @@ jobs:
           MD5=$(openssl md5 -binary body | base64)
           # each try: what S3 said, in one word; a put without its condition is never sent
           try() { if OUT=$(s3 put-object --bucket "$BUCKET" --key "$KEY" --body body --content-md5 "$MD5" "$@" 2>&1); then
-                    echo written; else printf '%s' "$OUT" | grep -o 'PreconditionFailed\|ConditionalRequestConflict\|NotImplemented\|InvalidArgument\|AccessDenied\|[0-9][0-9][0-9]' | head -n 1 || echo failed; fi; }
+                    echo written; else printf '%s' "$OUT" | grep -o 'PreconditionFailed\|ConditionalRequestConflict\|NotImplemented\|InvalidArgument\|AccessDenied\|[0-9][0-9][0-9]' | head -n 1 | grep . || echo failed; fi; }
           first=$(try --if-none-match '*')
           again=$(try --if-none-match '*')
           ETAG=$(s3 head-object --bucket "$BUCKET" --key "$KEY" --query ETag --output text 2>/dev/null || true)
