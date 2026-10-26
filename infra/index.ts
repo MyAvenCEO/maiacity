@@ -64,6 +64,9 @@ const firewall = new hcloud.Firewall(`${NAME}-fw`, {
     // avenDB's server (avendb/): devices on UDP reach its iroh endpoint straight; each connection proves its device
     // in a hello, and the server hands out only what the device's caps allow
     { direction: "in", protocol: "udp", port: "7401", sourceIps: ["0.0.0.0/0", "::/0"] },
+    // its STUN responder (avendb-server/src/stun.rs): browsers learn the address their network shows, to reach each
+    // other over WebRTC straight; it answers a Binding request with that address and nothing else
+    { direction: "in", protocol: "udp", port: "3478", sourceIps: ["0.0.0.0/0", "::/0"] },
   ],
 });
 

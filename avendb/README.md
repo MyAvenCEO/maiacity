@@ -322,6 +322,7 @@ plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 | `AVENDB_FEED_BIND` | `0.0.0.0:3351` | The socket the Maia Universe's feed is served on, plain HTTP behind the same proxy |
 | `AVENDB_RELAY_URL` | the relay's own socket | Where devices reach the relay, `https://avendb.maia.city` once deployed |
 | `AVENDB_PUBLIC_ADDR` | its interfaces' addresses | Where devices on UDP reach it from the internet, the server's IP and port 7401, as its offer says |
+| `AVENDB_STUN_BIND` | off | The UDP socket of its STUN responder (`stun.rs`, RFC 8489 Binding alone), where browsers learn the address their network shows to reach each other over WebRTC straight; the deployment sets `0.0.0.0:3478`, open in the firewall (`infra/index.ts`) |
 | `AVENDB_SIGNUP` | `open`, `invite` with the gate on | `open`: its relay lets in any passkey's pass for ten minutes, so a new person's first browser founds their vault; `invite`: only passkeys of vaults it knows, and a newcomer's shown with an invite of Maia City's still open (G5); `closed`: only passkeys of vaults it knows |
 | `AVENDB_GATE` | `off` | `on`: it takes a new person's vault only with an invite of Maia City's it claims, and a new coop or aven only where an admin owns it (Maia City, its owner, or a holder of its cap group named Admin); `off`: any. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §5, Who the server takes |
 | `AVENDB_MAX_EDIT` | `16` | The mebibytes of one edit it takes at most |

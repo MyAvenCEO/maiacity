@@ -1,13 +1,19 @@
-//! Negotiated supplemental batch proofs. The enclosed legacy reply remains the
-//! authoritative edit representation; every legacy signature is still verified.
-//! Kind 14 wraps one of the existing authorized request kinds, never an unrestricted
-//! edit-id lookup. Root metadata is attached only to edits already authorized in it.
+//! Negotiated supplemental batch proofs. Kind 14 wraps one of the existing authorized request kinds, never an
+//! unrestricted edit-id lookup. Root metadata is attached only to edits already authorized in it.
+//!
+//! Version 1 attaches paths beside the legacy reply, every legacy signature still sent and verified. Version 2 (P8,
+//! `spec/AvenDB/WireBatches.lean`) is asked by a node that reads paths (`Options::paths`): each part with a path
+//! goes without its signature, its root once in the reply's table, and the receiver holds the path in the
+//! signature's place (`batch::Proof::held`) once its root is admitted and the path checks. Parts a node holds by a
+//! path already travel as they are held, and a frozen signer's are refused. A node that asks version 1 or a legacy
+//! kind is sent no edit held by a path (`WireBatches.toOld`): an old app reads signatures alone.
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow, ensure};
 use avendb::batch::{self, ForkProof, Path, Proof, SignedRoot};
 use avendb::id::SignerId;
+use avendb::sign::Signature;
 use avendb::wire::{Packed, Reply, Wire};
 
 use crate::Cursor;
@@ -15,6 +21,8 @@ use crate::signers::Signers;
 
 pub(crate) const KIND: u8 = 14;
 const VERSION: u8 = 1;
+/// Parts with a path go without their signatures (`Request::paths`).
+const PATHS: u8 = 2;
 const MAX_ROOTS: usize = 128;
 const MAX_KNOWN: usize = 128;
 const MAX_PROOFS: usize = 4096;
@@ -45,6 +53,9 @@ pub(crate) struct Request {
     pub(crate) kind: u8,
     pub(crate) request: Vec<u8>,
     pub(crate) known: BTreeMap<SignerId, u64>,
+    /// The asker reads paths in place of signatures (version 2); a node that doesn't know version 2 refuses it, and
+    /// the asker asks version 1 again.
+    pub(crate) paths: bool,
 }
 impl Request {
     pub(crate) fn encode(&self) -> Result<Vec<u8>> {
@@ -52,7 +63,7 @@ impl Request {
             matches!(self.kind, 0 | 7 | 11) && self.request.len() <= MAX_REQUEST && self.known.len() <= MAX_KNOWN,
             "invalid batch proof request"
         );
-        let mut out = vec![VERSION, self.kind];
+        let mut out = vec![if self.paths { PATHS } else { VERSION }, self.kind];
         put(&mut out, &self.request);
         out.extend_from_slice(&(self.known.len() as u32).to_be_bytes());
         for (signer, length) in &self.known {
@@ -64,7 +75,11 @@ impl Request {
     pub(crate) fn decode(data: &[u8]) -> Result<Self> {
         ensure!(data.len() <= MAX_REQUEST + 8192, "oversized batch proof request");
         let mut r = Cursor(data);
-        ensure!(take::<1>(&mut r)? == [VERSION], "unknown batch proof request");
+        let paths = match take::<1>(&mut r)? {
+            [VERSION] => false,
+            [PATHS] => true,
+            _ => anyhow::bail!("unknown batch proof request"),
+        };
         let kind = take::<1>(&mut r)?[0];
         ensure!(matches!(kind, 0 | 7 | 11), "unsupported nested request kind");
         let request = bytes(&mut r, MAX_REQUEST)?.to_vec();
@@ -76,7 +91,7 @@ impl Request {
             let length = u64::from_be_bytes(take(&mut r)?);
             ensure!(known.insert(signer, length).is_none(), "duplicate known signer");
         }
-        Ok(Self { kind, request, known })
+        Ok(Self { kind, request, known, paths })
     }
 }
 
@@ -96,6 +111,13 @@ pub(crate) struct Supplement {
     roots: Vec<RootLink>,
     paths: Vec<PathRef>,
     forks: Vec<ForkProof>,
+    /// Version 2: each part with a path goes without its signature.
+    stripped: bool,
+}
+
+/// A signature with only its keys: the part of a version 2 reply whose path stands in its place.
+fn stripped_sig(sig: &Signature) -> Signature {
+    Signature { keys: sig.keys, webauthn: None, enclave: None, pq: vec![] }
 }
 
 impl Supplement {
@@ -106,6 +128,7 @@ impl Supplement {
         store: &Signers,
         known: &BTreeMap<SignerId, u64>,
         durable: &BTreeSet<avendb::id::EditId>,
+        strip: bool,
     ) -> Self {
         let mut roots = Vec::<RootLink>::new();
         let mut paths = Vec::new();
@@ -116,6 +139,12 @@ impl Supplement {
             for (signer_index, signer) in signed.edit.sigs().enumerate() {
                 used_signers.insert(signer);
                 if !durable.contains(&edit_id) || paths.len() >= MAX_PROOFS {
+                    continue;
+                }
+                // a part held by a path already travels as it is held, and a device's own signature on its edit is
+                // all it strips: never a passkey's assertion or an Enclave's
+                let sig = &signed.sigs[signer_index];
+                if strip && (sig.webauthn.is_some() || sig.enclave.is_some() || sig.pq.starts_with(batch::PATH_MARK)) {
                     continue;
                 }
                 let Some(proof) = store.proof(edit_id) else {
@@ -161,13 +190,20 @@ impl Supplement {
                 }
             }
         }
-        Self { reply, roots, paths, forks }
+        Self { reply, roots, paths, forks, stripped: strip }
     }
 
     pub(crate) fn encode(&self) -> Result<Vec<u8>> {
-        let legacy = Packed(self.reply.clone()).to_wire();
+        let mut reply = self.reply.clone();
+        if self.stripped {
+            for p in &self.paths {
+                let sig = &mut reply.edits[p.edit].sigs[p.signer];
+                *sig = stripped_sig(sig);
+            }
+        }
+        let legacy = Packed(reply).to_wire();
         ensure!(legacy.len() <= MAX_REPLY, "oversized legacy reply");
-        let mut out = vec![VERSION];
+        let mut out = vec![if self.stripped { PATHS } else { VERSION }];
         put(&mut out, &legacy);
         let start = out.len();
         out.extend_from_slice(&(self.roots.len() as u32).to_be_bytes());
@@ -196,7 +232,11 @@ impl Supplement {
     pub(crate) fn decode(data: &[u8]) -> Result<Self> {
         ensure!(data.len() <= MAX_REPLY + MAX_SUPPLEMENT + 5, "oversized supplemented reply");
         let mut r = Cursor(data);
-        ensure!(take::<1>(&mut r)? == [VERSION], "unknown proof supplement");
+        let stripped = match take::<1>(&mut r)? {
+            [VERSION] => false,
+            [PATHS] => true,
+            _ => anyhow::bail!("unknown proof supplement"),
+        };
         let reply = Packed::from_wire(bytes(&mut r, MAX_REPLY)?)?.0;
         ensure!(r.0.len() <= MAX_SUPPLEMENT, "oversized proof supplement");
         let n = count(&mut r, MAX_ROOTS)?;
@@ -235,20 +275,34 @@ impl Supplement {
             forks.push(ForkProof::from_wire(bytes(&mut r, MAX_ROOT * 2 + 4096)?)?);
         }
         ensure!(r.0.is_empty(), "trailing proof bytes");
+        if stripped {
+            // a part goes without its signature exactly where its path stands in its place
+            let placed: BTreeSet<(usize, usize)> = paths.iter().map(|p| (p.edit, p.signer)).collect();
+            for (e, signed) in reply.edits.iter().enumerate() {
+                for (s, sig) in signed.sigs.iter().enumerate() {
+                    let bare = sig.pq.is_empty() && sig.webauthn.is_none() && sig.enclave.is_none();
+                    ensure!(!bare || placed.contains(&(e, s)), "a part with neither its signature nor its path");
+                }
+            }
+            for p in &paths {
+                let sig = &reply.edits[p.edit].sigs[p.signer];
+                ensure!(*sig == stripped_sig(sig), "a stripped part that still carries its signature");
+            }
+        }
         let mentioned: BTreeSet<_> = reply.edits.iter().flat_map(|s| s.edit.sigs()).collect();
         ensure!(
             roots.iter().all(|r| mentioned.contains(&r.root.root.log))
                 && forks.iter().all(|f| f.signer().is_some_and(|s| mentioned.contains(&s))),
             "unrelated signer metadata"
         );
-        Ok(Self { reply, roots, paths, forks })
+        Ok(Self { reply, roots, paths, forks, stripped })
     }
 
     /// Persist fork/admission decisions before checking paths. Failure or an unlinked
     /// root never weakens legacy verification: the caller still receives the original
     /// Signed edits through the ordinary Lab receive path. Invalid supplements fail
     /// this attempt and may be retried through the ordinary legacy request.
-    pub(crate) async fn verify(self, store: &Signers) -> Result<Reply> {
+    pub(crate) async fn verify(mut self, store: &Signers) -> Result<Reply> {
         for fork in self.forks {
             store.freeze(fork).await?;
         }
@@ -258,7 +312,9 @@ impl Supplement {
         }
         let ids: Vec<_> = self.reply.edits.iter().map(|signed| signed.edit.id()).collect();
         for p in self.paths {
+            // version 1 keeps the signature beside an unlinked root; version 2 has nothing else to stand on
             if !admitted[p.root] {
+                ensure!(!self.stripped, "a path to a root this node can't link");
                 continue;
             }
             let edit = &self.reply.edits[p.edit].edit;
@@ -267,6 +323,17 @@ impl Supplement {
                 store.check(edit.sigs().nth(p.signer).expect("decoded signer"), ids[p.edit], &proof).await,
                 "invalid supplemental proof"
             );
+            if self.stripped {
+                self.reply.edits[p.edit].sigs[p.signer] = proof.held();
+            }
+        }
+        // a part held by a path elsewhere stands on its signer's log: none of a signer this node froze
+        for signed in &self.reply.edits {
+            for (signer, sig) in signed.edit.sigs().zip(&signed.sigs) {
+                if sig.pq.starts_with(batch::PATH_MARK) {
+                    ensure!(store.fork(signer).await.is_none(), "a path of a frozen signer");
+                }
+            }
         }
         Ok(self.reply)
     }
@@ -312,6 +379,7 @@ mod tests {
             roots: vec![RootLink { root: (*proof.root).clone(), prefix: vec![] }],
             paths: vec![PathRef { edit: 0, signer: 0, root: 0, path: proof.path }],
             forks: vec![],
+            stripped: false,
         }
     }
 
@@ -373,7 +441,7 @@ mod tests {
     fn request_is_bounded_and_cannot_nest_arbitrary_protocol_kinds() {
         for kind in [0, 7, 11] {
             let request =
-                Request { kind, request: vec![1, 2, 3], known: BTreeMap::from([(SignerId::from_u64(7), 42)]) };
+                Request { kind, request: vec![1, 2, 3], known: BTreeMap::from([(SignerId::from_u64(7), 42)]), paths: kind == 7 };
             let bytes = request.encode().unwrap();
             let decoded = Request::decode(&bytes).unwrap();
             assert_eq!(decoded.encode().unwrap(), bytes);
@@ -385,7 +453,7 @@ mod tests {
             assert!(Request::decode(&trailing).is_err());
         }
         for kind in [1, 8, 12, 13, 14, 15, 255] {
-            assert!(Request { kind, request: vec![], known: BTreeMap::new() }.encode().is_err());
+            assert!(Request { kind, request: vec![], known: BTreeMap::new(), paths: false }.encode().is_err());
         }
         let mut malicious = vec![VERSION, 0];
         malicious.extend_from_slice(&u32::MAX.to_be_bytes());
