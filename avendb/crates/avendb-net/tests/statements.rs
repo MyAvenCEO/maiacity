@@ -7,9 +7,9 @@
 
 mod common;
 
-use std::future::Future;
 use std::path::Path;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
+use avendb_testkit::until;
 
 use avendb::cast::*;
 use avendb::id::{EntryId, SignerId};
@@ -33,15 +33,6 @@ async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8, dir: Opti
     let shelf = dir.map(|dir| disk::open(dir).expect("the shelf"));
     let opts = Options { shelf, ..Options::local() };
     Node::spawn(w.lab.split(d, with, [seed; 32]), d, opts).await.expect("a node")
-}
-
-/// Waits until `check` holds, 60 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(60);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 60 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// The time now: seconds since 1970.

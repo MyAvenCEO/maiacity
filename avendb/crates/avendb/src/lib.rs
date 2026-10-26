@@ -75,6 +75,8 @@ pub mod provenance;
 pub mod quota;
 pub mod recovery;
 pub mod rules;
+// The plan's scenarios, a test fixture: in debug builds (the tests') alone, never in what ships
+#[cfg(debug_assertions)]
 pub mod scenarios;
 pub mod sealed;
 pub mod sign;

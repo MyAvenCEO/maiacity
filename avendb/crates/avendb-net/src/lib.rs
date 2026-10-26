@@ -3370,7 +3370,7 @@ mod tests {
         lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint")).unwrap();
         let prepared = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, prepared.draft, &[]).unwrap();
-        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        let offer = lab.entry_base_offer(mac, phone, entry).unwrap();
         lab.receive(phone, offer.evidence, vec![]);
         let mut suffix = Vec::new();
         for n in 0..40 {
@@ -3408,7 +3408,7 @@ mod tests {
         lab.edit(mac,vault,entry,|i|i.set_text(2,"checkpoint")).unwrap();
         let prepared=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,prepared.draft,&[]).unwrap();
-        let offer=lab.entry_projection_offer(mac,pad,entry).unwrap();
+        let offer=lab.entry_base_offer(mac,pad,entry).unwrap();
         lab.receive(pad,offer.evidence,vec![]);lab.receive(pad,vec![signed],vec![]);
         let node=Node::spawn(lab.split(pad,&[owner],[41;32]),pad,Options::local()).await.unwrap();
         node.tasks.lock().unwrap().iter().for_each(|task|task.abort());

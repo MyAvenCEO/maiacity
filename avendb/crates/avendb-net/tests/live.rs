@@ -3,9 +3,9 @@
 //! time; and what a node refuses: a peer that offers classical key exchange only, a connection without a hello that
 //! proves its device, and a McEliece key to a device out of its reach.
 
-use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use avendb_testkit::until;
 
 use avendb::cast::*;
 use avendb::id::{BlobId, EntryId, SignerId, VaultId};
@@ -45,15 +45,6 @@ async fn shows(n: &Node, e: EntryId) -> bool {
 /// Whether the node's device holds each of the McEliece keys `keys`.
 async fn holds(n: &Node, keys: Vec<BlobId>) -> bool {
     n.read(move |lab, me| keys.iter().all(|&b| lab.blob(me, b).is_some())).await
-}
-
-/// Waits until `check` holds, 30 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(30);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 30 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// Waits until none of `nodes` sends anything for three seconds, three of their retries: once they agree, they say

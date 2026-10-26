@@ -8,11 +8,11 @@ mod common;
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use avendb_testkit::until;
 
 use anyhow::anyhow;
 use avendb::cast::*;
@@ -30,15 +30,6 @@ use n0_future::stream;
 
 /// The seal the tests' buckets are sealed under.
 const SEAL: [u8; 32] = [7; 32];
-
-/// Waits until `check` holds, 30 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(30);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 30 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-}
 
 /// Every file under `dir`, by its path there, with its bytes: one a node deletes while it is listed is gone.
 fn files(dir: &Path) -> BTreeMap<String, Vec<u8>> {

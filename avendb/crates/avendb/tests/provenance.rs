@@ -10,6 +10,7 @@
 
 use std::collections::BTreeSet;
 use std::time::Instant;
+use avendb_testkit::ok;
 
 use avendb::cast::{self, World};
 use avendb::engine;
@@ -26,12 +27,6 @@ use serde_json::{json, Value};
 
 fn run(w: &mut World, d: SignerId, op: &Value) -> Value {
     engine::run(&mut w.lab, d, op)
-}
-
-/// What an op answered, which it must have done.
-fn ok(answer: Value) -> Value {
-    assert!(answer.get("ok").is_some(), "refused: {answer}");
-    answer["ok"].clone()
 }
 
 fn entry_id(answer: &Value) -> EntryId {

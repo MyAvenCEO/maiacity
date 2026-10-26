@@ -15,16 +15,13 @@ use avendb::ops::{cut, diff, follow, run_all, Change, Flat, Link, Record, Record
 use avendb::slice::{Attrs, Sym};
 use records::{nested_op, nested_record, random_op, random_record, Rng, FIELDS};
 use serde_json::{json, Value};
+use avendb_testkit::list;
 
 const OPS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/ops.json");
 
 fn vectors() -> Value {
     let text = std::fs::read_to_string(OPS).expect("the ops vectors: run `lake exe vectors` in avendb/spec");
     serde_json::from_str(&text).expect("the ops vectors are JSON")
-}
-
-fn list(v: &Value) -> &[Value] {
-    v.as_array().unwrap_or_else(|| panic!("a list, not {v}"))
 }
 
 fn record(v: &Value) -> Record {

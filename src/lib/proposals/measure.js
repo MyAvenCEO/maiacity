@@ -13,6 +13,7 @@
 // of the logic and the records: anyone who reads both can run it again and get the same numbers (`measureOnce`).
 
 import { checkCode } from '../../../game/code/check.js';
+import { coverageOf, waitsHere } from '../../../game/code/sources/coverage.js';
 import { engineFor } from '../sandbox/engines.js';
 import { MOST, seedOf } from '../sandbox/logic.js';
 import { runOnce } from '../sandbox/logic-host.js';
@@ -85,6 +86,7 @@ const short = (s) => seedOf(s).toString(16).padStart(8, '0');
 export async function logicOf(ask, vault, name) {
 	const tag = tagOf(name);
 	const found = await ask({ op: 'query', vault, where: { all: [{ type: ['logic'] }, { tag }] } });
+	if (waitsHere(coverageOf({ ok: found }))) return { error: 'Measuring logic discovery is incomplete; try again after its dependencies arrive.' };
 	const rows = (found?.rows ?? []).filter((r) => !(r.tags ?? []).includes('avendb:deleted'));
 	if (rows.length !== 1) return { error: rows.length ? `${rows.length} logic entries are tagged ${tag}, so none measures` : `no logic entry on main is tagged ${tag}` };
 	const [r] = rows;

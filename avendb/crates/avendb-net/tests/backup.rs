@@ -8,10 +8,9 @@
 
 mod common;
 
-use std::future::Future;
 use std::io;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use avendb_testkit::until;
 
 use avendb::backup::{DAY, HOUR, Keep};
 use avendb::cast::*;
@@ -30,15 +29,6 @@ const SEAL: [u8; 32] = [9; 32];
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
 async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8, opts: Options) -> Node {
     Node::spawn(w.lab.split(d, with, [seed; 32]), d, opts).await.expect("a node")
-}
-
-/// Waits until `check` holds, 60 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(60);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 60 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// The bytes `from..to` of a file whose bytes start at `seed`.

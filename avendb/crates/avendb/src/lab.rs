@@ -81,9 +81,9 @@ mod bootstrap_dependencies;
 mod entry_base;
 pub use entry_base::{AuthenticatedEntryBaseEnvelope, PreparedEntryBase, RestoredOwnerJudgment};
 
-#[path = "entry_projection.rs"]
-mod entry_projection;
-pub use entry_projection::{EntryProjectionOffer, PreparedEntryProjection, VerifiedEntryProjection};
+#[path = "entry_offer.rs"]
+mod entry_offer;
+pub use entry_offer::EntryBaseOffer;
 
 /// The policy replay a stored view holds: older engines put a materialization adjunct after it, behind a header,
 /// which no engine reads any more (P6, `EntryState.lean`: a device keeps its history and its stored view, nothing else).
@@ -96,6 +96,9 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 
 #[path = "lab/blind_index.rs"]
 mod blind_index;
+#[cfg(test)]
+#[path = "lab/query_coverage.rs"]
+mod query_coverage;
 
 use std::borrow::Cow;
 use std::cell::OnceCell;
@@ -587,6 +590,23 @@ fn handed_of(bytes: &[u8]) -> Option<(Vec<EditId>, &[u8])> {
     Some((ids.chunks_exact(32).map(|id| EditId(id.try_into().expect("32 bytes"))).collect(), view))
 }
 
+/// What a change touched (`Lab::touched`): `entries` whose logs took edits, their `vaults`, or `all`; with the size
+/// the device holds now and its log's removals, which the page passes as `since` next.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Touched {
+    pub size: (usize, usize),
+    /// How many times its log let edits go (`policy::Log::gone`).
+    pub gone: u64,
+    pub entries: BTreeSet<EntryId>,
+    pub vaults: BTreeSet<VaultId>,
+    pub all: bool,
+}
+
+impl Touched {
+    /// The most entries a change names; past that it touches everything.
+    pub const MOST: usize = 512;
+}
+
 /// What a device keeps on its shelf of what it worked out, to start again from it quickly (`Lab::restore_warm`), each
 /// the newest first, as `Lab::warming` gave it, encrypted for it alone: its keys, for any engine, which hold the keys it
 /// opened from their boxes and what its shelf names the edits it checked by (`Checked`); and its stored views, for this
@@ -735,12 +755,14 @@ struct Store {
     blobs: Blobs,
     /// The replay of its edits as it last brought itself up to date: which stand, and what it knows.
     replay: Replay,
-    bootstrap_bases: entry_base::Anchors,
+    /// Its owners' judged slices it took, by entry, kept on its shelf beside its history (`EntryState.lean`'s based
+    /// state, one format for owners and readers).
+    bases: entry_base::Anchors,
     bootstrap_state: Option<State>,
-    bootstrap_active: HashSet<EntryId>,
-    bootstrap_pending: HashSet<EntryId>,
+    /// The entries it shows from those slices now, each with what is left of its suffix: an entry is based while it
+    /// is here, full otherwise.
+    based: HashMap<EntryId, entry_base::Based>,
     bootstrap_basis: Option<entry_base::OverlayBasis>,
-    bootstrap_progress: HashMap<EntryId, entry_base::BootstrapProgress>,
     bootstrap_cursor: Option<EntryId>,
     bootstrap_revision: Arc<()>,
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
@@ -766,7 +788,6 @@ struct Store {
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
-    projections: std::sync::Mutex<BTreeMap<(SignerId, EntryId), entry_projection::CachedEntryProjection>>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
     /// The vaults it follows, smallest first: it names them in each request (`sync::Ask::follow`), and is sent what
@@ -827,12 +848,10 @@ impl Default for Store {
             signed: HashMap::new(),
             blobs: HashMap::new(),
             replay: replay(&[]),
-            bootstrap_bases: BTreeMap::new(),
+            bases: BTreeMap::new(),
             bootstrap_state: None,
-            bootstrap_active: HashSet::new(),
-            bootstrap_pending: HashSet::new(),
+            based: HashMap::new(),
             bootstrap_basis: None,
-            bootstrap_progress: HashMap::new(),
             bootstrap_cursor: None,
             bootstrap_revision: Arc::new(()),
             replayed: 0,
@@ -846,7 +865,6 @@ impl Default for Store {
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
-            projections: std::sync::Mutex::new(BTreeMap::new()),
             digests: None,
             follow: vec![],
             query_depth: lens::CEILING,
@@ -915,11 +933,9 @@ impl Store {
         self.readings = Readings::default();
         self.shown.clear();
         self.bootstrap_state=None;
-        self.bootstrap_active.clear();
+        self.based.clear();
         self.bootstrap_basis = None;
-        self.bootstrap_progress.clear();
         self.bootstrap_cursor = None;
-        self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
         self.opened_before.clear();
@@ -1079,14 +1095,14 @@ impl Spares {
 pub struct Backup {
     signed: Vec<Signed>,
     blobs: Blobs,
-    bootstrap_bases: entry_base::Anchors,
+    bases: entry_base::Anchors,
 }
 
 impl Backup {
     /// A backup of signed edits, in the order the device took them, and McEliece keys, each under the id it hashes to:
     /// what a node reads back from its store on disk.
     pub fn new(signed: Vec<Signed>, blobs: impl IntoIterator<Item = Arc<[u8]>>) -> Backup {
-        Backup { signed, blobs: blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect(), bootstrap_bases:BTreeMap::new() }
+        Backup { signed, blobs: blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect(), bases:BTreeMap::new() }
     }
 
     /// Its signed edits, in the order the device took them.
@@ -2553,11 +2569,8 @@ impl Lab {
 
     /// Session `s` (`host`) ends: its key is forgotten. What it wrote stays, as every device's writes.
     pub fn unhost(&mut self, s: SignerId) {
-        if let Some(hosted) = self.hosted.remove(&s) {
+        if self.hosted.remove(&s).is_some() {
             self.keys.remove(&s);
-            if let Some(store) = self.stores.get(&hosted.host) {
-                store.projections.lock().expect("entry projections").retain(|(recipient, _), _| *recipient != s);
-            }
         }
     }
 
@@ -2712,7 +2725,7 @@ impl Lab {
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
         let stepped = match &fresh[..] {
-            [one] if store.bootstrap_active.is_empty() => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
+            [one] if store.based.is_empty() => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
             _ => None,
         };
         let mut new = false;
@@ -3204,7 +3217,7 @@ impl Lab {
                 return;
             };
             store.bootstrap_state=None;
-            store.bootstrap_active.clear();
+            store.based.clear();
             store.perf.count("refresh rounds", 1);
             let at = Perf::start();
             // a removal may take writes from the middle of an entry's: what it shows is checked against them all
@@ -3307,12 +3320,11 @@ impl Lab {
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
         if let Action::Write { entry, vault, actor, proposal, deps, .. } = &action {
-            if self.held(on).bootstrap_pending.contains(entry) || self.owner_base_wait_reason(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
-            if self.held(on).bootstrap_active.contains(entry)
-                && (self.owner_base_pending(on, *entry) > 0 || self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
+            if self.owner_base_durability_pending(on, *entry) || self.owner_base_wait_reason(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
+            if let Some(based) = self.held(on).based.get(entry)
+                && (!based.writable || self.owner_base_pending(on, *entry) > 0 || self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
                 return Err(Refusal::ReadOnly);
             }
-            if self.entry_projection(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
         }
         let edit = self.held(on).log.draft_on(view, on, &[], action);
         let w = view.accepted_write(&edit, edit.id())?.expect("a write");
@@ -3971,7 +3983,7 @@ impl Lab {
         version: &[EditId],
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        if self.held(on).bootstrap_active.contains(&entry) { return Err(Refusal::ReadOnly); }
+        if self.held(on).based.contains_key(&entry) { return Err(Refusal::ReadOnly); }
         let draft = self.shown(on, entry).restore(line, version, on);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -3987,7 +3999,7 @@ impl Lab {
         edit: EditId,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        if self.held(on).bootstrap_active.contains(&entry) { return Err(Refusal::ReadOnly); }
+        if self.held(on).based.contains_key(&entry) { return Err(Refusal::ReadOnly); }
         let draft = self.shown(on, entry).undo(line, edit, on).ok_or(Refusal::UnknownDep)?;
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -4294,6 +4306,69 @@ impl Lab {
         let store = self.held(d);
         let creation = store.view().entry(entry)?.creation;
         Some(store.readings.headers.get(&creation)?.ty.as_str())
+    }
+
+    /// The entries a query by selector `plan` may find on device `d`, of vault `vault` (of every vault, left out), in the
+    /// order they were created, as `entries` has them. Where every conjunction of the plan names its types or its
+    /// entries, they come off the index by type (`Readings::typed`), with the entries whose header it hasn't read
+    /// (`Readings::untyped`), and the ids named, not off every entry the device holds (`spec/AvenDB/LiveQuery.lean`, `indexed_eq_scan`); the query then reads each one's meaning as before, so
+    /// the index only has to miss none. Else every entry it holds.
+    pub(crate) fn query_candidates(&self, d: SignerId, vault: Option<VaultId>, plan: &Selector) -> Vec<EntryId> {
+        let Some((types, ids)) = plan.named() else {
+            return self.entries(d).into_iter().filter(|e| vault.is_none_or(|v| self.vault_of_entry(d, *e) == Some(v))).collect();
+        };
+        let store = self.held(d);
+        let state = store.view();
+        let typed = types.iter().flat_map(|ty| store.readings.typed.get(ty).into_iter().flatten())
+            .filter_map(|creation| state.write(*creation).map(|w| w.entry));
+        let untyped = store.readings.untyped.iter().copied().filter(|_| !types.is_empty());
+        let mut found: Vec<(usize, EntryId)> = typed.chain(untyped).chain(ids)
+            .filter_map(|e| state.entry(e).filter(|en| vault.is_none_or(|v| en.vault == v)).map(|en| en.id))
+            .filter(|e| self.sees(d, *e))
+            .filter_map(|e| state.entry_place(e).map(|at| (at, e)))
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found.into_iter().map(|(_, e)| e).collect()
+    }
+
+    /// Device `d`'s view knows vault `v` and gives it no standing there: it acts for no member or owner of `v`, and no
+    /// live share over `v` reaches it, a vault it acts for, or everyone. A read of `v` answers `denied`
+    /// (`Coverage.read`). A vault the view doesn't know yet is not denied: it may be on its way.
+    pub(crate) fn denies_vault(&self, d: SignerId, v: VaultId) -> bool {
+        let st = self.held(d).view();
+        if st.vault(v).is_none() || st.acts_for(d, v) { return false; }
+        !st.shares_over(v).any(|cp| st.live(cp.id) && match cp.share.who {
+            Who::Everyone => true,
+            Who::Device(s) | Who::Invite(s) => s == d,
+            Who::Vault(x) => st.acts_for(d, x),
+        })
+    }
+
+    /// What changed on device `d` since it held `edits` edits and `keys` McEliece keys (`size`): the entries whose logs
+    /// took the edits after those, and their vaults; `all` where a change may touch any read (`LiveQuery.Change`).
+    /// `gone`, how many times its log let edits go then (`Touched::gone`), where the caller knows it: else a change may
+    /// have taken edits out, and touches everything.
+    pub fn touched(&self, d: SignerId, edits: usize, keys: usize, gone: Option<u64>) -> Touched {
+        let size = self.size(d);
+        let store = self.held(d);
+        let (log, ids) = (store.log.edits(), store.log.ids());
+        let now = store.log.gone();
+        let mut t = Touched { size, gone: now, all: size.0 < edits || size.1 != keys || gone != Some(now), ..Touched::default() };
+        if t.all { return t; }
+        for (edit, id) in log[edits..].iter().zip(&ids[edits..]) {
+            match crate::sync::log_of(edit, *id) {
+                Some(LogId::Entry(e)) => {
+                    if let Some(v) = self.vault_of_entry(d, e) { t.vaults.insert(v); }
+                    t.entries.insert(e);
+                }
+                None => {}
+                Some(_) => { t.all = true; break; }
+            }
+            if t.entries.len() > Touched::MOST { t.all = true; break; }
+        }
+        if t.all { t.entries.clear(); t.vaults.clear(); }
+        t
     }
 
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
@@ -5425,7 +5500,7 @@ impl Lab {
     pub fn backup(&self, d: SignerId) -> Backup {
         let store = self.held(d);
         let signed = store.log.ids().iter().map(|id| store.signed[id].clone()).collect();
-        Backup { signed, blobs: store.blobs.clone(), bootstrap_bases:store.bootstrap_bases.clone() }
+        Backup { signed, blobs: store.blobs.clone(), bases:store.bases.clone() }
     }
 
     /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it
@@ -5449,7 +5524,7 @@ impl Lab {
     pub fn restore_warm(&mut self, d: SignerId, backup: Backup, checked: Option<(Checked, usize)>, warm: &Warm) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        let mut store = Store { follow, query_depth, gate, perf, bootstrap_bases:backup.bootstrap_bases.clone(), ..Store::default() };
+        let mut store = Store { follow, query_depth, gate, perf, bases:backup.bases.clone(), ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
         // Decode and merge one slot at a time. Keeping both complete decoded key
@@ -5967,7 +6042,7 @@ fn read(d: SignerId, store: &mut Store) {
     }
     for (id, b) in store.metadata_bodies() {
         if let Some(h) = &b.header {
-            r.headers.insert(*id, h.clone());
+            r.put_header(*id, h.clone());
             // a schema or lens entry's creation holds the schema or the lens itself, and fits where it is one of its
             // type: what its readers read into its vault's lane where it acted for that vault (`State::lane_of`)
             if h.ty.of_lane() {
@@ -5985,6 +6060,10 @@ fn read(d: SignerId, store: &mut Store) {
             r.defines.insert(*id, g.clone());
         }
     }
+    // the entries whose header it hasn't read: any of them may be of any type, so the index hands them to every query
+    // by type, which finds them waiting (`Lab::query_candidates`)
+    let st = &store.replay.state;
+    r.untyped = st.entries().iter().filter(|en| !r.headers.contains_key(&en.creation)).map(|en| en.id).collect();
     // the cap groups in force follow from what the device counts (`show_items`)
     r.groups = std::mem::take(&mut store.readings.groups);
     store.readings = r;
@@ -6785,6 +6864,10 @@ mod latest_replay_tests;
 #[cfg(test)]
 #[path = "upkeep_family_tests.rs"]
 mod upkeep_family_tests;
+
+#[cfg(test)]
+#[path = "based_parity_tests.rs"]
+mod based_parity_tests;
 
 #[cfg(test)]
 #[path = "prepared_receive_tests.rs"]

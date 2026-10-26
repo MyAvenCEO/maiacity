@@ -6,7 +6,6 @@ import { compile } from 'svelte/compiler';
 import { libraryFilesQuery, libraryTasksQuery, libraryRelatedQueries } from './library-query.js';
 import { queryDiscovery, queryEntries } from './query-window.js';
 import { summaryView, needsWorldEntries } from './startup-summary.js';
-import { readCompleteness } from './read-completeness.js';
 const vault='a'.repeat(64), actor='b'.repeat(64), related='c'.repeat(64);
 test('Library preserves semantic file kind and actor while prioritizing ordinary files and tasks',()=>{
  const query=libraryFilesQuery(vault,actor);
@@ -15,7 +14,6 @@ test('Library preserves semantic file kind and actor while prioritizing ordinary
  assert.deepEqual(queryDiscovery(libraryTasksQuery(vault,actor)),[{types:['task']}]);
  assert.equal(summaryView('/app/','#library'),true);
  assert.equal(needsWorldEntries({entriesComplete:false},'library'),false);
- assert.equal(readCompleteness({ok:{rows:[]}}).authoritativeEmpty,false);
 });
 test('Library derived-file dependencies use bounded explicit IDs and current actor',()=>{
  const [query]=libraryRelatedQueries([{type:'task',record:{status:'done',outputs:[related,related,'bad'],inputs:[{entry:vault}]}}],actor);

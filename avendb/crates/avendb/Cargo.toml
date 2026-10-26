@@ -51,3 +51,7 @@ localhost-passkeys = []
 # the engine's own hash, of its sources (build.rs)
 [build-dependencies]
 blake3 = { version = "1.8.7", features = ["zeroize"] }
+
+[dev-dependencies]
+# the helpers the tests share (T3)
+avendb-testkit = { path = "../avendb-testkit" }
