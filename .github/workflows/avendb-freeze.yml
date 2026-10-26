@@ -16,12 +16,13 @@ name: avenDB freeze off SLH-DSA
 #            fork's branch as avendb/crates/avendb/legacy/, which the code cut builds in (F3). An edit's id is a hash of
 #            its sealed bytes and says nothing of them.
 #
-# It runs on a push of this file to the fork's branch alone. The log holds counts, short signer ids and vault ids, as
+# It runs only on a push that changes avendb/crates/avendb/legacy/freeze-now on the fork's branch (the final freeze,
+# on Samuel's go), never on a change to this file. The log holds counts, short signer ids and vault ids, as
 # `avendb-server snapshots` prints them; no secret leaves the server.
 on:
   push:
     branches: [claude/project-thread-ogctxh]
-    paths: ['.github/workflows/avendb-freeze.yml']
+    paths: ['avendb/crates/avendb/legacy/freeze-now']
 
 concurrency:
   group: avendb-freeze
@@ -74,7 +75,8 @@ jobs:
           echo "::error::no backup finished within 20 minutes"; exit 1
           EOS
       - name: The live server's device
-        run: ssh prod "docker logs maia-city-avendb 2>&1 | grep 'avenDB server: device' | tail -1"
+        run: |
+          ssh prod "docker logs maia-city-avendb 2>&1 | grep 'avenDB server: device' | tail -1"
       - name: Freeze
         env:
           IMAGE: ${{ env.PRE_CUT }}
