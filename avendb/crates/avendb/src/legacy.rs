@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 use crate::batch::{Hash, Path, Tree};
 use crate::id::{EditId, SignerId, VaultId};
 use crate::lab::Lab;
-use crate::policy::{Action, Edit, Kind, Principal, replay};
+use crate::policy::{Action, Edit, Principal, replay};
 use crate::recovery;
 use crate::sign::{Signed, Suite};
 use crate::words;
@@ -153,8 +153,12 @@ pub struct Survey {
     pub refused: usize,
     /// The frozen edits by the vault they came under, most first.
     pub by_vault: Vec<(Option<VaultId>, usize)>,
-    /// Each human and coop vault: who governs it and acts for it, and in which suite.
+    /// Each vault: who governs it and acts for it, and in which suite.
     pub vaults: Vec<Value>,
+    /// Each signer of SLH-DSA: how many edits it signed and the deepest of them, beside the deepest edit of all
+    /// (`deepest`), so that whoever forks sees who still signs in SLH-DSA.
+    pub slh_signers: Vec<Value>,
+    pub deepest: u64,
 }
 
 /// The freeze, one edit at a time (`freeze`), so that it never holds more than one vault's signed edits at once: each
@@ -171,6 +175,8 @@ pub struct Freezing {
     suites: HashMap<SignerId, Suite>,
     counts: BTreeMap<Option<VaultId>, usize>,
     governing: Vec<Edit>,
+    slh: HashMap<SignerId, (usize, u64)>,
+    deepest: u64,
 }
 
 impl Freezing {
@@ -187,8 +193,13 @@ impl Freezing {
             return;
         }
         (self.held, self.bare) = (self.held + 1, self.bare + usize::from(bare));
+        self.deepest = self.deepest.max(signed.edit.depth);
         for sig in &signed.sigs {
             self.suites.insert(sig.keys.id(), sig.keys.suite());
+            if sig.keys.suite() == Suite::SlhDsa {
+                let (n, deepest) = self.slh.entry(sig.keys.id()).or_default();
+                (*n, *deepest) = (*n + 1, (*deepest).max(signed.edit.depth));
+            }
         }
         if signed.sigs.iter().any(|s| s.keys.suite() == Suite::SlhDsa) {
             self.ids.push(signed.edit.id());
@@ -215,7 +226,6 @@ impl Freezing {
         let vaults = st
             .vaults()
             .iter()
-            .filter(|v| matches!(v.kind, Kind::Human | Kind::Coop))
             .map(|v| {
                 let owners: Vec<Value> = v
                     .owners
@@ -240,7 +250,14 @@ impl Freezing {
             .collect();
         let mut by_vault: Vec<(Option<VaultId>, usize)> = self.counts.into_iter().collect();
         by_vault.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-        Survey { frozen, held, bare: self.bare, refused: self.refused, by_vault, vaults }
+        let mut slh: Vec<(SignerId, (usize, u64))> = self.slh.into_iter().collect();
+        slh.sort_by_key(|(s, (_, deepest))| (std::cmp::Reverse(*deepest), *s));
+        let slh_signers = slh
+            .into_iter()
+            .map(|(s, (edits, deepest))| json!({ "signer": short(&s.0), "edits": edits, "deepest": deepest }))
+            .collect();
+        let (bare, refused, deepest) = (self.bare, self.refused, self.deepest);
+        Survey { frozen, held, bare, refused, by_vault, vaults, slh_signers, deepest }
     }
 }
 
@@ -272,6 +289,8 @@ impl Survey {
             "refused_now": self.refused,
             "frozen_by_vault": by_vault,
             "vaults": self.vaults,
+            "deepest": self.deepest,
+            "slh_signers": self.slh_signers,
         })
     }
 }

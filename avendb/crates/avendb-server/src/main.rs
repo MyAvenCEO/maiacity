@@ -217,7 +217,7 @@ async fn stopped(backups: Option<&backups::Backups>) -> Result<()> {
 /// newest by default, read one vault at a time, each edit checked again as a device checks what it takes
 /// (`legacy::Freezing`), so that it never holds more than one vault's signed edits at once. Writes the ids of the edits
 /// it takes that an SLH-DSA signer signed to `out`, and says what it found as JSON: the anchor, how many edits it read,
-/// took and froze, and each human and coop vault's owners, root and devices by suite.
+/// took and froze, each vault's owners, root and devices by suite, and who still signs in SLH-DSA.
 async fn freeze(config: &Config, at: Option<u64>, out: &std::path::Path) -> Result<()> {
     let snapshots = snapshots(config)?;
     let (mut freezing, mut read, mut offered) = (avendb::legacy::Freezing::default(), vec![], 0);

@@ -137,4 +137,7 @@ fn the_freeze_of_a_lab_takes_the_slh_dsa_edits_and_says_who_is_left() {
     };
     assert_eq!(left(&alice.0), 2, "her old passkey and her old Mac");
     assert_eq!(left(&bobs.0), 0);
+    let signers = report["slh_signers"].as_array().expect("signers");
+    assert_eq!(signers.len(), 2, "her old passkey and her old Mac: {signers:?}");
+    assert!(signers.iter().all(|s| s["deepest"].as_u64() <= report["deepest"].as_u64()));
 }
