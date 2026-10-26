@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use avendb::cast::{document, human_on};
-use avendb::entry_state::{EntryState, entry_state, log_edits, needs};
+use avendb::entry_state::{EntryState, entry_state, log_edits, needs, writable};
 use avendb::id::{EditId, EntryId, SignerId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::{Action, Edit, Revoking, Slice, Stated};
@@ -68,6 +68,8 @@ fn full_before_a_snapshot_based_after_it() {
     let state = entry_state(&held, &slices, n.welcome);
     assert_eq!(state, EntryState::Based { id: c, stated: x });
     assert!(needs(&held, &state, n.welcome).is_empty(), "a fresh snapshot: nothing to replay");
+    assert!(writable(true, &state) && !writable(false, &state), "an owner writes a based entry, a reader reads it");
+    assert!(writable(false, &EntryState::Full));
     // a slice the device hasn't opened yet leaves the entry full
     assert_eq!(entry_state(&held, &HashMap::new(), n.welcome), EntryState::Full);
 }

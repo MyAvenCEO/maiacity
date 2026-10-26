@@ -56,3 +56,13 @@ pub fn needs<'a>(edits: &'a [Edit], state: &EntryState, e: EntryId) -> Vec<&'a E
         }
     }
 }
+
+/// Whether a device may write an entry in `state` itself, besides what policy says (`writable`): a full entry yes, a
+/// based one only when the device acts for its vault (`owner`). Owners and readers take the same based format; a
+/// reader shows it read-only.
+pub fn writable(owner: bool, state: &EntryState) -> bool {
+    match state {
+        EntryState::Full => true,
+        EntryState::Based { .. } => owner,
+    }
+}
