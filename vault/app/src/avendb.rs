@@ -59,7 +59,57 @@ pub async fn avendb(
     call: String,
     args: Vec<Value>,
 ) -> Result<Value, String> {
+    if call == "run" {
+        if let Some(scope) = args.first().filter(|op| op.get("op").and_then(Value::as_str) == Some("interest")).and_then(|op| op.get("scope")).and_then(Value::as_str) {
+            held_by(window.label(), scope);
+        }
+    }
     call_on(&state, Some(window), call, args).await
+}
+
+/// The Interests' scopes each webview's page set (avendb-net `interest`, by its label): a page's views clear their own
+/// as they unmount, but a page that goes all at once (⌘R, a new address, a web process that died and opened again,
+/// revive.rs) clears none, and the node would keep bringing for views no page shows.
+static SCOPES: std::sync::LazyLock<Mutex<std::collections::HashMap<String, std::collections::BTreeSet<String>>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// The most scopes kept for one webview: the node keeps no more than this of all pages' (avendb-net `MOST_SCOPES`).
+const MOST_SCOPES: usize = 128;
+
+/// Scope `scope` set by the page of webview `label`.
+fn held_by(label: &str, scope: &str) {
+    if scope.len() != 32 || !scope.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return;
+    }
+    let mut all = SCOPES.lock().expect("the scopes");
+    let mine = all.entry(label.to_string()).or_default();
+    if mine.len() < MOST_SCOPES {
+        mine.insert(scope.to_ascii_lowercase());
+    }
+}
+
+/// A page starting to load in webview `webview` (main.rs `on_page_load`): the page before it is gone, so the
+/// Interests it set are cleared on the device, each at the highest revision so no late update of the old page
+/// brings it back. Scheduling metadata only: it changes what the node brings first, never a vault.
+pub fn page_left(webview: &tauri::Webview) {
+    use tauri::Manager as _;
+    let Some(scopes) = SCOPES.lock().expect("the scopes").remove(webview.label()) else { return };
+    if scopes.is_empty() {
+        return;
+    }
+    let app = webview.app_handle().clone();
+    tauri::async_runtime::spawn(async move {
+        // only a device that is already open holds them: none is started for this
+        if app.state::<Avendb>().hosted.lock().await.is_none() {
+            return;
+        }
+        for scope in scopes {
+            let op = json!({"op": "interest", "scope": scope, "revision": 9_007_199_254_740_991u64, "wants": []});
+            if let Err(e) = run(&app, op).await {
+                tracing::warn!(target: "webview", "a page's interest {scope} wasn't cleared: {e}");
+            }
+        }
+    });
 }
 
 /// Runs op `op` on avenDB's device as `avendb` runs it (`run`), a `read_file`'s bytes handed to the page as they are,
