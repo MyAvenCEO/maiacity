@@ -152,3 +152,43 @@ fn the_type_index_answers_what_the_full_scan_answers() {
     let q = json!({"op":"query","where":{"type":["todo"]}});
     assert_eq!(read(&w.lab, w.mac_b, &q), crate::engine::full_query_oracle(&w.lab, w.mac_b, &q));
 }
+
+/// `LiveQuery.lean` `untouched_query_unchanged`: a change names the entries it touched, and a query that selects none
+/// of them answers as before, so the page needn't run it again.
+#[test]
+fn a_change_names_what_it_touched_and_untouched_queries_stay() {
+    let mut w = crate::cast::world();
+    let (me, vault) = (w.mac_a, w.alice);
+    let todo = w.lab.create(me, vault, vault, "todo", &[], document("Todo", "body", me)).unwrap();
+    let todos = json!({"op":"query","vault":vault.to_hex(),"where":{"type":["todo"]}});
+    let notes = json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]}});
+    let before = (read(&w.lab, me, &todos), read(&w.lab, me, &notes));
+    let start = read(&w.lab, me, &json!({"op":"touched","since":[0, 0]}));
+    assert_eq!(start["ok"]["all"], true, "without what its log let go, a change may have taken edits out");
+    let since = start["ok"]["since"].clone();
+    let note = w.lab.create(me, vault, vault, "note", &[], document("Note", "body", me)).unwrap();
+    let touched = read(&w.lab, me, &json!({"op":"touched","since":since}));
+    assert_eq!(touched["ok"]["all"], false, "{touched}");
+    assert_eq!(touched["ok"]["entries"], json!([note.to_hex()]));
+    assert_eq!(touched["ok"]["vaults"], json!([vault.to_hex()]));
+    // The todos query selects nothing the change touched: its answer is the same.
+    assert_eq!(read(&w.lab, me, &todos), before.0);
+    assert_ne!(read(&w.lab, me, &notes), before.1);
+    // Nothing since: nothing touched.
+    let again = read(&w.lab, me, &json!({"op":"touched","since":touched["ok"]["since"]}));
+    assert_eq!((again["ok"]["all"].clone(), again["ok"]["entries"].clone()), (json!(false), json!([])));
+    // A change of standing may change any read.
+    let since = again["ok"]["since"].clone();
+    w.lab.tag(me, vault, todo, &["work"], &[]).unwrap();
+    let tagged = read(&w.lab, me, &json!({"op":"touched","since":since}));
+    assert_eq!(tagged["ok"]["entries"], json!([todo.to_hex()]), "a tag is the entry's own edit");
+    let since = tagged["ok"]["since"].clone();
+    let group = w.lab.define_group(me, vault, rules::CapGroup {
+        name: "Readers".into(), caps: vec![rules::Cap { op: rules::Op::Read, slice: Selector::All }], includes: vec![],
+    }).unwrap();
+    w.lab.issue_group(me, &[me], GroupShare {
+        over: vault, who: Who::Vault(w.bob), name: "Readers".into(),
+        select: crate::cast::by_id(todo), group, level: Level::Read, parent: None, issuer: vault,
+    }).unwrap();
+    assert_eq!(read(&w.lab, me, &json!({"op":"touched","since":since}))["ok"]["all"], true);
+}

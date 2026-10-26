@@ -168,6 +168,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "entry_views" => &["vault", "entries", "types", "as", "kind"],
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "after", "depth", "follow", "observeRevision"],
+        "touched" => &["since"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
         "checkpoint_view" | "checkpoint_entry_base" => &["entry"],
@@ -234,9 +235,10 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 38] = [
+const READS: [&str; 39] = [
     "entry_views",
     "query",
+    "touched",
     "objective_check",
     "get",
     "pin",
@@ -358,6 +360,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
     let out = op_of(v).and_then(|(name, o)| match name {
         "entry_views" => entry_views_inner(lab, me, o, &SyncedTo::default()),
         "query" => query(lab, me, o),
+        "touched" => touched(lab, me, o),
         "get" => get(lab, me, o),
         "pin" => pin(lab, me, o),
         "history" => history(lab, me, o),
@@ -1040,6 +1043,23 @@ fn query_from(
     }
     Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
         "next": next.map_or(Value::Null, |c| Value::String(c.to_text())), "coverage": waits.coverage(count).to_json() }))
+}
+
+/// `{"op": "touched", "since": [edits, keys, gone?]}`: what changed on the device since it held `edits` edits and `keys`
+/// McEliece keys (`size`, as the page last saw it before `changed` woke it) and its log had let edits go `gone` times
+/// (left out, unknown: everything is touched): `{"since", "entries", "vaults", "all"}`, what to pass next time, the
+/// entries whose logs took new edits, their vaults, and `all` where a change may touch any read (a vault's, a share's
+/// or an audience's edit, a new key, a removal, or more entries than an answer names). A mounted query re-runs only
+/// where a change touched what it selects (`LiveQuery.lean`, `untouched_query_unchanged`); the rest keep their answers.
+fn touched(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let wrong = || bad("since is [edits, keys] (the size the page last saw) or the since of the last touched");
+    let since = o.get("since").and_then(Value::as_array).filter(|a| (2..=3).contains(&a.len())).ok_or_else(wrong)?;
+    let at = |i: usize| since[i].as_u64().ok_or_else(wrong);
+    let gone = since.get(2).map(|_| at(2)).transpose()?;
+    let t = lab.touched(me, at(0)? as usize, at(1)? as usize, gone);
+    Ok(json!({ "since": [t.size.0, t.size.1, t.gone], "all": t.all,
+        "entries": t.entries.iter().map(|e| e.to_hex()).collect::<Vec<_>>(),
+        "vaults": t.vaults.iter().map(|v| v.to_hex()).collect::<Vec<_>>() }))
 }
 
 /// `{"op": "api_pass", "audience"}`: the device's pass to service `audience` (`sign::ApiPass`), made now by its clock,

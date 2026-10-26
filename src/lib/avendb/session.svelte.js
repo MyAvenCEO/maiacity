@@ -58,6 +58,7 @@ import { createReactiveRead } from './reactive-read.js';
 import { createWorldReader } from './world-reader.js';
 import { createEntryWindow, createReadWindow } from './query-window.js';
 import { useDevice, refreshActiveView, wantNow } from '../../../game/code/sources/device.js';
+import { touches } from '../../../game/code/sources/touched.js';
 import { sync } from './sync.svelte.js';
 
 /** The name of this browser's shelf in OPFS (./device/store.js). */
@@ -101,6 +102,11 @@ let meta = $state.raw(null);
 /** what the device shows of its world (avendb-browser's `World::to_json`): kept whole, as it comes */
 // Accepted local data changes, before the heavier world summary is rebuilt.
 let revision = $state(0);
+/** Bumped by a change that may change any read: the person's own, or one of standing (`touched` answers `all`). */
+let standing = $state(0);
+/** The observers mounted now: each re-runs on `standing`, or when a change touched what it reads (`touches`).
+ *  @type {Set<{ op: any, last: any, bump: () => void }>} */
+const observers = new Set();
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
@@ -585,12 +591,19 @@ function watch() {
 	const on = () => watching === token && device === d;
 	// A second cheap change subscription invalidates targeted views independently of
 	// full-world rendering/backoff. It never downloads or materializes the world.
+	// Each wake asks the device what the change touched (`touched`, spec/AvenDB/LiveQuery.lean) and runs again only the
+	// observers whose query it may change; a change of standing, or a device that can't say, runs them all.
 	(async () => {
-		let held = await d.size();
-		if (on()) { revision++; refreshActiveView(); } // cover changes concurrent with this initial snapshot too
-		while (on() && (await d.changed(...held)) && on()) {
-			held = await d.size();
-			if (on()) { revision++; refreshActiveView(); }
+		let since = await d.size();
+		if (on()) { revision++; standing++; refreshActiveView(); } // cover changes concurrent with this initial snapshot too
+		while (on() && (await d.changed(since[0], since[1])) && on()) {
+			const t = await d.run({ op: 'touched', since }).then((out) => out?.ok ?? null, () => null);
+			since = Array.isArray(t?.since) ? t.since : await d.size();
+			if (!on()) break;
+			revision++;
+			if (!t || t.all !== false) standing++;
+			else for (const o of observers) if (touches(o.op, t, o.last)) o.bump();
+			refreshActiveView();
 		}
 	})().catch((/** @type {Error} */ e) => on() && (error = `Watching local changes failed: ${e.message}`));
 	(async () => {
@@ -758,6 +771,7 @@ async function change(what, work) {
 	const ok = await attempt(what, work);
 	if (ok && device === d) {
 		revision++;
+		standing++;
 		// Local acceptance completes independently of the expensive world summary.
 		// Targeted subscribers read the authoritative local device immediately.
 		queueRefresh(d);
@@ -845,14 +859,22 @@ const api = {
 	/** Subscribe to any targeted local query, independent of the world summary.
 	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] @param {(revisions: any[]) => void} [observed] */
 	observe(query, take, failed, observed) {
-		const reader = createReactiveRead({ read: observedWindow((d, op) => near(d, op)), take, failed, observed });
+		let tick = $state(0);
+		// What it read last and of what, kept plain: the change wake asks `touches` of them, never a redraw.
+		const watched = { op: /** @type {any} */ (null), last: /** @type {any} */ (null), bump: () => tick++ };
+		const kept = (/** @type {any} */ answer) => { watched.last = answer; take(answer); };
+		const reader = createReactiveRead({ read: observedWindow((d, op) => near(d, op)), take: kept, failed, observed });
+		observers.add(watched);
 		const dispose = $effect.root(() => {
 			$effect(() => {
-				void revision;
-				reader.update(query(), device, context.current);
+				void standing;
+				void tick;
+				const op = query();
+				watched.op = op;
+				reader.update(op, device, context.current);
 			});
 		});
-		return () => { dispose(); reader.close(); };
+		return () => { observers.delete(watched); dispose(); reader.close(); };
 	},
 	/**
 	 * Runs change op `op` as `what` (./ops.js, avendb/docs/ARCHITECTURE.md §8): an entry's change, a share, a

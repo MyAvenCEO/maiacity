@@ -4338,13 +4338,16 @@ pub struct Log {
     revision: LogRevision,
     /// Stable only while this particular log appends. A removal or a clone starts a new lineage.
     lineage: LogRevision,
+    /// How many times it let edits go (`let_go`), the one way edits leave it: what a reader of its tail since a size
+    /// tells a removal by (`Lab::touched`).
+    gone: u64,
 }
 
 impl Clone for Log {
     fn clone(&self) -> Self {
         Self { edits: self.edits.clone(), ids: self.ids.clone(), held: self.held.clone(),
             revision: self.revision.clone(), lineage: LogRevision::default(),
-            entry_order: self.entry_order.clone(), write_at: self.write_at.clone() }
+            entry_order: self.entry_order.clone(), write_at: self.write_at.clone(), gone: self.gone }
     }
 }
 
@@ -4409,6 +4412,9 @@ impl Log {
 
     /// An incremental index may append while this token stays equal; otherwise it must rebuild.
     pub fn lineage(&self) -> LogRevision { self.lineage.clone() }
+
+    /// How many times it let edits go (`let_go`).
+    pub fn gone(&self) -> u64 { self.gone }
 
     pub fn view(&self) -> State {
         self.replay().state
@@ -4593,6 +4599,7 @@ impl Log {
         if self.ids.len() != before {
             self.revision = LogRevision::default();
             self.lineage = LogRevision::default();
+            self.gone += 1;
             self.rebuild_entry_index();
         }
     }

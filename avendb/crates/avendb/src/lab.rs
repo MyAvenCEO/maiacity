@@ -590,6 +590,23 @@ fn handed_of(bytes: &[u8]) -> Option<(Vec<EditId>, &[u8])> {
     Some((ids.chunks_exact(32).map(|id| EditId(id.try_into().expect("32 bytes"))).collect(), view))
 }
 
+/// What a change touched (`Lab::touched`): `entries` whose logs took edits, their `vaults`, or `all`; with the size
+/// the device holds now and its log's removals, which the page passes as `since` next.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Touched {
+    pub size: (usize, usize),
+    /// How many times its log let edits go (`policy::Log::gone`).
+    pub gone: u64,
+    pub entries: BTreeSet<EntryId>,
+    pub vaults: BTreeSet<VaultId>,
+    pub all: bool,
+}
+
+impl Touched {
+    /// The most entries a change names; past that it touches everything.
+    pub const MOST: usize = 512;
+}
+
 /// What a device keeps on its shelf of what it worked out, to start again from it quickly (`Lab::restore_warm`), each
 /// the newest first, as `Lab::warming` gave it, encrypted for it alone: its keys, for any engine, which hold the keys it
 /// opened from their boxes and what its shelf names the edits it checked by (`Checked`); and its stored views, for this
@@ -4334,6 +4351,32 @@ impl Lab {
             Who::Device(s) | Who::Invite(s) => s == d,
             Who::Vault(x) => st.acts_for(d, x),
         })
+    }
+
+    /// What changed on device `d` since it held `edits` edits and `keys` McEliece keys (`size`): the entries whose logs
+    /// took the edits after those, and their vaults; `all` where a change may touch any read (`LiveQuery.Change`).
+    /// `gone`, how many times its log let edits go then (`Touched::gone`), where the caller knows it: else a change may
+    /// have taken edits out, and touches everything.
+    pub fn touched(&self, d: SignerId, edits: usize, keys: usize, gone: Option<u64>) -> Touched {
+        let size = self.size(d);
+        let store = self.held(d);
+        let (log, ids) = (store.log.edits(), store.log.ids());
+        let now = store.log.gone();
+        let mut t = Touched { size, gone: now, all: size.0 < edits || size.1 != keys || gone != Some(now), ..Touched::default() };
+        if t.all { return t; }
+        for (edit, id) in log[edits..].iter().zip(&ids[edits..]) {
+            match crate::sync::log_of(edit, *id) {
+                Some(LogId::Entry(e)) => {
+                    if let Some(v) = self.vault_of_entry(d, e) { t.vaults.insert(v); }
+                    t.entries.insert(e);
+                }
+                None => {}
+                Some(_) => { t.all = true; break; }
+            }
+            if t.entries.len() > Touched::MOST { t.all = true; break; }
+        }
+        if t.all { t.entries.clear(); t.vaults.clear(); }
+        t
     }
 
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
