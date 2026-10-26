@@ -9,13 +9,8 @@ use std::collections::{BTreeSet, HashMap};
 use avendb::id::SignerId;
 use avendb::keys::{Secret, SeededRng};
 use avendb::tree::{Change, CommitId, KeyTree};
+use avendb_testkit::{num as n, vectors};
 use serde_json::Value;
-
-const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/key_trees.json");
-
-fn n(v: &Value) -> u64 {
-    v.as_u64().expect("a number")
-}
 
 /// One run on the Rust tree, against what the model says of it.
 fn play(case: &Value) {
@@ -78,8 +73,7 @@ fn play(case: &Value) {
 
 #[test]
 fn the_key_tree_opens_what_the_model_says() {
-    let file = std::fs::read_to_string(VECTORS).expect("the vectors: run `lake exe vectors` in avendb/spec");
-    let cases: Value = serde_json::from_str(&file).expect("the key tree vectors");
+    let cases = vectors("key_trees");
     for case in cases.as_array().expect("a list of runs") {
         play(case);
     }

@@ -5,9 +5,8 @@
 //! gives each of `verdicts`' readings the same Lean verdict (`leanVerdict`, `objective::lean_verdict`).
 
 use avendb::objective::{self, Dec};
+use avendb_testkit::vectors;
 use serde_json::Value;
-
-const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/objectives.json");
 
 fn dec(v: &Value) -> Option<Dec> {
     v.as_i64().map(Dec::from).or_else(|| v.as_u64().map(Dec::from))
@@ -15,7 +14,7 @@ fn dec(v: &Value) -> Option<Dec> {
 
 #[test]
 fn objective_vectors() {
-    let file: Value = serde_json::from_str(&std::fs::read_to_string(VECTORS).unwrap()).unwrap();
+    let file = vectors("objectives");
     let cases = file["cases"].as_array().unwrap();
     assert!(cases.len() >= 6);
     assert!(cases.iter().any(|c| c.get("proposed").is_some_and(|p| p.as_array().is_some_and(|p| !p.is_empty()))));
@@ -60,7 +59,7 @@ fn objective_vectors() {
 
 #[test]
 fn lean_verdict_vectors() {
-    let file: Value = serde_json::from_str(&std::fs::read_to_string(VECTORS).unwrap()).unwrap();
+    let file = vectors("objectives");
     let cases = file["verdicts"].as_array().unwrap();
     assert!(cases.len() >= 4);
     for c in cases {
@@ -78,7 +77,7 @@ fn lean_verdict_vectors() {
 
 #[test]
 fn notes_are_doc_comments() {
-    let file: Value = serde_json::from_str(&std::fs::read_to_string(VECTORS).unwrap()).unwrap();
+    let file = vectors("objectives");
     let start = objective::parse(file["cases"][0]["lean"].as_str().unwrap()).unwrap();
     assert_eq!(start[0].note.as_deref(), Some("V1 shows its first frame within 1.5 s on the 8 GB Mac."));
     assert_eq!(start[1].id, "fps");

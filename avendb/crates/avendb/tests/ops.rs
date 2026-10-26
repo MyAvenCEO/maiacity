@@ -15,14 +15,7 @@ use avendb::ops::{cut, diff, follow, run_all, Change, Flat, Link, Record, Record
 use avendb::slice::{Attrs, Sym};
 use records::{nested_op, nested_record, random_op, random_record, Rng, FIELDS};
 use serde_json::{json, Value};
-use avendb_testkit::list;
-
-const OPS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/ops.json");
-
-fn vectors() -> Value {
-    let text = std::fs::read_to_string(OPS).expect("the ops vectors: run `lake exe vectors` in avendb/spec");
-    serde_json::from_str(&text).expect("the ops vectors are JSON")
-}
+use avendb_testkit::{list, vectors};
 
 fn record(v: &Value) -> Record {
     v.as_object().unwrap_or_else(|| panic!("a record, not {v}")).clone()
@@ -35,7 +28,7 @@ fn same_changes(got: &[Change], want: &[Change]) -> bool {
 
 #[test]
 fn each_diff_makes_the_models_changes() {
-    let v = vectors();
+    let v = vectors("ops");
     for case in list(&v["diffs"]) {
         let (r, s) = (record(&case["before"]), record(&case["after"]));
         let want: Vec<Change> = list(&case["changes"]).iter().map(|c| Change::of_json(c).expect("a change")).collect();
@@ -53,7 +46,7 @@ fn each_diff_makes_the_models_changes() {
 
 #[test]
 fn each_run_ends_where_the_models_does() {
-    let v = vectors();
+    let v = vectors("ops");
     for case in list(&v["runs"]) {
         let before = record(&case["before"]);
         let op = |o: &Value| RecordOp::of_json(o).unwrap_or_else(|why| panic!("{o}: {why}"));
@@ -74,7 +67,7 @@ fn each_run_ends_where_the_models_does() {
 
 #[test]
 fn each_query_picks_and_holds_as_the_models() {
-    let v = vectors();
+    let v = vectors("ops");
     let entries: Vec<(Attrs, Record)> = list(&v["entries"])
         .iter()
         .map(|e| {
@@ -121,7 +114,7 @@ fn without_why(mut v: Value) -> Value {
 
 #[test]
 fn each_link_followed_shows_what_the_models_does() {
-    let v = vectors();
+    let v = vectors("ops");
     let graph: Vec<(Link, Record)> = list(&v["graph"])
         .iter()
         .map(|n| {
