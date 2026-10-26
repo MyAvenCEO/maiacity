@@ -1,15 +1,10 @@
-//! Bounded positive-type discovery. IDs are scheduling hints, never authority or completeness.
+//! A view's positive-type selectors, found through the blind index (`blind`, P4 of sync v2): any peer answers, the
+//! server too. Found IDs are scheduling hints, never authority or completeness.
 use std::sync::Arc;
-use anyhow::{Context, Result, ensure};
 use avendb::{id::{EntryId, VaultId}, sync::LogId};
 use n0_future::{task, time::{self, Duration, Instant}};
-use serde_json::{Value, json};
-use crate::{Shared, Peer, session};
-
-pub(crate) const KIND: u8 = 17;
-pub(crate) const REQUEST_LIMIT: usize = 4096;
-pub(crate) const RESPONSE_LIMIT: usize = 8192;
-pub(crate) const HINTS: usize = 64;
+use serde_json::Value;
+use crate::Shared;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Query {
@@ -25,60 +20,12 @@ impl Query {
         let query = Self { types, vault };
         query.valid().then_some(query)
     }
-    fn json(&self) -> Value {
-        let mut value = json!({"types": self.types});
-        if let Some(vault) = &self.vault { value["vault"] = json!(vault); }
-        value
-    }
-
     pub fn valid(&self) -> bool {
         !self.types.is_empty() && self.types.len() <= 8
             && self.types.iter().all(|t| !t.is_empty() && t.len() <= 64)
             && self.vault.as_ref().is_none_or(|v| VaultId::from_hex(v).is_some())
     }
 }
-fn request(bytes: &[u8]) -> Result<Query> {
-    ensure!(bytes.len() <= REQUEST_LIMIT, "discovery request too large");
-    let value: Value = serde_json::from_slice(bytes)?;
-    let map = value.as_object().context("discovery request object")?;
-    ensure!(map.len() == 2 && value["version"].as_u64() == Some(1), "unsupported discovery version");
-    Query::parse(&value["query"]).context("invalid discovery query")
-}
-fn response(bytes: &[u8]) -> Result<Vec<LogId>> {
-    ensure!(bytes.len() <= RESPONSE_LIMIT, "discovery response too large");
-    let value: Value = serde_json::from_slice(bytes)?;
-    ensure!(value.as_object().is_some_and(|m| m.len() == 3)
-        && value["version"].as_u64() == Some(1) && value["complete"].as_bool() == Some(false), "unsupported discovery response");
-    let rows = value["entries"].as_array().context("discovery entries")?;
-    ensure!(rows.len() <= HINTS, "too many discovery hints");
-    rows.iter().map(|v| v.as_str().and_then(EntryId::from_hex).map(LogId::Entry).context("invalid discovery ID")).collect()
-}
-
-pub(crate) async fn answer(shared: &Arc<Shared>, peer: &Peer, bytes: &[u8]) -> Result<Vec<u8>> {
-    let query = request(bytes)?;
-    let permit = shared.discovery_answer.clone().try_acquire_owned().context("discovery busy")?;
-    let requester = peer.device;
-    let (revision, entries, permit) = shared.read(move |lab, me| {
-        (lab.log(me).revision(), hints(lab, me, requester, &query), permit)
-    }).await;
-    let body = serde_json::to_vec(&json!({"version": 1, "complete": false, "entries": entries}))?;
-    // Recheck after preparation/encoding. Equal-count restore and revocation both change this identity.
-    shared.read(move |lab, me| {
-        let _permit = permit;
-        finish(lab, me, revision, body)
-    }).await
-}
-
-fn finish(lab: &avendb::lab::Lab, me: avendb::id::SignerId, revision: avendb::policy::LogRevision, body: Vec<u8>) -> Result<Vec<u8>> {
-    ensure!(lab.log(me).revision() == revision, "discovery authorization changed during preparation");
-    Ok(body)
-}
-
-fn hints(lab: &avendb::lab::Lab, me: avendb::id::SignerId, requester: avendb::id::SignerId, query: &Query) -> Vec<String> {
-    lab.discover_types(me, requester, query.vault.as_deref().and_then(VaultId::from_hex), &query.types)
-        .into_iter().map(|id| id.to_hex()).collect()
-}
-
 /// Bounded vault-local dependencies; never a global schema query or an access grant.
 fn lane_queries(entries: &[LogId], waits: &[(EntryId,VaultId)]) -> Vec<Query> {
     let mut vaults=std::collections::BTreeSet::new();
@@ -135,17 +82,26 @@ impl Shared {
                     // discovery uses the same authorized selector; it never claims completeness.
                     let requested = entries.clone();
                     let selectors = queries.clone();
-                    let local = shared.read(move |lab, me| {
+                    let mut tokens = Vec::new();
+                    for query in &selectors {
+                        let labels = query.types.iter().map(|t| avendb::index::type_label(t)).collect();
+                        tokens.push(shared.find_tokens(query.vault.as_deref().and_then(VaultId::from_hex), labels).await);
+                    }
+                    let (local, finds) = shared.read(move |lab, me| {
                         let mut local = requested;
-                        for query in selectors {
-                            for id in lab.discover_types(me, me, query.vault.as_deref().and_then(VaultId::from_hex), &query.types) {
+                        let mut finds = Vec::new();
+                        for (query, tokens) in selectors.into_iter().zip(tokens) {
+                            let vault = query.vault.as_deref().and_then(VaultId::from_hex);
+                            if tokens.is_empty() { finds.push(None); continue; }
+                            for id in lab.find_local(me, me, &[], vault, &tokens, None).0 {
+                                if local.len() >= 8 { break; }
                                 let id = LogId::Entry(id);
                                 if !local.contains(&id) { local.push(id); }
-                                if local.len() >= 8 { break; }
                             }
-                            if local.len() >= 8 { break; }
+                            // the newest keys' tokens first: one request a query, as the lane is bounded
+                            finds.push(Some(crate::blind::Find { vault, after: None, follow: vec![], tokens: tokens.into_iter().take(avendb::index::FIND_TOKENS).collect() }));
                         }
-                        local
+                        (local, finds)
                     }).await;
                     for id in local.iter().take(8) {
                         if !shared.discovery_current(&scope, revision) { break; }
@@ -167,12 +123,12 @@ impl Shared {
                                 if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
                             }
                         }
-                        for (query_index,query) in queries.iter().enumerate() {
+                        for (query_index,find) in finds.iter().enumerate() {
                             if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
-                            let request = serde_json::to_vec(&json!({"version": 1, "query": query.json()})).expect("discovery JSON");
-                            let reply = time::timeout(Duration::from_secs(3).min(deadline.saturating_duration_since(Instant::now())), session::exchange(&peer.conn, KIND, &request, RESPONSE_LIMIT)).await;
-                            let Ok(Ok(bytes)) = reply else { break }; // legacy/refusing peers remain incomplete
-                            let Ok(ids) = response(&bytes) else { break };
+                            let Some(find) = find.clone() else { continue }; // no key of the vault: nothing to find by
+                            let reply = time::timeout(Duration::from_secs(3).min(deadline.saturating_duration_since(Instant::now())), crate::blind::find_all(&peer, find)).await;
+                            let Ok(Ok(ids)) = reply else { break }; // legacy/refusing peers remain incomplete
+                            let ids: Vec<LogId> = ids.into_iter().take(avendb::index::FIND_PAGE).map(LogId::Entry).collect();
                             if !shared.interests.lock().expect("interests").discovered(&scope, revision, &ids) { break; }
                             shared.size.send_modify(|_| {});
                             shared.bootstrap_due.notify_one();
@@ -208,74 +164,15 @@ impl Shared {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use avendb::cast::{world, document};
     #[test]
-    fn positive_selectors_are_bounded_and_cannot_choose_an_identity() {
-        assert!(request(br#"{"version":1,"query":{"types":["note"]},"requester":"forged"}"#).is_err());
+    fn positive_selectors_are_bounded() {
         assert!(!Query { types: vec![], vault: None }.valid());
         assert!(!Query { types: vec!["x".repeat(65)], vault: None }.valid());
         assert!(!Query { types: vec!["note".into(); 9], vault: None }.valid());
         assert!(!Query { types: vec!["note".into()], vault: Some("bad".into()) }.valid());
-        assert!(Query::parse(&json!({"types":["note"],"where":{"any":[]}})).is_none());
+        assert!(Query::parse(&serde_json::json!({"types":["note"],"where":{"any":[]}})).is_none());
+        assert!(Query::parse(&serde_json::json!({"types":["note"]})).is_some());
     }
-    #[test]
-    fn unsupported_or_empty_discovery_never_claims_completeness() {
-        assert!(response(b"unsupported").is_err());
-        assert!(response(br#"{"version":2,"complete":false,"entries":[]}"#).is_err());
-        assert!(response(br#"{"version":1,"complete":true,"entries":[]}"#).is_err());
-        assert_eq!(response(br#"{"version":1,"complete":false,"entries":[]}"#).unwrap(), vec![]);
-        let too_many = json!({"version":1,"complete":false,"entries":vec!["ab".repeat(32); HINTS + 1]});
-        assert!(response(&serde_json::to_vec(&too_many).unwrap()).is_err());
-    }
-    #[test]
-    fn private_type_discovery_checks_recipient_before_matching_and_caps_hints() {
-        let mut w = world();
-        let target = w.lab.create(w.mac_a, w.alice, w.alice, "private-note", &[],
-            document("Private", "Never disclose to Bob", w.mac_a)).unwrap();
-        let query = Query { types: vec!["private-note".into()], vault: None };
-        assert!(hints(&w.lab, w.mac_a, w.mac_b, &query).is_empty());
-        assert!(hints(&w.lab, w.mac_a, w.stranger, &query).is_empty());
-        // A backup-only peer may retain ciphertext, but may not discover plaintext type metadata.
-        let alice = w.alice;
-        avendb::cast::relay_on(&mut w, alice);
-        assert!(hints(&w.lab, w.mac_a, w.server, &query).is_empty());
-        assert_eq!(hints(&w.lab, w.mac_a, w.phone_a, &query), vec![target.to_hex()]);
-        let narrow = Query { vault: Some(w.bob.to_hex()), ..query.clone() };
-        assert!(hints(&w.lab, w.mac_a, w.phone_a, &narrow).is_empty());
-        for _ in 0..HINTS {
-            w.lab.create(w.mac_a, w.alice, w.alice, "private-note", &[], document("Private", "More", w.mac_a)).unwrap();
-        }
-        assert_eq!(hints(&w.lab, w.mac_a, w.phone_a, &query).len(), HINTS);
-    }
-    #[test]
-    fn pending_revocation_invalidates_prepared_hints_before_materialization() {
-        use avendb::policy::{Action, Revoking};
-        let mut w = world();
-        let target = w.lab.create(w.mac_a, w.alice, w.alice, "private-note", &[],
-            document("Private", "Current permission", w.mac_a)).unwrap();
-        let query = Query { types: vec!["private-note".into()], vault: None };
-        // split moves the device store, so author the future governance batch while it is
-        // still held here, then restore only the provider's earlier state for the race.
-        let before_revocation = w.lab.backup(w.mac_a);
-        w.lab.submit(w.mac_a, &[w.passkey_a], Action::Revoke(Revoking::Device {
-            vault: w.alice, device: w.phone_a, keep: vec![],
-        })).unwrap();
-        let revoked = w.lab.backup(w.mac_a).signed().to_vec();
-        let mut provider = w.lab.split(w.mac_a, &[], [123; 32]);
-        provider.restore_from(w.mac_a, before_revocation);
-        let prepared_revision = provider.log(w.mac_a).revision();
-        assert_eq!(hints(&provider, w.mac_a, w.phone_a, &query), vec![target.to_hex()]);
-        let body = serde_json::to_vec(&json!({"version":1,"complete":false,"entries":[target.to_hex()]})).unwrap();
-        assert!(finish(&provider, w.mac_a, prepared_revision.clone(), body.clone()).is_ok());
-        provider.receive_whose_now(w.mac_a, revoked, vec![], false);
-        assert_ne!(provider.log(w.mac_a).revision(), prepared_revision,
-            "prepared response fails the transmission fence");
-        assert!(finish(&provider, w.mac_a, prepared_revision, body).is_err(),
-            "actual prepared-response fence must withhold already encoded IDs");
-        assert!(hints(&provider, w.mac_a, w.phone_a, &query).is_empty(),
-            "current policy rejects even before background materialization");
-    }
-
 }
 
 #[cfg(test)]

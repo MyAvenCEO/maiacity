@@ -48,7 +48,7 @@ pub async fn open_owned(writer: Writer, opts: Options) -> Result<Node> {
         "the server",
         &secret,
         suite,
-        Options { keep: true, card: true, ..opts },
+        Options { keep: true, card: true, index: true, ..opts },
         Some(writer),
     )
     .await

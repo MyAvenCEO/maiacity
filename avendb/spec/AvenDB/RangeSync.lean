@@ -200,6 +200,97 @@ theorem round_agrees_heads {fp : Held K Head → (K → Bool) → F} (hfp : Soun
     takeIn later t r a b k = takeIn later t r b a k ∧ takeIn later t r a b k = later (a k) (b k) :=
   (round_agrees hfp later_join a b t r hfin).1 k hr
 
+/-! ## Scoped rounds and pushed heads (P5 of sync v2)
+
+A device syncs what its views want, not whole vaults: an Interest names a set of logs (`scope`), the blind index finds
+the entry logs of a type or a tag (`BlindIndex.find`), and a round runs over the part of a range in the scope alone
+(`cutIn r scope`). Such a round sends only keys of the scope (`scoped_sends_only_scope`), so a view's sync moves no log
+of another view, and two devices that finish it hold the later head of every log of the scope in the range, leaving
+every other log as it was (`scoped_round_agrees`). Rounds of several scopes run side by side, one per peer, so a device
+takes from all the peers that hold what it lacks at once.
+
+A peer tells each device its new head of a log as it takes it (an announcement), never asked for it on a timer. Taking
+in an announcement is the later head again (`push`), so a device ends at the same heads whatever order its peers'
+announcements come in, and an announcement it took twice changes nothing (`push_comm`, `push_idem`).
+-/
+
+/-- R2: a round over the part of range `r` in scope `s` sends only keys of the scope. -/
+theorem scoped_sends_only_scope (t : Round K) (r s : K → Bool) (k : K) (h : sent t (cutIn r s) k = true) :
+    s k = true := by
+  have := sent_in t (cutIn r s) k h
+  simp only [cutIn, Bool.and_eq_true] at this
+  exact this.2
+
+/-- R2: two devices that finish a round over the part of range `r` in scope `s` hold the later head of every log of the
+    scope in the range, the same at both ends, and every other log as it was. -/
+theorem scoped_round_agrees {fp : Held K Head → (K → Bool) → F} (hfp : Sound fp) (a b : Held K Head) (t : Round K)
+    (r s : K → Bool) (hfin : finished fp a b t (cutIn r s)) :
+    (∀ k, r k = true → s k = true →
+      takeIn later t (cutIn r s) a b k = takeIn later t (cutIn r s) b a k ∧
+      takeIn later t (cutIn r s) a b k = later (a k) (b k)) ∧
+    (∀ k, s k = false → takeIn later t (cutIn r s) a b k = a k ∧ takeIn later t (cutIn r s) b a k = b k) := by
+  have h := round_agrees hfp later_join a b t (cutIn r s) hfin
+  refine ⟨fun k hr hs => h.1 k (by simp [cutIn, hr, hs]), fun k hs => h.2 k (by simp [cutIn, hs])⟩
+
+/-- A device takes in a peer's announcement of its head `h` of log `k`: the later of the two heads. -/
+def push [DecidableEq K] (held : Held K Head) (k : K) (h : Head) : Held K Head :=
+  fun j => if j = k then later (held j) (some h) else held j
+
+/-- The later head, as one comparison: the longer, or of two as long the one with the greater root. -/
+theorem Head.later_eq (x y : Head) :
+    x.later y = if x.len < y.len ∨ (x.len = y.len ∧ x.root < y.root) then y else x := by
+  obtain ⟨xl, xr⟩ := x
+  obtain ⟨yl, yr⟩ := y
+  unfold Head.later
+  by_cases h1 : xl < yl
+  · simp [h1]
+  · by_cases h2 : yl < xl
+    · have : ¬ (xl = yl) := by omega
+      simp [h1, h2, this]
+    · have he : xl = yl := by omega
+      subst he
+      simp [h1]
+
+theorem Head.later_assoc (x y z : Head) : (x.later y).later z = x.later (y.later z) := by
+  obtain ⟨xl, xr⟩ := x
+  obtain ⟨yl, yr⟩ := y
+  obtain ⟨zl, zr⟩ := z
+  simp only [Head.later_eq]
+  by_cases a : xl < yl ∨ (xl = yl ∧ xr < yr) <;> by_cases b : yl < zl ∨ (yl = zl ∧ yr < zr) <;>
+    by_cases c : xl < zl ∨ (xl = zl ∧ xr < zr) <;> simp only [a, b, c, ite_true, ite_false] <;> omega
+
+theorem later_assoc (x y z : Option Head) : later (later x y) z = later x (later y z) := by
+  cases x <;> cases y <;> cases z <;> simp [later, Head.later_assoc]
+
+/-- Announcements taken in either order leave the same heads. -/
+theorem push_comm [DecidableEq K] (held : Held K Head) (k k' : K) (h h' : Head) :
+    push (push held k h) k' h' = push (push held k' h') k h := by
+  funext j
+  unfold push
+  by_cases hk : j = k <;> by_cases hk' : j = k'
+  · subst hk; subst hk'
+    simp only [↓reduceIte, later_assoc]
+    rw [later_join.comm (some h) (some h')]
+  · simp [hk, show ¬ k = k' from fun e => hk' (hk.trans e)]
+  · simp [hk', show ¬ k' = k from fun e => hk (hk'.trans e)]
+  · simp [hk, hk']
+
+/-- An announcement taken twice changes nothing more. -/
+theorem push_idem [DecidableEq K] (held : Held K Head) (k : K) (h : Head) :
+    push (push held k h) k h = push held k h := by
+  funext j
+  unfold push
+  by_cases hk : j = k
+  · simp only [hk, ↓reduceIte, later_assoc, later_join.idem]
+  · simp [hk]
+
+/-- A pushed head never moves a log's head back: the later of the two is at least as long. -/
+theorem push_never_back [DecidableEq K] (held : Held K Head) (k : K) (h : Head) (x : Head) (hx : held k = some x) :
+    ∃ y, push held k h k = some y ∧ x.len ≤ y.len := by
+  refine ⟨x.later h, by simp [push, hx, later], ?_⟩
+  unfold Head.later
+  split <;> (try split) <;> (try split) <;> omega
+
 end Range
 
 end AvenDB

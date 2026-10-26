@@ -107,6 +107,7 @@ pub mod backup;
 #[cfg(test)]
 mod bench;
 mod actor;
+mod blind;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
@@ -139,6 +140,7 @@ mod pulls;
 mod live;
 mod ranges;
 mod run;
+mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
@@ -234,7 +236,7 @@ const PAGE_WAIT: Duration = Duration::from_secs(180);
 /// asking a page at a time by the edits' places across every log it names (`sync::place`), and a log counts only once
 /// it is whole, so one asking of every log of a vault (~2,200 of Maia City's) makes nearly none whole until its last
 /// page. Asked so many at a time, each batch of entries comes whole before the next starts.
-const LOGS_AT_ONCE: usize = 256;
+pub(crate) const LOGS_AT_ONCE: usize = 256;
 
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
 /// agrees the keys of every connection along with X25519, and a peer that offers only classical groups finds none in
@@ -328,6 +330,9 @@ pub struct Options {
     /// The simulated network it is on (P7, `sim`), in place of every socket and relay: a scenario's own.
     #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
     pub sim: Option<sim::Net>,
+    /// It keeps the blind index rows the devices it syncs with tell it, on its shelf, and answers `find` from them
+    /// (`blind`, P4 of sync v2): the server's.
+    pub index: bool,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -359,6 +364,7 @@ impl Options {
             progress: Progress::new(),
             #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
             sim: None,
+            index: false,
         }
     }
 
@@ -780,6 +786,9 @@ impl Node {
             interests: Mutex::default(),
             discovery_running: Mutex::default(),
             discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
+            index: Mutex::default(),
+            index_told: Mutex::default(),
+            index_due: Notify::new(),
             offered: Mutex::default(),
             shelf,
             blob_peers: Mutex::default(),
@@ -811,6 +820,8 @@ impl Node {
             task::spawn(shared.clone().keeper()),
             task::spawn(shared.clone().saver()),
             task::spawn(shared.clone().unshelve()),
+            task::spawn(shared.clone().unshelve_index()),
+            task::spawn(shared.clone().index_teller()),
             task::spawn(shared.clone().bootstrap_pump()),
             task::spawn(transports::control::maintain(shared.clone())),
             task::spawn(actor::run(shared.clone(), inbox)),
@@ -2113,6 +2124,12 @@ struct Shared {
     interests: Mutex<interest::Interests>,
     discovery_running: Mutex<HashMap<String, bool>>,
     discovery_answer: Arc<tokio::sync::Semaphore>,
+    /// The blind index rows it keeps, where it keeps an index (`Options::index`).
+    index: Mutex<avendb::index::Rows>,
+    /// Of each peer, the change of the device's entries it was last told the rows of, `None` once it refused them.
+    index_told: Mutex<HashMap<EndpointId, Option<u64>>>,
+    /// A peer connected: tell it the rows (`blind::index_teller`).
+    index_due: Notify,
     /// The McEliece keys in the blob store, by hash and by id.
     offered: Mutex<blobs::Offered>,
     /// Its blob store over its shelf, if it keeps one (`shelf`): what the shelf holds whole.
@@ -2456,6 +2473,8 @@ impl Shared {
         transports::control::connected(self, &peer);
         self.told.lock().expect("told").remove(&device);
         self.outreach.send(actor::Msg::Reached { device });
+        self.index_told.lock().expect("index told").remove(&endpoint);
+        self.index_due.notify_one();
         self.changed.notify_one();
         self.jobs.stir();
         peer

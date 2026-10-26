@@ -1485,6 +1485,11 @@ mod tests {
                     send.finish().unwrap();
                     continue;
                 }
+                if kind == crate::blind::OFFER {
+                    // a legacy peer knows no blind index
+                    send.reset(session::REFUSED).unwrap();
+                    continue;
+                }
                 return (kind, body.to_vec(), send);
             }
         }

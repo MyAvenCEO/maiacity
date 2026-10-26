@@ -275,7 +275,9 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
     let limit = match kind {
         crate::transports::control::KIND => crate::transports::control::LIMIT,
         crate::edit_ranges::KIND => crate::edit_ranges::CONTROL_BYTES,
-        crate::discovery::KIND => crate::discovery::REQUEST_LIMIT,
+        crate::blind::OFFER => crate::blind::OFFER_LIMIT,
+        crate::blind::ROWS => crate::blind::ROWS_LIMIT,
+        crate::blind::FIND => crate::blind::FIND_LIMIT,
         crate::checkpoint_delivery::KIND => crate::checkpoint_delivery::REQUEST_LIMIT,
         crate::bootstrap_dependencies::KIND => crate::bootstrap_dependencies::LIMIT,
         crate::peer_receipts::KIND | crate::peer_receipts::UI_KIND => crate::peer_receipts::REQUEST_LIMIT,
@@ -303,7 +305,9 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         wire
     };
     match kind {
-        crate::discovery::KIND => crate::discovery::answer(shared, peer, body).await,
+        crate::blind::OFFER => shared.answer_offer(peer, body).await,
+        crate::blind::ROWS => shared.answer_rows(peer, body).await,
+        crate::blind::FIND => shared.answer_find(peer, body).await,
         crate::checkpoint_delivery::KIND => crate::checkpoint_delivery::answer(shared, peer, body, checkpoint.context("missing checkpoint response admission")?).await,
         crate::bootstrap_dependencies::KIND => crate::bootstrap_dependencies::answer(shared,peer,body,checkpoint.context("missing dependency response admission")?).await,
         crate::peer_receipts::KIND => crate::peer_receipts::answer(shared, peer, body).await,
