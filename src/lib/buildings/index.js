@@ -34,7 +34,7 @@ const HISTORY = {
 
 const DOME_LIST = DOMES_IN_ORDER.map((d) => ({
 	id: `dome-${d.kind}`,
-	label: DOMES[d.kind].label,
+	label: d.label,
 	note: d.text,
 	usedIn: 'Sandbox 3',
 	dome: d.kind,

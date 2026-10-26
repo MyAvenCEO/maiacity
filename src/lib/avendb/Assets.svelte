@@ -11,7 +11,9 @@
 	the asset shown on its own ($lib/assets/Parts.svelte). Everything comes from the vault as this browser's device
 	holds it (./assets.js): the rows from the database op, its history from the note op, a file from the device when a
 	build needs it, held to the hash its card names. Nothing comes from the repo's recipes, cards or libraries, so what
-	the vault lacks, or holds otherwise, shows here, saying why, and is never stood in for. Each asset has an address of its own, `#assets/` and
+	the vault lacks, or holds otherwise, shows here, saying why, and is never stood in for. (Only the domes the Maia City
+	vault doesn't hold yet, Sandbox 3's interiors, are named under its buildings, each a link to the Buildings viewer,
+	until each is a recipe of its own.) Each asset has an address of its own, `#assets/` and
 	its entry, which the table editor's View asset leads to (its newest version), and each version and variant of it
 	one more, its recipe's hash after the entry.
 -->
@@ -25,6 +27,8 @@
 	import { vaultSource } from './assets.js';
 	import { authorsLine, count, nameOf, seeded, short } from './vaults.js';
 	import { groupName, nameOf as versionName, refusedOf, shelfOf, shortId } from '$lib/assets/sources/shelf.js';
+	import { DOMES_IN_ORDER } from '$lib/buildings/domes.js';
+	import { base } from '$app/paths';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, entry?: string,
@@ -91,13 +95,22 @@
 	const sealed = $derived((held?.rows ?? []).filter((r) => r.type === 'recipe' && r.record === null).length);
 
 	let query = $state('');
+	/** the domes the Maia City vault doesn't hold yet: each still Sandbox 3's interior, world code no recipe builds
+	 *  ($lib/buildings/inside.js), so never an entry here. Listed under its buildings, as found, each leading to the
+	 *  Buildings viewer, until the vault holds a building of its name. */
+	const away = $derived.by(() => {
+		if (!city || vault !== city.id) return [];
+		const q = query.trim().toLowerCase();
+		const held = new Set((shelf.find((g) => g.group === 'buildings')?.assets ?? []).map((a) => a.title));
+		return DOMES_IN_ORDER.filter((d) => !held.has(d.label) && (!q || 'buildings'.includes(q) || d.label.toLowerCase().includes(q)));
+	});
 	/** the shelf as searched: an asset by its title or ref, a group by its name */
 	const found = $derived.by(() => {
 		const q = query.trim().toLowerCase();
 		if (!q) return shelf;
 		return shelf
 			.map((g) => ({ ...g, assets: g.group.includes(q) ? g.assets : g.assets.filter((a) => `${a.title} ${a.entry}`.toLowerCase().includes(q)) }))
-			.filter((g) => g.assets.length);
+			.filter((g) => g.assets.length || (g.group === 'buildings' && away.length));
 	});
 
 	/** what a recipe is called: its asset's title, and its variant's name where it has one of its own (`Ant · Wood ant`) */
@@ -219,6 +232,13 @@
 				><Icon name="asset" size={16} /><span>{a.title}</span><small>v{a.versions[0].v}</small></a
 			>
 		{/each}
+		{#if g.group === 'buildings'}
+			{#each away as d (d.kind)}
+				<a class="nav-item" href="{base}/app/buildings/#dome-{d.kind}" title="Not in the vault yet: Sandbox 3’s interior, opened in the Buildings viewer"
+					><Icon name="asset" size={16} /><span>{d.label}</span><small>↗</small></a
+				>
+			{/each}
+		{/if}
 	{:else}
 		<p class="soft none">No asset is called that.</p>
 	{/each}
