@@ -597,7 +597,7 @@ function watch() {
 		let since = await d.size();
 		if (on()) { revision++; standing++; refreshActiveView(); } // cover changes concurrent with this initial snapshot too
 		while (on() && (await d.changed(since[0], since[1])) && on()) {
-			const t = await d.run({ op: 'touched', since }).then((out) => out?.ok ?? null, () => null);
+			const t = await d.run({ op: 'touched', since }).then((/** @type {any} */ out) => out?.ok ?? null, () => null);
 			since = Array.isArray(t?.since) ? t.since : await d.size();
 			if (!on()) break;
 			revision++;
