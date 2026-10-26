@@ -2,6 +2,7 @@
 use super::*;
 use crate::cast::{world, todos_on};
 use crate::policy::Revoking;
+use crate::sync::answer_ids;
 
 fn check(lab: &Lab, d: SignerId, peers: &[SignerId]) -> Why {
     let store = lab.held(d);
@@ -15,7 +16,6 @@ fn check(lab: &Lab, d: SignerId, peers: &[SignerId]) -> Why {
         let expected = answer_ids(store.log.edits(), store.log.ids(), &canonical, peer, &[]);
         let actual = lab.answered(d, peer, &[]);
         assert_eq!(*actual, expected, "canonical permission selection including private edits");
-        assert!(Arc::ptr_eq(&actual, &lab.answered(d, peer, &[])));
     }
     why
 }

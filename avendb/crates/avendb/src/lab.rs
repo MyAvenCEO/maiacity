@@ -138,7 +138,7 @@ use crate::slice::{
     Attrs, Body, CAP_GROUP_TYPE, Header, LENS_TYPE, SCHEMA_TYPE, Select, Selector, Slice, Sym, TagDelta,
 };
 use crate::sync::{
-    LogId, Place, answer_ids, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs,
+    LogId, Place, answer_by_log, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs,
 };
 use crate::wire::{Claim, FileHold, Frontier, Join, Request, Statement, Wire as _};
 use crate::world;
@@ -668,17 +668,16 @@ pub enum ReplyScope {
 }
 
 /// What a device worked out of its edits for its peers' syncs, while its edits stay as they were (Samuel's iPhone
-/// 2026-10-22, a page every 9 s): which of its edits each asker may receive (`sync::answer`), and, for each asking a
-/// peer makes page after page with the same request, the places of all it sends, in order (`Lab::reply`). Every page
-/// and every announcement worked both out again over every edit the device held, an edit's id hashed again each time,
-/// and a server holds every vault it keeps. Each is kept with the process-local revision of its log, checked in constant time. A changed log, including
-/// a checkpoint withdrawal or a restore of the same length, invalidates it without a history scan or hash collision.
+/// 2026-10-22, a page every 9 s): its frontiers, and, for each asking a peer makes page after page with the same
+/// request, the places of all it sends, in order (`Lab::reply`). Which edits an asker may receive needs no keeping: the
+/// log keeps each log's places as edits arrive (`Log::by_log`). Each is kept with the process-local revision of its log,
+/// checked in constant time. A changed log, including a checkpoint withdrawal or a restore of the same length,
+/// invalidates it without a history scan or hash collision.
 #[derive(Default)]
 struct Answers {
     basis: std::sync::Mutex<Option<Arc<RequestBasis>>>,
     #[cfg(test)]
     basis_builds: std::sync::atomic::AtomicUsize,
-    may: std::sync::Mutex<HashMap<(SignerId, Vec<VaultId>), (crate::policy::LogRevision, Arc<Vec<usize>>)>>,
     sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32], ReplyScope), (crate::policy::LogRevision, Arc<ReplyPlan>)>>,
 }
 
@@ -686,7 +685,6 @@ struct Answers {
 /// It contains NO permission decision, follow list, available-key state or persisted authority.
 struct RequestBasis {
     revision: crate::policy::LogRevision,
-    logs: Vec<Option<LogId>>,
     ask: crate::sync::Ask,
 }
 
@@ -759,7 +757,8 @@ struct Store {
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
     replayed: usize,
     /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
-    /// holds now, not on every ask, announce and fetch.
+    /// holds now, not on every ask, announce and fetch. Empty while the replay is of every edit it holds and no entry is
+    /// based, the replay then being `latest` itself.
     latest: OnceLock<State>,
     /// Empty while it is locked, as is everything below.
     keys: Keyring,
@@ -2080,7 +2079,11 @@ impl Lab {
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
         let stepped = match &fresh[..] {
-            [one] if store.based.is_empty() => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
+            [one] if store.based.is_empty() => {
+                let whole = store.replayed == store.log.edits().len();
+                let was = store.latest.get().or(whole.then_some(&store.replay.state));
+                was.and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit))
+            }
             _ => None,
         };
         let mut new = false;
@@ -2585,7 +2588,8 @@ impl Lab {
             store.perf.count(why_counted(why), 1);
             store.replayed = store.log.edits().len();
             debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
-            store.latest = OnceLock::from(store.replay.state.clone());
+            // the replay is of every edit it holds now, so it is `latest` itself: no second copy
+            store.latest = OnceLock::new();
             store.perf.add("replay", at);
             // the edits it holds on a checkpoint's word: those one that stands vouches for lose their signatures, the
             // rest keep theirs where they check out, and it lets go of the others and replays again (`trusted`)
@@ -2662,6 +2666,13 @@ impl Lab {
     /// checks its own edits by.
     fn latest(&self, d: SignerId) -> &State {
         let store = self.held(d);
+        // set, it is what they say (a write stepped on, or the based entries' state); unset, the replay of them all is
+        if let Some(state) = store.latest.get() {
+            return state;
+        }
+        if store.replayed == store.log.edits().len() {
+            return &store.replay.state;
+        }
         store.latest.get_or_init(|| {
             // The maintained replay is a prefix of this held log, even while receive defers
             // materialization. Advance it with the SAME guards/fallback as refresh; never
@@ -3958,7 +3969,7 @@ impl Lab {
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let places = self.answered(from, to, &asked.follow);
         let sent: Vec<EditId> =
-            beyond(edits, ids, &logs_of(edits, ids), &places, &asked).into_iter().map(|i| ids[i]).collect();
+            beyond(edits, ids, store.log.logs(), &places, &asked).into_iter().map(|i| ids[i]).collect();
         let (signed, blobs) = self.outgoing(from, &sent);
         self.deliver(to, signed, &blobs);
         sent.len()
@@ -3976,8 +3987,8 @@ impl Lab {
         self.digests(from);
         self.digests(to);
         let (theirs, mine) = (self.held(from), self.held(to));
-        let (edits, ids) = (theirs.log.edits(), theirs.log.ids());
-        let logs = logs_of(edits, ids);
+        let ids = theirs.log.ids();
+        let logs = theirs.log.logs();
         let (df, dt) = (theirs.digests.as_ref().expect("worked out"), mine.digests.as_ref().expect("worked out"));
         self.answered(from, to, &mine.follow).iter().any(|&i| match logs[i] {
             Some(l) => df.get(&l) != dt.get(&l),
@@ -4295,25 +4306,11 @@ impl Lab {
         peers
     }
 
-    /// `sync::answer` of device `d`'s edits for `asker`, which follows `follow`: kept while `d`'s edits stay as they
-    /// were (`Answers`).
+    /// `sync::answer` of device `d`'s edits for `asker`, which follows `follow`, by the logs its log keeps the places
+    /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
         let store = self.held(d);
-        let (edits, ids) = (store.log.edits(), store.log.ids());
-        let fp = store.log.revision();
-        let key = (asker, follow.to_vec());
-        if let Some((at, got)) = store.answers.may.lock().expect("answers").get(&key)
-            && *at == fp
-        {
-            return got.clone();
-        }
-        let got = Arc::new(answer_ids(edits, ids, self.latest(d), asker, follow));
-        let mut may = store.answers.may.lock().expect("answers");
-        if may.len() >= ANSWERS_KEPT {
-            may.clear();
-        }
-        may.insert(key, (fp, got.clone()));
-        got
+        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), self.latest(d), asker, follow))
     }
 
     /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
@@ -4326,9 +4323,8 @@ impl Lab {
             return basis.clone();
         }
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let logs = logs_of(edits, ids);
-        let ask = crate::sync::asks_with_logs(edits, ids, &logs, &[]);
-        let basis = Arc::new(RequestBasis { revision, logs, ask });
+        let ask = crate::sync::asks_with_logs(edits, ids, store.log.logs(), &[]);
+        let basis = Arc::new(RequestBasis { revision, ask });
         #[cfg(test)]
         store.answers.basis_builds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         *cached = Some(basis.clone());
@@ -4345,7 +4341,7 @@ impl Lab {
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let places = self.answered(d, peer, &[]);
         let basis = self.request_basis(d);
-        let shared: HashSet<LogId> = places.iter().filter_map(|&i| basis.logs[i]).collect();
+        let shared: HashSet<LogId> = places.iter().filter_map(|&i| store.log.logs()[i]).collect();
         let theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
         let mut ask = basis.ask.clone();
         ask.follow = store.follow.clone();
