@@ -340,6 +340,44 @@ async fn a_removal_waits_until_its_device_holds_what_its_peers_hold() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn devices_gone_for_good_never_keep_a_removal_waiting() {
+    use avendb::policy::{Action, Sharing};
+    let mut w = world();
+    let (passkey_a, mac_a, phone_a, alice) = (w.passkey_a, w.mac_a, w.phone_a, w.alice);
+    // more old phones of hers than the catch-up asks at once, each still holding her vault and none ever answering
+    let gone: Vec<SignerId> = (0..12).map(|n| w.lab.device_of(passkey_a, &format!("Alice's old iPhone {n}"))).collect();
+    for &d in &gone {
+        let add = Action::Share(Sharing::Device { vault: alice, device: d, seal_to: None });
+        w.lab.submit(mac_a, &[passkey_a, d], add).expect("her passkey adds the phone");
+    }
+    w.lab.sync_all(0);
+    let mac = node(&mut w, mac_a, &[], 1).await;
+    let phone = node(&mut w, phone_a, &[], 2).await;
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    let keys = phone.read(|lab, me| lab.peers(me)).await;
+    // where each old phone was: a socket that takes every packet and answers none, so each dial runs to its timeout
+    let silent = std::net::UdpSocket::bind("127.0.0.1:0").expect("a silent socket");
+    let at = silent.local_addr().expect("its address");
+    let mut silent_ones = 0;
+    for (device, key) in keys {
+        if gone.contains(&device) {
+            let id = iroh::EndpointId::from_bytes(&key).expect("a device key is an endpoint id");
+            phone.know(iroh::EndpointAddr::from_parts(id, [iroh::TransportAddr::Ip(at)]));
+            silent_ones += 1;
+        }
+    }
+    assert_eq!(silent_ones, gone.len(), "the phone counts every old phone among its peers");
+    // it is connected to her Mac and holds all it holds: the old phones, never reached, don't hold the removal up
+    let waits = phone.removal_waits().await;
+    assert_eq!(waits, None, "a removal goes ahead though the old phones never answer");
+    drop(silent);
+    for n in [&mac, &phone] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_panic_in_one_call_fails_that_call_alone_and_the_node_runs_on() {
     let mut w = world();
     let mac_a = w.mac_a;
