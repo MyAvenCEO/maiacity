@@ -53,6 +53,19 @@ impl Shared {
         }
         pending
     }
+    /// A new device asks `find` before its vaults' keys came: once keys or audiences it finds under change, every
+    /// live view's selectors find again under the new tokens, without waiting for the whole catch-up.
+    pub(crate) async fn find_again_on_new_keys(self: &Arc<Self>) {
+        if self.interests.lock().expect("interests").query_scopes().is_empty() { return; }
+        let mark = self.read(|lab, me| lab.index_mark(me)).await;
+        let changed = {
+            let mut held = self.discovery_mark.lock().expect("discovery mark");
+            let changed = *held != mark;
+            *held = mark;
+            changed
+        };
+        if changed { self.schedule_discoveries(); }
+    }
     pub(crate) fn schedule_discoveries(self: &Arc<Self>) {
         let scopes = self.interests.lock().expect("interests").query_scopes();
         for scope in scopes { self.schedule_discovery(scope); }

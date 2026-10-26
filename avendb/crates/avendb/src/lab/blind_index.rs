@@ -105,6 +105,20 @@ impl Lab {
         rows
     }
 
+    /// What the tokens device `d` finds under stand on: how many epochs it holds of each vault seed and share, and
+    /// how many audiences of those vaults it knows of. A new device takes its keys after it asked `find`; once this
+    /// changes, the tokens it asked under are stale and its views find again.
+    pub fn index_mark(&self, d: SignerId) -> usize {
+        let keys = &self.held(d).keys;
+        let epochs: usize = keys
+            .epochs
+            .iter()
+            .filter(|(fam, _)| matches!(fam, KeyFam::Seed(_) | KeyFam::Share(_, _)))
+            .map(|(_, e)| e.len())
+            .sum();
+        epochs + self.index_vaults(d).into_iter().map(|v| self.index_audiences(d, v).len()).sum::<usize>()
+    }
+
     /// The vaults device `d` may tell rows of and find in: those it holds a seed or a share key of.
     pub fn index_vaults(&self, d: SignerId) -> Vec<VaultId> {
         let keys = &self.held(d).keys;
