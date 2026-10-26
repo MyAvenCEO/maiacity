@@ -47,7 +47,8 @@ export function impact(files) {
    set('site');
    if (/^(game|code)\//.test(file) || /^src\/lib\/(sandbox\/engines.json|avendb\/device\/)/.test(file)) set('api');
    if (/^src\/lib\/avendb\//.test(file) || file === 'scripts/avendb-browser-transports.mjs') set('avendb','browser');
-   if (/^src\/lib\/avendb\/device\//.test(file)) set('native');
+   // the page's op names are the engine's: avendb's Rust test op_names holds them to it
+   if (/^src\/lib\/avendb\/(device\/|op-names\.js$)/.test(file)) set('native');
    continue;
   }
   if (/^vault\//.test(file)) { set('mac'); continue; }

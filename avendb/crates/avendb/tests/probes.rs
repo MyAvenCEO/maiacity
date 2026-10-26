@@ -3,9 +3,11 @@
 //!
 //!   NOTES=1500 cargo test --features test-fixtures --test probes one_write -- --ignored --nocapture
 //!   NOTES=3000 REMOVALS=8 cargo test --features test-fixtures --test probes whole_replay -- --ignored --nocapture
+//!   NOTES=3000 cargo test --features test-fixtures --test probes sync_request -- --ignored --nocapture
 //!
 //! `one_write_on_a_big_vault`: one local write, one new schema, a restore and Settings' shares, by the refresh's timers.
 //! `whole_replay_with_removals`: a whole replay as removals pile up on a big log.
+//! `sync_request_on_a_big_vault`: what a device asks a peer, the first time, again unchanged, and after one more write.
 
 use avendb::cast::{document, human_on};
 use avendb::lab::Lab;
@@ -118,4 +120,35 @@ fn whole_replay_with_removals() {
     let t = Instant::now();
     let whole = replay(&edits);
     eprintln!("PROBE edits={} removals={removals} stood={} replay_ms={:.0}", edits.len(), whole.stood.iter().filter(|s| **s).count(), t.elapsed().as_secs_f64() * 1e3);
+}
+
+#[test]
+#[ignore]
+fn sync_request_on_a_big_vault() {
+    let n: usize = std::env::var("NOTES").ok().and_then(|s| s.parse().ok()).unwrap_or(300);
+    let mut lab = Lab::new();
+    let passkey = lab.passkey("Alice");
+    let mac = lab.device_of(passkey, "Alice's Mac");
+    let phone = lab.device_of(passkey, "Alice's iPhone");
+    let alice = human_on(&mut lab, passkey, &[mac, phone]);
+    let mut notes = vec![];
+    for i in 0..n {
+        notes.push(lab.create(mac, alice, alice, "note", &[], document(&format!("Note {i}"), "Hello.", mac)).unwrap());
+    }
+    for (i, e) in notes.iter().enumerate() {
+        lab.edit(mac, alice, *e, |it| it.set_text(2, &format!("Edit of {i}."))).unwrap();
+    }
+    eprintln!("{} edits", lab.log(mac).edits().len());
+    let time = |lab: &Lab, what: &str| {
+        let t = Instant::now();
+        let asked = lab.request(mac, phone);
+        eprintln!("{what}: {:?} ({} logs)", t.elapsed(), asked.ask.haves.len());
+    };
+    time(&lab, "first");
+    for k in 0..3 {
+        time(&lab, &format!("unchanged {k}"));
+    }
+    lab.edit(mac, alice, notes[0], |it| it.set_text(2, "One more.")).unwrap();
+    time(&lab, "after a write");
+    time(&lab, "unchanged after it");
 }

@@ -311,7 +311,7 @@ async fn handle_inner(
                 scope: binding.scope,
                 history,
                 root: binding.root,
-                engine: avendb::paged_view::engine(),
+                engine: avendb::lab::engine(),
             };
             let loaded = match (shared.opts.shelf.as_ref(), key.as_ref()) {
                 (Some(shelf), Some(key)) => {

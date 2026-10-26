@@ -452,9 +452,12 @@ impl Node {
     }
 
     /// Asks each device that holds its vaults (`avendb::lab::Lab::peers`), and each it is connected to now, for what it
-    /// holds, for a few seconds at most (`CATCHING_UP`). All required candidates must enter bounded admission and
-    /// at least one must hand over its complete reply in that time. Local overload therefore postpones removal
-    /// rather than treating a peer that was never asked as an unreachable peer.
+    /// holds, for a few seconds at most (`CATCHING_UP`). Every peer it is connected to as the check starts is required:
+    /// each must enter bounded admission and at least one peer must hand over its complete reply in that time. Local
+    /// overload therefore postpones removal rather than treating a connected peer that was never asked as an
+    /// unreachable peer. A peer it isn't connected to is asked after those, as it gets a turn: a device gone for good
+    /// (a lost phone, the very one being removed) dials until `WAIT` runs out, and several of them must not keep
+    /// every removal waiting on peers that were never going to answer. One that answers still counts as reached.
     pub async fn catch_up(&self) -> bool {
         self.catching_up().await.ready()
     }
@@ -465,13 +468,15 @@ impl Node {
         let mut endpoints: BTreeSet<EndpointId> =
             known.into_iter().filter_map(|(_, key)| EndpointId::from_bytes(&key).ok()).collect();
         endpoints.extend(self.shared.peers.lock().expect("peers").keys().copied());
-        let mut endpoints: Vec<_> = endpoints.into_iter().collect();
-        endpoints.sort_by_key(|&peer| (self.shared.live(peer).is_none(), self.shared.pulls.rank(peer)));
-        let caught = crate::pulls::CatchUp::new(endpoints.len());
-        let asks = crate::pulls::each_bounded(endpoints, crate::pulls::CATCH_UP_FANOUT, |peer| {
+        let mut endpoints: Vec<_> =
+            endpoints.into_iter().map(|peer| (self.shared.live(peer).is_some(), peer)).collect();
+        endpoints.sort_by_key(|&(live, peer)| (!live, self.shared.pulls.rank(peer)));
+        let caught = crate::pulls::CatchUp::new(endpoints.iter().filter(|(live, _)| *live).count());
+        let asks = crate::pulls::each_bounded(endpoints, crate::pulls::CATCH_UP_FANOUT, |(live, peer)| {
             let caught = &caught;
             async move {
-                if self.shared.pull(peer, crate::Scope::All, false, Some(caught)).await.is_ok() {
+                let required = live.then_some(caught);
+                if self.shared.pull(peer, crate::Scope::All, false, required).await.is_ok() {
                     caught.reached();
                 }
             }

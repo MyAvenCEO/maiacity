@@ -247,18 +247,35 @@ pub(crate) fn answer(edits: &[Edit], st: &State, d: SignerId, follow: &[VaultId]
 /// `answer`, given each edit's id (`ids[i]` being `edits[i]`'s), as a store keeps them: an edit's id is a hash of all
 /// of it, which every page of a reply worked out again for every edit its device held.
 pub(crate) fn answer_ids(edits: &[Edit], ids: &[EditId], st: &State, d: SignerId, follow: &[VaultId]) -> Vec<usize> {
+    let mut by_log: HashMap<LogId, Vec<usize>> = HashMap::new();
+    for (i, (edit, &id)) in edits.iter().zip(ids).enumerate() {
+        if let Some(l) = log_of(edit, id) {
+            by_log.entry(l).or_default().push(i);
+        }
+    }
+    answer_by_log(edits, &by_log, st, d, follow)
+}
+
+/// `answer`, given each log's places in `edits` (`Log::by_log`, kept as edits arrive): it visits the logs, not every
+/// edit, so what it costs grows with the logs held and what it sends.
+pub(crate) fn answer_by_log(
+    edits: &[Edit], by_log: &HashMap<LogId, Vec<usize>>, st: &State, d: SignerId, follow: &[VaultId],
+) -> Vec<usize> {
     let reach = Reach::new(st, d, follow);
-    let logs: Vec<Option<LogId>> = edits.iter().zip(ids).map(|(edit, &id)| log_of(edit, id)).collect();
-    let mut may: HashMap<LogId, bool> = HashMap::new();
-    let items: Vec<usize> = (0..edits.len())
-        .filter(|&i| logs[i].is_some_and(|l| *may.entry(l).or_insert_with(|| reach.log(l))))
-        .collect();
+    let mut items: Vec<usize> =
+        by_log.iter().filter(|(l, _)| reach.log(**l)).flat_map(|(_, places)| places.iter().copied()).collect();
+    items.sort_unstable();
     let mut vs: Vec<VaultId> = reach.acts.iter().copied().collect();
     vs.sort();
     vs.extend(items.iter().flat_map(|&i| vaults_named(&edits[i])));
-    let vaults: HashSet<VaultId> = close_vaults(st, vs).into_iter().collect();
-    let vault_edits = (0..edits.len()).filter(|&i| matches!(logs[i], Some(LogId::Vault(v)) if vaults.contains(&v)));
-    items.iter().copied().chain(vault_edits).collect()
+    let mut vault_edits: Vec<usize> = close_vaults(st, vs)
+        .into_iter()
+        .filter_map(|v| by_log.get(&LogId::Vault(v)))
+        .flat_map(|places| places.iter().copied())
+        .collect();
+    vault_edits.sort_unstable();
+    items.extend(vault_edits);
+    items
 }
 
 /// The edits of the logs of `vs` and of every vault that owns one of them, up the chains, as `st` knows them: what a

@@ -1578,15 +1578,17 @@ mod tests {
         use crate::sign::{EnclaveKey, Passkey};
         let w = world();
         let edit = w.lab.log(w.mac_a).edits()[0].clone();
-        let (slh, ml) = (Suite::SlhDsa, Suite::MlDsa);
-        // each kind in each suite, its tag first: a signer made before the key move keeps its bytes
+        // each kind in each suite, its tag first: a signer made before the key move keeps its bytes, as the frozen
+        // edits still name it (`legacy`)
+        let ml = (DeviceKey::from_secret([3; 32]), Passkey::from_seed([1; 32]), EnclaveKey::from_seed([1; 32]));
+        let p256 = ml.1.public();
         let keys = [
-            (DeviceKey::from_secret_in([3; 32], slh).keys(), 0, 65),
-            (Passkey::from_seed_in([1; 32], slh).keys(), 1, 66),
-            (EnclaveKey::from_seed_in([1; 32], slh).keys(), 2, 65),
-            (DeviceKey::from_secret_in([3; 32], ml).keys(), 3, 65),
-            (Passkey::from_seed_in([1; 32], ml).keys(), 4, 66),
-            (EnclaveKey::from_seed_in([1; 32], ml).keys(), 5, 33),
+            (SignerKeys::Device { ed25519: [3; 32], pq: PqKey::Slh([4; 32]) }, 0, 65),
+            (SignerKeys::Passkey { p256, pq: PqKey::Slh([4; 32]) }, 1, 66),
+            (SignerKeys::Enclave { mldsa: [5; 32], slh: Some([4; 32]) }, 2, 65),
+            (ml.0.keys(), 3, 65),
+            (ml.1.keys(), 4, 66),
+            (ml.2.keys(), 5, 33),
         ];
         for (k, tag, len) in keys {
             let bytes = k.to_wire();
@@ -1595,9 +1597,7 @@ mod tests {
         }
         assert_eq!(SignerKeys::from_wire(&[&[6], &[0; 64][..]].concat()), Err(WireError::Unknown));
         // their signatures, a hello and a pass
-        let device = DeviceKey::from_secret_in([3; 32], ml);
-        let mut passkey = Passkey::from_seed_in([1; 32], ml);
-        let touch = EnclaveKey::from_seed_in([1; 32], ml);
+        let (device, mut passkey, touch) = ml;
         for sig in [device.sign(edit.id()), passkey.sign(edit.id()), touch.sign(edit.id())] {
             assert_eq!(Signature::from_wire(&sig.to_wire()), Ok(sig));
         }
@@ -1605,13 +1605,14 @@ mod tests {
         assert_eq!(Hello::from_wire(&hello.to_wire()), Ok(hello));
         // a pass says its suite by its signature's size
         let made = 1_791_500_000;
-        for suite in [slh, ml] {
-            let mut passkey = Passkey::from_seed_in([1; 32], suite);
-            let pass = passkey.pass(DeviceKey::from_secret_in([3; 32], suite).keys(), made);
-            let read = RelayPass::from_wire(&pass.to_wire()).expect("a pass");
-            assert_eq!((read.pq.suite(), &read), (suite, &pass));
-            assert!(read.passkeys(made).contains(&passkey.id()));
-        }
+        let pass = passkey.pass(device.keys(), made);
+        let read = RelayPass::from_wire(&pass.to_wire()).expect("a pass");
+        assert_eq!((read.pq.suite(), &read), (Suite::MlDsa, &pass));
+        assert!(read.passkeys(made).contains(&passkey.id()));
+        let old = RelayPass { sig: vec![0; PQ_SIGNATURE_BYTES], ..pass };
+        let read = RelayPass::from_wire(&old.to_wire()).expect("a pass");
+        assert_eq!(read.pq.suite(), Suite::SlhDsa);
+        assert!(read.passkeys(made).is_empty(), "an SLH-DSA pass counts for nothing since the fork");
     }
 
     #[test]

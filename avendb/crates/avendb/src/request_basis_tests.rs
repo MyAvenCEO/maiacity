@@ -2,6 +2,7 @@
 use super::*;
 use crate::cast::{world, todos_on};
 use crate::policy::Revoking;
+use crate::sync::answer_ids;
 use std::sync::atomic::Ordering;
 
 // Original uncached request algorithm, including uncached permission planning. Do not route this
@@ -151,4 +152,34 @@ fn missing_parent_arrival_and_withdrawal_rebuild_structural_closure() {
     let withdrawn = w.lab.request_basis(d);
     assert_ne!(repaired.revision, withdrawn.revision);
     assert_eq!(withdrawn.ask, incomplete.ask);
+}
+
+/// The log's own index of each edit's log (`Log::logs`, `Log::by_log`) is what a scan of every edit finds, as edits
+/// arrive and after the log lets some go; and an answer by it is the scan's, for every device and every asker.
+#[test]
+fn the_log_index_is_the_scan() {
+    let mut w = world();
+    todos_on(&mut w);
+    let devices = [w.mac_a, w.phone_a, w.mac_b, w.mac_c, w.stranger];
+    let indexed = |log: &Log| {
+        let (edits, ids) = (log.edits(), log.ids());
+        assert_eq!(log.logs(), logs_of(edits, ids).as_slice());
+        let mut by_log: HashMap<LogId, Vec<usize>> = HashMap::new();
+        for (i, l) in log.logs().iter().enumerate() {
+            if let Some(l) = l { by_log.entry(*l).or_default().push(i); }
+        }
+        assert_eq!(log.by_log(), &by_log);
+    };
+    for &d in &devices {
+        indexed(&w.lab.held(d).log);
+        for &peer in &devices {
+            let store = w.lab.held(d);
+            let scan = answer_ids(store.log.edits(), store.log.ids(), w.lab.latest(d), peer, &[]);
+            assert_eq!(*w.lab.answered(d, peer, &[]), scan);
+        }
+    }
+    let mut log = w.lab.held(w.mac_a).log.clone();
+    let gone: HashSet<EditId> = log.ids().iter().step_by(3).copied().collect();
+    log.let_go(&gone);
+    indexed(&log);
 }

@@ -398,18 +398,6 @@ mod tests {
     }
 
     #[test]
-    fn supplemental_codec_roundtrips_legacy_slh_dsa_roots_and_signatures() {
-        let original = sample_with(DeviceKey::from_secret_in([198; 32], avendb::sign::Suite::SlhDsa));
-        assert!(original.roots[0].root.to_wire().len() > 16_384);
-        let encoded = original.encode().unwrap();
-        let decoded = Supplement::decode(&encoded).unwrap();
-        assert_eq!(decoded.encode().unwrap(), encoded);
-        assert!(decoded.reply.edits[0].verify().is_ok());
-        let proof = Proof { root: Arc::new(decoded.roots[0].root.clone()), path: decoded.paths[0].path.clone() };
-        assert!(proof.shows(decoded.reply.edits[0].edit.author, decoded.reply.edits[0].edit.id()));
-    }
-
-    #[test]
     fn codecs_reject_truncation_trailing_bytes_duplicate_and_out_of_range_refs() {
         let original = sample().encode().unwrap();
         for n in [0, 1, 4, original.len() / 2, original.len() - 1] {

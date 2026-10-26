@@ -73,21 +73,21 @@ fn the_fork_takes_what_the_model_takes() {
     }
 }
 
-/// The freeze of a device's edits (`legacy::survey`): Alice's vault, founded before the key move by her SLH-DSA passkey
-/// on her SLH-DSA Mac, which then adds her ML-DSA-65 Mac, is frozen whole; Bob's vault, founded since in ML-DSA-65
-/// alone, is not. Every frozen edit has its path to the anchor, every edit the device holds is kept, and the survey
-/// says which signers of each vault are still of SLH-DSA.
+/// The freeze of the edits a server holds (`legacy::Freezing`): Alice's vault, founded before the key move by her
+/// SLH-DSA passkey on her SLH-DSA Mac, which then adds her ML-DSA-65 Mac, is frozen whole; Bob's vault, founded since
+/// in ML-DSA-65 alone, is not. As no test signs in SLH-DSA since the fork, her edits bring their old keys and no
+/// signature, and the test counts them as frozen (`legacy::admit`). Every edit is kept, every frozen one has its path to
+/// the anchor, and the survey says which signers of each vault are still of SLH-DSA, and who signs in it.
 #[test]
-fn the_freeze_of_a_lab_takes_the_slh_dsa_edits_and_says_who_is_left() {
-    use avendb::lab::Lab;
-    use avendb::policy::{Action, Kind, Principal, Sharing};
-    use avendb::sign::Suite;
+fn the_freeze_takes_the_slh_dsa_edits_and_says_who_is_left() {
+    use avendb::id::VaultId;
+    use avendb::policy::{Action, Edit, Kind, Principal, Sharing};
+    use avendb::sign::{DeviceKey, Passkey, PqKey, Signature, Signed, SignerKeys};
 
-    let mut lab = Lab::with_entropy([7; 32]);
-    let old = lab.passkey_from_in("Alice", [1; 32], Suite::SlhDsa);
-    let mac = lab.device_with_in("Alice's Mac", [2; 32], Suite::SlhDsa);
-    let next_mac = lab.device_with_in("Alice's new Mac", [3; 32], Suite::MlDsa);
-    let bob = lab.passkey_from_in("Bob", [4; 32], Suite::MlDsa);
+    let old = SignerKeys::Passkey { p256: Passkey::from_seed([1; 32]).public(), pq: PqKey::Slh([1; 32]) };
+    let mac = SignerKeys::Device { ed25519: [2; 32], pq: PqKey::Slh([2; 32]) };
+    let next_mac = DeviceKey::from_secret([3; 32]);
+    let mut bob = Passkey::from_seed([4; 32]);
     let genesis = |p: SignerId| Action::Genesis {
         kind: Kind::Human,
         owners: vec![Principal::Signer(p)],
@@ -96,48 +96,54 @@ fn the_freeze_of_a_lab_takes_the_slh_dsa_edits_and_says_who_is_left() {
         nonce: 0,
         seal_to: vec![],
     };
-    let alice = avendb::id::VaultId::from(lab.submit(mac, &[old], genesis(old)).expect("founded"));
-    for d in [mac, next_mac] {
-        let add = Action::Share(Sharing::Device { vault: alice, device: d, seal_to: None });
-        lab.submit(mac, &[old, d], add).expect("added");
-    }
-    let bobs = lab.submit(mac, &[bob], genesis(bob)).expect("founded");
+    let edit = |depth, author, cosigners, action| Edit { parents: vec![], depth, author, cosigners, action };
+    let unsigned = |keys: SignerKeys| Signature { keys, webauthn: None, enclave: None, pq: vec![] };
 
-    let survey = legacy::survey(&lab, mac);
-    let held: Vec<EditId> = lab.log(mac).ids().to_vec();
-    assert_eq!(survey.held, held.len());
-    let slh: Vec<EditId> = held
-        .iter()
-        .copied()
-        .filter(|&id| {
-            let signed = lab.signed_edit(mac, id).expect("held");
-            signed.sigs.iter().any(|s| s.keys.suite() == Suite::SlhDsa)
-        })
-        .collect();
-    // her genesis, her two devices and what her old Mac signed besides: the keys its edits bring
-    let by_old: Vec<EditId> =
-        held.iter().copied().filter(|&id| lab.signed_edit(mac, id).unwrap().edit.sigs().any(|s| s == old || s == mac)).collect();
-    assert_eq!(slh, by_old);
-    assert!(slh.len() >= 3);
-    let mut sorted = slh.clone();
+    let founding = edit(0, old.id(), vec![], genesis(old.id()));
+    let alice = VaultId::from(founding.id());
+    let add = |d| Action::Share(Sharing::Device { vault: alice, device: d, seal_to: None });
+    let adds_mac = edit(1, old.id(), vec![mac.id()], add(mac.id()));
+    let adds_next = edit(2, old.id(), vec![next_mac.id()], add(next_mac.id()));
+    let bobs = edit(0, bob.id(), vec![], genesis(bob.id()));
+    let frozen = [founding.id(), adds_mac.id(), adds_next.id()];
+    legacy::admit(frozen);
+    let signed = [
+        Signed { sigs: vec![unsigned(old)], edit: founding },
+        Signed { sigs: vec![unsigned(old), unsigned(mac)], edit: adds_mac },
+        Signed { sigs: vec![unsigned(old), next_mac.sign(adds_next.id())], edit: adds_next },
+        Signed { sigs: vec![bob.sign(bobs.id())], edit: bobs.clone() },
+    ];
+    // a frozen edit's legacy part counts with no signature; a later edit's never
+    assert!(signed.iter().all(|s| s.verify().is_ok()));
+    let late = edit(3, old.id(), vec![], add(SignerId::from_u64(9)));
+    assert!(Signed { sigs: vec![unsigned(old)], edit: late }.verify().is_err());
+
+    let mut freezing = legacy::Freezing::default();
+    for s in signed.iter().chain(&signed) {
+        freezing.take(s, Some(alice));
+    }
+    let survey = freezing.finish();
+    assert_eq!(survey.held, 4, "each edit once");
+    let mut sorted = frozen.to_vec();
     sorted.sort();
     assert_eq!(survey.frozen.ids().collect::<Vec<_>>(), sorted);
-    assert!(!survey.frozen.holds(bobs), "Bob's vault is ML-DSA-65 alone");
+    assert!(!survey.frozen.holds(bobs.id()), "Bob's vault is ML-DSA-65 alone");
     assert_eq!((survey.bare, survey.refused), (0, 0));
     let anchor = survey.frozen.anchor();
-    for id in slh {
+    for id in frozen {
         assert!(anchor.shows(id, &survey.frozen.path(id).expect("frozen")));
     }
     let report = survey.to_json();
-    assert_eq!(report["kept_after_the_fork"], held.len());
+    assert_eq!(report["kept_after_the_fork"], 4);
     let left = |v: &[u8; 32]| {
         let hex = avendb::words::hex(v);
         let vaults = report["vaults"].as_array().expect("vaults");
         vaults.iter().find(|x| x["vault"] == hex).expect("listed")["slh_dsa_left"].as_u64().expect("a count")
     };
     assert_eq!(left(&alice.0), 2, "her old passkey and her old Mac");
-    assert_eq!(left(&bobs.0), 0);
+    assert_eq!(left(&bobs.id().0), 0);
     let signers = report["slh_signers"].as_array().expect("signers");
     assert_eq!(signers.len(), 2, "her old passkey and her old Mac: {signers:?}");
-    assert!(signers.iter().all(|s| s["deepest"].as_u64() <= report["deepest"].as_u64()));
+    assert_eq!((signers[0]["edits"].as_u64(), signers[0]["deepest"].as_u64()), (Some(3), Some(2)), "her passkey");
+    assert_eq!(report["deepest"], 2);
 }

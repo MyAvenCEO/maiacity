@@ -15,7 +15,8 @@
 	and what via relay"): the device's own endpoint, relay and direct addresses, each peer it is connected to with each
 	path of the connection (direct or relayed, the one it sends on, its round trip, the bytes it carried), what it took
 	from each peer page by page and how fast, and its newest pages, as the device's `network` op answers (avendb-net's
-	`Node::network`), read again every few seconds while the page is open.
+	`Node::network`), read again every few seconds while the page is open. Diagnostics: the report of startup, unlock,
+	sync and connection speed, run and copied ($lib/app/DiagnosticsReport.svelte), once the top-left button.
 
 	All of it is read on the device, or from the server's public feed, and kept in this page alone: nothing here is
 	written to a vault or sent to a peer. It is read when the page opens and again on Refresh.
@@ -31,6 +32,7 @@
 	import { feed } from './server.js';
 	import { ago, count, nameOf, short, signerName, size } from './vaults.js';
 	import { session } from './session.svelte.js';
+	import DiagnosticsReport from '$lib/app/DiagnosticsReport.svelte';
 
 	/** @type {{ api: any, world?: import('./vaults.js').WorldView, section?: string, thisName: string }} */
 	let { api, world, section = '', thisName } = $props();
@@ -45,7 +47,8 @@
 		['work', 'Work', 'jobs'],
 		['network', 'Network', 'link'],
 		['storage', 'Storage', 'database'],
-		['server', 'Server', 'sync']
+		['server', 'Server', 'sync'],
+		['diagnostics', 'Diagnostics', 'pulse']
 	]);
 	/** Scrolls the page to section `id`. @param {string} id */
 	const scrollTo = (id) => document.getElementById(`performance-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -88,18 +91,8 @@
 	 * @typedef {{ timers: Record<string, Timer>, counts: Record<string, number>,
 	 *   held: { edits: number, bodies: number, shown: number, blobs: number, blob_bytes: number,
 	 *     logs?: Record<string, number>, actions?: Record<string, number> },
-	 *   checkpoints?: { standing: number, vouched: number, bare: number, uncovered?: number,
-	 *     uncovered_by?: { vault: string | null, edits: number }[], vouching?: Vouching | null } }} Perf
+	 *   checkpoints?: { standing: number, vouched: number, bare: number } }} Perf
 	 */
-	/**
-	 * What a checkpoint by the person's key would cover now (avendb's `Lab::vouching`): `ready` as each unlock offers
-	 * it, `waiting` on keys that still sign the old way, by vault, those keys, and `others`, which only other vaults'
-	 * owners can vouch for.
-	 * @typedef {{ by: string, ready: number, waiting: number, others: number,
-	 *   vaults: { vault: string, ready: number, waiting: number }[],
-	 *   keys: { signer: string, role: string, of: string | null, edits: number }[] }} Vouching
-	 */
-
 	/**
 	 * Where the device syncs from and how, as its `network` op answers (avendb-net's `Node::network`).
 	 * @typedef {{ pages: number, edits: number, new: number, bytes: number, wait_ms: number, take_ms: number,
@@ -172,13 +165,6 @@
 		}
 	}
 
-	/** what a key still signing the old way is, as a person reads it */
-	const ROLES = /** @type {Record<string, string>} */ ({
-		device: 'Device of',
-		owner: 'Owner key of',
-		recovery: 'Recovery key of',
-		signer: 'Key'
-	});
 	/** the log an edit is of (avendb's `sync::LogId`), as a person reads it: an entry's own log is what a snapshot spares */
 	const LOGS = /** @type {Record<string, string>} */ ({
 		entry: 'entries’ own',
@@ -208,20 +194,6 @@
 			.sort((a, b) => b[1] - a[1])
 			.map(([k, n]) => `${n.toLocaleString()} ${labels[k] ?? k}`)
 			.join(', ');
-	/** the checkpoint being signed, and how it went */
-	let signing = $state(false);
-	let signed = $state('');
-	/** Signs a checkpoint over everything the person may vouch for now (the session's `signCheckpoint`), then reads
-	 *  the page again. */
-	async function vouch() {
-		[signing, signed] = [true, ''];
-		const covered = await session.signCheckpoint();
-		signing = false;
-		if (covered === null) return void (signed = session.error || 'Your checkpoint didn’t go through.');
-		signed = covered ? `Your checkpoint covers ${covered.toLocaleString()} edits.` : 'There was nothing left to cover.';
-		await refresh();
-	}
-
 	/** Reads it all again: the device's, the browser's and the server's at once. */
 	async function refresh() {
 		if (reading) return;
@@ -537,47 +509,7 @@
 					<dd>{perf.checkpoints.vouched.toLocaleString()}</dd>
 					<dt>Held without signatures</dt>
 					<dd>{perf.checkpoints.bare.toLocaleString()}</dd>
-					{#if perf.checkpoints.uncovered !== undefined}
-						<dt>Old SLH-DSA signatures still checked</dt>
-						<dd>{perf.checkpoints.uncovered.toLocaleString()}</dd>
-						{#each perf.checkpoints.uncovered_by ?? [] as u (u.vault)}
-							<dt class="sub">{vaultName(u.vault)}</dt>
-							<dd>{u.edits.toLocaleString()}</dd>
-						{/each}
-					{/if}
-					{#if perf.checkpoints.vouching}
-						{@const v = perf.checkpoints.vouching}
-						<dt>You can vouch for now</dt>
-						<dd>{(v.ready + v.waiting).toLocaleString()}</dd>
-						{#each v.vaults as u (u.vault)}
-							<dt class="sub">{vaultName(u.vault)}</dt>
-							<dd>{(u.ready + u.waiting).toLocaleString()}</dd>
-						{/each}
-						{#if v.others}
-							<dt>Only other vaults’ owners can vouch for</dt>
-							<dd>{v.others.toLocaleString()}</dd>
-						{/if}
-					{/if}
 				</dl>
-				{#if perf.checkpoints.vouching}
-					{@const v = perf.checkpoints.vouching}
-					{#if v.keys.length}
-						<p class="soft">
-							{v.waiting.toLocaleString()} of them were signed by keys that still sign the old way, so the checkpoint your unlock offers leaves them
-							out. Signing here covers them too.
-						</p>
-						<dl>
-							{#each v.keys.slice(0, 12) as k (k.signer)}
-								<dt class="sub">{ROLES[k.role] ?? 'Key'} {k.of ? vaultName(k.of) : ''} · {short(k.signer)}</dt>
-								<dd>{k.edits.toLocaleString()}</dd>
-							{/each}
-						</dl>
-					{/if}
-					{#if v.ready + v.waiting}
-						<button class="btn" disabled={signing} onclick={vouch}>{signing ? 'Signing…' : 'Sign checkpoint'}</button>
-					{/if}
-				{/if}
-				{#if signed}<p class="soft">{signed}</p>{/if}
 			</article>
 		{/if}
 	{/if}
@@ -701,12 +633,18 @@
 	{/if}
 {/snippet}
 
+<!-- the report to run and copy, once the top-left diagnostics button (Samuel 2026-10-26: folded in here) -->
+{#snippet diagnostics()}
+	<article class="card wide"><DiagnosticsReport /></article>
+{/snippet}
+
 <Frame nav={menu} aside={details} navLabel="Performance" navIcon="gauge" asideLabel="The timer picked" asideIcon="info" bind:open>
 	<div class="page">
 		{@render part('work', work)}
 		{@render part('network', net)}
 		{@render part('storage', stored)}
 		{@render part('server', server)}
+		{@render part('diagnostics', diagnostics)}
 	</div>
 </Frame>
 

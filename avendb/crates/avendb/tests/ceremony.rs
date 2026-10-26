@@ -26,7 +26,7 @@ const NOW: u64 = 1_791_500_000;
 fn browser(authenticator: &mut Passkey, nonce: [u8; 32]) -> (Lab, SignerId, SignerId) {
     let mut lab = Lab::with_entropy([7; 32]);
     let unlock = authenticator.ceremony([1; 32]);
-    let [passkey, _] = lab.web_passkey("Alice", authenticator.public(), &unlock).expect("the passkey's own ceremony");
+    let passkey = lab.web_passkey("Alice", authenticator.public(), &unlock).expect("the passkey's own ceremony");
     let device = lab.device_with("Alice's browser", *authenticator.prf(&device_salt(&nonce)));
     (lab, passkey, device)
 }
@@ -138,7 +138,7 @@ fn fresh(authenticator: &mut Passkey, secret: [u8; 32]) -> (Lab, SignerId, Vec<S
     let pass = unlock.pass(key.keys(), NOW).expect("the unlock is the passkey's pass for the device");
     let recovered = unlock.assertion().expect("a passkey's").recover().into_iter();
     let held = recovered.filter_map(|p256| lab.web_passkey("Alice", p256, &unlock));
-    let passkeys: Vec<SignerId> = held.map(|[new, _]| new).collect();
+    let passkeys: Vec<SignerId> = held.collect();
     (lab, device, passkeys, RelayPass::from_wire(&pass.to_wire()).expect("a pass"))
 }
 

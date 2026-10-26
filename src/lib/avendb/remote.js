@@ -202,18 +202,6 @@ export class Device {
 		return this.#call('rename', [name]);
 	}
 
-	moving() {
-		return this.#call('moving');
-	}
-
-	move_keys(ceremony, steps) {
-		return this.#call('move_keys', [ceremony, steps]);
-	}
-
-	sign_checkpoint(ceremony) {
-		return this.#call('sign_checkpoint', [ceremony]);
-	}
-
 	behind() {
 		return this.#call('behind');
 	}

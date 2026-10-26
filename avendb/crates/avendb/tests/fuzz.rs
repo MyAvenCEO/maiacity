@@ -352,10 +352,16 @@ fn batched(add: &Signed) -> Signed {
 /// Edits signed with ML-DSA-65 (the key move): a passkey adding its device, by itself and in a batch, the device's
 /// write, a Touch ID key's edit signed by its Enclave alone, and the old device signing its new key in.
 fn ml_signed_edits() -> Vec<Signed> {
-    let device = DeviceKey::from_secret_in([7; 32], Suite::MlDsa);
-    let mut passkey = Passkey::from_seed_in([9; 32], Suite::MlDsa);
-    let touch = EnclaveKey::from_seed_in([5; 32], Suite::MlDsa);
-    let old = DeviceKey::from_secret_in([7; 32], Suite::SlhDsa);
+    let device = DeviceKey::from_secret([7; 32]);
+    let mut passkey = Passkey::from_seed([9; 32]);
+    let touch = EnclaveKey::from_seed([5; 32]);
+    // the old device in SLH-DSA, whose part counts on an edit the fork froze alone, with no signature (`legacy`)
+    let SignerKeys::Device { ed25519, .. } = device.keys() else { unreachable!() };
+    let old = SignerKeys::Device { ed25519, pq: PqKey::Slh([7; 32]) };
+    let old_part = |e: EditId| {
+        avendb::legacy::admit([e]);
+        Signature { keys: old, webauthn: None, enclave: None, pq: vec![] }
+    };
     let edit = |author, cosigners, action| Edit { parents: vec![EditId::from_u64(1)], depth: 1, author, cosigners, action };
     let adds = |d: SignerId| Action::Share(Sharing::Device { vault: ALICE, device: d, seal_to: None });
     let add = edit(passkey.id(), vec![device.id()], adds(device.id()));
@@ -384,7 +390,7 @@ fn ml_signed_edits() -> Vec<Signed> {
     let touched = edit(touch.id(), vec![device.id()], adds(device.id()));
     let touched = Signed { sigs: vec![touch.sign(touched.id()), device.sign(touched.id())], edit: touched };
     let moved = edit(old.id(), vec![device.id()], adds(device.id()));
-    let moved = Signed { sigs: vec![old.sign(moved.id()), device.sign(moved.id())], edit: moved };
+    let moved = Signed { sigs: vec![old_part(moved.id()), device.sign(moved.id())], edit: moved };
     vec![add, batched, write, touched, moved]
 }
 
@@ -595,6 +601,11 @@ fn a_changed_signed_edit_is_refused() {
                 2 => {
                     let i = g.below(bad.sigs.len());
                     bad.sigs[i] = mutate_signature(&mut g, &bad.sigs[i]);
+                    // a frozen edit's SLH-DSA part counts by its id alone, never by its signature (`legacy`)
+                    let keys = &signed.sigs[i].keys;
+                    if keys.suite() == Suite::SlhDsa && bad.sigs[i].keys == *keys {
+                        continue;
+                    }
                 }
                 _ => drop(bad.sigs.pop()),
             }
@@ -716,9 +727,9 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
         let answers = |b: &Body| assert!(b.answers.windows(2).all(|w| w[0] < w[1]), "{b:?}");
         wire_mutations(&mut g, &body, 3000, answers);
     }
-    // a hello read from changed bytes proves no device on the connection, in either suite
-    for suite in [Suite::SlhDsa, Suite::MlDsa] {
-        let device = DeviceKey::from_secret_in([7; 32], suite);
+    // a hello read from changed bytes proves no device on the connection
+    {
+        let device = DeviceKey::from_secret([7; 32]);
         let SignerKeys::Device { ed25519: endpoint, .. } = device.keys() else { unreachable!() };
         let exporter = [4; 32];
         let hello = device.hello(&exporter, true);
@@ -726,9 +737,9 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
         wire_mutations(&mut g, &hello, 1000, |h: &Hello| assert_eq!(h.verify(&exporter, true, &endpoint), None));
     }
     // a pass read from changed bytes is the passkey's for no device: a changed signature recovers to other keys,
-    // nobody's; in either suite
-    for suite in [Suite::SlhDsa, Suite::MlDsa] {
-        let mut passkey = Passkey::from_seed_in([6; 32], suite);
+    // nobody's
+    {
+        let mut passkey = Passkey::from_seed([6; 32]);
         let pass = passkey.pass(passkey.device([1; 32]).keys(), 1_791_500_000);
         assert!(pass.passkeys(pass.made).contains(&passkey.id()));
         let (now, theirs) = (pass.made, passkey.id());

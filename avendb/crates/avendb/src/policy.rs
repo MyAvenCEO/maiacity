@@ -4335,6 +4335,10 @@ pub struct Log {
     held: HashSet<EditId>,
     entry_order: BTreeMap<EntryId, BTreeMap<(u64, u8, EditId), usize>>,
     write_at: HashMap<EditId, usize>,
+    /// Each edit's log (`sync::log_of`), by its place, and each log's places in order: kept as edits arrive, so a sync
+    /// asks no scan of every edit to tell which logs it holds or which edits an asker may receive.
+    logs: Vec<Option<crate::sync::LogId>>,
+    by_log: HashMap<crate::sync::LogId, Vec<usize>>,
     revision: LogRevision,
     /// Stable only while this particular log appends. A removal or a clone starts a new lineage.
     lineage: LogRevision,
@@ -4347,7 +4351,8 @@ impl Clone for Log {
     fn clone(&self) -> Self {
         Self { edits: self.edits.clone(), ids: self.ids.clone(), held: self.held.clone(),
             revision: self.revision.clone(), lineage: LogRevision::default(),
-            entry_order: self.entry_order.clone(), write_at: self.write_at.clone(), gone: self.gone }
+            entry_order: self.entry_order.clone(), write_at: self.write_at.clone(), logs: self.logs.clone(),
+            by_log: self.by_log.clone(), gone: self.gone }
     }
 }
 
@@ -4357,6 +4362,11 @@ impl Log {
     }
 
     fn index_write(&mut self, edit: &Edit, id: EditId, at: usize) {
+        let log = crate::sync::log_of(edit, id);
+        self.logs.push(log);
+        if let Some(l) = log {
+            self.by_log.entry(l).or_default().push(at);
+        }
         if let Action::Write { entry, .. } = edit.action {
             self.write_at.entry(id).or_insert(at);
             self.entry_order.entry(entry).or_default()
@@ -4364,16 +4374,26 @@ impl Log {
         }
     }
 
-    fn rebuild_entry_index(&mut self) {
+    fn rebuild_index(&mut self) {
         self.entry_order.clear();
         self.write_at.clear();
-        for (at, (edit, &id)) in self.edits.iter().zip(&self.ids).enumerate() {
-            if let Action::Write { entry, .. } = edit.action {
-                self.write_at.entry(id).or_insert(at);
-                self.entry_order.entry(entry).or_default()
-                    .entry((edit.depth, edit.rank(), id)).or_insert(at);
-            }
+        self.logs.clear();
+        self.by_log.clear();
+        let (edits, ids) = (std::mem::take(&mut self.edits), std::mem::take(&mut self.ids));
+        for (at, (edit, &id)) in edits.iter().zip(&ids).enumerate() {
+            self.index_write(edit, id, at);
         }
+        (self.edits, self.ids) = (edits, ids);
+    }
+
+    /// Each edit's log, by its place (`sync::log_of`).
+    pub fn logs(&self) -> &[Option<crate::sync::LogId>] {
+        &self.logs
+    }
+
+    /// Each log it holds edits of, and their places in it, in order.
+    pub fn by_log(&self) -> &HashMap<crate::sync::LogId, Vec<usize>> {
+        &self.by_log
     }
 
     /// Reference-equivalent to order(filtered unseen entry writes), without
@@ -4430,7 +4450,7 @@ impl Log {
         let ids = ids(&edits);
         let held = ids.iter().copied().collect();
         let mut log = Self { edits, ids, held, ..Self::default() };
-        log.rebuild_entry_index();
+        log.rebuild_index();
         log
     }
 
@@ -4600,7 +4620,7 @@ impl Log {
             self.revision = LogRevision::default();
             self.lineage = LogRevision::default();
             self.gone += 1;
-            self.rebuild_entry_index();
+            self.rebuild_index();
         }
     }
 

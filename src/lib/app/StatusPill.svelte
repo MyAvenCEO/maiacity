@@ -1,11 +1,3 @@
-<!--
-	WHAT A PAGE WAITS FOR, centred just above the nav pill (Samuel 2026-10-20: "The loading progress should be above
-	center the navpill"), on every app page, a full-screen world too, clear of the HUD a game draws at its top: avenDB
-	updates announced by its peers ($lib/avendb/sync.svelte.js), with missing log counts; else the asset files the page
-	reads, or that it waits for while avenDB's server doesn't answer ($lib/assets/vault.js `recipes`). It shows once
-	something takes a moment, and fades once nothing does; tapped, it says how far each is. Nothing here is an error: a
-	file still on its way is loading, never missing (the page's own banner tells what really is, ./VaultRecipes.svelte).
--->
 <script>
 	// @ts-nocheck — plain JS
 	import { fade } from 'svelte/transition';
@@ -15,7 +7,7 @@
 	import { watchRecipes } from '$lib/assets/vault.js';
 	import { viewStatus } from '$lib/avendb/view-status.js';
 	import { watchActiveReads } from '$lib/avendb/active-reads.js';
-	import { foot, FOOT } from './foot.js';
+	import { screenSlot } from './screen-slots.js';
 
 	/** how long something must take before the pill shows, and how long it stays once nothing does (ms) */
 	const SHOW = 400;
@@ -51,46 +43,63 @@
 
 	const n = (/** @type {number} */ x) => x.toLocaleString('en');
 	const covered = $derived(Math.max(0, sync.logs - sync.behind));
-	const background = $derived(!sync.known ? 'Sync · checking' : !sync.peers ? 'Sync · offline' : sync.behind > 0 ? `Sync · ${n(covered)} / ${n(sync.logs)} logs` : sync.pulling > 0 ? 'Sync · checking updates' : sync.logs > 0 ? 'Sync · caught up' : 'Sync · checking');
 	const view = $derived(viewStatus(reads, files));
-	const label = $derived(view.state === 'local' ? 'View · local' : view.state === 'unknown' ? 'View · checking' : view.state === 'unavailable' ? 'View · unavailable' : files.waiting > 0 ? `View · ${n(files.waiting)} files waiting` : files.reading > 0 ? `View · ${n(files.reading)} files loading` : `View · ${n(reads.pending)} reads loading`);
-	const details = $derived([
-		`${n(sync.peers)} peers · ${n(sync.pulling)} active transfers`,
-		`${n(sync.behind)} logs remaining · ${n(files.waiting + files.reading)} files pending`
-	]);
-	const busy = $derived(sync.behind > 0 || sync.pulling > 0 || view.state === 'loading' || view.state === 'waiting');
-	const fraction = $derived(busy ? null : sync.known && sync.peers > 0 && sync.logs > 0 ? 1 : 0);
+	/**
+	 * Collapsed, one short line: the one thing that matters now, a number only where it says something (Samuel
+	 * 2026-10-26: "way more compact … reduced to the actual sync / offline / online numbers"). In order: not known yet,
+	 * offline, logs still coming (how many of how many), a transfer running, files coming, the view unavailable, synced.
+	 */
+	const line = $derived(
+		!sync.known ? 'Connecting'
+		: !sync.peers ? 'Offline'
+		: sync.behind > 0 ? `Syncing ${n(covered)}/${n(sync.logs)}`
+		: sync.pulling > 0 ? 'Syncing'
+		: files.waiting + files.reading > 0 ? `${n(files.waiting + files.reading)} files`
+		: view.state === 'unavailable' ? 'Not on this device'
+		: 'Synced'
+	);
+	const offline = $derived(sync.known && !sync.peers);
+	/** open, each number by its name: the ones that are not nought, and always the peers */
+	const details = $derived(/** @type {[string, string][]} */ ([
+		['Peers', sync.known ? n(sync.peers) : '…'],
+		...(sync.behind > 0 ? [['Logs left', `${n(sync.behind)} of ${n(sync.logs)}`]] : []),
+		...(sync.pulling > 0 ? [['Transfers', n(sync.pulling)]] : []),
+		...(files.waiting + files.reading > 0 ? [['Files', `${n(files.reading)} loading · ${n(files.waiting)} waiting`]] : []),
+		['View', view.state === 'local' ? 'on this device' : view.state === 'unavailable' ? 'not on this device' : view.state === 'unknown' ? 'checking' : 'loading']
+	]));
+	const busy = $derived(!sync.known || sync.pulling > 0 || view.state === 'loading' || view.state === 'waiting');
+	/** the ring: the share of logs in while syncing, full when synced, empty offline, a turning arc while it can't say */
+	const fraction = $derived(offline ? 0 : sync.behind > 0 && sync.logs > 0 ? covered / sync.logs : busy ? null : sync.logs > 0 ? 1 : null);
 	/** the ring: how far the sync is, or a turning arc while it can't say */
 	const R = 7;
 	const ROUND = 2 * Math.PI * R;
 </script>
 
 {#if shown}
-	<div class="status" use:foot={FOOT.status} transition:fade={{ duration: 200 }}>
+	<div class="status" use:screenSlot={'right'} transition:fade={{ duration: 200 }}>
 		{#if open}
-			<ul class="details" role="list">
-				{#each details as d (d)}<li>{d}</li>{/each}
-			</ul>
+			<dl class="details">
+				{#each details as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
+			</dl>
 		{/if}
-		<button class="pill" onclick={() => (open = !open)} aria-expanded={open} aria-live="polite" title="Incoming sync and current local reads">
+		<button class="pill" onclick={() => (open = !open)} aria-expanded={open} aria-live="polite" class:offline title="Sync with your other devices">
 			<svg class="sync-ring" class:turning={fraction === null} viewBox="0 0 18 18" width="16" height="16" aria-hidden="true">
 				<circle cx="9" cy="9" r={R} class="track" />
 				<circle cx="9" cy="9" r={R} class="done" stroke-dasharray="{fraction === null ? ROUND / 4 : fraction * ROUND} {ROUND}" />
 			</svg>
-			<span class="labels"><span>{label}</span><small>{background}</small></span>
+			<span>{line}</span>
 		</button>
 	</div>
 {/if}
 
 <style>
-	.labels { display: grid; gap: 2px; }
-	.labels small { font-size: 0.68rem; opacity: 0.75; }
-	/* in the app's foot stack, nearest the nav pill ($lib/app/foot.js) */
+	/* The shared top-right slot owns placement; details open below it. */
 	.status {
 		display: flex;
-		flex-direction: column;
-		align-items: center;
+		flex-direction: column-reverse;
+		align-items: flex-end;
 		gap: 6px;
+		position: relative;
 		pointer-events: none;
 	}
 
@@ -98,7 +107,7 @@
 	.details {
 		pointer-events: auto;
 		border: 1px solid var(--line);
-		background: rgb(250 248 242 / 0.94);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		box-shadow: 0 6px 20px rgb(38 56 44 / 0.16);
 		backdrop-filter: blur(10px);
 		color: var(--ink);
@@ -107,29 +116,45 @@
 	.pill {
 		display: flex;
 		align-items: center;
-		gap: 0.45rem;
-		padding: 0.32rem 0.8rem 0.32rem 0.55rem;
+		gap: 0.4rem;
+		padding: 0.28rem 0.7rem 0.28rem 0.45rem;
 		border-radius: 999px;
 		font: inherit;
 		font-size: 0.74rem;
 		letter-spacing: 0.02em;
-		white-space: normal;
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
 		text-align: left;
 		cursor: pointer;
 	}
 
 	.details {
+		position: absolute;
+		top: calc(100% + 8px);
+		right: 0;
+		display: grid;
+		grid-template-columns: max-content max-content;
+		gap: 0.2rem 0.8rem;
 		margin: 0;
-		padding: 0.55rem 0.8rem;
+		padding: 0.5rem 0.75rem;
 		border-radius: 12px;
-		font-size: 0.74rem;
+		font-size: 0.7rem;
 		line-height: 1.4;
-		list-style: none;
-		max-width: 22rem;
+		white-space: nowrap;
+		font-variant-numeric: tabular-nums;
 	}
 
-	.details li + li {
-		margin-top: 0.25rem;
+	.details dt {
+		opacity: 0.65;
+	}
+
+	.details dd {
+		margin: 0;
+		text-align: right;
+	}
+
+	.offline {
+		opacity: 0.8;
 	}
 
 	.sync-ring {

@@ -266,7 +266,7 @@ impl Lab {
         let at = self.at(on);
         let store = self.stores.get_mut(&at).expect("device");
         store.bootstrap_state = None;
-        store.latest = OnceLock::from(store.replay.state.clone());
+        store.latest = OnceLock::new();
         store.based.clear();
         store.bootstrap_basis = None;
         if restored.is_empty() {

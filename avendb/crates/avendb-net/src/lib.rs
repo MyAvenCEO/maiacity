@@ -8,8 +8,8 @@
 //!   dialer's hello before it sends its own and closes a connection without one; the dialer checks the listener's.
 //! - **Key exchange**: X25519MLKEM768 is the only group either end offers (`pq_provider`): ML-KEM-768 agrees the keys
 //!   of every connection along with X25519, and a peer that offers only classical groups doesn't connect.
-//! - **No curve trusted**: every signature on every edit is ML-DSA-65, or SLH-DSA from a signer made before the key
-//!   move (`sign::Suite`), so neither ed25519 nor P-256 makes an edit count; a passkey's WebAuthn assertion beside it
+//! - **No curve trusted**: every signature on every edit is ML-DSA-65, but on the SLH-DSA edits the fork froze, which
+//!   count by the legacy anchor alone (`avendb::legacy`), so neither ed25519 nor P-256 makes an edit count; a passkey's WebAuthn assertion beside it
 //!   only proves its person took part.
 //! - **Sync**: either end asks the other on the connection (`wire::Request`) and is answered with the edits it may
 //!   receive by the other's view and the McEliece keys they name (`wire::Reply`), each key by its id and BLAKE3 hash
@@ -133,7 +133,6 @@ pub mod kx;
 mod lifecycle;
 mod lab_schedule;
 mod limits;
-pub mod paged_views;
 mod progress;
 mod proofs;
 mod peer_receipts;
@@ -172,7 +171,7 @@ use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Checked, Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
-use avendb::sign::{Ceremony, RelayPass, SUITES, Signed, SignerKeys};
+use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
 use avendb::sync::{LogId, log_of, place};
 use avendb::wire::{Announce, Claim, FileHold, Join, Packed, Reply, Request, Statement, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
@@ -322,8 +321,7 @@ pub struct Options {
     /// Where it writes the endpoints of the devices it knows, for a relay to let them in: the server's.
     pub admission: Option<Admission>,
     /// The passes it shows its relay, signed by its person's passkey (`Lab::relay_pass`): a new device with no UDP of
-    /// its own, as a browser's, which the server doesn't know until it joined, is let in by one for ten minutes. One,
-    /// or one in each suite while it doesn't know which its person's vault knows (the key move, `passes_token`).
+    /// its own, as a browser's, which the server doesn't know until it joined, is let in by one for ten minutes.
     pub relay_passes: Vec<RelayPass>,
     /// The most bytes of edits it answers a request with, but at least one edit: a peer asks on for the rest
     /// (`Lab::reply`).
@@ -604,14 +602,12 @@ pub(crate) fn unix_now() -> u64 {
     time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
-/// The most passes a token carries (`passes_token`): one in each suite.
-pub const TOKEN_PASSES: usize = 2;
+/// The most passes a token carries (`passes_token`): one, its passkey's, since the fork off SLH-DSA.
+pub const TOKEN_PASSES: usize = 1;
 
 /// Relay passes as the token a node shows its relay as it connects: each in base64url without padding, joined by
 /// `.`, which a browser's node carries in the query of the relay's URL, as a page can't set the headers of a
-/// WebSocket. A new device shows its passkey's pass in each suite while it doesn't know which one its person's vault
-/// knows (the key move, Samuel 2026-10-19), the relay taking the one it honours (`token_passes`); one pass is the
-/// token it was before.
+/// WebSocket. The relay takes the first `TOKEN_PASSES` of them (`token_passes`).
 pub fn passes_token(passes: &[RelayPass]) -> String {
     let token = |pass: &RelayPass| BASE64URL_NOPAD.encode(&pass.to_wire());
     passes.iter().map(token).collect::<Vec<_>>().join(".")
@@ -922,8 +918,7 @@ impl Node {
     /// to its person's vault. A pass may be from any of a few passkeys, as this device may not know its passkey's P-256
     /// key yet (`RelayPass::candidates`): the one whose vault the peer hands over is its person's, and its keys must be
     /// at hand in the Lab (`Lab::web_passkey`), as those of the others may be. It shows the peer one pass after
-    /// another, one in each suite (`sign::Ceremony::passes`), until the peer hands a vault over: their vault may know
-    /// their passkey in either (the key move). That passkey and the vault it joined.
+    /// another until the peer hands a vault over. That passkey and the vault it joined.
     pub async fn link_with(
         &self,
         offer: &Offer,
@@ -936,7 +931,7 @@ impl Node {
 
     /// `link_with`, in the one ceremony that unlocked this device, `unlock`, which is the passkey's pass for it: that
     /// ceremony signs the edit adding the device too, as the pass (`sign::WebAuthn::Pass`), its PRF output making the
-    /// SLH-DSA signature over the edit itself, so that a browser signs in to its person's vault in one ceremony. That
+    /// ML-DSA-65 signature over the edit itself, so that a browser signs in to its person's vault in one ceremony. That
     /// passkey and the vault it joined.
     pub async fn link_by_pass(
         &self,
@@ -976,7 +971,7 @@ impl Node {
 
     /// Join the vault a pass's passkey roots, through device `offer`, which hands over its log for the pass: `None`
     /// if it hands over none for any of `passes`, which it shows one after another, the next only if the peer handed
-    /// nothing over for the one before (a pass in each suite, the key move). `linking` marks the pass step as it shows
+    /// nothing over for the one before. `linking` marks the pass step as it shows
     /// the passes; a device that founds its vault, only once the server handed one over.
     async fn join_through<A: Authenticator>(
         &self,
@@ -1290,75 +1285,16 @@ impl Node {
         Ok(out)
     }
 
-    /// The connection to the device `offer` names, once its hello proved it the device offered, or that device's next
-    /// key once its key moved (the key move, K3c), as the server's offer the app and the agents carry names the key it
-    /// started with: a device beside it in the vault it belongs to, by the logs its card brings, at the same endpoint,
-    /// so from the same secret. Its person's devices signed it in, and it signed its joining itself.
+    /// The connection to the device `offer` names, once its hello proved it the device offered.
     async fn offered(&self, offer: &Offer) -> Result<Peer> {
         let _activity = self.shared.admit()?;
         self.try_know(offer.addr.clone())?;
         let endpoint = offer.addr.id;
         let peer = self.shared.connection(endpoint).await?;
-        if peer.device != offer.device && !self.moved_from(offer.device, &peer).await {
+        if peer.device != offer.device {
             bail!("the device at {endpoint} isn't the one offered");
         }
         Ok(peer)
-    }
-
-    /// Whether `peer`'s device is the next key of device `earlier` (`offered`): a device beside it in a vault, by the
-    /// logs `peer`'s card brings, as their endpoint is the same.
-    async fn moved_from(&self, earlier: SignerId, peer: &Peer) -> bool {
-        if self.shared.contact(peer.endpoint).await.is_err() {
-            return false;
-        }
-        let next = peer.device;
-        let beside = move |lab: &Lab, me| {
-            let st = lab.state(me);
-            st.vaults().iter().any(|v| v.devices.contains(&earlier) && v.devices.contains(&next))
-        };
-        self.shared.read(beside).await
-    }
-
-    /// The next key of device `device` at `endpoint`, a server or an agent of an aven its person governs
-    /// (`Lab::aven_devices`), as it hands it while its key hasn't moved yet (the key move, K3c, `Lab::move_key`), once
-    /// its hello proved it that device. Fails if it isn't reached, or has no key to move.
-    pub async fn next_key_of(&self, endpoint: EndpointId, device: SignerId) -> Result<SignerId> {
-        let _activity = self.shared.admit()?;
-        let peer = self.shared.connection(endpoint).await?;
-        if peer.device != device {
-            bail!("the device at {endpoint} isn't the one asked");
-        }
-        let next = session::exchange(&peer.conn, session::NEXT_KEY, &[], 64).await;
-        let next = next.context("it hands no next key: its key moved, or it runs a build from before the move")?;
-        Ok(SignerId(<[u8; 32]>::try_from(&next[..]).context("a key's id")?))
-    }
-
-    /// Sends the device at `endpoint` the claim of its next key (`Lab::claim`, the key move, K3c), and keeps the join
-    /// it answers with, which makes that key a device of its vault beside it, as the device signed it too
-    /// (`Lab::accept_claim`). Then they sync.
-    pub async fn send_move(&self, endpoint: EndpointId, claim: Claim) -> Result<()> {
-        let _activity = self.shared.admit()?;
-        let peer = self.shared.connection(endpoint).await?;
-        let id = claim.add.id();
-        let Action::Share(Sharing::Device { vault, device: next, .. }) = claim.add.action else {
-            bail!("a claim that adds no device")
-        };
-        let join = session::exchange(&peer.conn, session::CLAIM, &claim.to_wire(), session::REPLY_LIMIT).await;
-        let Join { edit, blobs } = Join::from_wire(&join.context("the device refuses its key move")?)?;
-        if edit.edit.id() != id {
-            bail!("the device answered its key move with another edit");
-        }
-        let blobs = blobs.into_iter().map(Arc::from).collect();
-        let kept = self.shared.try_lab(move |lab, me| {
-            lab.receive(me, vec![edit], blobs);
-            lab.state(me).is_device(next, vault)
-        });
-        if !kept.await? {
-            bail!("the device's join doesn't make its next key a device of its vault");
-        }
-        self.shared.changed.notify_one();
-        self.shared.ask(peer.endpoint).await?;
-        Ok(())
     }
 
     /// The avenMAIA the server `offer` names is a device of, by its card (`contact`): none while nobody has
@@ -1599,16 +1535,10 @@ impl Node {
         let claim = move |lab: &mut Lab, me| -> Result<(VaultId, Vec<Signed>), Refusal> {
             lab.receive(me, edits, Vec::new());
             let vault = lab.vault_of(me).ok_or(Refusal::NotActing)?;
-            // the key in each suite, as an invite made before the key move names it in SLH-DSA: the one it names signs
-            let mut claimed = Err(Refusal::NoConsent);
-            for suite in SUITES {
-                let key = lab.invite_key_in(secret, suite);
-                claimed = lab.claim_invite(me, share, vault, key);
-                lab.lose(key);
-                if claimed.is_ok() {
-                    break;
-                }
-            }
+            // an invite made before the key move names its key in SLH-DSA, which signs nothing since the fork: refused
+            let key = lab.invite_key(secret);
+            let claimed = lab.claim_invite(me, share, vault, key);
+            lab.lose(key);
             claimed?;
             Ok((vault, lab.sign_up_card(me)))
         };
@@ -1798,7 +1728,7 @@ impl Node {
 
     /// The devices it is connected to now, as their hellos proved them, each with how many logs it holds edits in that
     /// this device lacks (`differ`), as `synced` counts them, or `None` until it told what it holds: what a removal of
-    /// keys waits for, as it cuts what rests on them that its drafter doesn't hold (T16; the key move's retire step).
+    /// keys waits for, as it cuts what rests on them that its drafter doesn't hold (T16).
     pub async fn live_peers(&self) -> BTreeMap<SignerId, Option<usize>> {
         let live: BTreeSet<SignerId> = {
             let peers = self.shared.peers.lock().expect("peers");
@@ -2223,11 +2153,6 @@ impl<K: Hash + Eq + Copy> Backoff<K> {
     /// It is time to try `k`: it never failed, or its wait is over.
     fn due(&self, k: &K) -> bool {
         self.0.get(k).is_none_or(|&(at, _)| Instant::now() >= at)
-    }
-
-    /// The peers out of reach whose wait is over.
-    fn ready(&self) -> Vec<K> {
-        self.0.iter().filter(|(_, (at, _))| Instant::now() >= *at).map(|(k, _)| *k).collect()
     }
 }
 
@@ -3089,9 +3014,7 @@ impl Shared {
     }
 
     /// Tells `device`, at `endpoint`, that it holds `want`: all of it on a connection it told nothing yet, else what
-    /// changed since it last told it, if anything did. Whichever key the device at `endpoint` goes by, as its hello
-    /// proves it: one secret makes one endpoint, so it is `device`, or across a key move its earlier or next key
-    /// (`Lab::peers`), as a server whose key moved goes by its earlier key until it starts again (K3c).
+    /// changed since it last told it, if anything did.
     async fn tell(self: &Arc<Self>, device: SignerId, endpoint: EndpointId, want: Holdings) -> Result<()> {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
@@ -3178,19 +3101,11 @@ impl Shared {
     /// since), as `synced_to` reads them: a claim to any other steers nothing, and learns nothing of what the node
     /// holds of it. A log the node holds nothing of, which its view can't place, it asks for naming nothing of it
     /// (`session::only`), as its request on a new connection does: else it would never learn of a new entry. A device
-    /// the view doesn't know, on the endpoint of one it knows, is that one's next key, whose key move the node lacks
-    /// yet (`Lab::peers`: one secret, one endpoint): it may hold what that one may, so the node asks it for the move
-    /// too, as it never would otherwise (Samuel's Mac 2026-10-20 moved while the server was away, and nobody learned).
     async fn differ(self: &Arc<Self>, device: SignerId) -> BTreeSet<LogId> {
         let Some(theirs) = self.held.lock().expect("held").get(&device).map(|h| h.logs.clone()) else {
             return BTreeSet::new();
         };
         let (shared, known) = (self.clone(), self.reach.lock().expect("reach").clone());
-        let earlier = || {
-            let endpoint = self.endpoint_of(device)?;
-            known.iter().find(|(_, r)| r.endpoint == endpoint).map(|(d, _)| *d)
-        };
-        let device = if known.contains_key(&device) { device } else { earlier().unwrap_or(device) };
         self.try_lab(move |lab, me| {
             let mine = shared.logs_of(lab, me);
             let mut now: Option<BTreeSet<LogId>> = None;

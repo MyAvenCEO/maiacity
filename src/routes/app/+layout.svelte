@@ -21,8 +21,9 @@
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import Diagnostics from '$lib/app/Diagnostics.svelte';
+	import ScreenChrome from '$lib/app/ScreenChrome.svelte';
 	import { lifecycle, noteLifecycle } from '$lib/avendb/lifecycle.js';
-	import { pillVaults, seeded, signerName } from '$lib/avendb/vaults.js';
+	import { pillVaults, seeded } from '$lib/avendb/vaults.js';
 	import { remember } from '$lib/app/session';
 	import { forwardConsole, native } from '$lib/native';
 	import { foot, footHost, FOOT } from '$lib/app/foot.js';
@@ -52,54 +53,6 @@
 	let stuck = $state(false);
 	/** why the invite a link brought didn't go through, if it didn't */
 	let invited = $state('');
-	/** the key move (K3b) under way, and why it didn't go through, if it didn't */
-	let moveBusy = $state(false);
-	let moveError = $state('');
-	/** the key move went through: said once, as the banner goes (Samuel 2026-10-20: after his touch "nothing happened"),
-	 *  'avens' where only the server and the agents of their coop's aven moved (K3c), 'retired' where the old keys went */
-	let moved = $state<boolean | 'avens' | 'retired' | 'checkpoint'>(false);
-	/** the key move's last step, once every key moved (Samuel 2026-10-20: "you should have removed all the old keys"):
-	 *  the earlier keys and the old devices it removes, each `{ kind, key }` ('root' hands the root on, 'owner' or
-	 *  'device' goes), and whether it waits until this device holds what the coop's server holds (`behind`) */
-	const retire = $derived(session.moving?.retire ?? []);
-	/** what the last step removes, in words: earlier keys (owners, and devices whose next key took their place), and
-	 *  the old devices never unlocked since the move, by name */
-	const retireWhat = $derived.by(() => {
-		const world = session.world;
-		const next = (key: string) => world?.vaults.some((v: any) => v.devices.some((d: any) => d.id === key && d.next));
-		const old = retire.filter((r) => r.kind === 'device' && !next(r.key));
-		const keys = retire.filter((r) => r.kind === 'owner').length + retire.filter((r) => r.kind === 'device').length - old.length;
-		const names = old.map((r) => (world ? signerName(world, r.key, true) : 'A device'));
-		const plural = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`;
-		return [keys ? plural(keys, 'earlier key') : '', old.length ? `${plural(old.length, 'old device')} not unlocked since (${names.join(', ')})` : '']
-			.filter(Boolean)
-			.join(' and ');
-	});
-	/** what moves: their keys, the server and the agents of their coop's aven (K3c), or both */
-	const moveWhat = $derived(
-		!session.moving?.avens
-			? 'Your keys move'
-			: session.moving.device
-				? 'Your keys, and your coop’s server and agents, move'
-				: 'Your coop’s server and agents move'
-	);
-	/** who asks once more for the key move: the passkey's prompt, Touch ID, or both */
-	const moveAsks = $derived(
-		[session.moving?.passkey ? `${asks} once more` : '', session.moving?.touch ? 'Touch ID asks for a touch' : '']
-			.filter(Boolean)
-			.join(', and ')
-	);
-
-	/** Moves the person's keys to ML-DSA-65 now (session.moveKeys), showing why not if it didn't go through. */
-	async function moveNow() {
-		[moveBusy, moveError] = [true, ''];
-		const avens = !!session.moving?.avens && !session.moving.device;
-		const retiring = retire.length > 0;
-		const checkpoint = !!session.moving?.checkpoint;
-		if (await session.moveKeys()) moved = retiring ? 'retired' : checkpoint ? 'checkpoint' : avens ? 'avens' : true;
-		else moveError = session.error;
-		moveBusy = false;
-	}
 	/** the passkey roots no human vault yet, or the person just signed up: the name its profile takes, to found it */
 	let naming = $state(false);
 	let name = $state('');
@@ -382,7 +335,9 @@
 	{#if phase !== 'ready'}<title>{session.phase === 'new' ? 'Sign in' : 'Unlock'} · maiaCITY</title>{:else if closed}<title>Not open to you yet · maiaCITY</title>{/if}
 </svelte:head>
 
-<Diagnostics />
+<ScreenChrome nativeWindow={native()} title={game?.label ?? 'Maia City'} />
+<!-- once the vault is open, diagnostics live on the Performance page ($lib/avendb/Performance.svelte) -->
+{#if phase !== 'ready'}<Diagnostics />{/if}
 
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
 {#if !(phase === 'ready' && immersive && !closed)}<div class="status-strip" aria-hidden="true"></div>{/if}
@@ -428,32 +383,8 @@
 		</div>
 	{:else}
 		{#if invited}<p class="invite-note" use:foot={FOOT.toast} role="status">{invited} <button class="quiet later" onclick={() => (invited = '')}>OK</button></p>
-		{:else if retire.length && session.moving?.behind}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
-				Your keys moved to ML-DSA-65. Removing the old ones waits until this device holds all your coop’s server holds: it is syncing.
-			</p>
-		{:else if retire.length && moveAsks}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
-				Your keys moved to ML-DSA-65. Remove the old ones now, {retireWhat}: {moveAsks}.
-				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Removing…' : 'Remove old keys'}</button>
-				{#if moveError}<span class="bad">{moveError}</span>{/if}
-			</p>
-		{:else if session.moving?.checkpoint && moveAsks}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
-				Your keys moved to ML-DSA-65. Sign one checkpoint over what your old keys signed, so their old signatures need no checking any more: {moveAsks}.
-				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Signing…' : 'Sign checkpoint'}</button>
-				{#if moveError}<span class="bad">{moveError}</span>{/if}
-			</p>
-		{:else if session.moving && moveAsks}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
-				{moveWhat} to ML-DSA-65, smaller and faster post-quantum signatures: {moveAsks}.
-				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Moving…' : session.moving.device || !session.moving.avens ? 'Move my keys' : 'Move them'}</button>
-				{#if moveError}<span class="bad">{moveError}</span>{/if}
-			</p>
-		{:else if moved}<p class="invite-note move-note" use:foot={FOOT.toast} role="status">
-				{#if moved === 'retired'}Your old keys are removed. Your other devices learn it as they sync with this one.
-				{:else if moved === 'checkpoint'}Your checkpoint is signed. Your other devices learn it as they sync with this one.
-				{:else if moved === 'avens'}Your coop’s server and agents moved to ML-DSA-65. Each signs with its new key from its next start.
-				{:else}Your keys moved to ML-DSA-65. Your other devices learn it as they sync with this one.{/if}
-				<button class="quiet later" onclick={() => (moved = false)}>OK</button>
-			</p>{/if}
-		<div class="app" class:immersive>
+{/if}
+		<div class="app screen-content" class:immersive>
 			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>
 		</div>
 	{/if}
@@ -538,11 +469,6 @@
 		font-size: 0.9rem;
 	}
 
-	/* the key move's one ask (K3b): news, not trouble */
-	.move-note {
-		color: var(--ink);
-	}
-
 	/* the name a new human vault takes */
 	.name {
 		width: min(20rem, 100%);
@@ -593,7 +519,7 @@
 	}
 
 	.app:not(.immersive) {
-		padding-top: env(safe-area-inset-top, 0px);
+		padding-top: var(--screen-head-room);
 		padding-bottom: calc(var(--nav-room) + 1.5rem);
 	}
 </style>

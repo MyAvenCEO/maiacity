@@ -27,6 +27,8 @@ const BUILDERS = [
 	'src/lib/biomes/',
 	'src/lib/buildings/built.js',
 	'src/lib/buildings/tent.js',
+	'src/lib/buildings/factory.js',
+	'src/lib/buildings/glamp.js',
 	'src/lib/assets/kit.js',
 	'src/lib/assets/parts.js',
 	'src/lib/assets/index.js',
@@ -34,7 +36,8 @@ const BUILDERS = [
 	'src/lib/sandbox-2/interior/spaces.ts',
 	'src/lib/sandbox-2/interior/rooms.ts',
 	'src/lib/sandbox-2/interior/plants.ts',
-	'src/lib/sandbox-2/interior/textures.ts'
+	'src/lib/sandbox-2/interior/textures.ts',
+	'src/lib/sandbox-2/interior/factory.ts'
 ];
 
 /** World modules: every world's own code and its pages (a page under /app/games, /games for the film, …) */
@@ -82,7 +85,14 @@ const ALLOWED = {
 	// Sandbox 3's domes (also Sandbox 4's, the Buildings' domes and the film's): raised in
 	// the page, by code that is itself recipe code (the dome rooms' Things are built from its furniture)
 	'src/lib/sandbox-2/interior/interior.ts': {
-		imports: { './textures': WHY.shell, './spaces': `${WHY.squares}; ${WHY.coops}`, './rooms': WHY.rooms, './plants': WHY.plants, '$lib/biomes': WHY.ground },
+		imports: {
+			'./textures': WHY.shell,
+			'./spaces': `${WHY.squares}; ${WHY.coops}`,
+			'./rooms': WHY.rooms,
+			'./plants': WHY.plants,
+			'$lib/biomes': WHY.ground,
+			'./factory': "the solar factory dome's five floors of lines, raised in the page at its v1 (Sandbox 3, the Buildings' v1); from its v2 the box builds them (../buildings/factory.js)"
+		},
 		owner: ASSET
 	},
 	'src/lib/sandbox-2/interior/village.ts': {

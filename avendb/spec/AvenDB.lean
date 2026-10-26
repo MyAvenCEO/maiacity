@@ -25,7 +25,6 @@ import AvenDB.BatchDurability
 import AvenDB.WireBatches
 import AvenDB.Snapshot
 import AvenDB.EntryState
-import AvenDB.PagedView
 import AvenDB.Wraps
 import AvenDB.Vectors
 import AvenDB.Ops

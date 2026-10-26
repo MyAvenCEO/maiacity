@@ -642,6 +642,139 @@ export const breath = () =>
 		}, HELD)
 	})
 
+/**
+ * The glamping dome's inside, in `scene` round its middle: its v1 in Sandbox 3 (raised here, `raiseInterior`), and from
+ * its v2 the asset box's (../../buildings/glamp.js). `addLamp` hangs a lamp (its light, and with `floor` a cone of it),
+ * `glowMat` is what a lamp's shade glows with. Hands back the things in the way and where it is walked in from.
+ */
+export function glampInside({ scene, R, m, addLamp, glowMat }: { scene: THREE.Object3D; R: number; m: Mats; addLamp: (x: number, y: number, z: number, base: number, reach: number, floor?: number) => void; glowMat: THREE.Material }) {
+	const colliders: { x: number; z: number; r: number }[] = []
+	/* a home for four, in zones round the room: the door at +z (angle 0), the
+	   living room to its left, the kitchen and table to its right, and at the
+	   back, behind timber screens, two sleeping nooks and the bathroom. The
+	   middle is a garden under the skylight. */
+	const floor = new THREE.Mesh(new THREE.CircleGeometry(R, 64), m.oak(R / 1.5))
+	floor.rotation.x = -Math.PI / 2
+	floor.position.y = 0.01
+	floor.receiveShadow = true
+	scene.add(floor)
+	const at = (rr: number, a: number) => polar(rr, a)
+	const put = (o: THREE.Object3D, rr: number, a: number, face = a + Math.PI, collide = 0) => {
+		const [x, z] = at(rr, a)
+		o.position.set(x, o.position.y, z)
+		o.rotation.y = face
+		scene.add(o)
+		if (collide) colliders.push({ x, z, r: collide })
+	}
+	// the living room: sofa, rug, a low table, the wood stove
+	const rug = new THREE.Mesh(new THREE.CircleGeometry(1.8, 40), m.rug)
+	rug.rotation.x = -Math.PI / 2
+	rug.position.y = 0.02
+	put(rug, 4.4, -1.05)
+	rug.rotation.set(-Math.PI / 2, 0, 0)
+	put(sofa(m, 2.8), 5.6, -1.05, -1.05 + Math.PI, 1.4)
+	put(box(1.1, 0.4, 0.6, m.oak(1)), 4.2, -1.05, -1.05, 0.6)
+	const stove = box(0.6, 0.75, 0.55, m.dark)
+	put(stove, 6.6, -1.75, -1.75 + Math.PI, 0.5)
+	const [fx, fz] = at(6.6, -1.75)
+	const flue = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, R * 0.9, 10), m.dark)
+	flue.position.set(fx * 0.9, 0.75 + (R * 0.9) / 2, fz * 0.9)
+	scene.add(flue)
+	put(box(1.2, 2, 0.4, m.oak(1)), 6.9, -0.55, -0.55 + Math.PI)
+	// the kitchen along the glass, and a table for four
+	for (let k = 0; k < 4; k++) {
+		const a = 0.85 + k * 0.17
+		put(box(1.05, 0.9, 0.62, m.oak(1)), 7, a, a + Math.PI, 0.55)
+		put(box(1.08, 0.05, 0.66, m.counter), 7, a, a + Math.PI)
+		const c = scene.children[scene.children.length - 1]!
+		c.position.y = 0.9
+	}
+	put(box(1, 0.9, 0.5, m.dark), 7.1, 1.55, 1.55 + Math.PI)
+	put(table(m, 1.6, 4), 4.6, 1.2, 1.2 + Math.PI / 2, 1.2)
+	// behind the screens: a sleeping nook for two, one with two single beds, and the bathroom
+	const screen = (rr0: number, rr1: number, a: number) => {
+		const [x, z] = at((rr0 + rr1) / 2, a)
+		scene.add(box(0.1, 2.2, rr1 - rr0, m.oak(0.5, 1), x, 0, z, a))
+	}
+	for (const a of [2.35, 2.95, -2.95, -2.35]) screen(3.4, 7.2, a)
+	put(bed(m, 1.7), 6.2, 2.65, 2.65 + Math.PI, 1.1)
+	const b1 = bed(m, 0.95)
+	put(b1, 6.2, 3.14 - 0.12, 3.14, 0.7)
+	const b2 = bed(m, 0.95)
+	put(b2, 6.2, -3.14 + 0.12, 3.14, 0.7)
+	const pod = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 2.3, 24, 1, true, 0.5, Math.PI * 2 - 1), m.oak(3, 1))
+	;(pod.material as THREE.Material).side = THREE.DoubleSide
+	const [px, pz] = at(5.9, -2.65)
+	pod.position.set(px, 1.15, pz)
+	pod.rotation.y = -2.65 + Math.PI
+	scene.add(pod)
+	colliders.push({ x: px, z: pz, r: 1.25 })
+	// the garden inside: raised beds under the glass, a lemon tree under the skylight, herbs everywhere
+	const planter = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.4, 0.55, 32), m.lime(3, 0.3))
+	planter.position.y = 0.275
+	scene.add(planter)
+	const planterSoil = new THREE.Mesh(new THREE.CircleGeometry(1.25, 32), m.soil(1))
+	planterSoil.rotation.x = -Math.PI / 2
+	planterSoil.position.y = 0.56
+	scene.add(planterSoil)
+	const lemon = fruitTree('citrus', 77, 0.75)
+	lemon.object.position.y = 0.55
+	scene.add(lemon.object)
+	colliders.push({ x: 0, z: 0, r: 1.5 })
+	for (let k = 0; k < 6; k++) {
+		const h = herb(80 + k, 0.25)
+		const [hx, hz] = at(0.9, k)
+		h.position.set(hx, 0.56, hz)
+		scene.add(h)
+	}
+	for (const a of [-0.55, 0.55, 1.95]) {
+		// a patch grown straight in the soil, as the gardens outside
+		const patch = crop(CROPS[Math.round(a * 10 + 20) % CROPS.length]!, 90 + Math.round(a * 10), 2.2)
+		patch.position.y = 0.02
+		put(patch, 7.3, a, a + Math.PI / 2, 0.9)
+	}
+	for (let k = 0; k < 5; k++) {
+		const potA = -1.9 + k * 0.28
+		const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.45, 16), m.dark)
+		const [x, z] = at(7.4, potA)
+		pot.position.set(x, 0.22, z)
+		scene.add(pot)
+		const plant = k % 2 ? shrub(120 + k, 1.1) : banana(130 + k, 1.6)
+		plant.object.position.set(x, 0.4, z)
+		scene.add(plant.object)
+	}
+	scene.add(lantern(m, 0.4, 3.4))
+	const l2 = lantern(m, 0.3, 2.6)
+	const [lx, lz] = at(4.6, 1.2)
+	l2.position.set(lx, 0, lz)
+	scene.add(l2)
+	addLamp(0, 3.1, 0, 16, 11, 0.56)
+	addLamp(lx, 2.35, lz, 10, 8, 0)
+	// over the kitchen counter, and a reading light in each sleeping nook
+	for (const [rr, a, base] of [[6.4, 1.1, 10], [5.8, 2.65, 6], [5.8, -3.02, 6], [5.4, -1.05, 8]] as const) {
+		const [x, z] = at(rr, a)
+		scene.add(box(0.3, 0.06, 0.3, glowMat, x, 2.45, z))
+		addLamp(x, 2.3, z, base, 7)
+	}
+	// the stone foundation ring the dome stands on, open at the door
+	const gh = 1.1 / R
+	const plinth = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.35, R + 0.45, 0.45, 96, 1, true, gh, Math.PI * 2 - 2 * gh), m.lime((Math.PI * R) / 1.5, 0.3))
+	;(plinth.material as THREE.Material).side = THREE.DoubleSide
+	plinth.position.y = 0.2
+	scene.add(plinth)
+	// a deck outside the door, and a table on it
+	const deck = new THREE.Mesh(new THREE.CircleGeometry(3.4, 48), m.oak(4))
+	deck.rotation.x = -Math.PI / 2
+	deck.position.set(0, 0.04, R + 2.2)
+	deck.receiveShadow = true
+	scene.add(deck)
+	const outTable = table(m, 1.2, 4)
+	outTable.position.set(1.8, 0.06, R + 2.4)
+	scene.add(outTable)
+	colliders.push({ x: 1.8, z: R + 2.4, r: 1.1 })
+	return { colliders, start: { x: 0, z: R - 2.2, look: 0 } }
+}
+
 export async function mountInterior(container: HTMLElement, kind: DomeKind, onProgress?: (label: string) => void, opts: InteriorOptions = {}): Promise<InteriorHandle> {
 	/** what it put into the host's renderers, taken out again if it never stands (a build cancelled, or failed) */
 	const drop: (() => void)[] = []
@@ -1148,130 +1281,9 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		liftFloor = works.floor
 		await pause('Waking the robots')
 	} else if (kind === 'glamp') {
-		/* a home for four, in zones round the room: the door at +z (angle 0), the
-		   living room to its left, the kitchen and table to its right, and at the
-		   back, behind timber screens, two sleeping nooks and the bathroom. The
-		   middle is a garden under the skylight. */
-		const floor = new THREE.Mesh(new THREE.CircleGeometry(R, 64), m.oak(R / 1.5))
-		floor.rotation.x = -Math.PI / 2
-		floor.position.y = 0.01
-		floor.receiveShadow = true
-		scene.add(floor)
-		const at = (rr: number, a: number) => polar(rr, a)
-		const put = (o: THREE.Object3D, rr: number, a: number, face = a + Math.PI, collide = 0) => {
-			const [x, z] = at(rr, a)
-			o.position.set(x, o.position.y, z)
-			o.rotation.y = face
-			scene.add(o)
-			if (collide) colliders.push({ x, z, r: collide })
-		}
-		// the living room: sofa, rug, a low table, the wood stove
-		const rug = new THREE.Mesh(new THREE.CircleGeometry(1.8, 40), m.rug)
-		rug.rotation.x = -Math.PI / 2
-		rug.position.y = 0.02
-		put(rug, 4.4, -1.05)
-		rug.rotation.set(-Math.PI / 2, 0, 0)
-		put(sofa(m, 2.8), 5.6, -1.05, -1.05 + Math.PI, 1.4)
-		put(box(1.1, 0.4, 0.6, m.oak(1)), 4.2, -1.05, -1.05, 0.6)
-		const stove = box(0.6, 0.75, 0.55, m.dark)
-		put(stove, 6.6, -1.75, -1.75 + Math.PI, 0.5)
-		const [fx, fz] = at(6.6, -1.75)
-		const flue = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, R * 0.9, 10), m.dark)
-		flue.position.set(fx * 0.9, 0.75 + (R * 0.9) / 2, fz * 0.9)
-		scene.add(flue)
-		put(box(1.2, 2, 0.4, m.oak(1)), 6.9, -0.55, -0.55 + Math.PI)
-		// the kitchen along the glass, and a table for four
-		for (let k = 0; k < 4; k++) {
-			const a = 0.85 + k * 0.17
-			put(box(1.05, 0.9, 0.62, m.oak(1)), 7, a, a + Math.PI, 0.55)
-			put(box(1.08, 0.05, 0.66, m.counter), 7, a, a + Math.PI)
-			const c = scene.children[scene.children.length - 1]!
-			c.position.y = 0.9
-		}
-		put(box(1, 0.9, 0.5, m.dark), 7.1, 1.55, 1.55 + Math.PI)
-		put(table(m, 1.6, 4), 4.6, 1.2, 1.2 + Math.PI / 2, 1.2)
-		// behind the screens: a sleeping nook for two, one with two single beds, and the bathroom
-		const screen = (rr0: number, rr1: number, a: number) => {
-			const [x, z] = at((rr0 + rr1) / 2, a)
-			scene.add(box(0.1, 2.2, rr1 - rr0, m.oak(0.5, 1), x, 0, z, a))
-		}
-		for (const a of [2.35, 2.95, -2.95, -2.35]) screen(3.4, 7.2, a)
-		put(bed(m, 1.7), 6.2, 2.65, 2.65 + Math.PI, 1.1)
-		const b1 = bed(m, 0.95)
-		put(b1, 6.2, 3.14 - 0.12, 3.14, 0.7)
-		const b2 = bed(m, 0.95)
-		put(b2, 6.2, -3.14 + 0.12, 3.14, 0.7)
-		const pod = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 2.3, 24, 1, true, 0.5, Math.PI * 2 - 1), m.oak(3, 1))
-		;(pod.material as THREE.Material).side = THREE.DoubleSide
-		const [px, pz] = at(5.9, -2.65)
-		pod.position.set(px, 1.15, pz)
-		pod.rotation.y = -2.65 + Math.PI
-		scene.add(pod)
-		colliders.push({ x: px, z: pz, r: 1.25 })
-		// the garden inside: raised beds under the glass, a lemon tree under the skylight, herbs everywhere
-		const planter = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.4, 0.55, 32), m.lime(3, 0.3))
-		planter.position.y = 0.275
-		scene.add(planter)
-		const planterSoil = new THREE.Mesh(new THREE.CircleGeometry(1.25, 32), m.soil(1))
-		planterSoil.rotation.x = -Math.PI / 2
-		planterSoil.position.y = 0.56
-		scene.add(planterSoil)
-		const lemon = fruitTree('citrus', 77, 0.75)
-		lemon.object.position.y = 0.55
-		scene.add(lemon.object)
-		colliders.push({ x: 0, z: 0, r: 1.5 })
-		for (let k = 0; k < 6; k++) {
-			const h = herb(80 + k, 0.25)
-			const [hx, hz] = at(0.9, k)
-			h.position.set(hx, 0.56, hz)
-			scene.add(h)
-		}
-		for (const a of [-0.55, 0.55, 1.95]) {
-			// a patch grown straight in the soil, as the gardens outside
-			const patch = crop(CROPS[Math.round(a * 10 + 20) % CROPS.length]!, 90 + Math.round(a * 10), 2.2)
-			patch.position.y = 0.02
-			put(patch, 7.3, a, a + Math.PI / 2, 0.9)
-		}
-		for (let k = 0; k < 5; k++) {
-			const potA = -1.9 + k * 0.28
-			const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.45, 16), m.dark)
-			const [x, z] = at(7.4, potA)
-			pot.position.set(x, 0.22, z)
-			scene.add(pot)
-			const plant = k % 2 ? shrub(120 + k, 1.1) : banana(130 + k, 1.6)
-			plant.object.position.set(x, 0.4, z)
-			scene.add(plant.object)
-		}
-		scene.add(lantern(m, 0.4, 3.4))
-		const l2 = lantern(m, 0.3, 2.6)
-		const [lx, lz] = at(4.6, 1.2)
-		l2.position.set(lx, 0, lz)
-		scene.add(l2)
-		addLamp(0, 3.1, 0, 16, 11, 0.56)
-		addLamp(lx, 2.35, lz, 10, 8, 0)
-		// over the kitchen counter, and a reading light in each sleeping nook
-		for (const [rr, a, base] of [[6.4, 1.1, 10], [5.8, 2.65, 6], [5.8, -3.02, 6], [5.4, -1.05, 8]] as const) {
-			const [x, z] = at(rr, a)
-			scene.add(box(0.3, 0.06, 0.3, glowMat, x, 2.45, z))
-			addLamp(x, 2.3, z, base, 7)
-		}
-		// the stone foundation ring the dome stands on, open at the door
-		const gh = 1.1 / R
-		const plinth = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.35, R + 0.45, 0.45, 96, 1, true, gh, Math.PI * 2 - 2 * gh), m.lime((Math.PI * R) / 1.5, 0.3))
-		;(plinth.material as THREE.Material).side = THREE.DoubleSide
-		plinth.position.y = 0.2
-		scene.add(plinth)
-		// a deck outside the door, and a table on it
-		const deck = new THREE.Mesh(new THREE.CircleGeometry(3.4, 48), m.oak(4))
-		deck.rotation.x = -Math.PI / 2
-		deck.position.set(0, 0.04, R + 2.2)
-		deck.receiveShadow = true
-		scene.add(deck)
-		const outTable = table(m, 1.2, 4)
-		outTable.position.set(1.8, 0.06, R + 2.4)
-		scene.add(outTable)
-		colliders.push({ x: 1.8, z: R + 2.4, r: 1.1 })
-		start = { x: 0, z: R - 2.2, look: 0 }
+		const glamp = glampInside({ scene, R, m, addLamp, glowMat })
+		colliders.push(...glamp.colliders)
+		start = glamp.start
 	} else {
 		const g = spec.gallery!
 		const H = g.height
