@@ -57,7 +57,8 @@
 	 *   $lib/buildings/inside.js)
 	 */
 	let { name, title, lede, group, items, where = (it) => it.from ?? it.usedIn ?? '', heading, soil = false, round = false, inPlace = false, inside = null } = $props();
-	const first = untrack(() => items[0]);
+	/** the item the address names by its id (`/app/buildings/#dome-factory`, as avenDB's Assets links a dome), else the first */
+	const first = untrack(() => (typeof location !== 'undefined' && items.find((it) => `#${it.id}` === decodeURIComponent(location.hash))) || items[0]);
 
 	/** @type {HTMLDivElement | undefined} */
 	let canvasBox = $state();

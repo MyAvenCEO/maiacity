@@ -65,6 +65,7 @@
       "src/lib/actors/",
       "src/lib/plants/",
       "src/lib/biomes/",
+      "src/lib/buildings/",
       "src/lib/render/"
     ],
     "impact": [
@@ -73,6 +74,7 @@
       "src/lib/actors/",
       "src/lib/plants/",
       "src/lib/biomes/",
+      "src/lib/buildings/",
       "src/lib/render/"
     ]
   },
