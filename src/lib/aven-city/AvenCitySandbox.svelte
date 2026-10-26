@@ -1,4 +1,6 @@
 <script lang="ts">
+import { screenSlot } from '$lib/app/screen-slots.js'
+
 import { onMount } from 'svelte'
 import { SkyControl } from '$lib/sandbox-kit'
 import DomeRail from './components/DomeRail.svelte'
@@ -70,10 +72,10 @@ function setLevel(lv: number): void {
 <div class="avencity fixed inset-0">
 	<canvas bind:this={canvas} class="block h-full w-full"></canvas>
 
-	<div class="hud-frame pointer-events-none absolute inset-0 flex flex-col justify-between">
+	<div style="padding-top:var(--screen-head-room, 5rem)" class="hud-frame pointer-events-none absolute inset-0 flex flex-col justify-between">
 		<!-- top bar -->
 		<div class="flex items-start justify-between gap-3">
-			<div class="hud-pill">
+			<div class="hud-pill" use:screenSlot={'title'}>
 				<span class="font-semibold">avenCITY</span>
 				<span class="hud-label">biome sandbox</span>
 			</div>

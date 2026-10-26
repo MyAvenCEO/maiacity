@@ -1,9 +1,23 @@
+import { useLayoutEffect, useRef } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
+import { screenSlot } from '../../../../../../../app/screen-slots.js';
 /** Top bar: calendar, shift, weather, money, alerts and time controls. */
 import { SPEEDS, SPEED_LABELS, type Hud } from '../../protocol.ts';
 import { cx, Icon, Kbd } from '../components/common.tsx';
 import { celsius, clock, date, eur, eurK, mmh, ms, weekday } from '../format.ts';
 import { app, frame, menuOpen, openDrawer, setSpeed, togglePause, world } from '../state.ts';
 import { agentPanelOpen, toggleAgentPanel } from './AgentPanel.tsx';
+
+/** Shared app chrome; standalone previews keep these controls in place. */
+function ScreenSlot({ name, children }: { name: string; children: ComponentChildren }) {
+  const node = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!node.current) return;
+    const action = screenSlot(node.current, name);
+    return () => action.destroy();
+  }, [name]);
+  return <div ref={node} class="cc-city screen-slot-theme">{children}</div>;
+}
 
 const SHORT = ['1m', '10m', '1h', '6h', '1d'];
 const WEATHER_LABEL: Record<string, string> = { clear: 'Clear', fair: 'Fair', overcast: 'Overcast', rain: 'Rain', heavyRain: 'Heavy rain', snow: 'Snow' };
@@ -47,14 +61,17 @@ export function TopBar() {
   const icon = !wx.daylight && (wx.kind === 'clear' || wx.kind === 'fair') ? 'moon' : precipNow && wx.kind !== 'snow' && wx.kind !== 'rain' && wx.kind !== 'heavyRain' ? 'rain' : wx.kind;
   const lowLiquidity = h.liquidity < 20_000;
   return (
-    <div class="topbar glass">
+    <div class="topbar-slots">
+      <ScreenSlot name="title">
       <div class="tb-group tb-brand" title={w ? `${w.world.label} — ${w.location.name} · ${w.location.lat.toFixed(2)}° N ${w.location.lon.toFixed(2)}° E\n${Object.entries(w.world.bound).map(([c, b]) => `${c}: ${b}`).join('\n')}` : ''}>
         <button class="icon-btn" onClick={() => (menuOpen.value = !menuOpen.value)} title="Game menu: save, load, new game, options">
           <Icon name="menu" />
         </button>
-        <span class="tb-loc">{w?.location.name.split(' (')[0] ?? '…'}</span>
+        <span class="tb-loc">Sandbox 8</span>
       </div>
+      </ScreenSlot>
 
+      <ScreenSlot name="center">
       <div class="tb-group tb-time" title="Simulation date and time">
         <span class="tb-clock num">{clock(f.t)}</span>
         <span class="tb-date num">
@@ -65,7 +82,9 @@ export function TopBar() {
           {h.onShift ? 'On shift' : 'Off shift'}
         </span>
       </div>
+      </ScreenSlot>
 
+      <ScreenSlot name="stats">
       <div class="tb-group tb-weather" tabIndex={0} aria-label="Weather now and forecast">
         <span class={cx('wx-ico', `wx-${wx.kind}`)}>
           <Icon name={icon} size={18} />
@@ -115,6 +134,8 @@ export function TopBar() {
         </button>
       </div>
 
+      </ScreenSlot>
+      <ScreenSlot name="center">
       <div class="tb-group tb-speed">
         <button class={cx('btn', 'btn-play', paused && 'is-paused')} onClick={togglePause} title="Pause / resume (Space)">
           <Icon name={paused ? 'play' : 'pause'} size={14} />
@@ -133,6 +154,7 @@ export function TopBar() {
           +1 d
         </button>
       </div>
+      </ScreenSlot>
       {f.dataWait && (
         <div class="data-wait" title={f.dataWait}>
           <Icon name="pause" size={11} /> Waiting for data — {f.dataWait}

@@ -113,9 +113,7 @@ impl Signers {
     /// Starts from a strict contiguous ledger. Existing enrollment plus missing/corrupt
     /// history is an error, never permission to wrap a replacement Store.
     pub(crate) async fn open(shelf: Shelf, signer: SignerId, lab: &mut Lab) -> Result<Option<Self>> {
-        // SLH devices retain individual-signature recovery until the existing authorized key move.
-        // Do not extend the deprecated suite with new enrollment or signed-root publication.
-        if !shelf.atomic_put() || !lab.keys_of(signer).is_some_and(|keys| keys.suite() == avendb::sign::Suite::MlDsa) {
+        if !shelf.atomic_put() || lab.keys_of(signer).is_none() {
             return Ok(None);
         }
         let Some(mac) = lab.own_key(signer, "signer ledger authentication 1", &signer.0) else {
@@ -633,28 +631,6 @@ mod tests {
         let root = store.book().log.durable_root().unwrap();
         store.publish(SignedRoot::sign(&key, root)).await.unwrap();
         assert!(store.proof(id(3)).is_some());
-    }
-
-    #[tokio::test]
-    async fn legacy_slh_dsa_keeps_individual_history_without_batch_enrollment() {
-        let folder = Folder::new();
-        let writer = disk::open(&folder.0).unwrap().writer().unwrap();
-        let shelf = writer.shelf();
-        let mut lab = Lab::new();
-        let signer = lab.device_with_in("legacy device", [198; 32], avendb::sign::Suite::SlhDsa);
-        let person = lab.passkey("person");
-        avendb::cast::human_on(&mut lab, person, &[signer]);
-        let before = lab.backup(signer).signed().to_vec();
-        assert!(!before.is_empty());
-        assert!(Signers::open(shelf.clone(), signer, &mut lab).await.unwrap().is_none());
-        assert_eq!(lab.keys_of(signer).unwrap().suite(), avendb::sign::Suite::SlhDsa);
-        assert_eq!(lab.backup(signer).signed(), before);
-        assert!(!lab.signing_pending(signer));
-        assert!(shelf.names("signers/").await.unwrap().is_empty());
-        // Deprecation does not remove legacy verification or rewrite the device identity.
-        for signed in before {
-            assert_eq!(avendb::sign::Signed::from_wire(&signed.to_wire()).unwrap(), signed);
-        }
     }
 
     #[tokio::test]
