@@ -271,6 +271,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 name = "avendb"
 version = "0.1.0"
 dependencies = [
+ "avendb-testkit",
  "blake3",
  "chacha20poly1305",
  "classic-mceliece-rust",
@@ -296,6 +297,7 @@ dependencies = [
  "avendb",
  "avendb-net",
  "avendb-server",
+ "avendb-testkit",
  "bytes",
  "getrandom 0.2.17",
  "getrandom 0.4.3",
@@ -320,6 +322,7 @@ dependencies = [
  "avendb-browser",
  "avendb-net",
  "avendb-server",
+ "avendb-testkit",
  "blake3",
  "bytes",
  "data-encoding",
@@ -344,6 +347,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "avendb",
+ "avendb-testkit",
  "bao-tree",
  "bytes",
  "data-encoding",
@@ -395,6 +399,14 @@ dependencies = [
  "tracing-subscriber",
  "webpki-roots",
  "zeroize",
+]
+
+[[package]]
+name = "avendb-testkit"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

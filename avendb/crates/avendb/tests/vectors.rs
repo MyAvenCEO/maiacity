@@ -39,6 +39,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
+use avendb_testkit::list;
 
 use avendb::gate;
 use avendb::{admission, quota};
@@ -68,10 +69,6 @@ fn blob(v: &Value) -> Vec<u8> {
 
 fn num(v: &Value) -> u64 {
     v.as_u64().unwrap_or_else(|| panic!("a number, not {v}"))
-}
-
-fn list(v: &Value) -> &[Value] {
-    v.as_array().unwrap_or_else(|| panic!("a list, not {v}"))
 }
 
 /// The model's file `n`: a root of its own, as long as a sealed file of `n` bytes is.

@@ -5,8 +5,7 @@
 
 mod common;
 
-use std::future::Future;
-use std::time::{Duration, Instant};
+use avendb_testkit::until;
 
 use avendb::cast::*;
 use avendb::id::{EntryId, ShareId, SignerId, VaultId};
@@ -28,15 +27,6 @@ async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8) -> Node {
 /// The endpoint of device `d` of `w`'s Lab.
 fn endpoint(w: &World, d: SignerId) -> EndpointId {
     SecretKey::from_bytes(&w.lab.endpoint_secret(d).expect("a device's key")).public()
-}
-
-/// Waits until `check` holds, 30 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(30);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 30 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// The server on the shelf in folder `dir`.

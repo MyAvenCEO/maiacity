@@ -16,24 +16,10 @@ use avendb::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use avendb::sealed::{Brought, FileKey, FileRoot, seal};
 use avendb::world;
 use serde_json::{Value, json};
+use avendb_testkit::{list, ok, refused};
 
 fn run(w: &mut World, d: SignerId, op: &Value) -> Value {
     engine::run(&mut w.lab, d, op)
-}
-
-/// What an op answered, which it must have done.
-fn ok(answer: Value) -> Value {
-    assert!(answer.get("ok").is_some(), "refused: {answer}");
-    answer["ok"].clone()
-}
-
-/// Why an op was refused, which it must have been.
-fn refused(answer: &Value) -> &str {
-    answer["refused"].as_str().unwrap_or_else(|| panic!("not refused: {answer}"))
-}
-
-fn list(v: &Value) -> &[Value] {
-    v.as_array().map(Vec::as_slice).unwrap_or_default()
 }
 
 fn entry_id(answer: &Value) -> EntryId {

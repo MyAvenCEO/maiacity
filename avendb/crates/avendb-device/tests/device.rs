@@ -36,6 +36,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use avendb_testkit::until;
 
 use avendb::cast::*;
 use avendb::id::{EntryId, SignerId, VaultId};
@@ -337,15 +338,6 @@ fn objects(dir: &Path, g: u64, under: &str) -> Vec<String> {
     let mut names: Vec<String> = entries.map(|e| e.expect("an entry").file_name().to_string_lossy().into()).collect();
     names.sort();
     names
-}
-
-/// Waits until `check` holds, 60 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(60);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 60 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// An id from its hex digits, as the device names it.

@@ -10,11 +10,10 @@ mod common;
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::future::Future;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::time::{Duration, Instant};
+use avendb_testkit::until;
 
 use avendb::cast::*;
 use avendb::id::{EditId, EntryId, SignerId, VaultId};
@@ -26,15 +25,6 @@ use avendb_net::shelf::FLOOR;
 use avendb_net::{Node, Options, Shelf, disk};
 use bytes::Bytes;
 use common::Folder;
-
-/// Waits until `check` holds, 60 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(60);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 60 s");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-}
 
 /// Every file under `dir`, by its path there, with its bytes.
 fn files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
