@@ -96,6 +96,9 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 
 #[path = "lab/blind_index.rs"]
 mod blind_index;
+#[cfg(test)]
+#[path = "lab/query_coverage.rs"]
+mod query_coverage;
 
 use std::borrow::Cow;
 use std::cell::OnceCell;
@@ -585,6 +588,23 @@ fn handed_of(bytes: &[u8]) -> Option<(Vec<EditId>, &[u8])> {
     let n = usize::try_from(u64::from_le_bytes(*n)).ok()?;
     let (ids, view) = rest.split_at_checked(n.checked_mul(32)?)?;
     Some((ids.chunks_exact(32).map(|id| EditId(id.try_into().expect("32 bytes"))).collect(), view))
+}
+
+/// What a change touched (`Lab::touched`): `entries` whose logs took edits, their `vaults`, or `all`; with the size
+/// the device holds now and its log's removals, which the page passes as `since` next.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Touched {
+    pub size: (usize, usize),
+    /// How many times its log let edits go (`policy::Log::gone`).
+    pub gone: u64,
+    pub entries: BTreeSet<EntryId>,
+    pub vaults: BTreeSet<VaultId>,
+    pub all: bool,
+}
+
+impl Touched {
+    /// The most entries a change names; past that it touches everything.
+    pub const MOST: usize = 512;
 }
 
 /// What a device keeps on its shelf of what it worked out, to start again from it quickly (`Lab::restore_warm`), each
@@ -4296,6 +4316,69 @@ impl Lab {
         Some(store.readings.headers.get(&creation)?.ty.as_str())
     }
 
+    /// The entries a query by selector `plan` may find on device `d`, of vault `vault` (of every vault, left out), in the
+    /// order they were created, as `entries` has them. Where every conjunction of the plan names its types or its
+    /// entries, they come off the index by type (`Readings::typed`), with the entries whose header it hasn't read
+    /// (`Readings::untyped`), and the ids named, not off every entry the device holds (`spec/AvenDB/LiveQuery.lean`, `indexed_eq_scan`); the query then reads each one's meaning as before, so
+    /// the index only has to miss none. Else every entry it holds.
+    pub(crate) fn query_candidates(&self, d: SignerId, vault: Option<VaultId>, plan: &Selector) -> Vec<EntryId> {
+        let Some((types, ids)) = plan.named() else {
+            return self.entries(d).into_iter().filter(|e| vault.is_none_or(|v| self.vault_of_entry(d, *e) == Some(v))).collect();
+        };
+        let store = self.held(d);
+        let state = store.view();
+        let typed = types.iter().flat_map(|ty| store.readings.typed.get(ty).into_iter().flatten())
+            .filter_map(|creation| state.write(*creation).map(|w| w.entry));
+        let untyped = store.readings.untyped.iter().copied().filter(|_| !types.is_empty());
+        let mut found: Vec<(usize, EntryId)> = typed.chain(untyped).chain(ids)
+            .filter_map(|e| state.entry(e).filter(|en| vault.is_none_or(|v| en.vault == v)).map(|en| en.id))
+            .filter(|e| self.sees(d, *e))
+            .filter_map(|e| state.entry_place(e).map(|at| (at, e)))
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found.into_iter().map(|(_, e)| e).collect()
+    }
+
+    /// Device `d`'s view knows vault `v` and gives it no standing there: it acts for no member or owner of `v`, and no
+    /// live share over `v` reaches it, a vault it acts for, or everyone. A read of `v` answers `denied`
+    /// (`Coverage.read`). A vault the view doesn't know yet is not denied: it may be on its way.
+    pub(crate) fn denies_vault(&self, d: SignerId, v: VaultId) -> bool {
+        let st = self.held(d).view();
+        if st.vault(v).is_none() || st.acts_for(d, v) { return false; }
+        !st.shares_over(v).any(|cp| st.live(cp.id) && match cp.share.who {
+            Who::Everyone => true,
+            Who::Device(s) | Who::Invite(s) => s == d,
+            Who::Vault(x) => st.acts_for(d, x),
+        })
+    }
+
+    /// What changed on device `d` since it held `edits` edits and `keys` McEliece keys (`size`): the entries whose logs
+    /// took the edits after those, and their vaults; `all` where a change may touch any read (`LiveQuery.Change`).
+    /// `gone`, how many times its log let edits go then (`Touched::gone`), where the caller knows it: else a change may
+    /// have taken edits out, and touches everything.
+    pub fn touched(&self, d: SignerId, edits: usize, keys: usize, gone: Option<u64>) -> Touched {
+        let size = self.size(d);
+        let store = self.held(d);
+        let (log, ids) = (store.log.edits(), store.log.ids());
+        let now = store.log.gone();
+        let mut t = Touched { size, gone: now, all: size.0 < edits || size.1 != keys || gone != Some(now), ..Touched::default() };
+        if t.all { return t; }
+        for (edit, id) in log[edits..].iter().zip(&ids[edits..]) {
+            match crate::sync::log_of(edit, *id) {
+                Some(LogId::Entry(e)) => {
+                    if let Some(v) = self.vault_of_entry(d, e) { t.vaults.insert(v); }
+                    t.entries.insert(e);
+                }
+                None => {}
+                Some(_) => { t.all = true; break; }
+            }
+            if t.entries.len() > Touched::MOST { t.all = true; break; }
+        }
+        if t.all { t.entries.clear(); t.vaults.clear(); }
+        t
+    }
+
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
         if !self.sees(d, entry) {
             return None;
@@ -5967,7 +6050,7 @@ fn read(d: SignerId, store: &mut Store) {
     }
     for (id, b) in store.metadata_bodies() {
         if let Some(h) = &b.header {
-            r.headers.insert(*id, h.clone());
+            r.put_header(*id, h.clone());
             // a schema or lens entry's creation holds the schema or the lens itself, and fits where it is one of its
             // type: what its readers read into its vault's lane where it acted for that vault (`State::lane_of`)
             if h.ty.of_lane() {
@@ -5985,6 +6068,10 @@ fn read(d: SignerId, store: &mut Store) {
             r.defines.insert(*id, g.clone());
         }
     }
+    // the entries whose header it hasn't read: any of them may be of any type, so the index hands them to every query
+    // by type, which finds them waiting (`Lab::query_candidates`)
+    let st = &store.replay.state;
+    r.untyped = st.entries().iter().filter(|en| !r.headers.contains_key(&en.creation)).map(|en| en.id).collect();
     // the cap groups in force follow from what the device counts (`show_items`)
     r.groups = std::mem::take(&mut store.readings.groups);
     store.readings = r;

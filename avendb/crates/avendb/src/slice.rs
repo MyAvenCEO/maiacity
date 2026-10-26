@@ -169,6 +169,26 @@ impl Selector {
         Selector::AnyOf(vec![vec![Atom::TypeIn(vec![Sym::new(SCHEMA_TYPE), Sym::new(LENS_TYPE)])]])
     }
 
+    /// The types and the entries every match of it is one of, where each conjunction names its types (`TypeIn`) or its
+    /// entries (`EntryIn`): an entry it matches is of one of those types, or one of those entries. `None` where a
+    /// conjunction names neither, and any entry may match.
+    pub fn named(&self) -> Option<(Vec<Sym>, Vec<EntryId>)> {
+        let Selector::AnyOf(ds) = self else { return None };
+        let (mut types, mut ids) = (Vec::new(), Vec::new());
+        for d in ds {
+            let entries = d.iter().find_map(|t| match t { Atom::EntryIn(es) => Some(es), _ => None });
+            let typed = d.iter().find_map(|t| match t { Atom::TypeIn(ts) => Some(ts), _ => None });
+            match (entries, typed) {
+                (Some(es), _) => ids.extend(es.iter().copied()),
+                (None, Some(ts)) => types.extend(ts.iter().cloned()),
+                (None, None) => return None,
+            }
+        }
+        types.sort();
+        types.dedup();
+        Some((types, ids))
+    }
+
     pub fn matches(&self, a: &Attrs) -> bool {
         match self {
             Selector::All => true,

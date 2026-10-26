@@ -285,7 +285,7 @@ impl Lab {
             let mut readings = store.readings.clone();
             for (id, body) in &base.bodies {
                 if let Some(h) = &body.header {
-                    readings.headers.insert(*id, h.clone());
+                    readings.put_header(*id, h.clone());
                 }
                 readings.tags.insert(*id, body.tags.clone());
                 if let Some(p) = &body.proof {
@@ -706,8 +706,8 @@ mod tests {
         assert_eq!(query["ok"]["rows"][0]["readOnly"],true);
         let empty_page=crate::engine::read(&lab,phone,&serde_json::json!({"op":"query","schema":"stored","where":{"type":["doc"]},"limit":0}));
         assert_eq!(empty_page["ok"]["rows"],serde_json::json!([]));
-        assert_eq!(empty_page["ok"]["readiness"]["checkpointPartial"],true);
-        assert_eq!(empty_page["ok"]["readiness"]["authoritativeEmpty"],false);
+        assert_eq!(empty_page["ok"]["coverage"]["state"],"partial","a row from an owner's base waits on its history");
+        assert_eq!(empty_page["ok"]["coverage"]["waiting"][0]["on"],"history");
         let before=lab.item(phone,entry).unwrap().record();
         assert!(lab.edit(phone,vault,entry,|item| { item.edit_document_v0(|d| d.title="Forbidden while incomplete".into()); }).is_err());
         let suffix=lab.edit(mac,vault,entry,|item| { item.edit_document_v0(|d| d.title="Latest".into()); }).unwrap();

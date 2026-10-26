@@ -257,6 +257,7 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         cache: 0,
         snapshots: None,
         webtransport: None,
+        stun: None,
     };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let offer = Offer::from_text(&started.offer.to_text()).expect("its offer reads back");

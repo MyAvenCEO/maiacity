@@ -73,11 +73,12 @@ test('DM reuse searches beyond the displayed page and never treats refusal as ab
  const ops=[];
  const found=await directRoom(async op=>{
   ops.push(op);
-  if(op.op==='query')return {ok:{rows:ids.slice(op.offset,op.offset+op.limit).map(entry=>({entry})),count:ids.length}};
+  if(op.op==='query'){const from=op.after?Number(op.after):0;
+   return {ok:{rows:ids.slice(from,from+op.limit).map(entry=>({entry})),count:ids.length,next:from+op.limit<ids.length?String(from+op.limit):null}};}
   return {ok:{rows:op.entries.map(entry=>({entry,type:'room',readers:[entry===ids[50]?'target':'other'],record:{look:'dm'}}))}};
  },'target');
  expect(found).toBe(ids[50]);
- expect(ops.filter(op=>op.op==='query').map(op=>op.offset)).toEqual([0,50]);
+ expect(ops.filter(op=>op.op==='query').map(op=>op.after)).toEqual([undefined,'50']);
  await expect(directRoom(async()=>({refused:'NoCap',why:'NoCap'}),'target')).rejects.toThrow();
  await expect(directRoom(async()=>null,'target')).rejects.toThrow();
  expect(await directRoom(async()=>({ok:{rows:[],count:0}}),'target')).toBe(null);
@@ -88,4 +89,10 @@ test('a DM whose metadata disappears during lookup does not establish absence', 
  await expect(directRoom(async op=>op.op==='query'
   ? {ok:{rows:[{entry:'a'.repeat(64)}],count:1}}
   : {ok:{rows:[]}},'target')).rejects.toThrow('Room access changed');
+});
+
+test('DM lookup cannot prove absence while a candidate waits', async () => {
+ expect(await directRoom(async()=>({ok:{rows:[],count:0,coverage:{state:'complete'}}}),'target')).toBe(null);
+ expect(await directRoom(async()=>({ok:{rows:[],count:0,coverage:{state:'partial',have:0,known:0,waiting:[],logs:4}}}),'target')).toBe(null);
+ await expect(directRoom(async()=>({ok:{rows:[],count:0,coverage:{state:'partial',have:0,known:1,waiting:[{entry:'a'.repeat(64),on:'semantics'}],logs:0}}}),'target')).rejects.toThrow('did not complete');
 });

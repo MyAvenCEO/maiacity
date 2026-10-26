@@ -13,10 +13,16 @@
 
 use crate::doc::Item;
 use crate::id::{EditId, EntryId, ShareId, SignerId, VaultId};
-use crate::lab::{Lab, NewShare};
+use crate::lab::NewShare;
+#[cfg(debug_assertions)]
+use crate::lab::Lab;
 use crate::lens::example::{BlockV0, DocV0, KindV0};
-use crate::lens::{BlockV1, Status, TypeV1};
-use crate::policy::{Action, KeepMode, Kind, Level, Principal, Proposal, Sharing, Who};
+use crate::lens::{BlockV1, TypeV1};
+#[cfg(debug_assertions)]
+use crate::lens::Status;
+use crate::policy::{Action, KeepMode, Level, Proposal, Who};
+#[cfg(debug_assertions)]
+use crate::policy::{Kind, Principal, Sharing};
 use crate::slice::{Atom, Selector};
 
 /// Vault `v` as a share's grantee.
@@ -66,6 +72,7 @@ pub fn write(vault: VaultId, entry: EntryId, actor: VaultId, stay: Option<EditId
     Action::Write { vault, entry, actor, stay, epoch, deps: vec![], proposal, via: vec![], create: None, files, body }
 }
 
+#[cfg(debug_assertions)]
 /// The Lab after scenarios 1 and 2, plus the server, avenMAIA and a stranger.
 pub struct World {
     pub lab: Lab,
@@ -88,6 +95,7 @@ pub struct World {
     pub dave: VaultId,
 }
 
+#[cfg(debug_assertions)]
 /// A human vault on the Lab, its passkey the root: the passkey signs the genesis on the first device, then adds each
 /// device, which countersigns.
 pub fn human_on(lab: &mut Lab, passkey: SignerId, devices: &[SignerId]) -> VaultId {
@@ -107,6 +115,7 @@ pub fn human_on(lab: &mut Lab, passkey: SignerId, devices: &[SignerId]) -> Vault
     v
 }
 
+#[cfg(debug_assertions)]
 /// The server claimed by human vault `human`, the first to (`Lab::claim`, P8f), its passkey `passkey` signing on its
 /// device `on`: the server hands its key to seal to, the passkey founds the seed (`world::SEED`), Maia City, a coop
 /// `human` owns, and avenMAIA, the aven Maia City owns, and
@@ -129,6 +138,7 @@ pub fn claim_on(lab: &mut Lab, on: SignerId, passkey: SignerId, human: VaultId, 
     avenceo
 }
 
+#[cfg(debug_assertions)]
 /// Each person's devices derive their keys from their passkey; the server and the stranger have keys of their own.
 pub fn world() -> World {
     let mut making = Making::new();
@@ -136,6 +146,7 @@ pub fn world() -> World {
     making.world()
 }
 
+#[cfg(debug_assertions)]
 /// The world made a step at a time: every signer first, whose McEliece pairs a page then makes in its workers, then
 /// Alice's vault, avenMAIA as Alice's vault claims the server, the other people's vaults, and the contact cards
 /// they exchange.
@@ -148,12 +159,14 @@ pub struct Making {
     done: usize,
 }
 
+#[cfg(debug_assertions)]
 impl Default for Making {
     fn default() -> Making {
         Making::new()
     }
 }
 
+#[cfg(debug_assertions)]
 impl Making {
     /// How many steps make the world.
     pub const STEPS: usize = 5;
@@ -253,6 +266,7 @@ impl Making {
     }
 }
 
+#[cfg(debug_assertions)]
 /// Scenario 3 on the Lab: Maia Coop, owned by Alice and Bob with threshold 2; Bob's passkey consents.
 pub fn coop_on(w: &mut World) -> VaultId {
     let owners = vec![Principal::Vault(w.alice), Principal::Vault(w.bob)];
@@ -260,6 +274,7 @@ pub fn coop_on(w: &mut World) -> VaultId {
     VaultId::from(w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("Alice and Bob found the coop"))
 }
 
+#[cfg(debug_assertions)]
 /// Vault `v` gives avenMAIA relay on all its entries, on Alice's Mac, for the server to hold and pass them on: a
 /// wide share, which reaches every audience and splits none.
 pub fn relay_on(w: &mut World, v: VaultId) -> ShareId {
@@ -291,26 +306,34 @@ pub fn document_v0(title: &str, body: &str, signer: SignerId) -> Item {
     Item::written_v0(&DocV0 { title: title.into(), blocks }, signer)
 }
 
+#[cfg(debug_assertions)]
 /// The text of block `id` of entry `e` as device `d` shows it.
 pub fn text(lab: &Lab, d: SignerId, e: EntryId, id: u64) -> Option<String> {
     let doc = lab.item(d, e)?.as_document()?;
     doc.blocks.into_iter().find(|b| b.id == id).map(|b| b.text)
 }
 
+#[cfg(debug_assertions)]
 pub fn status(lab: &Lab, d: SignerId, e: EntryId) -> Option<Status> {
     Some(lab.item(d, e)?.as_todo()?.status)
 }
 
+#[cfg(debug_assertions)]
 /// Whether `haystack` holds `needle` anywhere.
 pub fn contains(haystack: &[u8], needle: &str) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle.as_bytes())
 }
 
+#[cfg(debug_assertions)]
 pub const WELCOME_TEXT: &str = "Welcome to Maia Coop: the greenhouse opens at eight.";
+#[cfg(debug_assertions)]
 pub const ONBOARDING_TEXT: &str = "Onboarding: your first week, step by step.";
+#[cfg(debug_assertions)]
 pub const CHARTER_TEXT: &str = "Our charter: one vault per person, and the data stays theirs.";
+#[cfg(debug_assertions)]
 pub const AFTER_TEXT: &str = "Edited after the change: the greenhouse opens at nine.";
 
+#[cfg(debug_assertions)]
 /// Scenarios 3 and 4 on the Lab: the coop, which gives the server relay on its entries, every device synced, and
 /// nothing written yet: where devices split off to run on their own (`Lab::split`) before Alice writes over the
 /// network (P8).
@@ -321,6 +344,7 @@ pub fn handbook_ready(w: &mut World) -> VaultId {
     coop
 }
 
+#[cfg(debug_assertions)]
 /// Scenarios 3 to 5 on the Lab: the coop, its documents Welcome and Onboarding written by Alice for the coop, and every
 /// device synced. No share selects either: they are in the audience of no shares, which the coop's devices read and the
 /// server relays.
@@ -330,6 +354,7 @@ pub struct Handbook {
     pub onboarding: EntryId,
 }
 
+#[cfg(debug_assertions)]
 pub fn handbook(w: &mut World) -> Handbook {
     let coop = coop_on(w);
     relay_on(w, coop);
@@ -341,6 +366,7 @@ pub fn handbook(w: &mut World) -> Handbook {
     Handbook { coop, welcome, onboarding }
 }
 
+#[cfg(debug_assertions)]
 /// Scenario 15 on the Lab: three of Alice's todos in her vault, the door todo shared by its id with Bob (write), Carol
 /// (read) and the coop (owner, signed with Alice's passkey), and moved by Alice's Mac into the audience of those
 /// shares. Nothing synced yet.
@@ -354,11 +380,13 @@ pub struct Todos {
     pub coop_owner: ShareId,
 }
 
+#[cfg(debug_assertions)]
 pub fn todos_on(w: &mut World) -> Todos {
     let coop = coop_on(w);
     todos_in(w, coop)
 }
 
+#[cfg(debug_assertions)]
 /// Alice's todos as `todos_on` makes them, for a coop that is there already.
 pub fn todos_in(w: &mut World, coop: VaultId) -> Todos {
     let alice = w.alice;
@@ -381,6 +409,7 @@ pub fn todos_in(w: &mut World, coop: VaultId) -> Todos {
     Todos { coop, door, seeds, solar, bob_write, carol_read, coop_owner }
 }
 
+#[cfg(debug_assertions)]
 /// Alice's library, as the Lean model's slices start from it: three todos, the door and the solar panels tagged work
 /// and the seeds home, and two notes, the plan tagged work and her diary, all in her vault, which gives the server
 /// relay on them. No other share selects any of them yet. Nothing synced yet.
@@ -392,6 +421,7 @@ pub struct Library {
     pub diary: EntryId,
 }
 
+#[cfg(debug_assertions)]
 impl Library {
     /// Every entry, in the order Alice made them.
     pub fn all(&self) -> [EntryId; 5] {
@@ -399,6 +429,7 @@ impl Library {
     }
 }
 
+#[cfg(debug_assertions)]
 pub fn library(w: &mut World) -> Library {
     let alice = w.alice;
     relay_on(w, alice);

@@ -21,6 +21,7 @@ import AvenDB.Examples
 import AvenDB.Checkpoint
 import AvenDB.Batches
 import AvenDB.BatchDurability
+import AvenDB.WireBatches
 import AvenDB.Snapshot
 import AvenDB.EntryState
 import AvenDB.EntryProjection
@@ -103,7 +104,8 @@ import AvenDB.BaseAdmission
 import AvenDB.ProvenanceBoundary
 
 import AvenDB.LocalFileInventory
-import AvenDB.ReadCompleteness
+import AvenDB.Coverage
+import AvenDB.LiveQuery
 import AvenDB.JudgmentRestore
 
 import AvenDB.BootstrapAnchor
@@ -132,7 +134,6 @@ import AvenDB.ScopedDocumentView
 
 import AvenDB.DemandedFilesBatch
 
-import AvenDB.QueryReadiness
 import AvenDB.PublicFilesBatch
 
 import AvenDB.FillingReadFallback

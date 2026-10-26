@@ -1,5 +1,6 @@
 // @ts-nocheck — plain JS
 import { answer } from '../avendb/ops.js';
+import { coverageOf, waitsHere } from '../../../game/code/sources/coverage.js';
 /**
  * Chat rooms on avenDB (avendb/docs/ARCHITECTURE.md §8, "Rooms"; plan /mnt/project-files/chat-rooms/plan.md): a room
  * is an entry of type `room` (Room, v1), a channel, a group, a DM or a note to self; its messages are rows, each with
@@ -240,11 +241,13 @@ export function dayWords(at) {
 /** Search canonical local DMs across all pages, independently of the displayed sidebar.
  * A refused/cancelled read never proves absence. The caller owns and closes its read window. */
 export async function directRoom(read, who) {
- for (let offset = 0; ; ) {
-  const page = answer(await read({ op: 'query', where: { all: [
+ for (let after; ; ) {
+  const got = await read({ op: 'query', where: { all: [
    { type: ['room'] }, { path: ['look'], eq: 'dm' }, { not: { tag: GONE } }
-  ] }, select: [], order: [['created', 'desc']], offset, limit: 50 }));
-  if (!page || !Array.isArray(page.rows) || !Number.isSafeInteger(page.count)) throw Error('Room lookup did not complete. Please try again.');
+  ] }, select: [], order: [['created', 'desc']], limit: 50, ...(after ? { after } : {}) });
+  const page = answer(got);
+  // A DM that waits locally may be the one: don't make a second.
+  if (!page || waitsHere(coverageOf(got)) || !Array.isArray(page.rows)) throw Error('Room lookup did not complete. Please try again.');
   if (page.rows.length) {
    const metadata = answer(await read({ op: 'entry_views', entries: page.rows.map(r => r.entry), types: ['room'] }));
    if (!metadata || !Array.isArray(metadata.rows)) throw Error('Room lookup did not complete. Please try again.');
@@ -254,8 +257,7 @@ export async function directRoom(read, who) {
    const found = rows.find(r => r.record?.look === 'dm' && (r.readers ?? []).includes(who));
    if (found) return found.entry;
   }
-  offset += page.rows.length;
-  if (offset >= page.count) return null;
-  if (!page.rows.length) throw Error('Room lookup changed. Please try again.');
+  if (typeof page.next !== 'string') return null;
+  after = page.next;
  }
 }

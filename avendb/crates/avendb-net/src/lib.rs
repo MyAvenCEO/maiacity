@@ -333,6 +333,10 @@ pub struct Options {
     /// It keeps the blind index rows the devices it syncs with tell it, on its shelf, and answers `find` from them
     /// (`blind`, P4 of sync v2): the server's.
     pub index: bool,
+    /// It takes a peer's edits with paths up to their signer's signed roots in place of their signatures (P8,
+    /// `spec/AvenDB/WireBatches.lean`), each root once a reply: a device's. The server asks for signatures alone for
+    /// one release, so that it serves every edit it holds to an old app, which reads signatures alone.
+    pub paths: bool,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -365,6 +369,7 @@ impl Options {
             #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
             sim: None,
             index: false,
+            paths: true,
         }
     }
 
@@ -795,6 +800,7 @@ impl Node {
             follows: Mutex::default(),
             unpacked: Mutex::default(),
             unbatched: Mutex::default(),
+            unstripped: Mutex::default(),
             ranges: Mutex::default(),
             edit_transfer: edit_transfer::Runtime::default(),
             paced: Mutex::default(),
@@ -2145,6 +2151,9 @@ struct Shared {
     unpacked: Mutex<HashSet<usize>>,
     /// Connections without usable supplemental proofs, independent of their packed-reply support.
     unbatched: Mutex<HashSet<usize>>,
+    /// The connections whose peer didn't answer a proof request of version 2, with paths in place of signatures (P8):
+    /// an older node, or one that couldn't link a root; asked version 1 from then on.
+    unstripped: Mutex<HashSet<usize>>,
     /// Incremental, peer-scoped holdings trees and bounded root-bound receiving rounds.
     ranges: Mutex<ranges::Cache>,
     edit_transfer: edit_transfer::Runtime,
@@ -2799,10 +2808,19 @@ impl Shared {
             // Only the authenticated peer's own ledger is exported by this first batch slice.
             // Do not disclose the other signers whose roots this device has observed.
             if batches {
-                let known = signers.known(peer.device).await.map(|n| (peer.device, n)).into_iter().collect();
-                let batch = proofs::Request { kind, request: request.to_vec(), known }.encode()?;
-                // Near-limit legacy requests still fit their original framing, with no capability downgrade.
-                if batch.len() < session::MESSAGE_LIMIT {
+                let known: BTreeMap<_, _> =
+                    signers.known(peer.device).await.map(|n| (peer.device, n)).into_iter().collect();
+                // version 2 first where this node reads paths, version 1 where its peer doesn't know version 2 (P8)
+                let unstripped = self.unstripped.lock().expect("unstripped").contains(&id);
+                let versions: &[bool] = if self.opts.paths && !unstripped { &[true, false] } else { &[false] };
+                let mut asked = false;
+                for &paths in versions {
+                    let batch = proofs::Request { kind, request: request.to_vec(), known: known.clone(), paths }.encode()?;
+                    // Near-limit legacy requests still fit their original framing, with no capability downgrade.
+                    if batch.len() >= session::MESSAGE_LIMIT {
+                        break;
+                    }
+                    asked = true;
                     let result = session::exchange(&peer.conn, proofs::KIND, &batch, limit).await;
                     drop(batch);
                     match result {
@@ -2820,6 +2838,11 @@ impl Shared {
                         Err(error) if session::too_long(&error) => return Err(error),
                         Err(_) => {}
                     }
+                    if paths {
+                        self.unstripped.lock().expect("unstripped").insert(id);
+                    }
+                }
+                if asked {
                     self.unbatched.lock().expect("unbatched").insert(id);
                 }
             }
@@ -3134,6 +3157,7 @@ impl Shared {
         self.follows.lock().expect("follows").remove(&peer.conn.stable_id());
         self.unpacked.lock().expect("unpacked").remove(&peer.conn.stable_id());
         self.unbatched.lock().expect("unbatched").remove(&peer.conn.stable_id());
+        self.unstripped.lock().expect("unstripped").remove(&peer.conn.stable_id());
         let known = self.reach.lock().expect("reach").contains_key(&peer.device);
         let forget = !known && self.live(peer.endpoint).is_none();
         let mut held = self.held.lock().expect("held");

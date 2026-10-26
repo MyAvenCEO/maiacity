@@ -366,3 +366,49 @@ async fn an_active_type_query_discovers_existing_entries_without_unrelated_histo
         "a useful local result is not whole-device completeness: {incomplete}");
     assert!(useful, "an authenticated type-only active query must discover its existing entry before background admission is released");
 }
+
+/// Coverage.lean `behind_is_partial` and `arrived_is_complete`, on a node: while a peer has announced logs this
+/// device lacks, a query of their vault answers partial with those logs; once they arrive, complete. The iPhone's case.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_query_is_partial_while_announced_logs_are_behind_and_complete_once_they_arrive() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let mac = Node::spawn(w.lab.split(sender, &[], [53; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [54; 32]), receiver, Options::local()).await.unwrap();
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.sync_with(mac.id()).await.unwrap();
+    wait_for(async || mac.shared.told.lock().unwrap().contains_key(&receiver)).await;
+    wait_for(async || phone.shared.differ(sender).await.is_empty()).await;
+    let query = serde_json::json!({"op": "query", "vault": coop.to_hex(), "where": {"type": ["doc"]}});
+    let before = phone.op(query.clone()).await.unwrap();
+    assert_eq!(before["ok"]["coverage"], serde_json::json!({"state": "complete"}), "{before}");
+
+    // Hold every background page so the new logs stay behind while their announcement arrives.
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    let backlog = mac.act(move |lab, me| (0..pulls::LIVE_LOGS + 3).map(|i| lab.create(me, coop, coop, "doc", &[],
+        document(&format!("Behind {i}"), "history", me)).unwrap()).collect::<Vec<_>>()).await;
+    wait_for(async || phone.shared.differ(sender).await.len() > 1).await;
+    let behind = phone.op(query.clone()).await.unwrap();
+    let coverage = &behind["ok"]["coverage"];
+    assert_eq!(coverage["state"], "partial", "{behind}");
+    assert!(coverage["logs"].as_u64().unwrap() > 0, "{behind}");
+
+    drop(stalled);
+    wait_for(async || {
+        let backlog = backlog.clone();
+        phone.read(move |lab, me| backlog.iter().all(|entry| lab.item(me, *entry).is_some())).await
+            && phone.shared.differ(sender).await.is_empty()
+    }).await;
+    let arrived = phone.op(query).await.unwrap();
+    assert_eq!(arrived["ok"]["coverage"], serde_json::json!({"state": "complete"}), "{arrived}");
+    assert_eq!(arrived["ok"]["count"].as_u64().unwrap() as usize, before["ok"]["count"].as_u64().unwrap() as usize + backlog.len());
+    mac.shutdown().await.unwrap();
+    phone.shutdown().await.unwrap();
+}

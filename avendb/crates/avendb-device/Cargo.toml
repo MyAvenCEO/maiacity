@@ -38,6 +38,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zeroize = "1.8"
 
 [dev-dependencies]
+avendb-testkit = { path = "../avendb-testkit", features = ["wait"] }
 avendb-server = { path = "../avendb-server" }
 
 [features]
