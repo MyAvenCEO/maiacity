@@ -204,7 +204,7 @@ test('before the recipes are in, nothing is built, and a ref says why', () => {
 
 test("loaded once from local avenDB, the vault's index is the repo's: every version and variant, its latest, its first variant, its parameters", async () => {
 	expect(FEED.missing).toEqual([]);
-	expect(FEED.rows.length).toBe(337);
+	expect(FEED.rows.length).toBe(338);
 	const { r, asked, files } = await loaded();
 	expect(r.phase).toBe('ready');
 	expect([r.feed, r.vault, r.count, r.refused, r.missed, r.error]).toEqual(['this device', DEV_VAULT, FEED.rows.length, [], [], '']);

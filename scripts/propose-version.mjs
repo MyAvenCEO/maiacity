@@ -16,7 +16,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { createServer } from 'vite';
 
@@ -47,9 +47,11 @@ function device() {
 	throw new Error('no agent device: give --device <theOS app’s maiacity-studio>, or add it to Claude Code (claude mcp add --scope user avendb -- <maiacity-studio> agent claude)');
 }
 
-/** an MCP session with the agent device on its stdio: `call(tool, args)` answers its tool's text, read as JSON */
-function session({ command, args }) {
-	const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'] });
+/** an MCP session with the agent device on its stdio: `call(tool, args)` answers its tool's text, read as JSON. It
+ *  reads files only in its workspace (avendb-device agent.rs `roots`): this folder and `files`, where the recipe is written */
+function session({ command, args }, /** @type {string} */ files) {
+	const env = { ...process.env, AVENDB_AGENT_ROOTS: [process.cwd(), files].join(delimiter) };
+	const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'], env });
 	const waiting = new Map();
 	let n = 0;
 	createInterface({ input: child.stdout }).on('line', (line) => {
@@ -129,7 +131,7 @@ if (!flag('--run')) {
 	process.exit(0);
 }
 
-const agent = session(device());
+const agent = session(device(), dir);
 try {
 	await agent.open();
 	const me = await agent.call('avendb_vaults', {});

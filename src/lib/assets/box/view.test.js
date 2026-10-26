@@ -219,7 +219,7 @@ test('a container: its roof and where it is walked in from leave as data, on the
 	expect(verdict.ok ? [] : verdict.errors).toEqual([]);
 });
 
-test('every building built as one object: built through the box’s side and the page’s, its card fits; the domes and the tent’s v1 are worlds in disguise, never a recipe', async () => {
+test('every building built as one object: built through the box’s side and the page’s, its card fits; the domes and the tent’s and the factory’s v1 are worlds in disguise, never a recipe', async () => {
 	const list = await OBJECT_GROUPS.buildings.list();
 	const failed = [];
 	for (const item of list) {
@@ -234,21 +234,27 @@ test('every building built as one object: built through the box’s side and the
 		if (item.id.startsWith('container-') && !(view.walk && view.roof?.length)) failed.push(`${label}: no walk or roof`);
 		// the tent is walked in, and pitched
 		if (item.id === 'dome-tent' && !(view.walk && root.userData.controls.some((c) => c.id === 'pitch'))) failed.push(`${label}: no walk or pitch`);
+		// the factory dome is walked in
+		if (item.id === 'dome-factory' && !view.walk) failed.push(`${label}: no walk`);
 	}
 	expect(failed).toEqual([]);
-	expect(list.map((x) => x.id)).toEqual(['container-kitchen', 'container-workshop', 'container-tech', 'container-sanitary', 'bus-stop', 'gas-station', 'old-shed', 'maia-centre', 'village-store', 'dome-tent']);
+	expect(list.map((x) => x.id)).toEqual(['container-kitchen', 'container-workshop', 'container-tech', 'container-sanitary', 'bus-stop', 'gas-station', 'old-shed', 'maia-centre', 'village-store', 'dome-tent', 'dome-factory']);
 	// every building, the domes too, in the page's group; only those built as one object in the box's
 	const { GROUPS, objectAt } = await import('../index.js');
 	const all = await GROUPS.buildings.list();
 	expect(all.length).toBe(16);
 	const domes = all.filter((b) => 'dome' in b);
 	expect(domes.map((d) => d.id)).toEqual(['dome-tent', 'dome-glamp', 'dome-home', 'dome-large', 'dome-grand', 'dome-master', 'dome-factory']);
-	expect(all.filter((b) => !('dome' in b)).map((b) => b.id)).toEqual(list.map((x) => x.id).filter((id) => id !== 'dome-tent'));
+	expect(all.filter((b) => !('dome' in b)).map((b) => b.id)).toEqual(list.map((x) => x.id).filter((id) => id !== 'dome-tent' && id !== 'dome-factory'));
 	await expect(objectAt('buildings/dome-grand@2')).rejects.toThrow(/not built as one object/);
 	// the tent: its v1 the interior it was, its v2 the box's
 	const tent = all.find((b) => b.id === 'dome-tent');
 	expect(tent.versions.map((x) => typeof x.build)).toEqual(['string', 'function']);
 	await expect(objectAt('buildings/dome-tent@1')).rejects.toThrow(/not built as one object/);
+	// the factory: the same, its v1 Sandbox 3's interior, its v2 the box's
+	const factory = all.find((b) => b.id === 'dome-factory');
+	expect(factory.versions.map((x) => typeof x.build)).toEqual(['string', 'function']);
+	await expect(objectAt('buildings/dome-factory@1')).rejects.toThrow(/not built as one object/);
 }, 600000);
 
 test('a biome’s cover: every kind built through the box’s side and the page’s as its builder builds it, casting its shadow; each biome a patch of its floor, its card its numbers', async () => {
