@@ -13,7 +13,7 @@
  * looks on screen (as the API queued it). The studio reads them as it read the API's render jobs (`cutJobs`).
  */
 
-import { answer, DELETED } from '$lib/avendb/ops.js';
+import { answer, DELETED, reads } from '$lib/avendb/ops.js';
 import { BUILT_IN, held, layered } from './jobs/rules.js';
 import { madeIndex, newTask, pin, retrying, tasksOf } from './jobs/tasks.js';
 import { DEFAULT_SANDBOX, isWorld } from '../../../game/film/worlds.js';
@@ -106,9 +106,6 @@ export function fieldsOf(t) {
 	return { ...own, timeline: JSON.stringify(rest), at: Math.floor(Date.now() / 1000) };
 }
 
-/** The ops that read and change nothing: a world read stays good across them (`worldOf`). */
-const READS = new Set(['world', 'get', 'query', 'history', 'schemas', 'requests', 'aips', 'aip', 'may', 'jobs', 'shares', 'database', 'note', 'read_file', 'creatable', 'taggable']);
-
 /**
  * The world read last and when, shared by every caller for a moment (Samuel 2026-10-18: the whole world as JSON over
  * the bridge, read by thirty callers and every four seconds, ran theOS out of memory and stuttered playback): one
@@ -126,7 +123,7 @@ export async function device() {
 	const { call, status } = await import('$lib/avendb/native.js');
 	if (!(await status().catch(() => null))?.open) return null;
 	return (/** @type {string} */ c, /** @type {any[]} */ ...a) => {
-		if (c !== 'run' || !READS.has(a[0]?.op)) kept = null;
+		if (c !== 'run' || !reads(a[0])) kept = null; // a world read stays good across ops that change nothing
 		return call(c, ...a);
 	};
 }

@@ -22,6 +22,10 @@ test('generated WASM updates both consumers and must be checked',()=>{
  const next=impact(['src/lib/avendb/device/avendb_browser_bg.wasm']);
  expect(next.site && next.api && next.avendb && next.browser).toBe(true);
 });
+test('the page\'s op names run the Rust test that holds them to the engine',()=>{
+ expect(impact(['src/lib/avendb/op-names.js']).native).toBe(true);
+ expect(impact(['src/lib/avendb/ops.js']).native).toBe(false);
+});
 test('no new JS test can silently fall outside CI ownership',()=>{
  expect(()=>inventory(['src/new-component/security.test.js'])).toThrow('Unowned test');
  expect(Object.values(inventory()).flat().length).toBeGreaterThan(160);
