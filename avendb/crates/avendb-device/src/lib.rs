@@ -26,12 +26,6 @@
 //! starts (`open`, `avendb_browser::Device::open_by_touch`), its passkey's sheet only where the touch fails, and
 //! approves what their vault's owners approve (`avendb_net::Authenticator::touch`); `touchOff` forgets it here.
 //!
-//! The key move (K3b): once the device opened, the page asks `moving` what it asks of its person, and where their
-//! passkey, this Mac's Touch ID key, its device or a drive it hosts still signs in SLH-DSA, it asks them once more and
-//! calls `moveKeys`: one sheet of the passkey and one touch, the touch's prompt saying it moves the Touch ID key, sign
-//! one batch their vault approves (`avendb_browser::Device::move_keys`); each drive's store and this Mac's shelf then
-//! name the drive's next key (`drive`), and the device opens again as its next key, with no ceremony.
-//!
 //! While the device starts (`found`, `link`, `open`), the page asks `steps` for each step of its start so far,
 //! with how long it took (`avendb_browser::steps_json`), and shows them as they happen.
 //!
@@ -80,7 +74,7 @@ use avendb::engine;
 use avendb::id::SignerId;
 use avendb::keys;
 use avendb::sign::{self, Assertion, Ceremony};
-use avendb_browser::{Device, Fresh, Meta, Moving, Signing, Start, Touch, Unlock, steps_json};
+use avendb_browser::{Device, Fresh, Meta, Start, Touch, Unlock, steps_json};
 use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Node, Offer, Options, Place, Progress, Shelf, Step, disk};
 use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
@@ -96,12 +90,6 @@ pub const SHEET: &str = "https://maia.city/app/avendb/sheet/";
 
 /// The longest a call waits for the device to change (`changed`): then it answers `null`, and the page asks again.
 const CHANGED: Duration = Duration::from_secs(50);
-
-/// What the Touch ID prompt says the key move's touch is for (`Service::move_keys`).
-const MOVE_TOUCH: &str = "move your Touch ID key to ML-DSA-65";
-
-/// What the Touch ID prompt says a checkpoint's touch is for (`Service::sign_checkpoint`).
-const CHECKPOINT_TOUCH: &str = "sign a checkpoint over what your old keys signed";
 
 /// How the device runs: the folder it keeps its account in, on its shelves (`avendb_net::disk`), whether its node
 /// reaches its peers directly too (`avendb_net::Options::direct`), as the app's does, where a test's may run on its
@@ -468,7 +456,6 @@ impl Service {
     /// `drives` the volumes plugged in and the drives joined here, `joinDrive [volume, name]` a drive used for avenDB as
     /// a device of the person's vault, `openDrive [volume]` one another Mac of theirs joined, opened here, and
     /// `ejectDrive [volume]` one hosted here, its node stopped and the volume ejected (`drive`).
-    /// `moving` what the key move asks of its person now, and `moveKeys` the move (K3b, `move_keys`).
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
         let number = |i: usize| a.get(i).as_u64().with_context(|| format!("argument {} is a file's number", i + 1));
@@ -516,9 +503,6 @@ impl Service {
             "openDrive" => self.open_drive(&a.text(0)?).await?,
             "ejectDrive" => self.eject_drive(&a.text(0)?).await?,
             "touchSetup" => self.touch_setup(&d).await?,
-            "moving" => self.moving(&d).await?,
-            "moveKeys" => self.move_keys().await?,
-            "signCheckpoint" => self.sign_checkpoint(&d).await?,
             "touchOff" => {
                 d.forget_touch().await?;
                 Value::Null
@@ -1033,7 +1017,7 @@ impl Service {
         let relay: RelayUrl = meta.relay.parse().map_err(|_| anyhow!("the relay's URL isn't one"))?;
         let (name, secret) = (agent::device_name(agent::CLOUD), Zeroizing::new(random()?));
         let opts = Options { bind: None, direct: self.config.direct, relay: Some(relay), ..Options::local() };
-        let node = avendb_net::server::open_agent_with(None, &name, &secret, sign::SIGNING, opts).await?;
+        let node = avendb_net::server::open_agent_with(None, &name, &secret, opts).await?;
         let added = async {
             d.node().try_know(node.addr())?;
             let approver = self.approver().await?;
@@ -1051,7 +1035,7 @@ impl Service {
             tracing::warn!("avendb: the note that this Mac added {name} isn't kept: {e}");
         }
         // its secret with its suite (`sign::kept_secret`), as the cloud session reads it back (`agent::KEY_VAR`)
-        let key = Zeroizing::new(hex(&sign::kept_secret(&secret, sign::SIGNING)));
+        let key = Zeroizing::new(hex(&sign::kept_secret(&secret)));
         Ok(json!({ "device": hex(&device.0), "name": name, "aven": hex(&aven.0), "key": key.as_str(),
             "variable": agent::KEY_VAR }))
     }
@@ -1105,92 +1089,6 @@ impl Service {
         let touch = d.add_touch(first, keys, sign).await?;
         let id = d.node().read(move |lab, me| owner_touch(lab, me, &touch.public)).await;
         Ok(json!({ "touch": id.map(|id| id.to_hex()) }))
-    }
-
-    /// `moving`: what the key move asks of its person now (K3b, `Device::moving`), with the drives this Mac hosts held
-    /// beside its device in each suite, so they move with it (`hold_drives`): `{passkey, touch, device}`, or null once
-    /// nothing moves; it fails while the device caught up with none of its peers, and the page asks again.
-    async fn moving(self: &Arc<Self>, d: &Arc<Device>) -> Result<Value> {
-        self.look().await.ok();
-        self.hold_drives(d).await?;
-        Ok(d.moving().await?.map_or(Value::Null, |m| m.to_json()))
-    }
-
-    /// `moveKeys`: the key move (K3b, `Device::move_keys`). Its person's passkey, this Mac's Touch ID key, its device
-    /// and the drives it hosts move to ML-DSA-65, in one ceremony of the passkey in the sheet and one touch, each
-    /// where `moving` asks for it, the drives' nodes stopped first; each drive's store then names its next key, and
-    /// this Mac's shelf keeps the drive's key under that key (`moved_drives`); and the device opens again as its next
-    /// key, with no ceremony, and hosts its drives again as theirs. The device as `open` answers it.
-    async fn move_keys(self: &Arc<Self>) -> Result<Value> {
-        let _life = self.life.lock().await;
-        self.ensure_open()?;
-        let d = self.device()?;
-        let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
-        self.look().await.ok();
-        let drives = self.hold_drives(&d).await?;
-        self.drives.stop().await?;
-        let (start, _ending, starting) = self.start(&meta.name, &meta.relay)?;
-        let sign = self.signing(&meta, "move", MOVE_TOUCH);
-        let (service, mac) = (self.clone(), d.clone());
-        let keep = move |moves| async move { service.moved_drives(&mac, drives, moves).await };
-        let moved = d.move_keys(start, sign, keep).await;
-        match self.finish_start(moved, &starting).await {
-            Ok(Some(moved)) => Ok(self.opened(moved).await),
-            Ok(None) => {
-                self.watch_drives();
-                Ok(info(&d))
-            }
-            Err(e) => {
-                // closed, as it was to open again as its next key: the page opens it again from its shelf
-                if d.closed() {
-                    // closed() marks admission, not durable completion. A failed
-                    // fence must retain the old Device for Host::close to report.
-                    d.close().await.with_context(|| format!("key move failed ({e:#}); the old device did not durably close"))?;
-                    self.device.lock().expect("the device").take();
-                } else {
-                    self.watch_drives();
-                }
-                Err(e)
-            }
-        }
-    }
-
-    /// `signCheckpoint`: a checkpoint over every edit its person's key may vouch for now, as they ask for it on the
-    /// Performance page (`Device::sign_checkpoint`), in one ceremony of the passkey in the sheet or one touch, as it
-    /// asks: `{covered}`, how many edits it covers. Nothing moves, so the device and its drives run on as they are.
-    async fn sign_checkpoint(self: &Arc<Self>, d: &Arc<Device>) -> Result<Value> {
-        let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
-        let covered = d.sign_checkpoint(self.signing(&meta, "checkpoint", CHECKPOINT_TOUCH)).await?;
-        Ok(json!({ "covered": covered }))
-    }
-
-    /// What signs a batch the key move or a checkpoint drafts (`move_keys`, `sign_checkpoint`), as what it asks for
-    /// says: the passkey in the sheet, for `step`, and this Mac's Touch ID key, its prompt saying `why`.
-    fn signing(
-        self: &Arc<Self>,
-        meta: &Meta,
-        step: &'static str,
-        why: &'static str,
-    ) -> impl FnOnce([u8; 32], Moving) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Signing>> + Send>> + use<> {
-        let (service, sheets) = (self.clone(), Sheets::new(self.clone(), Some(meta.credential.clone())));
-        let touch = meta.touch.clone();
-        move |challenge, moving: Moving| {
-            Box::pin(async move {
-                let passkey = match moving.passkey {
-                    true => {
-                        let brought = sheets.ask(step, challenge, None).await?;
-                        Some(Ceremony::new(brought.assertion, *brought.prf))
-                    }
-                    false => None,
-                };
-                let touch = match (moving.touch, &touch) {
-                    (true, Some(touch)) => Some(service.touch(touch, why, challenge).await?),
-                    (true, None) => bail!("this Mac keeps no Touch ID key"),
-                    (false, _) => None,
-                };
-                Ok(Signing { passkey, touch })
-            })
-        }
     }
 
     /// The ceremony over `challenge` of this Mac's Touch ID key `touch` (`Meta::touch`), for `why`: one touch, with

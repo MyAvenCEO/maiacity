@@ -22,14 +22,10 @@
 //!   eject the volume (`diskutil eject`), so Finder never finds it in use. A volume ejected here stays unhosted until
 //!   it is unmounted, or opened here again (`open`). macOS's own Eject in Finder isn't heard: the Mac learns of it only
 //!   as the volume goes, at its next look.
-//! - **Moved** (K3b): a drive made before the key move moves to ML-DSA-65 with the Mac that hosts it, in the same
-//!   sheet and touch (`Service::hold_drives`, `Service::moved_drives`): its node stopped, it joins as its next key,
-//!   which takes over its copy setting, its old key stays in the vault beside it, its store and the Mac's shelf name
-//!   its next key, and the Mac hosts it as that key from then on.
 //! - **Removed** like a lost phone: the device is revoked (`{"op": "revoke", "vault", "device"}`), its peers refuse
 //!   it from then on, and the Mac hosts it no more.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -45,7 +41,7 @@ use avendb::world;
 use avendb_browser::{Device, Fresh, Meta, Start, Unlock};
 use avendb_net::{Node, Options, Shelf, disk};
 use bytes::Bytes;
-use iroh::{EndpointId, RelayUrl};
+use iroh::RelayUrl;
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 use zeroize::Zeroizing;
@@ -197,14 +193,6 @@ struct Hosted {
     volume: PathBuf,
     name: String,
     carded: Arc<AtomicBool>,
-}
-
-/// A drive this Mac hosted as its key move began (K3b, `Service::hold_drives`): its device, its key and its store's
-/// shelf.
-pub(crate) struct Held {
-    device: SignerId,
-    secret: Zeroizing<[u8; 32]>,
-    shelf: Shelf,
 }
 
 /// A volume a join or an open is under way on, until it drops.
@@ -414,8 +402,7 @@ impl Service {
     /// The volumes mounted and the drives joined here, for the page: each volume by its path and name, what it is to
     /// this Mac (`state_of`) and the device on it, if any; each drive whose key this Mac holds and that is a device of
     /// the person's vault still, whether it is plugged in, on which volume, its name there, and when it last checked
-    /// what it holds, by its newest signed statement this Mac's device keeps. A drive the key move kept beside its next
-    /// key (`Lab::earlier_keys`) is listed once, as its next key, where this Mac holds that.
+    /// what it holds, by its newest signed statement this Mac's device keeps.
     pub(crate) async fn drives(self: &Arc<Self>) -> Result<Value> {
         let d = self.device()?;
         let Some(root) = self.config.volumes.clone() else { return Ok(json!({ "volumes": [], "drives": [] })) };
@@ -438,12 +425,7 @@ impl Service {
                 "device": device.map(|x| hex(&x.0)),
             }));
         }
-        let known: Vec<SignerId> = KEY.on(&self.shelf()).await?.into_iter().filter(|id| mine.contains(id)).collect();
-        let earlier = {
-            let known: BTreeSet<SignerId> = known.iter().copied().collect();
-            d.node().read(move |lab, me| lab.earlier_keys(me, &known)).await
-        };
-        let known = known.iter().copied().filter(|id| earlier.get(id).is_none_or(|next| !known.contains(next)));
+        let known = KEY.on(&self.shelf()).await?.into_iter().filter(|id| mine.contains(id));
         let mut drives_json = vec![];
         for drive in known {
             let on = seen.iter().find(|(_, s)| s.meta.as_ref().is_some_and(|m| m.device == drive));
@@ -514,9 +496,8 @@ impl Service {
         let Unlock { ceremony, .. } = unlock;
         let (mut lab, me) = lab_of(&name, &secret, None)?;
         lab.web_passkey("the person", d.p256(), &ceremony).context("the sheet's passkey isn't this Mac's")?;
-        // in each suite, as its person's vault may know their passkey in either (the key move)
-        let passes = ceremony.passes(fresh.keys(), now);
-        anyhow::ensure!(!passes.is_empty(), "the sheet's ceremony isn't over the drive's challenge");
+        let pass = ceremony.pass(fresh.keys(), now).context("the sheet's ceremony isn't over the drive's challenge")?;
+        let passes = vec![pass];
         let relay: RelayUrl = host.relay.parse().map_err(|_| anyhow!("the relay's URL isn't one"))?;
         let opts = Options {
             bind: None,
@@ -617,53 +598,6 @@ impl Service {
         }
         eject(&volume).await?;
         Ok(json!({ "ejected": volume.to_string_lossy() }))
-    }
-
-    /// The drives hosted now, each held by this Mac's device in each suite (`Lab::device_keys`), so they move with it
-    /// in its key move (K3b, `Lab::moves`), once it synced with each, so it holds what each made: their devices, keys
-    /// and shelves. A drive whose key this Mac's shelf doesn't open is left as it is.
-    pub(crate) async fn hold_drives(&self, d: &Arc<Device>) -> Result<Vec<Held>> {
-        let hosted: Vec<(SignerId, EndpointId, Option<Shelf>)> = {
-            let (hosted, seen) = (self.drives.hosted.lock().expect("hosted"), self.drives.seen.lock().expect("seen"));
-            let shelf = |h: &Hosted| seen.get(&h.volume).map(|s| s.shelf.clone());
-            hosted.iter().map(|(drive, h)| (*drive, h.node.id(), shelf(h))).collect()
-        };
-        let mut held = vec![];
-        for (device, endpoint, shelf) in hosted {
-            d.node().sync_with(endpoint).await.ok();
-            let (Some(secret), Some(shelf)) = (self.unwrap_key(d, &KEY, device).await, shelf) else { continue };
-            let key = secret.clone();
-            d.node().try_act(move |lab, _| lab.device_keys(device, *key)).await?;
-            held.push(Held { device, secret, shelf });
-        }
-        Ok(held)
-    }
-
-    /// The drives of `held` that moved in this Mac's key move, each to its next key among `moves`
-    /// (`Device::move_keys`), as its own device's next key is named before it opens again: this Mac's shelf keeps
-    /// the drive's key under its next key (`wrap_key`), then the drive's store names that key (`Meta::device`), so
-    /// this Mac hosts it as that key from then on, with no ceremony, as it hosts it again (`look`). A drive that moved
-    /// already, as in a move cut short, stays as it is.
-    pub(crate) async fn moved_drives(
-        &self,
-        d: &Device,
-        held: Vec<Held>,
-        moves: Vec<(SignerId, SignerId)>,
-    ) -> Result<()> {
-        for Held { device, secret, shelf } in held {
-            let Some(&(_, next)) = moves.iter().find(|&&(old, _)| old == device) else { continue };
-            self.wrap_key(d, &KEY, next, &secret).await?;
-            // These drive nodes are already stopped. Claim before reading metadata,
-            // so another process cannot update it between the read and this write.
-            let owner = shelf.writer()?;
-            let writable = owner.shelf();
-            let meta = Meta::load(&writable).await?.context("the drive's store holds nothing that opens it")?;
-            let kept = Meta { device: next, ..meta }.keep(&writable).await;
-            let ended = owner.shutdown().await;
-            kept?;
-            ended?;
-        }
-        Ok(())
     }
 
     /// Drive `meta.device` hosted here from now on: its node on its shelf on `volume`, its key `secret`.

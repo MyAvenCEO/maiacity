@@ -96,8 +96,8 @@ configuration. Non-atomic backends do not publish batch roots.
 Do not run an older binary as a writer on an upgraded store. It can append valid ordinary edits outside
 the new signer ledger, so writable downgrade is unsupported. Retain the pre-upgrade copy for controlled
 recovery and account for any subsequent edits before restoring it. No rollout step deletes old generations,
-resets an account or discards history. SLH history remains readable and existing authorized key migration
-continues; this release does not remove the legacy verifier.
+resets an account or discards history. SLH-DSA history stays readable through the legacy anchor (the hard fork of 2026-10-26),
+with no SLH-DSA verifier left.
 
 Optional carriers are off by default in the site build. Set `VITE_AVENDB_BROWSER_CARRIERS=true` explicitly
 when building to advertise supported browser WebTransport/WebRTC APIs. Native WebTransport separately
@@ -125,11 +125,10 @@ cargo run --release -p avendb --bin master-key -- id ~/Desktop/master-recovery.p
 ```
 
 `new` prints the secret in the terminal, 64 hex digits to copy and keep offline, and writes it nowhere. Its one file is
-`master-recovery.pub`, the public half every vault needs: its P-256 and post-quantum signing keys (SLH-DSA for the key
-made before the key move, ML-DSA-65 for a new one), its X-Wing and Classic McEliece keys, a megabyte, and its standing
+`master-recovery.pub`, the public half every vault needs: its P-256 and ML-DSA-65 signing keys, its X-Wing and Classic McEliece keys, a megabyte, and its standing
 consent to be added as an owner. `new` never writes over a file. `pub` asks for the secret and makes the `.pub` file
-again, over one of an older format alone, never over the SLH-DSA key's; `id` names the key a `.pub` file holds, or,
-with no file, the keys the secret it asks for makes in each suite. Whoever holds the secret owns every vault that added the key: only the `.pub` file
+again, over one of an older format alone; `id` names the key a `.pub` file holds, or, with no file, the key the
+secret it asks for makes. Whoever holds the secret owns every vault that added the key: only the `.pub` file
 is handed on.
 
 The key's file is built in (`crates/avendb/master-recovery.pub`, `recovery::master`); an empty file builds avenDB

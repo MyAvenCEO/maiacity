@@ -256,7 +256,7 @@ fn owner_of_everything_makes_a_co_owner_once_the_passkey_approves() {
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
     assert_eq!(seen["recovery"], master.to_hex());
     let owners = shown(&seen, alice)["owners"].clone();
-    assert_eq!(owners[1], json!({ "signer": master.to_hex(), "recovery": true, "legacy": false, "by": null, "next": null }));
+    assert_eq!(owners[1], json!({ "signer": master.to_hex(), "recovery": true, "legacy": false, "by": null }));
     let listed = ok(run(&mut w, mac, json!({ "op": "shares", "over": alice.to_hex() })));
     assert_eq!(listed["rows"][1]["recovery"], true);
     // and out again, as any owner
