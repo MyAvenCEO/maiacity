@@ -7,20 +7,10 @@ use avendb::cast::{self, World};
 use avendb::engine;
 use avendb::id::{EntryId, SignerId};
 use serde_json::{Value, json};
+use avendb_testkit::{ok, refused};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
     engine::run(&mut w.lab, d, &op)
-}
-
-/// What an op answered, which it must have done.
-fn ok(answer: Value) -> Value {
-    assert!(answer.get("ok").is_some(), "refused: {answer}");
-    answer["ok"].clone()
-}
-
-/// Why an op was refused, which it must have been.
-fn refused(answer: &Value) -> &str {
-    answer["refused"].as_str().unwrap_or_else(|| panic!("not refused: {answer}"))
 }
 
 /// The room's record as device `d` opens it on the main line.

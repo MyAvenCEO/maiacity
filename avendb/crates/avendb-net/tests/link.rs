@@ -6,8 +6,8 @@
 
 mod common;
 
-use std::future::Future;
 use std::time::{Duration, Instant, SystemTime};
+use avendb_testkit::until;
 
 use std::sync::Mutex;
 
@@ -30,15 +30,6 @@ async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8) -> Node {
 /// The time by this machine's clock, as a node checks a pass by it: seconds since 1970.
 fn now() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("after 1970").as_secs()
-}
-
-/// Waits until `check` holds, 30 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(30);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 30 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// Waits until none of `nodes` sends anything for three seconds: once they agree, they say nothing more.

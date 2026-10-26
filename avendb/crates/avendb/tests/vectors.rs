@@ -39,6 +39,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
+use avendb_testkit::list;
 
 use avendb::gate;
 use avendb::{admission, quota};
@@ -48,7 +49,7 @@ use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::{example, View};
 use avendb::ops::Loc;
 use avendb::policy::{
-    history, mk_audience, replay, tips, Action, Creation, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
+    history, mk_audience, replay, replay_on_why, tips, Why, Action, Creation, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
     Readings, Refusal, Revoking, Setting, Share, Sharing, Stated, State, Vault, Who, Wrap,
 };
 use avendb::rules::{self, ops_of_json, Cap, CapGroup, Grant, Proof, Touch};
@@ -68,10 +69,6 @@ fn blob(v: &Value) -> Vec<u8> {
 
 fn num(v: &Value) -> u64 {
     v.as_u64().unwrap_or_else(|| panic!("a number, not {v}"))
-}
-
-fn list(v: &Value) -> &[Value] {
-    v.as_array().unwrap_or_else(|| panic!("a list, not {v}"))
 }
 
 /// The model's file `n`: a root of its own, as long as a sealed file of `n` bytes is.
@@ -930,6 +927,7 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
     for view in views {
         assert!(cases.iter().any(|c| c["name"] == view), "the model's view {view:?}");
     }
+    let mut stepped_on = 0;
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let (edits, standing) = (list(&case["edits"]), list(&case["standing"]));
@@ -947,7 +945,27 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
             assert_eq!(stood.contains(&edit.id()), want.as_bool().unwrap(), "{name}, edit {i}: {}", edits[i]);
         }
         names.check_state(name, case, &r.state);
+        // A device that held only the first edits steps the rest on the view it kept (V1, V3, V4) and ends where the
+        // model's view of them all ends, from every place it might have stopped; one handed the edits in any order,
+        // here the other way round, replays them into the same view (T11, V7)
+        for k in 1..held.len() {
+            let (stepped, why) = replay_on_why(replay(&held[..k]), &held, k);
+            if !matches!(why, Why::Whole(_)) {
+                stepped_on += 1;
+            }
+            assert_eq!(stepped.standing(), stood, "{name}: the first {k} edits' view, the rest stepped on");
+            names.check_state(&format!("{name}, stepped on after {k}"), case, &stepped.state);
+        }
+        let mut handed = held.clone();
+        handed.reverse();
+        let mut turned = replay(&handed).standing();
+        turned.sort();
+        let mut sorted = stood.clone();
+        sorted.sort();
+        assert_eq!(turned, sorted, "{name}: the edits handed in the other order");
     }
+    // the stepped paths themselves ran, not only the whole replay they fall back to
+    assert!(stepped_on > 0, "no view was stepped on");
 }
 
 #[test]

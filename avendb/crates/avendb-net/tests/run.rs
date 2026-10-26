@@ -5,11 +5,11 @@
 //! once the vaults its device follows change (`follow`), it asks its peers again, each request naming them, so it is
 //! sent what everyone reads of them.
 
-use std::future::Future;
 use std::io;
 use std::sync::Mutex;
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use avendb_testkit::until;
 
 use avendb::cast::*;
 use avendb::id::{BlobId, EntryId, SignerId, VaultId};
@@ -24,15 +24,6 @@ use serde_json::{Value, json};
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
 async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8) -> Node {
     Node::spawn(w.lab.split(d, with, [seed; 32]), d, Options::local()).await.expect("a node")
-}
-
-/// Waits until `check` holds, 30 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(30);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 30 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// A person's passkey in software, as a browser's authenticator holds one: each ceremony it made, and what for.

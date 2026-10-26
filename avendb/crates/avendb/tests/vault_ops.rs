@@ -6,6 +6,7 @@
 //! and the Mac app send it.
 
 use std::sync::Arc;
+use avendb_testkit::{ok, refused};
 
 use avendb::cast::{self, World};
 use avendb::engine::{self, Prepared};
@@ -22,17 +23,6 @@ use serde_json::{Value, json};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
     engine::run(&mut w.lab, d, &op)
-}
-
-/// What an op answered, which it must have done.
-fn ok(answer: Value) -> Value {
-    assert!(answer.get("ok").is_some(), "not done: {answer}");
-    answer["ok"].clone()
-}
-
-/// Why an op was refused, which it must have been.
-fn refused(answer: &Value) -> &str {
-    answer["refused"].as_str().unwrap_or_else(|| panic!("not refused: {answer}"))
 }
 
 /// What `may` answers of each of `ops` on device `d`.

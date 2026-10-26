@@ -11,9 +11,9 @@
 mod common;
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::io;
-use std::time::{Duration, Instant};
+use std::time::Instant;
+use avendb_testkit::until;
 
 use avendb::cast::*;
 use avendb::id::{BlobId, EntryId, SignerId, VaultId};
@@ -39,15 +39,6 @@ async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8, opts: Opt
 /// Options for a node whose shelf is in folder `dir`, as the Mac's.
 fn on_disk(dir: &Folder) -> Options {
     Options { shelf: Some(disk::open(dir.path()).expect("its shelf")), ..Options::local() }
-}
-
-/// Waits until `check` holds, 60 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(60);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 60 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// Byte `j` of a file whose bytes start at `seed`.
