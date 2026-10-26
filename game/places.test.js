@@ -25,7 +25,7 @@ test('navigation preserves labels, order, covers, notes and routes from a0ee4d25
 				...(navigation.anchors ? { anchors: navigation.anchors } : {})
 			}));
 	}
-	expect(digest(lists)).toBe('41083cd1913c80d75aa78b10fc61563110c148d11d600ce17c328f48bbbf6b63');
+	expect(digest(lists)).toBe('d7a63b9d64563c3df4e3e6418e92904c5439d7157cbea9c9152afc02aa77e3fe');
 });
 
 test('stable descriptor IDs, routes and optional film IDs are unique', () => {

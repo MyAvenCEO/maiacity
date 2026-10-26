@@ -20,6 +20,7 @@
 	import InspirePost from '$lib/universe/InspirePost.svelte';
 	import { inspireOf } from '$lib/universe/inspire.js';
 	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
+	import { session } from '$lib/avendb/session.svelte.js';
 
 	let { data } = $props();
 
@@ -86,7 +87,7 @@
 {/snippet}
 
 {#if data.asset}
-	<VaultRecipes><data.AssetPage hash={data.asset} /></VaultRecipes>
+	<VaultRecipes api={session}><data.AssetPage hash={data.asset} /></VaultRecipes>
 {:else if inspire}
 	<InspirePost entry={inspire} />
 {:else if post}

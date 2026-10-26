@@ -456,7 +456,7 @@
 				<button class="quiet later" onclick={() => (moved = false)}>OK</button>
 			</p>{/if}
 		<div class="app screen-content" class:immersive>
-			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>
+			<VaultRecipes hold={assetPage} api={session}>{@render children()}</VaultRecipes>
 		</div>
 	{/if}
 	<div class="app-dock">

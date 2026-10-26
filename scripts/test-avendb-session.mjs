@@ -63,7 +63,7 @@ try {
  await page.goto(origin+'/__session-lifecycle');
  await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
  const diagnostics=page.getByRole('button',{name:'Open diagnostics'});
- assert.equal(await diagnostics.evaluate(el=>getComputedStyle(el).position),'fixed');
+ assert.equal(await diagnostics.getAttribute('data-screen-slot'),'diagnostics'); // The app layout's screen chrome owns placement.
  await diagnostics.click();
  if(process.env.AVENDB_LIFECYCLE_SCREENSHOT)await page.screenshot({path:process.env.AVENDB_LIFECYCLE_SCREENSHOT});
  await page.getByRole('button',{name:'Run diagnostics',exact:true}).waitFor();

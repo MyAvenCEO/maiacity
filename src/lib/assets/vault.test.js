@@ -624,9 +624,9 @@ test('every page that builds assets waits for the vault\'s recipes before its fi
 		(r.at.startsWith('/app/') && vault.ASSET_PAGES.test(r.at)) || r.path === 'src/routes/[doc=doc]/+page.js' || r.path === 'src/routes/[doc=doc]/+page.svelte' || (r.at.startsWith('/games/') && reach(r.path).has('src/lib/film/FilmRoute.svelte'));
 	expect(pages.filter((r) => !waits(r)).map((r) => r.path)).toEqual([]);
 	const layout = readFileSync(join(ROOT, 'src/routes/app/+layout.svelte'), 'utf8');
-	expect(layout).toContain('<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>');
+	expect(layout).toContain('<VaultRecipes hold={assetPage} api={session}>{@render children()}</VaultRecipes>');
 	expect(layout).toContain('const assetPage = $derived(ASSET_PAGES.test(rel));');
-	expect(readFileSync(join(ROOT, 'src/lib/film/FilmRoute.svelte'), 'utf8')).toMatch(/<VaultRecipes><FilmWorld /);
+	expect(readFileSync(join(ROOT, 'src/lib/film/FilmRoute.svelte'), 'utf8')).toMatch(/<VaultRecipes api=\{session\}><FilmWorld /);
 	expect(readFileSync(join(ROOT, 'src/routes/[doc=doc]/+page.js'), 'utf8')).toContain('await loadRecipes()');
 });
 

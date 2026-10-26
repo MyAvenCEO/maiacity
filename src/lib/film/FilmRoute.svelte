@@ -10,6 +10,7 @@
 	import FilmWorld from './FilmWorld.svelte';
 	import { recipeStatus } from './recipe-status.js';
 	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
+	import { session } from '$lib/avendb/session.svelte.js';
 	import { useView } from '../../../game/code/sources/device.js';
 	import { localDevice } from '$lib/avendb/local.js';
 	import { watchRecipes } from '$lib/assets/vault.js';
@@ -63,7 +64,7 @@
 </script>
 
 {#if film && known}
-	<VaultRecipes><FilmWorld title="{WORLDS[sandbox]?.label ?? sandbox}{area ? ` · ${area}` : ''}" mount={(stage, onProgress) => mount(stage, area, onProgress)} /></VaultRecipes>
+	<VaultRecipes api={session}><FilmWorld title="{WORLDS[sandbox]?.label ?? sandbox}{area ? ` · ${area}` : ''}" mount={(stage, onProgress) => mount(stage, area, onProgress)} /></VaultRecipes>
 {:else if film}
 	<p>{sandbox} has no area “{area}”: one of {WORLDS[sandbox]?.areas?.join(', ')}.</p>
 {:else if film === false}

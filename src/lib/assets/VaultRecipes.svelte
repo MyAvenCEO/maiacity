@@ -13,14 +13,14 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { session } from '$lib/avendb/session.svelte.js';
 	import { recipes, reloadRecipes, watchRecipes, watchRecipeCatalog } from './vault.js';
 
 	/**
-	 * @type {{ children: import('svelte').Snippet, hold?: boolean }} `hold`: the page waits for the recipes and shows
+	 * @type {{ children: import('svelte').Snippet, hold?: boolean, api: any }} `api`: the page's avenDB session, passed
+	 *   in by the page so nothing under $lib/assets imports avenDB's client; `hold`: the page waits for the recipes and shows
 	 *   what failed of them (an asset page); without it, the page only
 	 */
-	let { children, hold = true } = $props();
+	let { children, hold = true, api } = $props();
 
 	const copy = (/** @type {typeof recipes} */ r) => ({ ...r, refused: [...r.refused], missed: [...r.missed], unread: [...r.unread] });
 	let state = $state.raw(copy(recipes));
@@ -28,9 +28,9 @@
 	onMount(() => watchRecipes((r) => (state = copy(r))));
 	$effect(() => {
 		if (!hold) return;
-		void session.device;
+		void api.device;
 		void page.url.pathname;
-		return watchRecipeCatalog(session);
+		return watchRecipeCatalog(api);
 	});
 
 	const told = $derived(hold ? [...state.missed, ...state.unread, ...state.refused.map((r) => `refused: ${r}`)] : []);
