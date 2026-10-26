@@ -1,0 +1,154 @@
+//! A query's coverage (`spec/AvenDB/Coverage.lean`): one answer, the same on every read of the same state.
+use super::*;
+use crate::cast::{document, human_on};
+use serde_json::{json, Value};
+
+fn read(lab: &Lab, d: SignerId, q: &Value) -> Value {
+    crate::engine::read(lab, d, q)
+}
+
+#[test]
+fn entries_whose_header_is_unread_wait_and_the_rest_answers_at_once() {
+    let mut w = crate::cast::world();
+    let mut entries = Vec::new();
+    for n in 0..12 {
+        entries.push(w.lab.create(w.mac_a, w.alice, w.alice, "note", &[],
+            document(&format!("Note {n:02}"), "body", w.mac_a)).unwrap());
+    }
+    // The device holds the first four and their keys, but hasn't read their headers yet: they may be notes.
+    entries.sort();
+    let readings = w.lab.held(w.mac_a).readings.clone();
+    let creations: Vec<_> = entries[..4].iter().map(|e| w.lab.held(w.mac_a).view().entry(*e).unwrap().creation).collect();
+    {
+        let r = &mut w.lab.stores.get_mut(&w.mac_a).unwrap().readings;
+        for c in &creations { r.headers.remove(c); }
+        for ids in r.typed.values_mut() { ids.retain(|c| !creations.contains(c)); }
+        r.untyped.extend(entries[..4].iter().copied());
+    }
+    for entry in &entries[..4] { assert!(w.lab.meaning(w.mac_a, *entry).is_none()); }
+    let query = json!({"op":"query","vault":w.alice.to_hex(),"where":{"type":["note"]},"depth":1,"select":[],"limit":1});
+    let result = read(&w.lab, w.mac_a, &query);
+    assert_eq!(result["ok"]["count"], 8);
+    let coverage = &result["ok"]["coverage"];
+    assert_eq!(coverage["state"], "partial");
+    assert_eq!(coverage["have"], 8);
+    assert_eq!(coverage["known"], 12);
+    assert_eq!(coverage["logs"], 0);
+    let waiting: BTreeSet<_> = coverage["waiting"].as_array().unwrap().iter()
+        .map(|w| (w["entry"].as_str().unwrap().to_string(), w["on"].as_str().unwrap().to_string())).collect();
+    assert_eq!(waiting, entries[..4].iter().map(|e| (e.to_hex(), "semantics".to_string())).collect());
+    assert_eq!(result, read(&w.lab, w.mac_a, &query), "the same state answers the same");
+    assert_eq!(result, crate::engine::full_query_oracle(&w.lab, w.mac_a, &query), "the index misses none that waits");
+    // Once the headers are read, nothing waits.
+    w.lab.stores.get_mut(&w.mac_a).unwrap().readings = readings;
+    let arrived = read(&w.lab, w.mac_a, &query);
+    assert_eq!(arrived["ok"]["count"], 12);
+    assert_eq!(arrived["ok"]["coverage"], json!({"state":"complete"}));
+}
+
+#[test]
+fn a_cold_restored_device_answers_the_exact_page_in_one_read() {
+    let mut lab = Lab::new();
+    let owner = lab.passkey("Cold query");
+    let device = lab.device_of(owner, "Mac");
+    let vault = human_on(&mut lab, owner, &[device]);
+    for n in 0..16 {
+        lab.create(device, vault, vault, "note", &[], document(&format!("Note {n:02}"), "body", device)).unwrap();
+    }
+    let queries = [
+        json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]},"depth":1,"select":[],"limit":1,"offset":2}),
+        json!({"op":"query","vault":vault.to_hex(),"where":{"all":[{"type":["note"]},{"path":["title"],"eq":"Note 07"}]},
+            "depth":1,"select":["title"],"limit":3,"order":[["created","desc"]]}),
+    ];
+    let expected: Vec<_> = queries.iter().map(|q| crate::engine::full_query_oracle(&lab, device, q)).collect();
+    let backup = lab.backup(device);
+    let count = backup.signed.len();
+    let receipt = lab.warming(device, count, Some([91; 40])).unwrap();
+    let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
+    lab.warmed(device, receipt);
+    for (query, expected) in queries.into_iter().zip(expected) {
+        lab.restore_warm(device, backup.clone(), Some(([91; 40], count)), &warm);
+        let first = read(&lab, device, &query);
+        assert_eq!(first, expected, "no time budget: the first read is the exact page");
+        assert_eq!(first["ok"]["coverage"], json!({"state":"complete"}));
+    }
+}
+
+#[test]
+fn pages_by_cursor_concatenate_to_the_whole_answer() {
+    let mut lab = Lab::new();
+    let owner = lab.passkey("Paging");
+    let device = lab.device_of(owner, "Mac");
+    let vault = human_on(&mut lab, owner, &[device]);
+    for n in 0..11 {
+        lab.create(device, vault, vault, "note", &[], document(&format!("Note {:02}", (n * 7) % 11), "body", device)).unwrap();
+    }
+    let rows = |v: &Value| v["ok"]["rows"].as_array().unwrap().iter().map(|r| r["entry"].clone()).collect::<Vec<_>>();
+    for order in [json!([]), json!([["created","desc"]]), json!([[["title"],"asc"]])] {
+        let whole = read(&lab, device, &json!({"op":"query","vault":vault.to_hex(),"order":order}));
+        assert_eq!(whole["ok"]["next"], Value::Null);
+        let mut paged = vec![];
+        let mut after = Value::Null;
+        for _ in 0..8 {
+            let mut q = json!({"op":"query","vault":vault.to_hex(),"order":order,"limit":3});
+            if !after.is_null() { q["after"] = after.clone(); }
+            let page = read(&lab, device, &q);
+            assert_eq!(page["ok"]["count"], 11);
+            paged.extend(rows(&page));
+            after = page["ok"]["next"].clone();
+            if after.is_null() { break; }
+        }
+        assert_eq!(paged, rows(&whole), "order {order}");
+    }
+    let refused = read(&lab, device, &json!({"op":"query","vault":vault.to_hex(),"after":"nonsense"}));
+    assert!(refused["refused"].is_string() || refused.get("why").is_some(), "{refused}");
+}
+
+#[test]
+fn a_vault_without_standing_is_denied() {
+    let mut w = crate::cast::world();
+    w.lab.create(w.mac_a, w.alice, w.alice, "note", &[], document("Private", "body", w.mac_a)).unwrap();
+    w.lab.sync_all(0);
+    let q = json!({"op":"query","vault":w.alice.to_hex()});
+    assert_eq!(read(&w.lab, w.mac_a, &q)["ok"]["coverage"], json!({"state":"complete"}));
+    let theirs = read(&w.lab, w.mac_b, &q);
+    assert_eq!(theirs["ok"]["coverage"]["state"], "denied", "{theirs}");
+    assert_eq!(theirs["ok"]["count"], 0);
+}
+
+/// `LiveQuery.lean` `indexed_eq_scan`: a query that names its types reads its candidates off the index by type and
+/// answers exactly what the scan of every entry answers.
+#[test]
+fn the_type_index_answers_what_the_full_scan_answers() {
+    let mut w = crate::cast::world();
+    let library = crate::cast::library(&mut w);
+    let (me, vault) = (w.mac_a, w.alice);
+    for n in 0..64 {
+        w.lab.create(me, vault, vault, "unrelated", &[], crate::doc::Item::document(&format!("Noise {n}"), me)).unwrap();
+    }
+    w.lab.tag(me, vault, library.seeds, &["work"], &["home"]).unwrap();
+    let plan = crate::ops::Where::of_json(&json!({"type":["todo"]})).unwrap().plan();
+    assert_eq!(w.lab.query_candidates(me, Some(vault), &plan).len(), 3, "only the todos reach meaning");
+    let cases = [
+        json!({"type":["todo"]}),
+        json!({"all":[{"type":["todo"]},{"tag":"work"}]}),
+        json!({"any":[{"type":["todo"]},{"tag":"work"}]}),
+        json!({"any":[{"type":["todo"]},{"entry":[library.seeds.to_hex()]}]}),
+        json!({"noTag":["home"]}),
+        json!({"not":{"type":["todo"]}}),
+        json!({"entry":[library.seeds.to_hex()]}),
+        json!({"all":[{"type":["todo"]},{"path":["status"],"eq":"open"}]}),
+    ];
+    for where_ in cases {
+        for order in [json!([]), json!([[["title"],"desc"]])] {
+            for vault in [Some(vault), None] {
+                let mut q = json!({"op":"query","where":where_,"order":order,"limit":2,"offset":1});
+                if let Some(v) = vault { q["vault"] = v.to_hex().into(); }
+                assert_eq!(read(&w.lab, me, &q), crate::engine::full_query_oracle(&w.lab, me, &q), "{q}");
+            }
+        }
+    }
+    w.lab.sync_all(0);
+    let q = json!({"op":"query","where":{"type":["todo"]}});
+    assert_eq!(read(&w.lab, w.mac_b, &q), crate::engine::full_query_oracle(&w.lab, w.mac_b, &q));
+}
