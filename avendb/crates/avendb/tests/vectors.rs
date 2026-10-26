@@ -39,7 +39,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
-use avendb_testkit::list;
+use avendb_testkit::{list, num, vectors};
 
 use avendb::gate;
 use avendb::{admission, quota};
@@ -59,16 +59,9 @@ use avendb::sync::{asks, closed_part, forks, frontiers, link_card, may_fetch, re
 use avendb::wire::Wire;
 use serde_json::{json, Map, Value};
 
-const VECTORS: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/vaults.json");
-const LENSES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/lenses.json");
-
 /// The bytes the model's blob number `b` stands for.
 fn blob(v: &Value) -> Vec<u8> {
     format!("blob {}", num(v)).into_bytes()
-}
-
-fn num(v: &Value) -> u64 {
-    v.as_u64().unwrap_or_else(|| panic!("a number, not {v}"))
 }
 
 /// The model's file `n`: a root of its own, as long as a sealed file of `n` bytes is.
@@ -735,11 +728,6 @@ impl Names {
     }
 }
 
-fn vectors() -> Value {
-    let file = std::fs::read_to_string(VECTORS).expect("the vectors: run `lake exe vectors` in avendb/spec");
-    serde_json::from_str(&file).unwrap()
-}
-
 /// The depth a step case gives the edit at place `i`: a genesis 0, so that one tried twice is the same edit, as the
 /// model's vault number names one vault; any other edit its place, so that no two are the same edit, as in the model,
 /// where an edit is its place. A step reads no depth.
@@ -753,17 +741,17 @@ fn the_built_in_groups_are_the_models() {
         .iter()
         .map(|g| json!({ "name": g.name, "ops": rules::ops_to_json(&g.ops), "everyone": g.everyone }))
         .collect();
-    assert_eq!(Value::Array(ours), vectors()["groups"]);
+    assert_eq!(Value::Array(ours), vectors("vaults")["groups"]);
 }
 
 #[test]
 fn the_kind_table_is_the_models() {
-    assert_eq!(avendb::words::kinds_json(), vectors()["kinds"]);
+    assert_eq!(avendb::words::kinds_json(), vectors("vaults")["kinds"]);
 }
 
 #[test]
 fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
-    let vectors = vectors();
+    let vectors = vectors("vaults");
     let cases = list(&vectors["cases"]);
     assert!(cases.len() >= 12);
     const KINDS: &str = "settings, shares and revocations, kind by kind";
@@ -862,7 +850,7 @@ fn replayed(case: &Value) -> (Names, State) {
 /// count (`Writes.lean`'s `writesAt`), a later version more, a version with writes left out no more.
 #[test]
 fn each_version_holds_as_many_writes_as_in_the_lean_model() {
-    let vectors = vectors();
+    let vectors = vectors("vaults");
     let (cases, versions) = (list(&vectors["cases"]), list(&vectors["versions"]));
     assert!(versions.len() >= 8, "the model's version cases");
     for v in versions {
@@ -885,7 +873,7 @@ fn each_version_holds_as_many_writes_as_in_the_lean_model() {
 #[test]
 fn each_edit_settles_the_keys_as_the_whole_model_does() {
     // the core settles an edit that removes nothing by what it touched (T6); the model settles every key every time
-    let vectors = vectors();
+    let vectors = vectors("vaults");
     for case in list(&vectors["cases"]) {
         let name = case["name"].as_str().unwrap();
         let mut names = Names::default();
@@ -910,7 +898,7 @@ fn each_edit_settles_the_keys_as_the_whole_model_does() {
 
 #[test]
 fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
-    let vectors = vectors();
+    let vectors = vectors("vaults");
     let cases = list(&vectors["views"]);
     assert!(cases.len() >= 12);
     // a vault's own removals outrank a revoked grant: a core that ranked them the other way round would keep the
@@ -970,7 +958,7 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
 
 #[test]
 fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
-    let vectors = vectors();
+    let vectors = vectors("vaults");
     let cases = list(&vectors["syncs"]);
     assert!(cases.len() >= 6);
     let (mut linked, mut fetched) = (0, 0);
@@ -1057,7 +1045,7 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
 
 #[test]
 fn the_server_takes_of_each_batch_what_the_lean_models_gate_takes() {
-    let vectors = vectors();
+    let vectors = vectors("vaults");
     let cases = list(&vectors["gates"]);
     assert!(cases.len() >= 7);
     let (mut all, mut none, mut some) = (0, 0, 0);
@@ -1098,7 +1086,7 @@ fn the_server_takes_of_each_batch_what_the_lean_models_gate_takes() {
 
 #[test]
 fn the_server_says_of_each_device_what_the_lean_model_says() {
-    let vectors = vectors();
+    let vectors = vectors("vaults");
     let cases = list(&vectors["standings"]);
     assert!(cases.len() >= 7);
     let (mut admins, mut others, mut nobodys) = (0, 0, 0);
@@ -1145,7 +1133,7 @@ fn held_of(case: &Value) -> (Vec<Edit>, Names) {
 
 #[test]
 fn the_server_keeps_for_each_person_what_the_lean_models_quota_keeps() {
-    let vectors = vectors();
+    let vectors = vectors("vaults");
     let cases = list(&vectors["quotas"]);
     assert!(cases.len() >= 7);
     let (mut refused, mut nobodys) = (0, 0);
@@ -1181,7 +1169,7 @@ fn the_server_keeps_for_each_person_what_the_lean_models_quota_keeps() {
 
 #[test]
 fn the_relay_honours_each_pass_the_lean_model_honours() {
-    let vectors = vectors();
+    let vectors = vectors("vaults");
     let cases = list(&vectors["admissions"]);
     assert!(cases.len() >= 9);
     let (mut yes, mut no) = (0, 0);
@@ -1234,8 +1222,7 @@ fn block_view(view: &View, block: &Value) -> Value {
 
 #[test]
 fn the_lens_vectors() {
-    let file = std::fs::read_to_string(LENSES).expect("the vectors: run `lake exe vectors` in avendb/spec");
-    let vectors: Value = serde_json::from_str(&file).unwrap();
+    let vectors = vectors("lenses");
     let (blocks, todos) = (list(&vectors["blocks"]), list(&vectors["todos"]));
     assert!(blocks.len() >= 100 && todos.len() >= 10);
     let apps = [("v0", "putV0", example::document_v0()), ("v1", "putV1", example::document_v1())];
@@ -1267,12 +1254,6 @@ fn the_lens_vectors() {
     }
 }
 
-fn backup_vectors() -> Value {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/backups.json");
-    serde_json::from_str(&std::fs::read_to_string(path).expect("the backup vectors: run `lake exe vectors` in avendb/spec"))
-        .unwrap()
-}
-
 /// The edits of a sync case, with its names.
 fn sync_case(case: &Value) -> (Names, Vec<Edit>) {
     let mut names = Names::default();
@@ -1290,7 +1271,7 @@ fn sync_case(case: &Value) -> (Names, Vec<Edit>) {
 /// vault's snapshot (`backup::snapshot`) is the model's edits, in its order, and brings the model's files (B6, B1).
 #[test]
 fn each_vault_s_snapshot_is_the_lean_model_s() {
-    let (vectors, backups) = (vectors(), backup_vectors());
+    let (vectors, backups) = (vectors("vaults"), vectors("backups"));
     let mut checked = 0;
     for case in list(&vectors["syncs"]) {
         let name = case["name"].as_str().unwrap();
@@ -1321,7 +1302,7 @@ struct Manifest {
 /// after each step, the folder's packs and what each manifest restores.
 #[test]
 fn each_backup_builds_on_its_folder_as_the_lean_model_s() {
-    let (vectors, backups) = (vectors(), backup_vectors());
+    let (vectors, backups) = (vectors("vaults"), vectors("backups"));
     assert_eq!(num(&backups["runs"][0]["most"]) as usize, avendb::backup::MOST_PACKS, "the most packs a manifest names");
     let mut steps = 0;
     for run in list(&backups["runs"]) {
@@ -1399,7 +1380,7 @@ fn each_backup_builds_on_its_folder_as_the_lean_model_s() {
 /// default policy (B5).
 #[test]
 fn each_retention_keeps_the_snapshots_the_lean_model_keeps() {
-    let backups = backup_vectors();
+    let backups = vectors("backups");
     let k = &backups["keep"];
     let keep = avendb::backup::Keep::default();
     assert_eq!((keep.recent, keep.days, keep.weeks), (num(&k["recent"]), num(&k["days"]), num(&k["weeks"])));

@@ -106,9 +106,7 @@ exact origins). A native listener failure preserves relay operation. Unsupported
 Carrier activation still requires the normal authenticated peer negotiation; these settings grant no access.
 
 Before rollout, run the Rust suites, Lean build and vector comparison, client tests and production web build.
-The PR checks also build the server image and check the macOS app. The ignored `upgrade_rehearsal` browser
-integration target checks an explicitly marked disposable Mac-store copy with a real existing-key Touch ID
-ceremony; it never accepts the installed store. The optional-carrier Chromium harness tests fresh edits and
+The PR checks also build the server image and check the macOS app. The optional-carrier Chromium harness tests fresh edits and
 sealed files through WebTransport, relay fallback and WebRTC with alternate paths deliberately stopped.
 Build shipped WASM with `scripts/build-web.sh` without the `localhost-passkeys` test feature.
 

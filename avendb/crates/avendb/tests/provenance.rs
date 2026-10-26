@@ -423,7 +423,7 @@ fn a_proof_of_some_entries_proves_those_alone() {
     }
 }
 
-/// How big a proof of many recipes is, and how long it takes to check: `cargo test -p avendb --release --test
+/// How big a proof of many recipes is, and how long it takes to check: `cargo test -p avendb --features test-fixtures --test
 /// provenance -- --ignored --nocapture measure`. `AVENDB_RECIPES` recipes (24 by default), each created with its file
 /// and given `AVENDB_VERSIONS` versions in all (3 by default), each after the first as the seed writes it (a proposal,
 /// its write, its merge), and a tag; a page's proof is of the first `AVENDB_PAGE` of them (all by default), as a world

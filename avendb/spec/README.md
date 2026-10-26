@@ -84,6 +84,31 @@ lake exe vectors
 | `protocol/*.vp` | Verifpal models of what devices say to each other: the hello on every connection, linking a new device by its passkey, and the sealed box (see [Protocol models](#protocol-models)) |
 | `protocol/check.sh` | Checks each model against the result its header expects |
 
+## Models of the runtime
+
+`AvenDB/` holds the models that refine the core for one part of the runtime. Each names the Rust it describes, and
+`contracts.json` maps the rest to their implementation tests. These are the ones the tables below do not cover:
+
+| File | What it holds |
+|---|---|
+| `AvenDB/Snapshot.lean` | Owner-signed snapshots: a device takes an entry's state at a frontier of its log instead of replaying it, accepted only where the vault approves it |
+| `AvenDB/EntryState.lean` | One entry state (P6): an entry is full or based on its owners' newest standing snapshot, worked out from history alone; no caches |
+| `AvenDB/Coverage.lean` | One answer to "is this read complete?" (P1): `complete`, `partial` or `denied`, a function of what the device holds and its peers announced |
+| `AvenDB/LiveQuery.lean` | Live queries (P2): an index by vault and type, and a change re-runs only the queries whose entries it touched |
+| `AvenDB/BlindIndex.lean` | The blind index (P4): tokens per audience and label, so a peer that cannot read an entry still matches its type or tag |
+| `AvenDB/BatchDurability.lean` | When a signed batch root may be published: only after its segment and the root are durable, for the exact prefix and writer generation |
+| `AvenDB/EditRanges.lean` | Edit transfer by ranges: a fingerprint only routes, a fetched edit still needs its root path and the ordinary checks |
+| `AvenDB/Wraps.lean` | A move's wraps in one edit, accepted exactly where each wrap would be as a `keys` edit of its own |
+| `AvenDB/EntryFilesBatch.lean` | Grouping an entry's file roots from the held logs keeps their order |
+| `AvenDB/FileAvailability.lean` | Reading a file across peers: idle deadlines, progress, and verified ranges kept across attempts (`avendb-net/src/files.rs`) |
+| `AvenDB/PeerRoleGate.lean` | A blob is handed by the history a requester may read now, never by the provider's role (server or not) |
+| `AvenDB/ConnectionSelection.lean` | Which connection stays when two devices dial each other at once |
+| `AvenDB/LivePriority.lean` | Live edits go first by local hints that never widen what a peer may receive (`avendb-net/src/pulls.rs`, `live.rs`) |
+| `AvenDB/ShutdownOwnership.lean` | The native host's shutdown: every owner of a node finishes its last save before the store closes |
+| `AvenDB/Sessions.lean` | Agents as sessions on their person's device: one store, one replay, each session signs with its own key |
+| `AvenDB/Measurers.lean` | Who may measure an AIP: the vault, its owners and holders of its Measurer cap group, never the AIP's author |
+| `AvenDB/VectorFiles.lean` | The list of vector files that `lake exe vectors` writes and the build checks |
+
 ## Theorems
 
 | # | What must always hold | Status | Guarded in Rust by |

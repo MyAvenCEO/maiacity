@@ -19,6 +19,18 @@ pub fn list(v: &Value) -> &[Value] {
     v.as_array().unwrap_or_else(|| panic!("a list, not {v}"))
 }
 
+/// The Lean model's vector file `name` (`avendb/spec/vectors/<name>.json`, written by `lake exe vectors`).
+pub fn vectors(name: &str) -> Value {
+    let path = format!("{}/../../spec/vectors/{name}.json", env!("CARGO_MANIFEST_DIR"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}: run `lake exe vectors` in avendb/spec"));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// A number in a vector, which must be one.
+pub fn num(v: &Value) -> u64 {
+    v.as_u64().unwrap_or_else(|| panic!("a number, not {v}"))
+}
+
 /// Waits until `check` holds, 60 seconds at most.
 #[cfg(feature = "wait")]
 pub async fn until<F: Future<Output = bool>>(what: &str, check: impl FnMut() -> F) {
