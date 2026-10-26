@@ -1,0 +1,8 @@
+# nextest's profiles for avenDB's tests (.github/workflows/avendb-checks.yml runs `--profile ci`).
+#
+# ci: a test still running after 90 s is named in the log as slow; after 6 minutes it is stopped and fails, so a hung
+# test fails its shard in minutes instead of running to the job's 45-minute limit (it did, twice, on 2026-10-25 and
+# 2026-10-26). The slowest test today takes about 2 minutes (avendb-browser's device.rs).
+[profile.ci]
+slow-timeout = { period = "90s", terminate-after = 4 }
+fail-fast = false

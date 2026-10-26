@@ -35,12 +35,38 @@ on:
 permissions:
   contents: read
 
+# CI's own WebAssembly commit (avendb-wasm.yml) waits for the run in progress instead of cancelling it: theOS reads none
+# of the WebAssembly, so its pass marker then lets that commit's run skip the build
 concurrency:
   group: mac-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.actor != 'github-actions[bot]' }}
 
 jobs:
+  # Pass marker (scripts/ci/passes.mjs, pull requests only): a build that passed on this PR with the same files is
+  # skipped. The files: vault/, avenDB, and what their crates read from outside them (include_str!)
+  passes:
+    runs-on: ubuntu-latest
+    outputs:
+      mac: ${{ steps.mac.outputs.cache-hit }}
+      mac_key: ${{ steps.passes.outputs.mac_key }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: passes
+        run: bun scripts/ci/passes.mjs "mac=vault,avendb,src/lib/models/models.json,src/lib/code/packages.json,game/film/grade-tools.json,tests/fixtures,.github/workflows/mac.yml"
+      - id: mac
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: .pass
+          key: ${{ steps.passes.outputs.mac_key }}
+          lookup-only: true
+
   check:
+    needs: passes
+    if: needs.passes.outputs.mac != 'true'
     name: theOS compiles on macOS
     runs-on: macos-15
     timeout-minutes: 60
@@ -74,3 +100,15 @@ jobs:
       - name: Render numerical contracts
         working-directory: vault
         run: cargo test --locked -p vault-render --test maths --test eq --test look --test creative
+
+  # the marker saved on Linux, as it is looked up, so both agree on the cache's archive format
+  passed:
+    needs: [passes, check]
+    if: github.event_name == 'pull_request' && needs.check.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo passed > .pass
+      - uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.passes.outputs.mac_key }}

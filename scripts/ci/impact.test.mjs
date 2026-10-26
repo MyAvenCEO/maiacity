@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { impact } from './impact.mjs';
-import { inventory, selected, partition, matrix } from './test.mjs';
+import { inventory, selected, partition, matrix, keyed } from './test.mjs';
 test('a missing comparison or an unknown build input selects all release checks',()=>{
  expect(Object.values(impact(null)).every(Boolean)).toBe(true);
  expect(Object.values(impact(['unexpected-build-input'])).every(Boolean)).toBe(true);
@@ -52,13 +52,23 @@ test('the actual aggregate rejects missing, skipped and failed required jobs', (
  const expression = workflow.slice(workflow.indexOf('      - name: Require every selected suite')).match(/jq -e '([\s\S]*?)'/)[1];
  const names = ['impact','tests','image','spec','real-browser','protocol','frontend'];
  const results = Object.fromEntries(names.map(name => [name, { result:'success' }]));
- results.impact.outputs = { native:'true', browser:'true', protocol:'true', server:'true' };
+ results.impact.outputs = { native:'true', browser:'true', protocol:'true', server:'true', image:'true' };
  const cases = [{ data:results, expected:true }];
  for (const name of names.filter(n => n !== 'frontend')) {
   for (const result of ['failure','cancelled','skipped']) cases.push({data:{...results,[name]:{...results[name],result}},expected:false});
   const missing = {...results}; delete missing[name]; cases.push({data:missing,expected:false});
  }
  cases.push({data:{...results, frontend:{result:'skipped'}},expected:true});
+ // a job skipped by its pass marker counts as passed; by another's marker, or with a marker that did not pass, it does not
+ const marker = { tests:'tests', image:'image', spec:'spec', 'real-browser':'browser', protocol:'protocol' };
+ for (const [name, key] of Object.entries(marker)) {
+  cases.push({data:{...results,[name]:{result:'skipped'},passes:{result:'success',outputs:{[key]:'true'}}},expected:true});
+  cases.push({data:{...results,[name]:{result:'skipped'},passes:{result:'success',outputs:{[key]:'false'}}},expected:false});
+  cases.push({data:{...results,[name]:{result:'skipped'},passes:{result:'success',outputs:{[key==='tests'?'spec':'tests']:'true'}}},expected:false});
+ }
+ cases.push({data:{...results,tests:{result:'skipped'},passes:{result:'failure',outputs:{tests:'true'}}},expected:false});
+ // the server's image is expected only when its build inputs changed
+ cases.push({data:{...results,image:{result:'skipped'},impact:{...results.impact,outputs:{...results.impact.outputs,image:'false'}}},expected:true});
  const run = spawnSync('jq', ['-c',expression], { input:cases.map(c=>JSON.stringify(c.data)).join('\n'), encoding:'utf8', env:{ ...process.env, PR:'true', DRAFT:'false', FRONTEND:'false', BROWSER_ONLY:'false', BROWSER:'false', PROTOCOL:'false' } });
  expect(run.status).toBe(0);
  expect(run.stdout.trim().split('\n').map(JSON.parse)).toEqual(cases.map(c=>c.expected));
@@ -121,12 +131,12 @@ test('physics shards cover each owned file exactly once and reject invalid selec
  const files=inventory().physics;
  const jobs=matrix(['security','ci','physics','assets']);
  const pieces=jobs.filter(j=>j.suite==='physics').map(j=>partition(files,j.shard));
- expect(pieces).toHaveLength(4);
+ expect(pieces).toHaveLength(5);
  expect(pieces.every(p=>p.length>0)).toBe(true);
  expect(pieces.flat().sort()).toEqual([...files].sort());
  expect(new Set(pieces.flat()).size).toBe(files.length);
  expect(jobs.filter(j=>j.suite!=='physics')).toEqual([{suite:'assets',shard:'',label:'assets'}]);
- for (const shard of ['0/4','5/4','1/0','1/999','oops']) expect(()=>partition(files,shard)).toThrow();
+ for (const shard of ['0/5','6/5','1/0','1/999','oops']) expect(()=>partition(files,shard)).toThrow();
 });
 
 test('JavaScript worker and carrier changes require real browser validation without native publishing', () => {
@@ -135,4 +145,50 @@ test('JavaScript worker and carrier changes require real browser validation with
   expect(next.site && next.avendb && next.browser).toBe(true);
   expect(next.server || next.agent || next.native).toBe(false);
  }
+});
+
+test('shards are packed by measured time: the longest files first, each to the least loaded shard', () => {
+ const files=['a','b','c','d','e'], times={a:10,b:9,c:5,d:4,e:1};
+ const pieces=['1/2','2/2'].map(shard=>partition(files,shard,times));
+ expect(pieces).toEqual([['a','d','e'],['b','c']]);
+ // an unmeasured file counts as the median, and the same files always land the same way
+ expect(partition([...files,'new'],'1/2',times)).toEqual(partition([...files,'new'],'1/2',times));
+ expect(partition([...files,'new'],'1/2',times).concat(partition([...files,'new'],'2/2',times)).sort()).toEqual([...files,'new'].sort());
+});
+
+import { hash } from './passes.mjs';
+test('a pass marker follows its files: the WebAssembly CI commits leaves the native keys alone', () => {
+ expect(hash(['avendb'])).toBe(hash(['avendb']));
+ expect(hash(['avendb'])).not.toBe(hash(['avendb/spec']));
+ expect(hash(['src/lib/avendb','!src/lib/avendb/device'])).not.toBe(hash(['src/lib/avendb']));
+ const keys=keyed(matrix(['physics','assets']));
+ expect(new Set(keys.map(k=>k.key)).size).toBe(keys.length);
+ expect(keys.every(k=>/^pass-app-[a-z]+-(all|\d+of\d+)-[0-9a-f]{40}$/.test(k.key))).toBe(true);
+});
+
+test('a workflow edit selects what that workflow checks; a release workflow or an unknown one selects everything', () => {
+ const on=f=>Object.entries(impact([f])).filter(([,v])=>v).map(([k])=>k).sort();
+ expect(on('.github/workflows/mac.yml')).toEqual(['mac']);
+ expect(on('.github/workflows/uptime.yml')).toEqual([]);
+ expect(on('.github/workflows/avendb-checks.yml')).toEqual(['avendb','browser','image','native','protocol']);
+ for (const f of ['.github/workflows/main.yml','.github/workflows/deploy.yml','.github/workflows/new.yml','.github/actions/prod-ssh/action.yml'])
+  expect(Object.values(impact([f])).every(Boolean)).toBe(true);
+ expect(selected(['.github/workflows/mac.yml'])).toEqual(['security','ci']);
+ expect(selected(['.github/workflows/kernel.yml'])).toContain('physics');
+});
+
+test('the server image builds on a PR only when its build reads something new', () => {
+ for (const f of ['avendb/Dockerfile.server','avendb/Cargo.lock','avendb/crates/avendb-net/Cargo.toml','avendb/vendor/iroh/src/lib.rs','avendb/.dockerignore'])
+  expect(impact([f]).image).toBe(true);
+ for (const f of ['avendb/crates/avendb-server/src/main.rs','avendb/crates/avendb/tests/properties.rs','avendb/spec/AvenDB/Wire.lean'])
+  expect(impact([f]).image).toBe(false);
+});
+
+test('each Playwright image is the Playwright its job drives', () => {
+ const version=JSON.parse(readFileSync('package.json','utf8')).devDependencies?.playwright ?? JSON.parse(readFileSync('package.json','utf8')).dependencies.playwright;
+ const kernel=readFileSync('.github/workflows/kernel.yml','utf8');
+ const jobs=kernel.split(/\n  (?=[a-z-]+:\n)/);
+ for (const name of ['probes','probes-webkit']) expect(jobs.find(j=>j.startsWith(name+':'))).toContain(`mcr.microsoft.com/playwright:v${version}-noble`);
+ const opfs=jobs.find(j=>j.startsWith('opfs-webkit:'));
+ expect(opfs).toContain(`playwright:v${opfs.match(/playwright@(\d+\.\d+\.\d+)/)[1]}-noble`);
 });
