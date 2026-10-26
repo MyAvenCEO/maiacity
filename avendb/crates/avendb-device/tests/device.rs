@@ -915,6 +915,20 @@ async fn reads(h: &mut Harness, entry: &Value) -> (String, bool) {
     read
 }
 
+/// Device `app` grants agent `name`'s request from device `device`, once the agent is up to cosign its join: an agent's
+/// request shows before its harness's process hosts its session, and a grant before then says the agent isn't running.
+async fn grant(app: &mut App, name: &str, device: &Value) -> Result<Value, String> {
+    let mut granted = Err(String::new());
+    for _ in 0..100 {
+        granted = app.call("grant", json!([name, device, []])).await;
+        if !granted.as_ref().is_err_and(|e| e.contains("isn't running")) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    granted
+}
+
 /// What harness `h` answers reading a file back (`avendb_read_file`) with `args`, once the file's entry reached it: its
 /// text, and whether it is an error.
 async fn reads_file(h: &mut Harness, args: Value) -> (String, bool) {
@@ -1044,7 +1058,7 @@ async fn harnesses_ask_for_access_and_join_her_coops_aven_as_its_devices_with_it
         "as": mine });
     run(&mut app, editor).await.expect("avenEVE an Editor of her vault");
     // one sheet: agentClaude's key joins avenEVE as a device; no vault of its own, no share of its own
-    let granted = app.call("grant", json!(["agentClaude", device, []])).await.expect("granted");
+    let granted = grant(&mut app, "agentClaude", &device).await.expect("granted");
     assert_eq!((&granted["aven"], &granted["vault"]), (&aven, &aven), "it acts as the aven itself");
     assert_eq!(app.asked(), ["approve"], "one sheet for agentClaude");
     let world = world_of(&mut app).await;
@@ -1071,7 +1085,7 @@ async fn harnesses_ask_for_access_and_join_her_coops_aven_as_its_devices_with_it
     let mut codex = Harness::start(&dir, "codex");
     let asked = requests(&mut app, 1).await;
     assert_eq!(asked[0]["name"], "agentCodex", "{asked}");
-    let joined = app.call("grant", json!(["agentCodex", asked[0]["device"], []])).await.expect("joined");
+    let joined = grant(&mut app, "agentCodex", &asked[0]["device"]).await.expect("joined");
     assert_eq!(joined["aven"], aven, "the same aven");
     assert_eq!(app.asked(), ["approve"], "one sheet");
     let read = reads(&mut codex, &entry).await;
@@ -1111,7 +1125,7 @@ async fn the_same_harness_on_her_other_mac_joins_her_coops_aven_as_a_device_too(
     let mut claude = Harness::start(&dir, agent::CLAUDE);
     let asked = requests(&mut app, 1).await;
     let first = asked[0]["device"].clone();
-    let granted = app.call("grant", json!(["agentClaude", first, []])).await.expect("granted");
+    let granted = grant(&mut app, "agentClaude", &first).await.expect("granted");
     assert_eq!((&granted["aven"], &granted["vault"]), (&aven, &aven));
     assert_eq!(app.asked(), ["approve"]);
     // her other Mac, linked through this one, holds her coop's aven, agentClaude its device, and the share it holds
@@ -1135,7 +1149,7 @@ async fn the_same_harness_on_her_other_mac_joins_her_coops_aven_as_a_device_too(
     let asked = requests(&mut other, 1).await;
     let second = asked[0]["device"].clone();
     assert_ne!(second, first, "a device of its own");
-    let joined = other.call("grant", json!(["agentClaude", second, []])).await.expect("joined");
+    let joined = grant(&mut other, "agentClaude", &second).await.expect("joined");
     assert_eq!((&joined["aven"], &joined["vault"]), (&aven, &aven), "the same aven");
     assert_eq!(other.asked(), ["approve"], "one sheet");
     let both = |v: &Value| v["devices"].as_array().is_some_and(|d| d.len() == 2);
@@ -1161,7 +1175,7 @@ async fn the_same_harness_on_her_other_mac_joins_her_coops_aven_as_a_device_too(
     // sheet, as its key is the aven's already
     revoke(&mut app, &viewer, &mine).await;
     give(&mut app, &mine, &aven, "Editor", &mine).await;
-    let more = app.call("grant", json!(["agentClaude", first, []])).await.expect("granted");
+    let more = grant(&mut app, "agentClaude", &first).await.expect("granted");
     assert_eq!((&more["aven"], &more["vault"]), (&aven, &aven));
     assert!(app.asked().is_empty(), "no sheet");
     let answer = json!({ "op": "set", "entry": record["entry"], "path": ["answer"], "value": "granted", "as": coop });
@@ -1221,7 +1235,7 @@ async fn every_session_of_a_harness_is_her_macs_session_of_its_one_key_approved_
     assert_eq!(devices, [&device, &device], "both hosted, as one key: {hosted}");
     assert!(!agent::agents(&dir).join("agentClaude.sock").exists(), "no device of its own answers on a socket");
     // approved while both run: its key signs its join over a session, and both act as the aven at once
-    let granted = app.call("grant", json!(["agentClaude", device, []])).await.expect("granted");
+    let granted = grant(&mut app, "agentClaude", &device).await.expect("granted");
     assert_eq!(granted["vault"], aven, "a device of the aven");
     assert_eq!(app.asked(), ["approve"], "one sheet");
     for h in [&mut first, &mut second] {
@@ -1319,7 +1333,7 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     assert_eq!(change.expect("avendb_run")["inputSchema"]["properties"]["path"]["type"], "string");
     let asked = requests(&mut app, 1).await;
     let claude_device = asked[0]["device"].clone();
-    app.call("grant", json!(["agentClaude", claude_device, []])).await.expect("granted");
+    grant(&mut app, "agentClaude", &claude_device).await.expect("granted");
     assert_eq!(app.asked(), ["approve"], "one sheet");
     let read = reads(&mut claude, &note).await;
     assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentClaude reads her note: {read:?}");
@@ -1454,7 +1468,7 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     let mut cursor = Harness::start(&dir, "cursor");
     let asked = requests(&mut app, 1).await;
     assert_eq!(asked[0]["name"], "agentCursor", "{asked}");
-    app.call("grant", json!(["agentCursor", asked[0]["device"], []])).await.expect("granted");
+    grant(&mut app, "agentCursor", &asked[0]["device"]).await.expect("granted");
     assert_eq!(app.asked(), ["approve"], "one sheet");
     let read = reads(&mut cursor, &note).await;
     assert!(!read.1 && read.0.contains("Tomatoes in March."), "agentCursor reads her note: {read:?}");
@@ -1526,7 +1540,7 @@ async fn an_agent_adds_a_spark_to_her_coop_and_her_mac_reads_it() {
     let (coop, aven) = coop_and_aven(&mut app).await;
     let editor = give(&mut app, &coop, &aven, "Editor", &coop).await;
     let asked = requests(&mut app, 1).await;
-    let granted = app.call("grant", json!(["agentClaude", asked[0]["device"], []])).await;
+    let granted = grant(&mut app, "agentClaude", &asked[0]["device"]).await;
     assert_eq!(granted.expect("granted")["aven"], aven);
     assert_eq!(app.asked(), ["approve"], "one sheet");
     // a thought, as the page captures one: no vault named, so into the coop that owns its aven, once its share
@@ -1569,20 +1583,20 @@ async fn an_agent_adds_a_spark_to_her_coop_and_her_mac_reads_it() {
     assert!(error && no.starts_with("a spark has no \"url\"") && no.contains("as an artifact"), "{no}");
     let (no, error) = claude.tool("avendb_add_spark", json!({ "title": "No words" })).await;
     assert!(error && no.contains("text"), "{no}");
-    // her coop makes the aven a Viewer of it in place of an Editor: agentCodex, joining the same aven, reads her spark
-    // and may add one nowhere, and says so
+    // her coop makes the aven a Viewer of it in place of an Editor: a second agent, joining the same aven, reads her
+    // spark and may add one nowhere, and says so
     revoke(&mut app, &editor, &coop).await;
     give(&mut app, &coop, &aven, "Viewer", &coop).await;
-    let mut codex = Harness::start(&dir, "codex");
+    let mut viewer = Harness::start(&dir, "viewer");
     let asked = requests(&mut app, 1).await;
-    app.call("grant", json!(["agentCodex", asked[0]["device"], []])).await.expect("granted");
+    grant(&mut app, "agentViewer", &asked[0]["device"]).await.expect("granted");
     assert_eq!(app.asked(), ["approve"], "one sheet");
-    let read = reads(&mut codex, &entry).await;
-    assert!(!read.1 && read.0.contains("Pinch out the side shoots."), "agentCodex reads her spark: {read:?}");
-    let (no, error) = codex.tool("avendb_add_spark", json!({ "text": "Beans in May." })).await;
+    let read = reads(&mut viewer, &entry).await;
+    assert!(!read.1 && read.0.contains("Pinch out the side shoots."), "a second agent reads her spark: {read:?}");
+    let (no, error) = viewer.tool("avendb_add_spark", json!({ "text": "Beans in May." })).await;
     assert!(error && no.contains("may add no spark to") && no.contains(coop_id), "{no}");
     assert!(no.contains("avendb_request_access"), "{no}");
-    codex.quit().await;
+    viewer.quit().await;
     claude.quit().await;
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
@@ -1614,7 +1628,7 @@ async fn an_agent_adds_artifacts_by_link_and_by_file_and_puts_them_on_a_spark() 
     let (coop, aven) = coop_and_aven(&mut app).await;
     let editor = give(&mut app, &coop, &aven, "Editor", &coop).await;
     let asked = requests(&mut app, 1).await;
-    app.call("grant", json!(["agentClaude", asked[0]["device"], []])).await.expect("granted");
+    grant(&mut app, "agentClaude", &asked[0]["device"]).await.expect("granted");
     assert_eq!(app.asked(), ["approve"], "one sheet");
     // a spark to put them on, in her coop, once its share reaches it
     let made = once_it_may(&mut claude, "avendb_add_spark", json!({ "text": "Morning light" })).await;
@@ -1688,25 +1702,25 @@ async fn an_agent_adds_artifacts_by_link_and_by_file_and_puts_them_on_a_spark() 
     assert!(error && no.starts_with("an artifact has no \"text\""), "{no}");
     let (no, error) = claude.tool("avendb_add_artifact", json!({ "path": "Sunrise.jpg" })).await;
     assert!(error && no.contains("isn't an absolute path"), "{no}");
-    // her coop makes the aven a Viewer of it in place of an Editor: agentCodex, joining the same aven, may add an
+    // her coop makes the aven a Viewer of it in place of an Editor: a second agent, joining the same aven, may add an
     // artifact nowhere, and saves no file before it says so
     revoke(&mut app, &editor, &coop).await;
     give(&mut app, &coop, &aven, "Viewer", &coop).await;
-    let mut codex = Harness::start(&dir, "codex");
+    let mut viewer = Harness::start(&dir, "viewer");
     let asked = requests(&mut app, 1).await;
-    app.call("grant", json!(["agentCodex", asked[0]["device"], []])).await.expect("granted");
+    grant(&mut app, "agentViewer", &asked[0]["device"]).await.expect("granted");
     assert_eq!(app.asked(), ["approve"], "one sheet");
-    let read = reads(&mut codex, &spark).await;
-    assert!(!read.1, "agentCodex reads her spark: {read:?}");
+    let read = reads(&mut viewer, &spark).await;
+    assert!(!read.1, "a second agent reads her spark: {read:?}");
     let files = |w: &Value| w["entries"].as_array().map_or(0, |e| e.iter().filter(|e| e["kind"] == "file").count());
     let before = files(&world_of(&mut app).await);
-    let (no, error) = codex.tool("avendb_add_artifact", json!({ "path": path.to_string_lossy() })).await;
+    let (no, error) = viewer.tool("avendb_add_artifact", json!({ "path": path.to_string_lossy() })).await;
     let coop_id = coop.as_str().expect("her coop's id");
     assert!(error && no.contains("may add no artifact and its file to") && no.contains(coop_id), "{no}");
     assert!(no.contains("avendb_request_access"), "{no}");
     tokio::time::sleep(Duration::from_secs(1)).await;
     assert_eq!(files(&world_of(&mut app).await), before, "no file saved");
-    codex.quit().await;
+    viewer.quit().await;
     claude.quit().await;
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
@@ -1759,7 +1773,7 @@ async fn a_suggester_agent_drafts_sparks_and_artifacts_in_her_maia_city_which_la
     // agentClaude joins avenMAIA as a device, beside its server, with its rights
     let mut claude = Harness::start(&dir, agent::CLAUDE);
     let asked = requests(&mut app, 1).await;
-    let granted = app.call("grant", json!(["agentClaude", asked[0]["device"], []])).await.expect("granted");
+    let granted = grant(&mut app, "agentClaude", &asked[0]["device"]).await.expect("granted");
     assert_eq!((&granted["aven"], &granted["vault"]), (&maia, &maia), "it acts as avenMAIA");
     assert_eq!(app.asked(), ["approve"], "one sheet");
     // a thought, no vault named: into her Maia City, once its share reaches it, as a draft, which is all it may do
@@ -2380,7 +2394,7 @@ async fn an_approved_agent_works_as_a_session_of_the_macs_device_by_its_own_key(
     let editor = json!({ "op": "share", "over": mine, "who": { "vault": aven }, "level": "Editor", "what": "everything",
         "as": mine });
     run(&mut app, editor).await.expect("avenEVE an Editor of her vault");
-    app.call("grant", json!(["agentClaude", device, []])).await.expect("granted");
+    grant(&mut app, "agentClaude", &device).await.expect("granted");
     claude.quit().await;
     let own = agent::agents(&dir).join("agentClaude.sock");
     std::fs::remove_file(&own).ok();
