@@ -141,12 +141,8 @@ impl Shared {
         st.kept.get(&device).map(|k| (*k.statement).clone())
     }
 
-    /// Of each device it keeps a statement of, but those connected to it now, what the newest states and when its device
-    /// checked: what Synced to lists them by.
-    pub(crate) fn stated(&self) -> BTreeMap<SignerId, (Holdings, u64)> {
-        self.stated_map(Clone::clone)
-    }
-
+    /// Of each device it keeps a statement of, but those connected to it now, what `select` keeps of the newest it states
+    /// and when its device checked: what Synced to lists them by.
     pub(crate) fn stated_map(&self, select: impl Fn(&Holdings) -> Holdings) -> BTreeMap<SignerId, (Holdings, u64)> {
         let live: HashSet<SignerId> = {
             let peers = self.peers.lock().expect("peers");

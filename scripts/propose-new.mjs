@@ -3,7 +3,8 @@
 // (Samuel 2026-10-19: every change to vault data goes to him as a proposal). Each asset is drafted as its recipe entry
 // (`create` with `draft: true`, the record, tags and file the seed would write: src/lib/avendb/seed.js `versionOf`), so
 // it shows nowhere on the vault's main line until an owner accepts the AIP in the Proposals app (/app/aips/); then it
-// carries its `ref:` tag, and the seed's top-up finds it held and writes nothing. Accept the AIP before the PR that
+// carries its `ref:` tag, and the seed's top-up finds it held and writes nothing. The AIP opens with its objective (Maia
+// City holds each new asset), measured before it and with its drafts. Accept the AIP before the PR that
 // adds the assets merges, or the seed's top-up writes them itself. An asset the vault holds already, or one whose repo
 // history is more than one version with one recipe, is refused (a newer version goes in by scripts/propose-version.mjs).
 // Without --run it only says what it would do.
@@ -16,7 +17,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { createServer } from 'vite';
 
@@ -48,11 +49,19 @@ function device() {
 	throw new Error('no agent device: give --device <theOS app’s maiacity-studio>, or add it to Claude Code (claude mcp add --scope user avendb -- <maiacity-studio> agent claude)');
 }
 
-/** an MCP session with the agent on its stdio: `call(tool, args)` answers its tool's text, read as JSON */
-function session({ command, args: argv }) {
-	const child = spawn(command, argv, { stdio: ['pipe', 'pipe', 'inherit'] });
+/** How long the agent stays open after its last write: it tells the server of its edits as it makes them, and the
+ *  server takes them in its own time, so an agent closed at once can keep them to itself (AIP-37 stayed on the cloud
+ *  agent until it was opened again) */
+const HAND_OVER = 60_000;
+
+/** an MCP session with the agent on its stdio: `call(tool, args)` answers its tool's text, read as JSON. It reads
+ *  files only in its workspace (avendb-device agent.rs `roots`): this folder and `files`, where the recipes are written */
+function session({ command, args: argv }, /** @type {string} */ files) {
+	const env = { ...process.env, AVENDB_AGENT_ROOTS: [process.cwd(), files].join(delimiter) };
+	const child = spawn(command, argv, { stdio: ['pipe', 'pipe', 'inherit'], env });
 	const waiting = new Map();
 	let n = 0;
+	let wrote = false;
 	createInterface({ input: child.stdout }).on('line', (line) => {
 		let msg;
 		try {
@@ -83,6 +92,7 @@ function session({ command, args: argv }) {
 		},
 		/** @param {string} name @param {any} a */
 		async call(name, a) {
+			if (name === 'avendb_run') wrote = true;
 			for (let i = 0; ; i++) {
 				const r = /** @type {any} */ (await send('tools/call', { name, arguments: a }));
 				const text = (r?.content ?? []).map((/** @type {any} */ c) => c.text ?? '').join('');
@@ -104,7 +114,13 @@ function session({ command, args: argv }) {
 				throw new Error(`${name} ${a.op?.op ?? ''}: ${text.slice(0, 600)}`);
 			}
 		},
-		close: () => child.stdin.end()
+		async close() {
+			if (wrote) {
+				console.error(`Keeping the agent open ${HAND_OVER / 1000} s, for the server to take its edits`);
+				await new Promise((ok) => setTimeout(ok, HAND_OVER));
+			}
+			child.stdin.end();
+		}
 	};
 }
 
@@ -136,7 +152,7 @@ if (!flag('--run')) {
 	process.exit(0);
 }
 
-const agent = session(device());
+const agent = session(device(), dir);
 try {
 	await agent.open();
 	const me = await agent.call('avendb_vaults', {});
@@ -157,7 +173,20 @@ try {
 		option('--note') ?? '',
 		made.map((m) => `${m.label}: recipe ${m.value.card.recipe}, ${m.value.card.triangles?.toLocaleString?.('en') ?? '?'} triangles, made for box engine ${m.value.card.engine}.`).join('\n')
 	].filter(Boolean).join('\n\n');
-	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals } });
+	// its objective: Maia City holds each new asset, measured before the AIP (none of them) and with its drafts (all)
+	const objective = [
+		'import AvenDB.Objective',
+		'open AvenDB.Objective',
+		'',
+		`/-- Maia City holds each new asset of this AIP as its recipe entry: ${made.map((m) => m.label).join(', ')}. -/`,
+		`def held : Metric := metric "New assets held in Maia City" (equals (reading "assets") ${made.length})`,
+		'',
+		'def objective : List Metric := [held]',
+		''
+	].join('\n');
+	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals, objective } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'assets', value: 0, note: 'Maia City before this AIP' } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'assets', value: made.length, note: 'with the drafts of this AIP, each its recipe entry and file' } });
 	let promoted = null;
 	try {
 		promoted = await agent.call('avendb_run', { op: { op: 'aip_promote', entry: aip.entry } });
@@ -167,5 +196,5 @@ try {
 	console.log(JSON.stringify({ vault: city.id, aip, promoted, proposals }, null, 2));
 	console.error(`Opened. An owner accepts it in the Proposals app: /app/aips/?aip=${aip.entry}`);
 } finally {
-	agent.close();
+	await agent.close();
 }

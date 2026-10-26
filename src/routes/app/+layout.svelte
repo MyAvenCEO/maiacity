@@ -21,6 +21,7 @@
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import Diagnostics from '$lib/app/Diagnostics.svelte';
+	import ScreenChrome from '$lib/app/ScreenChrome.svelte';
 	import { lifecycle, noteLifecycle } from '$lib/avendb/lifecycle.js';
 	import { pillVaults, seeded } from '$lib/avendb/vaults.js';
 	import { remember } from '$lib/app/session';
@@ -334,6 +335,7 @@
 	{#if phase !== 'ready'}<title>{session.phase === 'new' ? 'Sign in' : 'Unlock'} · maiaCITY</title>{:else if closed}<title>Not open to you yet · maiaCITY</title>{/if}
 </svelte:head>
 
+<ScreenChrome nativeWindow={native()} title={game?.label ?? 'Maia City'} />
 <Diagnostics />
 
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
@@ -381,7 +383,7 @@
 	{:else}
 		{#if invited}<p class="invite-note" use:foot={FOOT.toast} role="status">{invited} <button class="quiet later" onclick={() => (invited = '')}>OK</button></p>
 {/if}
-		<div class="app" class:immersive>
+		<div class="app screen-content" class:immersive>
 			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>
 		</div>
 	{/if}
@@ -516,7 +518,7 @@
 	}
 
 	.app:not(.immersive) {
-		padding-top: env(safe-area-inset-top, 0px);
+		padding-top: var(--screen-head-room);
 		padding-bottom: calc(var(--nav-room) + 1.5rem);
 	}
 </style>

@@ -82,6 +82,29 @@ export const MANIFEST_V2 = JSON.stringify({
  * @typedef {{run: (op: Record<string, unknown>) => Promise<any>}} ManifestDevice
  */
 
+/** The title of v1, the schema the lens joins to v2. */
+export const MANIFEST_V1_SCHEMA = 'Manifest, v1';
+/** The title of the lens from v1 to v2. */
+export const MANIFEST_LENS = 'Manifest, v1 to v2';
+
+/**
+ * The lens from v1 (schema id `from`) to v2 (`to`), so the vault's manifests are one schema in two versions, as a
+ * story's are: v1 gains slots, and its priority and parts give way to v and tiers, both written by the one write that
+ * moves a manifest to v2 (a v1 one opens in v2 with empty tiers, and in v1 a moved one with no parts). The parts carry
+ * over by that write, not by the lens: a lens maps fields, and a list of parts into four tiers is no field's map.
+ * @param {string} from @param {string} to
+ */
+export const manifestLens = (from, to) => JSON.stringify({
+	lens: MANIFEST_LENS,
+	from,
+	to,
+	steps: [
+		{ add: 'slots' },
+		{ convert: { from: ['priority', 'parts'], to: ['v', 'tiers'],
+			forward: [[{}, { v: 2, tiers: { now: [], next: [], later: [], idle: [] } }]], backward: [[{}, { parts: [] }]] } }
+	]
+});
+
 /** Route `route` covers path `path`: the same path, a path under a route ending in `*`, or any path for `*`. */
 /** @param {string} route @param {string} path */
 export const covers = (route, path) =>

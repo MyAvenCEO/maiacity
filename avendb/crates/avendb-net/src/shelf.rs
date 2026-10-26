@@ -277,14 +277,6 @@ impl Shelf {
         self.atomic
     }
 
-    /// Reserved for backend implementations that satisfy the atomic publication
-    /// contract. The disk backend uses fsynced staging plus an atomic hard link.
-    #[cfg(test)]
-    pub(crate) fn with_atomic_put(mut self) -> Self {
-        self.atomic = true;
-        self
-    }
-
     /// Backends install this only when the limit applies before allocating/reading
     /// an entire named object. Unsupported backends never fall back to an unbounded Get.
     pub(crate) fn with_bounded_get<F, Fut>(mut self, read: F) -> Self
@@ -294,9 +286,6 @@ impl Shelf {
     {
         self.bounded = Some(BoundedReader(Arc::new(move |name, limit| Box::pin(read(name, limit)))));
         self
-    }
-    pub(crate) fn bounded_reads(&self) -> bool {
-        self.bounded.is_some()
     }
 
     /// Read a named object with a backend-enforced byte limit. Oversized input is

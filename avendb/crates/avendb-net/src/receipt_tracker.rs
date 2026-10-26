@@ -79,9 +79,6 @@ impl Tracker {
     pub fn cancel(&mut self, nonce: Id) {
         self.pending.retain(|p| p.nonce != nonce);
     }
-    pub fn disconnect(&mut self, connection: usize) {
-        self.pending.retain(|p| p.connection != connection);
-    }
     pub fn expire(&mut self, now_ms: u64) {
         self.pending
             .retain(|p| now_ms >= p.began_ms && now_ms - p.began_ms < AGE_MS);
@@ -124,7 +121,7 @@ mod tests {
         assert!(!t.begin(id(99), id(2), 3, id(4), 0));
         assert!(!t.begin(id(1), id(2), 3, id(4), 0));
         t.cancel(id(1));
-        t.disconnect(2);
+        t.cancel(id(2));
         assert_eq!(t.pending.len(), LIMIT - 2);
         assert!(!t.complete(id(0), id(2), 0, id(4), Outcome::Standing, AGE_MS));
         assert!(t.pending.is_empty());

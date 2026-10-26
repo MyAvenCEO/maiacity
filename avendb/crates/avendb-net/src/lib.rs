@@ -131,7 +131,6 @@ pub mod kx;
 mod lifecycle;
 mod lab_schedule;
 mod limits;
-pub mod paged_views;
 mod progress;
 mod proofs;
 mod peer_receipts;
@@ -2150,11 +2149,6 @@ impl<K: Hash + Eq + Copy> Backoff<K> {
     /// It is time to try `k`: it never failed, or its wait is over.
     fn due(&self, k: &K) -> bool {
         self.0.get(k).is_none_or(|&(at, _)| Instant::now() >= at)
-    }
-
-    /// The peers out of reach whose wait is over.
-    fn ready(&self) -> Vec<K> {
-        self.0.iter().filter(|(_, (at, _))| Instant::now() >= *at).map(|(k, _)| *k).collect()
     }
 }
 

@@ -68,7 +68,6 @@ pub mod lens;
 pub mod merge;
 pub mod objective;
 pub mod ops;
-pub mod paged_view;
 pub mod perf;
 pub mod policy;
 pub mod provenance;

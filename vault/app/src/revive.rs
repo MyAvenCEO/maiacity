@@ -36,6 +36,10 @@ static SEEN: LazyLock<Mutex<Seen>> = LazyLock::new(Default::default);
 
 /// A page a webview finished loading: the first is the one it falls back to.
 pub fn loaded(webview: &Webview, payload: &PageLoadPayload<'_>) {
+    // a page starting to load: the one before it is gone, and so are its views (avendb.rs `page_left`)
+    if payload.event() == PageLoadEvent::Started {
+        crate::avendb::page_left(webview);
+    }
     if payload.event() == PageLoadEvent::Finished && payload.url().scheme() != "about" {
         SEEN.lock().unwrap().first.entry(webview.label().to_string()).or_insert_with(|| payload.url().clone());
     }

@@ -549,6 +549,11 @@ impl ShelfKey {
 /// The engine's own hash, of its sources (`build.rs`): what a device worked out with another engine it works out again.
 const ENGINE: &str = env!("AVENDB_ENGINE");
 
+/// The engine's hash as a fixed-size binding, for what a device seals to the engine that made it.
+pub fn engine() -> [u8; 32] {
+    crate::hash::content(ENGINE.as_bytes())
+}
+
 /// The key a person's devices hand each other what they worked out with (`Lab::handing`, `Lab::start_handed`, M6):
 /// derived from their passkey's seal key (`Passkey::seal_secret`), which a device derives from the PRF output of its
 /// passkey's ceremony, so only a device that holds the passkey makes or opens what it locks. That passkey already signs
