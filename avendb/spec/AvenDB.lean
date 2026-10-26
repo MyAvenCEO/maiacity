@@ -97,7 +97,6 @@ import AvenDB.PeerReceipt
 import AvenDB.LabScheduling
 import AvenDB.EntryBaseFormat
 
-import AvenDB.BaseSuffix
 
 import AvenDB.BaseAdmission
 
