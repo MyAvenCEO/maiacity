@@ -1,4 +1,4 @@
-//! The gate of A1, AIPs for every vault (`docs/ARCHITECTURE.md` §8, "AIPs"; the AIP plan's milestone A1): a vault
+//! The gate of A1, AIPs for every vault (`doc:docs/avendb` §8, "AIPs"; the AIP plan's milestone A1): a vault
 //! holds an AIP whose diff is derived from its lines, never typed. Everything goes through the ops engine
 //! (`engine::run`), as the page and an aven send ops: Alice's aven, an Editor of her notes, logic and AIPs, proposes
 //! changes to entries of two types, opens one AIP over both lines and promotes it to AIP-1; `aip` derives what each

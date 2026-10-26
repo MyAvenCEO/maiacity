@@ -1,4 +1,4 @@
-//! The server's backups (`docs/BACKUP.md`, `avendb_net::backup`): every day at the time its environment says
+//! The server's backups (`doc:docs/avendb`, `avendb_net::backup`): every day at the time its environment says
 //! (`SnapshotsConfig::at`), and whenever it is told to (SIGUSR1, `Backups::now`), it takes a snapshot of every vault
 //! it knows into the bucket of snapshots, a folder for each, then lets go of what retention drops (`Keep`), and keeps
 //! its device's secret there too; then it checks every folder (`check_all`), restoring nothing: the bucket's listing,

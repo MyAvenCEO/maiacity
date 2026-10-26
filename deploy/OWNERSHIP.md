@@ -28,4 +28,4 @@ These environment writers are intentionally not collapsed: they have different o
 
 ## Validation
 
-`bun test ./deploy/check-avendb.test.js` uses fake SSH/Docker/curl commands, including large-feed and failed-upgrade cases; it makes no network calls. The Kernel workflow runs it. `delivery-checks.yml` continues to test close ownership with model and disposable Docker cases. Live/installed-device acceptance is separately tracked in `docs/AVENDB_RELEASE_ACCEPTANCE.md` and `docs/AVENDB_UPGRADE_PLAN.md`.
+`bun test ./deploy/check-avendb.test.js` uses fake SSH/Docker/curl commands, including large-feed and failed-upgrade cases; it makes no network calls. The Kernel workflow runs it. `delivery-checks.yml` continues to test close ownership with model and disposable Docker cases. Live/installed-device acceptance is checked on the device itself.

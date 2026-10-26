@@ -1,4 +1,4 @@
-//! Writes that fit their schemas (`lens::Lane::fits`, `spec/AvenDB/Schemas.lean`, `docs/ARCHITECTURE.md` §8): every
+//! Writes that fit their schemas (`lens::Lane::fits`, `spec/AvenDB/Schemas.lean`, `doc:docs/avendb` §8): every
 //! reader judges each write by the schemas its entry was written under once it is in, which must be in the vault's lane
 //! or built in and all of one kind, and by what it changed. On random walks of writes over two versions of a schema, a
 //! record that fits keeps fitting through every write that fits, from nothing on (S2), and what a write didn't change,

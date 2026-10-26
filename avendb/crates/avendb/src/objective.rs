@@ -1,4 +1,4 @@
-//! Objectives: what an AIP must deliver, measured (`docs/ARCHITECTURE.md` §8, "AIPs"; the model is
+//! Objectives: what an AIP must deliver, measured (`doc:docs/avendb` §8, "AIPs"; the model is
 //! `spec/AvenDB/Objective.lean`, and `spec/vectors/objectives.json` holds this engine to it).
 //!
 //! An objective is a file of Lean against `AvenDB.Objective`: metrics, each a name and a goal over readings, numbers

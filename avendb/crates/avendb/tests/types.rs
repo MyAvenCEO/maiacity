@@ -1,4 +1,4 @@
-//! Schema types v2 (`lens::Schema`, `docs/ARCHITECTURE.md` §8): numbers with bounds, strings with a length, tuples,
+//! Schema types v2 (`lens::Schema`, `doc:docs/avendb` §8): numbers with bounds, strings with a length, tuples,
 //! bounded lists and objects as one value, nested to any depth, shapes named once in `$defs`; and how an item stores
 //! them (`doc::Item`): a tuple, a bounded list or an object is one value, which two devices editing it at once keep
 //! one of, whole, while an unbounded list of values still merges item by item and a list of records row by row.

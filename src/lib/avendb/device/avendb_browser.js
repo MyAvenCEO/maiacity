@@ -258,7 +258,7 @@ export class Device {
         return ret;
     }
     /**
-     * Runs op `op`, an object of the ops engine's (`Device::run`, `docs/ARCHITECTURE.md` §8): a promise of its
+     * Runs op `op`, an object of the ops engine's (`Device::run`, `doc:docs/avendb` §8): a promise of its
      * answer, `{ok}`, `{refused, why}`, or for a change its vault's owners approve when no `ceremony` is passed,
      * `{approve}`, which makes nothing. `ceremony(challenge, step)` is the passkey's, for such a change, as a start
      * takes it. `read(at, n)` hands over the bytes of a `put_file`'s file, or of the file a `create` brings (its

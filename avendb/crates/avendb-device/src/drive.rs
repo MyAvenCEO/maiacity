@@ -1,4 +1,4 @@
-//! A drive's own device (`docs/ARCHITECTURE.md` §3, "A drive's own device"): each external drive the person uses for
+//! A drive's own device (`doc:docs/avendb` §3, "A drive's own device"): each external drive the person uses for
 //! avenDB is a device of their own vault, as a phone is, on the same sync, shares, copy setting and holdings as every
 //! other. Nothing in sync knows it is a drive: it is one more node.
 //!

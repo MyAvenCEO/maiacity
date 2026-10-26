@@ -1,4 +1,4 @@
-//! A node's bucket (`docs/ARCHITECTURE.md` §14): the server's shelf (`shelf`), an S3 bucket, where
+//! A node's bucket (`doc:docs/avendb` §14): the server's shelf (`shelf`), an S3 bucket, where
 //! it keeps what lasts, its folder only a cache of it, which it may lose. Every object is sealed under a key the server
 //! is given (`Sealed`), as the bucket's TLS isn't post-quantum, and bound to its name, so an object read back under
 //! another name doesn't open. The bucket holds a shelf for each generation (`shelf::generation`), each under a prefix

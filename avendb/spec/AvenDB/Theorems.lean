@@ -196,7 +196,7 @@ theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs
 
 /-! ## Shares that name ops
 
-C1 to C4 (`avendb/docs/ARCHITECTURE.md` §8): a share is a name and the ops its grantee may make, its level the class of
+C1 to C4 (`doc:docs/avendb` §8): a share is a name and the ops its grantee may make, its level the class of
 its strongest op, and every reader of an entry counts a write by anyone but the entry's vault only where the share the
 write's proof names reaches the entry and every share of its chain is the class of its ops and allows what the write
 touches. A share that names a cap group (CG1) carries no ops of its own: it grants, on an entry, the op of each cap of
@@ -432,7 +432,7 @@ theorem D3_drafts_not_public {st : State} (hr : Reachable st) {en : Entry}
 
 /-! ## Writes that fit their schemas
 
-S1 to S4 (`avendb/docs/ARCHITECTURE.md` §8): every reader of an entry counts a write only where what it makes of the
+S1 to S4 (`doc:docs/avendb` §8): every reader of an entry counts a write only where what it makes of the
 record fits the schemas the entry was written under, so every device keeps the last record that fit, whatever a patched
 app writes. S1 and S2, about records, are proven in `Schemas.lean`. -/
 

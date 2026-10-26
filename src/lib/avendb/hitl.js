@@ -1,7 +1,7 @@
 /*
  * The HITL queue (human in the loop): every AIP waiting for a person's yes, as cards (./Hitl.svelte). AIPs, Aven
  * Improvement Proposals, are avenDB's one proposal standard, for every vault and every type of entry
- * (avendb/docs/ARCHITECTURE.md §8, "AIPs"): an aven, an agent or any vault with a share writes its changes on
+ * (doc:docs/avendb §8, "AIPs"): an aven, an agent or any vault with a share writes its changes on
  * proposals, opens an AIP over those lines (`aip_open`) and promotes it (`aip_promote`), which gives it the vault's
  * next number, AIP-n; the vault the AIP is in answers it, over every line at once. The queue is not stored anywhere:
  * each device reads it off what it already holds with one read, `aips`, so it works offline and an answer on one

@@ -1,7 +1,7 @@
 /*
  * The schemas of studio 2.0's jobs (plan: /mnt/project-files/studio-vs-avendb/jobs-studio-2.0-plan.md, J0b): a rule
  * says what is wanted, a task is one piece of work, a rule applied to pinned inputs. Both are records of the vault the
- * work is about, in that vault's own lane (avendb/docs/ARCHITECTURE.md §9), as the HITL queue's review is
+ * work is about, in that vault's own lane (doc:docs/avendb §9), as the HITL queue's review is
  * (src/lib/avendb/hitl.js): the page adds each the first time the vault needs it, the same bytes in every vault, so
  * the same id everywhere. avenDB may ship them later; the bytes stay, so nothing changes for a vault that has them.
  *

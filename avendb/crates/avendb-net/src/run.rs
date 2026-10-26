@@ -1,4 +1,4 @@
-//! One API (`docs/ARCHITECTURE.md` §8): every read and every change of a device's database, from its page, the Mac app
+//! One API (`doc:docs/avendb` §8): every read and every change of a device's database, from its page, the Mac app
 //! or an agent, is one JSON op of avendb's engine (`avendb::engine`), run on the node (`Node::run`) and answered as
 //! JSON: `{"ok": ...}`, a refusal, or for a change its vault's owners approve with no ceremony at hand,
 //! `{"approve": ...}`. What the engine can't do on a Lab alone, the node does around it: it shows where each entry and

@@ -115,7 +115,7 @@ pub struct Config {
     pub snapshots: Option<SnapshotsConfig>,
 }
 
-/// The server's backups (`backups`, `docs/BACKUP.md`): the bucket of snapshots, with a folder for each vault, when
+/// The server's backups (`backups`, `doc:docs/avendb`): the bucket of snapshots, with a folder for each vault, when
 /// each day it backs up every vault, and how much of it each day's check reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SnapshotsConfig {

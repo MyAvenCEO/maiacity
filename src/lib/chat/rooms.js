@@ -2,7 +2,7 @@
 import { answer } from '../avendb/ops.js';
 import { coverageOf, waitsHere } from '../../../game/code/sources/coverage.js';
 /**
- * Chat rooms on avenDB (avendb/docs/ARCHITECTURE.md §8, "Rooms"; plan /mnt/project-files/chat-rooms/plan.md): a room
+ * Chat rooms on avenDB (doc:docs/avendb §8, "Rooms"; plan /mnt/project-files/chat-rooms/plan.md): a room
  * is an entry of type `room` (Room, v1), a channel, a group, a DM or a note to self; its messages are rows, each with
  * its thread of replies and its reactions. Who may read it is its shares, never a stored list: its members hold
  * Member on that one entry, and the room's header names every vault that reads it, the aven and its server among

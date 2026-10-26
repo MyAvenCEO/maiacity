@@ -1,4 +1,4 @@
-//! Real Lean in theOS (N3, avendb/docs/ARCHITECTURE.md §8, "AIPs"): the pinned Lean release, the version
+//! Real Lean in theOS (N3, doc:docs/avendb §8, "AIPs"): the pinned Lean release, the version
 //! avendb/spec/lean-toolchain names (`VERSION`, `releases`), checks an AIP's objective, a file of Lean against the
 //! spec's own AvenDB.Objective, on the device of whoever measures it, and the page records what it found as their
 //! reading `lean:<key>` (`avendb::objective::verdict_name`): the AIP's Lean verdict (`AvenDB.Measurers.leanVerdict`).

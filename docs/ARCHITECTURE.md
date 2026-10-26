@@ -1,6 +1,6 @@
 # Current architecture and retirement decisions
 
-Reconciled against main on 2026-10-24. This is the current ownership guide, not a replacement for dated evidence or the active avenDB upgrade ledger.
+Reconciled against main on 2026-10-24. This is the current ownership guide, not a replacement for dated evidence. avenDB's design is the vault doc `doc:docs/avendb`.
 
 ## One owner per responsibility
 
@@ -18,9 +18,8 @@ Reconciled against main on 2026-10-24. This is the current ownership guide, not 
 | Material | How to use it |
 | --- | --- |
 | This guide and the three ownership documents linked above | Current source boundaries and compatibility gates |
-| `AVENDB_UPGRADE_PLAN.md` | Active upgrade ledger; its unchecked acceptance work remains open |
-| `AVENDB_RELEASE_ACCEPTANCE.md` | Operator acceptance procedure plus dated observations; not evidence that every step ran |
-| `AVENDB_HISTORICAL_STARTUP_EVIDENCE.md`, dated audit/latency documents, `docs/evidence` | Historical evidence pinned to the stated version/environment; revalidate against the release under test |
+| `doc:docs/avendb` (avenDB's Docs view) | avenDB's design as it ships, changed only by AIP |
+| `docs/evidence` | Historical evidence pinned to the stated version/environment; revalidate against the release under test |
 | Old media-vault/import plans, migration history and backup archives | Historical/migration material, not authority to restore an old writer or automatically import over live vault records |
 
 The packaged avenDB sidecar and old media catalog are retired. Public media aliases, standalone test tooling, frozen simulation versions, migration history and backup archives are retained compatibility/evidence surfaces, not dead code. Storage deletion still requires the explicit recovery and acceptance gates in the relevant ownership document. No archive or live bytes are deleted by these architecture changes.

@@ -15,7 +15,7 @@
 //! one of its peers, so it reads his name and Maia City after the move as before.
 //!
 //! Every read and change goes through one entry point, as the page's does (V2, `Device::run`,
-//! `docs/ARCHITECTURE.md` §8): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
+//! `doc:docs/avendb` §8): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
 //! the passkey's ceremony when one is at hand and else answered `approve`, which makes nothing. `tests/page.rs` runs
 //! the same in Chromium, the passkey in its virtual authenticator.
 

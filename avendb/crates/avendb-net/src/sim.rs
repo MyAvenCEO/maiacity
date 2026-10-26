@@ -1,4 +1,4 @@
-//! The simulated network (P7, `docs/AVENDB_SYNC_V2.md`): nodes of one test reach each other through an in-memory
+//! The simulated network (P7, `doc:docs/avendb, section 12`): nodes of one test reach each other through an in-memory
 //! carrier that loses, delays, duplicates and reorders their packets, and cuts links between them, each by a seed. A
 //! node on it (`Options::sim`) binds no socket and has no relay: every packet of its QUIC connections goes through
 //! `Net`, so a scenario runs the real node, its sessions, pulls and blobs, under faults a loopback socket never shows.

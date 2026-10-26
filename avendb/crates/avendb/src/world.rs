@@ -1301,7 +1301,7 @@ pub const SEED_NAMES: [&str; 2] = ["Maia City", "avenMAIA"];
 pub const SEED_COOP: &str = SEED_NAMES[0];
 
 /// Whether `share` is an invite of the seed's coop, Maia City, that a newcomer may still sign up with, by device `me`'s
-/// view: a live share over it to an invite key, which no vault claimed yet (`Lab::invite_card`, docs/ARCHITECTURE.md
+/// view: a live share over it to an invite key, which no vault claimed yet (`Lab::invite_card`, doc:docs/avendb
 /// §5, Invites). So maiaCITY's API, which holds no device, signs up only someone an owner of Maia City invited, by
 /// the invite their link brings, which a device signed with no passkey (Samuel 2026-10-19).
 pub fn open_invite(lab: &Lab, me: SignerId, share: ShareId) -> bool {

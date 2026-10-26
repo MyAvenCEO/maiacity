@@ -3,7 +3,7 @@ import AvenDB.Basic
 /-!
 # Interests: what a view wants, in tiers
 
-Step P3 of sync v2 (`docs/AVENDB_SYNC_V2.md`). One value says what a view wants: an `Interest`, a cap selector
+Step P3 of sync v2 (`doc:docs/avendb, section 12`). One value says what a view wants: an `Interest`, a cap selector
 (`Selector`, the grammar shares use, so caps and wants stay one concept) over one vault, a window, a tier and a
 distance. A mounted view sets its Interests through one handle and its unmount clears them: no lease, no timer. A
 manifest is a stored tree of Interests (`Tree`), the composite pattern of 2026-10-21, its slots (`$room`, `$timeline`,

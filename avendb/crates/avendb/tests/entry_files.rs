@@ -1,4 +1,4 @@
-//! An entry's files (`docs/ARCHITECTURE.md` §8 and §13): any entry brings a file in its creation's own write, one
+//! An entry's files (`doc:docs/avendb` §8 and §13): any entry brings a file in its creation's own write, one
 //! signed edit (`create` with a `file`, `Lab::create_bringing`), or in a write on its main line (`put_file` with an
 //! `entry`, `Lab::bring_into`), the file's bytes beside the op as a node brings them (avendb-net's `Node::run`). Who
 //! may is what the shares decide already: `create` for a creation that brings one, `set` of the whole record for a file

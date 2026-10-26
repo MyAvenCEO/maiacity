@@ -94,7 +94,7 @@ try {
 		''
 	].join('\n');
 	const note = [
-		'Sync v2, step P3 (docs/AVENDB_SYNC_V2.md; the audit "App manifests with progressive loading", Samuel 2026-10-26): each page\'s manifest becomes a tree of Interests in four tiers, what the screen shows now first, what the person opens next second, the rest of the screen later, offline copies idle. Slots ($room, $timeline, $asset, $original) come from the route or the selection; signals (viewport, playhead, camera, list) order a tier. Lean: avendb/spec/AvenDB/Interest.lean.',
+		'Sync v2, step P3 (doc:docs/avendb, section 12; the audit "App manifests with progressive loading", Samuel 2026-10-26): each page\'s manifest becomes a tree of Interests in four tiers, what the screen shows now first, what the person opens next second, the rest of the screen later, offline copies idle. Slots ($room, $timeline, $asset, $original) come from the route or the selection; signals (viewport, playhead, camera, list) order a tier. Lean: avendb/spec/AvenDB/Interest.lean.',
 		MANIFESTS.map((m) => `${m.id}: ${m.note}`).join('\n'),
 		`${fresh} new, ${changed} moved to v2 or changed, ${kept} as they were.`
 	].join('\n\n');

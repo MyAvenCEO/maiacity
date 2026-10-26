@@ -1,4 +1,4 @@
-//! Who the server takes (`Gate.lean`, `docs/ARCHITECTURE.md` §5, "Who the server takes"): a gated server, avenMAIA's
+//! Who the server takes (`Gate.lean`, `doc:docs/avendb` §5, "Who the server takes"): a gated server, avenMAIA's
 //! device, serving Maia City, takes a new human vault only with the invite it claims, and a coop or an aven only where
 //! an admin of Maia City owns it: Maia City, a vault that owns it, or a holder of its cap group named Admin. Key
 //! generation can't be stopped; what the server takes onto what it holds can. And a service that holds no device,

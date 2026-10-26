@@ -3,7 +3,7 @@ import AvenDB.Ops
 /-!
 # Schemas: writes that fit them
 
-`avendb/docs/ARCHITECTURE.md` §8, writes that fit their schemas. Every reader of an entry judges each write it opens by
+`doc:docs/avendb` §8, writes that fit their schemas. Every reader of an entry judges each write it opens by
 the record before it and after it, on the version it builds on, under the schemas the entry was written under up to it,
 which must be in the vault's lane or built in and all of one kind (`lens::Lane::fits`): each place the write changed
 holds a value one of them lets it hold there; each list of records it changed is one they name, holding no copy of a row

@@ -71,7 +71,7 @@ export const asks = native() ? 'a sign-in sheet asks for your passkey' : 'your b
 export const [here, Here] = native() ? ['this Mac', 'This Mac'] : ['this browser', 'This browser'];
 
 /** The changes a vault's owners may have to approve, with the passkey: owners, devices, Owner shares, settings and
- *  new vaults (avendb/docs/ARCHITECTURE.md §8). */
+ *  new vaults (doc:docs/avendb §8). */
 const APPROVED = ['share', 'share_group', 'revoke', 'settings', 'found'];
 
 /** @typedef {'loading' | 'new' | 'closed' | 'open' | 'broken'} Phase */
@@ -687,7 +687,7 @@ function queueRefresh(/** @type {any} */ d) {
 }
 
 /**
- * Op `op` on the device: the one way a page reads or changes the database (./ops.js, avendb/docs/ARCHITECTURE.md
+ * Op `op` on the device: the one way a page reads or changes the database (./ops.js, doc:docs/avendb
  * §8), on the page's own device and on the Mac app's alike. A change takes the passkey's ceremony, which the device
  * runs only where the vault's owners approve it (in the Mac app, in its sign-in sheet); asked first, the device says
  * whether it will, and what the page shows it doing says so. `read` hands over a file's bytes, for `put_file` and a
@@ -877,7 +877,7 @@ const api = {
 		return () => { observers.delete(watched); dispose(); reader.close(); };
 	},
 	/**
-	 * Runs change op `op` as `what` (./ops.js, avendb/docs/ARCHITECTURE.md §8): an entry's change, a share, a
+	 * Runs change op `op` as `what` (./ops.js, doc:docs/avendb §8): an entry's change, a share, a
 	 * revocation, a setting, new vaults, a mark, a name, acting for the vault the op names (`as`). What it did, or
 	 * `null` if it didn't go through, with why shown.
 	 * @param {string} what @param {object} op

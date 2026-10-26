@@ -5,7 +5,7 @@
  * at a time in each lane.
  *
  * It works straight in each vault, through the Mac's own device acting as the vault's acting vault (Samuel 2026-10-19:
- * no worker of its own, no device vault for it): every op one `send` (avendb/docs/ARCHITECTURE.md §8).
+ * no worker of its own, no device vault for it): every op one `send` (doc:docs/avendb §8).
  *
  * How a rule is done is an executor, by the rule's key: `(task, ctx) => { outputs, result }`. The page has the
  * checksum (./executors.js); the Mac's Rust does the rest (aven.rs `studio_job`).

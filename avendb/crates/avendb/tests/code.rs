@@ -1,4 +1,4 @@
-//! The gate of C4b, code entries in avenDB (`docs/ARCHITECTURE.md` §9 and §10; the Scion plan's phases A, B and I):
+//! The gate of C4b, code entries in avenDB (`doc:docs/avendb` §9 and §10; the Scion plan's phases A, B and I):
 //! prepared, and loaded by no app yet. One entry of each kind of code, a recipe, a view, a logic and a function, goes
 //! the whole way through the ops engine (`engine::run`), as the page and an aven send ops: Alice's aven proposes a
 //! change to an entry of Alice's vault, which an Editor share lets it write; Alice accepts it by a review; the aven

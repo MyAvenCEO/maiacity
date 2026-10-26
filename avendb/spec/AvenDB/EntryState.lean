@@ -3,7 +3,7 @@ import AvenDB.Snapshot
 /-!
 # One entry state
 
-P6 of the sync v2 plan (`docs/AVENDB_SYNC_V2.md`). Samuel, 2026-10-26: no caches. A device keeps two things, the
+P6 of the sync v2 plan (`doc:docs/avendb, section 12`). Samuel, 2026-10-26: no caches. A device keeps two things, the
 edits it holds (its history) and its stored view (`StoredView.lean`), what those edits make; nothing else is read to
 show an entry. No warm metadata, no scratch, no receipts, no judgment slices, no learned lists.
 

@@ -2,7 +2,7 @@
 // app links, and src/enclave.rs calls `avendb_enclave` with one ask in JSON and frees the answer it gets back, in JSON,
 // with `avendb_enclave_free`.
 //
-// The key (avendb/docs/ARCHITECTURE.md, "Touch ID on a Mac") is two keys in the Secure Enclave behind the fingers
+// The key (doc:docs/avendb, "Touch ID on a Mac") is two keys in the Secure Enclave behind the fingers
 // enrolled now (macOS 26): an ML-DSA-65 key that signs a ceremony's challenge with avenDB's context, and an ML-KEM-768
 // key that opens a secret sealed to it as the keys are made, with the same touch. What leaves the Enclave is the
 // ML-DSA key's public key, the blobs of both keys, which only this Mac's Enclave opens, and what each touch signs and
