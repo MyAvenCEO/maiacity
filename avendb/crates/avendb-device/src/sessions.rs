@@ -6,8 +6,7 @@
 //! its own key opens.
 //!
 //! The socket speaks JSON, a message a line. The host opens with a challenge, 32 random bytes; the agent answers with a
-//! hello over it from each key it may be (`server::agent_keys`: its next key first, after a key move), each with the
-//! key it is sealed to; the host takes the first that is a device of a vault it holds, else the first, as an agent not
+//! hello over it from its key (`server::agent_key`), with the key it is sealed to; the host takes the first that is a device of a vault it holds, else the first, as an agent not
 //! approved yet, which asks for access through it and whose join it signs over the session once its person approves
 //! (`Node::add_hosted_device`); never a device of its own. From then on the agent sends its harness's lines
 //! (`{"mcp": line}`) and the host answers each (`{"mcp": answer}`), running it as the session (`Node::acting`); where
@@ -282,8 +281,7 @@ pub async fn relay(
         return Ok(None);
     }
     let shelf = disk::open(&agent::folder(host, name))?;
-    let keys = server::agent_keys(&shelf).await?;
-    anyhow::ensure!(!keys.is_empty(), "{name}'s shelf holds no key");
+    let keys = vec![server::agent_key(&shelf).await?];
     let Some(mut hosted) = hosted_by(host, name, roots, &keys).await? else { return Ok(None) };
     tracing::info!("{name}: works as a session of theOS's device");
     loop {

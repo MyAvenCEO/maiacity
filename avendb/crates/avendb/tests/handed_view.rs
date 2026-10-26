@@ -146,9 +146,9 @@ fn real_passkey_devices_hand_views_without_software_passkey_seeds() {
     let mut browser = Lab::new();
     let device = browser.device_with("real browser", [83; 32]);
     let keys = browser.web_passkey("Alice", authenticator.public(), &ceremony).unwrap();
-    assert!(browser.passkey_secret(keys[0]).is_none());
+    assert!(browser.passkey_secret(keys).is_none());
     assert!(browser.hand_key(device).is_none(), "a device secret alone cannot open a passkey's view");
-    assert!(browser.hand_from_ceremony(device, keys[0], &ceremony));
+    assert!(browser.hand_from_ceremony(device, keys, &ceremony));
     assert!(browser.start_handed(device, backup.clone(), &handed));
     assert_eq!(count(&browser, device, "edits checked"), 0);
     assert_eq!(count(&browser, device, "replay: from a handed view"), 1);
@@ -157,12 +157,12 @@ fn real_passkey_devices_hand_views_without_software_passkey_seeds() {
 
     let mut stranger = Passkey::from_seed([84; 32]);
     let foreign = stranger.ceremony([42; 32]);
-    assert!(!browser.hand_from_ceremony(device, keys[0], &foreign));
+    assert!(!browser.hand_from_ceremony(device, keys, &foreign));
     assert!(browser.start_handed(device, backup, &handed), "a failed binding leaves the verified key intact");
 
     let mut split = browser.split(device, &[], [85; 32]);
     assert!(split.hand_key(device).is_some(), "the actual node retains the handoff key");
     split.lock(device);
     assert!(split.hand_key(device).is_none(), "locking drops the handoff key too");
-    assert!(!split.hand_from_ceremony(device, keys[0], &ceremony), "a ceremony alone cannot unlock a device");
+    assert!(!split.hand_from_ceremony(device, keys, &ceremony), "a ceremony alone cannot unlock a device");
 }

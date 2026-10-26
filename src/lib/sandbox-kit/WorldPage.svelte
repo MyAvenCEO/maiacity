@@ -147,7 +147,7 @@
 		margin: 0;
 		padding: 0.5rem 0.9rem;
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.7);
+		background: var(--overlay-paper, var(--overlay-paper, rgb(250 248 242 / .75)));
 		color: #2c2a1e;
 		font-size: 0.85rem;
 		z-index: 2;
@@ -157,7 +157,7 @@
 		margin: 0;
 		padding: 0.45rem 0.9rem;
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.6);
+		background: var(--overlay-paper, var(--overlay-paper, rgb(250 248 242 / .75)));
 		border: 1px solid rgb(255 255 255 / 0.35);
 		-webkit-backdrop-filter: blur(12px) saturate(1.2);
 		backdrop-filter: blur(12px) saturate(1.2);

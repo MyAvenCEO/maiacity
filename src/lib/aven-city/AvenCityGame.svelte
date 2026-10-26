@@ -1,4 +1,6 @@
 <script lang="ts">
+import { screenSlot } from '$lib/app/screen-slots.js'
+
 import AvenCitySandbox from './AvenCitySandbox.svelte'
 import { SkyControl } from '$lib/sandbox-kit'
 import DomeRail from './components/DomeRail.svelte'
@@ -220,13 +222,13 @@ $effect(() => {
 		     strip reads as a status bar and belongs against the edge, while the
 		     bottom row stays clear of the screen edge. -->
 		<div
-			class="hud-frame hud-frame-tight pointer-events-none absolute inset-0 flex flex-col justify-between"
+			style="padding-top:var(--screen-head-room, 5rem)" class="hud-frame hud-frame-tight pointer-events-none absolute inset-0 flex flex-col justify-between"
 		>
 			<!-- `shrink-0`: the status strip and the build rail keep their size, so the
 			     bottom row is the one that gives way when the screen runs short. -->
 			<div class="flex shrink-0 items-start justify-between gap-2">
 				<div class="pointer-events-auto flex items-center gap-1.5">
-					<div class="hud-pill hud-pill-sm">
+					<div class="hud-pill hud-pill-sm" use:screenSlot={'title'}>
 						<span class="font-semibold">avenCITY</span>
 						<span class="hud-label">world {seed}</span>
 					</div>

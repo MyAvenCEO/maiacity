@@ -274,8 +274,8 @@ copy of a row. A write is judged by what it changed alone (S1), so a record that
 fit counts for no reader, nor anything built on it (S3), so every device keeps the last record that fit, whatever a
 patched app writes; and relays, which open no write, judge none (S4).
 
-Every edit is named by a BLAKE3 hash, and every signature on it is post-quantum (ML-DSA-65, or SLH-DSA from a signer
-made before the key move), a write's too, so nothing counts on the curves: whoever breaks a device's ed25519 key, or a passkey's P-256 key, signs no edit. A passkey's
+Every edit is named by a BLAKE3 hash, and every signature on it is post-quantum (ML-DSA-65; an SLH-DSA part from before the fork
+counts by the legacy anchor alone, `LegacyAnchor.lean`), a write's too, so nothing counts on the curves: whoever breaks a device's ed25519 key, or a passkey's P-256 key, signs no edit. A passkey's
 signature also carries its WebAuthn assertion, the proof that its person took part, which adds nothing against a
 quantum computer. The model leaves signatures abstract: an edit's signers are its author and cosigners.
 
@@ -392,7 +392,7 @@ None are axioms; each is part of the model:
 - Signatures can't be forged: an edit's signers, and the device a statement of holdings verifies under
   (`Statement.signer`), are the keys that signed them, and a root of a batch-signed log is signed by its signer alone
   (`Batches.Said`). Where the curves fall, the Rust core keeps this true for every edit, root and statement, as each
-  signature is ML-DSA-65 or SLH-DSA.
+  signature is ML-DSA-65, and an SLH-DSA part counts only on an edit the fork froze.
 - Hashes don't collide: a hash of a batch-signed log's tree is the term it hashes (`Batches.Digest`), as BLAKE3 with a
   purpose of its own for leaves and for nodes stands for it.
 - A hello proves its device: whatever comes on a sync connection comes from the device whose hello proved it (`Conn`);

@@ -30,6 +30,54 @@ use crate::words;
 /// The version byte the file of frozen ids starts with (`Frozen::to_bytes`).
 pub const FORMAT: u8 = 1;
 
+/// The fork's freeze as the repo pins it (Samuel's go, 2026-10-26): the anchor, and the file of frozen ids it is the
+/// root of (`Frozen::to_bytes`), both written by the freeze on the server (`avendb-freeze.yml`). A test checks that
+/// the file hashes to the anchor (`the_pinned_freeze_hashes_to_its_anchor`).
+pub const ANCHOR: &str = include_str!("../legacy/anchor.txt");
+static FROZEN: &[u8] = include_bytes!("../legacy/frozen.ids");
+
+/// The fork froze edit `edit` (`check` in the model, the path being the pinned file's): an SLH-DSA signer's part of it
+/// counts, and of no other edit (`sign::verify_adding`). A binary search of the pinned ids, which are sorted.
+pub fn frozen(edit: EditId) -> bool {
+    let ids = FROZEN.get(1..).unwrap_or_default();
+    let n = ids.len() / 32;
+    let (mut lo, mut hi) = (0, n);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        match ids[32 * mid..32 * mid + 32].cmp(&edit.0[..]) {
+            std::cmp::Ordering::Less => lo = mid + 1,
+            std::cmp::Ordering::Greater => hi = mid,
+            std::cmp::Ordering::Equal => return true,
+        }
+    }
+    admitted(edit)
+}
+
+/// The pinned freeze, read whole: `None` unless the file is one `Frozen::to_bytes` writes.
+pub fn pinned() -> Option<Frozen> {
+    Frozen::from_bytes(FROZEN)
+}
+
+#[cfg(debug_assertions)]
+static ADMITTED: std::sync::Mutex<Vec<EditId>> = std::sync::Mutex::new(Vec::new());
+
+/// For the tests alone, in a build with debug assertions: count edits `ids` as frozen too, as no test can sign in
+/// SLH-DSA since the fork. A build that ships has no such call.
+#[cfg(debug_assertions)]
+pub fn admit(ids: impl IntoIterator<Item = EditId>) {
+    ADMITTED.lock().unwrap_or_else(|e| e.into_inner()).extend(ids);
+}
+
+#[cfg(debug_assertions)]
+fn admitted(edit: EditId) -> bool {
+    ADMITTED.lock().unwrap_or_else(|e| e.into_inner()).contains(&edit)
+}
+
+#[cfg(not(debug_assertions))]
+fn admitted(_: EditId) -> bool {
+    false
+}
+
 /// The anchor: how many edits the fork froze, and the root of their tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Anchor {
@@ -321,6 +369,16 @@ mod tests {
         assert!(!anchor.shows(ids[0], &shorter.path(ids[0]).expect("frozen")), "a path of another tree");
         assert!(!check(&anchor, true, other, Some(&path), || true), "a signature that checks counts for nothing");
         assert!(check(&anchor, false, other, None, || true));
+    }
+
+    #[test]
+    fn the_pinned_freeze_hashes_to_its_anchor() {
+        let pinned = pinned().expect("the pinned file is a freeze's");
+        assert_eq!(Some(pinned.anchor()), Anchor::from_text(ANCHOR), "the file hashes to the pinned anchor");
+        for id in pinned.ids().step_by(97) {
+            assert!(frozen(id));
+        }
+        assert!(!frozen(EditId([0xff; 32])) || pinned.holds(EditId([0xff; 32])));
     }
 
     #[test]

@@ -24,9 +24,8 @@ const MAGIC: &[u8] = b"avenDB master recovery key 3\n";
 
 /// The file of avenDB's master recovery key, its public half, as its person made it from its secret (`master-key pub`,
 /// again on 2026-10-20, in ML-DSA-65, the key move's K4): signer 29ee5fe7…, the same key as signer 05e5bd92… of
-/// 2026-10-16 in SLH-DSA, by its P-256 and McEliece keys, which every human vault made before the move has among its
-/// owners: the move adds this one beside it at the next unlock (`Lab::moves`), and the old one is listed as legacy
-/// (`Lab::is_recovery`). An empty file builds avenDB without one.
+/// 2026-10-16 in SLH-DSA, by its P-256 and McEliece keys, which the move replaced in every human vault before the fork
+/// off SLH-DSA (`legacy`). An empty file builds avenDB without one.
 const MASTER: &[u8] = include_bytes!("../master-recovery.pub");
 
 /// avenDB's master recovery key, which every human vault adds as an owner while avenDB is bootstrapped (`MASTER`):
@@ -40,7 +39,7 @@ pub fn master() -> Option<Arc<RecoveryKey>> {
 /// The public half of a master recovery key: the signer a vault adds as an owner, and what it seals its keys to.
 #[derive(Clone, PartialEq, Eq)]
 pub struct RecoveryKey {
-    /// Its P-256 and SLH-DSA keys, a passkey's.
+    /// Its P-256 and ML-DSA-65 keys, a passkey's.
     pub keys: SignerKeys,
     /// The key a vault seals its keys to: X-Wing, and the McEliece key's id.
     pub seal: PublicKey,
@@ -62,14 +61,7 @@ impl RecoveryKey {
     /// (`Passkey::from_seed`), the same a Lab takes it in as (`Lab::passkey_from`). Makes its McEliece pair, which
     /// takes about a second.
     pub fn of(secret: [u8; 32]) -> RecoveryKey {
-        Self::of_in(secret, sign::SIGNING)
-    }
-
-    /// `of`, its passkey's post-quantum key in suite `suite`: the same secret makes the key in either suite, two
-    /// signers, the second its next key (the key move). Its file is laid out the same either way, its keys' tag naming
-    /// their suite.
-    pub fn of_in(secret: [u8; 32], suite: sign::Suite) -> RecoveryKey {
-        let mut passkey = Passkey::from_seed_in(secret, suite);
+        let mut passkey = Passkey::from_seed(secret);
         let seal = passkey.seal_secret();
         let consent = passkey.consent();
         RecoveryKey { keys: passkey.keys(), seal: seal.public(), mceliece: seal.mceliece_public(), consent }
@@ -217,17 +209,13 @@ mod tests {
 
     #[test]
     fn a_recovery_key_in_ml_dsa_65_reads_back_from_its_bytes_alone() {
-        use crate::sign::Suite;
-        let (old, new) = (RecoveryKey::of_in([7; 32], Suite::SlhDsa), RecoveryKey::of_in([7; 32], Suite::MlDsa));
-        assert_ne!(old.id(), new.id(), "its next key is another signer");
-        assert_eq!((old.seal.clone(), old.mceliece.clone()), (new.seal.clone(), new.mceliece.clone()), "sealed to alike");
-        assert_eq!(RecoveryKey::from_bytes(&new.to_bytes()), Some(new.clone()), "its file holds it whole");
-        assert_eq!(new.keys.suite(), Suite::MlDsa);
-        assert_eq!(Lab::with_entropy([1; 32]).passkey_from_in("the master recovery", [7; 32], Suite::MlDsa), new.id());
-        // the old key's consent is no consent of the new one's
-        let mut other = new.clone();
-        other.consent = old.consent.clone();
-        assert!(RecoveryKey::from_bytes(&other.to_bytes()).is_none());
+        let (key, other) = (RecoveryKey::of([7; 32]), RecoveryKey::of([8; 32]));
+        assert_eq!(RecoveryKey::from_bytes(&key.to_bytes()), Some(key.clone()), "its file holds it whole");
+        assert_eq!(key.keys.suite(), sign::Suite::MlDsa);
+        // another key's consent is no consent of this one's
+        let mut forged = key.clone();
+        forged.consent = other.consent.clone();
+        assert!(RecoveryKey::from_bytes(&forged.to_bytes()).is_none());
     }
 
     #[test]

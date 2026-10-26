@@ -2,8 +2,8 @@
 /* maiaCITY (Sandbox 8): every rule scoped to the game's root (main.tsx mountCity), so none reaches the app's other pages; the keyframes, which cannot nest, follow it. */
 .cc-city {
 & {
-  --glass: rgba(17, 23, 28, 0.86);
-  --glass-2: rgba(28, 36, 43, 0.92);
+  --glass: rgb(17 23 28 / var(--overlay-alpha, .75));
+  --glass-2: rgb(28 36 43 / var(--overlay-alpha, .75));
   --line: rgba(255, 255, 255, 0.08);
   --line-2: rgba(255, 255, 255, 0.14);
   --ink: #e6edf2;

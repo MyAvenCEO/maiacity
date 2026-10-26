@@ -11,9 +11,8 @@
 //! `new` prints the secret in the terminal, 64 hex digits to copy and keep, and writes it nowhere: its one file is
 //! `<path>.pub`, the public half, a megabyte, nearly all of it the McEliece key, with the key's standing consent to be
 //! added as an owner; it never writes over a file. `pub` asks for the secret and writes `<path>.pub` again from it,
-//! over a `.pub` file of an older format. `id` says which key a `.pub` file holds, or, with no file, the keys the
-//! secret it asks for makes in each signature suite, to check one against the other: a key made before the key move
-//! (2026-10-19) is in SLH-DSA, a new one in ML-DSA-65, from the same secret. Whoever holds the secret owns every vault
+//! over a `.pub` file of an older format. `id` says which key a `.pub` file holds, or, with no file, the key the
+//! secret it asks for makes, in ML-DSA-65. Whoever holds the secret owns every vault
 //! that added the key: keep it offline, on paper or in a safe, and hand on the `.pub` file alone.
 
 use std::fs::{self, OpenOptions};
@@ -22,7 +21,6 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use avendb::recovery::RecoveryKey;
-use avendb::sign::SUITES;
 use zeroize::Zeroizing;
 
 fn main() -> ExitCode {
@@ -74,7 +72,7 @@ fn public(path: &Path) -> Result<(), String> {
         return Err(match there.id() == key.id() {
             true => format!("{} holds this key already", public_file.display()),
             false => format!(
-                "{} holds another key, or this secret's key in SLH-DSA from before the key move, and is never written \
+                "{} holds another key, and is never written \
                  over: write this one to another path",
                 public_file.display()
             ),
@@ -98,11 +96,8 @@ fn id(file: Option<&Path>) -> Result<(), String> {
         }
         None => {
             let secret = asked()?;
-            eprintln!("making the key in each suite, which takes a few seconds");
-            for suite in SUITES {
-                let key = RecoveryKey::of_in(*secret, suite);
-                println!("The master recovery key in {}: {}", suite.name(), key.id().to_hex());
-            }
+            let key = RecoveryKey::of(*secret);
+            println!("The master recovery key in {}: {}", key.keys.suite().name(), key.id().to_hex());
             return Ok(());
         }
     };

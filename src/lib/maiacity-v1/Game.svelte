@@ -11,6 +11,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
+	import { screenSlot } from '$lib/app/screen-slots.js';
 	import { onMount } from 'svelte';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
@@ -512,16 +513,12 @@
 		{/each}
 	{/if}
 
-	{#if !view || shows('brand')}<div class="brand panel">MaiaCity <b>V1</b></div>{/if}
+	{#if !view || shows('brand')}<div class="brand panel" use:screenSlot={'title'}>MaiaCity <b>V1</b></div>{/if}
 
 	{#if view && player}
-		<div class="topstats">
-			{#if shows('clock')}<span class="clock m panel" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year} ({dateText(cal)}). {speed}, 13 months of 28 days.">{cal.weekday} {cal.day} {cal.name} Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
-		</div>
-
-		<div class="topright">
-			{#if shows('clock')}<span class="clock panel" title="The game clock: {speed}, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
-		</div>
+		{#if shows('clock')}
+   <span class="clock panel" use:screenSlot={'center'} title="The game clock: {speed}, 13 months of 28 days">{cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>
+  {/if}
 
 		{#if shows('mint')}<nav class="tools" class:open={tools}>
 			{#each allTools.filter(([id]) => shows(id)) as [id, ic, label] (id)}
@@ -854,7 +851,7 @@
 	.tools button,
 	.tools a,
 	.tag {
-		background: rgb(250 248 242 / 0.86);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		border: 1px solid rgb(255 255 255 / 0.5);
 		-webkit-backdrop-filter: blur(14px) saturate(1.2);
 		backdrop-filter: blur(14px) saturate(1.2);
@@ -1098,7 +1095,7 @@
 		padding: 0.7rem 1.2rem;
 		border: 1px solid rgb(255 255 255 / 0.5);
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.94);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		color: #24452f;
 		font: inherit;
 		font-weight: 600;
@@ -1114,7 +1111,7 @@
 		margin: 0;
 		padding: 0.4rem 0.9rem;
 		border-radius: 999px;
-		background: rgb(250 248 242 / 0.9);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		color: #3a4a3f;
 		font-size: 0.85rem;
 		white-space: nowrap;
@@ -1211,7 +1208,7 @@
 		padding: 0.7rem 1.3rem;
 		border: 0;
 		border-radius: 999px;
-		background: #24452f;
+		background: var(--overlay-green);
 		color: #fff;
 		font: inherit;
 		font-weight: 600;
@@ -1228,12 +1225,13 @@
 		opacity: 0.8;
 	}
 	.mintbar:disabled {
-		background: rgb(250 248 242 / 0.94);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		color: #6b7a6f;
 		cursor: default;
 	}
 	.clock {
-		padding: 0.5rem 0.8rem;
+		padding: 0.35rem 0.65rem;
+		font-size: .75rem;
 		border-radius: 999px;
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
@@ -1241,7 +1239,7 @@
 	.tools {
 		position: absolute;
 		z-index: 2;
-		top: calc(5rem + env(safe-area-inset-top, 0px));
+		top: var(--screen-head-room, 5rem);
 		left: calc(1rem + env(safe-area-inset-left, 0px));
 		display: flex;
 		flex-direction: column;
@@ -1531,7 +1529,7 @@
 	/* in the app's foot stack ($lib/app/foot.js) */
 	.toast {
 		margin: 0;
-		background: rgb(250 248 242 / 0.94);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 	}
 	.loading {
 		position: absolute;
@@ -1580,7 +1578,7 @@
 		max-height: min(42rem, calc(100dvh - var(--nav-room, 4rem) - 5rem));
 		margin: 0 auto;
 		border-radius: 22px;
-		background: rgb(250 248 242 / 0.97);
+		background: var(--overlay-paper, rgb(250 248 242 / .75));
 		box-shadow: 0 18px 50px rgb(20 30 24 / 0.28);
 		transform-origin: 50% 100%;
 		animation: pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
@@ -1827,7 +1825,7 @@
 			padding: 0;
 			border: 1px solid rgb(255 255 255 / 0.5);
 			border-radius: 999px;
-			background: rgb(250 248 242 / 0.94);
+			background: var(--overlay-paper, rgb(250 248 242 / .75));
 			box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
 		}
 		.fab svg {
@@ -1879,7 +1877,7 @@
 	/* ── upright: the numbers across under the top bar, the card a sheet from the foot, at most half the screen ── */
 	@media (max-width: 720px) and (min-height: 501px) {
 		.topstats {
-			top: calc(3.6rem + env(safe-area-inset-top, 0px));
+			top: var(--screen-head-room, 5rem);
 			left: 0.5rem;
 			right: 0.5rem;
 			transform: none;
@@ -1916,13 +1914,13 @@
 			left: max(8px, env(safe-area-inset-left, 0px));
 		}
 		.topstats {
-			top: calc(3.2rem + env(safe-area-inset-top, 0px));
+			top: var(--screen-head-room, 5rem);
 			left: calc(0.5rem + env(safe-area-inset-left, 0px));
 			transform: none;
 		}
 		.card,
 		.card.wide {
-			top: calc(3.2rem + env(safe-area-inset-top, 0px));
+			top: var(--screen-head-room, 5rem);
 			right: 0;
 			bottom: 0;
 			width: calc(min(19rem, 50vw - 5.5rem) + env(safe-area-inset-right, 0px));

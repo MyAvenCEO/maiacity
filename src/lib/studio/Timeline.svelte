@@ -772,6 +772,9 @@
 		   program monitor keeps its height (Samuel 2026-10-18) */
 		max-height: 32vh;
 		overflow-y: auto;
+		padding-bottom: var(--nav-room, 5rem);
+		box-sizing: border-box;
+		scroll-padding-bottom: var(--nav-room, 5rem);
 		background: var(--bg);
 	}
 
