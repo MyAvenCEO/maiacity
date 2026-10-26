@@ -77,7 +77,8 @@
 </dialog>
 
 <style>
- .diagnostics-trigger { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid #d9d1bf; border-radius: 50%; color: #263c2e; background: var(--overlay-paper); box-shadow: 0 3px 16px #18271e26; cursor: pointer; }
+ /* Fixed top-left on its own; the app's top bar (.screen-chrome [data-screen-slot]) places it in the bar instead. */
+ .diagnostics-trigger { position: fixed; top: calc(.75rem + env(safe-area-inset-top, 0px)); left: calc(.75rem + env(safe-area-inset-left, 0px)); z-index: 1100; flex: none; display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid #d9d1bf; border-radius: 50%; color: #263c2e; background: var(--overlay-paper); box-shadow: 0 3px 16px #18271e26; cursor: pointer; }
  @media (pointer: coarse) { .diagnostics-trigger { width: 44px; height: 44px; } }
  dialog { box-sizing: border-box; width: min(36rem, calc(100vw - 1.5rem)); max-height: calc(100dvh - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 1.2rem; border: 1px solid #d9d1bf; border-radius: 1.25rem; background: #faf8f0; color: #263c2e; overflow: auto; }
  dialog::backdrop { background: #18271e70; }
