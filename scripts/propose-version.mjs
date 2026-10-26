@@ -47,6 +47,11 @@ function device() {
 	throw new Error('no agent device: give --device <theOS app’s maiacity-studio>, or add it to Claude Code (claude mcp add --scope user avendb -- <maiacity-studio> agent claude)');
 }
 
+/** How long the agent stays open after its last write: it tells the server of its edits as it makes them, and the
+ *  server takes them in its own time, so an agent closed at once can keep them to itself (AIP-37 stayed on the cloud
+ *  agent until it was opened again) */
+const HAND_OVER = 60_000;
+
 /** an MCP session with the agent device on its stdio: `call(tool, args)` answers its tool's text, read as JSON. It
  *  reads files only in its workspace (avendb-device agent.rs `roots`): this folder and `files`, where the recipe is written */
 function session({ command, args }, /** @type {string} */ files) {
@@ -54,6 +59,7 @@ function session({ command, args }, /** @type {string} */ files) {
 	const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'], env });
 	const waiting = new Map();
 	let n = 0;
+	let wrote = false;
 	createInterface({ input: child.stdout }).on('line', (line) => {
 		let msg;
 		try {
@@ -84,6 +90,7 @@ function session({ command, args }, /** @type {string} */ files) {
 		},
 		/** @param {string} name @param {any} a */
 		async call(name, a) {
+			if (name === 'avendb_run') wrote = true;
 			const r = /** @type {any} */ (await send('tools/call', { name, arguments: a }));
 			const text = (r?.content ?? []).map((/** @type {any} */ c) => c.text ?? '').join('');
 			if (r?.isError) throw new Error(`${name}: ${text}`);
@@ -98,7 +105,13 @@ function session({ command, args }, /** @type {string} */ files) {
 			if (got && typeof got === 'object' && 'ok' in got) return got.ok;
 			throw new Error(`${name} ${a.op?.op ?? ''}: ${text.slice(0, 600)}`);
 		},
-		close: () => child.stdin.end()
+		async close() {
+			if (wrote) {
+				console.error(`Keeping the agent open ${HAND_OVER / 1000} s, for the server to take its edits`);
+				await new Promise((ok) => setTimeout(ok, HAND_OVER));
+			}
+			child.stdin.end();
+		}
 	};
 }
 
@@ -170,5 +183,5 @@ try {
 	console.log(JSON.stringify({ vault: city.id, entry: row.entry, line, put, aip }, null, 2));
 	console.error(`Opened. An owner puts it forward ("Propose it") and accepts it in the Proposals app: /app/aips/?aip=${aip.entry}`);
 } finally {
-	agent.close();
+	await agent.close();
 }
