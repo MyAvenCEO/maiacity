@@ -38,4 +38,4 @@ bun test ./api/test
 | API and infrastructure | `api`, `infra`, `deploy`; API/site/avenDB have independent release workflows |
 | Dynamic code and assets | avenDB publication; `code/` is reviewed bootstrap/recovery input, not a competing live writer |
 
-Read [architecture and retirement decisions](docs/ARCHITECTURE.md) before changing an ownership boundary, [deployment ownership](deploy/OWNERSHIP.md) before changing release mechanics, and [release acceptance](docs/AVENDB_RELEASE_ACCEPTANCE.md) before operating a device. Merged code and green CI are not proof of installed-Mac acceptance or successful recovery.
+Read [architecture and retirement decisions](docs/ARCHITECTURE.md) before changing an ownership boundary, [deployment ownership](deploy/OWNERSHIP.md) before changing release mechanics. avenDB's design is the vault doc `doc:docs/avendb` in avenDB's Docs view. Merged code and green CI are not proof of installed-Mac acceptance or successful recovery.

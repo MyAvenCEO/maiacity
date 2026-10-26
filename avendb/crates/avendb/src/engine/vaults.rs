@@ -1,4 +1,4 @@
-//! The ops on vaults themselves (`docs/ARCHITECTURE.md` §8), beside those on entries' records: what a device's
+//! The ops on vaults themselves (`doc:docs/avendb` §8), beside those on entries' records: what a device's
 //! page reads of its world (`world`), of the shares over a vault (`shares`), and what a vault may add to another and
 //! tag there (`creatable`, `taggable`), and the access requests it holds (`requests`); and the changes of vaults:
 //! shares, keep shares and their revocations, an owner or a device taken out, a vault's settings, new vaults, a file

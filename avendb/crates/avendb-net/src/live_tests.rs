@@ -81,7 +81,7 @@ async fn a_live_edit_reaches_an_authorized_peer_while_its_background_pages_are_s
             })
     })
     .await;
-    wait_for(async || phone.shared.asking.lock().unwrap().contains_key(&mac.id())).await;
+    wait_for(async || phone.shared.outreach.look().await.asks.get(&mac.id()).is_some_and(|lane| lane.busy)).await;
     let backlog_first = backlog[0];
     assert!(
         !phone
@@ -189,6 +189,7 @@ async fn a_live_hint_does_not_authorize_a_private_entry() {
             false,
             None,
             Some(SignerId::from_u64(999)),
+            None,
         )
         .await
         .expect_err("a hint cannot be routed under another authenticated identity");
@@ -304,61 +305,6 @@ fn ineligible_announcements_are_unchanged_without_consuming_witnesses() {
     }
 }
 
-#[tokio::test]
-async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() {
-    let mut w = world();
-    let coop = handbook_ready(&mut w);
-    let (sender, receiver) = (w.mac_a, w.phone_a);
-    let node = Node::spawn(w.lab.split(sender, &[], [93; 32]), sender,
-        Options { lazy: true, retry: Duration::from_secs(60), ..Options::local() }).await.unwrap();
-    // Drive the production scheduling boundary explicitly, without a periodic retry
-    // or unrelated peer task consuming its notification. This is not wire timing.
-    let tasks: Vec<_> = node.tasks.lock().unwrap().drain(..).collect();
-    // Node::spawn returns immediately after spawning these tasks. On this
-    // current-thread runtime, abort every task before yielding so the initial
-    // announcer cannot start detached tells and seed unrelated failure backoff.
-    for task in &tasks { task.abort(); }
-    for task in tasks { let _ = task.await; }
-    let mut news = node.shared.news((usize::MAX, 0), None).await.unwrap();
-    node.shared.own_logs().await;
-    let before = node.shared.own.lock().unwrap().holdings.clone();
-    assert!(node.shared.begin_tell(receiver), "hold the first announcement slot");
-    node.act(move |lab, me| {
-        lab.create(me, coop, coop, "doc", &[], document("Generic live entry", "second frontier", me)).unwrap();
-    }).await;
-    news = node.shared.news(news.size, news.revision.clone()).await.unwrap();
-    node.shared.own_logs().await;
-    assert_ne!(before, node.shared.own.lock().unwrap().holdings);
-    let reach = news.reach.get(&receiver).unwrap();
-    news.reach = Arc::new(std::collections::BTreeMap::from([(receiver, crate::Reach {
-        endpoint: reach.endpoint, files: reach.files.clone(), logs: reach.logs.clone(),
-    })]));
-    assert_eq!(news.reach.len(), 1);
-    while time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_ok() {}
-    // Multiple passes consume the mutation's wake while the first tell is held.
-    assert!(node.shared.unreached.lock().unwrap().due(&receiver), "the fixture peer is eligible, without startup backoff");
-    node.shared.announce(&news);
-    node.shared.announce(&news);
-    assert_eq!(node.shared.telling.lock().unwrap().len(), 1);
-    assert_eq!(node.shared.telling.lock().unwrap().get(&receiver), Some(&true), "the held tell owes the new frontier");
-    node.shared.finish_tell(receiver, true);
-    time::timeout(Duration::from_millis(100), node.shared.changed.notified()).await
-        .expect("successful held tell must release the coalesced frontier wake before the 60s retry");
-    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err(), "one coalesced wake");
-    // A success with no intervening demand must not manufacture an announce loop.
-    assert!(node.shared.begin_tell(receiver));
-    node.shared.finish_tell(receiver, true);
-    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err());
-    // Failed work keeps the existing backoff even when another pass was skipped.
-    assert!(node.shared.begin_tell(receiver));
-    assert!(!node.shared.begin_tell(receiver));
-    node.shared.finish_tell(receiver, false);
-    assert!(!node.shared.unreached.lock().unwrap().due(&receiver));
-    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err());
-    assert!(node.shared.telling.lock().unwrap().is_empty());
-    node.shutdown().await.unwrap();
-}
-
 /// Every remote entry predates the first authenticated announcement. No target ID is supplied
 /// to the receiving application; discovery must hydrate its view while background work is held.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -419,4 +365,50 @@ async fn an_active_type_query_discovers_existing_entries_without_unrelated_histo
     assert!(incomplete["behind"].as_u64().is_some_and(|behind| behind > 0),
         "a useful local result is not whole-device completeness: {incomplete}");
     assert!(useful, "an authenticated type-only active query must discover its existing entry before background admission is released");
+}
+
+/// Coverage.lean `behind_is_partial` and `arrived_is_complete`, on a node: while a peer has announced logs this
+/// device lacks, a query of their vault answers partial with those logs; once they arrive, complete. The iPhone's case.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_query_is_partial_while_announced_logs_are_behind_and_complete_once_they_arrive() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let mac = Node::spawn(w.lab.split(sender, &[], [53; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [54; 32]), receiver, Options::local()).await.unwrap();
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.sync_with(mac.id()).await.unwrap();
+    wait_for(async || mac.shared.told.lock().unwrap().contains_key(&receiver)).await;
+    wait_for(async || phone.shared.differ(sender).await.is_empty()).await;
+    let query = serde_json::json!({"op": "query", "vault": coop.to_hex(), "where": {"type": ["doc"]}});
+    let before = phone.op(query.clone()).await.unwrap();
+    assert_eq!(before["ok"]["coverage"], serde_json::json!({"state": "complete"}), "{before}");
+
+    // Hold every background page so the new logs stay behind while their announcement arrives.
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    let backlog = mac.act(move |lab, me| (0..pulls::LIVE_LOGS + 3).map(|i| lab.create(me, coop, coop, "doc", &[],
+        document(&format!("Behind {i}"), "history", me)).unwrap()).collect::<Vec<_>>()).await;
+    wait_for(async || phone.shared.differ(sender).await.len() > 1).await;
+    let behind = phone.op(query.clone()).await.unwrap();
+    let coverage = &behind["ok"]["coverage"];
+    assert_eq!(coverage["state"], "partial", "{behind}");
+    assert!(coverage["logs"].as_u64().unwrap() > 0, "{behind}");
+
+    drop(stalled);
+    wait_for(async || {
+        let backlog = backlog.clone();
+        phone.read(move |lab, me| backlog.iter().all(|entry| lab.item(me, *entry).is_some())).await
+            && phone.shared.differ(sender).await.is_empty()
+    }).await;
+    let arrived = phone.op(query).await.unwrap();
+    assert_eq!(arrived["ok"]["coverage"], serde_json::json!({"state": "complete"}), "{arrived}");
+    assert_eq!(arrived["ok"]["count"].as_u64().unwrap() as usize, before["ok"]["count"].as_u64().unwrap() as usize + backlog.len());
+    mac.shutdown().await.unwrap();
+    phone.shutdown().await.unwrap();
 }

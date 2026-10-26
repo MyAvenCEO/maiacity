@@ -1,4 +1,4 @@
-//! The gate of drafts, new entries an AIP proposes (`docs/ARCHITECTURE.md` §8, "Drafts"): a draft is a creation that
+//! The gate of drafts, new entries an AIP proposes (`doc:docs/avendb` §8, "Drafts"): a draft is a creation that
 //! starts its own line, its main line empty until its vault lands it, merging that line; only the vault lands one.
 //! Everything goes through the ops engine (`engine::run`), as the page and an agent send ops, but where a patched app's
 //! writes are made (`Lab::patched`). agentClaude, a device vault of hers with a device of its own, is a Suggester of
@@ -9,6 +9,7 @@
 //! Mac and the agent's device, reaches the same verdicts on its own.
 
 use std::collections::BTreeSet;
+use avendb_testkit::{list, ok, refused};
 
 use avendb::cast::{self, World};
 use avendb::doc::{Item, Peer};
@@ -26,21 +27,6 @@ use serde_json::{Value, json};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
     engine::run(&mut w.lab, d, &op)
-}
-
-/// What an op answered, which it must have done.
-fn ok(answer: Value) -> Value {
-    assert!(answer.get("ok").is_some(), "refused: {answer}");
-    answer["ok"].clone()
-}
-
-/// Why an op was refused, which it must have been.
-fn refused(answer: &Value) -> &str {
-    answer["refused"].as_str().unwrap_or_else(|| panic!("not refused: {answer}"))
-}
-
-fn list(v: &Value) -> &[Value] {
-    v.as_array().map(Vec::as_slice).unwrap_or_default()
 }
 
 fn text(v: &Value) -> String {

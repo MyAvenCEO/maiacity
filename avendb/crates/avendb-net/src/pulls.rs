@@ -778,7 +778,7 @@ mod tests {
                         send.finish().unwrap();
                         continue;
                     }
-                    if matches!(kind, session::RANGES | crate::transports::control::KIND) {
+                    if matches!(kind, session::RANGES | crate::transports::control::KIND | crate::blind::OFFER) {
                         send.reset(session::REFUSED).unwrap();
                         continue;
                     }

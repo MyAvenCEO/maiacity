@@ -2,7 +2,7 @@ import { createReadWindow } from './query-window.js';
 
 /** A reactive scope owns one scheduling lease. Revisions reuse it; replacement/close aborts it.
  * The lease contains IDs only, never records or authorization decisions.
- * @param {(device: any, query: any, signal: AbortSignal, demand: any) => Promise<any>} read */
+ * @param {(device: any, query: any, signal: AbortSignal) => Promise<any>} read */
 export function observedWindow(read) {
 	/** @type {WeakMap<AbortSignal, ReturnType<typeof createReadWindow>>} */
 	const windows = new WeakMap();

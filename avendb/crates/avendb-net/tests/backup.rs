@@ -1,4 +1,4 @@
-//! Snapshots of each vault (`backup`, `docs/BACKUP.md`): the server backs up the coop into its folder of a bucket of
+//! Snapshots of each vault (`backup`, `doc:docs/avendb`): the server backs up the coop into its folder of a bucket of
 //! snapshots over a few days, the first day all of it, a quiet day only a manifest, and a busy day one pack of what is
 //! new and the file it brings; every object sealed. Each snapshot rehearsed in a new node of its own comes back as it
 //! was, every edit and every file: Carol's Mac, which may read Welcome, syncs from the newest over iroh and reads both
@@ -8,10 +8,9 @@
 
 mod common;
 
-use std::future::Future;
 use std::io;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use avendb_testkit::until;
 
 use avendb::backup::{DAY, HOUR, Keep};
 use avendb::cast::*;
@@ -30,15 +29,6 @@ const SEAL: [u8; 32] = [9; 32];
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
 async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8, opts: Options) -> Node {
     Node::spawn(w.lab.split(d, with, [seed; 32]), d, opts).await.expect("a node")
-}
-
-/// Waits until `check` holds, 60 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(60);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 60 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// The bytes `from..to` of a file whose bytes start at `seed`.
@@ -146,6 +136,17 @@ async fn a_vault_comes_back_from_each_snapshot_it_keeps() {
     for (hash, _) in busy.manifest.named() {
         assert_eq!((0..30).filter(|&d| Reading::at(30, day(d)).reads(&hash)).count(), 1, "read on one day of 30");
     }
+    // the freeze off SLH-DSA reads the newest snapshot's edits whole: a device restored from them takes every one, and
+    // freezes none, as every signer here is of ML-DSA-65
+    let newest = folder.newest().await.expect("its manifests").expect("the busy day's");
+    let edits = folder.edits_of(&newest).await.expect("its edits");
+    let keys = folder.keys_of(&newest).await.expect("their keys");
+    assert_eq!(edits.len() as u64, busy.manifest.edits);
+    let mut lab = avendb::lab::Lab::with_entropy([5; 32]);
+    let me = lab.device("the freeze");
+    lab.restore_from(me, avendb::lab::Backup::new(edits, keys));
+    let survey = avendb::legacy::survey(&lab, me);
+    assert_eq!((survey.held as u64, survey.frozen.len()), (busy.manifest.edits, 0));
 
     // the busy day's snapshot in a new node: every edit, both files, and Carol's Mac reads them from it over iroh
     let (newest_dir, oldest_dir) = (Folder::new("rehearsal-newest"), Folder::new("rehearsal-oldest"));

@@ -2,6 +2,8 @@ import AvenDB.Vectors
 import AvenDB.OpsVectors
 import AvenDB.BackupVectors
 import AvenDB.ObjectiveVectors
+import AvenDB.LegacyVectors
+import AvenDB.KeyTreeVectors
 
 /-- The complete model/runtime bridge, shared by the writer and build-time checker. -/
 def AvenDB.vectorFiles : List (String × String) :=
@@ -9,4 +11,6 @@ def AvenDB.vectorFiles : List (String × String) :=
    ("vectors/lenses.json", AvenDB.Vectors.renderLenses),
    ("vectors/ops.json", AvenDB.OpsVectors.render),
    ("vectors/backups.json", AvenDB.BackupVectors.render),
-   ("vectors/objectives.json", AvenDB.ObjectiveVectors.render)]
+   ("vectors/objectives.json", AvenDB.ObjectiveVectors.render),
+   ("vectors/legacy.json", AvenDB.LegacyVectors.render),
+   ("vectors/key_trees.json", AvenDB.KeyTreeVectors.render)]

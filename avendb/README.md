@@ -15,7 +15,7 @@ key that a newcomer's vault claims once; a keep share tells one device what to s
 shared with the vault asked, for a share, to co-own it, or inviting it to co-own, each answered on one consent screen,
 where a new device asks to join too. Least access is the default, and the server and relays only ever see ciphertext.
 
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the one reference for how avenDB works, from first principles, and
+`doc:docs/avendb` is the one reference for how avenDB works, from first principles, and
 [`spec/README.md`](spec/README.md) lists every theorem with the Rust tests that guard it. This file says how to build,
 test, run and deploy it.
 
@@ -38,7 +38,7 @@ encryption and passkeys, schemas and lenses, Loro documents and their history an
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `src/lib/avendb/device/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
 | `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T28, K1, H1, H2, O1 to O3, C1 to C4, CG1, G1, G2, M1, M2, D1 to D3, S1 to S4, L1 to L3) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
-| `docs/ARCHITECTURE.md` | The design as it ships, section by section, each claim tied to the code or the theorem that holds it |
+| `doc:docs/avendb` | The design as it ships, section by section, each claim tied to the code or the theorem that holds it |
 
 ## Build and test
 
@@ -106,16 +106,14 @@ exact origins). A native listener failure preserves relay operation. Unsupported
 Carrier activation still requires the normal authenticated peer negotiation; these settings grant no access.
 
 Before rollout, run the Rust suites, Lean build and vector comparison, client tests and production web build.
-The PR checks also build the server image and check the macOS app. The ignored `upgrade_rehearsal` browser
-integration target checks an explicitly marked disposable Mac-store copy with a real existing-key Touch ID
-ceremony; it never accepts the installed store. The optional-carrier Chromium harness tests fresh edits and
+The PR checks also build the server image and check the macOS app. The optional-carrier Chromium harness tests fresh edits and
 sealed files through WebTransport, relay fallback and WebRTC with alternate paths deliberately stopped.
 Build shipped WASM with `scripts/build-web.sh` without the `localhost-passkeys` test feature.
 
 ## The master recovery key
 
 One master recovery key is the way back in beside the passkeys (Samuel, 2026-10-13): every human vault is founded with
-it among its owners ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). It is a signer like any other, a passkey kept in
+it among its owners (`doc:docs/avendb` §3). It is a signer like any other, a passkey kept in
 software (`avendb::recovery`), whose signing keys and seal key all derive from 32 secret bytes. Its person makes it on a
 machine of their own, from `avendb/`:
 
@@ -141,12 +139,12 @@ owner: the ops `revoke {vault, owner}` and `share {over, who: {"signer": id}, le
 
 `crates/avendb-browser` is a device of its person in a web page: the network crate as WebAssembly, so a page is a
 device of its own, as a Mac or a phone is. A page has no UDP, so its node reaches every peer through the server's
-relay, which lets a new device in by its passkey's pass ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §11 and §12). Its TLS
+relay, which lets a new device in by its passkey's pass (`doc:docs/avendb` §11 and §12). Its TLS
 is rustls with ring, as aws-lc-rs doesn't build for a browser, and X25519MLKEM768 is written in pure Rust
 (`avendb_net::kx`, checked against aws-lc-rs's). Its tasks and timers run on the page's event loop.
 
 A device starts in one of three ways; everything after is one op through `PageDevice.run`
-([ARCHITECTURE.md](docs/ARCHITECTURE.md) §8).
+(`doc:docs/avendb` §8).
 
 - **Found** (`Device::found`, `Node::found_with`): a new person's first browser founds their human vault with the
   passkey they signed up to maiaCITY with, or one it makes, gives avenMAIA, the aven the server is a device of, backup
@@ -157,18 +155,18 @@ A device starts in one of three ways; everything after is one op through `PageDe
   (`AVENDB_SIGNUP`, open by default with the gate off; with it on, by invite: a newcomer's pass with an invite of Maia City's still open), so a person with no device yet gets in. The first person to found their vault
   through a server nobody has claimed yet claims it in that same ceremony, founding the seed: Maia City, a coop their
   vault owns alone, and avenMAIA, Maia City's one aven; the server becomes avenMAIA's device
-  ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). Each seed vault then follows the person's server setting, backup or
+  (`doc:docs/avendb` §3). Each seed vault then follows the person's server setting, backup or
   relay, as every vault founded under them does.
 - **Claim an invite** (`PageDevice::claim_invite`, `Node::claim_invite`): on a gated server (`AVENDB_GATE=on`) a
   new person's vault comes in only with an invite of Maia City's. Their invite link names the share and holds the
   secret of its one-time key: once their browser founded their vault, it asks the server for the invite, claims it
   with that key, and hands the server its vault and the claim at once, which the server takes
-  ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §5, Invites and Who the server takes).
+  (`doc:docs/avendb` §5, Invites and Who the server takes).
 - **Link** (`Device::link`, `Node::link_by_pass`): a browser of a person who has a device already links through the
   code that device shows, in one ceremony: the unlock, which is the pass and signs the join too. Of the keys the
   unlock's assertion recovers to, its passkey's is the one whose vault the peer hands over.
 - **Open** (`Device::open`): what the device holds is kept on its shelf in the browser's private file system, OPFS, by
-  a worker of its own (`js/store.js`, `js/store.worker.js`; [ARCHITECTURE.md](docs/ARCHITECTURE.md) §14), with what
+  a worker of its own (`js/store.js`, `js/store.worker.js`; `doc:docs/avendb` §14), with what
   opens it again (`Meta`, the vaults it follows among it). It opens again in one ceremony, the unlock; the relay knows
   it, so it needs no pass. While it runs, its worker holds its shelf, so it never runs in two tabs at once. What an
   earlier avenDB kept in OPFS it keeps: avenDB is never reset, and nothing clears a store.
@@ -205,7 +203,7 @@ natively, with a software passkey in the authenticator's place.
 The Mac app (maiaCITY Studio) shows the same page, but its web view may not use maia.city's passkeys, so each ceremony
 runs in a sign-in sheet: maia.city's own sheet page (`/app/avendb/sheet/`), shown by the app
 (`vault/app/src/passkey.rs`, macOS's ASWebAuthenticationSession, ephemeral), seals what the ceremony brings back to a
-one-time X-Wing key the device named, and the device opens it. [ARCHITECTURE.md](docs/ARCHITECTURE.md) §11 says why
+one-time X-Wing key the device named, and the device opens it. `doc:docs/avendb` §11 says why
 this is safe and where its one gate is, the person's own prompt. `scripts/avendb-sheet.mjs` walks the sheet in a
 headless Chrome, the test playing the app, against a server on this machine.
 
@@ -242,14 +240,14 @@ commands already use the running app executable (`agentCommand`).
   command a harness's MCP settings run. Granting adds the agent's key as a device of its coop's one aven, avenMAIA,
   beside the server, in one ceremony, which the agent's device cosigns (`Place::Vault`). From then on it acts as
   avenMAIA, with avenMAIA's rights, no more and no less: by default a Suggester on Maia City, whose drafts and AIPs a
-  human of Maia City accepts ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). One agent is taken out by removing its
+  human of Maia City accepts (`doc:docs/avendb` §3). One agent is taken out by removing its
   device from the aven. Its tools: `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change (`put_file`
   saves a file of the Mac by its path; `get_file` reads one back to a path, never over a file there unless
   `overwrite`, a small text file inline too), `avendb_add_spark` to capture a spark and `avendb_add_artifact` to add an
   artifact, each into the vault named or else Maia City, as the Sparks and Artifacts pages do, `avendb_read_file` for
   `get_file`, and `avendb_request_access`.
 
-Passkeys, PRF and a device's secure boundary are in [ARCHITECTURE.md](docs/ARCHITECTURE.md) §11.
+Passkeys, PRF and a device's secure boundary are in `doc:docs/avendb` §11.
 
 ### Cloud sessions
 
@@ -283,7 +281,7 @@ another **Add a cloud agent**.
 opens nothing but what is public.
 
 - At its first start it makes its device's secret (`device.key`, readable by its owner alone, or sealed in its bucket),
-  and belongs to no vault until a human vault claims it ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). It logs its
+  and belongs to no vault until a human vault claims it (`doc:docs/avendb` §3). It logs its
   offer (`AVENDB1…`): its device, its endpoint, its public address and its relay. The app keeps it, so that devices
   reach the server, and a new device links through it with its person's passkey alone.
 - avenDB is never reset (Samuel 2026-10-19): `shelf::FLOOR` (`crates/avendb-net/src/shelf.rs`, and `FLOOR` in
@@ -322,8 +320,9 @@ plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 | `AVENDB_FEED_BIND` | `0.0.0.0:3351` | The socket the Maia Universe's feed is served on, plain HTTP behind the same proxy |
 | `AVENDB_RELAY_URL` | the relay's own socket | Where devices reach the relay, `https://avendb.maia.city` once deployed |
 | `AVENDB_PUBLIC_ADDR` | its interfaces' addresses | Where devices on UDP reach it from the internet, the server's IP and port 7401, as its offer says |
+| `AVENDB_STUN_BIND` | off | The UDP socket of its STUN responder (`stun.rs`, RFC 8489 Binding alone), where browsers learn the address their network shows to reach each other over WebRTC straight; the deployment sets `0.0.0.0:3478`, open in the firewall (`infra/index.ts`) |
 | `AVENDB_SIGNUP` | `open`, `invite` with the gate on | `open`: its relay lets in any passkey's pass for ten minutes, so a new person's first browser founds their vault; `invite`: only passkeys of vaults it knows, and a newcomer's shown with an invite of Maia City's still open (G5); `closed`: only passkeys of vaults it knows |
-| `AVENDB_GATE` | `off` | `on`: it takes a new person's vault only with an invite of Maia City's it claims, and a new coop or aven only where an admin owns it (Maia City, its owner, or a holder of its cap group named Admin); `off`: any. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §5, Who the server takes |
+| `AVENDB_GATE` | `off` | `on`: it takes a new person's vault only with an invite of Maia City's it claims, and a new coop or aven only where an admin owns it (Maia City, its owner, or a holder of its cap group named Admin); `off`: any. See `doc:docs/avendb` §5, Who the server takes |
 | `AVENDB_MAX_EDIT` | `16` | The mebibytes of one edit it takes at most |
 | `AVENDB_MAX_FILE` | `50` | The gigabytes of one file it keeps at most |
 | `AVENDB_BACKUP_LIMITS` | `Traveler=5,Citizen=25` | The gigabytes of new files it keeps for each person, by the cap group of Maia City they hold: the most of those they hold, the least for one who holds none; owners and holders of Admin have none, and `off` limits nobody. Edits are always kept, and nothing kept is dropped (Q1-Q5); a device asks its standing at `/feed/backup` |
@@ -332,7 +331,7 @@ plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 | `AVENDB_FEED_RATE` | `30` | The asks a minute of the feed's signed routes from each address, by the proxy's `X-Forwarded-For`, `0` for no limit |
 | `AVENDB_BUCKET` and the rest | none | Its bucket (see [Deploying the server](#deploying-the-server), step 6) |
 | `AVENDB_CACHE` | `8` | With a bucket, the gigabytes of the parts it read lately that its folder caches |
-| `AVENDB_SNAPSHOTS` and the rest | none | Its bucket of snapshots: every vault backed up into it each day (see [docs/BACKUP.md](docs/BACKUP.md)) |
+| `AVENDB_SNAPSHOTS` and the rest | none | Its bucket of snapshots: every vault backed up into it each day (see `doc:docs/avendb`) |
 | `RUST_LOG` | `info` | How much it logs |
 
 ### Deploying the server
@@ -360,7 +359,7 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    City and avenMAIA, and makes it avenMAIA's device, so whoever runs a new server founds their vault there first.
    Every device reads the server from that seed (`avendb::world::seeder`). Both workflows log whether it is claimed
    yet.
-6. **Its bucket** ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §14): with `AVENDB_BUCKET`, `AVENDB_BUCKET_ENDPOINT`,
+6. **Its bucket** (`doc:docs/avendb` §14): with `AVENDB_BUCKET`, `AVENDB_BUCKET_ENDPOINT`,
    `AVENDB_BUCKET_REGION`, `AVENDB_BUCKET_ACCESS_KEY`, `AVENDB_BUCKET_SECRET_KEY` and `AVENDB_BUCKET_SEAL` (64 hex
    digits) in its environment, its shelf and its device's secret live in that bucket, every object sealed under the
    seal, and its folder is only a cache: it logs at its start whether it keeps one. `avendb.yml` writes them into the
@@ -368,7 +367,7 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    the GitHub secret `AVENDB_BUCKET_SEAL`, and the compose files pass them on; with one of those secrets unset, it
    writes none. The bucket is avenDB's own, `maiacity-avendb` in `hel1`, beside the media vault's: `avendb.yml`'s
    `bucket` job makes it with Object Lock, every object version locked for 7 days, or checks the one there.
-7. **Its backups** ([docs/BACKUP.md](docs/BACKUP.md)): `avendb.yml` also writes `AVENDB_SNAPSHOTS`, the bucket of
+7. **Its backups** (`doc:docs/avendb`): `avendb.yml` also writes `AVENDB_SNAPSHOTS`, the bucket of
    snapshots `maiacity-avendb-snapshots` beside it, which `avendb-backups.yml` makes with Object Lock. The server backs
    up every vault into it each day at 03:00 UTC, and on `docker kill -s USR1 maia-city-avendb`, then checks every
    folder from the bucket alone, each file's bytes once in 30 days; `avendb-server check` checks the same by hand, and
@@ -389,7 +388,7 @@ PR, merged when its Rust tests passed and its theorems were proven. The table sa
 merged, in the words of the time: caps and cells were what shares and audiences are now. Since then, the v8 plan
 made every share a named group of ops, replaced sync rules with keep shares and the schema lane's publish with schema
 and lens entries, added holdings, one `run(op)` API and one shelf per place, as
-[ARCHITECTURE.md](docs/ARCHITECTURE.md) describes.
+`doc:docs/avendb` describes.
 
 | Phase | What it builds | State |
 |---|---|---|

@@ -1,12 +1,24 @@
-//! Owner-held partial Store: main-line append while older content is absent.
-//! Received shared writes require complete group-free grant proofs. Proposal forks
-//! require their exact causal bodies; shared-holder authoring remains unsupported.
+//! Based entries (`EntryState.lean`): a device shows an entry from its owners' judged base, with the suffix after it
+//! replayed, while older content is absent. One format for owners and readers: an owner appends to the main line
+//! once the suffix is in (`writable`), a reader shows it read-only. Received shared writes require complete group-free
+//! grant proofs. Proposal forks require their exact causal bodies; shared-holder authoring remains unsupported.
 use super::*;
 
-pub(crate) type Anchors = BTreeMap<EntryId, (EditId, Vec<u8>)>;
+/// The judged base a device took of an entry: the snapshot that states it and the sealed slice file, and whether the
+/// device's journal holds it yet (until then the entry stays read-only, so no write rests on a base a restart loses).
+#[derive(Clone)]
+pub(crate) struct Base {
+    pub(crate) snapshot: EditId,
+    pub(crate) sealed: Vec<u8>,
+    pub(crate) saved: bool,
+}
+pub(crate) type Anchors = BTreeMap<EntryId, Base>;
 
 const SUFFIX_BATCH: usize = 32;
-pub(crate) struct BootstrapProgress {
+/// An entry the device shows from its base now: what is left of its suffix, and whether the device may write it
+/// (`entry_state::writable`: it acts for the entry's vault).
+pub(crate) struct Based {
+    pub(crate) writable: bool,
     basis: OverlayBasis,
     policy: crate::policy::Slice,
     lane_digest: Option<[u8;32]>,
@@ -33,7 +45,7 @@ pub(crate) struct OverlayBasis {
     gate: bool,
 }
 impl OverlayBasis {
-    fn of(store: &Store) -> Self {
+    pub(crate) fn of(store: &Store) -> Self {
         Self { log: store.log.revision(), keys: store.keys.revision.clone(),
             anchors: store.bootstrap_revision.clone(), warm: store.warm_revision.clone(),
             bodies: store.bodies.len(), blobs: store.blobs.len(), signed: store.signed.len(),
@@ -54,7 +66,7 @@ pub(crate) struct RetainedOverlay {
     basis: OverlayBasis,
     state: State,
     shown: HashMap<EntryId, Shown>,
-    active: HashSet<EntryId>,
+    based: HashMap<EntryId, Based>,
     readings: Readings,
 }
 
@@ -63,7 +75,6 @@ fn canonical_owner_replacement(on: SignerId, store: &Store, base: &RestoredOwner
     let state=&store.replay.state;
     if store.replayed != store.log.edits().len() { return None; }
     let en=state.entry(base.entry)?;
-    if !state.acts_for(on,en.vault) { return None; }
     let held=|id: EditId| store.signed.contains_key(&id) && store.bodies.contains_key(&id);
     if !base.history.changes().iter().all(|c| held(c.write.edit))
         || !state.entry_writes(base.entry).all(|w| held(w.edit)) { return None; }
@@ -96,24 +107,32 @@ fn bootstrap_share_proof(state: &State, vault: VaultId, write: &Write, proof: Op
 impl Lab {
 
     pub fn owner_bases_pending(&self, on: SignerId) -> bool {
-        !self.locked(on) && self.held(on).bootstrap_progress.values().any(|p| !p.pending.is_empty() && p.missing.is_empty() && p.wait_reason.is_none())
+        !self.locked(on) && self.held(on).based.values().any(|p| !p.pending.is_empty() && p.missing.is_empty() && p.wait_reason.is_none())
     }
     /// A retained ciphertext wait is distinct from a missing signed-edit demand.
     pub fn owner_base_wait_reason(&self, on: SignerId, entry: EntryId) -> Option<&'static str> {
         self.active_owner_base(on, entry)?;
-        self.held(on).bootstrap_progress.get(&entry)?.wait_reason
+        self.held(on).based.get(&entry)?.wait_reason
     }
     /// Missing authenticated historical bodies of the selected dependency cut.
     /// Current owner authorization gates this local scheduling hint; it grants no
     /// remote access. Held encrypted edits may instead need ordinary key recovery.
     pub fn owner_base_missing(&self, on: SignerId) -> Vec<(EntryId, Vec<EditId>)> {
-        self.held(on).bootstrap_progress.iter()
+        self.held(on).based.iter()
             .filter(|(entry, p)| !p.missing.is_empty() && self.active_owner_base(on, **entry).is_some())
             .map(|(entry, p)| (*entry, p.missing.clone())).collect()
     }
+    /// Whether device `on` shows entry `entry` read-only because of its base: a reader's base (`writable`), a base not
+    /// yet in its journal, or a suffix still being replayed or waiting.
+    pub fn based_read_only(&self, on: SignerId, entry: EntryId) -> bool {
+        self.held(on).based.get(&entry).is_some_and(|b| !b.writable)
+            || self.owner_base_durability_pending(on, entry)
+            || self.owner_base_pending(on, entry) > 0
+            || self.owner_base_wait_reason(on, entry).is_some()
+    }
     /// Remaining authenticated-log work, not complete history or file availability.
     pub fn owner_base_pending(&self, on: SignerId, entry: EntryId) -> usize {
-        self.held(on).bootstrap_progress.get(&entry).map_or(0, |p| p.pending.len())
+        self.held(on).based.get(&entry).map_or(0, |p| p.pending.len())
     }
     /// One bounded materialization turn. The Node pump must yield between turns.
     /// A changed input basis restarts from the owner-attested base, never a stale cursor.
@@ -123,44 +142,43 @@ impl Lab {
         self.rebuild_owner_bases(at);
         self.owner_bases_pending(at)
     }
-    /// Authorized provenance of a currently adopted owner base. A hint is neither
+    /// Authorized provenance of a base the device shows an entry from now, owner or reader. A hint is neither
     /// global completeness nor permission to skip ordinary write admission.
     pub fn active_owner_base(&self, on: SignerId, entry: EntryId) -> Option<(EditId, Vec<EditId>)> {
         let store = self.held(on);
-        if !store.bootstrap_active.contains(&entry)
+        if !store.based.contains_key(&entry)
             || store.replayed != store.log.edits().len() { return None; }
-        let (snapshot, _) = store.bootstrap_bases.get(&entry)?;
-        let (vault, stated, _) = self.projection_authority(on, *snapshot, entry)?;
-        if !store.replay.state.acts_for(on, vault) { return None; }
-        Some((*snapshot, stated.basis.clone()))
+        let snapshot = store.bases.get(&entry)?.snapshot;
+        let (_, stated, _) = self.snapshot_authority(on, snapshot, entry)?;
+        Some((snapshot, stated.basis.clone()))
     }
 
     pub(crate) fn take_owner_overlay(&mut self, on: SignerId) -> Option<RetainedOverlay> {
         let store = self.stores.get_mut(&on)?;
         let basis = store.bootstrap_basis.take()?;
-        if store.reshow || !basis.matches(store) || store.bootstrap_active.is_empty() { return None; }
+        if store.reshow || !basis.matches(store) || store.based.is_empty() { return None; }
         let state = store.bootstrap_state.take()?;
-        let active = std::mem::take(&mut store.bootstrap_active);
-        let shown = active.iter().filter_map(|e| store.shown.remove(e).map(|s| (*e, s))).collect();
+        let based = std::mem::take(&mut store.based);
+        let shown = based.keys().filter_map(|e| store.shown.remove(e).map(|s| (*e, s))).collect();
         let readings = std::mem::take(&mut store.readings);
         store.readings.groups = readings.groups.clone();
-        Some(RetainedOverlay { basis, state, shown, active, readings })
+        Some(RetainedOverlay { basis, state, shown, based, readings })
     }
 
     pub(crate) fn restore_owner_overlay(&mut self, on: SignerId, retained: Option<RetainedOverlay>) -> bool {
         let Some(retained) = retained else { return false; };
         if !retained.basis.matches(self.held(on)) { return false; }
         // Recheck current recipient entitlement even though the signed log is unchanged.
-        for entry in &retained.active {
-            let Some((snapshot, _)) = self.held(on).bootstrap_bases.get(entry) else { return false; };
-            if self.projection_authority(on, *snapshot, *entry).is_none() { return false; }
+        for entry in retained.based.keys() {
+            let Some(base) = self.held(on).bases.get(entry) else { return false; };
+            if self.snapshot_authority(on, base.snapshot, *entry).is_none() { return false; }
         }
         let store = self.stores.get_mut(&on).expect("device");
         store.shown.extend(retained.shown);
         store.readings = retained.readings;
         store.latest = OnceLock::from(retained.state.clone());
         store.bootstrap_state = Some(retained.state);
-        store.bootstrap_active = retained.active;
+        store.based = retained.based;
         store.bootstrap_basis = Some(retained.basis);
         store.perf.count("bootstrap: unchanged overlay reused", 1);
         true
@@ -181,21 +199,23 @@ impl Lab {
         }
         let at = self.at(on);
         let store = self.stores.get_mut(&at).expect("device");
-        if !store.bootstrap_bases.contains_key(&entry) && store.bootstrap_bases.len() >= 16 {
+        if !store.bases.contains_key(&entry) && store.bases.len() >= 16 {
             return false;
         }
         store.bootstrap_revision = Arc::new(());
         store.bootstrap_basis = None;
-        store.bootstrap_bases.insert(entry, (snapshot, sealed));
+        // a base staged and not yet in the journal stays unsaved when taken again (`stage_owner_entry_base`)
+        let saved = store.bases.get(&entry).is_none_or(|b| b.saved);
+        store.bases.insert(entry, Base { snapshot, sealed, saved });
         self.rebuild_owner_bases(at);
-        self.held(at).bootstrap_active.contains(&entry)
+        self.held(at).based.contains_key(&entry)
     }
 
     /// Reauthenticate ciphertext and policy on every reconstruction. The signed suffix
     /// stays in the ordinary log; only the entry's derived view is overlaid.
     pub(crate) fn rebuild_owner_bases(&mut self, on: SignerId) {
         // Only IDs are copied. Reusable cursors never clone/decrypt sealed anchors.
-        let mut entries: Vec<_> = self.held(on).bootstrap_bases.keys().copied().collect();
+        let mut entries: Vec<_> = self.held(on).bases.keys().copied().collect();
         if let Some(last) = self.held(on).bootstrap_cursor {
             let next = entries.partition_point(|entry| *entry <= last);
             let n = entries.len();
@@ -203,44 +223,42 @@ impl Lab {
         }
         let mut restored = Vec::new();
         for entry in &entries {
-            let snapshot = self.held(on).bootstrap_bases[entry].0;
+            let snapshot = self.held(on).bases[entry].snapshot;
             // Only attempt retirement after the complete attested frontier is locally held.
             // Frontier presence alone never establishes content/judgment completeness.
-            let frontier_held = self.projection_authority(on,snapshot,*entry)
+            let frontier_held = self.snapshot_authority(on,snapshot,*entry)
                 .is_some_and(|(_,stated,_)| stated.basis.iter().all(|id| self.held(on).signed.contains_key(id)));
             if frontier_held {
-                let sealed=&self.held(on).bootstrap_bases[entry].1;
+                let sealed=&self.held(on).bases[entry].sealed;
                 if let Some(base)=self.decode_owner_judgment(on,snapshot,*entry,sealed,false) {
                     if let Some(canonical)=canonical_owner_replacement(on,self.held(on),&base) {
                         let store=self.stores.get_mut(&on).expect("device");
                         store.shown.insert(*entry,canonical);
-                        store.bootstrap_bases.remove(entry);
-                        store.bootstrap_progress.remove(entry);
-                        store.bootstrap_pending.remove(entry);
-                        store.bootstrap_active.remove(entry);
+                        store.bases.remove(entry);
+                        store.based.remove(entry);
                         store.bootstrap_revision=Arc::new(());
                         continue;
                     }
                 }
             }
-            let reusable = self.held(on).bootstrap_progress.get(entry)
+            let reusable = self.held(on).based.get(entry)
                 .is_some_and(|p| p.basis.matches(self.held(on)))
                 && self.active_owner_base(on, *entry).is_some();
             if reusable {
                 let at = self.at(on);
                 let store = self.stores.get_mut(&at).expect("device");
-                let progress = store.bootstrap_progress.remove(entry).expect("progress");
+                let progress = store.based.remove(entry).expect("progress");
                 if let Some(shown) = store.shown.remove(entry) {
                     let base = RestoredOwnerJudgment { entry: *entry, lane_digest: progress.lane_digest, history: shown.history,
-                        after: shown.after, items: shown.items.into_inner().unwrap_or_default(),
+                        after: shown.after, items: shown.items,
                         policy: progress.policy, bodies: HashMap::new() };
                     restored.push((snapshot, base, Some((progress.pending, progress.base_scratch, progress.missing, progress.wait_reason))));
                     continue;
                 }
             }
             let at = self.at(on);
-            self.stores.get_mut(&at).expect("device").bootstrap_progress.remove(entry);
-            let sealed = &self.held(on).bootstrap_bases[entry].1;
+            self.stores.get_mut(&at).expect("device").based.remove(entry);
+            let sealed = &self.held(on).bases[entry].sealed;
             if let Some(base) = self.restore_owner_judgment(on, snapshot, *entry, sealed) {
                 restored.push((snapshot, base, None));
             }
@@ -249,7 +267,7 @@ impl Lab {
         let store = self.stores.get_mut(&at).expect("device");
         store.bootstrap_state = None;
         store.latest = OnceLock::from(store.replay.state.clone());
-        store.bootstrap_active.clear();
+        store.based.clear();
         store.bootstrap_basis = None;
         if restored.is_empty() {
             return;
@@ -278,14 +296,13 @@ impl Lab {
             if attrs.ty.of_lane() || attrs.ty.is_cap_group() {
                 continue;
             }
-            if !state.acts_for(on, vault) {
-                continue;
-            }
+            // one format for owners and readers: only an owner may write over its owners' base
+            let writable = state.acts_for(on, vault);
             let mut view = state.with_slice(entry, &base.policy);
             let mut readings = store.readings.clone();
             for (id, body) in &base.bodies {
                 if let Some(h) = &body.header {
-                    readings.headers.insert(*id, h.clone());
+                    readings.put_header(*id, h.clone());
                 }
                 readings.tags.insert(*id, body.tags.clone());
                 if let Some(p) = &body.proof {
@@ -411,30 +428,24 @@ impl Lab {
             store.bodies.extend(opened_suffix);
             store.shown.insert(entry, shown);
             store.readings = readings;
-            store
-                .projections
-                .lock()
-                .expect("entry projections")
-                .remove(&(on, entry));
-            store.bootstrap_active.insert(entry);
             {
                 let basis = OverlayBasis::of(store);
-                store.bootstrap_progress.insert(entry, BootstrapProgress {
-                    basis, policy: view.slice_of(entry), lane_digest,
+                store.based.insert(entry, Based {
+                    writable, basis, policy: view.slice_of(entry), lane_digest,
                     base_scratch, pending, missing, wait_reason,
                 });
             }
 
             state = view;
         }
-        if !store.bootstrap_active.is_empty() {
+        if !store.based.is_empty() {
             store.latest = OnceLock::from(state.clone());
             store.bootstrap_state = Some(state);
             store.bootstrap_basis = Some(OverlayBasis::of(store));
-            let entries: Vec<_> = store.bootstrap_progress.keys().copied().collect();
+            let entries: Vec<_> = store.based.keys().copied().collect();
             for entry in entries {
                 let basis = OverlayBasis::of(store);
-                store.bootstrap_progress.get_mut(&entry).expect("progress").basis = basis;
+                store.based.get_mut(&entry).expect("progress").basis = basis;
             }
 
         }
@@ -445,11 +456,11 @@ impl Backup {
     /// Durable companion to the existing signed-log backup. Ciphertext only; decoding
     /// grants no authority and restore rechecks its signed root and current policy.
     pub fn bootstrap_bytes(&self) -> Option<Vec<u8>> {
-        encode_anchors(&self.bootstrap_bases, self.signed.iter())
+        encode_anchors(&self.bases, self.signed.iter())
     }
     pub fn with_bootstrap_bytes(mut self, bytes: &[u8]) -> Option<Self> {
         if bytes.is_empty() {
-            self.bootstrap_bases.clear();
+            self.bases.clear();
             return Some(self);
         }
         if bytes.len() > 16 * (MAX_BYTES + 256 + 1024 * 32) {
@@ -486,7 +497,7 @@ impl Backup {
                     return None;
                 }
             }
-            if sealed.len() > MAX_BYTES + 128 || anchors.insert(entry, (snapshot, sealed)).is_some()
+            if sealed.len() > MAX_BYTES + 128 || anchors.insert(entry, Base { snapshot, sealed, saved: true }).is_some()
             {
                 return None;
             }
@@ -494,7 +505,7 @@ impl Backup {
         if !r.done() {
             return None;
         }
-        self.bootstrap_bases = anchors;
+        self.bases = anchors;
         Some(self)
     }
 }
@@ -521,7 +532,7 @@ mod tests {
         let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,draft,&[]).unwrap();
         for device in [phone,pad,bad] {
-            let offer=lab.entry_projection_offer(mac,device,entry).unwrap();
+            let offer=lab.entry_base_offer(mac,device,entry).unwrap();
             lab.receive(device,offer.evidence,vec![]);
             assert!(lab.adopt_owner_entry_base(device,snapshot,entry,sealed.clone()));
         }
@@ -588,7 +599,7 @@ mod tests {
         let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,draft,&[]).unwrap();
         for d in [phone,pad] {
-            let offer=lab.entry_projection_offer(mac,d,entry).unwrap(); lab.receive(d,offer.evidence,vec![]);
+            let offer=lab.entry_base_offer(mac,d,entry).unwrap(); lab.receive(d,offer.evidence,vec![]);
             assert!(lab.adopt_owner_entry_base(d,snapshot,entry,sealed.clone()));
         }
         lab.sync(mac,device);
@@ -679,7 +690,7 @@ mod tests {
         lab.edit(mac,vault,entry,|item| { item.edit_document_v0(|d| d.title="Attested".into()); }).unwrap();
         let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,draft,&[]).unwrap();
-        let offer=lab.entry_projection_offer(mac,phone,entry).unwrap();
+        let offer=lab.entry_base_offer(mac,phone,entry).unwrap();
         lab.receive(phone,offer.evidence,vec![]);
         // A pre-lane-attestation envelope remains readable but never grants writes.
         let name=lab.held(mac).replay.state.entry_key(entry).unwrap();
@@ -690,7 +701,7 @@ mod tests {
         let mut legacy_action=lab.signed_edit(mac,snapshot).unwrap().edit.action.clone();
         if let Action::Snapshot{states,..}=&mut legacy_action { states[0].slice=FileRoot{hash:crate::hash::content(&legacy),size:legacy.len() as u64}; }
         let legacy_snapshot=lab.submit(mac,&[owner],legacy_action).unwrap();
-        let legacy_offer=lab.entry_projection_offer(mac,phone,entry).unwrap();
+        let legacy_offer=lab.entry_base_offer(mac,phone,entry).unwrap();
         lab.receive(phone,legacy_offer.evidence,vec![]);
         assert!(lab.adopt_owner_entry_base(phone,legacy_snapshot,entry,legacy));
         assert_eq!(lab.owner_base_wait_reason(phone,entry),Some("missing-schema-lane"));
@@ -706,8 +717,8 @@ mod tests {
         assert_eq!(query["ok"]["rows"][0]["readOnly"],true);
         let empty_page=crate::engine::read(&lab,phone,&serde_json::json!({"op":"query","schema":"stored","where":{"type":["doc"]},"limit":0}));
         assert_eq!(empty_page["ok"]["rows"],serde_json::json!([]));
-        assert_eq!(empty_page["ok"]["readiness"]["checkpointPartial"],true);
-        assert_eq!(empty_page["ok"]["readiness"]["authoritativeEmpty"],false);
+        assert_eq!(empty_page["ok"]["coverage"]["state"],"partial","a row from an owner's base waits on its history");
+        assert_eq!(empty_page["ok"]["coverage"]["waiting"][0]["on"],"history");
         let before=lab.item(phone,entry).unwrap().record();
         assert!(lab.edit(phone,vault,entry,|item| { item.edit_document_v0(|d| d.title="Forbidden while incomplete".into()); }).is_err());
         let suffix=lab.edit(mac,vault,entry,|item| { item.edit_document_v0(|d| d.title="Latest".into()); }).unwrap();
@@ -734,7 +745,7 @@ mod tests {
         assert!(lab.edit(phone,vault,entry, |_| {}).is_err());
         lab.sync(mac,phone);
         assert!(lab.active_owner_base(phone,entry).is_none());
-        assert!(!lab.held(phone).bootstrap_bases.contains_key(&entry));
+        assert!(!lab.held(phone).bases.contains_key(&entry));
         assert!(lab.owner_base_wait_reason(phone,entry).is_none());
         lab.edit(phone,vault,entry,|item| { item.edit_document_v0(|d| d.title="Canonical again".into()); }).unwrap();
     }
@@ -764,7 +775,7 @@ mod tests {
             })
             .collect();
         let snapshot = backup.signed[0].edit.id();
-        backup.bootstrap_bases.insert(entry, (snapshot, vec![1]));
+        backup.bases.insert(entry, Base { snapshot, sealed: vec![1], saved: true });
         let mut legacy = b"avenDB bootstrap anchors 1\n".to_vec();
         1u32.encode(&mut legacy);
         entry.encode(&mut legacy);
@@ -868,7 +879,7 @@ mod tests {
         );
         backup.signed.push(held);
         // Opaque transport fixture only: this does not attest or activate a writable base.
-        backup.bootstrap_bases.insert(entry, (later, vec![1, 2, 3]));
+        backup.bases.insert(entry, Base { snapshot: later, sealed: vec![1, 2, 3], saved: true });
         let bytes = backup.bootstrap_bytes().unwrap();
         assert!(
             Backup::new(backup.signed.clone(), backup.blobs.values().cloned())
@@ -915,7 +926,7 @@ mod tests {
         let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
         for device in [phone, watcher] {
-            let offer = lab.entry_projection_offer(mac, device, entry).unwrap();
+            let offer = lab.entry_base_offer(mac, device, entry).unwrap();
             lab.receive(device, offer.evidence, vec![]);
             assert!(lab.adopt_owner_entry_base(device, snapshot, entry, sealed.clone()));
         }
@@ -983,7 +994,7 @@ mod tests {
         let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
         for device in [pad, watcher] {
-            let offer = lab.entry_projection_offer(mac, device, entry).unwrap();
+            let offer = lab.entry_base_offer(mac, device, entry).unwrap();
             lab.receive(device, offer.evidence, vec![]);
             lab.receive(device, vec![concurrent_signed.clone()], vec![]);
             assert!(lab.adopt_owner_entry_base(device, snapshot, entry, sealed.clone()));
@@ -1025,7 +1036,7 @@ mod tests {
         let signed = lab.backup(phone).signed().iter().find(|s| s.edit.id() == concurrent).unwrap().clone();
         let snapshot_depth = lab.log(mac).edits().iter().find(|e| e.id() == snapshot).unwrap().depth;
         assert!(signed.edit.depth < snapshot_depth, "the delayed branch predates the checkpoint, but is not included in it");
-        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        let offer = lab.entry_base_offer(mac, phone, entry).unwrap();
         lab.receive(phone, offer.evidence, vec![]);
         assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
         lab.receive(mac, vec![signed], vec![]);
@@ -1033,7 +1044,7 @@ mod tests {
         // The held edit alone is not sufficient evidence for writable adoption.
         lab.stores.get_mut(&phone).unwrap().signed.remove(&concurrent);
         lab.refresh(phone, &[]);
-        assert!(!lab.held(phone).bootstrap_active.contains(&entry), "an unverifiable required suffix cannot be skipped while claiming writable completeness");
+        assert!(!lab.held(phone).based.contains_key(&entry), "an unverifiable required suffix cannot be skipped while claiming writable completeness");
     }
 
     #[test]
@@ -1048,14 +1059,14 @@ mod tests {
         lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint")).unwrap();
         let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
-        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        let offer = lab.entry_base_offer(mac, phone, entry).unwrap();
         lab.receive(phone, offer.evidence, vec![]);
         assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed.clone()));
         let heads = lab.held(mac).shown.get(&entry).unwrap().history.heads(MAIN);
         let proposal = lab.propose(mac, vault, entry, &heads, "Partial proposal requiring its cut").unwrap();
         let signed = lab.backup(mac).signed().iter().find(|s| s.edit.id() == proposal).unwrap().clone();
         lab.receive(phone, vec![signed], vec![]);
-        assert!(lab.held(phone).bootstrap_active.contains(&entry), "retain the verified prefix during causal-body recovery");
+        assert!(lab.held(phone).based.contains_key(&entry), "retain the verified prefix during causal-body recovery");
         assert!(lab.owner_base_pending(phone, entry)>0);
         assert!(!lab.owner_base_missing(phone).is_empty());
         assert_eq!(lab.edit(phone,vault,entry,|i|i.set_text(2,"must wait")).unwrap_err(),Refusal::ReadOnly);
@@ -1085,14 +1096,14 @@ mod tests {
         lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint")).unwrap();
         let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
-        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        let offer = lab.entry_base_offer(mac, phone, entry).unwrap();
         lab.receive(phone, offer.evidence, vec![]);
         assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed.clone()));
         let mark = lab.submit(mac, &[owner], Action::Mark { vault, entry, caps: Some(vec![]), wants: None, keep: vec![], via: vec![] }).unwrap();
         let signed = lab.backup(mac).signed().iter().find(|s| s.edit.id() == mark).unwrap().clone();
         lab.receive(phone, vec![signed], vec![]);
         let canonical = lab.held(phone).replay.state.slice_of(entry);
-        assert!(!lab.held(phone).bootstrap_active.contains(&entry));
+        assert!(!lab.held(phone).based.contains_key(&entry));
         assert!(lab.active_owner_base(phone, entry).is_none());
         assert!(!lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
         assert_eq!(lab.held(phone).view().slice_of(entry), canonical, "historical stays/seals cannot overwrite the current policy");
@@ -1111,7 +1122,7 @@ mod tests {
             lab.edit(mac, vault, entry, |i| i.set_text(2, "base")).unwrap();
             let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
             let snapshot = lab.complete(mac, draft, &[]).unwrap();
-            let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+            let offer = lab.entry_base_offer(mac, phone, entry).unwrap();
             lab.receive(phone, offer.evidence, vec![]);
             assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
         }
@@ -1152,7 +1163,7 @@ mod tests {
         lab.edit(mac, vault, entry, |i| i.set_text(2, "base")).unwrap();
         let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
-        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        let offer = lab.entry_base_offer(mac, phone, entry).unwrap();
         lab.receive(phone, offer.evidence, vec![]);
         assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
         let mut suffix = Vec::new();
@@ -1198,14 +1209,14 @@ mod tests {
             lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
         for device in [phone, pad] {
-            let offer = lab.entry_projection_offer(mac, device, entry).unwrap();
+            let offer = lab.entry_base_offer(mac, device, entry).unwrap();
             lab.receive(device, offer.evidence, vec![]);
             assert!(lab.stage_owner_entry_base(device, snapshot, entry, sealed.clone()));
             assert!(lab.edit(device,vault,entry,|i|i.set_text(2,"not durable")).is_err());
             assert!(lab.owner_base_durability_pending(device,entry));
             assert!(lab.finish_durable_owner_bases(device));
             assert!(!lab.owner_base_durability_pending(device,entry));
-            assert_eq!(lab.retained_projection_hint(device, entry), Some(snapshot));
+            assert_eq!(lab.retained_base_hint(device, entry), Some(snapshot));
             let detail = crate::engine::read(&lab, device, &serde_json::json!({
                 "op":"get", "entry":entry.to_hex(), "schema":"stored"
             }));
@@ -1277,7 +1288,7 @@ mod tests {
         );
         lab.restore_backup(phone, &disk);
         assert_eq!(lab.item(phone, entry).unwrap().record(), expected);
-        assert!(lab.held(phone).bootstrap_active.contains(&entry));
+        assert!(lab.held(phone).based.contains_key(&entry));
         let c = lab
             .edit(phone, vault, entry, |item| item.set_text(2, "after crash"))
             .unwrap();
@@ -1312,7 +1323,7 @@ mod tests {
             .unwrap()
             .clone();
         lab.receive(phone, vec![removal], vec![]);
-        assert!(!lab.held(phone).bootstrap_active.contains(&entry));
+        assert!(!lab.held(phone).based.contains_key(&entry));
         assert!(
             lab.edit(phone, vault, entry, |item| item.set_text(2, "forbidden"))
                 .is_err()
@@ -1361,7 +1372,7 @@ fn encode_anchors<'a>(
     }
     let mut b = b"avenDB bootstrap anchors 2\n".to_vec();
     (anchors.len() as u32).encode(&mut b);
-    for (entry, (snapshot, sealed)) in anchors {
+    for (entry, Base { snapshot, sealed, .. }) in anchors {
         if sealed.len() > MAX_BYTES + 128 || !signed.clone().any(|s| s.edit.id() == *snapshot) {
             return None;
         }
@@ -1381,16 +1392,16 @@ impl Lab {
     /// Small identity stamp; the signed snapshot fixes its ciphertext root.
     pub fn bootstrap_stamp(&self, on: SignerId) -> Vec<(EntryId, EditId)> {
         self.held(on)
-            .bootstrap_bases
+            .bases
             .iter()
-            .map(|(e, (s, _))| (*e, *s))
+            .map(|(e, b)| (*e, b.snapshot))
             .collect()
     }
     /// Capture ciphertext anchors with the same held signed frontier as a journal save.
     pub fn bootstrap_bytes(&self, on: SignerId) -> Option<Vec<u8>> {
         let store = self.held(on);
         encode_anchors(
-            &store.bootstrap_bases,
+            &store.bases,
             store.log.ids().iter().map(|id| &store.signed[id]),
         )
     }
@@ -1401,17 +1412,19 @@ impl Lab {
     pub fn stage_owner_entry_base(&mut self,on:SignerId,snapshot:EditId,entry:EntryId,sealed:Vec<u8>)->bool {
         if !self.adopt_owner_entry_base(on,snapshot,entry,sealed) { return false; }
         let at=self.at(on);
-        self.stores.get_mut(&at).expect("device").bootstrap_pending.insert(entry);
+        if let Some(base)=self.stores.get_mut(&at).expect("device").bases.get_mut(&entry) { base.saved=false; }
         true
     }
-    pub fn owner_base_durability_pending(&self,on:SignerId,entry:EntryId)->bool { self.held(on).bootstrap_pending.contains(&entry) }
+    pub fn owner_base_durability_pending(&self,on:SignerId,entry:EntryId)->bool {
+        self.held(on).bases.get(&entry).is_some_and(|b| !b.saved)
+    }
     /// Caller must hold the Lab lock and verify the common journal has this exact
     /// signed frontier and anchor stamp. This does not make an invalid base active.
     pub fn finish_durable_owner_bases(&mut self,on:SignerId)->bool {
         let at=self.at(on);
         let store=self.stores.get_mut(&at).expect("device");
-        let changed=!store.bootstrap_pending.is_empty();
-        store.bootstrap_pending.clear();
+        let mut changed=false;
+        for base in store.bases.values_mut().filter(|b| !b.saved) { base.saved=true; changed=true; }
         changed
     }
 }

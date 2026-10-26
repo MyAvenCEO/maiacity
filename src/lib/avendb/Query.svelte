@@ -1,7 +1,7 @@
 <!--
 	The studio's query console, as a database studio's SQL editor, in the layout every avenDB view has (./Frame.svelte):
 	on the left the examples, the reads and the changes, each filling it in for the vault looked at; in the middle the
-	console, any op of avenDB's ops engine as JSON (./ops.js, avendb/docs/ARCHITECTURE.md §8), run on what this device
+	console, any op of avenDB's ops engine as JSON (./ops.js, doc:docs/avendb §8), run on what this device
 	holds, whatever the schema of the records it reads or changes, and what it answered. A query shows its rows as a
 	table, with the selector its labels picked them by before any entry was opened: a share's selector, the very one a
 	share over those entries would hold. A change acts as the acting vault, unless the op names another (`as`), and the

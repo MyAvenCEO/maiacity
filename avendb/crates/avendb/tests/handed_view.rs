@@ -105,7 +105,7 @@ fn another_passkeys_device_changed_bytes_or_missing_edits_start_as_a_restore() {
 }
 
 /// A probe, run by hand: how long a new device takes to start from every edit, checked and replayed, and from a view
-/// handed to it (`NOTES=2000 cargo test --release --test handed_view -- --ignored --nocapture`).
+/// handed to it (`NOTES=2000 cargo test --features test-fixtures --test handed_view -- --ignored --nocapture`).
 #[test]
 #[ignore]
 fn what_a_handed_view_spares() {

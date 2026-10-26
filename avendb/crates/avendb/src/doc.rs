@@ -356,14 +356,6 @@ impl Item {
         self.edit_todo(|t| t.status = status);
     }
 
-    /// Import an engine-bound snapshot authenticated by this device's own shelf.
-    /// Never a peer checkpoint: callers must match the exact current log and body basis.
-    pub(crate) fn from_own_snapshot(bytes: &[u8], signer: SignerId, line: Line) -> Option<Item> {
-        let doc = LoroDoc::new();
-        doc.import(bytes).ok()?;
-        Some(Item::on(doc, peer(signer, line)))
-    }
-
     /// Every op the item holds.
     pub fn version(&self) -> Version {
         Version::of(&self.doc.oplog_vv())

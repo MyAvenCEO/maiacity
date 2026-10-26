@@ -1,0 +1,168 @@
+name: avenDB assurance
+
+# What avenDB's tests are worth and what its dependencies carry (steps T1 and T7a of the tests and architecture audit,
+# 2026-10-26):
+#
+#   deny      – cargo-deny on every PR that touches avenDB's or the Mac app's lockfile: no open RustSec vulnerability,
+#               only licences avendb/deny.toml lists, crates from crates.io alone
+#   coverage  – by hand: every test's own lines, one coverage profile per test (scripts/ci/per-test-profile.sh)
+#   mutants   – by hand: cargo-mutants on the security core, each mutant's log naming the tests that killed it
+#   value     – both read together (scripts/test-value.mjs): the tests that cover no line and kill no mutant that
+#               another test doesn't, the candidates to drop or merge
+#
+# This is a public repository: everything these jobs print or keep is code and test names, never vault data.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'avendb/Cargo.lock'
+      - 'avendb/**/Cargo.toml'
+      - 'avendb/deny.toml'
+      - 'vault/Cargo.lock'
+      - '.github/workflows/avendb-assurance.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'avendb/Cargo.lock'
+      - 'avendb/deny.toml'
+  schedule:
+    # advisories appear without any change of ours: once a day
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+    inputs:
+      measure:
+        description: Measure every test's value (coverage per test and mutants, several hours of runners)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avendb-assurance-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  deny:
+    name: avenDB dependencies (cargo-deny)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - name: avenDB's workspace
+        working-directory: avendb
+        run: cargo deny --locked check
+      # The Mac app links avenDB's device crates with its own lockfile, so its versions are held to the same list
+      - name: The Mac app's lockfile, advisories
+        working-directory: vault
+        run: cargo deny --locked --config ../avendb/deny.toml check advisories
+
+  coverage:
+    if: github.event_name == 'workflow_dispatch' && inputs.measure
+    name: avenDB coverage per test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: core, args: -p avendb }
+          - { name: net-server, args: -p avendb-net -p avendb-server }
+          - { name: device-browser, args: -p avendb-device -p avendb-browser }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Every test on its own profile
+        working-directory: avendb
+        env:
+          RUSTFLAGS: -C instrument-coverage
+          CARGO_PROFILE_TEST_OPT_LEVEL: 1
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: ${{ github.workspace }}/avendb/scripts/ci/per-test-profile.sh
+          AVENDB_PROFILES: ${{ runner.temp }}/profiles
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        run: |
+          mkdir -p "$AVENDB_PROFILES/_other"
+          cargo nextest run --locked --no-fail-fast --features test-fixtures ${{ matrix.args }} || true
+          cargo nextest list --locked --features test-fixtures ${{ matrix.args }} --message-format json \
+            | jq -r '."rust-suites"[]."binary-path"' > "$RUNNER_TEMP/binaries"
+      - name: One lcov file per test
+        env:
+          PROFILES: ${{ runner.temp }}/profiles
+          OUT: ${{ runner.temp }}/lcov
+        run: |
+          tools="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+          objects=$(sed 's/^/-object=/' "$RUNNER_TEMP/binaries" | tr '\n' ' ')
+          mkdir -p "$OUT"
+          for raw in "$PROFILES"/*.profraw; do
+            test=$(basename "$raw" .profraw)
+            "$tools/llvm-profdata" merge -sparse "$raw" -o "$RUNNER_TEMP/one.profdata"
+            "$tools/llvm-cov" export -format=lcov -instr-profile="$RUNNER_TEMP/one.profdata" $objects \
+              -ignore-filename-regex='/.cargo/|/rustc/' > "$OUT/$test.lcov" || true
+          done
+          ls "$OUT" | wc -l
+      - uses: actions/upload-artifact@v5.0.0
+        with:
+          name: coverage-${{ matrix.name }}
+          path: ${{ runner.temp }}/lcov
+          retention-days: 14
+
+  mutants:
+    if: github.event_name == 'workflow_dispatch' && inputs.measure
+    name: avenDB mutants (shard ${{ matrix.shard }} of 48)
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,cargo-mutants
+      # The security core, 2,870 mutants on 2026-10-26, about 60 a shard, each a build and a test run: who may write,
+      # keys and key trees, signatures, sealed files, batch logs, selectors, sync
+      - name: cargo mutants
+        working-directory: avendb
+        env:
+          CARGO_PROFILE_TEST_OPT_LEVEL: 1
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        run: |
+          cargo mutants --test-tool nextest --features test-fixtures -p avendb --no-shuffle \
+            $(for f in policy rules slice keys tree sign sealed batch sync gate; do printf -- '-f crates/avendb/src/%s.rs ' $f; done) \
+            --shard ${{ matrix.shard }}/48 --timeout 600 --output "$RUNNER_TEMP/shard" || true
+      - uses: actions/upload-artifact@v5.0.0
+        with:
+          name: mutants-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard/mutants.out
+          retention-days: 14
+
+  value:
+    needs: [coverage, mutants]
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && inputs.measure }}
+    name: avenDB test value
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v6.0.0
+        with:
+          path: ${{ runner.temp }}/in
+      - name: Each test's unique lines and kills
+        run: |
+          mutants=$(for d in "$RUNNER_TEMP"/in/mutants-*; do printf -- '--mutants %s ' "$d"; done)
+          node avendb/scripts/test-value.mjs --coverage "$RUNNER_TEMP/in" $mutants --out "$RUNNER_TEMP/value"
+          cat "$RUNNER_TEMP/value/test-value.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v5.0.0
+        with:
+          name: test-value
+          path: ${{ runner.temp }}/value
+          retention-days: 30

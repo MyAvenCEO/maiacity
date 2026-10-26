@@ -1,5 +1,5 @@
 //! avenDB: the user-owned, end-to-end encrypted database behind the avenDB page: vaults, shares, keys, Loro documents
-//! and sync by shares, entry by entry and log by log. `avendb/docs/ARCHITECTURE.md` describes the whole design.
+//! and sync by shares, entry by entry and log by log. `doc:docs/avendb` describes the whole design.
 //!
 //! Signers (a person's passkeys and the master recovery key) own human vaults, a passkey as the vault's root, and the
 //! person's devices act for it; human and coop vaults own coop and aven vaults. A vault is a flat library: its entries
@@ -53,15 +53,17 @@ pub mod cast;
 pub mod data;
 pub mod doc;
 // Own warm metadata/content readiness, never a peer admission path.
-mod deferred_body;
 pub mod encode;
 pub mod engine;
+pub mod entry_state;
 pub mod gate;
 pub mod hash;
 pub mod history;
 pub mod id;
+pub mod index;
 pub mod keys;
 pub mod lab;
+pub mod legacy;
 pub mod lens;
 pub mod merge;
 pub mod objective;
@@ -73,6 +75,8 @@ pub mod provenance;
 pub mod quota;
 pub mod recovery;
 pub mod rules;
+// The plan's scenarios, a test fixture: in debug builds (the tests') alone, never in what ships
+#[cfg(debug_assertions)]
 pub mod scenarios;
 pub mod sealed;
 pub mod sign;

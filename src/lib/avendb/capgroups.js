@@ -3,7 +3,7 @@
  * and the games "purely behind avenDB native caps", "Not depending on PG"; "Always go for the full lean! Way"). A cap
  * group is an entry of its vault, `{name, caps, includes}`, each cap one op over one slice, and every right to it is a
  * share that names the group: a new version of the group reaches every share naming it at once, and revoking a share
- * ends that one alone (avendb/spec/AvenDB/Gate.lean, avendb/docs/ARCHITECTURE.md §8). An invite is such a share to a
+ * ends that one alone (avendb/spec/AvenDB/Gate.lean, doc:docs/avendb §8). An invite is such a share to a
  * one-time key, which the newcomer's vault claims at sign-up with no owner signing ($lib/app/entry.js).
  *
  *   Traveler   every invited human: Sandbox 4 demo only. Public assets and Universe posts remain public;

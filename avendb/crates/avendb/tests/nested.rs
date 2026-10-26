@@ -1,4 +1,4 @@
-//! Records inside records (`docs/ARCHITECTURE.md` §8, `spec/AvenDB/Ops.lean`): a row holds lists of records of its
+//! Records inside records (`doc:docs/avendb` §8, `spec/AvenDB/Ops.lean`): a row holds lists of records of its
 //! own, at any depth, and a shape may hold rows of its own shape (an outline). An item stores each nested list as the
 //! record's own, a movable list of maps in its row's map, made mergeable (`doc::Item`): rows merge by id at every
 //! depth, two devices making a row's first list at once share it, a text edit lands in its row wherever its parents

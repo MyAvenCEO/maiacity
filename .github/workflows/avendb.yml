@@ -108,7 +108,7 @@ jobs:
             echo "::error::No bucket for avenDB's server: set HETZNER_S3_ACCESS_KEY, HETZNER_S3_SECRET_KEY and AVENDB_BUCKET_SEAL. Nothing was deployed."
             exit 1
           fi
-          # and its bucket of snapshots (avendb/docs/BACKUP.md, avendb-backups.yml), at the same endpoint with the same key
+          # and its bucket of snapshots (doc:docs/avendb, avendb-backups.yml), at the same endpoint with the same key
           # and seal: every vault backed up into it each day at 03:00 UTC, then checked
           BUCKET_ENV=$(printf 'AVENDB_BUCKET=%s\nAVENDB_BUCKET_ENDPOINT=%s\nAVENDB_BUCKET_REGION=%s\nAVENDB_BUCKET_ACCESS_KEY=%s\nAVENDB_BUCKET_SECRET_KEY=%s\nAVENDB_BUCKET_SEAL=%s\nAVENDB_SNAPSHOTS=%s' \
             "$BUCKET" "$S3_ENDPOINT" "$S3_REGION" "$BUCKET_ACCESS_KEY" "$BUCKET_SECRET_KEY" "$BUCKET_SEAL" "$SNAPSHOTS")

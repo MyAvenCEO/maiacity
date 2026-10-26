@@ -1,4 +1,4 @@
-//! The ops engine on the Lab (`avendb::engine`, `docs/ARCHITECTURE.md` §8): queries that pick entries by the selector
+//! The ops engine on the Lab (`avendb::engine`, `doc:docs/avendb` §8): queries that pick entries by the selector
 //! of their labels and test what they open; record ops through an app's schema and its lens, which write only what
 //! changed; every write's changes in its entry's history, the same for every reader; batches, proposals, merges,
 //! restores, undos and forks as ops; and every op's write judged as any peer's, by the shares of the vault it acts
@@ -19,28 +19,14 @@ use avendb::policy::{Action, Kind, Level, Principal, Refusal};
 use avendb::rules::{self, Op};
 use avendb::world;
 use serde_json::{json, Value};
+use avendb_testkit::{list, ok, refused};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
     engine::run(&mut w.lab, d, &op)
 }
 
-/// What an op answered, which it must have done.
-fn ok(answer: Value) -> Value {
-    assert!(answer.get("ok").is_some(), "refused: {answer}");
-    answer["ok"].clone()
-}
-
-/// Why an op was refused, which it must have been.
-fn refused(answer: &Value) -> &str {
-    answer["refused"].as_str().unwrap_or_else(|| panic!("not refused: {answer}"))
-}
-
 fn hex(e: EntryId) -> String {
     e.to_hex()
-}
-
-fn list(v: &Value) -> &[Value] {
-    v.as_array().unwrap_or_else(|| panic!("a list, not {v}"))
 }
 
 /// The text at `at` in each of `xs`.

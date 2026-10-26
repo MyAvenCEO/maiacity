@@ -9,11 +9,11 @@
       "testName": "held_world_encoding_does_not_block_authorized_local_work"
     },
     {
-      "model": "avendb/spec/AvenDB/AnnounceOwed.lean",
-      "invariant": "pending wake survives an active announcement",
-      "implementation": "avendb/crates/avendb-net/src/live.rs",
-      "test": "avendb/crates/avendb-net/src/live_tests.rs",
-      "testName": "held_announcement_coalesces_new_entry_wake_without_waiting_for_retry"
+      "model": "avendb/spec/AvenDB/NodeActor.lean",
+      "invariant": "a wake is never lost: owed to the attempt in flight, or waiting for the lane's backoff",
+      "implementation": "avendb/crates/avendb-net/src/actor.rs",
+      "test": "avendb/crates/avendb-net/src/actor.rs",
+      "testName": "one_attempt_in_flight_and_a_wake_meanwhile_is_owed"
     },
     {
       "model": "avendb/spec/AvenDB/ListenerRelease.lean",

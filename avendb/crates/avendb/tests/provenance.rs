@@ -10,6 +10,7 @@
 
 use std::collections::BTreeSet;
 use std::time::Instant;
+use avendb_testkit::ok;
 
 use avendb::cast::{self, World};
 use avendb::engine;
@@ -26,12 +27,6 @@ use serde_json::{json, Value};
 
 fn run(w: &mut World, d: SignerId, op: &Value) -> Value {
     engine::run(&mut w.lab, d, op)
-}
-
-/// What an op answered, which it must have done.
-fn ok(answer: Value) -> Value {
-    assert!(answer.get("ok").is_some(), "refused: {answer}");
-    answer["ok"].clone()
 }
 
 fn entry_id(answer: &Value) -> EntryId {
@@ -428,7 +423,7 @@ fn a_proof_of_some_entries_proves_those_alone() {
     }
 }
 
-/// How big a proof of many recipes is, and how long it takes to check: `cargo test -p avendb --release --test
+/// How big a proof of many recipes is, and how long it takes to check: `cargo test -p avendb --features test-fixtures --test
 /// provenance -- --ignored --nocapture measure`. `AVENDB_RECIPES` recipes (24 by default), each created with its file
 /// and given `AVENDB_VERSIONS` versions in all (3 by default), each after the first as the seed writes it (a proposal,
 /// its write, its merge), and a tag; a page's proof is of the first `AVENDB_PAGE` of them (all by default), as a world

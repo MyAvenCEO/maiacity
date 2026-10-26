@@ -58,7 +58,10 @@ rustls = { version = "0.23.33", default-features = false, features = ["ring", "s
 getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
+avendb-testkit = { path = "../avendb-testkit", features = ["wait"] }
 tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
 
 [features]
-test-fixtures = ["avendb/test-fixtures"]
+test-fixtures = ["avendb/test-fixtures", "sim"]
+# the simulated network (P7, `sim`): nodes of a test on an in-memory carrier with seeded faults
+sim = []

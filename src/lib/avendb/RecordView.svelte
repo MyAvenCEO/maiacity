@@ -2,7 +2,7 @@
 	A record opened down its rows and through its links, as the studio's table opens a row of it (./TableEditor.svelte):
 	the place it is at (`trail`: each list's field and a row of it by its id, each link followed), in words, and what is
 	there, field by field. A list of records shows its rows, each to open in turn; a link shows what it leads to, a
-	level at a time, as the device's `query` follows it (`follow`, avendb/docs/ARCHITECTURE.md §8): the record or the
+	level at a time, as the device's `query` follows it (`follow`, doc:docs/avendb §8): the record or the
 	row of another entry, at its newest or at the version it is pinned at, or why it opens nothing there (an entry the
 	acting device doesn't read, another vault's, a version or a row it doesn't hold, or deeper than a query reads). The
 	device opens only what it reads: the page asks it for every hop.

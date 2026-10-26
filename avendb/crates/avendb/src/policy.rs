@@ -48,7 +48,7 @@ use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId}
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Seal};
 use crate::rules::{self, Grant, Proof};
 use crate::sealed::FileRoot;
-use crate::slice::{Attrs, Header, Select, Selector, TagDelta};
+use crate::slice::{Attrs, Header, Select, Selector, Sym, TagDelta};
 use crate::wire::Wire;
 
 mod view;
@@ -1129,6 +1129,11 @@ impl State {
 
     pub fn entry(&self, e: EntryId) -> Option<&Entry> {
         self.entry_at.get(&e).map(|&i| &self.entries[i])
+    }
+
+    /// Where entry `e` stands among the entries, in the order they were created (`entries`).
+    pub fn entry_place(&self, e: EntryId) -> Option<usize> {
+        self.entry_at.get(&e).copied()
     }
 
     /// Every entry, in the order they were created.
@@ -3242,8 +3247,14 @@ impl Counter {
 #[derive(Clone, Debug, Default)]
 pub struct Readings {
     pub selectors: HashMap<ShareId, Selector>,
-    /// By the edit that created the entry.
+    /// By the edit that created the entry. Put one with `put_header`, which keeps `typed` with it.
     pub headers: HashMap<EditId, Header>,
+    /// The index by type (`spec/AvenDB/LiveQuery.lean`, `indexed_eq_scan`): of each type, the edits that created an
+    /// entry of it, as their headers were read. A query that names its types reads its candidates here, not off every
+    /// entry the device holds (`lab::Lab::query_candidates`).
+    pub typed: HashMap<Sym, Vec<EditId>>,
+    /// The entries whose creation's header isn't read: of no type yet, so of any (`typed` hands them to every query).
+    pub untyped: Vec<EntryId>,
     /// By the edit that created a schema or lens entry (`slice::Sym::of_lane`): the content it holds, the schema or the
     /// lens, which its vault's lane names by its hash (`State::lane_of`).
     pub blobs: HashMap<EditId, Arc<[u8]>>,
@@ -3261,6 +3272,16 @@ pub struct Readings {
     /// (`State::read_groups`), so set it again whenever they change. Until then every share that names a cap group
     /// grants nothing.
     pub groups: Groups,
+}
+
+impl Readings {
+    /// Creation `id`'s header `h`, read, and indexed by its type.
+    pub fn put_header(&mut self, id: EditId, h: Header) {
+        let ty = h.ty.clone();
+        if self.headers.insert(id, h).is_none_or(|was| was.ty != ty) {
+            self.typed.entry(ty).or_default().push(id);
+        }
+    }
 }
 
 /// The cap groups as a reader reads them (`State.lean`'s `groupAt`): of each cap group entry, an entry its vault
@@ -4317,13 +4338,16 @@ pub struct Log {
     revision: LogRevision,
     /// Stable only while this particular log appends. A removal or a clone starts a new lineage.
     lineage: LogRevision,
+    /// How many times it let edits go (`let_go`), the one way edits leave it: what a reader of its tail since a size
+    /// tells a removal by (`Lab::touched`).
+    gone: u64,
 }
 
 impl Clone for Log {
     fn clone(&self) -> Self {
         Self { edits: self.edits.clone(), ids: self.ids.clone(), held: self.held.clone(),
             revision: self.revision.clone(), lineage: LogRevision::default(),
-            entry_order: self.entry_order.clone(), write_at: self.write_at.clone() }
+            entry_order: self.entry_order.clone(), write_at: self.write_at.clone(), gone: self.gone }
     }
 }
 
@@ -4388,6 +4412,9 @@ impl Log {
 
     /// An incremental index may append while this token stays equal; otherwise it must rebuild.
     pub fn lineage(&self) -> LogRevision { self.lineage.clone() }
+
+    /// How many times it let edits go (`let_go`).
+    pub fn gone(&self) -> u64 { self.gone }
 
     pub fn view(&self) -> State {
         self.replay().state
@@ -4572,6 +4599,7 @@ impl Log {
         if self.ids.len() != before {
             self.revision = LogRevision::default();
             self.lineage = LogRevision::default();
+            self.gone += 1;
             self.rebuild_entry_index();
         }
     }

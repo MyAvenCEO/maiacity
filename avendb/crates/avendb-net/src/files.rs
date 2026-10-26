@@ -1,4 +1,4 @@
-//! Files over iroh-blobs (`docs/ARCHITECTURE.md` §13): a node keeps one blob store, over its shelf (`shelf`), or else
+//! Files over iroh-blobs (`doc:docs/avendb` §13): a node keeps one blob store, over its shelf (`shelf`), or else
 //! in memory, and a file is its sealed pieces there, each a blob, with the
 //! HashSeq of their hashes when there are several. A node brings a file by reading it twice (`Source`): once to
 //! derive its key from what it holds, keyed by its person's vault (`Lab::convergence`, `sealed::Convergent`), so that
@@ -446,7 +446,7 @@ impl Shared {
         let keep = self.opts.keep;
         loop {
             let Ok(activity) = self.admit() else { return };
-            let entries = self.demands.lock().expect("demands").entries(time::Instant::now())
+            let entries = self.interests.lock().expect("interests").entries()
                 .into_iter().filter_map(|log| match log {
                     avendb::sync::LogId::Entry(entry) => Some(entry),
                     _ => None,

@@ -2,7 +2,7 @@
 //! place by range from avenDB's device inside the app (avendb.rs), as the byte source every reader of vault-media and
 //! vault-render takes (`Source::Blob`); and a file on this Mac brought into a vault
 //! (`put_path`), read back and compared before it counts. Every read and write is one op the device runs, the same the
-//! page sends (avendb/docs/ARCHITECTURE.md §8), so the keys never leave the device; a read runs on its node itself, its
+//! page sends (doc:docs/avendb §8), so the keys never leave the device; a read runs on its node itself, its
 //! bytes handed over with no JSON between (`read`).
 //!
 //! The jobs: `studio_job` does one task of a rule the page's job runner claimed (src/lib/studio/jobs/runner.js) in the

@@ -1,15 +1,15 @@
-//! One API (`Node::run`, `docs/ARCHITECTURE.md` §8): a node runs every op of the engine as JSON, a read on what
+//! One API (`Node::run`, `doc:docs/avendb` §8): a node runs every op of the engine as JSON, a read on what
 //! its device holds, `may` and `shares` dry, a change made and its peers told; one its vault's owners approve it has
 //! the passkey sign in a ceremony, or else answers `approve` and makes nothing. It brings a file's bytes in beside a
 //! `put_file`, once the entry it would create is checked, and reads any range of a file back beside a `read_file`; and
 //! once the vaults its device follows change (`follow`), it asks its peers again, each request naming them, so it is
 //! sent what everyone reads of them.
 
-use std::future::Future;
 use std::io;
 use std::sync::Mutex;
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use avendb_testkit::until;
 
 use avendb::cast::*;
 use avendb::id::{BlobId, EntryId, SignerId, VaultId};
@@ -24,15 +24,6 @@ use serde_json::{Value, json};
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
 async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8) -> Node {
     Node::spawn(w.lab.split(d, with, [seed; 32]), d, Options::local()).await.expect("a node")
-}
-
-/// Waits until `check` holds, 30 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(30);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 30 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// A person's passkey in software, as a browser's authenticator holds one: each ceremony it made, and what for.
@@ -364,27 +355,38 @@ async fn a_panic_in_one_call_fails_that_call_alone_and_the_node_runs_on() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn view_demand_is_revisioned_local_metadata_and_never_a_vault_edit() {
+async fn view_interests_are_revisioned_local_metadata_and_never_a_vault_edit() {
     let mut w = world();
     let me = w.mac_a;
     let n = node(&mut w, me, &[], 211).await;
     let before = n.read(|lab, me| lab.log(me).ids().to_vec()).await;
     let scope = "a".repeat(32);
     let entry = "b".repeat(64);
-    let first = n.op(json!({"op": "demand", "scope": scope, "revision": 1, "entries": [entry]})).await.unwrap();
+    let rooms = json!({"types": ["room"]});
+    let first = n.op(json!({"op": "interest", "scope": scope, "revision": 1,
+        "wants": [{"tier": "now", "entries": [entry]}, {"tier": "next", "queries": [rooms]}]})).await.unwrap();
     assert_eq!(first["ok"]["accepted"], true);
-    assert_eq!(first["ok"]["lease_ms"], 90_000);
-    let clear = n.op(json!({"op": "demand", "scope": scope, "revision": 3, "entries": []})).await.unwrap();
+    assert!(first["ok"].get("lease_ms").is_none(), "an interest has no lease: its view's unmount clears it");
+    let clear = n.op(json!({"op": "interest", "scope": scope, "revision": 3, "wants": []})).await.unwrap();
     assert_eq!(clear["ok"]["accepted"], true);
-    let late = n.op(json!({"op": "demand", "scope": scope, "revision": 2, "entries": [entry]})).await.unwrap();
-    assert_eq!(late["ok"]["accepted"], false);
+    let late = n.op(json!({"op": "interest", "scope": scope, "revision": 2, "wants": [{"tier": "now", "entries": [entry]}]})).await.unwrap();
+    assert_eq!(late["ok"]["accepted"], false, "a cleared view stays cleared");
+    // the op before it, for one release: one Interest on screen now
+    let old = n.op(json!({"op": "demand", "scope": "c".repeat(32), "revision": 1, "entries": [entry]})).await.unwrap();
+    assert_eq!(old["ok"]["accepted"], true);
+    let released = n.op(json!({"op": "interest", "release": "all"})).await.unwrap();
+    assert_eq!(released["ok"]["released"], 1);
     for invalid in [
-        json!({"op": "demand", "scope": "bad", "revision": 4, "entries": []}),
-        json!({"op": "demand", "scope": scope, "revision": 0, "entries": []}),
+        json!({"op": "interest", "scope": "bad", "revision": 4, "wants": []}),
+        json!({"op": "interest", "scope": scope, "revision": 0, "wants": []}),
+        json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "soon"}]}),
+        json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "now", "entries": ["bad"]}]}),
+        json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "now", "entries": vec![entry.clone(); 513]}]}),
+        json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "now", "where": {}}]}),
         json!({"op": "demand", "scope": scope, "revision": 4, "entries": ["bad"]}),
-        json!({"op": "demand", "scope": scope, "revision": 4, "entries": vec![entry; 513]}),
     ] {
-        assert_eq!(n.op(invalid).await.unwrap()["refused"], "BadOp");
+        let got = n.op(invalid.clone()).await.unwrap();
+        assert_eq!(got["refused"], "BadOp", "{invalid}");
     }
     assert_eq!(n.read(|lab, me| lab.log(me).ids().to_vec()).await, before);
     n.shutdown().await.unwrap();

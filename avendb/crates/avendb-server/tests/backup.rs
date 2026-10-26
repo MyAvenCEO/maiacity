@@ -1,4 +1,4 @@
-//! The full recovery test (`docs/BACKUP.md`): the server backs up every vault it knows into a bucket of snapshots over
+//! The full recovery test (`doc:docs/avendb`): the server backs up every vault it knows into a bucket of snapshots over
 //! three days, a quiet day putting no blob and a busy one the pack of what is new and the file it brings; the daily
 //! check finds every vault whole from the bucket alone, restoring nothing, reading every blob and then none of the
 //! files'; a rehearsal brings the coop back in a node of its own, whole, and the first day's without what came after;

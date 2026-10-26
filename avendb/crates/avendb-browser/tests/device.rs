@@ -15,18 +15,18 @@
 //! one of its peers, so it reads his name and Maia City after the move as before.
 //!
 //! Every read and change goes through one entry point, as the page's does (V2, `Device::run`,
-//! `docs/ARCHITECTURE.md` §8): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
+//! `doc:docs/avendb` §8): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
 //! the passkey's ceremony when one is at hand and else answered `approve`, which makes nothing. `tests/page.rs` runs
 //! the same in Chromium, the passkey in its virtual authenticator.
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use avendb_testkit::until;
 
 use avendb::cast::*;
 use avendb::id::{BlobId, EntryId, ShareId, SignerId, VaultId};
@@ -186,15 +186,6 @@ async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8, opts: Opt
 /// The time by this machine's clock: seconds since 1970.
 fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").as_secs()
-}
-
-/// Waits until `check` holds, 60 seconds at most.
-async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> F) {
-    let end = Instant::now() + Duration::from_secs(60);
-    while !check().await {
-        assert!(Instant::now() < end, "{what}, within 60 s");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// Op `op` of the ops engine run on device `d` as the page runs it (`Device::run`), with no ceremony at hand: what it

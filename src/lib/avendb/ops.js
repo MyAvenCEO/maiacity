@@ -1,4 +1,4 @@
-// avenDB's ops as the page writes them (avendb/docs/ARCHITECTURE.md §8, avendb's `engine`): every read
+// avenDB's ops as the page writes them (doc:docs/avendb §8, avendb's `engine`): every read
 // and every change of the database is one JSON op, whatever its schema, which the device runs (`run(op)`, in this
 // page's WebAssembly or in the Mac app's device alike) and answers `{ ok }`, `{ refused, why }`, or for a change its
 // vault's owners approve that runs without the passkey's ceremony, `{ approve }`. A change acts for the vault it names
@@ -10,6 +10,7 @@ import { why } from './vaults.js';
 export const READS = [
 	'entry_views',
 	'query',
+	'touched',
 	'get',
 	'history',
 	'schemas',
@@ -36,6 +37,7 @@ export const READS = [
 	'cap_groups',
 	'code',
 	'bring',
+	'interest',
 	'demand',
 	'synced',
 	'network',

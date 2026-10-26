@@ -1,4 +1,4 @@
-//! An entry's files (`docs/ARCHITECTURE.md` §8 and §13): any entry brings a file in its creation's own write, one
+//! An entry's files (`doc:docs/avendb` §8 and §13): any entry brings a file in its creation's own write, one
 //! signed edit (`create` with a `file`, `Lab::create_bringing`), or in a write on its main line (`put_file` with an
 //! `entry`, `Lab::bring_into`), the file's bytes beside the op as a node brings them (avendb-net's `Node::run`). Who
 //! may is what the shares decide already: `create` for a creation that brings one, `set` of the whole record for a file
@@ -16,24 +16,10 @@ use avendb::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use avendb::sealed::{Brought, FileKey, FileRoot, seal};
 use avendb::world;
 use serde_json::{Value, json};
+use avendb_testkit::{list, ok, refused};
 
 fn run(w: &mut World, d: SignerId, op: &Value) -> Value {
     engine::run(&mut w.lab, d, op)
-}
-
-/// What an op answered, which it must have done.
-fn ok(answer: Value) -> Value {
-    assert!(answer.get("ok").is_some(), "refused: {answer}");
-    answer["ok"].clone()
-}
-
-/// Why an op was refused, which it must have been.
-fn refused(answer: &Value) -> &str {
-    answer["refused"].as_str().unwrap_or_else(|| panic!("not refused: {answer}"))
-}
-
-fn list(v: &Value) -> &[Value] {
-    v.as_array().map(Vec::as_slice).unwrap_or_default()
 }
 
 fn entry_id(answer: &Value) -> EntryId {

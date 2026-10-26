@@ -143,3 +143,8 @@ describe('measuring an AIP on the device of whoever accepts it', () => {
 		expect((await logicOf(vault({ code: SIM + ' ' }).ask, 'v', 'valley-sim')).key).not.toBe(a.key);
 	});
 });
+
+test('measuring logic cannot select a singleton or declare absence while a candidate waits',async()=>{
+ const result=await logicOf(async()=>({rows:[],count:0,coverage:{state:'partial',have:0,known:1,waiting:[{entry:'f00d',on:'record'}],logs:0}}),'v','pending');
+ expect(result.error).toContain('incomplete');
+});

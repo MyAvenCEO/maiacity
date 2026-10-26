@@ -1223,7 +1223,7 @@ mod tests {
         lab.edit(mac,vault,entry,|i|i.set_text(2,"new")).unwrap();
         let prepared=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
         let snapshot=lab.complete(mac,prepared.draft,&[]).unwrap();
-        let offer=lab.entry_projection_offer(mac,phone,entry).unwrap();
+        let offer=lab.entry_base_offer(mac,phone,entry).unwrap();
         lab.receive(phone,offer.evidence,vec![]);
         let shelf=crate::disk::open(&folder).unwrap();
         let node=Node::spawn(lab.split(phone,&[owner],[73;32]),phone,Options { shelf:Some(shelf.clone()), ..Options::local() }).await.unwrap();
@@ -1318,8 +1318,8 @@ mod tests {
         assert_eq!(lab.device_of(restored_passkey, "Mac"), me);
         lab.restore_warm(me, Backup::new(signed,keys), reopened.checked().map(|c|(c,count)), &warm);
         assert_eq!(lab.item(me,entry).unwrap().record(), expected);
-        assert!(lab.work_metrics(me)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0)>0,
-            "write->shutdown->reopen must use persisted materialization");
+        assert!(lab.work_metrics(me)["counts"]["replay: from its stored view"].as_u64().unwrap_or(0)>0,
+            "write->shutdown->reopen must open from its stored view");
         assert!(lab.capture_warm_current(me,count,reopened.checked()).is_none(),
             "a second unchanged close does not export another snapshot");
         drop(reopened);

@@ -1,5 +1,5 @@
 // @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($lib/avendb/functions.js)
-// Measuring an AIP (avendb/docs/ARCHITECTURE.md §8, "AIPs", N2): an AIP's objective names the measuring logic that
+// Measuring an AIP (doc:docs/avendb §8, "AIPs", N2): an AIP's objective names the measuring logic that
 // measures it (`def sim : Measure := logic "valley-sim"`, avendb/spec/AvenDB/Objective.lean), a logic module on the
 // main line of the AIP's vault, which its owners accepted, so trusted code, tagged `ref:logic/measures/<name>`, that
 // exports `measure(input)`. Those who accept the AIP measure it, on their own device, with no server between them and
@@ -13,6 +13,7 @@
 // of the logic and the records: anyone who reads both can run it again and get the same numbers (`measureOnce`).
 
 import { checkCode } from '../../../game/code/check.js';
+import { coverageOf, waitsHere } from '../../../game/code/sources/coverage.js';
 import { engineFor } from '../sandbox/engines.js';
 import { MOST, seedOf } from '../sandbox/logic.js';
 import { runOnce } from '../sandbox/logic-host.js';
@@ -85,6 +86,7 @@ const short = (s) => seedOf(s).toString(16).padStart(8, '0');
 export async function logicOf(ask, vault, name) {
 	const tag = tagOf(name);
 	const found = await ask({ op: 'query', vault, where: { all: [{ type: ['logic'] }, { tag }] } });
+	if (waitsHere(coverageOf({ ok: found }))) return { error: 'Measuring logic discovery is incomplete; try again after its dependencies arrive.' };
 	const rows = (found?.rows ?? []).filter((r) => !(r.tags ?? []).includes('avendb:deleted'));
 	if (rows.length !== 1) return { error: rows.length ? `${rows.length} logic entries are tagged ${tag}, so none measures` : `no logic entry on main is tagged ${tag}` };
 	const [r] = rows;

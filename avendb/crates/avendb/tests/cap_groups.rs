@@ -1,4 +1,4 @@
-//! Cap groups and invites (`docs/ARCHITECTURE.md` §5, "Cap groups"; `Examples.lean`'s cap groups and invites): a cap
+//! Cap groups and invites (`doc:docs/avendb` §5, "Cap groups"; `Examples.lean`'s cap groups and invites): a cap
 //! group is an entry of its vault, versioned as any entry, and a share names one, copying none of its ops. Every write
 //! through it is judged by the version in force where it comes in the replay, so a narrower version narrows the share
 //! at once, and the writes made before stand. A share to an invite key is claimed once, by the newcomer's vault, with

@@ -56,8 +56,9 @@ import { noteLifecycle } from './lifecycle.js';
 import { measureLatency } from './latency-journal.js';
 import { createReactiveRead } from './reactive-read.js';
 import { createWorldReader } from './world-reader.js';
-import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
-import { bringEntries, learn, useDevice, refreshActiveView } from '../../../game/code/sources/device.js';
+import { createEntryWindow, createReadWindow } from './query-window.js';
+import { useDevice, refreshActiveView, wantNow } from '../../../game/code/sources/device.js';
+import { touches } from '../../../game/code/sources/touched.js';
 import { sync } from './sync.svelte.js';
 
 /** The name of this browser's shelf in OPFS (./device/store.js). */
@@ -70,7 +71,7 @@ export const asks = native() ? 'a sign-in sheet asks for your passkey' : 'your b
 export const [here, Here] = native() ? ['this Mac', 'This Mac'] : ['this browser', 'This browser'];
 
 /** The changes a vault's owners may have to approve, with the passkey: owners, devices, Owner shares, settings and
- *  new vaults (avendb/docs/ARCHITECTURE.md §8). */
+ *  new vaults (doc:docs/avendb §8). */
 const APPROVED = ['share', 'share_group', 'revoke', 'settings', 'found'];
 
 /** @typedef {'loading' | 'new' | 'closed' | 'open' | 'broken'} Phase */
@@ -101,6 +102,11 @@ let meta = $state.raw(null);
 /** what the device shows of its world (avendb-browser's `World::to_json`): kept whole, as it comes */
 // Accepted local data changes, before the heavier world summary is rebuilt.
 let revision = $state(0);
+/** Bumped by a change that may change any read: the person's own, or one of standing (`touched` answers `all`). */
+let standing = $state(0);
+/** The observers mounted now: each re-runs on `standing`, or when a change touched what it reads (`touches`).
+ *  @type {Set<{ op: any, last: any, bump: () => void }>} */
+const observers = new Set();
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
@@ -493,8 +499,8 @@ function running(d) {
 	phase = 'open';
 	if (!mac) noteLifecycle('open');
 	useDevice({
-		// Demand disposal belongs to this device even while a replacement is opening. Never send stale work to it.
-		run: (/** @type {any} */ op) => op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
+		// Interest disposal belongs to this device even while a replacement is opening. Never send stale work to it.
+		run: (/** @type {any} */ op) => op?.op === 'interest' || op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
 		read: api.readFile
 	});
 	if (holders) watch();
@@ -585,12 +591,19 @@ function watch() {
 	const on = () => watching === token && device === d;
 	// A second cheap change subscription invalidates targeted views independently of
 	// full-world rendering/backoff. It never downloads or materializes the world.
+	// Each wake asks the device what the change touched (`touched`, spec/AvenDB/LiveQuery.lean) and runs again only the
+	// observers whose query it may change; a change of standing, or a device that can't say, runs them all.
 	(async () => {
-		let held = await d.size();
-		if (on()) { revision++; refreshActiveView(); } // cover changes concurrent with this initial snapshot too
-		while (on() && (await d.changed(...held)) && on()) {
-			held = await d.size();
-			if (on()) { revision++; refreshActiveView(); }
+		let since = await d.size();
+		if (on()) { revision++; standing++; refreshActiveView(); } // cover changes concurrent with this initial snapshot too
+		while (on() && (await d.changed(since[0], since[1])) && on()) {
+			const t = await d.run({ op: 'touched', since }).then((/** @type {any} */ out) => out?.ok ?? null, () => null);
+			since = Array.isArray(t?.since) ? t.since : await d.size();
+			if (!on()) break;
+			revision++;
+			if (!t || t.all !== false) standing++;
+			else for (const o of observers) if (touches(o.op, t, o.last)) o.bump();
+			refreshActiveView();
 		}
 	})().catch((/** @type {Error} */ e) => on() && (error = `Watching local changes failed: ${e.message}`));
 	(async () => {
@@ -674,7 +687,7 @@ function queueRefresh(/** @type {any} */ d) {
 }
 
 /**
- * Op `op` on the device: the one way a page reads or changes the database (./ops.js, avendb/docs/ARCHITECTURE.md
+ * Op `op` on the device: the one way a page reads or changes the database (./ops.js, doc:docs/avendb
  * §8), on the page's own device and on the Mac app's alike. A change takes the passkey's ceremony, which the device
  * runs only where the vault's owners approve it (in the Mac app, in its sign-in sheet); asked first, the device says
  * whether it will, and what the page shows it doing says so. `read` hands over a file's bytes, for `put_file` and a
@@ -693,64 +706,19 @@ async function send(op, read) {
 	return d.run(op, mac ? undefined : (await ceremonies(meta.credential)).sign, read);
 }
 
-/** an entry's id: 64 hex digits */
-const ENTRY = /^[0-9a-f]{64}$/;
-
-/** the reads whose answers name the entries a view shows, which the page learns (`learn`): not the device's own
- *  bookkeeping (`world`, `jobs`, `synced`, `log`, `bring`, …), whose answers name everything it holds */
-const VIEWS = new Set(['entry_views', 'query', 'get', 'room', 'history', 'note', 'pin', 'posts', 'code', 'aip', 'aip_records', 'aips', 'database']);
-
-/** The entries answer `got` of a view's read names: its entry, or each row's, shallow. @param {any} got */
-const namedIn = replyEntries;
-
 /**
- * A read, for every app view the same way (Samuel 2026-10-21: query views solved once, for all our views, by the
- * manifests): run on what the device holds; where it names an entry the device holds nothing of yet (`NoEntry`, a new
- * device still syncing), that entry alone is brought from its peers first (`bring`, before anything else it syncs)
- * and read again; and the entries the answer names are learned for this page, which a device opened on it brings
- * first the next time (game/code/sources/device.js `learn`). @param {any} d @param {any} op
- * @param {{ signal?: AbortSignal, scoped?: boolean, demand?: any }} [options]
+ * A read, for every app view the same way: run on what the device holds. Where it names an entry the device holds
+ * nothing of yet (`NoEntry`, a new device still syncing), the entry joins the page's Interest on screen now
+ * (game/code/sources/device.js `wantNow`), and the view reads again once it lands. @param {any} d @param {any} op
  */
-async function near(d, op, { signal, scoped = false, demand } = {}) {
-	const path = typeof location === 'undefined' ? '' : location.pathname;
-	const currentView = () => !signal?.aborted && d === device && path === (typeof location === 'undefined' ? '' : location.pathname);
-	let got = await d.run(op);
-	if (!currentView()) return got;
-	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
-	if (got?.refused === 'NoEntry' && entry) {
-		// Reads return local state immediately. Sync completion refreshes the view separately.
-		void bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }, { signal, path, prioritize: !scoped, learnPriority: !scoped }).catch(() => {});
-	}
-	if (currentView() && VIEWS.has(op?.op)) {
-		const named = [...(entry && got?.ok ? [entry] : []), ...namedIn(got)];
-		learn(named, path, { prioritize: !scoped });
-		if (!scoped) freshen(d, named);
-	}
+async function near(d, op) {
+	const got = await d.run(op);
+	if (got?.refused === 'NoEntry' && /^[0-9a-f]{64}$/.test(String(op?.entry)) && d === device) wantNow([op.entry]);
 	return got;
 }
 
 /** Whether the device is still behind its peers, as the status pill last heard (./sync.svelte.js). */
 const behind = () => sync.known && sync.behind > 0;
-
-/** the entries each device was asked to bring while behind, so each comes once (`freshen`) @type {WeakMap<object, Set<string>>} */
-const freshened = new WeakMap();
-
-/**
- * While the device is still behind its peers, the entries a view's answer names come first, in the background: a
- * device holds an entry it took early at the heads it had then (an AIP still "proposed" that its vault accepted and
- * applied since, Samuel's iPhone 2026-10-22), and the whole vault comes a page at a time behind it. What the view shows
- * is shown at once; once they land, the world changes and the view reads again. Each entry once a device.
- * @param {any} d @param {string[]} named
- */
-function freshen(d, named) {
-	if (!behind() || !named.length) return;
-	let of = freshened.get(d);
-	if (!of) freshened.set(d, (of = new Set()));
-	const ids = named.filter((e) => !of.has(e));
-	if (!ids.length) return;
-	ids.forEach((e) => of.add(e));
-	void bringEntries(ids, { run: (/** @type {any} */ o) => d.run(o) });
-}
 
 /** A head-conditional review retains its freshness guard. Ordinary edits never wait for peers.
  * @param {any} d @param {any} op */
@@ -758,7 +726,7 @@ async function current(d, op) {
 	const what = doing;
 	await beforeLocalWrite(op, {
 		behind: behind(),
-		bring: (entry) => bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }),
+		bring: (entry) => d.run({ op: 'bring', entries: [entry] }),
 		refresh,
 		waiting: (on) => {
 			if (!what || !doing.startsWith(what)) return;
@@ -803,6 +771,7 @@ async function change(what, work) {
 	const ok = await attempt(what, work);
 	if (ok && device === d) {
 		revision++;
+		standing++;
 		// Local acceptance completes independently of the expensive world summary.
 		// Targeted subscribers read the authoritative local device immediately.
 		queueRefresh(d);
@@ -890,17 +859,25 @@ const api = {
 	/** Subscribe to any targeted local query, independent of the world summary.
 	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] @param {(revisions: any[]) => void} [observed] */
 	observe(query, take, failed, observed) {
-		const reader = createReactiveRead({ read: observedWindow((d, op, signal, demand) => near(d, op, { signal, demand, scoped: true })), take, failed, observed });
+		let tick = $state(0);
+		// What it read last and of what, kept plain: the change wake asks `touches` of them, never a redraw.
+		const watched = { op: /** @type {any} */ (null), last: /** @type {any} */ (null), bump: () => tick++ };
+		const kept = (/** @type {any} */ answer) => { watched.last = answer; take(answer); };
+		const reader = createReactiveRead({ read: observedWindow((d, op) => near(d, op)), take: kept, failed, observed });
+		observers.add(watched);
 		const dispose = $effect.root(() => {
 			$effect(() => {
-				void revision;
-				reader.update(query(), device, context.current);
+				void standing;
+				void tick;
+				const op = query();
+				watched.op = op;
+				reader.update(op, device, context.current);
 			});
 		});
-		return () => { dispose(); reader.close(); };
+		return () => { observers.delete(watched); dispose(); reader.close(); };
 	},
 	/**
-	 * Runs change op `op` as `what` (./ops.js, avendb/docs/ARCHITECTURE.md §8): an entry's change, a share, a
+	 * Runs change op `op` as `what` (./ops.js, doc:docs/avendb §8): an entry's change, a share, a
 	 * revocation, a setting, new vaults, a mark, a name, acting for the vault the op names (`as`). What it did, or
 	 * `null` if it didn't go through, with why shown.
 	 * @param {string} what @param {object} op
@@ -931,11 +908,11 @@ const api = {
 	ask: (op) => send(op),
 	/** A component-owned read window. Replace its query on each read and close it on unmount. */
 	window: () => {
-		const window = createReadWindow({ device: () => device, read: (d, op, signal, demand) => near(d, op, { signal, demand, scoped: true }) });
+		const window = createReadWindow({ device: () => device, read: (d, op) => near(d, op) });
 		const dispose = $effect.root(() => {
 			$effect(() => { void device; window.invalidate(); });
 		});
-		return { ...window, get completeness() { return window.completeness; }, close() { dispose(); window.close(); } };
+		return { ...window, get coverage() { return window.coverage; }, close() { dispose(); window.close(); } };
 	},
 	/** A mounted view's visible entries, already materialized locally: scheduling only, without a second read. */
 	demand: () => {

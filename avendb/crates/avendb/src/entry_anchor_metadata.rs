@@ -50,11 +50,11 @@ pub(super) fn put_anchor_metadata(store: &Store, entry: EntryId) -> Option<Vec<u
     }
     (ids.len() as u32).encode(&mut b);
     for id in ids {
-        // Own exact-basis metadata is authorized through current keys. Avoid
-        // copying historical content only to discard it for the policy envelope.
-        let body = crate::deferred_body::BodyMetadata::of(store.body_metadata(id)?);
+        // the body's metadata alone, its content left out
+        let body = store.body_metadata(id)?;
+        let body = Body { content: Vec::new(), ..body.clone() };
         id.encode(&mut b);
-        body.bytes().encode(&mut b);
+        body.to_wire().encode(&mut b);
     }
     (b.len() <= MAX_BYTES).then_some(b)
 }

@@ -1,11 +1,13 @@
-//! Owner-approved, read-only checkpoints on the existing authenticated sync connection.
-//! The hosted peer has no special role. Transport evidence is checked by ordinary signed receive.
+//! Owner-approved checkpoints on the existing authenticated sync connection: an entry's judged base (`entry_base`,
+//! `EntryState.lean`'s based state), the one format for owners and readers. The hosted peer has no special role.
+//! Transport evidence is checked by ordinary signed receive. Request version 1 asked for the read-only projection-1
+//! rows, which are gone: it is answered with none, so an older peer replays the entry's history instead.
 use crate::{Authenticator, Node, Peer, Shared, Step, session};
 use anyhow::{Result, ensure};
 use avendb::{
     engine::{self, Approval, Refused, Then},
     id::{EditId, EntryId},
-    lab::{PreparedEntryProjection, PreparedEntryBase},
+    lab::PreparedEntryBase,
     policy::LogRevision,
     sealed::FileRoot,
     wire::{Reply, Wire},
@@ -23,11 +25,10 @@ const CIPHER_LIMIT: usize = (1 << 20) + 128;
 const EVIDENCE_LIMIT: usize = 512 << 10;
 const RESPONSE_LIMIT: usize = CIPHER_LIMIT + EVIDENCE_LIMIT + 41;
 
+/// The pin of an entry's judged base on the blob store. Pins of the old projection-1 rows (`avendb/checkpoint/`) are
+/// no longer read or written.
 fn tag(entry: EntryId) -> Vec<u8> {
-    [b"avendb/checkpoint/".as_slice(), &entry.0].concat()
-}
-fn format_tag(entry: EntryId, judged: bool)->Vec<u8> {
-    if judged { [b"avendb/judged-checkpoint/".as_slice(), &entry.0].concat() } else { tag(entry) }
+    [b"avendb/judged-checkpoint/".as_slice(), &entry.0].concat()
 }
 fn request_format(bytes:&[u8])->Result<(bool,EntryId,Option<EditId>)> {
     ensure!(matches!(bytes.first(),Some(1|2)),"unsupported checkpoint request version");
@@ -92,7 +93,6 @@ impl Node {
         op: &Value,
         authenticator: Option<&A>,
     ) -> Result<Value> {
-        let judged = op.get("op").and_then(Value::as_str)==Some("checkpoint_entry_base");
         let entry = op
             .get("entry")
             .and_then(Value::as_str)
@@ -104,13 +104,8 @@ impl Node {
             .try_act(move |lab, me| {
                 let passkey =
                     engine::passkey_of(lab, me).ok_or(avendb::policy::Refusal::BelowThreshold)?;
-                let (draft,root,sealed) = if judged {
-                    let PreparedEntryBase {draft,root,sealed}=lab.draft_judged_entry_base(me,&[passkey],entry)?;
-                    (draft,root,sealed)
-                } else {
-                    let PreparedEntryProjection {draft,root,sealed}=lab.draft_entry_projection(me,&[passkey],entry)?;
-                    (draft,root,sealed)
-                };
+                // `checkpoint_view` and `checkpoint_entry_base` both publish the one based format
+                let PreparedEntryBase {draft,root,sealed}=lab.draft_judged_entry_base(me,&[passkey],entry)?;
                 let keys = lab.keys_of(passkey);
                 let approval = Approval {
                     passkey,
@@ -157,26 +152,17 @@ impl Node {
         };
         let snapshot = answer["edit"].as_str().and_then(EditId::from_hex)
             .ok_or_else(|| anyhow::anyhow!("checkpoint approval returned no edit ID"))?;
-        let pinned = self.shared.pin_checkpoint_format(entry, snapshot, root, judged).await?;
+        let pinned = self.shared.pin_checkpoint(entry, snapshot, root).await?;
         self.shared.changed.notify_one();
         Ok(
-            json!({"ok": {"edit": answer["edit"], "entry": entry.to_hex(), "checkpoint": true, "format": if judged { "owner-judgment-2" } else { "projection-1" },
+            json!({"ok": {"edit": answer["edit"], "entry": entry.to_hex(), "checkpoint": true, "format": "owner-judgment-2",
             "root": Hash::from_bytes(root.hash).to_string(), "size": root.size, "pinned": pinned}}),
         )
     }
 }
 
 impl Shared {
-    async fn store_checkpoint(
-        self: &Arc<Self>,
-        entry: EntryId,
-        snapshot: EditId,
-        root: FileRoot,
-        sealed: Vec<u8>,
-    ) -> Result<bool> {
-        self.store_checkpoint_format(entry,snapshot,root,sealed,false).await
-    }
-    async fn store_checkpoint_format(self:&Arc<Self>,entry:EntryId,snapshot:EditId,root:FileRoot,sealed:Vec<u8>,judged:bool)->Result<bool> {
+    async fn store_checkpoint(self: &Arc<Self>, entry: EntryId, snapshot: EditId, root: FileRoot, sealed: Vec<u8>) -> Result<bool> {
         ensure!(
             sealed.len() <= CIPHER_LIMIT
                 && root.size == sealed.len() as u64
@@ -192,20 +178,17 @@ impl Shared {
             temporary.hash().as_bytes() == &root.hash,
             "stored checkpoint hash"
         );
-        self.pin_checkpoint_format(entry, snapshot, root, judged).await
+        self.pin_checkpoint(entry, snapshot, root).await
     }
 
     async fn pin_checkpoint(self: &Arc<Self>, entry: EntryId, snapshot: EditId, root: FileRoot) -> Result<bool> {
-        self.pin_checkpoint_format(entry,snapshot,root,false).await
-    }
-    async fn pin_checkpoint_format(self: &Arc<Self>, entry: EntryId, snapshot: EditId, root: FileRoot, judged:bool) -> Result<bool> {
         // Keep this gate through the tag write. A newer accepted snapshot may appear
         // during I/O, but its pin then follows this write, never preceding a stale one.
         let _serial = self.checkpoint_pins.clone().lock_owned().await;
-        if !self.read(move |lab, me| lab.entry_projection_pin_is_current(me, entry, snapshot, root)).await {
+        if !self.read(move |lab, me| lab.entry_base_pin_is_current(me, entry, snapshot, root)).await {
             return Ok(false);
         }
-        self.store.tags().set(format_tag(entry,judged), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await?;
+        self.store.tags().set(tag(entry), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await?;
         Ok(true)
     }
 }
@@ -217,8 +200,10 @@ pub(crate) async fn answer(
     permit: Arc<tokio::sync::OwnedSemaphorePermit>,
 ) -> Result<Vec<u8>> {
     let (judged,entry,known)=request_format(bytes)?;
-    let Some(pin)=shared.store.tags().get(format_tag(entry,judged)).await? else {
-        return Ok(vec![if judged {2}else{1},0]);
+    // version 1 asked for projection-1 rows: none any more, the peer replays history
+    if !judged { return Ok(vec![1,0]); }
+    let Some(pin)=shared.store.tags().get(tag(entry)).await? else {
+        return Ok(vec![2,0]);
     };
     ensure!(pin.format.is_raw(),"checkpoint pin format");
     let compatible_root=*pin.hash.as_bytes();
@@ -229,12 +214,12 @@ pub(crate) async fn answer(
             let _preparing = preparing;
             (
                 lab.log(me).revision(),
-                lab.entry_projection_offer_for_root(me, requester, entry, known, compatible_root),
+                lab.entry_base_offer_for_root(me, requester, entry, known, compatible_root),
             )
         })
         .await;
     let Some(offer) = offer else {
-        return Ok(vec![if judged {2} else {1}, 0]);
+        return Ok(vec![2, 0]);
     };
     ensure!(offer.root.size <= CIPHER_LIMIT as u64, "checkpoint size");
     // Read at most the signed length plus one, never get_bytes on a potentially oversized blob.
@@ -256,10 +241,8 @@ pub(crate) async fn answer(
     );
     let check=sealed.clone();
     let snapshot=offer.snapshot;
-    let compatible=shared.read(move|lab,me| if judged {
-        lab.restore_owner_judgment(me,snapshot,entry,&check).is_some()
-    } else { lab.open_entry_projection(me,snapshot,entry,&check).is_some() }).await;
-    if !compatible { return Ok(vec![if judged {2}else{1},0]); }
+    let compatible=shared.read(move|lab,me| lab.restore_owner_judgment(me,snapshot,entry,&check).is_some()).await;
+    if !compatible { return Ok(vec![2,0]); }
     let mut body = encode(
         offer.snapshot,
         Reply {
@@ -269,7 +252,7 @@ pub(crate) async fn answer(
         },
         &sealed,
     )?;
-    if judged { body[0]=2; }
+    body[0]=2;
     shared
         .read(move |lab, me| {
             let _permit = permit;
@@ -277,6 +260,12 @@ pub(crate) async fn answer(
         })
         .await
 }
+/// Device `me` takes the judged base of `entry`: staged until the journal holds it where the node keeps one (the
+/// saver then marks it saved), taken at once on a node with no journal, which has nothing to wait for.
+fn take_base(lab: &mut avendb::lab::Lab, me: avendb::id::SignerId, snapshot: EditId, entry: EntryId, sealed: Vec<u8>, journal: bool) -> bool {
+    if journal { lab.stage_owner_entry_base(me, snapshot, entry, sealed) } else { lab.adopt_owner_entry_base(me, snapshot, entry, sealed) }
+}
+
 fn finish(current: LogRevision, prepared: LogRevision, body: Vec<u8>) -> Result<Vec<u8>> {
     ensure!(
         current == prepared,
@@ -297,8 +286,8 @@ impl Shared {
         ensure!(pin.format.is_raw(), "checkpoint pin format");
         let hash = *pin.hash.as_bytes();
         let point = self.read(move |lab, me| {
-            let point = lab.entry_projection_restore_point(me, entry, hash)?;
-            (lab.retained_projection_hint(me, entry) != Some(point.0)).then_some(point)
+            let point = lab.entry_base_restore_point(me, entry, hash)?;
+            (lab.retained_base_hint(me, entry) != Some(point.0)).then_some(point)
         }).await;
         let Some((snapshot, root)) = point else { return Ok(false); };
         let permit = self.pulls.page(false, false).await?;
@@ -315,10 +304,10 @@ impl Shared {
         ensure!(Hash::new(&sealed).as_bytes() == &root.hash, "persisted checkpoint hash");
         let shared = self.clone();
         let scope = scope.to_owned();
+        let journal = self.edits.is_some();
         let kept = self.try_lab(move |lab, me| {
             let _permit = permit;
-            shared.discovery_current(&scope, revision)
-                && lab.retain_entry_projection(me, snapshot, entry, sealed)
+            shared.discovery_current(&scope, revision) && take_base(lab, me, snapshot, entry, sealed, journal)
         }).await?;
         if kept { self.size.send_modify(|_| {}); }
         Ok(kept)
@@ -338,10 +327,10 @@ impl Shared {
             self.discovery_current(scope, revision),
             "checkpoint demand expired"
         );
-        let mut body = vec![1];
+        let mut body = vec![2];
         body.extend_from_slice(&entry.0);
         if let Some(known) = self
-            .read(move |lab, me| lab.retained_projection_hint(me, entry))
+            .read(move |lab, me| lab.retained_base_hint(me, entry))
             .await
         {
             body.extend_from_slice(&known.0);
@@ -351,26 +340,16 @@ impl Shared {
         ensure!(!remaining.is_zero(), "checkpoint deadline");
         let permit = time::timeout(remaining, self.pulls.page(false, false)).await??;
         let remaining = remaining.min(deadline.saturating_duration_since(Instant::now()));
-        // v2 is an explicit capability probe, never reinterpret a v1 projection.
-        body[0]=2;
-        let negotiated=time::timeout(remaining,session::exchange(&peer.conn,KIND,&body,RESPONSE_LIMIT)).await;
-        let (mut bytes,judged)=match negotiated {
-            Ok(Ok(bytes)) if bytes.first()==Some(&2) && bytes != [2,0] && self.edits.is_some() => (bytes,true),
-            _ => {
-                body[0]=1;
-                let remaining=deadline.saturating_duration_since(Instant::now());
-                ensure!(!remaining.is_zero(),"checkpoint fallback deadline");
-                (time::timeout(remaining,session::exchange(&peer.conn,KIND,&body,RESPONSE_LIMIT)).await??,false)
-            }
-        };
+        // only the judged base (version 2); a peer without one, or too old to know it, answers with none
+        let mut bytes = time::timeout(remaining, session::exchange(&peer.conn, KIND, &body, RESPONSE_LIMIT)).await??;
         ensure!(
             self.discovery_current(scope, revision),
             "checkpoint demand expired"
         );
-        if bytes == [1, 0] {
+        if bytes.first() != Some(&2) || bytes == [2, 0] {
             return Ok(false);
         }
-        if judged { bytes[0]=1; } // decode common framing after explicit negotiation
+        bytes[0] = 1; // the framing is version 1's
         let (snapshot, evidence, sealed) = decode(&bytes)?;
         drop(bytes); // the transport envelope need not survive verification or cache adoption
         // Auxiliary sealing keys stay on ordinary background sync; they must not delay an
@@ -399,6 +378,7 @@ impl Shared {
             hash: *Hash::new(&sealed).as_bytes(),
             size: sealed.len() as u64,
         };
+        let journal = self.edits.is_some();
         let (kept, sealed) = self
             .try_lab(move |lab, me| {
                 let (_permit, _activity) = (permit, activity);
@@ -406,9 +386,7 @@ impl Shared {
                     return (false, sealed);
                 }
                 lab.receive_prepared(me, prepared, true);
-                let kept = if judged {
-                    lab.stage_owner_entry_base(me,snapshot,entry,sealed.clone())
-                } else { lab.retain_entry_projection(me, snapshot, entry, sealed.clone()) };
+                let kept = take_base(lab, me, snapshot, entry, sealed.clone(), journal);
                 (kept, sealed)
             })
             .await?;
@@ -417,7 +395,7 @@ impl Shared {
             // rendering behind disk I/O, or lose the notification if persistence reports failure.
             self.size.send_modify(|_| {});
             self.changed.notify_one();
-            self.store_checkpoint_format(entry, snapshot, root, sealed, judged).await?;
+            self.store_checkpoint(entry, snapshot, root, sealed).await?;
             // The saver is already notified by the staged anchor stamp. Readiness is
             // published only by save_on after its exact durable receipt, not this fetch.
         }
@@ -464,7 +442,7 @@ mod tests {
             let mut body=vec![version];body.extend_from_slice(&[7;32]);
             assert!(request_format(&body).is_err());
         }
-        assert_ne!(format_tag(EntryId([7;32]),true),format_tag(EntryId([7;32]),false));
+        assert!(tag(EntryId([7;32])).starts_with(b"avendb/judged-checkpoint/"), "only the based format is pinned");
     }
 
     #[test]
@@ -512,12 +490,12 @@ mod tests {
             .unwrap();
         let prepared = w
             .lab
-            .draft_entry_projection(w.mac_a, &[w.passkey_a], entry)
+            .draft_judged_entry_base(w.mac_a, &[w.passkey_a], entry)
             .unwrap();
         w.lab.complete(w.mac_a, prepared.draft, &[]).unwrap();
         let offer = w
             .lab
-            .entry_projection_offer(w.mac_a, w.phone_a, entry)
+            .entry_base_offer(w.mac_a, w.phone_a, entry)
             .unwrap();
         let body = encode(
             offer.snapshot,
@@ -557,13 +535,14 @@ mod tests {
         assert!(finish(provider.log(w.mac_a).revision(), revision, body).is_err());
         assert!(
             provider
-                .entry_projection_offer(w.mac_a, w.phone_a, entry)
+                .entry_base_offer(w.mac_a, w.phone_a, entry)
                 .is_none()
         );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn owner_checkpoint_reaches_a_type_only_view_before_its_history() {
+        // a node with no journal takes the base at once
         owner_checkpoint_public_flow(false).await;
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -649,10 +628,11 @@ mod tests {
             "declined ceremony pins nothing"
         );
         let auth = Owner(Mutex::new(Passkey::from_seed(secret)));
-        let legacy_snapshot = if judged {
+        if judged {
+            // the old op name publishes the one based format too
             let (legacy,_)=mac.run(json!({"op":"checkpoint_view","entry":entry.to_hex()}),None::<NoBytes>,Some(&auth)).await.unwrap();
-            Some(EditId::from_hex(legacy["ok"]["edit"].as_str().unwrap()).unwrap())
-        } else { None };
+            assert_eq!(legacy["ok"]["format"], "owner-judgment-2", "{legacy}");
+        }
         let (published, _) = mac
             .run(publish, None::<NoBytes>, Some(&auth))
             .await
@@ -672,12 +652,9 @@ mod tests {
         phone.know(mac.addr());
         mac.know(phone.addr());
         let conn=phone.shared.connection(mac.id()).await.unwrap();
-        if let Some(legacy_snapshot)=legacy_snapshot {
-            let mut old_request=vec![1];old_request.extend_from_slice(&entry.0);
-            let bytes=session::exchange(&conn.conn,KIND,&old_request,RESPONSE_LIMIT).await.unwrap();
-            let (snapshot,_,_)=decode(&bytes).expect("v1 receives a projection even after judged publication");
-            assert_eq!(snapshot,legacy_snapshot);
-        }
+        let mut old_request=vec![1];old_request.extend_from_slice(&entry.0);
+        let bytes=session::exchange(&conn.conn,KIND,&old_request,RESPONSE_LIMIT).await.unwrap();
+        assert_eq!(bytes,[1,0],"a version 1 request (projection-1 rows) is answered with none: the peer replays history");
         let scope = "cd".repeat(16);
         let ack = phone
             .op(
@@ -706,7 +683,7 @@ mod tests {
                     .read(move |lab, me| (
                         lab.log(me).ids().len(),
                         lab.item(me, entry).is_some(),
-                        lab.retained_projection_hint(me, entry)
+                        lab.retained_base_hint(me, entry)
                     ))
                     .await
             );
@@ -743,11 +720,11 @@ mod tests {
         let entry = w.lab.create(sender, vault, vault, "offline-note", &[], document("Before", "initial", sender)).unwrap();
         for n in 0..8 { w.lab.edit(sender, vault, entry, |item| item.set_text(2, &format!("Offline latest {n}"))).unwrap(); }
         let expected = w.lab.item(sender, entry).unwrap().record();
-        let PreparedEntryProjection { draft, root, sealed } = w.lab.draft_entry_projection(sender, &[owner], entry).unwrap();
+        let PreparedEntryBase { draft, root, sealed } = w.lab.draft_judged_entry_base(sender, &[owner], entry).unwrap();
         let snapshot = w.lab.complete(sender, draft, &[]).unwrap();
-        let offer = w.lab.entry_projection_offer(sender, receiver, entry).unwrap();
+        let offer = w.lab.entry_base_offer(sender, receiver, entry).unwrap();
         w.lab.receive(receiver, offer.evidence, vec![]);
-        // Persist the received signed evidence and ciphertext, not the in-memory projection.
+        // Persist the received signed evidence and ciphertext, not a base taken in memory.
         let shelf = crate::disk::open(&folder).unwrap();
         let node = Node::spawn(w.lab.split(receiver, &[], [151;32]), receiver,
             Options { shelf: Some(shelf.clone()), ..Options::local() }).await.unwrap();
@@ -760,10 +737,10 @@ mod tests {
         let node = Node::spawn(next.lab.split(receiver, &[], [152;32]), receiver,
             Options { shelf: Some(shelf), ..Options::local() }).await.unwrap();
         assert!(node.shared.peers.lock().unwrap().is_empty());
-        assert_eq!(node.read(move |lab, me| lab.retained_projection_hint(me, entry)).await, None);
+        assert_eq!(node.read(move |lab, me| lab.retained_base_hint(me, entry)).await, None);
         let scope = "ef".repeat(16);
-        node.shared.demands.lock().unwrap().replace(scope.clone(), 1,
-            vec![avendb::sync::LogId::Entry(entry)], Instant::now()).unwrap();
+        node.shared.interests.lock().unwrap().replace(scope.clone(), 1,
+            vec![crate::interest::Want::now(vec![avendb::sync::LogId::Entry(entry)])]).unwrap();
         // Hold the legitimate blob across the deliberately corrupted tag, so GC cannot
         // turn the authority rejection check into an unrelated missing-file test.
         let preserved = node.shared.store.add_bytes_with_opts((sealed, BlobFormat::Raw)).temp_tag().await.unwrap();
@@ -782,10 +759,10 @@ mod tests {
                 if answer["ok"]["rows"][0]["checkpoint"]["partial"] == true { break answer["ok"]["rows"][0].clone(); }
                 time::sleep(Duration::from_millis(5)).await;
             }
-        }).await.expect("offline manifest demand rehydrates the retained projection");
+        }).await.expect("offline manifest demand takes the pinned base again");
         assert_eq!(row["record"], expected);
         assert_eq!(row["readOnly"], true);
-        assert_eq!(node.read(move |lab, me| lab.retained_projection_hint(me, entry)).await, Some(snapshot));
+        assert_eq!(node.read(move |lab, me| lab.retained_base_hint(me, entry)).await, Some(snapshot));
         w.lab.submit(sender, &[owner], Action::Revoke(Revoking::Device { vault, device: receiver, keep: vec![] })).unwrap();
         let revoked = w.lab.backup(sender).signed().iter().filter(|signed|
             matches!(signed.edit.action, Action::Revoke(Revoking::Device { device, .. }) if device == receiver)).cloned().collect();
@@ -803,9 +780,9 @@ mod tests {
         let (sender, receiver, owner, vault) = (w.mac_a, w.phone_a, w.passkey_a, w.alice);
         w.lab.sync(sender, receiver);
         let entry = w.lab.create(sender, vault, vault, "pin-race", &[], document("Checkpoint", "old", sender)).unwrap();
-        let old = w.lab.draft_entry_projection(sender, &[owner], entry).unwrap();
+        let old = w.lab.draft_judged_entry_base(sender, &[owner], entry).unwrap();
         let old_id = w.lab.complete(sender, old.draft, &[]).unwrap();
-        let evidence = w.lab.entry_projection_offer(sender, receiver, entry).unwrap().evidence;
+        let evidence = w.lab.entry_base_offer(sender, receiver, entry).unwrap().evidence;
         w.lab.receive(receiver, evidence, vec![]);
         let node = Node::spawn(w.lab.split(receiver, &[], [155;32]), receiver, Options::local()).await.unwrap();
         // A deterministic save gate, not a timing sleep: the old writer starts before
@@ -814,9 +791,9 @@ mod tests {
         let mut old_save = Box::pin(node.shared.store_checkpoint(entry, old_id, old.root, old.sealed));
         assert!(future::poll_once(&mut old_save).await.is_none());
         w.lab.edit(sender, vault, entry, |item| item.set_text(2, "new")).unwrap();
-        let new = w.lab.draft_entry_projection(sender, &[owner], entry).unwrap();
+        let new = w.lab.draft_judged_entry_base(sender, &[owner], entry).unwrap();
         let new_id = w.lab.complete(sender, new.draft, &[]).unwrap();
-        let evidence = w.lab.entry_projection_offer(sender, receiver, entry).unwrap().evidence;
+        let evidence = w.lab.entry_base_offer(sender, receiver, entry).unwrap().evidence;
         node.try_act(move |lab, me| lab.receive(me, evidence, vec![])).await.unwrap();
         let new_save = node.shared.store_checkpoint(entry, new_id, new.root, new.sealed);
         drop(gate);

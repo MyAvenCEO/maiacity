@@ -48,7 +48,7 @@
 //! vault; a relay share hands out none of them, and lets the server know the vault's devices.
 //!
 //! Every read and change the page makes is one op of the ops engine, JSON in and JSON out (`Device::run`,
-//! `PageDevice::run`, `avendb::engine`, `docs/ARCHITECTURE.md` §8), which the device runs as the vault it names, and
+//! `PageDevice::run`, `avendb::engine`, `doc:docs/avendb` §8), which the device runs as the vault it names, and
 //! the rules check as they check any peer's edit; the page keeps no rule, and asks `may` before it offers a button.
 //! Its whole world (`world`, `avendb::world`): every vault it knows, whom it acts for and as which vault its person
 //! acts in each; every share in force, what it reaches and who may revoke it; every audience, with the devices that
@@ -879,7 +879,7 @@ impl Device {
         self.node.read(|lab, me| lab.vault_of(me)).await
     }
 
-    /// Runs op `op` of the ops engine (`avendb::engine`, `docs/ARCHITECTURE.md` §8), as its node does
+    /// Runs op `op` of the ops engine (`avendb::engine`, `doc:docs/avendb` §8), as its node does
     /// (`avendb_net::Node::run`): every read and change of the database it holds, whatever their schema, and of its
     /// vaults, as JSON. Its answer, `{"ok": ...}`, `{"refused": ..., "why": ...}`, or for a change its vault's owners
     /// approve with no `authenticator` at hand, `{"approve": ...}`; and for `read_file` the bytes it read, beside.
@@ -1562,7 +1562,7 @@ impl PageDevice {
         })
     }
 
-    /// Runs op `op`, an object of the ops engine's (`Device::run`, `docs/ARCHITECTURE.md` §8): a promise of its
+    /// Runs op `op`, an object of the ops engine's (`Device::run`, `doc:docs/avendb` §8): a promise of its
     /// answer, `{ok}`, `{refused, why}`, or for a change its vault's owners approve when no `ceremony` is passed,
     /// `{approve}`, which makes nothing. `ceremony(challenge, step)` is the passkey's, for such a change, as a start
     /// takes it. `read(at, n)` hands over the bytes of a `put_file`'s file, or of the file a `create` brings (its

@@ -6,13 +6,12 @@ use crate::encode::Encode;
 use crate::wire::Reader as WireReader;
 use loro::{EncodedBlobMode, LoroDoc};
 
-#[path = "entry_base_suffix.rs"]
+#[path = "entry_write_codec.rs"]
 mod suffix;
-pub use suffix::AuthenticatedCountedEntryBase;
 #[path = "entry_judgment.rs"]
 mod judgment;
 pub use judgment::RestoredOwnerJudgment;
-pub(crate) use judgment::{Anchors, OverlayBasis, BootstrapProgress};
+pub(crate) use judgment::{Anchors, Based, OverlayBasis};
 
 const FORMAT: &[u8] = b"avenDB entry base 2\n";
 const MAX_BYTES: usize = 1 << 20;
@@ -160,7 +159,7 @@ impl Lab {
     /// policy, owner approval, key epoch and signed content root are ordinary gates.
     pub fn authenticate_entry_base(&self, on: SignerId, snapshot: EditId, entry: EntryId, sealed: &[u8]) -> Option<AuthenticatedEntryBaseEnvelope> {
         if sealed.len() > MAX_BYTES + 128 { return None; }
-        let (vault, stated, name) = self.projection_authority(on, snapshot, entry)?;
+        let (vault, stated, name) = self.snapshot_authority(on, snapshot, entry)?;
         if stated.slice.size != sealed.len() as u64 || stated.slice.hash != crate::hash::content(sealed) { return None; }
         let key = self.held(on).keys.get(&keys::edit_key(sealed)?, name)?;
         let bytes = keys::open_edit(key, sealed, &context(vault, entry))?;
@@ -189,7 +188,7 @@ mod tests {
         assert!(lab.draft_entry_base(mac, &[mac], entry).is_err(), "owner ceremony required");
         let PreparedEntryBase { draft, sealed, root } = lab.draft_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
-        let offered = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        let offered = lab.entry_base_offer(mac, phone, entry).unwrap();
         lab.receive(phone, offered.evidence, vec![]);
         let ids = lab.log(phone).ids().to_vec();
         let base = lab.authenticate_entry_base(phone, snapshot, entry, &sealed).unwrap();
@@ -200,7 +199,6 @@ mod tests {
         assert_eq!(lab.log(phone).ids(), ids);
         assert_eq!(lab.item(phone, entry).unwrap().record(), before);
         assert_eq!(root.hash, crate::hash::content(&sealed));
-        assert!(lab.open_entry_projection(phone, snapshot, entry, &sealed).is_none(), "v2 is not a JSON projection");
         let mut corrupt = sealed.clone(); corrupt[0] ^= 1;
         assert!(lab.authenticate_entry_base(phone, snapshot, entry, &corrupt).is_none());
         assert!(lab.authenticate_entry_base(phone, snapshot, EntryId([99;32]), &sealed).is_none());

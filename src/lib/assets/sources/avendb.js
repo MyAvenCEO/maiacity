@@ -145,7 +145,7 @@ export const labelOf = (card) => refOf(card.group, card.id, card.version, card.v
 
 /**
  * One of our recipes as the Maia City vault keeps it (V5 of the avenDB migration): a `recipe` entry of avenDB's
- * `Recipe, v1` (a code entry, avendb/docs/ARCHITECTURE.md section 9, with the asset's card beside it), and its source,
+ * `Recipe, v1` (a code entry, doc:docs/avendb section 9, with the asset's card beside it), and its source,
  * the recipe file byte for byte, as the entry's file: a code entry's `source` holds at most 200,000 characters, which
  * the stand-in's head outgrows, and a file any size (Samuel 2026-10-17). Nothing here writes it. The file's BLAKE3 hash
  * is the recipe's name, the one its card gives (`recipe`) and every build is named by, which a reader holds it to; the

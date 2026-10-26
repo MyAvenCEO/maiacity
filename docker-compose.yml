@@ -85,7 +85,7 @@ services:
       AVENDB_BUCKET_ACCESS_KEY: ${AVENDB_BUCKET_ACCESS_KEY:-}
       AVENDB_BUCKET_SECRET_KEY: ${AVENDB_BUCKET_SECRET_KEY:-}
       AVENDB_BUCKET_SEAL: ${AVENDB_BUCKET_SEAL:-}
-      # its bucket of snapshots (avendb/docs/BACKUP.md), if the .env names one: every vault backed up into it each day
+      # its bucket of snapshots (doc:docs/avendb), if the .env names one: every vault backed up into it each day
       # at AVENDB_SNAPSHOTS_AT (03:00 UTC by default), at its bucket's endpoint with its key, sealed under its seal
       AVENDB_SNAPSHOTS: ${AVENDB_SNAPSHOTS:-}
       AVENDB_SNAPSHOTS_AT: ${AVENDB_SNAPSHOTS_AT:-}
@@ -104,6 +104,8 @@ services:
       AVENDB_RELAY_RATE: ${AVENDB_RELAY_RATE:-}
       AVENDB_RELAY_PASSES: ${AVENDB_RELAY_PASSES:-}
       AVENDB_FEED_RATE: ${AVENDB_FEED_RATE:-}
+      # its STUN responder, where browsers learn the address their network shows to reach each other over WebRTC (P8)
+      AVENDB_STUN_BIND: ${AVENDB_STUN_BIND:-0.0.0.0:3478}
       RUST_LOG: ${AVENDB_LOG:-info}
       # plain log lines: the deploy reads its offer from them
       NO_COLOR: "1"
@@ -111,6 +113,7 @@ services:
       - avendbdata:/data
     ports:
       - "7401:7401/udp"
+      - "3478:3478/udp"
     # it holds every vault's signed edits while it runs: at 1g it was killed as it loaded them, a start every 80 s
     # (2026-10-20, /feed/health); 4g is the whole machine's, so it may take all the rest leave (about 2.9 GB)
     mem_limit: 4g

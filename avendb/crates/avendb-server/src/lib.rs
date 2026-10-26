@@ -33,6 +33,7 @@ pub mod bucket;
 pub mod feed;
 pub mod health;
 mod md5;
+pub mod stun;
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -83,6 +84,9 @@ pub struct Config {
     /// and AVENDB_WT_ORIGINS (JSON array of exact origins) must be set. Disabled by default.
     /// This listener owns its pinned PQ TLS; the existing reverse proxy stays unchanged.
     pub webtransport: Option<avendb_net::transports::WtConfig>,
+    /// The UDP socket of its STUN responder (`AVENDB_STUN_BIND`, such as `0.0.0.0:3478`; off if unsaid, `stun`):
+    /// where browsers learn the address their network shows, to reach each other over WebRTC straight (P8).
+    pub stun: Option<SocketAddr>,
     /// How it signs people up (`AVENDB_SIGNUP`; `avendb::admission::Signup`, `Admission.lean`): whose passes its relay
     /// honours for ten minutes besides those of a passkey that roots a vault the server knows. `open`, any passkey's
     /// (`avendb_net::Admission::open`); `invite`, one shown with an invite of Maia City no vault claimed yet
@@ -112,7 +116,7 @@ pub struct Config {
     pub snapshots: Option<SnapshotsConfig>,
 }
 
-/// The server's backups (`backups`, `docs/BACKUP.md`): the bucket of snapshots, with a folder for each vault, when
+/// The server's backups (`backups`, `doc:docs/avendb`): the bucket of snapshots, with a folder for each vault, when
 /// each day it backs up every vault, and how much of it each day's check reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SnapshotsConfig {
@@ -190,6 +194,7 @@ impl Config {
                 }),
                 _ => bail!("AVENDB_WT_BIND, AVENDB_WT_URL and AVENDB_WT_ORIGINS must all be configured together"),
             },
+            stun: var("AVENDB_STUN_BIND").map(|v| v.parse()).transpose().context("AVENDB_STUN_BIND")?,
             signup: match (var("AVENDB_SIGNUP").as_deref(), gate) {
                 (None, true) | (Some("invite"), _) => Signup::Invited,
                 (None, false) | (Some("open"), _) => Signup::Anyone,
@@ -334,6 +339,7 @@ pub struct Running {
     pub health: Arc<health::Health>,
     _beat: Abort,
     _measure: Abort,
+    _stun: Option<Abort>,
     /// What the apps know of the server (P8c), so that a new device links through it with its person's passkey alone:
     /// its device, its endpoint, where devices on UDP reach it (`Config::public_addr`) and its relay. A device it
     /// doesn't know yet reaches it straight, over UDP, as its relay lets the device in only once it joined.
@@ -378,19 +384,14 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
     let own = shelf.clone();
     let opts = Options {
         bind: Some(config.bind),
-        direct: false,
         relay: Some(url),
-        proxy: false,
-        lazy: false,
-        retry: Duration::from_secs(1),
-        shelf: None,
-        keep: false,
-        card: false,
         admission: Some(admission),
-        relay_passes: Vec::new(),
-        page: avendb_net::PAGE,
-        // its start is nobody's to watch
-        progress: avendb_net::Progress::new(),
+        // it keeps the blind index its devices tell it, so a new device finds its entries here in one round trip
+        index: true,
+        // signatures alone for one release, so that it serves every edit it holds to an old app (P8)
+        paths: false,
+        // the rest as a local node's: no shelf of its own here, its start nobody's to watch
+        ..Options::local()
     };
     let node = Arc::new(server::open(shelf, opts).await?);
     if let Some(config) = &config.webtransport {
@@ -425,7 +426,11 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
     let beat = health.beat();
     let measure = Abort(tokio::spawn(measure(config.clone(), health.clone())));
     let backups = backups.transpose()?;
-    Ok(Running { node, relay, feed, backups, health, _beat: beat, _measure: measure, offer })
+    let stun = match config.stun {
+        Some(bind) => Some(Abort(stun::spawn(bind).await?)),
+        None => None,
+    };
+    Ok(Running { node, relay, feed, backups, health, _beat: beat, _measure: measure, _stun: stun, offer })
 }
 
 /// How often the server measures what its shelf takes: its bucket's listing is a request per 1,000 objects.

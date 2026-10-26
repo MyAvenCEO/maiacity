@@ -1,4 +1,4 @@
-//! The gate of C4b, code entries in avenDB (`docs/ARCHITECTURE.md` §9 and §10; the Scion plan's phases A, B and I):
+//! The gate of C4b, code entries in avenDB (`doc:docs/avendb` §9 and §10; the Scion plan's phases A, B and I):
 //! prepared, and loaded by no app yet. One entry of each kind of code, a recipe, a view, a logic and a function, goes
 //! the whole way through the ops engine (`engine::run`), as the page and an aven send ops: Alice's aven proposes a
 //! change to an entry of Alice's vault, which an Editor share lets it write; Alice accepts it by a review; the aven
@@ -12,24 +12,10 @@ use avendb::id::{SignerId, VaultId};
 use avendb::policy::{Action, Kind, Level, Principal};
 use avendb::slice::{Atom, Selector};
 use serde_json::{json, Value};
+use avendb_testkit::{list, ok, refused};
 
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
     engine::run(&mut w.lab, d, &op)
-}
-
-/// What an op answered, which it must have done.
-fn ok(answer: Value) -> Value {
-    assert!(answer.get("ok").is_some(), "refused: {answer}");
-    answer["ok"].clone()
-}
-
-/// Why an op was refused, which it must have been.
-fn refused(answer: &Value) -> &str {
-    answer["refused"].as_str().unwrap_or_else(|| panic!("not refused: {answer}"))
-}
-
-fn list(v: &Value) -> &[Value] {
-    v.as_array().map(Vec::as_slice).unwrap_or_default()
 }
 
 /// The kinds of code entry, as the entries' types and their records' kinds.

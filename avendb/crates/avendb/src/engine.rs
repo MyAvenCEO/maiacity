@@ -1,4 +1,4 @@
-//! The ops engine (`docs/ARCHITECTURE.md` §8): every read and every change of a device's entries as one JSON op,
+//! The ops engine (`doc:docs/avendb` §8): every read and every change of a device's entries as one JSON op,
 //! whatever their schema, run on the device's Lab. `ops` is the part on records alone; this is the part on entries.
 //!
 //! - **Records through schemas.** An op sees an entry's record as an app on a schema sees it (`lens::View`): the schema
@@ -56,6 +56,7 @@
 //! (`Lab::landed`).
 
 mod aips;
+pub mod coverage;
 mod vaults;
 
 use std::cmp::Ordering;
@@ -80,6 +81,7 @@ use crate::words;
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
 use crate::world::{self, FORK, SyncedTo, authors, authors_json, fork_mark};
+use coverage::Cursor;
 
 pub use vaults::{approve, approved, follow_standing, passkey_of, world, world_snapshot, WorldSnapshot, Approval, Prepared, Then};
 
@@ -165,7 +167,8 @@ fn bad(why: impl Into<String>) -> Refused {
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "entry_views" => &["vault", "entries", "types", "as", "kind"],
-        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],
+        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "after", "depth", "follow", "observeRevision"],
+        "touched" => &["since"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
         "checkpoint_view" | "checkpoint_entry_base" => &["entry"],
@@ -200,7 +203,9 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "code" => &["vault", "type"],
         "posts" => &["limit", "after"],
         "bring" => &["vaults", "entries", "prioritize"],
+        "interest" => &["scope", "revision", "wants", "release"],
         "demand" => &["scope", "revision", "entries", "queries"],
+        "find" => &["vault", "types", "tags", "follow", "bring"],
         "shares" => &["over", "as"],
         "database" => &["vault", "types"],
         "note" => &["entry"],
@@ -230,9 +235,10 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 36] = [
+const READS: [&str; 39] = [
     "entry_views",
     "query",
+    "touched",
     "objective_check",
     "get",
     "pin",
@@ -260,7 +266,9 @@ const READS: [&str; 36] = [
     "code",
     "posts",
     "bring",
+    "interest",
     "demand",
+    "find",
     "synced",
     "network",
     "measure_peer_policy",
@@ -352,6 +360,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
     let out = op_of(v).and_then(|(name, o)| match name {
         "entry_views" => entry_views_inner(lab, me, o, &SyncedTo::default()),
         "query" => query(lab, me, o),
+        "touched" => touched(lab, me, o),
         "get" => get(lab, me, o),
         "pin" => pin(lab, me, o),
         "history" => history(lab, me, o),
@@ -375,8 +384,10 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "posts" => posts(lab, me, o),
         "read_file" => Err(bad("read_file reads a file's bytes from a node's store: a node runs it (Node::run)")),
         "jobs" => Err(bad("jobs tells what a node does in the background: a node runs it (Node::run)")),
+        "interest" => Err(bad("interest orders what a node brings for its mounted views: a node runs it (Node::run)")),
         "demand" => Err(bad("demand changes a node's local scheduling priorities: a node runs it (Node::run)")),
         "bring" => Err(bad("bring asks a node's peers for vaults or entries: a node runs it (Node::run)")),
+        "find" => Err(bad("find asks a node's peers by the blind index: a node runs it (Node::run)")),
         "synced" => Err(bad("synced tells what a node's peers hold: a node runs it (Node::run)")),
         "measure_peer_policy" | "measure_peer_visibility" | "observe_query_emission" => Err(bad("peer policy measurements require a node (Node::run)")),
         "network" => Err(bad("network tells where a node syncs from and how: a node runs it (Node::run)")),
@@ -894,6 +905,23 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// level of `depth`, so a cycle of links ends there (`Deep`). `count` is how many rows there are in all, and `depth`
 /// how deep each was read.
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    query_from(lab, me, o, Lab::query_candidates)
+}
+
+/// The same query over every entry the device holds, the index left out: what the index must answer alike
+/// (`LiveQuery.lean`, `indexed_eq_scan`).
+#[cfg(test)]
+pub(crate) fn full_query_oracle(lab: &Lab, me: SignerId, op: &Value) -> Value {
+    let o = op.as_object().expect("query object");
+    let scan = |lab: &Lab, me, vault: Option<VaultId>, _: &crate::slice::Selector| lab.entries(me).into_iter()
+        .filter(|e| vault.is_none_or(|v| lab.vault_of_entry(me, *e) == Some(v))).collect();
+    query_from(lab, me, o, scan).map_or_else(|why| why.to_json(), |ok| json!({ "ok": ok }))
+}
+
+fn query_from(
+    lab: &Lab, me: SignerId, o: &Map<String, Value>,
+    candidates: impl FnOnce(&Lab, SignerId, Option<VaultId>, &crate::slice::Selector) -> Vec<EntryId>,
+) -> Result<Value, Refused> {
     let observe_revision = match o.get("observeRevision") {
         None => false,
         Some(Value::Bool(value)) => *value,
@@ -905,40 +933,43 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     let select = o.get("select").map(|_| texts_of(o, "select")).transpose()?;
     let order = order_of(o)?;
     let (limit, offset) = (count_of(o, "limit")?, count_of(o, "offset")?.unwrap_or(0));
+    let after = o.get("after").map(Cursor::of_json).transpose()?;
+    if after.is_some() && offset > 0 { return Err(bad("a query pages by after or by offset, not both")); }
     let depth = count_of(o, "depth")?.unwrap_or(QUERY_DEPTH).min(lab.query_depth(me));
     let follow = follows_of(o)?;
     let plan = w.plan();
+    if let Some(v) = vault.filter(|v| lab.denies_vault(me, *v)) {
+        return Ok(json!({ "rows": [], "count": 0, "plan": plan.to_json(), "depth": depth, "next": Value::Null,
+            "coverage": coverage::Coverage::Denied(format!("this device has no standing in vault {}", v.to_hex())).to_json() }));
+    }
     let mut lanes: HashMap<VaultId, Lane> = HashMap::new();
     let mut rows = vec![];
-    let (mut unresolved_candidates, mut checkpoint_partial) = (0usize, false);
-    for entry in lab.entries(me) {
+    // Every candidate is classified in one read: the answer is a function of what the device holds, never of how long
+    // it took (Coverage.lean). A candidate it can't decide yet waits, and says on what.
+    let mut waits = coverage::Waits::default();
+    for entry in candidates(lab, me, vault, &plan) {
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
-        let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
-        let checkpoint = lab.entry_projection(me, entry);
-        checkpoint_partial |= checkpoint.is_some() || lab.active_owner_base(me, entry).is_some();
-        let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
-        let projected = checkpoint.as_ref().and_then(|p| p.record(MAIN));
-        let visible = if let Some(mut stored) = projected {
-            let below = stored.as_object_mut().map(|r| ops::empty_below(r, depth)).unwrap_or_default();
-            seen_of(lane, &stored, &BTreeSet::new(), &schema).map(|mut seen| {
-                seen.read_only = true;
-                ops::take_out(&mut seen.record, &below);
-                (seen, !below.is_empty())
-            })
-        } else {
-            lab.item(me, entry).and_then(|item| see_within(lane, item, &schema, depth))
-        };
-        let Some((mut seen, cut)) = visible else {
-            // Known readable metadata matched the label plan, but its record was
-            // absent or could not be translated. This is not a confirmed empty set.
-            unresolved_candidates += 1;
+        let Some(m) = lab.meaning(me, entry) else {
+            // Its header, or the cap groups its meaning rests on, haven't arrived; one it holds no key to it never reads.
+            if lab.reads(me, entry) { waits.add(entry, coverage::On::Semantics); }
             continue;
         };
-        seen.read_only |= lab.owner_base_durability_pending(me, entry) || lab.owner_base_pending(me, entry) > 0 || lab.owner_base_wait_reason(me, entry).is_some();
+        if !plan.matches(&m.attrs) { continue; }
+        // a based entry, owner's or reader's, shows from its owners' base before the history behind it
+        let based = lab.active_owner_base(me, entry).is_some();
+        let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
+        let visible = lab.item(me, entry).and_then(|item| see_within(lane, item, &schema, depth));
+        let Some((mut seen, cut)) = visible else {
+            // A record the device opened that the schema doesn't read is out; one it opened nothing of yet waits.
+            if lab.item(me, entry).is_none() { waits.add(entry, coverage::On::Record); }
+            continue;
+        };
+        let read_only = lab.based_read_only(me, entry);
+        seen.read_only |= read_only;
         if w.holds(&m.attrs, &seen.record) {
-            let provenance = checkpoint.map(|p| json!({ "snapshot": p.snapshot().to_hex(),
-                "basis": ids(p.basis()), "partial": true, "freshness": "owner-attested-basis" }))
-                .or_else(|| owner_base_provenance(lab, me, entry));
+            // A row from an owners' base, before the history behind it, shows read-only, and waits.
+            if based || read_only { waits.add(entry, coverage::On::History); }
+            let provenance = owner_base_provenance(lab, me, entry);
             rows.push((entry, v, m.attrs, seen, cut, provenance));
         }
     }
@@ -961,7 +992,15 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         order.iter().map(by).find(|o| o.is_ne()).unwrap_or(Ordering::Equal)
     });
     let count = rows.len();
-    let page = rows.into_iter().skip(offset).take(limit.unwrap_or(usize::MAX));
+    // A page starts after the cursor (`Coverage.after_page`), or at the offset, and says where it ended.
+    let keyed = |(entry, _, attrs, seen, _, _): &(EntryId, VaultId, Attrs, Seen, bool, Option<Value>)|
+        Cursor::at(*entry, order.iter().map(|(by, _)| match by {
+            By::Label(l) => label(attrs, l),
+            By::Place(p) => p.at(&seen.record).cloned().unwrap_or(Value::Null),
+        }).collect());
+    let from = after.as_ref().map_or(offset, |c| c.start(&rows, keyed, &order));
+    let page: Vec<_> = rows.into_iter().skip(from).take(limit.unwrap_or(usize::MAX)).collect();
+    let next = (from + page.len() < count).then(|| page.last().map(keyed)).flatten();
     let mut shown = vec![];
     for (entry, v, attrs, seen, cut, checkpoint) in page {
         let picked = |f: &String| select.as_ref().is_none_or(|fs| fs.contains(f));
@@ -990,8 +1029,24 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         shown.push(row);
     }
     Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
-        "readiness": { "discovery": "unverified", "authoritativeEmpty": false,
-            "unresolvedCandidates": unresolved_candidates, "checkpointPartial": checkpoint_partial } }))
+        "next": next.map_or(Value::Null, |c| Value::String(c.to_text())), "coverage": waits.coverage(count).to_json() }))
+}
+
+/// `{"op": "touched", "since": [edits, keys, gone?]}`: what changed on the device since it held `edits` edits and `keys`
+/// McEliece keys (`size`, as the page last saw it before `changed` woke it) and its log had let edits go `gone` times
+/// (left out, unknown: everything is touched): `{"since", "entries", "vaults", "all"}`, what to pass next time, the
+/// entries whose logs took new edits, their vaults, and `all` where a change may touch any read (a vault's, a share's
+/// or an audience's edit, a new key, a removal, or more entries than an answer names). A mounted query re-runs only
+/// where a change touched what it selects (`LiveQuery.lean`, `untouched_query_unchanged`); the rest keep their answers.
+fn touched(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let wrong = || bad("since is [edits, keys] (the size the page last saw) or the since of the last touched");
+    let since = o.get("since").and_then(Value::as_array).filter(|a| (2..=3).contains(&a.len())).ok_or_else(wrong)?;
+    let at = |i: usize| since[i].as_u64().ok_or_else(wrong);
+    let gone = since.get(2).map(|_| at(2)).transpose()?;
+    let t = lab.touched(me, at(0)? as usize, at(1)? as usize, gone);
+    Ok(json!({ "since": [t.size.0, t.size.1, t.gone], "all": t.all,
+        "entries": t.entries.iter().map(|e| e.to_hex()).collect::<Vec<_>>(),
+        "vaults": t.vaults.iter().map(|v| v.to_hex()).collect::<Vec<_>>() }))
 }
 
 /// `{"op": "api_pass", "audience"}`: the device's pass to service `audience` (`sign::ApiPass`), made now by its clock,
@@ -1037,28 +1092,6 @@ fn owner_base_provenance(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Valu
 
 fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let (entry, line, schema) = (entry_of(o)?, line_of(o, "line")?, named(o)?);
-    if !o.contains_key("at") && !o.contains_key("version") {
-        if let Some(checkpoint) = lab.entry_projection(me, entry) {
-            if let Some(stored) = checkpoint.record(line) {
-                let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
-                let m = lab.meaning(me, entry).ok_or(Refused::NoEntry)?;
-                let mut seen = seen_of(&lane(lab, me, vault), &stored, &BTreeSet::new(), &schema)
-                    .ok_or_else(|| unseen(&schema))?;
-                seen.read_only = true;
-                let mut out = row(entry, vault, &m.attrs, &seen, seen.record.clone());
-                out["line"] = line_json(line);
-                out["heads"] = ids(checkpoint.basis()).into();
-                out["at"] = Value::Null;
-                out["version"] = Value::Null;
-                out["authored"] = json!([]);
-                out["files"] = json!([]);
-                out["filesComplete"] = false.into();
-                out["checkpoint"] = json!({ "snapshot": checkpoint.snapshot().to_hex(),
-                    "basis": ids(checkpoint.basis()), "partial": true, "freshness": "owner-attested-basis" });
-                return Ok(out);
-            }
-        }
-    }
     let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
     if !h.lines().contains(&line) {
         return Err(Refused::NoEntry);
@@ -1088,7 +1121,7 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
         None => lab.item_on(me, entry, line).ok_or(Refused::NoEntry)?,
     };
     let mut seen = see(&lane(lab, me, vault), item, &schema).ok_or_else(|| unseen(&schema))?;
-    seen.read_only |= at.is_some() || lab.owner_base_durability_pending(me, entry) || lab.owner_base_pending(me, entry) > 0 || lab.owner_base_wait_reason(me, entry).is_some();
+    seen.read_only |= at.is_some() || lab.based_read_only(me, entry);
     let mut out = row(entry, vault, &m.attrs, &seen, seen.record.clone());
     out["line"] = line_json(line);
     out["heads"] = ids(&h.heads(line)).into();
@@ -1985,22 +2018,19 @@ fn edits(
 }
 
 #[cfg(test)]
-mod query_readiness_tests {
+mod query_coverage_tests {
     use super::*;
     use crate::cast::{document, human_on};
     #[test]
-    fn local_empty_query_does_not_certify_discovery_or_unresolved_records() {
+    fn local_queries_answer_complete_when_nothing_waits() {
         let mut lab=Lab::new(); let owner=lab.passkey("Query owner");
         let device=lab.device_of(owner,"Device"); let vault=human_on(&mut lab,owner,&[device]);
         let empty=run(&mut lab,device,&json!({"op":"query","vault":vault.to_hex()}));
-        assert_eq!(empty["ok"]["readiness"]["authoritativeEmpty"],false);
-        assert_eq!(empty["ok"]["readiness"]["discovery"],"unverified");
+        assert_eq!(empty["ok"]["coverage"],json!({"state":"complete"}),"locally complete; the node adds the logs it lacks");
         lab.create(device,vault,vault,"note",&[],document("Title","Text",device)).unwrap();
-        // Known label candidate cannot be translated to the requested record schema.
-        // Zero rows must preserve that distinction, not assert an empty collection.
+        // A note the todo schema doesn't read is out: the device opened it, so nothing waits.
         let missing=run(&mut lab,device,&json!({"op":"query","vault":vault.to_hex(),"schema":"todo"}));
         assert_eq!(missing["ok"]["count"],0);
-        assert_eq!(missing["ok"]["readiness"]["unresolvedCandidates"],1);
-        assert_eq!(missing["ok"]["readiness"]["authoritativeEmpty"],false);
+        assert_eq!(missing["ok"]["coverage"],json!({"state":"complete"}));
     }
 }

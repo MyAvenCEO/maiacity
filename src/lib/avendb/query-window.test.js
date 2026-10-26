@@ -2,18 +2,21 @@
 import { expect, test } from 'bun:test';
 import { createReadWindow, queryEntries, queryDiscovery, replyEntries } from './query-window.js';
 import { windowRead } from './ops.js';
+// an Interest op seen as the one list of entries and selectors it wants (tiers aside)
+/** @type {(op: any) => any} */
+const flat = (op) => op?.op !== 'interest' ? op : { ...op, entries: (op.wants ?? []).flatMap((/** @type {any} */ w) => w.entries ?? []), queries: op.wants?.length ? op.wants.flatMap((/** @type {any} */ w) => w.queries ?? []) : undefined };
 
 const id = (n) => n.toString(16).padStart(64, '0');
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const node = () => {
 	const calls = [];
-	return { calls, run: async (op) => { calls.push(op); return { ok: { accepted: true } }; } };
+	return { calls, run: async (op) => { calls.push(flat(op)); return { ok: { accepted: true } }; } };
 };
 
 test('an empty first-view query publishes bounded discovery without waiting for a lease response', async () => {
 	const pending = deferred(), calls = [];
-	const d = { run: (op) => { calls.push(op); return pending.promise; } };
+	const d = { run: (op) => { calls.push(flat(op)); return pending.promise; } };
 	const view = createReadWindow({ device: () => d, read: async () => ({ ok: { rows: [] } }) });
 	try {
 		const op = { op: 'query', vault: id(9), where: { all: [{ type: ['note'] }, { record: { private: 'not sent' } }] } };
@@ -105,7 +108,7 @@ test('a device change clears the old device scope and rejects its pending answer
 
 test('a local answer never waits for scheduling metadata to reach the node', async () => {
 	const send = deferred(), calls = [];
-	const d = { run: (op) => { calls.push(op); return send.promise; } };
+	const d = { run: (op) => { calls.push(flat(op)); return send.promise; } };
 	const view = createReadWindow({ device: () => d, read: async () => ({ ok: { entry: id(1) } }) });
 	try {
 		expect(await view.read({ op: 'get', entry: id(1) })).toEqual({ ok: { entry: id(1) } });
@@ -193,7 +196,7 @@ test('an effect clears a borrowed window without closing its component lifetime'
 
 test('identical empty reactive reads keep discovery in flight on the same revision', async () => {
 	const pending = deferred(), calls = [];
-	const d = { run: (op) => { calls.push(op); return pending.promise; } };
+	const d = { run: (op) => { calls.push(flat(op)); return pending.promise; } };
 	const view = createReadWindow({ device: () => d, read: async () => ({ ok: { rows: [] } }) });
 	const op = { op: 'query', where: { type: ['note'] }, select: [] };
 	try {

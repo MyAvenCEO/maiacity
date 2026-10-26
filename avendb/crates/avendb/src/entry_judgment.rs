@@ -12,7 +12,7 @@ use anchor_metadata::{get_anchor_metadata, put_anchor_metadata};
 
 #[path = "entry_bootstrap_store.rs"]
 mod bootstrap_store;
-pub(crate) use bootstrap_store::{Anchors, OverlayBasis, BootstrapProgress};
+pub(crate) use bootstrap_store::{Anchors, Based, OverlayBasis};
 
 const JUDGMENT: &[u8] = b"avenDB entry judgment 2\n";
 const MAX_FACTS: usize = 512;
@@ -150,6 +150,7 @@ fn put_judgment(shown: &Shown, store: &Store) -> Option<Vec<u8>> {
         &history.history(MAIN))?;
     put_judgment_with_scratch(history, &shown.after, Some(&scratch))
 }
+#[cfg(test)]
 fn put_judgment_parts(history: &History, after: &After) -> Option<Vec<u8>> {
     put_judgment_with_scratch(history, after, after.scratch.as_ref())
 }
@@ -457,7 +458,7 @@ impl Lab {
         if sealed.len() > MAX_BYTES + 128 {
             return None;
         }
-        let (vault, stated, name) = self.projection_authority(on, snapshot, entry)?;
+        let (vault, stated, name) = self.snapshot_authority(on, snapshot, entry)?;
         if stated.slice.size != sealed.len() as u64
             || stated.slice.hash != crate::hash::content(sealed)
         {
@@ -564,13 +565,10 @@ mod tests {
         let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
         lab.warmed(mac, receipt);
         lab.restore_warm(mac, backup, Some(([27; 40], n)), &warm);
-        assert!(lab.held(mac).deferred_bodies.contains_key(&proposal));
-        // Projection/base publication can use current snapshots without an empty
-        // fallback; judged publication must also demand the proposal label.
-        assert!(lab.draft_entry_projection(mac, &[owner], entry).is_ok());
+        // Judged publication uses current snapshots without an empty fallback and
+        // demands the proposal label.
         let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         assert_eq!(put_judgment(&lab.held(mac).shown[&entry], lab.held(mac)).unwrap(), expected);
-        assert!(lab.held(mac).deferred_bodies[&proposal].content_ready());
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
         lab.sync(mac, phone);
         let backup = lab.backup(phone);
@@ -579,7 +577,6 @@ mod tests {
         let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
         lab.warmed(phone, receipt);
         lab.restore_warm(phone, backup, Some(([28; 40], n)), &warm);
-        assert!(lab.held(phone).deferred_bodies.contains_key(&proposal));
         let restored = lab.restore_owner_judgment(phone, snapshot, entry, &sealed).unwrap();
         assert_eq!(put_judgment_parts(&restored.history, &restored.after).unwrap(), expected,
             "full holder accepts identical judgment including proposal labels");
@@ -602,7 +599,7 @@ mod tests {
         let PreparedEntryBase { draft, sealed, .. } =
             lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
-        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        let offer = lab.entry_base_offer(mac, phone, entry).unwrap();
         lab.receive(phone, offer.evidence, vec![]);
         let held = lab.log(phone).ids().to_vec();
         let kernel = lab.state(phone).clone();
@@ -666,7 +663,7 @@ mod tests {
         );
         // A structurally valid owner-attested lie is rejected by a holder with the
         // independently judged cut, not accepted merely because the owner signed it.
-        let (v, stated, name) = lab.projection_authority(mac, snapshot, entry).unwrap();
+        let (v, stated, name) = lab.snapshot_authority(mac, snapshot, entry).unwrap();
         let basis = stated.basis.clone();
         let key = lab.held(mac).keys.first(name).unwrap().clone();
         let plain = keys::open_edit(&key, &sealed, &judgment_context(v, entry)).unwrap();

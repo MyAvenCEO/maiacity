@@ -1,5 +1,5 @@
 /*
- * Records inside records, as the page words and walks them (avendb/docs/ARCHITECTURE.md §8): a path names a place of
+ * Records inside records, as the page words and walks them (doc:docs/avendb §8): a path names a place of
  * a record at any depth, a field, then a row of the list in it by its id, then a field of that row, and so on
  * (`["nodes", {"id": 1}, "kids", {"id": 11}, "text"]`), and a rule of a share names any row or any field by "*". A
  * field holds a list of records (rows, each an object with an integer id), or a link to another entry or a row of one

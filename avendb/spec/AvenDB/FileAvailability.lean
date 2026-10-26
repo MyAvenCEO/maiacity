@@ -34,7 +34,7 @@ Rust correspondence:
   excludes them from the next request, reads that prefix without consulting a provider, then
   completes through an authorized peer and checks the exact plaintext. This exercises the
   retention assumption with the real importer; it does not establish crash/fsync durability
-  or physical-device behavior. Execution evidence belongs in docs/AVENDB_UPGRADE_PLAN.md.
+  or physical-device behavior. Execution evidence belongs to the tests that run it.
 -/
 
 namespace AvenDB.FileAvailability

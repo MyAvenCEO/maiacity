@@ -362,7 +362,7 @@ pub(crate) fn key_logs(active: &[LogId], waits: &[EntryId]) -> Vec<LogId> {
 impl Shared {
     pub(crate) async fn prioritize_owner_keys(self: &Arc<Self>) -> bool {
         let waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
-        let active = self.demands.lock().expect("demands").entries(Instant::now());
+        let active = self.interests.lock().expect("interests").entries();
         if key_logs(&active, &waits).is_empty() { return false; }
         // Reuse the existing coalesced pull scheduler and ordinary authorized delta protocol.
         let mut peers: Vec<_> = self.peers.lock().expect("peers").values()
