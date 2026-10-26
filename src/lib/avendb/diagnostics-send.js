@@ -2,7 +2,8 @@
 // A device's diagnostics, sent to avenDB's server for its person alone (Samuel 2026-10-26: "I don't want to copy paste
 // anything"): every few minutes while the vault is open, and after each Run checks, by a pass this device signs for
 // "avenDB diagnostics" (`POST /feed/diagnostics`, avendb-server's reports.rs). What goes is what Copy logs copies:
-// timings, counts, short ids, never an entry's contents. In theOS the Mac also reads its person's back, every device's,
+// timings, counts, short ids, never an entry's contents; and the view it was on, its path and page alone (`view`), never
+// a query, and a short one ~10 s after the person opens another view (`viewChanged`), so each view's wait is seen. In theOS the Mac also reads its person's back, every device's,
 // and keeps each as a file in ~/Library/Logs/TheOS/diagnostics (vault/app's `diagnostics_keep`), where they are read.
 import { version } from '$app/environment';
 import { manifestDiagnostics } from '../../../game/code/sources/device.js';
@@ -21,6 +22,9 @@ import { viewReadiness } from './view-readiness.js';
 export const AUDIENCE = 'avenDB diagnostics';
 /** How often a device sends one while its vault is open, and the Mac reads them back (ms). */
 const EVERY = 3 * 60_000;
+/** How long after a view opens its report goes, and the least time between two such (ms). */
+const SETTLE = 10_000;
+const LEAST = 30_000;
 /** The most bytes a report takes, as the server keeps them (256 KiB), with room for the pass. */
 const MOST = 240 << 10;
 
@@ -42,6 +46,12 @@ export function snapshot() {
 	};
 }
 
+/** The view the page is on: its path and its page (`#chat`, `#performance/server`'s first part), never its query. */
+export function view() {
+	const page = location.hash.replace(/^#/, '').split('/')[0];
+	return `${location.pathname}${/^[a-z-]{1,32}$/.test(page) ? `#${page}` : ''}`;
+}
+
 /** A pass of this device for the server's reports, or null while its vault is closed. */
 async function pass() {
 	if (session.phase !== 'open') return null;
@@ -61,7 +71,7 @@ async function post(body) {
 
 /** Sends `report`, cut down to what the server keeps: the biggest parts go first where it is too big. Whether it was kept. */
 export async function sendReport(report) {
-	const r = { ...report, sentAt: Date.now(), kind: report.kind ?? 'maia-unified-diagnostics' };
+	const r = { ...report, view: view(), sentAt: Date.now(), kind: report.kind ?? 'maia-unified-diagnostics' };
 	const size = () => new TextEncoder().encode(JSON.stringify(r)).length;
 	for (const big of ['network', 'perf', 'timings', 'lifecycle']) {
 		if (size() <= MOST) break;
@@ -87,20 +97,33 @@ export async function keepReports() {
 	return command('diagnostics_keep', { reports: got.reports }).catch(() => 0);
 }
 
+let busy = false;
+let last = 0;
+let settling = null;
+/** Sends this device's report now, `why` it went (`every`, `view`), and in theOS reads its person's back. */
+async function tick(why) {
+	if (busy || session.phase !== 'open' || document.hidden) return;
+	busy = true;
+	try {
+		last = Date.now();
+		await sendReport({ page: 'background', why, diagnostics: snapshot(), ...(await engine()) });
+		await keepReports();
+	} finally {
+		busy = false;
+	}
+}
+
+/** Another view opened: its report goes once it had `SETTLE` to show, at most one each `LEAST`. */
+export function viewChanged() {
+	clearTimeout(settling);
+	settling = setTimeout(() => {
+		if (Date.now() - last >= LEAST) void tick('view');
+	}, SETTLE);
+}
+
 /** While the vault is open: a report sent every `EVERY`, and in theOS its person's read back. Its stop. */
 export function sendEvery() {
-	let busy = false;
-	const tick = async () => {
-		if (busy || session.phase !== 'open' || document.hidden) return;
-		busy = true;
-		try {
-			await sendReport({ page: 'background', diagnostics: snapshot(), ...(await engine()) });
-			await keepReports();
-		} finally {
-			busy = false;
-		}
-	};
-	const first = setTimeout(tick, 20_000);
-	const timer = setInterval(tick, EVERY);
-	return () => (clearTimeout(first), clearInterval(timer));
+	const first = setTimeout(() => tick('every'), 20_000);
+	const timer = setInterval(() => tick('every'), EVERY);
+	return () => (clearTimeout(first), clearInterval(timer), clearTimeout(settling));
 }
