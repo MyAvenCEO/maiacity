@@ -21,6 +21,7 @@ import AvenDB.Checkpoint
 import AvenDB.Batches
 import AvenDB.BatchDurability
 import AvenDB.Snapshot
+import AvenDB.EntryState
 import AvenDB.EntryProjection
 import AvenDB.CheckpointDemand
 import AvenDB.PagedView
@@ -93,11 +94,9 @@ import AvenDB.ScratchRetention
 
 import AvenDB.PeerReceipt
 
-import AvenDB.WarmMaterialization
 import AvenDB.LabScheduling
 import AvenDB.EntryBaseFormat
 
-import AvenDB.BaseSuffix
 
 import AvenDB.BaseAdmission
 
@@ -129,7 +128,6 @@ import AvenDB.CeremonyCancellation
 
 import AvenDB.IndexedHistoryAdmission
 
-import AvenDB.DeferredBodyReadiness
 import AvenDB.ScopedDocumentView
 
 import AvenDB.DemandedFilesBatch

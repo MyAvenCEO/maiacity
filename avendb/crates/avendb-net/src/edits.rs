@@ -1318,8 +1318,8 @@ mod tests {
         assert_eq!(lab.device_of(restored_passkey, "Mac"), me);
         lab.restore_warm(me, Backup::new(signed,keys), reopened.checked().map(|c|(c,count)), &warm);
         assert_eq!(lab.item(me,entry).unwrap().record(), expected);
-        assert!(lab.work_metrics(me)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0)>0,
-            "write->shutdown->reopen must use persisted materialization");
+        assert!(lab.work_metrics(me)["counts"]["replay: from its stored view"].as_u64().unwrap_or(0)>0,
+            "write->shutdown->reopen must open from its stored view");
         assert!(lab.capture_warm_current(me,count,reopened.checked()).is_none(),
             "a second unchanged close does not export another snapshot");
         drop(reopened);

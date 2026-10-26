@@ -6,9 +6,8 @@ use crate::encode::Encode;
 use crate::wire::Reader as WireReader;
 use loro::{EncodedBlobMode, LoroDoc};
 
-#[path = "entry_base_suffix.rs"]
+#[path = "entry_write_codec.rs"]
 mod suffix;
-pub use suffix::AuthenticatedCountedEntryBase;
 #[path = "entry_judgment.rs"]
 mod judgment;
 pub use judgment::RestoredOwnerJudgment;
