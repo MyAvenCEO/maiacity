@@ -759,7 +759,8 @@ struct Store {
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
     replayed: usize,
     /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
-    /// holds now, not on every ask, announce and fetch.
+    /// holds now, not on every ask, announce and fetch. Empty while the replay is of every edit it holds and no entry is
+    /// based, the replay then being `latest` itself.
     latest: OnceLock<State>,
     /// Empty while it is locked, as is everything below.
     keys: Keyring,
@@ -2080,7 +2081,11 @@ impl Lab {
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
         let stepped = match &fresh[..] {
-            [one] if store.based.is_empty() => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
+            [one] if store.based.is_empty() => {
+                let whole = store.replayed == store.log.edits().len();
+                let was = store.latest.get().or(whole.then_some(&store.replay.state));
+                was.and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit))
+            }
             _ => None,
         };
         let mut new = false;
@@ -2585,7 +2590,8 @@ impl Lab {
             store.perf.count(why_counted(why), 1);
             store.replayed = store.log.edits().len();
             debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
-            store.latest = OnceLock::from(store.replay.state.clone());
+            // the replay is of every edit it holds now, so it is `latest` itself: no second copy
+            store.latest = OnceLock::new();
             store.perf.add("replay", at);
             // the edits it holds on a checkpoint's word: those one that stands vouches for lose their signatures, the
             // rest keep theirs where they check out, and it lets go of the others and replays again (`trusted`)
@@ -2662,6 +2668,13 @@ impl Lab {
     /// checks its own edits by.
     fn latest(&self, d: SignerId) -> &State {
         let store = self.held(d);
+        // set, it is what they say (a write stepped on, or the based entries' state); unset, the replay of them all is
+        if let Some(state) = store.latest.get() {
+            return state;
+        }
+        if store.replayed == store.log.edits().len() {
+            return &store.replay.state;
+        }
         store.latest.get_or_init(|| {
             // The maintained replay is a prefix of this held log, even while receive defers
             // materialization. Advance it with the SAME guards/fallback as refresh; never
