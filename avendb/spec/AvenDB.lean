@@ -21,6 +21,7 @@ import AvenDB.Checkpoint
 import AvenDB.Batches
 import AvenDB.BatchDurability
 import AvenDB.Snapshot
+import AvenDB.EntryState
 import AvenDB.EntryProjection
 import AvenDB.CheckpointDemand
 import AvenDB.PagedView

@@ -56,6 +56,7 @@ pub mod doc;
 mod deferred_body;
 pub mod encode;
 pub mod engine;
+pub mod entry_state;
 pub mod gate;
 pub mod hash;
 pub mod history;
