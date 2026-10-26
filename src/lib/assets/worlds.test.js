@@ -28,6 +28,7 @@ const BUILDERS = [
 	'src/lib/buildings/built.js',
 	'src/lib/buildings/tent.js',
 	'src/lib/buildings/factory.js',
+	'src/lib/buildings/glamp.js',
 	'src/lib/assets/kit.js',
 	'src/lib/assets/parts.js',
 	'src/lib/assets/index.js',
