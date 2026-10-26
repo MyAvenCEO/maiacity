@@ -143,7 +143,9 @@ test('with no manifest of its route in the vault, the app\'s own says what comes
 	useBuiltInManifests([{ ...chat, tiers: { now: [{ want: { type: ['room'], vault: '*' }, part: 'headers' }] } }]);
 	// a v1 chat manifest (Maia City's rooms alone) gives way to the app's
 	const v1 = { kind: 'manifest', id: 'chat', title: 'Chat', routes: ['/app/chat/'], priority: 'medium', parts: [{ query: { type: ['room'] }, limit: 50 }] };
-	const d = device({ manifests: [v1], rows: { room: [{ entry: id(3) }] } });
+	// and so does one the v1-to-v2 lens reads with its tiers empty
+	const lensed = { kind: 'manifest', v: 2, id: 'kernel', title: 'Kernel', routes: ['*'], tiers: { now: [], next: [], later: [], idle: [] } };
+	const d = device({ manifests: [v1, lensed], rows: { room: [{ entry: id(3) }] } });
 	useDevice(d);
 	await useView('/app/chat/', {});
 	await settle();

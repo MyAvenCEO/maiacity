@@ -48,7 +48,9 @@ export function useBuiltInManifests(list) {
 /** The manifests of catalog `catalog`: the vault's, and for Maia City the app's own of each id it holds no v2 of. */
 export const withBuiltIn = (held, catalog) => {
 	if (catalog !== MAIA_CITY || !builtIn.length) return held;
-	const v2 = new Set(held.filter((m) => m?.v === 2).map((m) => m.id));
+	// a v1 read through the v1-to-v2 lens shows empty tiers until its AIP moves it: that holds nothing yet
+	const parts = (m) => Object.values(m?.tiers ?? {}).some((t) => Array.isArray(t) && t.length);
+	const v2 = new Set(held.filter((m) => m?.v === 2 && parts(m)).map((m) => m.id));
 	const ours = builtIn.filter((m) => !v2.has(m.id));
 	const replaced = new Set(ours.map((m) => m.id));
 	return [...held.filter((m) => !replaced.has(m?.id)), ...ours];
