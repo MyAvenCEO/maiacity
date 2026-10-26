@@ -22,7 +22,8 @@ services:
       # post-quantum TLS)
       AVENDB_FEED: http://avendb:3351/feed/code
 
-  # avenDB's server: its image from GHCR; UDP 7401 open to devices, its relay only through Caddy (avendb.maia.city).
+  # avenDB's server: its image from GHCR; UDP 7401 open to devices and UDP 7402 to browsers (WebTransport), its relay only
+  # through Caddy (avendb.maia.city).
   # Its device's secret and its store live on the Hetzner volume, so a rebuilt server is still the same device.
   avendb:
     image: ${AVENDB_IMAGE:-ghcr.io/myavenceo/maiacity-avendb:latest}

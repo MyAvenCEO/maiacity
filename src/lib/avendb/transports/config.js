@@ -1,13 +1,14 @@
 // @ts-nocheck — Vite substitutes these build flags; ordinary builds keep their existing relay paths.
-/** Optional browser carriers. WebTransport requires an intentional build opt-in and the local browser API; native WT
- * listeners have their own explicit configuration. WebRTC between browsers (P8) is on wherever the browser has it,
+/** Optional browser carriers. WebTransport, a browser's straight HTTP/3 link to avenDB's server, is on wherever the
+ * browser has it (Safari since 26.4) and the server offers it, unless a build sets VITE_AVENDB_BROWSER_CARRIERS=false:
+ * through the relay alone a phone took 3-40 s a page (Samuel 2026-10-26). WebRTC between browsers (P8) is on wherever the browser has it,
  * unless a build sets VITE_AVENDB_WEBRTC=false: it only carries packets of the same authenticated post-quantum iroh
  * connection, so it grants no peer authority either. */
 export function browserCarrierCapabilities(scope = globalThis, setting = import.meta.env?.VITE_AVENDB_BROWSER_CARRIERS, rtc = import.meta.env?.VITE_AVENDB_WEBRTC) {
-	const enabled = setting === 'true';
+	const enabled = setting !== 'false' && setting !== false;
 	return {
 		webtransport: enabled && typeof scope.WebTransport === 'function',
-		webrtc: (enabled || rtc !== 'false') && typeof scope.RTCPeerConnection === 'function'
+		webrtc: (setting === 'true' || rtc !== 'false') && typeof scope.RTCPeerConnection === 'function'
 	};
 }
 

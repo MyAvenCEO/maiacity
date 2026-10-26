@@ -3,19 +3,21 @@ import { expect, test } from 'bun:test';
 import { browserCarrierCapabilities, rtcIceServers } from './config.js';
 const supported = { WebTransport: class {}, RTCPeerConnection: class {} };
 
-test('ordinary builds advertise WebRTC between browsers but not WebTransport', () => {
-	expect(browserCarrierCapabilities(supported)).toEqual({ webtransport: false, webrtc: true });
+test('ordinary builds advertise WebTransport to the server and WebRTC between browsers', () => {
+	expect(browserCarrierCapabilities(supported)).toEqual({ webtransport: true, webrtc: true });
 });
 
-test('only the explicit true build flag enables WebTransport', () => {
-	for (const setting of ['', 'false', '0', '1', 'TRUE', true, null]) {
+test('only an explicit false build flag turns WebTransport off', () => {
+	for (const setting of ['false', false]) {
 		expect(browserCarrierCapabilities(supported, setting)).toEqual({ webtransport: false, webrtc: true });
 	}
-	expect(browserCarrierCapabilities(supported, 'true')).toEqual({ webtransport: true, webrtc: true });
+	for (const setting of ['', 'true', '0', '1', true, null]) {
+		expect(browserCarrierCapabilities(supported, setting)).toEqual({ webtransport: true, webrtc: true });
+	}
 });
 
 test('a build can turn WebRTC off', () => {
-	expect(browserCarrierCapabilities(supported, undefined, 'false')).toEqual({ webtransport: false, webrtc: false });
+	expect(browserCarrierCapabilities(supported, undefined, 'false')).toEqual({ webtransport: true, webrtc: false });
 });
 
 test('each carrier still requires its local browser API', () => {

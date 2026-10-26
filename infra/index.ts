@@ -67,6 +67,10 @@ const firewall = new hcloud.Firewall(`${NAME}-fw`, {
     // its STUN responder (avendb-server/src/stun.rs): browsers learn the address their network shows, to reach each
     // other over WebRTC straight; it answers a Binding request with that address and nothing else
     { direction: "in", protocol: "udp", port: "3478", sourceIps: ["0.0.0.0/0", "::/0"] },
+    // its WebTransport listener (avendb-net transports/webtransport.rs): a browser's straight HTTP/3 link to the server,
+    // post-quantum TLS under certificates it pins by hash; the relay stays the fallback (Samuel 2026-10-26: a phone's
+    // pages took 3-40 s through the relay while the server answered each in under 250 ms)
+    { direction: "in", protocol: "udp", port: "7402", sourceIps: ["0.0.0.0/0", "::/0"] },
   ],
 });
 
