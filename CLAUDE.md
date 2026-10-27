@@ -7,10 +7,10 @@ batch, not on each task.
 
 - **Draft pull requests run no CI.** Every `pull_request` workflow skips drafts (`types: [..., ready_for_review]` plus a
   job-level draft guard). Open your PR as a draft and keep it a draft. Never mark a task PR ready for review.
-- **One thread per task.** The coordinator splits each ask into tasks with their own files and starts one thread for
-  each, 25-50 in parallel. Don't split too finely (Samuel 2026-10-27): a piece gets its own thread only if it is big and
-  owns separate files. Parallel Rust work goes to separate threads, not helpers in one box (they queue
-  on one build folder). The method and the speed cycle: `.claude/skills/devx-speed/SKILL.md`.
+- **Threads sized to pay back their start.** A new cloud thread spends ~10-15 min before useful work, so it gets at
+  least ~45 min of work (JS) or ~1 h (Rust); small tasks on one area go to one thread, one after another. Separate
+  threads only for independent pieces with their own files; parallel Rust always in separate threads, not helpers in
+  one box. Sizing table and the speed cycle: `.claude/skills/devx-speed/SKILL.md`.
 - **Check locally, and only what you touched.** Before you push, run `bun scripts/devx/check.mjs` (`--plan` to see
   what it runs): the tests next to your change, svelte-check for page code, and per touched crate `cargo check --tests`
   and the test programs you touched. More commands in `docs/CI.md`. Do not run the full suite.

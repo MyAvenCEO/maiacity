@@ -21,21 +21,36 @@ once per batch of 25-50 tasks (repository `CLAUDE.md`). Measured baseline and hi
 So the wins are (1) no CI per task, (2) parallelism across threads (each has its own box), not across helpers in a
 box, (3) a collector that lands branches in seconds, and (4) checks that run only what a task touched.
 
-## Coordinator: how to hand out work (Samuel 2026-10-27)
+## Coordinator: how to size and hand out work (Samuel 2026-10-27)
 
-- **One thread per task, many at once.** Split every ask into small, independent tasks and start one thread for each,
-  all in parallel (25-50 in flight is the target). Each thread has its own 4-core box; helpers inside one box share
-  it and queue on cargo. A big thread with helpers is the slow path.
-- **Not too fine.** A piece gets its own thread only if it is big and owns separate files; small related changes stay
-  together in one task (Samuel 2026-10-27).
-- **Disjoint files.** Give each task the files or module it owns, so batches merge without conflicts. Two tasks that
-  must touch the same file go to the same thread, one after the other.
-- **Name the collector up front.** One collector thread per batch, known to every task thread. Task threads report
-  "branch ready" to the coordinator, which routes the branch to the collector; they never merge to main or mark PRs
-  ready.
-- **Cut a batch, don't wait for stragglers.** When 25-50 branches are in, or a few hours have passed, the collector
-  lands what is ready; late tasks go in the next batch.
+Tasks per batch (25-50) are not threads. A thread costs a fixed start before it does useful work, so it should carry
+enough work to pay that back. Measured on a 4-core cloud box (2026-10-27):
+
+| fixed cost of a new thread | JS/page work | Rust work |
+|---|---|---|
+| box start: bun install 9 s, dev-cache hook ~65 s | ~1 min | ~1 min |
+| first check / first test build | svelte-check ~65 s | ~4-5 min (dev cache), ~10 without |
+| reading in: the code, memory, the brief (estimate) | ~5-10 min | ~5-10 min |
+| total before useful work | **~8-12 min** | **~10-15 min** |
+
+Sizing rule: keep that start under ~20% of a thread's work.
+
+- **A new thread gets at least ~45 min of work (JS), ~1 h (Rust).** Smaller tasks are grouped: several small tasks
+  on the same area go to one thread, done one after another, one commit (or branch) each, so they still land as
+  separate `Task:` lines in the batch.
+- **Split into separate threads only when the pieces are independent and own different files.** Two pieces on the
+  same files stay in one thread (they would conflict in the batch anyway).
+- **Rust in parallel = separate threads.** One box has one build folder (~18 GB warm, of ~39 GB disk) and one cargo
+  lock, so a second Rust helper in the same box waits or fills the disk. Helpers in a thread are for reading,
+  searching, JS, docs and measuring.
+- **How many at once:** as many as there are independent, big-enough chunks, typically 5-15 threads in flight, each
+  doing several tasks. Fewer threads also means fewer replies for Samuel to read.
+- **Name the collector up front.** Task threads report "branch ready" to the coordinator, which routes it to the
+  collector; they never merge to main or mark PRs ready.
+- **Cut a batch, don't wait for stragglers.** When 25-50 tasks are in, or a few hours have passed, the collector lands
+  what is ready; late tasks go in the next batch.
 - **Exceptions get their own PR at once:** production down, a security fix, or Samuel asks.
+- Re-check the numbers in this table with the cycle below when the setup changes (dev cache, box size).
 
 ## Task thread: the loop
 
