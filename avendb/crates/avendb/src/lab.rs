@@ -6481,6 +6481,13 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
     old.insert(entry, shown);
 }
 
+/// The work a budgeted show does for each entry of its budget (`show_items`), counted as the writes it judges and
+/// `SHOW_ENTRY_WORK` for each entry it judges, one for each it looks at, and the writes it reads again into a scratch
+/// item it dropped (`SCRATCHES`): a step of a catch-up judges about this many writes whatever the
+/// entries hold, so that a step at a server's size takes as long as one at a phone's.
+const SHOW_WORK: usize = 6;
+const SHOW_ENTRY_WORK: usize = 4;
+
 /// Rebuild what device `d` shows of each entry whose writes, what it opened of them, its vault's lane or the cap groups
 /// in force changed: first the cap groups, as the device counts the writes that say them (`State::read_groups`), as
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
@@ -6491,13 +6498,6 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// with none shows what changed since it last showed and leaves those it left before as they are, for the budgeted
 /// ones to come (a write of the device's own in the middle of a catch-up waits for no whole showing), but where it
 /// shows every entry. So the entries end shown as one showing shows them, once none is left.
-/// The work a budgeted show does for each entry of its budget (`show_items`), counted as the writes it judges and
-/// `SHOW_ENTRY_WORK` for each entry it judges, one for each it looks at, and the writes it reads again into a scratch
-/// item it dropped (`SCRATCHES`): a step of a catch-up judges about this many writes whatever the
-/// entries hold, so that a step at a server's size takes as long as one at a phone's.
-const SHOW_WORK: usize = 6;
-const SHOW_ENTRY_WORK: usize = 4;
-
 fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     let pending = store.showing.take().unwrap_or_default();
     let (reshow, mut opened) = (std::mem::take(&mut store.reshow), std::mem::take(&mut store.opened));
@@ -6723,11 +6723,14 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     let room = SCRATCHES.saturating_sub(keep.len());
     let before: Vec<EntryId> = store.scratched.iter().filter(|e| !keep.contains(e)).take(room).copied().collect();
     keep.extend(before);
-    for (e, s) in old.iter_mut() {
-        if s.after.scratch.is_some() && !keep.contains(e) {
+    // of those that held one: the ones kept before, and those judged now, the cap groups' among them
+    let held: HashSet<EntryId> = store.scratched.iter().chain(&recent).chain(&cap_groups).copied().collect();
+    for e in held.iter().filter(|e| !keep.contains(e)) {
+        if let Some(s) = old.get_mut(e) {
             s.after.scratch = None;
         }
     }
+    debug_assert!(old.iter().all(|(e, s)| s.after.scratch.is_none() || keep.contains(e)), "a scratch item kept past SCRATCHES");
     store.scratched = keep;
     store.perf.add("show: entries", at);
     store.shown = old;
