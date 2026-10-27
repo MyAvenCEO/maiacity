@@ -3796,13 +3796,6 @@ impl Lab {
         self.held(d).perf.to_json()
     }
 
-    /// How far device `d`'s replay is behind the edits it holds, and whether its latest state is worked out: what a
-    /// slow answer may be waiting on (`latest` replays the rest under the Lab's lock).
-    pub fn replay_lag(&self, d: SignerId) -> Value {
-        let store = self.held(d);
-        serde_json::json!({ "edits": store.log.edits().len(), "replayed": store.replayed, "latest": store.latest.get().is_some() })
-    }
-
     /// What device `d`'s work cost since it started (`perf`), and how much it holds: its edits, the bodies it opened,
     /// the entries it shows and the blobs it keeps.
     pub fn perf(&self, d: SignerId) -> Value {

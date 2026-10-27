@@ -343,7 +343,6 @@ pub struct Running {
     pub claim: Option<Claim>,
     _beat: Abort,
     _measure: Abort,
-    _working: Abort,
     _stun: Option<Abort>,
     /// What the apps know of the server (P8c), so that a new device links through it with its person's passkey alone:
     /// its device, its endpoint, where devices on UDP reach it (`Config::public_addr`) and its relay. A device it
@@ -443,22 +442,12 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
     let backups = config.snapshots.as_ref().map(|s| backups::Backups::spawn(node.clone(), own, s, Keep::default(), health.clone()));
     let beat = health.beat();
     let measure = Abort(tokio::spawn(measure(config.clone(), health.clone())));
-    // what its Lab's work cost and how far its replay is behind, each minute, for its health to say (`Node::work`)
-    let working = {
-        let (node, health) = (node.clone(), health.clone());
-        Abort(tokio::spawn(async move {
-            loop {
-                health.work(node.work().await);
-                tokio::time::sleep(Duration::from_secs(60)).await;
-            }
-        }))
-    };
     let backups = backups.transpose()?;
     let stun = match config.stun {
         Some(bind) => Some(Abort(stun::spawn(bind).await?)),
         None => None,
     };
-    Ok(Running { node, relay, feed, backups, health, claim, _beat: beat, _measure: measure, _working: working, _stun: stun, offer })
+    Ok(Running { node, relay, feed, backups, health, claim, _beat: beat, _measure: measure, _stun: stun, offer })
 }
 
 /// How often the server measures what its shelf takes: its bucket's listing is a request per 1,000 objects.

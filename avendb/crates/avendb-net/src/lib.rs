@@ -763,7 +763,6 @@ impl Node {
             me,
             lab: Mutex::new(lab),
             lab_schedule: Arc::default(),
-            lab_turns: Arc::default(),
             edits,
             signers,
             endpoint: endpoint.clone(),
@@ -1645,19 +1644,8 @@ impl Node {
     /// it is not connected to now; and its newest pages. Kept in memory alone, since it started.
     /// What this node answered its peers' askings with, and how long each page took it (`traffic::Served`), without
     /// which peer asked: what avenDB's server says on its public health.
-    /// What this node's own Lab work cost since it started (`Lab::work_metrics`) and how far its replay is behind
-    /// (`Lab::replay_lag`), read in a background turn: what avenDB's server says on its public health every minute.
-    pub async fn work(&self) -> Value {
-        self.shared
-            .read_class(lab_schedule::Class::Background, |lab, me| json!({ "timers": lab.work_metrics(me), "replay": lab.replay_lag(me) }))
-            .await
-    }
-
     pub fn served(&self) -> Value {
-        let mut served = self.shared.traffic.served_json();
-        served["lab"] = self.shared.lab_turns.json();
-        served["carriers"] = self.shared.transport_control.json();
-        served
+        self.shared.traffic.served_json()
     }
 
     pub async fn network(&self) -> Value {
@@ -1736,7 +1724,6 @@ impl Node {
             "peers": peers,
             "gone": gone,
             "recent": s.traffic.recent(),
-            "carriers": s.transport_control.json(),
         })
     }
 
@@ -2032,8 +2019,6 @@ struct Shared {
     me: SignerId,
     lab: Mutex<Lab>,
     lab_schedule: Arc<lab_schedule::Schedule>,
-    /// How long Lab calls waited and held it, by call (`Node::served`).
-    lab_turns: Arc<lab_schedule::Turns>,
     /// Its device's edits on its shelf, if it keeps one.
     edits: Option<edits::Edits>,
     /// Durable supplemental signer roots; unsupported shelves keep ordinary signatures only.
@@ -2253,14 +2238,12 @@ impl Shared {
         // work; immediately-ready Rust futures alone cannot yield the worker event loop.
         #[cfg(target_arch = "wasm32")]
         if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
-        let (what, asked) = (std::any::type_name_of_val(&f), Instant::now());
         let turn = self.lab_schedule.acquire(class).await;
         let shared = self.clone();
         let me = acting().unwrap_or(self.me);
         let work = move || {
             let (_operation, _turn) = (operation, turn);
             let mut lab = shared.locked_lab();
-            let _timed = Timed::new(&shared.lab_turns, what, asked);
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
                 let before = lab.log(shared.me).revision();
@@ -2338,16 +2321,10 @@ impl Shared {
     ) -> T {
         #[cfg(target_arch = "wasm32")]
         if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
-        let (what, asked) = (std::any::type_name_of_val(&f), Instant::now());
         let turn = self.lab_schedule.acquire(class).await;
         let shared = self.clone();
         let me = acting().unwrap_or(self.me);
-        let work = move || {
-            let _turn = turn;
-            let lab = shared.locked_lab();
-            let _timed = Timed::new(&shared.lab_turns, what, asked);
-            f(&lab, me)
-        };
+        let work = move || { let _turn = turn; f(&shared.locked_lab(), me) };
         #[cfg(not(target_arch = "wasm32"))]
         return tokio::task::spawn_blocking(work).await.expect("the Lab's read task");
         #[cfg(target_arch = "wasm32")]
@@ -3509,24 +3486,3 @@ mod admission_tests {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "prepared_receive_tests.rs"]
 mod prepared_receive_tests;
-
-/// One Lab call's turn, timed from when it asked for it: its wait ends as it holds the Lab, its hold as this drops.
-struct Timed<'a> {
-    turns: &'a lab_schedule::Turns,
-    what: &'static str,
-    asked: Instant,
-    held: Instant,
-}
-
-impl<'a> Timed<'a> {
-    fn new(turns: &'a lab_schedule::Turns, what: &'static str, asked: Instant) -> Self {
-        Self { turns, what, asked, held: Instant::now() }
-    }
-}
-
-impl Drop for Timed<'_> {
-    fn drop(&mut self) {
-        let wait = self.held.duration_since(self.asked).as_millis() as u64;
-        self.turns.took(self.what, wait, self.held.elapsed().as_millis() as u64);
-    }
-}
