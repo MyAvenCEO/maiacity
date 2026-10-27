@@ -5,7 +5,7 @@
 // AIPs (the `aips` read, every vault this tab's device holds), and, until games keep their configs in avenDB, today's
 // MIPs where they are kept: MaiaCity V1's, from its one game.
 import { describe, signaturesOf } from '../../../game/maiacity-v1/engine.js';
-import { nameOf } from '$lib/avendb/vaults.js';
+import { hue, initials, nameOf } from '$lib/avendb/vaults.js';
 
 /** the games that have proposals, by their id in the Maia City COOP vault (game/games.js): the names they show under */
 export const GAMES = {
@@ -80,6 +80,8 @@ export function fromAvendb(a, world) {
 		outcome: a.outcome,
 		why: a.why,
 		author: author ? nameOf(author) : 'someone',
+		// the author's profile mark, as the nav pill shows a vault: its picture, else its initials on its colour
+		mark: author ? { id: author.id, text: initials(author), colour: `hsl(${hue(author.id)} 38% 42%)`, shape: author.kind } : null,
 		via: null,
 		created: 0,
 		decided: at,
