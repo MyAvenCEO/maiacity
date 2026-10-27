@@ -485,8 +485,8 @@ jobs:
           AVENDB_PHONE_FIXTURE="$RUNNER_TEMP/phone.bin" cargo test --locked -p avendb --features test-fixtures --test phone_fixture -- --ignored --nocapture
       - name: Chromium and WebKit
         run: |
-          scripts/ci/browser-deps.sh node_modules/playwright/cli.js chromium
-          scripts/ci/browser-deps.sh node_modules/playwright/cli.js webkit
+          scripts/ci/browser-deps.sh "$PWD/node_modules/playwright/cli.js" chromium
+          scripts/ci/browser-deps.sh "$PWD/node_modules/playwright/cli.js" webkit
           bun scripts/ci/avendb-bench-phone.mjs "$RUNNER_TEMP/phone-pkg" "$RUNNER_TEMP/phone.bin" chromium,webkit | tee "$RUNNER_TEMP/phone.log"
           bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/phone.log" --phone
 
