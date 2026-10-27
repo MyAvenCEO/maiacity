@@ -3,7 +3,7 @@
 use std::{sync::Arc, time::Duration};
 use avendb::cast::*;
 use avendb_net::{Node, Options, pq_provider};
-use avendb_net::transports::{Carrier, Command, NativeWt, PacketTransport, RouteId, WtConfig, WtEvent};
+use avendb_net::transports::{Carrier, Command, NativeWt, PacketTransport, RouteId, WtConfig, WtEvent, wt_sessions};
 use iroh::{EndpointAddr, EndpointId, TransportAddr};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -48,6 +48,10 @@ async fn pinned_pq_http3_requires_origin_and_single_use_admission() {
         let reservation = listener.reserve(peer(2), [7; 16]).unwrap();
         let url = reservation.descriptor["url"].as_str().unwrap();
         let endpoint = client(hashes(&reservation.descriptor), false);
+        // the health says how each session ended: counts only, other tests' sessions add to the same counts
+        let count = |what: &str| wt_sessions()["sessions"][what].as_u64().unwrap();
+        let before = ["wrong_origin", "no_ticket", "no_request", "ready"].map(count);
+        assert_eq!(wt_sessions()["certificate"], "pinned");
         assert!(connect(&endpoint, url, "https://wrong.example").await.is_err(), "Origin checked before consuming ticket");
         let connection = connect(&endpoint, url, ORIGIN).await.unwrap();
         let (id, expected, _) = ready(&mut events).await; assert_eq!(id, reservation.id); assert_eq!(expected, peer(2));
@@ -56,6 +60,12 @@ async fn pinned_pq_http3_requires_origin_and_single_use_admission() {
         assert!(connect(&bad_pin, url, ORIGIN).await.is_err(), "wrong certificate hash rejected");
         let classical = client(hashes(&reservation.descriptor), true);
         assert!(connect(&classical, url, ORIGIN).await.is_err(), "classical-only outer TLS cannot negotiate");
+        let after = ["wrong_origin", "no_ticket", "no_request", "ready"].map(count);
+        assert!(after[0] > before[0] && after[1] > before[1] && after[3] > before[3], "{before:?} -> {after:?}");
+        // a handshake the server's TLS refused counts once its future ends: no later than the handshake deadline
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(12);
+        while count("no_request") < before[2] + 2 && tokio::time::Instant::now() < deadline { tokio::time::sleep(Duration::from_millis(50)).await; }
+        assert!(count("no_request") >= before[2] + 2, "the bad pin and the classical handshake count as no request");
         connection.close(VarInt::from_u32(0), b"done");
         loop { if let WtEvent::Closed { id, .. } = events.recv().await.unwrap() { assert_eq!(id, reservation.id); break; } }
         listener.shutdown().await;

@@ -141,6 +141,7 @@ impl Health {
             "opened": *self.opened.lock().unwrap_or_else(|e| e.into_inner()),
             "reads": reads(avendb_net::bucket::reads()),
             "work": *self.work.lock().unwrap_or_else(|e| e.into_inner()),
+            "webtransport": avendb_net::transports::wt_sessions(),
         })
     }
 
