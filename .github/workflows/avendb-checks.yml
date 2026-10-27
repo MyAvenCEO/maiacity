@@ -231,8 +231,9 @@ jobs:
     # The release patches a local dependency: exercise cargo-chef and the Docker
     # context before merge, without publishing an image or touching production.
     # Only when what the image build reads beyond the tests' code changes (impact.mjs, imageInputs): the code itself the
-    # tests compile, and main builds the image on every server change
-    if: needs.impact.outputs.image == 'true' && needs.impact.outputs.pass_image != 'true' && github.event_name == 'pull_request' && !github.event.pull_request.draft
+    # tests compile, and main builds the image on every server change. A pull request from this repository has it
+    # built already, by server-prebuild.yml (its own check on the PR, and the image main promotes): only a fork's builds here
+    if: needs.impact.outputs.image == 'true' && needs.impact.outputs.pass_image != 'true' && github.event_name == 'pull_request' && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -372,6 +373,7 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
           DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
           PR: ${{ github.event_name == 'pull_request' }}
+          FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
           FRONTEND: ${{ inputs.frontend_only || false }}
           BROWSER_ONLY: ${{ inputs.real_browser_only || false }}
           BROWSER: ${{ inputs.real_browser || false }}
@@ -389,7 +391,7 @@ jobs:
                  else [] end) +
                 (if env.BROWSER == "true" or env.BROWSER_ONLY == "true" or $p.browser == "true" then ["real-browser"] else [] end)
                else [] end) +
-              (if env.PR == "true" and env.DRAFT != "true" and $p.image == "true" then ["image"] else [] end)
+              (if env.PR == "true" and env.FORK == "true" and env.DRAFT != "true" and $p.image == "true" then ["image"] else [] end)
             ) as $expected |
             {"tests":"tests","image":"image","spec":"spec","real-browser":"browser","protocol":"protocol"} as $marker |
             all($r[]; .result == "success" or .result == "skipped") and
