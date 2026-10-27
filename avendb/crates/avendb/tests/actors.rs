@@ -103,3 +103,52 @@ fn a_call_needs_a_cap_for_every_op_its_method_may_make() {
     assert_eq!(refused(&run(&mut w, mac_b, call("advance", json!({ "todo": door, "status": "done" })))), "outsideCap");
     assert_eq!(cast::status(&w.lab, mac_b, l.door), Some(Status::Open));
 }
+
+const QUERY_V1: &str = r#"{"title": "Query, v1", "type": "object", "required": ["kind"], "properties": {
+  "kind": { "const": "query" }, "title": { "type": "string", "default": "" },
+  "interface": { "type": "object", "default": {} }, "where": { "type": "object", "default": {} } }}"#;
+
+/// The Universe reads by a named query (task A3): `query-posts`, a query entry whose `read` runs the `posts` op over
+/// the posts a Public share reaches. Bob, who holds no share of his own, calls it by its address through the Public
+/// shares alone, and pages through the posts as the `posts` op does; a footprint wider than the published posts
+/// doesn't fit his caps.
+#[test]
+fn the_universe_reads_its_posts_by_a_named_query() {
+    let mut w = cast::world();
+    let (alice, mac, mac_b) = (w.alice, w.mac_a, w.mac_b);
+    let alice_hex = alice.to_hex();
+    w.lab.add_schema(mac, alice, alice, QUERY_V1.as_bytes()).expect("a lane entry");
+    let tag = "content:published";
+    for (title, tags) in [("Harvest", vec![tag]), ("Rain", vec![tag]), ("Mine", vec![])] {
+        let value = json!({ "kind": "post", "title": title, "text": "Out now.", "channel": "Devlog" });
+        ok(run(&mut w, mac, json!({ "op": "create", "vault": alice_hex, "type": "post", "tags": tags, "value": value })));
+    }
+    for what in [json!({ "tag": tag }), json!({ "type": ["query"] })] {
+        ok(run(&mut w, mac, json!({ "op": "share", "over": alice_hex, "who": "everyone", "level": "Public", "what": what })));
+    }
+    let posts = |footprint: Value| json!({ "kind": "query", "title": "query-posts", "where": footprint, "interface": {
+        "version": 1, "description": "Reads the published posts, newest first.", "events": [], "needs": [], "methods": [
+            { "name": "read", "params": ["limit", "after"], "ops": [{ "op": "read" }], "where": footprint,
+              "run": { "op": "posts", "limit": { "$": "limit" }, "after": { "$": "after" } } }] } });
+    let published = json!({ "all": [{ "type": ["post"] }, { "tag": tag }] });
+    let made = |w: &mut cast::World, value: Value| {
+        let made = ok(run(w, mac, json!({ "op": "create", "vault": alice_hex, "type": "query", "value": value })));
+        json!({ "vault": alice_hex, "entry": made["entry"], "version": 1 })
+    };
+    let (to, wide) = (made(&mut w, posts(published)), made(&mut w, posts(json!({ "type": ["post"] }))));
+    ok(run(&mut w, mac_b, json!({ "op": "follow", "vault": alice_hex, "on": true })));
+    w.lab.sync_all(0);
+    let bob = w.bob.to_hex();
+    let call = |to: &Value, args: Value| json!({ "op": "call", "to": to, "method": "read", "args": args, "as": bob });
+    let d = ok(run(&mut w, mac_b, json!({ "op": "describe", "entry": to["entry"] })));
+    assert_eq!(d["interface"]["methods"][0]["run"]["op"], "posts", "the query says what it runs");
+    let all = ok(run(&mut w, mac_b, call(&to, json!({ "limit": null, "after": null }))));
+    let mut titles: Vec<&str> = all["posts"].as_array().unwrap().iter().map(|p| p["title"].as_str().unwrap()).collect();
+    titles.sort();
+    assert_eq!(titles, ["Harvest", "Rain"], "the published posts, and no other");
+    let first = ok(run(&mut w, mac_b, call(&to, json!({ "limit": 1, "after": null }))));
+    assert_eq!((&first["posts"][0], &first["more"]), (&all["posts"][0], &json!(true)), "the newest first");
+    let next = ok(run(&mut w, mac_b, call(&to, json!({ "limit": 1, "after": first["posts"][0]["entry"] }))));
+    assert_eq!((&next["posts"][0], &next["more"]), (&all["posts"][1], &json!(false)), "then the next");
+    assert_eq!(refused(&run(&mut w, mac_b, call(&wide, json!({ "limit": 1, "after": null })))), "outsideCap");
+}
