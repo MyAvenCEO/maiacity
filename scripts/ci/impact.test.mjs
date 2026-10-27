@@ -75,9 +75,21 @@ test('the actual aggregate rejects missing, skipped and failed required jobs', (
  cases.push({data:{...results,tests:{result:'skipped'},impact:{...passed('tests','true'),result:'failure'}},expected:false});
  // the server's image is expected only when its build inputs changed
  cases.push({data:{...results,image:{result:'skipped'},impact:{...results.impact,outputs:{...results.impact.outputs,image:'false'}}},expected:true});
- const run = spawnSync('jq', ['-c',expression], { input:cases.map(c=>JSON.stringify(c.data)).join('\n'), encoding:'utf8', env:{ ...process.env, PR:'true', DRAFT:'false', FRONTEND:'false', BROWSER_ONLY:'false', BROWSER:'false', PROTOCOL:'false' } });
+ const run = spawnSync('jq', ['-c',expression], { input:cases.map(c=>JSON.stringify(c.data)).join('\n'), encoding:'utf8', env:{ ...process.env, PR:'true', FORK:'true', DRAFT:'false', FRONTEND:'false', BROWSER_ONLY:'false', BROWSER:'false', PROTOCOL:'false' } });
  expect(run.status).toBe(0);
  expect(run.stdout.trim().split('\n').map(JSON.parse)).toEqual(cases.map(c=>c.expected));
+});
+test('a pull request from this repository needs no image job: server-prebuild.yml builds its image', () => {
+ const workflow = readFileSync('.github/workflows/avendb-checks.yml', 'utf8');
+ const expression = workflow.slice(workflow.indexOf('      - name: Require every selected suite')).match(/jq -e '([\s\S]*?)'/)[1];
+ const names = ['impact','tests','image','spec','real-browser','protocol','frontend'];
+ const results = Object.fromEntries(names.map(name => [name, { result:'success' }]));
+ results.impact.outputs = { native:'true', browser:'true', protocol:'true', server:'true', image:'true' };
+ const ask = (data, fork) => spawnSync('jq', ['-c',expression], { input:JSON.stringify(data), encoding:'utf8', env:{ ...process.env, PR:'true', FORK:fork, DRAFT:'false', FRONTEND:'false', BROWSER_ONLY:'false', BROWSER:'false', PROTOCOL:'false' } }).stdout.trim();
+ expect(ask({...results, image:{result:'skipped'}}, 'false')).toBe('true');
+ expect(ask({...results, image:{result:'skipped'}}, 'true')).toBe('false');
+ expect(ask({...results, image:{result:'failure'}}, 'false')).toBe('false');
+ expect(workflow).toMatch(/name: avenDB server image builds[\s\S]*?head\.repo\.full_name != github\.repository/);
 });
 
 test('Bun package and container versions follow the pinned toolchain', () => {
