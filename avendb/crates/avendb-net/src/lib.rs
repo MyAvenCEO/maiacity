@@ -127,6 +127,7 @@ mod edit_summaries;
 mod edit_transfer;
 mod edits;
 mod files;
+mod fresh;
 mod holdings;
 mod jobs;
 pub mod kx;
@@ -816,6 +817,7 @@ impl Node {
             ui_receipts: peer_receipts::Receipts::for_ui(),
             outreach,
             wanted: Mutex::default(),
+            fresh: Mutex::default(),
             claims: Mutex::default(),
             interests: Mutex::default(),
             discovery_running: Mutex::default(),
@@ -2149,6 +2151,8 @@ struct Shared {
     outreach: actor::Outreach,
     /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
     wanted: Mutex<BTreeSet<LogId>>,
+    /// The stamp of its device's last current read (`fresh`), which an offline read is said to be as of.
+    fresh: Mutex<fresh::Stamp>,
     /// Which peer each log is asked of now (`Claims`): a log comes from one peer at a time, never from each.
     claims: Mutex<Claims>,
     /// Active app/query windows, replaced or released independently of one-shot brings.

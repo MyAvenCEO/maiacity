@@ -413,3 +413,60 @@ async fn a_query_is_partial_while_announced_logs_are_behind_and_complete_once_th
     mac.shutdown().await.unwrap();
     phone.shutdown().await.unwrap();
 }
+
+/// Freshness.lean on a node, for any read alike (a query and `aips`, which has no coverage of its own): with no peer a
+/// read is offline as of the device's last current read; while a live peer holds logs the device lacks, behind, so a
+/// page never shows it as final and no action sheet opens; once they arrive, current. The 27 Oct iPhone's case.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn every_read_is_offline_behind_or_current_as_its_peers_say() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let mac = Node::spawn(w.lab.split(sender, &[], [55; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [56; 32]), receiver, Options::local()).await.unwrap();
+    let query = serde_json::json!({"op": "query", "vault": coop.to_hex(), "where": {"type": ["doc"]}});
+    let aips = serde_json::json!({"op": "aips"});
+    let alone = phone.op(aips.clone()).await.unwrap();
+    assert_eq!(alone["fresh"], serde_json::json!({"state": "offline", "asOf": 0}), "{alone}");
+
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.sync_with(mac.id()).await.unwrap();
+    wait_for(async || phone.shared.differ(sender).await.is_empty()).await;
+    for read in [&query, &aips] {
+        let answer = phone.op(read.clone()).await.unwrap();
+        assert_eq!(answer["fresh"], serde_json::json!({"state": "current"}), "{answer}");
+    }
+
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    let backlog = mac.act(move |lab, me| (0..pulls::LIVE_LOGS + 3).map(|i| lab.create(me, coop, coop, "doc", &[],
+        document(&format!("Behind {i}"), "history", me)).unwrap()).collect::<Vec<_>>()).await;
+    wait_for(async || phone.shared.differ(sender).await.len() > 1).await;
+    for read in [&query, &aips] {
+        let answer = phone.op(read.clone()).await.unwrap();
+        assert_eq!(answer["fresh"]["state"], "behind", "{answer}");
+        assert!(answer["fresh"]["logs"].as_u64().unwrap() > 0, "{answer}");
+    }
+    // a read that is behind asks for its scope first
+    assert!(!phone.shared.wanted.lock().unwrap().is_empty());
+
+    drop(stalled);
+    wait_for(async || {
+        let backlog = backlog.clone();
+        phone.read(move |lab, me| backlog.iter().all(|entry| lab.item(me, *entry).is_some())).await
+            && phone.shared.differ(sender).await.is_empty()
+    }).await;
+    let arrived = phone.op(aips.clone()).await.unwrap();
+    assert_eq!(arrived["fresh"], serde_json::json!({"state": "current"}), "{arrived}");
+    mac.shutdown().await.unwrap();
+    wait_for(async || phone.shared.peers.lock().unwrap().values().all(|p| p.conn.close_reason().is_some())).await;
+    let offline = phone.op(aips).await.unwrap();
+    assert_eq!(offline["fresh"]["state"], "offline", "{offline}");
+    assert!(offline["fresh"]["asOf"].as_u64().unwrap() > 0, "{offline}");
+    phone.shutdown().await.unwrap();
+}
