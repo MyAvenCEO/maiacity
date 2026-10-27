@@ -341,6 +341,10 @@ impl Drafting<'_> {
 #[derive(Default)]
 struct Keyring {
     revision: Arc<()>,
+    /// Changes with each key it takes but an entry's: what the upkeep of every entry turns on (`UpkeepDue`).
+    scoped: Arc<()>,
+    /// The entries whose keys it took since the upkeep last looked (`UpkeepDue`).
+    entries_keyed: Vec<EntryId>,
     by_id: HashMap<KeyId, (KeyName, Secret)>,
     /// Each name's keys, the smallest id first.
     by_name: HashMap<KeyName, Vec<KeyId>>,
@@ -358,6 +362,10 @@ impl Keyring {
             return false;
         }
         self.revision = Arc::new(());
+        match name {
+            KeyName::Entry(e, ..) => self.entries_keyed.push(e),
+            _ => self.scoped = Arc::new(()),
+        }
         let ids = self.by_name.entry(name).or_default();
         let at = ids.partition_point(|x| *x < id);
         ids.insert(at, id);
@@ -525,6 +533,7 @@ fn trust(store: &mut Store) -> bool {
         store.bodies.remove(id);
         store.spoilt.remove(id);
     }
+    store.read_new.forget();
     store.replay = replay(&[]);
     store.replayed = 0;
     store.latest = OnceLock::new();
@@ -806,6 +815,9 @@ struct Store {
     keys: Keyring,
     /// The entry keys it derived: by the key of the audience it derived each from, the entry and the stay.
     derived: HashSet<(KeyId, EntryId, Option<EditId>)>,
+    /// The stays of its audience, by their print, each audience key it derived for every one of them (`derive`): a key
+    /// whose audience's stays are as they were then derives nothing new, and is left alone.
+    derived_through: HashMap<KeyId, [u8; 32]>,
     /// The slices of the shares, keep shares among them, whose selectors it opened, and those whose selectors never
     /// open for it: garbled, or with no box for a key it holds that opens, or, where it is a steward, for no seed of
     /// the vault the share is over.
@@ -849,7 +861,11 @@ struct Store {
     opened: HashMap<EntryId, Vec<EditId>>,
     /// The entries a budgeted showing left to show (`show_items`), of the edits of that revision, and what it read
     /// of them then: none once it showed them all, or once any later showing begins again.
-    showing: Option<(crate::policy::LogRevision, Vec<EntryId>)>,
+    showing: Option<Showing>,
+    /// What `read` opened since it last read (`ReadNew`).
+    read_new: ReadNew,
+    /// What changed since its upkeep last looked at its entries (`UpkeepDue`).
+    upkeep_due: UpkeepDue,
     /// The entries whose shown items keep their scratch items (`SCRATCHES`).
     scratched: HashSet<EntryId>,
     /// How many writes its view held when it last showed its items, and the last of them, with the hashes of the
@@ -895,6 +911,7 @@ impl Default for Store {
             latest: OnceLock::new(),
             keys: Keyring::default(),
             derived: HashSet::new(),
+            derived_through: HashMap::new(),
             slices: HashMap::new(),
             unreadable: HashSet::new(),
             unopened: HashSet::new(),
@@ -915,6 +932,8 @@ impl Default for Store {
             reshow: true,
             opened: HashMap::new(),
             showing: None,
+            read_new: ReadNew::default(),
+            upkeep_due: UpkeepDue::default(),
             scratched: HashSet::new(),
             shown_writes: (0, None),
             shown_lanes: BTreeMap::new(),
@@ -971,6 +990,7 @@ impl Store {
         self.warm_revision = Arc::new(());
         self.keys = Keyring::default();
         self.derived.clear();
+        self.derived_through.clear();
         self.slices.clear();
         self.unreadable.clear();
         self.unopened.clear();
@@ -978,6 +998,8 @@ impl Store {
         self.files_at = OnceLock::new();
         self.spoilt.clear();
         self.readings = Readings::default();
+        self.read_new.forget();
+        self.upkeep_due = UpkeepDue::default();
         self.shown.clear();
         self.bootstrap_state=None;
         self.based.clear();
@@ -2769,9 +2791,12 @@ impl Lab {
             // an entry's owner base overlay is taken out for the whole of a refresh: one is shown in one go. A budgeted
             // one shows one entry here, after its keys and reading, which take their own while, and the rest after it
             // a budget a step (`show_more`)
-            let shown = show_items(d, store, budget.filter(|_| retained.is_none()).map(|_| 1), false);
+            let budget = budget.filter(|_| retained.is_none());
+            let shown = show_items(d, store, budget.map(|_| 1));
             store.perf.add("show items", at);
-            if !shown {
+            // with no budget it leaves the entries a budgeted showing left before as they are: a catch-up a step at a
+            // time shows them (`catch_up_step`), and its upkeep leaves them for then
+            if !shown && budget.is_some() {
                 store.behind = true;
                 store.perf.add("refresh", began);
                 self.rebuild_owner_bases(d);
@@ -2779,11 +2804,24 @@ impl Lab {
             }
             let at = Perf::start();
             // a device holding stubs can't tell which boxes and keys its peers made of what they hold back: it makes
-            // none until their bodies are in, or it would box again what is boxed, or make a key for an epoch that has one
-            let work = if store.lazy.stubs.is_empty() { upkeep(d, store, &ix, &mine, rng, spares) } else { vec![] };
+            // none until their bodies are in, or it would box again what is boxed, or make a key for an epoch that has
+            // one; what is due for its upkeep waits for then (`UpkeepDue`)
+            let work = if store.lazy.stubs.is_empty() {
+                let waiting: HashSet<EntryId> = store.showing.iter().flat_map(|s| s.rest.iter().copied()).collect();
+                let scope = store.upkeep_due.scope(store);
+                store.perf.count(if scope.is_some() { "upkeep: of the entries changed" } else { "upkeep: of every entry" }, 1);
+                let work = upkeep(d, store, &ix, &mine, rng, spares, scope.as_ref(), &waiting);
+                store.upkeep_due.looked(&store.log, &store.keys.scoped, store.slices.len(), store.shown_groups, &store.shown_lanes, waiting);
+                store.keys.entries_keyed.clear();
+                work
+            } else {
+                vec![]
+            };
             store.perf.add("upkeep", at);
             if work.is_empty() {
                 store.perf.add("refresh", began);
+                // still behind while a showing with a budget left entries to show
+                store.behind |= store.showing.is_some();
                 if !self.restore_owner_overlay(d, retained.take()) {
                     self.rebuild_owner_bases(d);
                 }
@@ -2804,12 +2842,11 @@ impl Lab {
     fn show_more(&mut self, d: SignerId, budget: usize) -> bool {
         let d = self.at(d);
         let Some(store) = self.stores.get_mut(&d) else { return true };
-        if store.showing.as_ref().is_none_or(|(revision, _)| *revision != store.log.revision()) {
-            store.showing = None;
+        if store.showing.is_none() {
             return true;
         }
         let at = Perf::start();
-        let done = show_items(d, store, Some(budget), true);
+        let done = show_items(d, store, Some(budget));
         store.perf.add("show items", at);
         done
     }
@@ -3689,6 +3726,7 @@ impl Lab {
         self.keep(on, vec![signed], &Blobs::new());
         let store = self.stores.get_mut(&self.at(on)).expect("a device");
         store.bodies.insert(id, body);
+        store.read_new.bodies.push(id);
         store.opened.entry(entry).or_default().push(id);
         store.files_at = OnceLock::new();
         Ok(id)
@@ -5719,11 +5757,23 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
 /// key's epoch (`keys::entry_key`): true if it derived any.
 fn derive(store: &mut Store, stays: &HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>) -> bool {
     let mut new = vec![];
+    // each audience's stays by their print, made once for every key of it
+    let mut prints: HashMap<AudienceId, [u8; 32]> = HashMap::new();
     for id in &store.keys.audiences {
         let (name, audience) = &store.keys.by_id[id];
         let KeyName::Scoped(KeyFam::Audience(_, x), g) = *name else {
             continue;
         };
+        let print = *prints.entry(x).or_insert_with(|| {
+            let mut h = Hasher::new("lab stays");
+            for (e, s) in stays.get(&x).into_iter().flatten() {
+                h.update(&e.0).update(s.as_ref().map_or(&[0; 32], |s| &s.0));
+            }
+            h.finalize()
+        });
+        if store.derived_through.insert(*id, print) == Some(print) {
+            continue;
+        }
         for &(e, s) in stays.get(&x).into_iter().flatten() {
             if store.derived.insert((*id, e, s)) {
                 new.push((KeyName::Entry(e, s, g), keys::entry_key(audience, e, s)));
@@ -5782,6 +5832,7 @@ fn read(d: SignerId, store: &mut Store) {
         match open_select(of, &store.keys, st.acts_for(d, of.over)) {
             Ok(Some(slice)) => {
                 store.slices.insert(id, slice);
+                store.read_new.slices.push(id);
             }
             Ok(None) => {}
             Err(()) => {
@@ -5789,14 +5840,17 @@ fn read(d: SignerId, store: &mut Store) {
             }
         }
     }
+    let at = Perf::start();
     let retags = st.entries().iter().flat_map(|en| en.retags.iter().copied());
     let wanted = st.all_writes().iter().map(|w| w.edit).chain(retags);
     let wanted: Vec<EditId> =
         wanted.filter(|id| !store.bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
     if !wanted.is_empty() {
-        let edits: HashMap<EditId, &Edit> = store.replay.ids.iter().copied().zip(&store.replay.edits).collect();
+        // each edit by its id from the signed edits it holds, every one of which its replay is of: no map of every
+        // edit made again for each reading
         for id in wanted {
-            let Some(edit) = edits.get(&id) else { continue };
+            let Some(signed) = store.signed.get(&id) else { continue };
+            let edit = &signed.edit;
             let Action::Write { entry, stay, epoch, body, .. } = &edit.action else {
                 continue;
             };
@@ -5810,6 +5864,7 @@ fn read(d: SignerId, store: &mut Store) {
             match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
                 Some(b) => {
                     store.bodies.insert(id, b);
+                    store.read_new.bodies.push(id);
                     store.opened.entry(*entry).or_default().push(id);
                     store.files_at = OnceLock::new();
                 }
@@ -5819,38 +5874,135 @@ fn read(d: SignerId, store: &mut Store) {
             }
         }
     }
-    let mut r = Readings::default();
-    for (c, s) in &store.slices {
-        r.selectors.insert(*c, s.select.clone());
-    }
-    for (id, b) in store.metadata_bodies() {
-        if let Some(h) = &b.header {
-            r.put_header(*id, h.clone());
-            // a schema or lens entry's creation holds the schema or the lens itself, and fits where it is one of its
-            // type: what its readers read into its vault's lane where it acted for that vault (`State::lane_of`)
-            if h.ty.of_lane() {
-                r.blobs.insert(*id, b.content.as_slice().into());
-                if !lane_fits(&h.ty, &b.content) {
-                    r.unfit.insert(*id);
-                }
+    store.perf.add("read: bodies", at);
+    let at = Perf::start();
+    // what it reads in them: on what it read last time, the bodies and selectors it opened since alone, where it
+    // only opened more since (`ReadNew`); else all of them again
+    let on = store.read_new.basis(store.bodies.len(), store.slices.len(), &store.readings);
+    store.perf.count(if on { "read: on" } else { "read: whole" }, 1);
+    let mut r = match on {
+        true => {
+            let mut r = std::mem::take(&mut store.readings);
+            r.touches.clear();
+            r.adds.clear();
+            for (c, slice) in store.read_new.slices.iter().filter_map(|c| Some((c, store.slices.get(c)?))) {
+                r.selectors.insert(*c, slice.select.clone());
             }
+            for (id, b) in store.read_new.bodies.iter().filter_map(|id| Some((id, store.bodies.get(id)?))) {
+                read_body(&mut r, *id, b);
+            }
+            r
         }
-        r.tags.insert(*id, b.tags.clone());
-        if let Some(p) = &b.proof {
-            r.proofs.insert(*id, p.clone());
-        }
-        if let Some(g) = &b.defines {
-            r.defines.insert(*id, g.clone());
-        }
-    }
+        false => readings_of(store),
+    };
+    store.read_new.slices.clear();
+    store.read_new.bodies.clear();
     // the entries whose header it hasn't read: any of them may be of any type, so the index hands them to every query
     // by type, which finds them waiting (`Lab::query_candidates`)
     let st = &store.replay.state;
     r.untyped = st.entries().iter().filter(|en| !r.headers.contains_key(&en.creation)).map(|en| en.id).collect();
     // the cap groups in force follow from what the device counts (`show_items`)
     r.groups = std::mem::take(&mut store.readings.groups);
+    #[cfg(debug_assertions)]
+    debug_assert!(same_readings(&r, &readings_of(store)), "readings read on differ from readings read whole");
     store.readings = r;
+    store.read_new.read(store.bodies.len(), store.slices.len(), &store.readings);
+    store.perf.add("read: readings", at);
 }
+
+/// What device's store `store` reads in every body and selector it opened (`read`), but which entries are of no type
+/// and the cap groups in force.
+fn readings_of(store: &Store) -> Readings {
+    let mut r = Readings::default();
+    for (c, s) in &store.slices {
+        r.selectors.insert(*c, s.select.clone());
+    }
+    for (id, b) in store.metadata_bodies() {
+        read_body(&mut r, *id, b);
+    }
+    r
+}
+
+/// What write `id`'s body `b` says, into `r`.
+fn read_body(r: &mut Readings, id: EditId, b: &Body) {
+    if let Some(h) = &b.header {
+        r.put_header(id, h.clone());
+        // a schema or lens entry's creation holds the schema or the lens itself, and fits where it is one of its
+        // type: what its readers read into its vault's lane where it acted for that vault (`State::lane_of`)
+        if h.ty.of_lane() {
+            r.blobs.insert(id, b.content.as_slice().into());
+            if !lane_fits(&h.ty, &b.content) {
+                r.unfit.insert(id);
+            }
+        }
+    }
+    r.tags.insert(id, b.tags.clone());
+    if let Some(p) = &b.proof {
+        r.proofs.insert(id, p.clone());
+    }
+    if let Some(g) = &b.defines {
+        r.defines.insert(id, g.clone());
+    }
+}
+
+/// Two readings alike, the cap groups and which entries are of no type aside, and the order each type's creations
+/// were indexed in, which is a map's.
+#[cfg(debug_assertions)]
+fn same_readings(a: &Readings, b: &Readings) -> bool {
+    fn listed<K: std::fmt::Debug, V: std::fmt::Debug>(m: impl Iterator<Item = (K, V)>) -> Vec<String> {
+        let mut v: Vec<String> = m.map(|kv| format!("{kv:?}")).collect();
+        v.sort();
+        v
+    }
+    let typed = |r: &Readings| -> Vec<String> {
+        listed(r.typed.iter().map(|(t, ids)| (t, ids.iter().copied().collect::<BTreeSet<EditId>>())))
+    };
+    let unfit = |r: &Readings| listed(r.unfit.iter().map(|k| (k, ())));
+    typed(a) == typed(b)
+        && listed(a.headers.iter()) == listed(b.headers.iter())
+        && listed(a.selectors.iter()) == listed(b.selectors.iter())
+        && listed(a.tags.iter()) == listed(b.tags.iter())
+        && listed(a.proofs.iter()) == listed(b.proofs.iter())
+        && listed(a.defines.iter()) == listed(b.defines.iter())
+        && listed(a.blobs.iter()) == listed(b.blobs.iter())
+        && unfit(a) == unfit(b)
+        && a.touches.is_empty()
+        && a.adds.is_empty()
+}
+
+/// What `read` opened since it last read, and what it read then: so that it reads on from there where it only opened
+/// more since, rather than every body again (each of 130,000 a turn on a server's size, 2026-10-27). Anything else
+/// that takes bodies or selectors away or puts in readings of its own sends `read` through them all again: the counts
+/// then differ from those it kept (`basis`), or it forgets them (`forget`).
+#[derive(Default)]
+struct ReadNew {
+    /// The counts of bodies, selectors, headers and tags as it last read, if it did since it last forgot.
+    then: Option<(usize, usize, usize, usize)>,
+    bodies: Vec<EditId>,
+    slices: Vec<ShareId>,
+}
+
+impl ReadNew {
+    /// It reads on from what it read last time: what it holds now is that, and what it opened since, alone.
+    fn basis(&self, bodies: usize, slices: usize, r: &Readings) -> bool {
+        self.then.is_some_and(|(b, s, h, t)| {
+            b + self.bodies.len() == bodies
+                && s + self.slices.len() == slices
+                && h == r.headers.len()
+                && t == r.tags.len()
+        })
+    }
+
+    fn read(&mut self, bodies: usize, slices: usize, r: &Readings) {
+        self.then = Some((bodies, slices, r.headers.len(), r.tags.len()));
+    }
+
+    /// What it read is to be read whole again.
+    fn forget(&mut self) {
+        *self = ReadNew::default();
+    }
+}
+
 
 /// What a schema or lens entry of type `ty` holds, `blob`, is one of its type: a schema (`lens::Schema`) for a schema
 /// entry, a lens (`lens::Lens`) for a lens entry. Only then does its creation fit, and put it in its vault's lane.
@@ -5896,6 +6048,7 @@ fn open_select(of: &Share, keys: &Keyring, steward: bool) -> Result<Option<Slice
 /// under the next epoch's key if nobody wrapped it yet. For each entry it reads, the keys of the entry's earlier stays
 /// it holds wrapped under the key the schedule links them to, if nobody did yet. `mine` are the keys of the signers it
 /// may box for by wrapping: its own, and what owners lend it.
+#[allow(clippy::too_many_arguments)]
 fn upkeep(
     d: SignerId,
     store: &mut Store,
@@ -5903,8 +6056,11 @@ fn upkeep(
     mine: &[(SignerId, Secret)],
     rng: &mut SeededRng,
     spares: &mut Spares,
+    scope: Option<&HashSet<EntryId>>,
+    waiting: &HashSet<EntryId>,
 ) -> Vec<Work> {
     let st = store.replay.state.clone();
+    let at = Perf::start();
     let families: Vec<KeyFam> = st.key_fams().into_iter().filter(|&k| st.entitled(d, k)).collect();
     // a key for every epoch from the oldest it holds to the current one, where nobody made one yet: several rotations
     // at once leave the epochs between without a key, and the history must stay one chain
@@ -5966,12 +6122,20 @@ fn upkeep(
             }
         }
     }
+    store.perf.add("upkeep: families", at);
+    let at = Perf::start();
     // Every current entry audience occurs in key_fams. Reuse this round's exact entitlement
     // decisions from the same immutable State; never carry them across refreshes or revocation.
     let entitled: HashSet<KeyFam> = families.iter().copied().collect();
     // move links: the keys of an entry's earlier stays under a key of its stay now, as the schedule links them
+    // of the entries in `scope` alone where it has one (`UpkeepDue`), and none a showing left to show: a debug build
+    // checks that every other one calls for none
     for en in st.entries() {
-        if !entitled.contains(&KeyFam::Audience(en.vault, en.audience())) {
+        if waiting.contains(&en.id) || !entitled.contains(&KeyFam::Audience(en.vault, en.audience())) {
+            continue;
+        }
+        let skip = scope.is_some_and(|s| !s.contains(&en.id));
+        if skip && !cfg!(debug_assertions) {
             continue;
         }
         let epoch = st.epoch(KeyFam::Audience(en.vault, en.audience()));
@@ -5998,13 +6162,17 @@ fn upkeep(
                 wraps.push(Wrap { name, id, boxed: KeyBox { to, bytes } });
             }
         }
-        if !wraps.is_empty() {
+        debug_assert!(!skip || wraps.is_empty(), "upkeep left out {:?}, which has keys to wrap", en.id);
+        if !wraps.is_empty() && !skip {
             out.push(Work::Edit(Action::Wraps { entry: en.id, wraps }));
         }
     }
+    store.perf.add("upkeep: links", at);
+    let at = Perf::start();
     for vt in st.vaults().iter().filter(|vt| st.acts_for(d, vt.id)) {
-        out.extend(steward(store, &st, vt.id));
+        out.extend(steward(store, &st, vt.id, scope, waiting));
     }
+    store.perf.add("upkeep: steward", at);
     out
 }
 
@@ -6015,54 +6183,74 @@ fn upkeep(
 /// asks for, if it isn't there, and, once it reads the selector of every keep share over the vault too
 /// (`Store::reads_keeps`), with the keep shares that pick it, if it isn't marked so. A part it has nothing to change in
 /// it leaves out, so it never puts back an audience another steward changed meanwhile.
-fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
+fn steward(
+    store: &Store,
+    st: &State,
+    v: VaultId,
+    scope: Option<&HashSet<EntryId>>,
+    waiting: &HashSet<EntryId>,
+) -> Vec<Work> {
     if !store.reads_shares(st, v) {
         return vec![];
     }
     let marks = store.reads_keeps(st, v);
     let r = &store.readings;
     let mut out = vec![];
-    for en in st.entries().iter().filter(|en| en.vault == v) {
-        if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
+    // of the entries in `scope` alone where it has one, and none a showing left to show (`upkeep`)
+    for en in st.entries().iter().filter(|en| en.vault == v && !waiting.contains(&en.id)) {
+        let skip = scope.is_some_and(|s| !s.contains(&en.id));
+        if skip && !cfg!(debug_assertions) {
             continue;
         }
-        let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else {
-            continue;
-        };
-        let ours = st.entry_writes(en.id).filter(|w| w.actor == v);
-        let answered: HashSet<EditId> =
-            ours.filter_map(|w| store.body_metadata(w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
-        let asks: Vec<&Write> = st
-            .entry_writes(en.id)
-            .filter(|w| w.actor != v && !w.first && !answered.contains(&w.edit))
-            .filter(|w| store.body_metadata(w.edit).is_some_and(|b| !b.tags.is_empty()))
-            .collect();
-        if asks.is_empty() {
-            if let Some((caps, wants)) = m.mark {
-                let wants = wants.filter(|_| marks);
-                if caps.is_some() || wants.is_some() {
-                    let (keep, via) = (vec![], vec![]);
-                    out.push(Work::Edit(Action::Mark { vault: v, entry: en.id, caps, wants, keep, via }));
+        let before = out.len();
+        #[allow(clippy::never_loop)]
+        'one: loop {
+            if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
+                break 'one;
+            }
+            let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else {
+                break 'one;
+            };
+            let ours = st.entry_writes(en.id).filter(|w| w.actor == v);
+            let answered: HashSet<EditId> =
+                ours.filter_map(|w| store.body_metadata(w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
+            let asks: Vec<&Write> = st
+                .entry_writes(en.id)
+                .filter(|w| w.actor != v && !w.first && !answered.contains(&w.edit))
+                .filter(|w| store.body_metadata(w.edit).is_some_and(|b| !b.tags.is_empty()))
+                .collect();
+            if asks.is_empty() {
+                if let Some((caps, wants)) = m.mark {
+                    let wants = wants.filter(|_| marks);
+                    if caps.is_some() || wants.is_some() {
+                        let (keep, via) = (vec![], vec![]);
+                        out.push(Work::Edit(Action::Mark { vault: v, entry: en.id, caps, wants, keep, via }));
+                    }
+                }
+                break 'one;
+            }
+            let shown = store.shown.get(&en.id).map(|s| &s.history);
+            let counted = |w: &Write| shown.and_then(|h| h.get(w.edit)).is_some_and(|c| c.counted);
+            let mut tags = m.attrs.tags.clone();
+            for w in &asks {
+                let attrs = Attrs { tags: tags.clone(), ..m.attrs.clone() };
+                if counted(w) && granted(st, store, w, &attrs) {
+                    tags = store.body_metadata(w.edit).expect("read tag metadata").tags.apply(&tags);
                 }
             }
-            continue;
+            let add = tags.iter().filter(|t| !m.attrs.tags.contains(t)).cloned().collect();
+            let remove = m.attrs.tags.iter().filter(|t| !tags.contains(t)).cloned().collect();
+            let mut answers: Vec<EditId> = asks.iter().map(|w| w.edit).collect();
+            answers.sort();
+            let tags = TagDelta { add, remove };
+            let body = Body { header: None, tags, answers, content: vec![], proof: None, files: vec![], defines: None };
+            out.push(Work::Retag { vault: v, entry: en.id, body });
+            break 'one;
         }
-        let shown = store.shown.get(&en.id).map(|s| &s.history);
-        let counted = |w: &Write| shown.and_then(|h| h.get(w.edit)).is_some_and(|c| c.counted);
-        let mut tags = m.attrs.tags.clone();
-        for w in &asks {
-            let attrs = Attrs { tags: tags.clone(), ..m.attrs.clone() };
-            if counted(w) && granted(st, store, w, &attrs) {
-                tags = store.body_metadata(w.edit).expect("read tag metadata").tags.apply(&tags);
-            }
+        debug_assert!(!skip || out.len() == before, "upkeep left out {:?}, which a steward has work in", en.id);
+        if skip {
+            out.truncate(before);
         }
-        let add = tags.iter().filter(|t| !m.attrs.tags.contains(t)).cloned().collect();
-        let remove = m.attrs.tags.iter().filter(|t| !tags.contains(t)).cloned().collect();
-        let mut answers: Vec<EditId> = asks.iter().map(|w| w.edit).collect();
-        answers.sort();
-        let tags = TagDelta { add, remove };
-        let body = Body { header: None, tags, answers, content: vec![], proof: None, files: vec![], defines: None };
-        out.push(Work::Retag { vault: v, entry: en.id, body });
     }
     out
 }
@@ -6180,13 +6368,26 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
 /// Shows device `d`'s items anew. With a `budget`, at most that many entries other than the cap groups' are shown
-/// anew, and if more are left it keeps which (`Store::showing`), and what tells it what to show anew (`reshow`,
-/// `opened`, `shown_writes`) as it was for them, and says false: a `resume` shows the next of those, which an
-/// unbudgeted showing shows too, all of what it would have shown as one showing does. True once all are shown.
-fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>, resume: bool) -> bool {
-    let left = store.showing.take().filter(|_| resume);
+/// anew, those it left before first (`Store::showing`), and it keeps those it leaves now there, with whether they are to
+/// be checked against all their writes and the bodies it opened of them (`Showing`): false while any are left. One
+/// with none shows what changed since it last showed and leaves those it left before as they are, for the budgeted
+/// ones to come (a write of the device's own in the middle of a catch-up waits for no whole showing), but where it
+/// shows every entry. So the entries end shown as one showing shows them, once none is left.
+/// The work a budgeted show does for each entry of its budget (`show_items`), counted as the writes it judges and
+/// `SHOW_ENTRY_WORK` for each entry it judges, one for each it looks at, and the writes it reads again into a scratch
+/// item it dropped (`SCRATCHES`): a step of a catch-up judges about this many writes whatever the
+/// entries hold, so that a step at a server's size takes as long as one at a phone's.
+const SHOW_WORK: usize = 6;
+const SHOW_ENTRY_WORK: usize = 4;
+
+fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
+    let pending = store.showing.take().unwrap_or_default();
+    let (reshow, mut opened) = (std::mem::take(&mut store.reshow), std::mem::take(&mut store.opened));
+    for (e, ids) in pending.opened {
+        opened.entry(e).or_default().extend(ids);
+    }
+    let waiting: HashSet<EntryId> = pending.rest.iter().copied().collect();
     let (st, r, bodies) = (&store.replay.state, &store.readings, &store.bodies);
-    let (reshow, opened) = (std::mem::take(&mut store.reshow), std::mem::take(&mut store.opened));
     let mut old = std::mem::take(&mut store.shown);
     if reshow {
         old.retain(|e, _| st.entry(*e).is_some());
@@ -6283,36 +6484,55 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>, resume: boo
             .iter()
             .all(|(v, (h, _))| gained.contains_key(v) || store.shown_lanes.get(v).is_some_and(|w| w.0 == *h))
         && store.shown_groups == groups_print;
-    let todo: Vec<&Entry> = if let Some((_, left)) = &left {
-        left.iter().filter_map(|e| st.entry(*e)).collect()
-    } else if grew {
+    // what changed since it last showed (the bodies it opened since of the entries it left before among them)
+    let fresh: Vec<&Entry> = if grew {
         let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
-        let mut es: Vec<EntryId> =
-            all.iter().skip(n).map(|w| w.entry).chain(opened.keys().copied()).chain(changed).collect();
+        let opened_since = opened.keys().copied().filter(|e| !waiting.contains(e));
+        let mut es: Vec<EntryId> = all.iter().skip(n).map(|w| w.entry).chain(opened_since).chain(changed).collect();
         es.sort();
         es.dedup();
         es.into_iter().filter_map(|e| st.entry(e)).collect()
     } else {
         st.entries().iter().collect()
     };
-    let (todo, rest) = match budget {
-        Some(budget) if todo.len() > budget => {
-            let (now, rest) = todo.split_at(budget.max(1));
-            (now.to_vec(), rest.iter().map(|en| en.id).collect::<Vec<EntryId>>())
+    // and those it left before, after them, where it has a budget to show them in
+    let seen: HashSet<EntryId> = fresh.iter().map(|en| en.id).collect();
+    let left: Vec<&Entry> =
+        pending.rest.iter().filter(|e| !seen.contains(e)).filter_map(|e| st.entry(*e)).collect();
+    let (todo, mut rest): (Vec<&Entry>, Vec<EntryId>) = match budget {
+        Some(budget) => {
+            let mut all_todo = fresh;
+            all_todo.extend(left);
+            let cut = all_todo.len().min(budget.max(1) * SHOW_WORK);
+            let rest = all_todo[cut..].iter().map(|en| en.id).collect();
+            all_todo.truncate(cut);
+            (all_todo, rest)
         }
-        _ => (todo, vec![]),
+        None => (fresh, left.iter().map(|en| en.id).collect()),
     };
-    let done = rest.is_empty();
-    if done {
-        store.shown_writes = (all.len(), all.last().map(|w| w.edit));
-        store.shown_lanes = lanes_now;
-        store.shown_groups = groups_print;
-    }
-    let shown_now: HashSet<EntryId> = todo.iter().map(|en| en.id).collect();
-    for en in todo {
+    store.shown_writes = (all.len(), all.last().map(|w| w.edit));
+    store.shown_lanes = lanes_now;
+    store.shown_groups = groups_print;
+    let mut shown_now: HashSet<EntryId> = HashSet::new();
+    // a budget bounds the work too: the writes it judges, and a few for each entry it judges, past which it leaves
+    // the rest of them for the next step
+    let work = budget.map(|b| b.max(1) * SHOW_WORK);
+    let mut spent = 0;
+    let ids_todo: Vec<EntryId> = todo.iter().map(|en| en.id).collect();
+    for (k, en) in todo.into_iter().enumerate() {
+        if work.is_some_and(|w| spent >= w) {
+            let mut left = ids_todo[k..].to_vec();
+            left.append(&mut rest);
+            rest = left;
+            break;
+        }
+        shown_now.insert(en.id);
+        spent += 1;
         if cap_groups.contains(&en.id) {
             continue;
         }
+        // one it left before is checked against all its writes as it was to be then
+        let reshow = reshow || (pending.reshow && waiting.contains(&en.id));
         let tip = tip(en);
         // judged under the lane before it gained schemas none of its writes name: as if under this one
         if let Some((was, new)) = gained.get(&en.vault)
@@ -6356,16 +6576,23 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>, resume: boo
                 && opened.get(&en.id).is_none_or(|ids| ids.iter().all(new))
         };
         let judging_at = Perf::start();
+        // judged on without its scratch item, it builds that again of the writes it judged before
+        let mut again = 0;
         let (mut j, from, items) = match old.remove(&en.id) {
             Some(s) if resumes(&s) => {
                 let from = s.tip.writes;
+                again = if s.after.scratch.is_none() { from } else { 0 };
                 (Judging::resume(en, r, lane(en.vault), s.history, s.after), from, Some(s.items))
             }
             _ => (Judging::new(st, en, r, lane(en.vault)), 0, None),
         };
+        store.perf.add("show: judging, set up", judging_at);
+        store.perf.count("show: writes judged", (writes.len() - from) as u64);
+        store.perf.count("show: entries judged", 1);
         for w in &writes[from..] {
             j.judge(d, st, (r, bodies), w, &groups);
         }
+        spent += writes.len() - from + again + SHOW_ENTRY_WORK;
         store.perf.add("show: judging", judging_at);
         let materialize_at = Perf::start();
         let s = j.shown_on(d, print, tip, items);
@@ -6387,15 +6614,98 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>, resume: boo
     store.perf.add("show: entries", at);
     store.shown = old;
     store.readings.groups = groups;
-    if !done {
-        // what tells it what to show anew stays as it was for the entries left, until it shows them
-        let mut opened = opened;
-        opened.retain(|e, _| !shown_now.contains(e));
-        store.opened = opened;
-        store.reshow = reshow;
-        store.showing = Some((store.log.revision(), rest));
+    // the entries shown anew, for the upkeep to look at again (`UpkeepDue`)
+    store.upkeep_due.entries.extend(shown_now.iter().copied());
+    if rest.is_empty() {
+        return true;
     }
-    done
+    // what tells it what to show anew stays as it was for the entries left, until it shows them
+    let left: HashSet<EntryId> = rest.iter().copied().collect();
+    opened.retain(|e, _| left.contains(e));
+    store.showing = Some(Showing { rest, reshow: reshow || pending.reshow, opened });
+    false
+}
+
+/// The entries a showing with a budget left to show (`show_items`), in the order it would show them, with whether
+/// they are to be checked against all their writes and the bodies it opened of them since they were last shown.
+#[derive(Default)]
+struct Showing {
+    rest: Vec<EntryId>,
+    reshow: bool,
+    opened: HashMap<EntryId, Vec<EditId>>,
+}
+
+/// What changed since the upkeep last looked at every entry's keys and stewardship (`upkeep`), so that it looks at
+/// those entries alone, not at each of a server's thousands every turn: the entries the edits it took since are of, those
+/// it opened bodies or took keys of, and those shown anew. Where anything but an entry's changed since (an edit of a
+/// vault, a share, an audience or no log, a removal, an edit let go, a key of more than an entry, a selector opened,
+/// the cap groups or the lanes, an entry's base), or an entry changed that is a cap group or holds a schema or a lens,
+/// it looks at every entry again. A debug build checks each entry it leaves out calls for nothing.
+#[derive(Default)]
+struct UpkeepDue {
+    /// The entries shown anew, and those a showing left to show when it last looked.
+    entries: HashSet<EntryId>,
+    /// When it last looked: the log's lineage and length, the keys' revision, the selectors it read, the cap groups'
+    /// and the lanes' hashes.
+    then: Option<(crate::policy::LogRevision, usize, Arc<()>, usize, [u8; 32], Vec<(VaultId, [u8; 32])>)>,
+}
+
+impl UpkeepDue {
+    /// The entries its upkeep is to look at, or `None` for every one.
+    fn scope(&self, store: &Store) -> Option<HashSet<EntryId>> {
+        let (lineage, len, keys, slices, groups, lanes) = self.then.as_ref()?;
+        let log = &store.log;
+        if log.lineage() != *lineage
+            || log.edits().len() < *len
+            || !Arc::ptr_eq(keys, &store.keys.scoped)
+            || store.slices.len() != *slices
+            || store.shown_groups != *groups
+            || *lanes != lanes_of(&store.shown_lanes)
+            || !store.bases.is_empty()
+        {
+            return None;
+        }
+        let mut due = self.entries.clone();
+        due.extend(store.keys.entries_keyed.iter().copied());
+        for (edit, place) in log.edits()[*len..].iter().zip(&log.logs()[*len..]) {
+            match place {
+                Some(crate::sync::LogId::Entry(e)) if !edit.is_removal() => {
+                    due.insert(*e);
+                }
+                _ => return None,
+            }
+        }
+        let (st, r) = (&store.replay.state, &store.readings);
+        let global = |e: &EntryId| {
+            st.entry(*e).is_some_and(|en| {
+                st.is_cap_group(en, r) || r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane() || h.ty.is_cap_group())
+            })
+        };
+        if due.iter().any(global) {
+            return None;
+        }
+        Some(due)
+    }
+
+    /// It looked, at what `log`, `keys`, `slices`, `groups` and `lanes` say now; the entries `waiting` to be shown
+    /// it looks at again once they are.
+    fn looked(
+        &mut self,
+        log: &Log,
+        keys: &Arc<()>,
+        slices: usize,
+        groups: [u8; 32],
+        lanes: &BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>,
+        waiting: HashSet<EntryId>,
+    ) {
+        self.entries = waiting;
+        self.then = Some((log.lineage(), log.edits().len(), keys.clone(), slices, groups, lanes_of(lanes)));
+    }
+}
+
+/// Each vault's lane's hash, as a showing last showed it (`Store::shown_lanes`).
+fn lanes_of(lanes: &BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>) -> Vec<(VaultId, [u8; 32])> {
+    lanes.iter().map(|(v, (h, _))| (*v, *h)).collect()
 }
 
 /// Entry `en`'s writes judged anew from its first, on device `d`: what judging on from where it left off must make.
