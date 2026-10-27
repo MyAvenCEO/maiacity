@@ -51,13 +51,13 @@ import { measureLatency } from './latency-journal.js';
 import { createReactiveRead } from './reactive-read.js';
 import { createWorldReader } from './world-reader.js';
 import { createEntryWindow, createReadWindow } from './query-window.js';
-import { useBuiltInManifests, useDevice, refreshActiveView, wantNow } from '../../../game/code/sources/device.js';
-import { MANIFESTS } from './manifests.js';
+import { useBuiltInActors, useDevice, refreshActiveView, wantNow } from '../../../game/code/sources/device.js';
+import { ACTORS } from './actors.js';
 import { touches } from '../../../game/code/sources/touched.js';
 import { sync } from './sync.svelte.js';
 
-// until Maia City holds a manifest of an id, the app's own of it says what a page asks for first
-useBuiltInManifests(MANIFESTS);
+// until Maia City holds an actor of an id, the app's own of it says what a page asks for first
+useBuiltInActors(ACTORS);
 
 /** The name of this browser's shelf in OPFS (./device/store.js). */
 const STORE = 'avendb-browser';

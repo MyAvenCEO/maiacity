@@ -6,7 +6,7 @@
 // a query, and a short one ~10 s after the person opens another view (`viewChanged`), so each view's wait is seen. In theOS the Mac also reads its person's back, every device's,
 // and keeps each as a file in ~/Library/Logs/TheOS/diagnostics (vault/app's `diagnostics_keep`), where they are read.
 import { version } from '$app/environment';
-import { manifestDiagnostics } from '../../../game/code/sources/device.js';
+import { actorDiagnostics } from '../../../game/code/sources/device.js';
 import { command, native } from '$lib/native';
 import { playbackMetrics } from '$lib/studio/playback-metrics.js';
 import { diagnosticSnapshot } from './diagnostics-report.js';
@@ -41,7 +41,7 @@ export function snapshot() {
 		viewReadiness: viewReadiness.snapshot(),
 		...diagnosticSnapshot({
 			phase: session.phase, build: version, device: deviceKind(), journal: latencyJournal.snapshot(), lifecycle: lifecycle()?.snapshot(),
-			calls: localTimings.snapshot(), manifests: manifestDiagnostics(), sync, playback: playbackMetrics.snapshot()
+			calls: localTimings.snapshot(), manifests: actorDiagnostics(), sync, playback: playbackMetrics.snapshot()
 		})
 	};
 }

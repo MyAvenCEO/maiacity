@@ -1,11 +1,11 @@
 // Connect renderers to their local avenDB instance. Missing/locked devices never authorize remote fallback.
 import { native } from '$lib/native';
-import { deviceOf, useBuiltInManifests, useDevice } from '../../../game/code/sources/device.js';
-import { MANIFESTS } from './manifests.js';
+import { deviceOf, useBuiltInActors, useDevice } from '../../../game/code/sources/device.js';
+import { ACTORS } from './actors.js';
 import { readLocalFile } from './ops.js';
 
-// until Maia City holds a manifest of an id, the app's own of it says what a page asks for first
-useBuiltInManifests(MANIFESTS);
+// until Maia City holds an actor of an id, the app's own of it says what a page asks for first
+useBuiltInActors(ACTORS);
 
 /** Bound connection setup; callers show an explicit local-device error and offer retry. */
 const WAIT = 5000;

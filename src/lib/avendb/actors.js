@@ -1,10 +1,11 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
- * The manifests Maia City's vault holds (game/code/sources/manifests.js, "Manifest, v2"), as the repo declares them for
- * their AIP (scripts/propose-manifests.mjs): the kernel, which every page holds, the dashboard, the Universe, Chat,
- * the Studio, the asset libraries and each game. Each is a tree of Interests in four tiers (now, next, later, idle;
- * Lean avendb/spec/AvenDB/Interest.lean), slots bound by the route or the selection, signals ordering a tier. A
- * manifest is a vault entry like any other, so a change to one goes in by AIP too, never by the seed.
+ * The actors Maia City's vault holds (game/code/sources/actors.js, "Actor, v3", evolved from "Manifest, v2"), as the
+ * repo declares them for their AIP (scripts/propose-actors.mjs): the kernel, which every page holds, the dashboard, the
+ * Universe, Chat, the Studio, the asset libraries, each page and each game. An app is an actor (Samuel 2026-10-27);
+ * what it loads is a tree of Interests in four tiers (now, next, later, idle; Lean avendb/spec/AvenDB/Interest.lean),
+ * slots bound by the route or the selection, signals ordering a tier. An actor is a vault entry like any other, so a
+ * change to one goes in by AIP too, never by the seed.
  *
  * Long logs (a room's messages, an asset's versions) come whole today; their `window` says what of them is wanted
  * first, which the node honours inside one log once an entry starts from its newest snapshot plus the edits after it
@@ -13,10 +14,11 @@
 import { GAMES, gameTag } from '../../../game/games.js';
 import { PLACES } from '../../../game/places.js';
 
-const manifest = (o) => ({ kind: 'manifest', v: 2, note: '', routes: [], ...o });
+/** An actor of `o`: its loads in `tiers`, a held actor as `{ actor }`; no interface, caps or code of its own yet. */
+const actor = ({ tiers, ...o }) => ({ kind: 'actor', v: 3, note: '', routes: [], slots: [], ...o, interface: {}, needs: [], code: [], loads: tiers });
 
 /** The kernel: what every page reads, whatever app it is: who may do what, the schemas and lenses that read records. */
-export const KERNEL = manifest({
+export const KERNEL = actor({
 	id: 'kernel',
 	title: 'Kernel',
 	note: "What every page reads first: the vault's cap groups, schemas and lenses.",
@@ -24,15 +26,15 @@ export const KERNEL = manifest({
 	tiers: { now: [{ want: { type: ['capgroup', 'schema', 'lens'] }, part: 'headers' }] }
 });
 
-/** A game's manifest: the kernel, its code and settings (tagged `game:<id>`) on screen, the entries they name next. */
-export const gameManifest = (g) =>
-	manifest({
+/** A game's actor: the kernel, its code and settings (tagged `game:<id>`) on screen, the entries they name next. */
+export const gameActor = (g) =>
+	actor({
 		id: `game-${g.id}`,
 		title: g.label,
 		note: `What ${g.label} reads: its views, logic and settings now, the worlds and recipes they name next.`,
 		routes: [g.route, `/games/${g.id}/`],
 		tiers: {
-			now: [{ manifest: KERNEL.id }, { want: { tags: [gameTag(g.id)] } }],
+			now: [{ actor: KERNEL.id }, { want: { tags: [gameTag(g.id)] } }],
 			next: [{ want: { tags: [gameTag(g.id)] }, follow: 2 }]
 		}
 	});
@@ -44,35 +46,35 @@ export const gameManifest = (g) =>
  * sets the `camera` signal (game/code/sources/device.js `signalView`) as it moves into a new cell. Levels of detail stay
  * built on each device, never stored (2026-10-19).
  */
-export const sandbox4Manifest = (g) =>
-	manifest({
+export const sandbox4Actor = (g) =>
+	actor({
 		id: `game-${g.id}`,
 		title: g.label,
 		note: "What Sandbox 4 reads: its config now, the assets its pins name ordered by the camera's distance, then the other recipes.",
 		routes: [g.route, `/games/${g.id}/`],
 		tiers: {
-			now: [{ manifest: KERNEL.id }, { want: { tags: [gameTag(g.id)] } }, { want: { tags: [gameTag(g.id)] }, follow: 2, by: 'camera' }],
+			now: [{ actor: KERNEL.id }, { want: { tags: [gameTag(g.id)] } }, { want: { tags: [gameTag(g.id)] }, follow: 2, by: 'camera' }],
 			idle: [{ want: { type: ['recipe'] }, part: 'headers' }]
 		}
 	});
 
 /** The dashboard: the kernel, then the games it lists. */
-export const DASHBOARD = manifest({
+export const DASHBOARD = actor({
 	id: 'dashboard',
 	title: 'Dashboard',
 	note: 'What the dashboard reads: the games it lists.',
 	routes: ['/app/'],
-	tiers: { now: [{ manifest: KERNEL.id }, { want: { type: ['game'] }, part: 'headers' }] }
+	tiers: { now: [{ actor: KERNEL.id }, { want: { type: ['game'] }, part: 'headers' }] }
 });
 
 /** The Maia Universe: the kernel, its newest page of stories and posts, then the rest of them. */
-export const UNIVERSE = manifest({
+export const UNIVERSE = actor({
 	id: 'universe',
 	title: 'Maia Universe',
 	note: 'What the Universe shows first: its newest stories and posts, a page of them, the rest after.',
 	routes: ['/universe/', '/universe/*'],
 	tiers: {
-		now: [{ manifest: KERNEL.id }, { want: { type: ['story', 'post:inspire'] }, window: { newest: 20 }, files: ['media:still'] }],
+		now: [{ actor: KERNEL.id }, { want: { type: ['story', 'post:inspire'] }, window: { newest: 20 }, files: ['media:still'] }],
 		later: [{ want: { type: ['story', 'post:inspire'] } }]
 	}
 });
@@ -81,7 +83,7 @@ export const UNIVERSE = manifest({
  * Chat (Samuel's example, 2026-10-26): my rooms first, then the open room's newest messages, then the newest of the
  * other recent rooms, its pictures as they scroll into view, and older history last.
  */
-export const CHAT = manifest({
+export const CHAT = actor({
 	id: 'chat',
 	title: 'Chat',
 	note: 'My room list now; the open room ($room) on open, newest messages first; the five most recent other rooms next; its pictures by the viewport later; older history idle.',
@@ -89,7 +91,7 @@ export const CHAT = manifest({
 	slots: ['room'],
 	tiers: {
 		now: [
-			{ manifest: KERNEL.id },
+			{ actor: KERNEL.id },
 			{ want: { type: ['room'], vault: '*' }, part: 'headers', note: 'names, members, last line, unread' },
 			{ want: { entry: '$room' }, window: { newest: 50 }, note: 'the newest 50 messages and their senders' }
 		],
@@ -110,7 +112,7 @@ export const CHAT = manifest({
  * per shot, its sound from the playhead on, proxies near the playhead, originals only when opened full quality or
  * exported, the other timelines last. The player sets the `playhead` signal as the shot under it changes.
  */
-export const STUDIO = manifest({
+export const STUDIO = actor({
 	id: 'studio',
 	title: 'Studio',
 	note: 'Timelines now; the selected one ($timeline) with its shots and stills on open; its sound from the playhead; proxies by the playhead next; originals ($original) on demand; other timelines idle.',
@@ -118,7 +120,7 @@ export const STUDIO = manifest({
 	slots: ['timeline', 'original'],
 	tiers: {
 		now: [
-			{ manifest: KERNEL.id },
+			{ actor: KERNEL.id },
 			{ want: { type: ['cut'] }, part: 'headers', files: ['media:still'], note: 'names and covers' },
 			{ want: { entry: '$timeline' }, follow: 2, note: 'shots, clips and cut points' },
 			{ want: { entry: '$timeline' }, follow: 2, part: 'files', files: ['media:still'], note: 'one still per shot' },
@@ -134,7 +136,7 @@ export const STUDIO = manifest({
  * The asset libraries and their viewers (Samuel's example, 2026-10-26): the list first, the selected asset's card,
  * recipe and pins on select, its neighbours in the list next, its older versions later.
  */
-export const ASSETS = manifest({
+export const ASSETS = actor({
 	id: 'assets',
 	title: 'Game Assets',
 	note: 'The library list now; the selected asset ($asset) with what it pins on select; its neighbours by list position next; its older versions later.',
@@ -142,7 +144,7 @@ export const ASSETS = manifest({
 	slots: ['asset'],
 	tiers: {
 		now: [
-			{ manifest: KERNEL.id },
+			{ actor: KERNEL.id },
 			{ want: { type: ['recipe'] }, part: 'headers', files: ['media:still'], note: 'name, kind, versions, thumbnail' },
 			{ want: { entry: '$asset' }, follow: 2, note: 'card, recipe and what it pins' },
 			{ want: { entry: '$asset' }, part: 'files', note: 'its own files: the model the viewer shows' }
@@ -160,13 +162,13 @@ export const ASSETS = manifest({
  * @param {string} id @param {string} title @param {string[]} routes @param {string[]} [types]
  */
 const page = (id, title, routes, types = []) =>
-	manifest({
+	actor({
 		id: `page-${id}`,
 		title,
 		note: types.length ? `What ${title} lists: the headers of its ${types.join(', ')} entries now, them whole later.` : `${title} reads no entries of its own: the kernel alone.`,
 		routes,
 		tiers: {
-			now: [{ manifest: KERNEL.id }, ...(types.length ? [{ want: { type: types }, part: 'headers' }] : [])],
+			now: [{ actor: KERNEL.id }, ...(types.length ? [{ want: { type: types }, part: 'headers' }] : [])],
 			...(types.length ? { later: [{ want: { type: types } }] } : {})
 		}
 	});
@@ -208,9 +210,9 @@ export const PAGES = [
 /** The labs under /app/games/ that are no game of the list (no `gameOrder`, Sandbox 7 and 8): each reads as a game does. */
 export const LABS = PLACES.filter((p) => p.route?.startsWith('/app/games/') && !GAMES.some((g) => g.id === p.id));
 
-/** Every manifest the repo declares. */
-export const MANIFESTS = [
+/** Every actor the repo declares. */
+export const ACTORS = [
 	KERNEL, DASHBOARD, UNIVERSE, STUDIO, CHAT, ASSETS, ...PAGES,
-	...GAMES.map((g) => (g.id === 'sandbox-4' ? sandbox4Manifest(g) : gameManifest(g))),
-	...LABS.map(gameManifest)
+	...GAMES.map((g) => (g.id === 'sandbox-4' ? sandbox4Actor(g) : gameActor(g))),
+	...LABS.map(gameActor)
 ];

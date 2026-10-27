@@ -1,0 +1,1576 @@
+[
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What every page reads first: the vault's cap groups, schemas and lenses.",
+		"routes": [
+			"*"
+		],
+		"id": "kernel",
+		"title": "Kernel",
+		"tiers": {
+			"now": [
+				{
+					"want": {
+						"type": [
+							"capgroup",
+							"schema",
+							"lens"
+						]
+					},
+					"part": "headers"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What the dashboard reads: the games it lists.",
+		"routes": [
+			"/app/"
+		],
+		"id": "dashboard",
+		"title": "Dashboard",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"game"
+						]
+					},
+					"part": "headers"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What the Universe shows first: its newest stories and posts, a page of them, the rest after.",
+		"routes": [
+			"/universe/",
+			"/universe/*"
+		],
+		"id": "universe",
+		"title": "Maia Universe",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"story",
+							"post:inspire"
+						]
+					},
+					"window": {
+						"newest": 20
+					},
+					"files": [
+						"media:still"
+					]
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"story",
+							"post:inspire"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Timelines now; the selected one ($timeline) with its shots and stills on open; its sound from the playhead; proxies by the playhead next; originals ($original) on demand; other timelines idle.",
+		"routes": [
+			"/app/studio/",
+			"/app/studio/*"
+		],
+		"id": "studio",
+		"title": "Studio",
+		"slots": [
+			"timeline",
+			"original"
+		],
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"cut"
+						]
+					},
+					"part": "headers",
+					"files": [
+						"media:still"
+					],
+					"note": "names and covers"
+				},
+				{
+					"want": {
+						"entry": "$timeline"
+					},
+					"follow": 2,
+					"note": "shots, clips and cut points"
+				},
+				{
+					"want": {
+						"entry": "$timeline"
+					},
+					"follow": 2,
+					"part": "files",
+					"files": [
+						"media:still"
+					],
+					"note": "one still per shot"
+				},
+				{
+					"want": {
+						"entry": "$timeline"
+					},
+					"follow": 2,
+					"part": "files",
+					"files": [
+						"audio/"
+					],
+					"by": "playhead",
+					"note": "sound from the playhead"
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"entry": "$timeline"
+					},
+					"follow": 2,
+					"part": "files",
+					"files": [
+						"media:proxy"
+					],
+					"by": "playhead"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"entry": "$original"
+					},
+					"part": "files",
+					"files": [
+						"media:original"
+					],
+					"note": "export or full quality only"
+				}
+			],
+			"idle": [
+				{
+					"want": {
+						"type": [
+							"cut"
+						]
+					},
+					"follow": 2,
+					"part": "files",
+					"files": [
+						"media:still"
+					]
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "My room list now; the open room ($room) on open, newest messages first; the five most recent other rooms next; its pictures by the viewport later; older history idle.",
+		"routes": [
+			"/app/chat/",
+			"/app/chat/*",
+			"/app/#chat"
+		],
+		"id": "chat",
+		"title": "Chat",
+		"slots": [
+			"room"
+		],
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"room"
+						],
+						"vault": "*"
+					},
+					"part": "headers",
+					"note": "names, members, last line, unread"
+				},
+				{
+					"want": {
+						"entry": "$room"
+					},
+					"window": {
+						"newest": 50
+					},
+					"note": "the newest 50 messages and their senders"
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"type": [
+							"room"
+						],
+						"vault": "*"
+					},
+					"window": {
+						"newest": 5
+					},
+					"note": "the newest messages of the five most recent rooms"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"entry": "$room"
+					},
+					"part": "files",
+					"files": [
+						"media:still",
+						"media:preview"
+					],
+					"by": "viewport"
+				},
+				{
+					"want": {
+						"entry": "$room"
+					},
+					"part": "files",
+					"files": [
+						"media:original"
+					],
+					"by": "viewport"
+				}
+			],
+			"idle": [
+				{
+					"want": {
+						"entry": "$room"
+					},
+					"window": {
+						"oldest": true
+					},
+					"note": "the open room back in time"
+				},
+				{
+					"want": {
+						"type": [
+							"room"
+						],
+						"vault": "*"
+					},
+					"note": "then every room"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "The library list now; the selected asset ($asset) with what it pins on select; its neighbours by list position next; its older versions later.",
+		"routes": [
+			"/app/models/",
+			"/app/actors/",
+			"/app/machines/",
+			"/app/plants/",
+			"/app/biomes/",
+			"/app/buildings/",
+			"/app/worlds/*",
+			"/app/assets/*",
+			"/app/#assets"
+		],
+		"id": "assets",
+		"title": "Game Assets",
+		"slots": [
+			"asset"
+		],
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"recipe"
+						]
+					},
+					"part": "headers",
+					"files": [
+						"media:still"
+					],
+					"note": "name, kind, versions, thumbnail"
+				},
+				{
+					"want": {
+						"entry": "$asset"
+					},
+					"follow": 2,
+					"note": "card, recipe and what it pins"
+				},
+				{
+					"want": {
+						"entry": "$asset"
+					},
+					"part": "files",
+					"note": "its own files: the model the viewer shows"
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"type": [
+							"recipe"
+						]
+					},
+					"by": "list",
+					"note": "the neighbours of the selected one first"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"entry": "$asset"
+					},
+					"window": {
+						"oldest": true
+					},
+					"note": "older versions and variants"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Sparks lists: the headers of its note, artifact entries now, them whole later.",
+		"routes": [
+			"/app/#sparks"
+		],
+		"id": "page-sparks",
+		"title": "Sparks",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"note",
+							"artifact"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"note",
+							"artifact"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Artifacts lists: the headers of its artifact entries now, them whole later.",
+		"routes": [
+			"/app/#artifacts"
+		],
+		"id": "page-artifacts",
+		"title": "Artifacts",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"artifact"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"artifact"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Todos lists: the headers of its todo entries now, them whole later.",
+		"routes": [
+			"/app/#todos"
+		],
+		"id": "page-todos",
+		"title": "Todos",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"todo"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"todo"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Stories lists: the headers of its story entries now, them whole later.",
+		"routes": [
+			"/app/#stories"
+		],
+		"id": "page-stories",
+		"title": "Stories",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"story"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"story"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Docs lists: the headers of its story, post entries now, them whole later.",
+		"routes": [
+			"/app/#docs"
+		],
+		"id": "page-docs",
+		"title": "Docs",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"story",
+							"post"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"story",
+							"post"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Library lists: the headers of its file entries now, them whole later.",
+		"routes": [
+			"/app/#library"
+		],
+		"id": "page-library",
+		"title": "Library",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"file"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"file"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Worlds lists: the headers of its game entries now, them whole later.",
+		"routes": [
+			"/app/#worlds"
+		],
+		"id": "page-worlds",
+		"title": "Worlds",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"game"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"game"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Models lists: the headers of its file entries now, them whole later.",
+		"routes": [
+			"/app/#models"
+		],
+		"id": "page-models",
+		"title": "Models",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"file"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"file"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Code lists: the headers of its file entries now, them whole later.",
+		"routes": [
+			"/app/#code"
+		],
+		"id": "page-code",
+		"title": "Code",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"file"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"file"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Query reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/#query"
+		],
+		"id": "page-query",
+		"title": "Query",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Table editor reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/#tables"
+		],
+		"id": "page-tables",
+		"title": "Table editor",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Schemas lists: the headers of its schema entries now, them whole later.",
+		"routes": [
+			"/app/#schemas"
+		],
+		"id": "page-schemas",
+		"title": "Schemas",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"schema"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"schema"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Lenses lists: the headers of its lens entries now, them whole later.",
+		"routes": [
+			"/app/#lenses"
+		],
+		"id": "page-lenses",
+		"title": "Lenses",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"lens"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"lens"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Flows lists: the headers of its flow entries now, them whole later.",
+		"routes": [
+			"/app/#flows"
+		],
+		"id": "page-flows",
+		"title": "Flows",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"flow"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"flow"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Functions lists: the headers of its function entries now, them whole later.",
+		"routes": [
+			"/app/#functions"
+		],
+		"id": "page-functions",
+		"title": "Functions",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"function"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"function"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "History reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/#history"
+		],
+		"id": "page-history",
+		"title": "History",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Jobs lists: the headers of its job entries now, them whole later.",
+		"routes": [
+			"/app/#jobs"
+		],
+		"id": "page-jobs",
+		"title": "Jobs",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"job"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"job"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Performance reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/#performance"
+		],
+		"id": "page-performance",
+		"title": "Performance",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Settings lists: the headers of its capgroup entries now, them whole later.",
+		"routes": [
+			"/app/#settings"
+		],
+		"id": "page-settings",
+		"title": "Settings",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"capgroup"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"capgroup"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Vaults lists: the headers of its capgroup entries now, them whole later.",
+		"routes": [
+			"/app/#vaults"
+		],
+		"id": "page-vaults",
+		"title": "Vaults",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"capgroup"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"capgroup"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Activity reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/#activity"
+		],
+		"id": "page-activity",
+		"title": "Activity",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Proposals lists: the headers of its aip entries now, them whole later.",
+		"routes": [
+			"/app/aips/",
+			"/app/aips/*",
+			"/app/maiacity-v2/proposals/"
+		],
+		"id": "page-aips",
+		"title": "Proposals",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"aip"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"aip"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Postgres reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/postgres/",
+			"/app/#postgres"
+		],
+		"id": "page-postgres",
+		"title": "Postgres",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Coops reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/coops/",
+			"/app/coops/*"
+		],
+		"id": "page-coops",
+		"title": "Coops",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Factories lists: the headers of its recipe entries now, them whole later.",
+		"routes": [
+			"/app/factories/",
+			"/app/factories/*"
+		],
+		"id": "page-factories",
+		"title": "Factories",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"recipe"
+						]
+					},
+					"part": "headers"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"type": [
+							"recipe"
+						]
+					}
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Ledger reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/ledger/",
+			"/app/ledger/*"
+		],
+		"id": "page-ledger",
+		"title": "Ledger",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Network reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/network/",
+			"/app/network/*"
+		],
+		"id": "page-network",
+		"title": "Network",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "avenDB reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/avendb/",
+			"/app/avendb/*"
+		],
+		"id": "page-avendb",
+		"title": "avenDB",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "Probes reads no entries of its own: the kernel alone.",
+		"routes": [
+			"/app/math/probe/",
+			"/app/views/probe/"
+		],
+		"id": "page-probes",
+		"title": "Probes",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Sandbox 1 reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/games/sandbox-1/",
+			"/games/sandbox-1/"
+		],
+		"id": "game-sandbox-1",
+		"title": "Sandbox 1",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-1"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-1"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Sandbox 2 reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/games/sandbox-2/",
+			"/games/sandbox-2/"
+		],
+		"id": "game-sandbox-2",
+		"title": "Sandbox 2",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-2"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-2"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Sandbox 3 reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/games/sandbox-3/",
+			"/games/sandbox-3/"
+		],
+		"id": "game-sandbox-3",
+		"title": "Sandbox 3",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-3"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-3"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Sandbox 4 reads: its config now, the assets its pins name ordered by the camera's distance, then the other recipes.",
+		"routes": [
+			"/app/games/sandbox-4/",
+			"/games/sandbox-4/"
+		],
+		"id": "game-sandbox-4",
+		"title": "Sandbox 4",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-4"
+						]
+					}
+				},
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-4"
+						]
+					},
+					"follow": 2,
+					"by": "camera"
+				}
+			],
+			"idle": [
+				{
+					"want": {
+						"type": [
+							"recipe"
+						]
+					},
+					"part": "headers"
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Sandbox 5 reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/games/sandbox-5/",
+			"/games/sandbox-5/"
+		],
+		"id": "game-sandbox-5",
+		"title": "Sandbox 5",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-5"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-5"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Sandbox 6 reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/games/sandbox-6/",
+			"/games/sandbox-6/"
+		],
+		"id": "game-sandbox-6",
+		"title": "Sandbox 6",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-6"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-6"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What MaiaCity V2 reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/maiacity-v2/",
+			"/games/maiacity-v2/"
+		],
+		"id": "game-maiacity-v2",
+		"title": "MaiaCity V2",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:maiacity-v2"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:maiacity-v2"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What MaiaCity V1 reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/maiacity-v1/",
+			"/games/maiacity-v1/"
+		],
+		"id": "game-maiacity-v1",
+		"title": "MaiaCity V1",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:maiacity-v1"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:maiacity-v1"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What The tired land reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/worlds/tired-land/",
+			"/games/tired-land/"
+		],
+		"id": "game-tired-land",
+		"title": "The tired land",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:tired-land"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:tired-land"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Sandbox 7 reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/games/sandbox-7/",
+			"/games/sandbox-7/"
+		],
+		"id": "game-sandbox-7",
+		"title": "Sandbox 7",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-7"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-7"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	},
+	{
+		"kind": "manifest",
+		"v": 2,
+		"note": "What Sandbox 8 reads: its views, logic and settings now, the worlds and recipes they name next.",
+		"routes": [
+			"/app/games/sandbox-8/",
+			"/games/sandbox-8/"
+		],
+		"id": "game-sandbox-8",
+		"title": "Sandbox 8",
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-8"
+						]
+					}
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"tags": [
+							"game:sandbox-8"
+						]
+					},
+					"follow": 2
+				}
+			]
+		}
+	}
+]

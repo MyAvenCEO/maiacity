@@ -2,11 +2,12 @@ import { localFileEntries } from './file-entries.js';
 import { MAIA_CITY } from './anchor.js';
 import { TIERS, atMost, normalizeDiscovery, rank, schedule } from './interest.js';
 /**
- * MANIFESTS v2: WHAT A PAGE WANTS, IN TIERS (step P3 of sync v2; Lean avendb/spec/AvenDB/Interest.lean `Tree`). A
- * manifest is an entry of the Maia City vault, of type `manifest`, changed only by AIP like every vault entry. It is a
- * tree of Interests in four tiers: what the screen shows `now`, what the person will open `next`, the `later` rest of
- * the screen's data, and the `idle` rest the device keeps offline. A part is another manifest, held at the tier it
- * sits in (its parts never come above it: `flatten_never_raises`), or one Interest:
+ * ACTORS: WHAT AN APP IS AND WHAT IT LOADS, IN TIERS (task M of the one query engine, Samuel 2026-10-27: "Actor" means
+ * one thing everywhere, a self-contained, addressable, self-describing entry; an app is an actor). An actor is an entry
+ * of the Maia City vault, changed only by AIP like every vault entry. Its `loads` is a tree of Interests in four tiers
+ * (Lean avendb/spec/AvenDB/Interest.lean `Tree`): what the screen shows `now`, what the person will open `next`, the
+ * `later` rest of the screen's data, and the `idle` rest the device keeps offline. A part is another actor, held at the
+ * tier it sits in (its parts never come above it: `flatten_never_raises`), or one Interest:
  *
  *   { want: { type?, tags?, entry?, vault? },   the cap selector grammar shares use; `entry` may be a slot (`$room`)
  *     part?: 'headers' | 'record' | 'files',     what of it: rows alone, the entry, or its files
@@ -17,21 +18,38 @@ import { TIERS, atMost, normalizeDiscovery, rank, schedule } from './interest.js
  *
  * Slots (`$room`, `$timeline`, `$asset`, `$original`) are bound by the route or the selection (./device.js
  * `bindView`); a slot no one bound wants nothing, never the whole vault (`unbound_slot_wants_nothing`). Nothing is
- * hardcoded per app: a page asks for its path, and the manifests that name it say what comes in which tier. A v1
- * manifest (`priority` + `parts`) still reads, its parts at `now` (high, medium) or `later` (low).
+ * hardcoded per app: a page asks for its path, and the actors that name it say what comes in which tier.
+ *
+ * "Actor, v3" is "Manifest, v2" evolved, one schema in three versions joined by lenses: the same entries, ids and
+ * history, each moved by one v3 write (scripts/propose-actors.mjs). v3 renames the kind (`manifest` to `actor`) and
+ * `tiers` to `loads`, a held part `{ manifest }` to `{ actor }`, and adds the actor's `interface`, `needs` (caps) and
+ * `code` (pins), empty for a data-only actor. Until the vault holds v3, a v2 manifest (or a v1 one) still reads here,
+ * lifted (`lift`). The entries keep the entry type `manifest` (`ACTOR_TYPE`): a type is fixed at create, and one type
+ * keeps one catalog query.
  */
 
-/** The title of the Maia City vault's own schema of a manifest. */
+/** The entry type of an actor: the 15 entries AIP-38 made keep it, so every device finds actors by one selector. */
+export const ACTOR_TYPE = 'manifest';
+
+/** The title of the Maia City vault's own schema of an actor. */
+export const ACTOR_SCHEMA = 'Actor, v3';
+/** The title of the version it evolves from, and of the lens between them. */
 export const MANIFEST_SCHEMA = 'Manifest, v2';
+export const ACTOR_LENS = 'Manifest, v2 to Actor, v3';
+/** The title of v1, joined to v2 by its own lens (AIP-38 moved every manifest to v2). */
+export const MANIFEST_V1_SCHEMA = 'Manifest, v1';
+export const MANIFEST_LENS = 'Manifest, v1 to v2';
 
 const ID = '^[a-z0-9][a-z0-9-]*$';
 const HEX = /^[0-9a-f]{64}$/;
 const SLOT = /^\$([a-z][a-z0-9-]*)$/;
 
-const PART = {
+/** A part of an actor's `loads` (`held` names the field that holds another actor: `actor` in v3, `manifest` in v2). */
+/** @param {string} held */
+const part = (held) => ({
 	type: 'object',
 	properties: {
-		manifest: { type: 'string', maxLength: 64, pattern: ID },
+		[held]: { type: 'string', maxLength: 64, pattern: ID },
 		want: {
 			type: 'object',
 			properties: {
@@ -51,57 +69,88 @@ const PART = {
 		by: { enum: ['viewport', 'playhead', 'camera', 'list'] },
 		note: { type: 'string', maxLength: 400 }
 	}
+});
+
+/** Four tiers of parts. @param {string} held */
+const tiers = (held) => ({
+	type: 'object',
+	properties: Object.fromEntries(TIERS.map((t) => [t, { type: 'array', maxItems: 64, items: part(held), default: [] }]))
+});
+
+/** What every version holds alike: its id, title, note, the routes it is for and the slots it reads. */
+const COMMON = {
+	id: { type: 'string', maxLength: 64, pattern: ID },
+	title: { type: 'string', maxLength: 160 },
+	note: { type: 'string', maxLength: 2000, default: '' },
+	routes: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 200 }, default: [] },
+	slots: { type: 'array', maxItems: 8, items: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' }, default: [] }
 };
 
-/** The schema of a manifest, v2: its id, title, the routes it is for, the slots it reads, and its tiers. */
+/** The schema of a manifest, v2 (AIP-38), as the vault holds it: the version "Actor, v3" evolves from. */
 export const MANIFEST_V2 = JSON.stringify({
 	$schema: 'https://json-schema.org/draft/2020-12/schema',
 	title: MANIFEST_SCHEMA,
 	type: 'object',
-	properties: {
-		kind: { const: 'manifest' },
-		v: { const: 2 },
-		id: { type: 'string', maxLength: 64, pattern: ID },
-		title: { type: 'string', maxLength: 160 },
-		note: { type: 'string', maxLength: 2000, default: '' },
-		routes: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 200 }, default: [] },
-		slots: { type: 'array', maxItems: 8, items: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' }, default: [] },
-		tiers: {
-			type: 'object',
-			properties: Object.fromEntries(TIERS.map((t) => [t, { type: 'array', maxItems: 64, items: PART, default: [] }]))
-		}
-	},
+	properties: { kind: { const: 'manifest' }, v: { const: 2 }, ...COMMON, tiers: tiers('manifest') },
 	required: ['kind', 'v', 'id', 'title', 'tiers']
 });
 
 /**
- * @typedef {{type?: string[], tags?: string[], entry?: string, vault?: string}} Want
- * @typedef {{manifest?: string, want?: Want, part?: string, files?: string[], window?: {newest?: number, oldest?: boolean}, follow?: number, by?: string}} Part
- * @typedef {{kind: string, id: string, v?: number, title?: string, note?: string, routes?: string[], slots?: string[], tiers?: Record<string, Part[]>, priority?: string, parts?: any[]}} Manifest
- * @typedef {{tier: string, part: Part, want: Want, manifest: string}} Leaf
- * @typedef {{run: (op: Record<string, unknown>) => Promise<any>}} ManifestDevice
+ * The schema of an actor, v3: v2's fields with `loads` for `tiers`, and the actor's own interface (the methods and
+ * events it answers, empty until query and mutation entries land: task A2), the caps it needs and the code it pins.
+ * Self-contained: nothing about an actor lives outside its entry.
  */
-
-/** The title of v1, the schema the lens joins to v2. */
-export const MANIFEST_V1_SCHEMA = 'Manifest, v1';
-/** The title of the lens from v1 to v2. */
-export const MANIFEST_LENS = 'Manifest, v1 to v2';
+export const ACTOR_V3 = JSON.stringify({
+	$schema: 'https://json-schema.org/draft/2020-12/schema',
+	title: ACTOR_SCHEMA,
+	type: 'object',
+	properties: {
+		kind: { const: 'actor' },
+		v: { const: 3 },
+		...COMMON,
+		interface: { type: 'object', default: {} },
+		needs: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 200 }, default: [] },
+		code: {
+			type: 'array',
+			maxItems: 16,
+			items: { type: 'object', properties: { entry: { type: 'string', pattern: '^[0-9a-f]{64}$' }, at: { type: 'array', items: { type: 'string' } } } },
+			default: []
+		},
+		loads: tiers('actor')
+	},
+	required: ['kind', 'v', 'id', 'title', 'loads']
+});
 
 /**
- * The lens from v1 (schema id `from`) to v2 (`to`), so the vault's manifests are one schema in two versions, as a
- * story's are: v1 gains slots, and its priority and parts give way to v and tiers, both written by the one write that
- * moves a manifest to v2 (a v1 one opens in v2 with empty tiers, and in v1 a moved one with no parts). The parts carry
- * over by that write, not by the lens: a lens maps fields, and a list of parts into four tiers is no field's map.
+ * @typedef {{type?: string[], tags?: string[], entry?: string, vault?: string}} Want
+ * @typedef {{actor?: string, manifest?: string, want?: Want, part?: string, files?: string[], window?: {newest?: number, oldest?: boolean}, follow?: number, by?: string}} Part
+ * @typedef {{kind: string, id: string, v?: number, title?: string, note?: string, routes?: string[], slots?: string[], interface?: object, needs?: string[], code?: any[], loads?: Record<string, Part[]>, tiers?: Record<string, Part[]>, priority?: string, parts?: any[]}} Actor
+ * @typedef {{tier: string, part: Part, want: Want, actor: string}} Leaf
+ * @typedef {{run: (op: Record<string, unknown>) => Promise<any>}} ActorDevice
+ */
+
+/** No parts in any tier: what a lens gives the version it adds a list of tiers to. */
+const EMPTY = Object.freeze({ now: [], next: [], later: [], idle: [] });
+
+/**
+ * The lens from v2 (schema id `from`) to v3 (`to`): the kind `manifest` reads as `actor` and `v` 2 as 3 (a convert may
+ * name one field on both sides: task K, `lens::Lane::fits` takes the two kinds as one kin once this lens joins them),
+ * and the fields v3 adds read empty. As with v1 to v2, `tiers` give way to `loads` by the one write that moves an actor
+ * to v3 (a v2 one opens in v3 with empty loads, and in v2 a moved one with empty tiers): a lens maps fields, and
+ * renaming the part that holds another actor inside every tier is no field's map.
  * @param {string} from @param {string} to
  */
-export const manifestLens = (from, to) => JSON.stringify({
-	lens: MANIFEST_LENS,
+export const actorLens = (from, to) => JSON.stringify({
+	lens: ACTOR_LENS,
 	from,
 	to,
 	steps: [
-		{ add: 'slots' },
-		{ convert: { from: ['priority', 'parts'], to: ['v', 'tiers'],
-			forward: [[{}, { v: 2, tiers: { now: [], next: [], later: [], idle: [] } }]], backward: [[{}, { parts: [] }]] } }
+		{ convert: { from: ['kind'], to: ['kind'], forward: [[{ kind: 'manifest' }, { kind: 'actor' }]], backward: [[{ kind: 'actor' }, { kind: 'manifest' }]] } },
+		{ convert: { from: ['v'], to: ['v'], forward: [[{ v: 2 }, { v: 3 }]], backward: [[{ v: 3 }, { v: 2 }]] } },
+		{ convert: { from: ['tiers'], to: ['loads'], forward: [[{}, { loads: EMPTY }]], backward: [[{}, { tiers: EMPTY }]] } },
+		{ add: 'interface' },
+		{ add: 'needs' },
+		{ add: 'code' }
 	]
 });
 
@@ -110,49 +159,80 @@ export const manifestLens = (from, to) => JSON.stringify({
 export const covers = (route, path) =>
 	route === '*' || (route.endsWith('*') ? path.startsWith(route.slice(0, -1)) : route === path);
 
-/** A v1 manifest read as v2: high and medium parts on screen now, low later. @param {Manifest} m @returns {Manifest} */
-export function lift(m) {
-	if (m?.v === 2 || !Array.isArray(m?.parts)) return m;
-	const tier = m.priority === 'low' ? 'later' : 'now';
-	/** @type {(p: any) => Part[]} */
-	const one = (p) => {
-		if (typeof p?.manifest === 'string') return [{ manifest: p.manifest }];
-		if (p?.entry) return [{ want: { entry: p.entry }, ...(p.follow ? { follow: p.follow } : {}) }];
-		if (p?.query) return [{ want: { ...(p.query.type ? { type: p.query.type } : {}), ...(p.query.tags ? { tags: p.query.tags } : {}) },
-			...(p.limit ? { window: { newest: p.limit } } : {}), ...(p.follow ? { follow: p.follow } : {}) }];
-		return [];
-	};
-	const parts = m.parts.flatMap(one);
-	return { kind: 'manifest', v: 2, id: m.id, title: m.title, routes: m.routes ?? [], tiers: { [tier]: parts } };
-}
+/** A v1 part as v2's. @param {any} p @returns {Part[]} */
+const v1Part = (p) => {
+	if (typeof p?.manifest === 'string') return [{ manifest: p.manifest }];
+	if (p?.entry) return [{ want: { entry: p.entry }, ...(p.follow ? { follow: p.follow } : {}) }];
+	if (p?.query) return [{ want: { ...(p.query.type ? { type: p.query.type } : {}), ...(p.query.tags ? { tags: p.query.tags } : {}) },
+		...(p.limit ? { window: { newest: p.limit } } : {}), ...(p.follow ? { follow: p.follow } : {}) }];
+	return [];
+};
+
+/** A v2 part as v3's: the actor it holds named `actor`, everything else as it was. @param {Part} p @returns {Part} */
+const v2Part = (p) => {
+	if (typeof p?.manifest !== 'string') return p;
+	const { manifest, ...rest } = p;
+	return { actor: manifest, ...rest };
+};
 
 /**
- * The Interests the manifests `all` declare for path `path`, slots bound by `env` (`{ room: <entry>, … }`): each
- * manifest whose routes cover the path, and each it holds, once however many hold it (a cycle ends where it comes
+ * Any version read as v3 (the write `scripts/propose-actors.mjs` makes, and what the lens gives the fields it maps): a
+ * v1 manifest's high and medium parts on screen now, its low ones later; a v2 manifest's tiers as loads; a record that
+ * holds loads, an actor whatever kind or version it still stores. A v3 actor, or anything else, as it is.
+ * @param {Actor} m @returns {Actor}
+ */
+export function lift(m) {
+	if (!m || typeof m !== 'object' || (m.kind === 'actor' && m.v === 3)) return m;
+	if (m.kind !== 'manifest' && m.kind !== 'actor') return m;
+	// moved by its v3 write: what a lens edit keeps of the stored kind or version, the loads say it is an actor
+	if (m.loads && typeof m.loads === 'object') {
+		const { tiers: _, ...rest } = m;
+		return { ...rest, kind: 'actor', v: 3 };
+	}
+	/** @type {Record<string, Part[]>} */
+	let parts;
+	const held = m.tiers ?? {};
+	if (m.v === 2) parts = Object.fromEntries(TIERS.filter((t) => Array.isArray(held[t])).map((t) => [t, held[t]]));
+	else if (Array.isArray(m.parts)) parts = { [m.priority === 'low' ? 'later' : 'now']: m.parts.flatMap(v1Part) };
+	else return m;
+	const loads = Object.fromEntries(Object.entries(parts).map(([t, ps]) => [t, ps.map(v2Part)]));
+	return {
+		kind: 'actor', v: 3, id: m.id, title: m.title, note: m.note ?? '', routes: m.routes ?? [], slots: m.slots ?? [],
+		interface: {}, needs: [], code: [], loads
+	};
+}
+
+/** The actor part `p` holds, by its v3 name or its v2 one. @param {Part} p */
+const heldBy = (p) => (typeof p?.actor === 'string' ? p.actor : typeof p?.manifest === 'string' ? p.manifest : undefined);
+
+/**
+ * The Interests the actors `all` load for path `path`, slots bound by `env` (`{ room: <entry>, … }`): each actor
+ * whose routes cover the path, and each it holds, once however many hold it (a cycle ends where it comes
  * round), its parts at the lower of their own tier and the tier they are held at (Lean `flatten`). A part whose slot
  * is unbound is left out. In tier order, then in the order declared.
- * @param {Manifest[]} all @param {string} path @param {Record<string, string | undefined>} [env] @returns {Leaf[]}
+ * @param {Actor[]} all @param {string} path @param {Record<string, string | undefined>} [env] @returns {Leaf[]}
  */
 export function leavesFor(all, path, env = {}) {
-	const byId = new Map((all ?? []).map(lift).filter((m) => m?.kind === 'manifest' && typeof m.id === 'string').map((m) => [m.id, m]));
+	const byId = new Map((all ?? []).map(lift).filter((m) => m?.kind === 'actor' && typeof m.id === 'string').map((m) => [m.id, m]));
 	/** @type {Leaf[]} */
 	const out = [];
-	/** each manifest walked, at the highest tier it was held at: a lower holding adds nothing */
+	/** each actor walked, at the highest tier it was held at: a lower holding adds nothing */
 	const seen = new Map();
-	/** @param {Manifest} m @param {string} cap */
+	/** @param {Actor} m @param {string} cap */
 	const walk = (m, cap) => {
 		if ((seen.get(m.id) ?? TIERS.length) <= rank(cap)) return;
 		seen.set(m.id, rank(cap));
 		for (const tier of TIERS) {
-			for (const p of Array.isArray(m.tiers?.[tier]) ? m.tiers[tier] : []) {
+			for (const p of Array.isArray(m.loads?.[tier]) ? m.loads[tier] : []) {
 				const at = atMost(cap, tier);
-				if (typeof p?.manifest === 'string') {
-					const held = byId.get(p.manifest);
+				const by = heldBy(p);
+				if (by !== undefined) {
+					const held = byId.get(by);
 					if (held) walk(held, at);
 					continue;
 				}
 				const want = resolve(p?.want, env);
-				if (want) out.push({ tier: at, part: p, want, manifest: m.id });
+				if (want) out.push({ tier: at, part: p, want, actor: m.id });
 			}
 		}
 	};
@@ -224,13 +304,14 @@ const rootsOf = (record) => [...JSON.stringify(record ?? {}).matchAll(/aven:([a-
 const fileFits = (file, files) =>
 	!files?.length || files.some((f) => (f.endsWith('/') ? (file.files ?? []).some((/** @type {any} */ x) => String(x.media ?? '').startsWith(f)) : (file.tags ?? []).includes(f)));
 
-/** The manifests device `d` holds of vault `vault`: verified local records, which it syncs from peers in the background. */
-/** @param {ManifestDevice | undefined} d @param {{vault?: string, signal?: AbortSignal}} [o] @returns {Promise<Manifest[]>} */
-export async function manifestsOf(d, { vault = MAIA_CITY, signal } = {}) {
+/** The actors device `d` holds of vault `vault`, as stored (any version): verified local records, which it syncs from
+ *  peers in the background. */
+/** @param {ActorDevice | undefined} d @param {{vault?: string, signal?: AbortSignal}} [o] @returns {Promise<Actor[]>} */
+export async function actorsOf(d, { vault = MAIA_CITY, signal } = {}) {
 	signal?.throwIfAborted();
 	if (!d) return [];
 	try {
-		const got = await d.run({ op: 'query', vault, where: { type: ['manifest'] } });
+		const got = await d.run({ op: 'query', vault, where: { type: [ACTOR_TYPE] } });
 		signal?.throwIfAborted();
 		return (got?.ok?.rows ?? []).map((/** @type {any} */ r) => r.record).filter(Boolean);
 	} catch {
@@ -246,7 +327,7 @@ export async function manifestsOf(d, { vault = MAIA_CITY, signal } = {}) {
  * so the node finds from peers what this device holds nothing of yet. `publish` gets the wants so far after each leaf,
  * so what is on screen goes out before the slower walks of the lower tiers.
  * @param {Leaf[]} leaves
- * @param {{ device?: ManifestDevice, vault?: string, signals?: Record<string, (entry: string) => number>, signal?: AbortSignal, publish?: (wants: any[]) => unknown }} o
+ * @param {{ device?: ActorDevice, vault?: string, signals?: Record<string, (entry: string) => number>, signal?: AbortSignal, publish?: (wants: any[]) => unknown }} o
  */
 export async function plan(leaves, { device: d, vault = MAIA_CITY, signals = {}, signal, publish = () => {} }) {
 	/** @type {{entry: string, tier: string, dist: number}[]} */
@@ -306,7 +387,7 @@ const distance = (by, entry) => {
 };
 
 /** The entries device `d` holds that want `want` asks for, of vault `vault` (any where none), newest first, in `window`. */
-/** @param {ManifestDevice} d @param {Want} want @param {string | undefined} vault @param {Part['window']} window @param {AbortSignal | undefined} signal */
+/** @param {ActorDevice} d @param {Want} want @param {string | undefined} vault @param {Part['window']} window @param {AbortSignal | undefined} signal */
 async function rowsOf(d, want, vault, window, signal) {
 	const terms = [...(want.type?.length ? [{ type: want.type }] : []), ...(want.tags ?? []).map((tag) => ({ tag }))];
 	const where = terms.length === 1 ? terms[0] : { all: terms };
@@ -322,7 +403,7 @@ async function rowsOf(d, want, vault, window, signal) {
 }
 
 /** What the records of entries `ids` name, `depth` levels deep, as device `d` holds them now. */
-/** @param {ManifestDevice} d @param {string[]} ids @param {number} depth @param {AbortSignal | undefined} signal */
+/** @param {ActorDevice} d @param {string[]} ids @param {number} depth @param {AbortSignal | undefined} signal */
 async function follow(d, ids, depth, signal) {
 	const seen = new Set(ids);
 	const out = [];
@@ -342,7 +423,7 @@ async function follow(d, ids, depth, signal) {
 	return out;
 }
 
-/** @param {ManifestDevice} d @param {string} entry @param {AbortSignal | undefined} signal */
+/** @param {ActorDevice} d @param {string} entry @param {AbortSignal | undefined} signal */
 async function recordOf(d, entry, signal) {
 	try {
 		const got = await d.run({ op: 'get', entry });
@@ -358,7 +439,7 @@ async function recordOf(d, entry, signal) {
  * The file entries the records of `ids` name by their roots, and of `ids` those that are files, that are `files`
  * (the app's tags: media:still, media:proxy, media:original; or a media type such as `audio/`). One local file
  * inventory a walk.
- * @param {ManifestDevice} d @param {string[]} ids @param {string[] | undefined} files @param {{files?: any[]}} inventory @param {AbortSignal | undefined} signal
+ * @param {ActorDevice} d @param {string[]} ids @param {string[] | undefined} files @param {{files?: any[]}} inventory @param {AbortSignal | undefined} signal
  */
 async function filesOf(d, ids, files, inventory, signal) {
 	const roots = new Set();
