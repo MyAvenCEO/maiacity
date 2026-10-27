@@ -3462,7 +3462,7 @@ impl Shared {
         let differing = self.differ(peer.device).await;
         let mut left = self.claims.lock().expect("claims").take(endpoint, differing);
         let _claimed = Claimed { shared: self, endpoint };
-        let (mut new, mut keys, mut stage) = (0, BTreeSet::new(), Stage::Manifests);
+        let (mut new, mut keys, mut stage) = (0, BTreeSet::new(), AskingStage::Manifests);
         // a new device's views ask by selectors before they know an entry: the first asking waits a moment for what
         // peers name for them, Maia City's manifests first, else it would take every log at once and the views theirs
         // only at its end; a catch-up of a few logs asks for them at once
@@ -3700,7 +3700,7 @@ const LONG_TURN: Duration = Duration::from_millis(16);
 
 /// Which asking of a connection's comes next (`next_asking`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Stage {
+enum AskingStage {
     /// Maia City's manifests the views asked for: they say what each page wants, so they decide what comes first.
     Manifests,
     /// What the open views want now.
@@ -3722,25 +3722,25 @@ const FIRST_FINDS_LOGS: usize = 64;
 /// every vault's and share's log not asked yet, which say who may do what and are few, at most `VIEW_LOGS`; else, and
 /// then, every log left, in one asking. None once `left` is empty. Not every audience's log: those hold the keys and
 /// their wraps, most of a vault's edits (2026-10-27, with them in the first asking an iPhone's views never opened).
-fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut Stage) -> BTreeSet<LogId> {
+fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> BTreeSet<LogId> {
     let rules = |left: &BTreeSet<LogId>| left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_))).copied().collect::<Vec<_>>();
     let mut next = BTreeSet::new();
-    if *stage == Stage::Manifests {
-        *stage = Stage::Views;
+    if *stage == AskingStage::Manifests {
+        *stage = AskingStage::Views;
         let first: Vec<LogId> = manifests.iter().filter(|l| left.contains(l)).copied().collect();
         if !first.is_empty() {
             next = first.into_iter().chain(rules(left)).take(VIEW_LOGS).collect();
         }
     }
-    if next.is_empty() && *stage == Stage::Views {
-        *stage = Stage::Rest;
+    if next.is_empty() && *stage == AskingStage::Views {
+        *stage = AskingStage::Rest;
         let viewed: Vec<LogId> = active.iter().chain(wanted).filter(|l| left.contains(l)).copied().collect();
         if !viewed.is_empty() {
             next = viewed.into_iter().chain(rules(left)).take(VIEW_LOGS).collect();
         }
     }
     if next.is_empty() {
-        *stage = Stage::Rest;
+        *stage = AskingStage::Rest;
         next = std::mem::take(left);
     }
     left.retain(|l| !next.contains(l));
@@ -3852,7 +3852,7 @@ mod tests {
         left.extend([LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32])), LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]))]);
         let (wanted, view) = ([entry(1)].into(), [entry(99), entry(4)]);
         // the view's logs left and the old wants, with the vaults' and shares' logs; a log it doesn't lack isn't asked
-        let mut stage = Stage::Manifests;
+        let mut stage = AskingStage::Manifests;
         let none = BTreeSet::new();
         let first = next_asking(&mut left, &wanted, &view, &none, &mut stage);
         let audience = LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]));
@@ -3872,7 +3872,7 @@ mod tests {
         left.extend([vault, share, audience]);
         // entry 5 and 6 are manifests (6 held already: not left), entry 2 and 3 the view's rooms
         let (manifests, view) = ([entry(5), entry(60)].into(), [entry(2), entry(3), entry(5)]);
-        let mut stage = Stage::Manifests;
+        let mut stage = AskingStage::Manifests;
         let first = next_asking(&mut left, &BTreeSet::new(), &view, &manifests, &mut stage);
         assert_eq!(first, [entry(5), vault, share].into(), "the manifests first, with who may do what");
         let views = next_asking(&mut left, &BTreeSet::new(), &view, &manifests, &mut stage);
@@ -3882,7 +3882,7 @@ mod tests {
         assert!(left.is_empty());
         // no manifest named yet: the views first, as before
         let mut left: BTreeSet<LogId> = (1..=3).map(entry).collect();
-        let mut stage = Stage::Manifests;
+        let mut stage = AskingStage::Manifests;
         assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[entry(2)], &BTreeSet::new(), &mut stage), [entry(2)].into());
         assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[entry(2)], &BTreeSet::new(), &mut stage), [entry(1), entry(3)].into());
     }
@@ -3893,7 +3893,7 @@ mod tests {
         let mut left: BTreeSet<LogId> = (1..=300).map(|i| entry(i as u8)).collect();
         left.insert(LogId::Vault(VaultId([9; 32])));
         let all = left.clone();
-        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[], &BTreeSet::new(), &mut Stage::Manifests), all);
+        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[], &BTreeSet::new(), &mut AskingStage::Manifests), all);
     }
 
     #[test]
