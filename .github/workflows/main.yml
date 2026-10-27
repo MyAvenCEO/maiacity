@@ -1,6 +1,8 @@
 name: Validate and release
 
-# Each required suite runs once on the actual main commit. Calls never trust a PR result or a cache as validation.
+# Each required suite runs once on the actual main commit's files. Calls never trust a cache as validation. A suite runs
+# again here unless the merged pull request's own run of it passed on byte-for-byte these files (scripts/ci/reuse.mjs:
+# same tree, a head that holds main's parent, the latest run of that workflow green); then the release does not wait.
 on:
   push:
     branches: [main]
@@ -15,6 +17,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       full_validation: ${{ steps.paths.outputs.full_validation }}
@@ -26,6 +29,8 @@ jobs:
       infra: ${{ steps.paths.outputs.infra }}
       browser: ${{ steps.paths.outputs.browser }}
       protocol: ${{ steps.paths.outputs.protocol }}
+      reuse_kernel: ${{ steps.paths.outputs.reuse_kernel }}
+      reuse_avendb: ${{ steps.paths.outputs.reuse_avendb }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: oven-sh/setup-bun@v2.2.0
@@ -40,6 +45,7 @@ jobs:
           CI_BASE=$(bun scripts/ci/release-base.mjs)
           export CI_BASE
           bun scripts/ci/impact.mjs
+          bun scripts/ci/reuse.mjs
   site-build:
     needs: impact
     if: needs.impact.outputs.site == 'true'
@@ -66,7 +72,7 @@ jobs:
       component: avendb
   kernel:
     needs: impact
-    if: needs.impact.outputs.site == 'true'
+    if: needs.impact.outputs.site == 'true' && needs.impact.outputs.reuse_kernel != 'true'
     uses: ./.github/workflows/kernel.yml
     with:
       full: ${{ needs.impact.outputs.full_validation == 'true' }}
@@ -76,7 +82,7 @@ jobs:
     uses: ./.github/workflows/api-tests.yml
   avendb:
     needs: impact
-    if: needs.impact.outputs.avendb == 'true' || needs.impact.outputs.server == 'true' || needs.impact.outputs.agent == 'true'
+    if: (needs.impact.outputs.avendb == 'true' || needs.impact.outputs.server == 'true' || needs.impact.outputs.agent == 'true') && needs.impact.outputs.reuse_avendb != 'true'
     uses: ./.github/workflows/avendb-checks.yml
     with:
       full: ${{ needs.impact.outputs.full_validation == 'true' }}
@@ -88,7 +94,7 @@ jobs:
     uses: ./.github/workflows/delivery-checks.yml
   site:
     needs: [impact, kernel, site-build]
-    if: needs.impact.outputs.site == 'true'
+    if: ${{ !cancelled() && needs.impact.outputs.site == 'true' && needs.site-build.result == 'success' && (needs.kernel.result == 'success' || (needs.kernel.result == 'skipped' && needs.impact.outputs.reuse_kernel == 'true')) }}
     uses: ./.github/workflows/deploy.yml
     with:
       validated: true
@@ -96,7 +102,7 @@ jobs:
     secrets: inherit
   api:
     needs: [impact, kernel, api-tests, delivery, api-image]
-    if: ${{ !cancelled() && needs.impact.outputs.api == 'true' && needs.delivery.result == 'success' && needs.api-image.result == 'success' && ((needs.kernel.result == 'success' && needs.api-tests.result == 'skipped') || (needs.impact.outputs.site != 'true' && needs.kernel.result == 'skipped' && needs.api-tests.result == 'success')) }}
+    if: ${{ !cancelled() && needs.impact.outputs.api == 'true' && needs.delivery.result == 'success' && needs.api-image.result == 'success' && ((needs.impact.outputs.site == 'true' && needs.api-tests.result == 'skipped' && (needs.kernel.result == 'success' || (needs.kernel.result == 'skipped' && needs.impact.outputs.reuse_kernel == 'true'))) || (needs.impact.outputs.site != 'true' && needs.kernel.result == 'skipped' && needs.api-tests.result == 'success')) }}
     permissions:
       contents: write
       packages: write
@@ -108,7 +114,7 @@ jobs:
     secrets: inherit
   server:
     needs: [impact, avendb, delivery, server-image]
-    if: needs.impact.outputs.server == 'true'
+    if: ${{ !cancelled() && needs.impact.outputs.server == 'true' && needs.delivery.result == 'success' && needs.server-image.result == 'success' && (needs.avendb.result == 'success' || (needs.avendb.result == 'skipped' && needs.impact.outputs.reuse_avendb == 'true')) }}
     permissions:
       contents: read
       packages: write
@@ -117,11 +123,15 @@ jobs:
       validated: true
       built_image: ${{ needs.server-image.outputs.image }}
     secrets: inherit
+  # the cloud agent's build (7-13 min) runs as its own workflow, so the release, and the next merge's release queued
+  # behind it, need not wait for it; it builds this very commit and its group keeps only the newest
   agent:
     needs: [impact, avendb]
-    if: needs.impact.outputs.agent == 'true'
+    if: ${{ !cancelled() && needs.impact.outputs.agent == 'true' && (needs.avendb.result == 'success' || (needs.avendb.result == 'skipped' && needs.impact.outputs.reuse_avendb == 'true')) }}
     permissions:
-      contents: write
-    uses: ./.github/workflows/avendb-agent.yml
-    with:
-      validated: true
+      actions: write
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run avendb-agent.yml --repo "$GITHUB_REPOSITORY" --ref main -f sha="$GITHUB_SHA" -f validated=true
