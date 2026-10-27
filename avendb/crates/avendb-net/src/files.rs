@@ -60,6 +60,51 @@ const FILE_IDLE: time::Duration = time::Duration::from_secs(20);
 /// How many of the files the open views show the keeper fetches at once.
 const VIEW_FILES_AT_ONCE: usize = 4;
 
+/// How many of the files a page asked for and its device didn't hold the keeper keeps in mind at once (`Asked`).
+const ASKED_MOST: usize = 32;
+
+/// The files a page read off its device alone (`Node::read_local_file`) while its device didn't hold them: the open
+/// view's, whatever its manifests named, which the keeper fetches first, before it scans its edits for the rest, and
+/// whether or not its device is caught up (2026-10-27: an iPhone's asset viewer read a recipe's file again and again,
+/// "no blob … on the shelf", while its keeper waited for a catch-up that never ended, and the file never came). And what
+/// the keeper did, as the `network` op says it (`Asked::json`).
+#[derive(Default)]
+pub(crate) struct Asked {
+    roots: std::collections::VecDeque<FileRoot>,
+    /// How many files pages asked for in all, how many of those the keeper fetched, and how many it couldn't yet.
+    asked: u64,
+    fetched: u64,
+    failed: u64,
+    /// The files the keeper keeps whole now, those it is to keep, and those no peer handed over yet.
+    kept: usize,
+    due: usize,
+    failing: usize,
+    /// Whether its last scan of its edits waited for its device's catch-up.
+    behind: bool,
+}
+
+impl Asked {
+    /// File `root` was asked for: kept in mind once, the newest `ASKED_MOST`. True if it is new.
+    fn ask(&mut self, root: FileRoot) -> bool {
+        if self.roots.contains(&root) {
+            return false;
+        }
+        self.asked += 1;
+        self.roots.push_back(root);
+        while self.roots.len() > ASKED_MOST {
+            self.roots.pop_front();
+        }
+        true
+    }
+
+    pub(crate) fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "asked": self.asked, "waiting": self.roots.len(), "fetched": self.fetched, "failed": self.failed,
+            "kept": self.kept, "due": self.due, "failing": self.failing, "behind": self.behind,
+        })
+    }
+}
+
 /// How many edits the keeper scans for their files in one turn of the Lab (`Lab::scan_files`).
 pub(crate) const FILE_SCAN_SLICE: usize = 4096;
 
@@ -297,6 +342,21 @@ impl Shared {
             .read(move |lab, me| lab.file(me, &root))
             .await
             .context("no file this device opens")?;
+        let read = self.read_brought(root, brought, range, local).await;
+        // a file its device opens but doesn't hold, read off it alone: the keeper fetches it now (`Asked`)
+        if local && read.is_err() && !self.holds(root).await && self.asked.lock().expect("asked").ask(root) {
+            self.files_asked.notify_one();
+        }
+        read
+    }
+
+    async fn read_brought(
+        self: &Arc<Self>,
+        root: FileRoot,
+        brought: Brought,
+        range: Range<u64>,
+        local: bool,
+    ) -> Result<Vec<u8>> {
         let shape = brought.shape();
         let (from, to) = (range.start.min(shape.len), range.end.min(shape.len));
         if from >= to {
@@ -453,14 +513,34 @@ impl Shared {
         let mut behind = 0;
         loop {
             let Ok(activity) = self.admit() else { return };
+            // the files pages asked for first, whatever its scan below waits for: the open view shows them
+            let asked: Vec<FileRoot> = self.asked.lock().expect("asked").roots.iter().copied().collect();
+            for root in asked {
+                let keeping = self.keep(root, true).await;
+                self.refresh_file(root).await;
+                let mut book = self.asked.lock().expect("asked");
+                match keeping {
+                    Ok(()) => {
+                        kept.insert((root, true));
+                        failing.reached(&root);
+                        book.roots.retain(|r| *r != root);
+                        book.fetched += 1;
+                    }
+                    Err(e) => {
+                        tracing::debug!("avendb: a file a page asked for not fetched yet: {e:#}");
+                        book.failed += 1;
+                    }
+                }
+            }
             let entries = self.interests.lock().expect("interests").entries()
                 .into_iter().filter_map(|log| match log {
                     avendb::sync::LogId::Entry(entry) => Some(entry),
                     _ => None,
                 }).collect::<Vec<_>>();
             let Some((files, whole, demanded)) = self.files_to_keep(keep, entries, &mut behind).await else {
+                self.asked.lock().expect("asked").behind = true;
                 drop(activity);
-                time::timeout(self.opts.retry, size.changed()).await.ok();
+                self.keeper_waits(&mut size).await;
                 continue;
             };
             let mut whole: HashSet<FileRoot> = whole.into_iter().collect();
@@ -504,6 +584,8 @@ impl Shared {
             for (root, whole) in rest {
                 done.push((root, whole, self.keep(root, whole).await));
             }
+            let due = done.len();
+            let mut failed = 0;
             for (root, whole, keeping) in done {
                 self.refresh_file(root).await;
                 match keeping {
@@ -514,12 +596,23 @@ impl Shared {
                     Err(e) => {
                         tracing::debug!("avendb: file {} not kept yet: {e:#}", Hash::from_bytes(root.hash));
                         failing.failed(root, self.opts.retry);
+                        failed += 1;
                     }
                 }
             }
+            {
+                let mut book = self.asked.lock().expect("asked");
+                (book.kept, book.due, book.failing, book.behind) = (kept.len(), due, failed, false);
+            }
             drop(activity);
-            time::timeout(self.opts.retry, size.changed()).await.ok();
+            self.keeper_waits(&mut size).await;
         }
+    }
+
+    /// The keeper waits for its device to change, a page to ask for a file it lacks, or `retry`.
+    async fn keeper_waits(&self, size: &mut tokio::sync::watch::Receiver<(usize, usize)>) {
+        let changed = async { size.changed().await.ok(); };
+        time::timeout(self.opts.retry, n0_future::future::or(changed, self.files_asked.notified())).await.ok();
     }
 
     /// What the keeper keeps (`keeper`): the files its device's edits bring, those to keep whole by `keep` with those
