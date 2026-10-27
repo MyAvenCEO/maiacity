@@ -18,7 +18,7 @@ use std::sync::Mutex;
 use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::lab::Lab;
 
-use crate::shared_index::{SharedIndex, head};
+use crate::shared_index::SharedIndex;
 
 /// A window: its entries, the newest first, each with its creation; how many edits the index was of, how many edits
 /// the log held when the tail after them was read, how many entries that tail named, and how many index rows it read.
@@ -49,7 +49,7 @@ pub(crate) async fn window(
         let (tokens, tail, log_at) = {
             let lab = locked();
             let ids = lab.log(me).ids();
-            if stamp.at as usize > ids.len() || head(&ids[..stamp.at as usize]) != stamp {
+            if ix.of_log(&lab, me) != Some(stamp) {
                 return Ok(None);
             }
             let Some(touched) = lab.shared_touched(me, stamp.at as usize) else { return Ok(None) };
