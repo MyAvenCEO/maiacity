@@ -468,10 +468,15 @@ impl<'a> LogEdits<'a> {
     }
 }
 
-/// The frontier of log `l` among `edits` (`ids[i]` being `edits[i]`'s id): the ids of the edits of its closed part that
-/// no edit of it builds on, smallest first. What an edit made now builds on.
-pub(crate) fn frontier_of(edits: &[Edit], ids: &[EditId], l: LogId) -> Vec<EditId> {
-    LogEdits::new(edits, ids, l).frontier().0
+/// The frontier of the log whose edits are those at `places` among `edits` (`ids[i]` being `edits[i]`'s id, the places
+/// `Log::by_log` keeps of it): the ids of the edits of its closed part that no edit of it builds on, smallest first.
+/// What an edit made now builds on, read in the log's size, not in every edit held.
+pub(crate) fn frontier_at(edits: &[Edit], ids: &[EditId], places: &[usize]) -> Vec<EditId> {
+    let mut log = LogEdits::default();
+    for &at in places {
+        log.by_id.entry(ids[at]).or_insert(&edits[at]);
+    }
+    log.frontier().0
 }
 
 /// The part of log `l` among `edits` whose whole past is held, as ids: what a peer counts in the log's frontier.
