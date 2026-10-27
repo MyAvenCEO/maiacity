@@ -21,6 +21,20 @@ once per batch of 25-50 tasks (repository `CLAUDE.md`). Measured baseline and hi
 So the wins are (1) no CI per task, (2) parallelism across threads (each has its own box), not across helpers in a
 box, (3) a collector that lands branches in seconds, and (4) checks that run only what a task touched.
 
+## Coordinator: how to hand out work (Samuel 2026-10-27)
+
+- **One thread per task, many at once.** Split every ask into small, independent tasks and start one thread for each,
+  all in parallel (25-50 in flight is the target). Each thread has its own 4-core box; helpers inside one box share
+  it and queue on cargo. A big thread with helpers is the slow path.
+- **Disjoint files.** Give each task the files or module it owns, so batches merge without conflicts. Two tasks that
+  must touch the same file go to the same thread, one after the other.
+- **Name the collector up front.** One collector thread per batch, known to every task thread. Task threads report
+  "branch ready" to the coordinator, which routes the branch to the collector; they never merge to main or mark PRs
+  ready.
+- **Cut a batch, don't wait for stragglers.** When 25-50 branches are in, or a few hours have passed, the collector
+  lands what is ready; late tasks go in the next batch.
+- **Exceptions get their own PR at once:** production down, a security fix, or Samuel asks.
+
 ## Task thread: the loop
 
 1. Branch from `origin/main`. Own a clear set of files; say which in your first reply so the coordinator can keep
