@@ -142,6 +142,18 @@ fn measure_unlock_memory() {
         (node, took, perf)
     });
     let (peak, now) = (PEAK.load(Ordering::Relaxed) - h0, held() - h0);
+    // what each part of its store holds: what letting go of it frees, the store of no use after
+    let parts = rt.block_on(node.act(|lab: &mut Lab, me: SignerId| {
+        let mut freed = serde_json::Map::new();
+        for part in ["signed", "blobs", "log", "replay", "latest", "key_index", "keys", "bases", "bodies", "readings",
+            "shown", "answers", "files_at", "slices", "opened_keys", "derived", "covers", "showing"]
+        {
+            let before = held();
+            drop(lab.probe_part(me, part));
+            freed.insert(part.into(), json!((before - held()) / 1_000_000));
+        }
+        serde_json::Value::Object(freed)
+    }));
     let n = held_edits as isize;
     println!("UNLOCK_MEMORY {}", json!({
         "edits": n,
@@ -151,8 +163,9 @@ fn measure_unlock_memory() {
         "peak_per_edit": peak / n,
         "held_per_edit": now / n,
         "counted": perf["held"]["memory"],
+        "parts_mb": parts,
         "counts": perf["counts"],
         "timers": perf["timers"],
     }));
-    rt.block_on(node.shutdown()).expect("it stops");
+    drop(node);
 }
