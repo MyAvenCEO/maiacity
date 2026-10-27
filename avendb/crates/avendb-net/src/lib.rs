@@ -1509,7 +1509,14 @@ impl Node {
     /// caller asks the engine.
     pub async fn window(&self, vault: VaultId, labels: Vec<String>, w: usize) -> Result<Option<query_window::Window>> {
         let Some(index) = &self.shared.shared_index else { return Ok(None) };
-        Ok(query_window::window(index, &self.shared.lab, self.shared.me, vault, &labels, w).await?)
+        Ok(query_window::window(index, &self.shared.lab, self.shared.me, vault, &labels, None, w).await?)
+    }
+
+    /// What window query `op` answers (`engine::window_of`), off its shared index and the tail after it
+    /// (`query_window::answer`), never the log before it; `None` where the index can't say, and the engine answers.
+    pub(crate) async fn windowed(&self, op: &serde_json::Value) -> Option<serde_json::Value> {
+        let index = self.shared.shared_index.as_ref()?;
+        query_window::answer(index, &self.shared.lab, self.shared.me, op).await.ok().flatten().map(|(got, _)| got)
     }
 
     /// The root of its shared index and the head of the edits it is of, as its last save left them: what a peer holds
