@@ -18,7 +18,9 @@ const NAME = "maia-city";
 
 // Hetzner renames its models from time to time, so the type is resolved rather
 // than hardcoded: the cheapest non-deprecated shared x86 type that still meets
-// the floor. Set `serverType` in the stack config to override.
+// the floor and that Hetzner can place in our location right now (a type it has no room for fails only after the
+// server is shut down for the resize, 2026-10-27). Set `serverType` in the stack config to override.
+const location = cfg.get("location") ?? "nbg1";
 const MIN_CORES = cfg.getNumber("minCores") ?? 2;
 const MIN_MEMORY_GB = cfg.getNumber("minMemoryGb") ?? 4;
 const serverType: pulumi.Output<string> = cfg.get("serverType")
@@ -31,17 +33,17 @@ const serverType: pulumi.Output<string> = cfg.get("serverType")
             t.architecture === "x86" &&
             t.cpuType === "shared" &&
             t.cores >= MIN_CORES &&
-            t.memory >= MIN_MEMORY_GB,
+            t.memory >= MIN_MEMORY_GB &&
+            t.locations.some((l) => l.name === location && l.available && !l.isDeprecated),
         )
         .sort((a, b) => a.memory - b.memory || a.cores - b.cores || a.disk - b.disk || a.name.localeCompare(b.name));
       if (!fits.length)
         throw new Error(
-          `No server type with >= ${MIN_CORES} vCPU / ${MIN_MEMORY_GB} GB: ${r.serverTypes.map((t) => t.name).join(", ")}`,
+          `No server type with >= ${MIN_CORES} vCPU / ${MIN_MEMORY_GB} GB available in ${location}: ${r.serverTypes.map((t) => t.name).join(", ")}`,
         );
       return fits[0].name;
     });
 
-const location = cfg.get("location") ?? "nbg1";
 const volumeSize = cfg.getNumber("volumeSize") ?? 10;
 
 const sshPublicKey = process.env.SSH_PUBLIC_KEY?.trim();
