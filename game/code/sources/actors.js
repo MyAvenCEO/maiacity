@@ -376,12 +376,14 @@ export function withQueries(actors) {
 export function queryOp(q, args = {}, more = {}) {
 	const read = q?.interface?.methods?.find((/** @type {any} */ m) => m.name === 'read');
 	if (!read?.run) throw new Error(`query ${q?.id}: no read method`);
-	// each param passed, `null` for one left out, which the op then leaves out (a page's `after` on the first page)
+	// each param passed, `null` for one left out, which the op then leaves out (a page's `after` or `before` on the first page)
 	const missing = (read.params ?? []).filter((/** @type {string} */ k) => !(k in args));
 	if (missing.length) throw new Error(`query ${q.id}: no ${missing.join(', ')}`);
 	/** @param {any} v @returns {any} */
 	const bind = (v) => (Array.isArray(v) ? v.map(bind) : v && typeof v === 'object' ? (typeof v.$ === 'string' && Object.keys(v).length === 1 ? args[v.$] : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, bind(x)]))) : v);
-	const op = Object.fromEntries(Object.entries(bind(read.run)).filter(([, v]) => v != null));
+	/** an object's keys bound to null left out, at any depth: a window's `before` on the first page @param {any} v @returns {any} */
+	const prune = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([, x]) => x != null).map(([k, x]) => [k, prune(x)])) : v);
+	const op = prune(bind(read.run));
 	return { ...op, ...(more.offset ? { offset: more.offset } : {}), ...(more.limit ? { limit: more.limit } : {}) };
 }
 

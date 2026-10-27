@@ -242,5 +242,18 @@ export const QUERY_POSTS = {
 	where: POSTS_WHERE
 };
 
-/** The query entries the actors name, and those pages read by of their own (`QUERY_POSTS`). */
-export const QUERIES = [...named.queries, QUERY_POSTS];
+/** The rooms Chat lists, a page at a time (G1): the newest `newest`, older than cursor `before` (`[created, entry]` of
+ *  the last room of the page before, null on the first), off the engine's window, so opening Chat reads no log edit
+ *  and at most the window and the index's tail (src/lib/chat/Chat.svelte). */
+const ROOMS_WHERE = { type: ['room'] };
+export const QUERY_ROOMS_PAGE = {
+	kind: 'query', v: 1, id: 'query-rooms-page', title: 'query-rooms-page', note: 'Chat lists its rooms by this query.',
+	interface: { version: 1, description: 'Reads the rooms, newest first, a window at a time.', events: [], needs: [], methods: [
+		{ name: 'read', params: ['newest', 'before'], ops: [{ op: 'read' }], where: ROOMS_WHERE,
+			run: { op: 'query', where: ROOMS_WHERE, select: [], window: { newest: { $: 'newest' }, before: { $: 'before' } } } }
+	] },
+	where: ROOMS_WHERE
+};
+
+/** The query entries the actors name, and those pages read by of their own (`QUERY_POSTS`, `QUERY_ROOMS_PAGE`). */
+export const QUERIES = [...named.queries, QUERY_POSTS, QUERY_ROOMS_PAGE];

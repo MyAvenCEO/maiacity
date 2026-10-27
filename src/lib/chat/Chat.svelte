@@ -29,12 +29,20 @@
 
 	const world = $derived(api.world);
 	const byId = $derived(new Map((world?.vaults ?? []).map((v) => [v.id, v])));
-	// Discovery is an authorized local query, independent of the broad world summary: Maia City's query entry of the
-	// rooms (`query-room`, the chat actor names it), newest first, a page of 50 at a time.
-	// The page bounds rows/demand; the core query may still scan/materialize before limiting.
-	let offset = $state(0);
-	const ROOMS = { entry: 'query-room', version: 1 };
-	const discovery = entryDetail(() => api, () => useQuery(ROOMS, {}, { offset, limit: 50 }));
+	// Discovery is an authorized local query, independent of the broad world summary: Maia City's query entry of
+	// Chat's room pages (`query-rooms-page`), the newest 50 off the engine's window, each older page after the cursor
+	// `[created, entry]` of the last room of the one before: no log edit read, at most the window and the index's tail.
+	const PAGE = 50;
+	const ROOMS = { entry: 'query-rooms-page', version: 1 };
+	/** the cursors of the pages before this one, the newest page none */
+	let cursors = $state(/** @type {[number, string][]} */ ([]));
+	const discovery = entryDetail(() => api, () => useQuery(ROOMS, { newest: PAGE, before: cursors.at(-1) ?? null }));
+	/** the cursor after the last room of this page, null where it is the last page */
+	const next = $derived.by(() => {
+		const rows = discovery.value?.rows ?? [];
+		const last = rows.at(-1);
+		return rows.length >= PAGE && last ? /** @type {[number, string]} */ ([last.created, last.entry]) : null;
+	});
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let open = $state(q.get('room') ?? '');
@@ -290,8 +298,8 @@
 		{:else if discovery.phase === 'loading' || metadata.phase === 'loading'}
 			<p class="hint">Opening local rooms…</p>
 		{:else if !rooms.length}<p class="hint empty">No rooms held on this device yet.</p>{/if}
-		{#if offset > 0}<button class="link" onclick={() => offset = Math.max(0, offset - 50)}>Previous rooms</button>{/if}
-		{#if offset + 50 < (discovery.value?.count ?? 0)}<button class="link" onclick={() => offset += 50}>More rooms</button>{/if}
+		{#if cursors.length}<button class="link" onclick={() => cursors = cursors.slice(0, -1)}>Previous rooms</button>{/if}
+		{#if next}<button class="link" onclick={() => cursors = [...cursors, next]}>More rooms</button>{/if}
 	{/snippet}
 
 	{#snippet aside()}
