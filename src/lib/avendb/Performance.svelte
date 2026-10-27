@@ -17,8 +17,13 @@
 	from each peer page by page and how fast, and its newest pages, as the device's `network` op answers (avendb-net's
 	`Node::network`), read again every few seconds while the page is open. Overview (Samuel 2026-10-26: one place for
 	every diagnostic): the build and the device, sync, peers and the server in one card, what needs attention in plain
-	words, and the diagnostics bar ($lib/app/DiagnosticsReport.svelte, once the top-left button): Run checks, whose speed
-	test the Network section shows and whose responsiveness the Work section shows, and Copy all, the whole page as JSON.
+	words, and the diagnostics ($lib/app/DiagnosticsReport.svelte): its checks run as the page opens, at most every ten
+	minutes, the speed test the Network section shows and the responsiveness the Work section shows, and the report goes
+	to the server by itself (Samuel 2026-10-27: no Run checks or Copy all, it is all automated). Views (Samuel 2026-10-27:
+	"each app and its sub pages have their own interest manifests correctly defined, and measure if they are"): the
+	page's own view and the last walks of its manifests (game/code/sources/device.js `manifestDiagnostics`), what of it is
+	on this device, and each app and page with the manifests Maia City's vault holds for it (./manifest-coverage.js),
+	those with none named.
 
 	All of it is read on the device, or from the server's public feed, and kept in this page alone: nothing here is
 	written to a vault or sent to a peer. It is read when the page opens and again on Refresh.
@@ -35,6 +40,14 @@
 	import { ago, count, nameOf, short, signerName, size } from './vaults.js';
 	import { session } from './session.svelte.js';
 	import DiagnosticsReport from '$lib/app/DiagnosticsReport.svelte';
+	import { MAIA_CITY } from '../../../game/code/sources/anchor.js';
+	import { deviceOf, manifestDiagnostics, withBuiltIn } from '../../../game/code/sources/device.js';
+	import { manifestsOf } from '../../../game/code/sources/manifests.js';
+	import { GAMES } from '../../../game/games.js';
+	import { appPages, coverage } from './manifest-coverage.js';
+	import { view as viewNow } from './diagnostics-send.js';
+	import { viewReadiness } from './view-readiness.js';
+	import { NAV, OUT } from './VaultApps.svelte';
 	import { version } from '$app/environment';
 	import { sync } from './sync.svelte.js';
 
@@ -49,6 +62,7 @@
 	/** the page's sections, in order, as its left side lists them: each its address after `#performance/`, name and icon */
 	const SECTIONS = /** @type {const} */ ([
 		['overview', 'Overview', 'pulse'],
+		['views', 'Views', 'eye'],
 		['work', 'Work', 'jobs'],
 		['network', 'Network', 'link'],
 		['storage', 'Storage', 'database'],
@@ -203,10 +217,25 @@
 		if (reading) return;
 		reading = true;
 		const onMac = native() ? readDisk().catch(() => null) : Promise.resolve(null);
-		const [p, s, d] = await Promise.all([read(api, { op: 'perf' }, null), readStorage(), onMac, readHealth(), readNetwork()]);
+		const [p, s, d] = await Promise.all([read(api, { op: 'perf' }, null), readStorage(), onMac, readHealth(), readNetwork(), readViews()]);
 		[perf, storage, disk, heap, readAt, reading] = [p, s, d, readHeap(), Math.floor(Date.now() / 1000), false];
 	}
 	onMount(() => void refresh());
+
+	/** the page's view, its manifests' last walks and what of them is here, and each app's manifests, as Views shows */
+	let views = $state(/** @type {any} */ (null));
+	/** Reads the views again: the manifests Maia City's vault holds, the app's own where it holds none of an id. */
+	async function readViews() {
+		const held = await manifestsOf(deviceOf(), { vault: MAIA_CITY }).catch(() => []);
+		const ids = new Set(held.filter((m) => m?.v === 2).map((m) => m.id));
+		const manifests = withBuiltIn(held, MAIA_CITY);
+		views = {
+			path: viewNow(),
+			runs: manifestDiagnostics().runs.slice(-8).reverse(),
+			ready: (viewReadiness.snapshot()?.samples ?? []).slice(-1)[0] ?? null,
+			apps: coverage(manifests, appPages({ nav: NAV, out: OUT, games: GAMES })).map((c) => ({ ...c, vault: c.manifests.filter((m) => ids.has(m)) }))
+		};
+	}
 
 	/** A time in milliseconds, as a person reads it. @param {number | undefined} ms */
 	const time = (ms) =>
@@ -227,8 +256,8 @@
 	let diag = $state(/** @type {any} */ (null));
 	/** the commit this page was built from, its first digits */
 	const build = /^[0-9a-f]{40}$/.test(version) ? version.slice(0, 8) : version;
-	/** everything the page shows, for Copy all */
-	const everything = () => ({ page: 'performance', build: version, readAt, perf, network, storage, disk, heap, health });
+	/** everything the page shows, sent with the report */
+	const everything = () => ({ page: 'performance', build: version, readAt, perf, network, storage, disk, heap, health, views });
 	/** the speed test's results, as the Network section shows them */
 	const SPEED = /** @type {Record<string, string>} */ ({
 		'http-rtt': 'Round trip to Cloudflare',
@@ -331,6 +360,55 @@
 	</section>
 {/snippet}
 
+{#snippet viewsPart()}
+	{#if !views}
+		<p class="empty">Reading this page's views…</p>
+	{:else}
+		{@const missing = views.apps.filter((/** @type {any} */ a) => !a.manifests.length)}
+		<article class="card">
+			<h3>This page</h3>
+			<dl>
+				<dt>View</dt>
+				<dd>{views.path}</dd>
+				<dt>On this device</dt>
+				<dd>{views.ready ? `${views.ready.have.toLocaleString()} of ${views.ready.known.toLocaleString()} rows, ${views.ready.coverage}` : '–'}</dd>
+				<dt>Apps without a manifest</dt>
+				<dd>{missing.length ? `${missing.length} of ${views.apps.length}` : 'none'}</dd>
+			</dl>
+		</article>
+		<article class="card wide">
+			<h3>Its manifests' last walks</h3>
+			{#if !views.runs.length}
+				<p class="empty">No walk yet.</p>
+			{:else}
+				<div class="table-wrap"><table>
+					<thead><tr><th>Walk</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th><th>Held here</th><th>Took</th></tr></thead>
+					<tbody>
+						{#each views.runs as r, i (i)}
+							<tr><td>{r.state}</td><td>{r.now}</td><td>{r.next}</td><td>{r.later}</td><td>{r.idle}</td><td>{r.localRows}</td><td>{time(r.ms)}</td></tr>
+						{/each}
+					</tbody>
+				</table></div>
+			{/if}
+		</article>
+		<article class="card wide">
+			<h3>Each app's manifests</h3>
+			<div class="table-wrap"><table>
+				<thead><tr><th>App</th><th>Manifests</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th></tr></thead>
+				<tbody>
+					{#each views.apps as a (a.path)}
+						<tr class:gap={!a.manifests.length}>
+							<td>{a.title} <span class="soft">{a.path}</span></td>
+							<td>{a.manifests.length ? a.manifests.map((/** @type {string} */ m) => (a.vault.includes(m) ? m : `${m} (app's own)`)).join(', ') : 'none: the kernel alone'}</td>
+							<td>{a.tiers.now}</td><td>{a.tiers.next}</td><td>{a.tiers.later}</td><td>{a.tiers.idle}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table></div>
+		</article>
+	{/if}
+{/snippet}
+
 {#snippet work()}
 	{#if !perf}
 		<p class="empty">{reading ? 'Reading what this device’s work cost…' : 'This device doesn’t say what its work costs yet.'}</p>
@@ -383,7 +461,7 @@
 						<dd>{time(diag.run.localRead.ms)}</dd>
 					{/if}
 				</dl>
-				<p class="soft note">From the last Run checks.</p>
+				<p class="soft note">From the last checks.</p>
 			</article>
 		{/if}
 		{#if counts.length}
@@ -429,7 +507,7 @@
 						<dd>{r.status !== 'measured' ? 'unavailable' : r.kind === 'http-rtt' ? time(r.ms) : r.mbps != null ? `${r.mbps.toFixed(1)} Mbit/s` : time(r.ms)}</dd>
 					{/each}
 				</dl>
-				<p class="soft note">From the last Run checks: one stream each, not the most the line can carry.</p>
+				<p class="soft note">From the last checks: one stream each, not the most the line can carry.</p>
 			</article>
 		{/if}
 		<article class="card">
@@ -723,13 +801,14 @@
 	</article>
 	<article class="card wide">
 		<h3>Diagnostics</h3>
-		<DiagnosticsReport bar extra={everything} onreport={(r) => (diag = r)} />
+		<DiagnosticsReport extra={everything} onreport={(r) => (diag = r)} />
 	</article>
 {/snippet}
 
 <Frame nav={menu} aside={details} navLabel="Performance" navIcon="gauge" asideLabel="The timer picked" asideIcon="info" bind:open>
 	<div class="page">
 		{@render part('overview', overview)}
+		{@render part('views', viewsPart)}
 		{@render part('work', work)}
 		{@render part('network', net)}
 		{@render part('storage', stored)}
@@ -855,6 +934,9 @@
 		text-align: left;
 	}
 
+	tr.gap td {
+		color: #9a4a1f;
+	}
 	tr.on td {
 		background: rgb(0 0 0 / 0.04);
 	}
