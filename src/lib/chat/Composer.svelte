@@ -12,7 +12,6 @@
 
 	let text = $state('');
 	let box = $state();
-	let sending = $state(false);
 	$effect(() => {
 		text = draftOf(place);
 	});
@@ -39,13 +38,14 @@
 		box?.focus();
 	}
 
+	// the box empties at once and the message shows in the room as it is sent; refused, it comes back here
 	async function send() {
 		const t = text.trim();
-		if (!t || sending || disabled) return;
-		sending = true;
-		const done = await onsend?.(t, mentionsIn(t, people));
-		sending = false;
-		if (done) text = '';
+		if (!t || disabled) return;
+		const mentions = mentionsIn(t, people);
+		text = '';
+		const done = await onsend?.(t, mentions);
+		if (!done && !text) text = t;
 	}
 
 	function key(e) {
@@ -85,7 +85,7 @@
 		onclick={look}
 		onkeydown={key}
 	></textarea>
-	<button class="send" onclick={send} disabled={!text.trim() || sending || disabled} aria-label="Send">Send</button>
+	<button class="send" onclick={send} disabled={!text.trim() || disabled} aria-label="Send">Send</button>
 </div>
 
 <style>
