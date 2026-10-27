@@ -100,9 +100,11 @@ export async function keepReports() {
 let busy = false;
 let last = 0;
 let settling = null;
-/** Sends this device's report now, `why` it went (`every`, `view`), and in theOS reads its person's back. */
+/** Sends this device's report now, `why` it went (`every`, `view`), and in theOS reads its person's back. A page in
+ *  the background waits; theOS goes on with its window hidden, as it is the one that keeps every device's reports
+ *  (Samuel 2026-10-27: the reports stopped whenever theOS was behind another window). */
 async function tick(why) {
-	if (busy || session.phase !== 'open' || document.hidden) return;
+	if (busy || session.phase !== 'open' || (document.hidden && !native())) return;
 	busy = true;
 	try {
 		last = Date.now();

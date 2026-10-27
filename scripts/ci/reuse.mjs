@@ -2,7 +2,7 @@
 // main now holds. The pull request's head must hold the commit main merged onto (so its runs, which check out the PR
 // merged into main, tested exactly this tree, selected from the same changed files), the trees must be equal, and that
 // head's latest run of the suite's own workflow must have completed green. Anything else, an unknown or missing run, a
-// red one, a different tree, a release base that is not main's parent, validates on main as before (main.yml).
+// red one, a different tree, a release base that is not main's (first) parent, validates on main as before (main.yml).
 import { appendFileSync } from 'node:fs';
 export const suites = { kernel: '.github/workflows/kernel.yml', avendb: '.github/workflows/avendb-checks.yml' };
 
@@ -12,12 +12,15 @@ const WAIT_MS = 15 * 60 * 1000, POLL_MS = 20 * 1000;
 export async function reusable({ api, repo, sha, base, wait = WAIT_MS, poll = POLL_MS, sleep = ms => new Promise(r => setTimeout(r, ms)), log = () => {} }) {
  const none = Object.fromEntries(Object.keys(suites).map(k => [k, false]));
  const commit = await api(`repos/${repo}/commits/${sha}`);
- const parent = commit.parents?.length === 1 ? commit.parents[0].sha : '';
- if (!parent || base !== parent) { log(`release base ${base || 'none'} is not main's parent ${parent || '(merge)'}: validate`); return none; }
+ // a squash has one parent; a batch PR lands as a merge commit (CLAUDE.md) whose second parent must be the PR's head
+ const [first, second, ...more] = commit.parents ?? [];
+ const parent = first && !more.length ? first.sha : '';
+ if (!parent || base !== parent) { log(`release base ${base || 'none'} is not main's parent ${parent || '(several)'}: validate`); return none; }
  const tree = commit.commit.tree.sha;
  const pulls = (await api(`repos/${repo}/commits/${sha}/pulls`)).filter(p => p.merged_at && p.merge_commit_sha === sha && p.head?.repo?.full_name === repo);
  if (pulls.length !== 1) { log(`no single pull request merged as ${sha}: validate`); return none; }
  const head = pulls[0].head.sha;
+ if (second && second.sha !== head) { log(`#${pulls[0].number} merged as ${sha} onto another commit than its head ${head}: validate`); return none; }
  const headCommit = await api(`repos/${repo}/commits/${head}`);
  if (headCommit.commit.tree.sha !== tree) { log(`#${pulls[0].number}'s head ${head} holds other files than main: validate`); return none; }
  const compare = await api(`repos/${repo}/compare/${parent}...${head}`);

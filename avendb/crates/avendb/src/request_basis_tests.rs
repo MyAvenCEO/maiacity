@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering;
 fn reference(lab: &Lab, d: SignerId, peer: SignerId) -> Request {
     let store = lab.held(d);
     let (edits, ids) = (store.log.edits(), store.log.ids());
-    let places = answer_ids(edits, ids, lab.latest(d), peer, &[]);
+    let places = answer_ids(edits, ids, lab.latest(d), peer, &store.follow);
     let logs = logs_of(edits, ids);
     let shared: HashSet<_> = places.iter().filter_map(|&i| logs[i]).collect();
     let theirs: HashSet<_> = places.iter().map(|&i| ids[i]).collect();

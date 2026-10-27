@@ -4098,7 +4098,7 @@ impl Replay {
 
     /// Its edits in the one order, `held` being the edits it is the replay of: those its log held, in the order they
     /// came, when it was replayed or stepped on last (`replay_on`'s `edits`).
-    pub fn edits<'a>(&'a self, held: &'a [Edit]) -> impl ExactSizeIterator<Item = &'a Edit> + Clone + 'a {
+    pub fn edits<'a>(&'a self, held: &'a [Edit]) -> impl ExactSizeIterator<Item = &'a Edit> + DoubleEndedIterator + Clone + 'a {
         debug_assert!(self.of(held), "a replay read with other edits than it is of");
         self.order.iter().map(move |&p| &held[p])
     }

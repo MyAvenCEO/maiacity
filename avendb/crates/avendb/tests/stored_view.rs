@@ -157,3 +157,95 @@ fn previous_derived_view_version_is_rejected_for_full_replay() {
     bytes[..current.len()].copy_from_slice(b"avenDB view 2\n");
     assert!(Replay::from_view(&bytes, c.log.edits(), c.log.ids()).is_none());
 }
+
+/// What the replay rules give for a cast of edits that reaches every kind of step: entries, writes on them, a share
+/// bound to a cap group, a removal, and writes after it, as a stored view (`Replay::to_view`), hashed.
+fn pinned_views() -> String {
+    use avendb::policy::{Level, Share, Sharing, Who};
+    let mut c = cast();
+    let alice = c.alice;
+    for i in 0..6 {
+        c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+    }
+    let share = Share {
+        over: alice, who: Who::Vault(c.bob), level: Level::Read, wide: false, select: vec![1, 2, 3], parent: None,
+        issuer: alice, nonce: 1, group: Some(EntryId::from_u64(1000)),
+    };
+    c.log.append(MAC_A, &[], Action::Share(Sharing::Grant(share, vec![]))).expect("a share");
+    let mut views = vec![];
+    for n in 0..12u8 {
+        let st = c.log.view();
+        c.log.receive([write(&c.log, &st, MAC_A, EntryId::from_u64(1000 + u64::from(n % 6)), n)]);
+        if n == 5 {
+            let leave = Action::Revoke(Revoking::Device { vault: c.carol, device: MAC_C, keep: vec![] });
+            c.log.append(PASSKEY_C, &[], leave).expect("Carol's passkey revokes her Mac");
+        }
+        views.push(replay(c.log.edits()).to_view(c.log.edits().len()));
+    }
+    blake3::hash(&views.concat()).to_hex().to_string()
+}
+
+/// The replay rules' number (`viewRules`, `ViewRules.lean`) and the hash `pinned_views` gave under them.
+const PINNED: (&str, &str) = ("1", "5415ccaa46fc3c8925ef79196b9d5eaeab8efc6bcfa5531ec125c9b78f41ee66");
+
+/// A device opens a view sealed to the same rules number with any later build (VR1), so what the rules give must not
+/// change under one number. Where this fails: if the replay gives other views now (a rule changed, or a fix changed
+/// what the engine's replay gives), bump `viewRules` in `spec/AvenDB/ViewRules.lean` and pin the new hash beside it,
+/// so every device replays once; if only how a view or an edit is written down changed, with the same replay, pin the
+/// new hash under the same number (a new view format bumps `VIEW` in `policy/view.rs`).
+#[test]
+fn the_replay_rules_number_pins_what_views_hold() {
+    let rules = env!("AVENDB_VIEW_RULES");
+    let got = pinned_views();
+    assert_eq!(
+        (rules, got.as_str()),
+        PINNED,
+        "the replay gives other views than the rules number pins: bump viewRules, or pin the new hash (see above)"
+    );
+}
+
+/// A small deterministic generator, for the property below.
+struct Rng(u64);
+
+impl Rng {
+    fn below(&mut self, n: u64) -> u64 {
+        self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        (self.0 >> 33) % n
+    }
+}
+
+/// VR1 and VR3 as a property: for logs of writes, shares and a removal in many orders, the view of any prefix reads
+/// back as the replay of that prefix, opens against every longer log, and the edits after it step on it to the replay
+/// of them all.
+#[test]
+fn a_view_of_any_prefix_opens_as_the_replay_of_that_prefix() {
+    for seed in 0..8u64 {
+        let mut rng = Rng(seed);
+        let mut c = cast();
+        let alice = c.alice;
+        for i in 0..4 {
+            c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+        }
+        let revoke_at = 3 + rng.below(30) as usize;
+        for n in 0..40usize {
+            if n == revoke_at {
+                let leave = Action::Revoke(Revoking::Device { vault: c.carol, device: MAC_C, keep: vec![] });
+                c.log.append(PASSKEY_C, &[], leave).expect("Carol's passkey revokes her Mac");
+            }
+            let st = c.log.view();
+            let by = if rng.below(3) == 0 { PHONE_A } else { MAC_A };
+            c.log.receive([write(&c.log, &st, by, EntryId::from_u64(1000 + rng.below(4)), n as u8)]);
+        }
+        let whole = replay(c.log.edits());
+        for _ in 0..6 {
+            let held = 1 + rng.below(c.log.edits().len() as u64) as usize;
+            let prefix = replay(&c.log.edits()[..held]);
+            let bytes = prefix.to_view(held);
+            let (back, n) = Replay::from_view(&bytes, c.log.edits(), c.log.ids()).expect("a view of a prefix opens");
+            assert_eq!(n, held);
+            assert!(back == prefix && back.same_tail(&prefix), "seed {seed}, prefix {held}: it is not its replay");
+            let on = replay_on(back, c.log.edits(), held);
+            assert!(on == whole, "seed {seed}, prefix {held}: stepped on, it differs from the whole");
+        }
+    }
+}

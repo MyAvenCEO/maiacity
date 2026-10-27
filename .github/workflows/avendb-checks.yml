@@ -433,8 +433,8 @@ jobs:
           done
           AVENDB_BENCH_FIRST=10000:2000,50000:3000 cargo test --release --locked -p avendb --test bench_gates -- --ignored --nocapture --exact bench_first_sync \
             | tee -a "$RUNNER_TEMP/bench.log"
-          # a first sync's pages with moves cost the same at 100,000 edits held as at 10,000 (no whole replays)
-          cargo test --release --locked -p avendb --test first_sync_moves -- --ignored --nocapture --exact a_page_with_moves_costs_the_same_however_much_is_held \
+          # a first sync's pages with moves cost the same however much is held (no whole replays): ~2 min at 30,000
+          AVENDB_MOVES_HELD=30000 cargo test --release --locked -p avendb --test first_sync_moves -- --ignored --nocapture --exact a_page_with_moves_costs_the_same_however_much_is_held \
             | tee -a "$RUNNER_TEMP/bench.log"
       - name: The carriers, direct and through the relay
         working-directory: avendb

@@ -141,7 +141,7 @@ impl Shared {
             return Ok(());
         }
         if !rules.is_empty() {
-            self.pull_expected(endpoint, Scope::Logs(rules), false, None, Some(device), None)
+            self.pull_expected(endpoint, Scope::Logs(rules), false, None, Some(device), None, None)
                 .await?;
             self.materialize_live().await;
             missing = self.differ(device).await;
@@ -154,7 +154,7 @@ impl Shared {
             .copied()
             .collect::<BTreeSet<_>>();
         if !logs.is_empty() {
-            self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None)
+            self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None, None)
                 .await?;
             // A single interactive edit must wake reactive subscribers before the unrelated backlog finishes.
             self.materialize_live().await;

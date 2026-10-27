@@ -232,3 +232,28 @@ fn captured_view_bytes_equal_canonical_encoding() {
     lab.edit(phone, vault, note, |it| it.set_text(2, "Later")).unwrap();
     assert_eq!(capture.encode(held), expected);
 }
+
+#[test]
+fn a_device_that_keeps_taking_edits_seals_the_view_of_what_it_replayed() {
+    let (mut lab, _, mac, phone, vault, note) = alice();
+    lab.edit(mac, vault, note, |it| it.set_text(2, "Written on the Mac."))
+        .unwrap();
+    // a pull's page that isn't its last: the phone takes the edit and its replay waits, of the edits it held (VR3)
+    let held: std::collections::HashSet<_> = lab.log(phone).ids().iter().copied().collect();
+    let page: Vec<_> = lab.backup(mac).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
+    assert_eq!(lab.receive_whose_now(phone, page, vec![], false).0, 1);
+    let delayed = warming(&mut lab, phone, 1);
+    assert!(delayed.view.is_some(), "the view of the prefix it replayed is sealed");
+    let warm = bytes(&delayed);
+    lab.warmed(phone, delayed);
+    lab.catch_up(phone);
+    let expected = lab.item(phone, note).unwrap().record();
+    assert!(format!("{expected:?}").contains("Written on the Mac."));
+
+    let backup = lab.backup(phone);
+    let n = backup.signed().len();
+    let used = count(&lab, phone, "replay: from its stored view");
+    lab.restore_warm(phone, backup, Some(([1; 40], n)), &warm);
+    assert_eq!(count(&lab, phone, "replay: from its stored view"), used + 1);
+    assert_eq!(lab.item(phone, note).unwrap().record(), expected);
+}

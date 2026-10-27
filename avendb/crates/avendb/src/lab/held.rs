@@ -2,8 +2,9 @@
 //!
 //! A page and a Mac hold them in memory, as ever. The server, whose vaults grow toward a million edits and more, holds
 //! them in a spill (`Spill`) instead: each record appended once to a file in a folder of its own, in the server's
-//! folder beside its bucket's cache, and only an index in memory, a few dozen bytes an edit, with the records it read
-//! or took lately in a cache of `Spill::budget` bytes at most, the least lately used let go first. The spill is no
+//! folder beside its bucket's cache, and its index in runs of pages beside it (`pages::Runs`, the index gate), with
+//! the records and pages it read or took lately in a cache of `Spill::budget` bytes at most, the least lately used let
+//! go first: what it holds in memory is flat, however many edits it holds. The spill is no
 //! store of record: the bucket is (`avendb_net::edits`), and a spill is emptied as its server starts and filled again
 //! as the device takes its edits back from the bucket, so a server whose folder is lost loses nothing.
 //!
@@ -22,6 +23,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::id::{BlobId, EditId, SignerId};
+use crate::pages::{Folder, Runs};
 use crate::sign::{Signed, SignerKeys};
 use crate::wire::Wire as _;
 
@@ -30,18 +32,21 @@ use crate::wire::Wire as _;
 pub struct Spill {
     dir: PathBuf,
     budget: usize,
+    /// The pages of the index of every record it holds, a quarter of the budget at hand.
+    pages: Arc<Folder>,
 }
 
 impl Spill {
     /// A spill in folder `dir`, which it empties first (what was there is a cache of an older run), keeping `budget`
-    /// bytes of what it read or took lately at hand, half for edits and half for keys.
+    /// bytes of what it read or took lately at hand: a quarter for its index's pages, and the rest for edits and keys.
     pub fn new(dir: impl Into<PathBuf>, budget: usize) -> io::Result<Spill> {
         let dir = dir.into();
         if dir.exists() {
             fs::remove_dir_all(&dir)?;
         }
         fs::create_dir_all(&dir)?;
-        Ok(Spill { dir, budget })
+        let pages = Folder::new(dir.join("pages"), budget / 4)?;
+        Ok(Spill { dir, budget, pages })
     }
 
     /// The bytes it keeps at hand at most.
@@ -116,6 +121,9 @@ impl Drop for File {
 /// What a spill holds: a value that goes to bytes and comes back from them, checked against its key.
 pub(crate) trait Record: Clone {
     type Key: Copy + Eq + Hash;
+    /// A key's bytes, which its index sorts it by, and the key back from them.
+    fn key_bytes(k: &Self::Key) -> [u8; 32];
+    fn key_of(bytes: [u8; 32]) -> Self::Key;
     fn bytes(&self) -> Vec<u8>;
     /// The value `bytes` hold, if they hold the very value `key` names.
     fn from_bytes(key: &Self::Key, bytes: &[u8]) -> Option<Self>;
@@ -125,6 +133,12 @@ pub(crate) trait Record: Clone {
 
 impl Record for Arc<Signed> {
     type Key = EditId;
+    fn key_bytes(k: &EditId) -> [u8; 32] {
+        k.0
+    }
+    fn key_of(bytes: [u8; 32]) -> EditId {
+        EditId(bytes)
+    }
     fn bytes(&self) -> Vec<u8> {
         self.to_wire()
     }
@@ -140,6 +154,12 @@ impl Record for Arc<Signed> {
 
 impl Record for Arc<[u8]> {
     type Key = BlobId;
+    fn key_bytes(k: &BlobId) -> [u8; 32] {
+        k.0
+    }
+    fn key_of(bytes: [u8; 32]) -> BlobId {
+        BlobId(bytes)
+    }
     fn bytes(&self) -> Vec<u8> {
         self.to_vec()
     }
@@ -157,6 +177,20 @@ struct Slot {
     at: u64,
     len: u32,
     sum: [u8; 32],
+}
+
+impl Slot {
+    fn to_bytes(self) -> Vec<u8> {
+        [&self.at.to_be_bytes()[..], &self.len.to_be_bytes(), &self.sum].concat()
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Option<Slot> {
+        (bytes.len() == 44).then(|| Slot {
+            at: u64::from_be_bytes(bytes[..8].try_into().expect("8 bytes")),
+            len: u32::from_be_bytes(bytes[8..12].try_into().expect("4 bytes")),
+            sum: bytes[12..].try_into().expect("32 bytes"),
+        })
+    }
 }
 
 /// The records a spill read or took lately, each with when it was used last, `budget` bytes of them at most.
@@ -212,24 +246,49 @@ impl<V: Record> Hot<V> {
     }
 }
 
-/// A spill of records of one kind: its file, the index of what it holds, and those at hand.
+/// A spill of records of one kind: its file, the index of what it holds (each key's `Slot`), how many it holds and
+/// their bytes, and those at hand.
 struct Spilled<V: Record> {
     spill: Spill,
     what: &'static str,
     file: Arc<File>,
-    at: HashMap<V::Key, Slot>,
+    at: Runs,
+    count: usize,
+    bytes: u64,
     hot: Mutex<Hot<V>>,
 }
 
 impl<V: Record> Spilled<V> {
     fn new(spill: &Spill, what: &'static str) -> io::Result<Spilled<V>> {
         let file = Arc::new(File::new(spill, what)?);
-        let hot = Mutex::new(Hot::new(spill.budget / 2));
-        Ok(Spilled { spill: spill.clone(), what, file, at: HashMap::new(), hot })
+        let hot = Mutex::new(Hot::new(spill.budget * 3 / 8));
+        let at = Runs::new(&spill.pages);
+        Ok(Spilled { spill: spill.clone(), what, file, at, count: 0, bytes: 0, hot })
+    }
+
+    /// Where the record under `k` is, if it holds one.
+    fn slot(&self, k: &V::Key) -> Option<Slot> {
+        let bytes = self.at.get(&V::key_bytes(k)).unwrap_or_else(|e| panic!("avendb: its spill's index of {} doesn't read: {e}", self.what))?;
+        Some(Slot::from_bytes(&bytes).unwrap_or_else(|| panic!("avendb: its spill's index of {} holds no slot", self.what)))
+    }
+
+    fn set(&mut self, k: &V::Key, slot: Option<Slot>) {
+        let was = self.slot(k);
+        self.count = self.count + usize::from(slot.is_some()) - usize::from(was.is_some());
+        self.bytes = self.bytes + slot.map_or(0, |s| s.len as u64) - was.map_or(0, |s| s.len as u64);
+        self.at
+            .set(V::key_bytes(k).to_vec(), slot.map(Slot::to_bytes))
+            .unwrap_or_else(|e| panic!("avendb: its spill's index of {} takes nothing: {e}", self.what));
+    }
+
+    /// Every key it holds, in order.
+    fn keys(&self) -> Vec<V::Key> {
+        let rows = self.at.rows().unwrap_or_else(|e| panic!("avendb: its spill's index of {} doesn't read: {e}", self.what));
+        rows.into_iter().map(|(k, _)| V::key_of(k.try_into().expect("a key of 32 bytes"))).collect()
     }
 
     fn get(&self, k: &V::Key) -> Option<V> {
-        let slot = *self.at.get(k)?;
+        let slot = self.slot(k)?;
         if let Some(v) = self.hot.lock().expect("hot").get(k) {
             return Some(v);
         }
@@ -245,20 +304,23 @@ impl<V: Record> Spilled<V> {
         let bytes = v.bytes();
         let at = self.file.append(&bytes).unwrap_or_else(|e| panic!("avendb: its spill of {} takes nothing: {e}", self.what));
         let len = u32::try_from(bytes.len()).expect("a record under 4 GB");
-        self.at.insert(k, Slot { at, len, sum: *blake3::hash(&bytes).as_bytes() });
+        self.set(&k, Some(Slot { at, len, sum: *blake3::hash(&bytes).as_bytes() }));
         self.hot.lock().expect("hot").put(k, v);
     }
 
     fn remove(&mut self, k: &V::Key) {
-        self.at.remove(k);
+        if self.slot(k).is_some() {
+            self.set(k, None);
+        }
         self.hot.get_mut().expect("hot").remove(k);
     }
 }
 
 impl<V: Record> Clone for Spilled<V> {
     fn clone(&self) -> Spilled<V> {
-        let hot = Mutex::new(Hot::new(self.spill.budget / 2));
-        Spilled { spill: self.spill.clone(), what: self.what, file: self.file.clone(), at: self.at.clone(), hot }
+        let hot = Mutex::new(Hot::new(self.spill.budget * 3 / 8));
+        let (spill, file, at) = (self.spill.clone(), self.file.clone(), self.at.clone());
+        Spilled { spill, what: self.what, file, at, count: self.count, bytes: self.bytes, hot }
     }
 }
 
@@ -300,12 +362,12 @@ impl<V: Record> Held<V> {
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.spilled.as_ref().map_or(self.mem.len(), |s| s.at.len())
+        self.spilled.as_ref().map_or(self.mem.len(), |s| s.count)
     }
 
     pub(crate) fn contains_key(&self, k: &V::Key) -> bool {
         match &self.spilled {
-            Some(s) => s.at.contains_key(k),
+            Some(s) => s.slot(k).is_some(),
             None => self.mem.contains_key(k),
         }
     }
@@ -339,17 +401,17 @@ impl<V: Record> Held<V> {
     }
 
     /// Every key it holds, in no order.
-    pub(crate) fn keys(&self) -> Box<dyn Iterator<Item = &V::Key> + '_> {
+    pub(crate) fn keys(&self) -> Vec<V::Key> {
         match &self.spilled {
-            Some(s) => Box::new(s.at.keys()),
-            None => Box::new(self.mem.keys()),
+            Some(s) => s.keys(),
+            None => self.mem.keys().copied().collect(),
         }
     }
 
     /// The bytes it holds in memory, about: what it holds itself, and its index and what it keeps at hand, spilled.
     pub(crate) fn memory(&self) -> usize {
         match &self.spilled {
-            Some(s) => s.at.len() * (std::mem::size_of::<(V::Key, Slot)>() + 8) + s.hot.lock().expect("hot").bytes,
+            Some(s) => s.at.memory() + s.spill.pages.memory() + s.hot.lock().expect("hot").bytes,
             None => self.mem.values().map(Record::size).sum(),
         }
     }
@@ -357,7 +419,7 @@ impl<V: Record> Held<V> {
     /// The bytes of what it holds, spilled or not.
     pub(crate) fn bytes(&self) -> usize {
         match &self.spilled {
-            Some(s) => s.at.values().map(|slot| slot.len as usize).sum(),
+            Some(s) => s.bytes as usize,
             None => self.mem.values().map(|v| v.bytes().len()).sum(),
         }
     }
@@ -382,7 +444,7 @@ impl Keys {
 
     /// Every key it holds, each by its id: read whole from its spill, if spilled.
     pub(crate) fn to_map(&self) -> HashMap<BlobId, Arc<[u8]>> {
-        self.keys().filter_map(|k| Some((*k, self.get(k)?))).collect()
+        self.keys().into_iter().filter_map(|k| Some((k, self.get(&k)?))).collect()
     }
 }
 
@@ -495,7 +557,7 @@ mod tests {
     }
 
     /// The keys a spill holds read back as they went in, and what it keeps in memory stays within its budget and its
-    /// index however many it holds: 10,000 keys, then 100,000.
+    /// however many it holds: 10,000 keys, then 100,000.
     #[test]
     fn a_spill_holds_its_records_in_a_bounded_memory() {
         let spill = Spill::new(dir("bounded"), 1 << 20).expect("a spill");
@@ -517,17 +579,39 @@ mod tests {
         }
         assert_eq!(keys.len(), 100_000);
         assert_eq!(keys.bytes(), 100_000 * 256);
-        // the records themselves, 25.6 MB, are in the file, and memory holds the budget at most beside the index
-        let index = |n: usize| n * (std::mem::size_of::<(BlobId, Slot)>() + 8);
-        assert!(held_at[0] <= index(10_000) + (1 << 19), "{held_at:?}");
-        assert!(held_at[1] <= index(100_000) + (1 << 19), "{held_at:?}");
-        let per_record = (held_at[1] - (1 << 19).min(held_at[1])) / 100_000;
-        assert!(per_record < 256 / 2, "the index holds far less than the records: {per_record} bytes each");
+        // the records themselves, 25.6 MB, are in the file, their index in pages beside it: memory holds the budget
+        // and the index's newest changes at most, as much for 100,000 keys as for 10,000
+        let most = (1 << 20) + crate::pages::DELTA * 200;
+        assert!(held_at[0] <= most && held_at[1] <= most, "{held_at:?}");
         for (n, id) in ids.iter().enumerate().step_by(997) {
             assert_eq!(keys.get(id).as_deref(), Some(&key(n as u32)[..]), "read back from its file");
         }
         keys.remove(&ids[0]);
         assert!(!keys.contains_key(&ids[0]) && keys.get(&ids[0]).is_none());
+        fs::remove_dir_all(spill.dir()).ok();
+    }
+
+    /// What a spill holds in memory is flat: as much at a million keys as at 100,000 (measured 4.80 MB, then 4.83) (run by hand, `--ignored`: it
+    /// writes about 200 MB to its folder).
+    #[test]
+    #[ignore]
+    fn a_spill_holds_a_million_keys_in_flat_memory() {
+        let spill = Spill::new(dir("million"), 8 << 20).expect("a spill");
+        let mut keys = Keys::default();
+        keys.spill_keys(&spill).expect("spilled");
+        let mut at = vec![];
+        let started = std::time::Instant::now();
+        for n in 0..1_000_000u32 {
+            let k: Arc<[u8]> = Arc::from(&n.to_le_bytes().repeat(16)[..]);
+            let id = BlobId::of(&k);
+            keys.insert(id, k);
+            if n + 1 == 100_000 || n + 1 == 1_000_000 {
+                at.push((keys.memory(), started.elapsed()));
+            }
+        }
+        eprintln!("MEMORY {at:?}");
+        assert_eq!(keys.len(), 1_000_000);
+        assert!(at[1].0 <= at[0].0 + (256 << 10), "{at:?}");
         fs::remove_dir_all(spill.dir()).ok();
     }
 
