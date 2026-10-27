@@ -91,6 +91,15 @@ pub const SHEET: &str = "https://maia.city/app/avendb/sheet/";
 /// The longest a call waits for the device to change (`changed`): then it answers `null`, and the page asks again.
 const CHANGED: Duration = Duration::from_secs(50);
 
+/// The folder beside its shelves, in its account's folder, where its device spills its signed edits and McEliece keys
+/// (`avendb::lab::Spill`): a cache it empties as it starts, filled again from its shelf; a shelf is only ever a `g<n>`
+/// folder (`avendb_net::shelf::generation`), so no shelf is ever in it.
+pub const SPILL: &str = "spill";
+
+/// The most bytes of its signed edits and McEliece keys the Mac's device keeps at hand in memory, as the always-on
+/// peer's 256 MiB (`AVENDB_MEMORY_CACHE`): the rest wait in its spill, and its memory stays flat as its vaults grow.
+const MEMORY: usize = 256 << 20;
+
 /// How the device runs: the folder it keeps its account in, on its shelves (`avendb_net::disk`), whether its node
 /// reaches its peers directly too (`avendb_net::Options::direct`), as the app's does, where a test's may run on its
 /// relay alone; and the folder the system mounts volumes in, whose drives it hosts (`drive`): `/Volumes` on a Mac
@@ -799,7 +808,10 @@ impl Service {
             provisional.lock().expect("starting nodes").push(node.clone());
             *pending.lock().expect("starting node") = Some(node);
         }) as Arc<dyn Fn(Arc<Node>) + Send + Sync>);
-        Ok((Start { name, relay, entropy, now: now(), direct, shelf, progress, recovery, on_node }, ending, starting))
+        // its edits and keys past `MEMORY` bytes wait in a spill beside its shelves, a cache emptied as it starts (S7)
+        let spill = avendb::lab::Spill::new(self.config.dir.join(SPILL), MEMORY).context("its spill")?;
+        let spill = Some(spill);
+        Ok((Start { name, relay, entropy, now: now(), direct, shelf, progress, recovery, spill, on_node }, ending, starting))
     }
 
     /// The steps of the start under way, or of the last (`avendb_browser::steps_json`): null before the first.
