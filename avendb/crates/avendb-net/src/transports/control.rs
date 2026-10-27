@@ -83,7 +83,12 @@ pub(crate) struct Control {
     ending: tokio::sync::Mutex<()>,
     #[cfg(not(target_arch = "wasm32"))]
     starting: std::sync::atomic::AtomicBool,
+    /// What its carrier negotiations came to of late, newest first, without the peer: a report says why a browser
+    /// took no straight way (`Control::json`).
+    diary: Mutex<std::collections::VecDeque<(u64, String)>>,
 }
+/// How many lines of its diary it keeps.
+const DIARY: usize = 24;
 fn room(state: &mut State) -> bool {
     if state.sessions.len() < SESSIONS {
         return true;
@@ -151,7 +156,28 @@ impl Control {
             native: Mutex::default(),
             #[cfg(not(target_arch = "wasm32"))]
             starting: std::sync::atomic::AtomicBool::new(false),
+            diary: Mutex::default(),
         }
+    }
+    /// Notes what a negotiation or a carrier came to, for its diary.
+    pub(crate) fn note(&self, what: impl Into<String>) {
+        let at = crate::jobs::now_ms();
+        let mut diary = self.diary.lock().expect("transport diary");
+        diary.push_front((at, what.into()));
+        diary.truncate(DIARY);
+    }
+    /// What it can carry, the browser routes it holds, and its diary: `{caps, sessions, routes: [{ready, sent,
+    /// received, age_ms}], diary: [{at, what}]}`, no peer named.
+    pub(crate) fn json(&self) -> Value {
+        let state = self.state.lock().expect("transport control");
+        let routes: Vec<Value> = state
+            .routes
+            .values()
+            .map(|b| json!({"ready": b.ready, "sent": b.sent, "received": b.received, "age_ms": b.since.elapsed().as_millis() as u64}))
+            .collect();
+        let diary: Vec<Value> =
+            self.diary.lock().expect("transport diary").iter().map(|(at, what)| json!({"at": at, "what": what})).collect();
+        json!({"caps": state.caps.json(), "closed": state.closed, "sessions": state.sessions.len(), "routes": routes, "diary": diary})
     }
     pub(crate) fn browser(&self, wt: bool, rtc: bool) {
         let mut state = self.state.lock().expect("transport control");
@@ -459,7 +485,11 @@ fn validate_descriptor(value: &Value) -> Result<()> {
 
 async fn negotiate(shared: Arc<Shared>, peer: Peer) -> Result<()> {
     let _operation = shared.admit()?;
-    if shared.endpoint.id() >= peer.endpoint || !allowed(&shared, &peer).await {
+    if shared.endpoint.id() >= peer.endpoint {
+        return Ok(());
+    }
+    if !allowed(&shared, &peer).await {
+        shared.transport_control.note("a peer it may not offer a carrier: not among its Lab's peers, or locked");
         return Ok(());
     }
     let control = &shared.transport_control;
@@ -488,8 +518,10 @@ async fn negotiate(shared: Arc<Shared>, peer: Peer) -> Result<()> {
         } else if caps.rtc && remote.rtc {
             "rtc"
         } else {
+            control.note(format!("no carrier in common: mine {}, theirs {}", caps.json(), remote.json()));
             return Ok(());
         };
+        control.note(format!("opening {mode}"));
         control.spend(&shared, &peer, mine, theirs)?;
         let wire_epoch = epoch(&session::exporter(&peer.conn)?, shared.endpoint.id(), peer.endpoint, &mine, &theirs);
         let mut open = json!({"v":1,"op":"open","initiator":hex(&mine),"responder":hex(&theirs),"mode":mode});
@@ -517,6 +549,9 @@ async fn negotiate(shared: Arc<Shared>, peer: Peer) -> Result<()> {
     }
     .await;
     control.finish_attempt(&peer, mine);
+    if let Err(e) = &result {
+        control.note(format!("negotiation failed: {e:#}"));
+    }
     if result.is_err() {
         let id = control
             .state
@@ -631,6 +666,7 @@ pub(crate) fn ready_address(shared: &Arc<Shared>, id: &RouteId, address: iroh_ba
 pub(crate) async fn browser_event(shared: &Arc<Shared>, event: Value) -> Result<()> {
     let _operation = shared.admit()?;
     if event["kind"] == "capabilities" {
+        shared.transport_control.note(format!("browser can: webtransport {}, webrtc {}", event["webtransport"], event["webrtc"]));
         shared
             .transport_control
             .browser(event["webtransport"].as_bool().unwrap_or(false), event["webrtc"].as_bool().unwrap_or(false));
@@ -643,9 +679,11 @@ pub(crate) async fn browser_event(shared: &Arc<Shared>, event: Value) -> Result<
     match event["kind"].as_str() {
         Some("ready") => {
             let mtu = event["mtu"].as_u64().and_then(|n| usize::try_from(n).ok()).context("carrier MTU")?;
+            shared.transport_control.note(format!("carrier ready, mtu {mtu}"));
             ready(shared, &id, mtu)
         }
         Some("closed") => {
+            shared.transport_control.note(format!("carrier closed: {}", event["reason"].as_str().unwrap_or("no reason")));
             close_route(shared, &id);
             Ok(())
         }

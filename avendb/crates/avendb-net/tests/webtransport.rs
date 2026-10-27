@@ -84,8 +84,9 @@ fn client_pump(broker: PacketTransport, id: RouteId, connection: Connection) -> 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn real_aven_sync_keeps_inner_pq_and_exporter_hello_over_pinned_http3() {
+    // The cast's keys are made before the deadline starts: on a loaded runner they alone took ~39 s (2026-10-27).
+    let mut w = world(); let coop = handbook_ready(&mut w);
     tokio::time::timeout(Duration::from_secs(35), async {
-        let mut w = world(); let coop = handbook_ready(&mut w);
         let (a, b, ka, kb) = (w.mac_a, w.mac_b, w.passkey_a, w.passkey_b);
         let opts = Options { bind: None, ..Options::local() };
         let mac = Node::spawn(w.lab.split(a, &[ka], [1; 32]), a, opts.clone()).await.unwrap();
