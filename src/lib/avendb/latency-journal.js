@@ -1,7 +1,7 @@
 /** Device-local, bounded timing evidence. Never stores operation arguments, IDs, keys or error text. */
 const KEY = 'avendb:latency:v1';
 export const TIMED_OPS = new Set(['status', 'world', 'entries', 'entry', 'entry_views', 'query', 'get', 'room', 'history', 'read_file', 'synced', 'cap_groups', 'bring', 'bring_entries', 'network', 'create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'merge', 'review', 'put_file']);
-const STAGES = new Set(['unlock.total', 'peer.transport-rtt', 'query.first-nonempty-emission', 'query.first-nonempty-emission.readonly', ...[...TIMED_OPS].map(op => `call.${op}`)]);
+const STAGES = new Set(['unlock.total', 'unlock.lease', 'peer.transport-rtt', 'query.first-nonempty-emission', 'query.first-nonempty-emission.readonly', ...[...TIMED_OPS].map(op => `call.${op}`)]);
 const LIMIT = 120;
 const REASONS = new Set(['timeout', 'cancelled', 'locked', 'not-found', 'not-ready', 'not-allowed', 'refused', 'failed', 'worker-ended', 'file-not-open', 'file-index-incomplete']);
 /** @param {any} value */
@@ -85,7 +85,7 @@ export async function measureLatency(stage, work, journal = latencyJournal, now 
   journal.record(stage, Math.max(0, now() - start), outcome);
   // This boundary is rare and critical: iOS may reclaim the document immediately after unlock.
   // Do not leave its evidence waiting behind the ordinary two-second write coalescer.
-  if (stage === 'unlock.total') journal.flush();
+  if (stage === 'unlock.total' || stage === 'unlock.lease') journal.flush();
  }
 }
 

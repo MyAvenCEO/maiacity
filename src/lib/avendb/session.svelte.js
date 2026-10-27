@@ -46,6 +46,7 @@ import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
 import { beforeLocalWrite } from './local-write.js';
 import { noteLifecycle } from './lifecycle.js';
+import { lease, RENEW } from './lease.js';
 import { measureLatency } from './latency-journal.js';
 import { createReactiveRead } from './reactive-read.js';
 import { createWorldReader } from './world-reader.js';
@@ -172,11 +173,76 @@ async function start() {
 		avendb = pkg;
 		store = await pkg.openStore(STORE);
 		meta = (await avendb.storeMeta(store)) ?? null;
+		if (meta && (await resume())) return;
 		phase = meta ? 'closed' : 'new';
 	} catch (e) {
 		error = `This browser can't be a device: ${/** @type {Error} */ (e).message}`;
 		phase = 'new';
 	}
+}
+
+/**
+ * Opens the account this browser holds again by its lease (./lease.js), with no ceremony, where an unlock in the last
+ * minutes kept one: a reload, a back swipe into an earlier load, or iOS closing the app in the background then asks
+ * for no passkey again (Samuel's iPhone, 2026-10-27). Whether it opened. A lease that opens nothing is ended; one
+ * another tab's open device holds is kept for that tab.
+ */
+async function resume() {
+	const kept = lease();
+	if (!kept || !meta?.device) return false;
+	const got = await kept.take(meta.device);
+	if (!got) return false;
+	noteLifecycle('lease-open-start');
+	try {
+		// the page before a reload may hold the store for a moment more, as its worker ends
+		const open = async (/** @type {number} */ tries) => {
+			try {
+				return await avendb.Device.open_leased(got.pad.slice(), got.passkey, undefined, store);
+			} catch (e) {
+				if (tries <= 1 || !held(e)) throw e;
+				await new Promise((r) => setTimeout(r, 750));
+				return open(tries - 1);
+			}
+		};
+		const d = await measureLatency('unlock.lease', () => open(4));
+		running(d);
+		noteLifecycle('lease-opened');
+		await kept.keep(got.pad, meta.device, got.passkey);
+		renewing();
+		return true;
+	} catch (e) {
+		noteLifecycle('lease-failed');
+		if (!held(e)) kept.end();
+		return false;
+	} finally {
+		got.pad.fill(0);
+	}
+}
+
+/** Whether `e` says another tab, or the page before this one, holds the store. @param {unknown} e */
+const held = (e) => /another tab/i.test(String(/** @type {Error} */ (e)?.message ?? e));
+
+/** Keeps the lease of the device that just opened by `pad`, the PRF output on its salt its unlock brought back. A
+ *  lease that can't be kept costs nothing: the next load asks for the passkey, as before. @param {Uint8Array} pad
+ *  @param {any} d */
+function leaseOf(pad, d) {
+	const device = meta?.device ?? d?.id?.();
+	const passkey = d?.passkeyId?.();
+	if (!device || !passkey) return;
+	void lease()?.keep(pad, device, passkey).then(() => noteLifecycle('lease-kept'));
+	renewing();
+}
+
+/** While the page is open, its lease renewed each `RENEW` ms it is seen, and as it goes to the background, so it ends
+ *  `LIFE` after the person last saw it. Set up once per page. */
+let renews = false;
+function renewing() {
+	if (renews || typeof document === 'undefined') return;
+	renews = true;
+	const renew = () => phase === 'open' && !mac && lease()?.renew();
+	setInterval(() => document.visibilityState === 'visible' && renew(), RENEW);
+	document.addEventListener('visibilitychange', renew);
+	addEventListener('pagehide', renew);
 }
 
 /** In the Mac app: its device beside it, open already, to unlock, or none yet. The app runs avenDB natively, and
@@ -363,8 +429,14 @@ async function found(fresh, { name, relay, server, backup, person, invite }, { s
 	if (fresh) step('make');
 	const made = fresh ? await passkey.create(person || name) : null;
 	if (made) held.id = made.id;
-	// a copy of the nonce, as what the unlock brings back is moved to the device's worker, and the nonce kept after it
-	const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce.slice(), challenge);
+	// a copy of the nonce, as what the unlock brings back is moved to the device's worker, and the nonce kept after it;
+	// and of the pad it brings back, for the device's lease
+	let pad = new Uint8Array(0);
+	const unlockNew = async (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => {
+		const u = await unlock(nonce.slice(), challenge);
+		pad = u.devicePrf.slice();
+		return u;
+	};
 	const shows = shown();
 	await avendb.signUpWith(invite);
 	const d = await avendb.Device.found(name, relay, server, made?.spki, unlockNew, sign, backup, shows, store).finally(() =>
@@ -372,6 +444,8 @@ async function found(fresh, { name, relay, server, backup, person, invite }, { s
 	);
 	step('save');
 	await started(d, nonce, held.id, { name, relay });
+	leaseOf(pad, d);
+	pad.fill(0);
 }
 
 /**
@@ -388,11 +462,19 @@ async function link(through, { name, relay }, { step, device: shown } = QUIET) {
 	}
 	const nonce = crypto.getRandomValues(new Uint8Array(32));
 	const { unlock, held } = await ceremonies(undefined, nonce);
-	// a copy of the nonce, as what the unlock brings back is moved to the device's worker, and the nonce kept after it
-	const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce.slice(), challenge);
+	// a copy of the nonce, as what the unlock brings back is moved to the device's worker, and the nonce kept after it;
+	// and of the pad it brings back, for the device's lease
+	let pad = new Uint8Array(0);
+	const unlockNew = async (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => {
+		const u = await unlock(nonce.slice(), challenge);
+		pad = u.devicePrf.slice();
+		return u;
+	};
 	const d = await avendb.Device.link(name, relay, through, unlockNew, shown(), store).catch(noAccount);
 	step('save');
 	await started(d, nonce, held.id, { name, relay });
+	leaseOf(pad, d);
+	pad.fill(0);
 }
 
 /**
@@ -465,7 +547,15 @@ async function opening({ step, device: shown }) {
 		throw e;
 	}
 	noteLifecycle('device-open-start');
-	running(await avendb.Device.open(unlocked, shown(), store));
+	// a copy of the pad, as what the unlock brought back is moved to the device's worker
+	const pad = unlocked.devicePrf.slice();
+	try {
+		const d = await avendb.Device.open(unlocked, shown(), store);
+		running(d);
+		leaseOf(pad, d);
+	} finally {
+		pad.fill(0);
+	}
 }
 
 /** The device runs from here on, its shelf keeping what opens it again, even should that fail: it can still show
@@ -739,6 +829,7 @@ async function lock() {
 	if (mac) return;
 	noteLifecycle('session-lock-request');
 	noteLifecycle('locked');
+	lease()?.end();
 	const d = device;
 	if (d) retireWorld(d);
 	watching = null;
@@ -751,6 +842,7 @@ async function lock() {
 /** Forgets the account here: the device lets go, and its shelf is put aside, never deleted, and a new one is in use,
  *  in the app's folder or in OPFS; the account is new here, and every page of the tab sees it so. */
 async function forget() {
+	lease()?.end();
 	if (device) retireWorld(device);
 	await device?.close();
 	watching = null;
