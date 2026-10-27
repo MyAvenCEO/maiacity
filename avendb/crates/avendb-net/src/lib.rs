@@ -296,6 +296,10 @@ pub struct Options {
     /// nor again once the vaults it follows change; only what it is told to bring (`Node::bring`, `Node::sync_with`),
     /// so a fresh one never pulls all its device may hold, but the vaults a tool call touches.
     pub lazy: bool,
+    /// A device that holds nothing yet when it starts takes its first sync with the boxes it needs not now held back
+    /// as stubs, and their bodies in the pull after (`Lab::set_lazy_boxes`): on by default, never for a server (`card`,
+    /// `keep`) or a node that asks only when told (`lazy`).
+    pub first_sync_stubs: bool,
     /// How soon it tries again to tell a peer it couldn't reach, or to ask one it failed to ask: after `retry`, then
     /// twice as long each time the peer stays out of reach, up to a minute.
     pub retry: Duration,
@@ -367,6 +371,7 @@ impl Options {
             relay: None,
             proxy: false,
             lazy: false,
+            first_sync_stubs: true,
             retry: Duration::from_secs(1),
             shelf: None,
             keep: false,
@@ -702,6 +707,15 @@ impl Node {
             },
             None => None,
         };
+        // a device that holds nothing yet, the page's or a new native device's, takes its first sync with the boxes it
+        // needs not now held back as stubs and their bodies in the pull after (`Lab::set_lazy_boxes`,
+        // `spec/AvenDB/LazyBoxes.lean`); one that holds edits syncs as before. A peer from before box stubs refuses
+        // `session::STUBS` and sends everything, which ends it (`Shared::pages`). Not a server, which keeps and hands on
+        // what it holds (`card`, `keep`), nor a node that asks only when told (`lazy`), which would never ask for the
+        // bodies
+        if opts.first_sync_stubs && !opts.card && !opts.keep && !opts.lazy && lab.size(me).0 == 0 {
+            lab.set_lazy_boxes(me, true);
+        }
         opts.progress.step("node");
         if let Some(admission) = &opts.admission {
             let own = SecretKey::from_bytes(&secret).public();
@@ -813,6 +827,7 @@ impl Node {
             unpacked: Mutex::default(),
             unbatched: Mutex::default(),
             uncut: Mutex::default(),
+            unstubbed: Mutex::default(),
             unstripped: Mutex::default(),
             unsegmented: Mutex::default(),
             ranges: Mutex::default(),
@@ -2160,6 +2175,8 @@ struct Shared {
     unbatched: Mutex<HashSet<usize>>,
     /// The connections whose peer refused a `session::CUTS`, a peer from before S6: asked page after page.
     uncut: Mutex<HashSet<usize>>,
+    /// The connections whose peer refused or failed a `session::STUBS`, a peer from before box stubs: pulled whole.
+    unstubbed: Mutex<HashSet<usize>>,
     /// The connections whose peer didn't answer a proof request of version 2, with paths in place of signatures (P8):
     /// an older node, or one that couldn't link a root; asked version 1 from then on.
     unstripped: Mutex<HashSet<usize>>,
@@ -2945,8 +2962,15 @@ impl Shared {
             self.try_lab(|lab, me| lab.fetch_withheld(me)).await?;
             self.ask_soon(peer.endpoint);
         } else if let Some(logs) = answers {
-            // asked for their bodies, what didn't come of the stubs this peer sent is of nothing it sends
-            self.try_lab(move |lab, me| lab.drop_unanswered(me, device, logs.as_ref())).await?;
+            // asked for their bodies, what didn't come of the stubs this peer sent is of nothing it sends; and a first
+            // sync a peer from before box stubs sent whole leaves the device holding edits, which ends its stubs
+            self.try_lab(move |lab, me| {
+                lab.drop_unanswered(me, device, logs.as_ref());
+                if new > 0 && lab.lazy_boxes(me) && lab.stubs(me).is_empty() {
+                    lab.set_lazy_boxes(me, false);
+                }
+            })
+            .await?;
         }
         Ok(new)
     }
@@ -2969,6 +2993,10 @@ impl Shared {
             })
             .await;
         let Some(body) = body else { return false };
+        let connection = peer.conn.stable_id();
+        if self.unstubbed.lock().expect("unstubbed").contains(&connection) {
+            return false;
+        }
         let mut asked = vec![kind];
         asked.extend(body);
         let answer = async {
@@ -2982,6 +3010,7 @@ impl Shared {
             Ok(stubs) => self.try_lab(move |lab, me| lab.receive_stubs(me, device, stubs.0)).await.is_ok(),
             Err(error) => {
                 tracing::debug!(%error, "avendb: no stubs, the first sync takes every box");
+                self.unstubbed.lock().expect("unstubbed").insert(connection);
                 false
             }
         }
@@ -3437,6 +3466,7 @@ impl Shared {
         self.unpacked.lock().expect("unpacked").remove(&peer.conn.stable_id());
         self.unbatched.lock().expect("unbatched").remove(&peer.conn.stable_id());
         self.uncut.lock().expect("uncut").remove(&peer.conn.stable_id());
+        self.unstubbed.lock().expect("unstubbed").remove(&peer.conn.stable_id());
         self.unstripped.lock().expect("unstripped").remove(&peer.conn.stable_id());
         let known = self.reach.lock().expect("reach").contains_key(&peer.device);
         let forget = !known && self.live(peer.endpoint).is_none();
