@@ -220,7 +220,7 @@ async fn a_live_hint_does_not_authorize_a_private_entry() {
     );
     alice
         .shared
-        .pull_live(bob.id(), sender, [LogId::Entry(secret)].into())
+        .pull_live(bob.id(), sender, [LogId::Entry(secret)].into(), &mut super::LiveTiming::default())
         .await
         .unwrap();
     assert!(

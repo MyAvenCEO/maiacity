@@ -15,11 +15,29 @@ use n0_future::{
     time::{self, Duration},
 };
 
-use crate::{Holdings, Scope, Shared, pulls};
+use crate::traffic::{Live, LiveEnd};
+use crate::{Holdings, Scope, Shared, jobs, pulls};
 
 /// Bound one peer's interactive network attempt. An already admitted blocking validation may finish afterward;
 /// ordinary ownership fences retain it. Normal reconciliation covers overflow/timeouts and keeps verified records.
 const LIVE_WAIT: Duration = Duration::from_secs(10);
+
+/// Where one live pull's time went, for `traffic::Live`.
+#[derive(Default)]
+struct LiveTiming {
+    logs: u64,
+    new: usize,
+    differ_ms: u64,
+    rules_ms: u64,
+    pull_ms: u64,
+    view_ms: u64,
+    /// It lacked too many rule logs, or some still after taking them: the backlog brings the rest.
+    backlog: bool,
+}
+
+fn ms(since: time::Instant) -> u64 {
+    since.elapsed().as_millis() as u64
+}
 
 /// An unchanged frontier can be a causal witness accompanying a new edit. A duplicate-only frame must not
 /// manufacture priority, and both changed logs and witnesses share the same bounded admission.
@@ -95,22 +113,45 @@ impl Shared {
         let shared = self.clone();
         task::spawn(async move {
             let _activity = activity;
+            let began = time::Instant::now();
+            let mut timing = LiveTiming::default();
             let attempt = time::timeout(LIVE_WAIT, async {
                 while let Some(logs) = work.next() {
-                    shared.pull_live(endpoint, device, logs).await?;
+                    timing.logs += logs.len() as u64;
+                    shared.pull_live(endpoint, device, logs, &mut timing).await?;
                 }
                 Ok::<(), anyhow::Error>(())
             })
             .await;
-            if !matches!(attempt, Ok(Ok(()))) {
+            let end = match &attempt {
+                Ok(Ok(())) if timing.backlog => LiveEnd::Backlog,
+                Ok(Ok(())) => LiveEnd::Done,
+                Err(_) => LiveEnd::TimedOut,
+                Ok(Err(_)) => LiveEnd::Failed,
+            };
+            if end != LiveEnd::Done {
                 tracing::debug!(
                     ?attempt,
                     "avendb: live pull continues through normal reconciliation"
                 );
             }
             // A timed-out waiter can have accepted a partial page. Materialize it through the ordinary path too.
+            let viewing = time::Instant::now();
             shared.materialize_live().await;
+            timing.view_ms += ms(viewing);
             drop(work);
+            shared.traffic.live(Live {
+                device,
+                at: jobs::now_ms(),
+                logs: timing.logs,
+                new: timing.new as u64,
+                differ_ms: timing.differ_ms,
+                rules_ms: timing.rules_ms,
+                pull_ms: timing.pull_ms,
+                view_ms: timing.view_ms,
+                ms: ms(began),
+                end,
+            });
         });
     }
 
@@ -127,8 +168,11 @@ impl Shared {
         endpoint: EndpointId,
         device: SignerId,
         hints: BTreeSet<LogId>,
+        timing: &mut LiveTiming,
     ) -> anyhow::Result<()> {
+        let at = time::Instant::now();
         let mut missing = self.differ(device).await;
+        timing.differ_ms += ms(at);
         let rules: BTreeSet<_> = missing
             .iter()
             .filter(|log| !matches!(log, LogId::Entry(_)))
@@ -138,14 +182,18 @@ impl Shared {
         // A large authorization catch-up belongs to the existing authority-first backlog scheduler. Never skip
         // it to prioritize a chat or treat the peer's hints as permission to materialize its entry.
         if rules.len() > pulls::LIVE_LOGS {
+            timing.backlog = true;
             return Ok(());
         }
         if !rules.is_empty() {
-            self.pull_expected(endpoint, Scope::Logs(rules), false, None, Some(device), None)
+            let at = time::Instant::now();
+            timing.new += self.pull_expected(endpoint, Scope::Logs(rules), false, None, Some(device), None)
                 .await?;
             self.materialize_live().await;
             missing = self.differ(device).await;
+            timing.rules_ms += ms(at);
             if missing.iter().any(|log| !matches!(log, LogId::Entry(_))) {
+                timing.backlog = true;
                 return Ok(());
             }
         }
@@ -154,10 +202,14 @@ impl Shared {
             .copied()
             .collect::<BTreeSet<_>>();
         if !logs.is_empty() {
-            self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None)
+            let at = time::Instant::now();
+            timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None)
                 .await?;
+            timing.pull_ms += ms(at);
             // A single interactive edit must wake reactive subscribers before the unrelated backlog finishes.
+            let at = time::Instant::now();
             self.materialize_live().await;
+            timing.view_ms += ms(at);
         }
         Ok(())
     }

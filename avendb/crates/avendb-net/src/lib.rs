@@ -1763,6 +1763,7 @@ impl Node {
             "peers": peers,
             "gone": gone,
             "recent": s.traffic.recent(),
+            "live": s.traffic.live_json(),
             "carriers": s.transport_control.json(),
         })
     }

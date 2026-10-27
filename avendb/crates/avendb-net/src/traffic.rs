@@ -78,6 +78,52 @@ struct Book {
     by: HashMap<SignerId, Pulled>,
     recent: VecDeque<Page>,
     served: Served,
+    live: LiveBook,
+}
+
+/// How one live pull ended (`live::live_announced`): every log it was told of taken (`done`), given up at `LIVE_WAIT`
+/// (`timed_out`), left to the backlog because the device lacked too many rule logs first (`backlog`), or failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LiveEnd {
+    Done,
+    TimedOut,
+    Backlog,
+    Failed,
+}
+
+impl LiveEnd {
+    fn name(self) -> &'static str {
+        match self {
+            LiveEnd::Done => "done",
+            LiveEnd::TimedOut => "timed_out",
+            LiveEnd::Backlog => "backlog",
+            LiveEnd::Failed => "failed",
+        }
+    }
+}
+
+/// One live pull: a peer announced a few changed logs and this node asked for them at once, beside its backlog. How
+/// long its parts took, in milliseconds: working out what differs, the rule logs first, the announced logs, and
+/// bringing its view up to date after; and its whole, from the announcement to its view showing what came.
+#[derive(Clone, Debug)]
+pub struct Live {
+    pub device: SignerId,
+    pub at: u64,
+    pub logs: u64,
+    pub new: u64,
+    pub differ_ms: u64,
+    pub rules_ms: u64,
+    pub pull_ms: u64,
+    pub view_ms: u64,
+    pub ms: u64,
+    pub end: LiveEnd,
+}
+
+/// The live pulls, by how they ended, and the newest of them.
+#[derive(Default)]
+struct LiveBook {
+    ends: [u64; 4],
+    recent: VecDeque<Live>,
 }
 
 /// What a node answered its peers' askings with, page by page (`Traffic::served`): how many pages, edits and bytes,
@@ -149,6 +195,32 @@ impl Traffic {
         s.max_ms = s.max_ms.max(ms);
         s.recent.push_front((now_ms(), ms, bytes));
         s.recent.truncate(RECENT);
+    }
+
+    /// A live pull ended (`Live`).
+    pub fn live(&self, live: Live) {
+        tracing::debug!(device = %live.device.to_hex(), logs = live.logs, new = live.new, ms = live.ms,
+            differ_ms = live.differ_ms, rules_ms = live.rules_ms, pull_ms = live.pull_ms, view_ms = live.view_ms,
+            end = live.end.name(), "avendb: live pull");
+        let mut book = self.0.lock().expect("traffic");
+        book.live.ends[live.end as usize] += 1;
+        book.live.recent.push_front(live);
+        book.live.recent.truncate(RECENT);
+    }
+
+    /// The live pulls, as the `network` op says them: how many ended each way, and the newest, the newest first.
+    pub fn live_json(&self) -> Value {
+        let book = self.0.lock().expect("traffic");
+        let ends = [LiveEnd::Done, LiveEnd::TimedOut, LiveEnd::Backlog, LiveEnd::Failed];
+        let mut by = serde_json::Map::new();
+        for end in ends {
+            by.insert(end.name().into(), json!(book.live.ends[end as usize]));
+        }
+        let recent: Vec<Value> = book.live.recent.iter().map(|l| json!({
+            "device": l.device.to_hex(), "at": l.at, "logs": l.logs, "new": l.new, "differ_ms": l.differ_ms,
+            "rules_ms": l.rules_ms, "pull_ms": l.pull_ms, "view_ms": l.view_ms, "ms": l.ms, "end": l.end.name(),
+        })).collect();
+        json!({ "ends": by, "recent": recent })
     }
 
     /// What it answered its peers with, as `/feed/health` and the `network` op say it.
