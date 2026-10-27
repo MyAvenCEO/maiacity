@@ -1,8 +1,11 @@
 // @ts-nocheck — the device worker owns WebTransport; these datagrams remain inner iroh ciphertext.
 import { MIN_MTU, MAX_PACKET, packet, packetWriter, reason } from './packets.js';
 
+/** The datagrams held for the device while it is busy: ~5 MB of full-size ones, a few seconds of a fast link. */
+const INCOMING = 4096;
+
 export function webTransport(descriptor, { event, receive }, { WebTransport = globalThis.WebTransport, now = Date.now } = {}) {
-	let transport, reader, writer, outgoing, stopped = false, opening, expiry, settle;
+	let transport, reader, writer, outgoing, stopped = false, reached = false, opening, expiry, settle;
 	const ready = new Promise((resolve) => { settle = resolve; });
 	const close = (why = 'closed') => {
 		if (stopped) return;
@@ -24,15 +27,20 @@ export function webTransport(descriptor, { event, receive }, { WebTransport = gl
 			transport = new WebTransport(url.href, { allowPooling: false, requireUnreliable: true, serverCertificateHashes });
 			opening = setTimeout(() => close('WebTransport opening timed out'), 10_000);
 			expiry = setTimeout(() => close('WebTransport capability expired'), remaining);
-			void transport.closed.then(() => close('WebTransport closed'), close);
+			// a close says its code and reason, and the step it came at: before `ready` the session was never up
+			void transport.closed.then((info) => close({ name: reached ? 'WebTransport closed' : 'WebTransport refused', ...info }),
+				(error) => close(Object.assign(Object.create(error ?? null), { name: `${error?.name ?? 'Error'}${reached ? '' : ' before ready'}`, message: error?.message, source: error?.source, streamErrorCode: error?.streamErrorCode })));
 			await transport.ready;
+			reached = true;
 			if (stopped) return;
 			clearTimeout(opening);
 			const datagrams = transport.datagrams;
 			const mtu = Math.min(MAX_PACKET, datagrams.maxDatagramSize);
 			if (!Number.isSafeInteger(mtu) || mtu < MIN_MTU) throw new Error('WebTransport datagrams too small');
-			datagrams.incomingHighWaterMark = 32; datagrams.outgoingHighWaterMark = 32;
-			datagrams.incomingMaxAge = 1000; datagrams.outgoingMaxAge = 1000;
+			// what arrives while the device works (a page's check and keep) waits for it rather than being dropped: 32
+			// datagrams and a second's age lost every packet of a 1.5-4 s take, and with them the inner QUIC's window
+			datagrams.incomingHighWaterMark = INCOMING; datagrams.outgoingHighWaterMark = 32;
+			datagrams.incomingMaxAge = Infinity; datagrams.outgoingMaxAge = 1000;
 			reader = datagrams.readable.getReader(); writer = datagrams.writable.getWriter();
 			outgoing = packetWriter(async (bytes) => { await writer.ready; if (stopped) return false; await writer.write(bytes); return true; }, close, { mtu });
 			await event({ kind: 'ready', mtu });
