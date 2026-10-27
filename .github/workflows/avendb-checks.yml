@@ -442,6 +442,7 @@ jobs:
           cargo test --release --locked -p avendb --test bench_gates --no-run
           cargo test --release --locked -p avendb --test first_sync_moves --no-run
           cargo test --locked -p avendb-server --features test-fixtures --test relay_bench --no-run
+          cargo test --locked -p avendb-net --features test-fixtures --test sync_bench --no-run
       - name: avenDB at 10k, 100k and 1M edits, and a first sync
         working-directory: avendb
         run: |
@@ -461,6 +462,17 @@ jobs:
         run: |
           for c in direct relay relay_link; do
             AVENDB_CARRIER=$c cargo test --locked -p avendb-server --features test-fixtures --test relay_bench -- --ignored --nocapture --exact bench_carrier \
+              | tee -a "$RUNNER_TEMP/bench.log"
+          done
+      # a live edit's delay while a device catches up, on a calm simulated link and a phone's (avendb-net's
+      # tests/sync_bench.rs, plan D3: batch 5's exit gates)
+      - name: Live sync during a catch-up
+        working-directory: avendb
+        env:
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        run: |
+          for l in calm phone; do
+            AVENDB_LIVE_LINK=$l cargo test --locked -p avendb-net --features test-fixtures --test sync_bench -- --ignored --nocapture --exact bench_live \
               | tee -a "$RUNNER_TEMP/bench.log"
           done
       - name: Postgres, the same work
