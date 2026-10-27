@@ -77,8 +77,8 @@
 	/** the recipe of what is chosen, by its hash in the Maia City vault; undefined if only its note was kept, or the vault lacks it */
 	const hash = $derived(INDEX.labels[refOf(group, chosen.id, version, variant?.id)]);
 	const recipe = $derived(hash ? INDEX.recipes[hash] : null);
-	// the page's Interest: the chosen asset's entry is the manifest's `$asset`, its neighbours in the list come next,
-	// nearest first (src/lib/avendb/manifests.js ASSETS)
+	// the page's Interest: the chosen asset's entry is the actor's `$asset`, its neighbours in the list come next,
+	// nearest first (src/lib/avendb/actors.js ASSETS)
 	$effect(() => {
 		const entry = hash ? pinOf(hash)?.entry ?? null : null;
 		bindView('asset', entry);

@@ -25,7 +25,7 @@
 	 * @typedef {{ line: string | null, name: string | null, heads: string[], history: string[], variant?: boolean,
 	 *   version?: import('./versions.js').Described, main?: import('./versions.js').Described | null,
 	 *   behind?: boolean }} LineView a line of the entry, as the `note` op reads it
-	 * @typedef {{ id: string, author: string, actor: string, via: string[], chain: import('./vaults.js').Chain,
+	 * @typedef {{ id: string, author: string, signer: string, actor?: string, via: string[], chain: import('./vaults.js').Chain,
 	 *   line: string | null, deps: string[], kind: 'edit' | 'propose' | 'variant' | 'merge' | 'accept' | 'sealed',
 	 *   name: string | null, from: { line: string | null, name: string | null } | null, counted: boolean,
 	 *   version?: number | null, authors?: { vault: string, name: string | null, kind: string | null }[] | null }} EditView
@@ -99,7 +99,7 @@
 	/** Line `l` quoted, as a sentence names it. @param {string | null} l */
 	const quoted = (l) => `“${lineName(lineOf(l))}”`;
 	/** Who made edit `e`: its device by name, the vault it acted for and the owners it acted through. @param {Numbered} e */
-	const who = (e) => actingWords(world, e.author, e.actor, e.via);
+	const who = (e) => actingWords(world, e.author, e.signer ?? e.actor, e.via);
 
 	/** What edit `e` did, in the view's words where it has them, else avenDB's. @param {Numbered} e */
 	const what = (e) => said?.(e) || editWords(e, lines, here?.line, thing);

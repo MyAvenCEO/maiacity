@@ -129,6 +129,7 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
         "epoch": st.epoch(KeyFam::Audience(v, x)),
         "bytes": item.map_or(0, |i| i.bytes().len()),
         "author": author,
+        "signer": hex(&en.creator.0),
         "actor": hex(&en.creator.0),
         "public": st.public_key(KeyFam::Audience(v, x)),
         "levels": levels,
@@ -335,7 +336,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
         Action::Snapshot { vault, states } => ("snapshot", json!({ "vault": hex(&vault.0), "states": states.len() })),
         Action::Revoke(Revoking::Grant { share, actor, keep, via }) => (
             "revoke",
-            json!({ "share": hex(&share.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
+            json!({ "share": hex(&share.0), "signer": hex(&actor.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
         ),
         Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body } => {
             let line = match proposal {
@@ -348,6 +349,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 json!({
                     "vault": hex(&vault.0),
                     "entry": hex(&entry.0),
+                    "signer": hex(&actor.0),
                     "actor": hex(&actor.0),
                     "stay": stay.map(|s| hex(&s.0)),
                     "epoch": epoch,
@@ -575,6 +577,7 @@ fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, version: Option<&u
     json!({
         "id": hex(&w.edit.0),
         "author": hex(&w.author.0),
+        "signer": hex(&w.actor.0),
         "actor": hex(&w.actor.0),
         "via": w.via.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
         "chain": audit.chain(w.author, w.actor, &w.via),

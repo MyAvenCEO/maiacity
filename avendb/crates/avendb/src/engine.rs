@@ -55,6 +55,7 @@
 //! draft its vault hasn't landed has no main line yet, so every read and record op of its main line answers `NoEntry`
 //! (`Lab::landed`).
 
+mod actors;
 mod aips;
 pub mod coverage;
 mod vaults;
@@ -110,6 +111,8 @@ pub enum Refused {
     Behind(String),
     /// A batch's `at`th op was refused, after its steps before it did `done`, which stand.
     Batch { at: usize, done: Vec<Value>, why: Box<Refused> },
+    /// A call an actor's interface doesn't admit, or whose template writes outside its footprint (`address::Verdict`).
+    Call(crate::address::Verdict),
 }
 
 impl From<Refusal> for Refused {
@@ -126,6 +129,7 @@ impl Refused {
             Refused::NoSchema(why) => ("NoSchema".into(), why.clone()),
             Refused::NoEntry => ("NoEntry".into(), "the device shows no such entry, or no such line of it".into()),
             Refused::Behind(why) => ("Behind".into(), why.clone()),
+            Refused::Call(v) => (v.name().into(), v.why().into()),
             Refused::Batch { at, done, why } => {
                 let mut out = why.to_json();
                 out["at"] = (*at).into();
@@ -168,7 +172,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "entry_views" => &["vault", "entries", "types", "as", "kind"],
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "after", "depth", "follow", "observeRevision"],
-        "touched" => &["since"],
+        "touched" => &["since", "reads"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
         "checkpoint_view" | "checkpoint_entry_base" => &["entry"],
@@ -230,13 +234,15 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "define_group" => &["vault", "group"],
         "redefine_group" => &["entry", "group"],
         "share_group" => &["over", "group", "who", "what", "as"],
+        "describe" => &["entry", "version"],
+        "call" => &["to", "method", "args", "against", "as"],
         _ => return None,
     })
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing. The page's list
 /// (src/lib/avendb/op-names.js) is written from this one and `ASKS` (tests/op_names.rs), never by hand.
-pub const READS: [&str; 39] = [
+pub const READS: [&str; 40] = [
     "entry_views",
     "query",
     "touched",
@@ -276,6 +282,7 @@ pub const READS: [&str; 39] = [
     "measure_peer_visibility",
     "observe_query_emission",
     "api_pass",
+    "describe",
 ];
 
 /// The ops that change nothing but ask what changes would do, by dry runs (`Lab::dry`): `may`, and `shares`, which
@@ -358,7 +365,13 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
     if name(v) == Some("world") {
         return world(lab, me, &SyncedTo::default());
     }
-    let out = op_of(v).and_then(|(name, o)| match name {
+    answer(read_op(lab, me, v))
+}
+
+/// Read op `v` run on device `me`: its answer or a refusal; `world` and `world_summary` aside, which `read` answers.
+fn read_op(lab: &Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
+    op_of(v).and_then(|(name, o)| match name {
+        "describe" => actors::describe(lab, me, o),
         "entry_views" => entry_views_inner(lab, me, o, &SyncedTo::default()),
         "query" => query(lab, me, o),
         "touched" => touched(lab, me, o),
@@ -394,8 +407,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "network" => Err(bad("network tells where a node syncs from and how: a node runs it (Node::run)")),
         _ if ASKS.contains(&name) => Err(bad(format!("{name} asks by dry runs: run it, don't read it"))),
         _ => Err(bad(format!("{name} changes what the device holds: run it, don't read it"))),
-    });
-    answer(out)
+    })
 }
 
 fn answer(out: Result<Value, Refused>) -> Value {
@@ -424,6 +436,7 @@ pub fn prepare(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Prepared, Refus
         _ if READS.contains(&name) || ASKS.contains(&name) => {
             Err(bad(format!("{name} only reads: read it, don't run it")))
         }
+        "call" => actors::call(lab, me, o),
         _ if vaults::CHANGES.contains(&name) => vaults::prepare(lab, me, name, o),
         _ => change(lab, me, v).map(Prepared::Done),
     }
@@ -498,7 +511,7 @@ fn code(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refuse
 /// The most posts one `posts` op hands out.
 const MOST_POSTS: usize = 200;
 
-/// `{"op": "posts", "limit"?, "after"?}`: the posts device `me` opens that everyone may read, newest first, as avenDB's
+/// `{"op": "posts", "limit"?, "after"?}` (either `null` as left out, so a query entry's `read` binds both): the posts device `me` opens that everyone may read, newest first, as avenDB's
 /// server serves them (`world::public_posts`): `limit` of them (`MOST_POSTS` at most, and by default), the newest or
 /// those after post `after` (an entry id; none where it lists it no more: `world::page_of_posts`), as a page that shows the newest first asks for the next ones as
 /// its person scrolls. `{"posts": [...], "more"}`, `more` whether more come after the last.
@@ -575,7 +588,7 @@ fn optional_text(o: &Map<String, Value>, name: &str, field: &str) -> Result<Opti
 
 fn count_of(o: &Map<String, Value>, field: &str) -> Result<Option<usize>, Refused> {
     let count = |v: &Value| v.as_u64().map(|n| n as usize).ok_or_else(|| bad(format!("{field} is a count")));
-    o.get(field).map(count).transpose()
+    o.get(field).filter(|v| !v.is_null()).map(count).transpose()
 }
 
 fn strs(xs: &[String]) -> Vec<&str> {
@@ -905,8 +918,9 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// those places followed in turn, or why it shows none (`empty` and `why`, `open_link`); every row and every hop is a
 /// level of `depth`, so a cycle of links ends there (`Deep`). `count` is how many rows there are in all, and `depth`
 /// how deep each was read.
+/// The answer comes from the device's stored view of the query where that is still its answer (`query_view`).
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
-    query_from(lab, me, o, Lab::query_candidates)
+    crate::query_view::read(lab, me, o, |reads| query_from(lab, me, o, Lab::query_candidates, reads))
 }
 
 /// The same query over every entry the device holds, the index left out: what the index must answer alike
@@ -916,12 +930,14 @@ pub(crate) fn full_query_oracle(lab: &Lab, me: SignerId, op: &Value) -> Value {
     let o = op.as_object().expect("query object");
     let scan = |lab: &Lab, me, vault: Option<VaultId>, _: &crate::slice::Selector| lab.entries(me).into_iter()
         .filter(|e| vault.is_none_or(|v| lab.vault_of_entry(me, *e) == Some(v))).collect();
-    query_from(lab, me, o, scan).map_or_else(|why| why.to_json(), |ok| json!({ "ok": ok }))
+    query_from(lab, me, o, scan, &mut crate::query_view::Reads::default())
+        .map_or_else(|why| why.to_json(), |ok| json!({ "ok": ok }))
 }
 
 fn query_from(
     lab: &Lab, me: SignerId, o: &Map<String, Value>,
     candidates: impl FnOnce(&Lab, SignerId, Option<VaultId>, &crate::slice::Selector) -> Vec<EntryId>,
+    reads: &mut crate::query_view::Reads,
 ) -> Result<Value, Refused> {
     let observe_revision = match o.get("observeRevision") {
         None => false,
@@ -939,6 +955,8 @@ fn query_from(
     let depth = count_of(o, "depth")?.unwrap_or(QUERY_DEPTH).min(lab.query_depth(me));
     let follow = follows_of(o)?;
     let plan = w.plan();
+    reads.vault = vault;
+    reads.plan = Some(plan.clone());
     if let Some(v) = vault.filter(|v| lab.denies_vault(me, *v)) {
         return Ok(json!({ "rows": [], "count": 0, "plan": plan.to_json(), "depth": depth, "next": Value::Null,
             "coverage": coverage::Coverage::Denied(format!("this device has no standing in vault {}", v.to_hex())).to_json() }));
@@ -953,9 +971,11 @@ fn query_from(
         let Some(m) = lab.meaning(me, entry) else {
             // Its header, or the cap groups its meaning rests on, haven't arrived; one it holds no key to it never reads.
             if lab.reads(me, entry) { waits.add(entry, coverage::On::Semantics); }
+            reads.entries.insert(entry);
             continue;
         };
         if !plan.matches(&m.attrs) { continue; }
+        reads.entries.insert(entry);
         // a based entry, owner's or reader's, shows from its owners' base before the history behind it
         let based = lab.active_owner_base(me, entry).is_some();
         let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
@@ -1007,7 +1027,10 @@ fn query_from(
         let picked = |f: &String| select.as_ref().is_none_or(|fs| fs.contains(f));
         let mut record = seen.record.iter().filter(|(f, _)| picked(f)).map(|(f, x)| (f.clone(), x.clone())).collect();
         if !follow.is_empty() {
-            ops::follow(&mut record, depth, &follow, &mut |l, rows| open_link(lab, me, &mut lanes, l, rows));
+            ops::follow(&mut record, depth, &follow, &mut |l, rows| {
+                reads.entries.insert(l.entry);
+                open_link(lab, me, &mut lanes, l, rows)
+            });
         }
         let mut row = row(entry, v, &attrs, &seen, record);
         row["cut"] = cut.into();
@@ -1029,25 +1052,51 @@ fn query_from(
         if let Some(checkpoint) = checkpoint { row["checkpoint"] = checkpoint; }
         shown.push(row);
     }
+    reads.lanes.extend(lanes.keys().copied());
     Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
         "next": next.map_or(Value::Null, |c| Value::String(c.to_text())), "coverage": waits.coverage(count).to_json() }))
 }
 
-/// `{"op": "touched", "since": [edits, keys, gone?]}`: what changed on the device since it held `edits` edits and `keys`
+/// `{"op": "touched", "since": [edits, keys, gone?], "reads"?}`: what changed on the device since it held `edits` edits and `keys`
 /// McEliece keys (`size`, as the page last saw it before `changed` woke it) and its log had let edits go `gone` times
 /// (left out, unknown: everything is touched): `{"since", "entries", "vaults", "all"}`, what to pass next time, the
 /// entries whose logs took new edits, their vaults, and `all` where a change may touch any read (a vault's, a share's
 /// or an audience's edit, a new key, a removal, or more entries than an answer names). A mounted query re-runs only
 /// where a change touched what it selects (`LiveQuery.lean`, `untouched_query_unchanged`); the rest keep their answers.
+/// With `reads`, the queries a page shows (each its op, or `[op, version]` with the version of it the page last read),
+/// it answers `changed` and `versions` too: the places of those whose answer is another than the version the page saw
+/// (`query_view::changed`), each worked out again and kept, so the page re-runs those alone and reads them from the
+/// view at once, and each one's version now (null where it has none); any read that is no query counts as changed.
 fn touched(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let wrong = || bad("since is [edits, keys] (the size the page last saw) or the since of the last touched");
     let since = o.get("since").and_then(Value::as_array).filter(|a| (2..=3).contains(&a.len())).ok_or_else(wrong)?;
     let at = |i: usize| since[i].as_u64().ok_or_else(wrong);
     let gone = since.get(2).map(|_| at(2)).transpose()?;
     let t = lab.touched(me, at(0)? as usize, at(1)? as usize, gone);
-    Ok(json!({ "since": [t.size.0, t.size.1, t.gone], "all": t.all,
+    let mut out = json!({ "since": [t.size.0, t.size.1, t.gone], "all": t.all,
         "entries": t.entries.iter().map(|e| e.to_hex()).collect::<Vec<_>>(),
-        "vaults": t.vaults.iter().map(|v| v.to_hex()).collect::<Vec<_>>() }))
+        "vaults": t.vaults.iter().map(|v| v.to_hex()).collect::<Vec<_>>() });
+    if let Some(reads) = o.get("reads") {
+        let reads = reads.as_array().ok_or_else(|| bad("reads lists the queries a page shows"))?;
+        let (mut changed, mut versions) = (vec![], vec![]);
+        for (i, read) in reads.iter().enumerate() {
+            // a read is its op, or [op, the version of it the page saw]
+            let (op, seen) = match read.as_array().map(Vec::as_slice) {
+                Some([op, seen]) => (op, seen.as_u64()),
+                _ => (read, None),
+            };
+            let (moved, version) = match op_of(op) {
+                Ok(("query", q)) => crate::query_view::changed(lab, me, q, seen,
+                    |r| query_from(lab, me, q, Lab::query_candidates, r)),
+                _ => (true, None),
+            };
+            if moved { changed.push(i); }
+            versions.push(version.map_or(Value::Null, Value::from));
+        }
+        out["changed"] = changed.into();
+        out["versions"] = versions.into();
+    }
+    Ok(out)
 }
 
 /// `{"op": "api_pass", "audience"}`: the device's pass to service `audience` (`sign::ApiPass`), made now by its clock,
@@ -1326,6 +1375,8 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
         json!({
             "id": w.edit.to_hex(),
             "author": w.author.to_hex(),
+            "signer": w.actor.to_hex(),
+            // the old name, for one release (batch 5, R)
             "actor": w.actor.to_hex(),
             "via": w.via.iter().map(VaultId::to_hex).collect::<Vec<_>>(),
             "chain": audit.chain(w.author, w.actor, &w.via),
@@ -1395,7 +1446,9 @@ fn room(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refuse
             let place = [at, &[json!(field), json!({ "id": id })]].concat();
             let who = adders.get(&Value::Array(place.clone()).to_string()).copied().flatten();
             row["by"] = who.map_or(Value::Null, |(_, signed)| by(signed));
-            row["actor"] = who.map_or(Value::Null, |(actor, _)| actor.to_hex().into());
+            row["signer"] = who.map_or(Value::Null, |(actor, _)| actor.to_hex().into());
+            // the old name, for one release (batch 5, R)
+            row["actor"] = row["signer"].clone();
             for inner in ["thread", "reactions"] {
                 mark(row, &place, inner, adders, by);
             }

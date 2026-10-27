@@ -4,7 +4,7 @@ import { localDevice } from '$lib/avendb/local.js';
 import { authorsOf, fromFeed, pictureUrl } from './posts.js';
 import { PICTURE } from '$lib/avendb/picture.js';
 import { inspireOf } from './inspire.js';
-import { deviceOf } from '../../../game/code/sources/device.js';
+import { deviceOf, useQuery } from '../../../game/code/sources/device.js';
 
 /** How long the stream waits for its device to answer a page of posts. */
 const ANSWER = 5000;
@@ -78,11 +78,16 @@ function within(p, ms) {
 }
 
 
-/** A page of posts off the page's own device: `{ posts, more }`, or null where none is open or it can't answer. */
+/** Maia City's query entry of the published posts (src/lib/avendb/actors.js `QUERY_POSTS`), by its address. */
+const POSTS = { entry: 'query-posts', version: 1 };
+
+/** A page of posts off the page's own device, read by the posts query: `{ posts, more }`, or null where none is open
+ *  or it can't answer. */
 async function devicePage(after) {
 	const d = deviceOf() || await localDevice();
-	if (!d) return null;
-	const got = await within(d.run({ op: 'posts', limit: PAGE, ...(after ? { after } : {}) }), ANSWER);
+	const op = useQuery(POSTS, { limit: PAGE, after: after || null });
+	if (!d || !op) return null;
+	const got = await within(d.run(op), ANSWER);
 	return Array.isArray(got?.ok?.posts) ? got.ok : null;
 }
 

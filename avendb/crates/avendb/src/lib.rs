@@ -46,6 +46,7 @@
 #[cfg(all(feature = "test-fixtures", not(debug_assertions)))]
 compile_error!("test-fixtures must never be enabled in release/app builds");
 
+pub mod address;
 pub mod admission;
 pub mod aip;
 pub mod backup;
@@ -74,6 +75,7 @@ pub mod pages;
 pub mod perf;
 pub mod policy;
 pub mod provenance;
+pub mod query_view;
 pub mod quota;
 pub mod recovery;
 pub mod rules;
@@ -81,6 +83,7 @@ pub mod rules;
 #[cfg(debug_assertions)]
 pub mod scenarios;
 pub mod sealed;
+pub mod selector;
 pub mod sign;
 pub mod slice;
 pub mod snapshot;

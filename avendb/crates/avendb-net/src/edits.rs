@@ -873,6 +873,14 @@ impl Shared {
         if put {
             self.changed.notify_one();
         }
+        // the shared index, of the edits the shelf holds now, on the same path as their save (B1, `shared_index`): it
+        // is derived, so a shelf that can't take it costs the next save that step, never this one
+        if let Some(index) = &self.shared_index {
+            let held = edits.held(&self.locked_lab(), self.me);
+            if let Err(e) = index.step(&self.lab, self.me, held).await {
+                tracing::warn!("avendb: the shared index can't be stepped on: {e:#}");
+            }
+        }
         let shared = self.clone();
         // Only the once-only quiescent finalizer has an override shelf. The normal
         // save lane retains its bounded snapshot interval; authoritative data is already durable.

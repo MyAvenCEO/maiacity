@@ -527,7 +527,7 @@ export class Studio {
 	/** @type {(() => void) | null} */
 	stopInterest = null;
 	/**
-	 * The page's Interest (src/lib/avendb/manifests.js STUDIO): the open timeline is the manifest's `$timeline`, and
+	 * The page's Interest (src/lib/avendb/actors.js STUDIO): the open timeline is the actor's `$timeline`, and
 	 * the `playhead` signal puts the files of the clips at and after the playhead first, those behind it last. It moves
 	 * only at a cut (`reelAt`), never every frame.
 	 */
