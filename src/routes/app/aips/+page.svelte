@@ -18,6 +18,8 @@
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { aips } from '$lib/avendb/aips.svelte.js';
 	import { syncing, share } from '$lib/avendb/sync.svelte.js';
+	import { localMedia } from '$lib/avendb/local-media.svelte.js';
+	import { shaped } from '$lib/app/shapes.js';
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let stage = $state(STAGES.some((s) => s.id === q.get('stage')) ? q.get('stage') : 'proposed');
@@ -119,8 +121,8 @@
 									<button onclick={() => show(a)}>
 										<span class="where">{a.where} · {a.label}</span>
 										<b>{a.title}</b>
-										{#if a.changes.length}<span class="sum">{a.changes.slice(0, 2).join(' · ')}{a.changes.length > 2 ? ` · +${a.changes.length - 2} more` : ''}</span>{/if}
 										<span class="foot">
+											{#if a.mark}<span class="avatar" title={a.author} aria-hidden="true" style="background:{a.mark.colour}; {shaped(a.mark.shape)}">{#if localMedia(a.mark.id, 'profile.jpg')}<img src={localMedia(a.mark.id, 'profile.jpg')} alt="" />{:else}{a.mark.text}{/if}</span>{/if}
 											<span class="meta">{a.author}{a.decided || a.created ? ` · ${when(a.decided || a.created)}` : ''}{progress(a)}{a.stage === 'proposed' ? ` · ${a.signed} of ${a.needs} signed` : ''}</span>
 											{#if a.stage === 'archived'}<span class="status {outcome(a)}">{outcome(a)}</span>{/if}
 										</span>
@@ -205,20 +207,26 @@
 	.tabs small {
 		opacity: 0.7;
 	}
+	/* the board fills the screen below the tabs and above the nav pill (Samuel 2026-10-27): each column keeps its head and
+	   scrolls its own cards, the page itself does not scroll */
 	.board {
 		display: grid;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 0.8rem;
-		align-items: start;
+		height: calc(100dvh - 11rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+		min-height: 18rem;
 	}
 	.col {
+		display: flex;
+		flex-direction: column;
 		min-width: 0;
-		padding: 0.6rem;
+		min-height: 0;
+		padding: 0.6rem 0.6rem 0;
 		border-radius: 14px;
 		background: rgb(31 42 35 / 0.04);
-		min-height: 12rem;
 	}
 	.col-head {
+		flex: none;
 		margin: 0.1rem 0.3rem 0.6rem;
 		font-family: inherit;
 		font-size: 0.78rem;
@@ -234,10 +242,15 @@
 		font-size: 0.72rem;
 	}
 	.cards {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		overscroll-behavior: contain;
 		list-style: none;
 		margin: 0;
-		padding: 0;
+		padding: 0 0 0.6rem;
 		display: grid;
+		align-content: start;
 		gap: 0.5rem;
 	}
 	.cards li > button {
@@ -261,18 +274,30 @@
 		font-size: 0.92rem;
 		line-height: 1.3;
 	}
-	/* a card stays its column's width: long names (a file's hash) wrap, and title and changes keep to a few lines */
-	.cards b,
-	.cards .sum {
+	/* a card stays its column's width: long names (a file's hash) wrap, and the title keeps to a few lines */
+	.cards b {
 		display: -webkit-box;
 		-webkit-box-orient: vertical;
 		-webkit-line-clamp: 3;
 		line-clamp: 3;
 		overflow: hidden;
 	}
-	.cards .sum {
-		-webkit-line-clamp: 2;
-		line-clamp: 2;
+	.avatar {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 50%;
+		overflow: hidden;
+		color: #fff;
+		font-size: 0.6rem;
+		font-weight: 700;
+	}
+	.avatar img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
 	}
 	.where {
 		font-size: 0.68rem;
@@ -282,17 +307,16 @@
 	}
 	.foot {
 		display: flex;
-		justify-content: space-between;
-		gap: 0.5rem;
+		gap: 0.45rem;
 		align-items: center;
 	}
-	.meta,
-	.sum {
+	.foot .meta {
+		flex: 1;
+		min-width: 0;
+	}
+	.meta {
 		font-size: 0.78rem;
 		color: var(--muted);
-	}
-	.sum {
-		color: #24452f;
 	}
 	.empty {
 		font-size: 0.8rem;
@@ -326,7 +350,7 @@
 			min-height: 0;
 		}
 		.col.on {
-			display: block;
+			display: flex;
 		}
 		.col-head {
 			display: none;
