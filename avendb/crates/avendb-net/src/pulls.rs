@@ -73,6 +73,10 @@ pub(crate) struct Budget {
     ahead: Arc<Semaphore>,
     recent: Mutex<VecDeque<(EndpointId, Estimate)>>,
     live: Arc<Mutex<LiveBook>>,
+    /// A background catch-up runs on for what live pulls left of their views (`live::LIVE_VIEW`): one at a time.
+    pub(crate) view_behind: AtomicBool,
+    /// One asking of each peer at a time (`Budget::one_asking`).
+    askings: Mutex<BTreeMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 /// The queue ticket is retained during service too, bounding all outstanding admissions, including waiters.
@@ -161,6 +165,8 @@ impl Budget {
             ahead: Arc::new(Semaphore::new(ahead)),
             recent: Mutex::default(),
             live: Arc::default(),
+            view_behind: AtomicBool::new(false),
+            askings: Mutex::default(),
         }
     }
 
@@ -216,6 +222,21 @@ impl Budget {
             _background: background,
             _page: page,
         })
+    }
+
+    /// The turn of an asking of `peer`, once no other asking of it runs (F12, `LivePriority.lean`'s `oneAsking`): two at
+    /// once named the same holdings in their requests, so the peer sent the second all the first took again (sync_bench
+    /// `bench_live`: 1,352 edits pulled for 675 new, an explicit `sync_with` beside the backlog's asking). The second
+    /// names what the first took. Taken before admission, so a waiter holds no slot; a live pull takes none
+    /// (`Claims::live` keeps the backlog off its logs).
+    pub(crate) async fn one_asking(&self, peer: EndpointId) -> tokio::sync::OwnedMutexGuard<()> {
+        let turn = {
+            let mut askings = self.askings.lock().expect("askings");
+            // a peer no asking holds or waits for any more is forgotten, so the book stays as small as the pulls
+            askings.retain(|_, turn| Arc::strong_count(turn) > 1);
+            askings.entry(peer).or_default().clone()
+        };
+        turn.lock_owned().await
     }
 
     /// A page asked ahead (S6), if a slot is free now: `None` rather than waiting, so a pull that finds none asks on

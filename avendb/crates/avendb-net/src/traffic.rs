@@ -11,7 +11,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
-use avendb::id::SignerId;
+use avendb::id::{EditId, SignerId};
 use serde_json::{Value, json};
 
 use crate::jobs::now_ms;
@@ -79,7 +79,41 @@ struct Book {
     recent: VecDeque<Page>,
     served: Served,
     live: LiveBook,
+    trace: VecDeque<Trace>,
 }
+
+/// One step of a live edit on its way (T1): its id is the trace id on every device, as the edit's id is the same
+/// everywhere, so the sender's report and the receiver's join on it. `told` (this node announced it, a head of a
+/// small change, to `device`), `heard` (`device` announced it to this node), `taken` (this node's live pull of
+/// `device` took it; `left` its view not yet shown within `live::LIVE_VIEW`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stage {
+    Told,
+    Heard,
+    Taken,
+}
+
+impl Stage {
+    fn name(self) -> &'static str {
+        match self {
+            Stage::Told => "told",
+            Stage::Heard => "heard",
+            Stage::Taken => "taken",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Trace {
+    edit: EditId,
+    device: SignerId,
+    stage: Stage,
+    at: u64,
+    left: bool,
+}
+
+/// The trace steps kept: a few chat messages' worth, each a handful of steps on each device.
+pub const TRACE: usize = 128;
 
 /// How one live pull ended (`live::live_announced`): every log it was told of taken (`done`), given up at `LIVE_WAIT`
 /// (`timed_out`), left to the backlog because the device lacked too many rule logs first (`backlog`), or failed.
@@ -117,6 +151,8 @@ pub struct Live {
     pub view_ms: u64,
     pub ms: u64,
     pub end: LiveEnd,
+    /// Its view was not up to date within `live::LIVE_VIEW`: the background catch-up shows the rest.
+    pub left: bool,
 }
 
 /// The live pulls, by how they ended, and the newest of them.
@@ -197,11 +233,29 @@ impl Traffic {
         s.recent.truncate(RECENT);
     }
 
+    /// Edits `edits` reached `stage` with `device` (`Stage`), now.
+    pub fn trace(&self, stage: Stage, device: SignerId, edits: impl IntoIterator<Item = EditId>, left: bool) {
+        let at = now_ms();
+        let mut book = self.0.lock().expect("traffic");
+        for edit in edits {
+            book.trace.push_front(Trace { edit, device, stage, at, left });
+        }
+        book.trace.truncate(TRACE);
+    }
+
+    /// The trace steps (`Stage`), as the `network` op says them, the newest first: the edit's id in full, the trace id.
+    pub fn trace_json(&self) -> Value {
+        let book = self.0.lock().expect("traffic");
+        Value::Array(book.trace.iter().map(|t| json!({
+            "edit": t.edit.to_hex(), "device": t.device.to_hex(), "stage": t.stage.name(), "at": t.at, "left": t.left,
+        })).collect())
+    }
+
     /// A live pull ended (`Live`).
     pub fn live(&self, live: Live) {
         tracing::debug!(device = %live.device.to_hex(), logs = live.logs, new = live.new, ms = live.ms,
             differ_ms = live.differ_ms, rules_ms = live.rules_ms, pull_ms = live.pull_ms, view_ms = live.view_ms,
-            end = live.end.name(), "avendb: live pull");
+            end = live.end.name(), left = live.left, "avendb: live pull");
         let mut book = self.0.lock().expect("traffic");
         book.live.ends[live.end as usize] += 1;
         book.live.recent.push_front(live);
@@ -219,6 +273,7 @@ impl Traffic {
         let recent: Vec<Value> = book.live.recent.iter().map(|l| json!({
             "device": l.device.to_hex(), "at": l.at, "logs": l.logs, "new": l.new, "differ_ms": l.differ_ms,
             "rules_ms": l.rules_ms, "pull_ms": l.pull_ms, "view_ms": l.view_ms, "ms": l.ms, "end": l.end.name(),
+            "left": l.left,
         })).collect();
         json!({ "ends": by, "recent": recent })
     }

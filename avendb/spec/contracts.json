@@ -9,10 +9,10 @@
       "testName": "held_world_encoding_does_not_block_authorized_local_work"
     },
     {
-      "model": "avendb/spec/AvenDB/NodeActor.lean",
+      "model": "avendb/spec/AvenDB/NodeLoop.lean",
       "invariant": "a wake is never lost: owed to the attempt in flight, or waiting for the lane's backoff",
-      "implementation": "avendb/crates/avendb-net/src/actor.rs",
-      "test": "avendb/crates/avendb-net/src/actor.rs",
+      "implementation": "avendb/crates/avendb-net/src/node_loop.rs",
+      "test": "avendb/crates/avendb-net/src/node_loop.rs",
       "testName": "one_attempt_in_flight_and_a_wake_meanwhile_is_owed"
     },
     {
@@ -63,6 +63,13 @@
       "implementation": "avendb/crates/avendb-net/src/shelf_index.rs",
       "test": "avendb/crates/avendb-net/src/shelf_index_tests.rs",
       "testName": "a_crash_at_any_write_opens_the_index_of_the_log"
+    },
+    {
+      "model": "avendb/spec/AvenDB/Freshness.lean",
+      "invariant": "every read is stamped current, offline as of its last current read, or behind; an action sheet opens by itself only from current data",
+      "implementation": "avendb/crates/avendb-net/src/run.rs",
+      "test": "avendb/crates/avendb-net/src/live_tests.rs",
+      "testName": "every_read_is_offline_behind_or_current_as_its_peers_say"
     },
     {
       "model": "avendb/spec/AvenDB/SharedIndex.lean",

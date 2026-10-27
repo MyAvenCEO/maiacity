@@ -8,6 +8,8 @@
 //! scopes want, whatever their tiers (`schedule_whole`).
 
 use std::collections::{BTreeMap, BTreeSet};
+use avendb::selector::{Atom, Label, Selector};
+use avendb::slice::Sym;
 use avendb::sync::LogId;
 
 /// How many scopes a node keeps; a new one past it replaces the one changed longest ago (a page that closed without
@@ -43,6 +45,12 @@ impl Want {
     /// A want on screen now, of these entries alone.
     #[cfg(test)]
     pub(crate) fn now(entries: Vec<LogId>) -> Self { Self { tier: Tier::Now, entries, queries: vec![] } }
+}
+
+/// A want's type selector as the one selector grammar (`avendb::selector`, Lean `Interest.lean`'s `want`): the entries
+/// of any of its types. Its vault narrows where the node asks, not what the selector picks.
+pub(crate) fn selector(q: &crate::discovery::Query) -> Selector {
+    Selector::AnyOf(vec![vec![Atom::TypeIn(q.types.iter().map(|t| Sym::new(t)).collect())]])
 }
 
 struct Scope {
@@ -170,7 +178,9 @@ impl Interests {
     /// Whether a live scope asks for manifests by a selector: a page of maiaCITY's, which reads its route's manifests
     /// before it knows what else it wants.
     pub(crate) fn asks_for_manifests(&self) -> bool {
-        self.scopes.values().filter(|s| s.live()).any(|s| s.queries().iter().any(|q| q.types.iter().any(|t| t == MANIFEST_TYPE)))
+        let manifest = Label::Type(Sym::new(MANIFEST_TYPE));
+        self.scopes.values().filter(|s| s.live())
+            .any(|s| s.queries().iter().any(|q| selector(q).blind().is_some_and(|ls| ls.contains(&manifest))))
     }
     /// Whether the live scopes name no entry yet, by id or by what peers named for their selectors, though some ask by
     /// a selector: a new device's views, before its first find came back.
@@ -276,5 +286,15 @@ mod tests {
         i.release_all();
         i.replace("v".into(), 3, vec![Want { tier: Tier::Now, entries: vec![], queries: vec![Query { types: vec![MANIFEST_TYPE.into()], vault: None }] }]).unwrap();
         assert!(i.manifests().is_empty(), "released with the scopes");
+    }
+
+    #[test]
+    fn a_want_is_a_selector_found_blind_by_its_types() {
+        let q = Query { types: vec!["room".into(), MANIFEST_TYPE.into()], vault: None };
+        let labels = selector(&q).blind().expect("a type selector is found blind");
+        assert_eq!(labels, vec![Label::Type(Sym::new("room")), Label::Type(Sym::new(MANIFEST_TYPE))]);
+        let mut i = Interests::default();
+        i.replace("v".into(), 1, vec![Want { tier: Tier::Now, entries: vec![], queries: vec![q] }]).unwrap();
+        assert!(i.asks_for_manifests(), "one of its types is the manifests'");
     }
 }

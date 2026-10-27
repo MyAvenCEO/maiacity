@@ -32,4 +32,7 @@ test('a file not on this device yet fails in passing, one refused or never there
 	expect((await failing(async () => { throw new Error('a blob lacks 0..1024'); })).passing).toBe(true);
 	expect((await failing(async () => ({ error: 'no file this device opens' }))).passing).toBeUndefined();
 	expect((await failing(async () => { throw new Error('sealed bytes that don\'t open'); })).passing).toBeUndefined();
+	// refused while the device is behind (Freshness.lean): the file's entry may still be arriving
+	expect((await failing(async () => ({ refused: 'no_cap', why: 'no', fresh: { state: 'behind', logs: 3 } }))).passing).toBe(true);
+	expect((await failing(async () => ({ refused: 'no_cap', why: 'no', fresh: { state: 'current' } }))).passing).toBeUndefined();
 });

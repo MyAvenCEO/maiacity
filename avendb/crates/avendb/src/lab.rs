@@ -2952,13 +2952,14 @@ impl Lab {
                     None => st.entries().iter().map(|en| en.id).filter(|e| !waiting.contains(e)).collect(),
                 };
                 due.sort_by_key(|e| st.entry_place(*e));
-                let later = due.split_off(due.len().min(UPKEEP_SLICE));
+                let later: HashSet<EntryId> = due.split_off(due.len().min(UPKEEP_SLICE)).into_iter().collect();
                 sliced = !later.is_empty();
-                waiting.extend(later);
+                let showing = waiting.clone();
+                waiting.extend(later.iter().copied());
                 let scope: HashSet<EntryId> = due.into_iter().collect();
                 store.perf.count("upkeep: entries looked at", scope.len() as u64);
                 let work = upkeep(d, store, &ix, &mine, rng, spares, Some(&scope), &waiting);
-                store.upkeep_due.looked(&store.log, &store.keys.scoped, store.slices.len(), store.shown_groups, &store.shown_lanes, waiting);
+                store.upkeep_due.looked(&store.log, &store.keys.scoped, store.slices.len(), store.shown_groups, &store.shown_lanes, showing, later);
                 store.keys.entries_keyed.clear();
                 work
             } else {
@@ -7033,6 +7034,11 @@ struct Showing {
 struct UpkeepDue {
     /// The entries shown anew, and those a showing left to show when it last looked.
     entries: HashSet<EntryId>,
+    /// The entries a sliced upkeep left for its next look (`UPKEEP_SLICE`): due, but unchanged for being left, so a
+    /// lane or cap group among them is no reason to look at every entry again (2026-10-27: an iPhone's catch-up looked
+    /// at the same first slice of every entry some 40 times a second, a lane among the rest each time, and never ended;
+    /// `UpkeepSlices.lean`: it moves on and ends).
+    unlooked: HashSet<EntryId>,
     /// When it last looked: the log's lineage and length, the keys' revision, the selectors it read, the cap groups'
     /// and the lanes' hashes.
     then: Option<(crate::policy::LogRevision, usize, Arc<()>, usize, [u8; 32], Vec<(VaultId, [u8; 32])>)>,
@@ -7076,11 +7082,13 @@ impl UpkeepDue {
         if due.iter().any(global) {
             return None;
         }
+        due.extend(self.unlooked.iter().copied());
         Some(due)
     }
 
     /// It looked, at what `log`, `keys`, `slices`, `groups` and `lanes` say now; the entries `waiting` to be shown
-    /// it looks at again once they are.
+    /// it looks at again once they are, and those `unlooked` it left for its next look.
+    #[allow(clippy::too_many_arguments)]
     fn looked(
         &mut self,
         log: &Log,
@@ -7089,8 +7097,10 @@ impl UpkeepDue {
         groups: [u8; 32],
         lanes: &BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>,
         waiting: HashSet<EntryId>,
+        unlooked: HashSet<EntryId>,
     ) {
         self.entries = waiting;
+        self.unlooked = unlooked;
         self.then = Some((log.lineage(), log.edits().len(), keys.clone(), slices, groups, lanes_of(lanes)));
     }
 }

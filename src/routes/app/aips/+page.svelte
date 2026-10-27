@@ -17,7 +17,8 @@
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { aips } from '$lib/avendb/aips.svelte.js';
-	import { syncing, share } from '$lib/avendb/sync.svelte.js';
+	import Fresh from '$lib/avendb/Fresh.svelte';
+	import { showsFinal } from '$lib/avendb/fresh.js';
 	import { localMedia } from '$lib/avendb/local-media.svelte.js';
 	import { shaped } from '$lib/app/shapes.js';
 
@@ -39,7 +40,11 @@
 			.catch(() => {});
 	});
 
-	const all = $derived(allOf(g.view, aips.list, session.world));
+	// avenDB's AIPs show as they are only when their read is current, or offline and said to be as of then: while the
+	// device is behind on them (Freshness.lean), a stage they show may be one they left long ago, so the board shows
+	// them catching up, never an older stage as final ($lib/avendb/fresh.js)
+	const final = $derived(showsFinal(aips.fresh));
+	const all = $derived(allOf(g.view, final ? aips.list : [], session.world));
 	const count = (id) => all.filter((a) => a.stage === id).length;
 	const current = $derived(all.find((a) => a.key === open) ?? null);
 	// with avenDB open, only its answer is waited for: MaiaCity V1's MIPs join them once its game loads
@@ -106,10 +111,7 @@
 		{:else if aips.why && !aips.read}
 			<p class="dim center">avenDB's AIPs didn't read: {aips.why}. <button class="link" onclick={loadAvendb}>Read again</button></p>
 		{:else}
-			{#if syncing()}
-				<!-- a device still syncing holds some AIPs as they were when it took them: each one it shows is brought up to date first ($lib/avendb/session.svelte.js `freshen`) -->
-				<p class="dim center small">This device is still syncing ({Math.floor(share() * 100)} %), so some AIPs may show an older stage for a moment. Each one shown here is brought up to date first.</p>
-			{/if}
+			{#if avendbOn}<p class="center"><Fresh fresh={aips.fresh} /></p>{/if}
 			<!-- the board: a column per stage, side by side; on a narrow screen the stage bar picks the one column shown -->
 			<div class="board">
 				{#each STAGES as s (s.id)}
@@ -129,7 +131,7 @@
 									</button>
 								</li>
 							{:else}
-								<li class="dim empty">{EMPTY[s.id]}</li>
+								<li class="dim empty">{final || !avendbOn ? EMPTY[s.id] : 'Catching up…'}</li>
 							{/each}
 						</ul>
 					</section>

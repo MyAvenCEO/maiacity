@@ -37,7 +37,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use serde_json::{json, Map, Value};
 
 use crate::id::{EditId, EntryId, VaultId};
-use crate::slice::{Atom, Attrs, Selector};
+use crate::selector::{Atom, Attrs, Selector};
 
 /// A record: a JSON object.
 pub type Record = Map<String, Value>;
@@ -1150,17 +1150,8 @@ impl Where {
             Where::Yes | Where::Test(..) | Where::Not(_) => Selector::All,
             Where::No => Selector::AnyOf(vec![]),
             Where::Label(x) => Selector::AnyOf(vec![vec![x.clone()]]),
-            Where::And(u, w) => match (u.cover(), w.cover()) {
-                (Selector::All, s) | (s, Selector::All) => s,
-                (Selector::AnyOf(ds), Selector::AnyOf(es)) => {
-                    let both = ds.iter().flat_map(|d| es.iter().map(move |e| [d.clone(), e.clone()].concat()));
-                    Selector::AnyOf(both.collect())
-                }
-            },
-            Where::Or(u, w) => match (u.cover(), w.cover()) {
-                (Selector::AnyOf(ds), Selector::AnyOf(es)) => Selector::AnyOf([ds, es].concat()),
-                _ => Selector::All,
-            },
+            Where::And(u, w) => u.cover().both(&w.cover()),
+            Where::Or(u, w) => u.cover().either(&w.cover()),
         }
     }
 

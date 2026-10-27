@@ -52,11 +52,39 @@ export class Runner {
 		this.ticking = false;
 		/** @type {Map<string, string>} the vault it acts as in each vault it works on, from the last world */
 		this.acting = new Map();
+		/** @type {Map<string, string>} why the device refused ops in each vault, as said last (`allowed`) */
+		this.refused = new Map();
 	}
 
 	/** The vault it acts as in vault `v` (the vault itself where the person's owns it). @param {string} v */
 	as(v) {
 		return this.acting.get(v) ?? v;
+	}
+
+	/**
+	 * Of `ops` in vault `vault`, those the device says it would make now (`may`): the rest it never sends, each refusal
+	 * said once a vault. A create it may not make, sent every round anyway, failed 164 times on Samuel's Mac in a vault
+	 * it reads but may not write (batch 4 round, 2026-10-27), each a failed `create` in the latency journal. All of
+	 * them where the device has no `may`. @param {string} vault @param {any[]} ops
+	 */
+	async allowed(vault, ops) {
+		if (!ops.length) return ops;
+		/** @type {any[] | null} */
+		let verdicts = null;
+		try {
+			verdicts = answer(await this.send({ op: 'may', ops }));
+		} catch {
+			return ops;
+		}
+		if (!Array.isArray(verdicts) || verdicts.length !== ops.length) return ops;
+		const why = verdicts.find((v) => v !== true);
+		const said = why === undefined ? null : typeof why === 'object' && why && 'approve' in why ? 'it needs the owners’ approval' : String(why?.why ?? why?.refused ?? why);
+		if (said !== this.refused.get(vault)) {
+			if (said !== null) this.log(`${vault.slice(0, 8)}: not adding ${verdicts.filter((v) => v !== true).length} it may not make: ${said}`);
+			if (said === null) this.refused.delete(vault);
+			else this.refused.set(vault, said);
+		}
+		return ops.filter((_, i) => verdicts?.[i] === true);
 	}
 
 	/** The device's world, now. */
@@ -77,10 +105,11 @@ export class Runner {
 				const rules = layered(BUILT_IN, this.ceo ? held(world, this.ceo) : [], held(world, vault)).filter((r) => this.executors[r.key]);
 				const as = this.as(vault);
 				// the job schemas are the vault's own, added as it
-				const schemas = lacking(world, vault, as);
-				const ops = reconcile(rules, world, vault, as, this.now());
+				const schemas = await this.allowed(vault, lacking(world, vault, as));
+				let ops = [];
 				try {
 					for (const op of schemas) answer(await this.send(op));
+					ops = await this.allowed(vault, reconcile(rules, world, vault, as, this.now()));
 					for (const op of ops) answer(await this.send(op));
 				} catch (e) {
 					// a vault it may read but not write: the others go on
