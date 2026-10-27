@@ -169,16 +169,19 @@ fn a_first_sync_steps_each_page_with_moves_on() {
     assert!(late.is_empty(), "pages replayed every edit held:\n{r}");
 }
 
-/// The same at 100,000 edits: no page replays every edit held, and a page held after 80,000 takes about what one held
-/// after 10,000 takes (`FIRST_SYNC_MOVES` lines, printed).
-/// A bench: CI's bench job runs it in a release build (`avendb-checks.yml`), where it takes seconds; the debug build of
-/// the core tests took over 360 s. `a_first_sync_steps_each_page_with_moves_on` holds the same rule at 6,000 there.
+/// The same at `AVENDB_MOVES_HELD` edits (100,000 by default; 30,000 in CI's bench job): no page replays every edit
+/// held, and a page held after 80% of them takes about what one held after 10-30% takes (`FIRST_SYNC_MOVES` lines,
+/// printed). Before pages stepped on, one held after 30,000 took 354 ms against 45 ms at the start, growing with
+/// every edit held (2026-10-27). A bench: building the vault steps a replay on each pair of edits, ~8 minutes at
+/// 100,000 even in a release build, so the core tests' debug build never runs it (it timed out at 360 s there) and
+/// `a_first_sync_steps_each_page_with_moves_on` holds the same rule at 6,000 in them.
 #[test]
 #[ignore = "a bench: the bench job of avendb-checks.yml runs it in a release build"]
 fn a_page_with_moves_costs_the_same_however_much_is_held() {
-    let (log, _) = vault(100_000);
+    let held: usize = std::env::var("AVENDB_MOVES_HELD").ok().and_then(|n| n.parse().ok()).unwrap_or(100_000);
+    let (log, _) = vault(held);
     let took = first_sync(&log);
-    let r = report(&took, 10_000);
+    let r = report(&took, held / 10);
     eprint!("{r}");
     let late = wholes_after_the_start(&took, rules(&log) + PAGE);
     assert!(late.is_empty(), "pages replayed every edit held:\n{r}");
@@ -187,8 +190,8 @@ fn a_page_with_moves_costs_the_same_however_much_is_held() {
         s.sort_by(f64::total_cmp);
         s[s.len() / 2]
     };
-    let (early, late) = (median(10_000, 30_000), median(80_000, 100_000));
-    eprintln!("FIRST_SYNC_MOVES median_ms held 10k-30k={:.2} 80k-100k={:.2}", early * 1e3, late * 1e3);
-    // a shared runner's noise aside: flat, not the whole held again (that grew tenfold over the same span)
-    assert!(late <= early * 3.0 + 0.005, "a page costs more as more is held:\n{r}");
+    let (early, late) = (median(held / 10, held * 3 / 10), median(held * 8 / 10, held));
+    eprintln!("FIRST_SYNC_MOVES median_ms held={held} 10-30%={:.2} 80-100%={:.2}", early * 1e3, late * 1e3);
+    // a shared runner's noise aside: flat, not the whole held again (that grew about threefold from 10% to 100%)
+    assert!(late <= early * 2.0 + 0.005, "a page costs more as more is held:\n{r}");
 }
