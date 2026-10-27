@@ -135,11 +135,11 @@ impl Lab {
             let setup = audience_key || (log == Some(LogId::Entry(entry))
                 && !matches!(candidate.action, Action::Write { create: None, .. }));
             if setup || id == edit.id() {
-                let signed = store.signed.get(&id)?;
-                if !bounded_offer_edit(signed) { return None; }
+                let signed = store.signed.owned_get(&id)?;
+                if !bounded_offer_edit(&signed) { return None; }
                 evidence_bytes = evidence_bytes.checked_add(signed.to_wire().len())?;
                 if evidence_bytes > (480 << 10) { return None; }
-                evidence.push(signed.clone());
+                evidence.push(signed);
                 if evidence.len() > 64 { return None; }
             }
         }

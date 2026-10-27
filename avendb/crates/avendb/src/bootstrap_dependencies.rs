@@ -56,8 +56,8 @@ impl Lab {
             {
                 continue;
             }
-            let signed = store.signed.get(&id)?;
-            if !entry_offer::bounded_offer_edit(signed) {
+            let signed = store.signed.owned_get(&id)?;
+            if !entry_offer::bounded_offer_edit(&signed) {
                 continue;
             }
             let n = signed.to_wire().len();

@@ -330,6 +330,7 @@ plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 | `AVENDB_FEED_RATE` | `30` | The asks a minute of the feed's signed routes from each address, by the proxy's `X-Forwarded-For`, `0` for no limit |
 | `AVENDB_BUCKET` and the rest | none | Its bucket (see [Deploying the server](#deploying-the-server), step 6) |
 | `AVENDB_CACHE` | `8` | With a bucket, the gigabytes of the parts it read lately that its folder caches |
+| `AVENDB_MEMORY_CACHE` | `256` | The MiB of its signed edits and McEliece keys it keeps at hand in memory; the rest wait in its folder's `spill/`, a cache emptied at each start and filled again from its shelf, so its memory stays flat as its vaults grow (S7) |
 | `AVENDB_SNAPSHOTS` and the rest | none | Its bucket of snapshots: every vault backed up into it each day (see `doc:docs/avendb`) |
 | `RUST_LOG` | `info` | How much it logs |
 
