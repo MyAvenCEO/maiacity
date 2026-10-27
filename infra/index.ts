@@ -107,6 +107,8 @@ const server = new hcloud.Server(
   {
     // A changed key or a changed cloud-init must never replace a running server.
     ignoreChanges: ["sshKeys", "userData"],
+    // A new type resizes it in place; anything that would replace it (and its disk) fails instead.
+    protect: true,
   },
 );
 

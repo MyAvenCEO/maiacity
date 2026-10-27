@@ -120,8 +120,9 @@ services:
       - "3478:3478/udp"
       - "7402:7402/udp"
     # it holds every vault's signed edits while it runs: at 1g it was killed as it loaded them, a start every 80 s
-    # (2026-10-20, /feed/health); 4g is the whole machine's, so it may take all the rest leave (about 2.9 GB)
-    mem_limit: 4g
+    # (2026-10-20, /feed/health); at 4g on a 4 GB machine it reached 3 GB serving a new phone (2026-10-27), so the
+    # machine is 16 GB now and the server may take 12 of them
+    mem_limit: 12g
     logging:
       driver: json-file
       options:
