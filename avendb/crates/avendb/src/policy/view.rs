@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use super::{order_ids, watched, Edit, Entry, Issued, Listed, Replay, Seals, State, Tail, Vault, Write};
+use super::{order_ids, watched, Edit, Passed, Entry, Issued, Listed, Replay, Seals, State, Tail, Vault, Write};
 use crate::encode::Encode;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, PublicKey, Seal};
@@ -531,7 +531,7 @@ impl Replay {
                 return Err(WireError::Unknown);
             }
             let bits = rd.take(n.div_ceil(8))?;
-            let stood = (0..n).map(|i| bits[i / 8] & (1 << (i % 8)) != 0).collect();
+            let stood: Vec<bool> = (0..n).map(|i| bits[i / 8] & (1 << (i % 8)) != 0).collect();
             let state = state_of(&mut rd, &State::default())?;
             let acts = rd.seq::<(EditId, VaultId)>(64)?.into_iter().collect();
             let tail = match rd.u8()? {
@@ -553,7 +553,8 @@ impl Replay {
                     let depths: HashMap<EditId, u64> =
                         held_ids.iter().copied().zip(held_edits.iter().map(|e| e.depth)).collect();
                     let covered = watched(&edits);
-                    Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths })
+                    let passed = Passed::of(&edits, &ids, &stood, at);
+                    Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths, passed })
                 }
                 _ => return Err(WireError::Unknown),
             };
@@ -572,8 +573,8 @@ impl Replay {
         match (&self.tail, &o.tail) {
             (None, None) => true,
             (Some(a), Some(b)) => {
-                (a.at, &a.state, &a.base, &a.cands, &a.tried, &a.parents, &a.covered, &a.depths)
-                    == (b.at, &b.state, &b.base, &b.cands, &b.tried, &b.parents, &b.covered, &b.depths)
+                (a.at, &a.state, &a.base, &a.cands, &a.tried, &a.parents, &a.covered, &a.depths, &a.passed)
+                    == (b.at, &b.state, &b.base, &b.cands, &b.tried, &b.parents, &b.covered, &b.depths, &b.passed)
             }
             _ => false,
         }

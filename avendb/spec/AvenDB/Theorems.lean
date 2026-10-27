@@ -9,6 +9,7 @@ import AvenDB.StoredView
 import AvenDB.TrustRuns
 import AvenDB.MoveSteps
 import AvenDB.TailRuns
+import AvenDB.TailMoves
 import AvenDB.RangeSync
 import AvenDB.Batches
 import AvenDB.KeyTree
@@ -24,7 +25,8 @@ The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (shares, a
 replay), `RuleLemmas.lean` (shares that name ops), `Schemas.lean` (writes that fit their schemas), `RelayLemmas.lean`
 (blind relays), `KeyLemmas.lean` (keys), `SyncLemmas.lean` (convergence, sync and holdings), `StoredView.lean`
 (stepping on a stored view, V1), `TrustRuns.lean` (removals tried on the trust records, V2), `MoveSteps.lean` (a move
-stepped on a stored view, V3), `TailRuns.lean` (a late edit replays the last edits, V4), `RangeSync.lean` (a range
+stepped on a stored view, V3), `TailRuns.lean` (a late edit replays the last edits, V4), `TailMoves.lean` (a late
+page with moves replays the last edits, V4m), `RangeSync.lean` (a range
 round of sync, R1), `Batches.lean` (batch-signed logs, V5), `KeyTree.lean` (key trees, V6) and `HandedView.lean` (a
 handed view, V7); the predicates the statements use are in `Props.lean`, and the model of holdings and connections in
 `Logs.lean`.
@@ -741,6 +743,38 @@ theorem V4_tail_replays (held fresh p s s' : List Edit)
       standing (held ++ fresh) = (Tails.kept p s).2 ++ (Tails.tailRun p s s').2 ∧
       standing held = (Tails.kept p s).2 ++ (Tails.tailRun p s s).2 :=
   Tails.V4_tail_replays held fresh p s s' ho ho' hids hids' hrems hmoves hchosen hcands hrm hstands hinertP hinertT
+
+/-- V4m (a late page with moves replays the last edits): a peer that kept the replay of the edits it held, `p ++ s` in
+    order, at a place after `p`, every removal after it a move that stood, and receives edits `fresh` that sort after
+    it, `p ++ s'` in order, among them new moves, knows what replaying every edit would tell it by replaying only `s'`
+    from the state it kept there, with the removals it chose before the place and every move after it, the edits
+    before the place standing as they stood: where the removals before the place rank as before and take away what
+    they took, every new move keeps every write of its entry that stood before the place, every move after the place
+    stands again, and the moves after the place keep no edit out alone. A first sync's page that brings moves steps on
+    so. Assumes ids don't collide. -/
+theorem V4m_tail_moves (held fresh p s s' cp : List Edit)
+    (ho' : order (held ++ fresh) = p ++ s')
+    (hids : ((p ++ s).map Edit.id).Nodup) (hids' : ((p ++ s').map Edit.id).Nodup)
+    (hsub : ∀ x ∈ s, x ∈ s')
+    (hmoves : ∀ x ∈ s, x.isRemoval = true → x.action.isTrust = false)
+    (hchosen : ∀ x ∈ s, x.isRemoval = true → x ∈ resolve (p ++ s))
+    (hc : Tails.cands (p ++ s) = cp ++ s.filter Tails.isMove)
+    (hc' : Tails.cands (p ++ s') = cp ++ s'.filter Tails.isMove)
+    (hcp : ∀ x ∈ cp, x ∈ p)
+    (hrm : ∀ r ∈ p, r.isRemoval = true → removes (p ++ s') r = removes (p ++ s) r)
+    (hkeep : ∀ m ∈ s', m ∉ s → Tails.isMove m = true → ∀ w ∈ (Tails.kept p s).2, ∀ e to,
+      Fact.audience e to ∈ removes (p ++ s') m → Moves.writesEntry w e = true →
+        (m.action.keep?.getD []).contains w.id = true)
+    (hstands : ∀ x ∈ s', x.isRemoval = true → (TailMoves.tailRunM p s s' cp).2.any (·.id == x.id) = true)
+    (hinertP : runFrom (resolve (p ++ s)) (Tails.stripTail (p ++ s) (resolve (p ++ s)) p s) {} p.zipIdx =
+      Tails.kept p s)
+    (hinertT : runFrom (TailMoves.chosen p s s' cp)
+      (Tails.strip (Tails.cutsAt (p ++ s') (TailMoves.chosen p s s' cp) s' p.length)) (Tails.kept p s).1
+      (s'.zipIdx p.length) = TailMoves.tailRunM p s s' cp) :
+    view (held ++ fresh) = (TailMoves.tailRunM p s s' cp).1 ∧
+      standing (held ++ fresh) = (Tails.kept p s).2 ++ (TailMoves.tailRunM p s s' cp).2 :=
+  TailMoves.V4_tail_moves held fresh p s s' cp ho' hids hids' hsub hmoves hchosen hc hc' hcp hrm hkeep hstands
+    hinertP hinertT
 
 /-- R1 (range sync): two devices that finish a round over a range of logs, comparing one fingerprint per range and
     sending what each holds of the ranges that differ, hold the same head of every log in it, the later of the two they
