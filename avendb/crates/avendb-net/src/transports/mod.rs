@@ -9,3 +9,7 @@ pub use packet::{Carrier, Command, PacketTransport, RouteId};
 mod webtransport;
 #[cfg(not(target_arch = "wasm32"))]
 pub use webtransport::{sessions as wt_sessions, NativeWt, CertFiles as WtCertFiles, Config as WtConfig, Reservation as WtReservation, WtEvent};
+#[cfg(not(target_arch = "wasm32"))]
+pub mod webrtc;
+#[cfg(not(target_arch = "wasm32"))]
+pub use webrtc::Config as RtcConfig;

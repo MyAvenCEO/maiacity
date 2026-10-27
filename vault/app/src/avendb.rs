@@ -334,7 +334,9 @@ fn start() -> Result<Hosted, String> {
     // the drives the Mac mounts, which it hosts
     let volumes = cfg!(target_os = "macos").then(|| avendb_device::drive::VOLUMES.into());
     let webtransport = avendb_device::webtransport_from_env().map_err(|error| format!("avenDB transport configuration: {error:#}"))?;
-    let config = avendb_device::Config { dir, direct: true, volumes, webtransport };
+    // its own WebRTC peer, which the iPhone's page reaches it straight through, the relay their fallback
+    let webrtc = avendb_device::webrtc_from_env().map_err(|error| format!("avenDB transport configuration: {error:#}"))?;
+    let config = avendb_device::Config { dir, direct: true, volumes, webtransport, webrtc };
     let (hosted, made) = std::sync::mpsc::channel();
     let (quit, quitting) = oneshot::channel::<()>();
     let (done, ended) = oneshot::channel();
