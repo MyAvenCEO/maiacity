@@ -471,8 +471,9 @@ fn validate_descriptor(value: &Value) -> Result<()> {
     );
     let expires = value["expires"].as_u64().context("WT expiry")?;
     ensure!(expires > crate::unix_now() && expires.saturating_sub(crate::unix_now()) <= 14 * 86400, "WT expiry");
+    // none where the listener serves a public certificate, which the browser checks as any site's
     let hashes = value["certificateHashes"].as_array().context("WT certificate hashes")?;
-    ensure!(!hashes.is_empty() && hashes.len() <= 4, "WT certificate hashes");
+    ensure!(hashes.len() <= 4, "WT certificate hashes");
     for hash in hashes {
         let hash = hash.as_str().context("WT certificate hash")?;
         ensure!(
@@ -904,7 +905,7 @@ mod tests {
         let (events, _rx) = tokio::sync::mpsc::channel(32);
         let native = super::super::webtransport::NativeWt::bind(super::super::webtransport::Config {
             bind: "127.0.0.1:0".parse().unwrap(), public_url: "https://127.0.0.1:0/packets".into(),
-            allowed_origins: vec!["https://app.example".into()],
+            allowed_origins: vec!["https://app.example".into()], certificate: None,
         }, packets, events).await.unwrap();
         let address = native.local_addr().unwrap();
         *control.native.lock().unwrap() = Some(Arc::new(native));
@@ -963,8 +964,15 @@ mod tests {
         let mut bad = good.clone();
         bad["expires"] = json!(u64::MAX);
         assert!(validate_descriptor(&bad).is_err());
-        let mut bad = good;
+        let mut bad = good.clone();
         bad["certificateHashes"] = json!(["z".repeat(64)]);
         assert!(validate_descriptor(&bad).is_err());
+        let mut bad = good.clone();
+        bad["certificateHashes"] = json!(vec!["a".repeat(64); 5]);
+        assert!(validate_descriptor(&bad).is_err());
+        // a listener with a public certificate pins nothing
+        let mut public = good;
+        public["certificateHashes"] = json!([]);
+        assert!(validate_descriptor(&public).is_ok());
     }
 }

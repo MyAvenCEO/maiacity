@@ -11,6 +11,7 @@
  * (sync v2 step P6). For a list of entries it holds now.
  */
 import { GAMES, gameTag } from '../../../game/games.js';
+import { PLACES } from '../../../game/places.js';
 
 const manifest = (o) => ({ kind: 'manifest', v: 2, note: '', routes: [], ...o });
 
@@ -84,7 +85,7 @@ export const CHAT = manifest({
 	id: 'chat',
 	title: 'Chat',
 	note: 'My room list now; the open room ($room) on open, newest messages first; the five most recent other rooms next; its pictures by the viewport later; older history idle.',
-	routes: ['/app/chat/', '/app/chat/*'],
+	routes: ['/app/chat/', '/app/chat/*', '/app/#chat'],
 	slots: ['room'],
 	tiers: {
 		now: [
@@ -137,21 +138,79 @@ export const ASSETS = manifest({
 	id: 'assets',
 	title: 'Game Assets',
 	note: 'The library list now; the selected asset ($asset) with what it pins on select; its neighbours by list position next; its older versions later.',
-	routes: ['/app/models/', '/app/actors/', '/app/machines/', '/app/plants/', '/app/biomes/', '/app/buildings/', '/app/worlds/*', '/app/assets/*'],
+	routes: ['/app/models/', '/app/actors/', '/app/machines/', '/app/plants/', '/app/biomes/', '/app/buildings/', '/app/worlds/*', '/app/assets/*', '/app/#assets'],
 	slots: ['asset'],
 	tiers: {
 		now: [
 			{ manifest: KERNEL.id },
 			{ want: { type: ['recipe'] }, part: 'headers', files: ['media:still'], note: 'name, kind, versions, thumbnail' },
-			{ want: { entry: '$asset' }, follow: 2, note: 'card, recipe and what it pins' }
+			{ want: { entry: '$asset' }, follow: 2, note: 'card, recipe and what it pins' },
+			{ want: { entry: '$asset' }, part: 'files', note: 'its own files: the model the viewer shows' }
 		],
 		next: [{ want: { type: ['recipe'] }, by: 'list', note: 'the neighbours of the selected one first' }],
 		later: [{ want: { entry: '$asset' }, window: { oldest: true }, note: 'older versions and variants' }]
 	}
 });
 
+/**
+ * A page of the app's own, or of a vault opened in it (`/app/#<page>`, the name `viewPath` gives it): the kernel, the
+ * headers of the entries of types `types` it lists now and those entries whole later; a page that lists none (its
+ * device's own numbers, settings) holds the kernel alone, which it says so. Every page the app opens has one, so the
+ * first thing a device brings for it is that page's, never the bulk (Samuel 2026-10-27).
+ * @param {string} id @param {string} title @param {string[]} routes @param {string[]} [types]
+ */
+const page = (id, title, routes, types = []) =>
+	manifest({
+		id: `page-${id}`,
+		title,
+		note: types.length ? `What ${title} lists: the headers of its ${types.join(', ')} entries now, them whole later.` : `${title} reads no entries of its own: the kernel alone.`,
+		routes,
+		tiers: {
+			now: [{ manifest: KERNEL.id }, ...(types.length ? [{ want: { type: types }, part: 'headers' }] : [])],
+			...(types.length ? { later: [{ want: { type: types } }] } : {})
+		}
+	});
+
+/** The vault's pages the app opens by their hash (VaultApps.svelte `NAV`), each with what it lists. */
+export const PAGES = [
+	page('sparks', 'Sparks', ['/app/#sparks'], ['note', 'artifact']),
+	page('artifacts', 'Artifacts', ['/app/#artifacts'], ['artifact']),
+	page('todos', 'Todos', ['/app/#todos'], ['todo']),
+	page('stories', 'Stories', ['/app/#stories'], ['story']),
+	page('docs', 'Docs', ['/app/#docs'], ['story', 'post']),
+	page('library', 'Library', ['/app/#library'], ['file']),
+	page('worlds', 'Worlds', ['/app/#worlds'], ['game']),
+	page('models', 'Models', ['/app/#models'], ['file']),
+	page('code', 'Code', ['/app/#code'], ['file']),
+	page('query', 'Query', ['/app/#query']),
+	page('tables', 'Table editor', ['/app/#tables']),
+	page('schemas', 'Schemas', ['/app/#schemas'], ['schema']),
+	page('lenses', 'Lenses', ['/app/#lenses'], ['lens']),
+	page('flows', 'Flows', ['/app/#flows'], ['flow']),
+	page('functions', 'Functions', ['/app/#functions'], ['function']),
+	page('history', 'History', ['/app/#history']),
+	page('jobs', 'Jobs', ['/app/#jobs'], ['job']),
+	page('performance', 'Performance', ['/app/#performance']),
+	page('settings', 'Settings', ['/app/#settings'], ['capgroup']),
+	page('vaults', 'Vaults', ['/app/#vaults'], ['capgroup']),
+	page('activity', 'Activity', ['/app/#activity']),
+	// the app's own pages beside the vault's
+	page('aips', 'Proposals', ['/app/aips/', '/app/aips/*', '/app/maiacity-v2/proposals/'], ['aip']),
+	page('postgres', 'Postgres', ['/app/postgres/', '/app/#postgres']),
+	page('coops', 'Coops', ['/app/coops/', '/app/coops/*']),
+	page('factories', 'Factories', ['/app/factories/', '/app/factories/*'], ['recipe']),
+	page('ledger', 'Ledger', ['/app/ledger/', '/app/ledger/*']),
+	page('network', 'Network', ['/app/network/', '/app/network/*']),
+	page('avendb', 'avenDB', ['/app/avendb/', '/app/avendb/*']),
+	page('probes', 'Probes', ['/app/math/probe/', '/app/views/probe/'])
+];
+
+/** The labs under /app/games/ that are no game of the list (no `gameOrder`, Sandbox 7 and 8): each reads as a game does. */
+export const LABS = PLACES.filter((p) => p.route?.startsWith('/app/games/') && !GAMES.some((g) => g.id === p.id));
+
 /** Every manifest the repo declares. */
 export const MANIFESTS = [
-	KERNEL, DASHBOARD, UNIVERSE, STUDIO, CHAT, ASSETS,
-	...GAMES.map((g) => (g.id === 'sandbox-4' ? sandbox4Manifest(g) : gameManifest(g)))
+	KERNEL, DASHBOARD, UNIVERSE, STUDIO, CHAT, ASSETS, ...PAGES,
+	...GAMES.map((g) => (g.id === 'sandbox-4' ? sandbox4Manifest(g) : gameManifest(g))),
+	...LABS.map(gameManifest)
 ];

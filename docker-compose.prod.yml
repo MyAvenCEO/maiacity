@@ -30,7 +30,13 @@ services:
     build: !reset null
     volumes:
       - ${AVENDB_DATA_PATH:?set AVENDB_DATA_PATH in .env}:/data
+      # Caddy's certificates, read only: its WebTransport listener (UDP 7402) serves the same Let's Encrypt
+      # certificate as avendb.maia.city's HTTPS, as Safari on iOS 26 refuses a pinned one of its own; read again
+      # every hour for Caddy's renewals, and where it isn't there yet it pins one of its own as before
+      - caddy_data:/caddy:ro
     environment:
+      AVENDB_WT_CERT: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${AVENDB_ADDRESS:-avendb.maia.city}/${AVENDB_ADDRESS:-avendb.maia.city}.crt
+      AVENDB_WT_KEY: /caddy/caddy/certificates/acme-v02.api.letsencrypt.org-directory/${AVENDB_ADDRESS:-avendb.maia.city}/${AVENDB_ADDRESS:-avendb.maia.city}.key
       # it keeps a new vault only where Maia City welcomes it (a person's with the invite they claim, a coop or an aven
       # an admin owns), and its relay lets in by a pass only the passkeys of vaults it keeps and newcomers with an
       # open invite (Gate.lean, Admission.lean); the vaults it kept before stay kept

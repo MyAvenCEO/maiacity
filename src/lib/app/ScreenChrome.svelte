@@ -5,7 +5,6 @@
 
 <header class="screen-chrome" class:native-window={nativeWindow} use:screenSize aria-label="Screen controls">
  <div class="screen-leading">
-  <div class="screen-diagnostics" use:screenHost={'diagnostics'}></div>
   <div class="screen-titles">
    <div class="screen-title-slot" use:screenHost={'title'}></div>
    <span class="screen-title-fallback">{title}</span>

@@ -5,11 +5,13 @@ use std::future::{Future, IntoFuture};
 use std::pin::Pin;
 use std::io;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::time::Duration;
 
 use iroh::EndpointId;
 use iroh_base::CustomAddr;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, pem::PemObject as _};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
@@ -27,14 +29,25 @@ const TICKET_LIFETIME: Duration = Duration::from_secs(60);
 const LEASE: Duration = Duration::from_secs(6 * 3600);
 const HANDSHAKE: Duration = Duration::from_secs(10);
 const ROTATION: Duration = Duration::from_secs(6 * 86400);
+/// How often a public certificate's files are read again, for the issuer's renewal (Caddy renews 30 days early).
+const RELOAD: Duration = Duration::from_secs(3600);
 const CLOSE: VarInt = VarInt::from_u32(0);
 
-/// Explicit UDP listener/public HTTPS URL; the existing Caddy TLS configuration is unrelated and unchanged.
+/// Explicit UDP listener/public HTTPS URL, and the public certificate the host's HTTPS site already holds for that
+/// name, if it serves it: else a certificate of its own, which browsers take only pinned.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
     pub bind: SocketAddr,
     pub public_url: String,
     pub allowed_origins: Vec<String>,
+    pub certificate: Option<CertFiles>,
+}
+
+/// A CA-issued certificate chain and its private key, PEM files its issuer's client renews in place (Caddy's).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CertFiles {
+    pub chain: PathBuf,
+    pub key: PathBuf,
 }
 
 #[derive(Clone, Debug)]
@@ -49,9 +62,14 @@ pub struct Reservation {
     pub descriptor: Value,
 }
 
+/// The listener's certificate: one of its own, which a browser takes only by the hash pinned in the descriptor (and
+/// which Safari on iOS 26 refuses outright), or the host's public one, as its HTTPS site's CA-issued certificate files
+/// hold it, which every browser checks as any site's and which pins nothing.
 struct Certificate {
-    identity: Identity,
+    chain: Vec<CertificateDer<'static>>,
+    key: PrivateKeyDer<'static>,
     expires: i64,
+    pin: Option<String>,
 }
 impl Certificate {
     fn generate(host: &str, now: OffsetDateTime) -> io::Result<Self> {
@@ -59,16 +77,42 @@ impl Certificate {
         let expires = now + WallDuration::days(13);
         let identity = Identity::self_signed_builder().subject_alt_names([host])
             .validity_period(now - WallDuration::minutes(5), expires).build().map_err(io::Error::other)?;
-        Ok(Self { identity, expires: expires.unix_timestamp() })
+        let pin = data_encoding::HEXLOWER.encode(identity.certificate_chain().as_slice()[0].hash().as_ref());
+        let chain = identity.certificate_chain().as_slice().iter().map(|c| CertificateDer::from(c.der().to_vec())).collect();
+        let key = PrivatePkcs8KeyDer::from(identity.private_key().secret_der().to_vec()).into();
+        Ok(Self { chain, key, expires: expires.unix_timestamp(), pin: Some(pin) })
     }
-    fn hash(&self) -> String {
-        data_encoding::HEXLOWER.encode(self.identity.certificate_chain().as_slice()[0].hash().as_ref())
+    /// The public certificate in `files`, as its issuer renews it: read again every `RELOAD`, so it never pins.
+    fn load(files: &CertFiles) -> io::Result<Self> {
+        let chain = CertificateDer::pem_file_iter(&files.chain).and_then(|certs| certs.collect::<Result<Vec<_>, _>>())
+            .map_err(|_| invalid("WebTransport certificate chain doesn't read"))?;
+        let key = PrivateKeyDer::from_pem_file(&files.key).map_err(|_| invalid("WebTransport private key doesn't read"))?;
+        if chain.is_empty() { return Err(invalid("WebTransport certificate chain is empty")); }
+        Ok(Self { chain, key, expires: i64::MAX, pin: None })
     }
+    fn same(&self, other: &Certificate) -> bool { self.chain == other.chain && self.key.secret_der() == other.key.secret_der() }
 }
 struct Certificates {
     current: Certificate,
-    next: Certificate,
+    /// The certificate of its own pinned beside the current one across a rotation; none with a public certificate.
+    next: Option<Certificate>,
     rotate_at: Instant,
+}
+impl Certificates {
+    /// The public certificate where `files` reads, else two of its own, pinned.
+    fn new(host: &str, files: Option<&CertFiles>, now: OffsetDateTime) -> io::Result<Self> {
+        if let Some(files) = files {
+            match Certificate::load(files) {
+                Ok(current) => return Ok(Self { current, next: None, rotate_at: Instant::now() + RELOAD }),
+                Err(error) => tracing::warn!(%error, "avendb: WebTransport falls back to a certificate of its own, pinned"),
+            }
+        }
+        Ok(Self { current: Certificate::generate(host, now)?, next: Some(Certificate::generate(host, now)?), rotate_at: Instant::now() + ROTATION })
+    }
+    /// The hashes a browser pins: none with a public certificate.
+    fn pins(&self) -> Vec<String> {
+        std::iter::once(&self.current).chain(&self.next).filter_map(|c| c.pin.clone()).collect()
+    }
 }
 struct Route {
     peer: EndpointId,
@@ -144,9 +188,7 @@ fn invalid(message: &'static str) -> io::Error { io::Error::new(io::ErrorKind::I
 fn disconnected() -> io::Error { io::Error::new(io::ErrorKind::NotConnected, "WebTransport listener closed") }
 
 fn tls_config(bind: SocketAddr, certificate: &Certificate) -> io::Result<ServerConfig> {
-    let certs = certificate.identity.certificate_chain().as_slice().iter()
-        .map(|c| rustls::pki_types::CertificateDer::from(c.der().to_vec())).collect();
-    let key = rustls::pki_types::PrivatePkcs8KeyDer::from(certificate.identity.private_key().secret_der().to_vec()).into();
+    let (certs, key) = (certificate.chain.clone(), certificate.key.clone_key());
     let mut tls = rustls::ServerConfig::builder_with_provider(crate::pq_provider())
         .with_protocol_versions(&[&rustls::version::TLS13]).map_err(io::Error::other)?
         .with_no_client_auth().with_single_cert(certs, key).map_err(io::Error::other)?;
@@ -192,7 +234,7 @@ impl NativeWt {
         let (mut url, origins, host) = config.parsed()?;
         if events.max_capacity() < 2 * MAX_ROUTES { return Err(invalid("WebTransport event capacity")); }
         let now = OffsetDateTime::now_utc();
-        let certificates = Certificates { current: Certificate::generate(&host, now)?, next: Certificate::generate(&host, now)?, rotate_at: Instant::now() + ROTATION };
+        let certificates = Certificates::new(&host, config.certificate.as_ref(), now)?;
         let tls = tls_config(config.bind, &certificates.current)?;
         let runtime = Arc::new(JoinedRuntime::default());
         let endpoint = quinn::Endpoint::new(tls.quic_endpoint_config().clone(), Some(tls.quic_config().clone()),
@@ -220,7 +262,7 @@ impl NativeWt {
         let mut url = self.inner.url.clone();
         url.set_path(&format!("{}/{}", url.path().trim_end_matches('/'), ticket));
         let expires = (OffsetDateTime::now_utc() + WallDuration::seconds(LEASE.as_secs() as i64)).unix_timestamp();
-        let descriptor = json!({"url": url.as_str(), "certificateHashes": [state.certificates.current.hash(), state.certificates.next.hash()], "expires": expires});
+        let descriptor = json!({"url": url.as_str(), "certificateHashes": state.certificates.pins(), "expires": expires});
         // Reserve teardown credit before admission. Slow control consumers backpressure new routes;
         // every admitted route can still remove its lookup address without an unbounded event queue.
         let closed_event = self.inner.events.clone().try_reserve_owned().map_err(|error| match error {
@@ -261,14 +303,28 @@ impl Inner {
         let mut state = self.state.lock().expect("WT state");
         let certificates = &mut state.certificates;
         if at < certificates.rotate_at && certificates.current.expires > now.unix_timestamp() + LEASE.as_secs() as i64 { return Ok(()); }
+        let Some(pinned) = certificates.next.as_ref() else {
+            // a public certificate, as its issuer renewed it: taken where it changed, kept where it doesn't read
+            certificates.rotate_at = at + RELOAD;
+            let files = self.config.certificate.as_ref().expect("a public certificate's files");
+            match Certificate::load(files) {
+                Ok(renewed) if !renewed.same(&certificates.current) => {
+                    self.endpoint()?.set_server_config(Some(tls_config(self.config.bind, &renewed)?.quic_config().clone()));
+                    certificates.current = renewed;
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!(%error, "avendb: WebTransport keeps its certificate"),
+            }
+            return Ok(());
+        };
         let next = Certificate::generate(&self.host, now)?;
         // On a large wall-clock jump both old certificates may be invalid; fresh negotiation restores pins.
-        let fresh = if certificates.next.expires <= now.unix_timestamp() + LEASE.as_secs() as i64 {
+        let fresh = if pinned.expires <= now.unix_timestamp() + LEASE.as_secs() as i64 {
             Some(Certificate::generate(&self.host, now)?)
         } else { None };
-        let current = fresh.as_ref().unwrap_or(&certificates.next);
+        let current = fresh.as_ref().unwrap_or(pinned);
         self.endpoint()?.set_server_config(Some(tls_config(self.config.bind, current)?.quic_config().clone()));
-        let promoted = std::mem::replace(&mut certificates.next, next);
+        let promoted = certificates.next.replace(next).expect("a pinned certificate");
         certificates.current = fresh.unwrap_or(promoted);
         // The promoted certificate and the next pin overlap across a rotation boundary.
         certificates.rotate_at = at + ROTATION;
@@ -447,7 +503,7 @@ mod tests {
         assert!(listener.local_addr().is_err());
     }
 
-    fn config() -> Config { Config { bind: "127.0.0.1:0".parse().unwrap(), public_url: "https://127.0.0.1:0/packets".into(), allowed_origins: vec!["https://app.example".into()] } }
+    fn config() -> Config { Config { bind: "127.0.0.1:0".parse().unwrap(), public_url: "https://127.0.0.1:0/packets".into(), allowed_origins: vec!["https://app.example".into()], certificate: None } }
 
     #[tokio::test]
     async fn admission_is_one_shot_short_lived_and_bounded_separately_from_lease() {
@@ -503,6 +559,47 @@ mod tests {
         listener.close();
         let task = listener.task.lock().unwrap().take().unwrap();
         task.await.expect("shutdown never polls Endpoint.accept after close");
+    }
+
+    /// A certificate as an issuer's client writes it: chain and key, PEM files in `dir`.
+    fn issued(dir: &std::path::Path) -> CertFiles {
+        let identity = Identity::self_signed(["127.0.0.1"]).unwrap();
+        let files = CertFiles { chain: dir.join("host.crt"), key: dir.join("host.key") };
+        let chain: String = identity.certificate_chain().as_slice().iter().map(|c| c.to_pem()).collect();
+        std::fs::write(&files.chain, chain).unwrap();
+        std::fs::write(&files.key, identity.private_key().to_secret_pem()).unwrap();
+        files
+    }
+
+    #[tokio::test]
+    async fn a_public_certificate_pins_nothing_is_taken_again_as_renewed_and_falls_back_to_pins_where_absent() {
+        let dir = std::env::temp_dir().join(format!("avendb-wt-cert-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (events, _received) = mpsc::channel(16);
+        let files = issued(&dir);
+        let listener = NativeWt::bind(Config { certificate: Some(files.clone()), ..config() }, PacketTransport::new(peer(1)), events.clone()).await.unwrap();
+        let descriptor = listener.reserve(peer(2), [1; 16]).unwrap().descriptor;
+        assert_eq!(descriptor["certificateHashes"], json!([]), "a CA-issued certificate is checked as any site's, not pinned");
+        let served = listener.inner.state.lock().unwrap().certificates.current.chain.clone();
+        // renewed in place: taken at the next reload, and the listener keeps its address
+        let address = listener.local_addr().unwrap();
+        issued(&dir);
+        listener.inner.rotate(OffsetDateTime::now_utc(), Instant::now() + RELOAD + Duration::from_secs(1)).unwrap();
+        let renewed = listener.inner.state.lock().unwrap().certificates.current.chain.clone();
+        assert_ne!(renewed, served);
+        assert_eq!(listener.local_addr().unwrap(), address);
+        // gone for a while: the one it serves stays
+        std::fs::remove_file(&files.key).unwrap();
+        listener.inner.rotate(OffsetDateTime::now_utc(), Instant::now() + 3 * RELOAD).unwrap();
+        assert_eq!(listener.inner.state.lock().unwrap().certificates.current.chain, renewed);
+        assert_eq!(listener.reserve(peer(3), [2; 16]).unwrap().descriptor["certificateHashes"], json!([]));
+        listener.shutdown().await;
+        // not there at the start: two of its own, pinned, as before
+        let missing = CertFiles { chain: dir.join("none.crt"), key: dir.join("none.key") };
+        let pinned = NativeWt::bind(Config { certificate: Some(missing), ..config() }, PacketTransport::new(peer(1)), events).await.unwrap();
+        assert_eq!(pinned.reserve(peer(2), [3; 16]).unwrap().descriptor["certificateHashes"].as_array().unwrap().len(), 2);
+        pinned.shutdown().await;
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[tokio::test]

@@ -21,10 +21,12 @@ export function webTransport(descriptor, { event, receive }, { WebTransport = gl
 			if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw new Error('invalid WebTransport URL');
 			const remaining = descriptor.expires * 1000 - now();
 			if (!Number.isFinite(remaining) || remaining <= 0 || remaining > 14 * 86400_000) throw new Error('expired WebTransport capability');
-			const hashes = descriptor.certificateHashes;
-			if (!Array.isArray(hashes) || !hashes.length || hashes.length > 4 || hashes.some((hash) => !/^[0-9a-f]{64}$/.test(hash))) throw new Error('invalid certificate hashes');
+			// none where the server holds a public certificate, which the browser checks as any site's: Safari on iOS 26
+			// refuses a pinned certificate of the server's own
+			const hashes = descriptor.certificateHashes ?? [];
+			if (!Array.isArray(hashes) || hashes.length > 4 || hashes.some((hash) => !/^[0-9a-f]{64}$/.test(hash))) throw new Error('invalid certificate hashes');
 			const serverCertificateHashes = hashes.map((hash) => ({ algorithm: 'sha-256', value: Uint8Array.from(hash.match(/../g), (byte) => parseInt(byte, 16)) }));
-			transport = new WebTransport(url.href, { allowPooling: false, requireUnreliable: true, serverCertificateHashes });
+			transport = new WebTransport(url.href, { allowPooling: false, requireUnreliable: true, ...(serverCertificateHashes.length ? { serverCertificateHashes } : {}) });
 			opening = setTimeout(() => close('WebTransport opening timed out'), 10_000);
 			expiry = setTimeout(() => close('WebTransport capability expired'), remaining);
 			// a close says its code and reason, and the step it came at: before `ready` the session was never up

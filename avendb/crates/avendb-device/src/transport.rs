@@ -21,6 +21,7 @@ fn from_vars(var: impl Fn(&str) -> Result<Option<String>>) -> Result<Option<WtCo
             public_url,
             allowed_origins: serde_json::from_str(&origins)
                 .context("AVENDB_WT_ORIGINS must be a JSON array of exact origins")?,
+            certificate: None,
         },
         _ => bail!("AVENDB_WT_BIND, AVENDB_WT_URL and AVENDB_WT_ORIGINS must be configured together"),
     };

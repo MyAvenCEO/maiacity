@@ -35,6 +35,9 @@ chacha20poly1305 = { version = "0.11", default-features = false, features = ["al
 rand_core = { version = "0.10.1", default-features = false }
 # the device's secure boundary (P8c): every secret wiped as it is dropped, the hash states that held one among them
 zeroize = "1.8"
+# the state a replay works out (policy::State): collections that share what two states hold alike, so a state kept at a
+# place to step on from costs only what changes after it, not a copy of every write held (sync plan S3c, 2026-10-27)
+imbl = "7"
 # each item is one Loro document, its updates what gets encrypted and synced; pinned exactly, upgraded on purpose
 loro = "=1.17.1"
 # the clock of its own timings (perf.rs): std's on a native target, the page's performance.now() in a browser

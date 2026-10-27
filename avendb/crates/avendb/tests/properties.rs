@@ -66,9 +66,27 @@ impl Rng {
     }
 }
 
+/// What `pick_from` picks from: a list, or a state's shared one.
+trait Picks<T> {
+    fn count(&self) -> usize;
+    fn at(&self, i: usize) -> &T;
+}
+impl<T> Picks<T> for [T] {
+    fn count(&self) -> usize { self.len() }
+    fn at(&self, i: usize) -> &T { &self[i] }
+}
+impl<T> Picks<T> for Vec<T> {
+    fn count(&self) -> usize { self.len() }
+    fn at(&self, i: usize) -> &T { &self[i] }
+}
+impl<T: Clone> Picks<T> for imbl::Vector<T> {
+    fn count(&self) -> usize { self.len() }
+    fn at(&self, i: usize) -> &T { &self[i] }
+}
+
 /// One of `xs`, if there is any.
-fn pick_from<'a, T>(rng: &mut Rng, xs: &'a [T]) -> Option<&'a T> {
-    if xs.is_empty() { None } else { Some(&xs[rng.below(xs.len())]) }
+fn pick_from<'a, T, X: Picks<T> + ?Sized>(rng: &mut Rng, xs: &'a X) -> Option<&'a T> {
+    if xs.count() == 0 { None } else { Some(xs.at(rng.below(xs.count()))) }
 }
 
 const SIGNERS: [SignerId; 11] =

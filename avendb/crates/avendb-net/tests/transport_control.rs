@@ -294,6 +294,7 @@ async fn concurrent_shutdown_releases_listener_port_while_node_is_retained() {
             bind: address,
             public_url: format!("https://{address}/packets"),
             allowed_origins: vec!["https://app.example".into()],
+            certificate: None,
         })
         .await
         .unwrap();

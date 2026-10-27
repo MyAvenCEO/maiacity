@@ -13,7 +13,7 @@ use wtransport::tls::{Sha256Digest, client::ServerHashVerification};
 
 const ORIGIN: &str = "https://app.example";
 fn peer(byte: u8) -> EndpointId { iroh::SecretKey::from_bytes(&[byte; 32]).public() }
-fn config() -> WtConfig { WtConfig { bind: "127.0.0.1:0".parse().unwrap(), public_url: "https://127.0.0.1:0/packets".into(), allowed_origins: vec![ORIGIN.into()] } }
+fn config() -> WtConfig { WtConfig { bind: "127.0.0.1:0".parse().unwrap(), public_url: "https://127.0.0.1:0/packets".into(), allowed_origins: vec![ORIGIN.into()], certificate: None } }
 fn hashes(descriptor: &Value) -> Vec<Sha256Digest> {
     descriptor["certificateHashes"].as_array().unwrap().iter().map(|value| {
         let bytes: [u8; 32] = data_encoding::HEXLOWER.decode(value.as_str().unwrap().as_bytes()).unwrap().try_into().unwrap();

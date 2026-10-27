@@ -268,6 +268,39 @@ fn vec_of<T: Clone>(
     }
 }
 
+/// A shared collection of state `t` (`imbl`), against the same of state `r`, as `put_vec` writes one.
+fn put_shared<T: Clone + PartialEq + Encode, K: Eq + Hash>(
+    out: &mut Vec<u8>,
+    r: &imbl::Vector<T>,
+    t: &imbl::Vector<T>,
+    key: impl Fn(&T) -> K,
+) {
+    if r.ptr_eq(t) {
+        out.push(0);
+    } else {
+        out.push(1);
+        let (r, t): (Vec<T>, Vec<T>) = (r.iter().cloned().collect(), t.iter().cloned().collect());
+        let at = places(&r, &key);
+        put_items(out, &r, &t, key, &at);
+    }
+}
+
+/// The collection `put_shared` wrote, against `r`.
+fn shared_of<T: Clone>(
+    rd: &mut Reader<'_>,
+    r: &imbl::Vector<T>,
+    item: impl Fn(&mut Reader<'_>) -> Result<T, WireError>,
+) -> Result<imbl::Vector<T>, WireError> {
+    match rd.u8()? {
+        0 => Ok(r.clone()),
+        1 => {
+            let r: Vec<T> = r.iter().cloned().collect();
+            Ok(items(rd, &r, item)?.into())
+        }
+        _ => Err(WireError::Unknown),
+    }
+}
+
 /// A list without repeats, as `put_vec` writes a collection.
 fn put_listed<T: Copy + Eq + Hash + Encode>(out: &mut Vec<u8>, r: &Arc<Listed<T>>, t: &Arc<Listed<T>>) {
     if Arc::ptr_eq(r, t) {
@@ -367,9 +400,9 @@ fn put_state(out: &mut Vec<u8>, r: &State, t: &State) {
     put_vec(out, &r.shares, &t.shares, |c| c.id, &r.share_at);
     put_map(out, &r.held, &t.held, |v, out| put_places(v, out));
     put_listed(out, &r.revoked, &t.revoked);
-    put_vec(out, &r.entries, &t.entries, |en| en.id, &r.entry_at);
+    put_shared(out, &r.entries, &t.entries, |en| en.id);
     put_listed(out, &r.born, &t.born);
-    put_vec(out, &r.writes, &t.writes, |w| w.edit, &r.write_at);
+    put_shared(out, &r.writes, &t.writes, |w| w.edit);
     put_map(out, &r.audiences, &t.audiences, put_shares);
     put_map(out, &r.epochs, &t.epochs, |e, out| e.encode(out));
     put_map(out, &r.moved, &t.moved, |id, out| id.encode(out));
@@ -404,9 +437,9 @@ fn state_of(rd: &mut Reader<'_>, r: &State) -> Result<State, WireError> {
     };
     let held = map_of(rd, &r.held, places_of)?;
     let revoked = listed_of(rd, &r.revoked)?;
-    let entries = vec_of(rd, &r.entries, Entry::decode)?;
+    let entries = shared_of(rd, &r.entries, Entry::decode)?;
     let born = listed_of(rd, &r.born)?;
-    let writes = vec_of(rd, &r.writes, Write::decode)?;
+    let writes = shared_of(rd, &r.writes, Write::decode)?;
     let audiences = map_of(rd, &r.audiences, shares_of)?;
     let epochs = map_of(rd, &r.epochs, u64::decode)?;
     let moved = map_of::<(KeyFam, u64), EditId>(rd, &r.moved, EditId::decode)?;
@@ -422,7 +455,7 @@ fn state_of(rd: &mut Reader<'_>, r: &State) -> Result<State, WireError> {
     let published = listed_of::<KeyName>(rd, &r.published)?;
     let seal_keys = map_of(rd, &r.seal_keys, PublicKey::decode)?;
     let marks = map_of(rd, &r.marks, shares_of)?;
-    let same = Arc::ptr_eq(&entries, &r.entries) && Arc::ptr_eq(&writes, &r.writes);
+    let same = entries.ptr_eq(&r.entries) && writes.ptr_eq(&r.writes);
     let mut st = State {
         vaults,
         vault_at,

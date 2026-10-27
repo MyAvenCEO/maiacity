@@ -62,37 +62,12 @@ try {
  const probes=[];page.on('request',request=>{if(request.url().includes('speed.cloudflare.com') || request.url().includes('/release.json'))probes.push(request.url());});
  await page.goto(origin+'/__session-lifecycle');
  await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
- const diagnostics=page.getByRole('button',{name:'Open diagnostics'});
- assert.equal(await diagnostics.evaluate(el=>getComputedStyle(el).position),'fixed');
- await diagnostics.click();
- if(process.env.AVENDB_LIFECYCLE_SCREENSHOT)await page.screenshot({path:process.env.AVENDB_LIFECYCLE_SCREENSHOT});
- await page.getByRole('button',{name:'Run diagnostics',exact:true}).waitFor();
- assert.equal(await page.locator('dialog button').count(),3); // Run, Copy, Close: no nested modes.
- await page.getByRole('button',{name:'Copy logs',exact:true}).click();
- await page.waitForFunction(()=>Boolean(window.fixtureCopiedLogs));
- const lockedReport=await page.evaluate(()=>JSON.parse(window.fixtureCopiedLogs));
- assert.equal(lockedReport.kind,'maia-unified-diagnostics');
- assert.equal(lockedReport.lifecycle.current.documents,1);
- assert.equal(lockedReport.run.reason,'not-run');
+ // no diagnostics button: the report is the Performance page's and goes by itself (Samuel 2026-10-27)
+ assert.equal(await page.getByRole('button',{name:'Open diagnostics'}).count(),0);
  assert.equal(await page.evaluate(()=>window.fixtureSession.phase),'closed');
- assert.deepEqual(probes,[]); // Opening/copying never starts HTTP speed tests.
- await page.getByRole('button',{name:'Run diagnostics',exact:true}).click();
- await page.getByRole('button',{name:'Run diagnostics',exact:true}).waitFor();
- await page.getByRole('button',{name:'Copy logs',exact:true}).click();
- const checkedReport=await page.evaluate(()=>JSON.parse(window.fixtureCopiedLogs));
- assert.equal(checkedReport.run.engine.reason,'locked');
- assert(probes.length>0);
- assert.equal(await page.evaluate(()=>window.fixtureSession.phase),'closed');
- await page.getByRole('button',{name:'Close diagnostics'}).click();
- assert.equal(await diagnostics.evaluate(el=>document.activeElement===el),true);
+ assert.equal(await page.evaluate(()=>window.fixtureLifecycle.snapshot().current.documents),1);
  await page.getByRole('button',{name:'Unlock fixture'}).click();
  await page.getByTestId('phase').filter({hasText:'open'}).waitFor();
- await diagnostics.click();
- await page.keyboard.press('Escape');
- assert.equal(await diagnostics.evaluate(el=>document.activeElement===el),true);
- await diagnostics.click();
- await page.mouse.click(2,2);
- await page.waitForFunction(()=>!document.querySelector('dialog').open);
  const document=await page.evaluate(()=>{window.originalDevice=window.fixtureSession.device;return window.fixtureDocument});
  for(let i=0;i<4;i++) {
    await page.getByRole('button',{name:'Change view'}).click();
@@ -116,16 +91,7 @@ try {
  const restart=await page.evaluate(()=>window.fixtureLifecycle.snapshot());
  assert.equal(restart.current.documents,2); assert.equal(restart.previous.phase,'open');
  assert.equal(restart.navigation,'reload');
- await diagnostics.click();
- await page.evaluate(()=>{window.fixtureDenyClipboard=true});
- await page.getByRole('button',{name:'Copy logs',exact:true}).click();
- const fallback=page.getByRole('textbox',{name:'Diagnostic logs'});
- await fallback.waitFor();
- const report=JSON.parse(await fallback.inputValue());
- assert.equal(report.lifecycle.current.documents,2);
- assert.equal(report.lifecycle.navigation,'reload');
- assert.equal(report.lifecycle.previous.phase,'open');
- assert.equal(await fallback.evaluate(el=>document.activeElement===el && el.selectionStart===0 && el.selectionEnd===el.value.length),true);
+ assert.deepEqual(probes,[]); // nothing here starts a speed test
  assert.deepEqual(errors,[]);
- console.log('PASS '+engine+': global mobile diagnostics works locked/open without auto probes; close/Escape/outside preserve document; lifecycle distinguishes view/lock/reload and new document stays locked');
+ console.log('PASS '+engine+': no diagnostics button and no probes; lifecycle distinguishes view/lock/reload and new document stays locked');
 } finally { await browser?.close();await server?.close(); }

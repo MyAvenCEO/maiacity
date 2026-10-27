@@ -65,6 +65,7 @@ async fn optional_listener_bind_failure_keeps_the_existing_node_and_relay_runnin
         bind,
         public_url: format!("https://localhost:{}/avendb", bind.port()),
         allowed_origins: vec!["https://maia.city".into()],
+        certificate: None,
     });
     let running = avendb_server::start(&config).await.unwrap();
     assert_eq!(running.node.id(), running.offer.addr.id);

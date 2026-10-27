@@ -5858,7 +5858,7 @@ fn show_items(d: SignerId, store: &mut Store) {
     let todo: Vec<&Entry> = if grew {
         let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
         let mut es: Vec<EntryId> =
-            all[n..].iter().map(|w| w.entry).chain(opened.keys().copied()).chain(changed).collect();
+            all.iter().skip(n).map(|w| w.entry).chain(opened.keys().copied()).chain(changed).collect();
         es.sort();
         es.dedup();
         es.into_iter().filter_map(|e| st.entry(e)).collect()

@@ -193,6 +193,13 @@ impl Config {
                     bind: bind.parse().context("AVENDB_WT_BIND: expected UDP socket address")?,
                     public_url,
                     allowed_origins: serde_json::from_str(&origins).context("AVENDB_WT_ORIGINS: expected JSON array of exact origins")?,
+                    // the public certificate the site's HTTPS already holds for the host (Caddy's), which every browser
+                    // takes as any site's: Safari on iOS 26 refuses a pinned one of its own
+                    certificate: match (var("AVENDB_WT_CERT"), var("AVENDB_WT_KEY")) {
+                        (None, None) => None,
+                        (Some(chain), Some(key)) => Some(avendb_net::transports::WtCertFiles { chain: chain.into(), key: key.into() }),
+                        _ => bail!("AVENDB_WT_CERT and AVENDB_WT_KEY must be configured together"),
+                    },
                 }),
                 _ => bail!("AVENDB_WT_BIND, AVENDB_WT_URL and AVENDB_WT_ORIGINS must all be configured together"),
             },
