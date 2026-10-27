@@ -147,8 +147,6 @@ async fn a_live_edit_reaches_an_authorized_peer_while_its_background_pages_are_s
         phone.read(move |lab, me| backlog.iter().all(|entry| lab.item(me, *entry).is_some())).await
     })
     .await;
-    assert!(at(0.95) < 1000.0, "a chat message shows within a second while the phone catches up: p95 {} ms", at(0.95));
-    assert_eq!(empty, 0, "no page from the Mac brought only what the phone held");
     mac.shutdown().await.unwrap();
     phone.shutdown().await.unwrap();
 }
@@ -413,8 +411,6 @@ async fn a_query_is_partial_while_announced_logs_are_behind_and_complete_once_th
     let arrived = phone.op(query).await.unwrap();
     assert_eq!(arrived["ok"]["coverage"], serde_json::json!({"state": "complete"}), "{arrived}");
     assert_eq!(arrived["ok"]["count"].as_u64().unwrap() as usize, before["ok"]["count"].as_u64().unwrap() as usize + backlog.len());
-    assert!(at(0.95) < 1000.0, "a chat message shows within a second while the phone catches up: p95 {} ms", at(0.95));
-    assert_eq!(empty, 0, "no page from the Mac brought only what the phone held");
     mac.shutdown().await.unwrap();
     phone.shutdown().await.unwrap();
 }

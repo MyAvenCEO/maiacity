@@ -195,4 +195,20 @@ theorem split_view_does_all_the_work (work budget : Nat) :
     liveSteps work budget + backgroundSteps work budget = work := by
   simp only [liveSteps, backgroundSteps]; omega
 
+/-! ## One asking of a peer at a time (F12, batch 5)
+
+A peer answers an asking with what it holds beyond what the request names. Two askings of one peer at once named the
+same holdings, so the second brought all the first took again (sync_bench `bench_live`, 1,352 edits pulled for 675
+new). The second now waits for the first's turn to end and names what it took. Rust: pulls.rs `Budget::one_asking`. -/
+
+/-- What a peer holding `theirs` sends to a request naming `named`. -/
+def reply (theirs named : List Nat) : List Nat := theirs.filter (fun e => !named.contains e)
+
+/-- The second asking, made once the first's reply is held: it brings nothing the first brought. -/
+theorem one_asking_resends_nothing (theirs held : List Nat) (e : Nat)
+    (first : e ∈ reply theirs held) : e ∉ reply theirs (held ++ reply theirs held) := by
+  simp [reply, List.mem_filter] at *
+  intro _ _
+  exact first
+
 end AvenDB.LivePriority

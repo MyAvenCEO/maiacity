@@ -2577,6 +2577,7 @@ impl Shared {
         yielding: Option<&Yield>,
     ) -> Result<usize> {
         let _activity = self.admit()?;
+        let turn = if expected.is_none() { Some(self.pulls.one_asking(endpoint).await) } else { None };
         let admission = self.pulls.enter(background, catch_up).await?;
         let peer = self.connection(endpoint).await?;
         if expected.is_some_and(|device| device != peer.device) {
@@ -2593,6 +2594,8 @@ impl Shared {
                 asked = Err(error);
             }
         }
+        // the next asking of this peer names what these pages brought; bringing it up to date needs no turn
+        drop(turn);
         // what its pages brought, brought up to date once more, however the asking ended; a live pull's own caller
         // does it, bounded (`live::LIVE_VIEW`), where this would drain every catch-up pending
         if expected.is_none() {
