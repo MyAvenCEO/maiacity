@@ -1645,6 +1645,14 @@ impl Node {
     /// it is not connected to now; and its newest pages. Kept in memory alone, since it started.
     /// What this node answered its peers' askings with, and how long each page took it (`traffic::Served`), without
     /// which peer asked: what avenDB's server says on its public health.
+    /// What this node's own Lab work cost since it started (`Lab::work_metrics`) and how far its replay is behind
+    /// (`Lab::replay_lag`), read in a background turn: what avenDB's server says on its public health every minute.
+    pub async fn work(&self) -> Value {
+        self.shared
+            .read_class(lab_schedule::Class::Background, |lab, me| json!({ "timers": lab.work_metrics(me), "replay": lab.replay_lag(me) }))
+            .await
+    }
+
     pub fn served(&self) -> Value {
         let mut served = self.shared.traffic.served_json();
         served["lab"] = self.shared.lab_turns.json();
