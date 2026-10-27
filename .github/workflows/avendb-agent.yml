@@ -8,13 +8,17 @@ name: avenDB cloud agent
 #
 # Built on Ubuntu 22.04, so its glibc is older than a cloud session's (Ubuntu 24.04), and it runs there.
 on:
-  workflow_call:
+  # Validate and release (main.yml) starts it with the commit it validated, so its build waits for nothing there
+  workflow_dispatch:
     inputs:
+      sha:
+        description: The main commit to build (empty = the branch's head)
+        type: string
+        default: ''
       validated:
-        description: The trusted main pipeline already checked this exact commit
+        description: Validate and release already checked this commit (only a commit on main counts)
         type: boolean
         default: false
-  workflow_dispatch:
 
 concurrency:
   group: avendb-agent
@@ -28,18 +32,44 @@ env:
   ASSET: avendb-device-x86_64-linux
 
 jobs:
+  # a commit main.yml says it checked is believed only if it is on main; anything else runs avenDB's checks first
+  trust:
+    runs-on: ubuntu-latest
+    outputs:
+      validated: ${{ steps.on-main.outputs.validated }}
+    steps:
+      - id: on-main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VALIDATED: ${{ inputs.validated }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          # main is SHA itself or ahead of it: SHA is on main
+          status=""
+          if [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$SHA...main" --jq .status || true)
+          fi
+          if [ "$VALIDATED" = "true" ] && { [ "$status" = "ahead" ] || [ "$status" = "identical" ]; }; then
+            echo "validated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "validated=false" >> "$GITHUB_OUTPUT"
+          fi
+
   checks:
-    if: ${{ !inputs.validated }}
+    needs: trust
+    if: ${{ needs.trust.outputs.validated != 'true' }}
     uses: ./.github/workflows/avendb-checks.yml
 
   build:
-    needs: checks
-    if: ${{ !cancelled() && (needs.checks.result == 'success' || (inputs.validated && needs.checks.result == 'skipped')) }}
+    needs: [trust, checks]
+    if: ${{ !cancelled() && needs.trust.result == 'success' && (needs.checks.result == 'success' || (needs.trust.outputs.validated == 'true' && needs.checks.result == 'skipped')) }}
     name: Build the cloud agent and put it on its release
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.trust.outputs.validated == 'true' && inputs.sha || github.sha }}
       - uses: dtolnay/rust-toolchain@stable
       # Rust builds are slow: keep the compiled dependencies between runs
       - uses: Swatinem/rust-cache@v2.9.3
@@ -51,12 +81,13 @@ jobs:
       - name: Put it on the release
         env:
           GH_TOKEN: ${{ github.token }}
+          BUILT: ${{ needs.trust.outputs.validated == 'true' && inputs.sha || github.sha }}
         run: |
           cp avendb/target/release/avendb-device "$ASSET"
           strip "$ASSET"
           ./"$ASSET" agent cloud < /dev/null
           sha256sum "$ASSET" > "$ASSET.sha256"
-          notes="avendb-device agent cloud, built from ${GITHUB_SHA} on $(date -u +%F). Cloud sessions of this repository download it through scripts/avendb-cloud.sh (avendb/README.md, Cloud sessions)."
+          notes="avendb-device agent cloud, built from ${BUILT} on $(date -u +%F). Cloud sessions of this repository download it through scripts/avendb-cloud.sh (avendb/README.md, Cloud sessions)."
           if ! gh release view "$TAG" > /dev/null 2>&1; then
             gh release create "$TAG" --title "avenDB cloud agent" --notes "$notes" --prerelease --latest=false
           fi

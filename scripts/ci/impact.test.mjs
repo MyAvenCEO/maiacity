@@ -196,3 +196,46 @@ test('each Playwright image is the Playwright its job drives', () => {
  const opfs=jobs.find(j=>j.startsWith('opfs-webkit:'));
  expect(opfs).toContain(`playwright:v${opfs.match(/playwright@(\d+\.\d+\.\d+)/)[1]}-noble`);
 });
+import { reusable } from './reuse.mjs';
+function github({ parents = ['p'], tree = 't', headTree = 't', pulls, compare = 'ahead', runs }) {
+ const calls = [];
+ const api = async path => {
+  calls.push(path);
+  if (path === 'repos/o/r/commits/m') return { parents: parents.map(sha => ({ sha })), commit: { tree: { sha: tree } } };
+  if (path === 'repos/o/r/commits/m/pulls') return pulls ?? [{ number: 7, merged_at: 'x', merge_commit_sha: 'm', head: { sha: 'h', repo: { full_name: 'o/r' } } }];
+  if (path === 'repos/o/r/commits/h') return { commit: { tree: { sha: headTree } } };
+  if (path === 'repos/o/r/compare/p...h') return { status: compare };
+  if (path.startsWith('repos/o/r/actions/runs?head_sha=h')) return { workflow_runs: typeof runs === 'function' ? runs() : runs };
+  throw new Error('unexpected ' + path);
+ };
+ return { api, calls };
+}
+const run = (path, conclusion = 'success', extra = {}) => ({ id: 1, path: `.github/workflows/${path}`, head_sha: 'h', head_repository: { full_name: 'o/r' }, status: 'completed', conclusion, run_number: 1, run_attempt: 1, ...extra });
+const ask = (gh, base = 'p') => reusable({ api: gh.api, repo: 'o/r', sha: 'm', base, wait: 0, sleep: async () => {} });
+test('main reuses a suite only from a green run on the very files it holds',async()=>{
+ expect(await ask(github({ runs: [run('kernel.yml'), run('avendb-checks.yml')] }))).toEqual({ kernel: true, avendb: true });
+ expect(await ask(github({ runs: [run('kernel.yml'), run('avendb-checks.yml', 'failure')] }))).toEqual({ kernel: true, avendb: false });
+ expect(await ask(github({ runs: [run('kernel.yml')] }))).toEqual({ kernel: true, avendb: false });
+ // the latest run decides: a green older run does not cover a red re-run
+ expect((await ask(github({ runs: [run('kernel.yml'), run('kernel.yml', 'failure', { run_number: 2 })] }))).kernel).toBe(false);
+ // a fork's run, or a run of another head, is never evidence
+ expect((await ask(github({ runs: [run('kernel.yml', 'success', { head_repository: { full_name: 'x/r' } })] }))).kernel).toBe(false);
+});
+test('different files, a stale head, another base or no single pull request validate on main',async()=>{
+ const all = [run('kernel.yml'), run('avendb-checks.yml')];
+ const none = { kernel: false, avendb: false };
+ expect(await ask(github({ headTree: 'other', runs: all }))).toEqual(none);
+ expect(await ask(github({ compare: 'diverged', runs: all }))).toEqual(none);
+ expect(await ask(github({ runs: all }), 'older')).toEqual(none);
+ expect(await ask(github({ runs: all }), '')).toEqual(none);
+ expect(await ask(github({ parents: ['p', 'q'], runs: all }))).toEqual(none);
+ expect(await ask(github({ pulls: [], runs: all }))).toEqual(none);
+ expect(await ask(github({ pulls: [{ number: 7, merged_at: 'x', merge_commit_sha: 'm', head: { sha: 'h', repo: { full_name: 'x/r' } } }], runs: all }))).toEqual(none);
+});
+test('a run still going on the same files is waited for, never taken as passed',async()=>{
+ let n = 0;
+ const runs = () => [run('kernel.yml', n++ < 2 ? null : 'success', { status: n <= 2 ? 'in_progress' : 'completed' }), run('avendb-checks.yml')];
+ const gh = github({ runs });
+ expect(await reusable({ api: gh.api, repo: 'o/r', sha: 'm', base: 'p', wait: 60000, sleep: async () => {} })).toEqual({ kernel: true, avendb: true });
+ expect(await ask(github({ runs: [run('kernel.yml', null, { status: 'in_progress' })] }))).toEqual({ kernel: false, avendb: false });
+});

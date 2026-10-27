@@ -6,3 +6,10 @@
 [profile.ci]
 slow-timeout = { period = "90s", terminate-after = 4 }
 fail-fast = false
+
+# The two-node sync tests over WebTransport and custom carriers (PQ handshakes on 2 worker threads each) ran past
+# their own 35 s deadline three times on 2026-10-26/27 while the shard's other tests took every core; they now hold
+# two of nextest's slots each, and their deadline is 90 s (a hang guard: nextest stops them after 6 minutes anyway)
+[[profile.ci.overrides]]
+filter = 'package(avendb-net) & (binary(webtransport) | binary(packet_transport) | binary(transport_control))'
+threads-required = 2

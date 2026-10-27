@@ -57,7 +57,7 @@ fn forward(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn legacy_sync_negotiates_optional_carrier_and_survives_its_closure() {
-    tokio::time::timeout(Duration::from_secs(35), async {
+    tokio::time::timeout(Duration::from_secs(90), async {
         let mut w = world();
         let coop = handbook_ready(&mut w);
         let (a, b) = (w.mac_a, w.phone_a);
