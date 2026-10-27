@@ -399,7 +399,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 12
     env:
       # optimised as a release, but in parallel codegen units and thin LTO (the server profile's trade): the release
       # profile's one unit and full LTO are for the tile's WebAssembly, and took minutes more to build

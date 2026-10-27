@@ -60,22 +60,31 @@ async fn bench_carrier() {
         "direct" => (None, Options::local()),
         "relay" | "relay_link" => {
             let rates = Rates { relay: if case == "relay" { 0 } else { link }, ..Rates::default() };
-            let relay = Relay::spawn_with(LOOPBACK, Admission::open(), rates).await.expect("a relay");
+            // the relay lets in whom its admission names: Alice's Mac's, as a server's names the devices of the vaults
+            // it relays (its own and its peers', Bob's Mac among them)
+            let admission = Admission::default();
+            let relay = Relay::spawn_with(LOOPBACK, admission.clone(), rates).await.expect("a relay");
             let opts = Options { bind: None, relay: Some(relay.url()), ..Options::local() };
-            (Some(relay), opts)
+            (Some((relay, admission)), opts)
         }
         other => panic!("AVENDB_CARRIER: {other} is none of direct, relay, relay_link"),
     };
-    let mac = Node::spawn(w.lab.split(mac_a, &[passkey_a], [1; 32]), mac_a, opts.clone()).await.expect("Alice's Mac");
+    let mac_opts = Options { admission: relay.as_ref().map(|(_, a)| a.clone()), ..opts.clone() };
+    let mac = Node::spawn(w.lab.split(mac_a, &[passkey_a], [1; 32]), mac_a, mac_opts).await.expect("Alice's Mac");
     let bob = Node::spawn(w.lab.split(mac_b, &[passkey_b], [3; 32]), mac_b, opts).await.expect("Bob's Mac");
-    if relay.is_some() {
+    if let Some((relay, admission)) = &relay {
         let unbound = mac.endpoint().bound_sockets().is_empty() && bob.endpoint().bound_sockets().is_empty();
         assert!(unbound, "through the relay alone: no UDP of their own");
+        assert!(admission.admits(&mac.id()) && admission.admits(&bob.id()), "the relay's admission names both Macs");
+        // each gets onto the relay before the clock starts, as a device already on its relay asks
+        let on = async { tokio::join!(mac.on_relay(), bob.on_relay()) };
+        let (a, b) = tokio::time::timeout(Duration::from_secs(60), on).await.expect("on the relay within a minute");
+        assert!(a && b && relay.serves(&mac.id()) && relay.serves(&bob.id()), "the relay serves both Macs");
     }
     // through the relay, each is told the other's id at the relay alone, as a page knows its peers: no address it might
     // have bound, and none it hasn't learnt yet
     match &relay {
-        Some(r) => {
+        Some((r, _)) => {
             let at = |n: &Node| EndpointAddr::from_parts(n.id(), [TransportAddr::Relay(r.url())]);
             mac.know(at(&bob));
             bob.know(at(&mac));
@@ -104,7 +113,7 @@ async fn bench_carrier() {
         // what each ask brought, to the log: how many edits, or that it failed (no address, key or body)
         match bob.sync_with(mac.id()).await {
             Ok(n) => eprintln!("ask {asks}: {n} new, {missing} of {want_len} missing before"),
-            Err(_) => eprintln!("ask {asks}: failed, {missing} of {want_len} missing"),
+            Err(e) => eprintln!("ask {asks}: failed ({e:#}), {missing} of {want_len} missing"),
         }
     }
     let sync_s = t.elapsed().as_secs_f64();
