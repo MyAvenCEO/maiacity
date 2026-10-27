@@ -1,6 +1,6 @@
 // @ts-nocheck
 // One local media resolver for profiles, posts and legacy content hashes. No HTTP fallback.
-import { localFileEntries } from '../../../game/code/sources/file-entries.js';
+import { localFileEntries, pinnedEntries } from '../../../game/code/sources/file-entries.js';
 import { deviceOf, wantNow } from '../../../game/code/sources/device.js';
 import { mediaEntry, forgetMedia, resetMedia } from './local-media-state.js';
 import { useLocalMedia } from '$lib/media/local-resolver.js';
@@ -29,12 +29,18 @@ export function localMediaWorld(world) {
 	void refreshLocalMedia();
 }
 
-export function localMedia(vault, name) {
+/** The URL of file `name` of vault `vault` this device holds, '' until it is read. A file the caller knows by its entry
+ *  (`entry`, as the media manifest pins Maia City's public files) is read by that entry alone, never by listing the
+ *  vault's files to find its name. */
+export function localMedia(vault, name, entry) {
 	if (typeof window === 'undefined' || !name) return '';
     useMediaDevice(deviceOf());
 	const key = `${vault || ''}/${name}`;
 	if (!wanted.has(key)) {
-		wanted.set(key, { vault, name });
+		const pin = typeof entry === 'string' && /^[0-9a-f]{64}$/.test(entry) ? entry : undefined;
+		wanted.set(key, { vault, name, pin });
+		// what the screen shows now: its entry before anything else this page wants
+		if (pin) wantNow([pin]);
 		queueMicrotask(refreshLocalMedia);
 	}
 	return urls[key] || '';
@@ -51,7 +57,14 @@ export function refreshLocalMedia() {
         const requests = [...wanted];
         let world = snapshotDevice === d && snapshot;
         if (!world || world.entriesComplete === false) {
-            world = { entries: await localFileEntries(d, { vaults: requests.map(([, request]) => request.vault) }) };
+            // Pinned files by their entries (the engine's index of entries by id), the rest by their vault's files:
+            // a view costs what it shows, never a scan of Maia City's thousands of files for six covers.
+            const pins = requests.map(([, request]) => request.pin).filter(Boolean);
+            const named = requests.filter(([, request]) => !request.pin).map(([, request]) => request.vault);
+            world = { entries: [
+                ...(pins.length ? await pinnedEntries(d, pins) : []),
+                ...(named.length ? await localFileEntries(d, { vaults: named }) : [])
+            ] };
         }
 		if (d !== deviceOf()) return;
 		for (const [key, request] of requests) {
@@ -91,7 +104,10 @@ export function refreshLocalMedia() {
 		}
 	})().catch(() => {}).finally(() => {
 		loading = null;
-		if (!timer && wanted.size) timer = setTimeout(() => { timer = null; void refreshLocalMedia(); }, snapshot ? 15000 : 5000);
+		// Only what isn't shown yet is asked again; what changes later comes with the session's next world
+		// (localMediaWorld), so a shown picture costs nothing more.
+		const waiting = [...wanted.keys()].some((key) => !urls[key]);
+		if (!timer && waiting) timer = setTimeout(() => { timer = null; void refreshLocalMedia(); }, snapshot ? 15000 : 5000);
 	});
 	return loading;
 }
