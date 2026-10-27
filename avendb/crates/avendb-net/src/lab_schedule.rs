@@ -343,6 +343,91 @@ mod integration {
     }
 }
 
+#[cfg(test)]
+mod slices {
+    use super::*;
+    use crate::{Node, Options};
+    use avendb::cast::{document, handbook_ready, world};
+    use n0_future::time::Duration;
+    use std::time::Instant;
+
+    /// A node of Alice's iPhone holding, not yet caught up, `n` documents her Mac wrote for the coop, as a pull's pages
+    /// before its last leave it; its own tasks stopped, so nothing but the test catches it up.
+    async fn behind(n: usize) -> Node {
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (mac, phone) = (w.mac_a, w.phone_a);
+        let lab = w.lab.split(phone, &[], [77; 32]);
+        for i in 0..n {
+            let doc = document(&format!("Doc {i}"), "Written while the iPhone was away.", mac);
+            w.lab.create(mac, coop, coop, "doc", &[], doc).unwrap();
+        }
+        let node = Node::spawn(lab, phone, Options::local()).await.unwrap();
+        node.tasks.lock().unwrap().iter().for_each(|task| task.abort());
+        let held: std::collections::HashSet<_> = node.read(|lab, me| lab.log(me).ids().to_vec()).await.into_iter().collect();
+        let fresh: Vec<_> = w.lab.backup(mac).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
+        for page in fresh.chunks(100) {
+            let page = page.to_vec();
+            node.shared.try_lab(move |lab, me| lab.receive_whose_now(me, page, vec![], false)).await.unwrap();
+        }
+        node
+    }
+
+    /// The longest a page's read waited for the Lab while `job` ran in the background, and the longest one turn of the
+    /// job held it.
+    async fn while_running(node: &Node, job: impl std::future::Future<Output = ()> + Send + 'static) -> (Duration, u64) {
+        let running = tokio::spawn(job);
+        let mut longest = Duration::ZERO;
+        let mut reads = 0;
+        while !running.is_finished() {
+            let asked = Instant::now();
+            node.shared.read(|lab, me| lab.size(me)).await;
+            longest = longest.max(asked.elapsed());
+            reads += 1;
+            n0_future::time::sleep(Duration::from_millis(2)).await;
+        }
+        running.await.unwrap();
+        assert!(reads > 1, "reads asked while the job ran");
+        let turns = node.shared.lab_turns.json();
+        let held = turns["by"].as_object().unwrap().iter()
+            .filter(|(call, _)| call.contains("catch_up"))
+            .map(|(_, t)| t["max_hold_ms"].as_u64().unwrap()).max().unwrap_or(0);
+        (longest, held)
+    }
+
+    /// A page's read waits for no whole catch-up of a long backlog: the catch-up goes a short turn of the Lab at a time
+    /// (`Lab::catch_up_step`), and the read takes its turn between two of them. As one turn, as before, the read
+    /// waited the whole of it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_page_waits_for_one_slice_of_a_catch_up_not_the_whole() {
+        let n = 800;
+        let whole = behind(n).await;
+        let shared = whole.shared.clone();
+        let (whole_wait, _) = while_running(&whole, async move {
+            shared.try_lab_class(Class::Background, |lab, me| { lab.catch_up(me); }).await.unwrap();
+        }).await;
+        let sliced = behind(n).await;
+        let shared = sliced.shared.clone();
+        let began = Instant::now();
+        let (sliced_wait, sliced_hold) = while_running(&sliced, async move {
+            assert!(shared.catch_up_paced_class(true, Class::Background).await);
+        }).await;
+        let took = began.elapsed();
+        eprintln!("SLICES whole catch-up: a read waited {whole_wait:?}; sliced ({took:?} in all): a read waited {sliced_wait:?}, \
+            one turn held the Lab {sliced_hold} ms at most");
+        assert!(whole_wait >= Duration::from_millis(100), "the fixture's catch-up is long: {whole_wait:?}");
+        // ~50 ms, with room for a loaded test machine; a quarter of the whole at most, whatever the machine
+        assert!(sliced_hold <= 75 && Duration::from_millis(sliced_hold * 4) <= whole_wait,
+            "no turn of the catch-up holds the Lab past ~50 ms: {sliced_hold} ms, the whole {whole_wait:?}");
+        assert!(sliced_wait * 3 < whole_wait && sliced_wait < Duration::from_millis(150), "a read waits one slice: {sliced_wait:?}");
+        // and it brought what one catch-up brings
+        let seen = |lab: &avendb::lab::Lab, me| (lab.entries(me), lab.log(me).ids().to_vec());
+        assert_eq!(whole.read(seen).await, sliced.read(seen).await);
+        whole.shutdown().await.unwrap();
+        sliced.shutdown().await.unwrap();
+    }
+}
+
 /// How long Lab calls waited for their turn and held the Lab, by the call (its closure's type name), and the slowest of
 /// late: what a server says on its public health (`Node::served`), so a slow page names what held the Lab before it.
 #[derive(Default)]

@@ -78,3 +78,62 @@ fn batched_projection_matches_current_device_before_after_revocation_and_restore
     w.lab.restore_backup(w.mac_a, &backup);
     check(&w.lab);
 }
+
+/// The keeper's scan a slice at a time (`Lab::scan_files`) finds what `files`, `kept_files` and `demanded_files` find
+/// in one pass, however small its slices, and starts again where the edits changed between two slices.
+#[test]
+fn a_scan_of_files_in_slices_finds_what_one_pass_finds() {
+    let mut w = world();
+    let todos = todos_on(&mut w);
+    for (k, entry) in [(7u8, todos.door), (8, todos.seeds)] {
+        let file = Brought::new([k; 32], crate::sealed::FileKey::from_bytes([k + 2; 32]), 30 + k as u64);
+        let answer = crate::engine::put_file(&mut w.lab, w.mac_a, &serde_json::json!({
+            "op": "put_file", "entry": entry.to_hex(), "len": file.len, "name": "f.bin", "as": w.alice.to_hex(),
+        }), file);
+        assert!(answer.get("ok").is_some(), "{answer}");
+    }
+    w.lab.sync_all(0);
+    let whole = |lab: &Lab, d: SignerId, keep: bool, entries: &[EntryId], budget: usize| {
+        let mut scan = FileScan::new(keep, entries.to_vec());
+        let mut slices = 0;
+        loop {
+            slices += 1;
+            match lab.scan_files(d, &mut scan, budget) {
+                FileScanned::Done { files, kept, demanded } => return (files, kept, demanded, slices),
+                FileScanned::More => {}
+                FileScanned::Behind => panic!("a device caught up is not behind"),
+            }
+        }
+    };
+    let selected = [todos.door, todos.seeds, todos.solar];
+    for d in [w.mac_a, w.mac_b, w.mac_c, w.server, w.stranger] {
+        for keep in [false, true] {
+            let expected = (w.lab.files(d), w.lab.kept_files(d, keep), w.lab.demanded_files(d, &selected));
+            for budget in [1, 3, usize::MAX] {
+                let (files, kept, demanded, slices) = whole(&w.lab, d, keep, &selected, budget);
+                assert_eq!((files, kept, demanded), expected, "{d:?} keep={keep} budget={budget}");
+                if budget == 1 {
+                    assert_eq!(slices, w.lab.log(d).edits().len().max(1), "a slice of one edit a turn");
+                }
+            }
+        }
+    }
+    assert!(!w.lab.files(w.mac_a).is_empty(), "the fixture brings files");
+    // the edits change between two slices: it scans them all again, and finds what one pass finds now
+    let d = w.mac_a;
+    let mut scan = FileScan::new(true, selected.to_vec());
+    assert_eq!(w.lab.scan_files(d, &mut scan, 2), FileScanned::More);
+    let more = Brought::new([9; 32], crate::sealed::FileKey::from_bytes([11; 32]), 41);
+    let answer = crate::engine::put_file(&mut w.lab, d, &serde_json::json!({
+        "op": "put_file", "entry": todos.solar.to_hex(), "len": more.len, "name": "g.bin", "as": w.alice.to_hex(),
+    }), more);
+    assert!(answer.get("ok").is_some(), "{answer}");
+    let expected = (w.lab.files(d), w.lab.kept_files(d, true), w.lab.demanded_files(d, &selected));
+    loop {
+        match w.lab.scan_files(d, &mut scan, 2) {
+            FileScanned::Done { files, kept, demanded } => break assert_eq!((files, kept, demanded), expected),
+            FileScanned::More => {}
+            FileScanned::Behind => panic!("caught up"),
+        }
+    }
+}

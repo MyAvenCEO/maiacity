@@ -342,6 +342,10 @@ pub struct Options {
 /// with its signatures, so a big reply never waits whole in either end's memory, nor holds up the connection.
 pub const PAGE: usize = 4 << 20;
 
+/// How many entries a catch-up shows anew in one turn of the Lab (`Lab::catch_up_step`): about 0.35 ms each on a
+/// server's core (measured 2026-10-27), so a turn of 48 holds the Lab some 17 ms.
+pub(crate) const CATCH_UP_SLICE: usize = 48;
+
 /// How much longer than its last bringing up to date took a pull waits before it brings its device's keys and items up
 /// to date again (`Shared::catch_up_paced`): each time replays the whole log for a device catching up from far behind,
 /// whose edits sort before what its replay last stepped over. Samuel's iPhone 2026-10-22: each asking of 256 logs ended
@@ -3472,12 +3476,26 @@ impl Shared {
         if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
             return false;
         }
-        let (caught, work) = self.try_lab_class(class, |lab, me| {
-            // Queue waiting is not computation cost: foreground priority must not
-            // multiply a busy queue into another long background-sync cooldown.
-            let started = Instant::now();
-            (lab.catch_up(me), started.elapsed())
-        }).await.unwrap_or((false, Duration::ZERO));
+        // A turn of the Lab a step (`Lab::catch_up_step`), not one for the whole: its replay stepped on, then its
+        // entries shown anew `CATCH_UP_SLICE` at a time, so a page's turn comes between them rather than after all of
+        // them (a catch-up held the server's Lab 5.5 s, 2026-10-27).
+        let (mut caught, mut work) = (false, Duration::ZERO);
+        loop {
+            let (step, took) = self.try_lab_class(class, |lab, me| {
+                // Queue waiting is not computation cost: foreground priority must not
+                // multiply a busy queue into another long background-sync cooldown.
+                let started = Instant::now();
+                (lab.catch_up_step(me, CATCH_UP_SLICE), started.elapsed())
+            }).await.unwrap_or((avendb::lab::CatchUp::Caught(false), Duration::ZERO));
+            work += took;
+            match step {
+                avendb::lab::CatchUp::Stepped => caught = true,
+                avendb::lab::CatchUp::Caught(any) => {
+                    caught |= any;
+                    break;
+                }
+            }
+        }
         if caught {
             *self.paced.lock().expect("paced") = Some(Instant::now() + work * CATCH_UP_PACE);
             self.changed.notify_one();

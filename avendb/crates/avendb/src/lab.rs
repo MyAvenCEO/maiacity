@@ -824,6 +824,9 @@ struct Store {
     reshow: bool,
     /// The bodies it opened since it last showed its items, by their entries.
     opened: HashMap<EntryId, Vec<EditId>>,
+    /// The entries a budgeted showing left to show (`show_items`), of the edits of that revision, and what it read
+    /// of them then: none once it showed them all, or once any later showing begins again.
+    showing: Option<(crate::policy::LogRevision, Vec<EntryId>)>,
     /// The entries whose shown items keep their scratch items (`SCRATCHES`).
     scratched: HashSet<EntryId>,
     /// How many writes its view held when it last showed its items, and the last of them, with the hashes of the
@@ -886,6 +889,7 @@ impl Default for Store {
             behind: false,
             reshow: true,
             opened: HashMap::new(),
+            showing: None,
             scratched: HashSet::new(),
             shown_writes: (0, None),
             shown_lanes: BTreeMap::new(),
@@ -1097,6 +1101,47 @@ impl Spares {
             self.keys.push_back(key);
         }
     }
+}
+
+/// A scan of the files a device's edits bring, a slice at a time (`Lab::scan_files`): those to keep whole by `keep`,
+/// and those of `entries`, the open views', it reads.
+#[derive(Default)]
+pub struct FileScan {
+    keep: bool,
+    entries: Vec<EntryId>,
+    revision: Option<crate::policy::LogRevision>,
+    at: usize,
+    selected: HashSet<EntryId>,
+    files: BTreeSet<FileRoot>,
+    kept: BTreeSet<FileRoot>,
+    named: BTreeSet<FileRoot>,
+}
+
+impl FileScan {
+    /// A scan of the files to keep whole by the device's own setting `keep`, and of those the entries `entries` bring.
+    pub fn new(keep: bool, entries: Vec<EntryId>) -> FileScan {
+        FileScan { keep, entries, ..FileScan::default() }
+    }
+}
+
+/// How a step of a catch-up went (`Lab::catch_up_step`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatchUp {
+    /// Its replay stepped on: the rest of the catch-up to come.
+    Stepped,
+    /// Caught up, and whether there was anything to (`Lab::catch_up`).
+    Caught(bool),
+}
+
+/// How a slice of a scan of files went (`Lab::scan_files`).
+#[derive(Debug, PartialEq, Eq)]
+pub enum FileScanned {
+    /// The device's replay is behind: nothing scanned, until its catch-up.
+    Behind,
+    /// More slices to go.
+    More,
+    /// The whole scan: as `Lab::files`, `Lab::kept_files` and `Lab::demanded_files` say it.
+    Done { files: Vec<FileRoot>, kept: Vec<FileRoot>, demanded: Vec<FileRoot> },
 }
 
 /// A copy of what a device holds, as a backup keeps it: its signed edits and the blobs they name.
@@ -2590,6 +2635,12 @@ impl Lab {
     /// signing on it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and
     /// makes the edits its upkeep calls for (`upkeep`). A locked device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
+        self.refresh_with(d, lent, None);
+    }
+
+    /// `refresh`, showing at most `budget` entries anew (`show_items`) if there is one: true if it is done, else it is
+    /// still behind, and `show_more` and then another `refresh_with` go on from where it left off (`catch_up_step`).
+    fn refresh_with(&mut self, d: SignerId, lent: &[(SignerId, Secret)], budget: Option<usize>) -> bool {
         // a session's store is its host's, which opens what it holds with its own keys
         let d = self.at(d);
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
@@ -2603,7 +2654,7 @@ impl Lab {
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
             let Some(store) = stores.get_mut(&d) else {
-                return;
+                return true;
             };
             store.bootstrap_state=None;
             store.based.clear();
@@ -2630,7 +2681,7 @@ impl Lab {
             // a locked device holds no key, and opens nothing
             if !unlocked {
                 store.perf.add("refresh", began);
-                return;
+                return true;
             }
             let at = Perf::start();
             let ix = KeyIndex::of(&store.replay);
@@ -2642,8 +2693,17 @@ impl Lab {
             store.perf.add("read", at);
             // what it shows, every write counted or not, before its upkeep: its stewards grant counted asks alone
             let at = Perf::start();
-            show_items(d, store);
+            // an entry's owner base overlay is taken out for the whole of a refresh: one is shown in one go. A budgeted
+            // one shows one entry here, after its keys and reading, which take their own while, and the rest after it
+            // a budget a step (`show_more`)
+            let shown = show_items(d, store, budget.filter(|_| retained.is_none()).map(|_| 1), false);
             store.perf.add("show items", at);
+            if !shown {
+                store.behind = true;
+                store.perf.add("refresh", began);
+                self.rebuild_owner_bases(d);
+                return false;
+            }
             let at = Perf::start();
             let work = upkeep(d, store, &ix, &mine, rng, spares);
             store.perf.add("upkeep", at);
@@ -2652,7 +2712,7 @@ impl Lab {
                 if !self.restore_owner_overlay(d, retained.take()) {
                     self.rebuild_owner_bases(d);
                 }
-                return;
+                return true;
             }
             assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
             // what its edits say, every write counted: what it drafts on, its replay of this round
@@ -2661,6 +2721,22 @@ impl Lab {
                 self.work(d, &view, w);
             }
         }
+        unreachable!("refresh rounds end by returning")
+    }
+
+    /// The next at most `budget` entries a `refresh_with` left to show, shown, if its edits and what it read are as
+    /// it left them (`Store::showing`): true if there are none left, so that the next `refresh_with` finishes.
+    fn show_more(&mut self, d: SignerId, budget: usize) -> bool {
+        let d = self.at(d);
+        let Some(store) = self.stores.get_mut(&d) else { return true };
+        if store.showing.as_ref().is_none_or(|(revision, _)| *revision != store.log.revision()) {
+            store.showing = None;
+            return true;
+        }
+        let at = Perf::start();
+        let done = show_items(d, store, Some(budget), true);
+        store.perf.add("show items", at);
+        done
     }
 
     /// Sign and keep on device `d` an edit its upkeep calls for, drafted on `view`, what `d`'s edits say.
@@ -4665,6 +4741,59 @@ impl Lab {
         files.into_iter().collect()
     }
 
+    /// Its replay is of every edit device `d` holds, or what they say is worked out already: `latest` costs nothing.
+    /// Else the first call that asks what its edits say replays them under the Lab, which a background reader such as
+    /// a node's file keeper leaves to its catch-up instead.
+    pub fn replay_current(&self, d: SignerId) -> bool {
+        let store = self.held(d);
+        store.replayed == store.log.edits().len() || store.latest.get().is_some()
+    }
+
+    /// One slice of `scan`: the next `budget` edits device `d` holds, at least one, and at the last slice what the
+    /// whole scan found, as `files`, `kept_files` and `demanded_files` say it at once, for the same edits and keys.
+    /// Each slice is short, so a node's file keeper lets go of the Lab between slices and a page's turn comes between.
+    /// A scan whose edits changed since its last slice starts again; one of a device whose replay is behind waits
+    /// (`replay_current`).
+    pub fn scan_files(&self, d: SignerId, scan: &mut FileScan, budget: usize) -> FileScanned {
+        if !self.replay_current(d) {
+            return FileScanned::Behind;
+        }
+        let store = self.held(d);
+        let revision = store.log.revision();
+        if scan.revision.as_ref() != Some(&revision) {
+            let st = self.latest(d);
+            let selected = scan.entries.iter().copied().filter(|e| st.entry(*e).is_some_and(|en| st.wants(d, en)));
+            *scan = FileScan { revision: Some(revision), at: 0, selected: selected.collect(), ..FileScan::new(scan.keep, std::mem::take(&mut scan.entries)) };
+        }
+        let st = self.latest(d);
+        let edits = store.log.edits();
+        let end = edits.len().min(scan.at.saturating_add(budget.max(1)));
+        for edit in &edits[scan.at..end] {
+            if edit.files().is_empty() {
+                continue;
+            }
+            scan.files.extend(edit.files().iter().copied());
+            let entry = edit.entry();
+            let en = entry.and_then(|e| st.entry(e));
+            if en.is_some_and(|en| st.wants(d, en) && st.keeps(d, en).unwrap_or(scan.keep)) {
+                scan.kept.extend(edit.files().iter().copied());
+            }
+            if entry.is_some_and(|e| scan.selected.contains(&e)) {
+                scan.named.extend(edit.files().iter().copied());
+            }
+        }
+        scan.at = end;
+        if end < edits.len() {
+            return FileScanned::More;
+        }
+        let demanded = scan.named.iter().copied().filter(|root| self.file(d, root).is_some()).collect();
+        FileScanned::Done {
+            files: scan.files.iter().copied().collect(),
+            kept: scan.kept.iter().copied().collect(),
+            demanded,
+        }
+    }
+
     /// The files the writes of entry `entry` bring, as device `d` holds them, in the order it took them, each once:
     /// each with its plaintext length where `d` opens it (`file`), else `None`.
     pub fn entry_files(&self, d: SignerId, entry: EntryId) -> Vec<(FileRoot, Option<u64>)> {
@@ -4844,6 +4973,37 @@ impl Lab {
         }
         self.refresh(d, &[]);
         true
+    }
+
+    /// `catch_up` a step at a time, each its own short turn of a node's Lab, so that a page's turn comes between them
+    /// (a catch-up held the server's Lab 5.5 s, 2026-10-27, nearly all of it showing entries anew): first its replay
+    /// stepped on over the edits it took since (`step_replay`), which leaves it as a page taken but not yet caught up
+    /// leaves it (`receive_now`); then the catch-up itself, showing at most `budget` entries anew a step
+    /// (`show_items`), the entries left shown a step at a time after it, and once they all are, the catch-up again,
+    /// which finds them shown. `Stepped` while there is more to come, then `Caught` with what `catch_up` says. The same
+    /// keys, items and edits as one `catch_up`: a device with an entry's owner base takes it in one step still.
+    pub fn catch_up_step(&mut self, d: SignerId, budget: usize) -> CatchUp {
+        let Some(store) = self.stores.get(&self.at(d)) else {
+            return CatchUp::Caught(false);
+        };
+        if store.showing.is_some() {
+            self.show_more(d, budget);
+            return CatchUp::Stepped;
+        }
+        if !store.behind {
+            return CatchUp::Caught(false);
+        }
+        if store.replayed < store.log.edits().len() && store.latest.get().is_none() {
+            self.step_replay(d);
+            return CatchUp::Stepped;
+        }
+        if !store.bases.is_empty() {
+            return CatchUp::Caught(self.catch_up(d));
+        }
+        match self.refresh_with(d, &[], Some(budget)) {
+            true => CatchUp::Caught(true),
+            false => CatchUp::Stepped,
+        }
     }
 
     /// `receive`, and whose each edit it took is (`whose_log`): what a pull tells its person.
@@ -5815,7 +5975,12 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// in force changed: first the cap groups, as the device counts the writes that say them (`State::read_groups`), as
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
-fn show_items(d: SignerId, store: &mut Store) {
+/// Shows device `d`'s items anew. With a `budget`, at most that many entries other than the cap groups' are shown
+/// anew, and if more are left it keeps which (`Store::showing`), and what tells it what to show anew (`reshow`,
+/// `opened`, `shown_writes`) as it was for them, and says false: a `resume` shows the next of those, which an
+/// unbudgeted showing shows too, all of what it would have shown as one showing does. True once all are shown.
+fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>, resume: bool) -> bool {
+    let left = store.showing.take().filter(|_| resume);
     let (st, r, bodies) = (&store.replay.state, &store.readings, &store.bodies);
     let (reshow, opened) = (std::mem::take(&mut store.reshow), std::mem::take(&mut store.opened));
     let mut old = std::mem::take(&mut store.shown);
@@ -5914,7 +6079,9 @@ fn show_items(d: SignerId, store: &mut Store) {
             .iter()
             .all(|(v, (h, _))| gained.contains_key(v) || store.shown_lanes.get(v).is_some_and(|w| w.0 == *h))
         && store.shown_groups == groups_print;
-    let todo: Vec<&Entry> = if grew {
+    let todo: Vec<&Entry> = if let Some((_, left)) = &left {
+        left.iter().filter_map(|e| st.entry(*e)).collect()
+    } else if grew {
         let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
         let mut es: Vec<EntryId> =
             all.iter().skip(n).map(|w| w.entry).chain(opened.keys().copied()).chain(changed).collect();
@@ -5924,9 +6091,20 @@ fn show_items(d: SignerId, store: &mut Store) {
     } else {
         st.entries().iter().collect()
     };
-    store.shown_writes = (all.len(), all.last().map(|w| w.edit));
-    store.shown_lanes = lanes_now;
-    store.shown_groups = groups_print;
+    let (todo, rest) = match budget {
+        Some(budget) if todo.len() > budget => {
+            let (now, rest) = todo.split_at(budget.max(1));
+            (now.to_vec(), rest.iter().map(|en| en.id).collect::<Vec<EntryId>>())
+        }
+        _ => (todo, vec![]),
+    };
+    let done = rest.is_empty();
+    if done {
+        store.shown_writes = (all.len(), all.last().map(|w| w.edit));
+        store.shown_lanes = lanes_now;
+        store.shown_groups = groups_print;
+    }
+    let shown_now: HashSet<EntryId> = todo.iter().map(|en| en.id).collect();
     for en in todo {
         if cap_groups.contains(&en.id) {
             continue;
@@ -6005,6 +6183,15 @@ fn show_items(d: SignerId, store: &mut Store) {
     store.perf.add("show: entries", at);
     store.shown = old;
     store.readings.groups = groups;
+    if !done {
+        // what tells it what to show anew stays as it was for the entries left, until it shows them
+        let mut opened = opened;
+        opened.retain(|e, _| !shown_now.contains(e));
+        store.opened = opened;
+        store.reshow = reshow;
+        store.showing = Some((store.log.revision(), rest));
+    }
+    done
 }
 
 /// Entry `en`'s writes judged anew from its first, on device `d`: what judging on from where it left off must make.
