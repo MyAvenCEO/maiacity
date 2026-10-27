@@ -85,10 +85,9 @@ export class Device {
    const look=op.where?.all?.find(part=>part.path?.[0]==='look')?.eq;
    const selected=rows.filter(e=>(!op.vault || e.vault===op.vault) && (!look || e.record?.look===look));
    // Pages by cursor as the engine does (Coverage.lean after_page): next names where the page ended. A window
-   // (Chat's rooms, G1) is the newest n after the room its before cursor [created, entry] names, rows in order.
-   const at=op.window?.before?selected.findIndex(e=>e.entry===op.window.before[1])+1:0;
-   const from=op.window?at:op.after?Number(JSON.parse(op.after)):(op.offset??0), to=from+(op.window?.newest??op.limit??50);
-   const reply={ok:{rows:selected.slice(from,to),count:selected.length,next:to<selected.length?JSON.stringify(to):null,coverage:{state:'complete'}}};
+   // (Chat's rooms, G1) is the newest n after its before, the next a full window answered, rows in order.
+   const from=op.window?Number(op.window.before?.split('.')[0]??0):op.after?Number(JSON.parse(op.after)):(op.offset??0), to=from+(op.window?.newest??op.limit??50);
+   const reply={ok:{rows:selected.slice(from,to),count:op.window?selected.slice(from,to).length:selected.length,next:to<selected.length?(op.window?to+'.'+selected[to-1].entry:JSON.stringify(to)):null,coverage:{state:'complete'}}};
    if(window.fixtureHoldQuery)await new Promise(resolve=>(window.queryWaiters??=[]).push(resolve));
    return reply;
   }

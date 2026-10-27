@@ -30,19 +30,15 @@
 	const world = $derived(api.world);
 	const byId = $derived(new Map((world?.vaults ?? []).map((v) => [v.id, v])));
 	// Discovery is an authorized local query, independent of the broad world summary: Maia City's query entry of
-	// Chat's room pages (`query-rooms-page`), the newest 50 off the engine's window, each older page after the cursor
-	// `[created, entry]` of the last room of the one before: no log edit read, at most the window and the index's tail.
+	// Chat's room pages (`query-rooms-page`), the newest 50 off the engine's window, each older page after the answer's
+	// own `next` of the one before (null: it was the last): no log edit read, at most the window and the index's tail.
 	const PAGE = 50;
 	const ROOMS = { entry: 'query-rooms-page', version: 1 };
 	/** the cursors of the pages before this one, the newest page none */
-	let cursors = $state(/** @type {[number, string][]} */ ([]));
-	const discovery = entryDetail(() => api, () => useQuery(ROOMS, { newest: PAGE, before: cursors.at(-1) ?? null }));
-	/** the cursor after the last room of this page, null where it is the last page */
-	const next = $derived.by(() => {
-		const rows = discovery.value?.rows ?? [];
-		const last = rows.at(-1);
-		return rows.length >= PAGE && last ? /** @type {[number, string]} */ ([last.created, last.entry]) : null;
-	});
+	let cursors = $state(/** @type {string[]} */ ([]));
+	const discovery = entryDetail(() => api, () => useQuery(ROOMS, { vault: null, newest: PAGE, before: cursors.at(-1) ?? null }));
+	/** the cursor of the page after this one, null where this is the last */
+	const next = $derived(discovery.value?.next ?? null);
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let open = $state(q.get('room') ?? '');
