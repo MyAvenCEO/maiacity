@@ -504,7 +504,7 @@ fn why_counted(why: Why) -> &'static str {
 }
 
 fn trust(store: &mut Store) -> bool {
-    let vouched = store.replay.vouched();
+    let vouched = store.replay.vouched(store.log.edits());
     let out: Vec<EditId> = store.bare.iter().filter(|id| !vouched.contains(id)).copied().collect();
     let mut gone = HashSet::new();
     for id in out {
@@ -1092,9 +1092,10 @@ struct KeyIndex {
 }
 
 impl KeyIndex {
-    fn of(r: &Replay) -> KeyIndex {
+    /// `held` being the edits `r` is the replay of (`Replay::edits`).
+    fn of(r: &Replay, held: &[Edit]) -> KeyIndex {
         let mut ix = KeyIndex::default();
-        for (edit, _) in r.edits.iter().zip(&r.stood).filter(|(_, stood)| **stood) {
+        for (edit, _) in r.edits(held).zip(&r.stood).filter(|(_, stood)| **stood) {
             // a `Keys` edit's boxes, or a `Wraps` edit's
             for (name, id, b) in edit.action.key_boxes() {
                 ix.exists.insert(name);
@@ -2711,7 +2712,7 @@ impl Lab {
         let at = self.at(on);
         let Lab { stores, rng, .. } = self;
         let store = stores.get(&at).unwrap_or_else(|| panic!("{on:?} is no device of the Lab"));
-        let (st, ix) = (store.view(), KeyIndex::of(&store.replay));
+        let (st, ix) = (store.view(), KeyIndex::of(&store.replay, store.log.edits()));
         let key = Secret::generate(rng);
         let sealed = keys::seal_edit(&key, &slice.to_wire(), &share_context(of), rng);
         let bound = |to: &Recipient| share_select_info(of, key.id(), to);
@@ -2779,7 +2780,7 @@ impl Lab {
                 return true;
             }
             let at = Perf::start();
-            let ix = KeyIndex::of(&store.replay);
+            let ix = KeyIndex::of(&store.replay, store.log.edits());
             store.perf.add("keys: index", at);
             open_keys(store, &ix, &mine);
             store.perf.add("open keys", at);
@@ -4095,8 +4096,8 @@ impl Lab {
         let r = &store.replay;
         let checkpoint = |(e, stood): (&Edit, &bool)| *stood && matches!(e.action, Action::Checkpoint { .. });
         out["checkpoints"] = serde_json::json!({
-            "standing": r.edits.iter().zip(&r.stood).filter(|&x| checkpoint(x)).count(),
-            "vouched": r.vouched().len(),
+            "standing": r.edits(store.log.edits()).zip(&r.stood).filter(|&x| checkpoint(x)).count(),
+            "vouched": r.vouched(store.log.edits()).len(),
             "bare": store.bare.len(),
         });
         out

@@ -86,7 +86,7 @@ fn a_move_after_everything_held_steps_on_as_a_write() {
         }
     }
     // every move stood, and the last ones left notes in Bob's audience
-    let moves: Vec<bool> = was.edits.iter().zip(&was.stood).filter(|(e, _)| matches!(e.action, Action::Mark { .. }))
+    let moves: Vec<bool> = was.edits(c.log.edits()).zip(&was.stood).filter(|(e, _)| matches!(e.action, Action::Mark { .. }))
         .map(|(_, s)| *s).collect();
     assert!(moves.len() == 30 && moves.iter().all(|s| *s), "the moves stood: {moves:?}");
     let bobs_audience = AudienceId::of(alice, &mk_audience(&[bobs]));

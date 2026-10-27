@@ -872,7 +872,7 @@ fn steps(edits: &[Edit]) -> Vec<(Edit, State, State)> {
     let r = replay(edits);
     let mut st = State::default();
     let mut out = vec![];
-    for ((edit, &id), _) in r.edits.iter().zip(&r.ids).zip(&r.stood).filter(|(_, stood)| **stood) {
+    for ((edit, &id), _) in r.edits(edits).zip(&r.ids).zip(&r.stood).filter(|(_, stood)| **stood) {
         let mut next = st.clone();
         next.step_mut(edit, id).expect("an edit that stands is accepted where it stands");
         out.push((edit.clone(), std::mem::replace(&mut st, next.clone()), next));
@@ -1182,14 +1182,16 @@ fn t14_causally_closed() {
 }
 
 /// What each removal of replay `r` takes away (`removes`), by place.
-fn facts(r: &Replay) -> Vec<Vec<Fact>> {
-    r.edits.iter().map(|o| if o.is_removal() { removes(&r.edits, o) } else { vec![] }).collect()
+fn facts(r: &Replay, held: &[Edit]) -> Vec<Vec<Fact>> {
+    let edits: Vec<Edit> = r.edits(held).cloned().collect();
+    edits.iter().map(|o| if o.is_removal() { removes(&edits, o) } else { vec![] }).collect()
 }
 
 /// What each removal after place `i` of replay `r` that stands, and hadn't seen the edit there, takes away (`facts`).
-fn hidden(r: &Replay, facts: &[Vec<Fact>], i: usize) -> Vec<Fact> {
-    let unseen = |j: &usize| r.stood[*j] && r.edits[*j].action.keep().is_some_and(|k| !k.contains(&r.ids[i]));
-    (i + 1..r.edits.len()).filter(unseen).flat_map(|j| facts[j].iter().cloned()).collect()
+fn hidden(r: &Replay, held: &[Edit], facts: &[Vec<Fact>], i: usize) -> Vec<Fact> {
+    let edits: Vec<&Edit> = r.edits(held).collect();
+    let unseen = |j: &usize| r.stood[*j] && edits[*j].action.keep().is_some_and(|k| !k.contains(&r.ids[i]));
+    (i + 1..r.len()).filter(unseen).flat_map(|j| facts[j].iter().cloned()).collect()
 }
 
 #[test]
@@ -1201,10 +1203,10 @@ fn t16_strong_removal() {
     for (seed, h) in forked_histories() {
         let edits = h.log.edits();
         let (r, sts) = (replay(edits), trace(edits));
-        let facts = facts(&r);
-        for (i, x) in r.edits.iter().enumerate() {
+        let facts = facts(&r, edits);
+        for (i, x) in r.edits(edits).enumerate() {
             if r.stood[i] {
-                let hidden = hidden(&r, &facts, i);
+                let hidden = hidden(&r, edits, &facts, i);
                 assert!(sts[i].hide(&hidden).accepts(x, r.ids[i]).is_ok(), "seed {seed}: {x:?} stands on what was cut");
             } else if !x.is_removal() && sts[i].accepts(x, r.ids[i]).is_ok() {
                 cut += 1;
@@ -1222,12 +1224,12 @@ fn t16_resolved_removals_stand() {
     for (seed, h) in forked_histories() {
         let edits = h.log.edits();
         let (r, sts) = (replay(edits), trace(edits));
-        let facts = facts(&r);
-        for (i, x) in r.edits.iter().enumerate() {
+        let facts = facts(&r, edits);
+        for (i, x) in r.edits(edits).enumerate() {
             if r.stood[i] || x.is_removal() || sts[i].accepts(x, r.ids[i]).is_err() {
                 continue;
             }
-            let hidden = hidden(&r, &facts, i);
+            let hidden = hidden(&r, edits, &facts, i);
             let cut = sts[i].hide(&hidden).accepts(x, r.ids[i]).is_err();
             assert!(cut, "seed {seed}: {x:?} is cut by no removal that stands");
         }
@@ -2219,7 +2221,7 @@ fn t25_blind_relays() {
     for (seed, h) in every_history() {
         let r = replay(h.log.edits());
         let mut twin = Twin::default();
-        let blind: Vec<Edit> = r.edits.iter().map(|o| twin.blind(o)).collect();
+        let blind: Vec<Edit> = r.edits(h.log.edits()).map(|o| twin.blind(o)).collect();
         let b = replay(&blind);
         let standing: Vec<EditId> = r.standing().into_iter().map(|id| twin.edit(id)).collect();
         assert_eq!(b.standing(), standing, "seed {seed}");
