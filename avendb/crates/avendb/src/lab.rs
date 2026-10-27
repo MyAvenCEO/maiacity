@@ -698,6 +698,20 @@ struct ReplyPlan {
     wanted: Vec<BlobId>,
 }
 
+/// Where a reply page that starts at `from` of `places` ends (exclusive): as many edits as fit in `page` bytes on the
+/// wire, and at least one; true if more are left. One cut for `Lab::reply_in` and `Lab::reply_cuts`, so a pull that
+/// asks pages ahead by their cuts asks exactly the pages it would have asked one after the other.
+fn page_end(store: &Store, places: &[Place], from: usize, page: usize) -> (usize, bool) {
+    let mut size = 0usize;
+    for (i, (_, id)) in places.iter().enumerate().skip(from) {
+        size = size.saturating_add(store.signed.owned(id).to_wire().len());
+        if size > page && i > from {
+            return (i, true);
+        }
+    }
+    (places.len(), false)
+}
+
 /// Conservative encoded-size upper bound for the first range-transfer payload class. The fixed allowance
 /// covers every scalar, option/tag, vector prefix, Device public key and signature container. Variable fields
 /// are counted with checked arithmetic; no bytes are copied or hashed here. Unsupported actions/ceremonies use
@@ -4434,16 +4448,8 @@ impl Lab {
         let store = self.held(d);
         // the places of all it sends this asking, in order: this page starts after the request's `after`
         let from = request.after.map_or(0, |after| sends.places.partition_point(|p| *p <= after));
-        let (mut signed, mut size, mut more) = (vec![], 0usize, false);
-        for (_, id) in &sends.places[from..] {
-            let s = store.signed.owned(id);
-            size = size.saturating_add(s.to_wire().len());
-            if size > page && !signed.is_empty() {
-                more = true;
-                break;
-            }
-            signed.push(s);
-        }
+        let (end, more) = page_end(store, &sends.places, from, page);
+        let signed: Vec<Signed> = sends.places[from..end].iter().map(|(_, id)| store.signed.owned(id)).collect();
         let blobs: BTreeSet<BlobId> = signed
             .iter()
             .flat_map(|s| s.edit.blobs())
@@ -4455,6 +4461,35 @@ impl Lab {
             store.perf.count("sync: edits sent", signed.len() as u64);
         }
         (signed, blobs.into_iter().collect(), more)
+    }
+
+    /// Where the next `count` pages of `reply_in` would end, for `asker` to ask them all at once rather than each after
+    /// the last came (a pull's pipelined pages): the place of each page's last edit, cut exactly as `reply_in` cuts it
+    /// from the request's `after` on, and true if the last of them is the asking's last page. A hint alone: it names
+    /// only places of edits the same authorization plan sends `asker`, and every page is still asked and checked.
+    pub fn reply_cuts(
+        &mut self,
+        d: SignerId,
+        asker: SignerId,
+        request: &Request,
+        page: usize,
+        scope: &ReplyScope,
+        count: usize,
+    ) -> (Vec<Place>, bool) {
+        let places = self.answered(d, asker, &request.ask.follow);
+        let sends = self.sends(d, asker, request, &places, scope);
+        let store = self.held(d);
+        let mut from = request.after.map_or(0, |after| sends.places.partition_point(|p| *p <= after));
+        let mut cuts = Vec::new();
+        while cuts.len() < count && from < sends.places.len() {
+            let (end, more) = page_end(store, &sends.places, from, page);
+            cuts.push(sends.places[end - 1]);
+            if !more {
+                return (cuts, true);
+            }
+            from = end;
+        }
+        (cuts, from >= sends.places.len())
     }
 
     /// A bounded inventory for optional sparse payload transfer, using exactly the ordinary reply permission and
