@@ -177,6 +177,11 @@ export class Device {
 		return call('Device', 'open', args, [0]);
 	}
 
+	/** Opens it again by its lease (./lease.js): the pad moved to the worker. */
+	static open_leased(...args) {
+		return call('Device', 'open_leased', args, [0]);
+	}
+
 	id() {
 		return this.#said.id;
 	}
@@ -187,6 +192,11 @@ export class Device {
 
 	passkey() {
 		return this.#said.passkey;
+	}
+
+	/** Its person's passkey's id, in hex, as its lease names it. */
+	passkeyId() {
+		return this.#said.passkeyId;
 	}
 
 	/** Its code, as it said it when it started: in a browser it is reached through its relay, which it names. */
