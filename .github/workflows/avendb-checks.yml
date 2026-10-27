@@ -7,7 +7,8 @@ name: avenDB checks
 #   spec   – the Lean spec, the SSOT (avendb/spec): `lake build` proves it, checks its scenarios and holds the committed
 #            vectors to the model; `lake exe vectors` must write nothing new (vectors regenerated and committed)
 #   bench  – the performance gates (avendb/bench-gates.json): writes, point reads, views and a first sync at 10k, 100k and
-#            1M edits, and the relay's carrier apart from the direct path, beside a Postgres doing the same work
+#            1M edits, and the relay's carrier apart from the direct path, beside a Postgres doing the same work; and
+#            the phone-class row, the device as WebAssembly in Chromium and WebKit (bench-phone, printed, not gated)
 #
 # The page's WebAssembly, built and committed to a PR's branch, is avendb-wasm.yml's: it needs to write, and these
 # checks only read.
@@ -445,6 +446,49 @@ jobs:
         run: bun scripts/ci/avendb-bench-pg.mjs 10000,100000,1000000 | tee "$RUNNER_TEMP/pg.log"
       - name: The gates
         run: bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/bench.log" "$RUNNER_TEMP/pg.log"
+
+  # The phone-class row: avenDB's device as WebAssembly in Chromium and WebKit, as an iPhone's page runs it, taking a
+  # peer's signed edits with their signatures checked (avendb-browser's `bench` feature, scripts/ci/avendb-bench-phone.mjs)
+  # on a synthetic fixture (avendb/tests/phone_fixture.rs). It gates nothing yet (Samuel, 2026-10-27: print it, the
+  # target is 20k edits/s), so `required` doesn't wait on it.
+  bench-phone:
+    needs: impact
+    name: avenDB phone-class bench (WebAssembly in Chromium and WebKit)
+    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_bench != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - uses: rui314/setup-mold@v1
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: avendb -> target
+          key: bench-phone
+          cache-on-failure: true
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: The page's WebAssembly, with the bench, and the fixture
+        working-directory: avendb
+        env:
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        run: |
+          cargo build --locked -p avendb-browser --target wasm32-unknown-unknown --release --features bench
+          wasm-bindgen --target web --no-typescript --out-dir "$RUNNER_TEMP/phone-pkg" target/wasm32-unknown-unknown/release/avendb_browser.wasm
+          AVENDB_PHONE_FIXTURE="$RUNNER_TEMP/phone.bin" cargo test --locked -p avendb --features test-fixtures --test phone_fixture -- --ignored --nocapture
+      - name: Chromium and WebKit
+        run: |
+          scripts/ci/browser-deps.sh node_modules/playwright/cli.js chromium
+          scripts/ci/browser-deps.sh node_modules/playwright/cli.js webkit
+          bun scripts/ci/avendb-bench-phone.mjs "$RUNNER_TEMP/phone-pkg" "$RUNNER_TEMP/phone.bin" chromium,webkit | tee "$RUNNER_TEMP/phone.log"
+          bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/phone.log" --phone
 
   required:
     name: avenDB required checks

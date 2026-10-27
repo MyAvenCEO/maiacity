@@ -20,6 +20,7 @@ use avendb::id::EditId;
 use avendb::wire::Wire;
 use avendb_net::{Admission, Node, Options};
 use avendb_server::{Rates, Relay};
+use iroh::{EndpointAddr, TransportAddr};
 use serde_json::json;
 
 const LOOPBACK: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
@@ -71,23 +72,40 @@ async fn bench_carrier() {
         let unbound = mac.endpoint().bound_sockets().is_empty() && bob.endpoint().bound_sockets().is_empty();
         assert!(unbound, "through the relay alone: no UDP of their own");
     }
-    mac.know(bob.addr());
-    bob.know(mac.addr());
+    // through the relay, each is told the other's id at the relay alone, as a page knows its peers: no address it might
+    // have bound, and none it hasn't learnt yet
+    match &relay {
+        Some(r) => {
+            let at = |n: &Node| EndpointAddr::from_parts(n.id(), [TransportAddr::Relay(r.url())]);
+            mac.know(at(&bob));
+            bob.know(at(&mac));
+        }
+        None => {
+            mac.know(bob.addr());
+            bob.know(mac.addr());
+        }
+    }
     // the first ask opens the connection; it is timed with the rest, as a device that comes back opens it
     let t = Instant::now();
     let mut asks = 0;
+    let want_len = want.len();
     loop {
         let want = want.clone();
         let missing = bob.read(move |lab, me| {
             let ids: HashSet<&EditId> = lab.log(me).ids().iter().collect();
             want.iter().filter(|id| !ids.contains(id)).count()
         });
-        if missing.await == 0 {
+        let missing = missing.await;
+        if missing == 0 {
             break;
         }
-        assert!(t.elapsed() < Duration::from_secs(600), "Bob's Mac takes every edit within 10 minutes");
+        assert!(t.elapsed() < Duration::from_secs(300), "Bob's Mac takes every edit within 5 minutes ({missing} missing)");
         asks += 1;
-        let _ = bob.sync_with(mac.id()).await;
+        // what each ask brought, to the log: how many edits, or that it failed (no address, key or body)
+        match bob.sync_with(mac.id()).await {
+            Ok(n) => eprintln!("ask {asks}: {n} new, {missing} of {want_len} missing before"),
+            Err(_) => eprintln!("ask {asks}: failed, {missing} of {want_len} missing"),
+        }
     }
     let sync_s = t.elapsed().as_secs_f64();
     let link = (case == "relay_link").then_some(link);
