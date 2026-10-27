@@ -4,7 +4,7 @@
 //! - An index is a derivation of its log and nothing more: each entry of the log changes some rows (`Change`), in the
 //!   log's order, so the index of a log is its rows with every entry's changes applied (`derive`), and an index is
 //!   disposable: a node can always build it again from the log (I1).
-//! - Its rows lie in a tree of pages, sorted by key. A page ends after a key whose hash says so (`cut`), or once it
+//! - Its rows lie in a tree of pages (`avendb::pages`), sorted by key. A page ends after a key whose hash says so, or once it
 //!   holds `MOST` items, never where the writes fell, so the tree of the same rows is the same tree, with the same root,
 //!   however it was written (I4): a page changed puts a page anew and leaves every other page as it was. Each page is
 //!   put once under the BLAKE3 hash of its bytes (`index/<name>/<hash>`), and read back only if its bytes hash to its
@@ -24,39 +24,23 @@
 //!
 //! Pages no slot names any more stay on the shelf, as everything put on one does, till a sweep the person agrees to.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::sync::{Arc, Mutex};
 
-use bao_tree::blake3;
+pub(crate) use avendb::pages::Change;
+use avendb::pages::{Builder, Cache, Item, KEY_MAX, Node, Sum, VALUE_MAX, merge, sum};
 use bytes::Bytes;
 use data_encoding::HEXLOWER;
 
 use crate::shelf::{Shelf, named};
 
-/// What every page starts with.
-const PAGE: &[u8] = b"avenDB index page 1\n";
 /// What every slot starts with.
 const SLOT: &[u8] = b"avenDB index slot 1\n";
-/// About how many items a page holds: a key ends a page one time in `FANOUT`.
-const FANOUT: u32 = 128;
-/// The most items a page holds, whatever its keys' hashes.
-const MOST: usize = 4 * FANOUT as usize;
-/// The longest key and the longest value a row may have.
-pub(crate) const KEY_MAX: usize = 1024;
-pub(crate) const VALUE_MAX: usize = 4096;
-/// The most levels a tree has: far more than `MOST`-way pages of any log need.
-const LEVELS: u8 = 32;
 /// How many entries of a log a node steps on at once as it catches up or builds an index again.
 const BATCH: u64 = 4096;
 /// How many pages it puts at once.
 const PUTS: usize = 16;
-
-/// A change to one row of an index: the value its key holds from now on, or none.
-pub(crate) type Change = (Vec<u8>, Option<Vec<u8>>);
-
-/// A BLAKE3 hash.
-type Sum = [u8; 32];
 
 /// The head of a log an index reflects: how many of its entries, and the log's own hash of that prefix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,181 +71,8 @@ pub(crate) enum Opened {
     Rebuilt,
 }
 
-/// An item of a page: a row's key and value, or a page's last key and the hash of that page.
-type Item = (Vec<u8>, Vec<u8>);
-
-/// A page: its level, 0 for rows, and its items, sorted by key.
-#[derive(Debug)]
-struct Node {
-    level: u8,
-    items: Vec<Item>,
-}
-
-impl Node {
-    fn to_bytes(level: u8, items: &[Item]) -> Vec<u8> {
-        let mut out = Vec::with_capacity(
-            PAGE.len()
-                + 5
-                + items
-                    .iter()
-                    .map(|(k, v)| 6 + k.len() + v.len())
-                    .sum::<usize>(),
-        );
-        out.extend_from_slice(PAGE);
-        out.push(level);
-        out.extend_from_slice(&(items.len() as u32).to_be_bytes());
-        for (k, v) in items {
-            out.extend_from_slice(&(k.len() as u16).to_be_bytes());
-            out.extend_from_slice(k);
-            out.extend_from_slice(&(v.len() as u32).to_be_bytes());
-            out.extend_from_slice(v);
-        }
-        out
-    }
-
-    /// The page `bytes` hold, if they hold one whole: keys in order, within their limits, and a child's hash under
-    /// each key of a page above the rows.
-    fn from_bytes(bytes: &[u8]) -> Option<Node> {
-        let mut r = bytes.strip_prefix(PAGE)?;
-        let mut take = |n: usize| -> Option<&[u8]> {
-            let (head, rest) = r.split_at_checked(n)?;
-            r = rest;
-            Some(head)
-        };
-        let level = take(1)?[0];
-        let count = u32::from_be_bytes(take(4)?.try_into().ok()?) as usize;
-        if level >= LEVELS || count == 0 || count > MOST {
-            return None;
-        }
-        let mut items: Vec<Item> = Vec::with_capacity(count);
-        for _ in 0..count {
-            let klen = u16::from_be_bytes(take(2)?.try_into().ok()?) as usize;
-            let k = take(klen)?.to_vec();
-            let vlen = u32::from_be_bytes(take(4)?.try_into().ok()?) as usize;
-            let v = take(vlen)?.to_vec();
-            let fits = if level == 0 {
-                vlen <= VALUE_MAX
-            } else {
-                vlen == 32
-            };
-            if klen > KEY_MAX || !fits || items.last().is_some_and(|(last, _)| *last >= k) {
-                return None;
-            }
-            items.push((k, v));
-        }
-        r.is_empty().then_some(Node { level, items })
-    }
-
-    fn size(&self) -> usize {
-        64 + self
-            .items
-            .iter()
-            .map(|(k, v)| 48 + k.len() + v.len())
-            .sum::<usize>()
-    }
-}
-
-/// Whether `key` ends a page at `level`: one key in `FANOUT`, by its hash alone.
-fn cut(level: usize, key: &[u8]) -> bool {
-    let mut h = blake3::Hasher::new();
-    h.update(b"avenDB index cut\n");
-    h.update(&[level as u8]);
-    h.update(key);
-    let sum = h.finalize();
-    u32::from_be_bytes(sum.as_bytes()[..4].try_into().expect("4 bytes")) < u32::MAX / FANOUT
-}
-
-fn sum(bytes: &[u8]) -> Sum {
-    *blake3::hash(bytes).as_bytes()
-}
-
 fn invalid(what: impl std::fmt::Display) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, what.to_string())
-}
-
-/// The pages a tree's change puts, and the items of each level not on a page yet.
-#[derive(Default)]
-struct Builder {
-    pending: Vec<Vec<Item>>,
-    pages: Vec<(Sum, Bytes)>,
-}
-
-impl Builder {
-    fn push(&mut self, level: usize, item: Item) {
-        if self.pending.len() <= level {
-            self.pending.resize_with(level + 1, Vec::new);
-        }
-        let ends = cut(level, &item.0);
-        self.pending[level].push(item);
-        if ends || self.pending[level].len() >= MOST {
-            self.close(level);
-        }
-    }
-
-    /// Puts the items of `level` not on a page yet on one, which an item of the level above names.
-    fn close(&mut self, level: usize) {
-        let items = std::mem::take(&mut self.pending[level]);
-        let bytes = Node::to_bytes(level as u8, &items);
-        let hash = sum(&bytes);
-        let last = items.into_iter().next_back().expect("a page of items").0;
-        self.pages.push((hash, bytes.into()));
-        self.push(level + 1, (last, hash.to_vec()));
-    }
-
-    /// No item of `level` or below waits for a page: a page of `level` as it was may stand as it is.
-    fn clear_through(&self, level: usize) -> bool {
-        self.pending.iter().take(level + 1).all(Vec::is_empty)
-    }
-
-    /// The root of the tree: the one page of the top level, or none for no rows.
-    fn finish(mut self) -> (Option<Sum>, Vec<(Sum, Bytes)>) {
-        let mut level = 0;
-        loop {
-            let above = self
-                .pending
-                .get(level + 1..)
-                .is_none_or(|p| p.iter().all(Vec::is_empty));
-            let Some(here) = self.pending.get(level) else {
-                return (None, self.pages);
-            };
-            if level >= 1 && here.len() == 1 && above {
-                let root = here[0].1.as_slice().try_into().expect("a page's hash");
-                return (Some(root), self.pages);
-            }
-            if here.is_empty() {
-                if above {
-                    return (None, self.pages);
-                }
-            } else {
-                self.close(level);
-            }
-            level += 1;
-        }
-    }
-}
-
-/// The pages a node read lately, `budget` bytes of them at most, the oldest let go first.
-struct Pages {
-    budget: usize,
-    held: usize,
-    at: HashMap<Sum, Arc<Node>>,
-    order: VecDeque<Sum>,
-}
-
-impl Pages {
-    fn insert(&mut self, hash: Sum, node: Arc<Node>) {
-        if self.at.insert(hash, node.clone()).is_some() {
-            return;
-        }
-        self.held += node.size();
-        self.order.push_back(hash);
-        while self.held > self.budget && self.order.len() > 1 {
-            let old = self.order.pop_front().expect("a page held");
-            if let Some(n) = self.at.remove(&old) {
-                self.held -= n.size();
-            }
-        }
-    }
 }
 
 /// An index on a node's shelf, as the module says.
@@ -273,7 +84,7 @@ pub(crate) struct ShelfIndex {
     stamp: Stamp,
     /// The number of the slot it kept last: the next goes in slot `kept + 1`, in place of the older of the two.
     kept: u64,
-    pages: Arc<Mutex<Pages>>,
+    pages: Arc<Mutex<Cache>>,
 }
 
 impl ShelfIndex {
@@ -285,12 +96,7 @@ impl ShelfIndex {
                 format!("{name:?} names no index"),
             ));
         }
-        let pages = Pages {
-            budget,
-            held: 0,
-            at: HashMap::new(),
-            order: VecDeque::new(),
-        };
+        let pages = Cache::new(budget);
         Ok(ShelfIndex {
             shelf,
             name: name.to_string(),
@@ -407,7 +213,7 @@ impl ShelfIndex {
         let (root, pages) = self.walk(&changes).await?.finish();
         let mut put = HashMap::new();
         for (hash, bytes) in pages {
-            put.insert(hash, bytes);
+            put.insert(hash, Bytes::from(bytes));
         }
         let put: Vec<_> = put.into_iter().collect();
         for group in put.chunks(PUTS) {
@@ -489,7 +295,7 @@ impl ShelfIndex {
 
     /// Page `hash`, of `level` if given: from memory, or from the shelf if its bytes there hash to its name.
     async fn page(&self, hash: Sum, level: Option<u8>) -> io::Result<Arc<Node>> {
-        let held = self.pages.lock().expect("pages").at.get(&hash).cloned();
+        let held = self.pages.lock().expect("pages").get(&hash);
         let node = match held {
             Some(node) => node,
             None => {
@@ -645,34 +451,6 @@ fn slot_of(bytes: &[u8]) -> Option<(u64, Option<Sum>, Stamp)> {
         _ => return None,
     };
     Some((n, root, Stamp { at, head }))
-}
-
-/// The rows of a page with `changes`, sorted and one a key, applied, each passed to `out` in order.
-fn merge(rows: &[Item], changes: &[Change], mut out: impl FnMut(Item)) {
-    let (mut i, mut j) = (0, 0);
-    while i < rows.len() || j < changes.len() {
-        let order = match (rows.get(i), changes.get(j)) {
-            (Some(r), Some(c)) => r.0.cmp(&c.0),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            _ => std::cmp::Ordering::Greater,
-        };
-        match order {
-            std::cmp::Ordering::Less => {
-                out(rows[i].clone());
-                i += 1;
-            }
-            std::cmp::Ordering::Equal | std::cmp::Ordering::Greater => {
-                if order == std::cmp::Ordering::Equal {
-                    i += 1;
-                }
-                let (k, v) = &changes[j];
-                if let Some(v) = v {
-                    out((k.clone(), v.clone()));
-                }
-                j += 1;
-            }
-        }
-    }
 }
 
 /// The rows a log's entries give, from scratch: what every index of it must hold (I1).

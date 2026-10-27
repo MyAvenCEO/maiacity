@@ -5154,7 +5154,7 @@ impl Lab {
 
     /// The ids of the McEliece keys device `d` holds, smallest first.
     pub fn blob_ids(&self, d: SignerId) -> Vec<BlobId> {
-        let ids: BTreeSet<BlobId> = self.held(d).blobs.keys().copied().collect();
+        let ids: BTreeSet<BlobId> = self.held(d).blobs.keys().into_iter().collect();
         ids.into_iter().collect()
     }
 
