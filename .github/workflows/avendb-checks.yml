@@ -6,6 +6,8 @@ name: avenDB checks
 #   tests  – the Rust tests of avenDB's workspace (the browser page test, `--ignored`, stays scripts/test-browser.sh's)
 #   spec   – the Lean spec, the SSOT (avendb/spec): `lake build` proves it, checks its scenarios and holds the committed
 #            vectors to the model; `lake exe vectors` must write nothing new (vectors regenerated and committed)
+#   bench  – the performance gates (avendb/bench-gates.json): writes, point reads, views and a first sync at 10k, 100k and
+#            1M edits, and the relay's carrier apart from the direct path, beside a Postgres doing the same work
 #
 # The page's WebAssembly, built and committed to a PR's branch, is avendb-wasm.yml's: it needs to write, and these
 # checks only read.
@@ -48,6 +50,10 @@ on:
         description: Run the disposable real Chromium/WASM fixture instead of repeating native suites
         type: boolean
         default: false
+      bench_only:
+        description: Run the performance gates alone (a draft's branch, whose PR runs no suite)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -80,6 +86,8 @@ jobs:
       browser_key: ${{ steps.passes.outputs.browser_key }}
       pass_protocol: ${{ steps.protocol.outputs.cache-hit }}
       protocol_key: ${{ steps.passes.outputs.protocol_key }}
+      pass_bench: ${{ steps.bench.outputs.cache-hit }}
+      bench_key: ${{ steps.passes.outputs.bench_key }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: oven-sh/setup-bun@v2.2.0
@@ -104,6 +112,7 @@ jobs:
         run: |
           bun scripts/ci/passes.mjs \
             "tests=avendb,$OUTSIDE,$SELF" "image=avendb,$SELF" "spec=avendb/spec,$SELF" "protocol=avendb,$SELF" \
+            "bench=avendb,$OUTSIDE,$SELF" \
             "browser=avendb,$OUTSIDE,src/lib/avendb,!src/lib/avendb/device,scripts/avendb-browser-transports.mjs,$SELF"
       - id: tests
         if: github.event_name == 'pull_request'
@@ -140,12 +149,19 @@ jobs:
           path: .pass
           key: ${{ steps.passes.outputs.protocol_key }}
           lookup-only: true
+      - id: bench
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: .pass
+          key: ${{ steps.passes.outputs.bench_key }}
+          lookup-only: true
   # Not on a draft (Samuel 2026-10-21): a thread's every push to its draft ran all three, ten minutes each. They run
   # once the PR is marked ready, and on every push after; merge only once they are green there
   tests:
     needs: impact
     name: avenDB tests (${{ matrix.name }})
-    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_tests != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
+    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_tests != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only && !inputs.bench_only
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -249,7 +265,7 @@ jobs:
 
   spec:
     needs: impact
-    if: ${{ needs.impact.outputs.pass_spec != 'true' && !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ needs.impact.outputs.pass_spec != 'true' && !inputs.real_browser_only && !inputs.frontend_only && !inputs.bench_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Lean spec and vectors
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -285,7 +301,7 @@ jobs:
   real-browser:
     needs: impact
     name: Disposable real Chromium and WASM
-    if: ${{ needs.impact.outputs.pass_browser != 'true' && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.real_browser || inputs.real_browser_only || needs.impact.outputs.browser == 'true') }}
+    if: ${{ needs.impact.outputs.pass_browser != 'true' && !inputs.frontend_only && !inputs.bench_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.real_browser || inputs.real_browser_only || needs.impact.outputs.browser == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -345,7 +361,7 @@ jobs:
   protocol:
     needs: impact
     name: Protocol models and negative controls
-    if: ${{ needs.impact.outputs.pass_protocol != 'true' && !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.protocol || needs.impact.outputs.protocol == 'true') }}
+    if: ${{ needs.impact.outputs.pass_protocol != 'true' && !inputs.real_browser_only && !inputs.frontend_only && !inputs.bench_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.protocol || needs.impact.outputs.protocol == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -362,10 +378,78 @@ jobs:
           echo "$RUNNER_TEMP/verifpal-bin" >> "$GITHUB_PATH"
       - run: avendb/spec/protocol/check.sh
 
+  # The performance gates (avendb/bench-gates.json, scripts/ci/avendb-bench.mjs): avenDB's bench (tests/bench_gates.rs)
+  # at 10k, 100k and 1M edits, each size a process of its own so its resident memory is its own, and a first sync asked
+  # both ways; two real nodes taking a peer's edits directly and through the server's relay alone, at full speed and at
+  # a set link rate (avendb-server's tests/relay_bench.rs, a debug build as the scenarios' world is the tests' alone);
+  # then the same work on a Postgres beside it, printed next to avenDB's numbers (to the job's summary too). A gate
+  # missed fails the job, and so the PR; a target not reached yet is printed and fails nothing.
+  bench:
+    needs: impact
+    name: avenDB performance gates
+    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_bench != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      # optimised as a release, but in parallel codegen units and thin LTO (the server profile's trade): the release
+      # profile's one unit and full LTO are for the tile's WebAssembly, and took minutes more to build
+      CARGO_PROFILE_RELEASE_LTO: thin
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: avendb -> target
+          key: bench
+          cache-on-failure: true
+      - uses: rui314/setup-mold@v1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Build the bench
+        working-directory: avendb
+        run: |
+          cargo test --release --locked -p avendb --test bench_gates --no-run
+          cargo test --locked -p avendb-server --features test-fixtures --test relay_bench --no-run
+      - name: avenDB at 10k, 100k and 1M edits, and a first sync
+        working-directory: avendb
+        run: |
+          for n in 10000 100000 1000000; do
+            AVENDB_BENCH_N=$n cargo test --release --locked -p avendb --test bench_gates -- --ignored --nocapture --exact bench_scale \
+              | tee -a "$RUNNER_TEMP/bench.log"
+          done
+          AVENDB_BENCH_FIRST=10000:2000,50000:3000 cargo test --release --locked -p avendb --test bench_gates -- --ignored --nocapture --exact bench_first_sync \
+            | tee -a "$RUNNER_TEMP/bench.log"
+      - name: The carriers, direct and through the relay
+        working-directory: avendb
+        env:
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        run: |
+          for c in direct relay relay_link; do
+            AVENDB_CARRIER=$c cargo test --locked -p avendb-server --features test-fixtures --test relay_bench -- --ignored --nocapture --exact bench_carrier \
+              | tee -a "$RUNNER_TEMP/bench.log"
+          done
+      - name: Postgres, the same work
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+        run: bun scripts/ci/avendb-bench-pg.mjs 10000,100000,1000000 | tee "$RUNNER_TEMP/pg.log"
+      - name: The gates
+        run: bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/bench.log" "$RUNNER_TEMP/pg.log"
+
   required:
     name: avenDB required checks
     if: ${{ always() }}
-    needs: [impact, tests, image, spec, real-browser, protocol, frontend]
+    needs: [impact, tests, image, spec, real-browser, protocol, frontend, bench]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected suite to succeed
@@ -378,22 +462,24 @@ jobs:
           BROWSER_ONLY: ${{ inputs.real_browser_only || false }}
           BROWSER: ${{ inputs.real_browser || false }}
           PROTOCOL: ${{ inputs.protocol || false }}
+          BENCH_ONLY: ${{ inputs.bench_only || false }}
         run: |
           printf '%s' "$RESULTS" | jq -e '
             . as $r |
             [$r.impact.outputs] | .[0] as $p |
             (["impact"] +
               (if env.FRONTEND == "true" then ["frontend"] else [] end) +
-              (if env.DRAFT != "true" and env.FRONTEND != "true" then
+              (if env.DRAFT != "true" and env.FRONTEND != "true" and env.BENCH_ONLY != "true" then
                 (if env.BROWSER_ONLY != "true" then
                   ["spec"] + (if $p.native == "true" then ["tests"] else [] end) +
                   (if env.PROTOCOL == "true" or $p.protocol == "true" then ["protocol"] else [] end)
                  else [] end) +
                 (if env.BROWSER == "true" or env.BROWSER_ONLY == "true" or $p.browser == "true" then ["real-browser"] else [] end)
                else [] end) +
+              (if env.DRAFT != "true" and env.FRONTEND != "true" and env.BROWSER_ONLY != "true" and $p.native == "true" then ["bench"] else [] end) +
               (if env.PR == "true" and env.FORK == "true" and env.DRAFT != "true" and $p.image == "true" then ["image"] else [] end)
             ) as $expected |
-            {"tests":"tests","image":"image","spec":"spec","real-browser":"browser","protocol":"protocol"} as $marker |
+            {"tests":"tests","image":"image","spec":"spec","real-browser":"browser","protocol":"protocol","bench":"bench"} as $marker |
             all($r[]; .result == "success" or .result == "skipped") and
             all($expected[]; $r[.].result == "success" or
               ($r[.].result == "skipped" and env.PR == "true" and $marker[.] != null and $r.impact.outputs["pass_" + $marker[.]] == "true"))'
@@ -425,3 +511,8 @@ jobs:
         with:
           path: .pass
           key: ${{ needs.impact.outputs.protocol_key }}
+      - if: always() && github.event_name == 'pull_request' && needs.bench.result == 'success'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.impact.outputs.bench_key }}

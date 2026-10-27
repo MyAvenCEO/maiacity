@@ -1,0 +1,25 @@
+{
+  "about": "avenDB's performance gates, held by scripts/ci/avendb-bench.mjs to the lines of crates/avendb/tests/bench_gates.rs and crates/avendb-server/tests/relay_bench.rs (the bench job of avendb-checks.yml). A gate missed fails the PR; a target is printed with whether it is met. Gates sit at the level reached on 2026-10-27 with headroom for a shared runner; raise one when the code reaches past it. The carriers' gates are 0 until a CI run measures them.",
+  "sizes": [10000, 100000, 1000000],
+  "first_sync": [{ "n": 10000, "entries": 2000 }, { "n": 50000, "entries": 3000 }],
+  "carriers": ["direct", "relay", "relay_link"],
+  "gates": {
+    "first_sync_speedup_min": { "10000": 3, "50000": 15 },
+    "cost_ratio_max": 4,
+    "rss_ratio_max": 1.5,
+    "read_p95_us_max": 1000,
+    "view_p95_us_max": 10000,
+    "writes_per_s_min": 10000,
+    "intake_per_s_min": 30000,
+    "carrier_edits_per_s_min": { "direct": 0, "relay": 0, "relay_link": 0 },
+    "relay_link_share_min": 0
+  },
+  "targets": {
+    "first_sync_speedup": 20,
+    "cost_ratio": 2,
+    "writes_per_s": 100000,
+    "carrier_edits_per_s": 100000,
+    "carrier_edits_per_s_webkit": 20000,
+    "relay_link_share": 0.8
+  }
+}
