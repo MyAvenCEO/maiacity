@@ -39,6 +39,16 @@ export function checkIndex(bench, gates) {
   add(true, `index ${s.n}: index bytes/edit`, s.index_bytes_per_edit, `≤ ${g.index_bytes_per_edit_max}`, s.index_bytes_per_edit <= g.index_bytes_per_edit_max);
   add(true, `index ${s.n}: view open p95 µs`, s.open_p95_us, `< ${g.index_open_p95_us_max}`, s.open_p95_us < g.index_open_p95_us_max);
  }
+ // G1: a named query's window opened end to end (query_window_bench.rs), the head of the log at n edits counted in
+ const wins = bench.filter(b => b.kind === 'window');
+ for (const n of gates.window_sizes ?? []) if (!wins.some(s => s.n === n)) add(true, `window at ${n}`, null, 'present', false);
+ for (const s of wins) {
+  add(true, `window ${s.n}: log edits stepped on`, s.window_log_edits, `≤ ${g.window_log_edits_max}`, s.window_log_edits <= g.window_log_edits_max);
+  add(true, `window ${s.n}: index rows read`, s.window_rows_read, `≤ ${s.w}`, s.window_rows_read <= s.w);
+  add(true, `window ${s.n}: pages read (most)`, s.window_pages_read, `≤ ${g.window_pages_max}`, s.window_pages_read <= g.window_pages_max);
+  add(true, `window ${s.n}: bytes read`, s.window_bytes_read, `≤ ${g.window_bytes_max}`, s.window_bytes_read <= g.window_bytes_max);
+  add(true, `window ${s.n}: open p50 µs at n edits (with the log's head)`, s.window_at_n_p50_us, `< ${g.window_at_n_p50_us_max}`, s.window_at_n_p50_us < g.window_at_n_p50_us_max);
+ }
  return out;
 }
 
@@ -143,6 +153,9 @@ export function report(bench, pg, results) {
  const ix = bench.filter(b => b.kind === 'index').sort((a, b) => a.n - b.n);
  if (ix.length) rows.push('', '| index of edits | rows | depth (model) | pages read, view (median) | bytes read, view | pages read, point | view open p50 µs | p95 µs | index bytes/edit | built s |', '|---|---|---|---|---|---|---|---|---|---|',
   ...ix.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.depth} (${s.depth_model}) | ${s.open_pages_p50}, at most ${s.open_pages_read} | ${fmt(s.open_bytes_read)} | ${s.get_pages_read} | ${s.open_p50_us} | ${s.open_p95_us} | ${s.index_bytes_per_edit} | ${s.build_s} |`));
+ const wins = bench.filter(b => b.kind === 'window').sort((a, b) => a.n - b.n);
+ if (wins.length) rows.push('', '| named query window at edits | index rows | pages read (median, most) | bytes read | rows read | log edits | window p50 / p95 µs | log head µs | p50 at n µs |', '|---|---|---|---|---|---|---|---|---|',
+  ...wins.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.window_pages_p50}, ${s.window_pages_read} | ${fmt(s.window_bytes_read)} | ${s.window_rows_read} | ${s.window_log_edits} | ${s.window_p50_us} / ${s.window_p95_us} | ${fmt(s.head_us)} | ${fmt(s.window_at_n_p50_us)} |`));
  const first = bench.filter(b => b.kind === 'first');
  const carriers = bench.filter(b => b.kind === 'carrier');
  if (carriers.length) rows.push('', '| carrier | edits | bytes/edit | sync s | asks | edits/s | KB/s | link KB/s | of link |', '|---|---|---|---|---|---|---|---|---|',
