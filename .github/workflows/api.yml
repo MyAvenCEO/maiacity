@@ -117,6 +117,26 @@ jobs:
           pulumi login "file://$GITHUB_WORKSPACE/.pulumi-state"
           pulumi stack select prod --create
           pulumi up --yes --skip-preview --non-interactive
+      # A resize shuts the server down first; when Hetzner then can't place the new type, it stays off (2026-10-27).
+      # Whatever pulumi up did, the server ends this job running.
+      - name: The server is on
+        if: ${{ always() && (!inputs.validated || inputs.reconcile_infra) }}
+        run: |
+          API=https://api.hetzner.cloud/v1
+          AUTH="Authorization: Bearer $HCLOUD_TOKEN"
+          SERVER=$(curl -fsS -H "$AUTH" "$API/servers?name=maia-city" | jq -r '.servers[0] | "\(.id) \(.status)"')
+          read -r ID STATUS <<< "$SERVER"
+          echo "maia-city is $STATUS"
+          if [ "$STATUS" != running ]; then
+            curl -fsS -X POST -H "$AUTH" "$API/servers/$ID/actions/poweron" >/dev/null
+            for _ in $(seq 60); do
+              STATUS=$(curl -fsS -H "$AUTH" "$API/servers/$ID" | jq -r .server.status)
+              [ "$STATUS" = running ] && break
+              sleep 5
+            done
+            echo "maia-city is $STATUS"
+            [ "$STATUS" = running ]
+          fi
       - name: Outputs
         id: out
         working-directory: infra

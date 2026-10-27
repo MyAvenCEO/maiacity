@@ -9,7 +9,7 @@ pulumi.runtime.setMocks({
   return { id: '1', state: { ...args.inputs, ipv4Address: '192.0.2.1' } };
  },
  call(args) {
-  if (args.token === 'hcloud:index/getServerTypes:getServerTypes') return { serverTypes: [{ name:'fixture', architecture:'x86', cpuType:'shared', cores:2, memory:4, disk:40, isDeprecated:false }] };
+  if (args.token === 'hcloud:index/getServerTypes:getServerTypes') return { serverTypes: [{ name:'fixture', architecture:'x86', cpuType:'shared', cores:2, memory:4, disk:40, isDeprecated:false, locations:[{ name:'nbg1', available:true, isDeprecated:false }] }, { name:'full', architecture:'x86', cpuType:'shared', cores:2, memory:4, disk:20, isDeprecated:false, locations:[{ name:'nbg1', available:false, isDeprecated:false }] }] };
   throw new Error(`Unexpected provider call: ${args.token}`);
  }
 }, 'maiacity', 'test', false);
