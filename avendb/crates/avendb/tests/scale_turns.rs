@@ -126,6 +126,17 @@ impl Turns {
     }
 }
 
+/// One turn `f` of device `d`'s, timed as `what`, and where it took long, where its time went.
+fn turn<T>(lab: &mut Lab, d: SignerId, turns: &mut Turns, what: &'static str, f: impl FnOnce(&mut Lab) -> T) -> T {
+    let before = lab.perf(d)["timers"].clone();
+    let at = Instant::now();
+    let out = turns.took(what, || f(lab));
+    if at.elapsed() > TURN {
+        eprintln!("SCALE   a long {what} ({:.1?}): {}", at.elapsed(), spent(&before, &lab.perf(d)["timers"]));
+    }
+    out
+}
+
 /// A catch-up of device `d` a step at a time, each step timed as `what`.
 fn catch_up(lab: &mut Lab, d: SignerId, turns: &mut Turns, what: &'static str) {
     for _ in 0..1_000_000 {
@@ -190,10 +201,10 @@ fn every_turn_is_short_at_a_servers_size() {
         }
         take(&mut lab, phone, page, &mut turns, ["a page told apart", "a page kept"]);
         // a write of its own, two steps into the catch-up, as a person types while the pull goes on
-        turns.took("a catch-up step", || lab.catch_up_step(phone, SHOW));
-        turns.took("a catch-up step", || lab.catch_up_step(phone, SHOW));
+        turn(&mut lab, phone, &mut turns, "a catch-up step", |lab| lab.catch_up_step(phone, SHOW));
+        turn(&mut lab, phone, &mut turns, "a catch-up step", |lab| lab.catch_up_step(phone, SHOW));
         let mine = ws[round].1[3];
-        turns.took("a write of its own during a catch-up", || {
+        turn(&mut lab, phone, &mut turns, "a write of its own during a catch-up", |lab| {
             lab.edit(phone, alice, mine, |item| item.push_block(paragraph(2_000_000 + round as u64, "From the iPhone.")))
                 .expect("the iPhone's write")
         });
@@ -207,7 +218,7 @@ fn every_turn_is_short_at_a_servers_size() {
                 FileScanned::Behind => panic!("caught up"),
             }
         }
-        turns.took("a write of its own", || {
+        turn(&mut lab, phone, &mut turns, "a write of its own", |lab| {
             lab.edit(phone, alice, mine, |item| item.push_block(paragraph(3_000_000 + round as u64, "Again.")))
                 .expect("the iPhone's write")
         });
