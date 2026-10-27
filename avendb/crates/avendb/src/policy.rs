@@ -438,6 +438,26 @@ impl Action {
         }
     }
 
+    /// About what it holds in memory beside itself: its key boxes and a write's body, the bulk of an edit (`Lab::perf`).
+    pub fn heap_bytes(&self) -> usize {
+        let boxes: usize = self.key_boxes().iter().map(|(.., b)| size_of::<KeyBox>() + b.bytes.len()).sum();
+        let body = match self {
+            Action::Write { body, files, deps, .. } => body.len() + files.len() * size_of::<FileRoot>() + deps.len() * 32,
+            Action::Checkpoint { covers, .. } => covers.len() * 32,
+            _ => 0,
+        };
+        boxes + body
+    }
+
+    /// Its `slot`th box of a key, as `key_boxes` counts them.
+    pub fn key_box(&self, slot: usize) -> Option<&KeyBox> {
+        match self {
+            Action::Keys { boxes, .. } => boxes.get(slot),
+            Action::Wraps { wraps, .. } => wraps.get(slot).map(|w| &w.boxed),
+            _ => None,
+        }
+    }
+
     /// The edits a removal had seen and keeps, for removals: every revocation, handing the root on, and a mark that
     /// takes an entry to an audience.
     pub fn keep(&self) -> Option<&[EditId]> {
@@ -4101,6 +4121,11 @@ impl Replay {
     pub fn edits<'a>(&'a self, held: &'a [Edit]) -> impl ExactSizeIterator<Item = &'a Edit> + DoubleEndedIterator + Clone + 'a {
         debug_assert!(self.of(held), "a replay read with other edits than it is of");
         self.order.iter().map(move |&p| &held[p])
+    }
+
+    /// Where each of its edits is among the edits it is the replay of, in the one order (`edits`).
+    pub fn places(&self) -> &[usize] {
+        &self.order
     }
 
     /// Its `i`th edit in the one order, of `held` (`edits`).

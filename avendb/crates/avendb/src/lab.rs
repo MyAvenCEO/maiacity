@@ -1104,8 +1104,9 @@ struct Tip {
 struct KeyIndex {
     /// Each seed key announced, by name, with the public half keys are sealed to.
     made: HashMap<KeyName, Vec<(KeyId, PublicKey)>>,
-    /// Each box, after the name and the id of the key it holds.
-    boxes: Vec<(KeyName, KeyId, KeyBox)>,
+    /// Each box, after the name and the id of the key it holds: where it is, not its bytes, which its log holds
+    /// already (`IndexedBox`).
+    boxes: Vec<IndexedBox>,
     /// Which key has a box for which: its name, its id, the name of the key the box goes to.
     boxed: HashSet<(KeyName, KeyId, KeyName)>,
     /// Each key published in the clear, and their ids.
@@ -1116,7 +1117,7 @@ struct KeyIndex {
 }
 
 impl KeyIndex {
-    /// `held` being the edits `r` is the replay of (`Replay::edits`).
+    /// `held` being the edits `r` is the replay of (`Replay::edits`), which its boxes are read of again.
     fn of(r: &Replay, held: &[Edit]) -> KeyIndex {
         let mut ix = KeyIndex::default();
         ix.grow(r, held, 0);
@@ -1126,13 +1127,16 @@ impl KeyIndex {
     /// What `r`'s standing edits from the `from`th on add to it, as `of` reads them, `held` being the edits `r` is the
     /// replay of.
     fn grow(&mut self, r: &Replay, held: &[Edit], from: usize) {
-        let edits = r.edits(held).zip(&r.stood).skip(from).filter(|(_, stood)| **stood);
-        for (edit, _) in edits {
-            for (name, id, b) in edit.action.key_boxes() {
+        let edits = r.edits(held).zip(r.places()).zip(&r.stood).skip(from).filter(|(_, stood)| **stood);
+        for ((edit, &place), _) in edits {
+            for (slot, (name, id, b)) in edit.action.key_boxes().into_iter().enumerate() {
                 self.exists.insert(name);
                 self.exists.insert(b.to.name());
                 self.boxed.insert((name, id, b.to.name()));
-                self.boxes.push((name, id, b.clone()));
+                let mut first = [0; 32];
+                let n = b.bytes.len().min(32);
+                first[..n].copy_from_slice(&b.bytes[..n]);
+                self.boxes.push(IndexedBox { name, id, to: b.to, place, slot, first });
             }
             if let Action::Keys { name, id, public, clear, .. } = &edit.action {
                 self.exists.insert(*name);
@@ -1157,6 +1161,27 @@ impl KeyIndex {
     /// Key `id` of `name` is announced, its public half with it.
     fn announced(&self, name: KeyName, id: KeyId) -> bool {
         self.made.get(&name).is_some_and(|m| m.iter().any(|x| x.0 == id))
+    }
+}
+
+/// A box of a key in a `KeyIndex`: the name and the id of the key it holds, whom it is to, the edit it is of by its
+/// place in the log the index is of and which of that edit's boxes it is (`Action::key_box`), and its first bytes, what
+/// tells a box tried before (`Store::unopened`). Its bytes stay in the log alone: a key box is ~1.4 KB, and a copy of
+/// each in the index doubled what a device holds of them (F9).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct IndexedBox {
+    name: KeyName,
+    id: KeyId,
+    to: Recipient,
+    place: usize,
+    slot: usize,
+    first: [u8; 32],
+}
+
+impl IndexedBox {
+    /// Its bytes, of `held`, the edits of the log its index is of.
+    fn bytes<'a>(&self, held: &'a [Edit]) -> &'a [u8] {
+        &held[self.place].action.key_box(self.slot).expect("an indexed box").bytes
     }
 }
 
@@ -4176,6 +4201,11 @@ impl Lab {
             "blob_bytes": store.blobs.bytes(),
             // what it holds of its edits and keys in memory, spilled or not (S7), and what its spills hold on disk
             "memory": { "edits": store.signed.memory(), "keys": store.blobs.memory(),
+                // what its log of edits and its key index hold, beside the signed edits above (F9)
+                "log": store.log.edits().iter()
+                    .map(|e| size_of::<Edit>() + (e.parents.len() + e.cosigners.len()) * 32 + e.action.heap_bytes())
+                    .sum::<usize>(),
+                "key_index": store.key_ix.ix.boxes.len() * size_of::<IndexedBox>(),
                 "spilled": store.signed.spilled_bytes() + store.blobs.spilled_bytes(),
                 "spilling": store.signed.is_spilled() },
         });
@@ -5846,7 +5876,8 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
     loop {
         let mut more = false;
         let at = Perf::start();
-        for (name, id, b) in &ix.boxes {
+        for b in &ix.boxes {
+            let (name, id) = (&b.name, &b.id);
             if store.keys.contains(id) {
                 continue;
             }
@@ -5855,28 +5886,26 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 Recipient::Key { name: to, id: under } => store.keys.get(&under, to).cloned(),
             };
             let Some(with) = with else { continue };
-            let mut first = [0; 32];
-            let n = b.bytes.len().min(32);
-            first[..n].copy_from_slice(&b.bytes[..n]);
-            if store.unopened.contains(&(*id, b.to, first)) {
+            if store.unopened.contains(&(*id, b.to, b.first)) {
                 continue;
             }
+            let bytes = b.bytes(store.log.edits());
             let info = box_info(*name, *id, &b.to);
-            let opened = opened_box(&info, &b.bytes, &with);
+            let opened = opened_box(&info, bytes, &with);
             // the same box it opened before with the same key, as its shelf keeps it: what opened, again
             if let Some(secret) = store.opened_before.get(&opened).filter(|k| k.id() == *id) {
                 more |= store.keys.insert(*name, secret.clone());
                 store.perf.count("keys from the shelf", 1);
                 continue;
             }
-            match keys::open(&b.bytes, &with, &info) {
+            match keys::open(bytes, &with, &info) {
                 Some(secret) if secret.id() == *id => {
                     store.perf.count("keys opened", 1);
                     store.opened_since.push((opened, secret.clone()));
                     more |= store.keys.insert(*name, secret);
                 }
                 _ => {
-                    store.unopened.insert((*id, b.to, first));
+                    store.unopened.insert((*id, b.to, b.first));
                 }
             }
         }

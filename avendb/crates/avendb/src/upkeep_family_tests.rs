@@ -95,7 +95,7 @@ fn profile_same_engine_synthetic_warm_restore() {
     let backup = lab.backup(phone);
     let count = backup.signed.len();
     let index = KeyIndex::of(&lab.held(phone).replay, lab.held(phone).log.edits());
-    eprintln!("synthetic fixture edits={count} boxes={} cloned_box_bytes={}", index.boxes.len(), index.boxes.iter().map(|(_, _, b)| b.bytes.len()).sum::<usize>());
+    eprintln!("synthetic fixture edits={count} boxes={} cloned_box_bytes={}", index.boxes.len(), index.boxes.iter().map(|b| b.bytes(lab.held(phone).log.edits()).len()).sum::<usize>());
     drop(index);
     let pending = lab.warming(phone, count, Some([77; 40])).unwrap();
     let warm = Warm { keys: pending.keys.clone().into_iter().collect(), views: pending.view.clone().into_iter().collect() };
