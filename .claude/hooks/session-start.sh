@@ -14,7 +14,11 @@ target="${CLAUDE_PROJECT_DIR:-$(pwd)}/avendb/target"
 stamp="$target/.dev-cache"
 say() { echo "avendb dev cache: $*" >&2; }
 
-manifest=$(curl -fsSL --max-time 20 "$release/manifest") || { say "no manifest; builds start cold"; exit 0; }
+# The cloud environment's setup script (docs/devx/cloud-setup.sh) can unpack the cache once into the environment's disk
+# snapshot, which every new session starts from: then it is moved into place instead of downloaded and unpacked.
+snapshot=${AVENDB_DEV_CACHE_DIR:-/opt/avendb-dev-cache}
+manifest=$(curl -fsSL --max-time 20 "$release/manifest") || manifest=$(cat "$snapshot/manifest" 2>/dev/null) \
+	|| { say "no manifest; builds start cold"; exit 0; }
 rustc=$(sed -n 's/^rustc=//p' <<< "$manifest")
 [[ "$rustc" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { say "manifest names no toolchain"; exit 0; }
 
@@ -40,6 +44,14 @@ fi
 # only into an empty build folder: one that holds a build already (the cache's, or the session's own) stays as it is
 if [ -e "$target/debug" ]; then
 	[ -f "$stamp" ] && echo "avenDB dev cache already in avendb/target (rustc $rustc)."
+	exit 0
+fi
+
+# the snapshot's copy, when it is this manifest's: one rename on the same disk
+if [ -d "$snapshot/debug" ] && [ "$manifest" = "$(cat "$snapshot/manifest" 2>/dev/null)" ] \
+	&& mkdir -p "$target" && mv "$snapshot/debug" "$target/debug" 2>/dev/null; then
+	printf '%s\n' "$manifest" > "$stamp"
+	echo "avenDB dev cache moved into avendb/target from the environment snapshot (rustc $rustc)."
 	exit 0
 fi
 
