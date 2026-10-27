@@ -803,6 +803,8 @@ struct Store {
     blobs: held::Keys,
     /// The replay of its edits as it last brought itself up to date: which stand, and what it knows.
     replay: Replay,
+    /// Its replay's key index, grown on between refreshes (`KeyIndexed`).
+    key_ix: KeyIndexed,
     /// Its owners' judged slices it took, by entry, kept on its shelf beside its history (`EntryState.lean`'s based
     /// state, one format for owners and readers).
     bases: entry_base::Anchors,
@@ -826,6 +828,9 @@ struct Store {
     /// The stays of its audience, by their print, each audience key it derived for every one of them (`derive`): a key
     /// whose audience's stays are as they were then derives nothing new, and is left alone.
     derived_through: HashMap<KeyId, [u8; 32]>,
+    /// What its log and replay were when it last derived (`stays_changed`): its log's lineage and length, and its whole
+    /// replays.
+    stays_seen: Option<(crate::policy::LogRevision, usize, u64)>,
     /// The slices of the shares, keep shares among them, whose selectors it opened, and those whose selectors never
     /// open for it: garbled, or with no box for a key it holds that opens, or, where it is a steward, for no seed of
     /// the vault the share is over.
@@ -909,6 +914,7 @@ impl Default for Store {
             signed: held::Signeds::default(),
             blobs: held::Keys::default(),
             replay: replay(&[]),
+            key_ix: KeyIndexed::default(),
             bases: BTreeMap::new(),
             bootstrap_state: None,
             based: HashMap::new(),
@@ -920,6 +926,7 @@ impl Default for Store {
             keys: Keyring::default(),
             derived: HashSet::new(),
             derived_through: HashMap::new(),
+            stays_seen: None,
             slices: HashMap::new(),
             unreadable: HashSet::new(),
             unopened: HashSet::new(),
@@ -999,6 +1006,7 @@ impl Store {
         self.keys = Keyring::default();
         self.derived.clear();
         self.derived_through.clear();
+        self.stays_seen = None;
         self.slices.clear();
         self.unreadable.clear();
         self.unopened.clear();
@@ -1102,31 +1110,89 @@ struct KeyIndex {
 impl KeyIndex {
     fn of(r: &Replay) -> KeyIndex {
         let mut ix = KeyIndex::default();
-        for (edit, _) in r.edits.iter().zip(&r.stood).filter(|(_, stood)| **stood) {
-            // a `Keys` edit's boxes, or a `Wraps` edit's
+        ix.grow(r, 0);
+        ix
+    }
+
+    /// What `r`'s standing edits from the `from`th on add to it, as `of` reads them.
+    fn grow(&mut self, r: &Replay, from: usize) {
+        let edits = r.edits.iter().zip(&r.stood).skip(from).filter(|(_, stood)| **stood);
+        for (edit, _) in edits {
             for (name, id, b) in edit.action.key_boxes() {
-                ix.exists.insert(name);
-                ix.exists.insert(b.to.name());
-                ix.boxed.insert((name, id, b.to.name()));
-                ix.boxes.push((name, id, b.clone()));
+                self.exists.insert(name);
+                self.exists.insert(b.to.name());
+                self.boxed.insert((name, id, b.to.name()));
+                self.boxes.push((name, id, b.clone()));
             }
             if let Action::Keys { name, id, public, clear, .. } = &edit.action {
-                ix.exists.insert(*name);
+                self.exists.insert(*name);
                 if let Some(p) = public {
-                    ix.made.entry(*name).or_default().push((*id, p.clone()));
+                    self.made.entry(*name).or_default().push((*id, p.clone()));
                 }
                 if let Some(c) = clear {
-                    ix.clear.push((*name, *id, *c));
-                    ix.cleared.insert(*id);
+                    self.clear.push((*name, *id, *c));
+                    self.cleared.insert(*id);
                 }
             }
         }
-        ix
+    }
+
+    /// The same index as `o`.
+    #[cfg(debug_assertions)]
+    fn same(&self, o: &KeyIndex) -> bool {
+        (&self.made, &self.boxes, &self.boxed, &self.clear, &self.cleared, &self.exists)
+            == (&o.made, &o.boxes, &o.boxed, &o.clear, &o.cleared, &o.exists)
     }
 
     /// Key `id` of `name` is announced, its public half with it.
     fn announced(&self, name: KeyName, id: KeyId) -> bool {
         self.made.get(&name).is_some_and(|m| m.iter().any(|x| x.0 == id))
+    }
+}
+
+/// A device's `KeyIndex`, kept between refreshes and grown by the edits its replay took since (`KeyIndexed::take`),
+/// not made again of every edit it holds each time (3.6 ms a refresh at 130,000 edits, 2026-10-27).
+#[derive(Default)]
+struct KeyIndexed {
+    ix: KeyIndex,
+    /// What it is of: the log's lineage and length, the store's whole replays, and the replay's length and last edit.
+    of: Option<(crate::policy::LogRevision, usize, u64, usize, EditId)>,
+}
+
+impl KeyIndexed {
+    /// The index of `store`'s replay now, to be put back once used (`put`). It grows on from what it was of where its
+    /// log only grew since, by no removal, its replay was stepped on, not made whole, and its replay's edits so far are
+    /// where they were (the replay keeps its edits' order, so its last one where it was means none came before it).
+    /// Only removals change which earlier edits stand; else it is made again of every edit.
+    fn take(store: &mut Store) -> KeyIndex {
+        let (log, r) = (&store.log, &store.replay);
+        let from = std::mem::take(&mut store.key_ix.of).and_then(|(lineage, len, wholes, n, last)| {
+            let grown = lineage == log.lineage() && len <= log.edits().len() && wholes == store.wholes;
+            let kept = n <= r.ids.len() && r.ids[n - 1] == last;
+            let removes = log.edits()[len.min(log.edits().len())..].iter().any(Edit::is_removal);
+            (grown && kept && !removes).then_some(n)
+        });
+        let mut ix = std::mem::take(&mut store.key_ix.ix);
+        match from {
+            Some(n) => {
+                ix.grow(r, n);
+                store.perf.count("keys: index grown", 1);
+            }
+            None => {
+                ix = KeyIndex::of(r);
+                store.perf.count("keys: index made", 1);
+            }
+        }
+        #[cfg(debug_assertions)]
+        debug_assert!(ix.same(&KeyIndex::of(r)), "a key index grown on differs from one made whole");
+        ix
+    }
+
+    /// `ix`, taken of `store`'s replay as it is now, back.
+    fn put(store: &mut Store, ix: KeyIndex) {
+        let (log, r) = (&store.log, &store.replay);
+        store.key_ix.of = r.ids.last().map(|&last| (log.lineage(), log.edits().len(), store.wholes, r.ids.len(), last));
+        store.key_ix.ix = ix;
     }
 }
 
@@ -2259,7 +2325,12 @@ impl Lab {
             [one] if store.based.is_empty() => {
                 let whole = store.replayed == store.log.edits().len();
                 let was = store.latest.get().or(whole.then_some(&store.replay.state));
-                was.and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit))
+                // the deepest edit it holds: its replay's last, or one it took since (`replay_on_why`)
+                let edits = store.log.edits();
+                let since = edits.get(store.replayed..).unwrap_or(edits).iter().map(|e| e.depth);
+                let deepest = store.replay.edits.last().map(|e| e.depth).into_iter().chain(since).max();
+                debug_assert_eq!(deepest, edits.iter().map(|e| e.depth).max(), "the replay's last edit is its deepest");
+                was.and_then(|was| stepped_on(was, deepest, to, &one.edit))
             }
             _ => None,
         };
@@ -2787,7 +2858,7 @@ impl Lab {
                 return true;
             }
             let at = Perf::start();
-            let ix = KeyIndex::of(&store.replay);
+            let ix = KeyIndexed::take(store);
             store.perf.add("keys: index", at);
             open_keys(store, &ix, &mine);
             store.perf.add("open keys", at);
@@ -2805,6 +2876,7 @@ impl Lab {
             // with no budget it leaves the entries a budgeted showing left before as they are: a catch-up a step at a
             // time shows them (`catch_up_step`), and its upkeep leaves them for then
             if !shown && budget.is_some() {
+                KeyIndexed::put(store, ix);
                 store.behind = true;
                 store.perf.add("refresh", began);
                 self.rebuild_owner_bases(d);
@@ -2839,6 +2911,7 @@ impl Lab {
             } else {
                 vec![]
             };
+            KeyIndexed::put(store, ix);
             store.behind |= sliced;
             store.perf.add("upkeep", at);
             if work.is_empty() && sliced && budget.is_some() {
@@ -5724,13 +5797,11 @@ fn opened_box(info: &[u8], bytes: &[u8], with: &Secret) -> [u8; 32] {
 /// holds; and again, until nothing more opens. A box counts only if what opens is the key it names.
 fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
     let at = Perf::start();
-    // the stays each audience had: the entries whose keys a key of the audience derives, and in which stay
-    let mut stays: HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>> = HashMap::new();
-    for en in store.replay.state.entries() {
-        for (s, x) in &en.stays {
-            stays.entry(*x).or_default().push((en.id, *s));
-        }
-    }
+    // the stays each audience had, made only where `derive` needs them: of the entries whose stays may have changed
+    // since it last derived, or of every entry
+    let changed = stays_changed(store);
+    let (mut all, mut some) = (None, None);
+    store.perf.count(if changed.is_some() { "keys: stays of the entries changed" } else { "keys: stays of every entry" }, 1);
     store.perf.add("keys: stays", at);
     loop {
         let mut more = false;
@@ -5779,44 +5850,113 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
         }
         store.perf.add("keys: clear", at);
         let at = Perf::start();
-        more |= derive(store, &stays);
+        more |= derive(store, changed.as_ref(), &mut all, &mut some);
         store.perf.add("keys: derive", at);
         if !more {
-            return;
+            break;
+        }
+    }
+    store.stays_seen = Some((store.log.lineage(), store.log.edits().len(), store.wholes));
+    // every key an audience key it holds derives for a stay its audience ever had, it derived
+    #[cfg(debug_assertions)]
+    {
+        let stays = stays_of(&store.replay.state, None);
+        for id in &store.keys.audiences {
+            let KeyName::Scoped(KeyFam::Audience(_, x), _) = store.keys.by_id[id].0 else { continue };
+            for &(e, s) in stays.get(&x).into_iter().flatten() {
+                debug_assert!(store.derived.contains(&(*id, e, s)), "derive left out {e:?} in its stay {s:?}");
+            }
         }
     }
 }
 
+/// Each audience's stays: the entries in it, and in which stay, of the entries `of` alone, or of every one; in the order
+/// the entries were created.
+fn stays_of(st: &State, of: Option<&HashSet<EntryId>>) -> HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>> {
+    let mut stays: HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>> = HashMap::new();
+    let add = |en: &Entry| {
+        for (s, x) in &en.stays {
+            stays.entry(*x).or_default().push((en.id, *s));
+        }
+    };
+    match of {
+        Some(es) => {
+            let mut ens: Vec<&Entry> = es.iter().filter_map(|e| st.entry(*e)).collect();
+            ens.sort_by_key(|en| st.entry_place(en.id));
+            ens.into_iter().for_each(add);
+        }
+        None => st.entries().iter().for_each(add),
+    }
+    stays
+}
+
+/// The entries whose stays may have changed since device's store `store` last derived its entry keys (`derive`): those
+/// of the edits it took since, where each is of an entry's own log and no removal, which alone moves an entry or takes
+/// one away. `None` where it is to look at every entry: another edit came, its log began again, or its replay did.
+fn stays_changed(store: &Store) -> Option<HashSet<EntryId>> {
+    let (lineage, len, wholes) = store.stays_seen.as_ref()?;
+    let log = &store.log;
+    if log.lineage() != *lineage || log.edits().len() < *len || store.wholes != *wholes {
+        return None;
+    }
+    let mut out = HashSet::new();
+    for (edit, place) in log.edits()[*len..].iter().zip(&log.logs()[*len..]) {
+        match place {
+            Some(crate::sync::LogId::Entry(e)) if !edit.is_removal() => {
+                out.insert(*e);
+            }
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
 /// Derive the key of each entry that ever stayed in an audience whose key the device holds, for that stay, at that
-/// key's epoch (`keys::entry_key`): true if it derived any.
-fn derive(store: &mut Store, stays: &HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>) -> bool {
+/// key's epoch (`keys::entry_key`): true if it derived any. An audience key it derived with before looks only at the
+/// stays of the entries `changed` since where there are such (`stays_changed`); else at every stay of its audience,
+/// those of every entry (`all`) made once for every key, but where they are as they were when it last did.
+fn derive(
+    store: &mut Store,
+    changed: Option<&HashSet<EntryId>>,
+    all: &mut Option<HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>>,
+    some: &mut Option<HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>>,
+) -> bool {
+    let Store { keys, derived, derived_through, replay, .. } = store;
+    let st = &replay.state;
     let mut new = vec![];
     // each audience's stays by their print, made once for every key of it
     let mut prints: HashMap<AudienceId, [u8; 32]> = HashMap::new();
-    for id in &store.keys.audiences {
-        let (name, audience) = &store.keys.by_id[id];
+    for id in &keys.audiences {
+        let (name, audience) = &keys.by_id[id];
         let KeyName::Scoped(KeyFam::Audience(_, x), g) = *name else {
             continue;
         };
-        let print = *prints.entry(x).or_insert_with(|| {
-            let mut h = Hasher::new("lab stays");
-            for (e, s) in stays.get(&x).into_iter().flatten() {
-                h.update(&e.0).update(s.as_ref().map_or(&[0; 32], |s| &s.0));
+        let stays = match changed.filter(|_| derived_through.contains_key(id)) {
+            Some(ch) => some.get_or_insert_with(|| stays_of(st, Some(ch))),
+            None => {
+                let all = all.get_or_insert_with(|| stays_of(st, None));
+                let print = *prints.entry(x).or_insert_with(|| {
+                    let mut h = Hasher::new("lab stays");
+                    for (e, s) in all.get(&x).into_iter().flatten() {
+                        h.update(&e.0).update(s.as_ref().map_or(&[0; 32], |s| &s.0));
+                    }
+                    h.finalize()
+                });
+                if derived_through.insert(*id, print) == Some(print) {
+                    continue;
+                }
+                all
             }
-            h.finalize()
-        });
-        if store.derived_through.insert(*id, print) == Some(print) {
-            continue;
-        }
+        };
         for &(e, s) in stays.get(&x).into_iter().flatten() {
-            if store.derived.insert((*id, e, s)) {
+            if derived.insert((*id, e, s)) {
                 new.push((KeyName::Entry(e, s, g), keys::entry_key(audience, e, s)));
             }
         }
     }
     let more = !new.is_empty();
     for (name, key) in new {
-        store.keys.insert(name, key);
+        keys.insert(name, key);
     }
     more
 }
@@ -6466,6 +6606,25 @@ fn landed_in(store: &Store, e: EntryId) -> bool {
     !opened && crate::policy::history(ws.iter(), MAIN).iter().any(|w| w.first)
 }
 
+/// Vault `v`'s lane as `State::lane_of` reads it, read off the schemas and lenses `r` holds (`Readings::blobs`), not
+/// off every entry: those whose creation is of an entry of `v` as it is now, in the order the entries were created.
+fn lane_blobs<'a>(st: &'a State, v: VaultId, r: &'a Readings) -> Vec<&'a [u8]> {
+    let counts = |w: &Write| w.first && w.actor == v && w.proposal == Proposal::Main && !r.unfit.contains(&w.edit);
+    let mut of: Vec<(usize, &[u8])> = r
+        .blobs
+        .iter()
+        .filter(|(id, _)| r.headers.get(id).is_some_and(|h| h.ty.of_lane()))
+        .filter_map(|(id, b)| {
+            let w = st.write(*id).filter(|w| counts(w))?;
+            let en = st.entry(w.entry).filter(|en| en.vault == v && en.creation == *id)?;
+            Some((st.entry_place(en.id)?, &b[..]))
+        })
+        .collect();
+    of.sort_by_key(|(at, _)| *at);
+    let mut seen = HashSet::new();
+    of.into_iter().map(|(_, b)| b).filter(|b| seen.insert(BlobId::of(b))).collect()
+}
+
 /// Retain reconstruction accelerators as entries finish, rather than keeping
 /// one extra Loro document per entry until the entire database is reconstructed.
 /// Entry iteration is unique; an evicted earlier entry cannot enter the final
@@ -6514,15 +6673,15 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // and what judges the writes of the vault's entries, made once one of them is shown anew
     let mut lanes: HashMap<VaultId, (Vec<&[u8]>, [u8; 32], OnceCell<Lane>)> = HashMap::new();
     let at = Perf::start();
-    for en in st.entries() {
-        lanes.entry(en.vault).or_insert_with(|| {
-            let blobs = st.lane_of(en.vault, r);
-            let mut h = Hasher::new("lab lane");
-            for b in &blobs {
-                h.update(&BlobId::of(b).0);
-            }
-            (blobs, h.finalize(), OnceCell::new())
-        });
+    // of every vault, not of every entry's: a step costs what changed, not what the device holds
+    for vt in st.vaults() {
+        let blobs = lane_blobs(st, vt.id, r);
+        debug_assert!(blobs == st.lane_of(vt.id, r), "a lane read off its blobs differs from one read off every entry");
+        let mut h = Hasher::new("lab lane");
+        for b in &blobs {
+            h.update(&BlobId::of(b).0);
+        }
+        lanes.insert(vt.id, (blobs, h.finalize(), OnceCell::new()));
     }
     store.perf.add("show: lanes", at);
     let at = Perf::start();
@@ -6978,11 +7137,11 @@ impl<'a> Judging<'a> {
     }
 }
 
-/// What `was`, the replay of `held`, says once `edit` steps on it, where that is the replay of `held` and `edit`: a write
-/// device `on` authored, deeper than every edit held, so it sorts last, and no removal, so it cuts nothing before it
+/// What `was`, the replay of the edits held, says once `edit` steps on it, where that is the replay of them and `edit`: a
+/// write device `on` authored, deeper than every edit held (the deepest is `deepest`), so it sorts last, and no removal, so it cuts nothing before it
 /// and no removal's standing turns on it (`policy::replay`). None for any other edit, or one `was` refuses.
-fn stepped_on(was: &State, held: &[Edit], on: SignerId, edit: &Edit) -> Option<State> {
-    let last = held.iter().all(|e| e.depth < edit.depth);
+fn stepped_on(was: &State, deepest: Option<u64>, on: SignerId, edit: &Edit) -> Option<State> {
+    let last = deepest.is_none_or(|d| d < edit.depth);
     if edit.author != on || !matches!(edit.action, Action::Write { .. }) || edit.is_removal() || !last {
         return None;
     }
