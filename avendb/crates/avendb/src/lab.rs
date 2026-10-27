@@ -6644,11 +6644,12 @@ struct Showing {
 }
 
 /// What changed since the upkeep last looked at every entry's keys and stewardship (`upkeep`), so that it looks at
-/// those entries alone, not at each of a server's thousands every turn: the entries the edits it took since are of, those
-/// it opened bodies or took keys of, and those shown anew. Where anything but an entry's changed since (an edit of a
-/// vault, a share, an audience or no log, a removal, an edit let go, a key of more than an entry, a selector opened,
-/// the cap groups or the lanes, an entry's base), or an entry changed that is a cap group or holds a schema or a lens,
-/// it looks at every entry again. A debug build checks each entry it leaves out calls for nothing.
+/// those entries alone, not at each of a server's thousands every turn: the entries the edits it took since are of,
+/// those it opened bodies or took keys of, and those shown anew, a move of one among them. Where anything but an
+/// entry's changed since (an edit of a vault, a share, an audience or no log, a removal but a move, an edit let go, a
+/// key of more than an entry, a selector opened, the cap groups or the lanes, an entry's base), or an entry changed
+/// that is a cap group or holds a schema or a lens, it looks at every entry again. A debug build checks each entry it
+/// leaves out calls for nothing.
 #[derive(Default)]
 struct UpkeepDue {
     /// The entries shown anew, and those a showing left to show when it last looked.
@@ -6675,9 +6676,13 @@ impl UpkeepDue {
         }
         let mut due = self.entries.clone();
         due.extend(store.keys.entries_keyed.iter().copied());
+        // a move is a removal of its entry's log alone: it takes its entry to another audience, which only that
+        // entry's keys and writes read (`V3_move_steps_on`); an audience key it brings back into use is a family's,
+        // which the upkeep makes whatever its scope
+        let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
         for (edit, place) in log.edits()[*len..].iter().zip(&log.logs()[*len..]) {
             match place {
-                Some(crate::sync::LogId::Entry(e)) if !edit.is_removal() => {
+                Some(crate::sync::LogId::Entry(e)) if !edit.is_removal() || moving(edit) => {
                     due.insert(*e);
                 }
                 _ => return None,
