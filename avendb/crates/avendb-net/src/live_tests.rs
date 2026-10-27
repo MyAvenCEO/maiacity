@@ -472,10 +472,11 @@ async fn every_read_is_offline_behind_or_current_as_its_peers_say() {
     phone.shutdown().await.unwrap();
 }
 
-/// Gate G4 (batch 5): a chat round trip while a bulk catch-up runs, in process over the PQ transport, no server. The
-/// phone lacks `BULK` notes the Mac wrote; once it has taken some of them, the Mac edits a chat entry both hold,
-/// `MESSAGES` times, and each time waits until the phone's view shows the new text. Prints `CHAT_DURING_CATCH_UP`
-/// with p50/p95 and the phone's pulls from the Mac that brought nothing new (F12's duplicates).
+/// A chat round trip while a bulk catch-up runs (F2/F5), in process over the PQ transport, no server: the phone lacks
+/// `BULK` notes the Mac wrote; once it has taken some of them, the Mac edits a chat entry both hold, `MESSAGES` times,
+/// and each time waits until the phone's view shows the new text. 5505538 (the live view draining the whole catch-up):
+/// p95 2,970 ms; with `LIVE_VIEW`, ten runs 128-298 ms. The batch's gate is sync_bench's `bench_live`; this one asserts
+/// with room for loaded runners, and that no page from the Mac came back with nothing new (F12).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn chat_reaches_the_phone_quickly_while_it_catches_up() {
     const BULK: usize = 1500;
@@ -532,6 +533,8 @@ async fn chat_reaches_the_phone_quickly_while_it_catches_up() {
         "bulk": BULK, "messages": MESSAGES, "p50_ms": at(0.5), "p95_ms": at(0.95), "max_ms": at(1.0),
         "notes_left_at_end": behind, "duplicate_pages": empty, "live_ends": live["ends"], "traced_taken": traced,
     }));
+    assert!(at(0.95) < 1000.0, "a chat message shows within a second while the phone catches up: p95 {} ms", at(0.95));
+    assert_eq!(empty, 0, "no page from the Mac brought only what the phone held");
     mac.shutdown().await.unwrap();
     phone.shutdown().await.unwrap();
 }
