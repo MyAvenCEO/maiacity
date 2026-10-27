@@ -19,7 +19,7 @@ fn forward(from: PacketTransport, to: PacketTransport, theirs: RouteId) -> tokio
 async fn authenticated_sync_over_fragmented_carrier_without_ip_or_relay() {
     // The cast's keys are made before the deadline starts: on a loaded runner they alone took ~39 s (2026-10-27).
     // The deadline is a hang guard (nextest stops a test after 6 minutes anyway): with the keys out of it, the same
-    // sync over WebTransport still ran past 35 s as the last test of a loaded shard on 2026-10-27 10:33 UTC.
+    // two-node sync over WebTransport (webtransport.rs) still ran past 35 s on a loaded shard on 2026-10-27 10:33 UTC.
     let mut w = world(); let coop = handbook_ready(&mut w);
     tokio::time::timeout(Duration::from_secs(90), async {
         let (a, b, ka, kb) = (w.mac_a, w.mac_b, w.passkey_a, w.passkey_b);
