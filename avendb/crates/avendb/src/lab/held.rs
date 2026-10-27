@@ -591,7 +591,7 @@ mod tests {
         fs::remove_dir_all(spill.dir()).ok();
     }
 
-    /// What a spill holds in memory is flat: as much at a million keys as at 100,000 (run by hand, `--ignored`: it
+    /// What a spill holds in memory is flat: as much at a million keys as at 100,000 (measured 4.80 MB, then 4.83) (run by hand, `--ignored`: it
     /// writes about 200 MB to its folder).
     #[test]
     #[ignore]
@@ -611,7 +611,7 @@ mod tests {
         }
         eprintln!("MEMORY {at:?}");
         assert_eq!(keys.len(), 1_000_000);
-        assert!(at[1].0 <= at[0].0 + at[0].0 / 2 + (2 << 20), "{at:?}");
+        assert!(at[1].0 <= at[0].0 + (256 << 10), "{at:?}");
         fs::remove_dir_all(spill.dir()).ok();
     }
 

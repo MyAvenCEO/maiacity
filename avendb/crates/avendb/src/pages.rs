@@ -9,7 +9,8 @@
 //!   the rest trees of pages written once, a level each, every level `GROW` times the one above it at most, merged
 //!   into the next as it fills. A row is written again once a level, a few times in all whatever the history, not once
 //!   a batch as a tree changed in place would be (Samuel's flat cost per edit). Each run keeps a Bloom filter of its
-//!   keys in memory, 10 bits a row, so a look for a key no run holds, as a new edit's, reads no page. S7's spill holds
+//!   keys beside its pages, 10 bits a row, so a look for a key no run holds, as a new edit's, reads 64 bytes of each
+//!   run's filter and no page. S7's spill holds
 //!   the index of what it spilled this way (`lab::held`).
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -320,59 +321,111 @@ fn hex(hash: &Sum) -> String {
     hash.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// A Bloom filter of a run's keys, `BITS` bits a key, `PROBES` probes: a key it says no to the run doesn't hold, so a
-/// look for a key a store doesn't hold, as each new edit's, reads no page (one in a hundred does, about).
+/// A Bloom filter of a run's keys, `BITS` bits a key, in blocks of 448 bits and an 8-byte check of them (so a block
+/// changed in its folder is never read as another, as with a page), each key's `PROBES` probes in one block:
+/// a key it says no to the run doesn't hold, so a look for a key a store doesn't hold, as each new edit's, reads no
+/// page (one in a hundred does, about). It is made in memory as its run is written, then kept in the run's folder, so
+/// each look reads one block of 64 bytes of it, and memory holds none of it once the run is written.
 struct Bloom {
-    bits: Vec<u64>,
+    blocks: Vec<[u64; 7]>,
 }
 
 const BITS: usize = 10;
 const PROBES: u64 = 7;
+/// The bytes of a block, and the bits of it a filter sets.
+const BLOCK: usize = 64;
+const BLOCK_BITS: usize = 448;
+
+/// The check of block `n`'s bits.
+fn block_check(n: u64, bits: &[u8]) -> [u8; 8] {
+    let mut h = blake3::Hasher::new();
+    h.update(b"avenDB bloom block\n");
+    h.update(&n.to_be_bytes());
+    h.update(bits);
+    h.finalize().as_bytes()[..8].try_into().expect("8 bytes")
+}
+
+/// The block of `key` among `blocks`, and its probes there.
+fn probes(key: &[u8], blocks: u64) -> (u64, impl Iterator<Item = usize>) {
+    // FNV-1a, then two halves stirred apart: the keys are a store's own, not chosen to collide
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in key {
+        h = (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3);
+    }
+    let mix = |mut z: u64| {
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    };
+    let (a, b) = (mix(h), mix(h ^ 0x9e37_79b9_7f4a_7c15));
+    let (c, d) = ((b & 0xffff_ffff) as usize, ((b >> 32) | 1) as usize);
+    (a % blocks, (0..PROBES as usize).map(move |i| c.wrapping_add(i.wrapping_mul(d)) % BLOCK_BITS))
+}
 
 impl Bloom {
     fn new(keys: u64) -> Bloom {
-        Bloom {
-            bits: vec![0; (keys as usize * BITS).div_ceil(64).max(1)],
-        }
-    }
-
-    fn probes(&self, key: &[u8]) -> impl Iterator<Item = usize> + use<> {
-        // FNV-1a, then two halves stirred apart for double hashing: the keys are a store's own, not chosen to collide
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        for b in key {
-            h = (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3);
-        }
-        let mix = |mut z: u64| {
-            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-            z ^ (z >> 31)
-        };
-        let (a, b) = (mix(h), mix(h ^ 0x9e37_79b9_7f4a_7c15) | 1);
-        let m = self.bits.len() as u64 * 64;
-        (0..PROBES).map(move |i| (a.wrapping_add(i.wrapping_mul(b)) % m) as usize)
+        Bloom { blocks: vec![[0; 7]; (keys as usize * BITS).div_ceil(BLOCK_BITS).max(1)] }
     }
 
     fn add(&mut self, key: &[u8]) {
-        for p in self.probes(key) {
-            self.bits[p / 64] |= 1 << (p % 64);
+        let (block, bits) = probes(key, self.blocks.len() as u64);
+        let block = &mut self.blocks[block as usize];
+        for p in bits {
+            block[p / 64] |= 1 << (p % 64);
         }
     }
 
-    fn may_hold(&self, key: &[u8]) -> bool {
-        self.probes(key)
-            .all(|p| self.bits[p / 64] & (1 << (p % 64)) != 0)
+    fn to_bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(self.blocks.len() * BLOCK);
+        for (n, block) in self.blocks.iter().enumerate() {
+            let bits: Vec<u8> = block.iter().flat_map(|w| w.to_le_bytes()).collect();
+            out.extend_from_slice(&bits);
+            out.extend_from_slice(&block_check(n as u64, &bits));
+        }
+        out
     }
 }
 
+/// A run's Bloom filter in its folder, read a block at a time.
+struct Blooms {
+    file: fs::File,
+    blocks: u64,
+}
+
+impl Blooms {
+    fn may_hold(&self, key: &[u8]) -> io::Result<bool> {
+        let (block, bits) = probes(key, self.blocks);
+        let mut bytes = [0u8; BLOCK];
+        read_at(&self.file, &mut bytes, block * BLOCK as u64)?;
+        if bytes[56..] != block_check(block, &bytes[..56]) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "a Bloom filter changed in its folder"));
+        }
+        Ok(bits.into_iter().all(|p| bytes[p / 8] & (1 << (p % 8)) != 0))
+    }
+}
+
+#[cfg(unix)]
+fn read_at(file: &fs::File, bytes: &mut [u8], at: u64) -> io::Result<()> {
+    std::os::unix::fs::FileExt::read_exact_at(file, bytes, at)
+}
+
+#[cfg(not(unix))]
+fn read_at(file: &fs::File, bytes: &mut [u8], at: u64) -> io::Result<()> {
+    use std::io::{Read as _, Seek as _, SeekFrom};
+    let mut file = file.try_clone()?;
+    file.seek(SeekFrom::Start(at))?;
+    file.read_exact(bytes)
+}
+
 /// A run: a tree of pages written once, in a folder of its own, removed once nothing names it, with the Bloom filter
-/// of its keys in memory, `BITS` bits a row.
+/// of its keys beside them, `BITS` bits a row.
 pub struct Run {
     folder: Arc<Folder>,
     n: u64,
     root: Option<Sum>,
     /// How many rows it holds, tombstones among them.
     count: u64,
-    bloom: Bloom,
+    bloom: Blooms,
 }
 
 impl Drop for Run {
@@ -412,6 +465,9 @@ impl Run {
         for (hash, bytes) in pages {
             write(&hash, &bytes)?;
         }
+        let path = dir.join("bloom");
+        fs::write(&path, bloom.to_bytes())?;
+        let bloom = Blooms { file: fs::File::open(&path)?, blocks: bloom.blocks.len() as u64 };
         Ok(Run {
             folder: folder.clone(),
             n,
@@ -425,7 +481,7 @@ impl Run {
         let Some(mut hash) = self.root else {
             return Ok(None);
         };
-        if !self.bloom.may_hold(key) {
+        if !self.bloom.may_hold(key)? {
             return Ok(None);
         }
         loop {
@@ -568,18 +624,11 @@ impl Runs {
 
     /// The bytes it holds in memory beside the pages of its folder, about.
     pub fn memory(&self) -> usize {
-        let blooms: usize = self
-            .levels
-            .iter()
-            .flatten()
-            .map(|r| r.bloom.bits.len() * 8)
-            .sum();
         self.delta
             .iter()
             .map(|(k, v)| 64 + k.len() + v.as_ref().map_or(0, Vec::len))
             .sum::<usize>()
             + self.levels.len() * 64
-            + blooms
     }
 
     /// The rows of each level, the newest first.
@@ -784,9 +833,9 @@ mod tests {
             "{levels:?}"
         );
         assert!(folder.memory() <= (256 << 10) + MOST * 128);
-        // the changes in memory, and a Bloom filter of 10 bits a row
+        // the changes in memory alone: the runs' pages and Bloom filters are in the folder
         assert!(
-            runs.memory() < (200 << 10) + 200_000 * 10 / 8 + 4096,
+            runs.memory() < 200 << 10,
             "{}",
             runs.memory()
         );
@@ -815,7 +864,17 @@ mod tests {
             .unwrap()
             .unwrap()
             .path();
-        let file = fs::read_dir(&page).unwrap().next().unwrap().unwrap().path();
+        let file = fs::read_dir(&page)
+            .unwrap()
+            .map(|f| f.unwrap().path())
+            .find(|p| !p.ends_with("bloom"))
+            .unwrap();
+        // a Bloom filter changed is refused as well
+        let bloom = page.join("bloom");
+        let held = fs::read(&bloom).unwrap();
+        fs::write(&bloom, vec![0xff; held.len()]).unwrap();
+        assert_eq!(runs.get(&0u32.to_be_bytes()).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        fs::write(&bloom, held).unwrap();
         fs::write(&file, b"avenDB index page 1\nother bytes").unwrap();
         folder.cache.lock().unwrap().at.clear();
         assert_eq!(
