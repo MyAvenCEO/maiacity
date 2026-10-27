@@ -31,71 +31,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # A fixed matrix (scripts/ci/test.mjs matrix(), held to it by impact.test.mjs), so no selection job runs first: each
-  # job asks whether its suite is selected (scripts/ci/test.mjs --entry) and runs nothing when it is not, or when its
-  # pass marker (scripts/ci/passes.mjs, pull requests only) says it passed on this PR with these same files
-  application:
-    name: Application tests (${{ matrix.label }})
+  selection:
+    name: Select affected application suites
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { suite: assets, shard: '', label: assets }
-          - { suite: studio, shard: '', label: studio }
-          - { suite: games, shard: '', label: games }
-          - { suite: physics, shard: 1/5, label: physics 1/5 }
-          - { suite: physics, shard: 2/5, label: physics 2/5 }
-          - { suite: physics, shard: 3/5, label: physics 3/5 }
-          - { suite: physics, shard: 4/5, label: physics 4/5 }
-          - { suite: physics, shard: 5/5, label: physics 5/5 }
-          - { suite: application, shard: '', label: application }
+    outputs:
+      suites: ${{ steps.select.outputs.suites }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
-      - id: entry
+      - id: select
         env:
           FORCE_FULL: ${{ inputs.full || false }}
           CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           CI_HEAD: ${{ github.sha }}
-          SUITE: ${{ matrix.suite }}
-          SHARD: ${{ matrix.shard }}
         run: |
           if [ "$FORCE_FULL" = true ]; then unset CI_BASE; fi
-          bun scripts/ci/test.mjs --entry "$SUITE" --shard "$SHARD"
-      - if: steps.entry.outputs.selected != 'true'
-        run: echo "::notice::${{ matrix.label }} is not affected by this change"
+          bun scripts/ci/test.mjs --matrix
+
+  application:
+    name: Application tests (${{ matrix.label }})
+    needs: selection
+    if: needs.selection.outputs.suites != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.selection.outputs.suites) }}
+    steps:
+      # its pass marker (scripts/ci/passes.mjs, pull requests only): passed on this PR with the same files, it runs nothing
       - id: pass
-        if: steps.entry.outputs.selected == 'true' && github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request'
         uses: actions/cache/restore@v6.1.0
         with:
           path: .pass
-          key: ${{ steps.entry.outputs.key }}
+          key: ${{ matrix.key }}
           lookup-only: true
       - if: steps.pass.outputs.cache-hit == 'true'
         run: echo "::notice::${{ matrix.label }} passed before on this PR with these same files"
-      - id: run
-        if: steps.entry.outputs.selected == 'true' && steps.pass.outputs.cache-hit != 'true'
-        run: echo run=true >> "$GITHUB_OUTPUT"
-      - if: steps.run.outputs.run == 'true'
+      - if: steps.pass.outputs.cache-hit != 'true'
+        uses: actions/checkout@v7.0.1
+      - if: steps.pass.outputs.cache-hit != 'true'
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - if: steps.pass.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
-      - if: steps.run.outputs.run == 'true'
+      - if: steps.pass.outputs.cache-hit != 'true'
         run: bunx --bun svelte-kit sync
-      - if: steps.run.outputs.run == 'true'
+      - if: steps.pass.outputs.cache-hit != 'true'
         env:
           SUITE: ${{ matrix.suite }}
           SHARD: ${{ matrix.shard }}
         run: bun scripts/ci/test.mjs --suite "$SUITE" --shard "$SHARD"
-      - if: github.event_name == 'pull_request' && steps.run.outputs.run == 'true'
+      - if: github.event_name == 'pull_request' && steps.pass.outputs.cache-hit != 'true'
         run: echo passed > .pass
-      - if: github.event_name == 'pull_request' && steps.run.outputs.run == 'true'
+      - if: github.event_name == 'pull_request' && steps.pass.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: .pass
-          key: ${{ steps.entry.outputs.key }}
+          key: ${{ matrix.key }}
 
   tests:
     name: The kernel’s tests
@@ -169,13 +166,16 @@ jobs:
 
       - run: bun scripts/probes.mjs
 
+  # the probes and the OPFS reopen in one WebKit job: the probes keep their pinned engine (the image's, of package.json's
+  # Playwright); the OPFS test drives a newer WebKit, as older Playwright WebKit lacks persistent-context OPFS (upstream
+  # #41984), fetched beside it into its own folder
   probes-webkit:
     name: Every way out, tried in WebKit
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.56.1-noble
       options: --ipc=host
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -190,31 +190,25 @@ jobs:
       # the probes as in Chromium; a way out WebKit itself lacks is named in the log, refused and green
       - run: bun scripts/probes.mjs --browser webkit
 
-  opfs-webkit:
-    name: Derived views survive WebKit OPFS reopen
-    runs-on: ubuntu-latest
-    # Older Playwright WebKit lacks persistent-context OPFS (upstream #41984).
-    # Isolate this test runtime; existing security probes retain their pinned engine.
-    container:
-      image: mcr.microsoft.com/playwright:v1.64.1-noble
-      options: --ipc=host
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - run: npm install -g "bun@$(cat .bun-version)"
-      - run: mkdir -p "$RUNNER_TEMP/avendb-opfs" && bun add --cwd "$RUNNER_TEMP/avendb-opfs" --ignore-scripts --exact playwright@1.64.1
-      - run: AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" bun scripts/test-avendb-store.mjs --browser webkit
+      - name: Derived views survive WebKit OPFS reopen
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/avendb-opfs/browsers
+        run: |
+          mkdir -p "$RUNNER_TEMP/avendb-opfs" && bun add --cwd "$RUNNER_TEMP/avendb-opfs" --ignore-scripts --exact playwright@1.64.1
+          node "$RUNNER_TEMP/avendb-opfs/node_modules/playwright/cli.js" install webkit
+          AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" bun scripts/test-avendb-store.mjs --browser webkit
 
   required:
     name: Kernel required checks
     if: ${{ always() }}
-    needs: [tests, application, probes, probes-webkit, opfs-webkit]
+    needs: [selection, tests, application, probes, probes-webkit]
     runs-on: ubuntu-latest
     steps:
       - env:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           printf '%s' "$RESULTS" | jq -e '
-            .tests.result == "success" and
+            .selection.result == "success" and .tests.result == "success" and
             .probes.result == "success" and .["probes-webkit"].result == "success" and
-            .["opfs-webkit"].result == "success" and .application.result == "success"'
+            (.application.result == "success" or
+             (.selection.outputs.suites == "[]" and .application.result == "skipped"))'
