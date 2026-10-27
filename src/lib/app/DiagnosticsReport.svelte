@@ -1,54 +1,58 @@
 <!--
-	The diagnostics report: one report for startup, unlock, restarts, sync, responsiveness and connection speed, run and
-	copied from here. The Performance page shows it once the vault is open (Samuel 2026-10-26: the top-left button folded
-	into Performance), as a bar (`bar`) whose copy takes the whole page too (`extra`) and whose results the page shows in
-	its sections (`onreport`); before unlock, ./Diagnostics.svelte opens it in a dialog. It captures every 5 s while `active`.
+	The diagnostics report on the Performance page: one report for startup, unlock, restarts, sync, responsiveness and
+	connection speed. Nobody runs or copies it (Samuel 2026-10-27: "you fully automated this anyhow"): the checks run as
+	the page opens, at most once each `EVERY`, the report with the whole page (`extra`) goes to the server for its person
+	(./diagnostics-send.js), and the page shows the results in its sections (`onreport`). It captures every 5 s while
+	`active`.
 -->
 <script lang="ts">
- import { onMount, tick } from 'svelte';
+ import { onMount, untrack } from 'svelte';
  import { session } from '$lib/avendb/session.svelte.js';
  import { reactiveObservation } from '$lib/avendb/reactive-observation.js';
  import { createDiagnosticRunner } from '$lib/avendb/diagnostics-report.js';
  import { runNetworkDiagnostics } from '$lib/avendb/network-diagnostics.js';
  import { keepReports, sendReport, snapshot } from '$lib/avendb/diagnostics-send.js';
- let { active = true, bar = false, extra, onreport }: { active?: boolean, bar?: boolean, extra?: () => object, onreport?: (report: any) => void } = $props();
- let fallback = $state<HTMLTextAreaElement>();
+ let { active = true, extra, onreport }: { active?: boolean, extra?: () => object, onreport?: (report: any) => void } = $props();
+ /** the least time between two runs of the checks, which take up to 13 MiB of the connection (ms) */
+ const EVERY = 10 * 60_000;
+ /** where this browser keeps when it last ran them */
+ const LAST = 'maia:diagnostics:ran';
  let runner: ReturnType<typeof createDiagnosticRunner> | undefined;
  let capturesRemaining = 0;
  let mounted = $state(false);
- let running = $state(false), copied = $state(''), showText = $state(false), logs = $state('');
- let status = $state('Ready. Retained startup and restart details are included automatically.');
+ let running = $state(false);
+ let status = $state('');
+ const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+ const lastRun = () => { try { return Number(localStorage.getItem(LAST)) || 0; } catch { return 0; } };
  function refresh() {
-  if (!runner) return;
+  if (!runner) return null;
   const report = runner.snapshot();
   onreport?.(report);
-  logs = JSON.stringify(extra ? { ...extra(), diagnostics: report } : report, null, 2);
+  return extra ? { ...extra(), diagnostics: report } : report;
  }
  async function run() {
   if (!runner || running) return;
-  running = true; copied = ''; showText = false;
+  running = true;
   status = 'Running device, sync and connection checks…';
-  try { await runner.run(); status = 'Checks captured. Copy logs to share this report. Missing measurements are marked unavailable.'; }
-  catch { status = 'Some checks could not finish. Copy logs includes the available evidence.'; }
-  finally { running = false; refresh(); }
-  // the report goes to the server for its person, where it is read without copying it (./diagnostics-send.js)
-  if (session.phase === 'open') {
-   const sent = await sendReport({ page: bar ? 'performance' : 'dialog', ...JSON.parse(logs) }).catch(() => false);
-   status = sent ? 'Checks captured and sent: it can be read without copying it.' : `${status} It could not be sent to the server.`;
-   void keepReports();
-  }
+  try { localStorage.setItem(LAST, String(Date.now())); } catch { /* private mode: runs on each open */ }
+  let done = true;
+  try { await runner.run(); } catch { done = false; }
+  finally { running = false; }
+  const report = refresh();
+  const sent = session.phase === 'open' && report ? await sendReport({ page: 'performance', ...report }).catch(() => false) : false;
+  if (sent) void keepReports();
+  status = `${done ? 'Checks ran' : 'Some checks could not finish'} at ${clock(Date.now())}${sent ? ', report sent.' : ', not sent.'}`;
  }
- async function copy() {
-  // Keep clipboard.writeText inside the click's activation on iOS.
-  refresh();
-  try { await navigator.clipboard.writeText(logs); copied = 'Logs copied.'; }
-  catch { showText = true; copied = 'Clipboard unavailable. The report is selected below for copying.'; await tick(); fallback?.focus(); fallback?.select(); }
- }
- // each time it becomes active: a fresh report and two minutes of captures; inactive, whatever runs is cancelled
+ // each time it becomes active: a fresh report, two minutes of captures, and the checks if they are due
  $effect(() => {
   if (!mounted) return;
   if (!active) { runner?.cancel(); return; }
-  refresh(); capturesRemaining = 24; void runner?.capture();
+  untrack(() => {
+   refresh(); capturesRemaining = 24; void runner?.capture();
+   const last = lastRun();
+   if (Date.now() - last >= EVERY) void run();
+   else status = `Checks ran at ${clock(last)}; next after ${clock(last + EVERY)}.`;
+  });
  });
  onMount(() => {
   runner = createDiagnosticRunner({ ask: (op: object) => session.ask(op), currentOwner: () => session.device, isOpen: () => session.phase === 'open', snapshot,
@@ -64,19 +68,8 @@
  });
 </script>
 
-{#if !bar}<p>One report for startup, unlock, restarts, sync, responsiveness and connection speed. Available before and after unlock.</p>{/if}
-<div class="actions">
- <button class="btn" data-pick onclick={run} disabled={running}>{running ? 'Running diagnostics…' : 'Run diagnostics'}</button>
- <button class="btn" onclick={copy}>{bar ? 'Copy all' : 'Copy logs'}</button>
-</div>
-<p role="status" aria-live="polite">{copied || status}</p>
-{#if !bar}<p class="note">Keep the app open for up to 45 seconds. Connection checks use up to 13 MiB plus a small release lookup, through Maia City and Cloudflare. No messages or other account entries are created.</p>
-<p class="note">For cross-device timing, run diagnostics on both devices, then make an ordinary edit. Compatible peers observe delivery for two minutes. No sample means unmeasured, not instant delivery.</p>{/if}
-{#if showText}<textarea bind:this={fallback} aria-label="Diagnostic logs" readonly value={logs} rows="10"></textarea>{/if}
+<p role="status" aria-live="polite">{status}</p>
 
 <style>
- .actions { display: flex; gap: .75rem; flex-wrap: wrap; }
- button:disabled { opacity: .6; cursor: default; }
- p { line-height: 1.5; } .note { font-size: .85rem; opacity: .85; }
- textarea { box-sizing: border-box; width: 100%; font-size: .75rem; }
+ p { line-height: 1.5; margin: 0; }
 </style>

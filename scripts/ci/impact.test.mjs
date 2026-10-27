@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { impact } from './impact.mjs';
-import { inventory, selected, partition, matrix, keyed } from './test.mjs';
+import { inventory, selected, partition, matrix, keyed, suites } from './test.mjs';
 test('a missing comparison or an unknown build input selects all release checks',()=>{
  expect(Object.values(impact(null)).every(Boolean)).toBe(true);
  expect(Object.values(impact(['unexpected-build-input'])).every(Boolean)).toBe(true);
@@ -31,7 +31,8 @@ test('no new JS test can silently fall outside CI ownership',()=>{
  expect(Object.values(inventory()).flat().length).toBeGreaterThan(160);
 });
 test('shared build changes select every suite; targeted changes retain security',()=>{
- expect(selected(['bun.lock'])).toContain('physics');
+ expect(selected(['bun.lock'])).toContain('assets');
+ expect(selected(['bun.lock'])).not.toContain('physics');
  expect(selected(['src/lib/studio/jobs/jobs.js'])).toContain('studio');
  expect(selected(['src/lib/studio/jobs/jobs.js'])).toContain('security');
 });
@@ -65,12 +66,13 @@ test('the actual aggregate rejects missing, skipped and failed required jobs', (
  cases.push({data:{...results, frontend:{result:'skipped'}},expected:true});
  // a job skipped by its pass marker counts as passed; by another's marker, or with a marker that did not pass, it does not
  const marker = { tests:'tests', image:'image', spec:'spec', 'real-browser':'browser', protocol:'protocol' };
+ const passed = (key, value) => ({...results.impact, outputs:{...results.impact.outputs, ['pass_'+key]:value}});
  for (const [name, key] of Object.entries(marker)) {
-  cases.push({data:{...results,[name]:{result:'skipped'},passes:{result:'success',outputs:{[key]:'true'}}},expected:true});
-  cases.push({data:{...results,[name]:{result:'skipped'},passes:{result:'success',outputs:{[key]:'false'}}},expected:false});
-  cases.push({data:{...results,[name]:{result:'skipped'},passes:{result:'success',outputs:{[key==='tests'?'spec':'tests']:'true'}}},expected:false});
+  cases.push({data:{...results,[name]:{result:'skipped'},impact:passed(key,'true')},expected:true});
+  cases.push({data:{...results,[name]:{result:'skipped'},impact:passed(key,'false')},expected:false});
+  cases.push({data:{...results,[name]:{result:'skipped'},impact:passed(key==='tests'?'spec':'tests','true')},expected:false});
  }
- cases.push({data:{...results,tests:{result:'skipped'},passes:{result:'failure',outputs:{tests:'true'}}},expected:false});
+ cases.push({data:{...results,tests:{result:'skipped'},impact:{...passed('tests','true'),result:'failure'}},expected:false});
  // the server's image is expected only when its build inputs changed
  cases.push({data:{...results,image:{result:'skipped'},impact:{...results.impact,outputs:{...results.impact.outputs,image:'false'}}},expected:true});
  const run = spawnSync('jq', ['-c',expression], { input:cases.map(c=>JSON.stringify(c.data)).join('\n'), encoding:'utf8', env:{ ...process.env, PR:'true', DRAFT:'false', FRONTEND:'false', BROWSER_ONLY:'false', BROWSER:'false', PROTOCOL:'false' } });
@@ -87,10 +89,12 @@ test('Bun package and container versions follow the pinned toolchain', () => {
 test('kernel aggregate requires every selected application and security job', () => {
  const workflow=readFileSync('.github/workflows/kernel.yml','utf8');
  const expression=workflow.slice(workflow.indexOf('    name: Kernel required checks')).match(/jq -e '([\s\S]*?)'/)[1];
- const names=['tests','application','probes','probes-webkit','opfs-webkit'];
+ const names=['selection','tests','application','probes','probes-webkit'];
  const results=Object.fromEntries(names.map(name=>[name,{result:'success'}]));
+ results.selection.outputs={suites:'["physics"]'};
  const cases=[{data:results,expected:true}];
  for(const name of names) for(const result of ['failure','cancelled','skipped']) cases.push({data:{...results,[name]:{...results[name],result}},expected:false});
+ cases.push({data:{...results,selection:{result:'success',outputs:{suites:'[]'}},application:{result:'skipped'}},expected:true});
  const run=spawnSync('jq',['-c',expression],{input:cases.map(c=>JSON.stringify(c.data)).join('\n'),encoding:'utf8'});
  expect(run.status).toBe(0);
  expect(run.stdout.trim().split('\n').map(JSON.parse)).toEqual(cases.map(c=>c.expected));
@@ -176,7 +180,7 @@ test('a workflow edit selects what that workflow checks; a release workflow or a
  for (const f of ['.github/workflows/main.yml','.github/workflows/deploy.yml','.github/workflows/new.yml','.github/actions/prod-ssh/action.yml'])
   expect(Object.values(impact([f])).every(Boolean)).toBe(true);
  expect(selected(['.github/workflows/mac.yml'])).toEqual(['security','ci']);
- expect(selected(['.github/workflows/kernel.yml'])).toContain('physics');
+ expect(selected(['.github/workflows/kernel.yml'])).toContain('assets');
 });
 
 test('the server image builds on a PR only when its build reads something new', () => {
@@ -191,8 +195,6 @@ test('each Playwright image is the Playwright its job drives', () => {
  const kernel=readFileSync('.github/workflows/kernel.yml','utf8');
  const jobs=kernel.split(/\n  (?=[a-z-]+:\n)/);
  for (const name of ['probes','probes-webkit']) expect(jobs.find(j=>j.startsWith(name+':'))).toContain(`mcr.microsoft.com/playwright:v${version}-noble`);
- const opfs=jobs.find(j=>j.startsWith('opfs-webkit:'));
- expect(opfs).toContain(`playwright:v${opfs.match(/playwright@(\d+\.\d+\.\d+)/)[1]}-noble`);
 });
 import { reusable } from './reuse.mjs';
 function github({ parents = ['p'], tree = 't', headTree = 't', pulls, compare = 'ahead', runs }) {
@@ -237,9 +239,8 @@ test('a run still going on the same files is waited for, never taken as passed',
  expect(await reusable({ api: gh.api, repo: 'o/r', sha: 'm', base: 'p', wait: 60000, sleep: async () => {} })).toEqual({ kernel: true, avendb: true });
  expect(await ask(github({ runs: [run('kernel.yml', null, { status: 'in_progress' })] }))).toEqual({ kernel: false, avendb: false });
 });
-test('kernel.yml\'s fixed application matrix is every application job test.mjs knows',()=>{
- const workflow=readFileSync('.github/workflows/kernel.yml','utf8');
- const listed=[...workflow.matchAll(/- \{ suite: ([\w-]+), shard: '?([\d/]*)'?, label: ([^}]+?) \}/g)].map(m=>({suite:m[1],shard:m[2],label:m[3]}));
- const names=JSON.parse(readFileSync('scripts/ci/suites.json','utf8')).map(s=>s.name);
- expect(listed).toEqual(matrix(names));
+test('a suite marked off is never selected, not even by its own files or a full run', () => {
+ expect(suites.find(s=>s.name==='physics').off).toBeTruthy();
+ for (const run of [selected(['src/lib/sandbox-7/shed.ts']), selected(null), selected([], 'all')]) expect(run).not.toContain('physics');
+ expect(inventory().physics.length).toBeGreaterThan(0);
 });

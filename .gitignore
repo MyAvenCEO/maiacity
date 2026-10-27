@@ -9,6 +9,7 @@ node_modules
 /build
 /vault/target/
 /avendb/target/
+/avendb/target-wasm/
 /vault/app/gen/
 # Leftover generated sidecars from older app builds
 /vault/app/binaries/

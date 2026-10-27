@@ -20,7 +20,6 @@
 	import { claimInvite, failure, later, open, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
-	import Diagnostics from '$lib/app/Diagnostics.svelte';
 	import { sendEvery, viewChanged } from '$lib/avendb/diagnostics-send.js';
 	import ScreenChrome from '$lib/app/ScreenChrome.svelte';
 	import { lifecycle, noteLifecycle } from '$lib/avendb/lifecycle.js';
@@ -346,8 +345,6 @@
 </svelte:head>
 
 <ScreenChrome nativeWindow={native()} title={game?.label ?? 'Maia City'} />
-<!-- once the vault is open, diagnostics live on the Performance page ($lib/avendb/Performance.svelte) -->
-{#if phase !== 'ready'}<Diagnostics />{/if}
 
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
 {#if !(phase === 'ready' && immersive && !closed)}<div class="status-strip" aria-hidden="true"></div>{/if}

@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS
 // A device's diagnostics, sent to avenDB's server for its person alone (Samuel 2026-10-26: "I don't want to copy paste
 // anything"): every few minutes while the vault is open, and after each Run checks, by a pass this device signs for
-// "avenDB diagnostics" (`POST /feed/diagnostics`, avendb-server's reports.rs). What goes is what Copy logs copies:
+// "avenDB diagnostics" (`POST /feed/diagnostics`, avendb-server's reports.rs). What goes is the page's whole report:
 // timings, counts, short ids, never an entry's contents; and the view it was on, its path and page alone (`view`), never
 // a query, and a short one ~10 s after the person opens another view (`viewChanged`), so each view's wait is seen. In theOS the Mac also reads its person's back, every device's,
 // and keeps each as a file in ~/Library/Logs/TheOS/diagnostics (vault/app's `diagnostics_keep`), where they are read.
@@ -34,7 +34,7 @@ export function deviceKind() {
 	return /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (/Mac/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad' : /Mac/.test(ua) ? 'Mac' : 'other';
 }
 
-/** The page's diagnostics now, as Copy logs copies them without a run. */
+/** The page's diagnostics now, without a run of the checks. */
 export function snapshot() {
 	latencyJournal.flush();
 	return {

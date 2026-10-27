@@ -376,7 +376,6 @@ img {
 }
 .screen-chrome.native-window { padding-top: max(28px, env(safe-area-inset-top, 0px)); }
 .screen-leading { display: flex; align-items: center; gap: .4rem; min-width: 0; }
-.screen-diagnostics { flex: none; }
 .screen-titles { min-width: 0; }
 .screen-title-slot:empty { display: none; }
 .screen-title-slot:not(:empty) + .screen-title-fallback { display: none; }

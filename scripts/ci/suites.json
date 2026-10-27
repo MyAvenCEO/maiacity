@@ -117,6 +117,7 @@
   {
     "name": "physics",
     "tier": "targeted",
+    "off": "Samuel 2026-10-27: Sandbox 7's physics does not run in CI for now; its tests stay, run them with bun scripts/ci/test.mjs --suite physics",
     "paths": [
       "src/lib/sandbox-7/"
     ],
