@@ -266,11 +266,58 @@ impl Cache {
     }
 }
 
-/// A folder of pages, each run's in a folder of its own (`Run`), with the pages it read lately (`Cache`). It is a
-/// node's own, of this process alone: it starts empty, and holds nothing anyone reads after it stops.
+/// Where a store keeps its pages, read and written as it goes, with no waiting: a folder of files on a machine, or one
+/// space it appends to, as a page's file in OPFS that its worker reads and writes in place (`Space`).
+#[derive(Debug)]
+enum Store {
+    Dir(PathBuf),
+    Arena(Arc<dyn Space>),
+}
+
+/// A space of bytes a store appends to and reads back at once, as a page's worker does with an OPFS file it holds open
+/// (`FileSystemSyncAccessHandle`), where a folder of files that come and go can't be: what it appended stays till the
+/// space goes, read at the place `append` gave.
+pub trait Space: Send + Sync + std::fmt::Debug {
+    /// Appends `bytes`: where they start.
+    fn append(&self, bytes: &[u8]) -> io::Result<u64>;
+    /// Fills `bytes` from place `at`.
+    fn read_at(&self, at: u64, bytes: &mut [u8]) -> io::Result<()>;
+    /// The bytes it holds.
+    fn len(&self) -> u64;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// A space in memory, for tests of what a space holds.
+#[derive(Debug, Default)]
+pub struct MemorySpace(Mutex<Vec<u8>>);
+
+impl Space for MemorySpace {
+    fn append(&self, bytes: &[u8]) -> io::Result<u64> {
+        let mut held = self.0.lock().expect("space");
+        let at = held.len() as u64;
+        held.extend_from_slice(bytes);
+        Ok(at)
+    }
+    fn read_at(&self, at: u64, bytes: &mut [u8]) -> io::Result<()> {
+        let held = self.0.lock().expect("space");
+        let at = usize::try_from(at).map_err(|_| io::ErrorKind::UnexpectedEof)?;
+        let part = held.get(at..at + bytes.len()).ok_or(io::ErrorKind::UnexpectedEof)?;
+        bytes.copy_from_slice(part);
+        Ok(())
+    }
+    fn len(&self) -> u64 {
+        self.0.lock().expect("space").len() as u64
+    }
+}
+
+/// A folder of pages, each run's in a folder of its own (`Run`), or a space they are all appended to (`Space`), with
+/// the pages it read lately (`Cache`). It is a node's own, of this process alone: it starts empty, and holds nothing
+/// anyone reads after it stops.
 #[derive(Debug)]
 pub struct Folder {
-    dir: PathBuf,
+    store: Store,
     cache: Mutex<Cache>,
     runs: AtomicU64,
     /// The bytes of pages it wrote, of runs held or let go.
@@ -286,12 +333,18 @@ impl Folder {
             fs::remove_dir_all(&dir)?;
         }
         fs::create_dir_all(&dir)?;
-        Ok(Arc::new(Folder {
-            dir,
-            cache: Mutex::new(Cache::new(budget)),
-            runs: AtomicU64::new(0),
-            written: AtomicU64::new(0),
-        }))
+        Ok(Folder::of(Store::Dir(dir), budget))
+    }
+
+    /// Pages appended to `space`, `budget` bytes of them at hand. What runs let go of stays in the space till it goes:
+    /// a page's spill, whose space goes as its device closes.
+    pub fn in_space(space: Arc<dyn Space>, budget: usize) -> Arc<Folder> {
+        Folder::of(Store::Arena(space), budget)
+    }
+
+    fn of(store: Store, budget: usize) -> Arc<Folder> {
+        let (runs, written) = (AtomicU64::new(0), AtomicU64::new(0));
+        Arc::new(Folder { store, cache: Mutex::new(Cache::new(budget)), runs, written })
     }
 
     /// The bytes of pages it holds in memory.
@@ -299,20 +352,25 @@ impl Folder {
         self.cache.lock().expect("pages").held
     }
 
-    fn page(&self, run: u64, hash: &Sum) -> io::Result<Arc<Node>> {
+    fn page(&self, run: &Run, hash: &Sum) -> io::Result<Arc<Node>> {
         if let Some(node) = self.cache.lock().expect("pages").get(hash) {
             return Ok(node);
         }
-        let bytes = fs::read(self.dir.join(format!("r{run}")).join(hex(hash)))?;
+        let bytes = match &self.store {
+            Store::Dir(dir) => fs::read(dir.join(format!("r{}", run.n)).join(hex(hash)))?,
+            Store::Arena(space) => {
+                let (at, len) = *run.places.get(hash).ok_or(io::ErrorKind::NotFound)?;
+                let mut bytes = vec![0; len as usize];
+                space.read_at(at, &mut bytes)?;
+                bytes
+            }
+        };
         let invalid = || io::Error::new(io::ErrorKind::InvalidData, "a page changed in its folder");
         if sum(&bytes) != *hash {
             return Err(invalid());
         }
         let node = Arc::new(Node::from_bytes(&bytes).ok_or_else(invalid)?);
-        self.cache
-            .lock()
-            .expect("pages")
-            .insert(*hash, node.clone());
+        self.cache.lock().expect("pages").insert(*hash, node.clone());
         Ok(node)
     }
 }
@@ -386,17 +444,25 @@ impl Bloom {
     }
 }
 
-/// A run's Bloom filter in its folder, read a block at a time.
+/// A run's Bloom filter in its folder, or at a place of its space, read a block at a time.
 struct Blooms {
-    file: fs::File,
+    at: BloomAt,
     blocks: u64,
+}
+
+enum BloomAt {
+    File(fs::File),
+    Arena(Arc<dyn Space>, u64),
 }
 
 impl Blooms {
     fn may_hold(&self, key: &[u8]) -> io::Result<bool> {
         let (block, bits) = probes(key, self.blocks);
         let mut bytes = [0u8; BLOCK];
-        read_at(&self.file, &mut bytes, block * BLOCK as u64)?;
+        match &self.at {
+            BloomAt::File(file) => read_at(file, &mut bytes, block * BLOCK as u64)?,
+            BloomAt::Arena(space, at) => space.read_at(at + block * BLOCK as u64, &mut bytes)?,
+        }
         if bytes[56..] != block_check(block, &bytes[..56]) {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "a Bloom filter changed in its folder"));
         }
@@ -426,11 +492,15 @@ pub struct Run {
     /// How many rows it holds, tombstones among them.
     count: u64,
     bloom: Blooms,
+    /// Where each of its pages is in its folder's space, if it has one: a few dozen bytes a page.
+    places: HashMap<Sum, (u64, u32)>,
 }
 
 impl Drop for Run {
     fn drop(&mut self) {
-        fs::remove_dir_all(self.folder.dir.join(format!("r{}", self.n))).ok();
+        if let Store::Dir(dir) = &self.folder.store {
+            fs::remove_dir_all(dir.join(format!("r{}", self.n))).ok();
+        }
     }
 }
 
@@ -442,15 +512,27 @@ impl Run {
         rows: impl Iterator<Item = Item>,
     ) -> io::Result<Run> {
         let n = folder.runs.fetch_add(1, Ordering::Relaxed);
-        let dir = folder.dir.join(format!("r{n}"));
-        fs::create_dir_all(&dir)?;
-        let mut bloom = Bloom::new(expected);
-        let write = |hash: &Sum, bytes: &[u8]| {
-            folder
-                .written
-                .fetch_add(bytes.len() as u64, Ordering::Relaxed);
-            fs::write(dir.join(hex(hash)), bytes)
+        let dir = match &folder.store {
+            Store::Dir(dir) => {
+                let dir = dir.join(format!("r{n}"));
+                fs::create_dir_all(&dir)?;
+                Some(dir)
+            }
+            Store::Arena(_) => None,
         };
+        let mut places = HashMap::new();
+        let mut write = |hash: &Sum, bytes: &[u8]| -> io::Result<()> {
+            folder.written.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+            match (&folder.store, &dir) {
+                (Store::Arena(space), _) => {
+                    places.insert(*hash, (space.append(bytes)?, bytes.len() as u32));
+                    Ok(())
+                }
+                (_, Some(dir)) => fs::write(dir.join(hex(hash)), bytes),
+                (Store::Dir(_), None) => unreachable!("a folder's run has a folder"),
+            }
+        };
+        let mut bloom = Bloom::new(expected);
         let mut b = Builder::default();
         let mut count = 0;
         for row in rows {
@@ -465,16 +547,17 @@ impl Run {
         for (hash, bytes) in pages {
             write(&hash, &bytes)?;
         }
-        let path = dir.join("bloom");
-        fs::write(&path, bloom.to_bytes())?;
-        let bloom = Blooms { file: fs::File::open(&path)?, blocks: bloom.blocks.len() as u64 };
-        Ok(Run {
-            folder: folder.clone(),
-            n,
-            root,
-            count,
-            bloom,
-        })
+        let blocks = bloom.blocks.len() as u64;
+        let at = match (&folder.store, &dir) {
+            (Store::Arena(space), _) => BloomAt::Arena(space.clone(), space.append(&bloom.to_bytes())?),
+            (_, Some(dir)) => {
+                let path = dir.join("bloom");
+                fs::write(&path, bloom.to_bytes())?;
+                BloomAt::File(fs::File::open(&path)?)
+            }
+            (Store::Dir(_), None) => unreachable!("a folder's run has a folder"),
+        };
+        Ok(Run { folder: folder.clone(), n, root, count, bloom: Blooms { at, blocks }, places })
     }
 
     fn get(&self, key: &[u8]) -> io::Result<Option<Vec<u8>>> {
@@ -485,7 +568,7 @@ impl Run {
             return Ok(None);
         }
         loop {
-            let node = self.folder.page(self.n, &hash)?;
+            let node = self.folder.page(self, &hash)?;
             let at = node.items.partition_point(|(k, _)| k.as_slice() < key);
             if node.level == 0 {
                 return Ok(node
@@ -523,7 +606,7 @@ impl Iterator for RunRows<'_> {
         if !self.started {
             self.started = true;
             let root = self.run.root?;
-            match self.run.folder.page(self.run.n, &root) {
+            match self.run.folder.page(self.run, &root) {
                 Ok(node) => self.stack.push((node, 0)),
                 Err(e) => return Some(Err(e)),
             }
@@ -540,7 +623,7 @@ impl Iterator for RunRows<'_> {
                 return Some(Ok(node.items[at].clone()));
             }
             let child = node.child(at);
-            match self.run.folder.page(self.run.n, &child) {
+            match self.run.folder.page(self.run, &child) {
                 Ok(node) => self.stack.push((node, 0)),
                 Err(e) => return Some(Err(e)),
             }
@@ -745,6 +828,16 @@ impl<A: Iterator<Item = io::Result<Item>>, B: Iterator<Item = io::Result<Item>>>
 }
 
 #[cfg(test)]
+impl Folder {
+    fn dir(&self) -> &PathBuf {
+        match &self.store {
+            Store::Dir(dir) => dir,
+            Store::Arena(_) => panic!("a space has no folder"),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -808,11 +901,11 @@ mod tests {
         );
         drop((runs, kept));
         assert_eq!(
-            fs::read_dir(&folder.dir).unwrap().count(),
+            fs::read_dir(folder.dir()).unwrap().count(),
             0,
             "runs nothing names are removed"
         );
-        fs::remove_dir_all(&folder.dir).ok();
+        fs::remove_dir_all(folder.dir()).ok();
     }
 
     /// Each row is written again about once a level, so what a change costs in writes grows with the log of the rows
@@ -848,7 +941,7 @@ mod tests {
         );
         let probe = rng.next().to_be_bytes();
         assert_eq!(runs.get(&probe).unwrap(), None);
-        fs::remove_dir_all(&folder.dir).ok();
+        fs::remove_dir_all(folder.dir()).ok();
     }
 
     #[test]
@@ -858,7 +951,7 @@ mod tests {
         for k in 0..4u32 {
             runs.set(k.to_be_bytes().to_vec(), Some(vec![1])).unwrap();
         }
-        let page = fs::read_dir(&folder.dir)
+        let page = fs::read_dir(folder.dir())
             .unwrap()
             .next()
             .unwrap()
@@ -881,6 +974,6 @@ mod tests {
             runs.get(&0u32.to_be_bytes()).unwrap_err().kind(),
             io::ErrorKind::InvalidData
         );
-        fs::remove_dir_all(&folder.dir).ok();
+        fs::remove_dir_all(folder.dir()).ok();
     }
 }

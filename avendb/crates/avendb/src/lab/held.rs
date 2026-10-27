@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::id::{BlobId, EditId, SignerId};
-use crate::pages::{Folder, Runs};
+use crate::pages::{Folder, Runs, Space};
 use crate::sign::{Signed, SignerKeys};
 use crate::wire::Wire as _;
 
@@ -34,6 +34,8 @@ pub struct Spill {
     budget: usize,
     /// The pages of the index of every record it holds, a quarter of the budget at hand.
     pages: Arc<Folder>,
+    /// The one space it appends every record and page to, in place of files in `dir`: a page's, in OPFS.
+    space: Option<Arc<dyn Space>>,
 }
 
 impl Spill {
@@ -46,7 +48,15 @@ impl Spill {
         }
         fs::create_dir_all(&dir)?;
         let pages = Folder::new(dir.join("pages"), budget / 4)?;
-        Ok(Spill { dir, budget, pages })
+        Ok(Spill { dir, budget, pages, space: None })
+    }
+
+    /// A spill that appends every record and every page of its index to `space`, keeping `budget` bytes at hand as
+    /// `new` does: a page's device's, in an OPFS file its worker holds open, as a page can't make files as it goes.
+    /// What it lets go of stays in the space till the space goes, as the device closes.
+    pub fn in_space(space: Arc<dyn Space>, budget: usize) -> Spill {
+        let pages = Folder::in_space(space.clone(), budget / 4);
+        Spill { dir: PathBuf::new(), budget, pages, space: Some(space) }
     }
 
     /// The bytes it keeps at hand at most.
@@ -63,39 +73,53 @@ impl Spill {
 /// The numbers of the spill files made in this process, each new one's.
 static FILES: AtomicU64 = AtomicU64::new(0);
 
-/// A spill's file of records, appended to and read at; removed once nothing names it.
-struct File {
-    path: PathBuf,
-    file: Mutex<(fs::File, u64)>,
+/// A spill's file of records, appended to and read at; removed once nothing names it. In a spill's space, the space
+/// itself, whose places it reads: what it appended stays till the space goes.
+enum File {
+    Own { path: PathBuf, file: Mutex<(fs::File, u64)> },
+    Space(Arc<dyn Space>),
 }
 
 impl File {
     fn new(spill: &Spill, what: &str) -> io::Result<File> {
+        if let Some(space) = &spill.space {
+            return Ok(File::Space(space.clone()));
+        }
         let n = FILES.fetch_add(1, Ordering::Relaxed);
         let path = spill.dir.join(format!("{what}-{}-{n}", std::process::id()));
         let file = fs::OpenOptions::new().create_new(true).read(true).append(true).open(&path)?;
-        Ok(File { path, file: Mutex::new((file, 0)) })
+        Ok(File::Own { path, file: Mutex::new((file, 0)) })
     }
 
     /// Appends `bytes`: where they start.
     fn append(&self, bytes: &[u8]) -> io::Result<u64> {
-        let mut held = self.file.lock().expect("a spill file");
-        let at = held.1;
-        held.0.write_all(bytes)?;
-        held.1 += bytes.len() as u64;
-        Ok(at)
+        match self {
+            File::Own { file, .. } => {
+                let mut held = file.lock().expect("a spill file");
+                let at = held.1;
+                held.0.write_all(bytes)?;
+                held.1 += bytes.len() as u64;
+                Ok(at)
+            }
+            File::Space(space) => space.append(bytes),
+        }
     }
 
     fn read(&self, at: u64, len: u32) -> io::Result<Vec<u8>> {
         let mut bytes = vec![0; len as usize];
-        let held = self.file.lock().expect("a spill file");
-        read_at(&held.0, &mut bytes, at)?;
+        match self {
+            File::Own { file, .. } => read_at(&file.lock().expect("a spill file").0, &mut bytes, at)?,
+            File::Space(space) => space.read_at(at, &mut bytes)?,
+        }
         Ok(bytes)
     }
 
-    /// The bytes it holds, gone over or not.
+    /// The bytes it holds, gone over or not: in a space, the space's.
     fn len(&self) -> u64 {
-        self.file.lock().expect("a spill file").1
+        match self {
+            File::Own { file, .. } => file.lock().expect("a spill file").1,
+            File::Space(space) => space.len(),
+        }
     }
 }
 
@@ -114,7 +138,9 @@ fn read_at(file: &fs::File, bytes: &mut [u8], at: u64) -> io::Result<()> {
 
 impl Drop for File {
     fn drop(&mut self) {
-        fs::remove_file(&self.path).ok();
+        if let File::Own { path, .. } = self {
+            fs::remove_file(path).ok();
+        }
     }
 }
 
@@ -613,6 +639,30 @@ mod tests {
         assert_eq!(keys.len(), 1_000_000);
         assert!(at[1].0 <= at[0].0 + (256 << 10), "{at:?}");
         fs::remove_dir_all(spill.dir()).ok();
+    }
+
+    /// A spill in a space holds and reads back what one in a folder does: its records and its index's pages all in
+    /// the one space, as a page's OPFS file holds them.
+    #[test]
+    fn a_spill_in_a_space_holds_its_records() {
+        let space = Arc::new(crate::pages::MemorySpace::default());
+        let spill = Spill::in_space(space.clone(), 64 << 10);
+        let mut keys = Keys::default();
+        keys.spill_keys(&spill).expect("spilled");
+        let key = |n: u32| -> Arc<[u8]> { Arc::from(&n.to_le_bytes().repeat(16)[..]) };
+        let ids: Vec<BlobId> = (0..50_000u32).map(|n| BlobId::of(&key(n))).collect();
+        for (n, id) in ids.iter().enumerate() {
+            keys.insert(*id, key(n as u32));
+        }
+        assert_eq!(keys.len(), 50_000);
+        for (n, id) in ids.iter().enumerate().step_by(331) {
+            assert_eq!(keys.get(id).as_deref(), Some(&key(n as u32)[..]));
+        }
+        keys.remove(&ids[1]);
+        assert!(!keys.contains_key(&ids[1]) && keys.len() == 49_999);
+        assert_eq!(keys.keys().len(), 49_999);
+        assert!(keys.memory() < 4 << 20, "{}", keys.memory());
+        assert!(space.len() > 50_000 * 64, "the records and pages are in the space");
     }
 
     /// A record changed in the spill's file, as by its disk, is never read as another: the server stops.
