@@ -1093,8 +1093,12 @@ mod pipelined_tests {
         }
     }
 
-    /// S6: a pull over a link where every exchange takes `RTT` keeps its pages in flight. Asked one after the other,
-    /// `PAGES` pages take `PAGES` round trips; asked at the peer's cuts, ceil(PAGES / W) more after the first.
+    /// S6: a pull over a link where every exchange takes `RTT` keeps its pages in flight. Asked one after the other, the
+    /// last of `PAGES` pages is asked `PAGES - 1` round trips after the first; asked at the peer's cuts, ceil((PAGES - 1)
+    /// / W) round trips after it. Timed where the peer is asked, as that is what the window decides: taking the pages
+    /// (signature checks, the Lab) is the device's own work, overlapped with the next round trip one page at a time
+    /// and back to back once pages come together, so a pull's whole time on a machine whose cores other tests hold says
+    /// how busy the machine was (#1326 CI: 10.8 s with seven pages in flight, 0.8 s on an idle machine).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_pull_over_a_slow_link_keeps_its_pages_in_flight() {
         use crate::{ALPN, Node, Options, exporter, pq_provider, session};
@@ -1143,6 +1147,11 @@ mod pipelined_tests {
             // the peer: answers each message at once, and lets its answer arrive a round trip after it was asked;
             // one edit to a page, so the pull takes PAGES pages
             let (in_flight, most_in_flight) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+            // what the peer was asked and when, for a failure to show where the time went
+            let (timeline, start) = (Mutex::new(Vec::<String>::new()), Instant::now());
+            // when the peer was asked each page
+            let asks = Mutex::new(Vec::<Duration>::new());
+            let at = |what: String| timeline.lock().unwrap().push(format!("{:>6}ms {what}", start.elapsed().as_millis()));
             let serving = async {
                 let mut answering = FuturesUnordered::new();
                 loop {
@@ -1155,6 +1164,15 @@ mod pipelined_tests {
                     let Some((mut send, mut recv)) = accepted.await else { continue };
                     let bytes = recv.read_to_end(session::MESSAGE_LIMIT).await.unwrap();
                     let (&kind, body) = bytes.split_first().unwrap();
+                    let cursor = |body: &[u8]| match Request::from_wire(body) {
+                        Ok(r) => format!("{:?}", r.after.map(|(depth, id)| (depth, id.to_hex()[..6].to_string()))),
+                        Err(_) => "?".into(),
+                    };
+                    match kind {
+                        session::CUTS => at(format!("CUTS x{} after {}", body[1], cursor(&body[2..]))),
+                        k if k & !session::PACKED == session::ASK_LOGS => at(format!("ASK_LOGS {k:#x} after {}", cursor(body))),
+                        k => at(format!("kind {k}")),
+                    }
                     let answer = match kind {
                         session::ANNOUNCE | session::STATE => Some(Vec::new()),
                         session::CUTS => {
@@ -1169,6 +1187,7 @@ mod pipelined_tests {
                             let request = Request::from_wire(body).unwrap();
                             let scope = ReplyScope::Logs(request.ask.haves.keys().copied().collect());
                             let (edits, _, more) = w.lab.reply_in(sender, receiver, &request, 1, &scope);
+                            asks.lock().unwrap().push(start.elapsed());
                             let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
                             most_in_flight.fetch_max(now, Ordering::SeqCst);
                             Some(Reply { edits, blobs: vec![], more }.to_wire())
@@ -1205,7 +1224,12 @@ mod pipelined_tests {
             assert!(held, "the edits are the device's, checked and kept");
             let report = phone.shared.traffic.of(&sender).unwrap();
             assert_eq!(report.pages as usize, PAGES);
-            measured.push((window, took, most_in_flight.load(Ordering::SeqCst)));
+            let asks = asks.into_inner().unwrap();
+            assert_eq!(asks.len(), PAGES, "each page asked once, none dropped and asked again");
+            let span = asks[PAGES - 1] - asks[0];
+            measured.push((window, took, most_in_flight.load(Ordering::SeqCst), span));
+            eprintln!("S6 window {window}: the peer was asked\n{}\nthe phone's pages: {}\n{:?}",
+                timeline.lock().unwrap().join("\n"), report.to_json(), phone.shared.traffic.recent());
             assert_eq!(
                 phone.shared.pulls.ahead.available_permits(),
                 Budget::default().ahead.available_permits(),
@@ -1218,10 +1242,173 @@ mod pipelined_tests {
         eprintln!("S6 pipelined pages over a {RTT:?} round trip, {PAGES} pages: {measured:?}");
         let (before, after) = (measured[0], measured[1]);
         assert_eq!(before.2, 1, "page after page: one in flight at a time");
+        assert!(before.3 >= RTT * (PAGES - 1) as u32, "page after page: each asked a round trip after the last: {before:?}");
         assert!(before.1 >= RTT * PAGES as u32, "page after page takes a round trip a page: {before:?}");
         assert!(after.2 > 1, "asked ahead, pages are in flight together: {after:?}");
-        // the first page with its cuts, then the rest W at a time, and a round trip of slack for the machine
-        let rounds = 1 + (PAGES - 1).div_ceil(WINDOW) + 1;
-        assert!(after.1 < RTT * rounds as u32, "pipelined: ~ceil(pages / W) round trips, not one a page: {after:?}");
+        // the first page with its cuts, then the rest W at a time: the last asked ceil((PAGES - 1) / W) round trips on
+        let rounds = (PAGES - 1).div_ceil(WINDOW) as u32;
+        assert!(after.3 < RTT * (rounds + 1), "pipelined: the last page asked ~ceil(pages / W) round trips on: {after:?}");
+    }
+
+    /// A raw peer at `raw`, as device `sender` of `lab`, says its hello to `phone` and waits until the phone knows it.
+    async fn greet(raw: &iroh::Endpoint, phone: &crate::Node, lab: &mut avendb::lab::Lab, sender: avendb::id::SignerId) -> iroh::endpoint::Connection {
+        use avendb::wire::Wire;
+        let conn = raw.connect(phone.addr(), crate::ALPN).await.unwrap();
+        let exporter = crate::exporter(&conn).unwrap();
+        let (mut send, mut recv) = conn.open_bi().await.unwrap();
+        send.write_all(&lab.hello(sender, &exporter, true).unwrap().to_wire()).await.unwrap();
+        send.finish().unwrap();
+        avendb::sign::Hello::from_wire(&recv.read_to_end(64 << 10).await.unwrap()).unwrap();
+        time::timeout(Duration::from_secs(5), async {
+            while phone.shared.live(raw.id()).is_none() || phone.shared.live(raw.id()).is_some_and(|p| p.conn.stable_id() != conn.stable_id() && p.conn.close_reason().is_some()) {
+                time::sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .unwrap();
+        conn
+    }
+
+    /// The peer of `greet`: each page of one edit and the cuts, each answered a round trip `rtt` after it was asked;
+    /// it closes the connection once it was asked `close_at` pages, if any. The pages it was asked.
+    async fn serve_slow(
+        conn: &iroh::endpoint::Connection,
+        lab: &mut avendb::lab::Lab,
+        sender: avendb::id::SignerId,
+        receiver: avendb::id::SignerId,
+        rtt: Duration,
+        close_at: Option<usize>,
+        asked: &AtomicUsize,
+    ) {
+        use crate::session;
+        use avendb::lab::ReplyScope;
+        use avendb::wire::{Reply, Request, Wire};
+        enum Next<S> {
+            Stream(Option<S>),
+            Answered,
+        }
+        let mut answering = FuturesUnordered::new();
+        loop {
+            let next = future::or(async { Next::Stream(conn.accept_bi().await.ok()) }, async {
+                match answering.next().await {
+                    Some(()) => Next::Answered,
+                    None => future::pending().await,
+                }
+            });
+            let (mut send, mut recv) = match next.await {
+                Next::Answered => continue,
+                Next::Stream(Some(stream)) => stream,
+                Next::Stream(None) => return,
+            };
+            let Ok(bytes) = recv.read_to_end(session::MESSAGE_LIMIT).await else { return };
+            let (&kind, body) = bytes.split_first().unwrap();
+            let answer = match kind {
+                session::ANNOUNCE | session::STATE => Some(Vec::new()),
+                session::CUTS => {
+                    let request = Request::from_wire(&body[2..]).unwrap();
+                    let scope = ReplyScope::Logs(request.ask.haves.keys().copied().collect());
+                    let (cuts, done) = lab.reply_cuts(sender, receiver, &request, 1, &scope, body[1] as usize);
+                    Some(session::cuts_wire(&cuts, done))
+                }
+                session::ASK_LOGS => {
+                    if close_at.is_some_and(|n| asked.load(Ordering::SeqCst) >= n) {
+                        // the route goes away under the pages in flight, as a closed WebTransport session does
+                        conn.close(session::REFUSED, b"route gone");
+                        return;
+                    }
+                    asked.fetch_add(1, Ordering::SeqCst);
+                    let request = Request::from_wire(body).unwrap();
+                    let scope = ReplyScope::Logs(request.ask.haves.keys().copied().collect());
+                    let (edits, _, more) = lab.reply_in(sender, receiver, &request, 1, &scope);
+                    Some(Reply { edits, blobs: vec![], more }.to_wire())
+                }
+                _ => None,
+            };
+            answering.push(async move {
+                match answer {
+                    Some(answer) => {
+                        time::sleep(rtt).await;
+                        if send.write_all(&answer).await.is_ok() {
+                            let _ = send.finish();
+                        }
+                    }
+                    None => {
+                        let _ = send.reset(session::REFUSED);
+                    }
+                }
+            });
+        }
+    }
+
+    /// A pipelined pull whose connection closes under its pages in flight ends at once, with an error, and gives back
+    /// every slot it held (its admission, its page slots, the slots of the pages it asked ahead); the next pull, on the
+    /// connection that replaces it, brings every page. (#1328: after a WebTransport route closed, nothing more was sent.)
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_pull_whose_route_closes_under_its_pages_ends_and_frees_them_for_the_next() {
+        use crate::{Node, Options, pq_provider};
+        use avendb::cast::{document, handbook_ready, world};
+        use avendb::sync::LogId;
+        use iroh::endpoint::presets;
+        use iroh::{Endpoint, SecretKey};
+        const PAGES: usize = 8;
+        const RTT: Duration = Duration::from_millis(300);
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (sender, receiver) = (w.mac_a, w.phone_a);
+        let logs: BTreeSet<LogId> = (0..PAGES)
+            .map(|i| LogId::Entry(w.lab.create(sender, coop, coop, "doc", &[], document(&format!("D{i}"), "a page", sender)).unwrap()))
+            .collect();
+        let raw = Endpoint::builder(presets::Empty)
+            .secret_key(SecretKey::from_bytes(&w.lab.endpoint_secret(sender).unwrap()))
+            .crypto_provider(pq_provider())
+            .clear_ip_transports()
+            .bind_addr("127.0.0.1:0")
+            .unwrap()
+            .bind()
+            .await
+            .unwrap();
+        let phone = Node::spawn(w.lab.split(receiver, &[], [77; 32]), receiver, Options { lazy: true, ..Options::local() }).await.unwrap();
+        let fresh = Budget::default();
+        let slots = |b: &Budget| (b.active.available_permits(), b.pages.available_permits(), b.ahead.available_permits());
+        // the route closes once three pages were asked: the cuts are in, and pages are in flight ahead
+        let conn = greet(&raw, &phone, &mut w.lab, sender).await;
+        let asked = AtomicUsize::new(0);
+        let pull = phone.shared.pull(raw.id(), crate::Scope::Logs(logs.clone()), false, None);
+        let serving = async {
+            serve_slow(&conn, &mut w.lab, sender, receiver, RTT, Some(3), &asked).await;
+            future::pending::<()>().await;
+        };
+        let began = Instant::now();
+        let ended = time::timeout(Duration::from_secs(20), future::or(async { Some(pull.await) }, async { serving.await; None })).await;
+        let ended = ended.expect("the pull ends once its connection is gone").expect("the pull, not the peer, ends");
+        assert!(ended.is_err(), "a pull whose connection closed under it fails: {ended:?}");
+        assert!(began.elapsed() < Duration::from_secs(5), "it ends at once, not after a page's wait: {:?}", began.elapsed());
+        // its slots come back as its futures drop, the blocking checks of its pages included
+        time::timeout(Duration::from_secs(5), async {
+            while slots(&phone.shared.pulls) != slots(&fresh) {
+                time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("every slot is given back: {:?} of {:?}", slots(&phone.shared.pulls), slots(&fresh)));
+        // the route comes back: the next pull, on the new connection, brings what the first didn't
+        let conn = greet(&raw, &phone, &mut w.lab, sender).await;
+        let asked = AtomicUsize::new(0);
+        let pull = phone.shared.pull(raw.id(), crate::Scope::Logs(logs.clone()), false, None);
+        let serving = async {
+            serve_slow(&conn, &mut w.lab, sender, receiver, RTT, None, &asked).await;
+            future::pending::<()>().await;
+        };
+        let got = time::timeout(Duration::from_secs(20), future::or(async { Some(pull.await) }, async { serving.await; None }))
+            .await
+            .expect("the next pull ends")
+            .expect("the pull, not the peer, ends")
+            .unwrap();
+        let held = phone.read(move |lab, me| logs.iter().all(|l| lab.log(me).logs().contains(&Some(*l)))).await;
+        assert!(held, "after the route came back, every page's edit is the device's ({got} new on the second pull)");
+        assert_eq!(slots(&phone.shared.pulls), slots(&fresh), "and the second pull gave its slots back too");
+        conn.close(crate::session::REFUSED, b"test done");
+        raw.close().await;
+        phone.shutdown().await.unwrap();
     }
 }
