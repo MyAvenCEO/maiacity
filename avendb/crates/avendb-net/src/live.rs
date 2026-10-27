@@ -221,9 +221,11 @@ impl Shared {
     }
 
     async fn materialize_live(self: &Arc<Self>, timing: &mut LiveTiming) {
-        // At most LIVE_VIEW of it here; a step cut short is the Lab's own (each step one turn of it), so the background
-        // catch-up, at most one at a time, goes on from where this one stopped.
-        if time::timeout(LIVE_VIEW, self.catch_up_paced(true)).await.is_err() {
+        // At most LIVE_VIEW of it here, the pages stirred after each step: no step is begun after it (each step one
+        // turn of the Lab), and the background catch-up, at most one at a time, goes on from where this one stopped.
+        let until = time::Instant::now() + LIVE_VIEW;
+        let (_, left) = self.catch_up_steps(true, crate::lab_schedule::Class::Foreground, Some(until)).await;
+        if left {
             timing.left = true;
             if !self.pulls.view_behind.swap(true, std::sync::atomic::Ordering::AcqRel)
                 && let Ok(activity) = self.admit()
