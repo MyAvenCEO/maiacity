@@ -1992,6 +1992,7 @@ impl<'a> Cursor<'a> {
 
 /// What a node asks a peer for: all the peer may send it (`session::REQUEST`), the logs it names alone
 /// (`session::ASK_LOGS`), or the entries of the vaults it names alone (`session::ASK_VAULTS`).
+#[derive(Clone)]
 enum Scope {
     All,
     Logs(BTreeSet<LogId>),
@@ -2596,6 +2597,15 @@ impl Shared {
             Scope::Logs(_) => session::ASK_LOGS,
             Scope::Vaults(_) => session::ASK_VAULTS,
         };
+        // a fresh device asking for its first sync with the boxes held back asks the peer for their stubs first, to
+        // count them as held (`session::STUBS`, `LazyBoxes.lean`), and for their bodies in the pull after this one
+        let stubbed = self.stubs(&peer, kind, scope.clone()).await;
+        // the logs a pull for the bodies of stubs answers for: all, or those it names
+        let answers = match &scope {
+            Scope::All => Some(None),
+            Scope::Logs(logs) => Some(Some(logs.clone())),
+            Scope::Vaults(_) => None,
+        };
         // the request, worked out once for the whole asking: each page asks the same, after the last place it got, so
         // the peer works out what it sends once too (`Lab::reply`), and no page waits on this device's lab to ask
         let asking = Instant::now();
@@ -2910,7 +2920,52 @@ impl Shared {
                 None => break,
             }
         }
+        if stubbed && (kind == session::REQUEST || new == 0) {
+            // the first view is in, of all the peer may send or of logs that differ by their boxes alone: the bodies of
+            // the boxes held back come in the next pull, each checked against its stub as it comes (S5)
+            self.try_lab(|lab, me| lab.fetch_withheld(me)).await?;
+            self.ask_soon(peer.endpoint);
+        } else if let Some(logs) = answers {
+            // asked for their bodies, what didn't come of the stubs this peer sent is of nothing it sends
+            self.try_lab(move |lab, me| lab.drop_unanswered(me, device, logs.as_ref())).await?;
+        }
         Ok(new)
+    }
+
+    /// Asks `peer` for the stubs of the boxes this device needs not now of what a pull of `kind` for `scope` brings, if
+    /// it asks for its first syncs so (`Lab::lazy_boxes`), and takes them (`Lab::receive_stubs`). True if the peer
+    /// answered. A peer that refuses or fails to answer sends everything, as before.
+    async fn stubs(self: &Arc<Self>, peer: &Peer, kind: u8, scope: Scope) -> bool {
+        let device = peer.device;
+        let body = self
+            .read(move |lab: &Lab, me| {
+                lab.lazy_boxes(me).then(|| {
+                    let request = lab.request(me, device);
+                    match &scope {
+                        Scope::All => request.to_wire(),
+                        Scope::Logs(logs) => session::only(lab, me, request, logs).to_wire(),
+                        Scope::Vaults(vaults) => session::vaults_body(vaults, &request),
+                    }
+                })
+            })
+            .await;
+        let Some(body) = body else { return false };
+        let mut asked = vec![kind];
+        asked.extend(body);
+        let answer = async {
+            let _activity = self.admit()?;
+            anyhow::ensure!(asked.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
+            let bytes = session::exchange(&peer.conn, session::STUBS, &asked, session::STUBS_REPLY_LIMIT);
+            let bytes = time::timeout(PAGE_WAIT, bytes).await.context("no stubs in time")??;
+            Ok::<_, anyhow::Error>(avendb::wire::Stubs::from_wire(&bytes)?)
+        };
+        match answer.await {
+            Ok(stubs) => self.try_lab(move |lab, me| lab.receive_stubs(me, device, stubs.0)).await.is_ok(),
+            Err(error) => {
+                tracing::debug!(%error, "avendb: no stubs, the first sync takes every box");
+                false
+            }
+        }
     }
 
     /// The McEliece keys a pull's pages named that this device lacks, from `device` at `endpoint` in one request, once
