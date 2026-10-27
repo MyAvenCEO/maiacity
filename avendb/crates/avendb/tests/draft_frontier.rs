@@ -66,7 +66,7 @@ fn a_draft_builds_on_the_frontier_and_depth_the_scan_finds() {
     // a log that lets edits go keeps its frontiers and depth as the scan finds them
     let r = replay(c.log.edits());
     let gone: HashSet<_> = c.log.ids().iter().rev().take(5).copied().collect();
-    assert!(r.edits.len() > 5);
+    assert!(r.len() > 5);
     c.log.let_go(&gone);
     agrees(&c.log);
 }

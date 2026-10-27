@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { expect, test } from 'bun:test';
-import { localFileEntries } from './file-entries.js';
+import { localFileEntries, pinnedEntries } from './file-entries.js';
 const a = 'a'.repeat(64), b = 'b'.repeat(64);
 test('cross-vault file inventory uses canonical typed projections, never world', async () => {
  const calls = [];
@@ -31,4 +31,14 @@ test('cancellation stops inventory before the next vault', async () => {
  const device = { run: async op => { calls.push(op); controller.abort(); return { ok: { rows: [] } }; } };
  await expect(localFileEntries(device, { vaults: [a,b], signal: controller.signal })).rejects.toThrow();
  expect(calls.length).toBe(1);
+});
+test('pinned files are read by their entries alone, never by listing their vault', async () => {
+ const calls = [];
+ const device = { run: async op => { calls.push(op); return { ok: { rows: op.entries.map(entry => ({ entry })) } }; } };
+ expect(await pinnedEntries(device, [a, b, a, 'not-an-id'])).toEqual([{ entry: a }, { entry: b }]);
+ expect(calls).toEqual([{ op: 'entry_views', entries: [a, b], types: ['file'] }]);
+ calls.length = 0;
+ expect(await pinnedEntries(device, [])).toEqual([]);
+ expect(calls).toEqual([]);
+ await expect(pinnedEntries({ run: async () => ({ ok: null }) }, [a])).rejects.toThrow('unavailable');
 });

@@ -10,7 +10,7 @@ const checks = {
  'mac.yml': ['mac'],
  // these run on their own triggers alone
  'avendb-backups.yml': [], 'lean-mac.yml': [], 'site-same.yml': [], 'full-checks.yml': [], 'infra-checks.yml': ['infra'],
- 'uptime.yml': [], 'network-audit.yml': [], 'old-vault.yml': [], 'founders.yml': [], 'site-media.yml': [],
+ 'uptime.yml': [], 'network-audit.yml': [], 'ci-budget.yml': [], 'old-vault.yml': [], 'founders.yml': [], 'site-media.yml': [],
 };
 // What the server's image build reads beyond the code the tests compile (avendb/Dockerfile.server, cargo-chef's recipe).
 const imageInputs = /^avendb\/(Dockerfile[^/]*|\.dockerignore|Cargo\.(toml|lock)|rust-toolchain[^/]*|\.cargo\/.*|vendor\/.*|crates\/[^/]+\/(Cargo\.toml|build\.rs))$/;

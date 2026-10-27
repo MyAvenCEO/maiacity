@@ -187,7 +187,7 @@ impl Shared {
         }
         if !rules.is_empty() {
             let at = time::Instant::now();
-            timing.new += self.pull_expected(endpoint, Scope::Logs(rules), false, None, Some(device), None)
+            timing.new += self.pull_expected(endpoint, Scope::Logs(rules), false, None, Some(device), None, None)
                 .await?;
             self.materialize_live().await;
             missing = self.differ(device).await;
@@ -203,7 +203,7 @@ impl Shared {
             .collect::<BTreeSet<_>>();
         if !logs.is_empty() {
             let at = time::Instant::now();
-            timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None)
+            timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None, None)
                 .await?;
             timing.pull_ms += ms(at);
             // A single interactive edit must wake reactive subscribers before the unrelated backlog finishes.
