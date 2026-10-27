@@ -24,9 +24,12 @@ serde_json = "1"
 
 # Debug builds: line tables for our code (backtraces keep their lines), none for the dependencies; everything
 # optimised, as the property tests replay thousands of histories, each through every rule and the key schedule.
+# Our own crates at opt-level 1, the dependencies at 2: on a 4-core cloud session (2026-10-27) avendb-net's tests built
+# from nothing in 9.7 min and 7.5 GB at 1, against 17 min and 12 GB at 2, and ran as fast (CI had built them at 1 since
+# 2026-10-21). At 0 a one-line change rebuilt in 18 s instead of 42, but the tests ran half again as long.
 [profile.dev]
 debug = "line-tables-only"
-opt-level = 2
+opt-level = 1
 
 [profile.dev.package."*"]
 debug = false
