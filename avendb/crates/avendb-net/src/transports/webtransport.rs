@@ -43,12 +43,32 @@ static PUBLIC_CERTIFICATE: AtomicBool = AtomicBool::new(false);
 enum Outcome { NoRequest, WrongAuthority, WrongOrigin, NoTicket, NotAccepted, NoDatagrams, Expired, Ready, Ended }
 fn outcome(o: Outcome) { OUTCOMES[o as usize].fetch_add(1, Ordering::Relaxed); }
 
+/// Why each admitted session (`ready`) ended, so a browser's carrier that closes after ready says which side closed it:
+/// the browser (`peer_closed`, `peer_aborted`), this listener's route (`local`), an HTTP/3 rule the browser broke
+/// (`h3_error`), silence (`timed_out`), QUIC (`quic_error`), the lease, or shutdown. Counts only.
+static ENDINGS: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 8];
+const ENDING_NAMES: [&str; 8] = ["peer_closed", "peer_aborted", "local", "h3_error", "timed_out", "quic_error", "lease", "stopped"];
+#[derive(Clone, Copy)]
+enum Ending { PeerClosed, PeerAborted, Local, H3Error, TimedOut, QuicError, Lease, Stopped }
+impl Ending {
+    fn of(error: &wtransport::error::ConnectionError) -> Self {
+        use wtransport::error::ConnectionError as E;
+        match error {
+            E::ApplicationClosed(_) => Self::PeerClosed, E::ConnectionClosed(_) => Self::PeerAborted,
+            E::LocallyClosed => Self::Local, E::LocalH3Error(_) => Self::H3Error, E::TimedOut => Self::TimedOut,
+            E::QuicProto(_) | E::CidsExhausted => Self::QuicError,
+        }
+    }
+}
+
 /// The browser sessions so far by how they ended, and whether the listener serves the public certificate (else its
 /// own, pinned): `{certificate: "public"|"pinned", sessions: {no_request, wrong_authority, ...}}`.
 pub fn sessions() -> Value {
     let counts: serde_json::Map<String, Value> = OUTCOME_NAMES.iter().zip(&OUTCOMES)
         .map(|(name, n)| ((*name).to_owned(), json!(n.load(Ordering::Relaxed)))).collect();
-    json!({ "certificate": if PUBLIC_CERTIFICATE.load(Ordering::Relaxed) { "public" } else { "pinned" }, "sessions": counts })
+    let ended: serde_json::Map<String, Value> = ENDING_NAMES.iter().zip(&ENDINGS)
+        .map(|(name, n)| ((*name).to_owned(), json!(n.load(Ordering::Relaxed)))).collect();
+    json!({ "certificate": if PUBLIC_CERTIFICATE.load(Ordering::Relaxed) { "public" } else { "pinned" }, "sessions": counts, "ended": ended })
 }
 
 /// Explicit UDP listener/public HTTPS URL, and the public certificate the host's HTTPS site already holds for that
@@ -466,18 +486,18 @@ async fn session(inner: Arc<Inner>, incoming: IncomingSessionFuture, permit: tok
     let address = match inner.broker.ready(&id, mtu) { Ok(addr) => addr, Err(_) => { inner.finish(&id); return; } };
     if inner.events.try_send(WtEvent::Ready { id: id.clone(), peer, address }).is_err() { inner.finish(&id); return; }
     outcome(Outcome::Ready);
-    loop {
+    let ending = loop {
         tokio::select! {
             biased;
-            _ = stopped(&mut stop) => break,
-            _ = tokio::time::sleep_until(expires) => break,
+            _ = stopped(&mut stop) => break Ending::Stopped,
+            _ = tokio::time::sleep_until(expires) => break Ending::Lease,
             packet = connection.receive_datagram() => match packet {
                 Ok(bytes) => { inner.broker.receive(&id, &bytes); },
-                Err(_) => break,
+                Err(error) => break Ending::of(&error),
             }
         }
-    }
-    outcome(Outcome::Ended);
+    };
+    outcome(Outcome::Ended); ENDINGS[ending as usize].fetch_add(1, Ordering::Relaxed);
     inner.finish(&id);
 }
 

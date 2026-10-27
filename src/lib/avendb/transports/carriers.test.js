@@ -17,6 +17,11 @@ function wtFixture(options = {}) {
 				readable: { getReader: () => ({ read: () => { const d = deferred(); this.reads.push(d); return d.promise; }, cancel: async () => { this.cancelled = true; for (const d of this.reads) d.resolve({ done: true }); } }) },
 				writable: { getWriter: () => ({ ready: Promise.resolve(), write: async (bytes) => this.writes.push([...bytes]), abort: async () => { this.aborted = true; } }) }
 			};
+			// WebKit 624-625's shape (Safari 26.x): no `writable`, `createWritable()` instead, and 65535 for the size
+			if (options.webkit) {
+				const { writable } = this.datagrams; delete this.datagrams.writable;
+				this.datagrams.maxDatagramSize = 65_535; this.datagrams.createWritable = () => { this.created = true; return writable; };
+			}
 		}
 		close() { this.didClose = true; this.ending.resolve(); }
 	}
@@ -62,6 +67,25 @@ test('WebTransport says why it closed, where Safari gives an empty message', asy
 	up.opening.resolve(); expect(await g.carrier.ready).toBe(true);
 	up.ending.resolve({ closeCode: 7, reason: 'gone' }); await flush();
 	expect(g.events.at(-1)).toEqual({ kind: 'closed', reason: 'WebTransport closed: close code 7 gone' });
+});
+
+test('WebTransport in Safari 26 writes through createWritable and splits to datagrams one QUIC packet carries', async () => {
+	const f = wtFixture({ webkit: true }), wt = f.instances[0];
+	try {
+		wt.opening.resolve(); expect(await f.carrier.ready).toBe(true);
+		// 65535 is WebKit's placeholder: an inner packet sent whole at that size is more than one outer packet holds
+		expect(f.events).toEqual([{ kind: 'ready', mtu: 1024 }]); expect(wt.created).toBe(true);
+		expect(wt.datagrams.incomingMaxBufferedDatagrams).toBe(4096);
+		expect(await f.carrier.send(new Uint8Array(1025))).toBe(false);
+		expect(await f.carrier.send(new Uint8Array(1024).fill(1))).toBe(true);
+		expect(wt.writes.map((bytes) => bytes.length)).toEqual([1024]);
+	} finally { f.carrier.close(); }
+	// the placeholder alone, where `writable` is still there, is no path's size either; a real one is kept (Chromium ~1200)
+	for (const [reported, mtu] of [[65_535, 1024], [1206, 1206]]) {
+		const g = wtFixture({ mtu: reported }); g.instances[0].opening.resolve();
+		try { expect(await g.carrier.ready).toBe(true); expect(g.events).toEqual([{ kind: 'ready', mtu }]); }
+		finally { g.carrier.close(); }
+	}
 });
 
 test('WebTransport receive bounds are independent of its smaller outbound MTU', async () => {
