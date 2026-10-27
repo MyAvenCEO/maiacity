@@ -1772,6 +1772,7 @@ impl Node {
             "gone": gone,
             "recent": s.traffic.recent(),
             "live": s.traffic.live_json(),
+            "trace": s.traffic.trace_json(),
             "carriers": s.transport_control.json(),
             "files": s.asked.lock().expect("asked").json(),
         })
@@ -2157,7 +2158,7 @@ struct Shared {
     /// The stamp of its device's last current read (`fresh`), which an offline read is said to be as of.
     fresh: Mutex<fresh::Stamp>,
     /// Which peer each log is asked of now (`Claims`): a log comes from one peer at a time, never from each.
-    claims: Mutex<Claims>,
+    pub(crate) claims: Mutex<Claims>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
     interests: Mutex<interest::Interests>,
     discovery_running: Mutex<HashMap<String, bool>>,
@@ -2603,8 +2604,11 @@ impl Shared {
                 asked = Err(error);
             }
         }
-        // what its pages brought, brought up to date once more, however the asking ended
-        self.catch_up_paced_class(must, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
+        // what its pages brought, brought up to date once more, however the asking ended; a live pull's own caller
+        // does it, bounded (`live::LIVE_VIEW`), where this would drain every catch-up pending
+        if expected.is_none() {
+            self.catch_up_paced_class(must, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
+        }
         if matches!(asked, Ok(0)) {
             job.forget()
         } else {
@@ -3432,6 +3436,11 @@ impl Shared {
         let told = self.told.lock().expect("told").get(&device).filter(|(at, _)| *at == on).map(|(_, h)| h.clone());
         if let Some(mut announce) = want.since(told.as_ref()) {
             self.live_witnesses(&mut announce, &want).await;
+            // T1: a small change's heads, each the trace id of a live edit on its way to `device`
+            if !announce.full && announce.logs.len() <= pulls::LIVE_LOGS {
+                let heads = announce.logs.iter().flat_map(|(_, f)| f.heads.iter().copied());
+                self.traffic.trace(traffic::Stage::Told, device, heads.collect::<Vec<_>>(), false);
+            }
             // Small live changes already have the cheapest encoding. A complete replacement (including reconnect
             // and permission contraction) first reconciles cached subtrees with capable peers. Refusal preserves
             // the original full announcement, and a legacy peer is probed only once on this connection.
@@ -3470,6 +3479,10 @@ impl Shared {
         let mut held = self.held.lock().expect("held");
         let holdings = held.entry(device).or_default();
         let live_logs = live::announced_hints(holdings, &announce);
+        if !live_logs.is_empty() {
+            let heads = announce.logs.iter().filter(|(l, _)| live_logs.contains(l)).flat_map(|(_, f)| f.heads.iter().copied());
+            self.traffic.trace(traffic::Stage::Heard, device, heads.collect::<Vec<_>>(), false);
+        }
         // Always take the holdings lock before the range cache: complete range rounds use the same order, so a
         // legacy update cannot race between checking a root and publishing its replacement.
         let mut ranges = self.ranges.lock().expect("ranges");
@@ -3748,17 +3761,22 @@ impl Shared {
 /// again once that other's ends (`release`), so what the first did not bring, the second still does, and a failed
 /// asking's logs go to the next peer at once rather than after its wait.
 #[derive(Default)]
-struct Claims {
+pub(crate) struct Claims {
     by: BTreeMap<LogId, EndpointId>,
     owed: BTreeSet<EndpointId>,
+    /// The logs a live pull asks for now (`live::LiveClaimed`), and how many live pulls ask for each: no asking of
+    /// the backlog names them meanwhile, from any peer, as its request would name what the device held before the live
+    /// pull took them and the peer would send them again (`LivePriority.lean`'s `backlogTake`).
+    live: BTreeMap<LogId, usize>,
 }
 
 impl Claims {
-    /// The logs of `differing` no other peer is asked for now, claimed for `endpoint`; owes it an asking again if
-    /// it left any out.
+    /// The logs of `differing` no other peer is asked for now, nor a live pull, claimed for `endpoint`; owes it an
+    /// asking again if it left any out.
     fn take(&mut self, endpoint: EndpointId, differing: BTreeSet<LogId>) -> BTreeSet<LogId> {
-        let (mine, others): (BTreeSet<_>, BTreeSet<_>) =
-            differing.into_iter().partition(|l| self.by.get(l).is_none_or(|e| *e == endpoint));
+        let (mine, others): (BTreeSet<_>, BTreeSet<_>) = differing
+            .into_iter()
+            .partition(|l| !self.live.contains_key(l) && self.by.get(l).is_none_or(|e| *e == endpoint));
         if others.is_empty() {
             self.owed.remove(&endpoint);
         } else {
@@ -3777,6 +3795,29 @@ impl Claims {
             return BTreeSet::new();
         }
         self.owed.iter().filter(|e| **e != endpoint).copied().collect()
+    }
+
+    /// A live pull asks for `logs` now (`live::LiveClaimed`).
+    pub(crate) fn live(&mut self, logs: &BTreeSet<LogId>) {
+        for log in logs {
+            *self.live.entry(*log).or_default() += 1;
+        }
+    }
+
+    /// A live pull's `logs` asked, however it ended: every peer owed an asking, its own among them, to ask again now,
+    /// for what the live pull didn't bring (`no_differing_log_is_lost`).
+    pub(crate) fn live_done(&mut self, logs: &BTreeSet<LogId>) -> BTreeSet<EndpointId> {
+        let mut ended = false;
+        for log in logs {
+            if let Some(n) = self.live.get_mut(log) {
+                *n -= 1;
+                if *n == 0 {
+                    self.live.remove(log);
+                    ended = true;
+                }
+            }
+        }
+        if ended { std::mem::take(&mut self.owed) } else { BTreeSet::new() }
     }
 }
 
@@ -3919,6 +3960,24 @@ mod tests {
         assert_eq!(claims.take(mac, [log(2)].into()), [log(2)].into(), "which takes what is left");
         assert_eq!(claims.release(mac), BTreeSet::new(), "and is owed nothing more");
         assert_eq!(claims.release(server), BTreeSet::new(), "an asking that claimed nothing wakes no one");
+    }
+
+    /// F12: a log a live pull asks for is left out of every backlog asking meanwhile, of its own peer too, and the
+    /// backlog is asked again once the live pull ends, so nothing is pulled twice and nothing is lost.
+    #[test]
+    fn a_live_pulls_logs_are_not_asked_again_by_the_backlog() {
+        let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
+        let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        let mut claims = Claims::default();
+        let chat: BTreeSet<_> = [log(1)].into();
+        claims.live(&chat);
+        claims.live(&chat);
+        assert_eq!(claims.take(mac, [log(1), log(2)].into()), [log(2)].into(), "its own peer's backlog leaves it out");
+        assert_eq!(claims.take(server, [log(1)].into()), BTreeSet::new(), "and every other peer's");
+        assert_eq!(claims.live_done(&chat), BTreeSet::new(), "a second live pull still asks for it");
+        assert_eq!(claims.live_done(&chat), [mac, server].into(), "the last one's end asks both again");
+        assert_eq!(claims.take(mac, [log(1)].into()), [log(1)].into(), "what it didn't bring, the backlog takes");
+        assert_eq!(claims.live_done(&chat), BTreeSet::new(), "an ended claim ends once");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

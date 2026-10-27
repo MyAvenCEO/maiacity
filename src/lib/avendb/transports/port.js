@@ -1,7 +1,12 @@
 // @ts-nocheck — bounded Window/worker bridge, one port per route generation.
 import { MAX_BYTES, MAX_PACKETS, packet, reason } from './packets.js';
 
-export function packetPort(port, { receive, event, closed }) {
+/** How long a packet waits for the other side to take it before it counts as lost, and an event before the carrier
+ *  closes. */
+export const PACKET_WAIT = 5000;
+export const EVENT_WAIT = 30_000;
+
+export function packetPort(port, { receive, event, closed }, { packetWait = PACKET_WAIT, eventWait = EVENT_WAIT } = {}) {
 	let stopped = false, next = 0, bytes = 0, incoming = 0, incomingBytes = 0;
 	const pending = new Map();
 	const close = (why = 'closed', notify = true) => {
@@ -19,7 +24,14 @@ export function packetPort(port, { receive, event, closed }) {
 		if (stopped || pending.size >= MAX_PACKETS || size > MAX_BYTES || bytes + size > MAX_BYTES) return Promise.resolve(false);
 		const id = next++;
 		return new Promise((resolve) => {
-			const timer = setTimeout(() => close('Window/worker carrier timed out'), 5000);
+			// a packet the other side hasn't taken in time is a lost datagram, as on any link, not a dead carrier: a
+			// worker busy with a page's check for seconds closed every WebRTC route on the iPhone (batch 4 round,
+			// "Window/worker carrier timed out" each ~5 s after it opened); a signal or ready event that long unanswered is
+			const lost = () => {
+				if (!pending.delete(id)) return;
+				bytes -= size; resolve(false);
+			};
+			const timer = setTimeout(() => kind === 'packet' ? lost() : close('Window/worker carrier timed out'), kind === 'packet' ? packetWait : eventWait);
 			pending.set(id, { resolve, timer, size }); bytes += size;
 			try {
 				if (kind === 'packet') { const owned = value.slice(); port.postMessage({ kind, id, bytes: owned }, [owned.buffer]); }
