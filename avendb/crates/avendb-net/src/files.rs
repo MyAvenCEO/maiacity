@@ -408,8 +408,11 @@ impl Shared {
         if self.shelf.is_none() {
             self.refresh_file(root).await;
         }
-        let skip = (from - segments.start * SEGMENT as u64) as usize;
-        Ok(plain[skip..skip + (to - from) as usize].to_vec())
+        // a blob its store holds only part of, as while the keeper fetches it, exports fewer bytes: not held yet, never
+        // a short slice
+        let (skip, len) = ((from - segments.start * SEGMENT as u64) as usize, (to - from) as usize);
+        ensure!(plain.len() >= skip + len, "lacks {from}..{to} of the file");
+        Ok(plain[skip..skip + len].to_vec())
     }
 
     /// The hashes of file `root`'s pieces, in order: its root alone, or the HashSeq its root names, fetched if this
