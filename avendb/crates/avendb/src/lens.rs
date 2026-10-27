@@ -624,7 +624,8 @@ pub struct Lens {
 enum Step {
     /// The older version's fields `older` and the newer's `newer` hold the same thing. `forward` turns older values
     /// into newer ones and `backward` newer into older: rows of (when, then), the first row whose `when` fields all
-    /// hold winning, a field `when` doesn't name matching anything.
+    /// hold winning, a field `when` doesn't name matching anything. Both may name one field, as a lens renaming a
+    /// constant `kind` does (`manifest` to `actor`): then the value `backward` reads tells which version it holds.
     Convert { older: Vec<String>, newer: Vec<String>, forward: Vec<Row>, backward: Vec<Row> },
     /// A field only the newer version has.
     Add(String),
@@ -669,6 +670,17 @@ impl Step {
         }
     }
 
+    /// Whether `r` holds a convert's thing in the newer version: a newer field stored, where the two versions name
+    /// other fields; where they name one field alike (a constant `kind` a lens renames, `manifest` to `actor`), a value
+    /// its `backward` rows read as the newer version's.
+    fn newer_held(&self, r: &Record) -> bool {
+        let Step::Convert { older, newer, backward, .. } = self else { return false };
+        match newer.iter().any(|f| older.contains(f)) {
+            true => first(backward, r).is_some(),
+            false => newer.iter().any(|f| present(r, f).is_some()),
+        }
+    }
+
     /// The fields this step speaks for.
     fn fields(&self) -> Vec<&str> {
         match self {
@@ -685,6 +697,11 @@ fn steps(v: &Value) -> Option<Vec<Step>> {
 /// The first row whose `when` holds in `r`.
 fn first<'a>(rows: &'a [Row], r: &Record) -> Option<&'a Row> {
     rows.iter().find(|row| row.when.iter().all(|(k, v)| present(r, k) == Some(v)))
+}
+
+/// The fields of `fields` that `other` doesn't name too.
+fn only(fields: &[String], other: &[String]) -> Vec<String> {
+    fields.iter().filter(|f| !other.contains(f)).cloned().collect()
 }
 
 fn remove(r: &mut Record, fields: &[String]) {
@@ -714,11 +731,10 @@ fn translate(steps: &[Step], side: Side, r: &Record) -> Record {
     for s in steps {
         match s {
             Step::Convert { older, newer, forward, backward } => {
-                let newer_stored = newer.iter().any(|f| present(r, f).is_some());
-                match (side, newer_stored) {
-                    (Side::Newer, true) => remove(&mut out, older),
+                match (side, s.newer_held(r)) {
+                    (Side::Newer, true) => remove(&mut out, &only(older, newer)),
                     (Side::Newer, false) => {
-                        remove(&mut out, older);
+                        remove(&mut out, &only(older, newer));
                         if let Some(row) = first(forward, r) {
                             out.extend(row.then.clone());
                         }
@@ -814,6 +830,7 @@ fn put_one<'a>(schema: &Schema, at: Put<'a>, side: Side, walk: &mut Vec<Put<'a>>
     for s in steps {
         match s {
             Step::Convert { older, newer, forward, .. } => {
+                let held = s.newer_held(r);
                 let mine = if side == Side::Newer { newer } else { older };
                 if !mine.iter().any(|f| changed(f)) {
                     continue;
@@ -822,17 +839,17 @@ fn put_one<'a>(schema: &Schema, at: Put<'a>, side: Side, walk: &mut Vec<Put<'a>>
                     // the newer version's fields now hold it
                     Side::Newer => {
                         set_all(&mut out, newer, n);
-                        remove(&mut out, older);
+                        remove(&mut out, &only(older, newer));
                     }
                     // an older app writes where the item holds it: in the newer version's fields once any is stored
-                    Side::Older => match first(forward, n).filter(|_| newer.iter().any(|f| present(r, f).is_some())) {
+                    Side::Older => match first(forward, n).filter(|_| held) {
                         Some(row) => {
                             remove(&mut out, newer);
                             out.extend(row.then.clone());
                         }
                         None => {
                             set_all(&mut out, older, n);
-                            remove(&mut out, newer);
+                            remove(&mut out, &only(newer, older));
                         }
                     },
                 }
@@ -1114,9 +1131,29 @@ impl Lane {
         }
     }
 
+    /// Whether kinds `a` and `b` are kin (`Schemas.lean`'s `kin`): one kind, or joined by a chain of the lane's lenses,
+    /// each joining the kinds of its two schemas either way round. A lens whose schemas the lane lacks joins nothing.
+    pub fn kin(&self, a: Option<&str>, b: Option<&str>) -> bool {
+        let kind = |id: &BlobId| self.schemas.get(id).map(Schema::kind);
+        let joins: Vec<_> = self.lenses.values().filter_map(|l| Some((kind(&l.from)?, kind(&l.to)?))).collect();
+        let mut reached = vec![a];
+        let mut i = 0;
+        while let Some(&k) = reached.get(i) {
+            for &(x, y) in &joins {
+                let other = if x == k { y } else if y == k { x } else { continue };
+                if !reached.contains(&other) {
+                    reached.push(other);
+                }
+            }
+            i += 1;
+        }
+        reached.contains(&b)
+    }
+
     /// Whether a write that makes the stored record `before` into `after` fits the schemas `authored` names, those its
-    /// entry was written under once it is in (`Schemas.lean`'s `Fit.fits`): each in the lane, and all of one kind, so
-    /// that no write tags an item with another kind's schema to write that kind's fields into it. Only what it changed
+    /// entry was written under once it is in (`Schemas.lean`'s `Fit.fits`): each in the lane, and all of one kin (one
+    /// kind, or kinds a lens in the lane joins), so that no write tags an item with another kind's schema to write that
+    /// kind's fields into it. Only what it changed
     /// is judged (S1): each place it changed holds a value one of them lets it hold there; each list of records it
     /// changed is one they name, holding no copy of a row it didn't hold before; each row it added, or one of whose
     /// own fields it changed or whose lists it added or dropped, reads under one of them (the innermost row around
@@ -1141,7 +1178,9 @@ impl Lane {
             return true;
         }
         let Some(under) = under else { return false };
-        if under.windows(2).any(|w| w[0].kind() != w[1].kind()) {
+        if let Some(first) = under.first().map(|x| x.kind())
+            && under.iter().any(|x| x.kind() != first && !self.kin(first, x.kind()))
+        {
             return false;
         }
         let fit = Fit(under);
@@ -2913,5 +2952,80 @@ mod tests {
         use example::{DOCUMENT_LENS, DOCUMENT_V0, TODO_LENS, TODO_V0};
         assert_eq!((DOCUMENT_LENS.from(), DOCUMENT_LENS.to()), (DOCUMENT_V0.id(), DOCUMENT_V1.id()));
         assert_eq!((TODO_LENS.from(), TODO_LENS.to()), (TODO_V0.id(), TODO_V1.id()));
+    }
+    /// A schema of kind `kind` with a title, required with the kind, as a vault's lane holds one.
+    fn kind_schema(title: &str, kind: &str) -> String {
+        format!(
+            r#"{{"title": "{title}", "type": "object", "required": ["kind"], "properties": {{
+  "kind": {{ "const": "{kind}" }}, "title": {{ "type": "string", "default": "" }} }}}}"#
+        )
+    }
+
+    /// A lens from `from` to `to` that renames the constant `kind` field, `older` to `newer`, one field both name.
+    fn kind_lens(from: &Schema, to: &Schema, older: &str, newer: &str) -> String {
+        format!(
+            r#"{{"lens": "{older} to {newer}", "from": "{}", "to": "{}", "steps": [{{ "convert": {{
+  "from": ["kind"], "to": ["kind"],
+  "forward": [[{{ "kind": "{older}" }}, {{ "kind": "{newer}" }}]],
+  "backward": [[{{ "kind": "{newer}" }}, {{ "kind": "{older}" }}]] }} }}]}}"#,
+            from.id().to_hex(),
+            to.id().to_hex()
+        )
+    }
+
+    /// Kin by lens (`Schemas.lean`'s `kin`): a lens in the lane joining a manifest schema to an actor schema makes the
+    /// two kinds one, so a write under both fits; without the lens it fits nothing, and a third kind stays apart.
+    #[test]
+    fn a_lens_in_the_lane_makes_two_kinds_kin() {
+        let (manifest, actor, todo) =
+            (kind_schema("Manifest, v2", "manifest"), kind_schema("Actor, v1", "actor"), kind_schema("Todo, v9", "todo"));
+        let (m, a) = (Schema::parse(manifest.as_bytes()).expect("a schema"), Schema::parse(actor.as_bytes()).expect("a schema"));
+        let t = Schema::parse(todo.as_bytes()).expect("a schema");
+        let lens = kind_lens(&m, &a, "manifest", "actor");
+        let before = serde_json::json!({ "kind": "manifest", "title": "Chat" });
+        let after = serde_json::json!({ "kind": "manifest", "title": "Chat room" });
+        let both = BTreeSet::from([m.id(), a.id()]);
+        let apart = Lane::new([manifest.as_bytes(), actor.as_bytes(), todo.as_bytes()]);
+        assert!(!apart.fits(&both, &before, &after), "two kinds, no lens: another kind's schema");
+        assert!(!apart.kin(Some("manifest"), Some("actor")) && apart.kin(Some("todo"), Some("todo")));
+        let joined = Lane::new([manifest.as_bytes(), actor.as_bytes(), todo.as_bytes(), lens.as_bytes()]);
+        assert!(joined.fits(&both, &before, &after), "the lens makes them kin");
+        assert!(joined.kin(Some("actor"), Some("manifest")), "either way round");
+        assert!(!joined.fits(&BTreeSet::from([m.id(), t.id()]), &before, &after), "a third kind stays apart");
+        assert!(!joined.kin(Some("todo"), Some("actor")) && !joined.kin(None, Some("actor")));
+        // chains join: a lens from the actor kind on to a third makes the manifest kind its kin too
+        let agent = kind_schema("Agent, v1", "agent");
+        let g = Schema::parse(agent.as_bytes()).expect("a schema");
+        let on = kind_lens(&a, &g, "actor", "agent");
+        let chained = Lane::new([manifest.as_bytes(), actor.as_bytes(), agent.as_bytes(), lens.as_bytes(), on.as_bytes()]);
+        assert!(chained.kin(Some("manifest"), Some("agent")));
+        // a lens whose schemas the lane lacks joins nothing
+        assert!(!Lane::new([manifest.as_bytes(), lens.as_bytes()]).kin(Some("manifest"), Some("actor")));
+    }
+
+    /// A convert step that renames the constant `kind` field: an actor app reads a manifest as an actor, a manifest app
+    /// reads an actor as a manifest, and an edit through the lens round-trips, leaving the stored kind as it was.
+    #[test]
+    fn a_lens_renames_the_kind_both_ways_and_round_trips() {
+        let (manifest, actor) = (kind_schema("Manifest, v2", "manifest"), kind_schema("Actor, v1", "actor"));
+        let (m, a) = (Schema::parse(manifest.as_bytes()).expect("a schema"), Schema::parse(actor.as_bytes()).expect("a schema"));
+        let lens = Lens::parse(kind_lens(&m, &a, "manifest", "actor").as_bytes()).expect("a lens");
+        let stored = serde_json::json!({ "kind": "manifest", "title": "Chat" });
+        let newer = View::through(&a, &lens, &m).expect("the lens joins them");
+        let got = newer.get(&stored).expect("an actor app reads a manifest");
+        assert_eq!(got, serde_json::json!({ "kind": "actor", "title": "Chat" }));
+        assert_eq!(newer.put(&stored, &got), Some(stored.clone()), "putting the view back unchanged changes nothing");
+        let edited = newer.put(&stored, &serde_json::json!({ "kind": "actor", "title": "Chat room" })).expect("an edit");
+        assert_eq!(edited, serde_json::json!({ "kind": "manifest", "title": "Chat room" }), "only the title is written");
+        assert_eq!(newer.get(&edited), Some(serde_json::json!({ "kind": "actor", "title": "Chat room" })));
+        let older = View::through(&m, &lens, &a).expect("the lens joins them");
+        let as_actor = serde_json::json!({ "kind": "actor", "title": "Kernel" });
+        let back = older.get(&as_actor).expect("a manifest app reads an actor");
+        assert_eq!(back, serde_json::json!({ "kind": "manifest", "title": "Kernel" }));
+        assert_eq!(older.put(&as_actor, &back), Some(as_actor.clone()));
+        let renamed = older.put(&as_actor, &serde_json::json!({ "kind": "manifest", "title": "Core" })).expect("an edit");
+        assert_eq!(renamed, serde_json::json!({ "kind": "actor", "title": "Core" }), "written where the item holds it");
+        assert_eq!(older.get(&renamed), Some(serde_json::json!({ "kind": "manifest", "title": "Core" })));
+        assert_eq!(newer.get(&stored), newer.get(&older.put(&stored, &older.get(&stored).expect("it reads")).expect("a put")));
     }
 }
