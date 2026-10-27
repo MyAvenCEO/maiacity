@@ -12,10 +12,15 @@
  * (sync v2 step P6). For a list of entries it holds now.
  */
 import { GAMES, gameTag } from '../../../game/games.js';
+import { withQueries } from '../../../game/code/sources/actors.js';
 import { PLACES } from '../../../game/places.js';
 
-/** An actor of `o`: its loads in `tiers`, a held actor as `{ actor }`; no interface, caps or code of its own yet. */
-const actor = ({ tiers, ...o }) => ({ kind: 'actor', v: 3, note: '', routes: [], slots: [], ...o, interface: {}, needs: [], code: [], loads: tiers });
+/** An actor of `o`: its loads in `tiers`, a held actor as `{ actor }`; an interface of no methods (it only loads), no
+ *  caps or code of its own yet. */
+const actor = ({ tiers, ...o }) => ({
+	kind: 'actor', v: 3, note: '', routes: [], slots: [], ...o,
+	interface: { version: 1, description: o.note ?? '', methods: [], events: [], needs: [] }, code: [], loads: tiers
+});
 
 /** The kernel: what every page reads, whatever app it is: who may do what, the schemas and lenses that read records. */
 export const KERNEL = actor({
@@ -210,9 +215,16 @@ export const PAGES = [
 /** The labs under /app/games/ that are no game of the list (no `gameOrder`, Sandbox 7 and 8): each reads as a game does. */
 export const LABS = PLACES.filter((p) => p.route?.startsWith('/app/games/') && !GAMES.some((g) => g.id === p.id));
 
-/** Every actor the repo declares. */
-export const ACTORS = [
+/** Every actor the repo declares, each want written inline (pass 1 of the move; what `lift` reads a v2 manifest as). */
+export const INLINE = [
 	KERNEL, DASHBOARD, UNIVERSE, STUDIO, CHAT, ASSETS, ...PAGES,
 	...GAMES.map((g) => (g.id === 'sandbox-4' ? sandbox4Actor(g) : gameActor(g))),
 	...LABS.map(gameActor)
 ];
+
+/**
+ * Every actor the repo declares, each want named as a query entry of `QUERIES` (task C1, pass 2: `{ query: {entry,
+ * version}, bind }` in place of the want), and those query entries, one per meaning. Both go into Maia City by one AIP
+ * (scripts/propose-actors.mjs); a route's Interests are the same as from `INLINE` (game/code/sources/actors.test.js).
+ */
+export const { actors: ACTORS, queries: QUERIES } = withQueries(INLINE);

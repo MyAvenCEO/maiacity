@@ -2,9 +2,9 @@
 // The page's view (./device.js): one Interest a mounted page, set from the actors of its route, slots bound by the
 // route and the selection, signals ordering a tier; no learned lists, no brings, no timers.
 import { afterEach, expect, test } from 'bun:test';
-import { actorDiagnostics, actorSources, bindView, deviceRows, refreshActiveView, signalView, useBuiltInActors, useDevice, useView, viewPath, wantNow } from './device.js';
+import { actorDiagnostics, actorSources, bindView, deviceRows, refreshActiveView, signalView, useBuiltInActors, useDevice, useQuery, useView, viewPath, wantNow } from './device.js';
 import { MAIA_CITY } from './anchor.js';
-import { ACTORS } from '../../../src/lib/avendb/actors.js';
+import { ACTORS, QUERIES } from '../../../src/lib/avendb/actors.js';
 
 const id = (i) => i.toString(16).padStart(64, '0');
 const turn = () => new Promise((r) => setTimeout(r, 0));
@@ -187,7 +187,7 @@ test('a page the app opens by its hash is the view of that page, its manifest th
 
 test("Chat's rooms are asked for before any read of a busy device answers, and the vault's manifests run once read", async () => {
 	globalThis.location = { pathname: '/app/chat/' };
-	useBuiltInActors(ACTORS);
+	useBuiltInActors([...ACTORS, ...QUERIES]);
 	// a cold iPhone in its catch-up: every read waits behind the pages it applies
 	let release;
 	const wait = new Promise((r) => (release = r));
@@ -215,7 +215,7 @@ test("Chat's rooms are asked for before any read of a busy device answers, and t
 });
 
 test('each actor says whether it is the vault\'s or the app\'s own copy', () => {
-	useBuiltInActors(ACTORS);
+	useBuiltInActors([...ACTORS, ...QUERIES]);
 	const chat = { ...ACTORS.find((m) => m.id === 'chat') };
 	const lensed = { kind: 'manifest', v: 2, id: 'kernel', title: 'Kernel', routes: ['*'], tiers: { now: [], next: [], later: [], idle: [] } };
 	const sources = actorSources([chat, lensed], MAIA_CITY);
@@ -229,8 +229,23 @@ test('each actor says whether it is the vault\'s or the app\'s own copy', () => 
 test("the app's actors cover Chat by its route and its hash, the rooms of every vault now", () => {
 	const { leavesFor } = require('./actors.js');
 	for (const path of ['/app/chat/', '/app/#chat']) {
-		const leaves = leavesFor(ACTORS, path, {});
+		const leaves = leavesFor([...ACTORS, ...QUERIES], path, {});
 		expect([...new Set(leaves.map((l) => l.actor))].sort()).toEqual(['chat', 'kernel']);
 		expect(leaves.find((l) => l.tier === 'now' && l.want.type?.includes('room'))?.want.vault).toBe('*');
 	}
+});
+
+test("a page reads by a query entry's address: the vault's own of that id once a walk read it, else the app's", async () => {
+	useBuiltInActors([...ACTORS, ...QUERIES]);
+	const rooms = { entry: 'query-room', version: 1 };
+	expect(useQuery(rooms, {}, { limit: 50 })).toEqual({ op: 'query', where: { type: ['room'] }, select: [], order: [['created', 'desc']], limit: 50 });
+	expect(useQuery({ ...rooms, version: 2 })).toBeNull();
+	expect(useQuery({ entry: 'query-none', version: 1 })).toBeNull();
+	// the vault holds its own: the walk read it, and the page reads by it
+	const own = { ...QUERIES.find((q) => q.id === 'query-room'), interface: { version: 1, methods: [{ name: 'read', params: [], ops: [{ op: 'read' }], run: { op: 'query', where: { type: ['room', 'note'] }, select: [] } }] } };
+	globalThis.location = { pathname: '/app/chat/' };
+	useDevice(device({ manifests: [own] }));
+	await useView('/app/chat/', {});
+	await settle();
+	expect(useQuery(rooms).where).toEqual({ type: ['room', 'note'] });
 });

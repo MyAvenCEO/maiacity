@@ -33,11 +33,13 @@ export function appPages({ nav = [], out = {}, games = [] } = {}) {
  *  @returns {{path: string, title: string, actors: string[], tiers: {now: number, next: number, later: number, idle: number}}[]} */
 export function coverage(actors, pages) {
 	const own = (actors ?? []).map(lift).filter((m) => m?.kind === 'actor' && typeof m.id === 'string');
+	// the query entries the actors name, which their parts compile through
+	const all = [...own, ...(actors ?? []).filter((m) => m?.kind === 'query')];
 	return pages.map(({ path, title }) => {
 		const ids = own.filter((m) => (m.routes ?? []).some((r) => r !== '*' && typeof r === 'string' && covers(r, path))).map((m) => m.id);
 		const bound = new Proxy({}, { get: (_, k) => (typeof k === 'string' ? '0'.repeat(64) : undefined) });
 		const tiers = { now: 0, next: 0, later: 0, idle: 0 };
-		for (const leaf of ids.length ? leavesFor(own, path, bound) : []) if (leaf.tier in tiers) tiers[leaf.tier]++;
+		for (const leaf of ids.length ? leavesFor(all, path, bound) : []) if (leaf.tier in tiers) tiers[leaf.tier]++;
 		return { path, title, actors: ids, tiers };
 	});
 }

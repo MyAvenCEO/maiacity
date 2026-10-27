@@ -44,12 +44,25 @@ const ID = '^[a-z0-9][a-z0-9-]*$';
 const HEX = /^[0-9a-f]{64}$/;
 const SLOT = /^\$([a-z][a-z0-9-]*)$/;
 
+/** What a v3 part names a query entry by (task C1): its address in the actor's own vault, the query's params bound to
+ *  slots or entries, and the vault it reads where not the actor's own (`*` any, `$vault` the route's). */
+const LOAD_QUERY = {
+	query: {
+		type: 'object',
+		properties: { entry: { type: 'string', maxLength: 64, pattern: '^([0-9a-f]{64}|[a-z0-9][a-z0-9-]*)$' }, version: { type: 'integer', minimum: 1 } },
+		required: ['entry', 'version']
+	},
+	bind: { type: 'object', maxProperties: 8, additionalProperties: { type: 'string', pattern: '^([0-9a-f]{64}|\\$[a-z][a-z0-9-]*)$' } },
+	vault: { type: 'string', pattern: '^([0-9a-f]{64}|\\$vault|\\*)$' }
+};
+
 /** A part of an actor's `loads` (`held` names the field that holds another actor: `actor` in v3, `manifest` in v2). */
 /** @param {string} held */
 const part = (held) => ({
 	type: 'object',
 	properties: {
 		[held]: { type: 'string', maxLength: 64, pattern: ID },
+		...(held === 'actor' ? LOAD_QUERY : {}),
 		want: {
 			type: 'object',
 			properties: {
@@ -95,10 +108,24 @@ export const MANIFEST_V2 = JSON.stringify({
 	required: ['kind', 'v', 'id', 'title', 'tiers']
 });
 
+/** An interface (avendb::address, Lean Address.lean): its version, methods, events, the caps it needs, a description. */
+const INTERFACE = {
+	type: 'object',
+	properties: {
+		version: { type: 'integer', minimum: 1 },
+		description: { type: 'string', maxLength: 2000 },
+		methods: { type: 'array', maxItems: 64, items: { type: 'object' } },
+		events: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 64 } },
+		needs: { type: 'array', maxItems: 32, items: { type: 'object' } }
+	},
+	required: ['version', 'methods'],
+	default: { version: 1, methods: [] }
+};
+
 /**
- * The schema of an actor, v3: v2's fields with `loads` for `tiers`, and the actor's own interface (the methods and
- * events it answers, empty until query and mutation entries land: task A2), the caps it needs and the code it pins.
- * Self-contained: nothing about an actor lives outside its entry.
+ * The schema of an actor, v3: v2's fields with `loads` for `tiers`, the actor's own interface (avendb::address: the
+ * methods and events it answers and the caps it needs; no methods for an actor that only loads) and the code it pins.
+ * Self-contained: nothing about an actor lives outside its entry, so any peer that reads it describes it.
  */
 export const ACTOR_V3 = JSON.stringify({
 	$schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -108,8 +135,7 @@ export const ACTOR_V3 = JSON.stringify({
 		kind: { const: 'actor' },
 		v: { const: 3 },
 		...COMMON,
-		interface: { type: 'object', default: {} },
-		needs: { type: 'array', maxItems: 32, items: { type: 'string', maxLength: 200 }, default: [] },
+		interface: INTERFACE,
 		code: {
 			type: 'array',
 			maxItems: 16,
@@ -123,8 +149,8 @@ export const ACTOR_V3 = JSON.stringify({
 
 /**
  * @typedef {{type?: string[], tags?: string[], entry?: string, vault?: string}} Want
- * @typedef {{actor?: string, manifest?: string, want?: Want, part?: string, files?: string[], window?: {newest?: number, oldest?: boolean}, follow?: number, by?: string}} Part
- * @typedef {{kind: string, id: string, v?: number, title?: string, note?: string, routes?: string[], slots?: string[], interface?: object, needs?: string[], code?: any[], loads?: Record<string, Part[]>, tiers?: Record<string, Part[]>, priority?: string, parts?: any[]}} Actor
+ * @typedef {{actor?: string, manifest?: string, query?: {entry: string, version: number}, bind?: Record<string, string>, vault?: string, want?: Want, part?: string, files?: string[], window?: {newest?: number, oldest?: boolean}, follow?: number, by?: string, note?: string}} Part
+ * @typedef {{kind: string, id: string, v?: number, title?: string, note?: string, routes?: string[], slots?: string[], interface?: any, code?: any[], loads?: Record<string, Part[]>, tiers?: Record<string, Part[]>, priority?: string, parts?: any[], where?: any, window?: {limit?: number}, order?: string[], follow?: number}} Actor
  * @typedef {{tier: string, part: Part, want: Want, actor: string}} Leaf
  * @typedef {{run: (op: Record<string, unknown>) => Promise<any>}} ActorDevice
  */
@@ -149,7 +175,6 @@ export const actorLens = (from, to) => JSON.stringify({
 		{ convert: { from: ['v'], to: ['v'], forward: [[{ v: 2 }, { v: 3 }]], backward: [[{ v: 3 }, { v: 2 }]] } },
 		{ convert: { from: ['tiers'], to: ['loads'], forward: [[{}, { loads: EMPTY }]], backward: [[{}, { tiers: EMPTY }]] } },
 		{ add: 'interface' },
-		{ add: 'needs' },
 		{ add: 'code' }
 	]
 });
@@ -198,7 +223,7 @@ export function lift(m) {
 	const loads = Object.fromEntries(Object.entries(parts).map(([t, ps]) => [t, ps.map(v2Part)]));
 	return {
 		kind: 'actor', v: 3, id: m.id, title: m.title, note: m.note ?? '', routes: m.routes ?? [], slots: m.slots ?? [],
-		interface: {}, needs: [], code: [], loads
+		interface: { version: 1, description: m.note ?? '', methods: [], events: [], needs: [] }, code: [], loads
 	};
 }
 
@@ -206,14 +231,167 @@ export function lift(m) {
 const heldBy = (p) => (typeof p?.actor === 'string' ? p.actor : typeof p?.manifest === 'string' ? p.manifest : undefined);
 
 /**
- * The Interests the actors `all` load for path `path`, slots bound by `env` (`{ room: <entry>, … }`): each actor
- * whose routes cover the path, and each it holds, once however many hold it (a cycle ends where it comes
+ * QUERY ENTRIES (task C1 of the one query engine): what an actor's part wants is a named query, an entry of its own
+ * (`kind: 'query'`, schema "Query, v1") that any peer reads and calls by its address, never by a bare name
+ * (avendb::address: `{vault, entry, version}`, a natural id resolving as `get` resolves it). It is an actor too: its
+ * interface has one method, `read`, whose params are the query's own and whose op template is the local query that
+ * reads it (`run`, `{ "$": param }` where an arg goes); `where` is its selector (labels alone, A1's grammar), `window`
+ * the newest `limit` of them, `order` by creation, `follow` the levels of what its records name. A part names a query
+ * with `bind`, each param bound to a slot (`$room`) or an entry, and keeps what is the actor's own: the tier, which
+ * part of the entries (`headers`, `files`), which files, the signal that orders it, the vault it reads.
+ * `compile` gives back the want the part stood for, so a route's Interests are the same either way (the golden test).
+ */
+
+/** The kind and entry type of a query entry, and its schema's title. */
+export const QUERY_KIND = 'query';
+export const QUERY_TYPE = 'query';
+export const QUERY_SCHEMA = 'Query, v1';
+
+/** The schema of a query, v1: an actor (interface) with its selector, window, order and follow. */
+export const QUERY_V1 = JSON.stringify({
+	$schema: 'https://json-schema.org/draft/2020-12/schema',
+	title: QUERY_SCHEMA,
+	type: 'object',
+	properties: {
+		kind: { const: QUERY_KIND },
+		v: { const: 1 },
+		id: { type: 'string', maxLength: 64, pattern: ID },
+		title: { type: 'string', maxLength: 160 },
+		note: { type: 'string', maxLength: 2000, default: '' },
+		interface: INTERFACE,
+		where: { type: 'object' },
+		window: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 512 } } },
+		order: { type: 'array', prefixItems: [{ const: 'created' }, { enum: ['asc', 'desc'] }], minItems: 2, maxItems: 2 },
+		follow: { type: 'integer', minimum: 0, maximum: 3, default: 0 }
+	},
+	required: ['kind', 'v', 'id', 'title', 'interface', 'where']
+});
+
+/** One test or the conjunction of several, as `where` reads them. @param {any[]} atoms */
+const conj = (atoms) => (atoms.length === 1 ? atoms[0] : { all: atoms });
+/** The tests of a `where`: one, or those of its `all`. @param {any} w @returns {any[]} */
+const atomsOf = (w) => (Array.isArray(w?.all) ? w.all : w && typeof w === 'object' ? [w] : []);
+
+/**
+ * The query entry an inline part's want stands for, and the part naming it in its place: `{ query, part }`. Its
+ * entry slot (`$room`) becomes the param of that name, bound back to the slot. The query's id names what it picks
+ * (`query-room` the rooms, `query-one-room-newest-50` the bound room's newest 50); `ids` (id to the query's own JSON) makes one id one query, a second meaning gets a suffix.
+ * @param {Part} p @param {Map<string, string>} [ids] @returns {{ query: Actor, part: Part } | null}
+ */
+export function asQuery(p, ids = new Map()) {
+	const want = p?.want;
+	if (!want || typeof want !== 'object') return null;
+	const slot = typeof want.entry === 'string' ? SLOT.exec(want.entry) : null;
+	const params = slot ? [slot[1]] : [];
+	/** the selector, `{ "$": param }` where an arg goes @type {any[]} */
+	const atoms = [
+		...(want.type?.length ? [{ type: want.type }] : []),
+		...(want.tags ?? []).map((tag) => ({ tag })),
+		...(want.entry ? [{ entry: [slot ? { $: slot[1] } : want.entry] }] : [])
+	];
+	if (!atoms.length) return null;
+	const where = conj(atoms);
+	const footprint = atoms.filter((a) => !a.entry);
+	const window = p.window?.newest ? { limit: p.window.newest } : undefined;
+	const order = p.window?.newest ? ['created', 'desc'] : p.window?.oldest ? ['created', 'asc'] : undefined;
+	const follow = p.follow || undefined;
+	const named = [
+		...(want.type ?? []), ...(want.tags ?? []).map((t) => `tag-${t}`), ...(slot ? [`one-${slot[1]}`] : want.entry ? ['one-entry'] : []),
+		...(window ? [`newest-${window.limit}`] : order ? ['oldest'] : []), ...(follow ? [`follow-${follow}`] : [])
+	].join('-').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 52);
+	const body = { where, ...(window ? { window } : {}), ...(order ? { order } : {}), ...(follow ? { follow } : {}) };
+	const key = JSON.stringify(body);
+	// `query-` keeps a query's natural id clear of every other entry's of the vault, which `get` resolves alike
+	let id = `query-${named || 'entries'}`;
+	for (let n = 2; ids.has(id) && ids.get(id) !== key; n++) id = `query-${named}-${n}`;
+	ids.set(id, key);
+	const run = { op: 'query', where, select: [], order: [order ?? ['created', 'desc']], limit: window?.limit ?? 512 };
+	const query = {
+		kind: QUERY_KIND, v: 1, id, title: id, note: p.note ?? '',
+		interface: { version: 1, description: `Reads ${named.replace(/-/g, ' ') || 'entries'}.`, events: [], needs: [], methods: [
+			{ name: 'read', params, ops: [{ op: 'read' }], ...(footprint.length ? { where: conj(footprint) } : {}), run }
+		] },
+		...body
+	};
+	const { want: _w, window: _n, follow: _f, ...own } = p;
+	const part = { query: { entry: id, version: 1 }, ...(slot ? { bind: { [slot[1]]: String(want.entry) } } : {}), ...(want.vault ? { vault: want.vault } : {}), ...own };
+	return { query, part };
+}
+
+/**
+ * The inline part a part naming a query stands for, from the query entries `queries` (by id): its want from the
+ * query's selector with its params bound by `bind`, its window and follow from the query's, the rest the part's own.
+ * Null where no query of that id and version is held, or it reads by something a want can't say.
+ * @param {Part} p @param {Map<string, Actor>} queries @returns {Part | null}
+ */
+export function compile(p, queries) {
+	const q = p?.query ? queries.get(p.query.entry) : undefined;
+	if (!q || q.v !== 1 || q.interface?.version !== p.query?.version) return null;
+	/** @type {Want} */
+	const want = {};
+	for (const a of atomsOf(q.where)) {
+		if (Array.isArray(a.type)) want.type = [...(want.type ?? []), ...a.type];
+		else if (typeof a.tag === 'string') want.tags = [...(want.tags ?? []), a.tag];
+		else if (Array.isArray(a.entry) && a.entry.length === 1 && !want.entry) {
+			const e = a.entry[0];
+			const bound = typeof e?.$ === 'string' ? p.bind?.[e.$] : e;
+			if (typeof bound !== 'string') return null;
+			want.entry = bound;
+		} else return null;
+	}
+	if (p.vault) want.vault = p.vault;
+	const { query: _q, bind: _b, vault: _v, ...own } = p;
+	const window = q.window?.limit ? { newest: q.window.limit } : q.order?.[1] === 'asc' ? { oldest: /** @type {true} */ (true) } : undefined;
+	return { want, ...(window ? { window } : {}), ...(q.follow ? { follow: q.follow } : {}), ...own };
+}
+
+/**
+ * Actors `actors` with each inline want named as a query entry: `{ actors, queries }`, the queries one per meaning,
+ * in the order first named. What the repo declares inline, as the vault holds it.
+ * @param {Actor[]} actors @returns {{ actors: Actor[], queries: Actor[] }}
+ */
+export function withQueries(actors) {
+	const ids = new Map();
+	/** @type {Map<string, Actor>} */
+	const queries = new Map();
+	const named = actors.map((a) => ({
+		...a,
+		loads: Object.fromEntries(Object.entries(a.loads ?? {}).map(([t, ps]) => [t, ps.map((p) => {
+			const q = asQuery(p, ids);
+			if (!q) return p;
+			if (!queries.has(q.query.id)) queries.set(q.query.id, q.query);
+			return q.part;
+		})]))
+	}));
+	return { actors: named, queries: [...queries.values()] };
+}
+
+/**
+ * The op query `q` runs with args `args` (`{ room: <entry> }`): its `read` method's template with the args bound, as
+ * avendb::address `bind` binds it and the engine's `call` runs it. `more` (offset, limit) narrows a page of it.
+ * @param {Actor} q @param {Record<string, string>} [args] @param {{offset?: number, limit?: number}} [more]
+ */
+export function queryOp(q, args = {}, more = {}) {
+	const read = q?.interface?.methods?.find((/** @type {any} */ m) => m.name === 'read');
+	if (!read?.run) throw new Error(`query ${q?.id}: no read method`);
+	const missing = (read.params ?? []).filter((/** @type {string} */ k) => typeof args[k] !== 'string');
+	if (missing.length) throw new Error(`query ${q.id}: no ${missing.join(', ')}`);
+	/** @param {any} v @returns {any} */
+	const bind = (v) => (Array.isArray(v) ? v.map(bind) : v && typeof v === 'object' ? (typeof v.$ === 'string' && Object.keys(v).length === 1 ? args[v.$] : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, bind(x)]))) : v);
+	return { ...bind(read.run), ...(more.offset ? { offset: more.offset } : {}), ...(more.limit ? { limit: more.limit } : {}) };
+}
+
+/**
+ * The Interests the actors `all` load for path `path`, slots bound by `env` (`{ room: <entry>, … }`), the query
+ * entries among `all` naming what a part that names one wants: each actor whose routes cover the path, and each it holds, once however many hold it (a cycle ends where it comes
  * round), its parts at the lower of their own tier and the tier they are held at (Lean `flatten`). A part whose slot
  * is unbound is left out. In tier order, then in the order declared.
  * @param {Actor[]} all @param {string} path @param {Record<string, string | undefined>} [env] @returns {Leaf[]}
  */
 export function leavesFor(all, path, env = {}) {
-	const byId = new Map((all ?? []).map(lift).filter((m) => m?.kind === 'actor' && typeof m.id === 'string').map((m) => [m.id, m]));
+	const lifted = (all ?? []).map(lift).filter((m) => typeof m?.id === 'string');
+	const byId = new Map(lifted.filter((m) => m.kind === 'actor').map((m) => [m.id, m]));
+	const queries = new Map(lifted.filter((m) => m.kind === QUERY_KIND).map((m) => [m.id, m]));
 	/** @type {Leaf[]} */
 	const out = [];
 	/** each actor walked, at the highest tier it was held at: a lower holding adds nothing */
@@ -231,8 +409,10 @@ export function leavesFor(all, path, env = {}) {
 					if (held) walk(held, at);
 					continue;
 				}
-				const want = resolve(p?.want, env);
-				if (want) out.push({ tier: at, part: p, want, actor: m.id });
+				// a named query: compiled to the want it stands for (`compile`), unknown or another version wants nothing
+				const inline = p?.query ? compile(p, queries) : p;
+				const want = resolve(inline?.want, env);
+				if (want && inline) out.push({ tier: at, part: inline, want, actor: m.id });
 			}
 		}
 	};
@@ -304,14 +484,14 @@ const rootsOf = (record) => [...JSON.stringify(record ?? {}).matchAll(/aven:([a-
 const fileFits = (file, files) =>
 	!files?.length || files.some((f) => (f.endsWith('/') ? (file.files ?? []).some((/** @type {any} */ x) => String(x.media ?? '').startsWith(f)) : (file.tags ?? []).includes(f)));
 
-/** The actors device `d` holds of vault `vault`, as stored (any version): verified local records, which it syncs from
- *  peers in the background. */
+/** The actors device `d` holds of vault `vault`, as stored (any version), and the query entries they name: verified
+ *  local records, which it syncs from peers in the background. */
 /** @param {ActorDevice | undefined} d @param {{vault?: string, signal?: AbortSignal}} [o] @returns {Promise<Actor[]>} */
 export async function actorsOf(d, { vault = MAIA_CITY, signal } = {}) {
 	signal?.throwIfAborted();
 	if (!d) return [];
 	try {
-		const got = await d.run({ op: 'query', vault, where: { type: [ACTOR_TYPE] } });
+		const got = await d.run({ op: 'query', vault, where: { type: [ACTOR_TYPE, QUERY_TYPE] } });
 		signal?.throwIfAborted();
 		return (got?.ok?.rows ?? []).map((/** @type {any} */ r) => r.record).filter(Boolean);
 	} catch {
