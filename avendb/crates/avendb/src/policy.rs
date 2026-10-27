@@ -4362,6 +4362,9 @@ pub struct Log {
     /// How many times it let edits go (`let_go`), the one way edits leave it: what a reader of its tail since a size
     /// tells a removal by (`Lab::touched`).
     gone: u64,
+    /// One more than the deepest edit it holds, 0 for none: the depth of an edit drafted here, kept as edits arrive so
+    /// a draft scans no edit held (a device's own write cost 59 ms with a million held, 2026-10-27).
+    next_depth: u64,
 }
 
 impl Clone for Log {
@@ -4369,7 +4372,7 @@ impl Clone for Log {
         Self { edits: self.edits.clone(), ids: self.ids.clone(), held: self.held.clone(),
             revision: self.revision.clone(), lineage: LogRevision::default(),
             entry_order: self.entry_order.clone(), write_at: self.write_at.clone(), logs: self.logs.clone(),
-            by_log: self.by_log.clone(), gone: self.gone }
+            by_log: self.by_log.clone(), gone: self.gone, next_depth: self.next_depth }
     }
 }
 
@@ -4380,6 +4383,7 @@ impl Log {
 
     fn index_write(&mut self, edit: &Edit, id: EditId, at: usize) {
         let log = crate::sync::log_of(edit, id);
+        self.next_depth = self.next_depth.max(edit.depth.saturating_add(1));
         self.logs.push(log);
         if let Some(l) = log {
             self.by_log.entry(l).or_default().push(at);
@@ -4396,6 +4400,7 @@ impl Log {
         self.write_at.clear();
         self.logs.clear();
         self.by_log.clear();
+        self.next_depth = 0;
         let (edits, ids) = (std::mem::take(&mut self.edits), std::mem::take(&mut self.ids));
         for (at, (edit, &id)) in edits.iter().zip(&ids).enumerate() {
             self.index_write(edit, id, at);
@@ -4516,12 +4521,12 @@ impl Log {
         cosigners: &[SignerId],
         action: Action,
     ) -> Edit {
-        let depth = self.edits.iter().map(|o| o.depth.saturating_add(1)).max().unwrap_or(0);
+        let depth = self.next_depth;
         let mut edit = Edit { parents: vec![], depth, author, cosigners: cosigners.to_vec(), action };
         if !matches!(edit.action, Action::Genesis { .. } | Action::Share(Sharing::Grant(..)))
             && let Some(l) = crate::sync::log_of(&edit, EditId([0; 32]))
         {
-            edit.parents = crate::sync::frontier_of(&self.edits, &self.ids, l);
+            edit.parents = self.frontier(l);
         }
         let own = std::cell::OnceCell::new();
         let view = || given.unwrap_or_else(|| own.get_or_init(|| self.view()));
@@ -4587,9 +4592,11 @@ impl Log {
         edit
     }
 
-    /// The frontier of log `l`: what an edit of that log made here builds on.
+    /// The frontier of log `l`: what an edit of that log made here builds on, read off that log's own edits
+    /// (`by_log`), not a scan of every edit held.
     pub fn frontier(&self, l: crate::sync::LogId) -> Vec<EditId> {
-        crate::sync::frontier_of(&self.edits, &self.ids, l)
+        let places = self.by_log.get(&l).map_or(&[][..], Vec::as_slice);
+        crate::sync::frontier_at(&self.edits, &self.ids, places)
     }
 
     /// The edit `append` would add, if the view accepts it.
