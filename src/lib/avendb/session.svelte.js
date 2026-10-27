@@ -45,6 +45,7 @@ import { allowed, answer, readLocalFile, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
 import { beforeLocalWrite } from './local-write.js';
+import { createPendingWrites, paints } from './pending-writes.js';
 import { noteLifecycle } from './lifecycle.js';
 import { lease, RENEW } from './lease.js';
 import { measureLatency } from './latency-journal.js';
@@ -107,6 +108,12 @@ let standing = $state(0);
  *  a query, when the device says its answer is another than the version it last read (`seen`).
  *  @type {Set<{ op: any, last: any, bump: () => void, seen?: { key: string, version: number | null } }>} */
 const observers = new Set();
+/** Bumped as the page's pending writes change, for every view that lays them over to draw again. */
+let painted = $state(0);
+/** The page's writes not yet held by a read: painted at once, gone if refused (./pending-writes.js, LocalWrite.lean). */
+const pending = createPendingWrites(() => painted++);
+/** The reads' count each answer was asked at, beside it. */
+const HEARD = Symbol('heard at');
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
@@ -676,6 +683,8 @@ function retireWorld(/** @type {any} */ d) {
 	// Keep the terminal reader until this device object is collected: late callers
 	// during asynchronous close must not resurrect a new reader for it.
 }
+/** The reads' count each device's world summary was last asked at. @type {WeakMap<any, number>} */
+const worldAsked = new WeakMap();
 function refreshDevice(/** @type {any} */ d, initial = false, full = false) {
     if (full) fullWorldRequests.add(d);
 	if (retiredWorlds.has(d)) return Promise.reject(new Error('The avenDB device changed before its world refresh.'));
@@ -684,6 +693,7 @@ function refreshDevice(/** @type {any} */ d, initial = false, full = false) {
 		reader = createWorldReader({
 			read: async () => {
 				if (device !== d) throw new Error('The avenDB device changed before its world refresh.');
+				worldAsked.set(d, standing);
 				const full = fullWorldRequests.delete(d);
                 const scoped = !full && typeof location !== 'undefined' && summaryView(location.pathname, location.hash);
                 return answer(await near(d, { op: scoped ? 'world_summary' : 'world' })) ?? null;
@@ -691,6 +701,9 @@ function refreshDevice(/** @type {any} */ d, initial = false, full = false) {
 			take: (w) => {
 				if (device !== d) throw new Error('The avenDB device changed during its world refresh.');
 				world = w;
+				// the summary holds every accepted write asked before it; entries an observer reads wait for its answer
+				const watched = new Set([...observers].map((o) => o.op?.entry));
+				pending.heard((entry) => !watched.has(entry), worldAsked.get(d) ?? -1);
 				localMediaWorld(w);
 				context.reconcile();
 			}
@@ -849,6 +862,7 @@ async function lock() {
 	noteLifecycle('session-lock-request');
 	noteLifecycle('locked');
 	lease()?.end();
+	pending.clear();
 	const d = device;
 	if (d) retireWorld(d);
 	watching = null;
@@ -862,6 +876,7 @@ async function lock() {
  *  in the app's folder or in OPFS; the account is new here, and every page of the tab sees it so. */
 async function forget() {
 	lease()?.end();
+	pending.clear();
 	if (device) retireWorld(device);
 	await device?.close();
 	watching = null;
@@ -899,8 +914,19 @@ const api = {
 		let tick = $state(0);
 		// What it read last and of what, kept plain: the change wake asks `touches` of them, never a redraw.
 		const watched = { op: /** @type {any} */ (null), last: /** @type {any} */ (null), bump: () => tick++ };
-		const kept = (/** @type {any} */ answer) => { watched.last = answer; take(answer); };
-		const reader = createReactiveRead({ read: observedWindow((d, op) => near(d, op)), take: kept, failed, observed });
+		const kept = (/** @type {any} */ answer) => {
+			watched.last = answer;
+			take(answer);
+			// asked after a write was accepted, the answer holds it: laying it over changes nothing from here on
+			if (answer?.[HEARD] !== undefined && typeof watched.op?.entry === 'string') pending.heard(watched.op.entry, answer[HEARD]);
+		};
+		const asked = async (/** @type {any} */ d, /** @type {any} */ op) => {
+			const at = standing;
+			const got = await near(d, op);
+			if (got && typeof got === 'object') Object.defineProperty(got, HEARD, { value: at });
+			return got;
+		};
+		const reader = createReactiveRead({ read: observedWindow(asked), take: kept, failed, observed });
 		observers.add(watched);
 		const dispose = $effect.root(() => {
 			$effect(() => {
@@ -920,8 +946,11 @@ const api = {
 	 * @param {string} what @param {object} op
 	 */
 	run: async (what, op) => {
+		// painted now, in this frame, before the device answers (`overlay`); taken out again if it refuses
+		const s = paints(op) ? pending.add(op) : 0;
 		let done = null;
 		const ok = await change(what, async () => (done = answer(await send(op))));
+		if (s) pending.settle(s, ok, standing);
 		return ok ? done : null;
 	},
 	/**
@@ -932,10 +961,28 @@ const api = {
 	runAll: async (what, ops) => {
 		/** @type {any[]} */
 		const done = [];
+		const seqs = ops.map((op) => (paints(op) ? pending.add(op) : 0));
 		const ok = await change(what, async () => {
 			for (const op of ops) done.push(answer(await send(refs(op, done))));
 		});
+		// those it made stay painted until a read holds them; the one refused and those after it go
+		seqs.forEach((s, i) => s && pending.settle(s, i < done.length, ok ? standing : standing + 1));
 		return ok ? done : null;
+	},
+	/**
+	 * Record `record` of entry `entry` as the page shows it: with the writes made here that no read holds yet laid
+	 * over, oldest first (./pending-writes.js), so a write shows in the frame it was made in. `mark(row, op)` makes
+	 * the row an insert adds, as the view shows a pending one.
+	 * @param {string} entry @param {any} record @param {(row: any, op: any) => any} [mark]
+	 */
+	overlay: (entry, record, mark) => {
+		void painted;
+		return pending.overlay(entry, record, mark);
+	},
+	/** Whether entry `entry` has a write made here that the device hasn't answered yet. @param {string} entry */
+	pending: (entry) => {
+		void painted;
+		return pending.pending(entry);
 	},
 	/**
 	 * Runs op `op` as it is, a read or a change, as the studio's console and the screens' reads do: the device's
@@ -1074,5 +1121,7 @@ export const session = {
 	ask: api.ask,
 	initialWorld: api.initialWorld,
 	viewChanged: api.viewChanged,
-	observe: api.observe
+	observe: api.observe,
+	overlay: api.overlay,
+	pending: api.pending
 };

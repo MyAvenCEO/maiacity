@@ -48,7 +48,7 @@
 	}
 </script>
 
-<article class="msg" class:head id={inThread ? undefined : `m${m.id}`} class:mine>
+<article class="msg" class:head id={inThread ? undefined : `m${m.id}`} class:mine class:pending={m.pending} aria-busy={m.pending ? 'true' : undefined}>
 	<div class="gutter">
 		{#if head}
 			<span class="avatar" style="background: hsl({hue(m.by?.vault ?? '0000')} 38% 42%); {shaped(m.by?.kind ?? who?.kind)}"
@@ -116,6 +116,10 @@
 </article>
 
 <style>
+	/* sent, the device not done with it yet: shown at once, a little faint */
+	.msg.pending {
+		opacity: 0.6;
+	}
 	.msg {
 		position: relative;
 		display: grid;

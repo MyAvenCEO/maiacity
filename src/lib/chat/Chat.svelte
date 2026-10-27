@@ -93,7 +93,13 @@
 			why = answer?.ok ? '' : (answer?.why ?? 'This room doesn’t open on this device yet.');
 		}, (error) => { why = error.message; }));
 	$effect(() => { if (!here) read = null; });
-	const record = $derived(read?.entry === open ? read.room : null);
+	// what the device answered, with the person's own messages laid over the moment they are sent, before it answers
+	// (../avendb/session.svelte.js `overlay`): a refused one goes again, its draft back in the composer
+	const sent = (row, op) => ({ ...row, by: { vault: world?.mine }, actor: op.as, pending: true });
+	const record = $derived.by(() => {
+		const room = read?.entry === open ? read.room : null;
+		return room && api.overlay ? api.overlay(open, room, sent) : room;
+	});
 	const messages = $derived(record?.messages ?? []);
 	const lines = $derived(R.grouped(messages));
 

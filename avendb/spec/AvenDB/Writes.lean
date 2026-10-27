@@ -126,4 +126,111 @@ theorem T10_writes_left_out_same {ws ws' : List Write} (hord : Ordered ws) (hsub
     {v : List EditId} : writesAt ws' e v ≤ writesAt ws e v :=
   T10_writes_left_out hord hsub (holds_left_out hord hsub)
 
+/-! ## A person's write waits for no read and no catch-up (batch 5, W2)
+
+A device's Lab runs one turn at a time (avendb-net's `lab_schedule.rs`). Its turns come in three classes: a person's
+writes, the page's reads, and background work (catch-up, upkeep, a keeper's scan). Writes go first, oldest first, ahead
+of any read or background turn that waits (`pick_write_first`); with no write waiting, reads and background share the
+turns as before, three reads then one background turn (`pick_without_writes`). So a write waits for the turn that runs
+when it comes and for the writes made before it, nothing else (`write_granted_in_order`), however many reads and
+background turns wait or come while it waits (`pick_ignores_others`); with every turn at most `T` long (avendb's
+`scale_turns.rs` holds each at 50 ms at 130,000 edits), a write is applied within `(k + 1) * T` of being asked for, `k`
+the writes ahead of it (`write_wait_bound`). This models the order of turns only; how long a turn takes is measured. -/
+
+namespace Turns
+
+/-- A turn waiting for the Lab: a person's write, a page's read, or background work. -/
+inductive Class where
+  | write
+  | read
+  | background
+  deriving DecidableEq, Repr
+
+/-- The turns waiting, each by its ticket, oldest first, and how many reads in a row were let go ahead of background. -/
+structure Queue where
+  writes : List Nat
+  reads : List Nat
+  background : List Nat
+  burst : Nat
+  deriving DecidableEq, Repr
+
+/-- The next turn: the oldest write; with none, the oldest read unless three reads in a row went ahead of waiting
+background work; else the oldest background turn. What is left waiting beside it. -/
+def pick (q : Queue) : Option (Class × Nat × Queue) :=
+  match q.writes with
+  | w :: ws => some (.write, w, { q with writes := ws })
+  | [] =>
+    match q.reads, q.background with
+    | r :: rs, [] => some (.read, r, { q with reads := rs, burst := q.burst + 1 })
+    | r :: rs, b :: bs =>
+      if q.burst < 3 then some (.read, r, { q with reads := rs, burst := q.burst + 1 })
+      else some (.background, b, { q with background := bs, burst := 0 })
+    | [], b :: bs => some (.background, b, { q with background := bs, burst := 0 })
+    | [], [] => none
+
+/-- The turns granted, `n` picks in a row, with nothing new coming. -/
+def grants : Nat → Queue → List (Class × Nat)
+  | 0, _ => []
+  | n + 1, q =>
+    match pick q with
+    | some (c, t, q') => (c, t) :: grants n q'
+    | none => []
+
+/-- A waiting write goes first, whatever else waits. -/
+theorem pick_write_first (q : Queue) (w : Nat) (ws : List Nat) (h : q.writes = w :: ws) :
+    pick q = some (.write, w, { q with writes := ws }) := by
+  simp [pick, h]
+
+/-- While writes wait, the reads and background work waiting, and those that come, change nothing of which turn is
+next. -/
+theorem pick_ignores_others (q : Queue) (rs bs : List Nat) (n : Nat) (w : Nat) (ws : List Nat)
+    (h : q.writes = w :: ws) :
+    (pick { q with reads := rs, background := bs, burst := n }).map (fun x => (x.1, x.2.1)) =
+      (pick q).map (fun x => (x.1, x.2.1)) := by
+  simp [pick, h]
+
+/-- With no write waiting, turns go as before writes had a class of their own. -/
+theorem pick_without_writes (q : Queue) (h : q.writes = []) (r : Nat) (rs : List Nat) (b : Nat) (bs : List Nat)
+    (hr : q.reads = r :: rs) (hb : q.background = b :: bs) (busy : 3 ≤ q.burst) :
+    pick q = some (.background, b, { q with background := bs, burst := 0 }) := by
+  simp [pick, h, hr, hb]
+  omega
+
+/-- The writes waiting are granted first, in the order they were made: the write with `k` writes ahead of it gets
+the `k + 1`th turn. -/
+theorem write_granted_in_order (pre post : List Nat) (w : Nat) (q : Queue) (h : q.writes = pre ++ w :: post) :
+    grants (pre.length + 1) q = (pre ++ [w]).map (fun t => (Class.write, t)) := by
+  induction pre generalizing q with
+  | nil => simp [grants, pick, h]
+  | cons x xs ih =>
+    have hq : q.writes = x :: (xs ++ w :: post) := by simp [h]
+    have step := ih { q with writes := xs ++ w :: post } rfl
+    simp only [List.length_cons]
+    rw [grants, pick_write_first q x _ hq]
+    simp only
+    rw [step]
+    simp
+
+/-- Turns each at most `T` long add up to at most `T` for each. -/
+theorem sum_le_of_each_le (ds : List Nat) (T : Nat) (h : ∀ d ∈ ds, d ≤ T) : ds.sum ≤ ds.length * T := by
+  induction ds with
+  | nil => simp
+  | cons d ds ih =>
+    simp only [List.sum_cons, List.length_cons, Nat.succ_mul]
+    have := h d (List.mem_cons_self ..)
+    have := ih (fun e he => h e (List.mem_cons_of_mem _ he))
+    omega
+
+/-- A write with `k` writes ahead of it is applied after at most the turn running when it came and those `k` writes,
+then its own: within `(k + 2) * T` of being asked for when every turn is at most `T`, whatever reads and background
+work wait. -/
+theorem write_wait_bound (running : Nat) (ahead : List Nat) (own T : Nat) (hr : running ≤ T)
+    (ha : ∀ d ∈ ahead, d ≤ T) (ho : own ≤ T) : running + ahead.sum + own ≤ (ahead.length + 2) * T := by
+  have := sum_le_of_each_le ahead T ha
+  have e : (ahead.length + 2) * T = ahead.length * T + T + T := by
+    rw [Nat.add_mul]; omega
+  omega
+
+end Turns
+
 end AvenDB
