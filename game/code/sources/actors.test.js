@@ -288,7 +288,7 @@ test('a want as a query entry and back: its slot a param bound to the slot, the 
 	expect(asQuery({ want: { type: ['room'], vault: '*' }, part: 'headers' }, ids).query.id).toBe('query-room');
 	expect(asQuery({ want: { type: ['room'] } }, ids).part).toEqual({ query: { entry: 'query-room', version: 1 } });
 	// the read op, args bound: the same local query the walk runs
-	expect(queryOp(query, { room: id(4) })).toEqual({ op: 'query', where: { entry: [id(4)] }, select: [], order: [['created', 'desc']], limit: 50 });
+	expect(queryOp(query, { room: id(4) })).toEqual({ op: 'query', where: { entry: [id(4)] }, select: [], window: 50 });
 	expect(() => queryOp(query, {})).toThrow(/no room/);
 	const rooms = QUERIES.find((q) => q.id === 'query-room');
 	expect(queryOp(rooms, {}, { offset: 50, limit: 50 })).toEqual({ op: 'query', where: { type: ['room'] }, select: [], order: [['created', 'desc']], limit: 50, offset: 50 });
