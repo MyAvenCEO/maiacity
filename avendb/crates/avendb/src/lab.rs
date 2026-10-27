@@ -129,8 +129,8 @@ use crate::perf::Perf;
 use crate::query_view::{self, QueryViews};
 use crate::policy::{
     Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal, Proposal,
-    Readings, Refusal, Replay, Share, Sharing, State, Who, Why, Wrap, Write, covered,
-    mk_audience, replay, replay_on, replay_on_why,
+    Readings, Refusal, Replay, ReplayRun, Share, Sharing, State, Who, Why, Wrap, Write, covered,
+    mk_audience, replay, replay_on, replay_on_or, replay_on_why,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
@@ -157,6 +157,14 @@ const ROUNDS: usize = 10;
 /// The entries due for upkeep a refresh looks at, at most (`UpkeepDue`): those it leaves wait for the next one, each
 /// costing as much as its writes, so that a refresh costs what changed, whatever the device holds.
 const UPKEEP_SLICE: usize = 64;
+
+/// The edits a step of a catch-up replays for each entry of its budget (`Lab::catch_up_step`, `step_replay`): a step
+/// replays about as long as it shows.
+const REPLAY_WORK: usize = 4;
+
+/// The bodies a step of a catch-up opens for each entry of its budget (`read`).
+const READ_WORK: usize = 32;
+
 
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
 type Blobs = HashMap<BlobId, Arc<[u8]>>;
@@ -825,6 +833,9 @@ struct Store {
     bootstrap_revision: Arc<()>,
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
     replayed: usize,
+    /// A replay of every edit it held when it began, run a slice a step of a catch-up where stepping on would replay
+    /// them all (`step_replay`): of a log of that lineage, the replay before it being of `replayed` edits then.
+    replaying: Option<(crate::policy::LogRevision, usize, crate::policy::ReplayRun)>,
     /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
     /// holds now, not on every ask, announce and fetch. Empty while the replay is of every edit it holds and no entry is
     /// based, the replay then being `latest` itself.
@@ -936,6 +947,7 @@ impl Default for Store {
             bootstrap_cursor: None,
             bootstrap_revision: Arc::new(()),
             replayed: 0,
+            replaying: None,
             latest: OnceLock::new(),
             keys: Keyring::default(),
             derived: HashSet::new(),
@@ -2303,7 +2315,7 @@ impl Lab {
     fn take_checked(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs, prepared: &HashMap<EditId, bool>) -> bool {
         let mut fresh = self.checked_prepared(to, edits, prepared);
         if let Some(home) = self.home(to).filter(|_| !fresh.is_empty()) {
-            self.step_replay(to);
+            self.step_replay(to, usize::MAX);
             let store = self.held(to);
             // a vault new to what it knows comes only by a genesis: one in the batch, or one it holds that stands not
             // yet and the batch could let stand. With neither, `gate::takes` takes the whole batch, and its replay of
@@ -2892,6 +2904,8 @@ impl Lab {
             store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
             let was = std::mem::replace(&mut store.replay, replay(&[]));
             let (replayed, why) = replay_on_why(was, store.log.edits(), store.replayed);
+            // a whole replay a step at a time under way is of fewer edits than this one: it goes
+            store.replaying = None;
             store.replay = replayed;
             store.wholes += matches!(why, Why::Whole(_)) as u64;
             store.perf.count(why_counted(why), 1);
@@ -2916,14 +2930,23 @@ impl Lab {
             open_keys(store, &ix, &mine);
             store.perf.add("open keys", at);
             let at = Perf::start();
-            read(d, store);
+            // an entry's owner base overlay is taken out for the whole of a refresh: one is read and shown in one go
+            let budget = budget.filter(|_| retained.is_none());
+            let read_all = read(d, store, budget.map(|b| b.max(1).saturating_mul(READ_WORK)));
             store.perf.add("read", at);
+            // a step that left bodies to open goes on with them at the next, showing nothing before they are open
+            if !read_all && budget.is_some() {
+                KeyIndexed::put(store, ix);
+                store.behind = true;
+                store.perf.add("refresh", began);
+                self.rebuild_owner_bases(d);
+                return false;
+            }
             // what it shows, every write counted or not, before its upkeep: its stewards grant counted asks alone
             let at = Perf::start();
             // an entry's owner base overlay is taken out for the whole of a refresh: one is shown in one go. A budgeted
             // one shows one entry here, after its keys and reading, which take their own while, and the rest after it
             // a budget a step (`show_more`)
-            let budget = budget.filter(|_| retained.is_none());
             let shown = show_items(d, store, budget.map(|_| 1));
             store.perf.add("show items", at);
             // with no budget it leaves the entries a budgeted showing left before as they are: a catch-up a step at a
@@ -2940,7 +2963,8 @@ impl Lab {
             // none until their bodies are in, or it would box again what is boxed, or make a key for an epoch that has
             // one; what is due for its upkeep waits for then (`UpkeepDue`)
             let mut sliced = false;
-            let work = if store.lazy.stubs.is_empty() {
+            // nor while a step of a catch-up left bodies to open: what it boxes or tags again may be in them
+            let work = if store.lazy.stubs.is_empty() && store.read_new.left.is_empty() {
                 let mut waiting: HashSet<EntryId> = store.showing.iter().flat_map(|s| s.rest.iter().copied()).collect();
                 let scope = store.upkeep_due.scope(store);
                 store.perf.count(if scope.is_some() { "upkeep: of the entries changed" } else { "upkeep: of every entry" }, 1);
@@ -2975,8 +2999,8 @@ impl Lab {
             }
             if work.is_empty() {
                 store.perf.add("refresh", began);
-                // still behind while a showing with a budget left entries to show
-                store.behind |= store.showing.is_some();
+                // still behind while a showing with a budget left entries to show, or a step bodies to open
+                store.behind |= store.showing.is_some() || !store.read_new.left.is_empty();
                 if !self.restore_owner_overlay(d, retained.take()) {
                     self.rebuild_owner_bases(d);
                 }
@@ -3049,21 +3073,66 @@ impl Lab {
     /// 125,727-edit state for each page it took, holding the Lab 4.4-4.9 s a page (2026-10-27). What `refresh` does
     /// after its replay (keys, reading, showing) waits for it as before (`behind`), and a removal stepped on here is
     /// shown anew there (`reshow`).
-    fn step_replay(&mut self, d: SignerId) {
+    ///
+    /// Where stepping on would replay every edit again (a first sync's, or new edits sorting before its place), the
+    /// whole replay runs at most `most` edits a step (`ReplayRun`, `CatchUpBudget.lean`), the replay it held standing
+    /// till then, so a first sync's 130,000 edits are hundreds of short turns, not one of 10-24 s (2026-10-27).
+    fn step_replay(&mut self, d: SignerId, most: usize) {
         let Some(store) = self.stores.get_mut(&self.at(d)) else { return };
         if store.replayed == store.log.edits().len() || store.latest.get().is_some() {
             return;
         }
         let at = Perf::start();
-        let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
-        store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
-        let was = std::mem::replace(&mut store.replay, replay(&[]));
-        let (replayed, why) = replay_on_why(was, store.log.edits(), store.replayed);
-        store.replay = replayed;
-        store.wholes += matches!(why, Why::Whole(_)) as u64;
-        store.perf.count(why_counted(why), 1);
-        store.replayed = store.log.edits().len();
-        debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
+        // a replay of them all under way goes on, where its log and the replay it began after are as they were
+        let lineage = store.log.lineage();
+        let run = store.replaying.take().filter(|(l, from, run)| {
+            *l == lineage && *from == store.replayed && run.of() <= store.log.edits().len()
+        });
+        let (mut run, why) = match run {
+            Some((_, _, run)) => (run, None),
+            None => {
+                let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
+                store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
+                let was = std::mem::replace(&mut store.replay, replay(&[]));
+                match replay_on_or(was, store.log.edits(), store.replayed) {
+                    Ok((replayed, why)) => {
+                        store.replay = replayed;
+                        store.perf.count(why_counted(why), 1);
+                        store.replayed = store.log.edits().len();
+                        debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
+                        store.perf.add("replay", at);
+                        return;
+                    }
+                    // the replay it held, as it was, stays what it shows until the whole one ends
+                    Err((Some(was), why)) => {
+                        store.replay = was;
+                        (ReplayRun::start(store.log.edits(), store.log.ids()), Some(why))
+                    }
+                    // a move found late to keep not every write: rare, replayed whole at once as before
+                    Err((None, why)) => {
+                        store.replay = replay(store.log.edits());
+                        store.wholes += 1;
+                        store.perf.count(why_counted(Why::Whole(why)), 1);
+                        store.replayed = store.log.edits().len();
+                        store.perf.add("replay", at);
+                        return;
+                    }
+                }
+            }
+        };
+        if let Some(why) = why {
+            store.perf.count(why_counted(Why::Whole(why)), 1);
+        }
+        let n = run.of();
+        let edits = &store.log.edits()[..n];
+        if run.step(edits, most) {
+            store.replay = run.finish(edits, &store.log.ids()[..n]);
+            store.wholes += 1;
+            store.replayed = n;
+            debug_assert!(store.replay == replay(&store.log.edits()[..n]), "a replay run a slice a step differs from the whole");
+        } else {
+            store.replaying = Some((lineage, store.replayed, run));
+        }
         store.perf.add("replay", at);
     }
 
@@ -5454,7 +5523,7 @@ impl Lab {
             return CatchUp::Caught(false);
         }
         if store.replayed < store.log.edits().len() && store.latest.get().is_none() {
-            self.step_replay(d);
+            self.step_replay(d, budget.max(1).saturating_mul(REPLAY_WORK));
             return CatchUp::Stepped;
         }
         if !store.bases.is_empty() {
@@ -6107,7 +6176,9 @@ fn entry_key_for(
 /// Open what the device's keys open of its edits and keep it: the selector of each share (`open_select`), a keep
 /// share's too, and the body of each write its view counts, or whose tags count (`policy::Entry::retags`); then what
 /// it reads in them.
-fn read(d: SignerId, store: &mut Store) {
+/// At most `most` bodies opened, if there is one: those of new edits first, then those a step left before
+/// (`ReadNew::left`), the rest left for the next step; with none, those of new edits alone. True if it left none.
+fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
     let st = &store.replay.state;
     for cp in st.shares() {
         let (id, of) = (cp.id, &cp.share);
@@ -6143,8 +6214,26 @@ fn read(d: SignerId, store: &mut Store) {
         }
     };
     store.perf.count("read: writes looked at", wanted.len() as u64);
-    let wanted: Vec<EditId> =
+    let mut wanted: Vec<EditId> =
         wanted.into_iter().filter(|id| !store.bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
+    // a step of a catch-up opens at most `most` (a first sync's 130,000 bodies took 1.7 s in one turn, 2026-10-27):
+    // the bodies of new edits first, then those it left before, the rest left for the next step, as they were
+    if let Some(most) = most {
+        let most = most.max(1);
+        let left = &mut store.read_new.left;
+        if wanted.len() < most {
+            let more = left.len().min(most - wanted.len());
+            wanted.extend(left.drain(..more));
+        }
+        if wanted.len() > most {
+            for id in wanted.drain(most..).rev() {
+                left.push_front(id);
+            }
+        }
+    }
+    // with none it leaves those a step left as they are, as `show_items` leaves the entries: a write of the device's
+    // own in the middle of a catch-up waits for no reading of the whole, and the catch-up's next step goes on
+    let done = store.read_new.left.is_empty();
     if !wanted.is_empty() {
         // each edit by its id from the signed edits it holds, every one of which its replay is of: no map of every
         // edit made again for each reading
@@ -6181,9 +6270,9 @@ fn read(d: SignerId, store: &mut Store) {
             }
         }
     }
-    // what it opened is what looking at every write its replay counts opens
+    // what it opened is what looking at every write its replay counts opens, once it left none
     #[cfg(debug_assertions)]
-    {
+    if done {
         let retags = st.entries().iter().flat_map(|en| en.retags.iter().copied());
         for id in st.all_writes().iter().map(|w| w.edit).chain(retags) {
             if store.bodies.contains_key(&id) || store.spoilt.contains(&id) {
@@ -6230,6 +6319,7 @@ fn read(d: SignerId, store: &mut Store) {
     store.read_new.read(store.bodies.len(), store.slices.len(), &store.readings);
     store.read_new.looked(&store.log, store.wholes);
     store.perf.add("read: readings", at);
+    done
 }
 
 /// What device's store `store` reads in every body and selector it opened (`read`), but which entries are of no type
@@ -6312,6 +6402,8 @@ struct ReadNew {
     uncounted: HashSet<EditId>,
     /// The writes whose bodies it didn't open as it lacked their entry's key, by the entry.
     lacking: HashMap<EntryId, Vec<EditId>>,
+    /// The writes a step of a catch-up left to open for the next (`read`, at most `most` a step), in order.
+    left: std::collections::VecDeque<EditId>,
 }
 
 impl ReadNew {
@@ -6323,6 +6415,7 @@ impl ReadNew {
             _ => {
                 self.uncounted.clear();
                 self.lacking.clear();
+                self.left.clear();
                 return None;
             }
         };
