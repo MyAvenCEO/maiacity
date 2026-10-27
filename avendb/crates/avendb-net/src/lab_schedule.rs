@@ -569,6 +569,67 @@ mod slices {
     }
 }
 
+/// A live edit that lands while a long catch-up is showing a backlog is shown by the real judge in the next step of
+/// that catch-up, not after the backlog (lab.rs `show_items`: the entries of new writes before those a showing left):
+/// what a page needs to draw it at once, no second judge laid over. Batch 5, the live overlay asked of lane 8.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod live_first {
+    use avendb::cast::{document, handbook_ready, paragraph, world};
+    use avendb::lab::CatchUp;
+
+    #[test]
+    fn a_live_edit_is_shown_in_the_next_step_of_a_long_catch_up() {
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (mac, phone) = (w.mac_a, w.phone_a);
+        // the room both had before the backlog
+        let room = w.lab.create(mac, coop, coop, "doc", &[], document("Room", "Shared before.", mac)).unwrap();
+        w.lab.sync(mac, phone);
+        let mut lab = w.lab.split(phone, &[], [79; 32]);
+        for i in 0..800 {
+            let doc = document(&format!("Doc {i}"), "Written while the iPhone was away.", mac);
+            w.lab.create(mac, coop, coop, "doc", &[], doc).unwrap();
+        }
+        assert!(lab.item(phone, room).is_some(), "the room is shown before");
+        let held: std::collections::HashSet<_> = lab.log(phone).ids().iter().copied().collect();
+        let backlog: Vec<_> = w.lab.backup(mac).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
+        for page in backlog.chunks(100) {
+            lab.receive_whose_now(phone, page.to_vec(), vec![], false);
+        }
+        // the backlog's catch-up, a step a turn, as a pull's; the Mac writes in the room live two steps in
+        for _ in 0..2 {
+            assert!(matches!(lab.catch_up_step(phone, 48), CatchUp::Stepped));
+        }
+        let before = lab.log(phone).ids().len();
+        w.lab.edit(mac, coop, room, |item| item.push_block(paragraph(9, "Live from the Mac"))).unwrap();
+        let live: Vec<_> = w.lab.backup(mac).signed().iter().filter(|s| matches!(&s.edit.action,
+            avendb::policy::Action::Write { entry, .. } if *entry == room)).cloned().collect();
+        lab.receive_whose_now(phone, live, vec![], false);
+        assert!(lab.log(phone).ids().len() > before, "the live edit taken");
+        let shows = |lab: &avendb::lab::Lab| {
+            lab.item(phone, room).and_then(|i| i.as_document()).is_some_and(|d| format!("{d:?}").contains("Live from the Mac"))
+        };
+        let (mut steps, mut shown_at) = (0, None);
+        loop {
+            let step = lab.catch_up_step(phone, 48);
+            steps += 1;
+            if shown_at.is_none() && shows(&lab) {
+                shown_at = Some(steps);
+            }
+            if matches!(step, CatchUp::Caught(_)) {
+                break;
+            }
+        }
+        eprintln!("LIVE a live edit taken mid catch-up was shown after {shown_at:?} of the {steps} steps left");
+        assert!(steps >= 8, "the backlog takes many steps: {steps}");
+        assert!(shown_at.is_some_and(|s| s <= 2), "shown in the next step or two, not after the backlog: {shown_at:?} of {steps}");
+        // and it ends holding the backlog's entries and the live edit, as a whole catch-up does
+        let made = w.lab.entries(mac);
+        assert!(made.iter().all(|e| lab.entries(phone).contains(e)), "every entry of the backlog shown");
+        assert!(shows(&lab));
+    }
+}
+
 /// How long Lab calls waited for their turn and held the Lab, by the call (its closure's type name), and the slowest of
 /// late: what a server says on its public health (`Node::served`), so a slow page names what held the Lab before it.
 #[derive(Default)]

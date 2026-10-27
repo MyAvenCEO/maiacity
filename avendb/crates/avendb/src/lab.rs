@@ -5375,7 +5375,10 @@ impl Lab {
         let Some(store) = self.stores.get(&self.at(d)) else {
             return CatchUp::Caught(false);
         };
-        if store.showing.is_some() {
+        // edits taken while it shows a backlog, as a live page during a long catch-up, don't wait for the backlog: their
+        // replay is stepped on, their bodies read and their entries shown first, before those it left (`show_items`,
+        // the entries of new writes first), so a person sees a live edit a step after it lands (batch 5, lane 8)
+        if store.showing.as_ref().is_some_and(|s| s.taken == store.log.edits().len()) {
             self.show_more(d, budget);
             return CatchUp::Stepped;
         }
@@ -6805,9 +6808,15 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     let fresh: Vec<&Entry> = if grew {
         let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
         let opened_since = opened.keys().copied().filter(|e| !waiting.contains(e));
-        let mut es: Vec<EntryId> = all.iter().skip(n).map(|w| w.entry).chain(opened_since).chain(changed).collect();
+        // the entries of the new writes first, as a live edit's during a long catch-up, then the rest that moved
+        let mut es: Vec<EntryId> = all.iter().skip(n).map(|w| w.entry).collect();
         es.sort();
         es.dedup();
+        let first: HashSet<EntryId> = es.iter().copied().collect();
+        let mut more: Vec<EntryId> = opened_since.chain(changed).filter(|e| !first.contains(e)).collect();
+        more.sort();
+        more.dedup();
+        es.extend(more);
         es.into_iter().filter_map(|e| st.entry(e)).collect()
     } else {
         st.entries().iter().collect()
@@ -6942,7 +6951,8 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // what tells it what to show anew stays as it was for the entries left, until it shows them
     let left: HashSet<EntryId> = rest.iter().copied().collect();
     opened.retain(|e, _| left.contains(e));
-    store.showing = Some(Showing { rest, reshow: reshow || pending.reshow, opened });
+    let taken = store.log.edits().len();
+    store.showing = Some(Showing { rest, reshow: reshow || pending.reshow, opened, taken });
     false
 }
 
@@ -6953,6 +6963,9 @@ struct Showing {
     rest: Vec<EntryId>,
     reshow: bool,
     opened: HashMap<EntryId, Vec<EditId>>,
+    /// How many edits it held when it left them: one taken since (a live page during a long catch-up) is replayed,
+    /// read and its entry shown before them (`catch_up_step`).
+    taken: usize,
 }
 
 /// What changed since the upkeep last looked at every entry's keys and stewardship (`upkeep`), so that it looks at
