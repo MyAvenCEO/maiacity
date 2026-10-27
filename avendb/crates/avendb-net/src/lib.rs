@@ -1656,6 +1656,7 @@ impl Node {
     pub fn served(&self) -> Value {
         let mut served = self.shared.traffic.served_json();
         served["lab"] = self.shared.lab_turns.json();
+        served["carriers"] = self.shared.transport_control.json();
         served
     }
 
@@ -1735,6 +1736,7 @@ impl Node {
             "peers": peers,
             "gone": gone,
             "recent": s.traffic.recent(),
+            "carriers": s.transport_control.json(),
         })
     }
 

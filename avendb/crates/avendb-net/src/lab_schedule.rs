@@ -367,7 +367,7 @@ impl Turns {
         let t = book.by.entry(what).or_default();
         *t = (t.0 + 1, t.1 + wait_ms, t.2 + hold_ms, t.3.max(hold_ms));
         if hold_ms >= SLOW_MS || wait_ms >= SLOW_MS {
-            let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+            let at = crate::jobs::now_ms();
             book.slow.push_front((at, what, wait_ms, hold_ms));
             book.slow.truncate(SLOW_KEPT);
         }
