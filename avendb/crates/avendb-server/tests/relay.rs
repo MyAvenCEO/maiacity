@@ -255,6 +255,7 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         gate: false,
         bucket: None,
         cache: 0,
+        memory: 16 << 20,
         snapshots: None,
         webtransport: None,
         stun: None,
