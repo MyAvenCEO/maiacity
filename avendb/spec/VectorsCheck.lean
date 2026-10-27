@@ -2,7 +2,7 @@ import AvenDB.VectorFiles
 
 /-!
 The test vectors on disk are what the model says: `lake build` fails here when `vectors/vaults.json`,
-`vectors/lenses.json`, `vectors/ops.json`, `vectors/backups.json`, `vectors/objectives.json` or `vectors/legacy.json` is out of date. A library of its own that needs the files (see
+`vectors/lenses.json`, `vectors/ops.json`, `vectors/backups.json`, `vectors/objectives.json`, `vectors/legacy.json`, `vectors/key_trees.json` or `vectors/query_views.json` is out of date. A library of its own that needs the files (see
 `lakefile.toml`), so that it runs again whenever a file or the rules change, and so that `lake exe vectors` can build
 and write the files even when they are missing or stale.
 -/

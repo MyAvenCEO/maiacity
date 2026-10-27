@@ -90,6 +90,7 @@ import AvenDB.PreparedReceive
 
 import AvenDB.Coverage
 import AvenDB.LiveQuery
+import AvenDB.QueryView
 
 import AvenDB.BootstrapAnchor
 
