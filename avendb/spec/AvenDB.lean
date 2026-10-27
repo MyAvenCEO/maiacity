@@ -23,6 +23,7 @@ import AvenDB.Batches
 import AvenDB.LegacyAnchor
 import AvenDB.BatchDurability
 import AvenDB.WireBatches
+import AvenDB.Segments
 import AvenDB.Snapshot
 import AvenDB.EntryState
 import AvenDB.Wraps

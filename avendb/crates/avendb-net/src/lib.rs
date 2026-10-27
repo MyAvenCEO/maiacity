@@ -333,6 +333,12 @@ pub struct Options {
     /// `spec/AvenDB/WireBatches.lean`), each root once a reply: a device's. The server asks for signatures alone for
     /// one release, so that it serves every edit it holds to an old app, which reads signatures alone.
     pub paths: bool,
+    /// It keeps the segments of the writers whose edits it holds (S8, `spec/AvenDB/Segments.lean`): each one's ids in
+    /// order and the newest root it signed over them, taken only once they rebuild that root, so it makes their paths
+    /// for any peer, as a relay, and a page through it costs one signature check per writer, not per edit. It asks
+    /// peers for segments first (`proofs` version 3), and versions 2 and 1 of a peer that doesn't know them. Off until
+    /// the cut: a node that keeps segments still serves old apps their signatures where it keeps them (`paths` off).
+    pub segments: bool,
     /// The most pages a pull keeps in flight from one peer (S6, `pulls::Window`): asked at once where the peer says
     /// they end (`session::CUTS`), and taken in order. 1 asks each page once the one before came, as nodes did before.
     pub window: usize,
@@ -373,6 +379,7 @@ impl Options {
             sim: None,
             index: false,
             paths: true,
+            segments: false,
             window: pulls::WINDOW,
         }
     }
@@ -807,6 +814,7 @@ impl Node {
             unbatched: Mutex::default(),
             uncut: Mutex::default(),
             unstripped: Mutex::default(),
+            unsegmented: Mutex::default(),
             ranges: Mutex::default(),
             edit_transfer: edit_transfer::Runtime::default(),
             paced: Mutex::default(),
@@ -2155,6 +2163,8 @@ struct Shared {
     /// The connections whose peer didn't answer a proof request of version 2, with paths in place of signatures (P8):
     /// an older node, or one that couldn't link a root; asked version 1 from then on.
     unstripped: Mutex<HashSet<usize>>,
+    /// The connections whose peer didn't answer a segment request (S8, `proofs` version 3): asked version 2 or 1.
+    unsegmented: Mutex<HashSet<usize>>,
     /// Incremental, peer-scoped holdings trees and bounded root-bound receiving rounds.
     ranges: Mutex<ranges::Cache>,
     edit_transfer: edit_transfer::Runtime,
@@ -3049,6 +3059,30 @@ impl Shared {
         let _activity = self.admit()?;
         let id = peer.conn.stable_id();
         if let Some(signers) = &self.signers {
+            // segments first, where this node keeps them: every writer it holds a root of, and how many of its ids
+            if self.opts.segments && !self.unsegmented.lock().expect("unsegmented").contains(&id) {
+                let held = signers.held(proofs::MAX_KNOWN_SEGMENTS).await;
+                let known = held.iter().map(|(s, (n, _))| (*s, *n)).collect();
+                let held = Some(held.iter().filter(|(_, (_, ids))| *ids > 0).map(|(s, (_, ids))| (*s, *ids)).collect());
+                let paths = self.opts.paths;
+                let batch = proofs::Request { kind, request: request.to_vec(), known, paths, held }.encode()?;
+                if batch.len() < session::MESSAGE_LIMIT {
+                    match session::exchange(&peer.conn, proofs::KIND, &batch, limit).await {
+                        Ok(bytes) => {
+                            let size = bytes.len() as u64;
+                            if let Ok(supplement) = proofs::Supplement::decode(&bytes) {
+                                drop(bytes);
+                                if let Ok(reply) = supplement.verify(signers).await {
+                                    return Ok((reply, size));
+                                }
+                            }
+                        }
+                        Err(error) if session::too_long(&error) => return Err(error),
+                        Err(_) => {}
+                    }
+                    self.unsegmented.lock().expect("unsegmented").insert(id);
+                }
+            }
             let batches = !self.unbatched.lock().expect("unbatched").contains(&id);
             // Only the authenticated peer's own ledger is exported by this first batch slice.
             // Do not disclose the other signers whose roots this device has observed.
@@ -3060,7 +3094,9 @@ impl Shared {
                 let versions: &[bool] = if self.opts.paths && !unstripped { &[true, false] } else { &[false] };
                 let mut asked = false;
                 for &paths in versions {
-                    let batch = proofs::Request { kind, request: request.to_vec(), known: known.clone(), paths }.encode()?;
+                    let batch =
+                        proofs::Request { kind, request: request.to_vec(), known: known.clone(), paths, held: None }
+                            .encode()?;
                     // Near-limit legacy requests still fit their original framing, with no capability downgrade.
                     if batch.len() >= session::MESSAGE_LIMIT {
                         break;

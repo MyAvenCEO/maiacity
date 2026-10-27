@@ -117,6 +117,10 @@ pub struct Config {
     /// MiB, 256 by default; S7): the rest wait in its folder's spill (`avendb::lab::Spill`, `SPILL`), an index of
     /// them in memory, a few dozen bytes an edit, so that what it holds stays flat as its vaults grow.
     pub memory: u64,
+    /// It keeps the segments of the writers whose edits it holds and serves their paths (`AVENDB_SEGMENTS=1`, off by
+    /// default until the cut; S8, `avendb_net::Options::segments`): a page through it then costs a device one
+    /// signature check per writer, not per edit. It keeps every signature too, for old apps.
+    pub segments: bool,
     /// The bucket of snapshots of every vault it keeps (`AVENDB_SNAPSHOTS` and the rest of `SnapshotsConfig`), if any;
     /// else it backs nothing up.
     pub snapshots: Option<SnapshotsConfig>,
@@ -234,6 +238,7 @@ impl Config {
                 None => avendb_net::bucket::CACHE,
             },
             memory: number(&var, "AVENDB_MEMORY_CACHE", 256)?.saturating_mul(MIB),
+            segments: number(&var, "AVENDB_SEGMENTS", 0)? == 1,
             snapshots: var("AVENDB_SNAPSHOTS").map(|name| snapshots_config(name, &var)).transpose()?,
         })
         .and_then(Config::checked)
@@ -427,6 +432,8 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         index: true,
         // signatures alone for one release, so that it serves every edit it holds to an old app (P8)
         paths: false,
+        // other writers' segments, so it serves their paths, only once the cut turns them on (S8)
+        segments: config.segments,
         // the rest as a local node's: no shelf of its own here, its start nobody's to watch
         ..Options::local()
     };
