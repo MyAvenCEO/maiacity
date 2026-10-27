@@ -6,6 +6,8 @@
 //
 //   bun scripts/ci/avendb-bench.mjs bench.log [pg.log]
 //   bun scripts/ci/avendb-bench.mjs phone.log --phone      the phone-class rows alone (avendb-bench-phone.mjs)
+//   bun scripts/ci/avendb-bench.mjs bench.log [pg.log] --shard core|carriers|live   one shard of the bench job: only
+//                                                          its own runs are required present
 //   bun scripts/ci/avendb-bench.mjs index.log --index      the index's scale rows alone (avendb-net's shelf_index_bench.rs,
 //                                                          run in the net test shard, whose build it shares)
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -155,14 +157,27 @@ export function report(bench, pg, results) {
  return rows.join('\n');
 }
 
+// The gates with only shard `--shard`'s runs required present (the bench job's shards, avendb-checks.yml).
+function shardOf(gates) {
+ const at = process.argv.indexOf('--shard');
+ if (at < 0) return gates;
+ const shard = process.argv[at + 1];
+ const keep = { core: ['sizes', 'first_sync'], carriers: ['carriers'], live: ['live_links'] }[shard];
+ if (!keep) throw new Error(`--shard ${shard}: none of core, carriers, live`);
+ const out = { ...gates };
+ for (const k of ['sizes', 'first_sync', 'carriers', 'live_links']) if (!keep.includes(k)) out[k] = [];
+ return out;
+}
+
 if (import.meta.main) {
- const [benchFile, pgFile] = process.argv.slice(2).filter(a => !a.startsWith('--'));
+ const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--shard');
+ const [benchFile, pgFile] = args;
  const bench = lines(readFileSync(benchFile, 'utf8'), 'BENCH');
  const pg = pgFile ? lines(readFileSync(pgFile, 'utf8'), 'PG') : [];
  const gates = JSON.parse(readFileSync(gatesFile, 'utf8'));
  const phoneOnly = process.argv.includes('--phone');
  const results = process.argv.includes('--index') ? checkIndex(bench, gates)
-  : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, gates, pg);
+  : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, shardOf(gates), pg);
  const text = report(bench, pg, results);
  console.log(text);
  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## avenDB bench\n\n${text}\n`);
