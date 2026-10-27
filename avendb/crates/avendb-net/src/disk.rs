@@ -90,11 +90,12 @@ pub fn open(root: &Path) -> Result<Shelf> {
     };
     let selected = generation(dir.file_name().and_then(|n| n.to_str()).expect("generation name")).expect("generation");
     let anchor = File::open(&dir)?;
+    let local = dir.clone();
     let on = Arc::new(Folder { dir, anchor });
     let bounded = on.clone();
     let queue = crate::disk_queue::Queue::start(move |call| on.answer(call));
     let source = crate::writer::Source::for_generation(root, selected);
-    Ok(Shelf::native(queue, source).with_bounded_get(move |name, limit| {
+    Ok(Shelf::native(queue, source).with_local(local).with_bounded_get(move |name, limit| {
         let on = bounded.clone();
         async move { tokio::task::spawn_blocking(move || on.get_bounded(&name, limit)).await.map_err(io::Error::other)? }
     }))
