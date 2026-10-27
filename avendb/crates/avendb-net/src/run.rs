@@ -140,9 +140,8 @@ impl Node {
                 }).await;
                 json!({"ok":{"registered":self.shared.ui_receipts.emitted(ids)}})
             },
-            Some("query") => self.covered_query(op).await,
             _ if engine::asks(&op) => self.try_dry(move |lab, me| engine::run(lab, me, &op)).await?,
-            _ if engine::reads(&op) => self.read(move |lab, me| engine::read(lab, me, &op)).await,
+            _ if engine::reads(&op) => self.fresh_read(op).await,
             _ => self.change(op, authenticator).await?,
         };
         Ok((answer, None))
@@ -154,28 +153,29 @@ impl Node {
         Ok(self.run(op, None::<NoBytes>, None::<&NoCeremony>).await?.0)
     }
 
-    /// A query on what the device holds, its coverage with the logs its live peers announced that it lacks and that
-    /// may hold what the query reads (`Coverage.lean` `answer`): an entry's log of the query's vault, or of a vault the
-    /// device can't place yet, that vault's own log, and any share's or audience's, which may change what it sees.
-    /// Complete only once none is behind. No clock: the announcements and the holdings decide.
-    async fn covered_query(&self, op: Value) -> Value {
+    /// A read on what the device holds, stamped with its freshness (`Freshness.lean`), whatever it reads: `current`,
+    /// `offline` as of the device's last current read, or `behind` with the logs its live peers announced that it lacks
+    /// and that may hold what it reads: an entry's log of the read's vault, or of a vault the device can't place yet,
+    /// that vault's own log, and any share's or audience's, which may change what it sees. A query's coverage counts
+    /// those logs too (`Coverage.lean` `answer`): complete only once none is behind. A read that is behind asks for
+    /// those logs first (`wanted`), so its scope arrives before the rest. No clock: the announcements and the holdings
+    /// decide. `touched`, which says what changed and shows nothing, is not stamped. A read looks the walk up
+    /// (`Shared::heard`): it runs once per change of what the peers or the device hold, not once per read.
+    async fn fresh_read(&self, op: Value) -> Value {
         let vault = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex);
-        let mut answer = self.read(move |lab, me| engine::read(lab, me, &op)).await;
-        if !engine::coverage::reads_open(&answer) { return answer; }
-        let live: BTreeSet<_> = {
-            let peers = self.shared.peers.lock().expect("peers");
-            peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| p.device).collect()
+        let stamped = engine::name(&op) != Some("touched");
+        // a window comes off the shared index where that can say (`query_window`), else from the engine
+        let mut answer = match self.windowed(&op).await {
+            Some(got) => got,
+            None => self.read(move |lab, me| engine::read(lab, me, &op)).await,
         };
-        let mut behind = BTreeSet::new();
-        for device in live { behind.extend(self.shared.differ(device).await); }
-        let logs = if behind.is_empty() { 0 } else {
-            self.read(move |lab, me| behind.iter().filter(|log| match log {
-                LogId::Entry(e) => lab.vault_of_entry(me, *e).is_none_or(|v| vault.is_none_or(|x| x == v)),
-                LogId::Vault(v) | LogId::Audience(v, _) => vault.is_none_or(|x| x == *v),
-                LogId::Share(_) => true,
-            }).count()).await
-        };
-        engine::coverage::add_logs(&mut answer, logs);
+        if !stamped || answer.get("ok").is_none() { return answer; }
+        let (heard, matching, new) = self.shared.heard(vault).await;
+        if engine::coverage::reads_open(&answer) { engine::coverage::add_logs(&mut answer, matching.len()); }
+        engine::coverage::add_freshness(&mut answer, heard, matching.len());
+        if new && heard.live > 0 && !matching.is_empty() {
+            self.shared.wanted.lock().expect("wanted").extend(matching.iter().filter(|l| matches!(l, LogId::Entry(_))));
+        }
         answer
     }
 
@@ -301,7 +301,12 @@ impl Node {
             Err(why) => return Ok((why.to_json(), None)),
         };
         if !self.read(move |lab, me| lab.file(me, &root).is_some()).await {
-            return Ok((Refused::Rule(Refusal::NoCap).to_json(), None));
+            // the entry that brings it may not have arrived yet: the refusal says how fresh the device is
+            // (`Freshness.lean`), so a page tells a file still arriving (behind) from one it may not read
+            let (heard, behind, _) = self.shared.heard(None).await;
+            let mut refused = Refused::Rule(Refusal::NoCap).to_json();
+            refused["fresh"] = engine::coverage::Freshness::of(heard, (0, behind.len())).to_json();
+            return Ok((refused, None));
         }
         let from = range.start;
         let bytes = if op.get("local").and_then(Value::as_bool) == Some(true) {

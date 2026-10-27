@@ -139,4 +139,76 @@ theorem publication_closes_materialization_gap (s : Publication) :
 theorem earlier_catch_up_still_gets_a_wake (old current : Nat) :
     (publish ⟨current, old⟩).notified = current := rfl
 
+/-! ## One asking per log (F12, batch 5)
+
+A live pull and the backlog asked the SAME logs of the same peer at once: the backlog's request named what the device
+held before the live pull took the edit, so the peer sent it twice (Mac `network.recent`, batch 3: a live edit pulled
+new, then again with new 0, its duplicate's check up to 5.9 s). The live lane now claims its hinted logs as it is
+admitted, before the backlog is stirred; the backlog's asking leaves every live-claimed log out and is owed an asking
+again once the live pull ends, however it ends. Rust: avendb-net lib.rs `Claims::take` / `Claims::live` /
+`Claims::live_done`, live.rs `LiveClaimed`. -/
+
+/-- The backlog's share of `differing` while `live` is claimed: the logs it asks now, and whether it is owed another
+asking for those it left to the live lane. -/
+def backlogTake (live differing : List Nat) : List Nat × Bool :=
+  (differing.filter (fun l => !live.contains l), differing.any (fun l => live.contains l))
+
+theorem backlog_never_asks_a_live_log (live differing : List Nat) (l : Nat) (h : l ∈ live) :
+    l ∉ (backlogTake live differing).1 := by
+  simp [backlogTake, List.mem_filter, h]
+
+theorem backlog_asks_only_what_differs (live differing : List Nat) (l : Nat)
+    (h : l ∈ (backlogTake live differing).1) : l ∈ differing := by
+  simp [backlogTake, List.mem_filter] at h
+  exact h.1
+
+/-- Nothing is dropped: a differing log is asked by the backlog now, or the backlog is owed an asking again, which
+the live pull's end gives it (`Claims::live_done`) whether the live pull took the log, timed out or failed. -/
+theorem no_differing_log_is_lost (live differing : List Nat) (l : Nat) (h : l ∈ differing) :
+    l ∈ (backlogTake live differing).1 ∨ (backlogTake live differing).2 = true := by
+  by_cases hl : l ∈ live
+  · right
+    simp only [backlogTake, List.any_eq_true]
+    exact ⟨l, h, by simp [hl]⟩
+  · left
+    simp [backlogTake, List.mem_filter, h, hl]
+
+/-- With nothing live-claimed, the backlog asks exactly as before. -/
+theorem no_live_claim_changes_nothing (differing : List Nat) :
+    backlogTake [] differing = (differing, false) := by
+  simp [backlogTake]
+
+/-! ## A bounded live view (F2, batch 5)
+
+A live pull brought its view up to date by draining the WHOLE pending catch-up (`materialize_live` looped
+`Lab::catch_up_step` until caught), so during a bulk catch-up, or while a catch-up never settled, the live lane never
+ended and held its peer's slot (batch 4: one live start on the Mac in 25 min, never recorded). It now steps the view
+for at most `LIVE_VIEW`, and the background catch-up takes the rest. The same steps are done, only by another owner. -/
+
+/-- `work` steps of catch-up, of which the live lane takes at most `budget`. -/
+def liveSteps (work budget : Nat) : Nat := min work budget
+def backgroundSteps (work budget : Nat) : Nat := work - budget
+
+theorem live_view_is_bounded (work budget : Nat) : liveSteps work budget ≤ budget := Nat.min_le_right _ _
+
+theorem split_view_does_all_the_work (work budget : Nat) :
+    liveSteps work budget + backgroundSteps work budget = work := by
+  simp only [liveSteps, backgroundSteps]; omega
+
+/-! ## One asking of a peer at a time (F12, batch 5)
+
+A peer answers an asking with what it holds beyond what the request names. Two askings of one peer at once named the
+same holdings, so the second brought all the first took again (sync_bench `bench_live`, 1,352 edits pulled for 675
+new). The second now waits for the first's turn to end and names what it took. Rust: pulls.rs `Budget::one_asking`. -/
+
+/-- What a peer holding `theirs` sends to a request naming `named`. -/
+def reply (theirs named : List Nat) : List Nat := theirs.filter (fun e => !named.contains e)
+
+/-- The second asking, made once the first's reply is held: it brings nothing the first brought. -/
+theorem one_asking_resends_nothing (theirs held : List Nat) (e : Nat)
+    (first : e ∈ reply theirs held) : e ∉ reply theirs (held ++ reply theirs held) := by
+  simp [reply, List.mem_filter] at *
+  intro _ _
+  exact first
+
 end AvenDB.LivePriority

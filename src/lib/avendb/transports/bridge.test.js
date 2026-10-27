@@ -116,3 +116,16 @@ test('unexpected pump failure retires Rust routes and capabilities before closin
 	expect(closures).toHaveLength(1);
 	manager.close(); expect(closures).toHaveLength(1);
 });
+
+test('a packet the busy side takes late is lost alone; the carrier stays open', async () => {
+	const { port1, port2 } = new MessageChannel(), blocked = deferred(), received = [], closed = [];
+	const a = packetPort(port1, { receive: () => {}, event: () => {}, closed: (why) => closed.push(why) }, { packetWait: 20 });
+	const b = packetPort(port2, { receive: async (bytes) => { received.push(bytes); if (received.length === 1) await blocked.promise; }, event: () => {} });
+	try {
+		expect(await a.send(new Uint8Array([1]))).toBe(false);
+		expect(closed).toEqual([]);
+		blocked.resolve();
+		expect(await a.send(new Uint8Array([2]))).toBe(true);
+		expect(received.length).toBe(2);
+	} finally { a.close(); b.close(); }
+});

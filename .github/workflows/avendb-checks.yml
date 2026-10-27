@@ -398,21 +398,30 @@ jobs:
           echo "$RUNNER_TEMP/verifpal-bin" >> "$GITHUB_PATH"
       - run: avendb/spec/protocol/check.sh
 
-  # The performance gates (avendb/bench-gates.json, scripts/ci/avendb-bench.mjs): avenDB's bench (tests/bench_gates.rs)
-  # at 10k, 100k and 1M edits, each size a process of its own so its resident memory is its own, and a first sync asked
-  # both ways; two real nodes taking a peer's edits directly and through the server's relay alone, at full speed and at
-  # a set link rate (avendb-server's tests/relay_bench.rs, a debug build as the scenarios' world is the tests' alone);
-  # then the same work on a Postgres beside it, printed next to avenDB's numbers (to the job's summary too). A gate
-  # missed fails the job, and so the PR; a target not reached yet is printed and fails nothing.
+  # The performance gates (avendb/bench-gates.json, scripts/ci/avendb-bench.mjs), in three shards side by side so none
+  # takes more than about 5 minutes (Samuel, 2026-10-27), each holding its own lines to their gates:
+  #   core      avenDB's bench (tests/bench_gates.rs) at 10k, 100k and 1M edits, each size a process of its own so its
+  #             resident memory is its own, a first sync asked both ways, a first sync's pages with moves; then the same
+  #             work on a Postgres beside it, printed next to avenDB's numbers (to the job's summary too)
+  #   carriers  two real nodes taking a peer's edits directly and through the server's relay alone, at full speed and at
+  #             a set link rate (avendb-server's tests/relay_bench.rs, a debug build as the scenarios' world is the tests'
+  #             alone), one fixture for the three
+  #   live      a live edit's delay while a device catches up, on a calm simulated link and a phone's (avendb-net's
+  #             tests/sync_bench.rs, plan D3), one fixture for both
+  # A gate missed fails the shard, and so the PR; a target not reached yet is printed and fails nothing.
   bench:
     needs: impact
-    name: avenDB performance gates
+    name: avenDB performance gates (${{ matrix.shard }})
     if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_bench != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [core, carriers, live]
     services:
       postgres:
-        image: postgres:16
+        image: ${{ matrix.shard == 'core' && 'postgres:16' || '' }}
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -424,27 +433,27 @@ jobs:
       # profile's one unit and full LTO are for the tile's WebAssembly, and took minutes more to build
       CARGO_PROFILE_RELEASE_LTO: thin
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
+      AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: avendb -> target
-          key: bench
+          key: bench-${{ matrix.shard }}
           cache-on-failure: true
       - uses: rui314/setup-mold@v1
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
-      - name: Build the bench
+      - name: avenDB at 10k, 100k and 1M edits, a first sync, and Postgres beside it
+        if: matrix.shard == 'core'
         working-directory: avendb
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
         run: |
           cargo test --release --locked -p avendb --test bench_gates --no-run
           cargo test --release --locked -p avendb --test first_sync_moves --no-run
-          cargo test --locked -p avendb-server --features test-fixtures --test relay_bench --no-run
-      - name: avenDB at 10k, 100k and 1M edits, and a first sync
-        working-directory: avendb
-        run: |
           for n in 10000 100000 1000000; do
             AVENDB_BENCH_N=$n cargo test --release --locked -p avendb --test bench_gates -- --ignored --nocapture --exact bench_scale \
               | tee -a "$RUNNER_TEMP/bench.log"
@@ -454,21 +463,21 @@ jobs:
           # a first sync's pages with moves cost the same however much is held (no whole replays): ~2 min at 30,000
           AVENDB_MOVES_HELD=30000 cargo test --release --locked -p avendb --test first_sync_moves -- --ignored --nocapture --exact a_page_with_moves_costs_the_same_however_much_is_held \
             | tee -a "$RUNNER_TEMP/bench.log"
+          bun ../scripts/ci/avendb-bench-pg.mjs 10000,100000,1000000 | tee "$RUNNER_TEMP/pg.log"
       - name: The carriers, direct and through the relay
+        if: matrix.shard == 'carriers'
         working-directory: avendb
-        env:
-          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
         run: |
-          for c in direct relay relay_link; do
-            AVENDB_CARRIER=$c cargo test --locked -p avendb-server --features test-fixtures --test relay_bench -- --ignored --nocapture --exact bench_carrier \
-              | tee -a "$RUNNER_TEMP/bench.log"
-          done
-      - name: Postgres, the same work
-        env:
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
-        run: bun scripts/ci/avendb-bench-pg.mjs 10000,100000,1000000 | tee "$RUNNER_TEMP/pg.log"
+          AVENDB_CARRIER=direct,relay,relay_link cargo test --locked -p avendb-server --features test-fixtures --test relay_bench -- --ignored --nocapture --exact bench_carrier \
+            | tee -a "$RUNNER_TEMP/bench.log"
+      - name: Live sync during a catch-up, on a calm link and a phone's
+        if: matrix.shard == 'live'
+        working-directory: avendb
+        run: |
+          AVENDB_LIVE_LINK=calm,phone cargo test --locked -p avendb-net --features test-fixtures --test sync_bench -- --ignored --nocapture --exact bench_live \
+            | tee -a "$RUNNER_TEMP/bench.log"
       - name: The gates
-        run: bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/bench.log" "$RUNNER_TEMP/pg.log"
+        run: bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/bench.log" ${{ matrix.shard == 'core' && '"$RUNNER_TEMP/pg.log"' || '' }} --shard ${{ matrix.shard }}
 
   # The phone-class row: avenDB's device as WebAssembly in Chromium and WebKit, as an iPhone's page runs it, taking a
   # peer's signed edits with their signatures checked (avendb-browser's `bench` feature, scripts/ci/avendb-bench-phone.mjs)

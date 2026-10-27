@@ -154,50 +154,7 @@ def Who.invite? : Who → Option SignerId
 
 /-! ## Slices
 
-A share selects a slice of its vault's entries by what their first write says of them (their type, the vault that
-created them, their id, when they were created) and by their tags now. Groups of entries are never named: a slice is
-whatever a selector picks, and the audiences (`State.lean`) are whatever shares pick alike. -/
-
-/-- What a selector tests of an entry. -/
-structure Attrs where
-  type    : Sym
-  author  : VaultId
-  entry   : EntryId
-  created : Nat
-  tags    : List Sym
-  deriving DecidableEq, Repr
-
-/-- One test. `typeIn [t]` is `type == t`. -/
-inductive Atom where
-  | typeIn     (ts : List Sym)
-  | authorIn   (vs : List VaultId)
-  | entryIn    (es : List EntryId)
-  /-- Created in `[lo, hi)`. -/
-  | createdIn  (lo hi : Nat)
-  | tagHas     (t : Sym)
-  | tagNone    (ts : List Sym)
-  | tagsWithin (ts : List Sym)
-  deriving DecidableEq, Repr
-
-def Atom.test (a : Attrs) : Atom → Bool
-  | .typeIn ts      => ts.contains a.type
-  | .authorIn vs    => vs.contains a.author
-  | .entryIn es     => es.contains a.entry
-  | .createdIn lo hi => decide (lo ≤ a.created) && decide (a.created < hi)
-  | .tagHas t       => a.tags.contains t
-  | .tagNone ts     => !ts.any a.tags.contains
-  | .tagsWithin ts  => a.tags.all ts.contains
-
-/-- The whole vault, or the entries that pass every test of at least one of the conjunctions. The wire shares a selector
-    at 8 conjunctions of 16 tests and an `entryIn` at 1,000 ids, so matching stays linear. -/
-inductive Selector where
-  | all
-  | anyOf (ds : List (List Atom))
-  deriving DecidableEq, Repr
-
-def Selector.matches (a : Attrs) : Selector → Bool
-  | .all      => true
-  | .anyOf ds => ds.any fun d => d.all (·.test a)
+What a share selects of its vault's entries is a selector (`Selector.lean`). -/
 
 /-- The tags a write adds and removes. -/
 structure TagDelta where

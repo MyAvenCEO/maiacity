@@ -172,7 +172,7 @@
 	function first(r) {
 		if (!r.author) return null;
 		const device = s.signer(r.author);
-		return `${device}, for ${s.vaultName(r.actor ?? '')}`;
+		return `${device}, for ${s.vaultName(r.signer ?? r.actor ?? '')}`;
 	}
 
 	/** whether the device would mark the open row now, as it answers a dry run of it, and what its mark did */

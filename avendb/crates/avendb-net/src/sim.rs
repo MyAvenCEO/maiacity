@@ -68,11 +68,26 @@ pub struct Faults {
     pub delay: Duration,
     /// The share of packets delayed at all.
     pub delayed: u32,
+    /// What every packet waits besides, one way: a link's latency, half its round trip.
+    pub latency: Duration,
+    /// The bytes a second each link carries each way, a packet after the one before it; 0 for no limit.
+    pub rate: u64,
 }
 
 impl Faults {
     /// A calm network: every packet arrives once, at once, in order.
-    pub const CALM: Faults = Faults { lose: 0, duplicate: 0, delay: Duration::ZERO, delayed: 0 };
+    pub const CALM: Faults =
+        Faults { lose: 0, duplicate: 0, delay: Duration::ZERO, delayed: 0, latency: Duration::ZERO, rate: 0 };
+
+    /// A phone's link as the sync benches hold it to: 50 Mbit/s each way, 40 ms round trip, 1 % of packets lost.
+    pub const PHONE: Faults = Faults {
+        lose: 10,
+        duplicate: 0,
+        delay: Duration::ZERO,
+        delayed: 0,
+        latency: Duration::from_millis(20),
+        rate: 50_000_000 / 8,
+    };
 
     /// The profile of seed `seed`: up to 15 % lost, 5 % duplicated, and up to half delayed by up to 80 ms. Every
     /// eighth seed is calm, so a failure that needs no fault at all shows as one.
@@ -86,6 +101,8 @@ impl Faults {
             duplicate: rng.below(51) as u32,
             delay: Duration::from_millis(rng.below(81)),
             delayed: rng.below(501) as u32,
+            latency: Duration::ZERO,
+            rate: 0,
         }
     }
 }
@@ -101,6 +118,8 @@ struct Hub {
     inboxes: BTreeMap<EndpointId, Inbox>,
     /// Each link's own choices, in the order it carries packets.
     links: BTreeMap<(EndpointId, EndpointId), Rng>,
+    /// When each link (sender, receiver) is free again, at a set `rate`.
+    busy: BTreeMap<(EndpointId, EndpointId), tokio::time::Instant>,
     /// Links that carry nothing, both ways.
     cut: BTreeSet<(EndpointId, EndpointId)>,
     /// Nodes that reach only these peers, as a browser reaches only its relay.
@@ -163,6 +182,7 @@ impl Net {
             faults,
             inboxes: BTreeMap::new(),
             links: BTreeMap::new(),
+            busy: BTreeMap::new(),
             cut: BTreeSet::new(),
             only: BTreeMap::new(),
             names: BTreeMap::new(),
@@ -278,7 +298,7 @@ impl Net {
             let rng = hub.links.entry((from, to)).or_insert_with(|| link_rng(seed, from, to));
             let (lose, duplicate, delayed) =
                 (rng.chance(faults.lose), rng.chance(faults.duplicate), rng.chance(faults.delayed));
-            let wait = if delayed && !faults.delay.is_zero() {
+            let mut wait = if delayed && !faults.delay.is_zero() {
                 Duration::from_micros(rng.below(faults.delay.as_micros() as u64 + 1))
             } else {
                 Duration::ZERO
@@ -287,6 +307,15 @@ impl Net {
                 hub.counts.lost += 1;
                 continue;
             }
+            // a link at a set rate sends a packet once the one before it is through, then its latency
+            if faults.rate > 0 {
+                let now = tokio::time::Instant::now();
+                let free = hub.busy.entry((from, to)).or_insert(now);
+                let through = (*free).max(now) + Duration::from_nanos(bytes.len() as u64 * 1_000_000_000 / faults.rate);
+                *free = through;
+                wait += through - now;
+            }
+            wait += faults.latency;
             let copies = if duplicate { 2 } else { 1 };
             hub.counts.duplicated += copies - 1;
             for _ in 0..copies {

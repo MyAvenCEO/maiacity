@@ -1,5 +1,8 @@
-//! Fair local Lab admission. Foreground may overtake queued background work, but
-//! after three foreground grants one waiting background operation gets a turn.
+//! Fair local Lab admission. A person's write goes first, oldest first, ahead of every
+//! read and background turn that waits (`Writes.lean` `Turns`, batch 5 W2): it waits for
+//! the turn running when it comes and the writes made before it, nothing else. With no
+//! write waiting, foreground may overtake queued background work, but after three
+//! foreground grants one waiting background operation gets a turn.
 //! A granted ticket moves into the real blocking closure, so cancellation cannot
 //! release capacity while that closure still runs. This cannot preempt one operation.
 use std::{
@@ -17,6 +20,8 @@ tokio::task_local! {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Class {
+    /// A person's write (`Node::try_act`): ahead of every read and background turn.
+    Write,
     Foreground,
     Background,
 }
@@ -30,11 +35,13 @@ struct State {
     active: bool,
     next: u64,
     burst: usize,
+    writes: VecDeque<Waiting>,
     foreground: VecDeque<Waiting>,
     background: VecDeque<Waiting>,
 }
 pub(crate) struct Schedule {
     state: Mutex<State>,
+    writes: Arc<Semaphore>,
     foreground: Arc<Semaphore>,
     background: Arc<Semaphore>,
 }
@@ -42,6 +49,7 @@ impl Default for Schedule {
     fn default() -> Self {
         Self {
             state: Mutex::default(),
+            writes: Arc::new(Semaphore::new(256)),
             foreground: Arc::new(Semaphore::new(32)),
             background: Arc::new(Semaphore::new(16)),
         }
@@ -63,6 +71,7 @@ struct Registration {
 impl Drop for Registration {
     fn drop(&mut self) {
         let mut s = self.schedule.state.lock().expect("Lab schedule");
+        s.writes.retain(|w| w.id != self.id);
         s.foreground.retain(|w| w.id != self.id);
         s.background.retain(|w| w.id != self.id);
     }
@@ -70,6 +79,7 @@ impl Drop for Registration {
 impl Schedule {
     pub(crate) async fn acquire(self: &Arc<Self>, class: Class) -> Turn {
         let slots = match class {
+            Class::Write => &self.writes,
             Class::Foreground => &self.foreground,
             Class::Background => &self.background,
         };
@@ -83,7 +93,9 @@ impl Schedule {
             let mut s = self.state.lock().expect("Lab schedule");
             if !s.active {
                 s.active = true;
-                s.burst = usize::from(class == Class::Foreground);
+                if class != Class::Write {
+                    s.burst = usize::from(class == Class::Foreground);
+                }
                 return Turn {
                     schedule: self.clone(),
                     _slot: slot,
@@ -92,6 +104,7 @@ impl Schedule {
             let id = s.next;
             s.next = s.next.wrapping_add(1);
             let queue = match class {
+                Class::Write => &mut s.writes,
                 Class::Foreground => &mut s.foreground,
                 Class::Background => &mut s.background,
             };
@@ -112,7 +125,10 @@ impl Schedule {
     fn release(self: &Arc<Self>) {
         let next = {
             let mut s = self.state.lock().expect("Lab schedule");
-            let next = if !s.foreground.is_empty() && (s.background.is_empty() || s.burst < 3) {
+            // a write first, whatever else waits; it leaves the reads' run against background as it was
+            let next = if let Some(write) = s.writes.pop_front() {
+                Some(write)
+            } else if !s.foreground.is_empty() && (s.background.is_empty() || s.burst < 3) {
                 s.burst = s.burst.saturating_add(1);
                 s.foreground.pop_front()
             } else if !s.background.is_empty() {
@@ -169,6 +185,72 @@ mod tests {
         drop(history);
         assert!(poll_once(&mut readers[3]).await.is_some());
     }
+    /// The order `Writes.lean` (`Turns.grants`) grants waiting turns in, from `vectors/local_writes.json`: every
+    /// ticket queued behind a running turn, then each granted turn let go at once.
+    #[tokio::test]
+    async fn turns_go_in_the_models_order() {
+        let vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../../../spec/vectors/local_writes.json")).expect("the vectors");
+        let cases = vectors["turns"].as_array().expect("turn cases");
+        assert!(!cases.is_empty());
+        for case in cases {
+            let schedule = Arc::new(Schedule::default());
+            let active = schedule.acquire(Class::Background).await;
+            let tickets = |key: &str| -> Vec<u64> {
+                case[key].as_array().unwrap().iter().map(|t| t.as_u64().unwrap()).collect()
+            };
+            // tickets in the queue of their class, oldest first, as the model holds them
+            let mut waiting = Vec::new();
+            for (key, class, name) in [
+                ("writes", Class::Write, "write"),
+                ("reads", Class::Foreground, "read"),
+                ("background", Class::Background, "background"),
+            ] {
+                for t in tickets(key) {
+                    let mut turn = Box::pin(schedule.acquire(class));
+                    assert!(poll_once(&mut turn).await.is_none());
+                    waiting.push((name, t, turn));
+                }
+            }
+            schedule.state.lock().unwrap().burst = case["burst"].as_u64().unwrap() as usize;
+            drop(active);
+            let mut granted = Vec::new();
+            while !waiting.is_empty() {
+                let mut next = None;
+                for (i, (_, _, turn)) in waiting.iter_mut().enumerate() {
+                    if let Some(turn) = poll_once(turn).await {
+                        assert!(next.is_none(), "one turn at a time");
+                        next = Some((i, turn));
+                    }
+                }
+                let (i, turn) = next.expect("a turn granted");
+                let (name, t, _) = waiting.remove(i);
+                granted.push(serde_json::json!([name, t]));
+                drop(turn);
+            }
+            assert_eq!(serde_json::Value::Array(granted), case["grants"], "{case}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_write_overtakes_every_waiting_read_and_background_turn() {
+        let schedule = Arc::new(Schedule::default());
+        let active = schedule.acquire(Class::Background).await;
+        let mut reads: Vec<_> = (0..32).map(|_| Box::pin(schedule.acquire(Class::Foreground))).collect();
+        let mut background: Vec<_> = (0..16).map(|_| Box::pin(schedule.acquire(Class::Background))).collect();
+        for r in reads.iter_mut().chain(background.iter_mut()) {
+            assert!(poll_once(r).await.is_none());
+        }
+        let mut write = Box::pin(schedule.acquire(Class::Write));
+        assert!(poll_once(&mut write).await.is_none());
+        drop(active);
+        let turn = poll_once(&mut write).await.expect("the write goes next");
+        for r in reads.iter_mut().chain(background.iter_mut()) {
+            assert!(poll_once(r).await.is_none(), "nothing else while the write runs");
+        }
+        drop(turn);
+    }
+
     #[tokio::test]
     async fn registration_acknowledges_this_waiter_with_unrelated_work_queued() {
         let schedule = Arc::new(Schedule::default());
@@ -339,6 +421,70 @@ mod integration {
             node.read(move |lab, me| lab.item(me, entry).is_some())
                 .await
         );
+        node.shutdown().await.unwrap();
+    }
+}
+
+/// G5 (batch 5, W2): a person's write applied less than 50 ms behind while the Lab is busy, as the iPhone's was on 27
+/// Oct (writes 1.9 s): a catch-up slice running and a page's 32 reads waiting, each turn 20 ms. Before writes had a
+/// class of their own a write waited for every read queued ahead of it.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod writes_first {
+    use super::*;
+    use crate::{Node, Options};
+    use avendb::cast::{document, handbook_ready, world};
+    use std::time::{Duration, Instant};
+
+    const TURN: Duration = Duration::from_millis(20);
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_write_is_applied_within_50_ms_while_reads_and_catch_up_wait() {
+        let mut w = world();
+        let vault = handbook_ready(&mut w);
+        let me = w.mac_a;
+        let node = Node::spawn(w.lab.split(me, &[], [193; 32]), me, Options { lazy: true, ..Options::local() })
+            .await
+            .unwrap();
+        let mut behind = Vec::new();
+        for round in 0..20 {
+            // a catch-up slice holds the Lab, then the page's reads queue
+            let shared = node.shared.clone();
+            let (entered, entering) = tokio::sync::oneshot::channel();
+            let slice = tokio::spawn(async move {
+                shared.try_lab_class(Class::Background, move |_, _| {
+                    entered.send(()).unwrap();
+                    std::thread::sleep(TURN);
+                }).await.unwrap()
+            });
+            entering.await.unwrap();
+            let reads: Vec<_> = (0..32).map(|_| {
+                let shared = node.shared.clone();
+                tokio::spawn(async move { shared.read(|lab, me| { std::thread::sleep(TURN); lab.size(me) }).await })
+            }).collect();
+            let more: Vec<_> = (0..4).map(|_| {
+                let shared = node.shared.clone();
+                tokio::spawn(async move { shared.try_lab_class(Class::Background, |_, _| std::thread::sleep(TURN)).await.unwrap() })
+            }).collect();
+            // every read queued before the person writes
+            while node.shared.lab_schedule.state.lock().unwrap().foreground.len() < 32 {
+                tokio::task::yield_now().await;
+            }
+            let asked = Instant::now();
+            let entry = node.try_act(move |lab, me| {
+                lab.create(me, vault, vault, "doc", &[], document(&format!("Write {round}"), "while busy", me)).unwrap()
+            }).await.unwrap();
+            behind.push(asked.elapsed());
+            assert!(node.read(move |lab, me| lab.item(me, entry).is_some()).await);
+            slice.await.unwrap();
+            for r in reads { r.await.unwrap(); }
+            for m in more { m.await.unwrap(); }
+        }
+        behind.sort();
+        let p95 = behind[(behind.len() * 95).div_ceil(100) - 1];
+        eprintln!("WRITES behind a {TURN:?} slice and 32 queued {TURN:?} reads: p50 {:?}, p95 {p95:?}, max {:?}",
+            behind[behind.len() / 2], behind[behind.len() - 1]);
+        // one slice running and the write's own turn, never the 32 reads (640 ms) ahead of it
+        assert!(p95 < Duration::from_millis(50), "a write applied {p95:?} behind (p95)");
         node.shutdown().await.unwrap();
     }
 }

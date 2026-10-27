@@ -73,7 +73,56 @@ impl Lab {
         }
         let mut labels = vec![index::type_label(attrs.ty.as_str())];
         labels.extend(attrs.tags.iter().map(|t| index::tag_label(t.as_str())));
+        // the entries it links to, as its main line reads now
+        if let Some(item) = self.item(d, en.id) {
+            let mut to = BTreeSet::new();
+            links_in(&item.record(), &mut to);
+            labels.extend(to.into_iter().filter(|e| *e != en.id).map(index::link_label));
+        }
         Some(labels)
+    }
+
+    /// The rows of entry `e` in device `d`'s shared index (`index::shared`, `SharedIndex.rows`): none where it holds
+    /// no row of it to tell (`row`), as for an entry that fell or one not landed.
+    pub fn shared_of(&self, d: SignerId, e: EntryId) -> Option<index::shared::Of> {
+        let store = self.held(d);
+        let en = store.view().entry(e)?;
+        if !self.landed(d, e) {
+            return None;
+        }
+        let row = self.row(d, en)?;
+        let created = store.log.entry_write(en.creation).map(|c| c.depth)?;
+        Some(index::shared::Of { entry: e, audience: en.audience(), epoch: row.epoch, created, tokens: row.tokens })
+    }
+
+    /// Every entry device `d` may hold rows of in its shared index: those its edits say exist, in the order created.
+    pub fn shared_entries(&self, d: SignerId) -> Vec<EntryId> {
+        self.held(d).view().entries().iter().map(|en| en.id).collect()
+    }
+
+    /// The entries whose rows in device `d`'s shared index its edits from place `from` on may have changed: those they
+    /// are of, where each is of an entry's log; `None`, every entry, where one is of another log (a key, a share, a
+    /// vault's settings), which may change the rows of any, or where `from` is past its log.
+    pub fn shared_touched(&self, d: SignerId, from: usize) -> Option<BTreeSet<EntryId>> {
+        let log = &self.held(d).log;
+        let (edits, ids) = (log.edits().get(from..)?, &log.ids()[from..]);
+        let mut out = BTreeSet::new();
+        for (edit, id) in edits.iter().zip(ids) {
+            match crate::sync::log_of(edit, *id) {
+                Some(LogId::Entry(e)) => {
+                    out.insert(e);
+                }
+                _ => return None,
+            }
+        }
+        Some(out)
+    }
+
+    /// Device `d` worked out everything its edits say, its keys opened, read and shown: what its shared index is of
+    /// is what they say, so a save may step the index on (`shared_of`).
+    pub fn settled(&self, d: SignerId) -> bool {
+        let store = self.held(d);
+        self.replay_current(d) && !store.behind && store.showing.is_none()
     }
 
     /// The row of entry `en` device `d` tells: its labels' tokens in the audience it is in, under the newest epoch it
@@ -192,6 +241,22 @@ impl Lab {
     }
 }
 
+/// The entries `v` links to, anywhere in it (`ops::Link`), into `out`, at most `index::ROW_TOKENS`.
+fn links_in(v: &Value, out: &mut BTreeSet<EntryId>) {
+    if out.len() >= index::ROW_TOKENS {
+        return;
+    }
+    if let Some(link) = crate::ops::Link::of_json(v) {
+        out.insert(link.entry);
+        return;
+    }
+    match v {
+        Value::Array(xs) => xs.iter().for_each(|x| links_in(x, out)),
+        Value::Object(o) => o.values().for_each(|x| links_in(x, out)),
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::cast::{document, relay_on, world};
@@ -223,6 +288,42 @@ mod tests {
         relay_on(&mut w, alice);
         assert!(w.lab.index_rows(w.server, w.alice).is_empty());
         assert!(w.lab.find_tokens(w.server, w.alice, &[type_label("room")]).is_empty());
+    }
+
+    #[test]
+    fn an_entry_is_found_by_the_entries_it_links_to_in_the_order_created() {
+        use crate::index::{link_label, shared};
+        use serde_json::json;
+        let mut w = world();
+        let (mac, alice) = (w.mac_a, w.alice);
+        let room = w.lab.create(mac, alice, alice, "room", &["chat"], document("Room", "Hi", mac)).unwrap();
+        let link = json!({ "vault": alice.to_hex(), "entry": room.to_hex() });
+        let schema = r#"{ "title": "Message", "type": "object", "properties": { "kind": { "const": "message" },
+            "text": { "type": "string", "default": "" }, "room": { "x-link": "newest" } }, "required": ["kind"] }"#;
+        let made = crate::engine::run(&mut w.lab, mac, &json!({ "op": "create", "vault": alice.to_hex(), "type": "schema", "value": schema }));
+        assert!(made.get("ok").is_some(), "{made}");
+        let mut said = vec![];
+        for n in 0..3 {
+            let value = json!({ "kind": "message", "text": format!("message {n}"), "room": link });
+            let made = crate::engine::run(&mut w.lab, mac, &json!({ "op": "create", "vault": alice.to_hex(), "type": "note", "value": value }));
+            said.push(crate::id::EntryId::from_hex(made["ok"]["entry"].as_str().unwrap_or_else(|| panic!("{made}"))).unwrap());
+        }
+        let tokens = w.lab.find_tokens(mac, alice, &[link_label(room)]);
+        let of: Vec<shared::Of> = said.iter().map(|e| w.lab.shared_of(mac, *e).expect("a row")).collect();
+        for o in &of {
+            assert!(o.tokens.iter().any(|t| tokens.contains(t)), "a message carries its room's link");
+            assert_eq!(shared::Of::from_bytes(o.entry, &o.to_bytes()).as_ref(), Some(o));
+            assert!(o.keys().iter().all(|k| shared::owner(k) == Some(o.entry)), "every key names its entry");
+        }
+        // each was made after the one before, so its key under the link's token sorts before it, the newest first
+        assert!(of.windows(2).all(|p| p[0].created < p[1].created));
+        let room_of = w.lab.shared_of(mac, room).expect("the room's row");
+        assert!(!room_of.tokens.iter().any(|t| tokens.contains(t)), "the room links to no room");
+        assert!(w.lab.shared_touched(mac, 0).is_none(), "a vault's own edits are of other logs");
+        let n = w.lab.log(mac).ids().len();
+        w.lab.tag(mac, alice, room, &["pinned"], &[]).unwrap();
+        assert_eq!(w.lab.shared_touched(mac, n), Some([room].into_iter().collect()));
+        assert_ne!(w.lab.shared_of(mac, room), Some(room_of), "a tag added changes its rows");
     }
 
     #[test]
