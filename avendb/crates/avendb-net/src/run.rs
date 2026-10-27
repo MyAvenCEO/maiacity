@@ -159,24 +159,18 @@ impl Node {
     /// that vault's own log, and any share's or audience's, which may change what it sees. A query's coverage counts
     /// those logs too (`Coverage.lean` `answer`): complete only once none is behind. A read that is behind asks for
     /// those logs first (`wanted`), so its scope arrives before the rest. No clock: the announcements and the holdings
-    /// decide. `touched`, which says what changed and shows nothing, is not stamped.
+    /// decide. `touched`, which says what changed and shows nothing, is not stamped. A read looks the walk up
+    /// (`Shared::heard`): it runs once per change of what the peers or the device hold, not once per read.
     async fn fresh_read(&self, op: Value) -> Value {
         let vault = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex);
         let stamped = engine::name(&op) != Some("touched");
         let mut answer = self.read(move |lab, me| engine::read(lab, me, &op)).await;
         if !stamped || answer.get("ok").is_none() { return answer; }
-        let (heard, behind) = self.shared.heard().await;
-        let matching: Vec<LogId> = if behind.is_empty() { vec![] } else {
-            self.read(move |lab, me| behind.into_iter().filter(|log| match log {
-                LogId::Entry(e) => lab.vault_of_entry(me, *e).is_none_or(|v| vault.is_none_or(|x| x == v)),
-                LogId::Vault(v) | LogId::Audience(v, _) => vault.is_none_or(|x| x == *v),
-                LogId::Share(_) => true,
-            }).collect()).await
-        };
+        let (heard, matching, new) = self.shared.heard(vault).await;
         if engine::coverage::reads_open(&answer) { engine::coverage::add_logs(&mut answer, matching.len()); }
         engine::coverage::add_freshness(&mut answer, heard, matching.len());
-        if heard.live > 0 && !matching.is_empty() {
-            self.shared.wanted.lock().expect("wanted").extend(matching.into_iter().filter(|l| matches!(l, LogId::Entry(_))));
+        if new && heard.live > 0 && !matching.is_empty() {
+            self.shared.wanted.lock().expect("wanted").extend(matching.iter().filter(|l| matches!(l, LogId::Entry(_))));
         }
         answer
     }
@@ -305,7 +299,7 @@ impl Node {
         if !self.read(move |lab, me| lab.file(me, &root).is_some()).await {
             // the entry that brings it may not have arrived yet: the refusal says how fresh the device is
             // (`Freshness.lean`), so a page tells a file still arriving (behind) from one it may not read
-            let (heard, behind) = self.shared.heard().await;
+            let (heard, behind, _) = self.shared.heard(None).await;
             let mut refused = Refused::Rule(Refusal::NoCap).to_json();
             refused["fresh"] = engine::coverage::Freshness::of(heard, (0, behind.len())).to_json();
             return Ok((refused, None));
