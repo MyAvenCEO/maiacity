@@ -1,4 +1,5 @@
 import AvenDB.Basic
+import AvenDB.Selector
 import AvenDB.State
 import AvenDB.Step
 import AvenDB.Sync

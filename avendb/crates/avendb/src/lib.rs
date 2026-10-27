@@ -81,6 +81,7 @@ pub mod rules;
 #[cfg(debug_assertions)]
 pub mod scenarios;
 pub mod sealed;
+pub mod selector;
 pub mod sign;
 pub mod slice;
 pub mod snapshot;
