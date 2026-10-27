@@ -801,6 +801,8 @@ mod batch_session_tests {
             let root = ledger.commit(&key).unwrap();
             assert!(phone.shared.signers.as_ref().unwrap().admit((*root).clone(), &[]).await.unwrap());
             let seen = std::sync::Mutex::new(Vec::new());
+            // the writers the phone may name to the Mac in a segment request: those of the logs it names to it already
+            let shown = phone.read(move |lab, me| lab.writers_shown(me, sender)).await;
             let serving = async {
                 loop {
                     let (mut send, mut recv) = conn.accept_bi().await.unwrap();
@@ -811,7 +813,12 @@ mod batch_session_tests {
                     seen.lock().unwrap().push(kind);
                     if kind == proofs::KIND {
                         let batch = proofs::Request::decode(body).unwrap();
-                        assert!(batch.known.keys().all(|id| *id == sender));
+                        if batch.held.is_some() {
+                            // version 3 (S8) names the writers of what it shares with this peer, no other
+                            assert!(batch.known.keys().all(|id| shown.contains(id)), "a segment request names no stranger");
+                        } else {
+                            assert!(batch.known.keys().all(|id| *id == sender));
+                        }
                         assert!(!batch.known.contains_key(&key.id()));
                         if mode == 1 {
                             send.write_all(b"malformed supplement").await.unwrap();
@@ -835,13 +842,14 @@ mod batch_session_tests {
                 }
             };
             tokio::time::timeout(Duration::from_secs(10), n0_future::future::or(asking, serving)).await.unwrap();
-            // version 2 first, then version 1 (P8)
+            // version 3 first (S8), then version 2, then version 1 (P8)
             let expected = if mode == 2 {
-                vec![proofs::KIND, proofs::KIND, REQUEST | PACKED, REQUEST, REQUEST]
-            } else { vec![proofs::KIND, proofs::KIND, REQUEST | PACKED, REQUEST | PACKED] };
+                vec![proofs::KIND, proofs::KIND, proofs::KIND, REQUEST | PACKED, REQUEST, REQUEST]
+            } else { vec![proofs::KIND, proofs::KIND, proofs::KIND, REQUEST | PACKED, REQUEST | PACKED] };
             assert_eq!(*seen.lock().unwrap(), expected, "only the unsupported format is remembered on this connection");
             assert_eq!(phone.shared.unpacked.lock().unwrap().contains(&peer.conn.stable_id()), mode == 2);
             assert!(phone.shared.unbatched.lock().unwrap().contains(&peer.conn.stable_id()));
+            assert!(phone.shared.unsegmented.lock().unwrap().contains(&peer.conn.stable_id()));
             phone.shutdown().await.unwrap();
             raw.close().await;
         }

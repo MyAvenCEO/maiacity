@@ -706,6 +706,8 @@ struct Answers {
     #[cfg(test)]
     basis_builds: std::sync::atomic::AtomicUsize,
     sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32], ReplyScope), (crate::policy::LogRevision, Arc<ReplyPlan>)>>,
+    /// The writers `Lab::writers_shown` names to each peer, kept for the log's revision and the follow list.
+    writers: std::sync::Mutex<HashMap<SignerId, (crate::policy::LogRevision, Vec<VaultId>, Arc<BTreeSet<SignerId>>)>>,
 }
 
 /// Disposable structural work, shared across peers only while the exact held edits/IDs stay unchanged.
@@ -4736,6 +4738,34 @@ impl Lab {
         let wants: BTreeSet<BlobId> =
             places.iter().flat_map(|&i| edits[i].blobs()).filter(|b| !store.blobs.contains_key(b)).collect();
         Request { ask, wants: wants.into_iter().collect(), after: None }
+    }
+
+    /// The writers device `d` may name to `peer` as those it holds segments of (S8, `Segments.lean`'s `shown`): the
+    /// signers of the edits of the logs its request names to `peer` (`request`), whose ids it tells `peer` already, so
+    /// naming their writers tells nothing more. Not the writers of any other log it holds, which would tell `peer` whom
+    /// `d` knows in vaults `peer` has no part in. Kept for the log's revision and `d`'s follow list.
+    pub fn writers_shown(&self, d: SignerId, peer: SignerId) -> Arc<BTreeSet<SignerId>> {
+        let store = self.held(d);
+        let revision = store.log.revision();
+        if let Some((at, follow, got)) = store.answers.writers.lock().expect("writers").get(&peer)
+            && *at == revision
+            && *follow == store.follow
+        {
+            return got.clone();
+        }
+        let places = self.answered(d, peer, &store.follow);
+        let shared: HashSet<LogId> = places.iter().filter_map(|&i| store.log.logs()[i]).collect();
+        let edits = store.log.edits();
+        let mut out = BTreeSet::new();
+        for log in &shared {
+            for &i in store.log.by_log().get(log).map(Vec::as_slice).unwrap_or_default() {
+                out.insert(edits[i].author);
+                out.extend(edits[i].cosigners.iter().copied());
+            }
+        }
+        let out = Arc::new(out);
+        store.answers.writers.lock().expect("writers").insert(peer, (revision, store.follow.clone(), out.clone()));
+        out
     }
 
     /// What device `d` answers `asker`'s request: a page of the edits `asker` may receive by `d`'s view beyond those it

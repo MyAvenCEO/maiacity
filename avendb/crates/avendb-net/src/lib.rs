@@ -343,8 +343,9 @@ pub struct Options {
     /// It keeps the segments of the writers whose edits it holds (S8, `spec/AvenDB/Segments.lean`): each one's ids in
     /// order and the newest root it signed over them, taken only once they rebuild that root, so it makes their paths
     /// for any peer, as a relay, and a page through it costs one signature check per writer, not per edit. It asks
-    /// peers for segments first (`proofs` version 3), and versions 2 and 1 of a peer that doesn't know them. Off until
-    /// the cut: a node that keeps segments still serves old apps their signatures where it keeps them (`paths` off).
+    /// peers for segments first (`proofs` version 3), and versions 2 and 1 of a peer that doesn't know them. On since
+    /// Samuel's go (2026-10-27): a node that keeps segments still serves old apps their signatures where it keeps them
+    /// (`paths` off), and keeps every signature; dropping those a signed segment covers is a later step of its own.
     pub segments: bool,
     /// The most pages a pull keeps in flight from one peer (S6, `pulls::Window`): asked at once where the peer says
     /// they end (`session::CUTS`), and taken in order. 1 asks each page once the one before came, as nodes did before.
@@ -387,7 +388,7 @@ impl Options {
             sim: None,
             index: false,
             paths: true,
-            segments: false,
+            segments: true,
             window: pulls::WINDOW,
         }
     }
@@ -3097,13 +3098,16 @@ impl Shared {
     /// signed edits still take the ordinary verification path. Unsupported or invalid supplements fall
     /// back to packed, then original replies, with each capability remembered separately per connection.
     /// The byte limit and page admission remain the caller's, including typed oversized-response retries.
-    async fn reply_to(&self, peer: &Peer, kind: u8, request: &[u8], limit: usize) -> Result<(Reply, u64)> {
+    async fn reply_to(self: &Arc<Self>, peer: &Peer, kind: u8, request: &[u8], limit: usize) -> Result<(Reply, u64)> {
         let _activity = self.admit()?;
         let id = peer.conn.stable_id();
         if let Some(signers) = &self.signers {
-            // segments first, where this node keeps them: every writer it holds a root of, and how many of its ids
+            // segments first, where this node keeps them: each writer it holds a root of whose edits its request names
+            // to the peer already (`Lab::writers_shown`), and how many of its ids; never the writers of its other logs
             if self.opts.segments && !self.unsegmented.lock().expect("unsegmented").contains(&id) {
-                let held = signers.held(proofs::MAX_KNOWN_SEGMENTS).await;
+                let device = peer.device;
+                let shown = self.read(move |lab: &Lab, me| lab.writers_shown(me, device)).await;
+                let held = signers.held_among(&shown, proofs::MAX_KNOWN_SEGMENTS).await;
                 let known = held.iter().map(|(s, (n, _))| (*s, *n)).collect();
                 let held = Some(held.iter().filter(|(_, (_, ids))| *ids > 0).map(|(s, (_, ids))| (*s, *ids)).collect());
                 let paths = self.opts.paths;
