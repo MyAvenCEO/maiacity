@@ -67,6 +67,16 @@ pub(crate) const RANGES: u8 = 13;
 /// as it did (`Shared::uncut`).
 pub(crate) const CUTS: u8 = 22;
 
+/// The stubs of the box edits a request, an `ASK_LOGS` or an `ASK_VAULTS` would bring that the asking device needs not
+/// now (`Lab::withheld`, `spec/AvenDB/LazyBoxes.lean`): what a fresh device asks once before its first pull, so that
+/// it counts them as held and is sent every edit but those. Its body is the kind it asks about, then that kind's body;
+/// it is answered by the stubs (`wire::Stubs`), of no edit the same request would not bring. A peer from before
+/// refuses this kind, and the device pulls everything, as it did.
+pub(crate) const STUBS: u8 = 23;
+
+/// The most a `STUBS` answer takes.
+pub(crate) const STUBS_REPLY_LIMIT: usize = 64 << 20;
+
 /// The most cuts one `CUTS` asks for: each costs its peer a page's sizing.
 pub(crate) const CUTS_LIMIT: usize = 16;
 /// The most a `CUTS` answer takes (`cuts_wire`).
@@ -311,6 +321,16 @@ async fn authorized_cuts(shared: &Arc<Shared>, peer: &Peer, body: &[u8]) -> Resu
     Ok(cuts_wire(&cuts, done))
 }
 
+async fn authorized_stubs(shared: &Arc<Shared>, peer: &Peer, body: &[u8]) -> Result<Vec<u8>> {
+    let [kind, body @ ..] = body else { bail!("a stubs request cut short") };
+    let (request, scope) = authorized_request(*kind, body)?;
+    let device = peer.device;
+    let stubs = shared
+        .try_lab(move |lab, me| lab.withheld(me, device, &request, &scope.unwrap_or_default()))
+        .await?;
+    Ok(avendb::wire::Stubs(stubs).to_wire())
+}
+
 async fn authorized_reply(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], paths: bool) -> Result<Reply> {
     let (request, scope) = authorized_request(kind, body)?;
     shared.follows(peer, &request);
@@ -386,6 +406,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         crate::peer_receipts::KIND => crate::peer_receipts::answer(shared, peer, body).await,
         crate::peer_receipts::UI_KIND => crate::peer_receipts::answer_ui(shared, peer, body).await,
         CUTS => authorized_cuts(shared, peer, body).await,
+        STUBS => authorized_stubs(shared, peer, body).await,
         REQUEST | ASK_LOGS | ASK_VAULTS => {
             let reply = authorized_reply(shared, peer, kind, body, false).await?;
             let n = reply.edits.len();

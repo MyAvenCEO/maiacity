@@ -314,7 +314,7 @@ pub fn survey(lab: &Lab, on: SignerId) -> Survey {
     let mut freezing = Freezing::default();
     for &id in lab.log(on).ids() {
         if let Some(signed) = lab.signed_edit(on, id) {
-            freezing.take(signed, None);
+            freezing.take(&signed, None);
         }
     }
     freezing.finish()

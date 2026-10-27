@@ -107,9 +107,10 @@ fn trust_withdrawal_resets_prefix_before_next_latest() {
     }).unwrap();
     // Simulate a receipt held on a checkpoint's word whose signature was discarded,
     // but which is no longer vouched for. Exercise the real withdrawal path.
-    let signed = store.signed.get_mut(&id).unwrap();
+    let mut signed = store.signed.owned(&id);
     for sig in &mut signed.sigs { sig.pq.clear(); sig.webauthn = None; sig.enclave = None; }
     assert!(signed.verify().is_err());
+    store.signed.insert(id, signed);
     store.bare.insert(id);
     assert!(trust(store));
     assert_ne!(old_revision, store.log.revision());

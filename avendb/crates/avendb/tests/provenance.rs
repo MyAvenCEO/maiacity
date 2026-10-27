@@ -211,7 +211,7 @@ fn the_observer_reads_the_rows_the_feed_serves() {
     assert!(proof.iter().all(|s| stranger.contains(&s.edit.id())), "nothing a stranger may not receive");
     let entry_of = |s: &Signed| s.edit.entry();
     assert!(proof.iter().all(|s| entry_of(s) != Some(c.story) && entry_of(s) != Some(c.note)), "the code alone");
-    assert!(stranger.iter().any(|&id| c.w.lab.signed_edit(server, id).and_then(entry_of) == Some(c.story)));
+    assert!(stranger.iter().any(|&id| c.w.lab.signed_edit(server, id).and_then(|s| entry_of(&s)) == Some(c.story)));
     // the same proof from any device that holds it, and named by its edits alone
     let from_alice = c.proof(c.mac);
     assert_eq!(provenance::frontier(&from_alice), provenance::frontier(&proof));

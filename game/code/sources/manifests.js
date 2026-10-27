@@ -256,16 +256,29 @@ export async function plan(leaves, { device: d, vault = MAIA_CITY, signals = {},
 	const queries = new Map(TIERS.map((t) => [t, []]));
 	/** @type {{files?: any[]}} */
 	const inventory = {};
+	/** the bound entries, out before their leaves' walks reach them, after what the walks found (declared order kept) */
+	/** @type {{entry: string, tier: string, dist: number}[]} */
+	const early = [];
 	const wants = () => {
-		const ordered = schedule(works);
+		const ordered = schedule([...works, ...early]);
 		return TIERS.map((tier) => ({ tier, entries: ordered.filter((w) => w.tier === tier).map((w) => w.entry), queries: queries.get(tier) ?? [] }))
 			.filter((w) => w.entries.length || w.queries.length);
 	};
+	/** @param {Want} want */
+	const where = (want) => (want.vault === '*' ? undefined : want.vault ?? vault);
+	// Every leaf's selector and bound entry first, before any read of the device: they need none, and on a device whose
+	// reads wait behind its catch-up the node finds the route's data from peers meanwhile (the rooms of Chat waited for
+	// the kernel's read and their own so, tens of seconds on an iPhone).
+	for (const { part, want, tier } of leaves) {
+		const at = where(want);
+		if (want.type?.length) queries.get(tier)?.push(...normalizeDiscovery([{ types: want.type, ...(at ? { vault: at } : {}) }]));
+		if (want.entry && part.part !== 'files') early.push({ entry: want.entry, tier, dist: 0 });
+	}
+	if (leaves.length) publish(wants());
 	for (const leaf of leaves) {
 		signal?.throwIfAborted();
 		const { part, want, tier } = leaf;
-		const at = want.vault === '*' ? undefined : want.vault ?? vault;
-		if (want.type?.length) queries.get(tier)?.push(...normalizeDiscovery([{ types: want.type, ...(at ? { vault: at } : {}) }]));
+		const at = where(want);
 		let ids = want.entry ? [want.entry] : d ? await rowsOf(d, want, at, part.window, signal) : [];
 		if (part.window?.oldest) ids = [...ids].reverse();
 		if (d && (part.follow || part.files?.length || part.part === 'files')) {

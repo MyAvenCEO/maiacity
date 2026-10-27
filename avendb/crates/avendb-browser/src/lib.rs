@@ -102,6 +102,8 @@ pub use avendb::world::{CARD, DELETED, FILE, FORK, NOTE, PROFILE, TODO};
 
 /// Which code is a vault's, proven in the page (`provenCode`, H2).
 pub mod provenance;
+#[cfg(feature = "bench")]
+pub mod bench;
 
 /// How many bytes of a file the page hands its device at a time (`PageDevice::run`'s `read`, for `put_file` and a
 /// `create` that brings a file).

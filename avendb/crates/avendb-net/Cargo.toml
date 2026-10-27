@@ -48,7 +48,10 @@ wtransport = { version = "=0.7.2", default-features = false, features = ["aws-lc
 url = "2.5"
 iroh = { version = "=1.3.0", default-features = false, features = ["tls-aws-lc-rs", "portmapper", "fast-apple-datapath", "unstable-custom-transports"] }
 rustls = { version = "0.23.33", default-features = false, features = ["aws_lc_rs", "std"] }
-tokio = { version = "1.44", features = ["rt-multi-thread", "sync", "time", "io-util"] }
+tokio = { version = "1.44", features = ["rt-multi-thread", "sync", "time", "io-util", "net"] }
+# A machine's own WebRTC data channel (`transports::webrtc`), for a browser to reach it straight over ICE, in place of the
+# relay: sans-IO, on aws-lc-rs as its TLS is. It carries only the inner, already PQ-encrypted iroh packets.
+str0m = { version = "=0.24.1", default-features = false, features = ["aws-lc-rs"] }
 
 # In a browser (P8d), where aws-lc-rs doesn't build: ring for TLS, and X25519MLKEM768 in pure Rust (`kx`); randomness
 # from the browser

@@ -83,7 +83,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Signature, SignerKeys, Ask, Hello, Request, Reply, Packed, Announce, Statement, Join, RelayPass, ApiPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
+wire!(Signed, Signature, SignerKeys, Ask, Stubs, Hello, Request, Reply, Packed, Announce, Statement, Join, RelayPass, ApiPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
 
 /// An edit on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the edit.
 impl Wire for Edit {
@@ -1124,6 +1124,40 @@ impl Decode for Ask {
             haves.insert(log, r.set(32)?);
         }
         Ok(Ask { haves, loose: r.set(32)?, follow: r.set(32)? })
+    }
+}
+
+/// The stubs of the box edits a peer holds back from a device's first sync (`sync::Stub`), smallest first, no repeats:
+/// what a peer answers a device that asks for them (`Lab::withheld`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Stubs(pub Vec<crate::sync::Stub>);
+
+impl Encode for crate::sync::Stub {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.id.encode(out);
+        self.log.encode(out);
+        self.depth.encode(out);
+        self.parents.encode(out);
+    }
+}
+
+/// Its id, its log, its depth, then the parents it names, in their order.
+impl Decode for crate::sync::Stub {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(crate::sync::Stub { id: EditId::decode(r)?, log: LogId::decode(r)?, depth: u64::decode(r)?, parents: r.seq(32)? })
+    }
+}
+
+impl Encode for Stubs {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.0.encode(out);
+    }
+}
+
+/// A set of stubs: smallest first, no repeats.
+impl Decode for Stubs {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Stubs(r.set(77)?))
     }
 }
 

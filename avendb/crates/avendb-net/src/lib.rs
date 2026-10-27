@@ -296,6 +296,10 @@ pub struct Options {
     /// nor again once the vaults it follows change; only what it is told to bring (`Node::bring`, `Node::sync_with`),
     /// so a fresh one never pulls all its device may hold, but the vaults a tool call touches.
     pub lazy: bool,
+    /// A device that holds nothing yet when it starts takes its first sync with the boxes it needs not now held back
+    /// as stubs, and their bodies in the pull after (`Lab::set_lazy_boxes`): on by default, never for a server (`card`,
+    /// `keep`) or a node that asks only when told (`lazy`).
+    pub first_sync_stubs: bool,
     /// How soon it tries again to tell a peer it couldn't reach, or to ask one it failed to ask: after `retry`, then
     /// twice as long each time the peer stays out of reach, up to a minute.
     pub retry: Duration,
@@ -361,6 +365,7 @@ impl Options {
             relay: None,
             proxy: false,
             lazy: false,
+            first_sync_stubs: true,
             retry: Duration::from_secs(1),
             shelf: None,
             keep: false,
@@ -695,6 +700,15 @@ impl Node {
             },
             None => None,
         };
+        // a device that holds nothing yet, the page's or a new native device's, takes its first sync with the boxes it
+        // needs not now held back as stubs and their bodies in the pull after (`Lab::set_lazy_boxes`,
+        // `spec/AvenDB/LazyBoxes.lean`); one that holds edits syncs as before. A peer from before box stubs refuses
+        // `session::STUBS` and sends everything, which ends it (`Shared::pages`). Not a server, which keeps and hands on
+        // what it holds (`card`, `keep`), nor a node that asks only when told (`lazy`), which would never ask for the
+        // bodies
+        if opts.first_sync_stubs && !opts.card && !opts.keep && !opts.lazy && lab.size(me).0 == 0 {
+            lab.set_lazy_boxes(me, true);
+        }
         opts.progress.step("node");
         if let Some(admission) = &opts.admission {
             let own = SecretKey::from_bytes(&secret).public();
@@ -806,6 +820,7 @@ impl Node {
             unpacked: Mutex::default(),
             unbatched: Mutex::default(),
             uncut: Mutex::default(),
+            unstubbed: Mutex::default(),
             unstripped: Mutex::default(),
             ranges: Mutex::default(),
             edit_transfer: edit_transfer::Runtime::default(),
@@ -1800,6 +1815,15 @@ impl Node {
         transports::control::listen(&self.shared, config).await
     }
 
+    /// Start its own WebRTC peer, for the pages among its peers (an iPhone's) to reach it straight over ICE in place of
+    /// the relay, which stays as their fallback: as the Mac app's node does. It offers its own addresses and the one
+    /// its STUN servers see; every SDP and candidate goes only through the authenticated session of the peer it
+    /// negotiated with, and the route carries only that same PQ connection's packets. Fails if it runs already.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn serve_webrtc(&self, config: transports::RtcConfig) -> Result<()> {
+        transports::control::serve_rtc(&self.shared, config).await
+    }
+
     /// Its shelf lacks something its device holds (`edits`): its holdings name only what the shelf holds. Never, for a
     /// node with no shelf.
     pub async fn behind(&self) -> bool {
@@ -1992,6 +2016,7 @@ impl<'a> Cursor<'a> {
 
 /// What a node asks a peer for: all the peer may send it (`session::REQUEST`), the logs it names alone
 /// (`session::ASK_LOGS`), or the entries of the vaults it names alone (`session::ASK_VAULTS`).
+#[derive(Clone)]
 enum Scope {
     All,
     Logs(BTreeSet<LogId>),
@@ -2142,6 +2167,8 @@ struct Shared {
     unbatched: Mutex<HashSet<usize>>,
     /// The connections whose peer refused a `session::CUTS`, a peer from before S6: asked page after page.
     uncut: Mutex<HashSet<usize>>,
+    /// The connections whose peer refused or failed a `session::STUBS`, a peer from before box stubs: pulled whole.
+    unstubbed: Mutex<HashSet<usize>>,
     /// The connections whose peer didn't answer a proof request of version 2, with paths in place of signatures (P8):
     /// an older node, or one that couldn't link a root; asked version 1 from then on.
     unstripped: Mutex<HashSet<usize>>,
@@ -2596,6 +2623,15 @@ impl Shared {
             Scope::Logs(_) => session::ASK_LOGS,
             Scope::Vaults(_) => session::ASK_VAULTS,
         };
+        // a fresh device asking for its first sync with the boxes held back asks the peer for their stubs first, to
+        // count them as held (`session::STUBS`, `LazyBoxes.lean`), and for their bodies in the pull after this one
+        let stubbed = self.stubs(&peer, kind, scope.clone()).await;
+        // the logs a pull for the bodies of stubs answers for: all, or those it names
+        let answers = match &scope {
+            Scope::All => Some(None),
+            Scope::Logs(logs) => Some(Some(logs.clone())),
+            Scope::Vaults(_) => None,
+        };
         // the request, worked out once for the whole asking: each page asks the same, after the last place it got, so
         // the peer works out what it sends once too (`Lab::reply`), and no page waits on this device's lab to ask
         let asking = Instant::now();
@@ -2910,7 +2946,64 @@ impl Shared {
                 None => break,
             }
         }
+        if stubbed && (kind == session::REQUEST || new == 0) {
+            // the first view is in, of all the peer may send or of logs that differ by their boxes alone: the bodies of
+            // the boxes held back come in the next pull, each checked against its stub as it comes (S5)
+            self.try_lab(|lab, me| lab.fetch_withheld(me)).await?;
+            self.ask_soon(peer.endpoint);
+        } else if let Some(logs) = answers {
+            // asked for their bodies, what didn't come of the stubs this peer sent is of nothing it sends; and a first
+            // sync a peer from before box stubs sent whole leaves the device holding edits, which ends its stubs
+            self.try_lab(move |lab, me| {
+                lab.drop_unanswered(me, device, logs.as_ref());
+                if new > 0 && lab.lazy_boxes(me) && lab.stubs(me).is_empty() {
+                    lab.set_lazy_boxes(me, false);
+                }
+            })
+            .await?;
+        }
         Ok(new)
+    }
+
+    /// Asks `peer` for the stubs of the boxes this device needs not now of what a pull of `kind` for `scope` brings, if
+    /// it asks for its first syncs so (`Lab::lazy_boxes`), and takes them (`Lab::receive_stubs`). True if the peer
+    /// answered. A peer that refuses or fails to answer sends everything, as before.
+    async fn stubs(self: &Arc<Self>, peer: &Peer, kind: u8, scope: Scope) -> bool {
+        let device = peer.device;
+        let body = self
+            .read(move |lab: &Lab, me| {
+                lab.lazy_boxes(me).then(|| {
+                    let request = lab.request(me, device);
+                    match &scope {
+                        Scope::All => request.to_wire(),
+                        Scope::Logs(logs) => session::only(lab, me, request, logs).to_wire(),
+                        Scope::Vaults(vaults) => session::vaults_body(vaults, &request),
+                    }
+                })
+            })
+            .await;
+        let Some(body) = body else { return false };
+        let connection = peer.conn.stable_id();
+        if self.unstubbed.lock().expect("unstubbed").contains(&connection) {
+            return false;
+        }
+        let mut asked = vec![kind];
+        asked.extend(body);
+        let answer = async {
+            let _activity = self.admit()?;
+            anyhow::ensure!(asked.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
+            let bytes = session::exchange(&peer.conn, session::STUBS, &asked, session::STUBS_REPLY_LIMIT);
+            let bytes = time::timeout(PAGE_WAIT, bytes).await.context("no stubs in time")??;
+            Ok::<_, anyhow::Error>(avendb::wire::Stubs::from_wire(&bytes)?)
+        };
+        match answer.await {
+            Ok(stubs) => self.try_lab(move |lab, me| lab.receive_stubs(me, device, stubs.0)).await.is_ok(),
+            Err(error) => {
+                tracing::debug!(%error, "avendb: no stubs, the first sync takes every box");
+                self.unstubbed.lock().expect("unstubbed").insert(connection);
+                false
+            }
+        }
     }
 
     /// The McEliece keys a pull's pages named that this device lacks, from `device` at `endpoint` in one request, once
@@ -3337,6 +3430,7 @@ impl Shared {
         self.unpacked.lock().expect("unpacked").remove(&peer.conn.stable_id());
         self.unbatched.lock().expect("unbatched").remove(&peer.conn.stable_id());
         self.uncut.lock().expect("uncut").remove(&peer.conn.stable_id());
+        self.unstubbed.lock().expect("unstubbed").remove(&peer.conn.stable_id());
         self.unstripped.lock().expect("unstripped").remove(&peer.conn.stable_id());
         let known = self.reach.lock().expect("reach").contains_key(&peer.device);
         let forget = !known && self.live(peer.endpoint).is_none();
@@ -3383,8 +3477,9 @@ impl Shared {
     /// Asks `endpoint` for the logs where the device there holds what this one lacks (`differ`), and those alone, if
     /// there are any. How many edits were new.
     ///
-    /// In two askings at most (`next_asking`): first what the open views want now, with the logs that say who may do
-    /// what and the keys of their audiences; then every other log at once. A peer answers an asking a page at a time by
+    /// In three askings at most (`next_asking`): first Maia City's manifests the views asked for, which say what each
+    /// page wants, then what the open views want now, each with the logs that say who may do what; then every other
+    /// log at once. A peer answers an asking a page at a time by
     /// the edits' places across every log it names (`sync::place`), so each page of one asking sorts after all it took
     /// before and steps on the replay (`policy::replay_on`), where an asking of a few hundred logs at a time sorted each
     /// page among the edits held and replayed them all again: a first sync of 50,000 edits took 8.7 s so, 0.36 s in
@@ -3397,30 +3492,41 @@ impl Shared {
         let differing = self.differ(peer.device).await;
         let mut left = self.claims.lock().expect("claims").take(endpoint, differing);
         let _claimed = Claimed { shared: self, endpoint };
-        let (mut new, mut keys, mut first, mut viewed) = (0, BTreeSet::new(), true, true);
+        let (mut new, mut keys, mut stage) = (0, BTreeSet::new(), AskingStage::Manifests);
+        // a new device's views ask by selectors before they know an entry: the first asking waits a moment for what
+        // peers name for them, Maia City's manifests first, else it would take every log at once and the views theirs
+        // only at its end; a catch-up of a few logs asks for them at once
+        if left.len() > FIRST_FINDS_LOGS {
+            self.first_finds().await;
+        }
         let asked = loop {
             let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
             let logs = {
                 let mut wanted = self.wanted.lock().expect("wanted");
-                let active = self.interests.lock().expect("interests").entries();
+                let (active, manifests) = {
+                    let interests = self.interests.lock().expect("interests");
+                    (interests.entries(), interests.manifests())
+                };
                 let mut priority = bootstrap_dependencies::key_logs(&active, &key_waits);
                 priority.extend(active);
-                let logs = next_asking(&mut left, &wanted, &priority, std::mem::take(&mut viewed));
+                let logs = next_asking(&mut left, &wanted, &priority, &manifests, &mut stage);
                 wanted.retain(|l| !logs.contains(l));
                 logs
             };
             if logs.is_empty() {
                 break Ok(new);
             }
+            // an asking of the manifests or the views, which leaves logs for a later one
+            let early = !left.is_empty();
             match self.pull_expected(endpoint, Scope::Logs(logs), true, None, None, Some(&mut keys)).await {
                 Ok(got) => new += got,
                 Err(e) => break Err(e),
             }
-            // the keys the first batch named, on a task of their own while the next batches come: it is the logs no
-            // entry's (who may do what, the audiences' keys), so a new device's views open and find what they want
-            // at once instead of after the last log of a whole catch-up, and no log waits behind a key fetch
-            // (`a_new_humans_keys_hold_no_log_back`); every later batch's keys come after the last log
-            if std::mem::take(&mut first) && !keys.is_empty() {
+            // the keys the manifests' and the views' batches named, on a task of their own while the next batches
+            // come: it is the logs no entry's (who may do what, the audiences' keys), so a new device's views open and
+            // find what they want at once instead of after the last log of a whole catch-up, and no log waits behind a
+            // key fetch (`a_new_humans_keys_hold_no_log_back`); the last batch's keys come after its last log
+            if early && !keys.is_empty() {
                 let (now, shared, device) = (std::mem::take(&mut keys), self.clone(), peer.device);
                 if let Ok(activity) = self.admit() {
                     task::spawn(async move {
@@ -3442,6 +3548,16 @@ impl Shared {
         // what every asking brought, brought up to date at last, however it ended
         self.catch_up_paced_class(true, lab_schedule::Class::Background).await;
         asked
+    }
+
+    /// Waits, at most `FIRST_FINDS`, until peers named something for the open views' selectors, while they ask by
+    /// selectors alone (`Interests::finding`): a new device's pages, which know no entry before their first find came
+    /// back. At once where no view asks so, or one names an entry.
+    async fn first_finds(self: &Arc<Self>) {
+        let until = Instant::now() + FIRST_FINDS;
+        while self.interests.lock().expect("interests").finding() && Instant::now() < until {
+            time::sleep(Duration::from_millis(20)).await;
+        }
     }
 
     /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
@@ -3612,19 +3728,51 @@ const VIEW_LOGS: usize = 1024;
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 const LONG_TURN: Duration = Duration::from_millis(16);
 
-/// The logs of `left` to ask for next, taken out of it (`Shared::ask_differing`). At the `first` asking, the logs the
-/// open views want now (`active`, with their audiences' keys) and the entry logs pages asked for (`wanted`), with every
-/// vault's and share's log, which say who may do what and are few, at most `VIEW_LOGS`, if any of the views' are left;
-/// else every log left, in one asking. None once `left` is empty. Not every audience's log: those hold the keys and
+/// Which asking of a connection's comes next (`next_asking`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AskingStage {
+    /// Maia City's manifests the views asked for: they say what each page wants, so they decide what comes first.
+    Manifests,
+    /// What the open views want now.
+    Views,
+    /// Every log left.
+    Rest,
+}
+
+/// How long a connection's first asking waits for what peers name for the views' selectors (`Shared::first_finds`),
+/// at most: a find's round trip over the relay, the device's keys of the vaults found on the way.
+const FIRST_FINDS: Duration = Duration::from_millis(1500);
+/// The fewest logs a connection's askings take for its first to wait for the views' finds (`FIRST_FINDS`): a catch-up
+/// of fewer comes at once, whatever the views want.
+const FIRST_FINDS_LOGS: usize = 64;
+
+/// The logs of `left` to ask for next, taken out of it (`Shared::ask_differing`), by `stage`, which it moves on. First
+/// the manifests peers named for the views (`manifests`), if any are left; then the logs the open views want now
+/// (`active`, with their audiences' keys) and the entry logs pages asked for (`wanted`), if any are left; each with
+/// every vault's and share's log not asked yet, which say who may do what and are few, at most `VIEW_LOGS`; else, and
+/// then, every log left, in one asking. None once `left` is empty. Not every audience's log: those hold the keys and
 /// their wraps, most of a vault's edits (2026-10-27, with them in the first asking an iPhone's views never opened).
-fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], first: bool) -> BTreeSet<LogId> {
-    let viewed: BTreeSet<LogId> = active.iter().chain(wanted).filter(|l| left.contains(l)).copied().collect();
-    let next = if first && !viewed.is_empty() {
-        let rules = left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_))).copied();
-        viewed.iter().copied().chain(rules).take(VIEW_LOGS).collect()
-    } else {
-        std::mem::take(left)
-    };
+fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> BTreeSet<LogId> {
+    let rules = |left: &BTreeSet<LogId>| left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_))).copied().collect::<Vec<_>>();
+    let mut next = BTreeSet::new();
+    if *stage == AskingStage::Manifests {
+        *stage = AskingStage::Views;
+        let first: Vec<LogId> = manifests.iter().filter(|l| left.contains(l)).copied().collect();
+        if !first.is_empty() {
+            next = first.into_iter().chain(rules(left)).take(VIEW_LOGS).collect();
+        }
+    }
+    if next.is_empty() && *stage == AskingStage::Views {
+        *stage = AskingStage::Rest;
+        let viewed: Vec<LogId> = active.iter().chain(wanted).filter(|l| left.contains(l)).copied().collect();
+        if !viewed.is_empty() {
+            next = viewed.into_iter().chain(rules(left)).take(VIEW_LOGS).collect();
+        }
+    }
+    if next.is_empty() {
+        *stage = AskingStage::Rest;
+        next = std::mem::take(left);
+    }
     left.retain(|l| !next.contains(l));
     next
 }
@@ -3734,13 +3882,39 @@ mod tests {
         left.extend([LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32])), LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]))]);
         let (wanted, view) = ([entry(1)].into(), [entry(99), entry(4)]);
         // the view's logs left and the old wants, with the vaults' and shares' logs; a log it doesn't lack isn't asked
-        let first = next_asking(&mut left, &wanted, &view, true);
+        let mut stage = AskingStage::Manifests;
+        let none = BTreeSet::new();
+        let first = next_asking(&mut left, &wanted, &view, &none, &mut stage);
         let audience = LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]));
         assert_eq!(first, [entry(1), entry(4), LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32]))].into());
         // then the rest in one asking, an audience's keys among them, so its pages come by their places across every log
-        let rest = next_asking(&mut left, &wanted, &view, false);
+        let rest = next_asking(&mut left, &wanted, &view, &none, &mut stage);
         assert_eq!(rest, [entry(2), entry(3), entry(5), audience].into());
-        assert!(left.is_empty() && next_asking(&mut left, &wanted, &view, false).is_empty());
+        assert!(left.is_empty() && next_asking(&mut left, &wanted, &view, &none, &mut stage).is_empty());
+    }
+
+    #[test]
+    fn maia_citys_manifests_come_before_any_view_then_the_views_then_every_other_log() {
+        let entry = |i: u8| LogId::Entry(EntryId([i; 32]));
+        let (vault, share) = (LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32])));
+        let audience = LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]));
+        let mut left: BTreeSet<LogId> = (1..=6).map(entry).collect();
+        left.extend([vault, share, audience]);
+        // entry 5 and 6 are manifests (6 held already: not left), entry 2 and 3 the view's rooms
+        let (manifests, view) = ([entry(5), entry(60)].into(), [entry(2), entry(3), entry(5)]);
+        let mut stage = AskingStage::Manifests;
+        let first = next_asking(&mut left, &BTreeSet::new(), &view, &manifests, &mut stage);
+        assert_eq!(first, [entry(5), vault, share].into(), "the manifests first, with who may do what");
+        let views = next_asking(&mut left, &BTreeSet::new(), &view, &manifests, &mut stage);
+        assert_eq!(views, [entry(2), entry(3)].into(), "then the view's own");
+        let rest = next_asking(&mut left, &BTreeSet::new(), &view, &manifests, &mut stage);
+        assert_eq!(rest, [entry(1), entry(4), entry(6), audience].into(), "then every other log at once");
+        assert!(left.is_empty());
+        // no manifest named yet: the views first, as before
+        let mut left: BTreeSet<LogId> = (1..=3).map(entry).collect();
+        let mut stage = AskingStage::Manifests;
+        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[entry(2)], &BTreeSet::new(), &mut stage), [entry(2)].into());
+        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[entry(2)], &BTreeSet::new(), &mut stage), [entry(1), entry(3)].into());
     }
 
     #[test]
@@ -3749,7 +3923,7 @@ mod tests {
         let mut left: BTreeSet<LogId> = (1..=300).map(|i| entry(i as u8)).collect();
         left.insert(LogId::Vault(VaultId([9; 32])));
         let all = left.clone();
-        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[], true), all);
+        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[], &BTreeSet::new(), &mut AskingStage::Manifests), all);
     }
 
     #[test]

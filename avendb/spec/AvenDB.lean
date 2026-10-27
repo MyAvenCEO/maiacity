@@ -26,6 +26,7 @@ import AvenDB.WireBatches
 import AvenDB.Snapshot
 import AvenDB.EntryState
 import AvenDB.Wraps
+import AvenDB.LazyBoxes
 import AvenDB.Vectors
 import AvenDB.Ops
 import AvenDB.Links

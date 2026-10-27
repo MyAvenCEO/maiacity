@@ -10,6 +10,12 @@ export function peerDiagnostics(network, perf) {
   policy: policyObservations(network), reactive: policyObservations({ policy_observations: network?.reactive_observations }, 'local-completion-to-peer-reactive-consumer'),
   receiveWork: receiveWork(perf) };
 }
+/** A walk of a view's manifests as a report carries it: counts and times, and the ids of the manifests it matched
+ *  (`kernel`, `chat`: the app's names, never a route, vault or entry). */
+const manifestRun = run => ({ ms: number(run.ms), requested: number(run.requested), catalog: ['local','refused','unavailable'].includes(run.catalog) ? run.catalog : 'unavailable',
+ ...Object.fromEntries(['heldManifests','matchedLeaves','queryLeaves','typeDiscoveryHints','localRows','now','next','later','idle','firstMs','readMs','vaultManifests','builtInManifests'].map(key => [key, number(run[key])])),
+ matched: (Array.isArray(run.matched) ? run.matched : []).filter(id => typeof id === 'string' && /^[a-z][a-z0-9-]{0,47}$/.test(id) && !/[0-9a-f]{16}/.test(id)).slice(0, 16),
+ state: ['scheduled', 'ready', 'done', 'complete', 'failed', 'cancelled', 'running'].includes(run.state) ? run.state : 'unknown' });
 /** Existing sources already redact lifecycle and stage names; bound their final report too.
  * @param {{phase: string, journal: any, lifecycle: any, calls?: any[], manifests: any, sync: any, playback: any, device: string, build?: string}} options */
 export function diagnosticSnapshot({ phase, journal, lifecycle, calls = [], manifests, sync, playback, device, build }) {
@@ -19,7 +25,7 @@ export function diagnosticSnapshot({ phase, journal, lifecycle, calls = [], mani
   phase: ['open', 'locked', 'loading', 'new', 'error', 'unlocking'].includes(phase) ? phase : 'unknown',
   timings: journal ?? unavailable('no-retained-timing-journal'), lifecycle: lifecycle ?? unavailable('lifecycle-unavailable'),
   localCalls: calls.filter(row => TIMED_OPS.has(row.op)).slice(0, 40).map(row => ({ op: row.op, count: number(row.count), median: number(row.median), p95: number(row.p95), failed: number(row.failed), pending: number(row.pending), waiting: number(row.waiting) })),
-  manifests: manifests ? { pending: number(manifests.pending), runs: manifests.runs.slice(-20).map(run => ({ ms: number(run.ms), requested: number(run.requested), catalog: ['local','refused','unavailable'].includes(run.catalog) ? run.catalog : 'unavailable', ...Object.fromEntries(['heldManifests','matchedLeaves','queryLeaves','typeDiscoveryHints','localRows','now','next','later','idle'].map(key => [key, number(run[key])])), state: ['scheduled', 'ready', 'done', 'complete', 'failed', 'cancelled'].includes(run.state) ? run.state : 'unknown' })) } : unavailable('manifest-observations-unavailable'),
+  manifests: manifests ? { pending: number(manifests.pending), running: (Array.isArray(manifests.running) ? manifests.running : []).slice(0, 4).map(manifestRun), runs: manifests.runs.slice(-20).map(manifestRun) } : unavailable('manifest-observations-unavailable'),
   sync: sync?.known ? Object.fromEntries(['peers', 'logs', 'behind', 'pulling', 'pages'].map(key => [key, number(sync[key])])) : unavailable('peer-log-coverage-unavailable'),
   playback: playback ? Object.fromEntries(['frames','fps','renderP95','gapP95','cutP95','cuts','maxGap','maxCutGap','longGaps','failures'].map(key => [key, number(playback[key])])) : unavailable('no-playback-observation'),
   acceptance: { outgoingDurability: 'unmeasured', filesComplete: 'unmeasured', renderedRemoteLatency: 'unmeasured', completeFirstView: 'unmeasured', restartCause: 'unknown' },

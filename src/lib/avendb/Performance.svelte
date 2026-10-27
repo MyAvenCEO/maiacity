@@ -41,7 +41,7 @@
 	import { session } from './session.svelte.js';
 	import DiagnosticsReport from '$lib/app/DiagnosticsReport.svelte';
 	import { MAIA_CITY } from '../../../game/code/sources/anchor.js';
-	import { deviceOf, manifestDiagnostics, withBuiltIn } from '../../../game/code/sources/device.js';
+	import { deviceOf, manifestDiagnostics, manifestSources, withBuiltIn } from '../../../game/code/sources/device.js';
 	import { manifestsOf } from '../../../game/code/sources/manifests.js';
 	import { GAMES } from '../../../game/games.js';
 	import { appPages, coverage } from './manifest-coverage.js';
@@ -227,13 +227,14 @@
 	/** Reads the views again: the manifests Maia City's vault holds, the app's own where it holds none of an id. */
 	async function readViews() {
 		const held = await manifestsOf(deviceOf(), { vault: MAIA_CITY }).catch(() => []);
-		const ids = new Set(held.filter((m) => m?.v === 2).map((m) => m.id));
+		// the same rule the page's walks read by: the vault's v2 of an id, else the app's own copy standing in for it
+		const from = manifestSources(held, MAIA_CITY);
 		const manifests = withBuiltIn(held, MAIA_CITY);
 		views = {
 			path: viewNow(),
-			runs: manifestDiagnostics().runs.slice(-8).reverse(),
+			runs: [...manifestDiagnostics().running, ...manifestDiagnostics().runs.slice(-8).reverse()],
 			ready: (viewReadiness.snapshot()?.samples ?? []).slice(-1)[0] ?? null,
-			apps: coverage(manifests, appPages({ nav: NAV, out: OUT, games: GAMES })).map((c) => ({ ...c, vault: c.manifests.filter((m) => ids.has(m)) }))
+			apps: coverage(manifests, appPages({ nav: NAV, out: OUT, games: GAMES })).map((c) => ({ ...c, from: c.manifests.map((m) => from.get(m) ?? 'built-in') }))
 		};
 	}
 
@@ -382,10 +383,10 @@
 				<p class="empty">No walk yet.</p>
 			{:else}
 				<div class="table-wrap"><table>
-					<thead><tr><th>Walk</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th><th>Held here</th><th>Took</th></tr></thead>
+					<thead><tr><th>Walk</th><th>Manifests</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th><th>Held here</th><th>Asked</th><th>Took</th></tr></thead>
 					<tbody>
 						{#each views.runs as r, i (i)}
-							<tr><td>{r.state}</td><td>{r.now}</td><td>{r.next}</td><td>{r.later}</td><td>{r.idle}</td><td>{r.localRows}</td><td>{time(r.ms)}</td></tr>
+							<tr><td>{r.state}</td><td>{(r.matched ?? []).join(', ') || '–'}</td><td>{r.now}</td><td>{r.next}</td><td>{r.later}</td><td>{r.idle}</td><td>{r.localRows}</td><td>{time(r.firstMs)}</td><td>{time(r.ms)}</td></tr>
 						{/each}
 					</tbody>
 				</table></div>
@@ -394,12 +395,13 @@
 		<article class="card wide">
 			<h3>Each app's manifests</h3>
 			<div class="table-wrap"><table>
-				<thead><tr><th>App</th><th>Manifests</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th></tr></thead>
+				<thead><tr><th>App</th><th>Manifests</th><th>From</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th></tr></thead>
 				<tbody>
 					{#each views.apps as a (a.path)}
 						<tr class:gap={!a.manifests.length}>
 							<td>{a.title} <span class="soft">{a.path}</span></td>
-							<td>{a.manifests.length ? a.manifests.map((/** @type {string} */ m) => (a.vault.includes(m) ? m : `${m} (app's own)`)).join(', ') : 'none: the kernel alone'}</td>
+							<td>{a.manifests.length ? a.manifests.join(', ') : 'none: the kernel alone'}</td>
+							<td>{a.manifests.length ? [...new Set(a.from)].map((/** @type {string} */ f) => (f === 'built-in' ? "the app's built-in copy" : f === 'vault' ? "Maia City's vault" : "the vault's v1")).join(', ') : '–'}</td>
 							<td>{a.tiers.now}</td><td>{a.tiers.next}</td><td>{a.tiers.later}</td><td>{a.tiers.idle}</td>
 						</tr>
 					{/each}

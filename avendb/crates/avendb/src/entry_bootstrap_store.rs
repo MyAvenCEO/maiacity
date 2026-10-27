@@ -1400,10 +1400,12 @@ impl Lab {
     /// Capture ciphertext anchors with the same held signed frontier as a journal save.
     pub fn bootstrap_bytes(&self, on: SignerId) -> Option<Vec<u8>> {
         let store = self.held(on);
-        encode_anchors(
-            &store.bases,
-            store.log.ids().iter().map(|id| &store.signed[id]),
-        )
+        if store.bases.is_empty() {
+            return Some(Vec::new());
+        }
+        // read back whole only where it holds anchors: a store's edits may be spilled (`held`)
+        let signed: Vec<_> = store.log.ids().iter().map(|id| store.signed.owned(id)).collect();
+        encode_anchors(&store.bases, signed.iter())
     }
 }
 
