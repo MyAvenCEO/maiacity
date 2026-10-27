@@ -636,3 +636,25 @@ async fn a_thousand_reads_walk_once_per_change() {
     // at most one walk per change seen of what the peer or the device holds (an announcement may still land)
     assert!(walked <= keys.len() as u64, "{walked} walks for {} changes", keys.len());
 }
+
+#[test]
+fn a_hint_tells_its_witnesses_from_the_logs_it_changed() {
+    use avendb::wire::Frontier;
+    let log = |n| LogId::Entry(EntryId::from_u64(n));
+    let at = |b: u8| Frontier { heads: vec![EditId([b; 32])], waiting: vec![] };
+    let held = Holdings { logs: [(log(1), at(1)), (log(2), at(2))].into_iter().collect(), ..Default::default() };
+    let announce = Announce { logs: vec![(log(1), at(9)), (log(2), at(2)), (log(3), at(3))], ..Default::default() };
+    let hinted = announced_hints(&held, &announce);
+    assert_eq!(
+        super::unchanged(&held, &announce, &hinted),
+        vec![(log(1), false), (log(2), true), (log(3), false)],
+        "a changed or new log is no witness; a repeated frontier is"
+    );
+    // a log any coalesced hint changed is no witness, whatever another repeated
+    let budget = pulls::Budget::default();
+    let peer = SignerId([7; 32]);
+    budget.note_witnesses(peer, vec![(log(1), false), (log(2), true), (log(4), true)]);
+    budget.note_witnesses(peer, vec![(log(1), true), (log(2), false)]);
+    assert_eq!(budget.take_witnesses(peer, &[log(1), log(2), log(4)].into()), [log(4)].into());
+    assert!(budget.take_witnesses(peer, &[log(4)].into()).is_empty(), "a log is taken once");
+}

@@ -2641,7 +2641,20 @@ impl Shared {
         let mut named = BTreeSet::new();
         let mut asked = self.pages(peer, scope, &mut job, admission, background, keys.unwrap_or(&mut named), yielding).await;
         if asked.is_ok() {
-            if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
+            if expected.is_some() {
+                // a live pull's edits show without the keys they name (one is needed only to seal to its signer), and a
+                // key is a megabyte: brought after, not waited for (`bench_live` phone: a chat edit's pull waited 1.7 s
+                // on two keys the backlog was bringing too)
+                if !named.is_empty() && let Ok(activity) = self.admit() {
+                    let shared = self.clone();
+                    task::spawn(async move {
+                        let _activity = activity;
+                        if let Err(error) = shared.bring_keys(endpoint, device, named, background).await {
+                            tracing::debug!(%error, "avendb: a live pull's keys come with a later pull");
+                        }
+                    });
+                }
+            } else if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
                 asked = Err(error);
             }
         }
@@ -3100,6 +3113,12 @@ impl Shared {
         let lacking =
             move |lab: &Lab, me| -> Vec<BlobId> { keys.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect() };
         let lacking = self.read(lacking).await;
+        if lacking.is_empty() {
+            return Ok(());
+        }
+        // a key another pull brings now is waited for, not brought twice, and what is still lacking then brought
+        let _turns = self.pulls.fetching(&lacking).await;
+        let lacking = self.read(move |lab: &Lab, me| -> Vec<BlobId> { lacking.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect() }).await;
         if !lacking.is_empty() {
             let asked = lacking.len() as u64;
             let got = self.fetch(endpoint, lacking).await;
@@ -3525,6 +3544,7 @@ impl Shared {
         let holdings = held.entry(device).or_default();
         let live_logs = live::announced_hints(holdings, &announce);
         if !live_logs.is_empty() {
+            self.pulls.note_witnesses(device, live::unchanged(holdings, &announce, &live_logs));
             let heads = announce.logs.iter().filter(|(l, _)| live_logs.contains(l)).flat_map(|(_, f)| f.heads.iter().copied());
             self.traffic.trace(traffic::Stage::Heard, device, heads.collect::<Vec<_>>(), false);
         }
