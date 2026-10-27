@@ -328,3 +328,37 @@ async fn a_peer_out_of_reach_is_tried_less_and_less_often() {
     assert!(peers > 0 && dials >= peers, "each of its {peers} peers is tried");
     assert!(dials <= 6 * peers, "{dials} dials to {peers} peers out of reach in 4 s: less and less often");
 }
+
+/// How many of `notes` the node keeps the logs of.
+async fn kept(n: &Node, notes: &[EntryId]) -> usize {
+    let logs = n.holdings().await.logs;
+    notes.iter().filter(|e| logs.contains_key(&avendb::sync::LogId::Entry(**e))).count()
+}
+
+/// A view that opens while a device asks a peer for every log it lacks gets its entry at once: the asking yields to it
+/// after the page it is taking (`Yield`, `Interest.lean`'s `yields`), where the entry's log came only with the asking's
+/// last pages before, as its place sorts last. Alice's Mac wrote notes her iPhone lacks; once a few came, a page of the
+/// iPhone's wants the last she wrote.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_view_opened_during_a_catch_up_gets_its_entry_before_the_rest() {
+    use avendb::sync::LogId;
+    const NOTES: usize = 600;
+    let mut w = world();
+    let (mac_a, phone_a, alice) = (w.mac_a, w.phone_a, w.alice);
+    w.lab.sync_all(0);
+    let notes: Vec<EntryId> = (0..NOTES)
+        .map(|i| w.lab.create(mac_a, alice, alice, "note", &[], document(&format!("Note {i}"), "In May.", mac_a)).expect("a note"))
+        .collect();
+    let mac = Node::spawn(w.lab.split(mac_a, &[], [1; 32]), mac_a, Options { page: 16 << 10, ..Options::local() }).await.expect("a node");
+    let phone = Node::spawn(w.lab.split(phone_a, &[], [2; 32]), phone_a, Options { window: 1, ..Options::local() }).await.expect("a node");
+    let last = *notes.last().expect("notes");
+    meet(&[&mac, &phone]);
+    until("the iPhone takes its first notes", || async { kept(&phone, &notes).await >= 20 }).await;
+    phone.want([LogId::Entry(last)]);
+    until("the iPhone keeps the note its view wants", || async { phone.holdings().await.logs.contains_key(&LogId::Entry(last)) }).await;
+    let then = kept(&phone, &notes).await;
+    assert!(then < NOTES * 9 / 10, "the wanted note came before the rest: {then} of {NOTES} notes held when it came");
+    until("and every other note after it", || async { kept(&phone, &notes).await == NOTES }).await;
+    mac.shutdown().await.expect("shut down");
+    phone.shutdown().await.expect("shut down");
+}
