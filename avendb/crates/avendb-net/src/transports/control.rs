@@ -30,6 +30,10 @@ struct Caps {
     wt: bool,
     rtc: bool,
     listener: bool,
+    /// A machine whose own WebRTC peer runs (`serve_rtc`) beside UDP sockets of its own (`Options::direct` or `bind`),
+    /// where iroh reaches its native peers straight: two such need no WebRTC between them. Unsaid, as by a page and by
+    /// a node from before it was said, it is none.
+    udp: bool,
 }
 impl Caps {
     fn from_json(v: &Value) -> Result<Self> {
@@ -37,10 +41,11 @@ impl Caps {
             wt: v["wt"].as_bool().context("WT capability")?,
             rtc: v["rtc"].as_bool().context("RTC capability")?,
             listener: v["listener"].as_bool().context("listener capability")?,
+            udp: v["udp"].as_bool().unwrap_or(false),
         })
     }
     fn json(self) -> Value {
-        json!({"wt":self.wt,"rtc":self.rtc,"listener":self.listener})
+        json!({"wt":self.wt,"rtc":self.rtc,"listener":self.listener,"udp":self.udp})
     }
 }
 #[derive(Debug)]
@@ -83,6 +88,9 @@ pub(crate) struct Control {
     ending: tokio::sync::Mutex<()>,
     #[cfg(not(target_arch = "wasm32"))]
     starting: std::sync::atomic::AtomicBool,
+    /// Its own WebRTC peer is starting or running (`serve_rtc`).
+    #[cfg(not(target_arch = "wasm32"))]
+    rtc: std::sync::atomic::AtomicBool,
     /// What its carrier negotiations came to of late, newest first, without the peer: a report says why a browser
     /// took no straight way (`Control::json`).
     diary: Mutex<std::collections::VecDeque<(u64, String)>>,
@@ -156,6 +164,8 @@ impl Control {
             native: Mutex::default(),
             #[cfg(not(target_arch = "wasm32"))]
             starting: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(not(target_arch = "wasm32"))]
+            rtc: std::sync::atomic::AtomicBool::new(false),
             diary: Mutex::default(),
         }
     }
@@ -484,6 +494,21 @@ fn validate_descriptor(value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// The carrier the ordered initiator, of capabilities `caps`, opens to a peer of `remote`'s, if any: WebTransport to
+/// a listener, else WebRTC between a page and a machine (the iPhone and the Mac) or two pages, whose only straight way
+/// it is; never WebRTC between two machines, whose iroh sockets reach each other already.
+fn mode(caps: Caps, remote: Caps) -> Option<&'static str> {
+    if caps.listener && remote.wt {
+        Some("wt-client")
+    } else if caps.wt && remote.listener {
+        Some("wt-server")
+    } else if caps.rtc && remote.rtc && !(caps.udp && remote.udp) {
+        Some("rtc")
+    } else {
+        None
+    }
+}
+
 async fn negotiate(shared: Arc<Shared>, peer: Peer) -> Result<()> {
     let _operation = shared.admit()?;
     if shared.endpoint.id() >= peer.endpoint {
@@ -512,13 +537,7 @@ async fn negotiate(shared: Arc<Shared>, peer: Peer) -> Result<()> {
             ensure!(n.on == peer.conn.stable_id() && n.mine == mine && n.attempting, "transport negotiation replaced");
             n.theirs = Some(theirs);
         }
-        let mode = if caps.listener && remote.wt {
-            "wt-client"
-        } else if caps.wt && remote.listener {
-            "wt-server"
-        } else if caps.rtc && remote.rtc {
-            "rtc"
-        } else {
+        let Some(mode) = mode(caps, remote) else {
             control.note(format!("no carrier in common: mine {}, theirs {}", caps.json(), remote.json()));
             return Ok(());
         };
@@ -893,6 +912,45 @@ pub(crate) async fn listen(shared: &Arc<Shared>, config: super::webtransport::Co
     Ok(())
 }
 
+/// Start its own WebRTC peer (`webrtc::serve`), which a browser reaches straight over ICE: it then offers WebRTC to the
+/// pages among its peers. Its routes report as a browser's carrier does, through `browser_event`, so their signals
+/// travel only inside the authenticated session that negotiated them, in order.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) async fn serve_rtc(shared: &Arc<Shared>, config: super::webrtc::Config) -> Result<()> {
+    let _operation = shared.admit()?;
+    use std::sync::atomic::Ordering;
+    let control = &shared.transport_control;
+    ensure!(!control.rtc.swap(true, Ordering::AcqRel), "WebRTC peer already running");
+    let relay = shared.opts.relay.as_ref().and_then(|relay| relay.host_str().map(str::to_owned));
+    let config = config.resolved(relay.as_deref());
+    control.note(format!(
+        "its own WebRTC peer: STUN {}, addresses {}",
+        config.stun.as_deref().unwrap_or_default().join(", "),
+        config.hosts.as_ref().map_or("its default routes'".into(), |h| format!("{h:?}"))
+    ));
+    // the routes' events are few: their signals and their ready and closed, at most 128 signals a route
+    let (events, mut incoming) = tokio::sync::mpsc::channel(512);
+    let mut state = control.state.lock().expect("transport control");
+    if state.closed {
+        bail!("node closed");
+    }
+    let driver = task::spawn(super::webrtc::serve(shared.packets.clone(), config, events));
+    let device = shared.clone();
+    let forward = task::spawn(async move {
+        while let Some(event) = incoming.recv().await {
+            // a late or refused event is its route's to close, as for a browser's
+            let _ = browser_event(&device, event).await;
+        }
+    });
+    state.caps.rtc = true;
+    // iroh's own sockets reach its native peers straight: WebRTC is for the pages among them
+    state.caps.udp = shared.opts.direct || shared.opts.bind.is_some();
+    control.tasks.lock().expect("transport tasks").extend([driver, forward]);
+    drop(state);
+    control.changed.notify_one();
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -920,6 +978,25 @@ mod tests {
         let _rebound = std::net::UdpSocket::bind(address).expect("control must retain native driver completion");
     }
 
+    #[test]
+    fn a_page_and_a_machine_take_webrtc_and_two_machines_never_do() {
+        let page = Caps { wt: true, rtc: true, listener: false, udp: false };
+        let mac = Caps { wt: false, rtc: true, listener: false, udp: true };
+        let server = Caps { wt: false, rtc: false, listener: true, udp: true };
+        let before = Caps { rtc: false, ..mac };
+        assert_eq!(mode(page, mac), Some("rtc"), "the iPhone's page and the Mac app");
+        assert_eq!(mode(mac, page), Some("rtc"), "whichever end is the ordered initiator");
+        assert_eq!(mode(page, page), Some("rtc"), "two pages");
+        assert_eq!(mode(mac, mac), None, "two machines go straight over iroh's own sockets");
+        assert_eq!(mode(page, before), None, "a Mac with no WebRTC peer of its own, the cause of routes []");
+        assert_eq!(mode(page, server), Some("wt-server"));
+        assert_eq!(mode(server, page), Some("wt-client"));
+        assert_eq!(mode(mac, server), None);
+        // a page's capabilities say nothing of UDP, as an older node's don't: it has none
+        let said = Caps::from_json(&json!({"wt": true, "rtc": true, "listener": false})).unwrap();
+        assert!(!said.udp);
+        assert_eq!(Caps::from_json(&mac.json()).unwrap().udp, true);
+    }
     #[test]
     fn route_epoch_binds_both_challenges_ordered_endpoints_and_the_tls_session() {
         let a = iroh::SecretKey::from_bytes(&[1; 32]).public();

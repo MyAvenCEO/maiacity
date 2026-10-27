@@ -18,8 +18,9 @@
 //!   fetched, and counts once whole and finished there: on the server, once its bucket holds it;
 //! - what the node fetches of any other blob, as a page reads a stretch of a film, stays in memory, in windows of
 //!   `WINDOWS` bytes at most together, the oldest let go first;
-//! - the McEliece keys it offers stay in memory, and so does a file's HashSeq, which goes onto the shelf too once a tag
-//!   names it;
+//! - the McEliece keys it offers stay in memory until the shelf holds them whole, and so does a file's HashSeq, which
+//!   goes onto the shelf too once a tag names it: whatever the shelf holds whole it reads from there, never holding it
+//!   in memory again, but its outboard, `OUTBOARDS` bytes of them at most (S7, bounded RAM);
 //! - its tags stay in memory: as a node starts, its keeper tags again what it keeps (`files`), and the shelf lists what
 //!   it holds whole. What a shelf holds of a blob it never finished, it drops.
 
@@ -1098,6 +1099,22 @@ impl ShelfStore {
         matches!(self.0.lock().blobs.get(hash), Some(Blob::Shelved { .. } | Blob::Small { shelved: true, .. }))
     }
 
+    /// Whether it holds blob `hash` of `size` bytes whole, in memory or on the shelf, looking on the shelf for one put
+    /// there beside it, as a node's edits put its McEliece keys (`edits`): one found there it reads from there from now
+    /// on, never holding it in memory (S7).
+    pub(crate) async fn adopt(&self, hash: Hash, size: u64) -> bool {
+        if matches!(self.0.lock().blobs.get(&hash), Some(Blob::Shelved { .. } | Blob::Small { .. })) {
+            return true;
+        }
+        let Ok(outboard) = self.0.shelf.outboard(hash).await else { return false };
+        let mut state = self.0.lock();
+        if state.blobs.get(&hash).is_none() {
+            state.put(hash, Blob::Shelved { size });
+            state.remember(hash, outboard);
+        }
+        matches!(state.blobs.get(&hash), Some(Blob::Shelved { .. } | Blob::Small { .. }))
+    }
+
     /// Lets go of each of `hashes`, from memory and from the shelf, as a node lets go of a file (`Node::let_go`): of
     /// one a tag keeps, only if `force`.
     pub(crate) async fn delete(&self, hashes: Vec<Hash>, force: bool) -> io::Result<()> {
@@ -1250,11 +1267,8 @@ impl Inner {
         let kept = {
             let mut state = self.lock();
             match state.blobs.get_mut(&hash) {
-                Some(Blob::Small { .. }) => {}
-                Some(Blob::Shelved { .. }) => {
-                    let outboard = Bytes::from(tree.data);
-                    state.put(hash, Blob::Small { data, outboard, shelved: true });
-                }
+                // on the shelf whole already: read from there, never held in memory again (S7)
+                Some(Blob::Small { .. } | Blob::Shelved { .. }) => {}
                 _ => {
                     let small = Blob::Small { data, outboard: tree.data.into(), shelved: false };
                     if let Some(Blob::Filling(f)) = state.put(hash, small) {
@@ -1303,12 +1317,8 @@ impl Inner {
             let outboard = Bytes::from(outboard);
             self.shelf.finish(&name, hash, size, outboard.clone()).await?;
             let mut state = self.lock();
-            match state.blobs.get_mut(&hash) {
-                Some(Blob::Small { shelved, .. }) => *shelved = true,
-                _ => {
-                    state.put(hash, Blob::Shelved { size });
-                }
-            }
+            // whole on the shelf now: what memory held of it goes (S7)
+            state.put(hash, Blob::Shelved { size });
             state.remember(hash, outboard);
             Ok::<_, io::Error>((hash, size))
         };
@@ -1513,9 +1523,12 @@ impl Inner {
         for at in (0..data.len()).step_by(STEP) {
             self.shelf.write(&name, at as u64, data.slice(at..(at + STEP).min(data.len()))).await?;
         }
-        self.shelf.finish(&name, hash, data.len() as u64, outboard).await?;
-        if let Some(Blob::Small { shelved, .. }) = self.lock().blobs.get_mut(&hash) {
-            *shelved = true;
+        self.shelf.finish(&name, hash, data.len() as u64, outboard.clone()).await?;
+        let mut state = self.lock();
+        // whole on the shelf now: what memory held of it goes, its outboard kept at hand (S7)
+        if matches!(state.blobs.get(&hash), Some(Blob::Small { .. })) {
+            state.put(hash, Blob::Shelved { size: data.len() as u64 });
+            state.remember(hash, outboard);
         }
         Ok(())
     }

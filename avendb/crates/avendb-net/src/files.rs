@@ -60,6 +60,9 @@ const FILE_IDLE: time::Duration = time::Duration::from_secs(20);
 /// How many of the files the open views show the keeper fetches at once.
 const VIEW_FILES_AT_ONCE: usize = 4;
 
+/// How many edits the keeper scans for their files in one turn of the Lab (`Lab::scan_files`).
+pub(crate) const FILE_SCAN_SLICE: usize = 4096;
+
 /// Consume iroh-blobs' receive future itself, not a detached download. Dropping this stream on idle or caller
 /// cancellation drops that future and its QUIC streams; verified ranges already imported stay available to the
 /// next provider. There is no whole-transfer deadline: a large file progressing within each idle window continues.
@@ -447,6 +450,7 @@ impl Shared {
         let mut size = self.size.subscribe();
         let (mut kept, mut failing) = (HashSet::new(), Backoff::default());
         let keep = self.opts.keep;
+        let mut behind = 0;
         loop {
             let Ok(activity) = self.admit() else { return };
             let entries = self.interests.lock().expect("interests").entries()
@@ -454,12 +458,11 @@ impl Shared {
                     avendb::sync::LogId::Entry(entry) => Some(entry),
                     _ => None,
                 }).collect::<Vec<_>>();
-            let (files, whole, demanded) = self.read(move |lab, me| {
-                let demanded = lab.demanded_files(me, &entries);
-                let mut whole = lab.kept_files(me, keep);
-                whole.extend(demanded.iter().copied());
-                (lab.files(me), whole, demanded)
-            }).await;
+            let Some((files, whole, demanded)) = self.files_to_keep(keep, entries, &mut behind).await else {
+                drop(activity);
+                time::timeout(self.opts.retry, size.changed()).await.ok();
+                continue;
+            };
             let mut whole: HashSet<FileRoot> = whole.into_iter().collect();
             // a server's limits (`Node::limit`): of the files to keep whole that it doesn't hold whole yet, those that
             // would take their person past their backup's limit, or that are larger than one file may be, it keeps
@@ -516,6 +519,48 @@ impl Shared {
             }
             drop(activity);
             time::timeout(self.opts.retry, size.changed()).await.ok();
+        }
+    }
+
+    /// What the keeper keeps (`keeper`): the files its device's edits bring, those to keep whole by `keep` with those
+    /// the open views' `entries` read, and those alone. A background scan, a slice of `FILE_SCAN_SLICE` edits a Lab
+    /// turn (`Lab::scan_files`), so that no page waits behind the whole of it: one turn of it held the server's Lab 5 s
+    /// (2026-10-27). While its device's replay is behind, it waits for its catch-up rather than replay all its edits
+    /// under the Lab itself, `None`; the third time running it scans in one turn as before (`behind` counts them).
+    async fn files_to_keep(
+        self: &Arc<Self>, keep: bool, entries: Vec<avendb::id::EntryId>, behind: &mut u32,
+    ) -> Option<(Vec<FileRoot>, Vec<FileRoot>, Vec<FileRoot>)> {
+        use avendb::lab::{FileScan, FileScanned};
+        let mut scan = FileScan::new(keep, entries.clone());
+        loop {
+            let (back, scanned) = self
+                .read_class(crate::lab_schedule::Class::Background, move |lab, me| {
+                    let scanned = lab.scan_files(me, &mut scan, FILE_SCAN_SLICE);
+                    (scan, scanned)
+                })
+                .await;
+            scan = back;
+            match scanned {
+                FileScanned::More => continue,
+                FileScanned::Done { files, mut kept, demanded } => {
+                    *behind = 0;
+                    kept.extend(demanded.iter().copied());
+                    return Some((files, kept, demanded));
+                }
+                FileScanned::Behind if *behind < 2 => {
+                    *behind += 1;
+                    return None;
+                }
+                FileScanned::Behind => {
+                    *behind = 0;
+                    return Some(self.read_class(crate::lab_schedule::Class::Background, move |lab, me| {
+                        let demanded = lab.demanded_files(me, &entries);
+                        let mut whole = lab.kept_files(me, keep);
+                        whole.extend(demanded.iter().copied());
+                        (lab.files(me), whole, demanded)
+                    }).await);
+                }
+            }
         }
     }
 

@@ -60,7 +60,7 @@ pub mod sessions;
 mod transport;
 #[cfg(test)]
 mod shutdown_tests;
-pub use transport::webtransport_from_env;
+pub use transport::{webrtc_from_env, webtransport_from_env};
 
 use std::collections::HashMap;
 use std::io;
@@ -101,6 +101,9 @@ pub struct Config {
     pub volumes: Option<PathBuf>,
     /// Optional browser carrier on the main node only; never inferred from the iroh UDP/NAT address.
     pub webtransport: Option<avendb_net::transports::WtConfig>,
+    /// The main node's own WebRTC peer (`webrtc_from_env`), which the pages among its peers (an iPhone's) reach it
+    /// straight through, the relay their fallback; none, and they reach it through the relay alone.
+    pub webrtc: Option<avendb_net::transports::RtcConfig>,
 }
 
 /// Runs the device for the app until `input` ends, the app gone: each line of `input` a call or a sheet's answer, each
@@ -838,6 +841,11 @@ impl Service {
             if let Err(error) = d.node().listen_webtransport(listener.clone()).await {
                 tracing::warn!("avenDB: optional WebTransport listener unavailable; existing connections remain active: {error:#}");
             }
+        }
+        if let Some(rtc) = &self.config.webrtc
+            && let Err(error) = d.node().serve_webrtc(rtc.clone()).await
+        {
+            tracing::warn!("avenDB: its own WebRTC peer is unavailable; pages reach it through the relay: {error:#}");
         }
         let d = Arc::new(d);
         *self.device.lock().expect("the device") = Some(d.clone());

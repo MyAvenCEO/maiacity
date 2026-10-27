@@ -44,6 +44,8 @@ test-fixtures = ["avendb/test-fixtures"]
 # passkeys of the relying party localhost count (avendb's `localhost-passkeys`): the test page's, made by Chromium's
 # virtual authenticator (scripts/test-browser.sh), never in a build that ships
 localhost-passkeys = ["avendb/localhost-passkeys"]
+# the phone-class row of avenDB's bench (src/bench.rs, scripts/ci/avendb-bench-phone.mjs): never in a build that ships
+bench = []
 
 [dev-dependencies]
 avendb-testkit = { path = "../avendb-testkit", features = ["wait"] }

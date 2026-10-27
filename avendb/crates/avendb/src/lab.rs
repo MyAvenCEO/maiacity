@@ -97,6 +97,9 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 
 #[path = "lab/blind_index.rs"]
 mod blind_index;
+#[path = "lab/held.rs"]
+pub(crate) mod held;
+pub use held::Spill;
 #[cfg(test)]
 #[path = "lab/query_coverage.rs"]
 mod query_coverage;
@@ -138,9 +141,11 @@ use crate::slice::{
     Attrs, Body, CAP_GROUP_TYPE, Header, LENS_TYPE, SCHEMA_TYPE, Select, Selector, Slice, Sym, TagDelta,
 };
 use crate::sync::{
-    LogId, Place, answer_by_log, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs,
+    LogId, Place, Stub, answer_by_log, asks_with_stubs, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs,
 };
 use crate::wire::{Claim, FileHold, Frontier, Join, Request, Statement, Wire as _};
+#[cfg(test)]
+use crate::sync::asks_ids;
 use crate::world;
 
 /// A device keeps its keys and audiences up to date in a few rounds at most: one to make and seal keys and move
@@ -336,6 +341,10 @@ impl Drafting<'_> {
 #[derive(Default)]
 struct Keyring {
     revision: Arc<()>,
+    /// Changes with each key it takes but an entry's: what the upkeep of every entry turns on (`UpkeepDue`).
+    scoped: Arc<()>,
+    /// The entries whose keys it took since the upkeep last looked (`UpkeepDue`).
+    entries_keyed: Vec<EntryId>,
     by_id: HashMap<KeyId, (KeyName, Secret)>,
     /// Each name's keys, the smallest id first.
     by_name: HashMap<KeyName, Vec<KeyId>>,
@@ -353,6 +362,10 @@ impl Keyring {
             return false;
         }
         self.revision = Arc::new(());
+        match name {
+            KeyName::Entry(e, ..) => self.entries_keyed.push(e),
+            _ => self.scoped = Arc::new(()),
+        }
         let ids = self.by_name.entry(name).or_default();
         let at = ids.partition_point(|x| *x < id);
         ids.insert(at, id);
@@ -500,16 +513,16 @@ fn trust(store: &mut Store) -> bool {
             gone.insert(id);
         }
     }
+    let signed_still = |s: &crate::sign::Signature| !s.pq.is_empty() || s.webauthn.is_some() || s.enclave.is_some();
     for id in &store.bare {
-        if let Some(signed) = store.signed.get_mut(id) {
-            for sig in
-                signed.sigs.iter_mut().filter(|s| !s.pq.is_empty() || s.webauthn.is_some() || s.enclave.is_some())
-            {
+        let needs = |signed: &Signed| signed.sigs.iter().any(signed_still);
+        store.signed.strip(id, needs, |signed| {
+            for sig in signed.sigs.iter_mut().filter(|s| signed_still(s)) {
                 sig.pq = vec![];
                 sig.webauthn = None;
                 sig.enclave = None;
             }
-        }
+        });
     }
     if gone.is_empty() {
         return false;
@@ -520,6 +533,7 @@ fn trust(store: &mut Store) -> bool {
         store.bodies.remove(id);
         store.spoilt.remove(id);
     }
+    store.read_new.forget();
     store.replay = replay(&[]);
     store.replayed = 0;
     store.latest = OnceLock::new();
@@ -688,6 +702,27 @@ struct RequestBasis {
     ask: crate::sync::Ask,
 }
 
+/// A device's first sync with the boxes held back (`lazy`, `LazyBoxes.lean`): it asks its peer for the stubs of the box
+/// edits it needs not now (`Lab::withheld`), counts them as held in each log's closed part and frontier when it asks
+/// (`sync::asks_with_stubs`), and so is sent every edit but those; then, asked to (`Lab::fetch_withheld`), asks as any
+/// device does, is sent their bodies, and checks each against its stub as it takes it (S5). A stub enters nothing it
+/// knows, and opens nothing (S1, S4): only what it asks for.
+#[derive(Default)]
+struct LazyBoxes {
+    /// It asks for stubs in its first syncs.
+    on: bool,
+    /// It asks for the bodies of its stubs: they no longer count as held.
+    fetching: bool,
+    /// Its stubs whose bodies it holds not, each with the peer that sent it.
+    stubs: BTreeMap<EditId, (crate::sync::Stub, SignerId)>,
+    /// The bodies that came of a stub that lied about them, each with the peer that sent the stub.
+    liars: Vec<(SignerId, EditId)>,
+    /// How many stubs it took in all.
+    taken: usize,
+    /// The stubs whose bodies an asking for them didn't bring, of the peer that sent them (`drop_unanswered`).
+    unanswered: Vec<(crate::sync::Stub, SignerId)>,
+}
+
 /// The ordered edits and authorized explicit key requests for one asking. The first page works both out;
 /// subsequent pages do work proportional to their output, without scanning all authorized history for keys.
 struct ReplyPlan {
@@ -701,7 +736,7 @@ struct ReplyPlan {
 fn page_end(store: &Store, places: &[Place], from: usize, page: usize) -> (usize, bool) {
     let mut size = 0usize;
     for (i, (_, id)) in places.iter().enumerate().skip(from) {
-        size = size.saturating_add(store.signed[id].to_wire().len());
+        size = size.saturating_add(store.signed.owned(id).to_wire().len());
         if size > page && i > from {
             return (i, true);
         }
@@ -754,8 +789,10 @@ fn keys_of(bytes: &[u8]) -> Option<(Option<Checked>, Vec<([u8; 32], Secret)>)> {
 /// them; the keys it holds; what it read with them; and the entries it shows.
 struct Store {
     log: Log,
-    signed: HashMap<EditId, Signed>,
-    blobs: Blobs,
+    /// Its signed edits and McEliece keys: in memory, or spilled into the server's folder, a bounded cache of them in
+    /// memory (`held`, S7).
+    signed: held::Signeds,
+    blobs: held::Keys,
     /// The replay of its edits as it last brought itself up to date: which stand, and what it knows.
     replay: Replay,
     /// Its owners' judged slices it took, by entry, kept on its shelf beside its history (`EntryState.lean`'s based
@@ -778,6 +815,9 @@ struct Store {
     keys: Keyring,
     /// The entry keys it derived: by the key of the audience it derived each from, the entry and the stay.
     derived: HashSet<(KeyId, EntryId, Option<EditId>)>,
+    /// The stays of its audience, by their print, each audience key it derived for every one of them (`derive`): a key
+    /// whose audience's stays are as they were then derives nothing new, and is left alone.
+    derived_through: HashMap<KeyId, [u8; 32]>,
     /// The slices of the shares, keep shares among them, whose selectors it opened, and those whose selectors never
     /// open for it: garbled, or with no box for a key it holds that opens, or, where it is a steward, for no seed of
     /// the vault the share is over.
@@ -819,6 +859,13 @@ struct Store {
     reshow: bool,
     /// The bodies it opened since it last showed its items, by their entries.
     opened: HashMap<EntryId, Vec<EditId>>,
+    /// The entries a budgeted showing left to show (`show_items`), of the edits of that revision, and what it read
+    /// of them then: none once it showed them all, or once any later showing begins again.
+    showing: Option<Showing>,
+    /// What `read` opened since it last read (`ReadNew`).
+    read_new: ReadNew,
+    /// What changed since its upkeep last looked at its entries (`UpkeepDue`).
+    upkeep_due: UpkeepDue,
     /// The entries whose shown items keep their scratch items (`SCRATCHES`).
     scratched: HashSet<EntryId>,
     /// How many writes its view held when it last showed its items, and the last of them, with the hashes of the
@@ -843,14 +890,16 @@ struct Store {
     view_lineage: Option<crate::policy::LogRevision>,
     wholes: u64,
     view_wholes: u64,
+    /// Its first sync with the boxes held back, if it asks for one (`Lab::set_lazy_boxes`).
+    lazy: LazyBoxes,
 }
 
 impl Default for Store {
     fn default() -> Store {
         Store {
             log: Log::new(),
-            signed: HashMap::new(),
-            blobs: HashMap::new(),
+            signed: held::Signeds::default(),
+            blobs: held::Keys::default(),
             replay: replay(&[]),
             bases: BTreeMap::new(),
             bootstrap_state: None,
@@ -862,6 +911,7 @@ impl Default for Store {
             latest: OnceLock::new(),
             keys: Keyring::default(),
             derived: HashSet::new(),
+            derived_through: HashMap::new(),
             slices: HashMap::new(),
             unreadable: HashSet::new(),
             unopened: HashSet::new(),
@@ -881,6 +931,9 @@ impl Default for Store {
             behind: false,
             reshow: true,
             opened: HashMap::new(),
+            showing: None,
+            read_new: ReadNew::default(),
+            upkeep_due: UpkeepDue::default(),
             scratched: HashSet::new(),
             shown_writes: (0, None),
             shown_lanes: BTreeMap::new(),
@@ -893,11 +946,20 @@ impl Default for Store {
             view_lineage: None,
             wholes: 0,
             view_wholes: 0,
+            lazy: LazyBoxes::default(),
         }
     }
 }
 
 impl Store {
+    /// The stubs it counts as held when it asks (`LazyBoxes`): none once it asks for their bodies.
+    fn counted_stubs(&self) -> Vec<Stub> {
+        if self.lazy.fetching {
+            return vec![];
+        }
+        self.lazy.stubs.values().map(|(stub, _)| stub.clone()).collect()
+    }
+
     fn body_metadata(&self, id: EditId) -> Option<&Body> {
         self.bodies.get(&id)
     }
@@ -928,6 +990,7 @@ impl Store {
         self.warm_revision = Arc::new(());
         self.keys = Keyring::default();
         self.derived.clear();
+        self.derived_through.clear();
         self.slices.clear();
         self.unreadable.clear();
         self.unopened.clear();
@@ -935,6 +998,8 @@ impl Store {
         self.files_at = OnceLock::new();
         self.spoilt.clear();
         self.readings = Readings::default();
+        self.read_new.forget();
+        self.upkeep_due = UpkeepDue::default();
         self.shown.clear();
         self.bootstrap_state=None;
         self.based.clear();
@@ -1092,6 +1157,47 @@ impl Spares {
             self.keys.push_back(key);
         }
     }
+}
+
+/// A scan of the files a device's edits bring, a slice at a time (`Lab::scan_files`): those to keep whole by `keep`,
+/// and those of `entries`, the open views', it reads.
+#[derive(Default)]
+pub struct FileScan {
+    keep: bool,
+    entries: Vec<EntryId>,
+    revision: Option<crate::policy::LogRevision>,
+    at: usize,
+    selected: HashSet<EntryId>,
+    files: BTreeSet<FileRoot>,
+    kept: BTreeSet<FileRoot>,
+    named: BTreeSet<FileRoot>,
+}
+
+impl FileScan {
+    /// A scan of the files to keep whole by the device's own setting `keep`, and of those the entries `entries` bring.
+    pub fn new(keep: bool, entries: Vec<EntryId>) -> FileScan {
+        FileScan { keep, entries, ..FileScan::default() }
+    }
+}
+
+/// How a step of a catch-up went (`Lab::catch_up_step`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatchUp {
+    /// Its replay stepped on: the rest of the catch-up to come.
+    Stepped,
+    /// Caught up, and whether there was anything to (`Lab::catch_up`).
+    Caught(bool),
+}
+
+/// How a slice of a scan of files went (`Lab::scan_files`).
+#[derive(Debug, PartialEq, Eq)]
+pub enum FileScanned {
+    /// The device's replay is behind: nothing scanned, until its catch-up.
+    Behind,
+    /// More slices to go.
+    More,
+    /// The whole scan: as `Lab::files`, `Lab::kept_files` and `Lab::demanded_files` say it.
+    Done { files: Vec<FileRoot>, kept: Vec<FileRoot>, demanded: Vec<FileRoot> },
 }
 
 /// A copy of what a device holds, as a backup keeps it: its signed edits and the blobs they name.
@@ -1477,10 +1583,10 @@ impl Lab {
         let mut out: BTreeMap<SignerId, SignerKeys> =
             signers.iter().filter_map(|&s| Some((s, self.keys_of(s)?))).collect();
         if out.len() < signers.len() {
-            for sig in self.held(d).signed.values().flat_map(|s| &s.sigs) {
-                let s = sig.keys.id();
+            for keys in self.held(d).signed.signer_keys() {
+                let s = keys.id();
                 if signers.contains(&s) && !out.contains_key(&s) {
-                    out.insert(s, sig.keys.clone());
+                    out.insert(s, keys.clone());
                     if out.len() == signers.len() {
                         break;
                     }
@@ -2029,6 +2135,45 @@ impl Lab {
     }
 
     fn take_prepared(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs, prepared: &HashMap<EditId, bool>) -> bool {
+        let stubbed = self.stubbed(to, &edits);
+        let changed = self.take_checked(to, edits, blobs, prepared);
+        if !stubbed.is_empty() {
+            self.unstub(to, stubbed);
+        }
+        changed
+    }
+
+    /// Of the bodies `edits` device `to` takes, those of its stubs, each with whether its stub lied about it (S5).
+    fn stubbed(&self, to: SignerId, edits: &[Signed]) -> Vec<(EditId, bool)> {
+        let Some(store) = self.stores.get(&self.at(to)).filter(|s| !s.lazy.stubs.is_empty()) else {
+            return vec![];
+        };
+        let of = |s: &Signed| {
+            let id = s.edit.id();
+            store.lazy.stubs.get(&id).map(|(stub, _)| (id, stub.lies(&s.edit, id)))
+        };
+        edits.iter().filter_map(of).collect()
+    }
+
+    /// Device `to` took bodies of its stubs, `stubbed`: of each it now holds, its stub goes, and a stub that lied is
+    /// told of its peer (`stub_liars`). A body it took not leaves its stub there, asked for until a body comes (S3).
+    fn unstub(&mut self, to: SignerId, stubbed: Vec<(EditId, bool)>) {
+        let store = self.stores.get_mut(&self.at(to)).expect("a device");
+        for (id, lied) in stubbed {
+            if !store.signed.contains_key(&id) {
+                continue;
+            }
+            if let Some((_, from)) = store.lazy.stubs.remove(&id)
+                && lied
+            {
+                store.lazy.liars.push((from, id));
+            }
+        }
+        // the stubs it counted as held changed: so does what it asks with
+        *store.answers.basis.lock().expect("request basis") = None;
+    }
+
+    fn take_checked(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs, prepared: &HashMap<EditId, bool>) -> bool {
         let mut fresh = self.checked_prepared(to, edits, prepared);
         if let Some(home) = self.home(to).filter(|_| !fresh.is_empty()) {
             self.step_replay(to);
@@ -2122,8 +2267,10 @@ impl Lab {
                 store.bare.insert(id);
             }
             for b in signed.edit.blobs() {
-                if let Some(bytes) = blobs.get(&b) {
-                    store.blobs.entry(b).or_insert_with(|| bytes.clone());
+                if let Some(bytes) = blobs.get(&b)
+                    && !store.blobs.contains_key(&b)
+                {
+                    store.blobs.insert(b, bytes.clone());
                 }
             }
             store.log.receive([signed.edit.clone()]);
@@ -2152,11 +2299,11 @@ impl Lab {
     /// What device `d` sends with the edits `ids`: each with its signatures, and the blobs they name.
     fn outgoing(&self, d: SignerId, ids: &[EditId]) -> (Vec<Signed>, Blobs) {
         let store = self.held(d);
-        let signed: Vec<Signed> = ids.iter().map(|id| store.signed[id].clone()).collect();
+        let signed: Vec<Signed> = ids.iter().map(|id| store.signed.owned(id)).collect();
         let blobs = signed
             .iter()
             .flat_map(|s| s.edit.blobs())
-            .filter_map(|b| Some((b, store.blobs.get(&b)?.clone())))
+            .filter_map(|b| Some((b, store.blobs.get(&b)?)))
             .collect();
         (signed, blobs)
     }
@@ -2583,6 +2730,12 @@ impl Lab {
     /// signing on it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and
     /// makes the edits its upkeep calls for (`upkeep`). A locked device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
+        self.refresh_with(d, lent, None);
+    }
+
+    /// `refresh`, showing at most `budget` entries anew (`show_items`) if there is one: true if it is done, else it is
+    /// still behind, and `show_more` and then another `refresh_with` go on from where it left off (`catch_up_step`).
+    fn refresh_with(&mut self, d: SignerId, lent: &[(SignerId, Secret)], budget: Option<usize>) -> bool {
         // a session's store is its host's, which opens what it holds with its own keys
         let d = self.at(d);
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
@@ -2596,7 +2749,7 @@ impl Lab {
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
             let Some(store) = stores.get_mut(&d) else {
-                return;
+                return true;
             };
             store.bootstrap_state=None;
             store.based.clear();
@@ -2623,7 +2776,7 @@ impl Lab {
             // a locked device holds no key, and opens nothing
             if !unlocked {
                 store.perf.add("refresh", began);
-                return;
+                return true;
             }
             let at = Perf::start();
             let ix = KeyIndex::of(&store.replay);
@@ -2635,17 +2788,44 @@ impl Lab {
             store.perf.add("read", at);
             // what it shows, every write counted or not, before its upkeep: its stewards grant counted asks alone
             let at = Perf::start();
-            show_items(d, store);
+            // an entry's owner base overlay is taken out for the whole of a refresh: one is shown in one go. A budgeted
+            // one shows one entry here, after its keys and reading, which take their own while, and the rest after it
+            // a budget a step (`show_more`)
+            let budget = budget.filter(|_| retained.is_none());
+            let shown = show_items(d, store, budget.map(|_| 1));
             store.perf.add("show items", at);
+            // with no budget it leaves the entries a budgeted showing left before as they are: a catch-up a step at a
+            // time shows them (`catch_up_step`), and its upkeep leaves them for then
+            if !shown && budget.is_some() {
+                store.behind = true;
+                store.perf.add("refresh", began);
+                self.rebuild_owner_bases(d);
+                return false;
+            }
             let at = Perf::start();
-            let work = upkeep(d, store, &ix, &mine, rng, spares);
+            // a device holding stubs can't tell which boxes and keys its peers made of what they hold back: it makes
+            // none until their bodies are in, or it would box again what is boxed, or make a key for an epoch that has
+            // one; what is due for its upkeep waits for then (`UpkeepDue`)
+            let work = if store.lazy.stubs.is_empty() {
+                let waiting: HashSet<EntryId> = store.showing.iter().flat_map(|s| s.rest.iter().copied()).collect();
+                let scope = store.upkeep_due.scope(store);
+                store.perf.count(if scope.is_some() { "upkeep: of the entries changed" } else { "upkeep: of every entry" }, 1);
+                let work = upkeep(d, store, &ix, &mine, rng, spares, scope.as_ref(), &waiting);
+                store.upkeep_due.looked(&store.log, &store.keys.scoped, store.slices.len(), store.shown_groups, &store.shown_lanes, waiting);
+                store.keys.entries_keyed.clear();
+                work
+            } else {
+                vec![]
+            };
             store.perf.add("upkeep", at);
             if work.is_empty() {
                 store.perf.add("refresh", began);
+                // still behind while a showing with a budget left entries to show
+                store.behind |= store.showing.is_some();
                 if !self.restore_owner_overlay(d, retained.take()) {
                     self.rebuild_owner_bases(d);
                 }
-                return;
+                return true;
             }
             assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
             // what its edits say, every write counted: what it drafts on, its replay of this round
@@ -2654,6 +2834,21 @@ impl Lab {
                 self.work(d, &view, w);
             }
         }
+        unreachable!("refresh rounds end by returning")
+    }
+
+    /// The next at most `budget` entries a `refresh_with` left to show, shown, if its edits and what it read are as
+    /// it left them (`Store::showing`): true if there are none left, so that the next `refresh_with` finishes.
+    fn show_more(&mut self, d: SignerId, budget: usize) -> bool {
+        let d = self.at(d);
+        let Some(store) = self.stores.get_mut(&d) else { return true };
+        if store.showing.is_none() {
+            return true;
+        }
+        let at = Perf::start();
+        let done = show_items(d, store, Some(budget));
+        store.perf.add("show items", at);
+        done
     }
 
     /// Sign and keep on device `d` an edit its upkeep calls for, drafted on `view`, what `d`'s edits say.
@@ -3531,6 +3726,7 @@ impl Lab {
         self.keep(on, vec![signed], &Blobs::new());
         let store = self.stores.get_mut(&self.at(on)).expect("a device");
         store.bodies.insert(id, body);
+        store.read_new.bodies.push(id);
         store.opened.entry(entry).or_default().push(id);
         store.files_at = OnceLock::new();
         Ok(id)
@@ -3860,7 +4056,11 @@ impl Lab {
             "bodies": store.bodies.len(),
             "shown": store.shown.len(),
             "blobs": store.blobs.len(),
-            "blob_bytes": store.blobs.values().map(|b| b.len()).sum::<usize>(),
+            "blob_bytes": store.blobs.bytes(),
+            // what it holds of its edits and keys in memory, spilled or not (S7), and what its spills hold on disk
+            "memory": { "edits": store.signed.memory(), "keys": store.blobs.memory(),
+                "spilled": store.signed.spilled_bytes() + store.blobs.spilled_bytes(),
+                "spilling": store.signed.is_spilled() },
         });
         // its edits by the log each is of and by what it does: how much of a replay the entries' own logs are, which a
         // snapshot spares (S7c), and how much is key upkeep
@@ -3903,8 +4103,8 @@ impl Lab {
     }
 
     /// The signed edit device `d` holds with id `edit`, as it would send it.
-    pub fn signed_edit(&self, d: SignerId, edit: EditId) -> Option<&Signed> {
-        self.held(d).signed.get(&edit)
+    pub fn signed_edit(&self, d: SignerId, edit: EditId) -> Option<Signed> {
+        self.held(d).signed.owned_get(&edit)
     }
 
     /// Diagnostic policy observation only: no authority, persistence or rendered-state claim.
@@ -3936,7 +4136,7 @@ impl Lab {
         let mut out = vec![];
         for edit in store.log.edits() {
             out.extend(encode::bytes(edit));
-            for sig in &store.signed[&edit.id()].sigs {
+            for sig in &store.signed.owned(&edit.id()).sigs {
                 match &sig.keys {
                     SignerKeys::Device { ed25519, pq } => out.extend(ed25519.iter().chain(pq.bytes())),
                     SignerKeys::Passkey { p256, pq } => out.extend(p256.iter().chain(pq.bytes())),
@@ -4017,8 +4217,16 @@ impl Lab {
         if !self.online(from) || !self.online(to) {
             return 0;
         }
+        if self.held(to).lazy.on && !self.held(to).lazy.fetching {
+            let to_store = self.held(to);
+            let stubs = to_store.counted_stubs();
+            let ask = asks_with_stubs(to_store.log.edits(), to_store.log.ids(), to_store.log.logs(), &stubs, &to_store.follow);
+            let withheld = self.withheld(from, to, &Request { ask, ..Request::default() }, &ReplyScope::All);
+            self.receive_stubs(to, from, withheld);
+        }
         let to_store = self.held(to);
-        let asked = asks_ids(to_store.log.edits(), to_store.log.ids(), &to_store.follow);
+        let stubs = to_store.counted_stubs();
+        let asked = asks_with_stubs(to_store.log.edits(), to_store.log.ids(), to_store.log.logs(), &stubs, &to_store.follow);
         let store = self.held(from);
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let places = self.answered(from, to, &asked.follow);
@@ -4026,6 +4234,7 @@ impl Lab {
             beyond(edits, ids, store.log.logs(), &places, &asked).into_iter().map(|i| ids[i]).collect();
         let (signed, blobs) = self.outgoing(from, &sent);
         self.deliver(to, signed, &blobs);
+        self.drop_unanswered(to, from, None);
         sent.len()
     }
 
@@ -4273,7 +4482,7 @@ impl Lab {
     pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
         let store = self.held(d);
         let places = link_places(store.log.edits(), self.latest(d), passkey);
-        places.into_iter().map(|i| store.signed[&store.log.ids()[i]].clone()).collect()
+        places.into_iter().map(|i| store.signed.owned(&store.log.ids()[i])).collect()
     }
 
     /// Device `d` adds itself to the vault whose root is its person's passkey `passkey`, by its view, as a new device
@@ -4346,10 +4555,10 @@ impl Lab {
             _ => None,
         };
         let mut out: BTreeMap<[u8; 32], SignerId> = BTreeMap::new();
-        for sig in store.signed.values().flat_map(|s| &s.sigs) {
-            if let SignerKeys::Device { ed25519, .. } = sig.keys {
-                let s = sig.keys.id();
-                if s == d || Some(ed25519) == own || !devices.contains(&s) || sig.keys.suite() != sign::SIGNING {
+        for keys in store.signed.signer_keys() {
+            if let SignerKeys::Device { ed25519, .. } = *keys {
+                let s = keys.id();
+                if s == d || Some(ed25519) == own || !devices.contains(&s) || keys.suite() != sign::SIGNING {
                     continue;
                 }
                 out.entry(ed25519).or_insert(s);
@@ -4377,7 +4586,8 @@ impl Lab {
             return basis.clone();
         }
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let ask = crate::sync::asks_with_logs(edits, ids, store.log.logs(), &[]);
+        let stubs = store.counted_stubs();
+        let ask = crate::sync::asks_with_stubs(edits, ids, store.log.logs(), &stubs, &[]);
         let basis = Arc::new(RequestBasis { revision, ask });
         #[cfg(test)]
         store.answers.basis_builds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -4395,8 +4605,15 @@ impl Lab {
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let places = self.answered(d, peer, &[]);
         let basis = self.request_basis(d);
-        let shared: HashSet<LogId> = places.iter().filter_map(|&i| store.log.logs()[i]).collect();
-        let theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
+        let mut shared: HashSet<LogId> = places.iter().filter_map(|&i| store.log.logs()[i]).collect();
+        let mut theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
+        // the stubs `peer` sent it, which it tells `peer` of and no other peer
+        if !store.lazy.fetching {
+            for (stub, _) in store.lazy.stubs.values().filter(|(_, from)| *from == peer) {
+                shared.insert(stub.log);
+                theirs.insert(stub.id);
+            }
+        }
         let mut ask = basis.ask.clone();
         ask.follow = store.follow.clone();
         ask.haves.retain(|l, _| shared.contains(l));
@@ -4438,7 +4655,7 @@ impl Lab {
         // the places of all it sends this asking, in order: this page starts after the request's `after`
         let from = request.after.map_or(0, |after| sends.places.partition_point(|p| *p <= after));
         let (end, more) = page_end(store, &sends.places, from, page);
-        let signed: Vec<Signed> = sends.places[from..end].iter().map(|(_, id)| store.signed[id].clone()).collect();
+        let signed: Vec<Signed> = sends.places[from..end].iter().map(|(_, id)| store.signed.owned(id)).collect();
         let blobs: BTreeSet<BlobId> = signed
             .iter()
             .flat_map(|s| s.edit.blobs())
@@ -4481,6 +4698,118 @@ impl Lab {
         (cuts, from >= sends.places.len())
     }
 
+    /// Device `d` asks for its first syncs with the boxes held back from now on, if `on` (`LazyBoxes.lean`): it asks
+    /// each peer for the stubs of the box edits it needs not now (`withheld`), is sent the rest, and asks for their
+    /// bodies once told to (`fetch_withheld`). Off, it asks as any device does, its stubs no longer counted.
+    pub fn set_lazy_boxes(&mut self, d: SignerId, on: bool) {
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        store.lazy.on = on;
+        store.lazy.fetching |= !on;
+        *store.answers.basis.lock().expect("request basis") = None;
+    }
+
+    /// The stubs of the box edits device `d` would send `asker` for `request` in `scope` that `asker` needs not now
+    /// (`lazy::Needs`, by `d`'s view: a box changes nothing in the state, L1): each entry's wraps, the boxes of keys
+    /// no longer current, those `asker` can't open, and of each current key it opens all boxes but one. Smallest id
+    /// first. Of no edit `asker` may not receive (the same plan as `reply_in`), and only what `asker` would be sent
+    /// anyway: their ids, logs, depths and parents.
+    pub fn withheld(&self, d: SignerId, asker: SignerId, request: &Request, scope: &ReplyScope) -> Vec<Stub> {
+        let places = self.answered(d, asker, &request.ask.follow);
+        let sends = self.sends(d, asker, request, &places, scope);
+        let store = self.held(d);
+        let mut needs = crate::lazy::Needs::new(self.latest(d), asker);
+        let mut out: Vec<Stub> = sends
+            .places
+            .iter()
+            .filter_map(|(_, id)| {
+                let signed = store.signed.get(id)?;
+                let edit = &signed.edit;
+                let held_back = crate::lazy::is_box(edit) && needs.class(edit) != crate::lazy::Class::Now;
+                held_back.then(|| Some(Stub::of(edit, *id, log_of(edit, *id)?))).flatten()
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Device `d` takes the stubs `stubs` peer `from` sent it (`withheld`), while it asks for stubs and not yet for
+    /// their bodies: each of an edit it holds not, to count as held when it asks `from` (`request`). How many it took.
+    /// A stub enters nothing it knows (S1).
+    pub fn receive_stubs(&mut self, d: SignerId, from: SignerId, stubs: Vec<Stub>) -> usize {
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        if !store.lazy.on || store.lazy.fetching {
+            return 0;
+        }
+        let mut took = 0;
+        for stub in stubs {
+            if !store.signed.contains_key(&stub.id) && !store.lazy.stubs.contains_key(&stub.id) {
+                store.lazy.stubs.insert(stub.id, (stub, from));
+                took += 1;
+            }
+        }
+        if took > 0 {
+            store.lazy.taken += took;
+            *store.answers.basis.lock().expect("request basis") = None;
+        }
+        took
+    }
+
+    /// Device `d` asks for the bodies of its stubs from now on: they no longer count as held, so its peers send them,
+    /// and each is checked against its stub as it comes (S2, S5). It asks for no stubs again.
+    pub fn fetch_withheld(&mut self, d: SignerId) {
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        store.lazy.fetching = true;
+        *store.answers.basis.lock().expect("request basis") = None;
+    }
+
+    /// Device `d` asks for stubs in its syncs now: it asks for them, and not yet for their bodies.
+    pub fn lazy_boxes(&self, d: SignerId) -> bool {
+        let lazy = &self.held(d).lazy;
+        lazy.on && !lazy.fetching
+    }
+
+    /// The stubs device `d` holds whose bodies it holds not yet, smallest id first.
+    pub fn stubs(&self, d: SignerId) -> Vec<Stub> {
+        self.held(d).lazy.stubs.values().map(|(stub, _)| stub.clone()).collect()
+    }
+
+    /// Device `d` asked peer `from` for the bodies of its stubs, of the logs `logs` or of all, and the asking ended: the
+    /// stubs `from` sent of those logs whose bodies didn't come go, as of edits `from` holds not or sends not (a stub
+    /// of nothing), kept in `stubs_unanswered`. Only while it asks for their bodies. How many went.
+    pub fn drop_unanswered(&mut self, d: SignerId, from: SignerId, logs: Option<&BTreeSet<LogId>>) -> usize {
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        if !store.lazy.fetching {
+            return 0;
+        }
+        let gone: Vec<EditId> = store
+            .lazy
+            .stubs
+            .iter()
+            .filter(|(_, (stub, by))| *by == from && logs.is_none_or(|l| l.contains(&stub.log)))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &gone {
+            let stub = store.lazy.stubs.remove(id).expect("a stub");
+            store.lazy.unanswered.push(stub);
+        }
+        gone.len()
+    }
+
+    /// The stubs device `d` let go of unanswered (`drop_unanswered`), each with the peer that sent it.
+    pub fn stubs_unanswered(&self, d: SignerId) -> Vec<(Stub, SignerId)> {
+        self.held(d).lazy.unanswered.clone()
+    }
+
+    /// How many stubs device `d` took in all (`receive_stubs`): of boxes its first syncs held back.
+    pub fn stubs_taken(&self, d: SignerId) -> usize {
+        self.held(d).lazy.taken
+    }
+
+    /// Each body device `d` took of a stub that lied about it, with the peer that sent the stub, as they came (S5).
+    pub fn stub_liars(&self, d: SignerId) -> Vec<(SignerId, EditId)> {
+        self.held(d).lazy.liars.clone()
+    }
+
     /// A bounded inventory for optional sparse payload transfer, using exactly the ordinary reply permission and
     /// scope plan. Only single-device-signed entry writes with a cheap conservative byte bound are eligible.
     /// This is an optimization class, never a trust decision: every excluded edit stays on the legacy sync path.
@@ -4497,8 +4826,8 @@ impl Lab {
         let store = self.held(d);
         let mut ids = Vec::new();
         for (_, id) in &sends.places {
-            let signed = &store.signed[id];
-            if signed.edit.author == signer && range_write_bound(signed).is_some_and(|n| n <= max_wire) {
+            let signed = store.signed.owned(id);
+            if signed.edit.author == signer && range_write_bound(&signed).is_some_and(|n| n <= max_wire) {
                 ids.push(*id);
             }
         }
@@ -4524,7 +4853,7 @@ impl Lab {
             let signed = store.signed.get(id)?;
             let at = (signed.edit.depth, *id);
             if signed.edit.author != signer || sends.places.binary_search(&at).is_err() { return None; }
-            let bytes = range_write_bound(signed)?;
+            let bytes = range_write_bound(&signed)?;
             if bytes > max_wire { return None; }
             selected.insert(at, (signed, bytes));
         }
@@ -4533,7 +4862,7 @@ impl Lab {
         for (signed, size) in selected.values() {
             let total = bytes.checked_add(*size)?;
             if total > max_wire { break; }
-            bytes = total; take.push((*signed).clone());
+            bytes = total; take.push(Signed::clone(signed));
         }
         let more = take.len() < selected.len();
         Some((take, more))
@@ -4654,6 +4983,59 @@ impl Lab {
         files.into_iter().collect()
     }
 
+    /// Its replay is of every edit device `d` holds, or what they say is worked out already: `latest` costs nothing.
+    /// Else the first call that asks what its edits say replays them under the Lab, which a background reader such as
+    /// a node's file keeper leaves to its catch-up instead.
+    pub fn replay_current(&self, d: SignerId) -> bool {
+        let store = self.held(d);
+        store.replayed == store.log.edits().len() || store.latest.get().is_some()
+    }
+
+    /// One slice of `scan`: the next `budget` edits device `d` holds, at least one, and at the last slice what the
+    /// whole scan found, as `files`, `kept_files` and `demanded_files` say it at once, for the same edits and keys.
+    /// Each slice is short, so a node's file keeper lets go of the Lab between slices and a page's turn comes between.
+    /// A scan whose edits changed since its last slice starts again; one of a device whose replay is behind waits
+    /// (`replay_current`).
+    pub fn scan_files(&self, d: SignerId, scan: &mut FileScan, budget: usize) -> FileScanned {
+        if !self.replay_current(d) {
+            return FileScanned::Behind;
+        }
+        let store = self.held(d);
+        let revision = store.log.revision();
+        if scan.revision.as_ref() != Some(&revision) {
+            let st = self.latest(d);
+            let selected = scan.entries.iter().copied().filter(|e| st.entry(*e).is_some_and(|en| st.wants(d, en)));
+            *scan = FileScan { revision: Some(revision), at: 0, selected: selected.collect(), ..FileScan::new(scan.keep, std::mem::take(&mut scan.entries)) };
+        }
+        let st = self.latest(d);
+        let edits = store.log.edits();
+        let end = edits.len().min(scan.at.saturating_add(budget.max(1)));
+        for edit in &edits[scan.at..end] {
+            if edit.files().is_empty() {
+                continue;
+            }
+            scan.files.extend(edit.files().iter().copied());
+            let entry = edit.entry();
+            let en = entry.and_then(|e| st.entry(e));
+            if en.is_some_and(|en| st.wants(d, en) && st.keeps(d, en).unwrap_or(scan.keep)) {
+                scan.kept.extend(edit.files().iter().copied());
+            }
+            if entry.is_some_and(|e| scan.selected.contains(&e)) {
+                scan.named.extend(edit.files().iter().copied());
+            }
+        }
+        scan.at = end;
+        if end < edits.len() {
+            return FileScanned::More;
+        }
+        let demanded = scan.named.iter().copied().filter(|root| self.file(d, root).is_some()).collect();
+        FileScanned::Done {
+            files: scan.files.iter().copied().collect(),
+            kept: scan.kept.iter().copied().collect(),
+            demanded,
+        }
+    }
+
     /// The files the writes of entry `entry` bring, as device `d` holds them, in the order it took them, each once:
     /// each with its plaintext length where `d` opens it (`file`), else `None`.
     pub fn entry_files(&self, d: SignerId, entry: EntryId) -> Vec<(FileRoot, Option<u64>)> {
@@ -4725,7 +5107,7 @@ impl Lab {
             w.first || w.shares.is_empty() || w.shares.iter().any(lets)
         };
         let writes = h.history(line).into_iter().map(|c| &c.write).filter(may);
-        let files = |w: &Write| Some((w.edit, store.signed.get(&w.edit)?.edit.files().to_vec()));
+        let files = |w: &Write| Some((w.edit, store.log.entry_write(w.edit)?.files().to_vec()));
         writes.filter_map(files).filter(|(_, fs)| !fs.is_empty()).collect()
     }
 
@@ -4736,11 +5118,11 @@ impl Lab {
         // a session opens a file only through a write of an entry it reads itself
         if self.hosted.contains_key(&d) {
             let brings = |(id, body): (&EditId, &Body)| {
-                let signed = store.signed.get(id)?;
-                let Action::Write { entry, .. } = signed.edit.action else {
+                let edit = store.log.entry_write(*id)?;
+                let Action::Write { entry, .. } = edit.action else {
                     return None;
                 };
-                let named = signed.edit.files();
+                let named = edit.files();
                 let f = body.files.iter().find(|f| f.root == *root && named.contains(&f.root) && f.fits())?;
                 self.sees(d, entry).then(|| (*id, f.clone()))
             };
@@ -4753,7 +5135,7 @@ impl Lab {
             writes.sort_by_key(|(id, _)| **id);
             let mut at = HashMap::new();
             for (id, body) in writes {
-                let Some(named) = store.signed.get(id).map(|s| s.edit.files()) else {
+                let Some(named) = store.log.entry_write(*id).map(Edit::files) else {
                     continue;
                 };
                 for f in body.files.iter().filter(|f| named.contains(&f.root) && f.fits()) {
@@ -4767,7 +5149,7 @@ impl Lab {
 
     /// The McEliece key `b` as device `d` holds it.
     pub fn blob(&self, d: SignerId, b: BlobId) -> Option<Arc<[u8]>> {
-        self.held(d).blobs.get(&b).cloned()
+        self.held(d).blobs.get(&b)
     }
 
     /// The ids of the McEliece keys device `d` holds, smallest first.
@@ -4833,6 +5215,37 @@ impl Lab {
         }
         self.refresh(d, &[]);
         true
+    }
+
+    /// `catch_up` a step at a time, each its own short turn of a node's Lab, so that a page's turn comes between them
+    /// (a catch-up held the server's Lab 5.5 s, 2026-10-27, nearly all of it showing entries anew): first its replay
+    /// stepped on over the edits it took since (`step_replay`), which leaves it as a page taken but not yet caught up
+    /// leaves it (`receive_now`); then the catch-up itself, showing at most `budget` entries anew a step
+    /// (`show_items`), the entries left shown a step at a time after it, and once they all are, the catch-up again,
+    /// which finds them shown. `Stepped` while there is more to come, then `Caught` with what `catch_up` says. The same
+    /// keys, items and edits as one `catch_up`: a device with an entry's owner base takes it in one step still.
+    pub fn catch_up_step(&mut self, d: SignerId, budget: usize) -> CatchUp {
+        let Some(store) = self.stores.get(&self.at(d)) else {
+            return CatchUp::Caught(false);
+        };
+        if store.showing.is_some() {
+            self.show_more(d, budget);
+            return CatchUp::Stepped;
+        }
+        if !store.behind {
+            return CatchUp::Caught(false);
+        }
+        if store.replayed < store.log.edits().len() && store.latest.get().is_none() {
+            self.step_replay(d);
+            return CatchUp::Stepped;
+        }
+        if !store.bases.is_empty() {
+            return CatchUp::Caught(self.catch_up(d));
+        }
+        match self.refresh_with(d, &[], Some(budget)) {
+            true => CatchUp::Caught(true),
+            false => CatchUp::Stepped,
+        }
     }
 
     /// `receive`, and whose each edit it took is (`whose_log`): what a pull tells its person.
@@ -4914,8 +5327,8 @@ impl Lab {
     /// A backup of device `d`: its signed edits and their blobs, as they are now.
     pub fn backup(&self, d: SignerId) -> Backup {
         let store = self.held(d);
-        let signed = store.log.ids().iter().map(|id| store.signed[id].clone()).collect();
-        Backup { signed, blobs: store.blobs.clone(), bases:store.bases.clone() }
+        let signed = store.log.ids().iter().map(|id| store.signed.owned(id)).collect();
+        Backup { signed, blobs: store.blobs.to_map(), bases:store.bases.clone() }
     }
 
     /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it
@@ -4931,6 +5344,15 @@ impl Lab {
         self.restore_warm(d, backup, None, &Warm::default());
     }
 
+    /// Device `d` holds its signed edits and McEliece keys in `spill` from now on, those it holds now among them, and
+    /// only an index of them and a bounded cache in memory (S7, `held`): what a server does, its vaults growing toward
+    /// a million edits. A restore keeps it spilled. It holds, proves and says the same either way.
+    pub fn spill(&mut self, d: SignerId, spill: &Spill) -> std::io::Result<()> {
+        let store = self.stores.get_mut(&self.at(d)).ok_or_else(|| std::io::Error::other("no such device"))?;
+        store.signed.spill_edits(spill)?;
+        store.blobs.spill_keys(spill)
+    }
+
     /// `restore_from`, starting from what device `d` worked out before, as its shelf keeps it (`Warm`): what of it it
     /// opens with its shelf key. Where its keys name the edits it checked as its shelf names the first `n` of `backup`'s
     /// now (`checked`), their signatures aren't checked again: a device opening again checks only what came after. It
@@ -4939,7 +5361,10 @@ impl Lab {
     pub fn restore_warm(&mut self, d: SignerId, backup: Backup, checked: Option<(Checked, usize)>, warm: &Warm) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        let mut store = Store { follow, query_depth, gate, perf, bases:backup.bases.clone(), ..Store::default() };
+        // spilled as it was, into new files: the old ones go with the store they were of
+        let (signed, blobs) = (held.signed.fresh(), held.blobs.fresh_keys());
+        let mut store =
+            Store { follow, query_depth, gate, perf, signed, blobs, bases: backup.bases.clone(), ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
         // Decode and merge one slot at a time. Keeping both complete decoded key
@@ -5167,7 +5592,8 @@ impl Lab {
         let first: Vec<Signed> = ids.iter().filter_map(|id| first.remove(id)).collect();
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
+        let (spilled, keys) = (held.signed.fresh(), held.blobs.fresh_keys());
+        self.stores.insert(d, Store { follow, query_depth, gate, perf, signed: spilled, blobs: keys, ..Store::default() });
         let offered = (first.len() + rest.len()) as u64;
         let fresh = self.fresh(d, first.into_iter().chain(rest).collect(), &of);
         let Some(store) = self.stores.get_mut(&d) else {
@@ -5222,7 +5648,7 @@ impl Lab {
             }
             Tamper::ChangedCiphertext(id) => {
                 let mut signed =
-                    self.stores.values().find_map(|s| s.signed.get(&id)).cloned().expect("an edit some device holds");
+                    self.stores.values().find_map(|s| s.signed.get(&id)).map(|s| Signed::clone(&s)).expect("an edit some device holds");
                 if let Action::Write { body, .. } = &mut signed.edit.action
                     && let Some(last) = body.last_mut()
                 {
@@ -5331,11 +5757,23 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
 /// key's epoch (`keys::entry_key`): true if it derived any.
 fn derive(store: &mut Store, stays: &HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>) -> bool {
     let mut new = vec![];
+    // each audience's stays by their print, made once for every key of it
+    let mut prints: HashMap<AudienceId, [u8; 32]> = HashMap::new();
     for id in &store.keys.audiences {
         let (name, audience) = &store.keys.by_id[id];
         let KeyName::Scoped(KeyFam::Audience(_, x), g) = *name else {
             continue;
         };
+        let print = *prints.entry(x).or_insert_with(|| {
+            let mut h = Hasher::new("lab stays");
+            for (e, s) in stays.get(&x).into_iter().flatten() {
+                h.update(&e.0).update(s.as_ref().map_or(&[0; 32], |s| &s.0));
+            }
+            h.finalize()
+        });
+        if store.derived_through.insert(*id, print) == Some(print) {
+            continue;
+        }
         for &(e, s) in stays.get(&x).into_iter().flatten() {
             if store.derived.insert((*id, e, s)) {
                 new.push((KeyName::Entry(e, s, g), keys::entry_key(audience, e, s)));
@@ -5394,6 +5832,7 @@ fn read(d: SignerId, store: &mut Store) {
         match open_select(of, &store.keys, st.acts_for(d, of.over)) {
             Ok(Some(slice)) => {
                 store.slices.insert(id, slice);
+                store.read_new.slices.push(id);
             }
             Ok(None) => {}
             Err(()) => {
@@ -5401,14 +5840,17 @@ fn read(d: SignerId, store: &mut Store) {
             }
         }
     }
+    let at = Perf::start();
     let retags = st.entries().iter().flat_map(|en| en.retags.iter().copied());
     let wanted = st.all_writes().iter().map(|w| w.edit).chain(retags);
     let wanted: Vec<EditId> =
         wanted.filter(|id| !store.bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
     if !wanted.is_empty() {
-        let edits: HashMap<EditId, &Edit> = store.replay.ids.iter().copied().zip(&store.replay.edits).collect();
+        // each edit by its id from the signed edits it holds, every one of which its replay is of: no map of every
+        // edit made again for each reading
         for id in wanted {
-            let Some(edit) = edits.get(&id) else { continue };
+            let Some(signed) = store.signed.get(&id) else { continue };
+            let edit = &signed.edit;
             let Action::Write { entry, stay, epoch, body, .. } = &edit.action else {
                 continue;
             };
@@ -5422,6 +5864,7 @@ fn read(d: SignerId, store: &mut Store) {
             match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
                 Some(b) => {
                     store.bodies.insert(id, b);
+                    store.read_new.bodies.push(id);
                     store.opened.entry(*entry).or_default().push(id);
                     store.files_at = OnceLock::new();
                 }
@@ -5431,38 +5874,135 @@ fn read(d: SignerId, store: &mut Store) {
             }
         }
     }
-    let mut r = Readings::default();
-    for (c, s) in &store.slices {
-        r.selectors.insert(*c, s.select.clone());
-    }
-    for (id, b) in store.metadata_bodies() {
-        if let Some(h) = &b.header {
-            r.put_header(*id, h.clone());
-            // a schema or lens entry's creation holds the schema or the lens itself, and fits where it is one of its
-            // type: what its readers read into its vault's lane where it acted for that vault (`State::lane_of`)
-            if h.ty.of_lane() {
-                r.blobs.insert(*id, b.content.as_slice().into());
-                if !lane_fits(&h.ty, &b.content) {
-                    r.unfit.insert(*id);
-                }
+    store.perf.add("read: bodies", at);
+    let at = Perf::start();
+    // what it reads in them: on what it read last time, the bodies and selectors it opened since alone, where it
+    // only opened more since (`ReadNew`); else all of them again
+    let on = store.read_new.basis(store.bodies.len(), store.slices.len(), &store.readings);
+    store.perf.count(if on { "read: on" } else { "read: whole" }, 1);
+    let mut r = match on {
+        true => {
+            let mut r = std::mem::take(&mut store.readings);
+            r.touches.clear();
+            r.adds.clear();
+            for (c, slice) in store.read_new.slices.iter().filter_map(|c| Some((c, store.slices.get(c)?))) {
+                r.selectors.insert(*c, slice.select.clone());
             }
+            for (id, b) in store.read_new.bodies.iter().filter_map(|id| Some((id, store.bodies.get(id)?))) {
+                read_body(&mut r, *id, b);
+            }
+            r
         }
-        r.tags.insert(*id, b.tags.clone());
-        if let Some(p) = &b.proof {
-            r.proofs.insert(*id, p.clone());
-        }
-        if let Some(g) = &b.defines {
-            r.defines.insert(*id, g.clone());
-        }
-    }
+        false => readings_of(store),
+    };
+    store.read_new.slices.clear();
+    store.read_new.bodies.clear();
     // the entries whose header it hasn't read: any of them may be of any type, so the index hands them to every query
     // by type, which finds them waiting (`Lab::query_candidates`)
     let st = &store.replay.state;
     r.untyped = st.entries().iter().filter(|en| !r.headers.contains_key(&en.creation)).map(|en| en.id).collect();
     // the cap groups in force follow from what the device counts (`show_items`)
     r.groups = std::mem::take(&mut store.readings.groups);
+    #[cfg(debug_assertions)]
+    debug_assert!(same_readings(&r, &readings_of(store)), "readings read on differ from readings read whole");
     store.readings = r;
+    store.read_new.read(store.bodies.len(), store.slices.len(), &store.readings);
+    store.perf.add("read: readings", at);
 }
+
+/// What device's store `store` reads in every body and selector it opened (`read`), but which entries are of no type
+/// and the cap groups in force.
+fn readings_of(store: &Store) -> Readings {
+    let mut r = Readings::default();
+    for (c, s) in &store.slices {
+        r.selectors.insert(*c, s.select.clone());
+    }
+    for (id, b) in store.metadata_bodies() {
+        read_body(&mut r, *id, b);
+    }
+    r
+}
+
+/// What write `id`'s body `b` says, into `r`.
+fn read_body(r: &mut Readings, id: EditId, b: &Body) {
+    if let Some(h) = &b.header {
+        r.put_header(id, h.clone());
+        // a schema or lens entry's creation holds the schema or the lens itself, and fits where it is one of its
+        // type: what its readers read into its vault's lane where it acted for that vault (`State::lane_of`)
+        if h.ty.of_lane() {
+            r.blobs.insert(id, b.content.as_slice().into());
+            if !lane_fits(&h.ty, &b.content) {
+                r.unfit.insert(id);
+            }
+        }
+    }
+    r.tags.insert(id, b.tags.clone());
+    if let Some(p) = &b.proof {
+        r.proofs.insert(id, p.clone());
+    }
+    if let Some(g) = &b.defines {
+        r.defines.insert(id, g.clone());
+    }
+}
+
+/// Two readings alike, the cap groups and which entries are of no type aside, and the order each type's creations
+/// were indexed in, which is a map's.
+#[cfg(debug_assertions)]
+fn same_readings(a: &Readings, b: &Readings) -> bool {
+    fn listed<K: std::fmt::Debug, V: std::fmt::Debug>(m: impl Iterator<Item = (K, V)>) -> Vec<String> {
+        let mut v: Vec<String> = m.map(|kv| format!("{kv:?}")).collect();
+        v.sort();
+        v
+    }
+    let typed = |r: &Readings| -> Vec<String> {
+        listed(r.typed.iter().map(|(t, ids)| (t, ids.iter().copied().collect::<BTreeSet<EditId>>())))
+    };
+    let unfit = |r: &Readings| listed(r.unfit.iter().map(|k| (k, ())));
+    typed(a) == typed(b)
+        && listed(a.headers.iter()) == listed(b.headers.iter())
+        && listed(a.selectors.iter()) == listed(b.selectors.iter())
+        && listed(a.tags.iter()) == listed(b.tags.iter())
+        && listed(a.proofs.iter()) == listed(b.proofs.iter())
+        && listed(a.defines.iter()) == listed(b.defines.iter())
+        && listed(a.blobs.iter()) == listed(b.blobs.iter())
+        && unfit(a) == unfit(b)
+        && a.touches.is_empty()
+        && a.adds.is_empty()
+}
+
+/// What `read` opened since it last read, and what it read then: so that it reads on from there where it only opened
+/// more since, rather than every body again (each of 130,000 a turn on a server's size, 2026-10-27). Anything else
+/// that takes bodies or selectors away or puts in readings of its own sends `read` through them all again: the counts
+/// then differ from those it kept (`basis`), or it forgets them (`forget`).
+#[derive(Default)]
+struct ReadNew {
+    /// The counts of bodies, selectors, headers and tags as it last read, if it did since it last forgot.
+    then: Option<(usize, usize, usize, usize)>,
+    bodies: Vec<EditId>,
+    slices: Vec<ShareId>,
+}
+
+impl ReadNew {
+    /// It reads on from what it read last time: what it holds now is that, and what it opened since, alone.
+    fn basis(&self, bodies: usize, slices: usize, r: &Readings) -> bool {
+        self.then.is_some_and(|(b, s, h, t)| {
+            b + self.bodies.len() == bodies
+                && s + self.slices.len() == slices
+                && h == r.headers.len()
+                && t == r.tags.len()
+        })
+    }
+
+    fn read(&mut self, bodies: usize, slices: usize, r: &Readings) {
+        self.then = Some((bodies, slices, r.headers.len(), r.tags.len()));
+    }
+
+    /// What it read is to be read whole again.
+    fn forget(&mut self) {
+        *self = ReadNew::default();
+    }
+}
+
 
 /// What a schema or lens entry of type `ty` holds, `blob`, is one of its type: a schema (`lens::Schema`) for a schema
 /// entry, a lens (`lens::Lens`) for a lens entry. Only then does its creation fit, and put it in its vault's lane.
@@ -5508,6 +6048,7 @@ fn open_select(of: &Share, keys: &Keyring, steward: bool) -> Result<Option<Slice
 /// under the next epoch's key if nobody wrapped it yet. For each entry it reads, the keys of the entry's earlier stays
 /// it holds wrapped under the key the schedule links them to, if nobody did yet. `mine` are the keys of the signers it
 /// may box for by wrapping: its own, and what owners lend it.
+#[allow(clippy::too_many_arguments)]
 fn upkeep(
     d: SignerId,
     store: &mut Store,
@@ -5515,8 +6056,11 @@ fn upkeep(
     mine: &[(SignerId, Secret)],
     rng: &mut SeededRng,
     spares: &mut Spares,
+    scope: Option<&HashSet<EntryId>>,
+    waiting: &HashSet<EntryId>,
 ) -> Vec<Work> {
     let st = store.replay.state.clone();
+    let at = Perf::start();
     let families: Vec<KeyFam> = st.key_fams().into_iter().filter(|&k| st.entitled(d, k)).collect();
     // a key for every epoch from the oldest it holds to the current one, where nobody made one yet: several rotations
     // at once leave the epochs between without a key, and the history must stay one chain
@@ -5578,12 +6122,20 @@ fn upkeep(
             }
         }
     }
+    store.perf.add("upkeep: families", at);
+    let at = Perf::start();
     // Every current entry audience occurs in key_fams. Reuse this round's exact entitlement
     // decisions from the same immutable State; never carry them across refreshes or revocation.
     let entitled: HashSet<KeyFam> = families.iter().copied().collect();
     // move links: the keys of an entry's earlier stays under a key of its stay now, as the schedule links them
+    // of the entries in `scope` alone where it has one (`UpkeepDue`), and none a showing left to show: a debug build
+    // checks that every other one calls for none
     for en in st.entries() {
-        if !entitled.contains(&KeyFam::Audience(en.vault, en.audience())) {
+        if waiting.contains(&en.id) || !entitled.contains(&KeyFam::Audience(en.vault, en.audience())) {
+            continue;
+        }
+        let skip = scope.is_some_and(|s| !s.contains(&en.id));
+        if skip && !cfg!(debug_assertions) {
             continue;
         }
         let epoch = st.epoch(KeyFam::Audience(en.vault, en.audience()));
@@ -5610,13 +6162,17 @@ fn upkeep(
                 wraps.push(Wrap { name, id, boxed: KeyBox { to, bytes } });
             }
         }
-        if !wraps.is_empty() {
+        debug_assert!(!skip || wraps.is_empty(), "upkeep left out {:?}, which has keys to wrap", en.id);
+        if !wraps.is_empty() && !skip {
             out.push(Work::Edit(Action::Wraps { entry: en.id, wraps }));
         }
     }
+    store.perf.add("upkeep: links", at);
+    let at = Perf::start();
     for vt in st.vaults().iter().filter(|vt| st.acts_for(d, vt.id)) {
-        out.extend(steward(store, &st, vt.id));
+        out.extend(steward(store, &st, vt.id, scope, waiting));
     }
+    store.perf.add("upkeep: steward", at);
     out
 }
 
@@ -5627,54 +6183,74 @@ fn upkeep(
 /// asks for, if it isn't there, and, once it reads the selector of every keep share over the vault too
 /// (`Store::reads_keeps`), with the keep shares that pick it, if it isn't marked so. A part it has nothing to change in
 /// it leaves out, so it never puts back an audience another steward changed meanwhile.
-fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
+fn steward(
+    store: &Store,
+    st: &State,
+    v: VaultId,
+    scope: Option<&HashSet<EntryId>>,
+    waiting: &HashSet<EntryId>,
+) -> Vec<Work> {
     if !store.reads_shares(st, v) {
         return vec![];
     }
     let marks = store.reads_keeps(st, v);
     let r = &store.readings;
     let mut out = vec![];
-    for en in st.entries().iter().filter(|en| en.vault == v) {
-        if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
+    // of the entries in `scope` alone where it has one, and none a showing left to show (`upkeep`)
+    for en in st.entries().iter().filter(|en| en.vault == v && !waiting.contains(&en.id)) {
+        let skip = scope.is_some_and(|s| !s.contains(&en.id));
+        if skip && !cfg!(debug_assertions) {
             continue;
         }
-        let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else {
-            continue;
-        };
-        let ours = st.entry_writes(en.id).filter(|w| w.actor == v);
-        let answered: HashSet<EditId> =
-            ours.filter_map(|w| store.body_metadata(w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
-        let asks: Vec<&Write> = st
-            .entry_writes(en.id)
-            .filter(|w| w.actor != v && !w.first && !answered.contains(&w.edit))
-            .filter(|w| store.body_metadata(w.edit).is_some_and(|b| !b.tags.is_empty()))
-            .collect();
-        if asks.is_empty() {
-            if let Some((caps, wants)) = m.mark {
-                let wants = wants.filter(|_| marks);
-                if caps.is_some() || wants.is_some() {
-                    let (keep, via) = (vec![], vec![]);
-                    out.push(Work::Edit(Action::Mark { vault: v, entry: en.id, caps, wants, keep, via }));
+        let before = out.len();
+        #[allow(clippy::never_loop)]
+        'one: loop {
+            if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
+                break 'one;
+            }
+            let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else {
+                break 'one;
+            };
+            let ours = st.entry_writes(en.id).filter(|w| w.actor == v);
+            let answered: HashSet<EditId> =
+                ours.filter_map(|w| store.body_metadata(w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
+            let asks: Vec<&Write> = st
+                .entry_writes(en.id)
+                .filter(|w| w.actor != v && !w.first && !answered.contains(&w.edit))
+                .filter(|w| store.body_metadata(w.edit).is_some_and(|b| !b.tags.is_empty()))
+                .collect();
+            if asks.is_empty() {
+                if let Some((caps, wants)) = m.mark {
+                    let wants = wants.filter(|_| marks);
+                    if caps.is_some() || wants.is_some() {
+                        let (keep, via) = (vec![], vec![]);
+                        out.push(Work::Edit(Action::Mark { vault: v, entry: en.id, caps, wants, keep, via }));
+                    }
+                }
+                break 'one;
+            }
+            let shown = store.shown.get(&en.id).map(|s| &s.history);
+            let counted = |w: &Write| shown.and_then(|h| h.get(w.edit)).is_some_and(|c| c.counted);
+            let mut tags = m.attrs.tags.clone();
+            for w in &asks {
+                let attrs = Attrs { tags: tags.clone(), ..m.attrs.clone() };
+                if counted(w) && granted(st, store, w, &attrs) {
+                    tags = store.body_metadata(w.edit).expect("read tag metadata").tags.apply(&tags);
                 }
             }
-            continue;
+            let add = tags.iter().filter(|t| !m.attrs.tags.contains(t)).cloned().collect();
+            let remove = m.attrs.tags.iter().filter(|t| !tags.contains(t)).cloned().collect();
+            let mut answers: Vec<EditId> = asks.iter().map(|w| w.edit).collect();
+            answers.sort();
+            let tags = TagDelta { add, remove };
+            let body = Body { header: None, tags, answers, content: vec![], proof: None, files: vec![], defines: None };
+            out.push(Work::Retag { vault: v, entry: en.id, body });
+            break 'one;
         }
-        let shown = store.shown.get(&en.id).map(|s| &s.history);
-        let counted = |w: &Write| shown.and_then(|h| h.get(w.edit)).is_some_and(|c| c.counted);
-        let mut tags = m.attrs.tags.clone();
-        for w in &asks {
-            let attrs = Attrs { tags: tags.clone(), ..m.attrs.clone() };
-            if counted(w) && granted(st, store, w, &attrs) {
-                tags = store.body_metadata(w.edit).expect("read tag metadata").tags.apply(&tags);
-            }
+        debug_assert!(!skip || out.len() == before, "upkeep left out {:?}, which a steward has work in", en.id);
+        if skip {
+            out.truncate(before);
         }
-        let add = tags.iter().filter(|t| !m.attrs.tags.contains(t)).cloned().collect();
-        let remove = m.attrs.tags.iter().filter(|t| !tags.contains(t)).cloned().collect();
-        let mut answers: Vec<EditId> = asks.iter().map(|w| w.edit).collect();
-        answers.sort();
-        let tags = TagDelta { add, remove };
-        let body = Body { header: None, tags, answers, content: vec![], proof: None, files: vec![], defines: None };
-        out.push(Work::Retag { vault: v, entry: en.id, body });
     }
     out
 }
@@ -5734,7 +6310,7 @@ fn key_box(
         _ => return None,
     };
     let blob = store.blobs.get(&pk.mceliece).filter(|b| BlobId::of(b) == pk.mceliece)?;
-    let bytes = keys::seal(secret, pk, blob, &info(&to), rng)?;
+    let bytes = keys::seal(secret, pk, &blob, &info(&to), rng)?;
     Some(KeyBox { to, bytes })
 }
 
@@ -5791,9 +6367,27 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// in force changed: first the cap groups, as the device counts the writes that say them (`State::read_groups`), as
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
-fn show_items(d: SignerId, store: &mut Store) {
+/// Shows device `d`'s items anew. With a `budget`, at most that many entries other than the cap groups' are shown
+/// anew, those it left before first (`Store::showing`), and it keeps those it leaves now there, with whether they are to
+/// be checked against all their writes and the bodies it opened of them (`Showing`): false while any are left. One
+/// with none shows what changed since it last showed and leaves those it left before as they are, for the budgeted
+/// ones to come (a write of the device's own in the middle of a catch-up waits for no whole showing), but where it
+/// shows every entry. So the entries end shown as one showing shows them, once none is left.
+/// The work a budgeted show does for each entry of its budget (`show_items`), counted as the writes it judges and
+/// `SHOW_ENTRY_WORK` for each entry it judges, one for each it looks at, and the writes it reads again into a scratch
+/// item it dropped (`SCRATCHES`): a step of a catch-up judges about this many writes whatever the
+/// entries hold, so that a step at a server's size takes as long as one at a phone's.
+const SHOW_WORK: usize = 6;
+const SHOW_ENTRY_WORK: usize = 4;
+
+fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
+    let pending = store.showing.take().unwrap_or_default();
+    let (reshow, mut opened) = (std::mem::take(&mut store.reshow), std::mem::take(&mut store.opened));
+    for (e, ids) in pending.opened {
+        opened.entry(e).or_default().extend(ids);
+    }
+    let waiting: HashSet<EntryId> = pending.rest.iter().copied().collect();
     let (st, r, bodies) = (&store.replay.state, &store.readings, &store.bodies);
-    let (reshow, opened) = (std::mem::take(&mut store.reshow), std::mem::take(&mut store.opened));
     let mut old = std::mem::take(&mut store.shown);
     if reshow {
         old.retain(|e, _| st.entry(*e).is_some());
@@ -5890,23 +6484,55 @@ fn show_items(d: SignerId, store: &mut Store) {
             .iter()
             .all(|(v, (h, _))| gained.contains_key(v) || store.shown_lanes.get(v).is_some_and(|w| w.0 == *h))
         && store.shown_groups == groups_print;
-    let todo: Vec<&Entry> = if grew {
+    // what changed since it last showed (the bodies it opened since of the entries it left before among them)
+    let fresh: Vec<&Entry> = if grew {
         let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
-        let mut es: Vec<EntryId> =
-            all.iter().skip(n).map(|w| w.entry).chain(opened.keys().copied()).chain(changed).collect();
+        let opened_since = opened.keys().copied().filter(|e| !waiting.contains(e));
+        let mut es: Vec<EntryId> = all.iter().skip(n).map(|w| w.entry).chain(opened_since).chain(changed).collect();
         es.sort();
         es.dedup();
         es.into_iter().filter_map(|e| st.entry(e)).collect()
     } else {
         st.entries().iter().collect()
     };
+    // and those it left before, after them, where it has a budget to show them in
+    let seen: HashSet<EntryId> = fresh.iter().map(|en| en.id).collect();
+    let left: Vec<&Entry> =
+        pending.rest.iter().filter(|e| !seen.contains(e)).filter_map(|e| st.entry(*e)).collect();
+    let (todo, mut rest): (Vec<&Entry>, Vec<EntryId>) = match budget {
+        Some(budget) => {
+            let mut all_todo = fresh;
+            all_todo.extend(left);
+            let cut = all_todo.len().min(budget.max(1) * SHOW_WORK);
+            let rest = all_todo[cut..].iter().map(|en| en.id).collect();
+            all_todo.truncate(cut);
+            (all_todo, rest)
+        }
+        None => (fresh, left.iter().map(|en| en.id).collect()),
+    };
     store.shown_writes = (all.len(), all.last().map(|w| w.edit));
     store.shown_lanes = lanes_now;
     store.shown_groups = groups_print;
-    for en in todo {
+    let mut shown_now: HashSet<EntryId> = HashSet::new();
+    // a budget bounds the work too: the writes it judges, and a few for each entry it judges, past which it leaves
+    // the rest of them for the next step
+    let work = budget.map(|b| b.max(1) * SHOW_WORK);
+    let mut spent = 0;
+    let ids_todo: Vec<EntryId> = todo.iter().map(|en| en.id).collect();
+    for (k, en) in todo.into_iter().enumerate() {
+        if work.is_some_and(|w| spent >= w) {
+            let mut left = ids_todo[k..].to_vec();
+            left.append(&mut rest);
+            rest = left;
+            break;
+        }
+        shown_now.insert(en.id);
+        spent += 1;
         if cap_groups.contains(&en.id) {
             continue;
         }
+        // one it left before is checked against all its writes as it was to be then
+        let reshow = reshow || (pending.reshow && waiting.contains(&en.id));
         let tip = tip(en);
         // judged under the lane before it gained schemas none of its writes name: as if under this one
         if let Some((was, new)) = gained.get(&en.vault)
@@ -5950,16 +6576,23 @@ fn show_items(d: SignerId, store: &mut Store) {
                 && opened.get(&en.id).is_none_or(|ids| ids.iter().all(new))
         };
         let judging_at = Perf::start();
+        // judged on without its scratch item, it builds that again of the writes it judged before
+        let mut again = 0;
         let (mut j, from, items) = match old.remove(&en.id) {
             Some(s) if resumes(&s) => {
                 let from = s.tip.writes;
+                again = if s.after.scratch.is_none() { from } else { 0 };
                 (Judging::resume(en, r, lane(en.vault), s.history, s.after), from, Some(s.items))
             }
             _ => (Judging::new(st, en, r, lane(en.vault)), 0, None),
         };
+        store.perf.add("show: judging, set up", judging_at);
+        store.perf.count("show: writes judged", (writes.len() - from) as u64);
+        store.perf.count("show: entries judged", 1);
         for w in &writes[from..] {
             j.judge(d, st, (r, bodies), w, &groups);
         }
+        spent += writes.len() - from + again + SHOW_ENTRY_WORK;
         store.perf.add("show: judging", judging_at);
         let materialize_at = Perf::start();
         let s = j.shown_on(d, print, tip, items);
@@ -5981,6 +6614,98 @@ fn show_items(d: SignerId, store: &mut Store) {
     store.perf.add("show: entries", at);
     store.shown = old;
     store.readings.groups = groups;
+    // the entries shown anew, for the upkeep to look at again (`UpkeepDue`)
+    store.upkeep_due.entries.extend(shown_now.iter().copied());
+    if rest.is_empty() {
+        return true;
+    }
+    // what tells it what to show anew stays as it was for the entries left, until it shows them
+    let left: HashSet<EntryId> = rest.iter().copied().collect();
+    opened.retain(|e, _| left.contains(e));
+    store.showing = Some(Showing { rest, reshow: reshow || pending.reshow, opened });
+    false
+}
+
+/// The entries a showing with a budget left to show (`show_items`), in the order it would show them, with whether
+/// they are to be checked against all their writes and the bodies it opened of them since they were last shown.
+#[derive(Default)]
+struct Showing {
+    rest: Vec<EntryId>,
+    reshow: bool,
+    opened: HashMap<EntryId, Vec<EditId>>,
+}
+
+/// What changed since the upkeep last looked at every entry's keys and stewardship (`upkeep`), so that it looks at
+/// those entries alone, not at each of a server's thousands every turn: the entries the edits it took since are of, those
+/// it opened bodies or took keys of, and those shown anew. Where anything but an entry's changed since (an edit of a
+/// vault, a share, an audience or no log, a removal, an edit let go, a key of more than an entry, a selector opened,
+/// the cap groups or the lanes, an entry's base), or an entry changed that is a cap group or holds a schema or a lens,
+/// it looks at every entry again. A debug build checks each entry it leaves out calls for nothing.
+#[derive(Default)]
+struct UpkeepDue {
+    /// The entries shown anew, and those a showing left to show when it last looked.
+    entries: HashSet<EntryId>,
+    /// When it last looked: the log's lineage and length, the keys' revision, the selectors it read, the cap groups'
+    /// and the lanes' hashes.
+    then: Option<(crate::policy::LogRevision, usize, Arc<()>, usize, [u8; 32], Vec<(VaultId, [u8; 32])>)>,
+}
+
+impl UpkeepDue {
+    /// The entries its upkeep is to look at, or `None` for every one.
+    fn scope(&self, store: &Store) -> Option<HashSet<EntryId>> {
+        let (lineage, len, keys, slices, groups, lanes) = self.then.as_ref()?;
+        let log = &store.log;
+        if log.lineage() != *lineage
+            || log.edits().len() < *len
+            || !Arc::ptr_eq(keys, &store.keys.scoped)
+            || store.slices.len() != *slices
+            || store.shown_groups != *groups
+            || *lanes != lanes_of(&store.shown_lanes)
+            || !store.bases.is_empty()
+        {
+            return None;
+        }
+        let mut due = self.entries.clone();
+        due.extend(store.keys.entries_keyed.iter().copied());
+        for (edit, place) in log.edits()[*len..].iter().zip(&log.logs()[*len..]) {
+            match place {
+                Some(crate::sync::LogId::Entry(e)) if !edit.is_removal() => {
+                    due.insert(*e);
+                }
+                _ => return None,
+            }
+        }
+        let (st, r) = (&store.replay.state, &store.readings);
+        let global = |e: &EntryId| {
+            st.entry(*e).is_some_and(|en| {
+                st.is_cap_group(en, r) || r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane() || h.ty.is_cap_group())
+            })
+        };
+        if due.iter().any(global) {
+            return None;
+        }
+        Some(due)
+    }
+
+    /// It looked, at what `log`, `keys`, `slices`, `groups` and `lanes` say now; the entries `waiting` to be shown
+    /// it looks at again once they are.
+    fn looked(
+        &mut self,
+        log: &Log,
+        keys: &Arc<()>,
+        slices: usize,
+        groups: [u8; 32],
+        lanes: &BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>,
+        waiting: HashSet<EntryId>,
+    ) {
+        self.entries = waiting;
+        self.then = Some((log.lineage(), log.edits().len(), keys.clone(), slices, groups, lanes_of(lanes)));
+    }
+}
+
+/// Each vault's lane's hash, as a showing last showed it (`Store::shown_lanes`).
+fn lanes_of(lanes: &BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>) -> Vec<(VaultId, [u8; 32])> {
+    lanes.iter().map(|(v, (h, _))| (*v, *h)).collect()
 }
 
 /// Entry `en`'s writes judged anew from its first, on device `d`: what judging on from where it left off must make.

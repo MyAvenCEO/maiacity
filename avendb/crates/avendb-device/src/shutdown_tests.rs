@@ -29,6 +29,7 @@ impl Folder {
             direct: false,
             volumes: None,
             webtransport: None,
+            webrtc: None,
         })
         .unwrap()
     }
@@ -196,6 +197,7 @@ async fn failed_drive_eject_and_host_close_retain_hosted_owner_and_writer() {
         direct: false,
         volumes: Some(volumes),
         webtransport: None,
+        webrtc: None,
     })
     .unwrap();
     let service = host.service.clone();

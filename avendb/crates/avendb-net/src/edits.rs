@@ -478,7 +478,7 @@ impl Edits {
         }
         let mut records = Vec::new();
         for id in &ids[if whole { 0 } else { kept.written }..] {
-            record(&mut records, lab.signed_edit(me, *id).context("an edit the device holds")?);
+            record(&mut records, &lab.signed_edit(me, *id).context("an edit the device holds")?);
         }
         let anchors = lab.bootstrap_bytes(me).context("bootstrap anchor cannot be encoded within durable bounds; previous durable state retained")?;
         ensure!(anchors.len() <= MAX_ANCHORS, "bootstrap anchor save exceeds its bound");

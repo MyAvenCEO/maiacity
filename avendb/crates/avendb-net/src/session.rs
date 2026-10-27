@@ -67,6 +67,16 @@ pub(crate) const RANGES: u8 = 13;
 /// as it did (`Shared::uncut`).
 pub(crate) const CUTS: u8 = 22;
 
+/// The stubs of the box edits a request, an `ASK_LOGS` or an `ASK_VAULTS` would bring that the asking device needs not
+/// now (`Lab::withheld`, `spec/AvenDB/LazyBoxes.lean`): what a fresh device asks once before its first pull, so that
+/// it counts them as held and is sent every edit but those. Its body is the kind it asks about, then that kind's body;
+/// it is answered by the stubs (`wire::Stubs`), of no edit the same request would not bring. A peer from before
+/// refuses this kind, and the device pulls everything, as it did.
+pub(crate) const STUBS: u8 = 23;
+
+/// The most a `STUBS` answer takes.
+pub(crate) const STUBS_REPLY_LIMIT: usize = 64 << 20;
+
 /// The most cuts one `CUTS` asks for: each costs its peer a page's sizing.
 pub(crate) const CUTS_LIMIT: usize = 16;
 /// The most a `CUTS` answer takes (`cuts_wire`).
@@ -311,6 +321,16 @@ async fn authorized_cuts(shared: &Arc<Shared>, peer: &Peer, body: &[u8]) -> Resu
     Ok(cuts_wire(&cuts, done))
 }
 
+async fn authorized_stubs(shared: &Arc<Shared>, peer: &Peer, body: &[u8]) -> Result<Vec<u8>> {
+    let [kind, body @ ..] = body else { bail!("a stubs request cut short") };
+    let (request, scope) = authorized_request(*kind, body)?;
+    let device = peer.device;
+    let stubs = shared
+        .try_lab(move |lab, me| lab.withheld(me, device, &request, &scope.unwrap_or_default()))
+        .await?;
+    Ok(avendb::wire::Stubs(stubs).to_wire())
+}
+
 async fn authorized_reply(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], paths: bool) -> Result<Reply> {
     let (request, scope) = authorized_request(kind, body)?;
     shared.follows(peer, &request);
@@ -386,6 +406,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         crate::peer_receipts::KIND => crate::peer_receipts::answer(shared, peer, body).await,
         crate::peer_receipts::UI_KIND => crate::peer_receipts::answer_ui(shared, peer, body).await,
         CUTS => authorized_cuts(shared, peer, body).await,
+        STUBS => authorized_stubs(shared, peer, body).await,
         REQUEST | ASK_LOGS | ASK_VAULTS => {
             let reply = authorized_reply(shared, peer, kind, body, false).await?;
             let n = reply.edits.len();
@@ -394,7 +415,11 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         crate::proofs::KIND => {
             let signers = shared.signers.as_ref().context("supplemental batch roots unavailable")?;
             let request = crate::proofs::Request::decode(body)?;
-            anyhow::ensure!(request.known.keys().all(|signer| *signer == shared.me), "unrelated known signer");
+            // a segment request names every writer its asker holds a root of (S8); the others name this node alone
+            anyhow::ensure!(
+                request.held.is_some() || request.known.keys().all(|signer| *signer == shared.me),
+                "unrelated known signer"
+            );
             let reply = authorized_reply(shared, peer, request.kind, &request.request, request.paths).await?;
             let n = reply.edits.len();
             // A persisted signer leaf alone is insufficient: this node must also still hold the
@@ -406,7 +431,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
                 let held = held_by.edits.as_ref().map_or(0, |edits| edits.held(lab, me));
                 lab.log(me).ids().iter().take(held).filter(|id| ids.contains(id)).copied().collect()
             }).await;
-            let supplemented = crate::proofs::Supplement::attach(reply, signers, &request.known, &durable, request.paths).await;
+            let supplemented = crate::proofs::Supplement::attach(reply, signers, &request, &durable).await;
             let wire = supplemented.encode()?;
             // The original maximum remains unchanged. The client can retry the legacy request if
             // proof overhead would prevent a legitimate near-limit indivisible edit from fitting.
@@ -631,15 +656,15 @@ mod batch_session_tests {
             let plain = exchange(&peer.conn, kind | PACKED, &body, REPLY_LIMIT).await.unwrap();
             let plain = Packed::from_wire(&plain).unwrap().0;
             // version 1, as the server asks for one release: the exact authorized legacy reply, every signature in it
-            let v1 = proofs::Request { kind, request: body.clone(), known: Default::default(), paths: false };
+            let v1 = proofs::Request { kind, request: body.clone(), known: Default::default(), paths: false, held: None };
             let v1 = exchange(&peer.conn, proofs::KIND, &v1.encode().unwrap(), REPLY_LIMIT).await.unwrap();
             let v1 = proofs::Supplement::decode(&v1).unwrap().verify(phone.shared.signers.as_ref().unwrap()).await.unwrap();
             assert_eq!(v1.to_wire(), plain.to_wire(), "version 1 proofs preserve the exact authorized legacy reply");
             // version 2, as a device asks (P8): the same edits, the sender's own held by their paths in place of
             // their signatures, each checking as its signature does, and fewer bytes on the wire
-            let v2 = proofs::Request { kind, request: body.clone(), known: Default::default(), paths: true };
+            let v2 = proofs::Request { kind, request: body.clone(), known: Default::default(), paths: true, held: None };
             let wire = exchange(&peer.conn, proofs::KIND, &v2.encode().unwrap(), REPLY_LIMIT).await.unwrap();
-            let v1_wire = proofs::Request { kind, request: body.clone(), known: Default::default(), paths: false };
+            let v1_wire = proofs::Request { kind, request: body.clone(), known: Default::default(), paths: false, held: None };
             let v1_wire = exchange(&peer.conn, proofs::KIND, &v1_wire.encode().unwrap(), REPLY_LIMIT).await.unwrap();
             assert!(wire.len() < v1_wire.len(), "{} bytes with paths, {} with signatures", wire.len(), v1_wire.len());
             let (batch, _) = phone.shared.reply_to(&peer, kind, &body, REPLY_LIMIT).await.unwrap();
@@ -671,6 +696,7 @@ mod batch_session_tests {
             request: phone.read(move |lab, me| lab.request(me, sender).to_wire()).await,
             known: [(outsider, 3)].into_iter().collect(),
             paths: true,
+            held: None,
         }.encode().unwrap();
         assert!(exchange(&peer.conn, proofs::KIND, &unrelated, REPLY_LIMIT).await.is_err());
         phone.shutdown().await.unwrap();
@@ -679,6 +705,67 @@ mod batch_session_tests {
         let phone = Node::spawn(restart.lab.split(receiver, &[], [154; 32]), receiver, b.options()).await.unwrap();
         assert_eq!(phone.shared.signers.as_ref().unwrap().known(sender).await, Some(latest));
         for node in [&phone, &mac, &stranger] { node.shutdown().await.unwrap(); }
+    }
+
+    /// S8 (`spec/AvenDB/Segments.lean`): a relay that keeps segments takes a writer's ids with its root, checked before
+    /// they are held, keeps every signature for old apps, and serves a reader the writer's edits by paths to that root,
+    /// one root a reply; the reader then keeps the segment and serves it in its turn. A restart keeps the segment.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_relay_serves_a_writers_edits_by_paths_to_its_segment() {
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (writer, relay_d, reader) = (w.mac_a, w.server, w.mac_b);
+        let (a, b, c) = (Folder::new(), Folder::new(), Folder::new());
+        let mac = Node::spawn(w.lab.split(writer, &[], [171; 32]), writer, a.options()).await.unwrap();
+        let relay_options = || Options { segments: true, paths: false, ..b.options() };
+        let relay = Node::spawn(w.lab.split(relay_d, &[], [172; 32]), relay_d, relay_options()).await.unwrap();
+        let bob = Node::spawn(w.lab.split(reader, &[], [173; 32]), reader, Options { segments: true, ..c.options() })
+            .await.unwrap();
+        let mut written = vec![];
+        for n in 0..5 {
+            let entry = mac.act(move |lab, me| {
+                lab.create(me, coop, coop, "doc", &[], document(&format!("Segment {n}"), "one root for all", me))
+            }).await.unwrap();
+            written.push(entry);
+        }
+        mac.shared.save().await.unwrap();
+        let ids: Vec<_> = mac.read(|lab, me| lab.log(me).ids().to_vec()).await;
+        relay.know(mac.addr());
+        relay.sync_with(mac.id()).await.unwrap();
+        let held = relay.shared.signers.as_ref().unwrap().held(16).await;
+        let (root, segment) = held[&writer];
+        assert!(segment > 0 && segment == root, "the relay holds the writer's ids up to its newest root");
+        // the relay keeps every signature, so it serves old apps as before
+        let mine = ids.clone();
+        let kept = relay.read(move |lab, me| {
+            ids.iter().filter_map(|id| lab.signed_edit(me, *id)).all(|s| !avendb::batch::held_by_path(&s))
+        }).await;
+        assert!(kept, "a relay asking without paths holds each signature");
+        bob.know(relay.addr());
+        bob.sync_with(relay.id()).await.unwrap();
+        for entry in &written {
+            let entry = *entry;
+            assert!(bob.read(move |lab, me| lab.fetched(me, entry) > 0).await, "every edit came through the relay");
+        }
+        let by_path = bob.read(move |lab, me| {
+            mine.iter().filter_map(|id| lab.signed_edit(me, *id)).filter(avendb::batch::held_by_path).count()
+        }).await;
+        assert!(by_path >= written.len(), "the writer's edits came by paths the relay made: {by_path}");
+        let bob_held = bob.shared.signers.as_ref().unwrap().held(16).await;
+        assert_eq!(bob_held[&writer], (root, segment), "the reader keeps the segment too, and serves it in its turn");
+        // ids that rebuild no signed root are refused, and change nothing
+        let signers = relay.shared.signers.as_ref().unwrap();
+        let first = signers.segment(writer, 0, 1).await.unwrap()[0];
+        let newest = signers.peer_proof(writer, first).await.unwrap();
+        assert!(!signers.extend(&newest.root, segment, &[avendb::id::EditId::from_u64(9)]).await.unwrap());
+        assert_eq!(signers.held(16).await[&writer], (root, segment));
+        relay.shutdown().await.unwrap();
+        let mut restart = world();
+        handbook_ready(&mut restart);
+        let relay = Node::spawn(restart.lab.split(relay_d, &[], [174; 32]), relay_d, relay_options()).await.unwrap();
+        assert_eq!(relay.shared.signers.as_ref().unwrap().held(16).await[&writer], (root, segment),
+            "a cold start holds the segment it held");
+        for node in [&relay, &bob, &mac] { node.shutdown().await.unwrap(); }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

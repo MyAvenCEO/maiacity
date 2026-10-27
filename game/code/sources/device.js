@@ -45,19 +45,46 @@ export function useBuiltInManifests(list) {
 	refreshActiveView();
 }
 
+/** A v1 manifest read through the v1-to-v2 lens shows empty tiers until its AIP moves it: that holds nothing yet. */
+const holdsParts = (m) => Object.values(m?.tiers ?? {}).some((t) => Array.isArray(t) && t.length);
+
+/** The ids of the vault's own v2 manifests among `held` that hold parts: those the app's own of an id give way to. */
+const vaultIds = (held) => new Set((held ?? []).filter((m) => m?.v === 2 && holdsParts(m)).map((m) => m.id));
+
 /** The manifests of catalog `catalog`: the vault's, and for Maia City the app's own of each id it holds no v2 of. */
 export const withBuiltIn = (held, catalog) => {
 	if (catalog !== MAIA_CITY || !builtIn.length) return held;
-	// a v1 read through the v1-to-v2 lens shows empty tiers until its AIP moves it: that holds nothing yet
-	const parts = (m) => Object.values(m?.tiers ?? {}).some((t) => Array.isArray(t) && t.length);
-	const v2 = new Set(held.filter((m) => m?.v === 2 && parts(m)).map((m) => m.id));
+	const v2 = vaultIds(held);
 	const ours = builtIn.filter((m) => !v2.has(m.id));
 	const replaced = new Set(ours.map((m) => m.id));
 	return [...held.filter((m) => !replaced.has(m?.id)), ...ours];
 };
 
+/**
+ * Where each manifest `withBuiltIn(held, catalog)` reads came from, by id: `vault` for the vault's own v2 (what an AIP
+ * accepted), `built-in` for the app's copy standing in for an id the device holds no v2 of yet, `vault v1` for a
+ * vault's manifest no v2 of the app's replaced (another catalog's, or one the app ships none of).
+ * @param {any[]} held @param {string} catalog @returns {Map<string, 'vault' | 'built-in' | 'vault v1'>}
+ */
+export function manifestSources(held, catalog) {
+	const v2 = vaultIds(held);
+	const out = new Map();
+	for (const m of withBuiltIn(held, catalog)) {
+		if (typeof m?.id !== 'string' || out.has(m.id)) continue;
+		out.set(m.id, v2.has(m.id) ? 'vault' : (held ?? []).includes(m) ? 'vault v1' : 'built-in');
+	}
+	return out;
+}
+
+/** The manifests each catalog's last walk read off the device: what the next walk asks by before its own read
+ *  answers, so a device whose reads wait behind a catch-up still asks for its route's data at once. */
+const lastHeld = new Map();
+
 export function useDevice(d) {
-	if (device !== (d ?? null)) viewContext = {};
+	if (device !== (d ?? null)) {
+		viewContext = {};
+		lastHeld.clear();
+	}
 	closeView();
 	device = d ?? null;
 	if (typeof window !== 'undefined') /** @type {any} */ (window)[SHARED] = device;
@@ -108,18 +135,44 @@ export function useView(path, options) {
 		view.walking = true;
 		view.dirty = false;
 		const started = performance.now();
-		const run = { ms: 0, requested: 0, catalog: 'local', heldManifests: 0, matchedLeaves: 0, queryLeaves: 0, typeDiscoveryHints: 0, localRows: 0, state: 'failed', now: 0, next: 0, later: 0, idle: 0 };
+		const run = {
+			started,
+			ms: 0, requested: 0, catalog: 'local', heldManifests: 0, matchedLeaves: 0, queryLeaves: 0, typeDiscoveryHints: 0, localRows: 0,
+			state: 'failed', now: 0, next: 0, later: 0, idle: 0, firstMs: 0, readMs: 0, matched: [], vaultManifests: 0, builtInManifests: 0
+		};
 		walks.pending++;
+		walks.active.add(run);
+		/** what the route's manifests ask for, as `held` holds them, published at once: selectors and bound entries */
+		const ask = async (held) => {
+			const wants = await Promise.all(catalogs.map((catalog) => plan(leavesFor(withBuiltIn(held(catalog), catalog), path, env), { vault: catalog, signals, signal })));
+			signal.throwIfAborted();
+			// added to what the view asks already, never in place of it: the walk's own wants replace both
+			view.wants = [[...view.wants.flat(), ...wants.flat()]];
+			void view.publish();
+		};
 		view.done = (async () => {
+			// First, with no read of the device: its route's selectors from the manifests the last walk read (the app's
+			// own on a cold device), so the node finds the route's data from peers while the device's reads still wait
+			// behind its catch-up (an iPhone's took tens of seconds, and the rooms were asked for only after them).
+			await ask((catalog) => lastHeld.get(catalog) ?? []);
+			run.firstMs = performance.now() - started;
 			const parts = await Promise.all(catalogs.map(async (catalog) => {
-				const held = withBuiltIn(await manifestsOf(opened, { vault: catalog, signal }), catalog);
+				const read = await manifestsOf(opened, { vault: catalog, signal });
+				lastHeld.set(catalog, read);
+				const held = withBuiltIn(read, catalog);
 				const leaves = leavesFor(held, path, env);
+				const from = manifestSources(read, catalog);
+				const matched = [...new Set(leaves.map((l) => l.manifest))];
 				run.heldManifests += held.length;
 				run.matchedLeaves += leaves.length;
 				run.queryLeaves += leaves.filter((l) => !l.want.entry).length;
 				run.typeDiscoveryHints += leaves.filter((l) => l.want.type?.length).length;
+				run.matched.push(...matched);
+				run.vaultManifests += matched.filter((id) => from.get(id) !== 'built-in').length;
+				run.builtInManifests += matched.filter((id) => from.get(id) === 'built-in').length;
 				return { catalog, leaves };
 			}));
+			run.readMs = performance.now() - started;
 			signal.throwIfAborted();
 			const wants = parts.map(() => []);
 			const publish = () => {
@@ -142,6 +195,7 @@ export function useView(path, options) {
 			return [];
 		}).finally(() => {
 			walks.pending--;
+			walks.active.delete(run);
 			run.ms = performance.now() - started;
 			walks.runs.push(run);
 			if (walks.runs.length > 20) walks.runs.shift();
@@ -154,9 +208,17 @@ export function useView(path, options) {
 	return view.run();
 }
 
-/** The last walks of the page's manifests, for the diagnostics: no route, vault id or entry kept. */
-const walks = { pending: 0, runs: /** @type {any[]} */ ([]) };
-export const manifestDiagnostics = () => ({ pending: walks.pending, runs: walks.runs.map((r) => ({ ...r })) });
+/** The last walks of the page's manifests, for the diagnostics: no route, vault id or entry kept; the manifests each
+ *  matched by their ids (`kernel`, `chat`), and how many of those were the vault's and how many the app's own. A walk
+ *  still running shows as `running`, how long it has run, so a report sent while a slow walk waits says so, and its
+ *  `runs` are never taken for that walk's. */
+const walks = { pending: 0, runs: /** @type {any[]} */ ([]), active: new Set() };
+const shown = ({ started, ...r }) => ({ ...r, matched: [...r.matched] });
+export const manifestDiagnostics = () => ({
+	pending: walks.pending,
+	running: [...walks.active].map((r) => ({ ...shown(r), state: 'running', ms: performance.now() - r.started })),
+	runs: walks.runs.map(shown)
+});
 
 /**
  * The device took new edits: the page's view walks its manifests again, once however many came while it walked,
