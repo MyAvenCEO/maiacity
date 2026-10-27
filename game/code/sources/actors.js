@@ -305,7 +305,9 @@ export function asQuery(p, ids = new Map()) {
 	let id = `query-${named || 'entries'}`;
 	for (let n = 2; ids.has(id) && ids.get(id) !== key; n++) id = `query-${named}-${n}`;
 	ids.set(id, key);
-	const run = { op: 'query', where, select: [], order: [order ?? ['created', 'desc']], limit: window?.limit ?? 512 };
+	// newest n: the engine's window, answered off the shared index; the rest pages by order + limit (Chat's "More rooms" counts)
+	const run = window ? { op: 'query', where, select: [], window: window.limit }
+		: { op: 'query', where, select: [], order: [order ?? ['created', 'desc']], limit: 512 };
 	const query = {
 		kind: QUERY_KIND, v: 1, id, title: id, note: p.note ?? '',
 		interface: { version: 1, description: `Reads ${named.replace(/-/g, ' ') || 'entries'}.`, events: [], needs: [], methods: [
