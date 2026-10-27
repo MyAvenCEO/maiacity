@@ -2,7 +2,7 @@
 import { native } from '$lib/native';
 import { deviceOf, useBuiltInManifests, useDevice } from '../../../game/code/sources/device.js';
 import { MANIFESTS } from './manifests.js';
-import { answer } from './ops.js';
+import { readLocalFile } from './ops.js';
 
 // until Maia City holds a manifest of an id, the app's own of it says what a page asks for first
 useBuiltInManifests(MANIFESTS);
@@ -31,9 +31,6 @@ export async function localDevice(wait = WAIT) {
 /** What a page reads off device `d`: its ops, and a file's bytes by range, as the session reads them. @param {any} d */
 const readerOf = (d) => ({
 	run: (/** @type {any} */ op) => d.run(op),
-	read: async (/** @type {string} */ root, /** @type {number} */ size, /** @type {number} */ from, /** @type {number} */ to) => {
-		const out = await d.run({ op: 'read_file', root, size, from, to, local: true });
-		answer(out);
-		return out.bytes;
-	}
+	read: (/** @type {string} */ root, /** @type {number} */ size, /** @type {number} */ from, /** @type {number} */ to) =>
+		readLocalFile((op) => d.run(op), root, size, from, to)
 });

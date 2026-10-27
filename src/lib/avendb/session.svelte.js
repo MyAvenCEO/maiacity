@@ -41,7 +41,7 @@ import { observedWindow } from './observed-window.js';
 import { tick } from 'svelte';
 import { localMediaWorld } from './local-media.svelte.js';
 import { command, native } from '$lib/native';
-import { allowed, answer, reads, refs } from './ops.js';
+import { allowed, answer, readLocalFile, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
 import { beforeLocalWrite } from './local-write.js';
@@ -879,15 +879,11 @@ const api = {
     viewChanged: () => device ? refreshDevice(device, world === null) : Promise.resolve(),
 	/**
 	 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this device's
-	 * store or fetched from a peer that may hand them over.
+	 * store alone (`readLocalFile`): one it doesn't hold yet fails `passing`, while its keeper fetches it.
 	 * @param {string} root @param {number} size @param {number} from @param {number} to
 	 * @returns {Promise<Uint8Array>}
 	 */
-	readFile: async (root, size, from, to) => {
-		const out = await send({ op: 'read_file', root, size, from, to, local: true });
-		answer(out);
-		return out.bytes;
-	}
+	readFile: (root, size, from, to) => readLocalFile(send, root, size, from, to)
 };
 
 /** This tab's avenDB session: what it is now, read as state, and what it does. */
