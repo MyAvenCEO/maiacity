@@ -113,6 +113,14 @@ pub struct Config {
     pub bucket: Option<BucketConfig>,
     /// The most bytes of the files in its bucket its folder caches (`AVENDB_CACHE`, in gigabytes, 8 by default).
     pub cache: u64,
+    /// The most bytes of its signed edits and McEliece keys it keeps at hand in memory (`AVENDB_MEMORY_CACHE`, in
+    /// MiB, 256 by default; S7): the rest wait in its folder's spill (`avendb::lab::Spill`, `SPILL`), an index of
+    /// them in memory, a few dozen bytes an edit, so that what it holds stays flat as its vaults grow.
+    pub memory: u64,
+    /// It keeps the segments of the writers whose edits it holds and serves their paths (`AVENDB_SEGMENTS=1`, off by
+    /// default until the cut; S8, `avendb_net::Options::segments`): a page through it then costs a device one
+    /// signature check per writer, not per edit. It keeps every signature too, for old apps.
+    pub segments: bool,
     /// The bucket of snapshots of every vault it keeps (`AVENDB_SNAPSHOTS` and the rest of `SnapshotsConfig`), if any;
     /// else it backs nothing up.
     pub snapshots: Option<SnapshotsConfig>,
@@ -229,6 +237,8 @@ impl Config {
                 Some(v) => v.parse::<u64>().map(|g| g << 30).with_context(|| format!("AVENDB_CACHE: {v} isn't one"))?,
                 None => avendb_net::bucket::CACHE,
             },
+            memory: number(&var, "AVENDB_MEMORY_CACHE", 256)?.saturating_mul(MIB),
+            segments: number(&var, "AVENDB_SEGMENTS", 0)? == 1,
             snapshots: var("AVENDB_SNAPSHOTS").map(|name| snapshots_config(name, &var)).transpose()?,
         })
         .and_then(Config::checked)
@@ -370,6 +380,14 @@ impl Running {
     }
 }
 
+/// The first wait of a call to the server's own bucket that failed, doubled after each failure up to a minute, and how
+/// long it is tried from its first try (`backups::Retrying`): ten minutes, as the slow spell of 2026-10-20 lasted.
+pub const SHELF_FIRST_WAIT: Duration = Duration::from_millis(500);
+pub const SHELF_PATIENCE: Duration = Duration::from_secs(10 * 60);
+
+/// The folder in its own where the server spills its edits and keys (`Config::memory`): a cache, emptied as it starts.
+pub const SPILL: &str = "spill";
+
 /// How long the server waits at its start to be on its relay.
 const ONLINE: Duration = Duration::from_secs(30);
 
@@ -394,9 +412,13 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
     let (opening, before) = (std::time::Instant::now(), avendb_net::bucket::reads());
     let (shelf, claim) = match &config.bucket {
         Some(b) => {
-            let sealed = Sealed::new(bucket::S3::new(b)?, &b.seal);
-            // one server writes a bucket: claimed before its shelf opens (`claim`)
-            let claim = Claim::take(&sealed, &config.data, claim::Timing::default()).await?;
+            // one server writes a bucket: claimed before its shelf opens (`claim`), on the claim's own clock
+            let claiming = Sealed::new(bucket::S3::new(b)?, &b.seal);
+            let claim = Claim::take(&claiming, &config.data, claim::Timing::default()).await?;
+            // the shelf's every call tried again, a 504 or a timeout waited out rather than failing its load (S7)
+            let s3 = bucket::S3::new(b)?;
+            let retrying = backups::Retrying::with(s3, SHELF_FIRST_WAIT, SHELF_PATIENCE, "avenDB server's shelf");
+            let sealed = Sealed::new(retrying, &b.seal);
             (avendb_net::bucket::shelf(sealed, &config.data, config.cache).await?, Some(claim))
         }
         None => (avendb_net::disk::open(&config.data)?, None),
@@ -410,10 +432,14 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         index: true,
         // signatures alone for one release, so that it serves every edit it holds to an old app (P8)
         paths: false,
+        // other writers' segments, so it serves their paths, only once the cut turns them on (S8)
+        segments: config.segments,
         // the rest as a local node's: no shelf of its own here, its start nobody's to watch
         ..Options::local()
     };
-    let node = Arc::new(server::open(shelf, opts).await?);
+    // its edits and keys spilled into its folder, a cache emptied at each start and filled again from its shelf (S7)
+    let spill = avendb::lab::Spill::new(config.data.join(SPILL), config.memory as usize).context("its spill")?;
+    let node = Arc::new(server::open_spilled(shelf, opts, spill).await?);
     let (ms, after) = (opening.elapsed().as_millis() as u64, avendb_net::bucket::reads());
     let read = avendb_net::bucket::Reads { gets: after.gets - before.gets, bytes: after.bytes - before.bytes, spoiled: after.spoiled - before.spoiled };
     tracing::info!("avenDB server: opened its shelf in {ms} ms, {} objects read from its bucket ({} bytes)", read.gets, read.bytes);

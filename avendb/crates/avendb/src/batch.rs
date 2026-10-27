@@ -835,6 +835,11 @@ impl Roots {
         self.newest.get(&log)
     }
 
+    /// Each log it keeps a newest root of, with that root.
+    pub fn logs(&self) -> impl Iterator<Item = (SignerId, &Arc<SignedRoot>)> {
+        self.newest.iter().map(|(log, root)| (*log, root))
+    }
+
     /// The older roots it keeps of `log`, at checkpoints, oldest first.
     pub fn kept(&self, log: SignerId) -> &[Arc<SignedRoot>] {
         self.kept.get(&log).map_or(&[], |k| &k[..])

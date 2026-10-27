@@ -2,8 +2,9 @@
 // The page's view (./device.js): one Interest a mounted page, set from the manifests of its route, slots bound by the
 // route and the selection, signals ordering a tier; no learned lists, no brings, no timers.
 import { afterEach, expect, test } from 'bun:test';
-import { bindView, deviceRows, refreshActiveView, signalView, useBuiltInManifests, useDevice, useView, viewPath, wantNow } from './device.js';
+import { bindView, deviceRows, manifestDiagnostics, manifestSources, refreshActiveView, signalView, useBuiltInManifests, useDevice, useView, viewPath, wantNow } from './device.js';
 import { MAIA_CITY } from './anchor.js';
+import { MANIFESTS } from '../../../src/lib/avendb/manifests.js';
 
 const id = (i) => i.toString(16).padStart(64, '0');
 const turn = () => new Promise((r) => setTimeout(r, 0));
@@ -172,4 +173,54 @@ test('a page the app opens by its hash is the view of that page, its manifest th
 	// a hash that names no page (an anchor, a token) leaves the path as it is
 	expect(viewPath({ pathname: '/app/games/sandbox-5/', hash: '#Top_1' })).toBe('/app/games/sandbox-5/');
 	expect(viewPath({ pathname: '/universe/', hash: '#' + 'x'.repeat(40) })).toBe('/universe/');
+});
+
+test("Chat's rooms are asked for before any read of a busy device answers, and the vault's manifests run once read", async () => {
+	globalThis.location = { pathname: '/app/chat/' };
+	useBuiltInManifests(MANIFESTS);
+	// a cold iPhone in its catch-up: every read waits behind the pages it applies
+	let release;
+	const wait = new Promise((r) => (release = r));
+	const vaultChat = { ...MANIFESTS.find((m) => m.id === 'chat'), tiers: { now: [{ manifest: 'kernel' }, { want: { type: ['room'], vault: '*' }, part: 'headers' }, { want: { type: ['note'] } }] } };
+	const d = device({ wait, manifests: [vaultChat], rows: { room: [{ entry: id(1) }] } });
+	useDevice(d);
+	const walked = useView('/app/chat/', {});
+	await settle();
+	// no read answered, and the node is told the rooms of every vault (the human's and the coop's) are on screen now
+	const first = d.interests().at(-1).wants;
+	expect(first[0].tier).toBe('now');
+	expect(first[0].queries).toContainEqual({ types: ['room'] });
+	expect(first[0].queries).toContainEqual({ types: ['capgroup', 'schema', 'lens'], vault: MAIA_CITY });
+	expect(manifestDiagnostics().running).toHaveLength(1);
+	release();
+	await walked;
+	await settle();
+	// the vault's v2 chat is what runs now, the kernel the app's own until the vault's is held
+	const last = d.interests().at(-1).wants;
+	expect(last.flatMap((w) => w.queries)).toContainEqual({ types: ['note'], vault: MAIA_CITY });
+	expect(last[0].entries).toContain(id(1));
+	const run = manifestDiagnostics().runs.at(-1);
+	expect(run).toMatchObject({ state: 'scheduled', matched: ['kernel', 'chat'], vaultManifests: 1, builtInManifests: 1 });
+	expect(run.matchedLeaves).toBe(3);
+});
+
+test('each manifest says whether it is the vault\'s or the app\'s own copy', () => {
+	useBuiltInManifests(MANIFESTS);
+	const chat = { ...MANIFESTS.find((m) => m.id === 'chat') };
+	const lensed = { kind: 'manifest', v: 2, id: 'kernel', title: 'Kernel', routes: ['*'], tiers: { now: [], next: [], later: [], idle: [] } };
+	const sources = manifestSources([chat, lensed], MAIA_CITY);
+	expect(sources.get('chat')).toBe('vault');
+	expect(sources.get('kernel')).toBe('built-in');
+	expect(sources.get('studio')).toBe('built-in');
+	// another vault's catalog holds no built-in copy
+	expect([...manifestSources([chat], id(5)).values()]).toEqual(['vault']);
+});
+
+test("the app's manifests cover Chat by its route and its hash, the rooms of every vault now", () => {
+	const { leavesFor } = require('./manifests.js');
+	for (const path of ['/app/chat/', '/app/#chat']) {
+		const leaves = leavesFor(MANIFESTS, path, {});
+		expect([...new Set(leaves.map((l) => l.manifest))].sort()).toEqual(['chat', 'kernel']);
+		expect(leaves.find((l) => l.tier === 'now' && l.want.type?.includes('room'))?.want.vault).toBe('*');
+	}
 });

@@ -79,13 +79,13 @@ struct App {
 impl App {
     /// The app starts the device on folder `dir`, Eve's passkey answering its sheets.
     fn start(dir: &Path, passkey: Passkey, direct: bool) -> App {
-        App::with(Config { dir: dir.to_path_buf(), direct, volumes: None, webtransport: None }, passkey)
+        App::with(Config { dir: dir.to_path_buf(), direct, volumes: None, webtransport: None, webrtc: None }, passkey)
     }
 
     /// The app starts the device on folder `dir`, hosting the drives mounted in folder `volumes`, as macOS mounts them
     /// in /Volumes.
     fn with_volumes(dir: &Path, volumes: &Path, passkey: Passkey) -> App {
-        App::with(Config { dir: dir.to_path_buf(), direct: true, volumes: Some(volumes.to_path_buf()), webtransport: None }, passkey)
+        App::with(Config { dir: dir.to_path_buf(), direct: true, volumes: Some(volumes.to_path_buf()), webtransport: None, webrtc: None }, passkey)
     }
 
     fn with(config: Config, passkey: Passkey) -> App {
@@ -206,7 +206,7 @@ struct InApp {
 impl InApp {
     /// The app hosts the device on folder `dir`, Eve's passkey answering its sheets.
     fn start(dir: &Path, passkey: Passkey) -> InApp {
-        InApp::with(Config { dir: dir.to_path_buf(), direct: true, volumes: None, webtransport: None }, passkey)
+        InApp::with(Config { dir: dir.to_path_buf(), direct: true, volumes: None, webtransport: None, webrtc: None }, passkey)
     }
 
     fn with(config: Config, passkey: Passkey) -> InApp {

@@ -41,6 +41,7 @@
 //! | H2 provenance | `provenance`: the proof of a vault's public code, of what a stranger that follows it may receive (`sync::answer`), as one reply; an observer, a device of no vault anchored to the vault by its id, that takes it as any reply and reads back the rows the feed serves, and holds a file to the write that brought it | T12 |
 //! | M3 batch-signed logs | `batch`: each device's one append-only log of the edits it signs, a BLAKE3 Merkle tree split as RFC 9162 splits it, its root signed once per batch by group commit; an edit shown by its path up to a signed root; roots that disagree, a proof of fork that freezes their signer; an existing log wrapped as it stands | V5 |
 //! | M6 handed views | `lab`: a new device of a passkey starts from what another device of it handed it (`Lab::handing`, `Lab::start_handed`), the ids of the edits it held and its stored view, sealed under a key only the passkey's devices derive (`HandKey`): their signatures not checked again, the edits it took beside them stepped on the view | V7 |
+//! | Boxes fetched later | `lazy`: a first sync takes every edit but the boxes, which change nothing in the state, and the boxes the device opens now; an entry's wraps come with its history, boxes to keys it can't open never; a box fetched later is checked on the state of the edits before it | L1 to L3 |
 
 #[cfg(all(feature = "test-fixtures", not(debug_assertions)))]
 compile_error!("test-fixtures must never be enabled in release/app builds");
@@ -63,6 +64,7 @@ pub mod id;
 pub mod index;
 pub mod keys;
 pub mod lab;
+pub mod lazy;
 pub mod legacy;
 pub mod lens;
 pub mod merge;

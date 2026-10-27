@@ -343,6 +343,86 @@ mod integration {
     }
 }
 
+#[cfg(test)]
+mod slices {
+    use super::*;
+    use crate::{Node, Options};
+    use avendb::cast::{document, handbook_ready, world};
+
+    /// A node of Alice's iPhone holding, not yet caught up, `n` documents her Mac wrote for the coop, as a pull's pages
+    /// before its last leave it; its own tasks stopped, so nothing but the test catches it up.
+    async fn behind(n: usize) -> Node {
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (mac, phone) = (w.mac_a, w.phone_a);
+        let lab = w.lab.split(phone, &[], [77; 32]);
+        for i in 0..n {
+            let doc = document(&format!("Doc {i}"), "Written while the iPhone was away.", mac);
+            w.lab.create(mac, coop, coop, "doc", &[], doc).unwrap();
+        }
+        let node = Node::spawn(lab, phone, Options::local()).await.unwrap();
+        node.tasks.lock().unwrap().iter().for_each(|task| task.abort());
+        let held: std::collections::HashSet<_> = node.read(|lab, me| lab.log(me).ids().to_vec()).await.into_iter().collect();
+        let fresh: Vec<_> = w.lab.backup(mac).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
+        for page in fresh.chunks(100) {
+            let page = page.to_vec();
+            node.shared.try_lab(move |lab, me| lab.receive_whose_now(me, page, vec![], false)).await.unwrap();
+        }
+        node
+    }
+
+    /// The turns of the Lab a catch-up took so far, as the node counts them (`Turns`): a whole one is one turn, a paced
+    /// one a turn a step.
+    fn catch_up_turns(node: &Node) -> u64 {
+        let turns = node.shared.lab_turns.json();
+        turns["by"].as_object().unwrap().iter()
+            .filter(|(call, _)| call.contains("catch_up") && !call.contains("read_between"))
+            .map(|(_, t)| t["count"].as_u64().unwrap()).sum()
+    }
+
+    /// A page's read, asked once `job` took its first turn of the Lab and answered between two of its turns: the turns
+    /// of the catch-up done when it was answered, and in all once the job ended. By the order of events, not by the
+    /// clock, so a loaded machine can't make it fail or pass (it failed so on a loaded runner, 2026-10-27).
+    async fn read_between(node: &Node, job: impl std::future::Future<Output = ()> + Send + 'static) -> (u64, u64) {
+        let before = catch_up_turns(node);
+        let running = tokio::spawn(job);
+        while catch_up_turns(node) == before && !running.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        node.shared.read(|lab, me| lab.size(me)).await;
+        let answered = catch_up_turns(node) - before;
+        running.await.unwrap();
+        (answered, catch_up_turns(node) - before)
+    }
+
+    /// A page's read waits for no whole catch-up of a long backlog: the catch-up goes a short turn of the Lab at a time
+    /// (`Lab::catch_up_step`), and a read asked meanwhile takes its turn between two of them, while many are still to
+    /// come. As one turn, as before, a read waited the whole of it. How long a turn holds the Lab at a server's size is
+    /// `avendb/tests/scale_turns.rs`'s, in a release build.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_page_waits_for_one_slice_of_a_catch_up_not_the_whole() {
+        let n = 800;
+        let whole = behind(n).await;
+        let before = catch_up_turns(&whole);
+        whole.shared.try_lab_class(Class::Background, |lab, me| { lab.catch_up(me); }).await.unwrap();
+        assert_eq!(catch_up_turns(&whole) - before, 1, "a whole catch-up is one turn");
+        let sliced = behind(n).await;
+        let shared = sliced.shared.clone();
+        let (answered, turns) = read_between(&sliced, async move {
+            assert!(shared.catch_up_paced_class(true, Class::Background).await);
+        }).await;
+        eprintln!("SLICES the catch-up took {turns} turns, a read asked after its first was answered after {answered}");
+        // answered while most of the catch-up was still to come: a whole one answers it after its one turn, its last
+        assert!(turns >= 8, "the catch-up goes a step a turn: {turns} turns");
+        assert!(answered + 4 <= turns, "a read waits a slice, not the catch-up: answered after {answered} of {turns} turns");
+        // and it brought what one catch-up brings
+        let seen = |lab: &avendb::lab::Lab, me| (lab.entries(me), lab.log(me).ids().to_vec());
+        assert_eq!(whole.read(seen).await, sliced.read(seen).await);
+        whole.shutdown().await.unwrap();
+        sliced.shutdown().await.unwrap();
+    }
+}
+
 /// How long Lab calls waited for their turn and held the Lab, by the call (its closure's type name), and the slowest of
 /// late: what a server says on its public health (`Node::served`), so a slow page names what held the Lab before it.
 #[derive(Default)]

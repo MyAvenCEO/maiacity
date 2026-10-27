@@ -17,6 +17,11 @@ function wtFixture(options = {}) {
 				readable: { getReader: () => ({ read: () => { const d = deferred(); this.reads.push(d); return d.promise; }, cancel: async () => { this.cancelled = true; for (const d of this.reads) d.resolve({ done: true }); } }) },
 				writable: { getWriter: () => ({ ready: Promise.resolve(), write: async (bytes) => this.writes.push([...bytes]), abort: async () => { this.aborted = true; } }) }
 			};
+			// WebKit 624-625's shape (Safari 26.x): no `writable`, `createWritable()` instead, and 65535 for the size
+			if (options.webkit) {
+				const { writable } = this.datagrams; delete this.datagrams.writable;
+				this.datagrams.maxDatagramSize = 65_535; this.datagrams.createWritable = () => { this.created = true; return writable; };
+			}
 		}
 		close() { this.didClose = true; this.ending.resolve(); }
 	}
@@ -62,6 +67,25 @@ test('WebTransport says why it closed, where Safari gives an empty message', asy
 	up.opening.resolve(); expect(await g.carrier.ready).toBe(true);
 	up.ending.resolve({ closeCode: 7, reason: 'gone' }); await flush();
 	expect(g.events.at(-1)).toEqual({ kind: 'closed', reason: 'WebTransport closed: close code 7 gone' });
+});
+
+test('WebTransport in Safari 26 writes through createWritable and splits to datagrams one QUIC packet carries', async () => {
+	const f = wtFixture({ webkit: true }), wt = f.instances[0];
+	try {
+		wt.opening.resolve(); expect(await f.carrier.ready).toBe(true);
+		// 65535 is WebKit's placeholder: an inner packet sent whole at that size is more than one outer packet holds
+		expect(f.events).toEqual([{ kind: 'ready', mtu: 1024 }]); expect(wt.created).toBe(true);
+		expect(wt.datagrams.incomingMaxBufferedDatagrams).toBe(4096);
+		expect(await f.carrier.send(new Uint8Array(1025))).toBe(false);
+		expect(await f.carrier.send(new Uint8Array(1024).fill(1))).toBe(true);
+		expect(wt.writes.map((bytes) => bytes.length)).toEqual([1024]);
+	} finally { f.carrier.close(); }
+	// the placeholder alone, where `writable` is still there, is no path's size either; a real one is kept (Chromium ~1200)
+	for (const [reported, mtu] of [[65_535, 1024], [1206, 1206]]) {
+		const g = wtFixture({ mtu: reported }); g.instances[0].opening.resolve();
+		try { expect(await g.carrier.ready).toBe(true); expect(g.events).toEqual([{ kind: 'ready', mtu }]); }
+		finally { g.carrier.close(); }
+	}
 });
 
 test('WebTransport receive bounds are independent of its smaller outbound MTU', async () => {
@@ -187,4 +211,43 @@ test('RTC close settles signals behind a stalled offer; oversized signaling fail
 	const large = webRtc({ initiator: false }, { event: (e) => events.push(e), receive: () => {} }, { RTCPeerConnection: FakePeer });
 	expect(await large.signal({ description: { type: 'offer', sdp: 'a'.repeat(16 << 10) } })).toBe(false);
 	expect(events).toEqual([{ kind: 'closed', reason: 'RTC signaling overflow' }]);
+});
+
+// What the Mac app's own WebRTC peer (avendb-net's transports/webrtc.rs) signals, exactly as it builds them: its SDP,
+// then each candidate again as a browser trickles them, then the end of its candidates. A page takes them as another
+// browser's, whichever end offers, and checks the channel the machine opens as it checks a browser's.
+const native = (type) => [
+	{ description: { type, sdp: `v=0\r\na=candidate:1 1 udp 2130706175 192.168.1.20 50000 typ host\r\n` } },
+	{ candidate: { candidate: 'candidate:1 1 udp 2130706175 192.168.1.20 50000 typ host', sdpMid: '0', sdpMLineIndex: 0 } },
+	{ candidate: { candidate: 'candidate:2 1 udp 1694498559 203.0.113.9 40000 typ srflx raddr 192.168.1.20 rport 50000', sdpMid: '0', sdpMLineIndex: 0 } },
+	{ candidate: null }
+];
+
+test('a page takes a native peer\'s answer and candidates as a browser\'s, and its own ICE servers', async () => {
+	FakePeer.instances = []; const events = [];
+	const iceServers = [{ urls: ['stun:avendb.maia.city:3478'] }];
+	const carrier = webRtc({ initiator: true }, { event: (e) => events.push(e), receive: () => {} }, { RTCPeerConnection: FakePeer, iceServers });
+	const pc = FakePeer.instances[0];
+	try {
+		await flush(); expect(pc.config.iceServers).toEqual(iceServers);
+		for (const signal of native('answer')) expect(await carrier.signal(signal)).toBe(true);
+		expect(pc.remoteDescription.type).toBe('answer');
+		expect(pc.candidates).toEqual([native('answer')[1].candidate, native('answer')[2].candidate, null]);
+		pc.channel.open(); expect(await carrier.ready).toBe(true);
+		expect(events.at(-1)).toEqual({ kind: 'ready', mtu: 65535 });
+	} finally { carrier.close(); }
+});
+
+test('a page answers a native peer\'s offer and takes the channel it opens', async () => {
+	FakePeer.instances = []; const events = [];
+	const carrier = webRtc({ initiator: false }, { event: (e) => events.push(e), receive: () => {} }, { RTCPeerConnection: FakePeer });
+	const pc = FakePeer.instances[0];
+	try {
+		for (const signal of native('offer')) expect(await carrier.signal(signal)).toBe(true);
+		expect(events[0].signal.description).toEqual({ type: 'answer', sdp: 'our answer' });
+		expect(pc.candidates).toHaveLength(3);
+		// as str0m opens it over DCEP: unordered, never retransmitted
+		const channel = new FakeChannel('avendb-iroh-v1', { ordered: false, maxRetransmits: 0 });
+		pc.ondatachannel({ channel }); channel.open(); expect(await carrier.ready).toBe(true);
+	} finally { carrier.close(); }
 });

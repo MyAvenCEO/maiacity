@@ -1,7 +1,7 @@
 //! Durable signer order and publication receipts. Unlike a materialized view, these
 //! immutable objects are never rebuilt from a restored Store or skipped on conflict.
 //! Only shelves with atomic create-only names can publish batch roots.
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -22,6 +22,13 @@ const ENROLLED: &[u8] = b"avenDB signer enrollment 1\n";
 const PUBLICATION: &[u8] = b"avenDB signer publication 1\n";
 const ADMISSION: &[u8] = b"avenDB root admission 1\n";
 const DISABLED: &[u8] = b"avenDB signer publication disabled 1\n";
+/// One chunk of another writer's segment (S8, `spec/AvenDB/Segments.lean`): ids taken beyond the ones held, with the
+/// newest root they rebuild.
+const PEER_SEGMENT: &[u8] = b"avenDB peer segment 1\n";
+/// The most ids one reply hands over, and so one chunk holds: 2 MiB of ids.
+pub(crate) const MAX_SEGMENT_IDS: usize = 65_536;
+/// The most writers a node keeps segments of.
+const MAX_PEERS: usize = 4096;
 const MAX_IDS: usize = 65_536;
 // Legacy SLH-DSA alone has a 17,088-byte signature, plus its key/root.
 const MAX_ROOT: usize = 32 << 10;
@@ -107,6 +114,17 @@ pub(crate) struct Signers {
     admission: tokio::sync::Mutex<Roots>,
     admission_count: AtomicUsize,
     fork_count: AtomicUsize,
+    /// Other writers' segments (S8): the ids of each one's first edits and the newest root it signed over exactly
+    /// them, so this node makes their paths for any peer, as a relay.
+    peers: tokio::sync::Mutex<HashMap<SignerId, Peer>>,
+}
+
+/// What a node holds of another writer's log (`Segments.Segment`): its first edits, in order, and the newest root over
+/// exactly them, checked before it was taken (`Segments.extend`).
+struct Peer {
+    tree: batch::Tree,
+    root: Arc<SignedRoot>,
+    chunks: u64,
 }
 
 impl Signers {
@@ -183,6 +201,7 @@ impl Signers {
             admission: Default::default(),
             admission_count: AtomicUsize::new(0),
             fork_count: AtomicUsize::new(0),
+            peers: Default::default(),
         };
         // A segment may have reached disk before enrollment. Recover that exact segment;
         // never choose a new history. An empty enrollment also gets an immutable segment.
@@ -222,6 +241,7 @@ impl Signers {
             this.admission.lock().await.take(&own, None);
         }
         this.restore_admissions().await?;
+        this.restore_peers().await?;
         Ok(Some(this))
     }
 
@@ -355,6 +375,11 @@ impl Signers {
         next.clear_verification_cache();
         *roots = next;
         Ok(())
+    }
+
+    /// The writer whose log this is.
+    pub(crate) fn me(&self) -> SignerId {
+        self.signer
     }
 
     pub(crate) fn root_due(&self) -> bool {
@@ -564,6 +589,170 @@ impl Signers {
     pub(crate) async fn known(&self, signer: SignerId) -> Option<u64> {
         self.admission.lock().await.newest(signer).map(|r| r.root.length)
     }
+
+    /// What this node holds of each writer, for a segment request (`proofs::Request::segments`): the length of the
+    /// newest root it admitted, and how many of the writer's ids it holds (its own log's all, another's its
+    /// segment's), the first `MAX_KNOWN` writers.
+    pub(crate) async fn held(&self, most: usize) -> BTreeMap<SignerId, (u64, u64)> {
+        let roots = self.admission.lock().await;
+        let peers = self.peers.lock().await;
+        let mut out = BTreeMap::new();
+        for (log, root) in roots.logs() {
+            if out.len() == most {
+                break;
+            }
+            let ids = if log == self.signer {
+                self.book().log.tree().len()
+            } else {
+                peers.get(&log).map_or(0, |p| p.tree.len())
+            };
+            out.insert(log, (root.root.length, ids));
+        }
+        out
+    }
+
+    /// A segment's chunks are immutable and named by their order; each must begin where the one before ended and
+    /// rebuild the root it carries. Only the newest root's signature is checked again: it covers every id before it.
+    async fn restore_peers(&self) -> Result<()> {
+        let mut peers = self.peers.lock().await;
+        let names = self.shelf.names("batch-logs/").await?;
+        let mut by: BTreeMap<SignerId, Vec<(u64, String)>> = BTreeMap::new();
+        for name in names {
+            let rest = name.strip_prefix("batch-logs/").ok_or_else(|| anyhow!("invalid peer segment name"))?;
+            let (hex, seq) = rest.split_once('/').ok_or_else(|| anyhow!("invalid peer segment name"))?;
+            let signer = SignerId::from_hex(hex).ok_or_else(|| anyhow!("invalid peer segment name"))?;
+            let seq = u64::from_str_radix(seq, 16).map_err(|_| anyhow!("invalid peer segment name"))?;
+            by.entry(signer).or_default().push((seq, name));
+        }
+        ensure!(by.len() <= MAX_PEERS, "peer segments exceed their quota");
+        for (signer, mut chunks) in by {
+            chunks.sort();
+            let mut tree = batch::Tree::new();
+            let mut root = None;
+            for (sequence, (seq, name)) in chunks.iter().enumerate() {
+                ensure!(*seq == sequence as u64, "peer segment has a gap");
+                let data = self.shelf.get(name).await?.ok_or_else(|| anyhow!("peer segment disappeared"))?;
+                let (log, from, ids, signed) = decode_peer(&data)?;
+                ensure!(log == signer && from == tree.len(), "peer segment does not extend the segment");
+                for id in ids {
+                    ensure!(tree.index(id).is_none(), "repeated peer segment id");
+                    tree.push(id);
+                }
+                ensure!(
+                    signed.root.log == signer
+                        && signed.root.length == tree.len()
+                        && tree.root_at(signed.root.length) == Some(signed.root.hash),
+                    "peer segment does not rebuild its root"
+                );
+                root = Some(signed);
+            }
+            let root = root.ok_or_else(|| anyhow!("empty peer segment"))?;
+            ensure!(root.verify(), "peer segment root is not its writer's");
+            peers.insert(signer, Peer { tree, root: Arc::new(root), chunks: chunks.len() as u64 });
+        }
+        Ok(())
+    }
+
+    /// Take the ids `ids` of writer `root.root.log`'s log from `from` on, with its signed root `root`, already admitted
+    /// (`admit`): verify before apply (`Segments.extend`). They are taken only where they begin at the ids held, the ids
+    /// held and they rebuild the root exactly, the root is its writer's, and the writer isn't frozen; then persisted,
+    /// then held. False, holding what it held, otherwise.
+    pub(crate) async fn extend(&self, root: &SignedRoot, from: u64, ids: &[EditId]) -> Result<bool> {
+        let signer = root.root.log;
+        // fork evidence first: the admission lock is never taken while the segments' is held
+        if signer == self.signer || ids.len() > MAX_SEGMENT_IDS || self.fork(signer).await.is_some() {
+            return Ok(false);
+        }
+        let mut peers = self.peers.lock().await;
+        let held = peers.get(&signer);
+        if held.map_or(0, |p| p.tree.len()) != from || held.is_some_and(|p| p.root.root.length >= root.root.length) {
+            return Ok(false);
+        }
+        if held.is_none() && peers.len() >= MAX_PEERS {
+            return Ok(false);
+        }
+        let mut tree = held.map(|p| p.tree.clone()).unwrap_or_default();
+        for id in ids {
+            if tree.index(*id).is_some() {
+                return Ok(false);
+            }
+            tree.push(*id);
+        }
+        if tree.len() != root.root.length
+            || tree.root_at(root.root.length) != Some(root.root.hash)
+            || !root.verify()
+        {
+            return Ok(false);
+        }
+        let chunks = held.map_or(0, |p| p.chunks);
+        let mut out = PEER_SEGMENT.to_vec();
+        out.extend_from_slice(&signer.0);
+        out.extend_from_slice(&from.to_be_bytes());
+        out.extend_from_slice(&(ids.len() as u32).to_be_bytes());
+        for id in ids {
+            out.extend_from_slice(&id.0);
+        }
+        put_bytes(&mut out, &root.to_wire());
+        let name = format!("batch-logs/{}/{chunks:016x}", signer.to_hex());
+        if let Err(e) = self.shelf.put(&name, seal(out)).await {
+            if e.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(e.into());
+            }
+            // another instance wrote this chunk first: take it only if it holds the same ids
+            let data = self.shelf.get(&name).await?.ok_or_else(|| anyhow!("peer segment disappeared"))?;
+            let (log, at, theirs, _) = decode_peer(&data)?;
+            ensure!(log == signer && at == from && theirs == ids, "conflicting peer segment");
+        }
+        peers.insert(signer, Peer { tree, root: Arc::new(root.clone()), chunks: chunks + 1 });
+        Ok(true)
+    }
+
+    /// The path of `edit` up to the newest root of writer `signer`'s segment this node holds (`Segment.prove`): none
+    /// for an edit beyond it, or a frozen writer.
+    pub(crate) async fn peer_proof(&self, signer: SignerId, edit: EditId) -> Option<batch::Proof> {
+        if self.fork(signer).await.is_some() {
+            return None;
+        }
+        let peers = self.peers.lock().await;
+        let peer = peers.get(&signer)?;
+        let index = peer.tree.index(edit)?;
+        let path = peer.tree.prove(index, peer.root.root.length)?;
+        Some(batch::Proof { root: peer.root.clone(), path })
+    }
+
+    /// The hashes that link the first `from` edits of writer `signer`'s log to its first `to`, and its ids from `from`
+    /// to `to`, from this node's own log or a segment it holds.
+    pub(crate) async fn segment(&self, signer: SignerId, from: u64, to: u64) -> Option<Vec<EditId>> {
+        if from > to || to - from > MAX_SEGMENT_IDS as u64 {
+            return None;
+        }
+        let collect = |tree: &batch::Tree| -> Option<Vec<EditId>> {
+            (to <= tree.len()).then(|| (from..to).filter_map(|i| tree.edit(i)).collect())
+        };
+        if signer == self.signer {
+            return collect(self.book().log.tree());
+        }
+        collect(&self.peers.lock().await.get(&signer)?.tree)
+    }
+
+    pub(crate) async fn peer_prefix(&self, signer: SignerId, from: u64, to: u64) -> Option<Vec<batch::Hash>> {
+        self.peers.lock().await.get(&signer)?.tree.prefix(from, to)
+    }
+}
+
+fn decode_peer(data: &[u8]) -> Result<(SignerId, u64, Vec<EditId>, SignedRoot)> {
+    let mut r = checked(data, PEER_SEGMENT)?;
+    let signer = SignerId(take(&mut r)?);
+    let from = u64of(&mut r)?;
+    let n = u32::from_be_bytes(take(&mut r)?) as usize;
+    ensure!(n <= MAX_SEGMENT_IDS, "oversized peer segment");
+    let mut ids = Vec::with_capacity(n);
+    for _ in 0..n {
+        ids.push(EditId(take(&mut r)?));
+    }
+    let root = SignedRoot::from_wire(bytes(&mut r, MAX_ROOT)?)?;
+    ensure!(r.0.is_empty(), "trailing peer segment bytes");
+    Ok((signer, from, ids, root))
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -713,6 +902,57 @@ mod tests {
         assert!(store.fork(signer).await.is_some());
         assert!(!store.check(signer, id(1), &a.proof(id(1)).unwrap()).await);
         assert!(key.sign(id(1)).pq.len() > 0, "legacy signatures remain available");
+    }
+
+    /// The scenarios of `Segments.Examples`: ids taken only where they extend the ones held and rebuild a root their
+    /// writer signed; a clone's root freezes the writer, and its segment serves no path; a restart holds the segment.
+    #[tokio::test]
+    async fn segments_take_only_ids_that_rebuild_their_signed_root() {
+        let folder = Folder::new();
+        let writer = disk::open(&folder.0).unwrap().writer().unwrap();
+        let shelf = writer.shelf();
+        let (mut lab, signer, _) = device();
+        let store = Signers::open(shelf.clone(), signer, &mut lab).await.unwrap().unwrap();
+        let other = DeviceKey::from_secret([198; 32]);
+        let five: Vec<_> = (11..16).map(id).collect();
+        let mut log = SignerLog::wrap(other.id(), five[..3].iter().copied());
+        let r3 = log.commit(&other).unwrap();
+        for e in &five[3..] {
+            log.write(*e);
+        }
+        let r5 = log.commit(&other).unwrap();
+        // the first three with the root over them, then two more with the newer root
+        assert!(store.admit((*r3).clone(), &[]).await.unwrap());
+        assert!(store.extend(&r3, 0, &five[..3]).await.unwrap());
+        assert!(store.admit((*r5).clone(), &log.prefix(3).unwrap()).await.unwrap());
+        // ids that rebuild no signed root, begin elsewhere, repeat one held, or are of this node's own log: refused
+        assert!(!store.extend(&r5, 3, &[id(14), id(16)]).await.unwrap());
+        assert!(!store.extend(&r5, 2, &five[2..]).await.unwrap());
+        assert!(!store.extend(&r5, 3, &[id(14), id(11)]).await.unwrap());
+        assert_eq!(store.held(8).await[&other.id()], (5, 3), "refused ids change nothing");
+        assert!(store.peer_proof(other.id(), id(14)).await.is_none());
+        assert!(store.extend(&r5, 3, &five[3..]).await.unwrap());
+        // each edit of the segment has a path to its newest root, which checks as the writer's signature would
+        for e in &five {
+            let proof = store.peer_proof(other.id(), *e).await.unwrap();
+            assert!(proof.root.root == r5.root && proof.shows(other.id(), *e));
+        }
+        assert!(store.peer_proof(other.id(), id(16)).await.is_none());
+        assert_eq!(store.segment(other.id(), 3, 5).await.unwrap(), five[3..].to_vec());
+        drop(store);
+        let store = Signers::open(shelf.clone(), signer, &mut lab).await.unwrap().unwrap();
+        assert_eq!(store.held(8).await[&other.id()], (5, 5), "a restart holds the segment");
+        // a clone's sixth edit: its root proves a fork, and the writer's segment serves no path any more
+        let mut longer = log.clone();
+        longer.write(id(16));
+        let r6 = longer.commit(&other).unwrap();
+        let mut fork = SignerLog::wrap(other.id(), [id(11), id(12), id(13), id(14), id(15), id(98)]);
+        let f6 = fork.commit(&other).unwrap();
+        assert!(store.admit((*r6).clone(), &longer.prefix(5).unwrap()).await.unwrap());
+        assert!(!store.admit((*f6).clone(), &[]).await.unwrap());
+        assert!(store.fork(other.id()).await.is_some(), "two roots of one length that disagree freeze the writer");
+        assert!(store.peer_proof(other.id(), id(11)).await.is_none());
+        assert!(!store.extend(&r6, 5, &[id(16)]).await.unwrap());
     }
 
     #[tokio::test]

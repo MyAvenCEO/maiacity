@@ -329,3 +329,60 @@ async fn a_node_killed_on_a_failing_shelf_starts_again_whole() {
     })
     .await;
 }
+
+/// A fresh iPad of Alice's asks for its first sync with the boxes held back (`Lab::set_lazy_boxes`, `session::STUBS`,
+/// `spec/AvenDB/LazyBoxes.lean`): its first pull takes stubs of the boxes it needs not now and every edit but those,
+/// and it reads the handbook; the pull after fetches their bodies, each checked against its stub, and it ends holding
+/// exactly what a device that synced whole holds, every stub gone and none caught lying. Under a storm.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_fresh_device_syncs_its_boxes_later_and_converges() {
+    seeds("box stubs", SEEDS, LIMIT, |net| async move {
+        let mut w = world();
+        let h = handbook(&mut w);
+        let mut add = |w: &mut World, name: &str| {
+            let ipad = w.lab.device_of(w.passkey_a, name);
+            let share = avendb::policy::Action::Share(avendb::policy::Sharing::Device { vault: w.alice, device: ipad, seal_to: None });
+            w.lab.submit(w.mac_a, &[w.passkey_a, ipad], share).expect("Alice adds an iPad");
+            w.lab.set_online(ipad, false);
+            ipad
+        };
+        let (lazy, whole) = (add(&mut w, "Alice's iPad"), add(&mut w, "Alice's other iPad"));
+        w.lab.sync_all(7);
+        w.lab.set_online(whole, true);
+        w.lab.sync(w.mac_a, whole);
+        let all: BTreeSet<_> = w.lab.log(whole).ids().iter().copied().collect();
+        w.lab.set_online(lazy, true);
+        w.lab.set_lazy_boxes(lazy, true);
+        let (mac_a, welcome) = (w.mac_a, h.welcome);
+        let mac = node(&mut w, &net, mac_a, &[], 1, Options::simulated(&net)).await?;
+        let ipad = node(&mut w, &net, lazy, &[], 2, Options::simulated(&net)).await?;
+        ipad.know(mac.addr());
+        let storm = tokio::spawn({
+            let (net, ids) = (net.clone(), [mac.id(), ipad.id()]);
+            async move { net.storm(&ids, Duration::from_secs(2)).await }
+        });
+        until("the iPad reads Welcome", || async {
+            let _ = ipad.sync_with(mac.id()).await;
+            ipad.read(move |lab: &Lab, me| lab.reads(me, welcome)).await
+        })
+        .await?;
+        storm.await?;
+        let converged = {
+            let all = all.clone();
+            move |lab: &Lab, me| {
+                let held: BTreeSet<_> = lab.log(me).ids().iter().copied().collect();
+                held == all && lab.stubs(me).is_empty()
+            }
+        };
+        until("the iPad fetches its boxes and holds what a whole sync holds", || async {
+            let _ = ipad.sync_with(mac.id()).await;
+            ipad.read(converged.clone()).await
+        })
+        .await?;
+        let (taken, liars) = ipad.read(|lab: &Lab, me| (lab.stubs_taken(me), lab.stub_liars(me))).await;
+        ensure!(taken > 0, "the first sync held boxes back");
+        ensure!(liars.is_empty(), "an honest peer's stubs: {liars:?}");
+        stop(vec![mac, ipad]).await
+    })
+    .await;
+}

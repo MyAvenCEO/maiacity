@@ -66,8 +66,11 @@ async fn pinned_pq_http3_requires_origin_and_single_use_admission() {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(12);
         while count("no_request") < before[2] + 2 && tokio::time::Instant::now() < deadline { tokio::time::sleep(Duration::from_millis(50)).await; }
         assert!(count("no_request") >= before[2] + 2, "the bad pin and the classical handshake count as no request");
+        let peer_closed = wt_sessions()["ended"]["peer_closed"].as_u64().unwrap();
         connection.close(VarInt::from_u32(0), b"done");
         loop { if let WtEvent::Closed { id, .. } = events.recv().await.unwrap() { assert_eq!(id, reservation.id); break; } }
+        // the health says which side ended an admitted session: here the browser's side
+        assert!(wt_sessions()["ended"]["peer_closed"].as_u64().unwrap() > peer_closed, "{}", wt_sessions());
         listener.shutdown().await;
         for endpoint in [&endpoint, &bad_pin, &classical] { endpoint.close(VarInt::from_u32(0), b"done"); }
     }).await.expect("local security checks finish within deadline");

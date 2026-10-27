@@ -81,8 +81,18 @@ impl Scope {
     fn holds(&self, log: &LogId) -> bool { self.wants.iter().any(|w| w.entries.contains(log)) || self.discovered.contains(log) }
 }
 
+/// The type of the entries that say what each page wants (maiaCITY's manifests, game/code/sources/manifests.js): what
+/// peers name for a selector of it come before any view's, in a new device's first asking (`next_asking`).
+pub(crate) const MANIFEST_TYPE: &str = "manifest";
+
 #[derive(Default)]
-pub(crate) struct Interests { scopes: BTreeMap<String, Scope>, clock: u64 }
+pub(crate) struct Interests {
+    scopes: BTreeMap<String, Scope>,
+    clock: u64,
+    /// The manifests peers named for the views' `manifest` selectors (`found_manifests`), at most `MOST_ENTRIES`: hints
+    /// of which logs to ask for first, never authority; cleared with the scopes.
+    manifests: BTreeSet<LogId>,
+}
 
 impl Interests {
     /// Replace scope `scope`'s wants by `wants` at `revision`: false where it holds that revision or a later one
@@ -112,6 +122,7 @@ impl Interests {
     pub(crate) fn release_all(&mut self) -> usize {
         let n = self.scopes.values().filter(|s| s.live()).count();
         self.scopes.clear();
+        self.manifests.clear();
         n
     }
 
@@ -142,6 +153,30 @@ impl Interests {
             if !held.holds(log) { held.discovered.push(*log); }
         }
         true
+    }
+
+    /// Peers named `logs` for a live scope's selector of manifests: they come first in a new device's first asking.
+    pub(crate) fn found_manifests(&mut self, logs: &[LogId]) {
+        for log in logs {
+            if self.manifests.len() >= MOST_ENTRIES { break; }
+            self.manifests.insert(*log);
+        }
+    }
+    /// The manifests peers named for the views' selectors of them, while a view asks for them.
+    pub(crate) fn manifests(&self) -> BTreeSet<LogId> {
+        if !self.asks_for_manifests() { return BTreeSet::new(); }
+        self.manifests.clone()
+    }
+    /// Whether a live scope asks for manifests by a selector: a page of maiaCITY's, which reads its route's manifests
+    /// before it knows what else it wants.
+    pub(crate) fn asks_for_manifests(&self) -> bool {
+        self.scopes.values().filter(|s| s.live()).any(|s| s.queries().iter().any(|q| q.types.iter().any(|t| t == MANIFEST_TYPE)))
+    }
+    /// Whether the live scopes name no entry yet, by id or by what peers named for their selectors, though some ask by
+    /// a selector: a new device's views, before its first find came back.
+    pub(crate) fn finding(&self) -> bool {
+        let live: Vec<_> = self.scopes.values().filter(|s| s.live()).collect();
+        live.iter().any(|s| !s.queries().is_empty()) && live.iter().all(|s| s.named() == 0) && self.manifests.is_empty()
     }
 
     /// Every entry the scopes want, in the scheduler's order (Lean `schedule`).
@@ -225,5 +260,21 @@ mod tests {
         assert!(!i.discovered("v", 1, &[log(8)]), "old work stays cancelled");
         i.replace("v".into(), 3, vec![Want { tier: Tier::Now, entries: vec![], queries: query("cut") }]).unwrap();
         assert!(i.entries().is_empty(), "a changed selector drops them");
+    }
+
+    #[test]
+    fn manifests_peers_name_are_kept_while_a_view_asks_for_them_and_go_with_the_scopes() {
+        let mut i = Interests::default();
+        let manifests = vec![Query { types: vec![MANIFEST_TYPE.into()], vault: None }];
+        i.replace("v".into(), 1, vec![Want { tier: Tier::Now, entries: vec![], queries: manifests }]).unwrap();
+        assert!(i.finding(), "a view that asks by selectors alone, before any find came back");
+        i.found_manifests(&[log(7), log(8)]);
+        assert!(!i.finding());
+        assert_eq!(i.manifests(), [log(7), log(8)].into());
+        i.replace("v".into(), 2, vec![want(Tier::Now, &[1])]).unwrap();
+        assert!(i.manifests().is_empty(), "no view asks for manifests now");
+        i.release_all();
+        i.replace("v".into(), 3, vec![Want { tier: Tier::Now, entries: vec![], queries: vec![Query { types: vec![MANIFEST_TYPE.into()], vault: None }] }]).unwrap();
+        assert!(i.manifests().is_empty(), "released with the scopes");
     }
 }
