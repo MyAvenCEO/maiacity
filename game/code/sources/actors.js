@@ -367,18 +367,20 @@ export function withQueries(actors) {
 }
 
 /**
- * The op query `q` runs with args `args` (`{ room: <entry> }`): its `read` method's template with the args bound, as
+ * The op query `q` runs with args `args` (`{ room: <entry> }`, `null` for a param left out, which the op leaves out): its `read` method's template with the args bound, as
  * avendb::address `bind` binds it and the engine's `call` runs it. `more` (offset, limit) narrows a page of it.
- * @param {Actor} q @param {Record<string, string>} [args] @param {{offset?: number, limit?: number}} [more]
+ * @param {Actor} q @param {Record<string, any>} [args] @param {{offset?: number, limit?: number}} [more]
  */
 export function queryOp(q, args = {}, more = {}) {
 	const read = q?.interface?.methods?.find((/** @type {any} */ m) => m.name === 'read');
 	if (!read?.run) throw new Error(`query ${q?.id}: no read method`);
-	const missing = (read.params ?? []).filter((/** @type {string} */ k) => typeof args[k] !== 'string');
+	// each param passed, `null` for one left out, which the op then leaves out (a page's `after` on the first page)
+	const missing = (read.params ?? []).filter((/** @type {string} */ k) => !(k in args));
 	if (missing.length) throw new Error(`query ${q.id}: no ${missing.join(', ')}`);
 	/** @param {any} v @returns {any} */
 	const bind = (v) => (Array.isArray(v) ? v.map(bind) : v && typeof v === 'object' ? (typeof v.$ === 'string' && Object.keys(v).length === 1 ? args[v.$] : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, bind(x)]))) : v);
-	return { ...bind(read.run), ...(more.offset ? { offset: more.offset } : {}), ...(more.limit ? { limit: more.limit } : {}) };
+	const op = Object.fromEntries(Object.entries(bind(read.run)).filter(([, v]) => v != null));
+	return { ...op, ...(more.offset ? { offset: more.offset } : {}), ...(more.limit ? { limit: more.limit } : {}) };
 }
 
 /**
