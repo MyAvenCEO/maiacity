@@ -44,8 +44,8 @@ const server = createServer(async (req, res) => {
         }
         if (path.endsWith('/transports/webtransport.js')) {
             let text = body.toString();
-            text = replace(text, 'transport = new WebTransport(url.href, { allowPooling: false, requireUnreliable: true, serverCertificateHashes });',
-                'transport = new WebTransport(url.href, { allowPooling: false, requireUnreliable: true, serverCertificateHashes }); (globalThis.__testWebTransports ??= new Set()).add(transport);');
+            text = replace(text, 'transport = new WebTransport(url.href, { allowPooling: false, requireUnreliable: true, ...(serverCertificateHashes.length ? { serverCertificateHashes } : {}) });',
+                'transport = new WebTransport(url.href, { allowPooling: false, requireUnreliable: true, ...(serverCertificateHashes.length ? { serverCertificateHashes } : {}) }); (globalThis.__testWebTransports ??= new Set()).add(transport);');
             text = replace(text, "await event({ kind: 'ready', mtu });", "await event({ kind: 'ready', mtu }); globalThis.postMessage({ $probe: 'wt-ready' });");
             text = replace(text, 'await writer.write(bytes); return true;', "await writer.write(bytes); globalThis.postMessage({ $probe: 'wt-send', bytes: bytes.byteLength }); return true;");
             text = replace(text, 'if (packet(value)) await receive(value);', "if (packet(value)) { await receive(value); globalThis.postMessage({ $probe: 'wt-receive', bytes: value.byteLength }); }");

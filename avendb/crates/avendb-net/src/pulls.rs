@@ -68,6 +68,9 @@ pub(crate) struct Budget {
     pages: Arc<Semaphore>,
     background_pages: Arc<Semaphore>,
     page_slots: u32,
+    /// Pages a pull asks ahead of the one it needs next (S6), apart from `pages`: taken only if free, never waited for,
+    /// so asking ahead never holds another pull's page back, and bounded, as each holds a page's memory.
+    ahead: Arc<Semaphore>,
     recent: Mutex<VecDeque<(EndpointId, Estimate)>>,
     live: Arc<Mutex<LiveBook>>,
 }
@@ -131,9 +134,9 @@ struct Estimate {
 impl Default for Budget {
     fn default() -> Self {
         if cfg!(target_arch = "wasm32") {
-            Self::new(4, 2, 2, 8, 16)
+            Self::new(4, 2, 2, 8, 16, 4)
         } else {
-            Self::new(8, 6, 4, 16, 48)
+            Self::new(8, 6, 4, 16, 48, 12)
         }
     }
 }
@@ -145,6 +148,7 @@ impl Budget {
         pages: u32,
         foreground_queue: usize,
         background_queue: usize,
+        ahead: usize,
     ) -> Self {
         Self {
             active: Arc::new(Semaphore::new(active)),
@@ -154,6 +158,7 @@ impl Budget {
             pages: Arc::new(Semaphore::new(pages as usize)),
             background_pages: Arc::new(Semaphore::new(pages.saturating_sub(1).max(1) as usize)),
             page_slots: pages,
+            ahead: Arc::new(Semaphore::new(ahead)),
             recent: Mutex::default(),
             live: Arc::default(),
         }
@@ -211,6 +216,13 @@ impl Budget {
             _background: background,
             _page: page,
         })
+    }
+
+    /// A page asked ahead (S6), if a slot is free now: `None` rather than waiting, so a pull that finds none asks on
+    /// one page at a time, as it did. Carried into validation as any page's admission is.
+    pub(crate) fn ahead(&self) -> Option<Page> {
+        let page = self.ahead.clone().try_acquire_owned().ok()?;
+        Some(Page { _background: None, _page: page })
     }
 
     /// Scheduling hints only, received after the peer's authenticated announcement was admitted. The caller
@@ -278,6 +290,60 @@ impl Budget {
                 .saturating_div(2)
                 .clamp(250_000, 2_000_000),
         )
+    }
+}
+
+/// The fewest pages a pull keeps in flight once its peer tells it where they end (`session::CUTS`): the one it takes
+/// and the next.
+pub(crate) const WINDOW_MIN: usize = 2;
+/// The most, unless `Options::window` says fewer: eight 4-MiB pages cover a 5 s round trip at about 50 Mbit/s.
+pub(crate) const WINDOW: usize = 8;
+
+/// How many pages a pull keeps in flight (S6): the link's bandwidth × round trip in pages, plus the one being sent,
+/// within `WINDOW_MIN..=most`. The round trip is the quickest a `CUTS` answer took (a few hundred bytes, so the link's
+/// latency and the peer's turnaround alone); a page's time to send is what a page took beyond it, shared among the
+/// pages in flight with it. Local scheduling only: it never changes what a page asks for, nor the order pages are taken.
+#[derive(Clone, Debug)]
+pub(crate) struct Window {
+    most: usize,
+    latency: Option<Duration>,
+    /// The last pages' (wait, pages in flight when it was asked), the newest last.
+    pages: VecDeque<(Duration, usize)>,
+}
+
+/// The pages a `Window` reads a page's time to send from: the quickest of them, as the link's bandwidth is the most it
+/// carried, so a page that stalled behind something else doesn't close the window.
+const WINDOW_SAMPLES: usize = 8;
+
+impl Window {
+    pub(crate) fn new(most: usize) -> Window {
+        Window { most: most.max(1), latency: None, pages: VecDeque::new() }
+    }
+
+    /// A `CUTS` answer that took `wait`.
+    pub(crate) fn latency(&mut self, wait: Duration) {
+        self.latency = Some(self.latency.map_or(wait, |l| l.min(wait)));
+    }
+
+    /// A page that took `wait` from asked to read whole, asked while `flying` pages (itself among them) were in flight.
+    pub(crate) fn page(&mut self, wait: Duration, flying: usize) {
+        if self.pages.len() == WINDOW_SAMPLES {
+            self.pages.pop_front();
+        }
+        self.pages.push_back((wait, flying.max(1)));
+    }
+
+    /// The pages to keep in flight now.
+    pub(crate) fn size(&self) -> usize {
+        if self.most < WINDOW_MIN {
+            return self.most;
+        }
+        let Some(latency) = self.latency else { return WINDOW_MIN };
+        let sending = self.pages.iter().map(|&(wait, flying)| wait.saturating_sub(latency) / flying as u32).min();
+        let Some(sending) = sending else { return WINDOW_MIN };
+        let sending = sending.max(Duration::from_millis(1));
+        let pages = latency.as_micros().div_ceil(sending.as_micros()) as usize + 1;
+        pages.clamp(WINDOW_MIN, self.most)
     }
 }
 
@@ -362,7 +428,7 @@ mod tests {
 
     #[tokio::test]
     async fn admission_bounds_waiters_and_reserves_foreground_then_recovers_on_cancellation() {
-        let budget = Budget::new(2, 1, 2, 2, 2);
+        let budget = Budget::new(2, 1, 2, 2, 2, 0);
         let background = budget.enter(true, None).await.unwrap();
         let mut waiting = Box::pin(budget.enter(true, None));
         assert!(matches!(future::poll_once(&mut waiting).await, None));
@@ -384,7 +450,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn removal_catch_up_fails_closed_if_any_peer_never_enters_admission() {
-        let budget = Budget::new(2, 1, 2, 4, 4);
+        let budget = Budget::new(2, 1, 2, 4, 4, 0);
         let catch_up = CatchUp::new(12); // More candidates than foreground queue tickets.
         let attempts = each_bounded(0..12, 3, |peer| {
             let (budget, catch_up) = (&budget, &catch_up);
@@ -453,7 +519,7 @@ mod tests {
 
     #[tokio::test]
     async fn stalled_background_pages_leave_one_normal_page_for_foreground() {
-        let budget = Budget::new(4, 2, 2, 4, 4);
+        let budget = Budget::new(4, 2, 2, 4, 4, 0);
         let background = budget.page(false, true).await.unwrap();
         let mut queued = Box::pin(budget.page(false, true));
         assert!(future::poll_once(&mut queued).await.is_none());
@@ -468,7 +534,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_large_page_waits_for_all_slots_and_cannot_be_overtaken() {
-        let budget = Budget::new(2, 1, 2, 2, 2);
+        let budget = Budget::new(2, 1, 2, 2, 2, 0);
         let first = budget.page(false, false).await.unwrap();
         let mut large = Box::pin(budget.page(true, false));
         assert!(future::poll_once(&mut large).await.is_none());
@@ -778,7 +844,8 @@ mod tests {
                         send.finish().unwrap();
                         continue;
                     }
-                    if matches!(kind, session::RANGES | crate::transports::control::KIND | crate::blind::OFFER) {
+                    // a peer from before S6 refuses page cuts too: the pull asks page after page
+                    if matches!(kind, session::RANGES | session::CUTS | crate::transports::control::KIND | crate::blind::OFFER) {
                         send.reset(session::REFUSED).unwrap();
                         continue;
                     }
@@ -923,7 +990,7 @@ mod live_queue_tests {
     #[tokio::test]
     async fn later_live_admissions_cannot_overtake_a_queued_background_pull() {
         // LivePriority.later_arrival_cannot_overtake / queued_background_eventually_first.
-        let budget = Budget::new(2, 1, 2, 4, 4);
+        let budget = Budget::new(2, 1, 2, 4, 4, 0);
         let first = budget.enter(false, None).await.unwrap();
         let second = budget.enter(false, None).await.unwrap();
         let mut background = Box::pin(budget.enter(true, None));
@@ -937,5 +1004,224 @@ mod live_queue_tests {
         let live = later_live.await.unwrap();
         drop((background, live));
         assert_eq!(budget.active.available_permits(), 2);
+    }
+}
+
+#[cfg(test)]
+mod pipelined_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn the_window_is_bandwidth_times_round_trip_in_pages_within_its_bounds() {
+        // nothing measured yet: the one it takes and the next
+        assert_eq!(Window::new(WINDOW).size(), WINDOW_MIN);
+        // a window of one asks page after page, measured or not
+        let mut one = Window::new(1);
+        one.latency(Duration::from_secs(5));
+        one.page(Duration::from_secs(5), 1);
+        assert_eq!(one.size(), 1);
+        // a 5 s round trip, pages that take 5.01 s: latency-bound, as many as allowed
+        let mut slow = Window::new(WINDOW);
+        slow.latency(Duration::from_secs(5));
+        slow.page(Duration::from_millis(5_010), 1);
+        assert_eq!(slow.size(), WINDOW);
+        // a 4.5 s round trip and a 4-MiB page sending in 6.4 s (5 Mbit/s): two in flight fill the link
+        let mut thin = Window::new(WINDOW);
+        thin.latency(Duration::from_millis(4_500));
+        thin.page(Duration::from_millis(10_900), 1);
+        assert_eq!(thin.size(), 2);
+        // 1 s to send a page under a 3 s round trip: three to cover the trip, and the one being sent
+        let mut mid = Window::new(WINDOW);
+        mid.latency(Duration::from_secs(3));
+        mid.page(Duration::from_secs(4), 1);
+        assert_eq!(mid.size(), 4);
+        // a page that queued behind three others shares its wait among them; one stall doesn't close the window
+        mid.page(Duration::from_secs(7), 4);
+        mid.page(Duration::from_secs(60), 1);
+        assert_eq!(mid.size(), 4);
+        // a fast local link: the least
+        let mut lan = Window::new(WINDOW);
+        lan.latency(Duration::from_micros(300));
+        lan.page(Duration::from_millis(40), 1);
+        assert_eq!(lan.size(), WINDOW_MIN);
+    }
+
+    #[test]
+    fn cuts_name_exactly_the_pages_a_peer_answers_one_after_the_other() {
+        use avendb::cast::{document, handbook_ready, world};
+        use avendb::lab::ReplyScope;
+        use avendb::sync::LogId;
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (sender, receiver) = (w.mac_a, w.phone_a);
+        let logs: BTreeSet<LogId> = (0..9)
+            .map(|i| {
+                let body = "x".repeat(3_000 * (i % 3 + 1));
+                LogId::Entry(w.lab.create(sender, coop, coop, "doc", &[], document(&format!("D{i}"), &body, sender)).unwrap())
+            })
+            .collect();
+        let scope = ReplyScope::Logs(logs.clone());
+        let base = crate::session::only(&w.lab, receiver, w.lab.request(receiver, sender), &logs);
+        for page in [1, 10_000, 20_000, 1 << 30] {
+            // the pages asked one after the other, each after the last place the one before brought
+            let (mut ends, mut after) = (Vec::new(), None);
+            loop {
+                let request = avendb::wire::Request { after, ..base.clone() };
+                let (edits, _, more) = w.lab.reply_in(sender, receiver, &request, page, &scope);
+                let Some(last) = edits.iter().map(|s| avendb::sync::place(&s.edit)).max() else { break };
+                ends.push(last);
+                if !more {
+                    break;
+                }
+                after = Some(last);
+            }
+            assert!(!ends.is_empty());
+            // the cuts, asked a few at a time from wherever the last cuts ended
+            let (mut cuts, mut after) = (Vec::new(), None);
+            loop {
+                let request = avendb::wire::Request { after, ..base.clone() };
+                let (got, done) = w.lab.reply_cuts(sender, receiver, &request, page, &scope, 3);
+                cuts.extend(got.iter().copied());
+                if done {
+                    break;
+                }
+                after = got.last().copied();
+                assert!(after.is_some(), "cuts that aren't done name one at least");
+            }
+            assert_eq!(cuts, ends, "page size {page}");
+        }
+    }
+
+    /// S6: a pull over a link where every exchange takes `RTT` keeps its pages in flight. Asked one after the other,
+    /// `PAGES` pages take `PAGES` round trips; asked at the peer's cuts, ceil(PAGES / W) more after the first.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_pull_over_a_slow_link_keeps_its_pages_in_flight() {
+        use crate::{ALPN, Node, Options, exporter, pq_provider, session};
+        use avendb::cast::{document, handbook_ready, world};
+        use avendb::lab::ReplyScope;
+        use avendb::sync::LogId;
+        use avendb::wire::{Reply, Request, Wire};
+        use iroh::endpoint::presets;
+        use iroh::{Endpoint, SecretKey};
+        const PAGES: usize = 8;
+        const RTT: Duration = Duration::from_millis(400);
+        let mut measured = Vec::new();
+        for (round, window) in [1usize, WINDOW].into_iter().enumerate() {
+            let mut w = world();
+            let coop = handbook_ready(&mut w);
+            let (sender, receiver) = (w.mac_a, w.phone_a);
+            let logs: BTreeSet<LogId> = (0..PAGES)
+                .map(|i| LogId::Entry(w.lab.create(sender, coop, coop, "doc", &[], document(&format!("D{i}"), "a page", sender)).unwrap()))
+                .collect();
+            let raw = Endpoint::builder(presets::Empty)
+                .secret_key(SecretKey::from_bytes(&w.lab.endpoint_secret(sender).unwrap()))
+                .crypto_provider(pq_provider())
+                .clear_ip_transports()
+                .bind_addr("127.0.0.1:0")
+                .unwrap()
+                .bind()
+                .await
+                .unwrap();
+            let seed = [60 + round as u8; 32];
+            let options = Options { lazy: true, window, ..Options::local() };
+            let phone = Node::spawn(w.lab.split(receiver, &[], seed), receiver, options).await.unwrap();
+            let conn = raw.connect(phone.addr(), ALPN).await.unwrap();
+            let exporter = exporter(&conn).unwrap();
+            let (mut send, mut recv) = conn.open_bi().await.unwrap();
+            send.write_all(&w.lab.hello(sender, &exporter, true).unwrap().to_wire()).await.unwrap();
+            send.finish().unwrap();
+            let hello = avendb::sign::Hello::from_wire(&recv.read_to_end(64 << 10).await.unwrap()).unwrap();
+            assert_eq!(hello.verify(&exporter, false, phone.id().as_bytes()), Some(receiver));
+            time::timeout(Duration::from_secs(5), async {
+                while phone.shared.live(raw.id()).is_none() {
+                    time::sleep(Duration::from_millis(1)).await;
+                }
+            })
+            .await
+            .unwrap();
+            // the peer: answers each message at once, and lets its answer arrive a round trip after it was asked;
+            // one edit to a page, so the pull takes PAGES pages
+            let (in_flight, most_in_flight) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+            let serving = async {
+                let mut answering = FuturesUnordered::new();
+                loop {
+                    let accepted = future::or(async { Some(conn.accept_bi().await.unwrap()) }, async {
+                        match answering.next().await {
+                            Some(()) => None,
+                            None => future::pending().await,
+                        }
+                    });
+                    let Some((mut send, mut recv)) = accepted.await else { continue };
+                    let bytes = recv.read_to_end(session::MESSAGE_LIMIT).await.unwrap();
+                    let (&kind, body) = bytes.split_first().unwrap();
+                    let answer = match kind {
+                        session::ANNOUNCE | session::STATE => Some(Vec::new()),
+                        session::CUTS => {
+                            let (inner, count, body) = (body[0], body[1] as usize, &body[2..]);
+                            assert_eq!(inner, session::ASK_LOGS);
+                            let request = Request::from_wire(body).unwrap();
+                            let scope = ReplyScope::Logs(request.ask.haves.keys().copied().collect());
+                            let (cuts, done) = w.lab.reply_cuts(sender, receiver, &request, 1, &scope, count);
+                            Some(session::cuts_wire(&cuts, done))
+                        }
+                        k if k & !session::PACKED == session::ASK_LOGS && k & session::PACKED == 0 => {
+                            let request = Request::from_wire(body).unwrap();
+                            let scope = ReplyScope::Logs(request.ask.haves.keys().copied().collect());
+                            let (edits, _, more) = w.lab.reply_in(sender, receiver, &request, 1, &scope);
+                            let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                            most_in_flight.fetch_max(now, Ordering::SeqCst);
+                            Some(Reply { edits, blobs: vec![], more }.to_wire())
+                        }
+                        // packed replies, ranges and the rest: refused, as a peer that doesn't know them refuses
+                        _ => None,
+                    };
+                    let in_flight = in_flight.clone();
+                    answering.push(async move {
+                        match answer {
+                            Some(answer) => {
+                                time::sleep(RTT).await;
+                                if kind & !session::PACKED == session::ASK_LOGS {
+                                    in_flight.fetch_sub(1, Ordering::SeqCst);
+                                }
+                                if send.write_all(&answer).await.is_ok() {
+                                    let _ = send.finish();
+                                }
+                            }
+                            None => {
+                                let _ = send.reset(session::REFUSED);
+                            }
+                        }
+                    });
+                }
+            };
+            // the refused packed request costs no round trip (an immediate reset), so each page is one
+            let began = Instant::now();
+            let pull = phone.shared.pull(raw.id(), crate::Scope::Logs(logs.clone()), false, None);
+            let got = time::timeout(Duration::from_secs(60), future::or(pull, serving)).await.unwrap().unwrap();
+            let took = began.elapsed();
+            assert_eq!(got, PAGES, "every page's edit is taken, whatever the window");
+            let held = phone.read(move |lab, me| logs.iter().all(|l| lab.log(me).logs().contains(&Some(*l)))).await;
+            assert!(held, "the edits are the device's, checked and kept");
+            let report = phone.shared.traffic.of(&sender).unwrap();
+            assert_eq!(report.pages as usize, PAGES);
+            measured.push((window, took, most_in_flight.load(Ordering::SeqCst)));
+            assert_eq!(
+                phone.shared.pulls.ahead.available_permits(),
+                Budget::default().ahead.available_permits(),
+                "every page asked ahead gave its slot back"
+            );
+            conn.close(session::REFUSED, b"test done");
+            raw.close().await;
+            phone.shutdown().await.unwrap();
+        }
+        eprintln!("S6 pipelined pages over a {RTT:?} round trip, {PAGES} pages: {measured:?}");
+        let (before, after) = (measured[0], measured[1]);
+        assert_eq!(before.2, 1, "page after page: one in flight at a time");
+        assert!(before.1 >= RTT * PAGES as u32, "page after page takes a round trip a page: {before:?}");
+        assert!(after.2 > 1, "asked ahead, pages are in flight together: {after:?}");
+        // the first page with its cuts, then the rest W at a time, and a round trip of slack for the machine
+        let rounds = 1 + (PAGES - 1).div_ceil(WINDOW) + 1;
+        assert!(after.1 < RTT * rounds as u32, "pipelined: ~ceil(pages / W) round trips, not one a page: {after:?}");
     }
 }
