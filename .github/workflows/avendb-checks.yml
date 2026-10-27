@@ -484,6 +484,8 @@ jobs:
           wasm-bindgen --target web --no-typescript --out-dir "$RUNNER_TEMP/phone-pkg" target/wasm32-unknown-unknown/release/avendb_browser.wasm
           AVENDB_PHONE_FIXTURE="$RUNNER_TEMP/phone.bin" cargo test --locked -p avendb --features test-fixtures --test phone_fixture -- --ignored --nocapture
       - name: Chromium and WebKit
+        # pipefail: a browser that doesn't launch fails the job, not just the tee after it
+        shell: bash
         run: |
           scripts/ci/browser-deps.sh "$PWD/node_modules/playwright/cli.js" chromium
           scripts/ci/browser-deps.sh "$PWD/node_modules/playwright/cli.js" webkit

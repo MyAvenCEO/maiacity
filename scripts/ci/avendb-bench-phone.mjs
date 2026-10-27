@@ -57,5 +57,12 @@ export async function run(pkg, fixture, engines, playwright) {
 if (import.meta.main) {
  const [pkg, fixture, engines = 'chromium'] = process.argv.slice(2);
  const playwright = await import(process.env.AVENDB_TEST_PLAYWRIGHT || 'playwright');
- for (const line of await run(pkg, fixture, engines.split(','), playwright)) console.log(`BENCH ${JSON.stringify(line)}`);
+ // one engine at a time, each row printed as it comes, so that one browser that doesn't launch keeps the other's row
+ let failed = false;
+ for (const engine of engines.split(',')) {
+  try {
+   for (const line of await run(pkg, fixture, [engine], playwright)) console.log(`BENCH ${JSON.stringify(line)}`);
+  } catch (e) { failed = true; console.error(`${engine}: ${e.message}`); }
+ }
+ if (failed) process.exit(1);
 }
