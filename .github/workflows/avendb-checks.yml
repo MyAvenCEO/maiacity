@@ -173,9 +173,15 @@ jobs:
             properties: true
           # avendb-device's own build is the long pole (about 7 of 10 minutes compiling), so it and the browser's
           # tests, which build on it, run beside the network's and the server's rather than after them
-          - name: net, server
-            cache: net-server
-            args: -p avendb-net -p avendb-server
+          # net and server apart, each on its own runner: together they built for about 4.8 and ran for 2.9 minutes
+          # (8.2 in all, the longest job, 2026-10-27); the server's build still makes net's library, not its tests
+          - name: net
+            cache: net
+            args: -p avendb-net
+            doc: true
+          - name: server
+            cache: server
+            args: -p avendb-server
             doc: true
           - name: device, browser
             cache: device-browser
@@ -298,7 +304,10 @@ jobs:
       - uses: rui314/setup-mold@v1
       - uses: Swatinem/rust-cache@v2.9.3
         with:
-          workspaces: avendb -> target
+          # test-browser.sh builds the page's WebAssembly in target-wasm, beside the native tests in target
+          workspaces: |
+            avendb -> target
+            avendb -> target-wasm
           key: real-browser-localhost
           cache-on-failure: true
       - uses: oven-sh/setup-bun@v2.2.0

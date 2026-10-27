@@ -73,13 +73,17 @@ jobs:
       - name: Check the Pulumi passphrase is set
         run: |
           [ -n "$PULUMI_CONFIG_PASSPHRASE" ] || { echo "::error::Secret PULUMI_PASSPHRASE is missing — without it the Pulumi state cannot be read."; exit 1; }
+      # A validated release changes no infrastructure: it only reads the stack's outputs, straight from the state file
+      # (plain values, see Outputs), so it installs neither Bun nor Pulumi (1.8 of its 2 minutes on 2026-10-27).
       - uses: actions/checkout@v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ (!inputs.validated || inputs.reconcile_infra) && '0' || '1' }}
       - uses: oven-sh/setup-bun@v2.2.0
+        if: ${{ !inputs.validated || inputs.reconcile_infra }}
         with:
           bun-version-file: .bun-version
       - uses: pulumi/actions@v7.0.0
+        if: ${{ !inputs.validated || inputs.reconcile_infra }}
         with:
           pulumi-version: 3.272.0
       - name: Dependencies
@@ -137,14 +141,16 @@ jobs:
             echo "maia-city is $STATUS"
             [ "$STATUS" = running ]
           fi
+      # the stack's outputs as the state holds them: ipv4 and dataMount are plain strings, not secrets
       - name: Outputs
         id: out
-        working-directory: infra
         run: |
-          pulumi login "file://$GITHUB_WORKSPACE/.pulumi-state" >/dev/null
-          pulumi stack select prod
-          echo "ipv4=$(pulumi stack output ipv4)" >> "$GITHUB_OUTPUT"
-          echo "data_mount=$(pulumi stack output dataMount)" >> "$GITHUB_OUTPUT"
+          out=$(jq -c '.checkpoint.latest.resources[] | select(.type == "pulumi:pulumi:Stack") | .outputs' .pulumi-state/.pulumi/stacks/maiacity/prod.json)
+          ipv4=$(jq -r '.ipv4 | strings' <<< "$out")
+          mount=$(jq -r '.dataMount | strings' <<< "$out")
+          [[ "$ipv4" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ && -n "$mount" ]] || { echo "::error::no ipv4/dataMount in the Pulumi state"; exit 1; }
+          echo "ipv4=$ipv4" >> "$GITHUB_OUTPUT"
+          echo "data_mount=$mount" >> "$GITHUB_OUTPUT"
       - name: Write the Pulumi state back
         if: ${{ always() && (!inputs.validated || inputs.reconcile_infra) }}
         run: |

@@ -20,10 +20,17 @@ if [ "$have" != "$want" ]; then
 	exit 1
 fi
 
-cargo build --locked -p avendb-browser --target wasm32-unknown-unknown --release --features localhost-passkeys
+# The page's WebAssembly and the native test programs build side by side, each in a target dir of its own (a cargo
+# holds its target dir's lock for the whole build): on CI's 4 cores they took 2m10s and 2m26s one after the other.
+wasm_target=${AVENDB_WASM_TARGET_DIR:-target-wasm}
+CARGO_TARGET_DIR="$wasm_target" cargo build --locked -p avendb-browser --target wasm32-unknown-unknown --release --features localhost-passkeys &
+wasm=$!
+tests=(--locked -p avendb-browser --features localhost-passkeys,test-fixtures --test page --test transports)
+cargo test "${tests[@]}" --no-run || { wait "$wasm" || true; exit 1; }
+wait "$wasm"
 out=target/avendb-browser-pkg
 rm -rf "$out"
-wasm-bindgen --target web --no-typescript --out-dir "$out" target/wasm32-unknown-unknown/release/avendb_browser.wasm
+wasm-bindgen --target web --no-typescript --out-dir "$out" "$wasm_target/wasm32-unknown-unknown/release/avendb_browser.wasm"
 ls -l "$out"
 # the test's relay and server take the same passkeys of localhost as the page
-AVENDB_PKG="$PWD/$out" cargo test --locked -p avendb-browser --features localhost-passkeys,test-fixtures --test page --test transports -- --ignored --nocapture
+AVENDB_PKG="$PWD/$out" cargo test "${tests[@]}" -- --ignored --nocapture
