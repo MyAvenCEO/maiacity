@@ -32,7 +32,8 @@
 
 	const who = $derived(m.by?.vault ? byId.get(m.by.vault) : null);
 	const name = $derived(m.by?.name ?? (who ? nameOf(who) : m.by ? 'Someone' : 'Not yet counted'));
-	const agent = $derived(m.actor && m.by?.vault && m.actor !== m.by.vault ? byId.get(m.actor) : null);
+	const signer = $derived(m.signer ?? m.actor);
+	const agent = $derived(signer && m.by?.vault && signer !== m.by.vault ? byId.get(signer) : null);
 	const reactions = $derived(chips(m, me));
 	let picking = $state(false);
 	let text = $state('');

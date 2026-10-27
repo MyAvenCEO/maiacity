@@ -64,7 +64,7 @@
 	 *   base: { title: string | null, text: string | null } | null, conflicts: Conflict[] | null, record?: any,
 	 *   version?: import('./versions.js').Described, versions?: { edit: string, version: number }[],
 	 *   variant?: boolean, main?: import('./versions.js').Described | null, behind?: boolean }} LineView
-	 * @typedef {{ id: string, author: string, actor: string, via: string[], chain: import('./vaults.js').Chain,
+	 * @typedef {{ id: string, author: string, signer: string, actor?: string, via: string[], chain: import('./vaults.js').Chain,
 	 *   line: string | null, deps: string[],
 	 *   kind: 'edit' | 'propose' | 'variant' | 'merge' | 'accept' | 'sealed', name: string | null,
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
@@ -306,7 +306,7 @@
 	const vaultName = (id) => (id ? nameOf(byId.get(id)) : 'a vault');
 
 	/** Who made edit `e`: its device by name, the vault it acted for and the owners it acted through. @param {EditView} e */
-	const who = (e) => actingWords(world, e.author, e.actor, e.via);
+	const who = (e) => actingWords(world, e.author, e.signer ?? e.actor, e.via);
 
 	/**
 	 * What edit `e` did where a note says it in its own words: renamed it, its text as it was. Elsewhere avenDB's
