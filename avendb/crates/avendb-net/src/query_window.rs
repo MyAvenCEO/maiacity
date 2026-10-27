@@ -163,3 +163,7 @@ mod tests {
         assert!(with_tail > 20, "and many with a tail after its stamp: {with_tail}");
     }
 }
+
+#[cfg(test)]
+#[path = "query_window_bench.rs"]
+mod bench;
