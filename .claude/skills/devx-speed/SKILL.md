@@ -89,6 +89,12 @@ bun scripts/devx/collect.mjs --tasks                  # "Task: <branch>" lines f
   ready, one CI run, fix only the culprits in one round, land it with a merge commit (never a squash: main keeps
   every task's commits) and an explicit message (title + body with the `Task:` lines, never a `[skip ci]`), then close the task PRs naming the final PR, and merge main back into the
   collector branch.
+- **Time budget: CI and release under 10 minutes each** (Samuel 2026-10-27). `.github/workflows/ci-budget.yml` turns
+  red when a run goes over (`scripts/ci/budget.mjs`, which names the slowest jobs and steps); fix that first. What
+  blew it on 2026-10-27 (35 min): a 100k-edit scale test in the core tests hanging to nextest's limit, five pushes to
+  the ready PR in 13 minutes (each push restarts every job), main not reusing the PR's green run (merge commit), and a
+  new job's first cold cache. So: push a ready PR once per fix round, not per fix; scale tests are benches
+  (`#[ignore]`, the performance gates), never tests; a new CI job warms its cache on main before it gates anything.
 - A failing task in the batch: revert its merge commit on the collector branch (`git revert -m 1 <merge>`), push,
   tell its thread; don't hold the batch for it.
 

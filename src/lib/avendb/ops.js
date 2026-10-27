@@ -68,6 +68,32 @@ export function answer(out) {
 	throw new Error(`Refused${at}: ${why(out)}.`);
 }
 
+/** What a local `read_file` fails with while this device doesn't hold the file yet: its keeper fetches it for the
+ *  open view (avendb-net files.rs `keeper`), so the read is worth asking again, unlike a file the vault never had. */
+const NOT_HELD_YET = /no blob [0-9a-f]{64} on the shelf|lacks \d+\.\.\d+|incomplete local file index/;
+
+/**
+ * Bytes `from` to `to` of file `root`, read off this device alone (`local`, as every page reads files since #1268),
+ * by `run`: a refusal throws as `answer` does, and one only because the file hasn't reached this device yet throws
+ * marked `passing`, so the reader asks again later rather than show it as missing for good.
+ * @param {(op: any) => Promise<any>} run @param {string} root @param {number} size @param {number} from @param {number} to
+ * @returns {Promise<Uint8Array>}
+ */
+export async function readLocalFile(run, root, size, from, to) {
+	try {
+		const out = await run({ op: 'read_file', root, size, from, to, local: true });
+		answer(out);
+		return out.bytes;
+	} catch (e) {
+		if (NOT_HELD_YET.test(e instanceof Error ? e.message : String(e))) {
+			const err = e instanceof Error ? e : new Error(String(e));
+			/** @type {any} */ (err).passing = true;
+			throw err;
+		}
+		throw e;
+	}
+}
+
 /**
  * Op `op` of a list run one after another, each `"$n"` in it the entry op n of the list created, by the answers of
  * those before it, `done` (as a flow's move names the post its function creates, ./flows.js), and each `"$n.line"` the

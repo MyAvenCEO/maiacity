@@ -430,6 +430,11 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     until("the server keeps her note", || server.read(holds)).await;
     let garden = |n: &Value| n["type"] == "note" && n["tags"] == json!(["garden"]) && n["title"] == "Seeds";
     shown(&mut app, &entry, "her note, tagged", garden).await;
+    // its edits and keys past a bounded cache wait in its spill beside its shelves, as the always-on peer's do (S7)
+    let perf = run(&mut app, json!({ "op": "perf" })).await.expect("its perf");
+    assert_eq!(perf["held"]["memory"]["spilling"], true, "{}", perf["held"]);
+    assert!(dir.join(avendb_device::SPILL).is_dir(), "its spill, beside its shelves");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [FLOOR], "the spill is no shelf");
     // where her note is synced to (v8 phase H): her Mac, once its folder holds it, and the server, and no other
     let (mac, keeper) = (device["id"].clone(), json!(hex(&server.device().0)));
     let synced = |n: &Value| {

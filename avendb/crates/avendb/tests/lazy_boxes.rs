@@ -237,8 +237,8 @@ fn signers() -> Vec<SignerId> {
 }
 
 /// The ids that stand, but the boxes.
-fn standing_but_boxes(r: &Replay) -> Vec<avendb::id::EditId> {
-    r.ids.iter().zip(&r.edits).zip(&r.stood).filter(|((_, e), s)| **s && !is_box(e)).map(|((id, _), _)| *id).collect()
+fn standing_but_boxes(r: &Replay, held: &[Edit]) -> Vec<avendb::id::EditId> {
+    r.ids.iter().zip(r.edits(held)).zip(&r.stood).filter(|((_, e), s)| **s && !is_box(e)).map(|((id, _), _)| *id).collect()
 }
 
 #[test]
@@ -254,9 +254,10 @@ fn a_view_without_the_boxes_is_the_view_with_them() {
         let lazy = first_view(edits);
         // L1: the same state, every key schedule and audience in it, and the same edits standing but the boxes
         assert!(lazy.state == full.state, "seed {seed}: the state differs without the boxes");
-        assert_eq!(standing_but_boxes(&lazy), standing_but_boxes(&full), "seed {seed}");
+        let kept: Vec<Edit> = edits.iter().filter(|e| !is_box(e)).cloned().collect();
+        assert_eq!(standing_but_boxes(&lazy, &kept), standing_but_boxes(&full, edits), "seed {seed}");
         // and every box made stood: the history is no history of refused boxes
-        let stood_boxes = full.edits.iter().zip(&full.stood).filter(|(e, s)| **s && is_box(e)).count();
+        let stood_boxes = full.edits(edits).zip(&full.stood).filter(|(e, s)| **s && is_box(e)).count();
         assert_eq!(stood_boxes, boxes, "seed {seed}: some box was refused");
         // who opens what, and who may, by the caps: the same for every signer
         assert_eq!(access(&lazy.state, &signers()), access(&full.state, &signers()), "seed {seed}");

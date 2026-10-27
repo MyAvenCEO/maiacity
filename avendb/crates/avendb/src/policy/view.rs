@@ -16,7 +16,8 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use super::{order_ids, watched, Edit, Grants, Passed, Entry, Issued, Listed, Replay, Seals, State, Tail, Vault, Write};
+use super::{dangling, order_places, sorted, watched, Edit, Entry, Grants, Issued, Listed, Passed, Replay, Seals, State, Tail, Vault,
+    Write};
 use crate::encode::Encode;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, PublicKey, Seal};
@@ -524,7 +525,9 @@ impl Replay {
         let mut rd = Reader::new(bytes.strip_prefix(VIEW)?);
         let held = u64::decode(&mut rd).ok()? as usize;
         let (held_edits, held_ids) = (edits.get(..held)?, ids.get(..held)?);
-        let (edits, ids) = order_ids(held_edits, held_ids);
+        let order = order_places(held_edits, held_ids);
+        let ids: Vec<EditId> = order.iter().map(|&p| held_ids[p]).collect();
+        let edits = || order.iter().map(|&p| &held_edits[p]);
         if <[u8; 32]>::decode(&mut rd).ok()? != ids_hash(&ids) {
             return None;
         }
@@ -552,13 +555,14 @@ impl Replay {
                         return Err(WireError::Unknown);
                     }
                     // what follows from the edits: as `replay_ids` works it out, and each replay stepped on keeps
-                    let parents = edits.iter().flat_map(|e| e.parents.iter().copied()).collect();
                     let depths: HashMap<EditId, u64> =
                         held_ids.iter().copied().zip(held_edits.iter().map(|e| e.depth)).collect();
-                    let covered = watched(&edits);
-                    let passed = Passed::of(&edits, &ids, &stood, 0, at);
-                    let after = Passed::of(&edits, &ids, &stood, at, n);
-                    let grants = Grants::of(&edits, &ids);
+                    let parents = dangling(edits(), &depths);
+                    let covered = watched(edits());
+                    let held: Vec<&Edit> = edits().collect();
+                    let passed = Passed::of(sorted(&held, &ids, &stood, 0, at));
+                    let after = Passed::of(sorted(&held, &ids, &stood, at, n));
+                    let grants = Grants::of(edits().zip(ids.iter().copied()));
                     Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths, passed, after, grants })
                 }
                 _ => return Err(WireError::Unknown),
@@ -566,10 +570,10 @@ impl Replay {
             if !rd.done() {
                 return Err(WireError::Trailing);
             }
-            Ok(Replay { edits: vec![], ids: vec![], stood, state, acts, tail })
+            Ok(Replay { order: vec![], ids: vec![], stood, state, acts, tail })
         };
         let replay = read().ok()?;
-        Some((Replay { edits, ids, ..replay }, held))
+        Some((Replay { order, ids, ..replay }, held))
     }
 
     /// The place it steps on from is the same as `o`'s, state for state: what `to_view` and `from_view` keep beside

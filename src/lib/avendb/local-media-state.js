@@ -1,10 +1,12 @@
 import { localFile } from '../media/local-file.js';
 
 /** Resolve only complete local collections. undefined means not enumerated;
- * null means a complete local collection has no such entry.
- * @param {any} world @param {{vault:string,name:string}} request */
+ * null means a complete local collection has no such entry. A pinned request (`pin`, its file's entry) is that entry
+ * or nothing: one the device doesn't hold yet is not a deletion.
+ * @param {any} world @param {{vault:string,name:string,pin?:string}} request */
 export function mediaEntry(world, request) {
  if (!world || world.entriesComplete === false) return undefined;
+ if (request.pin) return world.entries?.find((/** @type {any} */ e) => e.entry === request.pin && !e.deleted) ?? undefined;
  return localFile(world.entries ?? [], request.vault, request.name) ?? null;
 }
 

@@ -102,6 +102,8 @@ pub use avendb::world::{CARD, DELETED, FILE, FORK, NOTE, PROFILE, TODO};
 
 /// Which code is a vault's, proven in the page (`provenCode`, H2).
 pub mod provenance;
+#[cfg(target_arch = "wasm32")]
+mod opfs_space;
 #[cfg(feature = "bench")]
 pub mod bench;
 
@@ -183,6 +185,11 @@ pub struct Start {
     pub shelf: Option<Shelf>,
     pub progress: Progress,
     pub recovery: Option<Arc<RecoveryKey>>,
+    /// Where its device keeps its signed edits and McEliece keys, past a bounded cache in memory, as the always-on
+    /// peer does (S7, `avendb::lab::Lab::spill`): a native host's folder (2026-10-27: a Mac held 1.4 GB of them and
+    /// paged them through swap, 38.8 s to check a page of 68 edits). None on a page, which spills into its OPFS
+    /// itself (`spilled`).
+    pub spill: Option<avendb::lab::Spill>,
     /// An embedding host retains a node before later startup steps can fail.
     /// Called synchronously after spawn, before another startup await. The host
     /// transfers ownership on publication, or awaits close before releasing it.
@@ -583,7 +590,14 @@ impl Device {
 
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by one of `relay_passes` if
     /// the relay doesn't know it yet, and directly too if it binds a socket; on its shelf, if it keeps one.
-    async fn spawn(lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Arc<Node>> {
+    async fn spawn(mut lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Arc<Node>> {
+        // spilled before its node takes back what its shelf kept, so the edits it restores go to the spill, not memory:
+        // a native host's folder (`Start::spill`), or a page's OPFS (`spilled`)
+        if let Some(spill) = &start.spill {
+            lab.spill(me, spill).context("its spill")?;
+        }
+        #[cfg(target_arch = "wasm32")]
+        let lab = spilled(lab, me).await;
         // a page shows its relay its passes first, by a request of its own, and then connects with none (`show`)
         let shown = !relay_passes.is_empty() && show(start, &relay_passes).await?;
         let relay_passes = if shown { Vec::new() } else { relay_passes };
@@ -885,6 +899,32 @@ async fn show(start: &Start, passes: &[RelayPass]) -> Result<bool> {
 #[cfg(not(target_arch = "wasm32"))]
 async fn show(_: &Start, _: &[RelayPass]) -> Result<bool> {
     Ok(false)
+}
+
+/// How many bytes of its spill a page's device keeps at hand in memory: the records and index pages it read lately.
+#[cfg(target_arch = "wasm32")]
+const SPILL_BUDGET: usize = 48 << 20;
+
+/// `lab` with device `me` holding its signed edits and McEliece keys in an OPFS file (`opfs_space`), not in memory: a
+/// page's memory holds `SPILL_BUDGET` bytes of them, however many it holds. Where OPFS can't (a browser without
+/// synchronous files), it holds them in memory as before, and says so on the console.
+#[cfg(target_arch = "wasm32")]
+async fn spilled(mut lab: Lab, me: SignerId) -> Lab {
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(js_namespace = console)]
+        fn warn(s: &str);
+    }
+    match opfs_space::OpfsSpace::open().await {
+        Ok(space) => {
+            let spill = avendb::lab::Spill::in_space(space, SPILL_BUDGET);
+            if let Err(e) = lab.spill(me, &spill) {
+                warn(&format!("avenDB: no spill, edits stay in memory: {e}"));
+            }
+        }
+        Err(e) => warn(&format!("avenDB: no OPFS spill, edits stay in memory: {e:?}")),
+    }
+    lab
 }
 
 /// Report a panic on the page's console: the device can't go on after one, and the page starts over.
@@ -1416,7 +1456,7 @@ fn starting(name: String, relay: &str, steps: Option<Function>, shelf: Shelf) ->
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
     let (progress, shelf, recovery) = (shown(steps), Some(shelf), Start::recovery());
-    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery, on_node: None })
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery, spill: None, on_node: None })
 }
 
 /// Holds the page's `store` for this page alone, until the device on it closes (`PageDevice::close`): refused while
@@ -1620,7 +1660,7 @@ mod tests {
         let relay = "http://localhost:3340".parse().expect("a relay's URL");
         let (name, progress) = ("Eve's browser".into(), Progress::new());
         let (entropy, recovery) = ([7; 32], None);
-        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery, on_node: None };
+        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery, spill: None, on_node: None };
         // its own secret, kept masked by the PRF output on its salt
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);

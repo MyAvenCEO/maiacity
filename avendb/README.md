@@ -331,7 +331,7 @@ plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 | `AVENDB_BUCKET` and the rest | none | Its bucket (see [Deploying the server](#deploying-the-server), step 6) |
 | `AVENDB_CACHE` | `8` | With a bucket, the gigabytes of the parts it read lately that its folder caches |
 | `AVENDB_MEMORY_CACHE` | `256` | The MiB of its signed edits and McEliece keys it keeps at hand in memory; the rest wait in its folder's `spill/`, a cache emptied at each start and filled again from its shelf, so its memory stays flat as its vaults grow (S7) |
-| `AVENDB_SEGMENTS` | `0` | `1` keeps the segments of the writers whose edits it holds, each one's ids and newest root, checked before they are held, so it serves their paths and a page through it costs a device one signature check per writer, not per edit (S8, `spec/AvenDB/Segments.lean`); off until the cut |
+| `AVENDB_SEGMENTS` | `1` | `1` keeps the segments of the writers whose edits it holds, each one's ids and newest root, checked before they are held, so it serves their paths and a page through it costs a device one signature check per writer, not per edit (S8, `spec/AvenDB/Segments.lean`); on since 2026-10-27, `0` turns it off; every signature stays held |
 | `AVENDB_SNAPSHOTS` and the rest | none | Its bucket of snapshots: every vault backed up into it each day (see `doc:docs/avendb`) |
 | `RUST_LOG` | `info` | How much it logs |
 

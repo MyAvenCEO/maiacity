@@ -6,7 +6,8 @@
 		"description": "",
 		"tags": [
 			"Day 01"
-		]
+		],
+		"entry": "18320b9dd94bf90889a2289db8a4f0867a2bb9042107a25a47d78fc0456d76bb"
 	},
 	"4ed3a1cfe0f16502163576159361dbd3d16b8fa8bb5833419aae6a8d3d28026b": {
 		"url": null,
@@ -15,7 +16,8 @@
 		"description": "",
 		"tags": [
 			"Day 01"
-		]
+		],
+		"entry": "4f689a976da1644c79dc7a829c3d825ae495871c634161080aeba3ad53545a59"
 	},
 	"016adb5703a15823dcd525accc0064a3b3a311d65b6d1e828b99dfe9564290e5": {
 		"url": null,
@@ -28,7 +30,8 @@
 			"role:cover",
 			"role:thumbnail",
 			"shape:16x9"
-		]
+		],
+		"entry": "25ce8b6f16314ea03f29723da61d69ec88b3143c779d3c0009308dc03aa9cb42"
 	},
 	"dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a": {
 		"url": null,
@@ -40,7 +43,8 @@
 			"person:samuel",
 			"role:portrait",
 			"site"
-		]
+		],
+		"entry": "9d06016b81849b3838531d0475a5014bb9cbb6dbd16537b53515ab50cfc32e6b"
 	},
 	"1a9eddd942a9e91bc0fae5276b501c3a01357df3ee2ed2c533c3b6da86a5c6bc": {
 		"url": null,
@@ -50,7 +54,8 @@
 		"tags": [
 			"Day 01",
 			"film"
-		]
+		],
+		"entry": "36b9cd792407db501fa57fb1769d4fcec922efb2f241d9669de33ea7b9b33151"
 	},
 	"3e534f65034cac1d8420090739d0f221ab48f2c66522535442231f0d406acadf": {
 		"url": null,
@@ -59,7 +64,8 @@
 		"description": "",
 		"tags": [
 			"Day 01"
-		]
+		],
+		"entry": "ce06f2ebb16d63def4c153d79397db6ad2dc284cd6e1d1cdd9e2f3f3ed22a85c"
 	},
 	"5403a0422e10e65470cb02b80aa3dee0350dab7722daf96521b77b54dd7b9116": {
 		"url": null,
@@ -70,7 +76,8 @@
 			"Day 12",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "ceb1a987efe24894015eb110d8e896c2284873596df54f92b1a880082482a5c6"
 	},
 	"c9819fe6a55b8585d94f0f09092629ecd2dfe1eb4621062b135bcd1507119cc2": {
 		"url": null,
@@ -81,7 +88,8 @@
 			"Day 12",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "0e2ea50ded14c0018af8dabba468ebd64575fa9a1cc6d3039e9f7f685b680f26"
 	},
 	"1702bb02017cd7d04653714dcd7c25cc2faf0ba7d18c7af3361c9c05e3e68874": {
 		"url": null,
@@ -92,7 +100,8 @@
 			"Day 12",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "a371a5cb9d15ffcf9ab989c1f1875c85834f2aa3b5e9747112e44965b829ba96"
 	},
 	"635a5c135c774446aa16b6e39759987cd3a7c90c973f57abfb93d07f6b14957a": {
 		"url": null,
@@ -103,7 +112,8 @@
 			"Day 12",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "1c518d7f551c44e95f42e0082da705d8d48d3d614f090ec7aa0cf33a6d88b09e"
 	},
 	"1e2df198fb7acb56c1a732b6376bf957290e864c2bd2ee12a796d4d6620deabd": {
 		"url": null,
@@ -114,7 +124,8 @@
 			"Day 12",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "851fdc8ae23ec7cebaeb00864208cd8fa54f03070097771979f482e4ca7058a0"
 	},
 	"2f9e6f28d21cd990abda84a67b0d13e8dc56c08776346e6388b758c7c2a9983d": {
 		"url": null,
@@ -123,7 +134,8 @@
 		"description": "",
 		"tags": [
 			"Day 19"
-		]
+		],
+		"entry": "90b4f10992ed6782a3c38c201241d90869769fdd8841f24c314a9c203fd9d14c"
 	},
 	"09017e300ec95db1d3c01b1b0179041f532343cc0f086e21a7032d94f709bfeb": {
 		"url": null,
@@ -137,7 +149,8 @@
 			"role:cover",
 			"role:thumbnail",
 			"shape:16x9"
-		]
+		],
+		"entry": "58e9357838129609c8211a955062ef240d5191aad40763f4cf2bf2960a402636"
 	},
 	"97a70ded03cf7084945d8e7c4b3022d73f40a84998f68b9941e5de83bba04610": {
 		"url": null,
@@ -149,7 +162,8 @@
 			"aspect:1:1",
 			"role:thumbnail",
 			"shape:1x1"
-		]
+		],
+		"entry": "9631e5196e124c80f3cedfd053188335aa06330927779598ecb20282cc117b3b"
 	},
 	"f5f2c0aa6ce83f0a9771a66952b5e122ff32565882b341d35dd5d6a2b3258873": {
 		"url": null,
@@ -161,7 +175,8 @@
 			"aspect:9:16",
 			"role:thumbnail",
 			"shape:9x16"
-		]
+		],
+		"entry": "ce3aab7bb13114bde1dbafc38729679165d4ec2473c68546035d97d3a3cd6394"
 	},
 	"df2a68a3c5e678554dc39c0d8a680f0baf2aa586442dba3cc82db93199bb6b49": {
 		"url": null,
@@ -172,7 +187,8 @@
 			"Day 19",
 			"role:thumbnail",
 			"shape:5x2"
-		]
+		],
+		"entry": "079afb18739af82f727bd25df3e8d9ce59b707f9e1703f5918721bbd7a0177d7"
 	},
 	"56fa2845563a4ca9869b7d474c5536771c2d5ebbf6c6c1ff6a16b7c783f15f67": {
 		"url": null,
@@ -183,7 +199,8 @@
 			"Day 19",
 			"role:hook",
 			"shape:16x9"
-		]
+		],
+		"entry": "d3e2e45465df48a2cbdb8abe4b5d024f96c0d17fa39aa969fd5ab4f9d7cc4b3e"
 	},
 	"eeb47f4bfadabcc145112a12535fe275770902b951811f35a8f7afeefa85929b": {
 		"url": null,
@@ -194,7 +211,8 @@
 			"Day 19",
 			"role:hook",
 			"shape:1x1"
-		]
+		],
+		"entry": "8dccaafffd4a77d84e86ef6ae5f7636b3ae6bafd4ae77a4be72ce8f92376eee8"
 	},
 	"a07d1c126dc8279f2e35494ed6673fe3e4ac84b433e4179ad71d5ecb371d294e": {
 		"url": null,
@@ -205,7 +223,8 @@
 			"Day 19",
 			"role:hook",
 			"shape:9x16"
-		]
+		],
+		"entry": "406ec3715541ee85e2c3e76b499b12a2fb23d90a5347710aad1bbd208501323b"
 	},
 	"4513badb286397d0c94bb7fd5cc3cf54876284c078bb2696362d70ed18863b1b": {
 		"url": null,
@@ -218,7 +237,8 @@
 			"role:title-card-marker",
 			"thumbnail",
 			"title"
-		]
+		],
+		"entry": "0afac87ec4e3d4e23a0ef73e1a88b9c3d02b90b93c766de365492174e9f51692"
 	},
 	"610350187aaecb31319fafbd81afb2c62499d378614dd060b9052cadb4e106fc": {
 		"url": null,
@@ -235,7 +255,8 @@
 			"h264",
 			"render",
 			"role:render"
-		]
+		],
+		"entry": "1cb037676138cf5b0cfcc5808e8e277d703e2db5bbef81ac388acd3d71c30e85"
 	},
 	"4ca4e7f9f50fe4b688e5ed1c86f1aa0ee8f5fdcee770bd5fd7d077996c64791b": {
 		"url": null,
@@ -246,7 +267,8 @@
 			"Day 19",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "a26ed13ab91076e9a101b1422b765ff213b1f4f96ae115853a194dd08651f55e"
 	},
 	"dfa011f815bb73b6680f57d3a85ca77c0a587de309cd6b695659ed46b9ceb60c": {
 		"url": null,
@@ -257,7 +279,8 @@
 			"Day 19",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "52862b6985bbc3725a0209bc49d9122c0e7038600e0e5f3cbc60ed0107b044fe"
 	},
 	"316bcfa9d68e893a55969a09bbbdc65373fda155f21ae04a41b0febdae94aea1": {
 		"url": null,
@@ -268,7 +291,8 @@
 			"Day 19",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "040a6799ea2e92c1b89c03b3664555be0cf2dc7aa412ead7a2d1bbfd0ca81c6f"
 	},
 	"d6bba639487cdf62cb307f6192da54354a1f8d49ac01353b675a82172e1c046a": {
 		"url": null,
@@ -279,7 +303,8 @@
 			"Day 19",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "7442e96c3c87b6095e75a64976880cab0450a0215b183a7a252e92dbfebcea58"
 	},
 	"0eb3327a73f57283565e1df4c067ae4b4f6010a14417beb9957e32deac786094": {
 		"url": null,
@@ -290,7 +315,8 @@
 			"Day 19",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "dc25d877eb69c5b51c375bcabee28f35ac9cea9f991440104f569f02b98b7ffd"
 	},
 	"e59e23495e406859a374d45e523a1da07aa1ae673216c87c887f86c19e3cecd5": {
 		"url": null,
@@ -301,7 +327,8 @@
 			"Day 06",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "1131836017f50af54bed5325c7cfb423795dc3a9441e2fcc62a0987546ad8721"
 	},
 	"3e8ee5739cce6825888081e76d95a8c7cff6f4c8c91863d39e993b4efac582ed": {
 		"url": null,
@@ -312,7 +339,8 @@
 			"Day 06",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "462d618ff2e549e71b961e887f9e106d19da1d5ffe68c60cc88838bde01b96c9"
 	},
 	"0752f3e7955000d279d3fb0a07c959d98f88e4186a163e72cfa48570e6121b49": {
 		"url": null,
@@ -323,7 +351,8 @@
 			"Day 06",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "c89df76853733a10576771930d56a4b3ee590d3f6736554e8a387db9ff85d224"
 	},
 	"6fd84f70bf5eb6d945638d551e74ac401fed8513fe7cd34f55625259b6499c20": {
 		"url": null,
@@ -334,7 +363,8 @@
 			"Day 06",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "6e8601e5eb025895779ff756a91a039ce1258de974cd47a0caf956cdb569b736"
 	},
 	"438fe44274208e201d26834f046a3c36a5f2bc72d8738e7b714c7088aaf96c03": {
 		"url": null,
@@ -345,7 +375,8 @@
 			"Day 06",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "1854d60256574d8edb6cf2be7f30bc69f29670a303fcea96693052280688e310"
 	},
 	"7eca1ca9bd81ed2bba552c0d496ab797bb0528223e3a0fa7f3199d0db214fcfd": {
 		"url": null,
@@ -356,7 +387,8 @@
 			"Day 06",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "ae29c0eef74f7f56b1fad2b2f0aa7fe28405466202e94cc24737a52a53da2342"
 	},
 	"35a7ea1e805aff14e4c9c5463fd6e618035edcc8e361e8723723555c4753d8bd": {
 		"url": null,
@@ -367,7 +399,8 @@
 			"Day 06",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "dcfff9f104d2c6877ad5eb1fc82717cf44df4708826f8da8913b55ad306f3df1"
 	},
 	"a587ea4f24cdcd44df90426893893ccbd5c95319279887eb7315bd68d10bf696": {
 		"url": null,
@@ -378,7 +411,8 @@
 			"Day 15",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "6c009c7019a0b6bc2cebf93cec09e371db1360a835268392e98cd6446282b82b"
 	},
 	"a49e17ca3615f828559d038056f1e6bf646d128277916f294110d4b9a8eacabe": {
 		"url": null,
@@ -389,7 +423,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "7e8c9e69795f15ed4da479595f958bfabcc8e5b5ef1d28a63923e73fd350bed6"
 	},
 	"4cbaffdaeef4744aa35dac03bb2f636baaa062af79647a15cf33cb0274e8e979": {
 		"url": null,
@@ -400,7 +435,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "64a51eaf9c13c561bc352504ef44f00cea705a405e1d67619d123028b323ed3f"
 	},
 	"61133bee68dd9eaef2f6bfe04275315ea2632a02372ff44ce3e9973c852b64bc": {
 		"url": null,
@@ -411,7 +447,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "b683a68ce6dbc3418723b2aa20e973b153e14cb561df63792e6e4cece3cc85c3"
 	},
 	"437aa18bb32913008f494aca77b26610eb98e346f306ca870a97e326f1166c04": {
 		"url": null,
@@ -422,7 +459,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "0c1c0e43f49d5224e0efcd34002e2ef6f7bfdd4ad3a1fb34eb32c7250ccd2573"
 	},
 	"dd103a53bba6aa52e04d96c9d7d8a0c5c62e7eff653827eee8844b47a7ec13e7": {
 		"url": null,
@@ -433,7 +471,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "8dd081469aab8cffdac605be3b140885b2c60d42705646c58d8244c3105858e5"
 	},
 	"ae53bbe299f808c4400527ec9b1cf1671b4fa2f60ddd1ccc6e4ef2cc27b20243": {
 		"url": null,
@@ -444,7 +483,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "5c952f1fe02b432715dba5b2abed92d32e3c2e68143c920ac989541a0e75c716"
 	},
 	"6780003b5e6db797291c2f9e0bef05be1bddcb8357f5070e0825df154c695078": {
 		"url": null,
@@ -455,7 +495,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "28e4824d10aea001366316ff656969fae6d8ceca2728f78c1ad2e265dabf21a2"
 	},
 	"f26646bf8d869fcad47a390ee8b10474bf7397545992ecf2dcd8801c34961087": {
 		"url": null,
@@ -466,7 +507,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "d038a4e4c530b1609c853668a765db45e639070bdbfd1eb6629b15f331c76e0d"
 	},
 	"136a003a0f7a2a2c3a20386e23d166dcca7d7bc9589951135d2fba72eeeb5b9d": {
 		"url": null,
@@ -477,7 +519,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "1a8ac9f5c38d33905d2e8a8efe8db457188695b4164dc5a8d37717f19a260c71"
 	},
 	"7c3b7e5bc70cee5baac185220ecfec80fec0fdb23ce8643dfe11f27cde2caa55": {
 		"url": null,
@@ -488,7 +531,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "b4439279d3d599189c1eca1c1fb31434dc34550cab34f7c2b9f513b2c87d664d"
 	},
 	"6efd477f857bda6b47979964448339b3c3b704a3e4295ffd68b57494b9ddf136": {
 		"url": null,
@@ -499,7 +543,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "204b9a16a2a4a569527229085eafe628e63c6a6763d3015baa0f732351f835f0"
 	},
 	"cfc2958649b043480951cf7317106647de9ad7333cf2be863a3f5d137b5c367c": {
 		"url": null,
@@ -510,7 +555,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "0973c6ec5cae3d80fc58b73cebdc3d745405fd7bcfded60ecde481972add6a4c"
 	},
 	"0fe1140b05c041d5cd1da33ad5c793fa53f1064117510def35699ccd9d3e5c82": {
 		"url": null,
@@ -521,7 +567,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "c4731a73886fb4c6f4cb375f5f2fa0cb9e874a52be0082cec30ff7cc3cbffa95"
 	},
 	"c935e441677083b12f6a009aa98946ee2e9526a57a23cf5df053cd99d027f7cd": {
 		"url": null,
@@ -532,7 +579,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "f6fc00342ef67642212cfcd9f634493072014e780927cf9f34596f87a101b4b1"
 	},
 	"1211f85c878f94ca3b9fda3179ee830c8917ba45b231972268932f71ed388e19": {
 		"url": null,
@@ -543,7 +591,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "fff934c082f1be68a310350e2bc7b5c85f98578126ab99b12167dbb93ac08751"
 	},
 	"d79518109a9aa78ceaf95d229f361141e0e2c5a55e734d269cd64c9f768296b3": {
 		"url": null,
@@ -554,7 +603,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "ee4e0e502c151afdbff06ac91cffbb4b29f8e83e1095bd30f38897b4681296dd"
 	},
 	"f82052f24cd2a9c0dcb778c4b4d02572097fd700a5bf0fde96b605508ac14730": {
 		"url": null,
@@ -565,7 +615,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "1acafe6552b147d0d2f908a08ea89bf4ad43bcd5628bb95d98efb5fb3c0f4697"
 	},
 	"c2bfcb47ed0fd8a04ab7c471a6decb2ae23d3c3336c4463f97e1fc0a686f1615": {
 		"url": null,
@@ -576,7 +627,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "de32ca89f1805d699c8cdbcc5c662ec374c6663b540da6463ed14c49530a7a00"
 	},
 	"d1bc2d2f63c50f6c6758d229657b11fdecd731f7a573a1a52d0ea510b26961e8": {
 		"url": null,
@@ -587,7 +639,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "5d2ebc217038bf5d8a091824a7e769ff255c6d397d1040047eb51930a29291bb"
 	},
 	"19088c78851fef2108422e8916d7cd9cf76267916ae22ca26f17c9cdbd7bda98": {
 		"url": null,
@@ -598,7 +651,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "41d4d7735fbc7a710d52fdb3f5f57f920ce15d82fae0b4899f8a5939e7af1351"
 	},
 	"1892873f2b151c8a42645cfc120c9dd27541a6613762b64a8a29d45e16bb952d": {
 		"url": null,
@@ -609,7 +663,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "e50a64bc6d660ff0b6e857f295d802e2a2b22f5381960db79e83d09621f55171"
 	},
 	"c8abe4d72ef4b676a106d6cfeca404d98effbb1b2a623c60d426fc856333f99d": {
 		"url": null,
@@ -620,7 +675,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "b521413dceabc536edd0d3d2e22f7f0f40323a84481f13100a2be0bcccb16004"
 	},
 	"694121fdfc58ecafd5e7b4ae64e30bebd14ab7d9d199264906c1641f1891d6a4": {
 		"url": null,
@@ -631,7 +687,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "d06ef7110bfd2dc6882c1108b2b0ce8302c5aa790197e2a9b8bb0e559b7feb6e"
 	},
 	"f323458881ab78066a560951507d8b11125969b2144226771d048b798d831027": {
 		"url": null,
@@ -642,7 +699,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "48f3ff12d07ebe26f39928538011386eddd87e9048c9345899eacbfbe941b88a"
 	},
 	"0eb03432164eedc6f5ef7580f119d9197abd10fe2eb62888f348002e8e4382f7": {
 		"url": null,
@@ -653,7 +711,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "d08a964221e282b0ba7cf0112ca7ea654a95e6db7186281edadbd13308aea570"
 	},
 	"0fdbea5f820cd132d1961f91248bcde1b2a2912337152b8f9b0641748dd728b7": {
 		"url": null,
@@ -664,7 +723,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "f1b7685b0372a049d127be4c7f2da3add541eb7228aabb3bea5eb11aaa9f6d1d"
 	},
 	"628564080c9717faef0fde5e8f209b947b2735a6d1c3d2f159cb1c55a43ca46b": {
 		"url": null,
@@ -675,7 +735,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "1b46c82f3cc5f174311dace4ae2c34b5cfedd91c3e3c68a6adf3f3614c6d7ee3"
 	},
 	"a5ad02519bea23fad010baee293a19dd90ff7c4970f649d46280679ec07f1d9d": {
 		"url": null,
@@ -686,7 +747,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "6e92173fe77dfc1c1e2384370ce398f553acdaf6ff51d266e55b95cf93e744f5"
 	},
 	"836ee94d701d4795af1af7b4372adabafb6c568df1b8d809e3123513c795303c": {
 		"url": null,
@@ -697,7 +759,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "25f0e6a2ca1d26bef0d2db59eb3452a2e04f48f2f467e531197686fe8a414d43"
 	},
 	"809b1947c34ad6eb12a9d415bb68c62be8fc6b95220f7c48f0a6ba4a72c0a764": {
 		"url": null,
@@ -708,7 +771,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "8692fda249a88755b2e93a7b2773fad74ac3050086990465ec03abebf536a256"
 	},
 	"ee577956da90bf93840fdf2570203bf786b0c56fa3a86ab16976679a25e39211": {
 		"url": null,
@@ -719,7 +783,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "8585d92e495884a90d20e516547d91d2761538d035bef2fa0f05f668ebb81308"
 	},
 	"ada3d2a31e7769bf6fc489867d394d3c52586b02c325c629723de671b806a9be": {
 		"url": null,
@@ -730,7 +795,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "45e7a9a5123574a56df42d1badc4e4b848ff16465e7f73ebf5efd620827116ff"
 	},
 	"a46aac011eec8881e8eb15ffc2b96d83e67ef16772a814e2723e98f6ce3d8cf1": {
 		"url": null,
@@ -741,7 +807,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "c9d243f2e5c63193bf92df9792886d7f7ed4484255a6188c8c560e8f2d6306b7"
 	},
 	"d34ed8a36d87926264f4355d4ddfe9e1aecad9f37dd8cd56dd7f77fafde9b84b": {
 		"url": null,
@@ -752,7 +819,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "c06cc000b452172d61f598b7f8f9476a1d8f8f7f5d9374d50d0f1072580c2489"
 	},
 	"19fe8a39c3a5338c547b2b3d34c1ce19188cb636684e5afdf82031e9528965a4": {
 		"url": null,
@@ -763,7 +831,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "37fe9a3658fe2607fde7e68aa301632f232b724b1d479cce652aa80c07b8e924"
 	},
 	"d2ddea0d548c7362da7a1dbc64ff1e8af7cc414e32059063fb86cafad5244f8d": {
 		"url": null,
@@ -774,7 +843,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "2c3a782a8b9fa5d741dada8991c983d3585e02c43905929cdb6046130cd0468c"
 	},
 	"1580612e9ab1dc8839f073d1ef21df025d4e93ae7c2adacb3f98031c9d9d5e31": {
 		"url": null,
@@ -785,7 +855,8 @@
 			"Day 15",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "b94d928b0a2e7aeb902efdf83937f80ee905d14945de9373124bd70d61279b14"
 	},
 	"3d79d411a1fc8041c9bb21ec13a8190990c2921ca1a92dd747b81390f2dcf0cd": {
 		"url": null,
@@ -796,7 +867,8 @@
 			"Day 05",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "d81bde35baf80c9d9d9d2c2d15fbdfa6cae30dfc05b2d82b8c6edb174838bb86"
 	},
 	"42fb04168483c9f7a6cfdbc549acdd610492593d28d78d87ea0d30ace559aa2b": {
 		"url": null,
@@ -807,7 +879,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "a5906b7623884e1a3856abfa28d417475a08d02989bfa756ef3dc37058f64957"
 	},
 	"c428d9a6b43cf83f21ddaaa577dd98fe487bb5a70e54c2c8fc1ab71f1c0b7c60": {
 		"url": null,
@@ -818,7 +891,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "ad2ded458dff6192343feeb14c7e0fcd879239ccce5aaab563c538df98d5acb1"
 	},
 	"2a1462f69e81c5bddb9666e1c12eb478febf24d46b7841df310a06f18c24b11a": {
 		"url": null,
@@ -829,7 +903,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "50627e8f7744f1678aeb92004b4304411c72465e97387d4e7aecb9905bf2dabd"
 	},
 	"459f932ea15bf15da01654ef6a83c24533a179a6a8718bfaf44ef8941fd07d2e": {
 		"url": null,
@@ -840,7 +915,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "ad931f3fbeb919f487b87bb46a58049159227fde1b720127370709f9f9851aa1"
 	},
 	"dec13970810d5a532621d08899869d0bd600c213bcda9dcb41a44f837e4dbd69": {
 		"url": null,
@@ -851,7 +927,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "35097eb9061a94652dfd9e350643f98aeeab1feab4d6747b3b2b6c9168a6a7c0"
 	},
 	"e391ed8bb79676160d1e5538b29868d75ea0a57494f8689beec558b32b840dcb": {
 		"url": null,
@@ -862,7 +939,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "bbfe24c78da8a44b06c43b9aff3f8a044102c1773ce17f0461351d8b86ea71e4"
 	},
 	"46c689e8a3be4b387cc2621334bc18c1f80974804ea139f8566d97fac4105963": {
 		"url": null,
@@ -873,7 +951,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "deea23bceeeebd21a13670d40e30f9d94371c5f13e82203971b2ef48cbffd10e"
 	},
 	"ba9d7b32bbda477d1e64e52cbee6da365684633283045946697d73295aaa782c": {
 		"url": null,
@@ -884,7 +963,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "2558e8abebc90748eff9379d6e652d8e23d993ca360d4d9adeca3ada5d5ee41a"
 	},
 	"61662b98bc8d816c4ba732be2cef3a2e56b2be7b4178267ab794cd39262ed9a6": {
 		"url": null,
@@ -895,7 +975,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "c2edc75960f34937a2886548918709e8eaf622eae8a907d62931b907d1dd9ddb"
 	},
 	"abadd43832a4ec9eb6112d431ef43bdf438b0c975a27c604576b3d464043a16b": {
 		"url": null,
@@ -906,7 +987,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "90682305ef1489664b1018d59702bcc37e21e9f211c8015d1e3eabe129ed86fb"
 	},
 	"0ed694e2525dbae2a251742dd86bfe8a6ed70f49147ec1d9e486eaef99d6180a": {
 		"url": null,
@@ -917,7 +999,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "4d715de8b6909d9294b1364173fa686329e39d66176b55fe983bb847878ef4da"
 	},
 	"5b8b0bcb8f6650ecf7c6dd125740d49492c84e0b02a12d6cdc874d91a571b103": {
 		"url": null,
@@ -928,7 +1011,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "529528a25ef789d3e1178cbbb0ba5974c4409baddd7f0b6f1f87953026f4a07d"
 	},
 	"21e08b9d35ef972c308f04f070fb17a07cb7e961eff732c68e9022a6c54ec9a4": {
 		"url": null,
@@ -939,7 +1023,8 @@
 			"Day 05",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "ead6c7905ea3fe5bd20925d85517964908d281b0a1f188e36ca9a18b18ea0a5b"
 	},
 	"6a08f524a54384aa2c902b0e19f3d01b0264f1c218f62a7c47c2950ed0a0b620": {
 		"url": null,
@@ -954,7 +1039,8 @@
 			"role:game-cover",
 			"role:in-post",
 			"site"
-		]
+		],
+		"entry": "45df9734eaf6e9b6b250a5fa815a9c990f6f95740af2b2c8fccd5c1f424ec047"
 	},
 	"b2d5e0d84e13fb44faf14541682ef283edf1592898bc3ed0aeb2b807eb8a87b7": {
 		"url": null,
@@ -965,7 +1051,8 @@
 			"Day 13",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "ca817a1c62a6549f026b8402ea57da251674891f6c20225525ddb382236b82e0"
 	},
 	"66f4d0e8003d428139a94f58040dcb1992539045d69154e8dfc215cb272a5b3b": {
 		"url": null,
@@ -976,7 +1063,8 @@
 			"Day 13",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "5dcfd0e0ec4781ad9393e9380573a866f00ad50b799789fb9304b1f0a0377974"
 	},
 	"15d43839f2e176ae818c32daed4c7275b120ea1b3cbf28c8e1add526e940eca7": {
 		"url": null,
@@ -987,7 +1075,8 @@
 			"Day 13",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "5a3141edad756d11fed9af14c9d99830f6a866c03f257a859674735ca68276f7"
 	},
 	"1d528fbd7eae3fb63146c39c9ce65ca979f8d23bf02a2a972a132270d49695be": {
 		"url": null,
@@ -998,7 +1087,8 @@
 			"Day 13",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "bf311a3daf5e44a69094433471956bbffdbce339f26e1b2e111338ed51f6cd41"
 	},
 	"0e8f9fe03779c82756cae903b436c47cbde53d177e69db1fb9766a17314c69f0": {
 		"url": null,
@@ -1009,7 +1099,8 @@
 			"Day 13",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "75f39c3a9078088876665fdcb1d775d2a692148d1a6dbe340bc436a46ea82636"
 	},
 	"f77aa57853c15dfb8e0a7b0b2f84d1734284febfc3bc1f9608e1e05740add18a": {
 		"url": null,
@@ -1020,7 +1111,8 @@
 			"Day 13",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "df547ad11ed646aee3a40d795c282735dd9187ec43b841aff65ab28098bea637"
 	},
 	"679a06202b8ac8ac256da5ac4ac28863242c8fe180fbcca8ef7aa418fd7d5b9b": {
 		"url": null,
@@ -1031,7 +1123,8 @@
 			"Day 13",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "49e2640526c5ad942f117ea0409230c900e79b243d24cbb2e212a2e19df53c43"
 	},
 	"b021f844cfe41a4f692a6d1d2c6eb82ee262aa06b83ef9e54c8e957a7da489d6": {
 		"url": null,
@@ -1042,7 +1135,8 @@
 			"Day 13",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "fd9860e61de8056ce6ddc93abffee0a31fc796bf4f68068d636f09f817972677"
 	},
 	"5d41765ccdf70ff67d4d41602ff89c06d216883faa4550d65cd8f2dc52da4379": {
 		"url": null,
@@ -1052,7 +1146,8 @@
 		"tags": [
 			"Day 02",
 			"role:frame"
-		]
+		],
+		"entry": "d4fc9ab6388cf4604477291c4df311084b68ef6e530e4bf4a5c19ed50cdb8719"
 	},
 	"52e78080157fc453b12a665f0c2831a03d77797ba0b4b5e421375aec4f696f0f": {
 		"url": null,
@@ -1063,7 +1158,8 @@
 			"Day 02",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "32d769cfe9e23781ecab7256100346e37955e04a6ed2a8ec2d183f613926fca4"
 	},
 	"47d164e6e3eb7a16c99f495d8e052a257fd0631a2d0bca212e6179733d627ee1": {
 		"url": null,
@@ -1074,7 +1170,8 @@
 			"Day 02",
 			"role:thumbnail",
 			"shape:16x9"
-		]
+		],
+		"entry": "3eb279306411ca7cbc83a9dc7fbfe33c9cf6c06b7bfd5b50e958df2f183fa1c6"
 	},
 	"f55ec6115610e16bc3af74da820362b03d6682477af5c29071c528e898a7dd4e": {
 		"url": null,
@@ -1085,7 +1182,8 @@
 			"Day 02",
 			"role:thumbnail",
 			"shape:1x1"
-		]
+		],
+		"entry": "85305444d42ed411f52cde2f531cdb04718429bc0309c6b460b18e28d2692482"
 	},
 	"328a2f6546adcae45fdf6866871971b4db3b2e89f2e3ce1013d6efc8f624d658": {
 		"url": null,
@@ -1096,7 +1194,8 @@
 			"Day 02",
 			"role:thumbnail",
 			"shape:5x2"
-		]
+		],
+		"entry": "bde65a180cb4a36b6bc29940e62a595accbb457e44aa6287def6aa707f37dca5"
 	},
 	"b9087d78cdf33f7ca5a8a25fab9891dbc7f027a31d25bd528d27b71f6a33d693": {
 		"url": null,
@@ -1107,7 +1206,8 @@
 			"Day 02",
 			"role:thumbnail",
 			"shape:9x16"
-		]
+		],
+		"entry": "ffec46c6c34109c41f64b617d9b258a77db37ff34ca426ed804959c6e8131ed6"
 	},
 	"033e662a2e03497a508c0d0028008eeccc085cc7f551b394d8c88cb94fba2af3": {
 		"url": null,
@@ -1118,7 +1218,8 @@
 			"Day 02",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "968f7eea8d3784968fb56ab7b702c0916af8395ebb9eead590ab932722ddba67"
 	},
 	"e303aee7ef0ff64734d1fef12767510ee6d269b136d628f85ccdc30745c2a7c1": {
 		"url": null,
@@ -1129,7 +1230,8 @@
 			"Day 02",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "e884853a0b2617bb86a596cd6ca0944ed944f7e6edea1c7cbab4984f1b9e6562"
 	},
 	"bee308b54127b30f641f735b6e941f893a8d70cce438863c271f3327803dcd7b": {
 		"url": null,
@@ -1140,7 +1242,8 @@
 			"Day 02",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "52c9e20f521db242073717484ffc3dd2b0009a55c3b2edfd2554439ec4aabe53"
 	},
 	"f1f64abf3d2be9b9d5abea3d5527825c62538a9e9722fc77ad0326e4971991ec": {
 		"url": null,
@@ -1151,7 +1254,8 @@
 			"Day 02",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "315bbf8877bbfa00e62279fc65f6c6ffbb9b875f7c6cd34c165eb3490143b5f1"
 	},
 	"b3ae93312ab4727b7f161147f406df5fff67073999d262142e1f346d100c3681": {
 		"url": null,
@@ -1162,7 +1266,8 @@
 			"Day 02",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "0b0886f660dd41783522e794f30afe987dd91310cb65669acf38252fc246d873"
 	},
 	"6b1708a118cecb40915a51c4bcc89cc5b4c120616a86cf3205ad0d9bcc27da56": {
 		"url": null,
@@ -1173,7 +1278,8 @@
 			"Day 02",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "9e37a7797e4c274a44a73e6fb1c01cc645b822c6e4be3b092aa1919e313f1a0f"
 	},
 	"9128e946e50f0f60a571c76de7c1884d5b1d1c5b82668ae580e06fef95386f20": {
 		"url": null,
@@ -1184,7 +1290,8 @@
 			"Day 02",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "b19ecafa5ec19edfdb210d7b7cd7d18efdad9c9c8ea43240e2206e779eea429d"
 	},
 	"9813391bb4b580b7cd4a14c0a9c349b2bafeb6efdc7521b89cdf3299daa9f9e8": {
 		"url": null,
@@ -1195,7 +1302,8 @@
 			"Day 02",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "c8d27bfc385db629f7fc02cf987c8885838d8546b13112eaef850bd62a1bac12"
 	},
 	"9e442ce81d3237243f561780fa6d3aeeeb7f1d83ea8e68f3a166650739c398b2": {
 		"url": null,
@@ -1207,7 +1315,8 @@
 			"in the post",
 			"role:in-post",
 			"site"
-		]
+		],
+		"entry": "8f9a9c4e583fbb9124ff4c5f941f18ac00a3447b36f38d07ee95b24032c71163"
 	},
 	"acaf221e368a91a94996e82e2802140143a8f02c692ebb3742f003849a04cdaf": {
 		"url": null,
@@ -1218,7 +1327,8 @@
 			"Day 08",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "537cf39cefcb6f6923b6c55515d8fc0ac6eb4e9ef693f7fe304bf0bb2f41a346"
 	},
 	"192fce2d0020b01ad283d4513aee2af799cc94c7d79cb28762317a1fe9650d9c": {
 		"url": null,
@@ -1229,7 +1339,8 @@
 			"Day 08",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "389c1ee70be284ae359d3bdc5229e71914d4a0ddb8956a933e4f8249f47e5771"
 	},
 	"6756d96f84deb52ea782839c80b98b3000e17edb1aa355ba1d17c7aa199c1584": {
 		"url": null,
@@ -1240,7 +1351,8 @@
 			"Day 08",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "a083cc287bec6e0940fac5fc430a3042e3d51cce42e2c48f84259883011df8d9"
 	},
 	"c141912f85a99fba5d104f791b04a9d9468a1b1ff7121b53e9f5482c5dd39d63": {
 		"url": null,
@@ -1251,7 +1363,8 @@
 			"Day 08",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "62c873a4f4a37f2e48744e27f7347ccb03c204882ba1857576cd6b9f9ea5b7f5"
 	},
 	"8908283ce1a46ee54125681955be3ea634a4b88c37a242ab5a41d923346530a6": {
 		"url": null,
@@ -1262,7 +1375,8 @@
 			"Day 08",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "3d193102f818ec4268468b4df6adf4bc804812b32a0b7fd0cf386536c54ddee5"
 	},
 	"9d94df0b692872f84063cfba681242e4c88b7e7c77cc8983fb7f4d30f0e62aac": {
 		"url": null,
@@ -1273,7 +1387,8 @@
 			"Day 08",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "34e650a7bd4bee9d6f0e73e186015d8d88367e618963bb87011d19c8977ace84"
 	},
 	"ef252906b634dd04e9dbcf3c6f47095846c8706655d5c0e12ce58416036f4197": {
 		"url": null,
@@ -1284,7 +1399,8 @@
 			"Day 08",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "08416387569adb8564e68741a6331b56e71fbc4bfe9ce683b43f22773d6532b8"
 	},
 	"a7484a5ac3ab63230c1979a6d3076aafde173aa44c242fb8d3af69c555e0016c": {
 		"url": null,
@@ -1295,7 +1411,8 @@
 			"Day 08",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "d6c7572f44fd0819a3ec3bd8002e6e8f7fb31586f6747f8ace2cb142e902d82d"
 	},
 	"884b391b31ee610b8c51b915957eca8c1771d2ff9522b2d657811e1573b7754e": {
 		"url": null,
@@ -1306,7 +1423,8 @@
 			"Day 14",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "831624e2ca93ff02a6a5e173a0f0d23daffa81fcc82b99282e28172844431363"
 	},
 	"0be6f9f675446a95a244a9a9103bce54a1607a39c36c2610b1c33064c241471b": {
 		"url": null,
@@ -1317,7 +1435,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "064c9d6791ead8830dbcd31c7843e99a161993732b0bc798d43521e7595e69f1"
 	},
 	"63e592b7bb89db879f8d058d27b3cad2a621d98291d4fbf67436e21780d4f710": {
 		"url": null,
@@ -1328,7 +1447,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "fe56781b6aef9ccf8536b71148c58e3fd30add3197450e439ea16ef3c37a3d58"
 	},
 	"28ac5bb32b676a89e45d856ca6e082f4b0f7025b8a2631881463eb6e8d60a9fd": {
 		"url": null,
@@ -1339,7 +1459,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "7b228598dca071e2fa90cdb4ff66a2d55b6f9daba6cc5feb6dcec07541b74871"
 	},
 	"6a5a51c94b53f29332ddb73512d02d387e8463f71932c2c95f06f3267f81b35a": {
 		"url": null,
@@ -1350,7 +1471,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "b69e5ec6c75f7f8afee68f2f3d36151bd8b09e98a3e0c904007c13f3191bcda5"
 	},
 	"d79f6c5a86ec78a2eeaccff4cb84d58827c0667c003e15a88e282eab597d0427": {
 		"url": null,
@@ -1361,7 +1483,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "ccf67b0dea882ee8dc70836a2db9367032a8a988e535e274462c2f4fcc79e8ad"
 	},
 	"101c4cff76669111e25741a265b7fb7a76b64ef3c930fa450668a103de88bfeb": {
 		"url": null,
@@ -1372,7 +1495,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "26c7da75f87b0b51ceb5c75aaf782e648ceb95650ae6f4c724bb94c251e1bdec"
 	},
 	"1779ebeaff5336dd0b2b0337d1caa2d34cd0bf0255efb690af4827bde99a1b02": {
 		"url": null,
@@ -1383,7 +1507,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "5cd0ba303056d2450f7ba75ae1b1a0555e68a9992253d798f64c15b4718b4247"
 	},
 	"3c56a387e51fbada1ef473c6ec17c9283fd29389e5814f0ee13c16fa4594651f": {
 		"url": null,
@@ -1394,7 +1519,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "ef6fd6c8d3fe8099eab426942b1599672d5f5c413120019aad0b1fa847185830"
 	},
 	"cd68fe978d2e95405cfb90b74fbab70046eeda0e208c23ac6cf88c37966d2eca": {
 		"url": null,
@@ -1405,7 +1531,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "21ec6b0c4af8bd8fbc94fecdaf29957e306de4905e6b1c21d8c75b5a06597d36"
 	},
 	"650904df35c55d630eaca2aeb216ba611049ccf269862860c58f7176a2cf0dfb": {
 		"url": null,
@@ -1416,7 +1543,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "8c8b5a447209f3cac9e21f20743b3ad64a4a9adc7b8800093e2c1210e8bf58da"
 	},
 	"e608af34b833e123cd1f1dec75cc0cb711c971b45ea5295720e75455cb737d17": {
 		"url": null,
@@ -1427,7 +1555,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "fcf38cb07d8f8e497c92e2c96ba60a0523e6e504f5c9b9962cfd82a3e92f8c18"
 	},
 	"bb646fe1944854e7e9f870102c13f6f827ddb779cbc638e0d5819c8409d22efa": {
 		"url": null,
@@ -1438,7 +1567,8 @@
 			"Day 14",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "e972cb6d3f980b3fbc496a5397be6b7363cf4d9702238c37eaedd415e014d9b1"
 	},
 	"20ac26b176acb976f16df4f8f444321a5c4d85f59b5f5b6e0e4ea914a0cbbc01": {
 		"url": null,
@@ -1449,7 +1579,8 @@
 			"Day 11",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "534366bd87ad5fa017ebd4c5d7d3b2e12afe028e353113ccc23ae0ba52b9f449"
 	},
 	"f1a6575ef79e4dd487415410de5e76c74cdb2a1d8af636070945b74dddc943d4": {
 		"url": null,
@@ -1460,7 +1591,8 @@
 			"Day 11",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "7e1fe17ec01fdc0ac9de58e198cbe3733d6d836af110e8b82fb8aa41b20e72e4"
 	},
 	"a46ab9639af44ac55e5b536072e7ecdd704e16cfda44d82b684dfbf300f5dfc2": {
 		"url": null,
@@ -1471,7 +1603,8 @@
 			"Day 11",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "4d39c6fed04e7e47351b13499057d1e1f5a6eae1e6f35d5b7b4aebcaac5dc257"
 	},
 	"99aa71d257e1c4832f43bfc3ff5839cf1b04f12dd1e92780cde18d3f8fb005ca": {
 		"url": null,
@@ -1482,7 +1615,8 @@
 			"Day 11",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "d39c0eefd3c43dabd1a4be9c864d33bc52fd1043bd912cca0abfc3fd7074e80e"
 	},
 	"b18c0899489d3d50f800637d98140700a5e6696d8b0dc11b50ac83b216ec4f85": {
 		"url": null,
@@ -1493,7 +1627,8 @@
 			"Day 11",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "dbe5c0add95c01899c4a00a216013098dd2bd10a15ecaf2bd631ae4573f6f9a0"
 	},
 	"84e11ab404c7d0d32d557f320aae2b89bc9ed3ba9e1a92e2778bb3055b9664b9": {
 		"url": null,
@@ -1504,7 +1639,8 @@
 			"Day 11",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "2461c5197ecd61777ba62f447fd8fa783ba23caa7e05044132202ecc0cf53f44"
 	},
 	"1d5006a4e44c6464119d827285d44e73ed41291445f0bd852a3efece0a66666d": {
 		"url": null,
@@ -1515,7 +1651,8 @@
 			"Day 11",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "6f624ed9ae444eb0a4c7f26cb53f69d7d0b07219a754043b49c78e85cea93e6d"
 	},
 	"3522dc73211ca1727f9329862beeadfc53ec20018b95d90c98b427163c77404c": {
 		"url": null,
@@ -1526,7 +1663,8 @@
 			"Day 17",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "70a5e35f69c31ea899ff9a7c7aa757ca2385ab0ea4bd837efc7171e7960db316"
 	},
 	"9eed66bb5e73ae7bc39744d85c416ae23bdafcdfaf03545aec060209fbd98573": {
 		"url": null,
@@ -1537,7 +1675,8 @@
 			"Day 17",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "17b53503daeb47047db450b8018b705d38559175b0360c39901cdad11d0c9dbe"
 	},
 	"e841e8de88eef17c9ba84b9e30195aa0aa2b2fce3e148161c5ab3f44d3bfb1aa": {
 		"url": null,
@@ -1548,7 +1687,8 @@
 			"Day 17",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "b9c1e59de90db84ebb6265bf646d5430522c5f829b9db9e3b1ddaff9b50d9a9a"
 	},
 	"cab04a7593bc33ea53453056d1adf5b4522b11a9ec4f0eab174039be57559676": {
 		"url": null,
@@ -1559,7 +1699,8 @@
 			"Day 17",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "4cb02a87766152fe1d2f767a7be07a986cec33bbe7c337d96db55c959095e33d"
 	},
 	"251d10efd50c39ff2c94d60ab63da70729af3bcafe57a2d7fd3cc64d16612f80": {
 		"url": null,
@@ -1570,7 +1711,8 @@
 			"Day 17",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "c19b4ea6e580f1be490877060b9d4cfc90cea4a87fae3b25ba516812c19e6357"
 	},
 	"577f1497f1fa9c035c1dca2a4524868b031f23975e76f897ca8dfb9e536dc6c3": {
 		"url": null,
@@ -1581,7 +1723,8 @@
 			"Day 17",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "39f885d4b634ddf538951e279ca30ae267fe4ad27d9ee233955bceaca01b1ff3"
 	},
 	"adfd93e8cf0dbb793c1e36d2217ce34a1d6b7dbfc37467782349b08eb05ea409": {
 		"url": null,
@@ -1592,7 +1735,8 @@
 			"Day 17",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "4f92fbed21dd398b5de680a5c2d5fe1cfc9038bd4092e28b9f1ef639dec2af36"
 	},
 	"0e257b7076a46a9cca06d28e2d6acac26ad256b76045702069a828938cc1e62b": {
 		"url": null,
@@ -1603,7 +1747,8 @@
 			"Day 17",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "861201b44a8f433d18fab91e1e8460a29d0ac9aacd84f3e59ef67aad1feeb258"
 	},
 	"dbb8051ef5b8733a10f793725312e46f60bb317aca58cb569f688a372cff8331": {
 		"url": null,
@@ -1614,7 +1759,8 @@
 			"Day 17",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "94fc7f35e08ed12dbe9d95b8280eb21b889f3cc08d01c36636f36e65512cc314"
 	},
 	"1f5d51413b7cdbfc88713427995babcbfd280c44b8647ca18844d870963e4cdc": {
 		"url": null,
@@ -1625,7 +1771,8 @@
 			"Day 17",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "3f298bb40c149a6128de5ac7f8a58042e7e0d8ff0f819e5b4ee68b38f8dc1f1d"
 	},
 	"683d09551c85fe0f614c1819922e85aa4a3da6dd7fb51a3257dd38d35373861d": {
 		"url": null,
@@ -1636,7 +1783,8 @@
 			"Day 16",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "ef14556b38696c1a070ee5dc9c232cab42171f65e51ea6f803bc9b72b37fa2f8"
 	},
 	"b93f0425e3f4741de9b7d411789cb4886988ddc393f37ab1cc92770821dd564e": {
 		"url": null,
@@ -1647,7 +1795,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "d4df25ada20e6c02c0aa6edabbb41a1bd4ada7be61e2af2682f17fcfc32bbf36"
 	},
 	"0770170a7baad33655539cc3c719c40e52e29971632ffdab271c9839017b5814": {
 		"url": null,
@@ -1658,7 +1807,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "619d5735017f4224e6488a443d9770bbd98118cf468a1ef92070154e492dc2b2"
 	},
 	"8a7219e9500c7b3efb2d9945574836b35a6d0631236d4c68123632e0c932b6bb": {
 		"url": null,
@@ -1669,7 +1819,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "1bab21ad5abe9d4fe26f065d01cdf9c061773f9e15c53a554ff436f7efefc57e"
 	},
 	"bdd4bc772536dfb223423ac1d2740b7cda46bd5061dddf9ee4ff42b478991e4d": {
 		"url": null,
@@ -1680,7 +1831,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "a03fd75d1f2cfa59fa0f03623aeb460f993781471753026d002a800df21095f5"
 	},
 	"72e25ae0bbfe7519e0d0c24652305ad33d802638baa2666cc1f9815690333c1a": {
 		"url": null,
@@ -1691,7 +1843,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "f112433f82d48c030f22f138b6295f13376555eef15917acc53a72ddb9fd409d"
 	},
 	"1c3cf59e9215e11343e5855d86dd96b0aaf498d26a12fba75b0acbae4aa8a0ab": {
 		"url": null,
@@ -1702,7 +1855,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "7bb0a30b64b98fb26c3b2706a6652fbeb007b8ac05327d8ca321e0c52daa05c0"
 	},
 	"030be26f441a7869da69e790600c460976ae387298b9eda3b65944fc4f904a2e": {
 		"url": null,
@@ -1713,7 +1867,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "7ee153bef459b526ae23e56a1e83ea1d010993cb6adeabfca3a32b12c24925b3"
 	},
 	"610b122f77c4a464b8f6c543f4e09a499f70d280cb1cc0912377c9487cc690f4": {
 		"url": null,
@@ -1724,7 +1879,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "28a66049bf5b08c9354f0b57a0f25b61ca9fd6c773e6f9fc5008e4a29e4d9d13"
 	},
 	"fde10b4f7b804a17c8be546fdab6efd95eeadc0f0b13b551680fdeb3c436b3fa": {
 		"url": null,
@@ -1735,7 +1891,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "6386e8d8db850e1fdb244b9a652b77a8a30a27b069f5a32f4df9df23c504e156"
 	},
 	"f661bccd09d21e234247f9d743e8ddd6c6877cc8ba6920541ce51ab56e2d1740": {
 		"url": null,
@@ -1746,7 +1903,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "4484010aafb1db23d26264535111a03d9bc12f3f0479dc39f5cec65270e36bf6"
 	},
 	"c8205556902b6ebf95823f9ced15b3533711afd4ea871eadab30eb52961a046d": {
 		"url": null,
@@ -1757,7 +1915,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "b52d22bcd292c83881974e49712bbba0d715f3c9ce5bc598580890e9005963e0"
 	},
 	"964aa2252546632fa36ca3f59657957d3735418848ecd726d3a1c92d3ba9e533": {
 		"url": null,
@@ -1768,7 +1927,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "b3a7162604498999b1099a2c16634d063e9753b6055ceea7a2f53876567bc090"
 	},
 	"cfd904f329bbe1561aa9ca49961f7d462c1813e526509b5146bdb1607ab3a142": {
 		"url": null,
@@ -1779,7 +1939,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "cc3b227469a5ee01507556d0afb0888217776dc9ae5003f3704f51028a96058d"
 	},
 	"6c0272fad11cb606c26f8746d3d2ea6b8fe61d02462d4d77b82f94bbff5c9890": {
 		"url": null,
@@ -1790,7 +1951,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "29bcba2e4e5daaab80d634ef5b899aca664639f2903ef45930d16a34758a4700"
 	},
 	"bde46890892bd327048f08ebb6e154f8d6cbe4ef075f78ec3137e1a8d5e20257": {
 		"url": null,
@@ -1801,7 +1963,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "1e5b7c69be04738499ffeac576e0f28bef1ef409e29f2fb09b2ca50462c997aa"
 	},
 	"9ba137e43cb035694cd23cae2b21aed187128e9a5073e79b060d3642739d4d7f": {
 		"url": null,
@@ -1812,7 +1975,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "e462faa527ccaf37e9a02bb62181dd6dd17232da7cf60f00aad7ef295a2168ea"
 	},
 	"bc567c7e34e21a223eab6c5c4ea77b7665d7761c885f06247505965d9686288f": {
 		"url": null,
@@ -1823,7 +1987,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "5a5551e64c1fd0850a18ebf0b42e2c3ef94c9a8faddd572a26bed4dc6ce54208"
 	},
 	"16f5ee5d0b3ff1bea6705c6e3abff68a980bfd878c53bd80ceaafee347c878e6": {
 		"url": null,
@@ -1834,7 +1999,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "87c65fc7f445f45a447b0326ddd4f995c550f6b621aa0df826fd878aa22d3d43"
 	},
 	"79f67518054348f32e08dc015f7e6ceec4527a57bb0a2a5be26374665110eb16": {
 		"url": null,
@@ -1845,7 +2011,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "c6bccd42411e54489bc200090fb4831c92446dc3e157f6aa4221db2cc91c9939"
 	},
 	"846a89251eb006be471963e57794daf5fb7bfb7eab03c1386e8731ff2a2b9561": {
 		"url": null,
@@ -1856,7 +2023,8 @@
 			"Day 16",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "141b7d2824b2b1d19593444200f58dfe158ae24b197c00f3d4d0fdbf153f7e5e"
 	},
 	"1ebf55a75d144560891cacaf9460a56e3eb44a1aa063468e57ac01c99357b1c7": {
 		"url": null,
@@ -1867,7 +2035,8 @@
 			"Day 18",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "502b6bc36118a77dc8351751cda34214ea17d807312e8da837a8d01a30c87639"
 	},
 	"bbd876b605df24a431710a7a815743c0e349bf9d42a3b42256e1311ee4b4b3ed": {
 		"url": null,
@@ -1878,7 +2047,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "0e742fe7e339c43f737a5cc5cf02db2a50135899eea229d5ec930f075e0b7984"
 	},
 	"8fb0dc56d82f0e4d80133fe3c44379cfe0c4b19ac4999a4800ba2b5bc4ea03e9": {
 		"url": null,
@@ -1889,7 +2059,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "09e60f9eb6ae99da412e2284c309f66383d9ebf23fbc819c4b87dbc0d301786b"
 	},
 	"da653aeb02e5495b6a9b92454533205d19eac05ac279361c361e394b767c254e": {
 		"url": null,
@@ -1900,7 +2071,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "a0c467c2f35c35582b66b9e3319a87b8055d023f0d837ab3bfacb6e656899c80"
 	},
 	"9ea6811a3ee5fac8a44a27568daae1db43a81c4578ddf166e42e5b410da9612d": {
 		"url": null,
@@ -1911,7 +2083,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "9a53de2aa7263f013e171997f65fb04d888bac66bbd4435ef39d6924fdc416f1"
 	},
 	"cf9ae5db864ee4775e39d01543df1e20b40193073afa95aa9377ce2d5532026d": {
 		"url": null,
@@ -1922,7 +2095,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "96b3ad300daa76ea43f4f97573ca2ba84c19782c0e7a8a1301ef8dde25776428"
 	},
 	"ef740aa294225b349eda8f296f7c01579f00ef997b4481715403eb89b829956d": {
 		"url": null,
@@ -1933,7 +2107,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "e1ae41f792d62a8b817c781bc5e36cbf214a1d7b7404e2761ac33e860663f1da"
 	},
 	"20d25c031d280e8cbc7a6822d7d914052dd941e9c1f85f9828b7e52319106f7d": {
 		"url": null,
@@ -1946,7 +2121,8 @@
 			"in the post",
 			"role:in-post",
 			"site"
-		]
+		],
+		"entry": "d1a6d761de58189bf35470fd9258868afba13ab154fe1075e645a7fa2a999a78"
 	},
 	"2771165774a52fe73498daf097e7b1924d0013b9d29b13df1312dacb5b19a5d9": {
 		"url": null,
@@ -1957,7 +2133,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "67e2d2a82708f963666e61b1db6a8caf87415eff2cc30044dd6424d40bd96d80"
 	},
 	"792f3e235b4e073faa0983e406171f4e0474678b3579bd90b5bc02d0e3c9137c": {
 		"url": null,
@@ -1968,7 +2145,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "5b050d081cdab17dbba72ae713845a8f6ec4795d9cb49128f1966481bfeb3c18"
 	},
 	"d39c3903ba03627a239f0bd767c482cd59b91838cf6e0bfd6019e534e8759864": {
 		"url": null,
@@ -1979,7 +2157,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "8e97caf932d475ba11f7f1489f4843685ba4b5e9b902a9b62c847ccaffac4b9e"
 	},
 	"fd499a9332d35cbd3d7ab67727e5dd3522537c27ff403026c05a55b8ae934e3b": {
 		"url": null,
@@ -1990,7 +2169,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "9ea7a2be0b8692a7efd5c28d0dfe8179af86433e4601e57d7eaf0fcdcb263afb"
 	},
 	"291807b4b289b578f99a32f20ab570d8cf63c0c59656a4cbc95c2e4cf7c0ada0": {
 		"url": null,
@@ -2001,7 +2181,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "5d1d046f6f56a4a323379870ca82229bf7cddb0b1649a05e8522e7693a874856"
 	},
 	"482535954361e391300d3158ced30e4557de95e488b9eacda09f49a5cd3fd3aa": {
 		"url": null,
@@ -2012,7 +2193,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "5b714852a490f3f3f173726973a344e58ba62942e0b2a263d40169748aea33c3"
 	},
 	"490556e3d0875212540b8baa870ddedf683b1cdaea64180f6cd1afe2e4874d09": {
 		"url": null,
@@ -2023,7 +2205,8 @@
 			"Day 18",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "14879d34ef3f1ba56a6af7a7e6834ace756265a45bcb4b6736b0491c8df3995b"
 	},
 	"02f4682c591ceed6419c5cf1af6236c0c48d1dbd4ce376527d8c1afdbce30d80": {
 		"url": null,
@@ -2034,7 +2217,8 @@
 			"Day 10",
 			"cover",
 			"role:cover"
-		]
+		],
+		"entry": "6a33d1f762e13e8d37983f6a37eab5e06833117898a141dfe376cc42c7d496d7"
 	},
 	"ae2c6ef857c53d839dd0bf22033b0820380b1c6c8aaa087727d87d471b642cb9": {
 		"url": null,
@@ -2045,7 +2229,8 @@
 			"Day 10",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "2781f5568a80ebfecc9e61b9b0cae1581f8d1006cfdf2dcb04735d500f1f8c57"
 	},
 	"b37defc1ef11a63e4f61cf393b0cf051883c67fb0d97c9e87db20ddae0b966c8": {
 		"url": null,
@@ -2056,7 +2241,8 @@
 			"Day 10",
 			"in the post",
 			"role:in-post"
-		]
+		],
+		"entry": "e967df38d35ade2abe53e96a0b4eb0376ff9c696fb242bb8955cdeccf56c68ad"
 	},
 	"79dec44c6aaf6de870df76b04698a38002bcbdad186375a3c876aaa10b8b06f3": {
 		"url": null,
@@ -2067,7 +2253,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:OUqKpUReINg"
-		]
+		],
+		"entry": "460c16241f23ba03d748baaf62e853c534be62890213352280d2b0350bcb7bc3"
 	},
 	"1886769a7f9ee7d8aa9b3c0e1a1f13fc201f2feb21c9b927aa67800a55893be3": {
 		"url": null,
@@ -2078,7 +2265,8 @@
 			"author:elias-ford",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "8b6f69333149539a0711f2d5c9e49723da54dfa94fe6cc8d9c81d98e16d77997"
 	},
 	"ac94514bf847f6764dac2822d4aa82dbf447ea254056692c77fd205245f260af": {
 		"url": null,
@@ -2089,7 +2277,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:a5DzxKy0yQQ"
-		]
+		],
+		"entry": "adcff4f95886992e4eea7168ed9e02afc535cf92efd0e74f38b1b0441a34ae23"
 	},
 	"43a7616c30b89f671c0647f6828dd4231b38221dd2decb94fb8cbd551543d81d": {
 		"url": null,
@@ -2100,7 +2289,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:9Ro0gp7xOlg"
-		]
+		],
+		"entry": "dfab35b83dd4f27330aa5e5bdeb5688ed0df99426ff6326d540644b771604b49"
 	},
 	"59e911522998d49fdfb6ee2f32a1dbd79cc482744ffd363f4361be523b5ec523": {
 		"url": null,
@@ -2111,7 +2301,8 @@
 			"author:celastrina-calea",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "6ca19ece2879cbc94a7d592ec999b4e6570813c7b1f6ea5437248e2f0f73e143"
 	},
 	"a07074887a3e53fed3b2ca52c21180f29616b88873f003f8e76dd89545b3a341": {
 		"url": null,
@@ -2122,7 +2313,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:zxVoCw3P1Gc"
-		]
+		],
+		"entry": "0925676a5bac3e59c40e2b7d59d06100131d2b6e56024f941dddc08f7bf930b2"
 	},
 	"86553f0c78e64c8b2fb6a5491dc13b1fe7fc3e2ffb89cb9d37d7d45e9d5fab45": {
 		"url": null,
@@ -2133,7 +2325,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:y_uQHoVhhcw"
-		]
+		],
+		"entry": "35462fef4fc08f54e7b902bd20dcc149ef4b89ab428a5817104ed377a33ff4e3"
 	},
 	"9339c7fe3e747a6caf2d7bcf765d58430735262e91134202a8f94b3a6df64991": {
 		"url": null,
@@ -2144,7 +2337,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:WzijH3lgzHI"
-		]
+		],
+		"entry": "273781cbb88d63ae0be95cbac23bd90bd1c5d70675ab859e612a753f4a86fd71"
 	},
 	"03ba00f62c52d01d2756c094cc83774a03218b68b9a4e353ab6fab911ec0fed6": {
 		"url": null,
@@ -2155,7 +2349,8 @@
 			"author:dw-planet-a",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "c4db3cd01ebf3656f4dd6580bbbaea425fa78559e3fd0d0155f7eda5918fd2bc"
 	},
 	"71acb602ac6c5c8a2d9e822d8408b2e1545cc3c8acbd81b699b819ca45628faf": {
 		"url": null,
@@ -2166,7 +2361,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:I0rQNYMwzfY"
-		]
+		],
+		"entry": "4fb585c14ccc4bd9fe9501f29dbffbf115376ebb793e2abf6eb2db8669e0497b"
 	},
 	"e241ef776d4239c1f58e2614c2a9b365b7a8d482ef0236e568412511e43a0eb3": {
 		"url": null,
@@ -2177,7 +2373,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:LoLYw--s-5w"
-		]
+		],
+		"entry": "0f56190764f52a6ab2bf34294b5ef9883b30989785f067021eb35d96103423ec"
 	},
 	"5eda8b0080595759647be6e4c00a03d70cf3b47e8aff665703b2de3158416d95": {
 		"url": null,
@@ -2188,7 +2385,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:GCfUT7jPkvk"
-		]
+		],
+		"entry": "cd24a5c6d7119f4f01eb9034644917d7d3a93ce5b931237cd43dcd3696e4c21e"
 	},
 	"1fc031c08f33be97ea6e69acb6f3be6a3924c338e0ff2b4e312f233d7fa9dfb0": {
 		"url": null,
@@ -2199,7 +2397,8 @@
 			"author:andrew",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "9b86408fbecedbe22302ae723205e3caaf53d9863ca8ff5e0eb110dcb77413e8"
 	},
 	"37eac23d4cdc87ec6f418cf0d9b6c207be280bc1dbb7299acc63f0b672ae36d1": {
 		"url": null,
@@ -2210,7 +2409,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:DD7bHSxV-EM"
-		]
+		],
+		"entry": "e7c24383b7e917629020ef9d9bb516860dce87af6d557e53b6d39fc617ceb75b"
 	},
 	"867573ac7cc22071808de9a0a497056ced3d7b1c9f40813d7dacf8bd75c09183": {
 		"url": null,
@@ -2221,7 +2421,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:RpkB8x5nqFU"
-		]
+		],
+		"entry": "2da06423eefbf2f62e12969919b4705cab594419fcd30cc3548c7187c6d8d024"
 	},
 	"b1b617e3d90c82ffbc5f1cf70f315cf3ee3aeb51c8e3dbbaef0962df84f07f87": {
 		"url": null,
@@ -2232,7 +2433,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:5vbl5FL-nsI"
-		]
+		],
+		"entry": "cb3a798fed0e938f238bf6736d83667e0428626a3bb49ef390c90f5255e24525"
 	},
 	"a24e9fc43f59af28994f66e0fc31bbf24c2a7c6de5581c69341e6da29051c836": {
 		"url": null,
@@ -2243,7 +2445,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:R2_V8Fe5-_A"
-		]
+		],
+		"entry": "22e96699accf2c31f1f8b699542da6e0b5fae3abcd8cc45a0d501888a0599092"
 	},
 	"09fb2d4005330909a93709d9552f03ee6224b2c8548a38fc530e68d930f5c0ca": {
 		"url": null,
@@ -2254,7 +2457,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:z-UsCjTfAD0"
-		]
+		],
+		"entry": "dddcbc554ad300ecbc9bc6b9add48a4125c728cf38eb04704e65f7e74b8cb295"
 	},
 	"0f591cec9fc7d1bca7107d0188522dabab0e9a24632501337b45e11b134f6360": {
 		"url": null,
@@ -2265,7 +2469,8 @@
 			"author:leave-curious",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "b3896c9bbd82b4c908e8c0b7b1f3a46f575849e035fb85c59346ea366882e0d2"
 	},
 	"2c1b2c4c07044dfbfc4e0ce87bb6d9fe797ab91125b419f94f58f4ab6d6ad67e": {
 		"url": null,
@@ -2276,7 +2481,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:hDIBkEFP_x4"
-		]
+		],
+		"entry": "35f36440ec32d0a698f8bedbd4074cf33628739dea098785d417e1016dcfc498"
 	},
 	"111b0f3fc419f49f3be58e817288000561a92a0e0c3da4c431c70e5e1bd34c2f": {
 		"url": null,
@@ -2287,7 +2493,8 @@
 			"author:arte",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "8c36d1d75d4141ea9fcebe5a4b93daccbc4cbd818c178415fea3ae105e810f65"
 	},
 	"886d36242f541f665732317cf69e84a05550eb86792067e9a42cfe0160e0404c": {
 		"url": null,
@@ -2298,7 +2505,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:eAV-ui_MB-A"
-		]
+		],
+		"entry": "7f3ddfa49e9646acf426eaa629c453c02d4febefee204155d2d7eb2674a91552"
 	},
 	"73d02446fd4310f0eb0701f50635b20940a596ebc60b2539619131445c2d811b": {
 		"url": null,
@@ -2309,7 +2517,8 @@
 			"author:shaun-hines",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "5e8b7ca912ecb77c6ed5125f75d8cdbd779df6244ca03458605a24ab31c3e55b"
 	},
 	"96589c6c5b17222837cc248480f5876bd62e1a7c7431ce8cc021dbedfd61f477": {
 		"url": null,
@@ -2320,7 +2529,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:rDVn-bvuYmo"
-		]
+		],
+		"entry": "9a25b5230c892b2a8b0d661e0075fd806d33dffcfc7531c05a19069647f723a5"
 	},
 	"c267859ff6db41e89c6f09bb2fac73652a0c4e8494abccc8fe8c2ae7f36905ad": {
 		"url": null,
@@ -2331,7 +2541,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:OU1ijmTK6-k"
-		]
+		],
+		"entry": "cb97af6e45146b4bfe8e90838f02150f4ebdc48c051e7b9c165ae736f088c0c8"
 	},
 	"3a577d703b26f90334c5f6f9295845c6d87eb0c4728fb12ce0b5fa8c387646c8": {
 		"url": null,
@@ -2342,7 +2553,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:1bqjt-xrlqk"
-		]
+		],
+		"entry": "483bbd9a7a923c44e934c42ac871a0975a7d68689804fead594ae607b3100e99"
 	},
 	"f43762ae77dd379fb675a1439485e2e29f6039dc5d3a9be6572d91bd6a51e5c6": {
 		"url": null,
@@ -2353,7 +2565,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:cOEUq0RuyjQ"
-		]
+		],
+		"entry": "6de31df16b5e2e1c2fbd07b196c13e583790b35edd11e00b394bcb5774046ad5"
 	},
 	"feb940a7c5317837ad96d672ba3c3f6f6b67384ff1a58754939000ba0fe6dfad": {
 		"url": null,
@@ -2364,7 +2577,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:O7LvhSQ5Te4"
-		]
+		],
+		"entry": "565597b9df7316a5858bb1ea10410d16ec1959c4a4b218d91aa81bb91a7413b4"
 	},
 	"afe1b3c7dc70a2a0b930b745982053a87d3e40ffb2fafdd96eaad70c1ef1f9a1": {
 		"url": null,
@@ -2375,7 +2589,8 @@
 			"author:johnny-harris",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "b389e51deb1dd33a6a7eaf9160ad17d817280d91a0cdbd894b53e335492541de"
 	},
 	"8f2ec61392dc77e8135ddfa1705fb8fc26e8aca3c6da1becc7d0e9a09dd53d05": {
 		"url": null,
@@ -2386,7 +2601,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:jcD-7YvPVQ0"
-		]
+		],
+		"entry": "a2e562970a999ffc5bf001d92f067722f9192b885700e642584177a4da9e0d7c"
 	},
 	"6fead8507df682b94914338725a3dc1855235d82481a0341e282917dd0c68d1d": {
 		"url": null,
@@ -2397,7 +2613,8 @@
 			"author:shaun-overton",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "d98b581e2c2a5e8ca8e9d20c3b09a9dd2587f7b3d916863713ceba3d50f8e88d"
 	},
 	"b89caa40187fc77973387636685e623118eb8cf02728f98b4b7bb85e87e492c6": {
 		"url": null,
@@ -2408,7 +2625,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:D1INOZltmyw"
-		]
+		],
+		"entry": "d965fc5e3761205c242315177edef4f28a0ecb809b7a7c805c3cee2724d90dee"
 	},
 	"b565d44dc3bc4b8b764e52e26515aa486d3eb466e3ab620a80b392353795e813": {
 		"url": null,
@@ -2419,7 +2637,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:mnuOZcmoGD8"
-		]
+		],
+		"entry": "aa809fe2d6a204a7403cf83c447f1566a1a2dd868020b26115efa12776bf03d3"
 	},
 	"6ef30aebb1d1bd513124f3791f5894ee8ba686a1932bff25e09bf62a9fff13e3": {
 		"url": null,
@@ -2430,7 +2649,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:ks3Rgl4oC3E"
-		]
+		],
+		"entry": "ae7a6329bb2414a12a91fa2cb040fe37344930960c0d54e7b4ceb3c9105519ff"
 	},
 	"fdae8d7e3d5bcfbc9c5034ff59efeab842be7be817b28982846de46a40658fd0": {
 		"url": null,
@@ -2441,7 +2661,8 @@
 			"author:chris-williamson",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "79e520a129b7096417fdc70f7cc8464371eeafbfb56c5c880b783687e9fb77e3"
 	},
 	"0d3b6e1e52072a82424c43ff12edb6f6cb324e88f1ebb0f4c4880c3ed83f4bc9": {
 		"url": null,
@@ -2452,7 +2673,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:jZb6_jlUJXs"
-		]
+		],
+		"entry": "aa129c80c9af1578cbc5bc2d60e86e55a459d077696fd2f1dd11de9bf78cfa12"
 	},
 	"4daca7ad2c03a7c8c131717de9b8408c58dedd833ee7683cb9debfea5bf76f49": {
 		"url": null,
@@ -2463,7 +2685,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:ZmNpeXTj2c4"
-		]
+		],
+		"entry": "0b807f53d4f0202ed4b6518324445759d604908721eb7ecbd1fba28dd8b5dcad"
 	},
 	"85d0416b76e9b841d2bc7d2f66d340bc7fe2420e9271a4b4765d22d0144fc027": {
 		"url": null,
@@ -2474,7 +2697,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:sTcvKn92TlI"
-		]
+		],
+		"entry": "6a90e947e6c17a63418e1b5c37d7f9d82a534fd433cd0e6572909a810168c270"
 	},
 	"0ab3349fc01e7c699dedf769ddf30a8e5caa2c4c52484cb2469fe3410bdef348": {
 		"url": null,
@@ -2485,7 +2709,8 @@
 			"author:the-ash-files",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "43dbfaf37e720a35fafcb1972bccf4f8262b7a82fa4ea479c74dd55cfaba6e8b"
 	},
 	"f39a91034588fe1c41f9971b21590361c73a0eeb29175b3a40e5d934900e5681": {
 		"url": null,
@@ -2496,7 +2721,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:BblaJ_Hb0vA"
-		]
+		],
+		"entry": "364ee6b98588ce5527278fa875f97be26235420f363b4d7d18bc3797f39d7f5d"
 	},
 	"aff456651fd73c2145f5dabf827e312023cf572573ad5dd1e8470cf7f0ec4243": {
 		"url": null,
@@ -2507,7 +2733,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:EMbZ72cCAzI"
-		]
+		],
+		"entry": "290b89b6d9103ded4c02e46bc5ad90162d9314456f41ae75ee2a684b81d2e60e"
 	},
 	"13cabce6b90ac3d11e04dda7901f13dabfd96fb61d471e39a4b2f5950a850a25": {
 		"url": null,
@@ -2518,7 +2745,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:twGcjDnOb_U"
-		]
+		],
+		"entry": "4a8ec35e14edf5e13b85bdbaa23e6dda7e35303000f42b1664ecc32f2cec3bd3"
 	},
 	"78c4bb2a1ebd6a85e6b668ec8968c1576dbcebacc51b7916dbcdcf47ed5d186a": {
 		"url": null,
@@ -2529,7 +2757,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:vgq14_IqdYM"
-		]
+		],
+		"entry": "68356fa95d740dcb95f72f194fc97c33a4994e7f5fb107cbd6ff89e7fe4b0814"
 	},
 	"4b40d87f1582c301e202567bed70b82d80ce727f2b453c9b491aeadb2cd4b226": {
 		"url": null,
@@ -2540,7 +2769,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:KYObF1-4SMU"
-		]
+		],
+		"entry": "c871caebad67058c654061cdb0f648a3621e65c9e1ca87a3695d2596ba69207c"
 	},
 	"9baf3a621c0fc7827edc9a1ed7a02e8be21330a1b31b223c4da840afa991ccfc": {
 		"url": null,
@@ -2551,7 +2781,8 @@
 			"author:homestead-roots",
 			"authors",
 			"role:author"
-		]
+		],
+		"entry": "1fd2e78a733ca44efc60e74d8020d5619abef4b6541e4fb1535190a154fb104b"
 	},
 	"f06137b9873b134c2fba131652fcdded43e2add66c46d67175992ad6ffee21e6": {
 		"url": null,
@@ -2562,7 +2793,8 @@
 			"role:source-thumbnail",
 			"thumbnails",
 			"youtube:zIsHKrP-66s"
-		]
+		],
+		"entry": "bedf070af559010d95c77fd32c66237178f50410a40d1eaa065d295fc6a4b874"
 	},
 	"a78e789f5d7c92310ebaac44368dd1c3ab6e65efcdee67f148649b3965a03f69": {
 		"url": null,
@@ -2573,7 +2805,8 @@
 			"Day 01",
 			"role:manifesto-banner",
 			"site"
-		]
+		],
+		"entry": "f85066d777792325a3bf2486b50f64f5aa45d4d6018c5869364086c10b31af02"
 	},
 	"ebfe67f916716b730cfb73b9dc90713a42675f8a092ffb9e9d6eb70cfaab160b": {
 		"url": null,
@@ -2586,7 +2819,8 @@
 			"games",
 			"role:game-card",
 			"site"
-		]
+		],
+		"entry": "8d3f8266fecf2c1ace3e6476838d1698b2d71bc02c669486ce953ff15f2119e2"
 	},
 	"7291d181201e0a5c5f5794e6e1c147529d3e220e6196d151374fb5030fba7584": {
 		"url": null,
@@ -2599,7 +2833,8 @@
 			"games",
 			"role:game-card",
 			"site"
-		]
+		],
+		"entry": "cd9b0ee9283aea149beefa5b836fb4bb3c25ddaab093fb2c7be063fab66d526b"
 	},
 	"88528c9521de8682f676c3e2539c3a19ffd2a4731a2343410761025e27fde55e": {
 		"url": null,
@@ -2611,7 +2846,8 @@
 			"games",
 			"role:game-cover",
 			"site"
-		]
+		],
+		"entry": "fdf18338667143a7de77cd014b8888e2263508f5b3ad6375b3fb579ee58986d3"
 	},
 	"d17cce66bce1298077dfa2617b08d868a2564503ee8bfabbbf01f40bdc30e2f9": {
 		"url": null,
@@ -2623,7 +2859,8 @@
 			"games",
 			"role:game-cover",
 			"site"
-		]
+		],
+		"entry": "2325e73d55464d91df5a68f4548849a1051c85020ef1b2516c9829d093761052"
 	},
 	"1427db9edf3652e5354bb645e1c8155930dd53bf7cb17e39a4019efe33c6c2d6": {
 		"url": null,
@@ -2635,7 +2872,8 @@
 			"games",
 			"role:game-cover",
 			"site"
-		]
+		],
+		"entry": "3298b88a33825a5ac2d68f6c353212d719187c3713070740ed85140a711aa811"
 	},
 	"f3ebbb41045f0a45d3a27d6782beb71973fa539e9640d1c7d1b9434b02351575": {
 		"url": null,
@@ -2652,7 +2890,8 @@
 			"sound:forest nature",
 			"sound:forest_nature",
 			"sounds"
-		]
+		],
+		"entry": "716e59b274dfe0f2495258958611fc1c8a13a3fc3fbca37f7b8cd916c0a31de7"
 	},
 	"b6713600778441dab6c5232fa418af56a85209b17308e16975684fafd6bd3f84": {
 		"url": null,
@@ -2669,7 +2908,8 @@
 			"sound:soft nature",
 			"sound:soft-nature",
 			"sounds"
-		]
+		],
+		"entry": "04fddd927c4f74968a184690647037a4f33c56cac3129032ac04475cf08b4ee5"
 	},
 	"42cbca3f5c288272cc9e836a4a1f970c2edd14c4c95b282fc166bc0ff1f978d7": {
 		"url": null,
@@ -2686,7 +2926,8 @@
 			"sound:water stream",
 			"sound:water_stream",
 			"sounds"
-		]
+		],
+		"entry": "3b41d7204702fde2191aeab3be0df416e353da9951b9d58b1ed7bb9aa09b5207"
 	},
 	"4ffa6fe2e7cbc5082a78a3eabed4706afde5d6cb3eaa9af8ba5b05ab1d3d5da7": {
 		"url": null,
@@ -2702,7 +2943,8 @@
 			"sound effect",
 			"sound:chickens",
 			"sounds"
-		]
+		],
+		"entry": "47b6599a6c8ad478a7766bcae83bf94f2a6eaecd74d18ea932b15e28efef4f01"
 	},
 	"646b67cf337fdfdb3446e55b1f1edd4bfc3e6469bc12ea3acd07901cc71cda8f": {
 		"url": null,
@@ -2718,7 +2960,8 @@
 			"sound effect",
 			"sound:geese",
 			"sounds"
-		]
+		],
+		"entry": "42ec98d90478bf3a9f08ec1be538c4961c5b91736e626a0132de2c8f86a90b66"
 	},
 	"ef0770d0d1b2927adbb95158dcf2a7c1a3abf74bf35f4aab4da3b2885374f25e": {
 		"url": null,
@@ -2734,7 +2977,8 @@
 			"sound effect",
 			"sound:sheep",
 			"sounds"
-		]
+		],
+		"entry": "50189499fad82ec840fb789cd8a4afcbb315645156984fc829d7f3f4f8709a78"
 	},
 	"1934113f408410383c16336a37d2e274579e0cc0802e574dcc232982cca02a84": {
 		"url": null,
@@ -2750,7 +2994,8 @@
 			"sound effect",
 			"sound:frog",
 			"sounds"
-		]
+		],
+		"entry": "72ce8fcbab90c0a4b5416ced90baac3efe56e8c7ccbbee5bc90bead2f9df677a"
 	},
 	"7605ffd5723a4511ba9320009d5e2beda3f9a734ad244d7765a6120bf4200e82": {
 		"url": null,
@@ -2766,7 +3011,8 @@
 			"sound effect",
 			"sound:bees",
 			"sounds"
-		]
+		],
+		"entry": "054be29c992170f5c9b14c08a2d18194eea9d8fab22a6859bd7a8f72f3fbefb5"
 	},
 	"e36dbf3ef91c0502ad0ebafa4de32e4f03a4428c5082b1cb806fb4007c34acfa": {
 		"url": null,
@@ -2782,7 +3028,8 @@
 			"sound:factory ambience",
 			"sound:factory-ambience",
 			"sounds"
-		]
+		],
+		"entry": "cb37139af451142057aea13f7ff158cffdc9fa14e867293d1e820290a7f3716f"
 	},
 	"685b4be78584d58bce7d5a658046f047eddfef1f358acf7939ccac46c2db567e": {
 		"url": null,
@@ -2797,7 +3044,8 @@
 			"sound effect",
 			"sound:machine",
 			"sounds"
-		]
+		],
+		"entry": "eba12ba1041f852940891fc729196eba4c9f1443bd8a6f86fff77764ea80511a"
 	},
 	"76059524fa9f0ac77bf2aab1738a344e3dd8526667502302f30637c007fb6be2": {
 		"url": null,
@@ -2812,7 +3060,8 @@
 			"sound effect",
 			"sound:lift",
 			"sounds"
-		]
+		],
+		"entry": "133da1e544e5463f8f48b364885a2ead9881e5f634cca3e617a61bdbed737ccc"
 	},
 	"8bfcdb0808397b78306e9e9c8935eb5211aec0361ddf638a1df2fbc76feb655e": {
 		"url": null,
@@ -2826,7 +3075,8 @@
 			"take:day-19-spuds-01",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "f8cac6a5a7b98c4b2f8564bf509f0d0ba455fe61f64582b58a3e54792b42b2d7"
 	},
 	"399edf6dcd7558645c12c5c1ba5c5a2b07eda6d7d29ab99cc10bf47bfe457c1f": {
 		"url": null,
@@ -2841,7 +3091,8 @@
 			"take:day-19-spuds-02",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "20503247a9d8b3e23a34038eb3129cb80f86cc1f7d7832f39bbef266fa8b7d3b"
 	},
 	"6084fb81fb65af1e9803caf651ccf0823fd9468a2f944621d9fcab4802f33b7c": {
 		"url": null,
@@ -2856,7 +3107,8 @@
 			"take:day-19-spuds-03",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "2af7ce4e1f51b3bf6194c0e9a2e4e7f9624a68f70c9d868f302f9ae48d8b91a6"
 	},
 	"c85216bcfc8815964d96827c1fae7dea0c015f989b3c00a505d599bf74cd7375": {
 		"url": null,
@@ -2871,7 +3123,8 @@
 			"take:day-19-spuds-04",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "aee5d68ae9920b7d3de27163bad3ecff75c47e1129870df89737b35949e8b754"
 	},
 	"27cda35428451706559284c9f1ee7317fed9057316abebe768bb77226e1dd1b3": {
 		"url": null,
@@ -2886,7 +3139,8 @@
 			"take:day-19-spuds-05",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "50be5ec1af3e3c458e1dcdcd39775a17d19991008ca4fb95c13e8ac19c85b3aa"
 	},
 	"6bafb035b4b7010deea0aebe9e3d79f17c9bda0835b90b6a868d222c8a22f173": {
 		"url": null,
@@ -2901,7 +3155,8 @@
 			"take:day-19-spuds-06",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "4d5c7bbeca294e152bf67354524fcd441f46dbde6a7d28a1339492f4df0df110"
 	},
 	"7b112fdbbd08373be4b504ffa6abcd022a8878fe7d087df5683222a404bb9444": {
 		"url": null,
@@ -2916,7 +3171,8 @@
 			"take:day-19-spuds-07",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "bb7d5fbe4f90b03c76219c08dbbb89facddff65cd69dc78e2ca0767cd49463c7"
 	},
 	"86c34d4c6736294cac650f85f3e5a56194b23e0610b201eb0b71c15c40232342": {
 		"url": null,
@@ -2930,7 +3186,8 @@
 			"take:day-19-spuds-08",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "6428c2b1bb0c838f1447612e3a59bffaab1bfb69d65ef4f253c48e0c0957bfd7"
 	},
 	"16b14c61449c36fed3ef2cc4052cc60247dd4e8b0fe681449d472b58c3d8e957": {
 		"url": null,
@@ -2944,7 +3201,8 @@
 			"take:day-19-spuds-09",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "80ab6344b2d58c52dfefa7565dbaf8dfa314be676238fb7e9d2ffa88c63729c0"
 	},
 	"5d3fa59f5217c7500ae12a0552a6b8b9d04e5d0ccba99252d28c2154c32564ae": {
 		"url": null,
@@ -2958,7 +3216,8 @@
 			"take:day-19-spuds-10",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "2bbfc1c690cf82084fe6e34c0db8f5c45200592db4d704084121d161839317ed"
 	},
 	"49592fba81affabc36dd564dbd095aea640250c23cc3732a7b2f0337e45427f9": {
 		"url": null,
@@ -2973,7 +3232,8 @@
 			"take:day-19-spuds-11",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "57f9fc971932e91b6fe465f3133ed800614f12c0fbc33680913c5fd174c743a3"
 	},
 	"e4741b3081f733c17ca6564ac94dd12f36d6b9a5711d0526354df1ca9d831968": {
 		"url": null,
@@ -2987,7 +3247,8 @@
 			"take:day-19-spuds-12",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "feba50bcce1e5f61257027fccf73ff9af9544a6e69f4024b63cbb923fafe020a"
 	},
 	"a014f513f6a5e1369bf4ec733dac564e28f6b7faf343e78368cdfb08ef42ecca": {
 		"url": null,
@@ -3002,7 +3263,8 @@
 			"take:day-19-spuds-13",
 			"voice",
 			"voice:spuds"
-		]
+		],
+		"entry": "c94694c3459cd0f8c2cbeaec6f0e51da143d213084f8bf33dac6f9c13f50ff28"
 	},
 	"4196e2e516c7843e92c35d63980354f66ff2c9209a1c4fab8e1c7fccd1ac7a3d": {
 		"url": null,
@@ -3016,7 +3278,8 @@
 			"music",
 			"promo",
 			"role:music"
-		]
+		],
+		"entry": "96449fffbeac43b30010f3ef1e2e1d781022f6a0003879c0f10f23be9f27b3c4"
 	},
 	"0fa1e0014afb92607afdcb7f92e0f3e0f31e179024d3c2398b6d247b39517867": {
 		"url": null,
@@ -3029,7 +3292,8 @@
 			"sfx",
 			"sound effect",
 			"sound:goats"
-		]
+		],
+		"entry": "b9c257d89ba1d2169188bc730ceb799e3354537d13bb9957073e388d0dc2ee2b"
 	},
 	"2240cbbadefb4c89e9c50509df8f5c254f8c4f68a806d7775dfd31c083dc60dd": {
 		"url": null,
@@ -3041,7 +3305,8 @@
 			"role:voice",
 			"scene:hook",
 			"take:day-19-d-hook"
-		]
+		],
+		"entry": "e8f98cb16fb4ee063b3f350d3a79f5ea5cc2ba6966080236baa4b60daca96777"
 	},
 	"8eb8e81ca8f95c15996f61d8ceefe6cf4053a16c63cfd04ca82da6fcd91ae9a7": {
 		"url": null,
@@ -3053,7 +3318,8 @@
 			"role:voice",
 			"scene:sunrise",
 			"take:day-19-d-01"
-		]
+		],
+		"entry": "59f880b64645e71dd03797c2037e21ca5fab8cd77d4b25abd7357359f27d4a1a"
 	},
 	"22710421c8dd79bdc3d7e183db174284eab762a9a5d38db2577a7db485292a99": {
 		"url": null,
@@ -3065,7 +3331,8 @@
 			"role:voice",
 			"scene:food forest",
 			"take:day-19-d-08"
-		]
+		],
+		"entry": "27520577d54727005cc3d55e32cca5333ff5a2b4f237df020381ecbec73c4bb1"
 	},
 	"a602a1fc67af46b8b77266e25f7a895440d232eb66e2348e995a2850fcc16d7c": {
 		"url": null,
@@ -3077,7 +3344,8 @@
 			"role:voice",
 			"scene:the ring",
 			"take:day-19-d-09"
-		]
+		],
+		"entry": "6f73520f4167e8b30e3a9088cec4157ed752c91de3d2e952a4ce3f7ffb3a2c2c"
 	},
 	"afe72d1358d21b744a354aa1465ca1513d28ae3af933d84fe93bfc450061fcd1": {
 		"url": null,
@@ -3089,7 +3357,8 @@
 			"role:voice",
 			"scene:the commons",
 			"take:day-19-d-10"
-		]
+		],
+		"entry": "7d2ba979324866d45cd809611fe75deecea63937cb5d6f3bd7def2b848836163"
 	},
 	"373048a0beecf79a1c1041cd77b43ed8d28651546321d9056ecea0b21030d610": {
 		"url": null,
@@ -3101,7 +3370,8 @@
 			"role:voice",
 			"scene:night",
 			"take:day-19-d-12"
-		]
+		],
+		"entry": "044ea5c4d16500bc286ba1260032e85a854cae342c6a9eb3c488ef6b4cf37d09"
 	},
 	"58ef55fcb26fb51d526cbc497b5b7fdf8c68f54d86571a8017f26faf45d8baca": {
 		"url": null,
@@ -3114,7 +3384,8 @@
 			"music",
 			"role:score",
 			"score"
-		]
+		],
+		"entry": "f1f7faf76745d185b436f437c3da89006bce9563a5d8221ea79e05f7e6b52142"
 	},
 	"f392c807c75f2fa38adabe086bc95701c10cfab88f05074a3b9e751ab8335895": {
 		"url": null,
@@ -3128,7 +3399,8 @@
 			"sfx",
 			"sound effect",
 			"sound:dawn chorus"
-		]
+		],
+		"entry": "2b489407cfa0c8448bd883fd82a20064497fcc11ae9d78e430b1c82f3263749b"
 	},
 	"b663781598745c432553f4bc544642724600b9677e301f7c0e7a5c8f038edfa9": {
 		"url": null,
@@ -3142,7 +3414,8 @@
 			"sfx",
 			"sound effect",
 			"sound:cold wind"
-		]
+		],
+		"entry": "d42f2c0b569d2a5aa7817adfa48497094b049d683bfa9361ba9b011331498bdb"
 	},
 	"1914dca5b50a9f0cc55320ecc6c78c2a0d8c7e3602fc1cd4511b5b96f05cca68": {
 		"url": null,
@@ -3156,7 +3429,8 @@
 			"sfx",
 			"sound effect",
 			"sound:traffic drone"
-		]
+		],
+		"entry": "530a4272982e2fa220aef26490e6c723ac2f4416e40733c2916b69858905bb83"
 	},
 	"4d34f215c6e292bc385692aae02eeb8ed7917f51138b1059c2adf439fa535d97": {
 		"url": null,
@@ -3170,7 +3444,8 @@
 			"sfx",
 			"sound effect",
 			"sound:commons"
-		]
+		],
+		"entry": "c41690cf6e328e40e53f5a96d1d2ea5418d7dcda8a28a3fb38c5c5357a178ba3"
 	},
 	"46e638bd4b75170f5450ffe1ec7232d22bfb0da0b5edaf88674e2065066f8d18": {
 		"url": null,
@@ -3184,7 +3459,8 @@
 			"sfx",
 			"sound effect",
 			"sound:crickets"
-		]
+		],
+		"entry": "c03d9a7b0fc93cb3b5b06778f3125205dbb725e2ee570e57515c200d6791f664"
 	},
 	"ec63e7d66166fe119d76abb832ee1ff077f46eae2a2ad24ab5cc435feab3f8a7": {
 		"url": null,
@@ -3197,7 +3473,8 @@
 			"sfx",
 			"sound effect",
 			"sound:drop hit"
-		]
+		],
+		"entry": "0157eaa6ed07fc37c997d5f66ea4f2d9ba5d322b995691d084b850a2b23b1bdc"
 	},
 	"8bbd14b92078058f71888fc91233a516e32cc5d2785f523d49151d2dac437df6": {
 		"url": null,
@@ -3210,7 +3487,8 @@
 			"sfx",
 			"sound effect",
 			"sound:truck pass"
-		]
+		],
+		"entry": "561b5660b38af8b0cea7f93bac00aac2990a62f23fe7bbef2b2603067701a32d"
 	},
 	"d4ae234054ed8d36b2c14a104b2c1c38992c38251570d2d056f90f545cd08669": {
 		"url": null,
@@ -3223,7 +3501,8 @@
 			"sfx",
 			"sound effect",
 			"sound:air horn"
-		]
+		],
+		"entry": "99451128b788c37523c62f151539e3a6963da413fea5d074b43273b4bab742bf"
 	},
 	"044e58504895e10963eb13eef303b8c7684826f2e585ce0aeb06596678491328": {
 		"url": null,
@@ -3236,7 +3515,8 @@
 			"sfx",
 			"sound effect",
 			"sound:morning birds"
-		]
+		],
+		"entry": "df01ae958b0e631917ea549b24e54b9895e1518b91b3016741cefa6ab8347343"
 	},
 	"cda4f556c62f50acc13f221c098c7341d4a498cc0388a017a0554ec5b1a75121": {
 		"url": null,
@@ -3249,7 +3529,8 @@
 			"sfx",
 			"sound effect",
 			"sound:whoosh orbit"
-		]
+		],
+		"entry": "6d78015b76d81acdc98a30e329ac74d25173b69f68581e34251dcdd1dafbff2b"
 	},
 	"2cc8e24903d8c60a09a7d2a022741683831350aaa3e730c2f749e718fe9766c6": {
 		"url": null,
@@ -3262,7 +3543,8 @@
 			"sfx",
 			"sound effect",
 			"sound:sub hit"
-		]
+		],
+		"entry": "5407b53036beb0f0bbfc7797de41cac7bbee30a412148dad395e771e2562285f"
 	},
 	"0351080bc48a35843bea1a1cba0d9d789a5443cd05d28e654af10c77bb1952a3": {
 		"url": null,
@@ -3277,7 +3559,8 @@
 			"music",
 			"role:cue",
 			"scene:the dip"
-		]
+		],
+		"entry": "d433e2706bd9dd01e0d5b7eb2d14124bff8cc6bc2c31fe962f21c4964635c02b"
 	},
 	"e26e51c1c6245692031e3790eb057fa88e4fdcc14e584f6fe55ef9a329507f48": {
 		"url": null,
@@ -3292,7 +3575,8 @@
 			"music",
 			"role:cue",
 			"scene:breakfast"
-		]
+		],
+		"entry": "35c2eac3df383ae145088a4157e87a4041b359d20ad4570113d5ecb1d1051a4a"
 	},
 	"5ddd7dc657e28a84e7ef48b8064dafe5698791950dea387e7059b1c41e5d2fc1": {
 		"url": null,
@@ -3304,7 +3588,8 @@
 			"games",
 			"role:game-cover",
 			"site"
-		]
+		],
+		"entry": "7c22b341069db5db4b4244667b786f382117ab53b19a083f394ff546dda0fe24"
 	},
 	"a36f799daadadb75a3d845776dc8ee9730f8fd92fb1458edff5d9819c155a7c8": {
 		"url": null,
@@ -3316,7 +3601,8 @@
 			"games",
 			"role:game-cover",
 			"site"
-		]
+		],
+		"entry": "4bc5417329114b0b498adb34295ed75f4d43eea6386e55b00d07bfceec38925c"
 	},
 	"46e52e9e393b192c0a6db481e95fbf623e8d12d2753a3e1d15d1663292d2c716": {
 		"url": null,
@@ -3328,6 +3614,7 @@
 			"games",
 			"role:game-cover",
 			"site"
-		]
+		],
+		"entry": "0dd17460c50b15ef44e76f5ec8efe46246a6a7365cb55cedd51e45ecc0476f92"
 	}
 }

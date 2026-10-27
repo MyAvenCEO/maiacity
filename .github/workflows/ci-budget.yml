@@ -1,0 +1,36 @@
+name: CI budget
+
+# CI and release stay under their time budget (Samuel 2026-10-27: under 10 minutes, kept there). When a budgeted
+# workflow finishes, scripts/ci/budget.mjs names its slowest jobs and steps in this run's summary and fails this run when
+# the workflow went over budget (scripts/ci/budget.mjs `budgets`): a red "CI budget" run is the flag to fix it before
+# it becomes the new normal. It reads timings only and runs main's own copy of the script, whatever branch ran.
+on:
+  workflow_run:
+    workflows: [Validate and release, avenDB checks, Kernel, avenDB WebAssembly, theOS on macOS]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  budget:
+    name: Time against budget
+    if: github.event.workflow_run.conclusion != 'cancelled' && github.event.workflow_run.conclusion != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: |
+            scripts/ci/budget.mjs
+            .bun-version
+          sparse-checkout-cone-mode: false
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Time against budget
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: bun scripts/ci/budget.mjs
