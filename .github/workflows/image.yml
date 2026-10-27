@@ -37,7 +37,32 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v7.4.0
+      # avenDB's server: the image server-prebuild.yml built from these very avendb/ files while the pull request ran,
+      # promoted only with its signature from that workflow on main; anything else (none there, another signer, a
+      # different tree) builds here as before
+      - id: prebuilt
+        if: inputs.component == 'avendb'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.meta.outputs.image }}
+        run: |
+          tree=$(git rev-parse HEAD:avendb)
+          ref="$IMAGE:tree-$tree"
+          if ! docker buildx imagetools inspect "$ref" > /dev/null 2>&1; then
+            echo "No image built ahead for avendb/ $tree: building it"; exit 0
+          fi
+          digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)
+          if gh attestation verify "oci://$IMAGE@$digest" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/server-prebuild.yml" --source-ref refs/heads/main \
+              --deny-self-hosted-runners --bundle-from-oci > /dev/null; then
+            docker buildx imagetools create --tag "$IMAGE:$GITHUB_SHA" "$IMAGE@$digest"
+            echo "promoted=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Promoted $IMAGE@$digest, built ahead from avendb/ $tree and signed by server-prebuild.yml on main"
+          else
+            echo "::warning::$ref is not signed by server-prebuild.yml on main: building it here"
+          fi
+      - if: steps.prebuilt.outputs.promoted != 'true'
+        uses: docker/build-push-action@v7.4.0
         with:
           context: ${{ steps.meta.outputs.context }}
           file: ${{ steps.meta.outputs.file }}
