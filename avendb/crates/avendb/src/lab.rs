@@ -4178,6 +4178,32 @@ impl Lab {
         found.into_iter().map(|(_, e)| e).collect()
     }
 
+    /// Where entry `e` was created on device `d`: the depth of its creation edit, as its shared index orders entries
+    /// (`index::shared`); `None` where its log holds no such edit.
+    pub(crate) fn creation_depth(&self, d: SignerId, e: EntryId) -> Option<u64> {
+        let store = self.held(d);
+        store.log.entry_write(store.view().entry(e)?.creation).map(|c| c.depth)
+    }
+
+    /// The entries of vault `vault` (of every vault, left out) whose header device `d` hasn't read
+    /// (`Readings::untyped`): a query by type can't place them yet, so each is a candidate that waits.
+    pub fn untyped_of(&self, d: SignerId, vault: Option<VaultId>) -> Vec<EntryId> {
+        let store = self.held(d);
+        let state = store.view();
+        store.readings.untyped.iter().copied()
+            .filter(|e| state.entry(*e).is_some_and(|en| vault.is_none_or(|v| en.vault == v))).collect()
+    }
+
+    /// Every vault device `d`'s view knows, in the order they were created.
+    pub fn view_vaults(&self, d: SignerId) -> Vec<VaultId> {
+        self.held(d).view().vaults().iter().map(|v| v.id).collect()
+    }
+
+    /// The vaults device `d` holds any key of: a seed, a share's or an audience's. Of any other it opens nothing.
+    pub fn key_vaults(&self, d: SignerId) -> BTreeSet<VaultId> {
+        self.held(d).keys.epochs.keys().map(|fam| fam.vault()).collect()
+    }
+
     /// Device `d`'s view knows vault `v` and gives it no standing there: it acts for no member or owner of `v`, and no
     /// live share over `v` reaches it, a vault it acts for, or everyone. A read of `v` answers `denied`
     /// (`Coverage.read`). A vault the view doesn't know yet is not denied: it may be on its way.

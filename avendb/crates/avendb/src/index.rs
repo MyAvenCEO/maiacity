@@ -209,6 +209,26 @@ impl Rows {
         (out, more)
     }
 
+    /// Every row it keeps, vault by vault: the digest each device last told, and each device's row of each entry, in
+    /// the order of the entries and then the devices. What a node's told index on its shelf takes in from it.
+    #[allow(clippy::type_complexity)]
+    pub fn told_rows(&self) -> Vec<(VaultId, Vec<(SignerId, [u8; 32])>, Vec<(SignerId, Row)>)> {
+        self.vaults
+            .iter()
+            .map(|(v, at)| {
+                let told = at.told.iter().map(|(d, x)| (*d, *x)).collect();
+                let rows = at
+                    .entries
+                    .iter()
+                    .flat_map(|(e, of)| {
+                        of.iter().map(|(d, (epoch, tokens))| (*d, Row { entry: *e, epoch: *epoch, tokens: tokens.clone() }))
+                    })
+                    .collect();
+                (*v, told, rows)
+            })
+            .collect()
+    }
+
     /// The vaults it keeps rows of.
     pub fn vaults(&self) -> impl Iterator<Item = VaultId> + '_ {
         self.vaults.keys().copied()

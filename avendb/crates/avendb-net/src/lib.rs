@@ -147,6 +147,8 @@ pub mod server;
 mod session;
 pub mod shelf;
 mod shared_index;
+pub mod query_window;
+mod told_index;
 // the index gate's on-disk index; the sync lane wires it in place of S7's spill (`avendb::lab::held`)
 #[cfg_attr(not(test), allow(dead_code))]
 mod shelf_index;
@@ -788,6 +790,18 @@ impl Node {
             },
             None => None,
         };
+        // the rows its peers told it, if it keeps an index (`told_index`): on its shelf, or in memory for a node that
+        // keeps none
+        let told_rows = match opts.index {
+            true => {
+                let (on, older) = match &opts.shelf {
+                    Some(shelf) => (shelf.clone(), blind::older_rows(shelf).await),
+                    None => (told_index::memory_shelf(), None),
+                };
+                Some(told_index::ToldIndex::open(on, older).await?)
+            }
+            false => None,
+        };
         let shared = Arc::new(Shared {
             lifecycle,
             writer: Mutex::new(writer),
@@ -827,7 +841,7 @@ impl Node {
             discovery_running: Mutex::default(),
             discovery_mark: Mutex::default(),
             discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
-            index: Mutex::default(),
+            told_rows,
             index_told: Mutex::default(),
             index_due: Notify::new(),
             offered: Mutex::default(),
@@ -867,7 +881,6 @@ impl Node {
             task::spawn(shared.clone().keeper()),
             task::spawn(shared.clone().saver()),
             task::spawn(shared.clone().unshelve()),
-            task::spawn(shared.clone().unshelve_index()),
             task::spawn(shared.clone().index_teller()),
             task::spawn(shared.clone().bootstrap_pump()),
             task::spawn(transports::control::maintain(shared.clone())),
@@ -1488,6 +1501,22 @@ impl Node {
     ) -> Result<Vec<(u64, EntryId)>> {
         let Some(index) = &self.shared.shared_index else { return Ok(vec![]) };
         Ok(index.find(&self.shared.lab, self.shared.me, vault, &labels, after, limit).await?)
+    }
+
+    /// The newest `w` entries of vault `vault` whose type, tag or link is one of `labels`, the newest first, read off its
+    /// shared index and the tail of edits after its last save (B3, `query_window`), never the log before it: a query
+    /// view's window. `None` where the index can't say (no shelf, or the tail is of a key's or share's log), and the
+    /// caller asks the engine.
+    pub async fn window(&self, vault: VaultId, labels: Vec<String>, w: usize) -> Result<Option<query_window::Window>> {
+        let Some(index) = &self.shared.shared_index else { return Ok(None) };
+        Ok(query_window::window(index, &self.shared.lab, self.shared.me, vault, &labels, None, w).await?)
+    }
+
+    /// What window query `op` answers (`engine::window_of`), off its shared index and the tail after it
+    /// (`query_window::answer`), never the log before it; `None` where the index can't say, and the engine answers.
+    pub(crate) async fn windowed(&self, op: &serde_json::Value) -> Option<serde_json::Value> {
+        let index = self.shared.shared_index.as_ref()?;
+        query_window::answer(index, &self.shared.lab, self.shared.me, op).await.ok().flatten().map(|(got, _)| got)
     }
 
     /// The root of its shared index and the head of the edits it is of, as its last save left them: what a peer holds
@@ -2247,7 +2276,7 @@ struct Shared {
     discovery_mark: Mutex<usize>,
     discovery_answer: Arc<tokio::sync::Semaphore>,
     /// The blind index rows it keeps, where it keeps an index (`Options::index`).
-    index: Mutex<avendb::index::Rows>,
+    told_rows: Option<told_index::ToldIndex>,
     /// Of each peer, the change of the device's entries it was last told the rows of, `None` once it refused them.
     index_told: Mutex<HashMap<EndpointId, Option<u64>>>,
     /// A peer connected: tell it the rows (`blind::index_teller`).
@@ -3736,19 +3765,27 @@ impl Shared {
 
     /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
     /// else once it waited `CATCH_UP_PACE` times as long as the last one took since it ended. True if it did.
-    async fn catch_up_paced(self: &Arc<Self>, must: bool) -> bool {
-        self.catch_up_paced_class(must, lab_schedule::Class::Foreground).await
+    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+        self.catch_up_steps(must, class, None).await.0
     }
 
-    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+    /// `catch_up_paced_class`, and for a live pull (`live::materialize_live`) `until` a deadline: no step begins after
+    /// it, and the pages are stirred after every step, so the step that shows the live edit's entries (a new write's
+    /// entries are shown first, `Lab::show_items`) reaches them at once rather than after the whole catch-up. Whether it
+    /// did, and whether steps were left at the deadline.
+    pub(crate) async fn catch_up_steps(self: &Arc<Self>, must: bool, class: lab_schedule::Class, until: Option<Instant>) -> (bool, bool) {
         if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
-            return false;
+            return (false, false);
         }
         // A turn of the Lab a step (`Lab::catch_up_step`), not one for the whole: its replay stepped on, then its
         // entries shown anew `CATCH_UP_SLICE` at a time, so a page's turn comes between them rather than after all of
         // them (a catch-up held the server's Lab 5.5 s, 2026-10-27).
-        let (mut caught, mut work) = (false, Duration::ZERO);
+        let (mut caught, mut work, mut left) = (false, Duration::ZERO, false);
         loop {
+            if until.is_some_and(|until| Instant::now() >= until) {
+                left = true;
+                break;
+            }
             let (step, took) = self.try_lab_class(class, |lab, me| {
                 // Queue waiting is not computation cost: foreground priority must not
                 // multiply a busy queue into another long background-sync cooldown.
@@ -3756,12 +3793,15 @@ impl Shared {
                 (lab.catch_up_step(me, CATCH_UP_SLICE), started.elapsed())
             }).await.unwrap_or((avendb::lab::CatchUp::Caught(false), Duration::ZERO));
             work += took;
-            match step {
-                avendb::lab::CatchUp::Stepped => caught = true,
-                avendb::lab::CatchUp::Caught(any) => {
-                    caught |= any;
-                    break;
-                }
+            let done = match step {
+                avendb::lab::CatchUp::Stepped => { caught = true; false }
+                avendb::lab::CatchUp::Caught(any) => { caught |= any; true }
+            };
+            if until.is_some() && caught {
+                self.jobs.stir();
+            }
+            if done {
+                break;
             }
         }
         if caught {
@@ -3769,7 +3809,7 @@ impl Shared {
             self.changed.notify_one();
             self.find_again_on_new_keys().await;
         }
-        caught
+        (caught, left)
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by

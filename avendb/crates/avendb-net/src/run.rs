@@ -164,7 +164,11 @@ impl Node {
     async fn fresh_read(&self, op: Value) -> Value {
         let vault = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex);
         let stamped = engine::name(&op) != Some("touched");
-        let mut answer = self.read(move |lab, me| engine::read(lab, me, &op)).await;
+        // a window comes off the shared index where that can say (`query_window`), else from the engine
+        let mut answer = match self.windowed(&op).await {
+            Some(got) => got,
+            None => self.read(move |lab, me| engine::read(lab, me, &op)).await,
+        };
         if !stamped || answer.get("ok").is_none() { return answer; }
         let (heard, matching, new) = self.shared.heard(vault).await;
         if engine::coverage::reads_open(&answer) { engine::coverage::add_logs(&mut answer, matching.len()); }
