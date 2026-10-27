@@ -4684,7 +4684,8 @@ impl Lab {
             .places
             .iter()
             .filter_map(|(_, id)| {
-                let edit = &store.signed[id].edit;
+                let signed = store.signed.get(id)?;
+                let edit = &signed.edit;
                 let held_back = crate::lazy::is_box(edit) && needs.class(edit) != crate::lazy::Class::Now;
                 held_back.then(|| Some(Stub::of(edit, *id, log_of(edit, *id)?))).flatten()
             })
