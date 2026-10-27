@@ -365,4 +365,44 @@ theorem answer_untouched (q : Query) (log batch : List Edit) (order : List Nat)
     flatMap_congr _ fun e he => hlinks e (hreach e (List.mem_append_left _ he))
   rw [hroots, QF1_untouched _ _ _ _ fun e he => hlinks e (hreach e (List.mem_append_right _ he))]
 
+/-! ## Stored query views (B3)
+
+A device keeps the answers of the queries its pages asked, each with the head it was worked out at (`Kept`), and serves
+one again where it is still the query's answer: at its own head, or where the delta rule says the change since names
+nothing it read (`fresh`, the Rust `query_view::kept`); else it works the answer out again. Whatever views it keeps, and
+whichever the byte budget let go (least recently read first), what it serves is the query's answer now
+(`served_answer`): a view let go is only worked out again (`served_without`). -/
+
+/-- A kept view: the head (log) it was worked out at, and its answer. -/
+structure Kept (α : Type) where
+  log : List Edit
+  answer : α
+
+/-- What the device serves for query `ans` at `log`: the kept view where `fresh` says it is current, else the answer
+    worked out again. -/
+def served {α : Type} (ans : List Edit → α) (fresh : List Edit → List Edit → Bool) (kept : Option (Kept α))
+    (log : List Edit) : α :=
+  match kept with
+  | some k => if fresh k.log log then k.answer else ans log
+  | none => ans log
+
+/-- What served is the query's answer now, where every kept view was the answer at its head, and `fresh` is sound: it
+    holds only where the answers at the two heads are one (`answer_untouched`, or the same head). -/
+theorem served_answer {α : Type} (ans : List Edit → α) (fresh : List Edit → List Edit → Bool)
+    (sound : ∀ a b, fresh a b = true → ans a = ans b) (kept : Option (Kept α))
+    (honest : ∀ k, kept = some k → k.answer = ans k.log) (log : List Edit) :
+    served ans fresh kept log = ans log := by
+  cases kept with
+  | none => rfl
+  | some k =>
+    simp only [served]
+    split
+    · rename_i hf
+      rw [honest k rfl, sound _ _ hf]
+    · rfl
+
+/-- A view the budget let go is worked out again. -/
+theorem served_without {α : Type} (ans : List Edit → α) (fresh : List Edit → List Edit → Bool) (log : List Edit) :
+    served ans fresh none log = ans log := rfl
+
 end AvenDB.QueryView

@@ -102,8 +102,9 @@ let meta = $state.raw(null);
 let revision = $state(0);
 /** Bumped by a change that may change any read: the person's own, or one of standing (`touched` answers `all`). */
 let standing = $state(0);
-/** The observers mounted now: each re-runs on `standing`, or when a change touched what it reads (`touches`).
- *  @type {Set<{ op: any, last: any, bump: () => void }>} */
+/** The observers mounted now: each re-runs on `standing`, or when a change touched what it reads (`touches`), or, for
+ *  a query, when the device says its answer is another than the version it last read (`seen`).
+ *  @type {Set<{ op: any, last: any, bump: () => void, seen?: { key: string, version: number | null } }>} */
 const observers = new Set();
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
@@ -615,12 +616,23 @@ function watch() {
 		let since = await d.size();
 		if (on()) { revision++; standing++; refreshActiveView(); } // cover changes concurrent with this initial snapshot too
 		while (on() && (await d.changed(since[0], since[1])) && on()) {
-			const t = await d.run({ op: 'touched', since }).then((/** @type {any} */ out) => out?.ok ?? null, () => null);
+			// The queries shown pass with the version of each the page last read: the device says which of them changed
+			// (its query views, spec/AvenDB/QueryView.lean), and only those run again, reading the view at once.
+			const shown = [...observers].filter((o) => o.op?.op === 'query');
+			const keys = shown.map((o) => JSON.stringify(o.op));
+			const reads = shown.map((o, i) => o.seen?.key === keys[i] ? [o.op, o.seen.version] : o.op);
+			const t = await d.run({ op: 'touched', since, ...(reads.length ? { reads } : {}) })
+				.then((/** @type {any} */ out) => out?.ok ?? null, () => null);
 			since = Array.isArray(t?.since) ? t.since : await d.size();
 			if (!on()) break;
 			revision++;
+			const moved = Array.isArray(t?.changed) && Array.isArray(t?.versions) ? new Set(t.changed) : null;
+			if (moved) shown.forEach((o, i) => { o.seen = { key: keys[i], version: t.versions[i] ?? null }; });
 			if (!t || t.all !== false) standing++;
-			else for (const o of observers) if (touches(o.op, t, o.last)) o.bump();
+			else for (const o of observers) {
+				const i = shown.indexOf(o);
+				if (moved && i >= 0 ? moved.has(i) : touches(o.op, t, o.last)) o.bump();
+			}
 			refreshActiveView();
 		}
 	})().catch((/** @type {Error} */ e) => on() && (error = `Watching local changes failed: ${e.message}`));
