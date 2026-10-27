@@ -166,7 +166,8 @@ try {
   assert.equal(await page.getByRole('button',{name:'Existing friend DM',exact:true}).count(),0);
   await page.getByRole('button',{name:'New message',exact:true}).first().click();
   await page.getByRole('button',{name:'Friend Human vault',exact:true}).click();
-  await page.locator('.room-head h2').filter({hasText:'Existing friend DM'}).waitFor({timeout:1500});
+  // no write is the check (below); WebKit on a busy runner took over 1.5 s to draw the room (2026-10-26)
+  await page.locator('.room-head h2').filter({hasText:'Existing friend DM'}).waitFor({timeout:5000});
   assert.equal(await page.evaluate(()=>window.fixtureCounts.writes),0);
   assert.deepEqual(errors,[]);
   console.log('PASS '+engine+': actual Chat reuses a DM beyond its sidebar page without a write');

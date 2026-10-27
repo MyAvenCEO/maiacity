@@ -197,7 +197,8 @@ test.each([DT, DT / 2])('every construction stage remains supported and accounts
     sim.step(); reaction += sim.contacts().filter(c => c.a === 'ground').reduce((sum, c) => sum + c.force * Math.abs(c.normal.y), 0) * dt;
   }
   expect(Math.abs(reaction - sim.mass * G) / (sim.mass * G)).toBeLessThan(.03);
-}, 30000);
+// dt/2 takes ~30 s on a busy CI runner (it ran past a 30 s limit on main, 2026-10-26): a hang guard, not a speed check
+}, 120000);
 
 test('released wall plank retains its mass and can be pushed clear of contact support', () => {
   const { sim, build } = lab();

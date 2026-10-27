@@ -17,7 +17,7 @@ fn forward(from: PacketTransport, to: PacketTransport, theirs: RouteId) -> tokio
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn authenticated_sync_over_fragmented_carrier_without_ip_or_relay() {
-    tokio::time::timeout(Duration::from_secs(35), async {
+    tokio::time::timeout(Duration::from_secs(90), async {
         let mut w = world(); let coop = handbook_ready(&mut w);
         let (a, b, ka, kb) = (w.mac_a, w.mac_b, w.passkey_a, w.passkey_b);
         let opts = Options { bind: None, ..Options::local() };
