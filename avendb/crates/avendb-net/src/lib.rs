@@ -817,7 +817,7 @@ impl Node {
             ui_receipts: peer_receipts::Receipts::for_ui(),
             outreach,
             wanted: Mutex::default(),
-            fresh: Mutex::default(),
+            fresh: fresh::Fresh::default(),
             claims: Mutex::default(),
             interests: Mutex::default(),
             discovery_running: Mutex::default(),
@@ -2155,8 +2155,9 @@ struct Shared {
     outreach: actor::Outreach,
     /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
     wanted: Mutex<BTreeSet<LogId>>,
-    /// The stamp of its device's last current read (`fresh`), which an offline read is said to be as of.
-    fresh: Mutex<fresh::Stamp>,
+    /// How fresh its reads are (`fresh`): the stamp of its last current read, and the walk of what its live peers
+    /// hold that it lacks, kept until what they hold or what it holds changes.
+    fresh: fresh::Fresh,
     /// Which peer each log is asked of now (`Claims`): a log comes from one peer at a time, never from each.
     pub(crate) claims: Mutex<Claims>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
@@ -3345,6 +3346,7 @@ impl Shared {
             .await
             .ok()??;
         *self.reach.lock().expect("reach") = news.reach.clone();
+        self.fresh.moved();
         if let Some(admission) = &self.opts.admission {
             let endpoints = news.reach.values().map(|r| r.endpoint).chain([self.endpoint.id()]).collect();
             let (passkeys, invites) = (news.roots.iter().copied().collect(), news.invites.iter().copied().collect());
@@ -3477,6 +3479,7 @@ impl Shared {
     fn hear(self: &Arc<Self>, device: SignerId, announce: Announce) {
         let full = announce.full;
         let mut held = self.held.lock().expect("held");
+        self.fresh.moved();
         let holdings = held.entry(device).or_default();
         let live_logs = live::announced_hints(holdings, &announce);
         if !live_logs.is_empty() {
@@ -3513,6 +3516,7 @@ impl Shared {
         let known = self.reach.lock().expect("reach").contains_key(&peer.device);
         let forget = !known && self.live(peer.endpoint).is_none();
         let mut held = self.held.lock().expect("held");
+        self.fresh.moved();
         if forget {
             held.remove(&peer.device);
         }
