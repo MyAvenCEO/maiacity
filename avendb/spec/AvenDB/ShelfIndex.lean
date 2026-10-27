@@ -109,6 +109,7 @@ theorem I3_crash [DecidableEq H] (d : Derive E K V) (stamp : List E → H) (hs :
     the writes fell, so its shape is the rows' alone). -/
 abbrev root (build : Index K V → R) (ix : Index K V) : R := build ix
 
+omit [DecidableEq K] in
 /-- Equal indexes have one root. -/
 theorem root_canonical (build : Index K V → R) {ix ix' : Index K V} (h : ix = ix') : root build ix = root build ix' :=
   congrArg build h
