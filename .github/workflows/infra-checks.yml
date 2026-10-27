@@ -1,12 +1,19 @@
 name: Infrastructure contracts
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths: ['infra/**', '.bun-version', '.github/workflows/api.yml', '.github/workflows/infra-checks.yml']
   workflow_dispatch:
 permissions:
   contents: read
+# a pull request's new push replaces its run
+concurrency:
+  group: infra-checks-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

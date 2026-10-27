@@ -1,0 +1,117 @@
+name: avenDB dev cache
+
+# A warm start for Claude Code sessions in Anthropic's cloud: avenDB's compiled dependencies, as each crate's tests
+# build them (`cargo test --no-run --features test-fixtures -p <crate>`, avendb/CLAUDE.md), put on the rolling release
+# "avendb-dev-cache" in place of the last one. .claude/hooks/session-start.sh downloads it when a cloud session starts
+# and unpacks it into avendb/target, so a session's first test build compiles only our own crates: avendb-net's tests
+# in about 4 minutes instead of about 10 on its 4 cores (2026-10-27).
+#
+# Only the dependencies: our own crates are built again in the session anyway (their paths differ), and their
+# incremental caches were most of a target's size. Built with the toolchain the manifest names; the hook installs that
+# same one, as cargo reuses nothing a different rustc built.
+#
+# Cargo notices when a dependency's source lies elsewhere ("the path to the source changed") and builds it again, so the
+# registry lives where a cloud session keeps it, /root/.cargo, here too. And vendor/iroh, a path dependency, counts as
+# changed whenever its files are newer than its build, as in every fresh clone: the hook dates them back when they are
+# the same as in the commit built here.
+#
+# Built from main only, never from a pull request: the session links what is in it into the tests it runs.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'avendb/Cargo.lock'
+      - 'avendb/Cargo.toml'
+      - 'avendb/crates/*/Cargo.toml'
+      - 'avendb/.cargo/config.toml'
+      - '.github/workflows/avendb-dev-cache.yml'
+  # a new stable Rust: the cache follows it
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: avendb-dev-cache
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: avendb-dev-cache
+
+jobs:
+  build:
+    name: Build the dev cache and put it on its release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+      - uses: dtolnay/rust-toolchain@stable
+      - name: The registry where cloud sessions keep it
+        run: |
+          sudo mkdir -p /root/.cargo
+          sudo chown -R "$(id -u):$(id -g)" /root/.cargo
+          sudo chmod 755 /root
+          echo "CARGO_HOME=/root/.cargo" >> "$GITHUB_ENV"
+      # nothing to do when the release already holds this toolchain and these manifests (the nightly run, mostly)
+      - id: key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rustc=$(rustc -V | cut -d' ' -f2)
+          inputs=$(cat avendb/Cargo.lock avendb/Cargo.toml avendb/crates/*/Cargo.toml avendb/.cargo/config.toml | sha256sum | cut -d' ' -f1)
+          echo "rustc=$rustc" >> "$GITHUB_OUTPUT"
+          echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
+          held=$(gh release download "$TAG" -p manifest -O - 2>/dev/null || true)
+          if [ "${{ github.event_name }}" != workflow_dispatch ] && echo "$held" | grep -qx "rustc=$rustc" && echo "$held" | grep -qx "inputs=$inputs"; then
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build each crate's tests
+        if: steps.key.outputs.fresh != 'true'
+        working-directory: avendb
+        # each crate on its own, as a session builds them: the dependencies' features differ with the crates asked for
+        run: |
+          find vendor/iroh -type f -exec touch -m -d '2001-01-01T00:00:00Z' {} +
+          for crates in "-p avendb" "-p avendb-net" "-p avendb-server" "-p avendb-device" "-p avendb-browser" "-p avendb-device -p avendb-browser"; do
+            cargo test --locked --features test-fixtures --no-run $crates
+            # `cargo check` keeps its own metadata for every dependency: without it a session's first check (the first
+            # step of scripts/devx/check.mjs) checked all 342 of them again, 90 s (2026-10-27)
+            cargo check --locked --features test-fixtures --tests $crates
+          done
+      - name: Pack the dependencies
+        if: steps.key.outputs.fresh != 'true'
+        working-directory: avendb
+        run: |
+          cargo clean -p avendb -p avendb-net -p avendb-server -p avendb-device -p avendb-browser -p avendb-testkit
+          rm -rf target/debug/incremental target/avendb-test-pairs
+          du -sh target
+          tar -C target -czf ../dev-cache.tgz debug
+          ls -l ../dev-cache.tgz
+      - name: Put it on the release
+        if: steps.key.outputs.fresh != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUSTC: ${{ steps.key.outputs.rustc }}
+          INPUTS: ${{ steps.key.outputs.inputs }}
+        run: |
+          # a release asset holds at most 2 GiB
+          split -b 1900M -d -a 2 dev-cache.tgz dev-cache.tgz.
+          {
+            echo "rustc=$RUSTC"
+            echo "inputs=$INPUTS"
+            echo "commit=$GITHUB_SHA"
+            echo "cargo_home=$CARGO_HOME"
+            for part in dev-cache.tgz.*; do echo "part=$part $(sha256sum "$part" | cut -d' ' -f1)"; done
+          } > manifest
+          cat manifest
+          notes="avenDB's compiled test dependencies for cloud sessions (rustc $RUSTC), built from ${GITHUB_SHA} on $(date -u +%F). .claude/hooks/session-start.sh downloads them; see avendb/CLAUDE.md."
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --title "avenDB dev cache" --notes "$notes" --prerelease --latest=false
+          fi
+          # parts first, the manifest last: a session reads the manifest and then only the parts it names
+          gh release upload "$TAG" dev-cache.tgz.* --clobber
+          gh release upload "$TAG" manifest --clobber
+          gh release edit "$TAG" --notes "$notes"

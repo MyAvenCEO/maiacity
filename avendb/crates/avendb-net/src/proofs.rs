@@ -7,12 +7,20 @@
 //! signature's place (`batch::Proof::held`) once its root is admitted and the path checks. Parts a node holds by a
 //! path already travel as they are held, and a frozen signer's are refused. A node that asks version 1 or a legacy
 //! kind is sent no edit held by a path (`WireBatches.toOld`): an old app reads signatures alone.
+//!
+//! Version 3 (S8, `spec/AvenDB/Segments.lean`) is asked by a node that keeps other writers' segments
+//! (`Options::segments`): the asker names every writer it holds a root of, with how many of its ids it holds, and the
+//! node attaches paths for every writer of the reply it holds a segment of, not its own log's alone, each root once and
+//! linked to the asker's, with the writer's ids beyond the ones the asker holds. The asker takes those ids only where
+//! they and the ones it holds rebuild the signed root exactly (`Signers::extend`), and serves paths for that writer in
+//! its turn. So a page through a relay costs one signature check per writer, not per edit. Version 3 may strip
+//! signatures as version 2 does, or keep them, as the server does for old apps.
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow, ensure};
 use avendb::batch::{self, ForkProof, Path, Proof, SignedRoot};
-use avendb::id::SignerId;
+use avendb::id::{EditId, SignerId};
 use avendb::sign::Signature;
 use avendb::wire::{Packed, Reply, Wire};
 
@@ -23,6 +31,13 @@ pub(crate) const KIND: u8 = 14;
 const VERSION: u8 = 1;
 /// Parts with a path go without their signatures (`Request::paths`).
 const PATHS: u8 = 2;
+/// Paths of every writer the node holds a segment of, with the ids beyond the asker's (`Request::held`).
+const SEGMENTS: u8 = 3;
+/// A segment request's flags: strip the signatures that paths stand in for.
+const STRIP: u8 = 1;
+pub(crate) const MAX_KNOWN_SEGMENTS: usize = 4096;
+/// Version 3 carries up to `MAX_SEGMENT_IDS` ids a root.
+const MAX_SEGMENT_SUPPLEMENT: usize = 8 << 20;
 const MAX_ROOTS: usize = 128;
 const MAX_KNOWN: usize = 128;
 const MAX_PROOFS: usize = 4096;
@@ -56,13 +71,28 @@ pub(crate) struct Request {
     /// The asker reads paths in place of signatures (version 2); a node that doesn't know version 2 refuses it, and
     /// the asker asks version 1 again.
     pub(crate) paths: bool,
+    /// Version 3: the asker keeps segments, and holds this many ids of each writer named in `known`.
+    pub(crate) held: Option<BTreeMap<SignerId, u64>>,
 }
 impl Request {
     pub(crate) fn encode(&self) -> Result<Vec<u8>> {
+        let most = if self.held.is_some() { MAX_KNOWN_SEGMENTS } else { MAX_KNOWN };
         ensure!(
-            matches!(self.kind, 0 | 7 | 11) && self.request.len() <= MAX_REQUEST && self.known.len() <= MAX_KNOWN,
+            matches!(self.kind, 0 | 7 | 11) && self.request.len() <= MAX_REQUEST && self.known.len() <= most,
             "invalid batch proof request"
         );
+        if let Some(held) = &self.held {
+            ensure!(held.keys().all(|s| self.known.contains_key(s)), "held ids of an unknown writer");
+            let mut out = vec![SEGMENTS, if self.paths { STRIP } else { 0 }, self.kind];
+            put(&mut out, &self.request);
+            out.extend_from_slice(&(self.known.len() as u32).to_be_bytes());
+            for (signer, length) in &self.known {
+                out.extend_from_slice(&signer.0);
+                out.extend_from_slice(&length.to_be_bytes());
+                out.extend_from_slice(&held.get(signer).copied().unwrap_or(0).to_be_bytes());
+            }
+            return Ok(out);
+        }
         let mut out = vec![if self.paths { PATHS } else { VERSION }, self.kind];
         put(&mut out, &self.request);
         out.extend_from_slice(&(self.known.len() as u32).to_be_bytes());
@@ -75,29 +105,43 @@ impl Request {
     pub(crate) fn decode(data: &[u8]) -> Result<Self> {
         ensure!(data.len() <= MAX_REQUEST + 8192, "oversized batch proof request");
         let mut r = Cursor(data);
-        let paths = match take::<1>(&mut r)? {
-            [VERSION] => false,
-            [PATHS] => true,
+        let (paths, segments) = match take::<1>(&mut r)? {
+            [VERSION] => (false, false),
+            [PATHS] => (true, false),
+            [SEGMENTS] => match take::<1>(&mut r)? {
+                [0] => (false, true),
+                [STRIP] => (true, true),
+                _ => anyhow::bail!("unknown segment request flags"),
+            },
             _ => anyhow::bail!("unknown batch proof request"),
         };
         let kind = take::<1>(&mut r)?[0];
         ensure!(matches!(kind, 0 | 7 | 11), "unsupported nested request kind");
         let request = bytes(&mut r, MAX_REQUEST)?.to_vec();
         let mut known = BTreeMap::new();
-        let n = count(&mut r, MAX_KNOWN)?;
-        ensure!(r.0.len() == n * 40, "invalid known-root list");
+        let mut held = segments.then(BTreeMap::new);
+        let n = count(&mut r, if segments { MAX_KNOWN_SEGMENTS } else { MAX_KNOWN })?;
+        ensure!(r.0.len() == n * if segments { 48 } else { 40 }, "invalid known-root list");
         for _ in 0..n {
             let signer = SignerId(take(&mut r)?);
             let length = u64::from_be_bytes(take(&mut r)?);
             ensure!(known.insert(signer, length).is_none(), "duplicate known signer");
+            if let Some(held) = &mut held {
+                let ids = u64::from_be_bytes(take(&mut r)?);
+                if ids > 0 {
+                    held.insert(signer, ids);
+                }
+            }
         }
-        Ok(Self { kind, request, known, paths })
+        Ok(Self { kind, request, known, paths, held })
     }
 }
 
 struct RootLink {
     root: SignedRoot,
     prefix: Vec<batch::Hash>,
+    /// Version 3: the writer's ids from the first one the asker doesn't hold up to the root.
+    ids: Option<(u64, Vec<EditId>)>,
 }
 struct PathRef {
     edit: usize,
@@ -113,6 +157,8 @@ pub(crate) struct Supplement {
     forks: Vec<ForkProof>,
     /// Version 2: each part with a path goes without its signature.
     stripped: bool,
+    /// Version 3: paths of other writers' segments, with their ids.
+    segments: bool,
 }
 
 /// A signature with only its keys: the part of a version 2 reply whose path stands in its place.
@@ -126,10 +172,12 @@ impl Supplement {
     pub(crate) async fn attach(
         reply: Reply,
         store: &Signers,
-        known: &BTreeMap<SignerId, u64>,
+        request: &Request,
         durable: &BTreeSet<avendb::id::EditId>,
-        strip: bool,
     ) -> Self {
+        let (known, strip) = (&request.known, request.paths);
+        let segments = request.held.is_some();
+        let most = if segments { MAX_SEGMENT_SUPPLEMENT } else { MAX_SUPPLEMENT };
         let mut roots = Vec::<RootLink>::new();
         let mut paths = Vec::new();
         let mut size = 0usize;
@@ -138,7 +186,10 @@ impl Supplement {
             let edit_id = signed.edit.id();
             for (signer_index, signer) in signed.edit.sigs().enumerate() {
                 used_signers.insert(signer);
-                if !durable.contains(&edit_id) || paths.len() >= MAX_PROOFS {
+                // a ledger leaf of this node's own needs the edit durably held; another writer's segment is that
+                // writer's own signed word, whatever this node holds
+                let own = signer == store.me();
+                if (own && !durable.contains(&edit_id)) || (!own && !segments) || paths.len() >= MAX_PROOFS {
                     continue;
                 }
                 // a part held by a path already travels as it is held, and a device's own signature on its edit is
@@ -147,10 +198,12 @@ impl Supplement {
                 if strip && (sig.webauthn.is_some() || sig.enclave.is_some() || sig.pq.starts_with(batch::PATH_MARK)) {
                     continue;
                 }
-                let Some(proof) = store.proof(edit_id) else {
+                let proof = if own { store.proof(edit_id) } else { store.peer_proof(signer, edit_id).await };
+                let Some(proof) = proof else {
                     continue;
                 };
-                if proof.root.root.log != signer {
+                // a root shorter than the asker's newest can't be linked to it: the signature goes instead
+                if proof.root.root.log != signer || known.get(&signer).is_some_and(|n| *n > proof.root.root.length) {
                     continue;
                 }
                 let found = roots.iter().position(|r| r.root.root == proof.root.root);
@@ -160,20 +213,31 @@ impl Supplement {
                     if roots.len() == MAX_ROOTS {
                         continue;
                     }
-                    let prefix = known
-                        .get(&signer)
-                        .and_then(|n| store.prefix_at(*n, proof.root.root.length))
-                        .unwrap_or_default();
-                    let root_size = proof.root.to_wire().len() + prefix.len() * 32 + 12;
-                    if size + root_size > MAX_SUPPLEMENT {
+                    let length = proof.root.root.length;
+                    let prefix = match known.get(&signer) {
+                        Some(n) if own => store.prefix_at(*n, length),
+                        Some(n) => store.peer_prefix(signer, *n, length).await,
+                        None => None,
+                    }
+                    .unwrap_or_default();
+                    let from = request.held.as_ref().map(|h| h.get(&signer).copied().unwrap_or(0));
+                    let ids = match from {
+                        Some(from) if from < length => store.segment(signer, from, length).await.map(|ids| (from, ids)),
+                        _ => None,
+                    };
+                    let root_size = proof.root.to_wire().len()
+                        + prefix.len() * 32
+                        + 13
+                        + ids.as_ref().map_or(0, |(_, ids)| 12 + ids.len() * 32);
+                    if size + root_size > most {
                         continue;
                     }
                     size += root_size;
-                    roots.push(RootLink { root: (*proof.root).clone(), prefix });
+                    roots.push(RootLink { root: (*proof.root).clone(), prefix, ids });
                     roots.len() - 1
                 };
                 let path_size = proof.path.to_wire().len() + 16;
-                if size + path_size > MAX_SUPPLEMENT {
+                if size + path_size > most {
                     continue;
                 }
                 size += path_size;
@@ -184,13 +248,13 @@ impl Supplement {
         for signer in used_signers {
             if let Some(fork) = store.fork(signer).await {
                 let bytes = fork.to_wire().len() + 4;
-                if forks.len() < MAX_ROOTS && size + bytes <= MAX_SUPPLEMENT {
+                if forks.len() < MAX_ROOTS && size + bytes <= most {
                     size += bytes;
                     forks.push(fork);
                 }
             }
         }
-        Self { reply, roots, paths, forks, stripped: strip }
+        Self { reply, roots, paths, forks, stripped: strip, segments }
     }
 
     pub(crate) fn encode(&self) -> Result<Vec<u8>> {
@@ -203,7 +267,11 @@ impl Supplement {
         }
         let legacy = Packed(reply).to_wire();
         ensure!(legacy.len() <= MAX_REPLY, "oversized legacy reply");
-        let mut out = vec![if self.stripped { PATHS } else { VERSION }];
+        let mut out = if self.segments {
+            vec![SEGMENTS, if self.stripped { STRIP } else { 0 }]
+        } else {
+            vec![if self.stripped { PATHS } else { VERSION }]
+        };
         put(&mut out, &legacy);
         let start = out.len();
         out.extend_from_slice(&(self.roots.len() as u32).to_be_bytes());
@@ -212,6 +280,19 @@ impl Supplement {
             out.extend_from_slice(&(root.prefix.len() as u32).to_be_bytes());
             for hash in &root.prefix {
                 out.extend_from_slice(hash);
+            }
+            if self.segments {
+                match &root.ids {
+                    None => out.push(0),
+                    Some((from, ids)) => {
+                        out.push(1);
+                        out.extend_from_slice(&from.to_be_bytes());
+                        out.extend_from_slice(&(ids.len() as u32).to_be_bytes());
+                        for id in ids {
+                            out.extend_from_slice(&id.0);
+                        }
+                    }
+                }
             }
         }
         out.extend_from_slice(&(self.paths.len() as u32).to_be_bytes());
@@ -225,20 +306,29 @@ impl Supplement {
         for fork in &self.forks {
             put(&mut out, &fork.to_wire());
         }
-        ensure!(out.len() - start <= MAX_SUPPLEMENT, "oversized proof supplement");
+        let most = if self.segments { MAX_SEGMENT_SUPPLEMENT } else { MAX_SUPPLEMENT };
+        ensure!(out.len() - start <= most, "oversized proof supplement");
         Ok(out)
     }
 
     pub(crate) fn decode(data: &[u8]) -> Result<Self> {
-        ensure!(data.len() <= MAX_REPLY + MAX_SUPPLEMENT + 5, "oversized supplemented reply");
+        ensure!(data.len() <= MAX_REPLY + MAX_SEGMENT_SUPPLEMENT + 6, "oversized supplemented reply");
         let mut r = Cursor(data);
-        let stripped = match take::<1>(&mut r)? {
-            [VERSION] => false,
-            [PATHS] => true,
+        let (stripped, segments) = match take::<1>(&mut r)? {
+            [VERSION] => (false, false),
+            [PATHS] => (true, false),
+            [SEGMENTS] => match take::<1>(&mut r)? {
+                [0] => (false, true),
+                [STRIP] => (true, true),
+                _ => anyhow::bail!("unknown segment supplement flags"),
+            },
             _ => anyhow::bail!("unknown proof supplement"),
         };
         let reply = Packed::from_wire(bytes(&mut r, MAX_REPLY)?)?.0;
-        ensure!(r.0.len() <= MAX_SUPPLEMENT, "oversized proof supplement");
+        ensure!(
+            r.0.len() <= if segments { MAX_SEGMENT_SUPPLEMENT } else { MAX_SUPPLEMENT },
+            "oversized proof supplement"
+        );
         let n = count(&mut r, MAX_ROOTS)?;
         let mut roots = Vec::with_capacity(n);
         let mut unique = BTreeSet::new();
@@ -250,7 +340,19 @@ impl Supplement {
             for _ in 0..m {
                 prefix.push(take(&mut r)?);
             }
-            roots.push(RootLink { root, prefix });
+            let ids = if segments && take::<1>(&mut r)? == [1] {
+                let from = u64::from_be_bytes(take(&mut r)?);
+                let n = count(&mut r, crate::signers::MAX_SEGMENT_IDS)?;
+                ensure!(from.checked_add(n as u64) == Some(root.root.length), "segment ids end short of their root");
+                let mut ids = Vec::with_capacity(n);
+                for _ in 0..n {
+                    ids.push(EditId(take(&mut r)?));
+                }
+                Some((from, ids))
+            } else {
+                None
+            };
+            roots.push(RootLink { root, prefix, ids });
         }
         let n = count(&mut r, MAX_PROOFS)?;
         let mut paths = Vec::with_capacity(n);
@@ -295,7 +397,7 @@ impl Supplement {
                 && forks.iter().all(|f| f.signer().is_some_and(|s| mentioned.contains(&s))),
             "unrelated signer metadata"
         );
-        Ok(Self { reply, roots, paths, forks, stripped })
+        Ok(Self { reply, roots, paths, forks, stripped, segments })
     }
 
     /// Persist fork/admission decisions before checking paths. Failure or an unlinked
@@ -308,7 +410,13 @@ impl Supplement {
         }
         let mut admitted = Vec::with_capacity(self.roots.len());
         for root in &self.roots {
-            admitted.push(store.admit(root.root.clone(), &root.prefix).await?);
+            let taken = store.admit(root.root.clone(), &root.prefix).await?;
+            // a writer's ids are held only once its root is admitted, and only where they rebuild it exactly
+            // (`Segments.extend`); ids that don't leave what this node held as it was
+            if let (true, Some((from, ids))) = (taken, &root.ids) {
+                store.extend(&root.root, *from, ids).await?;
+            }
+            admitted.push(taken);
         }
         let ids: Vec<_> = self.reply.edits.iter().map(|signed| signed.edit.id()).collect();
         for p in self.paths {
@@ -376,10 +484,11 @@ mod tests {
         let proof = log.proof(signed.edit.id()).unwrap();
         Supplement {
             reply: Reply { edits: vec![signed], blobs: vec![], more: false },
-            roots: vec![RootLink { root: (*proof.root).clone(), prefix: vec![] }],
+            roots: vec![RootLink { root: (*proof.root).clone(), prefix: vec![], ids: None }],
             paths: vec![PathRef { edit: 0, signer: 0, root: 0, path: proof.path }],
             forks: vec![],
             stripped: false,
+            segments: false,
         }
     }
 
@@ -429,7 +538,7 @@ mod tests {
     fn request_is_bounded_and_cannot_nest_arbitrary_protocol_kinds() {
         for kind in [0, 7, 11] {
             let request =
-                Request { kind, request: vec![1, 2, 3], known: BTreeMap::from([(SignerId::from_u64(7), 42)]), paths: kind == 7 };
+                Request { kind, request: vec![1, 2, 3], known: BTreeMap::from([(SignerId::from_u64(7), 42)]), paths: kind == 7, held: None };
             let bytes = request.encode().unwrap();
             let decoded = Request::decode(&bytes).unwrap();
             assert_eq!(decoded.encode().unwrap(), bytes);
@@ -441,7 +550,7 @@ mod tests {
             assert!(Request::decode(&trailing).is_err());
         }
         for kind in [1, 8, 12, 13, 14, 15, 255] {
-            assert!(Request { kind, request: vec![], known: BTreeMap::new(), paths: false }.encode().is_err());
+            assert!(Request { kind, request: vec![], known: BTreeMap::new(), paths: false, held: None }.encode().is_err());
         }
         let mut malicious = vec![VERSION, 0];
         malicious.extend_from_slice(&u32::MAX.to_be_bytes());

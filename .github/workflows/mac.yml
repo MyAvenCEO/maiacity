@@ -10,6 +10,7 @@ name: theOS on macOS
 # keeps a warm one there (about 4 minutes warm against 16 cold).
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'vault/app/**'
       - 'vault/crates/**'
@@ -45,6 +46,7 @@ jobs:
   # Pass marker (scripts/ci/passes.mjs, pull requests only): a build that passed on this PR with the same files is
   # skipped. The files: vault/, avenDB, and what their crates read from outside them (include_str!)
   passes:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     outputs:
       mac: ${{ steps.mac.outputs.cache-hit }}
@@ -66,7 +68,7 @@ jobs:
 
   check:
     needs: passes
-    if: needs.passes.outputs.mac != 'true'
+    if: ${{ (needs.passes.outputs.mac != 'true') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: theOS compiles on macOS
     runs-on: macos-15
     timeout-minutes: 60
@@ -104,7 +106,7 @@ jobs:
   # the marker saved on Linux, as it is looked up, so both agree on the cache's archive format
   passed:
     needs: [passes, check]
-    if: github.event_name == 'pull_request' && needs.check.result == 'success'
+    if: ${{ (github.event_name == 'pull_request' && needs.check.result == 'success') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     steps:
       - run: echo passed > .pass
