@@ -34,7 +34,8 @@ use serde_json::{json, Map, Value};
 use crate::id::{EntryId, ShareId};
 use crate::ops::{Loc, Seg};
 use crate::policy::{KeepMode, Level};
-use crate::slice::{Attrs, Selector, Sym, TagDelta};
+use crate::selector::{Attrs, Selector};
+use crate::slice::{Sym, TagDelta};
 
 /// The most ops a share names, steps a pattern has, and values an op may set a place to or tags it may ask for: so
 /// judging a write stays linear in it, and ops fit in a sealed slice. The most shares a proof opens: a write through a

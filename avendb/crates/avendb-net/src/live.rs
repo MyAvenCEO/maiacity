@@ -51,7 +51,7 @@ impl Drop for LiveClaimed {
     fn drop(&mut self) {
         let again = self.shared.claims.lock().map(|mut c| c.live_done(&self.logs)).unwrap_or_default();
         for endpoint in again {
-            self.shared.outreach.send(crate::actor::Msg::Ask { endpoint });
+            self.shared.outreach.send(crate::node_loop::Msg::Ask { endpoint });
         }
     }
 }

@@ -9,10 +9,10 @@
       "testName": "held_world_encoding_does_not_block_authorized_local_work"
     },
     {
-      "model": "avendb/spec/AvenDB/NodeActor.lean",
+      "model": "avendb/spec/AvenDB/NodeLoop.lean",
       "invariant": "a wake is never lost: owed to the attempt in flight, or waiting for the lane's backoff",
-      "implementation": "avendb/crates/avendb-net/src/actor.rs",
-      "test": "avendb/crates/avendb-net/src/actor.rs",
+      "implementation": "avendb/crates/avendb-net/src/node_loop.rs",
+      "test": "avendb/crates/avendb-net/src/node_loop.rs",
       "testName": "one_attempt_in_flight_and_a_wake_meanwhile_is_owed"
     },
     {

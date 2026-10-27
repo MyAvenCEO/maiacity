@@ -106,7 +106,7 @@
 pub mod backup;
 #[cfg(test)]
 mod bench;
-mod actor;
+mod node_loop;
 mod blind;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
@@ -236,7 +236,7 @@ const IDLE: Duration = Duration::from_secs(30);
 
 /// How long a node waits for a page of edits it asked a peer for (`Shared::pages`): one that never comes, over a
 /// connection kept open, would hold its pull, and the sync bar, for ever (Samuel's iPhone 2026-10-21, "syncing" at 19%
-/// with two pulls running). The asking fails, and the node asks again as it does any it failed (`actor`).
+/// with two pulls running). The asking fails, and the node asks again as it does any it failed (`node_loop`).
 const PAGE_WAIT: Duration = Duration::from_secs(180);
 
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
@@ -784,7 +784,7 @@ impl Node {
         let pool = connection_pool::Options { idle_timeout: IDLE, connect_timeout: WAIT, ..Default::default() };
         let pool = ConnectionPool::new(endpoint.clone(), iroh_blobs::ALPN, pool);
         let transport_control = transports::control::Control::new(packets.clone());
-        let (outreach, inbox) = actor::outreach();
+        let (outreach, inbox) = node_loop::outreach();
         let shared = Arc::new(Shared {
             lifecycle,
             writer: Mutex::new(writer),
@@ -867,7 +867,7 @@ impl Node {
             task::spawn(shared.clone().index_teller()),
             task::spawn(shared.clone().bootstrap_pump()),
             task::spawn(transports::control::maintain(shared.clone())),
-            task::spawn(actor::run(shared.clone(), inbox)),
+            task::spawn(node_loop::run(shared.clone(), inbox)),
         ];
         Ok(Node { shared, router, tasks: Mutex::new(tasks) })
     }
@@ -2151,8 +2151,8 @@ struct Shared {
     statements: Mutex<statements::Statements>,
     receipts: peer_receipts::Receipts,
     ui_receipts: peer_receipts::Receipts,
-    /// The node actor's handle: the telling of each peer and the asking of each, with their waits (`actor`).
-    outreach: actor::Outreach,
+    /// The node loop's handle: the telling of each peer and the asking of each, with their waits (`node_loop`).
+    outreach: node_loop::Outreach,
     /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
     wanted: Mutex<BTreeSet<LogId>>,
     /// How fresh its reads are (`fresh`): the stamp of its last current read, and the walk of what its live peers
@@ -2545,7 +2545,7 @@ impl Shared {
         // Control owns peer selection and old-route retirement under its state→peers lock order.
         transports::control::connected(self, &peer);
         self.told.lock().expect("told").remove(&device);
-        self.outreach.send(actor::Msg::Reached { device });
+        self.outreach.send(node_loop::Msg::Reached { device });
         self.index_told.lock().expect("index told").remove(&endpoint);
         self.index_due.notify_one();
         self.changed.notify_one();
@@ -3233,13 +3233,13 @@ impl Shared {
     }
 
     /// Asks `endpoint` soon for the logs where the device there holds what this one lacks, by what it told (`differ`):
-    /// the node actor starts the asking, or asks once more after the one under way, or once its wait is over if
-    /// asking it failed (`actor::Lane`).
+    /// the node loop starts the asking, or asks once more after the one under way, or once its wait is over if
+    /// asking it failed (`node_loop::Lane`).
     fn ask_soon(self: &Arc<Self>, endpoint: EndpointId) {
         if self.opts.lazy || self.admit().is_err() {
             return;
         }
-        self.outreach.send(actor::Msg::Ask { endpoint });
+        self.outreach.send(node_loop::Msg::Ask { endpoint });
     }
 
     /// Finish authenticated suffixes without making foreground requests pump history.
@@ -3277,7 +3277,7 @@ impl Shared {
         }
     }
 
-    /// Tells the peers what changed of its holdings whenever they may have, through the node actor, which tries again
+    /// Tells the peers what changed of its holdings whenever they may have, through the node loop, which tries again
     /// the peers it couldn't tell or failed to ask once their wait is over. It looks again every `retry` for the range
     /// candidates and transfers to expire.
     async fn announcer(self: Arc<Self>) {
@@ -3410,9 +3410,9 @@ impl Shared {
         }
     }
 
-    /// Has the node actor tell each peer what of the node's holdings it may know by the node's view, if that changed
+    /// Has the node loop tell each peer what of the node's holdings it may know by the node's view, if that changed
     /// since it was last told, or it is on a new connection: each on a task of its own, so that a peer out of reach
-    /// holds up nobody; one at a time; and a peer it couldn't reach, only once its wait is over (`actor`).
+    /// holds up nobody; one at a time; and a peer it couldn't reach, only once its wait is over (`node_loop`).
     fn announce(self: &Arc<Self>, news: &News) {
         let own = self.own.lock().expect("own").holdings.clone();
         let told = self.told.lock().expect("told").clone();
@@ -3421,7 +3421,7 @@ impl Shared {
             let live = self.live(reach.endpoint).map(|p| p.conn.stable_id());
             let due = told.get(device).is_none_or(|(on, was)| *was != want || live.is_some_and(|id| id != *on));
             if due {
-                self.outreach.send(actor::Msg::Tell { device: *device, endpoint: reach.endpoint });
+                self.outreach.send(node_loop::Msg::Tell { device: *device, endpoint: reach.endpoint });
             }
         }
     }
@@ -3838,7 +3838,7 @@ impl Drop for Claimed<'_> {
     fn drop(&mut self) {
         let again = self.shared.claims.lock().map(|mut c| c.release(self.endpoint)).unwrap_or_default();
         for endpoint in again {
-            self.shared.outreach.send(actor::Msg::Ask { endpoint });
+            self.shared.outreach.send(node_loop::Msg::Ask { endpoint });
         }
     }
 }
