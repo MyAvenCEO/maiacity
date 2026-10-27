@@ -97,6 +97,9 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 
 #[path = "lab/blind_index.rs"]
 mod blind_index;
+#[path = "lab/held.rs"]
+pub(crate) mod held;
+pub use held::Spill;
 #[cfg(test)]
 #[path = "lab/query_coverage.rs"]
 mod query_coverage;
@@ -500,16 +503,16 @@ fn trust(store: &mut Store) -> bool {
             gone.insert(id);
         }
     }
+    let signed_still = |s: &crate::sign::Signature| !s.pq.is_empty() || s.webauthn.is_some() || s.enclave.is_some();
     for id in &store.bare {
-        if let Some(signed) = store.signed.get_mut(id) {
-            for sig in
-                signed.sigs.iter_mut().filter(|s| !s.pq.is_empty() || s.webauthn.is_some() || s.enclave.is_some())
-            {
+        let needs = |signed: &Signed| signed.sigs.iter().any(signed_still);
+        store.signed.strip(id, needs, |signed| {
+            for sig in signed.sigs.iter_mut().filter(|s| signed_still(s)) {
                 sig.pq = vec![];
                 sig.webauthn = None;
                 sig.enclave = None;
             }
-        }
+        });
     }
     if gone.is_empty() {
         return false;
@@ -740,8 +743,10 @@ fn keys_of(bytes: &[u8]) -> Option<(Option<Checked>, Vec<([u8; 32], Secret)>)> {
 /// them; the keys it holds; what it read with them; and the entries it shows.
 struct Store {
     log: Log,
-    signed: HashMap<EditId, Signed>,
-    blobs: Blobs,
+    /// Its signed edits and McEliece keys: in memory, or spilled into the server's folder, a bounded cache of them in
+    /// memory (`held`, S7).
+    signed: held::Signeds,
+    blobs: held::Keys,
     /// The replay of its edits as it last brought itself up to date: which stand, and what it knows.
     replay: Replay,
     /// Its owners' judged slices it took, by entry, kept on its shelf beside its history (`EntryState.lean`'s based
@@ -835,8 +840,8 @@ impl Default for Store {
     fn default() -> Store {
         Store {
             log: Log::new(),
-            signed: HashMap::new(),
-            blobs: HashMap::new(),
+            signed: held::Signeds::default(),
+            blobs: held::Keys::default(),
             replay: replay(&[]),
             bases: BTreeMap::new(),
             bootstrap_state: None,
@@ -1463,10 +1468,10 @@ impl Lab {
         let mut out: BTreeMap<SignerId, SignerKeys> =
             signers.iter().filter_map(|&s| Some((s, self.keys_of(s)?))).collect();
         if out.len() < signers.len() {
-            for sig in self.held(d).signed.values().flat_map(|s| &s.sigs) {
-                let s = sig.keys.id();
+            for keys in self.held(d).signed.signer_keys() {
+                let s = keys.id();
                 if signers.contains(&s) && !out.contains_key(&s) {
-                    out.insert(s, sig.keys.clone());
+                    out.insert(s, keys.clone());
                     if out.len() == signers.len() {
                         break;
                     }
@@ -2108,8 +2113,10 @@ impl Lab {
                 store.bare.insert(id);
             }
             for b in signed.edit.blobs() {
-                if let Some(bytes) = blobs.get(&b) {
-                    store.blobs.entry(b).or_insert_with(|| bytes.clone());
+                if let Some(bytes) = blobs.get(&b)
+                    && !store.blobs.contains_key(&b)
+                {
+                    store.blobs.insert(b, bytes.clone());
                 }
             }
             store.log.receive([signed.edit.clone()]);
@@ -2138,11 +2145,11 @@ impl Lab {
     /// What device `d` sends with the edits `ids`: each with its signatures, and the blobs they name.
     fn outgoing(&self, d: SignerId, ids: &[EditId]) -> (Vec<Signed>, Blobs) {
         let store = self.held(d);
-        let signed: Vec<Signed> = ids.iter().map(|id| store.signed[id].clone()).collect();
+        let signed: Vec<Signed> = ids.iter().map(|id| store.signed.owned(id)).collect();
         let blobs = signed
             .iter()
             .flat_map(|s| s.edit.blobs())
-            .filter_map(|b| Some((b, store.blobs.get(&b)?.clone())))
+            .filter_map(|b| Some((b, store.blobs.get(&b)?)))
             .collect();
         (signed, blobs)
     }
@@ -3846,7 +3853,11 @@ impl Lab {
             "bodies": store.bodies.len(),
             "shown": store.shown.len(),
             "blobs": store.blobs.len(),
-            "blob_bytes": store.blobs.values().map(|b| b.len()).sum::<usize>(),
+            "blob_bytes": store.blobs.bytes(),
+            // what it holds of its edits and keys in memory, spilled or not (S7), and what its spills hold on disk
+            "memory": { "edits": store.signed.memory(), "keys": store.blobs.memory(),
+                "spilled": store.signed.spilled_bytes() + store.blobs.spilled_bytes(),
+                "spilling": store.signed.is_spilled() },
         });
         // its edits by the log each is of and by what it does: how much of a replay the entries' own logs are, which a
         // snapshot spares (S7c), and how much is key upkeep
@@ -3889,8 +3900,8 @@ impl Lab {
     }
 
     /// The signed edit device `d` holds with id `edit`, as it would send it.
-    pub fn signed_edit(&self, d: SignerId, edit: EditId) -> Option<&Signed> {
-        self.held(d).signed.get(&edit)
+    pub fn signed_edit(&self, d: SignerId, edit: EditId) -> Option<Signed> {
+        self.held(d).signed.owned_get(&edit)
     }
 
     /// Diagnostic policy observation only: no authority, persistence or rendered-state claim.
@@ -3922,7 +3933,7 @@ impl Lab {
         let mut out = vec![];
         for edit in store.log.edits() {
             out.extend(encode::bytes(edit));
-            for sig in &store.signed[&edit.id()].sigs {
+            for sig in &store.signed.owned(&edit.id()).sigs {
                 match &sig.keys {
                     SignerKeys::Device { ed25519, pq } => out.extend(ed25519.iter().chain(pq.bytes())),
                     SignerKeys::Passkey { p256, pq } => out.extend(p256.iter().chain(pq.bytes())),
@@ -4259,7 +4270,7 @@ impl Lab {
     pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
         let store = self.held(d);
         let places = link_places(store.log.edits(), self.latest(d), passkey);
-        places.into_iter().map(|i| store.signed[&store.log.ids()[i]].clone()).collect()
+        places.into_iter().map(|i| store.signed.owned(&store.log.ids()[i])).collect()
     }
 
     /// Device `d` adds itself to the vault whose root is its person's passkey `passkey`, by its view, as a new device
@@ -4332,10 +4343,10 @@ impl Lab {
             _ => None,
         };
         let mut out: BTreeMap<[u8; 32], SignerId> = BTreeMap::new();
-        for sig in store.signed.values().flat_map(|s| &s.sigs) {
-            if let SignerKeys::Device { ed25519, .. } = sig.keys {
-                let s = sig.keys.id();
-                if s == d || Some(ed25519) == own || !devices.contains(&s) || sig.keys.suite() != sign::SIGNING {
+        for keys in store.signed.signer_keys() {
+            if let SignerKeys::Device { ed25519, .. } = *keys {
+                let s = keys.id();
+                if s == d || Some(ed25519) == own || !devices.contains(&s) || keys.suite() != sign::SIGNING {
                     continue;
                 }
                 out.entry(ed25519).or_insert(s);
@@ -4425,13 +4436,13 @@ impl Lab {
         let from = request.after.map_or(0, |after| sends.places.partition_point(|p| *p <= after));
         let (mut signed, mut size, mut more) = (vec![], 0usize, false);
         for (_, id) in &sends.places[from..] {
-            let s = &store.signed[id];
+            let s = store.signed.owned(id);
             size = size.saturating_add(s.to_wire().len());
             if size > page && !signed.is_empty() {
                 more = true;
                 break;
             }
-            signed.push(s.clone());
+            signed.push(s);
         }
         let blobs: BTreeSet<BlobId> = signed
             .iter()
@@ -4462,8 +4473,8 @@ impl Lab {
         let store = self.held(d);
         let mut ids = Vec::new();
         for (_, id) in &sends.places {
-            let signed = &store.signed[id];
-            if signed.edit.author == signer && range_write_bound(signed).is_some_and(|n| n <= max_wire) {
+            let signed = store.signed.owned(id);
+            if signed.edit.author == signer && range_write_bound(&signed).is_some_and(|n| n <= max_wire) {
                 ids.push(*id);
             }
         }
@@ -4489,7 +4500,7 @@ impl Lab {
             let signed = store.signed.get(id)?;
             let at = (signed.edit.depth, *id);
             if signed.edit.author != signer || sends.places.binary_search(&at).is_err() { return None; }
-            let bytes = range_write_bound(signed)?;
+            let bytes = range_write_bound(&signed)?;
             if bytes > max_wire { return None; }
             selected.insert(at, (signed, bytes));
         }
@@ -4498,7 +4509,7 @@ impl Lab {
         for (signed, size) in selected.values() {
             let total = bytes.checked_add(*size)?;
             if total > max_wire { break; }
-            bytes = total; take.push((*signed).clone());
+            bytes = total; take.push(Signed::clone(signed));
         }
         let more = take.len() < selected.len();
         Some((take, more))
@@ -4690,7 +4701,7 @@ impl Lab {
             w.first || w.shares.is_empty() || w.shares.iter().any(lets)
         };
         let writes = h.history(line).into_iter().map(|c| &c.write).filter(may);
-        let files = |w: &Write| Some((w.edit, store.signed.get(&w.edit)?.edit.files().to_vec()));
+        let files = |w: &Write| Some((w.edit, store.log.entry_write(w.edit)?.files().to_vec()));
         writes.filter_map(files).filter(|(_, fs)| !fs.is_empty()).collect()
     }
 
@@ -4701,11 +4712,11 @@ impl Lab {
         // a session opens a file only through a write of an entry it reads itself
         if self.hosted.contains_key(&d) {
             let brings = |(id, body): (&EditId, &Body)| {
-                let signed = store.signed.get(id)?;
-                let Action::Write { entry, .. } = signed.edit.action else {
+                let edit = store.log.entry_write(*id)?;
+                let Action::Write { entry, .. } = edit.action else {
                     return None;
                 };
-                let named = signed.edit.files();
+                let named = edit.files();
                 let f = body.files.iter().find(|f| f.root == *root && named.contains(&f.root) && f.fits())?;
                 self.sees(d, entry).then(|| (*id, f.clone()))
             };
@@ -4718,7 +4729,7 @@ impl Lab {
             writes.sort_by_key(|(id, _)| **id);
             let mut at = HashMap::new();
             for (id, body) in writes {
-                let Some(named) = store.signed.get(id).map(|s| s.edit.files()) else {
+                let Some(named) = store.log.entry_write(*id).map(Edit::files) else {
                     continue;
                 };
                 for f in body.files.iter().filter(|f| named.contains(&f.root) && f.fits()) {
@@ -4732,7 +4743,7 @@ impl Lab {
 
     /// The McEliece key `b` as device `d` holds it.
     pub fn blob(&self, d: SignerId, b: BlobId) -> Option<Arc<[u8]>> {
-        self.held(d).blobs.get(&b).cloned()
+        self.held(d).blobs.get(&b)
     }
 
     /// The ids of the McEliece keys device `d` holds, smallest first.
@@ -4879,8 +4890,8 @@ impl Lab {
     /// A backup of device `d`: its signed edits and their blobs, as they are now.
     pub fn backup(&self, d: SignerId) -> Backup {
         let store = self.held(d);
-        let signed = store.log.ids().iter().map(|id| store.signed[id].clone()).collect();
-        Backup { signed, blobs: store.blobs.clone(), bases:store.bases.clone() }
+        let signed = store.log.ids().iter().map(|id| store.signed.owned(id)).collect();
+        Backup { signed, blobs: store.blobs.to_map(), bases:store.bases.clone() }
     }
 
     /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it
@@ -4896,6 +4907,15 @@ impl Lab {
         self.restore_warm(d, backup, None, &Warm::default());
     }
 
+    /// Device `d` holds its signed edits and McEliece keys in `spill` from now on, those it holds now among them, and
+    /// only an index of them and a bounded cache in memory (S7, `held`): what a server does, its vaults growing toward
+    /// a million edits. A restore keeps it spilled. It holds, proves and says the same either way.
+    pub fn spill(&mut self, d: SignerId, spill: &Spill) -> std::io::Result<()> {
+        let store = self.stores.get_mut(&self.at(d)).ok_or_else(|| std::io::Error::other("no such device"))?;
+        store.signed.spill_edits(spill)?;
+        store.blobs.spill_keys(spill)
+    }
+
     /// `restore_from`, starting from what device `d` worked out before, as its shelf keeps it (`Warm`): what of it it
     /// opens with its shelf key. Where its keys name the edits it checked as its shelf names the first `n` of `backup`'s
     /// now (`checked`), their signatures aren't checked again: a device opening again checks only what came after. It
@@ -4904,7 +4924,10 @@ impl Lab {
     pub fn restore_warm(&mut self, d: SignerId, backup: Backup, checked: Option<(Checked, usize)>, warm: &Warm) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        let mut store = Store { follow, query_depth, gate, perf, bases:backup.bases.clone(), ..Store::default() };
+        // spilled as it was, into new files: the old ones go with the store they were of
+        let (signed, blobs) = (held.signed.fresh(), held.blobs.fresh_keys());
+        let mut store =
+            Store { follow, query_depth, gate, perf, signed, blobs, bases: backup.bases.clone(), ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
         // Decode and merge one slot at a time. Keeping both complete decoded key
@@ -5132,7 +5155,8 @@ impl Lab {
         let first: Vec<Signed> = ids.iter().filter_map(|id| first.remove(id)).collect();
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
+        let (spilled, keys) = (held.signed.fresh(), held.blobs.fresh_keys());
+        self.stores.insert(d, Store { follow, query_depth, gate, perf, signed: spilled, blobs: keys, ..Store::default() });
         let offered = (first.len() + rest.len()) as u64;
         let fresh = self.fresh(d, first.into_iter().chain(rest).collect(), &of);
         let Some(store) = self.stores.get_mut(&d) else {
@@ -5187,7 +5211,7 @@ impl Lab {
             }
             Tamper::ChangedCiphertext(id) => {
                 let mut signed =
-                    self.stores.values().find_map(|s| s.signed.get(&id)).cloned().expect("an edit some device holds");
+                    self.stores.values().find_map(|s| s.signed.get(&id)).map(|s| Signed::clone(&s)).expect("an edit some device holds");
                 if let Action::Write { body, .. } = &mut signed.edit.action
                     && let Some(last) = body.last_mut()
                 {
@@ -5699,7 +5723,7 @@ fn key_box(
         _ => return None,
     };
     let blob = store.blobs.get(&pk.mceliece).filter(|b| BlobId::of(b) == pk.mceliece)?;
-    let bytes = keys::seal(secret, pk, blob, &info(&to), rng)?;
+    let bytes = keys::seal(secret, pk, &blob, &info(&to), rng)?;
     Some(KeyBox { to, bytes })
 }
 

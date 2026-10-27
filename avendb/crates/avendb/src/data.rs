@@ -246,7 +246,7 @@ pub fn history(lab: &Lab, me: SignerId) -> Value {
                 "fields": fields,
                 "author": hex(&edit.author.0),
                 "cosigners": edit.cosigners.iter().map(|s| hex(&s.0)).collect::<Vec<_>>(),
-                "sigs": signed.map(|s| s.sigs.iter().map(signature).collect::<Vec<_>>()).unwrap_or_default(),
+                "sigs": signed.as_ref().map(|s| s.sigs.iter().map(signature).collect::<Vec<_>>()).unwrap_or_default(),
                 "parents": ids(&edit.parents),
                 "depth": edit.depth,
                 "bytes": signed.map_or(0, |s| s.to_wire().len()),
