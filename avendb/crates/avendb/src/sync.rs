@@ -542,16 +542,73 @@ pub(crate) fn asks_ids(edits: &[Edit], ids: &[EditId], follow: &[VaultId]) -> As
 
 /// The same structural request with log assignments already derived from these exact edits/IDs.
 pub(crate) fn asks_with_logs(edits: &[Edit], ids: &[EditId], logs: &[Option<LogId>], follow: &[VaultId]) -> Ask {
+    asks_with_stubs(edits, ids, logs, &[], follow)
+}
+
+/// A box edit a peer held back from a device's first sync (`LazyBoxes.lean`'s `Stub`): its id, its log, and the depth
+/// and parents the peer says it has. A device counts it as held in its log's closed part and frontier, so that it asks
+/// for none of the box's descendants again and no peer sends the box until the device asks for its body
+/// (`Lab::fetch_withheld`). Nothing else of the device reads it: it enters no view and opens nothing (S1, S4), and the
+/// body, matched by its id, the hash of all it says, is checked against it when it comes (`lies`, S5).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Stub {
+    pub id: EditId,
+    pub log: LogId,
+    pub depth: u64,
+    pub parents: Vec<EditId>,
+}
+
+impl Stub {
+    /// The honest stub of `edit`, whose id is `id`, of log `log`.
+    pub fn of(edit: &Edit, id: EditId, log: LogId) -> Stub {
+        Stub { id, log, depth: edit.depth, parents: edit.parents.clone() }
+    }
+
+    /// The stub lies about the body `body` of its id `id` (`Stub.lies`): of another log, depth or parents, or no box.
+    pub fn lies(&self, body: &Edit, id: EditId) -> bool {
+        self.id == id
+            && (self.depth != body.depth
+                || self.parents != body.parents
+                || log_of(body, id) != Some(self.log)
+                || !crate::lazy::is_box(body))
+    }
+
+    /// What `LogEdits` reads of an edit, its parents, for the stub: no edit anyone signed.
+    fn placeholder(&self) -> Edit {
+        Edit {
+            parents: self.parents.clone(),
+            depth: self.depth,
+            author: SignerId::from_u64(0),
+            cosigners: vec![],
+            action: Action::Wraps { entry: EntryId::from_u64(0), wraps: vec![] },
+        }
+    }
+}
+
+/// `asks_with_logs`, counting the stubs `stubs` as held: each in its log, built on what it says it builds on. A stub
+/// of an edit it holds counts for nothing.
+pub(crate) fn asks_with_stubs(
+    edits: &[Edit],
+    ids: &[EditId],
+    logs: &[Option<LogId>],
+    stubs: &[Stub],
+    follow: &[VaultId],
+) -> Ask {
     let mut ask = Ask { follow: follow.to_vec(), ..Ask::default() };
     ask.follow.sort();
     ask.follow.dedup();
+    let held: Vec<Edit> = stubs.iter().map(Stub::placeholder).collect();
+    let mut all = LogEdits::all(edits, ids, logs);
+    for (stub, edit) in stubs.iter().zip(&held) {
+        all.entry(stub.log).or_default().by_id.entry(stub.id).or_insert(edit);
+    }
     let mut closed: HashSet<EditId> = HashSet::new();
-    for (l, log) in LogEdits::all(edits, ids, logs) {
+    for (l, log) in all {
         let c = log.closed();
         ask.haves.insert(l, log.haves(&c));
         closed.extend(c);
     }
-    ask.loose = ids.iter().copied().filter(|id| !closed.contains(id)).collect();
+    ask.loose = ids.iter().chain(stubs.iter().map(|s| &s.id)).copied().filter(|id| !closed.contains(id)).collect();
     ask.loose.sort();
     ask.loose.dedup();
     ask

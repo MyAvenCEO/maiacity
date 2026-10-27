@@ -138,9 +138,11 @@ use crate::slice::{
     Attrs, Body, CAP_GROUP_TYPE, Header, LENS_TYPE, SCHEMA_TYPE, Select, Selector, Slice, Sym, TagDelta,
 };
 use crate::sync::{
-    LogId, Place, answer_by_log, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs,
+    LogId, Place, Stub, answer_by_log, asks_with_stubs, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs,
 };
 use crate::wire::{Claim, FileHold, Frontier, Join, Request, Statement, Wire as _};
+#[cfg(test)]
+use crate::sync::asks_ids;
 use crate::world;
 
 /// A device keeps its keys and audiences up to date in a few rounds at most: one to make and seal keys and move
@@ -688,6 +690,25 @@ struct RequestBasis {
     ask: crate::sync::Ask,
 }
 
+/// A device's first sync with the boxes held back (`lazy`, `LazyBoxes.lean`): it asks its peer for the stubs of the box
+/// edits it needs not now (`Lab::withheld`), counts them as held in each log's closed part and frontier when it asks
+/// (`sync::asks_with_stubs`), and so is sent every edit but those; then, asked to (`Lab::fetch_withheld`), asks as any
+/// device does, is sent their bodies, and checks each against its stub as it takes it (S5). A stub enters nothing it
+/// knows, and opens nothing (S1, S4): only what it asks for.
+#[derive(Default)]
+struct LazyBoxes {
+    /// It asks for stubs in its first syncs.
+    on: bool,
+    /// It asks for the bodies of its stubs: they no longer count as held.
+    fetching: bool,
+    /// Its stubs whose bodies it holds not, each with the peer that sent it.
+    stubs: BTreeMap<EditId, (crate::sync::Stub, SignerId)>,
+    /// The bodies that came of a stub that lied about them, each with the peer that sent the stub.
+    liars: Vec<(SignerId, EditId)>,
+    /// How many stubs it took in all.
+    taken: usize,
+}
+
 /// The ordered edits and authorized explicit key requests for one asking. The first page works both out;
 /// subsequent pages do work proportional to their output, without scanning all authorized history for keys.
 struct ReplyPlan {
@@ -843,6 +864,8 @@ struct Store {
     view_lineage: Option<crate::policy::LogRevision>,
     wholes: u64,
     view_wholes: u64,
+    /// Its first sync with the boxes held back, if it asks for one (`Lab::set_lazy_boxes`).
+    lazy: LazyBoxes,
 }
 
 impl Default for Store {
@@ -893,11 +916,20 @@ impl Default for Store {
             view_lineage: None,
             wholes: 0,
             view_wholes: 0,
+            lazy: LazyBoxes::default(),
         }
     }
 }
 
 impl Store {
+    /// The stubs it counts as held when it asks (`LazyBoxes`): none once it asks for their bodies.
+    fn counted_stubs(&self) -> Vec<Stub> {
+        if self.lazy.fetching {
+            return vec![];
+        }
+        self.lazy.stubs.values().map(|(stub, _)| stub.clone()).collect()
+    }
+
     fn body_metadata(&self, id: EditId) -> Option<&Body> {
         self.bodies.get(&id)
     }
@@ -2029,6 +2061,45 @@ impl Lab {
     }
 
     fn take_prepared(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs, prepared: &HashMap<EditId, bool>) -> bool {
+        let stubbed = self.stubbed(to, &edits);
+        let changed = self.take_checked(to, edits, blobs, prepared);
+        if !stubbed.is_empty() {
+            self.unstub(to, stubbed);
+        }
+        changed
+    }
+
+    /// Of the bodies `edits` device `to` takes, those of its stubs, each with whether its stub lied about it (S5).
+    fn stubbed(&self, to: SignerId, edits: &[Signed]) -> Vec<(EditId, bool)> {
+        let Some(store) = self.stores.get(&self.at(to)).filter(|s| !s.lazy.stubs.is_empty()) else {
+            return vec![];
+        };
+        let of = |s: &Signed| {
+            let id = s.edit.id();
+            store.lazy.stubs.get(&id).map(|(stub, _)| (id, stub.lies(&s.edit, id)))
+        };
+        edits.iter().filter_map(of).collect()
+    }
+
+    /// Device `to` took bodies of its stubs, `stubbed`: of each it now holds, its stub goes, and a stub that lied is
+    /// told of its peer (`stub_liars`). A body it took not leaves its stub there, asked for until a body comes (S3).
+    fn unstub(&mut self, to: SignerId, stubbed: Vec<(EditId, bool)>) {
+        let store = self.stores.get_mut(&self.at(to)).expect("a device");
+        for (id, lied) in stubbed {
+            if !store.signed.contains_key(&id) {
+                continue;
+            }
+            if let Some((_, from)) = store.lazy.stubs.remove(&id)
+                && lied
+            {
+                store.lazy.liars.push((from, id));
+            }
+        }
+        // the stubs it counted as held changed: so does what it asks with
+        *store.answers.basis.lock().expect("request basis") = None;
+    }
+
+    fn take_checked(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs, prepared: &HashMap<EditId, bool>) -> bool {
         let mut fresh = self.checked_prepared(to, edits, prepared);
         if let Some(home) = self.home(to).filter(|_| !fresh.is_empty()) {
             self.step_replay(to);
@@ -4017,8 +4088,16 @@ impl Lab {
         if !self.online(from) || !self.online(to) {
             return 0;
         }
+        if self.held(to).lazy.on && !self.held(to).lazy.fetching {
+            let to_store = self.held(to);
+            let stubs = to_store.counted_stubs();
+            let ask = asks_with_stubs(to_store.log.edits(), to_store.log.ids(), to_store.log.logs(), &stubs, &to_store.follow);
+            let withheld = self.withheld(from, to, &Request { ask, ..Request::default() }, &ReplyScope::All);
+            self.receive_stubs(to, from, withheld);
+        }
         let to_store = self.held(to);
-        let asked = asks_ids(to_store.log.edits(), to_store.log.ids(), &to_store.follow);
+        let stubs = to_store.counted_stubs();
+        let asked = asks_with_stubs(to_store.log.edits(), to_store.log.ids(), to_store.log.logs(), &stubs, &to_store.follow);
         let store = self.held(from);
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let places = self.answered(from, to, &asked.follow);
@@ -4377,7 +4456,8 @@ impl Lab {
             return basis.clone();
         }
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let ask = crate::sync::asks_with_logs(edits, ids, store.log.logs(), &[]);
+        let stubs = store.counted_stubs();
+        let ask = crate::sync::asks_with_stubs(edits, ids, store.log.logs(), &stubs, &[]);
         let basis = Arc::new(RequestBasis { revision, ask });
         #[cfg(test)]
         store.answers.basis_builds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -4395,8 +4475,15 @@ impl Lab {
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let places = self.answered(d, peer, &[]);
         let basis = self.request_basis(d);
-        let shared: HashSet<LogId> = places.iter().filter_map(|&i| store.log.logs()[i]).collect();
-        let theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
+        let mut shared: HashSet<LogId> = places.iter().filter_map(|&i| store.log.logs()[i]).collect();
+        let mut theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
+        // the stubs `peer` sent it, which it tells `peer` of and no other peer
+        if !store.lazy.fetching {
+            for (stub, _) in store.lazy.stubs.values().filter(|(_, from)| *from == peer) {
+                shared.insert(stub.log);
+                theirs.insert(stub.id);
+            }
+        }
         let mut ask = basis.ask.clone();
         ask.follow = store.follow.clone();
         ask.haves.retain(|l, _| shared.contains(l));
@@ -4479,6 +4566,90 @@ impl Lab {
             from = end;
         }
         (cuts, from >= sends.places.len())
+    }
+
+    /// Device `d` asks for its first syncs with the boxes held back from now on, if `on` (`LazyBoxes.lean`): it asks
+    /// each peer for the stubs of the box edits it needs not now (`withheld`), is sent the rest, and asks for their
+    /// bodies once told to (`fetch_withheld`). Off, it asks as any device does, its stubs no longer counted.
+    pub fn set_lazy_boxes(&mut self, d: SignerId, on: bool) {
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        store.lazy.on = on;
+        store.lazy.fetching |= !on;
+        *store.answers.basis.lock().expect("request basis") = None;
+    }
+
+    /// The stubs of the box edits device `d` would send `asker` for `request` in `scope` that `asker` needs not now
+    /// (`lazy::Needs`, by `d`'s view: a box changes nothing in the state, L1): each entry's wraps, the boxes of keys
+    /// no longer current, those `asker` can't open, and of each current key it opens all boxes but one. Smallest id
+    /// first. Of no edit `asker` may not receive (the same plan as `reply_in`), and only what `asker` would be sent
+    /// anyway: their ids, logs, depths and parents.
+    pub fn withheld(&self, d: SignerId, asker: SignerId, request: &Request, scope: &ReplyScope) -> Vec<Stub> {
+        let places = self.answered(d, asker, &request.ask.follow);
+        let sends = self.sends(d, asker, request, &places, scope);
+        let store = self.held(d);
+        let mut needs = crate::lazy::Needs::new(self.latest(d), asker);
+        let mut out: Vec<Stub> = sends
+            .places
+            .iter()
+            .filter_map(|(_, id)| {
+                let edit = &store.signed[id].edit;
+                let held_back = crate::lazy::is_box(edit) && needs.class(edit) != crate::lazy::Class::Now;
+                held_back.then(|| Some(Stub::of(edit, *id, log_of(edit, *id)?))).flatten()
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Device `d` takes the stubs `stubs` peer `from` sent it (`withheld`), while it asks for stubs and not yet for
+    /// their bodies: each of an edit it holds not, to count as held when it asks `from` (`request`). How many it took.
+    /// A stub enters nothing it knows (S1).
+    pub fn receive_stubs(&mut self, d: SignerId, from: SignerId, stubs: Vec<Stub>) -> usize {
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        if !store.lazy.on || store.lazy.fetching {
+            return 0;
+        }
+        let mut took = 0;
+        for stub in stubs {
+            if !store.signed.contains_key(&stub.id) && !store.lazy.stubs.contains_key(&stub.id) {
+                store.lazy.stubs.insert(stub.id, (stub, from));
+                took += 1;
+            }
+        }
+        if took > 0 {
+            store.lazy.taken += took;
+            *store.answers.basis.lock().expect("request basis") = None;
+        }
+        took
+    }
+
+    /// Device `d` asks for the bodies of its stubs from now on: they no longer count as held, so its peers send them,
+    /// and each is checked against its stub as it comes (S2, S5). It asks for no stubs again.
+    pub fn fetch_withheld(&mut self, d: SignerId) {
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        store.lazy.fetching = true;
+        *store.answers.basis.lock().expect("request basis") = None;
+    }
+
+    /// Device `d` asks for stubs in its syncs now: it asks for them, and not yet for their bodies.
+    pub fn lazy_boxes(&self, d: SignerId) -> bool {
+        let lazy = &self.held(d).lazy;
+        lazy.on && !lazy.fetching
+    }
+
+    /// The stubs device `d` holds whose bodies it holds not yet, smallest id first.
+    pub fn stubs(&self, d: SignerId) -> Vec<Stub> {
+        self.held(d).lazy.stubs.values().map(|(stub, _)| stub.clone()).collect()
+    }
+
+    /// How many stubs device `d` took in all (`receive_stubs`): of boxes its first syncs held back.
+    pub fn stubs_taken(&self, d: SignerId) -> usize {
+        self.held(d).lazy.taken
+    }
+
+    /// Each body device `d` took of a stub that lied about it, with the peer that sent the stub, as they came (S5).
+    pub fn stub_liars(&self, d: SignerId) -> Vec<(SignerId, EditId)> {
+        self.held(d).lazy.liars.clone()
     }
 
     /// A bounded inventory for optional sparse payload transfer, using exactly the ordinary reply permission and

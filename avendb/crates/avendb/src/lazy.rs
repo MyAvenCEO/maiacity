@@ -16,7 +16,7 @@ use std::collections::HashSet;
 
 use crate::id::{EditId, SignerId};
 use crate::keys::KeyName;
-use crate::policy::{replay, Action, Edit, Replay};
+use crate::policy::{replay, Action, Edit, Replay, State};
 
 /// A box edit: the boxes of one key, or the wraps of one entry's earlier keys (`Edit.isBox`).
 pub fn is_box(edit: &Edit) -> bool {
@@ -56,29 +56,60 @@ pub struct FirstSync {
     pub never: Vec<usize>,
 }
 
-/// Which of `edits` device `d` takes in its first sync, with `view` the state of every edit but the boxes
-/// (`first_view`): it opens what the schedule seals to its own key, and down from there.
-pub fn first_sync(edits: &[Edit], view: &Replay, d: SignerId) -> FirstSync {
-    let st = &view.state;
-    let opens: HashSet<KeyName> = st.opens(&[KeyName::Signer(d)]);
-    let current = |name: &KeyName| matches!(*name, KeyName::Scoped(k, _) if st.current(k) == *name);
-    let mut boxed: HashSet<KeyName> = HashSet::new();
-    let mut out = FirstSync::default();
-    for (i, e) in edits.iter().enumerate() {
+/// Where an edit goes in a device's first sync (`FirstSync`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Class {
+    Now,
+    WithHistory,
+    Never,
+}
+
+/// What device `d` needs of the boxes now, by the state `st` of every edit but the boxes, edit after edit (`first_sync`
+/// with a peer's edits; `Lab::withheld` with what it sends): it opens what the schedule seals to its own key, and down
+/// from there, and takes one box of each current key it opens.
+pub struct Needs<'a> {
+    st: &'a State,
+    opens: HashSet<KeyName>,
+    boxed: HashSet<KeyName>,
+}
+
+impl<'a> Needs<'a> {
+    pub fn new(st: &'a State, d: SignerId) -> Needs<'a> {
+        Needs { st, opens: st.opens(&[KeyName::Signer(d)]), boxed: HashSet::new() }
+    }
+
+    /// Where `e` goes, the edits before it asked of already.
+    pub fn class(&mut self, e: &Edit) -> Class {
+        let st = self.st;
+        let current = |name: &KeyName| matches!(*name, KeyName::Scoped(k, _) if st.current(k) == *name);
         match &e.action {
             Action::Keys { name, boxes, public, clear, .. } => {
                 // a seed's public half (which upkeep seals to) and a public key in the clear travel now, few as they are
-                let mine = opens.contains(name) && boxes.iter().any(|b| opens.contains(&b.to.name()));
-                if public.is_some() || clear.is_some() || (mine && current(name) && boxed.insert(*name)) {
-                    out.now.push(i)
+                let mine = self.opens.contains(name) && boxes.iter().any(|b| self.opens.contains(&b.to.name()));
+                if public.is_some() || clear.is_some() || (mine && current(name) && self.boxed.insert(*name)) {
+                    Class::Now
                 } else if mine && !current(name) {
-                    out.with_history.push(i)
+                    Class::WithHistory
                 } else {
-                    out.never.push(i)
+                    Class::Never
                 }
             }
-            Action::Wraps { .. } => out.with_history.push(i),
-            _ => out.now.push(i),
+            Action::Wraps { .. } => Class::WithHistory,
+            _ => Class::Now,
+        }
+    }
+}
+
+/// Which of `edits` device `d` takes in its first sync, with `view` the state of every edit but the boxes
+/// (`first_view`): it opens what the schedule seals to its own key, and down from there.
+pub fn first_sync(edits: &[Edit], view: &Replay, d: SignerId) -> FirstSync {
+    let mut needs = Needs::new(&view.state, d);
+    let mut out = FirstSync::default();
+    for (i, e) in edits.iter().enumerate() {
+        match needs.class(e) {
+            Class::Now => out.now.push(i),
+            Class::WithHistory => out.with_history.push(i),
+            Class::Never => out.never.push(i),
         }
     }
     out
