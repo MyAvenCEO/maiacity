@@ -26,7 +26,11 @@ export function inventory(files=discover()) {
  }
  return groups;
 }
+// A suite marked "off" in suites.json is never selected for CI (its files stay owned, and --suite still runs it).
 export function selected(files, mode='changed') {
+ return chosen(files, mode).filter(name=>!suites.find(s=>s.name===name).off);
+}
+function chosen(files, mode) {
  if (mode==='gate') return suites.filter(s=>s.tier==='gate'||s.name==='ci').map(s=>s.name);
  if (mode==='all' || files===null) return suites.map(s=>s.name);
  // Dependency/build/CI changes can affect any suite; missing base takes this path too.
@@ -75,16 +79,6 @@ if (import.meta.main) {
  const mode=args.includes('--all')?'all':args.includes('--gate')?'gate':'changed';
  const base=value('--base')||process.env.CI_BASE;
  const names=value('--suite')?[value('--suite')]:selected(mode==='changed'?changed(base,process.env.CI_HEAD||'HEAD'):null,mode);
- // one application job of kernel.yml's fixed matrix: is its suite selected, and its pass marker's key
- if (args.includes('--entry')) {
-  const [suite, shard='']=[value('--entry'), value('--shard')||''];
-  const entry=keyed(matrix([suite])).find(e=>e.shard===shard);
-  if (!entry) throw new Error(`No application job ${suite} ${shard}`);
-  const out={selected:names.includes(suite), key:entry.key};
-  console.log(JSON.stringify(out));
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,`selected=${out.selected}\nkey=${out.key}\n`);
-  process.exit(0);
- }
  if (args.includes('--matrix')) {
   // each with its pass marker: on a pull request, a suite that passed with the same files skips its steps
   const json=JSON.stringify(keyed(matrix(names)));
