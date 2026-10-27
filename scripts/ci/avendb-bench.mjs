@@ -52,6 +52,22 @@ export function checkIndex(bench, gates) {
  return out;
 }
 
+// G1's named query of the Universe (avendb's tests/posts_bench.rs): a page of query-posts at 1M and 10M edits, from what
+// it costs more per entry held and per edit of a post; 0 per edit where it reads no history.
+export function checkPosts(bench, gates) {
+ const out = [];
+ const add = (gate, name, value, limit, ok) => out.push({ gate, name, value, limit, ok: value != null && ok });
+ const g = gates.gates, p = bench.find(b => b.kind === 'posts');
+ if (!p) add(true, 'query-posts', null, 'present', false);
+ else {
+  add(true, 'query-posts: µs a page costs more per edit of a post (reads history)', p.per_edit_us, `≤ ${g.posts_per_edit_us_max}`, p.per_edit_us <= g.posts_per_edit_us_max);
+  add(true, 'query-posts: a page at 1M edits, ms (no entry a post)', p.at_1m_ms, `≤ ${g.posts_page_ms_max}`, p.at_1m_ms <= g.posts_page_ms_max);
+  add(true, 'query-posts: a page at 10M edits, ms (no entry a post)', p.at_10m_ms, `≤ ${g.posts_page_ms_max}`, p.at_10m_ms <= g.posts_page_ms_max);
+  add(false, 'query-posts: a page at 10M edits, ms (every entry a post of 50 edits)', p.at_10m_all_posts_ms, `≤ ${g.posts_page_ms_max}`, p.at_10m_all_posts_ms <= g.posts_page_ms_max);
+ }
+ return out;
+}
+
 // Every gate and target over the bench's lines: [{ name, value, limit, ok, gate }], `gate` false for a target.
 export function check(bench, gates, pg = []) {
  const out = [];
@@ -156,6 +172,9 @@ export function report(bench, pg, results) {
  const wins = bench.filter(b => b.kind === 'window').sort((a, b) => a.n - b.n);
  if (wins.length) rows.push('', '| named query window at edits | index rows | pages read (median, most) | bytes read | rows read | log edits | window p50 / p95 µs | log head µs | p50 at n µs |', '|---|---|---|---|---|---|---|---|---|',
   ...wins.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.window_pages_p50}, ${s.window_pages_read} | ${fmt(s.window_bytes_read)} | ${s.window_rows_read} | ${s.window_log_edits} | ${s.window_p50_us} / ${s.window_p95_us} | ${fmt(s.head_us)} | ${fmt(s.window_at_n_p50_us)} |`));
+ const posts = bench.filter(b => b.kind === 'posts');
+ if (posts.length) rows.push('', '| query-posts page | base µs | µs more per post | per edit of a post | per other entry | at 1M ms | at 10M ms | at 10M, all posts, ms |', '|---|---|---|---|---|---|---|---|',
+  ...posts.map(p => `| ${p.page} posts | ${fmt(p.base_us)} | ${p.per_post_us} | ${p.per_edit_us} | ${p.per_entry_us} | ${fmt(p.at_1m_ms)} | ${fmt(p.at_10m_ms)} | ${fmt(p.at_10m_all_posts_ms)} |`));
  const first = bench.filter(b => b.kind === 'first');
  const carriers = bench.filter(b => b.kind === 'carrier');
  if (carriers.length) rows.push('', '| carrier | edits | bytes/edit | sync s | asks | edits/s | KB/s | link KB/s | of link |', '|---|---|---|---|---|---|---|---|---|',
@@ -190,6 +209,7 @@ if (import.meta.main) {
  const gates = JSON.parse(readFileSync(gatesFile, 'utf8'));
  const phoneOnly = process.argv.includes('--phone');
  const results = process.argv.includes('--index') ? checkIndex(bench, gates)
+  : process.argv.includes('--posts') ? checkPosts(bench, gates)
   : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, shardOf(gates), pg);
  const text = report(bench, pg, results);
  console.log(text);
