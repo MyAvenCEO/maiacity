@@ -225,6 +225,7 @@ const held = (e) => /another tab/i.test(String(/** @type {Error} */ (e)?.message
  *  lease that can't be kept costs nothing: the next load asks for the passkey, as before. @param {Uint8Array} pad
  *  @param {any} d */
 function leaseOf(pad, d) {
+	if (pad?.length !== 32) return;
 	const device = meta?.device ?? d?.id?.();
 	const passkey = d?.passkeyId?.();
 	if (!device || !passkey) return;
@@ -433,7 +434,7 @@ async function found(fresh, { name, relay, server, backup, person, invite }, { s
 	let pad = new Uint8Array(0);
 	const unlockNew = async (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => {
 		const u = await unlock(nonce.slice(), challenge);
-		pad = u.devicePrf.slice();
+		if (u?.devicePrf instanceof Uint8Array) pad = u.devicePrf.slice();
 		return u;
 	};
 	const shows = shown();
@@ -466,7 +467,7 @@ async function link(through, { name, relay }, { step, device: shown } = QUIET) {
 	let pad = new Uint8Array(0);
 	const unlockNew = async (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => {
 		const u = await unlock(nonce.slice(), challenge);
-		pad = u.devicePrf.slice();
+		if (u?.devicePrf instanceof Uint8Array) pad = u.devicePrf.slice();
 		return u;
 	};
 	const d = await avendb.Device.link(name, relay, through, unlockNew, shown(), store).catch(noAccount);
@@ -547,7 +548,7 @@ async function opening({ step, device: shown }) {
 	}
 	noteLifecycle('device-open-start');
 	// a copy of the pad, as what the unlock brought back is moved to the device's worker
-	const pad = unlocked.devicePrf.slice();
+	const pad = unlocked?.devicePrf instanceof Uint8Array ? unlocked.devicePrf.slice() : new Uint8Array(0);
 	try {
 		const d = await avendb.Device.open(unlocked, shown(), store);
 		running(d);
