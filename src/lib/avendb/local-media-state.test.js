@@ -24,3 +24,12 @@ test('complete file records still resolve without network or whole-world fallbac
  expect(mediaEntry({entries:[row]},request())).toBe(row);
  expect(mediaEntry(null,request())).toBeUndefined();
 });
+test('a pinned file resolves by its entry alone, never by a name in its vault',()=>{
+ const pinned={vault:'v',name:'a'.repeat(64),pin:'b'.repeat(64)};
+ const row={entry:'b'.repeat(64),vault:'v',type:'file',title:'cover.jpg',files:[{root:'root',len:12}]};
+ const namesake={entry:'c'.repeat(64),vault:'v',type:'file',title:'a'.repeat(64)+'.jpg',files:[{root:'other',len:12}]};
+ expect(mediaEntry({entries:[namesake,row]},pinned)).toBe(row);
+ // not held yet is no deletion: the shown picture stays until its entry arrives
+ expect(mediaEntry({entries:[namesake]},pinned)).toBeUndefined();
+ expect(mediaEntry({entries:[{...row,deleted:true}]},pinned)).toBeUndefined();
+});

@@ -88,9 +88,9 @@ fn same_run(f: &Fixture, edits: &[Edit], rem: &HashSet<EditId>, snap: usize) -> 
     let watch = watched(edits);
     let run = |indexed| {
         if indexed {
-            run_from_using::<true>(f.state.clone(), edits, &ids, rem, true, &watch, Some(snap))
+            run_from_using::<true, _>(f.state.clone(), edits, &ids, rem, true, &watch, Some(snap))
         } else {
-            run_from_using::<false>(f.state.clone(), edits, &ids, rem, true, &watch, Some(snap))
+            run_from_using::<false, _>(f.state.clone(), edits, &ids, rem, true, &watch, Some(snap))
         }
     };
     let indexed = run(true);
@@ -199,13 +199,14 @@ fn a_move_refusal_keeps_the_original_global_tail_boundary() {
 fn materialized_replay(edits: &[Edit]) -> Replay {
     let ids = ids(edits);
     let depths = ids.iter().copied().zip(edits.iter().map(|e| e.depth)).collect();
+    let order = order_places(edits, &ids);
     let (edits, ids) = order_ids(edits, &ids);
     let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
     let after = edits.iter().rposition(|e| e.is_removal() && !moving(e)).map_or(0, |i| i + 1);
     let mut at = after.max(edits.len().saturating_sub(TAIL));
     let Resolved { rem, cands, tried, mut base } = resolve_at(&edits, &ids, Some(at));
     let covered = watched(&edits);
-    let old_run = |at| run_from_using::<false>(State::default(), &edits, &ids, &rem, false, &covered, Some(at));
+    let old_run = |at| run_from_using::<false, _>(State::default(), &edits, &ids, &rem, false, &covered, Some(at));
     let mut run = old_run(at);
     let lost = (at..edits.len()).rev().find(|&i| moving(&edits[i]) && !run.stood[i]).map(|i| i + 1);
     if let Some(past) = lost.max(run.moved_out.map(|m| m + 1)).filter(|&p| p > at) {
@@ -216,14 +217,14 @@ fn materialized_replay(edits: &[Edit]) -> Replay {
         }
     }
     let Run { stood, state, acts, snap, .. } = run;
-    let parents = edits.iter().flat_map(|e| e.parents.iter().copied()).collect();
+    let parents = dangling(edits.iter(), &depths);
     let tail = snap.map(|state| {
-        let passed = Passed::of(&edits, &ids, &stood, 0, at);
-        let after = Passed::of(&edits, &ids, &stood, at, edits.len());
-        let grants = Grants::of(&edits, &ids);
+        let passed = Passed::of(sorted(&edits, &ids, &stood, 0, at));
+        let after = Passed::of(sorted(&edits, &ids, &stood, at, edits.len()));
+        let grants = Grants::of(edits.iter().zip(ids.iter().copied()));
         Tail { at, state, base, cands, tried, parents, covered, depths, passed, after, grants }
     });
-    Replay { edits, ids, stood, state, acts, tail }
+    Replay { order, ids, stood, state, acts, tail }
 }
 
 #[test]

@@ -4,7 +4,8 @@ import { MAIA_CITY } from '../../../game/code/sources/anchor.js';
 import published from './manifest.json';
 import { parseMediaRef } from './ref.js';
 
-export type MediaEntry = { url: string | null; mime: string; title: string; description: string; tags: string[]; stream?: string };
+/** `entry`: the file's entry in Maia City, by which a page reads it (the engine's index of entries by id, never a scan) */
+export type MediaEntry = { url: string | null; mime: string; title: string; description: string; tags: string[]; stream?: string; entry?: string };
 
 /** Every public file, by hash. */
 const known = published as Record<string, MediaEntry>;
@@ -19,10 +20,10 @@ export function asset(ref: string | undefined | null): string | undefined;
 export function asset(ref: string | undefined | null) {
 	if (!ref) return undefined;
 	const parsed = parseMediaRef(ref);
-	if (parsed?.kind === 'public') return localMedia(MAIA_CITY, parsed.hash);
+	if (parsed?.kind === 'public') return localMedia(MAIA_CITY, parsed.hash, known[parsed.hash]?.entry);
 	if (/^https?:\/\//i.test(ref)) {
 		const legacy = /\/vault\/files\/([a-f0-9]{64})(?:\.[a-z0-9]+)?(?:[?#]|$)/i.exec(ref);
-		return localMedia(MAIA_CITY, legacy?.[1] || ref);
+		return localMedia(MAIA_CITY, legacy?.[1] || ref, legacy ? known[legacy[1]]?.entry : undefined);
 	}
 	return ref;
 }

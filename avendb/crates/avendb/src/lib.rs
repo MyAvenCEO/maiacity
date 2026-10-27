@@ -70,6 +70,7 @@ pub mod lens;
 pub mod merge;
 pub mod objective;
 pub mod ops;
+pub mod pages;
 pub mod perf;
 pub mod policy;
 pub mod provenance;
