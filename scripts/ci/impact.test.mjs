@@ -233,6 +233,9 @@ test('main reuses a suite only from a green run on the very files it holds',asyn
  // a fork's run, or a run of another head, is never evidence
  expect((await ask(github({ runs: [run('kernel.yml', 'success', { head_repository: { full_name: 'x/r' } })] }))).kernel).toBe(false);
 });
+test('a batch merge commit onto main with the PR head as second parent reuses its runs',async()=>{
+ expect(await ask(github({ parents: ['p', 'h'], runs: [run('kernel.yml'), run('avendb-checks.yml')] }))).toEqual({ kernel: true, avendb: true });
+});
 test('different files, a stale head, another base or no single pull request validate on main',async()=>{
  const all = [run('kernel.yml'), run('avendb-checks.yml')];
  const none = { kernel: false, avendb: false };
@@ -241,6 +244,7 @@ test('different files, a stale head, another base or no single pull request vali
  expect(await ask(github({ runs: all }), 'older')).toEqual(none);
  expect(await ask(github({ runs: all }), '')).toEqual(none);
  expect(await ask(github({ parents: ['p', 'q'], runs: all }))).toEqual(none);
+ expect(await ask(github({ parents: ['p', 'h', 'q'], runs: all }))).toEqual(none);
  expect(await ask(github({ pulls: [], runs: all }))).toEqual(none);
  expect(await ask(github({ pulls: [{ number: 7, merged_at: 'x', merge_commit_sha: 'm', head: { sha: 'h', repo: { full_name: 'x/r' } } }], runs: all }))).toEqual(none);
 });
