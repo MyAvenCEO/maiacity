@@ -528,6 +528,12 @@ impl Shelf {
         Ok((hash, size))
     }
 
+    /// A blob put on the shelf a part at a time (`BlobWriter`), never held whole: its parts written as they come, and
+    /// finished once the last came.
+    pub(crate) fn blob_writer(&self) -> BlobWriter<'_> {
+        BlobWriter { shelf: self, name: fresh(), at: 0, tree: Outboarder::new() }
+    }
+
     /// Reads a blob incrementally. Its fragments are not authenticated until `BlobReader::finish` succeeds;
     /// callers must keep any decoded result private and discard it if reading or finishing fails.
     pub(crate) fn blob_reader(&self, hash: Hash, size: u64) -> BlobReader<'_> {
@@ -550,6 +556,40 @@ impl Shelf {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("blob {name} isn't what its hash says")));
         }
         Ok(out.into())
+    }
+}
+
+/// A blob written in parts (`Shelf::blob_writer`), hashed as they go: `put_blob`, of bytes it never holds together.
+pub(crate) struct BlobWriter<'a> {
+    shelf: &'a Shelf,
+    name: String,
+    at: u64,
+    tree: Outboarder,
+}
+
+impl BlobWriter<'_> {
+    /// Writes `bytes` after what it wrote. What it wrote of a blob it couldn't finish, it drops.
+    pub(crate) async fn push(&mut self, bytes: Bytes) -> io::Result<()> {
+        self.tree.push(&bytes);
+        for at in (0..bytes.len()).step_by(STEP) {
+            let part = bytes.slice(at..(at + STEP).min(bytes.len()));
+            if let Err(e) = self.shelf.write(&self.name, self.at + at as u64, part).await {
+                self.shelf.drop(&self.name).await.ok();
+                return Err(e);
+            }
+        }
+        self.at += bytes.len() as u64;
+        Ok(())
+    }
+
+    /// The blob it wrote, finished: its hash and size, once the shelf holds it whole.
+    pub(crate) async fn finish(self) -> io::Result<(Hash, u64)> {
+        let (hash, size, outboard) = self.tree.finish();
+        if let Err(e) = self.shelf.finish(&self.name, hash, size, outboard.into()).await {
+            self.shelf.drop(&self.name).await.ok();
+            return Err(e);
+        }
+        Ok((hash, size))
     }
 }
 

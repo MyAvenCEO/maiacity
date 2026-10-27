@@ -107,8 +107,9 @@ struct Book {
     next: u64,
     /// The number of the next head.
     head: u64,
-    /// The records of the journal's entries from `mark` on: the next pack.
-    pending: Vec<u8>,
+    /// The journal's entries from `mark` on whose records the next pack holds, read back from the shelf as it is put
+    /// (`pack_of_entries`), not held: a catch-up's saves since a head held every edit they saved twice (F9).
+    pending: Vec<u64>,
     anchors: Vec<u8>,
 }
 
@@ -144,6 +145,7 @@ struct Due {
 }
 
 /// What a node takes back from its shelf as it starts: its edits, in the order they were saved, and McEliece keys.
+#[cfg(test)]
 pub(crate) type Stored = (Vec<Signed>, Vec<Arc<[u8]>>, Vec<u8>);
 
 /// Head `n` of `bytes`, by its number and the hash of its bytes: it names its packs by their hashes, each checked as it
@@ -313,87 +315,92 @@ impl Edits {
     /// The edits on `shelf`, and what it holds, for its device to take back: the edits of its newest head that reads
     /// whole and of the journal after it, each once, in the order they were saved, and every McEliece key that reads
     /// whole and is its id's. Nothing, on a new shelf. Fails if the shelf can't be read.
+    #[cfg(test)]
     pub(crate) async fn open(shelf: Shelf) -> Result<(Edits, Stored)> {
+        let mut all = Collect::default();
+        let (edits, _, _, anchors) = Edits::open_into(shelf, &mut all).await?;
+        // every McEliece key on the shelf, as a bench compares them
+        let keys = edits.book.lock().await.keys.clone();
+        let mut bytes = Vec::new();
+        for (id, size) in keys {
+            match edits.shelf.read_blob(key_blob(id), size).await {
+                Ok(key) => bytes.push(Arc::from(&key[..])),
+                Err(e) => tracing::warn!("avendb: McEliece key {} on the shelf doesn't read whole: {e}", id.to_hex()),
+            }
+        }
+        Ok((edits, (all.signed, bytes, anchors)))
+    }
+
+    /// `open`, its edits given to `to` a page at a time as it reads them (`Taker`), never all of them at once: what it
+    /// worked out before (`warm`), and the ids of the edits it gave, in their order, and the anchors its shelf names.
+    pub(crate) async fn open_into(shelf: Shelf, to: &mut impl Taker) -> Result<(Edits, Warm, Vec<EditId>, Vec<u8>)> {
+        let (warm, slots) = read_warm(&shelf).await;
         let heads: Vec<u64> =
             numbered(&shelf, HEADS).await?.into_iter().filter(|(_, after)| after.is_empty()).map(|(n, _)| n).collect();
         let next_head = heads.last().map_or(1, |n| n + 1);
         let mut start = None;
         for &n in heads.iter().rev() {
-            match read_head(&shelf, n).await {
-                Ok(read) => {
-                    start = Some(read);
+            let mut taking = Taking::default();
+            match take_head(&shelf, n, &warm, &mut taking, to).await {
+                Ok((head, named)) => {
+                    start = Some((head, named, taking));
                     break;
                 }
                 Err(e) => tracing::warn!("avendb: head {n} on the shelf doesn't read whole, so it is passed: {e:#}"),
             }
         }
-        let (head, named, mut signed) = match start {
-            Some((head, named, signed)) => (head, Some(named), signed),
-            None => Default::default(),
+        let (head, named, mut taking) = match start {
+            Some((head, named, taking)) => (head, Some(named), taking),
+            None => {
+                to.begin(None, &warm).await?;
+                (Head::default(), None, Taking::default())
+            }
         };
-        let mut seen = HashSet::new();
-        signed.retain(|s| seen.insert(s.edit.id()));
-        let started = named.map(|named| (named, signed.len()));
+        let started = named.map(|named| (named, taking.ids.len()));
         let mut anchors = head.anchors;
-        let mut keys: BTreeMap<BlobId, u64> = head.keys.into_iter().collect();
         let (mut pending, mut next) = (Vec::new(), head.journal);
         while let Some(bytes) = shelf.get(&journal_name(next)).await? {
             next += 1;
             let entry = Entry::from_bytes(&bytes).and_then(|e| Some((edits_of(&e.records)?, e)));
+            drop(bytes);
             let Some((edits, entry)) = entry else {
                 tracing::warn!("avendb: journal entry {} on the shelf doesn't read whole, and is skipped", next - 1);
                 continue;
             };
-            signed.extend(edits.into_iter().filter(|s| seen.insert(s.edit.id())));
-            anchors = entry.anchors;
-            pending.extend(entry.records);
-            keys.extend(entry.keys);
-        }
-        let mut bytes = Vec::new();
-        for (id, size) in keys.clone() {
-            // checked against its hash, which is its id
-            match shelf.read_blob(key_blob(id), size).await {
-                Ok(key) => bytes.push(Arc::from(&key[..])),
-                Err(e) => {
-                    tracing::warn!("avendb: McEliece key {} on the shelf doesn't read whole: {e}", id.to_hex());
-                    keys.remove(&id);
+            taking.keys.extend(entry.keys.iter().copied());
+            let mut page = Vec::new();
+            for s in edits {
+                page.push(s);
+                if page.len() >= PAGE_EDITS {
+                    taking.give(&shelf, std::mem::take(&mut page), false, to).await?;
                 }
             }
+            taking.give(&shelf, page, false, to).await?;
+            anchors = entry.anchors;
+            pending.push(next - 1);
         }
+        // the keys its edits name that came on the shelf after them
+        let late: Vec<Key> = taking.missing.iter().filter_map(|b| Some((*b, *taking.keys.get(b)?))).collect();
+        if !late.is_empty() {
+            let keys = taking.read_keys(&shelf, late).await;
+            to.keys(keys).await?;
+        }
+        let Taking { ids, keys, .. } = taking;
         let kept = Kept { anchor_stamp: Vec::new(), written: 0, lineage: None, keys: keys.keys().copied().collect(), whole: false };
         let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending, anchors: anchors.clone() };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
-        let (slots, checked) = (Mutex::new((0, 0)), Mutex::new(None));
+        let (slots, checked) = (Mutex::new(slots), Mutex::new(None));
         let edits = Edits { shelf, book, kept, slots, started, checked, due: Notify::new() };
-        Ok((edits, (signed, bytes, anchors)))
+        Ok((edits, warm, ids, anchors))
     }
 
     /// What the device worked out before, as the shelf keeps it (`slots/`): its keys and its stored views, each the
     /// newest first. Nothing, where the shelf can't be read.
+    #[cfg(test)]
     pub(crate) async fn warm(&self) -> Warm {
-        let read = async {
-            let (keys, next_keys) = self.slots(KEYS).await?;
-            let (views, next_view) = self.slots(VIEW).await?;
-            *self.slots.lock().expect("slots") = (next_keys, next_view);
-            anyhow::Ok(Warm { keys, views })
-        };
-        read.await.unwrap_or_else(|e| {
-            tracing::warn!("avendb: what the device worked out before can't be read from its shelf: {e:#}");
-            Warm::default()
-        })
-    }
-
-    /// What the two slots `which` keep, the newest first, and the number the next is kept as.
-    async fn slots(&self, (names, starts): ([&str; 2], &[u8])) -> Result<(Vec<Vec<u8>>, u64)> {
-        let mut kept = vec![];
-        for name in names {
-            let bytes = self.shelf.get(name).await?;
-            let slot = bytes.as_deref().and_then(|b| b.strip_prefix(starts)).and_then(|b| b.split_first_chunk::<8>());
-            kept.extend(slot.map(|(n, bytes)| (u64::from_be_bytes(*n), bytes.to_vec())));
-        }
-        kept.sort_by(|a, b| b.0.cmp(&a.0));
-        let next = kept.first().map_or(0, |(n, _)| n + 1);
-        Ok((kept.into_iter().map(|(_, bytes)| bytes).collect(), next))
+        let (warm, next) = read_warm(&self.shelf).await;
+        *self.slots.lock().expect("slots") = next;
+        warm
     }
 
     /// Keeps on the shelf what the device worked out (`Shared::save`), as `warming` gives it, each in place of the older
@@ -420,6 +427,7 @@ impl Edits {
 
     /// The head the node started from, by its number and the hash of its bytes, and how many edits it holds, the first
     /// the node took back (`Lab::restore_warm`).
+    #[cfg(test)]
     pub(crate) fn started(&self) -> Option<(Checked, usize)> {
         self.started
     }
@@ -527,9 +535,9 @@ impl Edits {
             let entry = Entry { anchors: due.anchors.clone(), keys: keys.clone(), records: records.to_vec() };
             match on.put(&name, entry.to_bytes()).await {
                 Ok(()) => {
+                    book.pending.push(book.next);
                     book.next += 1;
                     book.anchors = due.anchors.clone();
-                    book.pending.extend(records);
                     book.keys.extend(keys);
                     break;
                 }
@@ -545,7 +553,7 @@ impl Edits {
                             records = &records[there.records.len()..];
                             keys.retain(|k| !there.keys.contains(k));
                             book.anchors = there.anchors;
-                            book.pending.extend(&there.records);
+                            book.pending.push(book.next - 1);
                             book.keys.extend(there.keys);
                         }
                         _ => tracing::warn!("avendb: {name} on the shelf is none of this node's saves, and is passed"),
@@ -562,7 +570,7 @@ impl Edits {
             kept.keys.extend(ids);
         }
         if book.next - book.mark >= JOURNALED {
-            let pack = self.pack_on(on, &book.pending).await?;
+            let pack = self.pack_of_entries(on, &book.pending).await?;
             let mut packs = book.packs.clone();
             packs.push(pack);
             let keys = book.keys.clone().into_iter().collect();
@@ -575,7 +583,23 @@ impl Edits {
 
     /// A pack of `records`, on the shelf.
     async fn pack_on(&self, on: &Shelf, records: &[u8]) -> Result<Blob> {
-        Ok(on.put_blob(&Bytes::from([PACK, records].concat())).await?)
+        let mut pack = on.blob_writer();
+        pack.push(Bytes::from_static(PACK)).await?;
+        pack.push(Bytes::copy_from_slice(records)).await?;
+        Ok(pack.finish().await?)
+    }
+
+    /// A pack of the records of journal entries `entries`, on the shelf, read back from it an entry at a time.
+    async fn pack_of_entries(&self, on: &Shelf, entries: &[u64]) -> Result<Blob> {
+        let mut pack = on.blob_writer();
+        pack.push(Bytes::from_static(PACK)).await?;
+        for &n in entries {
+            let bytes = on.get(&journal_name(n)).await?.ok_or_else(|| anyhow!("journal entry {n} is gone"))?;
+            let entry = Entry::from_bytes(&bytes).ok_or_else(|| anyhow!("journal entry {n} doesn't read whole"))?;
+            drop(bytes);
+            pack.push(Bytes::from(entry.records)).await?;
+        }
+        Ok(pack.finish().await?)
     }
 
     /// Puts `head` on the shelf, as the next head after every head there: of edits its device holds, each checked.
@@ -615,21 +639,155 @@ pub(crate) async fn put_first_head(shelf: &Shelf, packs: Vec<Blob>, keys: Vec<Ke
     Ok(shelf.put(&head_name(1), Head { anchors: Vec::new(), journal: 0, packs, keys }.to_bytes()).await?)
 }
 
-/// Head `n` on `shelf`, named by `checked`, and the edits of its packs, every one of which must read whole.
-async fn read_head(shelf: &Shelf, n: u64) -> Result<(Head, Checked, Vec<Signed>)> {
+/// The edits of a page a node gives its Lab as it takes them back from its shelf (`Edits::open_into`): a few MB of
+/// them, as each is a few KB.
+const PAGE_EDITS: usize = 2048;
+
+/// Where a node's edits go as it takes them back from its shelf (`Edits::open_into`), a page at a time: its Lab's
+/// restore (`Lab::restore_page`), or a list of them (`Collect`).
+pub(crate) trait Taker {
+    /// It begins again, from the head its shelf names by `checked`, if any, with what the device worked out before:
+    /// what it took before this, of a head that didn't read whole, it lets go of.
+    async fn begin(&mut self, checked: Option<Checked>, warm: &Warm) -> Result<()>;
+    /// The next page: its edits in the order the shelf holds them, the McEliece keys they name that the shelf holds,
+    /// and whether they are of the head `begin` named.
+    async fn page(&mut self, page: Vec<Signed>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()>;
+    /// McEliece keys its edits named that came on the shelf after them.
+    async fn keys(&mut self, keys: Vec<Arc<[u8]>>) -> Result<()>;
+}
+
+/// Every edit, in one list (`Edits::open`).
+#[cfg(test)]
+#[derive(Default)]
+struct Collect {
+    signed: Vec<Signed>,
+}
+
+#[cfg(test)]
+impl Taker for Collect {
+    async fn begin(&mut self, _: Option<Checked>, _: &Warm) -> Result<()> {
+        self.signed.clear();
+        Ok(())
+    }
+    async fn page(&mut self, page: Vec<Signed>, _: Vec<Arc<[u8]>>, _: bool) -> Result<()> {
+        self.signed.extend(page);
+        Ok(())
+    }
+    async fn keys(&mut self, _: Vec<Arc<[u8]>>) -> Result<()> {
+        Ok(())
+    }
+}
+
+/// What `Edits::open_into` gave so far: the ids of the edits, in their order, every McEliece key the shelf names and
+/// its size, and those its edits named that the shelf named none of yet.
+#[derive(Default)]
+struct Taking {
+    seen: HashSet<EditId>,
+    ids: Vec<EditId>,
+    keys: BTreeMap<BlobId, u64>,
+    missing: HashSet<BlobId>,
+}
+
+impl Taking {
+    /// Gives `to` the edits of `page` it didn't give yet, with the McEliece keys they name.
+    async fn give(&mut self, shelf: &Shelf, mut page: Vec<Signed>, of_head: bool, to: &mut impl Taker) -> Result<()> {
+        page.retain(|s| self.seen.insert(s.edit.id()));
+        if page.is_empty() {
+            return Ok(());
+        }
+        self.ids.extend(page.iter().map(|s| s.edit.id()));
+        let mut want = Vec::new();
+        for b in page.iter().flat_map(|s| s.edit.blobs()) {
+            match self.keys.get(&b) {
+                Some(&size) => want.push((b, size)),
+                None => {
+                    self.missing.insert(b);
+                }
+            }
+        }
+        want.sort();
+        want.dedup();
+        let keys = self.read_keys(shelf, want).await;
+        to.page(page, keys, of_head).await
+    }
+
+    /// Keys `want`, read from `shelf`: one that doesn't read whole it names no more.
+    async fn read_keys(&mut self, shelf: &Shelf, want: Vec<Key>) -> Vec<Arc<[u8]>> {
+        let mut keys = Vec::new();
+        for (id, size) in want {
+            // checked against its hash, which is its id
+            match shelf.read_blob(key_blob(id), size).await {
+                Ok(key) => keys.push(Arc::from(&key[..])),
+                Err(e) => {
+                    tracing::warn!("avendb: McEliece key {} on the shelf doesn't read whole: {e}", id.to_hex());
+                    self.keys.remove(&id);
+                }
+            }
+        }
+        keys
+    }
+}
+
+/// Head `n` of `shelf`, its edits given to `to` a page at a time as they're read (`Taking::give`), and its name: an
+/// error where it or a pack of it doesn't read whole, after which `to` begins again from another.
+async fn take_head(shelf: &Shelf, n: u64, warm: &Warm, taking: &mut Taking, to: &mut impl Taker) -> Result<(Head, Checked)> {
     let bytes = shelf.get(&head_name(n)).await?.ok_or_else(|| anyhow!("listed, and gone"))?;
     let named = checked(n, &bytes);
     let head = Head::from_bytes(&bytes).ok_or_else(|| anyhow!("cut short or changed"))?;
-    let mut signed = Vec::new();
+    to.begin(Some(named), warm).await?;
+    taking.keys.extend(head.keys.iter().copied());
     for &(hash, size) in &head.packs {
-        signed.extend(read_pack(shelf, hash, size).await.with_context(|| format!("its pack {hash}"))?);
+        let mut reader = shelf.blob_reader(hash, size);
+        ensure!(reader.take(PACK.len()).await?.as_ref() == PACK, "its pack {hash} is no pack of edits");
+        let mut page = Vec::new();
+        while reader.remaining() > 0 {
+            let length = reader.take(4).await?;
+            let length = u32::from_be_bytes(length.as_ref().try_into().expect("four bytes")) as usize;
+            let record = reader.take(length).await?;
+            page.push(Signed::from_wire(&record).with_context(|| format!("an edit of its pack {hash} does not decode whole"))?);
+            // given before the pack's hash is checked: one that isn't what its hash says ends the head, and `to`
+            // begins again from another
+            if page.len() >= PAGE_EDITS {
+                taking.give(shelf, std::mem::take(&mut page), true, to).await?;
+            }
+        }
+        reader.finish().with_context(|| format!("its pack {hash}"))?;
+        taking.give(shelf, page, true, to).await?;
     }
-    Ok((head, named, signed))
+    Ok((head, named))
+}
+
+/// What the device worked out before, as `shelf` keeps it (`Edits::warm`), and the numbers its next keys and view are
+/// kept as.
+async fn read_warm(shelf: &Shelf) -> (Warm, (u64, u64)) {
+    let read = async {
+        let (keys, next_keys) = slots_of(shelf, KEYS).await?;
+        let (views, next_view) = slots_of(shelf, VIEW).await?;
+        anyhow::Ok((Warm { keys, views }, (next_keys, next_view)))
+    };
+    read.await.unwrap_or_else(|e| {
+        tracing::warn!("avendb: what the device worked out before can't be read from its shelf: {e:#}");
+        (Warm::default(), (0, 0))
+    })
+}
+
+/// What the two slots `which` of `shelf` keep, the newest first, and the number the next is kept as.
+async fn slots_of(shelf: &Shelf, (names, starts): ([&str; 2], &[u8])) -> Result<(Vec<Vec<u8>>, u64)> {
+    let mut kept = vec![];
+    for name in names {
+        let bytes = shelf.get(name).await?;
+        let slot = bytes.as_deref().and_then(|b| b.strip_prefix(starts)).and_then(|b| b.split_first_chunk::<8>());
+        kept.extend(slot.map(|(n, bytes)| (u64::from_be_bytes(*n), bytes.to_vec())));
+    }
+    kept.sort_by(|a, b| b.0.cmp(&a.0));
+    let next = kept.first().map_or(0, |(n, _)| n + 1);
+    Ok((kept.into_iter().map(|(_, bytes)| bytes).collect(), next))
 }
 
 /// Decodes a legacy pack without retaining its entire raw encoding beside its decoded edits. The bytes in flight
 /// are one bounded shelf read plus the current record. Nothing escapes until the complete blob hash checks out;
 /// a changed or truncated pack still rejects its whole head, so `Edits::open` can try the previous head.
+#[cfg(test)]
 async fn read_pack(shelf: &Shelf, hash: Hash, size: u64) -> Result<Vec<Signed>> {
     let mut reader = shelf.blob_reader(hash, size);
     ensure!(reader.take(PACK.len()).await?.as_ref() == PACK, "no pack of edits");
@@ -965,6 +1123,8 @@ mod tests {
                             "heads/0000000000000001" => Some(heads[0].clone()),
                             "heads/0000000000000002" => Some(heads[1].clone()),
                             "journal/0000000000000000" => None,
+                            // what it worked out before, read first now (`Edits::open_into`): none
+                            "slots/keys-0" | "slots/keys-1" | "slots/view-0" | "slots/view-1" => None,
                             _ => panic!("unexpected object {name}"),
                         };
                         tx.send(Ok(bytes)).ok();

@@ -4689,6 +4689,9 @@ impl Log {
     /// Changes exactly when the sequence of held edits changes, without scanning history.
     pub fn revision(&self) -> LogRevision { self.revision.clone() }
 
+    /// It holds edit `id`.
+    pub fn has(&self, id: EditId) -> bool { self.held.contains(&id) }
+
     /// An incremental index may append while this token stays equal; otherwise it must rebuild.
     pub fn lineage(&self) -> LogRevision { self.lineage.clone() }
 
