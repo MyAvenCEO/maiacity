@@ -54,3 +54,4 @@ Budget: CI under 10 minutes, release under 10 (`scripts/ci/budget.mjs`).
 | 1 | #1342 | 1 (0) | 0 | 10.7 min | 1.9 min | one push, JS only |
 | 2 | #1343 | 1 (0) | 0 | 9.6 min | 9.3 min | one push; main re-ran avenDB (no reuse for merge commits yet) |
 | 3 | #1344 | 7 (2) | 8 | 87.7 min | 3.8 min | branches merged into the PR while its CI ran, each push restarting it; a 100k scale test timing out at 6 min in core tests; two CI WebAssembly rounds |
+| 4 | #1346 | 2 (1) | 1 | 12.9 min | 5.3 min | one push, but Rust changes: CI's WebAssembly commit added a second round (~3 min); avenDB net tests 9.4 min (7.3 before) are the critical path |
