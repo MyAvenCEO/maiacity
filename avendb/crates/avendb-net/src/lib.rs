@@ -848,6 +848,8 @@ impl Node {
             traffic: traffic::Traffic::default(),
             pulls: pulls::Budget::default(),
             keeping: Mutex::default(),
+            asked: Mutex::default(),
+            files_asked: Notify::new(),
         });
         let router = Router::builder(endpoint)
             .accept(ALPN, session::Protocol(shared.clone()))
@@ -1769,6 +1771,7 @@ impl Node {
             "recent": s.traffic.recent(),
             "live": s.traffic.live_json(),
             "carriers": s.transport_control.json(),
+            "files": s.asked.lock().expect("asked").json(),
         })
     }
 
@@ -2215,6 +2218,10 @@ struct Shared {
     pulls: pulls::Budget,
     /// What it takes and keeps at most, and what it keeps for each person (`Node::limit`, `limits`).
     keeping: Mutex<limits::Keeping>,
+    /// The files pages asked for that its device didn't hold, for the keeper to fetch first, and what it did (`files`).
+    asked: Mutex<files::Asked>,
+    /// Woken when a page asks for a file its device doesn't hold.
+    files_asked: Notify,
 }
 
 /// How many messages of each kind a node has sent, and how many times it dialed: once its peers and it agree, they
