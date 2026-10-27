@@ -73,6 +73,8 @@ pub(crate) struct Budget {
     ahead: Arc<Semaphore>,
     recent: Mutex<VecDeque<(EndpointId, Estimate)>>,
     live: Arc<Mutex<LiveBook>>,
+    /// A background catch-up runs on for what live pulls left of their views (`live::LIVE_VIEW`): one at a time.
+    pub(crate) view_behind: AtomicBool,
 }
 
 /// The queue ticket is retained during service too, bounding all outstanding admissions, including waiters.
@@ -161,6 +163,7 @@ impl Budget {
             ahead: Arc::new(Semaphore::new(ahead)),
             recent: Mutex::default(),
             live: Arc::default(),
+            view_behind: AtomicBool::new(false),
         }
     }
 

@@ -3,6 +3,7 @@
 use super::*;
 use crate::{Node, Options};
 use avendb::cast::{document, handbook_ready, world};
+use avendb::id::EntryId;
 use avendb::wire::Wire;
 use n0_future::future;
 use std::time::Instant;
@@ -410,6 +411,70 @@ async fn a_query_is_partial_while_announced_logs_are_behind_and_complete_once_th
     let arrived = phone.op(query).await.unwrap();
     assert_eq!(arrived["ok"]["coverage"], serde_json::json!({"state": "complete"}), "{arrived}");
     assert_eq!(arrived["ok"]["count"].as_u64().unwrap() as usize, before["ok"]["count"].as_u64().unwrap() as usize + backlog.len());
+    mac.shutdown().await.unwrap();
+    phone.shutdown().await.unwrap();
+}
+
+/// Gate G4 (batch 5): a chat round trip while a bulk catch-up runs, in process over the PQ transport, no server. The
+/// phone lacks `BULK` notes the Mac wrote; once it has taken some of them, the Mac edits a chat entry both hold,
+/// `MESSAGES` times, and each time waits until the phone's view shows the new text. Prints `CHAT_DURING_CATCH_UP`
+/// with p50/p95 and the phone's pulls from the Mac that brought nothing new (F12's duplicates).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn chat_reaches_the_phone_quickly_while_it_catches_up() {
+    const BULK: usize = 1500;
+    const MESSAGES: usize = 12;
+    let mut w = world();
+    let (sender, receiver, alice) = (w.mac_a, w.phone_a, w.alice);
+    w.lab.sync_all(0);
+    let chat = w.lab.create(sender, alice, alice, "note", &[], document("Chat", "hello", sender)).unwrap();
+    w.lab.sync(sender, receiver);
+    let notes: Vec<EntryId> = (0..BULK)
+        .map(|i| w.lab.create(sender, alice, alice, "note", &[], document(&format!("Note {i}"), "In May.", sender)).unwrap())
+        .collect();
+    let mac = Node::spawn(w.lab.split(sender, &[], [61; 32]), sender, Options { page: 16 << 10, ..Options::local() }).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [62; 32]), receiver, Options { window: 1, ..Options::local() }).await.unwrap();
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    let kept = async |n: &Node| {
+        let logs = n.holdings().await.logs;
+        notes.iter().filter(|e| logs.contains_key(&LogId::Entry(**e))).count()
+    };
+    time::timeout(Duration::from_secs(60), async { while kept(&phone).await < 20 { time::sleep(Duration::from_millis(5)).await } })
+        .await
+        .expect("the catch-up starts");
+    let mut took = Vec::new();
+    for i in 0..MESSAGES {
+        let said = format!("message {i}");
+        let began = Instant::now();
+        let text = said.clone();
+        mac.act(move |lab, me| lab.edit(me, alice, chat, |item| item.set_text(2, &text)).unwrap()).await;
+        let shown = time::timeout(Duration::from_secs(30), async {
+            loop {
+                let said = said.clone();
+                if phone.read(move |lab, me| avendb::cast::text(lab, me, chat, 2).as_deref() == Some(said.as_str())).await {
+                    break began.elapsed();
+                }
+                time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .expect("the phone shows the chat message");
+        took.push(shown);
+        time::sleep(Duration::from_millis(150)).await;
+    }
+    let behind = BULK - kept(&phone).await;
+    let mut sorted = took.clone();
+    sorted.sort();
+    let at = |p: f64| sorted[((sorted.len() as f64 * p).ceil() as usize).saturating_sub(1)].as_secs_f64() * 1000.0;
+    let rows = phone.shared.traffic.recent();
+    let empty = rows.iter().filter(|r| r["new"] == 0 && r["edits"].as_u64() > Some(0)).count();
+    let live = phone.shared.traffic.live_json();
+    let trace = phone.shared.traffic.trace_json();
+    let traced = trace.as_array().map_or(0, |t| t.iter().filter(|s| s["stage"] == "taken").count());
+    eprintln!("CHAT_DURING_CATCH_UP {}", serde_json::json!({
+        "bulk": BULK, "messages": MESSAGES, "p50_ms": at(0.5), "p95_ms": at(0.95), "max_ms": at(1.0),
+        "notes_left_at_end": behind, "duplicate_pages": empty, "live_ends": live["ends"], "traced_taken": traced,
+    }));
     mac.shutdown().await.unwrap();
     phone.shutdown().await.unwrap();
 }
