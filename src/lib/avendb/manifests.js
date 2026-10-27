@@ -11,6 +11,7 @@
  * (sync v2 step P6). For a list of entries it holds now.
  */
 import { GAMES, gameTag } from '../../../game/games.js';
+import { PLACES } from '../../../game/places.js';
 
 const manifest = (o) => ({ kind: 'manifest', v: 2, note: '', routes: [], ...o });
 
@@ -204,8 +205,12 @@ export const PAGES = [
 	page('probes', 'Probes', ['/app/math/probe/', '/app/views/probe/'])
 ];
 
+/** The labs under /app/games/ that are no game of the list (no `gameOrder`, Sandbox 7 and 8): each reads as a game does. */
+export const LABS = PLACES.filter((p) => p.route?.startsWith('/app/games/') && !GAMES.some((g) => g.id === p.id));
+
 /** Every manifest the repo declares. */
 export const MANIFESTS = [
 	KERNEL, DASHBOARD, UNIVERSE, STUDIO, CHAT, ASSETS, ...PAGES,
-	...GAMES.map((g) => (g.id === 'sandbox-4' ? sandbox4Manifest(g) : gameManifest(g)))
+	...GAMES.map((g) => (g.id === 'sandbox-4' ? sandbox4Manifest(g) : gameManifest(g))),
+	...LABS.map(gameManifest)
 ];

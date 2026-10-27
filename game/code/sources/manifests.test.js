@@ -176,7 +176,8 @@ test('every page the app opens has a manifest of its own, not the kernel alone',
 		'query', 'tables', 'schemas', 'lenses', 'flows', 'functions', 'history', 'jobs', 'performance', 'settings',
 		'vaults', 'activity', 'postgres', 'chat'].map((p) => `/app/#${p}`);
 	const own = ['/app/', '/app/chat/', '/app/studio/', '/app/aips/', '/app/coops/', '/app/factories/', '/app/ledger/',
-		'/app/network/', '/app/postgres/', '/app/avendb/', '/app/maiacity-v2/proposals/', '/app/math/probe/', '/app/views/probe/'];
+		'/app/network/', '/app/postgres/', '/app/avendb/', '/app/maiacity-v2/proposals/', '/app/math/probe/', '/app/views/probe/',
+		...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `/app/games/sandbox-${n}/`)];
 	for (const path of [...pages, ...own]) {
 		const mine = MANIFESTS.filter((m) => m.id !== 'kernel' && m.routes.some((r) => covers(r, path)));
 		expect({ path, manifests: mine.length }).toEqual({ path, manifests: 1 });
