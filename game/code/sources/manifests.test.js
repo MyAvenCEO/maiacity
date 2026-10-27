@@ -107,16 +107,22 @@ test('plan: windows, follows, files by tag and signals, in tiers', async () => {
 		{ tier: 'later', part: { follow: 2, part: 'files', files: ['media:proxy'] }, want: { entry: cut } },
 		{ tier: 'later', part: { follow: 2, part: 'files', files: ['audio/'], by: 'playhead' }, want: { entry: cut } }
 	];
-	const published = [];
-	const wants = await plan(leaves, { device: d, vault: id(100), signals: { playhead: () => 4 }, publish: (w) => published.push(w) });
+	const published = [], readsBefore = [];
+	const wants = await plan(leaves, { device: d, vault: id(100), signals: { playhead: () => 4 }, publish: (w) => (published.push(w), readsBefore.push(d.calls.length)) });
 	expect(wants).toEqual([
 		{ tier: 'now', entries: [id(10), id(11), room], queries: [{ types: ['room'], vault: id(100) }] },
 		{ tier: 'next', entries: [cut, shot], queries: [] },
 		{ tier: 'later', entries: [id(20), id(21)], queries: [] }
 	]);
-	// what is on screen went out before the slower walks of the lower tiers
-	expect(published[0]).toEqual([{ tier: 'now', entries: [id(10), id(11)], queries: [{ types: ['room'], vault: id(100) }] }]);
-	expect(published.length).toBe(leaves.length);
+	// every selector and bound entry went out first, before any read of the device: they need none
+	expect(readsBefore[0]).toBe(0);
+	expect(published[0]).toEqual([
+		{ tier: 'now', entries: [room], queries: [{ types: ['room'], vault: id(100) }] },
+		{ tier: 'next', entries: [cut], queries: [] }
+	]);
+	// then what is on screen, before the slower walks of the lower tiers
+	expect(published[1][0]).toEqual({ tier: 'now', entries: [id(10), id(11), room], queries: [{ types: ['room'], vault: id(100) }] });
+	expect(published.length).toBe(leaves.length + 1);
 	// the window went to the local query, newest first
 	expect(d.calls.find((c) => c.op === 'query')).toMatchObject({ order: [['created', 'desc']], limit: 2 });
 });

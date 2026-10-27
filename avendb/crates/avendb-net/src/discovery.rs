@@ -26,6 +26,20 @@ impl Query {
             && self.vault.as_ref().is_none_or(|v| VaultId::from_hex(v).is_some())
     }
 }
+/// The most `find` requests one selector takes of a peer: its tokens `FIND_TOKENS` at a time.
+const FIND_REQUESTS: usize = 8;
+
+/// The `find` requests for a selector's `tokens` in `vault` (any vault the device finds in, for none): every token,
+/// `FIND_TOKENS` a request, at most `FIND_REQUESTS` of them. A selector's tokens are each label's in every audience of
+/// every vault under each index key, so a vault of many audiences (a person's, each room's and share's) holds more than
+/// one request takes; the first `FIND_TOKENS` alone, sorted by their bytes, left a room's audience out at random: of
+/// Chat's `room` over every vault, the coop's channel or the note to self.
+fn finds_of(vault: Option<VaultId>, tokens: Vec<avendb::index::Token>) -> Vec<crate::blind::Find> {
+    tokens.chunks(avendb::index::FIND_TOKENS).take(FIND_REQUESTS)
+        .map(|c| crate::blind::Find { vault, after: None, follow: vec![], tokens: c.to_vec() })
+        .collect()
+}
+
 /// Bounded vault-local dependencies; never a global schema query or an access grant.
 fn lane_queries(entries: &[LogId], waits: &[(EntryId,VaultId)]) -> Vec<Query> {
     let mut vaults=std::collections::BTreeSet::new();
@@ -111,8 +125,7 @@ impl Shared {
                                 let id = LogId::Entry(id);
                                 if !local.contains(&id) { local.push(id); }
                             }
-                            // the newest keys' tokens first: one request a query, as the lane is bounded
-                            finds.push(Some(crate::blind::Find { vault, after: None, follow: vec![], tokens: tokens.into_iter().take(avendb::index::FIND_TOKENS).collect() }));
+                            finds.push(Some(finds_of(vault, tokens)));
                         }
                         (local, finds)
                     }).await;
@@ -136,13 +149,16 @@ impl Shared {
                                 if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
                             }
                         }
-                        for (query_index,find) in finds.iter().enumerate() {
-                            if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
-                            let Some(find) = find.clone() else { continue }; // no key of the vault: nothing to find by
-                            let reply = time::timeout(Duration::from_secs(3).min(deadline.saturating_duration_since(Instant::now())), crate::blind::find_all(&peer, find)).await;
-                            let Ok(Ok(ids)) = reply else { break }; // legacy/refusing peers remain incomplete
+                        'finds: for (query_index,find) in finds.iter().enumerate() {
+                          let Some(find) = find else { continue }; // no key of the vault: nothing to find by
+                          let manifests = queries.get(query_index).is_some_and(|q| q.types.iter().any(|t| t == crate::interest::MANIFEST_TYPE));
+                          for find in find {
+                            if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break 'finds; }
+                            let reply = time::timeout(Duration::from_secs(3).min(deadline.saturating_duration_since(Instant::now())), crate::blind::find_all(&peer, find.clone())).await;
+                            let Ok(Ok(ids)) = reply else { break 'finds }; // legacy/refusing peers remain incomplete
                             let ids: Vec<LogId> = ids.into_iter().take(avendb::index::FIND_PAGE).map(LogId::Entry).collect();
-                            if !shared.interests.lock().expect("interests").discovered(&scope, revision, &ids) { break; }
+                            if !shared.interests.lock().expect("interests").discovered(&scope, revision, &ids) { break 'finds; }
+                            if manifests { shared.interests.lock().expect("interests").found_manifests(&ids); }
                             shared.size.send_modify(|_| {});
                             shared.bootstrap_due.notify_one();
                             // A bounded working-set checkpoint precedes ordinary history for this view.
@@ -159,6 +175,7 @@ impl Shared {
                                 if !shared.discovery_current(&scope, revision) { break; }
                                 shared.live_announced(peer.device, false, chunk);
                             }
+                          }
                         }
                     }
                 }
@@ -205,5 +222,22 @@ mod lane_dependency_tests {
         assert!(demands.dependency_entries("view",1).is_empty());
         assert!(lane_queries(&demands.dependency_entries("view",2),&[(entry,vault)]).is_empty());
         assert!(!demands.discovered("view",1,&[LogId::Entry(other)]));
+    }
+}
+
+#[cfg(test)]
+mod find_tests {
+    use super::*;
+    #[test]
+    fn every_token_of_a_selector_is_asked_a_request_at_a_time() {
+        let tokens: Vec<avendb::index::Token> = (0..1300u32).map(|i| { let mut t = [0u8; 16]; t[..4].copy_from_slice(&i.to_be_bytes()); t }).collect();
+        let finds = finds_of(None, tokens.clone());
+        assert_eq!(finds.len(), 3);
+        assert!(finds.iter().all(|f| f.tokens.len() <= avendb::index::FIND_TOKENS && f.vault.is_none() && f.after.is_none()));
+        let asked: Vec<_> = finds.iter().flat_map(|f| f.tokens.iter().copied()).collect();
+        assert_eq!(asked, tokens, "none left out");
+        assert!(finds_of(None, vec![]).is_empty());
+        let many: Vec<avendb::index::Token> = (0..(FIND_REQUESTS * avendb::index::FIND_TOKENS + 9) as u32).map(|i| { let mut t = [0u8; 16]; t[..4].copy_from_slice(&i.to_be_bytes()); t }).collect();
+        assert_eq!(finds_of(None, many).len(), FIND_REQUESTS, "bounded");
     }
 }
