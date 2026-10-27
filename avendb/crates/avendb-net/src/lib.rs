@@ -1510,6 +1510,13 @@ impl Node {
         Ok(query_window::window(index, &self.shared.lab, self.shared.me, vault, &labels, w).await?)
     }
 
+    /// What window query `op` answers (`engine::window_of`), off its shared index and the tail after it
+    /// (`query_window::answer`), never the log before it; `None` where the index can't say, and the engine answers.
+    pub(crate) async fn windowed(&self, op: &serde_json::Value) -> Option<serde_json::Value> {
+        let index = self.shared.shared_index.as_ref()?;
+        query_window::answer(index, &self.shared.lab, self.shared.me, op).await.ok().flatten().map(|(got, _)| got)
+    }
+
     /// The root of its shared index and the head of the edits it is of, as its last save left them: what a peer holds
     /// it to before it reads through pages it fetched (`ShelfIndex.I5_trusted_reads`).
     pub async fn shared_index_root(&self) -> Option<(Option<[u8; 32]>, u64)> {

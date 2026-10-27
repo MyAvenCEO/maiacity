@@ -329,4 +329,29 @@ mod tests {
         read(&w.lab, me, &notes);
         assert_eq!(w.lab.query_views(me).lock().unwrap().stats().current, hits + 1, "the re-run reads the view");
     }
+
+    /// A window (`engine::query`, `window`) is the newest `n` rows by creation alone: `count` the rows it shows and no
+    /// `next`; a page cursor beside it is refused; its answer stays through edits to entries older than its rows and
+    /// to other types, and moves where a new entry comes in; the engine over just the entries a shared index lists
+    /// (`engine::query_among`) answers the same.
+    #[test]
+    fn a_window_is_the_newest_rows_by_creation() {
+        let mut w = crate::cast::world();
+        let (me, vault) = (w.mac_a, w.alice);
+        let made: Vec<_> = (0..8).map(|i| w.lab.create(me, vault, vault, "note", &[], document(&format!("N{i}"), "b", me)).unwrap()).collect();
+        let win = json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]},"select":[],"window":3});
+        let got = read(&w.lab, me, &win)["ok"].clone();
+        let rows: Vec<_> = got["rows"].as_array().unwrap().iter().map(|r| r["entry"].clone()).collect();
+        assert_eq!(rows, made[5..].iter().rev().map(|e| json!(e.to_hex())).collect::<Vec<_>>());
+        assert_eq!((got["count"].clone(), got["next"].clone()), (json!(3), Value::Null));
+        let paged = json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]},"window":3,"limit":3});
+        assert!(read(&w.lab, me, &paged).get("refused").is_some(), "a window takes no limit beside it");
+        let among = crate::engine::query_among(&w.lab, me, &win, made[5..].to_vec());
+        assert_eq!((json!({"ok": got.clone()}), 3), among, "the newest three alone answer it");
+        w.lab.create(me, vault, vault, "todo", &[], document("T", "b", me)).unwrap();
+        w.lab.edit(me, vault, made[0], |item| item.set_text(2, "older")).unwrap();
+        assert_eq!(read(&w.lab, me, &win)["ok"], got, "an older note and another type change nothing it shows");
+        let newer = w.lab.create(me, vault, vault, "note", &[], document("N8", "b", me)).unwrap();
+        assert_eq!(read(&w.lab, me, &win)["ok"]["rows"][0]["entry"], json!(newer.to_hex()));
+    }
 }

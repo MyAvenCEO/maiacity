@@ -4097,6 +4097,21 @@ impl Lab {
         found.into_iter().map(|(_, e)| e).collect()
     }
 
+    /// Where entry `e` was created on device `d`: the depth of its creation edit, as its shared index orders entries
+    /// (`index::shared`); `None` where its log holds no such edit.
+    pub(crate) fn creation_depth(&self, d: SignerId, e: EntryId) -> Option<u64> {
+        let store = self.held(d);
+        store.log.entry_write(store.view().entry(e)?.creation).map(|c| c.depth)
+    }
+
+    /// The entries of vault `vault` whose header device `d` hasn't read (`Readings::untyped`): a query by type can't
+    /// place them yet, so each is a candidate that waits.
+    pub fn untyped_of(&self, d: SignerId, vault: VaultId) -> Vec<EntryId> {
+        let store = self.held(d);
+        let state = store.view();
+        store.readings.untyped.iter().copied().filter(|e| state.entry(*e).is_some_and(|en| en.vault == vault)).collect()
+    }
+
     /// Device `d`'s view knows vault `v` and gives it no standing there: it acts for no member or owner of `v`, and no
     /// live share over `v` reaches it, a vault it acts for, or everyone. A read of `v` answers `denied`
     /// (`Coverage.read`). A vault the view doesn't know yet is not denied: it may be on its way.

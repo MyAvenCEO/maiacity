@@ -60,7 +60,7 @@ mod aips;
 pub mod coverage;
 mod vaults;
 
-use std::cmp::Ordering;
+use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Range;
 
@@ -171,7 +171,7 @@ fn bad(why: impl Into<String>) -> Refused {
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "entry_views" => &["vault", "entries", "types", "as", "kind"],
-        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "after", "depth", "follow", "observeRevision"],
+        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "after", "window", "depth", "follow", "observeRevision"],
         "touched" => &["since", "reads"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
@@ -919,8 +919,39 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// level of `depth`, so a cycle of links ends there (`Deep`). `count` is how many rows there are in all, and `depth`
 /// how deep each was read.
 /// The answer comes from the device's stored view of the query where that is still its answer (`query_view`).
+/// With `window: n` in place of `order`, `limit`, `offset` and `after`, it is a window (`QueryView.lean` `window`): the
+/// newest `n` rows by creation (the depth of each entry's creation edit, then its id, as the shared index orders them),
+/// read newest first until `n` rows show, so `count` is the rows shown and `next` is none, and only the entries newer
+/// than the last row shown say what they wait on. Its answer is a function of those entries alone, so a node reads
+/// them off its shared index (`window_of`, `query_among`) and never the rest.
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     crate::query_view::read(lab, me, o, |reads| query_from(lab, me, o, Lab::query_candidates, reads))
+}
+
+/// A window query `v` (`query`) of one vault, by labels a shared index lists (`Selector::blind`): its vault, its `n`
+/// and those labels, as `index::type_label` and `index::tag_label` spell them. `None` for any other op.
+pub fn window_of(v: &Value) -> Option<(VaultId, usize, Vec<String>)> {
+    let ("query", o) = op_of(v).ok()? else { return None };
+    let n = count_of(o, "window").ok()??;
+    let vault = vault_of(o, "vault").ok()?;
+    let w = o.get("where").map(Where::of_json).transpose().ok()?.unwrap_or(Where::Yes);
+    let labels = w.plan().blind()?.into_iter().map(|l| match l {
+        crate::selector::Label::Type(t) => crate::index::type_label(t.as_str()),
+        crate::selector::Label::Tag(t) => crate::index::tag_label(t.as_str()),
+    }).collect();
+    Some((vault, n, labels))
+}
+
+/// Query `v` on device `me` over the entries `among` alone, as `read` answers it where those hold every entry it reads:
+/// for a window, every entry with one of its labels newer than its `n`th row, and those whose header the device
+/// hasn't read (`Lab::untyped_of`). How many rows it shows, beside its answer.
+pub fn query_among(lab: &Lab, me: SignerId, v: &Value, among: Vec<EntryId>) -> (Value, usize) {
+    let out = op_of(v).and_then(|(_, o)| {
+        let sees: Vec<EntryId> = among.into_iter().filter(|e| lab.sees(me, *e)).collect();
+        query_from(lab, me, o, move |_, _, _, _| sees, &mut crate::query_view::Reads::default())
+    });
+    let shown = out.as_ref().ok().and_then(|a| a["rows"].as_array()).map_or(0, Vec::len);
+    (answer(out), shown)
 }
 
 /// The same query over every entry the device holds, the index left out: what the index must answer alike
@@ -954,6 +985,10 @@ fn query_from(
     if after.is_some() && offset > 0 { return Err(bad("a query pages by after or by offset, not both")); }
     let depth = count_of(o, "depth")?.unwrap_or(QUERY_DEPTH).min(lab.query_depth(me));
     let follow = follows_of(o)?;
+    let window = count_of(o, "window")?;
+    if window.is_some() && ["order", "limit", "offset", "after"].iter().any(|k| o.contains_key(*k)) {
+        return Err(bad("a window is the newest rows by creation: no order, limit, offset or after beside it"));
+    }
     let plan = w.plan();
     reads.vault = vault;
     reads.plan = Some(plan.clone());
@@ -966,7 +1001,14 @@ fn query_from(
     // Every candidate is classified in one read: the answer is a function of what the device holds, never of how long
     // it took (Coverage.lean). A candidate it can't decide yet waits, and says on what.
     let mut waits = coverage::Waits::default();
-    for entry in candidates(lab, me, vault, &plan) {
+    let mut found = candidates(lab, me, vault, &plan);
+    if window.is_some() {
+        // the newest first; one whose creation the log doesn't place is read first, as it may be the newest
+        found.sort_by_cached_key(|e| Reverse((lab.creation_depth(me, *e).unwrap_or(u64::MAX), *e)));
+        found.dedup();
+    }
+    for entry in found {
+        if window.is_some_and(|n| rows.len() >= n) { break; }
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
         let Some(m) = lab.meaning(me, entry) else {
             // Its header, or the cap groups its meaning rests on, haven't arrived; one it holds no key to it never reads.

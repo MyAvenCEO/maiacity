@@ -20,12 +20,13 @@ use avendb::lab::Lab;
 
 use crate::shared_index::{SharedIndex, head};
 
-/// A window: its entries, the newest first, each with its creation; how many edits the index was of, how many
-/// entries the tail after them named, and how many index rows it read.
+/// A window: its entries, the newest first, each with its creation; how many edits the index was of, how many edits
+/// the log held when the tail after them was read, how many entries that tail named, and how many index rows it read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Window {
     pub entries: Vec<(u64, EntryId)>,
     pub index_at: u64,
+    pub log_at: usize,
     pub tail: usize,
     pub rows_read: usize,
 }
@@ -44,7 +45,7 @@ pub(crate) async fn window(
     for _ in 0..4 {
         let stamp = ix.stamp().await;
         // the tail after the index, and the rows its entries have now, under one hold of the Lab
-        let (tokens, tail) = {
+        let (tokens, tail, log_at) = {
             let lab = locked();
             let ids = lab.log(me).ids();
             if stamp.at as usize > ids.len() || head(&ids[..stamp.at as usize]) != stamp {
@@ -54,7 +55,7 @@ pub(crate) async fn window(
             let tokens: BTreeSet<_> = lab.find_tokens(me, vault, labels).into_iter().collect();
             let tail: Vec<(EntryId, Option<avendb::index::shared::Of>)> =
                 touched.into_iter().map(|e| (e, lab.shared_of(me, e))).collect();
-            (tokens, tail)
+            (tokens, tail, ids.len())
         };
         let listed = ix.find(lab, me, vault, labels, None, w + tail.len()).await?;
         if ix.stamp().await != stamp {
@@ -72,9 +73,37 @@ pub(crate) async fn window(
         return Ok(Some(Window {
             entries: found.into_iter().take(w).map(|r| r.0).collect(),
             index_at: stamp.at,
+            log_at,
             tail: tail.len(),
             rows_read: listed.len(),
         }));
+    }
+    Ok(None)
+}
+
+/// What a window query `op` (`engine::window_of`) of device `me` answers, read off index `ix` and the tail after it:
+/// the engine's query over the newest entries with one of its labels and those whose header the device hasn't read
+/// (`engine::query_among`), a window of `n` first and four times more while fewer than `n` rows show and the index
+/// lists more; with the window it read last. `None` where the index can't say (`window`), or the log took edits
+/// between the window and the query, and the caller asks the engine.
+pub(crate) async fn answer(
+    ix: &SharedIndex,
+    lab: &Mutex<Lab>,
+    me: SignerId,
+    op: &serde_json::Value,
+) -> io::Result<Option<(serde_json::Value, Window)>> {
+    let Some((vault, n, labels)) = avendb::engine::window_of(op) else { return Ok(None) };
+    let mut k = n.max(1);
+    for _ in 0..8 {
+        let Some(win) = window(ix, lab, me, vault, &labels, k).await? else { return Ok(None) };
+        let held = lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if held.log(me).ids().len() != win.log_at { return Ok(None) }
+        let mut among: Vec<EntryId> = win.entries.iter().map(|(_, e)| *e).collect();
+        among.extend(held.untyped_of(me, vault));
+        let (got, shown) = avendb::engine::query_among(&held, me, op, among);
+        drop(held);
+        if shown >= n || win.entries.len() < k { return Ok(Some((got, win))) }
+        k = k.saturating_mul(4);
     }
     Ok(None)
 }
@@ -161,5 +190,72 @@ mod tests {
         eprintln!("windows answered off the index: {answered} of 240, {with_tail} with a tail");
         assert!(answered > 100, "the index answered most windows: {answered}");
         assert!(with_tail > 20, "and many with a tail after its stamp: {with_tail}");
+    }
+
+    /// Chat's rooms as a window (`engine::query`, `window`): opened right after a save, the newest `w` rooms come off
+    /// the index alone, no edit of the log read and at most `w` index rows; after edits the index hasn't saved, off
+    /// the index and the tail, at most `w` and the tail's entries per window it reads. Every answer is the engine's.
+    #[tokio::test]
+    async fn chats_rooms_open_off_the_index() {
+        let mut w = world();
+        let (mac, alice) = (w.mac_a, w.alice);
+        let ix = SharedIndex::open(Memory::new().shelf()).await.unwrap();
+        let rooms_of = |n: usize| serde_json::json!({"op": "query", "vault": alice.to_hex(),
+            "where": {"all": [{"type": ["room"]}, {"not": {"tag": "gone"}}]}, "select": [], "window": n});
+        let mut made = vec![];
+        for i in 0..60 {
+            let ty = if i % 3 == 2 { "note" } else { "room" };
+            made.push(w.lab.create(mac, alice, alice, ty, &[], document("R", "x", mac)).unwrap());
+        }
+        // rooms left long ago are the oldest
+        for e in &made[..6] { w.lab.tag(mac, alice, *e, &["gone"], &[]).unwrap(); }
+        let lab = Mutex::new(std::mem::replace(&mut w.lab, Lab::new()));
+        let held = lab.lock().unwrap().log(mac).ids().len();
+        ix.step(&lab, mac, held).await.unwrap();
+        for n in [1, 5, 20, 50] {
+            let op = rooms_of(n);
+            let (got, win) = answer(&ix, &lab, mac, &op).await.unwrap().expect("the index says");
+            let full = avendb::engine::read(&lab.lock().unwrap(), mac, &op);
+            assert_eq!(got, full, "window {n}");
+            assert_eq!(got["ok"]["rows"].as_array().unwrap().len(), n.min(36), "window {n}");
+            let log_read = win.log_at - win.index_at as usize;
+            eprintln!("open window {n}: {log_read} log edits, {} index rows, tail {}", win.rows_read, win.tail);
+            assert_eq!((log_read, win.tail), (0, 0), "opened right after a save");
+            if n <= 20 { assert!(win.rows_read <= n, "{win:?}"); }
+        }
+        // edits the index hasn't saved: the tail after its stamp
+        let mut w2 = lab.into_inner().unwrap();
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let (mut answered, mut most_over) = (0, 0usize);
+        for step in 0..40u64 {
+            match next(4) {
+                0 => made.push(w2.create(mac, alice, alice, "room", &[], document("R", "y", mac)).unwrap()),
+                1 => { let e = made[next(made.len() as u64) as usize]; w2.tag(mac, alice, e, &["gone"], &[]).unwrap(); }
+                2 => { let e = made[next(made.len() as u64) as usize]; w2.tag(mac, alice, e, &[], &["gone"]).unwrap(); }
+                _ => { let e = made[next(made.len() as u64) as usize]; w2.edit(mac, alice, e, |item| item.set_text(2, &format!("e {step}"))).ok(); }
+            }
+            let lab = Mutex::new(w2);
+            if next(4) == 0 {
+                let held = lab.lock().unwrap().log(mac).ids().len();
+                ix.step(&lab, mac, held).await.unwrap();
+            }
+            for n in [3, 10] {
+                let op = rooms_of(n);
+                if let Some((got, win)) = answer(&ix, &lab, mac, &op).await.unwrap() {
+                    answered += 1;
+                    assert_eq!(got, avendb::engine::read(&lab.lock().unwrap(), mac, &op), "step {step}, window {n}");
+                    most_over = most_over.max(win.rows_read.saturating_sub(n + win.tail));
+                }
+            }
+            w2 = lab.into_inner().unwrap();
+        }
+        eprintln!("windows off the index after edits: {answered} of 80, at most {most_over} rows past w + tail");
+        assert!(answered > 40, "{answered}");
     }
 }
