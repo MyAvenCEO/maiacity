@@ -55,8 +55,8 @@ bun scripts/devx/collect.mjs --tasks                  # "Task: <branch>" lines f
   its thread; don't hand-resolve someone else's logic. The CI-built WebAssembly (`src/lib/avendb/device/avendb_browser*`)
   never blocks: the batch keeps its copy and the final PR's CI commits the right one.
 - When the batch is in (25-50 tasks, or the coordinator says so): put the `Task:` lines in the PR body, mark the PR
-  ready, one CI run, fix only the culprits in one round, squash with an explicit commit message (title + body with the
-  `Task:` lines, never a `[skip ci]`), then close the task PRs naming the final PR, and merge main back into the
+  ready, one CI run, fix only the culprits in one round, land it with a merge commit (never a squash: main keeps
+  every task's commits) and an explicit message (title + body with the `Task:` lines, never a `[skip ci]`), then close the task PRs naming the final PR, and merge main back into the
   collector branch.
 - A failing task in the batch: revert its merge commit on the collector branch (`git revert -m 1 <merge>`), push,
   tell its thread; don't hold the batch for it.

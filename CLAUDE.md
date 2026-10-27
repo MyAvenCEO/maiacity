@@ -15,9 +15,10 @@ batch, not on each task.
   targeted checks again for the merged files. Task threads tell the collector (or the coordinator) when their branch is
   ready. They do not push to the collector's branch.
 - **One final PR to main.** The collector's draft PR goes ready for review once the batch is in. CI runs once. Fix what
-  fails in one round, push, and merge with a squash and an explicit commit message (title plus body; never let the
-  default message carry a CI commit's `[skip ci]`). Then close the task PRs it landed with a comment that names the
-  final PR, and bring `main` back into the collector's branch with a merge (no force push).
+  fails in one round, push, and merge with a **merge commit** (not a squash, Samuel 2026-10-27: every task's own
+  commits stay in main's history; `git log --first-parent main` reads one line per batch). Give it an explicit commit
+  message: the PR title plus the `Task:` lines, never a `[skip ci]`. Then close the task PRs it landed with a comment
+  that names the final PR, and bring `main` back into the collector's branch with a merge (no force push).
 - **Exceptions** go through their own PR at once: production down, a security fix, or Samuel asks for it.
 
 Main's checks and release gates are unchanged: every merge to main still runs the full validation before it deploys.

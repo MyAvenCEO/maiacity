@@ -7,7 +7,7 @@
 //   bun scripts/devx/collect.mjs --plan ...       report only; nothing changes
 //   bun scripts/devx/collect.mjs --check ...      then run scripts/devx/check.mjs for the whole batch
 //   bun scripts/devx/collect.mjs --tasks          the "Task: <branch>" lines of everything collected so far, for the
-//                                                 final PR's body and squash message (scripts/devx/measure.mjs counts them)
+//                                                 final PR's body and merge commit message (scripts/devx/measure.mjs counts them)
 import { execFileSync, spawnSync } from 'node:child_process';
 
 const git = (...a) => execFileSync('git', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
