@@ -3,3 +3,9 @@
 # linker's 1 MB: a key pair's public matrix, well over a megabyte, is made on the stack.
 [target.wasm32-unknown-unknown]
 rustflags = ["-C", "target-feature=+simd128", "-C", "link-arg=-zstack-size=8388608"]
+
+# The tests' shared McEliece pairs (keys.rs, `test_pairs`) by default, as CI's: without them every test program made
+# the same pairs again, and on a 4-core cloud session avendb-net's `live` test ran past its 60 s deadline (2026-10-27).
+# Read only by test-fixtures debug builds; an AVENDB_TEST_PAIRS already set (CI's) wins.
+[env]
+AVENDB_TEST_PAIRS = { value = "target/avendb-test-pairs", relative = true }
