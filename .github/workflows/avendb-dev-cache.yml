@@ -62,7 +62,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           rustc=$(rustc -V | cut -d' ' -f2)
-          inputs=$(cat avendb/Cargo.lock avendb/Cargo.toml avendb/crates/*/Cargo.toml avendb/.cargo/config.toml | sha256sum | cut -d' ' -f1)
+          # this file is an input too: a change to how the cache is built (#1343 added cargo check's metadata) rebuilds it
+          inputs=$(cat avendb/Cargo.lock avendb/Cargo.toml avendb/crates/*/Cargo.toml avendb/.cargo/config.toml .github/workflows/avendb-dev-cache.yml | sha256sum | cut -d' ' -f1)
           echo "rustc=$rustc" >> "$GITHUB_OUTPUT"
           echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
           held=$(gh release download "$TAG" -p manifest -O - 2>/dev/null || true)
