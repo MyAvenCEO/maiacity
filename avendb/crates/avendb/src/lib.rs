@@ -74,6 +74,7 @@ pub mod pages;
 pub mod perf;
 pub mod policy;
 pub mod provenance;
+pub mod query_view;
 pub mod quota;
 pub mod recovery;
 pub mod rules;
