@@ -215,8 +215,11 @@ fn history(seed: u64, mix: Mix) -> (common::Cast, VaultId, Vec<SignerId>) {
     (c, alice, devices)
 }
 
+/// Of each family in use: whether a signer opens its current key, and whether it may.
+type Access = Vec<(KeyFam, bool, bool)>;
+
 /// Each signer's keys it opens, of every family in use, by the state.
-fn access(st: &State, signers: &[SignerId]) -> Vec<(SignerId, Vec<(KeyFam, bool, bool)>)> {
+fn access(st: &State, signers: &[SignerId]) -> Vec<(SignerId, Access)> {
     signers
         .iter()
         .map(|&d| {
