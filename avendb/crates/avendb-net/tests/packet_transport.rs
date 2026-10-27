@@ -17,8 +17,9 @@ fn forward(from: PacketTransport, to: PacketTransport, theirs: RouteId) -> tokio
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn authenticated_sync_over_fragmented_carrier_without_ip_or_relay() {
-    tokio::time::timeout(Duration::from_secs(90), async {
-        let mut w = world(); let coop = handbook_ready(&mut w);
+    // The cast's keys are made before the deadline starts: on a loaded runner they alone took ~39 s (2026-10-27).
+    let mut w = world(); let coop = handbook_ready(&mut w);
+    tokio::time::timeout(Duration::from_secs(35), async {
         let (a, b, ka, kb) = (w.mac_a, w.mac_b, w.passkey_a, w.passkey_b);
         let opts = Options { bind: None, ..Options::local() };
         let mac = Node::spawn(w.lab.split(a, &[ka], [1; 32]), a, opts.clone()).await.unwrap();
