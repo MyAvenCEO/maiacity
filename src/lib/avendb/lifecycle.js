@@ -3,9 +3,9 @@
 const KEY = 'avendb:lifecycle:v1';
 const JOURNAL_KEY = 'avendb:lifecycle-events:v1';
 const LIMIT = 64;
-const LANDMARKS = new Set(['document-start','unlocking','passkey-finished','lease-opened','lease-failed','open','locked','worker-failed','app-reload-request','pagehide']);
+const LANDMARKS = new Set(['document-start','unlocking','passkey-finished','open','locked','worker-failed','app-reload-request','pagehide']);
 const EVENTS = new Set(['navigation-navigate', 'navigation-reload', 'navigation-back_forward', 'navigation-prerender', 'navigation-unknown', 'document-start', 'starting', 'unlocking', 'open', 'locked', 'worker-start', 'worker-failed', 'worker-message-error',
- 'passkey-start', 'passkey-finished', 'device-open-start', 'lease-open-start', 'lease-opened', 'lease-failed', 'lease-kept', 'unlock-failed', 'session-lock-request', 'app-reload-request',
+ 'passkey-start', 'passkey-finished', 'device-open-start', 'unlock-failed', 'session-lock-request', 'app-reload-request',
  'route-navigation', 'app-navigation-unload', 'visibility-visible', 'visibility-hidden', 'visibility-unknown',
  'pagehide', 'pagehide-persisted', 'pageshow', 'pageshow-persisted', 'beforeunload', 'history-pop', 'hash-change',
  'page-error', 'unhandled-rejection', 'sw-controlled', 'sw-uncontrolled', 'sw-controller-change', 'sw-update-found',

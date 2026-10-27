@@ -492,22 +492,6 @@ impl Device {
         Device::reopen(start, meta, lab, touch.passkey).await
     }
 
-    /// The device made here before, opened again from its shelf as `open` opens it, by its lease and no ceremony
-    /// (2026-10-27, an iPhone that reloaded its page on every back swipe and asked for the passkey each time): `pad`,
-    /// the PRF output on its salt that its passkey's last unlock brought back, which the page keeps sealed for minutes
-    /// (src/lib/avendb/lease.js), unmasks its secret as that unlock did. Its person's passkey `passkey` comes in with
-    /// its next ceremony (`avendb::lab::Lab::take_in`), as after a touch, so a change only their vault's root makes still
-    /// asks for it. Fails, before it touches the shelf, if `pad` unmasks another device's secret.
-    pub async fn open_leased(start: Start, meta: &Meta, pad: &[u8; 32], passkey: SignerId) -> Result<Device> {
-        start.progress.step("keys");
-        let mut lab = Lab::with_entropy(start.entropy);
-        start.recovery.clone().map(|key| lab.set_recovery(key));
-        let secret = xor(&meta.mask, pad);
-        let me = lab.device_as(&start.name, *secret, meta.device);
-        me.context("the lease opens another device than the one this shelf keeps")?;
-        Device::reopen(start, meta, lab, passkey).await
-    }
-
     /// Device `me` of `lab`, unlocked as its shelf's `meta` names it, opened again (`open`, `open_by_touch`): it
     /// follows what it followed and reads as deep as it did, its node takes back what the shelf kept, and it must still
     /// belong to a vault. Its person's passkey is `passkey`.
@@ -988,25 +972,6 @@ impl PageDevice {
         PageDevice::on(open.await, store).await
     }
 
-    /// The device the page made before, opened again from the shelf of the page's `store` by its lease (`Device::
-    /// open_leased`): `pad`, the PRF output on its salt its last unlock brought back, and `passkey`, its person's
-    /// passkey's id in hex (`passkey_id`), with no ceremony.
-    pub async fn open_leased(pad: Vec<u8>, passkey: String, steps: Option<Function>, store: JsValue) -> Result<PageDevice, JsError> {
-        let pad = Zeroizing::new(<[u8; 32]>::try_from(pad).map_err(|_| JsError::new("a lease's pad is 32 bytes"))?);
-        let passkey = hex_bytes(&passkey).and_then(|b| <[u8; 32]>::try_from(b).ok());
-        let passkey = SignerId(passkey.ok_or_else(|| JsError::new("a passkey's id is 32 bytes in hex"))?);
-        hold(&store).await?;
-        let shelf = shelf_of(store.clone());
-        let open = async {
-            let meta = Meta::load(&shelf).await.map_err(js_error)?;
-            let meta = meta.ok_or_else(|| JsError::new("this browser holds no avenDB account"))?;
-            let start = starting(meta.name.clone(), &meta.relay, steps, shelf)?;
-            let _ending = start.progress.ending();
-            Device::open_leased(start, &meta, &pad, passkey).await.map_err(js_error)
-        };
-        PageDevice::on(open.await, store).await
-    }
-
     /// The device a start made on the page's `store`; or, if it failed, the store let go of, for the next start.
     async fn on(device: Result<Device, JsError>, store: JsValue) -> Result<PageDevice, JsError> {
         match device {
@@ -1056,11 +1021,6 @@ impl PageDevice {
     /// Its person's passkey's P-256 key, compressed, in hex: what its shelf keeps to open it again (`Meta`).
     pub fn passkey(&self) -> String {
         self.0.p256.iter().map(|b| format!("{b:02x}")).collect()
-    }
-
-    /// Its person's passkey's id, in hex: what its lease names to open it again (`open_leased`).
-    pub fn passkey_id(&self) -> String {
-        hex(&self.0.passkey.0)
     }
 
     /// Its code, for the next device of its person to link through (`Offer::to_text`).

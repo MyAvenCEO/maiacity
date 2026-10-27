@@ -357,19 +357,6 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let theirs = Device::open(start_on(&shelf.0, "Eve's browser", &url, 10), &meta, mallory.unlock([1; 32], page));
     assert!(theirs.await.is_err(), "not her passkey's ceremony");
     assert_eq!(files(&shelf.0), kept, "the shelf as it was");
-    // its lease opens it again with no ceremony at all (src/lib/avendb/lease.js): the pad its last unlock brought back
-    // and its passkey's id; a pad of another unlock opens nothing, before it touches the shelf
-    let pad = eve.unlock([1; 32], page).device;
-    let wrong = Device::open_leased(start_on(&shelf.0, "Eve's browser", &url, 12), &meta, &[7; 32], first.passkey());
-    assert!(wrong.await.is_err(), "another pad unmasks another device's secret");
-    assert_eq!(files(&shelf.0), kept, "the shelf as it was");
-    let leased = start_on(&shelf.0, "Eve's browser", &url, 13);
-    let leased = Device::open_leased(leased, &meta, &pad, first.passkey()).await.expect("its lease opens it");
-    assert!(eve.steps().is_empty(), "with no ceremony");
-    assert_eq!(leased.node().id(), first.node().id(), "the same device");
-    assert_eq!(leased.passkey(), first.passkey(), "of the same passkey");
-    assert!(shows(&leased, note, "Tomatoes in April.").await, "it reads what its shelf kept");
-    leased.close().await.expect("it closes");
     let again = start_on(&shelf.0, "Eve's browser", &url, 11);
     let shown_steps = again.progress.clone();
     let again = Device::open(again, &meta, eve.unlock([1; 32], page)).await.expect("it opens again");
