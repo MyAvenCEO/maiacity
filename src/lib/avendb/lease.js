@@ -7,11 +7,10 @@
  *
  * What it never keeps: the passkey's own PRF output, from which its keys come. The pad alone unmasks this device's
  * secret only, a device its vault can take out; a change only the vault's owners make still asks for the passkey.
- * The seal's key is a WebCrypto key that no script can read out (`extractable` false): kept in IndexedDB, where a
- * browser keeps such a key (WebKit wraps it with the Keychain), the one thing a page keeps there; where IndexedDB
- * isn't at hand, raw in the tab's sessionStorage, which a closed app forgets. The sealed lease is in localStorage,
- * nothing without the key. It ends `LIFE` after the page was last seen open, or at once when the person locks or
- * forgets the account here.
+ * The seal's key is kept in the tab's sessionStorage, which a closed app forgets, and never in IndexedDB (pages keep
+ * nothing there, Samuel 2026-10-20); the sealed lease is in localStorage, nothing without the key. So a reload or a
+ * back swipe opens by the lease, and an app iOS closed asks for the passkey again. It ends `LIFE` after the page was
+ * last seen open, or at once when the person locks or forgets the account here.
  */
 
 /** How long a lease lasts after the page was last seen open (ms). */
@@ -21,7 +20,6 @@ export const RENEW = 60_000;
 
 const LEASE = 'avendb:lease:v1';
 const RAW_KEY = 'avendb:lease-key:v1';
-const DB = 'avendb-lease';
 
 const hex = (/** @type {Uint8Array} */ b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 const unhex = (/** @type {string} */ s) => new Uint8Array((s.match(/../g) ?? []).map((b) => parseInt(b, 16)));
@@ -30,34 +28,6 @@ const HEX64 = /^[0-9a-f]{64}$/;
 /** What the seal binds the pad to: the device, its passkey and the lease's end. */
 const bound = (/** @type {{ device: string, passkey: string, until: number }} */ l) =>
 	new TextEncoder().encode(`avenDB lease v1|${l.device}|${l.passkey}|${l.until}`);
-
-/** The seal's key in IndexedDB: one record, a key no script reads out. `make` makes it where there is none.
- *  @param {IDBFactory} idb @param {boolean} make @returns {Promise<CryptoKey | null>} */
-function storedKey(idb, make) {
-	return new Promise((resolve, reject) => {
-		const open = idb.open(DB, 1);
-		open.onupgradeneeded = () => open.result.createObjectStore('key');
-		open.onerror = () => reject(open.error);
-		open.onsuccess = () => {
-			const db = open.result;
-			const done = (/** @type {CryptoKey | null} */ key) => (db.close(), resolve(key));
-			const get = db.transaction('key').objectStore('key').get('seal');
-			get.onerror = () => (db.close(), reject(get.error));
-			get.onsuccess = async () => {
-				if (get.result || !make) return done(get.result ?? null);
-				try {
-					const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
-					const put = db.transaction('key', 'readwrite').objectStore('key').put(key, 'seal');
-					put.onsuccess = () => done(key);
-					put.onerror = () => (db.close(), reject(put.error));
-				} catch (e) {
-					db.close();
-					reject(e);
-				}
-			};
-		};
-	});
-}
 
 /** The seal's key in the tab's sessionStorage, raw, made where there is none and `make`.
  *  @param {Pick<Storage, 'getItem' | 'setItem'>} s @param {boolean} make @returns {Promise<CryptoKey | null>} */
@@ -73,23 +43,15 @@ async function sessionKey(s, make) {
 
 /**
  * The page's lease, over its browser's storage (injected for tests).
- * @param {{ local: () => Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, session: () => Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, idb?: () => IDBFactory | undefined, now?: () => number }} env
+ * @param {{ local: () => Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, session: () => Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>, now?: () => number }} env
  */
-export function createLease({ local, session, idb = () => undefined, now = () => Date.now() }) {
+export function createLease({ local, session, now = () => Date.now() }) {
 	/** What the open device's lease seals again as it renews: kept in memory only while it is open.
 	 *  @type {{ pad: Uint8Array<ArrayBuffer>, device: string, passkey: string } | null} */
 	let held = null;
 
 	/** The seal's key, where one is kept or, `make`, made. */
 	async function key(make = false) {
-		const factory = (() => { try { return idb(); } catch { return undefined; } })();
-		if (factory) {
-			try {
-				return await storedKey(factory, make);
-			} catch {
-				// a browser that keeps no IndexedDB here (a private window): the tab's sessionStorage instead
-			}
-		}
 		try {
 			return await sessionKey(session(), make);
 		} catch {
@@ -179,5 +141,5 @@ let active;
 /** The page's lease, or null outside a browser. */
 export function lease() {
 	if (typeof window === 'undefined') return null;
-	return (active ??= createLease({ local: () => localStorage, session: () => sessionStorage, idb: () => indexedDB }));
+	return (active ??= createLease({ local: () => localStorage, session: () => sessionStorage }));
 }

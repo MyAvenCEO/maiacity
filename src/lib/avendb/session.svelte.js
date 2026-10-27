@@ -183,8 +183,7 @@ async function start() {
 
 /**
  * Opens the account this browser holds again by its lease (./lease.js), with no ceremony, where an unlock in the last
- * minutes kept one: a reload, a back swipe into an earlier load, or iOS closing the app in the background then asks
- * for no passkey again (Samuel's iPhone, 2026-10-27). Whether it opened. A lease that opens nothing is ended; one
+ * minutes kept one: a reload or a back swipe into an earlier load then asks for no passkey again (Samuel's iPhone, 2026-10-27). Whether it opened. A lease that opens nothing is ended; one
  * another tab's open device holds is kept for that tab.
  */
 async function resume() {
