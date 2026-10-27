@@ -163,9 +163,24 @@ test('every manifest the repo declares fits the v2 schema, and the three example
 	expect(assets.filter((l) => l.want.entry === id(4)).map((l) => l.tier)).toEqual(['now', 'now', 'later']);
 	expect(assets.some((l) => l.want.entry === id(4) && l.tier === 'now' && l.part.part === 'files')).toBe(true);
 	// the app's #assets page is that view too
-	expect(leavesFor(MANIFESTS, '/app/assets/', { asset: id(4) }).some((l) => l.part.part === 'files')).toBe(true);
+	expect(leavesFor(MANIFESTS, '/app/#assets', { asset: id(4) }).some((l) => l.part.part === 'files')).toBe(true);
 	expect(assets.find((l) => l.part.by === 'list').tier).toBe('next');
 	// Sandbox 4: what the camera sees, nearest first
 	expect(leavesFor(MANIFESTS, '/app/games/sandbox-4/').some((l) => l.part.by === 'camera' && l.tier === 'now')).toBe(true);
 	expect([CHAT, STUDIO, ASSETS].every((x) => x.v === 2)).toBe(true);
+});
+
+test('every page the app opens has a manifest of its own, not the kernel alone', () => {
+	// VaultApps.svelte's NAV, each opened at /app/#<page>, and the app's own pages beside it
+	const pages = ['sparks', 'artifacts', 'todos', 'stories', 'docs', 'library', 'assets', 'worlds', 'models', 'code',
+		'query', 'tables', 'schemas', 'lenses', 'flows', 'functions', 'history', 'jobs', 'performance', 'settings',
+		'vaults', 'activity', 'postgres', 'chat'].map((p) => `/app/#${p}`);
+	const own = ['/app/', '/app/chat/', '/app/studio/', '/app/aips/', '/app/coops/', '/app/factories/', '/app/ledger/',
+		'/app/network/', '/app/postgres/', '/app/avendb/', '/app/maiacity-v2/proposals/', '/app/math/probe/', '/app/views/probe/'];
+	for (const path of [...pages, ...own]) {
+		const mine = MANIFESTS.filter((m) => m.id !== 'kernel' && m.routes.some((r) => covers(r, path)));
+		expect({ path, manifests: mine.length }).toEqual({ path, manifests: 1 });
+	}
+	// a vault's Models (speech models) is not the asset library at /app/models/
+	expect(MANIFESTS.filter((m) => m.id !== 'kernel' && m.routes.some((r) => covers(r, '/app/#models'))).map((m) => m.id)).toEqual(['page-models']);
 });

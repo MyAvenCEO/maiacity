@@ -165,9 +165,9 @@ test('with no manifest of its route in the vault, the app\'s own says what comes
 });
 
 test('a page the app opens by its hash is the view of that page, its manifest the one whose routes name it', () => {
-	expect(viewPath({ pathname: '/app/', hash: '#chat' })).toBe('/app/chat/');
-	expect(viewPath({ pathname: '/app/', hash: '#assets/908ceda0' })).toBe('/app/assets/');
-	expect(viewPath({ pathname: '/app', hash: '#performance' })).toBe('/app/performance/');
+	expect(viewPath({ pathname: '/app/', hash: '#chat' })).toBe('/app/#chat');
+	expect(viewPath({ pathname: '/app/', hash: '#assets/908ceda0' })).toBe('/app/#assets');
+	expect(viewPath({ pathname: '/app/', hash: '#performance/server' })).toBe('/app/#performance');
 	expect(viewPath({ pathname: '/app/', hash: '' })).toBe('/app/');
 	// a hash that names no page (an anchor, a token) leaves the path as it is
 	expect(viewPath({ pathname: '/app/games/sandbox-5/', hash: '#Top_1' })).toBe('/app/games/sandbox-5/');
