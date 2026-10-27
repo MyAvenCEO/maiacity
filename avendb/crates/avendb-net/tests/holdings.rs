@@ -80,9 +80,6 @@ async fn say(conn: &Connection, kind: u8, body: &[u8]) {
     recv.read_to_end(16 << 20).await.expect("its answer");
 }
 
-/// `session::CUTS`: where a peer's next pages end, which a peer from before pipelined pages refuses.
-const CUTS: u8 = 22;
-
 /// The next message the node sends on `conn` other than an announcement, answered by `answer`, packed where the node
 /// asks for it packed, as a node answers; and the announcements before it, each answered by nothing, as a node
 /// answers them.
@@ -92,9 +89,8 @@ async fn next(conn: &Connection, kind: u8, answer: impl FnOnce(&[u8]) -> Vec<u8>
         let (mut send, mut recv) = conn.accept_bi().await.expect("a message from the node");
         let message = recv.read_to_end(16 << 20).await.expect("its bytes");
         let (&k, body) = message.split_first().expect("a kind");
-        // a legacy peer refuses the kinds it doesn't know: ranges, the blind index's offer (40) and the cuts of
-        // pipelined pages (`session::CUTS`, 22)
-        if k == RANGES || k == 40 || k == CUTS {
+        // a legacy peer refuses the kinds it doesn't know: ranges, and the blind index's offer (40)
+        if k == RANGES || k == 40 {
             send.reset(iroh::endpoint::VarInt::from_u32(1)).expect("legacy peer refuses the new kind");
             continue;
         }
@@ -121,7 +117,7 @@ async fn announced(conn: &Connection) -> Announce {
         let (mut send, mut recv) = conn.accept_bi().await.expect("a message from the node");
         let message = recv.read_to_end(16 << 20).await.expect("its bytes");
         let (&k, body) = message.split_first().expect("a kind");
-        if k == RANGES || k == CUTS {
+        if k == RANGES {
             send.reset(iroh::endpoint::VarInt::from_u32(1)).expect("legacy peer refuses the new kind");
             continue;
         }

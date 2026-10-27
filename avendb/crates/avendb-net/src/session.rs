@@ -59,19 +59,6 @@ pub(crate) const ASK_VAULTS: u8 = 11;
 /// before refuses this kind, so the sender falls back to the unchanged `ANNOUNCE` on this connection.
 pub(crate) const RANGES: u8 = 13;
 
-/// Where the next pages of a request, an `ASK_LOGS` or an `ASK_VAULTS` would end (`Lab::reply_cuts`), so that a pull
-/// asks several pages at once on a slow link instead of each after the last came (S6). Its body is the kind it asks
-/// about, how many cuts, then that kind's body; it is answered by the cuts (`cuts_wire`). A hint and no more: each page
-/// is still asked as before, checked and taken in order, and one asked at a cut its predecessor didn't end on is
-/// dropped unread. A peer from before refuses this kind, and the asking node asks page after page on that connection,
-/// as it did (`Shared::uncut`).
-pub(crate) const CUTS: u8 = 22;
-
-/// The most cuts one `CUTS` asks for: each costs its peer a page's sizing.
-pub(crate) const CUTS_LIMIT: usize = 16;
-/// The most a `CUTS` answer takes (`cuts_wire`).
-pub(crate) const CUTS_REPLY_LIMIT: usize = 2 + CUTS_LIMIT * 40;
-
 /// The bit a request, an `ASK_LOGS` or an `ASK_VAULTS` sets in its kind to ask for its reply packed, each ML-DSA-65
 /// key its signatures carry once (K5, `wire::Packed`). A node from before refuses the kind, and the asking node asks
 /// again without it, and from then on on that connection (`Shared::unpacked`).
@@ -243,8 +230,8 @@ fn to_old(mut edits: Vec<avendb::sign::Signed>) -> Vec<avendb::sign::Signed> {
     edits
 }
 
-fn authorized_request(kind: u8, body: &[u8]) -> Result<(Request, Option<ReplyScope>)> {
-    Ok(match kind {
+async fn authorized_reply(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], paths: bool) -> Result<Reply> {
+    let (request, scope) = match kind {
         REQUEST => (Request::from_wire(body)?, None),
         ASK_LOGS => {
             let request = Request::from_wire(body)?;
@@ -256,63 +243,7 @@ fn authorized_request(kind: u8, body: &[u8]) -> Result<(Request, Option<ReplySco
             (request, Some(ReplyScope::Vaults(vaults)))
         }
         _ => bail!("unsupported authorized request kind"),
-    })
-}
-
-/// The body of a `CUTS`: the kind it asks about, how many cuts, then that kind's body.
-pub(crate) fn cuts_body(kind: u8, count: usize, body: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(body.len() + 2);
-    out.push(kind);
-    out.push(count.min(CUTS_LIMIT) as u8);
-    out.extend_from_slice(body);
-    out
-}
-
-/// A `CUTS` answer: how many cuts, each a place (its depth in eight bytes, then the edit's id), then 1 if the last
-/// ends the asking.
-pub(crate) fn cuts_wire(cuts: &[avendb::sync::Place], done: bool) -> Vec<u8> {
-    let mut out = Vec::with_capacity(2 + cuts.len() * 40);
-    out.push(cuts.len() as u8);
-    for (depth, id) in cuts {
-        out.extend_from_slice(&depth.to_be_bytes());
-        out.extend_from_slice(&id.0);
-    }
-    out.push(u8::from(done));
-    out
-}
-
-/// The cuts a `CUTS` answer names (`cuts_wire`), each after the one before, or an error.
-pub(crate) fn from_cuts_wire(bytes: &[u8]) -> Result<(Vec<avendb::sync::Place>, bool)> {
-    let (&n, rest) = bytes.split_first().context("an empty cuts answer")?;
-    let n = n as usize;
-    anyhow::ensure!(n <= CUTS_LIMIT && rest.len() == n * 40 + 1, "a malformed cuts answer");
-    let mut cuts: Vec<avendb::sync::Place> = Vec::with_capacity(n);
-    for chunk in rest[..n * 40].chunks_exact(40) {
-        let depth = u64::from_be_bytes(chunk[..8].try_into().expect("8 bytes"));
-        let place = (depth, EditId(chunk[8..].try_into().expect("32 bytes")));
-        anyhow::ensure!(cuts.last().is_none_or(|last| *last < place), "cuts out of order");
-        cuts.push(place);
-    }
-    let done = match rest[n * 40] {
-        0 => false,
-        1 => true,
-        _ => bail!("a malformed cuts answer"),
     };
-    Ok((cuts, done))
-}
-
-async fn authorized_cuts(shared: &Arc<Shared>, peer: &Peer, body: &[u8]) -> Result<Vec<u8>> {
-    let [kind, count, body @ ..] = body else { bail!("a cuts request cut short") };
-    let (request, scope) = authorized_request(*kind, body)?;
-    let (device, page, count) = (peer.device, shared.opts.page, (*count as usize).min(CUTS_LIMIT));
-    let (cuts, done) = shared
-        .try_lab(move |lab, me| lab.reply_cuts(me, device, &request, page, &scope.unwrap_or_default(), count))
-        .await?;
-    Ok(cuts_wire(&cuts, done))
-}
-
-async fn authorized_reply(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], paths: bool) -> Result<Reply> {
-    let (request, scope) = authorized_request(kind, body)?;
     shared.follows(peer, &request);
     let (device, page) = (peer.device, shared.opts.page);
     let (edits, ids, more) = shared.try_lab(move |lab, me| match scope {
@@ -385,7 +316,6 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         crate::bootstrap_dependencies::KIND => crate::bootstrap_dependencies::answer(shared,peer,body,checkpoint.context("missing dependency response admission")?).await,
         crate::peer_receipts::KIND => crate::peer_receipts::answer(shared, peer, body).await,
         crate::peer_receipts::UI_KIND => crate::peer_receipts::answer_ui(shared, peer, body).await,
-        CUTS => authorized_cuts(shared, peer, body).await,
         REQUEST | ASK_LOGS | ASK_VAULTS => {
             let reply = authorized_reply(shared, peer, kind, body, false).await?;
             let n = reply.edits.len();

@@ -333,9 +333,6 @@ pub struct Options {
     /// `spec/AvenDB/WireBatches.lean`), each root once a reply: a device's. The server asks for signatures alone for
     /// one release, so that it serves every edit it holds to an old app, which reads signatures alone.
     pub paths: bool,
-    /// The most pages a pull keeps in flight from one peer (S6, `pulls::Window`): asked at once where the peer says
-    /// they end (`session::CUTS`), and taken in order. 1 asks each page once the one before came, as nodes did before.
-    pub window: usize,
 }
 
 /// How many bytes of edits a node answers a request with, at most, unless told otherwise: a few hundred edits, each
@@ -369,7 +366,6 @@ impl Options {
             sim: None,
             index: false,
             paths: true,
-            window: pulls::WINDOW,
         }
     }
 
@@ -801,7 +797,6 @@ impl Node {
             follows: Mutex::default(),
             unpacked: Mutex::default(),
             unbatched: Mutex::default(),
-            uncut: Mutex::default(),
             unstripped: Mutex::default(),
             ranges: Mutex::default(),
             edit_transfer: edit_transfer::Runtime::default(),
@@ -1995,37 +1990,6 @@ enum Scope {
 }
 
 /// The way connection `conn` sends now: `direct` over an IP path, `relay` through a relay, `` where none is selected.
-/// How many times a pull's pages may end elsewhere than its peer's cuts said (`session::CUTS`) before it asks the rest
-/// page after page: its peer's edits changed under them, or the peer cuts pages otherwise than it says.
-const MISSES: u32 = 3;
-
-/// What landed first of a pull's pages and cuts in flight, or what else it waited on was done.
-enum Landing<P, C, T> {
-    Page(P),
-    Cuts(C),
-    Done(T),
-}
-
-/// The first of `pages` and `cuts` to land; never, while neither has any in flight.
-async fn landing<P: std::future::Future, C: std::future::Future, T>(
-    pages: &mut FuturesUnordered<P>,
-    cuts: &mut FuturesUnordered<C>,
-) -> Landing<P::Output, C::Output, T> {
-    let page = async {
-        match pages.next().await {
-            Some(page) => Landing::Page(page),
-            None => future::pending().await,
-        }
-    };
-    let cut = async {
-        match cuts.next().await {
-            Some(cut) => Landing::Cuts(cut),
-            None => future::pending().await,
-        }
-    };
-    future::or(page, cut).await
-}
-
 fn way_of(conn: &Connection) -> &'static str {
     let paths = conn.paths();
     match paths.iter().find(|p| p.is_selected()) {
@@ -2136,8 +2100,6 @@ struct Shared {
     unpacked: Mutex<HashSet<usize>>,
     /// Connections without usable supplemental proofs, independent of their packed-reply support.
     unbatched: Mutex<HashSet<usize>>,
-    /// The connections whose peer refused a `session::CUTS`, a peer from before S6: asked page after page.
-    uncut: Mutex<HashSet<usize>>,
     /// The connections whose peer didn't answer a proof request of version 2, with paths in place of signatures (P8):
     /// an older node, or one that couldn't link a root; asked version 1 from then on.
     unstripped: Mutex<HashSet<usize>>,
@@ -2618,26 +2580,19 @@ impl Shared {
         };
         // Acquire before serializing, and retain admission through decoding and validation. A page larger
         // than the ordinary budget retries exclusively under the original ceiling (old peers and large edits).
-        // A page asked ahead (S6) brings its own slot (`Budget::ahead`): it never retries large, and its failure is
-        // no failure of the pull, nor of the peer, as the page is asked again in its turn.
-        let ask = |after: Option<avendb::sync::Place>, ahead: Option<pulls::Page>| {
+        let ask = |after: Option<avendb::sync::Place>| {
             let (peer, wire) = (peer.clone(), &wire);
             async move {
                 let asked = Instant::now();
-                let early = ahead.is_some();
-                let mut ahead = ahead;
                 let receive = async {
-                    let mut permit = match ahead.take() {
-                        Some(permit) => permit,
-                        None => self.pulls.page(false, background).await?,
-                    };
+                    let mut permit = self.pulls.page(false, background).await?;
                     let reply = {
                         let request = wire(after);
                         anyhow::ensure!(request.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
                         self.reply_to(&peer, kind, &request, pulls::PAGE_BYTES).await
                     };
                     let reply = match reply {
-                        Err(error) if session::too_long(&error) && !early => {
+                        Err(error) if session::too_long(&error) => {
                             // No encoded request or partial reply remains while exclusive admission waits.
                             drop(permit);
                             permit = self.pulls.page(true, background).await?;
@@ -2649,147 +2604,19 @@ impl Shared {
                     reply.map(|(reply, bytes)| (reply, bytes, permit))
                 };
                 let reply = time::timeout(PAGE_WAIT, receive).await.context("no page in time").and_then(|r| r);
-                if reply.is_err() && !early {
+                if reply.is_err() {
                     self.traffic.failed(device);
                 }
                 reply.map(|(reply, bytes, permit)| (reply, bytes, asked.elapsed(), permit))
             }
         };
-        // where the peer's next pages end (`session::CUTS`), for the pages after them to be asked at once
-        let cut = |after: Option<avendb::sync::Place>, count: usize| {
-            let (peer, wire) = (peer.clone(), &wire);
-            async move {
-                let _activity = self.admit()?;
-                let asked = Instant::now();
-                let body = session::cuts_body(kind, count, &wire(after));
-                anyhow::ensure!(body.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
-                let answer = session::exchange(&peer.conn, session::CUTS, &body, session::CUTS_REPLY_LIMIT);
-                let answer = time::timeout(PAGE_WAIT, answer).await.context("no cuts in time")??;
-                let (cuts, done) = session::from_cuts_wire(&answer)?;
-                anyhow::ensure!(after.is_none_or(|a| cuts.first().is_none_or(|c| *c > a)), "cuts before their start");
-                Ok::<_, anyhow::Error>((cuts, done, asked.elapsed()))
-            }
-        };
-        let connection = peer.conn.stable_id();
-        let most = if self.uncut.lock().expect("uncut").contains(&connection) {
-            1
-        } else {
-            self.opts.window.clamp(1, session::CUTS_LIMIT)
-        };
-        // The pages in flight, each asked after the place its predecessor ends at by the peer's cuts, and taken
-        // strictly in order: one is taken only if it was asked after the last place the page before it brought, so
-        // the pages taken are exactly those asked one after the other, each sorting after the last (`replay_on`);
-        // one asked after any other place is dropped unread, and what follows asked again from where the last ended.
-        let mut window = pulls::Window::new(most);
-        let mut cutting = most > 1;
-        let fly = |seq: u64, flying: usize, after: Option<avendb::sync::Place>, ahead: Option<pulls::Page>| {
-            let page = ask(after, ahead);
-            async move { (seq, flying, page.await) }
-        };
-        let cut_fly = |generation: u64, after: Option<avendb::sync::Place>, count: usize| {
-            let cuts = cut(after, count);
-            async move { (generation, cuts.await) }
-        };
-        let mut flying = FuturesUnordered::new();
-        let mut cutting_flight = FuturesUnordered::new();
-        // the pages asked, in order: each its number, where it starts, and whether it was asked ahead
-        let mut asked: std::collections::VecDeque<(u64, Option<avendb::sync::Place>, bool)> = Default::default();
-        let mut landed = BTreeMap::new();
-        // where pages yet to be asked ahead start, where the next cuts start, and whether the peer named its last
-        let mut cuts: std::collections::VecDeque<avendb::sync::Place> = Default::default();
-        let (mut cut_after, mut cuts_end, mut cut_busy, mut generation, mut misses) = (None, false, false, 0u64, 0u32);
-        // the page asked last starts after this place
-        let (mut seq, mut asked_upto) = (0u64, None::<avendb::sync::Place>);
-        macro_rules! pump {
-            () => {
-                let size = window.size();
-                while cutting && asked.len() < size && !cuts.is_empty() {
-                    let Some(permit) = self.pulls.ahead() else { break };
-                    let after = cuts.pop_front();
-                    seq += 1;
-                    asked_upto = after.max(asked_upto);
-                    asked.push_back((seq, after, true));
-                    flying.push(fly(seq, asked.len(), after, Some(permit)));
-                }
-                if cutting && !cut_busy && !cuts_end && cuts.len() < size {
-                    cut_busy = true;
-                    cutting_flight.push(cut_fly(generation, cut_after, 2 * most));
-                }
-            };
-        }
-        macro_rules! land {
-            ($got:expr) => {
-                match $got {
-                    Landing::Page((at, count, page)) => {
-                        if asked.iter().any(|(s, _, _)| *s == at) {
-                            if let Ok((_, _, wait, _)) = &page {
-                                window.page(*wait, count);
-                            }
-                            landed.insert(at, page);
-                        }
-                    }
-                    Landing::Cuts((at, got)) if at == generation => {
-                        cut_busy = false;
-                        match got {
-                            Ok((mut got, done, wait)) => {
-                                window.latency(wait);
-                                if let Some(&last) = got.last() {
-                                    cut_after = Some(last);
-                                }
-                                // the last page ends where the last cut is: nothing is asked after it
-                                if done || got.is_empty() {
-                                    cuts_end = true;
-                                    if done {
-                                        got.pop();
-                                    }
-                                }
-                                // a page already asked after one of them is not asked again
-                                got.retain(|c| asked_upto.is_none_or(|upto| *c > upto));
-                                cuts.extend(got);
-                            }
-                            Err(error) => {
-                                tracing::debug!(%error, "avendb: no page cuts; asking page after page");
-                                cutting = false;
-                                self.uncut.lock().expect("uncut").insert(connection);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            };
-        }
         let (mut after, mut new, mut pages) = (None, sparse, 0);
         let (mut vaults, mut entries) = (BTreeMap::<String, u64>::new(), BTreeMap::<String, u64>::new());
         // Include initial admission, request encoding and reply wait in pipeline service time.
         // Starting after this await makes a slow one-page request appear arbitrarily fast.
         let mut since = Instant::now();
-        seq += 1;
-        asked.push_back((seq, None, false));
-        flying.push(fly(seq, 1, None, None));
-        pump!();
+        let mut coming = ask(None).await;
         loop {
-            let &(at, starts, early) = asked.front().expect("the next page is asked");
-            debug_assert_eq!(starts, after);
-            let coming = loop {
-                if let Some(page) = landed.remove(&at) {
-                    break page;
-                }
-                let got: Landing<_, _, ()> = landing(&mut flying, &mut cutting_flight).await;
-                land!(got);
-                pump!();
-            };
-            asked.pop_front();
-            let coming = match coming {
-                Err(error) if early => {
-                    // asked ahead and lost: asked again now, in its turn, as any page is
-                    tracing::debug!(%error, "avendb: a page asked ahead failed; asking it again");
-                    seq += 1;
-                    asked.push_front((seq, after, false));
-                    flying.push(fly(seq, asked.len(), after, None));
-                    continue;
-                }
-                coming => coming,
-            };
             let (Reply { mut edits, blobs, more }, bytes, wait, permit) = coming?;
             let (way, sent) = (way_of(&peer.conn), edits.len() as u64);
             let taking = Instant::now();
@@ -2801,37 +2628,6 @@ impl Shared {
                 Some(last) if more => Some(last),
                 _ => None,
             };
-            // the next page asked after where this one ends, and what follows it ahead, while this one is taken (checked
-            // and kept), so the peer, the network and this device work at once rather than in turn
-            match (next, asked.front().map(|&(_, starts, _)| starts)) {
-                (Some(next), Some(starts)) if starts == Some(next) => {}
-                (Some(next), ahead) => {
-                    if ahead.is_some() {
-                        // the peer's pages ended elsewhere than it said: what was asked ahead goes unread
-                        misses += 1;
-                        cutting &= misses < MISSES;
-                        (flying, landed, cutting_flight) = (FuturesUnordered::new(), BTreeMap::new(), FuturesUnordered::new());
-                        asked.clear();
-                        cuts.clear();
-                        (cut_after, cuts_end, cut_busy, generation) = (Some(next), false, false, generation + 1);
-                    }
-                    // a cut it reached is no page to ask ahead
-                    while cuts.front().is_some_and(|c| *c <= next) {
-                        cuts.pop_front();
-                    }
-                    seq += 1;
-                    asked_upto = Some(next).max(asked_upto);
-                    asked.push_back((seq, Some(next), false));
-                    flying.push(fly(seq, 1, Some(next), None));
-                }
-                (None, _) => {
-                    // the last page: nothing asked ahead of it is wanted
-                    (flying, landed, cutting_flight) = (FuturesUnordered::new(), BTreeMap::new(), FuturesUnordered::new());
-                    asked.clear();
-                    cutting = false;
-                }
-            }
-            pump!();
             // the McEliece keys its edits name come after the last page, not with each: a device needs one only to seal
             // to its signer, each is a megabyte, and a page of a few edits waited ~10 s on them through a relay
             // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
@@ -2860,18 +2656,15 @@ impl Shared {
                 let took = taking.elapsed();
                 Ok::<_, anyhow::Error>((got, whose, [checked, kept - checked, took - kept, took]))
             };
-            // the pages in flight land (and more are asked) while this one is taken
-            let mut take = std::pin::pin!(take);
-            let taken = loop {
-                let first = future::or(async { Landing::Done(take.as_mut().await) }, landing(&mut flying, &mut cutting_flight));
-                match first.await {
-                    Landing::Done(taken) => break taken,
-                    got => {
-                        land!(got);
-                        pump!();
-                    }
+            // the next page asked for while this one is taken (checked and kept), so the peer, the network and this
+            // device work at once rather than one after the other
+            let ahead = async {
+                match next {
+                    Some(last) => Some(ask(Some(last)).await),
+                    None => None,
                 }
             };
+            let (taken, ahead) = future::zip(take, ahead).await;
             let (got, whose, [checked, kept, caught, took]) = taken?;
             let finished = Instant::now();
             self.traffic.page(traffic::Page {
@@ -2901,9 +2694,12 @@ impl Shared {
             job.stage(format!("page {pages}"));
             job.progress(new as u64, None);
             job.about(vaults.clone(), entries.clone());
-            match next {
-                Some(last) => after = Some(last),
-                None => break,
+            match (next, ahead) {
+                (Some(last), Some(page)) => {
+                    after = Some(last);
+                    coming = page;
+                }
+                _ => break,
             }
         }
         Ok(new)
@@ -3332,7 +3128,6 @@ impl Shared {
         self.follows.lock().expect("follows").remove(&peer.conn.stable_id());
         self.unpacked.lock().expect("unpacked").remove(&peer.conn.stable_id());
         self.unbatched.lock().expect("unbatched").remove(&peer.conn.stable_id());
-        self.uncut.lock().expect("uncut").remove(&peer.conn.stable_id());
         self.unstripped.lock().expect("unstripped").remove(&peer.conn.stable_id());
         let known = self.reach.lock().expect("reach").contains_key(&peer.device);
         let forget = !known && self.live(peer.endpoint).is_none();
@@ -3596,15 +3391,12 @@ const LONG_TURN: Duration = Duration::from_millis(16);
 
 /// The logs of `left` to ask for next, taken out of it (`Shared::ask_differing`). At the `first` asking, the logs the
 /// open views want now (`active`, with their audiences' keys) and the entry logs pages asked for (`wanted`), with every
-/// vault's, share's and audience's log, which say who may do what and who reads what and are few, at most `VIEW_LOGS`,
-/// if any of the views' are left; else every log left, in one asking. None once `left` is empty. The audiences' come
-/// first too as a blind `find` asks under each audience it knows of (`Lab::find_tokens`): a coop's channel in an
-/// audience of its own was found only after the whole catch-up brought that audience's keys (2026-10-27, an iPhone's
-/// chat showed its note to self at once and the coop's channel minutes later).
+/// vault's and share's log, which say who may do what and are few, at most `VIEW_LOGS`, if any of the views' are left;
+/// else every log left, in one asking. None once `left` is empty.
 fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], first: bool) -> BTreeSet<LogId> {
     let viewed: BTreeSet<LogId> = active.iter().chain(wanted).filter(|l| left.contains(l)).copied().collect();
     let next = if first && !viewed.is_empty() {
-        let rules = left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_) | LogId::Audience(..))).copied();
+        let rules = left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_))).copied();
         viewed.iter().copied().chain(rules).take(VIEW_LOGS).collect()
     } else {
         std::mem::take(left)
@@ -3712,18 +3504,17 @@ mod tests {
     }
 
     #[test]
-    fn the_views_logs_come_first_with_who_may_do_and_read_what_then_every_other_log_at_once() {
+    fn the_views_logs_come_first_with_who_may_do_what_then_every_other_log_at_once() {
         let entry = |i: u8| LogId::Entry(EntryId([i; 32]));
         let mut left: BTreeSet<LogId> = (1..=5).map(entry).collect();
         left.extend([LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32])), LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]))]);
         let (wanted, view) = ([entry(1)].into(), [entry(99), entry(4)]);
         // the view's logs left and the old wants, with the vaults' and shares' logs; a log it doesn't lack isn't asked
         let first = next_asking(&mut left, &wanted, &view, true);
-        let audience = LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]));
-        assert_eq!(first, [entry(1), entry(4), LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32])), audience].into());
+        assert_eq!(first, [entry(1), entry(4), LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32]))].into());
         // then the rest in one asking, so its pages come by their places across every log
         let rest = next_asking(&mut left, &wanted, &view, false);
-        assert_eq!(rest, [entry(2), entry(3), entry(5)].into());
+        assert_eq!(rest, [entry(2), entry(3), entry(5), LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]))].into());
         assert!(left.is_empty() && next_asking(&mut left, &wanted, &view, false).is_empty());
     }
 

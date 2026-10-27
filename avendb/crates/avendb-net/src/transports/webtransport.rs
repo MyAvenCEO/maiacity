@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::io;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU64, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::time::Duration;
 
 use iroh::EndpointId;
@@ -32,24 +32,6 @@ const ROTATION: Duration = Duration::from_secs(6 * 86400);
 /// How often a public certificate's files are read again, for the issuer's renewal (Caddy renews 30 days early).
 const RELOAD: Duration = Duration::from_secs(3600);
 const CLOSE: VarInt = VarInt::from_u32(0);
-
-/// How each browser session that reached the listener ended, counted since it started (`sessions`), so a carrier that
-/// never comes up says where: counts and the certificate's kind alone, as `GET /feed/health` is public.
-static OUTCOMES: [AtomicU64; 9] = [const { AtomicU64::new(0) }; 9];
-const OUTCOME_NAMES: [&str; 9] = ["no_request", "wrong_authority", "wrong_origin", "no_ticket", "not_accepted",
-    "no_datagrams", "expired", "ready", "ended"];
-static PUBLIC_CERTIFICATE: AtomicBool = AtomicBool::new(false);
-#[derive(Clone, Copy)]
-enum Outcome { NoRequest, WrongAuthority, WrongOrigin, NoTicket, NotAccepted, NoDatagrams, Expired, Ready, Ended }
-fn outcome(o: Outcome) { OUTCOMES[o as usize].fetch_add(1, Ordering::Relaxed); }
-
-/// The browser sessions so far by how they ended, and whether the listener serves the public certificate (else its
-/// own, pinned): `{certificate: "public"|"pinned", sessions: {no_request, wrong_authority, ...}}`.
-pub fn sessions() -> Value {
-    let counts: serde_json::Map<String, Value> = OUTCOME_NAMES.iter().zip(&OUTCOMES)
-        .map(|(name, n)| ((*name).to_owned(), json!(n.load(Ordering::Relaxed)))).collect();
-    json!({ "certificate": if PUBLIC_CERTIFICATE.load(Ordering::Relaxed) { "public" } else { "pinned" }, "sessions": counts })
-}
 
 /// Explicit UDP listener/public HTTPS URL, and the public certificate the host's HTTPS site already holds for that
 /// name, if it serves it: else a certificate of its own, which browsers take only pinned.
@@ -121,11 +103,10 @@ impl Certificates {
     fn new(host: &str, files: Option<&CertFiles>, now: OffsetDateTime) -> io::Result<Self> {
         if let Some(files) = files {
             match Certificate::load(files) {
-                Ok(current) => { PUBLIC_CERTIFICATE.store(true, Ordering::Relaxed); return Ok(Self { current, next: None, rotate_at: Instant::now() + RELOAD }) },
+                Ok(current) => return Ok(Self { current, next: None, rotate_at: Instant::now() + RELOAD }),
                 Err(error) => tracing::warn!(%error, "avendb: WebTransport falls back to a certificate of its own, pinned"),
             }
         }
-        PUBLIC_CERTIFICATE.store(false, Ordering::Relaxed);
         Ok(Self { current: Certificate::generate(host, now)?, next: Some(Certificate::generate(host, now)?), rotate_at: Instant::now() + ROTATION })
     }
     /// The hashes a browser pins: none with a public certificate.
@@ -433,39 +414,32 @@ async fn session(inner: Arc<Inner>, incoming: IncomingSessionFuture, permit: tok
     let request = tokio::select! {
         biased;
         _ = stopped(&mut stop) => return,
-        request = timeout(HANDSHAKE, incoming.into_future()) => match request { Ok(Ok(request)) => request, _ => { outcome(Outcome::NoRequest); return } },
+        request = timeout(HANDSHAKE, incoming.into_future()) => match request { Ok(Ok(request)) => request, _ => return },
     };
-    let wrong = if request.authority() != inner.authority { Some(Outcome::WrongAuthority) }
-        else if !request.origin().is_some_and(|origin| inner.origins.contains(origin)) { Some(Outcome::WrongOrigin) } else { None };
-    if let Some(wrong) = wrong {
-        outcome(wrong);
-        tracing::info!(authority = request.authority(), origin = ?request.origin(), "avendb: WebTransport session refused");
+    if request.authority() != inner.authority || !request.origin().is_some_and(|origin| inner.origins.contains(origin)) {
         let _ = timeout(Duration::from_secs(1), request.forbidden()).await; return;
     }
     let Some(id) = inner.take_ticket(request.path(), Instant::now()) else {
-        outcome(Outcome::NoTicket);
         let _ = timeout(Duration::from_secs(1), request.not_found()).await; return;
     };
     let connection = tokio::select! {
         biased;
         _ = stopped(&mut stop) => { inner.finish(&id); return; },
         connection = timeout(HANDSHAKE, request.accept()) => match connection {
-            Ok(Ok(connection)) => connection, _ => { outcome(Outcome::NotAccepted); inner.finish(&id); return; }
+            Ok(Ok(connection)) => connection, _ => { inner.finish(&id); return; }
         },
     };
     drop(permit);
     let Some(mtu) = connection.max_datagram_size().filter(|mtu| (256..=65535).contains(mtu)) else {
-        outcome(Outcome::NoDatagrams);
         connection.close(CLOSE, b"datagrams unavailable"); inner.finish(&id); return;
     };
     let installed = {
         let mut state = inner.state.lock().expect("WT state");
         state.routes.get_mut(&id).map(|route| { route.connection = Some(connection.clone()); (route.peer, route.expires) })
     };
-    let Some((peer, expires)) = installed else { outcome(Outcome::Expired); connection.close(CLOSE, b"reservation expired"); return; };
+    let Some((peer, expires)) = installed else { connection.close(CLOSE, b"reservation expired"); return; };
     let address = match inner.broker.ready(&id, mtu) { Ok(addr) => addr, Err(_) => { inner.finish(&id); return; } };
     if inner.events.try_send(WtEvent::Ready { id: id.clone(), peer, address }).is_err() { inner.finish(&id); return; }
-    outcome(Outcome::Ready);
     loop {
         tokio::select! {
             biased;
@@ -477,7 +451,6 @@ async fn session(inner: Arc<Inner>, incoming: IncomingSessionFuture, permit: tok
             }
         }
     }
-    outcome(Outcome::Ended);
     inner.finish(&id);
 }
 
