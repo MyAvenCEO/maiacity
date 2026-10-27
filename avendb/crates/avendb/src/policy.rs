@@ -956,15 +956,15 @@ pub struct State {
     over: Arc<HashMap<VaultId, Vec<usize>>>,
     revoked: Arc<Listed<ShareId>>,
     /// In the order they were created, with each one's place.
-    entries: Arc<Vec<Entry>>,
-    entry_at: Arc<HashMap<EntryId, usize>>,
+    entries: imbl::Vector<Entry>,
+    entry_at: imbl::HashMap<EntryId, usize>,
     /// Every entry id ever created, even of an entry that fell since: an id is created once, so an entry key's name
     /// (the entry, its stay, an epoch) names one key.
     born: Arc<Listed<EntryId>>,
     /// In the order they were accepted, with each one's place and the places of each entry's.
-    writes: Arc<Vec<Write>>,
-    write_at: Arc<HashMap<EditId, usize>>,
-    by_entry: Arc<HashMap<EntryId, Vec<usize>>>,
+    writes: imbl::Vector<Write>,
+    write_at: imbl::HashMap<EditId, usize>,
+    by_entry: imbl::HashMap<EntryId, Vec<usize>>,
     /// The shares of every audience an entry was ever in or created in, by its id.
     audiences: Arc<HashMap<AudienceId, Arc<[ShareId]>>>,
     /// The audiences entries are in now, with their vault and how many.
@@ -1137,7 +1137,7 @@ impl State {
     }
 
     /// Every entry, in the order they were created.
-    pub fn entries(&self) -> &[Entry] {
+    pub fn entries(&self) -> &imbl::Vector<Entry> {
         &self.entries
     }
 
@@ -1192,7 +1192,7 @@ impl State {
     }
 
     /// Every accepted write, in replay order.
-    pub fn all_writes(&self) -> &[Write] {
+    pub fn all_writes(&self) -> &imbl::Vector<Write> {
         &self.writes
     }
 
@@ -2529,7 +2529,8 @@ impl State {
                         en.stay_audience(stay).ok_or(Refusal::UnknownStay)?;
                         // what it builds on was accepted, so the accepted writes stay causally closed (T14); a write
                         // on a proposal builds on the proposal's start
-                        builds_on(&self.entry_writes(e).collect::<Vec<_>>(), &w)?;
+                        // (each write it names looked up by its id, of its entry: not a scan of the entry's history)
+                        builds_on_lookup(&w, |id| self.write(id).into_iter())?;
                         // only the vault's own devices change tags; anyone else asks them to, in its body
                         Ok(Change::Write(w, actor == v))
                     }
@@ -2738,15 +2739,15 @@ impl State {
                 Arc::make_mut(&mut self.audiences).entry(audience).or_insert(shares);
                 let fresh = self.enter(v, audience);
                 Arc::make_mut(&mut self.born).push(e);
-                Arc::make_mut(&mut self.entry_at).insert(e, i);
-                Arc::make_mut(&mut self.entries).push(en);
+                self.entry_at.insert(e, i);
+                self.entries.push_back(en);
                 self.add_write(*w);
                 Touch::Created { entry: i, fresh }
             }
             Change::Write(w, retag) => {
                 if retag {
                     let at = self.entry_at[&w.entry];
-                    Arc::make_mut(&mut self.entries)[at].retags.push(w.edit);
+                    self.entries[at].retags.push(w.edit);
                 }
                 Touch::Wrote(self.add_write(w))
             }
@@ -2759,7 +2760,7 @@ impl State {
                 Arc::make_mut(&mut self.audiences).entry(to).or_insert(shares);
                 self.leave(from);
                 let fresh = self.enter(v, to);
-                Arc::make_mut(&mut self.entries)[at].stays.push((Some(stay), to));
+                self.entries[at].stays.push((Some(stay), to));
                 Touch::Moved { entry: at, fresh }
             }
         }
@@ -2786,9 +2787,9 @@ impl State {
     /// Add an accepted write: its place.
     fn add_write(&mut self, w: Write) -> usize {
         let i = self.writes.len();
-        Arc::make_mut(&mut self.write_at).insert(w.edit, i);
-        Arc::make_mut(&mut self.by_entry).entry(w.entry).or_default().push(i);
-        Arc::make_mut(&mut self.writes).push(w);
+        self.write_at.insert(w.edit, i);
+        self.by_entry.entry(w.entry).or_default().push(i);
+        self.writes.push_back(w);
         i
     }
 
@@ -2811,8 +2812,8 @@ impl State {
         let created: HashSet<EntryId> = kept.iter().filter(|w| w.first).map(|w| w.entry).collect();
         let entries: Vec<Entry> = self.entries.iter().filter(|en| created.contains(&en.id)).cloned().collect();
         kept.retain(|w| created.contains(&w.entry));
-        self.entries = Arc::new(entries);
-        self.writes = Arc::new(kept);
+        self.entries = entries.into();
+        self.writes = kept.into();
         self.index_entries();
     }
 
@@ -2841,10 +2842,8 @@ impl State {
     /// (`State.withSlice`). An audience it names joins those known, as the entry's creation or a mark would add it.
     pub fn with_slice(&self, e: EntryId, sl: &Slice) -> State {
         let mut st = self.clone();
-        let entries = st.entries.iter().filter(|en| en.id != e).chain(&sl.entries).cloned().collect();
-        let writes = st.writes.iter().filter(|w| w.entry != e).chain(&sl.writes).cloned().collect();
-        st.entries = Arc::new(entries);
-        st.writes = Arc::new(writes);
+        st.entries = st.entries.iter().filter(|en| en.id != e).chain(&sl.entries).cloned().collect();
+        st.writes = st.writes.iter().filter(|w| w.entry != e).chain(&sl.writes).cloned().collect();
         st.index_entries();
         let audiences = Arc::make_mut(&mut st.audiences);
         for (x, shares) in &sl.audiences {
@@ -2867,13 +2866,13 @@ impl State {
 
     /// Index the entries and the writes again, and count the audiences in use.
     fn index_entries(&mut self) {
-        self.entry_at = Arc::new(self.entries.iter().enumerate().map(|(i, en)| (en.id, i)).collect());
-        self.write_at = Arc::new(self.writes.iter().enumerate().map(|(i, w)| (w.edit, i)).collect());
+        self.entry_at = self.entries.iter().enumerate().map(|(i, en)| (en.id, i)).collect();
+        self.write_at = self.writes.iter().enumerate().map(|(i, w)| (w.edit, i)).collect();
         let mut by_entry: HashMap<EntryId, Vec<usize>> = HashMap::new();
         for (i, w) in self.writes.iter().enumerate() {
             by_entry.entry(w.entry).or_default().push(i);
         }
-        self.by_entry = Arc::new(by_entry);
+        self.by_entry = by_entry.into_iter().collect();
         let mut in_use: HashMap<AudienceId, (VaultId, usize)> = HashMap::new();
         for en in self.entries.iter() {
             in_use.entry(en.audience()).or_insert((en.vault, 0)).1 += 1;
@@ -3939,9 +3938,14 @@ impl PartialEq for Replay {
 /// How many edits at the end of the order a replay replays again, at most and about, when new edits sort among them:
 /// the edits peers made while this one was away sort there.
 const TAIL: usize = 4096;
-/// How far behind where the new edits reach the place stays, beside the last `TAIL`: none, as each page of a stream
-/// sorts after the last.
-const MARGIN: usize = 0;
+/// How far behind where the new edits reach the place stays, beside the last `TAIL`, after a page of a stream
+/// (`STREAM`): a few, as each page sorts after the last.
+const MARGIN: usize = 64;
+/// How many new edits at once make a page of a stream (a first sync's), whose next page sorts after it: only then
+/// does the place move up to them (`MARGIN`). A peer's few late edits, drafted on a little less than this one held,
+/// sort among the last edits and leave the place before the last `TAIL`, so the next late edit still replays the tail
+/// alone (`late_past_moves`), not the whole.
+const STREAM: usize = 256;
 /// How far the place must move on to be moved.
 const MOVE: usize = 1;
 
@@ -4183,10 +4187,11 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'st
         }
     }
     let (tail_edits, tail_ids): (Vec<Edit>, Vec<EditId>) = merged.into_iter().unzip();
-    // a new place: before the last `TAIL` edits, or, where new edits came in a stream of pages each sorting after the
+    // a new place: before the last `TAIL` edits, or, where new edits came in a page of a stream each sorting after the
     // last (a view's edits first, then the rest), `MARGIN` behind where the new ones reach, so the next page replays
     // the few after it, not the last `TAIL` again and again
-    let to = tail_edits.len().saturating_sub(TAIL).max(past_new.saturating_sub(MARGIN));
+    let streamed = if fresh.len() >= STREAM { past_new.saturating_sub(MARGIN) } else { 0 };
+    let to = tail_edits.len().saturating_sub(TAIL).max(streamed);
     let again = (to >= MOVE).then_some(to);
     let none = HashSet::new();
     let mut base = None;

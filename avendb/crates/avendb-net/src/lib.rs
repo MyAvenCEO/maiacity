@@ -783,6 +783,7 @@ impl Node {
             ui_receipts: peer_receipts::Receipts::for_ui(),
             outreach,
             wanted: Mutex::default(),
+            claims: Mutex::default(),
             interests: Mutex::default(),
             discovery_running: Mutex::default(),
             discovery_mark: Mutex::default(),
@@ -2070,6 +2071,8 @@ struct Shared {
     outreach: actor::Outreach,
     /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
     wanted: Mutex<BTreeSet<LogId>>,
+    /// Which peer each log is asked of now (`Claims`): a log comes from one peer at a time, never from each.
+    claims: Mutex<Claims>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
     interests: Mutex<interest::Interests>,
     discovery_running: Mutex<HashMap<String, bool>>,
@@ -3181,7 +3184,10 @@ impl Shared {
     async fn ask_differing(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
-        let mut left = self.differ(peer.device).await;
+        // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends
+        let differing = self.differ(peer.device).await;
+        let mut left = self.claims.lock().expect("claims").take(endpoint, differing);
+        let _claimed = Claimed { shared: self, endpoint };
         let (mut new, mut keys, mut first, mut viewed) = (0, BTreeSet::new(), true, true);
         let asked = loop {
             let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
@@ -3323,6 +3329,59 @@ impl Shared {
     }
 }
 
+/// Which peer each log is asked of now (S5): a log that two peers hold more of comes from the first one asked for
+/// it alone, not from both at once, which sent each of its edits twice and replayed them twice (the server's and
+/// the Mac's answers to a phone's first sync). A peer that held more of a log asked of another is owed an asking
+/// again once that other's ends (`release`), so what the first did not bring, the second still does, and a failed
+/// asking's logs go to the next peer at once rather than after its wait.
+#[derive(Default)]
+struct Claims {
+    by: BTreeMap<LogId, EndpointId>,
+    owed: BTreeSet<EndpointId>,
+}
+
+impl Claims {
+    /// The logs of `differing` no other peer is asked for now, claimed for `endpoint`; owes it an asking again if
+    /// it left any out.
+    fn take(&mut self, endpoint: EndpointId, differing: BTreeSet<LogId>) -> BTreeSet<LogId> {
+        let (mine, others): (BTreeSet<_>, BTreeSet<_>) =
+            differing.into_iter().partition(|l| self.by.get(l).is_none_or(|e| *e == endpoint));
+        if others.is_empty() {
+            self.owed.remove(&endpoint);
+        } else {
+            self.owed.insert(endpoint);
+        }
+        self.by.extend(mine.iter().map(|l| (*l, endpoint)));
+        mine
+    }
+
+    /// Ends `endpoint`'s claims: the other peers owed an asking, to ask again now. One still owed for logs claimed
+    /// by a third stays owed, so it is asked again when that one ends too.
+    fn release(&mut self, endpoint: EndpointId) -> BTreeSet<EndpointId> {
+        let before = self.by.len();
+        self.by.retain(|_, e| *e != endpoint);
+        if self.by.len() == before {
+            return BTreeSet::new();
+        }
+        self.owed.iter().filter(|e| **e != endpoint).copied().collect()
+    }
+}
+
+/// An asking's claims (`Claims`), ended as it drops, and the peers they held back asked again.
+struct Claimed<'a> {
+    shared: &'a Shared,
+    endpoint: EndpointId,
+}
+
+impl Drop for Claimed<'_> {
+    fn drop(&mut self) {
+        let again = self.shared.claims.lock().map(|mut c| c.release(self.endpoint)).unwrap_or_default();
+        for endpoint in again {
+            self.shared.outreach.send(actor::Msg::Ask { endpoint });
+        }
+    }
+}
+
 /// The most logs a first asking names for the open views (`next_asking`): their own few, not a vault's thousands.
 const VIEW_LOGS: usize = 1024;
 
@@ -3350,6 +3409,22 @@ fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[L
 mod tests {
     use super::*;
     use avendb::id::EntryId;
+
+    /// S5: a log two peers hold more of is asked of one of them at a time; the other is asked again once that
+    /// asking ends, and owed nothing more once it took all it differed by.
+    #[test]
+    fn each_log_is_asked_of_one_peer_and_the_other_is_asked_again_after() {
+        let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
+        let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        let mut claims = Claims::default();
+        let both: BTreeSet<_> = [log(1), log(2)].into();
+        assert_eq!(claims.take(server, both.clone()), both, "the first asked takes all");
+        assert_eq!(claims.take(mac, [log(2), log(3)].into()), [log(3)].into(), "the other only what no one asks for");
+        assert_eq!(claims.release(server), [mac].into(), "its end asks the held-back peer again");
+        assert_eq!(claims.take(mac, [log(2)].into()), [log(2)].into(), "which takes what is left");
+        assert_eq!(claims.release(mac), BTreeSet::new(), "and is owed nothing more");
+        assert_eq!(claims.release(server), BTreeSet::new(), "an asking that claimed nothing wakes no one");
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn bootstrap_pump_finishes_suffix_without_foreground_mutations() {
