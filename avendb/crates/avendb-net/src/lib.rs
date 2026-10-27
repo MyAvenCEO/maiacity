@@ -2022,10 +2022,10 @@ impl edits::Taker for Restorer {
         Ok(())
     }
 
-    async fn page(&mut self, page: Vec<Signed>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()> {
+    async fn page(&mut self, page: Vec<(Signed, Option<avendb::lab::Placed>)>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()> {
         let ((mut lab, mut r), me) = (self.take(), self.me);
         let take = move || {
-            lab.restore_page(me, &mut r, page, keys, of_head);
+            lab.restore_page_placed(me, &mut r, page, keys, of_head);
             (lab, r)
         };
         #[cfg(not(target_arch = "wasm32"))]

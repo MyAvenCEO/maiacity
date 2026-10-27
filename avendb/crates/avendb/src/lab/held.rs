@@ -78,6 +78,9 @@ static FILES: AtomicU64 = AtomicU64::new(0);
 enum File {
     Own { path: PathBuf, file: Mutex<(fs::File, u64)> },
     Space(Arc<dyn Space>),
+    /// A file of its shelf's that holds records as they went in, a pack of edits (`Placed`): read where they are, never
+    /// written or removed by it.
+    Shelf(fs::File),
 }
 
 impl File {
@@ -102,6 +105,7 @@ impl File {
                 Ok(at)
             }
             File::Space(space) => space.append(bytes),
+            File::Shelf(_) => Err(io::Error::other("a shelf's file takes nothing")),
         }
     }
 
@@ -110,6 +114,7 @@ impl File {
         match self {
             File::Own { file, .. } => read_at(&file.lock().expect("a spill file").0, &mut bytes, at)?,
             File::Space(space) => space.read_at(at, &mut bytes)?,
+            File::Shelf(file) => read_at(file, &mut bytes, at)?,
         }
         Ok(bytes)
     }
@@ -119,6 +124,7 @@ impl File {
         match self {
             File::Own { file, .. } => file.lock().expect("a spill file").1,
             File::Space(space) => space.len(),
+            File::Shelf(_) => 0,
         }
     }
 }
@@ -197,9 +203,11 @@ impl Record for Arc<[u8]> {
     }
 }
 
-/// Where a record is in its spill's file: its place, its length, and the BLAKE3 hash of its bytes.
+/// Where a record is: in which of its spill's files (`Spilled::files`, its own the first), its place there, its
+/// length, and the BLAKE3 hash of its bytes.
 #[derive(Clone, Copy)]
 struct Slot {
+    file: u32,
     at: u64,
     len: u32,
     sum: [u8; 32],
@@ -207,16 +215,28 @@ struct Slot {
 
 impl Slot {
     fn to_bytes(self) -> Vec<u8> {
-        [&self.at.to_be_bytes()[..], &self.len.to_be_bytes(), &self.sum].concat()
+        [&self.file.to_be_bytes()[..], &self.at.to_be_bytes(), &self.len.to_be_bytes(), &self.sum].concat()
     }
 
     fn from_bytes(bytes: &[u8]) -> Option<Slot> {
-        (bytes.len() == 44).then(|| Slot {
-            at: u64::from_be_bytes(bytes[..8].try_into().expect("8 bytes")),
-            len: u32::from_be_bytes(bytes[8..12].try_into().expect("4 bytes")),
-            sum: bytes[12..].try_into().expect("32 bytes"),
+        (bytes.len() == 48).then(|| Slot {
+            file: u32::from_be_bytes(bytes[..4].try_into().expect("4 bytes")),
+            at: u64::from_be_bytes(bytes[4..12].try_into().expect("8 bytes")),
+            len: u32::from_be_bytes(bytes[12..16].try_into().expect("4 bytes")),
+            sum: bytes[16..].try_into().expect("32 bytes"),
         })
     }
+}
+
+/// Where a signed edit is in a file of its device's shelf as the device takes it back (`Lab::restore_page`): the file,
+/// its place there, its length, and the BLAKE3 hash of its bytes, the edit on the wire. A spill in a folder of its own
+/// indexes it there instead of copying it into its file (`Signeds::insert_placed`).
+#[derive(Clone, Debug)]
+pub struct Placed {
+    pub file: Arc<PathBuf>,
+    pub at: u64,
+    pub len: u32,
+    pub sum: [u8; 32],
 }
 
 /// The records a spill read or took lately, each with when it was used last, `budget` bytes of them at most.
@@ -278,6 +298,9 @@ struct Spilled<V: Record> {
     spill: Spill,
     what: &'static str,
     file: Arc<File>,
+    /// Its files: its own first, then those of its shelf it reads records of in place (`insert_at`), each once.
+    files: Vec<Arc<File>>,
+    shelf_files: HashMap<Arc<PathBuf>, u32>,
     at: Runs,
     count: usize,
     bytes: u64,
@@ -289,7 +312,29 @@ impl<V: Record> Spilled<V> {
         let file = Arc::new(File::new(spill, what)?);
         let hot = Mutex::new(Hot::new(spill.budget * 3 / 8));
         let at = Runs::new(&spill.pages);
-        Ok(Spilled { spill: spill.clone(), what, file, at, count: 0, bytes: 0, hot })
+        let files = vec![file.clone()];
+        Ok(Spilled { spill: spill.clone(), what, file, files, shelf_files: HashMap::new(), at, count: 0, bytes: 0, hot })
+    }
+
+    /// The record under `k` is `len` bytes at `at` in file `path` of its shelf, which hash to `sum`: indexed there, not
+    /// copied. A spill in a space (a page's OPFS) copies it, as it reads no files; so does one whose file doesn't open.
+    fn insert_at(&mut self, k: V::Key, v: V, path: &Arc<PathBuf>, at: u64, len: u32, sum: [u8; 32]) {
+        if self.spill.space.is_some() {
+            return self.insert(k, v);
+        }
+        let file = match self.shelf_files.get(path) {
+            Some(&n) => n,
+            None => match fs::File::open(path.as_path()) {
+                Ok(f) => {
+                    let n = self.files.len() as u32;
+                    self.files.push(Arc::new(File::Shelf(f)));
+                    self.shelf_files.insert(path.clone(), n);
+                    n
+                }
+                Err(_) => return self.insert(k, v),
+            },
+        };
+        self.set(&k, Some(Slot { file, at, len, sum }));
     }
 
     /// Where the record under `k` is, if it holds one.
@@ -318,7 +363,8 @@ impl<V: Record> Spilled<V> {
         if let Some(v) = self.hot.lock().expect("hot").get(k) {
             return Some(v);
         }
-        let bytes = self.file.read(slot.at, slot.len).unwrap_or_else(|e| panic!("avendb: its spill of {} doesn't read: {e}", self.what));
+        let bytes = self.files[slot.file as usize].read(slot.at, slot.len)
+            .unwrap_or_else(|e| panic!("avendb: its spill of {} doesn't read: {e}", self.what));
         let whole = *blake3::hash(&bytes).as_bytes() == slot.sum;
         let v = whole.then(|| V::from_bytes(k, &bytes)).flatten();
         let v = v.unwrap_or_else(|| panic!("avendb: its spill of {} changed in its folder: a disk it can't trust", self.what));
@@ -330,7 +376,7 @@ impl<V: Record> Spilled<V> {
         let bytes = v.bytes();
         let at = self.file.append(&bytes).unwrap_or_else(|e| panic!("avendb: its spill of {} takes nothing: {e}", self.what));
         let len = u32::try_from(bytes.len()).expect("a record under 4 GB");
-        self.set(&k, Some(Slot { at, len, sum: *blake3::hash(&bytes).as_bytes() }));
+        self.set(&k, Some(Slot { file: 0, at, len, sum: *blake3::hash(&bytes).as_bytes() }));
         self.hot.lock().expect("hot").put(k, v);
     }
 
@@ -346,7 +392,8 @@ impl<V: Record> Clone for Spilled<V> {
     fn clone(&self) -> Spilled<V> {
         let hot = Mutex::new(Hot::new(self.spill.budget * 3 / 8));
         let (spill, file, at) = (self.spill.clone(), self.file.clone(), self.at.clone());
-        Spilled { spill, what: self.what, file, at, count: self.count, bytes: self.bytes, hot }
+        let (files, shelf_files) = (self.files.clone(), self.shelf_files.clone());
+        Spilled { spill, what: self.what, file, files, shelf_files, at, count: self.count, bytes: self.bytes, hot }
     }
 }
 
@@ -524,6 +571,20 @@ impl Signeds {
             self.signers.entry(sig.keys.id()).or_insert_with(|| (sig.keys.clone(), 0)).1 += 1;
         }
         self.held.insert(id, Arc::new(signed));
+    }
+
+    /// `insert`, of an edit its shelf holds where `placed` says: spilled, it reads it from there from now on.
+    pub(crate) fn insert_placed(&mut self, id: EditId, signed: Signed, placed: &Placed) {
+        if self.held.spilled.is_none() {
+            return self.insert(id, signed);
+        }
+        self.remove(&id);
+        self.stripped.remove(&id);
+        for sig in &signed.sigs {
+            self.signers.entry(sig.keys.id()).or_insert_with(|| (sig.keys.clone(), 0)).1 += 1;
+        }
+        let spilled = self.held.spilled.as_mut().expect("spilled");
+        spilled.insert_at(id, Arc::new(signed), &placed.file, placed.at, placed.len, placed.sum);
     }
 
     pub(crate) fn remove(&mut self, id: &EditId) {

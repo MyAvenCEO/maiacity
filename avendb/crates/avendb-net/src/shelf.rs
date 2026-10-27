@@ -107,6 +107,9 @@ pub struct Shelf {
     bounded: Option<BoundedReader>,
     access: Option<Access>,
     readonly: bool,
+    /// The folder its blobs are files in, `blobs/<hash>`, where it is a folder's (`disk`): what a device's spill
+    /// reads its edits from in place (`local_blob`).
+    local: Option<Arc<std::path::PathBuf>>,
 }
 #[derive(Clone, Debug)]
 enum Route {
@@ -266,6 +269,7 @@ impl Shelf {
                 bounded: None,
                 access: None,
                 readonly: false,
+                local: None,
             },
             rx,
         )
@@ -340,7 +344,20 @@ impl Shelf {
     }
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn native(queue: crate::disk_queue::Queue<Call>, source: crate::writer::Source) -> Self {
-        Self { route: Route::Native { queue, source }, atomic: true, bounded: None, access: None, readonly: true }
+        Self { route: Route::Native { queue, source }, atomic: true, bounded: None, access: None, readonly: true, local: None }
+    }
+
+    /// It, its blobs files of folder `dir`'s `blobs/` (`local_blob`).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn with_local(mut self, dir: std::path::PathBuf) -> Self {
+        self.local = Some(Arc::new(dir));
+        self
+    }
+
+    /// The file blob `hash` is, where its blobs are files in a folder (`disk`): finished blobs are never written to
+    /// again, so a reader holding the file open reads what the blob held, even after the shelf lets it go.
+    pub(crate) fn local_blob(&self, hash: Hash) -> Option<std::path::PathBuf> {
+        Some(self.local.as_ref()?.join("blobs").join(hash.to_hex()))
     }
     /// An independent read handle; it may be used to claim a later writer after
     /// this owner has completed shutdown, but cannot write through the current owner.
@@ -608,6 +625,11 @@ pub(crate) struct BlobReader<'a> {
 impl BlobReader<'_> {
     pub(crate) fn remaining(&self) -> u64 {
         self.size - self.at
+    }
+
+    /// Where in the blob the next `take` begins.
+    pub(crate) fn at(&self) -> u64 {
+        self.at
     }
 
     /// The next `len` bytes. A length beyond the blob is refused before allocation; a record crossing read

@@ -99,7 +99,7 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 mod blind_index;
 #[path = "lab/held.rs"]
 pub(crate) mod held;
-pub use held::Spill;
+pub use held::{Placed, Spill};
 #[cfg(test)]
 #[path = "lab/query_coverage.rs"]
 mod query_coverage;
@@ -2432,12 +2432,20 @@ impl Lab {
     /// Device `to` keeps `fresh`, new edits whose signatures checked out (`fresh`), and the blobs among `blobs` they
     /// name. True if there were any.
     fn keep_fresh(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs) -> bool {
-        self.keep_fresh_as(to, fresh, blobs, true)
+        self.keep_fresh_as(to, fresh, blobs, true, None)
     }
 
     /// `keep_fresh`, where `step` says a single write may step on what its edits say now (`latest`): not as it
     /// restores, which replays once it took every page.
-    fn keep_fresh_as(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs, step: bool) -> bool {
+    /// `placed` says where its shelf holds those of them it holds (`restore_page_placed`).
+    fn keep_fresh_as(
+        &mut self,
+        to: SignerId,
+        fresh: Vec<Signed>,
+        blobs: &Blobs,
+        step: bool,
+        placed: Option<&HashMap<EditId, Placed>>,
+    ) -> bool {
         let Some(store) = self.stores.get_mut(&self.at(to)) else {
             return false;
         };
@@ -2476,7 +2484,10 @@ impl Lab {
                 }
             }
             store.log.receive([signed.edit.clone()]);
-            store.signed.insert(id, signed);
+            match placed.and_then(|p| p.get(&id)) {
+                Some(p) => store.signed.insert_placed(id, signed, p),
+                None => store.signed.insert(id, signed),
+            }
             new = true;
         }
         if new {
@@ -4320,6 +4331,38 @@ impl Lab {
         self.held(d).perf.to_json()
     }
 
+    /// Takes part `part` of device `d`'s store out and hands it back, for a probe of what each part holds in memory
+    /// to let go of it and count what that frees (`avendb-net/tests/unlock_memory.rs`): the store is of no use after.
+    /// `None` for a part it doesn't know.
+    #[doc(hidden)]
+    pub fn probe_part(&mut self, d: SignerId, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
+        let store = self.stores.get_mut(&d)?;
+        fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
+            Some(Box::new(t))
+        }
+        match part {
+            "signed" => out(std::mem::take(&mut store.signed)),
+            "blobs" => out(std::mem::take(&mut store.blobs)),
+            "log" => out(std::mem::take(&mut store.log)),
+            "replay" => out(std::mem::replace(&mut store.replay, replay(&[]))),
+            "latest" => out(std::mem::take(&mut store.latest)),
+            "key_index" => out(std::mem::take(&mut store.key_ix.ix)),
+            "keys" => out(std::mem::take(&mut store.keys)),
+            "bases" => out((std::mem::take(&mut store.bases), std::mem::take(&mut store.based))),
+            "bodies" => out((std::mem::take(&mut store.bodies), std::mem::take(&mut store.opened))),
+            "readings" => out(std::mem::take(&mut store.readings)),
+            "shown" => out(std::mem::take(&mut store.shown)),
+            "answers" => out(std::mem::take(&mut store.answers)),
+            "files_at" => out(std::mem::take(&mut store.files_at)),
+            "slices" => out(std::mem::take(&mut store.slices)),
+            "opened_keys" => out((std::mem::take(&mut store.opened_before), std::mem::take(&mut store.opened_since))),
+            "derived" => out((std::mem::take(&mut store.derived), std::mem::take(&mut store.unopened))),
+            "covers" => out((std::mem::take(&mut store.covers), std::mem::take(&mut store.bare))),
+            "showing" => out(std::mem::take(&mut store.showing)),
+            _ => None,
+        }
+    }
+
     /// How far device `d`'s replay is behind the edits it holds, and whether its latest state is worked out: what a
     /// slow answer may be waiting on (`latest` replays the rest under the Lab's lock).
     pub fn replay_lag(&self, d: SignerId) -> Value {
@@ -5681,7 +5724,7 @@ impl Lab {
         let Backup { signed, blobs, bases } = backup;
         let mut r = self.restore_start(d, checked.map(|c| c.0), warm);
         r.vouch = if r.matched { checked.map_or(0, |c| c.1) } else { 0 };
-        self.restore_page_of(d, &mut r, signed, &blobs, false);
+        self.restore_page_of(d, &mut r, signed, &blobs, false, None);
         self.restore_end_with(d, r, bases, warm);
     }
 
@@ -5728,15 +5771,43 @@ impl Lab {
         keys: impl IntoIterator<Item = Arc<[u8]>>,
         checked: bool,
     ) {
+        self.restore_page_placed(d, r, page.into_iter().map(|s| (s, None)).collect(), keys, checked);
+    }
+
+    /// `restore_page`, each edit with where its shelf holds it, if in a file (`Placed`): a device spilled into a folder
+    /// of its own reads it from there, never copying it into its spill.
+    pub fn restore_page_placed(
+        &mut self,
+        d: SignerId,
+        r: &mut Restoring,
+        page: Vec<(Signed, Option<Placed>)>,
+        keys: impl IntoIterator<Item = Arc<[u8]>>,
+        checked: bool,
+    ) {
         if checked && r.matched {
             r.vouch = r.taken + page.len();
         }
         let blobs: Blobs = keys.into_iter().map(|b| (BlobId::of(&b), b)).collect();
-        self.restore_page_of(d, r, page, &blobs, true);
+        let mut placed = HashMap::new();
+        let page = page.into_iter().map(|(s, p)| {
+            if let Some(p) = p {
+                placed.insert(s.edit.id(), p);
+            }
+            s
+        }).collect();
+        self.restore_page_of(d, r, page, &blobs, true, Some(&placed));
     }
 
     /// `restore_page`: in the order they came where `in_order`, else as `fresh` orders them, held bare first.
-    fn restore_page_of(&mut self, d: SignerId, r: &mut Restoring, page: Vec<Signed>, blobs: &Blobs, in_order: bool) {
+    fn restore_page_of(
+        &mut self,
+        d: SignerId,
+        r: &mut Restoring,
+        page: Vec<Signed>,
+        blobs: &Blobs,
+        in_order: bool,
+        placed: Option<&HashMap<EditId, Placed>>,
+    ) {
         let (at, offered) = (Perf::start(), page.len() as u64);
         // the first edits of those it restores are those its shelf names it checked (`restore_start`)
         let vouched: HashSet<EditId> = page.iter().take(r.vouch.saturating_sub(r.taken)).map(|s| s.edit.id()).collect();
@@ -5756,7 +5827,7 @@ impl Lab {
             r.wanting.extend(fresh.iter().flat_map(|s| s.edit.blobs())
                 .filter(|b| !blobs.contains_key(b) && !store.blobs.contains_key(b)));
         }
-        self.keep_fresh_as(d, fresh, blobs, false);
+        self.keep_fresh_as(d, fresh, blobs, false, placed);
     }
 
     /// The McEliece keys the edits device `d` restored so far name, which didn't come with their pages
@@ -5798,7 +5869,7 @@ impl Lab {
                 Some(store) => r.doubtful.into_iter().filter(|s| store.covers.contains(&s.edit.id())).collect(),
                 None => vec![],
             };
-            self.keep_fresh_as(d, late, &Blobs::new(), false);
+            self.keep_fresh_as(d, late, &Blobs::new(), false, None);
         }
         let key = self.shelf_key(d);
         if let Some(store) = self.stores.get_mut(&d) {
