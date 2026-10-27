@@ -7,9 +7,10 @@
 //! between (`put_items`). Nothing that follows from the rest is kept: a state's lookups, and the parents, depths and
 //! checkpoints of the edits, are worked out again as the view is read.
 //!
-//! The bytes are the device's own, sealed with its shelf key for this engine alone (`Lab::warming`): a view is read only
-//! by the build that wrote it. One that doesn't read back whole, or names other edits than the device holds, is no
-//! view, and the device replays every edit again.
+//! The bytes are the device's own, sealed with its shelf key to the replay rules they were worked out under
+//! (`Lab::warming`, `ViewRules.lean`): a view is read by any build of the same rules and the same format (`VIEW`). One
+//! that doesn't read back whole, or names other edits than the device holds, is no view, and the device replays every
+//! edit again.
 
 use std::collections::HashMap;
 use std::hash::Hash;

@@ -17,6 +17,7 @@ import AvenDB.Measurers
 import AvenDB.Theorems
 import AvenDB.KeyTree
 import AvenDB.HandedView
+import AvenDB.ViewRules
 import AvenDB.Examples
 import AvenDB.Checkpoint
 import AvenDB.Batches
