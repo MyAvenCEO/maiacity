@@ -20,6 +20,7 @@ name: avenDB backups
 # (AVENDB_BUCKET_SEAL) never reaches a runner.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'avendb/crates/avendb/src/backup.rs'
       - 'avendb/crates/avendb/src/sync.rs'
@@ -54,6 +55,7 @@ env:
 
 jobs:
   buckets:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Make sure the snapshot buckets are there, locked
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -126,6 +128,7 @@ jobs:
             {"ID":"unfinished-1-day","Status":"Enabled","Filter":{"Prefix":""},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
 
   recovery:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Full recovery test on the test bucket
     needs: buckets
     runs-on: ubuntu-latest
