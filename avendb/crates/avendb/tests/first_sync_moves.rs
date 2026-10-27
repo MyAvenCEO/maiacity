@@ -53,12 +53,17 @@ fn vault(held: usize) -> (Log, VaultId) {
             depth = depth.max(c.log.edits()[before..].iter().map(|e| e.depth).max().unwrap_or(0));
         }
         if n > 0 && n % NOTE_EVERY == 0 {
+            // taken as a peer's edit, as the writes below, not checked as the cast's own: `Log::append` replays every
+            // edit held to check one, so the vault took minutes in CI's build (100,000 edits timed out at 360 s) where
+            // the first sync it is for takes a second
             let before = c.log.edits().len();
             let e = EntryId::from_u64(1000 + made.len() as u64);
-            c.create(MAC_A, alice, e, alice, &[], "note", &[]).expect("a note");
+            depth += 1;
+            let note = Edit { parents: vec![], depth, author: MAC_A, cosigners: vec![], action: creation(alice, e, alice, &[]) };
+            c.log.receive([note]);
             made.push(e);
             was = replay_on(was, c.log.edits(), before);
-            depth = depth.max(c.log.edits()[before..].iter().map(|e| e.depth).max().unwrap_or(0));
+            assert!(was.state.entry(e).is_some(), "the note is made");
         }
         // both devices at one depth, each on its own note, drafted on what both held
         depth += 1;
@@ -166,7 +171,10 @@ fn a_first_sync_steps_each_page_with_moves_on() {
 
 /// The same at 100,000 edits: no page replays every edit held, and a page held after 80,000 takes about what one held
 /// after 10,000 takes (`FIRST_SYNC_MOVES` lines, printed).
+/// A bench: CI's bench job runs it in a release build (`avendb-checks.yml`), where it takes seconds; the debug build of
+/// the core tests took over 360 s. `a_first_sync_steps_each_page_with_moves_on` holds the same rule at 6,000 there.
 #[test]
+#[ignore = "a bench: the bench job of avendb-checks.yml runs it in a release build"]
 fn a_page_with_moves_costs_the_same_however_much_is_held() {
     let (log, _) = vault(100_000);
     let took = first_sync(&log);
