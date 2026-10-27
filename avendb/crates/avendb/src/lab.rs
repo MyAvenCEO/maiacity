@@ -479,7 +479,12 @@ impl ReceivePreparation {
 /// alone (a restore of Maia City's 18,955 edits spent 11.2 s of its 13.5 s checking them on one core, 2026-10-20); on
 /// one in a browser, which has no threads to spare.
 fn checked_all(signed: &[Signed]) -> Vec<bool> {
-    let one = |s: &Signed| s.verify().is_ok();
+    checked_refs(&signed.iter().collect::<Vec<_>>())
+}
+
+/// `checked_all`, of the edits `signed` names.
+fn checked_refs(signed: &[&Signed]) -> Vec<bool> {
+    let one = |s: &&Signed| s.verify().is_ok();
     #[cfg(not(target_arch = "wasm32"))]
     {
         let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
@@ -637,6 +642,19 @@ impl Touched {
 pub struct Warm {
     pub keys: Vec<Vec<u8>>,
     pub views: Vec<Vec<u8>>,
+}
+
+/// A restore a page at a time under way (`Lab::restore_start`): how many of the first edits it restores its shelf names
+/// it checked, how many it took so far, and those whose signatures didn't check out, which a later page's checkpoint
+/// may hold on its word yet.
+pub struct Restoring {
+    /// Its keys name the edits its shelf's head holds as their shelf names them (`restore_start`).
+    matched: bool,
+    vouch: usize,
+    taken: usize,
+    doubtful: Vec<Signed>,
+    /// The McEliece keys its edits name that didn't come with their pages (`Lab::restore_wants`).
+    wanting: HashSet<BlobId>,
 }
 
 /// What of `Warm` a device's shelf lacks (`Lab::warming`), for its shelf to take, and what it is of, for `Lab::warmed`.
@@ -1113,8 +1131,9 @@ struct Tip {
 struct KeyIndex {
     /// Each seed key announced, by name, with the public half keys are sealed to.
     made: HashMap<KeyName, Vec<(KeyId, PublicKey)>>,
-    /// Each box, after the name and the id of the key it holds.
-    boxes: Vec<(KeyName, KeyId, KeyBox)>,
+    /// Each box, after the name and the id of the key it holds: where it is, not its bytes, which its log holds
+    /// already (`IndexedBox`).
+    boxes: Vec<IndexedBox>,
     /// Which key has a box for which: its name, its id, the name of the key the box goes to.
     boxed: HashSet<(KeyName, KeyId, KeyName)>,
     /// Each key published in the clear, and their ids.
@@ -1125,7 +1144,7 @@ struct KeyIndex {
 }
 
 impl KeyIndex {
-    /// `held` being the edits `r` is the replay of (`Replay::edits`).
+    /// `held` being the edits `r` is the replay of (`Replay::edits`), which its boxes are read of again.
     fn of(r: &Replay, held: &[Edit]) -> KeyIndex {
         let mut ix = KeyIndex::default();
         ix.grow(r, held, 0);
@@ -1135,13 +1154,16 @@ impl KeyIndex {
     /// What `r`'s standing edits from the `from`th on add to it, as `of` reads them, `held` being the edits `r` is the
     /// replay of.
     fn grow(&mut self, r: &Replay, held: &[Edit], from: usize) {
-        let edits = r.edits(held).zip(&r.stood).skip(from).filter(|(_, stood)| **stood);
-        for (edit, _) in edits {
-            for (name, id, b) in edit.action.key_boxes() {
+        let edits = r.edits(held).zip(r.places()).zip(&r.stood).skip(from).filter(|(_, stood)| **stood);
+        for ((edit, &place), _) in edits {
+            for (slot, (name, id, b)) in edit.action.key_boxes().into_iter().enumerate() {
                 self.exists.insert(name);
                 self.exists.insert(b.to.name());
                 self.boxed.insert((name, id, b.to.name()));
-                self.boxes.push((name, id, b.clone()));
+                let mut first = [0; 32];
+                let n = b.bytes.len().min(32);
+                first[..n].copy_from_slice(&b.bytes[..n]);
+                self.boxes.push(IndexedBox { name, id, to: b.to, place, slot, first });
             }
             if let Action::Keys { name, id, public, clear, .. } = &edit.action {
                 self.exists.insert(*name);
@@ -1166,6 +1188,27 @@ impl KeyIndex {
     /// Key `id` of `name` is announced, its public half with it.
     fn announced(&self, name: KeyName, id: KeyId) -> bool {
         self.made.get(&name).is_some_and(|m| m.iter().any(|x| x.0 == id))
+    }
+}
+
+/// A box of a key in a `KeyIndex`: the name and the id of the key it holds, whom it is to, the edit it is of by its
+/// place in the log the index is of and which of that edit's boxes it is (`Action::key_box`), and its first bytes, what
+/// tells a box tried before (`Store::unopened`). Its bytes stay in the log alone: a key box is ~1.4 KB, and a copy of
+/// each in the index doubled what a device holds of them (F9).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct IndexedBox {
+    name: KeyName,
+    id: KeyId,
+    to: Recipient,
+    place: usize,
+    slot: usize,
+    first: [u8; 32],
+}
+
+impl IndexedBox {
+    /// Its bytes, of `held`, the edits of the log its index is of.
+    fn bytes<'a>(&self, held: &'a [Edit]) -> &'a [u8] {
+        &held[self.place].action.key_box(self.slot).expect("an indexed box").bytes
     }
 }
 
@@ -2365,9 +2408,36 @@ impl Lab {
         bare.into_iter().chain(rest.into_iter().zip(ok).filter_map(|(s, ok)| ok.then_some(s))).collect()
     }
 
+    /// `fresh`, for a restore a page at a time (`restore_page`): the new edits of `page` in the order they came, those
+    /// whose signatures check out, that `vouched` names or that a checkpoint it holds or of the page covers; and apart,
+    /// those whose signatures don't, which a checkpoint of a later page may cover yet (`restore_end`).
+    fn fresh_in_order(&self, to: SignerId, page: Vec<Signed>, vouched: &HashSet<EditId>) -> (Vec<Signed>, Vec<Signed>) {
+        let Some(store) = self.stores.get(&self.at(to)) else {
+            return (vec![], vec![]);
+        };
+        let mut seen = HashSet::new();
+        let new: Vec<Signed> =
+            page.into_iter().filter(|s| { let id = s.edit.id(); !store.signed.contains_key(&id) && seen.insert(id) }).collect();
+        let batch = covered(new.iter().map(|s| &s.edit));
+        let trusted = |s: &Signed| {
+            let id = s.edit.id();
+            store.covers.contains(&id) || batch.contains(&id) || vouched.contains(&id)
+        };
+        let to_check: Vec<&Signed> = new.iter().filter(|s| !trusted(s)).collect();
+        let fine: HashSet<EditId> = to_check.iter().copied().zip(checked_refs(&to_check)).filter(|(_, ok)| *ok)
+            .map(|(s, _)| s.edit.id()).collect();
+        new.into_iter().partition(|s| trusted(s) || fine.contains(&s.edit.id()))
+    }
+
     /// Device `to` keeps `fresh`, new edits whose signatures checked out (`fresh`), and the blobs among `blobs` they
     /// name. True if there were any.
     fn keep_fresh(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs) -> bool {
+        self.keep_fresh_as(to, fresh, blobs, true)
+    }
+
+    /// `keep_fresh`, where `step` says a single write may step on what its edits say now (`latest`): not as it
+    /// restores, which replays once it took every page.
+    fn keep_fresh_as(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs, step: bool) -> bool {
         let Some(store) = self.stores.get_mut(&self.at(to)) else {
             return false;
         };
@@ -2375,7 +2445,7 @@ impl Lab {
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
         let stepped = match &fresh[..] {
-            [one] if store.based.is_empty() => {
+            [one] if step && store.based.is_empty() => {
                 let whole = store.replayed == store.log.edits().len();
                 let was = store.latest.get().or(whole.then_some(&store.replay.state));
                 // the deepest edit it holds: its replay's last, or one it took since (`replay_on_why`)
@@ -4244,6 +4314,11 @@ impl Lab {
             "blob_bytes": store.blobs.bytes(),
             // what it holds of its edits and keys in memory, spilled or not (S7), and what its spills hold on disk
             "memory": { "edits": store.signed.memory(), "keys": store.blobs.memory(),
+                // what its log of edits and its key index hold, beside the signed edits above (F9)
+                "log": store.log.edits().iter()
+                    .map(|e| size_of::<Edit>() + (e.parents.len() + e.cosigners.len()) * 32 + e.action.heap_bytes())
+                    .sum::<usize>(),
+                "key_index": store.key_ix.ix.boxes.len() * size_of::<IndexedBox>(),
                 "spilled": store.signed.spilled_bytes() + store.blobs.spilled_bytes(),
                 "spilling": store.signed.is_spilled() },
         });
@@ -5577,37 +5652,132 @@ impl Lab {
     /// takes the keys it opened from all of them, and its replay from the newest view that opens for this engine and is
     /// of the edits its log starts with.
     pub fn restore_warm(&mut self, d: SignerId, backup: Backup, checked: Option<(Checked, usize)>, warm: &Warm) {
+        let Backup { signed, blobs, bases } = backup;
+        let mut r = self.restore_start(d, checked.map(|c| c.0), warm);
+        r.vouch = if r.matched { checked.map_or(0, |c| c.1) } else { 0 };
+        self.restore_page_of(d, &mut r, signed, &blobs, false);
+        self.restore_end_with(d, r, bases, warm);
+    }
+
+    /// `restore_warm` a page at a time, as a node takes its edits back from its shelf (`avendb_net::edits`): begun
+    /// here, each page of its signed edits in the order the shelf holds them taken by `restore_page`, and ended by
+    /// `restore_end`, which opens its stored view and brings it up to date. It holds a page of signed edits at a time
+    /// beside what it keeps, spilled or not, never the whole of them twice (F9: the Mac's unlock held all 1.08 GB of
+    /// them at once, and the copy for their anchors again).
+    /// Its shelf names the edits of the head it starts from by `checked`: where its keys of `warm` name the same, those
+    /// edits' signatures aren't checked again (`restore_page`).
+    pub fn restore_start(&mut self, d: SignerId, checked: Option<Checked>, warm: &Warm) -> Restoring {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
         // spilled as it was, into new files: the old ones go with the store they were of
         let (signed, blobs) = (held.signed.fresh(), held.blobs.fresh_keys());
-        let mut store =
-            Store { follow, query_depth, gate, perf, signed, blobs, bases: backup.bases.clone(), ..Store::default() };
+        let mut store = Store { follow, query_depth, gate, perf, signed, blobs, ..Store::default() };
         let key = self.shelf_key(d);
-        let mut vouched = HashSet::new();
+        let mut matched = false;
         // Decode and merge one slot at a time. Keeping both complete decoded key
         // maps alive until collection finishes needlessly raises the startup peak.
         // Preserve newest-to-oldest order and the existing per-slot validity checks.
         for (named, keys) in warm.keys.iter().filter_map(|bytes| {
             keys_of(&key.as_ref()?.unlock("keys", bytes, b"stored keys")?)
         }) {
-            if let (Some((now, n)), Some(named)) = (checked, named)
+            if let (Some(now), Some(named)) = (checked, named)
                 && now == named
             {
-                vouched.extend(backup.signed.iter().take(n).map(|s| s.edit.id()));
+                matched = true;
                 store.checked_given = Some(now);
             }
             store.opened_before.extend(keys);
         }
         self.stores.insert(d, store);
-        let (at, offered) = (Perf::start(), backup.signed.len() as u64);
-        let fresh = self.fresh(d, backup.signed, &vouched);
+        Restoring { matched, vouch: 0, taken: 0, doubtful: Vec::new(), wanting: HashSet::new() }
+    }
+
+    /// The next page of the signed edits device `d` restores (`restore_start`), in the order its shelf holds them, and
+    /// the McEliece keys they bring; of the head its shelf names by the `checked` it started with where `checked`.
+    pub fn restore_page(
+        &mut self,
+        d: SignerId,
+        r: &mut Restoring,
+        page: Vec<Signed>,
+        keys: impl IntoIterator<Item = Arc<[u8]>>,
+        checked: bool,
+    ) {
+        if checked && r.matched {
+            r.vouch = r.taken + page.len();
+        }
+        let blobs: Blobs = keys.into_iter().map(|b| (BlobId::of(&b), b)).collect();
+        self.restore_page_of(d, r, page, &blobs, true);
+    }
+
+    /// `restore_page`: in the order they came where `in_order`, else as `fresh` orders them, held bare first.
+    fn restore_page_of(&mut self, d: SignerId, r: &mut Restoring, page: Vec<Signed>, blobs: &Blobs, in_order: bool) {
+        let (at, offered) = (Perf::start(), page.len() as u64);
+        // the first edits of those it restores are those its shelf names it checked (`restore_start`)
+        let vouched: HashSet<EditId> = page.iter().take(r.vouch.saturating_sub(r.taken)).map(|s| s.edit.id()).collect();
+        r.taken += page.len();
+        let fresh = if in_order {
+            let (fresh, failed) = self.fresh_in_order(d, page, &vouched);
+            r.doubtful.extend(failed);
+            fresh
+        } else {
+            self.fresh(d, page, &vouched)
+        };
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
             store.perf.count("edits checked", fresh.iter().filter(|s| !vouched.contains(&s.edit.id())).count() as u64);
+            // the keys they name that didn't come with them: a later save may have brought one (`restore_keys`)
+            r.wanting.extend(fresh.iter().flat_map(|s| s.edit.blobs())
+                .filter(|b| !blobs.contains_key(b) && !store.blobs.contains_key(b)));
         }
-        self.keep_fresh(d, fresh, &backup.blobs);
+        self.keep_fresh_as(d, fresh, blobs, false);
+    }
+
+    /// The McEliece keys the edits device `d` restored so far name, which didn't come with their pages
+    /// (`restore_page`).
+    pub fn restore_wants(&self, r: &Restoring) -> Vec<BlobId> {
+        r.wanting.iter().copied().collect()
+    }
+
+    /// Device `d`'s restore takes McEliece keys `keys`, those its edits name of them (`restore_wants`).
+    pub fn restore_keys(&mut self, d: SignerId, r: &mut Restoring, keys: impl IntoIterator<Item = Arc<[u8]>>) {
+        let Some(store) = self.stores.get_mut(&self.at(d)) else { return };
+        for bytes in keys {
+            let id = BlobId::of(&bytes);
+            if r.wanting.remove(&id) && !store.blobs.contains_key(&id) {
+                store.blobs.insert(id, bytes);
+            }
+        }
+    }
+
+    /// Ends device `d`'s restore (`restore_start`): what it holds on the word of a checkpoint a later page brought, its
+    /// owners' judged slices its shelf's `anchors` name (`Backup::with_bootstrap_bytes`) of the edits it holds now, none
+    /// where they don't read whole or name edits it doesn't hold, and its replay from the newest stored view of `warm`
+    /// that opens for this engine and is of the edits its log starts with.
+    pub fn restore_end(&mut self, d: SignerId, r: Restoring, anchors: &[u8], warm: &Warm) {
+        let bases = {
+            let log = &self.held(d).log;
+            entry_base::anchors_of(anchors, |id| log.has(id), |entry| {
+                entry_base::frontier_of(entry, log.edits().iter().zip(log.ids()))
+            })
+        };
+        self.restore_end_with(d, r, bases.unwrap_or_default(), warm);
+    }
+
+    /// `restore_end`, with its owners' judged slices `bases`.
+    fn restore_end_with(&mut self, d: SignerId, r: Restoring, bases: entry_base::Anchors, warm: &Warm) {
+        // an edit held bare that a later page's checkpoint covers, which its own page couldn't tell
+        if !r.doubtful.is_empty() {
+            let late: Vec<Signed> = match self.stores.get(&self.at(d)) {
+                Some(store) => r.doubtful.into_iter().filter(|s| store.covers.contains(&s.edit.id())).collect(),
+                None => vec![],
+            };
+            self.keep_fresh_as(d, late, &Blobs::new(), false);
+        }
+        let key = self.shelf_key(d);
+        if let Some(store) = self.stores.get_mut(&d) {
+            store.bases = bases;
+        }
         // what its edits said when it last stopped, of the edits its log starts with: the rest step on it
         if let Some(key) = key
             && let Some(store) = self.stores.get_mut(&d)
@@ -5917,7 +6087,8 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
     loop {
         let mut more = false;
         let at = Perf::start();
-        for (name, id, b) in &ix.boxes {
+        for b in &ix.boxes {
+            let (name, id) = (&b.name, &b.id);
             if store.keys.contains(id) {
                 continue;
             }
@@ -5926,28 +6097,26 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 Recipient::Key { name: to, id: under } => store.keys.get(&under, to).cloned(),
             };
             let Some(with) = with else { continue };
-            let mut first = [0; 32];
-            let n = b.bytes.len().min(32);
-            first[..n].copy_from_slice(&b.bytes[..n]);
-            if store.unopened.contains(&(*id, b.to, first)) {
+            if store.unopened.contains(&(*id, b.to, b.first)) {
                 continue;
             }
+            let bytes = b.bytes(store.log.edits());
             let info = box_info(*name, *id, &b.to);
-            let opened = opened_box(&info, &b.bytes, &with);
+            let opened = opened_box(&info, bytes, &with);
             // the same box it opened before with the same key, as its shelf keeps it: what opened, again
             if let Some(secret) = store.opened_before.get(&opened).filter(|k| k.id() == *id) {
                 more |= store.keys.insert(*name, secret.clone());
                 store.perf.count("keys from the shelf", 1);
                 continue;
             }
-            match keys::open(&b.bytes, &with, &info) {
+            match keys::open(bytes, &with, &info) {
                 Some(secret) if secret.id() == *id => {
                     store.perf.count("keys opened", 1);
                     store.opened_since.push((opened, secret.clone()));
                     more |= store.keys.insert(*name, secret);
                 }
                 _ => {
-                    store.unopened.insert((*id, b.to, first));
+                    store.unopened.insert((*id, b.to, b.first));
                 }
             }
         }
