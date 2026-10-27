@@ -143,7 +143,8 @@ export const ASSETS = manifest({
 		now: [
 			{ manifest: KERNEL.id },
 			{ want: { type: ['recipe'] }, part: 'headers', files: ['media:still'], note: 'name, kind, versions, thumbnail' },
-			{ want: { entry: '$asset' }, follow: 2, note: 'card, recipe and what it pins' }
+			{ want: { entry: '$asset' }, follow: 2, note: 'card, recipe and what it pins' },
+			{ want: { entry: '$asset' }, part: 'files', note: 'its own files: the model the viewer shows' }
 		],
 		next: [{ want: { type: ['recipe'] }, by: 'list', note: 'the neighbours of the selected one first' }],
 		later: [{ want: { entry: '$asset' }, window: { oldest: true }, note: 'older versions and variants' }]

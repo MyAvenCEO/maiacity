@@ -158,9 +158,12 @@ test('every manifest the repo declares fits the v2 schema, and the three example
 	expect(studio.filter((l) => l.part.files?.includes('media:proxy')).map((l) => l.tier)).toEqual(['next']);
 	expect(studio.some((l) => l.part.files?.includes('media:original'))).toBe(false);
 	expect(leavesFor(MANIFESTS, '/app/studio/', { timeline: id(2), original: id(3) }).find((l) => l.want.entry === id(3)).tier).toBe('later');
-	// assets: the list now, the selected one now on select, the neighbours next
+	// assets: the list now, the selected one and its own files (the model) now on select, the neighbours next
 	const assets = leavesFor(MANIFESTS, '/app/buildings/', { asset: id(4) });
-	expect(assets.filter((l) => l.want.entry === id(4)).map((l) => l.tier)).toEqual(['now', 'later']);
+	expect(assets.filter((l) => l.want.entry === id(4)).map((l) => l.tier)).toEqual(['now', 'now', 'later']);
+	expect(assets.some((l) => l.want.entry === id(4) && l.tier === 'now' && l.part.part === 'files')).toBe(true);
+	// the app's #assets page is that view too
+	expect(leavesFor(MANIFESTS, '/app/assets/', { asset: id(4) }).some((l) => l.part.part === 'files')).toBe(true);
 	expect(assets.find((l) => l.part.by === 'list').tier).toBe('next');
 	// Sandbox 4: what the camera sees, nearest first
 	expect(leavesFor(MANIFESTS, '/app/games/sandbox-4/').some((l) => l.part.by === 'camera' && l.tier === 'now')).toBe(true);

@@ -2,7 +2,7 @@
 // The page's view (./device.js): one Interest a mounted page, set from the manifests of its route, slots bound by the
 // route and the selection, signals ordering a tier; no learned lists, no brings, no timers.
 import { afterEach, expect, test } from 'bun:test';
-import { bindView, deviceRows, refreshActiveView, signalView, useBuiltInManifests, useDevice, useView, wantNow } from './device.js';
+import { bindView, deviceRows, refreshActiveView, signalView, useBuiltInManifests, useDevice, useView, viewPath, wantNow } from './device.js';
 import { MAIA_CITY } from './anchor.js';
 
 const id = (i) => i.toString(16).padStart(64, '0');
@@ -162,4 +162,14 @@ test('with no manifest of its route in the vault, the app\'s own says what comes
 	const queries = v.interests().at(-1).wants.flatMap((w) => w.queries);
 	expect(queries).toContainEqual({ types: ['note'], vault: MAIA_CITY });
 	expect(queries.some((q) => q.types.includes('room'))).toBe(false);
+});
+
+test('a page the app opens by its hash is the view of that page, its manifest the one whose routes name it', () => {
+	expect(viewPath({ pathname: '/app/', hash: '#chat' })).toBe('/app/chat/');
+	expect(viewPath({ pathname: '/app/', hash: '#assets/908ceda0' })).toBe('/app/assets/');
+	expect(viewPath({ pathname: '/app', hash: '#performance' })).toBe('/app/performance/');
+	expect(viewPath({ pathname: '/app/', hash: '' })).toBe('/app/');
+	// a hash that names no page (an anchor, a token) leaves the path as it is
+	expect(viewPath({ pathname: '/app/games/sandbox-5/', hash: '#Top_1' })).toBe('/app/games/sandbox-5/');
+	expect(viewPath({ pathname: '/universe/', hash: '#' + 'x'.repeat(40) })).toBe('/universe/');
 });

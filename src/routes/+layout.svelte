@@ -7,7 +7,7 @@
 	import '$lib/fonts/fraunces/opsz.css';
 	import '../app.css';
 	import { page } from '$app/state';
-	import { useView } from '../../game/code/sources/device.js';
+	import { useView, viewPath } from '../../game/code/sources/device.js';
 	import { socials } from '$lib/social';
 	import SiteFooter from '$lib/SiteFooter.svelte';
 	import logo from '$lib/images/maiacity-logo.png';
@@ -29,7 +29,7 @@
 
 	// Replan declared entry demand for each client-side navigation, even when the device stays open.
 	$effect(() => {
-		void useView(page.url.pathname);
+		void useView(viewPath(page.url));
 	});
 
 	// the phone menu; it closes itself whenever the page changes

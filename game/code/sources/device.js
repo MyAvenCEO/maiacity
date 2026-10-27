@@ -206,8 +206,22 @@ export function signalView(name, distance) {
 	refreshActiveView();
 }
 
-/** the page an entry is read for: its path, as one address of a game or a world */
-const pageNow = () => (typeof location !== 'undefined' ? location.pathname : '');
+/**
+ * The view a URL shows, as the manifests' routes name it: its path, and a page the app opens by its hash (`/app/#chat`,
+ * `#assets/…`'s first part) read as the path of that page (`/app/chat/`), so each such page holds its own manifest
+ * rather than the app's start page's. Never its query.
+ * @param {{ pathname: string, hash: string }} url @returns {string}
+ */
+export function viewPath(url) {
+	const path = String(url?.pathname ?? ''), page = String(url?.hash ?? '').replace(/^#/, '').split('/')[0];
+	return /^[a-z-]{1,32}$/.test(page) ? `${path.replace(/\/?$/, '/')}${page}/` : path;
+}
+
+/** the page an entry is read for: its view, as one address of a game, a world or an app page */
+const pageNow = () => (typeof location !== 'undefined' ? viewPath(location) : '');
+
+// a page the app opens by its hash is a view of its own, whoever changed the hash
+if (typeof window !== 'undefined') window.addEventListener('hashchange', () => { if (device) void useView(pageNow()); });
 
 /** The device the page holds open, else the one its parent page holds (a frame of ours, same origin), if any. */
 export function deviceOf() {
