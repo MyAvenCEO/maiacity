@@ -12,7 +12,7 @@ use std::io::ErrorKind;
 
 use anyhow::{Context as _, Result, anyhow};
 use avendb::id::VaultId;
-use avendb::lab::Lab;
+use avendb::lab::{Lab, Spill};
 use avendb::sign;
 use bytes::Bytes;
 use zeroize::{Zeroize as _, Zeroizing};
@@ -31,8 +31,19 @@ pub async fn open(shelf: Shelf, opts: Options) -> Result<Node> {
     open_owned(shelf.writer()?, opts).await
 }
 
+/// `open`, its device holding its signed edits and McEliece keys in `spill` (S7, `avendb::lab::Spill`): an index of
+/// them and a bounded cache in memory, however many it holds, the bucket their store of record as ever. What the
+/// server runs on.
+pub async fn open_spilled(shelf: Shelf, opts: Options, spill: Spill) -> Result<Node> {
+    open_owned_with(shelf.writer()?, opts, Some(spill)).await
+}
+
 /// Continue mutable startup with ownership already acquired, as a restore does.
 pub async fn open_owned(writer: Writer, opts: Options) -> Result<Node> {
+    open_owned_with(writer, opts, None).await
+}
+
+async fn open_owned_with(writer: Writer, opts: Options, spill: Option<Spill>) -> Result<Node> {
     let shelf = writer.shelf();
     let secret = secret(&shelf).await?;
     open_as(
@@ -41,6 +52,7 @@ pub async fn open_owned(writer: Writer, opts: Options) -> Result<Node> {
         &secret,
         Options { keep: true, card: true, index: true, ..opts },
         Some(writer),
+        spill,
     )
     .await
 }
@@ -54,7 +66,7 @@ pub async fn open_owned(writer: Writer, opts: Options) -> Result<Node> {
 pub async fn open_agent(shelf: Shelf, name: &str, opts: Options) -> Result<Node> {
     let writer = shelf.writer()?;
     let secret = secret(&writer.shelf()).await?;
-    open_as(Some(shelf), name, &secret, Options { card: true, ..opts }, Some(writer)).await
+    open_as(Some(shelf), name, &secret, Options { card: true, ..opts }, Some(writer), None).await
 }
 
 /// An agent device named `name` whose key is `secret`, which its person keeps elsewhere, never on
@@ -67,7 +79,7 @@ pub async fn open_agent_with(
     secret: &[u8; 32],
     opts: Options,
 ) -> Result<Node> {
-    open_as(shelf, name, secret, Options { card: true, ..opts }, None).await
+    open_as(shelf, name, secret, Options { card: true, ..opts }, None, None).await
 }
 
 /// The node of device `name` whose keys come from `secret`, on `shelf`, with `opts`.
@@ -77,10 +89,14 @@ async fn open_as(
     secret: &[u8; 32],
     opts: Options,
     writer: Option<Writer>,
+    spill: Option<Spill>,
 ) -> Result<Node> {
     let opts = Options { shelf, ..opts };
     let mut lab = Lab::with_entropy(*random()?);
     let me = lab.device_with(name, *secret);
+    if let Some(spill) = &spill {
+        lab.spill(me, spill).context("its spill")?;
+    }
     match writer {
         Some(writer) => Node::spawn_owned(lab, me, opts, Some(writer)).await,
         None => Node::spawn(lab, me, opts).await,

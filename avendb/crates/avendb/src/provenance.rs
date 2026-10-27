@@ -105,7 +105,7 @@ pub fn proof(lab: &Lab, me: SignerId, vault: VaultId, code: &BTreeSet<EntryId>) 
     let mut kept: Vec<usize> = items.iter().copied().chain(of_vaults).collect();
     kept.sort_by_key(|&i| sync::place(&edits[i]));
     kept.dedup();
-    kept.into_iter().filter_map(|i| lab.signed_edit(me, ids[i]).cloned()).collect()
+    kept.into_iter().filter_map(|i| lab.signed_edit(me, ids[i])).collect()
 }
 
 /// The stays of a vault's entries, by view `st` of `edits`, as far as a stranger may receive the edits that began them

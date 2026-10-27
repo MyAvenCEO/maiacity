@@ -120,7 +120,7 @@ fn the_bucket(folder: &Folder) -> (Arc<dyn Bucket>, String) {
         secret_key: said("AVENDB_TEST_BUCKET_SECRET_KEY"),
         seal: Zeroizing::new([0; 32]),
     };
-    let s3 = backups::Retrying(avendb_server::bucket::S3::new(&config).expect("the test bucket"));
+    let s3 = backups::Retrying::new(avendb_server::bucket::S3::new(&config).expect("the test bucket"));
     let prefix = format!("runs/{}/", data_encoding::HEXLOWER.encode(&random()[..8]));
     let at = format!("bucket {name} at {}, under {prefix}", config.endpoint);
     (Arc::new(Prefixed { bucket: Arc::new(s3), prefix }), at)

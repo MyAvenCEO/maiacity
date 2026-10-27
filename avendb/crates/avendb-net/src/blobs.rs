@@ -55,6 +55,13 @@ impl Shared {
                 continue;
             }
             let key = self.read(move |lab, me| lab.blob(me, id)).await.context("a key the node holds")?;
+            // one its shelf holds whole, as its edits put it there, is served from there, never held in memory (S7)
+            if let Some(shelf) = &self.shelf
+                && shelf.adopt(hash(id), key.len() as u64).await
+            {
+                self.offered.lock().expect("offered").insert(id);
+                continue;
+            }
             let stored = self.store.add_bytes(key.to_vec()).temp_tag().await?.hash();
             ensure!(stored == hash(id), "the key the node holds as {} is another's", id.to_hex());
             self.offered.lock().expect("offered").insert(id);
