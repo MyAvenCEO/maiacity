@@ -4294,6 +4294,38 @@ impl Lab {
         self.held(d).perf.to_json()
     }
 
+    /// Takes part `part` of device `d`'s store out and hands it back, for a probe of what each part holds in memory
+    /// to let go of it and count what that frees (`avendb-net/tests/unlock_memory.rs`): the store is of no use after.
+    /// `None` for a part it doesn't know.
+    #[doc(hidden)]
+    pub fn probe_part(&mut self, d: SignerId, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
+        let store = self.stores.get_mut(&d)?;
+        fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
+            Some(Box::new(t))
+        }
+        match part {
+            "signed" => out(std::mem::take(&mut store.signed)),
+            "blobs" => out(std::mem::take(&mut store.blobs)),
+            "log" => out(std::mem::take(&mut store.log)),
+            "replay" => out(std::mem::replace(&mut store.replay, replay(&[]))),
+            "latest" => out(std::mem::take(&mut store.latest)),
+            "key_index" => out(std::mem::take(&mut store.key_ix.ix)),
+            "keys" => out(std::mem::take(&mut store.keys)),
+            "bases" => out((std::mem::take(&mut store.bases), std::mem::take(&mut store.based))),
+            "bodies" => out((std::mem::take(&mut store.bodies), std::mem::take(&mut store.opened))),
+            "readings" => out(std::mem::take(&mut store.readings)),
+            "shown" => out(std::mem::take(&mut store.shown)),
+            "answers" => out(std::mem::take(&mut store.answers)),
+            "files_at" => out(std::mem::take(&mut store.files_at)),
+            "slices" => out(std::mem::take(&mut store.slices)),
+            "opened_keys" => out((std::mem::take(&mut store.opened_before), std::mem::take(&mut store.opened_since))),
+            "derived" => out((std::mem::take(&mut store.derived), std::mem::take(&mut store.unopened))),
+            "covers" => out((std::mem::take(&mut store.covers), std::mem::take(&mut store.bare))),
+            "showing" => out(std::mem::take(&mut store.showing)),
+            _ => None,
+        }
+    }
+
     /// How far device `d`'s replay is behind the edits it holds, and whether its latest state is worked out: what a
     /// slow answer may be waiting on (`latest` replays the rest under the Lab's lock).
     pub fn replay_lag(&self, d: SignerId) -> Value {
