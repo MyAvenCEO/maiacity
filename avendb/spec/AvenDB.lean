@@ -89,6 +89,7 @@ import AvenDB.PreparedReceive
 
 
 import AvenDB.Coverage
+import AvenDB.Freshness
 import AvenDB.LiveQuery
 import AvenDB.QueryView
 

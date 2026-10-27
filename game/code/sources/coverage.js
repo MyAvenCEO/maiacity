@@ -27,3 +27,33 @@ export function readState(/** @type {ReturnType<typeof coverageOf>} */ c) {
 	if (c.state === 'partial') return 'pending';
 	return 'unavailable';
 }
+
+/** A read's freshness (avendb/spec/AvenDB/Freshness.lean), which the device stamps on every read, whatever it reads:
+ * `current` (a live peer, every live peer heard, the read complete), `offline` as of `asOf` (Unix ms of the device's
+ * last current read, 0 for never: no live peer, so it shows what it holds as of then), or `behind` (a live peer holds
+ * newer data for the read's scope, `logs`; candidates wait, `waits`; or a peer was not heard yet, `unheard`): the
+ * device fetches that scope first, and a page shows it catching up, never as final. One value for every page, query,
+ * schema and type: no page decides it for itself. A device from before it names none: current, for one release.
+ * @param {any} answer @returns {{state:'current'|'offline'|'behind', asOf:number, logs:number, waits:number, unheard:number}} */
+export function freshnessOf(answer) {
+	const f = answer?.fresh;
+	const n = (/** @type {unknown} */ v) => (typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : 0);
+	if (f?.state === 'offline') return { state: 'offline', asOf: n(f.asOf), logs: 0, waits: 0, unheard: 0 };
+	if (f?.state === 'behind') return { state: 'behind', asOf: 0, logs: n(f.logs), waits: n(f.waits), unheard: n(f.unheard) };
+	return { state: 'current', asOf: 0, logs: 0, waits: 0, unheard: 0 };
+}
+
+/** What an action (approve, accept, decline, delete) does with a read's freshness (`Freshness.act`): `go` on current,
+ * `wait` while behind, and offline `confirm`: it says plainly it acts on data as of `asOf`.
+ * @param {ReturnType<typeof freshnessOf>} f @returns {'go'|'wait'|'confirm'} */
+export const actOf = (f) => (f.state === 'current' ? 'go' : f.state === 'behind' ? 'wait' : 'confirm');
+
+/** Whether an action's sheet opens (`Freshness.opens`): by itself (`asked` false) only on current data; when the person
+ * asked, offline too, said to be as of then; never while behind.
+ * @param {ReturnType<typeof freshnessOf>} f @param {boolean} [asked] */
+export const opensOn = (f, asked = false) => { const a = actOf(f); return a === 'go' || (a === 'confirm' && asked); };
+
+/** Whether a read's rows may show as they are: current, or offline and said to be as of then. Behind, they are an
+ * older state still catching up: a page shows the catching up, never them as final.
+ * @param {ReturnType<typeof freshnessOf>} f */
+export const showsFinal = (f) => f.state !== 'behind';

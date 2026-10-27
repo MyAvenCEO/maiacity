@@ -54,6 +54,7 @@ import { createEntryWindow, createReadWindow } from './query-window.js';
 import { useBuiltInActors, useDevice, refreshActiveView, wantNow } from '../../../game/code/sources/device.js';
 import { ACTORS } from './actors.js';
 import { touches } from '../../../game/code/sources/touched.js';
+import { watchStirs } from './stirs.js';
 import { sync } from './sync.svelte.js';
 
 // until Maia City holds an actor of an id, the app's own of it says what a page asks for first
@@ -624,6 +625,12 @@ function watch() {
 			refreshActiveView();
 		}
 	})().catch((/** @type {Error} */ e) => on() && (error = `Watching local changes failed: ${e.message}`));
+	// A read that was not current (its `fresh`, avendb/spec/AvenDB/Freshness.lean) reads again as the device's sync moves
+	// (`stirred`), not only when an edit touched it: a peer heard or gone, or the last log it was behind on, changes it.
+	const unstir = watchStirs(d, () => {
+		if (!on()) return void unstir();
+		for (const o of observers) if (o.last?.fresh && o.last.fresh.state !== 'current') o.bump();
+	});
 	(async () => {
 		let [edits, keys] = await d.size();
 		if (!on()) return;
