@@ -512,7 +512,7 @@ fn why_counted(why: Why) -> &'static str {
 }
 
 fn trust(store: &mut Store) -> bool {
-    let vouched = store.replay.vouched();
+    let vouched = store.replay.vouched(store.log.edits());
     let out: Vec<EditId> = store.bare.iter().filter(|id| !vouched.contains(id)).copied().collect();
     let mut gone = HashSet::new();
     for id in out {
@@ -1116,15 +1116,17 @@ struct KeyIndex {
 }
 
 impl KeyIndex {
-    fn of(r: &Replay) -> KeyIndex {
+    /// `held` being the edits `r` is the replay of (`Replay::edits`).
+    fn of(r: &Replay, held: &[Edit]) -> KeyIndex {
         let mut ix = KeyIndex::default();
-        ix.grow(r, 0);
+        ix.grow(r, held, 0);
         ix
     }
 
-    /// What `r`'s standing edits from the `from`th on add to it, as `of` reads them.
-    fn grow(&mut self, r: &Replay, from: usize) {
-        let edits = r.edits.iter().zip(&r.stood).skip(from).filter(|(_, stood)| **stood);
+    /// What `r`'s standing edits from the `from`th on add to it, as `of` reads them, `held` being the edits `r` is the
+    /// replay of.
+    fn grow(&mut self, r: &Replay, held: &[Edit], from: usize) {
+        let edits = r.edits(held).zip(&r.stood).skip(from).filter(|(_, stood)| **stood);
         for (edit, _) in edits {
             for (name, id, b) in edit.action.key_boxes() {
                 self.exists.insert(name);
@@ -1183,16 +1185,16 @@ impl KeyIndexed {
         let mut ix = std::mem::take(&mut store.key_ix.ix);
         match from {
             Some(n) => {
-                ix.grow(r, n);
+                ix.grow(r, log.edits(), n);
                 store.perf.count("keys: index grown", 1);
             }
             None => {
-                ix = KeyIndex::of(r);
+                ix = KeyIndex::of(r, log.edits());
                 store.perf.count("keys: index made", 1);
             }
         }
         #[cfg(debug_assertions)]
-        debug_assert!(ix.same(&KeyIndex::of(r)), "a key index grown on differs from one made whole");
+        debug_assert!(ix.same(&KeyIndex::of(r, log.edits())), "a key index grown on differs from one made whole");
         ix
     }
 
@@ -2336,7 +2338,7 @@ impl Lab {
                 // the deepest edit it holds: its replay's last, or one it took since (`replay_on_why`)
                 let edits = store.log.edits();
                 let since = edits.get(store.replayed..).unwrap_or(edits).iter().map(|e| e.depth);
-                let deepest = store.replay.edits.last().map(|e| e.depth).into_iter().chain(since).max();
+                let deepest = store.replay.edits(store.log.edits()).next_back().map(|e| e.depth).into_iter().chain(since).max();
                 debug_assert_eq!(deepest, edits.iter().map(|e| e.depth).max(), "the replay's last edit is its deepest");
                 was.and_then(|was| stepped_on(was, deepest, to, &one.edit))
             }
@@ -2798,7 +2800,7 @@ impl Lab {
         let at = self.at(on);
         let Lab { stores, rng, .. } = self;
         let store = stores.get(&at).unwrap_or_else(|| panic!("{on:?} is no device of the Lab"));
-        let (st, ix) = (store.view(), KeyIndex::of(&store.replay));
+        let (st, ix) = (store.view(), KeyIndex::of(&store.replay, store.log.edits()));
         let key = Secret::generate(rng);
         let sealed = keys::seal_edit(&key, &slice.to_wire(), &share_context(of), rng);
         let bound = |to: &Recipient| share_select_info(of, key.id(), to);
@@ -4210,8 +4212,8 @@ impl Lab {
         let r = &store.replay;
         let checkpoint = |(e, stood): (&Edit, &bool)| *stood && matches!(e.action, Action::Checkpoint { .. });
         out["checkpoints"] = serde_json::json!({
-            "standing": r.edits.iter().zip(&r.stood).filter(|&x| checkpoint(x)).count(),
-            "vouched": r.vouched().len(),
+            "standing": r.edits(store.log.edits()).zip(&r.stood).filter(|&x| checkpoint(x)).count(),
+            "vouched": r.vouched(store.log.edits()).len(),
             "bare": store.bare.len(),
         });
         out

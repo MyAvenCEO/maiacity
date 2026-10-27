@@ -74,7 +74,7 @@ fn a_late_write_replays_the_last_edits_past_moves() {
             assert_eq!(why, Why::Tail, "the iPhone's late write in round {round} replayed {why:?}");
         }
     }
-    let stood = was.edits.iter().zip(&was.stood).filter(|(e, _)| matches!(e.action, Action::Mark { .. }));
+    let stood = was.edits(c.log.edits()).zip(&was.stood).filter(|(e, _)| matches!(e.action, Action::Mark { .. }));
     assert!(stood.clone().count() == 48 && stood.into_iter().all(|(_, s)| *s), "every move stood");
     // read back from a stored view, it steps on the same
     let held = c.log.edits().len();
