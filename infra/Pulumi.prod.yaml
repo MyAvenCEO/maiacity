@@ -1,3 +1,5 @@
 config:
   maiacity:location: nbg1
   maiacity:volumeSize: "10"
+  # 16 GB since 2026-10-27: avenDB's server alone reached 3 GB serving a new phone on the 4 GB box (Samuel's choice).
+  maiacity:minMemoryGb: "16"
