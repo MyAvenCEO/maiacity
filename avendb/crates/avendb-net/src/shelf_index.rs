@@ -162,6 +162,34 @@ impl ShelfIndex {
         Ok((index, Opened::Rebuilt))
     }
 
+    /// Opens index `name` on `shelf` as its newest slot whose root reads whole left it, stamped as that slot says, for
+    /// a caller that steps it on itself (`shared_index`, whose rows are of a state, not of single entries of a log);
+    /// else the empty index stamped `empty`. True where a slot opened.
+    pub(crate) async fn open_kept(shelf: Shelf, name: &str, budget: usize, empty: Stamp) -> io::Result<(ShelfIndex, bool)> {
+        let mut index = ShelfIndex::empty(shelf, name, budget, empty.head)?;
+        let slots = index.slots().await?;
+        index.kept = slots.iter().map(|s| s.0).max().unwrap_or(0);
+        for (_, root, stamp) in slots {
+            if let Some(root) = root
+                && index.page(root, None).await.is_err()
+            {
+                continue;
+            }
+            index.root = root;
+            index.stamp = stamp;
+            return Ok((index, true));
+        }
+        index.stamp = empty;
+        Ok((index, false))
+    }
+
+    /// It forgets every row, stamped `empty`, its slots left as they are till its next `apply`: what a caller does
+    /// before it builds an index again, once a page didn't read whole.
+    pub(crate) fn clear(&mut self, empty: Stamp) {
+        self.root = None;
+        self.stamp = empty;
+    }
+
     /// It built again from `log`, from no pages: what a node does once a read finds a page lost or changed, which a
     /// read says (`NotFound`, `InvalidData`) and never answers past.
     pub(crate) async fn rebuild<L: Log>(
@@ -468,7 +496,7 @@ fn derive<E>(entries: &[E], rows: impl Fn(&E) -> Vec<Change>) -> BTreeMap<Vec<u8
 
 #[cfg(test)]
 #[path = "shelf_index_tests.rs"]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 #[path = "shelf_index_bench.rs"]

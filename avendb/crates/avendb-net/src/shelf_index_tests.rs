@@ -13,13 +13,13 @@ use bao_tree::blake3;
 /// What an in-memory shelf holds, and how many more writes it takes before it "crashes": every write after that is
 /// refused and holds nothing.
 #[derive(Default)]
-struct Memory {
-    objects: Mutex<HashMap<String, Bytes>>,
-    writes_left: AtomicI64,
+pub(crate) struct Memory {
+    pub(crate) objects: Mutex<HashMap<String, Bytes>>,
+    pub(crate) writes_left: AtomicI64,
 }
 
 impl Memory {
-    fn shelf(self: &Arc<Self>) -> Shelf {
+    pub(crate) fn shelf(self: &Arc<Self>) -> Shelf {
         let (shelf, mut calls) = Shelf::new();
         let me = self.clone();
         tokio::spawn(async move {
@@ -65,7 +65,7 @@ impl Memory {
         shelf
     }
 
-    fn new() -> Arc<Memory> {
+    pub(crate) fn new() -> Arc<Memory> {
         let m = Memory::default();
         m.writes_left.store(i64::MAX, Ordering::SeqCst);
         Arc::new(m)
