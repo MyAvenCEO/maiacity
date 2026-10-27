@@ -21,8 +21,8 @@
 	minutes, the speed test the Network section shows and the responsiveness the Work section shows, and the report goes
 	to the server by itself (Samuel 2026-10-27: no Run checks or Copy all, it is all automated). Views (Samuel 2026-10-27:
 	"each app and its sub pages have their own interest manifests correctly defined, and measure if they are"): the
-	page's own view and the last walks of its manifests (game/code/sources/device.js `manifestDiagnostics`), what of it is
-	on this device, and each app and page with the manifests Maia City's vault holds for it (./manifest-coverage.js),
+	page's own view and the last walks of its actors (game/code/sources/device.js `actorDiagnostics`), what of it is
+	on this device, and each app and page with the actors Maia City's vault holds for it (./actor-coverage.js),
 	those with none named.
 
 	All of it is read on the device, or from the server's public feed, and kept in this page alone: nothing here is
@@ -41,10 +41,10 @@
 	import { session } from './session.svelte.js';
 	import DiagnosticsReport from '$lib/app/DiagnosticsReport.svelte';
 	import { MAIA_CITY } from '../../../game/code/sources/anchor.js';
-	import { deviceOf, manifestDiagnostics, manifestSources, withBuiltIn } from '../../../game/code/sources/device.js';
-	import { manifestsOf } from '../../../game/code/sources/manifests.js';
+	import { actorDiagnostics, actorSources, deviceOf, withBuiltIn } from '../../../game/code/sources/device.js';
+	import { actorsOf } from '../../../game/code/sources/actors.js';
 	import { GAMES } from '../../../game/games.js';
-	import { appPages, coverage } from './manifest-coverage.js';
+	import { appPages, coverage } from './actor-coverage.js';
 	import { view as viewNow } from './diagnostics-send.js';
 	import { viewReadiness } from './view-readiness.js';
 	import { NAV, OUT } from './VaultApps.svelte';
@@ -222,19 +222,19 @@
 	}
 	onMount(() => void refresh());
 
-	/** the page's view, its manifests' last walks and what of them is here, and each app's manifests, as Views shows */
+	/** the page's view, its actors' last walks and what of them is here, and each app's actors, as Views shows */
 	let views = $state(/** @type {any} */ (null));
-	/** Reads the views again: the manifests Maia City's vault holds, the app's own where it holds none of an id. */
+	/** Reads the views again: the actors Maia City's vault holds, the app's own where it holds none of an id. */
 	async function readViews() {
-		const held = await manifestsOf(deviceOf(), { vault: MAIA_CITY }).catch(() => []);
-		// the same rule the page's walks read by: the vault's v2 of an id, else the app's own copy standing in for it
-		const from = manifestSources(held, MAIA_CITY);
-		const manifests = withBuiltIn(held, MAIA_CITY);
+		const held = await actorsOf(deviceOf(), { vault: MAIA_CITY }).catch(() => []);
+		// the same rule the page's walks read by: the vault's own of an id, else the app's own copy standing in for it
+		const from = actorSources(held, MAIA_CITY);
+		const actors = withBuiltIn(held, MAIA_CITY);
 		views = {
 			path: viewNow(),
-			runs: [...manifestDiagnostics().running, ...manifestDiagnostics().runs.slice(-8).reverse()],
+			runs: [...actorDiagnostics().running, ...actorDiagnostics().runs.slice(-8).reverse()],
 			ready: (viewReadiness.snapshot()?.samples ?? []).slice(-1)[0] ?? null,
-			apps: coverage(manifests, appPages({ nav: NAV, out: OUT, games: GAMES })).map((c) => ({ ...c, from: c.manifests.map((m) => from.get(m) ?? 'built-in') }))
+			apps: coverage(actors, appPages({ nav: NAV, out: OUT, games: GAMES })).map((c) => ({ ...c, from: c.actors.map((m) => from.get(m) ?? 'built-in') }))
 		};
 	}
 
@@ -365,7 +365,7 @@
 	{#if !views}
 		<p class="empty">Reading this page's views…</p>
 	{:else}
-		{@const missing = views.apps.filter((/** @type {any} */ a) => !a.manifests.length)}
+		{@const missing = views.apps.filter((/** @type {any} */ a) => !a.actors.length)}
 		<article class="card">
 			<h3>This page</h3>
 			<dl>
@@ -373,17 +373,17 @@
 				<dd>{views.path}</dd>
 				<dt>On this device</dt>
 				<dd>{views.ready ? `${views.ready.have.toLocaleString()} of ${views.ready.known.toLocaleString()} rows, ${views.ready.coverage}` : '–'}</dd>
-				<dt>Apps without a manifest</dt>
+				<dt>Apps without an actor</dt>
 				<dd>{missing.length ? `${missing.length} of ${views.apps.length}` : 'none'}</dd>
 			</dl>
 		</article>
 		<article class="card wide">
-			<h3>Its manifests' last walks</h3>
+			<h3>Its actors' last walks</h3>
 			{#if !views.runs.length}
 				<p class="empty">No walk yet.</p>
 			{:else}
 				<div class="table-wrap"><table>
-					<thead><tr><th>Walk</th><th>Manifests</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th><th>Held here</th><th>Asked</th><th>Took</th></tr></thead>
+					<thead><tr><th>Walk</th><th>Actors</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th><th>Held here</th><th>Asked</th><th>Took</th></tr></thead>
 					<tbody>
 						{#each views.runs as r, i (i)}
 							<tr><td>{r.state}</td><td>{(r.matched ?? []).join(', ') || '–'}</td><td>{r.now}</td><td>{r.next}</td><td>{r.later}</td><td>{r.idle}</td><td>{r.localRows}</td><td>{time(r.firstMs)}</td><td>{time(r.ms)}</td></tr>
@@ -393,15 +393,15 @@
 			{/if}
 		</article>
 		<article class="card wide">
-			<h3>Each app's manifests</h3>
+			<h3>Each app's actors</h3>
 			<div class="table-wrap"><table>
-				<thead><tr><th>App</th><th>Manifests</th><th>From</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th></tr></thead>
+				<thead><tr><th>App</th><th>Actors</th><th>From</th><th>Now</th><th>Next</th><th>Later</th><th>Idle</th></tr></thead>
 				<tbody>
 					{#each views.apps as a (a.path)}
-						<tr class:gap={!a.manifests.length}>
+						<tr class:gap={!a.actors.length}>
 							<td>{a.title} <span class="soft">{a.path}</span></td>
-							<td>{a.manifests.length ? a.manifests.join(', ') : 'none: the kernel alone'}</td>
-							<td>{a.manifests.length ? [...new Set(a.from)].map((/** @type {string} */ f) => (f === 'built-in' ? "the app's built-in copy" : f === 'vault' ? "Maia City's vault" : "the vault's v1")).join(', ') : '–'}</td>
+							<td>{a.actors.length ? a.actors.join(', ') : 'none: the kernel alone'}</td>
+							<td>{a.actors.length ? [...new Set(a.from)].map((/** @type {string} */ f) => (f === 'built-in' ? "the app's built-in copy" : f === 'vault' ? "Maia City's vault" : "the vault's v1")).join(', ') : '–'}</td>
 							<td>{a.tiers.now}</td><td>{a.tiers.next}</td><td>{a.tiers.later}</td><td>{a.tiers.idle}</td>
 						</tr>
 					{/each}

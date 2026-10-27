@@ -9,7 +9,8 @@
  * entry enters it or leaves it, and its code, checked by the one checker and run in QuickJS on the device that moves
  * it (./functions.js), hands back the ops that move makes besides. The device makes only those within what a function
  * may ask (`bound`): changes to the entry moved, its posts, its pictures and the entries it creates, and Public shares
- * of those entries by their ids, never of a wider slice; and it makes them as the acting vault, on the entry's vault
+ * of those entries by their ids, never of a wider slice; and only the ops its footprint declares (`footprint.ops`, a
+ * mutation's footprint, avendb/spec/AvenDB/Mutation.lean: one outside it makes the whole run nothing); and it makes them as the acting vault, on the entry's vault
  * alone, so every cap still holds: a function asks, the vault decides.
  *
  * Every app knows the content flow and its two functions, and the story flow, by heart (`FLOWS`, `FUNCTIONS`), as it
@@ -34,8 +35,8 @@ const PROFILE = 'profile';
  * @typedef {{ kind: 'flow', key: string, name: string, about: string, types: string[], stages: Stage[],
  *   tags: string[], entry?: string, vault?: string }} Flow
  * @typedef {{ kind: 'function', name: string, about: string, on: 'enter' | 'leave', flow: string, stage: string,
- *   code: string, enabled: boolean, tags: string[], engine?: { host: string, version: number }, entry?: string,
- *   vault?: string }} Fn
+ *   code: string, enabled: boolean, tags: string[], engine?: { host: string, version: number },
+ *   footprint?: { ops: string[] }, entry?: string, vault?: string }} Fn
  */
 
 /** @type {Flow} the content flow: a post's idea, its draft, then published on the Maia Universe stream */
@@ -121,6 +122,7 @@ export const FUNCTIONS = [
 		stage: 'published',
 		code: PUBLISH,
 		enabled: true,
+		footprint: { ops: ['tag'] },
 		tags: []
 	},
 	{
@@ -132,6 +134,7 @@ export const FUNCTIONS = [
 		stage: 'published',
 		code: UNPUBLISH,
 		enabled: true,
+		footprint: { ops: ['tag'] },
 		tags: []
 	}
 ];
@@ -279,11 +282,13 @@ export const ASKS = ['create', 'set', 'unset', 'insert', 'remove', 'move', 'tag'
  * ask for. A function may create entries in the vault; change and tag the entry moved, its posts and the pictures it
  * was handed (`entries`), and the entries its own ops before created; and share with Everyone, at Public, those same
  * entries by their ids (`what: { entry: [...] }`), and nothing wider: never a tag, a type or the whole vault (a share
- * with no `what`, or `everything`), which would reach entries the move doesn't concern.
+ * with no `what`, or `everything`), which would reach entries the move doesn't concern. And it asks only for the ops
+ * its footprint declares (`footprint`, all of `ASKS` for a function that declares none, as before footprints).
  * @param {any[]} asked @param {string} vault @param {string} actor @param {string[]} entries @param {number} base
+ * @param {string[]} [footprint]
  * @returns {object[] | string}
  */
-function bound(asked, vault, actor, entries, base) {
+function bound(asked, vault, actor, entries, base, footprint = ASKS) {
 	/** Entry `x`, which op `i` names, as the device makes it: `$n` counted from `base`; `null` where it may not name it. */
 	const reach = (/** @type {unknown} */ x, /** @type {number} */ i) => {
 		if (typeof x !== 'string') return null;
@@ -295,6 +300,7 @@ function bound(asked, vault, actor, entries, base) {
 	const made = [];
 	for (const [i, op] of asked.entries()) {
 		if (!ASKS.includes(op.op)) return `it may not ask for ${op.op}`;
+		if (!footprint.includes(op.op)) return `it asks for ${op.op}, outside its footprint`;
 		if (op.op === 'create') {
 			// it has no bytes to bring
 			if (op.file) return 'it brings no file';
@@ -372,7 +378,7 @@ export async function moving(world, actor, e, flow, to, withPictures = true) {
 		const now = Math.floor(Date.now() / 1000);
 		const { ops: asked, error } = await runFunction(f.code, { ...event, item, posts, pictures, now }, f.engine);
 		if (error) errors.push(`${f.name}: ${error}`);
-		const made = bound(asked, e.vault, actor, [e.entry, ...posts, ...pictures], ops.length);
+		const made = bound(asked, e.vault, actor, [e.entry, ...posts, ...pictures], ops.length, f.footprint?.ops);
 		if (typeof made === 'string') errors.push(`${f.name}: ${made}`);
 		else ops.push(...made);
 	}

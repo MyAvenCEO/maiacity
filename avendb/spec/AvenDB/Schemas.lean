@@ -5,7 +5,8 @@ import AvenDB.Ops
 
 `doc:docs/avendb` §8, writes that fit their schemas. Every reader of an entry judges each write it opens by
 the record before it and after it, on the version it builds on, under the schemas the entry was written under up to it,
-which must be in the vault's lane or built in and all of one kind (`lens::Lane::fits`): each place the write changed
+which must be in the vault's lane or built in and all of one kin, one kind or kinds a lens in the lane joins
+(`lens::Lane::fits`, `kin` below): each place the write changed
 holds a value one of them lets it hold there; each list of records it changed is one they name, holding no copy of a row
 it didn't hold before (copies are what two devices adding a row with one id at once make, never one write); each row it
 added reads under one of them, so holds what that schema requires of a row; and the innermost row around each other
@@ -311,5 +312,96 @@ theorem capped_clean {fit : Fit V} {n : Nat} {r : Record V} (hc : (fit.capped n)
     · exact hd
 
 end
+
+/-! ## Kin by lens
+
+The schemas a write is judged under must all be of one kind (`lens::Lane::fits`), so that no write tags an item with
+another kind's schema to write that kind's fields into it. A schema's kind is the constant of its `kind` field, none
+where it has none. A vault moves a kind on, as Maia City moves its app manifests to actors, by a lens in its lane that
+joins a schema of one kind to a schema of the other: the lens makes the two kinds kin, and kin count as one kind. Only
+the vault writes its lane, so only its owners join kinds. A lens joins its two kinds either way round and in chains, and
+nothing but a lens joins two kinds.
+
+- `kin_sound`: kin are joined by a chain of the lane's lenses (`Kin`), so a write never fits under schemas of two kinds
+  no chain of lenses joins.
+- `kin_alone`: where no lens joins two kinds, kin is one kind, the rule before lenses joined kinds.
+- `oneKin_sound`: the schemas of a write that are one kin are joined to its first, each by a chain of lenses.
+
+Rust: `lens::Lane::fits`, `Lane::kin`.
+-/
+
+section Kin
+
+variable {α : Type} [DecidableEq α]
+
+/-- Kinds joined by a chain of lenses `ls`, each the pair of kinds its two schemas have, either way round. -/
+inductive Kin (ls : List (α × α)) : α → α → Prop
+  | refl (a : α) : Kin ls a a
+  | fwd {a b c : α} : Kin ls a b → (b, c) ∈ ls → Kin ls a c
+  | bwd {a b c : α} : Kin ls a b → (c, b) ∈ ls → Kin ls a c
+
+/-- One round: the kinds reached, and each kind a lens joins to one of them. -/
+def kinStep (ls : List (α × α)) (s : List α) : List α :=
+  s ++ ls.filterMap fun p => if s.contains p.1 then some p.2 else if s.contains p.2 then some p.1 else none
+
+def kinReach (ls : List (α × α)) : Nat → List α → List α
+  | 0, s => s
+  | n + 1, s => kinReach ls n (kinStep ls s)
+
+/-- Kinds `a` and `b` are kin under the lenses `ls`: `b` is reached from `a`. A chain of lenses that joins two kinds
+    needs no lens twice, so as many rounds as there are lenses reach every kin. -/
+def kin (ls : List (α × α)) (a b : α) : Bool := (kinReach ls ls.length [a]).contains b
+
+/-- The kinds of a write's schemas are one kin: each is kin of the first. -/
+def oneKin (ls : List (α × α)) : List α → Bool
+  | [] => true
+  | k :: ks => ks.all (kin ls k)
+
+theorem kinStep_sound (ls : List (α × α)) (a : α) (s : List α) (h : ∀ x ∈ s, Kin ls a x) :
+    ∀ x ∈ kinStep ls s, Kin ls a x := by
+  intro x hx
+  simp only [kinStep, List.mem_append, List.mem_filterMap] at hx
+  rcases hx with hx | ⟨p, hp, he⟩
+  · exact h x hx
+  · by_cases h1 : s.contains p.1 = true
+    · simp only [h1, ↓reduceIte] at he
+      cases he
+      exact .fwd (h p.1 (by simpa using h1)) hp
+    · simp only [h1, Bool.false_eq_true, ↓reduceIte] at he
+      by_cases h2 : s.contains p.2 = true
+      · simp only [h2, ↓reduceIte] at he
+        cases he
+        exact .bwd (h p.2 (by simpa using h2)) hp
+      · simp only [h2, Bool.false_eq_true, ↓reduceIte] at he
+        cases he
+
+theorem kinReach_sound (ls : List (α × α)) (a : α) :
+    ∀ (n : Nat) (s : List α), (∀ x ∈ s, Kin ls a x) → ∀ x ∈ kinReach ls n s, Kin ls a x
+  | 0, _, h => h
+  | n + 1, s, h => kinReach_sound ls a n (kinStep ls s) (kinStep_sound ls a s h)
+
+/-- Kin are joined by a chain of the lane's lenses. -/
+theorem kin_sound (ls : List (α × α)) (a b : α) (h : kin ls a b = true) : Kin ls a b :=
+  kinReach_sound ls a ls.length [a] (by simp; exact .refl a) b (by simpa [kin] using h)
+
+/-- Where no lens joins two kinds, kin is one kind. -/
+theorem kin_alone (a b : α) (h : kin ([] : List (α × α)) a b = true) : a = b := by
+  simp [kin, kinReach] at h
+  exact h.symm
+
+/-- The kinds of a write's schemas that are one kin are each joined to the first by a chain of lenses. -/
+theorem oneKin_sound (ls : List (α × α)) (k : α) (ks : List α) (h : oneKin ls (k :: ks) = true) :
+    ∀ x ∈ ks, Kin ls k x := by
+  intro x hx
+  simp only [oneKin, List.all_eq_true] at h
+  exact kin_sound ls k x (h x hx)
+
+-- a lens from the manifest kind (1) to the actor kind (2) makes them kin, either way round; a third kind (3) stays
+-- apart; and chains join: a lens from 2 to 4 makes 1 kin of 4
+#guard oneKin [(1, 2)] [1, 2, 1] && oneKin [(1, 2)] [2, 1] && !oneKin [(1, 2)] [1, 3] && !oneKin ([] : List (Nat × Nat)) [1, 2]
+#guard oneKin [(1, 2), (2, 4)] [1, 4] && oneKin [(2, 4), (1, 2)] [4, 1] && !oneKin [(1, 2), (3, 4)] [1, 4]
+#guard oneKin [(some 1, some 2)] [some 1, some 2] && !oneKin [(some 1, some 2)] [none, some 1] && oneKin [] [(none : Option Nat), none]
+
+end Kin
 
 end AvenDB.Ops

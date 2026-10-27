@@ -11,7 +11,7 @@ import { defaultViews } from '../../../game/maiacity-v1/views.js';
 import { examples } from '../../../game/code/examples.js';
 import { FLOOR, engineFor, enginesOf, latestOf } from '../sandbox/engines.js';
 
-// the page's own ops, not the manifests' walk a device opened on it makes first (game/code/sources/manifests.js)
+// the page's own ops, not the actors' walk a device opened on it makes first (game/code/sources/actors.js)
 const ownOps = (o) => o.where?.type?.[0] !== 'manifest' && o.op !== 'synced';
 
 // the view host's page side, outside a page

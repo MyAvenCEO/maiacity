@@ -18,7 +18,10 @@
 	import ProposedAssets from '$lib/avendb/ProposedAssets.svelte';
 	import Objective from './Objective.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
-	import { syncing, share } from '$lib/avendb/sync.svelte.js';
+	import { aips } from '$lib/avendb/aips.svelte.js';
+	import ActGuard from '$lib/avendb/ActGuard.svelte';
+	import { mayAct, worst } from '$lib/avendb/fresh.js';
+	import { freshnessOf } from '../../../game/code/sources/coverage.js';
 	import { acting, authorsLine, nameOf } from '$lib/avendb/vaults.js';
 	import { when } from './aips.js';
 	import { measureAip, readingsOf } from './measure.js';
@@ -42,21 +45,30 @@
 	// the lines with their diffs: the `aip` read, once per AIP shown and version of its lines, not again for each new
 	// answer of the `aips` read (a bare proposal has no entry of its own to read)
 	let lines = $state(null);
+	/** how fresh the `aip` read is (Freshness.lean): with the `aips` read's, what every action here stands behind */
+	let linesFresh = $state.raw(null);
 	const entry = $derived(aip.entry);
 	const heads = $derived(aip.lines.map((l) => l.heads.join()).join(';'));
 	$effect(() => {
 		heads;
 		lines = null;
+		linesFresh = null;
 		if (!entry) return;
 		const selected = entry;
 		return session.observe(() => ({ op: 'aip', entry: selected }),
-			(got) => { lines = got?.ok?.lines ?? []; }, () => { lines = []; });
+			(got) => { lines = got?.ok?.lines ?? []; linesFresh = freshnessOf(got); }, () => { lines = []; });
 	});
 	const shown = $derived(lines ?? aip.lines);
 
 	let text = $state('');
+	// every action here stands behind one guard ($lib/avendb/ActGuard.svelte): it runs on current data, waits while the
+	// device is behind on this AIP, and offline runs only once the person said they act on data as of then
+	const fresh = $derived(worst(aips.fresh, linesFresh));
+	let confirmed = $state(false);
+	const blocked = $derived(!!session.doing || !mayAct(fresh, confirmed));
 	// what it does, as the page's toast says it, names the AIP (AIP-n), so a toast that stays shows which one waits
 	async function act(what, op) {
+		if (!mayAct(fresh, confirmed)) return;
 		const done = await session.run(`${what} ${aip.label ?? 'the idea'}`, { ...op, entry: aip.entry, as });
 		if (done) (text = ''), onchanged();
 	}
@@ -211,27 +223,28 @@
 	{/if}
 
 	{#if !aip.bare && aip.stage !== 'archived'}
+		<ActGuard {fresh} bind:confirmed />
 		<div class="actions">
 			{#if aip.stage === 'proposed' && ownVault}
 				<input placeholder="A note (needed for a revision)" bind:value={text} />
-				<button class="go" disabled={!!session.doing} onclick={() => review('Accepting', 'accepted')}>Accept</button>
-				<button disabled={!!session.doing} onclick={() => review('Declining', 'declined')}>Decline</button>
-				<button disabled={!!session.doing || !text.trim()} onclick={() => review('Asking for a revision of', 'revise')}>Revise</button>
+				<button class="go" disabled={blocked} onclick={() => review('Accepting', 'accepted')}>Accept</button>
+				<button disabled={blocked} onclick={() => review('Declining', 'declined')}>Decline</button>
+				<button disabled={blocked || !text.trim()} onclick={() => review('Asking for a revision of', 'revise')}>Revise</button>
 			{/if}
 			{#if aip.stage === 'objective' && (mine || ownVault)}
-				<button class="go" disabled={!!session.doing} onclick={() => act('Proposing', { op: 'aip_promote' })}>Propose it</button>
+				<button class="go" disabled={blocked} onclick={() => act('Proposing', { op: 'aip_promote' })}>Propose it</button>
 			{:else if aip.stage === 'idea' && (mine || ownVault)}
 				<small class="dim">It is proposed once it states its objective.</small>
 			{/if}
 			{#if mine || ownVault}
-				<button disabled={!!session.doing} onclick={() => act('Withdrawing', { op: 'aip_withdraw' })}>Withdraw</button>
+				<button disabled={blocked} onclick={() => act('Withdrawing', { op: 'aip_withdraw' })}>Withdraw</button>
 			{/if}
 			{#if aip.stage === 'proposed' && !ownVault}<small class="dim">Only {vaultName(aip.vault)} accepts it, acting as itself.</small>{/if}
 		</div>
 	{:else if aip.bare}
 		<p class="dim">A proposal no AIP names yet: it becomes one when its author or the vault opens an AIP over it.</p>
 	{/if}
-	{#if session.doing}<p class="dim">{session.doing}…</p>{:else if syncing() && aip.stage !== 'archived'}<p class="dim">This device is still syncing ({Math.floor(share() * 100)} %). If this AIP changed on your other devices, it’s brought up to date before your answer counts.</p>{/if}
+	{#if session.doing}<p class="dim">{session.doing}…</p>{/if}
 	{#if session.error}<p class="err">{session.error}</p>{/if}
 </div>
 

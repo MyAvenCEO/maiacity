@@ -21,3 +21,10 @@ test('where it can not tell, it is touched', () => {
 	expect(touches({ op: 'query', vault: 'v1' }, { refused: 'BadOp' })).toBe(true);
 	expect(touches({ op: 'query', vault: 'v1' }, change([], []))).toBe(false);
 });
+
+test('a read that was not current is touched by every change until it is', () => {
+	const t = { all: false, entries: [], vaults: [] };
+	expect(touches({ op: 'aips' }, t, { ok: [], fresh: { state: 'behind', logs: 3 } })).toBe(true);
+	expect(touches({ op: 'aips' }, t, { ok: [], fresh: { state: 'offline', asOf: 1 } })).toBe(true);
+	expect(touches({ op: 'aips' }, t, { ok: [], fresh: { state: 'current' } })).toBe(false);
+});

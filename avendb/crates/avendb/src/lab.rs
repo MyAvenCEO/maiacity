@@ -126,6 +126,7 @@ use crate::lens::{self, Lane, Lens, Schema, View};
 use crate::merge;
 use crate::ops::Loc;
 use crate::perf::Perf;
+use crate::query_view::{self, QueryViews};
 use crate::policy::{
     Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal, Proposal,
     Readings, Refusal, Replay, Share, Sharing, State, Who, Why, Wrap, Write, covered,
@@ -912,6 +913,12 @@ struct Store {
     view_wholes: u64,
     /// Its first sync with the boxes held back, if it asks for one (`Lab::set_lazy_boxes`).
     lazy: LazyBoxes,
+    /// How many times it was taken mutably (`Stores::get_mut`): a query view stamped with the revision now saw every
+    /// change the store took (`query_view::Stamp`).
+    revision: u64,
+    /// Its query views (`query_view`): the answers of the queries its pages asked, each at the head it was worked out
+    /// at. Its own, never an edit's, and none in a store made anew.
+    query_views: std::sync::Mutex<QueryViews>,
 }
 
 impl Default for Store {
@@ -969,6 +976,8 @@ impl Default for Store {
             wholes: 0,
             view_wholes: 0,
             lazy: LazyBoxes::default(),
+            revision: 0,
+            query_views: std::sync::Mutex::new(QueryViews::default()),
         }
     }
 }
@@ -1355,6 +1364,40 @@ enum Work {
     Retag { vault: VaultId, entry: EntryId, body: Body },
 }
 
+/// The devices' stores, by device: read as a map; each one taken mutably counts on its revision, so that no query view
+/// stamped before it is read as current (`query_view`).
+#[derive(Default)]
+struct Stores(HashMap<SignerId, Store>);
+
+impl std::ops::Deref for Stores {
+    type Target = HashMap<SignerId, Store>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Stores {
+    fn get_mut(&mut self, d: &SignerId) -> Option<&mut Store> {
+        let store = self.0.get_mut(d)?;
+        store.revision += 1;
+        Some(store)
+    }
+
+    fn insert(&mut self, d: SignerId, store: Store) -> Option<Store> {
+        self.0.insert(d, store)
+    }
+
+    fn remove(&mut self, d: &SignerId) -> Option<Store> {
+        self.0.remove(d)
+    }
+}
+
+impl<const N: usize> From<[(SignerId, Store); N]> for Stores {
+    fn from(stores: [(SignerId, Store); N]) -> Stores {
+        Stores(HashMap::from(stores))
+    }
+}
+
 pub struct Lab {
     /// The keys at hand: passkeys, owner keys, and unlocked devices.
     keys: HashMap<SignerId, Key>,
@@ -1366,7 +1409,7 @@ pub struct Lab {
     devices: Vec<SignerId>,
     /// Passkey-derived handoff keys of real devices, retained only while unlocked.
     hand_keys: HashMap<SignerId, HandKey>,
-    stores: HashMap<SignerId, Store>,
+    stores: Stores,
     /// Keys made so far; each key's seed counts on from here.
     made: u64,
     /// The randomness of new keys, seals and nonces, which keeps nothing that draws again what it drew
@@ -1434,7 +1477,7 @@ impl Lab {
             salts: HashMap::new(),
             devices: vec![],
             hand_keys: HashMap::new(),
-            stores: HashMap::new(),
+            stores: Stores::default(),
             made: 0,
             rng: SeededRng::new("lab randomness", entropy.as_ref().map_or(&[][..], |e| &e[..])),
             on_machine: entropy.is_some(),
@@ -2909,13 +2952,14 @@ impl Lab {
                     None => st.entries().iter().map(|en| en.id).filter(|e| !waiting.contains(e)).collect(),
                 };
                 due.sort_by_key(|e| st.entry_place(*e));
-                let later = due.split_off(due.len().min(UPKEEP_SLICE));
+                let later: HashSet<EntryId> = due.split_off(due.len().min(UPKEEP_SLICE)).into_iter().collect();
                 sliced = !later.is_empty();
-                waiting.extend(later);
+                let showing = waiting.clone();
+                waiting.extend(later.iter().copied());
                 let scope: HashSet<EntryId> = due.into_iter().collect();
                 store.perf.count("upkeep: entries looked at", scope.len() as u64);
                 let work = upkeep(d, store, &ix, &mine, rng, spares, Some(&scope), &waiting);
-                store.upkeep_due.looked(&store.log, &store.keys.scoped, store.slices.len(), store.shown_groups, &store.shown_lanes, waiting);
+                store.upkeep_due.looked(&store.log, &store.keys.scoped, store.slices.len(), store.shown_groups, &store.shown_lanes, showing, later);
                 store.keys.entries_keyed.clear();
                 work
             } else {
@@ -4092,6 +4136,30 @@ impl Lab {
         t
     }
 
+    /// Device `d`'s query views (`query_view`).
+    pub(crate) fn query_views(&self, d: SignerId) -> &std::sync::Mutex<QueryViews> {
+        &self.held(d).query_views
+    }
+
+    /// The head a query view of device `d` is stamped with now (`query_view::Stamp`): its store's revision, its size
+    /// and removals as `touched` reads them, and a digest of what a read depends on beside its log: its shares and the
+    /// selectors it opened, its cap groups, its lanes, its keys, the entries whose header it hasn't read, its query depth
+    /// and its own starts.
+    pub(crate) fn query_view_stamp(&self, d: SignerId) -> query_view::Stamp {
+        use std::hash::{Hash, Hasher as _};
+        let store = self.held(d);
+        let r = &store.readings;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (r.selectors.len(), r.defines.len(), store.shown_groups, store.query_depth, store.keys.ids().count()).hash(&mut h);
+        // the entries whose header it hasn't read: one read since is no edit `touched` names
+        r.untyped.hash(&mut h);
+        (store.slices.len(), store.unreadable.len(), store.based.len(), store.follow.len()).hash(&mut h);
+        (Arc::as_ptr(&store.bootstrap_revision) as usize, Arc::as_ptr(&store.warm_revision) as usize).hash(&mut h);
+        for (v, (lane, _)) in &store.shown_lanes { (v, lane).hash(&mut h); }
+        query_view::Stamp { revision: store.revision, size: self.size(d), gone: store.log.gone(), aux: h.finish(),
+            settled: store.showing.is_none() && !store.behind }
+    }
+
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
         if !self.sees(d, entry) {
             return None;
@@ -4453,7 +4521,7 @@ impl Lab {
             salts,
             devices: vec![d],
             hand_keys: self.hand_keys.get(&d).map(|key| (d, key.clone())).into_iter().collect(),
-            stores: HashMap::from([(d, store)]),
+            stores: Stores::from([(d, store)]),
             made: 0,
             rng,
             on_machine: true,
@@ -6966,6 +7034,11 @@ struct Showing {
 struct UpkeepDue {
     /// The entries shown anew, and those a showing left to show when it last looked.
     entries: HashSet<EntryId>,
+    /// The entries a sliced upkeep left for its next look (`UPKEEP_SLICE`): due, but unchanged for being left, so a
+    /// lane or cap group among them is no reason to look at every entry again (2026-10-27: an iPhone's catch-up looked
+    /// at the same first slice of every entry some 40 times a second, a lane among the rest each time, and never ended;
+    /// `UpkeepSlices.lean`: it moves on and ends).
+    unlooked: HashSet<EntryId>,
     /// When it last looked: the log's lineage and length, the keys' revision, the selectors it read, the cap groups'
     /// and the lanes' hashes.
     then: Option<(crate::policy::LogRevision, usize, Arc<()>, usize, [u8; 32], Vec<(VaultId, [u8; 32])>)>,
@@ -7009,11 +7082,13 @@ impl UpkeepDue {
         if due.iter().any(global) {
             return None;
         }
+        due.extend(self.unlooked.iter().copied());
         Some(due)
     }
 
     /// It looked, at what `log`, `keys`, `slices`, `groups` and `lanes` say now; the entries `waiting` to be shown
-    /// it looks at again once they are.
+    /// it looks at again once they are, and those `unlooked` it left for its next look.
+    #[allow(clippy::too_many_arguments)]
     fn looked(
         &mut self,
         log: &Log,
@@ -7022,8 +7097,10 @@ impl UpkeepDue {
         groups: [u8; 32],
         lanes: &BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>,
         waiting: HashSet<EntryId>,
+        unlooked: HashSet<EntryId>,
     ) {
         self.entries = waiting;
+        self.unlooked = unlooked;
         self.then = Some((log.lineage(), log.edits().len(), keys.clone(), slices, groups, lanes_of(lanes)));
     }
 }

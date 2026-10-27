@@ -448,7 +448,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
                 let mut ranges = shared.ranges.lock().expect("ranges");
                 let (answer, complete) = ranges.receive(peer.conn.stable_id(), device, body)?;
                 let done = complete.is_some();
-                if let Some(complete) = complete { complete.apply(held.entry(device).or_default()); }
+                if let Some(complete) = complete { complete.apply(held.entry(device).or_default()); shared.fresh.moved(); }
                 (answer, done)
             };
             if complete { shared.jobs.stir(); shared.ask_soon(peer.endpoint); shared.schedule_discoveries(); }

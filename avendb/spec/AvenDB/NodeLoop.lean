@@ -1,13 +1,13 @@
-/-! The node actor (sync v2, P7): one task owns the node's outreach to its peers, the telling of its holdings and the
+/-! The node loop (sync v2, P7): one task owns the node's outreach to its peers, the telling of its holdings and the
 asking for theirs, where it used to sit behind four shared locks (`telling`, `unreached`, `asking`, `owed`) and an
-announcer that woke every `retry` to look. Each peer has one lane per kind of outreach; the actor takes one message at
+announcer that woke every `retry` to look. Each peer has one lane per kind of outreach; the loop takes one message at
 a time (a wake, a finished attempt, its timer) and the time it took it at, so a run is a function of its messages.
-Rust: `avendb-net/src/actor.rs`, whose tests mirror the theorems here.
+Rust: `avendb-net/src/node_loop.rs`, whose tests mirror the theorems here.
 
 What it guarantees: at most one attempt in flight per lane; a wake is never lost (it starts an attempt, or is owed to
 the one in flight, or waits for the lane's backoff with the timer set for it); a failed attempt is tried again once its
-wait is over; waits double and stop at a minute; and the actor sleeps until the earliest lane is due, never polling. -/
-namespace AvenDB.NodeActor
+wait is over; waits double and stop at a minute; and the loop sleeps until the earliest lane is due, never polling. -/
+namespace AvenDB.NodeLoop
 
 /-- One peer's lane: an attempt in flight, a wake owed to it, a wake waiting for the backoff, the failures in a row
 and the moment (in ms) the lane may try again. -/
@@ -41,11 +41,11 @@ def finish (l : Lane) (now retry : Nat) (ok : Bool) : Lane :=
     failures := if ok then 0 else l.failures + 1
     dueAt := if ok then now else now + wait retry l.failures }
 
-/-- The actor's timer at `now`: a waiting lane whose wait is over wakes. -/
+/-- The loop's timer at `now`: a waiting lane whose wait is over wakes. -/
 def tick (l : Lane) (now : Nat) : Lane × Bool :=
   if l.pending && decide (l.dueAt ≤ now) then wake { l with pending := false } now else (l, false)
 
-/-- When the actor must wake next for this lane, if at all. -/
+/-- When the loop must wake next for this lane, if at all. -/
 def due (l : Lane) : Option Nat := if l.pending && !l.busy then some l.dueAt else none
 
 /-- The messages a lane takes. -/
@@ -108,11 +108,11 @@ theorem tick_starts (l : Lane) (now : Nat)
     (hp : l.pending = true) (hb : l.busy = false) (hd : l.dueAt ≤ now) : (tick l now).2 = true := by
   simp [tick, wake, hp, hb, hd, Nat.not_lt.mpr hd]
 
-/-- The actor sleeps until a waiting lane is due, and only then: no lane waits without its timer set. -/
+/-- The loop sleeps until a waiting lane is due, and only then: no lane waits without its timer set. -/
 theorem waiting_has_timer (l : Lane) (hp : l.pending = true) (hb : l.busy = false) : due l = some l.dueAt := by
   simp [due, hp, hb]
 
-/-- A run that ends every attempt it starts leaves no lane busy: the actor holds nothing across messages. -/
+/-- A run that ends every attempt it starts leaves no lane busy: the loop holds nothing across messages. -/
 theorem finish_frees (l : Lane) (now retry : Nat) (ok : Bool) : (finish l now retry ok).busy = false := rfl
 
-end AvenDB.NodeActor
+end AvenDB.NodeLoop

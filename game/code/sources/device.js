@@ -1,10 +1,10 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /** The renderer reads only this device's avenDB, including same-origin Studio frames. What the page wants comes in
- * by Interests (./interest.js), in tiers, the manifests of its route saying which; absent local data stays pending,
+ * by Interests (./interest.js), in tiers, the actors of its route saying which; absent local data stays pending,
  * and no empty, slow or locked local read authorizes an HTTP/peer fallback.
  */
 import { MAIA_CITY } from './anchor.js';
-import { leavesFor, manifestsOf, plan } from './manifests.js';
+import { ACTOR_TYPE, QUERY_KIND, actorsOf, leavesFor, plan, queryOp } from './actors.js';
 import { createInterest } from './interest.js';
 import { createLocalFileReads } from './local-file-read.js';
 
@@ -26,57 +26,77 @@ let device = null;
 /** where a page leaves its device for the pages it frames (`deviceOf`) */
 const SHARED = Symbol.for('maiacity.avendb.device');
 
-/** The page's view: its path, its bindings and signals, and the one Interest its manifests set. */
+/** The page's view: its path, its bindings and signals, and the one Interest its actors set. */
 let activeView = null;
 /** what the route binds (`useView`'s options), kept across a device change of the same page */
 let viewContext = {};
 /** what the selection binds (`bindView`) and the signals that order the tiers (`signalView`), the page's own */
 const selected = {};
 const signals = {};
-/** The manifests the app ships ($lib/avendb/manifests.js), read where Maia City's vault holds no v2 manifest of that id
- *  yet: a cold device, or a vault the manifests' AIP has not reached, still asks for what its route shows first, never
- *  only the catch-up of every log. A v1 manifest of the vault gives way to the app's of its id (v1 chat asked for Maia
- *  City's rooms alone); the vault's v2 manifest of an id always wins. */
+/** The actors the app ships ($lib/avendb/actors.js), read where Maia City's vault holds no actor of that id with
+ *  parts yet: a cold device, or a vault the actors' AIP has not reached, still asks for what its route shows first,
+ *  never only the catch-up of every log. A v1 manifest of the vault gives way to the app's of its id (v1 chat asked for
+ *  Maia City's rooms alone), and so does one a lens shows with empty tiers; the vault's own v2 manifest or v3 actor of
+ *  an id always wins. */
 let builtIn = [];
 
-/** Sets the app's own manifests (`MANIFESTS`), read under the vault's. @param {any[]} list */
-export function useBuiltInManifests(list) {
+/** Sets the app's own actors and the query entries they name (`ACTORS`, `QUERIES`), read under the vault's.
+ *  @param {any[]} list */
+export function useBuiltInActors(list) {
 	builtIn = Array.isArray(list) ? list : [];
 	refreshActiveView();
 }
 
-/** A v1 manifest read through the v1-to-v2 lens shows empty tiers until its AIP moves it: that holds nothing yet. */
-const holdsParts = (m) => Object.values(m?.tiers ?? {}).some((t) => Array.isArray(t) && t.length);
+/** A manifest or actor read through a lens shows empty tiers until its AIP moves it: that holds nothing yet. */
+const holdsParts = (m) => Object.values(m?.loads ?? m?.tiers ?? {}).some((t) => Array.isArray(t) && t.length);
 
-/** The ids of the vault's own v2 manifests among `held` that hold parts: those the app's own of an id give way to. */
-const vaultIds = (held) => new Set((held ?? []).filter((m) => m?.v === 2 && holdsParts(m)).map((m) => m.id));
+/** An actor's or a query entry's key: one id names one actor and one query. */
+const keyOf = (m) => `${m?.kind === QUERY_KIND ? 'query' : 'actor'}:${m?.id}`;
 
-/** The manifests of catalog `catalog`: the vault's, and for Maia City the app's own of each id it holds no v2 of. */
+/** The keys of the vault's own v2 manifests and v3 actors among `held` that hold parts, and of its query entries:
+ *  those the app's own of a key give way to. */
+const vaultIds = (held) => new Set((held ?? []).filter((m) => (m?.kind === QUERY_KIND ? m?.v === 1 : (m?.v === 2 || m?.v === 3 || m?.loads) && holdsParts(m))).map(keyOf));
+
+/** The actors of catalog `catalog`: the vault's, and for Maia City the app's own of each id it holds none of. */
 export const withBuiltIn = (held, catalog) => {
 	if (catalog !== MAIA_CITY || !builtIn.length) return held;
 	const v2 = vaultIds(held);
-	const ours = builtIn.filter((m) => !v2.has(m.id));
-	const replaced = new Set(ours.map((m) => m.id));
-	return [...held.filter((m) => !replaced.has(m?.id)), ...ours];
+	const ours = builtIn.filter((m) => !v2.has(keyOf(m)));
+	const replaced = new Set(ours.map(keyOf));
+	return [...held.filter((m) => !replaced.has(keyOf(m))), ...ours];
 };
 
 /**
- * Where each manifest `withBuiltIn(held, catalog)` reads came from, by id: `vault` for the vault's own v2 (what an AIP
- * accepted), `built-in` for the app's copy standing in for an id the device holds no v2 of yet, `vault v1` for a
- * vault's manifest no v2 of the app's replaced (another catalog's, or one the app ships none of).
+ * Where each actor `withBuiltIn(held, catalog)` reads came from, by id: `vault` for the vault's own v2 or v3 (what an
+ * AIP accepted), `built-in` for the app's copy standing in for an id the device holds none of yet, `vault v1` for a
+ * vault's v1 manifest none of the app's replaced (another catalog's, or one the app ships none of).
  * @param {any[]} held @param {string} catalog @returns {Map<string, 'vault' | 'built-in' | 'vault v1'>}
  */
-export function manifestSources(held, catalog) {
+export function actorSources(held, catalog) {
 	const v2 = vaultIds(held);
 	const out = new Map();
 	for (const m of withBuiltIn(held, catalog)) {
-		if (typeof m?.id !== 'string' || out.has(m.id)) continue;
-		out.set(m.id, v2.has(m.id) ? 'vault' : (held ?? []).includes(m) ? 'vault v1' : 'built-in');
+		if (typeof m?.id !== 'string' || m.kind === QUERY_KIND || out.has(m.id)) continue;
+		out.set(m.id, v2.has(keyOf(m)) ? 'vault' : (held ?? []).includes(m) ? 'vault v1' : 'built-in');
 	}
 	return out;
 }
 
-/** The manifests each catalog's last walk read off the device: what the next walk asks by before its own read
+/**
+ * The op that reads query entry `query` (`{ entry, version }`, its address in Maia City, as an actor's part names it)
+ * with args `args`, a page of it by `more` (`{ offset, limit }`): the vault's own query of that id where the last walk
+ * read one, else the app's own (`QUERIES`). Null where neither holds that version. The op is the query's `read`
+ * template bound (./actors.js `queryOp`), what the engine's `call` of it runs, so a page reads by the name the vault
+ * holds rather than a query of its own (task A3).
+ * @param {{ entry: string, version: number }} query @param {Record<string, string>} [args] @param {{offset?: number, limit?: number}} [more]
+ */
+export function useQuery(query, args = {}, more = {}) {
+	const q = withBuiltIn(lastHeld.get(MAIA_CITY) ?? [], MAIA_CITY).find((m) => m?.kind === QUERY_KIND && m.id === query?.entry);
+	if (!q || q.interface?.version !== query?.version) return null;
+	return queryOp(q, args, more);
+}
+
+/** The actors each catalog's last walk read off the device: what the next walk asks by before its own read
  *  answers, so a device whose reads wait behind a catch-up still asks for its route's data at once. */
 const lastHeld = new Map();
 
@@ -99,7 +119,7 @@ function closeView() {
 
 /**
  * The page's view at path `path`, the route binding `options` (`{ vault, context, entries, bind }`, from
- * ./view-context.js `routeDemandContext`): one Interest for its mounted lifetime, set from the manifests of Maia City
+ * ./view-context.js `routeDemandContext`): one Interest for its mounted lifetime, set from the actors of Maia City
  * and of the selected vault that cover the path, slots bound by the route and the selection. A new path, vault or
  * binding replaces it; nothing waits on a timer.
  * @param {string} path @param {{vault?: string, context?: string, entries?: string[], bind?: Record<string, string>}} [options]
@@ -127,8 +147,8 @@ export function useView(path, options) {
 	activeView = view;
 	const signal = controller.signal;
 	const catalogs = [...new Set([MAIA_CITY, ...(vault ? [vault] : [])])];
-	// A cold device finds its route manifests first, and what the route names is on screen at once.
-	const base = () => [{ tier: 'now', entries: [...explicit, ...view.asked], queries: catalogs.map((v) => ({ types: ['manifest'], vault: v })) }];
+	// A cold device finds its route's actors first, and what the route names is on screen at once.
+	const base = () => [{ tier: 'now', entries: [...explicit, ...view.asked], queries: catalogs.map((v) => ({ types: [ACTOR_TYPE], vault: v })) }];
 	view.publish = () => view.interest.set([...base(), ...view.wants.flat()]);
 	if (!interest) void view.publish();
 	view.run = () => {
@@ -142,7 +162,7 @@ export function useView(path, options) {
 		};
 		walks.pending++;
 		walks.active.add(run);
-		/** what the route's manifests ask for, as `held` holds them, published at once: selectors and bound entries */
+		/** what the route's actors ask for, as `held` holds them, published at once: selectors and bound entries */
 		const ask = async (held) => {
 			const wants = await Promise.all(catalogs.map((catalog) => plan(leavesFor(withBuiltIn(held(catalog), catalog), path, env), { vault: catalog, signals, signal })));
 			signal.throwIfAborted();
@@ -151,19 +171,19 @@ export function useView(path, options) {
 			void view.publish();
 		};
 		view.done = (async () => {
-			// First, with no read of the device: its route's selectors from the manifests the last walk read (the app's
+			// First, with no read of the device: its route's selectors from the actors the last walk read (the app's
 			// own on a cold device), so the node finds the route's data from peers while the device's reads still wait
 			// behind its catch-up (an iPhone's took tens of seconds, and the rooms were asked for only after them).
 			await ask((catalog) => lastHeld.get(catalog) ?? []);
 			run.firstMs = performance.now() - started;
 			const parts = await Promise.all(catalogs.map(async (catalog) => {
-				const read = await manifestsOf(opened, { vault: catalog, signal });
+				const read = await actorsOf(opened, { vault: catalog, signal });
 				lastHeld.set(catalog, read);
 				const held = withBuiltIn(read, catalog);
 				const leaves = leavesFor(held, path, env);
-				const from = manifestSources(read, catalog);
-				const matched = [...new Set(leaves.map((l) => l.manifest))];
-				run.heldManifests += held.length;
+				const from = actorSources(read, catalog);
+				const matched = [...new Set(leaves.map((l) => l.actor))];
+				run.heldManifests += held.filter((m) => m?.kind !== QUERY_KIND).length;
 				run.matchedLeaves += leaves.length;
 				run.queryLeaves += leaves.filter((l) => !l.want.entry).length;
 				run.typeDiscoveryHints += leaves.filter((l) => l.want.type?.length).length;
@@ -208,20 +228,21 @@ export function useView(path, options) {
 	return view.run();
 }
 
-/** The last walks of the page's manifests, for the diagnostics: no route, vault id or entry kept; the manifests each
- *  matched by their ids (`kernel`, `chat`), and how many of those were the vault's and how many the app's own. A walk
+/** The last walks of the page's actors, for the diagnostics: no route, vault id or entry kept; the actors each
+ *  matched by their ids (`kernel`, `chat`), and how many of those were the vault's and how many the app's own. The
+ *  report keeps its field names (`heldManifests`, `vaultManifests`, …) one release, so reports compare across it. A walk
  *  still running shows as `running`, how long it has run, so a report sent while a slow walk waits says so, and its
  *  `runs` are never taken for that walk's. */
 const walks = { pending: 0, runs: /** @type {any[]} */ ([]), active: new Set() };
 const shown = ({ started, ...r }) => ({ ...r, matched: [...r.matched] });
-export const manifestDiagnostics = () => ({
+export const actorDiagnostics = () => ({
 	pending: walks.pending,
 	running: [...walks.active].map((r) => ({ ...shown(r), state: 'running', ms: performance.now() - r.started })),
 	runs: walks.runs.map(shown)
 });
 
 /**
- * The device took new edits: the page's view walks its manifests again, once however many came while it walked,
+ * The device took new edits: the page's view walks its actors again, once however many came while it walked,
  * so records that came in name what they follow. Never polling: only a real revision calls it.
  */
 export function refreshActiveView() {
@@ -269,8 +290,8 @@ export function signalView(name, distance) {
 }
 
 /**
- * The view a URL shows, as the manifests' routes name it: its path, with the page the app opens by its hash
- * (`/app/#chat`, `#assets/…`'s first part), so each such page holds its own manifest rather than the app's start
+ * The view a URL shows, as the actors' routes name it: its path, with the page the app opens by its hash
+ * (`/app/#chat`, `#assets/…`'s first part), so each such page holds its own actor rather than the app's start
  * page's; the same name the Performance page's reports give a view. Never its query.
  * @param {{ pathname: string, hash: string }} url @returns {string}
  */
