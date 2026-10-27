@@ -145,6 +145,9 @@ mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
+// the index gate's on-disk index; the sync lane wires it in place of S7's spill (`avendb::lab::held`)
+#[cfg_attr(not(test), allow(dead_code))]
+mod shelf_index;
 #[cfg(test)]
 mod shelf_contract;
 mod signers;

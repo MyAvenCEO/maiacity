@@ -95,6 +95,7 @@ lake exe vectors
 | `AvenDB/EntryState.lean` | One entry state (P6): an entry is full or based on its owners' newest standing snapshot, worked out from history alone; no caches |
 | `AvenDB/Coverage.lean` | One answer to "is this read complete?" (P1): `complete`, `partial` or `denied`, a function of what the device holds and its peers announced |
 | `AvenDB/LiveQuery.lean` | Live queries (P2): an index by vault and type, and a change re-runs only the queries whose entries it touched |
+| `AvenDB/ShelfIndex.lean` | Indexes on the shelf (index gate): an index is a derivation of the log, its pages content-addressed on the one shelf, stamped with the log head it reflects; opening catches up from an honest slot or rebuilds, so a crash or a rewritten log never reads a stale index (I1-I3); the root is the rows' alone (I4); a fetched index is a hint until its root matches a rebuild (I5) |
 | `AvenDB/BlindIndex.lean` | The blind index (P4): tokens per audience and label, so a peer that cannot read an entry still matches its type or tag |
 | `AvenDB/BatchDurability.lean` | When a signed batch root may be published: only after its segment and the root are durable, for the exact prefix and writer generation |
 | `AvenDB/EditRanges.lean` | Edit transfer by ranges: a fingerprint only routes, a fetched edit still needs its root path and the ordinary checks |
