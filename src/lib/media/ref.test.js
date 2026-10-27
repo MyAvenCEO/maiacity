@@ -67,6 +67,7 @@ test('every published manifest hash retains metadata lookup and resolves locally
 });
 
 test('every public file is read by its Maia City entry, never by a scan of the vault for its name', () => {
+	/** @type {Array<[string, string | undefined]>} */
 	const asked = [];
 	useLocalMedia((_vault, name, entry) => (asked.push([name, entry]), `blob:local/${entry}`));
 	for (const [hash, file] of Object.entries(manifest)) {
