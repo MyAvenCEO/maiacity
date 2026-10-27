@@ -70,6 +70,20 @@
       "implementation": "avendb/crates/avendb-net/src/run.rs",
       "test": "avendb/crates/avendb-net/src/live_tests.rs",
       "testName": "every_read_is_offline_behind_or_current_as_its_peers_say"
+    },
+    {
+      "model": "avendb/spec/AvenDB/SharedIndex.lean",
+      "invariant": "the shared index after each save is the rebuild of what the device's edits say, with one root (X1, X2, X4)",
+      "implementation": "avendb/crates/avendb-net/src/shared_index.rs",
+      "test": "avendb/crates/avendb-net/src/shared_index_tests.rs",
+      "testName": "after_every_save_the_index_is_the_rebuild_with_its_root"
+    },
+    {
+      "model": "avendb/spec/AvenDB/SharedIndex.lean",
+      "invariant": "an entry put again takes out every row the index held of it and puts its new rows; a crash at any write is stepped on to the rebuild (X3, ShelfIndex I3)",
+      "implementation": "avendb/crates/avendb-net/src/shared_index.rs",
+      "test": "avendb/crates/avendb-net/src/shared_index_tests.rs",
+      "testName": "a_crash_at_any_write_leaves_an_index_the_next_save_brings_to_the_rebuild"
     }
   ]
 }

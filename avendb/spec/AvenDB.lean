@@ -5,6 +5,7 @@ import AvenDB.Step
 import AvenDB.Sync
 import AvenDB.BlindIndex
 import AvenDB.ShelfIndex
+import AvenDB.SharedIndex
 import AvenDB.Logs
 import AvenDB.Doc
 import AvenDB.Proposals

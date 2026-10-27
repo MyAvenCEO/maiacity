@@ -146,6 +146,7 @@ mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
+mod shared_index;
 // the index gate's on-disk index; the sync lane wires it in place of S7's spill (`avendb::lab::held`)
 #[cfg_attr(not(test), allow(dead_code))]
 mod shelf_index;
@@ -170,7 +171,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine::follow_standing;
-use avendb::id::{BlobId, EditId, ShareId, SignerId, VaultId};
+use avendb::id::{BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Checked, Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
@@ -785,11 +786,24 @@ impl Node {
         let pool = ConnectionPool::new(endpoint.clone(), iroh_blobs::ALPN, pool);
         let transport_control = transports::control::Control::new(packets.clone());
         let (outreach, inbox) = node_loop::outreach();
+        // its shared index, stepped on at its first save (`shared_index`); a shelf that can't read it costs it the
+        // index, never the node
+        let shared_index = match &opts.shelf {
+            Some(shelf) => match shared_index::SharedIndex::open(shelf.clone()).await {
+                Ok(ix) => Some(ix),
+                Err(e) => {
+                    tracing::warn!("avendb: the shared index can't be opened on the shelf: {e:#}");
+                    None
+                }
+            },
+            None => None,
+        };
         let shared = Arc::new(Shared {
             lifecycle,
             writer: Mutex::new(writer),
             me,
             lab: Mutex::new(lab),
+            shared_index,
             lab_schedule: Arc::default(),
             lab_turns: Arc::default(),
             edits,
@@ -1471,6 +1485,28 @@ impl Node {
         acting().unwrap_or(self.shared.me)
     }
 
+    /// The entries of vault `vault` whose type, tag or link is one of `labels` (`avendb::index::type_label`,
+    /// `tag_label`, `link_label`), the newest first, each with its creation, older than `after` (the last of a page
+    /// before), at most `limit`, read off its shelf's shared index (B1, `shared_index`) as of its last save: what a
+    /// view lists without the log. Nothing for a node that keeps no shelf.
+    pub async fn shared_find(
+        &self,
+        vault: VaultId,
+        labels: Vec<String>,
+        after: Option<(u64, EntryId)>,
+        limit: usize,
+    ) -> Result<Vec<(u64, EntryId)>> {
+        let Some(index) = &self.shared.shared_index else { return Ok(vec![]) };
+        Ok(index.find(&self.shared.lab, self.shared.me, vault, &labels, after, limit).await?)
+    }
+
+    /// The root of its shared index and the head of the edits it is of, as its last save left them: what a peer holds
+    /// it to before it reads through pages it fetched (`ShelfIndex.I5_trusted_reads`).
+    pub async fn shared_index_root(&self) -> Option<(Option<[u8; 32]>, u64)> {
+        let index = self.shared.shared_index.as_ref()?;
+        Some((index.root().await, index.stamp().await.at))
+    }
+
     /// Read its Lab as its device.
     pub async fn read<T: Send + 'static>(&self, f: impl FnOnce(&Lab, SignerId) -> T + Send + 'static) -> T {
         self.shared.read(f).await
@@ -2116,6 +2152,8 @@ struct Shared {
     lab_turns: Arc<lab_schedule::Turns>,
     /// Its device's edits on its shelf, if it keeps one.
     edits: Option<edits::Edits>,
+    /// Its shared index on its shelf, if it keeps one (B1, `shared_index`).
+    shared_index: Option<shared_index::SharedIndex>,
     /// Durable supplemental signer roots; unsupported shelves keep ordinary signatures only.
     signers: Option<signers::Signers>,
     endpoint: Endpoint,
