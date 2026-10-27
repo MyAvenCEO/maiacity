@@ -511,7 +511,7 @@ fn code(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refuse
 /// The most posts one `posts` op hands out.
 const MOST_POSTS: usize = 200;
 
-/// `{"op": "posts", "limit"?, "after"?}`: the posts device `me` opens that everyone may read, newest first, as avenDB's
+/// `{"op": "posts", "limit"?, "after"?}` (either `null` as left out, so a query entry's `read` binds both): the posts device `me` opens that everyone may read, newest first, as avenDB's
 /// server serves them (`world::public_posts`): `limit` of them (`MOST_POSTS` at most, and by default), the newest or
 /// those after post `after` (an entry id; none where it lists it no more: `world::page_of_posts`), as a page that shows the newest first asks for the next ones as
 /// its person scrolls. `{"posts": [...], "more"}`, `more` whether more come after the last.
@@ -588,7 +588,7 @@ fn optional_text(o: &Map<String, Value>, name: &str, field: &str) -> Result<Opti
 
 fn count_of(o: &Map<String, Value>, field: &str) -> Result<Option<usize>, Refused> {
     let count = |v: &Value| v.as_u64().map(|n| n as usize).ok_or_else(|| bad(format!("{field} is a count")));
-    o.get(field).map(count).transpose()
+    o.get(field).filter(|v| !v.is_null()).map(count).transpose()
 }
 
 fn strs(xs: &[String]) -> Vec<&str> {
