@@ -2596,6 +2596,12 @@ impl Shared {
         // a fresh device asking for its first sync with the boxes held back asks the peer for their stubs first, to
         // count them as held (`session::STUBS`, `LazyBoxes.lean`), and for their bodies in the pull after this one
         let stubbed = self.stubs(&peer, kind, scope.clone()).await;
+        // the logs a pull for the bodies of stubs answers for: all, or those it names
+        let answers = match &scope {
+            Scope::All => Some(None),
+            Scope::Logs(logs) => Some(Some(logs.clone())),
+            Scope::Vaults(_) => None,
+        };
         // the request, worked out once for the whole asking: each page asks the same, after the last place it got, so
         // the peer works out what it sends once too (`Lab::reply`), and no page waits on this device's lab to ask
         let asking = Instant::now();
@@ -2915,6 +2921,9 @@ impl Shared {
             // the boxes held back come in the next pull, each checked against its stub as it comes (S5)
             self.try_lab(|lab, me| lab.fetch_withheld(me)).await?;
             self.ask_soon(peer.endpoint);
+        } else if let Some(logs) = answers {
+            // asked for their bodies, what didn't come of the stubs this peer sent is of nothing it sends
+            self.try_lab(move |lab, me| lab.drop_unanswered(me, device, logs.as_ref())).await?;
         }
         Ok(new)
     }

@@ -45,6 +45,17 @@ fn ids(lab: &Lab, d: SignerId) -> BTreeSet<EditId> {
     lab.log(d).ids().iter().copied().collect()
 }
 
+/// Of the edits device `d` holds, those of `of`: what it took from there, beside what it made itself.
+fn from(lab: &Lab, d: SignerId, of: &BTreeSet<EditId>) -> BTreeSet<EditId> {
+    ids(lab, d).intersection(of).copied().collect()
+}
+
+/// What device `d` holds that `of` holds not, by kind: what it made itself.
+fn own(lab: &Lab, d: SignerId, of: &BTreeSet<EditId>) -> Vec<String> {
+    let kind = |a: &Action| format!("{a:?}").chars().take_while(|c| c.is_alphanumeric()).collect::<String>();
+    lab.log(d).edits().iter().filter(|e| !of.contains(&e.id())).map(|e| kind(&e.action)).collect()
+}
+
 /// The bytes on the wire of the edits device `d` holds, signatures and all.
 fn bytes(lab: &Lab, d: SignerId) -> usize {
     let backup = lab.backup(d);
@@ -59,11 +70,15 @@ fn a_fresh_device_takes_only_the_boxes_it_opens_now_and_converges_once_it_fetche
     let full = w.lab.sync(w.mac_a, whole);
     let stubs = w.lab.stubs(lazy);
     assert!(!stubs.is_empty(), "boxes held back");
-    let (mine, all) = (ids(&w.lab, lazy), ids(&w.lab, whole));
+    let mac = ids(&w.lab, w.mac_a);
+    println!("made on their own: lazy {:?}, whole {:?}", own(&w.lab, lazy, &mac), own(&w.lab, whole, &mac));
+    let (mine, all) = (from(&w.lab, lazy, &mac), from(&w.lab, whole, &mac));
     let stubbed: BTreeSet<EditId> = stubs.iter().map(|s| s.id).collect();
-    // it holds what the whole iPad holds but the stubs, and every stub is a box that iPad holds
+    // it holds what the whole iPad took but the stubs, and every stub is a box that iPad holds; while it holds stubs
+    // it makes no key upkeep of its own, which can't tell what they box
     assert_eq!(first + stubs.len(), full);
-    assert!(mine.is_subset(&all) && stubbed.is_disjoint(&mine));
+    assert!(own(&w.lab, lazy, &mac).is_empty());
+    assert!(stubbed.is_disjoint(&mine));
     assert_eq!(mine.union(&stubbed).copied().collect::<BTreeSet<_>>(), all);
     let edits = w.lab.log(whole).edits();
     let boxes = |set: &BTreeSet<EditId>| edits.iter().filter(|e| set.contains(&e.id()) && is_box(e)).count();
@@ -88,7 +103,8 @@ fn a_fresh_device_takes_only_the_boxes_it_opens_now_and_converges_once_it_fetche
     w.lab.fetch_withheld(lazy);
     assert_eq!(w.lab.sync(w.mac_a, lazy), stubs.len());
     assert!(w.lab.stubs(lazy).is_empty() && w.lab.stub_liars(lazy).is_empty());
-    assert_eq!(ids(&w.lab, lazy), all);
+    assert!(w.lab.stubs_unanswered(lazy).is_empty());
+    assert_eq!(from(&w.lab, lazy, &mac), all);
     assert_eq!(w.lab.state(lazy), w.lab.state(whole));
     assert_eq!(w.lab.sync(w.mac_a, lazy), 0);
 }
@@ -111,9 +127,12 @@ fn a_stub_that_lies_is_caught_when_its_body_comes_and_changes_nothing() {
     stubs.sort();
     assert_eq!(w.lab.receive_stubs(lazy, w.mac_a, stubs.clone()), stubs.len());
     w.lab.sync(w.mac_a, lazy);
-    // the lies open nothing and enter nothing it knows (S1, S4)
-    assert_eq!(w.lab.state(lazy), w.lab.state(whole));
-    assert!(w.lab.reads(lazy, h.welcome));
+    // the lies enter nothing it knows and open nothing (S1, S4): it holds only edits its peer holds. A lie about
+    // parents may make it claim edits it lacks, which its peer then holds back till it asks for the bodies: a wait,
+    // no loss (S3)
+    let mac = ids(&w.lab, w.mac_a);
+    assert!(ids(&w.lab, lazy).is_subset(&mac));
+    assert!(w.lab.stub_liars(lazy).is_empty());
     // fetched, the bodies come and the two lies are caught, of the peer that told them (S5)
     w.lab.fetch_withheld(lazy);
     w.lab.sync(w.mac_a, lazy);
@@ -122,11 +141,13 @@ fn a_stub_that_lies_is_caught_when_its_body_comes_and_changes_nothing() {
         *id
     }).collect();
     assert_eq!(caught, lied);
-    // it holds and knows exactly what the whole iPad does: nothing lost for good (S2, S3), and the forged stub alone
-    // is left, asked for no more
-    assert_eq!(ids(&w.lab, lazy), ids(&w.lab, whole));
+    // it took and knows exactly what the whole iPad does: nothing lost for good (S2, S3), and the forged stub, whose
+    // body never came, let go of unanswered
+    assert_eq!(from(&w.lab, lazy, &mac), from(&w.lab, whole, &mac));
     assert_eq!(w.lab.state(lazy), w.lab.state(whole));
-    assert_eq!(w.lab.stubs(lazy), vec![forged]);
+    assert!(w.lab.stubs(lazy).is_empty());
+    assert_eq!(w.lab.stubs_unanswered(lazy), vec![(forged, w.mac_a)]);
+    assert!(w.lab.reads(lazy, h.welcome));
     assert_eq!(w.lab.sync(w.mac_a, lazy), 0);
 }
 

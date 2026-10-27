@@ -707,6 +707,8 @@ struct LazyBoxes {
     liars: Vec<(SignerId, EditId)>,
     /// How many stubs it took in all.
     taken: usize,
+    /// The stubs whose bodies an asking for them didn't bring, of the peer that sent them (`drop_unanswered`).
+    unanswered: Vec<(crate::sync::Stub, SignerId)>,
 }
 
 /// The ordered edits and authorized explicit key requests for one asking. The first page works both out;
@@ -2709,7 +2711,9 @@ impl Lab {
             show_items(d, store);
             store.perf.add("show items", at);
             let at = Perf::start();
-            let work = upkeep(d, store, &ix, &mine, rng, spares);
+            // a device holding stubs can't tell which boxes and keys its peers made of what they hold back: it makes
+            // none until their bodies are in, or it would box again what is boxed, or make a key for an epoch that has one
+            let work = if store.lazy.stubs.is_empty() { upkeep(d, store, &ix, &mine, rng, spares) } else { vec![] };
             store.perf.add("upkeep", at);
             if work.is_empty() {
                 store.perf.add("refresh", began);
@@ -4105,6 +4109,7 @@ impl Lab {
             beyond(edits, ids, store.log.logs(), &places, &asked).into_iter().map(|i| ids[i]).collect();
         let (signed, blobs) = self.outgoing(from, &sent);
         self.deliver(to, signed, &blobs);
+        self.drop_unanswered(to, from, None);
         sent.len()
     }
 
@@ -4640,6 +4645,33 @@ impl Lab {
     /// The stubs device `d` holds whose bodies it holds not yet, smallest id first.
     pub fn stubs(&self, d: SignerId) -> Vec<Stub> {
         self.held(d).lazy.stubs.values().map(|(stub, _)| stub.clone()).collect()
+    }
+
+    /// Device `d` asked peer `from` for the bodies of its stubs, of the logs `logs` or of all, and the asking ended: the
+    /// stubs `from` sent of those logs whose bodies didn't come go, as of edits `from` holds not or sends not (a stub
+    /// of nothing), kept in `stubs_unanswered`. Only while it asks for their bodies. How many went.
+    pub fn drop_unanswered(&mut self, d: SignerId, from: SignerId, logs: Option<&BTreeSet<LogId>>) -> usize {
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        if !store.lazy.fetching {
+            return 0;
+        }
+        let gone: Vec<EditId> = store
+            .lazy
+            .stubs
+            .iter()
+            .filter(|(_, (stub, by))| *by == from && logs.is_none_or(|l| l.contains(&stub.log)))
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &gone {
+            let stub = store.lazy.stubs.remove(id).expect("a stub");
+            store.lazy.unanswered.push(stub);
+        }
+        gone.len()
+    }
+
+    /// The stubs device `d` let go of unanswered (`drop_unanswered`), each with the peer that sent it.
+    pub fn stubs_unanswered(&self, d: SignerId) -> Vec<(Stub, SignerId)> {
+        self.held(d).lazy.unanswered.clone()
     }
 
     /// How many stubs device `d` took in all (`receive_stubs`): of boxes its first syncs held back.
