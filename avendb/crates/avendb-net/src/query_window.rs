@@ -84,10 +84,11 @@ pub(crate) async fn window(
 }
 
 /// What a window query `op` (`engine::window_of`) of device `me` answers, read off index `ix` and the tail after it:
-/// the engine's query over the newest entries with one of its labels and those whose header the device hasn't read
-/// (`engine::query_among`), a window of `n` first and four times more while fewer than `n` rows show and the index
-/// lists more; with the window it read last. `None` where the index can't say (`window`), or the log took edits
-/// between the window and the query, and the caller asks the engine.
+/// the engine's query over the newest entries with one of its labels, of its vault or of every vault its view knows
+/// (each vault's window, merged by creation: one cursor orders them all), and those whose header the device hasn't
+/// read (`engine::query_among`); a window of `n` first and four times more while fewer than `n` rows show and some
+/// vault's index lists more; with the window it read last. `None` where the index can't say (`window`, or a vault it
+/// holds no index key of), or the log took edits between the windows and the query, and the caller asks the engine.
 pub(crate) async fn answer(
     ix: &SharedIndex,
     lab: &Mutex<Lab>,
@@ -95,16 +96,36 @@ pub(crate) async fn answer(
     op: &serde_json::Value,
 ) -> io::Result<Option<(serde_json::Value, Window)>> {
     let Some((vault, n, before, labels)) = avendb::engine::window_of(op) else { return Ok(None) };
+    let vaults = {
+        let held = lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let keyed: BTreeSet<VaultId> = held.index_vaults(me).into_iter().collect();
+        // of every vault: those it holds no key of it opens nothing of, and an audience's alone the index can't find
+        let any = held.key_vaults(me);
+        let vaults = vault.map_or_else(|| held.view_vaults(me).into_iter().filter(|v| any.contains(v)).collect(), |v| vec![v]);
+        if !vaults.iter().all(|v| keyed.contains(v)) { return Ok(None) }
+        vaults
+    };
     let mut k = n.max(1);
     for _ in 0..8 {
-        let Some(win) = window(ix, lab, me, vault, &labels, before, k).await? else { return Ok(None) };
+        let mut win = Window { entries: vec![], index_at: 0, log_at: 0, tail: 0, rows_read: 0 };
+        let mut more = false;
+        for (i, v) in vaults.iter().enumerate() {
+            let Some(one) = window(ix, lab, me, *v, &labels, before, k).await? else { return Ok(None) };
+            if i > 0 && (one.log_at, one.index_at) != (win.log_at, win.index_at) { return Ok(None) }
+            more |= one.entries.len() >= k;
+            win.entries.extend(one.entries);
+            (win.log_at, win.index_at, win.tail) = (one.log_at, one.index_at, one.tail);
+            win.rows_read += one.rows_read;
+        }
+        win.entries.sort_by(|a, b| b.cmp(a));
+        win.entries.truncate(k);
         let held = lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if held.log(me).ids().len() != win.log_at { return Ok(None) }
         let mut among: Vec<EntryId> = win.entries.iter().map(|(_, e)| *e).collect();
         among.extend(held.untyped_of(me, vault));
         let (got, shown) = avendb::engine::query_among(&held, me, op, among);
         drop(held);
-        if shown >= n || win.entries.len() < k { return Ok(Some((got, win))) }
+        if shown >= n || !more { return Ok(Some((got, win))) }
         k = k.saturating_mul(4);
     }
     Ok(None)
@@ -251,6 +272,27 @@ mod tests {
         let (now, win) = answer(&ix, &lab, mac, &second).await.unwrap().unwrap();
         assert_eq!(now["ok"]["rows"], was["ok"]["rows"]);
         assert_eq!(win.tail, 1);
+        // every vault the device holds (no `vault`): each vault's window merged by creation, one cursor across them
+        let coop = w.avenceo;
+        let in_coop = lab.lock().unwrap().create(mac, coop, coop, "room", &[], document("C", "coop", mac)).is_ok();
+        let held = lab.lock().unwrap().log(mac).ids().len();
+        ix.step(&lab, mac, held).await.unwrap();
+        let mut every = rooms_of(0);
+        every.as_object_mut().unwrap().remove("vault");
+        let (mut before, mut pages, mut off_index) = (serde_json::Value::Null, 0, 0);
+        loop {
+            every["window"] = serde_json::json!({"newest": 7, "before": before});
+            let full = avendb::engine::read(&lab.lock().unwrap(), mac, &every);
+            if let Some((got, _)) = answer(&ix, &lab, mac, &every).await.unwrap() {
+                assert_eq!(got, full, "every vault, page {pages}");
+                off_index += 1;
+            }
+            pages += 1;
+            before = full["ok"]["next"].clone();
+            if before.is_null() { break; }
+        }
+        eprintln!("every vault (a coop room: {in_coop}): {off_index} of {pages} pages off the index");
+        assert!(off_index > 0 && pages >= 6, "{off_index} of {pages}");
         // edits the index hasn't saved: the tail after its stamp
         let mut w2 = lab.into_inner().unwrap();
         let mut seed = 0x9e37_79b9_7f4a_7c15u64;

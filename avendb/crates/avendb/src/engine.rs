@@ -930,12 +930,13 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     crate::query_view::read(lab, me, o, |reads| query_from(lab, me, o, Lab::query_candidates, reads))
 }
 
-/// A window query `v` (`query`) of one vault, by labels a shared index lists (`Selector::blind`): its vault, its `n`
-/// and those labels, as `index::type_label` and `index::tag_label` spell them. `None` for any other op.
-pub fn window_of(v: &Value) -> Option<(VaultId, usize, Option<(u64, EntryId)>, Vec<String>)> {
+/// A window query `v` (`query`) by labels a shared index lists (`Selector::blind`): its vault (none for every vault),
+/// its `n`, its cursor and those labels, as `index::type_label` and `index::tag_label` spell them. `None` for any
+/// other op.
+pub fn window_of(v: &Value) -> Option<(Option<VaultId>, usize, Option<(u64, EntryId)>, Vec<String>)> {
     let ("query", o) = op_of(v).ok()? else { return None };
     let (n, before) = window_field(o).ok()??;
-    let vault = vault_of(o, "vault").ok()?;
+    let vault = match o.get("vault") { None => None, Some(_) => Some(vault_of(o, "vault").ok()?) };
     let w = o.get("where").map(Where::of_json).transpose().ok()?.unwrap_or(Where::Yes);
     let labels = w.plan().blind()?.into_iter().map(|l| match l {
         crate::selector::Label::Type(t) => crate::index::type_label(t.as_str()),
