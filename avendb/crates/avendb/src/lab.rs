@@ -6969,7 +6969,8 @@ struct UpkeepDue {
     entries: HashSet<EntryId>,
     /// The entries a sliced upkeep left for its next look (`UPKEEP_SLICE`): due, but unchanged for being left, so a
     /// lane or cap group among them is no reason to look at every entry again (2026-10-27: an iPhone's catch-up looked
-    /// at the same first slice of every entry some 40 times a second, a lane among the rest each time, and never ended).
+    /// at the same first slice of every entry some 40 times a second, a lane among the rest each time, and never ended;
+    /// `UpkeepSlices.lean`: it moves on and ends).
     unlooked: HashSet<EntryId>,
     /// When it last looked: the log's lineage and length, the keys' revision, the selectors it read, the cap groups'
     /// and the lanes' hashes.
