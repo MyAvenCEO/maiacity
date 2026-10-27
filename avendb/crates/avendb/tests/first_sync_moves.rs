@@ -17,8 +17,12 @@ use avendb::slice::{Atom, Selector, Sym};
 use avendb::sync::{log_of, place, LogId};
 use common::*;
 
-/// The entries the vault's edits are spread over.
+/// The notes the vault's edits are spread over at a time: the latest so many. A move wraps the key of every write of
+/// its note under its new stay's (`link`), so it costs what its note was written, which a vault that keeps writing
+/// new notes keeps bounded, as the iPhone's did (3,200 entries at 130,000 edits, about 40 each).
 const ENTRIES: u64 = 400;
+/// Of every so many edits, one creates a note, the oldest of the latest `ENTRIES` falling quiet: about 40 edits a note.
+const NOTE_EVERY: usize = 40;
 /// The edits of a page, about what a 3 MB page brings.
 const PAGE: usize = 600;
 /// Of every so many edits, one moves its entry.
@@ -27,29 +31,40 @@ const MOVE_EVERY: usize = 9;
 const GRANT_EVERY: usize = 10_000;
 
 /// Alice's vault as her Mac and her iPhone write it at once: `held` edits after its notes, two at each depth, every
-/// `MOVE_EVERY`-th a move of its note into Bob's audience or back, keeping every write of the note it had seen, and
-/// now and then a grant.
+/// `MOVE_EVERY`-th a move of its note into Bob's audience or back, keeping every write of the note it had seen, a new
+/// note every `NOTE_EVERY`, and now and then a grant.
 fn vault(held: usize) -> (Log, VaultId) {
     let mut c = cast();
     let (alice, bob) = (c.alice, c.bob);
     let notes = || Selector::AnyOf(vec![vec![Atom::TypeIn(vec![Sym::new("note")])]]);
     let bobs = c.issue(MAC_A, &[], alice, Who::Vault(bob), Level::Write, notes()).expect("a share with Bob");
-    for i in 0..ENTRIES {
-        c.create(MAC_A, alice, EntryId::from_u64(1000 + i), alice, &[], "note", &[]).expect("a note");
+    let mut made: Vec<EntryId> = (0..ENTRIES).map(|i| EntryId::from_u64(1000 + i)).collect();
+    for &e in &made {
+        c.create(MAC_A, alice, e, alice, &[], "note", &[]).expect("a note");
     }
     let mut was = replay(c.log.edits());
+    let mut depth = c.log.edits().iter().map(|e| e.depth).max().unwrap_or(0);
     let mut n = 0;
     while n < held {
         if n > 0 && n % GRANT_EVERY == 0 {
             let before = c.log.edits().len();
             c.issue(MAC_A, &[], alice, Who::Vault(c.carol), Level::Read, notes()).expect("a share with Carol");
             was = replay_on(was, c.log.edits(), before);
+            depth = depth.max(c.log.edits()[before..].iter().map(|e| e.depth).max().unwrap_or(0));
+        }
+        if n > 0 && n % NOTE_EVERY == 0 {
+            let before = c.log.edits().len();
+            let e = EntryId::from_u64(1000 + made.len() as u64);
+            c.create(MAC_A, alice, e, alice, &[], "note", &[]).expect("a note");
+            made.push(e);
+            was = replay_on(was, c.log.edits(), before);
+            depth = depth.max(c.log.edits()[before..].iter().map(|e| e.depth).max().unwrap_or(0));
         }
         // both devices at one depth, each on its own note, drafted on what both held
-        let depth = c.log.edits().iter().map(|e| e.depth).max().unwrap_or(0) + 1;
+        depth += 1;
         let mut group = vec![];
         for (k, by) in [MAC_A, PHONE_A].into_iter().enumerate() {
-            let e = EntryId::from_u64(1000 + ((n as u64 + k as u64) * 7919) % ENTRIES);
+            let e = made[made.len() - ENTRIES as usize + ((n + k) * 7919) % ENTRIES as usize];
             let en = was.state.entry(e).expect("a note");
             let action = if (n + k) % MOVE_EVERY == MOVE_EVERY - 1 {
                 let into = en.audience() == AudienceId::of(alice, &[]);

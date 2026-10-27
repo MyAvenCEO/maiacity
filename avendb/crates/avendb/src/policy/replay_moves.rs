@@ -218,8 +218,10 @@ fn materialized_replay(edits: &[Edit]) -> Replay {
     let Run { stood, state, acts, snap, .. } = run;
     let parents = edits.iter().flat_map(|e| e.parents.iter().copied()).collect();
     let tail = snap.map(|state| {
-        let passed = Passed::of(&edits, &ids, &stood, at);
-        Tail { at, state, base, cands, tried, parents, covered, depths, passed }
+        let passed = Passed::of(&edits, &ids, &stood, 0, at);
+        let after = Passed::of(&edits, &ids, &stood, at, edits.len());
+        let grants = Grants::of(&edits, &ids);
+        Tail { at, state, base, cands, tried, parents, covered, depths, passed, after, grants }
     });
     Replay { edits, ids, stood, state, acts, tail }
 }

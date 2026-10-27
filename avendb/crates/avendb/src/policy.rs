@@ -910,26 +910,28 @@ impl<T: Copy + Eq + Hash> Listed<T> {
     }
 }
 
-/// The seals made so far, in order, with what the schedule looks up in them.
+/// The seals made so far, in order, with what the schedule looks up in them. The long collections are shared like a
+/// state's, so a state copied before a change, as a replay keeps the one at its place, costs a few counts and not a
+/// copy of every seal made.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Seals {
-    list: Vec<Seal>,
-    set: HashSet<Seal>,
+    list: imbl::Vector<Seal>,
+    set: imbl::HashSet<Seal>,
     /// The family keys sealed to each key, by that key: what opening it opens of the families. An entry key opens no
     /// family key, so this is all `stale_keys` follows.
     fams: HashMap<KeyName, Vec<KeyName>>,
     /// Every family key sealed to anything.
     secrets: HashSet<KeyName>,
     /// Each key sealed to a key of an entry's stay, with that entry and stay: what `link` checks for a move link.
-    linked: HashSet<(KeyName, EntryId, Option<EditId>)>,
+    linked: imbl::HashSet<(KeyName, EntryId, Option<EditId>)>,
 }
 
 impl Seals {
     fn add(&mut self, s: Seal) {
-        if !self.set.insert(s) {
+        if self.set.insert(s).is_some() {
             return;
         }
-        self.list.push(s);
+        self.list.push_back(s);
         if let KeyName::Scoped(..) = s.secret {
             self.fams.entry(s.to).or_default().push(s.secret);
             self.secrets.insert(s.secret);
@@ -1936,7 +1938,7 @@ impl State {
     }
 
     /// Every seal of the schedule, in the order made.
-    pub fn seals(&self) -> &[Seal] {
+    pub fn seals(&self) -> &imbl::Vector<Seal> {
         &self.seals.list
     }
 
@@ -3966,6 +3968,43 @@ struct Tail {
     /// after it must keep to hide nothing from them (`V3_move_steps_on`, `V4_tail_moves`), and whether a move there
     /// stood not, which a new move would be tried with (`resolve_moves`).
     passed: Passed,
+    /// The same of the edits after the place.
+    after: Passed,
+    /// The grants among every edit held and the shares their revocations name (`rests_on_revoked`).
+    grants: Grants,
+}
+
+/// The grants among a replay's edits, each by its share with the share it rests on, and the shares the revocations
+/// among them name: a new grant is followed up its chain through these, never through every edit held. A share is the
+/// grant of the edit of its id, so it is the same whatever the edits' order.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Grants {
+    parent: HashMap<ShareId, Option<ShareId>>,
+    taken: HashSet<ShareId>,
+}
+
+impl Grants {
+    /// Edit `e`, whose id is `id`, among them too.
+    fn note(&mut self, e: &Edit, id: EditId) {
+        match &e.action {
+            Action::Share(Sharing::Grant(c, _)) => {
+                self.parent.entry(ShareId::from(id)).or_insert(c.parent);
+            }
+            Action::Revoke(Revoking::Grant { share, .. }) => {
+                self.taken.insert(*share);
+            }
+            _ => {}
+        }
+    }
+
+    /// Of the edits `edits`, each with its id.
+    fn of(edits: &[Edit], ids: &[EditId]) -> Grants {
+        let mut g = Grants::default();
+        for (e, &id) in edits.iter().zip(ids) {
+            g.note(e, id);
+        }
+        g
+    }
 }
 
 /// What the edits before a replay's place say of the moves (`Tail::passed`): no scan of every edit held for each page.
@@ -3987,11 +4026,19 @@ impl Passed {
         }
     }
 
-    /// What the first `to` of `edits` say.
-    fn of(edits: &[Edit], ids: &[EditId], stood: &[bool], to: usize) -> Passed {
+    /// What `edits[from..to]` say.
+    fn of(edits: &[Edit], ids: &[EditId], stood: &[bool], from: usize, to: usize) -> Passed {
         let mut p = Passed::default();
-        p.pass(edits, ids, stood, 0, to);
+        p.pass(edits, ids, stood, from, to);
         p
+    }
+
+    /// What the edits after those it passed say too.
+    fn extend(&mut self, o: Passed) {
+        for (e, ws) in o.wrote {
+            self.wrote.entry(e).or_default().extend(ws);
+        }
+        self.lost |= o.lost;
     }
 }
 
@@ -4074,11 +4121,25 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
             && deepest.is_none_or(|d| d < e.depth)
             && e.parents.iter().all(|p| by_id.get(p).is_none_or(|parent| parent.depth < e.depth))
     };
+    let tail_or_whole = |was: Replay| match step_tail(was, fresh, &ids_fresh) {
+        Ok(r) => (r, Why::Tail),
+        Err(why) => (whole(), Why::Whole(why)),
+    };
     if !fresh.iter().all(steps) {
-        return match step_tail(was, fresh, &ids_fresh) {
-            Ok(r) => (r, Why::Tail),
-            Err(why) => (whole(), Why::Whole(why)),
-        };
+        return tail_or_whole(was);
+    }
+    let mut order: Vec<(u64, u8, EditId, &Edit)> = by_id.iter().map(|(&id, &e)| (e.depth, e.rank(), id, e)).collect();
+    order.sort_by_key(|a| (a.0, a.1, a.2));
+    // a new edit as deep as a new move before it, as a page brings what two devices made at once: the last edits are
+    // replayed again with them (`V4_tail_moves`), not stepped on one by one
+    let mut floor = None;
+    for &(depth, _, _, e) in &order {
+        if floor.is_some_and(|f| depth <= f) {
+            return tail_or_whole(was);
+        }
+        if moving(e) {
+            floor = Some(depth);
+        }
     }
     // a move steps on where it keeps every write of its entry that stands (`V3_move_steps_on`) and every move before
     // it stood: the moves are tried all at once (`resolve_moves`), so one that stood not cut what the others stood on
@@ -4090,28 +4151,15 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
     }
     if !kept.is_empty() {
         // before its place, as the place keeps them; after it, the last edits
-        if tail.passed.lost {
-            return (whole(), Why::Whole("replay whole: a move it held stood not"));
+        // a new move would be tried with one it held that stood not: the last edits are replayed again with it
+        if tail.passed.lost || tail.after.lost {
+            return tail_or_whole(was);
         }
         for (entry, ws) in kept.iter_mut() {
-            ws.extend(tail.passed.wrote.get(entry).into_iter().flatten().copied());
-        }
-        for (i, e) in was.edits.iter().enumerate().skip(tail.at) {
-            match &e.action {
-                Action::Write { entry, .. } if was.stood[i] => {
-                    if let Some(ws) = kept.get_mut(entry) {
-                        ws.insert(was.ids[i]);
-                    }
-                }
-                Action::Mark { caps: Some(_), .. } if !was.stood[i] => {
-                    return (whole(), Why::Whole("replay whole: a move it held stood not"));
-                }
-                _ => {}
-            }
+            let (before, after) = (tail.passed.wrote.get(entry), tail.after.wrote.get(entry));
+            ws.extend(before.into_iter().chain(after).flatten().copied());
         }
     }
-    let mut order: Vec<(u64, u8, EditId, &Edit)> = by_id.iter().map(|(&id, &e)| (e.depth, e.rank(), id, e)).collect();
-    order.sort_by_key(|a| (a.0, a.1, a.2));
     let mut out = was;
     // the depth of the last move stepped on: what comes after it is deeper, as after an edit held
     let mut floor = None;
@@ -4132,6 +4180,9 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
         let tail = out.tail.as_mut().expect("a replay to step on from");
         tail.parents.extend(e.parents.iter().copied());
         tail.depths.insert(id, e.depth);
+        tail.grants.note(e, id);
+        let n = out.edits.len();
+        tail.after.pass(&out.edits, &out.ids, &out.stood, n - 1, n);
         match &e.action {
             Action::Write { entry, .. } if stands => {
                 if let Some(ws) = kept.get_mut(entry) {
@@ -4164,7 +4215,8 @@ fn past_move(out: &mut Replay) {
         let none = HashSet::new();
         tail.base = Some(run_from(base, &trust.edits, &trust.ids, &none, false, &HashMap::new(), None).state);
     }
-    tail.passed.pass(&out.edits, &out.ids, &out.stood, tail.at, n);
+    let after = std::mem::take(&mut tail.after);
+    tail.passed.extend(after);
     tail.at = n;
     tail.state = out.state.clone();
 }
@@ -4281,8 +4333,12 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'st
     }
     let Replay { mut edits, ids: mut all, mut stood, mut acts, tail, .. } = was;
     let mut tail = tail.expect("a replay to step on from");
-    let old: HashSet<EditId> = all[at..].iter().copied().collect();
-    acts.retain(|(id, _)| !old.contains(id));
+    // only an edit a checkpoint covers is among them, with a vault of one that covers it: no scan of them all
+    for id in &all[at..] {
+        for &v in tail.covered.get(id).into_iter().flatten() {
+            acts.remove(&(*id, v));
+        }
+    }
     acts.extend(run.acts);
     edits.truncate(at);
     all.truncate(at);
@@ -4290,6 +4346,7 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'st
     for (e, id) in fresh.iter().zip(ids) {
         tail.parents.extend(e.parents.iter().copied());
         tail.depths.insert(*id, e.depth);
+        tail.grants.note(e, *id);
     }
     edits.extend(tail_edits);
     all.extend(tail_ids);
@@ -4299,6 +4356,7 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'st
         tail.at = at + moved;
         tail.state = run.snap.expect("the state at its new place");
     }
+    tail.after = Passed::of(&edits, &all, &stood, tail.at, edits.len());
     tail.base = base;
     Ok(Replay { edits, ids: all, stood, state: run.state, acts, tail: Some(tail) })
 }
@@ -4314,17 +4372,13 @@ fn rests_on_revoked(was: &Replay, fresh: &[Edit], ids: &[EditId]) -> bool {
     if !fresh.iter().any(|e| parent_of(e).is_some()) {
         return false;
     }
-    let taken: HashSet<ShareId> = was.edits.iter().filter_map(|e| match &e.action {
-        Action::Revoke(Revoking::Grant { share, .. }) => Some(*share),
-        _ => None,
-    }).collect();
+    let Some(grants) = was.tail.as_ref().map(|t| &t.grants) else { return true };
+    let (taken, held) = (&grants.taken, &grants.parent);
     if taken.is_empty() {
         return false;
     }
     let new: HashMap<ShareId, Option<ShareId>> =
         fresh.iter().zip(ids).filter_map(|(e, id)| parent_of(e).map(|p| (ShareId::from(*id), p))).collect();
-    let shares = shares_issued(was.edits.iter().zip(was.ids.iter().copied()));
-    let held: HashMap<ShareId, Option<ShareId>> = shares.iter().rev().map(|x| (x.0, x.1)).collect();
     let bound = new.len() + held.len() + 1;
     new.keys().any(|&x| {
         let mut x = Some(x);
@@ -4363,8 +4417,10 @@ fn replay_ids(edits: &[Edit], ids: &[EditId]) -> Replay {
     let Run { stood, state, acts, snap, .. } = run;
     let parents = edits.iter().flat_map(|e| e.parents.iter().copied()).collect();
     let tail = snap.map(|state| {
-        let passed = Passed::of(&edits, &ids, &stood, at);
-        Tail { at, state, base, cands, tried, parents, covered, depths, passed }
+        let passed = Passed::of(&edits, &ids, &stood, 0, at);
+        let after = Passed::of(&edits, &ids, &stood, at, edits.len());
+        let grants = Grants::of(&edits, &ids);
+        Tail { at, state, base, cands, tried, parents, covered, depths, passed, after, grants }
     });
     Replay { edits, ids, stood, state, acts, tail }
 }
