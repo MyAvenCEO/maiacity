@@ -273,6 +273,10 @@ fn scale(n: usize) -> Value {
 
     // last, the log handed over and the replay let go, so a million edits are held but twice
     let (edits, writes) = (log.edits().len(), was.state.all_writes().len());
+    // what the log keeps of an edit on disk: its bytes, its id, and a signature of its own (one ML-DSA-65 an edit while
+    // segments are off; S8 signs a segment once instead)
+    let edit_bytes = log.edits().iter().map(|e| avendb::encode::bytes(e).len()).sum::<usize>() as f64 / edits as f64;
+    let log_bytes = edit_bytes + 32.0 + avendb::sign::ML_DSA_SIGNATURE_BYTES as f64;
     drop(was);
     let intake_s = intake(log, writes);
 
@@ -306,6 +310,8 @@ fn scale(n: usize) -> Value {
         "view_rows": listed,
         "view_p50_us": round(pct(&views, 0.50), 1),
         "view_p95_us": round(pct(&views, 0.95), 1),
+        "edit_bytes_per_edit": round(edit_bytes, 1),
+        "log_bytes_per_edit": log_bytes.round(),
     })
 }
 

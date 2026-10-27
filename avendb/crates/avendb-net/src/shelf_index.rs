@@ -469,3 +469,7 @@ fn derive<E>(entries: &[E], rows: impl Fn(&E) -> Vec<Change>) -> BTreeMap<Vec<u8
 #[cfg(test)]
 #[path = "shelf_index_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "shelf_index_bench.rs"]
+mod bench;

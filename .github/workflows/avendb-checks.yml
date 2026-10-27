@@ -227,6 +227,24 @@ jobs:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
           AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
         run: cargo nextest run --profile ci --locked --no-fail-fast --no-tests=fail --features test-fixtures ${{ matrix.args }} ${{ matrix.filter }}
+      # The index's scale gates (avendb/bench-gates.json's index rows, plan D1): a bulk-built index of 1M and 10M edits
+      # opened cold, counted in pages and bytes read and log edits stepped on, and the bulk build's root held to the same
+      # rows written as they come at 100k. In this shard, as its test program is the one just built here: about 20 s.
+      - uses: oven-sh/setup-bun@v2.2.0
+        if: matrix.name == 'net'
+        with:
+          bun-version-file: .bun-version
+      - name: The index at 1M and 10M edits
+        if: matrix.name == 'net'
+        working-directory: avendb
+        env:
+          CARGO_PROFILE_TEST_OPT_LEVEL: 1
+          AVENDB_INDEX_N: 1000000,10000000
+          AVENDB_PARITY_N: 100000
+        run: |
+          cargo nextest run --profile ci --locked --features test-fixtures -p avendb-net --run-ignored only --no-capture \
+            -E 'test(=shelf_index::bench::bench_index) | test(=shelf_index::bench::bench_parity)' | tee "$RUNNER_TEMP/index.log"
+          bun ../scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/index.log" --index
       # This binary shares immutable 40-seed histories via LazyLock. A process per property rebuilt them 37 times.
       - name: Shared-history properties (all seeds and invariants)
         if: matrix.properties
