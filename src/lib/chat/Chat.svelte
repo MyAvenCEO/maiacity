@@ -37,7 +37,7 @@
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let open = $state(q.get('room') ?? '');
-	// the open room is the chat manifest's `$room`: its newest messages come now, its history after
+	// the open room is the chat actor's `$room`: its newest messages come now, its history after
 	$effect(() => {
 		bindView('room', open || null);
 		return () => bindView('room', null);
