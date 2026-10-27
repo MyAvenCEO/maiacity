@@ -21,6 +21,37 @@ once per batch of 25-50 tasks (repository `CLAUDE.md`). Measured baseline and hi
 So the wins are (1) no CI per task, (2) parallelism across threads (each has its own box), not across helpers in a
 box, (3) a collector that lands branches in seconds, and (4) checks that run only what a task touched.
 
+## Coordinator: how to size and hand out work (Samuel 2026-10-27)
+
+Tasks per batch (25-50) are not threads. A thread costs a fixed start before it does useful work, so it should carry
+enough work to pay that back. Measured on a 4-core cloud box (2026-10-27):
+
+| fixed cost of a new thread | JS/page work | Rust work |
+|---|---|---|
+| box start: bun install 9 s, dev-cache hook ~65 s | ~1 min | ~1 min |
+| first check / first test build | svelte-check ~65 s | ~4-5 min (dev cache), ~10 without |
+| reading in: the code, memory, the brief (estimate) | ~5-10 min | ~5-10 min |
+| total before useful work | **~8-12 min** | **~10-15 min** |
+
+Sizing rule: keep that start under ~20% of a thread's work.
+
+- **A new thread gets at least ~45 min of work (JS), ~1 h (Rust).** Smaller tasks are grouped: several small tasks
+  on the same area go to one thread, done one after another, one commit (or branch) each, so they still land as
+  separate `Task:` lines in the batch.
+- **Split into separate threads only when the pieces are independent and own different files.** Two pieces on the
+  same files stay in one thread (they would conflict in the batch anyway).
+- **Rust in parallel = separate threads.** One box has one build folder (~18 GB warm, of ~39 GB disk) and one cargo
+  lock, so a second Rust helper in the same box waits or fills the disk. Helpers in a thread are for reading,
+  searching, JS, docs and measuring.
+- **How many at once:** as many as there are independent, big-enough chunks, typically 5-15 threads in flight, each
+  doing several tasks. Fewer threads also means fewer replies for Samuel to read.
+- **Name the collector up front.** Task threads report "branch ready" to the coordinator, which routes it to the
+  collector; they never merge to main or mark PRs ready.
+- **Cut a batch, don't wait for stragglers.** When 25-50 tasks are in, or a few hours have passed, the collector lands
+  what is ready; late tasks go in the next batch.
+- **Exceptions get their own PR at once:** production down, a security fix, or Samuel asks.
+- Re-check the numbers in this table with the cycle below when the setup changes (dev cache, box size).
+
 ## Task thread: the loop
 
 1. Branch from `origin/main`. Own a clear set of files; say which in your first reply so the coordinator can keep
@@ -55,8 +86,8 @@ bun scripts/devx/collect.mjs --tasks                  # "Task: <branch>" lines f
   its thread; don't hand-resolve someone else's logic. The CI-built WebAssembly (`src/lib/avendb/device/avendb_browser*`)
   never blocks: the batch keeps its copy and the final PR's CI commits the right one.
 - When the batch is in (25-50 tasks, or the coordinator says so): put the `Task:` lines in the PR body, mark the PR
-  ready, one CI run, fix only the culprits in one round, squash with an explicit commit message (title + body with the
-  `Task:` lines, never a `[skip ci]`), then close the task PRs naming the final PR, and merge main back into the
+  ready, one CI run, fix only the culprits in one round, land it with a merge commit (never a squash: main keeps
+  every task's commits) and an explicit message (title + body with the `Task:` lines, never a `[skip ci]`), then close the task PRs naming the final PR, and merge main back into the
   collector branch.
 - A failing task in the batch: revert its merge commit on the collector branch (`git revert -m 1 <merge>`), push,
   tell its thread; don't hold the batch for it.
