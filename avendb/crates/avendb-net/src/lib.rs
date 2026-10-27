@@ -147,6 +147,7 @@ pub mod server;
 mod session;
 pub mod shelf;
 mod shared_index;
+pub mod query_window;
 // the index gate's on-disk index; the sync lane wires it in place of S7's spill (`avendb::lab::held`)
 #[cfg_attr(not(test), allow(dead_code))]
 mod shelf_index;
@@ -1498,6 +1499,15 @@ impl Node {
     ) -> Result<Vec<(u64, EntryId)>> {
         let Some(index) = &self.shared.shared_index else { return Ok(vec![]) };
         Ok(index.find(&self.shared.lab, self.shared.me, vault, &labels, after, limit).await?)
+    }
+
+    /// The newest `w` entries of vault `vault` whose type, tag or link is one of `labels`, the newest first, read off its
+    /// shared index and the tail of edits after its last save (B3, `query_window`), never the log before it: a query
+    /// view's window. `None` where the index can't say (no shelf, or the tail is of a key's or share's log), and the
+    /// caller asks the engine.
+    pub async fn window(&self, vault: VaultId, labels: Vec<String>, w: usize) -> Result<Option<query_window::Window>> {
+        let Some(index) = &self.shared.shared_index else { return Ok(None) };
+        Ok(query_window::window(index, &self.shared.lab, self.shared.me, vault, &labels, w).await?)
     }
 
     /// The root of its shared index and the head of the edits it is of, as its last save left them: what a peer holds
