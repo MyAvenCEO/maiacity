@@ -31,14 +31,15 @@ pub struct Window {
     pub rows_read: usize,
 }
 
-/// The newest `w` entries of vault `vault` with one of `labels` on device `me` of `lab`, off index `ix` and the tail
-/// after it; `None` where the index can't say.
+/// The newest `w` entries of vault `vault` with one of `labels` on device `me` of `lab`, created before `before` where
+/// it names a cursor (`QueryView.lean` `page`), off index `ix` and the tail after it; `None` where the index can't say.
 pub(crate) async fn window(
     ix: &SharedIndex,
     lab: &Mutex<Lab>,
     me: SignerId,
     vault: VaultId,
     labels: &[String],
+    before: Option<(u64, EntryId)>,
     w: usize,
 ) -> io::Result<Option<Window>> {
     let locked = || lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -57,7 +58,7 @@ pub(crate) async fn window(
                 touched.into_iter().map(|e| (e, lab.shared_of(me, e))).collect();
             (tokens, tail, ids.len())
         };
-        let listed = ix.find(lab, me, vault, labels, None, w + tail.len()).await?;
+        let listed = ix.find(lab, me, vault, labels, before, w + tail.len()).await?;
         if ix.stamp().await != stamp {
             // a save stepped the index on meanwhile: read again
             continue;
@@ -66,7 +67,8 @@ pub(crate) async fn window(
         let mut found: BTreeSet<Reverse<(u64, EntryId)>> =
             listed.iter().filter(|(_, e)| !named.contains(e)).map(|r| Reverse(*r)).collect();
         for (e, of) in &tail {
-            if let Some(of) = of.as_ref().filter(|of| of.tokens.iter().any(|t| tokens.contains(t))) {
+            let older = |of: &&avendb::index::shared::Of| before.is_none_or(|c| (of.created, *e) < c);
+            if let Some(of) = of.as_ref().filter(|of| of.tokens.iter().any(|t| tokens.contains(t))).filter(older) {
                 found.insert(Reverse((of.created, *e)));
             }
         }
@@ -92,10 +94,10 @@ pub(crate) async fn answer(
     me: SignerId,
     op: &serde_json::Value,
 ) -> io::Result<Option<(serde_json::Value, Window)>> {
-    let Some((vault, n, labels)) = avendb::engine::window_of(op) else { return Ok(None) };
+    let Some((vault, n, before, labels)) = avendb::engine::window_of(op) else { return Ok(None) };
     let mut k = n.max(1);
     for _ in 0..8 {
-        let Some(win) = window(ix, lab, me, vault, &labels, k).await? else { return Ok(None) };
+        let Some(win) = window(ix, lab, me, vault, &labels, before, k).await? else { return Ok(None) };
         let held = lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if held.log(me).ids().len() != win.log_at { return Ok(None) }
         let mut among: Vec<EntryId> = win.entries.iter().map(|(_, e)| *e).collect();
@@ -177,7 +179,7 @@ mod tests {
                 ix.step(&lab, mac, held).await.unwrap();
             }
             for (labels, n) in &queries {
-                let got = window(&ix, &lab, mac, alice, labels, *n).await.unwrap();
+                let got = window(&ix, &lab, mac, alice, labels, None, *n).await.unwrap();
                 if let Some(got) = got {
                     answered += 1;
                     if got.tail > 0 { with_tail += 1; }
@@ -223,6 +225,32 @@ mod tests {
             assert_eq!((log_read, win.tail), (0, 0), "opened right after a save");
             if n <= 20 { assert!(win.rows_read <= n, "{win:?}"); }
         }
+        // older pages by the cursor of the page before (QW3_pages): 36 rooms in pages of 10, each the engine's, each
+        // read off the index alone, and together the newest 36
+        let paged = |n: usize, before: &serde_json::Value| { let mut op = rooms_of(0);
+            op["window"] = serde_json::json!({"newest": n, "before": before}); op };
+        let (mut before, mut all, mut pages) = (serde_json::Value::Null, vec![], 0);
+        loop {
+            let op = paged(10, &before);
+            let (got, win) = answer(&ix, &lab, mac, &op).await.unwrap().expect("the index says");
+            assert_eq!(got, avendb::engine::read(&lab.lock().unwrap(), mac, &op), "page {pages}");
+            assert!(win.rows_read <= 10 && win.log_at == win.index_at as usize, "{win:?}");
+            all.extend(got["ok"]["rows"].as_array().unwrap().iter().map(|r| r["entry"].clone()));
+            pages += 1;
+            before = got["ok"]["next"].clone();
+            if before.is_null() { break; }
+        }
+        let whole = avendb::engine::read(&lab.lock().unwrap(), mac, &rooms_of(50));
+        assert_eq!(all, whole["ok"]["rows"].as_array().unwrap().iter().map(|r| r["entry"].clone()).collect::<Vec<_>>());
+        assert_eq!(pages, 4);
+        // a room made since leaves an older page as it was (QW3_older_page)
+        let first = avendb::engine::read(&lab.lock().unwrap(), mac, &rooms_of(10));
+        let second = paged(10, &first["ok"]["next"]);
+        let was = answer(&ix, &lab, mac, &second).await.unwrap().unwrap().0;
+        lab.lock().unwrap().create(mac, alice, alice, "room", &[], document("R", "new", mac)).unwrap();
+        let (now, win) = answer(&ix, &lab, mac, &second).await.unwrap().unwrap();
+        assert_eq!(now["ok"]["rows"], was["ok"]["rows"]);
+        assert_eq!(win.tail, 1);
         // edits the index hasn't saved: the tail after its stamp
         let mut w2 = lab.into_inner().unwrap();
         let mut seed = 0x9e37_79b9_7f4a_7c15u64;

@@ -1507,7 +1507,7 @@ impl Node {
     /// caller asks the engine.
     pub async fn window(&self, vault: VaultId, labels: Vec<String>, w: usize) -> Result<Option<query_window::Window>> {
         let Some(index) = &self.shared.shared_index else { return Ok(None) };
-        Ok(query_window::window(index, &self.shared.lab, self.shared.me, vault, &labels, w).await?)
+        Ok(query_window::window(index, &self.shared.lab, self.shared.me, vault, &labels, None, w).await?)
     }
 
     /// What window query `op` answers (`engine::window_of`), off its shared index and the tail after it

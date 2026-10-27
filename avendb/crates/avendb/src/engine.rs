@@ -921,8 +921,10 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// The answer comes from the device's stored view of the query where that is still its answer (`query_view`).
 /// With `window: n` in place of `order`, `limit`, `offset` and `after`, it is a window (`QueryView.lean` `window`): the
 /// newest `n` rows by creation (the depth of each entry's creation edit, then its id, as the shared index orders them),
-/// read newest first until `n` rows show, so `count` is the rows shown and `next` is none, and only the entries newer
-/// than the last row shown say what they wait on. Its answer is a function of those entries alone, so a node reads
+/// read newest first until `n` rows show, so `count` is the rows shown, and only the entries newer than the last row
+/// shown say what they wait on. A full window's `next` names its oldest row; `window: {"newest": n, "before": next}`
+/// is the page before it, the newest `n` created before that row (`QueryView.lean` `QW3_pages`, `QW3_older_page`),
+/// which entries made since never move, as they would a page by `offset`. Its answer is a function of those entries alone, so a node reads
 /// them off its shared index (`window_of`, `query_among`) and never the rest.
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     crate::query_view::read(lab, me, o, |reads| query_from(lab, me, o, Lab::query_candidates, reads))
@@ -930,16 +932,41 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
 
 /// A window query `v` (`query`) of one vault, by labels a shared index lists (`Selector::blind`): its vault, its `n`
 /// and those labels, as `index::type_label` and `index::tag_label` spell them. `None` for any other op.
-pub fn window_of(v: &Value) -> Option<(VaultId, usize, Vec<String>)> {
+pub fn window_of(v: &Value) -> Option<(VaultId, usize, Option<(u64, EntryId)>, Vec<String>)> {
     let ("query", o) = op_of(v).ok()? else { return None };
-    let n = count_of(o, "window").ok()??;
+    let (n, before) = window_field(o).ok()??;
     let vault = vault_of(o, "vault").ok()?;
     let w = o.get("where").map(Where::of_json).transpose().ok()?.unwrap_or(Where::Yes);
     let labels = w.plan().blind()?.into_iter().map(|l| match l {
         crate::selector::Label::Type(t) => crate::index::type_label(t.as_str()),
         crate::selector::Label::Tag(t) => crate::index::tag_label(t.as_str()),
     }).collect();
-    Some((vault, n, labels))
+    Some((vault, n, before, labels))
+}
+
+/// A query's `window`: `n`, or `{"newest": n, "before"?}` with `before` the `next` of the page before it, the
+/// creation and id of the oldest row it showed as `"<creation>.<entry>"` (`QueryView.lean` `page`).
+fn window_field(o: &Map<String, Value>) -> Result<Option<(usize, Option<(u64, EntryId)>)>, Refused> {
+    let wrong = || bad("window is n, or {\"newest\": n, \"before\"?: the next of the page before}");
+    match o.get("window") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(_)) => Ok(count_of(o, "window")?.map(|n| (n, None))),
+        Some(Value::Object(w)) => {
+            if w.keys().any(|k| k != "newest" && k != "before") { return Err(wrong()); }
+            let n = w.get("newest").and_then(Value::as_u64).ok_or_else(wrong)? as usize;
+            let before = match w.get("before") {
+                None | Some(Value::Null) => None,
+                Some(v) => Some(v.as_str().and_then(window_cursor_of).ok_or_else(wrong)?),
+            };
+            Ok(Some((n, before)))
+        }
+        Some(_) => Err(wrong()),
+    }
+}
+
+fn window_cursor_of(t: &str) -> Option<(u64, EntryId)> {
+    let (at, e) = t.split_once('.')?;
+    Some((at.parse().ok()?, EntryId::from_hex(e)?))
 }
 
 /// Query `v` on device `me` over the entries `among` alone, as `read` answers it where those hold every entry it reads:
@@ -985,7 +1012,7 @@ fn query_from(
     if after.is_some() && offset > 0 { return Err(bad("a query pages by after or by offset, not both")); }
     let depth = count_of(o, "depth")?.unwrap_or(QUERY_DEPTH).min(lab.query_depth(me));
     let follow = follows_of(o)?;
-    let window = count_of(o, "window")?;
+    let (window, before) = window_field(o)?.map_or((None, None), |(n, b)| (Some(n), b));
     if window.is_some() && ["order", "limit", "offset", "after"].iter().any(|k| o.contains_key(*k)) {
         return Err(bad("a window is the newest rows by creation: no order, limit, offset or after beside it"));
     }
@@ -1006,6 +1033,8 @@ fn query_from(
         // the newest first; one whose creation the log doesn't place is read first, as it may be the newest
         found.sort_by_cached_key(|e| Reverse((lab.creation_depth(me, *e).unwrap_or(u64::MAX), *e)));
         found.dedup();
+        // an older page: the entries created before the cursor alone (`QW3_older_page`)
+        if let Some(c) = before { found.retain(|e| (lab.creation_depth(me, *e).unwrap_or(u64::MAX), *e) < c); }
     }
     for entry in found {
         if window.is_some_and(|n| rows.len() >= n) { break; }
@@ -1063,7 +1092,13 @@ fn query_from(
         }).collect());
     let from = after.as_ref().map_or(offset, |c| c.start(&rows, keyed, &order));
     let page: Vec<_> = rows.into_iter().skip(from).take(limit.unwrap_or(usize::MAX)).collect();
-    let next = (from + page.len() < count).then(|| page.last().map(keyed)).flatten();
+    let next = (from + page.len() < count).then(|| page.last().map(keyed)).flatten().map(|c| c.to_text());
+    // a full window's next page is the one before its oldest row (`QW3_pages`)
+    let next = match window {
+        Some(n) => page.last().filter(|_| n > 0 && page.len() == n)
+            .map(|(e, ..)| format!("{}.{}", lab.creation_depth(me, *e).unwrap_or(u64::MAX), e.to_hex())),
+        None => next,
+    };
     let mut shown = vec![];
     for (entry, v, attrs, seen, cut, checkpoint) in page {
         let picked = |f: &String| select.as_ref().is_none_or(|fs| fs.contains(f));
@@ -1096,7 +1131,7 @@ fn query_from(
     }
     reads.lanes.extend(lanes.keys().copied());
     Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth,
-        "next": next.map_or(Value::Null, |c| Value::String(c.to_text())), "coverage": waits.coverage(count).to_json() }))
+        "next": next.map_or(Value::Null, Value::String), "coverage": waits.coverage(count).to_json() }))
 }
 
 /// `{"op": "touched", "since": [edits, keys, gone?], "reads"?}`: what changed on the device since it held `edits` edits and `keys`

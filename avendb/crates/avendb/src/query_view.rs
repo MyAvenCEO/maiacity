@@ -343,7 +343,8 @@ mod tests {
         let got = read(&w.lab, me, &win)["ok"].clone();
         let rows: Vec<_> = got["rows"].as_array().unwrap().iter().map(|r| r["entry"].clone()).collect();
         assert_eq!(rows, made[5..].iter().rev().map(|e| json!(e.to_hex())).collect::<Vec<_>>());
-        assert_eq!((got["count"].clone(), got["next"].clone()), (json!(3), Value::Null));
+        assert_eq!(got["count"], json!(3));
+        assert!(got["next"].is_string(), "a full window names the page before it");
         let paged = json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]},"window":3,"limit":3});
         assert!(read(&w.lab, me, &paged).get("refused").is_some(), "a window takes no limit beside it");
         let among = crate::engine::query_among(&w.lab, me, &win, made[5..].to_vec());
@@ -351,7 +352,17 @@ mod tests {
         w.lab.create(me, vault, vault, "todo", &[], document("T", "b", me)).unwrap();
         w.lab.edit(me, vault, made[0], |item| item.set_text(2, "older")).unwrap();
         assert_eq!(read(&w.lab, me, &win)["ok"], got, "an older note and another type change nothing it shows");
+        let older = json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]},"select":[],
+            "window":{"newest":3,"before":got["next"]}});
+        let page = read(&w.lab, me, &older)["ok"].clone();
         let newer = w.lab.create(me, vault, vault, "note", &[], document("N8", "b", me)).unwrap();
         assert_eq!(read(&w.lab, me, &win)["ok"]["rows"][0]["entry"], json!(newer.to_hex()));
+        let rows: Vec<_> = page["rows"].as_array().unwrap().iter().map(|r| r["entry"].clone()).collect();
+        assert_eq!(rows, made[2..5].iter().rev().map(|e| json!(e.to_hex())).collect::<Vec<_>>(), "the page before");
+        assert_eq!(read(&w.lab, me, &older)["ok"]["rows"], page["rows"], "a note made since leaves it as it was");
+        let last = json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]},"select":[],
+            "window":{"newest":3,"before":page["next"]}});
+        let last = read(&w.lab, me, &last)["ok"].clone();
+        assert_eq!((last["rows"].as_array().unwrap().len(), last["next"].clone()), (2, Value::Null), "the oldest two, then none");
     }
 }
