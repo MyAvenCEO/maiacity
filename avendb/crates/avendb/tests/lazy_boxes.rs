@@ -385,6 +385,28 @@ fn a_fresh_device_replays_a_fraction_of_the_edits_before_its_first_view() {
         m.1 += e.to_wire().len();
     }
     eprintln!("LAZY mix {mix:?}");
+    // what the `keys` edits are, as `bench_keys` (avendb-net) reads them off a shelf: by the kind of key each boxes,
+    // how many boxes it carries, and whether that key is current or of an older epoch
+    let st = replay(edits).state;
+    let mut keys = std::collections::BTreeMap::new();
+    for e in edits {
+        if let Action::Keys { name, boxes, .. } = &e.action {
+            let current = matches!(*name, KeyName::Scoped(f, _) if st.current(f) == *name);
+            let k = match *name {
+                KeyName::Signer(_) => "signer",
+                KeyName::Scoped(KeyFam::Seed(_), _) => "seed",
+                KeyName::Scoped(KeyFam::Share(..), _) => "share",
+                KeyName::Scoped(KeyFam::Audience(..), _) => "audience",
+                KeyName::Entry(..) => "entry (legacy)",
+            };
+            let m = keys.entry((k, boxes.len().min(3), current)).or_insert((0usize, 0usize));
+            m.0 += 1;
+            m.1 += e.to_wire().len();
+        }
+    }
+    for ((k, n, current), (count, b)) in &keys {
+        eprintln!("LAZY keys {k} boxes={n} current={current}: {count} edits, {b} bytes");
+    }
     let first = first_view(edits);
     let split = first_sync(edits, &first, NEW_DEVICE);
     let before = (edits.len(), bytes(&mut edits.iter()));
