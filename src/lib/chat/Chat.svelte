@@ -12,7 +12,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
-	import { bindView } from '../../../game/code/sources/device.js';
+	import { bindView, useQuery } from '../../../game/code/sources/device.js';
 	import { onMount, tick, untrack } from 'svelte';
 	import Frame from '$lib/avendb/Frame.svelte';
 	import Icon from '$lib/avendb/Icon.svelte';
@@ -29,15 +29,16 @@
 
 	const world = $derived(api.world);
 	const byId = $derived(new Map((world?.vaults ?? []).map((v) => [v.id, v])));
-	// Discovery is an authorized local query, independent of the broad world summary.
+	// Discovery is an authorized local query, independent of the broad world summary: Maia City's query entry of the
+	// rooms (`query-room`, the chat actor names it), newest first, a page of 50 at a time.
 	// The page bounds rows/demand; the core query may still scan/materialize before limiting.
 	let offset = $state(0);
-	const discovery = entryDetail(() => api, () => ({ op: 'query', where: { type: ['room'] },
-		select: [], order: [['created', 'desc']], offset, limit: 50 }));
+	const ROOMS = { entry: 'query-room', version: 1 };
+	const discovery = entryDetail(() => api, () => useQuery(ROOMS, {}, { offset, limit: 50 }));
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let open = $state(q.get('room') ?? '');
-	// the open room is the chat manifest's `$room`: its newest messages come now, its history after
+	// the open room is the chat actor's `$room`: its newest messages come now, its history after
 	$effect(() => {
 		bindView('room', open || null);
 		return () => bindView('room', null);
@@ -92,7 +93,13 @@
 			why = answer?.ok ? '' : (answer?.why ?? 'This room doesn’t open on this device yet.');
 		}, (error) => { why = error.message; }));
 	$effect(() => { if (!here) read = null; });
-	const record = $derived(read?.entry === open ? read.room : null);
+	// what the device answered, with the person's own messages laid over the moment they are sent, before it answers
+	// (../avendb/session.svelte.js `overlay`): a refused one goes again, its draft back in the composer
+	const sent = (row, op) => ({ ...row, by: { vault: world?.mine }, actor: op.as, pending: true });
+	const record = $derived.by(() => {
+		const room = read?.entry === open ? read.room : null;
+		return room && api.overlay ? api.overlay(open, room, sent) : room;
+	});
 	const messages = $derived(record?.messages ?? []);
 	const lines = $derived(R.grouped(messages));
 
@@ -130,7 +137,7 @@
 	const title = (r) => R.titleOf(r, recordOf(r), world, (v) => (v ? nameOf(v) : ''));
 	const readers = $derived((here?.readers ?? []).map((v) => byId.get(v) ?? { id: v, name: `Vault ${v.slice(0, 8)}…`, kind: 'unknown' }));
 	const mentionable = $derived(readers.filter((v) => v.id !== world?.mine).map((v) => ({ id: v.id, name: v.name ?? '' })));
-	const mine = (m) => !!m?.by && (m.by.vault === world?.mine || m.actor === actor);
+	const mine = (m) => !!m?.by && (m.by.vault === world?.mine || (m.signer ?? m.actor) === actor);
 
 	// changes
 	async function send(text, mentions, threadOf = null) {

@@ -6,6 +6,8 @@
 //
 //   bun scripts/ci/avendb-bench.mjs bench.log [pg.log]
 //   bun scripts/ci/avendb-bench.mjs phone.log --phone      the phone-class rows alone (avendb-bench-phone.mjs)
+//   bun scripts/ci/avendb-bench.mjs bench.log [pg.log] --shard core|carriers|live   one shard of the bench job: only
+//                                                          its own runs are required present
 //   bun scripts/ci/avendb-bench.mjs index.log --index      the index's scale rows alone (avendb-net's shelf_index_bench.rs,
 //                                                          run in the net test shard, whose build it shares)
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -101,6 +103,22 @@ export function check(bench, gates, pg = []) {
    add(false, `carrier ${c.carrier}: edit bytes/s ÷ link`, c.link_share, `≥ ${t.relay_link_share}`, c.link_share >= t.relay_link_share);
   }
  }
+ // live sync (avendb-net's sync_bench.rs, plan D3): a live edit's delay while a catch-up runs, and the catch-up's use of
+ // its link
+ const lives = bench.filter(b => b.kind === 'live');
+ for (const l of gates.live_links ?? []) if (!lives.some(x => x.link === l)) add(true, `live sync on a ${l} link`, null, 'present', false);
+ for (const l of lives) {
+  if (g.live_busy_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${g.live_busy_p95_ms_max}`, l.live_busy_p95_ms < g.live_busy_p95_ms_max);
+  add(false, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${t.live_busy_p95_ms}`, l.live_busy_p95_ms < t.live_busy_p95_ms);
+  if (g.live_idle_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay, idle, p95 ms`, l.live_idle_p95_ms, `< ${g.live_idle_p95_ms_max}`, l.live_idle_p95_ms < g.live_idle_p95_ms_max);
+  if (g.live_missed_max != null) add(true, `live ${l.link}: live edits not there in 15 s`, l.live_missed, `≤ ${g.live_missed_max}`, l.live_missed <= g.live_missed_max);
+  if (l.link_share != null) {
+   if (g.live_link_share_min != null) add(true, `live ${l.link}: catch-up bytes/s ÷ link`, l.link_share, `≥ ${g.live_link_share_min}`, l.link_share >= g.live_link_share_min);
+   add(false, `live ${l.link}: catch-up bytes/s ÷ link`, l.link_share, `≥ ${t.live_link_share}`, l.link_share >= t.live_link_share);
+  }
+  if (g.live_resent_ratio_max != null) add(true, `live ${l.link}: edits sent again ÷ new`, l.resent_ratio, `≤ ${g.live_resent_ratio_max}`, l.resent_ratio <= g.live_resent_ratio_max);
+  add(false, `live ${l.link}: edits sent again ÷ new`, l.resent_ratio, `≤ ${t.live_resent_ratio}`, l.resent_ratio <= t.live_resent_ratio);
+ }
  const phones = bench.filter(b => b.kind === 'phone');
  for (const p of phones) {
   add(false, `phone ${p.engine}: edits/s taken, signatures checked`, p.intake_per_s, `≥ ${t.phone_edits_per_s}`, p.intake_per_s >= t.phone_edits_per_s);
@@ -129,6 +147,9 @@ export function report(bench, pg, results) {
  const carriers = bench.filter(b => b.kind === 'carrier');
  if (carriers.length) rows.push('', '| carrier | edits | bytes/edit | sync s | asks | edits/s | KB/s | link KB/s | of link |', '|---|---|---|---|---|---|---|---|---|',
   ...carriers.map(c => `| ${c.carrier} | ${fmt(c.edits)} | ${fmt(c.bytes_per_edit)} | ${c.sync_s} | ${c.asks} | ${fmt(c.edits_per_s)} | ${fmt(Math.round(c.bytes_per_s / 1000))} | ${c.link_bytes_per_s ? fmt(c.link_bytes_per_s / 1000) : '–'} | ${c.link_share ?? '–'} |`));
+ const lives = bench.filter(b => b.kind === 'live');
+ if (lives.length) rows.push('', '| live sync link | edits | bytes/edit | catch-up s | edits/s | of link | sent again | live during catch-up p50 / p95 ms | idle p50 / p95 ms | missed | peak MB |', '|---|---|---|---|---|---|---|---|---|---|---|',
+  ...lives.map(l => `| ${l.link} | ${fmt(l.edits)} | ${fmt(l.bytes_per_edit)} | ${l.sync_s} | ${fmt(l.edits_per_s)} | ${l.link_share ?? '–'} | ${l.resent_ratio} | ${l.live_busy_p50_ms} / ${l.live_busy_p95_ms} | ${l.live_idle_p50_ms} / ${l.live_idle_p95_ms} | ${l.live_missed} | ${l.peak_kib ? Math.round(l.peak_kib / 1024) : '–'} |`));
  const phones = bench.filter(b => b.kind === 'phone');
  if (phones.length) rows.push('', '| phone class (WebAssembly) | edits | bytes/edit | verified | signatures/s | held | taken/s |', '|---|---|---|---|---|---|---|',
   ...phones.map(p => `| ${p.engine} ${p.version} | ${fmt(p.edits)} | ${fmt(p.bytes_per_edit)} | ${fmt(p.verified)} | ${fmt(p.verify_per_s)} | ${fmt(p.held)} | ${fmt(p.intake_per_s)} |`));
@@ -136,14 +157,27 @@ export function report(bench, pg, results) {
  return rows.join('\n');
 }
 
+// The gates with only shard `--shard`'s runs required present (the bench job's shards, avendb-checks.yml).
+function shardOf(gates) {
+ const at = process.argv.indexOf('--shard');
+ if (at < 0) return gates;
+ const shard = process.argv[at + 1];
+ const keep = { core: ['sizes', 'first_sync'], carriers: ['carriers'], live: ['live_links'] }[shard];
+ if (!keep) throw new Error(`--shard ${shard}: none of core, carriers, live`);
+ const out = { ...gates };
+ for (const k of ['sizes', 'first_sync', 'carriers', 'live_links']) if (!keep.includes(k)) out[k] = [];
+ return out;
+}
+
 if (import.meta.main) {
- const [benchFile, pgFile] = process.argv.slice(2).filter(a => !a.startsWith('--'));
+ const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--shard');
+ const [benchFile, pgFile] = args;
  const bench = lines(readFileSync(benchFile, 'utf8'), 'BENCH');
  const pg = pgFile ? lines(readFileSync(pgFile, 'utf8'), 'PG') : [];
  const gates = JSON.parse(readFileSync(gatesFile, 'utf8'));
  const phoneOnly = process.argv.includes('--phone');
  const results = process.argv.includes('--index') ? checkIndex(bench, gates)
-  : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, gates, pg);
+  : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, shardOf(gates), pg);
  const text = report(bench, pg, results);
  console.log(text);
  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## avenDB bench\n\n${text}\n`);

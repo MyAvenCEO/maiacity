@@ -5,6 +5,12 @@
 //! (`known`: `have` and the candidates that wait), which wait and on what (`waiting`, at most `MOST_WAITING`), and the
 //! logs a reachable peer announced that the device lacks and that may match (`logs`, which the node adds, `with_logs`);
 //! `denied` where the device has no standing. No clock: the same state answers the same.
+//!
+//! Freshness (`spec/AvenDB/Freshness.lean`) is the one value a page shows and acts by, beside every read: `current`
+//! (a live peer, every live peer heard, the read complete), `offline` as of the stamp of the device's last current
+//! read (no live peer), or `behind` (a live peer holds newer data for the read's scope, candidates wait, or a live peer
+//! has not told what it holds yet). An action goes only on `current`, waits while `behind`, and on `offline` asks the
+//! person to confirm it acts on data as of then (`Act`).
 
 use serde_json::{json, Value};
 
@@ -150,4 +156,99 @@ pub fn add_logs(answer: &mut Value, logs: usize) {
 /// Answer `answer` is a read the device may make, complete or partial: the logs it lacks may still change it.
 pub fn reads_open(answer: &Value) -> bool {
     matches!(answer["ok"]["coverage"]["state"].as_str(), Some("complete" | "partial"))
+}
+
+/// What the device hears now (`Freshness.Heard`): its live peers, how many of them have not told what they hold yet,
+/// and the stamp of its last current read (Unix ms, 0 for never).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Heard {
+    pub live: usize,
+    pub unheard: usize,
+    pub as_of: u64,
+}
+
+/// `Freshness.Freshness`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Freshness {
+    Current,
+    Offline { as_of: u64 },
+    Behind { logs: usize, waits: usize, unheard: usize },
+}
+
+/// `Freshness.Act`: what an action (approve, accept, decline, delete) does with a read's freshness.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Act {
+    Go,
+    Wait,
+    Confirm { as_of: u64 },
+}
+
+/// What a read's coverage (its JSON, as `Coverage::to_json` writes it) still lacks (`Freshness.pending`): the
+/// candidates that wait (`known - have`) and the announced logs it lacks that may match. A read that names no coverage
+/// counts as complete for what the device holds, so it lacks only the logs the node counted for its scope
+/// (`Coverage::with_logs`); a denied read lacks nothing.
+pub fn pending(coverage: &Value, logs: usize) -> (usize, usize) {
+    match coverage["state"].as_str() {
+        Some("denied") => return (0, 0),
+        Some("partial") => {}
+        _ => return (0, logs),
+    }
+    let n = |k: &str| coverage[k].as_u64().unwrap_or(0) as usize;
+    (n("known").saturating_sub(n("have")), n("logs").max(logs))
+}
+
+impl Freshness {
+    /// `Freshness.of`, from what a read still lacks (`pending`).
+    pub fn of(heard: Heard, (waits, logs): (usize, usize)) -> Freshness {
+        if heard.live == 0 { return Freshness::Offline { as_of: heard.as_of } }
+        if waits == 0 && logs == 0 && heard.unheard == 0 { return Freshness::Current }
+        Freshness::Behind { logs, waits, unheard: heard.unheard }
+    }
+
+    /// `Freshness.act`.
+    pub fn act(self) -> Act {
+        match self {
+            Freshness::Current => Act::Go,
+            Freshness::Behind { .. } => Act::Wait,
+            Freshness::Offline { as_of } => Act::Confirm { as_of },
+        }
+    }
+
+    /// `Freshness.opens`: whether an action's sheet opens, by itself (`asked` false) or because the person asked.
+    pub fn opens(self, asked: bool) -> bool {
+        match self.act() {
+            Act::Go => true,
+            Act::Wait => false,
+            Act::Confirm { .. } => asked,
+        }
+    }
+
+    pub fn to_json(self) -> Value {
+        match self {
+            Freshness::Current => json!({ "state": "current" }),
+            Freshness::Offline { as_of } => json!({ "state": "offline", "asOf": as_of }),
+            Freshness::Behind { logs, waits, unheard } =>
+                json!({ "state": "behind", "logs": logs, "waits": waits, "unheard": unheard }),
+        }
+    }
+}
+
+impl Act {
+    pub fn name(self) -> &'static str {
+        match self {
+            Act::Go => "go",
+            Act::Wait => "wait",
+            Act::Confirm { .. } => "confirm",
+        }
+    }
+}
+
+/// Stamps read answer `answer` with its freshness (`fresh`, beside `ok`), `logs` the announced logs its device lacks
+/// that may hold what it reads: every read, whatever it reads, the same way. A refused answer stays as it is. What it
+/// stamped, if anything.
+pub fn add_freshness(answer: &mut Value, heard: Heard, logs: usize) -> Option<Freshness> {
+    let ok = answer.get("ok")?;
+    let fresh = Freshness::of(heard, pending(&ok["coverage"], logs));
+    answer["fresh"] = fresh.to_json();
+    Some(fresh)
 }

@@ -4,7 +4,7 @@ import { expect, mock, test } from 'bun:test';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
-// the page's own ops, not the manifests' walk a device opened on it makes first (game/code/sources/manifests.js)
+// the page's own ops, not the actors' walk a device opened on it makes first (game/code/sources/actors.js)
 const ownOps = (o) => o.where?.type?.[0] !== 'manifest' && o.op !== 'synced';
 
 // outside a page: textures draw on a stand-in canvas, and a module's runes are plain values

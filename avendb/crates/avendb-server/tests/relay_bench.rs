@@ -7,7 +7,7 @@
 //!   AVENDB_CARRIER=relay AVENDB_CARRIER_EDITS=1000 cargo test -p avendb-server --features test-fixtures \
 //!     --test relay_bench -- --ignored --nocapture
 //!
-//! `AVENDB_CARRIER` is `direct`, `relay`, or `relay_link` (a relay reading `AVENDB_CARRIER_LINK` bytes a second of each
+//! `AVENDB_CARRIER` is `direct`, `relay`, or `relay_link`, or several of them, comma-separated, (a relay reading `AVENDB_CARRIER_LINK` bytes a second of each
 //! client, 1 MB/s if unset). Alice's Mac writes the edits into the coop before either node starts; Bob's Mac then asks
 //! it until it holds every one. Only numbers are printed.
 
@@ -30,12 +30,31 @@ const ENTRIES: u64 = 8;
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore]
 async fn bench_carrier() {
-    let case = std::env::var("AVENDB_CARRIER").unwrap_or_else(|_| "relay".into());
+    // one case or several (the bench job's carriers shard runs all three in one process): their worlds written side by
+    // side, each on a thread of its own, as writing one takes most of a minute in a debug build; then the cases one
+    // after another, so no case's sync shares the machine with another's
     let edits: usize = std::env::var("AVENDB_CARRIER_EDITS").ok().and_then(|n| n.parse().ok()).unwrap_or(1000);
-    let link: u64 = std::env::var("AVENDB_CARRIER_LINK").ok().and_then(|n| n.parse().ok()).unwrap_or(1_000_000);
+    let cases: Vec<String> =
+        std::env::var("AVENDB_CARRIER").unwrap_or_else(|_| "relay".into()).split(',').map(|c| c.trim().to_string()).collect();
+    let writing: Vec<_> = cases.iter().map(|_| std::thread::spawn(move || fixture(edits))).collect();
+    let fixtures: Vec<Fixture> = writing.into_iter().map(|t| t.join().expect("a fixture")).collect();
+    for (case, f) in cases.into_iter().zip(fixtures) {
+        carrier(case, f).await;
+    }
+}
+
+/// A world in which Alice's Mac wrote `edits` edits into the coop that Bob's Mac doesn't hold yet.
+struct Fixture {
+    w: World,
+    want: HashSet<EditId>,
+    bytes: usize,
+    write_s: f64,
+}
+
+fn fixture(edits: usize) -> Fixture {
     let mut w = world();
     let coop = handbook_ready(&mut w);
-    let (mac_a, passkey_a, mac_b, passkey_b) = (w.mac_a, w.passkey_a, w.mac_b, w.passkey_b);
+    let mac_a = w.mac_a;
 
     // Alice's Mac writes the edits; what Bob's Mac may take of them is what it doesn't hold yet
     let t = Instant::now();
@@ -55,6 +74,14 @@ async fn bench_carrier() {
     let fresh: Vec<_> = backup.signed().iter().filter(|s| !held.contains(&s.edit.id())).collect();
     let want: HashSet<EditId> = fresh.iter().map(|s| s.edit.id()).collect();
     let bytes: usize = fresh.iter().map(|s| s.to_wire().len()).sum();
+    Fixture { w, want, bytes, write_s }
+}
+
+/// One case: Bob's Mac taking the fixture's edits from Alice's Mac.
+async fn carrier(case: String, f: Fixture) {
+    let link: u64 = std::env::var("AVENDB_CARRIER_LINK").ok().and_then(|n| n.parse().ok()).unwrap_or(1_000_000);
+    let Fixture { mut w, want, bytes, write_s } = f;
+    let (mac_a, passkey_a, mac_b, passkey_b) = (w.mac_a, w.passkey_a, w.mac_b, w.passkey_b);
 
     let (relay, opts) = match case.as_str() {
         "direct" => (None, Options::local()),

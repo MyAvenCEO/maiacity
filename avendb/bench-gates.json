@@ -1,10 +1,11 @@
 {
-  "about": "avenDB's performance gates, held by scripts/ci/avendb-bench.mjs to the lines of crates/avendb/tests/bench_gates.rs and crates/avendb-server/tests/relay_bench.rs (the bench job of avendb-checks.yml). A gate missed fails the PR; a target is printed with whether it is met. Gates sit at the level reached on 2026-10-27 with headroom for a shared runner; raise one when the code reaches past it. The carriers' gates sit at under half of the first CI run's (2026-10-27: direct 582 edits/s, relay 710, a 1 MB/s link 93 edits/s at 0.56 of it, 1001 edits of 6 KB); draft_on_ratio_max (1.2) is null until Log::draft_on reads its log's index (claude/s-draft-on). The phone-class rows (WebAssembly in Chromium and WebKit) gate nothing yet. The index rows (index_sizes, parity_n: avendb-net's shelf_index_bench.rs, run with --index in the net test shard) gate counts, not only time: a view opened cold steps on no log edit and reads pages as the tree is deep (depth within the model's; a view's 50 rows the median open reads at most one page past the depth, the worst of 200 at most 6, as a page may hold few rows); 2026-10-27: 1M 3 deep, at most 7 pages, 81 KB; 10M 4, 8, 59 KB; 100M (by hand) 4, 7, 67 KB, built in 157 s; 49 index bytes/edit at each. log_bytes_per_edit_max (3,585 on 2026-10-27: 244 bytes an edit, its id, one ML-DSA-65 signature an edit while S8 is off) catches growth; the target bytes_ratio_pg (log over Postgres's bytes/edit) needs S8's one signature a segment.",
+  "about": "avenDB's performance gates, held by scripts/ci/avendb-bench.mjs to the lines of crates/avendb/tests/bench_gates.rs and crates/avendb-server/tests/relay_bench.rs (the bench job of avendb-checks.yml). A gate missed fails the PR; a target is printed with whether it is met. Gates sit at the level reached on 2026-10-27 with headroom for a shared runner; raise one when the code reaches past it. The carriers' gates sit at under half of the first CI run's (2026-10-27: direct 582 edits/s, relay 710, a 1 MB/s link 93 edits/s at 0.56 of it, 1001 edits of 6 KB); draft_on_ratio_max (1.2) is null until Log::draft_on reads its log's index (claude/s-draft-on). The phone-class rows (WebAssembly in Chromium and WebKit) gate nothing yet. The index rows (index_sizes, parity_n: avendb-net's shelf_index_bench.rs, run with --index in the net test shard) gate counts, not only time: a view opened cold steps on no log edit and reads pages as the tree is deep (depth within the model's; a view's 50 rows the median open reads at most one page past the depth, the worst of 200 at most 6, as a page may hold few rows); 2026-10-27: 1M 3 deep, at most 7 pages, 81 KB; 10M 4, 8, 59 KB; 100M (by hand) 4, 7, 67 KB, built in 157 s; 49 index bytes/edit at each. log_bytes_per_edit_max (3,585 on 2026-10-27: 244 bytes an edit, its id, one ML-DSA-65 signature an edit while S8 is off) catches growth; the target bytes_ratio_pg (log over Postgres's bytes/edit) needs S8's one signature a segment. The live rows (live_links: avendb-net's tests/sync_bench.rs, plan D3, batch 5's exit gates) hold a live edit's delay while a device catches up on a bulk of history, on a simulated calm link and a phone's (50 Mbit/s, 40 ms round trip, 1 % lost): p95 under 500 ms, none missing at 15 s, the catch-up using at least 80 % of a set-rate link, and at most 5 % of edits sent again. First run, 2026-10-27, calm, 3,000 edits: catch-up 14 s (215 edits/s), live p95 11.8 s during it (the iPhone's LIVE_WAIT case), 107 ms idle.",
   "sizes": [10000, 100000, 1000000],
   "first_sync": [{ "n": 10000, "entries": 2000 }, { "n": 50000, "entries": 3000 }],
   "carriers": ["direct", "relay", "relay_link"],
   "index_sizes": [1000000, 10000000],
   "parity_n": 100000,
+  "live_links": ["calm", "phone"],
   "gates": {
     "first_sync_speedup_min": { "10000": 3, "50000": 15 },
     "cost_ratio_max": 4,
@@ -22,7 +23,12 @@
     "index_view_pages_over_depth_max": 6,
     "index_view_bytes_max": 131072,
     "index_bytes_per_edit_max": 64,
-    "index_open_p95_us_max": 5000
+    "index_open_p95_us_max": 5000,
+    "live_busy_p95_ms_max": 500,
+    "live_idle_p95_ms_max": 500,
+    "live_missed_max": 0,
+    "live_link_share_min": 0.8,
+    "live_resent_ratio_max": 0.05
   },
   "targets": {
     "first_sync_speedup": 20,
@@ -33,6 +39,9 @@
     "relay_link_share": 0.8,
     "draft_on_ratio": 1.2,
     "phone_edits_per_s": 20000,
-    "bytes_ratio_pg": 2
+    "bytes_ratio_pg": 2,
+    "live_busy_p95_ms": 250,
+    "live_link_share": 0.9,
+    "live_resent_ratio": 0
   }
 }

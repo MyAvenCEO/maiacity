@@ -106,7 +106,7 @@
 pub mod backup;
 #[cfg(test)]
 mod bench;
-mod actor;
+mod node_loop;
 mod blind;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
@@ -127,6 +127,7 @@ mod edit_summaries;
 mod edit_transfer;
 mod edits;
 mod files;
+mod fresh;
 mod holdings;
 mod jobs;
 pub mod kx;
@@ -145,6 +146,7 @@ mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
+mod shared_index;
 // the index gate's on-disk index; the sync lane wires it in place of S7's spill (`avendb::lab::held`)
 #[cfg_attr(not(test), allow(dead_code))]
 mod shelf_index;
@@ -169,7 +171,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine::follow_standing;
-use avendb::id::{BlobId, EditId, ShareId, SignerId, VaultId};
+use avendb::id::{BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Checked, Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
@@ -235,7 +237,7 @@ const IDLE: Duration = Duration::from_secs(30);
 
 /// How long a node waits for a page of edits it asked a peer for (`Shared::pages`): one that never comes, over a
 /// connection kept open, would hold its pull, and the sync bar, for ever (Samuel's iPhone 2026-10-21, "syncing" at 19%
-/// with two pulls running). The asking fails, and the node asks again as it does any it failed (`actor`).
+/// with two pulls running). The asking fails, and the node asks again as it does any it failed (`node_loop`).
 const PAGE_WAIT: Duration = Duration::from_secs(180);
 
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
@@ -783,12 +785,25 @@ impl Node {
         let pool = connection_pool::Options { idle_timeout: IDLE, connect_timeout: WAIT, ..Default::default() };
         let pool = ConnectionPool::new(endpoint.clone(), iroh_blobs::ALPN, pool);
         let transport_control = transports::control::Control::new(packets.clone());
-        let (outreach, inbox) = actor::outreach();
+        let (outreach, inbox) = node_loop::outreach();
+        // its shared index, stepped on at its first save (`shared_index`); a shelf that can't read it costs it the
+        // index, never the node
+        let shared_index = match &opts.shelf {
+            Some(shelf) => match shared_index::SharedIndex::open(shelf.clone()).await {
+                Ok(ix) => Some(ix),
+                Err(e) => {
+                    tracing::warn!("avendb: the shared index can't be opened on the shelf: {e:#}");
+                    None
+                }
+            },
+            None => None,
+        };
         let shared = Arc::new(Shared {
             lifecycle,
             writer: Mutex::new(writer),
             me,
             lab: Mutex::new(lab),
+            shared_index,
             lab_schedule: Arc::default(),
             lab_turns: Arc::default(),
             edits,
@@ -816,6 +831,7 @@ impl Node {
             ui_receipts: peer_receipts::Receipts::for_ui(),
             outreach,
             wanted: Mutex::default(),
+            fresh: fresh::Fresh::default(),
             claims: Mutex::default(),
             interests: Mutex::default(),
             discovery_running: Mutex::default(),
@@ -848,6 +864,8 @@ impl Node {
             traffic: traffic::Traffic::default(),
             pulls: pulls::Budget::default(),
             keeping: Mutex::default(),
+            asked: Mutex::default(),
+            files_asked: Notify::new(),
         });
         let router = Router::builder(endpoint)
             .accept(ALPN, session::Protocol(shared.clone()))
@@ -863,7 +881,7 @@ impl Node {
             task::spawn(shared.clone().index_teller()),
             task::spawn(shared.clone().bootstrap_pump()),
             task::spawn(transports::control::maintain(shared.clone())),
-            task::spawn(actor::run(shared.clone(), inbox)),
+            task::spawn(node_loop::run(shared.clone(), inbox)),
         ];
         Ok(Node { shared, router, tasks: Mutex::new(tasks) })
     }
@@ -1439,7 +1457,8 @@ impl Node {
         f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static,
     ) -> Result<T> {
         let sampled = self.shared.receipts.enabled() || self.shared.ui_receipts.enabled();
-        let (out, edit) = self.shared.try_lab(move |lab, me| {
+        // a person's write goes ahead of every read and background turn waiting (`lab_schedule`, `Writes.lean`)
+        let (out, edit) = self.shared.try_lab_class(lab_schedule::Class::Write, move |lab, me| {
             let before = if sampled { lab.log(me).ids().len() } else { 0 };
             let out = f(lab, me);
             let edit = if sampled && lab.log(me).ids().len() > before {
@@ -1464,6 +1483,28 @@ impl Node {
     /// Who acts through the node here: the session `acting` names, else its device.
     pub fn acting_as(&self) -> SignerId {
         acting().unwrap_or(self.shared.me)
+    }
+
+    /// The entries of vault `vault` whose type, tag or link is one of `labels` (`avendb::index::type_label`,
+    /// `tag_label`, `link_label`), the newest first, each with its creation, older than `after` (the last of a page
+    /// before), at most `limit`, read off its shelf's shared index (B1, `shared_index`) as of its last save: what a
+    /// view lists without the log. Nothing for a node that keeps no shelf.
+    pub async fn shared_find(
+        &self,
+        vault: VaultId,
+        labels: Vec<String>,
+        after: Option<(u64, EntryId)>,
+        limit: usize,
+    ) -> Result<Vec<(u64, EntryId)>> {
+        let Some(index) = &self.shared.shared_index else { return Ok(vec![]) };
+        Ok(index.find(&self.shared.lab, self.shared.me, vault, &labels, after, limit).await?)
+    }
+
+    /// The root of its shared index and the head of the edits it is of, as its last save left them: what a peer holds
+    /// it to before it reads through pages it fetched (`ShelfIndex.I5_trusted_reads`).
+    pub async fn shared_index_root(&self) -> Option<(Option<[u8; 32]>, u64)> {
+        let index = self.shared.shared_index.as_ref()?;
+        Some((index.root().await, index.stamp().await.at))
     }
 
     /// Read its Lab as its device.
@@ -1770,6 +1811,7 @@ impl Node {
             "live": s.traffic.live_json(),
             "trace": s.traffic.trace_json(),
             "carriers": s.transport_control.json(),
+            "files": s.asked.lock().expect("asked").json(),
         })
     }
 
@@ -2110,6 +2152,8 @@ struct Shared {
     lab_turns: Arc<lab_schedule::Turns>,
     /// Its device's edits on its shelf, if it keeps one.
     edits: Option<edits::Edits>,
+    /// Its shared index on its shelf, if it keeps one (B1, `shared_index`).
+    shared_index: Option<shared_index::SharedIndex>,
     /// Durable supplemental signer roots; unsupported shelves keep ordinary signatures only.
     signers: Option<signers::Signers>,
     endpoint: Endpoint,
@@ -2146,10 +2190,13 @@ struct Shared {
     statements: Mutex<statements::Statements>,
     receipts: peer_receipts::Receipts,
     ui_receipts: peer_receipts::Receipts,
-    /// The node actor's handle: the telling of each peer and the asking of each, with their waits (`actor`).
-    outreach: actor::Outreach,
+    /// The node loop's handle: the telling of each peer and the asking of each, with their waits (`node_loop`).
+    outreach: node_loop::Outreach,
     /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
     wanted: Mutex<BTreeSet<LogId>>,
+    /// How fresh its reads are (`fresh`): the stamp of its last current read, and the walk of what its live peers
+    /// hold that it lacks, kept until what they hold or what it holds changes.
+    fresh: fresh::Fresh,
     /// Which peer each log is asked of now (`Claims`): a log comes from one peer at a time, never from each.
     pub(crate) claims: Mutex<Claims>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
@@ -2216,6 +2263,10 @@ struct Shared {
     pulls: pulls::Budget,
     /// What it takes and keeps at most, and what it keeps for each person (`Node::limit`, `limits`).
     keeping: Mutex<limits::Keeping>,
+    /// The files pages asked for that its device didn't hold, for the keeper to fetch first, and what it did (`files`).
+    asked: Mutex<files::Asked>,
+    /// Woken when a page asks for a file its device doesn't hold.
+    files_asked: Notify,
 }
 
 /// How many messages of each kind a node has sent, and how many times it dialed: once its peers and it agree, they
@@ -2533,7 +2584,7 @@ impl Shared {
         // Control owns peer selection and old-route retirement under its state→peers lock order.
         transports::control::connected(self, &peer);
         self.told.lock().expect("told").remove(&device);
-        self.outreach.send(actor::Msg::Reached { device });
+        self.outreach.send(node_loop::Msg::Reached { device });
         self.index_told.lock().expect("index told").remove(&endpoint);
         self.index_due.notify_one();
         self.changed.notify_one();
@@ -3221,13 +3272,13 @@ impl Shared {
     }
 
     /// Asks `endpoint` soon for the logs where the device there holds what this one lacks, by what it told (`differ`):
-    /// the node actor starts the asking, or asks once more after the one under way, or once its wait is over if
-    /// asking it failed (`actor::Lane`).
+    /// the node loop starts the asking, or asks once more after the one under way, or once its wait is over if
+    /// asking it failed (`node_loop::Lane`).
     fn ask_soon(self: &Arc<Self>, endpoint: EndpointId) {
         if self.opts.lazy || self.admit().is_err() {
             return;
         }
-        self.outreach.send(actor::Msg::Ask { endpoint });
+        self.outreach.send(node_loop::Msg::Ask { endpoint });
     }
 
     /// Finish authenticated suffixes without making foreground requests pump history.
@@ -3265,7 +3316,7 @@ impl Shared {
         }
     }
 
-    /// Tells the peers what changed of its holdings whenever they may have, through the node actor, which tries again
+    /// Tells the peers what changed of its holdings whenever they may have, through the node loop, which tries again
     /// the peers it couldn't tell or failed to ask once their wait is over. It looks again every `retry` for the range
     /// candidates and transfers to expire.
     async fn announcer(self: Arc<Self>) {
@@ -3337,6 +3388,7 @@ impl Shared {
             .await
             .ok()??;
         *self.reach.lock().expect("reach") = news.reach.clone();
+        self.fresh.moved();
         if let Some(admission) = &self.opts.admission {
             let endpoints = news.reach.values().map(|r| r.endpoint).chain([self.endpoint.id()]).collect();
             let (passkeys, invites) = (news.roots.iter().copied().collect(), news.invites.iter().copied().collect());
@@ -3397,9 +3449,9 @@ impl Shared {
         }
     }
 
-    /// Has the node actor tell each peer what of the node's holdings it may know by the node's view, if that changed
+    /// Has the node loop tell each peer what of the node's holdings it may know by the node's view, if that changed
     /// since it was last told, or it is on a new connection: each on a task of its own, so that a peer out of reach
-    /// holds up nobody; one at a time; and a peer it couldn't reach, only once its wait is over (`actor`).
+    /// holds up nobody; one at a time; and a peer it couldn't reach, only once its wait is over (`node_loop`).
     fn announce(self: &Arc<Self>, news: &News) {
         let own = self.own.lock().expect("own").holdings.clone();
         let told = self.told.lock().expect("told").clone();
@@ -3408,7 +3460,7 @@ impl Shared {
             let live = self.live(reach.endpoint).map(|p| p.conn.stable_id());
             let due = told.get(device).is_none_or(|(on, was)| *was != want || live.is_some_and(|id| id != *on));
             if due {
-                self.outreach.send(actor::Msg::Tell { device: *device, endpoint: reach.endpoint });
+                self.outreach.send(node_loop::Msg::Tell { device: *device, endpoint: reach.endpoint });
             }
         }
     }
@@ -3469,6 +3521,7 @@ impl Shared {
     fn hear(self: &Arc<Self>, device: SignerId, announce: Announce) {
         let full = announce.full;
         let mut held = self.held.lock().expect("held");
+        self.fresh.moved();
         let holdings = held.entry(device).or_default();
         let live_logs = live::announced_hints(holdings, &announce);
         if !live_logs.is_empty() {
@@ -3505,6 +3558,7 @@ impl Shared {
         let known = self.reach.lock().expect("reach").contains_key(&peer.device);
         let forget = !known && self.live(peer.endpoint).is_none();
         let mut held = self.held.lock().expect("held");
+        self.fresh.moved();
         if forget {
             held.remove(&peer.device);
         }
@@ -3834,7 +3888,7 @@ impl Drop for Claimed<'_> {
     fn drop(&mut self) {
         let again = self.shared.claims.lock().map(|mut c| c.release(self.endpoint)).unwrap_or_default();
         for endpoint in again {
-            self.shared.outreach.send(actor::Msg::Ask { endpoint });
+            self.shared.outreach.send(node_loop::Msg::Ask { endpoint });
         }
     }
 }

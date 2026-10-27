@@ -1,4 +1,4 @@
-import AvenDB.Basic
+import AvenDB.Selector
 
 /-!
 # Ops: one language to read and change any record
@@ -775,17 +775,6 @@ def Where.holds (a : Attrs) (r : Record Leaf) : Where → Bool
   | .or u w => u.holds a r || w.holds a r
   | .not w => !w.holds a r
 
-/-- Entries both selectors pick. -/
-def _root_.AvenDB.Selector.both : Selector → Selector → Selector
-  | .all, s => s
-  | .anyOf ds, .all => .anyOf ds
-  | .anyOf ds, .anyOf es => .anyOf (ds.flatMap fun d => es.map fun e => d ++ e)
-
-/-- Entries either selector picks. -/
-def _root_.AvenDB.Selector.either : Selector → Selector → Selector
-  | .anyOf ds, .anyOf es => .anyOf (ds ++ es)
-  | _, _ => .all
-
 /-- The selector of a `where`'s labels: values and negations are left to the tests, so it picks no less. -/
 def Where.cover : Where → Selector
   | .yes => .all
@@ -795,30 +784,6 @@ def Where.cover : Where → Selector
   | .and u w => u.cover.both w.cover
   | .or u w => u.cover.either w.cover
   | .not _ => .all
-
-theorem any_and_any {α β : Type} (xs : List α) (ys : List β) (P : α → Bool) (Q : β → Bool) :
-    (xs.any fun x => ys.any fun y => P x && Q y) = (xs.any P && ys.any Q) := by
-  apply Bool.eq_iff_iff.2
-  simp only [List.any_eq_true, Bool.and_eq_true]
-  constructor
-  · rintro ⟨x, hx, y, hy, px, qy⟩
-    exact ⟨⟨x, hx, px⟩, ⟨y, hy, qy⟩⟩
-  · rintro ⟨⟨x, hx, px⟩, ⟨y, hy, qy⟩⟩
-    exact ⟨x, hx, y, hy, px, qy⟩
-
-theorem both_matches (s t : Selector) (a : Attrs) : (s.both t).matches a = (s.matches a && t.matches a) := by
-  cases s with
-  | all => simp [Selector.both, Selector.matches]
-  | anyOf ds =>
-    cases t with
-    | all => simp [Selector.both, Selector.matches]
-    | anyOf es =>
-      simp only [Selector.both, Selector.matches, List.any_flatMap, List.any_map, Function.comp_def,
-        List.all_append]
-      exact any_and_any ds es _ _
-
-theorem either_matches (s t : Selector) (a : Attrs) : (s.either t).matches a = (s.matches a || t.matches a) := by
-  cases s <;> cases t <;> simp [Selector.either, Selector.matches, List.any_append]
 
 /-- A `where`'s labels pick every entry it holds of. -/
 theorem cover_sound (w : Where) (a : Attrs) (r : Record Leaf) (h : w.holds a r = true) :
@@ -837,20 +802,6 @@ theorem cover_sound (w : Where) (a : Attrs) (r : Record Leaf) (h : w.holds a r =
     · simp [Where.cover, either_matches, hu h]
     · simp [Where.cover, either_matches, hw h]
   | not w _ => rfl
-
-/-- The most conjunctions a selector has, the most tests in one, and the most ids or names a test lists. -/
-def maxConjunctions : Nat := 8
-def maxTests : Nat := 16
-def maxIds : Nat := 1000
-
-def _root_.AvenDB.Atom.bounded : Atom → Bool
-  | .typeIn xs | .authorIn xs | .entryIn xs | .tagNone xs | .tagsWithin xs => decide (xs.length ≤ maxIds)
-  | .createdIn _ _ | .tagHas _ => true
-
-/-- Within the bounds a peer accepts of a cap's selector (`slice::Selector::bounded`). -/
-def _root_.AvenDB.Selector.bounded : Selector → Bool
-  | .all => true
-  | .anyOf ds => decide (ds.length ≤ maxConjunctions) && ds.all fun d => decide (d.length ≤ maxTests) && d.all Atom.bounded
 
 /-- How a device runs a query: picking by this selector, a cap's, then testing what it opens. A `where` whose labels
     make a selector beyond the bounds picks by none. -/
