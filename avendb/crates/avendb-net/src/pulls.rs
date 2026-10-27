@@ -1093,8 +1093,12 @@ mod pipelined_tests {
         }
     }
 
-    /// S6: a pull over a link where every exchange takes `RTT` keeps its pages in flight. Asked one after the other,
-    /// `PAGES` pages take `PAGES` round trips; asked at the peer's cuts, ceil(PAGES / W) more after the first.
+    /// S6: a pull over a link where every exchange takes `RTT` keeps its pages in flight. Asked one after the other, the
+    /// last of `PAGES` pages is asked `PAGES - 1` round trips after the first; asked at the peer's cuts, ceil((PAGES - 1)
+    /// / W) round trips after it. Timed where the peer is asked, as that is what the window decides: taking the pages
+    /// (signature checks, the Lab) is the device's own work, overlapped with the next round trip one page at a time
+    /// and back to back once pages come together, so a pull's whole time on a machine whose cores other tests hold says
+    /// how busy the machine was (#1326 CI: 10.8 s with seven pages in flight, 0.8 s on an idle machine).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_pull_over_a_slow_link_keeps_its_pages_in_flight() {
         use crate::{ALPN, Node, Options, exporter, pq_provider, session};
@@ -1145,6 +1149,8 @@ mod pipelined_tests {
             let (in_flight, most_in_flight) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
             // what the peer was asked and when, for a failure to show where the time went
             let (timeline, start) = (Mutex::new(Vec::<String>::new()), Instant::now());
+            // when the peer was asked each page
+            let asks = Mutex::new(Vec::<Duration>::new());
             let at = |what: String| timeline.lock().unwrap().push(format!("{:>6}ms {what}", start.elapsed().as_millis()));
             let serving = async {
                 let mut answering = FuturesUnordered::new();
@@ -1181,6 +1187,7 @@ mod pipelined_tests {
                             let request = Request::from_wire(body).unwrap();
                             let scope = ReplyScope::Logs(request.ask.haves.keys().copied().collect());
                             let (edits, _, more) = w.lab.reply_in(sender, receiver, &request, 1, &scope);
+                            asks.lock().unwrap().push(start.elapsed());
                             let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
                             most_in_flight.fetch_max(now, Ordering::SeqCst);
                             Some(Reply { edits, blobs: vec![], more }.to_wire())
@@ -1217,7 +1224,10 @@ mod pipelined_tests {
             assert!(held, "the edits are the device's, checked and kept");
             let report = phone.shared.traffic.of(&sender).unwrap();
             assert_eq!(report.pages as usize, PAGES);
-            measured.push((window, took, most_in_flight.load(Ordering::SeqCst)));
+            let asks = asks.into_inner().unwrap();
+            assert_eq!(asks.len(), PAGES, "each page asked once, none dropped and asked again");
+            let span = asks[PAGES - 1] - asks[0];
+            measured.push((window, took, most_in_flight.load(Ordering::SeqCst), span));
             eprintln!("S6 window {window}: the peer was asked\n{}\nthe phone's pages: {}\n{:?}",
                 timeline.lock().unwrap().join("\n"), report.to_json(), phone.shared.traffic.recent());
             assert_eq!(
@@ -1232,11 +1242,12 @@ mod pipelined_tests {
         eprintln!("S6 pipelined pages over a {RTT:?} round trip, {PAGES} pages: {measured:?}");
         let (before, after) = (measured[0], measured[1]);
         assert_eq!(before.2, 1, "page after page: one in flight at a time");
+        assert!(before.3 >= RTT * (PAGES - 1) as u32, "page after page: each asked a round trip after the last: {before:?}");
         assert!(before.1 >= RTT * PAGES as u32, "page after page takes a round trip a page: {before:?}");
         assert!(after.2 > 1, "asked ahead, pages are in flight together: {after:?}");
-        // the first page with its cuts, then the rest W at a time, and a round trip of slack for the machine
-        let rounds = 1 + (PAGES - 1).div_ceil(WINDOW) + 1;
-        assert!(after.1 < RTT * rounds as u32, "pipelined: ~ceil(pages / W) round trips, not one a page: {after:?}");
+        // the first page with its cuts, then the rest W at a time: the last asked ceil((PAGES - 1) / W) round trips on
+        let rounds = (PAGES - 1).div_ceil(WINDOW) as u32;
+        assert!(after.3 < RTT * (rounds + 1), "pipelined: the last page asked ~ceil(pages / W) round trips on: {after:?}");
     }
 
     /// A raw peer at `raw`, as device `sender` of `lab`, says its hello to `phone` and waits until the phone knows it.
