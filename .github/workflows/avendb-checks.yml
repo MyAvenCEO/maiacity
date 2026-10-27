@@ -195,6 +195,11 @@ jobs:
           tool: cargo-nextest
       # mold links the 23 test programs in a fraction of ld's time
       - uses: rui314/setup-mold@v1
+      # sccache keeps each crate's build by the hash of what goes into it (rust-cache keeps the dependencies): our own
+      # crates a PR did not change come from it, where cargo, judging by file times a checkout makes new, builds them
+      # all again. Linked programs (every test program) are never cached. A PR's entries stay its own branch's.
+      - uses: mozilla-actions/sccache-action@v0.0.9
+      - run: echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV" && echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
       # Our own crates' tests built at opt-level 1, not dev's 2 (the dependencies keep theirs): each test file took 70
       # to 150 s to build at 2. Locally (2026-10-21) the net and server tests built in 2m47s at 1 and ran as fast as at
       # 2 (220 s against 216 s); here they had taken 6m57s to build.
@@ -224,6 +229,8 @@ jobs:
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
         run: cargo test --locked --features test-fixtures --doc ${{ matrix.args }}
+      - if: always()
+        run: sccache --show-stats
 
   image:
     needs: impact
