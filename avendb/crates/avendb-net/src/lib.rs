@@ -3695,19 +3695,27 @@ impl Shared {
 
     /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
     /// else once it waited `CATCH_UP_PACE` times as long as the last one took since it ended. True if it did.
-    async fn catch_up_paced(self: &Arc<Self>, must: bool) -> bool {
-        self.catch_up_paced_class(must, lab_schedule::Class::Foreground).await
+    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+        self.catch_up_steps(must, class, None).await.0
     }
 
-    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+    /// `catch_up_paced_class`, and for a live pull (`live::materialize_live`) `until` a deadline: no step begins after
+    /// it, and the pages are stirred after every step, so the step that shows the live edit's entries (a new write's
+    /// entries are shown first, `Lab::show_items`) reaches them at once rather than after the whole catch-up. Whether it
+    /// did, and whether steps were left at the deadline.
+    pub(crate) async fn catch_up_steps(self: &Arc<Self>, must: bool, class: lab_schedule::Class, until: Option<Instant>) -> (bool, bool) {
         if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
-            return false;
+            return (false, false);
         }
         // A turn of the Lab a step (`Lab::catch_up_step`), not one for the whole: its replay stepped on, then its
         // entries shown anew `CATCH_UP_SLICE` at a time, so a page's turn comes between them rather than after all of
         // them (a catch-up held the server's Lab 5.5 s, 2026-10-27).
-        let (mut caught, mut work) = (false, Duration::ZERO);
+        let (mut caught, mut work, mut left) = (false, Duration::ZERO, false);
         loop {
+            if until.is_some_and(|until| Instant::now() >= until) {
+                left = true;
+                break;
+            }
             let (step, took) = self.try_lab_class(class, |lab, me| {
                 // Queue waiting is not computation cost: foreground priority must not
                 // multiply a busy queue into another long background-sync cooldown.
@@ -3715,12 +3723,15 @@ impl Shared {
                 (lab.catch_up_step(me, CATCH_UP_SLICE), started.elapsed())
             }).await.unwrap_or((avendb::lab::CatchUp::Caught(false), Duration::ZERO));
             work += took;
-            match step {
-                avendb::lab::CatchUp::Stepped => caught = true,
-                avendb::lab::CatchUp::Caught(any) => {
-                    caught |= any;
-                    break;
-                }
+            let done = match step {
+                avendb::lab::CatchUp::Stepped => { caught = true; false }
+                avendb::lab::CatchUp::Caught(any) => { caught |= any; true }
+            };
+            if until.is_some() && caught {
+                self.jobs.stir();
+            }
+            if done {
+                break;
             }
         }
         if caught {
@@ -3728,7 +3739,7 @@ impl Shared {
             self.changed.notify_one();
             self.find_again_on_new_keys().await;
         }
-        caught
+        (caught, left)
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by
