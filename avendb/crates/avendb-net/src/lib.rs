@@ -3596,15 +3596,13 @@ const LONG_TURN: Duration = Duration::from_millis(16);
 
 /// The logs of `left` to ask for next, taken out of it (`Shared::ask_differing`). At the `first` asking, the logs the
 /// open views want now (`active`, with their audiences' keys) and the entry logs pages asked for (`wanted`), with every
-/// vault's, share's and audience's log, which say who may do what and who reads what and are few, at most `VIEW_LOGS`,
-/// if any of the views' are left; else every log left, in one asking. None once `left` is empty. The audiences' come
-/// first too as a blind `find` asks under each audience it knows of (`Lab::find_tokens`): a coop's channel in an
-/// audience of its own was found only after the whole catch-up brought that audience's keys (2026-10-27, an iPhone's
-/// chat showed its note to self at once and the coop's channel minutes later).
+/// vault's and share's log, which say who may do what and are few, at most `VIEW_LOGS`, if any of the views' are left;
+/// else every log left, in one asking. None once `left` is empty. Not every audience's log: those hold the keys and
+/// their wraps, most of a vault's edits (2026-10-27, with them in the first asking an iPhone's views never opened).
 fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], first: bool) -> BTreeSet<LogId> {
     let viewed: BTreeSet<LogId> = active.iter().chain(wanted).filter(|l| left.contains(l)).copied().collect();
     let next = if first && !viewed.is_empty() {
-        let rules = left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_) | LogId::Audience(..))).copied();
+        let rules = left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_))).copied();
         viewed.iter().copied().chain(rules).take(VIEW_LOGS).collect()
     } else {
         std::mem::take(left)
@@ -3712,7 +3710,7 @@ mod tests {
     }
 
     #[test]
-    fn the_views_logs_come_first_with_who_may_do_and_read_what_then_every_other_log_at_once() {
+    fn the_views_logs_come_first_with_who_may_do_what_then_every_other_log_at_once() {
         let entry = |i: u8| LogId::Entry(EntryId([i; 32]));
         let mut left: BTreeSet<LogId> = (1..=5).map(entry).collect();
         left.extend([LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32])), LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]))]);
@@ -3720,10 +3718,10 @@ mod tests {
         // the view's logs left and the old wants, with the vaults' and shares' logs; a log it doesn't lack isn't asked
         let first = next_asking(&mut left, &wanted, &view, true);
         let audience = LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]));
-        assert_eq!(first, [entry(1), entry(4), LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32])), audience].into());
-        // then the rest in one asking, so its pages come by their places across every log
+        assert_eq!(first, [entry(1), entry(4), LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32]))].into());
+        // then the rest in one asking, an audience's keys among them, so its pages come by their places across every log
         let rest = next_asking(&mut left, &wanted, &view, false);
-        assert_eq!(rest, [entry(2), entry(3), entry(5)].into());
+        assert_eq!(rest, [entry(2), entry(3), entry(5), audience].into());
         assert!(left.is_empty() && next_asking(&mut left, &wanted, &view, false).is_empty());
     }
 
