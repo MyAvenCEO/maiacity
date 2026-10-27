@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { impact } from './impact.mjs';
-import { inventory, selected, partition, matrix, keyed } from './test.mjs';
+import { inventory, selected, partition, matrix, keyed, suites } from './test.mjs';
 test('a missing comparison or an unknown build input selects all release checks',()=>{
  expect(Object.values(impact(null)).every(Boolean)).toBe(true);
  expect(Object.values(impact(['unexpected-build-input'])).every(Boolean)).toBe(true);
@@ -31,7 +31,8 @@ test('no new JS test can silently fall outside CI ownership',()=>{
  expect(Object.values(inventory()).flat().length).toBeGreaterThan(160);
 });
 test('shared build changes select every suite; targeted changes retain security',()=>{
- expect(selected(['bun.lock'])).toContain('physics');
+ expect(selected(['bun.lock'])).toContain('assets');
+ expect(selected(['bun.lock'])).not.toContain('physics');
  expect(selected(['src/lib/studio/jobs/jobs.js'])).toContain('studio');
  expect(selected(['src/lib/studio/jobs/jobs.js'])).toContain('security');
 });
@@ -179,7 +180,7 @@ test('a workflow edit selects what that workflow checks; a release workflow or a
  for (const f of ['.github/workflows/main.yml','.github/workflows/deploy.yml','.github/workflows/new.yml','.github/actions/prod-ssh/action.yml'])
   expect(Object.values(impact([f])).every(Boolean)).toBe(true);
  expect(selected(['.github/workflows/mac.yml'])).toEqual(['security','ci']);
- expect(selected(['.github/workflows/kernel.yml'])).toContain('physics');
+ expect(selected(['.github/workflows/kernel.yml'])).toContain('assets');
 });
 
 test('the server image builds on a PR only when its build reads something new', () => {
@@ -237,4 +238,9 @@ test('a run still going on the same files is waited for, never taken as passed',
  const gh = github({ runs });
  expect(await reusable({ api: gh.api, repo: 'o/r', sha: 'm', base: 'p', wait: 60000, sleep: async () => {} })).toEqual({ kernel: true, avendb: true });
  expect(await ask(github({ runs: [run('kernel.yml', null, { status: 'in_progress' })] }))).toEqual({ kernel: false, avendb: false });
+});
+test('a suite marked off is never selected, not even by its own files or a full run', () => {
+ expect(suites.find(s=>s.name==='physics').off).toBeTruthy();
+ for (const run of [selected(['src/lib/sandbox-7/shed.ts']), selected(null), selected([], 'all')]) expect(run).not.toContain('physics');
+ expect(inventory().physics.length).toBeGreaterThan(0);
 });

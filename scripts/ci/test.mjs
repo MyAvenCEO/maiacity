@@ -26,7 +26,11 @@ export function inventory(files=discover()) {
  }
  return groups;
 }
+// A suite marked "off" in suites.json is never selected for CI (its files stay owned, and --suite still runs it).
 export function selected(files, mode='changed') {
+ return chosen(files, mode).filter(name=>!suites.find(s=>s.name===name).off);
+}
+function chosen(files, mode) {
  if (mode==='gate') return suites.filter(s=>s.tier==='gate'||s.name==='ci').map(s=>s.name);
  if (mode==='all' || files===null) return suites.map(s=>s.name);
  // Dependency/build/CI changes can affect any suite; missing base takes this path too.
