@@ -4603,13 +4603,15 @@ impl Lab {
 
     /// What device `d` asks `peer` when it syncs with it on the network (`wire::Request`): its frontier of each log and
     /// a few edits further back, and the vaults it follows (`sync::asks`), and the McEliece keys it lacks that the
-    /// edits of those logs name, but only of the logs `peer` may hold by `d`'s view, following nothing: `d` tells a
-    /// peer nothing about the rest. A log it names nothing of comes whole, if the peer may send it, so one `peer` holds
-    /// only through what it follows comes whole: that costs bytes, and loses nothing.
+    /// edits of those logs name, but only of the logs `peer` may hold by `d`'s view, following what `d` follows: `d`
+    /// tells a peer nothing about the rest. The public logs of a vault it follows it names too, as it names the vault
+    /// in its request anyway, so a peer that holds them through a follow of its own sends only what `d` lacks of them,
+    /// not each whole again on every asking (`RequestBasis.lean`'s `permittedWith`). A log it names nothing of comes
+    /// whole, if the peer may send it.
     pub fn request(&self, d: SignerId, peer: SignerId) -> Request {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = self.answered(d, peer, &[]);
+        let places = self.answered(d, peer, &store.follow);
         let basis = self.request_basis(d);
         let mut shared: HashSet<LogId> = places.iter().filter_map(|&i| store.log.logs()[i]).collect();
         let mut theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
@@ -5310,15 +5312,15 @@ impl Lab {
         (new, whose)
     }
 
-    /// The digest of each log device `d` holds that `peer` may hold too by `d`'s view (`sync::digests`), smallest log
-    /// first: what `d` tells `peer` whenever one changes, so that `peer` asks it where they differ. Nothing about any
-    /// other log.
+    /// The digest of each log device `d` holds that `peer` may hold too by `d`'s view, following what `d` follows
+    /// (`sync::digests`, as `request` names them), smallest log first: what `d` tells `peer` whenever one changes, so
+    /// that `peer` asks it where they differ. Nothing about any other log.
     pub fn announce(&mut self, d: SignerId, peer: SignerId) -> Vec<(LogId, [u8; 32])> {
         self.digests(d);
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let logs = logs_of(edits, ids);
-        let shared: BTreeSet<LogId> = self.answered(d, peer, &[]).iter().filter_map(|&i| logs[i]).collect();
+        let shared: BTreeSet<LogId> = self.answered(d, peer, &store.follow).iter().filter_map(|&i| logs[i]).collect();
         let digests = store.digests.as_ref().expect("worked out");
         shared.into_iter().filter_map(|l| Some((l, *digests.get(&l)?))).collect()
     }
