@@ -3939,6 +3939,11 @@ impl PartialEq for Replay {
 /// How many edits at the end of the order a replay replays again, at most and about, when new edits sort among them:
 /// the edits peers made while this one was away sort there.
 const TAIL: usize = 4096;
+/// How far behind where the new edits reach the place stays, beside the last `TAIL`: none, as each page of a stream
+/// sorts after the last.
+const MARGIN: usize = 0;
+/// How far the place must move on to be moved.
+const MOVE: usize = 1;
 
 /// What a replay steps on from when new edits sort after its place `at`, after every removal and move: the states
 /// just before it, of the replay and of the one with no removal standing (`resolve`'s base, where it tried any), what
@@ -4013,7 +4018,9 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
     if held == 0 {
         return (whole(), Why::Whole("replay whole: the first since it opened"));
     }
-    let deepest = edits[..held].iter().map(|e| e.depth).max();
+    // the replay holds its edits in their order, deepest last: no scan of every edit held for each page
+    let deepest = was.edits.last().map(|e| e.depth);
+    debug_assert_eq!(deepest, edits[..held].iter().map(|e| e.depth).max(), "a replay's last edit is its deepest");
     let ids_fresh = ids(fresh);
     let by_id: HashMap<EditId, &Edit> = ids_fresh.iter().copied().zip(fresh).collect();
     let Some(tail) = was.tail.as_ref() else { return (whole(), Why::Whole("replay whole: no place to step on from")) };
@@ -4160,6 +4167,8 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'st
     }
     let mut merged: Vec<(Edit, EditId)> = Vec::with_capacity(was.edits.len() - at + new.len());
     let (mut old, mut add) = ((at..was.edits.len()).peekable(), new.into_iter().peekable());
+    // just past the last new edit: where the next page, which sorts after this one, comes in
+    let mut past_new = 0;
     loop {
         let next_old = old.peek().map(|&i| key(i));
         match (next_old, add.peek()) {
@@ -4167,15 +4176,18 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'st
             (_, Some(_)) => {
                 let (.., id, e) = add.next().ok_or("replay whole: its tail ran out")?;
                 merged.push((e.clone(), id));
+                past_new = merged.len();
             }
             (Some(k), None) => merged.push((was.edits[old.next().ok_or("replay whole: its tail ran out")?].clone(), k.2)),
             (None, None) => break,
         }
     }
     let (tail_edits, tail_ids): (Vec<Edit>, Vec<EditId>) = merged.into_iter().unzip();
-    let n = at + tail_edits.len();
-    // a new place once the edits replayed again grow twice as many as it keeps
-    let again = (tail_edits.len() > 2 * TAIL).then(|| n - TAIL - at);
+    // a new place: before the last `TAIL` edits, or, where new edits came in a stream of pages each sorting after the
+    // last (a view's edits first, then the rest), `MARGIN` behind where the new ones reach, so the next page replays
+    // the few after it, not the last `TAIL` again and again
+    let to = tail_edits.len().saturating_sub(TAIL).max(past_new.saturating_sub(MARGIN));
+    let again = (to >= MOVE).then_some(to);
     let none = HashSet::new();
     let mut base = None;
     if !tail.tried.is_empty() {

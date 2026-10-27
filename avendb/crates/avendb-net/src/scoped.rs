@@ -4,7 +4,7 @@
 //! The scope is a set of logs: what `find` found (`blind`) or what a view names. Of each live peer, the logs of the scope
 //! where the peer's announced holdings (`held`) say it holds what the device lacks (`differ`), each given to the peer
 //! that holds it with the fewest logs given yet, so the work spreads over the peers; logs of the scope no peer announced
-//! go to the peer that named them, or to every peer. Each peer's share is pulled in its own task, `LOGS_AT_ONCE` logs a
+//! go to the peer that named them, or to every peer. Each peer's share is pulled in its own task, all of it one
 //! request, so the device takes from all of them side by side (`scoped_round_agrees`: what a scoped round sends is of
 //! the scope alone). A peer tells its new heads as it takes them (announcements), so nothing here waits on a timer.
 
@@ -14,7 +14,7 @@ use std::sync::Arc;
 use avendb::sync::LogId;
 use iroh::EndpointId;
 
-use crate::{LOGS_AT_ONCE, Peer, Scope, Shared};
+use crate::{Peer, Scope, Shared};
 
 /// What a scoped sync did: how many new edits it took, of how many logs asked, from how many peers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -90,15 +90,9 @@ impl Shared {
             .map(|(peer, logs)| {
                 let shared = self.clone();
                 async move {
-                    let mut new = 0;
-                    let logs: Vec<LogId> = logs.into_iter().collect();
-                    for chunk in logs.chunks(LOGS_AT_ONCE) {
-                        match shared.pull(peer, Scope::Logs(chunk.iter().copied().collect()), true, None).await {
-                            Ok(got) => new += got,
-                            Err(_) => break,
-                        }
-                    }
-                    new
+                    // every log of its share in one asking, whose pages come by their places across all of them, so
+                    // each steps on what came before (`Shared::ask_differing`)
+                    shared.pull(peer, Scope::Logs(logs), true, None).await.unwrap_or(0)
                 }
             })
             .collect();

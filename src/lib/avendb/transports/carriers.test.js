@@ -43,6 +43,16 @@ test('WebTransport pins authenticated hashes, reports outer MTU, and carries onl
 	} finally { f.carrier.close(); }
 });
 
+test('WebTransport to a server with a public certificate pins nothing, as Safari on iOS 26 needs', async () => {
+	const f = wtFixture({ descriptor: { certificateHashes: [] } }), wt = f.instances[0];
+	try {
+		expect('serverCertificateHashes' in wt.config).toBe(false);
+		wt.opening.resolve(); expect(await f.carrier.ready).toBe(true);
+	} finally { f.carrier.close(); }
+	const many = wtFixture({ descriptor: { certificateHashes: Array(5).fill('ab'.repeat(32)) } });
+	expect(await many.carrier.ready).toBe(false); expect(many.instances).toEqual([]);
+});
+
 test('WebTransport says why it closed, where Safari gives an empty message', async () => {
 	const f = wtFixture(), wt = f.instances[0];
 	const error = Object.assign(new Error(''), { name: 'WebTransportError', source: 'session', streamErrorCode: null });

@@ -12,6 +12,7 @@ fn config(dir: &Path, bind: SocketAddr) -> Config {
             bind,
             public_url: format!("https://127.0.0.1:{}/avendb", bind.port()),
             allowed_origins: vec!["https://maia.city".into()],
+            certificate: None,
         }),
     }
 }

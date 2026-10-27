@@ -37,6 +37,7 @@ use avendb::sealed::{Brought, Convergent, FileKey, FileRoot, PIECE, PIECE_SEGMEN
 use avendb::wire::FileHold;
 use bytes::Bytes;
 use iroh::EndpointId;
+use n0_future::FuturesUnordered;
 use iroh_blobs::api::proto::BlobStatus;
 use iroh_blobs::api::remote::GetProgressItem;
 use iroh_blobs::api::{Store, TempTag};
@@ -56,6 +57,8 @@ const READ: u64 = 64 * SEALED as u64;
 /// extend its turn: an otherwise live sync connection cannot keep a stalled file read waiting forever.
 const FILE_CONNECT: time::Duration = time::Duration::from_secs(30);
 const FILE_IDLE: time::Duration = time::Duration::from_secs(20);
+/// How many of the files the open views show the keeper fetches at once.
+const VIEW_FILES_AT_ONCE: usize = 4;
 
 /// Consume iroh-blobs' receive future itself, not a detached download. Dropping this stream on idle or caller
 /// cancellation drops that future and its QUIC streams; verified ranges already imported stay available to the
@@ -451,10 +454,11 @@ impl Shared {
                     avendb::sync::LogId::Entry(entry) => Some(entry),
                     _ => None,
                 }).collect::<Vec<_>>();
-            let (files, whole) = self.read(move |lab, me| {
+            let (files, whole, demanded) = self.read(move |lab, me| {
+                let demanded = lab.demanded_files(me, &entries);
                 let mut whole = lab.kept_files(me, keep);
-                whole.extend(lab.demanded_files(me, &entries));
-                (lab.files(me), whole)
+                whole.extend(demanded.iter().copied());
+                (lab.files(me), whole, demanded)
             }).await;
             let mut whole: HashSet<FileRoot> = whole.into_iter().collect();
             // a server's limits (`Node::limit`): of the files to keep whole that it doesn't hold whole yet, those that
@@ -476,8 +480,28 @@ impl Shared {
                 whole.retain(|f| held.contains(f) || may.contains(f));
             }
             let files = files.into_iter().map(|f| (f, whole.contains(&f)));
-            for (root, whole) in files.filter(|f| !kept.contains(f) && failing.due(&f.0)).collect::<Vec<_>>() {
-                let keeping = self.keep(root, whole).await;
+            let mut todo: Vec<(FileRoot, bool)> = files.filter(|f| !kept.contains(f) && failing.due(&f.0)).collect();
+            // the files the open views show first, several at once, each from whichever peer hands it over: a view's
+            // model waits behind no other file, and no one slow peer holds up the rest
+            let demanded: HashSet<FileRoot> = demanded.into_iter().collect();
+            let (now, rest): (Vec<_>, Vec<_>) = todo.drain(..).partition(|(f, w)| *w && demanded.contains(f));
+            let mut shown: FuturesUnordered<_> = FuturesUnordered::new();
+            let mut done = Vec::with_capacity(now.len() + rest.len());
+            for (root, whole) in now {
+                if shown.len() >= VIEW_FILES_AT_ONCE {
+                    done.extend(shown.next().await);
+                }
+                let keeper = &self;
+                shown.push(async move { (root, whole, keeper.keep(root, whole).await) });
+            }
+            while let Some(one) = shown.next().await {
+                done.push(one);
+            }
+            drop(shown);
+            for (root, whole) in rest {
+                done.push((root, whole, self.keep(root, whole).await));
+            }
+            for (root, whole, keeping) in done {
                 self.refresh_file(root).await;
                 match keeping {
                     Ok(()) => {

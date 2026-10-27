@@ -235,12 +235,6 @@ const IDLE: Duration = Duration::from_secs(30);
 /// with two pulls running). The asking fails, and the node asks again as it does any it failed (`actor`).
 const PAGE_WAIT: Duration = Duration::from_secs(180);
 
-/// The most entry logs one asking of the logs a peer holds more of names (`Shared::ask_differing`). A peer answers an
-/// asking a page at a time by the edits' places across every log it names (`sync::place`), and a log counts only once
-/// it is whole, so one asking of every log of a vault (~2,200 of Maia City's) makes nearly none whole until its last
-/// page. Asked so many at a time, each batch of entries comes whole before the next starts.
-pub(crate) const LOGS_AT_ONCE: usize = 256;
-
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
 /// agrees the keys of every connection along with X25519, and a peer that offers only classical groups finds none in
 /// common. Ciphers with 256-bit keys first; AES-128 last, as QUIC protects its first packets with it.
@@ -2318,9 +2312,17 @@ impl Shared {
         };
         #[cfg(not(target_arch = "wasm32"))]
         return Ok(tokio::task::spawn_blocking(work).await.context("the Lab's task")?);
-        // a page's node runs in a worker of its own, which the Lab may hold up
+        // a page's node runs in a worker of its own, which the Lab may hold up: after a long turn the worker's event
+        // loop runs before the next, so the carrier's packets waiting in its socket are drained, not dropped
         #[cfg(target_arch = "wasm32")]
-        Ok(work())
+        {
+            let began = Instant::now();
+            let out = work();
+            if began.elapsed() > LONG_TURN {
+                time::sleep(Duration::ZERO).await;
+            }
+            Ok(out)
+        }
     }
 
     /// Pure observation: does not set the clock, mutate the view, or wake persistence.
@@ -2351,7 +2353,14 @@ impl Shared {
         #[cfg(not(target_arch = "wasm32"))]
         return tokio::task::spawn_blocking(work).await.expect("the Lab's read task");
         #[cfg(target_arch = "wasm32")]
-        work()
+        {
+            let began = Instant::now();
+            let out = work();
+            if began.elapsed() > LONG_TURN {
+                time::sleep(Duration::ZERO).await;
+            }
+            out
+        }
     }
 
     /// The Lab, locked. A call that changes it never poisons the lock (`lab` catches its panic first); one that only
@@ -3162,14 +3171,18 @@ impl Shared {
     /// Asks `endpoint` for the logs where the device there holds what this one lacks (`differ`), and those alone, if
     /// there are any. How many edits were new.
     ///
-    /// A batch at a time (`next_logs`): first every log that is no entry's, the vaults', shares' and audiences', which
-    /// say who may do what; then the entry logs its pages asked for (`wanted`), as they stand when each batch starts;
-    /// then the rest, `LOGS_AT_ONCE` at a time, so that the entries come whole a batch after another.
+    /// In two askings at most (`next_asking`): first what the open views want now, with the logs that say who may do
+    /// what and the keys of their audiences; then every other log at once. A peer answers an asking a page at a time by
+    /// the edits' places across every log it names (`sync::place`), so each page of one asking sorts after all it took
+    /// before and steps on the replay (`policy::replay_on`), where an asking of a few hundred logs at a time sorted each
+    /// page among the edits held and replayed them all again: a first sync of 50,000 edits took 8.7 s so, 0.36 s in
+    /// one asking (`replay_scale`, 2026-10-27). The view's few edits sort among the rest's, which replays them again
+    /// alone (`Tail`).
     async fn ask_differing(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
         let mut left = self.differ(peer.device).await;
-        let (mut new, mut keys, mut first) = (0, BTreeSet::new(), true);
+        let (mut new, mut keys, mut first, mut viewed) = (0, BTreeSet::new(), true, true);
         let asked = loop {
             let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
             let logs = {
@@ -3177,7 +3190,7 @@ impl Shared {
                 let active = self.interests.lock().expect("interests").entries();
                 let mut priority = bootstrap_dependencies::key_logs(&active, &key_waits);
                 priority.extend(active);
-                let logs = next_demand_logs(&mut left, &wanted, &priority, LOGS_AT_ONCE);
+                let logs = next_asking(&mut left, &wanted, &priority, std::mem::take(&mut viewed));
                 wanted.retain(|l| !logs.contains(l));
                 logs
             };
@@ -3310,33 +3323,24 @@ impl Shared {
     }
 }
 
-/// The logs of `left` to ask for next, taken out of it (`Shared::ask_differing`): up to `most` logs that are no entry's, if any are
-/// left; else the entry logs of `wanted` left, at most `most`; else at most `most` others. None once `left` is empty.
-#[cfg(test)]
-fn next_logs(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, most: usize) -> BTreeSet<LogId> {
-    next_demand_logs(left, wanted, &[], most)
-}
+/// The most logs a first asking names for the open views (`next_asking`): their own few, not a vault's thousands.
+const VIEW_LOGS: usize = 1024;
 
-fn next_demand_logs(
-    left: &mut BTreeSet<LogId>,
-    wanted: &BTreeSet<LogId>,
-    active: &[LogId],
-    most: usize,
-) -> BTreeSet<LogId> {
-    let rules: BTreeSet<LogId> = left.iter().filter(|l| !matches!(l, LogId::Entry(_))).take(most).copied().collect();
-    let next = if !rules.is_empty() {
-        rules
+/// A turn on the Lab so long that, in a page's worker, the network's packets wait behind it: one frame's time.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+const LONG_TURN: Duration = Duration::from_millis(16);
+
+/// The logs of `left` to ask for next, taken out of it (`Shared::ask_differing`). At the `first` asking, the logs the
+/// open views want now (`active`, with their audiences' keys) and the entry logs pages asked for (`wanted`), with every
+/// vault's and share's log, which say who may do what and are few, at most `VIEW_LOGS`, if any of the views' are left;
+/// else every log left, in one asking. None once `left` is empty.
+fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], first: bool) -> BTreeSet<LogId> {
+    let viewed: BTreeSet<LogId> = active.iter().chain(wanted).filter(|l| left.contains(l)).copied().collect();
+    let next = if first && !viewed.is_empty() {
+        let rules = left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_))).copied();
+        viewed.iter().copied().chain(rules).take(VIEW_LOGS).collect()
     } else {
-        let mut first = BTreeSet::new();
-        for log in active.iter().chain(wanted.iter()) {
-            if first.len() == most {
-                break;
-            }
-            if left.contains(log) {
-                first.insert(*log);
-            }
-        }
-        if first.is_empty() { left.iter().take(most).copied().collect() } else { first }
+        std::mem::take(left)
     };
     left.retain(|l| !next.contains(l));
     next
@@ -3425,32 +3429,27 @@ mod tests {
     }
 
     #[test]
-    fn active_windows_precede_legacy_wants_without_adding_unknown_logs() {
-        let entry = |n| LogId::Entry(EntryId([n; 32]));
-        let mut left = [entry(1), entry(2), entry(3), entry(4)].into();
-        let old = [entry(1)].into();
-        let view = [entry(99), entry(4), entry(3)];
-        assert_eq!(next_demand_logs(&mut left, &old, &view, 1), [entry(4)].into());
-        // Closing the view removes its priority; the one-shot demand now wins.
-        assert_eq!(next_demand_logs(&mut left, &old, &[], 1), [entry(1)].into());
-        assert_eq!(next_demand_logs(&mut left, &old, &[], 2), [entry(2), entry(3)].into());
+    fn the_views_logs_come_first_with_who_may_do_what_then_every_other_log_at_once() {
+        let entry = |i: u8| LogId::Entry(EntryId([i; 32]));
+        let mut left: BTreeSet<LogId> = (1..=5).map(entry).collect();
+        left.extend([LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32])), LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]))]);
+        let (wanted, view) = ([entry(1)].into(), [entry(99), entry(4)]);
+        // the view's logs left and the old wants, with the vaults' and shares' logs; a log it doesn't lack isn't asked
+        let first = next_asking(&mut left, &wanted, &view, true);
+        assert_eq!(first, [entry(1), entry(4), LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32]))].into());
+        // then the rest in one asking, so its pages come by their places across every log
+        let rest = next_asking(&mut left, &wanted, &view, false);
+        assert_eq!(rest, [entry(2), entry(3), entry(5), LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]))].into());
+        assert!(left.is_empty() && next_asking(&mut left, &wanted, &view, false).is_empty());
     }
 
     #[test]
-    fn the_logs_that_say_who_may_do_what_come_first_then_the_wanted_entries_then_the_rest_in_batches() {
+    fn with_no_view_every_log_comes_in_one_asking() {
         let entry = |i: u8| LogId::Entry(EntryId([i; 32]));
-        let mut left: BTreeSet<LogId> = (1..=5).map(entry).collect();
-        left.extend([LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32]))]);
-        let wanted: BTreeSet<LogId> = [entry(4), entry(7)].into();
-        // authorization logs first, still bounded by the batch limit
-        let rules = next_logs(&mut left, &wanted, 1);
-        assert_eq!(rules, [LogId::Vault(VaultId([9; 32]))].into());
-        assert_eq!(next_logs(&mut left, &wanted, 1), [LogId::Share(ShareId([8; 32]))].into());
-        // the wanted entry left, then the others two at a time, until none is left
-        assert_eq!(next_logs(&mut left, &wanted, 2), [entry(4)].into());
-        assert_eq!(next_logs(&mut left, &wanted, 2), [entry(1), entry(2)].into());
-        assert_eq!(next_logs(&mut left, &wanted, 2), [entry(3), entry(5)].into());
-        assert!(next_logs(&mut left, &wanted, 2).is_empty() && left.is_empty());
+        let mut left: BTreeSet<LogId> = (1..=300).map(|i| entry(i as u8)).collect();
+        left.insert(LogId::Vault(VaultId([9; 32])));
+        let all = left.clone();
+        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[], true), all);
     }
 
     #[test]

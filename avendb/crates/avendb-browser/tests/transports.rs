@@ -95,6 +95,7 @@ async fn real_browser_workers_sync_over_negotiated_wt_and_rtc_after_relay_shutdo
             bind: loopback,
             public_url: "https://localhost:0/avendb".into(),
             allowed_origins: vec![origin],
+            certificate: None,
         })
         .await
         .unwrap();
