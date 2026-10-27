@@ -1,41 +1,46 @@
-//! The window's scale bench (gate G1, batch 5, 2026-10-27): what a named query costs opened end to end, as
-//! `Node::window` opens it (`query_window::window` off the shared index, cold), on the index of a vault at 1M and 10M
-//! edits: pages and bytes read off the shelf, log edits stepped on (0: the tail after the index's stamp is empty), and
-//! the time. Lines of JSON (`BENCH {"kind":"window",...}`) that `scripts/ci/avendb-bench.mjs --index` holds to
-//! `avendb/bench-gates.json`:
+//! The window's scale bench (gate G1, batch 5, 2026-10-27): what a named query costs answered end to end, as
+//! `Node::windowed` answers it (`query_window::answer`: the window off the shared index, then the query over the
+//! entries it names), cold, on the index of a vault at 1M and 10M edits: pages and bytes read off the shelf, index rows
+//! read, log edits stepped on (0: the tail after the index's stamp is empty), and the time. Lines of JSON
+//! (`BENCH {"kind":"window",...}`) that `scripts/ci/avendb-bench.mjs --index` holds to `avendb/bench-gates.json`:
 //!
 //!   AVENDB_WINDOW_N=1000000,10000000 cargo test -p avendb-net --features test-fixtures --lib -- --ignored \
 //!     --nocapture --exact query_window::bench::bench_window
 //!
-//! The fixture: a real World's Lab (Alice's vault on her Mac), its tokens for 16 types (`Lab::find_tokens`), and the
-//! shared index such a vault at `n` edits holds, an entry per 50 edits of one of the types, each with its rows as
-//! `index::shared::Of::rows` gives them, built through `ShelfIndex::apply` in key order, 64k rows a step, as the index
-//! bench builds (I4 holds that this is the tree any order of writes gives). Its stamp is the head of the Lab's log, so
-//! the window steps on no edit, as on a device whose last save is current.
+//! The fixture: a real World's Lab (Alice's vault on her Mac) with `REAL` entries of each of `QUERIED` types, and the
+//! shared index such a vault at `n` edits holds: those entries' rows as the Lab gives them (`Lab::shared_of`), and
+//! below them in creation an entry per 50 edits of one of `TYPES` types (the queried ones among them), each with its
+//! rows as `index::shared::Of::rows` gives them, built through `ShelfIndex::apply` in key order, 64k rows a step, as
+//! the index bench builds (I4 holds that this is the tree any order of writes gives). A query's newest `W` are the
+//! Lab's own entries, which the query reads as ever; the rest of the index is what its pages are cut from. Its stamp is
+//! the head of the Lab's log, so the window steps on no edit, as on a device whose last save is current.
 //!
-//! The one cost the fixture can't stand for is `shared_index::head`: each window hashes the ids of the log up to the
-//! index's stamp, to check it is of a prefix of the log, and the Lab's log is short. So the bench times that hash over
-//! `n` ids on its own (`head_us`) and adds it to the window's time (`window_at_n_p50_us`), which the gate holds.
+//! The one cost the fixture can't stand for is the head of a long log: a node hashes its log's ids up to the index's
+//! stamp once, as it opens (`shared_index::of_log`; each window after asks it in O(1)), and the Lab's log is short. So
+//! the bench times that hash over `n` ids on its own (`node_open_head_ms`), a cost of the node's opening, not of a window.
 
-use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Instant;
 
-use avendb::cast::world;
+use avendb::cast::{document, world};
 use avendb::id::{AudienceId, EditId, EntryId};
 use avendb::index::shared::Of;
 use avendb::index::type_label;
 use avendb::pages::Change;
 use serde_json::{Value, json};
 
-use super::window;
+use super::answer;
 use crate::shared_index::{NAME, SharedIndex, head};
 use crate::shelf_index::bench::{Counts, Lcg, env_or, pct, round, shelf};
 use crate::shelf_index::{ShelfIndex, Stamp};
 
 /// The types the entries are of, as the index bench's.
 const TYPES: usize = 16;
+/// The types queried, of which the Lab holds entries of its own.
+const QUERIED: usize = 4;
+/// The Lab's own entries of each queried type: a window's and some.
+const REAL: usize = W + 10;
 /// The entries a window lists.
 const W: usize = 50;
 /// The rows a build step applies.
@@ -45,18 +50,30 @@ const OPENS: usize = 200;
 /// The edits an entry has, as `bench_gates.rs` spreads its writes.
 const EDITS_PER_ENTRY: u64 = 50;
 
-/// The index of a vault at `n` edits on `shelf`, of the tokens `tokens` (a type's, each), stamped `stamp`: its rows,
-/// its depth.
-async fn build(shelf: crate::shelf::Shelf, n: u64, audience: AudienceId, tokens: &[avendb::index::Token], stamp: Stamp) -> usize {
+/// The index of a vault at `n` edits on `shelf`: rows `real`, and older than the oldest of them (`under`) an entry per 50
+/// edits, of the tokens `tokens` in turn, stamped `stamp`; how many rows.
+async fn build(
+    shelf: crate::shelf::Shelf,
+    n: u64,
+    audience: AudienceId,
+    tokens: &[avendb::index::Token],
+    real: Vec<(Vec<u8>, Vec<u8>)>,
+    under: u64,
+    stamp: Stamp,
+) -> usize {
     let entries = (n / EDITS_PER_ENTRY).max(W as u64 * TYPES as u64);
+    assert!(under > 0, "the Lab's entries come after its first edit");
     let mut rng = Lcg(11);
-    let mut rows: Vec<(Vec<u8>, Vec<u8>)> = Vec::with_capacity(entries as usize * 3);
+    let mut rows = real;
+    rows.reserve(entries as usize * 3);
     for i in 0..entries {
         let mut id = [0u8; 32];
         for c in id.chunks_mut(8) {
             c.copy_from_slice(&rng.next().to_be_bytes());
         }
-        let of = Of { entry: EntryId(id), audience, epoch: 0, created: 1_000 + i, tokens: vec![tokens[i as usize % TYPES]] };
+        // older than the Lab's own, as many to a creation as it takes (a row's key ends in its entry, so they differ)
+        let created = i * under / entries;
+        let of = Of { entry: EntryId(id), audience, epoch: 0, created, tokens: vec![tokens[i as usize % TYPES]] };
         rows.extend(of.rows());
     }
     rows.sort_unstable_by(|a, b| a.0.cmp(&b.0));
@@ -73,42 +90,58 @@ async fn build(shelf: crate::shelf::Shelf, n: u64, audience: AudienceId, tokens:
     count
 }
 
-/// One `BENCH` line: the window of one type opened cold `OPENS` times through `query_window::window`.
+/// One `BENCH` line: a query of one type answered cold `OPENS` times through `query_window::answer`.
 async fn bench(n: u64) -> Value {
-    let w = world();
+    let mut w = world();
     let (mac, alice) = (w.mac_a, w.alice);
-    let labels: Vec<Vec<String>> = (0..TYPES).map(|t| vec![type_label(&format!("bench{t}"))]).collect();
-    let tokens: Vec<avendb::index::Token> =
-        labels.iter().map(|l| *w.lab.find_tokens(mac, alice, l).first().expect("a token of the type")).collect();
+    let types: Vec<String> = (0..TYPES).map(|t| format!("bench{t}")).collect();
+    let tokens: Vec<avendb::index::Token> = types
+        .iter()
+        .map(|t| *w.lab.find_tokens(mac, alice, &[type_label(t)]).first().expect("a token of the type"))
+        .collect();
+    let mut real = vec![];
+    for t in &types[..QUERIED] {
+        for i in 0..REAL {
+            let e = w.lab.create(mac, alice, alice, t, &[], document(&format!("{t} {i}"), "x", mac)).expect("an entry");
+            real.push(w.lab.shared_of(mac, e).expect("its rows"));
+        }
+    }
+    let under = real.iter().map(|of| of.created).min().expect("entries");
+    let real_rows: Vec<_> = real.iter().flat_map(Of::rows).collect();
     let ids = w.lab.log(mac).ids().to_vec();
     let stamp = head(&ids);
     let lab = Mutex::new(w.lab);
+    let query = |t: usize| json!({ "op": "query", "vault": alice.to_hex(), "where": { "type": [types[t]] }, "window": W });
 
     let counts = Arc::new(Counts::default());
     let shelf = shelf(None, counts.clone());
     let t = Instant::now();
-    let rows = build(shelf.clone(), n, AudienceId::of(alice, &[]), &tokens, stamp).await;
+    let rows = build(shelf.clone(), n, AudienceId::of(alice, &[]), &tokens, real_rows, under, stamp).await;
     let build_s = t.elapsed().as_secs_f64();
     counts.take();
 
-    let (mut opens, mut pages, mut bytes, mut read) = (vec![], vec![], 0u64, 0usize);
+    let (mut opens, mut warm, mut pages, mut bytes, mut read) = (vec![], vec![], vec![], 0u64, 0usize);
     let mut log_edits = 0u64;
     for q in 0..OPENS {
         let t = Instant::now();
         let ix = SharedIndex::open(shelf.clone()).await.expect("the index opens");
-        let got = window(&ix, &lab, mac, alice, &labels[q % TYPES], W).await.expect("a window").expect("the index says");
+        let (got, win) = answer(&ix, &lab, mac, &query(q % QUERIED)).await.expect("a window").expect("the index says");
         opens.push(t.elapsed().as_secs_f64());
         let (p, b, _) = counts.take();
         pages.push(p as f64);
         bytes = bytes.max(b);
-        read = read.max(got.rows_read);
-        log_edits += ids.len() as u64 - got.index_at;
-        assert_eq!((got.index_at, got.tail, got.entries.len()), (stamp.at, 0, W), "a whole window off the index");
-        let newest: BTreeSet<u64> = got.entries.iter().map(|(c, _)| *c).collect();
-        assert!(newest.iter().all(|c| (c - 1_000) as usize % TYPES == q % TYPES), "of its type alone");
+        read = read.max(win.rows_read);
+        log_edits += (win.log_at as u64).saturating_sub(win.index_at);
+        assert_eq!((win.index_at, win.tail), (stamp.at, 0), "a window off the index alone");
+        assert_eq!(got["ok"]["rows"].as_array().map(Vec::len), Some(W), "a whole window of the query");
+        // the same index asked again, as a node's next window is: its stamp checked in O(1), its pages held
+        let t = Instant::now();
+        std::hint::black_box(answer(&ix, &lab, mac, &query((q + 1) % QUERIED)).await.expect("a window"));
+        warm.push(t.elapsed().as_secs_f64());
+        counts.take();
     }
 
-    // the hash each window takes of the log's ids up to the stamp, at `n` edits
+    // the hash a node takes of its log's ids up to the index's stamp, once as it opens, at `n` edits
     let many: Vec<EditId> = (0..n).map(EditId::from_u64).collect();
     let mut heads = vec![];
     for _ in 0..3 {
@@ -116,7 +149,6 @@ async fn bench(n: u64) -> Value {
         std::hint::black_box(head(std::hint::black_box(&many)));
         heads.push(t.elapsed().as_secs_f64());
     }
-    let head_us = pct(&heads, 0.5) * 1e6;
     let p50_us = pct(&opens, 0.5) * 1e6;
     json!({
         "kind": "window",
@@ -131,8 +163,9 @@ async fn bench(n: u64) -> Value {
         "window_log_edits": log_edits,
         "window_p50_us": round(p50_us, 1),
         "window_p95_us": round(pct(&opens, 0.95) * 1e6, 1),
-        "head_us": round(head_us, 1),
-        "window_at_n_p50_us": round(p50_us + head_us, 1),
+        "window_warm_p50_us": round(pct(&warm, 0.5) * 1e6, 1),
+        "window_at_n_p50_us": round(p50_us, 1),
+        "node_open_head_ms": round(pct(&heads, 0.5) * 1e3, 1),
     })
 }
 
