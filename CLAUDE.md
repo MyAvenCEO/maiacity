@@ -7,15 +7,20 @@ batch, not on each task.
 
 - **Draft pull requests run no CI.** Every `pull_request` workflow skips drafts (`types: [..., ready_for_review]` plus a
   job-level draft guard). Open your PR as a draft and keep it a draft. Never mark a task PR ready for review.
-- **Check locally, and only what you touched.** Before you push, run the targeted checks for your files, for example
-  `bun scripts/ci/test.mjs --suite <suite>`, `bun run test:changed -- --base origin/main`, or
-  `cd avendb && cargo test --locked -p <crate> <test>`. See `docs/CI.md` for the commands. Do not run the full suite.
-- **One collector thread per batch.** The collector merges the finished task branches into its own branch
-  (`git fetch origin <task-branch> && git merge --no-ff origin/<task-branch>`), resolves conflicts, and runs the
-  targeted checks again for the merged files. Task threads tell the collector (or the coordinator) when their branch is
+- **One thread per small task.** The coordinator splits each ask into small tasks with their own files and starts one
+  thread for each, 25-50 in parallel. Parallel Rust work goes to separate threads, not helpers in one box (they queue
+  on one build folder). The method and the speed cycle: `.claude/skills/devx-speed/SKILL.md`.
+- **Check locally, and only what you touched.** Before you push, run `bun scripts/devx/check.mjs` (`--plan` to see
+  what it runs): the tests next to your change, svelte-check for page code, and per touched crate `cargo check --tests`
+  and the test programs you touched. More commands in `docs/CI.md`. Do not run the full suite.
+- **One collector thread per batch.** The collector merges the finished task branches into its own branch with
+  `bun scripts/devx/collect.mjs --check <task-branches>` (or `--drafts`; `--plan` changes nothing): an ordinary
+  `--no-ff` merge commit per branch, made in memory first, so a conflicting branch is left out and named instead of
+  half-merged (send it back to its thread). It then runs the targeted checks for the merged files. Task threads tell the collector (or the coordinator) when their branch is
   ready. They do not push to the collector's branch.
-- **One final PR to main.** The collector's draft PR goes ready for review once the batch is in. CI runs once. Fix what
-  fails in one round, push, and merge with a squash and an explicit commit message (title plus body; never let the
+- **One final PR to main.** The collector's draft PR goes ready for review once the batch is in, its body listing the
+  `Task:` lines from `bun scripts/devx/collect.mjs --tasks` (`scripts/devx/measure.mjs` counts them). CI runs once. Fix
+  what fails in one round, push, and merge with a squash and an explicit commit message (title plus body; never let the
   default message carry a CI commit's `[skip ci]`). Then close the task PRs it landed with a comment that names the
   final PR, and bring `main` back into the collector's branch with a merge (no force push).
 - **Exceptions** go through their own PR at once: production down, a security fix, or Samuel asks for it.
