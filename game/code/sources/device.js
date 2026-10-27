@@ -4,7 +4,7 @@
  * and no empty, slow or locked local read authorizes an HTTP/peer fallback.
  */
 import { MAIA_CITY } from './anchor.js';
-import { ACTOR_TYPE, actorsOf, leavesFor, plan } from './actors.js';
+import { ACTOR_TYPE, QUERY_KIND, actorsOf, leavesFor, plan, queryOp } from './actors.js';
 import { createInterest } from './interest.js';
 import { createLocalFileReads } from './local-file-read.js';
 
@@ -40,7 +40,8 @@ const signals = {};
  *  an id always wins. */
 let builtIn = [];
 
-/** Sets the app's own actors (`ACTORS`), read under the vault's. @param {any[]} list */
+/** Sets the app's own actors and the query entries they name (`ACTORS`, `QUERIES`), read under the vault's.
+ *  @param {any[]} list */
 export function useBuiltInActors(list) {
 	builtIn = Array.isArray(list) ? list : [];
 	refreshActiveView();
@@ -49,17 +50,20 @@ export function useBuiltInActors(list) {
 /** A manifest or actor read through a lens shows empty tiers until its AIP moves it: that holds nothing yet. */
 const holdsParts = (m) => Object.values(m?.loads ?? m?.tiers ?? {}).some((t) => Array.isArray(t) && t.length);
 
-/** The ids of the vault's own v2 manifests and v3 actors among `held` that hold parts: those the app's own of an id
- *  give way to. */
-const vaultIds = (held) => new Set((held ?? []).filter((m) => (m?.v === 2 || m?.v === 3) && holdsParts(m)).map((m) => m.id));
+/** An actor's or a query entry's key: one id names one actor and one query. */
+const keyOf = (m) => `${m?.kind === QUERY_KIND ? 'query' : 'actor'}:${m?.id}`;
+
+/** The keys of the vault's own v2 manifests and v3 actors among `held` that hold parts, and of its query entries:
+ *  those the app's own of a key give way to. */
+const vaultIds = (held) => new Set((held ?? []).filter((m) => (m?.kind === QUERY_KIND ? m?.v === 1 : (m?.v === 2 || m?.v === 3 || m?.loads) && holdsParts(m))).map(keyOf));
 
 /** The actors of catalog `catalog`: the vault's, and for Maia City the app's own of each id it holds none of. */
 export const withBuiltIn = (held, catalog) => {
 	if (catalog !== MAIA_CITY || !builtIn.length) return held;
 	const v2 = vaultIds(held);
-	const ours = builtIn.filter((m) => !v2.has(m.id));
-	const replaced = new Set(ours.map((m) => m.id));
-	return [...held.filter((m) => !replaced.has(m?.id)), ...ours];
+	const ours = builtIn.filter((m) => !v2.has(keyOf(m)));
+	const replaced = new Set(ours.map(keyOf));
+	return [...held.filter((m) => !replaced.has(keyOf(m))), ...ours];
 };
 
 /**
@@ -72,10 +76,24 @@ export function actorSources(held, catalog) {
 	const v2 = vaultIds(held);
 	const out = new Map();
 	for (const m of withBuiltIn(held, catalog)) {
-		if (typeof m?.id !== 'string' || out.has(m.id)) continue;
-		out.set(m.id, v2.has(m.id) ? 'vault' : (held ?? []).includes(m) ? 'vault v1' : 'built-in');
+		if (typeof m?.id !== 'string' || m.kind === QUERY_KIND || out.has(m.id)) continue;
+		out.set(m.id, v2.has(keyOf(m)) ? 'vault' : (held ?? []).includes(m) ? 'vault v1' : 'built-in');
 	}
 	return out;
+}
+
+/**
+ * The op that reads query entry `query` (`{ entry, version }`, its address in Maia City, as an actor's part names it)
+ * with args `args`, a page of it by `more` (`{ offset, limit }`): the vault's own query of that id where the last walk
+ * read one, else the app's own (`QUERIES`). Null where neither holds that version. The op is the query's `read`
+ * template bound (./actors.js `queryOp`), what the engine's `call` of it runs, so a page reads by the name the vault
+ * holds rather than a query of its own (task A3).
+ * @param {{ entry: string, version: number }} query @param {Record<string, string>} [args] @param {{offset?: number, limit?: number}} [more]
+ */
+export function useQuery(query, args = {}, more = {}) {
+	const q = withBuiltIn(lastHeld.get(MAIA_CITY) ?? [], MAIA_CITY).find((m) => m?.kind === QUERY_KIND && m.id === query?.entry);
+	if (!q || q.interface?.version !== query?.version) return null;
+	return queryOp(q, args, more);
 }
 
 /** The actors each catalog's last walk read off the device: what the next walk asks by before its own read
@@ -165,7 +183,7 @@ export function useView(path, options) {
 				const leaves = leavesFor(held, path, env);
 				const from = actorSources(read, catalog);
 				const matched = [...new Set(leaves.map((l) => l.actor))];
-				run.heldManifests += held.length;
+				run.heldManifests += held.filter((m) => m?.kind !== QUERY_KIND).length;
 				run.matchedLeaves += leaves.length;
 				run.queryLeaves += leaves.filter((l) => !l.want.entry).length;
 				run.typeDiscoveryHints += leaves.filter((l) => l.want.type?.length).length;

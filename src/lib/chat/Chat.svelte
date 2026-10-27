@@ -12,7 +12,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
-	import { bindView } from '../../../game/code/sources/device.js';
+	import { bindView, useQuery } from '../../../game/code/sources/device.js';
 	import { onMount, tick, untrack } from 'svelte';
 	import Frame from '$lib/avendb/Frame.svelte';
 	import Icon from '$lib/avendb/Icon.svelte';
@@ -29,11 +29,12 @@
 
 	const world = $derived(api.world);
 	const byId = $derived(new Map((world?.vaults ?? []).map((v) => [v.id, v])));
-	// Discovery is an authorized local query, independent of the broad world summary.
+	// Discovery is an authorized local query, independent of the broad world summary: Maia City's query entry of the
+	// rooms (`query-room`, the chat actor names it), newest first, a page of 50 at a time.
 	// The page bounds rows/demand; the core query may still scan/materialize before limiting.
 	let offset = $state(0);
-	const discovery = entryDetail(() => api, () => ({ op: 'query', where: { type: ['room'] },
-		select: [], order: [['created', 'desc']], offset, limit: 50 }));
+	const ROOMS = { entry: 'query-room', version: 1 };
+	const discovery = entryDetail(() => api, () => useQuery(ROOMS, {}, { offset, limit: 50 }));
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let open = $state(q.get('room') ?? '');

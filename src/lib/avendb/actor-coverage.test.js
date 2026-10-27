@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { APP_ROUTES, appPages, coverage } from './actor-coverage.js';
-import { ACTORS } from './actors.js';
+import { ACTORS, QUERIES } from './actors.js';
 import { GAMES } from '../../../game/games.js';
 
 /** each folder under src/routes/app holding a `+page.svelte`, as its path */
@@ -25,7 +25,7 @@ test("the app's routes are the folders that hold a page, the games' aside", () =
 test("a page's actors are those whose routes cover it, the kernel's aside, and each tier's parts are counted", () => {
 	const pages = appPages({ nav: [['', [['assets', 'Assets'], ['studio', 'Studio']]]], out: { studio: '/app/studio/' }, games: GAMES });
 	expect(pages.find((p) => p.path === '/app/#studio')).toBeUndefined();
-	const by = Object.fromEntries(coverage(ACTORS, pages).map((c) => [c.path, c]));
+	const by = Object.fromEntries(coverage([...ACTORS, ...QUERIES], pages).map((c) => [c.path, c]));
 	expect(by['/app/chat/'].actors).toEqual(['chat']);
 	expect(by['/app/chat/'].tiers.now).toBeGreaterThanOrEqual(3);
 	expect(by['/app/studio/'].actors).toEqual(['studio']);
