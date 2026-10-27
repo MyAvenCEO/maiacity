@@ -48,6 +48,7 @@ impl Command {
 #[derive(Debug)]
 struct Route {
     id: RouteId,
+    carrier: Carrier,
     local: CustomAddr,
     remote: CustomAddr,
     wire_epoch: [u8; 16],
@@ -65,12 +66,14 @@ struct State {
     bound: bool,
     closed: bool,
     routes: BTreeMap<RouteId, Route>,
-    control: VecDeque<Command>,
+    /// Each command beside the carrier of its route, for that carrier's own consumer (`next_carrier`).
+    control: VecDeque<(Carrier, Command)>,
     incoming: VecDeque<Packet>,
     in_bytes: usize,
     next_route: usize,
     control_burst: usize,
-    commands_waker: Option<Waker>,
+    /// The consumers waiting for a command: the browser's, of every carrier, and a machine's, one per carrier.
+    commands_wakers: [Option<Waker>; 3],
     recv_waker: Option<Waker>,
     dropped: u64,
 }
@@ -89,8 +92,11 @@ fn address(carrier: Carrier, endpoint: EndpointId, epoch: &[u8; 16]) -> CustomAd
     bytes.push(1); bytes.extend_from_slice(endpoint.as_bytes()); bytes.extend_from_slice(epoch);
     CustomAddr::from_parts(carrier.id(), &bytes)
 }
-fn take_control(state: &mut State) -> Option<Command> {
-    let command = state.control.pop_front()?;
+/// Which of `State::commands_wakers` a consumer of `carrier`'s commands waits in: 0 for every carrier's.
+fn slot(carrier: Option<Carrier>) -> usize { match carrier { None => 0, Some(Carrier::WebTransport) => 1, Some(Carrier::WebRtc) => 2 } }
+fn take_control(state: &mut State, carrier: Option<Carrier>) -> Option<Command> {
+    let index = state.control.iter().position(|(c, _)| carrier.is_none_or(|carrier| carrier == *c))?;
+    let (_, command) = state.control.remove(index)?;
     if let Command::Open { id, .. } = &command {
         if let Some(route) = state.routes.get_mut(id) { route.opened = true; }
     }
@@ -98,6 +104,8 @@ fn take_control(state: &mut State) -> Option<Command> {
     Some(command)
 }
 fn wake(wakers: impl IntoIterator<Item = Waker>) { for waker in wakers { waker.wake(); } }
+/// Every consumer waiting for a command: each looks again for its own.
+fn commands(state: &mut State) -> impl IntoIterator<Item = Waker> + use<> { state.commands_wakers.each_mut().map(Option::take).into_iter().flatten() }
 fn failed(message: &'static str) -> io::Error { io::Error::new(io::ErrorKind::NotConnected, message) }
 
 impl PacketTransport {
@@ -121,11 +129,11 @@ impl PacketTransport {
             return Err(io::Error::new(io::ErrorKind::AlreadyExists, "carrier epoch already open"));
         }
         state.routes.insert(id.clone(), Route {
-            id: id.clone(), local: address(carrier, self.0.local, &wire_epoch), remote, wire_epoch,
+            id: id.clone(), carrier, local: address(carrier, self.0.local, &wire_epoch), remote, wire_epoch,
             mtu: None, opened: false, next_packet: 0, out: VecDeque::new(), out_bytes: 0, reassembly: Reassembly::new(wire_epoch),
         });
-        state.control.push_back(Command::Open { id: id.clone(), carrier, descriptor });
-        let waker = state.commands_waker.take(); drop(state); wake(waker);
+        state.control.push_back((carrier, Command::Open { id: id.clone(), carrier, descriptor }));
+        let waker = commands(&mut state); drop(state); wake(waker);
         Ok(id)
     }
 
@@ -149,9 +157,10 @@ impl PacketTransport {
     pub fn signal(&self, id: &RouteId, signal: Value) -> bool {
         if signal.to_string().len() > 16 << 10 { return false; }
         let mut state = self.0.state.lock().expect("packet transport");
-        if !state.routes.contains_key(id) || state.control.len() >= MAX_CONTROL { return false; }
-        state.control.push_back(Command::Signal { id: id.clone(), signal });
-        let waker = state.commands_waker.take(); drop(state); wake(waker); true
+        let Some(carrier) = state.routes.get(id).map(|r| r.carrier) else { return false; };
+        if state.control.len() >= MAX_CONTROL { return false; }
+        state.control.push_back((carrier, Command::Signal { id: id.clone(), signal }));
+        let waker = commands(&mut state); drop(state); wake(waker); true
     }
 
     /// Consume one outer datagram. A stale callback can never inject into a later route.
@@ -171,43 +180,49 @@ impl PacketTransport {
     /// Drop every queue and partial packet belonging to this route, including commands not yet consumed by JS.
     pub fn close_route(&self, id: &RouteId) {
         let mut state = self.0.state.lock().expect("packet transport");
-        if state.routes.remove(id).is_none() { return; }
-        state.control.retain(|command| command.route() != id);
+        let Some(route) = state.routes.remove(id) else { return; };
+        state.control.retain(|(_, command)| command.route() != id);
         state.incoming.retain(|packet| &packet.id != id);
         state.in_bytes = state.incoming.iter().map(|p| p.bytes.len()).sum();
         // Teardown has up to MAX_ROUTES reserved slots beyond MAX_CONTROL. Repeated closes cannot add
         // duplicates, and opens stop at MAX_CONTROL, so old Close commands cannot grow without bound.
         if state.control.len() >= MAX_CONTROL {
-            if let Some(index) = state.control.iter().position(|c| matches!(c, Command::Signal { .. })) { state.control.remove(index); }
+            if let Some(index) = state.control.iter().position(|(_, c)| matches!(c, Command::Signal { .. })) { state.control.remove(index); }
         }
-        state.control.push_back(Command::Close { id: id.clone() });
+        state.control.push_back((route.carrier, Command::Close { id: id.clone() }));
         self.publish(&state);
-        let waker = state.commands_waker.take(); drop(state); wake(waker);
+        let waker = commands(&mut state); drop(state); wake(waker);
     }
 
     pub fn close(&self) {
         let mut state = self.0.state.lock().expect("packet transport");
         state.closed = true; state.routes.clear(); state.control.clear(); state.incoming.clear(); state.in_bytes = 0;
         self.publish(&state);
-        let wakers = [state.commands_waker.take(), state.recv_waker.take()]; drop(state); wake(wakers.into_iter().flatten());
+        let wakers: Vec<_> = commands(&mut state).into_iter().chain(state.recv_waker.take()).collect(); drop(state); wake(wakers);
     }
 
     /// Inner packets dropped at bounded outbound admission. QUIC treats these as ordinary packet loss.
     pub fn dropped(&self) -> u64 { self.0.state.lock().expect("packet transport").dropped }
 
-    /// A single consumer, normally the browser worker or native HTTP3 carrier task.
-    pub async fn next(&self) -> Option<Command> {
+    /// The next command of every carrier, for a single consumer: the browser worker's, which carries both.
+    pub async fn next(&self) -> Option<Command> { self.next_of(None).await }
+
+    /// The next command of `carrier`'s routes alone, for that carrier's own consumer on a machine: its HTTP/3
+    /// listener's (`NativeWt`) and its WebRTC peer's (`NativeRtc`), each the sole consumer of its carrier.
+    pub async fn next_carrier(&self, carrier: Carrier) -> Option<Command> { self.next_of(Some(carrier)).await }
+
+    async fn next_of(&self, carrier: Option<Carrier>) -> Option<Command> {
         poll_fn(|cx| {
             let mut state = self.0.state.lock().expect("packet transport");
             if state.closed { return Poll::Ready(None); }
             if state.control_burst < 8 {
-                if let Some(command) = take_control(&mut state) { return Poll::Ready(Some(command)); }
+                if let Some(command) = take_control(&mut state, carrier) { return Poll::Ready(Some(command)); }
             }
             let count = state.routes.len();
             for step in 0..count {
                 let index = (state.next_route + step) % count;
                 let Some(route) = state.routes.values_mut().nth(index) else { continue; };
-                if !route.opened { continue; }
+                if !route.opened || carrier.is_some_and(|carrier| carrier != route.carrier) { continue; }
                 if let Some(bytes) = route.out.pop_front() {
                     route.out_bytes -= bytes.len();
                     let command = Command::Send { id: route.id.clone(), bytes };
@@ -215,8 +230,8 @@ impl PacketTransport {
                     return Poll::Ready(Some(command));
                 }
             }
-            if let Some(command) = take_control(&mut state) { return Poll::Ready(Some(command)); }
-            state.commands_waker = Some(cx.waker().clone()); Poll::Pending
+            if let Some(command) = take_control(&mut state, carrier) { return Poll::Ready(Some(command)); }
+            state.commands_wakers[slot(carrier)] = Some(cx.waker().clone()); Poll::Pending
         }).await
     }
 
@@ -251,7 +266,7 @@ impl PacketTransport {
             }
         }
         route.next_packet += count; route.out_bytes += bytes; route.out.extend(frames);
-        let waker = state.commands_waker.take(); drop(state); wake(waker); Poll::Ready(Ok(()))
+        let waker = commands(&mut state); drop(state); wake(waker); Poll::Ready(Ok(()))
     }
 }
 
@@ -360,6 +375,33 @@ mod tests {
             assert!(at < 8, "control producer cannot starve data"); assert!(t.signal(&id, Value::Null));
         }
         unreachable!();
+    }
+
+    #[tokio::test]
+    async fn each_native_carrier_consumes_its_own_routes_alone() {
+        let t = transport();
+        let wt = t.open(peer(), Carrier::WebTransport, [1; 16], Value::Null).unwrap();
+        let rtc = t.open(peer(), Carrier::WebRtc, [2; 16], Value::Null).unwrap();
+        // the WebRTC peer never sees the listener's routes, nor the listener the WebRTC peer's
+        assert!(matches!(t.next_carrier(Carrier::WebRtc).await, Some(Command::Open { id, carrier: Carrier::WebRtc, .. }) if id == rtc));
+        assert!(matches!(t.next_carrier(Carrier::WebTransport).await, Some(Command::Open { id, .. }) if id == wt));
+        let (to_wt, to_rtc) = (t.ready(&wt, 1200).unwrap(), t.ready(&rtc, 1200).unwrap());
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(t.send(&mut cx, &to_wt, None, &[1; 100], None).is_ready());
+        assert!(t.signal(&rtc, Value::Bool(true)));
+        assert!(matches!(t.next_carrier(Carrier::WebRtc).await, Some(Command::Signal { id, .. }) if id == rtc));
+        assert!(t.send(&mut cx, &to_rtc, None, &[2; 100], None).is_ready());
+        assert!(matches!(t.next_carrier(Carrier::WebRtc).await, Some(Command::Send { id, .. }) if id == rtc));
+        assert!(matches!(t.next_carrier(Carrier::WebTransport).await, Some(Command::Send { id, .. }) if id == wt));
+        // a consumer waiting on its carrier wakes for its own route's close
+        let waiting = tokio::spawn({ let t = t.clone(); async move { t.next_carrier(Carrier::WebRtc).await } });
+        tokio::task::yield_now().await;
+        t.close_route(&rtc);
+        assert!(matches!(waiting.await.unwrap(), Some(Command::Close { id }) if id == rtc));
+        t.close_route(&wt);
+        assert!(matches!(t.next().await, Some(Command::Close { id }) if id == wt), "the browser's consumer takes every carrier's");
+        t.close();
+        assert!(t.next_carrier(Carrier::WebRtc).await.is_none());
     }
 
     fn route_error(t: &PacketTransport) -> bool { t.open(peer(), Carrier::WebRtc, [9; 16], Value::Null).is_err() }

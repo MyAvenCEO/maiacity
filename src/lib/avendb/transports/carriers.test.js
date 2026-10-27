@@ -188,3 +188,42 @@ test('RTC close settles signals behind a stalled offer; oversized signaling fail
 	expect(await large.signal({ description: { type: 'offer', sdp: 'a'.repeat(16 << 10) } })).toBe(false);
 	expect(events).toEqual([{ kind: 'closed', reason: 'RTC signaling overflow' }]);
 });
+
+// What the Mac app's own WebRTC peer (avendb-net's transports/webrtc.rs) signals, exactly as it builds them: its SDP,
+// then each candidate again as a browser trickles them, then the end of its candidates. A page takes them as another
+// browser's, whichever end offers, and checks the channel the machine opens as it checks a browser's.
+const native = (type) => [
+	{ description: { type, sdp: `v=0\r\na=candidate:1 1 udp 2130706175 192.168.1.20 50000 typ host\r\n` } },
+	{ candidate: { candidate: 'candidate:1 1 udp 2130706175 192.168.1.20 50000 typ host', sdpMid: '0', sdpMLineIndex: 0 } },
+	{ candidate: { candidate: 'candidate:2 1 udp 1694498559 203.0.113.9 40000 typ srflx raddr 192.168.1.20 rport 50000', sdpMid: '0', sdpMLineIndex: 0 } },
+	{ candidate: null }
+];
+
+test('a page takes a native peer\'s answer and candidates as a browser\'s, and its own ICE servers', async () => {
+	FakePeer.instances = []; const events = [];
+	const iceServers = [{ urls: ['stun:avendb.maia.city:3478'] }];
+	const carrier = webRtc({ initiator: true }, { event: (e) => events.push(e), receive: () => {} }, { RTCPeerConnection: FakePeer, iceServers });
+	const pc = FakePeer.instances[0];
+	try {
+		await flush(); expect(pc.config.iceServers).toEqual(iceServers);
+		for (const signal of native('answer')) expect(await carrier.signal(signal)).toBe(true);
+		expect(pc.remoteDescription.type).toBe('answer');
+		expect(pc.candidates).toEqual([native('answer')[1].candidate, native('answer')[2].candidate, null]);
+		pc.channel.open(); expect(await carrier.ready).toBe(true);
+		expect(events.at(-1)).toEqual({ kind: 'ready', mtu: 65535 });
+	} finally { carrier.close(); }
+});
+
+test('a page answers a native peer\'s offer and takes the channel it opens', async () => {
+	FakePeer.instances = []; const events = [];
+	const carrier = webRtc({ initiator: false }, { event: (e) => events.push(e), receive: () => {} }, { RTCPeerConnection: FakePeer });
+	const pc = FakePeer.instances[0];
+	try {
+		for (const signal of native('offer')) expect(await carrier.signal(signal)).toBe(true);
+		expect(events[0].signal.description).toEqual({ type: 'answer', sdp: 'our answer' });
+		expect(pc.candidates).toHaveLength(3);
+		// as str0m opens it over DCEP: unordered, never retransmitted
+		const channel = new FakeChannel('avendb-iroh-v1', { ordered: false, maxRetransmits: 0 });
+		pc.ondatachannel({ channel }); channel.open(); expect(await carrier.ready).toBe(true);
+	} finally { carrier.close(); }
+});

@@ -142,7 +142,8 @@ struct Inner {
     stop: watch::Sender<bool>,
 }
 
-/// The sole native consumer of `PacketTransport::next`. Do not also run the browser broker pump on this node.
+/// The sole native consumer of the WebTransport routes' commands (`PacketTransport::next_carrier`), beside the WebRTC
+/// routes' own (`NativeRtc`). Do not also run the browser broker pump on this node.
 pub struct NativeWt {
     inner: Arc<Inner>,
     task: Mutex<Option<JoinHandle<()>>>,
@@ -378,7 +379,7 @@ async fn serve(inner: Arc<Inner>, mut stop: watch::Receiver<bool>) {
                 if inner.rotate(now, Instant::now()).is_err() { break; }
             },
             Some(_) = sessions.join_next(), if !sessions.is_empty() => {},
-            command = inner.broker.next() => {
+            command = inner.broker.next_carrier(Carrier::WebTransport) => {
                 let Some(command) = command else { break; };
                 match command {
                     Command::Send { id, bytes } => {

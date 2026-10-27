@@ -1791,6 +1791,15 @@ impl Node {
         transports::control::listen(&self.shared, config).await
     }
 
+    /// Start its own WebRTC peer, for the pages among its peers (an iPhone's) to reach it straight over ICE in place of
+    /// the relay, which stays as their fallback: as the Mac app's node does. It offers its own addresses and the one
+    /// its STUN servers see; every SDP and candidate goes only through the authenticated session of the peer it
+    /// negotiated with, and the route carries only that same PQ connection's packets. Fails if it runs already.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn serve_webrtc(&self, config: transports::RtcConfig) -> Result<()> {
+        transports::control::serve_rtc(&self.shared, config).await
+    }
+
     /// Its shelf lacks something its device holds (`edits`): its holdings name only what the shelf holds. Never, for a
     /// node with no shelf.
     pub async fn behind(&self) -> bool {

@@ -14,6 +14,7 @@ fn config(dir: &Path, bind: SocketAddr) -> Config {
             allowed_origins: vec!["https://maia.city".into()],
             certificate: None,
         }),
+        webrtc: None,
     }
 }
 
