@@ -675,7 +675,12 @@ mod tests {
         let k: Arc<[u8]> = Arc::from(&b"a key of a few bytes"[..]);
         let id = BlobId::of(&k);
         keys.insert(id, k);
-        let path = fs::read_dir(spill.dir()).expect("its folder").next().expect("its file").expect("a file").path();
+        // the records' file, not a folder of their index's runs beside it
+        let path = fs::read_dir(spill.dir())
+            .expect("its folder")
+            .map(|e| e.expect("an entry").path())
+            .find(|p| p.is_file())
+            .expect("its file");
         let mut bytes = fs::read(&path).expect("its bytes");
         bytes[3] ^= 1;
         fs::write(&path, bytes).expect("spoiled");
