@@ -7,6 +7,7 @@ name: Lean on macOS
 # or starting anything. Only for pull requests that touch it: it downloads Lean's 570 MB archive each run.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'avendb/crates/avendb-device/src/lean.rs'
       - 'src/lib/code/packages.json'
@@ -24,6 +25,7 @@ concurrency:
 
 jobs:
   lean:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Lean runs locked down on macOS
     runs-on: macos-15
     timeout-minutes: 45

@@ -62,6 +62,7 @@ concurrency:
 jobs:
   # what changed (impact.mjs) and which jobs passed before on this PR with these files (passes.mjs), in one job
   impact:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     outputs:
       native: ${{ steps.paths.outputs.native }}
@@ -364,7 +365,7 @@ jobs:
 
   required:
     name: avenDB required checks
-    if: ${{ always() }}
+    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     needs: [impact, tests, image, spec, real-browser, protocol, frontend]
     runs-on: ubuntu-latest
     steps:

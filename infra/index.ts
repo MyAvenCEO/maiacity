@@ -17,32 +17,38 @@ const cfg = new pulumi.Config();
 const NAME = "maia-city";
 
 // Hetzner renames its models from time to time, so the type is resolved rather
-// than hardcoded: the cheapest non-deprecated shared x86 type that still meets
-// the floor and that Hetzner can place in our location right now (a type it has no room for fails only after the
-// server is shut down for the resize, 2026-10-27). Set `serverType` in the stack config to override.
+// than hardcoded. A server that runs on a type that still meets the floor keeps it: Hetzner's "available" means room
+// for a new server or a resize, so a type sold out in our location must not fail a deploy that changes nothing
+// (2026-10-27: no 16 GB type was available in nbg1 while ours ran on cpx42). Otherwise the cheapest non-deprecated shared
+// x86 type that meets the floor and that Hetzner can place in our location right now (a type it has no room for fails
+// only after the server is shut down for the resize, 2026-10-27). Set `serverType` in the stack config to override.
 const location = cfg.get("location") ?? "nbg1";
 const MIN_CORES = cfg.getNumber("minCores") ?? 2;
 const MIN_MEMORY_GB = cfg.getNumber("minMemoryGb") ?? 4;
 const serverType: pulumi.Output<string> = cfg.get("serverType")
   ? pulumi.output(cfg.get("serverType")!)
-  : hcloud.getServerTypesOutput({}).apply((r) => {
-      const fits = r.serverTypes
-        .filter(
+  : pulumi
+      .all([hcloud.getServerTypesOutput({}), hcloud.getServersOutput({ withSelector: `app=${NAME}` })])
+      .apply(([r, running]) => {
+        const meets = r.serverTypes.filter(
           (t) =>
             !t.isDeprecated &&
             t.architecture === "x86" &&
             t.cpuType === "shared" &&
             t.cores >= MIN_CORES &&
-            t.memory >= MIN_MEMORY_GB &&
-            t.locations.some((l) => l.name === location && l.available && !l.isDeprecated),
-        )
-        .sort((a, b) => a.memory - b.memory || a.cores - b.cores || a.disk - b.disk || a.name.localeCompare(b.name));
-      if (!fits.length)
-        throw new Error(
-          `No server type with >= ${MIN_CORES} vCPU / ${MIN_MEMORY_GB} GB available in ${location}: ${r.serverTypes.map((t) => t.name).join(", ")}`,
+            t.memory >= MIN_MEMORY_GB,
         );
-      return fits[0].name;
-    });
+        const current = running.servers.find((s) => s.name === NAME)?.serverType;
+        if (current && meets.some((t) => t.name === current)) return current;
+        const fits = meets
+          .filter((t) => t.locations.some((l) => l.name === location && l.available && !l.isDeprecated))
+          .sort((a, b) => a.memory - b.memory || a.cores - b.cores || a.disk - b.disk || a.name.localeCompare(b.name));
+        if (!fits.length)
+          throw new Error(
+            `No server type with >= ${MIN_CORES} vCPU / ${MIN_MEMORY_GB} GB available in ${location}: ${r.serverTypes.map((t) => t.name).join(", ")}`,
+          );
+        return fits[0].name;
+      });
 
 const volumeSize = cfg.getNumber("volumeSize") ?? 10;
 

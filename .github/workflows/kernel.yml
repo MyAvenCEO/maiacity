@@ -15,6 +15,7 @@ name: Kernel
 #            (Tauri is WebKit): a wall that holds in Chromium is not taken to hold there
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_call:
     inputs:
       full:
@@ -32,6 +33,7 @@ concurrency:
 
 jobs:
   selection:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Select affected application suites
     runs-on: ubuntu-latest
     outputs:
@@ -53,7 +55,7 @@ jobs:
   application:
     name: Application tests (${{ matrix.label }})
     needs: selection
-    if: needs.selection.outputs.suites != '[]'
+    if: ${{ (needs.selection.outputs.suites != '[]') && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -95,6 +97,7 @@ jobs:
           key: ${{ matrix.key }}
 
   tests:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: The kernel’s tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -145,6 +148,7 @@ jobs:
   # it): its browsers and every system library they need come in it. Installing them on the runner went through Ubuntu's
   # package mirrors, which hung for 15 to 20 minutes, to the job's limit, five times on 2026-10-26.
   probes:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Every way out, tried in Chromium
     runs-on: ubuntu-latest
     container:
@@ -170,6 +174,7 @@ jobs:
   # Playwright); the OPFS test drives a newer WebKit, as older Playwright WebKit lacks persistent-context OPFS (upstream
   # #41984), fetched beside it into its own folder
   probes-webkit:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Every way out, tried in WebKit
     runs-on: ubuntu-latest
     container:
@@ -200,7 +205,7 @@ jobs:
 
   required:
     name: Kernel required checks
-    if: ${{ always() }}
+    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     needs: [selection, tests, application, probes, probes-webkit]
     runs-on: ubuntu-latest
     steps:

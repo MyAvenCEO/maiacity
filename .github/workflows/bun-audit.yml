@@ -11,6 +11,7 @@
 name: bun dependencies (audit)
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths: ['bun.lock', 'package.json', 'api/bun.lock', 'api/package.json', 'infra/bun.lock', 'infra/package.json', '.github/workflows/bun-audit.yml']
   push:
     branches: [main]
@@ -20,8 +21,14 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# a pull request's new push replaces its run
+concurrency:
+  group: bun-audit-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   audit:
+    if: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
