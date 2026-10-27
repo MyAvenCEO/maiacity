@@ -35,6 +35,8 @@ import AvenDB.Vectors
 import AvenDB.Ops
 import AvenDB.Links
 import AvenDB.Rules
+import AvenDB.Address
+import AvenDB.Mutation
 import AvenDB.Schemas
 import AvenDB.OpsVectors
 import AvenDB.Backup

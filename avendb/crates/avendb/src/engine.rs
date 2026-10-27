@@ -55,6 +55,7 @@
 //! draft its vault hasn't landed has no main line yet, so every read and record op of its main line answers `NoEntry`
 //! (`Lab::landed`).
 
+mod actors;
 mod aips;
 pub mod coverage;
 mod vaults;
@@ -110,6 +111,8 @@ pub enum Refused {
     Behind(String),
     /// A batch's `at`th op was refused, after its steps before it did `done`, which stand.
     Batch { at: usize, done: Vec<Value>, why: Box<Refused> },
+    /// A call an actor's interface doesn't admit, or whose template writes outside its footprint (`address::Verdict`).
+    Call(crate::address::Verdict),
 }
 
 impl From<Refusal> for Refused {
@@ -126,6 +129,7 @@ impl Refused {
             Refused::NoSchema(why) => ("NoSchema".into(), why.clone()),
             Refused::NoEntry => ("NoEntry".into(), "the device shows no such entry, or no such line of it".into()),
             Refused::Behind(why) => ("Behind".into(), why.clone()),
+            Refused::Call(v) => (v.name().into(), v.why().into()),
             Refused::Batch { at, done, why } => {
                 let mut out = why.to_json();
                 out["at"] = (*at).into();
@@ -230,13 +234,15 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "define_group" => &["vault", "group"],
         "redefine_group" => &["entry", "group"],
         "share_group" => &["over", "group", "who", "what", "as"],
+        "describe" => &["entry", "version"],
+        "call" => &["to", "method", "args", "against", "as"],
         _ => return None,
     })
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing. The page's list
 /// (src/lib/avendb/op-names.js) is written from this one and `ASKS` (tests/op_names.rs), never by hand.
-pub const READS: [&str; 39] = [
+pub const READS: [&str; 40] = [
     "entry_views",
     "query",
     "touched",
@@ -276,6 +282,7 @@ pub const READS: [&str; 39] = [
     "measure_peer_visibility",
     "observe_query_emission",
     "api_pass",
+    "describe",
 ];
 
 /// The ops that change nothing but ask what changes would do, by dry runs (`Lab::dry`): `may`, and `shares`, which
@@ -358,7 +365,13 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
     if name(v) == Some("world") {
         return world(lab, me, &SyncedTo::default());
     }
-    let out = op_of(v).and_then(|(name, o)| match name {
+    answer(read_op(lab, me, v))
+}
+
+/// Read op `v` run on device `me`: its answer or a refusal; `world` and `world_summary` aside, which `read` answers.
+fn read_op(lab: &Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
+    op_of(v).and_then(|(name, o)| match name {
+        "describe" => actors::describe(lab, me, o),
         "entry_views" => entry_views_inner(lab, me, o, &SyncedTo::default()),
         "query" => query(lab, me, o),
         "touched" => touched(lab, me, o),
@@ -394,8 +407,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "network" => Err(bad("network tells where a node syncs from and how: a node runs it (Node::run)")),
         _ if ASKS.contains(&name) => Err(bad(format!("{name} asks by dry runs: run it, don't read it"))),
         _ => Err(bad(format!("{name} changes what the device holds: run it, don't read it"))),
-    });
-    answer(out)
+    })
 }
 
 fn answer(out: Result<Value, Refused>) -> Value {
@@ -424,6 +436,7 @@ pub fn prepare(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Prepared, Refus
         _ if READS.contains(&name) || ASKS.contains(&name) => {
             Err(bad(format!("{name} only reads: read it, don't run it")))
         }
+        "call" => actors::call(lab, me, o),
         _ if vaults::CHANGES.contains(&name) => vaults::prepare(lab, me, name, o),
         _ => change(lab, me, v).map(Prepared::Done),
     }
