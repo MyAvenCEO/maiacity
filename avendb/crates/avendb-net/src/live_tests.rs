@@ -190,6 +190,7 @@ async fn a_live_hint_does_not_authorize_a_private_entry() {
             None,
             Some(SignerId::from_u64(999)),
             None,
+            None,
         )
         .await
         .expect_err("a hint cannot be routed under another authenticated identity");

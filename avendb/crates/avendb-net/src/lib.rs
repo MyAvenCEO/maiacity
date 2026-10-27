@@ -2558,7 +2558,7 @@ impl Shared {
         background: bool,
         catch_up: Option<&pulls::CatchUp>,
     ) -> Result<usize> {
-        self.pull_expected(endpoint, scope, background, catch_up, None, None).await
+        self.pull_expected(endpoint, scope, background, catch_up, None, None, None).await
     }
 
     /// A live hint belongs to the authenticated identity that announced it. Fence that identity before building
@@ -2571,6 +2571,7 @@ impl Shared {
         catch_up: Option<&pulls::CatchUp>,
         expected: Option<SignerId>,
         keys: Option<&mut BTreeSet<BlobId>>,
+        yielding: Option<&Yield>,
     ) -> Result<usize> {
         let _activity = self.admit()?;
         let admission = self.pulls.enter(background, catch_up).await?;
@@ -2583,7 +2584,7 @@ impl Shared {
         let must = !matches!(scope, Scope::Logs(_));
         let device = peer.device;
         let mut named = BTreeSet::new();
-        let mut asked = self.pages(peer, scope, &mut job, admission, background, keys.unwrap_or(&mut named)).await;
+        let mut asked = self.pages(peer, scope, &mut job, admission, background, keys.unwrap_or(&mut named), yielding).await;
         if asked.is_ok() {
             if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
                 asked = Err(error);
@@ -2600,7 +2601,9 @@ impl Shared {
     }
 
     /// `asking` of `peer`: page after page, each told to `job`, with how many of the edits it took are each vault's and
-    /// each entry's, and the McEliece keys its pages named added to `keys` (`bring_keys`).
+    /// each entry's, and the McEliece keys its pages named added to `keys` (`bring_keys`). It ends after a page where
+    /// `yielding` says the open views want now a log it asks for that they didn't when it began (`Yield`).
+    #[allow(clippy::too_many_arguments)]
     async fn pages(
         self: &Arc<Self>,
         peer: Peer,
@@ -2609,6 +2612,7 @@ impl Shared {
         admission: Arc<pulls::Admission>,
         background: bool,
         keys: &mut BTreeSet<BlobId>,
+        yielding: Option<&Yield>,
     ) -> Result<usize> {
         // Only the authority-first background scheduler uses the optional payload pass. A refusal, unsupported
         // signer, large edit, exhausted quota or stale scope always reaches the original legacy reconciliation.
@@ -2954,6 +2958,12 @@ impl Shared {
             job.stage(format!("page {pages}"));
             job.progress(new as u64, None);
             job.about(vaults.clone(), entries.clone());
+            // the open views want a log of its own now that they didn't when it began: it ends here, with all it took,
+            // for them to be asked for at once, and the rest again after them (`Yield`); nothing more of it is taken,
+            // so none of a stub's bodies counts as not sent
+            if next.is_some() && yielding.is_some_and(|y| y.due(self)) {
+                return Ok(new);
+            }
             match next {
                 Some(last) => after = Some(last),
                 None => break,
@@ -3555,12 +3565,21 @@ impl Shared {
             if logs.is_empty() {
                 break Ok(new);
             }
-            // an asking of the manifests or the views, which leaves logs for a later one
-            let early = !left.is_empty();
-            match self.pull_expected(endpoint, Scope::Logs(logs), true, None, None, Some(&mut keys)).await {
+            // an asking of every log left yields to what the open views come to want now while it runs (`Yield`):
+            // a view opened, or peers named the entries a new device's view asks for by its selectors
+            let yielding = left.is_empty().then(|| Yield::new(logs.clone(), self.views_want()));
+            match self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, None, Some(&mut keys), yielding.as_ref()).await {
                 Ok(got) => new += got,
                 Err(e) => break Err(e),
             }
+            // it yielded: its logs are left again, the manifests and the views asked for first, then the rest, whose
+            // pages come after what it took (the request names what is held now)
+            if yielding.as_ref().is_some_and(Yield::yielded) {
+                left.extend(logs);
+                stage = AskingStage::Manifests;
+            }
+            // an asking of the manifests or the views, which leaves logs for a later one
+            let early = !left.is_empty();
             // the keys the manifests' and the views' batches named, on a task of their own while the next batches
             // come: it is the logs no entry's (who may do what, the audiences' keys), so a new device's views open and
             // find what they want at once instead of after the last log of a whole catch-up, and no log waits behind a
@@ -3762,6 +3781,55 @@ impl Drop for Claimed<'_> {
 
 /// The most logs a first asking names for the open views (`next_asking`): their own few, not a vault's thousands.
 const VIEW_LOGS: usize = 1024;
+
+/// What an asking of every log left (`Shared::ask_differing`) yields to (`Interest.lean`'s `yields`): the logs it asks
+/// for, and what the open views wanted when it began (`Shared::views_want`). It yields once they want now a log it
+/// asks for that they didn't then: a view that opened while it ran, or the entries peers named for a view's
+/// selectors. Their logs came only when its pages reached their places, often at its very end; so it ends after the
+/// page it is taking, and they are asked for on their own. What was wanted when it began never stops it, so an asking
+/// begun anew doesn't yield to the same wants again.
+pub(crate) struct Yield {
+    asked: BTreeSet<LogId>,
+    before: BTreeSet<LogId>,
+    yielded: AtomicBool,
+}
+
+impl Yield {
+    fn new(asked: BTreeSet<LogId>, before: BTreeSet<LogId>) -> Self {
+        Self { asked, before, yielded: AtomicBool::new(false) }
+    }
+
+    /// Whether `now`, what the views want now, holds a log it asks for that they didn't want when it began.
+    fn yields_to(&self, now: &BTreeSet<LogId>) -> bool {
+        now.iter().any(|l| self.asked.contains(l) && !self.before.contains(l))
+    }
+
+    /// Whether it yields now to what `shared`'s views want; once it did, it stays yielded.
+    fn due(&self, shared: &Shared) -> bool {
+        let due = self.yields_to(&shared.views_want());
+        if due {
+            self.yielded.store(true, Ordering::Relaxed);
+        }
+        due
+    }
+
+    fn yielded(&self) -> bool {
+        self.yielded.load(Ordering::Relaxed)
+    }
+}
+
+impl Shared {
+    /// What the open views want: the entries their Interests name or peers named for their selectors, the manifests
+    /// peers named for them, and the entries pages asked for (`Node::want`). An asking's `Yield` reads it.
+    fn views_want(&self) -> BTreeSet<LogId> {
+        let mut out: BTreeSet<LogId> = {
+            let interests = self.interests.lock().expect("interests");
+            interests.entries().into_iter().chain(interests.manifests()).collect()
+        };
+        out.extend(self.wanted.lock().expect("wanted").iter().copied());
+        out
+    }
+}
 
 /// A turn on the Lab so long that, in a page's worker, the network's packets wait behind it: one frame's time.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
