@@ -28,3 +28,25 @@ export async function localFileEntries(device, { vaults, signal } = {}) {
  }
  return [...entries.values()];
 }
+
+/**
+ * The file entries `ids` names, by the engine's index of entries by id: what a page that knows its files' entries
+ * reads, at the cost of those entries alone. An entry this device doesn't hold yet is left out (the page's Interest
+ * asks for it).
+ * @param {FileDevice} device @param {string[]} ids @param {{signal?: AbortSignal}} [options]
+ * @returns {Promise<FileEntry[]>}
+ */
+export async function pinnedEntries(device, ids, { signal } = {}) {
+ signal?.throwIfAborted();
+ const entries = [...new Set(ids)].filter(id => /^[a-f0-9]{64}$/.test(id));
+ if (!entries.length) return [];
+ const rows = [];
+ // the engine reads at most 512 entries a call
+ for (let at = 0; at < entries.length; at += 512) {
+  const result = (await device.run({ op: 'entry_views', entries: entries.slice(at, at + 512), types: ['file'] }))?.ok;
+  signal?.throwIfAborted();
+  if (!Array.isArray(result?.rows)) throw new Error('Local file entries unavailable');
+  rows.push(...result.rows);
+ }
+ return rows;
+}
