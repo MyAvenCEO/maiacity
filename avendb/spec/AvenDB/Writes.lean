@@ -233,4 +233,46 @@ theorem write_wait_bound (running : Nat) (ahead : List Nat) (own T : Nat) (hr : 
 
 end Turns
 
+/-! ## A live edit during a long catch-up is shown in the next step (batch 5, lane 8)
+
+A catch-up shows a backlog's entries a budget a step (lab.rs `catch_up_step`, `show_items`). Edits taken while it
+shows them, as a live page, are replayed and read at once, and the entries of their writes go before those the showing
+left (`order`). Each entry is shown by the replay alone, never by when it is shown (`view` is a function of the replayed
+state and the entry), so the order changes nothing of what is shown in the end (`order_mem`, `shown_same`); and live
+entries no more than a step's budget are all shown in the first step (`live_in_first_step`). Before, the showing went
+on with what it had left and a live edit waited for the whole backlog (19 of 31 steps in avendb-net's
+`lab_schedule::live_first` test; 2 with this order). -/
+
+namespace Showing
+
+/-- What a step shows next: the live entries first, then those the showing left, without the live ones again. -/
+def order (live rest : List Nat) : List Nat := live ++ rest.filter (fun e => e ∉ live)
+
+/-- A step shows at most `budget` of them. -/
+def step (budget : Nat) (todo : List Nat) : List Nat := todo.take budget
+
+/-- Live entries no more than a step's budget are all shown in the first step. -/
+theorem live_in_first_step (live rest : List Nat) (budget : Nat) (h : live.length ≤ budget) :
+    ∀ e ∈ live, e ∈ step budget (order live rest) := by
+  intro e he
+  simp only [step, order, List.take_append, List.take_of_length_le h]
+  exact List.mem_append_left _ he
+
+/-- Every entry, live or left, is still shown, and only those: the order moves none in or out. -/
+theorem order_mem (live rest : List Nat) (e : Nat) : e ∈ order live rest ↔ e ∈ live ∨ e ∈ rest := by
+  simp only [order, List.mem_append, List.mem_filter]
+  by_cases h : e ∈ live <;> simp [h]
+
+/-- What is shown of each entry is the replay's, whatever the order it is shown in. -/
+def shown (view : Nat → Nat) (todo : List Nat) : List (Nat × Nat) := todo.map (fun e => (e, view e))
+
+theorem shown_same (view : Nat → Nat) (live rest : List Nat) (e : Nat) (v : Nat)
+    (h : (e, v) ∈ shown view (order live rest)) : v = view e := by
+  simp only [shown, List.mem_map] at h
+  obtain ⟨x, _, hx⟩ := h
+  simp only [Prod.mk.injEq] at hx
+  rw [← hx.2, hx.1]
+
+end Showing
+
 end AvenDB
