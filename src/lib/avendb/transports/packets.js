@@ -50,4 +50,12 @@ export function packetWriter(write, failed, { mtu = MAX_PACKET, timeout = 5000 }
 	};
 }
 
-export function reason(error) { return String(error?.message ?? error ?? 'closed').slice(0, 160); }
+/** Why a carrier ended, in words: a WebTransportError's `source` and code, or a close's code, kept beside its message,
+ *  as Safari rejects with an empty one (the iPhone's carrier closed with no reason at all, 2026-10-27). */
+export function reason(error) {
+	const parts = [error?.name && error.name !== 'Error' ? error.name : '', error?.message ?? (typeof error === 'object' ? '' : error)];
+	if (error?.source) parts.push(`source ${error.source}`);
+	if (error?.streamErrorCode != null) parts.push(`stream code ${error.streamErrorCode}`);
+	if (error?.closeCode != null) parts.push(`close code ${error.closeCode}${error.reason ? ` ${error.reason}` : ''}`);
+	return (parts.filter(Boolean).join(': ') || (error == null ? 'closed' : String(error)) || 'closed').slice(0, 160);
+}

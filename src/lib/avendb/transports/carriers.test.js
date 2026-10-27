@@ -32,7 +32,7 @@ test('WebTransport pins authenticated hashes, reports outer MTU, and carries onl
 		expect(wt.config.serverCertificateHashes).toEqual([{ algorithm: 'sha-256', value: new Uint8Array(32).fill(0xab) }]);
 		wt.opening.resolve(); expect(await f.carrier.ready).toBe(true);
 		expect(f.events).toEqual([{ kind: 'ready', mtu: 1000 }]);
-		expect(wt.datagrams.incomingHighWaterMark).toBe(32); expect(wt.datagrams.outgoingMaxAge).toBe(1000);
+		expect(wt.datagrams.incomingHighWaterMark).toBe(4096); expect(wt.datagrams.incomingMaxAge).toBe(Infinity); expect(wt.datagrams.outgoingMaxAge).toBe(1000);
 		expect(await f.carrier.send(new Uint8Array([1, 2, 3]))).toBe(true);
 		expect(await f.carrier.send(new Uint8Array(1001))).toBe(false);
 		wt.reads[0].resolve({ value: new Uint8Array([4, 5]), done: false }); await flush();
@@ -41,6 +41,17 @@ test('WebTransport pins authenticated hashes, reports outer MTU, and carries onl
 		expect(f.events.filter((e) => e.kind === 'closed')).toHaveLength(1);
 		expect(await f.carrier.send(new Uint8Array([1]))).toBe(false);
 	} finally { f.carrier.close(); }
+});
+
+test('WebTransport says why it closed, where Safari gives an empty message', async () => {
+	const f = wtFixture(), wt = f.instances[0];
+	const error = Object.assign(new Error(''), { name: 'WebTransportError', source: 'session', streamErrorCode: null });
+	wt.ending.reject(error); await flush();
+	expect(f.events).toEqual([{ kind: 'closed', reason: 'WebTransportError before ready: source session' }]);
+	const g = wtFixture(), up = g.instances[0];
+	up.opening.resolve(); expect(await g.carrier.ready).toBe(true);
+	up.ending.resolve({ closeCode: 7, reason: 'gone' }); await flush();
+	expect(g.events.at(-1)).toEqual({ kind: 'closed', reason: 'WebTransport closed: close code 7 gone' });
 });
 
 test('WebTransport receive bounds are independent of its smaller outbound MTU', async () => {

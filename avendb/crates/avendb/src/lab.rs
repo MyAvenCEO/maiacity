@@ -2017,7 +2017,17 @@ impl Lab {
     fn take_prepared(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs, prepared: &HashMap<EditId, bool>) -> bool {
         let mut fresh = self.checked_prepared(to, edits, prepared);
         if let Some(home) = self.home(to).filter(|_| !fresh.is_empty()) {
+            self.step_replay(to);
             let store = self.held(to);
+            // a vault new to what it knows comes only by a genesis: one in the batch, or one it holds that stands not
+            // yet and the batch could let stand. With neither, `gate::takes` takes the whole batch, and its replay of
+            // every edit held (4.4-4.9 s a page on the server, 2026-10-27) is skipped.
+            let genesis = |e: &Edit| matches!(e.action, Action::Genesis { .. });
+            let latest = self.latest(to);
+            let standing = store.log.edits().iter().zip(store.log.ids()).all(|(e, id)| !genesis(e) || latest.vault(VaultId::from(*id)).is_some());
+            if standing && !fresh.iter().any(|s| genesis(&s.edit)) {
+                return self.keep_fresh(to, fresh, blobs);
+            }
             let batch = fresh.iter().map(|s| s.edit.clone()).collect();
             let taken = gate::takes(home, store.log.edits(), self.latest(to), batch, &store.readings);
             let ids: HashSet<EditId> = taken.unwrap_or_default().iter().map(Edit::id).collect();
@@ -2664,6 +2674,29 @@ impl Lab {
 
     /// What device `d`'s edits say now, those it kept since it last brought itself up to date too: what it drafts and
     /// checks its own edits by.
+    /// Steps device `d`'s replay on in place over the edits it took since (`replay_on_why`), as `refresh` begins, so
+    /// that `latest` is the replay itself, not a copy of the whole state made under the Lab: the server cloned its
+    /// 125,727-edit state for each page it took, holding the Lab 4.4-4.9 s a page (2026-10-27). What `refresh` does
+    /// after its replay (keys, reading, showing) waits for it as before (`behind`), and a removal stepped on here is
+    /// shown anew there (`reshow`).
+    fn step_replay(&mut self, d: SignerId) {
+        let Some(store) = self.stores.get_mut(&self.at(d)) else { return };
+        if store.replayed == store.log.edits().len() || store.latest.get().is_some() {
+            return;
+        }
+        let at = Perf::start();
+        let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
+        store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
+        let was = std::mem::replace(&mut store.replay, replay(&[]));
+        let (replayed, why) = replay_on_why(was, store.log.edits(), store.replayed);
+        store.replay = replayed;
+        store.wholes += matches!(why, Why::Whole(_)) as u64;
+        store.perf.count(why_counted(why), 1);
+        store.replayed = store.log.edits().len();
+        debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
+        store.perf.add("replay", at);
+    }
+
     fn latest(&self, d: SignerId) -> &State {
         let store = self.held(d);
         // set, it is what they say (a write stepped on, or the based entries' state); unset, the replay of them all is
