@@ -451,9 +451,9 @@ jobs:
   # peer's signed edits with their signatures checked (avendb-browser's `bench` feature, scripts/ci/avendb-bench-phone.mjs)
   # on a synthetic fixture (avendb/tests/phone_fixture.rs). It gates nothing yet (Samuel, 2026-10-27: print it, the
   # target is 20k edits/s), so `required` doesn't wait on it.
-  bench-phone:
+  bench-phone-build:
     needs: impact
-    name: avenDB phone-class bench (WebAssembly in Chromium and WebKit)
+    name: avenDB phone-class bench, its WebAssembly and fixture
     if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_bench != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -471,10 +471,6 @@ jobs:
           workspaces: avendb -> target
           key: bench-phone
           cache-on-failure: true
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version-file: .bun-version
-      - run: bun install --frozen-lockfile
       - name: The page's WebAssembly, with the bench, and the fixture
         working-directory: avendb
         env:
@@ -483,14 +479,41 @@ jobs:
           cargo build --locked -p avendb-browser --target wasm32-unknown-unknown --release --features bench
           wasm-bindgen --target web --no-typescript --out-dir "$RUNNER_TEMP/phone-pkg" target/wasm32-unknown-unknown/release/avendb_browser.wasm
           AVENDB_PHONE_FIXTURE="$RUNNER_TEMP/phone.bin" cargo test --locked -p avendb --features test-fixtures --test phone_fixture -- --ignored --nocapture
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: avendb-phone-bench
+          path: |
+            ${{ runner.temp }}/phone-pkg
+            ${{ runner.temp }}/phone.bin
+          retention-days: 3
+
+  # the browsers run in Playwright's image, as the kernel's WebKit job does: its engines and every system library they
+  # need come in it, where installing WebKit's on the runner fetched 117 MB through a mirror that outran a 5-minute
+  # limit and left apt holding its lock (2026-10-27)
+  bench-phone:
+    needs: bench-phone-build
+    name: avenDB phone-class bench (WebAssembly in Chromium and WebKit)
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --ipc=host
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # the image has Node and npm but no unzip, which setup-bun needs
+      - run: npm install -g "bun@$(cat .bun-version)"
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: avendb-phone-bench
+          # in the checkout: in a container job, runner.temp names the host's folder, not the container's
+          path: phone-bench
       - name: Chromium and WebKit
         # pipefail: a browser that doesn't launch fails the job, not just the tee after it
         shell: bash
         run: |
-          scripts/ci/browser-deps.sh "$PWD/node_modules/playwright/cli.js" chromium
-          scripts/ci/browser-deps.sh "$PWD/node_modules/playwright/cli.js" webkit
-          bun scripts/ci/avendb-bench-phone.mjs "$RUNNER_TEMP/phone-pkg" "$RUNNER_TEMP/phone.bin" chromium,webkit | tee "$RUNNER_TEMP/phone.log"
-          bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/phone.log" --phone
+          bun scripts/ci/avendb-bench-phone.mjs phone-bench/phone-pkg phone-bench/phone.bin chromium,webkit | tee phone-bench/phone.log
+          bun scripts/ci/avendb-bench.mjs phone-bench/phone.log --phone
 
   required:
     name: avenDB required checks

@@ -9,15 +9,9 @@ set -euo pipefail
 cli=$1 browser=$2
 bun "$cli" install "$browser"
 exe=$(bun -e "const { $browser } = await import('$(dirname "$cli")/index.mjs'); console.log($browser.executablePath())")
-# WebKit's executable is a script that starts its binaries with their own library path, so ldd reads nothing of it
-# (2026-10-27: "has every library" and then a launch missing 36): only an executable ldd can read is checked
-if missing=$(ldd "$exe" 2>&1) && ! grep -q 'not a dynamic executable' <<<"$missing"; then
-	missing=$(grep 'not found' <<<"$missing" || true)
-	if [ -z "$missing" ]; then echo "$browser has every library it links to"; exit 0; fi
-	echo "$browser lacks:"; echo "$missing"
-else
-	echo "$browser's executable is no binary ldd reads: its system libraries installed"
-fi
+missing=$(ldd "$exe" | grep 'not found' || true)
+if [ -z "$missing" ]; then echo "$browser has every library it links to"; exit 0; fi
+echo "$browser lacks:"; echo "$missing"
 printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::Retries "3";\n' | sudo tee /etc/apt/apt.conf.d/99ci-timeouts >/dev/null
 for try in 1 2 3; do
 	if timeout 300 bun "$cli" install-deps "$browser"; then exit 0; fi
