@@ -8,8 +8,9 @@
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
-use avendb_net::{Admission, pq_provider};
-use avendb_server::{Rates, Relay};
+use avendb_net::pq_provider;
+use iroh_relay::server::{ClientRateLimit, Limits, RelayConfig as RelayServerConfig, Server, ServerConfig};
+use std::num::NonZeroU32;
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointAddr, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey};
 
@@ -39,9 +40,9 @@ fn one_reply(relay: RelayUrl, every: usize, held: Duration) -> (f64, f64) {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         rt.block_on(async move {
             let ep = endpoint(&relay2, 7).await;
-            ep.online().await;
+            tokio::time::timeout(Duration::from_secs(20), ep.online()).await.expect("on the relay");
             let addr = addr_rx.recv().unwrap();
-            let conn = ep.connect(addr, ALPN).await.expect("a connection through the relay");
+            let conn = tokio::time::timeout(Duration::from_secs(30), ep.connect(addr, ALPN)).await.expect("in time").expect("a connection through the relay");
             let (mut send, mut recv) = conn.open_bi().await.unwrap();
             send.write_all(b"ask").await.unwrap();
             send.finish().unwrap();
@@ -68,7 +69,7 @@ fn one_reply(relay: RelayUrl, every: usize, held: Duration) -> (f64, f64) {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
     rt.block_on(async move {
         let ep = endpoint(&relay, 9).await;
-        ep.online().await;
+        tokio::time::timeout(Duration::from_secs(20), ep.online()).await.expect("on the relay");
         addr_tx.send(EndpointAddr::new(ep.id()).with_relay_url(relay.clone())).unwrap();
         let incoming = ep.accept().await.expect("an incoming connection");
         let conn = incoming.await.expect("accepted");
@@ -87,9 +88,21 @@ fn one_reply(relay: RelayUrl, every: usize, held: Duration) -> (f64, f64) {
 fn one_lanes_rate_through_the_relay() {
     let _ = rustls::crypto::CryptoProvider::install_default((*pq_provider()).clone());
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
-    // the relay reads each client at 8 MiB/s, as the server's does
-    let relay = rt.block_on(Relay::spawn_with(LOOPBACK, Admission::open(), Rates { relay: 8 << 20, ..Rates::default() })).unwrap();
-    let url = relay.url();
+    // iroh's relay, reading each client at 8 MiB/s with a burst of two seconds' worth, as the server's does
+    // (`avendb_server::Relay::spawn_with`), but open to any endpoint: the bench's endpoints are no devices it knows
+    let relay = rt.block_on(async {
+        let mut config = RelayServerConfig::new(LOOPBACK);
+        let rate = NonZeroU32::new(8 << 20).unwrap();
+        let mut client = ClientRateLimit::new(rate);
+        client.max_burst_bytes = rate.checked_mul(NonZeroU32::new(2).unwrap());
+        let mut limits = Limits::default();
+        limits.client_rx = Some(client);
+        config.limits = limits;
+        let mut server = ServerConfig::default();
+        server.relay = Some(config);
+        Server::spawn(server).await.expect("a relay")
+    });
+    let url: RelayUrl = format!("http://{}", relay.http_addr().expect("HTTP")).parse().unwrap();
     for (label, every, held) in [
         ("free receiver", usize::MAX, Duration::ZERO),
         ("held 250 ms per 512 KiB", 512 << 10, Duration::from_millis(250)),
@@ -99,5 +112,5 @@ fn one_lanes_rate_through_the_relay() {
         let mb = REPLY as f64 / 1e6;
         eprintln!("LANE {label}: {mb:.2} MB in {s:.2} s = {:.2} MB/s; held {h:.2} s, so {:.2} s on the wire", mb / s, s - h);
     }
-    rt.block_on(relay.shutdown()).unwrap();
+    rt.block_on(relay.shutdown()).ok();
 }
