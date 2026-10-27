@@ -153,6 +153,10 @@ use crate::world;
 /// to find nothing left. More means an edit the rules refuse, made again and again.
 const ROUNDS: usize = 10;
 
+/// The entries due for upkeep a refresh looks at, at most (`UpkeepDue`): those it leaves wait for the next one, each
+/// costing as much as its writes, so that a refresh costs what changed, whatever the device holds.
+const UPKEEP_SLICE: usize = 64;
+
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
 type Blobs = HashMap<BlobId, Arc<[u8]>>;
 
@@ -343,8 +347,9 @@ struct Keyring {
     revision: Arc<()>,
     /// Changes with each key it takes but an entry's: what the upkeep of every entry turns on (`UpkeepDue`).
     scoped: Arc<()>,
-    /// The entries whose keys it took since the upkeep last looked (`UpkeepDue`).
+    /// The entries whose keys it took since the upkeep last looked (`UpkeepDue`), and since `read` last looked.
     entries_keyed: Vec<EntryId>,
+    keyed_for_read: Vec<EntryId>,
     by_id: HashMap<KeyId, (KeyName, Secret)>,
     /// Each name's keys, the smallest id first.
     by_name: HashMap<KeyName, Vec<KeyId>>,
@@ -363,7 +368,10 @@ impl Keyring {
         }
         self.revision = Arc::new(());
         match name {
-            KeyName::Entry(e, ..) => self.entries_keyed.push(e),
+            KeyName::Entry(e, ..) => {
+                self.entries_keyed.push(e);
+                self.keyed_for_read.push(e);
+            }
             _ => self.scoped = Arc::new(()),
         }
         let ids = self.by_name.entry(name).or_default();
@@ -2806,18 +2814,38 @@ impl Lab {
             // a device holding stubs can't tell which boxes and keys its peers made of what they hold back: it makes
             // none until their bodies are in, or it would box again what is boxed, or make a key for an epoch that has
             // one; what is due for its upkeep waits for then (`UpkeepDue`)
+            let mut sliced = false;
             let work = if store.lazy.stubs.is_empty() {
-                let waiting: HashSet<EntryId> = store.showing.iter().flat_map(|s| s.rest.iter().copied()).collect();
+                let mut waiting: HashSet<EntryId> = store.showing.iter().flat_map(|s| s.rest.iter().copied()).collect();
                 let scope = store.upkeep_due.scope(store);
                 store.perf.count(if scope.is_some() { "upkeep: of the entries changed" } else { "upkeep: of every entry" }, 1);
-                let work = upkeep(d, store, &ix, &mine, rng, spares, scope.as_ref(), &waiting);
+                // the entries it looks at, `UPKEEP_SLICE` at most, in the order they were created; the rest wait, due,
+                // for the next refresh, and it is behind till then
+                let st = &store.replay.state;
+                let mut due: Vec<EntryId> = match scope {
+                    Some(s) => s.into_iter().filter(|e| !waiting.contains(e) && st.entry(*e).is_some()).collect(),
+                    None => st.entries().iter().map(|en| en.id).filter(|e| !waiting.contains(e)).collect(),
+                };
+                due.sort_by_key(|e| st.entry_place(*e));
+                let later = due.split_off(due.len().min(UPKEEP_SLICE));
+                sliced = !later.is_empty();
+                waiting.extend(later);
+                let scope: HashSet<EntryId> = due.into_iter().collect();
+                store.perf.count("upkeep: entries looked at", scope.len() as u64);
+                let work = upkeep(d, store, &ix, &mine, rng, spares, Some(&scope), &waiting);
                 store.upkeep_due.looked(&store.log, &store.keys.scoped, store.slices.len(), store.shown_groups, &store.shown_lanes, waiting);
                 store.keys.entries_keyed.clear();
                 work
             } else {
                 vec![]
             };
+            store.behind |= sliced;
             store.perf.add("upkeep", at);
+            if work.is_empty() && sliced && budget.is_some() {
+                store.perf.add("refresh", began);
+                self.rebuild_owner_bases(d);
+                return false;
+            }
             if work.is_empty() {
                 store.perf.add("refresh", began);
                 // still behind while a showing with a budget left entries to show
@@ -2832,6 +2860,12 @@ impl Lab {
             let view = store.replay.state.clone();
             for w in work {
                 self.work(d, &view, w);
+            }
+            // a step of a catch-up looks at one slice of the entries due for upkeep; the next step goes on
+            if sliced && budget.is_some() {
+                self.stores.get_mut(&d).expect("a device").perf.add("refresh", began);
+                self.rebuild_owner_bases(d);
+                return false;
             }
         }
         unreachable!("refresh rounds end by returning")
@@ -5841,10 +5875,25 @@ fn read(d: SignerId, store: &mut Store) {
         }
     }
     let at = Perf::start();
-    let retags = st.entries().iter().flat_map(|en| en.retags.iter().copied());
-    let wanted = st.all_writes().iter().map(|w| w.edit).chain(retags);
+    // the bodies it may open now: of the edits it took since it last looked, of those its replay didn't count then,
+    // and of those of the entries whose keys it took since; or, where its log or its replay began again since, of
+    // every write its replay counts (`ReadNew::since`)
+    let keyed = std::mem::take(&mut store.keys.keyed_for_read);
+    let wanted: Vec<EditId> = match store.read_new.since(&store.log, store.wholes, keyed) {
+        Some(ids) => ids,
+        None => {
+            store.perf.count("read: every write", 1);
+            let retags = st.entries().iter().flat_map(|en| en.retags.iter().copied());
+            let mut all: Vec<EditId> = st.all_writes().iter().map(|w| w.edit).chain(retags).collect();
+            // and the writes it holds that its replay doesn't count, which wait for it to
+            let counted: HashSet<EditId> = all.iter().copied().collect();
+            all.extend(store.log.ids().iter().filter(|id| !counted.contains(id)));
+            all
+        }
+    };
+    store.perf.count("read: writes looked at", wanted.len() as u64);
     let wanted: Vec<EditId> =
-        wanted.filter(|id| !store.bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
+        wanted.into_iter().filter(|id| !store.bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
     if !wanted.is_empty() {
         // each edit by its id from the signed edits it holds, every one of which its replay is of: no map of every
         // edit made again for each reading
@@ -5854,11 +5903,18 @@ fn read(d: SignerId, store: &mut Store) {
             let Action::Write { entry, stay, epoch, body, .. } = &edit.action else {
                 continue;
             };
+            // a write its replay counts, or whose tags count: another waits for it to
+            let counts = st.write(id).is_some() || st.entry(*entry).is_some_and(|en| en.retags.contains(&id));
+            if !counts {
+                store.read_new.uncounted.insert(id);
+                continue;
+            }
             let Some(key) = keys::edit_key(body) else {
                 store.spoilt.insert(id);
                 continue;
             };
             let Some(key) = store.keys.get(&key, KeyName::Entry(*entry, *stay, *epoch)) else {
+                store.read_new.lacking.entry(*entry).or_default().push(id);
                 continue;
             };
             match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
@@ -5872,6 +5928,20 @@ fn read(d: SignerId, store: &mut Store) {
                     store.spoilt.insert(id);
                 }
             }
+        }
+    }
+    // what it opened is what looking at every write its replay counts opens
+    #[cfg(debug_assertions)]
+    {
+        let retags = st.entries().iter().flat_map(|en| en.retags.iter().copied());
+        for id in st.all_writes().iter().map(|w| w.edit).chain(retags) {
+            if store.bodies.contains_key(&id) || store.spoilt.contains(&id) {
+                continue;
+            }
+            let Some(signed) = store.signed.get(&id) else { continue };
+            let Action::Write { entry, stay, epoch, body, .. } = &signed.edit.action else { continue };
+            let opens = keys::edit_key(body).and_then(|k| store.keys.get(&k, KeyName::Entry(*entry, *stay, *epoch)).cloned());
+            debug_assert!(opens.is_none(), "read left {id:?} unopened, which it opens");
         }
     }
     store.perf.add("read: bodies", at);
@@ -5907,6 +5977,7 @@ fn read(d: SignerId, store: &mut Store) {
     debug_assert!(same_readings(&r, &readings_of(store)), "readings read on differ from readings read whole");
     store.readings = r;
     store.read_new.read(store.bodies.len(), store.slices.len(), &store.readings);
+    store.read_new.looked(&store.log, store.wholes);
     store.perf.add("read: readings", at);
 }
 
@@ -5974,15 +6045,49 @@ fn same_readings(a: &Readings, b: &Readings) -> bool {
 /// more since, rather than every body again (each of 130,000 a turn on a server's size, 2026-10-27). Anything else
 /// that takes bodies or selectors away or puts in readings of its own sends `read` through them all again: the counts
 /// then differ from those it kept (`basis`), or it forgets them (`forget`).
+///
+/// Which bodies it may open goes the same way: the edits it took since it last looked, those its replay didn't count
+/// then, and those whose entry's key it lacked, of the entries whose keys it took since; every write its replay counts
+/// where its log began again (a removal let go of edits) or its replay did (`Store::wholes`).
 #[derive(Default)]
 struct ReadNew {
     /// The counts of bodies, selectors, headers and tags as it last read, if it did since it last forgot.
     then: Option<(usize, usize, usize, usize)>,
     bodies: Vec<EditId>,
     slices: Vec<ShareId>,
+    /// The log's lineage and length, and how many times the store replayed every edit, when it last looked.
+    log: Option<(crate::policy::LogRevision, usize, u64)>,
+    /// The writes it held whose bodies it didn't open as its replay didn't count them.
+    uncounted: HashSet<EditId>,
+    /// The writes whose bodies it didn't open as it lacked their entry's key, by the entry.
+    lacking: HashMap<EntryId, Vec<EditId>>,
 }
 
 impl ReadNew {
+    /// The writes whose bodies it may open now, as `ReadNew` says, `keyed` the entries whose keys it took since;
+    /// `None` where it is to look at every write its replay counts.
+    fn since(&mut self, log: &Log, wholes: u64, keyed: Vec<EntryId>) -> Option<Vec<EditId>> {
+        let fresh = match self.log.as_ref() {
+            Some((lineage, len, w)) if log.lineage() == *lineage && *len <= log.edits().len() && *w == wholes => *len,
+            _ => {
+                self.uncounted.clear();
+                self.lacking.clear();
+                return None;
+            }
+        };
+        let mut ids: Vec<EditId> = log.ids()[fresh..].to_vec();
+        ids.extend(self.uncounted.drain());
+        for e in keyed {
+            ids.extend(self.lacking.remove(&e).into_iter().flatten());
+        }
+        Some(ids)
+    }
+
+    /// It looked at `log` and its replay now.
+    fn looked(&mut self, log: &Log, wholes: u64) {
+        self.log = Some((log.lineage(), log.edits().len(), wholes));
+    }
+
     /// It reads on from what it read last time: what it holds now is that, and what it opened since, alone.
     fn basis(&self, bodies: usize, slices: usize, r: &Readings) -> bool {
         self.then.is_some_and(|(b, s, h, t)| {
@@ -6130,7 +6235,7 @@ fn upkeep(
     // move links: the keys of an entry's earlier stays under a key of its stay now, as the schedule links them
     // of the entries in `scope` alone where it has one (`UpkeepDue`), and none a showing left to show: a debug build
     // checks that every other one calls for none
-    for en in st.entries() {
+    for en in upkept(&st, scope) {
         if waiting.contains(&en.id) || !entitled.contains(&KeyFam::Audience(en.vault, en.audience())) {
             continue;
         }
@@ -6176,6 +6281,19 @@ fn upkeep(
     out
 }
 
+/// The entries an upkeep of the entries `scope` looks at, in the order they were created: those of `scope` alone, or
+/// every one where it has none; in a debug build every one, which checks that those out of it call for nothing.
+fn upkept<'s>(st: &'s State, scope: Option<&HashSet<EntryId>>) -> Vec<&'s Entry> {
+    match scope {
+        Some(s) if !cfg!(debug_assertions) => {
+            let mut v: Vec<&Entry> = s.iter().filter_map(|e| st.entry(*e)).collect();
+            v.sort_by_key(|en| st.entry_place(en.id));
+            v
+        }
+        _ => st.entries().iter().collect(),
+    }
+}
+
 /// What a steward of vault `v` does, once it reads the selector of every share of the vault (`Store::reads_shares`):
 /// for each entry whose creation and tags it reads, it answers the asks for tags no write acting for the vault answered
 /// yet, granting each its entry's readers count (`show_items`) where the asker may (`granted`), in one write acting for
@@ -6197,7 +6315,7 @@ fn steward(
     let r = &store.readings;
     let mut out = vec![];
     // of the entries in `scope` alone where it has one, and none a showing left to show (`upkeep`)
-    for en in st.entries().iter().filter(|en| en.vault == v && !waiting.contains(&en.id)) {
+    for en in upkept(st, scope).into_iter().filter(|en| en.vault == v && !waiting.contains(&en.id)) {
         let skip = scope.is_some_and(|s| !s.contains(&en.id));
         if skip && !cfg!(debug_assertions) {
             continue;
