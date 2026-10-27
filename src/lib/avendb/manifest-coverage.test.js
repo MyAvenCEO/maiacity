@@ -30,8 +30,8 @@ test("a page's manifests are those whose routes cover it, the kernel's aside, an
 	expect(by['/app/chat/'].tiers.now).toBeGreaterThanOrEqual(3);
 	expect(by['/app/studio/'].manifests).toEqual(['studio']);
 	expect(by['/app/'].manifests).toEqual(['dashboard']);
-	expect(by['/app/#assets'].manifests).toEqual([]);
-	expect(by['/app/#assets'].tiers).toEqual({ now: 0, next: 0, later: 0, idle: 0 });
+	expect(by['/app/#assets'].manifests).toEqual(['assets']);
+	expect(by['/app/#assets'].tiers.now).toBeGreaterThanOrEqual(3);
 	for (const g of GAMES) expect(by[g.route].manifests).toContain(`game-${g.id}`);
-	expect(by['/app/games/sandbox-7/'].manifests).toEqual([]);
+	expect(by['/app/games/sandbox-7/'].manifests).toEqual(['game-sandbox-7']);
 });
