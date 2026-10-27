@@ -1,7 +1,7 @@
 //! Durable signer order and publication receipts. Unlike a materialized view, these
 //! immutable objects are never rebuilt from a restored Store or skipped on conflict.
 //! Only shelves with atomic create-only names can publish batch roots.
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -601,6 +601,27 @@ impl Signers {
             if out.len() == most {
                 break;
             }
+            let ids = if log == self.signer {
+                self.book().log.tree().len()
+            } else {
+                peers.get(&log).map_or(0, |p| p.tree.len())
+            };
+            out.insert(log, (root.root.length, ids));
+        }
+        out
+    }
+
+    /// `held`, of the writers `among` alone, at most `most` of them: what a node names to a peer it asks
+    /// (`Lab::writers_shown`), never the writers of logs that peer has no part in.
+    pub(crate) async fn held_among(&self, among: &BTreeSet<SignerId>, most: usize) -> BTreeMap<SignerId, (u64, u64)> {
+        let roots = self.admission.lock().await;
+        let peers = self.peers.lock().await;
+        let mut out = BTreeMap::new();
+        for &log in among {
+            if out.len() == most {
+                break;
+            }
+            let Some(root) = roots.newest(log) else { continue };
             let ids = if log == self.signer {
                 self.book().log.tree().len()
             } else {
