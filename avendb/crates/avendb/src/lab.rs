@@ -563,6 +563,11 @@ impl ShelfKey {
 /// The engine's own hash, of its sources (`build.rs`): what a device worked out with another engine it works out again.
 const ENGINE: &str = env!("AVENDB_ENGINE");
 
+/// What a device seals its stored view to (`ViewRules.lean`, `build.rs`): the number of the replay rules it was worked
+/// out under, not the engine's hash, so a release that keeps the rules keeps every device's view (VR1), and one that
+/// changes them names a new number, under which no older view opens (VR2).
+const VIEW_RULES: &str = concat!("avenDB view rules ", env!("AVENDB_VIEW_RULES"));
+
 /// The engine's hash as a fixed-size binding, for what a device seals to the engine that made it.
 pub fn engine() -> [u8; 32] {
     crate::hash::content(ENGINE.as_bytes())
@@ -615,7 +620,7 @@ impl Touched {
 /// What a device keeps on its shelf of what it worked out, to start again from it quickly (`Lab::restore_warm`), each
 /// the newest first, as `Lab::warming` gave it, encrypted for it alone: its keys, for any engine, which hold the keys it
 /// opened from their boxes and what its shelf names the edits it checked by (`Checked`); and its stored views, for this
-/// engine alone (`ENGINE`), each its replay of the edits its log started with (`Replay::to_view`). It vouches for
+/// replay rules alone (`VIEW_RULES`), each its replay of the edits its log started with (`Replay::to_view`). It vouches for
 /// nothing it doesn't check: a key counts only for the very box it opened, with the key it opens it with now, and where
 /// its id is the one that box names; the edits only where its shelf names them the same now; and a view only where it
 /// reads back whole and is of the very edits its log starts with (`Replay::from_view`).
@@ -662,7 +667,7 @@ impl WarmCapture {
         }
         if let Some(replay) = self.replay.take() {
             let bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
-            self.receipt.view = Some(self.key.lock("view", &bytes, ENGINE.as_bytes(), &mut self.rng));
+            self.receipt.view = Some(self.key.lock("view", &bytes, VIEW_RULES.as_bytes(), &mut self.rng));
         }
         self.receipt
     }
@@ -970,13 +975,14 @@ impl Store {
         self.bootstrap_state.as_ref().unwrap_or(&self.replay.state)
     }
 
-    /// Its shelf lacks its view (`Lab::warming`): it replayed all its edits, and the view its shelf keeps, if any, is of
-    /// other edits, and it replayed every edit since or stepped `VIEW_STEPS` on it.
+    /// Its shelf lacks its view (`Lab::warming`): the view its shelf keeps, if any, is of other edits, and it replayed
+    /// every edit since or stepped `VIEW_STEPS` on it. Its replay is of the first `replayed` edits of its log, so it
+    /// seals that view even while newer edits wait to step on it (VR3): a device that keeps taking edits keeps one too.
     fn view_due(&self) -> bool {
         let n = self.replayed;
         let since = n.abs_diff(self.view_given);
         let stale = self.wholes != self.view_wholes || self.view_lineage.as_ref() != Some(&self.log.lineage());
-        n > 0 && n == self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS)
+        n > 0 && n <= self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS)
     }
 
     /// Its shelf lacks its keys (`Lab::warming`): it opened a key since its shelf took them, or its shelf names the
@@ -5397,7 +5403,7 @@ impl Lab {
             let at = Perf::start();
             let (edits, ids) = (store.log.edits(), store.log.ids());
             let found = warm.views.iter().find_map(|b| {
-                let view = key.unlock("view", b, ENGINE.as_bytes())?;
+                let view = key.unlock("view", b, VIEW_RULES.as_bytes())?;
                 let older = view.starts_with(b"avenDB own materialization 1\n");
                 Replay::from_view(view_replay(&view)?, edits, ids).map(|(replay, held)| (replay, held, older))
             });
@@ -5452,7 +5458,7 @@ impl Lab {
     fn capture_warm_at(&mut self, d: SignerId, held: usize, checked: Option<Checked>, current: bool) -> Option<WarmCapture> {
         let key = self.shelf_key(d)?;
         let store = self.stores.get(&d)?;
-        let close_due = current && store.replayed > 0 && store.replayed == store.log.edits().len()
+        let close_due = current && store.replayed > 0 && store.replayed <= store.log.edits().len()
             && store.replayed != store.view_given;
         let (keys_due, view_due) = (store.keys_due(checked), (store.view_due() || close_due) && store.replayed <= held);
         if !keys_due && !view_due { return None; }
