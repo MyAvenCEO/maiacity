@@ -873,6 +873,158 @@ theorem D2_entry_iff_audience {st : State} (hr : Reachable st) (h : Holder) {en 
   exact ⟨hiff, fun hk => T6_forward_secrecy ⟨edits, hst⟩ h
     (mem_keyFams.2 (.inr (.inr ⟨en, hen, rfl⟩))) (hiff.1 hk)⟩
 
+
+/-! ## Stubs of the boxes left out
+
+A peer that leaves a box out of a first sync sends its stub instead: its id, its depth and its parents, so the device
+knows the box is there and keeps each log's past whole while the body is away. A stub can't be checked: the id hashes
+the whole edit, and a relay may send a stub that lies about its depth or parents. So no part of a stub enters what the
+device knows (`S1_view_ignores_stubs`): it knows the view of the edits it holds, which a lying stub can't widen (`S4`).
+A body is taken only for a stub of its id, which the hash of the body checks (`take`), whatever the stub said of its
+depth and parents; once every body is taken the device knows what the full replay knows (`S2_bodies_taken`), and a stub
+that lied is seen (`Stub.lies`). A body for no stub, garbled or forged, changes nothing, and every stub stays asked for
+until its own body comes (`S3_nothing_lost`). -/
+
+/-- What a peer sends of a box it leaves out. -/
+structure Stub where
+  id      : EditId
+  depth   : Nat
+  parents : List EditId
+  deriving DecidableEq, Repr
+
+/-- An honest stub of edit `o`. -/
+def Edit.stub (o : Edit) : Stub := ⟨o.id, o.depth, o.parents⟩
+
+/-- A stub lies about the body of its id. -/
+def Stub.lies (s : Stub) (b : Edit) : Bool := s.id == b.id && (s.depth != b.depth || s.parents != b.parents)
+
+theorem stub_honest (o : Edit) : (Edit.stub o).lies o = false := by simp [Stub.lies, Edit.stub]
+
+/-- A device in a lazy first sync: the edits it holds, and the stubs of the boxes it hasn't. -/
+structure Device where
+  held  : List Edit
+  stubs : List Stub
+
+/-- What it knows: the view of the edits it holds. Its stubs count for nothing here. -/
+def Device.view (d : Device) : State := AvenDB.view d.held
+
+/-- A body comes: taken if it is a box with a stub of its id, which drops that stub; else nothing changes. -/
+def Device.take (d : Device) (b : Edit) : Device :=
+  if b.isBox && d.stubs.any (·.id == b.id) then ⟨d.held ++ [b], d.stubs.filter (·.id != b.id)⟩ else d
+
+/-- Bodies come, one after another. -/
+def Device.takeAll (d : Device) (bs : List Edit) : Device := bs.foldl Device.take d
+
+/-- **S1** (stubs count for nothing in what a device knows): two devices holding the same edits, with any stubs, know
+    the same. -/
+theorem S1_view_ignores_stubs (held : List Edit) (s s' : List Stub) :
+    Device.view ⟨held, s⟩ = Device.view ⟨held, s'⟩ := rfl
+
+/-- **S1**, with L1: a device holding every edit but the boxes, with any stubs, knows what the full replay knows, where
+    no edit names a box as a parent as deep as itself. -/
+theorem S1_lazy_device (N B : List Edit) (stubs : List Stub) (hN : ∀ e ∈ N, e.isBox = false)
+    (hB : ∀ b ∈ B, b.isBox = true) (hids : ((order (N ++ B)).map Edit.id).Nodup) (hb : boxesUnder (N ++ B)) :
+    Device.view ⟨N, stubs⟩ = AvenDB.view (N ++ B) := by
+  have hf : (N ++ B).filter nb = N := by
+    rw [List.filter_append, List.filter_eq_self.2 (fun e he => by simp [nb, hN e he]),
+      List.filter_eq_nil_iff.2 (fun b hb' => by simp [nb, hB b hb']), List.append_nil]
+  unfold Device.view
+  have h1 := (L1_lazy_view (N ++ B) hids hb).1
+  rw [hf] at h1
+  exact h1
+
+/-- Bodies with distinct ids, each a box with a stub of its id, are all taken, in any order, whatever their stubs said
+    of their depth and parents; the stubs left are those of no body that came. -/
+theorem takeAll_eq : ∀ (B : List Edit) (H : List Edit) (S : List Stub), (B.map Edit.id).Nodup →
+    (∀ b ∈ B, b.isBox = true) → (∀ b ∈ B, ∃ s ∈ S, s.id = b.id) →
+    Device.takeAll ⟨H, S⟩ B = ⟨H ++ B, S.filter fun s => !(B.map Edit.id).contains s.id⟩
+  | [], H, S, _, _, _ => by
+    simp only [Device.takeAll, List.foldl_nil, List.append_nil, List.map_nil, List.contains_nil, Bool.not_false]
+    exact congrArg _ (List.filter_eq_self.2 fun _ _ => rfl).symm
+  | b :: B, H, S, hn, hb, hs => by
+    have hn' := (List.nodup_cons.1 hn)
+    unfold Device.takeAll
+    rw [List.foldl_cons]
+    have ht : Device.take ⟨H, S⟩ b = ⟨H ++ [b], S.filter (·.id != b.id)⟩ := by
+      obtain ⟨s, hsS, hsid⟩ := hs b List.mem_cons_self
+      unfold Device.take
+      have : (b.isBox && S.any (·.id == b.id)) = true := by
+        simp only [hb b List.mem_cons_self, Bool.true_and, List.any_eq_true, beq_iff_eq]
+        exact ⟨s, hsS, hsid⟩
+      simp only [this, ite_true]
+    rw [ht]
+    have ih := takeAll_eq B (H ++ [b]) (S.filter (·.id != b.id)) hn'.2 (fun x hx => hb x (List.mem_cons_of_mem _ hx))
+      (fun x hx => by
+        obtain ⟨s, hsS, hsid⟩ := hs x (List.mem_cons_of_mem _ hx)
+        refine ⟨s, List.mem_filter.2 ⟨hsS, ?_⟩, hsid⟩
+        have : x.id ≠ b.id := fun h => hn'.1 (by rw [← h]; exact List.mem_map_of_mem hx)
+        simp [hsid, this])
+    unfold Device.takeAll at ih
+    rw [ih, List.append_assoc, List.filter_filter]
+    congr 2
+    funext s
+    simp only [List.map_cons, List.contains_cons, Bool.not_or, Bool.and_comm]
+    cases h : (s.id == b.id) <;> simp_all [bne]
+
+/-- **S2** (bodies taken, lies or not): a device holding the edits `N` and the stubs `S`, every stub one of the boxes
+    `B`, takes each body as it comes, and then holds `N ++ B` and no stub: it knows what the full replay knows, and
+    the same edits stand, whatever the stubs said of their depths and parents. -/
+theorem S2_bodies_taken (N B : List Edit) (S : List Stub) (hn : (B.map Edit.id).Nodup)
+    (hb : ∀ b ∈ B, b.isBox = true) (hs : ∀ b ∈ B, ∃ s ∈ S, s.id = b.id) (hS : ∀ s ∈ S, s.id ∈ B.map Edit.id) :
+    Device.takeAll ⟨N, S⟩ B = ⟨N ++ B, []⟩ ∧ (Device.takeAll ⟨N, S⟩ B).view = AvenDB.view (N ++ B) := by
+  have h := takeAll_eq B N S hn hb hs
+  have hnil : (S.filter fun s => !(B.map Edit.id).contains s.id) = [] :=
+    List.filter_eq_nil_iff.2 fun s hs' => by
+      have := hS s hs'
+      simp only [Bool.not_eq_true', List.contains_eq_any_beq, List.any_eq_false, Bool.not_eq_true, beq_eq_false_iff_ne,
+        ne_eq, Classical.not_forall, Classical.not_not]
+      exact ⟨s.id, this, rfl⟩
+  rw [hnil] at h
+  exact ⟨h, by rw [h]; rfl⟩
+
+/-- **S3** (nothing lost for good): a body that is no box, or whose id no stub has (garbled, forged, or a lying peer's),
+    changes nothing; and every stub of another id stays, asked for until its own body comes. -/
+theorem S3_nothing_lost (d : Device) (b : Edit) :
+    ((b.isBox && d.stubs.any (·.id == b.id)) = false → d.take b = d) ∧
+    ∀ s ∈ d.stubs, s.id ≠ b.id → s ∈ (d.take b).stubs := by
+  refine ⟨fun h => by unfold Device.take; simp [h], fun s hs hne => ?_⟩
+  unfold Device.take
+  split
+  · exact List.mem_filter.2 ⟨hs, by simp [hne]⟩
+  · exact hs
+
+/-- **S4** (a relay opens nothing): whatever stubs a device holds, it opens the current key of a family in use only
+    if it may by the edits it holds (T6): stubs carry no key and enter no state. -/
+theorem S4_relay_opens_nothing (held : List Edit) (stubs : List Stub) (h : Holder) {k : KeyFam}
+    (hkf : k ∈ keyFams (Device.view ⟨held, stubs⟩))
+    (hk : Knows (Device.view ⟨held, stubs⟩) (h.start (Device.view ⟨held, stubs⟩))
+      ((Device.view ⟨held, stubs⟩).curKey k)) :
+    MayOpen (Device.view ⟨held, stubs⟩) h k :=
+  T6_forward_secrecy (view_reachable held) h hkf hk
+
+/-- **S5** (a lie is caught when its body comes): a stub lies about a body of its id exactly when it is not that body's
+    honest stub. -/
+theorem S5_lie_caught (s : Stub) (b : Edit) (hid : s.id = b.id) : s.lies b = true ↔ s ≠ Edit.stub b := by
+  obtain ⟨i, d, ps⟩ := s
+  simp only at hid
+  subst hid
+  simp only [Stub.lies, Edit.stub, beq_self_eq_true, Bool.true_and, Bool.or_eq_true, bne_iff_ne, ne_eq, Stub.mk.injEq,
+    true_and]
+  exact Classical.not_and_iff_not_or_not.symm
+
+/-- **S5** (a lying stub changes nothing it can be caught at): whatever depths and parents the stubs `S` claimed, once
+    the bodies `B` have come the device holds the same edits as the full replay, so every edit is malformed on the device
+    exactly when it is in the full replay (an edit naming a box whose stub lied about its depth among them), and the
+    view is the full replay's. -/
+theorem S5_lying_stub (N B : List Edit) (S : List Stub) (hn : (B.map Edit.id).Nodup)
+    (hb : ∀ b ∈ B, b.isBox = true) (hs : ∀ b ∈ B, ∃ s ∈ S, s.id = b.id) (hS : ∀ s ∈ S, s.id ∈ B.map Edit.id) :
+    (∀ e, wellFormed (Device.takeAll ⟨N, S⟩ B).held e = wellFormed (N ++ B) e) ∧
+    order (Device.takeAll ⟨N, S⟩ B).held = order (N ++ B) ∧
+    (Device.takeAll ⟨N, S⟩ B).view = AvenDB.view (N ++ B) := by
+  obtain ⟨h, hv⟩ := S2_bodies_taken N B S hn hb hs hS
+  rw [h]
+  exact ⟨fun _ => rfl, rfl, by rw [← h]; exact hv⟩
+
 end Lazy
 
 end AvenDB
