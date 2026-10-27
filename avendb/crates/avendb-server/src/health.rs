@@ -53,6 +53,8 @@ pub struct Health {
     /// How this run opened its shelf (`opened`): how long it took, and what it read from the bucket meanwhile, or null
     /// before it did.
     opened: Mutex<Value>,
+    /// What its node's Lab work cost and how far its replay is behind, as last read (`work`), or null before.
+    work: Mutex<Value>,
 }
 
 impl Health {
@@ -77,7 +79,7 @@ impl Health {
         let (panic, shelf) = (Mutex::new(Value::Null), Mutex::new(Value::Null));
         let backups = Mutex::new(json!({ "checked_at": null, "whole": null }));
         let opened = Mutex::new(Value::Null);
-        let health = Arc::new(Health { file, started, starts, before, panic, shelf, backups, opened });
+        let health = Arc::new(Health { file, started, starts, before, panic, shelf, backups, opened, work: Mutex::new(Value::Null) });
         health.write(Value::Null);
         health
     }
@@ -138,6 +140,7 @@ impl Health {
             "backups": *self.backups.lock().unwrap_or_else(|e| e.into_inner()),
             "opened": *self.opened.lock().unwrap_or_else(|e| e.into_inner()),
             "reads": reads(avendb_net::bucket::reads()),
+            "work": *self.work.lock().unwrap_or_else(|e| e.into_inner()),
         })
     }
 
@@ -158,6 +161,11 @@ impl Health {
     /// Says this run opened its shelf in `ms` milliseconds, reading `read` from the bucket meanwhile.
     pub fn opened(&self, ms: u64, read: avendb_net::bucket::Reads) {
         *self.opened.lock().unwrap_or_else(|e| e.into_inner()) = json!({ "ms": ms, "objects": read.gets, "bytes": read.bytes });
+    }
+
+    /// Says what its node's Lab work cost and how far its replay is behind, as just read (`Node::work`).
+    pub fn work(&self, read: Value) {
+        *self.work.lock().unwrap_or_else(|e| e.into_inner()) = read;
     }
 
     /// Says what its shelf takes, as just measured: `{at, bucket: {objects, bytes}, folder: {files, bytes}}`.
