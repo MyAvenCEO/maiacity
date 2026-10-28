@@ -730,10 +730,11 @@ impl Node {
                 let parts = opts.progress.current() == Some("restore");
                 let step = |step| if parts { opts.progress.step(step) };
                 step("shelf");
-                let mut to = Restorer { lab: Some(lab), me, checked: None, keys: Warm::default(), restoring: None };
+                let mut to = Restorer { lab: Some(lab), me, checked: None, keys: Warm::default(), restoring: None, of_head: 0, after: 0, taking: Duration::ZERO };
+                let began = n0_future::time::Instant::now();
                 let (edits, warm, stored, anchors) = edits::Edits::open_into(shelf.clone(), &mut to).await?;
                 let taken = to.lab.as_ref().map_or(0, |lab| lab.size(me).0);
-                opts.progress.note("shelf", format!("{taken} edits, {} stored views, {} packs of kept showings", warm.views.len(), warm.shown.len()));
+                opts.progress.note("shelf", to.note(taken, began.elapsed(), &warm));
                 step("refresh");
                 let lab = to.end(anchors, warm).await?;
                 if let Some(report) = lab.restore_report(me) {
@@ -2113,9 +2114,27 @@ struct Restorer {
     checked: Option<avendb::lab::Checked>,
     keys: Warm,
     restoring: Option<avendb::lab::Restoring>,
+    /// The edits it was given of its head and after it, and how long its Lab took them (`Lab::restore_page`).
+    of_head: usize,
+    after: usize,
+    taking: Duration,
 }
 
 impl Restorer {
+    /// Where its shelf's step went, in words for its person, it taking `took` in all: the edits it took of its head
+    /// and after it, those held on its keys' word and those whose signatures it checked, and how long taking them and
+    /// reading its shelf took.
+    fn note(&self, taken: usize, took: Duration, warm: &Warm) -> String {
+        let (matched, vouched, checked) = self.restoring.as_ref().map_or((false, 0, 0), |r| r.checks());
+        let named = if matched { "its keys name its head" } else { "its keys name no head of it" };
+        let read = took.saturating_sub(self.taking).as_secs_f64();
+        format!(
+            "{taken} edits, {} of its head and {} after it; {named}: {vouched} held on their word, {checked} signatures \
+             checked; taking them {:.1} s, reading the shelf {read:.1} s; {} stored views, {} packs of kept showings",
+            self.of_head, self.after, self.taking.as_secs_f64(), warm.views.len(), warm.shown.len()
+        )
+    }
+
     /// Its Lab and its restore, taken out to work on (`Lab::restore_start` where it began none yet).
     fn take(&mut self) -> (Lab, avendb::lab::Restoring) {
         let mut lab = self.lab.take().expect("its Lab");
@@ -2146,6 +2165,7 @@ impl Restorer {
 impl edits::Taker for Restorer {
     async fn begin(&mut self, checked: Option<avendb::lab::Checked>, warm: &Warm) -> Result<()> {
         (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new(), shown: Vec::new() });
+        (self.of_head, self.after) = (0, 0);
         // what it took of a head that didn't read whole goes
         if self.restoring.is_some() {
             let mut lab = self.lab.take().expect("its Lab");
@@ -2156,6 +2176,8 @@ impl edits::Taker for Restorer {
     }
 
     async fn page(&mut self, page: Vec<(Signed, Option<avendb::lab::Placed>)>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()> {
+        *if of_head { &mut self.of_head } else { &mut self.after } += page.len();
+        let began = n0_future::time::Instant::now();
         let ((mut lab, mut r), me) = (self.take(), self.me);
         let take = move || {
             lab.restore_page_placed(me, &mut r, page, keys, of_head);
@@ -2166,6 +2188,7 @@ impl edits::Taker for Restorer {
         #[cfg(target_arch = "wasm32")]
         let (lab, r) = take();
         (self.lab, self.restoring) = (Some(lab), Some(r));
+        self.taking += began.elapsed();
         Ok(())
     }
 
