@@ -125,8 +125,41 @@ fn written(writers: usize, entries: usize, edits: usize) -> (Lab, SignerId, Vec<
         }
         written.extend(made.iter().enumerate().map(|(k, e)| (w, if k % 2 == 0 { alice } else { coop }, *e)));
     }
+    // UNLOCK_PHONE_STAGED: the iPhone takes each device's edits in turn, catching up after each as a node does after a
+    // page (`catch_up_steps`), and a `CATCH_UP_PAGE {...}` line gives what each catch-up took, a step at a time
+    let staged = std::env::var("UNLOCK_PHONE_STAGED").is_ok();
     for &w in &all {
-        lab.sync(w, phone);
+        let took = lab.sync(w, phone);
+        if staged {
+            let before = lab.perf(phone);
+            let (began, mut steps, mut longest) = (Instant::now(), 0usize, 0f64);
+            loop {
+                let at = Instant::now();
+                let step = lab.catch_up_step(phone, 48);
+                longest = longest.max(at.elapsed().as_secs_f64() * 1000.0);
+                steps += 1;
+                if matches!(step, avendb::lab::CatchUp::Caught(_)) {
+                    break;
+                }
+            }
+            let after = lab.perf(phone);
+            let mut counts = serde_json::Map::new();
+            for (k, v) in after["counts"].as_object().into_iter().flatten() {
+                let n = v.as_u64().unwrap_or(0) - before["counts"][k].as_u64().unwrap_or(0);
+                if n > 0 {
+                    counts.insert(k.clone(), json!(n));
+                }
+            }
+            println!("CATCH_UP_PAGE {}", json!({
+                "took_edits": took,
+                "held": lab.log(phone).ids().len(),
+                "ms": (began.elapsed().as_secs_f64() * 10_000.0).round() / 10.0,
+                "steps": steps,
+                "longest_step_ms": (longest * 10.0).round() / 10.0,
+                "timers": diff(&after["timers"], &before["timers"]),
+                "counts": counts,
+            }));
+        }
     }
     // the iPhone works out all of it, as it does before it saves what it worked out
     lab.catch_up(phone);
