@@ -2899,6 +2899,23 @@
  "held": [
   ],
  "signup": "known", "claimable": true, "passkey": 12, "invite": null,
+ "honours": true},
+{"name": "an owner key of a known vault that roots none, sign-up closed",
+ "home": 200,
+ "held": [
+  {"depth": 0, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 100, "kind": "human", "owners": [{"signer": 1}], "threshold": 1, "root": null}}},
+  {"depth": 1, "author": 1, "cosigners": [2], "action": {"share": {"device": {"vault": 100, "device": 2}}}},
+  {"depth": 2, "author": 4, "cosigners": [], "action": {"genesis": {"vault": 101, "kind": "human", "owners": [{"signer": 4}], "threshold": 1, "root": null}}},
+  {"depth": 3, "author": 4, "cosigners": [5], "action": {"share": {"device": {"vault": 101, "device": 5}}}},
+  {"depth": 4, "author": 6, "cosigners": [], "action": {"genesis": {"vault": 102, "kind": "human", "owners": [{"signer": 6}], "threshold": 1, "root": null}}},
+  {"depth": 5, "author": 8, "cosigners": [], "action": {"genesis": {"vault": 103, "kind": "human", "owners": [{"signer": 8}], "threshold": 1, "root": null}}},
+  {"depth": 6, "author": 1, "cosigners": [], "action": {"genesis": {"vault": 200, "kind": "coop", "owners": [{"vault": 100}], "threshold": 1, "root": null}}},
+  {"depth": 7, "author": 2, "cosigners": [], "action": {"write": {"vault": 200, "entry": 50, "actor": 200, "stay": null, "epoch": 0, "deps": [], "proposal": "main", "via": [100], "create": {"audience": [], "header": {"type": 902, "created": 0, "blob": 0}}, "tags": {"add": [], "remove": []}, "defines": {"name": "Traveler", "caps": [{"op": {"op": "read"}, "slice": {"anyOf": [[{"typeIn": [2]}]]}}], "includes": []}}}},
+  {"depth": 8, "author": 2, "cosigners": [], "action": {"share": {"grant": {"share": {"id": 31, "over": 200, "who": {"invite": 700}, "level": "read", "wide": false, "select": {"anyOf": [[]]}, "ops": [], "parent": null, "issuer": 200, "group": 50}, "via": [100]}}}},
+  {"depth": 9, "author": 2, "cosigners": [], "action": {"write": {"vault": 200, "entry": 52, "actor": 200, "stay": null, "epoch": 0, "deps": [], "proposal": "main", "via": [100], "create": {"audience": [], "header": {"type": 902, "created": 0, "blob": 0}}, "tags": {"add": [], "remove": []}, "defines": {"name": "Admin", "caps": [], "includes": []}}}},
+  {"depth": 10, "author": 2, "cosigners": [], "action": {"share": {"grant": {"share": {"id": 32, "over": 200, "who": {"vault": 101}, "level": "read", "wide": false, "select": {"anyOf": [[]]}, "ops": [], "parent": null, "issuer": 200, "group": 52}, "via": [100]}}}},
+  {"depth": 11, "author": 2, "cosigners": [], "action": {"share": {"grant": {"share": {"id": 33, "over": 100, "who": {"invite": 703}, "level": "read", "wide": false, "select": {"anyOf": [[{"typeIn": [2]}]]}, "ops": [{"op": "read"}], "parent": null, "issuer": 100}, "via": []}}}}],
+ "signup": "known", "claimable": false, "passkey": 1, "invite": null,
  "honours": true}
 ],
 "versions": [

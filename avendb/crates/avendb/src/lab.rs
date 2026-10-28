@@ -5248,8 +5248,8 @@ impl Lab {
     }
 
     /// The pass passkey `passkey`, used on device `d`, makes `d` at `made`, seconds since 1970 (`sign::RelayPass`): for
-    /// `d` alone, which the server's relay lets in for ten minutes if the passkey roots a vault the server knows
-    /// (`roots`), and which a peer hands the passkey's link card on (`link_card`). `None` unless the passkey is at hand
+    /// `d` alone, which the server's relay lets in for ten minutes if the passkey owns a vault the server knows
+    /// (`owner_keys`), and which a peer hands the passkey's link card on (`link_card`). `None` unless the passkey is at hand
     /// and `d` is an unlocked device of the Lab.
     pub fn relay_pass(&mut self, d: SignerId, passkey: SignerId, made: u64) -> Option<RelayPass> {
         let Key::Device(device) = self.keys.get(&d)? else {
@@ -5278,6 +5278,12 @@ impl Lab {
     pub fn roots(&self, d: SignerId) -> Vec<SignerId> {
         let roots: BTreeSet<SignerId> = self.held(d).view().vaults().iter().filter_map(|v| v.root).collect();
         roots.into_iter().collect()
+    }
+
+    /// The keys that own the vaults in device `d`'s view, their roots among them (`admission::owner_keys`): the people
+    /// the server knows, by any of their owner keys, whose passes its relay honours (`relay_pass`).
+    pub fn owner_keys(&self, d: SignerId) -> Vec<SignerId> {
+        crate::admission::owner_keys(self.held(d).view())
     }
 
     /// What device `d` hands a device whose passkey `passkey` proved itself on their connection (`sync::link_card`):
@@ -5312,7 +5318,10 @@ impl Lab {
     pub fn joining(&self, d: SignerId, passkey: SignerId) -> Result<(VaultId, Option<EditId>), Refusal> {
         let store = self.held(d);
         let st = store.view();
-        let vault = st.vaults().iter().find(|v| v.root == Some(passkey)).ok_or(Refusal::UnknownVault)?;
+        // the vault it roots, else the person's vault it owns, as a second passkey does (Samuel 2026-10-28)
+        let owns = |v: &&crate::policy::Vault| v.kind == Kind::Human && v.owners.contains(&Principal::Signer(passkey));
+        let rooted = st.vaults().iter().find(|v| v.root == Some(passkey));
+        let vault = rooted.or_else(|| st.vaults().iter().find(owns)).ok_or(Refusal::UnknownVault)?;
         let adds = |edit: &Edit| match edit.action {
             Action::Share(Sharing::Device { vault: v, device, .. }) => v == vault.id && device == d,
             _ => false,
