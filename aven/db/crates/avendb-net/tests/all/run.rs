@@ -442,3 +442,26 @@ async fn view_interests_are_revisioned_local_metadata_and_never_a_vault_edit() {
     assert_eq!(n.read(|lab, me| lab.log(me).ids().to_vec()).await, before);
     n.shutdown().await.unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_mac_adds_a_test_browsers_passkey_as_one_more_owner_of_its_persons_vault_and_forgets_its_keys() {
+    let mut w = world();
+    let secret = w.lab.passkey_secret(w.passkey_a).expect("Alice's passkey, a software passkey");
+    let (mac_a, alice, passkey) = (w.mac_a, w.alice, w.passkey_a);
+    let mac = node(&mut w, mac_a, &[passkey], 1).await;
+    let alices = Software(Mutex::new((Passkey::from_seed(*secret), vec![])));
+    // the test browser's passkey answers PRF with CTAP2's hmac-secret, as scripts/devx/passkey.mjs does
+    let mut browser = Passkey::with_hmac_secret([5; 32], [6; 32]).expect("a P-256 scalar");
+    let keys = browser.keys();
+    let added = mac.add_owner_passkey(&mut browser, passkey, &alices).await.expect("added");
+    assert_eq!(alices.steps(), [Step::Approve], "one ceremony of hers");
+    assert_eq!(added, keys.id(), "its keys are its browser's, PRF and all");
+    let owners = move |lab: &Lab, me| (lab.state(me).vault(alice).map(|v| v.owners.clone()), lab.keys_of(added));
+    let (owners, held) = mac.read(owners).await;
+    assert_eq!(owners, Some(vec![Principal::Signer(passkey), Principal::Signer(added)]), "beside her passkey");
+    assert!(held.is_none(), "the Mac forgets its keys, and never approves with it");
+    // a ceremony of another passkey than hers approves nothing
+    let mut other = Passkey::with_hmac_secret([7; 32], [8; 32]).expect("a P-256 scalar");
+    let theirs = Software(Mutex::new((Passkey::with_hmac_secret([9; 32], [1; 32]).expect("a scalar"), vec![])));
+    assert!(mac.add_owner_passkey(&mut other, passkey, &theirs).await.is_err(), "not hers");
+}

@@ -181,7 +181,7 @@ use avendb::keys::PublicKey;
 use avendb::lab::{Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
-use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
+use avendb::sign::{Ceremony, Passkey, RelayPass, Signed, SignerKeys};
 use avendb::sync::{LogId, log_of, place};
 use avendb::wire::{Announce, Claim, FileHold, Join, Packed, Reply, Request, Statement, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
@@ -1424,6 +1424,44 @@ impl Node {
         let (out, drafts) = self.shared.try_lab(drafted).await?.map_err(|why| anyhow!("refused: {why:?}"))?;
         self.sign(vec![(passkey, (), drafts)], false, Step::Approve, authenticator).await?;
         Ok(out)
+    }
+
+    /// Passkey `added`, one its person holds outside the platform's keychain (a test browser's, scripts/devx/
+    /// passkey.mjs), added as one more owner of this device's vault, as their Touch ID key is (`Sharing::Owner` of a
+    /// signer): the owner key `passkey` approves in one ceremony of `authenticator`, and `added` consents over the
+    /// same edit, as every newcomer an owner share names does. Its keys come from its ceremony, so its PRF is the one
+    /// its browser answers with; this device forgets them after, so it never approves with it. Its id.
+    pub async fn add_owner_passkey(
+        &self,
+        added: &mut Passkey,
+        passkey: SignerId,
+        authenticator: &impl Authenticator,
+    ) -> Result<SignerId> {
+        let _activity = self.shared.admit()?;
+        let mut challenge = [0; 32];
+        getrandom::fill(&mut challenge).map_err(anyhow::Error::msg)?;
+        let (public, first) = (added.public(), added.ceremony(challenge));
+        let draft = move |lab: &mut Lab, me| {
+            let vault = lab.vault_of(me).ok_or(Refusal::NotActing)?;
+            let new = lab.web_passkey("a test browser", public, &first).ok_or(Refusal::BadSignature)?;
+            let add = Action::Share(Sharing::Owner { vault, owner: Principal::Signer(new), seal_to: None });
+            Ok::<_, Refusal>((new, lab.draft(me, &[passkey, new], add)?))
+        };
+        let drafted = self.shared.try_lab(draft).await?;
+        let (new, draft) = drafted.map_err(|why| anyhow!("the passkey is refused: {why:?}"))?;
+        let challenge = draft.challenge();
+        let keys = self.shared.read(move |lab, _| lab.keys_of(passkey)).await;
+        let ceremony = ceremony_of(authenticator, keys, challenge, Step::Approve).await?;
+        let consent = added.ceremony(challenge);
+        let complete = move |lab: &mut Lab, me| {
+            lab.take_in(passkey, &ceremony);
+            let done = lab.complete(me, draft, &[(passkey, &ceremony), (new, &consent)]);
+            lab.lose(new);
+            done
+        };
+        self.shared.try_lab(complete).await?.map_err(|why| anyhow!("the passkey isn't added: {why:?}"))?;
+        self.shared.changed.notify_one();
+        Ok(new)
     }
 
     /// The connection to the device `offer` names, once its hello proved it the device offered.
