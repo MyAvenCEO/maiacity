@@ -895,16 +895,16 @@ fn t1_authorized_writes() {
     for (seed, h) in every_history() {
         for (edit, before, after) in steps(h.log.edits()) {
             for w in after.all_writes().iter().filter(|w| before.write(w.edit).is_none()) {
-                assert!(before.acts_via(w.author, &w.via, w.actor), "seed {seed}: {w:?}");
+                assert!(before.acts_via(w.author, &w.via, w.signer), "seed {seed}: {w:?}");
                 through += usize::from(!w.via.is_empty());
                 let en = after.entry(w.entry).expect("a write's entry");
                 if w.first {
                     let audience = after.audience_shares(en.audience()).expect("the cell it is created in");
-                    assert!(before.may_create(w.actor, en.vault, audience), "seed {seed}: {w:?}");
+                    assert!(before.may_create(w.signer, en.vault, audience), "seed {seed}: {w:?}");
                     created += 1;
                 } else {
-                    assert!(before.authorized(w) && before.may_write(w.actor, w.entry), "seed {seed}: {w:?}");
-                    by_share += usize::from(w.actor != en.vault);
+                    assert!(before.authorized(w) && before.may_write(w.signer, w.entry), "seed {seed}: {w:?}");
+                    by_share += usize::from(w.signer != en.vault);
                 }
             }
             for en in after.entries().iter().filter(|en| before.entry(en.id).is_none()) {
@@ -1881,7 +1881,7 @@ fn d1_drafts_land_by_their_vault() {
                     continue;
                 }
                 let en = after.entry(w.entry).expect("a write's entry");
-                assert_eq!(w.actor, en.vault, "seed {seed}: {w:?}");
+                assert_eq!(w.signer, en.vault, "seed {seed}: {w:?}");
                 by_vault += 1;
             }
         }
@@ -2188,7 +2188,7 @@ fn ops(st: &State, t: &Twin) -> Ops {
     };
     let write = |w: &Write| Write {
         edit: t.edit(w.edit),
-        actor: t.vault(w.actor),
+        signer: t.vault(w.signer),
         stay: w.stay.map(|s| t.edit(s)),
         deps: t.edits(&w.deps),
         proposal: t.proposal(w.proposal),

@@ -1116,7 +1116,7 @@ pub fn authors(lab: &Lab, me: SignerId, entry: EntryId, version: &[EditId]) -> V
     }
     let Some(history) = lab.history(me, entry) else { return out };
     for c in history.version(version).into_iter().filter(|c| c.counted) {
-        let signed = c.write.via.last().copied().unwrap_or(c.write.actor);
+        let signed = c.write.via.last().copied().unwrap_or(c.write.signer);
         let person = st.vault(signed).is_some_and(|v| matches!(v.kind, Kind::Human | Kind::Aven));
         if person && !out.contains(&signed) {
             out.push(signed);
