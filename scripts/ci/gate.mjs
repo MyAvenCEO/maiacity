@@ -1,9 +1,9 @@
-// The batch gate: the one check main's branch protection needs to require (Samuel 2026-10-28: a batch must not merge
+// The goal gate: the one check main's branch protection needs to require (Samuel 2026-10-28: a goal must not merge
 // unless every suite it needs ran and passed). From the PR's changed files and each workflow's own `pull_request`
 // trigger it works out which workflows GitHub must start on the head commit, waits for their runs, and fails when one
 // is red, cancelled for good, or missing. Missing is what a rejected workflow file looks like (batch 5, 2026-10-28:
 // avenDB checks never ran and nothing stopped the merge). Drafts run no CI and so no gate either (GitHub won't merge a
-// draft); the gate starts with the batch's one CI run, and adds none.
+// draft); the gate starts with the goal's one CI run, and adds none.
 //   GITHUB_TOKEN=… HEAD_SHA=… BASE_SHA=… bun scripts/ci/gate.mjs           (in .github/workflows/gate.yml)
 //   bun scripts/ci/gate.mjs --plan <base> <head>                           which workflows a diff must start
 import { execFileSync } from 'node:child_process';

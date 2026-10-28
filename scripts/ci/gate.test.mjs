@@ -21,7 +21,7 @@ test('expected names the workflows a diff starts, never the gate itself', () => 
  writeFileSync(`${dir}/rust.yml`, 'name: Rust\non:\n  pull_request:\n    paths: [avendb/**]\njobs: {}\n');
  writeFileSync(`${dir}/all.yml`, 'name: All\non: [push, pull_request]\njobs: {}\n');
  writeFileSync(`${dir}/main.yml`, 'name: Main\non:\n  push:\n    branches: [main]\njobs: {}\n');
- writeFileSync(`${dir}/gate.yml`, 'name: Batch gate\non: pull_request\njobs: {}\n');
+ writeFileSync(`${dir}/gate.yml`, 'name: Goal gate\non: pull_request\njobs: {}\n');
  expect(expected(['src/a.js'], dir).map(w => w.name)).toEqual(['All']);
  expect(expected(['avendb/x.rs'], dir).map(w => w.name).sort()).toEqual(['All', 'Rust']);
 });

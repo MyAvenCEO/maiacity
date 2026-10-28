@@ -1,11 +1,11 @@
 // The fast local check for one task branch: only what the branch touched, in seconds to a few minutes, so a task never
-// needs CI of its own (CLAUDE.md: CI runs once per batch). The batch's one CI run still runs every gate.
+// needs CI of its own (CLAUDE.md: CI runs once per goal). The goal's one CI run still runs every gate.
 //   bun scripts/devx/check.mjs              plan + run against origin/main (committed, staged, unstaged, untracked)
 //   bun scripts/devx/check.mjs --plan       print the commands only
 //   bun scripts/devx/check.mjs --wide       whole suites instead of the test files next to the change
-//   bun scripts/devx/check.mjs --base <ref> compare with another ref (a collector: the batch's base)
+//   bun scripts/devx/check.mjs --base <ref> compare with another ref (a collector: the goal's base)
 //   bun scripts/devx/check.mjs --merge      a collector's check after a merge: JS tests + types, Rust `cargo check` only.
-//                                           The task thread already ran its Rust tests and Lean; the batch CI runs them all.
+//                                           The task thread already ran its Rust tests and Lean; the goal CI runs them all.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -64,7 +64,7 @@ if (import.meta.main) {
  const base = args.includes('--base') ? args[args.indexOf('--base') + 1] : 'origin/main';
  const files = touched(base);
  const { steps, hit } = plan(files, { wide: args.includes('--wide'), merge: args.includes('--merge') });
- console.log(`${files.length} files changed against ${base}; the batch CI will run: ${Object.keys(hit).filter(k => hit[k]).join(', ') || 'nothing'}`);
+ console.log(`${files.length} files changed against ${base}; the goal CI will run: ${Object.keys(hit).filter(k => hit[k]).join(', ') || 'nothing'}`);
  for (const s of steps) console.log(`  ${s.why}: ${s.cwd ? `(cd ${s.cwd}) ` : ''}${s.cmd.join(' ')}`);
  if (!steps.length) console.log('  nothing to run locally for these files');
  if (args.includes('--plan')) process.exit(0);
@@ -72,7 +72,7 @@ if (import.meta.main) {
  const results = [];
  // One at a time on purpose: a cloud box has 4 cores, and cargo queues on its build folder anyway.
  for (const s of steps) {
-  if (s.needs && !has(s.needs)) { results.push(`skipped  ${s.why} (no ${s.needs} here; the batch CI runs it)`); continue; }
+  if (s.needs && !has(s.needs)) { results.push(`skipped  ${s.why} (no ${s.needs} here; the goal CI runs it)`); continue; }
   const t = performance.now();
   const r = spawnSync(s.cmd[0], s.cmd.slice(1), { stdio: 'inherit', cwd: s.cwd, env: process.env });
   results.push(`${r.status === 0 ? 'ok     ' : 'FAILED '} ${((performance.now() - t) / 1000).toFixed(1).padStart(6)} s  ${s.why}`);
