@@ -4,9 +4,10 @@
 //!
 //! - `journal/<n>`, numbered from 0 on in 16 hex digits: what one save added, the McEliece keys it brought, each by its
 //!   id, the hash of the blob that holds it, and its size, and the new edits of the device's log;
-//! - `heads/<n>`, numbered from 1 on: a head, put after every `JOURNALED` entries, which names the packs that hold the
-//!   device's edits up to an entry of the journal, and every McEliece key: a node starts from its newest head and the
-//!   journal after it, a few dozen objects, however long its device's log;
+//! - `heads/<n>`, numbered from 1 on: a head, put after every `JOURNALED` entries or `TAIL_EDITS` edits, which names
+//!   the packs that hold the device's edits up to an entry of the journal, and every McEliece key: a node starts from
+//!   its newest head and the journal after it, a few dozen objects and fewer than `TAIL_EDITS` edits, however long its
+//!   device's log;
 //! - a pack: a blob of `PACK` and then edits, as a journal entry holds them.
 //!
 //! An edit is a record: its length in 4 bytes, big-endian, then its bytes on the wire. A head and a journal entry end
@@ -66,6 +67,10 @@ const MAX_ANCHORS: usize = 16 * (1024 * 1024 + 256 + 1024 * 32);
 const PACK: &[u8] = b"avenDB edits 1\n";
 /// How many journal entries a head comes after.
 const JOURNALED: u64 = 64;
+/// How many edits of the journal a head comes after, however few entries hold them: a node checks the signature of
+/// every edit after its newest head as it starts (`Lab::restore_warm`), so a catch-up's few saves of thousands of edits
+/// each would have every start check them all (58 s of an iPhone's unlock, of 110k edits, on 2026-10-28).
+const TAIL_EDITS: usize = PAGE_EDITS;
 /// Once a head names this many packs, the next names one pack of the whole log.
 const PACKS: usize = 64;
 const HEADS: &str = "heads/";
@@ -110,6 +115,8 @@ struct Book {
     /// The first journal entry the newest head doesn't cover, and the next to put.
     mark: u64,
     next: u64,
+    /// How many edits the journal's entries from `mark` on hold.
+    tail: usize,
     /// The number of the next head.
     head: u64,
     /// The journal's entries from `mark` on whose records the next pack holds, read back from the shelf as it is put
@@ -167,6 +174,18 @@ fn record(out: &mut Vec<u8>, signed: &Signed) {
     let bytes = signed.to_wire();
     out.extend((bytes.len() as u32).to_be_bytes());
     out.extend(bytes);
+}
+
+/// How many records `records` holds.
+fn records_in(records: &[u8]) -> usize {
+    let (mut n, mut r) = (0, Cursor(records));
+    while let Some(len) = r.array().map(u32::from_be_bytes) {
+        n += 1;
+        if r.take(len as usize).is_none() {
+            break;
+        }
+    }
+    n
 }
 
 /// The edits of `records`, every one of which must decode whole.
@@ -363,7 +382,7 @@ impl Edits {
         };
         let started = named.map(|named| (named, taking.ids.len()));
         let mut anchors = head.anchors;
-        let (mut pending, mut next) = (Vec::new(), head.journal);
+        let (mut pending, mut next, mut tail) = (Vec::new(), head.journal, 0);
         while let Some(bytes) = shelf.get(&journal_name(next)).await? {
             next += 1;
             let entry = Entry::from_bytes(&bytes).and_then(|e| Some((edits_of(&e.records)?, e)));
@@ -373,6 +392,7 @@ impl Edits {
                 continue;
             };
             taking.keys.extend(entry.keys.iter().copied());
+            tail += edits.len();
             let mut page = Vec::new();
             for s in edits {
                 page.push((s, None));
@@ -392,7 +412,7 @@ impl Edits {
         }
         let Taking { ids, keys, .. } = taking;
         let kept = Kept { anchor_stamp: Vec::new(), written: 0, lineage: None, keys: keys.keys().copied().collect(), whole: false };
-        let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending, anchors: anchors.clone() };
+        let book = Book { packs: head.packs, keys, mark: head.journal, next, tail, head: next_head, pending, anchors: anchors.clone() };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
         let (slots, shown, checked) = (Mutex::new(slots), Mutex::new(shown), Mutex::new(None));
         let edits = Edits { shelf, book, kept, slots, shown, started, checked, due: Notify::new() };
@@ -495,7 +515,7 @@ impl Edits {
 
     /// What a save puts on the shelf, as device `me` of `lab` holds it now and `book` says the shelf holds, if
     /// anything: its new edits and keys, or a pack and head due.
-    fn due(&self, lab: &Lab, me: SignerId, (journaled, packs): (u64, usize)) -> Result<Option<Due>> {
+    fn due(&self, lab: &Lab, me: SignerId, (journaled, tail, packs): (u64, usize, usize)) -> Result<Option<Due>> {
         let kept = self.kept.lock().expect("kept");
         let ids = lab.log(me).ids();
         let mut keys = Vec::new();
@@ -504,7 +524,7 @@ impl Edits {
         }
         let anchor_stamp = lab.bootstrap_stamp(me);
         let fresh = ids.len() > kept.written || !keys.is_empty() || kept.anchor_stamp != anchor_stamp;
-        let packing = journaled + u64::from(fresh) >= JOURNALED;
+        let packing = journaled + u64::from(fresh) >= JOURNALED || tail + ids.len().saturating_sub(kept.written) >= TAIL_EDITS;
         let whole = !kept.continues(lab.log(me)) || ids.len() < kept.written || (packing && packs >= PACKS);
         if !whole && !fresh && !packing {
             return Ok(None);
@@ -544,7 +564,7 @@ impl Edits {
             book.keys.extend(brought);
             let head = Head { anchors: due.anchors.clone(), journal: book.next, packs: vec![pack], keys: book.keys.clone().into_iter().collect() };
             self.put_head_on(on, book, &head).await?;
-            (book.packs, book.mark) = (vec![pack], book.next);
+            (book.packs, book.mark, book.tail) = (vec![pack], book.next, 0);
             book.pending.clear();
             book.anchors = due.anchors.clone();
             let mut kept = self.kept.lock().expect("kept");
@@ -562,6 +582,7 @@ impl Edits {
                 Ok(()) => {
                     book.pending.push(book.next);
                     book.next += 1;
+                    book.tail += records_in(records);
                     book.anchors = due.anchors.clone();
                     book.keys.extend(keys);
                     break;
@@ -576,6 +597,7 @@ impl Edits {
                     match there {
                         Some(there) if ours(&there) => {
                             records = &records[there.records.len()..];
+                            book.tail += records_in(&there.records);
                             keys.retain(|k| !there.keys.contains(k));
                             book.anchors = there.anchors;
                             book.pending.push(book.next - 1);
@@ -594,13 +616,13 @@ impl Edits {
             kept.lineage = Some(due.lineage);
             kept.keys.extend(ids);
         }
-        if book.next - book.mark >= JOURNALED {
+        if book.next - book.mark >= JOURNALED || book.tail >= TAIL_EDITS {
             let pack = self.pack_of_entries(on, &book.pending).await?;
             let mut packs = book.packs.clone();
             packs.push(pack);
             let keys = book.keys.clone().into_iter().collect();
             self.put_head_on(on, book, &Head { anchors: book.anchors.clone(), journal: book.next, packs: packs.clone(), keys }).await?;
-            (book.packs, book.mark) = (packs, book.next);
+            (book.packs, book.mark, book.tail) = (packs, book.next, 0);
             book.pending.clear();
         }
         Ok(())
@@ -916,7 +938,7 @@ impl Shared {
         };
         let on = override_shelf.unwrap_or(&edits.shelf);
         let mut book = edits.book.lock().await;
-        let plan = (book.next - book.mark, book.packs.len());
+        let plan = (book.next - book.mark, book.tail, book.packs.len());
         let shared = self.clone();
         let due = move || shared.edits.as_ref().expect("its edits").due(&shared.locked_lab(), shared.me, plan);
         #[cfg(not(target_arch = "wasm32"))]
@@ -926,7 +948,12 @@ impl Shared {
         // the edits first, so that what it worked out from them is of edits its shelf holds
         let mut put = due.is_some();
         if let Some(due) = due {
+            let before = edits.checked();
             edits.put_on(on, &mut book, due).await?;
+            // a head it put, named by its keys at once (`keep_checked`)
+            if edits.checked() != before {
+                self.keep_checked(on).await;
+            }
         }
         // Unlock only bases whose signed frontier and anchor stamp this same save lane
         // has acknowledged. Concurrent changes keep them read-only until the next save.
@@ -999,6 +1026,40 @@ impl Shared {
             tracing::warn!(%error, "avendb: optional range summary remains pending");
         }
         Ok(put)
+    }
+
+    /// Keeps its keys on its shelf at once, naming the head it just put (`Lab::capture_warm_keys`), before the rest of
+    /// its save: a node stopped between the two would else hold that head on no word as it starts again, and check the
+    /// signature of every edit of it. A shelf that can't take them costs that check, no more, and the save gives them
+    /// again.
+    async fn keep_checked(self: &Arc<Self>, on: &Shelf) {
+        let edits = self.edits.as_ref().expect("its edits");
+        let shared = self.clone();
+        let capture = move || {
+            let checked = shared.edits.as_ref().expect("its edits").checked();
+            shared.locked_lab().capture_warm_keys(shared.me, checked).map(avendb::lab::WarmCapture::encode)
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let warming = match tokio::task::spawn_blocking(capture).await {
+            Ok(warming) => warming,
+            Err(e) => return tracing::warn!("avendb: its keys can't be worked out: {e:#}"),
+        };
+        #[cfg(target_arch = "wasm32")]
+        let warming = capture();
+        let Some(mut warming) = warming else { return };
+        match edits.put_warm_on(on, &mut warming).await {
+            Ok(()) => {
+                let shared = self.clone();
+                let warmed = move || shared.locked_lab().warmed(shared.me, warming);
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Err(e) = tokio::task::spawn_blocking(warmed).await {
+                    tracing::warn!("avendb: its keys put can't be told: {e:#}");
+                }
+                #[cfg(target_arch = "wasm32")]
+                warmed();
+            }
+            Err(e) => tracing::warn!("avendb: its keys can't be put on its shelf: {e:#}"),
+        }
     }
 
     /// Puts on the node's shelf what its device takes, as soon as it took it, and tells the peers once the shelf holds
@@ -1327,7 +1388,7 @@ mod tests {
         edits.kept.lock().expect("kept").whole = true;
         {
             let mut book = edits.book.lock().await;
-            let due = edits.due(&w.lab, me, (0, 0)).unwrap().unwrap();
+            let due = edits.due(&w.lab, me, (0, 0, 0)).unwrap().unwrap();
             edits.put(&mut book, due).await.expect("the first head");
         }
         assert_eq!(edits.held(&w.lab, me), first_ids.len());
@@ -1342,7 +1403,7 @@ mod tests {
         assert!(edits.lacks(&w.lab, me));
         {
             let mut book = edits.book.lock().await;
-            let due = edits.due(&w.lab, me, (book.next - book.mark, book.packs.len())).unwrap().unwrap();
+            let due = edits.due(&w.lab, me, (book.next - book.mark, book.tail, book.packs.len())).unwrap().unwrap();
             assert!(due.whole, "replacement prefixes require a new full head");
             let writing = edits.put(&mut book, due);
             tokio::pin!(writing);
@@ -1362,7 +1423,7 @@ mod tests {
         let second_head = shelf.get(&head_name(2)).await.unwrap().unwrap();
         {
             let mut book = edits.book.lock().await;
-            let due = edits.due(&w.lab, me, (book.next - book.mark, book.packs.len())).unwrap().unwrap();
+            let due = edits.due(&w.lab, me, (book.next - book.mark, book.tail, book.packs.len())).unwrap().unwrap();
             assert!(due.whole);
             edits.put(&mut book, due).await.expect("the current lineage is durable");
         }

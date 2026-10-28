@@ -702,9 +702,20 @@ pub struct Restoring {
     matched: bool,
     vouch: usize,
     taken: usize,
+    /// Of the edits it took so far, how many it held on its shelf's word and how many it checked the signatures of.
+    vouched: usize,
+    checked: usize,
     doubtful: Vec<Signed>,
     /// The McEliece keys its edits name that didn't come with their pages (`Lab::restore_wants`).
     wanting: HashSet<BlobId>,
+}
+
+impl Restoring {
+    /// Whether its keys named the head its shelf started from (`Lab::restore_start`), how many edits it held on their
+    /// word, and how many it checked the signatures of: what its person reads of where its shelf's step went.
+    pub fn checks(&self) -> (bool, usize, usize) {
+        (self.matched, self.vouched, self.checked)
+    }
 }
 
 /// How a restore went (`Lab::restore_report`): the edits it held, the stored view it started from or why none, the
@@ -6260,7 +6271,7 @@ impl Lab {
             store.opened_before.extend(keys);
         }
         self.stores.insert(d, store);
-        Restoring { matched, vouch: 0, taken: 0, doubtful: Vec::new(), wanting: HashSet::new() }
+        Restoring { matched, vouch: 0, taken: 0, vouched: 0, checked: 0, doubtful: Vec::new(), wanting: HashSet::new() }
     }
 
     /// The next page of the signed edits device `d` restores (`restore_start`), in the order its shelf holds them, and
@@ -6324,7 +6335,9 @@ impl Lab {
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
-            store.perf.count("edits checked", fresh.iter().filter(|s| !vouched.contains(&s.edit.id())).count() as u64);
+            let checked = fresh.iter().filter(|s| !vouched.contains(&s.edit.id())).count();
+            store.perf.count("edits checked", checked as u64);
+            (r.vouched, r.checked) = (r.vouched + vouched.len(), r.checked + checked);
             // the keys they name that didn't come with them: a later save may have brought one (`restore_keys`)
             r.wanting.extend(fresh.iter().flat_map(|s| s.edit.blobs())
                 .filter(|b| !blobs.contains_key(b) && !store.blobs.contains_key(b)));
@@ -6513,24 +6526,35 @@ impl Lab {
     /// bulk encryption occurs here. Captures IDs/bits/acts/key handles and hashes the ordered log IDs; no edit bodies.
     /// The caller must release Lab before encoding. The existing receipt fence is retained.
     pub fn capture_warm(&mut self, d: SignerId, held: usize, checked: Option<Checked>) -> Option<WarmCapture> {
-        self.capture_warm_at(d, held, checked, false)
+        self.capture_warm_at(d, held, checked, Some(false))
     }
 
     /// Clean shutdown has stopped writers and saved the authoritative journal. Publish
     /// its current derived state without waiting for the background snapshot interval.
     /// A current acknowledged view remains a no-op; failed persistence acknowledges nothing.
     pub fn capture_warm_current(&mut self, d: SignerId, held: usize, checked: Option<Checked>) -> Option<WarmCapture> {
-        self.capture_warm_at(d, held, checked, true)
+        self.capture_warm_at(d, held, checked, Some(true))
     }
 
-    fn capture_warm_at(&mut self, d: SignerId, held: usize, checked: Option<Checked>, current: bool) -> Option<WarmCapture> {
+    /// `capture_warm` of its keys alone, where they are due: put on its shelf as soon as it put a head of edits it
+    /// checked (`checked`), so that a node stopped before the rest of its save still holds that head on their word as
+    /// it starts again, never checking every edit of it again.
+    pub fn capture_warm_keys(&mut self, d: SignerId, checked: Option<Checked>) -> Option<WarmCapture> {
+        self.capture_warm_at(d, 0, checked, None)
+    }
+
+    /// `capture_warm`: of everything due where `current` (`Some`), as it is now where `Some(true)`; of its keys alone
+    /// where `None`.
+    fn capture_warm_at(&mut self, d: SignerId, held: usize, checked: Option<Checked>, current: Option<bool>) -> Option<WarmCapture> {
         let key = self.shelf_key(d)?;
         let store = self.stores.get(&d)?;
-        let close_due = current && store.replayed > 0 && store.replayed <= store.log.edits().len()
+        let close_due = current == Some(true) && store.replayed > 0 && store.replayed <= store.log.edits().len()
             && store.replayed != store.view_given;
-        let (keys_due, view_due) = (store.keys_due(checked), (store.view_due() || close_due) && store.replayed <= held);
+        let keys_due = store.keys_due(checked);
+        let view_due = current.is_some() && (store.view_due() || close_due) && store.replayed <= held;
         // the showings, as often as its view, and once it holds none on its shelf yet
-        let fresh_shown = if view_due || store.shown_packs.0 == 0 { store.shown_due() } else { vec![] };
+        let fresh_shown =
+            if current.is_some() && (view_due || store.shown_packs.0 == 0) { store.shown_due() } else { vec![] };
         if !keys_due && !view_due && fresh_shown.is_empty() { return None; }
         let (shown, shown_of) = match fresh_shown.is_empty() {
             true => (None, None),
