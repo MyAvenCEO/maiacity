@@ -5,7 +5,8 @@
 //   bun scripts/devx/collect.mjs <branch>...      fetch, merge, report (origin/ is added when missing)
 //   bun scripts/devx/collect.mjs --drafts         every open draft PR into main (but this branch's own)
 //   bun scripts/devx/collect.mjs --plan ...       report only; nothing changes
-//   bun scripts/devx/collect.mjs --check ...      then run scripts/devx/check.mjs for the whole batch
+//   bun scripts/devx/collect.mjs --check ...      then scripts/devx/check.mjs --merge for what merged (types + JS tests, ~1-2 min)
+//   bun scripts/devx/collect.mjs --late ...       merge even though this branch's PR is ready (refused otherwise: it restarts CI)
 //   bun scripts/devx/collect.mjs --tasks          the "Task: <branch>" lines of everything collected so far, for the
 //                                                 final PR's body and merge commit message (scripts/devx/measure.mjs counts them)
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -23,6 +24,13 @@ async function drafts(repo = 'MyAvenCEO/maiacity') {
   out.push(...list.filter(p => p.draft && p.head.repo?.full_name === repo).map(p => ({ branch: p.head.ref, pr: p.number, title: p.title })));
   if (list.length < 100) return out;
  }
+}
+
+// This branch's own open PR into main, if any
+async function ownPr(branch, repo = 'MyAvenCEO/maiacity') {
+ const headers = { accept: 'application/vnd.github+json', ...(process.env.GITHUB_TOKEN && { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }) };
+ const res = await fetch(`https://api.github.com/repos/${repo}/pulls?state=open&base=main&head=${repo.split('/')[0]}:${branch}`, { headers }).catch(() => null);
+ return res?.ok ? (await res.json())[0] : undefined;
 }
 
 // Files CI builds and commits itself (avendb-wasm.yml): two branches that both rebuilt them always conflict, and either
@@ -65,6 +73,12 @@ if (import.meta.main) {
  let wanted = args.filter(a => !a.startsWith('--')).map(b => ({ branch: b.replace(/^origin\//, '') }));
  if (flags.has('--drafts')) wanted.push(...(await drafts()).filter(d => d.branch !== here));
  if (!wanted.length) { console.error(flags.has('--drafts') ? 'No open draft PRs into main.' : 'Name branches, or pass --drafts.'); process.exit(flags.has('--drafts') ? 0 : 2); }
+ // Once the batch PR is ready its one CI run is going: every merge pushed into it restarts that run (batch 3: 5 pushes in
+ // 13 min, 35 min of CI). Late branches go into the next batch; --late adds them anyway (a fix the run needs).
+ if (!flags.has('--plan') && !flags.has('--late')) {
+  const pr = await ownPr(here);
+  if (pr && !pr.draft) { console.error(`#${pr.number} is ready, so its CI is running: put these branches in the next batch (or pass --late for a fix this run needs).`); process.exit(2); }
+ }
  if (!flags.has('--plan') && git('status', '--porcelain', '--untracked-files=no')) { console.error('Commit or stash first: the batch lands as a fast-forward of this branch.'); process.exit(2); }
  const t0 = performance.now();
  tryGit('fetch', '-q', 'origin', ...wanted.map(w => `+refs/heads/${w.branch}:refs/remotes/origin/${w.branch}`));
@@ -89,6 +103,6 @@ if (import.meta.main) {
  console.log(`${here} is now ${head.slice(0, 10)}. Push it: git push -u origin ${here}`);
  if (flags.has('--check')) {
   const base = git('merge-base', 'origin/main', 'HEAD');
-  process.exitCode = spawnSync('bun', ['scripts/devx/check.mjs', '--base', base], { stdio: 'inherit' }).status;
+  process.exitCode = spawnSync('bun', ['scripts/devx/check.mjs', '--base', base, '--merge'], { stdio: 'inherit' }).status;
  } else process.exitCode = n('CONFLICT') ? 1 : 0;
 }

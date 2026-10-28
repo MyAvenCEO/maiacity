@@ -26,6 +26,10 @@ batch, not on each task.
   explicit commit message: the PR title plus the `Task:` lines, never a `[skip ci]`. Then close the task PRs it landed
   with a comment that names the final PR, and bring `main` back into the collector's branch with a merge (no force
   push).
+- **The batch gate.** `.github/workflows/gate.yml` waits on a ready PR for every workflow its files need and fails on a
+  red or missing one (a rejected workflow file, batch 5). It is the required check on main. Once the batch PR is ready,
+  `collect.mjs` takes no more branches (`--late` only for a fix the run needs). A batch ships when its goal metric is
+  met or Samuel says so, not on a timer.
 - **Exceptions** go through their own PR at once: production down, a security fix, or Samuel asks for it.
 
 Main's checks and release gates are unchanged: every merge to main still runs the full validation before it deploys.
