@@ -294,6 +294,13 @@ test('a want as a query entry and back: its slot a param bound to the slot, the 
 	expect(queryOp(rooms, {}, { offset: 50, limit: 50 })).toEqual({ op: 'query', where: { type: ['room'] }, select: [], order: [['created', 'desc']], limit: 50, offset: 50 });
 });
 
+test('the rooms page query: the newest window first, each older page after the answer\'s own next', () => {
+	const rooms = QUERIES.find((q) => q.id === 'query-rooms-page');
+	expect(queryOp(rooms, { vault: id(1), newest: 50, before: null })).toEqual({ op: 'query', vault: id(1), where: { type: ['room'] }, select: [], window: { newest: 50 } });
+	expect(queryOp(rooms, { vault: null, newest: 50, before: `7.${id(4)}` })).toEqual({ op: 'query', where: { type: ['room'] }, select: [], window: { newest: 50, before: `7.${id(4)}` } });
+	expect(() => queryOp(rooms, { vault: null, newest: 50 })).toThrow(/no before/);
+});
+
 test('the posts query: a page of published posts, `after` left out on the first page', () => {
 	const posts = QUERIES.find((q) => q.id === 'query-posts');
 	expect(queryOp(posts, { limit: 20, after: null })).toEqual({ op: 'posts', limit: 20 });

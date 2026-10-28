@@ -42,7 +42,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, EntryId, SignerId};
-use avendb::lab::{Checked, Lab, Warm, Warming};
+use avendb::lab::{Checked, Lab, Placed, Warm, Warming};
 use avendb::policy::{Log, LogRevision};
 use avendb::sign::Signed;
 use avendb::wire::Wire;
@@ -370,7 +370,7 @@ impl Edits {
             taking.keys.extend(entry.keys.iter().copied());
             let mut page = Vec::new();
             for s in edits {
-                page.push(s);
+                page.push((s, None));
                 if page.len() >= PAGE_EDITS {
                     taking.give(&shelf, std::mem::take(&mut page), false, to).await?;
                 }
@@ -651,7 +651,7 @@ pub(crate) trait Taker {
     async fn begin(&mut self, checked: Option<Checked>, warm: &Warm) -> Result<()>;
     /// The next page: its edits in the order the shelf holds them, the McEliece keys they name that the shelf holds,
     /// and whether they are of the head `begin` named.
-    async fn page(&mut self, page: Vec<Signed>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()>;
+    async fn page(&mut self, page: Vec<(Signed, Option<Placed>)>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()>;
     /// McEliece keys its edits named that came on the shelf after them.
     async fn keys(&mut self, keys: Vec<Arc<[u8]>>) -> Result<()>;
 }
@@ -669,8 +669,8 @@ impl Taker for Collect {
         self.signed.clear();
         Ok(())
     }
-    async fn page(&mut self, page: Vec<Signed>, _: Vec<Arc<[u8]>>, _: bool) -> Result<()> {
-        self.signed.extend(page);
+    async fn page(&mut self, page: Vec<(Signed, Option<Placed>)>, _: Vec<Arc<[u8]>>, _: bool) -> Result<()> {
+        self.signed.extend(page.into_iter().map(|(s, _)| s));
         Ok(())
     }
     async fn keys(&mut self, _: Vec<Arc<[u8]>>) -> Result<()> {
@@ -690,14 +690,20 @@ struct Taking {
 
 impl Taking {
     /// Gives `to` the edits of `page` it didn't give yet, with the McEliece keys they name.
-    async fn give(&mut self, shelf: &Shelf, mut page: Vec<Signed>, of_head: bool, to: &mut impl Taker) -> Result<()> {
-        page.retain(|s| self.seen.insert(s.edit.id()));
+    async fn give(
+        &mut self,
+        shelf: &Shelf,
+        mut page: Vec<(Signed, Option<Placed>)>,
+        of_head: bool,
+        to: &mut impl Taker,
+    ) -> Result<()> {
+        page.retain(|(s, _)| self.seen.insert(s.edit.id()));
         if page.is_empty() {
             return Ok(());
         }
-        self.ids.extend(page.iter().map(|s| s.edit.id()));
+        self.ids.extend(page.iter().map(|(s, _)| s.edit.id()));
         let mut want = Vec::new();
-        for b in page.iter().flat_map(|s| s.edit.blobs()) {
+        for b in page.iter().flat_map(|(s, _)| s.edit.blobs()) {
             match self.keys.get(&b) {
                 Some(&size) => want.push((b, size)),
                 None => {
@@ -737,14 +743,22 @@ async fn take_head(shelf: &Shelf, n: u64, warm: &Warm, taking: &mut Taking, to: 
     to.begin(Some(named), warm).await?;
     taking.keys.extend(head.keys.iter().copied());
     for &(hash, size) in &head.packs {
+        // a pack that is a file of its shelf's: its edits are read from it in place from now on (`Placed`)
+        let file = shelf.blob_file(hash).await;
         let mut reader = shelf.blob_reader(hash, size);
         ensure!(reader.take(PACK.len()).await?.as_ref() == PACK, "its pack {hash} is no pack of edits");
         let mut page = Vec::new();
         while reader.remaining() > 0 {
             let length = reader.take(4).await?;
             let length = u32::from_be_bytes(length.as_ref().try_into().expect("four bytes")) as usize;
+            let at = reader.at();
             let record = reader.take(length).await?;
-            page.push(Signed::from_wire(&record).with_context(|| format!("an edit of its pack {hash} does not decode whole"))?);
+            let placed = file.as_ref().map(|file| {
+                let sum = *bao_tree::blake3::hash(&record).as_bytes();
+                Placed { file: file.clone(), at, len: length as u32, sum }
+            });
+            let signed = Signed::from_wire(&record).with_context(|| format!("an edit of its pack {hash} does not decode whole"))?;
+            page.push((signed, placed));
             // given before the pack's hash is checked: one that isn't what its hash says ends the head, and `to`
             // begins again from another
             if page.len() >= PAGE_EDITS {

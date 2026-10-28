@@ -99,7 +99,7 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 mod blind_index;
 #[path = "lab/held.rs"]
 pub(crate) mod held;
-pub use held::Spill;
+pub use held::{Placed, ShelfFile, Spill};
 #[cfg(test)]
 #[path = "lab/query_coverage.rs"]
 mod query_coverage;
@@ -937,6 +937,9 @@ struct Store {
     /// Its query views (`query_view`): the answers of the queries its pages asked, each at the head it was worked out
     /// at. Its own, never an edit's, and none in a store made anew.
     query_views: std::sync::Mutex<QueryViews>,
+    /// Whether its shared index lists every entry of a vault it reads (`index_complete`), each with the revision it
+    /// was worked out at.
+    complete: std::sync::Mutex<HashMap<VaultId, (u64, bool)>>,
 }
 
 impl Default for Store {
@@ -996,6 +999,7 @@ impl Default for Store {
             lazy: LazyBoxes::default(),
             revision: 0,
             query_views: std::sync::Mutex::new(QueryViews::default()),
+            complete: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }
@@ -2432,12 +2436,20 @@ impl Lab {
     /// Device `to` keeps `fresh`, new edits whose signatures checked out (`fresh`), and the blobs among `blobs` they
     /// name. True if there were any.
     fn keep_fresh(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs) -> bool {
-        self.keep_fresh_as(to, fresh, blobs, true)
+        self.keep_fresh_as(to, fresh, blobs, true, None)
     }
 
     /// `keep_fresh`, where `step` says a single write may step on what its edits say now (`latest`): not as it
     /// restores, which replays once it took every page.
-    fn keep_fresh_as(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs, step: bool) -> bool {
+    /// `placed` says where its shelf holds those of them it holds (`restore_page_placed`).
+    fn keep_fresh_as(
+        &mut self,
+        to: SignerId,
+        fresh: Vec<Signed>,
+        blobs: &Blobs,
+        step: bool,
+        placed: Option<&HashMap<EditId, Placed>>,
+    ) -> bool {
         let Some(store) = self.stores.get_mut(&self.at(to)) else {
             return false;
         };
@@ -2476,7 +2488,10 @@ impl Lab {
                 }
             }
             let mut edit = signed.edit.clone();
-            store.signed.insert(id, signed);
+            match placed.and_then(|p| p.get(&id)) {
+                Some(p) => store.signed.insert_placed(id, signed, p),
+                None => store.signed.insert(id, signed),
+            }
             // spilled, the log's copy reads its bulk bytes back from the record that went in (`bulk`)
             if let Some(place) = store.signed.place(&id) {
                 edit.shelve(place);
@@ -4172,6 +4187,39 @@ impl Lab {
         found.into_iter().map(|(_, e)| e).collect()
     }
 
+    /// Where entry `e` was created on device `d`: the depth of its creation edit, as its shared index orders entries
+    /// (`index::shared`); `None` where its log holds no such edit.
+    pub(crate) fn creation_depth(&self, d: SignerId, e: EntryId) -> Option<u64> {
+        let store = self.held(d);
+        store.log.entry_write(store.view().entry(e)?.creation).map(|c| c.depth)
+    }
+
+    /// The entries of vault `vault` (of every vault, left out) whose header device `d` hasn't read
+    /// (`Readings::untyped`): a query by type can't place them yet, so each is a candidate that waits.
+    pub fn untyped_of(&self, d: SignerId, vault: Option<VaultId>) -> Vec<EntryId> {
+        let store = self.held(d);
+        let state = store.view();
+        store.readings.untyped.iter().copied()
+            .filter(|e| state.entry(*e).is_some_and(|en| vault.is_none_or(|v| en.vault == v))).collect()
+    }
+
+    /// Every vault device `d`'s view knows, in the order they were created.
+    pub fn view_vaults(&self, d: SignerId) -> Vec<VaultId> {
+        self.held(d).view().vaults().iter().map(|v| v.id).collect()
+    }
+
+    /// `index_complete`, kept while device `d`'s store takes no change (its revision): whether a view of vault `vault`
+    /// may list off the shared index alone.
+    pub fn index_lists_all(&self, d: SignerId, vault: VaultId) -> bool {
+        let store = self.held(d);
+        if let Some((at, yes)) = store.complete.lock().unwrap_or_else(|p| p.into_inner()).get(&vault) {
+            if *at == store.revision { return *yes; }
+        }
+        let yes = self.index_complete(d, vault);
+        store.complete.lock().unwrap_or_else(|p| p.into_inner()).insert(vault, (store.revision, yes));
+        yes
+    }
+
     /// Device `d`'s view knows vault `v` and gives it no standing there: it acts for no member or owner of `v`, and no
     /// live share over `v` reaches it, a vault it acts for, or everyone. A read of `v` answers `denied`
     /// (`Coverage.read`). A vault the view doesn't know yet is not denied: it may be on its way.
@@ -5694,7 +5742,7 @@ impl Lab {
         let Backup { signed, blobs, bases } = backup;
         let mut r = self.restore_start(d, checked.map(|c| c.0), warm);
         r.vouch = if r.matched { checked.map_or(0, |c| c.1) } else { 0 };
-        self.restore_page_of(d, &mut r, signed, &blobs, false);
+        self.restore_page_of(d, &mut r, signed, &blobs, false, None);
         self.restore_end_with(d, r, bases, warm);
     }
 
@@ -5741,15 +5789,43 @@ impl Lab {
         keys: impl IntoIterator<Item = Arc<[u8]>>,
         checked: bool,
     ) {
+        self.restore_page_placed(d, r, page.into_iter().map(|s| (s, None)).collect(), keys, checked);
+    }
+
+    /// `restore_page`, each edit with where its shelf holds it, if in a file (`Placed`): a device spilled into a folder
+    /// of its own reads it from there, never copying it into its spill.
+    pub fn restore_page_placed(
+        &mut self,
+        d: SignerId,
+        r: &mut Restoring,
+        page: Vec<(Signed, Option<Placed>)>,
+        keys: impl IntoIterator<Item = Arc<[u8]>>,
+        checked: bool,
+    ) {
         if checked && r.matched {
             r.vouch = r.taken + page.len();
         }
         let blobs: Blobs = keys.into_iter().map(|b| (BlobId::of(&b), b)).collect();
-        self.restore_page_of(d, r, page, &blobs, true);
+        let mut placed = HashMap::new();
+        let page = page.into_iter().map(|(s, p)| {
+            if let Some(p) = p {
+                placed.insert(s.edit.id(), p);
+            }
+            s
+        }).collect();
+        self.restore_page_of(d, r, page, &blobs, true, Some(&placed));
     }
 
     /// `restore_page`: in the order they came where `in_order`, else as `fresh` orders them, held bare first.
-    fn restore_page_of(&mut self, d: SignerId, r: &mut Restoring, page: Vec<Signed>, blobs: &Blobs, in_order: bool) {
+    fn restore_page_of(
+        &mut self,
+        d: SignerId,
+        r: &mut Restoring,
+        page: Vec<Signed>,
+        blobs: &Blobs,
+        in_order: bool,
+        placed: Option<&HashMap<EditId, Placed>>,
+    ) {
         let (at, offered) = (Perf::start(), page.len() as u64);
         // the first edits of those it restores are those its shelf names it checked (`restore_start`)
         let vouched: HashSet<EditId> = page.iter().take(r.vouch.saturating_sub(r.taken)).map(|s| s.edit.id()).collect();
@@ -5769,7 +5845,7 @@ impl Lab {
             r.wanting.extend(fresh.iter().flat_map(|s| s.edit.blobs())
                 .filter(|b| !blobs.contains_key(b) && !store.blobs.contains_key(b)));
         }
-        self.keep_fresh_as(d, fresh, blobs, false);
+        self.keep_fresh_as(d, fresh, blobs, false, placed);
     }
 
     /// The McEliece keys the edits device `d` restored so far name, which didn't come with their pages
@@ -5811,7 +5887,7 @@ impl Lab {
                 Some(store) => r.doubtful.into_iter().filter(|s| store.covers.contains(&s.edit.id())).collect(),
                 None => vec![],
             };
-            self.keep_fresh_as(d, late, &Blobs::new(), false);
+            self.keep_fresh_as(d, late, &Blobs::new(), false, None);
         }
         let key = self.shelf_key(d);
         if let Some(store) = self.stores.get_mut(&d) {

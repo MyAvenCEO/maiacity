@@ -84,7 +84,7 @@ fn base(writers: usize) -> (Lab, SignerId, SignerId, VaultId, Vec<SignerId>) {
 
 /// `base`, each writer having written `edits / writers` edits over 50 entries of Alice's vault, all of which the
 /// iPhone took.
-fn written(writers: usize, edits: usize) -> (Lab, SignerId, SignerId) {
+fn written(writers: usize, edits: usize) -> (Lab, SignerId, SignerId, VaultId) {
     let (mut lab, passkey, phone, alice, ws) = base(writers);
     let per = edits / writers.max(1);
     for (i, &w) in ws.iter().enumerate() {
@@ -101,7 +101,7 @@ fn written(writers: usize, edits: usize) -> (Lab, SignerId, SignerId) {
         }
         lab.sync(w, phone);
     }
-    (lab, passkey, phone)
+    (lab, passkey, phone, alice)
 }
 
 #[test]
@@ -113,15 +113,27 @@ fn measure_unlock_memory() {
     // its shelf, as the iPhone's node keeps it
     let began = Instant::now();
     let held_edits = rt.block_on(async {
-        let (mut lab, passkey, phone) = written(writers, edits);
+        let (mut lab, passkey, phone, alice) = written(writers, edits);
         let lab = lab.split(phone, &[passkey], [1; 32]);
         let opts = Options { shelf: Some(disk::open(dir.path()).expect("the shelf")), ..Options::local() };
         let node = Node::spawn(lab, phone, opts).await.expect("a node");
         until("the shelf holds it", || async { !node.behind().await }).await;
+        // saves enough for a head (one after every 64 journal entries), so that it starts again from a head's packs,
+        // as a device that ran a while does
+        for n in 0..70 {
+            let doc = move |lab: &mut Lab, me: SignerId| {
+                lab.create(me, alice, alice, "doc", &[], document(&format!("Note {n}"), "From the iPhone.", me))
+            };
+            node.act(doc).await.expect("a note");
+            until("the shelf holds it", || async { !node.behind().await }).await;
+        }
         // and what it worked out, so that it starts again as a device does, from its stored view and checked keys
         until("what it worked out, put", || async { !node.read(|lab, me| lab.warm_due(me)).await }).await;
         let n = node.read(|lab, me| lab.log(me).edits().len()).await;
         node.shutdown().await.expect("it stops");
+        let heads = std::fs::read_dir(dir.path()).expect("the folder").filter_map(Result::ok)
+            .map(|g| g.path().join("heads")).filter(|h| h.exists()).map(|h| std::fs::read_dir(h).expect("heads").count()).sum::<usize>();
+        assert!(heads > 0, "a head of packs on its shelf");
         n
     });
     eprintln!("UNLOCK fixture: {held_edits} edits on its shelf in {:.1?}", began.elapsed());
@@ -133,13 +145,20 @@ fn measure_unlock_memory() {
     let h0 = held();
     PEAK.store(h0, Ordering::Relaxed);
     let began = Instant::now();
-    let (node, after, perf) = rt.block_on(async {
+    let (node, after, perf, unlocked, read_back) = rt.block_on(async {
         let opts = Options { shelf: Some(disk::open(dir.path()).expect("the shelf")), ..Options::local() };
         let node = Node::spawn(lab, phone, opts).await.expect("a node");
         let took = began.elapsed();
+        let unlocked = (PEAK.load(Ordering::Relaxed) - h0, held() - h0);
+        PEAK.store(held(), Ordering::Relaxed);
         let (n, perf) = node.read(|lab, me| (lab.log(me).edits().len(), lab.perf(me))).await;
         assert_eq!(n, held_edits, "it took back every edit");
-        (node, took, perf)
+        // every edit reads back whole from where its spill holds it, its shelf's packs among them
+        let back = node.read(|lab, me| lab.backup(me).signed().len()).await;
+        assert_eq!(back, held_edits, "every edit reads back");
+        let read_back = PEAK.load(Ordering::Relaxed) - h0;
+        PEAK.store(PEAK.load(Ordering::Relaxed).max(unlocked.0 + h0), Ordering::Relaxed);
+        (node, took, perf, unlocked, read_back)
     });
     let (peak, now) = (PEAK.load(Ordering::Relaxed) - h0, held() - h0);
     // what each part of its store holds: what letting go of it frees, the store of no use after
@@ -159,6 +178,9 @@ fn measure_unlock_memory() {
         "edits": n,
         "unlock_s": after.as_secs_f64(),
         "peak_mb": peak / 1_000_000,
+        "unlock_peak_mb": unlocked.0 / 1_000_000,
+        "unlock_held_mb": unlocked.1 / 1_000_000,
+        "read_back_peak_mb": read_back / 1_000_000,
         "held_mb": now / 1_000_000,
         "peak_per_edit": peak / n,
         "held_per_edit": now / n,
