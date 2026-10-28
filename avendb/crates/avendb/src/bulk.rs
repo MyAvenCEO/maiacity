@@ -40,6 +40,8 @@ pub(crate) enum Part {
     Body,
     /// Its `n`th key box, as `Action::key_box` counts them.
     Box(u32),
+    /// Its key's public half's X-Wing key (`Action::Keys`'s `public`).
+    Public,
 }
 
 /// Bytes read back from their edit's record: its place, shared by every part of the edit, which part, and how long.
@@ -127,6 +129,10 @@ impl Shelved {
         let bulk = match self.part {
             Part::Body => edit.action.body().cloned(),
             Part::Box(n) => edit.action.key_box(n as usize).map(|b| b.bytes.clone()),
+            Part::Public => match &edit.action {
+                crate::policy::Action::Keys { public: Some(p), .. } => Some(p.xwing.clone()),
+                _ => None,
+            },
         };
         let bulk = bulk.unwrap_or_else(|| panic!("avendb: an edit's record lacks the bulk it was shelved from"));
         let bytes = bulk.to_vec();
@@ -194,7 +200,10 @@ impl Edit {
         let place = &place;
         match &mut self.action {
             crate::policy::Action::Write { body, .. } => body.shelve(place, Part::Body),
-            crate::policy::Action::Keys { boxes, .. } => {
+            crate::policy::Action::Keys { boxes, public, .. } => {
+                if let Some(p) = public {
+                    p.xwing.shelve(place, Part::Public);
+                }
                 for (n, b) in boxes.iter_mut().enumerate() {
                     b.bytes.shelve(place, Part::Box(n as u32));
                 }

@@ -105,7 +105,7 @@ impl std::fmt::Debug for KeyId {
 /// beside the edits.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct PublicKey {
-    pub xwing: Vec<u8>,
+    pub xwing: crate::bulk::Bulk,
     pub mceliece: BlobId,
 }
 
@@ -196,7 +196,7 @@ impl Secret {
     /// The public halves of the key's pairs: what others seal to without holding the key. The first call makes the
     /// McEliece pair, which takes most of a second.
     pub fn public(&self) -> PublicKey {
-        PublicKey { xwing: self.xwing().encapsulation_key().to_bytes().to_vec(), mceliece: self.mceliece().id }
+        PublicKey { xwing: self.xwing().encapsulation_key().to_bytes().to_vec().into(), mceliece: self.mceliece().id }
     }
 
     /// The public half of its X-Wing pair alone, which `seal_once` seals to: no McEliece pair is made for it.
@@ -477,7 +477,7 @@ pub struct KeyBox {
 /// both public keys, so opening the box takes both secret keys. `None` if `to` is no X-Wing key, or `mceliece` no
 /// McEliece key; a McEliece key other than the one `to` names makes a box nobody opens.
 pub fn seal(key: &Secret, to: &PublicKey, mceliece: &[u8], info: &[u8], rng: &mut impl CryptoRng) -> Option<Vec<u8>> {
-    let xwing = x_wing::EncapsulationKey::try_from(&to.xwing[..]).ok()?;
+    let xwing = x_wing::EncapsulationKey::try_from(&to.xwing.bytes()[..]).ok()?;
     let (ct1, ss1) = xwing.encapsulate_with_rng(rng);
     let pk: Box<[u8; MCELIECE_PUBLIC_BYTES]> = mceliece.to_vec().into_boxed_slice().try_into().ok()?;
     let (ct2, ss2) = mceliece::encapsulate_boxed(&mceliece::PublicKey::from(pk), &mut Rng06::from(rng));
@@ -489,7 +489,7 @@ pub fn seal(key: &Secret, to: &PublicKey, mceliece: &[u8], info: &[u8], rng: &mu
 /// is bound to. All have fixed sizes but `info`, which comes last.
 fn box_key(ss1: &[u8], ss2: &[u8], ct1: &[u8], ct2: &[u8], to: &PublicKey, info: &[u8]) -> Secret {
     let mut h = Hasher::new("box key");
-    h.update(ss1).update(ss2).update(ct1).update(ct2).update(&to.xwing).update(&to.mceliece.0).update(info);
+    h.update(ss1).update(ss2).update(ct1).update(ct2).update(&to.xwing.bytes()).update(&to.mceliece.0).update(info);
     Secret(h.finalize())
 }
 
