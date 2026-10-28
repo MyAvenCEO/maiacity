@@ -59,18 +59,18 @@ export function checkIndex(bench, gates) {
  return out;
 }
 
-// G1's named query of the Universe (avendb's tests/posts_bench.rs): a page of query-posts at 1M and 10M edits, from what
-// it costs more per entry held and per edit of a post; 0 per edit where it reads no history.
+// G1's named query of the Universe on a node (avendb-net's posts_page_bench.rs, the path the always-on peer's
+// /feed/posts and Node::run take): a page of posts off the shared index at 1M and 10M edits, from what it costs more per
+// entry held and per edit of a post; about 0 per edit where it reads no history.
 export function checkPosts(bench, gates) {
  const out = [];
  const add = (gate, name, value, limit, ok) => out.push({ gate, name, value, limit, ok: value != null && ok });
- const g = gates.gates, p = bench.find(b => b.kind === 'posts');
- if (!p) add(true, 'query-posts', null, 'present', false);
+ const g = gates.gates, p = bench.find(b => b.kind === 'posts_node');
+ if (!p) add(true, 'posts page on a node', null, 'present', false);
  else {
-  add(true, 'query-posts: µs a page costs more per edit of a post (reads history)', p.per_edit_us, `≤ ${g.posts_per_edit_us_max}`, p.per_edit_us <= g.posts_per_edit_us_max);
-  add(true, 'query-posts: a page at 1M edits, ms (no entry a post)', p.at_1m_ms, `≤ ${g.posts_page_ms_max}`, p.at_1m_ms <= g.posts_page_ms_max);
-  add(true, 'query-posts: a page at 10M edits, ms (no entry a post)', p.at_10m_ms, `≤ ${g.posts_page_ms_max}`, p.at_10m_ms <= g.posts_page_ms_max);
-  add(false, 'query-posts: a page at 10M edits, ms (every entry a post of 50 edits)', p.at_10m_all_posts_ms, `≤ ${g.posts_page_ms_max}`, p.at_10m_all_posts_ms <= g.posts_page_ms_max);
+  add(true, 'posts page: µs more per edit of a post (reads history)', p.per_edit_us, `≤ ${g.posts_per_edit_us_max}`, p.per_edit_us <= g.posts_per_edit_us_max);
+  add(true, 'posts page: at 1M edits, ms', p.at_1m_ms, `≤ ${g.posts_page_ms_max}`, p.at_1m_ms <= g.posts_page_ms_max);
+  add(true, 'posts page: at 10M edits, ms', p.at_10m_ms, `≤ ${g.posts_page_ms_max}`, p.at_10m_ms <= g.posts_page_ms_max);
  }
  return out;
 }
@@ -185,9 +185,9 @@ export function report(bench, pg, results) {
  const wins = bench.filter(b => b.kind === 'window').sort((a, b) => a.n - b.n);
  if (wins.length) rows.push('', '| named query answered at edits | index rows | pages read (median, most) | bytes read | rows read | log edits | cold p50 / p95 µs | again p50 µs | log head at node open ms |', '|---|---|---|---|---|---|---|---|---|',
   ...wins.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.window_pages_p50}, ${s.window_pages_read} | ${fmt(s.window_bytes_read)} | ${s.window_rows_read} | ${s.window_log_edits} | ${s.window_p50_us} / ${s.window_p95_us} | ${s.window_warm_p50_us ?? '–'} | ${fmt(s.node_open_head_ms)} |`));
- const posts = bench.filter(b => b.kind === 'posts');
- if (posts.length) rows.push('', '| query-posts page | base µs | µs more per post | per edit of a post | per other entry | at 1M ms | at 10M ms | at 10M, all posts, ms |', '|---|---|---|---|---|---|---|---|',
-  ...posts.map(p => `| ${p.page} posts | ${fmt(p.base_us)} | ${p.per_post_us} | ${p.per_edit_us} | ${p.per_entry_us} | ${fmt(p.at_1m_ms)} | ${fmt(p.at_10m_ms)} | ${fmt(p.at_10m_all_posts_ms)} |`));
+ const posts = bench.filter(b => b.kind === 'posts_node');
+ if (posts.length) rows.push('', '| posts page on a node | µs, base / 8x posts / 16 edits each / 480 more entries | µs more per post | per edit of a post | per other entry | at 1M ms | at 10M ms |', '|---|---|---|---|---|---|---|',
+  ...posts.map(p => `| ${p.page} posts | ${p.us.join(' / ')} | ${p.per_post_us} | ${p.per_edit_us} | ${p.per_entry_us} | ${p.at_1m_ms} | ${p.at_10m_ms} |`));
  const first = bench.filter(b => b.kind === 'first');
  const carriers = bench.filter(b => b.kind === 'carrier');
  if (carriers.length) rows.push('', '| carrier | edits | bytes/edit | sync s | asks | edits/s | KB/s | link KB/s | of link |', '|---|---|---|---|---|---|---|---|---|',
