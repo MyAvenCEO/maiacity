@@ -95,6 +95,19 @@ impl Lab {
         Some(index::shared::Of { entry: e, audience: en.audience(), epoch: row.epoch, created, tokens: row.tokens })
     }
 
+    /// Entry `e`'s type as its creation's header says it, and its creation (the depth of its creation edit, the order
+    /// the shared index keeps): what a page of posts orders its candidates by (`world::post_keys`, `PostsPage.lean`),
+    /// without working out what the entry means. `None` where device `d` doesn't see it or reads no header of it.
+    pub fn creation_of(&self, d: SignerId, e: EntryId) -> Option<(crate::slice::Sym, u64)> {
+        if !self.sees(d, e) {
+            return None;
+        }
+        let store = self.held(d);
+        let en = store.view().entry(e)?;
+        let ty = store.readings.headers.get(&en.creation)?.ty.clone();
+        Some((ty, store.log.entry_write(en.creation)?.depth))
+    }
+
     /// Every entry device `d` may hold rows of in its shared index: those its edits say exist, in the order created.
     pub fn shared_entries(&self, d: SignerId) -> Vec<EntryId> {
         self.held(d).view().entries().iter().map(|en| en.id).collect()
@@ -189,6 +202,31 @@ impl Lab {
         let keys = self.index_keys(d, vault);
         let mut out = BTreeSet::new();
         for x in self.index_audiences(d, vault) {
+            for ix in &keys {
+                for l in labels {
+                    out.insert(index::token(ix, x, l));
+                }
+            }
+        }
+        out.into_iter().collect()
+    }
+
+    /// The tokens of `labels` that device `d`'s own shared index keys the rows of vault `vault`'s entries by: each
+    /// label's in each audience of the vault its view holds (`index_audiences` without the walk of the log for the key
+    /// edits of audiences it holds no entry of yet: a row is of an entry it holds), under each index key it holds of
+    /// the vault. A read of its own index (`avendb-net`'s `posts_page`) asks for these, at no cost per edit held.
+    pub fn held_tokens(&self, d: SignerId, vault: VaultId, labels: &[String]) -> Vec<Token> {
+        let keys = self.index_keys(d, vault);
+        let store = self.held(d);
+        let mut audiences: BTreeSet<AudienceId> = store
+            .view()
+            .audiences()
+            .filter(|(x, shares)| AudienceId::of(vault, shares) == *x)
+            .map(|(x, _)| x)
+            .collect();
+        audiences.insert(AudienceId::of(vault, &[]));
+        let mut out = BTreeSet::new();
+        for x in audiences {
             for ix in &keys {
                 for l in labels {
                     out.insert(index::token(ix, x, l));
