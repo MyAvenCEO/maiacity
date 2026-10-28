@@ -16,15 +16,17 @@
  *                                                                whenever both are online, catching up or not
  *
  * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 60 (seconds to watch sync),
- * --profile <dir>. Each run writes build/live-device/<time>/: screenshots in order, run.json (step times, the unlock
+ * --profile <dir>, --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
+ * its `build/` folder), served at --base's own origin so the always-on peer takes the passkey as it takes the live
+ * site's; the peer stays the live one. Each run writes build/live-device/<time>/: screenshots in order, run.json (step times, the unlock
  * sheet's steps, the sync pill over time, first paints, every diagnostics report the page sent, which is the phone's),
  * and prints one line of numbers with pass/fail against the targets below. One heavy job at a time on the 8 GB Mac:
  * don't run it beside a Rust build.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync, chmodSync } from 'node:fs';
 import { homedir, platform, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authenticator, passkey } from './passkey.mjs';
 
@@ -34,6 +36,7 @@ const option = (name, fallback) => (args.includes(name) ? args[args.indexOf(name
 const engine = option('--engine', 'webkit');
 const base = option('--base', 'https://maia.city').replace(/\/$/, '');
 const watchSync = Number(option('--sync', '60'));
+const pageDir = args.includes('--page') ? resolve(option('--page')) : null;
 const mac = platform() === 'darwin';
 const profile = option('--profile', mac ? join(homedir(), 'Library/Application Support/maiacity-live-device', engine) : join(homedir(), '.maiacity-live-device', engine));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -104,12 +107,16 @@ async function launch(dir = profile) {
 	const pw = await import('playwright');
 	const key = readKey();
 	if (!key) throw new Error(`no dev passkey yet: run with --setup '<invite link>' first`);
-	const options = { headless: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 };
+	// a service worker would answer the page's requests past --page's routes
+	const options = { headless: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...(pageDir ? { serviceWorkers: 'block' } : {}) };
+	// WEBKIT_PATH: a newer WebKit than this Playwright's own, where its own opens no saved profile (macOS 26.1, build 2215)
+	if (engine === 'webkit' && process.env.WEBKIT_PATH) options.executablePath = process.env.WEBKIT_PATH;
 	if (engine === 'chromium' && existsSync('/opt/pw-browsers/chromium')) Object.assign(options, { executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
 	const context = await pw[engine].launchPersistentContext(dir, options).catch((e) => {
 		throw new Error(`${engine} didn't start (${e.message.split('\n')[0]}): on the Mac, once: npx playwright install ${engine}`);
 	});
 	await context.addInitScript(authenticator, key);
+	if (pageDir) await serveCandidate(context);
 	// a dev site against a local peer (scripts/devx/fresh-device.mjs's): RELAY and SERVER, which only a dev build takes
 	if (process.env.RELAY && process.env.SERVER)
 		await context.addInitScript(([relay, server, signup]) => {
@@ -130,6 +137,29 @@ async function launch(dir = profile) {
 		}
 	});
 	return { context, page };
+}
+
+/** Content types of what a static build holds. */
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.webmanifest': 'application/manifest+json', '.txt': 'text/plain' };
+
+/** --page: --base's own pages answered from the candidate's static build, at --base's origin (the passkey's), and
+ *  everything else, the feed, the peer, a POST, from the network as ever. */
+async function serveCandidate(context) {
+	if (!existsSync(join(pageDir, 'index.html')) && !existsSync(join(pageDir, '404.html'))) throw new Error(`--page ${pageDir}: no static build there (bun run build)`);
+	const file = (path) => {
+		const at = normalize(join(pageDir, decodeURIComponent(path)));
+		if (!at.startsWith(pageDir)) return null;
+		for (const f of [at, join(at, 'index.html'), `${at}.html`]) if (existsSync(f) && statSync(f).isFile()) return f;
+		return null;
+	};
+	await context.route(`${base}/**`, async (route) => {
+		const url = new URL(route.request().url());
+		if (route.request().method() !== 'GET' || url.pathname.startsWith('/feed/') || url.pathname.startsWith('/api/')) return route.continue();
+		const f = file(url.pathname) ?? join(pageDir, '404.html');
+		if (!existsSync(f)) return route.continue();
+		await route.fulfill({ status: 200, contentType: TYPES[extname(f)] ?? 'application/octet-stream', body: readFileSync(f) });
+	});
+	log.page = pageDir;
 }
 
 // ─── once: sign up and found the dev vault; accept co-owning ───
