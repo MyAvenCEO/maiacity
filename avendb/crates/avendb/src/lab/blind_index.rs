@@ -68,13 +68,8 @@ impl Lab {
                 out.insert(*x);
             }
         }
-        for edit in store.log.edits() {
-            if let crate::policy::Action::Keys { name: KeyName::Scoped(KeyFam::Audience(v, x), _), .. } = &edit.action
-                && *v == vault
-            {
-                out.insert(*x);
-            }
-        }
+        // the audiences whose key edits it holds, as its log keeps them (`Log::audience_logs`), not a walk of its edits
+        out.extend(store.log.audience_logs(vault));
         out
     }
 

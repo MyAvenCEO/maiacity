@@ -4698,6 +4698,9 @@ pub struct Log {
     /// asks no scan of every edit to tell which logs it holds or which edits an asker may receive.
     logs: Vec<Option<crate::sync::LogId>>,
     by_log: HashMap<crate::sync::LogId, Vec<usize>>,
+    /// The audiences of each vault it holds key edits of (each `LogId::Audience` of `by_log`), kept as edits arrive:
+    /// what a device's index tokens are in (`Lab::index_audiences`), with no walk of every edit held.
+    audience_logs: BTreeMap<VaultId, std::collections::BTreeSet<AudienceId>>,
     revision: LogRevision,
     /// Stable only while this particular log appends. A removal or a clone starts a new lineage.
     lineage: LogRevision,
@@ -4714,7 +4717,8 @@ impl Clone for Log {
         Self { edits: self.edits.clone(), ids: self.ids.clone(), held: self.held.clone(),
             revision: self.revision.clone(), lineage: LogRevision::default(),
             entry_order: self.entry_order.clone(), write_at: self.write_at.clone(), logs: self.logs.clone(),
-            by_log: self.by_log.clone(), gone: self.gone, next_depth: self.next_depth }
+            by_log: self.by_log.clone(), audience_logs: self.audience_logs.clone(), gone: self.gone,
+            next_depth: self.next_depth }
     }
 }
 
@@ -4729,6 +4733,9 @@ impl Log {
         self.logs.push(log);
         if let Some(l) = log {
             self.by_log.entry(l).or_default().push(at);
+            if let crate::sync::LogId::Audience(v, x) = l {
+                self.audience_logs.entry(v).or_default().insert(x);
+            }
         }
         if let Action::Write { entry, .. } = edit.action {
             self.write_at.entry(id).or_insert(at);
@@ -4742,6 +4749,7 @@ impl Log {
         self.write_at.clear();
         self.logs.clear();
         self.by_log.clear();
+        self.audience_logs.clear();
         self.next_depth = 0;
         let (edits, ids) = (std::mem::take(&mut self.edits), std::mem::take(&mut self.ids));
         for (at, (edit, &id)) in edits.iter().zip(&ids).enumerate() {
@@ -4753,6 +4761,11 @@ impl Log {
     /// Each edit's log, by its place (`sync::log_of`).
     pub fn logs(&self) -> &[Option<crate::sync::LogId>] {
         &self.logs
+    }
+
+    /// The audiences of vault `vault` it holds key edits of (`audience_logs`).
+    pub fn audience_logs(&self, vault: VaultId) -> impl Iterator<Item = AudienceId> + '_ {
+        self.audience_logs.get(&vault).into_iter().flatten().copied()
     }
 
     /// Each log it holds edits of, and their places in it, in order.
