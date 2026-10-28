@@ -104,7 +104,9 @@ fn measure_upkeep_memory() {
         let perf = lab.perf(mac);
         let edits = perf["held"]["edits"].as_u64().unwrap_or(1) as isize;
         let parts: serde_json::Map<String, serde_json::Value> =
-            ["log.edits", "log.entry_order", "log.logs", "log.held", "log.ids", "log.write_at", "log", "replay"]
+            ["log.edits", "log.entry_order", "log.logs", "log.held", "log.ids", "log.write_at", "log", "replay.order",
+                "replay.ids", "replay.stood", "replay.acts", "replay.tail", "replay.state.vaults", "replay.state.shares",
+                "replay.state.entries", "replay.state.writes", "replay.state.audiences", "replay.state.epochs", "replay.state.seals", "replay.state.published", "replay.state.seal_keys", "latest", "replay"]
                 .into_iter()
                 .map(|p| (p.to_string(), json!(weigh(&mut lab, mac, p) / edits)))
                 .collect();

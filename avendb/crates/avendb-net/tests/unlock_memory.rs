@@ -165,6 +165,9 @@ fn measure_unlock_memory() {
     let parts = rt.block_on(node.act(|lab: &mut Lab, me: SignerId| {
         let mut freed = serde_json::Map::new();
         for part in ["log.edits", "log.ids", "log.held", "log.entry_order", "log.write_at", "log.logs", "log.by_log",
+            "replay.order", "replay.ids", "replay.stood", "replay.acts", "replay.tail", "replay.state.vaults",
+            "replay.state.shares", "replay.state.entries", "replay.state.writes", "replay.state.audiences",
+            "replay.state.epochs", "replay.state.seals", "replay.state.published", "replay.state.seal_keys",
             "signed", "blobs", "log", "replay", "latest", "key_index", "keys", "bases", "bodies", "readings",
             "shown", "answers", "files_at", "slices", "opened_keys", "derived", "covers", "showing"]
         {

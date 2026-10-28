@@ -4487,6 +4487,7 @@ impl Lab {
             "blobs" => out(std::mem::take(&mut store.blobs)),
             "log" => out(std::mem::take(&mut store.log)),
             p if p.starts_with("log.") => store.log.probe_part(&p[4..]),
+            p if p.starts_with("replay.") => store.replay.probe_part(&p[7..]),
             "replay" => out(std::mem::replace(&mut store.replay, replay(&[]))),
             "latest" => out(std::mem::take(&mut store.latest)),
             "key_index" => out(std::mem::take(&mut store.key_ix.ix)),

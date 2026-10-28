@@ -938,35 +938,92 @@ impl<T: Copy + Eq + Hash> Listed<T> {
 
 /// The seals made so far, in order, with what the schedule looks up in them. The long collections are shared like a
 /// state's, so a state copied before a change, as a replay keeps the one at its place, costs a few counts and not a
-/// copy of every seal made.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// copy of every seal made. Each seal is held once, in `list`: the lookups name it by its place there, under a hash of
+/// what they look up, every match checked against the seal itself, so they say exactly what sets of the seals would
+/// (a seal is two key names, 176 bytes; held in a list and two sets it cost 1.4 KB an edit of key upkeep).
+#[derive(Clone, Debug, Default)]
 struct Seals {
     list: imbl::Vector<Seal>,
-    set: imbl::HashSet<Seal>,
+    /// Each seal's place in `list`, by a hash of it.
+    set: Places,
     /// The family keys sealed to each key, by that key: what opening it opens of the families. An entry key opens no
     /// family key, so this is all `stale_keys` follows.
     fams: HashMap<KeyName, Vec<KeyName>>,
     /// Every family key sealed to anything.
     secrets: HashSet<KeyName>,
-    /// Each key sealed to a key of an entry's stay, with that entry and stay: what `link` checks for a move link.
-    linked: imbl::HashSet<(KeyName, EntryId, Option<EditId>)>,
+    /// Each key sealed to a key of an entry's stay, with that entry and stay, by a hash of the three: what `link`
+    /// checks for a move link.
+    linked: Places,
+}
+
+/// Places in a list of seals, by a hash of what they are looked up by: the first under each hash, and any other there
+/// beside it (two hashes the same are rare, never wrong).
+#[derive(Clone, Debug, Default)]
+struct Places {
+    first: imbl::HashMap<u64, u32>,
+    more: imbl::HashMap<u64, Vec<u32>>,
+}
+
+impl Places {
+    fn hash(x: &impl Hash) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        x.hash(&mut h);
+        std::hash::Hasher::finish(&h)
+    }
+
+    /// Whether a place under `key`'s hash holds what `is` says is it.
+    fn find(&self, key: &impl Hash, is: impl Fn(u32) -> bool) -> bool {
+        let h = Places::hash(key);
+        self.first.get(&h).is_some_and(|&i| is(i)) || self.more.get(&h).is_some_and(|m| m.iter().any(|&i| is(i)))
+    }
+
+    fn put(&mut self, key: &impl Hash, at: u32) {
+        let h = Places::hash(key);
+        if self.first.contains_key(&h) {
+            self.more.entry(h).or_default().push(at);
+        } else {
+            self.first.insert(h, at);
+        }
+    }
 }
 
 impl Seals {
+    fn contains(&self, s: &Seal) -> bool {
+        self.set.find(s, |i| self.list[i as usize] == *s)
+    }
+
+    fn is_linked(&self, l: &(KeyName, EntryId, Option<EditId>)) -> bool {
+        self.linked.find(l, |i| {
+            let s = self.list[i as usize];
+            matches!(s.to, KeyName::Entry(e, stay, _) if (s.secret, e, stay) == *l)
+        })
+    }
+
     fn add(&mut self, s: Seal) {
-        if self.set.insert(s).is_some() {
+        if self.contains(&s) {
             return;
         }
+        let at = u32::try_from(self.list.len()).expect("under 4 billion seals");
         self.list.push_back(s);
+        self.set.put(&s, at);
         if let KeyName::Scoped(..) = s.secret {
             self.fams.entry(s.to).or_default().push(s.secret);
             self.secrets.insert(s.secret);
         }
         if let KeyName::Entry(e, stay, _) = s.to {
-            self.linked.insert((s.secret, e, stay));
+            self.linked.put(&(s.secret, e, stay), at);
         }
     }
 }
+
+/// Two schedules are the same where they made the same seals in the same order: all else is looked up from them.
+impl PartialEq for Seals {
+    fn eq(&self, o: &Seals) -> bool {
+        self.list == o.list
+    }
+}
+
+impl Eq for Seals {}
 
 /// What a peer knows after replaying its edits: vaults, shares, entries and their audiences, accepted writes and the
 /// key schedule. No schema lane: its readers read it off the entries (`lane_of`), which no relay can (T25). Every
@@ -1970,7 +2027,7 @@ impl State {
 
     /// The schedule seals `secret` to `to`.
     pub fn sealed(&self, secret: KeyName, to: KeyName) -> bool {
-        self.seals.set.contains(&Seal { secret, to })
+        self.seals.contains(&Seal { secret, to })
     }
 
     /// Every published key, in the order published.
@@ -2933,8 +2990,8 @@ impl State {
                 let en = &self.entries[self.entry_at[&w.entry]];
                 let x = en.stay_audience(w.stay).expect("a write's stay");
                 let to = KeyName::Scoped(KeyFam::Audience(en.vault, x), w.epoch);
-                let linked = w.stay == en.stay() || self.seals.linked.contains(&(w.key(), en.id, en.stay()));
-                if !self.seals.set.contains(&Seal { secret: w.key(), to }) || !linked {
+                let linked = w.stay == en.stay() || self.seals.is_linked(&(w.key(), en.id, en.stay()));
+                if !self.seals.contains(&Seal { secret: w.key(), to }) || !linked {
                     let seals = Arc::make_mut(&mut self.seals);
                     link(seals, &self.epochs, &self.entries[self.entry_at[&self.writes[i].entry]], [&self.writes[i]]);
                 }
@@ -3014,7 +3071,7 @@ impl State {
             for to in self.targets(k) {
                 let s = Seal { secret, to };
                 // the seals are shared with the states before; copy them only to add one
-                if !self.seals.set.contains(&s) {
+                if !self.seals.contains(&s) {
                     Arc::make_mut(&mut self.seals).add(s);
                 }
             }
@@ -3103,7 +3160,7 @@ fn link<'a>(seals: &mut Seals, epochs: &HashMap<KeyFam, u64>, en: &Entry, ws: im
     for w in ws {
         let x = en.stay_audience(w.stay).unwrap_or_else(|| AudienceId::of(en.vault, &[]));
         seals.add(Seal { secret: w.key(), to: KeyName::Scoped(KeyFam::Audience(en.vault, x), w.epoch) });
-        if w.stay != en.stay() && !seals.linked.contains(&(w.key(), en.id, en.stay())) {
+        if w.stay != en.stay() && !seals.is_linked(&(w.key(), en.id, en.stay())) {
             seals.add(Seal { secret: w.key(), to: key });
         }
     }
@@ -4222,6 +4279,33 @@ impl Passed {
 }
 
 impl Replay {
+    /// Lets go of one part of it, which it returns, the replay of no use after: what a memory probe weighs it by
+    /// (`Lab::probe_part`, `replay.<part>`, `replay.state.<part>`).
+    pub fn probe_part(&mut self, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
+        fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
+            Some(Box::new(t))
+        }
+        let st = &mut self.state;
+        match part {
+            "order" => out(std::mem::take(&mut self.order)),
+            "ids" => out(std::mem::take(&mut self.ids)),
+            "stood" => out(std::mem::take(&mut self.stood)),
+            "acts" => out(std::mem::take(&mut self.acts)),
+            "tail" => out(self.tail.take()),
+            "state.vaults" => out((std::mem::take(&mut st.vaults), std::mem::take(&mut st.vault_at))),
+            "state.shares" => out((std::mem::take(&mut st.shares), std::mem::take(&mut st.share_at),
+                std::mem::take(&mut st.held), std::mem::take(&mut st.over), std::mem::take(&mut st.revoked))),
+            "state.entries" => out((std::mem::take(&mut st.entries), std::mem::take(&mut st.entry_at), std::mem::take(&mut st.born))),
+            "state.writes" => out((std::mem::take(&mut st.writes), std::mem::take(&mut st.write_at), std::mem::take(&mut st.by_entry))),
+            "state.audiences" => out((std::mem::take(&mut st.audiences), std::mem::take(&mut st.in_use), std::mem::take(&mut st.marks))),
+            "state.epochs" => out((std::mem::take(&mut st.epochs), std::mem::take(&mut st.moved))),
+            "state.seals" => out(std::mem::take(&mut st.seals)),
+            "state.published" => out(std::mem::take(&mut st.published)),
+            "state.seal_keys" => out(std::mem::take(&mut st.seal_keys)),
+            _ => None,
+        }
+    }
+
     /// The edits the checkpoints that stand vouch for (`vouched` in `Checkpoint.lean`): each edit before a checkpoint
     /// that stands, that stands itself, that the checkpoint covers, and whose signers all acted for the checkpoint's
     /// vault just before or just after it.
