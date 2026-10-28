@@ -120,6 +120,8 @@ struct Hub {
     links: BTreeMap<(EndpointId, EndpointId), Rng>,
     /// When each link (sender, receiver) is free again, at a set `rate`.
     busy: BTreeMap<(EndpointId, EndpointId), tokio::time::Instant>,
+    /// Links at a rate of their own, bytes a second each way, in place of the faults' (`Net::rate`).
+    rates: BTreeMap<(EndpointId, EndpointId), u64>,
     /// What each link has on its way, in the order sent, with when each arrives: a link delivers in order, as a wire
     /// or a queue does, where one timer for each packet woke them in any order within a timer tick.
     pipes: BTreeMap<(EndpointId, EndpointId), VecDeque<(tokio::time::Instant, Vec<u8>)>>,
@@ -200,6 +202,7 @@ impl Net {
             inboxes: BTreeMap::new(),
             links: BTreeMap::new(),
             busy: BTreeMap::new(),
+            rates: BTreeMap::new(),
             pipes: BTreeMap::new(),
             bottleneck: None,
             cut: BTreeSet::new(),
@@ -261,6 +264,15 @@ impl Net {
         let mut hub = self.hub();
         hub.cut.clear();
         hub.note("heal all".into());
+    }
+
+    /// The link between `a` and `b` carries `rate` bytes a second each way, whatever the faults' rate: a peer behind a
+    /// slow relay beside a fast one.
+    pub fn rate(&self, a: EndpointId, b: EndpointId, rate: u64) {
+        let mut hub = self.hub();
+        hub.rates.insert(link(a, b), rate);
+        let note = format!("{} | {} at {rate} B/s", hub.name_of(a), hub.name_of(b));
+        hub.note(note);
     }
 
     /// `a` reaches `peers` alone, and nobody else reaches it: a browser behind its relay, an agent in a cloud session.
@@ -354,10 +366,11 @@ impl Net {
                 wait += b.free - now;
             }
             // a link at a set rate sends a packet once the one before it is through, then its latency
-            if faults.rate > 0 {
+            let rate = hub.rates.get(&link(from, to)).copied().unwrap_or(faults.rate);
+            if rate > 0 {
                 let now = tokio::time::Instant::now();
                 let free = hub.busy.entry((from, to)).or_insert(now);
-                let through = (*free).max(now) + Duration::from_nanos(bytes.len() as u64 * 1_000_000_000 / faults.rate);
+                let through = (*free).max(now) + Duration::from_nanos(bytes.len() as u64 * 1_000_000_000 / rate);
                 *free = through;
                 wait += through - now;
             }

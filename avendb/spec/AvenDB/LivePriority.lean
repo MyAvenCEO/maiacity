@@ -358,8 +358,9 @@ came again on its last page (`bench_live` phone_bulk at ten chat edits a second:
 names them loose too, which the peer sends none of again (`Logs.lean` `respondSince`). Rust: lib.rs `pages`,
 pulls.rs `Taken`. -/
 
-/-- An asking's request for its next page, naming loose too the edits `taken` that another pull of the same peer
-    brought this device since the asking began (a live pull's chat edits during a catch-up). -/
+/-- An asking's request for its next page, naming loose too the edits `taken` that another pull brought this device
+    since the asking began, of the same peer (a live pull's chat edits during a catch-up) or of another (a stalled
+    claim handed over). -/
 def withTaken (a : Ask) (taken : List EditId) : Ask := { a with loose := a.loose ++ taken }
 
 /-- The peer sends what it would have, less exactly the edits taken: none of them again, and nothing else held back. -/
@@ -527,5 +528,47 @@ theorem either3_carries_no_less (asked link bbr cubic queue : Nat) :
     carried asked link (either bbr cubic) ≤ carried asked link (either3 bbr cubic queue) ∧
     carried asked link (either3 bbr cubic queue) ≤ link := by
   simp only [carried, either, either3]; omega
+
+/-! ## A stalled claim hands over (S1, 2026-10-28)
+
+A log that two peers hold more of is asked of one at a time (`Claims`, S5): the first asking takes it, and the other
+peer is owed an asking once that one ends. Samuel's iPhone, over a 66-214 KB/s relay and backgrounded, had an asking
+of the always-on peer land one page and then none for 9 minutes: it held every log the Mac advertised too, and the Mac
+was never asked all evening. So a claim holds only while its asking's pages land: once none landed for `handover`,
+a peer owed the log takes it, and every page asked after names loose what any pull took meanwhile (`withTaken`, from
+any peer), so the stalled asking, if it comes back, sends none of it again. Rust: avendb-net lib.rs `Claims::take`,
+`Claims::landed`, pulls.rs `Taken`. -/
+
+/-- A claim on a log: the peer asked for it, and when its asking last landed a page (or began). -/
+structure Claim where
+  peer : Nat
+  landed : Nat
+
+/-- Whether peer `me` takes a log claimed so at `now`: unclaimed, its own, or its asking stalled `handover` long. -/
+def takes (handover now me : Nat) : Option Claim → Bool
+  | none => true
+  | some c => c.peer == me || decide (c.landed + handover ≤ now)
+
+/-- A claim whose pages land is kept: no other peer is asked for its log, nothing comes twice (S5). -/
+theorem a_landing_claim_is_kept (handover now me : Nat) (c : Claim) (h : c.peer ≠ me)
+    (fresh : now < c.landed + handover) : takes handover now me (some c) = false := by
+  simp [takes, h, Nat.not_le.mpr fresh]
+
+/-- A stalled claim is handed over: a peer owed the log asks for it once `handover` passed with no page. -/
+theorem a_stalled_claim_hands_over (handover now me : Nat) (c : Claim) (h : c.landed + handover ≤ now) :
+    takes handover now me (some c) = true := by
+  simp [takes, h]
+
+/-- No log waits on a stalled asking for ever: an owed peer asking again at `landed + handover` takes it. -/
+theorem no_log_waits_past_the_handover (handover me : Nat) (c : Option Claim) :
+    ∃ t, ∀ now, t ≤ now → takes handover now me c = true := by
+  match c with
+  | none => exact ⟨0, fun _ _ => rfl⟩
+  | some c => exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover now me c h⟩
+
+/-- What the stalled asking sends if it comes back: none of what the peer that took over brought, by `withTaken`. -/
+theorem the_stalled_asking_sends_none_of_it_again (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId)
+    (e : Edit) (h : e ∈ respondSince edits d (withTaken a taken)) : taken.contains e.id = false :=
+  taken_is_never_sent edits d a taken e h
 
 end AvenDB.LivePriority
