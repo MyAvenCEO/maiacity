@@ -170,7 +170,7 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -2389,6 +2389,11 @@ struct Peer {
     endpoint: EndpointId,
     /// When its hellos proved it, in milliseconds since 1970.
     since: u64,
+    /// The bytes of the answers to this node's askings it brought so far (`session::exchange_timed`): what a page's
+    /// wait watches, the pages asked before it included, not every byte the connection carries. A peer that never
+    /// answered a page but announced its edits and asked its own kept that wait, and its pull, going for ever (the Mac
+    /// self-test 2026-10-28: a pull of the Mac at "other" 10 min, 0 pages).
+    answered: Arc<AtomicU64>,
 }
 
 /// What a node's tasks share.
@@ -2900,7 +2905,7 @@ impl Shared {
     /// connection for its caller to serve, even if it is not selected; the node announces its holdings again.
     fn connected(self: &Arc<Self>, conn: Connection, device: SignerId) -> Peer {
         let endpoint = conn.remote_id();
-        let peer = Peer { conn, device, endpoint, since: jobs::now_ms() };
+        let peer = Peer { conn, device, endpoint, since: jobs::now_ms(), answered: Arc::default() };
         if self.opts.relay.is_some() {
             self.lookup.add_endpoint_info(self.addr_of(endpoint));
         }
@@ -3127,8 +3132,8 @@ impl Shared {
                 let early = ahead.is_some();
                 let mut ahead = ahead;
                 // the wait for a page's slot is this node's own, bounded as it always was; the page's, from its asking on, lasts
-                // while its connection brings bytes (`session::unstalled`): those of the pages asked before it, which the
-                // peer sends first, then its own
+                // while answers to this node's askings come on its connection (`Peer::answered`, `session::unstalled`):
+                // those of the pages asked before it, which the peer sends first, then its own
                 let slot = async {
                     match ahead.take() {
                         Some(permit) => Ok(permit),
@@ -3159,7 +3164,7 @@ impl Shared {
                     };
                     reply.map(|(reply, came)| (reply, came, permit))
                 };
-                let reply = session::unstalled(|| session::carried(&peer.conn, session::Flow::In), PAGE_WAIT, receive)
+                let reply = session::unstalled(|| peer.answered.load(Ordering::Relaxed), PAGE_WAIT, receive)
                     .await
                     .context("no page in time")
                     .and_then(|r| r);
@@ -3534,10 +3539,10 @@ impl Shared {
         let answer = async {
             let _activity = self.admit()?;
             anyhow::ensure!(asked.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
-            let bytes = session::exchange(&peer.conn, session::STUBS, &asked, session::STUBS_REPLY_LIMIT);
-            // as long as its connection brings bytes, as a page (`session::unstalled`): a big vault's stubs are many MB
-            let progress = || session::carried(&peer.conn, session::Flow::In);
-            let bytes = session::unstalled(progress, PAGE_WAIT, bytes).await.context("no stubs in time")??;
+            let bytes = session::exchange_timed(&peer.conn, session::STUBS, &asked, session::STUBS_REPLY_LIMIT, &peer.answered);
+            // as long as its answers come, as a page's (`session::unstalled`): a big vault's stubs are many MB
+            let progress = || peer.answered.load(Ordering::Relaxed);
+            let (bytes, _) = session::unstalled(progress, PAGE_WAIT, bytes).await.context("no stubs in time")??;
             Ok::<_, anyhow::Error>(avendb::wire::Stubs::from_wire(&bytes)?)
         };
         match answer.await {
@@ -3639,7 +3644,7 @@ impl Shared {
                 let paths = self.opts.paths;
                 let batch = proofs::Request { kind, request: request.to_vec(), known, paths, held }.encode()?;
                 if batch.len() < session::MESSAGE_LIMIT {
-                    match session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit).await {
+                    match session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit, &peer.answered).await {
                         Ok((bytes, sending)) => {
                             let came = pulls::Came { bytes: bytes.len() as u64, sending };
                             if let Ok(supplement) = proofs::Supplement::decode(&bytes) {
@@ -3674,7 +3679,7 @@ impl Shared {
                         break;
                     }
                     asked = true;
-                    let result = session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit).await;
+                    let result = session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit, &peer.answered).await;
                     drop(batch);
                     match result {
                         Ok((bytes, sending)) => {
@@ -3702,7 +3707,7 @@ impl Shared {
         }
         let packs = !self.unpacked.lock().expect("unpacked").contains(&id);
         if packs {
-            match session::exchange_timed(&peer.conn, kind | session::PACKED, request, limit).await {
+            match session::exchange_timed(&peer.conn, kind | session::PACKED, request, limit, &peer.answered).await {
                 Ok((bytes, sending)) => {
                     if let Ok(Packed(reply)) = Packed::from_wire(&bytes) {
                         return Ok((reply, pulls::Came { bytes: bytes.len() as u64, sending }));
@@ -3714,7 +3719,7 @@ impl Shared {
                 Err(_) => {}
             }
         }
-        let (bytes, sending) = session::exchange_timed(&peer.conn, kind, request, limit).await?;
+        let (bytes, sending) = session::exchange_timed(&peer.conn, kind, request, limit, &peer.answered).await?;
         let reply = Reply::from_wire(&bytes)?;
         if packs {
             self.unpacked.lock().expect("unpacked").insert(id);

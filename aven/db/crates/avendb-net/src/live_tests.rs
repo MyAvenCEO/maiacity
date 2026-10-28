@@ -623,6 +623,10 @@ let said = format!("from the Mac {i}");
         "phone_live": phone.shared.traffic.live_json(), "mac_live": mac.shared.traffic.live_json(),
     }));
     assert!(behind > 0, "the phone still caught up as the last message crossed");
+    // what a page's wait watches: the answers to the phone's askings, not every byte its connection carried
+    let answered: u64 = phone.shared.peers.lock().unwrap().values()
+        .map(|p| p.answered.load(std::sync::atomic::Ordering::Relaxed)).sum();
+    assert!(answered > 0, "the phone counted the Mac's answers to its askings");
     // the gate where the build times what a release does; a debug build's checks replay a whole log on each turn of the
     // Lab (lab.rs), 150-250 ms a turn here, so there every message must come, within `shows`'s 30 s
     let gate = if cfg!(avendb_no_replay_checks) { 3000.0 } else { 30_000.0 };
