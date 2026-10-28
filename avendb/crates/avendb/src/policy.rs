@@ -4320,7 +4320,7 @@ impl Passed {
 
 impl Replay {
     /// Lets go of one part of it, which it returns, the replay of no use after: what a memory probe weighs it by
-    /// (`Lab::probe_part`, `replay.<part>`, `replay.state.<part>`).
+    /// (`Probed::part`, `replay.<part>`, `replay.state.<part>`).
     pub fn probe_part(&mut self, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
         fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
             Some(Box::new(t))
@@ -5037,7 +5037,7 @@ impl Log {
     }
 
     /// Lets go of one part of it, which it returns, the log of no use after: what a memory probe weighs it by
-    /// (`Lab::probe_part`, `log.<part>`).
+    /// (`Probed::part`, `log.<part>`).
     pub fn probe_part(&mut self, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
         fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
             Some(Box::new(t))
