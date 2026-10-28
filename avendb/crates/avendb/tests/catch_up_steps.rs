@@ -186,6 +186,13 @@ fn a_whole_replay_run_a_slice_a_step_is_the_whole_replay() {
 /// as a node takes them, not yet caught up: as the server's, interleaved, they sort before where its replay steps on
 /// from, so its catch-up replays them all (`scale_turns.rs`, a first sync of 130,000 edits).
 fn first_sync(writers: usize, per: usize) -> (avendb::lab::Lab, SignerId) {
+    let (lab, phone, _) = first_sync_of(writers, per, false);
+    (lab, phone)
+}
+
+/// `first_sync`, and with `removal` a device added to Alice's vault and removed again among the edits it takes, as
+/// Maia City's hold removals; with one of the writers, which lacks the others' edits.
+fn first_sync_of(writers: usize, per: usize, removal: bool) -> (avendb::lab::Lab, SignerId, SignerId) {
     use avendb::cast::paragraph;
     use avendb::id::VaultId;
     use avendb::policy::{Action, Kind, Principal, Sharing};
@@ -205,6 +212,17 @@ fn first_sync(writers: usize, per: usize) -> (avendb::lab::Lab, SignerId) {
     for &d in [phone].iter().chain(&ws) {
         lab.sync(mac, d);
     }
+    if removal {
+        use avendb::policy::Revoking;
+        let pad = lab.device_of(passkey, "Alice's old iPad");
+        let add = Action::Share(Sharing::Device { vault: alice, device: pad, seal_to: None });
+        lab.submit(mac, &[passkey, pad], add).expect("a device added");
+        let remove = Action::Revoke(Revoking::Device { vault: alice, device: pad, keep: vec![] });
+        lab.submit(mac, &[passkey], remove).expect("and removed");
+        for &w in &ws {
+            lab.sync(mac, w);
+        }
+    }
     for (i, &w) in ws.iter().enumerate() {
         let doc = document(&format!("Doc {i}"), "Written by one of Alice's devices.", w);
         let entry = lab.create(w, alice, alice, "doc", &[], doc).expect("a document");
@@ -220,7 +238,7 @@ fn first_sync(writers: usize, per: usize) -> (avendb::lab::Lab, SignerId) {
             lab.receive_prepared(phone, prepared, false);
         }
     }
-    (lab, phone)
+    (lab, phone, ws[0])
 }
 
 /// Such a catch-up replays every edit a slice a step (`ReplayRun`), the replay it held standing till the whole one
@@ -289,4 +307,34 @@ fn an_entry_of_many_writes_is_shown_over_several_steps() {
     assert!(most <= 16, "at most a slice of the entry's writes judged a step: {most}");
     assert_eq!(seen(&once, d), seen(&steps, d), "the same entries and items as one catch-up");
     assert!(once.lab.state(d) == steps.lab.state(d), "the same view");
+}
+
+/// A first sync whose edits hold a removal answers its peers by nothing in the middle of its catch-up, rather than replay
+/// every edit it holds for each ask (S2, 2026-10-28: a first sync of Maia City replayed them all for each page's
+/// announce, and never ended); once caught up, it answers by all of them (`answerOr` in `StandingReplay.lean`).
+#[test]
+fn a_first_sync_with_a_removal_answers_its_peers_by_nothing_till_caught_up_not_by_a_whole_replay() {
+    let (mut lab, d, writer) = first_sync_of(6, 40, true);
+    // a page of what the writer, a peer, asks the iPhone for
+    let asked = |lab: &mut avendb::lab::Lab| {
+        let request = lab.request(writer, d);
+        lab.reply(d, writer, &request, 1 << 20).0.len()
+    };
+    assert!(!lab.replay_current(d), "a first sync taken, not caught up");
+    let mut steps = 0;
+    loop {
+        let step = lab.catch_up_step(d, 1);
+        steps += 1;
+        assert!(steps < 10_000, "a catch-up in steps ends");
+        if matches!(step, CatchUp::Caught(_)) {
+            break;
+        }
+        if !lab.replay_current(d) {
+            let _ = lab.announce(d, writer);
+            let _ = asked(&mut lab);
+            assert!(!lab.replay_current(d), "a peer's ask at step {steps} replayed every edit");
+        }
+    }
+    assert!(lab.replay_current(d), "caught up");
+    assert!(asked(&mut lab) > 0, "caught up, it hands its peer what it holds");
 }

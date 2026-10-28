@@ -396,7 +396,8 @@ grows a sixteenth a round, to find where the queue begins. The pair keeps the la
 
 /-- What one round trip told the queue-gated member (µs, bytes, packets): the least round trip it measured, the least
     ever, the larger of BBR's and Cubic's windows in it, the packets sent and lost in it, and whether the window
-    bounded it (`full`), not the application. -/
+    bounded it (`full`): the connection's window was full while the member's was no larger, so what was in flight
+    reached the member's (Rust: `on_cwnd_limited`). Not the application, the CPU or the pacer. -/
 structure Round where
   rtt : Nat
   minRtt : Nat
@@ -529,6 +530,34 @@ theorem either3_carries_no_less (asked link bbr cubic queue : Nat) :
     carried asked link (either3 bbr cubic queue) ≤ link := by
   simp only [carried, either, either3]; omega
 
+/-! ## A small change first on a new connection (Goal 6, G4)
+
+On a connection it told nothing yet, a node tells a device all it holds again, which can take range rounds: four round
+trips on a phone's link. Two nodes that know each other dial each other at once, and the crossed dial each keeps
+is a new connection: the live edits written meanwhile waited behind that replacement (`bench_live` phone_bulk: the
+first five live edits arrived together, 0.5-0.8 s after their writes). So a small change since what the device was
+told on the connection before goes first, then all of it. A device that kept what it was told takes the change at once;
+one that lost it (a restart) takes the change, then the replacement; either way it ends holding all of it. Holdings
+by log, a frontier each. Rust: lib.rs `tell`. -/
+
+/-- What a device holds once told `announce` (`Holdings::take`): that alone where it is all, else that over before. -/
+def take (full : Bool) (held announce : Nat → Option Nat) : Nat → Option Nat :=
+  fun l => match announce l with
+    | some f => some f
+    | none => if full then none else held l
+
+/-- The change goes first: every log it names, the device holds as told at once, whatever it held before. -/
+theorem change_heard_at_once (held change : Nat → Option Nat) (l f : Nat) (h : change l = some f) :
+    take false held change l = some f := by
+  simp [take, h]
+
+/-- Then all it holds: the device ends holding exactly that, whatever the change or what it kept. -/
+theorem change_first_ends_whole (held change all : Nat → Option Nat) :
+    take true (take false held change) all = all := by
+  funext l
+  simp only [take]
+  cases all l <;> simp
+
 /-! ## A stalled claim hands over (S1, 2026-10-28)
 
 A log that two peers hold more of is asked of one at a time (`Claims`, S5): the first asking takes it, and the other
@@ -539,32 +568,70 @@ a peer owed the log takes it, and every page asked after names loose what any pu
 any peer), so the stalled asking, if it comes back, sends none of it again. Rust: avendb-net lib.rs `Claims::take`,
 `Claims::landed`, pulls.rs `Taken`. -/
 
-/-- A claim on a log: the peer asked for it, and when its asking last landed a page (or began). -/
+
+/-! Since pages are sized to their asker (S1b, below), a page over a slow link lands in its couple of seconds too, so
+a claim on a 20 KB/s relay never stalled: a browser took every log from its Mac at that rate while the server that held
+them waited (sim `a_browser_takes_what_it_lacks_from_the_fast_peer`, 2026-10-28). So a claim holds only while its pages
+also come at least a `slower`th as fast as the link of the peer owed the log (its pages lately, or a new peer's start
+rate): a log comes from the peer that brings it faster. The faster peer's claim then holds when the slow one asks
+again, so the log moves once (`a_faster_claim_is_kept`). Rust: `Claims::take` with `SLOWER`, `pulls::Rate::per_second`. -/
+
+/-- A claim on a log: the peer asked for it, when its asking last landed a page (or began), and how fast its pages came
+lately, in bytes a second, if any did. -/
 structure Claim where
   peer : Nat
   landed : Nat
+  rate : Option Nat := none
 
-/-- Whether peer `me` takes a log claimed so at `now`: unclaimed, its own, or its asking stalled `handover` long. -/
-def takes (handover now me : Nat) : Option Claim → Bool
+/-- Whether its pages come `slower` times slower than a link of `rate`. -/
+def Claim.slow (slower rate : Nat) (c : Claim) : Bool := c.rate.any (fun r => r * slower < rate)
+
+/-- Whether peer `me`, its link carrying `rate`, takes a log claimed so at `now`: unclaimed, its own, its asking
+stalled `handover` long, or its pages `slower` times slower than `me`'s link. -/
+def takes (handover slower now me rate : Nat) : Option Claim → Bool
   | none => true
-  | some c => c.peer == me || decide (c.landed + handover ≤ now)
+  | some c => c.peer == me || decide (c.landed + handover ≤ now) || c.slow slower rate
 
-/-- A claim whose pages land is kept: no other peer is asked for its log, nothing comes twice (S5). -/
-theorem a_landing_claim_is_kept (handover now me : Nat) (c : Claim) (h : c.peer ≠ me)
-    (fresh : now < c.landed + handover) : takes handover now me (some c) = false := by
-  simp [takes, h, Nat.not_le.mpr fresh]
+/-- A claim whose pages land, about as fast as `me`'s link would bring them, is kept: no other peer is asked for its
+log, nothing comes twice (S5). -/
+theorem a_landing_claim_is_kept (handover slower now me rate : Nat) (c : Claim) (h : c.peer ≠ me)
+    (fresh : now < c.landed + handover) (fast : c.slow slower rate = false) :
+    takes handover slower now me rate (some c) = false := by
+  simp [takes, h, Nat.not_le.mpr fresh, fast]
 
 /-- A stalled claim is handed over: a peer owed the log asks for it once `handover` passed with no page. -/
-theorem a_stalled_claim_hands_over (handover now me : Nat) (c : Claim) (h : c.landed + handover ≤ now) :
-    takes handover now me (some c) = true := by
+theorem a_stalled_claim_hands_over (handover slower now me rate : Nat) (c : Claim) (h : c.landed + handover ≤ now) :
+    takes handover slower now me rate (some c) = true := by
   simp [takes, h]
 
+/-- A slow claim is handed over: a peer owed the log whose link is `slower` times as fast takes it, however its pages
+land. -/
+theorem a_slow_claim_hands_over (handover slower now me rate : Nat) (c : Claim) (h : c.slow slower rate = true) :
+    takes handover slower now me rate (some c) = true := by
+  simp [takes, h]
+
+/-- The faster peer's claim holds when the slower one asks again: with `1 ≤ slower`, a claim at `r` that took the log
+from a peer at `q < r` (`q * slower < r`) isn't slow to it, so the log moves once. -/
+theorem a_faster_claim_is_kept (slower q r : Nat) (hs : 1 ≤ slower) (h : q * slower < r) (c : Claim)
+    (hc : c.rate = some r) : c.slow slower q = false := by
+  have : q ≤ r * slower := by
+    have := Nat.le_mul_of_pos_right q hs
+    have := Nat.le_mul_of_pos_right r hs
+    omega
+  simp [Claim.slow, hc]
+  omega
+
 /-- No log waits on a stalled asking for ever: an owed peer asking again at `landed + handover` takes it. -/
-theorem no_log_waits_past_the_handover (handover me : Nat) (c : Option Claim) :
-    ∃ t, ∀ now, t ≤ now → takes handover now me c = true := by
+theorem no_log_waits_past_the_handover (handover slower me rate : Nat) (c : Option Claim) :
+    ∃ t, ∀ now, t ≤ now → takes handover slower now me rate c = true := by
   match c with
   | none => exact ⟨0, fun _ _ => rfl⟩
-  | some c => exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover now me c h⟩
+  | some c => exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover slower now me rate c h⟩
+
+-- the sim's browser: the Mac's pages at 20 KB/s, the server new (128 KiB in 2 s), `SLOWER` 2
+#guard takes 15 2 3 2 65536 (some { peer := 1, landed := 2, rate := some 20000 }) == true
+#guard takes 15 2 3 2 40000 (some { peer := 1, landed := 2, rate := some 20000 }) == false
+#guard takes 15 2 3 1 20000 (some { peer := 2, landed := 3, rate := some 65536 }) == false
 
 /-- What the stalled asking sends if it comes back: none of what the peer that took over brought, by `withTaken`. -/
 theorem the_stalled_asking_sends_none_of_it_again (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId)

@@ -61,9 +61,9 @@ impl Either {
 }
 
 /// The member that backs off on a queue, not on every loss (`LivePriority.lean` `nextWindow`): it grows a sixteenth a
-/// round the window bounded that shows no queue, or to the largest window BBR or Cubic reached in it, which a random loss doesn't take, and
-/// gives 3/10 of it up at each round that shows a queue past the target or lost more than a tenth
-/// (`grows_only_with_no_queue`).
+/// round the window bounded that shows no queue, or to the largest window BBR or Cubic reached in it, which a random
+/// loss doesn't take, and gives 3/10 of it up at each round that shows a queue past the target or lost more than a
+/// tenth (`grows_only_with_no_queue`).
 ///
 /// A queue is judged against the least round trip, which a flow that starts behind another's standing queue measures
 /// with that queue in it: it then never sees the queue it adds (two of ours on one queue split it 0.85 to 0.11). So it
@@ -97,7 +97,9 @@ struct Round {
     others: u64,
     sent: u64,
     lost: u64,
-    /// Whether the window bounded it, not the application: a round that sent all it had shows nothing past it.
+    /// Whether the window bounded it: the connection's window was full (`on_cwnd_limited`) while it held no more than
+    /// that window, so what it sent reached this member's. A round that sent all it had, or that the CPU or the pacer
+    /// held back, shows nothing past it. (`app_limited` is no such sign: the connection clears it at every send.)
     full: bool,
 }
 
@@ -143,6 +145,43 @@ impl Queue {
         if self.confirmed { self.window } else { 0 }
     }
 
+    /// An ack of packet `pn`, sent at `sent`: its round trip as it measures it, a drain's step, a round's end.
+    fn acked(&mut self, now: Instant, sent: Instant, pn: u64) {
+        // its own sample, the time from sending to this ack: the least of a round's is the one least delayed by acks
+        let sample = now.saturating_duration_since(sent);
+        if let Some(drain) = &mut self.draining {
+            if pn < drain.ends {
+                return;
+            }
+            if !drain.emptied {
+                // its own queue is gone: the next packet sent meets none of it
+                *drain = Drain { ends: self.largest_sent + 1, emptied: true };
+                return;
+            }
+            // the round trip of a packet sent with its queue gone is its least round trip, from now on
+            self.min_rtt = Some((sample, now));
+            self.confirmed = true;
+            self.draining = None;
+            self.round = Round { ends: self.largest_sent, ..Round::default() };
+            return;
+        }
+        // a round trip under its least: the queue emptied, as when the flows beside it drained; it drains on from now
+        if self.min_rtt.is_none_or(|(min, _)| sample < min) {
+            self.min_rtt = Some((sample, now));
+        }
+        self.round.rtt = Some(self.round.rtt.map_or(sample, |r| r.min(sample)));
+        self.round.others = self.round.others.max(self.others);
+        if pn >= self.round.ends {
+            self.end_round(now);
+        }
+    }
+
+    /// The connection's window `window` was full: this round counts as bounded if this member's is no larger, so what
+    /// was in flight reached it (`Either` calls it, knowing the connection's window).
+    fn window_full(&mut self, window: u64) {
+        self.round.full |= self.window <= window;
+    }
+
     /// The round ends: congested where its least round trip lies past the target above the least (a quarter of it,
     /// 2 ms at least) or it lost more than a tenth of what it sent, 7/10 of the window then; else a sixteenth more
     /// if the window bounded the round, or what the others reached in it, if more. A drain begins where its window
@@ -175,35 +214,8 @@ impl Controller for Queue {
         self.round.sent += 1;
     }
 
-    fn on_ack(&mut self, now: Instant, sent: Instant, _bytes: u64, pn: u64, app_limited: bool, _rtt: &RttEstimator) {
-        // its own sample, the time from sending to this ack: the least of a round's is the one least delayed by acks
-        let sample = now.saturating_duration_since(sent);
-        if let Some(drain) = &mut self.draining {
-            if pn < drain.ends {
-                return;
-            }
-            if !drain.emptied {
-                // its own queue is gone: the next packet sent meets none of it
-                *drain = Drain { ends: self.largest_sent + 1, emptied: true };
-                return;
-            }
-            // the round trip of a packet sent with its queue gone is its least round trip, from now on
-            self.min_rtt = Some((sample, now));
-            self.confirmed = true;
-            self.draining = None;
-            self.round = Round { ends: self.largest_sent, ..Round::default() };
-            return;
-        }
-        // a round trip under its least: the queue emptied, as when the flows beside it drained; it drains on from now
-        if self.min_rtt.is_none_or(|(min, _)| sample < min) {
-            self.min_rtt = Some((sample, now));
-        }
-        self.round.rtt = Some(self.round.rtt.map_or(sample, |r| r.min(sample)));
-        self.round.others = self.round.others.max(self.others);
-        self.round.full |= !app_limited;
-        if pn >= self.round.ends {
-            self.end_round(now);
-        }
+    fn on_ack(&mut self, now: Instant, sent: Instant, _bytes: u64, pn: u64, _app_limited: bool, _rtt: &RttEstimator) {
+        self.acked(now, sent, pn);
     }
 
     fn on_congestion_event(&mut self, _now: Instant, _sent: Instant, persistent: bool, _ecn: bool, _lost: u64, _pn: u64) {
@@ -261,6 +273,7 @@ impl Controller for Either {
     fn on_cwnd_limited(&mut self) {
         self.bbr.on_cwnd_limited();
         self.cubic.on_cwnd_limited();
+        self.queue.window_full(self.window());
     }
 
     fn on_ack(&mut self, now: Instant, sent: Instant, bytes: u64, pn: u64, app_limited: bool, rtt: &RttEstimator) {
@@ -361,6 +374,38 @@ mod tests {
         assert_eq!(either.metrics().congestion_window, either.window());
         let leads_bbr = either.bbr.window() >= either.cubic.window();
         assert_eq!(either.metrics().pacing_rate.is_some(), leads_bbr, "BBR paces when it leads, Cubic's window otherwise");
+    }
+
+    /// `rounds` clean rounds of one packet each, 40 ms, nothing lost: the window bounded each one if `full`.
+    fn clean_rounds(queue: &mut Queue, rounds: u64, full: bool) {
+        let start = Instant::now();
+        for pn in 0..rounds {
+            let sent = start + Duration::from_millis(40 * pn);
+            queue.on_packet_sent(sent, 1200, pn);
+            if full {
+                queue.window_full(u64::MAX);
+            }
+            queue.acked(sent + Duration::from_millis(40), sent, pn);
+        }
+    }
+
+    /// LivePriority.sent_all_grows_no_further: on a link with no queue and nothing lost (calm, calm_bulk) a window
+    /// the connection never filled stays where it is, round after round, where growing on every clean round ran it
+    /// past u64 and panicked the connection (`bench_live` calm_bulk).
+    #[test]
+    fn a_window_never_filled_never_grows() {
+        let mut queue = Queue::new(12_000, 1200);
+        clean_rounds(&mut queue, 20_000, false);
+        assert_eq!(queue.window, 12_000);
+    }
+
+    /// LivePriority.grows_a_sixteenth_at_most: a round the window bounded grows it, a sixteenth at most.
+    #[test]
+    fn a_full_window_grows_a_sixteenth_a_round() {
+        let mut queue = Queue::new(12_000, 1200);
+        clean_rounds(&mut queue, 40, true);
+        assert!(queue.window > 12_000, "it grows: {}", queue.window);
+        assert!(queue.window as f64 <= 12_000.0 * (17.0f64 / 16.0).powi(40), "a sixteenth a round at most");
     }
 }
 

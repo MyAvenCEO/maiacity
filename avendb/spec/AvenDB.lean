@@ -5,6 +5,7 @@ import AvenDB.Step
 import AvenDB.Sync
 import AvenDB.BlindIndex
 import AvenDB.ShelfIndex
+import AvenDB.ShownView
 import AvenDB.SharedIndex
 import AvenDB.ToldIndex
 import AvenDB.Logs
@@ -118,4 +119,7 @@ import AvenDB.BootstrapAnchor
 import AvenDB.NodeLoop
 import AvenDB.UpkeepSlices
 import AvenDB.CatchUpBudget
+import AvenDB.KeyDerivation
+import AvenDB.CapGroupsOnce
+import AvenDB.StepCostVectors
 import AvenDB.StandingReplay

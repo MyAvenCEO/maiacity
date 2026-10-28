@@ -42,4 +42,16 @@ Target, 5x the Oct 22-27 rate: **90+ tasks a day**, under 2 CI minutes per task,
 
 | date | change | before | after | verdict |
 |---|---|---|---|---|
-| 2026-10-27 | drafts run no CI (#1340), batch rule, `scripts/devx` | 18-25 tasks/day, 75 CI min/task | measure after the first batch | |
+| 2026-10-27 | drafts run no CI (#1340), goal rule, `scripts/devx` | 18-25 tasks/day, 75 CI min/task | measure after the first goal | |
+
+## Goals: CI time per goal PR
+
+From `bun scripts/devx/goal.mjs <pr>` (every push with CI on the goal PR, each workflow's time, merge, release).
+Budget: CI under 10 minutes, release under 10 (`scripts/ci/budget.mjs`).
+
+| goal | PR | heads with CI (CI's wasm) | cancelled runs | first push → merged | release | why |
+|---|---|---|---|---|---|---|
+| 1 | #1342 | 1 (0) | 0 | 10.7 min | 1.9 min | one push, JS only |
+| 2 | #1343 | 1 (0) | 0 | 9.6 min | 9.3 min | one push; main re-ran avenDB (no reuse for merge commits yet) |
+| 3 | #1344 | 7 (2) | 8 | 87.7 min | 3.8 min | branches merged into the PR while its CI ran, each push restarting it; a 100k scale test timing out at 6 min in core tests; two CI WebAssembly rounds |
+| 4 | #1346 | 2 (1) | 1 | 12.9 min | 5.3 min | one push, but Rust changes: CI's WebAssembly commit added a second round (~3 min); avenDB net tests 9.4 min (7.3 before) are the critical path |

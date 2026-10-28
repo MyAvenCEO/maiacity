@@ -5,7 +5,7 @@ defaultTargets = ["AvenDB", "VectorsCheck"]
 [[lean_lib]]
 name = "AvenDB"
 
-# `lake exe vectors` writes vectors/vaults.json, vectors/lenses.json, vectors/ops.json, vectors/backups.json, vectors/objectives.json, vectors/legacy.json, vectors/key_trees.json, vectors/query_views.json, vectors/freshness.json and vectors/local_writes.json, the cases the Rust core
+# `lake exe vectors` writes vectors/vaults.json, vectors/lenses.json, vectors/ops.json, vectors/backups.json, vectors/objectives.json, vectors/legacy.json, vectors/key_trees.json, vectors/query_views.json, vectors/freshness.json, vectors/local_writes.json and vectors/step_costs.json, the cases the Rust core
 # replays (crates/avendb/tests)
 [[lean_exe]]
 name = "vectors"
@@ -14,7 +14,7 @@ root = "WriteVectors"
 # `lake build` checks the files against the model, again whenever a file or the rules change
 [[lean_lib]]
 name = "VectorsCheck"
-needs = ["vaults-json", "lenses-json", "ops-json", "backups-json", "objectives-json", "legacy-json", "key-trees-json", "query-views-json", "freshness-json", "local-writes-json"]
+needs = ["vaults-json", "lenses-json", "ops-json", "backups-json", "objectives-json", "legacy-json", "key-trees-json", "query-views-json", "freshness-json", "local-writes-json", "step-costs-json"]
 
 [[input_file]]
 name = "vaults-json"
@@ -64,4 +64,9 @@ text = true
 [[input_file]]
 name = "local-writes-json"
 path = "vectors/local_writes.json"
+text = true
+
+[[input_file]]
+name = "step-costs-json"
+path = "vectors/step_costs.json"
 text = true

@@ -19,11 +19,18 @@
 //! time and not the receiver's cost per edit is most of it. Alice's Mac writes the bulk before either node starts; Bob's Mac asks it
 //! for what it lacks till it holds all, while Alice's Mac writes a live edit every `EVERY` and the bench times each
 //! from its write to Bob's Mac holding it, during the catch-up and after it. Only numbers are printed.
+//!
+//! A `_bulk` link runs on simulated time (Goal 6, 2026-10-28): one thread with tokio's clock paused, so time moves only
+//! as the link's packets and the nodes' timers say and stands still while a node works, and its use of the link is the
+//! protocol's against the link, not the runner's CPU (on the wall clock, the same code gave 0.23 to 0.49 on one
+//! runner). `AVENDB_LIVE_WALL` runs it on the wall clock instead, to compare.
 
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+use tokio::time::Instant as Clock;
 
 use avendb::cast::*;
 use avendb::id::EditId;
@@ -68,7 +75,7 @@ async fn holds(n: &Node, id: EditId) -> bool {
 
 /// One live edit by Alice's Mac on `entry`, and the milliseconds till Bob's Mac holds it (`MISS` at most).
 async fn live(mac: Arc<Node>, bob: Arc<Node>, coop: avendb::id::VaultId, entry: avendb::id::EntryId, k: u64) -> f64 {
-    let t = Instant::now();
+    let t = Clock::now();
     let write = move |lab: &mut avendb::lab::Lab, me| lab.edit(me, coop, entry, |item| item.push_block(paragraph(900_000 + k, "live")));
     let id = mac.act(write).await.expect("a live edit");
     while !holds(&bob, id).await {
@@ -80,9 +87,9 @@ async fn live(mac: Arc<Node>, bob: Arc<Node>, coop: avendb::id::VaultId, entry: 
     t.elapsed().as_secs_f64() * 1000.0
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[test]
 #[ignore]
-async fn bench_live() {
+fn bench_live() {
     // one link or both: their worlds written side by side, each on a thread of its own, then the links one after
     // another, so no link's catch-up shares the machine with another's
     let bulk: usize = std::env::var("AVENDB_LIVE_BULK").ok().and_then(|n| n.parse().ok()).unwrap_or(600);
@@ -99,7 +106,16 @@ async fn bench_live() {
         .collect();
     let fixtures: Vec<Fixture> = writing.into_iter().map(|t| t.join().expect("a fixture")).collect();
     for (case, f) in cases.into_iter().zip(fixtures) {
-        live_on(case, f).await;
+        // a `_bulk` link on simulated time: one thread, its clock paused, so that time moves only as the link's packets
+        // and the nodes' timers say and stands still while a node works (on the thread, or on a blocking one, which
+        // holds the clock); its use of the link is then the same run after run, whatever the runner. The other links
+        // on the wall clock, four threads, for a live edit's delay as a person meets it (G4).
+        let rt = if case.ends_with("_bulk") && std::env::var("AVENDB_LIVE_WALL").is_err() {
+            tokio::runtime::Builder::new_current_thread().enable_all().start_paused(true).build()
+        } else {
+            tokio::runtime::Builder::new_multi_thread().worker_threads(4).enable_all().build()
+        };
+        rt.expect("a runtime").block_on(live_on(case, f));
     }
 }
 
@@ -151,7 +167,8 @@ fn fixture(bulk: usize, text: usize) -> Fixture {
 async fn live_on(case: String, f: Fixture) {
     let faults = match case.trim_end_matches("_bulk") {
         "calm" => Faults::CALM,
-        "phone" => Faults::PHONE,
+        // `AVENDB_LIVE_LOSE` (thousandths) sets the phone's loss instead of its 1 %, to compare
+        "phone" => Faults { lose: std::env::var("AVENDB_LIVE_LOSE").ok().and_then(|n| n.parse().ok()).unwrap_or(Faults::PHONE.lose), ..Faults::PHONE },
         other => panic!("AVENDB_LIVE_LINK: {other} is none of calm, phone, calm_bulk, phone_bulk"),
     };
     let Fixture { mut w, coop, live_entry, want, bytes, write_s } = f;
@@ -165,7 +182,7 @@ async fn live_on(case: String, f: Fixture) {
 
     // Bob's Mac catches up, asking Alice's till it holds the bulk
     let caught = Arc::new(AtomicBool::new(false));
-    let t = Instant::now();
+    let t = Clock::now();
     let catch_up = {
         let (bob, mac_id, caught, want) = (bob.clone(), mac.id(), caught.clone(), want.clone());
         tokio::spawn(async move {

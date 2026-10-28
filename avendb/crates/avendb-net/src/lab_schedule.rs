@@ -528,6 +528,21 @@ mod slices {
         node
     }
 
+    /// Any device's rule: a catch-up its pace puts off still comes, so it never answers its peers from a replay behind
+    /// its log for good. Left behind with nothing to step it on, a device answered by a replay without the edits it took
+    /// since (`Lab::standing`): a peer was never handed the note written while it was away
+    /// (the drive test `eves_drive_…` caught it, 2026-10-28).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_put_off_catch_up_still_runs_so_no_peer_is_answered_from_a_stale_replay() {
+        let node = behind(40).await;
+        assert!(!node.read(|lab, me| lab.replay_current(me)).await, "it took pages it hasn't caught up with");
+        *node.shared.paced.lock().unwrap() = Some(crate::time::Instant::now() + std::time::Duration::from_millis(200));
+        assert!(!node.shared.catch_up_paced_class(false, Class::Background).await, "put off by its pace");
+        avendb_testkit::until("the catch-up it put off", || async { node.read(|lab, me| lab.replay_current(me)).await }).await;
+        assert!(node.read(|lab, me| lab.entries(me).len()).await >= 40, "every document it took, shown");
+        node.shutdown().await.unwrap();
+    }
+
     /// The turns of the Lab a catch-up took so far, as the node counts them (`Turns`): a whole one is one turn, a paced
     /// one a turn a step.
     fn catch_up_turns(node: &Node) -> u64 {
