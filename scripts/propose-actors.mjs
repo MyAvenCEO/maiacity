@@ -114,7 +114,15 @@ try {
 	const lane = await agent.call('avendb_ask', { op: { op: 'schemas', vault: city.id } });
 	const v2 = (lane.schemas ?? []).find((s) => s.title === MANIFEST_SCHEMA);
 	const v3 = (lane.schemas ?? []).find((s) => s.title === ACTOR_SCHEMA && s.json === ACTOR_V3);
-	const joined = v2 && v3 && (lane.lenses ?? []).some((l) => l.title === ACTOR_LENS && l.from === v2.id && l.to === v3.id);
+	// the lane reads through the lens with the smallest id where several join v2 and v3 (lens.rs Lane::view; a lens's id
+	// is its blob's hash), and only the repo's moves kind, v and tiers in one write that v3 reads whole
+	const ours = v2 && v3 && actorLens(v2.id, v3.id);
+	const joining = (lane.lenses ?? []).filter((l) => [l.from, l.to].sort().join() === [v2?.id, v3?.id].sort().join()).sort((a, b) => (a.id < b.id ? -1 : 1));
+	const joined = v2 && v3 && joining.some((l) => l.json === ours);
+	if (joined && joining[0].json !== ours) {
+		console.error(`Maia City reads v2 through v3 by the lens ${joining[0].id}, not the repo's "${ACTOR_LENS}" (${joining.find((l) => l.json === ours).id}), whose id is larger: nothing was written.`);
+		process.exit(1);
+	}
 	const qv1 = (lane.schemas ?? []).find((s) => s.title === QUERY_SCHEMA);
 	if (qv1 && qv1.json !== QUERY_V1) console.error(`Maia City's "${QUERY_SCHEMA}" is not the repo's: each query is written under the vault's, as it reads them`);
 	const missing = [...(v3 ? [] : [schemaOp(city.id)]), ...(v2 && v3 && !joined ? [lensOp(city.id, v2.id, v3.id)] : []), ...(qv1 ? [] : [querySchemaOp(city.id)])];
@@ -141,6 +149,39 @@ try {
 	const title = titleOf(moving.length);
 	const open = (await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } })).filter((a) => a.title === title && !a.outcome);
 	if (open.length && !flag('--again')) throw new Error(`"${title}" is open already (${open.map((a) => a.entry).join(', ')}): nothing was written (--again proposes all the same)`);
+	// every actor write, asked before any is made (`may`: a dry run the rules judge as they would the write). A v3 write
+	// whose record neither schema reads (a lens that moves kind, v and tiers apart) is refused here, with no record
+	// written. Each actor's write goes on a line of its own: the empty "actor v3" line a refused run left, else a new one
+	// (a proposal's start writes no record), so a run refused here and run again starts no line twice.
+	const setsOf = (a, r) => FIELDS.filter((f) => a[f] !== undefined && (!was.get(r.entry)?.loads || !same(r.record?.[f], a[f])));
+	/** the "actor v3" line on entry `entry` that holds no write but its start, where a run left one */
+	const emptyLine = async (entry) => {
+		const edits = (await agent.call('avendb_ask', { op: { op: 'history', entry } }))?.edits ?? [];
+		const start = edits.find((e) => e.kind === 'propose' && e.name === 'actor v3' && !edits.some((x) => x.line === e.line && x.kind !== 'propose'));
+		return start?.line ?? null;
+	};
+	const writes = [];
+	for (const a of moving.filter((a) => held.has(a.id))) {
+		const r = held.get(a.id);
+		const sets = setsOf(a, r);
+		if (!sets.length) continue;
+		let line = await emptyLine(r.entry);
+		const again = Boolean(line);
+		if (!line) line = (await agent.call('avendb_run', { op: { op: 'propose', entry: r.entry, name: 'actor v3' } }))?.line;
+		if (!line) throw new Error(`the proposal on actor ${a.id} (${r.entry}) started no line`);
+		// one write: a record between v2 and v3 fits neither, so its sets go in one batch
+		writes.push({ a, r, line, again, sets, op: { op: 'batch', ops: sets.map((f) => ({ op: 'set', entry: r.entry, line, schema, path: [f], value: a[f] })) } });
+	}
+	const drafted = moving.filter((a) => !held.has(a.id)).map((a) => ({ a, op: { op: 'create', vault: city.id, type: ACTOR_TYPE, schema, tags: ['actor', `actor:${a.id}`], value: a, draft: true } }));
+	const asked = [...writes, ...drafted];
+	const verdicts = asked.length ? await agent.call('avendb_ask', { op: { op: 'may', ops: asked.map((w) => w.op) } }) : [];
+	const refused = asked.map((w, i) => [w.a.id, verdicts?.[i]]).filter(([, v]) => v !== true && !v?.approve);
+	if (refused.length) {
+		console.error(`${refused.length} of ${asked.length} actor writes would be refused: no record was written (the "actor v3" lines started are empty, and the next run takes them up).`);
+		for (const [id, v] of refused) console.error(`  ${id}: ${JSON.stringify(v)}`);
+		process.exit(1);
+	}
+	console.error(`${asked.length} actor writes asked first (may): each would be made (${writes.filter((w) => w.again).length} on the empty line a run left).`);
 	const ledger = drafts(option('--drafts') ?? join(homedir(), '.cache', 'maiacity', `propose-actors-${city.id.slice(0, 16)}.json`));
 	/** the draft `key` names in the ledger, with its line from the entry's history; none if the entry is gone */
 	const reuse = async (key) => {
@@ -201,18 +242,12 @@ try {
 			console.error(`actor ${a.id}: drafted as ${made.entry}`);
 			continue;
 		}
-		// read through v3, a v2 manifest shows kind actor, v 3 and empty loads: one that stores no loads yet always gets
-		// the write (a moved one may keep its stored kind and version: a lens edit keeps what it doesn't map)
-		const v2Stored = !was.get(r.entry)?.loads;
-		const sets = FIELDS.filter((f) => a[f] !== undefined && (v2Stored || !same(r.record?.[f], a[f])));
-		if (!sets.length) { kept++; continue; }
-		const { line } = await agent.call('avendb_run', { op: { op: 'propose', entry: r.entry, name: 'actor v3' } });
-		if (!line) throw new Error(`the proposal on actor ${a.id} (${r.entry}) started no line`);
-		// one write: a record between v2 and v3 fits neither, so its sets go in one batch
-		await agent.call('avendb_run', { op: { op: 'batch', ops: sets.map((f) => ({ op: 'set', entry: r.entry, line, schema, path: [f], value: a[f] })) } });
-		proposals.push({ entry: r.entry, line });
+		const w = writes.find((w) => w.a === a);
+		if (!w) { kept++; continue; }
+		await agent.call('avendb_run', { op: w.op });
+		proposals.push({ entry: r.entry, line: w.line });
 		moved++;
-		console.error(`actor ${a.id}: ${v2Stored ? 'v2 to v3, ' : ''}${sets.map((f) => `set ${f}`).join(', ')}, proposed on ${r.entry}`);
+		console.error(`actor ${a.id}: ${!was.get(r.entry)?.loads ? 'v2 to v3, ' : ''}${w.sets.map((f) => `set ${f}`).join(', ')}, proposed on ${r.entry}`);
 	}
 	if (!proposals.length) {
 		console.error('Maia City holds every actor and query the repo declares, as it declares them: no AIP needed');
