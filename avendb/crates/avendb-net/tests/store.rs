@@ -174,7 +174,9 @@ fn checks(lab: &Lab, me: SignerId) -> (u64, u64) {
 async fn the_edits_its_keys_name_are_not_checked_again_and_forged_keys_vouch_for_none() {
     let dir = Folder::new("vouched");
     let (node, _, coop) = mac(dir.path()).await;
-    for n in 0..70 {
+    // past 64 journal entries, and more than three times the edits a head comes after with `test-fixtures` (64): the
+    // edits after the newest head, which a start checks, are fewer than a third of all
+    for n in 0..140 {
         write(&node, coop, &format!("Note {n}"), &format!("note number {n}")).await;
     }
     warmed(&node).await;
