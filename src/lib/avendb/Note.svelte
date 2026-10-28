@@ -1041,7 +1041,7 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 0.4rem 0.7rem;
-		padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 1rem 0.4rem;
+		padding: 0.4rem 1rem 0.4rem;
 		border-bottom: 1px solid var(--edge);
 		background: #f7f5f0;
 	}
@@ -1536,7 +1536,7 @@
 	@media (max-width: 640px) {
 		.top {
 			gap: 0.4rem 0.5rem;
-			padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 0.6rem 0.5rem;
+			padding: 0.4rem 0.6rem 0.5rem;
 		}
 
 		.back {

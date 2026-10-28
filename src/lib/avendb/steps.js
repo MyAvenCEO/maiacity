@@ -4,10 +4,12 @@
 // Mac app through its `steps` call. The page marks its own steps around them, the same way: making a passkey, and
 // saving what opens the device again.
 
-/** @typedef {{ step: string, start: number, end: number | null }} Stage a step begun, by the page's clock (ms) */
-/** @typedef {{ steps: { step: string, at: number, took: number | null }[], over: boolean }} Report the device's */
+/** @typedef {{ step: string, start: number, end: number | null, note?: string | null }} Stage a step begun, by the
+ *  page's clock (ms), and how it went where the device says */
+/** @typedef {{ steps: { step: string, at: number, took: number | null, note?: string | null }[], over: boolean }} Report
+ *  the device's */
 /** @typedef {{ step: string, title: string, does: string, prompt: boolean, state: 'next' | 'now' | 'done' | 'failed',
- *  ms: number }} Row */
+ *  ms: number, note: string }} Row */
 
 /**
  * What each step shows: its title, and what happens in it; a passkey's prompt is marked as one. `here` is this
@@ -28,7 +30,10 @@ export function stepWords(here) {
 		keys: { title: `Making ${here}’s keys`, does: 'Post-quantum keys from a secret your passkey unmasks' },
 		// the same step after Touch ID (`touch`): the secret is the one the Secure Enclave's key opens at the touch
 		touchKeys: { title: `Making ${here}’s keys`, does: 'Post-quantum keys from a secret the Secure Enclave opens at your touch' },
-		restore: { title: 'Replaying your vault', does: 'Every edit checked again and applied in order' },
+		restore: { title: 'Opening your store', does: `What ${here} keeps, opened` },
+		shelf: { title: 'Taking back your edits', does: `Every edit ${here} keeps, read a page at a time and checked` },
+		refresh: { title: 'Replaying your vault', does: 'What your edits say, from the view it stored, or replayed' },
+		ledger: { title: 'Settling your store', does: 'What it holds settled, its signing ledger opened' },
 		// a page's pass goes to the server by a request of its own, as a WebSocket's URL can't carry it whole
 		show: { title: 'Showing avenDB’s relay your pass', does: `One request to the server, so its relay lets ${here} in` },
 		node: { title: `Starting ${here}’s node`, does: 'Its own endpoint, quantum-proof TLS on every connection' },
@@ -77,7 +82,7 @@ export function plan(start, { mac, make = false, touch = false }) {
 		];
 	if (start === 'link')
 		return ['unlock', 'keys', ...own(['show']), 'node', 'relay', 'server', 'pass', 'vault', 'join', ...own(['save'])];
-	return [touch ? 'touch' : 'unlock', 'keys', 'restore', 'node', 'check'];
+	return [touch ? 'touch' : 'unlock', 'keys', 'restore', 'shelf', 'refresh', 'ledger', 'node', 'check'];
 }
 
 /**
@@ -88,7 +93,8 @@ export function reported(report, t0) {
 	return (report?.steps ?? []).map((s) => ({
 		step: s.step,
 		start: t0 + s.at,
-		end: s.took == null ? null : t0 + s.at + s.took
+		end: s.took == null ? null : t0 + s.at + s.took,
+		note: s.note ?? null
 	}));
 }
 
@@ -113,16 +119,16 @@ export function rows(stages, planned, words, { now, ended, failed }) {
 		.filter((step) => !begun.some((s) => s.step === step) && !(joins && FOUNDING.includes(step)));
 	// after Touch ID, this device's keys come from the secret the Secure Enclave opened, not from the passkey
 	const touched = planned.includes('touch') || begun.some((s) => s.step === 'touch');
-	/** @param {string} step @param {Row['state']} state @param {number} ms @returns {Row} */
-	const row = (step, state, ms) => {
+	/** @param {string} step @param {Row['state']} state @param {number} ms @param {string | null} [note] @returns {Row} */
+	const row = (step, state, ms, note) => {
 		const w = step === 'keys' && touched ? words.touchKeys : words[step];
-		return { step, title: w?.title ?? step, does: w?.does ?? '', prompt: !!w?.prompt, state, ms };
+		return { step, title: w?.title ?? step, does: w?.does ?? '', prompt: !!w?.prompt, state, ms, note: note ?? '' };
 	};
 	return [
 		...begun.map((s, i) => {
 			const end = s.end ?? begun[i + 1]?.start ?? (ended || null);
 			const state = failed && i === begun.length - 1 ? 'failed' : end == null ? 'now' : 'done';
-			return row(s.step, state, (end ?? now) - s.start);
+			return row(s.step, state, (end ?? now) - s.start, s.note);
 		}),
 		...next.map((step) => row(step, 'next', 0))
 	];

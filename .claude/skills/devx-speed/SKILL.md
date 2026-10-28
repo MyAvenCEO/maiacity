@@ -103,7 +103,7 @@ bun scripts/devx/collect.mjs --tasks                  # "Task: <branch>" lines f
   blew it on 2026-10-27 (35 min): a 100k-edit scale test in the core tests hanging to nextest's limit, five pushes to
   the ready PR in 13 minutes (each push restarts every job), main not reusing the PR's green run (merge commit), and a
   new job's first cold cache. So: push a ready PR once per fix round, not per fix; scale tests are benches
-  (`#[ignore]`, the performance gates), never tests; a new CI job warms its cache on main before it gates anything.
+  (`#[ignore]`, run by hand), never tests; a new CI job warms its cache on main before it gates anything.
 - **The goal gate guards the merge.** `.github/workflows/gate.yml` ("Goal gate", `scripts/ci/gate.mjs`) runs on a
   ready PR only. It works out from the changed files which workflows must run, waits for them, and fails when one is
   red or never started. A workflow file GitHub rejects never starts and shows no red job: batch 5 (2026-10-28) nearly
@@ -114,13 +114,19 @@ bun scripts/devx/collect.mjs --tasks                  # "Task: <branch>" lines f
   and commits the page's WebAssembly while it is still a draft, where that commit restarts nothing. `collect.mjs` takes
   that commit before each merge. Mark the PR ready only once "avenDB WebAssembly" on the draft's head has finished:
   then the one CI run is not started a second time by the bot's commit.
-- **Speed gates hold the goal against main on the same runner** (Goal 6 D3): each bench shard runs main's build and
-  the goal's in turn (`scripts/ci/avendb-bench-shard.mjs`), and every gate holds its fixed limit and no more than
-  `vs_main.tolerance` worse than main. Dispatch avenDB checks with `bench_only` and `bench_rounds: 5` to see a spread.
+- **No benchmark in CI** (Goal 7a W1, Samuel 2026-10-28): a timing on a shared runner gates noise. A performance rule
+  goes in as a count (pages, bytes, index rows, log edits read; bytes an edit) or on simulated time (tokio's paused
+  clock, `avendb-net`'s `sim` link: a link's use, a live edit's delay), as a plain test with its limit in the test. The
+  `#[ignore]` benches stay for a by-hand look.
+- **The fresh-device check before ready** (Goal 7 P2): the collector runs `node scripts/devx/fresh-device.mjs` on
+  its branch before the goal PR goes ready. A local peer, fresh browser profiles sharing one software passkey: found,
+  write 2,000 todos, sign in on a fresh device, catch up, live both ways, unlock after a restart, the peer killed
+  mid-pull and back, CPU settled; each step against its budget (`BUDGETS`), exit 1 on a miss. First run ~2 min plus
+  the localhost-passkeys builds (~9 min cold). `--fresh webkit` where WebKit is installed (the iPhone's engine).
 - **Once the PR is ready, the goal is closed.** `collect.mjs` refuses to merge more into a ready PR (each push restarts
   its CI). Late branches go in the next goal; `--late` only for a fix this run needs.
-- **Long benches and scale runs go to CI runners, never the 4-core box:** dispatch avenDB checks with `bench_only`
-  (30-min 130k runs on a thread's box held its cargo lock for half an hour, 2026-10-28).
+- **Long benches and scale runs never on a thread's 4-core box** (30-min 130k runs held its cargo lock for half an
+  hour, 2026-10-28): keep a test's size small enough for the shard, and a bench's for a machine of its own.
 - A failing task in the goal: revert its merge commit on the collector branch (`git revert -m 1 <merge>`), push,
   tell its thread; don't hold the goal for it.
 

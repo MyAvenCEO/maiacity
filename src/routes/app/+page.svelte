@@ -18,7 +18,7 @@
 
 <style>
 	.avendb {
-		min-height: 100vh;
+		height: 100%;
 		background: #f4f1eb;
 		color: #1f2a23;
 		--ok: #3f7a4f;

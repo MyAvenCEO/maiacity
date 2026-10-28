@@ -62,6 +62,8 @@
 				<span class="what">
 					<b>{r.title}</b>
 					<small>{r.does}</small>
+					<!-- how the step went, where the device says: what it started from and what its parts took -->
+					{#if r.note}<small class="note">{r.note}</small>{/if}
 				</span>
 				<span class="time">
 					{#if r.state === 'now' && r.prompt}<span class="you">Your turn</span>{/if}
@@ -240,6 +242,12 @@
 		font-size: 0.78rem;
 		line-height: 1.35;
 		color: var(--soft);
+	}
+
+	.what small.note {
+		margin-top: 0.25rem;
+		color: inherit;
+		font-variant-numeric: tabular-nums;
 	}
 
 	.time {

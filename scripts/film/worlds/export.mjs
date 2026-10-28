@@ -1,8 +1,8 @@
-// A shot list written before shots were data (scripts/film/day-19-d.mjs …) as world shot records, in a JSON file
+// A shot list written before shots were data (a .mjs of camera.mjs moves …) as world shot records, in a JSON file
 // beside it (scripts/film/worlds/<name>.json): each shot's camera, lens, hour, world, exposure, shutter, look and
 // sounds (game/film/shot.js fromLegacy).
 //
-//   node scripts/film/worlds/export.mjs scripts/film/day-19-d.mjs [out.json]
+//   node scripts/film/worlds/export.mjs <shot list .mjs> [out.json]
 //
 // A shot's length and its place on the film's clock come from the voice's word timings (avenDB, or LIBRARY=<dir>).
 // Without them — or with --untimed — they are left null: the cut gives them (each world clip's start and length in

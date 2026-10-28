@@ -10,7 +10,7 @@
 //
 // Used by shoot.mjs (which keeps an ungraded master of each shot, NN-name.raw.mp4) and the storyboard builder.
 // Re-grade finished shots without rendering them again:
-//   node scripts/film/grade.mjs scripts/film/day-19-d.mjs [--only 1,2]
+//   node scripts/film/grade.mjs <shot list .mjs> [--only 1,2]
 // — from the master where there is one, else a correction on top of the graded shot.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';

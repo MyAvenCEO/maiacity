@@ -395,8 +395,7 @@ img {
 }
 .screen-chrome [data-screen-slot='title'] { font-size: .9rem; }
 .screen-chrome [data-screen-slot='center'] { min-width: 0; }
-.screen-content { padding-top: var(--screen-head-room); }
-.screen-content.immersive { padding-top: 0; }
+/* The room the head takes is the app's page container's (src/routes/app/+layout.svelte `.app`). */
 @media (max-width: 1100px) {
  .screen-chrome { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .35rem .75rem; }
  .screen-leading { grid-column: 1; grid-row: 1; }

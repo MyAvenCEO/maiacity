@@ -28,7 +28,8 @@
 <script>
 	import { screenSlot } from '$lib/app/screen-slots.js';
 	import { setContext } from 'svelte';
-    import { needsWorldEntries, localNavigation } from './startup-summary.js';
+    import { shellView, localNavigation } from './startup-summary.js';
+	import Fresh from './Fresh.svelte';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { afterNavigate } from '$app/navigation';
 	import { wayBack } from '$lib/app/back.svelte.js';
@@ -62,7 +63,6 @@
 	import Vaults from './Vaults.svelte';
 	import Worlds from './Worlds.svelte';
 	import Models from './Models.svelte';
-	import Code from './Code.svelte';
 	import { NAV, OUT } from './VaultApps.svelte';
 	import Dashboard from '$lib/app/Dashboard.svelte';
 	import { may } from './ops.js';
@@ -145,14 +145,14 @@
 			// the section of the settings, or of the device's performance, it opens at (`#settings/devices`)
 			section: known === 'settings' || known === 'performance' ? (entry ?? '') : '',
 			// a model the Models page shows (`#models/` and its id)
-			model: known === 'models' && /^[a-z0-9-]+$/.test(entry ?? '') ? (entry ?? '') : '',
-			// a code package the Code page shows (`#code/` and its id)
-			pack: known === 'code' && /^[a-z0-9-]+$/.test(entry ?? '') ? (entry ?? '') : ''
+			model: known === 'models' && /^[a-z0-9-]+$/.test(entry ?? '') ? (entry ?? '') : ''
 		};
 	}
 
 	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
 	const tab = $derived(route.page);
+	/** the view paints at once from what the device holds, marked while it is still reading or catching up */
+	const view = $derived(shellView(world, tab, session.worldFresh));
 	// a link to the dashboard itself (the nav pill's Home and Back, `/app/` with no hash) is the router's navigation, no
 	// hashchange: the page it leads to is read from the address after every navigation too
 	const navigated = () => localNavigation(() => { route = parse(location.hash); }, () => session.viewChanged());
@@ -296,10 +296,10 @@
 	<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 {/snippet}
 
+<!-- how fresh the view is, in the one screen head (catching up, offline), never a row of the view's own -->
+{#if view.fresh.state !== 'current'}<div use:screenSlot={'center'}><Fresh fresh={view.fresh} /></div>{/if}
+
 <div class="shell" class:reading={!!route.entry}>
-    {#if needsWorldEntries(world, tab)}
-        <p role="status">Loading this view’s local entries…</p>
-    {:else}
 	{#if route.entry}
 		{#key `${route.entry}${route.page}${route.edit}`}
 			{#if route.page === 'stories' && route.edit}
@@ -350,8 +350,6 @@
 				<Worlds {world} vault={context} {actor} entry={route.world} />
 			{:else if tab === 'models'}
 				<Models {world} vault={context} {actor} {api} entry={route.model} />
-			{:else if tab === 'code'}
-				<Code {world} vault={context} {actor} {api} entry={route.pack} />
 			{:else if tab === 'flows'}
 				<Flows {world} vault={context} {actor} />
 			{:else if tab === 'functions'}
@@ -397,7 +395,6 @@
 			<Ask {world} {api} {busy} made={asks.made} to={here.id} />
 		</Panel>
 	{/if}
-    {/if}
 </div>
 
 <style>
@@ -406,7 +403,7 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: minmax(0, 1fr);
-		height: calc(100dvh - var(--screen-head-room, 0px));
+		height: 100%;
 		overflow: hidden;
 	}
 
@@ -416,7 +413,7 @@
 		box-sizing: border-box;
 		overflow-y: auto;
 		overscroll-behavior: contain;
-		padding: calc(1.4rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2.4rem) 10rem;
+		padding: 0.4rem clamp(1rem, 3vw, 2.4rem) 1.5rem;
 	}
 
 	/* the vault the view is in, back to its apps */
@@ -506,13 +503,6 @@
 
 	.toast.bad {
 		background: #6b2c1c;
-	}
-
-	@media (max-width: 760px) {
-		/* clear of the notch and the status bar, now that nothing stands above it */
-		.main {
-			padding-top: calc(1rem + env(safe-area-inset-top, 0px));
-		}
 	}
 
 </style>

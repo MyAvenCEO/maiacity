@@ -733,13 +733,28 @@ impl Node {
         // its edits taken back from its shelf a page at a time, never all of them at once beside what it keeps (F9)
         let (edits, lab, stored) = match &opts.shelf {
             Some(shelf) => {
+                // a device opening again restores in parts, each its own step with how it went, so that its person sees
+                // which takes the time; a new one's empty shelf has none to show
+                let parts = opts.progress.current() == Some("restore");
+                let step = |step| if parts { opts.progress.step(step) };
+                step("shelf");
                 let mut to = Restorer { lab: Some(lab), me, checked: None, keys: Warm::default(), restoring: None };
                 let (edits, warm, stored, anchors) = edits::Edits::open_into(shelf.clone(), &mut to).await?;
-                (Some(edits), to.end(anchors, warm).await?, stored)
+                let taken = to.lab.as_ref().map_or(0, |lab| lab.size(me).0);
+                opts.progress.note("shelf", format!("{taken} edits, {} stored views, {} packs of kept showings", warm.views.len(), warm.shown.len()));
+                step("refresh");
+                let lab = to.end(anchors, warm).await?;
+                if let Some(report) = lab.restore_report(me) {
+                    opts.progress.note("refresh", report);
+                }
+                (Some(edits), lab, stored)
             }
             None => (None, lab, Vec::new()),
         };
         if let Some(edits) = &edits {
+            if opts.progress.current() == Some("refresh") {
+                opts.progress.step("ledger");
+            }
             edits.settle(&lab, me, &stored);
         }
         // Batch roots are optional: an unsupported shelf or damaged signer ledger must not
@@ -854,6 +869,9 @@ impl Node {
             }
             false => None,
         };
+        // a start that left part of its catch-up to the steps after it (`Lab::restore_end_with`) goes on with them at
+        // once, in the background, so that the device opens on what it shows before its whole log is read
+        let behind = lab.catching_up(me);
         let shared = Arc::new(Shared {
             lifecycle,
             writer: Mutex::new(writer),
@@ -945,6 +963,9 @@ impl Node {
             task::spawn(transports::control::maintain(shared.clone())),
             task::spawn(node_loop::run(shared.clone(), inbox)),
         ];
+        if behind {
+            shared.catch_up_later(Instant::now());
+        }
         Ok(Node { shared, router, tasks: Mutex::new(tasks) })
     }
 

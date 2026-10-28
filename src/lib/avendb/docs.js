@@ -13,13 +13,14 @@
 // docs are served from avenDB only, never via the repo; the paper since AIP-19, its old page /theos/ passing on to it,
 // $lib/app/redirects.js). A change to any of them is a proposal on its entries there, put in an AIP.
 
+import { FILE } from './doc-text.js';
+
+// the text's own functions, from ./doc-text.js, which scripts read without a bundler
+export { FILE, filesOf, readable } from './doc-text.js';
+
 const SKILLS = /** @type {Record<string, () => Promise<string>>} */ (
 	import.meta.glob('/.claude/skills/*/**/*.md', { query: '?raw', import: 'default' })
 );
-
-/** The line before each further file of a skill, naming its path within the skill. */
-export const FILE = (/** @type {string} */ path) => `<!-- file: ${path} -->`;
-const FILE_LINE = /^<!-- file: (.+?) -->$/m;
 
 /**
  * @typedef {{ key: string, section: 'skill' | 'paper' | 'architecture', slug: string, title: string, excerpt: string,
@@ -61,23 +62,3 @@ function skills() {
 
 /** Every document the repository proposes: the skills, by name. */
 export const DOCS = skills();
-
-/**
- * A skill's files from its story's text (`text`, as `DOCS` wrote it): SKILL.md, then each file its `FILE` line names.
- * @param {string} text @returns {Record<string, string>}
- */
-export function filesOf(text) {
-	const parts = text.split(/^(<!-- file: .+? -->)$/m);
-	/** @type {Record<string, string>} */
-	const files = { 'SKILL.md': `${parts[0].trim()}\n` };
-	for (let i = 1; i < parts.length; i += 2) files[FILE_LINE.exec(parts[i])?.[1] ?? `file-${i}.md`] = `${(parts[i + 1] ?? '').trim()}\n`;
-	return files;
-}
-
-/** A skill's text as a post shows it: its files without their frontmatter, each further one under its path. @param {string} text */
-export function readable(text) {
-	const drop = (/** @type {string} */ md) => md.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '').trim();
-	return Object.entries(filesOf(text))
-		.map(([path, md], i) => (i === 0 ? drop(md) : `---\n\n*${path}*\n\n${drop(md)}`))
-		.join('\n\n');
-}

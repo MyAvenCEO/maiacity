@@ -374,7 +374,7 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     let shown_steps = again.progress.clone();
     let again = Device::open(again, &meta, eve.unlock([1; 32], page)).await.expect("it opens again");
     assert!(eve.steps().is_empty(), "with no ceremony but the unlock");
-    assert_eq!(steps(&shown_steps), ["keys", "restore", "node", "check"]);
+    assert_eq!(steps(&shown_steps), ["keys", "restore", "shelf", "refresh", "ledger", "node", "check"]);
     assert_eq!(again.node().id(), first.node().id(), "the same device");
     let follows = again.node().read(|lab, me| lab.follows(me).to_vec()).await;
     assert_eq!(follows, [avenceo], "it follows what it followed");

@@ -338,3 +338,124 @@ fn a_first_sync_with_a_removal_answers_its_peers_by_nothing_till_caught_up_not_b
     assert!(lab.replay_current(d), "caught up");
     assert!(asked(&mut lab) > 0, "caught up, it hands its peer what it holds");
 }
+
+/// Mid such a catch-up it still answers a peer the removal doesn't concern, by the replay it holds: never more than it
+/// hands it once caught up (Fix C, 2026-10-28: a Mac in the middle of its catch-up of Maia City, which holds removals,
+/// handed an iPhone that lacked 2,569 logs no page, as it answered every peer by nothing till caught up).
+#[test]
+fn a_first_sync_with_a_removal_answers_the_peers_it_doesnt_concern_by_its_replay() {
+    let (mut lab, d, writer) = first_sync_of(6, 40, true);
+    let asked = |lab: &mut avendb::lab::Lab| {
+        let request = lab.request(writer, d);
+        lab.reply(d, writer, &request, 1 << 30).0.into_iter().map(|s| s.edit.id()).collect::<Vec<_>>()
+    };
+    let (mut steps, mut mid) = (0, Vec::new());
+    loop {
+        let step = lab.catch_up_step(d, 1);
+        steps += 1;
+        assert!(steps < 10_000, "a catch-up in steps ends");
+        if matches!(step, CatchUp::Caught(_)) {
+            break;
+        }
+        if !lab.replay_current(d) {
+            mid.push(asked(&mut lab));
+            assert!(!lab.replay_current(d), "a peer's ask at step {steps} replayed every edit");
+        }
+    }
+    let whole: std::collections::HashSet<_> = asked(&mut lab).into_iter().collect();
+    assert!(!whole.is_empty(), "caught up, it hands its peer what it lacks");
+    let answered = mid.iter().filter(|page| !page.is_empty()).count();
+    assert!(answered > 0, "it answered the writer mid its catch-up, at none of {} steps", mid.len());
+    for page in &mid {
+        assert!(page.iter().all(|id| whole.contains(id)), "mid its catch-up it hands over only what it hands once caught up");
+    }
+}
+
+/// A start of more than it does in one go (`Lab::set_restore_whole`), as an iPhone's unlock of a partial vault with no
+/// stored view (313 s, 2026-10-28): its restore replays and shows a step of it and ends catching up, a replay of a few
+/// edits; its catch-up a step at a time then brings it to what a start that did it all in one go shows.
+#[test]
+fn a_start_of_more_than_it_does_in_one_go_ends_behind_and_its_catch_up_shows_the_rest() {
+    let warm = avendb::lab::Warm::default();
+    let start = |whole: Option<usize>| {
+        let (mut lab, d) = first_sync(6, 40);
+        while matches!(lab.catch_up_step(d, 64), CatchUp::Stepped) {}
+        if let Some(n) = whole {
+            lab.set_restore_whole(d, n);
+        }
+        let backup = lab.backup(d);
+        lab.restore_warm(d, backup, None, &warm);
+        (lab, d)
+    };
+    let (whole, d) = start(None);
+    assert!(!whole.catching_up(d), "a start of what it does in one go ends caught up");
+    let (mut parts, _) = start(Some(16));
+    assert!(parts.catching_up(d), "a start of more ends catching up");
+    assert!(parts.perf(d)["counts"]["restore: left to its catch-up"].as_u64().is_some_and(|n| n > 16));
+    let mut steps = 0;
+    while matches!(parts.catch_up_step(d, 64), CatchUp::Stepped) {
+        steps += 1;
+    }
+    assert!(steps > 1, "its catch-up takes the rest a step at a time: {steps}");
+    assert!(!parts.catching_up(d));
+    let seen = |lab: &avendb::lab::Lab| {
+        let entries: Vec<_> = lab.entries(d).into_iter().map(|e| (e, lab.item(d, e).map(|i| i.record()))).collect();
+        (lab.log(d).ids().to_vec(), entries)
+    };
+    assert_eq!(seen(&parts), seen(&whole), "the same as a start that did it all in one go");
+}
+
+/// What a device takes in the middle of a catch-up a step at a time brings it one step on, not the whole of it: the
+/// keys a pull brought after its pages (`Shared::bring_keys`, a `receive` that brings it up to date) ran an iPhone's
+/// whole catch-up in one turn of 1.8 min, a whole replay of 47.6 s, its key index made again 27.9 s and its bodies
+/// 26.3 s, and its page's worker, which runs the Lab, answered no peer meanwhile (2026-10-28, `taken_le` in
+/// `CatchUpBudget.lean`). The catch-up's own steps bring the rest, to what one catch-up brings.
+#[test]
+fn what_a_device_takes_mid_catch_up_brings_it_one_step_on_not_the_whole() {
+    let (mut once, d) = first_sync(6, 40);
+    let (mut steps, _) = first_sync(6, 40);
+    assert!(once.catch_up(d));
+    assert!(matches!(steps.catch_up_step(d, 1), CatchUp::Stepped), "a catch-up under way");
+    // the keys a pull brings after its last page, as `bring_keys` takes them
+    steps.receive(d, vec![], vec![]);
+    assert!(!steps.replay_current(d), "taking its keys replayed every edit in one turn");
+    let mut taken = 0;
+    while let CatchUp::Stepped = steps.catch_up_step(d, 1) {
+        taken += 1;
+        assert!(taken < 10_000, "a catch-up in steps ends");
+    }
+    assert!(taken > 10, "the rest came a step at a time: {taken} steps");
+    assert!(once.state(d) == steps.state(d), "the same view");
+    let seen = |lab: &avendb::lab::Lab| {
+        let entries: Vec<_> = lab.entries(d).into_iter().map(|e| (e, lab.item(d, e).map(|i| i.record()))).collect();
+        (lab.log(d).ids().to_vec(), entries)
+    };
+    assert_eq!(seen(&once), seen(&steps), "the same edits, entries and items as one catch-up");
+}
+
+/// A whole replay makes a device's key index again of every edit it holds; in a catch-up a step at a time it is made
+/// a slice a step (`KeyIndexed::step`, `index` in `CatchUpBudget.lean`), never of them all in one step (27.9 s on an
+/// iPhone, 2026-10-28), and ends the index one catch-up makes.
+#[test]
+fn a_key_index_made_again_is_made_a_slice_a_step() {
+    let (mut once, d) = first_sync(6, 40);
+    let (mut steps, _) = first_sync(6, 40);
+    assert!(once.catch_up(d));
+    let count = |lab: &avendb::lab::Lab, k: &str| lab.perf(d)["counts"][k].as_u64().unwrap_or(0);
+    let made = count(&steps, "keys: index made");
+    let mut taken = 0;
+    while let CatchUp::Stepped = steps.catch_up_step(d, 1) {
+        taken += 1;
+        assert!(taken < 10_000, "a catch-up in steps ends");
+    }
+    let counts = &steps.perf(d)["counts"];
+    assert_eq!(count(&steps, "keys: index made"), made, "no index made of every edit in one step: {counts}");
+    assert_eq!(count(&steps, "keys: index begun a step"), 1, "made again once, a slice at a time: {counts}");
+    assert!(count(&steps, "keys: index grown a step") > 2, "over several steps: {counts}");
+    assert!(once.state(d) == steps.state(d), "the same view");
+    let seen = |lab: &avendb::lab::Lab| {
+        let entries: Vec<_> = lab.entries(d).into_iter().map(|e| (e, lab.item(d, e).map(|i| i.record()))).collect();
+        (lab.log(d).ids().to_vec(), entries)
+    };
+    assert_eq!(seen(&once), seen(&steps), "the same edits, entries and items as one catch-up");
+}

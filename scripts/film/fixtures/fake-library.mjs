@@ -1,14 +1,14 @@
 // A stand-in for the takes' words, for testing without the vault: fake word timings for every voice take a shot list
-// cues on, one <hash>.json each, so scripts/film/day-19-d.mjs (and anything built on it) can be timed anywhere.
+// cues on, one <hash>.json each, so a shot list written before shots were data (and anything built on it) can be timed anywhere.
 // Never used for a real film.
 //
-//   node scripts/film/fixtures/fake-library.mjs <dir> [scripts/film/day-19-d.mjs]
-//   LIBRARY=<dir> node …   — then day-19-d.mjs times its shots on these words
+//   node scripts/film/fixtures/fake-library.mjs <dir> <shot list .mjs>
+//   LIBRARY=<dir> node …   — then the shot list times its shots on these words
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-const [dir, list = 'scripts/film/day-19-d.mjs'] = process.argv.slice(2);
-if (!dir) throw new Error('usage: node scripts/film/fixtures/fake-library.mjs <dir> [shot list]');
+const [dir, list] = process.argv.slice(2);
+if (!dir || !list) throw new Error('usage: node scripts/film/fixtures/fake-library.mjs <dir> <shot list .mjs>');
 const src = readFileSync(resolve(list), 'utf8');
 // the takes, in order, and every phrase a shot cues on, by line
 const hashes = [...src.matchAll(/\{ take: '[^']+', hash: '([0-9a-f]{64})'/g)].map((m) => m[1]);
