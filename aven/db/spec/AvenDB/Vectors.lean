@@ -1775,9 +1775,12 @@ def admissions : List AdmissionCase := [
   { name := "a stranger's passkey, sign-up open to anyone", home := 200, held := gateHeld, signup := .anyone,
     claimable := false, passkey := 12, invite := none },
   { name := "a stranger's passkey while nobody has claimed the server", home := 200, held := [], signup := .known,
-    claimable := true, passkey := 12, invite := none }]
+    claimable := true, passkey := 12, invite := none },
+  -- a vault's standing lets its person in by any of its owner keys, not its root alone (Samuel 2026-10-28)
+  { name := "an owner key of a known vault that roots none, sign-up closed", home := 200, held := gateHeld,
+    signup := .known, claimable := false, passkey := 1, invite := none }]
 
-#guard (admissions.map (·.honours)) == [false, true, false, false, false, true, false, true, true]
+#guard (admissions.map (·.honours)) == [false, true, false, false, false, true, false, true, true, true]
 
 /-! ## A version's writes (T10l)
 

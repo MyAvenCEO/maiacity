@@ -13,7 +13,7 @@ use crate::common;
 use avendb::id::{AudienceId, BlobId, EditId, SignerId};
 use avendb::keys::{KeyFam, KeyName, Recipient};
 use avendb::lab::Lab;
-use avendb::policy::{Action, Edit, Refusal, Setting, Sharing};
+use avendb::policy::{Action, Edit, Principal, Refusal, Setting, Sharing};
 use avendb::sign::{RelayPass, Signed};
 use avendb::sync::{log_of, LogId};
 use avendb::wire::{Join, Reply, Request, Wire};
@@ -266,4 +266,24 @@ fn a_browser_takes_alices_passkey_in_and_links_by_a_pass_to_the_relay() {
     settle((&mut page, browser), (&mut mac, w.mac_a));
     assert_eq!(text(&page, browser, h.welcome, 2).as_deref(), Some(WELCOME_TEXT), "and reads Welcome");
     assert!(page.roots(browser).contains(&passkey), "it knows Alice's vault now, and Bob's, a coop owner");
+}
+
+#[test]
+fn a_second_passkey_that_owns_alices_vault_links_a_new_device_as_her_first_does() {
+    let mut w = world();
+    let alice = w.alice;
+    // her second passkey, one more owner of her vault beside the one that roots it (a test browser's, Samuel
+    // 2026-10-28): her vault's standing lets her in by either
+    let backup = w.lab.passkey("Alice's second passkey");
+    let add = Action::Share(Sharing::Owner { vault: alice, owner: Principal::Signer(backup), seal_to: None });
+    w.lab.submit(w.mac_a, &[w.passkey_a, backup], add).expect("her passkey approves, the new one consents");
+    w.lab.sync_all(1);
+    assert!(!w.lab.roots(w.server).contains(&backup), "it roots nothing");
+    assert!(w.lab.owner_keys(w.server).contains(&backup), "and the server's relay honours its pass all the same");
+    let new = w.lab.device_of(backup, "Alice's test browser");
+    let mut mac = w.lab.split(w.mac_a, &[], [1; 32]);
+    let mut browser = w.lab.split(new, &[backup], [2; 32]);
+    link((&mut browser, new), backup, (&mut mac, w.mac_a)).expect("the browser links by the second passkey");
+    assert_eq!(browser.vault_of(new), Some(alice), "into Alice's vault, the one the passkey owns");
+    assert!(mac.state(w.mac_a).vault(alice).expect("Alice's vault").devices.contains(&new), "and the Mac counts it");
 }

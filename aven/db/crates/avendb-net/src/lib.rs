@@ -467,7 +467,7 @@ pub struct Admission {
 pub struct Admitted {
     /// The endpoints of the devices it knows, and its own.
     pub endpoints: HashSet<EndpointId>,
-    /// The passkeys whose passes it honours: those that root a vault it knows (`Lab::roots`).
+    /// The keys whose passes it honours: those that own a vault it knows, its root among them (`Lab::owner_keys`).
     pub passkeys: HashSet<SignerId>,
     /// Nobody has claimed the server yet: it honours a pass of any passkey, for the device that claims it
     /// (`Node::claim`, `Node::found_with`).
@@ -787,7 +787,7 @@ impl Node {
             let endpoints = endpoints(&lab.peers(me)).chain([own]).collect();
             let claimable = opts.card && lab.vault_of(me).is_none();
             let (passkeys, invites) =
-                (lab.roots(me).into_iter().collect(), open_invites(&lab, me).into_iter().collect());
+                (lab.owner_keys(me).into_iter().collect(), open_invites(&lab, me).into_iter().collect());
             admission.set(Admitted { endpoints, passkeys, claimable, invites });
         }
         let size = lab.size(me);
@@ -2648,8 +2648,9 @@ struct News {
     size: (usize, usize),
     revision: Option<avendb::policy::LogRevision>,
     reach: Arc<BTreeMap<SignerId, Reach>>,
-    /// The passkeys that root the vaults in the device's view, whose passes a server's relay honours.
-    roots: Vec<SignerId>,
+    /// The keys that own the vaults in the device's view, their roots among them, whose passes a server's relay
+    /// honours.
+    owners: Vec<SignerId>,
     /// The node is a server whose device belongs to no vault yet: nobody has claimed it.
     claimable: bool,
     /// The invites of Maia City no vault claimed yet, whose passes a server's relay honours while it signs people up
@@ -3784,7 +3785,7 @@ impl Shared {
             size: (usize::MAX, 0),
             revision: None,
             reach: Arc::default(),
-            roots: Vec::new(),
+            owners: Vec::new(),
             claimable: false,
             invites: Vec::new(),
         };
@@ -3844,7 +3845,7 @@ impl Shared {
                     size: now,
                     revision: current,
                     reach: Arc::new(reach),
-                    roots: lab.roots(me),
+                    owners: lab.owner_keys(me),
                     claimable,
                     invites,
                 })
@@ -3855,7 +3856,7 @@ impl Shared {
         self.fresh.moved();
         if let Some(admission) = &self.opts.admission {
             let endpoints = news.reach.values().map(|r| r.endpoint).chain([self.endpoint.id()]).collect();
-            let (passkeys, invites) = (news.roots.iter().copied().collect(), news.invites.iter().copied().collect());
+            let (passkeys, invites) = (news.owners.iter().copied().collect(), news.invites.iter().copied().collect());
             admission.set(Admitted { endpoints, passkeys, claimable: news.claimable, invites });
         }
         Some(news)
