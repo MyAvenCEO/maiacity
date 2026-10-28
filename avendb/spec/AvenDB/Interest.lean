@@ -290,4 +290,42 @@ end
 theorem now_keeps_tiers (i : Interest) : (i.lift .now).tier = i.tier := by
   cases h : i.tier <;> simp [Interest.lift, Tier.atMost, Tier.rank, h]
 
+/-! ## A background asking yields to the open views
+
+A device asks a peer for every log it lacks in one background asking, page after page by the edits' places. A view
+that opens while it runs, or whose selectors peers answer while it runs, wants some of those logs now: they would come
+only when the asking's pages reach their places, often at its end. So the asking yields between two pages
+(`yields`) once a log it asks for is wanted now that was not wanted when it began (`before`): it ends there, holding
+every edit it took, the views' logs are asked for on their own, and an asking of every log left comes after them, its
+pages after the last place taken. Wants that were there when it began never stop it (`yields_only_for_new`), so an
+asking that starts again after yielding to `now` does not yield to `now` again (`yields_once`), and a view that wants
+nothing the asking asks for leaves it as it is (`yields_only_for_asked`). Yielding orders; it adds and withholds
+nothing (`schedule_whole`), as every log left is asked again.
+
+Rust: `avendb-net/src/lib.rs` (`Yield`, `Shared::pages`, `Shared::ask_differing`).
+-/
+
+/-- An asking of `asked`, begun while the views wanted `before`, yields once they want `now`: a log it asks for is
+    wanted now and was not then. -/
+def yields {α : Type} [DecidableEq α] (asked before now : List α) : Bool :=
+  now.any (fun l => asked.contains l && !before.contains l)
+
+theorem yields_only_for_new {α : Type} [DecidableEq α] (asked before now : List α)
+    (h : ∀ l ∈ now, l ∈ before) : yields asked before now = false := by
+  unfold yields
+  rw [List.any_eq_false]
+  intro l hl
+  simp [h l hl]
+
+theorem yields_once {α : Type} [DecidableEq α] (asked before now : List α) :
+    yields asked (before ++ now) now = false :=
+  yields_only_for_new asked (before ++ now) now (fun _ hl => List.mem_append_right before hl)
+
+theorem yields_only_for_asked {α : Type} [DecidableEq α] (asked before now : List α)
+    (h : ∀ l ∈ now, l ∉ asked) : yields asked before now = false := by
+  unfold yields
+  rw [List.any_eq_false]
+  intro l hl
+  simp [h l hl]
+
 end AvenDB.Interest

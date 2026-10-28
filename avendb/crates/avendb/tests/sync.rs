@@ -484,3 +484,54 @@ fn keep_shares_grant_nothing() {
     assert!(w.lab.state(mac).live(phone_keep));
 }
 
+
+/// What `asker` is sent when it asks `peer` on the network (`Lab::request`, `Lab::reply`): the edits of one asking, all
+/// pages of it.
+fn asked_of(lab: &mut Lab, asker: SignerId, peer: SignerId) -> usize {
+    let mut request = lab.request(asker, peer);
+    let mut sent = 0;
+    loop {
+        let (page, _, more) = lab.reply(peer, asker, &request, 1 << 20);
+        sent += page.len();
+        if !more || page.is_empty() { return sent; }
+        request.after = page.iter().map(|s| avendb::sync::place(&s.edit)).max();
+    }
+}
+
+/// A device that holds a vault it follows names what it holds of that vault's logs when it asks again, so a second
+/// asking over the network brings only what is new (`RequestBasis.lean`, `followed_haves`): before, it named its
+/// haves only of the logs its peer may receive from it, so every followed log came whole on every asking.
+#[test]
+fn a_second_asking_of_a_followed_vault_brings_only_what_is_new() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac, stranger) = (w.mac_a, w.stranger);
+    let charter = w.lab.create(mac, h.coop, h.coop, "doc", &[], document("Charter", CHARTER_TEXT, mac)).unwrap();
+    w.lab.issue(mac, &[mac], share(h.coop, Who::Everyone, Level::Read, by_id(charter))).unwrap();
+    w.lab.follow(stranger, &[h.coop]);
+    w.lab.sync_all(12);
+    assert!(w.lab.entries(stranger).contains(&charter), "following the coop, it holds the Charter");
+    assert_eq!(asked_of(&mut w.lab, stranger, mac), 0, "asking again, it is sent nothing it holds");
+    w.lab.edit(mac, h.coop, charter, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    assert_eq!(asked_of(&mut w.lab, stranger, mac), 1, "and after one edit, that edit alone");
+}
+
+/// Two devices that both only follow a vault, neither of a member, tell each other what they hold of it: asking one
+/// that follows it too, a device is sent only what it lacks, not the vault's public logs whole each time.
+#[test]
+fn a_follower_asking_another_follower_brings_only_what_is_new() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac, carol, stranger) = (w.mac_a, w.mac_c, w.stranger);
+    let charter = w.lab.create(mac, h.coop, h.coop, "doc", &[], document("Charter", CHARTER_TEXT, mac)).unwrap();
+    w.lab.issue(mac, &[mac], share(h.coop, Who::Everyone, Level::Read, by_id(charter))).unwrap();
+    w.lab.follow(stranger, &[h.coop]);
+    w.lab.follow(carol, &[h.coop]);
+    w.lab.sync_all(12);
+    assert!(w.lab.entries(carol).contains(&charter) && w.lab.entries(stranger).contains(&charter));
+    assert_eq!(asked_of(&mut w.lab, stranger, carol), 0, "asking a fellow follower, it is sent nothing it holds");
+    w.lab.edit(mac, h.coop, charter, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    w.lab.sync(mac, carol);
+    w.lab.sync(carol, mac);
+    assert_eq!(asked_of(&mut w.lab, stranger, carol), 1, "and after one edit, that edit alone");
+}

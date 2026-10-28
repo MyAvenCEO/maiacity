@@ -102,6 +102,8 @@ pub use avendb::world::{CARD, DELETED, FILE, FORK, NOTE, PROFILE, TODO};
 
 /// Which code is a vault's, proven in the page (`provenCode`, H2).
 pub mod provenance;
+#[cfg(target_arch = "wasm32")]
+mod opfs_space;
 #[cfg(feature = "bench")]
 pub mod bench;
 
@@ -183,6 +185,11 @@ pub struct Start {
     pub shelf: Option<Shelf>,
     pub progress: Progress,
     pub recovery: Option<Arc<RecoveryKey>>,
+    /// Where its device keeps its signed edits and McEliece keys, past a bounded cache in memory, as the always-on
+    /// peer does (S7, `avendb::lab::Lab::spill`): a native host's folder (2026-10-27: a Mac held 1.4 GB of them and
+    /// paged them through swap, 38.8 s to check a page of 68 edits). None on a page, which spills into its OPFS
+    /// itself (`spilled`).
+    pub spill: Option<avendb::lab::Spill>,
     /// An embedding host retains a node before later startup steps can fail.
     /// Called synchronously after spawn, before another startup await. The host
     /// transfers ownership on publication, or awaits close before releasing it.
@@ -492,6 +499,22 @@ impl Device {
         Device::reopen(start, meta, lab, touch.passkey).await
     }
 
+    /// The device made here before, opened again from its shelf as `open` opens it, by its lease and no ceremony
+    /// (2026-10-27, an iPhone that reloaded its page on every back swipe and asked for the passkey each time): `pad`,
+    /// the PRF output on its salt that its passkey's last unlock brought back, which the page keeps sealed for minutes
+    /// (src/lib/avendb/lease.js), unmasks its secret as that unlock did. Its person's passkey `passkey` comes in with
+    /// its next ceremony (`avendb::lab::Lab::take_in`), as after a touch, so a change only their vault's root makes still
+    /// asks for it. Fails, before it touches the shelf, if `pad` unmasks another device's secret.
+    pub async fn open_leased(start: Start, meta: &Meta, pad: &[u8; 32], passkey: SignerId) -> Result<Device> {
+        start.progress.step("keys");
+        let mut lab = Lab::with_entropy(start.entropy);
+        start.recovery.clone().map(|key| lab.set_recovery(key));
+        let secret = xor(&meta.mask, pad);
+        let me = lab.device_as(&start.name, *secret, meta.device);
+        me.context("the lease opens another device than the one this shelf keeps")?;
+        Device::reopen(start, meta, lab, passkey).await
+    }
+
     /// Device `me` of `lab`, unlocked as its shelf's `meta` names it, opened again (`open`, `open_by_touch`): it
     /// follows what it followed and reads as deep as it did, its node takes back what the shelf kept, and it must still
     /// belong to a vault. Its person's passkey is `passkey`.
@@ -567,7 +590,14 @@ impl Device {
 
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by one of `relay_passes` if
     /// the relay doesn't know it yet, and directly too if it binds a socket; on its shelf, if it keeps one.
-    async fn spawn(lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Arc<Node>> {
+    async fn spawn(mut lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Arc<Node>> {
+        // spilled before its node takes back what its shelf kept, so the edits it restores go to the spill, not memory:
+        // a native host's folder (`Start::spill`), or a page's OPFS (`spilled`)
+        if let Some(spill) = &start.spill {
+            lab.spill(me, spill).context("its spill")?;
+        }
+        #[cfg(target_arch = "wasm32")]
+        let lab = spilled(lab, me).await;
         // a page shows its relay its passes first, by a request of its own, and then connects with none (`show`)
         let shown = !relay_passes.is_empty() && show(start, &relay_passes).await?;
         let relay_passes = if shown { Vec::new() } else { relay_passes };
@@ -871,6 +901,32 @@ async fn show(_: &Start, _: &[RelayPass]) -> Result<bool> {
     Ok(false)
 }
 
+/// How many bytes of its spill a page's device keeps at hand in memory: the records and index pages it read lately.
+#[cfg(target_arch = "wasm32")]
+const SPILL_BUDGET: usize = 48 << 20;
+
+/// `lab` with device `me` holding its signed edits and McEliece keys in an OPFS file (`opfs_space`), not in memory: a
+/// page's memory holds `SPILL_BUDGET` bytes of them, however many it holds. Where OPFS can't (a browser without
+/// synchronous files), it holds them in memory as before, and says so on the console.
+#[cfg(target_arch = "wasm32")]
+async fn spilled(mut lab: Lab, me: SignerId) -> Lab {
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(js_namespace = console)]
+        fn warn(s: &str);
+    }
+    match opfs_space::OpfsSpace::open().await {
+        Ok(space) => {
+            let spill = avendb::lab::Spill::in_space(space, SPILL_BUDGET);
+            if let Err(e) = lab.spill(me, &spill) {
+                warn(&format!("avenDB: no spill, edits stay in memory: {e}"));
+            }
+        }
+        Err(e) => warn(&format!("avenDB: no OPFS spill, edits stay in memory: {e:?}")),
+    }
+    lab
+}
+
 /// Report a panic on the page's console: the device can't go on after one, and the page starts over.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
@@ -972,6 +1028,25 @@ impl PageDevice {
         PageDevice::on(open.await, store).await
     }
 
+    /// The device the page made before, opened again from the shelf of the page's `store` by its lease (`Device::
+    /// open_leased`): `pad`, the PRF output on its salt its last unlock brought back, and `passkey`, its person's
+    /// passkey's id in hex (`passkey_id`), with no ceremony.
+    pub async fn open_leased(pad: Vec<u8>, passkey: String, steps: Option<Function>, store: JsValue) -> Result<PageDevice, JsError> {
+        let pad = Zeroizing::new(<[u8; 32]>::try_from(pad).map_err(|_| JsError::new("a lease's pad is 32 bytes"))?);
+        let passkey = hex_bytes(&passkey).and_then(|b| <[u8; 32]>::try_from(b).ok());
+        let passkey = SignerId(passkey.ok_or_else(|| JsError::new("a passkey's id is 32 bytes in hex"))?);
+        hold(&store).await?;
+        let shelf = shelf_of(store.clone());
+        let open = async {
+            let meta = Meta::load(&shelf).await.map_err(js_error)?;
+            let meta = meta.ok_or_else(|| JsError::new("this browser holds no avenDB account"))?;
+            let start = starting(meta.name.clone(), &meta.relay, steps, shelf)?;
+            let _ending = start.progress.ending();
+            Device::open_leased(start, &meta, &pad, passkey).await.map_err(js_error)
+        };
+        PageDevice::on(open.await, store).await
+    }
+
     /// The device a start made on the page's `store`; or, if it failed, the store let go of, for the next start.
     async fn on(device: Result<Device, JsError>, store: JsValue) -> Result<PageDevice, JsError> {
         match device {
@@ -1021,6 +1096,11 @@ impl PageDevice {
     /// Its person's passkey's P-256 key, compressed, in hex: what its shelf keeps to open it again (`Meta`).
     pub fn passkey(&self) -> String {
         self.0.p256.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// Its person's passkey's id, in hex: what its lease names to open it again (`open_leased`).
+    pub fn passkey_id(&self) -> String {
+        hex(&self.0.passkey.0)
     }
 
     /// Its code, for the next device of its person to link through (`Offer::to_text`).
@@ -1376,7 +1456,7 @@ fn starting(name: String, relay: &str, steps: Option<Function>, shelf: Shelf) ->
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
     let (progress, shelf, recovery) = (shown(steps), Some(shelf), Start::recovery());
-    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery, on_node: None })
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery, spill: None, on_node: None })
 }
 
 /// Holds the page's `store` for this page alone, until the device on it closes (`PageDevice::close`): refused while
@@ -1580,7 +1660,7 @@ mod tests {
         let relay = "http://localhost:3340".parse().expect("a relay's URL");
         let (name, progress) = ("Eve's browser".into(), Progress::new());
         let (entropy, recovery) = ([7; 32], None);
-        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery, on_node: None };
+        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery, spill: None, on_node: None };
         // its own secret, kept masked by the PRF output on its salt
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);

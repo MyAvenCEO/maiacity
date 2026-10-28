@@ -106,45 +106,77 @@ fn spent(before: &serde_json::Value, after: &serde_json::Value) -> String {
     d.iter().map(|(k, ms)| format!("{k} {ms:.1} ms")).collect::<Vec<_>>().join(", ")
 }
 
-/// The longest turns, by what they were.
+/// The longest turns, by what they were, with where the longest one's time went.
 #[derive(Default)]
-struct Turns(Vec<(&'static str, Duration, usize)>);
+struct Turns(Vec<(&'static str, Duration, usize, String)>);
 
 impl Turns {
     fn took<T>(&mut self, what: &'static str, f: impl FnOnce() -> T) -> T {
         let at = Instant::now();
         let out = f();
-        let took = at.elapsed();
+        self.record(what, at.elapsed(), String::new());
+        out
+    }
+
+    /// A turn of `what` took `took`, its time going where `why` says.
+    fn record(&mut self, what: &'static str, took: Duration, why: String) {
         match self.0.iter_mut().find(|(w, ..)| *w == what) {
-            Some((_, longest, n)) => {
-                *longest = (*longest).max(took);
+            Some((_, longest, n, was)) => {
+                if took > *longest {
+                    (*longest, *was) = (took, why);
+                }
                 *n += 1;
             }
-            None => self.0.push((what, took, 1)),
+            None => self.0.push((what, took, 1, why)),
         }
-        out
     }
 }
 
-/// A catch-up of device `d` a step at a time, each step timed as `what`.
-fn catch_up(lab: &mut Lab, d: SignerId, turns: &mut Turns, what: &'static str) {
+/// One turn `f` of device `d`'s, timed as `what`, with where its time went.
+fn turn<T>(lab: &mut Lab, d: SignerId, turns: &mut Turns, what: &'static str, f: impl FnOnce(&mut Lab) -> T) -> T {
+    let before = lab.perf(d);
+    let at = Instant::now();
+    let out = f(lab);
+    let took = at.elapsed();
+    let after = lab.perf(d);
+    let why = breakdown(&before, &after);
+    if took > TURN {
+        eprintln!("SCALE   a long {what} ({took:.1?}): {why}");
+    }
+    turns.record(what, took, why);
+    out
+}
+
+/// What a turn judged and where its time went, between a device's perf before and after it.
+fn breakdown(before: &serde_json::Value, after: &serde_json::Value) -> String {
+    let n = |p: &serde_json::Value, k: &str| p["counts"][k].as_u64().unwrap_or(0);
+    let judged = ["show: entries judged", "show: writes judged", "upkeep: entries looked at", "read: writes looked at"]
+        .map(|k| n(after, k) - n(before, k));
+    format!(
+        "{} entries and {} writes judged, {} entries kept up, {} writes read: {}",
+        judged[0],
+        judged[1],
+        judged[2],
+        judged[3],
+        spent(&before["timers"], &after["timers"])
+    )
+}
+
+/// A catch-up of device `d` a step at a time, each step timed as `what`, the last one, `Caught`, as `last`.
+fn catch_up(lab: &mut Lab, d: SignerId, turns: &mut Turns, [what, last]: [&'static str; 2]) {
     for _ in 0..1_000_000 {
         let before = lab.perf(d);
         let at = Instant::now();
-        let step = turns.took(what, || lab.catch_up_step(d, SHOW));
-        if at.elapsed() > TURN {
-            let after = lab.perf(d);
-            let n = |p: &serde_json::Value, k: &str| p["counts"][k].as_u64().unwrap_or(0);
-            let judged = ["show: entries judged", "show: writes judged"].map(|k| n(&after, k) - n(&before, k));
-            eprintln!(
-                "SCALE   a long {what} ({:.1?}, {step:?}, {} entries and {} writes judged): {}",
-                at.elapsed(),
-                judged[0],
-                judged[1],
-                spent(&before["timers"], &after["timers"])
-            );
+        let step = lab.catch_up_step(d, SHOW);
+        let took = at.elapsed();
+        let after = lab.perf(d);
+        let why = breakdown(&before, &after);
+        if took > TURN {
+            eprintln!("SCALE   a long {what} ({took:.1?}, {step:?}): {why}");
         }
-        if let CatchUp::Caught(_) = step {
+        let caught = matches!(step, CatchUp::Caught(_));
+        turns.record(if caught { last } else { what }, took, why);
+        if caught {
             return;
         }
     }
@@ -167,11 +199,11 @@ fn every_turn_is_short_at_a_servers_size() {
             take(&mut lab, phone, page.to_vec(), &mut first, ["first sync: a page told apart", "first sync: a page kept"]);
         }
     }
-    catch_up(&mut lab, phone, &mut first, "first sync: a catch-up step");
+    catch_up(&mut lab, phone, &mut first, ["first sync: a catch-up step", "first sync: the last catch-up step"]);
     let held = lab.log(phone).edits().len();
     let entries = lab.entries(phone).len();
     eprintln!("SCALE the iPhone holds {held} edits, {entries} entries, set up in {:.1?}", setup.elapsed());
-    for (what, longest, n) in &first.0 {
+    for (what, longest, n, _) in &first.0 {
         eprintln!("SCALE   (setup) {what}: {n} turns, the longest {longest:.1?}");
     }
     assert!(held >= edits, "it holds what they wrote");
@@ -190,14 +222,14 @@ fn every_turn_is_short_at_a_servers_size() {
         }
         take(&mut lab, phone, page, &mut turns, ["a page told apart", "a page kept"]);
         // a write of its own, two steps into the catch-up, as a person types while the pull goes on
-        turns.took("a catch-up step", || lab.catch_up_step(phone, SHOW));
-        turns.took("a catch-up step", || lab.catch_up_step(phone, SHOW));
+        turn(&mut lab, phone, &mut turns, "a catch-up step", |lab| lab.catch_up_step(phone, SHOW));
+        turn(&mut lab, phone, &mut turns, "a catch-up step", |lab| lab.catch_up_step(phone, SHOW));
         let mine = ws[round].1[3];
-        turns.took("a write of its own during a catch-up", || {
+        turn(&mut lab, phone, &mut turns, "a write of its own during a catch-up", |lab| {
             lab.edit(phone, alice, mine, |item| item.push_block(paragraph(2_000_000 + round as u64, "From the iPhone.")))
                 .expect("the iPhone's write")
         });
-        catch_up(&mut lab, phone, &mut turns, "a catch-up step");
+        catch_up(&mut lab, phone, &mut turns, ["a catch-up step", "the last catch-up step (Caught)"]);
         // its keeper's scan of its files, a slice a turn
         let mut scan = FileScan::new(true, lab.entries(phone).into_iter().take(20).collect());
         loop {
@@ -207,14 +239,14 @@ fn every_turn_is_short_at_a_servers_size() {
                 FileScanned::Behind => panic!("caught up"),
             }
         }
-        turns.took("a write of its own", || {
+        turn(&mut lab, phone, &mut turns, "a write of its own", |lab| {
             lab.edit(phone, alice, mine, |item| item.push_block(paragraph(3_000_000 + round as u64, "Again.")))
                 .expect("the iPhone's write")
         });
     }
     let mut long = vec![];
-    for (what, longest, n) in &turns.0 {
-        eprintln!("SCALE {what}: {n} turns, the longest {longest:.1?}");
+    for (what, longest, n, why) in &turns.0 {
+        eprintln!("SCALE {what}: {n} turns, the longest {longest:.1?} ({why})");
         if *longest > TURN {
             long.push(format!("{what} {longest:.1?}"));
         }

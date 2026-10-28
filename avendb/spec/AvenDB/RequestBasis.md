@@ -21,7 +21,7 @@ The token is process-local allocation identity held by the memo itself, not a co
 
 ## Request construction and callers
 
-`Lab::request` still obtains current `answered(d, peer, [])`. The existing authorization cache is unchanged. It filters structural haves by permitted logs and loose IDs by permitted edits, attaches the current canonical follow list, and computes wanted blobs from current authorized edits and current blob availability.
+`Lab::request` obtains current `answered(d, peer, follow)` with the device's current follow list (`permittedWith`, 2026-10-27: before, `[]` made two devices that only follow a vault resend its public logs whole on every asking, measured 23 of 23 resent in `a_follower_asking_another_follower_brings_only_what_is_new`, 94% duplicate pages on the iPhone). `Lab::announce` uses the same list. The existing authorization cache is unchanged. It filters structural haves by permitted logs and loose IDs by permitted edits, attaches the current canonical follow list, and computes wanted blobs from current authorized edits and current blob availability.
 
 A request owns a clone of the structural Ask. Thus network `session::only` / `of_vaults`, cursor changes, and optional range-transfer request rewriting cannot mutate the memo or affect another peer. Ordinary page preparation and range-transfer preparation retain their existing permission gates and wire encoding.
 

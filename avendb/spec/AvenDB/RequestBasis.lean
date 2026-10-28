@@ -44,6 +44,20 @@ def disclose (held permitted : Bool) : Bool := held && permitted
 theorem no_private_disclosure (held : Bool) : disclose held false = false := by
   simp [disclose]
 
+/-- What a request may name of a log: what the peer may receive by the asker's view, or what everyone may read of a
+vault the asker follows. The request names the vaults it follows anyway (`Ask.follow`), so naming their public logs
+discloses nothing more, and a peer holding them through its own follow sends only what the asker lacks. -/
+def permittedWith (receives everyone followed : Bool) : Bool := receives || (everyone && followed)
+
+theorem permitted_names_only_received_or_public_followed (held receives everyone followed : Bool)
+    (h : disclose held (permittedWith receives everyone followed) = true) :
+    receives = true ∨ (everyone = true ∧ followed = true) := by
+  cases receives <;> cases everyone <;> cases followed <;> simp_all [disclose, permittedWith]
+
+theorem private_unreceived_never_named (held followed : Bool) :
+    disclose held (permittedWith false false followed) = false := by
+  cases held <;> cases followed <;> simp [disclose, permittedWith]
+
 def wants (referenced available : Bool) : Bool := referenced && !available
 
 theorem arrived_blob_not_requested (referenced : Bool) : wants referenced true = false := by

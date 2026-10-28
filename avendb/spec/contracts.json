@@ -49,6 +49,20 @@
       "implementation": "game/code/sources/proof-worker.js",
       "test": "game/code/sources/proof-worker.test.js",
       "testName": ""
+    },
+    {
+      "model": "avendb/spec/AvenDB/ShelfIndex.lean",
+      "invariant": "index == rebuild(log): an index caught up from an honest slot is the index built from the log, with one root (I1, I2, I4)",
+      "implementation": "avendb/crates/avendb-net/src/shelf_index.rs",
+      "test": "avendb/crates/avendb-net/src/shelf_index_tests.rs",
+      "testName": "index_is_the_rebuild_of_its_log_at_every_step"
+    },
+    {
+      "model": "avendb/spec/AvenDB/ShelfIndex.lean",
+      "invariant": "a crash at any write, a torn slot or a rewritten log opens the log's own index (I3)",
+      "implementation": "avendb/crates/avendb-net/src/shelf_index.rs",
+      "test": "avendb/crates/avendb-net/src/shelf_index_tests.rs",
+      "testName": "a_crash_at_any_write_opens_the_index_of_the_log"
     }
   ]
 }

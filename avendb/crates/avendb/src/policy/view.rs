@@ -7,15 +7,17 @@
 //! between (`put_items`). Nothing that follows from the rest is kept: a state's lookups, and the parents, depths and
 //! checkpoints of the edits, are worked out again as the view is read.
 //!
-//! The bytes are the device's own, sealed with its shelf key for this engine alone (`Lab::warming`): a view is read only
-//! by the build that wrote it. One that doesn't read back whole, or names other edits than the device holds, is no
-//! view, and the device replays every edit again.
+//! The bytes are the device's own, sealed with its shelf key to the replay rules they were worked out under
+//! (`Lab::warming`, `ViewRules.lean`): a view is read by any build of the same rules and the same format (`VIEW`). One
+//! that doesn't read back whole, or names other edits than the device holds, is no view, and the device replays every
+//! edit again.
 
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use super::{order_ids, watched, Edit, Entry, Issued, Listed, Replay, Seals, State, Tail, Vault, Write};
+use super::{dangling, order_places, sorted, watched, Edit, Entry, Grants, Issued, Listed, Passed, Replay, Seals, State, Tail, Vault,
+    Write};
 use crate::encode::Encode;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, PublicKey, Seal};
@@ -410,7 +412,8 @@ fn put_state(out: &mut Vec<u8>, r: &State, t: &State) {
         out.push(0);
     } else {
         out.push(1);
-        put_items(out, &r.seals.list, &t.seals.list, |s| *s, &places(&r.seals.list, |s| *s));
+        let (rs, ts): (Vec<Seal>, Vec<Seal>) = (r.seals.list.iter().copied().collect(), t.seals.list.iter().copied().collect());
+        put_items(out, &rs, &ts, |s| *s, &places(&rs, |s| *s));
     }
     put_listed(out, &r.published, &t.published);
     put_map(out, &r.seal_keys, &t.seal_keys, |k, out| k.encode(out));
@@ -447,7 +450,8 @@ fn state_of(rd: &mut Reader<'_>, r: &State) -> Result<State, WireError> {
         0 => r.seals.clone(),
         1 => {
             let mut seals = Seals::default();
-            items(rd, &r.seals.list, Seal::decode)?.into_iter().for_each(|s| seals.add(s));
+            let rs: Vec<Seal> = r.seals.list.iter().copied().collect();
+            items(rd, &rs, Seal::decode)?.into_iter().for_each(|s| seals.add(s));
             Arc::new(seals)
         }
         _ => return Err(WireError::Unknown),
@@ -521,7 +525,9 @@ impl Replay {
         let mut rd = Reader::new(bytes.strip_prefix(VIEW)?);
         let held = u64::decode(&mut rd).ok()? as usize;
         let (held_edits, held_ids) = (edits.get(..held)?, ids.get(..held)?);
-        let (edits, ids) = order_ids(held_edits, held_ids);
+        let order = order_places(held_edits, held_ids);
+        let ids: Vec<EditId> = order.iter().map(|&p| held_ids[p]).collect();
+        let edits = || order.iter().map(|&p| &held_edits[p]);
         if <[u8; 32]>::decode(&mut rd).ok()? != ids_hash(&ids) {
             return None;
         }
@@ -531,7 +537,7 @@ impl Replay {
                 return Err(WireError::Unknown);
             }
             let bits = rd.take(n.div_ceil(8))?;
-            let stood = (0..n).map(|i| bits[i / 8] & (1 << (i % 8)) != 0).collect();
+            let stood: Vec<bool> = (0..n).map(|i| bits[i / 8] & (1 << (i % 8)) != 0).collect();
             let state = state_of(&mut rd, &State::default())?;
             let acts = rd.seq::<(EditId, VaultId)>(64)?.into_iter().collect();
             let tail = match rd.u8()? {
@@ -549,21 +555,25 @@ impl Replay {
                         return Err(WireError::Unknown);
                     }
                     // what follows from the edits: as `replay_ids` works it out, and each replay stepped on keeps
-                    let parents = edits.iter().flat_map(|e| e.parents.iter().copied()).collect();
                     let depths: HashMap<EditId, u64> =
                         held_ids.iter().copied().zip(held_edits.iter().map(|e| e.depth)).collect();
-                    let covered = watched(&edits);
-                    Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths })
+                    let parents = dangling(edits(), &depths);
+                    let covered = watched(edits());
+                    let held: Vec<&Edit> = edits().collect();
+                    let passed = Passed::of(sorted(&held, &ids, &stood, 0, at));
+                    let after = Passed::of(sorted(&held, &ids, &stood, at, n));
+                    let grants = Grants::of(edits().zip(ids.iter().copied()));
+                    Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths, passed, after, grants })
                 }
                 _ => return Err(WireError::Unknown),
             };
             if !rd.done() {
                 return Err(WireError::Trailing);
             }
-            Ok(Replay { edits: vec![], ids: vec![], stood, state, acts, tail })
+            Ok(Replay { order: vec![], ids: vec![], stood, state, acts, tail })
         };
         let replay = read().ok()?;
-        Some((Replay { edits, ids, ..replay }, held))
+        Some((Replay { order, ids, ..replay }, held))
     }
 
     /// The place it steps on from is the same as `o`'s, state for state: what `to_view` and `from_view` keep beside
@@ -572,8 +582,8 @@ impl Replay {
         match (&self.tail, &o.tail) {
             (None, None) => true,
             (Some(a), Some(b)) => {
-                (a.at, &a.state, &a.base, &a.cands, &a.tried, &a.parents, &a.covered, &a.depths)
-                    == (b.at, &b.state, &b.base, &b.cands, &b.tried, &b.parents, &b.covered, &b.depths)
+                (a.at, &a.state, &a.base, &a.cands, &a.tried, &a.parents, &a.covered, &a.depths, &a.passed, &a.after, &a.grants)
+                    == (b.at, &b.state, &b.base, &b.cands, &b.tried, &b.parents, &b.covered, &b.depths, &b.passed, &b.after, &b.grants)
             }
             _ => false,
         }

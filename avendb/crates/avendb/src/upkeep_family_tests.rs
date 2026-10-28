@@ -94,7 +94,7 @@ fn profile_same_engine_synthetic_warm_restore() {
     lab.restore_from(phone, lab.backup(mac));
     let backup = lab.backup(phone);
     let count = backup.signed.len();
-    let index = KeyIndex::of(&lab.held(phone).replay);
+    let index = KeyIndex::of(&lab.held(phone).replay, lab.held(phone).log.edits());
     eprintln!("synthetic fixture edits={count} boxes={} cloned_box_bytes={}", index.boxes.len(), index.boxes.iter().map(|(_, _, b)| b.bytes.len()).sum::<usize>());
     drop(index);
     let pending = lab.warming(phone, count, Some([77; 40])).unwrap();
@@ -301,15 +301,22 @@ fn stored_view_shows_what_replay_shows() {
 
     // the view an older engine kept, its replay behind the adjunct header, opens as the replay alone, once
     let key = lab.shelf_key(d).unwrap();
-    let opened = key.unlock("view", &warm.views[0], ENGINE.as_bytes()).unwrap();
+    let opened = key.unlock("view", &warm.views[0], VIEW_RULES.as_bytes()).unwrap();
     let mut older = b"avenDB own materialization 1\n".to_vec();
     older.extend((opened.len() as u32).to_be_bytes());
     older.extend(opened.iter().copied());
     older.extend([7; 64]);
-    let older = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", &older, ENGINE.as_bytes(), &mut lab.rng)] };
+    let older = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", &older, VIEW_RULES.as_bytes(), &mut lab.rng)] };
     lab.restore_warm(d, backup.clone(), Some(([84; 40], held)), &older);
     assert_eq!(shows(&lab), replayed);
     assert!(lab.capture_warm(d, held, Some([84; 40])).is_some(), "kept again without the adjunct");
+
+    // sealed under other replay rules, the same view stays shut and the device replays (VR2)
+    let other = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", &opened, b"avenDB view rules 0", &mut lab.rng)] };
+    let shut = lab.work_metrics(d)["counts"]["stored view: none that opens"].as_u64().unwrap_or(0);
+    lab.restore_warm(d, backup.clone(), Some(([84; 40], held)), &other);
+    assert_eq!(lab.work_metrics(d)["counts"]["stored view: none that opens"].as_u64().unwrap_or(0), shut + 1);
+    assert_eq!(shows(&lab), replayed);
 
     // a write after the start: the same on both
     lab.edit(d, v, entry, |it| it.set_text(2, "successor")).unwrap();

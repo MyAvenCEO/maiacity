@@ -3,6 +3,7 @@ import AvenDB.State
 import AvenDB.Step
 import AvenDB.Sync
 import AvenDB.BlindIndex
+import AvenDB.ShelfIndex
 import AvenDB.Logs
 import AvenDB.Doc
 import AvenDB.Proposals
@@ -17,6 +18,7 @@ import AvenDB.Measurers
 import AvenDB.Theorems
 import AvenDB.KeyTree
 import AvenDB.HandedView
+import AvenDB.ViewRules
 import AvenDB.Examples
 import AvenDB.Checkpoint
 import AvenDB.Batches

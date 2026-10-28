@@ -6,6 +6,8 @@
 //
 //   bun scripts/ci/avendb-bench.mjs bench.log [pg.log]
 //   bun scripts/ci/avendb-bench.mjs phone.log --phone      the phone-class rows alone (avendb-bench-phone.mjs)
+//   bun scripts/ci/avendb-bench.mjs index.log --index      the index's scale rows alone (avendb-net's shelf_index_bench.rs,
+//                                                          run in the net test shard, whose build it shares)
 import { appendFileSync, readFileSync } from 'node:fs';
 
 export const gatesFile = new URL('../../avendb/bench-gates.json', import.meta.url);
@@ -17,8 +19,29 @@ export function lines(text, tag) {
 
 const fmt = x => x == null ? '–' : typeof x === 'number' ? (Math.abs(x) >= 1000 ? Math.round(x).toLocaleString('en-US') : String(x)) : String(x);
 
+// The index's gates over its lines (`kind` index and parity): a view opened cold reads pages as the tree is deep, not
+// as the log is long, and steps on no edit of the log.
+export function checkIndex(bench, gates) {
+ const out = [];
+ const add = (gate, name, value, limit, ok) => out.push({ gate, name, value, limit, ok: value != null && ok });
+ const g = gates.gates, ix = bench.filter(b => b.kind === 'index'), parity = bench.find(b => b.kind === 'parity');
+ for (const n of gates.index_sizes ?? []) if (!ix.some(s => s.n === n)) add(true, `index at ${n}`, null, 'present', false);
+ if (gates.parity_n) add(true, `index at ${gates.parity_n}: bulk-built root == written as they come`, parity?.same_root ?? null, 'true', parity?.same_root === true);
+ for (const s of ix) {
+  add(true, `index ${s.n}: log edits stepped on opening`, s.open_log_edits, `≤ ${g.index_log_edits_max}`, s.open_log_edits <= g.index_log_edits_max);
+  add(true, `index ${s.n}: depth ÷ the model's`, s.depth, `≤ ${s.depth_model}`, s.depth <= s.depth_model);
+  add(true, `index ${s.n}: pages read opening a view (median), past the depth`, s.open_pages_p50 - s.depth, `≤ ${g.index_view_pages_p50_over_depth_max}`, s.open_pages_p50 - s.depth <= g.index_view_pages_p50_over_depth_max);
+  add(true, `index ${s.n}: pages read opening a view (most), past the depth`, s.open_pages_read - s.depth, `≤ ${g.index_view_pages_over_depth_max}`, s.open_pages_read - s.depth <= g.index_view_pages_over_depth_max);
+  add(true, `index ${s.n}: pages read by a point read`, s.get_pages_read, `≤ ${s.depth}`, s.get_pages_read <= s.depth);
+  add(true, `index ${s.n}: bytes read opening a view`, s.open_bytes_read, `≤ ${g.index_view_bytes_max}`, s.open_bytes_read <= g.index_view_bytes_max);
+  add(true, `index ${s.n}: index bytes/edit`, s.index_bytes_per_edit, `≤ ${g.index_bytes_per_edit_max}`, s.index_bytes_per_edit <= g.index_bytes_per_edit_max);
+  add(true, `index ${s.n}: view open p95 µs`, s.open_p95_us, `< ${g.index_open_p95_us_max}`, s.open_p95_us < g.index_open_p95_us_max);
+ }
+ return out;
+}
+
 // Every gate and target over the bench's lines: [{ name, value, limit, ok, gate }], `gate` false for a target.
-export function check(bench, gates) {
+export function check(bench, gates, pg = []) {
  const out = [];
  const add = (gate, name, value, limit, ok) => out.push({ gate, name, value, limit, ok: value != null && ok });
  const scale = bench.filter(b => b.kind === 'scale').sort((a, b) => a.n - b.n);
@@ -42,6 +65,14 @@ export function check(bench, gates) {
   add(false, `${s.n}: writes/s, one at a time through draft_on`, s.device_writes_per_s, `≥ ${t.writes_per_s}`, s.device_writes_per_s >= t.writes_per_s);
   if (g.intake_per_s_min != null) add(true, `${s.n}: edits/s taken in pages`, s.intake_per_s, `≥ ${g.intake_per_s_min}`, s.intake_per_s >= g.intake_per_s_min);
   add(false, `${s.n}: edits/s taken in pages`, s.intake_per_s, `≥ ${t.writes_per_s}`, s.intake_per_s >= t.writes_per_s);
+  if (s.log_bytes_per_edit != null) {
+   if (g.log_bytes_per_edit_max != null) add(true, `${s.n}: log bytes/edit`, s.log_bytes_per_edit, `≤ ${g.log_bytes_per_edit_max}`, s.log_bytes_per_edit <= g.log_bytes_per_edit_max);
+   const p = pg.find(x => x.n === s.n);
+   if (p) {
+    const r = Math.round(s.log_bytes_per_edit / p.bytes_per_edit * 100) / 100;
+    add(false, `${s.n}: log bytes/edit ÷ Postgres's (the index apart)`, r, `≤ ${t.bytes_ratio_pg}`, r <= t.bytes_ratio_pg);
+   }
+  }
   if (base && s !== base) {
    const cost = s.tail_us_per_edit / base.tail_us_per_edit;
    const r = Math.round(cost * 100) / 100;
@@ -87,10 +118,13 @@ export function report(bench, pg, results) {
  const scale = bench.filter(b => b.kind === 'scale').sort((a, b) => a.n - b.n);
  if (scale.length) rows.push('', '| edits | | writes/s | read p50 µs | read p95 µs | view p50 µs | view p95 µs | view rows | bytes/edit |', '|---|---|---|---|---|---|---|---|---|');
  for (const s of scale) {
-  rows.push(`| ${fmt(s.n)} | avenDB | ${fmt(s.writes_per_s)} one at a time, ${fmt(s.intake_per_s)} in pages | ${s.read_p50_us} | ${s.read_p95_us} | ${s.view_p50_us} | ${s.view_p95_us} | ${s.view_rows} | ${fmt(s.rss_bytes_per_edit)} resident |`);
+  rows.push(`| ${fmt(s.n)} | avenDB | ${fmt(s.writes_per_s)} one at a time, ${fmt(s.intake_per_s)} in pages | ${s.read_p50_us} | ${s.read_p95_us} | ${s.view_p50_us} | ${s.view_p95_us} | ${s.view_rows} | ${fmt(s.rss_bytes_per_edit)} resident${s.log_bytes_per_edit ? `, ${fmt(s.log_bytes_per_edit)} log` : ''} |`);
   const p = pg.find(x => x.n === s.n);
   if (p) rows.push(`| ${fmt(p.n)} | Postgres | ${fmt(p.single_insert_per_s)} a commit each, ${fmt(p.insert_per_s)} in batches | ${p.read_p50_us} | ${p.read_p95_us} | ${p.view_p50_us} | ${p.view_p95_us} | ${p.view_rows} | ${fmt(p.bytes_per_edit)} on disk |`);
  }
+ const ix = bench.filter(b => b.kind === 'index').sort((a, b) => a.n - b.n);
+ if (ix.length) rows.push('', '| index of edits | rows | depth (model) | pages read, view (median) | bytes read, view | pages read, point | view open p50 µs | p95 µs | index bytes/edit | built s |', '|---|---|---|---|---|---|---|---|---|---|',
+  ...ix.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.depth} (${s.depth_model}) | ${s.open_pages_p50}, at most ${s.open_pages_read} | ${fmt(s.open_bytes_read)} | ${s.get_pages_read} | ${s.open_p50_us} | ${s.open_p95_us} | ${s.index_bytes_per_edit} | ${s.build_s} |`));
  const first = bench.filter(b => b.kind === 'first');
  const carriers = bench.filter(b => b.kind === 'carrier');
  if (carriers.length) rows.push('', '| carrier | edits | bytes/edit | sync s | asks | edits/s | KB/s | link KB/s | of link |', '|---|---|---|---|---|---|---|---|---|',
@@ -108,7 +142,8 @@ if (import.meta.main) {
  const pg = pgFile ? lines(readFileSync(pgFile, 'utf8'), 'PG') : [];
  const gates = JSON.parse(readFileSync(gatesFile, 'utf8'));
  const phoneOnly = process.argv.includes('--phone');
- const results = phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, gates);
+ const results = process.argv.includes('--index') ? checkIndex(bench, gates)
+  : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, gates, pg);
  const text = report(bench, pg, results);
  console.log(text);
  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## avenDB bench\n\n${text}\n`);

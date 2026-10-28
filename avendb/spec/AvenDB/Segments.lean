@@ -217,6 +217,21 @@ theorem V5_segments_take_as_today {signs today : SignerId → Said → Bool} {L 
       rw [hp] at hp'
       cases hp'
 
+/-! ## Which writers a request names
+
+A device asks a peer for the roots of the writers it holds segments of, to be sent only the ids beyond them. Naming
+every writer it holds would show the peer whom it syncs with in vaults the peer never shares with it. So it names only
+the writers of edits in the logs it and that peer share (`Lab::writers_shown`): every writer it names is the signer of
+an edit the peer already serves it (`shown_of_shared`), so the peer learns nothing it did not hold. -/
+
+/-- The writers a request names: the signers (author and cosigners) of the edits in the logs both sides share. -/
+def shown (signers : EditId → List SignerId) (shared : List EditId) : List SignerId :=
+  shared.flatMap signers
+
+theorem shown_of_shared {signers : EditId → List SignerId} {shared : List EditId} {s : SignerId} :
+    s ∈ shown signers shared ↔ ∃ e ∈ shared, s ∈ signers e := by
+  simp [shown]
+
 /-! ## Scenarios -/
 
 namespace Examples
@@ -243,6 +258,8 @@ def signsAll : SignerId → Said → Bool := fun s x => s == 7 && (x == .root r3
 #guard (table (named (served fun _ => some ⟨five, r5⟩) page)).length == 1
 #guard let tbl := table (named (served fun _ => some ⟨five, r5⟩) page)
   page.all fun o => wireAuth signsAll [r5] tbl (fun e s => strip tbl (served (fun _ => some ⟨five, r5⟩) e s)) 7 o.id
+-- a request to a peer that shares edits 11 and 12 names only their writers, never writer 9 of another vault
+#guard shown (fun e => if e == 11 then [7] else if e == 12 then [7, 8] else [9]) [11, 12] == [7, 7, 8]
 -- an edit beyond its segment goes by the signature the relay holds
 #guard served (fun _ => some ⟨five.take 3, r3⟩) 15 7 == .sig
 

@@ -605,7 +605,7 @@ pub struct Audit<'a> {
 impl<'a> Audit<'a> {
     pub fn new(lab: &'a Lab, me: SignerId) -> Audit<'a> {
         let replay = lab.replay(me);
-        let edits = replay.edits.iter().zip(replay.ids.iter().copied()).zip(&replay.stood);
+        let edits = replay.edits(lab.log(me).edits()).zip(replay.ids.iter().copied()).zip(&replay.stood);
         let joins = |e: &Edit| {
             matches!(e.action, Action::Genesis { .. } | Action::Share(Sharing::Device { .. } | Sharing::Owner { .. }))
         };

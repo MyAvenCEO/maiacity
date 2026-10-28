@@ -24,7 +24,7 @@ import { browserCarrierCapabilities } from './transports/config.js';
 /** What the page may call, by target: nothing of the module beyond these. */
 const CALLS = {
 	pkg: ['storeMeta', 'qrSvg', 'prfSalt', 'deviceSalt', 'provenCode'],
-	Device: ['found', 'link', 'open'],
+	Device: ['found', 'link', 'open', 'open_leased'],
 	store: ['hold', 'release', 'aside'],
 	device: ['keep', 'rename', 'behind', 'vault', 'claim_invite', 'run', 'size', 'changed', 'stirred', 'close', 'free']
 };
@@ -87,7 +87,7 @@ function given(ok) {
 	devices.set(n, ok);
 	transports.set(n, deviceTransports(ok, { webtransport: browserCarrierCapabilities().webtransport, openRtc: rtcAvailable ? (descriptor, callbacks) =>
 		rtcWorkerCarrier({ ...descriptor, device: n }, callbacks, (message, moving) => postMessage(message, moving)) : undefined }));
-	return { $device: n, id: ok.id(), endpoint: ok.endpoint(), passkey: ok.passkey(), offer: ok.offer() };
+	return { $device: n, id: ok.id(), endpoint: ok.endpoint(), passkey: ok.passkey(), passkeyId: ok.passkey_id?.(), offer: ok.offer() };
 }
 
 /** Whether `bytes` is the whole of its buffer, which an answer can then hand over rather than copy. */
