@@ -4349,9 +4349,9 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
             }
         }
         let stands = out.state.step_mut(e, id).is_ok();
-        out.order.push(place);
-        out.ids.push(id);
-        out.stood.push(stands);
+        push_grown(&mut out.order, place);
+        push_grown(&mut out.ids, id);
+        push_grown(&mut out.stood, stands);
         let tail = out.tail.as_mut().expect("a replay to step on from");
         tail.depths.insert(id, e.depth);
         tail.parents.extend(e.parents.iter().filter(|p| !tail.depths.contains_key(*p)).copied());
@@ -4650,6 +4650,16 @@ pub fn trace(edits: &[Edit]) -> Vec<State> {
     run(&edits, &ids, &rem, true).states
 }
 
+/// Push `x` onto `v`, which grows by an eighth when full rather than doubling: a log's and a replay's lists of its
+/// edits are the longest a device holds, a few hundred bytes an edit, and a list that doubles holds a third more than
+/// it needs on average and twice at worst (46 MB of a Mac's 151k edits' log alone). Still amortized constant.
+pub(crate) fn push_grown<T>(v: &mut Vec<T>, x: T) {
+    if v.len() == v.capacity() {
+        v.reserve_exact((v.len() / 8).max(256));
+    }
+    v.push(x);
+}
+
 /// A process-local revision of immutable log contents. Equality is allocation identity, not a shortened hash
 /// or a length: a restore or checkpoint withdrawal may replace a log with a different one of the same length.
 /// It is neither persisted nor sent to a peer, and cannot establish trust in data.
@@ -4705,7 +4715,7 @@ impl Log {
     fn index_write(&mut self, edit: &Edit, id: EditId, at: usize) {
         let log = crate::sync::log_of(edit, id);
         self.next_depth = self.next_depth.max(edit.depth.saturating_add(1));
-        self.logs.push(log);
+        push_grown(&mut self.logs, log);
         if let Some(l) = log {
             self.by_log.entry(l).or_default().push(at);
         }
@@ -4952,8 +4962,8 @@ impl Log {
         let edit = self.check(author, cosigners, action)?;
         let id = edit.id();
         self.index_write(&edit, id, self.edits.len());
-        self.edits.push(edit);
-        self.ids.push(id);
+        push_grown(&mut self.edits, edit);
+        push_grown(&mut self.ids, id);
         self.held.insert(id);
         self.revision = LogRevision::default();
         Ok(id)
@@ -4974,8 +4984,8 @@ impl Log {
             debug_assert_eq!(edit.id(), id, "an edit received with its own id");
             if self.held.insert(id) {
                 self.index_write(&edit, id, self.edits.len());
-                self.edits.push(edit);
-                self.ids.push(id);
+                push_grown(&mut self.edits, edit);
+                push_grown(&mut self.ids, id);
             }
         }
         if self.ids.len() != before { self.revision = LogRevision::default(); }
