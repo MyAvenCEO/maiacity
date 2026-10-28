@@ -533,3 +533,43 @@ fn a_store_taken_out_for_a_probe_leaves_a_device_its_catch_up_steps_on() {
     assert!(held > 0 && lab.log(d).edits().is_empty(), "the Lab holds an empty store in its place");
     assert!(lab.entries(d).is_empty(), "and shows nothing of the store taken out");
 }
+
+/// Every turn of a Lab whose turns are bounded (`Lab::bound_turns`, a node's) is one step of a catch-up, whichever
+/// call it is: a page that comes to a device not catching up, one that brings it every edit of a vault, brings it one
+/// step on, and its catch-up's steps the rest, to what one catch-up brings. Until 2026-10-28 such a page brought it
+/// all in one turn: a whole replay, its key index made again and every body read, 131.9 s on a Mac's page, whose
+/// worker answered no peer meanwhile (`every_turn_le` in `CatchUpBudget.lean`).
+#[test]
+fn a_page_to_a_device_not_catching_up_brings_it_one_step_on_in_a_bounded_lab() {
+    let n = 120;
+    let made = |bounded: bool| {
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (mac, phone) = (w.mac_a, w.phone_a);
+        for i in 0..n {
+            let doc = document(&format!("Doc {i}"), "Written while the iPhone was away.", mac);
+            w.lab.create(mac, coop, coop, "doc", &[], doc).expect("a document");
+        }
+        if bounded {
+            w.lab.bound_turns();
+        }
+        assert!(!w.lab.catching_up(phone), "caught up before the page");
+        let held: std::collections::HashSet<_> = w.lab.log(phone).ids().iter().copied().collect();
+        let fresh: Vec<Signed> = w.lab.backup(mac).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
+        w.lab.receive_whose_now(phone, fresh, vec![], true);
+        (w, phone)
+    };
+    let (mut once, d) = made(false);
+    let (mut steps, _) = made(true);
+    assert!(once.lab.replay_current(d), "a Lab whose turns are not bounded replays every edit at once");
+    while once.lab.catch_up(d) {}
+    assert!(!steps.lab.replay_current(d), "the page replayed every edit in one turn");
+    let mut taken = 0;
+    while let CatchUp::Stepped = steps.lab.catch_up_step(d, 7) {
+        taken += 1;
+        assert!(taken < 10 * n, "a catch-up in steps ends");
+    }
+    assert!(taken > 10, "the rest came a step at a time: {taken} steps");
+    assert_eq!(seen(&once, d), seen(&steps, d), "the same edits, entries and items as one catch-up");
+    assert!(once.lab.state(d) == steps.lab.state(d), "the same view");
+}
