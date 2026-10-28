@@ -3,6 +3,7 @@
 //! integers are big-endian and fixed-size, sequences carry their length, and every enum starts with a tag. The first
 //! byte is the format's version, so a later format can live beside this one.
 
+use std::sync::Arc;
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{
     Action, Creation, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who,
@@ -144,6 +145,14 @@ impl<A: Encode, B: Encode> Encode for (A, B) {
 }
 
 impl Encode for Vec<u8> {
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.len() as u32).encode(out);
+        out.extend_from_slice(self);
+    }
+}
+
+/// As the bytes it holds: shared, as a body's content is with the history judged of it (`slice::Body::content`).
+impl Encode for Arc<[u8]> {
     fn encode(&self, out: &mut Vec<u8>) {
         (self.len() as u32).encode(out);
         out.extend_from_slice(self);

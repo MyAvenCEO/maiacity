@@ -42,6 +42,7 @@
 //! for each entry it shows. `Repo` keeps one locally, with no keys and no shares, for the tests and the property
 //! checks.
 
+use std::sync::Arc;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::{Map, Value};
@@ -70,7 +71,8 @@ pub const VARIANT_START: u8 = 0xFF;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Change {
     pub write: Write,
-    pub body: Option<Vec<u8>>,
+    /// The content of its body, shared with the body it opened (`slice::Body::content`).
+    pub body: Option<Arc<[u8]>>,
     pub fits: bool,
     pub touches: Option<Vec<Touch>>,
     pub counted: bool,
@@ -908,7 +910,7 @@ impl Repo {
         let (stay, epoch, audience, first) = (None, 0, AudienceId::of(actor, &[]), self.history.changes.is_empty());
         let (deps, proposal, via, shares) = (d.deps, d.proposal, vec![], vec![]);
         let write = Write { edit, author, actor, entry, stay, epoch, deps, proposal, via, first, audience, shares };
-        self.history.push(Change { write, body: Some(d.body), fits: true, touches: None, counted: true, adds: vec![] })?;
+        self.history.push(Change { write, body: Some(d.body.into()), fits: true, touches: None, counted: true, adds: vec![] })?;
         Ok(edit)
     }
 }

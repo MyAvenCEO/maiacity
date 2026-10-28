@@ -3577,7 +3577,7 @@ impl Lab {
             true => self.prove(on, &view, &w, (Some(&[Touch::Create]), &tags), Some(&attrs))?,
             false => self.proven(on, &view, (vault, &History::default()), &w, (&content, &tags), &[], Some(&attrs))?,
         };
-        self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content, proof, files, defines }, x)
+        self.write(on, edit, Body { header: Some(header), tags, answers: vec![], content: content.into(), proof, files, defines }, x)
     }
 
     /// Define cap group `group` of vault `vault` on device `on`, acting for the vault: a new entry of type
@@ -4055,7 +4055,7 @@ impl Lab {
             Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files: roots, body: vec![] };
         let (edit, w) = self.check_write(on, &view, action)?;
         let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, (&content, &tags), needs, None)?;
-        self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof, files, defines }, x)
+        self.write(on, edit, Body { header: None, tags, answers: vec![], content: content.into(), proof, files, defines }, x)
     }
 
     /// Encrypt `body` into the write `edit`, whose stay is in audience `x`, then sign and keep it (`seal_write`), and
@@ -6668,7 +6668,7 @@ fn read_body(r: &mut Readings, id: EditId, b: &Body) {
         // a schema or lens entry's creation holds the schema or the lens itself, and fits where it is one of its
         // type: what its readers read into its vault's lane where it acted for that vault (`State::lane_of`)
         if h.ty.of_lane() {
-            r.blobs.insert(id, b.content.as_slice().into());
+            r.blobs.insert(id, b.content[..].into());
             if !lane_fits(&h.ty, &b.content) {
                 r.unfit.insert(id);
             }
@@ -7031,7 +7031,7 @@ fn steward(
             let mut answers: Vec<EditId> = asks.iter().map(|w| w.edit).collect();
             answers.sort();
             let tags = TagDelta { add, remove };
-            let body = Body { header: None, tags, answers, content: vec![], proof: None, files: vec![], defines: None };
+            let body = Body { header: None, tags, answers, content: Arc::from([]), proof: None, files: vec![], defines: None };
             out.push(Work::Retag { vault: v, entry: en.id, body });
             break 'one;
         }
@@ -7644,7 +7644,7 @@ impl<'a> Judging<'a> {
         mine.note(w, &adds, counted);
         // what it touches and asks for, as a merge that brings it in reads it
         let touches = read.and_then(|r| r.touches).map(|ts| ts.into_iter().chain(rules::asked(asks)).collect());
-        let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, touches, counted, adds };
+        let change = Change { write: w.clone(), body: body.map(|b| b.content.clone()), fits, touches, counted, adds };
         history.push(change).expect("the view's writes are causally closed");
         // its tags count from now on where it acts for the vault
         if !w.first

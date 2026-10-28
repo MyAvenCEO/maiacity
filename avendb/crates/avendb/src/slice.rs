@@ -5,6 +5,7 @@
 //! no rule of `policy` reads any of this: only a vault's stewards (the devices acting for it) and a share's grantee
 //! read a selector, and only an entry's readers its header and tags (`policy::Meaning`).
 
+use std::sync::Arc;
 use serde_json::{json, Value};
 
 use crate::id::EditId;
@@ -185,7 +186,8 @@ pub struct Body {
     pub tags: TagDelta,
     /// Smallest first, no repeats.
     pub answers: Vec<EditId>,
-    pub content: Vec<u8>,
+    /// Shared with the history it is judged into (`history::Change::body`): held once, however many hold it.
+    pub content: Arc<[u8]>,
     pub proof: Option<Proof>,
     /// The keys and lengths of the files it brings, which it names in the clear (`Action::Write`): smallest root
     /// first, no repeats.

@@ -273,7 +273,7 @@ fn get_judgment(bytes: &[u8], entry: EntryId, on: SignerId) -> Option<RestoredOw
         history
             .push(Change {
                 write: w,
-                body,
+                body: body.map(Into::into),
                 fits,
                 touches,
                 counted,

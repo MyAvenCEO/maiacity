@@ -684,7 +684,7 @@ impl Decode for Body {
             }
             defines = Some(CapGroup::decode(r)?);
         }
-        Ok(Body { header, tags, answers, content, proof, files, defines })
+        Ok(Body { header, tags, answers, content: content.into(), proof, files, defines })
     }
 }
 
