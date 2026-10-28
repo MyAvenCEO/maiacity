@@ -6,9 +6,13 @@
 // None yet: it drafts both (`create` with `draft: true`, the records of src/lib/avendb/seed.js `docRecords`, the post
 // naming the story drafted), each its own line. One there: it starts a proposal on each whose text differs (`propose`,
 // or the same day's line a failed run left with no AIP over it) and sets the new text on that line (`set` at `text`,
-// through the record's own schema, as the app edits it). Either way it opens one AIP over the lines (`aip_open`).
-// An owner then puts it forward ("Propose it") and accepts it in the Proposals app (/app/aips/); the accept merges the
-// lines into main. Without --run it only says what it would do.
+// through the record's own schema, as the app edits it). Either way it opens one AIP over the lines (`aip_open`) with
+// its objective, measures it and puts it forward (`aip_promote`: straight to Proposed, Samuel 2026-10-26); an owner
+// accepts it in the Proposals app (/app/aips/), and the accept merges the lines into main. Without --run it only says
+// what it would do.
+// The doc post's text is the story's as ../src/lib/avendb/doc-text.js `postText` makes it, as the seed drafts it: a
+// skill's readable form (no frontmatter, each further file under its path), so a one-line change of a skill's text is
+// a one-line change of its post.
 // With --text <file>, that file's text is the new text instead of the repository's: for a doc only the vault holds, as
 // the avenDB doc (`docs/avendb`), which then needs no entry in `DOCS`; drafting a new doc still takes the repository's.
 // The AIP's objective, in Lean against AvenDB.Objective: every line holds the new text, read back off it once set.
@@ -22,7 +26,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { createServer } from 'vite';
+import { postText } from '../src/lib/avendb/doc-text.js';
 
 const args = process.argv.slice(2);
 const flag = (/** @type {string} */ f) => args.includes(f);
@@ -114,21 +118,22 @@ let tag = '';
 /** @type {any} */
 let records = null;
 if (textFile) {
-	// a doc the vault alone holds: its story and its post both take the file's text, as the Docs view shows the story's
+	// the file's text is the story's, and the post's is made of it as the seed makes it (a skill's readable form)
 	story = readFileSync(textFile, 'utf8');
-	post = story;
+	post = postText(key, story);
 	tag = `doc:${key}`;
 	doc = { title: /^# (.+)$/m.exec(story)?.[1]?.trim() ?? key, section: 'doc' };
 } else {
+	const { createServer } = await import('vite');
 	const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
 	try {
-		const { DOCS, readable } = await server.ssrLoadModule('/src/lib/avendb/docs.js');
+		const { DOCS } = await server.ssrLoadModule('/src/lib/avendb/docs.js');
 		const { docTag, docRecords } = await server.ssrLoadModule('/src/lib/avendb/seed.js');
 		doc = DOCS.find((/** @type {any} */ d) => d.key === key);
 		if (!doc) throw new Error(`no document ${key}: one of ${DOCS.map((/** @type {any} */ d) => d.key).join(', ')}`);
 		// as docRecords drafts them: the story holds the text, the doc post its readable form
 		story = await doc.read();
-		post = doc.section === 'skill' ? readable(story) : story;
+		post = postText(key, story);
 		tag = docTag(key);
 		records = await docRecords(key);
 	} finally {
@@ -146,8 +151,47 @@ const newNote = option('--note') ?? `${doc.title} as a new doc of Maia City: its
 console.error(`${key}: ${story.length.toLocaleString('en')} characters, the doc post tagged ${tag} and its story`);
 console.error(`AIP: ${title}`);
 if (!flag('--run')) {
-	console.error('Without --run nothing is written. With it: find the doc post and its story in Maia City, propose the new text on each that differs (or draft both, if Maia City holds none), open the AIP.');
+	console.error('Without --run nothing is written. With it: find the doc post and its story in Maia City, propose the new text on each that differs (or draft both, if Maia City holds none), open the AIP and put it forward.');
 	process.exit(0);
+}
+
+/**
+ * Opens the AIP over `proposals` (each `{entry, line, text}`, its new text set on its line) with its objective, in Lean
+ * against AvenDB.Objective: each line holds the new text, read back off the line. Measures it and puts it forward.
+ * @param {ReturnType<typeof session>} agent @param {string} vault @param {string} title @param {string} note
+ * @param {{ entry: string, line: string, text: string }[]} proposals
+ */
+async function forward(agent, vault, title, note, proposals) {
+	const objective = [
+		'import AvenDB.Objective',
+		'open AvenDB.Objective',
+		'',
+		`/-- Every entry of ${key} this AIP changes holds the new text on its line. -/`,
+		`def holding : Metric := metric "Lines holding the new text of ${key}" (equals (reading "lines") ${proposals.length})`,
+		'',
+		'def objective : List Metric := [holding]',
+		''
+	].join('\n');
+	const lines = proposals.map(({ entry, line }) => ({ entry, line }));
+	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault, title, note, proposals: lines, objective } });
+	let holding = 0;
+	for (const p of proposals) {
+		const got = await agent.call('avendb_ask', { op: { op: 'get', entry: p.entry, line: p.line } });
+		if (got.record?.text === p.text) holding++;
+	}
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'lines', value: 0, note: 'main, before this AIP' } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'lines', value: holding, note: 'each line read back after its text was set' } });
+	let promoted = null;
+	if (holding === proposals.length) {
+		// straight to Proposed (Samuel 2026-10-26): its objective is met, so it is ready for an Accept
+		try {
+			promoted = await agent.call('avendb_run', { op: { op: 'aip_promote', entry: aip.entry } });
+		} catch (e) {
+			console.error(`not put forward: ${/** @type {Error} */ (e).message.slice(0, 400)}`);
+		}
+	} else console.error(`only ${holding} of ${proposals.length} lines read back the new text: not put forward, look at the AIP`);
+	console.log(JSON.stringify({ vault, proposals: lines, aip, promoted }, null, 2));
+	console.error(promoted ? `Proposed. An owner accepts it in the Proposals app: /app/aips/?aip=${aip.entry}` : `Opened, not proposed: /app/aips/?aip=${aip.entry}`);
 }
 
 const agent = session(device());
@@ -168,10 +212,11 @@ try {
 		const storyDraft = await agent.call('avendb_run', { op: { op: 'create', vault: city.id, draft: true, ...records.story } });
 		const value = { ...records.post.value, story: { vault: city.id, entry: storyDraft.entry } };
 		const postDraft = await agent.call('avendb_run', { op: { op: 'create', vault: city.id, draft: true, ...records.post, value } });
-		const proposals = [storyDraft, postDraft].map((d) => ({ entry: d.entry, line: d.line }));
-		const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title: newTitle, note: newNote, proposals } });
-		console.log(JSON.stringify({ vault: city.id, proposals, aip }, null, 2));
-		console.error(`Opened. An owner puts it forward ("Propose it") and accepts it in the Proposals app: /app/aips/?aip=${aip.entry}`);
+		const proposals = [
+			{ entry: storyDraft.entry, line: storyDraft.line, text: records.story.value.text },
+			{ entry: postDraft.entry, line: postDraft.line, text: value.text }
+		];
+		await forward(agent, city.id, newTitle, newNote, proposals);
 		done = true;
 		agent.close();
 		process.exit(0);
@@ -212,29 +257,7 @@ try {
 		await agent.call('avendb_run', { op: { op: 'set', entry: t.entry, line, path: ['text'], value: t.text } });
 		proposals.push({ entry: t.entry, line, text: t.text });
 	}
-	// its objective: each line holds the new text, as read back off the line
-	const objective = [
-		'import AvenDB.Objective',
-		'open AvenDB.Objective',
-		'',
-		`/-- Every entry of ${key} this AIP changes holds the new text on its line. -/`,
-		`def holding : Metric := metric "Lines holding the new text of ${key}" (equals (reading "lines") ${proposals.length})`,
-		'',
-		'def objective : List Metric := [holding]',
-		''
-	].join('\n');
-	const lines = proposals.map(({ entry, line }) => ({ entry, line }));
-	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals: lines, objective } });
-	let holding = 0;
-	for (const p of proposals) {
-		const got = await agent.call('avendb_ask', { op: { op: 'get', entry: p.entry, line: p.line } });
-		if (got.record?.text === p.text) holding++;
-	}
-	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'lines', value: 0, note: 'main, before this AIP' } });
-	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'lines', value: holding, note: 'each line read back after its text was set' } });
-	if (holding !== proposals.length) console.error(`only ${holding} of ${proposals.length} lines read back the new text: look at the AIP before it is proposed`);
-	console.log(JSON.stringify({ vault: city.id, proposals: lines, aip }, null, 2));
-	console.error(`Opened. An owner puts it forward ("Propose it") and accepts it in the Proposals app: /app/aips/?aip=${aip.entry}`);
+	await forward(agent, city.id, title, note, proposals);
 	done = true;
 } finally {
 	agent.close(done);
