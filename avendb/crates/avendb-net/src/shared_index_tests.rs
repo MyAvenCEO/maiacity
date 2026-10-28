@@ -379,3 +379,18 @@ async fn a_log_that_grew_is_checked_at_once_and_a_rewritten_one_is_refused() {
     // and the log it is of still is, after the refusal
     assert_eq!(ix.of_log(&lab.lock().unwrap(), mac), Some(grown));
 }
+
+/// What the head of a log costs to work out once, as a node opens: `AVENDB_HEAD_N` ids (10M if unset).
+///
+///   cargo test -p avendb-net --features test-fixtures --lib -- --ignored --nocapture bench_head
+#[test]
+#[ignore]
+fn bench_head() {
+    let n: usize = std::env::var("AVENDB_HEAD_N").ok().and_then(|n| n.parse().ok()).unwrap_or(10_000_000);
+    let ids: Vec<EditId> = (0..n as u64)
+        .map(|i| EditId(avendb::hash::Hasher::new("bench").update(&i.to_be_bytes()).clone().finalize()))
+        .collect();
+    let t = std::time::Instant::now();
+    let h = head(&ids);
+    println!("BENCH {}", json!({ "bench": "shared_index_head", "ids": n, "ms": t.elapsed().as_secs_f64() * 1e3, "at": h.at }));
+}

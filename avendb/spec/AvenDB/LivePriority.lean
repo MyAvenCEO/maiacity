@@ -217,4 +217,79 @@ The Lab shows a live edit's entries in the first steps of a catch-up (Writes.lea
 now stirs the pages after every step it takes (`Shared::catch_up_steps` with a deadline), so a reader is told then,
 not once after the whole catch-up was caught, as before. Its steps stay bounded by `live_view_is_bounded`. -/
 
+/-! ## A live pull asks no witness this device holds (batch 5)
+
+A live pull asks each hinted log for all this device lacks of it. The hint names the logs an announcement changed and,
+for a new audience key, the log of an earlier creation in that audience, its witness (`live_witnesses`), repeated
+unchanged. Asked of a device that already holds that creation, the witness brought the rest of its log, the backlog,
+with the change: during a bulk catch-up one chat edit's live pull carried 86 bulk edits, 2.0 s (`bench_live` phone, T1
+traces). A witness is now asked only of a device that holds none of its log (the creation is a log's first edit); a log
+any hint changed is asked as before. A log left out stays with the backlog, which still asks it
+(`backlog_asks_unclaimed`). Rust: live.rs `in_step`, pulls.rs `note_witnesses`. -/
+
+/-- A hinted log: whether every hint coalesced into the pull repeated it unchanged (a witness), and whether this device
+holds any of it. -/
+def inStep (witness heldAny : Bool) : Bool := !witness || !heldAny
+
+/-- A witness this device holds some of is never asked live. -/
+theorem held_witness_is_not_live : inStep true true = false := rfl
+
+/-- A log a hint changed is asked live, whatever this device holds of it. -/
+theorem changed_is_live (heldAny : Bool) : inStep false heldAny = true := rfl
+
+/-- A witness it holds none of is asked live: it needs the creation for the change. -/
+theorem missing_witness_is_live : inStep true false = true := rfl
+
+/-- The live logs: the hinted logs in step. -/
+def liveOf (hinted : List (Nat × Bool × Bool)) : List Nat :=
+  (hinted.filter (fun h => inStep h.2.1 h.2.2)).map (·.1)
+
+/-- A hinted log left out of the live pull is not claimed, so the backlog asks it if it differs. -/
+theorem backlog_asks_unclaimed (hinted : List (Nat × Bool × Bool)) (differing : List Nat) (l : Nat)
+    (h : l ∈ differing) (out : l ∉ liveOf hinted) : l ∈ (backlogTake (liveOf hinted) differing).1 := by
+  simp only [backlogTake, List.mem_filter]
+  exact ⟨h, by simp [out]⟩
+
+/-! ## A live pull waits for no key; one fetch of a key at a time (batch 5)
+
+The McEliece keys a pull's edits name come after its pages; a device needs one only to seal to its signer, so what
+the edits say shows without it. A live pull waited for them all the same, and the backlog fetched the same two keys at
+once (`bench_live` phone: 1.7 s of a chat edit's 1.8 s, 2 MB twice). A live pull now brings its keys after it ends;
+a fetch of a key another fetch holds waits for that one and brings only what is still lacking, the law of
+`one_asking_resends_nothing` with keys for edits. Rust: lib.rs `pull_expected`, `bring_keys`, pulls.rs
+`Budget::fetching`. -/
+
+/-- What a fetch brings: the keys asked that are not held once its turn comes. -/
+def fetched (asked held : List Nat) : List Nat := asked.filter (fun k => !held.contains k)
+
+/-- A second fetch, whose turn comes once the first's keys are held, brings none of them again. -/
+theorem one_fetch_of_a_key (asked held : List Nat) (k : Nat) (first : k ∈ fetched asked held) :
+    k ∉ fetched asked (held ++ fetched asked held) := by
+  simp [fetched, List.mem_filter] at *
+  intro _ _
+  exact first
+
+/-! ## Small answers first on a connection (batch 5)
+
+A peer answers each request on its own stream of one connection. A catch-up's page (up to 4 MiB) and a live pull's few
+edits shared the connection's sending in turn, so the live answer waited on what was queued of the page: on a phone link
+the first live pull of a catch-up took 450-650 ms for 2-3 edits (`bench_live` phone, 10 runs, T1 traces). An answer of
+at most `SMALL_ANSWER` bytes is now sent ahead of larger ones. Two levels only: within each, streams keep their turns,
+so no page waits on another page longer than before. Rust: session.rs `priority`, `serve`. -/
+
+def smallAnswer : Nat := 65536
+
+/-- The send priority of an answer of `bytes`: higher goes first. -/
+def priority (bytes : Nat) : Nat := if bytes ≤ smallAnswer then 1 else 0
+
+/-- A small answer never waits behind a large one's queued bytes. -/
+theorem small_goes_before_large (small large : Nat) (h : small ≤ smallAnswer) (h' : smallAnswer < large) :
+    priority large < priority small := by
+  simp [priority, h, Nat.not_le.mpr h']
+
+/-- Two answers of one size class keep their turns: neither goes before the other. -/
+theorem same_class_same_priority (a b : Nat) (ha : a ≤ smallAnswer) (hb : b ≤ smallAnswer) :
+    priority a = priority b := by
+  simp [priority, ha, hb]
+
 end AvenDB.LivePriority
