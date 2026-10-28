@@ -592,7 +592,8 @@ impl Signers {
 
     /// What this node holds of each writer, for a segment request (`proofs::Request::segments`): the length of the
     /// newest root it admitted, and how many of the writer's ids it holds (its own log's all, another's its
-    /// segment's), the first `MAX_KNOWN` writers.
+    /// segment's), the first `most` writers. The tests' view of all of it: a node names a peer `held_among` alone.
+    #[cfg(test)]
     pub(crate) async fn held(&self, most: usize) -> BTreeMap<SignerId, (u64, u64)> {
         let roots = self.admission.lock().await;
         let peers = self.peers.lock().await;
