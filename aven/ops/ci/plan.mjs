@@ -99,7 +99,6 @@ export function unpassed(p, passed) {
 export const folds = {
  js: ['gate', 'suites', 'delivery', 'publish', 'infra', 'audit', 'deny'],
  proofs: ['spec', 'protocol'],
- macos: ['mac', 'lean'],
 };
 
 // the plan's outputs, as GitHub's job outputs read them: run_<check> for each job and step, key_<check>, and the
@@ -125,7 +124,7 @@ export function verdict(needs) {
  const plan = needs.plan;
  if (plan?.result !== 'success') return [`plan: ${plan?.result ?? 'missing'}`];
  const out = plan.outputs ?? {};
- const wanted = id => out[`run_${(id === 'rust-archive' ? 'rust' : id).replace(/-/g, '_')}`] === 'true';
+ const wanted = id => out[`run_${id.replace(/-/g, '_')}`] === 'true';
  for (const [id, job] of Object.entries(needs)) {
   if (id === 'plan') continue;
   if (job.result === 'success') continue;

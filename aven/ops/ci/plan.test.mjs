@@ -13,12 +13,12 @@ test('a JS change runs the page device, the gate, the probes and its suite, and 
  expect(p.images).toEqual([]);
 });
 
-test('an avenDB change runs its Rust shards, the spec, theOS on a Mac and the peer\'s image', () => {
+test('an avenDB change runs its Rust shards, the spec, theOS on a Mac, and the peer\'s and the API\'s images (it carries the page device)', () => {
  const p = plan(['aven/db/crates/avendb-net/src/sync.rs'], { key });
  expect(p.jobs).toMatchObject({ rust: true, spec: true, mac: true, browser: true, delivery: true });
- expect(p.rust.map(s => s.shard)).toEqual(['core', 'core-properties', 'net', 'server-device']);
+ expect(p.rust.map(s => s.shard)).toEqual(['core', 'core-properties', 'net', 'server', 'device-browser']);
  expect(new Set(p.rust.map(s => s.key)).size).toBe(p.rust.length);
- expect(p.images).toEqual(['avendb']);
+ expect(p.images).toEqual(['avendb', 'api']);
  // a test file builds no image and starts no Mac
  expect(plan(['aven/db/crates/avendb/tests/all/live.rs'], { key })).toMatchObject({ images: [], jobs: { rust: true, mac: false } });
 });
@@ -43,11 +43,11 @@ test('the JS suites pass together: one verdict of every selected entry\'s key le
  expect(outputs(unpassed(p, new Set([p.keys.js])))).toMatchObject({ run_suites: 'false', run_js: 'true' });
 });
 
-test('a job folds its checks: it runs when any of them does', () => {
+test('a job folds its checks: it runs when any of them does; Lean and theOS each have their Mac', () => {
  const lean = outputs(plan(['aven/db/spec/AvenDB/Objective.lean'], { key }));
- expect(lean).toMatchObject({ run_lean: 'true', run_macos: 'true' });
+ expect(lean).toMatchObject({ run_lean: 'true', run_mac: 'false', run_spec: 'true', run_protocol: 'false', run_proofs: 'true' });
  const audit = outputs(plan(null, { mode: 'audit', key }));
- expect(audit).toMatchObject({ run_js: 'true', run_gate: 'false', run_suites: 'false', run_wasm: 'false', run_macos: 'false', run_proofs: 'false' });
+ expect(audit).toMatchObject({ run_js: 'true', run_gate: 'false', run_suites: 'false', run_wasm: 'false', run_mac: 'false', run_lean: 'false', run_proofs: 'false' });
 });
 
 test('a key that passed before leaves its job or matrix entry out, unless the run is full', () => {
@@ -75,7 +75,7 @@ test('"CI required" needs every job, and passes only when each job the plan name
  const jobs = Object.keys(ci.jobs).filter(j => j !== 'required');
  expect([...ci.jobs.required.needs].sort()).toEqual(jobs.sort());
  const out = outputs(plan(['aven/db/crates/avendb-net/src/sync.rs'], { key }));
- const ran = id => id === 'rust-archive' ? out.run_rust : out[`run_${id.replace(/-/g, '_')}`];
+ const ran = id => out[`run_${id.replace(/-/g, '_')}`];
  const needs = Object.fromEntries(jobs.map(id => [id, { result: id === 'plan' || ran(id) === 'true' ? 'success' : 'skipped' }]));
  needs.plan.outputs = out;
  expect(verdict(needs)).toEqual([]);

@@ -4,8 +4,8 @@
 //! range, off the shelf, its pages a budget's worth in memory.
 //!
 //! - It is of what the device's edits say (`Lab::shared_of`), and stepped on in the save that puts them on the shelf,
-//!   right after them (`Shared::save_on`), its slot stamped with the head of the edits it is of (`head`): the number of
-//!   them and a hash chain of their ids, one link an edit. A save steps on it only where the device worked out all they say
+//!   right after them (`Shared::save_on`), its slot stamped with the head of the edits it is of: the log's one head
+//!   (`Log::head`, `avendb::log_head`), the number of them and a hash of their ids in one stream. A save steps on it only where the device worked out all they say
 //!   (`Lab::settled`) and the shelf holds every one of them; else the next save does.
 //! - A save puts again each entry its new edits are of (`Lab::shared_touched`): what the index held of it, read from
 //!   its own `E` row, taken out, and its rows as its edits say now put (`SharedIndex.X3_changes`). Where an edit of
@@ -22,11 +22,10 @@ use std::collections::BTreeSet;
 use std::io;
 use std::sync::Mutex;
 
-use avendb::id::{EditId, EntryId, SignerId, VaultId};
+use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::index::shared::{self, Of};
 use avendb::lab::Lab;
 use avendb::pages::{Change, Sum};
-use avendb::policy::LogRevision;
 
 use crate::shelf::Shelf;
 use crate::shelf_index::{ShelfIndex, Stamp};
@@ -42,116 +41,21 @@ const MARK: &[u8] = b"M";
 /// The most rows one scan reads.
 const SCAN: usize = 4096;
 
-/// What the head of a log prefix is a hash of, in one stream.
-const HEAD: &str = "avenDB shared index head 3";
-/// How many ids a hash of them takes at once: a run of them, so it hashes them as fast as it hashes any bytes.
-const RUN: usize = 4096;
-
-/// A head being worked out: the hash of the first `at` ids of a log, in one stream, which goes on as the log grows.
-#[derive(Clone)]
-struct Running {
-    at: u64,
-    hasher: avendb::hash::Hasher,
-}
-
-impl Running {
-    fn new() -> Running {
-        Running { at: 0, hasher: avendb::hash::Hasher::new(HEAD) }
-    }
-
-    /// The same, `more` ids on.
-    fn on(&mut self, more: &[EditId]) {
-        #[cfg(test)]
-        tests::HASHED.with(|n| n.set(n.get() + more.len()));
-        let mut run = Vec::with_capacity(32 * RUN.min(more.len()));
-        for ids in more.chunks(RUN) {
-            run.clear();
-            run.extend(ids.iter().flat_map(|id| id.0));
-            self.hasher.update(&run);
-        }
-        self.at += more.len() as u64;
-    }
-
-    fn stamp(&self) -> Stamp {
-        Stamp { at: self.at, head: self.hasher.clone().finalize() }
-    }
-}
-
 /// The head of a device's log with no edits.
 pub(crate) fn empty_head() -> Stamp {
-    Running::new().stamp()
+    head(&[])
 }
 
-/// The head of the first edits `ids` of a device's log: their number and a hash of their ids, in one stream, so that
-/// the head of a prefix is a function of its edits alone (`ShelfIndex.Sound`). What a node works out once as it
-/// opens, and goes on with as the log grows (`Heads`), never hashing an edit twice while its log only grows.
-pub(crate) fn head(ids: &[EditId]) -> Stamp {
-    let mut r = Running::new();
-    r.on(ids);
-    r.stamp()
+/// The head of a log of edits `ids` (`avendb::log_head::head`).
+pub(crate) fn head(ids: &[avendb::id::EditId]) -> Stamp {
+    avendb::log_head::head(ids).into()
 }
 
-/// What it knows of the device's log, so that it hashes no edit twice: the index's stamp and whether it is the head of
-/// a prefix of a log (by its lineage, `Log::lineage`, which changes when the log is anything but appended to), and the
-/// head it worked out last, of which log, to go on from.
-struct Heads {
-    index: Stamp,
-    index_of: Option<LogRevision>,
-    /// A log the index's stamp was found not to be the head of a prefix of.
-    not_of: Option<LogRevision>,
-    newest: Option<(LogRevision, Running)>,
-}
-
-impl Heads {
-    fn new(index: Stamp) -> Heads {
-        Heads { index, index_of: None, not_of: None, newest: None }
-    }
-
-    /// Its head of device `me`'s log, gone on to the first `to` of its edits: from the head it worked out last where
-    /// that is of this log and no further, else from the first edit. Passing the index's stamp, it notes whether the
-    /// stamp is the head there.
-    fn to(&mut self, lab: &Lab, me: SignerId, to: usize) -> Stamp {
-        let log = lab.log(me);
-        let (lineage, ids) = (log.lineage(), log.ids());
-        let mut r = match self.newest.take() {
-            Some((l, r)) if l == lineage && r.at as usize <= to => r,
-            _ => Running::new(),
-        };
-        let unknown = self.index_of.as_ref() != Some(&lineage) && self.not_of.as_ref() != Some(&lineage);
-        let index = self.index.at as usize;
-        if unknown && (r.at as usize) <= index && index <= to {
-            r.on(&ids[r.at as usize..index]);
-            if r.stamp() == self.index {
-                self.index_of = Some(lineage.clone());
-            } else {
-                self.not_of = Some(lineage.clone());
-            }
-        }
-        r.on(&ids[r.at as usize..to]);
-        let stamp = r.stamp();
-        self.newest = Some((lineage, r));
-        stamp
-    }
-
-    /// The head of device `me`'s log now.
-    fn now(&mut self, lab: &Lab, me: SignerId) -> Stamp {
-        let len = lab.log(me).ids().len();
-        self.to(lab, me, len)
-    }
-
-    /// The index's stamp, if it is the head of a prefix of device `me`'s log: at once where it is known to be of this
-    /// log or not, else by hashing that prefix, once a log, from the head worked out last where it can.
-    fn of_log(&mut self, lab: &Lab, me: SignerId) -> Option<Stamp> {
-        let log = lab.log(me);
-        let lineage = log.lineage();
-        if self.index.at as usize > log.ids().len() {
-            return None;
-        }
-        if self.index_of.as_ref() != Some(&lineage) && self.not_of.as_ref() != Some(&lineage) {
-            self.to(lab, me, self.index.at as usize);
-        }
-        (self.index_of.as_ref() == Some(&lineage)).then_some(self.index)
-    }
+/// The head of the first `stamp.at` edits of `log`, if it holds that many, is `stamp`: the index reflects them, so a
+/// read may take the edits after them as its tail. From the log's mark before them (`Log::head_at`), never hashing
+/// its edits from the first.
+fn of_prefix(stamp: Stamp, log: &avendb::policy::Log) -> bool {
+    log.head_at(stamp.at).map(Stamp::from) == Some(stamp)
 }
 
 /// How a save stepped the index on.
@@ -168,37 +72,21 @@ pub(crate) enum Stepped {
 /// The index, as the module says.
 pub(crate) struct SharedIndex {
     index: tokio::sync::Mutex<ShelfIndex>,
-    heads: Mutex<Heads>,
-    /// The last stamp found to be of a prefix of the device's log, and the lineage of the log it was found in: while
-    /// that log only appends (`Log::lineage`), the stamp stays of its prefix, so a read checks it at no cost per edit.
-    checked: std::sync::Mutex<Option<(Stamp, avendb::policy::LogRevision)>>,
+    /// The head of the edits it is of, as its slot holds it: what a reader asks under its hold of the Lab.
+    stamp: Mutex<Stamp>,
 }
 
 impl SharedIndex {
     /// The index on `shelf`, as its newest slot that opens left it: stepped on at the next save.
     pub(crate) async fn open(shelf: Shelf) -> io::Result<SharedIndex> {
         let (index, _) = ShelfIndex::open_kept(shelf, NAME, BUDGET, empty_head()).await?;
-        let heads = Mutex::new(Heads::new(index.stamp()));
-        Ok(SharedIndex { index: tokio::sync::Mutex::new(index), heads, checked: std::sync::Mutex::new(None) })
+        let stamp = Mutex::new(index.stamp());
+        Ok(SharedIndex { index: tokio::sync::Mutex::new(index), stamp })
     }
 
-    /// Stamp `stamp` is of a prefix of log `log`: the index reflects its first `stamp.at` edits, so a read may take the
-    /// edits after them as its tail. Hashed once per stamp and lineage of the log (`checked`), not once per read.
+    /// Stamp `stamp` is of a prefix of log `log` (`of_prefix`).
     pub(crate) fn of_prefix(&self, stamp: Stamp, log: &avendb::policy::Log) -> bool {
-        let ids = log.ids();
-        if stamp.at as usize > ids.len() {
-            return false;
-        }
-        let lineage = log.lineage();
-        let mut checked = self.checked.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if checked.as_ref().is_some_and(|(s, l)| *s == stamp && *l == lineage) {
-            return true;
-        }
-        let of = head(&ids[..stamp.at as usize]) == stamp;
-        if of {
-            *checked = Some((stamp, lineage));
-        }
-        of
+        of_prefix(stamp, log)
     }
 
     /// Steps it on to what device `me` of `lab` holds, if it is settled and the shelf holds `held` of its edits, every
@@ -210,7 +98,7 @@ impl SharedIndex {
         held: usize,
     ) -> io::Result<Stepped> {
         let mut index = self.index.lock().await;
-        match step_on(&mut index, &self.heads, lab, me, held).await {
+        match step_on(&mut index, &self.stamp, lab, me, held).await {
             Err(e)
                 if matches!(
                     e.kind(),
@@ -222,8 +110,8 @@ impl SharedIndex {
                     "avendb: the shared index doesn't read whole, so it is built again: {e}"
                 );
                 index.clear(empty_head());
-                *self.heads.lock().expect("heads") = Heads::new(empty_head());
-                step_on(&mut index, &self.heads, lab, me, held).await
+                *self.stamp.lock().expect("stamp") = empty_head();
+                step_on(&mut index, &self.stamp, lab, me, held).await
             }
             other => other,
         }
@@ -236,11 +124,10 @@ impl SharedIndex {
 
     /// The head of the edits it is of, if they are the first edits of device `me`'s log in `lab` now; `None` where its
     /// log isn't one they begin (a withdrawal, a log restored otherwise): what a reader asks under its hold of the Lab
-    /// before it reads through the index and the tail of edits after it. At once for a log that only grew since the
-    /// index was stepped on or last asked; once a log, by hashing the edits it is of.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// before it reads through the index and the tail of edits after it (`of_prefix`).
     pub(crate) fn of_log(&self, lab: &Lab, me: SignerId) -> Option<Stamp> {
-        self.heads.lock().expect("heads").of_log(lab, me)
+        let stamp = *self.stamp.lock().expect("stamp");
+        of_prefix(stamp, lab.log(me)).then_some(stamp)
     }
 
     /// The rows its finds have read off the index so far, all told: a bench's count of what a read reads.
@@ -317,7 +204,7 @@ impl SharedIndex {
 
 async fn step_on(
     index: &mut ShelfIndex,
-    heads: &Mutex<Heads>,
+    kept: &Mutex<Stamp>,
     lab: &Mutex<Lab>,
     me: SignerId,
     held: usize,
@@ -326,25 +213,23 @@ async fn step_on(
         lab.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     };
-    let heads = || heads.lock().expect("heads");
     let was = index.stamp();
     let mark_was = index.get(MARK).await?;
     // what it puts again, worked out under one hold of the Lab with the stamp it will be of
-    let (stamp, lineage, mark, touched) = {
+    let (stamp, mark, touched) = {
         let lab = locked();
         if !lab.settled(me) || held != lab.log(me).ids().len() {
             return Ok(Stepped::Not);
         }
-        let mut heads = heads();
-        let stamp = heads.now(&lab, me);
+        let stamp: Stamp = lab.log(me).head().into();
         let mark = (lab.index_mark(me) as u64).to_be_bytes().to_vec();
-        let of_prefix = heads.of_log(&lab, me) == Some(was);
+        let of_prefix = of_prefix(was, lab.log(me));
         let touched = if of_prefix && mark_was.as_deref() == Some(&mark[..]) {
             lab.shared_touched(me, was.at as usize)
         } else {
             None
         };
-        (stamp, lab.log(me).lineage(), mark, touched)
+        (stamp, mark, touched)
     };
     if stamp == was && touched.as_ref().is_some_and(BTreeSet::is_empty) {
         return Ok(Stepped::Not);
@@ -373,10 +258,7 @@ async fn step_on(
         let new: Vec<Option<Of>> = {
             let lab = locked();
             // the Lab moved on while the old rows were read: this save leaves the index as it was
-            if lab.log(me).lineage() != lineage
-                || lab.log(me).ids().len() as u64 != stamp.at
-                || !lab.settled(me)
-            {
+            if Stamp::from(lab.log(me).head()) != stamp || !lab.settled(me) {
                 return Ok(Stepped::Not);
             }
             slice.iter().map(|e| lab.shared_of(me, *e)).collect()
@@ -391,11 +273,7 @@ async fn step_on(
     }
     changes.push((MARK.to_vec(), Some(mark)));
     index.apply(changes, stamp).await?;
-    // the index is of the log of `lineage`, as its stamp was worked out from it
-    {
-        let mut heads = heads();
-        (heads.index, heads.index_of, heads.not_of) = (stamp, Some(lineage), None);
-    }
+    *kept.lock().expect("stamp") = stamp;
     Ok(if every {
         Stepped::Every(entries.len())
     } else {
