@@ -21,14 +21,17 @@ export const crates = ['avendb', 'avendb-net', 'avendb-server', 'avendb-device',
 const build = [...crates.flatMap(c => ['-p', c]), '--features', crates.map(c => `${c}/test-fixtures`).join(',')];
 
 // Each shard on a runner of its own, its tests a nextest filter, sized to about three minutes of tests each (run of
-// 2026-10-28): the core's (4.3 min), net's (3.4), and the server's with the device's and the browser's (2.6 + 2.0).
+// 2026-10-28): the core's (4.3 min), net's (3.4), the server's (2.6) and the device's with the browser's (2.0). The
+// server's heavy tests (first_view_gate) stay apart from the browser's: on one runner a browser test's 60 s wait for
+// the server's feed ran out (#1375).
 // The core's property tests run under libtest in one process: .config/nextest.toml says why, and its default filter
 // leaves them out of every other shard.
 export const shards = {
  core: { name: 'core', filter: 'package(avendb)' },
  'core-properties': { name: 'core properties', binary: 'avendb::all', args: ['--test-threads=2', 'properties::'] },
  net: { name: 'net', filter: 'package(avendb-net)' },
- 'server-device': { name: 'server, device, browser', filter: 'package(avendb-server) | package(avendb-device) | package(avendb-browser)' },
+ server: { name: 'server', filter: 'package(avendb-server)' },
+ 'device-browser': { name: 'device, browser', filter: 'package(avendb-device) | package(avendb-browser)' },
 };
 
 // what a step runs, at the workspace's root: each command as [program, ...arguments]

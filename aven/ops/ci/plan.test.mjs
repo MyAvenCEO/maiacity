@@ -16,7 +16,7 @@ test('a JS change runs the page device, the gate, the probes and its suite, and 
 test('an avenDB change runs its Rust shards, the spec, theOS on a Mac and the peer\'s image', () => {
  const p = plan(['aven/db/crates/avendb-net/src/sync.rs'], { key });
  expect(p.jobs).toMatchObject({ rust: true, spec: true, mac: true, browser: true, delivery: true });
- expect(p.rust.map(s => s.shard)).toEqual(['core', 'core-properties', 'net', 'server-device']);
+ expect(p.rust.map(s => s.shard)).toEqual(['core', 'core-properties', 'net', 'server', 'device-browser']);
  expect(new Set(p.rust.map(s => s.key)).size).toBe(p.rust.length);
  expect(p.images).toEqual(['avendb']);
  // a test file builds no image and starts no Mac
