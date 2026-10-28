@@ -21,6 +21,7 @@ mod revisions;
 mod run;
 mod server;
 mod sim;
+mod slow_link;
 mod statements;
 mod store;
 mod stub_holdings;

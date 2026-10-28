@@ -273,7 +273,7 @@ test('the lens from v2 to v3 names both schemas and moves kind, v and tiers in o
 	expect(JSON.parse(MANIFEST_V2).title).toBe('Manifest, v2');
 });
 
-test('the engine\'s fixture of the move (avendb tests/actor_move.rs) is these schemas, this lens and the assets actor', () => {
+test('the engine\'s fixture of the move (avendb tests/all/actor_move.rs) is these schemas, this lens and the assets actor', () => {
 	const f = JSON.parse(readFileSync(new URL('../../../../../aven/db/crates/avendb/tests/data/actors-v3.json', import.meta.url), 'utf8'));
 	expect(f.manifest_v2).toBe(MANIFEST_V2);
 	expect(f.actor_v3).toBe(ACTOR_V3);

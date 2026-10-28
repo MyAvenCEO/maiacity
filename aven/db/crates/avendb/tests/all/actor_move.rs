@@ -14,7 +14,7 @@ use avendb::lens::{Lens, Schema};
 use serde_json::{json, Value};
 use avendb_testkit::{ok, refused};
 
-const FIXTURE: &str = include_str!("data/actors-v3.json");
+const FIXTURE: &str = include_str!("../data/actors-v3.json");
 
 fn run(w: &mut cast::World, d: SignerId, op: Value) -> Value {
     engine::run(&mut w.lab, d, &op)

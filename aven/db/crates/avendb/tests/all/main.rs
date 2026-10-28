@@ -9,6 +9,7 @@ mod common;
 #[path = "../records/mod.rs"]
 mod records;
 
+mod actor_move;
 mod actors;
 mod aip;
 mod aips_scale;
