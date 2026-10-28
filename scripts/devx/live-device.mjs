@@ -37,6 +37,7 @@ const engine = option('--engine', 'webkit');
 const base = option('--base', 'https://maia.city').replace(/\/$/, '');
 const watchSync = Number(option('--sync', '60'));
 const pageDir = args.includes('--page') ? resolve(option('--page')) : null;
+const messages = Math.max(1, Number(option('--messages', '1')));
 const mac = platform() === 'darwin';
 const profile = option('--profile', mac ? join(homedir(), 'Library/Application Support/maiacity-live-device', engine) : join(homedir(), '.maiacity-live-device', engine));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -392,6 +393,13 @@ async function roundtrip(name) {
 		// to the device catching up, then back from it while it still is
 		gate.toFresh = await message(home.page, fresh.page, `${tag} → fresh`, 'to-fresh');
 		gate.fromFresh = await message(fresh.page, home.page, `${tag} ← fresh`, 'from-fresh');
+		// --messages n: n each way in all, the first above, for each direction's p50 and p95
+		gate.to = [gate.toFresh];
+		gate.from = [gate.fromFresh];
+		for (let i = 2; i <= messages; i++) {
+			gate.to.push(await message(home.page, fresh.page, `${tag} → fresh ${i}`, `to-fresh-${i}`));
+			gate.from.push(await message(fresh.page, home.page, `${tag} ← fresh ${i}`, `from-fresh-${i}`));
+		}
 		gate.freshPillAfter = await pill(fresh.page);
 	} catch (e) {
 		log.errors.push(`roundtrip: ${e instanceof Error ? e.message : e}`);
@@ -400,14 +408,21 @@ async function roundtrip(name) {
 		await fresh?.context.close();
 		await home.context.close();
 	}
-	const ways = [gate.toFresh, gate.fromFresh];
+	const ways = [...(gate.to ?? [gate.toFresh]), ...(gate.from ?? [gate.fromFresh])];
 	const fast = ways.every((w) => w?.seconds != null && w.seconds < TARGETS.message);
+	/** The p-th percentile of a direction's times (null for one that never arrived counts as the slowest). */
+	const pct = (list, p) => {
+		const xs = (list ?? []).map((w) => w?.seconds ?? Infinity).sort((a, b) => a - b);
+		return xs.length ? xs[Math.min(xs.length - 1, Math.ceil((p / 100) * xs.length) - 1)] : null;
+	};
+	gate.stats = { to: { p50: pct(gate.to, 50), p95: pct(gate.to, 95) }, from: { p50: pct(gate.from, 50), p95: pct(gate.from, 95) } };
 	// the gate holds whenever both are online; whether the fresh one was still catching up is said, not gated
 	const pass = (log.pass = { message: fast, errors: !log.errors.length });
 	writeFileSync(join(out, 'run.json'), JSON.stringify(log, null, 1));
 	const line =
 		`${stamp} ${engine} roundtrip #${name}: fresh open ${gate.open ?? '-'}s room ${gate.room ?? '-'}s ` +
-		`→fresh ${gate.toFresh?.seconds ?? 'none'}s ←fresh ${gate.fromFresh?.seconds ?? 'none'}s ` +
+		`first →fresh ${gate.toFresh?.seconds ?? 'none'}s ←fresh ${gate.fromFresh?.seconds ?? 'none'}s ` +
+		(messages > 1 ? `| ${messages} each way →fresh p50 ${gate.stats.to.p50}s p95 ${gate.stats.to.p95}s ←fresh p50 ${gate.stats.from.p50}s p95 ${gate.stats.from.p95}s ` : '') +
 		`(fresh pill at send: ${gate.toFresh?.receiverPill || '?'}) errors ${log.errors.length} ` +
 		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')}`;
 	writeFileSync(join(out, 'line.txt'), `${line}\n`);
