@@ -27,6 +27,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) use avendb::pages::Change;
 use avendb::pages::{Builder, Cache, Item, KEY_MAX, Node, Sum, VALUE_MAX, merge, sum};
@@ -85,6 +86,8 @@ pub(crate) struct ShelfIndex {
     /// The number of the slot it kept last: the next goes in slot `kept + 1`, in place of the older of the two.
     kept: u64,
     pages: Arc<Mutex<Cache>>,
+    /// The rows its scans have read, all told: what a bench holds a read to, as it holds its pages.
+    rows: Arc<AtomicU64>,
 }
 
 impl ShelfIndex {
@@ -104,6 +107,7 @@ impl ShelfIndex {
             stamp: Stamp { at: 0, head },
             kept: 0,
             pages: Arc::new(Mutex::new(pages)),
+            rows: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -374,6 +378,12 @@ impl ShelfIndex {
 
     /// Up to `limit` rows from key `from` on, in order.
     pub(crate) async fn scan(&self, from: &[u8], limit: usize) -> io::Result<Vec<Item>> {
+        self.scan_within(from, &[], limit).await
+    }
+
+    /// `scan`, of the rows whose keys start with `prefix` alone: it stops at the first row past them, so a prefix of
+    /// few rows reads no row after them, however many there are.
+    pub(crate) async fn scan_within(&self, from: &[u8], prefix: &[u8], limit: usize) -> io::Result<Vec<Item>> {
         let mut out = Vec::new();
         let Some(root) = self.root else {
             return Ok(out);
@@ -385,7 +395,12 @@ impl ShelfIndex {
             }
             let start = next.max(node.items.partition_point(|(k, _)| k.as_slice() < from));
             if node.level == 0 {
-                out.extend(node.items[start..].iter().take(limit - out.len()).cloned());
+                let rows = &node.items[start..];
+                let within = rows.iter().take(limit - out.len()).take_while(|(k, _)| k.starts_with(prefix)).count();
+                out.extend(rows[..within].iter().cloned());
+                if within < rows.len() && out.len() < limit {
+                    break;
+                }
                 continue;
             }
             if start < node.items.len() {
@@ -399,7 +414,14 @@ impl ShelfIndex {
                 stack.push((child, 0));
             }
         }
+        self.rows.fetch_add(out.len() as u64, Ordering::Relaxed);
         Ok(out)
+    }
+
+    /// The rows its scans have read so far, all told.
+    #[cfg(test)]
+    pub(crate) fn rows_read(&self) -> u64 {
+        self.rows.load(Ordering::Relaxed)
     }
 
     /// The hash of its root page, a function of its rows alone (I4), or none for no rows.

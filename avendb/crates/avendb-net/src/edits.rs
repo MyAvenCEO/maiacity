@@ -42,7 +42,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, EntryId, SignerId};
-use avendb::lab::{Checked, Lab, Placed, Warm, Warming};
+use avendb::lab::{Checked, Lab, Placed, ShownPack, Warm, Warming};
 use avendb::policy::{Log, LogRevision};
 use avendb::sign::Signed;
 use avendb::wire::Wire;
@@ -813,13 +813,18 @@ async fn read_warm(shelf: &Shelf) -> (Warm, (u64, u64), (u64, Vec<(Hash, u64)>))
 
 /// The packs of kept showings the newest list of them names, the oldest first, and the number the next list is kept
 /// as with the packs it names. Nothing, where a pack doesn't read whole: its showings are judged anew.
-async fn read_shown(shelf: &Shelf) -> (Vec<Vec<u8>>, (u64, Vec<(Hash, u64)>)) {
+async fn read_shown(shelf: &Shelf) -> (Vec<ShownPack>, (u64, Vec<(Hash, u64)>)) {
     let Ok((lists, next)) = slots_of(shelf, SHOWN).await else { return (vec![], (0, vec![])) };
     let Some(packs) = lists.first().and_then(|b| packs_of(b)) else { return (vec![], (next, vec![])) };
     let mut out = Vec::with_capacity(packs.len());
     for &(hash, size) in &packs {
+        // the file it is, where its shelf keeps blobs as files, its showings read there as they open; else its bytes
+        if let Some(file) = shelf.blob_file(hash).await.filter(|f| f.len() == size) {
+            out.push(ShownPack(file));
+            continue;
+        }
         match shelf.read_blob(hash, size).await {
-            Ok(bytes) => out.push(bytes.to_vec()),
+            Ok(bytes) => out.push(bytes.to_vec().into()),
             Err(e) => {
                 tracing::warn!("avendb: a pack of kept showings doesn't read whole, so its showings are judged anew: {e:#}");
                 return (vec![], (next, vec![]));

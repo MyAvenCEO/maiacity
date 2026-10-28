@@ -41,8 +41,6 @@ const SLICE: usize = 256;
 const MARK: &[u8] = b"M";
 /// The most rows one scan reads.
 const SCAN: usize = 4096;
-/// The most rows one scan of `find_by` reads: it reads on while the token's rows go on.
-const FIND_CHUNK: usize = 64;
 
 /// What the head of a log prefix is a hash of, in one stream.
 const HEAD: &str = "avenDB shared index head 3";
@@ -245,6 +243,12 @@ impl SharedIndex {
         self.heads.lock().expect("heads").of_log(lab, me)
     }
 
+    /// The rows its finds have read off the index so far, all told: a bench's count of what a read reads.
+    #[cfg(test)]
+    pub(crate) async fn rows_read(&self) -> u64 {
+        self.index.lock().await.rows_read()
+    }
+
     /// The hash of its root, a function of its rows alone (`SharedIndex.X4_same_root`).
     pub(crate) async fn root(&self) -> Option<Sum> {
         self.index.lock().await.root()
@@ -297,26 +301,14 @@ impl SharedIndex {
         let mut found = BTreeSet::new();
         for t in tokens {
             let prefix = shared::label_prefix(t);
-            let mut from = match after {
+            let from = match after {
                 Some((created, entry)) => [&shared::label_key(t, created, entry)[..], &[0]].concat(),
                 None => prefix.clone(),
             };
-            // a few rows a scan, so a token of few rows reads no rows of the tokens after it
-            let (chunk, mut got) = (limit.clamp(1, FIND_CHUNK), 0);
-            'token: loop {
-                let rows = index.scan(&from, chunk).await?;
-                for (k, _) in &rows {
-                    if !k.starts_with(&prefix) || got == limit {
-                        break 'token;
-                    }
-                    let created = shared::created(k[17..25].try_into().expect("8 bytes"));
-                    found.insert(std::cmp::Reverse((created, shared::owner(k).expect("an entry's row"))));
-                    got += 1;
-                }
-                match rows.last() {
-                    Some((k, _)) if rows.len() == chunk => from = [&k[..], &[0]].concat(),
-                    _ => break,
-                }
+            // its own rows alone, so a token of few rows reads no rows of the tokens after it
+            for (k, _) in index.scan_within(&from, &prefix, limit).await? {
+                let created = shared::created(k[17..25].try_into().expect("8 bytes"));
+                found.insert(std::cmp::Reverse((created, shared::owner(k.as_slice()).expect("an entry's row"))));
             }
         }
         Ok(found.into_iter().take(limit).map(|r| r.0).collect())

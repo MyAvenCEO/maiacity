@@ -2027,6 +2027,10 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").as_secs()
 }
 
+/// Her drive, a device of her vault hosted by her Mac. Beside the drive feature it guards sync with any peer: a peer
+/// that stops and starts again (unplugged and plugged in) is handed what was written meanwhile. It caught a node
+/// answering its peers from a stale replay for good once a catch-up was put off by its pace
+/// (2026-10-28, `lab_schedule::slices::a_put_off_catch_up_still_runs_so_no_peer_is_answered_from_a_stale_replay`).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn eves_drive_is_a_device_of_her_vault_hosted_by_the_mac_it_is_plugged_into() {
     let (_relay, url, server) = server().await;
