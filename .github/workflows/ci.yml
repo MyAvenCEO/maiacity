@@ -706,6 +706,7 @@ jobs:
         with:
           sparse-checkout: |
             aven/ops/ci
+            aven/ops/devx/wasm.mjs
             .bun-version
           sparse-checkout-cone-mode: false
       - uses: oven-sh/setup-bun@v2.2.0
