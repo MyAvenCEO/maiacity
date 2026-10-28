@@ -270,8 +270,7 @@ test('nothing here writes to avenDB: no module of the assets imports its client 
 	for (const f of walk(lib).filter((x) => /\.(js|svelte)$/.test(x) && !/\.test\.js$/.test(x))) {
 		const text = readFileSync(f, 'utf8');
 		const imports = [...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"]([^'"]+)['"]/g)].map((m) => m[1]);
-		// stirs only says when the device's sync moved (read-only, F16: a file still arriving is read again)
-		const theirs = imports.filter((i) => /avendb/i.test(i) && !/(^|\/)sources\/avendb\.js$|^\.\/avendb\.js$|^\$lib\/avendb\/stirs\.svelte\.js$/.test(i));
+		const theirs = imports.filter((i) => /avendb/i.test(i) && !/(^|\/)sources\/avendb\.js$|^\.\/avendb\.js$/.test(i));
 		if (theirs.length) throw new Error(`${f.slice(lib.length)} imports ${theirs.join(', ')}`);
 		expect(text).not.toMatch(/avendb\.maia\.city|\/api\/avendb/i);
 	}
