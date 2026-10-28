@@ -27,6 +27,9 @@ beforeAll(async () => {
 		previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
 		Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: key === 'window' ? window : window[key] });
 	}
+	// Svelte's dev client puts a throwing getter on globalThis for each rune it finds missing; the test files that run
+	// after this one in the same process read those globals, so they go back to what they were
+	for (const rune of ['$state', '$effect', '$derived', '$inspect', '$props', '$bindable']) previous.set(rune, Object.getOwnPropertyDescriptor(globalThis, rune));
 	// Svelte caches Node's DOM getters. Linkedom implements these on concrete subclasses instead.
 	for (const key of ['firstChild', 'nextSibling']) {
 		const original = Object.getOwnPropertyDescriptor(window.Node.prototype, key);
