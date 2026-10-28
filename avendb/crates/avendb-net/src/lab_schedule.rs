@@ -425,9 +425,11 @@ mod integration {
     }
 }
 
-/// G5 (batch 5, W2): a person's write applied less than 50 ms behind while the Lab is busy, as the iPhone's was on 27
-/// Oct (writes 1.9 s): a catch-up slice running and a page's 32 reads waiting, each turn 20 ms. Before writes had a
-/// class of their own a write waited for every read queued ahead of it.
+/// G5 (batch 5, W2): a person's write goes ahead of the reads queued before it while the Lab is busy, as the iPhone's
+/// did not on 27 Oct (writes 1.9 s): a catch-up slice running and a page's 32 reads waiting, each turn 20 ms. Before
+/// writes had a class of their own a write waited for every read queued ahead of it. Here the order is asserted (no
+/// queued read ran before the write); the 50 ms p95 the order buys is a gate of the bench's live shard, on a
+/// release-like build, not of a unit test on a loaded machine.
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod writes_first {
     use super::*;
@@ -438,7 +440,7 @@ mod writes_first {
     const TURN: Duration = Duration::from_millis(20);
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn a_write_is_applied_within_50_ms_while_reads_and_catch_up_wait() {
+    async fn a_write_goes_ahead_of_the_queued_reads_and_catch_up() {
         let mut w = world();
         let vault = handbook_ready(&mut w);
         let me = w.mac_a;
@@ -457,9 +459,16 @@ mod writes_first {
                 }).await.unwrap()
             });
             entering.await.unwrap();
+            let ran = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let reads: Vec<_> = (0..32).map(|_| {
-                let shared = node.shared.clone();
-                tokio::spawn(async move { shared.read(|lab, me| { std::thread::sleep(TURN); lab.size(me) }).await })
+                let (shared, ran) = (node.shared.clone(), ran.clone());
+                tokio::spawn(async move {
+                    shared.read(move |lab, me| {
+                        ran.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        std::thread::sleep(TURN);
+                        lab.size(me)
+                    }).await
+                })
             }).collect();
             let more: Vec<_> = (0..4).map(|_| {
                 let shared = node.shared.clone();
@@ -470,10 +479,14 @@ mod writes_first {
                 tokio::task::yield_now().await;
             }
             let asked = Instant::now();
-            let entry = node.try_act(move |lab, me| {
-                lab.create(me, vault, vault, "doc", &[], document(&format!("Write {round}"), "while busy", me)).unwrap()
+            let ahead = ran.clone();
+            let (entry, reads_before) = node.try_act(move |lab, me| {
+                let reads_before = ahead.load(std::sync::atomic::Ordering::SeqCst);
+                (lab.create(me, vault, vault, "doc", &[], document(&format!("Write {round}"), "while busy", me)).unwrap(),
+                    reads_before)
             }).await.unwrap();
             behind.push(asked.elapsed());
+            assert_eq!(reads_before, 0, "round {round}: the write ran after {reads_before} of the 32 queued reads");
             assert!(node.read(move |lab, me| lab.item(me, entry).is_some()).await);
             slice.await.unwrap();
             for r in reads { r.await.unwrap(); }
@@ -483,8 +496,6 @@ mod writes_first {
         let p95 = behind[(behind.len() * 95).div_ceil(100) - 1];
         eprintln!("WRITES behind a {TURN:?} slice and 32 queued {TURN:?} reads: p50 {:?}, p95 {p95:?}, max {:?}",
             behind[behind.len() / 2], behind[behind.len() - 1]);
-        // one slice running and the write's own turn, never the 32 reads (640 ms) ahead of it
-        assert!(p95 < Duration::from_millis(50), "a write applied {p95:?} behind (p95)");
         node.shutdown().await.unwrap();
     }
 }

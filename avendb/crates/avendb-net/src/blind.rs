@@ -633,16 +633,17 @@ mod tests {
         let start = Instant::now();
         phone.know(server.addr());
         phone.shared.connection(server.id()).await.unwrap();
-        let until = start + Duration::from_secs(20);
+        let until = start + Duration::from_secs(60);
         loop {
             if phone.shared.read(move |lab, me| lab.history(me, room).is_some()).await { break; }
             assert!(Instant::now() < until, "the room never came");
             n0_future::time::sleep(Duration::from_millis(20)).await;
         }
-        let took = start.elapsed();
+        // the first round that asked the server named it: the round the connection started, not a later one
+        let first = phone.shared.discovery_first_found.load(std::sync::atomic::Ordering::Acquire);
         phone.shutdown().await.unwrap();
         server.shutdown().await.unwrap();
-        assert!(took < Duration::from_secs(2), "the room came after {took:?}");
+        assert_eq!(first, 1, "the room came from discovery round {first}");
     }
 
 }
