@@ -566,34 +566,47 @@ of the always-on peer land one page and then none for 9 minutes: it held every l
 was never asked all evening. So a claim holds only while its asking's pages land: once none landed for `handover`,
 a peer owed the log takes it, and every page asked after names loose what any pull took meanwhile (`withTaken`, from
 any peer), so the stalled asking, if it comes back, sends none of it again. Rust: avendb-net lib.rs `Claims::take`,
-`Claims::landed`, pulls.rs `Taken`. -/
+`Claims::landed`, pulls.rs `Taken`.
+
+No device waits on one peer (Samuel 2026-10-28 20:29, the Mac "Waiting on Safari on iPhone · 29 s" while the always-on
+peer held the same logs): a claim of a peer whose connection is gone holds nothing, not even for `handover`, and
+`handover` is the stall the sync pill shows (5 s), not a phone relay's slowest page (15 s). Rust: `Claims::gone`,
+called as the connection closes, which asks every peer the claim held back again at once. -/
 
 /-- A claim on a log: the peer asked for it, and when its asking last landed a page (or began). -/
 structure Claim where
   peer : Nat
   landed : Nat
 
-/-- Whether peer `me` takes a log claimed so at `now`: unclaimed, its own, or its asking stalled `handover` long. -/
-def takes (handover now me : Nat) : Option Claim → Bool
+/-- Whether peer `me` takes a log claimed so at `now`, `connected` saying which peers' connections are open: unclaimed,
+    its own, its peer gone, or its asking stalled `handover` long. -/
+def takes (handover now me : Nat) (connected : Nat → Bool) : Option Claim → Bool
   | none => true
-  | some c => c.peer == me || decide (c.landed + handover ≤ now)
+  | some c => c.peer == me || !connected c.peer || decide (c.landed + handover ≤ now)
 
-/-- A claim whose pages land is kept: no other peer is asked for its log, nothing comes twice (S5). -/
-theorem a_landing_claim_is_kept (handover now me : Nat) (c : Claim) (h : c.peer ≠ me)
-    (fresh : now < c.landed + handover) : takes handover now me (some c) = false := by
-  simp [takes, h, Nat.not_le.mpr fresh]
+/-- A claim whose pages land over an open connection is kept: no other peer is asked for its log, nothing comes twice
+    (S5). -/
+theorem a_landing_claim_is_kept (handover now me : Nat) (connected : Nat → Bool) (c : Claim) (h : c.peer ≠ me)
+    (open_ : connected c.peer = true) (fresh : now < c.landed + handover) :
+    takes handover now me connected (some c) = false := by
+  simp [takes, h, open_, Nat.not_le.mpr fresh]
 
 /-- A stalled claim is handed over: a peer owed the log asks for it once `handover` passed with no page. -/
-theorem a_stalled_claim_hands_over (handover now me : Nat) (c : Claim) (h : c.landed + handover ≤ now) :
-    takes handover now me (some c) = true := by
+theorem a_stalled_claim_hands_over (handover now me : Nat) (connected : Nat → Bool) (c : Claim)
+    (h : c.landed + handover ≤ now) : takes handover now me connected (some c) = true := by
   simp [takes, h]
 
+/-- A claim of a peer whose connection is gone holds nothing: any other peer takes its log at once. -/
+theorem a_gone_peers_claim_hands_over_at_once (handover now me : Nat) (connected : Nat → Bool) (c : Claim)
+    (gone : connected c.peer = false) : takes handover now me connected (some c) = true := by
+  simp [takes, gone]
+
 /-- No log waits on a stalled asking for ever: an owed peer asking again at `landed + handover` takes it. -/
-theorem no_log_waits_past_the_handover (handover me : Nat) (c : Option Claim) :
-    ∃ t, ∀ now, t ≤ now → takes handover now me c = true := by
+theorem no_log_waits_past_the_handover (handover me : Nat) (connected : Nat → Bool) (c : Option Claim) :
+    ∃ t, ∀ now, t ≤ now → takes handover now me connected c = true := by
   match c with
   | none => exact ⟨0, fun _ _ => rfl⟩
-  | some c => exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover now me c h⟩
+  | some c => exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover now me connected c h⟩
 
 /-- What the stalled asking sends if it comes back: none of what the peer that took over brought, by `withTaken`. -/
 theorem the_stalled_asking_sends_none_of_it_again (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId)
