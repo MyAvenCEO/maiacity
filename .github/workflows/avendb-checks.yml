@@ -495,7 +495,9 @@ jobs:
         env:
           RUSTFLAGS: --cfg avendb_no_replay_checks
           AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        # both test programs built in one cargo call, side by side: one after the other they took 3m06s and 2m39s
         run: |
+          cargo test --locked --profile live -p avendb-net --features test-fixtures --test sync_bench --lib --no-run
           AVENDB_LIVE_LINK=calm,phone,phone_bulk,calm_bulk cargo test --locked --profile live -p avendb-net --features test-fixtures --test sync_bench -- --ignored --nocapture --exact bench_live \
             | tee -a "$RUNNER_TEMP/bench.log"
           # G5: a person's write behind a catch-up slice and 32 queued reads (lab_schedule_bench.rs)
