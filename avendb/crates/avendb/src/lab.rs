@@ -5583,6 +5583,13 @@ impl Lab {
         self.held(d).lazy.unanswered.clone()
     }
 
+    /// The stubs device `d` counts as held (`LazyBoxes.lean`), each by its id with the edits it says it builds on:
+    /// what its request names (`request_basis`), and its holdings count too (avendb-net `differ`), none once it asks
+    /// for their bodies.
+    pub fn held_stubs(&self, d: SignerId) -> Vec<(EditId, Vec<EditId>)> {
+        self.held(d).counted_stubs().into_iter().map(|s| (s.id, s.parents)).collect()
+    }
+
     /// How many stubs device `d` took in all (`receive_stubs`): of boxes its first syncs held back.
     pub fn stubs_taken(&self, d: SignerId) -> usize {
         self.held(d).lazy.taken
