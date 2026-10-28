@@ -788,7 +788,7 @@ mod tests {
         );
         let mut partial =
             Judging::resume(en, &store.readings, &lane, restored.history, restored.after);
-        let bodies = HashMap::from([(next.edit, store.bodies[&next.edit].clone())]);
+        let bodies = HashMap::from([(next.edit, store.body_metadata(next.edit).expect("its body").clone())]);
         assert!(full.judge(
             me,
             st,

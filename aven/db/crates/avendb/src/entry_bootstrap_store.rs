@@ -79,7 +79,7 @@ fn canonical_owner_replacement(on: SignerId, store: &Store, base: &RestoredOwner
     if !base.history.changes().iter().all(|c| held(c.write.edit))
         || !state.entry_writes(base.entry).all(|w| held(w.edit)) { return None; }
     let lane=Lane::with_built_ins(state.lane_of(en.vault,&store.readings));
-    let canonical=judged_anew(on,state,(&store.readings,&store.bodies),&store.readings.groups,en,&lane);
+    let canonical=judged_anew(on,state,(&store.readings,&store.body_of()),&store.readings.groups,en,&lane);
     if !base.history.changes().iter().all(|old| canonical.history.get(old.write.edit).is_some_and(|now|
         now.write==old.write && now.counted==old.counted && now.fits==old.fits
             && now.touches==old.touches && now.adds==old.adds)) { return None; }
@@ -313,7 +313,7 @@ impl Lab {
             let lane_ready = lane_digest == Some(bootstrap_lane_digest(&view, &readings, vault));
             let lane = Lane::with_built_ins(view.lane_of(vault, &readings));
             let en = view.entry(entry).expect("scoped entry").clone();
-            base.history.restore_held_bodies(&store.bodies);
+            base.history.restore_held_bodies(&store.body_of());
             let original_scratch = if resumed.is_none() {
                 base.items.get(&MAIN).cloned().and_then(|item| {
                     Scratch::from_attested_item(item, &base.history.history(MAIN))
@@ -425,7 +425,9 @@ impl Lab {
             };
             let shown = judging.shown_on(on, [0; 32], tip, Some(std::mem::take(&mut base.items)));
             // The ordinary checks may reject suffix content; only counted history shows.
-            store.bodies.extend(opened_suffix);
+            for (id, body) in opened_suffix {
+                store.bodies.insert(id, body);
+            }
             store.shown.insert(entry, shown);
             store.readings = readings;
             {
@@ -560,7 +562,7 @@ mod tests {
         lab.sync(mac,guest_device);
         let shared=lab.edit(guest_device,guest_vault,entry,|item|item.set_text(2,"Guest update")).unwrap();
         let signed=lab.signed_edit(guest_device,shared).unwrap().clone();
-        let body=lab.held(guest_device).bodies[&shared].clone();
+        let body=lab.held(guest_device).body_metadata(shared).expect("its body").clone();
         let write=lab.held(guest_device).replay.state.write(shared).unwrap();
         assert!(bootstrap_share_proof(&lab.held(guest_device).replay.state,vault,write,body.proof.as_ref()));
         assert!(!bootstrap_share_proof(&lab.held(guest_device).replay.state,vault,write,None));

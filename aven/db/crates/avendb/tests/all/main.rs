@@ -53,6 +53,7 @@ mod phone_fixture;
 mod probes;
 mod properties;
 mod provenance;
+mod read_rules;
 mod replay_rungs;
 mod replay_scale;
 mod replay_tail;

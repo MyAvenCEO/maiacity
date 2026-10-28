@@ -1,6 +1,6 @@
 // @ts-nocheck — Bun fixtures intentionally inject browser and engine boundaries.
 import {test,expect} from 'bun:test';
-import {createDiagnosticRunner,peerDiagnostics,diagnosticSnapshot} from './diagnostics-report.js';
+import {createDiagnosticRunner,peerDiagnostics,diagnosticSnapshot,unlockReport} from './diagnostics-report.js';
 import {runNetworkDiagnostics} from './network-diagnostics.js';
 import {createLatencyJournal} from './latency-journal.js';
 import {failureClass} from './local-timings.js';
@@ -67,4 +67,18 @@ test('the report carries what a sync lacks of each peer and takes of it, as numb
  // an engine stage that isn't its own few words is not copied
  const odd = observeSync(sync, { ...synced, from: [{ ...synced.from[0], pulling: { since: 1, stage: 'GET https://x/y', took: 1 } }] }, 3000);
  expect(diagnosticSnapshot({ phase: 'open', sync: odd, device: 'iPhone' }).sync.from[0].pulling.stage).toBe('other');
+});
+test('a report carries each step of the last unlock, its time and its note, on the unlock\'s clock, bounded',()=>{
+ const unlock={began:1793216000000,from:4600,over:true,steps:[
+  {step:'restore',at:0,took:0,note:null},
+  {step:'shelf',at:10,took:97500,note:'115719 edits, 2048 of its head and 3 after it; key '+'ab'.repeat(16)},
+  {step:'refresh',at:97510,took:1200,note:'x'.repeat(900)},
+  {step:'Bad step!',at:1,took:1}]};
+ const r=diagnosticSnapshot({phase:'open',device:'iPhone',journal:null,lifecycle:null,manifests:null,sync:null,playback:null,unlock}).unlock;
+ expect(r.began).toBe(1793216000000);expect(r.over).toBe(true);
+ expect(r.steps.map(s=>s.step)).toEqual(['restore','shelf','refresh']);
+ expect(r.steps[1]).toMatchObject({at:4610,took:97500});
+ expect(r.steps[1].note).toBe('115719 edits, 2048 of its head and 3 after it; key …');
+ expect(r.steps[2].note.length).toBe(600);
+ expect(unlockReport(null)).toEqual({status:'unavailable',reason:'no-unlock-in-this-tab'});
 });

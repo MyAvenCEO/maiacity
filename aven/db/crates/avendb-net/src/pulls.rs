@@ -41,10 +41,18 @@ pub(crate) struct LiveWork {
 }
 
 impl LiveWork {
-    pub(crate) fn next(&mut self) -> Option<BTreeSet<LogId>> {
+    /// The logs its next round takes: those the open views want (`wanted`), if any are held back, else every one; what
+    /// it leaves waits for the round after (`LivePriority.lean` `nextRound`, `wanted_go_first`). A chat message to a
+    /// device waited 4.2 s behind the hundred logs of key upkeep its sender announced while it caught up.
+    pub(crate) fn next(&mut self, wanted: &BTreeSet<LogId>) -> Option<BTreeSet<LogId>> {
         let mut book = self.book.lock().expect("live pulls");
         let (sequence, logs) = book.peers.get_mut(&self.peer)?;
         if *sequence != self.sequence { return None; }
+        let first: BTreeSet<LogId> = logs.intersection(wanted).copied().collect();
+        if !first.is_empty() {
+            logs.retain(|l| !first.contains(l));
+            return Some(first);
+        }
         if !logs.is_empty() { return Some(std::mem::take(logs)); }
         book.peers.remove(&self.peer);
         None
@@ -349,13 +357,17 @@ impl Budget {
         taken
     }
 
-    pub(crate) fn live_announced(&self, peer: SignerId, full: bool, logs: &[LogId]) -> Option<LiveWork> {
+    /// A live pull of `peer`'s announced `logs`, or none where one runs, which takes them on its next round: at most
+    /// `LIVE_LOGS` held back, but every log the open views want (`wanted`), as few as the views (`LivePriority.lean`
+    /// `holdBack`, `a_wanted_log_is_held_back`).
+    pub(crate) fn live_announced(&self, peer: SignerId, full: bool, logs: &[LogId], wanted: &BTreeSet<LogId>) -> Option<LiveWork> {
         if full || logs.is_empty() || logs.len() > LIVE_LOGS { return None; }
         let mut book = self.live.lock().expect("live pulls");
         if let Some((_, pending)) = book.peers.get_mut(&peer) {
             for log in logs {
-                if pending.len() >= LIVE_LOGS { break; }
-                pending.insert(*log);
+                if pending.len() < LIVE_LOGS || wanted.contains(log) {
+                    pending.insert(*log);
+                }
             }
             return None;
         }
@@ -1179,19 +1191,37 @@ mod live_queue_tests {
         // LivePriority.full_is_not_interactive / oversized_is_not_interactive / hints_are_bounded.
         let budget = Budget::default();
         let peer = SignerId::from_u64(1);
-        assert!(budget.live_announced(peer, true, &[log(1)]).is_none());
-        assert!(budget.live_announced(peer, false, &[]).is_none());
-        assert!(budget.live_announced(peer, false, &(0..=LIVE_LOGS as u64).map(log).collect::<Vec<_>>()).is_none());
-        let mut first = budget.live_announced(peer, false, &[log(1)]).unwrap();
-        assert!(budget.live_announced(peer, false, &(2..=LIVE_LOGS as u64 + 1).map(log).collect::<Vec<_>>()).is_none());
-        assert_eq!(first.next().unwrap().len(), LIVE_LOGS);
+        assert!(budget.live_announced(peer, true, &[log(1)], &BTreeSet::new()).is_none());
+        assert!(budget.live_announced(peer, false, &[], &BTreeSet::new()).is_none());
+        assert!(budget.live_announced(peer, false, &(0..=LIVE_LOGS as u64).map(log).collect::<Vec<_>>(), &BTreeSet::new()).is_none());
+        let mut first = budget.live_announced(peer, false, &[log(1)], &BTreeSet::new()).unwrap();
+        assert!(budget.live_announced(peer, false, &(2..=LIVE_LOGS as u64 + 1).map(log).collect::<Vec<_>>(), &BTreeSet::new()).is_none());
+        assert_eq!(first.next(&BTreeSet::new()).unwrap().len(), LIVE_LOGS);
         let mut workers = vec![first];
         for n in 2..=LIVE_PEERS as u64 {
-            workers.push(budget.live_announced(SignerId::from_u64(n), false, &[log(n)]).unwrap());
+            workers.push(budget.live_announced(SignerId::from_u64(n), false, &[log(n)], &BTreeSet::new()).unwrap());
         }
-        assert!(budget.live_announced(SignerId::from_u64(LIVE_PEERS as u64 + 1), false, &[log(1)]).is_none());
+        assert!(budget.live_announced(SignerId::from_u64(LIVE_PEERS as u64 + 1), false, &[log(1)], &BTreeSet::new()).is_none());
         drop(workers);
         assert!(budget.live.lock().unwrap().peers.is_empty(), "cancellation releases every bounded entry");
+    }
+
+    /// The open view's log goes first, and is kept past the bound, while the sender's key upkeep fills the queue
+    /// (`a_wanted_log_is_held_back`, `wanted_go_first`); the rest comes in the round after.
+    #[test]
+    fn a_live_pull_takes_what_the_views_want_first() {
+        let budget = Budget::default();
+        let peer = SignerId::from_u64(1);
+        let chat: BTreeSet<_> = [log(1000)].into();
+        let mut work = budget.live_announced(peer, false, &[log(1)], &chat).unwrap();
+        assert!(budget.live_announced(peer, false, &(2..=LIVE_LOGS as u64 + 1).map(log).collect::<Vec<_>>(), &chat).is_none());
+        assert!(budget.live_announced(peer, false, &[log(1000)], &chat).is_none(), "held back past the bound");
+        assert!(budget.live_announced(peer, false, &[log(2000)], &chat).is_none());
+        assert_eq!(work.next(&chat), Some(chat.clone()), "the view's log first");
+        let rest = work.next(&chat).unwrap();
+        assert_eq!(rest.len(), LIVE_LOGS, "then the upkeep held back, the bound kept");
+        assert!(!rest.contains(&log(2000)), "a log past the bound no view wants is left to the backlog");
+        assert!(work.next(&chat).is_none());
     }
 
     #[test]
@@ -1199,16 +1229,16 @@ mod live_queue_tests {
         // LivePriority.old_worker_keeps_replacement. Empty detection and removal happen atomically.
         let budget = Budget::default();
         let peer = SignerId::from_u64(1);
-        let mut old = budget.live_announced(peer, false, &[log(1)]).unwrap();
-        assert_eq!(old.next().unwrap(), [log(1)].into());
-        assert!(old.next().is_none());
-        let mut fresh = budget.live_announced(peer, false, &[log(2)]).unwrap();
+        let mut old = budget.live_announced(peer, false, &[log(1)], &BTreeSet::new()).unwrap();
+        assert_eq!(old.next(&BTreeSet::new()).unwrap(), [log(1)].into());
+        assert!(old.next(&BTreeSet::new()).is_none());
+        let mut fresh = budget.live_announced(peer, false, &[log(2)], &BTreeSet::new()).unwrap();
         drop(old);
-        assert_eq!(fresh.next().unwrap(), [log(2)].into());
-        assert!(budget.live_announced(peer, false, &[log(3)]).is_none());
-        assert_eq!(fresh.next().unwrap(), [log(3)].into());
+        assert_eq!(fresh.next(&BTreeSet::new()).unwrap(), [log(2)].into());
+        assert!(budget.live_announced(peer, false, &[log(3)], &BTreeSet::new()).is_none());
+        assert_eq!(fresh.next(&BTreeSet::new()).unwrap(), [log(3)].into());
         drop(fresh);
-        assert!(budget.live_announced(peer, false, &[log(4)]).is_some());
+        assert!(budget.live_announced(peer, false, &[log(4)], &BTreeSet::new()).is_some());
     }
 
     #[tokio::test]

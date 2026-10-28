@@ -558,6 +558,60 @@ theorem change_first_ends_whole (held change all : Nat → Option Nat) :
   simp only [take]
   cases all l <;> simp
 
+/-! ## What the open views want goes first in a live pull (2026-10-28)
+
+A live pull of one peer takes the logs that peer announced a round at a time, at most `limit` held back for the next
+round (`Budget::live_announced`, `LiveWork::next`). An iPhone catching up announced its own key upkeep, a hundred logs
+of keys and wraps in announcements of a few logs each, while Samuel's chat message to the Mac waited behind them, 4.2 s
+(`chat_crosses_both_ways_…`), or was left out once `limit` were held back. As a device's backlog asks for the open
+actor's needs before the rest (`next_asking`), its live pull takes the logs its views want first, and keeps one they
+want even past `limit`: those are as few as the views, which are bounded on their own (`Interest`). Every other log
+keeps the bound, and none is lost: what one round leaves waits for the next. Rust: avendb-net pulls.rs `LiveWork::next`,
+`Budget::live_announced`. -/
+
+/-- Whether a log announced while `pending` are held back is held back too: under the bound, or wanted by a view. -/
+def holdBack (limit : Nat) (wanted : Nat → Bool) (pending : List Nat) (l : Nat) : Bool :=
+  pending.length < limit || wanted l
+
+/-- A log a view wants is never left out of a live pull. -/
+theorem a_wanted_log_is_held_back (limit : Nat) (wanted : Nat → Bool) (pending : List Nat) (l : Nat)
+    (h : wanted l = true) : holdBack limit wanted pending l = true := by
+  simp [holdBack, h]
+
+/-- Any other is held back only under the bound. -/
+theorem an_unwanted_log_keeps_the_bound (limit : Nat) (wanted : Nat → Bool) (pending : List Nat) (l : Nat)
+    (h : wanted l = false) (held : holdBack limit wanted pending l = true) : pending.length < limit := by
+  simpa [holdBack, h] using held
+
+/-- The logs of `pending` the next round takes: those the views want, if any are, else all of them. -/
+def nextRound (wanted : Nat → Bool) (pending : List Nat) : List Nat :=
+  if pending.any wanted then pending.filter wanted else pending
+
+/-- Where a held-back log is wanted, the next round takes the wanted ones alone. -/
+theorem wanted_go_first (wanted : Nat → Bool) (pending : List Nat) (h : pending.any wanted = true) :
+    ∀ l ∈ nextRound wanted pending, wanted l = true := by
+  intro l hl
+  simp only [nextRound, h, ite_true, List.mem_filter] at hl
+  exact hl.2
+
+/-- A round takes only what was held back, and what it leaves waits for the next: nothing is lost. -/
+theorem a_round_loses_nothing (wanted : Nat → Bool) (pending : List Nat) (l : Nat) (h : l ∈ pending) :
+    l ∈ nextRound wanted pending ∨ (pending.any wanted = true ∧ wanted l = false) := by
+  unfold nextRound
+  split
+  · rename_i hw
+    by_cases hl : wanted l = true
+    · exact Or.inl (List.mem_filter.mpr ⟨h, hl⟩)
+    · exact Or.inr ⟨hw, by simpa using hl⟩
+  · exact Or.inl h
+
+theorem a_round_takes_what_was_held_back (wanted : Nat → Bool) (pending : List Nat) (l : Nat)
+    (h : l ∈ nextRound wanted pending) : l ∈ pending := by
+  unfold nextRound at h
+  split at h
+  · exact (List.mem_filter.mp h).1
+  · exact h
+
 /-! ## A stalled claim hands over (S1, 2026-10-28)
 
 A log that two peers hold more of is asked of one at a time (`Claims`, S5): the first asking takes it, and the other
@@ -566,7 +620,12 @@ of the always-on peer land one page and then none for 9 minutes: it held every l
 was never asked all evening. So a claim holds only while its asking's pages land: once none landed for `handover`,
 a peer owed the log takes it, and every page asked after names loose what any pull took meanwhile (`withTaken`, from
 any peer), so the stalled asking, if it comes back, sends none of it again. Rust: avendb-net lib.rs `Claims::take`,
-`Claims::landed`, pulls.rs `Taken`. -/
+`Claims::landed`, pulls.rs `Taken`.
+
+No device waits on one peer (Samuel 2026-10-28 20:29, the Mac "Waiting on Safari on iPhone · 29 s" while the always-on
+peer held the same logs): a claim of a peer whose connection is gone holds nothing, not even for `handover`, and
+`handover` is the stall the sync pill shows (5 s), not a phone relay's slowest page (15 s). Rust: `Claims::gone`,
+called as the connection closes, which asks every peer the claim held back again at once. -/
 
 
 /-! Since pages are sized to their asker (S1b, below), a page over a slow link lands in its couple of seconds too, so
@@ -586,29 +645,35 @@ structure Claim where
 /-- Whether its pages come `slower` times slower than a link of `rate`. -/
 def Claim.slow (slower rate : Nat) (c : Claim) : Bool := c.rate.any (fun r => r * slower < rate)
 
-/-- Whether peer `me`, its link carrying `rate`, takes a log claimed so at `now`: unclaimed, its own, its asking
-stalled `handover` long, or its pages `slower` times slower than `me`'s link. -/
-def takes (handover slower now me rate : Nat) : Option Claim → Bool
+/-- Whether peer `me`, its link carrying `rate`, takes a log claimed so at `now`, `connected` saying which peers'
+connections are open: unclaimed, its own, its peer gone, its asking stalled `handover` long, or its pages `slower` times
+slower than `me`'s link. -/
+def takes (handover slower now me rate : Nat) (connected : Nat → Bool) : Option Claim → Bool
   | none => true
-  | some c => c.peer == me || decide (c.landed + handover ≤ now) || c.slow slower rate
+  | some c => c.peer == me || !connected c.peer || decide (c.landed + handover ≤ now) || c.slow slower rate
 
-/-- A claim whose pages land, about as fast as `me`'s link would bring them, is kept: no other peer is asked for its
-log, nothing comes twice (S5). -/
-theorem a_landing_claim_is_kept (handover slower now me rate : Nat) (c : Claim) (h : c.peer ≠ me)
-    (fresh : now < c.landed + handover) (fast : c.slow slower rate = false) :
-    takes handover slower now me rate (some c) = false := by
-  simp [takes, h, Nat.not_le.mpr fresh, fast]
+/-- A claim whose pages land over an open connection, about as fast as `me`'s link would bring them, is kept: no other
+peer is asked for its log, nothing comes twice (S5). -/
+theorem a_landing_claim_is_kept (handover slower now me rate : Nat) (connected : Nat → Bool) (c : Claim)
+    (h : c.peer ≠ me) (open_ : connected c.peer = true) (fresh : now < c.landed + handover)
+    (fast : c.slow slower rate = false) : takes handover slower now me rate connected (some c) = false := by
+  simp [takes, h, open_, Nat.not_le.mpr fresh, fast]
 
 /-- A stalled claim is handed over: a peer owed the log asks for it once `handover` passed with no page. -/
-theorem a_stalled_claim_hands_over (handover slower now me rate : Nat) (c : Claim) (h : c.landed + handover ≤ now) :
-    takes handover slower now me rate (some c) = true := by
+theorem a_stalled_claim_hands_over (handover slower now me rate : Nat) (connected : Nat → Bool) (c : Claim)
+    (h : c.landed + handover ≤ now) : takes handover slower now me rate connected (some c) = true := by
   simp [takes, h]
 
 /-- A slow claim is handed over: a peer owed the log whose link is `slower` times as fast takes it, however its pages
 land. -/
-theorem a_slow_claim_hands_over (handover slower now me rate : Nat) (c : Claim) (h : c.slow slower rate = true) :
-    takes handover slower now me rate (some c) = true := by
+theorem a_slow_claim_hands_over (handover slower now me rate : Nat) (connected : Nat → Bool) (c : Claim)
+    (h : c.slow slower rate = true) : takes handover slower now me rate connected (some c) = true := by
   simp [takes, h]
+
+/-- A claim of a peer whose connection is gone holds nothing: any other peer takes its log at once. -/
+theorem a_gone_peers_claim_hands_over_at_once (handover slower now me rate : Nat) (connected : Nat → Bool)
+    (c : Claim) (gone : connected c.peer = false) : takes handover slower now me rate connected (some c) = true := by
+  simp [takes, gone]
 
 /-- The faster peer's claim holds when the slower one asks again: with `1 ≤ slower`, a claim at `r` that took the log
 from a peer at `q < r` (`q * slower < r`) isn't slow to it, so the log moves once. -/
@@ -622,16 +687,19 @@ theorem a_faster_claim_is_kept (slower q r : Nat) (hs : 1 ≤ slower) (h : q * s
   omega
 
 /-- No log waits on a stalled asking for ever: an owed peer asking again at `landed + handover` takes it. -/
-theorem no_log_waits_past_the_handover (handover slower me rate : Nat) (c : Option Claim) :
-    ∃ t, ∀ now, t ≤ now → takes handover slower now me rate c = true := by
+theorem no_log_waits_past_the_handover (handover slower me rate : Nat) (connected : Nat → Bool) (c : Option Claim) :
+    ∃ t, ∀ now, t ≤ now → takes handover slower now me rate connected c = true := by
   match c with
   | none => exact ⟨0, fun _ _ => rfl⟩
-  | some c => exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover slower now me rate c h⟩
+  | some c =>
+    exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover slower now me rate connected c h⟩
 
--- the sim's browser: the Mac's pages at 20 KB/s, the server new (128 KiB in 2 s), `SLOWER` 2
-#guard takes 15 2 3 2 65536 (some { peer := 1, landed := 2, rate := some 20000 }) == true
-#guard takes 15 2 3 2 40000 (some { peer := 1, landed := 2, rate := some 20000 }) == false
-#guard takes 15 2 3 1 20000 (some { peer := 2, landed := 3, rate := some 65536 }) == false
+-- the sim's browser: the Mac's pages at 20 KB/s, the server new (128 KiB in 2 s), `SLOWER` 2, both connected
+#guard takes 15 2 3 2 65536 (fun _ => true) (some { peer := 1, landed := 2, rate := some 20000 }) == true
+#guard takes 15 2 3 2 40000 (fun _ => true) (some { peer := 1, landed := 2, rate := some 20000 }) == false
+#guard takes 15 2 3 1 20000 (fun _ => true) (some { peer := 2, landed := 3, rate := some 65536 }) == false
+-- the Mac's connection gone: its fresh, fast claim holds nothing
+#guard takes 15 2 3 2 40000 (fun p => p != 1) (some { peer := 1, landed := 2, rate := some 20000 }) == true
 
 /-- What the stalled asking sends if it comes back: none of what the peer that took over brought, by `withTaken`. -/
 theorem the_stalled_asking_sends_none_of_it_again (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId)
