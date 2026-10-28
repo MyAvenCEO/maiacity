@@ -2949,6 +2949,36 @@ impl State {
         st
     }
 
+    /// Index the entries again, and count the audiences in use, its writes being the first `k` of `r`'s: the places of
+    /// its writes are `r`'s, but of the writes after them, so they share all but those with `r`'s, as `index_entries`
+    /// would make them.
+    fn index_first_writes(&mut self, r: &State, k: usize) {
+        let (mut write_at, mut by_entry) = (r.write_at.clone(), r.by_entry.clone());
+        for (i, w) in r.writes.iter().enumerate().skip(k).rev() {
+            write_at.remove(&w.edit);
+            if let Some(places) = by_entry.get_mut(&w.entry) {
+                debug_assert_eq!(places.last(), Some(&i), "an entry's places of its writes, in order");
+                places.pop();
+                if places.is_empty() {
+                    by_entry.remove(&w.entry);
+                }
+            }
+        }
+        self.entry_at = self.entries.iter().enumerate().map(|(i, en)| (en.id, i)).collect();
+        (self.write_at, self.by_entry) = (write_at, by_entry);
+        let mut in_use: HashMap<AudienceId, (VaultId, usize)> = HashMap::new();
+        for en in self.entries.iter() {
+            in_use.entry(en.audience()).or_insert((en.vault, 0)).1 += 1;
+        }
+        self.in_use = Arc::new(in_use);
+        #[cfg(all(debug_assertions, not(avendb_no_replay_checks)))]
+        {
+            let mut anew = self.clone();
+            anew.index_entries();
+            assert!(anew.write_at == self.write_at && anew.by_entry == self.by_entry, "indexed as anew");
+        }
+    }
+
     /// Index the entries and the writes again, and count the audiences in use.
     fn index_entries(&mut self) {
         self.entry_at = self.entries.iter().enumerate().map(|(i, en)| (en.id, i)).collect();
