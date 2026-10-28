@@ -12,7 +12,7 @@ export const API = dev
 	: 'https://api.maia.city';
 
 /** Who is signed in, as maiaCITY's API knows them: their id, place in the line and role. Their profile, their name
- *  among it, lives in their avenDB human vault alone ($lib/avendb/session.svelte.js `session.name`); what they open of
+ *  among it, lives in their avenDB human vault alone ($avendb/session.svelte.js `session.name`); what they open of
  *  the app, the Maia City cap groups they hold there ($lib/app/access.svelte.js), never a Postgres role. */
 export type Founder = {
 	id: string;

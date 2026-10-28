@@ -17,14 +17,14 @@
  * keys, isn't asked again on this browser.
  */
 import { native } from '$lib/native';
-import { deviceName, relay, server } from '$lib/avendb/server.js';
-import { session } from '$lib/avendb/session.svelte.js';
-import { nameShare, nameShared, plain, seedCity } from '$lib/avendb/vaults.js';
+import { deviceName, relay, server } from '$avendb/server.js';
+import { session } from '$avendb/session.svelte.js';
+import { nameShare, nameShared, plain, seedCity } from '$avendb/vaults.js';
 
 /**
- * How the gate shows a start of avenDB's step by step while it runs ($lib/avendb/steps.js, Signing.svelte): called as
+ * How the gate shows a start of avenDB's step by step while it runs ($avendb/steps.js, Signing.svelte): called as
  * the start of kind `kind` begins, it hands over how the session marks its steps. The way in shows none without one.
- * @typedef {(kind: 'found' | 'link' | 'open') => import('$lib/avendb/session.svelte.js').Steps} Starts
+ * @typedef {(kind: 'found' | 'link' | 'open') => import('$avendb/session.svelte.js').Steps} Starts
  */
 /** @type {Starts} */
 const UNSHOWN = () => ({ step: () => {}, device: () => () => {} });
@@ -65,7 +65,7 @@ export const signingUp = (name) => keep(() => sessionStorage, SIGNUP, name.trim(
 
 /**
  * Remembers the invite a link brought (Samuel 2026-10-19: "The invite automatically should sign that share"): its
- * share of one of Maia City's cap groups, Traveler or Citizen ($lib/avendb/capgroups.js), and the key that claims it,
+ * share of one of Maia City's cap groups, Traveler or Citizen ($avendb/capgroups.js), and the key that claims it,
  * until the person's human vault claims it as they come into the app (`claimInvite`).
  * @param {string} share @param {string} key
  */
@@ -84,7 +84,7 @@ export function invitation() {
 
 /**
  * Claims the invite a link brought in this tab, if any, for the person's human vault, once avenDB is open: just
- * founded, as they signed up with it, or theirs from before ($lib/avendb/session.svelte.js `claim`). What it gives
+ * founded, as they signed up with it, or theirs from before ($avendb/session.svelte.js `claim`). What it gives
  * them is theirs from then on, with no owner of Maia City signing. Its owners' own devices claim none: they run the
  * city, and the invite stays for whoever it was made for. Why it didn't go through, in the person's words, or ''.
  */
@@ -169,7 +169,7 @@ export async function open(say, name = '', starts = UNSHOWN) {
 }
 
 /** Names the person's new human vault `name`: its profile, once the device shows the vault (within a minute), which
- *  everyone reads by default, shared Public with their own key ($lib/avendb/vaults.js `NAME_TYPES`).
+ *  everyone reads by default, shared Public with their own key ($avendb/vaults.js `NAME_TYPES`).
  *  @param {string} name */
 async function profile(name) {
 	const by = Date.now() + 60_000;

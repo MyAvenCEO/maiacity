@@ -10,7 +10,7 @@
  *   fastest channel needs (15 to 120 a second, the line between two samples nowhere further than a fraction of a
  *   degree from the clip). Past LOOP it repeats, its last SEAM seconds blended into its start; a channel that keeps
  *   going one way (an ant round its hill) carries on from where the loop left it (`drift`).
- * - A gait also takes how the actor moves (how far it has come, how fast, how fast it turns: $lib/actors/rig.ts
+ * - A gait also takes how the actor moves (how far it has come, how fast, how fast it turns: $content/actors/rig.ts
  *   `Motion`). It is written down at a few paces of the one it is made for (its gear, `PACES`), each channel by what
  *   moves it, found here by trying: time alone (a tail's swing, an ear's flick); distance alone (a foot set down and
  *   kept there), over one stride, found here too; both as one wave (a fish's body: a beat for every length swum and a

@@ -1,6 +1,6 @@
 <!--
 	THE MAIA CITY VAULT'S RECIPES ON A PAGE — what a page that builds assets shows of where its recipes come from
-	($lib/assets/vault.js, with no repo fallback: Samuel 2026-10-17). While they load, that they do, the page held back
+	($content/assets/vault.js, with no repo fallback: Samuel 2026-10-17). While they load, that they do, the page held back
 	(`hold`), so a world's first build finds them; a feed that can't be reached, or a vault that holds none, in the page's
 	place, saying why, with a way to ask again; and once the page stands, one line over it, naming every ref a build
 	asked for that the vault doesn't hold or holds otherwise, every one whose file never came however long the page

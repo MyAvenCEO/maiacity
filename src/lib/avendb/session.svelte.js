@@ -16,8 +16,8 @@ import { observedWindow } from './observed-window.js';
  * A page that reads or changes the person's avenDB:
  *
  *   import { onMount } from 'svelte';
- *   import { session } from '$lib/avendb/session.svelte.js';
- *   import Unlock from '$lib/avendb/Unlock.svelte';
+ *   import { session } from '$avendb/session.svelte.js';
+ *   import Unlock from '$avendb/Unlock.svelte';
  *
  *   // loads this browser's device, or takes up the one this tab opened already, and never asks for the passkey; the
  *   // function it gives back is onMount's cleanup, which stops watching the device for this page
@@ -65,7 +65,7 @@ useBuiltInActors([...ACTORS, ...QUERIES]);
 /** The name of this browser's shelf in OPFS (./device/store.js). */
 const STORE = 'avendb-browser';
 
-/** Who asks for the passkey: the browser, or in the Mac app its sign-in sheet on maia.city ($lib/avendb/device/passkey.js). */
+/** Who asks for the passkey: the browser, or in the Mac app its sign-in sheet on maia.city ($avendb/device/passkey.js). */
 export const asks = native() ? 'a sign-in sheet asks for your passkey' : 'your browser asks for your passkey';
 
 /** This device, as the person sees it, and the same at the start of a sentence. */

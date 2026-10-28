@@ -5,7 +5,7 @@
 // asks the same matcher, ../../params/moved.js).
 //
 // A sandbox's old /games/<sandbox>/ address is not here: it still has a page of its own, the film camera's
-// ($lib/film/FilmRoute.svelte), which passes on only without ?film.
+// ($content/film/FilmRoute.svelte), which passes on only without ?film.
 
 /** Each old address (with its trailing slash, as every route has one) and where it goes now. */
 export const MOVED = /** @type {const} */ ({
@@ -38,7 +38,7 @@ export const MOVED = /** @type {const} */ ({
 	'/docs/avendb/': '/app/#docs',
 	'/docs/avenbrain/': '/app/#docs',
 	// the theOS paper's own page: its text and figures live in Maia City alone since AIP-19, and the Docs view opens on
-	// it by its story's entry (`#docs/` and its entry, $lib/avendb/Docs.svelte), whatever anchor the old link had
+	// it by its story's entry (`#docs/` and its entry, $avendb/Docs.svelte), whatever anchor the old link had
 	'/theos/': '/app/#docs/5c38946e391378e9bedd2021b042e7cde5990b0bd38919d81495b7ed6b51f218'
 });
 

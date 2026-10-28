@@ -2,7 +2,7 @@
 /**
  * MaiaCity V1's world, in three.js, and nothing but it: the city plot of 49 hexes on a wide sandy steppe, a dusty
  * highway through its centre hex, and the journey of a newcomer across it. At the city's centre the bus stop and the
- * abandoned gas station (the MaiaCity centre, $lib/models/wayside.js); a meandering gravel track leaves the highway
+ * abandoned gas station (the MaiaCity centre, $content/models/wayside.js); a meandering gravel track leaves the highway
  * there and runs through the village's centre hex, where the Village COOP's old shed keeps the powercube beside the
  * solar row and the battery (the village store), on to our tribe's hex: grass, a few bushes, the 2-person bell tent
  * and the pickup's round lot. The city's own hexes are steppe and prairie, the villages' hexes grass.
@@ -24,19 +24,19 @@
  * film's clock, is the film world of /games/maiacity-v1/?film (`clock`, `own: false`, `tick`, `film`).
  */
 import * as THREE from 'three';
-import { worldRenderer } from '$lib/render/world.js';
-import { createOrbitRig } from '$lib/sandbox-kit/orbit.js';
-import { createSky } from '$lib/sandbox-kit/sky.js';
-import { seededRandom } from '$lib/sandbox-kit/random.js'; // so everything stands in the same places for everyone
-import { blend } from '$lib/assets/clips.js';
-import { SPEED } from '$lib/models/units.js';
+import { worldRenderer } from '$content/render/world.js';
+import { createOrbitRig } from '$content/sandbox-kit/orbit.js';
+import { createSky } from '$content/sandbox-kit/sky.js';
+import { seededRandom } from '$content/sandbox-kit/random.js'; // so everything stands in the same places for everyone
+import { blend } from '$content/assets/clips.js';
+import { SPEED } from '$content/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan, seeThrough, wearFace } from './van.js';
 import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, WALK_CYCLE, stakeRef, standInRef, tentWork } from './things.js';
 import { createDrawn } from './drawn.js';
-import { aim, filmHoldsSize, poseIn } from '$lib/sandbox-kit/film.js';
+import { aim, filmHoldsSize, poseIn } from '$content/sandbox-kit/film.js';
 import { frameAt as reelFrame } from '../../../game/film/reel.js';
 import { plantRef } from './plants.js';
 
@@ -677,13 +677,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the world's clock, in seconds */
 	const now = clockOf ?? (() => performance.now() / 1000);
 	let rand = random;
-	// the world renderer ($lib/render/world.js): ACES and soft shadows, as every world under the kit's sky, at most 1.5
+	// the world renderer ($content/render/world.js): ACES and soft shadows, as every world under the kit's sky, at most 1.5
 	// pixels per CSS pixel
 	const renderer = worldRenderer({ canvas, maxPixelRatio: 1.5 });
 	const scene = new THREE.Scene();
 	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 6400);
 	camera.position.set(138, 118, 170);
-	// the kit's map camera ($lib/sandbox-kit/orbit.js): drag turns and tilts, right-drag slides, the wheel zooms; the
+	// the kit's map camera ($content/sandbox-kit/orbit.js): drag turns and tilts, right-drag slides, the wheel zooms; the
 	// keys are the world's own (they walk the player and drive the pickup); out far enough to see the whole city plot
 	const rig = createOrbitRig(camera, canvas, { target: new THREE.Vector3(2, 1, 3), minDistance: 12, maxDistance: 2700, keys: false });
 	const controls = rig.controls;
@@ -3301,7 +3301,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		}
 	}
 
-	// the kit's one sky ($lib/sandbox-kit/sky.js) on the story's own day: its hours run from sunrise at six to sunset at
+	// the kit's one sky ($content/sandbox-kit/sky.js) on the story's own day: its hours run from sunrise at six to sunset at
 	// six (`day`), so the sun is as high at an hour of the story as it always was, low and warm at the ends, the moon and
 	// the stars at night; the haze takes the horizon's colour, and the sun's shadows (a box 220 m across) follow what the
 	// camera looks at, so they fall wherever the story is

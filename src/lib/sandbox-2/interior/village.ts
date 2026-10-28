@@ -17,20 +17,20 @@ import * as THREE from 'three'
 import { DOMES, DOORS, adiff, bake, box, breath, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
 import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
-import { groundMaterial } from '$lib/biomes'
-import { biomeOr } from '$lib/assets/sources/biome.js'
-import { LEVELS } from '$lib/assets/render/lod.js'
+import { groundMaterial } from '$content/biomes'
+import { biomeOr } from '$content/assets/sources/biome.js'
+import { LEVELS } from '$content/assets/render/lod.js'
 import { songbirds } from './birds.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
-import { nearReady as actorsReady, wantNear as actorsNear } from '$lib/assets/render/crowd.js'
+import { nearReady as actorsReady, wantNear as actorsNear } from '$content/assets/render/crowd.js'
 import { flow, pond, shore, stream } from './water'
-import { createWorldRenderer } from '$lib/render/world.js'
-import { createSky } from '$lib/sandbox-kit/sky.js'
-import { createWalker } from '$lib/sandbox-kit/walker.js'
-import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
-import { connectFilm, filmDraws, filmHoldsSize, filmPlays, worldTime } from '$lib/sandbox-kit/film.js'
-import { createStream, type View } from '$lib/sandbox-kit/stream.js'
+import { createWorldRenderer } from '$content/render/world.js'
+import { createSky } from '$content/sandbox-kit/sky.js'
+import { createWalker } from '$content/sandbox-kit/walker.js'
+import { createObstacles } from '$content/sandbox-kit/obstacles.js'
+import { connectFilm, filmDraws, filmHoldsSize, filmPlays, worldTime } from '$content/sandbox-kit/film.js'
+import { createStream, type View } from '$content/sandbox-kit/stream.js'
 import { ambience, levelsAt } from './ambience'
 import { createForest, INSIDE, type Forest } from './flora.js'
 import { createDrawn, createFlora } from './drawn.js'
@@ -81,7 +81,7 @@ function layout(): VillageDome[] {
 
 /**
  * Which sandbox the village is: Sandbox 4 as it was built (its forest of simple stand-in plants, ./plants.ts), or
- * Sandbox 5, its forest grown from our own plants ($lib/plants, ./flora.js) as its `flora` says (./sandbox5.js).
+ * Sandbox 5, its forest grown from our own plants ($content/plants, ./flora.js) as its `flora` says (./sandbox5.js).
  */
 export type VillageOptions = { sandbox?: 'sandbox-4' | 'sandbox-5'; flora?: Flora }
 
@@ -91,7 +91,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		onProgress(label)
 		await breath()
 	}
-	// the canvas, the camera and the sky are every sandbox's own ($lib/sandbox-kit)
+	// the canvas, the camera and the sky are every sandbox's own ($content/sandbox-kit)
 	const stage = createWorldRenderer(container)
 	const { renderer, scene, camera } = stage
 	// where the eye is (the walker's, or the film camera's): the animals near it move every bone
@@ -102,7 +102,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	 *  next look at the level of detail (below), not every frame */
 	let shadowsStale = false
 	const staleShadows = () => void (shadowsStale = true)
-	/** Sandbox 5: our plants drawn by the universal renderer (./drawn.js, $lib/assets/render), each kind built in the asset
+	/** Sandbox 5: our plants drawn by the universal renderer (./drawn.js, $content/assets/render), each kind built in the asset
 	 *  box: the cell's at the village's distances, and the domes' insides' at the nearer ones under their glass */
 	const plantsOut = flora ? createFlora({ renderer, camera, scene, shadows: staleShadows }) : null
 	const plantsIn = flora ? createFlora({ renderer, camera, scene, reach: INSIDE, boxes: 2, shadows: staleShadows }) : null
@@ -131,8 +131,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const lastNear = new Map<number, number>()
 	let nightNow = 0
 
-	/* ── the sky, and a sun that follows the in-game clock ($lib/sandbox-kit/sky) ── */
-	// the film camera (src/lib/film, $lib/sandbox-kit/film): while a film holds the cell, every animation runs on the
+	/* ── the sky, and a sun that follows the in-game clock ($content/sandbox-kit/sky) ── */
+	// the film camera (src/lib/film, $content/sandbox-kit/film): while a film holds the cell, every animation runs on the
 	// world's clock it sets (worldTime) instead of the page's, and the film draws the canvas itself (filmDraws)
 	const GLOW = '#ffc070', LAMP = '#ffc98a'
 	const glowMat = new THREE.MeshStandardMaterial({ color: '#fff0d0', emissive: GLOW, emissiveIntensity: 0.1 })
@@ -162,7 +162,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	hexShape.holes.push(new THREE.Path().absarc(0, 0, Math.max(4.5, domes[0]!.R * 0.22) + 0.3, 0, Math.PI * 2, true))
 	// Sandbox 5: the cell is a forest garden to its edges, its soil never bare — its floor is the food forest biome's,
-	// as the Maia City vault keeps it ($lib/assets/sources/biome.js, its newest version): a living mat of clover and
+	// as the Maia City vault keeps it ($content/assets/sources/biome.js, its newest version): a living mat of clover and
 	// grasses in the light, leaf litter, humus and moss under the trees. Where the vault holds none, the ground lies bare
 	// (said on the page's banner), never a floor of the repo's
 	const FLOOR_BIOME = opts.flora ? biomeOr(FLOORS.outside) : null
@@ -853,9 +853,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	FLOOR.push(species(grassTuft(0.55), false))
 	const TUFT = FLOOR.length - 1
 	// Sandbox 5's floor cover: the food forest biome's grasses, moss, flowers, strawberries, ferns, leaves and deadwood,
-	// each in its colonies, laid out in tiles round you as you go ($lib/biomes/stream.js) — too dense for the whole cell;
+	// each in its colonies, laid out in tiles round you as you go ($content/biomes/stream.js) — too dense for the whole cell;
 	// all of it near you, thinning out further off, each plant growing out of the ground as you come (so it has no edge)
-	// ($lib/biomes/stream.js lays it; each kind built in the box and drawn by the renderer, ./cover.js)
+	// ($content/biomes/stream.js lays it; each kind built in the box and drawn by the renderer, ./cover.js)
 	const floorCover = flora && FLOOR_BIOME ? createCover({ drawn: library, recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 28, near: 7, thin: 0.2, density: 3.4, seed: 505 }) : null
 	const TILE = 70
 	type Tile = { cx: number; cz: number; main: THREE.Matrix4[][]; under: THREE.Matrix4[][]; floor: THREE.Matrix4[][]; far: THREE.Matrix4[]; farCrowns: THREE.Matrix4[]; farColors: THREE.Color[]; dense: THREE.Matrix4[]; denseCrowns: THREE.Matrix4[]; denseColors: THREE.Color[]; near?: THREE.Group; farMesh?: THREE.Group; ground?: THREE.Group }
@@ -1152,7 +1152,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// for a look round from the console (and the checks that photograph the cell): __walker.place(x, z, yaw, pitch)
 	;(window as unknown as { __walker?: typeof walker }).__walker = walker
 
-	// every tree, pillar and table, filed by 8 m cells for walking ($lib/sandbox-kit/obstacles)
+	// every tree, pillar and table, filed by 8 m cells for walking ($content/sandbox-kit/obstacles)
 	const blockers = createObstacles(colliders)
 	/* ── the full insides: as you walk up to a dome, its whole inside is built into the
 	   village a piece at a time, and the simple one steps aside. You walk in through the
@@ -1213,7 +1213,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		for (const i of built.keys()) if (gapTo(i) < gap) (gap = gapTo(i)), (best = i)
 		return best
 	}
-	/* The domes' full insides are streamed by what is seen ($lib/sandbox-kit/stream, one scheduler for every world):
+	/* The domes' full insides are streamed by what is seen ($content/sandbox-kit/stream, one scheduler for every world):
 	   the walker's camera wants every dome within SHOW_NEAREST, those it looks at first, the biggest on screen first;
 	   a shot wants exactly the domes its camera path sees, no more. At most KEEP's worth are built, the longest unseen let go;
 	   one builds at a time. A dome not built shows its simple self. */
@@ -1399,7 +1399,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	onProgress('ready')
 	tick()
 
-	/* ── the film camera's hold on the cell (src/lib/film, $lib/sandbox-kit/film): every frame set from the shot alone,
+	/* ── the film camera's hold on the cell (src/lib/film, $content/sandbox-kit/film): every frame set from the shot alone,
 	   never from the frame before it. Players never reach any of this. ── */
 	/** what a shot sees: its camera path's views (the film knows them), else all round where it stands */
 	const shotViews = (w: { stand: [number, number]; views?: View[] }): View[] => (w.views?.length ? w.views : [{ x: w.stand[0], y: 1.7, z: w.stand[1], near: SHOW_WITHIN }])

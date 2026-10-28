@@ -9,8 +9,8 @@
 <script>
 	import { onMount } from 'svelte';
 	import { apiCall } from '$lib/auth/client';
-	import { Here, here, session } from '$lib/avendb/session.svelte.js';
-	import Unlock from '$lib/avendb/Unlock.svelte';
+	import { Here, here, session } from '$avendb/session.svelte.js';
+	import Unlock from '$avendb/Unlock.svelte';
 
 	const PAGE = 50;
 	/** the name maiaCITY's API goes by in a pass (api/src/standing.ts `AUDIENCE`) */

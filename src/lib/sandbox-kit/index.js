@@ -3,7 +3,7 @@
  *
  * In the world (three.js):
  *   createStage   the canvas, the scene and the camera, kept to their container's size and smooth on a slow phone:
- *                 the world renderer ($lib/render/world.js `createWorldRenderer`), under its kit name
+ *                 the world renderer ($content/render/world.js `createWorldRenderer`), under its kit name
  *   createSky     the one sky of every world, a view of one universe (./universe.js): from the ground, or round a
  *                 planet from space; the sun and moon on the hour, shadows, fog in the horizon's colour, the stars
  *   createWalker  the first-person camera: WASD and drag to look, a joystick and a finger on a phone
@@ -11,7 +11,7 @@
  *   createOrbitRig  the map camera: WASD travels, drag turns and tilts, the wheel zooms to the cursor
  *   connectFilm   hands the world to the film camera (window.__world): the studio can shoot it
  *   seededRandom  chance that is the same every time (./random.js), for whatever a world scatters
- *   disposeObject a world's shapes, materials and pictures let go of, all at once ($lib/render/core.js)
+ *   disposeObject a world's shapes, materials and pictures let go of, all at once ($content/render/core.js)
  *
  * On the page (Svelte):
  *   SkyControl    the time of the sky: Auto (the in-game clock) or Manual (a slider, from noon), one state for
@@ -25,11 +25,11 @@
  *
  * How to build a new sandbox with it: ./README.md.
  */
-export { createWorldRenderer as createStage } from '$lib/render/world.js';
+export { createWorldRenderer as createStage } from '$content/render/world.js';
 export { createSky, createSkyClock, lightAt, sunAt } from './sky.js';
 export { celestial, createUniverse, horizonAt, sunOverGround } from './universe.js';
 export { seededLcg, seededMinStd, seededRandom } from './random.js';
-export { disposeObject } from '$lib/render/core.js';
+export { disposeObject } from '$content/render/core.js';
 export { automatic, manual, skyHour, skyTime, NOON } from './skyTime.svelte.js';
 export { createWalker, PACE } from './walker.js';
 export { createObstacles } from './obstacles.js';

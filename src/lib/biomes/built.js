@@ -1,5 +1,5 @@
 /*
- * THE BIOMES AND THEIR COVER, BUILT IN THE BOX — the `biomes` group the asset box builds ($lib/assets/groups.js), kept
+ * THE BIOMES AND THEIR COVER, BUILT IN THE BOX — the `biomes` group the asset box builds ($content/assets/groups.js), kept
  * in the Maia City vault as every other asset is:
  *
  *   each biome   a patch of its floor, its card its numbers: what a world reads from the vault to lay that floor round
@@ -7,7 +7,7 @@
  *   the cover    what stands on a biome's floor (./cover.js: a grass clump, a fern, a wood anemone, a fallen branch…),
  *                each kind one shape a builder hands back as one three.js object: one asset, its kinds its variants,
  *                built at a seed, `biomes/cover@1:fern?seed=7139`. The worlds and the Biomes explorer (/app/biomes/)
- *                draw a floor's cover from these through the universal renderer ($lib/assets/render), laid out where
+ *                draw a floor's cover from these through the universal renderer ($content/assets/render), laid out where
  *                ./stream.js lays it (`coverLaid`)
  *
  * A world lays a biome as a floor without an edge, round wherever the eye is, its ground painted by a shader of the
@@ -17,7 +17,7 @@
  */
 import { COVER } from './cover.js';
 import { FLOORS } from './floors.js';
-import { registerAssets } from '$lib/assets/register.js';
+import { registerAssets } from '$content/assets/register.js';
 
 /**
  * the cover's older versions, with their frozen builders (none yet)

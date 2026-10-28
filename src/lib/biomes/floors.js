@@ -3,7 +3,7 @@
  * the cover), kept in the Maia City vault as every other asset is (Samuel 2026-10-20: biomes as dynamic as every other
  * asset, loaded from avenDB, not from the repo): a patch of its floor (./patch.js), its card (./card.js) its surfaces,
  * its density and its cover, each kind the cover's asset at its seed. A world reads that card from the vault to lay
- * the floor round you ($lib/assets/sources/biome.js); this list only makes the recipes the vault is given.
+ * the floor round you ($content/assets/sources/biome.js); this list only makes the recipes the vault is given.
  *
  * Its numbers are written in ./index.js, which only these recipes read. The list is written out, each biome by its id
  * and name, so the box's narrowing (./box/narrow.js) keeps one biome in its own recipe and none in the cover's.

@@ -12,7 +12,7 @@
 // section, found by its `slug`; where the site lays it out on a page of its own, with live figures, its `page`.
 //
 // A film post (`film`) is the story gone out as a film: its rendered master (`media`, a Library file the render made),
-// the cut it was rendered from and that cut's script (the film workshop behind it, $lib/studio/scripts.js), its shape
+// the cut it was rendered from and that cut's script (the film workshop behind it, $content/studio/scripts.js), its shape
 // and its length.
 
 /** The tag, and the record's kind, of a post of type `type`. @param {string} type */

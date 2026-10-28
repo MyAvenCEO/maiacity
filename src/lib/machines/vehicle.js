@@ -1,7 +1,7 @@
 /*
  * THE VEHICLE KIT — what every wheeled machine of ours is built from and runs on, pulled out of the travel van and the
  * pickup (./van.js, ./pickup.js) so the next one (a tractor, a trailer, a cart, a truck in a factory) takes them as they
- * are, at AirSup's realism ($lib/assets):
+ * are, at AirSup's realism ($content/assets):
  *
  *   tyreSize, tyreGeometry   a tyre from its marking (205/75 R16): a revolved rubber section, its beads, sidewalls,
  *                            shoulders, ribs and lugs, hollow round its air so a cut shows the carcass
@@ -27,11 +27,11 @@
  * In a wheel's own frame: metres, its axle along x with +x its outer face, its middle at the origin.
  */
 import * as THREE from 'three';
-import { GEO, LAB_PLANES, MAT, approach, clamp, table } from '$lib/assets/kit.js';
+import { GEO, LAB_PLANES, MAT, approach, clamp, table } from '$content/assets/kit.js';
 
 /** @typedef {[number, number, number]} V3 */
 /** @typedef {[number, number]} V2 */
-/** @typedef {ReturnType<typeof import('$lib/assets/parts.js').assetKit>} Kit */
+/** @typedef {ReturnType<typeof import('$content/assets/parts.js').assetKit>} Kit */
 
 /** gravity (m/s²) */
 export const G = 9.81;
@@ -505,7 +505,7 @@ export const KNUCKLE = { upper: /** @type {V3} */ ([-0.112, 0.165, 0]), lower: /
  * @property {'highway' | 'allTerrain'} [pattern]
  * @property {string} assembly @property {string} [source] @property {string} [drive]
  * @property {[string, string][]} [specs] more of the wheel's numbers
- * @property {import('$lib/assets/parts.js').How['tag']} [tag] a label on the tyre
+ * @property {import('$content/assets/parts.js').How['tag']} [tag] a label on the tyre
  * @property {VehicleMats} M
  * @property {THREE.Material} [rimMat] @property {THREE.Material} [capMat]
  * @property {THREE.Object3D} [parent]
@@ -1218,7 +1218,7 @@ export function inlineEngine(kit, o) {
 	E.position.set(...o.at);
 	o.parent.add(E);
 	const m = (/** @type {THREE.BufferGeometry} */ g, /** @type {THREE.Material} */ mat) => kit.mesh(g, mat);
-	/** @param {any} info @param {THREE.Object3D[]} objs @param {import('$lib/assets/parts.js').How} [how] */
+	/** @param {any} info @param {THREE.Object3D[]} objs @param {import('$content/assets/parts.js').How} [how] */
 	const part = (info, objs, how = {}) => {
 		const g = new THREE.Group();
 		g.add(...objs);
@@ -1551,7 +1551,7 @@ export const latheY = (pts, seg = 48) => GEO.lathe(pts, seg);
  * @property {V3} rack the tie rod's inner end (in the body's frame)
  * @property {{ R: number, wire: number, turns: number, k: number }} coil its spring and rate (N/m at the wheel)
  * @property {VehicleMats} M @property {string} assembly @property {string} [source]
- * @property {import('$lib/assets/parts.js').How['tag']} [tag]
+ * @property {import('$content/assets/parts.js').How['tag']} [tag]
  */
 /**
  * One side of a double-wishbone front suspension: the upper and lower A-arms from their bushes on the body to the
@@ -1625,7 +1625,7 @@ export function steeringRack(kit, o) {
  * @property {[V3, V3]} dampers each damper's top (in the body's frame); its bottom on the axle below it
  * @property {number} ratio the final drive @property {number} rate each spring's rate (N/m)
  * @property {VehicleMats} M @property {EngineMats} E @property {string} assembly @property {string} [springs] the springs', hangers' and dampers' assembly (else `assembly`) @property {string} [source]
- * @property {import('$lib/assets/parts.js').How['tag']} [tag]
+ * @property {import('$content/assets/parts.js').How['tag']} [tag]
  */
 /**
  * A live rear axle on leaf springs: the banjo housing, the crown wheel and pinion in its bowl, the half-shafts in its
@@ -1725,7 +1725,7 @@ export function liveAxle(kit, o) {
 /**
  * The propshaft: one or two steel tubes with a universal joint at each end (and a centre bearing between two), re-aimed
  * every moment from the gearbox (on the sprung body) to the axle's pinion (on the wheels), turning.
- * @param {Kit} kit @param {{ n: 1 | 2, r: number, M: VehicleMats, assembly: string, source?: string, specs?: [string, string][], tag?: import('$lib/assets/parts.js').How['tag'] }} o
+ * @param {Kit} kit @param {{ n: 1 | 2, r: number, M: VehicleMats, assembly: string, source?: string, specs?: [string, string][], tag?: import('$content/assets/parts.js').How['tag'] }} o
  */
 export function propshaft(kit, o) {
 	const { M } = o, m = (/** @type {THREE.BufferGeometry} */ g, /** @type {THREE.Material} */ mat) => kit.mesh(g, mat);

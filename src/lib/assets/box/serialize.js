@@ -62,7 +62,7 @@ function lightOf(o, kind) {
 	return L;
 }
 
-/** whether this engine's skinned meshes bend by dual quaternions ($lib/actors/dqs.ts puts its code in three's chunks) */
+/** whether this engine's skinned meshes bend by dual quaternions ($content/actors/dqs.ts puts its code in three's chunks) */
 const dualQuaternions = () => /dqQuat/.test(ShaderChunk.skinning_pars_vertex ?? '');
 
 /**

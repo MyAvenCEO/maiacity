@@ -1,10 +1,10 @@
 /*
  * THE BATTERYPACK, v10 and v11 — our own modular, repairable battery (Samuel 2026-10-13; the v9 design of
- * $lib/actors/batterypack.js, kept to every measure) built the way AirSup's machine skill builds a machine: every part a
+ * $content/actors/batterypack.js, kept to every measure) built the way AirSup's machine skill builds a machine: every part a
  * technician would name as real solids in measured materials, its insides there to cut open (each cell's can, its
  * jelly roll, its crimped cap with the vent, its insulator ring and its sleeve; the contact plates' spring fingers in
  * the holders' holes; the pawls, springs and cables in the hollow foot; the MOSFETs, shunt and fuse on the BMS), and a
- * solver that runs it per row on real equations. The older pack (v1 to v9: $lib/actors/batterypack.js, one rigged
+ * solver that runs it per row on real equations. The older pack (v1 to v9: $content/actors/batterypack.js, one rigged
  * mesh in flat colours) stays as it was; the BatteryCube and the games still build on it.
  *
  * ---------------------------------------------------------------- research (AirSup's step 1)
@@ -51,8 +51,8 @@
  * measures below are v9's, in mm: x across, y to the front, z up.
  */
 import * as THREE from 'three';
-import { GEO, MAT, Flow, approach, clamp, ease, fmt, lerp, table } from '$lib/assets/kit.js';
-import { assetKit } from '$lib/assets/parts.js';
+import { GEO, MAT, Flow, approach, clamp, ease, fmt, lerp, table } from '$content/assets/kit.js';
+import { assetKit } from '$content/assets/parts.js';
 
 /** @typedef {[number, number, number]} V3 */
 /** @typedef {[number, number]} V2 */
@@ -77,7 +77,7 @@ const phase = (t, a, b) => ease.io(clamp((t - a) / (b - a)));
  * Its own moves (v11), loops over its controls: Service presses the two buttons (the drawer's first 4 mm), pulls the
  * whole inside out between the columns and slides it home again till the catches click; Grip closes a hand round
  * the grip, the trigger pulls both pawls in, and lets go, so they click out again.
- * @type {Record<string, import('$lib/assets/parts.js').Move>}
+ * @type {Record<string, import('$content/assets/parts.js').Move>}
  */
 const MOVES = {
 	service: {
@@ -114,7 +114,7 @@ const SOURCES = [
 ];
 const SRC = { ours: SOURCES[0].label, cell: SOURCES[1].label, heat: SOURCES[2].label, rt: SOURCES[3].label, ocv: SOURCES[4].label, cu: SOURCES[5].label, press: SOURCES[6].label, bms: SOURCES[8].label };
 
-const ASSEMBLIES = /** @type {import('$lib/actors/parts.js').Assembly[]} */ ([
+const ASSEMBLIES = /** @type {import('$content/actors/parts.js').Assembly[]} */ ([
 	{ id: 'shell', label: 'Shell', note: 'The closed outer shell on its foot: floor tub, walls, top and back in one, open at the front above the foot’s sill. Its two front corners stand up as columns to the base plate’s top, each with a release button in its face and the drawer’s catch inside; the sill between them carries the grip, and the back socket sits in the back.', out: [0, 0, -0.6] },
 	{ id: 'drawer', label: 'Service drawer', note: 'One L of aluminium riding on the shell’s foot: the front plate (the face above the sill and the two columns, with its finger pull and the charge strip) and the base plate behind it, running between the columns. It carries every inner part and nothing you hold: press the two buttons, pull it by its finger pull, and the whole inside comes out.', out: [0, 0, 0.4] },
 	{ id: 'cells', label: 'Cells', note: '280 cylindrical 21700 cells standing in two holder plates on the drawer, 14 rows in series of 20 side by side, every other row upside down so the plates alone join them.', out: [0, 0.2, 0] },
@@ -474,7 +474,7 @@ export function batteryPack({ load = 2, ambient = 20, soc = 70, v = 11 } = {}) {
 	const kit = assetKit(root, { assemblies: ASSEMBLIES, steps: STEPS, sources: SOURCES });
 	const m = (/** @type {THREE.BufferGeometry} */ geo, /** @type {THREE.Material} */ mat) => kit.mesh(geo, mat);
 	/** a part: its meshes, its card and how it is shown */
-	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$lib/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (root)) => {
+	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$content/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (root)) => {
 		const grp = new THREE.Group();
 		grp.add(...objs);
 		return kit.part(grp, info, how, parent);
@@ -788,7 +788,7 @@ export function batteryPack({ load = 2, ambient = 20, soc = 70, v = 11 } = {}) {
 	});
 	/** hours as "2 h 14 min" @param {number} h */
 	const runTime = (h) => (h >= 1 ? `${Math.floor(h)} h ${fmt((h % 1) * 60)} min` : `${fmt(h * 60)} min`);
-	/** @type {import('$lib/assets/parts.js').Lab} */
+	/** @type {import('$content/assets/parts.js').Lab} */
 	const lab = {
 		hero: { label: 'Power delivered', unit: 'kW', max: 5, digits: 2 },
 		read: { value: 0, state: '', sub: '', bad: false },

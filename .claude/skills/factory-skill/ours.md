@@ -4,7 +4,7 @@ This file is ours, not AirSup's. `SKILL.md` and `references/` beside it stay Air
 but for the one section at the end of `SKILL.md` that says where our library keeps a factory. They make one factory
 as a standalone page or a film; this is what building the first factory into our own library taught us: the
 BatteryPack line (2026-10-15), a line that builds our BatteryPack, 120 a day on two shifts, every station standing
-in AirSup's kit machines until our own are built. The laws, the shared core (`$lib/assets`, refs, one version
+in AirSup's kit machines until our own are built. The laws, the shared core (`$content/assets`, refs, one version
 control) and how we check are the asset producer's (`asset-producer`); this file has the same shape as every other
 sub skill.
 
@@ -73,7 +73,7 @@ sub skill.
 - Our own intermediate shapes (the cell tray, the loaded drawer with 280 cells, the holder and plates, the BMS board
   bare and populated) are `K.shapes` in `kit.js`'s "maiaCITY additions": built with the same `add(geo, color, …)`
   as AirSup's shapes, at real size, with no 1.2 scale. AirSup's own shapes keep their scale.
-- Pallets are our Euro pallet (`$lib/actors/pallet.js`, `K.europallet`), the raw stacks on the feeders and the
+- Pallets are our Euro pallet (`$content/actors/pallet.js`, `K.europallet`), the raw stacks on the feeders and the
   finished stacks at the shipping door laid out by `K.stackOf` and `K.palletLayout` (a stage's `pallet: { nx, nz,
   dx, dz, dy, ny }` for the real stacking of the product; 2 × 6 packs a pallet).
 
@@ -85,7 +85,7 @@ sub skill.
   AirSup's queries work as they did (`?select=load`, `?assemble=0`, `?film=1`, `?speed=`, `?ao=0`).
 - The new-app checklist of `asset-producer`'s `checking.md`: `FACTORIES_TILE` in `gameAt` (draft: an admin's),
   `placeOf`, the `immersive` list of `src/routes/app/+layout.svelte`, its address in `ASSET_PAGES`, and the
-  `factories` group first in `GROUPS` of `$lib/assets/index.js`. (Its Game Assets tile and cover went with the
+  `factories` group first in `GROUPS` of `$content/assets/index.js`. (Its Game Assets tile and cover went with the
   dashboard's Game Assets, #942.)
 
 ## Composable

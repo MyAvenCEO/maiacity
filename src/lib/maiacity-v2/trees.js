@@ -3,7 +3,7 @@
  * MaiaCity V2's first trees (Samuel 2026-10-14): the seed each newcomer brings from home in their backpack, planted
  * at a spot they choose outside the core circle, named after them. It grows only when it is watered: each watering
  * (once a game month, one a real day) walks it one game month (28 game days) on through its plant's own stages from
- * the Plants ($lib/plants, read through ./plants.js), from the seed; a month without water, it waits. Once it has
+ * the Plants ($content/plants, read through ./plants.js), from the seed; a month without water, it waits. Once it has
  * borne its first crop it flowers and fruits again every game year. The tree itself is built in the asset box at its
  * stage and drawn by the renderer (./plants.js `plantRef`).
  */

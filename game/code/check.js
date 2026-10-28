@@ -10,7 +10,7 @@
  * every rule (./rules.js); mode 'read' is for code already kept, which a page draws whatever its rules say now: only its
  * shape is checked, since what the rules refuse the engines drop anyway (safety never rests on this checker).
  *
- * The types (each type's owner may add one with `define`, as the asset schemas do for asset cards, $lib/code/check.js):
+ * The types (each type's owner may add one with `define`, as the asset schemas do for asset cards, $kernel/code/check.js):
  *   view       a Generated UI view: { id, title, note?, kind: a2ui | html, spec }      (./views.js)
  *   view-card  a game's screen: { id, kind: 'view', name, data: { slot, libs, height }, code }, with `slots`
  *   logic      a bare logic module: { code, hooks?, max? }

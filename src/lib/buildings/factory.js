@@ -2,23 +2,23 @@
 /*
  * THE SOLAR FACTORY DOME AS A BUILDING — the Buildings' factory from v2 (`buildings/dome-factory@2`), built in the
  * asset box like the tent from its v2: Sandbox 3's factory dome (its v1, raised by that world's own code, ./inside.js)
- * as one object, by the same builders: the geodesic shell and its doors ($lib/sandbox-2/interior/interior.ts) and the
- * five floors of lines round the great lift ($lib/sandbox-2/interior/factory.ts), as they stand in Sandbox 3, without
+ * as one object, by the same builders: the geodesic shell and its doors ($content/sandbox-2/interior/interior.ts) and the
+ * five floors of lines round the great lift ($content/sandbox-2/interior/factory.ts), as they stand in Sandbox 3, without
  * the land round it. Its machines run as the dome's do, by its own clock (`tick`); the lift stands at the ground floor.
  * Walked in from just inside its north door, on the floors its own shape has. What the world adds round it (its sky
  * and sun, the lamps that follow you at night, its sounds, the lift's ↑ and ↓) stays the world's.
  */
 import * as THREE from 'three';
-import { DOMES, bake, box, geodesic, mats, portal } from '$lib/sandbox-2/interior/interior';
-import { buildFactory } from '$lib/sandbox-2/interior/factory';
+import { DOMES, bake, box, geodesic, mats, portal } from '$content/sandbox-2/interior/interior';
+import { buildFactory } from '$content/sandbox-2/interior/factory';
 
-/** a station's sign, as the factory paints it ($lib/sandbox-2/interior/factory.ts `sign`), and the gap kept round each
+/** a station's sign, as the factory paints it ($content/sandbox-2/interior/factory.ts `sign`), and the gap kept round each
  *  in the atlas, in its own dark grey, so a far view's blur takes nothing from the sign beside it */
 const SIGN = { w: 768, h: 176, gap: 8, ground: '#23292e' };
 
 /**
  * The signs, on one picture: the factory paints one for each of its stations, 78 pictures, and the box hands back at
- * most 64 ($lib/assets/box/rebuild.js BUDGET). Each sign's material shows its own piece of the atlas instead (its
+ * most 64 ($content/assets/box/rebuild.js BUDGET). Each sign's material shows its own piece of the atlas instead (its
  * place and size on it, `offset` and `repeat`), as sharp as before, the sign itself unchanged.
  * @param {THREE.Object3D} root
  */

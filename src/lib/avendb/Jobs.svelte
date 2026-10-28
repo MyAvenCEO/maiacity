@@ -2,7 +2,7 @@
 	Every job for the vault the page shows, in one list, live (Samuel 2026-10-19: one jobs interface, under the hood and
 	on the page), in the layout every avenDB view has (./Frame.svelte). Each is a `Job` (./jobs.js), whatever does it:
 	this device syncing (files brought in and kept whole, edits taken from a peer: the device's `jobs` op), a task of a
-	studio rule as the vault holds it (proxies, stills, transcripts, renders: $lib/studio/jobs, run straight in the
+	studio rule as the vault holds it (proxies, stills, transcripts, renders: $content/studio/jobs, run straight in the
 	vault by the Mac's runner, ./runner.js there), and on the Mac app, its own jobs no rule starts (imports, files
 	kept), from its lanes (vault/app/src/jobs.rs `jobs_list` and its `jobs` and `jobs-gone` events).
 	On the left what to show (everything, now, failed, done, still syncing) and each kind of job, with how its jobs
@@ -13,11 +13,11 @@
 <script>
 	import { onMount } from 'svelte';
 	import { onStir } from './stirs.svelte.js';
-	import { refreshQueue } from '$lib/studio/refresh.js';
+	import { refreshQueue } from '$content/studio/refresh.js';
 	import { native } from '$lib/native';
-	import { BUILT_IN, held, toRecord } from '$lib/studio/jobs/rules.js';
-	import { RULE } from '$lib/studio/jobs/schemas.js';
-	import { retrying, tasksOf, TRIES } from '$lib/studio/jobs/tasks.js';
+	import { BUILT_IN, held, toRecord } from '$content/studio/jobs/rules.js';
+	import { RULE } from '$content/studio/jobs/schemas.js';
+	import { retrying, tasksOf, TRIES } from '$content/studio/jobs/tasks.js';
 	import { studio } from './db.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
@@ -73,7 +73,7 @@
 	/** A command of the Mac app's. @param {string} name @param {Record<string, unknown>} [args] */
 	const command = async (name, args = {}) => (await import('$lib/native')).command(name, args);
 	/** A round of the Mac's runner now, as after a task is asked again or a rule turned on. */
-	const nudge = () => void import('$lib/studio/jobs/mac.js').then((m) => m.nudge());
+	const nudge = () => void import('$content/studio/jobs/mac.js').then((m) => m.nudge());
 
 	/** The Mac's jobs, read whole; between reads its events tell each change. */
 	async function loadMac() {
@@ -104,7 +104,7 @@
 		const refresh = refreshQueue(loadMac, { allowed: () => mac && !gone && !document.hidden });
 		const visible = () => refresh.resume();
 		document.addEventListener('visibilitychange', visible);
-		/** @type {typeof import('$lib/studio/jobs/mac.js') | null} */
+		/** @type {typeof import('$content/studio/jobs/mac.js') | null} */
 		let runner = null;
 		/** @type {(() => void)[]} */
 		const unlisten = [];
@@ -121,7 +121,7 @@
 		// the Mac's own jobs: read once, then as its events tell, read whole again now and then (what holds its lanes)
 		if (mac) {
 			refresh.invalidate();
-			void import('$lib/studio/jobs/mac.js').then((module) => { if (!gone) runner = module; });
+			void import('$content/studio/jobs/mac.js').then((module) => { if (!gone) runner = module; });
 			void import('@tauri-apps/api/event')
 				.then(async ({ listen }) => {
 					const on = [
@@ -232,7 +232,7 @@
 
 	/**
 	 * Each studio rule as this vault holds it: its own newest record (`own` its entry), or the app's.
-	 * @type {Map<string, { rule: import('$lib/studio/jobs/rules.js').Rule, own: string | null }>}
+	 * @type {Map<string, { rule: import('$content/studio/jobs/rules.js').Rule, own: string | null }>}
 	 */
 	const rules = $derived.by(() => {
 		const mine = held(world, vault);
@@ -357,9 +357,9 @@
 		/** @type {[string, string]} */ (
 			j.state === 'running' ? ['Running', 'accent'] : j.state === 'queued' ? ['Waiting', ''] : j.state === 'done' ? ['Done', 'ok'] : j.state === 'held' ? ['Held', 'warn'] : [j.task && j.task.attempts < TRIES ? 'Failed, tries again' : 'Failed', 'bad']
 		);
-	/** What a rule makes, in a few words. @param {import('$lib/studio/jobs/rules.js').Rule} r */
+	/** What a rule makes, in a few words. @param {import('$content/studio/jobs/rules.js').Rule} r */
 	const makes = (r) => r.makes.map((m) => ('value' in m ? `its ${m.value}, on the task` : `a file tagged ${m.tags.join(', ')}`)).join('; ');
-	/** What a rule waits for: the rules whose work it reads. @param {import('$lib/studio/jobs/rules.js').Rule} r */
+	/** What a rule waits for: the rules whose work it reads. @param {import('$content/studio/jobs/rules.js').Rule} r */
 	const after = (r) =>
 		list(Object.values(r.inputs).flatMap((i) => (typeof i === 'object' ? [`${kindName(i.made)}${i.optional ? ' (if there is one)' : ''}`] : [])));
 	/** @param {string} h */

@@ -1,6 +1,6 @@
 // @ts-nocheck — compare each world's species and stages with the shared plant library.
 import { describe, expect, test } from 'bun:test';
-import { plantAt } from '$lib/plants/index.js';
+import { plantAt } from '$content/plants/index.js';
 export function plantsContract(version, { PLANT_IDS, plantOf }, SEEDLINGS) {
 describe(version, () => {
 test('every seed a newcomer plants is here', () => {

@@ -5,24 +5,24 @@
 	slider says. Drag to turn round it, scroll to come closer. An admin's.
 
 	The biomes are the Maia City vault's, each at its newest version, read off the card the vault keeps beside its recipe
-	($lib/assets/sources/biome.js), never the repo's list: what the worlds lay is what is shown here. The cover is drawn
-	by the universal renderer ($lib/assets/render): each kind the asset its biome's card names, built in the asset box
-	at its seed (`biomes/cover@1:fern?seed=7139`, $lib/biomes/built.js), laid where the biome's stream lays it round an
-	eye that stays in the middle ($lib/biomes/stream.js `coverLaid`), every copy at its finest shape. The ground its
+	($content/assets/sources/biome.js), never the repo's list: what the worlds lay is what is shown here. The cover is drawn
+	by the universal renderer ($content/assets/render): each kind the asset its biome's card names, built in the asset box
+	at its seed (`biomes/cover@1:fern?seed=7139`, $content/biomes/built.js), laid where the biome's stream lays it round an
+	eye that stays in the middle ($content/biomes/stream.js `coverLaid`), every copy at its finest shape. The ground its
 	shader paints stays the page's.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
-	import { COVER, SURFACE, SURFACES, coverSeed, groundMaterial, mix } from '$lib/biomes';
-	import { coverRef } from '$lib/biomes/built.js';
-	import { coverLaid } from '$lib/biomes/stream.js';
-	import { INDEX } from '$lib/assets/vault.js';
-	import { biomeOr } from '$lib/assets/sources/biome.js';
+	import { COVER, SURFACE, SURFACES, coverSeed, groundMaterial, mix } from '$content/biomes';
+	import { coverRef } from '$content/biomes/built.js';
+	import { coverLaid } from '$content/biomes/stream.js';
+	import { INDEX } from '$content/assets/vault.js';
+	import { biomeOr } from '$content/assets/sources/biome.js';
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { fit } from '$lib/app/turntable.js';
 
-	/** @typedef {import('$lib/biomes').Recipe & { version: number }} Biome */
-	/** @typedef {import('$lib/biomes').Recipe} Recipe */
+	/** @typedef {import('$content/biomes').Recipe & { version: number }} Biome */
+	/** @typedef {import('$content/biomes').Recipe} Recipe */
 
 	/** every biome the Maia City vault holds (the app's layout let the page in once its recipes were), each its newest
 	 *  version as its card says it; the one a card is no floor's is left out (said on the console) */
@@ -66,10 +66,10 @@
 
 	onMount(async () => {
 		const THREE = await import('three');
-		const { createStageRenderer } = await import('$lib/render/stage.js');
-		const [{ createAssets }, { LEVELS }] = await Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/render/lod.js')]);
+		const { createStageRenderer } = await import('$content/render/stage.js');
+		const [{ createAssets }, { LEVELS }] = await Promise.all([import('$content/assets/render/index.js'), import('$content/assets/render/lod.js')]);
 		const box = /** @type {HTMLDivElement} */ (canvasBox);
-		// the stage renderer ($lib/render/stage.js): the canvas in the box, the camera (its field of view widened on an
+		// the stage renderer ($content/render/stage.js): the canvas in the box, the camera (its field of view widened on an
 		// upright canvas, $lib/app/turntable.js), the controls, kept to the box's size
 		const view = createStageRenderer(box, { shadows: true, toneMapping: 'aces', fov: 50, near: 0.05, far: 200, turntable: true, fit, controls: { maxPolarAngle: Math.PI / 2 - 0.05 } });
 		const { renderer, camera, controls } = view;
@@ -232,7 +232,7 @@
 		<div class="layers">
 			<span class="label">Surfaces</span>
 			{#each surfaceShare as { s, share } (s)}
-				<label><input type="checkbox" checked={!hiddenSurfaces.includes(s)} onchange={() => toggleSurface(s)} /> {SURFACE[/** @type {import('$lib/biomes').Surface} */ (s)].label}<small>{pct(share)}</small></label>
+				<label><input type="checkbox" checked={!hiddenSurfaces.includes(s)} onchange={() => toggleSurface(s)} /> {SURFACE[/** @type {import('$content/biomes').Surface} */ (s)].label}<small>{pct(share)}</small></label>
 			{/each}
 			<span class="label">Cover</span>
 			{#each coverShare as { i, kind, share } (i)}

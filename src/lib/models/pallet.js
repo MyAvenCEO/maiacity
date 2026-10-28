@@ -1,8 +1,8 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /*
- * THE EURO PALLET — the empty EPAL (1200 × 800 × 144 mm) the machines carry ($lib/actors/pallet.js: the goods pod's
+ * THE EURO PALLET — the empty EPAL (1200 × 800 × 144 mm) the machines carry ($content/actors/pallet.js: the goods pod's
  * hold, the forklift's forks) as a model of its own: the pallets a factory's line stacks its raw material and its
- * product on ($lib/factories), built in the asset box like every other asset. Its pieces are the machines' own, each
+ * product on ($content/factories), built in the asset box like every other asset. Its pieces are the machines' own, each
  * in its wood.
  */
 import * as THREE from 'three';

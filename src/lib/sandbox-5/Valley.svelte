@@ -7,7 +7,7 @@
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { WorldBar } from '$lib/sandbox-kit';
+	import { WorldBar } from '$content/sandbox-kit';
 	import { BIOMES, BUILDINGS, LAND, LOAD_T, MENU, RECIPES, START, WARES, buildIn } from './rules.js';
 	import { EUR_PER_GOLD, GRID_EUR_KWH } from './market.js';
 	import { UNIT_OF, costLine, craftLine, energy, fmt, food, gold, nameOf, side, ware, water } from './units.js';

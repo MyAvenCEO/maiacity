@@ -2,10 +2,10 @@
 /*
  * THE ASSET VIEWER'S CORE — what every viewer that shows a build on the asset stage shares: the repo's own viewer
  * (./AssetViewer.svelte, the Buildings) and a vault's (./VaultAsset.svelte, the avenDB app's Assets), and in part an
- * asset's own page (./AssetPage.svelte) and a plant's card in Sandbox 5 ($lib/sandbox-2/interior/PlantLook.svelte),
+ * asset's own page (./AssetPage.svelte) and a plant's card in Sandbox 5 ($content/sandbox-2/interior/PlantLook.svelte),
  * which keep their own lights. Their bar, panel and readout are drawn by ./ViewerParts.svelte.
  *
- *   openStage   the stage renderer ($lib/render/stage.js) in the viewer's box, and the paper studio on it (./stage.js),
+ *   openStage   the stage renderer ($content/render/stage.js) in the viewer's box, and the paper studio on it (./stage.js),
  *               its resolution following the frame rate
  *   camerawork  the camera on what is shown: framed as built, gliding to a new framing, following a plant as it grows,
  *               turning to a part, backing off while it is drawn apart
@@ -18,7 +18,7 @@
  * and what the bar offers of a build (`VIEWS`, `viewsOf`, `movesOf`, `tabbed`), and how a reading is written (`num`,
  * `measure`). Nothing here reads the repo's recipes or the vault's: where a build comes from is the viewer's.
  */
-import { adaptiveResolution, disposeObject, lowPower, topPixelRatio } from '$lib/render/core.js';
+import { adaptiveResolution, disposeObject, lowPower, topPixelRatio } from '$content/render/core.js';
 import { fit } from '$lib/app/turntable.js';
 
 /** the stage's views (how it is looked at, any at once), as the bar names them */
@@ -63,7 +63,7 @@ export const num = (v, digits = 0) => v.toLocaleString('en-GB', { minimumFractio
 export const measure = (v) => (v < 0.01 ? `${Math.round(v * 10000) / 10} mm` : v < 1 ? `${Math.round(v * 1000) / 10} cm` : `${Math.round(v * 100) / 100} m`);
 
 /**
- * The stage up in `box`: the stage renderer ($lib/render/stage.js), the canvas in the box, the camera (its field of
+ * The stage up in `box`: the stage renderer ($content/render/stage.js), the canvas in the box, the camera (its field of
  * view widened on an upright canvas, $lib/app/turntable.js) and the controls, the canvas kept to the box, and the paper
  * studio with it (./stage.js); the canvas fitted now, and its resolution following the frame rate, held while `hold`
  * says so (a build being made). A browser that gives the page no 3D drawing throws, with nothing left behind.
@@ -72,7 +72,7 @@ export const measure = (v) => (v < 0.01 ? `${Math.round(v * 10000) / 10} mm` : v
  */
 export async function openStage(box, { onLost, hold } = {}) {
 	const THREE = await import('three');
-	const { createStageRenderer } = await import('$lib/render/stage.js');
+	const { createStageRenderer } = await import('$content/render/stage.js');
 	const { Stage } = await import('./stage.js');
 	const low = lowPower();
 	/** @type {any} */

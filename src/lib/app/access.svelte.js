@@ -2,23 +2,23 @@
 /*
  * Who opens what of Maia City (Samuel 2026-10-19: the sandboxes, worlds, game assets and games "purely behind avenDB
  * native caps", "Not depending on PG"): the Maia City COOP vault's cap groups the person holds, read from their own
- * avenDB ($lib/avendb/capgroups.js). A Traveler opens the Sandbox 4 demo and public assets;
+ * avenDB ($avendb/capgroups.js). A Traveler opens the Sandbox 4 demo and public assets;
  * a Citizen opens the other games too; whoever acts for Maia City itself, as its owners' devices do, or holds
  * its Admin group, opens everything, and invites. There is no draft stage: what a group opens, it opens.
  *
  * Maia City is the coop of the seed whose aven is the server the person's vault is kept by, as their own avenDB shows
- * it ($lib/avendb/vaults.js `serverCity`), and on its owners' devices the coop their own seed founded (`seedCity`),
+ * it ($avendb/vaults.js `serverCity`), and on its owners' devices the coop their own seed founded (`seedCity`),
  * never a vault by its name: so a vault that calls itself Maia City and shares a group named Traveler opens nothing.
  * Read again as the device shows
  * its world anew (`readAccess`, from src/routes/app/+layout.svelte); until then, and where avenDB isn't open, the
  * person holds nothing (`access.known` false).
  */
 import { base } from '$app/paths';
-import { ADMIN, heldGroups, travelerDemoOps } from '$lib/avendb/capgroups.js';
-import { session } from '$lib/avendb/session.svelte.js';
-import { seedCity, serverCity } from '$lib/avendb/vaults.js';
+import { ADMIN, heldGroups, travelerDemoOps } from '$avendb/capgroups.js';
+import { session } from '$avendb/session.svelte.js';
+import { seedCity, serverCity } from '$avendb/vaults.js';
 import { native } from '$lib/native';
-import { travelerSyncOps } from '$lib/avendb/traveler-sync.js';
+import { travelerSyncOps } from '$avendb/traveler-sync.js';
 
 export const access = $state({
 	/** the Maia City vault's id, '' while unknown */
@@ -28,7 +28,7 @@ export const access = $state({
 	/** the names of the groups they hold, each with those it includes */
 	groups: /** @type {Set<string>} */ (new Set()),
 	/** Maia City's cap groups, as the `cap_groups` op answers them: what an invite names */
-	list: /** @type {import('$lib/avendb/capgroups.js').CapGroup[]} */ ([]),
+	list: /** @type {import('$avendb/capgroups.js').CapGroup[]} */ ([]),
 	/** whether that was read from avenDB, open */
 	known: false
 });

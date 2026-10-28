@@ -31,7 +31,7 @@ export { buildOf, checked, hashText, parseBuild } from './builds.js';
 
 /**
  * A build's page: on the root, its recipe's hash as an address reads it ($lib/ids.js), its label in words (`?t=`,
- * never one of its values), then its values, sorted ($lib/assets/AssetPage.svelte).
+ * never one of its values), then its values, sorted ($content/assets/AssetPage.svelte).
  * @param {string} base the site's base path @param {string} hash @param {Record<string, unknown>} [values]
  */
 export const pageOf = (base, hash, values) => {

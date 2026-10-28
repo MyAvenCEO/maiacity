@@ -1,5 +1,5 @@
 <!--
-	AN ASSET'S PARTS, TO PICK FROM — the avenDB app's Assets lists them in its side ($lib/avendb/Assets.svelte), beside
+	AN ASSET'S PARTS, TO PICK FROM — the avenDB app's Assets lists them in its side ($avendb/Assets.svelte), beside
 	the asset's history and versions: the card of the part picked (what it is, what moves it, its numbers, its build step
 	and its source), then its parts tree from its card's catalog (./tree.js): its own parts by assembly, each whole asset
 	it carries with its own parts under it, and the sources. A part picked here is the one the viewer shows on its own

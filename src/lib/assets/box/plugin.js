@@ -34,13 +34,13 @@ import vm from 'node:vm';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { hashText } from '../../../../game/hash.js';
+import { ROOT, aliasDirs } from '../../../../aven/ops/paths.js';
 import { rolldown } from 'rolldown';
 import { LATEST, RECIPE_END, RECIPE_HEAD, recipeTail } from '../engines.js';
 import { listsKeyOf, narrowTo } from './narrow.js';
 
 const ID = 'virtual:asset-recipes';
 const TRIALS = 'virtual:box-trials';
-const LIB = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '');
 const ENGINE = fileURLToPath(new URL('./engine.js', import.meta.url));
 const PROBE = fileURLToPath(new URL('./probe.js', import.meta.url));
 const RECIPE = fileURLToPath(new URL('../recipe.js', import.meta.url));
@@ -54,8 +54,8 @@ const groups = async () => (await import(/* @vite-ignore */ new URL('../groups.j
 /** a module of three.js: what a recipe leaves to the engine */
 const isThree = (id) => id === 'three' || id.startsWith('three/');
 
-/** a module of ours, which narrowing reads and takes to have no side effects but its exports (./narrow.js) */
-const isOurs = (id) => id.startsWith(`${LIB}/`) && !id.includes('/node_modules/');
+/** a module of ours (the repo's, no package's), which narrowing reads and takes to have no side effects but its exports (./narrow.js) */
+const isOurs = (id) => id.startsWith(ROOT) && !id.includes('/node_modules/');
 
 /** a bundle of `input` (a file, or code of its own), and every file it was made of */
 async function bundle({ input, code, format, minify, external, plugins = [], ownSideEffects = true }) {
@@ -64,7 +64,7 @@ async function bundle({ input, code, format, minify, external, plugins = [], own
 	const b = await rolldown({
 		input: code ? entry : input,
 		platform: 'browser',
-		resolve: { alias: { $lib: LIB } },
+		resolve: { alias: aliasDirs },
 		external,
 		// a module of three.js left to the engine is only there for what is taken from it, and so, in an asset's own
 		// library, is a module of ours

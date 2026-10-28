@@ -3,9 +3,9 @@
  * src/routes/app/buildings), on their own so the sandbox loads none of the models.
  */
 
-/** @typedef {import('$lib/sandbox-2/interior/interior').DomeKind} DomeKind */
+/** @typedef {import('$content/sandbox-2/interior/interior').DomeKind} DomeKind */
 
-/** the domes in the order a village grows them, each with its name (Sandbox 3's, $lib/sandbox-2/interior's `DOMES`,
+/** the domes in the order a village grows them, each with its name (Sandbox 3's, $content/sandbox-2/interior's `DOMES`,
  *  written out here so avenDB's Assets can name them without loading a dome: ./domes.test.js holds them the same), its
  *  picture from inside (by hash) and what it is */
 /** @type {{ kind: DomeKind, label: string, image: string, text: string, flora?: boolean }[]} */

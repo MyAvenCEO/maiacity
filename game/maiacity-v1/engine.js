@@ -58,7 +58,7 @@ export const COOPS = {
 };
 /** the seeds every newcomer brings from home in their backpack, one to plant as their first tree (Samuel 2026-10-13,
  *  2026-10-14: ten trees that bear fruit, nuts or seeds): trees that grow outdoors in a central European climate, from
- *  the Plants ($lib/plants: the page grows them from their stages, from the seed on) */
+ *  the Plants ($content/plants: the page grows them from their stages, from the seed on) */
 export const SEEDLINGS = [
 	{ id: 'apple', label: 'Apple', fruit: 'apples' },
 	{ id: 'pear', label: 'Pear', fruit: 'pears' },
@@ -608,7 +608,7 @@ function settle(s, mip, now) {
  *   mark { x, z }                where the first tree grows on the tribe's hex (metres from its centre, PLOT)
  *   seedling { plant }           pick the seed from the backpack (one of SEEDLINGS), until it is planted
  *   plant { v }                  plant it at the mark: the player's first tree, named after them, a seed in wet earth
- *                                (v: the plant's version in $lib/plants as the page grew it)
+ *                                (v: the plant's version in $content/plants as the page grew it)
  *   water                        water it, once a game month: each watering grows it one game month on (grown)
  *   propose { mip }              a MIP: title, description, settings, coops, payouts and screens (views, removeViews; a view's
  *                                data.slot is 'panel' for a tab of its own or a panel it stands in: game/maiacity-v1/views.js

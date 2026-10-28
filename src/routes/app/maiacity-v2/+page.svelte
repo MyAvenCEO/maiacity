@@ -1,9 +1,9 @@
 <!--
-	MaiaCity V2 — the simplest game of the city ($lib/maiacity-v2): three players, 24 HEARTS a day each, the MaiaCity COOP
+	MaiaCity V2 — the simplest game of the city ($content/maiacity-v2): three players, 24 HEARTS a day each, the MaiaCity COOP
 	with the shared hex, the Tribe COOP with the 2-person bell tent, one maiaMIND/villageMIND pool, rent and the melt.
 -->
 <script>
-	import Game from '$lib/maiacity-v2/Game.svelte';
+	import Game from '$content/maiacity-v2/Game.svelte';
 </script>
 
 <svelte:head>

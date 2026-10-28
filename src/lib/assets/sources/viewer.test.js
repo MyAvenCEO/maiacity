@@ -1,8 +1,8 @@
 // @ts-nocheck — plain JS
-// V5 of the avenDB migration: the avenDB app's Assets ($lib/avendb/Assets.svelte), a vault's recipes shown from the
+// V5 of the avenDB migration: the avenDB app's Assets ($avendb/Assets.svelte), a vault's recipes shown from the
 // vault alone, with no repo fallback (Samuel 2026-10-17). The rows are the vault's `recipe` entries as the device's
 // database op hands them out, each recipe's source the newest file its entry brings, read from the device a window at
-// a time ($lib/avendb/assets.js); the list is those entries by group, asset, version and variant (./shelf.js); a build
+// a time ($avendb/assets.js); the list is those entries by group, asset, version and variant (./shelf.js); a build
 // is the entry's file, held to its hash before anything else, then the cache or the box, checked (./viewer.js). The
 // device here is a stand-in made from the repo as the seed will write it (`recipeEntryOf`, ./cards.json), as
 // ./vault.test.js makes its vault: the repo feeds this test, never the viewer, whose modules import nothing of it.
@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { unaliased } from '../../../../aven/ops/paths.js';
 
 // outside a page: textures draw on a stand-in canvas, and a module's runes are plain values
 const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : noop), apply: () => noop, set: () => true });
@@ -397,14 +398,14 @@ test("what the box hands back is checked as every build is: a card that doesn't 
 }, 60000);
 
 /**
- * The modules a module imports, as its source names them, followed through ours (`$lib/`, relative): every file and
+ * The modules a module imports, as its source names them, followed through ours (an alias, relative): every file and
  * every name it reaches, so a test can say what it never reaches.
  */
 function reached(...from) {
 	const seen = new Set();
 	const names = new Set();
 	const resolved = (spec, dir) => {
-		const base = spec.startsWith('$lib/') ? resolve(ROOT, 'src/lib', spec.slice(5)) : spec.startsWith('.') ? resolve(dir, spec) : null;
+		const base = unaliased(spec) ? resolve(ROOT, unaliased(spec)) : spec.startsWith('.') ? resolve(dir, spec) : null;
 		if (!base) return null;
 		for (const p of [base, `${base}.js`, `${base}.ts`, `${base}.svelte`, `${base}/index.js`]) if (existsSync(p) && !p.endsWith('/')) return p;
 		return null;

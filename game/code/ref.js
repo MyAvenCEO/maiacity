@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
  * THE ONE ENTRY REF — how anything we load names one avenDB entry at one version, read here alone, so a code entry's
- * ref (./index.js `codeAt`) and an asset's pin ($lib/assets/sources/avendb.js `parsePin`) can never be read two ways:
+ * ref (./index.js `codeAt`) and an asset's pin ($content/assets/sources/avendb.js `parsePin`) can never be read two ways:
  *
  *   vault:<vault>/<entry>@<head>[,<head>…][?its=values]
  *

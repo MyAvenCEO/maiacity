@@ -2,7 +2,7 @@
  * THE WORLD RENDERER — the canvas, the scene and the camera every world is drawn with (the sandboxes, Sandbox 1 and 2's
  * islands, MaiaCity V1, the Factories, the tired land): the purpose renderer for worlds on the core (./core.js).
  *
- * Taken out of Sandbox 4 as the sandbox kit's stage: a renderer set up for the sky ($lib/sandbox-kit/sky.js) — ACES
+ * Taken out of Sandbox 4 as the sandbox kit's stage: a renderer set up for the sky ($content/sandbox-kit/sky.js) — ACES
  * tone mapping and soft shadows — a perspective camera at a walker's field of view, both kept to the size of their
  * container, and a resolution that eases down a little when frames get slow and back up when there is room, so a
  * world stays smooth on a slow phone. A world that sizes its own canvas (an island's) takes only the renderer

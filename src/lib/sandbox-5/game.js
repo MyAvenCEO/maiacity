@@ -14,7 +14,7 @@
  * same valley, played by ./autoplay.js, on the shot's clock: the same shot renders the same frames.
  */
 import * as THREE from 'three';
-import { connectFilm, createOrbitRig, createSky, createStage, filmDraws, filmHoldsSize, skyTime, worldTime } from '$lib/sandbox-kit';
+import { connectFilm, createOrbitRig, createSky, createStage, filmDraws, filmHoldsSize, skyTime, worldTime } from '$content/sandbox-kit';
 import { createView } from './view.js';
 import { loadGame, newGame, PLAYER, TICK } from './sim.js';
 import { createAutoplay } from './autoplay.js';

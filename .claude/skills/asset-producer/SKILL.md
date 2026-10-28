@@ -1,6 +1,6 @@
 ---
 name: asset-producer
-description: The maiaCITY asset producer — the meta skill over every asset we build: the asset laws (real size in metres, real numbers from real physics, built in its parts, everything composable, every upgrade its own frozen version, look like a critic), the shared core ($lib/assets — AirSup's kit, one part contract, carry and refs group/id@v, one version control and its test, where an asset is kept: recipes and schemas by hash, the box and the device cache, avenDB recipe entries later), the order of work, how we check (checking.md) and which sub skill to load, one per asset group — factory-skill (Factories, AirSup's; ours in its ours.md), machine-skill (Machines, AirSup's; ours in its ours.md), actor-skill (people and animals), world-skill (sandboxes, real places), building-skill (tents, domes, containers), thing-skill (still props, furniture), biome-skill (the floor) and plant-skill (grown from a seed). Use it whenever any asset is built, simulated, upgraded, composed into another or shown, or when it is unclear which asset skill a task needs.
+description: The maiaCITY asset producer — the meta skill over every asset we build: the asset laws (real size in metres, real numbers from real physics, built in its parts, everything composable, every upgrade its own frozen version, look like a critic), the shared core ($content/assets — AirSup's kit, one part contract, carry and refs group/id@v, one version control and its test, where an asset is kept: recipes and schemas by hash, the box and the device cache, avenDB recipe entries later), the order of work, how we check (checking.md) and which sub skill to load, one per asset group — factory-skill (Factories, AirSup's; ours in its ours.md), machine-skill (Machines, AirSup's; ours in its ours.md), actor-skill (people and animals), world-skill (sandboxes, real places), building-skill (tents, domes, containers), thing-skill (still props, furniture), biome-skill (the floor) and plant-skill (grown from a seed). Use it whenever any asset is built, simulated, upgraded, composed into another or shown, or when it is unclear which asset skill a task needs.
 ---
 
 # Asset producer
@@ -23,7 +23,7 @@ films.
    its target is the finding.
 3. **Built in its parts.** An asset is the parts a mechanic would name, in assembly order, each where it really sits,
    each with its card; nothing floats, nothing clips, every part touches what holds it. New assets are built with
-   `$lib/assets` (below); the older ones keep their own way (a thing's `userData.catalog`, a rigged machine's bone per
+   `$content/assets` (below); the older ones keep their own way (a thing's `userData.catalog`, a rigged machine's bone per
    part, a plant's organs grown from its seed).
 4. **Everything composes.** Samuel (2026-10-14): "all are composeable" — things go into machines, machines into
    factories and buildings, everything into worlds and biomes, and the parts and moving pieces of one asset are
@@ -41,7 +41,7 @@ nor an engine's maker; an asset never changes a game's story — the game thread
 
 ## The shared core: one kit, one contract, one version control
 
-### One kit: `$lib/assets`
+### One kit: `$content/assets`
 
 AirSup's `kit/lab-kit.js`, ported into the app once for every group. It never scales anything: the studio is scaled
 to the asset, never the asset to the studio.
@@ -155,7 +155,7 @@ factories, worlds, buildings and biomes keep their own pages for now:
 | Group | Sub skill | Where it lives | Use it for |
 |---|---|---|---|
 | Factories | `factory-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `src/lib/factories/<factory>.js` on the runtime ported into `src/lib/factories`; `/app/factories` | a whole production line as a live 3D miniature on a real discrete event simulation: sizing a line, its bottleneck, "can this line make N a day" |
-| Machines | `machine-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `src/lib/machines/<machine>.js` with `$lib/assets`; the older ones rigged in `src/lib/actors`; avenDB's Assets | what works by moving parts: an engine, a pump, a vehicle, the pod, the LifeTrac, the cubes, the BatteryPack; "show how X works" as a page or a film |
+| Machines | `machine-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `src/lib/machines/<machine>.js` with `$content/assets`; the older ones rigged in `src/lib/actors`; avenDB's Assets | what works by moving parts: an engine, a pump, a vehicle, the pod, the LifeTrac, the cubes, the BatteryPack; "show how X works" as a page or a film |
 | Actors | `actor-skill` | `src/lib/actors`, avenDB's Assets | people and animals: the stand-in, its poses and its face, the animals of the worlds |
 | Worlds | `world-skill` | `src/lib/worlds`, `src/lib/sandbox-*`, `/app/worlds` | a world, a sandbox, a real place or a village: the sky, the walker, the film camera, many things drawn cheaply |
 | Buildings | `building-skill` | `src/lib/buildings`, `/app/buildings` | a tent, a dome, a container, a tower: sized, engineered, walked inside |
@@ -205,7 +205,7 @@ Research before geometry, always.
 
 `factory-skill` and `machine-skill` each write one self-contained HTML file. Kept as it is, it is a finished
 explainer or a film. When the same machine or line must live in our app (a machine in avenDB's Assets or a game, a
-thing, a world; a line in `/app/factories`), port it into a JS module with `$lib/assets`: its parts through `part(...)`
+thing, a world; a line in `/app/factories`), port it into a JS module with `$content/assets`: its parts through `part(...)`
 with the same measures and cards, its solver and its lab as they were, its root at real size; a line as its spec on
 the runtime ported into `src/lib/factories`, its engine pure with the same equations. Then follow the laws above: a
 kind in its library's `LIST`, a frozen version, the size test, the versions test (`machine-skill`'s `ours.md` has the

@@ -4,14 +4,14 @@
  * `globalThis.THREE`) gave them. The ported runtime (des.js, kit.js, world.js, look.js, app.js) reads `T.…` exactly as
  * AirSup wrote it, so a newer AirSup version can be diffed against ours line by line.
  *
- * Its renderer, its orbit controls and its composer are the render core's ($lib/render, plan C5): `new
+ * Its renderer, its orbit controls and its composer are the render core's ($content/render, plan C5): `new
  * T.WebGLRenderer(params)`, `new T.OrbitControls(camera, dom)` and `new T.EffectComposer(renderer, target)` give back
  * what createRenderer, createControls and createComposer make, set the way three.js's own constructors leave them (one
  * pixel per CSS pixel, no damping), so the runtime sets the rest itself, as it always did.
  */
 import * as THREE from 'three';
-import { createControls, createRenderer } from '$lib/render/core.js';
-import { createComposer } from '$lib/render/post.js';
+import { createControls, createRenderer } from '$content/render/core.js';
+import { createComposer } from '$content/render/post.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';

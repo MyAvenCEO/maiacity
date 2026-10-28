@@ -8,7 +8,7 @@
 import { base } from '$app/paths';
 import { loadCode } from '../../../../game/code/index.js';
 import { loadBiomeMap, loadDepthMap, loadLandMask, loadMountainMask } from '../../../../game/map';
-import { ISLAND_SEED } from '$lib/aven-city/game/seed.js';
+import { ISLAND_SEED } from '$content/aven-city/game/seed.js';
 
 /**
  * @typedef {(stage: HTMLElement, area: string | undefined, onProgress: (label: string) => void) => Promise<{ dispose: () => void }>} Mount
@@ -27,7 +27,7 @@ export const MOUNTS = {
 	// the island alone under the film's clocks, grown from its seed with nothing kept in the browser
 	'sandbox-1': async (stage, _area, onProgress) => {
 		await loadCode();
-		const { createScene } = await import('$lib/aven-city/game/three/scene');
+		const { createScene } = await import('$content/aven-city/game/three/scene');
 		onProgress('Growing the island');
 		const canvas = canvasIn(stage);
 		const island = createScene(canvas, { film: true });
@@ -42,7 +42,7 @@ export const MOUNTS = {
 		const url = (/** @type {string} */ f) => `${base}/sandbox-2/map/${f}`;
 		const quiet = (/** @type {Promise<any>} */ p) => p.catch(() => undefined);
 		const [{ mountWorld }, isLand, kindOf, isMountain, depthOf] = await Promise.all([
-			import('$lib/sandbox-2/world/world'),
+			import('$content/sandbox-2/world/world'),
 			quiet(loadLandMask(url('land.json'))),
 			quiet(loadBiomeMap(url('biomes.json'))),
 			quiet(loadMountainMask(url('mountains.geojson'))),
@@ -55,24 +55,24 @@ export const MOUNTS = {
 
 	// one dome's whole inside, the dome the area names (its page in the app is the Buildings')
 	'sandbox-3': async (stage, area, onProgress) => {
-		const { mountInterior } = await import('$lib/sandbox-2/interior/interior');
-		return mountInterior(stage, /** @type {import('$lib/sandbox-2/interior/interior').DomeKind} */ (area), onProgress);
+		const { mountInterior } = await import('$content/sandbox-2/interior/interior');
+		return mountInterior(stage, /** @type {import('$content/sandbox-2/interior/interior').DomeKind} */ (area), onProgress);
 	},
 
 	// the dome cell (Sandbox 3 in the app)
-	'sandbox-4': async (stage, _area, onProgress) => (await import('$lib/sandbox-2/interior/village')).mountVillage(stage, onProgress),
+	'sandbox-4': async (stage, _area, onProgress) => (await import('$content/sandbox-2/interior/village')).mountVillage(stage, onProgress),
 
 	// the dome cell grown from our plants (Sandbox 4 in the app)
 	'sandbox-5': async (stage, _area, onProgress) =>
-		(await import('$lib/sandbox-2/interior/village')).mountVillage(stage, onProgress, await (await import('$lib/sandbox-2/interior/sandbox5.js')).sandbox5()),
+		(await import('$content/sandbox-2/interior/village')).mountVillage(stage, onProgress, await (await import('$content/sandbox-2/interior/sandbox5.js')).sandbox5()),
 
 	// the valley (Sandbox 5 in the app), played by its autoplayer
-	'sandbox-6': async (stage, _area, onProgress) => (await loadCode(), await import('$lib/sandbox-5/game.js')).mountGame(stage, { film: true, onProgress }),
+	'sandbox-6': async (stage, _area, onProgress) => (await loadCode(), await import('$content/sandbox-5/game.js')).mountGame(stage, { film: true, onProgress }),
 
 	// the fields and the highway alone
-	'tired-land': async (stage, _area, onProgress) => (await import('$lib/worlds/tired-land')).mountTiredLand(stage, onProgress),
+	'tired-land': async (stage, _area, onProgress) => (await import('$content/worlds/tired-land')).mountTiredLand(stage, onProgress),
 
 	// MaiaCity V1's world playing a seat's whole first-run intro on the film's clock: A the first player's, B the second's
-	'maiacity-v2': async (stage, area, onProgress) => (await import('$lib/maiacity-v2/film.js')).mountIntroFilm(stage, area === 'C' ? 'C' : area === 'B' ? 'B' : 'A', onProgress),
-	'maiacity-v1': async (stage, area, onProgress) => (await import('$lib/maiacity-v1/film.js')).mountIntroFilm(stage, area === 'B' ? 'B' : 'A', onProgress)
+	'maiacity-v2': async (stage, area, onProgress) => (await import('$content/maiacity-v2/film.js')).mountIntroFilm(stage, area === 'C' ? 'C' : area === 'B' ? 'B' : 'A', onProgress),
+	'maiacity-v1': async (stage, area, onProgress) => (await import('$content/maiacity-v1/film.js')).mountIntroFilm(stage, area === 'B' ? 'B' : 'A', onProgress)
 };

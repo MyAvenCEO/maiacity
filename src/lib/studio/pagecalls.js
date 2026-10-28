@@ -13,7 +13,7 @@ const CALLS = {
 	},
 	cutJobs: async (a) => (await import('./cuts.js')).cutJobs(a.id),
 	retryTask: async (a) => {
-		const { answer } = await import('$lib/avendb/ops.js');
+		const { answer } = await import('$avendb/ops.js');
 		const { asIn, device, worldOf } = await import('./cuts.js');
 		const { retrying, tasksOf } = await import('./jobs/tasks.js');
 		const call = await device();

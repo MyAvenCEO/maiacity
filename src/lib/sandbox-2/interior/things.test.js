@@ -3,14 +3,14 @@
 // stand where they always stood, in the walker's way as their builders say, at the version they have them.
 // Run: bun test src/lib/sandbox-2/interior/things.test.js
 import { expect, test } from 'bun:test';
-import { pinnedAs } from '$lib/assets/pins.fixture.js';
+import { pinnedAs } from '$content/assets/pins.fixture.js';
 
 /** the workshop a Thing of the library is, as the village's config names it (./things.js `THINGS`) */
 const KEYS = { 'art-studio': 'studio', 'repair-cafe': 'repair' };
 
 test('what of each Thing stands in the walker’s way is what its builder hands back with it', async () => {
 	const { WALK, THINGS } = await import('./things.js');
-	const { henDome, rabbitDome, playDome } = await import('$lib/models/minidomes.js');
+	const { henDome, rabbitDome, playDome } = await import('$content/models/minidomes.js');
 	const { playground } = await import('./spaces');
 	const near = (a, b) => {
 		expect(a.length).toBe(b.length);
@@ -68,7 +68,7 @@ async function builtWorkshops() {
 test('every workshop Thing is in the way where its builder says, and its middle is the one the library brings it to', async () => {
 	const THREE = await import('three');
 	const { WALK, MIDDLE, villageAsset } = await import('./things.js');
-	const { DOME_ROOMS } = await import('$lib/models/domerooms.js');
+	const { DOME_ROOMS } = await import('$content/models/domerooms.js');
 	for (const [, id, build] of await builtWorkshops()) {
 		const ref = villageAsset(KEYS[id] ?? id);
 		expect(pinnedAs(ref)).toBe(`things/${id}@1`);
@@ -90,7 +90,7 @@ test('every workshop Thing is in the way where its builder says, and its middle 
 test('a copy of each workshop covers what the master dome built there, and is in the way as it was', async () => {
 	const THREE = await import('three');
 	const { workshopsOf, placeOf, collidersAt } = await import('./things.js');
-	const { DOME_ROOMS } = await import('$lib/models/domerooms.js');
+	const { DOME_ROOMS } = await import('$content/models/domerooms.js');
 	const rr = 61.985;
 	const ours = workshopsOf(rr), theirs = await builtWorkshops();
 	expect(ours.length).toBe(theirs.length);

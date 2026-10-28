@@ -1,9 +1,9 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// A post of the Maia Universe on its own page (an inspire post as its report card, $lib/universe/InspirePost.svelte) (or, when the name is an asset recipe's hash, that asset's build:
-	// $lib/assets/AssetPage.svelte, as ./+page.js finds), laid out as the journal lays out every article on the site
+	// $content/assets/AssetPage.svelte, as ./+page.js finds), laid out as the journal lays out every article on the site
 	// ($lib/blog/PostLayout.svelte): its cover, its channel, its title, its subtitle, who wrote it and when, its words,
-	// then more of the stream. Its Markdown reads as avenDB lays it out ($lib/avendb/article.js), with the pictures
+	// then more of the stream. Its Markdown reads as avenDB lays it out ($avendb/article.js), with the pictures
 	// everyone may read, from avenDB's server or, for a post from before avenDB, the media vault's gateway; one only its
 	// vault's readers hold is left out.
 	import { onMount } from 'svelte';
@@ -12,14 +12,14 @@
 	import { page } from '$app/state';
 	import Cover from '$lib/blog/Cover.svelte';
 	import PostLayout from '$lib/blog/PostLayout.svelte';
-	import { bodyText, laidOut, render } from '$lib/avendb/article.js';
+	import { bodyText, laidOut, render } from '$avendb/article.js';
 	import { shaped } from '$lib/app/shapes.js';
 	import { ago, isDoc, pictureOf, postHref, slug } from '$lib/universe/posts.js';
 	import { authorOf, findPost, loadAll, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
 	import InspirePost from '$lib/universe/InspirePost.svelte';
 	import { inspireOf } from '$lib/universe/inspire.js';
-	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
+	import VaultRecipes from '$content/assets/VaultRecipes.svelte';
 
 	let { data } = $props();
 
@@ -111,7 +111,7 @@
 			{:else}
 				<h1>This post is not in the stream</h1>
 				<p>It may have been taken off avenDB, as its article went back to a draft.</p>
-				<!-- an asset's own page is found among the Maia City vault's recipes ($lib/assets/vault.js): when they can't be
+				<!-- an asset's own page is found among the Maia City vault's recipes ($content/assets/vault.js): when they can't be
 				     loaded, which this name may be is not known, and the page says why -->
 				{#if data.recipes}<p class="bad" role="alert">If it is an asset's page: {data.recipes}</p>{/if}
 			{/if}

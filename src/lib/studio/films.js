@@ -1,7 +1,7 @@
 /*
  * A story going out as a film (Samuel 2026-10-17: only stories and their posts; script, cut and artwork stay the film
  * workshop behind a video post). A cut's render (the `render` rule, J12) makes its films, `media:delivery` Library
- * files; each one can become a post of type `film` ($lib/avendb/posttypes.js): its `media` the film, beside the cut it
+ * files; each one can become a post of type `film` ($avendb/posttypes.js): its `media` the film, beside the cut it
  * was rendered from, that cut's script and the story they all tell.
  */
 

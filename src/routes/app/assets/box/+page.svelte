@@ -12,37 +12,37 @@
 	the two and times both.
 	Laid out as every asset library of the app is ($lib/app/Turntable.svelte): the builds down the left, the asset on its
 	turntable, the actions across the top, the build's name, the cache and the checks down the right. Every recipe built
-	here is the Maia City vault's ($lib/assets/vault.js), so the page's own build of each (objectAt) holds the vault's
+	here is the Maia City vault's ($content/assets/vault.js), so the page's own build of each (objectAt) holds the vault's
 	recipes to the repo's code; the trials, made to do harm, are the box's own (`virtual:box-trials`), never a vault's.
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import * as THREE from 'three';
-	import { disposeObject } from '$lib/render/core.js';
-	import { createStageRenderer } from '$lib/render/stage.js';
+	import { disposeObject } from '$content/render/core.js';
+	import { createStageRenderer } from '$content/render/stage.js';
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { fit } from '$lib/app/turntable.js';
-	import { OBJECT_GROUPS } from '$lib/assets/groups.js';
+	import { OBJECT_GROUPS } from '$content/assets/groups.js';
 	import TRIALS from 'virtual:box-trials';
-	import { AssetBox, engineCode } from '$lib/assets/box/host.js';
-	import { rebuild } from '$lib/assets/box/rebuild.js';
-	import { FORMAT } from '$lib/assets/box/serialize.js';
-	import * as cache from '$lib/assets/cache.js';
-	import { trianglesOf as tris } from '$lib/assets/card.js';
-	import { ENGINES, LATEST } from '$lib/assets/engines.js';
-	import { boxOf, keyOf, loadAsset } from '$lib/assets/load.js';
+	import { AssetBox, engineCode } from '$content/assets/box/host.js';
+	import { rebuild } from '$content/assets/box/rebuild.js';
+	import { FORMAT } from '$content/assets/box/serialize.js';
+	import * as cache from '$content/assets/cache.js';
+	import { trianglesOf as tris } from '$content/assets/card.js';
+	import { ENGINES, LATEST } from '$content/assets/engines.js';
+	import { boxOf, keyOf, loadAsset } from '$content/assets/load.js';
 	import { base as root } from '$app/paths';
-	import { INDEX, buildAt, checked, hashText, pageOf, parseBuild, recipeAt } from '$lib/assets/vault.js';
-	import { valuesOf } from '$lib/assets/params.js';
-	import { checkCard } from '$lib/assets/schemas/index.js';
-	import { hostileCards } from '$lib/assets/schemas/hostile.js';
+	import { INDEX, buildAt, checked, hashText, pageOf, parseBuild, recipeAt } from '$content/assets/vault.js';
+	import { valuesOf } from '$content/assets/params.js';
+	import { checkCard } from '$content/assets/schemas/index.js';
+	import { hostileCards } from '$content/assets/schemas/hostile.js';
 
 	// each named by its label and the values it takes (a plant's stage and seed; the others take none), then by hash
 	const LABELS = ['plants/apple?seed=maia&stage=9', 'plants/jackfruit?seed=maia&stage=9', 'things/bell-tent', 'machines/powercube@3', 'actors/stand-in'];
 	const SAMPLES = LABELS.map((label) => ({ label, name: buildAt(label) }));
 	const short = (name) => `${name.slice(0, 10)}…${name.slice(64)}`;
-	// a build's own page, on the root by its hash ($lib/assets/AssetPage.svelte), or none for a name of nothing
+	// a build's own page, on the root by its hash ($content/assets/AssetPage.svelte), or none for a name of nothing
 	const linkOf = (n) => {
 		try {
 			const { hash, params } = parseBuild(n.trim());
@@ -77,7 +77,7 @@
 	let still = false;
 
 	onMount(() => {
-		// the stage renderer ($lib/render/stage.js): the canvas in the box, the camera (its field of view widened on an
+		// the stage renderer ($content/render/stage.js): the canvas in the box, the camera (its field of view widened on an
 		// upright canvas, $lib/app/turntable.js), the controls, kept to the box's size
 		const view = createStageRenderer(canvasBox, { toneMapping: 'aces', fov: 40, near: 0.01, far: 500, turntable: true, fit });
 		({ renderer, camera, controls } = view);
@@ -203,7 +203,7 @@
 			const open = Object.entries(probes).filter(([, v]) => v.startsWith('OPEN'));
 			add('Nothing gets out of the box', open.length === 0 && Object.keys(probes).length > 10, open.length ? `open: ${open.map(([k]) => k).join(', ')}` : `${Object.keys(probes).length} ways out, every one refused`);
 
-			const { objectAt } = await import('$lib/assets/index.js');
+			const { objectAt } = await import('$content/assets/index.js');
 			for (const { label, name: n } of SAMPLES) {
 				line = `Building ${label} in the box and in the page…`;
 				try {
@@ -461,7 +461,7 @@
 		busy = true;
 		still = true;
 		checks = checks.filter((c) => !c.name.startsWith('Every asset'));
-		const { objectAt } = await import('$lib/assets/index.js');
+		const { objectAt } = await import('$content/assets/index.js');
 		const all = Object.entries(INDEX.recipes).sort(([, a], [, b]) => a.label.localeCompare(b.label));
 		const rows = [];
 		const t0 = now();

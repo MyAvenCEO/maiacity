@@ -3,7 +3,7 @@
  * and pointer events. Static world data is (re)built only when its revision changes; frames
  * update dynamic objects and the environment.
  */
-import { createRenderer } from '$lib/render/core.js';
+import { createRenderer } from '$content/render/core.js';
 import {
   ACESFilmicToneMapping,
   Mesh,

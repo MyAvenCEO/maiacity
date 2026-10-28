@@ -1,7 +1,7 @@
-// @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($lib/sandbox/view-logic.js)
+// @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($kernel/sandbox/view-logic.js)
 // A database function in a box: avenDB's own `function` schema holds its code, a JS module that exports
 // `run(event)`, given plain JSON, handing back the ops it would make as plain JSON. It runs by the logic host
-// ($lib/sandbox/logic-host.js): a fresh QuickJS engine for each call, in a sealed worker, with the core's limits and
+// ($kernel/sandbox/logic-host.js): a fresh QuickJS engine for each call, in a sealed worker, with the core's limits and
 // its deterministic profile (its random seeded by the event, its clock the event's `now`), so every device that runs
 // it hands back the same ops: no page, no network, no keys, no clock to wait on. Before it loads, the one checker
 // (game/code/check.js `function`) reads its code as it reads a logic module's: one that imports, requires or exports
@@ -29,7 +29,7 @@ export function refusal(code) {
  * Runs function code `code` on `event`: `{ ops }`, the ops it hands back (none where it hands back nothing), or
  * `{ ops: [], error }` where the checker refuses it (`refusal`), it doesn't load, throws, runs too long or hands back
  * anything but a list of ops. It runs on the logic engine its record names (`engine`, `{ host, version }`), never one
- * below the floor ($lib/sandbox/engines.js `engineFor`); one that names none runs on the floor, one made for another
+ * below the floor ($kernel/sandbox/engines.js `engineFor`); one that names none runs on the floor, one made for another
  * host runs nowhere.
  * @param {string} code @param {object} event @param {{ host?: string, version?: number }} [engine]
  * @returns {Promise<{ ops: object[], error?: string }>}

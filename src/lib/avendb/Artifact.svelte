@@ -31,9 +31,9 @@
 	import { addingSpark, grownFrom, itemsFor, pictureOf, SPARK, sparkRecord } from './sparks.js';
 	import { authorsLine, count, signerName } from './vaults.js';
 	import { filling, took, wordsOf, wordsRule, wordsTasks } from './youtube.js';
-	import { nudge } from '$lib/studio/jobs/mac.js';
-	import { lacking } from '$lib/studio/jobs/schemas.js';
-	import { asking, retrying, TRIES } from '$lib/studio/jobs/tasks.js';
+	import { nudge } from '$content/studio/jobs/mac.js';
+	import { lacking } from '$content/studio/jobs/schemas.js';
+	import { asking, retrying, TRIES } from '$content/studio/jobs/tasks.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string }}

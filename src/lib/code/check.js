@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS
 /*
  * The one checker (game/code/check.js) as the pages use it, with the types only a page has: an asset's card, judged
- * by the asset schemas ($lib/assets/schemas). The API checks the same types from game/, which it carries; it never
+ * by the asset schemas ($content/assets/schemas). The API checks the same types from game/, which it carries; it never
  * reads asset cards.
  */
 import { TYPES, checkCode, define } from '../../../game/code/check.js';

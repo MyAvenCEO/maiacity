@@ -1,6 +1,6 @@
 /*
  * THE HEAVY DIESEL — a 13 L inline-six truck diesel and its 12-speed automated gearbox, each part a mechanic would
- * name as its own solid at AirSup's realism ($lib/assets), and the model that runs its air and its fire: for the
+ * name as its own solid at AirSup's realism ($content/assets), and the model that runs its air and its fire: for the
  * truck (./truck.js) and any heavy machine after it. The light four-cylinder of the van and the pickup is
  * ./vehicle.js `inlineEngine`; this one goes further inside:
  *
@@ -37,12 +37,12 @@
  * camshaft, the rail and the intake on its left (+x), the exhaust and the turbo on its right (−x).
  */
 import * as THREE from 'three';
-import { GEO, MAT, clamp } from '$lib/assets/kit.js';
+import { GEO, MAT, clamp } from '$content/assets/kit.js';
 import { at, beltGeometry, beltHole, beltShape, box, circle, coil, cyl, ext, hex, hose, latheY, latheZ, onY, plate, rrect, slab, spurGeometry } from './vehicle.js';
 
 /** @typedef {[number, number, number]} V3 */
 /** @typedef {[number, number]} V2 */
-/** @typedef {ReturnType<typeof import('$lib/assets/parts.js').assetKit>} Kit */
+/** @typedef {ReturnType<typeof import('$content/assets/parts.js').assetKit>} Kit */
 
 /** the engine's measures (m) and its timing (crank degrees after its cylinder's firing top dead centre) */
 export const SIX = {
@@ -230,7 +230,7 @@ export function dieselSix(kit, o) {
 	E.position.set(...o.at);
 	o.parent.add(E);
 	const m = (/** @type {THREE.BufferGeometry} */ g, /** @type {THREE.Material} */ mat) => kit.mesh(g, mat);
-	/** @param {any} info @param {THREE.Object3D[]} objs @param {import('$lib/assets/parts.js').How} [how] */
+	/** @param {any} info @param {THREE.Object3D[]} objs @param {import('$content/assets/parts.js').How} [how] */
 	const part = (info, objs, how = {}) => {
 		const g = new THREE.Group();
 		g.add(...objs);

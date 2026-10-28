@@ -25,7 +25,7 @@ export const DOC_PICTURE = /^[0-9a-f]{64}\.(jpe?g|png|webp|gif|avif|svg)$/;
  * `src(name)` (`''` while it isn't read yet); a picture alone in its paragraph is a figure, its words its caption.
  * `named` is which names are pictures: an article's (`PICTURE`), or a doc's (`DOC_PICTURE`). `math`: its `$$…$$` and
  * `$…$` are maths, each left as a placeholder holding its source, for the math host to typeset in the page
- * ($lib/sandbox/math-host.js `typesetIn`); off, a `$` is a dollar.
+ * ($kernel/sandbox/math-host.js `typesetIn`); off, a `$` is a dollar.
  * @param {string} md @param {(name: string) => string} src @param {RegExp} [named] @param {{ math?: boolean }} [o]
  */
 export function render(md, src, named = PICTURE, { math = false } = {}) {

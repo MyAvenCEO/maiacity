@@ -1,11 +1,11 @@
 <!--
 	The app's one dashboard and avenDB in it (Samuel 2026-10-18: no avenDB page of its own): the person's account
-	($lib/avendb/Account.svelte), whose home is the dashboard ($lib/app/Dashboard.svelte), the games, the apps and the
+	($avendb/Account.svelte), whose home is the dashboard ($lib/app/Dashboard.svelte), the games, the apps and the
 	vault's pages, each of which opens right here (`#sparks`, `#library`, …) in the vault picked in the nav pill, a coop
 	and a person's own alike. Mounted here, its upkeep (the repo seed, the access requests) runs wherever the app opens.
 -->
 <script>
-	import Account from '$lib/avendb/Account.svelte';
+	import Account from '$avendb/Account.svelte';
 </script>
 
 <svelte:head>

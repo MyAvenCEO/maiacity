@@ -81,8 +81,8 @@ test('the core makes them (so the rule above holds something)', () => {
 
 test("the factories' T hands out the core's renderer, controls and composer under AirSup's names", () => {
 	const t = readFileSync(join(ROOT, 'src/lib/factories/three.js'), 'utf8');
-	expect(t).toMatch(/import \{ createControls, createRenderer \} from '\$lib\/render\/core\.js'/);
-	expect(t).toMatch(/import \{ createComposer \} from '\$lib\/render\/post\.js'/);
+	expect(t).toMatch(/import \{ createControls, createRenderer \} from '\$content\/render\/core\.js'/);
+	expect(t).toMatch(/import \{ createComposer \} from '\$content\/render\/post\.js'/);
 	for (const [name, fn] of [['WebGLRenderer', 'WebGLRenderer'], ['EffectComposer', 'Composer'], ['OrbitControls', 'Controls']])
 		expect(t).toMatch(new RegExp(`\\n\\t${name}: /\\*\\* @type \\{typeof [\\w.]+\\} \\*/ \\(/\\*\\* @type \\{unknown\\} \\*/ \\(${fn}\\)\\),`));
 });

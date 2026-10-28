@@ -11,7 +11,7 @@
  *
  * One way for every group (the things, the machines, the actors, the plants, the biomes, the buildings, the worlds):
  * the same history, the same frozen builders, the same list in every explorer, and one way to name an asset at a
- * version, `group/id@v` (`machines/powercube@3`, `plants/apple@1`), which `$lib/assets` turns back into its builder
+ * version, `group/id@v` (`machines/powercube@3`, `plants/apple@1`), which `$content/assets` turns back into its builder
  * (`assetAt`). A version whose builder was not kept says so (`kept: false`): it is listed for its note, never shown as
  * something it was not. Every older version of an asset keeps its builder (src/lib/assets/versions.test.js); only a
  * world's older versions are notes alone, since a world is a page.

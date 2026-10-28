@@ -1,6 +1,6 @@
 <!--
 	MaiaCity V1: the one shared game, as both players see it, as a game screen like Sandbox 1 and Sandbox 5 — the hex in
-	3D under everything ($lib/maiacity-v1/world.js: the tent and the two players, nothing else), the COOPs and what
+	3D under everything ($content/maiacity-v1/world.js: the tent and the two players, nothing else), the COOPs and what
 	they own (the MaiaCity COOP the hex and the AMM pool) as a list in a card, the numbers in pills across the top, the tools down the left, and
 	a card on the right for whatever is open (a sheet from the foot on a phone, an aside down the right on its side). The
 	wallet is one banking sheet from the foot, opened by the nav pill's green "+": the balance and recent transactions,
@@ -14,8 +14,8 @@
 	import { screenSlot } from '$lib/app/screen-slots.js';
 	import { onMount } from 'svelte';
 	import { foot, FOOT } from '$lib/app/foot.js';
-	import { VILLAGE_INFO } from '$lib/models/village.js';
-	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
+	import { VILLAGE_INFO } from '$content/models/village.js';
+	import { WAYSIDE_INFO } from '$content/models/wayside.js';
 	import { RENTED, SUBLET, COOPS, DAY_MS, act, newGame, MINDS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
 	import { loadGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
@@ -25,9 +25,9 @@
 	import { treeNow } from './trees.js';
 	import { plantOf } from './plants.js';
 	import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
-	import ViewHost from '$lib/sandbox/ViewHost.svelte';
-	import ViewSlot, { standing } from '$lib/sandbox/ViewSlot.svelte';
-	import { viewOfCard } from '$lib/sandbox/view-host.js';
+	import ViewHost from '$kernel/sandbox/ViewHost.svelte';
+	import ViewSlot, { standing } from '$kernel/sandbox/ViewSlot.svelte';
+	import { viewOfCard } from '$kernel/sandbox/view-host.js';
 	import { screenDataOf } from './screen.js';
 	import { base } from '$app/paths';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
@@ -427,12 +427,12 @@
 	// the game's screens (game/maiacity-v1/views.js): view cards a MIP brings, each a tool of its own, run sandboxed
 	const screens = $derived(view ? viewsOf(view).filter((v) => (v.data?.slot ?? 'panel') === 'panel') : []);
 	// a screen a MIP stood in one of the page's panels (views.js SLOTS): it replaces a panel that only shows and stands
-	// over the moves of the others; the slot ($lib/sandbox/ViewSlot.svelte) brings the page's own panel back, for this visit
+	// over the moves of the others; the slot ($kernel/sandbox/ViewSlot.svelte) brings the page's own panel back, for this visit
 	const slotted = $derived(view ? slotsOf(view) : {});
 	const slotCard = $derived(panel && !isViewPanel(panel) ? slotted[panel] : null);
 	const allTools = $derived([...TOOLS, ...screens.map((v) => [`view:${v.id}`, '▦', v.name])]);
 	const isViewPanel = (x) => typeof x === 'string' && x.startsWith('view:');
-	// what a screen is handed: the game as it stands ($lib/maiacity-v1/screen.js, the same as the Proposals app hands)
+	// what a screen is handed: the game as it stands ($content/maiacity-v1/screen.js, the same as the Proposals app hands)
 	const screenData = $derived(screenDataOf(view, seat, now));
 	// a view card as the view host takes it: the same object while its code is (the game is copied every second, its
 	// cards with it), so its frame never reloads until a MIP changes it
@@ -442,7 +442,7 @@
 	/** the COOP that owns an asset now (MIPs can move assets), and the asset as it lists it */
 	/** the rent a COOP pays for an asset another owns, if one rents it */
 	const rentOf = (id) => RENTED.find((r) => r.asset === id);
-	/** the first-run story ($lib/maiacity-v1/tour.js): one idea a step, for each player at their own seat. The steps
+	/** the first-run story ($content/maiacity-v1/tour.js): one idea a step, for each player at their own seat. The steps
 	 *  that only tell remember "Next" in this browser; the moves (mint, invest) are read off the game. */
 	let seen = $state({});
 	let seenOf = $state(0); // the game start the remembered steps were read for: no story before they are

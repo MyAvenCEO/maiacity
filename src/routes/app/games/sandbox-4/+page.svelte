@@ -1,18 +1,18 @@
 <!--
 	avenCITY Sandbox 5 — Sandbox 4's dome cell (interior/village.ts), its food
-	forest grown from our own plants ($lib/plants, through interior/flora.js): every
+	forest grown from our own plants ($content/plants, through interior/flora.js): every
 	plant at its stage, from young tree to ripe fruit; the plants of a middle-European
 	garden outside, the ones that need the warmth inside the domes. Each plant is
 	anchored to the version it was planted with (interior/sandbox5.js). Click or tap
 	any plant: a card beside the world tells what it is and where it is in its life.
-	The page round it is the kit's ($lib/sandbox-kit/WorldPage.svelte).
+	The page round it is the kit's ($content/sandbox-kit/WorldPage.svelte).
 -->
 <script lang="ts">
 	import { asset } from '$lib/media/url';
-	import type { PickedPlant, VillageHandle } from '$lib/sandbox-2/interior/village';
+	import type { PickedPlant, VillageHandle } from '$content/sandbox-2/interior/village';
 	import { base } from '$app/paths';
-	import { WorldPage } from '$lib/sandbox-kit';
-	import PlantLook from '$lib/sandbox-2/interior/PlantLook.svelte';
+	import { WorldPage } from '$content/sandbox-kit';
+	import PlantLook from '$content/sandbox-2/interior/PlantLook.svelte';
 	import { fly } from 'svelte/transition';
 
 	let village: VillageHandle | null = null;
@@ -20,7 +20,7 @@
 	/** the plant picked by a click or a tap, and what the library knows of it */
 	type Card = { picked: PickedPlant; label: string; latin: string; note: string; from: string; layer: string; stages: { name: string; day: number; note: string }[] };
 	let card = $state<Card | null>(null);
-	let plants: typeof import('$lib/plants') | null = null;
+	let plants: typeof import('$content/plants') | null = null;
 	/** the card slides in from the right beside the world; on a phone, up from the foot of it */
 	let narrow = $state(false);
 	/** a press that comes up where it went down, soon (by the events' own times: a busy frame between them is no matter), is a click on the world, not a look round */
@@ -32,7 +32,7 @@
 		if (!p || !village || Math.hypot(e.clientX - p.x, e.clientY - p.y) > 6 || e.timeStamp - p.t > 450) return;
 		const picked = village.pickPlant(e.clientX, e.clientY);
 		if (!picked) return close();
-		plants ??= await import('$lib/plants');
+		plants ??= await import('$content/plants');
 		const plant = plants.plantAt(picked.id, picked.v);
 		if (!plant) return (card = null);
 		const layer = plants.LAYERS.find((l) => l.id === plant.layer);
@@ -52,8 +52,8 @@
 
 <WorldPage
 	mount={async (stage, onProgress) => {
-		const { mountVillage } = await import('$lib/sandbox-2/interior/village');
-		const SANDBOX_5 = await (await import('$lib/sandbox-2/interior/sandbox5.js')).sandbox5();
+		const { mountVillage } = await import('$content/sandbox-2/interior/village');
+		const SANDBOX_5 = await (await import('$content/sandbox-2/interior/sandbox5.js')).sandbox5();
 		return (village = await mountVillage(stage, onProgress, SANDBOX_5));
 	}}
 	title="avenCITY Sandbox 4"

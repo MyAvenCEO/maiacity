@@ -39,7 +39,7 @@ import { BEAN_STAGES, beans } from './beans.js';
 
 import * as THREE from 'three';
 import { FIRST, at } from '../app/versions.js';
-import { registerAssets } from '$lib/assets/register.js';
+import { registerAssets } from '$content/assets/register.js';
 import { detailAt, lite } from './grow.js';
 import { oneFruit, ripeOf } from './fruit.js';
 import { orchard as orchardV1 } from './orchard.v1.js';
@@ -736,9 +736,9 @@ const HISTORY = {
 export const SEEDS = ['maia', 'isar', 'samuel', 'backyard', 'seed-0042', 'sun', 'rain', 'domes'];
 
 /**
- * What a plant is grown with, in the order `grow` takes it ($lib/assets/params.js): its stage, from seed to ripe fruit
+ * What a plant is grown with, in the order `grow` takes it ($content/assets/params.js): its stage, from seed to ripe fruit
  * (between two stages, on the way), and its seed id.
- * @param {{ stages: Stage[] }} p @returns {import('$lib/assets/params.js').Param[]}
+ * @param {{ stages: Stage[] }} p @returns {import('$content/assets/params.js').Param[]}
  */
 const paramsOf = (p) => [
 	{ id: 'stage', label: 'Stage', type: 'number', min: 0, max: p.stages.length - 1, value: p.stages.length - 1, names: p.stages.map((s) => s.name) },
@@ -778,7 +778,7 @@ function fruitOf(grow, last, stage, seed) {
 /**
  * every plant, layer by layer from the canopy down (in each layer as they were added), with its versions and what it
  * is grown with
- * @type {(Plant & { versions: import('../app/versions.js').Version<Plant['grow']>[], version: number, params: import('$lib/assets/params.js').Param[] })[]}
+ * @type {(Plant & { versions: import('../app/versions.js').Version<Plant['grow']>[], version: number, params: import('$content/assets/params.js').Param[] })[]}
  */
 export const PLANTS = registerAssets(
 	LAYERS.flatMap((l) => [...ALL, ...WALD, ...FIELDS].filter((p) => (p.layer ?? LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id, params: paramsOf(p) }))),

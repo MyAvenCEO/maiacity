@@ -2,7 +2,7 @@
 import { screenSlot } from '$lib/app/screen-slots.js'
 
 import { onMount } from 'svelte'
-import { SkyControl } from '$lib/sandbox-kit'
+import { SkyControl } from '$content/sandbox-kit'
 import DomeRail from './components/DomeRail.svelte'
 import ResourceIcon from './components/ResourceIcon.svelte'
 import { BIOME_IDS, BIOME_RESOURCES, type BiomeId } from '../../../game/island/hexmap'

@@ -1,7 +1,7 @@
 <!--
 	One avenDB AIP in the Proposals app: where it stands, idea → objective → proposed → archived; its objective, what
 	it must deliver as metrics in Lean, each measured against the readings recorded on it (./Objective.svelte); the assets it proposes, in 3D, built from the files on their lines
-	($lib/avendb/ProposedAssets.svelte); then, in a section that opens, what it changes, a line per part, and every line
+	($avendb/ProposedAssets.svelte); then, in a section that opens, what it changes, a line per part, and every line
 	it bundles (a note, an asset, a view, a game config, any type of entry), each with what it changes field by field as
 	its schema reads it (the `aip` read's diff, derived, never typed); the reviews so far, and what the person may do with it, acting as the vault the device says: promote it once it holds an objective
 	(the objective stage) and withdraw it (its author or its vault), and accept, decline or ask for a revision of a proposed one (its vault
@@ -13,14 +13,14 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { linkHref } from '$lib/markdown/index.js';
-	import ProposedAssets from '$lib/avendb/ProposedAssets.svelte';
+	import ProposedAssets from '$avendb/ProposedAssets.svelte';
 	import Objective from './Objective.svelte';
-	import { session } from '$lib/avendb/session.svelte.js';
-	import { aips } from '$lib/avendb/aips.svelte.js';
-	import ActGuard from '$lib/avendb/ActGuard.svelte';
-	import { mayAct, worst } from '$lib/avendb/fresh.js';
+	import { session } from '$avendb/session.svelte.js';
+	import { aips } from '$avendb/aips.svelte.js';
+	import ActGuard from '$avendb/ActGuard.svelte';
+	import { mayAct, worst } from '$avendb/fresh.js';
 	import { freshnessOf } from '../../../game/code/sources/coverage.js';
-	import { acting, authorsLine, nameOf } from '$lib/avendb/vaults.js';
+	import { acting, authorsLine, nameOf } from '$avendb/vaults.js';
 	import { when } from './aips.js';
 	import { measureAip, readingsOf } from './measure.js';
 
@@ -58,7 +58,7 @@
 	const shown = $derived(lines ?? aip.lines);
 
 	let text = $state('');
-	// every action here stands behind one guard ($lib/avendb/ActGuard.svelte): it runs on current data, waits while the
+	// every action here stands behind one guard ($avendb/ActGuard.svelte): it runs on current data, waits while the
 	// device is behind on this AIP, and offline runs only once the person said they act on data as of then
 	const fresh = $derived(worst(aips.fresh, linesFresh));
 	let confirmed = $state(false);

@@ -3,7 +3,7 @@
 	(Samuel 2026-10-17: proposals leave the game and sandbox screens completely). Every AIP goes the same way: an idea,
 	then proposed (waiting for the signatures its game's policy asks for), then archived as applied or rejected; each is
 	a readable text plus the changes it makes. Until they live in avenDB (plan: /mnt/project-files/game-caps/plan.md),
-	the app reads today's MIPs where they are kept ($lib/maiacity-v2/aips.js) and shows each the AIP way, with the number
+	the app reads today's MIPs where they are kept ($content/maiacity-v2/aips.js) and shows each the AIP way, with the number
 	it had ("was MIP-42"). A game links here; its own screens show no proposal.
 -->
 <script>
@@ -11,15 +11,15 @@
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import { me } from '$lib/auth/client';
-	import { liveGame } from '$lib/maiacity-v2/live.svelte.js';
-	import { GAMES, STAGES, allOf, when } from '$lib/maiacity-v2/aips.js';
-	import V1Aip from '$lib/maiacity-v2/V1Aip.svelte';
-	import V1Draft from '$lib/maiacity-v2/V1Draft.svelte';
+	import { liveGame } from '$content/maiacity-v2/live.svelte.js';
+	import { GAMES, STAGES, allOf, when } from '$content/maiacity-v2/aips.js';
+	import V1Aip from '$content/maiacity-v2/V1Aip.svelte';
+	import V1Draft from '$content/maiacity-v2/V1Draft.svelte';
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
-	import { session } from '$lib/avendb/session.svelte.js';
-	import { aips } from '$lib/avendb/aips.svelte.js';
-	import Unlock from '$lib/avendb/Unlock.svelte';
-	import { nameOf } from '$lib/avendb/vaults.js';
+	import { session } from '$avendb/session.svelte.js';
+	import { aips } from '$avendb/aips.svelte.js';
+	import Unlock from '$avendb/Unlock.svelte';
+	import { nameOf } from '$avendb/vaults.js';
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let game = $state(q.get('game') ?? '');

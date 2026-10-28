@@ -12,7 +12,7 @@
 	// @ts-nocheck — plain JS
 	import { when } from './aips.js';
 
-	/** o: the objective as the `aip` read gives it ($lib/avendb/hitl.js `Objective`), or null */
+	/** o: the objective as the `aip` read gives it ($avendb/hitl.js `Objective`), or null */
 	let { o } = $props();
 
 	const GOAL = { atLeast: 'at least', atMost: 'at most', between: 'between', equals: 'exactly' };

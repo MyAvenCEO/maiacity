@@ -5,7 +5,7 @@
 // AIPs (the `aips` read, every vault this tab's device holds), and, until games keep their configs in avenDB, today's
 // MIPs where they are kept: MaiaCity V2's, from its one game.
 import { describe, signaturesOf } from '../../../game/maiacity-v2/engine.js';
-import { nameOf } from '$lib/avendb/vaults.js';
+import { nameOf } from '$avendb/vaults.js';
 
 /** the games that have proposals, by their id in the Maia City COOP vault (game/games.js): the game filter's names */
 export const GAMES = {
@@ -56,7 +56,7 @@ export function fromV1(view, m) {
 const gameTag = (tags) => (tags ?? []).find((t) => t.startsWith('game:'))?.slice(5) ?? null;
 
 /**
- * An avenDB AIP, as the `aips` read lists it ($lib/avendb/hitl.js `Aip`), in the app's shape. A bare proposal (a line
+ * An avenDB AIP, as the `aips` read lists it ($avendb/hitl.js `Aip`), in the app's shape. A bare proposal (a line
  * no AIP names yet) is an idea of its own, keyed by its line. `world` is the device's, for the vaults' names.
  */
 export function fromAvendb(a, world) {

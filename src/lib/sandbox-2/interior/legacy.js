@@ -1,6 +1,6 @@
 /*
  * LEGACY — Sandbox 4's stand-in plants (./plants.ts) traded, in Sandbox 5, for the plants of our own library
- * ($lib/plants, drawn by ./flora.js) in the same places. Every stand-in says what it is (`userData.legacy`): a bed of a
+ * ($content/plants, drawn by ./flora.js) in the same places. Every stand-in says what it is (`userData.legacy`): a bed of a
  * crop becomes a row of that crop, a tuft of herbs a kitchen herb, a potted olive the library's olive in the same pot,
  * a vine along a balcony rail grapevines, a pergola's vines grapevines up its posts, a shrub or a fruit tree its kind.
  * The pots, the posts and the beds' soil stay; the stand-ins go.

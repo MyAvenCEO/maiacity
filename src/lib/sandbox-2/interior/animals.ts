@@ -7,14 +7,14 @@
  * the eye it moves every bone as its kind does — walks with its feet set down
  * and kept there, pecks, scratches, grazes, hops, flies, swims — from the clips
  * the box wrote down, and further off a coarser build of it stands in for
- * itself, a hundred of them a draw call ($lib/assets/render/crowd.js). Every
+ * itself, a hundred of them a draw call ($content/assets/render/crowd.js). Every
  * animal wanders on its own: it walks,
  * turns, slows, stops to peck or graze, and walks on, always inside its own
  * patch of ground; no two quite the same size.
  */
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { actor, blend, crowd } from '$lib/assets/render/crowd.js'
+import { actor, blend, crowd } from '$content/assets/render/crowd.js'
 import { seeded } from './plants'
 import { villageAsset } from './things.js'
 
@@ -291,7 +291,7 @@ export function fishes(pools: { x: number; z: number; r: number; y: number; n: n
 	const school = crowd(
 		kinds.map(actorRef),
 		Array.from({ length: COATS }, (_, c) => fish.filter((f) => f.coat === c).length),
-		// a fish's middle is 0.15 m over its origin ($lib/actors/species/fish.ts): the pool gives where its middle swims
+		// a fish's middle is 0.15 m over its origin ($content/actors/species/fish.ts): the pool gives where its middle swims
 		{ near: 18, max: 20, lift: 0.15 }
 	)
 	const swimmers = { clips: clipsOf(school) }
@@ -367,7 +367,7 @@ export function antHills(
 		return { near, holder }
 	}
 	/** the first one, made hidden once the build is here, so that a world's warming (src/lib/film/warm.js) draws it out
-	 * of sight before a shot comes near a hill, as a crowd's first copy ($lib/assets/render/crowd.js) */
+	 * of sight before a shot comes near a hill, as a crowd's first copy ($content/assets/render/crowd.js) */
 	let spare: ReturnType<typeof rig> | null = null
 	void hill.ready.then(() => {
 		if (hill.model) {

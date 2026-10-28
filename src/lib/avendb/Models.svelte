@@ -14,7 +14,7 @@
 	import { packageQuery, missingPackageLabel } from './package-inventory.js';
 	import Icon from './Icon.svelte';
 	import { ago, nameOf, reads, short, size } from './vaults.js';
-	import PINS from '$lib/models/models.json';
+	import PINS from '$content/models/models.json';
 
 	/** @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, entry?: string }} */
 	let { world, vault, actor, api, entry = '' } = $props();

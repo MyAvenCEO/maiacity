@@ -2,7 +2,7 @@
 /**
  * MaiaCity V2's world, in three.js, and nothing but it: the city plot of 49 hexes on a wide sandy steppe, a dusty
  * highway through its centre hex, and the journey of a newcomer across it. At the city's centre the bus stop and the
- * abandoned gas station (the MaiaCity centre, $lib/models/wayside.js); a meandering gravel track leaves the highway
+ * abandoned gas station (the MaiaCity centre, $content/models/wayside.js); a meandering gravel track leaves the highway
  * there and runs through the village's centre hex, where the Village COOP's old shed keeps the powercube beside the
  * solar row and the battery (the village store), on to our tribe's hex: grass, a few bushes, the 2-person bell tent
  * and the pickup's round lot. The city's own hexes are steppe and prairie, the villages' hexes grass.
@@ -25,10 +25,10 @@
  */
 import * as THREE from 'three';
 import { CAST, SECOND_HOME } from './cast.js';
-import { createControls } from '$lib/render/core.js';
-import { worldRenderer } from '$lib/render/world.js';
-import { blend } from '$lib/assets/clips.js';
-import { SPEED } from '$lib/models/units.js';
+import { createControls } from '$content/render/core.js';
+import { worldRenderer } from '$content/render/world.js';
+import { blend } from '$content/assets/clips.js';
+import { SPEED } from '$content/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan, seeThrough, wearFace } from './van.js';
 import { PLOT, SEATS, WATER_REACH } from '../../../game/maiacity-v2/engine.js';
@@ -36,7 +36,7 @@ import { look, pathOf } from '../../../game/film/camera.js';
 import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, WALK_CYCLE, stakeRef, standInRef, tentWork } from './things.js';
 import { createDrawn } from './drawn.js';
 import { growthFrame } from './tree-camera.js';
-import { aim, filmHoldsSize, poseIn } from '$lib/sandbox-kit/film.js';
+import { aim, filmHoldsSize, poseIn } from '$content/sandbox-kit/film.js';
 import { frameAt as reelFrame } from '../../../game/film/reel.js';
 import { plantRef } from './plants.js';
 import { orbitTarget } from './watering.js';
@@ -680,7 +680,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the world's clock, in seconds */
 	const now = clockOf ?? (() => performance.now() / 1000);
 	let rand = random;
-	// the world renderer ($lib/render/world.js): soft shadows, V1's own colours (no tone mapping), at most 1.5 pixels
+	// the world renderer ($content/render/world.js): soft shadows, V1's own colours (no tone mapping), at most 1.5 pixels
 	// per CSS pixel
 	const renderer = worldRenderer({ canvas, maxPixelRatio: 1.5, toneMapping: 'none' });
 	const scene = new THREE.Scene();

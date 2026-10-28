@@ -1,6 +1,6 @@
 /*
  * AN ASSET'S PARAMETERS — what its recipe is built with, declared by the recipe itself (a plant's stage and seed,
- * $lib/plants), so a world, a viewer or the asset box can name any build of it by one ref:
+ * $content/plants), so a world, a viewer or the asset box can name any build of it by one ref:
  *
  *   plants/apple@2?seed=maia&stage=9
  *

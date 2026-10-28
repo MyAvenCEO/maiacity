@@ -27,21 +27,21 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, grass, groundCover, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { antHills, apiary, fishes, herd, TANK_FISH } from './animals'
-import { settled as actorsSettled, wantNear as actorsNear } from '$lib/assets/render/crowd.js'
+import { settled as actorsSettled, wantNear as actorsNear } from '$content/assets/render/crowd.js'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
 import { furnish, terraceSet } from './rooms'
 import { ambience, levelsAt, nearness } from './ambience'
 import { flow, pond as pondShape, shore, stream as streamShape, waterMaterial } from './water'
-import { createWorldRenderer, type StageHandle } from '$lib/render/world.js'
-import { createSky, type SkyHandle } from '$lib/sandbox-kit/sky.js'
-import { skyHour } from '$lib/sandbox-kit/skyTime.svelte.js'
-import { createWalker } from '$lib/sandbox-kit/walker.js'
-import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
-import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
+import { createWorldRenderer, type StageHandle } from '$content/render/world.js'
+import { createSky, type SkyHandle } from '$content/sandbox-kit/sky.js'
+import { skyHour } from '$content/sandbox-kit/skyTime.svelte.js'
+import { createWalker } from '$content/sandbox-kit/walker.js'
+import { createObstacles } from '$content/sandbox-kit/obstacles.js'
+import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$content/sandbox-kit/film.js'
 import { createForest, type FloraDrawn, type Forest } from './flora.js'
-import { groundMaterial } from '$lib/biomes'
-import { biomeOr } from '$lib/assets/sources/biome.js'
+import { groundMaterial } from '$content/biomes'
+import { biomeOr } from '$content/assets/sources/biome.js'
 import { createCover, type Cover } from './cover.js'
 import type { Drawn } from './drawn.js'
 import { FLOORS, standThings, workshopsOf } from './things.js'
@@ -585,7 +585,7 @@ export type InteriorHandle = {
 /** Where to come in, and what to do on walking back out (Sandbox 4's village). */
 export type InteriorOptions = {
 	entry?: number; onLeave?: (door: number) => void; host?: DomeHost; cancelled?: () => boolean; hurry?: () => boolean; background?: () => boolean
-	/** Sandbox 5: the food forest inside grown from our plants ($lib/plants, ./flora.js), from this garden (./sandbox5.js),
+	/** Sandbox 5: the food forest inside grown from our plants ($content/plants, ./flora.js), from this garden (./sandbox5.js),
 	 *  drawn by the host's renderer of plants (`flora`, ./drawn.js `createFlora`, at the distances under the glass:
 	 *  ./flora.js `INSIDE`), and its floor's cover by the host's renderer of the library (`drawn`, ./drawn.js
 	 *  `createDrawn`, every copy at its finest), both of which the host updates every frame */
@@ -828,7 +828,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 	const huge = kind === 'master' || kind === 'factory'
 	/** the tent and the glamping dome stand in the forest the same way: small, one door */
 	const lite = kind === 'glamp' || kind === 'tent'
-	// standing alone (Sandbox 3) the dome has the kit's stage, sky and walker ($lib/sandbox-kit); built into a host's
+	// standing alone (Sandbox 3) the dome has the kit's stage, sky and walker ($content/sandbox-kit); built into a host's
 	// world (Sandbox 4) it draws with the host's
 	const stage: StageHandle | null = host ? null : createWorldRenderer(container, { maxPixelRatio: huge ? 1.25 : 1.5, near: 0.05, far: R * 30 + 500 })
 	const renderer = host?.renderer ?? stage!.renderer
@@ -844,7 +844,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 
 	/* the sun stands where the in-game clock says: it rises in the east, crosses
 	   the south, sets in the west, and the sky, the light and the reflections
-	   follow it through the day and into the night ($lib/sandbox-kit/sky, made
+	   follow it through the day and into the night ($content/sandbox-kit/sky, made
 	   once the lamps are). A dev hook (window.__interiorLight = 'golden') holds it
 	   at late afternoon for the journal's pictures, and window.__interiorHour (the
 	   film camera's) pins any hour. */
@@ -992,7 +992,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 	const library = async () => {
 		if (opts.library) return opts.library
 		if (!ownLibrary) {
-			const [{ createDrawn }, { LEVELS }] = await Promise.all([import('./drawn.js'), import('$lib/assets/render/lod.js')])
+			const [{ createDrawn }, { LEVELS }] = await Promise.all([import('./drawn.js'), import('$content/assets/render/lod.js')])
 			ownLibrary ??= createDrawn({ renderer, camera, scene, boxes: 1, levels: [LEVELS[0]!], force: 0 })
 		}
 		return ownLibrary
@@ -1374,7 +1374,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		// the master dome's centre is a theatre sunk into the ground, so its floor is a ring round the bowl
 		const theatre = kind === 'master'
 		// Sandbox 5: the floor under the glass is the warm food forest biome's, as the Maia City vault keeps it
-		// ($lib/assets/sources/biome.js, its newest version): big fallen leaves, humus, moss and a living mat, run into
+		// ($content/assets/sources/biome.js, its newest version): big fallen leaves, humus, moss and a living mat, run into
 		// each other in patches; its cover streamed round you (below). Bare soil where the vault holds none, no cover
 		const warmBiome = opts.flora ? biomeOr(FLOORS.warm) : null
 		const warmFloor = opts.flora ? groundMaterial(warmBiome?.surface ?? { soil: 1 }) : null
@@ -2662,7 +2662,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		return { lift: () => null, liftStep: () => {}, move: () => {}, look: () => {}, embedded, dispose: disposeAll }
 	}
 
-	/* ── walking ($lib/sandbox-kit/walker) ─────────────────────────────── */
+	/* ── walking ($content/sandbox-kit/walker) ─────────────────────────────── */
 	// coming in from the village: just inside the door you walked through, facing in
 	if (opts.entry !== undefined) {
 		const [ex, ez] = polar(R - (kind === 'glamp' ? 2 : 3.5), opts.entry)
@@ -2684,7 +2684,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		return inDoor || (rr > R + 0.4 && rr < outerR)
 	}
 
-	// what stands in the way, filed in 8 m cells ($lib/sandbox-kit/obstacles)
+	// what stands in the way, filed in 8 m cells ($content/sandbox-kit/obstacles)
 	const stands = createObstacles([...colliders, ...outsideColliders] as { x: number; z: number; r: number; y?: number }[])
 	const walker = createWalker(camera, renderer.domElement, {
 		x: start.x,
@@ -2761,7 +2761,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 	onProgress?.('ready')
 	tick()
 
-	/* the film camera's hold on the dome (src/lib/film, $lib/sandbox-kit/film): Sandbox 3 on film, one dome a page */
+	/* the film camera's hold on the dome (src/lib/film, $content/sandbox-kit/film): Sandbox 3 on film, one dome a page */
 	const world = connectFilm({
 		sandbox: 'sandbox-3',
 		area: kind,

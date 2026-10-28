@@ -8,7 +8,7 @@
 	so the large card, the small preview and the rendered JPEG (card.js) show the same lines.
 -->
 <script>
-	/** @typedef {import('$lib/studio/types.js').Layer} Layer */
+	/** @typedef {import('$content/studio/types.js').Layer} Layer */
 
 	/**
 	 * @type {{

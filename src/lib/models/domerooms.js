@@ -7,12 +7,12 @@
  * dome's middle (a room, a workshop) is brought to the viewer's middle. ./index.js adds every entry to the library.
  */
 import * as THREE from 'three';
-import { box, lantern, mats, sofa, table } from '$lib/sandbox-2/interior/interior';
-import { balconyDoor, furnish, terraceSet } from '$lib/sandbox-2/interior/rooms';
-import { awnings, bakery, bistro, cowork, kiosk, library, oven, parasol, pergola, pottery, repair, square, stool, studio, woodshop } from '$lib/sandbox-2/interior/spaces';
-import { houseplant, potted } from '$lib/sandbox-2/interior/plants';
+import { box, lantern, mats, sofa, table } from '$content/sandbox-2/interior/interior';
+import { balconyDoor, furnish, terraceSet } from '$content/sandbox-2/interior/rooms';
+import { awnings, bakery, bistro, cowork, kiosk, library, oven, parasol, pergola, pottery, repair, square, stool, studio, woodshop } from '$content/sandbox-2/interior/spaces';
+import { houseplant, potted } from '$content/sandbox-2/interior/plants';
 
-/** @typedef {import('$lib/sandbox-2/interior/spaces').Kit} Kit */
+/** @typedef {import('$content/sandbox-2/interior/spaces').Kit} Kit */
 
 /** the domes' surfaces and furniture, as a dome lends them to its spaces; made once, when the first is built */
 /** @type {Kit | null} */

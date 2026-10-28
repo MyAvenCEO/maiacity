@@ -1,6 +1,6 @@
 <!--
 	ONE VIEWER FOR EVERY ASSET — the Things, the Machines, the Actors and the Plants all show theirs with it, the same
-	way: the list to pick from down the left ($lib/app/Turntable.svelte), the asset on the asset stage ($lib/assets/stage.js,
+	way: the list to pick from down the left ($lib/app/Turntable.svelte), the asset on the asset stage ($content/assets/stage.js,
 	the paper studio AirSup's lab shows a machine in), and round it the same options for every one, each where it applies:
 
 	  Moves    how it moves, one at a time: Run (its solver at the sliders), its own moves (a drawer out and in), an
@@ -12,17 +12,17 @@
 	  Parts    every part it is made of, by its assemblies, a part that is a whole asset of its own (a Power Cube in a
 	           pickup) under that asset, linked to its own page; tap one, on it or in the list, for its card
 
-	Every build comes from the asset box or this device's cache, checked ($lib/assets/load.js), and is shown from its
-	data alone ($lib/assets/hero.js): what moves by itself runs in the box, and only numbers come back. The stage, the
+	Every build comes from the asset box or this device's cache, checked ($content/assets/load.js), and is shown from its
+	data alone ($content/assets/hero.js): what moves by itself runs in the box, and only numbers come back. The stage, the
 	camera's work and what is drawn round it are every asset viewer's (./viewer.js, ./ViewerParts.svelte), the vault's
-	(./VaultAsset.svelte) too. Its recipe is the Maia City vault's ($lib/assets/vault.js), with no repo fallback: a
+	(./VaultAsset.svelte) too. Its recipe is the Maia City vault's ($content/assets/vault.js), with no repo fallback: a
 	version whose recipe the vault doesn't hold, or holds otherwise, says so on the stage, naming its ref. Drag to turn
 	round it, scroll to come closer. An admin's.
 
-	The Buildings add three things: every building stands on the same round ground ($lib/buildings/ground.js, `round`)
+	The Buildings add three things: every building stands on the same round ground ($content/buildings/ground.js, `round`)
 	and is walked there, the list kept beside it (`inPlace`); and an item that is a world in disguise (a dome: Sandbox
 	3's interior, `inside`), at a version that is no recipe, is built by that world's own code into a scene of its own on
-	this canvas, not in the box ($lib/buildings/inside.js), and stepped inside the same way.
+	this canvas, not in the box ($content/buildings/inside.js), and stepped inside the same way.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -30,9 +30,9 @@
 	import { base } from '$app/paths';
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { atOrLatest } from '$lib/app/versions.js';
-	import { disposeObject } from '$lib/render/core.js';
+	import { disposeObject } from '$content/render/core.js';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import WalkHint from '$lib/sandbox-kit/WalkHint.svelte';
+	import WalkHint from '$content/sandbox-kit/WalkHint.svelte';
 	import { walk } from './controls.js';
 	import { growth, stageAt } from './grow.js';
 	import { forStage, heroOf, runner, walkOf } from './hero.js';
@@ -46,7 +46,7 @@
 	import { VIEWS, asker, camerawork, letGoOf, loop, measure, movesOf, onTap, openStage, safeArea, tabbed, viewsOf } from './viewer.js';
 	import { builtRows, heroReading, labRows, longNote, moveChips, paramTabs, scaleBar, slider, tagLines, viewChips } from './ViewerParts.svelte';
 
-	/** how many steps a world in disguise reports while it is built ($lib/buildings/inside.js) */
+	/** how many steps a world in disguise reports while it is built ($content/buildings/inside.js) */
 	const STEPS = 5;
 
 	/**
@@ -55,7 +55,7 @@
 	 *   `heading` the heading an item is listed under; `soil` a plant's earth round its roots; `round` every build on the
 	 *   Buildings' round ground, a walk kept to it; `inPlace` a walk keeps the list beside it, never the whole screen;
 	 *   `inside` the items that are worlds in disguise (`is`) and how one is raised on this canvas (`raise`,
-	 *   $lib/buildings/inside.js)
+	 *   $content/buildings/inside.js)
 	 */
 	let { name, title, lede, group, items, where = (it) => it.from ?? it.usedIn ?? '', heading, soil = false, round = false, inPlace = false, inside = null } = $props();
 	/** the item the address names by its id (`/app/buildings/#dome-factory`, as avenDB's Assets links a dome), else the first */
@@ -122,7 +122,7 @@
 	});
 	const build = $derived(hash ? buildOf(hash, Object.fromEntries(Object.entries(given).filter(([k]) => params.some((p) => p.id === k)))) : null);
 
-	/** the build shown, ready for the stage ($lib/assets/hero.js) */
+	/** the build shown, ready for the stage ($content/assets/hero.js) */
 	let hero = $state.raw(null);
 	let building = $state(false);
 	let error = $state('');
@@ -210,12 +210,12 @@
 		const box = canvasBox;
 		// the stage renderer and the paper studio on it (./viewer.js `openStage`)
 		const up = await openStage(box, { onLost: () => (lost = true), hold: () => building });
-		const { createWalker, PACE } = await import('$lib/sandbox-kit/walker.js');
+		const { createWalker, PACE } = await import('$content/sandbox-kit/walker.js');
 		const { THREE, view, renderer, camera, controls, low, resize, adapt } = up;
 		stage = up.stage;
 		const earth = soil ? soilOf() : null;
 		// the Buildings' round ground, laid under each build as it is shown
-		const grounds = round ? await import('$lib/buildings/ground.js') : null;
+		const grounds = round ? await import('$content/buildings/ground.js') : null;
 		/** @type {{ obj: any, r: number } | null} */
 		let ground = null;
 		// for a test in a browser to read what is shown

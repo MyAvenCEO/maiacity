@@ -157,15 +157,15 @@ test('materials the same are kept once; a different setting is another; the kit\
 });
 
 test('a plant takes a detail: at 0.25 and 0.1 grown as Sandbox 4 grows its near and far plants', async () => {
-	const { detailAt } = await import('$lib/plants/grow.js');
-	const { TIERS } = await import('$lib/sandbox-2/interior/sandbox5.js');
+	const { detailAt } = await import('$content/plants/grow.js');
+	const { TIERS } = await import('$content/sandbox-2/interior/sandbox5.js');
 	for (const tier of [TIERS.near, TIERS.mid, TIERS.look]) {
 		const d = detailAt(tier.level);
 		expect(d.roots).toBe(tier.roots);
 		for (const k of ['level', 'thin', 'fill', 'finest']) expect(d[k]).toBeCloseTo(tier[k], 6);
 	}
 	expect(detailAt(1)).toEqual({ level: 1, roots: true, thin: 1, fill: 1, finest: 0 });
-	const { PLANTS, plantAt } = await import('$lib/plants/index.js');
+	const { PLANTS, plantAt } = await import('$content/plants/index.js');
 	expect(PLANTS.every((p) => p.params.some((x) => x.id === 'detail'))).toBe(true);
 	// fewer triangles at a lower detail, the same at 1 as before
 	const apple = plantAt('apple', 2);

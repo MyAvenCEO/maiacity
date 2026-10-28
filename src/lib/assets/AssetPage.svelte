@@ -15,8 +15,8 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import * as THREE from 'three';
-	import { disposeObject } from '$lib/render/core.js';
-	import { createStageRenderer } from '$lib/render/stage.js';
+	import { disposeObject } from '$content/render/core.js';
+	import { createStageRenderer } from '$content/render/stage.js';
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -89,7 +89,7 @@
 	const asks = asker();
 
 	onMount(() => {
-		// the stage renderer ($lib/render/stage.js) on the page's canvas, fitted to it as it is drawn (below)
+		// the stage renderer ($content/render/stage.js) on the page's canvas, fitted to it as it is drawn (below)
 		view = createStageRenderer(canvas, { canvas, fov: 40, near: 0.01, far: 500, style: false });
 		({ renderer, camera, controls } = view);
 		scene = new THREE.Scene();

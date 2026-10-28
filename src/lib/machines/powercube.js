@@ -2,7 +2,7 @@
  * THE POWER CUBE, v3 — Open Source Ecology's hydraulic power unit (Power Cube VII / 7s, v15.6, 2014–15) built the way
  * AirSup's machine skill builds a machine: every part a mechanic would name as real solids in measured materials, its
  * insides there to cut open (the V-twin's pistons on their rods, the crank, the pump's two gears in their housing, the
- * oil in the tank), and a solver that runs it on real equations. The older cube (v1, v2: $lib/actors/powercube.js, one
+ * oil in the tank), and a solver that runs it on real equations. The older cube (v1, v2: $content/actors/powercube.js, one
  * rigged mesh) stays as it was; the ElectroCube, the BatteryCube and the LifeTrac still build on it.
  *
  * ---------------------------------------------------------------- research (AirSup's step 1)
@@ -12,7 +12,7 @@
  * gpm (57.5 L/min) at 3,600 rpm, 3,000 psi (207 bar) at most; a 7-gallon reservoir, a relief valve (v15.6), a pressure
  * gauge (v15.6), a six-tube fan-cooled oil cooler (7s), a return filter, pressure and return quick couplers; a 7-gallon
  * fuel tank on top, a 12 V battery, a panel with the key, choke and throttle; about 181 kg (OSE's wiki and fabrication
- * manual, $lib/actors/powercube.js has the sources). Inferred, and said so on each card: the torque curve (peak 63 N·m
+ * manual, $content/actors/powercube.js has the sources). Inferred, and said so on each card: the torque curve (peak 63 N·m
  * at 2,600 rpm from a 9.8 bar mean effective pressure, typical of these engines), the rod length (116 mm), the pump's
  * slip (6 % at 3,000 psi) and efficiency (92 %), the relief's override, the cooler's UA, the layout inside the cube.
  * The physics: a gear pump's flow Q = D n ηv and torque T = D p / (2π ηhm); the engine's torque against the pump's on
@@ -25,8 +25,8 @@
  * towards +z, x across.
  */
 import * as THREE from 'three';
-import { GEO, MAT, Flow, approach, clamp, fmt, lerp, table } from '$lib/assets/kit.js';
-import { assetKit } from '$lib/assets/parts.js';
+import { GEO, MAT, Flow, approach, clamp, fmt, lerp, table } from '$content/assets/kit.js';
+import { assetKit } from '$content/assets/parts.js';
 
 /** @typedef {[number, number, number]} V3 */
 
@@ -50,7 +50,7 @@ const SOURCES = [
 /** the engine's own numbers (bore, stroke, compression) are from its maker's data sheet, which we do not name */
 const SRC = { vii: SOURCES[0].label, s7: SOURCES[1].label, v156: SOURCES[2].label, port: SOURCES[3].label, man: SOURCES[4].label, eng: SOURCES[0].label };
 
-const ASSEMBLIES = /** @type {import('$lib/actors/parts.js').Assembly[]} */ ([
+const ASSEMBLIES = /** @type {import('$content/actors/parts.js').Assembly[]} */ ([
 	{ id: 'frame', label: 'Frame', note: 'A 27" cube: two 4×4 tube skids carry everything and take the forks; 2×2 angle posts and rails close it; the quick-attach plates on its back couple it to a machine.', out: [0, -0.12, 0] },
 	{ id: 'engine', label: 'Engine', note: 'An 810 cc air-cooled 90° V-twin, 28 hp at 3,600 rpm, electric start: its crank turns the pump through the coupling behind it.', out: [0, 0.32, 0.3] },
 	{ id: 'hydraulics', label: 'Hydraulics', note: 'The gear pump on the engine’s shaft, the 7-gallon reservoir over it, the relief valve and gauge, the six-tube cooler, the return filter and the two quick couplers on the back.', out: [0, 0.18, -0.42] },
@@ -335,7 +335,7 @@ export function powerCube({ speed = 3600, load = 1500 } = {}) {
 	};
 	const m = (/** @type {THREE.BufferGeometry} */ geo, /** @type {THREE.Material} */ mat) => kit.mesh(geo, mat);
 	/** a part: its meshes, its card and how it is shown */
-	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$lib/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (root)) => {
+	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$content/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (root)) => {
 		const grp = new THREE.Group();
 		grp.add(...objs);
 		return kit.part(grp, info, how, parent);
@@ -816,7 +816,7 @@ export function powerCube({ speed = 3600, load = 1500 } = {}) {
 		}
 	});
 	let lastP = 0, lastTp = 0;
-	/** @type {import('$lib/assets/parts.js').Lab} */
+	/** @type {import('$content/assets/parts.js').Lab} */
 	const lab = {
 		hero: { label: 'Hydraulic power', unit: 'kW', max: 20, digits: 1 },
 		read: { value: 0, state: '', sub: '', bad: false },

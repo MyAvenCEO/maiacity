@@ -37,7 +37,7 @@ export function lite(o, make) {
 	}
 }
 /**
- * The detail of one number, 1 as built down to 0.05, as a world asks for a plant's levels ($lib/assets/render): at
+ * The detail of one number, 1 as built down to 0.05, as a world asks for a plant's levels ($content/assets/render): at
  * 0.25 and 0.1 the same as Sandbox 4's forest grows its near and far plants (src/lib/sandbox-2/interior/flora.grow.js),
  * at 0.5 its plant card's, and between them in step; roots only at 1.
  * @param {number} d @returns {Partial<typeof DETAIL>}

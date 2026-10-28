@@ -14,7 +14,7 @@ afterAll(() => {
 });
 
 test('each dome of the light list is named as Sandbox 3 names it', async () => {
-	const { DOMES } = await import('$lib/sandbox-2/interior/interior');
+	const { DOMES } = await import('$content/sandbox-2/interior/interior');
 	expect(DOMES_IN_ORDER.map((d) => d.kind).sort()).toEqual(Object.keys(DOMES).sort());
 	for (const d of DOMES_IN_ORDER) expect(d.label).toBe(DOMES[d.kind].label);
 });

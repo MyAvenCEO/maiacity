@@ -1,5 +1,5 @@
 // @ts-nocheck — plain JS
-// The ported simulation ($lib/factories/des.js) gives the BatteryPack line exactly the numbers AirSup's own engine gave
+// The ported simulation ($content/factories/des.js) gives the BatteryPack line exactly the numbers AirSup's own engine gave
 // it: `node scripts/check.mjs spec.js --days 5` of AirSup's factory-skill at commit 9fde755, run on 2026-10-15 on the
 // same spec (/mnt/project-files/factories/batterypack-line/check.json). Same seed, same equations, same draws: the
 // numbers are equal, not close.

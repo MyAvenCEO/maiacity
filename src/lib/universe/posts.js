@@ -1,9 +1,9 @@
 // @ts-nocheck — plain JS, kept loose on purpose
-import { localMedia } from '$lib/avendb/local-media.svelte.js';
+import { localMedia } from '$avendb/local-media.svelte.js';
 // The Maia Universe stream: every post published in avenDB, as its server's feed serves them (`FEED`, `fromFeed`): a
 // post an article's content flow made as it was published, which everyone may read, with the pictures it shows that
 // everyone may read too (`FILES`).
-import { laidOut } from '$lib/avendb/article.js';
+import { laidOut } from '$avendb/article.js';
 import { idOf, slug } from '$lib/ids.js';
 import { asset, media } from '$lib/media/url';
 
@@ -117,7 +117,7 @@ export const fromFeed = (p, now, pictures = Array.isArray(p.pictures) ? p.pictur
 export const postHref = (base, p) => `${base}/${p.doc}/?t=${slug(p.title)}`;
 
 // the tag of a doc post (src/lib/avendb/posttypes.js `doc`): a skill, a paper or an architecture document, which the
-// Docs view lists ($lib/avendb/Docs.svelte) and the stream leaves out
+// Docs view lists ($avendb/Docs.svelte) and the stream leaves out
 export const DOC = 'post:doc';
 export const isDoc = (p) => p.tags.includes(DOC);
 

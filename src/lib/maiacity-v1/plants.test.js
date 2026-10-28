@@ -3,7 +3,7 @@
 // from, every version of it, its name and its stages' days and names.
 // Run: bun test src/lib/maiacity-v1/plants.test.js
 import { expect, test } from 'bun:test';
-import { pinnedAs } from '$lib/assets/pins.fixture.js';
+import { pinnedAs } from '$content/assets/pins.fixture.js';
 import { PLANT_IDS, plantOf, plantRef } from './plants.js';
 import { plantsContract } from '../maiacity-testing/plants.js';
 import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';

@@ -1,6 +1,6 @@
 // @ts-nocheck — shared contract, exercised for every supported version.
 import { expect, test } from 'bun:test';
-import { travelVan } from '$lib/models/wayside.js';
+import { travelVan } from '$content/models/wayside.js';
 export function vanContract(version, { LOWER_BODY, seeThrough }) {
 test(`${version}: the minibus glass and lower body`, () => {
 	const body = travelVan();

@@ -19,22 +19,22 @@
 	import { screenSlot } from '$lib/app/screen-slots.js';
 
 	import { onDestroy, onMount } from 'svelte';
-	import Deliveries from '$lib/studio/Deliveries.svelte';
-	import Inspector from '$lib/studio/Inspector.svelte';
-	import CueCard from '$lib/studio/CueCard.svelte';
-	import Script from '$lib/studio/Script.svelte';
-	import TimelinePicker from '$lib/studio/TimelinePicker.svelte';
-	import GradeAside from '$lib/studio/GradeAside.svelte';
+	import Deliveries from '$content/studio/Deliveries.svelte';
+	import Inspector from '$content/studio/Inspector.svelte';
+	import CueCard from '$content/studio/CueCard.svelte';
+	import Script from '$content/studio/Script.svelte';
+	import TimelinePicker from '$content/studio/TimelinePicker.svelte';
+	import GradeAside from '$content/studio/GradeAside.svelte';
 	import { forwardConsole, native } from '$lib/native';
-	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
-	import RenderQueue from '$lib/studio/RenderQueue.svelte';
-	import SourceMonitor from '$lib/studio/SourceMonitor.svelte';
-	import StageBar from '$lib/studio/StageBar.svelte';
-	import StoryNav from '$lib/studio/StoryNav.svelte';
-	import Timeline from '$lib/studio/Timeline.svelte';
-	import Transport from '$lib/studio/Transport.svelte';
-	import { Studio } from '$lib/studio/studio.svelte';
-	import { session as avendb } from '$lib/avendb/session.svelte.js';
+	import ProgramMonitor from '$content/studio/ProgramMonitor.svelte';
+	import RenderQueue from '$content/studio/RenderQueue.svelte';
+	import SourceMonitor from '$content/studio/SourceMonitor.svelte';
+	import StageBar from '$content/studio/StageBar.svelte';
+	import StoryNav from '$content/studio/StoryNav.svelte';
+	import Timeline from '$content/studio/Timeline.svelte';
+	import Transport from '$content/studio/Transport.svelte';
+	import { Studio } from '$content/studio/studio.svelte';
+	import { session as avendb } from '$avendb/session.svelte.js';
 
 	const s = new Studio();
 	// the vault picked in the nav pill: its cuts alone (Samuel 2026-10-18: Maia City's, not every vault's)

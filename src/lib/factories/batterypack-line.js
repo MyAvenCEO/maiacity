@@ -1,10 +1,10 @@
 /*
  * THE BATTERYPACK LINE — the first factory of maiaCITY: a line that builds our own BatteryPack
- * ($lib/actors/batterypack.js, machines/batterypack@9: 460 × 480 × 125 mm, 280 cylindrical 21700 cells as 14S20P in two
+ * ($content/actors/batterypack.js, machines/batterypack@9: 460 × 480 × 125 mm, 280 cylindrical 21700 cells as 14S20P in two
  * holder plates, copper contact plates pressed on by a clamp with no welds, an L-shaped service drawer carrying the
  * holders, cells, plates, BMS and inner plug, a closed shell with a foot, a grip, a ClickLock, a back socket and an LED
  * strip). This file is the spec AirSup's factory skill reads (.claude/skills/factory-skill/SKILL.md): the product, the
- * demand, the calendar and the route, every number with where it comes from. The simulation ($lib/factories/des.js)
+ * demand, the calendar and the route, every number with where it comes from. The simulation ($content/factories/des.js)
  * sizes the line from it and runs it; nothing here was tuned to a result.
  *
  * Assumptions (2026-10-15):

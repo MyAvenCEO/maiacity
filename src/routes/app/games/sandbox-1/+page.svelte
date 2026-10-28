@@ -3,8 +3,8 @@
 
 	// the island's biomes are a config entry of the Maia City COOP (configs/sandbox-1/biomes): loaded before the
 	// island's modules are, as they read them as they load
-	const island = loadCode().then(() => import('$lib/aven-city'));
-	import '$lib/aven-city/styles/index.css';
+	const island = loadCode().then(() => import('$content/aven-city'));
+	import '$content/aven-city/styles/index.css';
 </script>
 
 <svelte:head>

@@ -1,6 +1,6 @@
 /*
- * FLORA — a world's forest of our own plants ($lib/plants), as many thousands of them as a dome cell holds, drawn by the
- * universal renderer ($lib/assets/render, through ./drawn.js `createFlora`): every kind of plant (a plant at its
+ * FLORA — a world's forest of our own plants ($content/plants), as many thousands of them as a dome cell holds, drawn by the
+ * universal renderer ($content/assets/render, through ./drawn.js `createFlora`): every kind of plant (a plant at its
  * version, stage and seed: an apple tree in flower, a ripe pumpkin) built in the asset box,
  * `plants/<id>@<v>?stage=<s>&seed=<seed>`, at the two details Sandbox 4 has always drawn its plants at (0.25 near you,
  * 0.1 further off: `DETAILS`, ./sandbox5.js `TIERS`), and further still as a picture of itself; every plant of a kind one

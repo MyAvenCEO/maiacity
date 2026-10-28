@@ -11,13 +11,13 @@ import { createLocalFileReads } from './local-file-read.js';
 /** Local file read deadline; background sync may make a later retry succeed. */
 export const READ = 6000;
 
-/** How many bytes a page asks its device for at a time, as the Library reads a file ($lib/avendb/files.js). */
+/** How many bytes a page asks its device for at a time, as the Library reads a file ($avendb/files.js). */
 const WINDOW = 4 << 20;
 
 const HEX = /^[0-9a-f]{64}$/;
 
 /**
- * The device the page holds open, set by its avenDB session ($lib/avendb/session.svelte.js): `run(op)`, which answers
+ * The device the page holds open, set by its avenDB session ($avendb/session.svelte.js): `run(op)`, which answers
  * `{ ok }` or `{ refused, why }`, and `read(root, size, from, to)`, a file's bytes. Null while none is open.
  * @type {{ run: (op: object) => Promise<any>, read: (root: string, size: number, from: number, to: number) => Promise<Uint8Array> } | null}
  */
@@ -33,7 +33,7 @@ let viewContext = {};
 /** what the selection binds (`bindView`) and the signals that order the tiers (`signalView`), the page's own */
 const selected = {};
 const signals = {};
-/** The actors the app ships ($lib/avendb/actors.js), read where Maia City's vault holds no actor of that id with
+/** The actors the app ships ($avendb/actors.js), read where Maia City's vault holds no actor of that id with
  *  parts yet: a cold device, or a vault the actors' AIP has not reached, still asks for what its route shows first,
  *  never only the catch-up of every log. A v1 manifest of the vault gives way to the app's of its id (v1 chat asked for
  *  Maia City's rooms alone), and so does one a lens shows with empty tiers; the vault's own v2 manifest or v3 actor of

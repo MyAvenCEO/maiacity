@@ -2,40 +2,40 @@
  * THE MACHINES — everything we build that works by moving parts, as avenDB's Assets (/app/avendb/#assets) lists it:
  * the small and the large excavator, the pod and the forklift that loads it, Open Source Ecology's LifeTrac and Power Cube, and our own
  * ElectroCube, BatteryCube and BatteryPack — each kind with its variants and its versions. Most are rigged like the
- * people and animals (a bone and a card for every part, $lib/actors/rig.ts) and built beside them in $lib/actors, where
+ * people and animals (a bone and a card for every part, $content/actors/rig.ts) and built beside them in $content/actors, where
  * the games import them from; a machine built at AirSup's realism (real meshes in measured materials, its insides there
- * to cut open, a solver running it: $lib/assets) lives here in its own file, the Power Cube from v3 the first. This
- * list gathers them apart from the Actors (people and animals, $lib/actors).
+ * to cut open, a solver running it: $content/assets) lives here in its own file, the Power Cube from v3 the first. This
+ * list gathers them apart from the Actors (people and animals, $content/actors).
  */
-import { crawlerExcavator } from '$lib/actors/crawler-excavator.js';
-import { miniExcavator } from '$lib/actors/excavator.js';
-import { excavator as excavatorV1 } from '$lib/actors/excavator.v1.js';
-import { excavator as excavatorV2 } from '$lib/actors/excavator.v2.js';
-import { pod } from '$lib/actors/pod.js';
-import { pod as podV1 } from '$lib/actors/pod.v1.js';
-import { pod as podV2 } from '$lib/actors/pod.v2.js';
-import { pod as podV3 } from '$lib/actors/pod.v3.js';
-import { pod as podV4 } from '$lib/actors/pod.v4.js';
-import { forklift } from '$lib/actors/forklift.js';
-import { lifetrac } from '$lib/actors/lifetrac.js';
-import { powerCube as powerCubeV2 } from '$lib/actors/powercube.js';
+import { crawlerExcavator } from '$content/actors/crawler-excavator.js';
+import { miniExcavator } from '$content/actors/excavator.js';
+import { excavator as excavatorV1 } from '$content/actors/excavator.v1.js';
+import { excavator as excavatorV2 } from '$content/actors/excavator.v2.js';
+import { pod } from '$content/actors/pod.js';
+import { pod as podV1 } from '$content/actors/pod.v1.js';
+import { pod as podV2 } from '$content/actors/pod.v2.js';
+import { pod as podV3 } from '$content/actors/pod.v3.js';
+import { pod as podV4 } from '$content/actors/pod.v4.js';
+import { forklift } from '$content/actors/forklift.js';
+import { lifetrac } from '$content/actors/lifetrac.js';
+import { powerCube as powerCubeV2 } from '$content/actors/powercube.js';
 import { powerCube } from './powercube.js';
 import { van } from './van.js';
 import { pickup } from './pickup.js';
-import { electroCube } from '$lib/actors/electrocube.js';
-import { batteryCube } from '$lib/actors/batterycube.js';
-import { batteryCube as batteryCubeV1 } from '$lib/actors/batterycube.v1.js';
-import { batteryPack } from '$lib/actors/batterypack.js';
-import { batteryPack as batteryPackV1 } from '$lib/actors/batterypack.v1.js';
+import { electroCube } from '$content/actors/electrocube.js';
+import { batteryCube } from '$content/actors/batterycube.js';
+import { batteryCube as batteryCubeV1 } from '$content/actors/batterycube.v1.js';
+import { batteryPack } from '$content/actors/batterypack.js';
+import { batteryPack as batteryPackV1 } from '$content/actors/batterypack.v1.js';
 import { batteryPack as batteryPackV10 } from './batterypack.js';
-import { truck as truckV1 } from '$lib/models/furniture';
+import { truck as truckV1 } from '$content/models/furniture';
 import { truck } from './truck.js';
-import { castOf } from '$lib/assets/parts.js';
+import { castOf } from '$content/assets/parts.js';
 import { FIRST } from '$lib/app/versions.js';
-import { registerAssets } from '$lib/assets/register.js';
+import { registerAssets } from '$content/assets/register.js';
 
-/** @typedef {import('$lib/actors').Actor} Actor */
-/** @typedef {import('$lib/actors').Family} Family */
+/** @typedef {import('$content/actors').Actor} Actor */
+/** @typedef {import('$content/actors').Family} Family */
 
 /** the kinds' older versions, by id, each with its frozen variants (the rest are at v1)
  * @type {Record<string, (import('$lib/app/versions.js').Change & { build?: Actor[] })[]>} */

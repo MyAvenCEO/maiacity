@@ -11,7 +11,7 @@
  *
  * `assetAt(ref)` gives back the version and its builder, the one the group's explorer shows for it ($lib/app/versions.js:
  * a version's own frozen builder, or `kept: false` when only its note is left); `objectAt(ref, …)` builds it, as the
- * object to put into a scene or to carry in another asset ($lib/assets/parts.js). A world, a building or a film names
+ * object to put into a scene or to carry in another asset ($content/assets/parts.js). A world, a building or a film names
  * what it puts in by such a ref and so stays anchored to the asset as it was when it was made. Each group is loaded
  * only when it is asked for.
  */
@@ -31,12 +31,12 @@ export { readRef, repoRef } from './sources/index.js';
  * @type {Record<string, import('./groups.js').Group>}
  */
 export const GROUPS = {
-	// a factory is its spec, not an object: objectAt throws for it ($lib/factories/index.js)
-	factories: { label: 'Factories', list: async () => (await import('$lib/factories/index.js')).FACTORIES },
+	// a factory is its spec, not an object: objectAt throws for it ($content/factories/index.js)
+	factories: { label: 'Factories', list: async () => (await import('$content/factories/index.js')).FACTORIES },
 	...OBJECT_GROUPS,
 	// every building: the ones built as one object, which the box builds (./groups.js), and the tent and the domes, worlds
 	// in disguise built by Sandbox 3's interiors (objectAt throws for one of them, as for a factory)
-	buildings: { ...OBJECT_GROUPS.buildings, list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/buildings')).BUILDINGS)) },
+	buildings: { ...OBJECT_GROUPS.buildings, list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$content/buildings')).BUILDINGS)) },
 	worlds: {
 		label: 'Worlds',
 		list: async () => {

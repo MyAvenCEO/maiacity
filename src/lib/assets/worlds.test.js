@@ -10,6 +10,7 @@
 import { expect, test } from 'bun:test';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
+import { unaliased } from '../../../aven/ops/paths.js';
 
 const ROOT = join(import.meta.dir, '../../..');
 
@@ -90,22 +91,22 @@ const ALLOWED = {
 			'./spaces': `${WHY.squares}; ${WHY.coops}`,
 			'./rooms': WHY.rooms,
 			'./plants': WHY.plants,
-			'$lib/biomes': WHY.ground,
+			'$content/biomes': WHY.ground,
 			'./factory': "the solar factory dome's five floors of lines, raised in the page at its v1 (Sandbox 3, the Buildings' v1); from its v2 the box builds them (../buildings/factory.js)"
 		},
 		owner: ASSET
 	},
 	'src/lib/sandbox-2/interior/village.ts': {
-		imports: { './interior': "Sandbox 3 and 4's village: its domes raised in the page, as ./interior.ts is", './spaces': `${WHY.squares}; ${WHY.coops}`, './textures': WHY.shell, './plants': WHY.plants, '$lib/biomes': WHY.ground },
+		imports: { './interior': "Sandbox 3 and 4's village: its domes raised in the page, as ./interior.ts is", './spaces': `${WHY.squares}; ${WHY.coops}`, './textures': WHY.shell, './plants': WHY.plants, '$content/biomes': WHY.ground },
 		owner: ASSET
 	},
-	'src/lib/buildings/inside.js': { imports: { '$lib/sandbox-2/interior/interior': "the Buildings' domes: Sandbox 3's, raised in the page" }, owner: ASSET },
-	'src/routes/games/[world=world]/mounts.js': { imports: { '$lib/sandbox-2/interior/interior': "Sandbox 3's domes on film: each raised in the page" }, owner: ASSET },
+	'src/lib/buildings/inside.js': { imports: { '$content/sandbox-2/interior/interior': "the Buildings' domes: Sandbox 3's, raised in the page" }, owner: ASSET },
+	'src/routes/games/[world=world]/mounts.js': { imports: { '$content/sandbox-2/interior/interior': "Sandbox 3's domes on film: each raised in the page" }, owner: ASSET },
 	'src/lib/sandbox-2/interior/spaces.ts': {
 		imports: {
-			'$lib/models/timber.v1.js': `${WHY.coops}; the unchanged historical builders moved from this module into asset ownership (A12)`,
+			'$content/models/timber.v1.js': `${WHY.coops}; the unchanged historical builders moved from this module into asset ownership (A12)`,
 			'./plants': `the squares' shrubs: ${WHY.plants}`,
-			'$lib/models/minidomes.js': 'the mini domes for its `mini` coops, which only a test asks for (Sandbox 4 draws them from the box)'
+			'$content/models/minidomes.js': 'the mini domes for its `mini` coops, which only a test asks for (Sandbox 4 draws them from the box)'
 		},
 		owner: ASSET
 	},
@@ -117,20 +118,20 @@ const ALLOWED = {
 	'src/lib/sandbox-2/interior/things.js': { imports: { './spaces': "where the coops stand round the squares (coopsAround), which the dome's own coops share" }, owner: ASSET },
 	'src/lib/sandbox-2/interior/cover.js': {
 		imports: {
-			'$lib/biomes/built.js': "the floor's cover is drawn from the box: from the biomes it takes each kind's build (coverRef), not a builder",
-			'$lib/biomes/index.js': "the floor's cover: each kind's seed (coverSeed)",
-			'$lib/biomes/stream.js': "the floor's cover: how a tile is laid (coverTile)"
+			'$content/biomes/built.js': "the floor's cover is drawn from the box: from the biomes it takes each kind's build (coverRef), not a builder",
+			'$content/biomes/index.js': "the floor's cover: each kind's seed (coverSeed)",
+			'$content/biomes/stream.js': "the floor's cover: how a tile is laid (coverTile)"
 		},
 		owner: ASSET
 	},
 	// MaiaCity V1 (phase 8e) and Sandbox 4's page: words and numbers kept beside the builders
 	'src/lib/maiacity-v1/Game.svelte': {
-		imports: { '$lib/models/village.js': "the info cards' texts (VILLAGE_INFO), which the Things' notes share; nothing is built", '$lib/models/wayside.js': "the info cards' texts (WAYSIDE_INFO), which the Things' notes share; nothing is built" },
+		imports: { '$content/models/village.js': "the info cards' texts (VILLAGE_INFO), which the Things' notes share; nothing is built", '$content/models/wayside.js': "the info cards' texts (WAYSIDE_INFO), which the Things' notes share; nothing is built" },
 		owner: ASSET
 	},
-	'src/routes/app/coops/+page.svelte': { imports: { '$lib/models/village.js': "MaiaCity V1's coops: their texts (VILLAGE_INFO), which the Things' notes share; nothing is built" }, owner: ASSET },
-	'src/lib/maiacity-v1/world.js': { imports: { '$lib/models/units.js': 'how fast the people and machines move (SPEED), which the Things share; nothing is built' }, owner: ASSET },
-	'src/routes/app/games/sandbox-4/+page.svelte': { imports: { '$lib/plants': "the plant card's words (its name, Latin name, layer, stages), read from the plants' list; nothing is built" }, owner: ASSET }
+	'src/routes/app/coops/+page.svelte': { imports: { '$content/models/village.js': "MaiaCity V1's coops: their texts (VILLAGE_INFO), which the Things' notes share; nothing is built" }, owner: ASSET },
+	'src/lib/maiacity-v1/world.js': { imports: { '$content/models/units.js': 'how fast the people and machines move (SPEED), which the Things share; nothing is built' }, owner: ASSET },
+	'src/routes/app/games/sandbox-4/+page.svelte': { imports: { '$content/plants': "the plant card's words (its name, Latin name, layer, stages), read from the plants' list; nothing is built" }, owner: ASSET }
 };
 
 const under = (list, f) => list.some((d) => (d.endsWith('/') ? f.startsWith(d) : f === d));
@@ -167,7 +168,7 @@ const EXT = ['', '.js', '.ts', '.svelte', '/index.js', '/index.ts'];
 function resolve(from, spec, ext = EXT) {
 	let base;
 	spec = spec.split('?')[0];
-	if (spec === '$lib' || spec.startsWith('$lib/')) base = join(ROOT, 'src/lib', spec.slice(5));
+	if (unaliased(spec)) base = join(ROOT, unaliased(spec));
 	else if (spec.startsWith('.')) base = join(dirname(from), spec);
 	else return null;
 	for (const e of ext) if (existsSync(base + e) && statSync(base + e).isFile()) return relative(ROOT, base + e);
@@ -238,7 +239,7 @@ test('every import of ours in src and scripts names a file that is there (a modu
 
 test('every builder module listed is there, and the rule finds a back door (so it holds something)', () => {
 	for (const b of BUILDERS) expect(existsSync(join(ROOT, b)), b).toBe(true);
-	expect(specifiers(join(ROOT, 'src/lib/models/domerooms.js'))).toContain('$lib/sandbox-2/interior/spaces');
-	expect(resolve(join(ROOT, 'src/lib/buildings/inside.js'), '$lib/sandbox-2/interior/interior')).toBe('src/lib/sandbox-2/interior/interior.ts');
-	expect(backDoors()['src/lib/buildings/inside.js']).toContain('$lib/sandbox-2/interior/interior');
+	expect(specifiers(join(ROOT, 'src/lib/models/domerooms.js'))).toContain('$content/sandbox-2/interior/spaces');
+	expect(resolve(join(ROOT, 'src/lib/buildings/inside.js'), '$content/sandbox-2/interior/interior')).toBe('src/lib/sandbox-2/interior/interior.ts');
+	expect(backDoors()['src/lib/buildings/inside.js']).toContain('$content/sandbox-2/interior/interior');
 });

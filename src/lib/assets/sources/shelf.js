@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, trusted: runs in the page
 /*
  * THE MAIA CITY VAULT'S ASSETS, LISTED FROM THE VAULT ALONE (V5 of the avenDB migration): what a viewer of a vault's
- * recipes lists (the avenDB app's Assets, $lib/avendb/Assets.svelte), with no repo fallback (Samuel 2026-10-17): the
+ * recipes lists (the avenDB app's Assets, $avendb/Assets.svelte), with no repo fallback (Samuel 2026-10-17): the
  * vault's `recipe` entries as ./avendb.js `vaultRecipes` reads them, by group, asset, version and variant, each with
  * the card its entry holds (`shelfOf`), and why an entry the reader refused is none (`refusedOf`). A build of one is
  * ./viewer.js's. Nothing here reads the repo's index (../recipes.js, `virtual:asset-recipes`).

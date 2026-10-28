@@ -3,6 +3,7 @@
 import { expect, mock, test } from 'bun:test';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
+import { unaliased } from '../../../aven/ops/paths.js';
 
 // the page's own ops, not the actors' walk a device opened on it makes first (game/code/sources/actors.js)
 const ownOps = (o) => o.where?.type?.[0] !== 'manifest' && o.op !== 'synced';
@@ -538,8 +539,8 @@ function resolveOf(from, spec) {
 	if (spec.startsWith('virtual:')) return spec;
 	let base;
 	spec = spec.split('?')[0];
-	if (spec === '$lib' || spec.startsWith('$lib/')) base = join(ROOT, 'src/lib', spec.slice(5));
-	else if (spec.startsWith('/src/')) base = join(ROOT, spec);
+	if (unaliased(spec)) base = join(ROOT, unaliased(spec));
+	else if (spec.startsWith('/')) base = join(ROOT, spec);
 	else if (spec.startsWith('.')) base = join(dirname(from), spec);
 	else return null;
 	for (const e of EXT) if (existsSync(base + e) && statSync(base + e).isFile()) return relative(ROOT, base + e);
@@ -620,7 +621,7 @@ test('every page that builds assets waits for the vault\'s recipes before its fi
 	expect(pages.length).toBeGreaterThan(10);
 	const waits = (r) =>
 		// the app's layout holds these (./VaultRecipes.svelte), an asset's own page loads them first (its +page.js), and a
-		// film's world is raised once they are in ($lib/film/FilmRoute.svelte)
+		// film's world is raised once they are in ($content/film/FilmRoute.svelte)
 		(r.at.startsWith('/app/') && vault.ASSET_PAGES.test(r.at)) || r.path === 'src/routes/[doc=doc]/+page.js' || r.path === 'src/routes/[doc=doc]/+page.svelte' || (r.at.startsWith('/games/') && reach(r.path).has('src/lib/film/FilmRoute.svelte'));
 	expect(pages.filter((r) => !waits(r)).map((r) => r.path)).toEqual([]);
 	const layout = readFileSync(join(ROOT, 'src/routes/app/+layout.svelte'), 'utf8');

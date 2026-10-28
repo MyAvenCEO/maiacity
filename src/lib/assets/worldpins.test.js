@@ -38,15 +38,15 @@ test('a world’s name for an asset is the pin its config keeps, its values with
 });
 
 test('every asset the sandboxes and worlds name is pinned', async () => {
-	const { THINGS, FLOORS } = await import('$lib/sandbox-2/interior/things.js');
-	const { CASTS, actorRef } = await import('$lib/sandbox-2/interior/animals');
-	const { SONGBIRDS } = await import('$lib/sandbox-2/interior/birds.js');
-	const V1 = await import('$lib/maiacity-v1/things.js');
-	const { PLANT_IDS, plantOf, plantRef } = await import('$lib/maiacity-v1/plants.js');
+	const { THINGS, FLOORS } = await import('$content/sandbox-2/interior/things.js');
+	const { CASTS, actorRef } = await import('$content/sandbox-2/interior/animals');
+	const { SONGBIRDS } = await import('$content/sandbox-2/interior/birds.js');
+	const V1 = await import('$content/maiacity-v1/things.js');
+	const { PLANT_IDS, plantOf, plantRef } = await import('$content/maiacity-v1/plants.js');
 	// the tired land's set imports the page's own modules: its truck read off its source
 	const TRUCK = /export const TRUCK = '([^']+)'/.exec(readFileSync(new URL('../worlds/tiredLandSet.js', import.meta.url), 'utf8'))?.[1];
-	const { PALLET } = await import('$lib/factories/pallet.js');
-	const { PACK_REF } = await import('$lib/factories/batterypack-line.js');
+	const { PALLET } = await import('$content/factories/pallet.js');
+	const { PACK_REF } = await import('$content/factories/batterypack-line.js');
 	const refs = [
 		...Object.values(THINGS),
 		...Object.values(FLOORS),

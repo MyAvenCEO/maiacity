@@ -1,10 +1,10 @@
 /*
- * A FLOOR'S COVER, DRAWN BY THE RENDERER — a biome's cover ($lib/biomes) on a sandbox's floor, as the Biomes explorer
- * draws it: each kind built in the asset box at its seed (`biomes/cover@1:<kind>?seed=<n>`, $lib/biomes/built.js), and
+ * A FLOOR'S COVER, DRAWN BY THE RENDERER — a biome's cover ($content/biomes) on a sandbox's floor, as the Biomes explorer
+ * draws it: each kind built in the asset box at its seed (`biomes/cover@1:<kind>?seed=<n>`, $content/biomes/built.js), and
  * every plant of it one more copy of that kind (./drawn.js), each at its finest shape however small, casting no shadow
  * (as the cover streamed on a sandbox's floor never has).
  *
- * Where the plants stand is the stream's ($lib/biomes/stream.js): laid out in tiles round the eye as it goes (`coverTile`,
+ * Where the plants stand is the stream's ($content/biomes/stream.js): laid out in tiles round the eye as it goes (`coverTile`,
  * each tile from its place alone, a tile or so a frame, the tiles left behind let go), all of it near the eye and less
  * and less further off, each plant growing up out of the ground as the eye comes and sinking back as it goes, by the
  * stream's own sums (`coverLaid`'s, for an eye that moves): worked out again whenever the eye has gone half a metre, a
@@ -14,9 +14,9 @@
  * where the eye is (in the floor's own ground) every frame.
  */
 import * as THREE from 'three';
-import { coverRef } from '$lib/biomes/built.js';
-import { coverSeed } from '$lib/biomes/index.js';
-import { coverTile } from '$lib/biomes/stream.js';
+import { coverRef } from '$content/biomes/built.js';
+import { coverSeed } from '$content/biomes/index.js';
+import { coverTile } from '$content/biomes/stream.js';
 
 /** how far the eye goes before the cover is worked out again (m) */
 const STEP = 0.5;
@@ -24,7 +24,7 @@ const STEP = 0.5;
 /**
  * @param {{
  *   drawn: { use: (ref: string, shadows?: boolean, picture?: boolean) => any, take: (k: any, at: THREE.Matrix4) => any, move: (c: any, at: THREE.Matrix4) => void, give: (c: any) => void },
- *   recipe: import('$lib/biomes/index.js').Recipe,
+ *   recipe: import('$content/biomes/index.js').Recipe,
  *   open?: (x: number, z: number) => boolean,
  *   tile?: number, reach?: number, near?: number, thin?: number, perFrame?: number, seed?: number, density?: number,
  *   origin?: [number, number], at?: [number, number, number], hidden?: boolean
@@ -47,7 +47,7 @@ export function createCover(o) {
 	/** each kind of the cover, in its order: drawn finely however small, so never as a picture */
 	// each the asset its biome's card names (the vault's), else the cover's kind at its seed
 	const kinds = recipe.cover.map((c, i) => drawn.use(c.ref ?? coverRef(c.kind, coverSeed(i, c.kind)), false, false));
-	/** @type {Map<string, { ix: number, iz: number, kinds: import('$lib/biomes/stream.js').TileKinds }>} */
+	/** @type {Map<string, { ix: number, iz: number, kinds: import('$content/biomes/stream.js').TileKinds }>} */
 	const tiles = new Map();
 	/** the copies of each kind standing now */
 	const copies = kinds.map(() => /** @type {any[]} */ ([]));

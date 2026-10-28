@@ -3,7 +3,7 @@
  * shot is blocked with, and the animals of the worlds, kind by kind — the chickens (six breeds of hen, the rooster, the
  * chick), the rabbits, the geese, the goats, the sheep, the frogs, the bee, the ants and their hill, the songbirds and
  * the fish — each kind with its variants. The machines are rigged the same way and built here too (the excavators,
- * the pod, the forklift, the LifeTrac, the cubes, the BatteryPack), but listed apart, in $lib/machines.
+ * the pod, the forklift, the LifeTrac, the cubes, the BatteryPack), but listed apart, in $content/machines.
  * Each is built by a function that hands back its rig (./rig.ts), its moves (clips) and, for the stand-in, its poses.
  * An animal is its species' (./species/, on its body plan in ./plans/) and a line in ./casts.ts; it shows here with a
  * line in its kind below.
@@ -26,13 +26,13 @@ import { quadMoves as quadMovesV1 } from './plans/quadruped.v1';
 import { goose, GOOSE_BREEDS } from './species/goose';
 import { birdMoves as birdMovesV1 } from './plans/bird.v1';
 import { FIRST, type Change, type Version } from '$lib/app/versions.js';
-import { registerAssets } from '$lib/assets/register.js';
+import { registerAssets } from '$content/assets/register.js';
 
 /** one actor: a breed, a coat, the stand-in */
 export type Actor = { id: string; label: string; note: string; make: () => Cast; ready?: () => Promise<void> };
 /** a kind of actor and its variants (the first shown first), with its version and history: a kind is versioned as a
  * whole (its species is one body plan), each version bringing the variants it made ($lib/app/versions.js) */
-export type Family = { id: string; label: string; note: string; from: string; params?: import('$lib/assets/params.js').Param[]; variants: Actor[]; versions: Version<Actor[]>[]; version: number };
+export type Family = { id: string; label: string; note: string; from: string; params?: import('$content/assets/params.js').Param[]; variants: Actor[]; versions: Version<Actor[]>[]; version: number };
 
 /** a four-legged kind as it moved at v1: its breeds, grazing with the head folded back between the forelegs */
 const quadV1 = <T extends string>(kind: string, ids: readonly T[], make: (id: T, moves: typeof quadMovesV1) => Cast): Actor[] =>
@@ -70,7 +70,7 @@ const animal = (id: string, label: string, note: string): Actor => ({ id, label,
 const LOOK_KEYS = Object.keys(LOOK) as (keyof Look)[];
 const LOOK_LABELS: Record<keyof Look, string> = { skin: 'Skin', brows: 'Brows', shirt: 'T-shirt', trousers: 'Jeans', belt: 'Belt', shoes: 'Trainers', soles: 'Soles', hair: 'Hair (none, short, long, bun)', hairColour: 'Hair colour', iris: 'Eyes', lips: 'Lips', face: 'Face (man, woman)' };
 /** what the stand-in is built with from v11: its height (1.0 to 2.2 m) and its look, a colour or a word each */
-const STAND_IN_PARAMS: import('$lib/assets/params.js').Param[] = [
+const STAND_IN_PARAMS: import('$content/assets/params.js').Param[] = [
 	{ id: 'height', label: 'Height (m)', type: 'number', min: 1, max: 2.2, step: 0.01, value: HEIGHT },
 	...LOOK_KEYS.map((k) => ({ id: k, label: LOOK_LABELS[k], type: 'string' as const, value: LOOK[k], maxLength: k === 'hair' || k === 'face' ? 8 : 16 }))
 ];
@@ -221,7 +221,7 @@ const LIST: Omit<Family, 'versions' | 'version'>[] = [
 
 /**
  * How finely an animal is built (1: as it is; a world draws its far-off flocks at a fifth,
- * $lib/assets/render/crowd.js `FAR`): its shapes coarser and its smallest parts left off, its bones and its clips the
+ * $content/assets/render/crowd.js `FAR`): its shapes coarser and its smallest parts left off, its bones and its clips the
  * same. Every version of every kind but the stand-in takes it.
  */
 const DETAIL = { id: 'detail', label: 'Detail', type: 'number', min: 0.05, max: 1, step: 0.01, value: 1 } as const;

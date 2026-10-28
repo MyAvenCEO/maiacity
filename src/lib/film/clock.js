@@ -7,7 +7,7 @@
 //     set by the film for every frame (the shot's world.clock + its own time), so the animals, the water and the
 //     trucks of a set are where the shot says, whenever and wherever the page was loaded.
 // Players never load this file.
-import { seededRandom as worldRandom } from '$lib/sandbox-kit/random.js';
+import { seededRandom as worldRandom } from '$content/sandbox-kit/random.js';
 
 /**
  * @typedef {{
@@ -95,5 +95,5 @@ export function installClock() {
 	return C;
 }
 
-/** A seeded random generator: the worlds' own ($lib/sandbox-kit/random.js), a seed of 0 taken as 1. */
+/** A seeded random generator: the worlds' own ($content/sandbox-kit/random.js), a seed of 0 taken as 1. */
 export const seededRandom = (/** @type {number} */ seed) => worldRandom(seed >>> 0 || 1);

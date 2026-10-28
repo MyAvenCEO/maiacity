@@ -1,6 +1,6 @@
 ---
 name: thing-skill
-description: The maiaCITY thing skill — the still things the worlds are built from (props, tents, equipment and furniture) in the Things library (src/lib/models, shown in avenDB's Assets; the code keeps the name models): where a thing lives (LIST, HISTORY, REAL_SIZES and the size test), how it is built (a new one with $lib/assets so the Things viewer and every other asset read it; size as a measure never a scale; models that pitch, open and build in named steps; parts and the catalog; walking in; lamps at night), how it composes (a thing goes into machines, buildings and worlds by carry or ref), versions that never break a game, checking and the lessons kept. Use it whenever a thing is built, upgraded, resized, taken apart, put into another asset or handed to a game. What works by moving parts is a machine (machine-skill); people and animals are actors (actor-skill). Part of asset-producer.
+description: The maiaCITY thing skill — the still things the worlds are built from (props, tents, equipment and furniture) in the Things library (src/lib/models, shown in avenDB's Assets; the code keeps the name models): where a thing lives (LIST, HISTORY, REAL_SIZES and the size test), how it is built (a new one with $content/assets so the Things viewer and every other asset read it; size as a measure never a scale; models that pitch, open and build in named steps; parts and the catalog; walking in; lamps at night), how it composes (a thing goes into machines, buildings and worlds by carry or ref), versions that never break a game, checking and the lessons kept. Use it whenever a thing is built, upgraded, resized, taken apart, put into another asset or handed to a game. What works by moving parts is a machine (machine-skill); people and animals are actors (actor-skill). Part of asset-producer.
 ---
 
 # Things: the still things worlds are built from
@@ -8,7 +8,7 @@ description: The maiaCITY thing skill — the still things the worlds are built 
 The Things are the still models, shown in avenDB's Assets (`/app/avendb/#assets`). They were called Models, and the
 code's names (`src/lib/models`, `MODELS`) are kept. What works by moving parts — an engine, a vehicle that drives —
 is a machine (`machine-skill`, our notes in its `ours.md`); people and animals are actors (`actor-skill`). The laws,
-the shared core (`$lib/assets`, refs, one version control) and how we check are the `asset-producer`'s; this is what
+the shared core (`$content/assets`, refs, one version control) and how we check are the `asset-producer`'s; this is what
 the Things taught us on top of them. The conventions every model keeps (origin on the floor, back towards −z, shared
 materials, seeded randomness, handles in `userData`) are in `production-designer`'s `models.md`.
 
@@ -29,7 +29,7 @@ materials, seeded randomness, handles in `userData`) are in `production-designer
 
 ### In its parts, with the shared kit
 
-- A new thing, or a new version built from scratch, is built with `$lib/assets` (`assetKit`, `part`, `seal`): `seal`
+- A new thing, or a new version built from scratch, is built with `$content/assets` (`assetKit`, `part`, `seal`): `seal`
   writes the Things' handles (`userData.parts`, `catalog`, `explode`, `setBuild`) as well as `userData.asset`, so the
   Things viewer shows it, a machine or a building can carry it, and its parts have cards.
 - The older things keep their own handles: each part a group tagged `userData.part = id`, listed in

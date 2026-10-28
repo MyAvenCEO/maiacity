@@ -5,6 +5,7 @@ import { parseHTML } from 'linkedom';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { ROOT, aliases, unaliased } from '../../../aven/ops/paths.js';
 import { createReadWindow } from './query-window.js';
 import { createReactiveRead } from './reactive-read.js';
 import { observedWindow } from './observed-window.js';
@@ -64,7 +65,7 @@ beforeAll(async () => {
 		plugins: [{ name: 'entry-bootstrap-fixture', setup(build) {
 			build.onResolve({ filter: /^entry-bootstrap-fixture$/ }, () => ({ path: 'entry', namespace: 'entry-fixture' }));
 			build.onResolve({ filter: /^entry-bootstrap-harness$/ }, () => ({ path: 'harness', namespace: 'entry-fixture' }));
-			build.onResolve({ filter: /^\$lib\// }, ({ path }) => ({ path: resolve(here, '..', path.slice(5)) }));
+			build.onResolve({ filter: new RegExp(`^(${Object.keys(aliases).map((a) => a.replace('$', '\\$')).join('|')})/`) }, ({ path }) => ({ path: join(ROOT, unaliased(path)) }));
 			build.onLoad({ filter: /.*/, namespace: 'entry-fixture' }, ({ path }) => ({
 				contents: path === 'entry' ? 'export { mount, unmount, flushSync } from "svelte"; export { default as Harness } from "entry-bootstrap-harness";' : compile(harness, { filename: 'entry-bootstrap-harness.svelte', generate: 'client' }).js.code,
 				loader: 'js', resolveDir: here

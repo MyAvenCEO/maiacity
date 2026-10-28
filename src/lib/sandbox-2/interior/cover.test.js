@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS
 // Phase 8c of the asset pipeline: a floor's cover drawn by the renderer (./cover.js) stands where the stream lays it
-// and grows as far as the stream's shader grows it ($lib/biomes/stream.js `coverLaid`, the Biomes explorer's sum),
+// and grows as far as the stream's shader grows it ($content/biomes/stream.js `coverLaid`, the Biomes explorer's sum),
 // each kind the box's build at its seed; the copies put away when it is hidden or let go.
 // Run: bun test src/lib/sandbox-2/interior/cover.test.js
 import { expect, test } from 'bun:test';
@@ -30,9 +30,9 @@ function fakeDrawn() {
 }
 
 test('the cover stands where the stream lays it, as far grown, each kind its box build at its seed', async () => {
-	const { BIOMES, coverSeed } = await import('$lib/biomes/index.js');
-	const { coverRef } = await import('$lib/biomes/built.js');
-	const { coverLaid } = await import('$lib/biomes/stream.js');
+	const { BIOMES, coverSeed } = await import('$content/biomes/index.js');
+	const { coverRef } = await import('$content/biomes/built.js');
+	const { coverLaid } = await import('$content/biomes/stream.js');
 	const { createCover } = await import('./cover.js');
 	const recipe = BIOMES.find((b) => b.id === 'food-forest');
 	const o = { tile: 10, reach: 28, near: 7, thin: 0.2, density: 3.4, seed: 505, open: (x, z) => Math.hypot(x - 3, z) > 2 };

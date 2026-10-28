@@ -7,9 +7,9 @@
 	(Samuel 2026-10-18: what happens while the passkey's window is open or the device works). Then the dashboard; the games, worlds and game assets, each opened by the cap group of the Maia City vault it needs, which the person holds in their avenDB ($lib/app/access.svelte.js); and for whoever holds them, the admin's tools. One nav pill at the foot of every page is the only way round ($lib/app/NavPill.svelte: back, home,
 	you): no top bar, and no page has a back button of its own. A sandbox, a world and the studio's editor run full
 	screen, the pill over them — and so does a game gone full screen over its own page (Sandbox 3's domes). A page that
-	builds assets (a world, a viewer, the box's lab: $lib/assets/vault.js ASSET_PAGES) opens once the Maia City vault's
+	builds assets (a world, a viewer, the box's lab: $content/assets/vault.js ASSET_PAGES) opens once the Maia City vault's
 	recipes are in, and says so on the page when they can't be, or when one it asks for is not in the vault
-	($lib/assets/VaultRecipes.svelte).
+	($content/assets/VaultRecipes.svelte).
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
@@ -19,11 +19,11 @@
 	import { ApiError, me, passBy, signOut, type Founder } from '$lib/auth/client';
 	import { claimInvite, failure, later, open, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
-	import { session } from '$lib/avendb/session.svelte.js';
-	import { sendEvery, viewChanged } from '$lib/avendb/diagnostics-send.js';
+	import { session } from '$avendb/session.svelte.js';
+	import { sendEvery, viewChanged } from '$avendb/diagnostics-send.js';
 	import ScreenChrome from '$lib/app/ScreenChrome.svelte';
-	import { lifecycle, noteLifecycle } from '$lib/avendb/lifecycle.js';
-	import { pillVaults, seeded } from '$lib/avendb/vaults.js';
+	import { lifecycle, noteLifecycle } from '$avendb/lifecycle.js';
+	import { pillVaults, seeded } from '$avendb/vaults.js';
 	import { remember } from '$lib/app/session';
 	import { forwardConsole, native } from '$lib/native';
 	import { foot, footHost, FOOT } from '$lib/app/foot.js';
@@ -32,13 +32,13 @@
 	import { gameAt, opens } from '$lib/app/places';
 	import { access, readAccess } from '$lib/app/access.svelte.js';
 	import { loadCode } from '../../../game/code/index.js';
-	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
+	import VaultRecipes from '$content/assets/VaultRecipes.svelte';
 	import StatusPill from '$lib/app/StatusPill.svelte';
-	import { ASSET_PAGES } from '$lib/assets/vault.js';
-	import Signing from '$lib/avendb/Signing.svelte';
-	import { asks, here, type Steps } from '$lib/avendb/session.svelte.js';
-	import { plan, reported, rows, stepWords, type Report, type Stage } from '$lib/avendb/steps.js';
-	import { ADMIN, CITIZEN } from '$lib/avendb/capgroups.js';
+	import { ASSET_PAGES } from '$content/assets/vault.js';
+	import Signing from '$avendb/Signing.svelte';
+	import { asks, here, type Steps } from '$avendb/session.svelte.js';
+	import { plan, reported, rows, stepWords, type Report, type Stage } from '$avendb/steps.js';
+	import { ADMIN, CITIZEN } from '$avendb/capgroups.js';
 
 	let { children } = $props();
 
@@ -91,7 +91,7 @@
 	beforeNavigate(({ willUnload }) => { if (!native() && willUnload) noteLifecycle('app-navigation-unload'); });
 
 	// this device's diagnostics, sent for its person every few minutes while it is open, and in theOS read back as files
-	// ($lib/avendb/diagnostics-send.js): nobody copies a report by hand (Samuel 2026-10-26)
+	// ($avendb/diagnostics-send.js): nobody copies a report by hand (Samuel 2026-10-26)
 	$effect(() => {
 		if (phase === 'ready') return sendEvery();
 	});
@@ -255,7 +255,7 @@
 		if (!native() || phase !== 'ready') return;
 		let stopped = false;
 		const tryStart = async () => {
-			const { macRunner } = await import('$lib/studio/jobs/mac.js');
+			const { macRunner } = await import('$content/studio/jobs/mac.js');
 			const r = await macRunner().catch(() => null);
 			if (!r && !stopped) timer = setTimeout(tryStart, 120_000);
 		};
@@ -268,12 +268,12 @@
 	});
 
 	// on the Mac, the page answers what the MCP asks of an avenDB cut (a render, a frame, its jobs) with the studio's own
-	// code (vault/app/src/page.rs, $lib/studio/pagecalls.js)
+	// code (vault/app/src/page.rs, $content/studio/pagecalls.js)
 	$effect(() => {
 		if (!native() || phase !== 'ready') return;
 		let stop: (() => void) | null = null;
 		let gone = false;
-		import('$lib/studio/pagecalls.js')
+		import('$content/studio/pagecalls.js')
 			.then((m) => m.servePageCalls())
 			.then((s) => (gone ? s() : (stop = s)))
 			.catch(() => {});

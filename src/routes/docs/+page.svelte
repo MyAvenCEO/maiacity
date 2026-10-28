@@ -1,7 +1,7 @@
 <script>
 	// The docs live in avenDB alone (Samuel 2026-10-18: "a purely avenDB route, not a public open file reference from the
 	// main navbar"): the skills, the theOS paper and the avenDB architecture are drafts of the Maia City vault, read in
-	// avenDB's Docs view ($lib/avendb/Docs.svelte). An old address of the Docs page goes there.
+	// avenDB's Docs view ($avendb/Docs.svelte). An old address of the Docs page goes there.
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 

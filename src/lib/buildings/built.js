@@ -1,11 +1,11 @@
 /*
  * THE BUILDINGS BUILT AS ONE OBJECT — the shipping containers fitted out as the crew's kitchen, workshop, power and
- * washroom (Sandbox 1's, $lib/models/containers.js), the wayside of MaiaCity V1 ($lib/models/wayside.js) and, from
+ * washroom (Sandbox 1's, $content/models/containers.js), the wayside of MaiaCity V1 ($content/models/wayside.js) and, from
  * their v2, the bell tent (./tent.js), the solar factory dome (./factory.js) and the glamping dome (./glamp.js): each
  * made by a builder that hands back one three.js object, so each is a recipe of the `buildings` group the asset box
- * builds ($lib/assets/groups.js), `buildings/container-kitchen@1`, and the Buildings viewer (/app/buildings/) shows it
+ * builds ($content/assets/groups.js), `buildings/container-kitchen@1`, and the Buildings viewer (/app/buildings/) shows it
  * from the box like any thing or machine. The other domes are not here, nor the v1 of these three: each is a world in
- * disguise (Sandbox 3's interiors, $lib/sandbox-2/interior, a sky, lamps, animals and a forest of its own), built by
+ * disguise (Sandbox 3's interiors, $content/sandbox-2/interior, a sky, lamps, animals and a forest of its own), built by
  * that world's code (./inside.js); ./index.js lists them all.
  *
  * Each has its version and history ($lib/app/versions.js): a changed building goes up a version, its old builder kept
@@ -15,14 +15,14 @@
  * The lists are the box's: each asset's recipe is made of its own entry in them (../assets/box/narrow.js), so a new
  * building is one more entry, written out, never a list spread into one (that would move every other one's recipe).
  */
-import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from '$lib/models/containers.js';
-import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, villageStore } from '$lib/models/wayside.js';
+import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from '$content/models/containers.js';
+import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, villageStore } from '$content/models/wayside.js';
 import { tentSite } from './tent.js';
 import { factoryDome } from './factory.js';
 import { glampDome } from './glamp.js';
-import { registerAssets } from '$lib/assets/register.js';
+import { registerAssets } from '$content/assets/register.js';
 
-/** @typedef {import('$lib/models').Model} Model */
+/** @typedef {import('$content/models').Model} Model */
 
 /**
  * the buildings' older versions, by id, each with its frozen builder (the tent's, the factory's and the glamping

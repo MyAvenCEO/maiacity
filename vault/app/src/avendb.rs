@@ -3,7 +3,7 @@
 //! sockets of its own, and keeps their vault in a folder on this Mac (~/avenDB/mac/, where the person finds all of
 //! avenDB's data), not in the web view's IndexedDB. Each call the app makes is
 //! answered by the device itself, with no lines of JSON between. The avenDB page calls it through `avendb`
-//! ($lib/avendb/native.js), in the calls the page's own device answers, a file's bytes both ways as they are, never in
+//! ($avendb/native.js), in the calls the page's own device answers, a file's bytes both ways as they are, never in
 //! base64 in JSON (`avendb_read`, `avendb_chunk`); each ceremony of the person's passkey it asks
 //! for runs in the sign-in sheet over the window that called last (passkey.rs), what comes back sealed to a key the
 //! device made for that ceremony alone; each touch of the Mac's Touch ID key it asks for, the Secure Enclave answers
@@ -114,7 +114,7 @@ pub fn page_left(webview: &tauri::Webview) {
 
 /// Runs op `op` on avenDB's device as `avendb` runs it (`run`), a `read_file`'s bytes handed to the page as they are,
 /// not in base64 in JSON: the op's answer as JSON after its length (four bytes, little-endian), `bytes` in it the
-/// number of bytes read, then those bytes ($lib/avendb/native.js `readFile`). A call that fails answers why, as
+/// number of bytes read, then those bytes ($avendb/native.js `readFile`). A call that fails answers why, as
 /// `avendb`'s do.
 #[tauri::command]
 pub async fn avendb_read(
@@ -137,7 +137,7 @@ pub async fn avendb_read(
 
 /// Hands avenDB's device a chunk of a file on its way in (`fileStart`), its bytes the call's raw body, as they are,
 /// not in base64 in JSON: the file's number in header `x-file` and where the chunk starts in `x-at`
-/// ($lib/avendb/native.js `putFile`).
+/// ($avendb/native.js `putFile`).
 #[tauri::command]
 pub async fn avendb_chunk(
     window: tauri::WebviewWindow,

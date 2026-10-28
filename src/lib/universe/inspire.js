@@ -5,11 +5,11 @@
 // link, whose words, its picture, its transcript). The story is the source of truth; the report card is how a post of
 // type inspire is laid out (Samuel 2026-10-17: only stories and their posts, each post type its own layout).
 import { base } from '$app/paths';
-import { entryOf, youtubeId } from '$lib/avendb/artifacts.js';
+import { entryOf, youtubeId } from '$avendb/artifacts.js';
 import { journalHtml } from '$lib/markdown/journal.js';
 import { asset } from '$lib/media/url';
 
-/** The tag of an inspire post ($lib/avendb/posttypes.js `postTag('inspire')`). */
+/** The tag of an inspire post ($avendb/posttypes.js `postTag('inspire')`). */
 export const INSPIRE_POST = 'post:inspire';
 
 // a report links its own sections with absolute paths, under the site's base

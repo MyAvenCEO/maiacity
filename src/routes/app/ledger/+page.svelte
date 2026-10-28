@@ -2,7 +2,7 @@
 	Ledger: the money of MaiaCity V1's one game, on its own, with no world round it. The single source of truth is the
 	game (game/maiacity-v1/engine.js, held by the server): your seat's HEARTS and MINDs, what is ready to mint (the
 	game's own rule, on the game clock), and, for any player, COOP or the pool, its rents in and out, what each weekly
-	pay day nets it, by interval, and every transaction ($lib/maiacity-v1/LedgerView.svelte, the same
+	pay day nets it, by interval, and every transaction ($content/maiacity-v1/LedgerView.svelte, the same
 	view as the game's Ledger card).
 -->
 <script>
@@ -11,10 +11,10 @@
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { base } from '$app/paths';
 	import { COOPS, MINDS, SEATS, TOKEN_COLOUR, TOKEN_LABEL, calendar, dateText, heartsValue, inHearts, mintState, nameOf } from '../../../../game/maiacity-v1/engine.js';
-	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
-	import LedgerView from '$lib/maiacity-v1/LedgerView.svelte';
-	import PoolBasket from '$lib/maiacity-v1/PoolBasket.svelte';
-	import Mark from '$lib/maiacity-v1/Mark.svelte';
+	import { liveGame } from '$content/maiacity-v1/live.svelte.js';
+	import LedgerView from '$content/maiacity-v1/LedgerView.svelte';
+	import PoolBasket from '$content/maiacity-v1/PoolBasket.svelte';
+	import Mark from '$content/maiacity-v1/Mark.svelte';
 
 	const g = liveGame();
 	let chosen = $state(typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('who') ?? '') : '');

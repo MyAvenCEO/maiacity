@@ -16,7 +16,7 @@ export const TRUCK = 'pin:tired-land/truck';
 
 /**
  * The fleet's trucks as copies of the library's truck, each in its colours, put down and moved by a world's renderer
- * of assets ($lib/assets/render `createAssets`: its `place` and `move`); every copy it puts down is added to `copies`.
+ * of assets ($content/assets/render `createAssets`: its `place` and `move`); every copy it puts down is added to `copies`.
  * @param {{ place: Function, move: Function }} assets @param {unknown[]} [copies]
  * @returns {(cab: string, box: string) => (x: number, z: number, turn: number) => void}
  */

@@ -1448,7 +1448,7 @@ export const K = {}
   // Product shapes of our own, at their real size in metres (AirSup's shapes are readable tokens, not measured ones):
   // what the BatteryPack line carries between its stations. `K.product` builds them through the hook above, with the
   // same `add` (a geometry, its colour, where it goes) and the same cache. A stage drawn as one of our whole assets
-  // (`shape: 'asset'`, its ref) is the world's: it takes the asset's geometry from the page ($lib/factories/assets.js).
+  // (`shape: 'asset'`, its ref) is the world's: it takes the asset's geometry from the page ($content/factories/assets.js).
   K.shapes = {}
   /** a tray of 21700 cells (420 × 300 mm): 7 × 5 of the 280 shown standing in it at 55 mm, blue wrap, steel caps;
    *  `sorted` makes the tray the lighter one of the sorter's output */
@@ -1494,7 +1494,7 @@ export const K = {}
     }
   }
   /** our Euro pallet (EPAL 1200 × 800 × 144 mm), the Things' own, by its ref (./pallet.js): the page builds it in the
-   *  asset box and hands its pieces in with the assets ($lib/factories/assets.js) */
+   *  asset box and hands its pieces in with the assets ($content/factories/assets.js) */
   K.PALLET = PALLET
   K.PALLET_H = PALLET_H
   /** the Euro pallet from its `pieces` (each a geometry and its wood's colour), lying along x, standing at (x, y, z);

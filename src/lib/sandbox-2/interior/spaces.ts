@@ -6,14 +6,14 @@
  *
  * Each space is drawn in its own frame: x runs along the ring, +z points out
  * toward the glass, and the space is placed on the ring by `place`. The
- * workshops are Things of the library ($lib/models/domerooms.js), and the
+ * workshops are Things of the library ($content/models/domerooms.js), and the
  * master dome puts copies of them down on its ring (./things.js `workshopsOf`).
  */
 import * as THREE from 'three'
-import { coop, hutch } from '$lib/models/timber.v1.js'
-export { playground, timberCoop, timberHutch } from '$lib/models/timber.v1.js'
+import { coop, hutch } from '$content/models/timber.v1.js'
+export { playground, timberCoop, timberHutch } from '$content/models/timber.v1.js'
 import { berryBush, herb, seeded, shrub } from './plants'
-import { henDome, rabbitDome } from '$lib/models/minidomes.js'
+import { henDome, rabbitDome } from '$content/models/minidomes.js'
 
 /** What the scene lends the spaces: its furniture and its materials. */
 export type Kit = {
@@ -622,13 +622,13 @@ export function rabbitPatches(squareR: number): { x: number; z: number; r: numbe
 		})
 }
 
-/** The coops round the squares; as mini domes (`$lib/models/minidomes.js`, the coop's and the hutch's v2) in Sandbox 5. */
+/** The coops round the squares; as mini domes (`$content/models/minidomes.js`, the coop's and the hutch's v2) in Sandbox 5. */
 export function coops(k: Kit, squareR: number, mini = false): Space[] {
 	return coopsAround(squareR).map(({ a, r }, i) => place(isHutch(i) ? (mini ? rabbitDome(3 + i) : hutch(k, 3 + i)) : mini ? henDome(3 + i) : coop(k, 3 + i), r, a))
 }
 
 /** the plain surfaces the 3D models viewer builds the timber coop and hutch with (their v1), away from any world */
 
-/* the workshops' and squares' builders and pieces, for the 3D models library ($lib/models/domerooms.js) */
+/* the workshops' and squares' builders and pieces, for the 3D models library ($content/models/domerooms.js) */
 export { awnings, bakery, bistro, cowork, kiosk, library, oven, parasol, pergola, pottery, repair, square, stool, studio, woodshop }
 export type { Space }

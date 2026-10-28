@@ -3,16 +3,16 @@
 	which stays in the browser's authenticator, with the master recovery key as a way back while avenDB is young, and
 	this browser is one of its devices, its keys unmasked by the passkey at every unlock, what it holds kept on its
 	shelf in the browser's private file system (OPFS) so that it opens again in one ceremony, and kept open as long as
-	the tab lives, by the tab's one session ($lib/avendb/session.svelte.js), which every page of the site that reads
+	the tab lives, by the tab's one session ($avendb/session.svelte.js), which every page of the site that reads
 	avenDB shares: leaving avenDB for another page and coming back, or opening one that reads it, asks for no second
 	unlock. Every device of the vault
 	shows by the name on its card, an entry of the vault the device writes itself, end-to-end encrypted like its notes
 	(avendb-browser's `Device::card`), and every vault by the name on its profile, an entry this browser writes into it
 	(`Device::profile`): the person's own by the name they gave as they set it up, their profile, which lives
 	here alone (none of it in maiaCITY's database), the seed's by theirs. In the Mac app the device runs
-	natively beside the app ($lib/avendb/native.js): its node on UDP sockets of its own, its shelf in a folder on the
+	natively beside the app ($avendb/native.js): its node on UDP sockets of its own, its shelf in a folder on the
 	Mac; and it hosts each of the person's drives plugged into the Mac, a device of their vault of its own, which the
-	page lists and joins in Settings, under Devices ($lib/avendb/Settings.svelte), where alone the person forgets their
+	page lists and joins in Settings, under Devices ($avendb/Settings.svelte), where alone the person forgets their
 	account here. A device forgotten there, one taken out of its vault, or what an earlier avenDB kept, is put aside and
 	never read again. A new person
 	founds their vault with the passkey they signed up to maiaCITY with (the same relying party, maia.city), as they
@@ -22,11 +22,11 @@
 	with an account signs in on a new browser with their passkey alone: avenDB's server, which keeps their vault's log
 	as ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every device. Or
 	it links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=), which
-	asks to join on the one consent sheet every request rises on ($lib/avendb/AccessRequest.svelte): approving it is the
+	asks to join on the one consent sheet every request rises on ($avendb/AccessRequest.svelte): approving it is the
 	passkey's one touch that unlocks this browser and adds it to their vault, and denying it puts the link away. Once
-	unlocked, the account opens on the vaults it knows ($lib/avendb/Shell.svelte): the person's own, and those their vault
+	unlocked, the account opens on the vaults it knows ($avendb/Shell.svelte): the person's own, and those their vault
 	founds and owns, each of which they act as: coops, their one aven, and the device vaults of its agents, which join
-	it from the consent screen ($lib/avendb/AccessRequest.svelte). avenDB's server runs at avendb.maia.city: its
+	it from the consent screen ($avendb/AccessRequest.svelte). avenDB's server runs at avendb.maia.city: its
 	relay and its code are filled in, and in a dev build a test server’s can take their place (?relay=, ?server=).
 -->
 <script module>
@@ -69,7 +69,7 @@
 	const device = $derived(session.device);
 	const meta = $derived(session.meta);
 	const world = $derived(session.world);
-	/** in the Mac app, its device beside it ($lib/avendb/native.js): null where the page runs the device */
+	/** in the Mac app, its device beside it ($avendb/native.js): null where the page runs the device */
 	const mac = $derived(session.mac);
 	/** what the page is doing, and what went wrong: the session's, which its `attempt` and every op shows */
 	const doing = $derived(session.doing);

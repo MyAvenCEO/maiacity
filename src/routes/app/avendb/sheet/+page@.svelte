@@ -3,7 +3,7 @@
 	may not use maia.city's passkeys. The app shows this page in macOS's sign-in sheet over its window
 	(vault/app/src/passkey.rs) with what its avenDB page asks for in the fragment: the challenge, the PRF salts, the
 	passkey's credential if it knows it, and the public key of the `Sheet` it holds for this ceremony alone
-	($lib/avendb/device/passkey.js, `inSheet`). The ceremony runs here, in the browser's own passkey prompt, as on the
+	($avendb/device/passkey.js, `inSheet`). The ceremony runs here, in the browser's own passkey prompt, as on the
 	site; what it brings back is sealed to that key at once (avendb-browser's `sealCeremony`), its PRF outputs wiped
 	from the page as they are sealed, and sent back to the app through its own scheme, which the sheet hands to the app
 	instead of loading: nothing crosses but sealed, and only the page that asked opens it. Outside the /app/ layout: the
@@ -38,11 +38,11 @@
 	let ask = null;
 
 	onMount(async () => {
-		module = import('$lib/avendb/device/avendb_browser.js').then(async (pkg) => {
+		module = import('$avendb/device/avendb_browser.js').then(async (pkg) => {
 			await pkg.default();
 			return pkg;
 		});
-		passkey = await import('$lib/avendb/device/passkey.js');
+		passkey = await import('$avendb/device/passkey.js');
 		const q = new URLSearchParams(location.hash.slice(1));
 		const [challenge, salt, key] = ['challenge', 'salt', 'key'].map((k) => q.get(k));
 		what = q.get('what') ?? '';

@@ -263,9 +263,9 @@ test('every building built as one object: built through the box’s side and the
 
 test('a biome’s cover: every kind built through the box’s side and the page’s as its builder builds it, casting its shadow; each biome a patch of its floor, its card its numbers', async () => {
 	const THREE = await import('three');
-	const { COVER } = await import('$lib/biomes/cover.js');
-	const { BIOMES, coverSeed } = await import('$lib/biomes');
-	const { coverRef } = await import('$lib/biomes/built.js');
+	const { COVER } = await import('$content/biomes/cover.js');
+	const { BIOMES, coverSeed } = await import('$content/biomes');
+	const { coverRef } = await import('$content/biomes/built.js');
 	const list = await OBJECT_GROUPS.biomes.list();
 	expect(list.map((x) => x.id)).toEqual([...BIOMES.map((b) => b.id), 'cover']);
 	expect(list.at(-1).versions.at(-1).build.map((k) => k.id)).toEqual(Object.keys(COVER));
@@ -292,8 +292,8 @@ test('a biome’s cover: every kind built through the box’s side and the page�
 	expect(failed).toEqual([]);
 	// each biome: a patch of its floor through the box, within its budgets, and a card a world reads its numbers back
 	// off: its surfaces, its density and its cover, each kind the cover's asset at its seed
-	const { biomeOfCard } = await import('$lib/biomes/card.js');
-	const { RADIUS } = await import('$lib/biomes/patch.js');
+	const { biomeOfCard } = await import('$content/biomes/card.js');
+	const { RADIUS } = await import('$content/biomes/patch.js');
 	for (const b of BIOMES) {
 		const label = `biomes/${b.id}@1`;
 		const { obj, cast, meta } = await made(label);
@@ -319,8 +319,8 @@ test('a biome’s cover: every kind built through the box’s side and the page�
 }, 600000);
 
 test('a biome’s cover laid round an eye that stays (the Biomes explorer): the plants the stream draws there, each grown as its shader grows it', async () => {
-	const { BIOMES, mix } = await import('$lib/biomes');
-	const { coverLaid, coverStream } = await import('$lib/biomes/stream.js');
+	const { BIOMES, mix } = await import('$content/biomes');
+	const { coverLaid, coverStream } = await import('$content/biomes/stream.js');
 	const o = { tile: 8, reach: 26, near: 22 };
 	const recipes = [
 		[BIOMES[0], new Set()],

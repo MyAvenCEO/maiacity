@@ -5,14 +5,14 @@
 // Run: bun test src/lib/factories/pallet.test.js
 import { expect, test } from 'bun:test';
 import { PALLET, PALLET_H } from './pallet.js';
-import { PH } from '$lib/actors/pallet.js';
-import { pinnedAs } from '$lib/assets/pins.fixture.js';
+import { PH } from '$content/actors/pallet.js';
+import { pinnedAs } from '$content/assets/pins.fixture.js';
 
 // outside a page: textures draw on a stand-in canvas, and a module's runes are plain values
 const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : noop), apply: () => noop, set: () => true });
 globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => noop }) };
 globalThis.$state ??= (x) => x;
-const { MODELS } = await import('$lib/models');
+const { MODELS } = await import('$content/models');
 
 test('the kit stacks on the pallet at its height', () => {
 	expect(PALLET_H).toBe(PH);

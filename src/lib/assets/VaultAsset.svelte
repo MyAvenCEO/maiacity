@@ -1,5 +1,5 @@
 <!--
-	ONE OF A VAULT'S ASSETS, SHOWN FROM THE VAULT ALONE — the avenDB app's Assets ($lib/avendb/Assets.svelte): a build of
+	ONE OF A VAULT'S ASSETS, SHOWN FROM THE VAULT ALONE — the avenDB app's Assets ($avendb/Assets.svelte): a build of
 	a recipe the Maia City vault keeps, its source its entry's file, read from the vault and held to its hash before
 	anything else (./sources/viewer.js `vaultBuild`), then this device's cache or the box, which runs it on the frozen
 	engine its entry names, checked either way, and shown on the asset stage (./stage.js, ./hero.js) as every asset
@@ -37,11 +37,11 @@
 	 * @type {{ source: ReturnType<typeof import('./sources/avendb.js').vaultRecipes>, hash: string, title?: string,
 	 *   note?: string, about?: import('svelte').Snippet, catalog?: any, picked?: string | null, solo?: boolean,
 	 *   compact?: boolean, onStir?: (read: () => void) => (() => void) }}
-	 *   `source` the vault's recipes ($lib/avendb/assets.js `vaultSource`), `hash` the recipe shown, `title` and `note`
+	 *   `source` the vault's recipes ($avendb/assets.js `vaultSource`), `hash` the recipe shown, `title` and `note`
 	 *   what its entry calls it and says of it, `about` what the page says of its entry, at the foot of the panel;
 	 *   `catalog` its parts as built (null where it lists none), `picked` the part picked, `solo` whether it is shown on
 	 *   its own; `compact`, its name, its moves and views and a short canvas alone, in a card with its own answers
-	 *   ($lib/avendb/Hitl.svelte, an AIP's); `onStir` the page's watch of the device's sync ($lib/avendb/stirs.svelte.js),
+	 *   ($avendb/Hitl.svelte, an AIP's); `onStir` the page's watch of the device's sync ($avendb/stirs.svelte.js),
 	 *   so a file still arriving is read again as it moves
 	 */
 	let { source, hash, title = '', note = '', about, catalog = $bindable(null), picked = $bindable(null), solo = true, compact = false, onStir } = $props();

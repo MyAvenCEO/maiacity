@@ -2,7 +2,7 @@
 /**
  * avenDB's FEED, AS OUR PAGES AND THE API READ CODE OFF IT (C10) — the one client for the code entries the server
  * serves to everyone (avendb/crates/avendb-server/src/feed.rs): the views, logic modules and configs (./avendb.js
- * `loadCode`) and the asset recipes ($lib/assets/vault.js) of the coop Maia City.
+ * `loadCode`) and the asset recipes ($content/assets/vault.js) of the coop Maia City.
  *
  * Which code is Maia City's is proven where it runs, never taken on the server's word (H2 of the hardening plan,
  * /mnt/project-files/code-architecture/h2-provenance.md). The server hands out the signed edits that prove a vault's
@@ -125,7 +125,7 @@ function store(name, value) {
  * WebAssembly. Each row is kept once (`avendb-row:<vault>/<entry>`), however many queries' proofs hold it (a world's,
  * and each of its assets' own pages), and a query's record names its rows: the page's storage holds about 5 MB, and
  * every recipe's row together about 1.5. What it can't hold, and the API, which has no storage, are kept in `memory`
- * alone. `put` keeps any other value (a page's batches, $lib/assets/vault.js) as it is.
+ * alone. `put` keeps any other value (a page's batches, $content/assets/vault.js) as it is.
  */
 const memory = new Map();
 export const KEPT_PROOFS = {
@@ -216,7 +216,7 @@ export async function provenRows(url, { vault = MAIA_CITY, kinds, entries, fetch
  * one), with `passing` where asking again may help (the network dropped it, it took too long, or the server or a
  * proxy before it couldn't answer yet: 429, 502, 503, 504). Never throws. `timeout` (ms) is how long the feed may take
  * to answer. Unproven, on the server's word: the
- * asset recipes' index is read off them, each recipe proven before it runs ($lib/assets/vault.js), and the dev
+ * asset recipes' index is read off them, each recipe proven before it runs ($content/assets/vault.js), and the dev
  * server's stand-in reads code so (never in a build); everything else that runs reads `provenRows`.
  * @param {string} url @param {{ vault?: string, fetch?: typeof globalThis.fetch, timeout?: number }} [o]
  * @returns {Promise<{ rows: any[] } | { error: string, passing?: true }>}

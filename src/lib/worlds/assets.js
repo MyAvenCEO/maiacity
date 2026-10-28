@@ -2,15 +2,15 @@
 /*
  * A WORLD'S ASSETS — how a world (the tired land; src/lib/worlds) puts the library's assets in: by their ref
  * (`machines/truck@1?box=%23e0ddd6&cab=%23a33a2a`), built in the asset box (or read from this device's cache) and drawn
- * by the universal renderer ($lib/assets/render), never by calling a builder. The world's own geometry (its ground,
+ * by the universal renderer ($content/assets/render), never by calling a builder. The world's own geometry (its ground,
  * its fields, its road) stays the world's.
  *
  * Each frame `update` before the scene is drawn; while a film draws, every copy at its finest (`force(0)`), so a shot
  * renders the same every time.
  */
-import { createAssets } from '$lib/assets/render/index.js';
-import { queryOf } from '$lib/assets/params.js';
-import { filmDraws } from '$lib/sandbox-kit';
+import { createAssets } from '$content/assets/render/index.js';
+import { queryOf } from '$content/assets/params.js';
+import { filmDraws } from '$content/sandbox-kit';
 
 /**
  * A ref with the values it is built with, written as every ref writes them (sorted, a colour's # escaped):

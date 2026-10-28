@@ -4,8 +4,8 @@
 // into the fields the artifact still has empty, once a task: the artifact then carries the tag `youtube:` and the
 // task's key, so words a person takes out stay out, and a new link (a new task) fills again what is empty then.
 
-import { BUILT_IN, held, layered } from '$lib/studio/jobs/rules.js';
-import { tasksOf } from '$lib/studio/jobs/tasks.js';
+import { BUILT_IN, held, layered } from '$content/studio/jobs/rules.js';
+import { tasksOf } from '$content/studio/jobs/tasks.js';
 import { isArtifact, youtubeId } from './artifacts.js';
 import { whole } from './files.js';
 import { seeded } from './vaults.js';
@@ -15,10 +15,10 @@ export const RULE = 'youtube';
 
 /** The start of the tag that says which task's words an artifact took. */
 const MARK = 'youtube:';
-/** The tag that says an artifact took task `t`'s words. @param {import('$lib/studio/jobs/tasks.js').Task} t */
+/** The tag that says an artifact took task `t`'s words. @param {import('$content/studio/jobs/tasks.js').Task} t */
 const markOf = (t) => `${MARK}${t.key.slice(0, 16)}`;
 /** Whether artifact `e` took task `t`'s words already. @param {import('./vaults.js').EntryView} e
- *  @param {import('$lib/studio/jobs/tasks.js').Task} t */
+ *  @param {import('$content/studio/jobs/tasks.js').Task} t */
 export const took = (e, t) => (e.tags ?? []).includes(markOf(t));
 
 /**
@@ -32,7 +32,7 @@ export function wordsRule(world, vault) {
 	return rules.find((r) => r.key === RULE) ?? null;
 }
 
-/** A task's params, `{}` where they don't parse. @param {import('$lib/studio/jobs/tasks.js').Task} t */
+/** A task's params, `{}` where they don't parse. @param {import('$content/studio/jobs/tasks.js').Task} t */
 const paramsOf = (t) => {
 	try {
 		return JSON.parse(t.params || '{}') ?? {};
@@ -62,7 +62,7 @@ const values = new Map();
 /**
  * Done task `t`'s value: in its result, or where that names a JSON file it made (`{ file }`, words too long for a
  * task's result), in that file's bytes; `null` where there is none.
- * @param {import('$lib/studio/jobs/tasks.js').Task} t @param {import('./vaults.js').WorldView} world
+ * @param {import('$content/studio/jobs/tasks.js').Task} t @param {import('./vaults.js').WorldView} world
  * @param {{ readFile: import('./files.js').Read }} api
  * @returns {Promise<any>}
  */

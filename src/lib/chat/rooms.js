@@ -33,7 +33,7 @@ export const rowId = () => 1 + Math.floor(Math.random() * (Number.MAX_SAFE_INTEG
 
 /**
  * The rooms of world `world` the person reads: each entry of type room, newest first.
- * @param {import('$lib/avendb/vaults.js').WorldView} world
+ * @param {import('$avendb/vaults.js').WorldView} world
  */
 export function roomsOf(world) {
 	return (world?.entries ?? []).filter((e) => e.type === 'room' && !e.deleted && !(e.tags ?? []).includes(GONE)).sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
@@ -42,7 +42,7 @@ export function roomsOf(world) {
 /**
  * The vault the person acts as in vault `vault`, as the device says: the vault itself where theirs owns it, else the
  * vault of theirs holding the share over it.
- * @param {import('$lib/avendb/vaults.js').WorldView} world @param {string} vault
+ * @param {import('$avendb/vaults.js').WorldView} world @param {string} vault
  */
 export const actorIn = (world, vault) => world?.vaults.find((v) => v.id === vault)?.acting?.as ?? world?.mine;
 

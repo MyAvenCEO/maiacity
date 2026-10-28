@@ -1,10 +1,10 @@
-// @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($lib/avendb/functions.js)
+// @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($avendb/functions.js)
 // Measuring an AIP (doc:docs/avendb §8, "AIPs", N2): an AIP's objective names the measuring logic that
 // measures it (`def sim : Measure := logic "valley-sim"`, avendb/spec/AvenDB/Objective.lean), a logic module on the
 // main line of the AIP's vault, which its owners accepted, so trusted code, tagged `ref:logic/measures/<name>`, that
 // exports `measure(input)`. Those who accept the AIP measure it, on their own device, with no server between them and
 // the vault (Samuel 2026-10-20: avenDB is local first and user owned): "Measure" on the AIP in the Proposals app
-// (./AvendbAip.svelte) runs it in the page's logic host ($lib/sandbox/logic-host.js: a fresh QuickJS engine in the
+// (./AvendbAip.svelte) runs it in the page's logic host ($kernel/sandbox/logic-host.js: a fresh QuickJS engine in the
 // shell's worker, no page, no network, no keys, no clock, its work counted in ticks, its random seeded by its input) on
 // the records of the AIP's lines, the input nobody trusts: first main's side, once, as the baseline, then the
 // proposal's, each time its lines or the logic change. What it hands back, named numbers, the device records on the
@@ -24,7 +24,7 @@ export const tagOf = (name) => `ref:logic/measures/${name}`;
 /**
  * What one run of a measuring logic may use: more than a game rule's call, since a measurement may run a whole sim,
  * still counted in ticks, the same on every device, the clock only a backstop well past them: the most a run may be
- * given ($lib/sandbox/logic.js `MOST`), from logic engine 2 on (`FIRST`).
+ * given ($kernel/sandbox/logic.js `MOST`), from logic engine 2 on (`FIRST`).
  */
 export const MEASURE = MOST;
 

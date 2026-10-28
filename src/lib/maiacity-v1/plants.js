@@ -4,7 +4,7 @@
  * seeds it once had): its name, the versions of it the Plants have, and its stages (the day each begins, from the
  * seed, and its name), the same at every version. ./trees.js walks a tree through them; the tree itself is built in
  * the asset box and drawn by the renderer by its ref (`plantRef`), never grown here. ./plants.test.js holds every
- * number to the Plants ($lib/plants).
+ * number to the Plants ($content/plants).
  */
 
 /** @type {Record<string, { label: string, versions: number[], stages: [number, string][] }>} */

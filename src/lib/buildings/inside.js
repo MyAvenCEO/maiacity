@@ -2,8 +2,8 @@
 /*
  * A BUILDING THAT IS A WORLD IN DISGUISE — the domes of the Buildings (./index.js), and the tent at its v1, are no
  * single object a recipe could hand back (the tent from v2 is one: ./tent.js): each is Sandbox 3's interior of its
- * kind ($lib/sandbox-2/interior: its floors, rooms, lamps, water, animals and a forest of our real plants, ticking as
- * it is walked). So the asset box does not build them; the viewer (/app/buildings/, $lib/assets/AssetViewer.svelte)
+ * kind ($content/sandbox-2/interior: its floors, rooms, lamps, water, animals and a forest of our real plants, ticking as
+ * it is walked). So the asset box does not build them; the viewer (/app/buildings/, $content/assets/AssetViewer.svelte)
  * has this build one, alone, as Sandbox 3's village builds it into its own world (mountInterior with a host), and as
  * the Buildings viewer always has:
  *
@@ -21,7 +21,7 @@
  */
 import * as THREE from 'three';
 import { atOrLatest } from '$lib/app/versions.js';
-import { disposeObject } from '$lib/render/core.js';
+import { disposeObject } from '$content/render/core.js';
 import { groundRadius, roundGround } from './ground.js';
 
 /** how many steps a dome's build reports, for a bar of how far it is */
@@ -46,13 +46,13 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 	/** the round ground under it, and its radius: a walk keeps to it */
 	let ground = null, groundR = 0;
 	let stopped = false, building = true, frames = 0, done = 0;
-	/** @type {import('$lib/sandbox-2/interior/interior').EmbeddedDome | null} */
+	/** @type {import('$content/sandbox-2/interior/interior').EmbeddedDome | null} */
 	let dome = null;
 	/** a dome planted with our real plants: the renderers they and its floor's cover are drawn by in this scene
-	 *  ($lib/sandbox-2/interior/drawn.js) */
-	/** @type {ReturnType<typeof import('$lib/sandbox-2/interior/drawn.js').createFlora> | null} */
+	 *  ($content/sandbox-2/interior/drawn.js) */
+	/** @type {ReturnType<typeof import('$content/sandbox-2/interior/drawn.js').createFlora> | null} */
 	let plants = null;
-	/** @type {ReturnType<typeof import('$lib/sandbox-2/interior/drawn.js').createDrawn> | null} */
+	/** @type {ReturnType<typeof import('$content/sandbox-2/interior/drawn.js').createDrawn> | null} */
 	let laid = null;
 
 	/** the round ground under a building of this measure, and the key light over it, its shadow framed to it @param {THREE.Box3} b */
@@ -141,7 +141,7 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 
 	handle.ready = (async () => {
 		onStep?.('Opening the doors', done);
-		const interior = await import('$lib/sandbox-2/interior/interior');
+		const interior = await import('$content/sandbox-2/interior/interior');
 		if (stopped) return null;
 		const r = (R = interior.DOMES[kind].diameter / 2);
 		// meanwhile it stands where it will, the ground laid
@@ -154,10 +154,10 @@ export function raiseInside(item, v, { renderer, camera, box, low = false, onSte
 		let flora;
 		if (item.flora || kind === 'master') {
 			const [{ SANDBOX_5 }, { createDrawn, createFlora }, { INSIDE }, { LEVELS }] = await Promise.all([
-				import('$lib/sandbox-2/interior/sandbox5.js'),
-				import('$lib/sandbox-2/interior/drawn.js'),
-				import('$lib/sandbox-2/interior/flora.js'),
-				import('$lib/assets/render/lod.js')
+				import('$content/sandbox-2/interior/sandbox5.js'),
+				import('$content/sandbox-2/interior/drawn.js'),
+				import('$content/sandbox-2/interior/flora.js'),
+				import('$content/assets/render/lod.js')
 			]);
 			if (stopped) return null;
 			if (item.flora) plants = createFlora({ renderer, camera, scene, reach: INSIDE });

@@ -8,7 +8,7 @@
 	// @ts-nocheck — plain JS
 	import { markdown } from '$lib/markdown';
 	import { shaped } from '$lib/app/shapes.js';
-	import { hue, initials, nameOf } from '$lib/avendb/vaults.js';
+	import { hue, initials, nameOf } from '$avendb/vaults.js';
 	import { chips, clock } from './rooms.js';
 
 	/** the emoji a reaction picks from */

@@ -1,15 +1,15 @@
 /*
  * What the rules made of each file (Samuel 2026-10-18: the Library's table keeps a file's derived files with it, as
- * the old studio's ingest table did): the files a done task of a rule made from it ($lib/studio/jobs: proxy, grading
+ * the old studio's ingest table did): the files a done task of a rule made from it ($content/studio/jobs: proxy, grading
  * still, preview, a spilled transcript or analysis), each with what it is. A task is of the file its first input
  * names; the newest done task of a rule on a file says what it made. Where a step stands is the Jobs app's, not this.
  */
 
-import { BUILT_IN } from '$lib/studio/jobs/rules.js';
-import { tasksOf } from '$lib/studio/jobs/tasks.js';
+import { BUILT_IN } from '$content/studio/jobs/rules.js';
+import { tasksOf } from '$content/studio/jobs/tasks.js';
 
 /** @typedef {import('./vaults.js').EntryView} EntryView */
-/** @typedef {import('$lib/studio/jobs/tasks.js').Task} Task */
+/** @typedef {import('$content/studio/jobs/tasks.js').Task} Task */
 
 /** Each rule's name, as the Jobs app shows it. */
 const NAMES = new Map(BUILT_IN.map((r) => [r.key, r.name]));

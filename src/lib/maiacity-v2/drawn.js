@@ -3,15 +3,15 @@
  * WHAT MAIACITY V1 DRAWS OF THE LIBRARY — every asset by its ref (./things.js), built in the asset box (or read from
  * this device's cache) and never by calling a builder, put in the world one of two ways:
  *
- * - `follow`: drawn by the universal renderer ($lib/assets/render), one copy standing wherever an anchor of the world's
+ * - `follow`: drawn by the universal renderer ($content/assets/render), one copy standing wherever an anchor of the world's
  *   stands (a plain group the story moves, parents and hides as it moved the builder's object), at its finest shape
  *   only (a world this small always drew all of it: no coarser shapes and no pictures are made), casting its shadow. A box the size of the copy in the anchor, unseen,
  *   carries the name a tap finds it by.
  *   What the story moves part by part (a tailgate let down, a door opened) is moved by its controls (`pose`): the
  *   renderer draws that copy as its own tree, its parts where the numbers the box wrote down put them
- *   ($lib/assets/controls.js), and with the others again once every control is back at rest.
+ *   ($content/assets/controls.js), and with the others again once every control is back at rest.
  * - `load`: the build itself, as the box made it (its nodes, its materials, its controls as numbers), put into an
- *   anchor; `cast`: that, kept running in the box ($lib/assets/hero.js, $lib/assets/box/live.js) for what moves by
+ *   anchor; `cast`: that, kept running in the box ($content/assets/hero.js, $content/assets/box/live.js) for what moves by
  *   itself (a machine's clip: the ElectroCube humming), each frame's step asked of the box and followed here, from the
  *   first frame it is seen (what never comes into view runs nothing in the box: a second visit to the opening runs no
  *   recipe at all).
@@ -40,7 +40,7 @@ const boxes = () => Math.max(2, Math.min(4, ((typeof navigator !== 'undefined' &
 
 let mods = null;
 const modules = () =>
-	(mods ??= Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/load.js'), import('$lib/assets/vault.js'), import('$lib/assets/hero.js'), import('$lib/assets/controls.js'), import('$lib/assets/clips.js')]).then(async ([r, l, x, h, c, k]) => ({
+	(mods ??= Promise.all([import('$content/assets/render/index.js'), import('$content/assets/load.js'), import('$content/assets/vault.js'), import('$content/assets/hero.js'), import('$content/assets/controls.js'), import('$content/assets/clips.js')]).then(async ([r, l, x, h, c, k]) => ({
 		// the Maia City vault's recipes, in before the first build is asked for
 		recipes: await x.loadRecipes(),
 		createAssets: r.createAssets,
@@ -192,8 +192,8 @@ export function createDrawn({ renderer, camera, scene }) {
 		},
 		/**
 		 * The build of `ref` (with its values, if any) put into `anchor` as the box made it: `{ obj, card, data, named,
-		 * poser }` ($lib/assets/load.js; `named`: its first node of each name, as its builder named them; `poser`: its
-		 * controls, played from the numbers the box wrote down: $lib/assets/controls.js), once it is there.
+		 * poser }` ($content/assets/load.js; `named`: its first node of each name, as its builder named them; `poser`: its
+		 * controls, played from the numbers the box wrote down: $content/assets/controls.js), once it is there.
 		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean }} [o]
 		 *   `pick`: every part of it named so (its bones keep their names); `cast`: every part casting a shadow (false: as
 		 *   built)
@@ -225,7 +225,7 @@ export function createDrawn({ renderer, camera, scene }) {
 		},
 		/**
 		 * The build of `ref` put into `anchor` (as `load`) and kept running in the box: what the stage calls a hero
-		 * ($lib/assets/hero.js `heroOf`): `play(clip)`, `hold(pose)`, and `tick(dt)` each frame it moves. It is started
+		 * ($content/assets/hero.js `heroOf`): `play(clip)`, `hold(pose)`, and `tick(dt)` each frame it moves. It is started
 		 * there on the first frame it stands in the camera's view (a world that never looks at it runs no recipe for it,
 		 * on a first visit or a second); until the box has it running, it stands as built, its controls played here.
 		 * @param {string} ref @param {THREE.Object3D} anchor @param {{ pick?: string, cast?: boolean }} [o]
@@ -250,7 +250,7 @@ export function createDrawn({ renderer, camera, scene }) {
 		/**
 		 * A rigged actor of `ref` (a person: the stand-in, with their height and look) put into `anchor` as the box built
 		 * it, moved as its builder's cast was, by our own code: `rig.bones` by name and `rig.pose(p)` its bones set to a
-		 * pose ($lib/assets/clips.js `poser`); `clips` by name, (t) → pose, played from the tables the box wrote down
+		 * pose ($content/assets/clips.js `poser`); `clips` by name, (t) → pose, played from the tables the box wrote down
 		 * (`playerOf`), each named in `cycles` played within one round of it (s); `poses` its poses as data (its view's
 		 * held ones); `face` the skinned mesh its blend shapes are on (`joy`, `friendly`). `ready` once it is here (a pose
 		 * asked for before is set then); `loaded` settles then.

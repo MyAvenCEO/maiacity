@@ -8,7 +8,7 @@
 import { version } from '$app/environment';
 import { actorDiagnostics } from '../../../game/code/sources/device.js';
 import { command, native } from '$lib/native';
-import { playbackMetrics } from '$lib/studio/playback-metrics.js';
+import { playbackMetrics } from '$content/studio/playback-metrics.js';
 import { diagnosticSnapshot } from './diagnostics-report.js';
 import { latencyJournal } from './latency-journal.js';
 import { lifecycle } from './lifecycle.js';

@@ -1,6 +1,6 @@
 /*
  * A NAME OF 32 BYTES AS AN ADDRESS READS IT — every thing that never changes is named by the BLAKE3 hash of its bytes
- * (an asset's recipe, $lib/assets/recipes.js), and every avenDB entry by its id (a Universe post,
+ * (an asset's recipe, $content/assets/recipes.js), and every avenDB entry by its id (a Universe post,
  * $lib/universe/posts.js): 32 bytes, written in code and data as 64 hex digits. At the root of the site the same 32
  * bytes read in lower-case base32 without padding, 52 letters, as an iroh doc id reads (/<id>/, src/params/doc.js),
  * and `?t=` after it gives the thing's title as words, only so the address reads (`slug`).

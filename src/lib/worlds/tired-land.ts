@@ -7,7 +7,7 @@
  * (./assets.js), moved along the road each frame.
  */
 import * as THREE from 'three';
-import { connectFilm, createSky, createStage, createWalker, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit';
+import { connectFilm, createSky, createStage, createWalker, filmDraws, filmHoldsSize, worldTime } from '$content/sandbox-kit';
 import { buildTiredLand, libraryLorry } from './tiredLandSet.js';
 import { worldAssets } from './assets.js';
 

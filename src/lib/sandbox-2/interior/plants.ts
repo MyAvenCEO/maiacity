@@ -10,8 +10,8 @@ import { bark, frond, grassBlades, leaves } from './textures'
 
 type Rand = () => number
 
-import { seeded } from '$lib/assets/seeded.js'
-export { seeded } from '$lib/assets/seeded.js'
+import { seeded } from '$content/assets/seeded.js'
+export { seeded } from '$content/assets/seeded.js'
 
 const shared = <T,>(make: () => T) => {
 	let v: T | undefined
@@ -85,7 +85,7 @@ export type Plant = { object: THREE.Group; radius: number }
 
 /**
  * What a stand-in plant is, written on it (`userData.legacy`), so that Sandbox 5 can put the plant of our own library
- * ($lib/plants) in its place (./legacy.js): a bed of a crop `len` long, a plant in a pot standing `ph` above its foot,
+ * ($content/plants) in its place (./legacy.js): a bed of a crop `len` long, a plant in a pot standing `ph` above its foot,
  * a tuft of herbs, a vine along a rail, a pergola's vines, or a whole plant of a kind.
  */
 export type Legacy =

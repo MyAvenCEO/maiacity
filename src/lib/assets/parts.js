@@ -23,8 +23,8 @@ import * as THREE from 'three';
 import { clamp, ease } from './kit.js';
 
 /** @typedef {[number, number, number]} V3 */
-/** @typedef {import('$lib/actors/parts.js').Assembly} Assembly */
-/** @typedef {import('$lib/actors/parts.js').PartInfo} PartInfo */
+/** @typedef {import('$content/actors/parts.js').Assembly} Assembly */
+/** @typedef {import('$content/actors/parts.js').PartInfo} PartInfo */
 
 /**
  * @typedef {object} How how a part is shown (AirSup's `lab.add` options)
@@ -314,10 +314,10 @@ export function assetKit(root, { assemblies = [], steps = [], sources = [] } = {
  */
 
 /**
- * An asset as the machines list it ($lib/machines): a cast with no bones, its moves
+ * An asset as the machines list it ($content/machines): a cast with no bones, its moves
  * played by its own solver.
  * @param {THREE.Object3D} root a sealed asset
- * @returns {import('$lib/actors/rig').Cast}
+ * @returns {import('$content/actors/rig').Cast}
  */
 export const castOf = (root) => ({
 	rig: { object: /** @type {any} */ (root), bones: {}, names: [], pose: () => {} },

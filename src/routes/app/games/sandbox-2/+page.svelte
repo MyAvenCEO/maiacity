@@ -12,8 +12,8 @@
 	import { calendar } from '../../../../../game/time';
 	import { loadBiomeMap, loadDepthMap, loadLandMask, loadMountainMask } from '../../../../../game/map';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { SkyControl } from '$lib/sandbox-kit';
-	import type { WorldHandle } from '$lib/sandbox-2/world/world';
+	import { SkyControl } from '$content/sandbox-kit';
+	import type { WorldHandle } from '$content/sandbox-2/world/world';
 
 	let stage: HTMLDivElement;
 	let world: WorldHandle | null = null;
@@ -32,7 +32,7 @@
 		void (async () => {
 			try {
 				const [{ mountWorld }, isLand, kindOf, isMountain, depthOf] = await Promise.all([
-					import('$lib/sandbox-2/world/world'),
+					import('$content/sandbox-2/world/world'),
 					quiet(loadLandMask(url('land.json'))),
 					quiet(loadBiomeMap(url('biomes.json'))),
 					quiet(loadMountainMask(url('mountains.geojson'))),
@@ -76,7 +76,7 @@
 			<strong>avenCITY Sandbox 2</strong>
 			<span class="dim">{calendarLabel}</span>
 		</div>
-		<!-- the time of the sky: Auto, or set by hand ($lib/sandbox-kit) -->
+		<!-- the time of the sky: Auto, or set by hand ($content/sandbox-kit) -->
 		<SkyControl />
 	</div>
 </div>

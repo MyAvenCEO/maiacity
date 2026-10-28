@@ -253,7 +253,7 @@
 	const timer = $derived(perf?.timers?.[picked] ?? null);
 	const counts = $derived(Object.entries(perf?.counts ?? {}));
 	const memory = $derived(health?.memory ?? null);
-	/** the diagnostics report as its bar last made it ($lib/avendb/diagnostics-report.js), its `run` once checks ran */
+	/** the diagnostics report as its bar last made it ($avendb/diagnostics-report.js), its `run` once checks ran */
 	let diag = $state(/** @type {any} */ (null));
 	/** the commit this page was built from, its first digits */
 	const build = /^[0-9a-f]{40}$/.test(version) ? version.slice(0, 8) : version;

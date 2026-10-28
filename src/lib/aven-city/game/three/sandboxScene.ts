@@ -6,10 +6,10 @@
 import * as THREE from 'three'
 import type { BiomeId } from '../../../../../game/island/hexmap'
 import { buildBiomeTile, type PlacedKind } from './buildWorld'
-import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
-import { disposeObject } from '$lib/render/core.js'
-import { worldRenderer } from '$lib/render/world.js'
-import { createSky } from '$lib/sandbox-kit/sky.js'
+import { createOrbitRig } from '$content/sandbox-kit/orbit.js'
+import { disposeObject } from '$content/render/core.js'
+import { worldRenderer } from '$content/render/world.js'
+import { createSky } from '$content/sandbox-kit/sky.js'
 
 export interface SandboxApi {
 	show(biome: BiomeId, seed: number, options?: { building?: PlacedKind }): void
@@ -17,7 +17,7 @@ export interface SandboxApi {
 }
 
 export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
-	// the world renderer ($lib/render/world.js), at up to twice the pixels: one small specimen
+	// the world renderer ($content/render/world.js), at up to twice the pixels: one small specimen
 	const renderer = worldRenderer({ canvas, maxPixelRatio: 2, exposure: 1.05 })
 
 	const scene = new THREE.Scene()
@@ -35,7 +35,7 @@ export function createSandbox(canvas: HTMLCanvasElement): SandboxApi {
 		floorY: -0.05
 	})
 
-	// the one sky of every world, over one tile ($lib/sandbox-kit/sky): its shadows round the pedestal, no fog,
+	// the one sky of every world, over one tile ($content/sandbox-kit/sky): its shadows round the pedestal, no fog,
 	// the islands' lens
 	const sky = createSky(renderer, scene, { shadowsAt: [0, 0], shadowReach: 3, shadowNear: 0.5, shadowFar: 20, shadowMap: 2048, shadowBias: { bias: -0.0004, normal: 0 }, lightDistance: 8, fog: null, exposure: { day: 0.36, night: 0.8 } })
 

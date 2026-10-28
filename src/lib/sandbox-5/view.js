@@ -7,7 +7,7 @@
  * building needs tinted. Only what changed is rebuilt: the state counts its changes (objV, netV, terV).
  */
 import * as THREE from 'three';
-import { disposeObject } from '$lib/render/core.js';
+import { disposeObject } from '$content/render/core.js';
 import { GRASS, MOUNTAIN, SAND, WARES, WATER } from './rules.js';
 import { buildingModel, mat, recolour, scaffold, TEAM } from './models.js';
 import { ROW, SE, STEP } from './hex.js';
@@ -40,7 +40,7 @@ export function createView(scene, sim) {
 	scene.add(root);
 	const disposables = /** @type {{ dispose: () => void }[]} */ ([]);
 	const keep = (/** @type {any} */ x) => (disposables.push(x), x);
-	/** what goes, its shapes let go of (the kit's one way, $lib/render/core.js): its materials stay, the models' shared
+	/** what goes, its shapes let go of (the kit's one way, $content/render/core.js): its materials stay, the models' shared
 	 *  ones (./models.js) and the view's own, kept to the end (`keep`) */
 	const free = (/** @type {THREE.Object3D | null} */ o) => disposeObject(o, { materials: false });
 	const X = (/** @type {number} */ i) => g.x(i), Z = (/** @type {number} */ i) => g.z(i);

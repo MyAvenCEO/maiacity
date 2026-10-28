@@ -1,6 +1,6 @@
 <!--
 	Signing in, setting up or unlocking, as a sheet that slides up from the bottom of the page while the person waits:
-	every step of the device's start as it happens ($lib/avendb/steps.js), the passkey's prompts among them, each with
+	every step of the device's start as it happens ($avendb/steps.js), the passkey's prompts among them, each with
 	the seconds it took or, under way, has taken so far, and the whole start's time. A prompt waiting on the person
 	says so. It stays open on a failure, with what went wrong, until they close it.
 -->

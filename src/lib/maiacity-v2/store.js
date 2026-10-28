@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 // MaiaCity V2's link to the one shared game on the server (api/src/maiacity-v2.js).
 import { apiCall } from '$lib/auth/client';
-import { session } from '$lib/avendb/session.svelte.js';
+import { session } from '$avendb/session.svelte.js';
 
 const post = (path, body) => apiCall(path, { method: 'POST', body: JSON.stringify(body) });
 

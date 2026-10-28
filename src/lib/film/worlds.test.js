@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS
 // The one world registry (game/film/worlds.js), what a shot may say of a world's own camera, its frames and its
 // moving parts (game/film/shot.js, camera.js), the shot player's reel (game/film/reel.js) and the seekable film
-// timeline ($lib/sandbox-kit/timeline.js).
+// timeline ($content/sandbox-kit/timeline.js).
 // Run: bun test src/lib/film/worlds.test.js
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';

@@ -12,7 +12,7 @@
 	vault's own files), and its diagrams are SVG files of the vault's Library, named by their hashes, each shown as a
 	data URL in an image, where the browser runs no script of it and loads nothing, never as a page of this site, as
 	the Library shows an SVG. Its maths (`$…$`, `$$…$$`: the paper's) the Markdown engine leaves as its LaTeX source, and
-	the math host typesets after, off the page ($lib/sandbox/math-host.js: KaTeX in a worker of the shell, with no
+	the math host typesets after, off the page ($kernel/sandbox/math-host.js: KaTeX in a worker of the shell, with no
 	origin and no network), each formula's MathML drawn only as its checker passed it, element by element, never as
 	HTML; until then, or where it can't, the source is what shows.
 -->
@@ -20,7 +20,7 @@
 	import { entryCollection } from './entry-collection.svelte.js';
 	import { documentQuery } from './document-query.js';
 	import { tick } from 'svelte';
-	import { typesetIn } from '$lib/sandbox/math-host.js';
+	import { typesetIn } from '$kernel/sandbox/math-host.js';
 	import { DOC_PICTURE, fileNamed, pictures, render } from './article.js';
 	import { readable } from './docs.js';
 	import { dataUrl, mediaOf, whole } from './files.js';

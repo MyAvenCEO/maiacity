@@ -3,12 +3,12 @@
 	medium domes, six small domes, the paths and streams between them and the
 	food forest round it all (interior/village.ts). Walk up to any dome and its
 	full inside is built into the village as you come; walk in through its door
-	with nothing to wait for. The page round it is the kit's ($lib/sandbox-kit/WorldPage.svelte).
+	with nothing to wait for. The page round it is the kit's ($content/sandbox-kit/WorldPage.svelte).
 -->
 <script lang="ts">
 	import { asset } from '$lib/media/url';
-	import type { VillageHandle } from '$lib/sandbox-2/interior/village';
-	import { WorldPage } from '$lib/sandbox-kit';
+	import type { VillageHandle } from '$content/sandbox-2/interior/village';
+	import { WorldPage } from '$content/sandbox-kit';
 
 	let village: VillageHandle | null = null;
 </script>
@@ -19,7 +19,7 @@
 </svelte:head>
 
 <WorldPage
-	mount={async (stage, onProgress) => (village = await (await import('$lib/sandbox-2/interior/village')).mountVillage(stage, onProgress))}
+	mount={async (stage, onProgress) => (village = await (await import('$content/sandbox-2/interior/village')).mountVillage(stage, onProgress))}
 	title="avenCITY Sandbox 3"
 	subtitle="A dome cell · thirteen domes"
 	keys="Drag to look · WASD to walk · Shift to hurry · walk through any door to step inside"

@@ -166,7 +166,7 @@ film takes it from there. How to build it into the library is in `ours.md` besid
 
 - **The builder:** `src/lib/machines/<machine>.js`, in JavaScript, at its real size in metres (1 unit = 1 m, never a
   `scale.set` on its root: the viewer frames it, the model is never resized), standing on y 0, its front towards +z.
-  It is built with this skill's kit as ported into the app, `$lib/assets`: `kit.js` (the math, materials, geometry
+  It is built with this skill's kit as ported into the app, `$content/assets`: `kit.js` (the math, materials, geometry
   and studio of `kit/lab-kit.js`), `parts.js` (`assetKit(root)`: `part`, `label`, `onTick`, `carry`, `seal`; your
   `lab.add` as one contract every asset group shares) and `stage.js` (your Lab's studio, post and modes at the
   machine's real size). The Machines page shows it on that stage with its parts, its hero, sliders and how, its moves
@@ -181,7 +181,7 @@ film takes it from there. How to build it into the library is in `ours.md` besid
 - **Composable:** a sealed machine goes whole into another asset with `carry` (its parts, labels, x-ray shells and
   solver join the host's: a Power Cube in a pickup's bed); a piece several machines share (a wheel, a door, a
   ClickLock) is one builder they all import; a building, a factory or a world names it by its ref,
-  `machines/<id>@<v>`, and builds it with `objectAt` (`$lib/assets/index.js`).
+  `machines/<id>@<v>`, and builds it with `objectAt` (`$content/assets/index.js`).
 - **Its versions:** every upgrade is a new version with a dated note in `HISTORY`; the old builder stays frozen and
   keeps building exactly what it built (`bun test src/lib/assets/versions.test.js` holds every version to it).
 - **What you hand over:** the shots, this skill's page and its film go to `/mnt/project-files/machines/<machine>/`,

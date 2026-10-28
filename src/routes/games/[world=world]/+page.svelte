@@ -5,7 +5,7 @@
 	the plate renderers. How each world is raised for the film is ./mounts.js.
 -->
 <script>
-	import FilmRoute from '$lib/film/FilmRoute.svelte';
+	import FilmRoute from '$content/film/FilmRoute.svelte';
 	import { MOUNTS } from './mounts.js';
 
 	/** @type {{ data: import('./$types').PageData }} */

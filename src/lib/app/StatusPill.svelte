@@ -1,12 +1,12 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { fade } from 'svelte/transition';
-	import { session } from '$lib/avendb/session.svelte.js';
-	import { sync, watchSync } from '$lib/avendb/sync.svelte.js';
-	import { peerStatus } from '$lib/avendb/sync-status.js';
-	import { watchRecipes } from '$lib/assets/vault.js';
-	import { viewStatus } from '$lib/avendb/view-status.js';
-	import { watchActiveReads } from '$lib/avendb/active-reads.js';
+	import { session } from '$avendb/session.svelte.js';
+	import { sync, watchSync } from '$avendb/sync.svelte.js';
+	import { peerStatus } from '$avendb/sync-status.js';
+	import { watchRecipes } from '$content/assets/vault.js';
+	import { viewStatus } from '$avendb/view-status.js';
+	import { watchActiveReads } from '$avendb/active-reads.js';
 	import { screenSlot } from './screen-slots.js';
 
 	/** how long something must take before the pill shows, and how long it stays once nothing does (ms) */

@@ -30,7 +30,7 @@ every asset group.
   longer opens them. Mount the view in a throwaway route instead (`src/routes/dev-assets-check/+page.svelte`, never
   committed), with Vite started as `VITE_RECIPE_FEED=dev bunx vite dev --port 5199 --strictPort`: it reads
   `/__recipe-feed/code?seed=1&type=recipe`, makes one entry per asset as the vault keeps it (the first version on main,
-  each later one a proposal merged into main, each variant a line), and renders `$lib/avendb/Assets.svelte` with
+  each later one a proposal merged into main, each variant a line), and renders `$avendb/Assets.svelte` with
   `{ world, vault, actor, api, entry, recipe }`, the last two read from the page's `#assets/<entry>/<recipe hash>`.
   Its `api` needs `database(vault)` (the rows), `note(entry)` (the lines and edits) and `readFile(root, size, from,
   to)` (the bytes from `/__recipe-feed/entry/<vault>/<entry>/file`). Factories, buildings, biomes and worlds keep their

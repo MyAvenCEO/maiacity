@@ -1,7 +1,7 @@
 /*
- * THE LIBRARY'S THINGS IN THE VILLAGE — what Sandbox 3 and 4 put down that is a Thing of the library ($lib/models):
+ * THE LIBRARY'S THINGS IN THE VILLAGE — what Sandbox 3 and 4 put down that is a Thing of the library ($content/models):
  * the playgrounds between the domes, in Sandbox 4 the coops and hutches round the squares, mini domes, and in every
- * master dome the workshops round its ground floor (the dome rooms', $lib/models/domerooms.js). Each is built in the
+ * master dome the workshops round its ground floor (the dome rooms', $content/models/domerooms.js). Each is built in the
  * asset box from its recipe at the version the village's config pins (its avenDB entry, `THINGS`) and drawn by the
  * renderer (./drawn.js) as a copy of it, at its finest shape, casting its shadow as the village's baked ones did.
  *
@@ -18,7 +18,7 @@ import { coopsAround } from './spaces';
 
 /**
  * An asset of the village, by the key its config pins it under (code/configs/sandbox-4/assets: its avenDB entry and
- * the heads of its version, $lib/assets/vault.js `WORLD_PIN`), with the values it is built with.
+ * the heads of its version, $content/assets/vault.js `WORLD_PIN`), with the values it is built with.
  * @param {string} key @param {string} [query]
  */
 export const villageAsset = (key, query = '') => `pin:sandbox-4/${key}${query ? `?${query}` : ''}`;
@@ -48,7 +48,7 @@ export const FLOORS = { outside: villageAsset('food-forest'), warm: villageAsset
 
 /**
  * A set the dome builds round its own place and the library brings to its middle, its foot on the ground
- * ($lib/models/domerooms.js `centred`): where that middle is in its builder's ground (x, z in metres).
+ * ($content/models/domerooms.js `centred`): where that middle is in its builder's ground (x, z in metres).
  * @type {Record<string, { x: number, z: number }>}
  */
 export const MIDDLE = {

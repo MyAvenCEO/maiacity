@@ -1,6 +1,6 @@
 <!--
 	THE VIEW PROBE (/app/views/probe/) — every way out of a view, tried from inside views made to do harm
-	($lib/sandbox/view/probe.js), each shown by the real view host ($lib/sandbox/ViewHost.svelte) as any view a vault
+	($kernel/sandbox/view/probe.js), each shown by the real view host ($kernel/sandbox/ViewHost.svelte) as any view a vault
 	holds is: the view's frame, its engine and its worker, frozen and checked as they ship. The asset box's lab
 	(/app/assets/box/) does the same for the box. Every attempt must be refused or stopped:
 	- what the view's script tries in its worker (the network, storage, cookies, code from strings, the page's DOM,
@@ -18,8 +18,8 @@
 
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { onMount } from 'svelte';
-	import ViewHost from '$lib/sandbox/ViewHost.svelte';
-	import { CLICKS, HEAVY, HTML_TRIES, PAGE_SAYS, SECRET, UNKNOWN_ENGINE, WORKER_TRIES, burnView, heavyView, hostileView, logicViews, spinView, unknownEngineView } from '$lib/sandbox/view/probe.js';
+	import ViewHost from '$kernel/sandbox/ViewHost.svelte';
+	import { CLICKS, HEAVY, HTML_TRIES, PAGE_SAYS, SECRET, UNKNOWN_ENGINE, WORKER_TRIES, burnView, heavyView, hostileView, logicViews, spinView, unknownEngineView } from '$kernel/sandbox/view/probe.js';
 
 	/** how long the views have to say everything and be stopped (ms), and how long stray effects have to land after */
 	const DEADLINE = 40000;

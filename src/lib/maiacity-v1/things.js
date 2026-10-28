@@ -11,7 +11,7 @@
  */
 
 /** an asset of the game's, by the key its config pins it under (code/configs/maiacity-v1/assets: its avenDB entry and
- * the heads of its version, $lib/assets/vault.js `WORLD_PIN`) @param {string} key */
+ * the heads of its version, $content/assets/vault.js `WORLD_PIN`) @param {string} key */
 const asset = (key) => `pin:maiacity-v1/${key}`;
 
 /** the library's assets the world puts in, each at the version its config pins */
@@ -145,7 +145,7 @@ export const PACK_PACKETS = ['apple', 'pear', 'cherry', 'plum', 'apricot', 'quin
 export const BOTTLE_MOUTH = 0.268;
 
 /** the people: the rigged stand-in (actors/stand-in@11), built with how tall they are and their look (./van.js PEOPLE,
- *  the players in their seat's colours), its moves played from the tables the box wrote down ($lib/assets/clips.js) */
+ *  the players in their seat's colours), its moves played from the tables the box wrote down ($content/assets/clips.js) */
 export const STAND_IN = asset('stand-in');
 /** a person's ref: their height (m) and what of their look is not the stand-in's, by name, in a steady order */
 export const standInRef = (height, look = {}) =>

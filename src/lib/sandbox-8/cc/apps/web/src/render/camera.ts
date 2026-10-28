@@ -5,7 +5,7 @@
  */
 import { MOUSE, type PerspectiveCamera, Spherical, TOUCH, Vector3 } from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { createControls } from '$lib/render/core.js';
+import { createControls } from '$content/render/core.js';
 import type { Heightfield } from './heightfield.ts';
 
 const MIN_DIST = .7;

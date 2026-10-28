@@ -7,7 +7,7 @@ description: The maiaCITY building skill — what a settlement lives and works i
 
 Every building stands alone in `/app/buildings` (admin) on the same round ground (`src/lib/buildings/ground.js`: a
 disc of light earth, 1 m grid squares, every 10 m darker, a rim), made as large as it needs, and opens straight
-inside to be walked. The laws, the shared core (`$lib/assets`, refs, one version control) and how we check are the
+inside to be walked. The laws, the shared core (`$content/assets`, refs, one version control) and how we check are the
 `asset-producer`'s; this is what the buildings taught us on top of them.
 
 ## Where it lives
@@ -36,7 +36,7 @@ inside to be walked. The laws, the shared core (`$lib/assets`, refs, one version
 1. **Research** the real construction: span, height, struts and hubs, glazing, the north shell, people per dome and
    rooms per person, what the floor carries. Say which figures are estimates.
 2. **Build** at real size (1 unit = 1 m), in its parts: structure, skin, floors and galleries, doors to the compass
-   points, the interior's plan before its furniture. A new building's structure is built with `$lib/assets`, so its
+   points, the interior's plan before its furniture. A new building's structure is built with `$content/assets`, so its
    struts, hubs, glass and shell are parts with cards that explode and cut like a machine's.
 3. **Furnish** it from the libraries, never with its own copies (below).
 4. **Walk** it: every door, every gallery, the stairs, the headroom under the slope of the shell.

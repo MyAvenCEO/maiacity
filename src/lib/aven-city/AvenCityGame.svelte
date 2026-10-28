@@ -2,7 +2,7 @@
 import { screenSlot } from '$lib/app/screen-slots.js'
 
 import AvenCitySandbox from './AvenCitySandbox.svelte'
-import { SkyControl } from '$lib/sandbox-kit'
+import { SkyControl } from '$content/sandbox-kit'
 import DomeRail from './components/DomeRail.svelte'
 import Icon, { type IconName } from './components/Icon.svelte'
 import ResourceIcon from './components/ResourceIcon.svelte'

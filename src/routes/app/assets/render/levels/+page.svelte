@@ -15,7 +15,7 @@
 	// @ts-nocheck — plain JS
 	import { onDestroy, onMount } from 'svelte';
 	import * as THREE from 'three';
-	import { createSky, createStage, WorldBar } from '$lib/sandbox-kit';
+	import { createSky, createStage, WorldBar } from '$content/sandbox-kit';
 
 	/** the kinds checked unless the address names others */
 	const SAMPLE = ['machines/pickup', 'machines/lifetrac', 'machines/batterycube', 'things/bell-tent', 'things/dome-tent', 'things/chicken-coop', 'things/tent-bag', 'actors/goat:goat-saanen', 'actors/stand-in', 'plants/walnut?stage=9', 'plants/apple@2?stage=9'];
@@ -42,7 +42,7 @@
 	onMount(async () => {
 		const q = new URLSearchParams(location.search);
 		const refs = q.get('refs')?.split(',').filter(Boolean) ?? SAMPLE;
-		const [{ createAssets }, lod] = await Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/render/lod.js')]);
+		const [{ createAssets }, lod] = await Promise.all([import('$content/assets/render/index.js'), import('$content/assets/render/lod.js')]);
 		if (destroyed) return;
 		world = createStage(stage, { maxPixelRatio: 1 });
 		const { renderer, scene, camera } = world;

@@ -75,7 +75,7 @@ function radiusOf(rig) {
 /**
  * A build's view.
  * @param {import('three').Object3D} root as its builder made it (and put back after its controls were played)
- * @param {any} [cast] the rig it came in, for an actor (`{ rig, clips, poses, first }`, $lib/actors/rig.ts)
+ * @param {any} [cast] the rig it came in, for an actor (`{ rig, clips, poses, first }`, $content/actors/rig.ts)
  */
 export function viewOf(root, cast) {
 	const nodes = walk(root);

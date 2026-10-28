@@ -10,7 +10,7 @@
  *   time     the build-out (./buildout.js) at a month: only what is begun stands, its labels and picks with it
  */
 import * as THREE from 'three';
-import { createOrbitRig, createSky, createStage, skyTime } from '$lib/sandbox-kit';
+import { createOrbitRig, createSky, createStage, skyTime } from '$content/sandbox-kit';
 import { buildWorld } from './scene.js';
 import { VILLAGE, USES, landPatches } from './layout.js';
 import { FACTORIES, KINDS, capOf } from './specs.js';

@@ -12,7 +12,7 @@ const { objectAt, parseRef, refOf } = await import('./index.js');
 const { valuesOf } = await import('./params.js');
 const { fingerprint, keyOf } = await import('./cache.js');
 const { trianglesOf } = await import('./card.js');
-const { PLANTS } = await import('$lib/plants');
+const { PLANTS } = await import('$content/plants');
 
 const ENGINE = 'ab'.repeat(32);
 

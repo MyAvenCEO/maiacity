@@ -1,14 +1,14 @@
 <!--
 	A vault's assets: the recipes of the vault looked at, its `recipe` entries (avenDB's `Recipe, v1`, one for each
 	asset, its versions and variants in its history, the Maia City vault's seed writes them), from the entries alone
-	($lib/assets/sources/shelf.js), in the layout every avenDB view has (./Frame.svelte): on the left its assets, by
+	($content/assets/sources/shelf.js), in the layout every avenDB view has (./Frame.svelte): on the left its assets, by
 	group, each leading to its newest version; in the middle the one picked, shown in 3D, built in the box from its
-	entry's own file ($lib/assets/VaultAsset.svelte), in the turntable every asset viewer of the app has (its name, its
+	entry's own file ($content/assets/VaultAsset.svelte), in the turntable every asset viewer of the app has (its name, its
 	name and its moves and views above it, staying at the top as the column scrolls); on the right the one place for it,
 	avenDB's version-control side every entry has (./Lines.svelte): its history, its versions and variants to pick (with
 	its name by avenDB's own ids, its title, number, variant and the entry's short id, never a slug (Samuel
 	2026-10-19), its entry, the heads of its version, its recipe and engine), and its parts, a part picked there or on
-	the asset shown on its own ($lib/assets/Parts.svelte). Everything comes from the vault as this browser's device
+	the asset shown on its own ($content/assets/Parts.svelte). Everything comes from the vault as this browser's device
 	holds it (./assets.js): the rows from the database op, its history from the note op, a file from the device when a
 	build needs it, held to the hash its card names. Nothing comes from the repo's recipes, cards or libraries, so what
 	the vault lacks, or holds otherwise, shows here, saying why, and is never stood in for. (Only the domes the Maia City
@@ -27,8 +27,8 @@
 	import Lines from './Lines.svelte';
 	import { vaultSource } from './assets.js';
 	import { authorsLine, count, nameOf, seeded, short } from './vaults.js';
-	import { groupName, nameOf as versionName, refusedOf, shelfOf, shortId } from '$lib/assets/sources/shelf.js';
-	import { DOMES_IN_ORDER } from '$lib/buildings/domes.js';
+	import { groupName, nameOf as versionName, refusedOf, shelfOf, shortId } from '$content/assets/sources/shelf.js';
+	import { DOMES_IN_ORDER } from '$content/buildings/domes.js';
 	import { base } from '$app/paths';
 
 	/**
@@ -50,10 +50,10 @@
 	});
 
 	/** the parts list, with the stage's own `Parts` of an asset's parts, loaded with the stage */
-	const partsList = import('$lib/assets/Parts.svelte');
+	const partsList = import('$content/assets/Parts.svelte');
 
 	/** the viewer, with three.js and the asset stage, loaded once this page shows */
-	const viewer = import('$lib/assets/VaultAsset.svelte');
+	const viewer = import('$content/assets/VaultAsset.svelte');
 
 	let db = $state(/** @type {import('./db.js').Db | null} */ (null));
 	let failed = $state('');
@@ -97,7 +97,7 @@
 
 	let query = $state('');
 	/** the domes the Maia City vault doesn't hold yet: each still Sandbox 3's interior, world code no recipe builds
-	 *  ($lib/buildings/inside.js), so never an entry here. Listed under its buildings, as found, each leading to the
+	 *  ($content/buildings/inside.js), so never an entry here. Listed under its buildings, as found, each leading to the
 	 *  Buildings viewer, until the vault holds a building of its name. */
 	const away = $derived.by(() => {
 		if (!city || vault !== city.id) return [];

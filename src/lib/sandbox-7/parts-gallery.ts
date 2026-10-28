@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {createControls} from '$lib/render/core.js';
+import {createControls} from '$content/render/core.js';
 import type {Box} from './simulation';
 import type {BuildDefinition, BuildPart} from './shed';
 import {boundsOf, escapeHtml as e, geometryDetails, mm, partsCatalog, partGeometryRecord, previewSpec, type PartGroup} from './parts-catalog';

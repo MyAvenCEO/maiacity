@@ -1,7 +1,7 @@
 /*
- * THE MODELS — every reusable still model, as avenDB's Assets lists it among the Things (/app/avendb/#assets) (the containers and the wayside are the Buildings', $lib/buildings/built.js): its name, what it is, where
+ * THE MODELS — every reusable still model, as avenDB's Assets lists it among the Things (/app/avendb/#assets) (the containers and the wayside are the Buildings', $content/buildings/built.js): its name, what it is, where
  * it is used, and the function that builds it (./minidomes.js, ./domerooms.js, ./village.js, ./planting.js, ./tent.js,
- * ./belltent.js, ./wayside.js, ./pallet.js; a machine that works or has moving parts is a machine, $lib/machines, and never listed here too). A world places
+ * ./belltent.js, ./wayside.js, ./pallet.js; a machine that works or has moving parts is a machine, $content/machines, and never listed here too). A world places
  * them (src/lib/worlds); a new one is a function there and a line here. Each has its version and history
  * ($lib/app/versions.js): a changed model goes up a version, its old builder kept in HISTORY below.
  */
@@ -17,13 +17,13 @@ import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from './timber.v1.js';
 import { waterCanister } from './water-canister.js';
 import { FIRST, type Version, type Change } from '$lib/app/versions.js';
-import { registerAssets } from '$lib/assets/register.js';
+import { registerAssets } from '$content/assets/register.js';
 
 /** a model's builder: none of its arguments, or the values of the parameters it declares, in their order */
 type Make = (...args: any[]) => THREE.Object3D;
-/** what a model's recipe is built with, when a world places it otherwise than as it is listed ($lib/assets/params.js):
+/** what a model's recipe is built with, when a world places it otherwise than as it is listed ($content/assets/params.js):
  *  each takes its `value` when not given */
-type Param = import('$lib/assets/params.js').Param;
+type Param = import('$content/assets/params.js').Param;
 /** one kind of a model (a small and a big excavator): the viewer shows its variants to switch between, as the Actors
  *  gallery shows a kind's breeds; `make` is the first's */
 export type Variant = { id: string; label: string; note: string; make: Make };

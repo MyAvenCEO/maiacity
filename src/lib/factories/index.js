@@ -5,7 +5,7 @@
  * A factory is its spec (the product, the demand, the calendar, the route with every cycle time and where it comes
  * from, src/lib/factories/<factory>.js); the engine sizes the line from it and runs it. Each kind lists its versions in
  * HISTORY ($lib/app/versions.js), so a game can anchor to a line as it was: `factories/batterypack-line@1`
- * ($lib/assets). A factory is not built as one object (objectAt throws, as for a biome): `build()` gives its spec.
+ * ($content/assets). A factory is not built as one object (objectAt throws, as for a biome): `build()` gives its spec.
  */
 import { FIRST, versioned } from '$lib/app/versions.js';
 import { PACK_REF, SPEC as BATTERYPACK_LINE } from './batterypack-line.js';

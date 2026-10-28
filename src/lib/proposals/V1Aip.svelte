@@ -7,11 +7,11 @@
 	// @ts-nocheck — plain JS
 	import { base } from '$app/paths';
 	import { SEATS } from '../../../game/maiacity-v1/engine.js';
-	import ViewHost from '$lib/sandbox/ViewHost.svelte';
-	import { viewOfCard } from '$lib/sandbox/view-host.js';
-	import { screenDataOf } from '$lib/maiacity-v1/screen.js';
+	import ViewHost from '$kernel/sandbox/ViewHost.svelte';
+	import { viewOfCard } from '$kernel/sandbox/view-host.js';
+	import { screenDataOf } from '$content/maiacity-v1/screen.js';
 
-	/** g: the live game ($lib/maiacity-v1/live.svelte.js) */
+	/** g: the live game ($content/maiacity-v1/live.svelte.js) */
 	let { m, g } = $props();
 
 	const view = $derived(g.view);

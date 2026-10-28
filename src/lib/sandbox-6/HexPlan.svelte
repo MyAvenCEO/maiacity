@@ -17,7 +17,7 @@
 <script>
 	import { onDestroy, onMount } from 'svelte';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
-	import { WorldBar } from '$lib/sandbox-kit';
+	import { WorldBar } from '$content/sandbox-kit';
 	import { LIVING, TOWER_HEX, USES, VILLAGE, landOf } from './layout.js';
 	import { hexStats, siteCard, villageStats } from './stats.js';
 	import { DAYS, placeAll, sunShares } from './light.js';

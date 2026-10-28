@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
  * The travel van as MaiaCity V2's story rides in it (Samuel 2026-10-13: far more detail, real people, no ball heads):
- * the old minibus of $lib/models/wayside.js (things/travel-van@1, built in the asset box and put in by the world:
+ * the old minibus of $content/models/wayside.js (things/travel-van@1, built in the asset box and put in by the world:
  * seeThrough) with see-through glass, and inside it all that a packed van on a long road holds. A ribbed rubber floor; three rows of worn striped moquette seats with their headrests (two buckets in front,
  * two benches behind) on steel frames; door cards with a handle and window winders; window sills; curtains tied back at
  * every side window; a roof lining with its ribs, grab handles and a dome light; sun visors; a dashboard with two
@@ -19,7 +19,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { blend } from '$lib/assets/clips.js';
+import { blend } from '$content/assets/clips.js';
 import { standInRef } from './things.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);

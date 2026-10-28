@@ -744,7 +744,7 @@ fn a_drafts_creation_uses_its_draft_peer_and_never_collides_with_main() {
 }
 
 /// A standing Suggester her page gave her coop's aven before drafts, and that another coop she owns followed, is given
-/// again in the group's form when her page grants it again (`$lib/avendb/vaults.js` `standingOps`): no sheet, a new
+/// again in the group's form when her page grants it again (`$avendb/vaults.js` `standingOps`): no sheet, a new
 /// standing grant, and the coop follows it in that form; the one before stands for nothing more. Then agentClaude, a
 /// device of the aven, acting as it with its rights, drafts in the coop.
 #[test]

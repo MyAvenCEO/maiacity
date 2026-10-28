@@ -410,7 +410,7 @@ fn two_devices_apart_give_one_number_twice_and_every_reader_labels_them_alike() 
     assert_eq!(g.promote(mac, &c, aven), 2);
 }
 
-/// An agent its person makes a Suggester of all her vaults, as the page grants it (`$lib/avendb/vaults.js`
+/// An agent its person makes a Suggester of all her vaults, as the page grants it (`$avendb/vaults.js`
 /// `standingOps`, and `aipAuthorOps` beside it): her vault gives agentClaude's device vault, which it owns, a standing
 /// Suggester; a Suggester alone opens no AIP, which is an entry of its own. Then her vault gives it a share of its own,
 /// "AIP author", `create` and `set` on her AIPs alone. On its own device agentClaude opens an AIP over its proposal

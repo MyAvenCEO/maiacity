@@ -2,7 +2,7 @@
 /*
  * AN ACTOR'S MOVES, PLAYED BACK — the clips of a rigged build as the box wrote them down (./box/clips.js), played in
  * the page by our own code, none of the asset's: for any rigged actor (an animal of a world, a person), any number of
- * copies, each at its own time and as it moves. A clip here is what it is in the actor's own code ($lib/actors/rig.ts
+ * copies, each at its own time and as it moves. A clip here is what it is in the actor's own code ($content/actors/rig.ts
  * `Clip`): the pose at time t (seconds) and, for a gait, how the actor moves (how far it has come, how fast, how fast
  * it turns), the same pose for the same time and motion however often it is asked for, so a film's frame is always
  * the same frame. With `blend` (two poses, turned the short way from one to the other) and `poser` (a copy's bones
@@ -133,7 +133,7 @@ export function playerOf(motion, names) {
 const qa = new THREE.Quaternion(), qb = new THREE.Quaternion(), eb = new THREE.Euler();
 /**
  * Between two poses: the root's place, and each bone turned t of the way from a to b along the shortest arc, its size
- * and offset between (as $lib/actors/rig.ts `blend`).
+ * and offset between (as $content/actors/rig.ts `blend`).
  * @param {Record<string, number[]>} a @param {Record<string, number[]>} b @param {number} t
  * @returns {Record<string, number[]>}
  */
@@ -157,7 +157,7 @@ export function blend(a, b, t) {
 
 /**
  * How to pose a copy's bones: from where they rest now, each turned as a pose says (a bone it does not name rests; the
- * root moves the first bone), as $lib/actors/rig.ts `poser`.
+ * root moves the first bone), as $content/actors/rig.ts `poser`.
  * @param {THREE.Bone[]} list
  */
 export function poser(list) {

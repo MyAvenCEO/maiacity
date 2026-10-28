@@ -1,4 +1,4 @@
-import { createIntroFilm } from '$lib/sandbox-kit/intro-film.js';
+import { createIntroFilm } from '$content/sandbox-kit/intro-film.js';
 import { createWorld } from './world.js';
 import { momentOf } from './tour.js';
 import * as intro from './intro.js';

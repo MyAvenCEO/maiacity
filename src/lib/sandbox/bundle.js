@@ -7,11 +7,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { hashText } from '../../../game/hash.js';
 import { LIBS } from '../../../game/code/limits.js';
+import { ROOT, aliasDirs } from '../../../aven/ops/paths.js';
 import { rolldown } from 'rolldown';
 
-const LIB = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
-const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 /** each kernel engine's source */
 export const SOURCES = {
@@ -43,7 +42,7 @@ export { hashText };
 
 /** engine `kind` as one script @param {keyof typeof SOURCES} kind @returns {Promise<string>} */
 export async function bundleKernel(kind) {
-	const b = await rolldown({ input: SOURCES[kind], platform: 'browser', resolve: { alias: { $lib: LIB } }, plugins: [fonts], logLevel: 'silent' });
+	const b = await rolldown({ input: SOURCES[kind], platform: 'browser', resolve: { alias: aliasDirs }, plugins: [fonts], logLevel: 'silent' });
 	try {
 		const { output } = await b.generate({ format: 'iife', minify: true, codeSplitting: false });
 		return output.find((o) => o.type === 'chunk').code;

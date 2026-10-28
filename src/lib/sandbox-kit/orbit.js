@@ -15,7 +15,7 @@
  * takes over from wherever the camera was left, looking where it looked.
  */
 import * as THREE from 'three';
-import { createControls } from '$lib/render/core.js';
+import { createControls } from '$content/render/core.js';
 
 /** @typedef {import('./film.js').Pose} Pose */
 

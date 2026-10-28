@@ -17,7 +17,7 @@
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { onDestroy, onMount } from 'svelte';
 	import * as THREE from 'three';
-	import { createSky, createStage, createWalker, WalkHint, WorldBar } from '$lib/sandbox-kit';
+	import { createSky, createStage, createWalker, WalkHint, WorldBar } from '$content/sandbox-kit';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 
 	let stage = $state();
@@ -45,7 +45,7 @@
 
 	onMount(async () => {
 		const q = new URLSearchParams(location.search);
-		const [{ createAssets }, { testScene, SPOTS }] = await Promise.all([import('$lib/assets/render/index.js'), import('$lib/assets/render/testScene.js')]);
+		const [{ createAssets }, { testScene, SPOTS }] = await Promise.all([import('$content/assets/render/index.js'), import('$content/assets/render/testScene.js')]);
 		if (destroyed) return;
 		world = createStage(stage);
 		const { renderer, scene, camera } = world;
@@ -154,7 +154,7 @@
 
 	/** stands at each of the scene's places, lets the finer levels come, then times ten seconds of frames */
 	async function measure() {
-		const { SPOTS } = await import('$lib/assets/render/testScene.js');
+		const { SPOTS } = await import('$content/assets/render/testScene.js');
 		measuring = true;
 		measured = null;
 		const out = [];

@@ -1,17 +1,17 @@
 <!--
-	A story's Movie tab (./Story.svelte, plan J8, J9): its script ($lib/studio/scripts.js), an entry of its own that links
+	A story's Movie tab (./Story.svelte, plan J8, J9): its script ($content/studio/scripts.js), an entry of its own that links
 	the story. Its scenes in order, each drawn from a beat of the journey and
 	saying what happens there, with its lines (the voice-over and what is said on screen) and its shot list (size, angle,
 	move, what it shows, the line it covers). A story with no script draws its first from its beats; its lines and shots
 	can be adapted from the story's full text, the lines then quoting it. When the beats or that text move on, the
 	script says it is behind and takes the change. A script makes a first cut for the studio: a slate for each shot and a
 	line for each line, the story listing its cuts; and once a cut is rendered, each film it made can go out as a film post
-	($lib/studio/films.js), the story's post of type `film`. Agents propose on the script's lines, as on any entry; each change
+	($content/studio/films.js), the story's post of type `film`. Agents propose on the script's lines, as on any entry; each change
 	here is one op on its main line, as the device allows it.
 -->
 <script>
 	import { BEAT_LABEL } from '$lib/stories/stories.js';
-	import { CUT, CUT_V1, fieldsOf } from '$lib/studio/cuts.js';
+	import { CUT, CUT_V1, fieldsOf } from '$content/studio/cuts.js';
 	import {
 		ANGLES,
 		DELIVERY,
@@ -30,8 +30,8 @@
 		spokenSeconds,
 		storyBehindOf,
 		storyTakingOps
-	} from '$lib/studio/scripts.js';
-	import { filmPost, filmsOf, postsOfFilm } from '$lib/studio/films.js';
+	} from '$content/studio/scripts.js';
+	import { filmPost, filmsOf, postsOfFilm } from '$content/studio/films.js';
 	import FILM_TEMPLATE from '/films/TEMPLATE.md?raw';
 	import { entryOf } from './artifacts.js';
 	import { allowed, may, windowRead } from './ops.js';
@@ -60,7 +60,7 @@
 	let picked = $state('');
 	const script = $derived(scripts.find((s) => s.entry === picked) ?? scripts[0]);
 	const record = $derived(/** @type {any} */ (script?.record) ?? {});
-	const scenes = $derived(/** @type {import('$lib/studio/scripts.js').Scene[]} */ (record.scenes ?? []));
+	const scenes = $derived(/** @type {import('$content/studio/scripts.js').Scene[]} */ (record.scenes ?? []));
 	/** the delivery the script was adapted from, if any */
 	const source = $derived(record.from ? world.entries.find((e) => e.entry === entryOf(record.from)) : undefined);
 	const storyWhere = $derived(script ? storyBehindOf(record, beats) : { behind: false, changed: [], added: [], gone: [] });
@@ -86,7 +86,7 @@
 			}
 			if (!file || asked.has(t.entry)) continue;
 			asked.add(t.entry);
-			import('$lib/studio/aven.js')
+			import('$content/studio/aven.js')
 				.then((m) => m.valueOfFile(world, file))
 				.then((v) => v && (reports = { ...reports, [t.entry]: v }))
 				.catch(() => {});

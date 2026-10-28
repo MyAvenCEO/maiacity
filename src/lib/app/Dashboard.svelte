@@ -5,7 +5,7 @@
 	the Game Worlds, every game (MaiaCity V1, the sandboxes) the Maia City cap groups the person holds open: the
 	sandboxes to every Traveler, V1 to every Citizen ($lib/app/access.svelte.js; Samuel 2026-10-19: no draft stage);
 	the founder's apps (Ledger, Coops, Proposals, the Universe); then avenDB's apps, the vault's pages
-	($lib/avendb/VaultApps.svelte), each opening right here: all of them for an admin, in the vault picked in the nav
+	($avendb/VaultApps.svelte), each opening right here: all of them for an admin, in the vault picked in the nav
 	pill; Maia City's Assets and Worlds, read only, for every other Traveler.
 -->
 <script lang="ts">
@@ -13,13 +13,13 @@
 	import { onMount } from 'svelte';
 	import { founderCount, me, type Founder } from '$lib/auth/client';
 	// the person's name, from their avenDB human vault's profile: none of it in maiaCITY's database
-	import { session } from '$lib/avendb/session.svelte.js';
-	import { nameOf } from '$lib/avendb/vaults.js';
-	import VaultApps from '$lib/avendb/VaultApps.svelte';
+	import { session } from '$avendb/session.svelte.js';
+	import { nameOf } from '$avendb/vaults.js';
+	import VaultApps from '$avendb/VaultApps.svelte';
 	import Icon from '$lib/app/Icon.svelte';
 	import { APPS, CITY, GAME_WORLDS, isAdmin, opens } from '$lib/app/places';
 	import { access, holdsGroup } from '$lib/app/access.svelte.js';
-	import { TRAVELER } from '$lib/avendb/capgroups.js';
+	import { TRAVELER } from '$avendb/capgroups.js';
 	import { asset } from '$lib/media/url';
 
 	/** what the vault's home shows above its apps: the consent screen, while a request waits */

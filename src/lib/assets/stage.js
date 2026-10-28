@@ -31,7 +31,7 @@
  * `ground`, a plant's soil at 0 rather than under its roots).
  */
 import * as THREE from 'three';
-import { ShaderPass, createPost } from '$lib/render/post.js';
+import { ShaderPass, createPost } from '$content/render/post.js';
 import { CUT, ContactShadow, LAB_PLANES, LAYER_FX, approach, clamp, ease, ghostMaterial, lerp, studioEnvironment, untonemap } from './kit.js';
 
 export const MODES = /** @type {const} */ (['explode', 'cut', 'xray', 'labels', 'slow']);
@@ -44,7 +44,7 @@ export class Stage {
 	 * @param {THREE.WebGLRenderer} renderer the page's renderer (its tone mapping is set while the stage draws)
 	 * @param {THREE.PerspectiveCamera} camera
 	 * @param {{ theme?: 'paper' | 'night', low?: boolean }} [o] `low`: a phone's budget (no occlusion pass, 2× multisampling,
-	 *   a smaller, softer-sampled shadow), so it draws smoothly and fits in a phone's memory ($lib/render/core.js)
+	 *   a smaller, softer-sampled shadow), so it draws smoothly and fits in a phone's memory ($content/render/core.js)
 	 */
 	constructor(renderer, camera, { theme = 'paper', low = false } = {}) {
 		this.renderer = renderer;
@@ -95,7 +95,7 @@ export class Stage {
 
 	/**
 	 * the post stack, made at the canvas's size (AirSup's: MSAA HDR, GTAO, bloom, tone map, grade; on a phone no GTAO):
-	 * the renderer's one ($lib/render/post.js)
+	 * the renderer's one ($content/render/post.js)
 	 */
 	_post() {
 		const r = this.renderer, size = r.getDrawingBufferSize(new THREE.Vector2());

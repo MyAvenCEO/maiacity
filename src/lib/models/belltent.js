@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /*
- * THE BELL TENT — our bell tent (the Buildings' one, $lib/sandbox-2/interior/tent.ts, which stays as it is) as a model
+ * THE BELL TENT — our bell tent (the Buildings' one, $content/sandbox-2/interior/tent.ts, which stays as it is) as a model
  * in its parts, pitched the way a settler pitches it; the fire place in front of it; and the bag it comes in.
  *
  * The tent: cotton canvas 4.2 m across on one centre pole. A wall 75 cm high all round, the bell rising from it to the

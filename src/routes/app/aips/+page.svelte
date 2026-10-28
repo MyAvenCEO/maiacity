@@ -11,15 +11,15 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import { me } from '$lib/auth/client';
-	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
+	import { liveGame } from '$content/maiacity-v1/live.svelte.js';
 	import { STAGES, allOf, when } from '$lib/proposals/aips.js';
 	import V1Aip from '$lib/proposals/V1Aip.svelte';
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
-	import { session } from '$lib/avendb/session.svelte.js';
-	import { aips } from '$lib/avendb/aips.svelte.js';
-	import Fresh from '$lib/avendb/Fresh.svelte';
-	import { showsFinal } from '$lib/avendb/fresh.js';
-	import { localMedia } from '$lib/avendb/local-media.svelte.js';
+	import { session } from '$avendb/session.svelte.js';
+	import { aips } from '$avendb/aips.svelte.js';
+	import Fresh from '$avendb/Fresh.svelte';
+	import { showsFinal } from '$avendb/fresh.js';
+	import { localMedia } from '$avendb/local-media.svelte.js';
 	import { shaped } from '$lib/app/shapes.js';
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
@@ -29,7 +29,7 @@
 	const g = liveGame();
 	let acct = $state({ id: null });
 	// avenDB's AIPs: every vault this device holds, read again each time its world changes, one read at a time, the
-	// read the HITL stack shares ($lib/avendb/aips.svelte.js): until the device answered, the tabs say they read
+	// read the HITL stack shares ($avendb/aips.svelte.js): until the device answered, the tabs say they read
 	const loadAvendb = () => aips.again();
 	onMount(() => aips.hold());
 	onMount(() => session.boot());
@@ -42,7 +42,7 @@
 
 	// avenDB's AIPs show as they are only when their read is current, or offline and said to be as of then: while the
 	// device is behind on them (Freshness.lean), a stage they show may be one they left long ago, so the board shows
-	// them catching up, never an older stage as final ($lib/avendb/fresh.js)
+	// them catching up, never an older stage as final ($avendb/fresh.js)
 	const final = $derived(showsFinal(aips.fresh));
 	const all = $derived(allOf(g.view, final ? aips.list : [], session.world));
 	const count = (id) => all.filter((a) => a.stage === id).length;

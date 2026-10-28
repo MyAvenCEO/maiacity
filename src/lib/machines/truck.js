@@ -1,6 +1,6 @@
 /*
- * THE TRUCK, v2 — the tired land's highway truck (v1: $lib/models/furniture.ts `truck`, a cab and a box on eight
- * wheels) built again as a Machine at AirSup's realism ($lib/assets) round the heavy diesel of ./diesel6.js: a 4×2
+ * THE TRUCK, v2 — the tired land's highway truck (v1: $content/models/furniture.ts `truck`, a cab and a box on eight
+ * wheels) built again as a Machine at AirSup's realism ($content/assets) round the heavy diesel of ./diesel6.js: a 4×2
  * cab-over tractor and a 13.6 m box semi-trailer, every part a mechanic would name as its own solid in its measured
  * material, the 13 L six and its 12-speed gearbox there to cut open, the cab that tilts forward over the engine, the
  * trailer's rear doors that swing round to its sides, and a solver that drives it on the road on real equations, the
@@ -38,8 +38,8 @@
  * it drives on the right, its wheel on the left).
  */
 import * as THREE from 'three';
-import { GEO, MAT, clamp, ease, fmt } from '$lib/assets/kit.js';
-import { assetKit } from '$lib/assets/parts.js';
+import { GEO, MAT, clamp, ease, fmt } from '$content/assets/kit.js';
+import { assetKit } from '$content/assets/parts.js';
 import { VD, airOf, dieselMaterials, dieselSix } from './diesel6.js';
 import { G, aim, at, barrelGeometry, box, calliperGeometry, circle, cluster, coil, cyl, discGeometry, doorPanels, edgePanel, halfCut, hex, hinge, hose, inFrame, insetEdges, latheX, latheY, latheZ, leafPack, onEdge, onX, onY, ordinal, plate, propshaft, roundHole, roundPoly, seatGeometry, slab, spurGeometry, steeringWheelGeometry, tyreGeometry, tyreSize, unitBar, vehicleMaterials, vehicleSolver, xz, zyHole, zyShape } from './vehicle.js';
 
@@ -88,7 +88,7 @@ const SOURCES = [
 ];
 const SRC = { road: SOURCES[0].label, air: SOURCES[1].label, eu: SOURCES[2].label, tyre: SOURCES[3].label, king: SOURCES[4].label, bags: SOURCES[5].label, eng: SOURCES[6].label };
 
-const ASSEMBLIES = /** @type {import('$lib/actors/parts.js').Assembly[]} */ ([
+const ASSEMBLIES = /** @type {import('$content/actors/parts.js').Assembly[]} */ ([
 	{ id: 'chassis', label: 'Frame and suspension', note: 'The ladder frame of two C rails; the forged front axle on its leaf springs and the steering; the drive axle on its four air bellows.', out: [0, -0.9, 0] },
 	{ id: 'wheels', label: 'Wheels and brakes', note: 'Six 315/70 R22.5 tyres on ten-stud steel wheels, twins on the drive axle; a disc brake worked by air at every wheel.', out: [0.7, -0.2, 0] },
 	{ id: 'engine', label: 'Engine', note: 'The 12.8 L six under the cab, 338 kW and 2,300 N·m, its turbocharger and its common rail.', out: [0, 0.7, 0.5] },
@@ -276,7 +276,7 @@ const studAt = (k) => {
  * (`wheel-<id>`: tyres, rims, studs and nuts, the hub and its cap, the brake disc, all turning) and what holds still
  * (`brake-<id>`: the calliper on its bracket and the air chamber that works it).
  * @param {Kit} kit
- * @param {{ id: string, label: string, at: V3, side: 1 | -1, size: ReturnType<typeof tyreSize>, rimW: number, et: number, twin?: boolean, spring?: boolean, angle: number, parent: THREE.Object3D, assembly: string, drive?: string, tag?: import('$lib/assets/parts.js').How['tag'], M: ReturnType<typeof materials>, R: ReturnType<typeof vehicleMaterials> }} o
+ * @param {{ id: string, label: string, at: V3, side: 1 | -1, size: ReturnType<typeof tyreSize>, rimW: number, et: number, twin?: boolean, spring?: boolean, angle: number, parent: THREE.Object3D, assembly: string, drive?: string, tag?: import('$content/assets/parts.js').How['tag'], M: ReturnType<typeof materials>, R: ReturnType<typeof vehicleMaterials> }} o
  */
 function station(kit, o) {
 	const { M, R } = o;
@@ -371,7 +371,7 @@ export function truck({ cab: cabColour = '#a33a2a', box: boxColour = '#e0ddd6', 
 	trailer.name = 'trailer';
 	root.add(trailer);
 	/** a part: its meshes, its card and how it is shown (in the tractor's body unless said) */
-	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$lib/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (body)) => {
+	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$content/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (body)) => {
 		const grp = new THREE.Group();
 		grp.add(...objs);
 		return kit.part(grp, info, how, parent);
@@ -998,7 +998,7 @@ export function truck({ cab: cabColour = '#a33a2a', box: boxColour = '#e0ddd6', 
 			: `${fmt(kmh())} km/h · ${fmt(s.rpm)} rpm · ${fmt(Math.max(0, s.Pe) / 1000)} kW at the flywheel · ${fmt(air.s.boost / 1e5, 2)} bar boost · the road takes ${fmt(s.road.F / 1000, 1)} kN (rolling ${fmt(s.road.roll / 1000, 1)}, climbing ${fmt(s.road.climb / 1000, 1)}, air ${fmt(s.road.air / 1000, 1)}) · ${s.v > 0.5 ? `${fmt(s.l100, 1)} L/100 km` : `${fmt(s.fuel, 1)} L/h`}`;
 	});
 	const phase = (/** @type {number} */ t0, /** @type {number} */ a, /** @type {number} */ b) => ease.io(clamp((t0 - a) / (b - a)));
-	/** @type {import('$lib/assets/parts.js').Lab} */
+	/** @type {import('$content/assets/parts.js').Lab} */
 	const lab = {
 		hero: { label: 'Power at the wheels', unit: 'kW', max: 400, digits: 0 },
 		read: { value: 0, state: '', sub: '', bad: false },

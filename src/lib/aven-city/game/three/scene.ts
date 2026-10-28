@@ -19,13 +19,13 @@ import {
 	type WorldApi,
 	type WorldStats
 } from './buildWorld'
-import { createOrbitRig } from '$lib/sandbox-kit/orbit.js'
-import { disposeObject } from '$lib/render/core.js'
-import { worldRenderer } from '$lib/render/world.js'
-import { createSky, sunAt } from '$lib/sandbox-kit/sky.js'
-import { connectFilm, filmDraws } from '$lib/sandbox-kit/film.js'
+import { createOrbitRig } from '$content/sandbox-kit/orbit.js'
+import { disposeObject } from '$content/render/core.js'
+import { worldRenderer } from '$content/render/world.js'
+import { createSky, sunAt } from '$content/sandbox-kit/sky.js'
+import { connectFilm, filmDraws } from '$content/sandbox-kit/film.js'
 
-/** The one sky ($lib/sandbox-kit/sky) at an island's size, and the island's lens. */
+/** The one sky ($content/sandbox-kit/sky) at an island's size, and the island's lens. */
 const ISLAND_SKY = {
 	shadowsAt: [0, 0] as [number, number],
 	shadowReach: 30,
@@ -147,7 +147,7 @@ export function createScene<K extends string = BuildingKind>(
 	/** what a hex carries: a settlement of this island's kinds, or a works */
 	type Placed = K | FactoryKind
 	const settlements = SANDBOX_1 as unknown as Settlements<K>
-	// the world renderer ($lib/render/world.js): plain shadows, the island's lens, and at most 1.25 pixels per CSS
+	// the world renderer ($content/render/world.js): plain shadows, the island's lens, and at most 1.25 pixels per CSS
 	// pixel (where the extra pixels stop showing and keep costing)
 	const renderer = worldRenderer({ canvas, shadows: 'pcf', exposure: 1.05 })
 	if (import.meta.env.DEV) {
@@ -167,7 +167,7 @@ export function createScene<K extends string = BuildingKind>(
 	// placeholder until the world exists — frameOpening() sets the real shot
 	camera.position.set(7, 2.8, 15)
 
-	// the map camera of every sandbox seen from above ($lib/sandbox-kit/orbit)
+	// the map camera of every sandbox seen from above ($content/sandbox-kit/orbit)
 	const rig = createOrbitRig(camera, canvas, {
 		// close enough to stand among the domes of a single hex
 		minDistance: 0.35,
@@ -181,7 +181,7 @@ export function createScene<K extends string = BuildingKind>(
 	/* a dev hook, like the planet's __world: inspect the island camera from the console */
 	;(window as unknown as { __island: unknown }).__island = { camera, controls }
 
-	// the one sky of every world ($lib/sandbox-kit/sky), at the island's size: the shadow box only has to cover the
+	// the one sky of every world ($content/sandbox-kit/sky), at the island's size: the shadow box only has to cover the
 	// island (a tight box spends its texels on the domes instead of the sea, so a smaller map looks the same), the fog
 	// closes where the sea ends, and the lens is the island's: its clay is lit brighter than a walk among the domes
 	const sky = createSky(renderer, scene, ISLAND_SKY)
@@ -590,7 +590,7 @@ export function createScene<K extends string = BuildingKind>(
 	}
 	animate()
 
-	/* the film camera's hold on the island (src/lib/film, $lib/sandbox-kit/film) */
+	/* the film camera's hold on the island (src/lib/film, $content/sandbox-kit/film) */
 	const film = connectFilm({
 		sandbox: 'sandbox-1',
 		area: 'island',

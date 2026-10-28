@@ -1,6 +1,6 @@
 /*
- * THE PICKUP — the double-cab pickup of the MaiaCity V1 world (the Thing: $lib/models/village.js `pickup`, its v3 with
- * four doors that open and a tailgate that drops) built as a Machine at AirSup's realism ($lib/assets): every part a
+ * THE PICKUP — the double-cab pickup of the MaiaCity V1 world (the Thing: $content/models/village.js `pickup`, its v3 with
+ * four doors that open and a tailgate that drops) built as a Machine at AirSup's realism ($content/assets): every part a
  * mechanic would name as its own solid in its measured material, the engine's insides there to cut open, the doors
  * and the tailgate that open, the bed a real floor that carries what is put on it, and a solver that drives it on the
  * road on real equations. The pieces it shares with the travel van (the wheels, the engine, the suspension, the body's
@@ -34,8 +34,8 @@
  * it drives on the right, its wheel on the left).
  */
 import * as THREE from 'three';
-import { GEO, MAT, clamp, fmt } from '$lib/assets/kit.js';
-import { assetKit } from '$lib/assets/parts.js';
+import { GEO, MAT, clamp, fmt } from '$content/assets/kit.js';
+import { assetKit } from '$content/assets/parts.js';
 import { CUBE, powerCube } from './powercube.js';
 import { G, aim, at, box, circle, cluster, cyl, doorPanels, doubleWishbone, edgePanel, engineMaterials, frameY, halfCut, hinge, hose, inFrame, inlineEngine, insetEdges, ladderFrame, latheY, liveAxle, onEdge, onX, onY, ordinal, plate, propshaft, roundHole, roundPoly, seatGeometry, slab, steeringRack, steeringWheelGeometry, tyreSize, unitBar, vehicleMaterials, vehicleSolver, wheelCorner, xz, zyHole, zyShape } from './vehicle.js';
 
@@ -79,7 +79,7 @@ const SOURCES = [
 ];
 const SRC = { road: SOURCES[0].label, air: SOURCES[1].label, eng: SOURCES[2].label, tyre: SOURCES[3].label, susp: SOURCES[4].label, cube: SOURCES[5].label };
 
-const ASSEMBLIES = /** @type {import('$lib/actors/parts.js').Assembly[]} */ ([
+const ASSEMBLIES = /** @type {import('$content/actors/parts.js').Assembly[]} */ ([
 	{ id: 'chassis', label: 'Chassis and suspension', note: 'The ladder frame, kicked up over the rear axle; double wishbones and coil-overs in front with the rack-and-pinion, a live axle on leaf springs behind.', out: [0, -0.7, 0] },
 	{ id: 'wheels', label: 'Wheels and brakes', note: 'Four 265/70 R16 tyres on steel wheels and a fifth under the bed; vented discs and callipers in front, drums behind.', out: [0.5, -0.2, 0] },
 	{ id: 'engine', label: 'Engine', note: 'A 2.5 L four-cylinder turbo-diesel under the bonnet, 75 kW and 240 N·m.', out: [0, 0.5, 0.3] },
@@ -231,7 +231,7 @@ export function pickup({ speed = 90, grade = 0, load = 200, doors = 0, tailgate 
 	body.name = 'sprung';
 	root.add(body);
 	/** a part: its meshes, its card and how it is shown (in the body unless said) */
-	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$lib/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (body)) => {
+	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$content/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (body)) => {
 		const grp = new THREE.Group();
 		grp.add(...objs);
 		return kit.part(grp, info, how, parent);
@@ -700,7 +700,7 @@ export function pickup({ speed = 90, grade = 0, load = 200, doors = 0, tailgate 
 			? `first gear gives at most ${fmt(s.can)} N at the wheels, the hill and the road take ${fmt(s.need)} N · ${env.broken ? 'take the break back' : 'move a slider'} to start it again`
 			: `${fmt(kmh())} km/h · ${fmt(s.rpm)} rpm · ${fmt(Math.max(0, s.Pe) / 1000, 1)} kW at the flywheel · the road takes ${fmt(s.road.F)} N (rolling ${fmt(s.road.roll)}, climbing ${fmt(s.road.climb)}, air ${fmt(s.road.air)}) · ${s.v > 0.5 ? `${fmt(s.l100, 1)} L/100 km` : `${fmt(s.fuel, 2)} L/h`}${s.bottomed ? ' · the springs on their bump stops' : ''}`;
 	});
-	/** @type {import('$lib/assets/parts.js').Lab} */
+	/** @type {import('$content/assets/parts.js').Lab} */
 	const lab = {
 		hero: { label: 'Power at the wheels', unit: 'kW', max: 80, digits: 1 },
 		read: { value: 0, state: '', sub: '', bad: false },

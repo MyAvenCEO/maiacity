@@ -1,6 +1,6 @@
 <!--
 	THE MATH PROBE (/app/math/probe/) — every way out of the math host, tried by formulas made to do harm
-	($lib/sandbox/math-probe.js) in the real host ($lib/sandbox/math-host.js): the shell's frame with no origin, the
+	($kernel/sandbox/math-probe.js) in the real host ($kernel/sandbox/math-host.js): the shell's frame with no origin, the
 	frozen math engine checked against its hash, its worker, and the checker that draws what comes back. Every attempt
 	must be refused or stopped:
 	- a doc whose formulas reach out (\href, \url, \includegraphics, the HTML extension, HTML in \text), blow up (\def
@@ -20,13 +20,13 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount, tick } from 'svelte';
-	import { DOC_PICTURE, render } from '$lib/avendb/article.js';
+	import { DOC_PICTURE, render } from '$avendb/article.js';
 	import { TAGS } from '$lib/markdown/index.js';
-	import { latestOf } from '$lib/sandbox/engines.js';
-	import { engineCode } from '$lib/sandbox/frame.js';
-	import { GOOD, MEGABYTE, SPIN, WORKER_TRIES, hostileDoc, hostileTex, probeEngine } from '$lib/sandbox/math-probe.js';
-	import { TIMEOUT, mathShell, typeset, typesetIn } from '$lib/sandbox/math-host.js';
-	import { ELEMENTS, MATHML } from '$lib/sandbox/mathml.js';
+	import { latestOf } from '$kernel/sandbox/engines.js';
+	import { engineCode } from '$kernel/sandbox/frame.js';
+	import { GOOD, MEGABYTE, SPIN, WORKER_TRIES, hostileDoc, hostileTex, probeEngine } from '$kernel/sandbox/math-probe.js';
+	import { TIMEOUT, mathShell, typeset, typesetIn } from '$kernel/sandbox/math-host.js';
+	import { ELEMENTS, MATHML } from '$kernel/sandbox/mathml.js';
 
 	// where every attempt aims: the runner's canary (a plain web address), else this site's own
 	const given = new URLSearchParams(location.search).get('canary') ?? '';

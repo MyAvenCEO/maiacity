@@ -16,8 +16,8 @@
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { materialCache } from '$lib/render/core.js';
-import { seededLcg as rng } from '$lib/sandbox-kit/random.js';
+import { materialCache } from '$content/render/core.js';
+import { seededLcg as rng } from '$content/sandbox-kit/random.js';
 import { BATTERY_KWH, capOf, CORE_R, DF, FACADE, FACTORIES, INSIDES, KINDS, POND_BAND, POND_HALF, POND_IN, geodesicOf, siteHall, towerGridOf, towerLevels, towerRadius } from './specs.js';
 import { CELL, HEX_S, HEX_W, USES, USE_IDS, corners, landOf } from './layout.js';
 

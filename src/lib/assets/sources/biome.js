@@ -1,11 +1,11 @@
 /*
  * A BIOME FROM THE MAIA CITY VAULT — the floor a world lays (its surfaces, its density, its cover, each kind the asset
- * it is), read off the card the vault keeps beside the biome's recipe ($lib/biomes/card.js `biomeOfCard`), never off
+ * it is), read off the card the vault keeps beside the biome's recipe ($content/biomes/card.js `biomeOfCard`), never off
  * the repo's list of them: a biome changed in the vault (a new version its owners accepted) is the floor every world
  * lays from then on. Only once the vault's recipes are in (../vault.js `loadRecipes`, which every world's page waits
  * for).
  */
-import { biomeOfCard } from '$lib/biomes/card.js';
+import { biomeOfCard } from '$content/biomes/card.js';
 import { cardOf, hashOf } from '../vault.js';
 
 /**

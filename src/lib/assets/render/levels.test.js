@@ -285,7 +285,7 @@ test("a level that cannot reach its share leaves out what is never seen: a close
 }, 60000);
 
 test("a plant's level over its ceiling (a big tree's crown) brought under it, every leaf kept", async () => {
-	const { plantAt } = await import('$lib/plants/index.js');
+	const { plantAt } = await import('$content/plants/index.js');
 	const presets = createPresets();
 	const piecesIn = (shape) => {
 		const w = weldCorners(shape);
@@ -315,7 +315,7 @@ test("a plant's level over its ceiling (a big tree's crown) brought under it, ev
 }, 120000);
 
 test('a plant keeps its own detail: each level its recipe at a lower detail, within its share', async () => {
-	const { plantAt } = await import('$lib/plants/index.js');
+	const { plantAt } = await import('$content/plants/index.js');
 	const presets = createPresets();
 	for (const name of ['walnut', 'apple', 'strawberry']) {
 		const plant = plantAt(name);

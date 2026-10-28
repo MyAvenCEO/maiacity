@@ -1,7 +1,7 @@
 import { screenSlot } from '../app/screen-slots.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { createControls, createRenderer } from '$lib/render/core.js';
+import { createControls, createRenderer } from '$content/render/core.js';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { scenarios, polyhedraOf, piecesOf, verticesOf, type Box, type Scenario } from './simulation';
 import { shedScenario } from './shed';

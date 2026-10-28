@@ -5,8 +5,12 @@ import adapter from '@sveltejs/adapter-static';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { aliases, paths } from './aven/ops/paths.js';
 import { assetBox } from './src/lib/assets/box/plugin.js';
 import { pageCsp } from './src/lib/sandbox/policy.js';
+
+/** the folders the import aliases name beside the site, which the site's checks and dev server take in as the site's own */
+const beside = Object.values(paths.aliases).filter((dir) => !(dir + '/').startsWith(paths.site + '/'));
 
 function commit() {
 	try {
@@ -23,6 +27,16 @@ export default defineConfig(({ command }) => ({
 		// the asset box's worker, bundled whole (src/lib/assets/box)
 		assetBox(),
 		sveltekit({
+			// where the site and its static files are, and the aliases of the folders that left its library
+			// (aven/ops/paths.json): $avendb the page's avenDB, $kernel the kernel, $content the content
+			files: { src: paths.site, assets: paths.static },
+			alias: Object.fromEntries(Object.entries(aliases).filter(([name]) => name !== '$lib')),
+			typescript: {
+				config: (c) => {
+					c.include.push(...beside.flatMap((dir) => ['js', 'ts', 'svelte'].map((e) => `../${dir}/**/*.${e}`)));
+				}
+			},
+
 			compilerOptions: {
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
 				runes: ({ filename }) =>
@@ -55,11 +69,11 @@ export default defineConfig(({ command }) => ({
 		})
 	],
 	server: {
-		// game/ holds the rules the site and the API share (policies, the calendar,
-		// the cap table, the globe); it sits beside src/, so Vite has to be told. So do the journal, which avenDB's pages
-		// read in the browser (src/lib/avendb/article.js), the inspire-me library and the journal's sources, and the documents
-		// the repository proposes: the skills (src/lib/avendb/docs.js).
-		fs: { allow: ['game', 'blog', 'inspire-me', 'sources', 'films', '.claude/skills'] },
+		// what sits beside the site, so Vite has to be told: the folders the aliases name, and what the pages read in the
+		// browser (paths.json `served`): the rules the site and the API share (game/: policies, the calendar, the cap
+		// table, the globe), the journal, which avenDB's pages read (src/lib/avendb/article.js), the inspire-me library and
+		// the journal's sources, the films, and the documents the repository proposes: the skills (src/lib/avendb/docs.js)
+		fs: { allow: [...beside, ...paths.served] },
 		// other sessions' worktrees and the Mac app's build folder change all day: watched, each one reloaded the
 		// studio in the middle of a session
 		watch: { ignored: ['**/.claude/**', '**/.cargo/**', '**/vault/target/**', '**/avendb/target/**'] },

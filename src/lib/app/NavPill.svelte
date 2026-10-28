@@ -5,7 +5,7 @@
 	bar or a back button of its own, and everything else — the games, the worlds, the admin's tools — is a tile on the
 	dashboard. You is the person's vault switcher too (Samuel 2026-10-18): their avenDB vaults, their own first, which
 	is their profile (their name lives there alone), and the one picked shown on the item, with how many changes wait
-	in the others; then the public site and signing out. Invites live in avenDB's Vaults app alone ($lib/avendb/Vaults.svelte,
+	in the others; then the public site and signing out. Invites live in avenDB's Vaults app alone ($avendb/Vaults.svelte,
 	Samuel 2026-10-20), beside the roles they give. A page may add a
 	green "+" between Home and You that opens its main sheet, and the accounts it can be looked at as, listed in the You
 	menu ($lib/app/pill.svelte.js: MaiaCity V1's wallet and its COOPs).
@@ -16,7 +16,7 @@
 <script>
 	import { foot, FOOT } from './foot.js';
 	import { tick } from 'svelte';
-	import { localMedia } from '$lib/avendb/local-media.svelte.js';
+	import { localMedia } from '$avendb/local-media.svelte.js';
 	import { base } from '$app/paths';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';

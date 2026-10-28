@@ -1,5 +1,5 @@
 /*
- * DRAWN BY THE RENDERER — what a sandbox draws of the asset library: a universal renderer ($lib/assets/render) in a
+ * DRAWN BY THE RENDERER — what a sandbox draws of the asset library: a universal renderer ($content/assets/render) in a
  * world's scene, every asset in it built in the asset box and drawn there as copies of its kind, and its copies kept
  * when a part of the world lets them go (a tile of floor walked away from, a dome's inside let go of), for the next
  * that wants one of that kind: a world that comes and goes as you walk adds none.
@@ -13,7 +13,7 @@
  * detail changing at the world's own distances.
  */
 import * as THREE from 'three';
-import { createAssets } from '$lib/assets/render/index.js';
+import { createAssets } from '$content/assets/render/index.js';
 import { DETAILS, VILLAGE } from './flora.js';
 
 /** a copy put away: drawn nowhere until it is wanted again */

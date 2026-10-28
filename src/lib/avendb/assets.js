@@ -3,9 +3,9 @@
 // its versions and variants, each recipe's source the newest file its entry brings (the world's `files`, oldest
 // first) or its own version's, read whole from the device a window at a time as the Library reads a file
 // (./files.js `whole`), and the two read as the Maia City vault's recipes are read, with no repo fallback
-// ($lib/assets/sources/avendb.js `vaultRecipes`): what the vault lacks, or holds otherwise, fails, naming the ref.
+// ($content/assets/sources/avendb.js `vaultRecipes`): what the vault lacks, or holds otherwise, fails, naming the ref.
 
-import { RECIPE_MEDIA, vaultRecipes } from '$lib/assets/sources/avendb.js';
+import { RECIPE_MEDIA, vaultRecipes } from '$content/assets/sources/avendb.js';
 import { whole } from './files.js';
 import { reads, size } from './vaults.js';
 
@@ -34,7 +34,7 @@ export const newestFile = (e) => e?.files?.at(-1);
 
 /**
  * How the reader reads a recipe row's file: the newest file its entry brings, as world `world` lists it, or for one
- * version of an asset's entry, the file of its own write ($lib/assets/sources/avendb.js `versionsOf`), read whole
+ * version of an asset's entry, the file of its own write ($content/assets/sources/avendb.js `versionsOf`), read whole
  * through `read` (the device's `readFile`), as bytes; refused, saying why, where its entry brings none, this browser
  * holds no key to it yet, or it is larger than a recipe may be.
  * @param {import('./vaults.js').WorldView} world @param {import('./files.js').Read} read
@@ -59,7 +59,7 @@ async function bytesOf(file, read) {
 }
 
 /**
- * The recipes an AIP proposes, for its vault to see before it answers ($lib/avendb/Hitl.svelte): each of its `recipe`
+ * The recipes an AIP proposes, for its vault to see before it answers ($avendb/Hitl.svelte): each of its `recipe`
  * lines as `get` reads it on that line (its record and `files`, what the line brings, oldest first), read as the
  * vault's own are (`vaultRecipes`), each file the newest its line brings, held to the hash its card names. A device
  * older than `get`'s `files` lists none, and says so. `firsts`, each entry's first version as `get` reads it

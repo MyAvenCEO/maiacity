@@ -1,5 +1,5 @@
 <!--
-	The vaults a vault owns, one component for every parent, as the settings' Owners show them ($lib/avendb/Settings.svelte):
+	The vaults a vault owns, one component for every parent, as the settings' Owners show them ($avendb/Settings.svelte):
 	first those wholly its own, of a kind that takes one owner alone (the kind table's `most`), each with its devices
 	and the shares it holds, by name, over which vault and at what level, and under it the vaults it owns in turn that
 	hold devices; then, in one line, the other vaults it owns. So it is "Agents" on an aven, whose agents are devices

@@ -10,7 +10,7 @@
  * Pure: the same seed grows the same valley.
  */
 import { GRASS, IRON, MOUNTAIN, SAND, WATER } from './rules.js';
-import { seededRandom } from '$lib/sandbox-kit/random.js';
+import { seededRandom } from '$content/sandbox-kit/random.js';
 import { STEP, makeGrid } from './hex.js';
 import { K, makePlan } from './plots.js';
 

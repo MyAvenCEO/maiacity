@@ -2,7 +2,7 @@
 	A vault's Library: every file of the vault the acting vault reads, as a media app lists them, in the layout every
 	avenDB view has (./Frame.svelte): on the left what narrows them, by kind (films, images, SVGs, PDFs, audio, other)
 	or a tag, each with how many there are, the deleted ones apart; in the middle each a tile with a preview where it
-	is a picture or a film the Mac made a still of (the `still` rule's preview, $lib/studio/jobs/rules.js), its size, its
+	is a picture or a film the Mac made a still of (the `still` rule's preview, $content/studio/jobs/rules.js), its size, its
 	kind and its tags, or the same as a table (Samuel 2026-10-18), with every vault whose devices hold its bytes, and
 	right under each file what the Mac's rules made of it (its proxy, grading still, preview), as the old studio's
 	ingest table kept them (./made.js); where a rule's step stands is the Jobs app's. A click opens it in the middle, to save or delete there, its
@@ -110,7 +110,7 @@
 
 	/**
 	 * Each file's preview, by its entry: the JPEG the Mac's `still` rule made of it at its hero frame
-	 * ($lib/studio/jobs/rules.js, vault/app/src/aven.rs), or of its original, for a file made of one; where this device
+	 * ($content/studio/jobs/rules.js, vault/app/src/aven.rs), or of its original, for a file made of one; where this device
 	 * can open it.
 	 */
 	const previewOf = $derived.by(() => {
@@ -209,7 +209,7 @@
 
 	/**
 	 * Files `picked`, into the vault one by one. A film or a sound is footage (`media:original`), the studio's way in
-	 * (Samuel 2026-10-18): the Mac's rules make its proxy, its still and its words ($lib/studio/jobs/rules.js).
+	 * (Samuel 2026-10-18): the Mac's rules make its proxy, its still and its words ($content/studio/jobs/rules.js).
 	 * @param {FileList | File[] | null | undefined} picked
 	 */
 	async function add(picked) {

@@ -1,6 +1,6 @@
 /*
  * THE TRUCK — the tired land's truck, built to its real measure (metres) by one function: the Machines list it
- * (machines/truck@1, $lib/machines) and the tired land's set drives a fleet of them (src/lib/worlds/tiredLandSet.js).
+ * (machines/truck@1, $content/machines) and the tired land's set drives a fleet of them (src/lib/worlds/tiredLandSet.js).
  * The furniture this file once held (the room's bed, crates, chairs, bulb, picture, sheepskin and the CB60 on its
  * stand) went with the room's Things on 2026-10-16.
  *

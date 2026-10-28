@@ -1,6 +1,6 @@
 //! avenDB's passkey in the app: a sign-in sheet on maia.city. The app's web view may not use maia.city's passkeys
 //! (WebKit lets an app's web view use a relying party's passkeys only with an Apple-signed entitlement that ties the
-//! app to its domain), so avenDB's page asks for each ceremony here ($lib/avendb/device/passkey.js, `inSheet`):
+//! app to its domain), so avenDB's page asks for each ceremony here ($avendb/device/passkey.js, `inSheet`):
 //! macOS's sign-in sheet (ASWebAuthenticationSession) shows maia.city's own page for it over the studio's window
 //! (src/routes/app/avendb/sheet/), which runs it in the passkey prompt as the site does and sends back what it brings,
 //! sealed to a key only the asking page holds, to `city.maia.studio://`: the sheet hands that here instead of loading

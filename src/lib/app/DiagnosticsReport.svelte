@@ -7,11 +7,11 @@
 -->
 <script lang="ts">
  import { onMount, untrack } from 'svelte';
- import { session } from '$lib/avendb/session.svelte.js';
- import { reactiveObservation } from '$lib/avendb/reactive-observation.js';
- import { createDiagnosticRunner } from '$lib/avendb/diagnostics-report.js';
- import { runNetworkDiagnostics } from '$lib/avendb/network-diagnostics.js';
- import { keepReports, sendReport, snapshot } from '$lib/avendb/diagnostics-send.js';
+ import { session } from '$avendb/session.svelte.js';
+ import { reactiveObservation } from '$avendb/reactive-observation.js';
+ import { createDiagnosticRunner } from '$avendb/diagnostics-report.js';
+ import { runNetworkDiagnostics } from '$avendb/network-diagnostics.js';
+ import { keepReports, sendReport, snapshot } from '$avendb/diagnostics-send.js';
  let { active = true, extra, onreport }: { active?: boolean, extra?: () => object, onreport?: (report: any) => void } = $props();
  /** the least time between two runs of the checks, which take up to 13 MiB of the connection (ms) */
  const EVERY = 10 * 60_000;

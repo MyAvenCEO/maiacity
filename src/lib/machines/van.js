@@ -1,6 +1,6 @@
 /*
- * THE TRAVEL VAN — the old minibus of the MaiaCity V1 intro (the Thing: $lib/models/wayside.js `travelVan`, its inside:
- * $lib/maiacity-v1/van.js) built as a Machine at AirSup's realism ($lib/assets): every part a mechanic would name as
+ * THE TRAVEL VAN — the old minibus of the MaiaCity V1 intro (the Thing: $content/models/wayside.js `travelVan`, its inside:
+ * $content/maiacity-v1/van.js) built as a Machine at AirSup's realism ($content/assets): every part a mechanic would name as
  * its own solid in its measured material, the engine's insides there to cut open, the doors that open, and a solver
  * that drives it on the road on real equations. The pieces any wheeled machine shares (the wheels, the engine, the
  * suspension, the solver) are in ./vehicle.js.
@@ -30,8 +30,8 @@
  * left: the van drives on the left, its wheel on the right).
  */
 import * as THREE from 'three';
-import { GEO, MAT, clamp, fmt } from '$lib/assets/kit.js';
-import { assetKit } from '$lib/assets/parts.js';
+import { GEO, MAT, clamp, fmt } from '$content/assets/kit.js';
+import { assetKit } from '$content/assets/parts.js';
 import { G, at, bar, box, circle, cluster, cyl, doorPanels, doubleWishbone, edgePanel, engineMaterials, ext, frameY, halfCut, hinge, hose, inFrame, inlineEngine, insetEdges, ladderFrame, latheX, latheY, latheZ, liveAxle, onEdge, onX, onY, ordinal, outsetRect, plate, propshaft, rrect, roundHole, roundPoly, seatGeometry, slab, slide, steeringRack, steeringWheelGeometry, tyreSize, vehicleMaterials, vehicleSolver, wheelCorner, xz, zy, zyHole, zyRect, zyShape } from './vehicle.js';
 
 /** @typedef {[number, number, number]} V3 */
@@ -66,7 +66,7 @@ const SOURCES = [
 ];
 const SRC = { road: SOURCES[0].label, air: SOURCES[1].label, eng: SOURCES[2].label, tyre: SOURCES[3].label, susp: SOURCES[4].label };
 
-const ASSEMBLIES = /** @type {import('$lib/actors/parts.js').Assembly[]} */ ([
+const ASSEMBLIES = /** @type {import('$content/actors/parts.js').Assembly[]} */ ([
 	{ id: 'chassis', label: 'Chassis and suspension', note: 'The ladder frame the body sits on; double wishbones and coil springs in front with the rack-and-pinion, a live axle on leaf springs behind.', out: [0, -0.7, 0] },
 	{ id: 'wheels', label: 'Wheels and brakes', note: 'Four 185/80 R14 C tyres on steel wheels; vented discs and callipers in front, drums behind.', out: [0.5, -0.2, 0] },
 	{ id: 'engine', label: 'Engine', note: 'A 2.4 L four-cylinder diesel under the cover between the front seats, 55 kW and 152 N·m.', out: [0, 0.1, 0] },
@@ -212,7 +212,7 @@ export function van({ speed = 80, grade = 0, load = 600, doors = 0 } = {}) {
 	body.name = 'sprung';
 	root.add(body);
 	/** a part: its meshes, its card and how it is shown (in the body unless said) */
-	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$lib/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (body)) => {
+	const part = (/** @type {any} */ info, /** @type {THREE.Object3D[]} */ objs, /** @type {import('$content/assets/parts.js').How} */ how = {}, parent = /** @type {THREE.Object3D} */ (body)) => {
 		const grp = new THREE.Group();
 		grp.add(...objs);
 		return kit.part(grp, info, how, parent);
@@ -634,7 +634,7 @@ export function van({ speed = 80, grade = 0, load = 600, doors = 0 } = {}) {
 			? `first gear gives at most ${fmt(s.can)} N at the wheels, the hill and the road take ${fmt(s.need)} N · ${env.broken ? 'take the break back' : 'move a slider'} to start it again`
 			: `${fmt(kmh())} km/h · ${fmt(s.rpm)} rpm · ${fmt(Math.max(0, s.Pe) / 1000, 1)} kW at the flywheel · the road takes ${fmt(s.road.F)} N (rolling ${fmt(s.road.roll)}, climbing ${fmt(s.road.climb)}, air ${fmt(s.road.air)}) · ${s.v > 0.5 ? `${fmt(s.l100, 1)} L/100 km` : `${fmt(s.fuel, 2)} L/h`}${s.bottomed ? ' · the springs on their bump stops' : ''}`;
 	});
-	/** @type {import('$lib/assets/parts.js').Lab} */
+	/** @type {import('$content/assets/parts.js').Lab} */
 	const lab = {
 		hero: { label: 'Power at the wheels', unit: 'kW', max: 60, digits: 1 },
 		read: { value: 0, state: '', sub: '', bad: false },

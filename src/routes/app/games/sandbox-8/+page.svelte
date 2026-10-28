@@ -1,10 +1,10 @@
 <!--
-	avenCITY Sandbox 8 — Constructible City ($lib/sandbox-8, from its upstream: ./upstream.mjs): a hard-realism
+	avenCITY Sandbox 8 — Constructible City ($content/sandbox-8, from its upstream: ./upstream.mjs): a hard-realism
 	settlement game near Göttingen, where every road, house and tent is built by people with their hands, tools and
 	machines, from materials that arrive by truck, in real weather.
 -->
 <script>
-	const city = import('$lib/sandbox-8/City.svelte');
+	const city = import('$content/sandbox-8/City.svelte');
 </script>
 
 <svelte:head>

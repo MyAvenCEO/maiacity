@@ -1,5 +1,5 @@
 /*
- * SANDBOX 5 — Sandbox 4's dome cell (./village.ts), its food forest grown from our own plants ($lib/plants) through
+ * SANDBOX 5 — Sandbox 4's dome cell (./village.ts), its food forest grown from our own plants ($content/plants) through
  * ./flora.js: each plant at a stage of its life, from the young tree to the ripe fruit, so the forest is never all one
  * age. Outside, under the open sky, the plants of a middle-European forest garden; inside the domes, under the glass,
  * the ones that need the warmth — the mango, the banana, the coconut palm, the coffee and the cacao.
@@ -8,7 +8,7 @@
  * seed: `sandbox5()` reads it there.
  *
  * Every plant is anchored to the version it was planted with: its pin, the plant's avenDB entry and the heads of that
- * version (`pin`, $lib/assets/sources/avendb.js `PIN_REF`; Samuel 2026-10-20), or, in a garden not pinned yet, the
+ * version (`pin`, $content/assets/sources/avendb.js `PIN_REF`; Samuel 2026-10-20), or, in a garden not pinned yet, the
  * version its card numbers (`v`). A plant changed later is a new version of its entry, and Sandbox 5 keeps growing the
  * one written here until it is planted again on purpose.
  */
@@ -33,7 +33,7 @@ import { configAt, loadCode } from '../../../../game/code/index.js';
 export const pinOf = (p) => (p.pin ? { pin: p.pin } : {});
 
 /**
- * How finely Sandbox 4 has always grown its plants (DETAIL in $lib/plants/grow.js: `detailAt` of each level is these):
+ * How finely Sandbox 4 has always grown its plants (DETAIL in $content/plants/grow.js: `detailAt` of each level is these):
  * near you, further off, and one alone in the picked plant's card (./PlantLook.svelte), finer than any in the forest.
  * Its forest asks the asset box for its plants at these levels, as their `detail` (./flora.js `DETAILS`).
  */

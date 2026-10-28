@@ -8,9 +8,9 @@
 	// @ts-nocheck — plain JS
 	import { base } from '$app/paths';
 	import { COOPS, MINDS, RENTED, SEATS, TOKEN_COLOUR, TOKEN_LABEL, heartsValue, inHearts, nameOf, rents, supply } from '../../../../game/maiacity-v1/engine.js';
-	import { VILLAGE_INFO } from '$lib/models/village.js';
-	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
-	import PoolBasket from '$lib/maiacity-v1/PoolBasket.svelte';
+	import { VILLAGE_INFO } from '$content/models/village.js';
+	import { liveGame } from '$content/maiacity-v1/live.svelte.js';
+	import PoolBasket from '$content/maiacity-v1/PoolBasket.svelte';
 
 	const g = liveGame();
 	let chosen = $state(typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('coop') ?? 'tribe') : 'tribe');

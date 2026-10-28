@@ -11,11 +11,11 @@
  * so nothing shows through between them from any angle.
  */
 import * as THREE from 'three'
-import { connectFilm, createCameraHold, filmDraws } from '$lib/sandbox-kit/film.js'
-import { createSky } from '$lib/sandbox-kit/sky.js'
-import { createAirShell } from '$lib/sandbox-kit/universe.js'
-import { disposeRenderer } from '$lib/render/core.js'
-import { worldRenderer } from '$lib/render/world.js'
+import { connectFilm, createCameraHold, filmDraws } from '$content/sandbox-kit/film.js'
+import { createSky } from '$content/sandbox-kit/sky.js'
+import { createAirShell } from '$content/sandbox-kit/universe.js'
+import { disposeRenderer } from '$content/render/core.js'
+import { worldRenderer } from '$content/render/world.js'
 import { CameraRig } from './camera'
 import { BIOMES, TREE } from './biomes'
 import { buildGlobe, FREQUENCY, LAND, type Tile, type Vec3 } from '../../../../game/globe'
@@ -143,7 +143,7 @@ function forests(tiles: Tile[]): THREE.Object3D {
 
 export function mountWorld(container: HTMLElement, options: WorldOptions = {}): WorldHandle {
 
-	// the world renderer ($lib/render/world.js), with the same lens as every world ($lib/sandbox-kit/sky): the
+	// the world renderer ($content/render/world.js), with the same lens as every world ($content/sandbox-kit/sky): the
 	// universe's light and the planet's in one picture; no shadows on a planet seen from space
 	const renderer = worldRenderer({ maxPixelRatio: 2, shadows: false, colorSpace: THREE.SRGBColorSpace })
 	renderer.setSize(container.clientWidth, container.clientHeight)
@@ -172,7 +172,7 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = {}): 
 
 	scene.add(forests(tiles))
 
-	/* The planet in the universe ($lib/sandbox-kit/sky, seen from space): a dark blue universe and its stars, the sun
+	/* The planet in the universe ($content/sandbox-kit/sky, seen from space): a dark blue universe and its stars, the sun
 	   a star, its light from where it really stands at the hour — day on one side of the planet, night on the other,
 	   the hour of every world (the time control, Auto or by hand). The closer you come, the deeper you are in its air:
 	   the sky turns blue and light round you, as it is on the islands and in the domes, the same sky zoomed in. */
@@ -192,7 +192,7 @@ export function mountWorld(container: HTMLElement, options: WorldOptions = {}): 
 		air.set(toUp.copy(sky.sun.position).normalize(), (1 - depth) ** 3)
 	}
 
-	/* The film camera's hold on the planet (src/lib/film, $lib/sandbox-kit/film): it flies the camera free of the rig,
+	/* The film camera's hold on the planet (src/lib/film, $content/sandbox-kit/film): it flies the camera free of the rig,
 	   and may scale and colour the sun and the fill. It is also the dev hook: the camera and the globe from the console. */
 	const hold = createCameraHold(camera)
 	const film = connectFilm({

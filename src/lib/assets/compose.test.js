@@ -1,5 +1,5 @@
 // @ts-nocheck — plain JS
-// Everything composes ($lib/assets): an asset built by its ref, carried into another, and every part it brings
+// Everything composes ($content/assets): an asset built by its ref, carried into another, and every part it brings
 // naming where it came from; any other object carried whole, as one part.
 // Run: bun test src/lib/assets/compose.test.js
 import { expect, test } from 'bun:test';

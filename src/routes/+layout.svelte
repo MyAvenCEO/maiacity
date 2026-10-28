@@ -1,5 +1,5 @@
 <script lang="ts">
-	import '$lib/avendb/local-media.svelte.js';
+	import '$avendb/local-media.svelte.js';
 	import { base } from '$app/paths';
 	// self-hosted from npm, bundled into the build and served from our own CDN —
 	// no request ever goes to Google
@@ -20,7 +20,7 @@
 		{ href: base || '/', label: 'Home' },
 		{ href: `${base}/universe`, label: 'Universe' }
 		// the docs (the skills, the theOS paper, the avenDB architecture) live in avenDB alone, its Docs view
-		// ($lib/avendb/Docs.svelte), not on the public site (Samuel 2026-10-18)
+		// ($avendb/Docs.svelte), not on the public site (Samuel 2026-10-18)
 	];
 
 	// The signed-in app (/app/: the dashboard, the games, the admin's tools) is its own place: none of the public

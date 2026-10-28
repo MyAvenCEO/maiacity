@@ -10,7 +10,7 @@
  * is a box as high as its ridge in another's way, and its own three points sit on its south roof, where its solar is.
  * Pure functions, in the browser or in node.
  */
-import { sunOverGround } from '$lib/sandbox-kit/universe.js';
+import { sunOverGround } from '$content/sandbox-kit/universe.js';
 import { capOf, KINDS, TOWER, capHeight, siteHall, towerRadius } from './specs.js';
 
 /** the village's latitude */
@@ -21,7 +21,7 @@ const DEG = Math.PI / 180;
 const STEP_MIN = 10;
 
 /** the sun's direction (x east, y up, z south) every 10 minutes of a day while it is over 2°: the universe's own sun
- *  ($lib/sandbox-kit/universe.js `sunOverGround`), seen from the village; its noon is at twelve, the universe's at half
+ *  ($content/sandbox-kit/universe.js `sunOverGround`), seen from the village; its noon is at twelve, the universe's at half
  *  past, so each moment is asked for half an hour later (and a little into its ten minutes) @returns {number[][]} */
 function sunPath(/** @type {number} */ decl) {
 	/** @type {number[][]} */

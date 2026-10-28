@@ -13,7 +13,7 @@
  * (`userData.view.clips.motion`, for ../clips.js to play).
  */
 import * as THREE from 'three';
-import { dualQuaternionSkinning } from '$lib/actors/dqs.ts';
+import { dualQuaternionSkinning } from '$content/actors/dqs.ts';
 import { FORMAT, LIGHTS, MATERIALS } from './serialize.js';
 import { LIGHT, MAT } from './bake.js';
 import { MOVE_SAMPLES } from './view.js';
@@ -266,7 +266,7 @@ function lightOf(x, i) {
 /**
  * A skinned mesh bound to its bones: bones that are bones of this tree, as many inverses as bones, each finite, and
  * no vertex weighted to a bone it does not have. One that bends by dual quaternions in the box does here (our
- * actors, $lib/actors/dqs.ts).
+ * actors, $content/actors/dqs.ts).
  */
 function bind(mesh, skin, i, objs) {
 	if (!skin || typeof skin !== 'object' || !Array.isArray(skin.bones)) fail(`node ${i} skin`);

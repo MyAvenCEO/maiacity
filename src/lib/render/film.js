@@ -6,11 +6,11 @@
  * meter, the 10-bit ACEScct encode), which is the film's own post stack and stays as it is, byte for byte, so a render's
  * fingerprint (FILM_VERSION) never moves.
  *
- * The contract a world hands over (`window.__world`) is the sandbox kit's `connectFilm` ($lib/sandbox-kit/film.js);
+ * The contract a world hands over (`window.__world`) is the sandbox kit's `connectFilm` ($content/sandbox-kit/film.js);
  * film mode itself is ../film/index.js.
  */
 /** the darkroom, loaded only by film mode (a world never pays for it) */
-export const darkroom = () => import('$lib/film/pipeline.js');
+export const darkroom = () => import('$content/film/pipeline.js');
 
 const win = () => /** @type {{ __filmDraw?: boolean, __filmPlays?: boolean, __worldTime?: number, __film?: { virtual?: boolean }, __world?: unknown }} */ (/** @type {unknown} */ (window));
 /** True while the film draws the canvas itself: the world must not spend a frame drawing for nobody. */

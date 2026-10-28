@@ -19,7 +19,7 @@
  *
  * A world chooses only its size (how far the shadows and the fog reach, how far off the light stands) and its lens
  * (`exposure`); never how the sky behaves. Give the renderer ACES tone mapping and soft shadows (`createStage`,
- * the world renderer $lib/render/world.js, does), call `tick()` every frame and `follow(x, z)` with where the camera stands. What else changes with
+ * the world renderer $content/render/world.js, does), call `tick()` every frame and `follow(x, z)` with where the camera stands. What else changes with
  * the hour in your world — lamps that glow at night — goes in `onHour`.
  *
  * The film camera (src/lib/film, ./film.js) steers every world through it: it pins the hour with

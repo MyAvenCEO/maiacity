@@ -5,8 +5,8 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
-	import { session } from '$lib/avendb/session.svelte.js';
-	import Unlock from '$lib/avendb/Unlock.svelte';
+	import { session } from '$avendb/session.svelte.js';
+	import Unlock from '$avendb/Unlock.svelte';
 	import Chat from '$lib/chat/Chat.svelte';
 
 	onMount(() => session.boot());

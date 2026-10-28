@@ -6,7 +6,7 @@
  */
 
 import { native } from '$lib/native';
-import { answer } from '$lib/avendb/ops.js';
+import { answer } from '$avendb/ops.js';
 import { Runner } from './runner.js';
 import { EXECUTORS, NATIVE } from './executors.js';
 
@@ -27,7 +27,7 @@ export const studioWorld = (on) => void (worldOpen = on);
 /** The app's device, or `null` off the Mac app or while it isn't open. */
 async function device() {
 	if (!native()) return null;
-	const { call, status } = await import('$lib/avendb/native.js');
+	const { call, status } = await import('$avendb/native.js');
 	const s = await status().catch(() => null);
 	return s?.open ? { call } : null;
 }

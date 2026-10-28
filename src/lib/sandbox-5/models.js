@@ -7,7 +7,7 @@
  * builder per type (`buildingModel`), the chimneys named so the view can puff them (`smoke`).
  */
 import * as THREE from 'three';
-import { materialCache } from '$lib/render/core.js';
+import { materialCache } from '$content/render/core.js';
 
 /** the owners' colours: yours, the two neighbours', and spares */
 export const TEAM = ['#2f6fb3', '#c8642a', '#3d8f5c', '#7a55a8', '#8a7f6e'];

@@ -1,8 +1,8 @@
 // @ts-nocheck — plain JS, kept loose on purpose
-import { localDevice } from '$lib/avendb/local.js';
+import { localDevice } from '$avendb/local.js';
 // Shared Universe state. Every page reads local avenDB; manifests and background sync supply missing records.
 import { authorsOf, fromFeed, pictureUrl } from './posts.js';
-import { PICTURE } from '$lib/avendb/picture.js';
+import { PICTURE } from '$avendb/picture.js';
 import { inspireOf } from './inspire.js';
 import { deviceOf, useQuery } from '../../../game/code/sources/device.js';
 
@@ -31,7 +31,7 @@ export const findPost = (doc) => stream.posts.find((p) => p.doc === doc);
 
 export const authorOf = (p) => stream.authors[p.author];
 
-// each vault's profile picture as avenDB's server serves it to everyone ($lib/avendb/picture.js): its address once it
+// each vault's profile picture as avenDB's server serves it to everyone ($avendb/picture.js): its address once it
 // loaded, '' where it has none, asked for once per vault whatever number of cards show it
 // (`asked` plain, as a card asks while it renders, where no state may change)
 export const faceOf = (vault) => pictureUrl(vault, PICTURE);

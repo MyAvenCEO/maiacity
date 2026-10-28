@@ -1,16 +1,16 @@
 /*
- * OUR ASSETS ON THE LINE — a product stage of a factory drawn as one of our own assets, by its ref ($lib/assets:
+ * OUR ASSETS ON THE LINE — a product stage of a factory drawn as one of our own assets, by its ref ($content/assets:
  * `stages.pack = { shape: 'asset', ref: 'machines/batterypack@9' }`), and the Euro pallets its raw material and its
  * product are stacked on (the Things' `euro-pallet`, ./pallet.js). Each is built as anyone's asset is, in the
- * asset box or got from this device's cache ($lib/assets/load.js), at its real size, and turned into what the world
+ * asset box or got from this device's cache ($content/assets/load.js), at its real size, and turned into what the world
  * needs: a stage's asset into one geometry in its rest pose and one material, so every pack on the belts, in a tester
  * and on the outgoing pallets is one instance of the real BatteryPack; the pallet into its pieces, each painted in
  * the kit's way.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { loadAsset } from '$lib/assets/load.js';
-import { buildAt, loadRecipes } from '$lib/assets/vault.js';
+import { loadAsset } from '$content/assets/load.js';
+import { buildAt, loadRecipes } from '$content/assets/vault.js';
 import { PALLET } from './pallet.js';
 
 /** @typedef {{ ref: string, geometry: THREE.BufferGeometry, material: THREE.Material, object: THREE.Object3D }} Token */
@@ -19,7 +19,7 @@ import { PALLET } from './pallet.js';
 const KEEP = new Set(['position', 'normal', 'color', 'uv']);
 
 /**
- * An asset built by its ref, its recipe the Maia City vault's ($lib/assets/vault.js), in the box or from the cache;
+ * An asset built by its ref, its recipe the Maia City vault's ($content/assets/vault.js), in the box or from the cache;
  * throws when the vault holds no such asset (NotInVault, naming it) or its build was refused. @param {string} ref
  */
 async function built(ref) {

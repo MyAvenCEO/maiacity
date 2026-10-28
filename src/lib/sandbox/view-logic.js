@@ -1,5 +1,5 @@
 // @ts-nocheck — plain JS, kept loose on purpose
-// A declarative view's logic, run by the logic host ($lib/sandbox/logic-host.js): QuickJS in a sealed worker, with
+// A declarative view's logic, run by the logic host ($kernel/sandbox/logic-host.js): QuickJS in a sealed worker, with
 // the core's limits and its deterministic profile, never on the page's thread. The code (a JS module) may export
 // `init(data)` and `on(event, data)`; each is given plain JSON and hands back the view's whole new data model as plain
 // JSON. It has no page, no network, no keys, no clock to wait on; a call that loops, eats its memory or throws is

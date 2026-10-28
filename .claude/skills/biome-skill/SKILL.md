@@ -26,13 +26,13 @@ floors taught us on top of them.
 - `built.js`: the `biomes` group the asset box builds (`BUILT`): every biome (`floors.js`) and the cover, one asset
   whose kinds are its variants, built at a seed, `biomes/cover@1:fern?seed=7139` (`coverRef`, the seed
   `coverSeed(i, kind)` from `index.js`). The worlds and `/app/biomes` draw cover from these through the universal
-  renderer (`$lib/assets/render`), at their finest shape, where `coverTile`/`coverLaid` lay them.
+  renderer (`$content/assets/render`), at their finest shape, where `coverTile`/`coverLaid` lay them.
 - `floors.js`, `patch.js`, `card.js` (Samuel 2026-10-20: biomes as dynamic as every other asset, from avenDB): each
   biome is an asset of its own, `biomes/<id>@<v>`, built in the box as a round patch of its floor 12 m across
   (`floorPatch`: the ground painted by the shader's own sums into one picture, its cover laid by `coverTile`). Its
   card's catalog carries its numbers (`biomeCatalog`: `ground-<surface>` weights, `density`, `cover-<kind>` with its
   `ref`, share, colony, spread, fill, surface), and a world reads them back off the vault's card alone
-  (`$lib/assets/sources/biome.js` `biomeOr`, through `biomeOfCard`, every number range checked). `index.js` `BIOMES`
+  (`$content/assets/sources/biome.js` `biomeOr`, through `biomeOfCard`, every number range checked). `index.js` `BIOMES`
   feeds only those recipes. A world never lays a floor of the repo's: where the vault holds no biome its ground lies
   bare (`{ soil: 1 }`) with no cover. A new version of a biome goes into the vault as an AIP; the worlds lay it from
   then on. The list in `floors.js` stays written out (id and label per item), so the box's narrowing keeps the

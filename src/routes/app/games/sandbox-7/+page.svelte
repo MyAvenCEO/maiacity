@@ -1,9 +1,9 @@
 <!--
-	avenCITY Sandbox 7 — the physical world lab ($lib/sandbox-7): buildings assembled from their physical parts, part by
+	avenCITY Sandbox 7 — the physical world lab ($content/sandbox-7): buildings assembled from their physical parts, part by
 	part and stage by stage, with Rapier rigid-body physics in a worker, finite fixings, temporary stands, wind and damage.
 -->
 <script>
-	const lab = import('$lib/sandbox-7/Lab.svelte');
+	const lab = import('$content/sandbox-7/Lab.svelte');
 </script>
 
 <svelte:head>

@@ -198,7 +198,7 @@ export class NotInVault extends Error {
 
 /**
  * What a page is refused for a recipe the vault lists whose file neither the page's device nor the feed handed over,
- * however long the page waited for it ($lib/assets/vault.js `PATIENCE`): it may well be in the vault, so the page tells
+ * however long the page waited for it ($content/assets/vault.js `PATIENCE`): it may well be in the vault, so the page tells
  * it apart from one that isn't.
  */
 export class Unread extends NotInVault {
@@ -248,7 +248,7 @@ function recipeOfRow(row) {
 }
 
 /**
- * A recipe's name as avenDB names a version (`pin` op, $lib/avendb/versions.js `pinLabel`), as the avenDB app's Assets
+ * A recipe's name as avenDB names a version (`pin` op, $avendb/versions.js `pinLabel`), as the avenDB app's Assets
  * lists it (./shelf.js `nameOf`): its title there, a variant's own name after the asset's ("Goat · Boer" of "Goat:
  * Boer", "Truck" of "Truck: Truck"), the number of the version of its entry's main line it is (`main`, else its
  * card's) and its entry's short id: "Oats v1 · 1a2b3c4d…".
@@ -305,7 +305,7 @@ export function versionsOf(row) {
  * An entry is one asset: the one its first version names (its main line's oldest, as `versionsOf` lists them), and a
  * version of it whose card names another is refused, so no entry speaks for an asset another entry holds. `assets`
  * says which asset an entry already is (`group/id`, by its entry) where the rows don't hold its first version: a
- * proposal's line, read alone ($lib/avendb/assets.js `proposedSource`).
+ * proposal's line, read alone ($avendb/assets.js `proposedSource`).
  * `stale` are rows older than the newest version this device proved of their entries (game/code/fresh.js `fresh`,
  * each `{ row, error }`), among `rows` too: what they hold is read as ever, so a pin by heads, or a ref that names its
  * version, still finds that exact version, but a ref that names no version, which means the newest, is refused with
@@ -466,7 +466,7 @@ export function vaultRecipes(rows, { read, assets = [], stale = [] }) {
 		},
 		/**
 		 * The row a recipe of the index was read from, by its hash: its entry, its tags and its record (its card, title
-		 * and note), as a viewer of the vault shows it ($lib/avendb/Assets.svelte); undefined for a hash it doesn't hold.
+		 * and note), as a viewer of the vault shows it ($avendb/Assets.svelte); undefined for a hash it doesn't hold.
 		 * Its file is read only by `recipeAt`.
 		 * @param {string} hash @returns {any}
 		 */

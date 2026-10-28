@@ -13,7 +13,7 @@ const near = (a, b) => {
 
 test('the bus stop and the gas station stand where the MaiaCity centre stands them', async () => {
 	const { CENTRE_AT } = await load();
-	const { maiaCentre } = await import('$lib/models/wayside.js');
+	const { maiaCentre } = await import('$content/models/wayside.js');
 	const [stop, station] = maiaCentre({ withVan: false, withRoad: false }).children;
 	for (const [at, o] of [[CENTRE_AT.busStop, stop], [CENTRE_AT.gasStation, station]]) {
 		expect(o.position.x).toBeCloseTo(at.x, 9);
@@ -27,7 +27,7 @@ test('the bus stop and the gas station stand where the MaiaCity centre stands th
 
 test('the pickup and the ramp measure what their builders say', async () => {
 	const ours = await load();
-	const { PICKUP, RAMP } = await import('$lib/models/village.js');
+	const { PICKUP, RAMP } = await import('$content/models/village.js');
 	expect(ours.PICKUP.tailgate).toBe(PICKUP.tailgate);
 	expect(ours.PICKUP.gate).toBe(PICKUP.gate);
 	expect(ours.PICKUP.driver).toEqual(PICKUP.driver);
@@ -38,7 +38,7 @@ test('the pickup and the ramp measure what their builders say', async () => {
 
 test('the bell tent and its fire place measure what their builders say', async () => {
 	const ours = await load();
-	const { BELL_TENT, bellTent, firePlace } = await import('$lib/models/belltent.js');
+	const { BELL_TENT, bellTent, firePlace } = await import('$content/models/belltent.js');
 	expect(ours.BELL_TENT.R).toBe(BELL_TENT.R);
 	expect(ours.BELL_TENT.guyOut).toBe(BELL_TENT.guyOut);
 	expect(ours.BELL_TENT.steps).toEqual(BELL_TENT.steps);
@@ -53,7 +53,7 @@ test('the bell tent and its fire place measure what their builders say', async (
 
 test("the bell tent's lantern and canvas, its bag's parts and where the fire place catches, as their builders make them", async () => {
 	const { TENT_LAMP, TENT_CLOTH, BAG_PARTS, FIRE_CATCHES } = await load();
-	const { bellTent, bellTentBag, FIRE_PLACE } = await import('$lib/models/belltent.js');
+	const { bellTent, bellTentBag, FIRE_PLACE } = await import('$content/models/belltent.js');
 	const down = (o, path) => path.reduce((x, i) => x.children[i], o);
 	const tent = bellTent();
 	expect(down(tent.getObjectByName(TENT_LAMP.part), TENT_LAMP.path)).toBe(tent.userData.lamp);
@@ -70,7 +70,7 @@ test("the bell tent's lantern and canvas, its bag's parts and where the fire pla
 
 test("the bell tent's work as it is pitched, where its builder has it", async () => {
 	const { tentWork } = await load();
-	const { bellTent } = await import('$lib/models/belltent.js');
+	const { bellTent } = await import('$content/models/belltent.js');
 	const work = bellTent().userData.work;
 	for (let i = 0; i <= 20000; i++) {
 		const k = i / 20000, a = tentWork(k), b = work(k);
@@ -82,7 +82,7 @@ test("the bell tent's work as it is pitched, where its builder has it", async ()
 
 test("the plant stake's flag, and the open backpack's bottle, cap and packets, as their builders make them", async () => {
 	const { STAKE_FLAG, PACK_PACKETS, BOTTLE_MOUTH, stakeRef } = await load();
-	const { plantStake, backpack, SEED_PACKETS, BOTTLE } = await import('$lib/models/planting.js');
+	const { plantStake, backpack, SEED_PACKETS, BOTTLE } = await import('$content/models/planting.js');
 	const stake = plantStake({ name: 'Samuel', seed: 'apple' });
 	expect(STAKE_FLAG.path.reduce((x, i) => x.children[i], stake)).toBe(stake.userData.flag);
 	checkStake(stakeRef);
@@ -104,8 +104,8 @@ test("the plant stake's flag, and the open backpack's bottle, cap and packets, a
 
 test("the people: the stand-in's ref, built with their height and look, and its walk's round", async () => {
 	const { STAND_IN, WALK_CYCLE, standInRef } = await load();
-	const { FAMILIES } = await import('$lib/actors');
-	const { human } = await import('$lib/actors/human.ts');
+	const { FAMILIES } = await import('$content/actors');
+	const { human } = await import('$content/actors/human.ts');
 	expect(standInRef(1.8, { trousers: '#5b5145', shirt: '#3f6f9a' })).toBe(`${STAND_IN}?height=1.8&shirt=%233f6f9a&trousers=%235b5145`);
 	// the version it names builds human(look, height): its params in their order, after its height
 	const fam = FAMILIES.find((f) => f.id === 'stand-in');

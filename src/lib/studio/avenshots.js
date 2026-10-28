@@ -8,7 +8,7 @@
  * renders its plates from the version's spec (render.rs `spec_of`, world.rs `aven_shot`).
  */
 
-import { answer } from '$lib/avendb/ops.js';
+import { answer } from '$avendb/ops.js';
 import { normalize } from '../../../game/film/shot.js';
 import { asIn, device, homeOf, schemaIn, worldOf } from './cuts.js';
 

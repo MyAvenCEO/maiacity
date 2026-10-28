@@ -7,12 +7,12 @@
 import { base } from '$app/paths';
 import { latestOf, versionsOf, type Version } from '$lib/app/versions.js';
 import { holdsGroup } from '$lib/app/access.svelte.js';
-import { ADMIN, CITIZEN, TRAVELER, TRAVELER_GAME } from '$lib/avendb/capgroups.js';
+import { ADMIN, CITIZEN, TRAVELER, TRAVELER_GAME } from '$avendb/capgroups.js';
 import { PLACES } from '../../../game/places.js';
 
 export type Place = {
 	href: string; label: string; icon: IconName; note?: string; /** a picture, by hash */ cover?: string
-	/** the cap group of the Maia City vault that opens it ($lib/avendb/capgroups.js): Admin for the admins' own tools */
+	/** the cap group of the Maia City vault that opens it ($avendb/capgroups.js): Admin for the admins' own tools */
 	needs?: string
 	/** a world's or sandbox's versions and history ($lib/app/versions.js), the latest its own; and what it is anchored to */
 	versions?: Version<string>[]; version?: number; anchors?: string

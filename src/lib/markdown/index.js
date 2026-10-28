@@ -14,7 +14,7 @@
  * - A picture is shown only where the caller's `picture(name, alt)` gives it an address; otherwise its words are.
  * - Maths, only where a caller asks for it (`math`): `$$…$$` and `$…$` are found as pandoc finds them, before any other
  *   rule reads them, and each is written as a placeholder holding its LaTeX source as text (`MATH`). This engine never
- *   typesets it: the math host does, off the page ($lib/sandbox/math-host.js), and until it has, or where it can't, the
+ *   typesets it: the math host does, off the page ($kernel/sandbox/math-host.js), and until it has, or where it can't, the
  *   source is what a reader sees.
  * - Every tag and attribute that can come out is in `TAGS` (markdown.test.js checks hostile Markdown against it).
  */

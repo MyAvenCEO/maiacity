@@ -8,7 +8,7 @@ import { sure } from '$lib/app/sure.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
-import { session } from '$lib/avendb/session.svelte.js';
+import { session } from '$avendb/session.svelte.js';
 import { refreshQueue } from './refresh.js';
 import { MediaSources } from './media-sources.js';
 import { invalidateWorld } from './cuts.js';
@@ -119,7 +119,7 @@ export const raw = (hash) => (isAven(hash) ? avenUrl(hash) : '');
  * them are Maia City's own cuts now, changed only in the studio (Samuel 2026-10-19: nothing written back over Maia City).
  */
 /** The cuts of the vault picked in the nav pill (Maia City's in Maia City, a person's own in theirs), else all. */
-const listTimelines = async () => listCuts((await import('$lib/avendb/session.svelte.js')).session.vault ?? null);
+const listTimelines = async () => listCuts((await import('$avendb/session.svelte.js')).session.vault ?? null);
 /** @param {Partial<Timeline>} t */
 const createTimeline = createCut;
 const getTimeline = getCut;

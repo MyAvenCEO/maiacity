@@ -212,7 +212,7 @@ describe('maths, where a caller asks for it (math)', () => {
 // is named here with what feeds it. A new {@html} fails until its HTML comes through one of these (for Markdown:
 // $lib/markdown) and is added below.
 const RAW_HTML = {
-	'src/lib/blog/PostLayout.svelte': "its html prop: an avenDB article through avenDB's escaping article renderer (render, $lib/avendb/ArticleView.svelte)",
+	'src/lib/blog/PostLayout.svelte': "its html prop: an avenDB article through avenDB's escaping article renderer (render, $avendb/ArticleView.svelte)",
 	'src/lib/avendb/ArticleView.svelte': "avenDB's escaping article renderer (render)",
 	'src/lib/avendb/Docs.svelte': "avenDB's escaping article renderer (render), a doc's or a skill's text; its maths drawn after by the math host's checker, as elements, never as HTML",
 	'src/lib/universe/InspirePost.svelte': "an inspire post's report and source through journalHtml ($lib/markdown), its shifts split into spans of ours (./inspire.js)",

@@ -14,15 +14,15 @@
 	// @ts-nocheck — plain JS
 	import { bindView, useQuery } from '../../../game/code/sources/device.js';
 	import { onMount, tick, untrack } from 'svelte';
-	import Frame from '$lib/avendb/Frame.svelte';
-	import Icon from '$lib/avendb/Icon.svelte';
-	import { session } from '$lib/avendb/session.svelte.js';
-	import { KINDS, nameOf } from '$lib/avendb/vaults.js';
+	import Frame from '$avendb/Frame.svelte';
+	import Icon from '$avendb/Icon.svelte';
+	import { session } from '$avendb/session.svelte.js';
+	import { KINDS, nameOf } from '$avendb/vaults.js';
 	import Composer from './Composer.svelte';
 	import Message from './Message.svelte';
 	import * as R from './rooms.js';
-	import { entryDetail } from '$lib/avendb/entry-detail.svelte.js';
-	import { entryCollection } from '$lib/avendb/entry-collection.svelte.js';
+	import { entryDetail } from '$avendb/entry-detail.svelte.js';
+	import { entryCollection } from '$avendb/entry-collection.svelte.js';
 
 	/** the device the view reads and changes through: the tab's (../avendb/session.svelte.js), or one a test gives */
 	let { api = session } = $props();
