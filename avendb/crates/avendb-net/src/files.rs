@@ -643,7 +643,9 @@ impl Shared {
                     kept.extend(demanded.iter().copied());
                     return Some((files, kept, demanded));
                 }
-                FileScanned::Behind if *behind < 2 => {
+                // nor where its Lab would replay every edit it holds to tell (`Lab::answers_now`): in the middle of
+                // a first sync whose pages hold removals, each such scan replayed them all (S2, 2026-10-28)
+                FileScanned::Behind if *behind < 2 || !self.read(|lab, me| lab.answers_now(me)).await => {
                     *behind += 1;
                     return None;
                 }

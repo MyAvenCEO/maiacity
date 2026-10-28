@@ -74,6 +74,14 @@ impl noq::Runtime for Runtime {
         Box::pin(web::Timer(n0_future::time::sleep_until(deadline)))
     }
 
+    /// tokio's clock, as noq's own `TokioRuntime` reads it: the instant the timers above sleep to. noq's default is the
+    /// wall clock, so under a paused tokio clock (a simulated link) the controller and the RTT estimator saw wall
+    /// time while every timer ran on tokio's; unpaused the two are the same.
+    #[cfg(not(wasm_browser))]
+    fn now(&self) -> std::time::Instant {
+        noq::TokioRuntime.now()
+    }
+
     #[cfg(not(wasm_browser))]
     fn spawn(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) {
         // Do not allow spawning more tasks if the runtime should be closed.

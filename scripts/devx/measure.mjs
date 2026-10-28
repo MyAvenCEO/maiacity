@@ -2,7 +2,7 @@
 // thing, measure again over the same kind of window. Read-only.
 //   bun scripts/devx/measure.mjs                      the last 24 hours
 //   bun scripts/devx/measure.mjs --since 2026-10-13 --until 2026-10-22 [--by-day] [--json]
-// A task is one piece of work that reached main: a batch PR into main counts its "Task: <branch>" lines (the body
+// A task is one piece of work that reached main: a goal PR into main counts its "Task: <branch>" lines (the body
 // `bun scripts/devx/collect.mjs --tasks` writes), any other PR into main one, and a lane PR merged into another
 // branch one more.
 const repo = 'MyAvenCEO/maiacity', api = 'https://api.github.com';

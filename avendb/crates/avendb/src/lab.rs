@@ -100,6 +100,8 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 mod blind_index;
 #[path = "lab/held.rs"]
 pub(crate) mod held;
+mod shown_map;
+use shown_map::{Closed, ShownMap};
 pub use held::{Placed, ShelfFile, Spill};
 #[cfg(test)]
 #[path = "lab/query_coverage.rs"]
@@ -664,7 +666,18 @@ pub struct Warm {
     pub views: Vec<Vec<u8>>,
     /// Its packs of kept showings, the oldest first: a later one's showing of an entry in place of an earlier one's
     /// (`Warming::shown`).
-    pub shown: Vec<Vec<u8>>,
+    pub shown: Vec<ShownPack>,
+}
+
+/// A pack of kept showings as a shelf holds it (`Warm::shown`): the file it is, read where it is as the showings it
+/// holds open (`shown_map::unpack`), or its bytes.
+#[derive(Clone, Debug)]
+pub struct ShownPack(pub Arc<dyn crate::pages::Space>);
+
+impl From<Vec<u8>> for ShownPack {
+    fn from(bytes: Vec<u8>) -> ShownPack {
+        ShownPack(Arc::new(crate::pages::MemorySpace::of(bytes)))
+    }
 }
 
 /// A restore a page at a time under way (`Lab::restore_start`): how many of the first edits it restores its shelf names
@@ -705,8 +718,9 @@ pub struct WarmCapture {
     rng: SeededRng,
     opened: Option<Vec<([u8; 32], Secret)>>,
     replay: Option<crate::policy::ViewCapture>,
-    /// The showings to keep, encoded (`Shown::kept`).
-    shown: Option<Zeroizing<Vec<u8>>>,
+    /// The showings to keep, each its entry's, print and bytes (`Shown::record`), to seal one by one
+    /// (`shown_map::pack`).
+    shown: Option<Vec<(EntryId, [u8; 32], Zeroizing<Vec<u8>>)>>,
     receipt: Warming,
 }
 impl WarmCapture {
@@ -726,8 +740,8 @@ impl WarmCapture {
             let bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
             self.receipt.view = Some(self.key.lock("view", &bytes, VIEW_RULES.as_bytes(), &mut self.rng));
         }
-        if let (Some(bytes), Some((_, whole))) = (self.shown.take(), &self.receipt.shown_of) {
-            self.receipt.shown = Some((self.key.lock("kept shown", &bytes, ENGINE.as_bytes(), &mut self.rng), *whole));
+        if let (Some(shown), Some((_, whole))) = (self.shown.take(), &self.receipt.shown_of) {
+            self.receipt.shown = Some((shown_map::pack(&self.key, &mut self.rng, &shown), *whole));
         }
         self.receipt
     }
@@ -906,7 +920,7 @@ struct Store {
     spoilt: HashSet<EditId>,
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
-    shown: BTreeMap<EntryId, Shown>,
+    shown: ShownMap,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
     /// The vaults it follows, smallest first: it names them in each request (`sync::Ask::follow`), and is sent what
@@ -954,7 +968,7 @@ struct Store {
     shown_caps: Option<[u8; 32]>,
     /// The showings its shelf kept (`Warm::shown`), by entry, till `show_items` takes each whose print is its entry's
     /// print then, in place of judging the entry anew (`ShownView.lean`).
-    kept_shown: HashMap<EntryId, Shown>,
+    kept_shown: HashMap<EntryId, Closed>,
     /// The print of each showing its shelf keeps, by entry, and how many packs and showings hold them: what a save
     /// leaves out, and when it puts them all in one pack again.
     shown_given: HashMap<EntryId, [u8; 32]>,
@@ -1016,7 +1030,7 @@ impl Default for Store {
             bodies: HashMap::new(),
             spoilt: HashSet::new(),
             readings: Readings::default(),
-            shown: BTreeMap::new(),
+            shown: ShownMap::default(),
             kept_shown: HashMap::new(),
             shown_given: HashMap::new(),
             shown_packs: (0, 0),
@@ -1091,13 +1105,13 @@ impl Store {
             return vec![];
         }
         let st = &self.replay.state;
-        self.shown.iter().filter(|(e, s)| {
+        self.shown.tips().filter(|(e, print, tip)| {
             let (writes, last) = st.entry_tip(**e);
-            s.tip.writes == writes && s.tip.last == last
-                && (!fresh || self.shown_given.get(*e) != Some(&s.print))
+            tip.writes == writes && tip.last == last
+                && (!fresh || self.shown_given.get(*e) != Some(print))
                 && !self.based.contains_key(*e) && !self.bases.contains_key(*e)
                 && st.entry(**e).is_some_and(|en| !st.is_cap_group(en, &self.readings))
-        }).map(|(e, _)| *e).collect()
+        }).map(|(e, _, _)| *e).collect()
     }
 
     fn view_due(&self) -> bool {
@@ -1169,16 +1183,14 @@ struct Shown {
     after: After,
 }
 
-/// What a pack of kept showings starts with (`Warming::shown`), the version of its bytes.
-const KEPT_SHOWN: &[u8] = b"avenDB kept shown 1\n";
-
 /// How many packs of kept showings a shelf holds at most: past them a save puts every showing in one pack again.
 const SHOWN_PACKS: usize = 8;
 
 impl Shown {
-    /// Its bytes as a device keeps it on its shelf (`kept`), all but its scratch item, which judging builds again of
-    /// its writes: none where an item holds changes a Loro snapshot leaves out.
-    fn kept(&self, out: &mut Vec<u8>) -> Option<()> {
+    /// Its bytes as a device keeps it on its shelf (`Warming::shown`) and closes it to (`shown_map::Closed`), all but
+    /// its scratch item, which judging builds again of its writes: none where an item holds changes a Loro snapshot
+    /// leaves out.
+    fn record(&self) -> Option<Vec<u8>> {
         use crate::encode::Encode;
         let mut b = vec![];
         self.print.encode(&mut b);
@@ -1196,15 +1208,13 @@ impl Shown {
         self.after.mine.encode(&mut b);
         crate::kept::put_imported(&mut b, &self.after.imported);
         crate::kept::put_asked(&mut b, &self.after.asked);
-        b.encode(out);
-        Some(())
+        Some(b)
     }
 
-    /// The showing `kept` made the bytes of.
-    fn of_kept(r: &mut crate::wire::Reader<'_>) -> Result<Shown, crate::wire::WireError> {
+    /// The showing `record` made the bytes of.
+    fn of_record(bytes: &[u8]) -> Result<Shown, crate::wire::WireError> {
         use crate::wire::{Decode, Reader, WireError};
-        let bytes = r.bytes()?;
-        let r = &mut Reader::new(&bytes);
+        let r = &mut Reader::new(bytes);
         let print = <[u8; 32]>::decode(r)?;
         let tip = Tip {
             writes: u64::decode(r)? as usize,
@@ -1231,19 +1241,6 @@ impl Shown {
         }
         Ok(Shown { history, items, print, tip, after })
     }
-}
-
-/// The showings a pack holds (`Warming::shown`), by entry: none of bytes that aren't one.
-fn kept_shown_of(bytes: &[u8]) -> Option<Vec<(EntryId, Shown)>> {
-    use crate::wire::{Decode, Reader};
-    let mut r = Reader::new(bytes.strip_prefix(KEPT_SHOWN)?);
-    let n = r.count(36).ok()?;
-    let mut out = Vec::with_capacity(n.min(4096));
-    for _ in 0..n {
-        let e = EntryId::decode(&mut r).ok()?;
-        out.push((e, Shown::of_kept(&mut r).ok()?));
-    }
-    r.done().then_some(out)
 }
 
 impl Shown {
@@ -3425,16 +3422,51 @@ impl Lab {
     /// holds, where the edits it took since hold no removal (they can only add to what anyone may do: it hands over and
     /// accepts no more than all of them would, `StandingReplay.lean`), else `latest`. A peer's ask or a write in the
     /// middle of a first sync replayed every edit first, 10-24 s at 130,000 (2026-10-27); the catch-up's next steps
-    /// bring the rest.
+    /// bring the rest. Only while a catch-up steps it on (`catching_up`): a device that isn't catching up has nothing
+    /// to step its replay on, and answered from it every ask after an edit it took came back without that edit, until
+    /// something else replayed (`answer_current`; a drive re-plugged never got the note written meanwhile, 2026-10-28).
     fn standing(&self, d: SignerId) -> &State {
+        self.standing_or(d).unwrap_or_else(|| self.latest(d))
+    }
+
+    /// `standing` answers by a replay behind device `d`'s log: what it answers now is less than it will once caught up.
+    fn standing_lags(&self, d: SignerId) -> bool {
         let store = self.held(d);
-        if store.latest.get().is_none()
+        self.catching_up(d)
+            && store.latest.get().is_none()
             && store.replayed < store.log.edits().len()
             && !store.log.edits()[store.replayed..].iter().any(Edit::is_removal)
-        {
-            return &store.replay.state;
+    }
+
+    /// Whether what device `d` answers its peers (`announce`, `request`) is by every edit it holds: false in the middle
+    /// of a catch-up whose replay lags its log (`standing`), or where it answers nothing till then (`standing_or`).
+    /// Whatever is worked out of its answers then and kept for its log's revision is to be worked out again once it
+    /// caught up, though its log didn't change: a node that kept whom to tell what so never told a peer of the edits
+    /// the catch-up brought (2026-10-28, `answer_current`).
+    pub fn answers_current(&self, d: SignerId) -> bool {
+        !self.standing_lags(d) && self.standing_or(d).is_some()
+    }
+
+    /// `standing`, but `None` where it would replay every edit it holds: in the middle of a catch-up, with a removal
+    /// among the edits it took since its replay. What answers a peer then answers nothing (`answered`,
+    /// `may_fetch_file`, `withheld`), less than all its edits would, and only while the catch-up runs, whose steps bring
+    /// its replay up to them (`answerBy` in `StandingReplay.lean`). A first sync of Maia City, whose pages hold removals,
+    /// replayed every edit for each page's announce and each peer's ask, and never ended (S2, 2026-10-28).
+    fn standing_or(&self, d: SignerId) -> Option<&State> {
+        let store = self.held(d);
+        if !self.catching_up(d) || store.latest.get().is_some() || store.replayed >= store.log.edits().len() {
+            return Some(self.latest(d));
         }
-        self.latest(d)
+        if !store.log.edits()[store.replayed..].iter().any(Edit::is_removal) {
+            return Some(&store.replay.state);
+        }
+        None
+    }
+
+    /// Whether device `d` answers what its edits say now without replaying every edit it holds (`standing_or`): a
+    /// background reader, as a node's file keeper, waits for its catch-up while it doesn't.
+    pub fn answers_now(&self, d: SignerId) -> bool {
+        self.standing_or(d).is_some()
     }
 
     fn latest(&self, d: SignerId) -> &State {
@@ -5214,7 +5246,8 @@ impl Lab {
     /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
         let store = self.held(d);
-        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), self.standing(d), asker, follow))
+        let Some(st) = self.standing_or(d) else { return Arc::new(vec![]) };
+        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow))
     }
 
     /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
@@ -5290,7 +5323,10 @@ impl Lab {
             }
         }
         let out = Arc::new(out);
-        store.answers.writers.lock().expect("writers").insert(peer, (revision, store.follow.clone(), out.clone()));
+        // worked out by a replay that lags, it is worked out again once caught up (`answers_current`)
+        if self.answers_current(d) {
+            store.answers.writers.lock().expect("writers").insert(peer, (revision, store.follow.clone(), out.clone()));
+        }
         out
     }
 
@@ -5388,7 +5424,8 @@ impl Lab {
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         let store = self.held(d);
-        let mut needs = crate::lazy::Needs::new(self.standing(d), asker);
+        let Some(st) = self.standing_or(d) else { return vec![] };
+        let mut needs = crate::lazy::Needs::new(st, asker);
         let mut out: Vec<Stub> = sends
             .places
             .iter()
@@ -5615,7 +5652,7 @@ impl Lab {
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
     /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        crate::sync::fetchable(self.held(d).log.edits(), self.standing(d), asker, file, follow)
+        self.standing_or(d).is_some_and(|st| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow))
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
@@ -5976,15 +6013,18 @@ impl Lab {
         (new, whose)
     }
 
-    /// The digest of each log device `d` holds that `peer` may hold too by `d`'s view, following what `d` follows
-    /// (`sync::digests`, as `request` names them), smallest log first: what `d` tells `peer` whenever one changes, so
-    /// that `peer` asks it where they differ. Nothing about any other log.
+    /// The digest of each log device `d` holds that `peer` may hold too by `d`'s view (`sync::digests`, as `request`
+    /// names them), smallest log first: what `d` tells `peer` whenever one changes, so that `peer` asks it where they
+    /// differ. Nothing about any other log. The logs of what `d` sends `peer` following nothing (`Logs.lean`
+    /// `reachLogs`), which `peer`'s request is answered with whatever it follows. Told by what `d` follows, as it was, a
+    /// server that follows a vault told a phone that doesn't of its public logs, then answered the phone's asking for
+    /// them with nothing, and the phone counted them as lacking and asked again (S1, 2026-10-28).
     pub fn announce(&mut self, d: SignerId, peer: SignerId) -> Vec<(LogId, [u8; 32])> {
         self.digests(d);
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let logs = logs_of(edits, ids);
-        let shared: BTreeSet<LogId> = self.answered(d, peer, &store.follow).iter().filter_map(|&i| logs[i]).collect();
+        let shared: BTreeSet<LogId> = self.answered(d, peer, &[]).iter().filter_map(|&i| logs[i]).collect();
         let digests = store.digests.as_ref().expect("worked out");
         shared.into_iter().filter_map(|l| Some((l, *digests.get(&l)?))).collect()
     }
@@ -6215,8 +6255,8 @@ impl Lab {
             // is its entry's print as it shows them (`show_items`); a pack that doesn't open is none
             let at = Perf::start();
             let mut packs = 0;
-            for b in &warm.shown {
-                let Some(kept) = key.unlock("kept shown", b, ENGINE.as_bytes()).and_then(|b| kept_shown_of(&b)) else {
+            for pack in &warm.shown {
+                let Some(kept) = shown_map::unpack(&key, &pack.0) else {
                     store.perf.count("kept shown: a pack that doesn't open", 1);
                     continue;
                 };
@@ -6284,21 +6324,15 @@ impl Lab {
                     true => store.keeps(false),
                     false => fresh_shown,
                 };
-                let mut bytes = Zeroizing::new(KEPT_SHOWN.to_vec());
-                let mut body = Zeroizing::new(vec![]);
+                let mut shown = vec![];
                 let mut of = vec![];
                 for e in es {
-                    let s = &store.shown[&e];
-                    let mut one = vec![];
-                    if s.kept(&mut one).is_some() {
-                        body.extend(e.0);
-                        body.extend(one);
-                        of.push((e, s.print));
+                    if let (Some(record), Some(print)) = (store.shown.record(&e), store.shown.print(&e)) {
+                        shown.push((e, print, record));
+                        of.push((e, print));
                     }
                 }
-                bytes.extend((of.len() as u32).to_be_bytes());
-                bytes.extend(body.iter());
-                (Some(bytes), Some((of, whole)))
+                (Some(shown), Some((of, whole)))
             }
         };
         let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
@@ -7465,15 +7499,19 @@ fn lane_blobs<'a>(st: &'a State, v: VaultId, r: &'a Readings) -> Vec<&'a [u8]> {
 /// one extra Loro document per entry until the entire database is reconstructed.
 /// Entry iteration is unique; an evicted earlier entry cannot enter the final
 /// last-SCRATCHES selection. Its shown items/history remain untouched.
-fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<EntryId>, entry: EntryId, shown: Shown) {
+fn retain_recent_shown(old: &mut ShownMap, recent: &mut Vec<EntryId>, entry: EntryId, shown: Shown) {
     recent.push(entry);
     if recent.len() > SCRATCHES {
         let expired = recent[recent.len() - SCRATCHES - 1];
-        if let Some(shown) = old.get_mut(&expired) {
-            shown.after.scratch = None;
-        }
+        old.drop_scratch(&expired);
     }
     old.insert(entry, shown);
+    // at most a window of showings open as it goes, but the scratch items it keeps: a showing of every entry anew
+    // holds no more open than one of a few
+    if recent.len() % shown_map::WINDOW == 0 {
+        let keep: HashSet<EntryId> = recent.iter().rev().take(SCRATCHES).copied().collect();
+        old.trim(shown_map::WINDOW, &keep);
+    }
 }
 
 /// The work a budgeted show does for each entry of its budget (`show_items`), counted as the writes it judges and
@@ -7505,8 +7543,10 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     let waiting: HashSet<EntryId> = pending.rest.iter().copied().collect();
     let (st, r, bodies) = (&store.replay.state, &store.readings, &store.bodies);
     let mut old = std::mem::take(&mut store.shown);
+    // a showing whose bytes didn't open is none: its entry is judged anew, as after a removal
+    let reshow = reshow | !old.take_spoilt().is_empty();
     if reshow {
-        old.retain(|e, _| st.entry(*e).is_some());
+        old.retain(|e| st.entry(*e).is_some());
     }
     // each vault's lane as the device reads it off the vault's schema and lens entries (`State::lane_of`), its hash,
     // and what judges the writes of the vault's entries, made once one of them is shown anew
@@ -7681,33 +7721,37 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
                 debug_assert!(same_shown_in(s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
             }
         }
-        let kept = old.get_mut(&en.id).filter(|s| s.tip == tip && !opened.contains_key(&en.id));
+        let kept = old.tip(&en.id).filter(|t| *t == tip && !opened.contains_key(&en.id));
         let print = match kept {
             Some(_) if !reshow => continue,
-            Some(s) => {
+            Some(_) => {
                 let print = print(en, &groups_print);
-                if s.print == print {
+                if old.print(&en.id) == Some(print) {
                     continue;
                 }
                 print
             }
             None => print(en, &groups_print),
         };
-        if let Some(s) = old.get_mut(&en.id).filter(|s| s.print == print) {
-            s.tip = tip;
+        if old.print(&en.id) == Some(print) {
+            old.set_tip(&en.id, tip);
             continue;
         }
         // one its shelf kept whose print is this one, judged of the same writes, bodies, lane and cap groups: what
         // judging them anew makes (`SV1_open`), against its replay of every edit it holds alone
         if standing
             && !old.contains_key(&en.id)
-            && let Some(s) = store.kept_shown.remove(&en.id).filter(|s| s.print == print)
+            && let Some(c) = store.kept_shown.remove(&en.id).filter(|c| c.print == print)
         {
-            let s = Shown { tip, ..s };
+            let mut c = c;
+            c.tip = tip;
             #[cfg(not(avendb_no_replay_checks))]
-            debug_assert!(same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
+            debug_assert!(
+                c.open().is_none_or(|s| same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store))),
+                "a kept showing that opens as other than judging its entry anew"
+            );
             store.perf.count("show: entries taken as kept", 1);
-            old.insert(en.id, s);
+            old.insert_closed(en.id, c);
             continue;
         }
         // writes that only came after those it judged, judged on where it left off: what judging all of them makes
@@ -7783,11 +7827,11 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // of those that held one: the ones kept before, and those judged now, the cap groups' among them
     let held: HashSet<EntryId> = store.scratched.iter().chain(&recent).chain(&cap_groups).copied().collect();
     for e in held.iter().filter(|e| !keep.contains(e)) {
-        if let Some(s) = old.get_mut(e) {
-            s.after.scratch = None;
-        }
+        old.drop_scratch(e);
     }
-    debug_assert!(old.iter().all(|(e, s)| s.after.scratch.is_none() || keep.contains(e)), "a scratch item kept past SCRATCHES");
+    debug_assert!(held.iter().all(|e| !old.has_scratch(e) || keep.contains(e)), "a scratch item kept past SCRATCHES");
+    let closed = old.trim(shown_map::WINDOW, &keep);
+    store.perf.count("show: showings closed", closed as u64);
     store.scratched = keep;
     store.perf.add("show: entries", at);
     store.shown = old;
