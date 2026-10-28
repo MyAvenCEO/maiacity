@@ -1,3 +1,5 @@
+import AvenDB.Logs
+
 /-!
 Live edits are ordinary signed edits. Local priority hints only choose the order of the same authorized
 reconciliation; they never authorize data, certify closure, or replace validation. Full inventories remain
@@ -328,5 +330,38 @@ theorem either_carries_no_less (asked link bbr cubic : Nat) :
 /-- And no more than the link: the pair's window never makes a round trip carry past it. -/
 theorem either_within_the_link (asked link bbr cubic : Nat) : carried asked link (either bbr cubic) ≤ link := by
   simp only [carried]; omega
+
+/-! ## A catch-up's pages and a live pull of the same peer
+
+A catch-up asks every page with the request it began with, so edits a live pull of the same peer brought meanwhile
+came again on its last page (`bench_live` phone_bulk at ten chat edits a second: 63 of a page's 94 edits). Each page
+names them loose too, which the peer sends none of again (`Logs.lean` `respondSince`). Rust: lib.rs `pages`,
+pulls.rs `Taken`. -/
+
+/-- An asking's request for its next page, naming loose too the edits `taken` that another pull of the same peer
+    brought this device since the asking began (a live pull's chat edits during a catch-up). -/
+def withTaken (a : Ask) (taken : List EditId) : Ask := { a with loose := a.loose ++ taken }
+
+/-- The peer sends what it would have, less exactly the edits taken: none of them again, and nothing else held back. -/
+theorem taken_not_sent_again (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId) :
+    respondSince edits d (withTaken a taken) = (respondSince edits d a).filter fun e => !taken.contains e.id := by
+  unfold respondSince withTaken
+  rw [List.filter_filter]
+  congr 1
+  funext e
+  simp only [List.contains_append, Bool.not_or]
+  cases e.log? <;> simp [Bool.and_comm, Bool.and_assoc]
+
+theorem taken_is_never_sent (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId) (e : Edit)
+    (h : e ∈ respondSince edits d (withTaken a taken)) : taken.contains e.id = false := by
+  rw [taken_not_sent_again] at h
+  simpa using (List.mem_filter.mp h).2
+
+theorem only_taken_is_held_back (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId) (e : Edit)
+    (h : e ∈ respondSince edits d a) (n : taken.contains e.id = false) : e ∈ respondSince edits d (withTaken a taken) := by
+  rw [taken_not_sent_again]
+  refine List.mem_filter.mpr ⟨h, ?_⟩
+  simp only [n, Bool.not_false]
+
 
 end AvenDB.LivePriority
