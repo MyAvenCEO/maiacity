@@ -158,6 +158,13 @@ export function check(bench, gates, pg = []) {
   if (g.live_resent_ratio_max != null) add(true, `live ${l.link}: edits sent again ÷ new`, l.resent_ratio, `≤ ${g.live_resent_ratio_max}`, l.resent_ratio <= g.live_resent_ratio_max);
   add(false, `live ${l.link}: edits sent again ÷ new`, l.resent_ratio, `≤ ${t.live_resent_ratio}`, l.resent_ratio <= t.live_resent_ratio);
  }
+ // G5: a person's write while the Lab is busy (avendb-net's lab_schedule_bench.rs): ahead of every queued read, and soon
+ const writes = bench.filter(b => b.kind === 'writes');
+ for (const k of gates.writes_runs ?? []) if (!writes.length) add(true, `${k}: a write behind a busy Lab`, null, 'present', false);
+ for (const x of writes) {
+  add(true, 'a write behind a catch-up slice and 32 queued reads: reads run before it', x.writes_behind_a_read, '≤ 0', x.writes_behind_a_read === 0);
+  if (g.write_p95_ms_max != null) add(true, 'a write behind a catch-up slice and 32 queued reads: p95 ms', x.write_p95_ms, `< ${g.write_p95_ms_max}`, x.write_p95_ms < g.write_p95_ms_max);
+ }
  const phones = bench.filter(b => b.kind === 'phone');
  for (const p of phones) {
   add(false, `phone ${p.engine}: edits/s taken, signatures checked`, p.intake_per_s, `≥ ${t.phone_edits_per_s}`, p.intake_per_s >= t.phone_edits_per_s);
@@ -195,6 +202,9 @@ export function report(bench, pg, results) {
  const lives = bench.filter(b => b.kind === 'live');
  if (lives.length) rows.push('', '| live sync link | edits | bytes/edit | catch-up s | edits/s | of link | sent again | live during catch-up p50 / p95 ms | idle p50 / p95 ms | missed | peak MB |', '|---|---|---|---|---|---|---|---|---|---|---|',
   ...lives.map(l => `| ${l.link} | ${fmt(l.edits)} | ${fmt(l.bytes_per_edit)} | ${l.sync_s} | ${fmt(l.edits_per_s)} | ${l.link_share ?? '–'} | ${l.resent_ratio} | ${l.live_busy_p50_ms} / ${l.live_busy_p95_ms} | ${l.live_idle_p50_ms} / ${l.live_idle_p95_ms} | ${l.live_missed} | ${l.peak_kib ? Math.round(l.peak_kib / 1024) : '–'} |`));
+ const writes = bench.filter(b => b.kind === 'writes');
+ if (writes.length) rows.push('', '| a write behind a busy Lab | rounds | p50 ms | p95 ms | max ms | reads run before it |', '|---|---|---|---|---|---|',
+  ...writes.map(x => `| ${x.turn_ms} ms slice + ${x.reads_queued} reads of ${x.turn_ms} ms | ${x.rounds} | ${x.write_p50_ms} | ${x.write_p95_ms} | ${x.write_max_ms} | ${x.writes_behind_a_read} |`));
  const phones = bench.filter(b => b.kind === 'phone');
  if (phones.length) rows.push('', '| phone class (WebAssembly) | edits | bytes/edit | verified | signatures/s | held | taken/s |', '|---|---|---|---|---|---|---|',
   ...phones.map(p => `| ${p.engine} ${p.version} | ${fmt(p.edits)} | ${fmt(p.bytes_per_edit)} | ${fmt(p.verified)} | ${fmt(p.verify_per_s)} | ${fmt(p.held)} | ${fmt(p.intake_per_s)} |`));
@@ -207,10 +217,10 @@ function shardOf(gates) {
  const at = process.argv.indexOf('--shard');
  if (at < 0) return gates;
  const shard = process.argv[at + 1];
- const keep = { core: ['sizes', 'first_sync'], carriers: ['carriers'], live: ['live_links'] }[shard];
+ const keep = { core: ['sizes', 'first_sync'], carriers: ['carriers'], live: ['live_links', 'writes_runs'] }[shard];
  if (!keep) throw new Error(`--shard ${shard}: none of core, carriers, live`);
  const out = { ...gates };
- for (const k of ['sizes', 'first_sync', 'carriers', 'live_links']) if (!keep.includes(k)) out[k] = [];
+ for (const k of ['sizes', 'first_sync', 'carriers', 'live_links', 'writes_runs']) if (!keep.includes(k)) out[k] = [];
  return out;
 }
 
