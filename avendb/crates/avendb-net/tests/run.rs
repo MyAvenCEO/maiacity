@@ -285,6 +285,8 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     assert_eq!(from[0]["device"], json!(mac_a.to_hex()), "{after}");
     assert!(from[0]["edits"].as_u64() > Some(0) && from[0]["last"].as_u64() > Some(0), "{after}");
     assert!(from[0].get("name").is_some() && from[0].get("pulling").is_some(), "{after}");
+    // and its askings, none of whose pages failed to come
+    assert!(from[0]["askings"].as_u64() > Some(0) && from[0]["failed"] == json!(0), "{after}");
     let caught = || async { run(&phone, json!({ "op": "synced" })).await.expect("synced")["behind"] == 0 };
     until("the phone is synced with its peer", caught).await;
     // where it synced from and how, as the Performance page reads it: its one peer, the Mac, over a direct path on a

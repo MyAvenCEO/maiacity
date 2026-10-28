@@ -33,7 +33,7 @@ const syncReport = sync => ({
  ...Object.fromEntries(['peers', 'logs', 'behind', 'pulling', 'pages', 'edits', 'base', 'since', 'paged', 'at'].map(key => [key, number(sync[key])])),
  from: (Array.isArray(sync.from) ? sync.from : []).slice(0, 32).map(p => ({ device: short(p?.device),
   pulling: p?.pulling ? { since: number(p.pulling.since), stage: stage(p.pulling.stage), took: number(p.pulling.took) } : null,
-  pages: number(p?.pages), edits: number(p?.edits), last: number(p?.last) })),
+  pages: number(p?.pages), edits: number(p?.edits), last: number(p?.last), askings: number(p?.askings), failed: number(p?.failed) })),
  lacked: (Array.isArray(sync.lacked) ? sync.lacked : []).slice(0, 32).map(p => ({ device: short(p?.device),
   lacks: number(p?.lacks), byStub: number(p?.by_stub), stubs: number(p?.stubs),
   sample: (Array.isArray(p?.sample) ? p.sample : []).slice(0, 5).map(l => ({ log: logRef(l?.log), held: l?.held === true,
