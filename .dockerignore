@@ -9,6 +9,7 @@
 # the frozen engines the repo ships, which maia/content/game/code/sources/avendb.js holds code entries to
 !aven/kernel/engines.js
 !aven/kernel/sandbox/engines.json
-# avenDB's WebAssembly, which checks the proof of the code the API runs (H2: maia/content/game/code/sources/feed.js `verifyProof`)
+# avenDB's WebAssembly, which checks the proof of the code the API runs (H2: maia/content/game/code/sources/feed.js
+# `verifyProof`): a build output, there once `bun aven/ops/devx/wasm.mjs ensure` ran before the image's build
 !aven/db/page/device/avendb_browser.js
 !aven/db/page/device/avendb_browser_bg.wasm

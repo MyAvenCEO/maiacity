@@ -10,6 +10,9 @@
 set -uo pipefail
 [ "${CLAUDE_CODE_REMOTE:-}" = true ] && [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] || exit 0
 
+# the page's avenDB device for this checkout (B1), from CI's build of its sources, in the background; never a build
+( cd "${CLAUDE_PROJECT_DIR:-$(pwd)}" && bun aven/ops/devx/wasm.mjs ensure --fetch > /dev/null 2>&1 & )
+
 release="${AVENDB_DEV_CACHE_URL:-https://github.com/MyAvenCEO/maiacity/releases/download/avendb-dev-cache}"
 target="${CLAUDE_PROJECT_DIR:-$(pwd)}/target"
 stamp="$target/.dev-cache"

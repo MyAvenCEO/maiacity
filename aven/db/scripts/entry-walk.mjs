@@ -12,7 +12,7 @@
  * screenshot with its app grid.
  *
  * Build and start as aven/db/scripts/avendb-account.mjs says (a device and a server with `localhost-passkeys`, the device
- * copied into aven/db/page/device for the dev server, and `git checkout aven/db/page/device` after), then:
+ * copied into aven/db/page/device for the dev server, and `bun aven/ops/devx/wasm.mjs ensure` after), then:
  *
  *   BASE=http://localhost:5173 RELAY=http://localhost:3360 SERVER=AVENDB1… node aven/db/scripts/entry-walk.mjs [--out dir]
  *

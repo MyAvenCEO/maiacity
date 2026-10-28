@@ -92,8 +92,8 @@ bun aven/ops/devx/collect.mjs --tasks                  # "Task: <branch>" lines 
 ```
 
 - Every merge is made in memory first; a conflicting branch is left out and named with its files. Send it back to
-  its thread; don't hand-resolve someone else's logic. The CI-built WebAssembly (`aven/db/page/device/avendb_browser*`)
-  never blocks: the goal keeps its copy and the final PR's CI commits the right one.
+  its thread; don't hand-resolve someone else's logic. The page WebAssembly (`aven/db/page/device/`) is not in git
+  (B1), so it never conflicts: `bun aven/ops/devx/wasm.mjs ensure` takes the build of the merged sources.
 - When the goal is in (25-50 tasks, or the coordinator says so): put the `Task:` lines in the PR body, mark the PR
   ready, one CI run, fix only the culprits in one round, land it with a merge commit (never a squash: main keeps
   every task's commits) and an explicit message (title + body with the `Task:` lines, never a `[skip ci]`), then close the task PRs naming the final PR, and merge main back into the

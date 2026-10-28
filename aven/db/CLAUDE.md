@@ -27,6 +27,9 @@ builds in one container share 4 cores and wait on each other's build-folder lock
   fails while a file in the folder is named by none. The shared helpers come in as `use crate::common;`. A file that
   uses the debug-only fixtures (`avendb::cast`, `avendb::scenarios`) opens with `#![cfg(debug_assertions)]`, so that
   the release benches (files with `#![cfg(not(debug_assertions))]`, `cargo test --release --test all <file>::`) build.
+- **The page's device is a build output** (B1), not in git: `bun aven/ops/devx/wasm.mjs ensure` fills
+  `aven/db/page/device/` with CI's build of the same sources, or builds it here (5 min, wasm-bindgen 0.2.129) for
+  Rust changes not yet built; `wasm.mjs build` after a change the page needs.
 - **One Rust build at a time per container.** Several cargo processes on 4 cores don't finish sooner; they queue on
   the build-folder lock and on the cores. Helpers in one container take turns, or use CI (below).
 - **The full suite runs on CI, once per batch, not here** (repository `CLAUDE.md`). For a task,

@@ -64,11 +64,13 @@
     "name": "ci",
     "tier": "targeted",
     "paths": [
-      "aven/ops/ci/"
+      "aven/ops/ci/",
+      "aven/ops/devx/"
     ],
     "impact": [
       ".github/",
       "aven/ops/ci/",
+      "aven/ops/devx/",
       ".bun-version",
       "aven/api/Dockerfile"
     ]
