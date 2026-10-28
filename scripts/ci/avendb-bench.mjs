@@ -141,11 +141,15 @@ export function check(bench, gates, pg = []) {
  const lives = bench.filter(b => b.kind === 'live');
  for (const l of gates.live_links ?? []) if (!lives.some(x => x.link === l)) add(true, `live sync on a ${l} link`, null, 'present', false);
  for (const l of lives) {
-  if (g.live_busy_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${g.live_busy_p95_ms_max}`, l.live_busy_p95_ms < g.live_busy_p95_ms_max);
-  add(false, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${t.live_busy_p95_ms}`, l.live_busy_p95_ms < t.live_busy_p95_ms);
-  if (g.live_idle_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay, idle, p95 ms`, l.live_idle_p95_ms, `< ${g.live_idle_p95_ms_max}`, l.live_idle_p95_ms < g.live_idle_p95_ms_max);
-  if (g.live_missed_max != null) add(true, `live ${l.link}: live edits not there in 15 s`, l.live_missed, `≤ ${g.live_missed_max}`, l.live_missed <= g.live_missed_max);
-  if (l.link_share != null) {
+  // a `_bulk` link's run (20 MB of fat edits) is for the link's use alone (G3); the others' for a live edit's delay (G4)
+  const bulk = l.link.endsWith('_bulk');
+  if (!bulk) {
+   if (g.live_busy_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${g.live_busy_p95_ms_max}`, l.live_busy_p95_ms < g.live_busy_p95_ms_max);
+   add(false, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${t.live_busy_p95_ms}`, l.live_busy_p95_ms < t.live_busy_p95_ms);
+   if (g.live_idle_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay, idle, p95 ms`, l.live_idle_p95_ms, `< ${g.live_idle_p95_ms_max}`, l.live_idle_p95_ms < g.live_idle_p95_ms_max);
+   if (g.live_missed_max != null) add(true, `live ${l.link}: live edits not there in 15 s`, l.live_missed, `≤ ${g.live_missed_max}`, l.live_missed <= g.live_missed_max);
+  }
+  if (bulk && l.link_share != null) {
    if (g.live_link_share_min != null) add(true, `live ${l.link}: catch-up bytes/s ÷ link`, l.link_share, `≥ ${g.live_link_share_min}`, l.link_share >= g.live_link_share_min);
    add(false, `live ${l.link}: catch-up bytes/s ÷ link`, l.link_share, `≥ ${t.live_link_share}`, l.link_share >= t.live_link_share);
   }
