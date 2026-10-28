@@ -22,6 +22,8 @@ export function touched(base = 'origin/main') {
 // The commands for these files, cheapest first; each says why it runs.
 export function plan(files, { wide = false } = {}) {
  const steps = [], hit = impact(files);
+ // a workflow file GitHub rejects never runs and shows no red job (batch 5): lint them first, it takes a second
+ if (files.some(f => f.startsWith('.github/workflows/'))) steps.push({ why: 'workflow files GitHub will accept', cmd: ['bun', 'scripts/ci/workflows.mjs'] });
  const js = files.filter(f => /\.(m?[jt]s|svelte)$/.test(f));
  // JS tests: each owned suite the change selects, narrowed to its test files in a touched folder (or the whole suite).
  const dirs = new Set(files.map(f => dirname(f) + '/'));

@@ -47,8 +47,12 @@ Sizing rule: keep that start under ~20% of a thread's work.
   doing several tasks. Fewer threads also means fewer replies for Samuel to read.
 - **Name the collector up front.** Task threads report "branch ready" to the coordinator, which routes it to the
   collector; they never merge to main or mark PRs ready.
-- **Cut a batch, don't wait for stragglers.** When 25-50 tasks are in, or a few hours have passed, the collector lands
-  what is ready; late tasks go in the next batch.
+- **A batch ships on its goal, not a clock** (Samuel 2026-10-28: "define a batch metric instead, or manually trigger
+  by me"). Each batch starts with one line: its goal metric (e.g. "130k catch-up under 60 s, suite green", or "25
+  tasks in") and its tasks. It ships when that goal is met, or when Samuel says ship. Not on a timer. Stragglers never
+  hold it: a lane that misses the goal goes in the next batch. Finished branches waiting more than ~2 h are reported
+  to Samuel with the reason (the 12 h review of 2026-10-28 found lanes idle ~5 h for the slowest one), not shipped
+  silently.
 - **Exceptions get their own PR at once:** production down, a security fix, or Samuel asks.
 - Re-check the numbers in this table with the cycle below when the setup changes (dev cache, box size).
 
@@ -95,6 +99,16 @@ bun scripts/devx/collect.mjs --tasks                  # "Task: <branch>" lines f
   the ready PR in 13 minutes (each push restarts every job), main not reusing the PR's green run (merge commit), and a
   new job's first cold cache. So: push a ready PR once per fix round, not per fix; scale tests are benches
   (`#[ignore]`, the performance gates), never tests; a new CI job warms its cache on main before it gates anything.
+- **The batch gate guards the merge.** `.github/workflows/gate.yml` ("Batch gate", `scripts/ci/gate.mjs`) runs on a
+  ready PR only. It works out from the changed files which workflows must run, waits for them, and fails when one is
+  red or never started. A workflow file GitHub rejects never starts and shows no red job: batch 5 (2026-10-28) nearly
+  merged without its avenDB suite. Main's branch protection requires that one check. `bun scripts/ci/workflows.mjs`
+  lints workflow files locally (check.mjs runs it when one changed). `bun scripts/ci/gate.mjs --plan origin/main HEAD`
+  shows what the gate will wait for.
+- **Once the PR is ready, the batch is closed.** `collect.mjs` refuses to merge more into a ready PR (each push restarts
+  its CI). Late branches go in the next batch; `--late` only for a fix this run needs.
+- **Long benches and scale runs go to CI runners, never the 4-core box:** dispatch avenDB checks with `bench_only`
+  (30-min 130k runs on a thread's box held its cargo lock for half an hour, 2026-10-28).
 - A failing task in the batch: revert its merge commit on the collector branch (`git revert -m 1 <merge>`), push,
   tell its thread; don't hold the batch for it.
 

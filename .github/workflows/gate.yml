@@ -1,0 +1,40 @@
+name: Batch gate
+
+# The one check main's branch protection requires (Samuel 2026-10-28: a batch must not merge unless every suite it needs
+# ran and passed). scripts/ci/gate.mjs works out from the PR's files and each workflow's own pull_request trigger which
+# workflows must run on the head commit, waits for them, and fails when one is red or never started (a workflow file
+# GitHub rejected, batch 5). Drafts run no CI and no gate: task branches and the collector's branch stay drafts, and
+# the gate runs with the batch's one CI run, once its PR is ready.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Batch gate
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Workflow files GitHub will accept
+        run: bun scripts/ci/workflows.mjs
+      - name: Every suite this batch needs, green
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bun scripts/ci/gate.mjs
