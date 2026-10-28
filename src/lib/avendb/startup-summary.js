@@ -9,7 +9,7 @@ export const completeEntries = world => !!world && world.entriesComplete !== fal
 
 /** Legacy consumers need a complete world; Assets, Docs and package pages own scoped inventories.
  * @param {any} world @param {string} tab */
-export const needsWorldEntries = (world, tab) => world?.entriesComplete === false && !['home', 'assets', 'docs', 'models', 'code', 'library'].includes(tab);
+export const needsWorldEntries = (world, tab) => world?.entriesComplete === false && !['home', 'assets', 'docs', 'models', 'library'].includes(tab);
 
 /** Native hash changes can bypass router page-state notification. Publish the
  * route immediately, then ask the local reader; never await a peer or this read.

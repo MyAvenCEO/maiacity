@@ -21,9 +21,7 @@
 				['studio', 'Studio', 'studio'],
 				['assets', 'Assets', 'asset'],
 				['worlds', 'Worlds', 'play'],
-				['models', 'Models', 'audio'],
-				// the programs theOS runs beside its own code, Lean first, kept in Maia City (Samuel 2026-10-21)
-				['code', 'Code', 'code']
+				['models', 'Models', 'audio']
 			]
 		],
 		[
