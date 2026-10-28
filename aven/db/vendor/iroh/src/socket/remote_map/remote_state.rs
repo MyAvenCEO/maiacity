@@ -65,6 +65,11 @@ const GOOD_ENOUGH_LATENCY: Duration = Duration::from_millis(10);
 /// Even if we have some non-relay route that works.
 const UPGRADE_INTERVAL: Duration = Duration::from_secs(60);
 
+/// avenDB local patch: how often the path selector looks again at what its paths measured. Upstream selects only when
+/// a path opens or goes, so a selected path whose round trip grew or that stopped delivering stayed selected until its
+/// idle timeout, with a faster path beside it (a Mac's page kept a 10.8 s WebRTC path over a 715 ms relay, 2026-10-28).
+const PATH_CHECK_INTERVAL: Duration = Duration::from_secs(1);
+
 /// The time after which an idle [`RemoteStateActor`] stops.
 ///
 /// The actor only enters the idle state if no connections are active and no inbox senders exist
@@ -250,6 +255,8 @@ impl RemoteStateActor {
 
         let check_connections = time::interval(UPGRADE_INTERVAL);
         n0_future::pin!(check_connections);
+        let check_paths = time::interval(PATH_CHECK_INTERVAL);
+        n0_future::pin!(check_paths);
 
         loop {
             let scheduled_path_open = match self.state.scheduled_open_path {
@@ -319,6 +326,9 @@ impl RemoteStateActor {
                 }
                 _ = check_connections.tick() => {
                     self.check_connections();
+                }
+                _ = check_paths.tick(), if !self.connections.is_empty() => {
+                    self.select_path();
                 }
                 _ = &mut idle_timeout => {
                     if self.is_idle(&inbox) {
