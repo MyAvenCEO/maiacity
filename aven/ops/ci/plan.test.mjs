@@ -16,7 +16,7 @@ test('a JS change runs the page device, the gate, the probes and its suite, and 
 test('an avenDB change runs its Rust shards, the spec, theOS on a Mac and the peer\'s image', () => {
  const p = plan(['aven/db/crates/avendb-net/src/sync.rs'], { key });
  expect(p.jobs).toMatchObject({ rust: true, spec: true, mac: true, browser: true, delivery: true });
- expect(p.rust.map(s => s.shard)).toEqual(['core-1', 'core-2', 'core-properties', 'net', 'server', 'device-browser']);
+ expect(p.rust.map(s => s.shard)).toEqual(['core', 'core-properties', 'net', 'server-device']);
  expect(new Set(p.rust.map(s => s.key)).size).toBe(p.rust.length);
  expect(p.images).toEqual(['avendb']);
  // a test file builds no image and starts no Mac
@@ -34,12 +34,28 @@ test('the lockfiles start their audits; the daily run is the audits alone; the w
  expect(full.images.sort()).toEqual(['api', 'avendb']);
 });
 
+test('the JS suites pass together: one verdict of every selected entry\'s key leaves them all out', () => {
+ const p = plan(['maia/content/studio/jobs/jobs.js', 'maia/content/assets/vault.js'], { key });
+ expect(p.js.length).toBeGreaterThan(1);
+ expect(p.keys.js).toMatch(/^pass-js-[0-9a-f]{32}$/);
+ expect(unpassed(p, new Set([p.keys.js])).js).toEqual([]);
+ expect(unpassed(p, new Set([p.js[0].key])).js).toEqual(p.js);
+ expect(outputs(unpassed(p, new Set([p.keys.js])))).toMatchObject({ run_suites: 'false', run_js: 'true' });
+});
+
+test('a job folds its checks: it runs when any of them does', () => {
+ const lean = outputs(plan(['aven/db/spec/AvenDB/Objective.lean'], { key }));
+ expect(lean).toMatchObject({ run_lean: 'true', run_macos: 'true' });
+ const audit = outputs(plan(null, { mode: 'audit', key }));
+ expect(audit).toMatchObject({ run_js: 'true', run_gate: 'false', run_suites: 'false', run_wasm: 'false', run_macos: 'false', run_proofs: 'false' });
+});
+
 test('a key that passed before leaves its job or matrix entry out, unless the run is full', () => {
  const p = plan(['aven/db/crates/avendb-net/src/sync.rs'], { key });
  const passed = new Set([p.keys.spec, p.rust[0].key]);
  const q = unpassed(p, passed);
  expect(q.jobs.spec).toBe(false);
- expect(q.rust.map(s => s.shard)).not.toContain('core-1');
+ expect(q.rust.map(s => s.shard)).not.toContain('core');
  expect(q.jobs.rust).toBe(true);
  // every shard passed: no archive to build
  expect(unpassed(p, new Set(p.rust.map(s => s.key))).jobs.rust).toBe(false);
@@ -59,7 +75,7 @@ test('"CI required" needs every job, and passes only when each job the plan name
  const jobs = Object.keys(ci.jobs).filter(j => j !== 'required');
  expect([...ci.jobs.required.needs].sort()).toEqual(jobs.sort());
  const out = outputs(plan(['aven/db/crates/avendb-net/src/sync.rs'], { key }));
- const ran = id => id === 'rust-archive' ? out.run_rust : id === 'site-same-check' ? out.run_site_same : out[`run_${id.replace(/-/g, '_')}`];
+ const ran = id => id === 'rust-archive' ? out.run_rust : out[`run_${id.replace(/-/g, '_')}`];
  const needs = Object.fromEntries(jobs.map(id => [id, { result: id === 'plan' || ran(id) === 'true' ? 'success' : 'skipped' }]));
  needs.plan.outputs = out;
  expect(verdict(needs)).toEqual([]);
@@ -84,6 +100,6 @@ test('the release ships only what a green check of this commit\'s files built, a
  expect(release.jobs.ci.uses).toBe('./.github/workflows/ci.yml');
  expect(release.jobs.ci.if).toBe("needs.base.outputs.reuse_ci != 'true'");
  // an image is promoted by the digest its checked run names, and never built under a tag a release reads
- expect(ci.jobs.images.steps.find(s => s.id === 'build').with.tags).toContain(':ci-${{ github.sha }}');
+ for (const id of ['avendb', 'api']) expect(ci.jobs.images.steps.find(s => s.id === id).with.tags).toContain(`-${id}:ci-\${{ github.sha }}`);
  expect(JSON.stringify(release.jobs.images.steps)).toContain('imagetools create --tag \\"$IMAGE:$GITHUB_SHA\\" \\"$IMAGE@$DIGEST\\"');
 });
