@@ -811,7 +811,8 @@ impl Node {
             builder = builder
                 .portmapper_config(PortmapperConfig::Disabled)
                 .clear_ip_transports()
-                .add_custom_transport(net.transport(SecretKey::from_bytes(&secret).public()));
+                .add_custom_transport(net.transport(SecretKey::from_bytes(&secret).public()))
+                .path_selector(Arc::new(sim::AsRelay));
         }
         if let Some(relay) = &opts.relay {
             builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(relay_config(relay, &opts))));
