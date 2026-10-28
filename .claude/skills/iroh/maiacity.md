@@ -46,7 +46,6 @@ vault/                         Rust workspace (iroh pinned exactly) · PLAN.md =
   app/                         maiaCITY Studio (Tauri 2): native commands, vault:// (local, Range), maiaapi:// (API +
                                gateway with the app's key), passkey device-flow sign-in (Keychain), sync.rs (pair,
                                join, keep complete from the gateway), mcp.rs (the studio for agents)
-  migration/                   cid-to-blake3.json (old CID → hash, only for rewriting) and rewrite.ts
 src/lib/studio/                the studio's Ingest, Library, CopiesBadge, Devices — inside the app only
 api/src/vault.ts               pairing, joining, the mirror (migration 0028) — routes /api/vault/*
 ```
