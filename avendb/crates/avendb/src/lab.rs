@@ -99,6 +99,8 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 mod blind_index;
 #[path = "lab/held.rs"]
 pub(crate) mod held;
+mod shown_map;
+use shown_map::{Closed, ShownMap};
 pub use held::{Placed, ShelfFile, Spill};
 #[cfg(test)]
 #[path = "lab/query_coverage.rs"]
@@ -899,7 +901,7 @@ struct Store {
     spoilt: HashSet<EditId>,
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
-    shown: BTreeMap<EntryId, Shown>,
+    shown: ShownMap,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
     /// The vaults it follows, smallest first: it names them in each request (`sync::Ask::follow`), and is sent what
@@ -943,7 +945,7 @@ struct Store {
     shown_groups: [u8; 32],
     /// The showings its shelf kept (`Warm::shown`), by entry, till `show_items` takes each whose print is its entry's
     /// print then, in place of judging the entry anew (`ShownView.lean`).
-    kept_shown: HashMap<EntryId, Shown>,
+    kept_shown: HashMap<EntryId, Closed>,
     /// The print of each showing its shelf keeps, by entry, and how many packs and showings hold them: what a save
     /// leaves out, and when it puts them all in one pack again.
     shown_given: HashMap<EntryId, [u8; 32]>,
@@ -1005,7 +1007,7 @@ impl Default for Store {
             bodies: HashMap::new(),
             spoilt: HashSet::new(),
             readings: Readings::default(),
-            shown: BTreeMap::new(),
+            shown: ShownMap::default(),
             kept_shown: HashMap::new(),
             shown_given: HashMap::new(),
             shown_packs: (0, 0),
@@ -1079,13 +1081,13 @@ impl Store {
             return vec![];
         }
         let st = &self.replay.state;
-        self.shown.iter().filter(|(e, s)| {
+        self.shown.tips().filter(|(e, print, tip)| {
             let (writes, last) = st.entry_tip(**e);
-            s.tip.writes == writes && s.tip.last == last
-                && (!fresh || self.shown_given.get(*e) != Some(&s.print))
+            tip.writes == writes && tip.last == last
+                && (!fresh || self.shown_given.get(*e) != Some(print))
                 && !self.based.contains_key(*e) && !self.bases.contains_key(*e)
                 && st.entry(**e).is_some_and(|en| !st.is_cap_group(en, &self.readings))
-        }).map(|(e, _)| *e).collect()
+        }).map(|(e, _, _)| *e).collect()
     }
 
     fn view_due(&self) -> bool {
@@ -1168,6 +1170,13 @@ impl Shown {
     /// its writes: none where an item holds changes a Loro snapshot leaves out.
     fn kept(&self, out: &mut Vec<u8>) -> Option<()> {
         use crate::encode::Encode;
+        self.record()?.encode(out);
+        Some(())
+    }
+
+    /// What `kept` holds of it, without its length: what a closed showing keeps (`shown_map::Closed`).
+    fn record(&self) -> Option<Vec<u8>> {
+        use crate::encode::Encode;
         let mut b = vec![];
         self.print.encode(&mut b);
         (self.tip.writes as u64).encode(&mut b);
@@ -1184,15 +1193,13 @@ impl Shown {
         self.after.mine.encode(&mut b);
         crate::kept::put_imported(&mut b, &self.after.imported);
         crate::kept::put_asked(&mut b, &self.after.asked);
-        b.encode(out);
-        Some(())
+        Some(b)
     }
 
-    /// The showing `kept` made the bytes of.
-    fn of_kept(r: &mut crate::wire::Reader<'_>) -> Result<Shown, crate::wire::WireError> {
+    /// The showing `record` made the bytes of.
+    fn of_record(bytes: &[u8]) -> Result<Shown, crate::wire::WireError> {
         use crate::wire::{Decode, Reader, WireError};
-        let bytes = r.bytes()?;
-        let r = &mut Reader::new(&bytes);
+        let r = &mut Reader::new(bytes);
         let print = <[u8; 32]>::decode(r)?;
         let tip = Tip {
             writes: u64::decode(r)? as usize,
@@ -1221,15 +1228,15 @@ impl Shown {
     }
 }
 
-/// The showings a pack holds (`Warming::shown`), by entry: none of bytes that aren't one.
-fn kept_shown_of(bytes: &[u8]) -> Option<Vec<(EntryId, Shown)>> {
+/// The showings a pack holds (`Warming::shown`), by entry, closed: none of bytes that aren't one.
+fn kept_shown_of(bytes: &[u8]) -> Option<Vec<(EntryId, Closed)>> {
     use crate::wire::{Decode, Reader};
     let mut r = Reader::new(bytes.strip_prefix(KEPT_SHOWN)?);
     let n = r.count(36).ok()?;
     let mut out = Vec::with_capacity(n.min(4096));
     for _ in 0..n {
         let e = EntryId::decode(&mut r).ok()?;
-        out.push((e, Shown::of_kept(&mut r).ok()?));
+        out.push((e, Closed::of_record(r.bytes().ok()?)?));
     }
     r.done().then_some(out)
 }
@@ -6270,12 +6277,11 @@ impl Lab {
                 let mut body = Zeroizing::new(vec![]);
                 let mut of = vec![];
                 for e in es {
-                    let s = &store.shown[&e];
                     let mut one = vec![];
-                    if s.kept(&mut one).is_some() {
+                    if store.shown.kept(&e, &mut one).is_some() && let Some(print) = store.shown.print(&e) {
                         body.extend(e.0);
                         body.extend(one);
-                        of.push((e, s.print));
+                        of.push((e, print));
                     }
                 }
                 bytes.extend((of.len() as u32).to_be_bytes());
@@ -7392,15 +7398,19 @@ fn lane_blobs<'a>(st: &'a State, v: VaultId, r: &'a Readings) -> Vec<&'a [u8]> {
 /// one extra Loro document per entry until the entire database is reconstructed.
 /// Entry iteration is unique; an evicted earlier entry cannot enter the final
 /// last-SCRATCHES selection. Its shown items/history remain untouched.
-fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<EntryId>, entry: EntryId, shown: Shown) {
+fn retain_recent_shown(old: &mut ShownMap, recent: &mut Vec<EntryId>, entry: EntryId, shown: Shown) {
     recent.push(entry);
     if recent.len() > SCRATCHES {
         let expired = recent[recent.len() - SCRATCHES - 1];
-        if let Some(shown) = old.get_mut(&expired) {
-            shown.after.scratch = None;
-        }
+        old.drop_scratch(&expired);
     }
     old.insert(entry, shown);
+    // at most a window of showings open as it goes, but the scratch items it keeps: a showing of every entry anew
+    // holds no more open than one of a few
+    if recent.len() % shown_map::WINDOW == 0 {
+        let keep: HashSet<EntryId> = recent.iter().rev().take(SCRATCHES).copied().collect();
+        old.trim(shown_map::WINDOW, &keep);
+    }
 }
 
 /// The work a budgeted show does for each entry of its budget (`show_items`), counted as the writes it judges and
@@ -7432,8 +7442,10 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     let waiting: HashSet<EntryId> = pending.rest.iter().copied().collect();
     let (st, r, bodies) = (&store.replay.state, &store.readings, &store.bodies);
     let mut old = std::mem::take(&mut store.shown);
+    // a showing whose bytes didn't open is none: its entry is judged anew, as after a removal
+    let reshow = reshow | !old.take_spoilt().is_empty();
     if reshow {
-        old.retain(|e, _| st.entry(*e).is_some());
+        old.retain(|e| st.entry(*e).is_some());
     }
     // each vault's lane as the device reads it off the vault's schema and lens entries (`State::lane_of`), its hash,
     // and what judges the writes of the vault's entries, made once one of them is shown anew
@@ -7601,33 +7613,36 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
                 debug_assert!(same_shown_in(s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
             }
         }
-        let kept = old.get_mut(&en.id).filter(|s| s.tip == tip && !opened.contains_key(&en.id));
+        let kept = old.tip(&en.id).filter(|t| *t == tip && !opened.contains_key(&en.id));
         let print = match kept {
             Some(_) if !reshow => continue,
-            Some(s) => {
+            Some(_) => {
                 let print = print(en, &groups_print);
-                if s.print == print {
+                if old.print(&en.id) == Some(print) {
                     continue;
                 }
                 print
             }
             None => print(en, &groups_print),
         };
-        if let Some(s) = old.get_mut(&en.id).filter(|s| s.print == print) {
-            s.tip = tip;
+        if old.print(&en.id) == Some(print) {
+            old.set_tip(&en.id, tip);
             continue;
         }
         // one its shelf kept whose print is this one, judged of the same writes, bodies, lane and cap groups: what
         // judging them anew makes (`SV1_open`), against its replay of every edit it holds alone
         if standing
             && !old.contains_key(&en.id)
-            && let Some(s) = store.kept_shown.remove(&en.id).filter(|s| s.print == print)
+            && let Some(c) = store.kept_shown.remove(&en.id).filter(|c| c.print == print)
         {
-            let s = Shown { tip, ..s };
+            let c = Closed { tip, ..c };
             #[cfg(not(avendb_no_replay_checks))]
-            debug_assert!(same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
+            debug_assert!(
+                c.open().is_some_and(|s| same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store))),
+                "a kept showing that opens as other than judging its entry anew"
+            );
             store.perf.count("show: entries taken as kept", 1);
-            old.insert(en.id, s);
+            old.insert_closed(en.id, c);
             continue;
         }
         // writes that only came after those it judged, judged on where it left off: what judging all of them makes
@@ -7703,11 +7718,11 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // of those that held one: the ones kept before, and those judged now, the cap groups' among them
     let held: HashSet<EntryId> = store.scratched.iter().chain(&recent).chain(&cap_groups).copied().collect();
     for e in held.iter().filter(|e| !keep.contains(e)) {
-        if let Some(s) = old.get_mut(e) {
-            s.after.scratch = None;
-        }
+        old.drop_scratch(e);
     }
-    debug_assert!(old.iter().all(|(e, s)| s.after.scratch.is_none() || keep.contains(e)), "a scratch item kept past SCRATCHES");
+    debug_assert!(held.iter().all(|e| !old.has_scratch(e) || keep.contains(e)), "a scratch item kept past SCRATCHES");
+    let closed = old.trim(shown_map::WINDOW, &keep);
+    store.perf.count("show: showings closed", closed as u64);
     store.scratched = keep;
     store.perf.add("show: entries", at);
     store.shown = old;

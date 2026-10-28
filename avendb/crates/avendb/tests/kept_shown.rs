@@ -72,6 +72,34 @@ fn a_showing_of_other_writes_is_judged_anew() {
     assert!(expected[1].contains("After the save."));
 }
 
+/// More entries than stay open (`shown_map::WINDOW`, 8 in a test build, beside the 32 that keep scratch items):
+/// those past the window close as their kept bytes, and each shows as it did open, read in any order, edited on, and kept again.
+#[test]
+fn showings_past_the_window_close_and_open_as_they_were() {
+    let (mut lab, mac, phone, vault, notes) = alice(56);
+    for (i, e) in notes.iter().enumerate() {
+        lab.edit(phone, vault, *e, |it| it.set_text(2, &format!("Written {i}."))).unwrap();
+    }
+    assert!(count(&lab, phone, "show: showings closed") > 0, "showings past the window closed");
+    let expected = records(&lab, phone, &notes);
+    let mut backwards = notes.clone();
+    backwards.reverse();
+    let mut seen = records(&lab, phone, &backwards);
+    seen.reverse();
+    assert_eq!(seen, expected);
+    // edited on after it closed and opened again, on the device and on another that takes the edit
+    lab.edit(phone, vault, notes[0], |it| it.set_text(2, "Again.")).unwrap();
+    assert!(lab.sync(phone, mac) > 0);
+    assert_eq!(records(&lab, mac, &notes[..1]), records(&lab, phone, &notes[..1]));
+    assert!(records(&lab, phone, &notes[..1])[0].contains("Again."));
+    // and kept: an unlock takes every one, closed, and shows each as before
+    let (warm, held) = save(&mut lab, phone).expect("the shelf lacks work");
+    let expected = records(&lab, phone, &notes);
+    let backup = lab.backup(phone);
+    lab.restore_warm(phone, backup, Some(([1; 40], held)), &warm);
+    assert_eq!(records(&lab, phone, &notes), expected);
+}
+
 /// A random walk: notes written on both devices, saves in between, each unlock with the last save's showings; every
 /// note shows as the device showed it before it locked, which in a debug build is checked against judging it anew.
 #[test]

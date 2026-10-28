@@ -242,7 +242,7 @@ fn ordinary_reconstruction_bounds_scratch_retention_before_final_sweep() {
     let passkey = lab.passkey("Scratch bound");
     let device = lab.device_of(passkey, "Device");
     let vault = human_on(&mut lab, passkey, &[device]);
-    let (mut reconstructed, mut recent) = (BTreeMap::new(), Vec::new());
+    let (mut reconstructed, mut recent) = (super::ShownMap::default(), Vec::new());
     let mut expected = BTreeMap::new();
     let mut peak = 0;
     for i in 0..(SCRATCHES * 2 + 7) {
@@ -259,7 +259,7 @@ fn ordinary_reconstruction_bounds_scratch_retention_before_final_sweep() {
     }
     assert_eq!(peak, SCRATCHES);
     let selected: HashSet<_> = recent.iter().rev().take(SCRATCHES).copied().collect();
-    for (entry, shown) in &reconstructed {
+    for (entry, shown) in reconstructed.iter() {
         assert_eq!(shown.after.scratch.is_some(), selected.contains(entry), "same final cache selection");
         assert_eq!((shown.items()[&MAIN].record(), shown.items()[&MAIN].version()), expected[entry]);
     }
