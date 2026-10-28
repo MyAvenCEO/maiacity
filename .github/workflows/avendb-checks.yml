@@ -231,10 +231,10 @@ jobs:
       # opened cold, counted in pages and bytes read and log edits stepped on, and the bulk build's root held to the same
       # rows written as they come at 100k. In this shard, as its test program is the one just built here: about 20 s.
       - uses: oven-sh/setup-bun@v2.2.0
-        if: matrix.name == 'net' || matrix.name == 'core'
+        if: matrix.name == 'net'
         with:
           bun-version-file: .bun-version
-      - name: The index and a named query's window at 1M and 10M edits
+      - name: The index, a named query's window and the Universe's posts page at 1M and 10M edits
         if: matrix.name == 'net'
         working-directory: avendb
         env:
@@ -244,20 +244,13 @@ jobs:
           AVENDB_WINDOW_N: 1000000,10000000
         run: |
           cargo nextest run --profile ci --locked --features test-fixtures -p avendb-net --run-ignored only --no-capture \
-            -E 'test(=shelf_index::bench::bench_index) | test(=shelf_index::bench::bench_parity) | test(=query_window::bench::bench_window)' \
+            -E 'test(=shelf_index::bench::bench_index) | test(=shelf_index::bench::bench_parity) | test(=query_window::bench::bench_window) | test(=posts_page::bench::bench_posts_off_the_index)' \
             | tee "$RUNNER_TEMP/index.log"
-          bun ../scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/index.log" --index
-      # G1's named query of the Universe (bench-gates.json's posts row): what a page of query-posts costs more per entry
-      # held and per edit of a post, so at 1M and 10M edits. About 40 s, its test program built just above.
-      - name: The Universe's posts query at 1M and 10M edits
-        if: matrix.name == 'core'
-        working-directory: avendb
-        env:
-          CARGO_PROFILE_TEST_OPT_LEVEL: 1
-        run: |
-          cargo nextest run --profile ci --locked --features test-fixtures -p avendb --run-ignored only --no-capture \
-            -E 'binary(posts_bench)' | tee "$RUNNER_TEMP/posts.log"
-          bun ../scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/posts.log" --posts
+          # both checks run, so that one red shows the other's numbers too
+          failed=0
+          bun ../scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/index.log" --index || failed=1
+          bun ../scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/index.log" --posts || failed=1
+          exit $failed
       # This binary shares immutable 40-seed histories via LazyLock. A process per property rebuilt them 37 times.
       - name: Shared-history properties (all seeds and invariants)
         if: matrix.properties
