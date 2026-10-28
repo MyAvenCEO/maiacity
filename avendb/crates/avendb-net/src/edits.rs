@@ -74,6 +74,9 @@ const JOURNAL: &str = "journal/";
 const KEYS: ([&str; 2], &[u8]) = (["slots/keys-0", "slots/keys-1"], b"avenDB keys 1\n");
 /// The two slots a device's stored view is kept in, in turn, and what each starts with.
 const VIEW: ([&str; 2], &[u8]) = (["slots/view-0", "slots/view-1"], b"avenDB slot 1\n");
+/// The two slots the list of a device's packs of kept showings is kept in, in turn, and what each starts with: each
+/// pack a blob, by its hash and size, the oldest first (`Warming::shown`).
+const SHOWN: ([&str; 2], &[u8]) = (["slots/shown-0", "slots/shown-1"], b"avenDB shown packs 1\n");
 
 /// A blob on the shelf: its hash and its size.
 pub(crate) type Blob = (Hash, u64);
@@ -88,6 +91,8 @@ pub(crate) struct Edits {
     kept: Mutex<Kept>,
     /// The numbers its next keys and its next stored view are kept as, `n` in slot `n % 2` of theirs (`warm`).
     slots: Mutex<(u64, u64)>,
+    /// The number its next list of packs of kept showings is kept as, and the packs its shelf holds now.
+    shown: Mutex<(u64, Vec<(Hash, u64)>)>,
     /// The head it started from and how many edits it holds, the first it took back (`started`); and its newest head
     /// of edits its device checked, each one (`checked`).
     started: Option<(Checked, usize)>,
@@ -334,7 +339,7 @@ impl Edits {
     /// `open`, its edits given to `to` a page at a time as it reads them (`Taker`), never all of them at once: what it
     /// worked out before (`warm`), and the ids of the edits it gave, in their order, and the anchors its shelf names.
     pub(crate) async fn open_into(shelf: Shelf, to: &mut impl Taker) -> Result<(Edits, Warm, Vec<EditId>, Vec<u8>)> {
-        let (warm, slots) = read_warm(&shelf).await;
+        let (warm, slots, shown) = read_warm(&shelf).await;
         let heads: Vec<u64> =
             numbered(&shelf, HEADS).await?.into_iter().filter(|(_, after)| after.is_empty()).map(|(n, _)| n).collect();
         let next_head = heads.last().map_or(1, |n| n + 1);
@@ -389,8 +394,8 @@ impl Edits {
         let kept = Kept { anchor_stamp: Vec::new(), written: 0, lineage: None, keys: keys.keys().copied().collect(), whole: false };
         let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending, anchors: anchors.clone() };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
-        let (slots, checked) = (Mutex::new(slots), Mutex::new(None));
-        let edits = Edits { shelf, book, kept, slots, started, checked, due: Notify::new() };
+        let (slots, shown, checked) = (Mutex::new(slots), Mutex::new(shown), Mutex::new(None));
+        let edits = Edits { shelf, book, kept, slots, shown, started, checked, due: Notify::new() };
         Ok((edits, warm, ids, anchors))
     }
 
@@ -398,8 +403,9 @@ impl Edits {
     /// newest first. Nothing, where the shelf can't be read.
     #[cfg(test)]
     pub(crate) async fn warm(&self) -> Warm {
-        let (warm, next) = read_warm(&self.shelf).await;
+        let (warm, next, shown) = read_warm(&self.shelf).await;
         *self.slots.lock().expect("slots") = next;
+        *self.shown.lock().expect("shown") = shown;
         warm
     }
 
@@ -415,6 +421,25 @@ impl Edits {
             let n = self.slots.lock().expect("slots").1;
             self.keep_on(on, VIEW, n, &view).await?;
             self.slots.lock().expect("slots").1 = n + 1;
+        }
+        // a pack of showings as a blob, then the list that names it beside those before it, or alone where it holds
+        // every showing the device keeps
+        if let Some((pack, whole)) = warming.shown.take() {
+            let (hash, size) = on.put_blob(&Bytes::from(pack)).await?;
+            let (n, mut packs) = self.shown.lock().expect("shown").clone();
+            let before = match whole {
+                true => std::mem::take(&mut packs),
+                false => vec![],
+            };
+            packs.push((hash, size));
+            let list: Vec<u8> = packs.iter().flat_map(|(h, size)| h.as_bytes().iter().copied().chain(size.to_be_bytes())).collect();
+            self.keep_on(on, SHOWN, n, &list).await?;
+            *self.shown.lock().expect("shown") = (n + 1, packs);
+            // the packs the whole one holds the showings of go: a list kept before that names them, read after a
+            // crash, reads as none, and its showings are judged anew
+            for (h, _) in before.into_iter().filter(|(h, _)| *h != hash) {
+                on.drop(&h.to_hex()).await.ok();
+            }
         }
         Ok(())
     }
@@ -773,16 +798,46 @@ async fn take_head(shelf: &Shelf, n: u64, warm: &Warm, taking: &mut Taking, to: 
 
 /// What the device worked out before, as `shelf` keeps it (`Edits::warm`), and the numbers its next keys and view are
 /// kept as.
-async fn read_warm(shelf: &Shelf) -> (Warm, (u64, u64)) {
+async fn read_warm(shelf: &Shelf) -> (Warm, (u64, u64), (u64, Vec<(Hash, u64)>)) {
     let read = async {
         let (keys, next_keys) = slots_of(shelf, KEYS).await?;
         let (views, next_view) = slots_of(shelf, VIEW).await?;
-        anyhow::Ok((Warm { keys, views }, (next_keys, next_view)))
+        let (shown, packs) = read_shown(shelf).await;
+        anyhow::Ok((Warm { keys, views, shown }, (next_keys, next_view), packs))
     };
     read.await.unwrap_or_else(|e| {
         tracing::warn!("avendb: what the device worked out before can't be read from its shelf: {e:#}");
-        (Warm::default(), (0, 0))
+        (Warm::default(), (0, 0), (0, vec![]))
     })
+}
+
+/// The packs of kept showings the newest list of them names, the oldest first, and the number the next list is kept
+/// as with the packs it names. Nothing, where a pack doesn't read whole: its showings are judged anew.
+async fn read_shown(shelf: &Shelf) -> (Vec<Vec<u8>>, (u64, Vec<(Hash, u64)>)) {
+    let Ok((lists, next)) = slots_of(shelf, SHOWN).await else { return (vec![], (0, vec![])) };
+    let Some(packs) = lists.first().and_then(|b| packs_of(b)) else { return (vec![], (next, vec![])) };
+    let mut out = Vec::with_capacity(packs.len());
+    for &(hash, size) in &packs {
+        match shelf.read_blob(hash, size).await {
+            Ok(bytes) => out.push(bytes.to_vec()),
+            Err(e) => {
+                tracing::warn!("avendb: a pack of kept showings doesn't read whole, so its showings are judged anew: {e:#}");
+                return (vec![], (next, vec![]));
+            }
+        }
+    }
+    (out, (next, packs))
+}
+
+/// The packs a list of them names (`SHOWN`), each its hash and size.
+fn packs_of(bytes: &[u8]) -> Option<Vec<(Hash, u64)>> {
+    if bytes.len() % 40 != 0 {
+        return None;
+    }
+    Some(bytes.chunks(40).map(|c| {
+        let (hash, size) = c.split_at(32);
+        (Hash::from_bytes(hash.try_into().expect("32 bytes")), u64::from_be_bytes(size.try_into().expect("8 bytes")))
+    }).collect())
 }
 
 /// What the two slots `which` of `shelf` keep, the newest first, and the number the next is kept as.
@@ -1153,7 +1208,8 @@ mod tests {
                             "heads/0000000000000002" => Some(heads[1].clone()),
                             "journal/0000000000000000" => None,
                             // what it worked out before, read first now (`Edits::open_into`): none
-                            "slots/keys-0" | "slots/keys-1" | "slots/view-0" | "slots/view-1" => None,
+                            "slots/keys-0" | "slots/keys-1" | "slots/view-0" | "slots/view-1" | "slots/shown-0"
+                            | "slots/shown-1" => None,
                             _ => panic!("unexpected object {name}"),
                         };
                         tx.send(Ok(bytes)).ok();

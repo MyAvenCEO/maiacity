@@ -64,7 +64,7 @@ fn a_cold_restored_device_answers_the_exact_page_in_one_read() {
     let backup = lab.backup(device);
     let count = backup.signed.len();
     let receipt = lab.warming(device, count, Some([91; 40])).unwrap();
-    let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
+    let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect(), shown: receipt.shown.clone().map(|(p, _)| p).into_iter().collect() };
     lab.warmed(device, receipt);
     for (query, expected) in queries.into_iter().zip(expected) {
         lab.restore_warm(device, backup.clone(), Some(([91; 40], count)), &warm);
