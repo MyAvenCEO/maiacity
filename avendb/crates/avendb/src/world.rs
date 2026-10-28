@@ -967,10 +967,14 @@ pub fn cards(lab: &Lab, me: SignerId, vault: VaultId) -> BTreeMap<SignerId, (Ent
 }
 
 /// Vault `vault`'s profile as device `me` reads it: its first entry of type `PROFILE` that it wrote itself, and the
-/// name it reads.
+/// name it reads. Its candidates come off the index by type (`Lab::query_candidates`, `LiveQuery.lean`
+/// `indexed_eq_scan`), not off every entry the device holds: a room's read named each message's author so, and walked
+/// every entry once a message (Goal 7, 2026-10-28: 156 s a room read on an iPhone).
 pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, String)> {
     let st = lab.state(me);
-    profile_in(lab, me, vault, st.entries().iter())
+    let profiles = Selector::AnyOf(vec![vec![crate::slice::Atom::TypeIn(vec![crate::slice::Sym::new(PROFILE)])]]);
+    let candidates = lab.query_candidates(me, Some(vault), &profiles);
+    profile_in(lab, me, vault, candidates.iter().filter_map(|e| st.entry(*e)))
 }
 
 /// The name vault `vault`'s profile gives (`profile_of`), of the entries `among` names, the oldest first: a node lists
