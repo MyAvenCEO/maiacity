@@ -892,6 +892,7 @@ impl Node {
             receive_checking: Arc::default(),
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
+            differed: Mutex::default(),
             held: Mutex::default(),
             told: Mutex::default(),
             statements: Mutex::default(),
@@ -1810,8 +1811,14 @@ impl Node {
         let pages = self.shared.sent.requests.load(Ordering::Relaxed);
         let unsaved = self.shared.unsaved.lock().expect("unsaved").clone()
             .map(|u| json!({ "since": u.since, "tries": u.tries, "error": u.error }));
+        // per peer: the logs held as a stub alone, the stubs held, and a few lacked logs, so a report says what is left
+        let lacked: Vec<Value> = {
+            let differed = self.shared.differed.lock().expect("differed");
+            heard.iter().filter_map(|(d, _)| differed.get(d).map(|(l, t)| json!({ "device": d.to_hex()[..8].to_string(),
+                "lacks": l.len(), "by_stub": t.by_stub, "stubs": t.stubs, "sample": t.sample }))).collect()
+        };
         json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages,
-            "unsaved": unsaved })
+            "unsaved": unsaved, "lacked": lacked })
     }
 
     /// Where it syncs from and how (Samuel 2026-10-22: "the whole sync topology … what comes directly p2p and what via
@@ -2299,6 +2306,18 @@ struct Peer {
 }
 
 /// What a node's tasks share.
+/// How many lacked logs `differ` names in its sample for a report (`Node::synced`).
+const DIFFER_SAMPLE: usize = 5;
+
+/// What `differ` saw of a device's logs besides those lacked, for a report: how many it would have counted lacked but
+/// for a stub of a key box it holds (Fix D), how many stubs stand held, and a few lacked logs with their heads it lacks.
+#[derive(Clone, Debug, Default)]
+struct Differed {
+    by_stub: usize,
+    stubs: usize,
+    sample: Vec<Value>,
+}
+
 struct Shared {
     /// Admission remains open until the one owned shutdown finalizer closes it.
     lifecycle: Arc<lifecycle::Lifecycle>,
@@ -2342,6 +2361,8 @@ struct Shared {
     own: Mutex<Own>,
     /// Each device it may tell, by its device's view, and what of its holdings it tells it.
     reach: Mutex<Arc<BTreeMap<SignerId, Reach>>>,
+    /// What `differ` worked out last for each device, for when the Lab's turn can't be had, and what it told of it.
+    differed: Mutex<HashMap<SignerId, (BTreeSet<LogId>, Differed)>>,
     /// What each device told it it holds, on a connection whose hello proved that device.
     held: Mutex<HashMap<SignerId, Holdings>>,
     /// What each peer was last told, and on which connection (`Connection::stable_id`).
@@ -3804,24 +3825,57 @@ impl Shared {
     /// since), as `synced_to` reads them: a claim to any other steers nothing, and learns nothing of what the node
     /// holds of it. A log the node holds nothing of, which its view can't place, it asks for naming nothing of it
     /// (`session::only`), as its request on a new connection does: else it would never learn of a new entry. A device
+    ///
+    /// The stubs it holds of key boxes a peer held back count as held, as its request counts them (`Lab::held_stubs`):
+    /// else a log whose head on the peer is such a box read as lacked for good, its asking brought nothing new, and the
+    /// views waited on it (an iPhone lacking 2,577 of 3,090 logs, 2026-10-28, Fix D). Where the Lab's turn can't be had,
+    /// it answers what it worked out last for the device, not nothing, so the count the views wait on doesn't drop
+    /// to nothing and back.
     async fn differ(self: &Arc<Self>, device: SignerId) -> BTreeSet<LogId> {
         let Some(theirs) = self.held.lock().expect("held").get(&device).map(|h| h.logs.clone()) else {
             return BTreeSet::new();
         };
         let (shared, known) = (self.clone(), self.reach.lock().expect("reach").clone());
-        self.try_lab(move |lab, me| {
+        let worked = self.try_lab(move |lab, me| {
             let mine = shared.logs_of(lab, me);
+            let stubs = mine.closed_stubs(&lab.held_stubs(me));
             let mut now: Option<BTreeSet<LogId>> = None;
             let mut within = |l: &LogId| {
                 let reach = |lab: &mut Lab| lab.announce(me, device).into_iter().map(|(l, _)| l).collect();
                 known.get(&device).is_some_and(|r| r.logs.contains(l))
                     || now.get_or_insert_with(|| reach(lab)).contains(l)
             };
-            let lacking = theirs.into_iter().filter(|(_, f)| mine.lacks(f)).map(|(l, _)| l);
-            lacking.filter(|l| !mine.of.contains_key(l) || within(l)).collect()
-        })
-        .await
-        .unwrap_or_default()
+            let (mut lacking, mut by_stub, mut sample) = (BTreeSet::new(), 0, Vec::new());
+            for (l, f) in theirs {
+                if !mine.lacks(&f) {
+                    continue;
+                }
+                if !mine.lacks_with(&f, &stubs) {
+                    by_stub += 1;
+                    continue;
+                }
+                if mine.of.contains_key(&l) && !within(&l) {
+                    continue;
+                }
+                if sample.len() < DIFFER_SAMPLE {
+                    let held = |h: &EditId| mine.closed.contains(h) || stubs.contains(h);
+                    let heads: Vec<String> = f.heads.iter().filter(|h| !held(h)).map(|h| h.to_hex()[..8].to_string()).collect();
+                    sample.push(json!({ "log": format!("{l:?}"), "held": mine.of.contains_key(&l), "lacked_heads": heads,
+                        "waiting": f.waiting.len() }));
+                }
+                lacking.insert(l);
+            }
+            (lacking, Differed { by_stub, stubs: stubs.len(), sample })
+        });
+        let worked = worked.await;
+        let mut last = self.differed.lock().expect("differed");
+        match worked {
+            Ok((lacking, told)) => {
+                last.insert(device, (lacking.clone(), told));
+                lacking
+            }
+            Err(_) => last.get(&device).map(|(l, _)| l.clone()).unwrap_or_default(),
+        }
     }
 
     /// The endpoint of the live connection whose hellos proved `device`, if there is one.
