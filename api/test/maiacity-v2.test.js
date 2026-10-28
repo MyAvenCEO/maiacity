@@ -40,18 +40,18 @@ test('C mints and invests; tree placement checks both existing players', () => {
 test('database migration copies V1 exactly; C joins, acts, and cannot take another seat', async () => {
  const pg = new PGlite();
  try {
- await pg.exec(MIGRATIONS.find(m => m.id === '0046-maiacity-v1')!.sql);
+ await pg.exec(MIGRATIONS.find(m => m.id === '0046-maiacity-v1').sql);
  const old = v1Game(now); old.players.A.founder='a'; old.players.B.founder='b';
  await pg.query('INSERT INTO v1_games (id,state) VALUES ($1,$2)', ['main',JSON.stringify(old)]);
- await pg.exec(MIGRATIONS.find(m => m.id === '0060-maiacity-v2')!.sql);
- const copied:any = (await pg.query('SELECT state FROM v2_games')).rows[0];
- expect((await pg.query<any>('SELECT state FROM game_fork_snapshots')).rows[0].state).toEqual(old);
+ await pg.exec(MIGRATIONS.find(m => m.id === '0060-maiacity-v2').sql);
+ const copied = (await pg.query('SELECT state FROM v2_games')).rows[0];
+ expect((await pg.query('SELECT state FROM game_fork_snapshots')).rows[0].state).toEqual(old);
  await expect(pg.query("UPDATE game_fork_snapshots SET state = '{}'::jsonb")).rejects.toThrow('immutable');
  expect(copied.state.players.A).toEqual(old.players.A);
  expect(copied.state.players.B).toEqual(old.players.B);
  expect(copied.state.ledger).toEqual(old.ledger);
  expect(copied.state.started).toBe(old.started);
- useDb(pg as any);
+ useDb(pg);
  expect(await seedPendingGame(now)).toBe(true);
  expect(await seedPendingGame(now)).toBe(false);
  const joined=await getGame({id:'c',name:'Third player'}, now);
@@ -61,7 +61,7 @@ test('database migration copies V1 exactly; C joins, acts, and cannot take anoth
  const minted=await move({id:'c'},'A',{type:'mint'},now);
  expect(minted.players.C.wallet.HEARTS).toBeGreaterThan(0);
  expect(minted.players.A.wallet.HEARTS).toBe(49800);
- expect((await pg.query<any>('SELECT state FROM v1_games')).rows[0].state).toEqual(old);
+ expect((await pg.query('SELECT state FROM v1_games')).rows[0].state).toEqual(old);
  } finally {await pg.close();}
 });
 
