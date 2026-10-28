@@ -85,10 +85,11 @@ pub(crate) async fn window(
 
 /// What a window query `op` (`engine::window_of`) of device `me` answers, read off index `ix` and the tail after it:
 /// the engine's query over the newest entries with one of its labels, of its vault or of every vault its view knows
-/// (each vault's window, merged by creation: one cursor orders them all), and those whose header the device hasn't
-/// read (`engine::query_among`); a window of `n` first and four times more while fewer than `n` rows show and some
-/// vault's index lists more; with the window it read last. `None` where the index can't say (`window`, or a vault it
-/// holds no index key of), or the log took edits between the windows and the query, and the caller asks the engine.
+/// whose seed it holds (each vault's window, merged by creation: one cursor orders them all), the candidates of every
+/// other vault (`engine::query_candidates_in`), and those whose header the device hasn't read
+/// (`engine::query_among`); a window of `n` first and four times more while fewer than `n` rows show and some vault's
+/// index lists more; with the window it read last. `None` where the index can't say (`window`, or a vault it holds
+/// no seed of), or the log took edits between the windows and the query, and the caller asks the engine.
 pub(crate) async fn answer(
     ix: &SharedIndex,
     lab: &Mutex<Lab>,
@@ -96,14 +97,16 @@ pub(crate) async fn answer(
     op: &serde_json::Value,
 ) -> io::Result<Option<(serde_json::Value, Window)>> {
     let Some((vault, n, before, labels)) = avendb::engine::window_of(op) else { return Ok(None) };
-    let vaults = {
+    // off the index, the vaults it holds the seed of, where it lists every entry the device reads; the others' by their
+    // candidates, as the engine finds them (an entry read by a share's, an audience's or its own key has no row there)
+    let (vaults, others) = {
         let held = lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let keyed: BTreeSet<VaultId> = held.index_vaults(me).into_iter().collect();
-        // of every vault: those it holds no key of it opens nothing of, and an audience's alone the index can't find
-        let any = held.key_vaults(me);
-        let vaults = vault.map_or_else(|| held.view_vaults(me).into_iter().filter(|v| any.contains(v)).collect(), |v| vec![v]);
-        if !vaults.iter().all(|v| keyed.contains(v)) { return Ok(None) }
-        vaults
+        let seeded = held.seed_vaults(me);
+        match vault {
+            Some(v) if !seeded.contains(&v) => return Ok(None),
+            Some(v) => (vec![v], vec![]),
+            None => held.view_vaults(me).into_iter().partition::<Vec<_>, _>(|v| seeded.contains(v)),
+        }
     };
     let mut k = n.max(1);
     for _ in 0..8 {
@@ -123,6 +126,7 @@ pub(crate) async fn answer(
         if held.log(me).ids().len() != win.log_at { return Ok(None) }
         let mut among: Vec<EntryId> = win.entries.iter().map(|(_, e)| *e).collect();
         among.extend(held.untyped_of(me, vault));
+        for v in &others { among.extend(avendb::engine::query_candidates_in(&held, me, op, *v)); }
         let (got, shown) = avendb::engine::query_among(&held, me, op, among);
         drop(held);
         if shown >= n || !more { return Ok(Some((got, win))) }
@@ -327,5 +331,30 @@ mod tests {
         }
         eprintln!("windows off the index after edits: {answered} of 80, at most {most_over} rows past w + tail");
         assert!(answered > 40, "{answered}");
+    }
+
+    /// A draft (`create` with `draft`) its vault hasn't landed holds nothing on main and has no shared row: a window
+    /// neither shows it nor waits on it, and off the index answers as the engine does, saved or in the tail.
+    #[tokio::test]
+    async fn a_draft_room_is_the_engines_too() {
+        let mut w = world();
+        let (mac, alice) = (w.mac_a, w.alice);
+        let ix = SharedIndex::open(Memory::new().shelf()).await.unwrap();
+        for _ in 0..5 { w.lab.create(mac, alice, alice, "room", &[], document("R", "x", mac)).unwrap(); }
+        for _ in 0..3 { w.lab.create(mac, alice, alice, "document", &[], document("D", "x", mac)).unwrap(); }
+        let made = avendb::engine::run(&mut w.lab, mac, &serde_json::json!({"op": "create", "vault": alice.to_hex(),
+            "type": "document", "value": {"kind": "document", "title": "Idea"}, "draft": true}));
+        assert!(made.get("ok").is_some(), "a draft: {made}");
+        let draft = made["ok"]["entry"].clone();
+        let op = serde_json::json!({"op": "query", "vault": alice.to_hex(), "where": {"type": ["document"]}, "select": [], "window": 3});
+        let lab = Mutex::new(std::mem::replace(&mut w.lab, Lab::new()));
+        for save in [false, true] {
+            if save { let held = lab.lock().unwrap().log(mac).ids().len(); ix.step(&lab, mac, held).await.unwrap(); }
+            let full = avendb::engine::read(&lab.lock().unwrap(), mac, &op);
+            assert!(full["ok"]["rows"].as_array().unwrap().iter().all(|r| r["entry"] != draft), "no draft row");
+            assert_eq!(full["ok"]["coverage"]["state"], serde_json::json!("complete"), "{full}");
+            let got = answer(&ix, &lab, mac, &op).await.unwrap().map(|(g, _)| g);
+            assert_eq!(got.as_ref().unwrap_or(&full), &full, "saved {save}");
+        }
     }
 }
