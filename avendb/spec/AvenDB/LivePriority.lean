@@ -269,4 +269,27 @@ theorem one_fetch_of_a_key (asked held : List Nat) (k : Nat) (first : k ∈ fetc
   intro _ _
   exact first
 
+/-! ## Small answers first on a connection (batch 5)
+
+A peer answers each request on its own stream of one connection. A catch-up's page (up to 4 MiB) and a live pull's few
+edits shared the connection's sending in turn, so the live answer waited on what was queued of the page: on a phone link
+the first live pull of a catch-up took 450-650 ms for 2-3 edits (`bench_live` phone, 10 runs, T1 traces). An answer of
+at most `SMALL_ANSWER` bytes is now sent ahead of larger ones. Two levels only: within each, streams keep their turns,
+so no page waits on another page longer than before. Rust: session.rs `priority`, `serve`. -/
+
+def smallAnswer : Nat := 65536
+
+/-- The send priority of an answer of `bytes`: higher goes first. -/
+def priority (bytes : Nat) : Nat := if bytes ≤ smallAnswer then 1 else 0
+
+/-- A small answer never waits behind a large one's queued bytes. -/
+theorem small_goes_before_large (small large : Nat) (h : small ≤ smallAnswer) (h' : smallAnswer < large) :
+    priority large < priority small := by
+  simp [priority, h, Nat.not_le.mpr h']
+
+/-- Two answers of one size class keep their turns: neither goes before the other. -/
+theorem same_class_same_priority (a b : Nat) (ha : a ≤ smallAnswer) (hb : b ≤ smallAnswer) :
+    priority a = priority b := by
+  simp [priority, ha, hb]
+
 end AvenDB.LivePriority
