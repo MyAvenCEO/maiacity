@@ -872,6 +872,11 @@ fn range_write_bound(signed: &Signed) -> Option<usize> {
 /// How many edits a device steps on its replay before its shelf takes its view again (`Lab::warming`): as many as it
 /// steps on again as it starts from the view before. A replay of every edit puts the view on its shelf at once.
 const VIEW_STEPS: usize = 4096;
+
+/// The work a start does in one go, in edits to replay past its stored view and entries to show (`restore_end_with`):
+/// more, and it does a step of it, `RESTORE_BUDGET`, and its catch-up the rest.
+const RESTORE_WHOLE: usize = 4096;
+const RESTORE_BUDGET: usize = 48;
 /// What a device's shelf names edits it holds by that the device checked, each one, as it took them (avendb-net's
 /// newest head that holds only such edits, by its number and the hash of its bytes, which name its packs by their
 /// hashes): it keeps it with its keys (`Lab::warming`), so that it doesn't check them again as it starts, where its shelf
@@ -1015,6 +1020,8 @@ struct Store {
     /// What the keys its shelf keeps name the edits it checked by, as it last gave them or took them from there
     /// (`Lab::warming`).
     checked_given: Option<Checked>,
+    /// The work its start does in one go (`restore_end_with`), `RESTORE_WHOLE` but in a test.
+    restore_whole: usize,
     /// How many edits the view its shelf keeps is of, as it last gave it or took it from there, none if 0; how many
     /// times it replayed every edit, and how many times when its shelf took that view (`Lab::warming`).
     view_given: usize,
@@ -1091,6 +1098,7 @@ impl Default for Store {
             warm_revision: Arc::new(()),
             checked_given: None,
             view_given: 0,
+            restore_whole: RESTORE_WHOLE,
             view_lineage: None,
             wholes: 0,
             view_wholes: 0,
@@ -3141,7 +3149,7 @@ impl Lab {
 
     /// Whether device `d` is in the middle of a catch-up a step at a time (`catch_up_step`): behind, or with a replay
     /// under way, entries left to show or bodies left to open.
-    fn catching_up(&self, d: SignerId) -> bool {
+    pub fn catching_up(&self, d: SignerId) -> bool {
         self.stores.get(&self.at(d)).is_some_and(|s| {
             s.behind || s.replaying.is_some() || s.showing.is_some() || !s.read_new.left.is_empty()
         })
@@ -6122,9 +6130,10 @@ impl Lab {
     pub fn restore_start(&mut self, d: SignerId, checked: Option<Checked>, warm: &Warm) -> Restoring {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
+        let restore_whole = held.restore_whole;
         // spilled as it was, into new files: the old ones go with the store they were of
         let (signed, blobs) = (held.signed.fresh(), held.blobs.fresh_keys());
-        let mut store = Store { follow, query_depth, gate, perf, signed, blobs, ..Store::default() };
+        let mut store = Store { follow, query_depth, gate, perf, signed, blobs, restore_whole, ..Store::default() };
         let key = self.shelf_key(d);
         let mut matched = false;
         // Decode and merge one slot at a time. Keeping both complete decoded key
@@ -6350,7 +6359,28 @@ impl Lab {
             let edits = store.log.edits().len();
             store.restored = Some(Restored { edits, view: ViewOpened::Locked, kept: (0, 0), showings: 0 });
         }
-        self.refresh(d, &[]);
+        // what is left to do: the edits past its stored view, and the entries no showing it kept stands for. A start
+        // of little does it in one go; one of more does a step of it and ends behind, its node's catch-up steps doing
+        // the rest a turn at a time as its pages read (`CatchUpBudget.lean`): an iPhone's unlock with no view of a
+        // partial vault replayed, read and showed it all inside the start, 313 s (2026-10-28)
+        let Some(store) = self.stores.get_mut(&d) else { return };
+        let unshown = store.replay.state.entries().len().saturating_sub(store.kept_shown.len());
+        let left = store.log.edits().len().saturating_sub(store.replayed) + unshown;
+        if left <= store.restore_whole {
+            self.refresh(d, &[]);
+            return;
+        }
+        store.behind = true;
+        store.perf.count("restore: left to its catch-up", left as u64);
+        self.refresh_with(d, &[], Some(RESTORE_BUDGET));
+    }
+
+    /// The work device `d`'s start does in one go (`restore_end_with`), in edits to replay and entries to show:
+    /// `RESTORE_WHOLE`, or `n`, as a test of a start that ends behind sets it.
+    pub fn set_restore_whole(&mut self, d: SignerId, n: usize) {
+        if let Some(store) = self.stores.get_mut(&self.at(d)) {
+            store.restore_whole = n;
+        }
     }
 
     /// Device `d`'s key for what it seals on its own shelf (`ShelfKey`), derived from its own key: `None` while it is
