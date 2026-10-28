@@ -291,7 +291,7 @@
 		{/each}
 		{#if discovery.phase === 'error' || metadata.phase === 'error'}
 			<p class="hint" role="alert">Rooms could not be read on this device.</p>
-		{:else if discovery.phase === 'loading' || metadata.phase === 'loading'}
+		{:else if !rooms.length && (discovery.phase === 'loading' || metadata.phase === 'loading')}
 			<p class="hint">Opening local rooms…</p>
 		{:else if !rooms.length}<p class="hint empty">No rooms held on this device yet.</p>{/if}
 		{#if cursors.length}<button class="link" onclick={() => cursors = cursors.slice(0, -1)}>Previous rooms</button>{/if}

@@ -1,9 +1,13 @@
+import { untrack } from 'svelte';
 import { answer } from './ops.js';
+import { stillNamed } from './kept-answers.js';
 import { coverageOf } from '../../../game/code/sources/coverage.js';
 
 /** One mounted canonical collection, driven by the shared authorized local observer.
  * Keeps no world fallback: a ready empty result and a failed read are different states.
- * Query/context replacement resets rows; api.observe rejects late old-owner replies.
+ * Query/context replacement resets rows; api.observe rejects late old-owner replies. Where only the entries an op names
+ * change (a list whose rooms arrive one by one as the device catches up), the rows of those still named stay while the
+ * new answer is read: each row is its entry's alone, the same in any list that names it.
  * @param {() => { observe: (query: () => any, take: (out: any) => void, failed: (error: Error) => void) => () => void }} api
  * @param {() => object} query
  */
@@ -14,10 +18,14 @@ export function entryCollection(api, query) {
 	let phase = $state(/** @type {'loading' | 'ready' | 'error'} */ ('loading'));
 	let error = $state('');
 	let coverage = $state(coverageOf(null));
+	let last = /** @type {{ owner: any, op: any } | null} */ (null);
 	$effect(() => {
 		const owner = api();
 		const op = query();
-		rows = [];
+		const still = last?.owner === owner ? stillNamed(last.op, op) : null;
+		last = { owner, op };
+		const kept = still ? untrack(() => rows).filter((r) => still.has(r?.entry)) : [];
+		rows = kept;
 		coverage = coverageOf(null);
 		totalEntries = readableEntries = 0;
 		phase = 'loading';
@@ -46,3 +54,4 @@ export function entryCollection(api, query) {
 		get readableEntries() { return readableEntries; }, get phase() { return phase; }, get error() { return error; }
 	};
 }
+
