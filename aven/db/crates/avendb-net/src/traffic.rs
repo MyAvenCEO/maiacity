@@ -114,6 +114,40 @@ pub struct Lost {
     pub ahead: bool,
 }
 
+/// The askings kept (`Asking`), the newest.
+pub const ASKINGS: usize = 32;
+
+/// The logs an asking of a pull put to a device, as `Shared::pull_logs` chose them (`next_asking`): when, its stage
+/// (`manifests`, `views` or `rest`), how many logs and the first of them, how many of the logs the open views want it
+/// named and how many they want in all, and once it ended, how long it took, what was new, and whether it yielded to a
+/// view or failed. Whether a page's room was asked first, and where it waited, as the report reads it.
+#[derive(Clone, Debug)]
+pub struct Asking {
+    pub device: SignerId,
+    pub at: u64,
+    pub stage: &'static str,
+    pub logs: usize,
+    pub first: Vec<String>,
+    pub wanted: usize,
+    pub wants: usize,
+    pub ms: u64,
+    pub new: u64,
+    pub yielded: bool,
+    pub failed: bool,
+}
+
+/// A log as a report names it: its kind and the first 4 bytes of its id.
+pub fn log_name(log: &avendb::sync::LogId) -> String {
+    use avendb::sync::LogId;
+    let short = |b: &[u8; 32]| b[..4].iter().map(|x| format!("{x:02x}")).collect::<String>();
+    match log {
+        LogId::Vault(v) => format!("Vault {}", short(&v.0)),
+        LogId::Share(s) => format!("Share {}", short(&s.0)),
+        LogId::Audience(v, a) => format!("Audience {} {}", short(&v.0), short(&a.0)),
+        LogId::Entry(e) => format!("Entry {}", short(&e.0)),
+    }
+}
+
 #[derive(Default)]
 struct Book {
     by: HashMap<SignerId, Pulled>,
@@ -122,6 +156,7 @@ struct Book {
     live: LiveBook,
     trace: VecDeque<Trace>,
     lost: VecDeque<Lost>,
+    askings: VecDeque<Asking>,
 }
 
 /// One step of a live edit on its way (T1): its id is the trace id on every device, as the edit's id is the same
@@ -349,6 +384,36 @@ impl Traffic {
         book.by.entry(lost.device).or_default().lost += 1;
         book.lost.push_front(lost);
         book.lost.truncate(LOST);
+    }
+
+    /// An asking of a pull ended (`Asking`).
+    pub fn asking(&self, asking: Asking) {
+        let mut book = self.0.lock().expect("traffic");
+        book.askings.push_front(asking);
+        book.askings.truncate(ASKINGS);
+    }
+
+    /// The newest askings, the newest first.
+    pub fn askings_json(&self) -> Vec<Value> {
+        let book = self.0.lock().expect("traffic");
+        book.askings
+            .iter()
+            .map(|a| {
+                json!({
+                    "device": a.device.to_hex(),
+                    "at": a.at,
+                    "stage": a.stage,
+                    "logs": a.logs,
+                    "first": a.first,
+                    "wanted": a.wanted,
+                    "wants": a.wants,
+                    "ms": a.ms,
+                    "new": a.new,
+                    "yielded": a.yielded,
+                    "failed": a.failed,
+                })
+            })
+            .collect()
     }
 
     /// The newest pages lost in flight, the newest first.
