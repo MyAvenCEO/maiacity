@@ -604,6 +604,12 @@ const ENGINE: &str = env!("AVENDB_ENGINE");
 /// changes them names a new number, under which no older view opens (VR2).
 const VIEW_RULES: &str = concat!("avenDB view rules ", env!("AVENDB_VIEW_RULES"));
 
+/// What a device seals the showings it keeps to (`ShowRules.lean`, `build.rs`): the number of the show rules it judged
+/// them under, not the engine's hash, so a release that keeps the rules keeps every device's kept showings (SR1), and one
+/// that changes them names a new number, under which no older pack opens (SR2). Sealed to the engine's hash, every
+/// release left them shut, and a phone's first unlock after it judged every entry anew (2026-10-28).
+const SHOW_RULES: &str = concat!("avenDB show rules ", env!("AVENDB_SHOW_RULES"));
+
 /// The engine's hash as a fixed-size binding, for what a device seals to the engine that made it.
 pub fn engine() -> [u8; 32] {
     crate::hash::content(ENGINE.as_bytes())
@@ -691,6 +697,28 @@ pub struct Restoring {
     doubtful: Vec<Signed>,
     /// The McEliece keys its edits name that didn't come with their pages (`Lab::restore_wants`).
     wanting: HashSet<BlobId>,
+}
+
+/// How a restore went (`Lab::restore_report`): the edits it held, the stored view it started from or why none, the
+/// packs of kept showings that opened and those that didn't, and the showings they held.
+#[derive(Clone, Debug)]
+struct Restored {
+    edits: usize,
+    view: ViewOpened,
+    kept: (usize, usize),
+    showings: usize,
+}
+
+/// The stored view a restore started from (`restore_end_with`): one of the first `held` edits of its log; none on its
+/// shelf; `n` none of which opens for these replay rules with its shelf key; `n` of which some open but none is of the
+/// edits its log starts with; or none, as it was locked.
+#[derive(Clone, Copy, Debug)]
+enum ViewOpened {
+    Of { held: usize },
+    NoneKept,
+    NoneOpens(usize),
+    NoneOfThese(usize),
+    Locked,
 }
 
 /// What of `Warm` a device's shelf lacks (`Lab::warming`), for its shelf to take, and what it is of, for `Lab::warmed`.
@@ -973,6 +1001,9 @@ struct Store {
     /// leaves out, and when it puts them all in one pack again.
     shown_given: HashMap<EntryId, [u8; 32]>,
     shown_packs: (usize, usize),
+    /// How its last restore went (`restore_end_with`), for its person to read beside the step it took
+    /// (`Lab::restore_report`).
+    restored: Option<Restored>,
     /// The keys it opened from their boxes before, from its shelf (`Warm::keys`), each by the box it opened and the key
     /// it opened it with (`opened_box`): that box it doesn't open again. And those it opened since its shelf took them
     /// (`Lab::warming`, `Lab::warmed`).
@@ -1034,6 +1065,7 @@ impl Default for Store {
             kept_shown: HashMap::new(),
             shown_given: HashMap::new(),
             shown_packs: (0, 0),
+            restored: None,
             digests: None,
             follow: vec![],
             query_depth: lens::CEILING,
@@ -6214,6 +6246,34 @@ impl Lab {
     }
 
     /// `restore_end`, with its owners' judged slices `bases`.
+    /// How device `d`'s last restore went, in words for its person, with what each part of it took (`restore_end`):
+    /// whether it started from a stored view and of how many edits, and if not why not, the kept showings it took,
+    /// and how long replaying, reading and showing took. `None` before any restore.
+    pub fn restore_report(&self, d: SignerId) -> Option<String> {
+        let store = self.held(d);
+        let r = store.restored.as_ref()?;
+        let ms = |k: &str| store.perf.total_ms(k);
+        let view = match r.view {
+            ViewOpened::Of { held } => {
+                let after = r.edits.saturating_sub(held);
+                format!("From its stored view of {held} edits, {after} after it replayed")
+            }
+            ViewOpened::NoneKept => "No stored view on its shelf: every edit replayed".into(),
+            ViewOpened::NoneOpens(n) => format!("{n} stored views, none sealed for these replay rules: every edit replayed"),
+            ViewOpened::NoneOfThese(n) => format!("{n} stored views, none of the edits its log starts with: every edit replayed"),
+            ViewOpened::Locked => "Locked, no stored view opened: every edit replayed".into(),
+        };
+        let kept = match r.kept {
+            (0, 0) => "no kept showings".to_string(),
+            (packs, 0) => format!("{} kept showings from {packs} packs", r.showings),
+            (packs, failed) => format!("{} kept showings from {packs} packs, {failed} packs that don't open", r.showings),
+        };
+        Some(format!(
+            "{view}; {kept}. {} edits. Replay {:.1} s, read {:.1} s, show {:.1} s, upkeep {:.1} s",
+            r.edits, ms("replay") / 1000.0, ms("read") / 1000.0, ms("show items") / 1000.0, ms("upkeep") / 1000.0
+        ))
+    }
+
     fn restore_end_with(&mut self, d: SignerId, r: Restoring, bases: entry_base::Anchors, warm: &Warm) {
         // an edit held bare that a later page's checkpoint covers, which its own page couldn't tell
         if !r.doubtful.is_empty() {
@@ -6233,11 +6293,24 @@ impl Lab {
         {
             let at = Perf::start();
             let (edits, ids) = (store.log.edits(), store.log.ids());
+            let mut opened = 0;
             let found = warm.views.iter().find_map(|b| {
                 let view = key.unlock("view", b, VIEW_RULES.as_bytes())?;
+                opened += 1;
                 let older = view.starts_with(b"avenDB own materialization 1\n");
                 Replay::from_view(view_replay(&view)?, edits, ids).map(|(replay, held)| (replay, held, older))
             });
+            let mut restored = Restored {
+                edits: edits.len(),
+                view: match (&found, warm.views.len(), opened) {
+                    (Some((_, held, _)), ..) => ViewOpened::Of { held: *held },
+                    (None, 0, _) => ViewOpened::NoneKept,
+                    (None, n, 0) => ViewOpened::NoneOpens(n),
+                    (None, n, _) => ViewOpened::NoneOfThese(n),
+                },
+                kept: (0, 0),
+                showings: 0,
+            };
             match found {
                 Some((replay, held, older)) => {
                     store.replay = replay;
@@ -6258,6 +6331,7 @@ impl Lab {
             for pack in &warm.shown {
                 let Some(kept) = shown_map::unpack(&key, &pack.0) else {
                     store.perf.count("kept shown: a pack that doesn't open", 1);
+                    restored.kept.1 += 1;
                     continue;
                 };
                 packs += 1;
@@ -6270,6 +6344,11 @@ impl Lab {
             store.shown_packs.0 = packs;
             store.perf.count("kept shown: showings", store.kept_shown.len() as u64);
             store.perf.add("open kept shown", at);
+            (restored.kept.0, restored.showings) = (packs, store.kept_shown.len());
+            store.restored = Some(restored);
+        } else if let Some(store) = self.stores.get_mut(&d) {
+            let edits = store.log.edits().len();
+            store.restored = Some(Restored { edits, view: ViewOpened::Locked, kept: (0, 0), showings: 0 });
         }
         self.refresh(d, &[]);
     }
