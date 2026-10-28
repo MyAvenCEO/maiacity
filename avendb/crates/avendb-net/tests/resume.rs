@@ -22,9 +22,13 @@ fn ready() -> (World, VaultId) {
 }
 
 /// Alice's iPhone from a world made anew, on the shelf in `dir`, its randomness drawn anew at each start.
-async fn phone(dir: &std::path::Path, start: u8) -> Arc<Node> {
+/// With `whole`, the work its start does in one go (`Lab::set_restore_whole`).
+async fn phone(dir: &std::path::Path, start: u8, whole: Option<usize>) -> Arc<Node> {
     let (mut w, _) = ready();
-    let lab = w.lab.split(w.phone_a, &[w.passkey_a], [100 + start; 32]);
+    let mut lab = w.lab.split(w.phone_a, &[w.passkey_a], [100 + start; 32]);
+    if let Some(n) = whole {
+        lab.set_restore_whole(w.phone_a, n);
+    }
     let opts = Options { shelf: Some(disk::open(dir).expect("the shelf")), ..Options::local() };
     Arc::new(Node::spawn(lab, w.phone_a, opts).await.expect("Alice's iPhone"))
 }
@@ -48,7 +52,7 @@ async fn a_first_pull_cut_off_goes_on_from_its_shelf_when_started_again() {
     let mac = Node::spawn(w.lab.split(mac_d, &[w.passkey_a], [1; 32]), mac_d, Options::local()).await.expect("Alice's Mac");
     let all = held(&mac).await;
     let dir = Folder::new("resume");
-    let first = phone(dir.path(), 0).await;
+    let first = phone(dir.path(), 0, None).await;
     let before = held(&first).await;
     first.know(mac.addr());
     mac.know(first.addr());
@@ -64,14 +68,26 @@ async fn a_first_pull_cut_off_goes_on_from_its_shelf_when_started_again() {
     drop(first);
     eprintln!("RESUME the Mac holds {all}, the iPhone {before} before its first pull, {cut} when it was cut off");
     assert!(cut < all, "cut off part of the way: {cut} of {all}");
+    // and its stored view and kept showings gone, as an iPhone's that never kept one of a partial vault (2026-10-28)
+    let generations = std::fs::read_dir(dir.path()).expect("the shelf's folder").map(|g| g.expect("a generation").path());
+    let mut gone = 0;
+    for generation in generations.filter(|g| g.is_dir()) {
+        for slot in ["view-0", "view-1", "shown-0", "shown-1"] {
+            gone += std::fs::remove_file(generation.join("slots").join(slot)).is_ok() as usize;
+        }
+    }
+    assert!(gone > 0, "it kept a view to lose");
     // started again from its shelf: it holds at least what it took, and goes on to every edit, what it holds only
     // growing, and caught up within a bounded time
     let starting = Instant::now();
-    let again = phone(dir.path(), 1).await;
+    // with nothing it may do in one go as it starts, as a start of a vault too big for that (an iPhone's unlock of a
+    // partial vault, 313 s, 2026-10-28): it does a step and ends behind, its own catch-up doing the rest
+    let again = phone(dir.path(), 1, Some(0)).await;
     let back = held(&again).await;
     let perf = again.read(|lab: &Lab, me: SignerId| lab.perf(me)).await;
     eprintln!("RESUME started again in {:?}: refresh {} counts {}", starting.elapsed(), perf["timers"]["refresh"], perf["counts"]);
     assert!(back >= before, "its shelf's edits back: {back}");
+    assert!(perf["counts"]["restore: left to its catch-up"].as_u64().is_some_and(|n| n > 0), "its start left work to its catch-up");
     again.know(mac.addr());
     mac.know(again.addr());
     let began = Instant::now();
@@ -84,7 +100,7 @@ async fn a_first_pull_cut_off_goes_on_from_its_shelf_when_started_again() {
         let now = held(&again).await;
         assert!(now >= last, "what it holds only grows: {last} then {now}");
         last = now;
-        if now >= all && !again.behind().await {
+        if now >= all && !again.behind().await && !again.read(|lab: &Lab, me: SignerId| lab.catching_up(me)).await {
             break;
         }
         assert!(began.elapsed() < Duration::from_secs(120), "caught up in time: {now} of {all} held");
