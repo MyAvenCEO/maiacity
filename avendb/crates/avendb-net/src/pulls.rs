@@ -1507,13 +1507,16 @@ mod pipelined_tests {
             future::pending::<()>().await;
         };
         // it ends by its connection's loss, not by a page's wait running out (`PAGE_WAIT`, "no page in time"): the
-        // cause, not a wall clock a loaded machine misses (10.3 s once, batch 5); the timeout only stops a hang
+        // cause, not a wall clock a loaded machine misses (10.3 s once, batch 5); the timeout only stops a hang. The
+        // close's reason, "route gone", is in the error whichever call met the closed connection first: a page read
+        // under way ("connection lost: closed by peer: …") or the next page's stream ("closed by peer: …", seen under
+        // a loaded machine, batch 5 CI)
         let ended = time::timeout(crate::PAGE_WAIT / 6, future::or(async { Some(pull.await) }, async { serving.await; None }))
             .await
             .expect("the pull ends once its connection is gone")
             .expect("the pull, not the peer, ends");
         let why = format!("{:#}", ended.as_ref().expect_err("a pull whose connection closed under it fails"));
-        assert!(why.contains("connection lost") && !why.contains("no page in time"), "it ends by the route's loss: {why}");
+        assert!(why.contains("route gone") && !why.contains("no page in time"), "it ends by the route's loss: {why}");
         // its slots come back as its futures drop, the blocking checks of its pages included
         time::timeout(Duration::from_secs(30), async {
             while slots(&phone.shared.pulls) != slots(&fresh) {
