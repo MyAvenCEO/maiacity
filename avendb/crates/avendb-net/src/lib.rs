@@ -110,6 +110,8 @@ mod node_loop;
 mod blind;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
+mod congestion;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod claim;
@@ -276,6 +278,14 @@ pub fn web_provider() -> Arc<CryptoProvider> {
 }
 
 /// The TLS of this node: `pq_provider` on a machine, `web_provider` in a browser.
+/// Every connection's QUIC: iroh's, its send rate set by BBR v3 and Cubic together (`congestion`).
+fn quic() -> iroh::endpoint::QuicTransportConfig {
+    let builder = iroh::endpoint::QuicTransportConfig::builder();
+    #[cfg(not(target_arch = "wasm32"))]
+    let builder = builder.congestion_controller_factory(Arc::new(congestion::EitherConfig::default()));
+    builder.build()
+}
+
 fn provider() -> Arc<CryptoProvider> {
     #[cfg(not(target_arch = "wasm32"))]
     return pq_provider();
@@ -740,6 +750,7 @@ impl Node {
             .secret_key(SecretKey::from_bytes(&secret))
             .crypto_provider(provider())
             .address_lookup(lookup.clone())
+            .transport_config(quic())
             .add_custom_transport(Arc::new(packets.clone()));
         // iroh's own sockets, on every interface, and its port mapping, for a node that reaches out directly; else
         // the one socket it binds, if any
