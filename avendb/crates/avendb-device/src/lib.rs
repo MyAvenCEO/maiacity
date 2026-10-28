@@ -528,6 +528,7 @@ impl Service {
                 Value::Null
             }
             "addCloudAgent" => self.add_cloud_agent(&d).await?,
+            "addTestPasskey" => self.add_test_passkey(&d).await?,
             "fileEnd" => {
                 let incoming = self.files.lock().expect("the files").remove(&number(0)?);
                 let Incoming { chunks, answer, .. } = incoming.context("no such file on its way in")?;
@@ -1058,6 +1059,36 @@ impl Service {
         let key = Zeroizing::new(hex(&sign::kept_secret(&secret)));
         Ok(json!({ "device": hex(&device.0), "name": name, "aven": hex(&aven.0), "key": key.as_str(),
             "variable": agent::KEY_VAR }))
+    }
+
+    /// `addTestPasskey`: a disposable passkey for the test browser on this Mac (scripts/devx/live-device.mjs), made here
+    /// and added as one more owner key of its person's vault, in one sheet of their passkey or a touch
+    /// (`Node::add_owner_passkey`): the browser signs in with it as another device of theirs, admitted by their vault's
+    /// standing. Its key goes nowhere but the login Keychain, as the script reads it (`{id, jwk, prf}`); revoking the
+    /// owner ends it. `{"passkey": id}`.
+    async fn add_test_passkey(self: &Arc<Self>, d: &Arc<Device>) -> Result<Value> {
+        let mut added = loop {
+            // a random 32 bytes outside P-256's scalar range is about 2^-32 likely: draw again
+            if let Some(passkey) = sign::Passkey::with_hmac_secret(*Zeroizing::new(random()?), random()?) {
+                break passkey;
+            }
+        };
+        let approver = self.approver().await?;
+        // the owner key that approves: the Mac's Touch ID key where it is one, else the passkey
+        let owner = d.node().read(engine::passkey_of).await.unwrap_or(d.passkey());
+        let id = d.node().add_owner_passkey(&mut added, owner, &approver).await?;
+        let (x, y) = added.point();
+        let (secret, hmac) = (added.secret(), added.hmac_secret().context("a passkey with its hmac-secret")?);
+        let b64 = |b: &[u8]| BASE64URL_NOPAD.encode(b);
+        let jwk = json!({ "kty": "EC", "crv": "P-256", "x": b64(&x), "y": b64(&y), "d": b64(&*secret) });
+        let key = Zeroizing::new(json!({ "id": b64(&random()?[..16]), "jwk": jwk, "prf": b64(&*hmac) }).to_string());
+        let kept = std::process::Command::new("/usr/bin/security")
+            .args(["add-generic-password", "-U", "-s", "maiacity-live-device", "-a", "passkey"])
+            .args(["-l", "maiaCITY dev browser passkey (disposable)", "-w", key.as_str()])
+            .status()
+            .context("the Keychain's `security`")?;
+        anyhow::ensure!(kept.success(), "the Keychain didn't keep the test passkey ({kept}): revoke it in your vault");
+        Ok(json!({ "passkey": id.to_hex() }))
     }
 
     /// Denies agent `name`'s access request, the one its device `device` left: it is taken away, and the no left for

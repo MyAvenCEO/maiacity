@@ -147,6 +147,12 @@
 	async function addCloud() {
 		cloud = (await api.addCloudAgent?.()) ?? null;
 	}
+	/** the test browser's passkey this page just added, by its id */
+	let testPasskey = $state(/** @type {string | null} */ (null));
+	/** Adds a disposable passkey for the test browser as one more owner key of this vault, in one sheet. */
+	async function addTestPasskey() {
+		testPasskey = (await api.addTestPasskey?.()) ?? null;
+	}
 	/** in the Mac app, the agents' devices it knows of (avendb-device's `agentDevices`), looked for again now and then,
 	 *  as an agent starts or stops and its key moves; else none */
 	let agents = $state(/** @type {{ name: string, device: string, cloud: boolean, online: boolean }[] | null} */ (null));
@@ -1144,6 +1150,14 @@
 					<button class="btn quiet" onclick={() => (cloud = null)}>Done</button>
 				{:else}
 					<button class="btn" disabled={busy} onclick={addCloud}>Add a cloud agent</button>
+				{/if}
+				{#if testPasskey}
+					<p class="soft">
+						The test browser's passkey is in your login Keychain and owns your vault beside your passkey. Run
+						<code>bun scripts/devx/live-device.mjs</code>; revoke it under Who has your vault when you're done.
+					</p>
+				{:else}
+					<button class="btn quiet" disabled={busy} onclick={addTestPasskey}>Add a test passkey</button>
 				{/if}
 			</article>
 		{/if}

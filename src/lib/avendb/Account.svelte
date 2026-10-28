@@ -510,6 +510,19 @@
 			return added;
 		},
 		/**
+		 * In the Mac app: a disposable passkey for the test browser (scripts/devx/live-device.mjs), made on this Mac and
+		 * added as one more owner key of the person's vault, in one sheet (avendb-device's `addTestPasskey`). Its key goes
+		 * to the login Keychain alone. Its id, or null.
+		 * @returns {Promise<string | null>}
+		 */
+		addTestPasskey: async () => {
+			if (!mac) return null;
+			/** @type {string | null} */
+			let added = null;
+			await act('Adding a test passkey', async () => (added = (await mac.call('addTestPasskey')).passkey));
+			return added;
+		},
+		/**
 		 * In the Mac app: uses the drive plugged in at volume `path` for avenDB, as a device of the person's vault of
 		 * its own named `name`, in one ceremony of their passkey (avendb-device's `joinDrive`).
 		 * @param {string} path @param {string} name
