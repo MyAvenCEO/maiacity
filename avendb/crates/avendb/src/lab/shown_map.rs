@@ -6,13 +6,20 @@
 //! changes a snapshot leaves out stays open. A showing its shelf kept comes in closed (`insert_closed`), so an unlock
 //! opens only those it reads. Closed or open, it is the same showing: it opens as the showing it closed, and judging
 //! anew makes it (`SV1_open`). One whose bytes don't open is none, and the next `show_items` judges its entry anew.
+//!
+//! A pack of them (`pack`) holds each sealed alone, behind a sealed index of where each is, so one taken from its
+//! shelf (`unpack`) is read where it is, in its pack's file, as it opens: what an unlock holds of them is their index.
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use super::{Shown, Tip};
+use zeroize::Zeroizing;
+
+use super::{ENGINE, ShelfKey, Shown, Tip};
 use crate::id::EntryId;
+use crate::keys::SeededRng;
+use crate::pages::Space;
 
 /// How many showings stay open past a `trim` beside those it keeps open (the scratch items' entries): those read or
 /// judged last.
@@ -23,26 +30,51 @@ pub(super) const WINDOW: usize = if cfg!(feature = "test-fixtures") { 8 } else {
 pub(super) struct Closed {
     pub(super) print: [u8; 32],
     pub(super) tip: Tip,
-    pub(super) bytes: Arc<[u8]>,
+    bytes: Bytes,
 }
 
+/// A closed showing's bytes: in memory, or sealed in a pack on its shelf (`pack`).
+#[derive(Clone)]
+enum Bytes {
+    Held(Arc<[u8]>),
+    Packed(Arc<Packed>),
+}
+
+/// Where a showing is sealed in a pack: its pack, and its place and length there, with the key and the context it was
+/// sealed under.
+struct Packed {
+    pack: Arc<dyn Space>,
+    at: u64,
+    len: u32,
+    key: ShelfKey,
+    context: Vec<u8>,
+}
+
+impl Packed {
+    fn read(&self) -> Option<Zeroizing<Vec<u8>>> {
+        let mut sealed = vec![0; self.len as usize];
+        self.pack.read_at(self.at, &mut sealed).ok()?;
+        self.key.unlock("kept shown", &sealed, &self.context)
+    }
+}
+
+/// The tip of a showing a pack holds till `show_items` takes it, which gives it its entry's tip then.
+const UNTAKEN: Tip = Tip { writes: 0, last: None, lane: [0; 32], groups: [0; 32] };
+
 impl Closed {
-    /// The showing a shelf kept as `bytes` (`Shown::record`): its print and tip read off them, the rest when it opens.
-    pub(super) fn of_record(bytes: Vec<u8>) -> Option<Closed> {
-        use crate::wire::{Decode, Reader};
-        let r = &mut Reader::new(&bytes);
-        let print = <[u8; 32]>::decode(r).ok()?;
-        let tip = Tip {
-            writes: u64::decode(r).ok()? as usize,
-            last: r.option().ok()?,
-            lane: <[u8; 32]>::decode(r).ok()?,
-            groups: <[u8; 32]>::decode(r).ok()?,
-        };
-        Some(Closed { print, tip, bytes: bytes.into() })
+    /// Its bytes (`Shown::record`).
+    fn record(&self) -> Option<Zeroizing<Vec<u8>>> {
+        match &self.bytes {
+            Bytes::Held(b) => Some(Zeroizing::new(b.to_vec())),
+            Bytes::Packed(p) => p.read(),
+        }
     }
 
     pub(super) fn open(&self) -> Option<Shown> {
-        let mut s = Shown::of_record(&self.bytes).ok()?;
+        let mut s = match &self.bytes {
+            Bytes::Held(b) => Shown::of_record(b).ok()?,
+            Bytes::Packed(p) => Shown::of_record(&p.read()?).ok()?,
+        };
         (s.print == self.print).then(|| {
             s.tip = self.tip;
             s
@@ -224,17 +256,13 @@ impl ShownMap {
         self.iter().map(|(_, s)| s)
     }
 
-    /// Its bytes as its shelf keeps them (`Shown::kept`): those it holds closed, or the open showing's.
-    pub(super) fn kept(&self, e: &EntryId, out: &mut Vec<u8>) -> Option<()> {
-        use crate::encode::Encode;
+    /// Its bytes as its shelf keeps them (`Shown::record`): those it holds closed, or the open showing's.
+    pub(super) fn record(&self, e: &EntryId) -> Option<Zeroizing<Vec<u8>>> {
         let slot = self.slots.get(e)?;
         // the tip its bytes hold is of no account: one taken again stands for its entry's tip then (`show_items`)
         match (&slot.closed, slot.open.get()) {
-            (Some(c), _) => {
-                c.bytes.encode(out);
-                Some(())
-            }
-            (None, Some(s)) => s.kept(out),
+            (Some(c), _) => c.record(),
+            (None, Some(s)) => s.record().map(Zeroizing::new),
             (None, None) => None,
         }
     }
@@ -274,7 +302,7 @@ impl ShownMap {
             if slot.closed.is_none() {
                 let s = slot.open.get().expect("open");
                 let Some(bytes) = s.record() else { continue };
-                slot.closed = Some(Closed { print: s.print, tip: s.tip, bytes: bytes.into() });
+                slot.closed = Some(Closed { print: s.print, tip: s.tip, bytes: Bytes::Held(bytes.into()) });
             }
             slot.open = OnceLock::new();
             closed += 1;
@@ -288,4 +316,68 @@ impl std::ops::Index<&EntryId> for ShownMap {
     fn index(&self, e: &EntryId) -> &Shown {
         self.get(e).expect("a showing of the entry")
     }
+}
+
+/// What a pack of kept showings starts with (`Warming::shown`), the version of its bytes.
+const KEPT_SHOWN: &[u8] = b"avenDB kept shown 2\n";
+
+/// What a showing in a pack is sealed under: the engine, its entry and its print, so that it opens as no other.
+fn context(e: &EntryId, print: &[u8; 32]) -> Vec<u8> {
+    [ENGINE.as_bytes(), &e.0, print].concat()
+}
+
+/// A pack of the showings `shown`, each its entry's, print and bytes (`Shown::record`): `KEPT_SHOWN`, the length of
+/// its index and its index, sealed, of each one's entry, print, and place and length past the index, then each one
+/// sealed alone.
+pub(super) fn pack(key: &ShelfKey, rng: &mut SeededRng, shown: &[(EntryId, [u8; 32], Zeroizing<Vec<u8>>)]) -> Vec<u8> {
+    use crate::encode::Encode;
+    let mut index = Zeroizing::new(vec![]);
+    (shown.len() as u32).encode(&mut index);
+    let mut sealed = vec![];
+    for (e, print, record) in shown {
+        let one = key.lock("kept shown", record, &context(e, print), rng);
+        index.extend(e.0);
+        index.extend(print);
+        (sealed.len() as u64).encode(&mut index);
+        (one.len() as u32).encode(&mut index);
+        sealed.extend(one);
+    }
+    let index = key.lock("kept shown index", &index, ENGINE.as_bytes(), rng);
+    let mut out = KEPT_SHOWN.to_vec();
+    (index.len() as u32).encode(&mut out);
+    out.extend(index);
+    out.extend(sealed);
+    out
+}
+
+/// The showings pack `pack` holds (`pack`), by entry, each closed where it is in the pack: none of a pack that isn't
+/// one, or whose index doesn't open with `key`.
+pub(super) fn unpack(key: &ShelfKey, pack: &Arc<dyn Space>) -> Option<Vec<(EntryId, Closed)>> {
+    use crate::wire::{Decode, Reader};
+    let head = KEPT_SHOWN.len() as u64 + 4;
+    let mut start = vec![0; head as usize];
+    pack.read_at(0, &mut start).ok()?;
+    let n = u32::from_be_bytes(start.strip_prefix(KEPT_SHOWN)?.try_into().ok()?) as u64;
+    if head + n > pack.len() {
+        return None;
+    }
+    let mut sealed = vec![0; n as usize];
+    pack.read_at(head, &mut sealed).ok()?;
+    let index = key.unlock("kept shown index", &sealed, ENGINE.as_bytes())?;
+    let base = head + n;
+    let r = &mut Reader::new(&index);
+    let count = r.count(76).ok()?;
+    let mut out = Vec::with_capacity(count.min(4096));
+    for _ in 0..count {
+        let e = EntryId::decode(r).ok()?;
+        let print = <[u8; 32]>::decode(r).ok()?;
+        let at = base.checked_add(u64::decode(r).ok()?)?;
+        let len = u32::decode(r).ok()?;
+        if at.checked_add(len as u64)? > pack.len() {
+            return None;
+        }
+        let packed = Packed { pack: pack.clone(), at, len, key: key.clone(), context: context(&e, &print) };
+        out.push((e, Closed { print, tip: UNTAKEN, bytes: Bytes::Packed(Arc::new(packed)) }));
+    }
+    r.done().then_some(out)
 }

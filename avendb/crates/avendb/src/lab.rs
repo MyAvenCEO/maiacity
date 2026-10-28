@@ -659,7 +659,18 @@ pub struct Warm {
     pub views: Vec<Vec<u8>>,
     /// Its packs of kept showings, the oldest first: a later one's showing of an entry in place of an earlier one's
     /// (`Warming::shown`).
-    pub shown: Vec<Vec<u8>>,
+    pub shown: Vec<ShownPack>,
+}
+
+/// A pack of kept showings as a shelf holds it (`Warm::shown`): the file it is, read where it is as the showings it
+/// holds open (`shown_map::unpack`), or its bytes.
+#[derive(Clone, Debug)]
+pub struct ShownPack(pub Arc<dyn crate::pages::Space>);
+
+impl From<Vec<u8>> for ShownPack {
+    fn from(bytes: Vec<u8>) -> ShownPack {
+        ShownPack(Arc::new(crate::pages::MemorySpace::of(bytes)))
+    }
 }
 
 /// A restore a page at a time under way (`Lab::restore_start`): how many of the first edits it restores its shelf names
@@ -700,8 +711,9 @@ pub struct WarmCapture {
     rng: SeededRng,
     opened: Option<Vec<([u8; 32], Secret)>>,
     replay: Option<crate::policy::ViewCapture>,
-    /// The showings to keep, encoded (`Shown::kept`).
-    shown: Option<Zeroizing<Vec<u8>>>,
+    /// The showings to keep, each its entry's, print and bytes (`Shown::record`), to seal one by one
+    /// (`shown_map::pack`).
+    shown: Option<Vec<(EntryId, [u8; 32], Zeroizing<Vec<u8>>)>>,
     receipt: Warming,
 }
 impl WarmCapture {
@@ -721,8 +733,8 @@ impl WarmCapture {
             let bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
             self.receipt.view = Some(self.key.lock("view", &bytes, VIEW_RULES.as_bytes(), &mut self.rng));
         }
-        if let (Some(bytes), Some((_, whole))) = (self.shown.take(), &self.receipt.shown_of) {
-            self.receipt.shown = Some((self.key.lock("kept shown", &bytes, ENGINE.as_bytes(), &mut self.rng), *whole));
+        if let (Some(shown), Some((_, whole))) = (self.shown.take(), &self.receipt.shown_of) {
+            self.receipt.shown = Some((shown_map::pack(&self.key, &mut self.rng, &shown), *whole));
         }
         self.receipt
     }
@@ -1159,22 +1171,13 @@ struct Shown {
     after: After,
 }
 
-/// What a pack of kept showings starts with (`Warming::shown`), the version of its bytes.
-const KEPT_SHOWN: &[u8] = b"avenDB kept shown 1\n";
-
 /// How many packs of kept showings a shelf holds at most: past them a save puts every showing in one pack again.
 const SHOWN_PACKS: usize = 8;
 
 impl Shown {
-    /// Its bytes as a device keeps it on its shelf (`kept`), all but its scratch item, which judging builds again of
-    /// its writes: none where an item holds changes a Loro snapshot leaves out.
-    fn kept(&self, out: &mut Vec<u8>) -> Option<()> {
-        use crate::encode::Encode;
-        self.record()?.encode(out);
-        Some(())
-    }
-
-    /// What `kept` holds of it, without its length: what a closed showing keeps (`shown_map::Closed`).
+    /// Its bytes as a device keeps it on its shelf (`Warming::shown`) and closes it to (`shown_map::Closed`), all but
+    /// its scratch item, which judging builds again of its writes: none where an item holds changes a Loro snapshot
+    /// leaves out.
     fn record(&self) -> Option<Vec<u8>> {
         use crate::encode::Encode;
         let mut b = vec![];
@@ -1226,19 +1229,6 @@ impl Shown {
         }
         Ok(Shown { history, items, print, tip, after })
     }
-}
-
-/// The showings a pack holds (`Warming::shown`), by entry, closed: none of bytes that aren't one.
-fn kept_shown_of(bytes: &[u8]) -> Option<Vec<(EntryId, Closed)>> {
-    use crate::wire::{Decode, Reader};
-    let mut r = Reader::new(bytes.strip_prefix(KEPT_SHOWN)?);
-    let n = r.count(36).ok()?;
-    let mut out = Vec::with_capacity(n.min(4096));
-    for _ in 0..n {
-        let e = EntryId::decode(&mut r).ok()?;
-        out.push((e, Closed::of_record(r.bytes().ok()?)?));
-    }
-    r.done().then_some(out)
 }
 
 impl Shown {
@@ -6204,8 +6194,8 @@ impl Lab {
             // is its entry's print as it shows them (`show_items`); a pack that doesn't open is none
             let at = Perf::start();
             let mut packs = 0;
-            for b in &warm.shown {
-                let Some(kept) = key.unlock("kept shown", b, ENGINE.as_bytes()).and_then(|b| kept_shown_of(&b)) else {
+            for pack in &warm.shown {
+                let Some(kept) = shown_map::unpack(&key, &pack.0) else {
                     store.perf.count("kept shown: a pack that doesn't open", 1);
                     continue;
                 };
@@ -6273,20 +6263,15 @@ impl Lab {
                     true => store.keeps(false),
                     false => fresh_shown,
                 };
-                let mut bytes = Zeroizing::new(KEPT_SHOWN.to_vec());
-                let mut body = Zeroizing::new(vec![]);
+                let mut shown = vec![];
                 let mut of = vec![];
                 for e in es {
-                    let mut one = vec![];
-                    if store.shown.kept(&e, &mut one).is_some() && let Some(print) = store.shown.print(&e) {
-                        body.extend(e.0);
-                        body.extend(one);
+                    if let (Some(record), Some(print)) = (store.shown.record(&e), store.shown.print(&e)) {
+                        shown.push((e, print, record));
                         of.push((e, print));
                     }
                 }
-                bytes.extend((of.len() as u32).to_be_bytes());
-                bytes.extend(body.iter());
-                (Some(bytes), Some((of, whole)))
+                (Some(shown), Some((of, whole)))
             }
         };
         let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
@@ -7635,10 +7620,11 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
             && !old.contains_key(&en.id)
             && let Some(c) = store.kept_shown.remove(&en.id).filter(|c| c.print == print)
         {
-            let c = Closed { tip, ..c };
+            let mut c = c;
+            c.tip = tip;
             #[cfg(not(avendb_no_replay_checks))]
             debug_assert!(
-                c.open().is_some_and(|s| same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store))),
+                c.open().is_none_or(|s| same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store))),
                 "a kept showing that opens as other than judging its entry anew"
             );
             store.perf.count("show: entries taken as kept", 1);

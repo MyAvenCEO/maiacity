@@ -26,7 +26,7 @@ fn save(lab: &mut Lab, d: SignerId) -> Option<(Warm, usize)> {
     let warm = Warm {
         keys: w.keys.clone().into_iter().collect(),
         views: w.view.clone().into_iter().collect(),
-        shown: w.shown.clone().map(|(pack, _)| pack).into_iter().collect(),
+        shown: w.shown.clone().map(|(pack, _)| pack.into()).into_iter().collect(),
     };
     lab.warmed(d, w);
     Some((warm, held))
@@ -98,6 +98,37 @@ fn showings_past_the_window_close_and_open_as_they_were() {
     let backup = lab.backup(phone);
     lab.restore_warm(phone, backup, Some(([1; 40], held)), &warm);
     assert_eq!(records(&lab, phone, &notes), expected);
+}
+
+/// A pack whose last showing doesn't open (a shelf's file spoilt after the save): the others are taken, that one's
+/// entry shows nothing till the next showing, which judges it anew.
+#[test]
+fn a_showing_that_does_not_open_is_judged_anew() {
+    let (mut lab, _, phone, vault, notes) = alice(3);
+    for (i, e) in notes.iter().enumerate() {
+        lab.edit(phone, vault, *e, |it| it.set_text(2, &format!("Written {i}."))).unwrap();
+    }
+    let held = lab.log(phone).ids().len();
+    let w: Warming = lab.warming(phone, held, Some([1; 40])).expect("the shelf lacks work");
+    let mut pack = w.shown.clone().expect("a pack").0;
+    *pack.last_mut().unwrap() ^= 1;
+    let warm = Warm { keys: w.keys.clone().into_iter().collect(), views: w.view.clone().into_iter().collect(), shown: vec![pack.into()] };
+    lab.warmed(phone, w);
+    let expected = records(&lab, phone, &notes);
+    let backup = lab.backup(phone);
+    lab.restore_warm(phone, backup, Some(([1; 40], held)), &warm);
+    let seen = records(&lab, phone, &notes);
+    assert_eq!(seen.iter().filter(|r| r.is_empty()).count(), 1, "the one that doesn't open shows nothing yet");
+    // a write to another note shows the device's entries again
+    let other = seen.iter().position(|r| !r.is_empty()).unwrap();
+    lab.edit(phone, vault, notes[other], |it| it.set_text(2, "Again.")).unwrap();
+    let now = records(&lab, phone, &notes);
+    for (i, r) in now.iter().enumerate() {
+        match i == other {
+            true => assert!(r.contains("Again.")),
+            false => assert_eq!(*r, expected[i], "note {i} judged anew as it was"),
+        }
+    }
 }
 
 /// A random walk: notes written on both devices, saves in between, each unlock with the last save's showings; every
