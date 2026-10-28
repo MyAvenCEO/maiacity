@@ -224,7 +224,7 @@ fn first_sync(writers: usize, per: usize) -> (avendb::lab::Lab, SignerId) {
 }
 
 /// Such a catch-up replays every edit a slice a step (`ReplayRun`), the replay it held standing till the whole one
-/// ends, derives the entries' keys a slice a step (`open_keys`), and opens their bodies a slice a step: more steps than one each, and the same as one catch-up.
+/// ends, and opens their bodies a slice a step: more steps than one each, and the same as one catch-up.
 #[test]
 fn a_first_sync_replays_and_reads_a_slice_a_step() {
     let (mut once, d) = first_sync(6, 40);
@@ -243,7 +243,6 @@ fn a_first_sync_replays_and_reads_a_slice_a_step() {
     let counts = &steps.perf(d)["counts"];
     assert!(replays > 10, "{n} edits replayed in {replays} steps: {counts}");
     assert!(reads > 2, "their bodies read in {reads} steps: {counts}");
-    assert!(counts["keys: left for a step"].as_u64().unwrap_or(0) > 0, "the entries' keys derived over steps: {counts}");
     assert!(once.state(d) == steps.state(d), "the same view");
     let seen = |lab: &avendb::lab::Lab| {
         let entries: Vec<_> = lab.entries(d).into_iter().map(|e| (e, lab.item(d, e).map(|i| i.record()))).collect();
