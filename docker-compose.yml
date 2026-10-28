@@ -28,7 +28,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: api/Dockerfile
+      dockerfile: aven/api/Dockerfile
     image: ${API_IMAGE:-maia-city-api:local}
     container_name: maia-city-api
     restart: unless-stopped
@@ -45,12 +45,12 @@ services:
       RP_NAME: ${RP_NAME:-maiaCITY}
       SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:5173}
       # the asks a minute one address may make of the passkey ceremonies and the calls with a device's pass
-      # (api/src/limits.js): 30 by default, 0 for no limit
+      # (aven/api/src/limits.js): 30 by default, 0 for no limit
       API_RATE: ${API_RATE:-}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
-      # speech to text and the shot analysis (api/src/stt.ts, analysis.ts, prem.ts): Prem's key, from the GitHub secret
+      # speech to text and the shot analysis (aven/api/src/stt.ts, analysis.ts, prem.ts): Prem's key, from the GitHub secret
       # PREMAI_API_KEY; without it /api/transcripts and /api/analysis answer 503. (The shot analysis itself runs on the
-      # Mac now and calls Prem from there — vault/app analyse/; /api/analysis stays until it is retired.) No client
+      # Mac now and calls Prem from there — theos/app analyse/; /api/analysis stays until it is retired.) No client
       # KEK: nothing is kept at Prem (prem.ts). Confidential only, attested per model; a model Prem fails on is
       # paused (1 → 30 min) and asked nothing meanwhile. PREMAI_PAUSED=1: the kill switch — nothing calls Prem.
       PREMAI_API_KEY: ${PREMAI_API_KEY:-}
@@ -63,12 +63,12 @@ services:
       timeout: 5s
       retries: 5
 
-  # avenDB's server (avendb/crates/avendb-server): a device of avenCEO, holding only ciphertext, and its relay. Its own
+  # avenDB's server (aven/db/crates/avendb-server): a device of avenCEO, holding only ciphertext, and its relay. Its own
   # image, port and host name; nothing of the media vault. The first human vault founded through it claims it
-  # (avendb/README.md, "Deploying the server").
+  # (aven/db/README.md, "Deploying the server").
   avendb:
     build:
-      context: avendb
+      context: aven/db
       dockerfile: Dockerfile.server
     image: ${AVENDB_IMAGE:-maia-city-avendb:local}
     container_name: maia-city-avendb
@@ -91,7 +91,7 @@ services:
       AVENDB_SNAPSHOTS_AT: ${AVENDB_SNAPSHOTS_AT:-}
       # then checks every folder, reading each file's bytes once in AVENDB_SNAPSHOTS_READ_DAYS (30 by default)
       AVENDB_SNAPSHOTS_READ_DAYS: ${AVENDB_SNAPSHOTS_READ_DAYS:-}
-      # who it takes and whom its relay lets in (avendb/crates/avendb-server/src/lib.rs Config): the gate (on or off)
+      # who it takes and whom its relay lets in (aven/db/crates/avendb-server/src/lib.rs Config): the gate (on or off)
       # and sign-up (open, invite or closed; invite by default with the gate on). Production turns the gate on
       AVENDB_GATE: ${AVENDB_GATE:-}
       AVENDB_SIGNUP: ${AVENDB_SIGNUP:-}

@@ -39,7 +39,7 @@ The look is data on the cut, written as avenMAIA on a proposal of the cut entry 
 - **The shots, through their whole chain:** their graded stills and hero frames (`frame` tasks of the cut), measured
   the same way. Compare them zone by zone with the references. (The legacy studio's `look_reference`, `grade_look`
   and `grade_scopes` did this; Studio 2 has no measuring tool for agents yet.)
-- **The grade is stacks of tools** (game/film/grade-tools.json, one registry, every tool's controls, ranges and
+- **The grade is stacks of tools** (maia/content/game/film/grade-tools.json, one registry, every tool's controls, ranges and
   defaults; the maths in Rust only), held in the cut's `timeline`:
   - `base` and `clip` in each clip's `stacks` (a shot's base correct, its clip look), `scene` in
     `grade.scenes[<scene>]` (a scene's look), `timeline` in `grade.timeline` (the timeline's look, the finishing

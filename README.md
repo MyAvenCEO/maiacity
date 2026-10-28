@@ -14,13 +14,13 @@ bun --bun run build
 bun run preview
 ```
 
-The build uses Bun's Vite runtime to match the release witness. Production is served at the domain root; `BASE_PATH` is optional for other mounts. Native development additionally requires Rust and the macOS build tools; `vault/app/tauri.conf.json` defines the frontend/native handoff. A page hot reload does not upgrade the native device.
+The build uses Bun's Vite runtime to match the release witness. Production is served at the domain root; `BASE_PATH` is optional for other mounts. Native development additionally requires Rust and the macOS build tools; `theos/app/tauri.conf.json` defines the frontend/native handoff. A page hot reload does not upgrade the native device.
 
 API dependencies and tests:
 
 ```sh
-cd api && bun install --frozen-lockfile && cd ..
-bun test ./api/test
+cd aven/api && bun install --frozen-lockfile && cd ../..
+bun test ./aven/api/test
 ```
 
 `.github/workflows/kernel.yml` is the authoritative application test list and Chromium/WebKit probe gate. `avendb-checks.yml` checks avenDB's Rust/Lean workspace. Tests that exercise native devices, storage migrations or recovery must use isolated stores, never a live device directory.
@@ -29,13 +29,13 @@ bun test ./api/test
 
 | Area | Owner / entry point |
 | --- | --- |
-| Site and app navigation | `src/routes`, `src/lib/app`; shared game/world descriptors in `game/places.js` |
-| Game simulations and film contracts | `game`, `src/lib/sandbox-*`, `src/lib/maiacity-*`; frozen versions stay distinct |
-| Vault records, capabilities, synchronization | `avendb`; browser/session integration in `src/lib/avendb` |
-| Studio cuts and media | `src/lib/studio/cuts.js`, `aven.js`; media loading/decoding in `media-sources.js` |
-| Native device, rendering, MCP commands | `vault/app`; the embedded device is not a packaged avenDB sidecar |
-| Public media aliases | `src/lib/media`, `deploy/Caddyfile`; stable public URLs are not private sealed references |
+| Site and app navigation | `maia/site/routes`, `maia/site/lib/app`; shared game/world descriptors in `maia/content/game/places.js` |
+| Game simulations and film contracts | `game`, `maia/content/sandbox-*`, `maia/content/maiacity-*`; frozen versions stay distinct |
+| Vault records, capabilities, synchronization | `avendb`; browser/session integration in `aven/db/page` |
+| Studio cuts and media | `maia/content/studio/cuts.js`, `aven.js`; media loading/decoding in `media-sources.js` |
+| Native device, rendering, MCP commands | `theos/app`; the embedded device is not a packaged avenDB sidecar |
+| Public media aliases | `maia/site/lib/media`, `aven/ops/deploy/Caddyfile`; stable public URLs are not private sealed references |
 | API and infrastructure | `api`, `infra`, `deploy`; API/site/avenDB have independent release workflows |
-| Dynamic code and assets | avenDB publication; `code/` is reviewed bootstrap/recovery input, not a competing live writer |
+| Dynamic code and assets | avenDB publication; `maia/content/code/` is reviewed bootstrap/recovery input, not a competing live writer |
 
-Read [architecture and retirement decisions](docs/ARCHITECTURE.md) before changing an ownership boundary, [deployment ownership](deploy/OWNERSHIP.md) before changing release mechanics. avenDB's design is the vault doc `doc:docs/avendb` in avenDB's Docs view. Merged code and green CI are not proof of installed-Mac acceptance or successful recovery.
+Read [architecture and retirement decisions](docs/ARCHITECTURE.md) before changing an ownership boundary, [deployment ownership](aven/ops/deploy/OWNERSHIP.md) before changing release mechanics. avenDB's design is the vault doc `doc:docs/avendb` in avenDB's Docs view. Merged code and green CI are not proof of installed-Mac acceptance or successful recovery.

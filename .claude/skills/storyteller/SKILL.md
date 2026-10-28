@@ -51,7 +51,7 @@ viewer stays to the last line. The hook itself is the `hook-writer`'s; the pictu
 
 ## In avenDB: a story's Journey tab
 
-A story is an avenDB entry of the `story` schema; its Journey tab (`src/lib/avendb/StoryJourney.svelte`) shows the
+A story is an avenDB entry of the `story` schema; its Journey tab (`aven/db/page/StoryJourney.svelte`) shows the
 transformation, the arching question and the beats along a tension curve. Through the avenDB MCP an agent writes
 there as its shares allow:
 
@@ -72,7 +72,7 @@ there as its shares allow:
 ## In avenDB: a story's Writing tab
 
 The story's article is an entry of its own, of the `article` schema, beside the story: its Writing tab
-(`src/lib/avendb/StoryWriting.svelte`) shows it as the journal lays it out, with its variants. The article's record:
+(`aven/db/page/StoryWriting.svelte`) shows it as the journal lays it out, with its variants. The article's record:
 `{ title, text, story, language, excerpt, quote: { text, by }, tags }`. `text` is the Markdown, its subtitle the
 emphasised line it opens with and its cover the picture alone after it; `story` links the story,
 `{ vault, entry }`; `language` a code such as `en` or `de`.
@@ -91,7 +91,7 @@ emphasised line it opens with and its cover the picture alone after it; `story` 
 
 The story is the one source of truth; its article, its film script and its inspire piece are deliveries of it,
 siblings, none made from another. A film's script is an entry of its own, of type `script` (schema "Script, v2",
-`src/lib/studio/scripts.js`), beside the story: its Movie tab (`src/lib/avendb/StoryMovie.svelte`) shows it. The
+`maia/content/studio/scripts.js`), beside the story: its Movie tab (`aven/db/page/StoryMovie.svelte`) shows it. The
 record: `{ kind: "script", title, story: { vault, entry }, pinned, from, fromPinned, language, scenes }`. Each scene
 is a row of `scenes`, in order: `{ id, name, beat, action, told, feel, lines, shots }`, drawn from one beat of the
 story (`beat` its id), `action` what happens in it, in a sentence or two. Each line a row of its `lines`: `{ id, who,
@@ -114,4 +114,4 @@ was adapted from (leave it out on a line of your own). The shot list is the dire
   150 words a minute. The cut names the script and the story in its timeline (`script`, `story`).
 - Once a cut is rendered, each film it made can go out as a post of type `film` ("Make a film post"): `media` links
   the film, `cut` and `script` the workshop behind it, `story` the story. Its words are written from the type's
-  template (`films/TEMPLATE.md`): the hook as its title, the first two lines, chapters from the script's scenes.
+  template (`maia/content/films/TEMPLATE.md`): the hook as its title, the first two lines, chapters from the script's scenes.

@@ -50,7 +50,7 @@ contact = "…"
 
 ### TLS on our box
 
-The API host already runs **Caddy** on 443 (`deploy/Caddyfile`). Two options:
+The API host already runs **Caddy** on 443 (`aven/ops/deploy/Caddyfile`). Two options:
 1. **Relay behind Caddy** — Caddy terminates TLS for `relay.maia.city` and reverse-proxies (WebSocket upgrade) to the
    relay's plain HTTP port; relay runs without `[tls]`. Simplest cert story, **but QAD needs TLS on the relay itself**
    ("TLS is required for QUIC", `main.rs`), so this mode loses QAD — hole punching still works, a bit less well.
@@ -67,7 +67,7 @@ We don't need it: we control every node, Postgres knows every EndpointId, and th
 node's `MemoryLookup` is filled from the API. Add iroh-dns-server only if nodes ever need to find each other without
 our API.
 
-## Hetzner firewall (Pulumi, `infra/index.ts`)
+## Hetzner firewall (Pulumi, `aven/ops/infra/index.ts`)
 
 Open: UDP `<iroh port>` (server endpoint), TCP 443 (already), TCP 80 (already, ACME), UDP 7842 (QAD).
 Keep closed: 9090 (relay metrics), the server endpoint's metrics, anything else.

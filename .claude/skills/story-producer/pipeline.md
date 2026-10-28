@@ -7,7 +7,7 @@ From an approved story to a rendered film in the media library.
 **Everything lives in Studio 2: avenDB, in The OS app.** Cuts, world shots, files, renders and their jobs are
 entries of the Maia City vault; nothing goes to the old API's timelines or the legacy media vault (127.0.0.1:4545 and
 its token are retired). `bun voice` and `bun media` bring files into avenDB's Library as the agent device
-agentScripts (`scripts/film/vault.mjs`): no login, one approval in The OS app the first time. The render has no
+agentScripts (`maia/content/scripts/film/vault.mjs`): no login, one approval in The OS app the first time. The render has no
 command of its own: The OS app renders, as Studio 2's worker. Agents work through the avendb MCP ("Studio 2 through
 avenDB" below).
 
@@ -17,9 +17,9 @@ Local setup: the site with `bun run dev` (:5173), The OS app open with avenDB un
 **Step 1: the storyboard (cheap, fast, judge the whole film)**
 1. The story: transformation, arching question, hook, arc (`storyteller`, `hook-writer`) — approved by Samuel.
 2. Voice takes, one per line (`sound-designer`); each prints its BLAKE3 hash.
-3. The shot list, `scripts/film/<film>.mjs` (its anatomy: `director`, `shot-list.md`).
+3. The shot list, `maia/content/scripts/film/<film>.mjs` (its anatomy: `director`, `shot-list.md`).
 4. The score, cues and sound effects (`sound-designer`).
-5. Storyboard stills: `node scripts/film/shoot.mjs scripts/film/<film>.mjs --mid` (one frame from the middle of each
+5. Storyboard stills: `node maia/content/scripts/film/shoot.mjs maia/content/scripts/film/<film>.mjs --mid` (one frame from the middle of each
    shot) or `--stills` (first, middle, last).
 6. The storyboard timeline: for Day 19 D, `bun api/scripts/.animatic.ts --local` (hard-wired to `day-19-d`; copy it
    for a new film). It grades each still like its shot, brings it into the library, and lays stills on V1, takes on
@@ -28,10 +28,10 @@ Local setup: the site with `bun run dev` (:5173), The OS app open with avenDB un
 
 **Step 2: the film (slow, expensive, only after approval)** — Edit → Grade → Render, like a real post house
 1. World shots become data, not files: each shot of the list is a `shot` entry of the vault (camera, lens, hour,
-   metered exposure, lights, cues as its `spec`; every version an entry of its own, `src/lib/studio/avenshots.js`),
+   metered exposure, lights, cues as its `spec`; every version an entry of its own, `maia/content/studio/avenshots.js`),
    and the cut has a **world clip** in each shot's place (`shot: "shot:<entry>"`, `shotVersion`). It plays live in its
    world in the 3D and Edit tabs; a proxy is rendered only when asked (the `world-proxy` rule).
-   (Old way, still works: `node scripts/film/shoot.mjs <list>` renders log plates you bring in as files.)
+   (Old way, still works: `node maia/content/scripts/film/shoot.mjs <list>` renders log plates you bring in as files.)
 2. iPhone footage (HEVC Apple Log / Apple Log 2), other camera files and AI EXR sequences: `bun media add` / the
    Library in The OS app, tagged `media:original` (the rules make a probe, a proxy, a grading still, the words and an
    analysis only for those). The colour space is detected (set it in the Bin when a file doesn't say, e.g. an untagged Apple
@@ -42,7 +42,7 @@ Local setup: the site with `bun run dev` (:5173), The OS app open with avenDB un
    master, `colorist` `base-correction.md`), then clip CDLs + the film's look (presets); **Hero frame**
    renders the frame at the playhead at full size, 16-bit, through the whole chain — judge the grade on it.
 5. **Render** tab: **⤓ Render** (a `render` task on the cut, below). **The Mac app is the render worker**: The OS
-   app claims the task and renders it natively (`vault/app/src/render.rs` → `vault/crates/vault-render`:
+   app claims the task and renders it natively (`theos/app/src/render.rs` → `theos/crates/vault-render`:
    Core Image on Metal, VideoToolbox, AVFoundation, Core Text — no bun, no ffmpeg, no Chrome, nothing to install). It
    takes its turn with the proxies (one heavy GPU job at a time, after an ingest, only while memory is normal; uploads
    wait while it renders) and shows its progress on the job and in Ingest → Activity. World clips first become ACEScct
@@ -64,7 +64,7 @@ timeline.
 
 ## The studio and the library
 
-**Studio** (`/app/studio`, code in `src/lib/studio/`): three working steps like DaVinci Resolve's pages, over one
+**Studio** (`/app/studio`, code in `maia/content/studio/`): three working steps like DaVinci Resolve's pages, over one
 timeline, its stage shown at the top (edit → locked → graded → rendered, and its version).
 - **Edit** — tracks **V1 Picture**, **A1 Voice**, **A2 Music**, **A3 Sound**, **T1 Captions** (built from the A1 takes'
   word timings, phrase by phrase, two lines at most). Drag files onto tracks, drag clips to move, edges to trim; Space
@@ -87,11 +87,11 @@ timeline, its stage shown at the top (edit → locked → graded → rendered, a
   (transforms by config hash, conformed clips, plates, warnings); the last render's deliveries per shape with QC and
   loudness, each viewable; the render queue.
 
-**Media library** (avenDB's Library of Maia City, `api/scripts/media.ts`): every file is a `file` entry, named by its
+**Media library** (avenDB's Library of Maia City, `aven/api/scripts/media.ts`): every file is a `file` entry, named by its
 BLAKE3 hash (its `legacy:<hash>` tag when it came from the legacy vault, `blake3:<hash>` when added since), its
 description and meta in a JSON "about" beside it (`about:<entry>`). **Everything references a file by its hash;
 tags only sort.** `bun media status | add <file> [--title] [--description] [--tags] [--replaces <hash>] |
-add-sequence <dir>`. Scripts use `scripts/film/vault.mjs` (`list`, `meta`, `fileOf`, `add`, `describe`, `wordsOf`).
+add-sequence <dir>`. Scripts use `maia/content/scripts/film/vault.mjs` (`list`, `meta`, `fileOf`, `add`, `describe`, `wordsOf`).
 Where avenMAIA may only suggest, each add is a draft in an AIP of its own, and lands when Maia City accepts it.
 
 ## After the ingest: every step on the Mac
@@ -111,7 +111,7 @@ itself: three tries, then it waits for a person.
     confidential Qwen (`qwen38-27b`) with the server's key. The prompt, the vocabulary, the validation, the model's
     pick, the rate limit and the pause after a Prem failure live there, once. No LLM key is ever on a Mac.
   - In Studio 2 it is the `analysis` rule: every `media:original` video, once its proxy and words are made; a vault
-    turns it off or narrows its `when` with a rule entry of its own (`src/lib/studio/jobs/rules.js`).
+    turns it off or narrows its `when` with a rule entry of its own (`maia/content/studio/jobs/rules.js`).
 
 ## Studio 2 through avenDB (agents)
 
@@ -124,7 +124,7 @@ proposes and drafts and never lands anything itself. Call `avendb_vaults` first;
   the rest of the studio's timeline as one JSON text — `clips` (each `id`, `track` V1/A1/A2/A3/T1, `start`, `in`,
   `dur`, `kind`, `hash` or a world clip's `shot` and `shotVersion`, `vol`, `eq`, `fin`/`fout`, `script`, a picture
   clip's `stacks` `{base, clip}` of grade tools and `frame` per shape), `grade` (`scenes`: each scene's look tools),
-  `color` (working and output), `aspect`, `tags` (`src/lib/studio/cuts.js` `timelineOf`). A clip's `hash` is a
+  `color` (working and output), `aspect`, `tags` (`maia/content/studio/cuts.js` `timelineOf`). A clip's `hash` is a
   legacy 64-hex hash or an avenDB file's `aven:<root>:<size>:<len>:<media>`. `{"op": "get", "entry"}` reads one
   entry; `{"op": "history", "entry"}` its versions.
 - **Propose an edit:** `avendb_run` `{"op": "propose", "entry": <cut>}` answers its `line`; then write the whole new
@@ -137,14 +137,14 @@ proposes and drafts and never lands anything itself. Call `avendb_vaults` first;
   "type": "cut", "value": {"kind": "cut", "name", "project", "variant", "stage": "edit", "version": 1, "timeline":
   "<JSON>", "at": <unix seconds>}}` answers its `entry` and `line`.
 - **Put it to Maia City:** `{"op": "aip_open", "vault", "title", "note", "proposals": [{"entry", "line"}, …],
-  "objective"}`, the objective what the AIP must deliver as metrics in Lean (avendb/spec/AvenDB/Objective.lean: e.g.
+  "objective"}`, the objective what the AIP must deliver as metrics in Lean (aven/db/spec/AvenDB/Objective.lean: e.g.
   `def length : Metric := metric "Length, s" (between (reading "seconds") 60 90)`), each measured with
   `{"op": "aip_measure", "entry", "name", "value"}` as the work goes (the `aip` read shows its progress), then
   `{"op": "aip_promote", "entry": <the aip>}` (AIP-n; refused without an objective). The note says why, what changes, and what to make once it lands
   (a render, hero frames). Samuel answers it whole in The OS app (/app/aips/?aip=<entry>); an agent never reviews or
   merges. After a revise, write again on the same lines and promote again.
-- **Renders, hero frames, stills, proxies** are `task` entries the rules make (`src/lib/studio/jobs/rules.js`, done by
-  the Mac's worker, `vault/app/src/aven.rs`), keyed by the rule, the inputs' versions and the params
+- **Renders, hero frames, stills, proxies** are `task` entries the rules make (`maia/content/studio/jobs/rules.js`, done by
+  the Mac's worker, `theos/app/src/aven.rs`), keyed by the rule, the inputs' versions and the params
   (`jobs/tasks.js` `newTask`, `keyOf`):
   - by themselves, for every `media:original` file on main: `probe`, `proxy` (HD ACEScct), `still` (the 4K grading
     still and its preview), `transcript`, `analysis`;
@@ -163,15 +163,15 @@ proposes and drafts and never lands anything itself. Call `avendb_vaults` first;
 ## Building the Mac app
 
 - **One build folder for every checkout and worktree:** `maiaCITY/.cargo/target`, set by `maiaCITY/.cargo/config.toml`
-  (this Mac only, not in git). Each worktree's `vault/target` links to it. The app is always
+  (this Mac only, not in git). Each worktree's `theos/target` links to it. The app is always
   `maiaCITY/.cargo/target/release/maiacity-studio`: whichever branch built it last.
-- **Build:** `bun run build`, then `cargo build --release --features custom-protocol -p maiacity-studio` in `vault/`.
+- **Build:** `bun run build`, then `cargo build --release --features custom-protocol -p maiacity-studio` in `theos/`.
   There's no LTO, release is incremental, and sccache (`~/.cargo/config.toml`) serves the dependencies. A change in
   the app or vault-render rebuilds in about 15 s; a change of profile or toolchain costs one full build of ~12 min.
 - **Start it:** `RUST_LOG=info,iroh=warn,iroh_docs=warn,iroh_gossip=warn maiaCITY/.cargo/target/release/maiacity-studio`.
   Agents reach it only through avenDB (the avendb MCP), never a port of its own.
 - **Studio UI work needs no Rust build:**
-  - Run `bun run dev` and `cargo run -p maiacity-studio` in `vault/` (debug, without `custom-protocol`: the window
+  - Run `bun run dev` and `cargo run -p maiacity-studio` in `theos/` (debug, without `custom-protocol`: the window
     loads the dev server on localhost:5173).
   - Svelte changes then show at once.
   - Debug builds keep line tables only and optimise their dependencies, so measuring and iroh stay usable.

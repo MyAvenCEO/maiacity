@@ -4,23 +4,23 @@ This file is ours, not AirSup's. `SKILL.md` and `references/` beside it stay Air
 but for the one section at the end of `SKILL.md` that says where our library keeps a factory. They make one factory
 as a standalone page or a film; this is what building the first factory into our own library taught us: the
 BatteryPack line (2026-10-15), a line that builds our BatteryPack, 120 a day on two shifts, every station standing
-in AirSup's kit machines until our own are built. The laws, the shared core (`$lib/assets`, refs, one version
+in AirSup's kit machines until our own are built. The laws, the shared core (`$content/assets`, refs, one version
 control) and how we check are the asset producer's (`asset-producer`); this file has the same shape as every other
 sub skill.
 
 ## Where it lives
 
-- Listed in `src/lib/factories/index.js` (`FACTORIES`): a kind in `LIST` (`{ id, label, note, from, builds, build }`,
+- Listed in `maia/content/factories/index.js` (`FACTORIES`): a kind in `LIST` (`{ id, label, note, from, builds, build }`,
   `builds` the ref of the product, `build()` its spec) and its versions in `HISTORY`, shown in `/app/factories`
   (admin, full screen, the nav pill over it; `?factory=<id>` once there is more than one). Its ref:
   `factories/<id>@<v>`; `objectAt` throws for it, as for a biome: a factory is its spec, not an object.
-- **The spec:** `src/lib/factories/<factory>.js`, a JS module exporting `SPEC` as AirSup's runtime reads it
+- **The spec:** `maia/content/factories/<factory>.js`, a JS module exporting `SPEC` as AirSup's runtime reads it
   (`SKILL.md` "Spec": product, demand, calendar, sizing, release, stations, stages, look), plus what is ours on it:
   `standIn` on a station that runs on a kit machine, a `stages.x = { shape: 'asset', ref }` for a stage drawn as one
   of our assets, and one exported constant for the product's ref (`PACK_REF = 'machines/batterypack@9'`). The file
   opens with AirSup's workflow 1 and 2 as its research comment: the assumptions (volume, shifts, what is bought in),
   the route and where every cycle time comes from.
-- **The runtime**, AirSup's, ported into `src/lib/factories/` (MIT notice kept at the head of each): `des.js` the
+- **The runtime**, AirSup's, ported into `maia/content/factories/` (MIT notice kept at the head of each): `des.js` the
   engine, pure, the same equations (`plan`, `Sim`, `forecast`, the seeded RNG), `kit.js` the kit machines and
   products, `world.js` the hall, `look.js` the lens, `app.js` the page (`boot(spec, host, { assets })` instead of
   AirSup's `FactorySkill.define`, and `dispose()` for leaving the page), `hud.css` its HUD scoped to the host
@@ -73,19 +73,19 @@ sub skill.
 - Our own intermediate shapes (the cell tray, the loaded drawer with 280 cells, the holder and plates, the BMS board
   bare and populated) are `K.shapes` in `kit.js`'s "maiaCITY additions": built with the same `add(geo, color, …)`
   as AirSup's shapes, at real size, with no 1.2 scale. AirSup's own shapes keep their scale.
-- Pallets are our Euro pallet (`$lib/actors/pallet.js`, `K.europallet`), the raw stacks on the feeders and the
+- Pallets are our Euro pallet (`$content/actors/pallet.js`, `K.europallet`), the raw stacks on the feeders and the
   finished stacks at the shipping door laid out by `K.stackOf` and `K.palletLayout` (a stage's `pallet: { nx, nz,
   dx, dz, dy, ny }` for the real stacking of the product; 2 × 6 packs a pallet).
 
 ### The page
 
-- `src/routes/app/factories/+page.svelte`: `prerender`, no SSR; imports `FACTORIES` and `hud.css`; on mount imports
+- `maia/site/routes/app/factories/+page.svelte`: `prerender`, no SSR; imports `FACTORIES` and `hud.css`; on mount imports
   `boot` and `tokenOf` lazily, builds every `asset` stage's token, boots into one `fixed; inset: 0` host; on leaving,
   `dispose()` (the rAF loop, the resize observer, the renderer, the composer, the DOM, `globalThis.factory`).
   AirSup's queries work as they did (`?select=load`, `?assemble=0`, `?film=1`, `?speed=`, `?ao=0`).
 - The new-app checklist of `asset-producer`'s `checking.md`: `FACTORIES_TILE` in `gameAt` (draft: an admin's),
-  `placeOf`, the `immersive` list of `src/routes/app/+layout.svelte`, its address in `ASSET_PAGES`, and the
-  `factories` group first in `GROUPS` of `$lib/assets/index.js`. (Its Game Assets tile and cover went with the
+  `placeOf`, the `immersive` list of `maia/site/routes/app/+layout.svelte`, its address in `ASSET_PAGES`, and the
+  `factories` group first in `GROUPS` of `$content/assets/index.js`. (Its Game Assets tile and cover went with the
   dashboard's Game Assets, #942.)
 
 ## Composable
@@ -101,14 +101,14 @@ sub skill.
 
 ## Versions
 
-- A kind's `HISTORY` in `src/lib/factories/index.js`; every version but the latest has its own frozen `build` (the
+- A kind's `HISTORY` in `maia/content/factories/index.js`; every version but the latest has its own frozen `build` (the
   older spec as a file beside the live one). One ask, one version, one dated note: the pack on the line to v10 is a
   version, a station replaced by our machine is a version, a cycle time changed from a measurement is a version.
-- The versions test (`bun test src/lib/assets/versions.test.js`) covers the group with every other asset.
+- The versions test (`bun test maia/content/assets/versions.test.js`) covers the group with every other asset.
 
 ## Checking
 
-- `bun test src/lib/factories/des.test.js`: the ported engine runs the spec 5 days with AirSup's seed and must give
+- `bun test maia/content/factories/des.test.js`: the ported engine runs the spec 5 days with AirSup's seed and must give
   `check.mjs`'s numbers to the digit (packs a day, scrap, bottleneck, WIP, lead time, every station's servers,
   failures, busy, blocked, down and starved), and the what-if. Regenerate `spec.js` and rerun `check.mjs` when the
   spec changes, then move the numbers in the test.
@@ -148,6 +148,6 @@ sub skill.
 ## From an AirSup page to our library
 
 A factory made with AirSup's skill is one HTML file. When the same line must live in `/app/factories` or a game, the
-spec becomes `src/lib/factories/<factory>.js` (the same numbers, the stages mapped to our shapes or our assets, the
+spec becomes `maia/content/factories/<factory>.js` (the same numbers, the stages mapped to our shapes or our assets, the
 stand-ins said), a kind in the factories' `LIST`, a frozen version, the engine test, the versions test; the AirSup
 tools' output stays in `/mnt/project-files/factories/<factory>/`.

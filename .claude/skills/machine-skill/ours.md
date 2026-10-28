@@ -5,22 +5,22 @@ but for the one section at the end of `SKILL.md` that says where our library kee
 a standalone page or a film; this is what building machines into our own library taught us: the excavators, the pod
 and its forklift, the LifeTrac and its Power Cube, the ElectroCube, the BatteryCube and the BatteryPack, the Power
 Cube v3 (the first built with AirSup's own kit inside the app), the travel van and the pickup. The laws, the
-shared core (`$lib/assets`, refs, one version control) and how we check are the asset producer's (`asset-producer`); this
+shared core (`$content/assets`, refs, one version control) and how we check are the asset producer's (`asset-producer`); this
 file has the same shape as every other sub skill.
 
 ## Where it lives
 
-- Listed in `src/lib/machines/index.js` (`MACHINES`): a kind in `LIST` (`{ id, label, note, from, variants }`) and
+- Listed in `maia/content/machines/index.js` (`MACHINES`): a kind in `LIST` (`{ id, label, note, from, variants }`) and
   its versions in `HISTORY`, shown in avenDB's Assets (`/app/avendb/#assets`) on the turntable every asset
-  shares there (`src/lib/assets/VaultAsset.svelte`). A machine never also goes into the Things (`thing-skill`).
-- **A new machine, or a new version built from scratch:** `src/lib/machines/<machine>.js`, built at AirSup's realism
-  with `$lib/assets`. Its variant's `make` hands the turntable `castOf(root)` (`$lib/assets/parts.js`), and the
+  shares there (`maia/content/assets/VaultAsset.svelte`). A machine never also goes into the Things (`thing-skill`).
+- **A new machine, or a new version built from scratch:** `maia/content/machines/<machine>.js`, built at AirSup's realism
+  with `$content/assets`. Its variant's `make` hands the turntable `castOf(root)` (`$content/assets/parts.js`), and the
   turntable shows it on the asset stage: its parts, its sliders and "How it is computed" in the panel, its hero number
   read out, and on the bar its moves apart from its views (below).
-- **The older machines** are rigged meshes in `src/lib/actors/*.js` (`rig.ts`, flat vertex colours, a bone per part),
-  where the games import them from (`$lib/actors/batterypack.js`). They stay as they are, frozen; how their rig works
+- **The older machines** are rigged meshes in `maia/content/actors/*.js` (`rig.ts`, flat vertex colours, a bone per part),
+  where the games import them from (`$content/actors/batterypack.js`). They stay as they are, frozen; how their rig works
   is in `production-designer`'s `models.md` ("The actors").
-- Its real size in `REAL_SIZES` (`src/lib/models/units.js`) and the `BUILD` map of `src/lib/models/sizes.test.js`:
+- Its real size in `REAL_SIZES` (`maia/content/models/units.js`) and the `BUILD` map of `maia/content/models/sizes.test.js`:
   a new machine's root as built (its moving parts placed by its first `tick`), an old rigged one at rest (`still(...)`).
 - Its ref: `machines/<id>@<v>`, a variant after a colon (`machines/powercube@1:powercube-electric`).
 
@@ -36,7 +36,7 @@ file has the same shape as every other sub skill.
   inferred.
 - Never name the brand or startup that inspired a machine, nor an engine's maker.
 
-### The Power Cube v3 pattern (`src/lib/machines/powercube.js`)
+### The Power Cube v3 pattern (`maia/content/machines/powercube.js`)
 
 - The file opens with AirSup's step 1 as its research comment: the machine's measures, its parts and materials, the
   equations, the one number, the input, the break, and every inferred value said so (`[inferred]` on its card too).
@@ -61,7 +61,7 @@ How a machine moves and how it is looked at are kept apart, on the bar and in th
 
 - **Moves**, one at a time, by the clock on the wall (Slow slows them, Pause holds them): **Run** (its solver at the
   sliders, nothing scripted), **its own moves**, **Assemble** (its parts flying in by their build steps, from its
-  `steps`, again and again), its **break**, and **Pause**. Run and Assemble are the stage's (`$lib/assets/stage.js`,
+  `steps`, again and again), its **break**, and **Pause**. Run and Assemble are the stage's (`$content/assets/stage.js`,
   `moves()`, `play(k)`): never write them per machine.
 - **Views**, any at once: **Explode**, **Cut away**, **X-ray**, **Labels**, **Slow**. Explode is a view, never a move.
 - **Its own moves** are `lab.moves`: `{ service: { label: 'Service', seconds: 9, note, at: (u) => ({ drawer: … }) } }`,
@@ -83,7 +83,7 @@ How a machine moves and how it is looked at are kept apart, on the bar and in th
   host's explode, x-ray, cut and break reach into it (the pickup's "With a Power Cube" variant carries
   `machines/powercube@3` in its bed, its engine running).
 - **A piece:** what several machines share is one builder in one file, each machine with its own measures (a road
-  vehicle's wheel corners, ladder frame, axles, engine, hinged doors and solver in `src/lib/machines/vehicle.js`,
+  vehicle's wheel corners, ladder frame, axles, engine, hinged doors and solver in `maia/content/machines/vehicle.js`,
   shared by the van and the pickup). The older
   rigged machines do it by functions that add their parts to another rig (`powerCubeParts(kit, { at, joints,
   assembly, step })`, `forkliftParts`, `clickLockPieces()`): the LifeTrac carries a Power Cube, a goods pod four
@@ -96,13 +96,13 @@ How a machine moves and how it is looked at are kept apart, on the bar and in th
 
 ## Versions
 
-- A kind's `HISTORY` in `src/lib/machines/index.js`; every version but the latest has its own frozen `build` (the
+- A kind's `HISTORY` in `maia/content/machines/index.js`; every version but the latest has its own frozen `build` (the
   older builders in files beside the live one, `pod.v4.js`, `batterypack.v1.js`, or behind a version argument,
-  `batteryPack(v)`; the Power Cube's v1 and v2 are `$lib/actors/powercube.js`). Each upgrade one step, one version;
+  `batteryPack(v)`; the Power Cube's v1 and v2 are `$content/actors/powercube.js`). Each upgrade one step, one version;
   fingerprint the old ones.
 - When a machine carries another, each of its versions names the version it carries (cube v8 = packs v7).
 - A new version of a machine the Maia City vault already holds reaches it as a proposal, never as a second entry:
-  once merged, `node scripts/propose-version.mjs machines/<id>@<v> --run` on the Mac proposes it on the asset's entry
+  once merged, `node maia/content/scripts/propose-version.mjs machines/<id>@<v> --run` on the Mac proposes it on the asset's entry
   and opens its AIP, which an owner puts forward and accepts in the Proposals app (`/app/aips/`).
 - A machine that was a Thing starts at v1 in the Machines; the Thing stays as it was for the games that use it
   (the V1 travel van and pickup are Things; `machines/van` and `machines/pickup` start at v1).
@@ -125,6 +125,6 @@ How a machine moves and how it is looked at are kept apart, on the bar and in th
 ## From an AirSup page to our library
 
 A machine made with AirSup's skill is one HTML file. When the same machine must live in avenDB's Assets or a game,
-port it into `src/lib/machines/<machine>.js` with `$lib/assets`: its parts through `part(...)` with the same measures
+port it into `maia/content/machines/<machine>.js` with `$content/assets`: its parts through `part(...)` with the same measures
 and cards, its solver and its lab as they were, its root at real size; then a kind in the machines' `LIST`, a frozen
 version, the size test, the versions test.

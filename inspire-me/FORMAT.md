@@ -18,7 +18,7 @@ The folder name becomes the URL: `inspire-me/failure-as-a-superpower/` → `/ins
 1. Grab the source — YouTube transcript, paper/PDF text, X thread, blog post, report.
 2. Paste it unchanged into `inspire-me/<slug>/source.md` (paragraph breaks are fine).
 3. Give an AI the link + the source + the prompt below. Save the answer as `inspire-me/<slug>/README.md`.
-4. For a YouTube source, run `node scripts/fetch-thumbnails.mjs` — thumbnails are served from our own CDN, never from YouTube.
+4. For a YouTube source, run `node maia/content/scripts/fetch-thumbnails.mjs` — thumbnails are served from our own CDN, never from YouTube.
 5. Check the facts, reload `/inspire-me`.
 
 ## Frontmatter
@@ -102,7 +102,7 @@ Length: 8–12 paragraphs, mostly 1–3 sentences — then break that on purpose
 | `self`         | Mind, spirit, belief, passion, purpose                               |
 | `filmmaking`   | Cameras, editing, captions, publishing                               |
 
-**Add categories freely.** When a source doesn't fit, add a new one to `src/lib/inspire-me/categories.ts` (id, label, colour, blurb) and to this table. Unknown ids still render, in a neutral colour.
+**Add categories freely.** When a source doesn't fit, add a new one to `maia/site/lib/inspire-me/categories.ts` (id, label, colour, blurb) and to this table. Unknown ids still render, in a neutral colour.
 
 ## Tutorials
 

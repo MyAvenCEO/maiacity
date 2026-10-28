@@ -11,7 +11,7 @@
   a truck passing close on the cut in, then a beat of silence, then close morning birds).
 - Match the sound to what the scene *means* — a workshop's tools under the commons made it sound like a factory.
 - Sound effects: `fal-ai/elevenlabs/sound-effects/v2` (≤ 22 s; `loop: true` for a seamless loop):
-  `bun scripts/film/score.ts <list> --sfx <name> --local` makes one from its recipe in `SFX` and prints its CID.
+  `bun maia/content/scripts/film/score.ts <list> --sfx <name> --local` makes one from its recipe in `SFX` and prints its CID.
 - The game's own ambience recordings are not equally loud: multiply sheep ×22.1, frog ×0.35, bees ×0.66, geese ×1.5
   (`NORMALIZE` in `sound.ts`, `assemble.mjs`, `ambience.ts`).
 

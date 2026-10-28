@@ -20,7 +20,7 @@ A shot names it (`props: 'tired-land'`); `shoot.mjs` builds it once and calls `w
 Day 19's `tired-land` west of the city's edge (x < −398): ploughed monoculture fields, a highway at x = −470, power
 lines, dead trees, eight trucks. The empty plain beyond the edge showed nothing and read as a dead shot.
 
-## The tired land (`src/lib/worlds/tired-land.ts`, `tiredLandSet.js`)
+## The tired land (`maia/content/worlds/tired-land.ts`, `tiredLandSet.js`)
 
 Day 19's world as it was, west of the city's edge:
 - ploughed monoculture fields in ochre and tired green;
@@ -31,7 +31,7 @@ It is its own world (`/games/tired-land`) and also Sandbox 4's `tired-land` set.
 
 ## Building a new world
 
-1. **Mount it with the sandbox kit** (`src/lib/sandbox-kit`):
+1. **Mount it with the sandbox kit** (`maia/content/sandbox-kit`):
    - `createStage` — the renderer and the camera.
    - `createSky` — the hour and the sun. Give it the place's `north`; for a real place laid out as a map (x east,
      z south), `map: true`, or the sun turns the mirror way round. A small world needs a short shadow range:
@@ -40,10 +40,10 @@ It is its own world (`/games/tired-land`) and also Sandbox 4's `tired-land` set.
    - `createWalker` — walking, with a `canStand` test.
    - `connectFilm` — `sandbox`, the `advance` and `lights` hooks, and `place`.
 2. **Register it:**
-   - `game/film/worlds.js` (label, areas) and `game/film/shot.js` (the `Sandbox` type);
+   - `maia/content/game/film/worlds.js` (label, areas) and `maia/content/game/film/shot.js` (the `Sandbox` type);
    - a film page `/games/<world>/` (FilmRoute);
    - an admin page `/app/worlds/<world>/` with the time control (`SkyControl`, Auto/Manual);
-   - a line in `WORLDS` (`src/lib/app/places.ts`).
+   - a line in `WORLDS` (`maia/site/lib/app/places.ts`).
 3. **Furnish it from the 3D models** (`models.md`). The world's own code keeps only its shell — walls, windows, doors,
    what is outside — and its lights. A world of many parts welds what never moves: one mesh per material,
    a hundred-odd draw calls for some thousand parts.

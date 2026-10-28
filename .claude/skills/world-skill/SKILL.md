@@ -1,27 +1,27 @@
 ---
 name: world-skill
-description: The maiaCITY world skill — the worlds and sandboxes everything is placed in (src/lib/worlds, src/lib/sandbox-*, /app/worlds, /app/games): one universe and one sky for every world (the sandbox kit — createStage, createSky, createWalker, createOrbitRig, connectFilm, SkyControl), a new world step by step, a real place rebuilt from map data or photos with one plan file of measures, the shell kept in the world and everything else from the libraries by ref (group/id@v, assetAt), many things drawn cheaply (welding, instancing, impostors, streamed cover, crowds), the film camera, versions and seeds, checking and the lessons kept. Use it whenever a world, a sandbox, a real place or a village is built, extended, furnished, walked or prepared for filming. Part of asset-producer.
+description: The maiaCITY world skill — the worlds and sandboxes everything is placed in (maia/content/worlds, maia/content/sandbox-*, /app/worlds, /app/games): one universe and one sky for every world (the sandbox kit — createStage, createSky, createWalker, createOrbitRig, connectFilm, SkyControl), a new world step by step, a real place rebuilt from map data or photos with one plan file of measures, the shell kept in the world and everything else from the libraries by ref (group/id@v, assetAt), many things drawn cheaply (welding, instancing, impostors, streamed cover, crowds), the film camera, versions and seeds, checking and the lessons kept. Use it whenever a world, a sandbox, a real place or a village is built, extended, furnished, walked or prepared for filming. Part of asset-producer.
 ---
 
 # Worlds: where everything is placed
 
-A world is a place to walk and to film: the tired land (`src/lib/worlds`, `/app/worlds`), and the sandboxes (`src/lib/sandbox-*`, `/app/games`). The laws, the shared core
+A world is a place to walk and to film: the tired land (`maia/content/worlds`, `/app/worlds`), and the sandboxes (`maia/content/sandbox-*`, `/app/games`). The laws, the shared core
 (refs, one version control) and how we check are the `asset-producer`'s; this is how a world is made. The details of
 each film world (axes, where things are, how its light falls) are in `production-designer`'s `worlds.md`.
 
 ## Where it lives
 
-- Its code in `src/lib/worlds/<world>` or `src/lib/sandbox-*`; its film page `/games/<world>/`, its admin page
+- Its code in `maia/content/worlds/<world>` or `maia/content/sandbox-*`; its film page `/games/<world>/`, its admin page
   `/app/worlds/<world>/` with the time control.
-- A line in `WORLDS` or `PLAY` (`src/lib/app/places.ts`) with its `versions` and what it is `anchors`ed to; the film
-  registers it in `game/film/worlds.js` and `game/film/shot.js`.
+- A line in `WORLDS` or `PLAY` (`maia/site/lib/app/places.ts`) with its `versions` and what it is `anchors`ed to; the film
+  registers it in `maia/content/game/film/worlds.js` and `maia/content/game/film/shot.js`.
 - Its ref: `worlds/<id>@<v>`, the id the last part of its address (`worlds/sandbox-5@9`, `worlds/tired-land`).
 
 ## How it is built
 
 ### One universe, one sky
 
-Every world is a view of the same universe (`src/lib/sandbox-kit`, its `README.md`): the same sky and stars, the same
+Every world is a view of the same universe (`maia/content/sandbox-kit`, its `README.md`): the same sky and stars, the same
 time control (`SkyControl`: Auto, the in-game clock, or Manual, a slider from noon), the same cameras, the same hold
 for the studio's film camera. A world chooses only its size (how far shadows and fog reach) and its lens
 (`exposure`), never how the sky behaves.
@@ -44,7 +44,7 @@ for the studio's film camera. A world chooses only its size (how far shadows and
    moved is moved everywhere; textures at their real size (every UV in metres); from map data where it exists
    (OpenStreetMap and survey terrain); from photos for a room, with the estimates
    named. The person who lives there notices a window on the wrong side at once.
-5. **Real scale, real speeds**: distances in metres and speeds in m/s (`SPEED` in `src/lib/models/units.js`: walk 5,
+5. **Real scale, real speeds**: distances in metres and speeds in m/s (`SPEED` in `maia/content/models/units.js`: walk 5,
    track 30, highway 80 km/h). A long drive is shortened by film cuts, never by speeding up.
 
 ### Many things, cheaply
@@ -64,7 +64,7 @@ for the studio's film camera. A world chooses only its size (how far shadows and
   people and animals (`actor-skill`), plants (`plant-skill`), the floor (`biome-skill`), buildings
   (`building-skill`), factories (`factory-skill`'s "Our library").
 - It names each by its ref at the version it was built with (`plants/apple@1`, `machines/powercube@3`,
-  `things/bell-tent@2`) and builds it with `objectAt` (`$lib/assets`; a recipe such as a biome, or a dome's interior,
+  `things/bell-tent@2`) and builds it with `objectAt` (`$content/assets`; a recipe such as a biome, or a dome's interior,
   through `assetAt`), or imports a frozen builder by name; a plan file lists what stands where by ref, so the world's
   `anchors` line can be read off it.
 - A world never draws its own copy of a library asset; what it needs that no library has is built in the library
