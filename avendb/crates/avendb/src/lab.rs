@@ -165,6 +165,10 @@ const UPKEEP_SLICE: usize = 64;
 /// replays about as long as it shows.
 const REPLAY_WORK: usize = 4;
 
+/// The edits a step of a catch-up adds to its key index for each entry of its budget, where the index is made again
+/// (`KeyIndexed::step`).
+const INDEX_WORK: usize = 32;
+
 /// The bodies a step of a catch-up opens for each entry of its budget (`read`).
 const READ_WORK: usize = 32;
 
@@ -1344,8 +1348,15 @@ impl KeyIndex {
     /// What `r`'s standing edits from the `from`th on add to it, as `of` reads them, `held` being the edits `r` is the
     /// replay of.
     fn grow(&mut self, r: &Replay, held: &[Edit], from: usize) {
-        let edits = r.edits(held).zip(r.places()).zip(&r.stood).skip(from).filter(|(_, stood)| **stood);
-        for ((edit, &place), _) in edits {
+        self.grow_to(r, held, from, r.places().len());
+    }
+
+    /// `grow` by `r`'s standing edits from the `from`th up to the `to`th alone: a slice of them, so that an index made
+    /// again of every edit is made a step at a time (`KeyIndexed::step`).
+    fn grow_to(&mut self, r: &Replay, held: &[Edit], from: usize, to: usize) {
+        let places = &r.places()[from.min(to)..to];
+        let edits = places.iter().zip(&r.stood[from.min(to)..to]).filter(|(_, stood)| **stood).map(|(place, _)| (&held[*place], place));
+        for (edit, &place) in edits {
             for (slot, (name, id, b)) in edit.action.key_boxes().into_iter().enumerate() {
                 self.exists.insert(name);
                 self.exists.insert(b.to.name());
@@ -1418,12 +1429,8 @@ impl KeyIndexed {
     /// Only removals change which earlier edits stand; else it is made again of every edit.
     fn take(store: &mut Store) -> KeyIndex {
         let (log, r) = (&store.log, &store.replay);
-        let from = std::mem::take(&mut store.key_ix.of).and_then(|(lineage, len, wholes, n, last)| {
-            let grown = lineage == log.lineage() && len <= log.edits().len() && wholes == store.wholes;
-            let kept = n <= r.ids.len() && r.ids[n - 1] == last;
-            let removes = log.edits()[len.min(log.edits().len())..].iter().any(Edit::is_removal);
-            (grown && kept && !removes).then_some(n)
-        });
+        let from = Self::from(store);
+        store.key_ix.of = None;
         let mut ix = std::mem::take(&mut store.key_ix.ix);
         match from {
             Some(n) => {
@@ -1439,6 +1446,38 @@ impl KeyIndexed {
         #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(ix.same(&KeyIndex::of(r, log.edits())), "a key index grown on differs from one made whole");
         ix
+    }
+
+    /// How many of the edits of `store`'s replay its index is of, if it grows on from there (`take`).
+    fn from(store: &Store) -> Option<usize> {
+        let (log, r) = (&store.log, &store.replay);
+        store.key_ix.of.as_ref().and_then(|(lineage, len, wholes, n, last)| {
+            let (len, n) = (*len, *n);
+            let grown = *lineage == log.lineage() && len <= log.edits().len() && *wholes == store.wholes;
+            let kept = 0 < n && n <= r.ids.len() && r.ids[n - 1] == *last;
+            let removes = log.edits()[len.min(log.edits().len())..].iter().any(Edit::is_removal);
+            (grown && kept && !removes).then_some(n)
+        })
+    }
+
+    /// The index of `store`'s replay grown by at most `most` of its edits, where it lacks more than that: made again of
+    /// every edit (a whole replay, a removal) a slice a step, and put back of that slice, so that the next `take` grows
+    /// on from it (`CatchUpBudget.lean` `index`). An index made whole of a phone's 107,000 edits held its Lab 27.9 s in
+    /// one turn, and a page's worker, which runs the Lab, answered no peer meanwhile (2026-10-28). True if it did.
+    fn step(store: &mut Store, most: usize) -> bool {
+        let from = Self::from(store);
+        let (n, len) = (from.unwrap_or(0), store.replay.ids.len());
+        if len - n.min(len) <= most {
+            return false;
+        }
+        let mut ix = if from.is_some() { std::mem::take(&mut store.key_ix.ix) } else { KeyIndex::default() };
+        let to = n + most.max(1);
+        ix.grow_to(&store.replay, store.log.edits(), n, to);
+        store.perf.count(if from.is_some() { "keys: index grown a step" } else { "keys: index begun a step" }, 1);
+        let (log, r) = (&store.log, &store.replay);
+        store.key_ix.of = Some((log.lineage(), log.edits().len(), store.wholes, to, r.ids[to - 1]));
+        store.key_ix.ix = ix;
+        true
     }
 
     /// `ix`, taken of `store`'s replay as it is now, back.
@@ -3180,6 +3219,12 @@ impl Lab {
                 store.behind = true;
                 return false;
             }
+            // and its key index, made again of every edit after a whole replay, grows a slice at most
+            let unlocked = self.keys.get(&d).and_then(Key::seal_secret).is_some();
+            if unlocked && let Some(store) = self.stores.get_mut(&d) && KeyIndexed::step(store, b.max(1).saturating_mul(INDEX_WORK)) {
+                store.behind = true;
+                return false;
+            }
         }
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.behind = false;
@@ -3220,6 +3265,14 @@ impl Lab {
             // the edits it holds on a checkpoint's word: those one that stands vouches for lose their signatures, the
             // rest keep theirs where they check out, and it lets go of the others and replays again (`trusted`)
             if !store.bare.is_empty() && trust(store) {
+                // with a budget the replay of what it kept starts again a slice a step, at the next (`step_replay`):
+                // in this round it was one of every edit in one turn
+                if budget.is_some() {
+                    store.behind = true;
+                    store.perf.add("refresh", began);
+                    self.rebuild_owner_bases(d);
+                    return false;
+                }
                 continue;
             }
             // a locked device holds no key, and opens nothing

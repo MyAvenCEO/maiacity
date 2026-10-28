@@ -400,3 +400,30 @@ fn what_a_device_takes_mid_catch_up_brings_it_one_step_on_not_the_whole() {
     };
     assert_eq!(seen(&once), seen(&steps), "the same edits, entries and items as one catch-up");
 }
+
+/// A whole replay makes a device's key index again of every edit it holds; in a catch-up a step at a time it is made
+/// a slice a step (`KeyIndexed::step`, `index` in `CatchUpBudget.lean`), never of them all in one step (27.9 s on an
+/// iPhone, 2026-10-28), and ends the index one catch-up makes.
+#[test]
+fn a_key_index_made_again_is_made_a_slice_a_step() {
+    let (mut once, d) = first_sync(6, 40);
+    let (mut steps, _) = first_sync(6, 40);
+    assert!(once.catch_up(d));
+    let count = |lab: &avendb::lab::Lab, k: &str| lab.perf(d)["counts"][k].as_u64().unwrap_or(0);
+    let made = count(&steps, "keys: index made");
+    let mut taken = 0;
+    while let CatchUp::Stepped = steps.catch_up_step(d, 1) {
+        taken += 1;
+        assert!(taken < 10_000, "a catch-up in steps ends");
+    }
+    let counts = &steps.perf(d)["counts"];
+    assert_eq!(count(&steps, "keys: index made"), made, "no index made of every edit in one step: {counts}");
+    assert_eq!(count(&steps, "keys: index begun a step"), 1, "made again once, a slice at a time: {counts}");
+    assert!(count(&steps, "keys: index grown a step") > 2, "over several steps: {counts}");
+    assert!(once.state(d) == steps.state(d), "the same view");
+    let seen = |lab: &avendb::lab::Lab| {
+        let entries: Vec<_> = lab.entries(d).into_iter().map(|e| (e, lab.item(d, e).map(|i| i.record()))).collect();
+        (lab.log(d).ids().to_vec(), entries)
+    };
+    assert_eq!(seen(&once), seen(&steps), "the same edits, entries and items as one catch-up");
+}

@@ -6,11 +6,16 @@ for the whole catch-up (`Lab::catch_up_step` in lab.rs, `Writes.lean` for the wa
 bounded only while it showed entries: a first sync's replay of every edit was one step (10.5-24 s at 130,000 edits),
 and so was the opening of every body (1.7 s).
 
-Now a step does one of three kinds of work, each at most `k` units of it:
+Now a step does one of four kinds of work, each at most `k` units of it:
 
 - replay: the log's next `k` edits at most, stepped on from where the last step left (`step_replay`, `REPLAY_WORK`);
+- index: the replay's next `k` edits at most added to the key index, where a whole replay or a removal has it made
+  again of every edit (`KeyIndexed::step`, `INDEX_WORK`; made whole in one step until 2026-10-28, 27.9 s on an iPhone);
 - read: the next `k` bodies at most, those of new edits first, then those a step left (`read`, `READ_WORK`);
 - show: the next entries a showing left, by the writes it judges (`show_items`, `SHOW_WORK`).
+
+A step that lets go of bare edits no checkpoint vouches for (`trust`) leaves the replay of what it keeps to the next
+steps, as `replay` work, rather than replay every edit again in the same turn (until 2026-10-28).
 
 `step` models one step. Its work is at most `k` (`work_le`). Without new edits, each step leaves strictly less to do
 (`step_shrinks`), so the catch-up ends within `left` steps (`ends_within`). Bodies of new edits go first: a page of at
@@ -36,19 +41,21 @@ namespace AvenDB.CatchUpBudget
 /-- What a catch-up still has to do: edits to replay, bodies to open, entries to show. -/
 structure Todo where
   replay : Nat
+  index : Nat
   read : List Nat
   shows : List Nat
   deriving DecidableEq, Repr
 
 /-- How much is left, in units of work. -/
-def Todo.left (t : Todo) : Nat := t.replay + t.read.length + t.shows.length
+def Todo.left (t : Todo) : Nat := t.replay + t.index + t.read.length + t.shows.length
 
 /-- One read: at most `k` bodies, of the new edits `fresh` first, then of those left; what it leaves. -/
 def readStep (k : Nat) (fresh left : List Nat) : List Nat := (fresh ++ left).drop k
 
-/-- One step of at most `k` units: the replay first, then the bodies, then the entries. -/
+/-- One step of at most `k` units: the replay first, then the key index, then the bodies, then the entries. -/
 def step (k : Nat) (t : Todo) : Todo :=
   if 0 < t.replay then { t with replay := t.replay - k }
+  else if 0 < t.index then { t with index := t.index - k }
   else if t.read ≠ [] then { t with read := readStep k [] t.read }
   else { t with shows := t.shows.drop k }
 
@@ -60,8 +67,10 @@ theorem work_le (k : Nat) (t : Todo) : work k t ≤ k := by
   split
   · simp only; omega
   · split
-    · simp only [List.nil_append, List.length_drop]; omega
-    · simp only [List.length_drop]; omega
+    · simp only; omega
+    · split
+      · simp only [List.nil_append, List.length_drop]; omega
+      · simp only [List.length_drop]; omega
 
 /-- A based device's step: the step's work and the bases laid over again, at most `c`. -/
 def basedWork (k c : Nat) (t : Todo) : Nat := work k t + c
@@ -75,13 +84,15 @@ theorem step_shrinks (k : Nat) (hk : 0 < k) (t : Todo) (h : 0 < t.left) : (step 
   split
   · simp only; omega
   · split
-    · rename_i _ hr
-      have : 0 < t.read.length := List.length_pos_iff.mpr hr
-      simp only [List.nil_append, List.length_drop]; omega
-    · rename_i h0 hr
-      have : t.read = [] := by simpa using hr
-      simp only [this, List.length_nil, List.length_drop] at *
-      omega
+    · simp only; omega
+    · split
+      · rename_i _ _ hr
+        have : 0 < t.read.length := List.length_pos_iff.mpr hr
+        simp only [List.nil_append, List.length_drop]; omega
+      · rename_i h0 hi hr
+        have : t.read = [] := by simpa using hr
+        simp only [this, List.length_nil, List.length_drop] at *
+        omega
 
 /-- `n` steps. -/
 def steps (k : Nat) : Nat → Todo → Todo
@@ -98,7 +109,7 @@ theorem steps_left_le (k : Nat) (hk : 0 < k) (n : Nat) (t : Todo) : (steps k n t
       have := ih (step k t)
       omega
     · have h0 : t.left = 0 := by omega
-      have : (step k t).left ≤ t.left := by have := work_le k t; unfold work at this; unfold step Todo.left readStep at *; split <;> (try split) <;> simp_all <;> omega
+      have : (step k t).left ≤ t.left := by have := work_le k t; unfold work at this; unfold step Todo.left readStep at *; split <;> (try split) <;> (try split) <;> simp_all <;> omega
       have := ih (step k t)
       omega
 
@@ -117,7 +128,7 @@ theorem fresh_first (k : Nat) (fresh left : List Nat) (h : fresh.length ≤ k) :
 def startWork (w k : Nat) (t : Todo) : Nat := if t.left ≤ w then t.left else work k t
 
 /-- What a start leaves to its catch-up: nothing, or what its one step left. -/
-def startLeaves (w k : Nat) (t : Todo) : Todo := if t.left ≤ w then { replay := 0, read := [], shows := [] } else step k t
+def startLeaves (w k : Nat) (t : Todo) : Todo := if t.left ≤ w then { replay := 0, index := 0, read := [], shows := [] } else step k t
 
 theorem start_le (w k : Nat) (t : Todo) : startWork w k t ≤ max w k := by
   unfold startWork
@@ -131,7 +142,8 @@ theorem start_ends (w k : Nat) (hk : 0 < k) (t : Todo) :
 
 /-- What a device takes in the middle of a catch-up, `more`, added to what is left. -/
 def Todo.add (t more : Todo) : Todo :=
-  { replay := t.replay + more.replay, read := more.read ++ t.read, shows := t.shows ++ more.shows }
+  { replay := t.replay + more.replay, index := t.index + more.index, read := more.read ++ t.read,
+    shows := t.shows ++ more.shows }
 
 /-- Taking `more` in the middle of a catch-up: what is left grows by it, and one step brings it on. -/
 def take (k : Nat) (t more : Todo) : Todo := step k (t.add more)
@@ -142,20 +154,22 @@ theorem taken_le (k : Nat) (t more : Todo) : (t.add more).left - (take k t more)
 
 namespace Examples
 
--- a first sync: 130,000 edits to replay, 130,000 bodies, 3,200 entries; 768 units a step
-def first : Todo := { replay := 130000, read := List.range 130000, shows := List.range 3200 }
+-- a first sync: 130,000 edits to replay and to index, 130,000 bodies, 3,200 entries; 768 units a step
+def first : Todo := { replay := 130000, index := 130000, read := List.range 130000, shows := List.range 3200 }
 #guard (step 768 first).replay == 130000 - 768
 #guard work 768 first == 768
--- once replayed, a step opens 768 bodies at most
+-- once replayed, a step adds 768 edits at most to its key index made again, then opens 768 bodies at most
 #guard work 768 { first with replay := 0 } == 768
+#guard (step 768 { first with replay := 0 }).index == 130000 - 768
+#guard work 768 { first with replay := 0, index := 0 } == 768
 -- a live page of 5 bodies in the middle of the backlog is read in the next step
 #guard readStep 768 [1, 2, 3, 4, 5] (List.range 1000) == (List.range 1000).drop 763
--- an unlock of that first sync with no stored view does 48 units, not all 263,200
+-- an unlock of that first sync with no stored view does 48 units, not all 393,200
 #guard startWork 4096 48 first == 48
-#guard startWork 4096 48 { replay := 100, read := [], shows := List.range 40 } == 140
+#guard startWork 4096 48 { replay := 100, index := 0, read := [], shows := List.range 40 } == 140
 
--- the keys a pull brings in the middle of a first sync: one step, not the 263,200 units left
-#guard (first.add { replay := 0, read := [1, 2], shows := [] }).left - (take 768 first { replay := 0, read := [1, 2], shows := [] }).left == 768
+-- the keys a pull brings in the middle of a first sync: one step, not the 393,200 units left
+#guard (first.add { replay := 0, index := 0, read := [1, 2], shows := [] }).left - (take 768 first { replay := 0, index := 0, read := [1, 2], shows := [] }).left == 768
 
 end Examples
 
