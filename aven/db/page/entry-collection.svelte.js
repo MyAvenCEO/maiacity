@@ -1,7 +1,7 @@
 import { untrack } from 'svelte';
 import { answer } from './ops.js';
 import { stillNamed } from './kept-answers.js';
-import { coverageOf } from '../../../game/code/sources/coverage.js';
+import { coverageOf } from '../../../maia/content/game/code/sources/coverage.js';
 
 /** One mounted canonical collection, driven by the shared authorized local observer.
  * Keeps no world fallback: a ready empty result and a failed read are different states.

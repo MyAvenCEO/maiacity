@@ -1,6 +1,6 @@
 <!--
 	An AIP's objective in the Proposals app: what it must deliver, its metrics (as written, the model
-	avendb/spec/AvenDB/Objective.lean), each checked by avenDB's engine against the readings its author recorded while working on it
+	aven/db/spec/AvenDB/Objective.lean), each checked by avenDB's engine against the readings its author recorded while working on it
 	(`aip_measure`), those a Measurer of the vault wrote (`measured "name"`: the vault itself or an owner, who accept
 	it, or a holder of its Measurer group, never its author), and the numbers its own lines propose (`proposed "path"`,
 	against main's, `current "path"`), and the measuring logic it names, which those who accept it run on their own
