@@ -871,6 +871,8 @@ impl Node {
             claims: Mutex::default(),
             interests: Mutex::default(),
             discovery_running: Mutex::default(),
+            discovery_rounds: AtomicUsize::new(0),
+            discovery_first_found: AtomicUsize::new(0),
             discovery_mark: Mutex::default(),
             discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
             told_rows,
@@ -2317,6 +2319,10 @@ struct Shared {
     /// Active app/query windows, replaced or released independently of one-shot brings.
     interests: Mutex<interest::Interests>,
     discovery_running: Mutex<HashMap<String, bool>>,
+    /// The discovery rounds that asked a peer, and the one whose find first named something (0 = none yet): a test
+    /// tells by them that the round a connection started brought a view's entries, never a later one.
+    pub(crate) discovery_rounds: AtomicUsize,
+    pub(crate) discovery_first_found: AtomicUsize,
     /// The keys and audiences the views' last finds stood on (`Lab::index_mark`): a change finds again.
     discovery_mark: Mutex<usize>,
     discovery_answer: Arc<tokio::sync::Semaphore>,

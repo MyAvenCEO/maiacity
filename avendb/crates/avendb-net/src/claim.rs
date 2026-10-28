@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, bail};
-use n0_future::time::sleep;
+use n0_future::time::{Instant, sleep};
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
@@ -51,6 +51,8 @@ pub struct Claim {
     id: String,
     lost: watch::Receiver<bool>,
     beat: tokio::task::JoinHandle<()>,
+    /// How many times it waited for another's claim to go stale before it took it.
+    waits: u32,
 }
 
 fn now() -> u64 {
@@ -75,7 +77,8 @@ impl Claim {
     pub async fn take(bucket: &Sealed, data: &Path, timing: Timing) -> Result<Claim> {
         let own: PathBuf = data.join(OWN);
         let before = std::fs::read_to_string(&own).ok().map(|s| s.trim().to_string());
-        let waited = std::time::Instant::now();
+        let waited = Instant::now();
+        let mut waits = 0;
         loop {
             match read(bucket).await? {
                 None => break,
@@ -90,6 +93,7 @@ impl Claim {
                         );
                     }
                     tracing::warn!("avenDB: another server holds the bucket; waiting for its claim to go stale");
+                    waits += 1;
                     sleep(timing.beat.min(timing.stale) / 4).await;
                 }
             }
@@ -125,7 +129,12 @@ impl Claim {
                 }
             }
         });
-        Ok(Claim { bucket: bucket.clone(), id, lost, beat })
+        Ok(Claim { bucket: bucket.clone(), id, lost, beat, waits })
+    }
+
+    /// How many times it waited for another's claim to go stale: none where it took the bucket at once.
+    pub fn waits(&self) -> u32 {
+        self.waits
     }
 
     /// Answers once another server's claim is found in its place.
@@ -161,11 +170,12 @@ mod tests {
         Timing { beat: Duration::from_millis(200), stale: Duration::from_secs(2), settle: Duration::from_millis(50) }
     }
 
-    /// One server holds a bucket: a second waits, then is refused while the first is alive; takes it at once once the
-    /// first lets go; takes a claim gone stale; and a server finds its claim lost when another's is in its place.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn one_server_writes_a_bucket() {
-        let dir = std::env::temp_dir().join(format!("avendb-claim-{}", std::process::id()));
+    /// A second server waits, then is refused while the first is alive; and a server finds its claim lost when
+    /// another's is in its place. On a paused clock: the waits and the beats are the runtime's, and the wall clock
+    /// the claims are said alive by stands still, so the first is alive however loaded the machine is.
+    #[tokio::test(start_paused = true)]
+    async fn a_second_server_is_refused_and_a_taken_claim_lost() {
+        let dir = std::env::temp_dir().join(format!("avendb-claim-paused-{}", std::process::id()));
         std::fs::remove_dir_all(&dir).ok();
         let bucket = Sealed::new(Folder::new(dir.join("objects")), &[7; 32]);
         let (a, b) = (dir.join("a"), dir.join("b"));
@@ -174,25 +184,36 @@ mod tests {
         let refused = Claim::take(&bucket, &b, quick()).await;
         assert!(refused.is_err(), "a second server is refused while the first is alive");
 
+        // and a server whose claim is another's now stops writing
+        say(&bucket, "another", false).await.expect("said");
+        tokio::time::timeout(Duration::from_secs(5), first.lost()).await.expect("its claim lost");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    /// One server holds a bucket: the next takes it at once once the first lets go, or its own claim back, and takes a
+    /// claim gone stale. "At once" is counted (`Claim::waits`), never timed.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn one_server_writes_a_bucket() {
+        let dir = std::env::temp_dir().join(format!("avendb-claim-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        let bucket = Sealed::new(Folder::new(dir.join("objects")), &[7; 32]);
+        let (a, b) = (dir.join("a"), dir.join("b"));
+
+        let first = Claim::take(&bucket, &a, quick()).await.expect("a free bucket is claimed");
+
         // the first stops as at a deploy: the next takes it at once
         first.release().await.expect("released");
-        let started = std::time::Instant::now();
         let second = Claim::take(&bucket, &b, quick()).await.expect("a released claim is taken");
-        assert!(started.elapsed() < quick().stale, "at once");
+        assert_eq!(second.waits(), 0, "at once");
 
         // the second is killed, and comes back on its own folder: its own claim, taken back at once
         drop(second);
-        let started = std::time::Instant::now();
         let second = Claim::take(&bucket, &b, quick()).await.expect("its own claim, taken back");
-        assert!(started.elapsed() < quick().stale, "at once");
+        assert_eq!(second.waits(), 0, "at once");
 
         // killed again: another server, on a folder of its own, takes it once it went stale
         drop(second);
-        let third = Claim::take(&bucket, &a, quick()).await.expect("a stale claim is taken");
-
-        // and a server whose claim is another's now stops writing
-        say(&bucket, "another", false).await.expect("said");
-        tokio::time::timeout(Duration::from_secs(5), third.lost()).await.expect("its claim lost");
+        Claim::take(&bucket, &a, quick()).await.expect("a stale claim is taken");
         std::fs::remove_dir_all(dir).ok();
     }
 }
