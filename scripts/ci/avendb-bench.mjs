@@ -274,13 +274,19 @@ if (import.meta.main) {
   : process.argv.includes('--posts') ? checkPosts(bench, gates)
   : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, shardOf(gates), pg);
  const baseAt = process.argv.indexOf('--base');
+ let baseSpread = [];
  if (baseAt > 0) {
-  const base = collapse(lines(readFileSync(process.argv[baseAt + 1], 'utf8'), 'BENCH')).lines;
-  results.push(...vsMain(results, check(base, shardOf(gates)), gates.vs_main?.tolerance ?? 0.15));
+  const base = collapse(lines(readFileSync(process.argv[baseAt + 1], 'utf8'), 'BENCH'));
+  baseSpread = base.spread;
+  const held = vsMain(results, check(base.lines, shardOf(gates)), gates.vs_main?.tolerance ?? 0.15);
+  // printed and not failing while vs_main.gate is false (see its "about")
+  results.push(...held.map(r => ({ ...r, gate: gates.vs_main?.gate !== false })));
  }
  let text = report(bench, pg, results);
  if (spread.length) text += ['', '| repeated run | number | runs | fewest | median | most |', '|---|---|---|---|---|---|',
   ...spread.map(x => `| ${x.run} | ${x.field} | ${x.runs} | ${fmt(x.min)} | ${fmt(x.median)} | ${fmt(x.max)} |`)].join('\n');
+ if (baseSpread.length) text += ['', '| main\'s repeated run | number | runs | fewest | median | most |', '|---|---|---|---|---|---|',
+  ...baseSpread.map(x => `| ${x.run} | ${x.field} | ${x.runs} | ${fmt(x.min)} | ${fmt(x.median)} | ${fmt(x.max)} |`)].join('\n');
  console.log(text);
  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## avenDB bench\n\n${text}\n`);
  const failed = results.filter(r => r.gate && !r.ok);
