@@ -658,3 +658,86 @@ fn a_hint_tells_its_witnesses_from_the_logs_it_changed() {
     assert_eq!(budget.take_witnesses(peer, &[log(1), log(2), log(4)].into()), [log(4)].into());
     assert!(budget.take_witnesses(peer, &[log(4)].into()).is_empty(), "a log is taken once");
 }
+
+
+/// A view paints from what the device holds while its catch-up is still under way (Goal 6 S3): with the phone's
+/// background pages held and the Mac's logs behind, the whole-world read and the world summary both answer at once,
+/// with the entries the phone holds, stamped behind, never waiting for the logs to arrive.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_world_paints_from_local_entries_while_catching_up() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let mac = Node::spawn(w.lab.split(sender, &[], [63; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [64; 32]), receiver, Options::local()).await.unwrap();
+    let local = mac.act(move |lab, me| (0..3).map(|i| lab.create(me, coop, coop, "doc", &[],
+        document(&format!("Held {i}"), "here", me)).unwrap()).collect::<Vec<_>>()).await;
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.sync_with(mac.id()).await.unwrap();
+    wait_for(async || {
+        let local = local.clone();
+        phone.read(move |lab, me| local.iter().all(|e| lab.item(me, *e).is_some())).await
+            && phone.shared.differ(sender).await.is_empty()
+    }).await;
+    let held = phone.op(serde_json::json!({"op": "world"})).await.unwrap()["ok"]["entries"].as_array().unwrap().len();
+    assert!(held > 0);
+
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    mac.act(move |lab, me| for i in 0..pulls::LIVE_LOGS + 40 {
+        lab.create(me, coop, coop, "doc", &[], document(&format!("Behind {i}"), "history", me)).unwrap();
+    }).await;
+    wait_for(async || phone.shared.differ(sender).await.len() > pulls::LIVE_LOGS).await;
+    for op in ["world", "world_summary"] {
+        let started = std::time::Instant::now();
+        let answer = time::timeout(Duration::from_secs(5), phone.op(serde_json::json!({"op": op}))).await
+            .expect("a world read never waits for the catch-up").unwrap();
+        eprintln!("{op} during catch-up: {:?}, {}", started.elapsed(), answer["fresh"]);
+        assert_eq!(answer["fresh"]["state"], "behind", "{op}: {}", answer["fresh"]);
+        assert!(answer["fresh"]["logs"].as_u64().unwrap() > pulls::LIVE_LOGS as u64, "{op}");
+        if op == "world" {
+            assert!(answer["ok"]["entries"].as_array().unwrap().len() >= held, "the entries it holds, shown now");
+        }
+    }
+    assert!(phone.shared.differ(sender).await.len() > pulls::LIVE_LOGS, "the catch-up is still under way");
+    drop(stalled);
+    phone.shutdown().await.unwrap();
+    mac.shutdown().await.unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore]
+async fn probe_world_cost_holding_many() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let phone_lab = w.lab.split(receiver, &[], [65; 32]);
+    let mac = Node::spawn(w.lab.split(sender, &[], [66; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(phone_lab, receiver, Options::local()).await.unwrap();
+    let first = mac.act(move |lab, me| (0..1500).map(|i| lab.create(me, coop, coop, "doc", &[], document(&format!("A {i}"), "x", me)).unwrap()).collect::<Vec<_>>()).await;
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.sync_with(mac.id()).await.unwrap();
+    wait_for(async || { let f = first.clone(); phone.read(move |lab, me| f.iter().all(|e| lab.item(me, *e).is_some())).await }).await;
+    for op in ["world_summary", "world", "world"] {
+        let t = std::time::Instant::now();
+        phone.op(serde_json::json!({"op": op})).await.unwrap();
+        eprintln!("synced {op}: {:?}", t.elapsed());
+    }
+    mac.act(move |lab, me| for i in 0..1500 { lab.create(me, coop, coop, "doc", &[], document(&format!("B {i}"), "x", me)).unwrap(); }).await;
+    for _ in 0..8 {
+        for op in ["world_summary", "world"] {
+            let t = std::time::Instant::now();
+            phone.op(serde_json::json!({"op": op})).await.unwrap();
+            eprintln!("catching up {op}: {:?} behind={}", t.elapsed(), phone.shared.differ(sender).await.len());
+        }
+        time::sleep(Duration::from_millis(300)).await;
+    }
+    phone.shutdown().await.unwrap();
+    mac.shutdown().await.unwrap();
+}

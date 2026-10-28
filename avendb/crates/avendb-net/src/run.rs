@@ -104,7 +104,14 @@ impl Node {
         let name = engine::name(&op).map(str::to_string);
         let answer = match name.as_deref() {
             Some("world") => {
-                self.world_encoded(engine::WorldSnapshot::into_json).await?
+                // stamped as every read is (`fresh_read`), so a page paints what the device holds now, marked behind
+                // while a peer holds more, never waiting for the whole catch-up
+                let mut world = self.world_encoded(engine::WorldSnapshot::into_json).await?;
+                if world.get("ok").is_some() {
+                    let (heard, behind, _) = self.shared.heard(None).await;
+                    engine::coverage::add_freshness(&mut world, heard, behind.len());
+                }
+                world
             }
             Some("entry_views") => self.entry_views_encoded(op).await?,
             Some("checkpoint_view" | "checkpoint_entry_base") => self.publish_checkpoint(&op, authenticator).await?,

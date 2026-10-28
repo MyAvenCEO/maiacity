@@ -55,6 +55,7 @@ import { createEntryWindow, createReadWindow } from './query-window.js';
 import { useBuiltInActors, useDevice, refreshActiveView, wantNow } from '../../../game/code/sources/device.js';
 import { ACTORS, QUERIES } from './actors.js';
 import { touches } from '../../../game/code/sources/touched.js';
+import { freshnessOf } from '../../../game/code/sources/coverage.js';
 import { watchStirs } from './stirs.js';
 import { sync } from './sync.svelte.js';
 
@@ -115,6 +116,8 @@ const pending = createPendingWrites(() => painted++);
 /** The reads' count each answer was asked at, beside it. */
 const HEARD = Symbol('heard at');
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
+/** how fresh that world is, as the device stamped its read (`freshnessOf`): a page paints it at once, marked behind */
+let worldFresh = $state.raw(freshnessOf(null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
 const context = createVaultContext({ world: () => world, read: () => vault, write: (id) => (vault = id) });
@@ -696,11 +699,12 @@ function refreshDevice(/** @type {any} */ d, initial = false, full = false) {
 				worldAsked.set(d, standing);
 				const full = fullWorldRequests.delete(d);
                 const scoped = !full && typeof location !== 'undefined' && summaryView(location.pathname, location.hash);
-                return answer(await near(d, { op: scoped ? 'world_summary' : 'world' })) ?? null;
+                const out = await near(d, { op: scoped ? 'world_summary' : 'world' });
+                return { w: answer(out) ?? null, fresh: freshnessOf(out) };
 			},
-			take: (w) => {
+			take: ({ w, fresh }) => {
 				if (device !== d) throw new Error('The avenDB device changed during its world refresh.');
-				world = w;
+				[world, worldFresh] = [w, fresh];
 				// the summary holds every accepted write asked before it; entries an observer reads wait for its answer
 				const watched = new Set([...observers].map((o) => o.op?.entry));
 				pending.heard((entry) => !watched.has(entry), worldAsked.get(d) ?? -1);
@@ -867,7 +871,7 @@ async function lock() {
 	if (d) retireWorld(d);
 	watching = null;
 	useDevice(null);
-	[device, world, vault] = [null, null, ''];
+	[device, world, vault, worldFresh] = [null, null, '', freshnessOf(null)];
 	if (meta) phase = 'closed';
 	await d?.close().catch(() => {});
 }
@@ -882,7 +886,7 @@ async function forget() {
 	watching = null;
 	useDevice(null);
 	await (mac ? mac.call('forget') : store.aside());
-	[device, meta, world, vault, phase] = [null, null, null, '', 'new'];
+	[device, meta, world, vault, phase, worldFresh] = [null, null, null, '', 'new', freshnessOf(null)];
 }
 
 /** In the Mac app: whether a touch may open avenDB here, its Secure Enclave able to hold a Touch ID key (macOS 26, a
@@ -1055,6 +1059,10 @@ export const session = {
 	/** what the device shows of its world, once open: refreshed as it changes while a page holds the session */
 	get world() {
 		return world;
+	},
+	/** how fresh `world` is (`freshnessOf` of its read): behind while a peer holds more, offline with none */
+	get worldFresh() {
+		return worldFresh;
 	},
 	/** the vault the person looks at: the one they picked in avenDB's nav pill, else their own */
 	get vault() {
