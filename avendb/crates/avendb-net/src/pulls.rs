@@ -1454,15 +1454,14 @@ mod pipelined_tests {
             serve_slow(&conn, &mut w.lab, sender, receiver, RTT, Some(3), &asked).await;
             future::pending::<()>().await;
         };
-        let began = Instant::now();
-        // well short of a page's wait (`PAGE_WAIT`), the time it would take if a page outlived its route; not a wall
-        // clock bound, which a loaded machine misses (10.3 s once, batch 5)
-        let soon = crate::PAGE_WAIT / 6;
-        let ended = time::timeout(soon, future::or(async { Some(pull.await) }, async { serving.await; None })).await;
-        let ended = ended
-            .unwrap_or_else(|_| panic!("the pull ends once its connection is gone, not after a page's wait: {:?}", began.elapsed()))
+        // it ends by its connection's loss, not by a page's wait running out (`PAGE_WAIT`, "no page in time"): the
+        // cause, not a wall clock a loaded machine misses (10.3 s once, batch 5); the timeout only stops a hang
+        let ended = time::timeout(crate::PAGE_WAIT / 6, future::or(async { Some(pull.await) }, async { serving.await; None }))
+            .await
+            .expect("the pull ends once its connection is gone")
             .expect("the pull, not the peer, ends");
-        assert!(ended.is_err(), "a pull whose connection closed under it fails: {ended:?}");
+        let why = format!("{:#}", ended.as_ref().expect_err("a pull whose connection closed under it fails"));
+        assert!(why.contains("connection lost") && !why.contains("no page in time"), "it ends by the route's loss: {why}");
         // its slots come back as its futures drop, the blocking checks of its pages included
         time::timeout(Duration::from_secs(30), async {
             while slots(&phone.shared.pulls) != slots(&fresh) {
