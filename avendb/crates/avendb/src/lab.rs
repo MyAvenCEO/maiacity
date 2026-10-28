@@ -3295,10 +3295,7 @@ impl Lab {
     /// to step its replay on, and answered from it every ask after an edit it took came back without that edit, until
     /// something else replayed (`answer_current`; a drive re-plugged never got the note written meanwhile, 2026-10-28).
     fn standing(&self, d: SignerId) -> &State {
-        if self.standing_lags(d) {
-            return &self.held(d).replay.state;
-        }
-        self.latest(d)
+        self.standing_or(d).unwrap_or_else(|| self.latest(d))
     }
 
     /// `standing` answers by a replay behind device `d`'s log: what it answers now is less than it will once caught up.
@@ -3311,11 +3308,34 @@ impl Lab {
     }
 
     /// Whether what device `d` answers its peers (`announce`, `request`) is by every edit it holds: false in the middle
-    /// of a catch-up whose replay lags its log (`standing`). Whatever is worked out of its answers then and kept for its
-    /// log's revision is to be worked out again once it caught up, though its log didn't change: a node that kept whom
-    /// to tell what so never told a peer of the edits the catch-up brought (2026-10-28, `answer_current`).
+    /// of a catch-up whose replay lags its log (`standing`), or where it answers nothing till then (`standing_or`).
+    /// Whatever is worked out of its answers then and kept for its log's revision is to be worked out again once it
+    /// caught up, though its log didn't change: a node that kept whom to tell what so never told a peer of the edits
+    /// the catch-up brought (2026-10-28, `answer_current`).
     pub fn answers_current(&self, d: SignerId) -> bool {
-        !self.standing_lags(d)
+        !self.standing_lags(d) && self.standing_or(d).is_some()
+    }
+
+    /// `standing`, but `None` where it would replay every edit it holds: in the middle of a catch-up, with a removal
+    /// among the edits it took since its replay. What answers a peer then answers nothing (`answered`,
+    /// `may_fetch_file`, `withheld`), less than all its edits would, and only while the catch-up runs, whose steps bring
+    /// its replay up to them (`answerBy` in `StandingReplay.lean`). A first sync of Maia City, whose pages hold removals,
+    /// replayed every edit for each page's announce and each peer's ask, and never ended (S2, 2026-10-28).
+    fn standing_or(&self, d: SignerId) -> Option<&State> {
+        let store = self.held(d);
+        if !self.catching_up(d) || store.latest.get().is_some() || store.replayed >= store.log.edits().len() {
+            return Some(self.latest(d));
+        }
+        if !store.log.edits()[store.replayed..].iter().any(Edit::is_removal) {
+            return Some(&store.replay.state);
+        }
+        None
+    }
+
+    /// Whether device `d` answers what its edits say now without replaying every edit it holds (`standing_or`): a
+    /// background reader, as a node's file keeper, waits for its catch-up while it doesn't.
+    pub fn answers_now(&self, d: SignerId) -> bool {
+        self.standing_or(d).is_some()
     }
 
     fn latest(&self, d: SignerId) -> &State {
@@ -5089,7 +5109,8 @@ impl Lab {
     /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
         let store = self.held(d);
-        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), self.standing(d), asker, follow))
+        let Some(st) = self.standing_or(d) else { return Arc::new(vec![]) };
+        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow))
     }
 
     /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
@@ -5266,7 +5287,8 @@ impl Lab {
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         let store = self.held(d);
-        let mut needs = crate::lazy::Needs::new(self.standing(d), asker);
+        let Some(st) = self.standing_or(d) else { return vec![] };
+        let mut needs = crate::lazy::Needs::new(st, asker);
         let mut out: Vec<Stub> = sends
             .places
             .iter()
@@ -5493,7 +5515,7 @@ impl Lab {
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
     /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        crate::sync::fetchable(self.held(d).log.edits(), self.standing(d), asker, file, follow)
+        self.standing_or(d).is_some_and(|st| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow))
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
