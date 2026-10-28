@@ -3,6 +3,7 @@
 // or the selection; the repo's declarations (src/lib/avendb/actors.js) against the schema; and the golden gate of task
 // M: every route compiles to the same Interests from the actors as from the manifests they evolved from.
 import { expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { ACTOR_V3, MANIFEST_V2, QUERY_V1, actorLens, asQuery, compile, covers, leavesFor, lift, namedBy, plan, queryOp, resolve } from './actors.js';
 import { ACTORS, CHAT, INLINE, QUERIES, STUDIO, ASSETS } from '../../../src/lib/avendb/actors.js';
 
@@ -254,13 +255,15 @@ test('golden: every route compiles to the same Interests from the actors and the
 	for (const path of routes) expect(leavesFor(mixed, path, bound).map(seen)).toEqual(leavesFor(GOLDEN, path, bound).map(seen));
 });
 
-test('the lens from v2 to v3 names both schemas and renames the kind both ways', () => {
+test('the lens from v2 to v3 names both schemas and moves kind, v and tiers in one convert', () => {
 	const lens = JSON.parse(actorLens(id(1), id(2)));
 	expect(lens).toMatchObject({ lens: 'Manifest, v2 to Actor, v3', from: id(1), to: id(2) });
-	const convert = (f) => lens.steps.find((s) => s.convert?.from[0] === f).convert;
-	expect(convert('kind')).toEqual({ from: ['kind'], to: ['kind'], forward: [[{ kind: 'manifest' }, { kind: 'actor' }]], backward: [[{ kind: 'actor' }, { kind: 'manifest' }]] });
-	expect(convert('v').forward).toEqual([[{ v: 2 }, { v: 3 }]]);
-	expect(convert('tiers').to).toEqual(['loads']);
+	// one convert: a write that sets loads stores kind actor and v 3 with them, a record v3 reads whole (a convert per
+	// field stored loads beside kind manifest and v 2, which no schema reads: the Actors v3 AIP's NotAView, 2026-10-28)
+	const EMPTY = { now: [], next: [], later: [], idle: [] };
+	expect(lens.steps[0]).toEqual({ convert: { from: ['kind', 'v', 'tiers'], to: ['kind', 'v', 'loads'],
+		forward: [[{ kind: 'manifest', v: 2 }, { kind: 'actor', v: 3, loads: EMPTY }]],
+		backward: [[{ kind: 'actor', v: 3 }, { kind: 'manifest', v: 2, tiers: EMPTY }]] } });
 	// each field v3 adds is added by the lens, and v2's schema is the one the vault holds
 	const v3 = Object.keys(JSON.parse(ACTOR_V3).properties), v2 = Object.keys(JSON.parse(MANIFEST_V2).properties);
 	const added = lens.steps.filter((s) => s.add).map((s) => s.add);
@@ -268,6 +271,16 @@ test('the lens from v2 to v3 names both schemas and renames the kind both ways',
 	expect(v3.filter((f) => !v2.includes(f)).sort()).toEqual([...added, 'loads'].sort());
 	expect(v2.filter((f) => !v3.includes(f))).toEqual(['tiers']);
 	expect(JSON.parse(MANIFEST_V2).title).toBe('Manifest, v2');
+});
+
+test('the engine\'s fixture of the move (avendb tests/actor_move.rs) is these schemas, this lens and the assets actor', () => {
+	const f = JSON.parse(readFileSync(new URL('../../../avendb/crates/avendb/tests/data/actors-v3.json', import.meta.url), 'utf8'));
+	expect(f.manifest_v2).toBe(MANIFEST_V2);
+	expect(f.actor_v3).toBe(ACTOR_V3);
+	const { from, to } = JSON.parse(f.lens);
+	expect(f.lens).toBe(actorLens(from, to));
+	expect(f.stored).toEqual(GOLDEN.find((m) => m.id === 'assets'));
+	expect(f.actor).toEqual(ACTORS.find((a) => a.id === 'assets'));
 });
 
 test('a want as a query entry and back: its slot a param bound to the slot, the rest the part\'s own', () => {

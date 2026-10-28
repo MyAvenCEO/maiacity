@@ -1241,7 +1241,7 @@ fn public_row(
         (Lane::with_built_ins(lab.lane_of(me, en.vault)), name)
     });
     let app = engine::own(lane, &stored)?;
-    let record = lane.view(&app, &item.authored()).0.get(&stored)?;
+    let record = lane.view(&app, &item.authored(), &stored).0.get(&stored)?;
     let kind = app.kind()?.to_string();
     let tags = record.get("tags").and_then(Value::as_array);
     let deleted = tags.is_some_and(|ts| ts.iter().any(|t| t.as_str() == Some(DELETED)));
@@ -1277,7 +1277,7 @@ fn public_row(
         let at: Vec<(EditId, Line)> = brought.iter().map(|(edit, line, _)| (*edit, *line)).collect();
         let records = history.read_at(&at, me, |item| {
             let stored = item.record();
-            engine::own(lane, &stored).and_then(|app| lane.view(&app, &item.authored()).0.get(&stored))
+            engine::own(lane, &stored).and_then(|app| lane.view(&app, &item.authored(), &stored).0.get(&stored))
         });
         let version = |((edit, line, files), record): ((EditId, Line, Vec<(FileRoot, Option<u64>)>), Option<Value>)| {
             json!({

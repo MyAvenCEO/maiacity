@@ -4604,7 +4604,7 @@ impl Lab {
     /// or the app reads nothing of it.
     pub fn open(&self, d: SignerId, entry: EntryId, app: &Schema) -> Option<(Value, bool)> {
         let item = self.item(d, entry)?;
-        let (view, read_only) = self.lane(d, self.vault_of_entry(d, entry)?).view(app, &item.authored());
+        let (view, read_only) = self.lane(d, self.vault_of_entry(d, entry)?).view(app, &item.authored(), &item.record());
         Some((item.read(&view)?, read_only))
     }
 
@@ -4623,7 +4623,7 @@ impl Lab {
         self.unlocked(on)?;
         let item = self.item(on, entry).ok_or(Refusal::ReadOnly)?;
         let vault = self.vault_of_entry(on, entry).ok_or(Refusal::ReadOnly)?;
-        let (view, read_only) = self.lane(on, vault).view(app, &item.authored());
+        let (view, read_only) = self.lane(on, vault).view(app, &item.authored(), &item.record());
         let seen = item.read(&view).filter(|_| !read_only).ok_or(Refusal::ReadOnly)?;
         let mut value = seen.clone();
         change(&mut value);

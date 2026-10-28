@@ -159,11 +159,14 @@ export const ACTOR_V3 = JSON.stringify({
 const EMPTY = Object.freeze({ now: [], next: [], later: [], idle: [] });
 
 /**
- * The lens from v2 (schema id `from`) to v3 (`to`): the kind `manifest` reads as `actor` and `v` 2 as 3 (a convert may
- * name one field on both sides: task K, `lens::Lane::fits` takes the two kinds as one kin once this lens joins them),
- * and the fields v3 adds read empty. As with v1 to v2, `tiers` give way to `loads` by the one write that moves an actor
- * to v3 (a v2 one opens in v3 with empty loads, and in v2 a moved one with empty tiers): a lens maps fields, and
- * renaming the part that holds another actor inside every tier is no field's map.
+ * The lens from v2 (schema id `from`) to v3 (`to`): `kind`, `v` and `tiers` move together, as `priority` and `parts`
+ * gave way to `v` and `tiers` from v1 to v2. A v2 manifest opens in v3 as kind `actor`, v 3 and empty loads, and a
+ * moved one in v2 as kind `manifest`, v 2 and empty tiers; the one write that sets an actor's loads stores kind `actor`
+ * and v 3 with them and drops its tiers, a record v3 reads whole. A convert per field instead would store loads beside
+ * kind `manifest` and v 2, a record neither schema reads, which the rules refuse (`lens::Lane::fits`). The fields v3
+ * adds read empty. Renaming the part that holds another actor inside every tier is no field's map, so tiers become
+ * loads by that write, not by the lens. A convert may name a field on both sides (task K, `lens::Lane::fits` takes the
+ * two kinds as one kin once this lens joins them).
  * @param {string} from @param {string} to
  */
 export const actorLens = (from, to) => JSON.stringify({
@@ -171,9 +174,14 @@ export const actorLens = (from, to) => JSON.stringify({
 	from,
 	to,
 	steps: [
-		{ convert: { from: ['kind'], to: ['kind'], forward: [[{ kind: 'manifest' }, { kind: 'actor' }]], backward: [[{ kind: 'actor' }, { kind: 'manifest' }]] } },
-		{ convert: { from: ['v'], to: ['v'], forward: [[{ v: 2 }, { v: 3 }]], backward: [[{ v: 3 }, { v: 2 }]] } },
-		{ convert: { from: ['tiers'], to: ['loads'], forward: [[{}, { loads: EMPTY }]], backward: [[{}, { tiers: EMPTY }]] } },
+		{
+			convert: {
+				from: ['kind', 'v', 'tiers'],
+				to: ['kind', 'v', 'loads'],
+				forward: [[{ kind: 'manifest', v: 2 }, { kind: 'actor', v: 3, loads: EMPTY }]],
+				backward: [[{ kind: 'actor', v: 3 }, { kind: 'manifest', v: 2, tiers: EMPTY }]]
+			}
+		},
 		{ add: 'interface' },
 		{ add: 'code' }
 	]

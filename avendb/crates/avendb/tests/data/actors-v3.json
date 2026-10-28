@@ -1,0 +1,172 @@
+{
+	"manifest_v2": "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"title\":\"Manifest, v2\",\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"manifest\"},\"v\":{\"const\":2},\"id\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"title\":{\"type\":\"string\",\"maxLength\":160},\"note\":{\"type\":\"string\",\"maxLength\":2000,\"default\":\"\"},\"routes\":{\"type\":\"array\",\"maxItems\":32,\"items\":{\"type\":\"string\",\"maxLength\":200},\"default\":[]},\"slots\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"pattern\":\"^[a-z][a-z0-9-]*$\"},\"default\":[]},\"tiers\":{\"type\":\"object\",\"properties\":{\"now\":{\"type\":\"array\",\"maxItems\":64,\"items\":{\"type\":\"object\",\"properties\":{\"manifest\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"want\":{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"tags\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"string\",\"maxLength\":128}},\"entry\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"}}},\"part\":{\"enum\":[\"headers\",\"record\",\"files\"],\"default\":\"record\"},\"files\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"window\":{\"type\":\"object\",\"properties\":{\"newest\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":512},\"oldest\":{\"const\":true}}},\"follow\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":3,\"default\":0},\"by\":{\"enum\":[\"viewport\",\"playhead\",\"camera\",\"list\"]},\"note\":{\"type\":\"string\",\"maxLength\":400}}},\"default\":[]},\"next\":{\"type\":\"array\",\"maxItems\":64,\"items\":{\"type\":\"object\",\"properties\":{\"manifest\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"want\":{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"tags\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"string\",\"maxLength\":128}},\"entry\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"}}},\"part\":{\"enum\":[\"headers\",\"record\",\"files\"],\"default\":\"record\"},\"files\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"window\":{\"type\":\"object\",\"properties\":{\"newest\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":512},\"oldest\":{\"const\":true}}},\"follow\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":3,\"default\":0},\"by\":{\"enum\":[\"viewport\",\"playhead\",\"camera\",\"list\"]},\"note\":{\"type\":\"string\",\"maxLength\":400}}},\"default\":[]},\"later\":{\"type\":\"array\",\"maxItems\":64,\"items\":{\"type\":\"object\",\"properties\":{\"manifest\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"want\":{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"tags\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"string\",\"maxLength\":128}},\"entry\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"}}},\"part\":{\"enum\":[\"headers\",\"record\",\"files\"],\"default\":\"record\"},\"files\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"window\":{\"type\":\"object\",\"properties\":{\"newest\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":512},\"oldest\":{\"const\":true}}},\"follow\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":3,\"default\":0},\"by\":{\"enum\":[\"viewport\",\"playhead\",\"camera\",\"list\"]},\"note\":{\"type\":\"string\",\"maxLength\":400}}},\"default\":[]},\"idle\":{\"type\":\"array\",\"maxItems\":64,\"items\":{\"type\":\"object\",\"properties\":{\"manifest\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"want\":{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"tags\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"string\",\"maxLength\":128}},\"entry\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"}}},\"part\":{\"enum\":[\"headers\",\"record\",\"files\"],\"default\":\"record\"},\"files\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"window\":{\"type\":\"object\",\"properties\":{\"newest\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":512},\"oldest\":{\"const\":true}}},\"follow\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":3,\"default\":0},\"by\":{\"enum\":[\"viewport\",\"playhead\",\"camera\",\"list\"]},\"note\":{\"type\":\"string\",\"maxLength\":400}}},\"default\":[]}}}},\"required\":[\"kind\",\"v\",\"id\",\"title\",\"tiers\"]}",
+	"actor_v3": "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"title\":\"Actor, v3\",\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"actor\"},\"v\":{\"const\":3},\"id\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"title\":{\"type\":\"string\",\"maxLength\":160},\"note\":{\"type\":\"string\",\"maxLength\":2000,\"default\":\"\"},\"routes\":{\"type\":\"array\",\"maxItems\":32,\"items\":{\"type\":\"string\",\"maxLength\":200},\"default\":[]},\"slots\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"pattern\":\"^[a-z][a-z0-9-]*$\"},\"default\":[]},\"interface\":{\"type\":\"object\",\"properties\":{\"version\":{\"type\":\"integer\",\"minimum\":1},\"description\":{\"type\":\"string\",\"maxLength\":2000},\"methods\":{\"type\":\"array\",\"maxItems\":64,\"items\":{\"type\":\"object\"}},\"events\":{\"type\":\"array\",\"maxItems\":32,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"needs\":{\"type\":\"array\",\"maxItems\":32,\"items\":{\"type\":\"object\"}}},\"required\":[\"version\",\"methods\"],\"default\":{\"version\":1,\"methods\":[]}},\"code\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"object\",\"properties\":{\"entry\":{\"type\":\"string\",\"pattern\":\"^[0-9a-f]{64}$\"},\"at\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}}},\"default\":[]},\"loads\":{\"type\":\"object\",\"properties\":{\"now\":{\"type\":\"array\",\"maxItems\":64,\"items\":{\"type\":\"object\",\"properties\":{\"actor\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"query\":{\"type\":\"object\",\"properties\":{\"entry\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^([0-9a-f]{64}|[a-z0-9][a-z0-9-]*)$\"},\"version\":{\"type\":\"integer\",\"minimum\":1}},\"required\":[\"entry\",\"version\"]},\"bind\":{\"type\":\"object\",\"maxProperties\":8,\"additionalProperties\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"}},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"},\"want\":{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"tags\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"string\",\"maxLength\":128}},\"entry\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"}}},\"part\":{\"enum\":[\"headers\",\"record\",\"files\"],\"default\":\"record\"},\"files\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"window\":{\"type\":\"object\",\"properties\":{\"newest\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":512},\"oldest\":{\"const\":true}}},\"follow\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":3,\"default\":0},\"by\":{\"enum\":[\"viewport\",\"playhead\",\"camera\",\"list\"]},\"note\":{\"type\":\"string\",\"maxLength\":400}}},\"default\":[]},\"next\":{\"type\":\"array\",\"maxItems\":64,\"items\":{\"type\":\"object\",\"properties\":{\"actor\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"query\":{\"type\":\"object\",\"properties\":{\"entry\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^([0-9a-f]{64}|[a-z0-9][a-z0-9-]*)$\"},\"version\":{\"type\":\"integer\",\"minimum\":1}},\"required\":[\"entry\",\"version\"]},\"bind\":{\"type\":\"object\",\"maxProperties\":8,\"additionalProperties\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"}},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"},\"want\":{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"tags\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"string\",\"maxLength\":128}},\"entry\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"}}},\"part\":{\"enum\":[\"headers\",\"record\",\"files\"],\"default\":\"record\"},\"files\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"window\":{\"type\":\"object\",\"properties\":{\"newest\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":512},\"oldest\":{\"const\":true}}},\"follow\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":3,\"default\":0},\"by\":{\"enum\":[\"viewport\",\"playhead\",\"camera\",\"list\"]},\"note\":{\"type\":\"string\",\"maxLength\":400}}},\"default\":[]},\"later\":{\"type\":\"array\",\"maxItems\":64,\"items\":{\"type\":\"object\",\"properties\":{\"actor\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"query\":{\"type\":\"object\",\"properties\":{\"entry\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^([0-9a-f]{64}|[a-z0-9][a-z0-9-]*)$\"},\"version\":{\"type\":\"integer\",\"minimum\":1}},\"required\":[\"entry\",\"version\"]},\"bind\":{\"type\":\"object\",\"maxProperties\":8,\"additionalProperties\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"}},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"},\"want\":{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"tags\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"string\",\"maxLength\":128}},\"entry\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"}}},\"part\":{\"enum\":[\"headers\",\"record\",\"files\"],\"default\":\"record\"},\"files\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"window\":{\"type\":\"object\",\"properties\":{\"newest\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":512},\"oldest\":{\"const\":true}}},\"follow\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":3,\"default\":0},\"by\":{\"enum\":[\"viewport\",\"playhead\",\"camera\",\"list\"]},\"note\":{\"type\":\"string\",\"maxLength\":400}}},\"default\":[]},\"idle\":{\"type\":\"array\",\"maxItems\":64,\"items\":{\"type\":\"object\",\"properties\":{\"actor\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^[a-z0-9][a-z0-9-]*$\"},\"query\":{\"type\":\"object\",\"properties\":{\"entry\":{\"type\":\"string\",\"maxLength\":64,\"pattern\":\"^([0-9a-f]{64}|[a-z0-9][a-z0-9-]*)$\"},\"version\":{\"type\":\"integer\",\"minimum\":1}},\"required\":[\"entry\",\"version\"]},\"bind\":{\"type\":\"object\",\"maxProperties\":8,\"additionalProperties\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"}},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"},\"want\":{\"type\":\"object\",\"properties\":{\"type\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"tags\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"string\",\"maxLength\":128}},\"entry\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$[a-z][a-z0-9-]*)$\"},\"vault\":{\"type\":\"string\",\"pattern\":\"^([0-9a-f]{64}|\\\\$vault|\\\\*)$\"}}},\"part\":{\"enum\":[\"headers\",\"record\",\"files\"],\"default\":\"record\"},\"files\":{\"type\":\"array\",\"maxItems\":8,\"items\":{\"type\":\"string\",\"maxLength\":64}},\"window\":{\"type\":\"object\",\"properties\":{\"newest\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":512},\"oldest\":{\"const\":true}}},\"follow\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":3,\"default\":0},\"by\":{\"enum\":[\"viewport\",\"playhead\",\"camera\",\"list\"]},\"note\":{\"type\":\"string\",\"maxLength\":400}}},\"default\":[]}}}},\"required\":[\"kind\",\"v\",\"id\",\"title\",\"loads\"]}",
+	"lens": "{\"lens\":\"Manifest, v2 to Actor, v3\",\"from\":\"f4874aa944695d3879a3057f87a5cd78fdb187bc5d9c7053e2fbe11c47ba13bf\",\"to\":\"8f73521ad178ea43e2cd4e3c8a3244cb1959c23403acf7f1759331562bd53968\",\"steps\":[{\"convert\":{\"from\":[\"kind\",\"v\",\"tiers\"],\"to\":[\"kind\",\"v\",\"loads\"],\"forward\":[[{\"kind\":\"manifest\",\"v\":2},{\"kind\":\"actor\",\"v\":3,\"loads\":{\"now\":[],\"next\":[],\"later\":[],\"idle\":[]}}]],\"backward\":[[{\"kind\":\"actor\",\"v\":3},{\"kind\":\"manifest\",\"v\":2,\"tiers\":{\"now\":[],\"next\":[],\"later\":[],\"idle\":[]}}]]}},{\"add\":\"interface\"},{\"add\":\"code\"}]}",
+	"lens_per_field": "{\"lens\":\"Manifest, v2 to Actor, v3\",\"from\":\"f4874aa944695d3879a3057f87a5cd78fdb187bc5d9c7053e2fbe11c47ba13bf\",\"to\":\"8f73521ad178ea43e2cd4e3c8a3244cb1959c23403acf7f1759331562bd53968\",\"steps\":[{\"convert\":{\"from\":[\"kind\"],\"to\":[\"kind\"],\"forward\":[[{\"kind\":\"manifest\"},{\"kind\":\"actor\"}]],\"backward\":[[{\"kind\":\"actor\"},{\"kind\":\"manifest\"}]]}},{\"convert\":{\"from\":[\"v\"],\"to\":[\"v\"],\"forward\":[[{\"v\":2},{\"v\":3}]],\"backward\":[[{\"v\":3},{\"v\":2}]]}},{\"convert\":{\"from\":[\"tiers\"],\"to\":[\"loads\"],\"forward\":[[{},{\"loads\":{\"now\":[],\"next\":[],\"later\":[],\"idle\":[]}}]],\"backward\":[[{},{\"tiers\":{\"now\":[],\"next\":[],\"later\":[],\"idle\":[]}}]]}},{\"add\":\"interface\"},{\"add\":\"code\"}]}",
+	"stored": {
+		"kind": "manifest",
+		"v": 2,
+		"note": "The library list now; the selected asset ($asset) with what it pins on select; its neighbours by list position next; its older versions later.",
+		"routes": [
+			"/app/models/",
+			"/app/actors/",
+			"/app/machines/",
+			"/app/plants/",
+			"/app/biomes/",
+			"/app/buildings/",
+			"/app/worlds/*",
+			"/app/assets/*",
+			"/app/#assets"
+		],
+		"id": "assets",
+		"title": "Game Assets",
+		"slots": [
+			"asset"
+		],
+		"tiers": {
+			"now": [
+				{
+					"manifest": "kernel"
+				},
+				{
+					"want": {
+						"type": [
+							"recipe"
+						]
+					},
+					"part": "headers",
+					"files": [
+						"media:still"
+					],
+					"note": "name, kind, versions, thumbnail"
+				},
+				{
+					"want": {
+						"entry": "$asset"
+					},
+					"follow": 2,
+					"note": "card, recipe and what it pins"
+				},
+				{
+					"want": {
+						"entry": "$asset"
+					},
+					"part": "files",
+					"note": "its own files: the model the viewer shows"
+				}
+			],
+			"next": [
+				{
+					"want": {
+						"type": [
+							"recipe"
+						]
+					},
+					"by": "list",
+					"note": "the neighbours of the selected one first"
+				}
+			],
+			"later": [
+				{
+					"want": {
+						"entry": "$asset"
+					},
+					"window": {
+						"oldest": true
+					},
+					"note": "older versions and variants"
+				}
+			]
+		}
+	},
+	"actor": {
+		"kind": "actor",
+		"v": 3,
+		"note": "The library list now; the selected asset ($asset) with what it pins on select; its neighbours by list position next; its older versions later.",
+		"routes": [
+			"/app/models/",
+			"/app/actors/",
+			"/app/machines/",
+			"/app/plants/",
+			"/app/biomes/",
+			"/app/buildings/",
+			"/app/worlds/*",
+			"/app/assets/*",
+			"/app/#assets"
+		],
+		"slots": [
+			"asset"
+		],
+		"id": "assets",
+		"title": "Game Assets",
+		"interface": {
+			"version": 1,
+			"description": "The library list now; the selected asset ($asset) with what it pins on select; its neighbours by list position next; its older versions later.",
+			"methods": [],
+			"events": [],
+			"needs": []
+		},
+		"code": [],
+		"loads": {
+			"now": [
+				{
+					"actor": "kernel"
+				},
+				{
+					"query": {
+						"entry": "query-recipe",
+						"version": 1
+					},
+					"part": "headers",
+					"files": [
+						"media:still"
+					],
+					"note": "name, kind, versions, thumbnail"
+				},
+				{
+					"query": {
+						"entry": "query-one-asset-follow-2",
+						"version": 1
+					},
+					"bind": {
+						"asset": "$asset"
+					},
+					"note": "card, recipe and what it pins"
+				},
+				{
+					"query": {
+						"entry": "query-one-asset",
+						"version": 1
+					},
+					"bind": {
+						"asset": "$asset"
+					},
+					"part": "files",
+					"note": "its own files: the model the viewer shows"
+				}
+			],
+			"next": [
+				{
+					"query": {
+						"entry": "query-recipe",
+						"version": 1
+					},
+					"by": "list",
+					"note": "the neighbours of the selected one first"
+				}
+			],
+			"later": [
+				{
+					"query": {
+						"entry": "query-one-asset-oldest",
+						"version": 1
+					},
+					"bind": {
+						"asset": "$asset"
+					},
+					"note": "older versions and variants"
+				}
+			]
+		}
+	}
+}

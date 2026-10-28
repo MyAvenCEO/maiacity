@@ -29,8 +29,9 @@
 //! every walk over a record here is a loop over an explicit stack, never a recursion: a record nested deep can't
 //! overflow the stack. A write reaches no deeper than `CEILING` rows, whatever its schemas say.
 //!
-//! A view follows one lens: an item written under the app's schema and at most one other version, joined to it by a
-//! lens in the lane. Anything else opens read-only (`Lane::view`); chains of lenses come with a third version.
+//! A view follows one lens: an item written under the app's schema and one other version, joined to it by a lens in the
+//! lane, or under several, where the others are spent on what it stores (`Lane::spent`): joined to the lens's other
+//! version by chains of lenses with nothing left to translate. Anything else opens read-only (`Lane::view`).
 
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -1154,11 +1155,15 @@ impl Lane {
         self.lenses.values().map(Arc::as_ref)
     }
 
-    /// How an app on `app` opens an item written under the schemas `authored`, and whether only read-only. It reads
-    /// through the lens joining `app` to the one other schema the item was written under; where the lane holds several,
-    /// every device takes the one with the smallest id. Read-only when the item was written under more than one other
-    /// schema, or under one the lane holds no lens or no schema for: then it shows what it can.
-    pub fn view(&self, app: &Schema, authored: &BTreeSet<BlobId>) -> (View, bool) {
+    /// How an app on `app` opens an item written under the schemas `authored` that stores `stored`, and whether only
+    /// read-only. It reads through the lens joining `app` to the one other schema the item was written under; where the
+    /// lane holds several, every device takes the one with the smallest id. Written under several other schemas, it
+    /// reads through the lens to the one, its partner, that holds what it stores (`spent`): each other is joined to the
+    /// partner by a chain of the lane's lenses, and none of them has anything left to translate, so a read through the
+    /// chain is the read through that one lens (`Schemas.lean` `chainRead_spent`). Read-only when no other schema is
+    /// such a partner, or the item was written under one the lane holds no lens or no schema for: then it shows what
+    /// it can.
+    pub fn view(&self, app: &Schema, authored: &BTreeSet<BlobId>, stored: &Value) -> (View, bool) {
         let joined = |x: BlobId| {
             let other = self.schemas.get(&x)?;
             self.lenses.values().find_map(|l| View::through(app, l, other))
@@ -1170,8 +1175,44 @@ impl Lane {
                 Some(v) => (v, false),
                 None => (View::plain(app), true),
             },
-            xs => (xs.iter().find_map(|&x| joined(x)).unwrap_or_else(|| View::plain(app)), true),
+            xs => match xs.iter().find(|&&x| self.spent(app.id, x, xs, stored)).and_then(|&x| joined(x)) {
+                Some(v) => (v, false),
+                None => (xs.iter().find_map(|&x| joined(x)).unwrap_or_else(|| View::plain(app)), true),
+            },
         }
+    }
+
+    /// Whether the schemas `others` an item was written under, but for `partner`, are spent on what it stores, `stored`:
+    /// each is joined to `partner` by a chain of the lane's lenses that passes only through them (never through the
+    /// app's schema `app`), and each lens of the chains, read toward `partner`, changes nothing of `stored` (`translate`):
+    /// the record holds none of the fields the farther version alone names, and nothing a step would bring in. A read
+    /// through the chain toward the app is then the read through its last lens alone, and every device decides alike
+    /// from what it stores. A loop over the schemas reached, each lens tried once per schema.
+    fn spent(&self, app: BlobId, partner: BlobId, others: &[BlobId], stored: &Value) -> bool {
+        let Some(r) = stored.as_object() else { return false };
+        if !self.schemas.contains_key(&partner) {
+            return false;
+        }
+        let mut reached = vec![partner];
+        let mut i = 0;
+        while let Some(&near) = reached.get(i) {
+            for l in self.lenses.values() {
+                let (far, side) = match (l.from, l.to) {
+                    (f, t) if t == near => (f, Side::Newer),
+                    (f, t) if f == near => (t, Side::Older),
+                    _ => continue,
+                };
+                if far == app || reached.contains(&far) || !others.contains(&far) || !self.schemas.contains_key(&far) {
+                    continue;
+                }
+                if &translate(&l.steps, side, r) != r {
+                    continue;
+                }
+                reached.push(far);
+            }
+            i += 1;
+        }
+        others.iter().all(|x| reached.contains(x))
     }
 
     /// Whether kinds `a` and `b` are kin (`Schemas.lean`'s `kin`): one kind, or joined by a chain of the lane's lenses,
@@ -2886,7 +2927,7 @@ mod tests {
     fn a_v1_article_opens_in_v2_as_it_was() {
         assert_eq!((ARTICLE_LENS.from(), ARTICLE_LENS.to()), (ARTICLE_V1.id(), ARTICLE_V2.id()));
         let lane = Lane::with_built_ins([]);
-        let (view, read_only) = lane.view(&ARTICLE_V2, &BTreeSet::from([ARTICLE_V1.id()]));
+        let (view, read_only) = lane.view(&ARTICLE_V2, &BTreeSet::from([ARTICLE_V1.id()]), &Value::Null);
         assert!(!read_only, "the shipped lens joins them");
         let v1 = serde_json::json!({ "kind": "article", "title": "Seeds", "text": "*Sown in March.*", "tags": ["d1"] });
         let got = view.get(&v1).expect("it reads");
@@ -2899,7 +2940,7 @@ mod tests {
         assert_eq!((SPARK_LENS.from(), SPARK_LENS.to()), (SPARK_V1.id(), SPARK_V2.id()));
         let lane = Lane::with_built_ins([]);
         let authored = BTreeSet::from([SPARK_V1.id()]);
-        let (view, read_only) = lane.view(&SPARK_V2, &authored);
+        let (view, read_only) = lane.view(&SPARK_V2, &authored, &Value::Null);
         assert!(!read_only, "the shipped lens joins them");
         let v1 = serde_json::json!({ "kind": "spark", "title": "Mornings", "look": "moodboard", "tags": ["light"],
             "blocks": [{ "id": 1, "type": "heading", "level": 1, "text": "Mornings" }] });
@@ -2912,7 +2953,7 @@ mod tests {
     fn a_v1_post_opens_in_v2_as_it_was() {
         assert_eq!((POST_LENS.from(), POST_LENS.to()), (POST_V1.id(), POST_V2.id()));
         let lane = Lane::with_built_ins([]);
-        let (view, read_only) = lane.view(&POST_V2, &BTreeSet::from([POST_V1.id()]));
+        let (view, read_only) = lane.view(&POST_V2, &BTreeSet::from([POST_V1.id()]), &Value::Null);
         assert!(!read_only, "the shipped lens joins them");
         let v1 = serde_json::json!({ "kind": "post", "title": "Seeds", "text": "Sown.", "channel": "Devlog", "tags": [] });
         let got = view.get(&v1).expect("it reads");
@@ -2924,7 +2965,7 @@ mod tests {
     fn a_v1_function_opens_in_v2_with_no_engine_and_no_manifest() {
         assert_eq!((FUNCTION_LENS.from(), FUNCTION_LENS.to()), (FUNCTION_V1.id(), FUNCTION_V2.id()));
         let lane = Lane::with_built_ins([]);
-        let (view, read_only) = lane.view(&FUNCTION_V2, &BTreeSet::from([FUNCTION_V1.id()]));
+        let (view, read_only) = lane.view(&FUNCTION_V2, &BTreeSet::from([FUNCTION_V1.id()]), &Value::Null);
         assert!(!read_only, "the shipped lens joins them");
         let v1 = serde_json::json!({ "kind": "function", "name": "Publish", "flow": "content", "stage": "live",
             "code": "return [];", "tags": ["flow"] });
@@ -2939,7 +2980,7 @@ mod tests {
     fn a_v1_view_opens_in_v2_as_an_html_view() {
         assert_eq!((VIEW_LENS.from(), VIEW_LENS.to()), (VIEW_V1.id(), VIEW_V2.id()));
         let lane = Lane::with_built_ins([]);
-        let (view, read_only) = lane.view(&VIEW_V2, &BTreeSet::from([VIEW_V1.id()]));
+        let (view, read_only) = lane.view(&VIEW_V2, &BTreeSet::from([VIEW_V1.id()]), &Value::Null);
         assert!(!read_only, "the shipped lens joins them");
         let v1 = serde_json::json!({ "kind": "view", "title": "Holders", "source": "<p>{{n}}</p>", "tags": ["code"] });
         let got = view.get(&v1).expect("it reads");

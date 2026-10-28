@@ -736,7 +736,7 @@ fn seen_of(lane: &Lane, stored: &Value, authored: &BTreeSet<BlobId>, schema: &Na
     let Some(app) = app else {
         return Some(Seen { record: stored.as_object().cloned().unwrap_or_default(), view: None, read_only: true });
     };
-    let (view, read_only) = lane.view(&app, authored);
+    let (view, read_only) = lane.view(&app, authored, stored);
     let record = view.get(stored)?.as_object()?.clone();
     Some(Seen { record, view: Some(view), read_only })
 }

@@ -423,7 +423,7 @@ fn sides_of(lab: &Lab, me: SignerId, lanes: &mut HashMap<VaultId, Lane>, l: &Lin
     authored.extend(main.map(|m| m.authored()).unwrap_or_default());
     let read = |stored: &Value| -> Record {
         let seen = match &app {
-            Some(app) => lane.view(app, &authored).0.get(stored),
+            Some(app) => lane.view(app, &authored, stored).0.get(stored),
             None => Some(stored.clone()),
         };
         seen.and_then(|v| v.as_object().cloned()).unwrap_or_default()
