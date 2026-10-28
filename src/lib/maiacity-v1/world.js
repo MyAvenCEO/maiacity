@@ -799,7 +799,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const centre = new THREE.Group();
 	centre.position.set(CENTRE.x, 0, CENTRE.z);
 	for (const [id, pick] of [['busStop', 'asset:busStop'], ['gasStation', 'asset:gasStation']]) {
-		const at = CENTRE_AT[id], o = anchor(THINGS[id], pick);
+		const at = CENTRE_AT[id], o = anchor(things.THINGS[id], pick);
 		o.position.set(at.x, 0, at.z);
 		o.rotation.y = at.turn;
 		centre.add(o);
@@ -955,7 +955,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	drawn.load(things.THINGS.van, van, { pick: 'asset:van' }).then((got) => seeThrough(got.obj), () => {});
 	van.visible = false;
 	world.add(van);
-	const people = Object.fromEntries(SEATS.map((s) => [s, person(s, drawn, edition)]));
+	const people = Object.fromEntries(SEATS.map((s) => [s, person(s, drawn, { things, cast: edition.cast })]));
 	world.add(...Object.values(people));
 
 	/** a place on the track (0 the highway, 1 the lot) and the way it heads */
@@ -3230,7 +3230,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (x || y) ((roamTo = []), (boardNext = false), (driveTo = null));
 	}
 	/** the stick's look: the camera turned round and tilted over what it looks at */
-	function look(dx, dy) {
+	function lookBy(dx, dy) {
 		if (!roam || busy) return;
 		goal = null;
 		drift = false;
@@ -3930,7 +3930,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		sow,
 		water: waterTree,
 		move,
-		look,
+		look: lookBy,
 		/** where I stand now, on the ground */
 		position: () => {
 			const p = people[stage.me].getWorldPosition(V());
