@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
-use avendb::id::SignerId;
+use avendb::id::{BlobId, SignerId};
 use avendb::sync::LogId;
 use iroh::EndpointId;
 use n0_future::time::{self, Duration, Instant};
@@ -75,8 +75,13 @@ pub(crate) struct Budget {
     live: Arc<Mutex<LiveBook>>,
     /// A background catch-up runs on for what live pulls left of their views (`live::LIVE_VIEW`): one at a time.
     pub(crate) view_behind: AtomicBool,
+    /// For each log a peer's announcement hinted, whether it only repeated it (a witness, `LivePriority.lean`
+    /// `inStep`), till a live pull takes it.
+    witnesses: Mutex<BTreeMap<SignerId, BTreeMap<LogId, bool>>>,
     /// One asking of each peer at a time (`Budget::one_asking`).
     askings: Mutex<BTreeMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
+    /// One fetch of each McEliece key at a time (`Budget::fetching`).
+    fetches: Mutex<BTreeMap<BlobId, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 /// The queue ticket is retained during service too, bounding all outstanding admissions, including waiters.
@@ -166,7 +171,9 @@ impl Budget {
             recent: Mutex::default(),
             live: Arc::default(),
             view_behind: AtomicBool::new(false),
+            witnesses: Mutex::default(),
             askings: Mutex::default(),
+            fetches: Mutex::default(),
         }
     }
 
@@ -239,6 +246,22 @@ impl Budget {
         turn.lock_owned().await
     }
 
+    /// The turns of fetching `keys` (smallest first, as `bring_keys` lists them), once no other fetch holds any: a live
+    /// pull and the backlog brought the same two keys at once, 2 MB each time on a phone's link (`bench_live`). Taken in
+    /// order, so two fetches never wait on each other.
+    pub(crate) async fn fetching(&self, keys: &[BlobId]) -> Vec<tokio::sync::OwnedMutexGuard<()>> {
+        let turns: Vec<_> = {
+            let mut fetches = self.fetches.lock().expect("fetches");
+            fetches.retain(|_, turn| Arc::strong_count(turn) > 1);
+            keys.iter().map(|key| fetches.entry(*key).or_default().clone()).collect()
+        };
+        let mut held = Vec::with_capacity(turns.len());
+        for turn in turns {
+            held.push(turn.lock_owned().await);
+        }
+        held
+    }
+
     /// A page asked ahead (S6), if a slot is free now: `None` rather than waiting, so a pull that finds none asks on
     /// one page at a time, as it did. Carried into validation as any page's admission is.
     pub(crate) fn ahead(&self) -> Option<Page> {
@@ -249,6 +272,38 @@ impl Budget {
     /// Scheduling hints only, received after the peer's authenticated announcement was admitted. The caller
     /// still intersects these IDs with ordinary authorized differences before asking; a hint grants no access.
     /// Overflow remains on normal reconciliation. Existing workers coalesce up to LIVE_LOGS pending logs.
+    /// Notes which logs `peer`'s hint repeated unchanged (witnesses) and which it changed, till a live pull takes them:
+    /// a log changed by any hint coalesced into the pull is no witness. A book grown past a few pulls' worth (hints no
+    /// pull took) starts again.
+    pub(crate) fn note_witnesses(&self, peer: SignerId, hinted: Vec<(LogId, bool)>) {
+        let mut book = self.witnesses.lock().expect("live witnesses");
+        let of = book.entry(peer).or_default();
+        if of.len() > 4 * LIVE_LOGS {
+            of.clear();
+        }
+        for (log, unchanged) in hinted {
+            if unchanged {
+                of.entry(log).or_insert(true);
+            } else {
+                of.insert(log, false);
+            }
+        }
+        if of.is_empty() {
+            book.remove(&peer);
+        }
+    }
+
+    /// The witnesses among `logs` for `peer`, each log taken out of the book.
+    pub(crate) fn take_witnesses(&self, peer: SignerId, logs: &BTreeSet<LogId>) -> BTreeSet<LogId> {
+        let mut book = self.witnesses.lock().expect("live witnesses");
+        let Some(of) = book.get_mut(&peer) else { return BTreeSet::new() };
+        let taken = logs.iter().filter(|l| of.remove(*l) == Some(true)).copied().collect();
+        if of.is_empty() {
+            book.remove(&peer);
+        }
+        taken
+    }
+
     pub(crate) fn live_announced(&self, peer: SignerId, full: bool, logs: &[LogId]) -> Option<LiveWork> {
         if full || logs.is_empty() || logs.len() > LIVE_LOGS { return None; }
         let mut book = self.live.lock().expect("live pulls");
@@ -1400,12 +1455,16 @@ mod pipelined_tests {
             future::pending::<()>().await;
         };
         let began = Instant::now();
-        let ended = time::timeout(Duration::from_secs(20), future::or(async { Some(pull.await) }, async { serving.await; None })).await;
-        let ended = ended.expect("the pull ends once its connection is gone").expect("the pull, not the peer, ends");
+        // well short of a page's wait (`PAGE_WAIT`), the time it would take if a page outlived its route; not a wall
+        // clock bound, which a loaded machine misses (10.3 s once, batch 5)
+        let soon = crate::PAGE_WAIT / 6;
+        let ended = time::timeout(soon, future::or(async { Some(pull.await) }, async { serving.await; None })).await;
+        let ended = ended
+            .unwrap_or_else(|_| panic!("the pull ends once its connection is gone, not after a page's wait: {:?}", began.elapsed()))
+            .expect("the pull, not the peer, ends");
         assert!(ended.is_err(), "a pull whose connection closed under it fails: {ended:?}");
-        assert!(began.elapsed() < Duration::from_secs(5), "it ends at once, not after a page's wait: {:?}", began.elapsed());
         // its slots come back as its futures drop, the blocking checks of its pages included
-        time::timeout(Duration::from_secs(5), async {
+        time::timeout(Duration::from_secs(30), async {
             while slots(&phone.shared.pulls) != slots(&fresh) {
                 time::sleep(Duration::from_millis(5)).await;
             }
