@@ -592,6 +592,21 @@ impl History {
         merge::merge(&base, &record(self.record(into, signer)), &record(self.record(from, signer)), take)
     }
 
+    /// What a merge of `from` into `into` shows taking `from`'s value at every conflict, as an AIP's acceptance merges
+    /// it: `merged` with `take` its own conflicts, the base and both sides each made once, not once a pass (Goal 7,
+    /// 2026-10-28: the Proposals page made every line's three items twice a read).
+    pub fn merged_theirs(&self, from: Line, into: Line, signer: SignerId) -> Merged {
+        let record = |v: Value| match v {
+            Value::Object(r) => r,
+            _ => Map::new(),
+        };
+        let base = record(self.item_at(&self.base(from, into), signer, into).record());
+        let (ours, theirs) = (record(self.record(into, signer)), record(self.record(from, signer)));
+        let conflicts = merge::merge(&base, &ours, &theirs, &BTreeSet::new()).conflicts;
+        let take = conflicts.into_iter().map(|c| c.place).collect();
+        merge::merge(&base, &ours, &theirs, &take)
+    }
+
     /// A merge of `from` into `into`: a write on `into` that builds on the heads of both, so the history of `into` is
     /// then the union of both (T10g), carrying the change that brings Loro's merged item to what the merge shows
     /// (`merged`), none where it shows that already (T10h).
