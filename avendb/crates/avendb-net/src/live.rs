@@ -108,6 +108,50 @@ fn add_witness_hints(announce: &mut Announce, want: &Holdings, witnesses: impl I
     announce.logs.sort_by_key(|(log, _)| *log);
 }
 
+/// The rules entries `entries` rest on, by `st`: each one's vault's log and those of the vaults that own it, up the
+/// chains, the logs of the audiences it stood in and their shares' logs with the shares those rest on, and those of
+/// the shares that took it in. An entry `st` doesn't know yet rests on any vault's log it knows: those are few, and an
+/// audience's or a share's it names only once its creation came.
+pub(crate) fn rests_on(st: &avendb::policy::State, entries: &[LogId]) -> BTreeSet<LogId> {
+    let mut out = BTreeSet::new();
+    let mut vaults = Vec::new();
+    let share = |out: &mut BTreeSet<LogId>, c: avendb::id::ShareId| {
+        out.insert(LogId::Share(c));
+        if let Some(cp) = st.share(c) {
+            out.extend(cp.chain.iter().map(|c| LogId::Share(*c)));
+        }
+    };
+    for log in entries {
+        let LogId::Entry(e) = log else { continue };
+        let Some(en) = st.entry(*e) else {
+            vaults.extend(st.vaults().iter().map(|v| v.id));
+            continue;
+        };
+        vaults.push(en.vault);
+        for (_, x) in &en.stays {
+            out.insert(LogId::Audience(en.vault, *x));
+            for c in st.audience_shares(*x).unwrap_or_default() {
+                share(&mut out, *c);
+            }
+        }
+        for c in &en.intake {
+            share(&mut out, *c);
+        }
+    }
+    while let Some(v) = vaults.pop() {
+        if !out.insert(LogId::Vault(v)) {
+            continue;
+        }
+        if let Some(vt) = st.vault(v) {
+            vaults.extend(vt.owners.iter().filter_map(|p| match p {
+                avendb::policy::Principal::Vault(o) => Some(*o),
+                _ => None,
+            }));
+        }
+    }
+    out
+}
+
 impl Shared {
     /// A first audience key can precede the newly announced entry while depending on an earlier creation in
     /// that audience. Repeat that creation's authorized frontier as a hint, so a live read needn't wait for all
@@ -281,14 +325,19 @@ impl Shared {
         let at = time::Instant::now();
         let mut missing = self.differ(device).await;
         timing.differ_ms += ms(at);
+        // the rules the hinted entries rest on (`rests_on`), those it lacks first: not every rule the device lacks,
+        // which a device catching up a history of many grants always lacks more than `LIVE_LOGS` of, so a chat
+        // message waited for the whole backlog (24.8 s, 2026-10-28). A hint is no permission: what comes is checked
+        // as any edit, and an edit whose authority hasn't come yet doesn't stand till it does.
+        let entries: Vec<_> = hints.iter().filter(|log| matches!(log, LogId::Entry(_))).copied().collect();
+        let rests = self.read(move |lab, me| rests_on(lab.state(me), &entries)).await;
         let rules: BTreeSet<_> = missing
             .iter()
-            .filter(|log| !matches!(log, LogId::Entry(_)))
+            .filter(|log| !matches!(log, LogId::Entry(_)) && rests.contains(log))
             .take(pulls::LIVE_LOGS + 1)
             .copied()
             .collect();
-        // A large authorization catch-up belongs to the existing authority-first backlog scheduler. Never skip
-        // it to prioritize a chat or treat the peer's hints as permission to materialize its entry.
+        // More rules than a live pull takes belong to the existing authority-first backlog scheduler.
         if rules.len() > pulls::LIVE_LOGS {
             timing.backlog = true;
             return Ok(());
@@ -300,7 +349,7 @@ impl Shared {
             self.materialize_live(timing).await;
             missing = self.differ(device).await;
             timing.rules_ms += ms(at);
-            if missing.iter().any(|log| !matches!(log, LogId::Entry(_))) {
+            if missing.iter().any(|log| !matches!(log, LogId::Entry(_)) && rests.contains(log)) {
                 timing.backlog = true;
                 return Ok(());
             }
