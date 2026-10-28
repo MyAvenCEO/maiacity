@@ -241,7 +241,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing. The page's list
-/// (aven/db/page/op-names.js) is written from this one and `ASKS` (tests/op_names.rs), never by hand.
+/// (aven/db/page/op-names.js) is written from this one and `ASKS` (tests/all/op_names.rs), never by hand.
 pub const READS: [&str; 40] = [
     "entry_views",
     "query",

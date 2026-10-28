@@ -244,7 +244,7 @@ fn listable(prefix: &str) -> bool {
 /// raises it, and no place deletes a shelf, of whatever generation, or anything else it finds beside its shelves; a
 /// shelf put aside (`disk::aside`, a page's "Forget") stays whole where it is. It stood at 18 when avenDB's last reset
 /// (2026-10-18 evening, Studio 2 standing alone and the old vault's media copied into Maia City) became its last, and
-/// a test holds it there (`tests/store.rs`).
+/// a test holds it there (`tests/all/store.rs`).
 pub const FLOOR: u64 = 18;
 
 /// The generation a place's shelf is, by the name of its folder or prefix: `g1`, `g2` and on, written as the number

@@ -4806,7 +4806,7 @@ impl Lab {
     }
 
     /// Takes part `part` of device `d`'s store out and hands it back, for a probe of what each part holds in memory
-    /// to let go of it and count what that frees (`avendb-net/tests/unlock_memory.rs`): the store is of no use after.
+    /// to let go of it and count what that frees (`avendb-net/tests/memory/unlock_memory.rs`): the store is of no use after.
     /// `None` for a part it doesn't know.
     #[doc(hidden)]
     pub fn probe_part(&mut self, d: SignerId, part: &str) -> Option<Box<dyn std::any::Any + Send>> {

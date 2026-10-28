@@ -582,7 +582,7 @@ mod slices {
     /// A page's read waits for no whole catch-up of a long backlog: the catch-up goes a short turn of the Lab at a time
     /// (`Lab::catch_up_step`), and a read asked meanwhile takes its turn between two of them, while many are still to
     /// come. As one turn, as before, a read waited the whole of it. How long a turn holds the Lab at a server's size is
-    /// `avendb/tests/scale_turns.rs`'s, in a release build.
+    /// `avendb/tests/all/scale_turns.rs`'s, in a release build.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn a_page_waits_for_one_slice_of_a_catch_up_not_the_whole() {
         let n = 800;

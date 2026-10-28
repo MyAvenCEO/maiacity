@@ -7,7 +7,7 @@
 			"blake3": "459af77f1a06c30d74bcccb91db6acf44910e3d60974177b26afe134f5c13fdd",
 			"bytes": 1127,
 			"title": "Asset, v1",
-			"note": "An asset as an avenDB entry of kind asset, in avenDB's own schema subset: title, group, name, version, note, licence, its files by role, tags (aven/db/crates/avendb/tests/assets.rs reads these bytes with avenDB's parser)"
+			"note": "An asset as an avenDB entry of kind asset, in avenDB's own schema subset: title, group, name, version, note, licence, its files by role, tags (aven/db/crates/avendb/tests/all/assets.rs reads these bytes with avenDB's parser)"
 		},
 		{
 			"name": "card",

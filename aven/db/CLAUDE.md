@@ -8,7 +8,8 @@ Measured on a 4-core cloud session (2026-10-27), avendb-net's tests:
 | `cargo check --tests` after a one-line change in `avendb` | 6 s |
 | rebuild after a one-line change in `avendb` | ~40 s (25 s of it the `avendb` crate itself) |
 | rebuild after a change in `avendb-net` only | ~15 s |
-| one test file (`--test live`) | 3-15 s |
+| rebuild after editing one test file (its crate's one program, W4) | 5-13 s |
+| one test file's tests (`--test all live::`) | 3-15 s |
 | every avendb-net test | ~3 min |
 
 So a change costs about a minute when one build has the machine. The 15-minute waits come from queueing: several
@@ -18,8 +19,14 @@ builds in one container share 4 cores and wait on each other's build-folder lock
 
 - **Check first, test second.** `cargo check -p <crate> --features test-fixtures --tests` finds type errors in
   seconds, without linking anything.
-- **Run the one test file you touched**, not the crate: `cargo test --features test-fixtures -p avendb-net --test
-  live` (or `-- <name>` for one test). Each file in `crates/*/tests/` is its own program; `-p avendb` alone builds 56.
+- **Run the tests of the one file you touched**, not the crate: `cargo test --features test-fixtures -p avendb-net
+  --test all live::` (or `live::<name>` for one test). A crate's test files are the modules of one program,
+  `tests/all/` (and `tests/memory/` for the tests that count the process's memory), so `-p avendb` builds 2 test
+  programs, not 56.
+- **A new test file needs its `mod` line** in its program's `main.rs`: the program's `every_file_is_a_module` test
+  fails while a file in the folder is named by none. The shared helpers come in as `use crate::common;`. A file that
+  uses the debug-only fixtures (`avendb::cast`, `avendb::scenarios`) opens with `#![cfg(debug_assertions)]`, so that
+  the release benches (files with `#![cfg(not(debug_assertions))]`, `cargo test --release --test all <file>::`) build.
 - **One Rust build at a time per container.** Several cargo processes on 4 cores don't finish sooner; they queue on
   the build-folder lock and on the cores. Helpers in one container take turns, or use CI (below).
 - **The full suite runs on CI, once per batch, not here** (repository `CLAUDE.md`). For a task,

@@ -19,7 +19,7 @@
       "model": "aven/db/spec/AvenDB/ListenerRelease.lean",
       "invariant": "listener ownership ends at awaited shutdown",
       "implementation": "aven/db/crates/avendb-net/src/transports/control.rs",
-      "test": "aven/db/crates/avendb-net/tests/transport_control.rs",
+      "test": "aven/db/crates/avendb-net/tests/all/transport_control.rs",
       "testName": "concurrent_shutdown_releases_listener_port_while_node_is_retained"
     },
     {

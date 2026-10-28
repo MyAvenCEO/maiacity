@@ -21,7 +21,7 @@
 //!   as every edit before batches did and goes on doing (`sign::Signed::verify`), or by a path from the edit to a root
 //!   of the signer's log that the signer signed (`Proof::shows`, `Roots::check`). Lean's V5 proves both ways
 //!   authenticate exactly the edits of the signer's log, so a device takes and knows the same; the tests hold the two
-//!   to each other edit by edit (`tests/batch.rs`).
+//!   to each other edit by edit (`tests/all/batch.rs`).
 //! - **Forks.** Two roots of one log that disagree, of other fork numbers, of one length with other hashes, or the
 //!   shorter not the first edits of the longer, prove its device signed two histories of its log: a clone, a backup
 //!   restored, a stolen key (`ForkProof`). A shorter root is shown to begin a longer one by the hashes that rebuild

@@ -1,5 +1,5 @@
 // WRITTEN FROM avenDB's ENGINE, NOT BY HAND: aven/db/crates/avendb/src/engine.rs `READS` and `ASKS`.
-// `AVENDB_WRITE_OPS=1 cargo test -p avendb --test op_names` (in aven/db/) writes it again; CI fails where it differs.
+// `AVENDB_WRITE_OPS=1 cargo test -p avendb --test all op_names::` (in aven/db/) writes it again; CI fails where it differs.
 
 /** The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing. */
 export const READS = [

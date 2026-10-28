@@ -52,6 +52,6 @@ test('what the checker and avenDB read is the latest frozen version of each', ()
 	expect(CARD.properties.v.const).toBe(latest('card').v);
 	expect(ASSET.properties.kind.const).toBe('asset');
 	// avenDB's own test reads the asset schema from these very bytes, with avenDB's parser (read here, never changed)
-	const avendb = readFileSync(`${ROOT}aven/db/crates/avendb/tests/assets.rs`, 'utf8');
+	const avendb = readFileSync(`${ROOT}aven/db/crates/avendb/tests/all/assets.rs`, 'utf8');
 	expect(avendb).toContain(`maia/content/assets/schemas/asset.v${latest('asset').v}.json`);
 });

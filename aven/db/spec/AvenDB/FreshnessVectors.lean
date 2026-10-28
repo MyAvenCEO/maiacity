@@ -4,7 +4,7 @@ import AvenDB.Json
 /-!
 # Freshness vectors
 
-`vectors/freshness.json`, the cases the Rust engine replays (`crates/avendb/tests/freshness_vectors.rs`): what a device
+`vectors/freshness.json`, the cases the Rust engine replays (`crates/avendb/tests/all/freshness_vectors.rs`): what a device
 hears (its live peers, those of them not yet heard, the stamp of its last current read) against each kind of coverage,
 with the freshness the model gives the read (`Freshness.of`), what an action does with it (`act`), and whether its
 sheet opens by itself (`pops`) or when the person asks (`asked`).

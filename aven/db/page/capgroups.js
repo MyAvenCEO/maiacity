@@ -145,7 +145,7 @@ export function moveOps(city, vault, to, groups, held) {
 	return [...(has ? [] : [{ op: 'share_group', over: city, group: group.entry, who: { vault }, as: city }]), ...drop];
 }
 
-/** What the Agent group gives (aven/db/crates/avendb/tests/cap_groups.rs proves it), its AIPs its entries of type `aip`. */
+/** What the Agent group gives (aven/db/crates/avendb/tests/all/cap_groups.rs proves it), its AIPs its entries of type `aip`. */
 export const AGENT_GROUP = {
 	name: AGENT,
 	caps: [

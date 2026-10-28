@@ -5,7 +5,7 @@ import AvenDB.Json
 # Show rules vectors
 
 `vectors/show_rules.json`, what the model of `ShowRules.lean` answers, for the Rust engine to replay
-(`crates/avendb/tests/show_rules.rs`): the show rules' number, and for a pack of kept showings sealed by one build under
+(`crates/avendb/tests/all/show_rules.rs`): the show rules' number, and for a pack of kept showings sealed by one build under
 these rules and opened by a build, whether the device takes an entry's kept showing (`kept`) or judges it anew
 (`judged`): the same build, another build, and another build after a write to the entry.
 -/

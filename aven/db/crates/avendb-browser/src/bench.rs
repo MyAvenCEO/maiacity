@@ -1,6 +1,6 @@
 //! The phone-class row of avenDB's bench (`bench` feature, never in a build that ships): what a page's device does
 //! with a peer's signed edits, in WebAssembly in a browser, as an iPhone's page does. `aven/ops/ci/avendb-bench-phone.mjs`
-//! loads a fixture of signed edits (`aven/db/crates/avendb/tests/phone_fixture.rs`: synthetic, the scenarios' cast) and
+//! loads a fixture of signed edits (`aven/db/crates/avendb/tests/all/phone_fixture.rs`: synthetic, the scenarios' cast) and
 //! times each call with the page's clock: `benchVerify` checks every edit's signatures alone, and `benchIntake` has a
 //! new device take them, a page at a time, as a pull's pages come, its signatures checked as it takes each.
 //! `benchUnlock` opens a device again from its shelf (`aven/ops/ci/avendb-bench-unlock.mjs`).
@@ -47,7 +47,7 @@ pub fn bench_intake(fixture: &[u8], page: usize) -> Result<usize, JsError> {
     Ok(lab.size(me).0)
 }
 
-/// What a fixture of `aven/db/crates/avendb/tests/unlock_phone.rs` holds, read in its order: each list a count in 4 bytes,
+/// What a fixture of `aven/db/crates/avendb/tests/all/unlock_phone.rs` holds, read in its order: each list a count in 4 bytes,
 /// big-endian, each item its length in 4 bytes, then its bytes.
 struct Reader<'a>(&'a [u8]);
 

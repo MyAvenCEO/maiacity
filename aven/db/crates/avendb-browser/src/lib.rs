@@ -63,7 +63,7 @@
 //! sockets of its own, so it reaches its peers directly and through the relay only where it must, and keeps what it
 //! holds on a shelf in a folder on disk (`Start::direct`, `avendb_net::disk`).
 //!
-//! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
+//! The tests run natively (`tests/all/device.rs`) and in Chromium (`tests/all/page.rs`, through `scripts/test-browser.sh`),
 //! where a virtual authenticator holds the passkey.
 
 use std::io;

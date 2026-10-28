@@ -1,5 +1,5 @@
 /*
- * AVENDB'S DEVICE IN A PAGE, as tests/page.rs drives it in Chromium (P8e, v8 phase S): each device a frame of one tab,
+ * AVENDB'S DEVICE IN A PAGE, as tests/all/page.rs drives it in Chromium (P8e, v8 phase S): each device a frame of one tab,
  * so all of them share the tab's virtual authenticator, which holds the person's passkey. The query says who the
  * device is and what it does. With `server`, it makes the passkey and founds its person's vault, claiming the server if
  * nobody has yet, then writes a note; with `offer`, it links through that code; if its store (`store`, its shelf in

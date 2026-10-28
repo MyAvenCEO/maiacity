@@ -1,5 +1,9 @@
 //! The helpers every avenDB test shares, once (step T3 of the tests and architecture audit): what an op answered or
-//! why it was refused, a list in an answer, and a wait until a condition holds. Tests only: no product crate links it.
+//! why it was refused, a list in an answer, a wait until a condition holds, the counting allocator of the tests that
+//! measure memory (`memory`), and the check that every file of a test program builds (W4). Tests only: no product
+//! crate links it.
+
+pub mod memory;
 
 use serde_json::Value;
 
@@ -29,6 +33,23 @@ pub fn vectors(name: &str) -> Value {
 /// A number in a vector, which must be one.
 pub fn num(v: &Value) -> u64 {
     v.as_u64().unwrap_or_else(|| panic!("a number, not {v}"))
+}
+
+/// Every `.rs` file in the folder `dir` of a test program is a module its `main.rs` (`main`) names: cargo builds only
+/// what a `mod` line names, so a file none names never builds and none of its tests runs (W4, each crate's tests one
+/// program: `tests/all/`).
+pub fn every_file_a_module(main: &str, dir: &str) {
+    let named: Vec<&str> = main.lines().filter_map(|l| l.trim().strip_prefix("mod ")?.strip_suffix(';')).collect();
+    let mut unnamed = vec![];
+    for file in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{dir}: {e}")) {
+        let name = file.unwrap_or_else(|e| panic!("{dir}: {e}")).file_name();
+        let name = name.to_str().unwrap_or_else(|| panic!("{dir}: a file name in UTF-8, not {name:?}"));
+        if let Some(module) = name.strip_suffix(".rs").filter(|m| *m != "main" && !named.contains(m)) {
+            unnamed.push(format!("mod {module};"));
+        }
+    }
+    unnamed.sort();
+    assert!(unnamed.is_empty(), "{dir}: no `mod` line names these files, so they never build: add {}", unnamed.join(" "));
 }
 
 /// Waits until `check` holds, 60 seconds at most.

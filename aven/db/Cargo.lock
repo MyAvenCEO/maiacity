@@ -383,6 +383,7 @@ dependencies = [
  "anyhow",
  "avendb",
  "avendb-net",
+ "avendb-testkit",
  "blake3",
  "bytes",
  "data-encoding",

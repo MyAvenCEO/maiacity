@@ -145,7 +145,7 @@ test('API release accepts exactly its selected gate and successful delivery/imag
 });
 
 test('native tests and build helpers validate without publishing unchanged binaries', () => {
- for (const file of ['aven/db/crates/avendb/tests/properties.rs','aven/db/crates/avendb-device/tests/agent.rs','aven/db/scripts/test-browser.sh']) {
+ for (const file of ['aven/db/crates/avendb/tests/all/properties.rs','aven/db/crates/avendb-device/tests/agent.rs','aven/db/scripts/test-browser.sh']) {
   const next=impact([file]); expect(next.avendb && next.native).toBe(true); expect(next.server || next.agent).toBe(false);
  }
  expect(impact(['aven/db/crates/avendb/src/lib.rs']).server).toBe(true);
@@ -204,7 +204,7 @@ test('a workflow edit selects what that workflow checks; a release workflow or a
 test('the server image builds on a PR only when its build reads something new', () => {
  for (const f of ['aven/db/Dockerfile.server','aven/db/Cargo.lock','aven/db/crates/avendb-net/Cargo.toml','aven/db/vendor/iroh/src/lib.rs','aven/db/.dockerignore'])
   expect(impact([f]).image).toBe(true);
- for (const f of ['aven/db/crates/avendb-server/src/main.rs','aven/db/crates/avendb/tests/properties.rs','aven/db/spec/AvenDB/Wire.lean'])
+ for (const f of ['aven/db/crates/avendb-server/src/main.rs','aven/db/crates/avendb/tests/all/properties.rs','aven/db/spec/AvenDB/Wire.lean'])
   expect(impact([f]).image).toBe(false);
 });
 

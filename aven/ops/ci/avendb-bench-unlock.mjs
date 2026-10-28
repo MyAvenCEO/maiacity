@@ -1,10 +1,10 @@
 // The iPhone's unlock as WebAssembly in a browser (avendb-browser's `bench` feature, src/bench.rs `benchUnlock`): the
-// device of aven/db/crates/avendb/tests/unlock_phone.rs opening again from what its shelf holds. The fixture goes into
+// device of aven/db/crates/avendb/tests/all/unlock_phone.rs opening again from what its shelf holds. The fixture goes into
 // the page's OPFS first and is read back from there, as a page reads its shelf, then the device restores from it. Prints
 // an `UNLOCK {...}` line per browser: the OPFS read, the restore, and the restore split as the native probe splits it.
 // Synthetic data only; only numbers are printed.
 //
-//   UNLOCK_PHONE_FIXTURE=/tmp/unlock.bin cargo test --release -p avendb --test unlock_phone -- --ignored --nocapture
+//   UNLOCK_PHONE_FIXTURE=/tmp/unlock.bin cargo test --release -p avendb --test all unlock_phone:: -- --ignored --nocapture
 //   cargo build -p avendb-browser --target wasm32-unknown-unknown --release --features bench
 //   wasm-bindgen --target web --no-typescript --out-dir /tmp/pkg target/wasm32-unknown-unknown/release/avendb_browser.wasm
 //   bun aven/ops/ci/avendb-bench-unlock.mjs /tmp/pkg /tmp/unlock.bin chromium

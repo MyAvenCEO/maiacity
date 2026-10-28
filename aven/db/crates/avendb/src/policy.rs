@@ -4136,7 +4136,7 @@ pub struct Replay {
 /// same; how far each could step on from is no part of it.
 impl Replay {
     /// Lets go of the rungs it holds (`Tail::rungs`): how many. What they cost is what this frees
-    /// (`tests/peer_memory.rs`).
+    /// (`tests/memory/peer_memory.rs`).
     #[doc(hidden)]
     pub fn drop_rungs(&mut self) -> usize {
         self.tail.as_mut().map_or(0, |t| std::mem::take(&mut t.rungs).len())
@@ -4208,7 +4208,7 @@ struct Rung {
 /// How many edits apart the rungs nearest the end of the order are, at least: those further back each twice as far
 /// as the one after, so a replay from the nearest rung before a new edit replays twice as many edits as sort after it,
 /// at most. None is further back than `RUNG_REACH`: a rung holds the state as it was before every edit after it, which
-/// is about 120 bytes an edit (2026-10-28, `tests/peer_memory.rs`: 68 MB for five rungs back to 65,536 of 130,000
+/// is about 120 bytes an edit (2026-10-28, `tests/memory/peer_memory.rs`: 68 MB for five rungs back to 65,536 of 130,000
 /// edits), so a replay holds two or three, a few MB, however many edits it holds.
 const RUNG: usize = TAIL;
 /// How many of its last edits a replay steps on from a rung in one go, at most: further back, it replays every edit
