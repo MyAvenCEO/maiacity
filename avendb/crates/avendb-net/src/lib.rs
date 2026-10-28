@@ -854,6 +854,7 @@ impl Node {
             dependency_peer_turn: std::sync::atomic::AtomicUsize::new(0),
             dialing: Mutex::default(),
             logs: Mutex::default(),
+            held_logs: Mutex::default(),
             world_encoding: Arc::default(),
             entry_encoding: Arc::default(),
             checkpoint_pins: Arc::default(),
@@ -2288,6 +2289,8 @@ struct Shared {
     dialing: Mutex<HashMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
     /// Its device's edits by their logs, as they were when they were last worked out.
     logs: Mutex<Option<Arc<Logs>>>,
+    /// The same of the edits its shelf holds while it holds fewer (`own_logs`), grown as the shelf catches up.
+    held_logs: Mutex<Option<Logs>>,
     /// One owned world snapshot/conversion at a time; targeted reads and writes bypass it.
     world_encoding: Arc<tokio::sync::Mutex<()>>,
     entry_encoding: Arc<tokio::sync::Mutex<()>>,
@@ -3589,8 +3592,10 @@ impl Shared {
                 let logs = match held >= size.0 {
                     true => shared.logs_of(lab, me).frontiers(),
                     false => {
-                        let log = lab.log(me);
-                        Logs::of(&log.edits()[..held], &log.ids()[..held], size).frontiers()
+                        let mut index = shared.held_logs.lock().expect("held logs");
+                        let index = index.get_or_insert_with(|| Logs::of(&[], &[], (0, 0)));
+                        index.update_held(lab.log(me), held, size);
+                        index.frontiers()
                     }
                 };
                 Some(((size, held), revision, logs))
