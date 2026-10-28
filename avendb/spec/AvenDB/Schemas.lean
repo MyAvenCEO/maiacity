@@ -404,4 +404,59 @@ theorem oneKin_sound (ls : List (α × α)) (k : α) (ks : List α) (h : oneKin 
 
 end Kin
 
+/-! ## Spent schemas
+
+An app reads an item through the lens that joins its schema to the one other schema the item was written under
+(`lens::Lane::view`). An item written under several other versions, as Maia City's kernel manifest was written under
+v1 and then v2 before v3 came, would be read through a chain of lenses: the farthest version's lens translates first,
+the one joined to the app's schema last. Where each farther lens, read toward the app, changes nothing of what the item
+stores, the farther versions are spent on it: it holds none of the fields they alone name, and nothing a step of theirs
+would bring in. Then the read through the chain is the read through the last lens alone, so the app opens it writable
+through that lens, and every device decides alike, from what it stores and its lane. Where any farther lens would
+still translate, it opens read-only, as before.
+
+- `chainRead_spent`: where every farther lens leaves the stored record as it is, the read through the chain is the read
+  through the last lens alone.
+- `spent_sound`: `spent`, the check `lens::Lane::spent` makes, holds only where every farther lens leaves it so.
+
+Rust: `lens::Lane::view`, `Lane::spent`.
+-/
+
+section Spent
+
+variable {R : Type}
+
+/-- A read through a chain of lenses: the farthest of `far` (the last) translates first, `near`, the lens joined to the
+    app's schema, last. -/
+def chainRead (near : R → R) (far : List (R → R)) (r : R) : R := near (far.foldr (fun t x => t x) r)
+
+/-- The farther versions are spent on record `r`: each of their lenses, read toward the app, leaves it as it is. -/
+def spent [DecidableEq R] (far : List (R → R)) (r : R) : Bool := far.all fun t => decide (t r = r)
+
+theorem foldr_fixed (far : List (R → R)) (r : R) (h : ∀ t ∈ far, t r = r) : far.foldr (fun t x => t x) r = r := by
+  induction far with
+  | nil => rfl
+  | cons t ts ih =>
+    simp only [List.foldr]
+    rw [ih (fun u hu => h u (by simp [hu]))]
+    exact h t (by simp)
+
+/-- Where every farther lens leaves the stored record as it is, the read through the chain is the read through the
+    last lens alone. -/
+theorem chainRead_spent (near : R → R) (far : List (R → R)) (r : R) (h : ∀ t ∈ far, t r = r) :
+    chainRead near far r = near r := by
+  simp only [chainRead, foldr_fixed far r h]
+
+/-- `spent` holds only where every farther lens leaves the record as it is. -/
+theorem spent_sound [DecidableEq R] (far : List (R → R)) (r : R) (h : spent far r = true) : ∀ t ∈ far, t r = r := by
+  intro t ht
+  simp only [spent, List.all_eq_true, decide_eq_true_eq] at h
+  exact h t ht
+
+-- a record of 5 that the farther lenses leave as it is reads as the last lens reads it; one they change is not spent
+#guard spent [fun x : Nat => x, fun x => if x = 5 then 5 else 0] 5 && chainRead (· + 1) [fun x : Nat => x] 5 == 6
+#guard !spent [fun x : Nat => x + 1] 5
+
+end Spent
+
 end AvenDB.Ops
