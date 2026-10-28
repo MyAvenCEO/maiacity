@@ -54,11 +54,11 @@ const OWNERS: Mix = Mix { writes: 70, keys_per_write: 44.0 / 7.0, wraps_per_move
 /// A box of key `name` to the key `t` of the schedule: sealed to a signer or a seed, wrapped under any other key.
 fn key_box(t: KeyName) -> KeyBox {
     match t {
-        KeyName::Signer(s) => KeyBox { to: Recipient::Signer(s), bytes: vec![7; SEALED] },
+        KeyName::Signer(s) => KeyBox { to: Recipient::Signer(s), bytes: vec![7; SEALED].into() },
         KeyName::Scoped(KeyFam::Seed(_), _) => {
-            KeyBox { to: Recipient::Key { name: t, id: KeyId([1; 32]) }, bytes: vec![7; SEALED] }
+            KeyBox { to: Recipient::Key { name: t, id: KeyId([1; 32]) }, bytes: vec![7; SEALED].into() }
         }
-        _ => KeyBox { to: Recipient::Key { name: t, id: KeyId([1; 32]) }, bytes: vec![7; WRAPPED] },
+        _ => KeyBox { to: Recipient::Key { name: t, id: KeyId([1; 32]) }, bytes: vec![7; WRAPPED].into() },
     }
 }
 
@@ -95,7 +95,7 @@ fn wraps(st: &State, e: EntryId) -> Option<Action> {
         .map(|s| Wrap {
             name: s.secret,
             id: KeyId([2; 32]),
-            boxed: KeyBox { to: Recipient::Key { name: s.to, id: KeyId([3; 32]) }, bytes: vec![7; WRAPPED] },
+            boxed: KeyBox { to: Recipient::Key { name: s.to, id: KeyId([3; 32]) }, bytes: vec![7; WRAPPED].into() },
         })
         .collect();
     (!ws.is_empty()).then_some(Action::Wraps { entry: e, wraps: ws })
@@ -117,7 +117,7 @@ fn write(st: &State, e: EntryId, n: u64) -> Action {
         via: vec![],
         create: None,
         files: vec![],
-        body: vec![n as u8; 600],
+        body: vec![n as u8; 600].into(),
     }
 }
 

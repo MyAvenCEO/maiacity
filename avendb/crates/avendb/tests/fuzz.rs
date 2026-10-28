@@ -222,7 +222,7 @@ fn seal_select(of: &Share, slice: &Slice, k: &Keys, rng: &mut SeededRng) -> Vec<
     let sealed = keys::seal_edit(&key, &slice.to_wire(), &share_context(of), rng);
     let boxes = [(ALICE, &k.alice), (BOB, &k.bob)].map(|(v, seed)| {
         let to = to_seed(v, seed);
-        KeyBox { to, bytes: keys::wrap(&key, seed, &share_select_info(of, key.id(), &to), rng) }
+        KeyBox { to, bytes: keys::wrap(&key, seed, &share_select_info(of, key.id(), &to), rng).into() }
     });
     Select::Sealed { boxes: boxes.to_vec(), slice: sealed, commitment: slice.grant.commitment() }.to_wire()
 }
@@ -236,7 +236,7 @@ fn open_select(of: &Share, v: VaultId, seed: &Secret) -> Option<Slice> {
     };
     let id = keys::edit_key(&sealed)?;
     let b = boxes.iter().find(|b| b.to == to_seed(v, seed))?;
-    let key = keys::open(&b.bytes, seed, &share_select_info(of, id, &b.to)).filter(|k| k.id() == id)?;
+    let key = keys::open(&b.bytes.bytes(), seed, &share_select_info(of, id, &b.to)).filter(|k| k.id() == id)?;
     Slice::from_wire(&keys::open_edit(&key, &sealed, &share_context(of))?).ok()
 }
 
@@ -244,7 +244,7 @@ fn open_select(of: &Share, v: VaultId, seed: &Secret) -> Option<Slice> {
 fn seal_body(mut edit: Edit, body: &Body, key: &Secret, rng: &mut SeededRng) -> Edit {
     let sealed = keys::seal_edit(key, &body.to_wire(), &write_context(&edit), rng);
     if let Action::Write { body, .. } = &mut edit.action {
-        *body = sealed;
+        *body = sealed.into();
     }
     edit
 }
@@ -300,7 +300,7 @@ fn signed_edits() -> Edits {
         via: vec![],
         create: Some(Creation { audience, nonce: DOOR_NONCE }),
         files: vec![],
-        body: vec![],
+        body: Default::default(),
     };
     let create = by_device(seal_body(edit(2, create), &door_created(), &k.door, &mut rng));
     let write = Action::Write {
@@ -314,7 +314,7 @@ fn signed_edits() -> Edits {
         via: vec![VaultId::from_u64(3), VaultId::from_u64(4)],
         create: None,
         files: vec![],
-        body: vec![],
+        body: Default::default(),
     };
     let write = by_device(seal_body(edit(3, write), &door_retagged(), &k.door, &mut rng));
     let (who, level, issuer) = (Who::Vault(BOB), Level::Write, ALICE);
@@ -383,7 +383,7 @@ fn ml_signed_edits() -> Vec<Signed> {
         via: vec![],
         create: None,
         files: vec![],
-        body,
+        body: body.into(),
     };
     let write = edit(device.id(), vec![], write);
     let write = Signed { sigs: vec![device.sign(write.id())], edit: write };
@@ -405,15 +405,15 @@ fn a_changed_write_decrypts_to_nothing() {
     for (signed, plain) in [(&edits.create, door_created()), (&edits.write, door_retagged())] {
         let Action::Write { body, .. } = &signed.edit.action else { unreachable!("a write") };
         let context = write_context(&signed.edit);
-        assert_eq!(open(body, &context).map(|b| Body::from_wire(&b)), Some(Ok(plain)));
+        assert_eq!(open(&body.bytes(), &context).map(|b| Body::from_wire(&b)), Some(Ok(plain)));
         for _ in 0..2500 {
-            let bad = mutate(&mut g, body);
+            let bad = mutate(&mut g, &body.bytes());
             assert_eq!(open(&bad, &context), None, "{bad:?}");
             let bad = mutate(&mut g, &context);
-            assert_eq!(open(body, &bad), None, "{bad:?}");
+            assert_eq!(open(&body.bytes(), &bad), None, "{bad:?}");
             let other = write_context(&mutate_edit(&mut g, &signed.edit));
             if other != context {
-                assert_eq!(open(body, &other), None, "{other:?}");
+                assert_eq!(open(&body.bytes(), &other), None, "{other:?}");
                 elsewhere += 1;
             }
         }
@@ -530,7 +530,7 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                         },
                         None => *create = Some(Creation { audience: vec![], nonce: [0; 32] }),
                     },
-                    _ => *body = mutate(g, body),
+                    _ => *body = mutate(g, &body.bytes()).into(),
                 }
             }
             Action::Share(Sharing::Grant(c, via)) => match g.below(9) {

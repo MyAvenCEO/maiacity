@@ -58,7 +58,7 @@ fn action(st: &State, e: EntryId, n: usize) -> Action {
     let epoch = st.epoch(KeyFam::Audience(en.vault, en.audience()));
     let body = n.to_le_bytes().to_vec();
     let (vault, actor, stay, deps, via, files) = (en.vault, en.vault, en.stay(), vec![], vec![], vec![]);
-    Action::Write { vault, entry: e, actor, stay, epoch, deps, proposal: Proposal::Main, via, create: None, files, body }
+    Action::Write { vault, entry: e, actor, stay, epoch, deps, proposal: Proposal::Main, via, create: None, files, body: body.into() }
 }
 
 /// Drafts a write as `Log::draft_on` does, keeping what that finds by a scan of every edit held: the deepest edit's

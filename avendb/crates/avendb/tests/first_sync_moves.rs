@@ -80,7 +80,7 @@ fn vault(held: usize) -> (Log, VaultId) {
                 let epoch = was.state.epoch(KeyFam::Audience(en.vault, en.audience()));
                 let body = (n + k).to_le_bytes().to_vec();
                 let (vault, actor, stay, deps, via, files) = (alice, alice, en.stay(), vec![], vec![], vec![]);
-                Action::Write { vault, entry: e, actor, stay, epoch, deps, proposal: Proposal::Main, via, create: None, files, body }
+                Action::Write { vault, entry: e, actor, stay, epoch, deps, proposal: Proposal::Main, via, create: None, files, body: body.into() }
             };
             group.push(Edit { parents: vec![], depth, author: by, cosigners: vec![], action });
         }

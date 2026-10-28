@@ -99,6 +99,19 @@ fn a_spilled_device_holds_the_same_in_a_fraction_of_the_memory() {
     assert!(per_edit(se) < 200, "spilled, a few dozen bytes an edit: {} ({se} for {n})", per_edit(se));
     assert!(per_edit(pe) > 2000, "in memory, kilobytes an edit: {}", per_edit(pe));
     assert!(sk < 4096 && pk > 1 << 20, "keys: {sk} spilled, {pk} in memory (a megabyte each)");
+    // the log's copies of the edits: the same edits, each body and key box read back from the spill
+    let (pl, sl) = (plain.lab.log(plain.mac_a), spilled.lab.log(spilled.mac_a));
+    assert_eq!(pl.ids(), sl.ids(), "the same log");
+    assert!(pl.edits() == sl.edits(), "the same edits, their bulk read back");
+    let bulk = |l: &avendb::policy::Log| -> (usize, usize) {
+        let all = l.edits().iter().flat_map(|e| e.action.body().into_iter().chain(e.action.key_boxes().into_iter().map(|(.., b)| &b.bytes)));
+        all.filter(|b| b.len() >= 96).fold((0, 0), |(n, held), b| (n + 1, held + usize::from(b.is_held())))
+    };
+    let ((pn, ph), (sn, sh)) = (bulk(pl), bulk(sl));
+    assert!(pn > 60 && ph == pn, "in memory, every body and box held: {ph} of {pn}");
+    assert!(sn == pn && sh == 0, "spilled, none held: {sh} of {sn}");
+    let log = |w: &avendb::cast::World| w.lab.perf(w.mac_a)["held"]["memory"]["log"].as_u64().expect("log");
+    assert!(log(&spilled) < log(&plain), "the log's memory: {} spilled, {} in memory", log(&spilled), log(&plain));
     let _ = (p0, s0);
     std::fs::remove_dir_all(dir).ok();
 }

@@ -84,7 +84,7 @@ pub fn creation(vault: VaultId, entry: EntryId, actor: VaultId, audience: &[Shar
     let create = Some(Creation { audience: mk_audience(audience), nonce: [0; 32] });
     let (body, proposal) = (vec![0xc1, 0x9e, 0x47], Proposal::Main);
     let (deps, via, files) = (vec![], vec![], vec![]);
-    Action::Write { vault, entry, actor, stay: None, epoch: 0, deps, proposal, via, create, files, body }
+    Action::Write { vault, entry, actor, stay: None, epoch: 0, deps, proposal, via, create, files, body: body.into() }
 }
 
 impl Cast {
