@@ -79,6 +79,16 @@ if (import.meta.main) {
   const pr = await ownPr(here);
   if (pr && !pr.draft) { console.error(`#${pr.number} is ready, so its CI is running: put these branches in the next batch (or pass --late for a fix this run needs).`); process.exit(2); }
  }
+ // CI commits the batch's WebAssembly to its draft PR (avendb-wasm.yml): take that commit before merging more, so the
+ // push stays a fast-forward
+ if (!flags.has('--plan')) {
+  tryGit('fetch', '-q', 'origin', here);
+  if (tryGit('merge-base', '--is-ancestor', 'HEAD', `origin/${here}`).ok && git('rev-parse', 'HEAD') !== tryGit('rev-parse', `origin/${here}`).out) {
+   const ff = tryGit('merge', '--ff-only', '-q', `origin/${here}`);
+   console.log(ff.ok ? `Took CI's commits on origin/${here} first.` : `origin/${here} has commits this branch can't fast-forward to: pull first.`);
+   if (!ff.ok) process.exit(2);
+  }
+ }
  if (!flags.has('--plan') && git('status', '--porcelain', '--untracked-files=no')) { console.error('Commit or stash first: the batch lands as a fast-forward of this branch.'); process.exit(2); }
  const t0 = performance.now();
  tryGit('fetch', '-q', 'origin', ...wanted.map(w => `+refs/heads/${w.branch}:refs/remotes/origin/${w.branch}`));

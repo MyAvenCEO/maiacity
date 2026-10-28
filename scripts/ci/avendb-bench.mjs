@@ -8,6 +8,9 @@
 //   bun scripts/ci/avendb-bench.mjs phone.log --phone      the phone-class rows alone (avendb-bench-phone.mjs)
 //   bun scripts/ci/avendb-bench.mjs bench.log [pg.log] --shard core|carriers|live   one shard of the bench job: only
 //                                                          its own runs are required present
+//   bun scripts/ci/avendb-bench.mjs bench.log --shard live --base base.log   also hold each gate's value against main's
+//                                                          build timed on the same runner (avendb-bench-shard.mjs):
+//                                                          no worse than main's by more than vs_main.tolerance
 //   bun scripts/ci/avendb-bench.mjs index.log --index      the index's scale rows alone (avendb-net's shelf_index_bench.rs,
 //                                                          run in the net test shard, whose build it shares)
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -195,6 +198,42 @@ export function check(bench, gates, pg = []) {
  return out;
 }
 
+// A run repeated (the shard's rounds) gives one line each time: one line per run, each number the median of its
+// repeats, and the repeats' spread (fewest, median, most) of each number that varied.
+const runKey = b => [b.kind, b.n, b.link, b.carrier, b.engine, b.turn_ms].join('|');
+export function collapse(bench) {
+ const groups = new Map();
+ for (const b of bench) groups.set(runKey(b), [...(groups.get(runKey(b)) ?? []), b]);
+ const median = xs => { const v = [...xs].sort((a, b) => a - b), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+ const lines = [], spread = [];
+ for (const runs of groups.values()) {
+  const out = { ...runs[0] };
+  for (const k of Object.keys(out)) {
+   const xs = runs.map(r => r[k]);
+   if (!xs.every(x => typeof x === 'number')) continue;
+   out[k] = Math.round(median(xs) * 1000) / 1000;
+   if (runs.length > 1 && Math.min(...xs) !== Math.max(...xs)) spread.push({ run: runKey(runs[0]).replace(/\|+$/, '').replace(/\|+/g, ' '), field: k, runs: runs.length, min: Math.min(...xs), median: out[k], max: Math.max(...xs) });
+  }
+  lines.push(out);
+ }
+ return { lines, spread };
+}
+
+// The branch against main, run for run on the same runner: each gate's value no worse than main's by more than
+// `tolerance` (a share of main's value), in the gate's own direction (≥ higher is better, ≤ and < lower). A gate main
+// doesn't measure, or measures as 0, is held by its fixed limit alone.
+export function vsMain(results, baseResults, tolerance) {
+ const base = new Map(baseResults.filter(r => r.gate).map(r => [r.name, r.value]));
+ const out = [];
+ for (const r of results.filter(r => r.gate && typeof r.value === 'number')) {
+  const b = base.get(r.name), dir = r.limit.startsWith('≥') || r.limit.startsWith('>') ? 1 : r.limit.startsWith('≤') || r.limit.startsWith('<') ? -1 : 0;
+  if (typeof b !== 'number' || b === 0 || !dir) continue;
+  const worse = Math.round(dir * (b - r.value) / Math.abs(b) * 1000) / 1000;
+  out.push({ gate: true, name: `${r.name}, against main's ${fmt(b)}`, value: r.value, limit: `${worse > 0 ? `${Math.round(worse * 100)} % worse` : 'not worse'}, ≤ ${Math.round(tolerance * 100)} % allowed`, ok: worse <= tolerance });
+ }
+ return out;
+}
+
 // The tables: the gates and targets, then avenDB beside Postgres at each size.
 export function report(bench, pg, results) {
  const rows = [
@@ -251,16 +290,29 @@ function shardOf(gates) {
 }
 
 if (import.meta.main) {
- const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--shard');
+ const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--shard' && all[i - 1] !== '--base');
  const [benchFile, pgFile] = args;
- const bench = lines(readFileSync(benchFile, 'utf8'), 'BENCH');
+ const { lines: bench, spread } = collapse(lines(readFileSync(benchFile, 'utf8'), 'BENCH'));
  const pg = pgFile ? lines(readFileSync(pgFile, 'utf8'), 'PG') : [];
  const gates = JSON.parse(readFileSync(gatesFile, 'utf8'));
  const phoneOnly = process.argv.includes('--phone');
  const results = process.argv.includes('--index') ? checkIndex(bench, gates)
   : process.argv.includes('--posts') ? checkPosts(bench, gates)
   : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, shardOf(gates), pg);
- const text = report(bench, pg, results);
+ const baseAt = process.argv.indexOf('--base');
+ let baseSpread = [];
+ if (baseAt > 0) {
+  const base = collapse(lines(readFileSync(process.argv[baseAt + 1], 'utf8'), 'BENCH'));
+  baseSpread = base.spread;
+  const held = vsMain(results, check(base.lines, shardOf(gates)), gates.vs_main?.tolerance ?? 0.15);
+  // printed and not failing while vs_main.gate is false (see its "about")
+  results.push(...held.map(r => ({ ...r, gate: gates.vs_main?.gate !== false })));
+ }
+ let text = report(bench, pg, results);
+ if (spread.length) text += ['', '| repeated run | number | runs | fewest | median | most |', '|---|---|---|---|---|---|',
+  ...spread.map(x => `| ${x.run} | ${x.field} | ${x.runs} | ${fmt(x.min)} | ${fmt(x.median)} | ${fmt(x.max)} |`)].join('\n');
+ if (baseSpread.length) text += ['', '| main\'s repeated run | number | runs | fewest | median | most |', '|---|---|---|---|---|---|',
+  ...baseSpread.map(x => `| ${x.run} | ${x.field} | ${x.runs} | ${fmt(x.min)} | ${fmt(x.median)} | ${fmt(x.max)} |`)].join('\n');
  console.log(text);
  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## avenDB bench\n\n${text}\n`);
  const failed = results.filter(r => r.gate && !r.ok);
