@@ -245,6 +245,12 @@ impl SharedIndex {
         self.heads.lock().expect("heads").of_log(lab, me)
     }
 
+    /// The rows its finds have read off the index so far, all told: a bench's count of what a read reads.
+    #[cfg(test)]
+    pub(crate) async fn rows_read(&self) -> u64 {
+        self.index.lock().await.rows_read()
+    }
+
     /// The hash of its root, a function of its rows alone (`SharedIndex.X4_same_root`).
     pub(crate) async fn root(&self) -> Option<Sum> {
         self.index.lock().await.root()

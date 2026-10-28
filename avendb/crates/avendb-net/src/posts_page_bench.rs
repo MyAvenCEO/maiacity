@@ -4,12 +4,12 @@
 //! gave "11.7 ms at 10M", the merged head 0.4 ms), so the gate holds what a page reads and times it where it reads it:
 //!
 //! - the shapes: a base vault of published posts as Bob's Mac follows it, and two like it with 8x the posts or 16 edits
-//!   on each post. Pages and bytes a page reads off the shelf, cold, are the same in each: a page reads the newest of
-//!   the posts' rows, never the rest of them nor their history.
+//!   on each post. Pages, bytes and index rows a page reads off the shelf, cold, are the same in each: a page reads the
+//!   newest of the posts' rows, never the rest of them nor their history, and no index row it doesn't need.
 //! - the sizes: the base with, older than its posts, an entry per 50 edits of a vault at 1M and 10M edits (the other
 //!   types of `TYPES` in turn, under the keys Bob's Mac holds), built on the shelf through `ShelfIndex::apply` as
-//!   `query_window_bench.rs` builds them, stamped as Bob's log is, so a page steps on no edit. Each page cold: pages
-//!   and bytes read, and its time, p50 and p95 of `OPENS`.
+//!   `query_window_bench.rs` builds them, stamped as Bob's log is, so a page steps on no edit. Each page cold: pages,
+//!   bytes and index rows read, and its time, p50 and p95 of `OPENS`.
 //!
 //! Lines of JSON (`BENCH {"kind":"posts_node",...}`, `{"kind":"posts_at",...}`) that `scripts/ci/avendb-bench.mjs
 //! --posts` holds to `avendb/bench-gates.json`:
@@ -31,6 +31,9 @@ const POSTS: usize = 60;
 const MORE: usize = 8;
 const EDITS: usize = 16;
 const PAGE: usize = 20;
+/// The index rows a page needs: its posts and one more, newest first, and the one profile of the vault (it holds no
+/// files). A find that reads past a token's own rows (before fab0a86d, up to 64 rows a token) reads more.
+const ROWS_NEEDED: usize = PAGE + 1 + 1;
 /// The cold pages timed, for their percentiles.
 const OPENS: usize = 100;
 /// The edits an entry has, as `bench_gates.rs` spreads its writes.
@@ -102,16 +105,17 @@ async fn fixture(posts: usize, edits: usize, others: u64) -> (Mutex<Lab>, Shelf,
     (lab, shelf, counts, mac_b)
 }
 
-/// A first page and the next, each opened cold `OPENS` times: the pages and bytes each read at most, and the first
-/// page's times, µs.
+/// A first page and the next, each opened cold `OPENS` times: the pages, bytes and index rows each read at most, and
+/// the first page's times, µs.
 struct Read {
     pages: [u64; 2],
     bytes: [u64; 2],
+    rows: [u64; 2],
     us: Vec<f64>,
 }
 
 async fn read(lab: &Mutex<Lab>, shelf: &Shelf, counts: &Counts, me: SignerId) -> Read {
-    let mut r = Read { pages: [0; 2], bytes: [0; 2], us: vec![] };
+    let mut r = Read { pages: [0; 2], bytes: [0; 2], rows: [0; 2], us: vec![] };
     for _ in 0..OPENS {
         let mut last = None;
         for (i, after) in [None, Some(())].into_iter().enumerate() {
@@ -124,6 +128,7 @@ async fn read(lab: &Mutex<Lab>, shelf: &Shelf, counts: &Counts, me: SignerId) ->
             let (p, b, _) = counts.take();
             r.pages[i] = r.pages[i].max(p);
             r.bytes[i] = r.bytes[i].max(b);
+            r.rows[i] = r.rows[i].max(ix.rows_read().await);
             assert_eq!(got["ok"]["posts"].as_array().map(Vec::len), Some(PAGE), "a whole page");
             last = EntryId::from_hex(got["ok"]["posts"][PAGE - 1]["entry"].as_str().unwrap());
         }
@@ -153,6 +158,9 @@ async fn bench_posts_off_the_index() {
         "pages": shapes.iter().map(|r| r.pages[0]).collect::<Vec<_>>(),
         "next_pages": shapes.iter().map(|r| r.pages[1]).collect::<Vec<_>>(),
         "bytes": shapes.iter().map(|r| r.bytes[0]).collect::<Vec<_>>(),
+        "rows": shapes.iter().map(|r| r.rows[0]).collect::<Vec<_>>(),
+        "next_rows": shapes.iter().map(|r| r.rows[1]).collect::<Vec<_>>(),
+        "rows_needed": ROWS_NEEDED,
         "us": shapes.iter().map(|r| round(pct(&r.us, 0.5), 0)).collect::<Vec<_>>(),
         "pages_more_per_post": round((more.pages[0] as f64 - base.pages[0] as f64) / ((MORE - 1) * POSTS) as f64, 3),
         "pages_more_per_edit": round((edits.pages[0] as f64 - base.pages[0] as f64) / ((EDITS - 1) * POSTS) as f64, 3),
@@ -172,6 +180,9 @@ async fn bench_posts_off_the_index() {
             "pages_read": r.pages[0],
             "next_pages_read": r.pages[1],
             "bytes_read": r.bytes[0],
+            "rows_read": r.rows[0],
+            "next_rows_read": r.rows[1],
+            "rows_needed": ROWS_NEEDED,
             "p50_us": round(pct(&r.us, 0.5), 1),
             "p95_us": round(pct(&r.us, 0.95), 1),
         });

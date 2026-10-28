@@ -61,7 +61,8 @@ export function checkIndex(bench, gates) {
 
 // G1's named query of the Universe on a node (avendb-net's posts_page_bench.rs, the path the always-on peer's
 // /feed/posts and Node::run take): a page of posts off the shared index, held by what it reads as well as its time, so a
-// slow runner can neither hide a regression nor make one up. Across vaults of more posts and of posts with history, a
+// slow runner can neither hide a regression nor make one up: pages, bytes and index rows read (no row past those a page
+// needs, as a find reading past its token's rows did before fab0a86d). Across vaults of more posts and of posts with history, a
 // page reads the same pages (it reads no history); at 1M and 10M edits, measured there, not drawn from slopes, it reads
 // at most posts_pages_max pages and posts_bytes_max bytes cold, its p50 under posts_page_ms_max, and both grow little.
 export function checkPosts(bench, gates) {
@@ -72,6 +73,8 @@ export function checkPosts(bench, gates) {
  else {
   const more = Math.max(...p.pages, ...p.next_pages) - p.pages[0];
   add(true, 'posts page: pages read more with 8x the posts or 16 edits each (reads no history)', more, `≤ ${g.posts_shape_pages_more_max}`, more <= g.posts_shape_pages_more_max);
+  const over = Math.max(...p.rows, ...p.next_rows) - p.rows_needed;
+  add(true, 'posts page: index rows read past those it needs, any shape', over, `≤ ${g.posts_rows_over_max}`, over <= g.posts_rows_over_max);
  }
  const sized = new Map(bench.filter(b => b.kind === 'posts_at').map(b => [b.n, b]));
  for (const n of gates.window_sizes) {
@@ -80,6 +83,8 @@ export function checkPosts(bench, gates) {
   const pages = Math.max(s.pages_read, s.next_pages_read);
   add(true, `posts page ${n}: pages read cold (most)`, pages, `≤ ${g.posts_pages_max}`, pages <= g.posts_pages_max);
   add(true, `posts page ${n}: bytes read cold`, s.bytes_read, `≤ ${g.posts_bytes_max}`, s.bytes_read <= g.posts_bytes_max);
+  const over = Math.max(s.rows_read, s.next_rows_read) - s.rows_needed;
+  add(true, `posts page ${n}: index rows read past the ${s.rows_needed} it needs`, over, `≤ ${g.posts_rows_over_max}`, over <= g.posts_rows_over_max);
   add(true, `posts page ${n}: a page cold, p50 ms`, Math.round(s.p50_us / 100) / 10, `< ${g.posts_page_ms_max}`, s.p50_us < g.posts_page_ms_max * 1000);
  }
  const [lo, hi] = [Math.min(...gates.window_sizes), Math.max(...gates.window_sizes)].map(n => sized.get(n));
@@ -212,10 +217,10 @@ export function report(bench, pg, results) {
  const posts = bench.filter(b => b.kind === 'posts_node');
  if (posts.length) rows.push('', '| posts page on a node, cold | base | 8x posts | 16 edits each |', '|---|---|---|---|',
   ...posts.flatMap(p => [`| pages read, first / next page | ${p.pages.map((x, i) => `${x} / ${p.next_pages[i]}`).join(' | ')} |`,
-   `| bytes read | ${p.bytes.map(fmt).join(' | ')} |`, `| p50 µs | ${p.us.join(' | ')} |`]));
+   `| bytes read | ${p.bytes.map(fmt).join(' | ')} |`, `| index rows read (needs ${p.rows_needed}) | ${p.rows.join(' | ')} |`, `| p50 µs | ${p.us.join(' | ')} |`]));
  const postsAt = bench.filter(b => b.kind === 'posts_at').sort((a, b) => a.n - b.n);
- if (postsAt.length) rows.push('', '| posts page at edits | pages read, first / next page | bytes read | cold p50 / p95 µs | built s |', '|---|---|---|---|---|',
-  ...postsAt.map(s => `| ${fmt(s.n)} | ${s.pages_read} / ${s.next_pages_read} | ${fmt(s.bytes_read)} | ${s.p50_us} / ${s.p95_us} | ${s.build_s} |`));
+ if (postsAt.length) rows.push('', '| posts page at edits | pages read, first / next page | bytes read | index rows read (needed) | cold p50 / p95 µs | built s |', '|---|---|---|---|---|---|',
+  ...postsAt.map(s => `| ${fmt(s.n)} | ${s.pages_read} / ${s.next_pages_read} | ${fmt(s.bytes_read)} | ${s.rows_read} (${s.rows_needed}) | ${s.p50_us} / ${s.p95_us} | ${s.build_s} |`));
  const first = bench.filter(b => b.kind === 'first');
  const carriers = bench.filter(b => b.kind === 'carrier');
  if (carriers.length) rows.push('', '| carrier | edits | bytes/edit | sync s | asks | edits/s | KB/s | link KB/s | of link |', '|---|---|---|---|---|---|---|---|---|',
