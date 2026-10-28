@@ -438,6 +438,26 @@ impl Action {
         }
     }
 
+    /// About what it holds in memory beside itself: its key boxes and a write's body, the bulk of an edit (`Lab::perf`).
+    pub fn heap_bytes(&self) -> usize {
+        let boxes: usize = self.key_boxes().iter().map(|(.., b)| size_of::<KeyBox>() + b.bytes.len()).sum();
+        let body = match self {
+            Action::Write { body, files, deps, .. } => body.len() + files.len() * size_of::<FileRoot>() + deps.len() * 32,
+            Action::Checkpoint { covers, .. } => covers.len() * 32,
+            _ => 0,
+        };
+        boxes + body
+    }
+
+    /// Its `slot`th box of a key, as `key_boxes` counts them.
+    pub fn key_box(&self, slot: usize) -> Option<&KeyBox> {
+        match self {
+            Action::Keys { boxes, .. } => boxes.get(slot),
+            Action::Wraps { wraps, .. } => wraps.get(slot).map(|w| &w.boxed),
+            _ => None,
+        }
+    }
+
     /// The edits a removal had seen and keeps, for removals: every revocation, handing the root on, and a mark that
     /// takes an entry to an audience.
     pub fn keep(&self) -> Option<&[EditId]> {
@@ -4232,6 +4252,11 @@ impl Replay {
         self.order.iter().map(move |&p| &held[p])
     }
 
+    /// Where each of its edits is among the edits it is the replay of, in the one order (`edits`).
+    pub fn places(&self) -> &[usize] {
+        &self.order
+    }
+
     /// Its `i`th edit in the one order, of `held` (`edits`).
     fn edit<'a>(&self, held: &'a [Edit], i: usize) -> &'a Edit {
         &held[self.order[i]]
@@ -4912,6 +4937,9 @@ impl Log {
 
     /// Changes exactly when the sequence of held edits changes, without scanning history.
     pub fn revision(&self) -> LogRevision { self.revision.clone() }
+
+    /// It holds edit `id`.
+    pub fn has(&self, id: EditId) -> bool { self.held.contains(&id) }
 
     /// An incremental index may append while this token stays equal; otherwise it must rebuild.
     pub fn lineage(&self) -> LogRevision { self.lineage.clone() }

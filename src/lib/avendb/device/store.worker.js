@@ -177,6 +177,13 @@ async function blob(name, create = false) {
 	return file;
 }
 
+/** Finished blob `hash` as a file, read without holding it: no worker holds a finished blob open, so that a file of
+ *  it reads in any worker of the page. */
+async function finished(hash) {
+	shut(`${BLOBS}/${hash}`);
+	return (await (await dir.getDirectoryHandle(BLOBS)).getFileHandle(hash)).getFile();
+}
+
 /** Lets go of the blob file at `at`, if it is held. */
 function shut(at) {
 	handles.get(at)?.close();
@@ -258,12 +265,24 @@ const ops = {
 		return held;
 	},
 
-	/** `len` bytes of blob `name` from byte `at` on, or fewer at its end. */
+	/** `len` bytes of blob `name` from byte `at` on, or fewer at its end. A finished one is read as a file, never
+	 *  held open, so that the device's spill can read it too (`file`). */
 	async read(name, at, len) {
+		if (HASH.test(name)) {
+			const file = await finished(name);
+			return new Uint8Array(await file.slice(at, at + len).arrayBuffer());
+		}
 		const file = await blob(name);
 		const bytes = new Uint8Array(Math.max(0, Math.min(at + len, file.getSize()) - at));
 		file.read(bytes, { at });
 		return bytes;
+	},
+
+	/** Finished blob `hash` as a file, for the device's spill to read its edits in place (`avendb::lab::Placed`):
+	 *  never written again, the file reads what it held. */
+	async file(hash) {
+		if (!HASH.test(hash)) throw new Error(`${hash} is no blob's hash`);
+		return finished(hash);
 	},
 
 	/** The outboard of blob `hash`. */

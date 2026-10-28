@@ -10,7 +10,9 @@
 //! The bulk is 600 edits by default: the Lab checks each write against a replay of its whole log in a debug build (as
 //! `test-fixtures` needs), so writing the bulk grows with its square, about 18 s at 600 and 50 s at 1,000.
 //!
-//! `AVENDB_LIVE_LINK` is `calm` or `phone`, or both, comma-separated. Alice's Mac writes the bulk before either node starts; Bob's Mac asks it
+//! `AVENDB_LIVE_LINK` is `calm` or `phone`, or both, comma-separated; `phone_bulk` (or `calm_bulk`) is that link with a
+//! bulk of `AVENDB_LIVE_BULK_MB` (20) of 48 KB edits instead, for the catch-up's use of the link (G3), where the wire's
+//! time and not the receiver's cost per edit is most of it. Alice's Mac writes the bulk before either node starts; Bob's Mac asks it
 //! for what it lacks till it holds all, while Alice's Mac writes a live edit every `EVERY` and the bench times each
 //! from its write to Bob's Mac holding it, during the catch-up and after it. Only numbers are printed.
 
@@ -34,6 +36,9 @@ const EVERY: Duration = Duration::from_millis(250);
 const AFTER: usize = 10;
 /// The longest a live edit is waited for: past it, it counts as missed, at this time.
 const MISS: Duration = Duration::from_secs(15);
+/// The text of each edit of a `_bulk` link's bulk: big, so that the catch-up's time is the wire's, not the receiver's
+/// cost per edit (G3, the link's use).
+const FAT: usize = 48 << 10;
 
 fn pct(xs: &[f64], p: f64) -> f64 {
     if xs.is_empty() {
@@ -75,7 +80,15 @@ async fn bench_live() {
     let bulk: usize = std::env::var("AVENDB_LIVE_BULK").ok().and_then(|n| n.parse().ok()).unwrap_or(600);
     let cases: Vec<String> =
         std::env::var("AVENDB_LIVE_LINK").unwrap_or_else(|_| "phone".into()).split(',').map(|c| c.trim().to_string()).collect();
-    let writing: Vec<_> = cases.iter().map(|_| std::thread::spawn(move || fixture(bulk))).collect();
+    // a `_bulk` link's bulk is `AVENDB_LIVE_BULK_MB` of edits of `FAT` text each, 20 MB by default
+    let mb: usize = std::env::var("AVENDB_LIVE_BULK_MB").ok().and_then(|n| n.parse().ok()).unwrap_or(20);
+    let writing: Vec<_> = cases
+        .iter()
+        .map(|c| {
+            let (edits, text) = if c.ends_with("_bulk") { (mb * 1_000_000 / FAT, FAT) } else { (bulk, 0) };
+            std::thread::spawn(move || fixture(edits, text))
+        })
+        .collect();
     let fixtures: Vec<Fixture> = writing.into_iter().map(|t| t.join().expect("a fixture")).collect();
     for (case, f) in cases.into_iter().zip(fixtures) {
         live_on(case, f).await;
@@ -93,7 +106,8 @@ struct Fixture {
     write_s: f64,
 }
 
-fn fixture(bulk: usize) -> Fixture {
+/// `text`, where not 0, is the bytes of text each bulk edit carries.
+fn fixture(bulk: usize, text: usize) -> Fixture {
     let mut w = world();
     let coop = handbook_ready(&mut w);
     let (mac_a, mac_b) = (w.mac_a, w.mac_b);
@@ -107,6 +121,13 @@ fn fixture(bulk: usize) -> Fixture {
     w.lab.sync_all(0);
     let held: HashSet<EditId> = w.lab.log(mac_b).ids().iter().copied().collect();
     for k in 0..bulk {
+        if text > 0 {
+            // a fat edit makes an entry of its own, so that no document grows past one edit's text and each write
+            // costs what one edit does; letters at random, so that no layer squeezes them
+            let body: String = (0..text).map(|i| (b'a' + ((k * 7919 + i * 104_729) % 9973 % 26) as u8) as char).collect();
+            w.lab.create(mac_a, coop, coop, "doc", &[], document(&format!("Bulk {k}"), &body, mac_a)).expect("an entry");
+            continue;
+        }
         let entry = entries[k % entries.len()];
         let text = format!("edit {k} of the live bench's bulk");
         w.lab.edit(mac_a, coop, entry, |item| item.push_block(paragraph(100 + k as u64, &text))).expect("an edit");
@@ -120,10 +141,10 @@ fn fixture(bulk: usize) -> Fixture {
 
 /// One link: Bob's Mac catching up on the fixture's bulk while live edits come.
 async fn live_on(case: String, f: Fixture) {
-    let faults = match case.as_str() {
+    let faults = match case.trim_end_matches("_bulk") {
         "calm" => Faults::CALM,
         "phone" => Faults::PHONE,
-        other => panic!("AVENDB_LIVE_LINK: {other} is none of calm, phone"),
+        other => panic!("AVENDB_LIVE_LINK: {other} is none of calm, phone, calm_bulk, phone_bulk"),
     };
     let Fixture { mut w, coop, live_entry, want, bytes, write_s } = f;
     let (mac_a, passkey_a, mac_b, passkey_b) = (w.mac_a, w.passkey_a, w.mac_b, w.passkey_b);

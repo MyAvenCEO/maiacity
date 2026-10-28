@@ -110,6 +110,8 @@ mod node_loop;
 mod blind;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
+mod congestion;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod claim;
@@ -146,7 +148,10 @@ mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
+mod posts_page;
 mod shared_index;
+pub mod query_window;
+mod told_index;
 // the index gate's on-disk index; the sync lane wires it in place of S7's spill (`avendb::lab::held`)
 #[cfg_attr(not(test), allow(dead_code))]
 mod shelf_index;
@@ -173,7 +178,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine::follow_standing;
 use avendb::id::{BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::PublicKey;
-use avendb::lab::{Backup, Checked, Drafting, Lab, Unsigned, Warm};
+use avendb::lab::{Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
 use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
@@ -274,6 +279,14 @@ pub fn web_provider() -> Arc<CryptoProvider> {
 }
 
 /// The TLS of this node: `pq_provider` on a machine, `web_provider` in a browser.
+/// Every connection's QUIC: iroh's, its send rate set by BBR v3 and Cubic together (`congestion`).
+fn quic() -> iroh::endpoint::QuicTransportConfig {
+    let builder = iroh::endpoint::QuicTransportConfig::builder();
+    #[cfg(not(target_arch = "wasm32"))]
+    let builder = builder.congestion_controller_factory(Arc::new(congestion::EitherConfig::default()));
+    builder.build()
+}
+
 fn provider() -> Arc<CryptoProvider> {
     #[cfg(not(target_arch = "wasm32"))]
     return pq_provider();
@@ -697,25 +710,15 @@ impl Node {
         if opts.shelf.is_none() {
             bail!("a node in a browser keeps a shelf");
         }
-        let (edits, stored) = match &opts.shelf {
+        // its edits taken back from its shelf a page at a time, never all of them at once beside what it keeps (F9)
+        let (edits, lab, stored) = match &opts.shelf {
             Some(shelf) => {
-                let (edits, stored) = edits::Edits::open(shelf.clone()).await?;
-                (Some(edits), stored)
+                let mut to = Restorer { lab: Some(lab), me, checked: None, keys: Warm::default(), restoring: None };
+                let (edits, warm, stored, anchors) = edits::Edits::open_into(shelf.clone(), &mut to).await?;
+                (Some(edits), to.end(anchors, warm).await?, stored)
             }
-            None => (None, edits::Stored::default()),
+            None => (None, lab, Vec::new()),
         };
-        // what it worked out from them before (`Edits::warm`)
-        let warm = match &edits {
-            Some(edits) => edits.warm().await,
-            None => Warm::default(),
-        };
-        let started = edits.as_ref().and_then(|edits| edits.started());
-        let restore = move || restore(lab, me, stored, started, &warm);
-        #[cfg(not(target_arch = "wasm32"))]
-        let (lab, stored) = tokio::task::spawn_blocking(restore).await?;
-        // a page has no threads to spare
-        #[cfg(target_arch = "wasm32")]
-        let (lab, stored) = restore();
         if let Some(edits) = &edits {
             edits.settle(&lab, me, &stored);
         }
@@ -758,6 +761,7 @@ impl Node {
             .secret_key(SecretKey::from_bytes(&secret))
             .crypto_provider(provider())
             .address_lookup(lookup.clone())
+            .transport_config(quic())
             .add_custom_transport(Arc::new(packets.clone()));
         // iroh's own sockets, on every interface, and its port mapping, for a node that reaches out directly; else
         // the one socket it binds, if any
@@ -818,6 +822,18 @@ impl Node {
             },
             None => None,
         };
+        // the rows its peers told it, if it keeps an index (`told_index`): on its shelf, or in memory for a node that
+        // keeps none
+        let told_rows = match opts.index {
+            true => {
+                let (on, older) = match &opts.shelf {
+                    Some(shelf) => (shelf.clone(), blind::older_rows(shelf).await),
+                    None => (told_index::memory_shelf(), None),
+                };
+                Some(told_index::ToldIndex::open(on, older).await?)
+            }
+            false => None,
+        };
         let shared = Arc::new(Shared {
             lifecycle,
             writer: Mutex::new(writer),
@@ -857,7 +873,7 @@ impl Node {
             discovery_running: Mutex::default(),
             discovery_mark: Mutex::default(),
             discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
-            index: Mutex::default(),
+            told_rows,
             index_told: Mutex::default(),
             index_due: Notify::new(),
             offered: Mutex::default(),
@@ -897,7 +913,6 @@ impl Node {
             task::spawn(shared.clone().keeper()),
             task::spawn(shared.clone().saver()),
             task::spawn(shared.clone().unshelve()),
-            task::spawn(shared.clone().unshelve_index()),
             task::spawn(shared.clone().index_teller()),
             task::spawn(shared.clone().bootstrap_pump()),
             task::spawn(transports::control::maintain(shared.clone())),
@@ -1520,6 +1535,35 @@ impl Node {
         Ok(index.find(&self.shared.lab, self.shared.me, vault, &labels, after, limit).await?)
     }
 
+    /// The newest `w` entries of vault `vault` whose type, tag or link is one of `labels`, the newest first, read off its
+    /// shared index and the tail of edits after its last save (B3, `query_window`), never the log before it: a query
+    /// view's window. `None` where the index can't say (no shelf, or the tail is of a key's or share's log), and the
+    /// caller asks the engine.
+    pub async fn window(&self, vault: VaultId, labels: Vec<String>, w: usize) -> Result<Option<query_window::Window>> {
+        let Some(index) = &self.shared.shared_index else { return Ok(None) };
+        Ok(query_window::window(index, &self.shared.lab, self.shared.me, vault, &labels, None, w).await?)
+    }
+
+    /// What window query `op` answers (`engine::window_of`), off its shared index and the tail after it
+    /// (`query_window::answer`), never the log before it; `None` where the index can't say, and the engine answers.
+    pub(crate) async fn windowed(&self, op: &serde_json::Value) -> Option<serde_json::Value> {
+        let index = self.shared.shared_index.as_ref()?;
+        query_window::answer(index, &self.shared.lab, self.shared.me, op).await.ok().flatten().map(|(got, _)| got)
+    }
+
+    /// A page of posts (`{"op": "posts", "limit"?, "after"?}`, as the engine answers it) off its shared index and the
+    /// tail of edits after its last save (`posts_page`, `PostsPage.lean`), never a walk of every entry it holds; `None`
+    /// where the index can't say (no shelf, or the tail is of a key's or share's log), and the caller asks the engine.
+    pub(crate) async fn posts_indexed(&self, op: &Value) -> Option<Value> {
+        let index = self.shared.shared_index.as_ref()?;
+        let o = op.as_object()?;
+        let (limit, after) = match avendb::engine::posts_args(o) {
+            Ok(args) => args,
+            Err(why) => return Some(why.to_json()),
+        };
+        posts_page::page(index, &self.shared.lab, self.shared.me, limit, after).await.ok().flatten()
+    }
+
     /// The root of its shared index and the head of the edits it is of, as its last save left them: what a peer holds
     /// it to before it reads through pages it fetched (`ShelfIndex.I5_trusted_reads`).
     pub async fn shared_index_root(&self) -> Option<(Option<[u8; 32]>, u64)> {
@@ -1972,26 +2016,77 @@ impl Drop for Node {
     }
 }
 
-/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`), from what it worked out
-/// before (`Lab::restore_warm`), the first edits of the head it started from (`Edits::started`); and the ids of the
-/// edits the shelf held, in its order.
-fn restore(
-    mut lab: Lab,
+/// A node's Lab taking its device's edits back from its shelf a page at a time (`edits::Taker`, `Lab::restore_page`):
+/// its restore begun at the first page, so a shelf that holds none leaves it as it was.
+struct Restorer {
+    lab: Option<Lab>,
     me: SignerId,
-    (signed, keys, anchors): edits::Stored,
-    started: Option<(Checked, usize)>,
-    warm: &Warm,
-) -> (Lab, Vec<EditId>) {
-    let stored = signed.iter().map(|s| s.edit.id()).collect();
-    if !signed.is_empty() {
-        let backup = Backup::new(signed, keys);
-        let backup = if anchors.is_empty() { backup } else {
-            // Invalid companion never invalidates or discards the ordinary signed log.
-            backup.clone().with_bootstrap_bytes(&anchors).unwrap_or(backup)
+    /// The head it begins from, and the keys the device worked out before (`Warm::keys`), what its restore begins with.
+    checked: Option<avendb::lab::Checked>,
+    keys: Warm,
+    restoring: Option<avendb::lab::Restoring>,
+}
+
+impl Restorer {
+    /// Its Lab and its restore, taken out to work on (`Lab::restore_start` where it began none yet).
+    fn take(&mut self) -> (Lab, avendb::lab::Restoring) {
+        let mut lab = self.lab.take().expect("its Lab");
+        let restoring = match self.restoring.take() {
+            Some(r) => r,
+            None => lab.restore_start(self.me, self.checked, &self.keys),
         };
-        lab.restore_warm(me, backup, started, warm);
+        (lab, restoring)
     }
-    (lab, stored)
+
+    /// Its Lab, its restore ended (`Lab::restore_end`) with `anchors` and `warm`, where it began one.
+    async fn end(mut self, anchors: Vec<u8>, warm: Warm) -> Result<Lab> {
+        let Some(r) = self.restoring.take() else { return Ok(self.lab.take().expect("its Lab")) };
+        let (mut lab, me) = (self.lab.take().expect("its Lab"), self.me);
+        let end = move || {
+            lab.restore_end(me, r, &anchors, &warm);
+            lab
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let lab = tokio::task::spawn_blocking(end).await?;
+        // a page has no threads to spare
+        #[cfg(target_arch = "wasm32")]
+        let lab = end();
+        Ok(lab)
+    }
+}
+
+impl edits::Taker for Restorer {
+    async fn begin(&mut self, checked: Option<avendb::lab::Checked>, warm: &Warm) -> Result<()> {
+        (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new() });
+        // what it took of a head that didn't read whole goes
+        if self.restoring.is_some() {
+            let mut lab = self.lab.take().expect("its Lab");
+            self.restoring = Some(lab.restore_start(self.me, checked, &self.keys));
+            self.lab = Some(lab);
+        }
+        Ok(())
+    }
+
+    async fn page(&mut self, page: Vec<(Signed, Option<avendb::lab::Placed>)>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()> {
+        let ((mut lab, mut r), me) = (self.take(), self.me);
+        let take = move || {
+            lab.restore_page_placed(me, &mut r, page, keys, of_head);
+            (lab, r)
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let (lab, r) = tokio::task::spawn_blocking(take).await?;
+        #[cfg(target_arch = "wasm32")]
+        let (lab, r) = take();
+        (self.lab, self.restoring) = (Some(lab), Some(r));
+        Ok(())
+    }
+
+    async fn keys(&mut self, keys: Vec<Arc<[u8]>>) -> Result<()> {
+        if let (Some(lab), Some(r)) = (self.lab.as_mut(), self.restoring.as_mut()) {
+            lab.restore_keys(self.me, r, keys);
+        }
+        Ok(())
+    }
 }
 
 /// `s` is an edit of a vault's log (`sync::log_of`), all that a card carries.
@@ -2226,7 +2321,7 @@ struct Shared {
     discovery_mark: Mutex<usize>,
     discovery_answer: Arc<tokio::sync::Semaphore>,
     /// The blind index rows it keeps, where it keeps an index (`Options::index`).
-    index: Mutex<avendb::index::Rows>,
+    told_rows: Option<told_index::ToldIndex>,
     /// Of each peer, the change of the device's entries it was last told the rows of, `None` once it refused them.
     index_told: Mutex<HashMap<EndpointId, Option<u64>>>,
     /// A peer connected: tell it the rows (`blind::index_teller`).
@@ -2661,7 +2756,20 @@ impl Shared {
         let mut named = BTreeSet::new();
         let mut asked = self.pages(peer, scope, &mut job, admission, background, keys.unwrap_or(&mut named), yielding).await;
         if asked.is_ok() {
-            if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
+            if expected.is_some() {
+                // a live pull's edits show without the keys they name (one is needed only to seal to its signer), and a
+                // key is a megabyte: brought after, not waited for (`bench_live` phone: a chat edit's pull waited 1.7 s
+                // on two keys the backlog was bringing too)
+                if !named.is_empty() && let Ok(activity) = self.admit() {
+                    let shared = self.clone();
+                    task::spawn(async move {
+                        let _activity = activity;
+                        if let Err(error) = shared.bring_keys(endpoint, device, named, background).await {
+                            tracing::debug!(%error, "avendb: a live pull's keys come with a later pull");
+                        }
+                    });
+                }
+            } else if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
                 asked = Err(error);
             }
         }
@@ -3120,6 +3228,12 @@ impl Shared {
         let lacking =
             move |lab: &Lab, me| -> Vec<BlobId> { keys.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect() };
         let lacking = self.read(lacking).await;
+        if lacking.is_empty() {
+            return Ok(());
+        }
+        // a key another pull brings now is waited for, not brought twice, and what is still lacking then brought
+        let _turns = self.pulls.fetching(&lacking).await;
+        let lacking = self.read(move |lab: &Lab, me| -> Vec<BlobId> { lacking.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect() }).await;
         if !lacking.is_empty() {
             let asked = lacking.len() as u64;
             let got = self.fetch(endpoint, lacking).await;
@@ -3545,6 +3659,7 @@ impl Shared {
         let holdings = held.entry(device).or_default();
         let live_logs = live::announced_hints(holdings, &announce);
         if !live_logs.is_empty() {
+            self.pulls.note_witnesses(device, live::unchanged(holdings, &announce, &live_logs));
             let heads = announce.logs.iter().filter(|(l, _)| live_logs.contains(l)).flat_map(|(_, f)| f.heads.iter().copied());
             self.traffic.trace(traffic::Stage::Heard, device, heads.collect::<Vec<_>>(), false);
         }
@@ -3715,19 +3830,27 @@ impl Shared {
 
     /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
     /// else once it waited `CATCH_UP_PACE` times as long as the last one took since it ended. True if it did.
-    async fn catch_up_paced(self: &Arc<Self>, must: bool) -> bool {
-        self.catch_up_paced_class(must, lab_schedule::Class::Foreground).await
+    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+        self.catch_up_steps(must, class, None).await.0
     }
 
-    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+    /// `catch_up_paced_class`, and for a live pull (`live::materialize_live`) `until` a deadline: no step begins after
+    /// it, and the pages are stirred after every step, so the step that shows the live edit's entries (a new write's
+    /// entries are shown first, `Lab::show_items`) reaches them at once rather than after the whole catch-up. Whether it
+    /// did, and whether steps were left at the deadline.
+    pub(crate) async fn catch_up_steps(self: &Arc<Self>, must: bool, class: lab_schedule::Class, until: Option<Instant>) -> (bool, bool) {
         if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
-            return false;
+            return (false, false);
         }
         // A turn of the Lab a step (`Lab::catch_up_step`), not one for the whole: its replay stepped on, then its
         // entries shown anew `CATCH_UP_SLICE` at a time, so a page's turn comes between them rather than after all of
         // them (a catch-up held the server's Lab 5.5 s, 2026-10-27).
-        let (mut caught, mut work, mut budget) = (false, Duration::ZERO, CATCH_UP_SLICE);
+        let (mut caught, mut work, mut left, mut budget) = (false, Duration::ZERO, false, CATCH_UP_SLICE);
         loop {
+            if until.is_some_and(|until| Instant::now() >= until) {
+                left = true;
+                break;
+            }
             let (step, took) = self.try_lab_class(class, move |lab, me| {
                 // Queue waiting is not computation cost: foreground priority must not
                 // multiply a busy queue into another long background-sync cooldown.
@@ -3736,12 +3859,15 @@ impl Shared {
             }).await.unwrap_or((avendb::lab::CatchUp::Caught(false), Duration::ZERO));
             work += took;
             budget = catch_up_budget(budget, took);
-            match step {
-                avendb::lab::CatchUp::Stepped => caught = true,
-                avendb::lab::CatchUp::Caught(any) => {
-                    caught |= any;
-                    break;
-                }
+            let done = match step {
+                avendb::lab::CatchUp::Stepped => { caught = true; false }
+                avendb::lab::CatchUp::Caught(any) => { caught |= any; true }
+            };
+            if until.is_some() && caught {
+                self.jobs.stir();
+            }
+            if done {
+                break;
             }
         }
         if caught {
@@ -3749,7 +3875,7 @@ impl Shared {
             self.changed.notify_one();
             self.find_again_on_new_keys().await;
         }
-        caught
+        (caught, left)
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by
