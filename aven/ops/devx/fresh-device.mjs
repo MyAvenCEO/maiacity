@@ -24,7 +24,7 @@
  *   node aven/ops/devx/fresh-device.mjs [--fresh chromium|webkit] [--entries 2000] [--json] [--keep] [--build]
  *
  * --build rebuilds the device (wasm-bindgen 0.2.129) and the peer with `localhost-passkeys` first; without it, the
- * builds of a run before are taken, and made where none is. The device's package goes to aven/db/target/fresh-device/,
+ * builds of a run before are taken, and made where none is. The device's package goes to target/fresh-device/,
  * never aven/db/page/device/, which holds the committed build: the dev server answers its two files from there.
  * --keep leaves the peer's shelf and the profiles in place and prints where. Exit 1 when a step fails or overruns.
  */
@@ -38,7 +38,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const avendb = join(root, 'aven/db');
-const target = process.env.CARGO_TARGET_DIR ?? join(avendb, 'target');
+const target = process.env.CARGO_TARGET_DIR ?? join(root, 'target');
 const pkg = join(target, 'fresh-device', 'pkg');
 const peerBin = join(target, 'debug', 'avendb-server');
 
@@ -69,8 +69,8 @@ function build() {
 	const want = '0.2.129';
 	const have = spawnSync('wasm-bindgen', ['--version'], { encoding: 'utf8' }).stdout?.split(' ')[1]?.trim();
 	if (have !== want) throw new Error(`needs wasm-bindgen ${want} (found ${have ?? 'none'}): cargo install wasm-bindgen-cli --version ${want} --locked`);
-	run('cargo', ['build', '-p', 'avendb-browser', '--target', 'wasm32-unknown-unknown', '--release', '--features', 'localhost-passkeys']);
-	run('wasm-bindgen', ['--target', 'web', '--no-typescript', '--out-dir', pkg, join(target, 'wasm32-unknown-unknown/release/avendb_browser.wasm')]);
+	run('cargo', ['build', '-p', 'avendb-browser', '--target', 'wasm32-unknown-unknown', '--profile', 'wasm', '--features', 'localhost-passkeys']);
+	run('wasm-bindgen', ['--target', 'web', '--no-typescript', '--out-dir', pkg, join(target, 'wasm32-unknown-unknown/wasm/avendb_browser.wasm')]);
 	run('cargo', ['build', '-p', 'avendb-server', '--features', 'avendb/localhost-passkeys']);
 }
 

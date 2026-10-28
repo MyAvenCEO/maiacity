@@ -68,8 +68,8 @@ services:
   # (aven/db/README.md, "Deploying the server").
   avendb:
     build:
-      context: aven/db
-      dockerfile: Dockerfile.server
+      context: .
+      dockerfile: aven/db/Dockerfile.server
     image: ${AVENDB_IMAGE:-maia-city-avendb:local}
     container_name: maia-city-avendb
     restart: unless-stopped

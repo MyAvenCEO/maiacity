@@ -4,8 +4,8 @@
 services:
   avendb:
     build:
-      context: .
-      dockerfile: Dockerfile.server
+      context: ../..
+      dockerfile: aven/db/Dockerfile.server
     image: ${AVENDB_IMAGE:-avendb-server:local}
     container_name: avendb-server
     restart: unless-stopped

@@ -3,7 +3,7 @@
 # It runs once; Anthropic then snapshots the disk, and new sessions start from that snapshot for ~7 days without
 # running it again. It must finish in ~5 minutes or nothing is cached (measured 2026-10-27: about 1 minute).
 # What it puts in the snapshot: the Rust toolchain avenDB's dev cache was built with (plus the WebAssembly target), and
-# the dev cache unpacked in /opt/avendb-dev-cache, which .claude/hooks/session-start.sh moves into aven/db/target in an
+# the dev cache unpacked in /opt/avendb-dev-cache, which .claude/hooks/session-start.sh moves into target/ in an
 # instant when the cache on GitHub is still the same one (otherwise it downloads the newer one, as without this).
 # Anything that fails just leaves the hook to do it as before.
 set -u

@@ -7,6 +7,9 @@ node_modules
 .wrangler
 /.svelte-kit
 /build
+# the one Cargo workspace's build folders (D3); the two before it, still on older checkouts
+/target/
+/target-wasm/
 /theos/target/
 /aven/db/target/
 /aven/db/target-wasm/

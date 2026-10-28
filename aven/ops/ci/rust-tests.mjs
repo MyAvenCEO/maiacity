@@ -14,7 +14,8 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const DB = resolve(import.meta.dir, '../../db');
+// the one Cargo workspace's root (D3), where nextest finds .config/nextest.toml
+const ROOT = resolve(import.meta.dir, '../../..');
 // the crates whose tests the archive holds, each with its fixtures (the test kit has no tests of its own)
 export const crates = ['avendb', 'avendb-net', 'avendb-server', 'avendb-device', 'avendb-browser'];
 const build = [...crates.flatMap(c => ['-p', c]), '--features', crates.map(c => `${c}/test-fixtures`).join(',')];
@@ -31,7 +32,7 @@ export const shards = {
  'device-browser': { name: 'device, browser', filter: 'package(avendb-device) | package(avendb-browser)' },
 };
 
-// what a step runs, in aven/db: each command as [program, ...arguments]
+// what a step runs, at the workspace's root: each command as [program, ...arguments]
 export function commands(step, { shard, file, extracted } = {}) {
  if (step === 'archive') return [['cargo', 'nextest', 'archive', '--locked', ...build, '--archive-file', file]];
  if (step === 'doc') return [['cargo', 'test', '--locked', '--doc', ...build]];
@@ -61,15 +62,15 @@ if (import.meta.main) {
  }
  const [shard, file] = step === 'run' ? rest : [undefined, rest[0]];
  const s = shards[shard];
- // the tests' shared McEliece pairs where .cargo/config.toml puts them for cargo, so that a program run here without
+ // the tests' shared McEliece pairs where aven/db/.cargo/config.toml puts them for cargo, so that a program run here without
  // cargo finds them too; a folder CI names wins
- const env = { ...process.env, AVENDB_TEST_PAIRS: process.env.AVENDB_TEST_PAIRS ?? join(DB, 'target/avendb-test-pairs') };
+ const env = { ...process.env, AVENDB_TEST_PAIRS: process.env.AVENDB_TEST_PAIRS ?? join(ROOT, 'target/avendb-test-pairs') };
  const extracted = s?.binary && !plan ? mkdtempSync(join(tmpdir(), 'avendb-archive-')) : '<a new folder>';
  let out = '';
  for (const cmd of commands(step, { shard, file: file && resolve(file), extracted })) {
   console.log(`$ ${cmd.join(' ')}`);
   if (plan) continue;
-  const r = spawnSync(cmd[0], cmd.slice(1), { cwd: DB, env, encoding: 'utf8', maxBuffer: 1 << 28,
+  const r = spawnSync(cmd[0], cmd.slice(1), { cwd: ROOT, env, encoding: 'utf8', maxBuffer: 1 << 28,
    stdio: s?.binary ? ['ignore', 'pipe', 'inherit'] : 'inherit' });
   if (r.status !== 0) process.exit(r.status ?? 1);
   out = r.stdout;

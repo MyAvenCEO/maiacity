@@ -5,8 +5,8 @@
 // Synthetic data only; only numbers are printed.
 //
 //   UNLOCK_PHONE_FIXTURE=/tmp/unlock.bin cargo test --release -p avendb --test all unlock_phone:: -- --ignored --nocapture
-//   cargo build -p avendb-browser --target wasm32-unknown-unknown --release --features bench
-//   wasm-bindgen --target web --no-typescript --out-dir /tmp/pkg target/wasm32-unknown-unknown/release/avendb_browser.wasm
+//   cargo build -p avendb-browser --target wasm32-unknown-unknown --profile wasm --features bench
+//   wasm-bindgen --target web --no-typescript --out-dir /tmp/pkg target/wasm32-unknown-unknown/wasm/avendb_browser.wasm
 //   bun aven/ops/ci/avendb-bench-unlock.mjs /tmp/pkg /tmp/unlock.bin chromium
 //
 // AVENDB_TEST_PLAYWRIGHT names the Playwright to drive, else the repository's.

@@ -1,7 +1,7 @@
-# avendb-server: avenDB's server and its relay (crates/avendb-server), built from aven/db/ alone, its own workspace:
-# nothing of the media vault (theos/) is compiled here. Build it from aven/db/: docker build -f Dockerfile.server .
-# .github/workflows/avendb.yml builds it, pushes it to GHCR and restarts the server with it (README.md, "Deploying the
-# server").
+# avendb-server: avenDB's server and its relay (crates/avendb-server). It builds in the one Cargo workspace (D3), so its
+# context is the repository's root, cut down by Dockerfile.server.dockerignore to the workspace's manifests, avenDB's
+# crates and the patched iroh, and theOS's manifests and sources, which cargo needs to read the workspace but never
+# compiles here. Build it from the root: docker build -f aven/db/Dockerfile.server .
 # cargo-chef keeps the compiled dependencies in their own layer, so a change to our code rebuilds only our crates, in
 # the `server` profile (Cargo.toml).
 FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
@@ -14,7 +14,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS build
 COPY --from=planner /src/recipe.json recipe.json
 # The patched dependency is outside the workspace, so chef does not include it in its recipe.
-COPY vendor ./vendor
+COPY aven/db/vendor ./aven/db/vendor
 RUN cargo chef cook --profile server --locked --package avendb-server --recipe-path recipe.json
 COPY . ./
 RUN cargo build --profile server --locked -p avendb-server && cp target/server/avendb-server /avendb-server

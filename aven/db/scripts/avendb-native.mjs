@@ -30,7 +30,7 @@
  *     AVENDB_RELAY_URL=http://localhost:3360 target/debug/avendb-server     (it logs its offer)
  *   BASE=http://localhost:5173 RELAY=http://localhost:3360 SERVER=AVENDB1… node aven/db/scripts/avendb-native.mjs [--out dir]
  *
- * DEVICE=/path/to/avendb-device, else aven/db/target/debug/avendb-device. CHROME=/path/to/chrome, else
+ * DEVICE=/path/to/avendb-device, else target/debug/avendb-device. CHROME=/path/to/chrome, else
  * /opt/pw-browsers/chromium, or Chrome on a Mac.
  */
 import { spawn } from 'node:child_process';
@@ -50,7 +50,7 @@ const out = resolve(arg('--out', 'build/avendb-native'));
 mkdirSync(out, { recursive: true });
 const { BASE: base, RELAY: relay, SERVER: server } = process.env;
 if (!base || !relay || !server) throw new Error('BASE, RELAY and SERVER: the dev server, the test server’s relay and offer');
-const binary = resolve(process.env.DEVICE ?? 'aven/db/target/debug/avendb-device');
+const binary = resolve(process.env.DEVICE ?? 'target/debug/avendb-device');
 if (!existsSync(binary)) throw new Error(`No avendb-device at ${binary}: build it, or set DEVICE`);
 const chrome =
 	process.env.CHROME ??

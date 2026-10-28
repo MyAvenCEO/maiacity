@@ -1,0 +1,15 @@
+# The server's image (Dockerfile.server) is built from the repository's root, as the one Cargo workspace's member: this
+# file (BuildKit reads it in place of the root's .dockerignore) lets in only what cargo reads for it. Never build output,
+# the proofs, the plans, the page or the tile's scripts; each crate's tests, which a release build never compiles, stay
+# out too, so a change to one leaves the image as it was.
+*
+!Cargo.toml
+!Cargo.lock
+!aven/db/crates
+aven/db/crates/*/tests
+!aven/db/vendor/iroh
+# theOS's crates are members of the workspace: cargo reads their manifests and finds their targets, and builds none
+!theos/app/Cargo.toml
+!theos/app/src
+!theos/crates/*/Cargo.toml
+!theos/crates/*/src
