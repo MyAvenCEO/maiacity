@@ -287,17 +287,37 @@ fn put_shared<T: Clone + PartialEq + Encode, K: Eq + Hash>(
     }
 }
 
-/// The collection `put_shared` wrote, against `r`.
+/// The collection `put_shared` wrote, against `r`: its runs of `r`'s items shared with `r`, not copied, and how many
+/// of `r`'s first items it is, where it is just those (a tail's state, as it is before the edits after it).
 fn shared_of<T: Clone>(
     rd: &mut Reader<'_>,
     r: &imbl::Vector<T>,
     item: impl Fn(&mut Reader<'_>) -> Result<T, WireError>,
-) -> Result<imbl::Vector<T>, WireError> {
+) -> Result<(imbl::Vector<T>, Option<usize>), WireError> {
     match rd.u8()? {
-        0 => Ok(r.clone()),
+        0 => Ok((r.clone(), Some(r.len()))),
         1 => {
-            let r: Vec<T> = r.iter().cloned().collect();
-            Ok(items(rd, &r, item)?.into())
+            let n = rd.count(1)?;
+            let mut out = imbl::Vector::new();
+            // whether it is `r`'s first items so far
+            let mut first = true;
+            for _ in 0..n {
+                match rd.u8()? {
+                    0 => {
+                        let (from, len) = (u32::decode(rd)? as usize, u32::decode(rd)? as usize);
+                        let to = from.checked_add(len).filter(|&to| to <= r.len()).ok_or(WireError::Short)?;
+                        first &= from == out.len();
+                        out.append(r.skip(from).take(to - from));
+                    }
+                    1 => {
+                        first = false;
+                        out.push_back(item(rd)?);
+                    }
+                    _ => return Err(WireError::Unknown),
+                }
+            }
+            let k = out.len();
+            Ok((out, first.then_some(k)))
         }
         _ => Err(WireError::Unknown),
     }
@@ -440,9 +460,9 @@ fn state_of(rd: &mut Reader<'_>, r: &State) -> Result<State, WireError> {
     };
     let held = map_of(rd, &r.held, places_of)?;
     let revoked = listed_of(rd, &r.revoked)?;
-    let entries = shared_of(rd, &r.entries, Entry::decode)?;
+    let (entries, _) = shared_of(rd, &r.entries, Entry::decode)?;
     let born = listed_of(rd, &r.born)?;
-    let writes = shared_of(rd, &r.writes, Write::decode)?;
+    let (writes, first) = shared_of(rd, &r.writes, Write::decode)?;
     let audiences = map_of(rd, &r.audiences, shares_of)?;
     let epochs = map_of(rd, &r.epochs, u64::decode)?;
     let moved = map_of::<(KeyFam, u64), EditId>(rd, &r.moved, EditId::decode)?;
@@ -486,7 +506,11 @@ fn state_of(rd: &mut Reader<'_>, r: &State) -> Result<State, WireError> {
         marks,
     };
     if !same {
-        st.index_entries();
+        // a tail's writes are the first of the state's after it: its places of them are the same, but of those after
+        match first {
+            Some(k) => st.index_first_writes(r, k),
+            None => st.index_entries(),
+        }
     }
     Ok(st)
 }
