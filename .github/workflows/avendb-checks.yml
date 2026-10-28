@@ -173,11 +173,17 @@ jobs:
           # the property tests are most of core's time (869 of about 1,300 test-seconds on 2026-10-21, t19 alone 126 s)
           # and nextest starts them last, so core ran 7 minutes; on a runner of their own they run beside the rest.
           # Separate execution styles: nextest for isolation, libtest for shared immutable histories.
-          - name: core
+          # core runs on two runners, half its test programs each (nextest's hash partition): it built in 2m19s and ran
+          # 683 tests in 3m51s on one (#1348, 2026-10-28), the longest job but the server's; the build is the floor
+          - name: core 1 of 2
             cache: core
             args: -p avendb
-            filter: -E 'not binary_id(avendb::properties)'
+            filter: -E 'not binary_id(avendb::properties)' --partition hash:1/2
             doc: true
+          - name: core 2 of 2
+            cache: core
+            args: -p avendb
+            filter: -E 'not binary_id(avendb::properties)' --partition hash:2/2
           - name: core properties
             cache: core
             args: -p avendb
@@ -504,7 +510,7 @@ jobs:
   # target is 20k edits/s), so `required` doesn't wait on it.
   bench-phone-build:
     needs: impact
-    name: avenDB phone-class bench, its WebAssembly and fixture
+    name: avenDB phone-class bench, its WebAssembly
     if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_bench != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -522,27 +528,55 @@ jobs:
           workspaces: avendb -> target
           key: bench-phone
           cache-on-failure: true
-      - name: The page's WebAssembly, with the bench, and the fixture
+      - name: The page's WebAssembly, with the bench
         working-directory: avendb
-        env:
-          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
         run: |
           cargo build --locked -p avendb-browser --target wasm32-unknown-unknown --release --features bench
           wasm-bindgen --target web --no-typescript --out-dir "$RUNNER_TEMP/phone-pkg" target/wasm32-unknown-unknown/release/avendb_browser.wasm
-          AVENDB_PHONE_FIXTURE="$RUNNER_TEMP/phone.bin" cargo test --locked -p avendb --features test-fixtures --test phone_fixture -- --ignored --nocapture
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: avendb-phone-bench
-          path: |
-            ${{ runner.temp }}/phone-pkg
-            ${{ runner.temp }}/phone.bin
+          name: avendb-phone-pkg
+          path: ${{ runner.temp }}/phone-pkg
+          retention-days: 3
+
+  # The fixture on a runner of its own, beside the WebAssembly's build: one after the other they were the workflow's
+  # longest chain (9m20s on #1348, 2026-10-28). Built as the live shard's is, without the debug checks that replay the
+  # whole log on every write: with them the fixture's 2,000 writes took 251 s on the runner (345 s locally), without them 50 s locally, and the
+  # bytes come out the same. Those checks are for the tests; the fixture is only the input of a bench.
+  bench-phone-fixture:
+    needs: impact
+    name: avenDB phone-class bench, its fixture
+    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_bench != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # on the job, before rust-cache, whose key takes it in: a cache built with the checks wouldn't fit
+      RUSTFLAGS: --cfg avendb_no_replay_checks
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rui314/setup-mold@v1
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: avendb -> target
+          key: bench-phone-fixture
+          cache-on-failure: true
+      - name: The fixture
+        working-directory: avendb
+        env:
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        run: AVENDB_PHONE_FIXTURE="$RUNNER_TEMP/phone.bin" cargo test --locked -p avendb --features test-fixtures --test phone_fixture -- --ignored --nocapture
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: avendb-phone-fixture
+          path: ${{ runner.temp }}/phone.bin
           retention-days: 3
 
   # the browsers run in Playwright's image, as the kernel's WebKit job does: its engines and every system library they
   # need come in it, where installing WebKit's on the runner fetched 117 MB through a mirror that outran a 5-minute
   # limit and left apt holding its lock (2026-10-27)
   bench-phone:
-    needs: bench-phone-build
+    needs: [bench-phone-build, bench-phone-fixture]
     name: avenDB phone-class bench (WebAssembly in Chromium and WebKit)
     runs-on: ubuntu-latest
     container:
@@ -554,10 +588,14 @@ jobs:
       # the image has Node and npm but no unzip, which setup-bun needs
       - run: npm install -g "bun@$(cat .bun-version)"
       - run: bun install --frozen-lockfile
+      # in the checkout: in a container job, runner.temp names the host's folder, not the container's
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: avendb-phone-bench
-          # in the checkout: in a container job, runner.temp names the host's folder, not the container's
+          name: avendb-phone-pkg
+          path: phone-bench/phone-pkg
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: avendb-phone-fixture
           path: phone-bench
       - name: Chromium and WebKit
         # pipefail: a browser that doesn't launch fails the job, not just the tee after it
