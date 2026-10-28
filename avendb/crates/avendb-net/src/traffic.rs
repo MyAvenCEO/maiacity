@@ -137,8 +137,9 @@ impl LiveEnd {
 }
 
 /// One live pull: a peer announced a few changed logs and this node asked for them at once, beside its backlog. How
-/// long its parts took, in milliseconds: working out what differs, the rule logs first, the announced logs, and
-/// bringing its view up to date after; and its whole, from the announcement to its view showing what came.
+/// long its parts took, in milliseconds: working out what differs, the announced logs with the rule logs they rest on
+/// (how many of those, `rules`), and bringing its view up to date after; and its whole, from the announcement to its
+/// view showing what came.
 #[derive(Clone, Debug)]
 pub struct Live {
     pub device: SignerId,
@@ -146,7 +147,7 @@ pub struct Live {
     pub logs: u64,
     pub new: u64,
     pub differ_ms: u64,
-    pub rules_ms: u64,
+    pub rules: u64,
     pub pull_ms: u64,
     pub view_ms: u64,
     pub ms: u64,
@@ -254,7 +255,7 @@ impl Traffic {
     /// A live pull ended (`Live`).
     pub fn live(&self, live: Live) {
         tracing::debug!(device = %live.device.to_hex(), logs = live.logs, new = live.new, ms = live.ms,
-            differ_ms = live.differ_ms, rules_ms = live.rules_ms, pull_ms = live.pull_ms, view_ms = live.view_ms,
+            differ_ms = live.differ_ms, rules = live.rules, pull_ms = live.pull_ms, view_ms = live.view_ms,
             end = live.end.name(), left = live.left, "avendb: live pull");
         let mut book = self.0.lock().expect("traffic");
         book.live.ends[live.end as usize] += 1;
@@ -272,7 +273,7 @@ impl Traffic {
         }
         let recent: Vec<Value> = book.live.recent.iter().map(|l| json!({
             "device": l.device.to_hex(), "at": l.at, "logs": l.logs, "new": l.new, "differ_ms": l.differ_ms,
-            "rules_ms": l.rules_ms, "pull_ms": l.pull_ms, "view_ms": l.view_ms, "ms": l.ms, "end": l.end.name(),
+            "rules": l.rules, "pull_ms": l.pull_ms, "view_ms": l.view_ms, "ms": l.ms, "end": l.end.name(),
             "left": l.left,
         })).collect();
         json!({ "ends": by, "recent": recent })

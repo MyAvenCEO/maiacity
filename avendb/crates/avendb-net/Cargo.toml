@@ -70,3 +70,8 @@ tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "ti
 test-fixtures = ["avendb/test-fixtures", "sim"]
 # the simulated network (P7, `sim`): nodes of a test on an in-memory carrier with seeded faults
 sim = []
+
+# avendb_no_replay_checks: as in avendb's, set by RUSTFLAGS where a test times what a release does (lab.rs's debug
+# checks replay a whole log on each write); the live tests hold their gates only then
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(avendb_no_replay_checks)"] }

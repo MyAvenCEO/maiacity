@@ -558,6 +558,60 @@ theorem change_first_ends_whole (held change all : Nat → Option Nat) :
   simp only [take]
   cases all l <;> simp
 
+/-! ## What the open views want goes first in a live pull (2026-10-28)
+
+A live pull of one peer takes the logs that peer announced a round at a time, at most `limit` held back for the next
+round (`Budget::live_announced`, `LiveWork::next`). An iPhone catching up announced its own key upkeep, a hundred logs
+of keys and wraps in announcements of a few logs each, while Samuel's chat message to the Mac waited behind them, 4.2 s
+(`chat_crosses_both_ways_…`), or was left out once `limit` were held back. As a device's backlog asks for the open
+actor's needs before the rest (`next_asking`), its live pull takes the logs its views want first, and keeps one they
+want even past `limit`: those are as few as the views, which are bounded on their own (`Interest`). Every other log
+keeps the bound, and none is lost: what one round leaves waits for the next. Rust: avendb-net pulls.rs `LiveWork::next`,
+`Budget::live_announced`. -/
+
+/-- Whether a log announced while `pending` are held back is held back too: under the bound, or wanted by a view. -/
+def holdBack (limit : Nat) (wanted : Nat → Bool) (pending : List Nat) (l : Nat) : Bool :=
+  pending.length < limit || wanted l
+
+/-- A log a view wants is never left out of a live pull. -/
+theorem a_wanted_log_is_held_back (limit : Nat) (wanted : Nat → Bool) (pending : List Nat) (l : Nat)
+    (h : wanted l = true) : holdBack limit wanted pending l = true := by
+  simp [holdBack, h]
+
+/-- Any other is held back only under the bound. -/
+theorem an_unwanted_log_keeps_the_bound (limit : Nat) (wanted : Nat → Bool) (pending : List Nat) (l : Nat)
+    (h : wanted l = false) (held : holdBack limit wanted pending l = true) : pending.length < limit := by
+  simpa [holdBack, h] using held
+
+/-- The logs of `pending` the next round takes: those the views want, if any are, else all of them. -/
+def nextRound (wanted : Nat → Bool) (pending : List Nat) : List Nat :=
+  if pending.any wanted then pending.filter wanted else pending
+
+/-- Where a held-back log is wanted, the next round takes the wanted ones alone. -/
+theorem wanted_go_first (wanted : Nat → Bool) (pending : List Nat) (h : pending.any wanted = true) :
+    ∀ l ∈ nextRound wanted pending, wanted l = true := by
+  intro l hl
+  simp only [nextRound, h, ite_true, List.mem_filter] at hl
+  exact hl.2
+
+/-- A round takes only what was held back, and what it leaves waits for the next: nothing is lost. -/
+theorem a_round_loses_nothing (wanted : Nat → Bool) (pending : List Nat) (l : Nat) (h : l ∈ pending) :
+    l ∈ nextRound wanted pending ∨ (pending.any wanted = true ∧ wanted l = false) := by
+  unfold nextRound
+  split
+  · rename_i hw
+    by_cases hl : wanted l = true
+    · exact Or.inl (List.mem_filter.mpr ⟨h, hl⟩)
+    · exact Or.inr ⟨hw, by simpa using hl⟩
+  · exact Or.inl h
+
+theorem a_round_takes_what_was_held_back (wanted : Nat → Bool) (pending : List Nat) (l : Nat)
+    (h : l ∈ nextRound wanted pending) : l ∈ pending := by
+  unfold nextRound at h
+  split at h
+  · exact (List.mem_filter.mp h).1
+  · exact h
+
 /-! ## A stalled claim hands over (S1, 2026-10-28)
 
 A log that two peers hold more of is asked of one at a time (`Claims`, S5): the first asking takes it, and the other

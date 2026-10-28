@@ -62,10 +62,10 @@ struct LiveTiming {
     logs: u64,
     new: usize,
     differ_ms: u64,
-    rules_ms: u64,
+    rules: u64,
     pull_ms: u64,
     view_ms: u64,
-    /// It lacked too many rule logs, or some still after taking them: the backlog brings the rest.
+    /// It lacked more rule logs than a live pull takes: the backlog brings them.
     backlog: bool,
     /// Its view was left to the background catch-up at `LIVE_VIEW`.
     left: bool,
@@ -194,7 +194,7 @@ impl Shared {
             return;
         };
         let Ok(activity) = self.admit() else { return };
-        let Some(mut work) = self.pulls.live_announced(device, full, logs) else {
+        let Some(mut work) = self.pulls.live_announced(device, full, logs, &self.views_want()) else {
             return;
         };
         // claimed now, before the caller stirs the backlog, which would ask for the same logs (F12)
@@ -206,7 +206,8 @@ impl Shared {
             let began = time::Instant::now();
             let mut timing = LiveTiming::default();
             let attempt = time::timeout(LIVE_WAIT, async {
-                while let Some(logs) = work.next() {
+                // what the open views want first, each round (`wanted_go_first`)
+                while let Some(logs) = work.next(&shared.views_want()) {
                     claimed.claim(&logs);
                     timing.logs += logs.len() as u64;
                     shared.pull_live(endpoint, device, logs, &mut timing).await?;
@@ -239,7 +240,7 @@ impl Shared {
                 logs: timing.logs,
                 new: timing.new as u64,
                 differ_ms: timing.differ_ms,
-                rules_ms: timing.rules_ms,
+                rules: timing.rules,
                 pull_ms: timing.pull_ms,
                 view_ms: timing.view_ms,
                 ms: ms(began),
@@ -323,12 +324,12 @@ impl Shared {
         timing: &mut LiveTiming,
     ) -> anyhow::Result<()> {
         let at = time::Instant::now();
-        let mut missing = self.differ(device).await;
+        let missing = self.differ(device).await;
         timing.differ_ms += ms(at);
-        // the rules the hinted entries rest on (`rests_on`), those it lacks first: not every rule the device lacks,
-        // which a device catching up a history of many grants always lacks more than `LIVE_LOGS` of, so a chat
-        // message waited for the whole backlog (24.8 s, 2026-10-28). A hint is no permission: what comes is checked
-        // as any edit, and an edit whose authority hasn't come yet doesn't stand till it does.
+        // the rules the hinted entries rest on (`rests_on`), those it lacks: not every rule the device lacks, which a
+        // device catching up a history of many grants always lacks more than `LIVE_LOGS` of, so a chat message waited
+        // for the whole backlog (24.8 s, 2026-10-28). A hint is no permission: what comes is checked as any edit, and
+        // an edit whose authority hasn't come yet doesn't stand till it does.
         let entries: Vec<_> = hints.iter().filter(|log| matches!(log, LogId::Entry(_))).copied().collect();
         let rests = self.read(move |lab, me| rests_on(lab.state(me), &entries)).await;
         let rules: BTreeSet<_> = missing
@@ -342,33 +343,34 @@ impl Shared {
             timing.backlog = true;
             return Ok(());
         }
-        if !rules.is_empty() {
-            let at = time::Instant::now();
-            timing.new += self.pull_expected(endpoint, Scope::Logs(rules), false, None, Some(device), None, None)
-                .await?;
-            self.materialize_live(timing).await;
-            missing = self.differ(device).await;
-            timing.rules_ms += ms(at);
-            if missing.iter().any(|log| !matches!(log, LogId::Entry(_)) && rests.contains(log)) {
-                timing.backlog = true;
-                return Ok(());
-            }
+        // the rules and the hinted logs in one asking, which the peer answers in the order the edits came
+        // (`sync::place`), each rule before what rests on it: asked first on their own, they were a moving target, a
+        // device catching up writing its key upkeep on the very audience logs a chat entry rests on, which the Mac
+        // chased 1.3 s and then left the message to the backlog
+        let mut logs = self.in_step(device, hints.intersection(&missing).copied().collect()).await;
+        timing.rules = rules.len() as u64;
+        logs.extend(rules);
+        if logs.is_empty() {
+            return Ok(());
         }
-        let logs = hints
-            .intersection(&missing)
-            .copied()
-            .collect::<BTreeSet<_>>();
-        let logs = self.in_step(device, logs).await;
-        if !logs.is_empty() {
-            let at = time::Instant::now();
-            timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None, None)
-                .await?;
-            timing.pull_ms += ms(at);
-            // A single interactive edit must wake reactive subscribers before the unrelated backlog finishes.
-            let at = time::Instant::now();
-            self.materialize_live(timing).await;
-            timing.view_ms += ms(at);
-        }
+        self.pull_live_logs(endpoint, device, logs, timing).await
+    }
+
+    /// Pulls `logs` of `device` live, and shows what they bring a step at once (`materialize_live`).
+    async fn pull_live_logs(
+        self: &Arc<Self>,
+        endpoint: EndpointId,
+        device: SignerId,
+        logs: BTreeSet<LogId>,
+        timing: &mut LiveTiming,
+    ) -> anyhow::Result<()> {
+        let at = time::Instant::now();
+        timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None, None).await?;
+        timing.pull_ms += ms(at);
+        // A single interactive edit must wake reactive subscribers before the unrelated backlog finishes.
+        let at = time::Instant::now();
+        self.materialize_live(timing).await;
+        timing.view_ms += ms(at);
         Ok(())
     }
 }

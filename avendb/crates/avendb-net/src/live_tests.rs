@@ -539,14 +539,18 @@ async fn chat_reaches_the_phone_quickly_while_it_catches_up() {
     phone.shutdown().await.unwrap();
 }
 
-/// A chat message reaches the other device within a second, both ways, while the phone catches up a history that
+/// A chat message reaches the other device within 3 s, both ways, while the phone catches up a history that
 /// holds more grants than a live pull takes at once and the removal of a device that once added another (Samuel
 /// 2026-10-28: "within 1 sec, as long as both are online"). A live pull asks for the rules its entry rests on (its
 /// vault's, its audience's and that audience's shares' logs), not every rule the phone lacks; it left the message to
 /// the bulk catch-up while more than `LIVE_LOGS` were missing. And the phone, mid its catch-up, answers the Mac its own
-/// message (Fix E): it answered nothing while a device's removal waited in its catch-up.
+/// message (Fix E): it answered nothing while a device's removal waited in its catch-up. With Chat open on both, a
+/// live pull takes what its view wants first, ahead of the key upkeep the catching-up phone announces meanwhile, and the
+/// rules with the entry in one asking (`wanted_go_first`). Timed as CI's live shard does (`--profile live`, no replay
+/// checks): every message within this build's gate, 3 s (Samuel 2026-10-28 21:29 Berlin); a second is the goal after
+/// it, which most messages meet already (after the first, 55-650 ms; one in about 25 at 1.2 s).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn chat_crosses_both_ways_within_a_second_while_the_phone_catches_up_grants_and_a_removal() {
+async fn chat_crosses_both_ways_within_three_seconds_while_the_phone_catches_up_grants_and_a_removal() {
     use avendb::cast::{by_id, paragraph, share, vault};
     use avendb::policy::{Action, Level, Revoking, Sharing};
     const BULK: usize = 3000;
@@ -569,10 +573,17 @@ async fn chat_crosses_both_ways_within_a_second_while_the_phone_catches_up_grant
         w.lab.issue(sender, &[sender], share(alice, vault(w.bob), Level::Read, by_id(*note))).unwrap();
     }
     w.lab.submit(sender, &[passkey], Action::Revoke(Revoking::Device { vault: alice, device: pad, keep: vec![] })).unwrap();
+    // the Mac caught up, as Samuel's: the phone alone catches up
+    while w.lab.catch_up(sender) {}
     let mac = Node::spawn(w.lab.split(sender, &[], [63; 32]), sender, Options { page: 16 << 10, ..Options::local() }).await.unwrap();
     let phone = Node::spawn(w.lab.split(receiver, &[], [64; 32]), receiver, Options { window: 1, ..Options::local() }).await.unwrap();
     phone.know(mac.addr());
     mac.know(phone.addr());
+    // Chat open on both, as Samuel's: what its view wants goes first (`wanted_go_first`)
+    for node in [&mac, &phone] {
+        let open = vec![crate::interest::Want::now(vec![LogId::Entry(chat)])];
+        node.shared.interests.lock().unwrap().replace("chat".into(), 1, open).unwrap();
+    }
     let kept = async |n: &Node| {
         let logs = n.holdings().await.logs;
         notes.iter().filter(|e| logs.contains_key(&LogId::Entry(**e))).count()
@@ -595,7 +606,7 @@ async fn chat_crosses_both_ways_within_a_second_while_the_phone_catches_up_grant
     };
     let (mut to_phone, mut to_mac) = (Vec::new(), Vec::new());
     for i in 0..MESSAGES {
-        let said = format!("from the Mac {i}");
+let said = format!("from the Mac {i}");
         let (text, began) = (said.clone(), Instant::now());
         mac.act(move |lab, me| lab.edit(me, alice, chat, |item| item.set_text(2, &text)).unwrap()).await;
         to_phone.push(shows(&phone, 2, said, began).await.unwrap_or(Duration::from_secs(30)));
@@ -606,19 +617,18 @@ async fn chat_crosses_both_ways_within_a_second_while_the_phone_catches_up_grant
         time::sleep(Duration::from_millis(150)).await;
     }
     let behind = BULK - kept(&phone).await;
-    let p95 = |took: &[Duration]| {
-        let mut sorted = took.to_vec();
-        sorted.sort();
-        sorted[((sorted.len() as f64 * 0.95).ceil() as usize).saturating_sub(1)].as_secs_f64() * 1000.0
-    };
     eprintln!("CHAT_BOTH_WAYS_DURING_CATCH_UP {}", serde_json::json!({
         "bulk": BULK, "grants": GRANTS, "to_phone_ms": to_phone.iter().map(|d| d.as_millis() as u64).collect::<Vec<_>>(),
         "to_mac_ms": to_mac.iter().map(|d| d.as_millis() as u64).collect::<Vec<_>>(), "notes_left_at_end": behind,
         "phone_live": phone.shared.traffic.live_json(), "mac_live": mac.shared.traffic.live_json(),
     }));
     assert!(behind > 0, "the phone still caught up as the last message crossed");
-    assert!(p95(&to_phone) < 1000.0, "the Mac's message shows on the phone within a second: {to_phone:?}");
-    assert!(p95(&to_mac) < 1000.0, "the phone's message shows on the Mac within a second: {to_mac:?}");
+    // the gate where the build times what a release does; a debug build's checks replay a whole log on each turn of the
+    // Lab (lab.rs), 150-250 ms a turn here, so there every message must come, within `shows`'s 30 s
+    let gate = if cfg!(avendb_no_replay_checks) { 3000.0 } else { 30_000.0 };
+    let most = |took: &[Duration]| took.iter().max().map_or(0.0, |d| d.as_secs_f64() * 1000.0);
+    assert!(most(&to_phone) < gate, "the Mac's message shows on the phone within the gate: {to_phone:?}");
+    assert!(most(&to_mac) < gate, "the phone's message shows on the Mac within the gate: {to_mac:?}");
     mac.shutdown().await.unwrap();
     phone.shutdown().await.unwrap();
 }
