@@ -292,19 +292,7 @@ impl Item {
     /// blocks and its tags, as a document, or an article as one, its title and its tags, its text the paragraph of
     /// block 2, where a note keeps its text (`cast::document`). `None` for anything else.
     pub fn as_markdown(&self) -> Option<DocV1> {
-        if let Some(doc) = self.as_document() {
-            return Some(doc);
-        }
-        if let Some(spark) = self.read(View::built_in("spark")?).and_then(|s| DocV1::from_value(&s)) {
-            return Some(spark);
-        }
-        let article = self.read(View::built_in("article")?)?;
-        let text = |k: &str| article.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
-        let tags = article.get("tags").and_then(Value::as_array).into_iter().flatten();
-        let tags = tags.filter_map(|t| Some(t.as_str()?.to_string())).collect();
-        let paragraph = TypeV1::Paragraph;
-        let block = BlockV1 { id: 2, r#type: paragraph, level: None, checked: None, lang: None, text: text("text") };
-        Some(DocV1 { title: text("title"), blocks: vec![block], tags })
+        markdown_of(&self.record())
     }
 
     /// The item as the example's v0 app, which has the lens, reads it; `None` for a todo.
@@ -314,7 +302,7 @@ impl Item {
 
     /// The item as the todo app reads it; `None` for a document.
     pub fn as_todo(&self) -> Option<TodoV1> {
-        TodoV1::from_value(&self.read(View::todo_v1())?)
+        todo_of(&self.record())
     }
 
     /// The item as the example's v0 todo app, which has the lens, reads it; `None` for a document.
@@ -1328,4 +1316,28 @@ mod tests {
         assert_eq!(longest_increasing(&[0, 1, 2]), [0, 1, 2]);
         assert_eq!(longest_increasing(&[2, 1, 0]).len(), 1);
     }
+}
+
+/// Record `record`, an item's (`Item::record`), as Markdown, as `Item::as_markdown` reads it: so that a reader that
+/// reads one item several ways (`world`'s rows) turns it into JSON once, not once a way (Goal 7, 2026-10-28: five times a
+/// row, 0.27 ms of 0.33 at 2,300 rows of a vault, a minute an `entry_views` on an iPhone).
+pub fn markdown_of(record: &Value) -> Option<DocV1> {
+    if let Some(doc) = View::document_v1().get(record).and_then(|d| DocV1::from_value(&d)) {
+        return Some(doc);
+    }
+    if let Some(spark) = View::built_in("spark")?.get(record).and_then(|s| DocV1::from_value(&s)) {
+        return Some(spark);
+    }
+    let article = View::built_in("article")?.get(record)?;
+    let text = |k: &str| article.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let tags = article.get("tags").and_then(Value::as_array).into_iter().flatten();
+    let tags = tags.filter_map(|t| Some(t.as_str()?.to_string())).collect();
+    let paragraph = TypeV1::Paragraph;
+    let block = BlockV1 { id: 2, r#type: paragraph, level: None, checked: None, lang: None, text: text("text") };
+    Some(DocV1 { title: text("title"), blocks: vec![block], tags })
+}
+
+/// Record `record`, an item's, as the todo app reads it (`Item::as_todo`); `None` for a document.
+pub fn todo_of(record: &Value) -> Option<TodoV1> {
+    TodoV1::from_value(&View::todo_v1().get(record)?)
 }

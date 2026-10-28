@@ -5873,10 +5873,15 @@ impl Lab {
     }
 
     /// The files the writes of entry `entry` bring, as device `d` holds them, in the order it took them, each once:
-    /// each with its plaintext length where `d` opens it (`file`), else `None`.
+    /// each with its plaintext length where `d` opens it (`file`), else `None`. Only a write brings a file, and a write
+    /// is of its entry's log, so it looks at that log's edits alone (`Log::by_log`), in the order it took them: not
+    /// every edit it holds once per entry, which made `entry_views` of a vault's 2,300 entries walk 107,000 edits 2,300
+    /// times, 2.2 s here at 20,000 edits and over a minute on an iPhone (Goal 7, 2026-10-28).
     pub fn entry_files(&self, d: SignerId, entry: EntryId) -> Vec<(FileRoot, Option<u64>)> {
         let mut seen = BTreeSet::new();
-        let edits = self.held(d).log.edits().iter().filter(|e| e.entry() == Some(entry));
+        let log = &self.held(d).log;
+        let places = log.by_log().get(&LogId::Entry(entry)).map_or(&[][..], Vec::as_slice);
+        let edits = places.iter().map(|&at| &log.edits()[at]).filter(|e| e.entry() == Some(entry));
         let files = edits.flat_map(|e| e.files().iter().copied()).filter(|f| seen.insert(*f));
         files.map(|f| (f, self.file(d, &f).map(|b| b.len))).collect()
     }
