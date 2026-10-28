@@ -43,3 +43,28 @@ test('copied report retains bounded manifest stages without exporting identities
  expect(named.manifests.running[0]).toMatchObject({state:'running',matched:['kernel','chat'],firstMs:1});
  expect(JSON.stringify(report)).not.toContain('private-');
 });
+
+test('the report carries what a sync lacks of each peer and takes of it, as numbers and 8-hex ids alone', async () => {
+ const { observeSync, emptySync } = await import('./sync-status.js');
+ const hex = '36ee6eef' + 'a'.repeat(56);
+ const sample = n => ({ log: `Entry(EntryId(${String(n).padStart(8, '0')}…))`, held: n % 2 === 0, lacked_heads: ['deadbeef', 'not hex', 'cafebabe1234'], waiting: 2 });
+ // the device's `synced` answer, as the page's sync state keeps it (sync.svelte.js), with what a report must not copy
+ const synced = { peers: 1, logs: 3090, behind: 2577, pulling: 1, pages: 40, edits: 812,
+  from: [{ device: hex, name: "Samuel's Mac", address: '10.0.0.2:443', pulling: { since: 1000, stage: 'taking edits', took: 812 }, pages: 40, edits: 812, last: 1900 }],
+  lacked: [{ device: '85b01be4', lacks: 2577, by_stub: 513, stubs: 900, address: 'secret', sample: Array.from({ length: 9 }, (_, n) => sample(n)) }],
+  unsaved: { since: 1, tries: 2, error: 'secret path /Users/samuel' } };
+ const sync = observeSync(emptySync(), synced, 2000);
+ const report = diagnosticSnapshot({ phase: 'open', journal: null, lifecycle: null, manifests: null, sync, playback: null, device: 'iPhone' }).sync;
+ expect(report).toMatchObject({ peers: 1, logs: 3090, behind: 2577, pulling: 1, pages: 40, edits: 812, base: 812, at: 2000 });
+ expect(report.from).toEqual([{ device: '36ee6eef', pulling: { since: 1000, stage: 'taking edits', took: 812 }, pages: 40, edits: 812, last: 1900 }]);
+ expect(report.lacked).toHaveLength(1);
+ const [peer] = report.lacked;
+ expect(peer).toMatchObject({ device: '85b01be4', lacks: 2577, byStub: 513, stubs: 900 });
+ expect(peer.sample).toHaveLength(5);
+ expect(peer.sample[0]).toEqual({ log: { kind: 'Entry', ids: ['00000000'] }, held: true, lackedHeads: ['deadbeef', 'cafebabe'], waiting: 2 });
+ const text = JSON.stringify(report);
+ for (const secret of ['Samuel', 'address', '10.0.0.2', 'secret', 'Users', 'a'.repeat(9)]) expect(text).not.toContain(secret);
+ // an engine stage that isn't its own few words is not copied
+ const odd = observeSync(sync, { ...synced, from: [{ ...synced.from[0], pulling: { since: 1, stage: 'GET https://x/y', took: 1 } }] }, 3000);
+ expect(diagnosticSnapshot({ phase: 'open', sync: odd, device: 'iPhone' }).sync.from[0].pulling.stage).toBe('other');
+});
