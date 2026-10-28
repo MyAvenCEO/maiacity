@@ -81,7 +81,7 @@
 	<title>Proposals · maiaCITY</title>
 </svelte:head>
 
-<main class="app-page">
+<main class="app-page" class:fill={!current}>
 	<h1 class="sr">Proposals</h1>
 	<nav class="tabs" class:hide={!current} aria-label="Stage">
 		{#each STAGES as s (s.id)}<button class:on={!current && stage === s.id} onclick={() => ((stage = s.id), (open = ''))}>{s.label} <small>{count(s.id)}</small></button>{/each}
@@ -143,10 +143,9 @@
 </main>
 
 <style>
+	/* the app's page column (src/routes/app/+layout.svelte `.app-page`), wider for its board */
 	.app-page {
-		max-width: 84rem;
-		margin: 0 auto;
-		padding: 1.6rem clamp(1rem, 4vw, 2rem) 6rem;
+		--page-width: 84rem;
 	}
 	.dim {
 		color: var(--muted);
@@ -209,13 +208,13 @@
 	.tabs small {
 		opacity: 0.7;
 	}
-	/* the board fills the screen below the tabs and above the nav pill (Samuel 2026-10-27): each column keeps its head and
-	   scrolls its own cards, the page itself does not scroll */
+	/* the board fills the page below the tabs (Samuel 2026-10-27; the page `fill`s the app's container, which ends
+	   above the nav pill): each column keeps its head and scrolls its own cards, the page itself does not scroll */
 	.board {
+		flex: 1;
 		display: grid;
 		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 0.8rem;
-		height: calc(100dvh - 11rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
 		min-height: 18rem;
 	}
 	.col {

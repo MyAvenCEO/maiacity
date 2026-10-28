@@ -145,11 +145,6 @@
 </main>
 
 <style>
-	.app-page {
-		max-width: 60rem;
-		margin: 0 auto;
-		padding: 1.6rem clamp(1rem, 4vw, 2rem) 6rem;
-	}
 	.dim {
 		color: var(--muted);
 	}

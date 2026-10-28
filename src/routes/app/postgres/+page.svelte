@@ -209,10 +209,9 @@
 </main>
 
 <style>
+	/* the app's page column (src/routes/app/+layout.svelte `.app-page`), wider for its tables */
 	.app-page {
-		max-width: 76rem;
-		margin: 0 auto;
-		padding: 1.6rem clamp(1rem, 4vw, 2rem) 6rem;
+		--page-width: 76rem;
 	}
 	.dim {
 		color: var(--muted);

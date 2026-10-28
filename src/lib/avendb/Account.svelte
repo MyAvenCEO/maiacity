@@ -751,7 +751,7 @@
 	.account {
 		max-width: 64rem;
 		margin: 0 auto;
-		padding: 2rem clamp(1rem, 4vw, 2.6rem) 8rem;
+		padding: 0.4rem clamp(1rem, 4vw, 2.6rem) 1.5rem;
 	}
 
 	.account input.field {

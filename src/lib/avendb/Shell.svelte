@@ -299,8 +299,10 @@
 	<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 {/snippet}
 
+<!-- how fresh the view is, in the one screen head (catching up, offline), never a row of the view's own -->
+{#if view.fresh.state !== 'current'}<div use:screenSlot={'center'}><Fresh fresh={view.fresh} /></div>{/if}
+
 <div class="shell" class:reading={!!route.entry}>
-	{#if view.fresh.state !== 'current'}<Fresh fresh={view.fresh} />{/if}
 	{#if route.entry}
 		{#key `${route.entry}${route.page}${route.edit}`}
 			{#if route.page === 'stories' && route.edit}
@@ -406,7 +408,7 @@
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: minmax(0, 1fr);
-		height: calc(100dvh - var(--screen-head-room, 0px));
+		height: 100%;
 		overflow: hidden;
 	}
 
@@ -416,7 +418,7 @@
 		box-sizing: border-box;
 		overflow-y: auto;
 		overscroll-behavior: contain;
-		padding: calc(1.4rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2.4rem) 10rem;
+		padding: 0.4rem clamp(1rem, 3vw, 2.4rem) 1.5rem;
 	}
 
 	/* the vault the view is in, back to its apps */
@@ -506,13 +508,6 @@
 
 	.toast.bad {
 		background: #6b2c1c;
-	}
-
-	@media (max-width: 760px) {
-		/* clear of the notch and the status bar, now that nothing stands above it */
-		.main {
-			padding-top: calc(1rem + env(safe-area-inset-top, 0px));
-		}
 	}
 
 </style>
