@@ -47,7 +47,14 @@ export function checkIndex(bench, gates) {
   add(true, `window ${s.n}: index rows read`, s.window_rows_read, `≤ ${s.w}`, s.window_rows_read <= s.w);
   add(true, `window ${s.n}: pages read (most)`, s.window_pages_read, `≤ ${g.window_pages_max}`, s.window_pages_read <= g.window_pages_max);
   add(true, `window ${s.n}: bytes read`, s.window_bytes_read, `≤ ${g.window_bytes_max}`, s.window_bytes_read <= g.window_bytes_max);
-  add(true, `window ${s.n}: open p50 µs at n edits (with the log's head)`, s.window_at_n_p50_us, `< ${g.window_at_n_p50_us_max}`, s.window_at_n_p50_us < g.window_at_n_p50_us_max);
+  add(true, `window ${s.n}: a query answered cold, p50 µs`, s.window_at_n_p50_us, `< ${g.window_at_n_p50_us_max}`, s.window_at_n_p50_us < g.window_at_n_p50_us_max);
+  if (s.node_open_head_ms != null) add(false, `window ${s.n}: the log's head a node works out as it opens, ms`, s.node_open_head_ms, `≤ ${gates.targets.node_open_head_ms}`, s.node_open_head_ms <= gates.targets.node_open_head_ms);
+ }
+ // a window's cost holds with the edits: the largest size's over the smallest's
+ const [lo, hi] = [wins.reduce((a, b) => (a && a.n < b.n ? a : b), null), wins.reduce((a, b) => (a && a.n > b.n ? a : b), null)];
+ if (lo && hi && lo !== hi) {
+  const r = Math.round(hi.window_at_n_p50_us / lo.window_at_n_p50_us * 100) / 100;
+  add(true, `window ${hi.n} p50 ÷ ${lo.n}'s`, r, `≤ ${g.window_growth_max}`, r <= g.window_growth_max);
  }
  return out;
 }
@@ -134,11 +141,15 @@ export function check(bench, gates, pg = []) {
  const lives = bench.filter(b => b.kind === 'live');
  for (const l of gates.live_links ?? []) if (!lives.some(x => x.link === l)) add(true, `live sync on a ${l} link`, null, 'present', false);
  for (const l of lives) {
-  if (g.live_busy_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${g.live_busy_p95_ms_max}`, l.live_busy_p95_ms < g.live_busy_p95_ms_max);
-  add(false, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${t.live_busy_p95_ms}`, l.live_busy_p95_ms < t.live_busy_p95_ms);
-  if (g.live_idle_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay, idle, p95 ms`, l.live_idle_p95_ms, `< ${g.live_idle_p95_ms_max}`, l.live_idle_p95_ms < g.live_idle_p95_ms_max);
-  if (g.live_missed_max != null) add(true, `live ${l.link}: live edits not there in 15 s`, l.live_missed, `≤ ${g.live_missed_max}`, l.live_missed <= g.live_missed_max);
-  if (l.link_share != null) {
+  // a `_bulk` link's run (20 MB of fat edits) is for the link's use alone (G3); the others' for a live edit's delay (G4)
+  const bulk = l.link.endsWith('_bulk');
+  if (!bulk) {
+   if (g.live_busy_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${g.live_busy_p95_ms_max}`, l.live_busy_p95_ms < g.live_busy_p95_ms_max);
+   add(false, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${t.live_busy_p95_ms}`, l.live_busy_p95_ms < t.live_busy_p95_ms);
+   if (g.live_idle_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay, idle, p95 ms`, l.live_idle_p95_ms, `< ${g.live_idle_p95_ms_max}`, l.live_idle_p95_ms < g.live_idle_p95_ms_max);
+   if (g.live_missed_max != null) add(true, `live ${l.link}: live edits not there in 15 s`, l.live_missed, `≤ ${g.live_missed_max}`, l.live_missed <= g.live_missed_max);
+  }
+  if (bulk && l.link_share != null) {
    if (g.live_link_share_min != null) add(true, `live ${l.link}: catch-up bytes/s ÷ link`, l.link_share, `≥ ${g.live_link_share_min}`, l.link_share >= g.live_link_share_min);
    add(false, `live ${l.link}: catch-up bytes/s ÷ link`, l.link_share, `≥ ${t.live_link_share}`, l.link_share >= t.live_link_share);
   }
@@ -170,8 +181,8 @@ export function report(bench, pg, results) {
  if (ix.length) rows.push('', '| index of edits | rows | depth (model) | pages read, view (median) | bytes read, view | pages read, point | view open p50 µs | p95 µs | index bytes/edit | built s |', '|---|---|---|---|---|---|---|---|---|---|',
   ...ix.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.depth} (${s.depth_model}) | ${s.open_pages_p50}, at most ${s.open_pages_read} | ${fmt(s.open_bytes_read)} | ${s.get_pages_read} | ${s.open_p50_us} | ${s.open_p95_us} | ${s.index_bytes_per_edit} | ${s.build_s} |`));
  const wins = bench.filter(b => b.kind === 'window').sort((a, b) => a.n - b.n);
- if (wins.length) rows.push('', '| named query window at edits | index rows | pages read (median, most) | bytes read | rows read | log edits | window p50 / p95 µs | log head µs | p50 at n µs |', '|---|---|---|---|---|---|---|---|---|',
-  ...wins.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.window_pages_p50}, ${s.window_pages_read} | ${fmt(s.window_bytes_read)} | ${s.window_rows_read} | ${s.window_log_edits} | ${s.window_p50_us} / ${s.window_p95_us} | ${fmt(s.head_us)} | ${fmt(s.window_at_n_p50_us)} |`));
+ if (wins.length) rows.push('', '| named query answered at edits | index rows | pages read (median, most) | bytes read | rows read | log edits | cold p50 / p95 µs | again p50 µs | log head at node open ms |', '|---|---|---|---|---|---|---|---|---|',
+  ...wins.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.window_pages_p50}, ${s.window_pages_read} | ${fmt(s.window_bytes_read)} | ${s.window_rows_read} | ${s.window_log_edits} | ${s.window_p50_us} / ${s.window_p95_us} | ${s.window_warm_p50_us ?? '–'} | ${fmt(s.node_open_head_ms)} |`));
  const posts = bench.filter(b => b.kind === 'posts');
  if (posts.length) rows.push('', '| query-posts page | base µs | µs more per post | per edit of a post | per other entry | at 1M ms | at 10M ms | at 10M, all posts, ms |', '|---|---|---|---|---|---|---|---|',
   ...posts.map(p => `| ${p.page} posts | ${fmt(p.base_us)} | ${p.per_post_us} | ${p.per_edit_us} | ${p.per_entry_us} | ${fmt(p.at_1m_ms)} | ${fmt(p.at_10m_ms)} | ${fmt(p.at_10m_all_posts_ms)} |`));

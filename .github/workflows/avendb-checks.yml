@@ -483,11 +483,13 @@ jobs:
         run: |
           AVENDB_CARRIER=direct,relay,relay_link cargo test --locked -p avendb-server --features test-fixtures --test relay_bench -- --ignored --nocapture --exact bench_carrier \
             | tee -a "$RUNNER_TEMP/bench.log"
+      # calm and phone: a live edit's delay during a catch-up of 600 edits (G4); phone_bulk and its control calm_bulk:
+      # the catch-up's use of the link on 20 MB of fat edits (G3), about 60 s on the phone link today, 4 s at 80 % of it
       - name: Live sync during a catch-up, on a calm link and a phone's
         if: matrix.shard == 'live'
         working-directory: avendb
         run: |
-          AVENDB_LIVE_LINK=calm,phone cargo test --locked -p avendb-net --features test-fixtures --test sync_bench -- --ignored --nocapture --exact bench_live \
+          AVENDB_LIVE_LINK=calm,phone,phone_bulk,calm_bulk cargo test --locked -p avendb-net --features test-fixtures --test sync_bench -- --ignored --nocapture --exact bench_live \
             | tee -a "$RUNNER_TEMP/bench.log"
       - name: The gates
         run: bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/bench.log" ${{ matrix.shard == 'core' && '"$RUNNER_TEMP/pg.log"' || '' }} --shard ${{ matrix.shard }}
