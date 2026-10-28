@@ -776,6 +776,8 @@ pub struct Warming {
     keys_of: Option<(Option<Checked>, usize)>,
     view_of: usize,
     view_wholes: u64,
+    /// Its view holds what it read (`stored_readings::seal`).
+    view_read: bool,
     /// The prints of the showings its pack holds, by entry, and whether they are all it keeps.
     shown_of: Option<(Vec<(EntryId, [u8; 32])>, bool)>,
 }
@@ -1115,8 +1117,9 @@ struct Store {
     view_lineage: Option<crate::policy::LogRevision>,
     wholes: u64,
     view_wholes: u64,
-    /// The view its shelf keeps holds not what it read (`stored_readings`): one of an older engine, or none, so it gives
-    /// one again once it read every body it counts.
+    /// The view its shelf keeps holds not what it read (`stored_readings`): one of an older engine, one given before it
+    /// read every body it counts (a first sync's, given as it goes), or none, so it gives one again once it can seal what
+    /// it read beside it (`stored_readings::sealable`).
     view_read_due: bool,
     /// Its first sync with the boxes held back, if it asks for one (`Lab::set_lazy_boxes`).
     lazy: LazyBoxes,
@@ -1231,7 +1234,7 @@ impl Default for Store {
             view_lineage: None,
             wholes: 0,
             view_wholes: 0,
-            view_read_due: false,
+            view_read_due: true,
             lazy: LazyBoxes::default(),
             revision: 0,
             query_views: std::sync::Mutex::new(QueryViews::default()),
@@ -1309,7 +1312,7 @@ impl Store {
         let n = self.replayed;
         let since = n.abs_diff(self.view_given);
         let stale = self.wholes != self.view_wholes || self.view_lineage.as_ref() != Some(&self.log.lineage());
-        let read_due = self.view_read_due && n == self.log.edits().len() && self.read_new.left.is_empty();
+        let read_due = self.view_read_due && stored_readings::sealable(self, n);
         n > 0 && n <= self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS || read_due)
     }
 
@@ -6810,6 +6813,7 @@ impl Lab {
             revision: store.warm_revision.clone(), lineage: store.log.lineage(), keys_of,
             view_of: if view_due { store.replayed } else { 0 },
             view_wholes: if view_due { store.wholes } else { 0 },
+            view_read: read.is_some(),
             shown: None,
             shown_of,
         };
@@ -6846,7 +6850,8 @@ impl Lab {
             store.opened_before.extend(given);
         }
         if warming.view_of > 0 {
-            store.view_read_due = false;
+            // a view given without what it read is given again once it can seal that beside it
+            store.view_read_due = !warming.view_read;
             store.view_given = warming.view_of;
             store.view_lineage = Some(warming.lineage);
             store.view_wholes = warming.view_wholes;

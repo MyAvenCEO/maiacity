@@ -162,6 +162,42 @@ fn a_view_without_what_it_read_reads_anew_and_is_given_again() {
     assert_eq!(showings(&c), expected);
 }
 
+/// A view given before its device read every body (a first sync's, saved as it goes) holds not what it read: the device
+/// gives one again once it read them all, which the unlock after reads on from (a Mac's browser read every body anew at
+/// each unlock, 36.1 s of 57.3 s, 2026-10-28).
+#[test]
+fn a_view_given_before_it_read_every_body_is_given_again_with_what_it_read() {
+    use avendb::lab::CatchUp;
+    let mut c = cast();
+    // the Mac writes more, and the phone takes it a page at a time, not caught up
+    for (i, e) in c.entries.clone().iter().enumerate().filter(|(i, _)| i % 2 == 0) {
+        c.lab.edit(c.mac, c.vault, *e, |it| it.set_text(2, &format!("Later {i}."))).expect("an edit");
+    }
+    let fresh: Vec<_> = {
+        let held: std::collections::HashSet<_> = c.lab.log(c.phone).ids().iter().copied().collect();
+        c.lab.backup(c.mac).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect()
+    };
+    assert!(!fresh.is_empty());
+    c.lab.receive_whose_now(c.phone, fresh, vec![], false);
+    // its replay stepped on, its bodies not yet read: the view it gives now holds not what it read
+    while c.lab.replay_current(c.phone) == false {
+        assert_eq!(c.lab.catch_up_step(c.phone, 1), CatchUp::Stepped);
+    }
+    let (early, held) = save(&mut c);
+    assert_eq!(early.views.len(), 1, "a view, given as it goes");
+    while let CatchUp::Stepped = c.lab.catch_up_step(c.phone, 1) {}
+    let expected = showings(&c);
+    let (again, held_again) = save(&mut c);
+    assert_eq!(held_again, held);
+    assert_eq!(again.views.len(), 1, "once it read every body, the view again, with what it read");
+    let (from, whole) = (count(&c.lab, c.phone, "read: from its stored view"), count(&c.lab, c.phone, "read: every write"));
+    let warm = Warm { views: again.views, ..early };
+    reopen(&mut c, &warm, held);
+    assert_eq!(count(&c.lab, c.phone, "read: from its stored view"), from + 1, "it reads on from its view");
+    assert_eq!(count(&c.lab, c.phone, "read: every write"), whole);
+    assert_eq!(showings(&c), expected);
+}
+
 /// The read rules' number (`readRules`, `StoredReadings.lean`) and the hash `Lab::read_print` gave of `cast` under it.
 const PINNED: (&str, &str) = ("1", "48ff8a354b0ce0d4765db320af084c917cbd64d916fc011767c8d9459c13fa4f");
 
