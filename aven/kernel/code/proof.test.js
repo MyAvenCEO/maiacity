@@ -4,7 +4,7 @@
 // WebAssembly is handed what a server could hand out in a proof's place, and the loader takes none of it: the seed
 // runs, as offline. (The recipes' loader is held to the same in ../../../maia/content/assets/vault.test.js; that a forged edit, a record
 // the vault never signed, a write without the right or a file of other bytes proves nothing is avenDB's own test,
-// aven/db/crates/avendb/tests/provenance.rs.) And what a device proved is kept as rows, each once, never as the proof's
+// aven/db/crates/avendb/tests/all/provenance.rs.) And what a device proved is kept as rows, each once, never as the proof's
 // bytes, and the anchor is the repo's own.
 // Run: bun test aven/kernel/code/proof.test.js
 import { afterEach, describe, expect, test } from 'bun:test';

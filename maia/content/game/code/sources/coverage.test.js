@@ -24,7 +24,7 @@ test('a view state follows coverage', () => {
  expect(readState(coverageOf(null))).toBe('unavailable');
 });
 
-// Freshness.lean's vectors, the same file the Rust engine replays (aven/db/crates/avendb/tests/freshness_vectors.rs).
+// Freshness.lean's vectors, the same file the Rust engine replays (aven/db/crates/avendb/tests/all/freshness_vectors.rs).
 test('freshness and the action guard are what the model says', async () => {
  const { freshnessOf, actOf, opensOn, showsFinal } = await import('./coverage.js');
  const cases = await Bun.file(new URL('../../../../../aven/db/spec/vectors/freshness.json', import.meta.url)).json();

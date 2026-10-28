@@ -4,7 +4,7 @@ import AvenDB.Vectors
 /-!
 # Test vectors for backups
 
-`lake exe vectors` writes them to `vectors/backups.json`, which the Rust core replays (`crates/avendb/tests/vectors.rs`):
+`lake exe vectors` writes them to `vectors/backups.json`, which the Rust core replays (`crates/avendb/tests/all/vectors.rs`):
 
 - `snapshots`: for each sync case of `vaults.json` (by its name) and each vault of its view, the edits of the vault's
   snapshot (`Backup.snapshot`), by place and in its order, and the files they bring;

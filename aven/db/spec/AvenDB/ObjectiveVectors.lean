@@ -9,7 +9,7 @@ import AvenDB.Objectives.Measured
 /-!
 # Objective vectors
 
-`vectors/objectives.json`, the cases the Rust engine replays (`crates/avendb/tests/objective.rs`): each an objective
+`vectors/objectives.json`, the cases the Rust engine replays (`crates/avendb/tests/all/objective.rs`): each an objective
 file of Lean, its text as `include_str` reads it, the very file Lean elaborated here, so the text and the metrics are
 one; the metrics as the model holds them (`Expr`, `Goal`, `Metric`, numbers in millionths); readings, each a name and
 a value in millionths, in the order recorded, and those of them a Measurer wrote; the numbers found at the paths it

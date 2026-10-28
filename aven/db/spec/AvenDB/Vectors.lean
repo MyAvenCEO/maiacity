@@ -10,7 +10,7 @@ import AvenDB.Writes
 /-!
 # Test vectors for the Rust core
 
-The same cases run here and in `crates/avendb/tests/vectors.rs`. A step case is a list of edits applied one after the
+The same cases run here and in `crates/avendb/tests/all/vectors.rs`. A step case is a list of edits applied one after the
 other from the empty state, as every peer applies them once they are in replay order; the model's answer is whether each
 edit is accepted, and the state at the end. A view case gives each edit the depth it claims, as edits made on different
 devices do, and the answer is which edits stand in the view (`standing`) and the view itself: that is where removals

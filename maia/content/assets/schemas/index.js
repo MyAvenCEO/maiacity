@@ -2,7 +2,7 @@
  * THE ASSET SCHEMAS — one place that names them:
  *
  * - `asset` (./asset.v1.json): an asset as an avenDB entry, the one thing of it avenDB reads. It is in avenDB's own
- *   schema subset, and a test runs it through avenDB's own schema parser (aven/db/crates/avendb/tests/assets.rs). On the
+ *   schema subset, and a test runs it through avenDB's own schema parser (aven/db/crates/avendb/tests/all/assets.rs). On the
  *   day assets move in, the Maia City COOP vault creates it as a `schema` entry, and its records are written under it;
  *   a later version comes with an avenDB lens from this one. An asset's versions are its entry's history, its variants
  *   avenDB variants (their own entries, linked to the version they came from), a change someone suggests a proposal.

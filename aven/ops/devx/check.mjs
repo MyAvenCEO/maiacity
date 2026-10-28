@@ -38,21 +38,30 @@ export function plan(files, { wide = false, merge = false } = {}) {
  }
  if (js.some(f => /^(maia\/(site|content)|aven\/(kernel|db\/page))\//.test(f)) || files.some(f => /^(svelte|vite|tsconfig)/.test(f)))
   steps.push({ why: 'types (svelte-check, ~80 s)', cmd: ['bun', '--bun', 'run', 'check'] });
- // Rust: type check per touched crate first, then only the test programs the change names (aven/db/CLAUDE.md).
+ // Rust: type check per touched crate first, then only the tests the change names (aven/db/CLAUDE.md). A crate's test
+ // files are the modules of one program (`tests/all/`, and `tests/memory/` for those that need the process to
+ // themselves): a touched file runs its module's tests, each in a run of its own as each file was a program of its own,
+ // and a touched `main.rs` the program's check that every file in its folder builds. A file straight in `tests/` is
+ // still a program of its own; the shared helpers (`tests/common/`) only type check.
  const crates = new Map();
  for (const f of files) {
   const m = /^aven\/db\/crates\/([^/]+)\/(.*)$/.exec(f);
   if (!m || !m[2].endsWith('.rs')) continue;
-  const c = crates.get(m[1]) ?? crates.set(m[1], { tests: new Set(), src: false }).get(m[1]);
-  const t = /^tests\/([^/]+)\.rs$/.exec(m[2]);
-  t ? c.tests.add(t[1]) : (c.src = c.src || m[2].startsWith('src/'));
+  const c = crates.get(m[1]) ?? crates.set(m[1], { tests: new Map(), src: false }).get(m[1]);
+  const own = /^tests\/([^/]+)\.rs$/.exec(m[2]);
+  const mod = /^tests\/([^/]+)\/([^/]+?)(\.rs|\/.*)$/.exec(m[2]);
+  if (own) c.tests.set(`tests/${own[1]}.rs`, [own[1]]);
+  else if (mod && existsSync(`aven/db/crates/${m[1]}/tests/${mod[1]}/main.rs`))
+   c.tests.set(`tests/${mod[1]}/${mod[2]}${mod[3] === '.rs' ? '.rs' : '/'}`, [mod[1], mod[2] === 'main' ? 'every_file_is_a_module' : `${mod[2]}::`]);
+  else c.src = c.src || m[2].startsWith('src/');
  }
  const feat = c => c === 'avendb-testkit' ? [] : ['--features', 'test-fixtures'];
  for (const [c, { tests, src }] of crates) {
   steps.push({ why: `rust ${c}: types`, cmd: ['cargo', 'check', '--locked', '-p', c, ...feat(c), '--tests'], cwd: 'aven/db' });
   if (merge) continue;
   if (src) steps.push({ why: `rust ${c}: unit tests`, cmd: ['cargo', 'test', '--locked', '-p', c, ...feat(c), '--lib'], cwd: 'aven/db' });
-  for (const t of tests) steps.push({ why: `rust ${c}: tests/${t}.rs`, cmd: ['cargo', 'test', '--locked', '-p', c, ...feat(c), '--test', t], cwd: 'aven/db' });
+  for (const [file, [program, filter]] of tests)
+   steps.push({ why: `rust ${c}: ${file}`, cmd: ['cargo', 'test', '--locked', '-p', c, ...feat(c), '--test', program, ...(filter ? [filter] : [])], cwd: 'aven/db' });
  }
  if (!merge && files.some(f => /^aven\/db\/spec\/.*\.lean$/.test(f)))
   steps.push({ why: 'Lean proofs', cmd: ['lake', 'build'], cwd: 'aven/db/spec', needs: 'lake' });

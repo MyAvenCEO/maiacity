@@ -4844,7 +4844,7 @@ impl Lab {
     }
 
     /// Takes device `d`'s store out whole and hands it over, for a probe of what each part holds in memory to let go of
-    /// it and count what that frees (`Probed::part`; `avendb-net/tests/unlock_memory.rs`, `tests/upkeep_memory.rs`).
+    /// it and count what that frees (`Probed::part`; `avendb-net/tests/memory/unlock_memory.rs`, `tests/memory/upkeep_memory.rs`).
     /// The Lab holds an empty store for `d` in its place, as a device holding nothing yet, so that whatever runs on it
     /// after (a node's catch-up, a peer's asking) finds a store that holds together. Until 2026-10-28 the probe took
     /// the parts out of the store in place: its log's edits went while its replay still counted 20,171 of them

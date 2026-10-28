@@ -8,7 +8,7 @@ The cases that hold the Rust key tree (`crates/avendb/src/tree.rs`) to the model
 removals and commits, each commit drafted on the tree as it stood after some of the changes before it (the changes so
 far for an honest commit, fewer for one made apart). For each run the model says which changes count, the epochs and
 their keys, which epochs keep the history, and which key of which epoch each device opens. The Rust tree, with real
-X-Wing keys, must count the same changes and open exactly the same keys (`crates/avendb/tests/key_tree_vectors.rs`).
+X-Wing keys, must count the same changes and open exactly the same keys (`crates/avendb/tests/all/key_tree_vectors.rs`).
 
 The Rust tree grows to hold its highest leaf; the model's has its height from the start. So each run adds a device
 at a leaf of the top half first, and the two trees are as high before any commit.

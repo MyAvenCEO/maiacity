@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # avenDB's device in Chromium (P8d, P8e): builds avendb-browser for the browser (with SIMD, see .cargo/config.toml) into
-# target/avendb-browser-pkg/, with passkeys of localhost, then runs its page test (crates/avendb-browser/tests/page.rs),
+# target/avendb-browser-pkg/, with passkeys of localhost, then runs its page test (crates/avendb-browser/tests/all/page.rs),
 # which serves the page, starts a relay and the server on this machine, and drives a headless Chromium whose virtual
 # authenticator holds Eve's passkey: her browsers found her vault, link and open again from OPFS, and keep what an
 # earlier avenDB kept there.
@@ -20,17 +20,18 @@ if [ "$have" != "$want" ]; then
 	exit 1
 fi
 
-# The page's WebAssembly and the native test programs build side by side, each in a target dir of its own (a cargo
+# The page's WebAssembly and the native test program build side by side, each in a target dir of its own (a cargo
 # holds its target dir's lock for the whole build): on CI's 4 cores they took 2m10s and 2m26s one after the other.
 wasm_target=${AVENDB_WASM_TARGET_DIR:-target-wasm}
 CARGO_TARGET_DIR="$wasm_target" cargo build --locked -p avendb-browser --target wasm32-unknown-unknown --release --features localhost-passkeys &
 wasm=$!
-tests=(--locked -p avendb-browser --features localhost-passkeys,test-fixtures --test page --test transports)
+tests=(--locked -p avendb-browser --features localhost-passkeys,test-fixtures --test all)
 cargo test "${tests[@]}" --no-run || { wait "$wasm" || true; exit 1; }
 wait "$wasm"
 out=target/avendb-browser-pkg
 rm -rf "$out"
 wasm-bindgen --target web --no-typescript --out-dir "$out" "$wasm_target/wasm32-unknown-unknown/release/avendb_browser.wasm"
 ls -l "$out"
-# the test's relay and server take the same passkeys of localhost as the page
-AVENDB_PKG="$PWD/$out" cargo test "${tests[@]}" -- --ignored --nocapture
+# the test's relay and server take the same passkeys of localhost as the page; the program's page and transports tests
+# alone, as its native device tests run with the rest
+AVENDB_PKG="$PWD/$out" cargo test "${tests[@]}" -- --ignored --nocapture page:: transports::

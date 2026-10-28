@@ -1,5 +1,12 @@
-# nextest's profiles for avenDB's tests (.github/workflows/avendb-checks.yml runs `--profile ci`).
-#
+# nextest's profiles for avenDB's tests (`--profile ci` in CI: aven/ops/ci/rust-tests.mjs). Each crate's tests are one
+# program (`tests/all/`, W4), so a test file is a module of it: `test(/^live::/)` names the file's tests.
+
+# The property tests share the histories of their 40 seeds in one process (LazyLock): nextest, a process a test, would
+# build them again for each of the 37 properties. So no profile here runs them, and libtest does, in one process:
+# `cargo test -p avendb --features test-fixtures --test all -- --test-threads=2 properties::` (rust-tests.mjs in CI).
+[profile.default]
+default-filter = 'not (binary_id(avendb::all) & test(/^properties::/))'
+
 # ci: a test still running after 90 s is named in the log as slow; after 3 minutes it is stopped and fails, so a hung
 # test fails its shard in minutes instead of running to the job's 45-minute limit (it did, twice, on 2026-10-25 and
 # 2026-10-26). It was 6 minutes until a 100k-edit scale test in the core tests ran into it and held the batch's CI for
@@ -14,9 +21,9 @@ fail-fast = false
 # their own 35 s deadline three times on 2026-10-26/27 while the shard's other tests took every core; they now hold
 # two of nextest's slots each, and their deadline is 90 s (a hang guard: nextest stops them after 3 minutes anyway)
 [[profile.ci.overrides]]
-filter = 'package(avendb-net) & (binary(webtransport) | binary(packet_transport) | binary(transport_control))'
+filter = 'binary_id(avendb-net::all) & (test(/^webtransport::/) | test(/^packet_transport::/) | test(/^transport_control::/))'
 threads-required = 2
 
 [[profile.ci.overrides]]
-filter = 'package(avendb-server) & binary(first_view_gate)'
+filter = 'binary_id(avendb-server::all) & test(/^first_view_gate::/)'
 slow-timeout = { period = "90s", terminate-after = 4 }

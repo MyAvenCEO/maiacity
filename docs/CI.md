@@ -15,7 +15,8 @@ On main, `main.yml` selects affected components, builds site/container artifacts
 - `bun run test:inventory`: fail if a test has no owner.
 - `bun --bun run check`: application types under Bun.
 - `bun aven/db/scripts/test-avendb-local-write.mjs --browser chromium --all`: six scenarios, one server/browser and a fresh context per case. Repeat with `webkit`.
-- `cd aven/db && cargo test --locked --features test-fixtures -p avendb --test properties -- --test-threads=2`: the same 37 properties and 40 seeds in one process, sharing immutable histories. Other native tests retain nextest isolation.
+- `cd aven/db && cargo test --locked --features test-fixtures -p avendb --test all -- --test-threads=2 properties::`: the same 37 properties and 40 seeds in one process, sharing immutable histories. Other native tests retain nextest isolation.
+- `bun aven/ops/ci/rust-tests.mjs archive <file>`, then `bun aven/ops/ci/rust-tests.mjs run <shard> <file>`: avenDB's Rust tests as CI runs them (W4), every test program built once into one nextest archive and each shard (`shards` lists them) run from it, building nothing; needs cargo-nextest. `--plan` prints the commands. Each crate's tests are one program, `tests/all/` (and `tests/memory/` for the tests that need the process to themselves), so a test file's tests are a filter: `--test all -- live::`.
 - `cd aven/db/spec && lake build && lake exe vectors`: complete proof umbrella, generated-content checks and writer coverage.
 
 Selectors fetch only the comparison commit when needed instead of cloning all binary history. Native test/helper changes validate without publishing unchanged binaries.

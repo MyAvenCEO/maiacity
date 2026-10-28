@@ -45,7 +45,7 @@ encryption and passkeys, schemas and lenses, Loro documents and their history an
 ```sh
 cd aven/db
 cargo test                      # every Rust test, the nodes on iroh among them (over loopback, no network needed)
-cargo test -p avendb-net --test files -- --ignored  # the other test it skips: it writes 2 GB to the temporary folder
+cargo test -p avendb-net --test all files:: -- --ignored  # the other test it skips: it writes 2 GB to the temporary folder
 ./scripts/test-browser.sh       # browsers' devices in headless Chromium, linking and syncing through the relay
 cd spec && lake build           # the Lean model: proofs, scenario checks, test vectors
 cd protocol && ./check.sh       # the protocol models, against Verifpal 1.6.5 (minutes)
@@ -192,9 +192,9 @@ device or new vaults, runs the passkey's ceremony.
 
 `scripts/test-browser.sh` builds the device with passkeys of `localhost` (the feature `localhost-passkeys`, never in a
 build that ships; it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129 and Chromium, Playwright's or
-`$AVENDB_CHROMIUM`) and runs `tests/page.rs`: a relay open to sign-up and a new server on this machine, and one
+`$AVENDB_CHROMIUM`) and runs `tests/all/page.rs`: a relay open to sign-up and a new server on this machine, and one
 headless Chromium whose virtual authenticator, with PRF, holds Eve's passkey. Each of her browsers is a frame of one
-tab with a shelf of its own in OPFS; the header of `tests/page.rs` says what each does. `tests/device.rs` runs the same
+tab with a shelf of its own in OPFS; the header of `tests/all/page.rs` says what each does. `tests/all/device.rs` runs the same
 natively, with a software passkey in the authenticator's place.
 
 ### In the Mac app

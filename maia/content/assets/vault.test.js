@@ -97,7 +97,7 @@ function feedOf({ rows = FEED.rows, proven = rows, files = FEED.files, status = 
 /**
  * A stand-in for avenDB's WebAssembly (maia/content/game/code/sources/feed.js `verifyProof`) that reads the test's rows back as
  * proven: what the loader does with proven rows is under test here; that only a proof proves any is avenDB's
- * (aven/db/crates/avendb/tests/provenance.rs), and that the loader takes nothing else, below and ../../../aven/kernel/code/proof.test.js.
+ * (aven/db/crates/avendb/tests/all/provenance.rs), and that the loader takes nothing else, below and ../../../aven/kernel/code/proof.test.js.
  */
 const trusting = async (bytes) => JSON.parse(new TextDecoder().decode(bytes));
 /** how the test's loads prove their rows: anchored to the stand-in's vault, by the stand-in */

@@ -11,7 +11,7 @@ and every view sealed to the old one stays shut, so the device replays its edits
 `viewRules` names what `view` and `standing` (`Step.lean`) give for a list of edits, with all they read: `order`,
 `resolve`, `runWith`, `step`, `apply`, the cuts and the priorities, and the state they build (`State.lean`). Bump it
 in the same change as any edit to those that changes what they give, and as any fix to the engine that changes what
-its replay gives (the Rust core's pinned views, `tests/stored_view.rs`, fail until it is bumped). A change of how the
+its replay gives (the Rust core's pinned views, `tests/all/stored_view.rs`, fail until it is bumped). A change of how the
 engine writes a view down is not a change of the rules: the view's own format line names that (`policy/view.rs`).
 
 The engine reads the number from this file as it builds (`crates/avendb/build.rs`), so this line is its one source.

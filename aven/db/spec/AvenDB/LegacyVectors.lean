@@ -4,7 +4,7 @@ import AvenDB.Vectors
 /-!
 # Test vectors for the legacy anchor
 
-`lake exe vectors` writes them to `vectors/legacy.json`, which the Rust core replays (`crates/avendb/tests/legacy.rs`).
+`lake exe vectors` writes them to `vectors/legacy.json`, which the Rust core replays (`crates/avendb/tests/all/legacy.rs`).
 Each case names the legacy (SLH-DSA) signers, the edits a device holds at the fork, each with its signers, and the
 signatures among them that don't check; then edits after the fork. It says which edits the device takes at the fork,
 which it freezes, sorted as the engine sorts them (the anchor's tree hashes them in that order), and which it takes

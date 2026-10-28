@@ -12,7 +12,7 @@ same fix (`ViewRules.lean`).
 
 `showRules` names what judging an entry gives of its inputs (`ShownView.Inputs`): its items and its history, as
 `show_items` builds them, with the cap groups it judges by and the lanes it reads. Bump it in the same change as any
-edit to those that changes what they give (the Rust core's pinned showings, `tests/show_rules.rs`, fail until it is
+edit to those that changes what they give (the Rust core's pinned showings, `tests/all/show_rules.rs`, fail until it is
 bumped). A change of how a showing is written down is not a change of the rules: the pack's own format line names that
 (`KEPT_SHOWN` in `lab/shown_map.rs`).
 

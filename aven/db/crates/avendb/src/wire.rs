@@ -10,7 +10,7 @@
 //! big-endian and fixed-size, sequences carry their length, every enum starts with a tag, sets go smallest first with
 //! no repeats, and nothing may follow the value. So two devices never read one message two ways. Nothing a peer sends
 //! can make a device panic, or allocate more than a few times what it sent: a count is checked against the bytes left
-//! before anything is made of it. The mutation fuzzing covers every decoder (`tests/fuzz.rs`).
+//! before anything is made of it. The mutation fuzzing covers every decoder (`tests/all/fuzz.rs`).
 
 use std::collections::BTreeMap;
 

@@ -6,7 +6,7 @@ import AvenDB.Json
 # Step cost vectors
 
 `vectors/step_costs.json`, what the models of `KeyDerivation.lean` and `CapGroupsOnce.lean` answer, for the Rust engine
-to replay (`crates/avendb/tests/step_costs.rs`):
+to replay (`crates/avendb/tests/all/step_costs.rs`):
 
 - `keys`: `writers` devices of one vault that each wrote `entries` entries before they synced, so that each made its own
   key of the vault's audience and wrote under it, and a device that took them all, holding `held` keys of the audience.

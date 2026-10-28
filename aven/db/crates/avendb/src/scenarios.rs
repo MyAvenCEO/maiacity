@@ -1,6 +1,6 @@
 //! The plan's acceptance scenarios on the Lab, numbered as in the plan, each tagged with the phase that turned it
 //! green; the flat vaults (F2) added those from 19 on, and turned 4 into a vault's own entries. Each records what it
-//! checks, green or red (`Run`): `tests/scenarios.rs` runs every one and fails on any red check. `aven/db/spec/AvenDB/
+//! checks, green or red (`Run`): `tests/all/scenarios.rs` runs every one and fails on any red check. `aven/db/spec/AvenDB/
 //! Examples.lean` runs the same scenarios on the Lean model.
 
 use std::collections::BTreeSet;
