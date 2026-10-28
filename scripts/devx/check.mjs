@@ -4,6 +4,8 @@
 //   bun scripts/devx/check.mjs --plan       print the commands only
 //   bun scripts/devx/check.mjs --wide       whole suites instead of the test files next to the change
 //   bun scripts/devx/check.mjs --base <ref> compare with another ref (a collector: the batch's base)
+//   bun scripts/devx/check.mjs --merge      a collector's check after a merge: JS tests + types, Rust `cargo check` only.
+//                                           The task thread already ran its Rust tests and Lean; the batch CI runs them all.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -20,7 +22,7 @@ export function touched(base = 'origin/main') {
 }
 
 // The commands for these files, cheapest first; each says why it runs.
-export function plan(files, { wide = false } = {}) {
+export function plan(files, { wide = false, merge = false } = {}) {
  const steps = [], hit = impact(files);
  // a workflow file GitHub rejects never runs and shows no red job (batch 5): lint them first, it takes a second
  if (files.some(f => f.startsWith('.github/workflows/'))) steps.push({ why: 'workflow files GitHub will accept', cmd: ['bun', 'scripts/ci/workflows.mjs'] });
@@ -48,10 +50,11 @@ export function plan(files, { wide = false } = {}) {
  const feat = c => c === 'avendb-testkit' ? [] : ['--features', 'test-fixtures'];
  for (const [c, { tests, src }] of crates) {
   steps.push({ why: `rust ${c}: types`, cmd: ['cargo', 'check', '--locked', '-p', c, ...feat(c), '--tests'], cwd: 'avendb' });
+  if (merge) continue;
   if (src) steps.push({ why: `rust ${c}: unit tests`, cmd: ['cargo', 'test', '--locked', '-p', c, ...feat(c), '--lib'], cwd: 'avendb' });
   for (const t of tests) steps.push({ why: `rust ${c}: tests/${t}.rs`, cmd: ['cargo', 'test', '--locked', '-p', c, ...feat(c), '--test', t], cwd: 'avendb' });
  }
- if (files.some(f => /^avendb\/spec\/.*\.lean$/.test(f)))
+ if (!merge && files.some(f => /^avendb\/spec\/.*\.lean$/.test(f)))
   steps.push({ why: 'Lean proofs', cmd: ['lake', 'build'], cwd: 'avendb/spec', needs: 'lake' });
  return { steps, hit };
 }
@@ -60,7 +63,7 @@ if (import.meta.main) {
  const args = process.argv.slice(2);
  const base = args.includes('--base') ? args[args.indexOf('--base') + 1] : 'origin/main';
  const files = touched(base);
- const { steps, hit } = plan(files, { wide: args.includes('--wide') });
+ const { steps, hit } = plan(files, { wide: args.includes('--wide'), merge: args.includes('--merge') });
  console.log(`${files.length} files changed against ${base}; the batch CI will run: ${Object.keys(hit).filter(k => hit[k]).join(', ') || 'nothing'}`);
  for (const s of steps) console.log(`  ${s.why}: ${s.cwd ? `(cd ${s.cwd}) ` : ''}${s.cmd.join(' ')}`);
  if (!steps.length) console.log('  nothing to run locally for these files');

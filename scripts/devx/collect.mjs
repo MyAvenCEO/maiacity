@@ -5,7 +5,7 @@
 //   bun scripts/devx/collect.mjs <branch>...      fetch, merge, report (origin/ is added when missing)
 //   bun scripts/devx/collect.mjs --drafts         every open draft PR into main (but this branch's own)
 //   bun scripts/devx/collect.mjs --plan ...       report only; nothing changes
-//   bun scripts/devx/collect.mjs --check ...      then run scripts/devx/check.mjs for the whole batch
+//   bun scripts/devx/collect.mjs --check ...      then scripts/devx/check.mjs --merge for what merged (types + JS tests, ~1-2 min)
 //   bun scripts/devx/collect.mjs --late ...       merge even though this branch's PR is ready (refused otherwise: it restarts CI)
 //   bun scripts/devx/collect.mjs --tasks          the "Task: <branch>" lines of everything collected so far, for the
 //                                                 final PR's body and merge commit message (scripts/devx/measure.mjs counts them)
@@ -103,6 +103,6 @@ if (import.meta.main) {
  console.log(`${here} is now ${head.slice(0, 10)}. Push it: git push -u origin ${here}`);
  if (flags.has('--check')) {
   const base = git('merge-base', 'origin/main', 'HEAD');
-  process.exitCode = spawnSync('bun', ['scripts/devx/check.mjs', '--base', base], { stdio: 'inherit' }).status;
+  process.exitCode = spawnSync('bun', ['scripts/devx/check.mjs', '--base', base, '--merge'], { stdio: 'inherit' }).status;
  } else process.exitCode = n('CONFLICT') ? 1 : 0;
 }

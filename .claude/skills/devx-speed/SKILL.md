@@ -51,8 +51,11 @@ Sizing rule: keep that start under ~20% of a thread's work.
   by me"). Each batch starts with one line: its goal metric (e.g. "130k catch-up under 60 s, suite green", or "25
   tasks in") and its tasks. It ships when that goal is met, or when Samuel says ship. Not on a timer. Stragglers never
   hold it: a lane that misses the goal goes in the next batch. Fast feedback without CI: the collector merges each
-  branch into the draft batch the moment it's reported ready (`collect.mjs --check`, minutes, no CI), so conflicts and
-  local failures go back to the thread within minutes. A finished branch waiting more than ~45 min for the batch to
+  branch into the draft batch the moment it's reported ready (`collect.mjs --check`, no CI), so conflicts and
+  local failures go back to the thread within minutes. That check is deliberately small (`check.mjs --merge`: the
+  merge in seconds, JS tests, svelte-check ~65 s, `cargo check` ~6-40 s per crate) and never re-runs a thread's Rust
+  tests or Lean: the thread ran them, the batch CI runs everything. Task threads don't wait for it; they start their
+  next task. A finished branch waiting more than ~45 min for the batch to
   ship is reported to Samuel with the reason and what the goal still lacks (the 12 h review of 2026-10-28 found lanes
   idle ~5 h for the slowest one).
 - **Exceptions get their own PR at once:** production down, a security fix, or Samuel asks.
