@@ -27,6 +27,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(crate) use avendb::pages::Change;
 use avendb::pages::{Builder, Cache, Item, KEY_MAX, Node, Sum, VALUE_MAX, merge, sum};
@@ -85,6 +86,8 @@ pub(crate) struct ShelfIndex {
     /// The number of the slot it kept last: the next goes in slot `kept + 1`, in place of the older of the two.
     kept: u64,
     pages: Arc<Mutex<Cache>>,
+    /// The rows its scans have read, all told: what a bench holds a read to, as it holds its pages.
+    rows: Arc<AtomicU64>,
 }
 
 impl ShelfIndex {
@@ -104,6 +107,7 @@ impl ShelfIndex {
             stamp: Stamp { at: 0, head },
             kept: 0,
             pages: Arc::new(Mutex::new(pages)),
+            rows: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -410,7 +414,14 @@ impl ShelfIndex {
                 stack.push((child, 0));
             }
         }
+        self.rows.fetch_add(out.len() as u64, Ordering::Relaxed);
         Ok(out)
+    }
+
+    /// The rows its scans have read so far, all told.
+    #[cfg(test)]
+    pub(crate) fn rows_read(&self) -> u64 {
+        self.rows.load(Ordering::Relaxed)
     }
 
     /// The hash of its root page, a function of its rows alone (I4), or none for no rows.
