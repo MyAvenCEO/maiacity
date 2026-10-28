@@ -12,8 +12,8 @@
  *   node scripts/devx/live-device.mjs --accept                  once, after Samuel invited it: accept co-owning
  *   node scripts/devx/live-device.mjs                           a run: reopen + unlock, sync, Chat, Assets, report
  *   node scripts/devx/live-device.mjs --roundtrip [Bla]         the release gate (Samuel 2026-10-28): a message in the
- *                                                                room reaches the other device within 2 s, both ways,
- *                                                                while the receiving one is still catching up
+ *                                                                room reaches the other device within 1 s, both ways,
+ *                                                                whenever both are online, catching up or not
  *
  * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 60 (seconds to watch sync),
  * --profile <dir>. Each run writes build/live-device/<time>/: screenshots in order, run.json (step times, the unlock
@@ -43,7 +43,7 @@ mkdirSync(profile, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** What a run must meet. */
-export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 2 };
+export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 1 };
 
 // ─── the key: in the login Keychain on the Mac, else a file only its owner reads ───
 
@@ -372,9 +372,8 @@ async function roundtrip(name) {
 	}
 	const ways = [gate.toFresh, gate.fromFresh];
 	const fast = ways.every((w) => w?.seconds != null && w.seconds < TARGETS.message);
-	// a valid gate run sends to the fresh device while it is still catching up
-	const valid = gate.toFresh?.receiverCatchingUp === true;
-	const pass = (log.pass = { message: fast, midCatchUp: valid, errors: !log.errors.length });
+	// the gate holds whenever both are online; whether the fresh one was still catching up is said, not gated
+	const pass = (log.pass = { message: fast, errors: !log.errors.length });
 	writeFileSync(join(out, 'run.json'), JSON.stringify(log, null, 1));
 	const line =
 		`${stamp} ${engine} roundtrip #${name}: fresh open ${gate.open ?? '-'}s room ${gate.room ?? '-'}s ` +
