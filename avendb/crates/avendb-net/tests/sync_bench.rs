@@ -30,8 +30,13 @@ use serde_json::json;
 
 /// The entries the bulk goes to, in turn.
 const ENTRIES: u64 = 8;
-/// How often Alice's Mac writes a live edit.
-const EVERY: Duration = Duration::from_millis(250);
+/// How often Alice's Mac writes a live edit during a catch-up: often enough that one of four seconds gives the 40 a p95
+/// needs. A `_bulk` link's catch-up runs a minute today, so it writes one every `BULK_EVERY`: each write replays the
+/// 20 MB log in a debug build, and ten a second left the Mac no time to send the catch-up.
+const EVERY: Duration = Duration::from_millis(100);
+const BULK_EVERY: Duration = Duration::from_millis(250);
+/// How often it writes one once the catch-up is over: as a person types, for the idle round trip.
+const IDLE_EVERY: Duration = Duration::from_millis(250);
 /// The live edits written once the catch-up is over, for the idle round trip.
 const AFTER: usize = 10;
 /// The longest a live edit is waited for: past it, it counts as missed, at this time.
@@ -188,13 +193,13 @@ async fn live_on(case: String, f: Fixture) {
     while !caught.load(Ordering::SeqCst) {
         busy.push(tokio::spawn(live(mac.clone(), bob.clone(), coop, live_entry, k)));
         k += 1;
-        tokio::time::sleep(EVERY).await;
+        tokio::time::sleep(if case.ends_with("_bulk") { BULK_EVERY } else { EVERY }).await;
     }
     let (sync_s, asks) = catch_up.await.expect("the catch-up");
     for _ in 0..AFTER {
         idle.push(tokio::spawn(live(mac.clone(), bob.clone(), coop, live_entry, k)));
         k += 1;
-        tokio::time::sleep(EVERY).await;
+        tokio::time::sleep(IDLE_EVERY).await;
     }
     let took = |tasks: Vec<tokio::task::JoinHandle<f64>>| async move {
         let mut out = vec![];
