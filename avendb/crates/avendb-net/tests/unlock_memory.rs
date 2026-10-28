@@ -145,16 +145,20 @@ fn measure_unlock_memory() {
     let h0 = held();
     PEAK.store(h0, Ordering::Relaxed);
     let began = Instant::now();
-    let (node, after, perf) = rt.block_on(async {
+    let (node, after, perf, unlocked, read_back) = rt.block_on(async {
         let opts = Options { shelf: Some(disk::open(dir.path()).expect("the shelf")), ..Options::local() };
         let node = Node::spawn(lab, phone, opts).await.expect("a node");
         let took = began.elapsed();
+        let unlocked = (PEAK.load(Ordering::Relaxed) - h0, held() - h0);
+        PEAK.store(held(), Ordering::Relaxed);
         let (n, perf) = node.read(|lab, me| (lab.log(me).edits().len(), lab.perf(me))).await;
         assert_eq!(n, held_edits, "it took back every edit");
         // every edit reads back whole from where its spill holds it, its shelf's packs among them
         let back = node.read(|lab, me| lab.backup(me).signed().len()).await;
         assert_eq!(back, held_edits, "every edit reads back");
-        (node, took, perf)
+        let read_back = PEAK.load(Ordering::Relaxed) - h0;
+        PEAK.store(PEAK.load(Ordering::Relaxed).max(unlocked.0 + h0), Ordering::Relaxed);
+        (node, took, perf, unlocked, read_back)
     });
     let (peak, now) = (PEAK.load(Ordering::Relaxed) - h0, held() - h0);
     // what each part of its store holds: what letting go of it frees, the store of no use after
@@ -174,6 +178,9 @@ fn measure_unlock_memory() {
         "edits": n,
         "unlock_s": after.as_secs_f64(),
         "peak_mb": peak / 1_000_000,
+        "unlock_peak_mb": unlocked.0 / 1_000_000,
+        "unlock_held_mb": unlocked.1 / 1_000_000,
+        "read_back_peak_mb": read_back / 1_000_000,
         "held_mb": now / 1_000_000,
         "peak_per_edit": peak / n,
         "held_per_edit": now / n,
