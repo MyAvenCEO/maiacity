@@ -3295,15 +3295,27 @@ impl Lab {
     /// to step its replay on, and answered from it every ask after an edit it took came back without that edit, until
     /// something else replayed (`answer_current`; a drive re-plugged never got the note written meanwhile, 2026-10-28).
     fn standing(&self, d: SignerId) -> &State {
+        if self.standing_lags(d) {
+            return &self.held(d).replay.state;
+        }
+        self.latest(d)
+    }
+
+    /// `standing` answers by a replay behind device `d`'s log: what it answers now is less than it will once caught up.
+    fn standing_lags(&self, d: SignerId) -> bool {
         let store = self.held(d);
-        if self.catching_up(d)
+        self.catching_up(d)
             && store.latest.get().is_none()
             && store.replayed < store.log.edits().len()
             && !store.log.edits()[store.replayed..].iter().any(Edit::is_removal)
-        {
-            return &store.replay.state;
-        }
-        self.latest(d)
+    }
+
+    /// Whether what device `d` answers its peers (`announce`, `request`) is by every edit it holds: false in the middle
+    /// of a catch-up whose replay lags its log (`standing`). Whatever is worked out of its answers then and kept for its
+    /// log's revision is to be worked out again once it caught up, though its log didn't change: a node that kept whom
+    /// to tell what so never told a peer of the edits the catch-up brought (2026-10-28, `answer_current`).
+    pub fn answers_current(&self, d: SignerId) -> bool {
+        !self.standing_lags(d)
     }
 
     fn latest(&self, d: SignerId) -> &State {
@@ -5153,7 +5165,10 @@ impl Lab {
             }
         }
         let out = Arc::new(out);
-        store.answers.writers.lock().expect("writers").insert(peer, (revision, store.follow.clone(), out.clone()));
+        // worked out by a replay that lags, it is worked out again once caught up (`answers_current`)
+        if self.answers_current(d) {
+            store.answers.writers.lock().expect("writers").insert(peer, (revision, store.follow.clone(), out.clone()));
+        }
         out
     }
 

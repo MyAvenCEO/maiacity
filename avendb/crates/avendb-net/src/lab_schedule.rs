@@ -536,7 +536,7 @@ mod slices {
     async fn a_put_off_catch_up_still_runs_so_no_peer_is_answered_from_a_stale_replay() {
         let node = behind(40).await;
         assert!(!node.read(|lab, me| lab.replay_current(me)).await, "it took pages it hasn't caught up with");
-        *node.shared.paced.lock().unwrap() = Some(std::time::Instant::now() + std::time::Duration::from_millis(200));
+        *node.shared.paced.lock().unwrap() = Some(crate::time::Instant::now() + std::time::Duration::from_millis(200));
         assert!(!node.shared.catch_up_paced_class(false, Class::Background).await, "put off by its pace");
         avendb_testkit::until("the catch-up it put off", || async { node.read(|lab, me| lab.replay_current(me)).await }).await;
         assert!(node.read(|lab, me| lab.entries(me).len()).await >= 40, "every document it took, shown");
