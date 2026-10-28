@@ -896,6 +896,8 @@ impl Node {
             blob_peers: Mutex::default(),
             follows: Mutex::default(),
             unpacked: Mutex::default(),
+            sizing: Mutex::default(),
+            rates: Mutex::default(),
             unbatched: Mutex::default(),
             uncut: Mutex::default(),
             unstubbed: Mutex::default(),
@@ -1893,6 +1895,7 @@ impl Node {
             "peers": peers,
             "gone": gone,
             "recent": s.traffic.recent(),
+            "lost": s.traffic.lost_json(),
             "live": s.traffic.live_json(),
             "trace": s.traffic.trace_json(),
             "carriers": s.transport_control.json(),
@@ -2366,6 +2369,11 @@ struct Shared {
     /// The sync connections whose node refused a request for a packed reply (K5, `session::PACKED`), a node from before
     /// it, by the connection (`Connection::stable_id`): it asks those for whole replies.
     unpacked: Mutex<HashSet<usize>>,
+    /// The page sizes of each sync connection's peer, by the connection, as its `session::SIZING` answer named them
+    /// (the least and the most page it makes), or `None` where it refused it, a peer from before S1b: asked unsized.
+    sizing: Mutex<HashMap<usize, Option<(usize, usize)>>>,
+    /// How fast each device's pages came lately (`pulls::Rate`), which the budget of the next asking of it reads.
+    rates: Mutex<HashMap<SignerId, pulls::Rate>>,
     /// Connections without usable supplemental proofs, independent of their packed-reply support.
     unbatched: Mutex<HashSet<usize>>,
     /// The connections whose peer refused a `session::CUTS`, a peer from before S6: asked page after page.
@@ -2865,6 +2873,13 @@ impl Shared {
         // a fresh device asking for its first sync with the boxes held back asks the peer for their stubs first, to
         // count them as held (`session::STUBS`, `LazyBoxes.lean`), and for their bodies in the pull after this one
         let stubbed = self.stubs(&peer, kind, scope.clone()).await;
+        // the page budget this asking states, fixed for the whole of it so that its cuts and its pages end at the same
+        // places (`session::SIZED`, S1b): what the peer's pages carried in `pulls::PAGE_TIME` lately, so that a page
+        // lost in flight costs a couple of seconds of the link, not a minute of it; unsized to a peer from before
+        let sizes = self.sizes(&peer).await;
+        let rate = || self.rates.lock().expect("rates").get(&device).cloned().unwrap_or_default();
+        let budget = sizes.map(|(least, most)| rate().budget(least, most));
+        let sized = if budget.is_some() { kind | session::SIZED } else { kind };
         // the logs a pull for the bodies of stubs answers for: all, or those it names
         let answers = match &scope {
             Scope::All => Some(None),
@@ -2900,9 +2915,13 @@ impl Shared {
                 request.ask.loose.sort();
                 request.ask.loose.dedup();
             }
-            match &base.1 {
+            let body = match &base.1 {
                 Some(vaults) => session::vaults_body(vaults, &request),
                 None => request.to_wire(),
+            };
+            match budget {
+                Some(budget) => session::sized_body(budget, &body),
+                None => body,
             }
         };
         // Acquire before serializing, and retain admission through decoding and validation. A page larger
@@ -2923,7 +2942,7 @@ impl Shared {
                     let reply = {
                         let request = wire(after);
                         anyhow::ensure!(request.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
-                        self.reply_to(&peer, kind, &request, pulls::PAGE_BYTES).await
+                        self.reply_to(&peer, sized, &request, pulls::PAGE_BYTES).await
                     };
                     let reply = match reply {
                         Err(error) if session::too_long(&error) && !early => {
@@ -2931,7 +2950,7 @@ impl Shared {
                             drop(permit);
                             permit = self.pulls.page(true, background).await?;
                             let request = wire(after);
-                            self.reply_to(&peer, kind, &request, session::REPLY_LIMIT).await
+                            self.reply_to(&peer, sized, &request, session::REPLY_LIMIT).await
                         }
                         reply => reply,
                     };
@@ -2950,7 +2969,7 @@ impl Shared {
             async move {
                 let _activity = self.admit()?;
                 let asked = Instant::now();
-                let body = session::cuts_body(kind, count, &wire(after));
+                let body = session::cuts_body(sized, count, &wire(after));
                 anyhow::ensure!(body.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
                 let answer = session::exchange(&peer.conn, session::CUTS, &body, session::CUTS_REPLY_LIMIT);
                 let answer = time::timeout(PAGE_WAIT, answer).await.context("no cuts in time")??;
@@ -2981,6 +3000,8 @@ impl Shared {
         };
         let mut flying = FuturesUnordered::new();
         let mut cutting_flight = FuturesUnordered::new();
+        // the pages asked and not yet taken: those it ends with, however it ends, were lost in flight
+        let mut flight = Flight::new(&self.traffic, device, budget);
         // the pages asked, in order: each its number, where it starts, and whether it was asked ahead
         let mut asked: std::collections::VecDeque<(u64, Option<avendb::sync::Place>, bool)> = Default::default();
         let mut landed = BTreeMap::new();
@@ -2998,6 +3019,7 @@ impl Shared {
                     seq += 1;
                     asked_upto = after.max(asked_upto);
                     asked.push_back((seq, after, true));
+                    flight.asked(seq, true);
                     flying.push(fly(seq, asked.len(), after, Some(permit)));
                 }
                 if cutting && !cut_busy && !cuts_end && cuts.len() < size {
@@ -3011,8 +3033,9 @@ impl Shared {
                 match $got {
                     Landing::Page((at, count, page)) => {
                         if asked.iter().any(|(s, _, _)| *s == at) {
-                            if let Ok((_, _, wait, _)) = &page {
+                            if let Ok((_, bytes, wait, _)) = &page {
                                 window.page(*wait, count);
+                                self.rates.lock().expect("rates").entry(device).or_default().page(*bytes, *wait, count);
                             }
                             landed.insert(at, page);
                         }
@@ -3054,6 +3077,7 @@ impl Shared {
         let mut since = Instant::now();
         seq += 1;
         asked.push_back((seq, None, false));
+        flight.asked(seq, false);
         flying.push(fly(seq, 1, None, None));
         pump!();
         loop {
@@ -3068,12 +3092,17 @@ impl Shared {
                 pump!();
             };
             asked.pop_front();
+            match &coming {
+                Ok(_) => flight.landed(at),
+                Err(error) => flight.lost(at, traffic::lost_why(error)),
+            }
             let coming = match coming {
                 Err(error) if early => {
                     // asked ahead and lost: asked again now, in its turn, as any page is
                     tracing::debug!(%error, "avendb: a page asked ahead failed; asking it again");
                     seq += 1;
                     asked.push_front((seq, after, false));
+                    flight.asked(seq, false);
                     flying.push(fly(seq, asked.len(), after, None));
                     continue;
                 }
@@ -3099,6 +3128,7 @@ impl Shared {
                         // the peer's pages ended elsewhere than it said: what was asked ahead goes unread
                         misses += 1;
                         cutting &= misses < MISSES;
+                        flight.all("missed");
                         (flying, landed, cutting_flight) = (FuturesUnordered::new(), BTreeMap::new(), FuturesUnordered::new());
                         asked.clear();
                         cuts.clear();
@@ -3111,10 +3141,12 @@ impl Shared {
                     seq += 1;
                     asked_upto = Some(next).max(asked_upto);
                     asked.push_back((seq, Some(next), false));
+                    flight.asked(seq, false);
                     flying.push(fly(seq, 1, Some(next), None));
                 }
                 (None, _) => {
-                    // the last page: nothing asked ahead of it is wanted
+                    // the last page: nothing asked ahead of it is wanted, nor lost
+                    flight.forget();
                     (flying, landed, cutting_flight) = (FuturesUnordered::new(), BTreeMap::new(), FuturesUnordered::new());
                     asked.clear();
                     cutting = false;
@@ -3127,17 +3159,22 @@ impl Shared {
             keys.extend(blobs);
             let logged: Vec<(EditId, Option<LogId>)> = edits.iter().map(|s| (s.edit.id(), log_of(&s.edit, s.edit.id()))).collect();
             let ids: Vec<EditId> = logged.iter().map(|(id, _)| *id).collect();
-            let take = async {
+            // a page that came whole is taken on a task of its own, so that it is kept even where the asking stops
+            // while it is taken (its caller dropped it, or gave up on it): a stop loses only the pages in flight (S1b,
+            // `a_stop_loses_at_most_its_pages_in_flight`)
+            let (shared, others) = (self.clone(), others_took.clone());
+            let take = task::spawn(async move {
+                let others_took = others;
                 // Native cryptography runs outside the Lab mutex. The owned page/admission survives
                 // cancellation until its blocking checker exits; current-state admission still runs below.
                 #[cfg(not(target_arch = "wasm32"))]
-                let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, (),
+                let (prepared, permit, activity, ()) = shared.prepare_received_page(edits, permit, (),
                     #[cfg(test)] None,
                 ).await?;
                 #[cfg(target_arch = "wasm32")]
-                let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, ()).await?;
+                let (prepared, permit, activity, ()) = shared.prepare_received_page(edits, permit, ()).await?;
                 let checked = taking.elapsed();
-                let (got, whose, held) = self
+                let (got, whose, held) = shared
                     .try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| {
                         let (_permit, _activity) = (permit, activity);
                         let (got, whose) = lab.receive_prepared(me, prepared, false);
@@ -3146,17 +3183,17 @@ impl Shared {
                     .await?;
                 let held: BTreeSet<EditId> = held.into_iter().collect();
                 let held: Vec<_> = logged.into_iter().filter(|(id, _)| held.contains(id)).collect();
-                self.pulls.took(device, &others_took, &held);
+                shared.pulls.took(device, &others_took, &held);
                 let kept = taking.elapsed();
                 // its keys and items brought up to date now and then, not at each page (`CATCH_UP_PACE`)
                 if next.is_some() {
-                    self.catch_up_paced_class(false, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
+                    shared.catch_up_paced_class(false, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
                 }
                 let took = taking.elapsed();
                 Ok::<_, anyhow::Error>((got, whose, [checked, kept - checked, took - kept, took]))
-            };
+            });
             // the pages in flight land (and more are asked) while this one is taken
-            let mut take = std::pin::pin!(take);
+            let mut take = std::pin::pin!(async { take.await.context("a page's taking ended")? });
             let taken = loop {
                 let first = future::or(async { Landing::Done(take.as_mut().await) }, landing(&mut flying, &mut cutting_flight));
                 match first.await {
@@ -3184,6 +3221,7 @@ impl Shared {
                 catch_ms: caught.as_millis() as u64,
                 ms: finished.duration_since(since).as_millis() as u64,
                 way,
+                budget: budget.unwrap_or(0) as u64,
             });
             self.jobs.stir();
             since = finished;
@@ -3203,6 +3241,15 @@ impl Shared {
             // so none of a stub's bodies counts as not sent
             if next.is_some() && yielding.is_some_and(|y| y.due(self)) {
                 return Ok(new);
+            }
+            // the rate its pages come at moved far from the one its budget was worked out at: it ends here too, and its
+            // logs are asked again at once, at a budget of the rate now (`pulls::RESIZE`)
+            if let (Some(_), Some(y), Some(stated), Some((least, most))) = (next, yielding, budget, sizes) {
+                let now = rate().budget(least, most);
+                if now >= stated.saturating_mul(pulls::RESIZE) || now.saturating_mul(pulls::RESIZE) <= stated {
+                    y.resize();
+                    return Ok(new);
+                }
             }
             match next {
                 Some(last) => after = Some(last),
@@ -3226,6 +3273,20 @@ impl Shared {
             .await?;
         }
         Ok(new)
+    }
+
+    /// The least and the most page `peer` makes for an asking that states its budget (`session::SIZING`), asked once
+    /// a connection; `None` where it refused, a peer from before S1b, which is asked unsized on that connection, or
+    /// didn't answer in time, which is asked again by the next asking.
+    async fn sizes(self: &Arc<Self>, peer: &Peer) -> Option<(usize, usize)> {
+        let connection = peer.conn.stable_id();
+        if let Some(sizes) = self.sizing.lock().expect("sizing").get(&connection) {
+            return *sizes;
+        }
+        let answer = time::timeout(PAGE_WAIT, session::exchange(&peer.conn, session::SIZING, &[], 8)).await.ok()?;
+        let sizes = answer.and_then(|bytes| session::from_sizing_wire(&bytes)).ok();
+        self.sizing.lock().expect("sizing").insert(connection, sizes);
+        sizes
     }
 
     /// Asks `peer` for the stubs of the boxes this device needs not now of what a pull of `kind` for `scope` brings, if
@@ -3761,6 +3822,7 @@ impl Shared {
         transports::control::gone(self, peer);
         self.follows.lock().expect("follows").remove(&peer.conn.stable_id());
         self.unpacked.lock().expect("unpacked").remove(&peer.conn.stable_id());
+        self.sizing.lock().expect("sizing").remove(&peer.conn.stable_id());
         self.unbatched.lock().expect("unbatched").remove(&peer.conn.stable_id());
         self.uncut.lock().expect("uncut").remove(&peer.conn.stable_id());
         self.unstubbed.lock().expect("unstubbed").remove(&peer.conn.stable_id());
@@ -4154,6 +4216,58 @@ impl Drop for Claimed<'_> {
     }
 }
 
+/// The pages an asking asked and didn't take yet, each by its number with when it was asked and whether ahead
+/// (`session::CUTS`): those it ends with, however it ends (failed, yielded, or dropped by its caller), were lost in
+/// flight, as are those it dropped unread, and each is told to `Traffic::lost` (S1b).
+struct Flight<'a> {
+    traffic: &'a traffic::Traffic,
+    device: SignerId,
+    budget: u64,
+    pages: BTreeMap<u64, (Instant, bool)>,
+}
+
+impl<'a> Flight<'a> {
+    fn new(traffic: &'a traffic::Traffic, device: SignerId, budget: Option<usize>) -> Self {
+        Flight { traffic, device, budget: budget.unwrap_or(0) as u64, pages: BTreeMap::new() }
+    }
+
+    /// Page `seq` was asked now, ahead or in its turn.
+    fn asked(&mut self, seq: u64, ahead: bool) {
+        self.pages.insert(seq, (Instant::now(), ahead));
+    }
+
+    /// Page `seq` came whole, and is taken.
+    fn landed(&mut self, seq: u64) {
+        self.pages.remove(&seq);
+    }
+
+    /// Page `seq` was lost, `why`.
+    fn lost(&mut self, seq: u64, why: &'static str) {
+        if let Some((asked, ahead)) = self.pages.remove(&seq) {
+            let flight_ms = asked.elapsed().as_millis() as u64;
+            let (device, budget) = (self.device, self.budget);
+            self.traffic.lost(traffic::Lost { device, at: jobs::now_ms(), why, flight_ms, budget, ahead });
+        }
+    }
+
+    /// Every page in flight was lost, `why`.
+    fn all(&mut self, why: &'static str) {
+        let seqs: Vec<u64> = self.pages.keys().copied().collect();
+        seqs.into_iter().for_each(|seq| self.lost(seq, why));
+    }
+
+    /// The pages in flight are wanted no more: the asking's last page came before them.
+    fn forget(&mut self) {
+        self.pages.clear();
+    }
+}
+
+impl Drop for Flight<'_> {
+    fn drop(&mut self) {
+        self.all("stopped");
+    }
+}
+
 /// The most logs a first asking names for the open views (`next_asking`): their own few, not a vault's thousands.
 const VIEW_LOGS: usize = 1024;
 
@@ -4190,6 +4304,11 @@ impl Yield {
 
     fn yielded(&self) -> bool {
         self.yielded.load(Ordering::Relaxed)
+    }
+
+    /// Its asking ends to be asked again at the budget its pages' rate says now (`pulls::RESIZE`), as a yield does.
+    fn resize(&self) {
+        self.yielded.store(true, Ordering::Relaxed);
     }
 }
 

@@ -78,7 +78,7 @@ impl Request {
     pub(crate) fn encode(&self) -> Result<Vec<u8>> {
         let most = if self.held.is_some() { MAX_KNOWN_SEGMENTS } else { MAX_KNOWN };
         ensure!(
-            matches!(self.kind, 0 | 7 | 11) && self.request.len() <= MAX_REQUEST && self.known.len() <= most,
+            matches!(self.kind & !crate::session::SIZED, 0 | 7 | 11) && self.request.len() <= MAX_REQUEST && self.known.len() <= most,
             "invalid batch proof request"
         );
         if let Some(held) = &self.held {
@@ -116,7 +116,7 @@ impl Request {
             _ => anyhow::bail!("unknown batch proof request"),
         };
         let kind = take::<1>(&mut r)?[0];
-        ensure!(matches!(kind, 0 | 7 | 11), "unsupported nested request kind");
+        ensure!(matches!(kind & !crate::session::SIZED, 0 | 7 | 11), "unsupported nested request kind");
         let request = bytes(&mut r, MAX_REQUEST)?.to_vec();
         let mut known = BTreeMap::new();
         let mut held = segments.then(BTreeMap::new);

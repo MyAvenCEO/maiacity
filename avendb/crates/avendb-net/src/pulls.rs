@@ -468,6 +468,46 @@ impl Window {
     }
 }
 
+/// How long a page of a sized asking takes to come at the rate its peer's pages came lately (S1b, `session::SIZED`):
+/// long enough that its round trip and the peer's planning are a small part of it, short enough that a page lost in
+/// flight (the app hidden, a reload, a lost path) costs a couple of seconds of the link, not a minute of it (an iPhone
+/// on a 66-214 KB/s relay took 20-60 s for a 4 MiB page, 2026-10-28).
+pub(crate) const PAGE_TIME: Duration = Duration::from_secs(2);
+/// The budget of a sized asking of a device no page came from yet: `PAGE_TIME` at 64 KB/s, the slowest relay an
+/// iPhone was seen on (66 KB/s, 2026-10-28); an asking at it is asked again at the measured rate after its first page
+/// where that is far off (`RESIZE`).
+pub(crate) const START_PAGE: usize = 128 << 10;
+/// How many times larger or smaller the budget the rate says now may be than the one an asking states before it ends
+/// after the page it is taking, to be asked again at the new one: an asking's budget is fixed, so that its cuts and its
+/// pages end at the same places (`Lab::reply_cuts`).
+pub(crate) const RESIZE: usize = 4;
+
+/// How fast a device's pages came lately: each page's bytes and its time to send, the page's wait shared among the
+/// pages in flight with it (as `Window` reads it). The rate is the most of them: the link carried that much, and a page
+/// that stalled behind another doesn't shrink the next asking's pages.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Rate {
+    pages: VecDeque<(u64, Duration)>,
+}
+
+impl Rate {
+    /// A page of `bytes` that took `wait` from asked to read whole, asked while `flying` pages were in flight.
+    pub(crate) fn page(&mut self, bytes: u64, wait: Duration, flying: usize) {
+        if self.pages.len() == WINDOW_SAMPLES {
+            self.pages.pop_front();
+        }
+        self.pages.push_back((bytes, (wait / flying.max(1) as u32).max(Duration::from_millis(1))));
+    }
+
+    /// The budget an asking states (`LivePriority.lean` `budget`): the bytes its pages carried in `PAGE_TIME` at the
+    /// rate they came, `START_PAGE` before any came, within `least..=most`.
+    pub(crate) fn budget(&self, least: usize, most: usize) -> usize {
+        let rate = self.pages.iter().map(|&(bytes, sending)| bytes as u128 * 1_000_000 / sending.as_micros().max(1)).max();
+        let budget = rate.map_or(START_PAGE as u128, |r| r * PAGE_TIME.as_millis() / 1000);
+        (budget.min(most as u128) as usize).clamp(least.min(most), most)
+    }
+}
+
 /// Visit every candidate with bounded fanout; unlike the foreground race, one success does not cancel peers
 /// required by a removal check. A shared caller deadline may stop dispatch before all were admitted.
 pub(crate) async fn each_bounded<I, F, Fut>(
@@ -965,8 +1005,9 @@ mod tests {
                         send.finish().unwrap();
                         continue;
                     }
-                    // a peer from before S6 refuses page cuts too: the pull asks page after page
-                    if matches!(kind, session::RANGES | session::CUTS | crate::transports::control::KIND | crate::blind::OFFER) {
+                    // a peer from before S6 refuses page cuts too: the pull asks page after page; and from before S1b
+                    // page sizing: the pull asks unsized
+                    if matches!(kind, session::RANGES | session::CUTS | session::SIZING | crate::transports::control::KIND | crate::blind::OFFER) {
                         send.reset(session::REFUSED).unwrap();
                         continue;
                     }
@@ -1190,6 +1231,31 @@ mod pipelined_tests {
         lan.latency(Duration::from_micros(300));
         lan.page(Duration::from_millis(40), 1);
         assert_eq!(lan.size(), WINDOW_MIN);
+    }
+
+    #[test]
+    fn an_askings_budget_is_what_its_link_carries_in_the_page_time_within_the_peers_pages() {
+        let (least, most) = (32 << 10, 4 << 20);
+        // nothing came yet: the start budget
+        assert_eq!(Rate::default().budget(least, most), START_PAGE);
+        // an iPhone's relay at 66 KB/s: 132 KB pages, a couple of seconds each, not a minute
+        let mut relay = Rate::default();
+        relay.page(4 << 20, Duration::from_millis(63_550), 1);
+        assert_eq!(relay.budget(least, most), 132_000);
+        // a page that queued behind three others shares its wait among them; a stalled one doesn't shrink the budget
+        relay.page(132_000, Duration::from_secs(8), 4);
+        relay.page(132_000, Duration::from_secs(60), 1);
+        assert_eq!(relay.budget(least, most), 132_000);
+        // a fast link: the peer's own page, the most it makes
+        let mut lan = Rate::default();
+        lan.page(4 << 20, Duration::from_millis(40), 1);
+        assert_eq!(lan.budget(least, most), most);
+        // a link slower than the least page a time: the least
+        let mut slow = Rate::default();
+        slow.page(1000, Duration::from_secs(1), 1);
+        assert_eq!(slow.budget(least, most), least);
+        // a peer whose most page is under the start: its most
+        assert_eq!(Rate::default().budget(1 << 10, 64 << 10), 64 << 10);
     }
 
     #[test]
