@@ -1,5 +1,5 @@
 // Every IPFS CID the database ever named, and the BLAKE3 hash (64 hex) the same bytes are known by in the vault.
-// Written once from vault/migration/cid-to-blake3.json (856 files) for migration 0029, which rewrites the
+// Written once from vault/migration/cid-to-blake3.json (856 files, since removed) for migration 0029, which rewrites the
 // database by it: the API container has no vault/, so the map travels with the migration. Never edited by hand.
 export const CID_MAP: [cid: string, hash: string][] = [
   ["bafkreia2nktr54q527v54hx4fqj6246dn6rch6cphoi44czef5ainttgqm", "5de302202e5c67e03d60ade4d04db03d636a2e2e7199a3cf1bf2245311111a5a"],
