@@ -17,7 +17,7 @@ use avendb::slice::{Atom, Selector};
 use serde_json::Value;
 
 fn vectors() -> Value {
-    serde_json::from_str(include_str!("../../../spec/vectors/stored_readings.json")).expect("the stored readings vectors")
+    serde_json::from_str(include_str!("../../../../spec/vectors/stored_readings.json")).expect("the stored readings vectors")
 }
 
 const RULES: &str = env!("AVENDB_READ_RULES");
