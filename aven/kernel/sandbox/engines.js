@@ -5,6 +5,8 @@
  * d3, the MCP Apps SDK), and the math engine that reads a doc's LaTeX (./math-engine.js: KaTeX). Each version's BLAKE3
  * hash and size are in ./engines.json, its file is maia/site/static/engines/<kind>-v<n>.js (a box engine's engine-v<n>.js, as it
  * was first frozen), made by aven/kernel/freeze-engine.mjs; a frozen engine never changes or goes (./engines.test.js).
+ * Git does not carry those files: each entry names the commit of main it is kept at (`kept`), and
+ * aven/kernel/fetch-engines.mjs fetches it from there by its hash before the site is served or built.
  *
  * Which one runs a piece of code (`engineFor`, gap G6): the version it names, as a code entry names it (its `engine`),
  * so a new engine never changes what older code does. But never one below the kind's FLOOR: a version that closes a

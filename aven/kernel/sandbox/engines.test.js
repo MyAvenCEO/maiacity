@@ -4,15 +4,19 @@
 // each version's file is the bytes its BLAKE3 hash names, and the source as it is now is the latest version, so a
 // change to what runs untrusted code never ships without a new, reviewed version. A page refuses an engine whose
 // bytes are not the ones named, and no source anywhere loads code from a CDN. Code runs on the engine it names, never
-// below its kind's floor, and every frozen version stays loadable.
+// below its kind's floor, and every frozen version stays loadable. Git does not carry the files: each is kept at a commit
+// of main and fetched by its hash (../fetch-engines.mjs), so the tests fetch them first.
 // Run: bun test aven/kernel/sandbox/engines.test.js
 import { describe, expect, mock, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import MANIFEST from './engines.json' with { type: 'json' };
 import { FLOOR, WORKERS, engineFor, enginesOf, isFrozen, latestOf, pathOf, workerFor } from './engines.js';
 import { SOURCES, bundleOf, hashText, versionOf } from './bundle.js';
+import { fetchEngines } from '../fetch-engines.mjs';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
+
+await fetchEngines();
 
 test('the one list holds every kind the kernel bundles, the box\'s among them, and nothing else', () => {
 	expect(Object.keys(MANIFEST).sort()).toEqual(['box', ...Object.keys(SOURCES)].sort());
@@ -31,6 +35,11 @@ for (const kind of Object.keys(MANIFEST))
 				expect(hashText(bytes.toString('utf8'))).toBe(e.blake3);
 				expect(e.note.length).toBeGreaterThan(10);
 			});
+		});
+		test('every version is kept where a fresh checkout fetches it: a commit of main, and the file in it', () => {
+			for (const e of enginesOf(kind))
+				if (!/^[0-9a-f]{40}:[\w./-]+\.js$/.test(e.kept ?? ''))
+					throw new Error(`${kind} engine v${e.v} is kept nowhere: put its bytes where a fresh checkout can fetch them, and name that place as its kept (aven/kernel/fetch-engines.mjs)`);
 		});
 		test(`the source as it is now is the latest version (else: node aven/kernel/freeze-engine.mjs --${kind} "…")`, async () => {
 			const latest = latestOf(kind);

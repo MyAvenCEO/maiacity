@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Freezes an engine as its next version: bundles it, and if it is not the latest frozen engine of its kind byte for
-// byte, writes its file under maia/site/static/engines/ and its entry in the one list of frozen engines,
-// aven/kernel/sandbox/engines.json. A frozen engine is never changed or removed: what was made for it runs on it for good
-// (aven/kernel/sandbox/engines.test.js).
+// byte, writes its file where the site serves it (maia/site/static/engines/, which git does not carry) and in this
+// machine's cache of engines by hash, and its entry in the one list of frozen engines, aven/kernel/sandbox/engines.json.
+// A frozen engine is never changed or removed: what was made for it runs on it for good (aven/kernel/sandbox/engines.test.js).
+// Its entry has no `kept` place yet, and the tests say so until it has one: the bytes go into the vault as a code
+// package by an AIP (refactor stage 6), and its entry then names where (aven/kernel/fetch-engines.mjs).
 //
 //   node aven/kernel/freeze-engine.mjs "what the new engine brings"            the asset box's engine (maia/content/assets/box/engine.js):
 //                                                                          kind box, maia/site/static/engines/engine-v<n>.js
@@ -12,6 +14,7 @@
 //     in a view's frame), --view-worker (the worker a view's draw script runs in), --lib-three, --lib-d3, --lib-mcp-apps
 //     (the libraries a draw script may import)
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { CACHE } from './fetch-engines.mjs';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -42,6 +45,9 @@ const v = (list.at(-1)?.v ?? 0) + 1;
 const file = kind === 'box' ? `engine-v${v}.js` : `${kind}-v${v}.js`;
 mkdirSync(`${ROOT}maia/site/static/engines`, { recursive: true });
 writeFileSync(`${ROOT}maia/site/static/engines/${file}`, code);
+mkdirSync(CACHE, { recursive: true });
+writeFileSync(`${CACHE}/${blake3}.js`, code);
 list.push({ v, date: new Date().toISOString().slice(0, 10), blake3, bytes: Buffer.byteLength(code), ...carries, note });
 writeFileSync(LIST, JSON.stringify(manifest, null, '\t') + '\n');
 console.log(`froze ${kind} engine v${v}: ${blake3}, ${(Buffer.byteLength(code) / 1024).toFixed(0)} KB`);
+console.log(`not kept anywhere yet: propose it into the vault as a code package, then name that place as its \`kept\``);
