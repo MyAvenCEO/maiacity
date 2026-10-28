@@ -277,6 +277,14 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     // the pages it took tell the bring moving, as a log counts only once whole
     let after = run(&phone, json!({ "op": "synced" })).await.expect("synced");
     assert!(after["pages"].as_u64() > Some(pages), "{after}");
+    // and what moves long before a log is whole, which the app's sync pill shows live: the edits it took, from which
+    // peer, and when its last page came
+    assert!(after["edits"].as_u64() > Some(0), "{after}");
+    let from = after["from"].as_array().expect("its peers");
+    assert_eq!(from.len(), 1, "{after}");
+    assert_eq!(from[0]["device"], json!(mac_a.to_hex()), "{after}");
+    assert!(from[0]["edits"].as_u64() > Some(0) && from[0]["last"].as_u64() > Some(0), "{after}");
+    assert!(from[0].get("name").is_some() && from[0].get("pulling").is_some(), "{after}");
     let caught = || async { run(&phone, json!({ "op": "synced" })).await.expect("synced")["behind"] == 0 };
     until("the phone is synced with its peer", caught).await;
     // where it synced from and how, as the Performance page reads it: its one peer, the Mac, over a direct path on a

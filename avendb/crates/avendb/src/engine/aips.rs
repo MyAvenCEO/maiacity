@@ -44,7 +44,7 @@ use crate::lab::Lab;
 use crate::lens::{self, Lane};
 use crate::objective::{self, Dec};
 use crate::ops::{self, FieldOp, Link, Record, RecordOp};
-use crate::policy::Refusal;
+use crate::policy::{Groups, Refusal};
 use crate::world;
 use crate::slice::Attrs;
 
@@ -187,8 +187,9 @@ struct Measured {
 /// `Measurers.lean`'s `measuredBy`): of each write the line counts, oldest first, its actor and the rows it added, as
 /// it wrote them, so no later write changes a measured reading. Who wrote one is the write's actor, signed as every
 /// write is, never a typed field. Only the writes of a vault that measures it are read row by row.
-fn measured(lab: &Lab, me: SignerId, a: &Aip) -> Vec<Measured> {
+fn measured(lab: &Lab, me: SignerId, a: &Aip, groups: &Groups) -> Vec<Measured> {
     let Some(h) = lab.history(me, a.entry) else { return vec![] };
+    let st = lab.state(me);
     let (vault, author) = (a.vault, a.attrs.author);
     let mut measures: HashMap<VaultId, bool> = HashMap::new();
     let rows = |version: &[EditId]| -> Vec<Value> {
@@ -198,7 +199,7 @@ fn measured(lab: &Lab, me: SignerId, a: &Aip) -> Vec<Measured> {
     let mut added = vec![];
     for c in h.history(MAIN) {
         let by = c.write.signer;
-        if !*measures.entry(by).or_insert_with(|| lab.measures(me, vault, author, by)) {
+        if !*measures.entry(by).or_insert_with(|| crate::gate::measures(st, groups, vault, author, by)) {
             continue;
         }
         let before: HashSet<i64> = rows(&c.write.deps).iter().filter_map(|r| r["id"].as_i64()).collect();
@@ -208,7 +209,7 @@ fn measured(lab: &Lab, me: SignerId, a: &Aip) -> Vec<Measured> {
         };
         added.push((by, rows(&[c.write.edit]).iter().filter_map(one).collect::<Vec<_>>()));
     }
-    lab.measured_by(me, vault, author, added)
+    crate::gate::measured_by(st, groups, vault, author, added)
 }
 
 /// The numbers objective paths `paths` find in an AIP's lines, `lines`, each line's `sides`: a path reads the first
@@ -409,8 +410,12 @@ fn sides_of(lab: &Lab, me: SignerId, lanes: &mut HashMap<VaultId, Lane>, l: &Lin
     let (old, new) = if l.merged {
         (h.item_at(&h.get(l.line)?.write.deps, me, MAIN).record(), item.record())
     } else {
-        let merged = Value::Object(h.merged_theirs(Some(l.line), MAIN, me).record);
-        (main.map_or_else(|| json!({}), |m| m.record()), merged)
+        // the items the device shows on main and on the line are made of the same changes as the history's: only their
+        // base is made here; an entry its owners' base shows, or a draft with no main item yet, makes them from it
+        let shown = main.filter(|_| lab.active_owner_base(me, l.entry).is_none()).map(|m| (m.record(), item.record()));
+        let old = shown.as_ref().map(|(ours, _)| ours.clone());
+        let merged = Value::Object(h.merged_theirs_on(Some(l.line), MAIN, me, shown).record);
+        (old.unwrap_or_else(|| main.map_or_else(|| json!({}), |m| m.record())), merged)
     };
     let lane = lane_of(lanes, lab, me, vault);
     let app = own(lane, &new).or_else(|| own(lane, &old));
@@ -464,11 +469,13 @@ struct Book<'a> {
     lanes: HashMap<VaultId, Lane>,
     aips: Vec<Aip>,
     reviews: HashMap<(String, String), Vec<Review>>,
+    /// The cap groups in force, worked out once a read (`Lab::read_groups`), not once an AIP: who measures each.
+    groups: Groups,
 }
 
 impl<'a> Book<'a> {
     fn new(lab: &'a Lab, me: SignerId) -> Book<'a> {
-        let mut book = Book { lab, me, lanes: HashMap::new(), aips: vec![], reviews: HashMap::new() };
+        let mut book = Book { lab, me, lanes: HashMap::new(), aips: vec![], reviews: HashMap::new(), groups: lab.read_groups(me) };
         for entry in lab.entries(me) {
             let Some(m) = lab.meaning(me, entry) else { continue };
             match m.attrs.ty.as_str() {
@@ -599,7 +606,7 @@ impl<'a> Book<'a> {
             "author": a.attrs.author.to_hex(),
             "intent": a.record.get("intent").cloned().unwrap_or(Value::Null),
             "links": a.record.get("links").cloned().unwrap_or_else(|| json!([])),
-            "objective": a.objective_json(&d.lines, &sides, &measured(lab, me, a)),
+            "objective": a.objective_json(&d.lines, &sides, &measured(lab, me, a, &self.groups)),
             "lines": lines,
             "reviews": reviews.iter().map(|r| r.to_json(&d.lines)).collect::<Vec<_>>(),
             "signatures": { "have": have, "need": 1, "of": "owners" },
@@ -999,7 +1006,7 @@ fn objective_now(lab: &Lab, me: SignerId, entry: EntryId) -> Value {
     let Ok(a) = aip_of(lab, me, &mut lanes, entry) else { return Value::Null };
     let lines: Vec<Line> = a.lines.iter().map(|&l| Line::of(lab, me, &mut lanes, l)).collect();
     let sides: Vec<Option<Sides>> = lines.iter().map(|l| sides_of(lab, me, &mut lanes, l)).collect();
-    a.objective_json(&lines, &sides, &measured(lab, me, &a))
+    a.objective_json(&lines, &sides, &measured(lab, me, &a, &lab.read_groups(me)))
 }
 
 /// Lean `lean` as an objective: its metrics, or `BadOp` with where and why it doesn't read.

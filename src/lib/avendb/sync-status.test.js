@@ -1,6 +1,6 @@
 // @ts-nocheck — Bun, as the other plain JS suites.
 import { expect, test } from 'bun:test';
-import { emptySync, observeSync, peerCoverage, peerStatus, missingUpdates } from './sync-status.js';
+import { emptySync, observeSync, peerCoverage, peerStatus, missingUpdates, liveSync, STALL } from './sync-status.js';
 const report = (change = {}) => ({ peers: 3, logs: 2483, behind: 192, pulling: 5, pages: 1200, ...change });
 const sample = (change = {}, at = 1000) => observeSync(emptySync(), report(change), at);
 
@@ -86,4 +86,57 @@ test('incoming log completion never claims outgoing or file completion', () => {
  expect(status.label).not.toMatch(/up to date/i);
  expect(status.details.join(' ')).toContain('acknowledgment unavailable');
  expect(status.details.join(' ')).toContain('completeness unavailable');
+});
+
+test('the pill moves with every edit and page while no log is whole yet, and says what it waits on once nothing moves', () => {
+	const mac = (pulling, edits, last) => ({ device: '36ee6eef' + '0'.repeat(56), name: 'Mac', pages: 0, edits, last,
+		pulling: pulling && { since: 1000, stage: 'taking edits', took: edits } });
+	const at = (change, previous, when) => observeSync(previous, report({ edits: change.edits, from: [mac(true, change.edits, change.last)], ...change.counts }), when);
+	const start = at({ edits: 5000, last: 900 }, emptySync(), 1000);
+	expect(liveSync(start, 1000).line).toBe('Syncing 2,291/2,483');
+	expect(start.base).toBe(5000);
+
+	// the logs stand still; the edits a page brings move the line, the peer and the page's age
+	const paged = at({ edits: 5800, last: 2000, counts: { pages: 1201 } }, start, 2000);
+	let live = liveSync(paged, 2000);
+	expect(live.line).toBe('Syncing 2,291/2,483 · +800 edits');
+	expect(live.stalled).toBe(false);
+	expect(live.rows).toContainEqual(['Mac', 'taking edits · 5,800 edits · page just now']);
+	expect(live.rows).toContainEqual(['Edits taken', '5,800 (+800 now)']);
+	live = liveSync(paged, 4000);
+	expect(live.rows).toContainEqual(['Last page', '2 s ago']);
+
+	// a second answer with the same counts moves nothing; the clock alone brings it to waiting, by name and for how long
+	const same = at({ edits: 5800, last: 2000, counts: { pages: 1201 } }, paged, 3000);
+	expect(same.since).toBe(2000);
+	live = liveSync(same, 2000 + STALL + 7000);
+	expect(live.stalled).toBe(true);
+	expect(live.line).toBe('Waiting on Mac · 12 s');
+	expect(live.rows).toContainEqual(['Waiting on', 'Mac for 12 s']);
+	expect(liveSync(same, 2000 + 125000).line).toBe('Waiting on Mac · 2 min');
+
+	// the next edits end the wait at once
+	const more = at({ edits: 5810, last: 20000, counts: { pages: 1202 } }, same, 20000);
+	expect(liveSync(more, 20500).line).toBe('Syncing 2,291/2,483 · +810 edits');
+
+	// a log whole moves the count; once none is behind and no pull runs, the pill has nothing live to say
+	const whole = at({ edits: 5810, last: 20000, counts: { pages: 1202, behind: 191 } }, more, 21000);
+	expect(liveSync(whole, 21000).line).toBe('Syncing 2,292/2,483 · +810 edits');
+	expect(liveSync(observeSync(whole, report({ pages: 1202, behind: 0, pulling: 0, edits: 5810, from: [mac(false, 5810, 20000)] }), 22000), 22000)).toBeNull();
+});
+
+test('with no pull running it waits on the peers it hears, named by their device when they wrote no card', () => {
+	const peerOf = (device) => ({ device, name: null, pulling: null, pages: 0, edits: 0, last: 0 });
+	const idle = observeSync(emptySync(), report({ pulling: 0, edits: 0, from: [peerOf('85b01be4' + '0'.repeat(56)), peerOf('2f74eca3' + '0'.repeat(56))] }), 1000);
+	const live = liveSync(idle, 1000 + STALL + 1000);
+	expect(live.line).toBe('Waiting on 85b01be4, 2f74eca3 · 6 s');
+	expect(live.rows).toContainEqual(['Last page', 'none yet']);
+});
+
+test('a device too old to tell edits or peers still reads as before', () => {
+	const old = sample();
+	expect(old.edits).toBe(0);
+	expect(old.from).toEqual([]);
+	expect(liveSync(old, 1000).line).toBe('Syncing 2,291/2,483');
+	expect(liveSync(old, 1000 + STALL).line).toBe('Waiting on peers · 5 s');
 });

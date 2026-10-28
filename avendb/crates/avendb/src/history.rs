@@ -596,12 +596,19 @@ impl History {
     /// it: `merged` with `take` its own conflicts, the base and both sides each made once, not once a pass (Goal 7,
     /// 2026-10-28: the Proposals page made every line's three items twice a read).
     pub fn merged_theirs(&self, from: Line, into: Line, signer: SignerId) -> Merged {
+        self.merged_theirs_on(from, into, signer, None)
+    }
+
+    /// `merged_theirs`, with the records `into` and `from` show, `sides`, where the caller holds them already (a
+    /// device's shown items, made of these same changes), so that only their base is made.
+    pub fn merged_theirs_on(&self, from: Line, into: Line, signer: SignerId, sides: Option<(Value, Value)>) -> Merged {
         let record = |v: Value| match v {
             Value::Object(r) => r,
             _ => Map::new(),
         };
         let base = record(self.item_at(&self.base(from, into), signer, into).record());
-        let (ours, theirs) = (record(self.record(into, signer)), record(self.record(from, signer)));
+        let (ours, theirs) = sides.unwrap_or_else(|| (self.record(into, signer), self.record(from, signer)));
+        let (ours, theirs) = (record(ours), record(theirs));
         let conflicts = merge::merge(&base, &ours, &theirs, &BTreeSet::new()).conflicts;
         let take = conflicts.into_iter().map(|c| c.place).collect();
         merge::merge(&base, &ours, &theirs, &take)

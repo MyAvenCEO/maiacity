@@ -931,6 +931,7 @@ impl Node {
             size: watch::Sender::new(size),
             warm: AtomicBool::new(false),
             unsaved: Mutex::new(None),
+            names: Mutex::default(),
             sent: Sent::default(),
             jobs: Jobs::default(),
             traffic: traffic::Traffic::default(),
@@ -1816,8 +1817,46 @@ impl Node {
             heard.iter().filter_map(|(d, _)| differed.get(d).map(|(l, t)| json!({ "device": d.to_hex()[..8].to_string(),
                 "lacks": l.len(), "by_stub": t.by_stub, "stubs": t.stubs, "sample": t.sample }))).collect()
         };
+        // per peer, what moves while a catch-up runs, long before a log is whole (Samuel 2026-10-28: "with zero visible
+        // feedback the syncing UI doesn't reflect what is actually happening in real time"): whether a pull of it runs
+        // and since when, what it does now, the edits it took so far and since this device started, and when its last
+        // page came
+        let names = self.peer_names(heard.iter().map(|(d, _)| *d).collect()).await;
+        let from: Vec<Value> = heard.iter().map(|(d, _)| {
+            let job = running.iter().find(|j| j.kind == "pull" && j.subject == d.to_hex());
+            let pulled = self.shared.traffic.of(d);
+            json!({ "device": d.to_hex(), "name": names.get(d).cloned().flatten(),
+                "pulling": job.map(|j| json!({ "since": j.started, "stage": j.stage, "took": j.done })),
+                "pages": pulled.as_ref().map_or(0, |p| p.pages), "edits": pulled.as_ref().map_or(0, |p| p.new),
+                "last": pulled.as_ref().map_or(0, |p| p.last) })
+        }).collect();
+        let edits: u64 = heard.iter().filter_map(|(d, _)| self.shared.traffic.of(d)).map(|p| p.new).sum();
         json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages,
-            "unsaved": unsaved, "lacked": lacked })
+            "edits": edits, "from": from, "unsaved": unsaved, "lacked": lacked })
+    }
+
+    /// The names of devices `devices` by their cards (`world::cards`), each read once and kept (`Shared::names`), in
+    /// one background turn of the Lab for those it hasn't read yet.
+    async fn peer_names(&self, devices: Vec<SignerId>) -> HashMap<SignerId, Option<String>> {
+        let unread: Vec<SignerId> = {
+            let names = self.shared.names.lock().expect("names");
+            devices.iter().filter(|d| !names.contains_key(d)).copied().collect()
+        };
+        if !unread.is_empty() {
+            let read = self.shared.read_class(lab_schedule::Class::Background, move |lab, me| {
+                let mut by_vault: HashMap<VaultId, BTreeMap<SignerId, (EntryId, String)>> = HashMap::new();
+                unread.into_iter().map(|d| {
+                    let vault = lab.state(me).vaults().iter().find(|v| v.devices.contains(&d)).map(|v| v.id);
+                    let name = vault.and_then(|v| {
+                        by_vault.entry(v).or_insert_with(|| avendb::world::cards(lab, me, v)).get(&d).map(|(_, n)| n.clone())
+                    });
+                    (d, name)
+                }).collect::<Vec<_>>()
+            }).await;
+            self.shared.names.lock().expect("names").extend(read);
+        }
+        let names = self.shared.names.lock().expect("names");
+        devices.into_iter().map(|d| (d, names.get(&d).cloned().flatten())).collect()
     }
 
     /// Where it syncs from and how (Samuel 2026-10-22: "the whole sync topology … what comes directly p2p and what via
@@ -2442,6 +2481,9 @@ struct Shared {
     /// Since when its saves fail, how many failed, and why the last did: a full disk or an OPFS quota leaves what the
     /// device took off its shelf, which its person is told (`Node::synced`), never a silent stall. None once one saves.
     unsaved: Mutex<Option<Unsaved>>,
+    /// Each peer device's name, by its card in its vault, as `Node::synced` names the peers it pulls from: read once
+    /// a device, `None` for one that wrote none it holds.
+    names: Mutex<HashMap<SignerId, Option<String>>>,
     /// How many messages it has sent.
     sent: Sent,
     /// What it does in the background, as its person watches it (`Node::jobs`).
