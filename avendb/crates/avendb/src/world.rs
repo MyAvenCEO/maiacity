@@ -707,30 +707,34 @@ fn entry_with_files(lab: &Lab, me: SignerId, en: &Entry, files: Vec<(FileRoot, O
     let meaning = lab.meaning(me, en.id);
     let what = match lab.item(me, en.id) {
         None => lane(lab, me, en.id, meaning.as_ref().map(|m| m.attrs.ty.as_str())).unwrap_or(What::Sealed),
-        Some(item) => match (View::built_in(FILE).and_then(|v| item.read(v)), item.as_markdown(), item.as_todo()) {
-            (Some(file), ..) => {
-                let text = |k: &str| file.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
-                let mut tags = file.get("tags").and_then(Value::as_array).into_iter().flatten();
-                let deleted = tags.any(|t| t.as_str() == Some(DELETED));
-                What::File { title: text("title"), media: text("media"), deleted }
+        Some(item) => {
+            // the item's record turned into JSON once, which each way of reading it reads (`doc::markdown_of`)
+            let stored = item.record();
+            match (View::built_in(FILE).and_then(|v| v.get(&stored)), crate::doc::markdown_of(&stored), crate::doc::todo_of(&stored)) {
+                (Some(file), ..) => {
+                    let text = |k: &str| file.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+                    let mut tags = file.get("tags").and_then(Value::as_array).into_iter().flatten();
+                    let deleted = tags.any(|t| t.as_str() == Some(DELETED));
+                    What::File { title: text("title"), media: text("media"), deleted }
+                }
+                (_, Some(doc), _) => {
+                    let text = doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default();
+                    let history = lab.history(me, en.id);
+                    let edits = history.map_or(0, |h| h.changes().len());
+                    let variants = history.map_or(0, |h| h.variants().len());
+                    let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1 + variants));
+                    let deleted = doc.tags.iter().any(|t| t == DELETED);
+                    let read = |kind: &str| View::built_in(kind).and_then(|v| v.get(&stored));
+                    // an article's text is the entry's text already: its record tells the rest
+                    let article = || read("article").map(|mut r| (r.as_object_mut().map(|o| o.remove("text")), r).1);
+                    let record = read("spark").or_else(article);
+                    let fork_of = fork_of(&doc);
+                    What::Note { title: doc.title.clone(), text, fork_of, deleted, edits, proposals, variants, record }
+                }
+                (_, None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
+                (_, None, None) => record(stored),
             }
-            (_, Some(doc), _) => {
-                let text = doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default();
-                let history = lab.history(me, en.id);
-                let edits = history.map_or(0, |h| h.changes().len());
-                let variants = history.map_or(0, |h| h.variants().len());
-                let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1 + variants));
-                let deleted = doc.tags.iter().any(|t| t == DELETED);
-                let read = |kind: &str| View::built_in(kind).and_then(|v| item.read(v));
-                // an article's text is the entry's text already: its record tells the rest
-                let article = || read("article").map(|mut r| (r.as_object_mut().map(|o| o.remove("text")), r).1);
-                let record = read("spark").or_else(article);
-                let fork_of = fork_of(&doc);
-                What::Note { title: doc.title.clone(), text, fork_of, deleted, edits, proposals, variants, record }
-            }
-            (_, None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
-            (_, None, None) => record(item.record()),
-        },
+        }
     };
     let st = lab.state(me);
     let (ty, tags, created) = match &meaning {
