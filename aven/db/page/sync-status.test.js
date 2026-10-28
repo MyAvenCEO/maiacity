@@ -1,6 +1,6 @@
 // @ts-nocheck — Bun, as the other plain JS suites.
 import { expect, test } from 'bun:test';
-import { emptySync, observeSync, peerCoverage, peerStatus, missingUpdates, liveSync, STALL } from './sync-status.js';
+import { emptySync, observeSync, peerCoverage, peerStatus, missingUpdates, liveSync, STALL, taking } from './sync-status.js';
 const report = (change = {}) => ({ peers: 3, logs: 2483, behind: 192, pulling: 5, pages: 1200, ...change });
 const sample = (change = {}, at = 1000) => observeSync(emptySync(), report(change), at);
 
@@ -139,4 +139,26 @@ test('a device too old to tell edits or peers still reads as before', () => {
 	expect(old.from).toEqual([]);
 	expect(liveSync(old, 1000).line).toBe('Syncing 2,291/2,483');
 	expect(liveSync(old, 1000 + STALL).line).toBe('Waiting on peers · 5 s');
+});
+
+test('a pull that runs on and brings nothing is stalled, not a transfer, and its failed askings are counted', () => {
+	const peerOf = (device, name, last, failed, askings) => ({ device, name, pages: 3, edits: 30, last, askings, failed,
+		pulling: { since: 1000, stage: 'taking edits', took: 30 } });
+	// two pulls run: the Mac's brought a page a second ago, the always-on peer's none for 6 min, every asking failing
+	const from = [peerOf('36ee6eef', 'Mac', 361000, 0, 4), peerOf('85b01be4', null, 1500, 14, 15)];
+	const sync = observeSync(emptySync(), report({ pulling: 2, edits: 60, from }), 361000);
+	let live = liveSync(sync, 362000);
+	expect(live.moving).toBe(1);
+	expect(live.rows).toContainEqual(['Transfers', '1 taking · 1 stalled']);
+	expect(live.rows).toContainEqual(['85b01be4', 'stalled · 30 edits · page 6 min ago · 14 failed']);
+	expect(live.rows).toContainEqual(['Failed askings', '14 of 19']);
+	// once the Mac's pages stop too, nothing is a transfer and the pill says what it waits on
+	live = liveSync(sync, 361000 + STALL + 2000);
+	expect(live.moving).toBe(0);
+	expect(live.rows).toContainEqual(['Transfers', '0 taking · 2 stalled']);
+	expect(live.line).toBe('Waiting on Mac, 85b01be4 · 7 s');
+	// a failed asking alone moves nothing
+	const failedAgain = observeSync(sync, report({ pulling: 2, edits: 60, from: [from[0], { ...from[1], failed: 15, askings: 16 }] }), 368000);
+	expect(failedAgain.since).toBe(361000);
+	expect(taking(failedAgain.from[1], 368000)).toBe(false);
 });

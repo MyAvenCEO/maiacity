@@ -459,3 +459,29 @@ fn a_key_index_made_again_is_made_a_slice_a_step() {
     };
     assert_eq!(seen(&once), seen(&steps), "the same edits, entries and items as one catch-up");
 }
+
+/// A probe of a device's memory takes its store out whole (`Lab::probe_store`) and leaves the Lab an empty one, so a
+/// catch-up step taken after (a node's, which runs on while its probe weighs the parts) steps on a store that holds
+/// together. Until 2026-10-28 the probe took the parts out in place: the log's edits went while its replay counted
+/// them replayed, and the next step panicked, "range start index 20171 out of range for slice of length 0" (the Mac's
+/// 20k unlock probe, `avendb-net/tests/unlock_memory.rs`).
+#[test]
+fn a_store_taken_out_for_a_probe_leaves_a_device_its_catch_up_steps_on() {
+    let (mut lab, d) = first_sync(6, 40);
+    for _ in 0..3 {
+        assert!(matches!(lab.catch_up_step(d, 16), CatchUp::Stepped), "part way through its catch-up");
+    }
+    let held = lab.log(d).edits().len();
+    let mut store = lab.probe_store(d).expect("its store");
+    for part in ["log.edits", "log.ids", "replay.order", "signed", "log", "replay", "key_index", "bodies", "showing"] {
+        assert!(store.part(part).is_some(), "{part} is a part of its store");
+    }
+    drop(store);
+    let mut taken = 0;
+    while let CatchUp::Stepped = lab.catch_up_step(d, 16) {
+        taken += 1;
+        assert!(taken < 100, "a catch-up of nothing ends");
+    }
+    assert!(held > 0 && lab.log(d).edits().is_empty(), "the Lab holds an empty store in its place");
+    assert!(lab.entries(d).is_empty(), "and shows nothing of the store taken out");
+}
