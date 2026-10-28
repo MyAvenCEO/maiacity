@@ -42,7 +42,7 @@ Target, 5x the Oct 22-27 rate: **90+ tasks a day**, under 2 CI minutes per task,
 
 | date | change | before | after | verdict |
 |---|---|---|---|---|
-| 2026-10-27 | drafts run no CI (#1340), goal rule, `scripts/devx` | 18-25 tasks/day, 75 CI min/task | measure after the first goal | |
+| 2026-10-27 | drafts run no CI (#1340), goal rule, `scripts/devx` | 18-25 tasks/day, 75 CI min/task | measure after the first goal  50 tasks/day, 21.8 CI min/task (Oct 27 16:00 to Oct 28 16:00 UTC: 15 PRs, 823 runs, 11 % cancelled, release 9.3 min) | 2x tasks, 3.4x less CI a task; 5x target (90/day, <2 min) not met. Next wait: a goal PR open to merge 75 min (CI 17.5 min plus red rounds), and the peer never deployed (`server` skipped on red avenDB checks) |
 
 ## Goals: CI time per goal PR
 
