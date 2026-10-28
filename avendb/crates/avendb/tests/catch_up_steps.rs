@@ -338,3 +338,37 @@ fn a_first_sync_with_a_removal_answers_its_peers_by_nothing_till_caught_up_not_b
     assert!(lab.replay_current(d), "caught up");
     assert!(asked(&mut lab) > 0, "caught up, it hands its peer what it holds");
 }
+
+/// A start of more than it does in one go (`Lab::set_restore_whole`), as an iPhone's unlock of a partial vault with no
+/// stored view (313 s, 2026-10-28): its restore replays and shows a step of it and ends catching up, a replay of a few
+/// edits; its catch-up a step at a time then brings it to what a start that did it all in one go shows.
+#[test]
+fn a_start_of_more_than_it_does_in_one_go_ends_behind_and_its_catch_up_shows_the_rest() {
+    let warm = avendb::lab::Warm::default();
+    let start = |whole: Option<usize>| {
+        let (mut lab, d) = first_sync(6, 40);
+        while matches!(lab.catch_up_step(d, 64), CatchUp::Stepped) {}
+        if let Some(n) = whole {
+            lab.set_restore_whole(d, n);
+        }
+        let backup = lab.backup(d);
+        lab.restore_warm(d, backup, None, &warm);
+        (lab, d)
+    };
+    let (whole, d) = start(None);
+    assert!(!whole.catching_up(d), "a start of what it does in one go ends caught up");
+    let (mut parts, _) = start(Some(16));
+    assert!(parts.catching_up(d), "a start of more ends catching up");
+    assert!(parts.perf(d)["counts"]["restore: left to its catch-up"].as_u64().is_some_and(|n| n > 16));
+    let mut steps = 0;
+    while matches!(parts.catch_up_step(d, 64), CatchUp::Stepped) {
+        steps += 1;
+    }
+    assert!(steps > 1, "its catch-up takes the rest a step at a time: {steps}");
+    assert!(!parts.catching_up(d));
+    let seen = |lab: &avendb::lab::Lab| {
+        let entries: Vec<_> = lab.entries(d).into_iter().map(|e| (e, lab.item(d, e).map(|i| i.record()))).collect();
+        (lab.log(d).ids().to_vec(), entries)
+    };
+    assert_eq!(seen(&parts), seen(&whole), "the same as a start that did it all in one go");
+}

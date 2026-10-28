@@ -70,6 +70,11 @@ impl Perf {
         for (name, count) in other.counts { self.count(name, count); }
     }
 
+    /// The time the work `what` took in all, in milliseconds.
+    pub fn total_ms(&self, what: &str) -> f64 {
+        self.timers.get(what).map_or(0.0, |t| t.total_us as f64 / 1000.0)
+    }
+
     /// `n` more of `what`.
     pub fn count(&mut self, what: &'static str, n: u64) {
         *self.counts.entry(what).or_default() += n;
