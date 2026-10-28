@@ -45,11 +45,16 @@ if (args[0] === '--list') {
 		const run = d.run ?? {};
 		const peers = report.network?.peers ?? [];
 		const failed = peers.reduce((n, p) => n + (p.pulled?.failed ?? 0), 0);
+		// pages lost in flight (S1b): why, how long each had been in flight, the budget its asking stated
+		const lost = report.network?.lost ?? [];
+		const seen = report.visibility;
 		const speed = (run.network?.results ?? []).filter((r) => r.mbps != null).map((r) => `${r.kind} ${r.mbps.toFixed(1)} Mbit/s`);
 		console.log([
 			`${device} · ${d.device ?? '?'} · build ${String(d.build?.frontend ?? '?').slice(0, 8)} · ${report.view ?? '?'} (${report.why ?? report.page ?? '?'}) · ${when(list[0].at)} (${list.length} kept)`,
 			`  phase ${d.phase ?? '?'} · sync ${sync.status === 'unavailable' ? 'unknown' : `${sync.peers ?? '?'} peers, ${sync.behind ?? '?'} of ${sync.logs ?? '?'} logs behind, ${sync.pulling ?? 0} pulling`}`,
 			`  peers ${peers.length}: ${peers.map((p) => `${String(p.device).slice(0, 8)} ${p.way}${p.lacks ? `, lacks ${p.lacks}` : ''}`).join('; ') || 'none'}${failed ? ` · ${failed} failed page requests` : ''}`,
+			...(seen ? [`  page ${seen.now}${seen.native ? ' (theOS)' : ''} · hidden ${Math.round(seen.hiddenTotalMs / 1000)} s of ${Math.round(seen.elapsedMs / 1000)} s, last stretch ${Math.round(seen.lastHiddenMs / 1000)} s`] : []),
+			...(lost.length ? [`  ${lost.length} pages lost in flight: ${lost.slice(0, 8).map((l) => `${l.why} after ${Math.round(l.flight_ms / 1000)} s (${Math.round(l.budget / 1024)} KB${l.ahead ? ', ahead' : ''})`).join('; ')}`] : []),
 			...(run.status ? [`  last checks: ${run.status}${speed.length ? ` · ${speed.join(', ')}` : ''}${run.responsiveness?.eventLoopDelayP95Ms != null ? ` · page delay p95 ${Math.round(run.responsiveness.eventLoopDelayP95Ms)} ms` : ''}`] : [])
 		].join('\n'));
 	}
