@@ -3184,6 +3184,22 @@ impl Lab {
         store.perf.add("replay", at);
     }
 
+    /// What device `d` answers its peers and checks its person's writes by in the middle of a catch-up: the replay it
+    /// holds, where the edits it took since hold no removal (they can only add to what anyone may do: it hands over and
+    /// accepts no more than all of them would, `StandingReplay.lean`), else `latest`. A peer's ask or a write in the
+    /// middle of a first sync replayed every edit first, 10-24 s at 130,000 (2026-10-27); the catch-up's next steps
+    /// bring the rest.
+    fn standing(&self, d: SignerId) -> &State {
+        let store = self.held(d);
+        if store.latest.get().is_none()
+            && store.replayed < store.log.edits().len()
+            && !store.log.edits()[store.replayed..].iter().any(Edit::is_removal)
+        {
+            return &store.replay.state;
+        }
+        self.latest(d)
+    }
+
     fn latest(&self, d: SignerId) -> &State {
         let store = self.held(d);
         // set, it is what they say (a write stepped on, or the based entries' state); unset, the replay of them all is
@@ -3466,7 +3482,7 @@ impl Lab {
         files.sort_by_key(|f| f.root);
         files.dedup_by_key(|f| f.root);
         let roots = files.iter().map(|f| f.root).collect();
-        let view = self.latest(on).clone();
+        let view = self.standing(on).clone();
         let x = AudienceId::of(vault, &create.audience);
         let epoch = view.epoch(KeyFam::Audience(vault, x)) + view.reenters(vault, x) as u64;
         let action = Action::Write {
@@ -3627,7 +3643,7 @@ impl Lab {
     /// now. In a dry run, none is issued.
     fn schemas_share(&mut self, on: SignerId, vault: VaultId) -> Result<Option<ShareId>, Refusal> {
         let select = Selector::lane();
-        let (store, st) = (self.held(on), self.latest(on));
+        let (store, st) = (self.held(on), self.standing(on));
         let ours = |cp: &&Issued| {
             let s = &cp.share;
             let read = (s.who, s.level, s.wide, s.parent) == (Who::Everyone, Level::Read, false, None);
@@ -3661,7 +3677,7 @@ impl Lab {
         tags: &[Sym],
         main: bool,
     ) -> Result<Vec<ShareId>, Refusal> {
-        let (store, st) = (self.held(on), self.latest(on));
+        let (store, st) = (self.held(on), self.standing(on));
         let attrs = Attrs { ty: header.ty.clone(), author: actor, entry, created: header.created, tags: tags.to_vec() };
         if actor == vault {
             let complete = store.reads_shares(st, vault);
@@ -3824,7 +3840,7 @@ impl Lab {
     /// alone counts (the default policy, one of its owners), `NotOnProposal` if the device shows no such proposal.
     pub fn accept(&mut self, on: SignerId, actor: VaultId, entry: EntryId, line: EditId) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let vault = self.latest(on).entry(entry).ok_or(Refusal::UnknownEntry)?.vault;
+        let vault = self.standing(on).entry(entry).ok_or(Refusal::UnknownEntry)?.vault;
         if actor != vault {
             return Err(Refusal::NoCap);
         }
@@ -3960,7 +3976,7 @@ impl Lab {
         files.sort_by_key(|f| f.root);
         files.dedup_by_key(|f| f.root);
         let roots = files.iter().map(|f| f.root).collect();
-        let view = self.latest(on).clone();
+        let view = self.standing(on).clone();
         let en = view.entry(entry).ok_or(Refusal::UnknownEntry)?;
         let (vault, stay, x) = (en.vault, en.stay(), en.audience());
         let epoch = view.epoch(KeyFam::Audience(vault, x));
@@ -4784,7 +4800,7 @@ impl Lab {
     /// entry (T20); a passkey that owns no vault gets nothing.
     pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
         let store = self.held(d);
-        let places = link_places(store.log.edits(), self.latest(d), passkey);
+        let places = link_places(store.log.edits(), self.standing(d), passkey);
         places.into_iter().map(|i| store.signed.owned(&store.log.ids()[i])).collect()
     }
 
@@ -4876,7 +4892,7 @@ impl Lab {
     /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
         let store = self.held(d);
-        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), self.latest(d), asker, follow))
+        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), self.standing(d), asker, follow))
     }
 
     /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
@@ -5050,7 +5066,7 @@ impl Lab {
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         let store = self.held(d);
-        let mut needs = crate::lazy::Needs::new(self.latest(d), asker);
+        let mut needs = crate::lazy::Needs::new(self.standing(d), asker);
         let mut out: Vec<Stub> = sends
             .places
             .iter()
@@ -5277,7 +5293,7 @@ impl Lab {
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
     /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        crate::sync::fetchable(self.held(d).log.edits(), self.latest(d), asker, file, follow)
+        crate::sync::fetchable(self.held(d).log.edits(), self.standing(d), asker, file, follow)
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
@@ -5291,7 +5307,7 @@ impl Lab {
     /// where its keep shares over the entry's vault say to keep them whole (`State::keeps`), or, with none there but
     /// never ones, where its own setting `keep` says. It fetches the rest a piece at a time as it reads them.
     pub fn kept_files(&self, d: SignerId, keep: bool) -> Vec<FileRoot> {
-        let (store, st) = (self.held(d), self.latest(d));
+        let (store, st) = (self.held(d), self.standing(d));
         let kept = |edit: &&Edit| {
             let en = edit.entry().and_then(|e| st.entry(e));
             en.is_some_and(|en| st.wants(d, en) && st.keeps(d, en).unwrap_or(keep))
@@ -5304,7 +5320,7 @@ impl Lab {
     /// Files needed by active local views. Demand grants nothing: both current keep selection and
     /// readable file keys must permit each file. Opened/light devices hydrate these in background.
     pub fn demanded_files(&self, d: SignerId, entries: &[EntryId]) -> Vec<FileRoot> {
-        let st = self.latest(d);
+        let st = self.standing(d);
         // Many active entries still require just one held-history pass. Selection
         // precedes grouping; file() inside the projection still checks readable keys.
         let selected = entries.iter().copied()
@@ -5336,11 +5352,11 @@ impl Lab {
         let store = self.held(d);
         let revision = store.log.revision();
         if scan.revision.as_ref() != Some(&revision) {
-            let st = self.latest(d);
+            let st = self.standing(d);
             let selected = scan.entries.iter().copied().filter(|e| st.entry(*e).is_some_and(|en| st.wants(d, en)));
             *scan = FileScan { revision: Some(revision), at: 0, selected: selected.collect(), ..FileScan::new(scan.keep, std::mem::take(&mut scan.entries)) };
         }
-        let st = self.latest(d);
+        let st = self.standing(d);
         let edits = store.log.edits();
         let end = edits.len().min(scan.at.saturating_add(budget.max(1)));
         for edit in &edits[scan.at..end] {
@@ -6898,6 +6914,9 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// item it dropped (`SCRATCHES`): a step of a catch-up judges about this many writes whatever the
 /// entries hold, so that a step at a server's size takes as long as one at a phone's.
 const SHOW_WORK: usize = 6;
+/// The fewest writes of one entry a budgeted show judges in a step (`show_items`): an entry's writes past them wait for
+/// the next step.
+const SHOW_SLICE: usize = 16;
 const SHOW_ENTRY_WORK: usize = 4;
 
 /// Rebuild what device `d` shows of each entry whose writes, what it opened of them, its vault's lane or the cap groups
@@ -7054,6 +7073,8 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // the rest of them for the next step
     let work = budget.map(|b| b.max(1) * SHOW_WORK);
     let mut spent = 0;
+    // an entry it judged part of its writes of, to go on with first at the next step
+    let mut part: Option<EntryId> = None;
     let ids_todo: Vec<EntryId> = todo.iter().map(|en| en.id).collect();
     for (k, en) in todo.into_iter().enumerate() {
         if work.is_some_and(|w| spent >= w) {
@@ -7068,7 +7089,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
             continue;
         }
         // one it left before is checked against all its writes as it was to be then
-        let reshow = reshow || (pending.reshow && waiting.contains(&en.id));
+        let reshow = reshow || (pending.reshow && waiting.contains(&en.id) && pending.part != Some(en.id));
         let tip = tip(en);
         // judged under the lane before it gained schemas none of its writes name: as if under this one
         if let Some((was, new)) = gained.get(&en.vault)
@@ -7123,18 +7144,44 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
             _ => (Judging::new(st, en, r, lane(en.vault)), 0, None),
         };
         store.perf.add("show: judging, set up", judging_at);
-        store.perf.count("show: writes judged", (writes.len() - from) as u64);
+        // with a budget, at most what is left of it of an entry's writes, `SHOW_SLICE` at least: an entry of a thousand
+        // writes is judged over several steps, each going on where the last left off (a step of four entries judged
+        // 300 writes, 200-300 ms on an iPhone, 2026-10-28)
+        let to = match work {
+            Some(w) => writes.len().min(from + w.saturating_sub(spent).max(SHOW_SLICE)),
+            None => writes.len(),
+        };
+        store.perf.count("show: writes judged", (to - from) as u64);
         store.perf.count("show: entries judged", 1);
-        for w in &writes[from..] {
+        for w in &writes[from..to] {
             j.judge(d, st, (r, bodies), w, &groups);
         }
-        spent += writes.len() - from + again + SHOW_ENTRY_WORK;
+        spent += to - from + again + SHOW_ENTRY_WORK;
         store.perf.add("show: judging", judging_at);
         let materialize_at = Perf::start();
+        if to < writes.len() {
+            // shown as far as it judged, with a print no whole showing has, so that it is never taken as shown whole
+            let tip = Tip { writes: to, last: Some(writes[to - 1].edit), ..tip };
+            let mut h = Hasher::new("lab shown in part");
+            h.update(&print).update(&(to as u64).to_le_bytes());
+            let print = h.finalize();
+            let s = j.shown_on(d, print, tip, items);
+            store.perf.add("show: materialize", materialize_at);
+            retain_recent_shown(&mut old, &mut recent, en.id, s);
+            shown_now.remove(&en.id);
+            part = Some(en.id);
+            let mut left = ids_todo[k + 1..].to_vec();
+            left.append(&mut rest);
+            rest = left;
+            break;
+        }
         let s = j.shown_on(d, print, tip, items);
         store.perf.add("show: materialize", materialize_at);
         debug_assert!(from == 0 || same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
         retain_recent_shown(&mut old, &mut recent, en.id, s);
+    }
+    if let Some(e) = part {
+        rest.insert(0, e);
     }
     // only the entries judged last keep their scratch items
     let mut keep: HashSet<EntryId> = recent.iter().rev().take(SCRATCHES).copied().collect();
@@ -7161,8 +7208,12 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // what tells it what to show anew stays as it was for the entries left, until it shows them
     let left: HashSet<EntryId> = rest.iter().copied().collect();
     opened.retain(|e, _| left.contains(e));
+    // the bodies opened of the entry it judged part of were there as it judged them, or are of writes it judges next
+    if let Some(e) = part {
+        opened.remove(&e);
+    }
     let taken = store.log.edits().len();
-    store.showing = Some(Showing { rest, reshow: reshow || pending.reshow, opened, taken });
+    store.showing = Some(Showing { rest, reshow: reshow || pending.reshow, opened, taken, part });
     false
 }
 
@@ -7176,6 +7227,9 @@ struct Showing {
     /// How many edits it held when it left them: one taken since (a live page during a long catch-up) is replayed,
     /// read and its entry shown before them (`catch_up_step`).
     taken: usize,
+    /// The entry it judged part of the writes of (`SHOW_SLICE`), judged anew where it was to be: it goes on from
+    /// where it left off, though the others left are to be checked against all their writes.
+    part: Option<EntryId>,
 }
 
 /// What changed since the upkeep last looked at every entry's keys and stewardship (`upkeep`), so that it looks at

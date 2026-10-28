@@ -250,3 +250,43 @@ fn a_first_sync_replays_and_reads_a_slice_a_step() {
     };
     assert_eq!(seen(&once), seen(&steps), "the same edits, entries and items as one catch-up");
 }
+
+/// An entry of many writes is judged over several steps of a catch-up, each going on where the last left off, so that
+/// no step judges more than a slice of them (`show_items`, `SHOW_SLICE`); it ends shown as one catch-up shows it.
+#[test]
+fn an_entry_of_many_writes_is_shown_over_several_steps() {
+    use avendb::cast::paragraph;
+    let make = || {
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (mac, phone) = (w.mac_a, w.phone_a);
+        let doc = w.lab.create(mac, coop, coop, "doc", &[], document("Long", "Many edits.", mac)).expect("a document");
+        for k in 0..200 {
+            w.lab.edit(mac, coop, doc, |item| item.push_block(paragraph(100 + k, &format!("Edit {k}.")))).expect("an edit");
+        }
+        let held: std::collections::HashSet<_> = w.lab.log(phone).ids().iter().copied().collect();
+        let fresh: Vec<Signed> = w.lab.backup(mac).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
+        for page in fresh.chunks(40) {
+            w.lab.receive_whose_now(phone, page.to_vec(), vec![], false);
+        }
+        (w, phone)
+    };
+    let (mut once, d) = make();
+    let (mut steps, _) = make();
+    assert!(once.lab.catch_up(d));
+    let judged = |w: &World| w.lab.perf(d)["counts"]["show: writes judged"].as_u64().unwrap_or(0);
+    let (mut most, mut taken) = (0, 0);
+    loop {
+        let before = judged(&steps);
+        let step = steps.lab.catch_up_step(d, 1);
+        most = most.max(judged(&steps) - before);
+        taken += 1;
+        assert!(taken < 1_000, "a catch-up in steps ends");
+        if matches!(step, CatchUp::Caught(_)) {
+            break;
+        }
+    }
+    assert!(most <= 16, "at most a slice of the entry's writes judged a step: {most}");
+    assert_eq!(seen(&once, d), seen(&steps, d), "the same entries and items as one catch-up");
+    assert!(once.lab.state(d) == steps.lab.state(d), "the same view");
+}
