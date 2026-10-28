@@ -366,6 +366,7 @@ dependencies = [
  "ml-kem",
  "n0-future",
  "n0-watcher",
+ "noq-proto",
  "noq-udp",
  "range-collections",
  "rustls",

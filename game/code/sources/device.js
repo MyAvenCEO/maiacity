@@ -88,7 +88,7 @@ export function actorSources(held, catalog) {
  * read one, else the app's own (`QUERIES`). Null where neither holds that version. The op is the query's `read`
  * template bound (./actors.js `queryOp`), what the engine's `call` of it runs, so a page reads by the name the vault
  * holds rather than a query of its own (task A3).
- * @param {{ entry: string, version: number }} query @param {Record<string, string>} [args] @param {{offset?: number, limit?: number}} [more]
+ * @param {{ entry: string, version: number }} query @param {Record<string, any>} [args] @param {{offset?: number, limit?: number}} [more]
  */
 export function useQuery(query, args = {}, more = {}) {
 	const q = withBuiltIn(lastHeld.get(MAIA_CITY) ?? [], MAIA_CITY).find((m) => m?.kind === QUERY_KIND && m.id === query?.entry);

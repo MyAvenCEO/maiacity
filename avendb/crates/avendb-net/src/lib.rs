@@ -110,6 +110,8 @@ mod node_loop;
 mod blind;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
+mod congestion;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod claim;
@@ -146,6 +148,7 @@ mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
+mod posts_page;
 mod shared_index;
 pub mod query_window;
 mod told_index;
@@ -175,7 +178,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine::follow_standing;
 use avendb::id::{BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::PublicKey;
-use avendb::lab::{Backup, Checked, Drafting, Lab, Unsigned, Warm};
+use avendb::lab::{Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
 use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
@@ -276,6 +279,14 @@ pub fn web_provider() -> Arc<CryptoProvider> {
 }
 
 /// The TLS of this node: `pq_provider` on a machine, `web_provider` in a browser.
+/// Every connection's QUIC: iroh's, its send rate set by BBR v3 and Cubic together (`congestion`).
+fn quic() -> iroh::endpoint::QuicTransportConfig {
+    let builder = iroh::endpoint::QuicTransportConfig::builder();
+    #[cfg(not(target_arch = "wasm32"))]
+    let builder = builder.congestion_controller_factory(Arc::new(congestion::EitherConfig::default()));
+    builder.build()
+}
+
 fn provider() -> Arc<CryptoProvider> {
     #[cfg(not(target_arch = "wasm32"))]
     return pq_provider();
@@ -363,6 +374,26 @@ pub const PAGE: usize = 4 << 20;
 /// How many entries a catch-up shows anew in one turn of the Lab (`Lab::catch_up_step`): about 0.35 ms each on a
 /// server's core (measured 2026-10-27), so a turn of 48 holds the Lab some 17 ms.
 pub(crate) const CATCH_UP_SLICE: usize = 48;
+
+/// How long one step of a catch-up may hold the Lab: each step's budget follows how long the last one took
+/// (`catch_up_budget`), from `CATCH_UP_SLICE`, so a phone's WebAssembly, several times slower than a server's core, takes
+/// steps as short (G5: a person's write applied within 50 ms during a catch-up, 2026-10-27).
+const CATCH_UP_TURN: Duration = Duration::from_millis(16);
+
+/// The budget of a catch-up's next step, after one of `budget` took `took`: smaller in proportion where it took longer
+/// than `CATCH_UP_TURN`, twice as big where it took less than half of it, never under 1 nor over four times
+/// `CATCH_UP_SLICE`.
+fn catch_up_budget(budget: usize, took: Duration) -> usize {
+    let (took, turn) = (took.as_micros().max(1), CATCH_UP_TURN.as_micros());
+    let next = if took > turn {
+        (budget as u128 * turn / took) as usize
+    } else if took * 2 < turn {
+        budget.saturating_mul(2)
+    } else {
+        budget
+    };
+    next.clamp(1, CATCH_UP_SLICE * 4)
+}
 
 /// How much longer than its last bringing up to date took a pull waits before it brings its device's keys and items up
 /// to date again (`Shared::catch_up_paced`): each time replays the whole log for a device catching up from far behind,
@@ -679,25 +710,15 @@ impl Node {
         if opts.shelf.is_none() {
             bail!("a node in a browser keeps a shelf");
         }
-        let (edits, stored) = match &opts.shelf {
+        // its edits taken back from its shelf a page at a time, never all of them at once beside what it keeps (F9)
+        let (edits, lab, stored) = match &opts.shelf {
             Some(shelf) => {
-                let (edits, stored) = edits::Edits::open(shelf.clone()).await?;
-                (Some(edits), stored)
+                let mut to = Restorer { lab: Some(lab), me, checked: None, keys: Warm::default(), restoring: None };
+                let (edits, warm, stored, anchors) = edits::Edits::open_into(shelf.clone(), &mut to).await?;
+                (Some(edits), to.end(anchors, warm).await?, stored)
             }
-            None => (None, edits::Stored::default()),
+            None => (None, lab, Vec::new()),
         };
-        // what it worked out from them before (`Edits::warm`)
-        let warm = match &edits {
-            Some(edits) => edits.warm().await,
-            None => Warm::default(),
-        };
-        let started = edits.as_ref().and_then(|edits| edits.started());
-        let restore = move || restore(lab, me, stored, started, &warm);
-        #[cfg(not(target_arch = "wasm32"))]
-        let (lab, stored) = tokio::task::spawn_blocking(restore).await?;
-        // a page has no threads to spare
-        #[cfg(target_arch = "wasm32")]
-        let (lab, stored) = restore();
         if let Some(edits) = &edits {
             edits.settle(&lab, me, &stored);
         }
@@ -740,6 +761,7 @@ impl Node {
             .secret_key(SecretKey::from_bytes(&secret))
             .crypto_provider(provider())
             .address_lookup(lookup.clone())
+            .transport_config(quic())
             .add_custom_transport(Arc::new(packets.clone()));
         // iroh's own sockets, on every interface, and its port mapping, for a node that reaches out directly; else
         // the one socket it binds, if any
@@ -1529,6 +1551,19 @@ impl Node {
         query_window::answer(index, &self.shared.lab, self.shared.me, op).await.ok().flatten().map(|(got, _)| got)
     }
 
+    /// A page of posts (`{"op": "posts", "limit"?, "after"?}`, as the engine answers it) off its shared index and the
+    /// tail of edits after its last save (`posts_page`, `PostsPage.lean`), never a walk of every entry it holds; `None`
+    /// where the index can't say (no shelf, or the tail is of a key's or share's log), and the caller asks the engine.
+    pub(crate) async fn posts_indexed(&self, op: &Value) -> Option<Value> {
+        let index = self.shared.shared_index.as_ref()?;
+        let o = op.as_object()?;
+        let (limit, after) = match avendb::engine::posts_args(o) {
+            Ok(args) => args,
+            Err(why) => return Some(why.to_json()),
+        };
+        posts_page::page(index, &self.shared.lab, self.shared.me, limit, after).await.ok().flatten()
+    }
+
     /// The root of its shared index and the head of the edits it is of, as its last save left them: what a peer holds
     /// it to before it reads through pages it fetched (`ShelfIndex.I5_trusted_reads`).
     pub async fn shared_index_root(&self) -> Option<(Option<[u8; 32]>, u64)> {
@@ -1981,26 +2016,77 @@ impl Drop for Node {
     }
 }
 
-/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`), from what it worked out
-/// before (`Lab::restore_warm`), the first edits of the head it started from (`Edits::started`); and the ids of the
-/// edits the shelf held, in its order.
-fn restore(
-    mut lab: Lab,
+/// A node's Lab taking its device's edits back from its shelf a page at a time (`edits::Taker`, `Lab::restore_page`):
+/// its restore begun at the first page, so a shelf that holds none leaves it as it was.
+struct Restorer {
+    lab: Option<Lab>,
     me: SignerId,
-    (signed, keys, anchors): edits::Stored,
-    started: Option<(Checked, usize)>,
-    warm: &Warm,
-) -> (Lab, Vec<EditId>) {
-    let stored = signed.iter().map(|s| s.edit.id()).collect();
-    if !signed.is_empty() {
-        let backup = Backup::new(signed, keys);
-        let backup = if anchors.is_empty() { backup } else {
-            // Invalid companion never invalidates or discards the ordinary signed log.
-            backup.clone().with_bootstrap_bytes(&anchors).unwrap_or(backup)
+    /// The head it begins from, and the keys the device worked out before (`Warm::keys`), what its restore begins with.
+    checked: Option<avendb::lab::Checked>,
+    keys: Warm,
+    restoring: Option<avendb::lab::Restoring>,
+}
+
+impl Restorer {
+    /// Its Lab and its restore, taken out to work on (`Lab::restore_start` where it began none yet).
+    fn take(&mut self) -> (Lab, avendb::lab::Restoring) {
+        let mut lab = self.lab.take().expect("its Lab");
+        let restoring = match self.restoring.take() {
+            Some(r) => r,
+            None => lab.restore_start(self.me, self.checked, &self.keys),
         };
-        lab.restore_warm(me, backup, started, warm);
+        (lab, restoring)
     }
-    (lab, stored)
+
+    /// Its Lab, its restore ended (`Lab::restore_end`) with `anchors` and `warm`, where it began one.
+    async fn end(mut self, anchors: Vec<u8>, warm: Warm) -> Result<Lab> {
+        let Some(r) = self.restoring.take() else { return Ok(self.lab.take().expect("its Lab")) };
+        let (mut lab, me) = (self.lab.take().expect("its Lab"), self.me);
+        let end = move || {
+            lab.restore_end(me, r, &anchors, &warm);
+            lab
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let lab = tokio::task::spawn_blocking(end).await?;
+        // a page has no threads to spare
+        #[cfg(target_arch = "wasm32")]
+        let lab = end();
+        Ok(lab)
+    }
+}
+
+impl edits::Taker for Restorer {
+    async fn begin(&mut self, checked: Option<avendb::lab::Checked>, warm: &Warm) -> Result<()> {
+        (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new() });
+        // what it took of a head that didn't read whole goes
+        if self.restoring.is_some() {
+            let mut lab = self.lab.take().expect("its Lab");
+            self.restoring = Some(lab.restore_start(self.me, checked, &self.keys));
+            self.lab = Some(lab);
+        }
+        Ok(())
+    }
+
+    async fn page(&mut self, page: Vec<(Signed, Option<avendb::lab::Placed>)>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()> {
+        let ((mut lab, mut r), me) = (self.take(), self.me);
+        let take = move || {
+            lab.restore_page_placed(me, &mut r, page, keys, of_head);
+            (lab, r)
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let (lab, r) = tokio::task::spawn_blocking(take).await?;
+        #[cfg(target_arch = "wasm32")]
+        let (lab, r) = take();
+        (self.lab, self.restoring) = (Some(lab), Some(r));
+        Ok(())
+    }
+
+    async fn keys(&mut self, keys: Vec<Arc<[u8]>>) -> Result<()> {
+        if let (Some(lab), Some(r)) = (self.lab.as_mut(), self.restoring.as_mut()) {
+            lab.restore_keys(self.me, r, keys);
+        }
+        Ok(())
+    }
 }
 
 /// `s` is an edit of a vault's log (`sync::log_of`), all that a card carries.
@@ -2670,7 +2756,20 @@ impl Shared {
         let mut named = BTreeSet::new();
         let mut asked = self.pages(peer, scope, &mut job, admission, background, keys.unwrap_or(&mut named), yielding).await;
         if asked.is_ok() {
-            if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
+            if expected.is_some() {
+                // a live pull's edits show without the keys they name (one is needed only to seal to its signer), and a
+                // key is a megabyte: brought after, not waited for (`bench_live` phone: a chat edit's pull waited 1.7 s
+                // on two keys the backlog was bringing too)
+                if !named.is_empty() && let Ok(activity) = self.admit() {
+                    let shared = self.clone();
+                    task::spawn(async move {
+                        let _activity = activity;
+                        if let Err(error) = shared.bring_keys(endpoint, device, named, background).await {
+                            tracing::debug!(%error, "avendb: a live pull's keys come with a later pull");
+                        }
+                    });
+                }
+            } else if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
                 asked = Err(error);
             }
         }
@@ -3129,6 +3228,12 @@ impl Shared {
         let lacking =
             move |lab: &Lab, me| -> Vec<BlobId> { keys.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect() };
         let lacking = self.read(lacking).await;
+        if lacking.is_empty() {
+            return Ok(());
+        }
+        // a key another pull brings now is waited for, not brought twice, and what is still lacking then brought
+        let _turns = self.pulls.fetching(&lacking).await;
+        let lacking = self.read(move |lab: &Lab, me| -> Vec<BlobId> { lacking.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect() }).await;
         if !lacking.is_empty() {
             let asked = lacking.len() as u64;
             let got = self.fetch(endpoint, lacking).await;
@@ -3554,6 +3659,7 @@ impl Shared {
         let holdings = held.entry(device).or_default();
         let live_logs = live::announced_hints(holdings, &announce);
         if !live_logs.is_empty() {
+            self.pulls.note_witnesses(device, live::unchanged(holdings, &announce, &live_logs));
             let heads = announce.logs.iter().filter(|(l, _)| live_logs.contains(l)).flat_map(|(_, f)| f.heads.iter().copied());
             self.traffic.trace(traffic::Stage::Heard, device, heads.collect::<Vec<_>>(), false);
         }
@@ -3724,32 +3830,44 @@ impl Shared {
 
     /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
     /// else once it waited `CATCH_UP_PACE` times as long as the last one took since it ended. True if it did.
-    async fn catch_up_paced(self: &Arc<Self>, must: bool) -> bool {
-        self.catch_up_paced_class(must, lab_schedule::Class::Foreground).await
+    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+        self.catch_up_steps(must, class, None).await.0
     }
 
-    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+    /// `catch_up_paced_class`, and for a live pull (`live::materialize_live`) `until` a deadline: no step begins after
+    /// it, and the pages are stirred after every step, so the step that shows the live edit's entries (a new write's
+    /// entries are shown first, `Lab::show_items`) reaches them at once rather than after the whole catch-up. Whether it
+    /// did, and whether steps were left at the deadline.
+    pub(crate) async fn catch_up_steps(self: &Arc<Self>, must: bool, class: lab_schedule::Class, until: Option<Instant>) -> (bool, bool) {
         if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
-            return false;
+            return (false, false);
         }
         // A turn of the Lab a step (`Lab::catch_up_step`), not one for the whole: its replay stepped on, then its
         // entries shown anew `CATCH_UP_SLICE` at a time, so a page's turn comes between them rather than after all of
         // them (a catch-up held the server's Lab 5.5 s, 2026-10-27).
-        let (mut caught, mut work) = (false, Duration::ZERO);
+        let (mut caught, mut work, mut left, mut budget) = (false, Duration::ZERO, false, CATCH_UP_SLICE);
         loop {
-            let (step, took) = self.try_lab_class(class, |lab, me| {
+            if until.is_some_and(|until| Instant::now() >= until) {
+                left = true;
+                break;
+            }
+            let (step, took) = self.try_lab_class(class, move |lab, me| {
                 // Queue waiting is not computation cost: foreground priority must not
                 // multiply a busy queue into another long background-sync cooldown.
                 let started = Instant::now();
-                (lab.catch_up_step(me, CATCH_UP_SLICE), started.elapsed())
+                (lab.catch_up_step(me, budget), started.elapsed())
             }).await.unwrap_or((avendb::lab::CatchUp::Caught(false), Duration::ZERO));
             work += took;
-            match step {
-                avendb::lab::CatchUp::Stepped => caught = true,
-                avendb::lab::CatchUp::Caught(any) => {
-                    caught |= any;
-                    break;
-                }
+            budget = catch_up_budget(budget, took);
+            let done = match step {
+                avendb::lab::CatchUp::Stepped => { caught = true; false }
+                avendb::lab::CatchUp::Caught(any) => { caught |= any; true }
+            };
+            if until.is_some() && caught {
+                self.jobs.stir();
+            }
+            if done {
+                break;
             }
         }
         if caught {
@@ -3757,7 +3875,7 @@ impl Shared {
             self.changed.notify_one();
             self.find_again_on_new_keys().await;
         }
-        caught
+        (caught, left)
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by
@@ -4264,5 +4382,22 @@ impl Drop for Timed<'_> {
     fn drop(&mut self) {
         let wait = self.held.duration_since(self.asked).as_millis() as u64;
         self.turns.took(self.what, wait, self.held.elapsed().as_millis() as u64);
+    }
+}
+
+#[cfg(test)]
+mod catch_up_budget_tests {
+    use super::*;
+
+    /// A step that took four times its turn shrinks the next to a quarter; one in under half of it doubles; within it,
+    /// the same; never under one, nor over four times `CATCH_UP_SLICE`.
+    #[test]
+    fn a_catch_ups_budget_follows_how_long_its_steps_took() {
+        let ms = Duration::from_millis;
+        assert_eq!(catch_up_budget(48, ms(64)), 12);
+        assert_eq!(catch_up_budget(48, ms(4)), 96);
+        assert_eq!(catch_up_budget(48, ms(12)), 48);
+        assert_eq!(catch_up_budget(1, ms(24_100)), 1, "a 24 s step leaves one entry's worth");
+        assert_eq!(catch_up_budget(CATCH_UP_SLICE * 4, Duration::ZERO), CATCH_UP_SLICE * 4);
     }
 }

@@ -227,4 +227,34 @@ export const INLINE = [
  * version}, bind }` in place of the want), and those query entries, one per meaning. Both go into Maia City by one AIP
  * (scripts/propose-actors.mjs); a route's Interests are the same as from `INLINE` (game/code/sources/actors.test.js).
  */
-export const { actors: ACTORS, queries: QUERIES } = withQueries(INLINE);
+const named = withQueries(INLINE);
+export const ACTORS = named.actors;
+
+/** The published posts everyone may read, newest first, a page at a time (`limit`, `after`, null for none): the posts
+ *  op behind the Universe's stream (src/lib/universe/stream.svelte.js). Its footprint keeps to the published tag, so a
+ *  reader through Maia City's Public share alone is let in; a footprint of every post would be outside its cap. */
+const POSTS_WHERE = { all: [{ type: ['post'] }, { tag: 'content:published' }] };
+export const QUERY_POSTS = {
+	kind: 'query', v: 1, id: 'query-posts', title: 'query-posts', note: 'The Universe reads its stream by this query.',
+	interface: { version: 1, description: 'Reads the published posts, newest first.', events: [], needs: [], methods: [
+		{ name: 'read', params: ['limit', 'after'], ops: [{ op: 'read' }], where: POSTS_WHERE, run: { op: 'posts', limit: { $: 'limit' }, after: { $: 'after' } } }
+	] },
+	where: POSTS_WHERE
+};
+
+/** The rooms Chat lists, a page at a time (G1): the newest `newest` of vault `vault` (null: every vault the device
+ *  holds, which the engine answers by scan), older than `before` (the answer's own `next` of the page before, an opaque
+ *  cursor, null on the first), off the engine's window and the shared index: opening Chat reads no log edit and at most
+ *  the window and the index's tail (src/lib/chat/Chat.svelte). */
+const ROOMS_WHERE = { type: ['room'] };
+export const QUERY_ROOMS_PAGE = {
+	kind: 'query', v: 1, id: 'query-rooms-page', title: 'query-rooms-page', note: 'Chat lists its rooms by this query.',
+	interface: { version: 1, description: 'Reads the rooms, newest first, a window at a time.', events: [], needs: [], methods: [
+		{ name: 'read', params: ['vault', 'newest', 'before'], ops: [{ op: 'read' }], where: ROOMS_WHERE,
+			run: { op: 'query', vault: { $: 'vault' }, where: ROOMS_WHERE, select: [], window: { newest: { $: 'newest' }, before: { $: 'before' } } } }
+	] },
+	where: ROOMS_WHERE
+};
+
+/** The query entries the actors name, and those pages read by of their own (`QUERY_POSTS`, `QUERY_ROOMS_PAGE`). */
+export const QUERIES = [...named.queries, QUERY_POSTS, QUERY_ROOMS_PAGE];

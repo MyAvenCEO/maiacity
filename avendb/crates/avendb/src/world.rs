@@ -966,33 +966,99 @@ pub fn cards(lab: &Lab, me: SignerId, vault: VaultId) -> BTreeMap<SignerId, (Ent
 /// name it reads.
 pub fn profile_of(lab: &Lab, me: SignerId, vault: VaultId) -> Option<(EntryId, String)> {
     let st = lab.state(me);
-    let profiles = st.entries().iter().filter(|en| en.vault == vault && en.creator == vault && lab.landed(me, en.id));
-    profiles.filter(|en| typed(lab, me, en.id, PROFILE)).find_map(|en| {
+    profile_in(lab, me, vault, st.entries().iter())
+}
+
+/// The name vault `vault`'s profile gives (`profile_of`), of the entries `among` names, the oldest first: a node lists
+/// a vault's profiles off its shared index and reads only those.
+pub fn profile_among(lab: &Lab, me: SignerId, vault: VaultId, among: &[(u64, EntryId)]) -> Option<String> {
+    let st = lab.state(me);
+    let mut oldest: Vec<(u64, EntryId)> = among.to_vec();
+    oldest.sort();
+    profile_in(lab, me, vault, oldest.iter().filter_map(|(_, e)| st.entry(*e))).map(|(_, name)| name)
+}
+
+/// `profile_of`, of entries `entries`, the oldest first.
+fn profile_in<'a>(lab: &Lab, me: SignerId, vault: VaultId, entries: impl Iterator<Item = &'a Entry>) -> Option<(EntryId, String)> {
+    // the header's type first, which reads no policy, then whether it landed and what it means
+    let profile = |en: &&Entry| lab.creation_of(me, en.id).is_some_and(|(ty, _)| ty.as_str() == PROFILE);
+    let profiles = entries.filter(|en| en.vault == vault && en.creator == vault).filter(profile);
+    profiles.filter(|en| lab.landed(me, en.id) && typed(lab, me, en.id, PROFILE)).find_map(|en| {
         Some((en.id, title_of(lab.item(me, en.id)?, PROFILE)?))
     })
 }
 
 /// The posts device `me` opens that everyone may read, newest first: each entry of type `POST` whose audience is
 /// public and that isn't deleted (`DELETED`), as the Maia Universe stream shows it, `{entry, vault, name, kind,
-/// created, title, text, channel, about, published, tags, pictures}`, its vault's name as its profile reads (`null`
-/// where it has none) and kind, when it was created, in seconds since 1970, the entry it is about, its `about` or else
-/// the story it links (`null` for none),
+/// created, title, text, channel, about, published, tags, pictures, authors}`, its vault's name as its profile reads
+/// (`null` where it has none) and kind, when it was created, in seconds since 1970, the entry it is about, its `about`
+/// or else the story it links (`null` for none),
 /// when it says it was published, as its record's own `published` reads, an ISO 8601 date or time passed on as it is
 /// (`null` where it says none), its tags as its header reads them, and the names of the files of its vault everyone may
 /// read that its text shows (`public_files`). A field its schema doesn't name, as `published` before a post's schema
 /// names it, reads as the record stores it. What avenDB's server serves as its feed, of what it keeps (avendb-server's
 /// `feed`): a post leaves it once its tag no longer reaches a Public share, as when its article goes back to a draft,
-/// and a picture once its own does. A draft its vault hasn't landed is never among them (`Lab::landed`).
+/// and a picture once its own does. A draft its vault hasn't landed is never among them (`Lab::landed`). Newest first
+/// is by creation (`post_keys`), the order of the shared index.
 pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
-    let st = lab.state(me);
     let files = public_files(lab, me);
+    let named = |v| profile_of(lab, me, v).map(|(_, name)| name);
+    posts_page(lab, me, post_keys(lab, me), usize::MAX, &mut |v| names_in(&files, v), &mut { named }).0
+}
+
+/// The keys of the posts device `me` may show everyone, the newest first: each entry of type `POST` it has landed whose
+/// audience is public, by its creation, then its id (`Lab::creation_of`, the shared index's order). A walk of the
+/// entries it holds that reads no record and no history, so cheap per entry; `posts_page` checks each it shows again.
+pub fn post_keys(lab: &Lab, me: SignerId) -> Vec<(u64, EntryId)> {
+    let st = lab.state(me);
+    let post = |en: &&Entry| everyone_reads(st, en) && lab.landed(me, en.id);
+    let mut keys: Vec<(u64, EntryId)> = st
+        .entries()
+        .iter()
+        .filter(post)
+        .filter_map(|en| lab.creation_of(me, en.id).filter(|(ty, _)| ty.as_str() == POST).map(|(_, at)| (at, en.id)))
+        .collect();
+    keys.sort_by(|a, b| b.cmp(a));
+    keys
+}
+
+/// The key of post `entry` as `post_keys` orders it, for a page's cursor: `None` where device `me` holds none of it.
+pub fn post_key(lab: &Lab, me: SignerId, entry: EntryId) -> Option<(u64, EntryId)> {
+    lab.creation_of(me, entry).map(|(_, at)| (at, entry))
+}
+
+/// The names of the files of vault `vault` in `files` (`public_files`).
+pub fn names_in(files: &BTreeMap<(VaultId, String), PublicFile>, vault: VaultId) -> Vec<String> {
+    files.range((vault, String::new())..).take_while(|((v, _), _)| *v == vault).map(|((_, n), _)| n.clone()).collect()
+}
+
+/// A page of posts (`PostsPage.lean`): of the candidates `keys`, the newest first, the first `limit` that are posts
+/// device `me` shows everyone (`public_posts`), each read in full, its authors and its pictures too, and whether one
+/// more comes after them. It reads what it shows and one post more, never the rest: the authors of a post read its
+/// history, so only the posts of the page pay for theirs. `files` names the files of a vault everyone may read, which
+/// a post's pictures are of (`public_files`, or off the shared index on a node), and `named` the name a vault's profile
+/// gives (`profile_of`, or `profile_among`), each asked once a vault.
+pub fn posts_page(
+    lab: &Lab,
+    me: SignerId,
+    keys: impl IntoIterator<Item = (u64, EntryId)>,
+    limit: usize,
+    files: &mut dyn FnMut(VaultId) -> Vec<String>,
+    named: &mut dyn FnMut(VaultId) -> Option<String>,
+) -> (Vec<Value>, bool) {
+    let st = lab.state(me);
     let mut names: BTreeMap<VaultId, Option<String>> = BTreeMap::new();
+    let mut pictures_of: BTreeMap<VaultId, Vec<String>> = BTreeMap::new();
     let mut posts = vec![];
-    for en in st.entries().iter().filter(|en| lab.landed(me, en.id) && everyone_reads(st, en)) {
+    for (_, e) in keys {
+        let Some(en) = st.entry(e).filter(|en| lab.landed(me, en.id) && everyone_reads(st, en)) else { continue };
         let Some(attrs) = lab.meaning(me, en.id).map(|m| m.attrs).filter(|a| a.ty.as_str() == POST) else { continue };
         let Some(stored) = lab.item(me, en.id).map(|i| i.record()) else { continue };
         let What::Record { title, text, record, deleted: false } = record(stored.clone()) else { continue };
-        let name = names.entry(en.vault).or_insert_with(|| profile_of(lab, me, en.vault).map(|(_, name)| name));
+        if posts.len() == limit {
+            return (posts, true);
+        }
+        let name = names.entry(en.vault).or_insert_with(|| named(en.vault)).clone();
         let kind = st.vault(en.vault).map(|v| kind_name(v.kind));
         let field = |k: &str| record.get(k).or(stored.get(k)).and_then(Value::as_str).filter(|v| !v.is_empty());
         // a post of a post type links the story it came from (`story`): the entry it is about
@@ -1000,9 +1066,9 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
             l?.get("entry")?.as_str().filter(|v| !v.is_empty())
         }
         let text = text.unwrap_or_default();
-        let ours = files.keys().filter(|(v, name)| *v == en.vault && text.contains(name.as_str()));
-        let pictures: Vec<&str> = ours.map(|(_, name)| name.as_str()).collect();
-        let post = json!({
+        let ours = pictures_of.entry(en.vault).or_insert_with(|| files(en.vault));
+        let pictures: Vec<&str> = ours.iter().filter(|name| text.contains(name.as_str())).map(String::as_str).collect();
+        posts.push(json!({
             "entry": en.id.to_hex(),
             "vault": en.vault.to_hex(),
             "name": name,
@@ -1015,12 +1081,10 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
             "published": field("published"),
             "tags": attrs.tags.iter().map(|t| t.as_str()).collect::<Vec<_>>(),
             "pictures": pictures,
-            "authors": lab.history(me, en.id).map_or(json!([]), |h| authors_json(lab, me, &authors(lab, me, en.id, &h.heads(MAIN)))),
-        });
-        posts.push((attrs.created, en.id, post));
+            "authors": lab.history(me, en.id).map_or(json!([]), |h| authors_named(lab, me, &authors(lab, me, en.id, &h.heads(MAIN)), &mut names, named)),
+        }));
     }
-    posts.sort_by_key(|p| std::cmp::Reverse((p.0, p.1)));
-    posts.into_iter().map(|(_, _, post)| post).collect()
+    (posts, false)
 }
 
 /// A page of posts `posts`, newest first as `public_posts` lists them: `limit` of them, the newest, or with `after` (an
@@ -1064,12 +1128,24 @@ pub fn authors(lab: &Lab, me: SignerId, entry: EntryId, version: &[EditId]) -> V
 /// Vaults `vaults`, as `authors` lists them, as JSON: each `{vault, name, kind}`, its name as its profile reads (`null`
 /// where it has none the device opens).
 pub fn authors_json(lab: &Lab, me: SignerId, vaults: &[VaultId]) -> Value {
+    authors_named(lab, me, vaults, &mut BTreeMap::new(), &mut |v| profile_of(lab, me, v).map(|(_, name)| name))
+}
+
+/// `authors_json`, with the names of the vaults it read already in `names`, which it adds to: a page of posts reads
+/// each vault's profile once.
+fn authors_named(
+    lab: &Lab,
+    me: SignerId,
+    vaults: &[VaultId],
+    names: &mut BTreeMap<VaultId, Option<String>>,
+    named: &mut dyn FnMut(VaultId) -> Option<String>,
+) -> Value {
     let st = lab.state(me);
-    let one = |&v: &VaultId| {
-        let name = profile_of(lab, me, v).map(|(_, name)| name);
+    let mut one = |&v: &VaultId| {
+        let name = names.entry(v).or_insert_with(|| named(v));
         json!({ "vault": v.to_hex(), "name": name, "kind": st.vault(v).map(|v| kind_name(v.kind)) })
     };
-    Value::Array(vaults.iter().map(one).collect())
+    Value::Array(vaults.iter().map(&mut one).collect())
 }
 
 /// The kinds of record that are code: a recipe, a view, a logic and a function, the code entries avenDB ships
@@ -1244,9 +1320,21 @@ fn files_everyone_reads(
     of: impl Fn(&Entry) -> bool,
 ) -> BTreeMap<(VaultId, String), PublicFile> {
     let st = lab.state(me);
+    files_of(lab, me, st.entries().iter().filter(|en| of(en)))
+}
+
+/// The names of the files everyone may read among entries `entries` that device `me` opens (`public_files`): a node
+/// lists a vault's files off its shared index and reads only those (`posts_page`'s pictures).
+pub fn public_file_names(lab: &Lab, me: SignerId, entries: &[EntryId]) -> Vec<String> {
+    let st = lab.state(me);
+    files_of(lab, me, entries.iter().filter_map(|e| st.entry(*e))).into_keys().map(|(_, name)| name).collect()
+}
+
+/// `public_files`, of entries `entries`.
+fn files_of<'a>(lab: &Lab, me: SignerId, entries: impl Iterator<Item = &'a Entry>) -> BTreeMap<(VaultId, String), PublicFile> {
+    let st = lab.state(me);
     let mut files = BTreeMap::new();
-    let landed = |en: &&Entry| lab.landed(me, en.id);
-    let public = st.entries().iter().filter(landed).filter(|en| of(en) && everyone_reads(st, en));
+    let public = entries.filter(|en| everyone_reads(st, en) && lab.landed(me, en.id));
     let mut candidates = Vec::new();
     for en in public.filter(|en| typed(lab, me, en.id, FILE)) {
         let Some(What::Record { title, record, deleted: false, .. }) = lab.item(me, en.id).map(|i| record(i.record()))

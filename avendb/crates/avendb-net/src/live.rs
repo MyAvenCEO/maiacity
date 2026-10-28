@@ -86,6 +86,13 @@ pub(crate) fn announced_hints(held: &Holdings, announce: &Announce) -> Vec<LogId
     announce.logs.iter().map(|(log, _)| *log).collect()
 }
 
+/// Of the logs `announce` hints, those whose frontier it repeats unchanged: witnesses (`add_witness_hints`), and how
+/// they were, as against those it changed.
+pub(crate) fn unchanged(held: &Holdings, announce: &Announce, hinted: &[LogId]) -> Vec<(LogId, bool)> {
+    announce.logs.iter().filter(|(log, _)| hinted.contains(log))
+        .map(|(log, frontier)| (*log, held.logs.get(log) == Some(frontier))).collect()
+}
+
 fn add_witness_hints(announce: &mut Announce, want: &Holdings, witnesses: impl IntoIterator<Item = LogId>) {
     if announce.full || announce.logs.is_empty() || announce.logs.len() >= pulls::LIVE_LOGS {
         return;
@@ -221,9 +228,11 @@ impl Shared {
     }
 
     async fn materialize_live(self: &Arc<Self>, timing: &mut LiveTiming) {
-        // At most LIVE_VIEW of it here; a step cut short is the Lab's own (each step one turn of it), so the background
-        // catch-up, at most one at a time, goes on from where this one stopped.
-        if time::timeout(LIVE_VIEW, self.catch_up_paced(true)).await.is_err() {
+        // At most LIVE_VIEW of it here, the pages stirred after each step: no step is begun after it (each step one
+        // turn of the Lab), and the background catch-up, at most one at a time, goes on from where this one stopped.
+        let until = time::Instant::now() + LIVE_VIEW;
+        let (_, left) = self.catch_up_steps(true, crate::lab_schedule::Class::Foreground, Some(until)).await;
+        if left {
             timing.left = true;
             if !self.pulls.view_behind.swap(true, std::sync::atomic::Ordering::AcqRel)
                 && let Ok(activity) = self.admit()
@@ -241,6 +250,25 @@ impl Shared {
         // barrier, making this catch-up return false. Publish after the barrier in either case, so an earlier
         // receive wake cannot be the consumer's last notification of the newly materialized view.
         self.jobs.stir();
+    }
+
+    /// The hinted `logs` a live pull asks (`LivePriority.lean` `inStep`): every log the announcement changed, and a
+    /// witness only if this device holds none of it. A witness is an earlier entry's log, named for its creation alone
+    /// (`live_witnesses`); asked of a device that holds that creation, it brought the rest of that log, the backlog, with
+    /// the change (`bench_live` phone: one chat edit's pull carried 86 bulk edits, 2.0 s). The backlog asks it once this
+    /// pull ends (`Claims::live_done`).
+    async fn in_step(self: &Arc<Self>, device: SignerId, logs: BTreeSet<LogId>) -> BTreeSet<LogId> {
+        let witnesses = self.pulls.take_witnesses(device, &logs);
+        if witnesses.is_empty() {
+            return logs;
+        }
+        let shared = self.clone();
+        self.try_lab(move |lab, me| {
+            let mine = shared.logs_of(lab, me);
+            logs.into_iter().filter(|log| !witnesses.contains(log) || !mine.of.contains_key(log)).collect()
+        })
+        .await
+        .unwrap_or_default()
     }
 
     async fn pull_live(
@@ -281,6 +309,7 @@ impl Shared {
             .intersection(&missing)
             .copied()
             .collect::<BTreeSet<_>>();
+        let logs = self.in_step(device, logs).await;
         if !logs.is_empty() {
             let at = time::Instant::now();
             timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None, None)

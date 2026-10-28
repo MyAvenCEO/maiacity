@@ -97,6 +97,7 @@ import AvenDB.Coverage
 import AvenDB.Freshness
 import AvenDB.LiveQuery
 import AvenDB.QueryView
+import AvenDB.PostsPage
 
 import AvenDB.BootstrapAnchor
 
@@ -116,3 +117,4 @@ import AvenDB.BootstrapAnchor
 
 import AvenDB.NodeLoop
 import AvenDB.UpkeepSlices
+import AvenDB.CatchUpBudget
