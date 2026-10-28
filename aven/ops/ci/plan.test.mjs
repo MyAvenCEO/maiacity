@@ -75,7 +75,7 @@ test('"CI required" needs every job, and passes only when each job the plan name
  const jobs = Object.keys(ci.jobs).filter(j => j !== 'required');
  expect([...ci.jobs.required.needs].sort()).toEqual(jobs.sort());
  const out = outputs(plan(['aven/db/crates/avendb-net/src/sync.rs'], { key }));
- const ran = id => id === 'rust-archive' ? out.run_rust : out[`run_${id.replace(/-/g, '_')}`];
+ const ran = id => out[`run_${id.replace(/-/g, '_')}`];
  const needs = Object.fromEntries(jobs.map(id => [id, { result: id === 'plan' || ran(id) === 'true' ? 'success' : 'skipped' }]));
  needs.plan.outputs = out;
  expect(verdict(needs)).toEqual([]);

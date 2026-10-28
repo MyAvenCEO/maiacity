@@ -124,7 +124,7 @@ export function verdict(needs) {
  const plan = needs.plan;
  if (plan?.result !== 'success') return [`plan: ${plan?.result ?? 'missing'}`];
  const out = plan.outputs ?? {};
- const wanted = id => out[`run_${(id === 'rust-archive' ? 'rust' : id).replace(/-/g, '_')}`] === 'true';
+ const wanted = id => out[`run_${id.replace(/-/g, '_')}`] === 'true';
  for (const [id, job] of Object.entries(needs)) {
   if (id === 'plan') continue;
   if (job.result === 'success') continue;

@@ -13,8 +13,7 @@ name: CI
 #                 and the dependency audits
 #   probes        every way out of the asset box, a view and the math host, tried in Chromium and then in WebKit (theOS's
 #                 engine), and avenDB's page in both
-#   rust-archive  avenDB's Rust tests built once into one nextest archive (W4), and the doc tests
-#   rust          the archive's shards, each on a runner of its own, building nothing
+#   rust          avenDB's Rust tests in shards, each building its own crates' tests on a runner of its own
 #   proofs        the Lean spec, avenDB's SSOT (it proves, and the committed vectors are the model's), and the protocol
 #                 models (Verifpal) with their negative controls
 #   browser       avenDB's device as WebAssembly in a real Chromium, against a real relay and server
@@ -322,15 +321,19 @@ jobs:
           node "$RUNNER_TEMP/avendb-opfs/node_modules/playwright/cli.js" install webkit
           AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" bun aven/db/scripts/test-avendb-store.mjs --browser webkit
 
-  # One build of every avenDB test program (W4: one program a crate), into one nextest archive the shards run from. Our
-  # own crates at opt-level 1, not dev's 2 (the dependencies keep theirs): they build in about half the time and run as
-  # fast. mold links them in a fraction of ld's time.
-  rust-archive:
+  # Each shard builds its own crates' tests on a runner of its own, beside the others, with a cache of its own build
+  # (rust-tests.mjs). Our own crates at opt-level 1, not dev's 2 (the dependencies keep theirs): they build in about
+  # half the time and run as fast. mold links them in a fraction of ld's time.
+  rust:
     needs: plan
     if: needs.plan.outputs.run_rust == 'true'
-    name: avenDB tests, built once
+    name: avenDB tests (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.rust) }}
     env:
       CARGO_PROFILE_TEST_OPT_LEVEL: 1
     steps:
@@ -339,7 +342,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: . -> target
-          key: rust-tests
+          key: rust-tests-${{ matrix.shard }}
           cache-on-failure: true
       - uses: taiki-e/install-action@v2
         with:
@@ -348,42 +351,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
-      - run: bun aven/ops/ci/rust-tests.mjs archive "$RUNNER_TEMP/rust-tests.tar.zst"
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: rust-tests
-          path: ${{ runner.temp }}/rust-tests.tar.zst
-          retention-days: 1
-          compression-level: 0
-      # nextest runs no doc tests; they build here, after the shards have their archive
-      - run: bun aven/ops/ci/rust-tests.mjs doc
-
-  rust:
-    needs: [plan, rust-archive]
-    if: needs.plan.outputs.run_rust == 'true'
-    name: avenDB tests (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.plan.outputs.rust) }}
-    steps:
-      # the sources the tests read their fixtures from, as the archive's paths are remapped onto them
-      - uses: actions/checkout@v7.0.1
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version-file: .bun-version
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: rust-tests
-          path: ${{ runner.temp }}
       - env:
           SHARD: ${{ matrix.shard }}
-        run: bun aven/ops/ci/rust-tests.mjs run "$SHARD" "$RUNNER_TEMP/rust-tests.tar.zst"
+        run: bun aven/ops/ci/rust-tests.mjs run "$SHARD"
       - run: echo passed > .pass
       - uses: actions/cache/save@v6.1.0
         with:
@@ -724,7 +694,7 @@ jobs:
 
   required:
     name: CI required
-    needs: [plan, wasm, js, probes, rust-archive, rust, proofs, browser, images, mac, lean, site-same]
+    needs: [plan, wasm, js, probes, rust, proofs, browser, images, mac, lean, site-same]
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
