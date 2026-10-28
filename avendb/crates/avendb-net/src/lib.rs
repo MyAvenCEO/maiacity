@@ -365,6 +365,26 @@ pub const PAGE: usize = 4 << 20;
 /// server's core (measured 2026-10-27), so a turn of 48 holds the Lab some 17 ms.
 pub(crate) const CATCH_UP_SLICE: usize = 48;
 
+/// How long one step of a catch-up may hold the Lab: each step's budget follows how long the last one took
+/// (`catch_up_budget`), from `CATCH_UP_SLICE`, so a phone's WebAssembly, several times slower than a server's core, takes
+/// steps as short (G5: a person's write applied within 50 ms during a catch-up, 2026-10-27).
+const CATCH_UP_TURN: Duration = Duration::from_millis(16);
+
+/// The budget of a catch-up's next step, after one of `budget` took `took`: smaller in proportion where it took longer
+/// than `CATCH_UP_TURN`, twice as big where it took less than half of it, never under 1 nor over four times
+/// `CATCH_UP_SLICE`.
+fn catch_up_budget(budget: usize, took: Duration) -> usize {
+    let (took, turn) = (took.as_micros().max(1), CATCH_UP_TURN.as_micros());
+    let next = if took > turn {
+        (budget as u128 * turn / took) as usize
+    } else if took * 2 < turn {
+        budget.saturating_mul(2)
+    } else {
+        budget
+    };
+    next.clamp(1, CATCH_UP_SLICE * 4)
+}
+
 /// How much longer than its last bringing up to date took a pull waits before it brings its device's keys and items up
 /// to date again (`Shared::catch_up_paced`): each time replays the whole log for a device catching up from far behind,
 /// whose edits sort before what its replay last stepped over. Samuel's iPhone 2026-10-22: each asking of 256 logs ended
@@ -3814,19 +3834,20 @@ impl Shared {
         // A turn of the Lab a step (`Lab::catch_up_step`), not one for the whole: its replay stepped on, then its
         // entries shown anew `CATCH_UP_SLICE` at a time, so a page's turn comes between them rather than after all of
         // them (a catch-up held the server's Lab 5.5 s, 2026-10-27).
-        let (mut caught, mut work, mut left) = (false, Duration::ZERO, false);
+        let (mut caught, mut work, mut left, mut budget) = (false, Duration::ZERO, false, CATCH_UP_SLICE);
         loop {
             if until.is_some_and(|until| Instant::now() >= until) {
                 left = true;
                 break;
             }
-            let (step, took) = self.try_lab_class(class, |lab, me| {
+            let (step, took) = self.try_lab_class(class, move |lab, me| {
                 // Queue waiting is not computation cost: foreground priority must not
                 // multiply a busy queue into another long background-sync cooldown.
                 let started = Instant::now();
-                (lab.catch_up_step(me, CATCH_UP_SLICE), started.elapsed())
+                (lab.catch_up_step(me, budget), started.elapsed())
             }).await.unwrap_or((avendb::lab::CatchUp::Caught(false), Duration::ZERO));
             work += took;
+            budget = catch_up_budget(budget, took);
             let done = match step {
                 avendb::lab::CatchUp::Stepped => { caught = true; false }
                 avendb::lab::CatchUp::Caught(any) => { caught |= any; true }
@@ -4350,5 +4371,22 @@ impl Drop for Timed<'_> {
     fn drop(&mut self) {
         let wait = self.held.duration_since(self.asked).as_millis() as u64;
         self.turns.took(self.what, wait, self.held.elapsed().as_millis() as u64);
+    }
+}
+
+#[cfg(test)]
+mod catch_up_budget_tests {
+    use super::*;
+
+    /// A step that took four times its turn shrinks the next to a quarter; one in under half of it doubles; within it,
+    /// the same; never under one, nor over four times `CATCH_UP_SLICE`.
+    #[test]
+    fn a_catch_ups_budget_follows_how_long_its_steps_took() {
+        let ms = Duration::from_millis;
+        assert_eq!(catch_up_budget(48, ms(64)), 12);
+        assert_eq!(catch_up_budget(48, ms(4)), 96);
+        assert_eq!(catch_up_budget(48, ms(12)), 48);
+        assert_eq!(catch_up_budget(1, ms(24_100)), 1, "a 24 s step leaves one entry's worth");
+        assert_eq!(catch_up_budget(CATCH_UP_SLICE * 4, Duration::ZERO), CATCH_UP_SLICE * 4);
     }
 }
