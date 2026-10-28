@@ -223,6 +223,34 @@ impl Logs {
         self.of.iter().map(|(l, log)| (*l, log.frontier.clone())).collect()
     }
 
+    /// The stubs of `stubs` (each an id with what it builds on) that stand closed on what this one holds: each of
+    /// their parents in a closed part or such a stub. A held stub counts as held (`LazyBoxes.lean`), as a request
+    /// counts it (`Lab::held_stubs`).
+    pub(crate) fn closed_stubs(&self, stubs: &[(EditId, Vec<EditId>)]) -> HashSet<EditId> {
+        let mut closed: HashSet<EditId> = HashSet::new();
+        let mut left: Vec<&(EditId, Vec<EditId>)> = stubs.iter().collect();
+        loop {
+            let before = left.len();
+            left.retain(|(id, parents)| {
+                let stands = parents.iter().all(|p| self.closed.contains(p) || closed.contains(p));
+                if stands {
+                    closed.insert(*id);
+                }
+                !stands
+            });
+            if left.len() == before {
+                return closed;
+            }
+        }
+    }
+
+    /// `lacks`, counting the held stubs `stubs` (`closed_stubs`) as held: a head that is one of them is no edit
+    /// this one lacks, so a log whose head on the peer is a key box it held back doesn't read as lacked for good.
+    pub(crate) fn lacks_with(&self, theirs: &Frontier, stubs: &HashSet<EditId>) -> bool {
+        theirs.heads.iter().any(|h| !self.closed.contains(h) && !stubs.contains(h))
+            || theirs.waiting.iter().any(|w| !self.at.contains_key(w) && !stubs.contains(w))
+    }
+
     /// A device that holds `theirs` of a log holds an edit of it that this one lacks: a head outside this one's
     /// closed parts, which this one lacks or holds without the whole past the device holds of it, or a waiting edit
     /// this one doesn't hold.
