@@ -98,7 +98,7 @@ fn profile_same_engine_synthetic_warm_restore() {
     eprintln!("synthetic fixture edits={count} boxes={} cloned_box_bytes={}", index.boxes.len(), index.boxes.iter().map(|b| b.bytes(lab.held(phone).log.edits()).len()).sum::<usize>());
     drop(index);
     let pending = lab.warming(phone, count, Some([77; 40])).unwrap();
-    let warm = Warm { keys: pending.keys.clone().into_iter().collect(), views: pending.view.clone().into_iter().collect(), shown: pending.shown.clone().map(|(p, _)| p).into_iter().collect() };
+    let warm = Warm { keys: pending.keys.clone().into_iter().collect(), views: pending.view.clone().into_iter().collect(), shown: pending.shown.clone().map(|(p, _)| p.into()).into_iter().collect() };
     assert!(warm.views.len() == 1 && warm.keys.len() == 1);
     lab.warmed(phone, pending);
     let records: Vec<_> = entries.iter().map(|e| lab.item(phone, *e).unwrap().record()).collect();
@@ -205,7 +205,7 @@ fn unchanged_warm_restore_does_not_reencode_and_corrupt_views_recover() {
     let count = backup.signed.len();
     let marker = [81; 40];
     let saved = lab.warming(device, count, Some(marker)).unwrap();
-    let warm = Warm { keys: saved.keys.clone().into_iter().collect(), views: saved.view.clone().into_iter().collect(), shown: saved.shown.clone().map(|(p, _)| p).into_iter().collect() };
+    let warm = Warm { keys: saved.keys.clone().into_iter().collect(), views: saved.view.clone().into_iter().collect(), shown: saved.shown.clone().map(|(p, _)| p.into()).into_iter().collect() };
     assert_eq!(warm.views.len(), 1);
     lab.warmed(device, saved);
     lab.restore_warm(device, backup.clone(), Some((marker, count)), &warm);
@@ -242,7 +242,7 @@ fn ordinary_reconstruction_bounds_scratch_retention_before_final_sweep() {
     let passkey = lab.passkey("Scratch bound");
     let device = lab.device_of(passkey, "Device");
     let vault = human_on(&mut lab, passkey, &[device]);
-    let (mut reconstructed, mut recent) = (BTreeMap::new(), Vec::new());
+    let (mut reconstructed, mut recent) = (super::ShownMap::default(), Vec::new());
     let mut expected = BTreeMap::new();
     let mut peak = 0;
     for i in 0..(SCRATCHES * 2 + 7) {
@@ -259,7 +259,7 @@ fn ordinary_reconstruction_bounds_scratch_retention_before_final_sweep() {
     }
     assert_eq!(peak, SCRATCHES);
     let selected: HashSet<_> = recent.iter().rev().take(SCRATCHES).copied().collect();
-    for (entry, shown) in &reconstructed {
+    for (entry, shown) in reconstructed.iter() {
         assert_eq!(shown.after.scratch.is_some(), selected.contains(entry), "same final cache selection");
         assert_eq!((shown.items()[&MAIN].record(), shown.items()[&MAIN].version()), expected[entry]);
     }
@@ -294,7 +294,7 @@ fn stored_view_shows_what_replay_shows() {
     lab.restore_from(d, backup.clone());
     let replayed = shows(&lab);
     let saved = lab.warming(d, held, Some([84; 40])).unwrap();
-    let warm = Warm { keys: saved.keys.into_iter().collect(), views: saved.view.into_iter().collect(), shown: saved.shown.into_iter().map(|(p, _)| p).collect() };
+    let warm = Warm { keys: saved.keys.into_iter().collect(), views: saved.view.into_iter().collect(), shown: saved.shown.into_iter().map(|(p, _)| p.into()).collect() };
     lab.restore_warm(d, backup.clone(), Some(([84; 40], held)), &warm);
     assert!(lab.work_metrics(d)["counts"]["replay: from its stored view"].as_u64().unwrap_or(0) > 0);
     assert_eq!(shows(&lab), replayed, "the stored view shows what replay shows");

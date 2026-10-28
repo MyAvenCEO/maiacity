@@ -26,7 +26,7 @@ fn save(lab: &mut Lab, d: SignerId) -> Option<(Warm, usize)> {
     let warm = Warm {
         keys: w.keys.clone().into_iter().collect(),
         views: w.view.clone().into_iter().collect(),
-        shown: w.shown.clone().map(|(pack, _)| pack).into_iter().collect(),
+        shown: w.shown.clone().map(|(pack, _)| pack.into()).into_iter().collect(),
     };
     lab.warmed(d, w);
     Some((warm, held))
@@ -70,6 +70,65 @@ fn a_showing_of_other_writes_is_judged_anew() {
     lab.restore_warm(phone, backup, Some(([1; 40], held)), &warm);
     assert_eq!(records(&lab, phone, &notes), expected);
     assert!(expected[1].contains("After the save."));
+}
+
+/// More entries than stay open (`shown_map::WINDOW`, 8 in a test build, beside the 32 that keep scratch items):
+/// those past the window close as their kept bytes, and each shows as it did open, read in any order, edited on, and kept again.
+#[test]
+fn showings_past_the_window_close_and_open_as_they_were() {
+    let (mut lab, mac, phone, vault, notes) = alice(56);
+    for (i, e) in notes.iter().enumerate() {
+        lab.edit(phone, vault, *e, |it| it.set_text(2, &format!("Written {i}."))).unwrap();
+    }
+    assert!(count(&lab, phone, "show: showings closed") > 0, "showings past the window closed");
+    let expected = records(&lab, phone, &notes);
+    let mut backwards = notes.clone();
+    backwards.reverse();
+    let mut seen = records(&lab, phone, &backwards);
+    seen.reverse();
+    assert_eq!(seen, expected);
+    // edited on after it closed and opened again, on the device and on another that takes the edit
+    lab.edit(phone, vault, notes[0], |it| it.set_text(2, "Again.")).unwrap();
+    assert!(lab.sync(phone, mac) > 0);
+    assert_eq!(records(&lab, mac, &notes[..1]), records(&lab, phone, &notes[..1]));
+    assert!(records(&lab, phone, &notes[..1])[0].contains("Again."));
+    // and kept: an unlock takes every one, closed, and shows each as before
+    let (warm, held) = save(&mut lab, phone).expect("the shelf lacks work");
+    let expected = records(&lab, phone, &notes);
+    let backup = lab.backup(phone);
+    lab.restore_warm(phone, backup, Some(([1; 40], held)), &warm);
+    assert_eq!(records(&lab, phone, &notes), expected);
+}
+
+/// A pack whose last showing doesn't open (a shelf's file spoilt after the save): the others are taken, that one's
+/// entry shows nothing till the next showing, which judges it anew.
+#[test]
+fn a_showing_that_does_not_open_is_judged_anew() {
+    let (mut lab, _, phone, vault, notes) = alice(3);
+    for (i, e) in notes.iter().enumerate() {
+        lab.edit(phone, vault, *e, |it| it.set_text(2, &format!("Written {i}."))).unwrap();
+    }
+    let held = lab.log(phone).ids().len();
+    let w: Warming = lab.warming(phone, held, Some([1; 40])).expect("the shelf lacks work");
+    let mut pack = w.shown.clone().expect("a pack").0;
+    *pack.last_mut().unwrap() ^= 1;
+    let warm = Warm { keys: w.keys.clone().into_iter().collect(), views: w.view.clone().into_iter().collect(), shown: vec![pack.into()] };
+    lab.warmed(phone, w);
+    let expected = records(&lab, phone, &notes);
+    let backup = lab.backup(phone);
+    lab.restore_warm(phone, backup, Some(([1; 40], held)), &warm);
+    let seen = records(&lab, phone, &notes);
+    assert_eq!(seen.iter().filter(|r| r.is_empty()).count(), 1, "the one that doesn't open shows nothing yet");
+    // a write to another note shows the device's entries again
+    let other = seen.iter().position(|r| !r.is_empty()).unwrap();
+    lab.edit(phone, vault, notes[other], |it| it.set_text(2, "Again.")).unwrap();
+    let now = records(&lab, phone, &notes);
+    for (i, r) in now.iter().enumerate() {
+        match i == other {
+            true => assert!(r.contains("Again.")),
+            false => assert_eq!(*r, expected[i], "note {i} judged anew as it was"),
+        }
+    }
 }
 
 /// A random walk: notes written on both devices, saves in between, each unlock with the last save's showings; every
