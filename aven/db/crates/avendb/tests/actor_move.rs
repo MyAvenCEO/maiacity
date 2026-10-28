@@ -1,4 +1,4 @@
-//! A manifest moves to an actor through the lens "Manifest, v2 to Actor, v3" (game/code/sources/actors.js
+//! A manifest moves to an actor through the lens "Manifest, v2 to Actor, v3" (maia/content/game/code/sources/actors.js
 //! `actorLens`), as the Actors v3 AIP moves each of Maia City's: a proposal on the entry, then one write through v3 that
 //! sets the actor's fields. The write stores what `View::put` makes of it, and the rules count it only where that
 //! record fits the schemas the entry was written under (`lens::Lane::fits`). A lens that converts `kind`, `v` and

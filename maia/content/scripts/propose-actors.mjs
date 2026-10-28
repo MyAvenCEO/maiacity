@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// The actors the repo declares (src/lib/avendb/actors.js, "Actor, v3": the kernel, the dashboard, the Universe, Chat,
+// The actors the repo declares (aven/db/page/actors.js, "Actor, v3": the kernel, the dashboard, the Universe, Chat,
 // the Studio, the asset libraries, each page and each game, each what its app loads, a tree of Interests in tiers),
-// proposed into the Maia City vault as ONE AIP by avenMAIA's agent (./agent.mjs: the Mac's, or a cloud session's),
+// proposed into the Maia City vault as ONE AIP by avenMAIA's agent (../../../aven/db/scripts/agent.mjs: the Mac's, or a cloud session's),
 // never written by the seed (Samuel 2026-10-19: every change to vault data goes to him as a proposal). "Manifest, v2"
 // evolves into "Actor, v3" (Samuel 2026-10-27): an entry Maia City holds already (by its id) keeps its id and its
 // history and gets a proposal line with one v3 write that makes it the repo's; an id it holds none of is a draft of
 // its own. No copies, nothing superseded or deleted. Without --run it only says what it would do.
 //
-//   node scripts/propose-actors.mjs [--run] [--device <path of avendb-device>] [--again]
-//   node scripts/propose-actors.mjs --owner <Maia City vault id>     the owner's schema op, printed
+//   node maia/content/scripts/propose-actors.mjs [--run] [--device <path of avendb-device>] [--again]
+//   node maia/content/scripts/propose-actors.mjs --owner <Maia City vault id>     the owner's schema op, printed
 //
 // A schema or a lens is never a draft: it joins the vault's lane only by the vault's own create on main. So before the
 // run an owner adds, in theOS (avenDB's Query console), the schema "Actor, v3" (`--owner` prints it) and the lens
@@ -18,7 +18,7 @@
 // it reads in v3 only through a v1 to v2 to v3 chain, which a view does not walk (one lens hop).
 //
 // Each actor's part names a query entry (task C1: `{ query: {entry, version}, bind }`), so the same AIP drafts the query
-// entries the actors name (src/lib/avendb/actors.js `QUERIES`, schema "Query, v1", entry type `query`), or proposes the
+// entries the actors name (aven/db/page/actors.js `QUERIES`, schema "Query, v1", entry type `query`), or proposes the
 // repo's text on one Maia City holds already. "Query, v1" comes into the lane by the schemas AIP of task A2; until it
 // is there, `--run` prints its op and stops.
 //
@@ -33,13 +33,13 @@
 // With `--skip-locked` it leaves those out instead (they stay v2, which pages read lifted) and proposes the rest; a
 // later run, on an engine that opens them, moves them in an AIP of their own, which names only what it moves.
 //
-//   node scripts/propose-actors.mjs --run [--drafts <ledger.json | run.log>] [--skip-locked]
+//   node maia/content/scripts/propose-actors.mjs --run [--drafts <ledger.json | run.log>] [--skip-locked]
 import { ACTOR_LENS, ACTOR_SCHEMA, ACTOR_TYPE, ACTOR_V3, MANIFEST_SCHEMA, MANIFEST_V1_SCHEMA, QUERY_SCHEMA, QUERY_TYPE, QUERY_V1, actorLens } from '../game/code/sources/actors.js';
-import { ACTORS, QUERIES } from '../src/lib/avendb/actors.js';
+import { ACTORS, QUERIES } from '../../../aven/db/page/actors.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { device, session } from './agent.mjs';
+import { device, session } from '../../../aven/db/scripts/agent.mjs';
 
 const args = process.argv.slice(2);
 const flag = (f) => args.includes(f);
@@ -264,14 +264,14 @@ try {
 		'import AvenDB.Objective',
 		'open AvenDB.Objective',
 		'',
-		`/-- Maia City holds every actor and query entry the repo declares (src/lib/avendb/actors.js), as "${ACTOR_SCHEMA}" and "${QUERY_SCHEMA}". -/`,
+		`/-- Maia City holds every actor and query entry the repo declares (aven/db/page/actors.js), as "${ACTOR_SCHEMA}" and "${QUERY_SCHEMA}". -/`,
 		`def actors : Metric := metric "Actors v3 and their queries in Maia City" (equals (reading "actors") ${ACTORS.length - skipped.size + QUERIES.length})`,
 		'',
 		'def objective : List Metric := [actors]',
 		''
 	].join('\n');
 	const note = [
-		'One query engine, tasks M and C1 (Samuel 2026-10-27: "Actor" means one thing everywhere, and an app is an actor): each page\'s manifest becomes its app\'s actor. "Manifest, v2" evolves into "Actor, v3" through one lens: the same entries, ids and history, each with one v3 write; no copies, nothing superseded. v3 renames the kind to actor and tiers to loads (a held part names `actor`), and adds the actor\'s interface (no methods: these actors only load) and code. Each part names a query entry ("Query, v1", an actor of one read method) by its address, its params bound to the actor\'s slots. Every route loads exactly what it loaded before: a golden test compiles each route\'s Interests from the manifests and from the actors and their queries (game/code/sources/actors.test.js). Lean: avendb/spec/AvenDB/Interest.lean, Address.lean.',
+		'One query engine, tasks M and C1 (Samuel 2026-10-27: "Actor" means one thing everywhere, and an app is an actor): each page\'s manifest becomes its app\'s actor. "Manifest, v2" evolves into "Actor, v3" through one lens: the same entries, ids and history, each with one v3 write; no copies, nothing superseded. v3 renames the kind to actor and tiers to loads (a held part names `actor`), and adds the actor\'s interface (no methods: these actors only load) and code. Each part names a query entry ("Query, v1", an actor of one read method) by its address, its params bound to the actor\'s slots. Every route loads exactly what it loaded before: a golden test compiles each route\'s Interests from the manifests and from the actors and their queries (maia/content/game/code/sources/actors.test.js). Lean: aven/db/spec/AvenDB/Interest.lean, Address.lean.',
 		queries.map((q) => `${q.id}: ${JSON.stringify(q.where)}${q.window ? `, newest ${q.window.limit}` : q.order?.[1] === 'asc' ? ', oldest first' : ''}${q.follow ? `, follow ${q.follow}` : ''}`).join('\n'),
 		moving.map((a) => `${a.id}: ${a.note}`).join('\n'),
 		...(skipped.size ? [`Not in this AIP: ${[...skipped].join(', ')}. Each was written under "${MANIFEST_V1_SCHEMA}" and "${MANIFEST_SCHEMA}", so it opens read-only through v3 until the engine reads through a chain of lenses; it stays v2, which pages read lifted, and moves by an AIP of its own.`] : []),
