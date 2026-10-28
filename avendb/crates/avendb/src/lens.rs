@@ -34,7 +34,7 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use serde_json::Value;
 
@@ -1071,44 +1071,87 @@ impl View {
     }
 }
 
-/// The schemas and lenses a device holds from a vault's lane.
+/// The schemas and lenses a device holds from a vault's lane. Each is parsed once per process from its bytes
+/// (`parsed`) and shared, so a lane costs what its blobs' lookups cost, not their parse: the `get` op built one for every
+/// read, 1.3 ms of the shipped schemas parsed anew each time (2026-10-28).
 #[derive(Clone, Debug, Default)]
 pub struct Lane {
-    schemas: BTreeMap<BlobId, Schema>,
-    lenses: BTreeMap<BlobId, Lens>,
+    schemas: BTreeMap<BlobId, Arc<Schema>>,
+    lenses: BTreeMap<BlobId, Arc<Lens>>,
+}
+
+/// What a blob of a lane is: a lens, a schema, or neither.
+#[derive(Clone)]
+enum Parsed {
+    Lens(Arc<Lens>),
+    Schema(Arc<Schema>),
+    Neither,
+}
+
+/// The most blobs `parsed` remembers; past it, it starts again (a parse is a function of the bytes alone).
+const MOST_PARSED: usize = 4096;
+
+/// Blob `b` parsed as a lens or else a schema (`Lens::parse`, `Schema::parse`), remembered by its bytes.
+fn parsed(b: &[u8]) -> Parsed {
+    static PARSED: LazyLock<Mutex<HashMap<Vec<u8>, Parsed>>> = LazyLock::new(Default::default);
+    if let Some(p) = PARSED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(b) {
+        return p.clone();
+    }
+    let p = match Lens::parse(b) {
+        Some(l) => Parsed::Lens(Arc::new(l)),
+        None => Schema::parse(b).map_or(Parsed::Neither, |s| Parsed::Schema(Arc::new(s))),
+    };
+    let mut memo = PARSED.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if memo.len() >= MOST_PARSED {
+        memo.clear();
+    }
+    memo.insert(b.to_vec(), p.clone());
+    p
 }
 
 impl Lane {
     /// The lane of these blobs: each a schema or a lens; any other blob is kept by the rules but means nothing here.
     pub fn new<'a>(blobs: impl IntoIterator<Item = &'a [u8]>) -> Lane {
         let mut lane = Lane::default();
+        lane.add(blobs);
+        lane
+    }
+
+    fn add<'a>(&mut self, blobs: impl IntoIterator<Item = &'a [u8]>) {
         for b in blobs {
-            if let Some(l) = Lens::parse(b) {
-                lane.lenses.insert(l.id, l);
-            } else if let Some(s) = Schema::parse(b) {
-                lane.schemas.insert(s.id, s);
+            match parsed(b) {
+                Parsed::Lens(l) => {
+                    self.lenses.insert(l.id, l);
+                }
+                Parsed::Schema(s) => {
+                    self.schemas.insert(s.id, s);
+                }
+                Parsed::Neither => {}
             }
         }
-        lane
     }
 
     /// The lane of the blobs `lane` and of the shipped schemas and lenses, which apps read through before a vault
     /// creates any schema or lens (`blobs::SHIPPED`, `blobs::LENSES`): what a device reads and judges a vault's entries
-    /// by.
+    /// by. The shipped ones are one lane, built once.
     pub fn with_built_ins<'a>(lane: impl IntoIterator<Item = &'a [u8]>) -> Lane {
-        Lane::new(blobs::SHIPPED.iter().chain(&blobs::LENSES).map(|b| b.as_bytes()).chain(lane))
+        static SHIPPED: LazyLock<Lane> =
+            LazyLock::new(|| Lane::new(blobs::SHIPPED.iter().chain(&blobs::LENSES).map(|b| b.as_bytes())));
+        let mut out = SHIPPED.clone();
+        out.add(lane);
+        out
     }
 
     pub fn schema(&self, id: BlobId) -> Option<&Schema> {
-        self.schemas.get(&id)
+        self.schemas.get(&id).map(Arc::as_ref)
     }
 
     pub fn schemas(&self) -> impl Iterator<Item = &Schema> {
-        self.schemas.values()
+        self.schemas.values().map(Arc::as_ref)
     }
 
     pub fn lenses(&self) -> impl Iterator<Item = &Lens> {
-        self.lenses.values()
+        self.lenses.values().map(Arc::as_ref)
     }
 
     /// How an app on `app` opens an item written under the schemas `authored`, and whether only read-only. It reads
@@ -1134,7 +1177,7 @@ impl Lane {
     /// Whether kinds `a` and `b` are kin (`Schemas.lean`'s `kin`): one kind, or joined by a chain of the lane's lenses,
     /// each joining the kinds of its two schemas either way round. A lens whose schemas the lane lacks joins nothing.
     pub fn kin(&self, a: Option<&str>, b: Option<&str>) -> bool {
-        let kind = |id: &BlobId| self.schemas.get(id).map(Schema::kind);
+        let kind = |id: &BlobId| self.schema(*id).map(Schema::kind);
         let joins: Vec<_> = self.lenses.values().filter_map(|l| Some((kind(&l.from)?, kind(&l.to)?))).collect();
         let mut reached = vec![a];
         let mut i = 0;
@@ -1163,7 +1206,7 @@ impl Lane {
     /// No change is deeper than `CEILING` rows, whatever the schemas say. A write that changes nothing fits.
     pub fn fits(&self, authored: &BTreeSet<BlobId>, before: &Value, after: &Value) -> bool {
         let (before, after) = (before.as_object().unwrap_or(&NOTHING), after.as_object().unwrap_or(&NOTHING));
-        let under = authored.iter().map(|id| self.schemas.get(id)).collect::<Option<Vec<_>>>();
+        let under = authored.iter().map(|id| self.schema(*id)).collect::<Option<Vec<_>>>();
         // an array of rows is a list of records unless every schema that names its place calls it one value
         let rows_at = |p: &Path| {
             let named = |records: bool| {
