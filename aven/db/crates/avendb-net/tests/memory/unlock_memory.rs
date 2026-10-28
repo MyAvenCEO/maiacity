@@ -134,7 +134,7 @@ fn measure_unlock_memory() {
     let (peak, now) = (PEAK.load(Ordering::Relaxed) - h0, held() - h0);
     // what each part of its store holds: what letting go of it frees, the store of no use after
     let parts = rt.block_on(node.act(|lab: &mut Lab, me: SignerId| {
-        let mut freed = serde_json::Map::new();
+        let (mut freed, mut store) = (serde_json::Map::new(), lab.probe_store(me).expect("its store"));
         for part in ["log.edits", "log.ids", "log.held", "log.entry_order", "log.write_at", "log.logs", "log.by_log",
             "replay.order", "replay.ids", "replay.stood", "replay.acts", "replay.tail", "replay.state.vaults",
             "replay.state.shares", "replay.state.entries", "replay.state.writes", "replay.state.audiences",
@@ -143,7 +143,7 @@ fn measure_unlock_memory() {
             "shown", "answers", "files_at", "slices", "opened_keys", "derived", "covers", "showing"]
         {
             let before = held();
-            drop(lab.probe_part(me, part));
+            drop(store.part(part));
             freed.insert(part.into(), json!((before - held()) / 1_000_000));
         }
         serde_json::Value::Object(freed)

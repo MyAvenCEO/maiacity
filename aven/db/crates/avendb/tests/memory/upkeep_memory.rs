@@ -9,7 +9,7 @@
 
 use avendb::cast::{by_id, document, share, vault};
 use avendb::id::{SignerId, VaultId};
-use avendb::lab::{Lab, Spill};
+use avendb::lab::{Lab, Probed, Spill};
 use avendb::policy::{Action, Kind, Level, Principal, Sharing};
 use avendb_testkit::memory::{alone, held};
 use serde_json::json;
@@ -32,10 +32,10 @@ fn person(lab: &mut Lab, name: &str) -> (VaultId, SignerId) {
     (v, mac)
 }
 
-/// What letting go of part `part` of device `d`'s store frees, in bytes.
-fn weigh(lab: &mut Lab, d: SignerId, part: &str) -> isize {
+/// What letting go of part `part` of a device's store frees, in bytes.
+fn weigh(store: &mut Probed, part: &str) -> isize {
     let before = held();
-    drop(lab.probe_part(d, part));
+    drop(store.part(part));
     before - held()
 }
 
@@ -77,12 +77,13 @@ fn measure_upkeep_memory() {
         }
         let perf = lab.perf(mac);
         let edits = perf["held"]["edits"].as_u64().unwrap_or(1) as isize;
+        let mut store = lab.probe_store(mac).expect("its store");
         let parts: serde_json::Map<String, serde_json::Value> =
             ["log.edits", "log.entry_order", "log.logs", "log.held", "log.ids", "log.write_at", "log", "replay.order",
                 "replay.ids", "replay.stood", "replay.acts", "replay.tail", "replay.state.vaults", "replay.state.shares",
                 "replay.state.entries", "replay.state.writes", "replay.state.audiences", "replay.state.epochs", "replay.state.seals", "replay.state.published", "replay.state.seal_keys", "latest", "replay"]
                 .into_iter()
-                .map(|p| (p.to_string(), json!(weigh(&mut lab, mac, p) / edits)))
+                .map(|p| (p.to_string(), json!(weigh(&mut store, p) / edits)))
                 .collect();
         println!("UPKEEP_MEMORY {}", json!({ "spilled": spilled, "entries": n, "edits": edits,
             "actions": perf["held"]["actions"],

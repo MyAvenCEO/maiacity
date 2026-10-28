@@ -220,16 +220,19 @@ async fn the_edits_its_keys_name_are_not_checked_again_and_forged_keys_vouch_for
     node.shutdown().await.expect("it stops");
 }
 
-/// A catch-up: thousands of edits taken in a few saves, far fewer than the 64 a head follows. A head follows them
-/// all the same, and the next start checks only the edits after it, fewer than a page of them, not every one.
+/// A catch-up: many edits taken in a few saves, far fewer than the 64 a head follows. A head follows them all the
+/// same, once the journal holds `TAIL_EDITS` edits (64 with `test-fixtures`, a page without), and the next start checks
+/// only the edits after it, fewer than one save's, not every one.
+#[cfg(feature = "test-fixtures")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_catch_up_in_few_saves_is_not_checked_again() {
     let dir = Folder::new("caught-up");
     let (node, _, coop) = mac(dir.path()).await;
     write(&node, coop, "Welcome", WELCOME_TEXT).await;
+    const CHUNK: usize = 100;
     for chunk in 0..3 {
         node.act(move |lab: &mut Lab, me| {
-            for n in 0..1500 {
+            for n in 0..CHUNK {
                 let doc = document(&format!("Note {chunk}-{n}"), "taken", me);
                 lab.create(me, coop, coop, "doc", &[], doc).expect("a note");
             }
@@ -245,7 +248,7 @@ async fn a_catch_up_in_few_saves_is_not_checked_again() {
     assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
     let (checked, offered) = node.read(|lab, me| checks(lab, me)).await;
     assert!(offered as usize >= held.len(), "offered {offered} of {}", held.len());
-    assert!(checked < 2048, "only the edits after its newest head are checked: {checked} of {offered}");
+    assert!((checked as usize) < CHUNK, "only the edits after its newest head are checked: {checked} of {offered}");
     node.shutdown().await.expect("it stops");
 }
 

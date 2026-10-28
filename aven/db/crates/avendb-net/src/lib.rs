@@ -902,6 +902,7 @@ impl Node {
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
             differed: Mutex::default(),
+            went: Mutex::default(),
             held: Mutex::default(),
             told: Mutex::default(),
             statements: Mutex::default(),
@@ -1809,10 +1810,18 @@ impl Node {
             let peers = self.shared.peers.lock().expect("peers");
             peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| p.device).collect()
         };
+        // and those whose connection closed a moment ago, by what they told last, marked reconnecting: else every short
+        // drop of a connection took its logs out of the counts and back, "behind" jumping 294, 2,504, 294 seconds
+        // apart (the iPhone, 2026-10-28), which reads as the UI lying
+        let counted = {
+            let mut went = self.shared.went.lock().expect("went");
+            counted(&live, &mut went, jobs::now_ms())
+        };
         let heard: Vec<(SignerId, Vec<LogId>)> = {
             let held = self.shared.held.lock().expect("held");
-            live.iter().filter_map(|d| Some((*d, held.get(d)?.logs.keys().copied().collect()))).collect()
+            counted.keys().filter_map(|d| Some((*d, held.get(d)?.logs.keys().copied().collect()))).collect()
         };
+        let reconnecting = heard.iter().filter(|(d, _)| counted[d]).count();
         let (mut logs, mut behind) = (BTreeSet::new(), BTreeSet::new());
         for (device, theirs) in &heard {
             logs.extend(theirs.iter().copied());
@@ -1831,19 +1840,21 @@ impl Node {
         };
         // per peer, what moves while a catch-up runs, long before a log is whole (Samuel 2026-10-28: "with zero visible
         // feedback the syncing UI doesn't reflect what is actually happening in real time"): whether a pull of it runs
-        // and since when, what it does now, the edits it took so far and since this device started, and when its last
-        // page came
+        // and since when, what it does now, the edits it took so far and since this device started, when its last
+        // page came, and its askings and the pages asked that never came, so a pull that runs on and brings nothing
+        // reads as such, not as a transfer (the iPhone's "pulling: 2" for 6 min of askings failing, 2026-10-28)
         let names = self.peer_names(heard.iter().map(|(d, _)| *d).collect()).await;
         let from: Vec<Value> = heard.iter().map(|(d, _)| {
             let job = running.iter().find(|j| j.kind == "pull" && j.subject == d.to_hex());
             let pulled = self.shared.traffic.of(d);
-            json!({ "device": d.to_hex(), "name": names.get(d).cloned().flatten(),
+            json!({ "device": d.to_hex(), "name": names.get(d).cloned().flatten(), "reconnecting": counted[d],
                 "pulling": job.map(|j| json!({ "since": j.started, "stage": j.stage, "took": j.done })),
                 "pages": pulled.as_ref().map_or(0, |p| p.pages), "edits": pulled.as_ref().map_or(0, |p| p.new),
-                "last": pulled.as_ref().map_or(0, |p| p.last) })
+                "last": pulled.as_ref().map_or(0, |p| p.last), "askings": pulled.as_ref().map_or(0, |p| p.askings),
+                "failed": pulled.as_ref().map_or(0, |p| p.failed) })
         }).collect();
         let edits: u64 = heard.iter().filter_map(|(d, _)| self.shared.traffic.of(d)).map(|p| p.new).sum();
-        json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages,
+        json!({ "peers": heard.len(), "reconnecting": reconnecting, "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages,
             "edits": edits, "from": from, "unsaved": unsaved, "lacked": lacked })
     }
 
@@ -2379,6 +2390,41 @@ struct Peer {
 }
 
 /// What a node's tasks share.
+/// How long a known device whose connection closed still counts in `Node::synced`, by what it told last, marked
+/// reconnecting: a phone's connections drop and come back within seconds as it moves between networks or sleeps.
+const RECONNECTING_MS: u64 = 60_000;
+
+/// The devices `Node::synced` counts at `now` (ms since 1970), each with whether it is reconnecting: those connected
+/// (`live`), and those whose last connection closed (`went`) less than `RECONNECTING_MS` ago. It lets go of those gone
+/// longer, and of those connected again.
+fn counted(live: &BTreeSet<SignerId>, went: &mut HashMap<SignerId, u64>, now: u64) -> BTreeMap<SignerId, bool> {
+    went.retain(|d, at| !live.contains(d) && now.saturating_sub(*at) < RECONNECTING_MS);
+    live.iter().map(|d| (*d, false)).chain(went.keys().map(|d| (*d, true))).collect()
+}
+
+#[cfg(test)]
+mod counted_tests {
+    use super::*;
+
+    /// A device whose connection closes keeps counting, reconnecting, for `RECONNECTING_MS`, then not; once connected
+    /// again it counts as connected, and its closing a moment before is let go of.
+    #[test]
+    fn a_device_that_drops_its_connection_a_moment_still_counts_reconnecting() {
+        let (mac, phone, peer) = (SignerId([1; 32]), SignerId([2; 32]), SignerId([3; 32]));
+        let mut went = HashMap::from([(peer, 1_000), (phone, 1_000)]);
+        let live = BTreeSet::from([mac]);
+        let now = counted(&live, &mut went, 1_000 + RECONNECTING_MS - 1);
+        assert_eq!(now, BTreeMap::from([(mac, false), (phone, true), (peer, true)]));
+        let later = counted(&live, &mut went, 1_000 + RECONNECTING_MS);
+        assert_eq!(later, BTreeMap::from([(mac, false)]), "gone a minute, it counts no more");
+        assert!(went.is_empty());
+        let mut went = HashMap::from([(peer, 1_000)]);
+        let back = counted(&BTreeSet::from([mac, peer]), &mut went, 2_000);
+        assert_eq!(back, BTreeMap::from([(mac, false), (peer, false)]), "connected again, it counts connected");
+        assert!(went.is_empty());
+    }
+}
+
 /// How many lacked logs `differ` names in its sample for a report (`Node::synced`).
 const DIFFER_SAMPLE: usize = 5;
 
@@ -2436,6 +2482,9 @@ struct Shared {
     reach: Mutex<Arc<BTreeMap<SignerId, Reach>>>,
     /// What `differ` worked out last for each device, for when the Lab's turn can't be had, and what it told of it.
     differed: Mutex<HashMap<SignerId, (BTreeSet<LogId>, Differed)>>,
+    /// When each known device's last connection closed (ms since 1970), as `Node::synced` keeps counting it a while,
+    /// reconnecting (`counted`).
+    went: Mutex<HashMap<SignerId, u64>>,
     /// What each device told it it holds, on a connection whose hello proved that device.
     held: Mutex<HashMap<SignerId, Holdings>>,
     /// What each peer was last told, and on which connection (`Connection::stable_id`).
@@ -3074,11 +3123,18 @@ impl Shared {
                 let asked = Instant::now();
                 let early = ahead.is_some();
                 let mut ahead = ahead;
+                // the wait for a page's slot is this node's own, bounded as it always was; the page's, from its asking on, lasts
+                // while its connection brings bytes (`session::unstalled`): those of the pages asked before it, which the
+                // peer sends first, then its own
+                let slot = async {
+                    match ahead.take() {
+                        Some(permit) => Ok(permit),
+                        None => self.pulls.page(false, background).await,
+                    }
+                };
+                let slot = time::timeout(PAGE_WAIT, slot).await.context("no page slot in time").and_then(|r| r);
                 let receive = async {
-                    let mut permit = match ahead.take() {
-                        Some(permit) => permit,
-                        None => self.pulls.page(false, background).await?,
-                    };
+                    let mut permit = slot?;
                     let reply = {
                         let request = wire(after);
                         anyhow::ensure!(request.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
@@ -3096,7 +3152,10 @@ impl Shared {
                     };
                     reply.map(|(reply, came)| (reply, came, permit))
                 };
-                let reply = time::timeout(PAGE_WAIT, receive).await.context("no page in time").and_then(|r| r);
+                let reply = session::unstalled(|| session::carried(&peer.conn, session::Flow::In), PAGE_WAIT, receive)
+                    .await
+                    .context("no page in time")
+                    .and_then(|r| r);
                 if reply.is_err() && !early {
                     self.traffic.failed(device);
                 }
@@ -3469,7 +3528,9 @@ impl Shared {
             let _activity = self.admit()?;
             anyhow::ensure!(asked.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
             let bytes = session::exchange(&peer.conn, session::STUBS, &asked, session::STUBS_REPLY_LIMIT);
-            let bytes = time::timeout(PAGE_WAIT, bytes).await.context("no stubs in time")??;
+            // as long as its connection brings bytes, as a page (`session::unstalled`): a big vault's stubs are many MB
+            let progress = || session::carried(&peer.conn, session::Flow::In);
+            let bytes = session::unstalled(progress, PAGE_WAIT, bytes).await.context("no stubs in time")??;
             Ok::<_, anyhow::Error>(avendb::wire::Stubs::from_wire(&bytes)?)
         };
         match answer.await {
@@ -3985,6 +4046,8 @@ impl Shared {
         self.fresh.moved();
         if forget {
             held.remove(&peer.device);
+        } else {
+            self.went.lock().expect("went").insert(peer.device, jobs::now_ms());
         }
         self.ranges.lock().expect("ranges").gone(peer.conn.stable_id(), peer.device, forget);
         drop(held);

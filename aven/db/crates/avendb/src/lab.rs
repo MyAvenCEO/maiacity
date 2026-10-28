@@ -1060,6 +1060,44 @@ struct Store {
     complete: std::sync::Mutex<HashMap<VaultId, (u64, bool)>>,
 }
 
+/// A device's store taken out of its Lab for a probe of its memory (`Lab::probe_store`): of no use but to let go of.
+#[doc(hidden)]
+pub struct Probed(Store);
+
+impl Probed {
+    /// Takes part `part` out and hands it back, to let go of it and count what that frees; `None` for a part it doesn't
+    /// know.
+    pub fn part(&mut self, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
+        let store = &mut self.0;
+        fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
+            Some(Box::new(t))
+        }
+        match part {
+            "signed" => out(std::mem::take(&mut store.signed)),
+            "blobs" => out(std::mem::take(&mut store.blobs)),
+            "log" => out(std::mem::take(&mut store.log)),
+            p if p.starts_with("log.") => store.log.probe_part(&p[4..]),
+            p if p.starts_with("replay.") => store.replay.probe_part(&p[7..]),
+            "replay" => out(std::mem::replace(&mut store.replay, replay(&[]))),
+            "latest" => out(std::mem::take(&mut store.latest)),
+            "key_index" => out(std::mem::take(&mut store.key_ix.ix)),
+            "keys" => out(std::mem::take(&mut store.keys)),
+            "bases" => out((std::mem::take(&mut store.bases), std::mem::take(&mut store.based))),
+            "bodies" => out((std::mem::take(&mut store.bodies), std::mem::take(&mut store.opened))),
+            "readings" => out(std::mem::take(&mut store.readings)),
+            "shown" => out(std::mem::take(&mut store.shown)),
+            "answers" => out(std::mem::take(&mut store.answers)),
+            "files_at" => out(std::mem::take(&mut store.files_at)),
+            "slices" => out(std::mem::take(&mut store.slices)),
+            "opened_keys" => out((std::mem::take(&mut store.opened_before), std::mem::take(&mut store.opened_since))),
+            "derived" => out((std::mem::take(&mut store.derived), std::mem::take(&mut store.unopened))),
+            "covers" => out((std::mem::take(&mut store.covers), std::mem::take(&mut store.bare))),
+            "showing" => out(std::mem::take(&mut store.showing)),
+            _ => None,
+        }
+    }
+}
+
 impl Default for Store {
     fn default() -> Store {
         Store {
@@ -4513,7 +4551,7 @@ impl Lab {
     /// or the app reads nothing of it.
     pub fn open(&self, d: SignerId, entry: EntryId, app: &Schema) -> Option<(Value, bool)> {
         let item = self.item(d, entry)?;
-        let (view, read_only) = self.lane(d, self.vault_of_entry(d, entry)?).view(app, &item.authored());
+        let (view, read_only) = self.lane(d, self.vault_of_entry(d, entry)?).view(app, &item.authored(), &item.record());
         Some((item.read(&view)?, read_only))
     }
 
@@ -4532,7 +4570,7 @@ impl Lab {
         self.unlocked(on)?;
         let item = self.item(on, entry).ok_or(Refusal::ReadOnly)?;
         let vault = self.vault_of_entry(on, entry).ok_or(Refusal::ReadOnly)?;
-        let (view, read_only) = self.lane(on, vault).view(app, &item.authored());
+        let (view, read_only) = self.lane(on, vault).view(app, &item.authored(), &item.record());
         let seen = item.read(&view).filter(|_| !read_only).ok_or(Refusal::ReadOnly)?;
         let mut value = seen.clone();
         change(&mut value);
@@ -4805,38 +4843,18 @@ impl Lab {
         self.held(d).perf.to_json()
     }
 
-    /// Takes part `part` of device `d`'s store out and hands it back, for a probe of what each part holds in memory
-    /// to let go of it and count what that frees (`avendb-net/tests/memory/unlock_memory.rs`): the store is of no use after.
-    /// `None` for a part it doesn't know.
+    /// Takes device `d`'s store out whole and hands it over, for a probe of what each part holds in memory to let go of
+    /// it and count what that frees (`Probed::part`; `avendb-net/tests/memory/unlock_memory.rs`,
+    /// `tests/memory/upkeep_memory.rs`). The Lab holds an empty store for `d` in its place, as a device holding nothing
+    /// yet, so that whatever runs on it after (a node's catch-up, a peer's asking) finds a store that holds together.
+    /// Until 2026-10-28 the probe took the parts out of the store in place: its log's edits went while its replay still
+    /// counted 20,171 of them replayed, and the node's next catch-up step panicked in a worker (`step_replay`, the
+    /// Mac's 20k probe).
     #[doc(hidden)]
-    pub fn probe_part(&mut self, d: SignerId, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
-        let store = self.stores.get_mut(&d)?;
-        fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
-            Some(Box::new(t))
-        }
-        match part {
-            "signed" => out(std::mem::take(&mut store.signed)),
-            "blobs" => out(std::mem::take(&mut store.blobs)),
-            "log" => out(std::mem::take(&mut store.log)),
-            p if p.starts_with("log.") => store.log.probe_part(&p[4..]),
-            p if p.starts_with("replay.") => store.replay.probe_part(&p[7..]),
-            "replay" => out(std::mem::replace(&mut store.replay, replay(&[]))),
-            "latest" => out(std::mem::take(&mut store.latest)),
-            "key_index" => out(std::mem::take(&mut store.key_ix.ix)),
-            "keys" => out(std::mem::take(&mut store.keys)),
-            "bases" => out((std::mem::take(&mut store.bases), std::mem::take(&mut store.based))),
-            "bodies" => out((std::mem::take(&mut store.bodies), std::mem::take(&mut store.opened))),
-            "readings" => out(std::mem::take(&mut store.readings)),
-            "shown" => out(std::mem::take(&mut store.shown)),
-            "answers" => out(std::mem::take(&mut store.answers)),
-            "files_at" => out(std::mem::take(&mut store.files_at)),
-            "slices" => out(std::mem::take(&mut store.slices)),
-            "opened_keys" => out((std::mem::take(&mut store.opened_before), std::mem::take(&mut store.opened_since))),
-            "derived" => out((std::mem::take(&mut store.derived), std::mem::take(&mut store.unopened))),
-            "covers" => out((std::mem::take(&mut store.covers), std::mem::take(&mut store.bare))),
-            "showing" => out(std::mem::take(&mut store.showing)),
-            _ => None,
-        }
+    pub fn probe_store(&mut self, d: SignerId) -> Option<Probed> {
+        let store = self.stores.get_mut(&self.at(d))?;
+        let empty = Store { follow: store.follow.clone(), query_depth: store.query_depth, gate: store.gate, ..Store::default() };
+        Some(Probed(std::mem::replace(store, empty)))
     }
 
     /// How far device `d`'s replay is behind the edits it holds, and whether its latest state is worked out: what a

@@ -58,11 +58,12 @@
 	/**
 	 * Collapsed, one short line: the one thing that matters now, a number only where it says something (Samuel
 	 * 2026-10-26: "way more compact … reduced to the actual sync / offline / online numbers"). In order: not known yet,
-	 * offline, a sync running (the logs in of how many, the edits it took, or what it waits on: `liveSync`), files coming, the view unavailable, synced.
+	 * offline, every peer reconnecting (counted by what it told last, so the numbers hold), a sync running (the logs in of how many, the edits it took, or what it waits on: `liveSync`), files coming, the view unavailable, synced.
 	 */
 	const line = $derived(
 		!sync.known ? 'Connecting'
 		: !sync.peers ? 'Offline'
+		: sync.reconnecting >= sync.peers ? 'Reconnecting'
 		: live ? live.line
 		: files.waiting + files.reading > 0 ? `${n(files.waiting + files.reading)} files`
 		: view.state === 'unavailable' ? 'Not on this device'
@@ -71,9 +72,9 @@
 	const offline = $derived(sync.known && !sync.peers);
 	/** open, each number by its name: the ones that are not nought, and always the peers */
 	const details = $derived(/** @type {[string, string][]} */ ([
-		['Peers', sync.known ? n(sync.peers) : '…'],
+		['Peers', !sync.known ? '…' : sync.reconnecting ? `${n(sync.peers - sync.reconnecting)} connected · ${n(sync.reconnecting)} reconnecting` : n(sync.peers)],
 		...(sync.behind > 0 ? [['Logs left', `${n(sync.behind)} of ${n(sync.logs)}`]] : []),
-		...(sync.pulling > 0 ? [['Transfers', n(sync.pulling)]] : []),
+		...(sync.pulling > 0 && !live?.rows.some(([k]) => k === 'Transfers') ? [['Transfers', n(sync.pulling)]] : []),
 		...(live?.rows ?? []),
 		...(files.waiting + files.reading > 0 ? [['Files', `${n(files.reading)} loading · ${n(files.waiting)} waiting`]] : []),
 		['View', view.state === 'local' ? 'on this device' : view.state === 'unavailable' ? 'not on this device' : view.state === 'unknown' ? 'checking' : 'loading']
@@ -137,6 +138,14 @@
 		font-variant-numeric: tabular-nums;
 		text-align: left;
 		cursor: pointer;
+		/* never past the screen's edge, however long what it says (a phone, 2026-10-28) */
+		max-width: calc(100vw - 32px);
+		min-width: 0;
+	}
+
+	.pill span {
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.details {
@@ -144,24 +153,29 @@
 		top: calc(100% + 8px);
 		right: 0;
 		display: grid;
-		grid-template-columns: max-content max-content;
+		grid-template-columns: max-content minmax(0, 1fr);
 		gap: 0.2rem 0.8rem;
 		margin: 0;
 		padding: 0.5rem 0.75rem;
 		border-radius: 12px;
 		font-size: 0.7rem;
 		line-height: 1.4;
-		white-space: nowrap;
 		font-variant-numeric: tabular-nums;
+		/* the names and numbers wrap inside the screen rather than run off its left edge */
+		width: max-content;
+		max-width: min(22rem, calc(100vw - 32px));
 	}
 
 	.details dt {
 		opacity: 0.65;
+		white-space: nowrap;
 	}
 
 	.details dd {
 		margin: 0;
 		text-align: right;
+		min-width: 0;
+		overflow-wrap: anywhere;
 	}
 
 	.offline {
