@@ -2,16 +2,9 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 export const components = ['site', 'api', 'avendb', 'server', 'agent', 'infra', 'browser', 'protocol', 'mac', 'native', 'image'];
-// A workflow that only checks selects the parts it checks; the release workflows and any other select everything.
-const checks = {
- 'kernel.yml': ['site'],
- 'avendb-checks.yml': ['avendb', 'native', 'browser', 'protocol', 'image'],
- 'avendb-wasm.yml': ['avendb', 'native'],
- 'mac.yml': ['mac'],
- // these run on their own triggers alone
- 'avendb-backups.yml': [], 'site-same.yml': [], 'full-checks.yml': [], 'infra-checks.yml': ['infra'],
- 'uptime.yml': [], 'network-audit.yml': [], 'ci-budget.yml': [], 'gate.yml': [], 'old-vault.yml': [], 'founders.yml': [], 'site-media.yml': [],
-};
+// ops.yml runs its tasks by hand and on its schedule alone, and checks nothing a change can break; ci.yml (the checks) and
+// release.yml (the deploys), like any other file under .github/, select everything.
+const checks = { 'ops.yml': [] };
 // What the server's image build reads beyond the code the tests compile (aven/db/Dockerfile.server, cargo-chef's recipe).
 // The workspace's own manifest and lockfile (the root's, D3) select every check, the image's among them.
 const imageInputs = /^aven\/db\/(Dockerfile[^/]*|rust-toolchain[^/]*|\.cargo\/.*|vendor\/.*|crates\/[^/]+\/(Cargo\.toml|build\.rs))$/;

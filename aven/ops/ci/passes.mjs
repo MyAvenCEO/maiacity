@@ -1,12 +1,10 @@
-// Pass markers (pull requests only): a job that passed on this PR saves an empty cache entry named by the hash of the
-// files it reads; a later run of the same PR whose files hash the same skips that job. CI's own WebAssembly commit
-// changes only aven/db/page/device, so the Rust tests, the spec and theOS's build pass on it without running again.
-// main never reads a marker: "Validate and release" runs every suite on the merged commit itself.
+// Verdicts by key (C1): a job of ci.yml that passed saves an empty cache entry named by the hash of the files it reads;
+// plan.mjs asks GitHub for those entries, on the run's ref and on main, and leaves out each job whose key passed, so a
+// new push runs only what its new files can change. A full run (weekly, or by hand) reads none.
 //
-//   bun aven/ops/ci/passes.mjs tests=aven/db,!aven/db/page,.github/workflows/avendb-checks.yml browser=aven/db,!aven/db/page/device
+//   bun aven/ops/ci/passes.mjs tests=aven/db,!aven/db/page,.github/workflows/ci.yml browser=aven/db,aven/db/page
 //
-// writes <name>_key=pass-<name>-<hash> to $GITHUB_OUTPUT; the workflow looks the key up (actions/cache/restore,
-// lookup-only: through the runner's own cache token, so no job needs more permissions) and saves it once the job passed.
+// prints each key, and writes <name>_key=pass-<name>-<hash> to $GITHUB_OUTPUT when it is set.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';

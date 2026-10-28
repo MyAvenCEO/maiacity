@@ -1,5 +1,5 @@
 /*
- * avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml), which the app's way in
+ * avenDB's server (avendb.maia.city, rolled out by .github/workflows/release.yml's peer job), which the app's way in
  * ($lib/app/entry.js) and avenDB's own page (./Account.svelte) both reach: its relay, and its offer as it logs it at
  * every start; and the name this browser goes by among the person's devices.
  */
@@ -10,7 +10,7 @@ export const RELAY = 'https://avendb.maia.city';
 
 /** The server's offer, the same as long as its shelf (g18, for good: avenDB is never reset) keeps its device's key. A key
  *  move changes it (K3c, 2026-10-20): once its earlier key is removed, a new device can't tell the server by the old one
- *  (avendb-net's `offered`), so this takes the offer the server logs as it starts (avendb.yml, "What the server says"). */
+ *  (avendb-net's `offered`), so this takes the offer the server logs as it starts (release.yml, "What the peer says"). */
 export const SERVER =
 	'AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYILMA34RATWVAUIACI3TRYMUAW3PSIXGBRKSIFTSZ5DMBTRRLB6BYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 

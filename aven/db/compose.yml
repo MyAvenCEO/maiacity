@@ -1,6 +1,6 @@
 # avenDB's server on this machine (P8b): docker compose -f aven/db/compose.yml up --build
 # Its device's secret and its store stay in the avendbdata volume. Not the deployment: that is the service avendb in the
-# root compose files, rolled out by .github/workflows/api.yml and avendb.yml (README.md, "Deploying the server").
+# root compose files, rolled out by .github/workflows/release.yml (its API and peer jobs) (README.md, "Deploying the server").
 services:
   avendb:
     build:

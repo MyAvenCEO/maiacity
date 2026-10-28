@@ -57,7 +57,7 @@ describe('the anchor and what is kept', () => {
 		expect(MAIA_CITY).toMatch(/^([0-9a-f]{64})?$/);
 		const feed = readFileSync(new URL('../../../maia/content/game/code/sources/feed.js', import.meta.url), 'utf8');
 		expect(feed).not.toMatch(/import\.meta\.env|process\.env/);
-		for (const file of ['.github/workflows/deploy.yml', 'docker-compose.prod.yml', 'aven/api/src/index.ts'])
+		for (const file of ['.github/workflows/release.yml', 'docker-compose.prod.yml', 'aven/api/src/index.ts'])
 			expect([file, readFileSync(new URL(`../../../${file}`, import.meta.url), 'utf8').includes('MAIA_CITY')]).toEqual([file, false]);
 	});
 	test("a device keeps the rows it proved, each once however many proofs hold it, and asks again by the proof's tag", async () => {

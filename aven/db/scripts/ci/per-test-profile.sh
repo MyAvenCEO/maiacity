@@ -1,5 +1,5 @@
 #!/bin/sh
-# A cargo target runner for avendb-assurance.yml's coverage job: nextest runs every test as a process of its own, as
+# A cargo target runner for ops.yml's coverage job (task test-value): nextest runs every test as a process of its own, as
 # `<binary> <test name> --exact --nocapture`; this names that process's coverage profile after the binary and the test,
 # so each test's lines can be told apart (scripts/test-value.mjs). Listing runs and anything else share one name.
 set -eu

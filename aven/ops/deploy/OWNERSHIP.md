@@ -4,9 +4,9 @@ The site, API and avenDB remain independent releases. CI workflow concurrency is
 
 | Release | Owns | Must not restart |
 | --- | --- | --- |
-| `deploy.yml` | Static build, retained immutable assets, site symlink, validated Caddy route activation | API, avenDB |
-| `api.yml` | API image, infrastructure/base compose settings, Postgres/API/Caddy rollout | avenDB |
-| `avendb.yml` | avenDB image, bucket/snapshot settings, verified close and activation | API, Postgres, Caddy |
+| `release.yml` site | Static build, retained immutable assets, site symlink, validated Caddy route activation | API, avenDB |
+| `release.yml` api | API image, infrastructure/base compose settings, Postgres/API/Caddy rollout | avenDB |
+| `release.yml` peer | avenDB image, bucket/snapshot settings, verified close and activation | API, Postgres, Caddy |
 
 ## Shared tools
 
@@ -28,4 +28,4 @@ These environment writers are intentionally not collapsed: they have different o
 
 ## Validation
 
-`bun test ./aven/ops/deploy/check-avendb.test.js` uses fake SSH/Docker/curl commands, including large-feed and failed-upgrade cases; it makes no network calls. The Kernel workflow runs it. `delivery-checks.yml` continues to test close ownership with model and disposable Docker cases. Live/installed-device acceptance is checked on the device itself.
+`bun test ./aven/ops/deploy/check-avendb.test.js` uses fake SSH/Docker/curl commands, including large-feed and failed-upgrade cases; it makes no network calls. CI's gate runs it (`ci.yml`). Its `small` job continues to test close ownership with model and disposable Docker cases. Live/installed-device acceptance is checked on the device itself.

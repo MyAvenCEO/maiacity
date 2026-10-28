@@ -1,11 +1,11 @@
-// The time budget of CI and release (Samuel 2026-10-27: under 10 minutes, and kept there). .github/workflows/ci-budget.yml
-// runs this when one of the budgeted workflows finishes: it names the run's slowest jobs and their slowest steps, and
-// fails (a red "CI budget" run, the flag) when the run took longer than its budget. Read-only.
+// The time budget of CI and release (Samuel 2026-10-27: under 10 minutes, and kept there). The last job of ci.yml and
+// of release.yml runs this on its own run: it names the run's slowest jobs and their slowest steps in the summary, and
+// flags the run (a warning; the step's red, never the merge's) when it took longer than its budget. Read-only.
 //   RUN_ID=<id> bun aven/ops/ci/budget.mjs      (GITHUB_TOKEN optional locally; GITHUB_STEP_SUMMARY gets the table)
 import { appendFileSync } from 'node:fs';
 
 // minutes from the run's start to its last job's end; a run of these workflows past it is flagged
-export const budgets = { 'Validate and release': 10, 'avenDB checks': 10, 'Kernel': 6, 'avenDB WebAssembly': 6, 'theOS on macOS': 10 };
+export const budgets = { 'CI': 10, 'Release': 10 };
 
 const repo = process.env.GITHUB_REPOSITORY || 'MyAvenCEO/maiacity';
 const headers = { accept: 'application/vnd.github+json', ...(process.env.GITHUB_TOKEN && { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }) };

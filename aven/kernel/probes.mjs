@@ -1,7 +1,7 @@
 /*
  * The probes in a real browser (hardening H8, gap G9): every way out of the asset box, of a view and of the math host,
  * tried from inside each by code made to do harm, in headless Chromium, against the site as it is in this checkout. CI
- * runs it on every pull request and before every deploy (.github/workflows/kernel.yml); a failure stops the deploy. CI
+ * runs it on every pull request and before every deploy (.github/workflows/ci.yml's probes job, which every release needs); a failure stops the deploy. CI
  * runs it again in WebKit (--browser webkit, on Playwright), the engine Samuel's Mac app, theOS, shows the site in
  * (Tauri is WebKit): a wall that holds in Chromium is not taken to hold there.
  *

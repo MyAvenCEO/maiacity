@@ -33,9 +33,8 @@ builds in one container share 4 cores and wait on each other's build-folder lock
 - **One Rust build at a time per container.** Several cargo processes on 4 cores don't finish sooner; they queue on
   the build-folder lock and on the cores. Helpers in one container take turns, or use CI (below).
 - **The full suite runs on CI, once per batch, not here** (repository `CLAUDE.md`). For a task,
-  `bun aven/ops/devx/check.mjs` runs exactly the steps above for the files you touched. Dispatching the "avenDB
-  checks" workflow on a branch (`.github/workflows/avendb-checks.yml`, workflow_dispatch; every suite in ~5-6 min on
-  runners) is for a change no local check can cover, such as a dependency bump across all crates; it takes the same
+  `bun aven/ops/devx/check.mjs` runs exactly the steps above for the files you touched. Dispatching CI on a branch (`.github/workflows/ci.yml`, workflow_dispatch, `full` for every job; its jobs side by
+  side on runners) is for a change no local check can cover, such as a dependency bump across all crates; it takes the same
   runners the batch's CI needs, so not per task.
 - **One build folder per checkout** (project rule): no shared `CARGO_TARGET_DIR` across worktrees. Ask Samuel before
   deleting any build folder or cache.
@@ -49,6 +48,6 @@ builds in one container share 4 cores and wait on each other's build-folder lock
   programs share the McEliece pairs instead of each making them again (without it `live` ran past its 60 s deadline).
   Cargo reads it, and the page WebAssembly's flags, only when run from `aven/db/`: run cargo there.
 - `.claude/hooks/session-start.sh`: a cloud session starts with avenDB's compiled dependencies from the release
-  "avendb-dev-cache" (`.github/workflows/avendb-dev-cache.yml`) in `target/`, and with the Rust version they
+  "avendb-dev-cache" (`.github/workflows/ops.yml`, task avendb-dev-cache) in `target/`, and with the Rust version they
   were built with as its default; only our own crates are built then.
 - The linker is already rust-lld (Rust's default on x86_64 Linux since 1.90); mold would gain little more.
