@@ -499,11 +499,20 @@ impl Rate {
         self.pages.push_back((bytes, (wait / flying.max(1) as u32).max(Duration::from_millis(1))));
     }
 
+    /// The bytes a second its pages carried lately, the most of them (as `budget` reads it); none before any came.
+    pub(crate) fn per_second(&self) -> Option<u128> {
+        self.pages.iter().map(|&(bytes, sending)| bytes as u128 * 1_000_000 / sending.as_micros().max(1)).max()
+    }
+
+    /// The bytes a second an asking of a device no page came from yet is counted to bring: `START_PAGE` in `PAGE_TIME`.
+    pub(crate) fn start_per_second() -> u128 {
+        START_PAGE as u128 * 1000 / PAGE_TIME.as_millis()
+    }
+
     /// The budget an asking states (`LivePriority.lean` `budget`): the bytes its pages carried in `PAGE_TIME` at the
     /// rate they came, `START_PAGE` before any came, within `least..=most`.
     pub(crate) fn budget(&self, least: usize, most: usize) -> usize {
-        let rate = self.pages.iter().map(|&(bytes, sending)| bytes as u128 * 1_000_000 / sending.as_micros().max(1)).max();
-        let budget = rate.map_or(START_PAGE as u128, |r| r * PAGE_TIME.as_millis() / 1000);
+        let budget = self.per_second().map_or(START_PAGE as u128, |r| r * PAGE_TIME.as_millis() / 1000);
         (budget.min(most as u128) as usize).clamp(least.min(most), most)
     }
 }
