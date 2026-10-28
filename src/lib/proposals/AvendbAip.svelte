@@ -1,6 +1,6 @@
 <!--
 	One avenDB AIP in the Proposals app: where it stands, idea → objective → proposed → archived; its objective, what
-	it must deliver as metrics in Lean, each measured against the readings recorded on it (./Objective.svelte); the assets it proposes, in 3D, built from the files on their lines
+	it must deliver as metrics, each measured against the readings recorded on it (./Objective.svelte); the assets it proposes, in 3D, built from the files on their lines
 	($lib/avendb/ProposedAssets.svelte); then, in a section that opens, what it changes, a line per part, and every line
 	it bundles (a note, an asset, a view, a game config, any type of entry), each with what it changes field by field as
 	its schema reads it (the `aip` read's diff, derived, never typed); the reviews so far, and what the person may do with it, acting as the vault the device says: promote it once it holds an objective

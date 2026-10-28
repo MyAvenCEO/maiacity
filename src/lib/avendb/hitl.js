@@ -92,7 +92,7 @@ export const REVIEW_V1 = `{
 export function objectiveLine(aip) {
 	const o = aip.objective;
 	if (!o) return null;
-	if (o.error) return 'Objective: its Lean does not read';
+	if (o.error) return 'Objective: its metrics do not read';
 	return `Objective: ${o.met} of ${o.total} met · ${Math.round(o.progress * 100)} %`;
 }
 

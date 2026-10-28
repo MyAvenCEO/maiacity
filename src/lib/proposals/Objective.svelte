@@ -1,11 +1,11 @@
 <!--
-	An AIP's objective in the Proposals app: what it must deliver, metrics written in Lean (avendb/spec/AvenDB/
-	Objective.lean), each checked by avenDB's engine against the readings its author recorded while working on it
+	An AIP's objective in the Proposals app: what it must deliver, its metrics (as written, the model
+	avendb/spec/AvenDB/Objective.lean), each checked by avenDB's engine against the readings its author recorded while working on it
 	(`aip_measure`), those a Measurer of the vault wrote (`measured "name"`: the vault itself or an owner, who accept
 	it, or a holder of its Measurer group, never its author), and the numbers its own lines propose (`proposed "path"`,
 	against main's, `current "path"`), and the measuring logic it names, which those who accept it run on their own
 	device (`logic "name"`, ./measure.js). Each metric: its name and note, its goal and targets, where it started (its first reading, or what main holds) and
-	where it stands now, a bar of its progress and whether it is met; then the Lean itself, the numbers read from its
+	where it stands now, a bar of its progress and whether it is met; then the objective as written, the numbers read from its
 	lines and every reading, in sections that open. Read only: an objective is written and measured by its author, an agent through the MCP.
 -->
 <script>
@@ -30,11 +30,11 @@
 </script>
 
 {#if !o}
-	<p class="dim">No objective yet. Before it is proposed, its author states what it must deliver: one or more measurable metrics in Lean.</p>
+	<p class="dim">No objective yet. Before it is proposed, its author states what it must deliver: one or more measurable metrics.</p>
 {:else}
 	<div class="objective">
 		{#if o.error}
-			<p class="err">Its Lean does not read: {o.error}</p>
+			<p class="err">Its metrics do not read: {o.error}</p>
 		{:else}
 			<p class="total"><b>{o.met} of {o.total} met</b> · {pct(o.progress)} of the way</p>
 			{#if o.measures?.length}<p class="paths">Measured by {#each o.measures as n, i (n)}{i ? ', ' : ''}the logic <code>{n}</code>{/each}, which those who accept it run on its lines, on their own device</p>{/if}
@@ -55,7 +55,7 @@
 			</ul>
 		{/if}
 		<details>
-			<summary>The objective in Lean</summary>
+			<summary>The objective as written</summary>
 			<pre><code>{o.lean}</code></pre>
 		</details>
 		{#if o.fields?.length}

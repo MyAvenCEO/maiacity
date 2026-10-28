@@ -1,7 +1,7 @@
 <!--
 	Proposals: the AIPs, Aven Improvement Proposals, of every vault and game, in one app of their own next to Ledger and
 	Coops (Samuel 2026-10-17: proposals leave the game and sandbox screens completely). Every AIP goes the same way: an
-	idea, then its objective (what it must deliver, metrics in Lean, measured as it is worked on), then proposed
+	idea, then its objective (what it must deliver, its metrics, measured as it is worked on), then proposed
 	(waiting for its vault's yes), then archived as applied or rejected. Samuel 2026-10-20: the page is the four stages
 	as one tab bar and nothing else, no filter and no way to write one here: agents make proposals through the MCP for
 	now. Samuel 2026-10-21: the stages as a kanban board, open only signed in (no sign-in box here), a column of cards each; a narrow screen keeps the tab bar and
@@ -71,7 +71,7 @@
 	const progress = (a) => (a.aip?.objective && !a.aip.objective.error ? ` · ${a.aip.objective.met} of ${a.aip.objective.total} met` : '');
 	const EMPTY = {
 		idea: 'No ideas. An idea is an AIP an agent opened over its proposals through the MCP, before it states its objective.',
-		objective: 'Nothing at the objective stage. Here an AIP states what it must deliver, metrics in Lean, and measures its own progress while its agent works on it.',
+		objective: 'Nothing at the objective stage. Here an AIP states what it must deliver and its metrics, and measures its own progress while its agent works on it.',
 		proposed: 'Nothing waits for a yes.',
 		archived: 'Nothing archived yet.'
 	};
