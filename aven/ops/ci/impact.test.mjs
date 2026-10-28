@@ -51,52 +51,6 @@ test('device dependencies select the real browser and cloud agent', () => {
  expect(next.browser && next.agent && next.avendb).toBe(true);
 });
 
-import { spawnSync } from 'node:child_process';
-test('the actual aggregate rejects missing, skipped and failed required jobs', () => {
- const workflow = readFileSync('.github/workflows/avendb-checks.yml', 'utf8');
- const expression = workflow.slice(workflow.indexOf('      - name: Require every selected suite')).match(/jq -e '([\s\S]*?)'/)[1];
- const names = ['impact','tests','image','spec','real-browser','protocol','frontend','bench'];
- const results = Object.fromEntries(names.map(name => [name, { result:'success' }]));
- results.impact.outputs = { native:'true', browser:'true', protocol:'true', server:'true', image:'true' };
- const cases = [{ data:results, expected:true }];
- for (const name of names.filter(n => n !== 'frontend')) {
-  for (const result of ['failure','cancelled','skipped']) cases.push({data:{...results,[name]:{...results[name],result}},expected:false});
-  const missing = {...results}; delete missing[name]; cases.push({data:missing,expected:false});
- }
- cases.push({data:{...results, frontend:{result:'skipped'}},expected:true});
- // a job skipped by its pass marker counts as passed; by another's marker, or with a marker that did not pass, it does not
- const marker = { tests:'tests', image:'image', spec:'spec', 'real-browser':'browser', protocol:'protocol', bench:'bench' };
- const passed = (key, value) => ({...results.impact, outputs:{...results.impact.outputs, ['pass_'+key]:value}});
- for (const [name, key] of Object.entries(marker)) {
-  cases.push({data:{...results,[name]:{result:'skipped'},impact:passed(key,'true')},expected:true});
-  cases.push({data:{...results,[name]:{result:'skipped'},impact:passed(key,'false')},expected:false});
-  cases.push({data:{...results,[name]:{result:'skipped'},impact:passed(key==='tests'?'spec':'tests','true')},expected:false});
- }
- cases.push({data:{...results,tests:{result:'skipped'},impact:{...passed('tests','true'),result:'failure'}},expected:false});
- // the server's image is expected only when its build inputs changed
- cases.push({data:{...results,image:{result:'skipped'},impact:{...results.impact,outputs:{...results.impact.outputs,image:'false'}}},expected:true});
- const run = spawnSync('jq', ['-c',expression], { input:cases.map(c=>JSON.stringify(c.data)).join('\n'), encoding:'utf8', env:{ ...process.env, PR:'true', FORK:'true', DRAFT:'false', FRONTEND:'false', BROWSER_ONLY:'false', BROWSER:'false', PROTOCOL:'false', BENCH_ONLY:'false' } });
- expect(run.status).toBe(0);
- expect(run.stdout.trim().split('\n').map(JSON.parse)).toEqual(cases.map(c=>c.expected));
- // a dispatch of the bench alone expects impact and the bench, and nothing else
- const benchOnly = data => spawnSync('jq', ['-c',expression], { input:JSON.stringify(data), encoding:'utf8', env:{ ...process.env, PR:'false', FORK:'false', DRAFT:'false', FRONTEND:'false', BROWSER_ONLY:'false', BROWSER:'false', PROTOCOL:'false', BENCH_ONLY:'true' } }).stdout.trim();
- const skipped = Object.fromEntries(names.map(name => [name, { result: name === 'impact' || name === 'bench' ? 'success' : 'skipped' }]));
- skipped.impact.outputs = results.impact.outputs;
- expect(benchOnly(skipped)).toBe('true');
- expect(benchOnly({...skipped, bench:{result:'skipped'}})).toBe('false');
-});
-test('a pull request from this repository needs no image job: server-prebuild.yml builds its image', () => {
- const workflow = readFileSync('.github/workflows/avendb-checks.yml', 'utf8');
- const expression = workflow.slice(workflow.indexOf('      - name: Require every selected suite')).match(/jq -e '([\s\S]*?)'/)[1];
- const names = ['impact','tests','image','spec','real-browser','protocol','frontend','bench'];
- const results = Object.fromEntries(names.map(name => [name, { result:'success' }]));
- results.impact.outputs = { native:'true', browser:'true', protocol:'true', server:'true', image:'true' };
- const ask = (data, fork) => spawnSync('jq', ['-c',expression], { input:JSON.stringify(data), encoding:'utf8', env:{ ...process.env, PR:'true', FORK:fork, DRAFT:'false', FRONTEND:'false', BROWSER_ONLY:'false', BROWSER:'false', PROTOCOL:'false', BENCH_ONLY:'false' } }).stdout.trim();
- expect(ask({...results, image:{result:'skipped'}}, 'false')).toBe('true');
- expect(ask({...results, image:{result:'skipped'}}, 'true')).toBe('false');
- expect(ask({...results, image:{result:'failure'}}, 'false')).toBe('false');
- expect(workflow).toMatch(/name: avenDB server image builds[\s\S]*?head\.repo\.full_name != github\.repository/);
-});
 
 test('Bun package and container versions follow the pinned toolchain', () => {
  const version = readFileSync('.bun-version','utf8').trim();
@@ -104,19 +58,6 @@ test('Bun package and container versions follow the pinned toolchain', () => {
  expect(readFileSync('aven/api/Dockerfile','utf8')).toContain(`oven/bun:${version}-alpine`);
 });
 
-test('kernel aggregate requires every selected application and security job', () => {
- const workflow=readFileSync('.github/workflows/kernel.yml','utf8');
- const expression=workflow.slice(workflow.indexOf('    name: Kernel required checks')).match(/jq -e '([\s\S]*?)'/)[1];
- const names=['selection','tests','application','probes','probes-webkit'];
- const results=Object.fromEntries(names.map(name=>[name,{result:'success'}]));
- results.selection.outputs={suites:'["physics"]'};
- const cases=[{data:results,expected:true}];
- for(const name of names) for(const result of ['failure','cancelled','skipped']) cases.push({data:{...results,[name]:{...results[name],result}},expected:false});
- cases.push({data:{...results,selection:{result:'success',outputs:{suites:'[]'}},application:{result:'skipped'}},expected:true});
- const run=spawnSync('jq',['-c',expression],{input:cases.map(c=>JSON.stringify(c.data)).join('\n'),encoding:'utf8'});
- expect(run.status).toBe(0);
- expect(run.stdout.trim().split('\n').map(JSON.parse)).toEqual(cases.map(c=>c.expected));
-});
 
 import { releasedBase } from './release-base.mjs';
 test('a queued, superseded, failed or unknown predecessor forces a full release', () => {
@@ -128,21 +69,6 @@ test('a queued, superseded, failed or unknown predecessor forces a full release'
  expect(releasedBase('0'.repeat(40),[])).toBe('');
 });
 
-test('API release accepts exactly its selected gate and successful delivery/image work', () => {
- const workflow=readFileSync('.github/workflows/main.yml','utf8');
- const condition=workflow.slice(workflow.indexOf('  api:\n')).match(/if: \$\{\{ (.*?) \}\}/)[1];
- // This condition uses only boolean operators, string equality and cancelled(); exercise the actual expression.
- const evaluate=new Function('needs','cancelled',`return (${condition.replaceAll('needs.api-tests', "needs['api-tests']").replaceAll('needs.api-image', "needs['api-image']")})`);
- const needs={impact:{outputs:{api:'true',site:'true'}},kernel:{result:'success'},'api-tests':{result:'skipped'},delivery:{result:'success'},'api-image':{result:'success'}};
- expect(evaluate(needs,()=>false)).toBe(true);
- expect(evaluate(needs,()=>true)).toBe(false);
- for(const name of ['kernel','delivery','api-image']) for(const result of ['failure','cancelled','skipped']) expect(evaluate({...needs,[name]:{result}},()=>false)).toBe(false);
- const apiOnly={...needs,impact:{outputs:{api:'true',site:'false'}},kernel:{result:'skipped'},'api-tests':{result:'success'}};
- expect(evaluate(apiOnly,()=>false)).toBe(true);
- for(const result of ['failure','cancelled','skipped']) expect(evaluate({...apiOnly,'api-tests':{result}},()=>false)).toBe(false);
- expect(evaluate({...apiOnly,impact:needs.impact},()=>false)).toBe(false);
- expect(evaluate({...needs,'api-tests':{result:'failure'}},()=>false)).toBe(false);
-});
 
 test('native tests and build helpers validate without publishing unchanged binaries', () => {
  for (const file of ['aven/db/crates/avendb/tests/all/properties.rs','aven/db/crates/avendb-device/tests/agent.rs','aven/db/scripts/test-browser.sh']) {
@@ -181,24 +107,21 @@ test('shards are packed by measured time: the longest files first, each to the l
 });
 
 import { hash } from './passes.mjs';
-test('a pass marker follows its files: the WebAssembly CI commits leaves the native keys alone', () => {
+test('a pass marker follows its files, and a path left out leaves its key alone', () => {
  expect(hash(['aven/db'])).toBe(hash(['aven/db']));
  expect(hash(['aven/db'])).not.toBe(hash(['aven/db/spec']));
- expect(hash(['aven/db/page','!aven/db/page/device'])).not.toBe(hash(['aven/db/page']));
+ expect(hash(['aven/db','!aven/db/page'])).not.toBe(hash(['aven/db']));
  const keys=keyed(matrix(['physics','assets']));
  expect(new Set(keys.map(k=>k.key)).size).toBe(keys.length);
  expect(keys.every(k=>/^pass-app-[a-z]+-(all|\d+of\d+)-[0-9a-f]{40}$/.test(k.key))).toBe(true);
 });
 
-test('a workflow edit selects what that workflow checks; a release workflow or an unknown one selects everything', () => {
- const on=f=>Object.entries(impact([f])).filter(([,v])=>v).map(([k])=>k).sort();
- expect(on('.github/workflows/mac.yml')).toEqual(['mac']);
- expect(on('.github/workflows/uptime.yml')).toEqual([]);
- expect(on('.github/workflows/avendb-checks.yml')).toEqual(['avendb','browser','image','native','protocol']);
- for (const f of ['.github/workflows/main.yml','.github/workflows/deploy.yml','.github/workflows/new.yml','.github/actions/prod-ssh/action.yml'])
+test('a workflow edit selects what that workflow checks; the checks, the release or an unknown one select everything', () => {
+ expect(Object.entries(impact(['.github/workflows/ops.yml'])).filter(([,v])=>v)).toEqual([]);
+ for (const f of ['.github/workflows/ci.yml','.github/workflows/release.yml','.github/workflows/new.yml','.github/actions/prod-ssh/action.yml'])
   expect(Object.values(impact([f])).every(Boolean)).toBe(true);
- expect(selected(['.github/workflows/mac.yml'])).toEqual(['security','ci']);
- expect(selected(['.github/workflows/kernel.yml'])).toContain('assets');
+ expect(selected(['.github/workflows/ops.yml'])).toEqual(['security','ci']);
+ expect(selected(['.github/workflows/ci.yml'])).toContain('assets');
 });
 
 test('the server image builds on a PR only when its build reads something new', () => {
@@ -210,9 +133,8 @@ test('the server image builds on a PR only when its build reads something new', 
 
 test('each Playwright image is the Playwright its job drives', () => {
  const version=JSON.parse(readFileSync('package.json','utf8')).devDependencies?.playwright ?? JSON.parse(readFileSync('package.json','utf8')).dependencies.playwright;
- const kernel=readFileSync('.github/workflows/kernel.yml','utf8');
- const jobs=kernel.split(/\n  (?=[a-z-]+:\n)/);
- for (const name of ['probes','probes-webkit']) expect(jobs.find(j=>j.startsWith(name+':'))).toContain(`mcr.microsoft.com/playwright:v${version}-noble`);
+ const ci=Bun.YAML.parse(readFileSync('.github/workflows/ci.yml','utf8'));
+ expect(ci.jobs.probes.container.image).toBe(`mcr.microsoft.com/playwright:v${version}-noble`);
 });
 import { reusable } from './reuse.mjs';
 function github({ parents = ['p'], tree = 't', headTree = 't', pulls, compare = 'ahead', runs }) {
@@ -230,21 +152,22 @@ function github({ parents = ['p'], tree = 't', headTree = 't', pulls, compare = 
 }
 const run = (path, conclusion = 'success', extra = {}) => ({ id: 1, path: `.github/workflows/${path}`, head_sha: 'h', head_repository: { full_name: 'o/r' }, status: 'completed', conclusion, run_number: 1, run_attempt: 1, ...extra });
 const ask = (gh, base = 'p') => reusable({ api: gh.api, repo: 'o/r', sha: 'm', base, wait: 0, sleep: async () => {} });
-test('main reuses a suite only from a green run on the very files it holds',async()=>{
- expect(await ask(github({ runs: [run('kernel.yml'), run('avendb-checks.yml')] }))).toEqual({ kernel: true, avendb: true });
- expect(await ask(github({ runs: [run('kernel.yml'), run('avendb-checks.yml', 'failure')] }))).toEqual({ kernel: true, avendb: false });
- expect(await ask(github({ runs: [run('kernel.yml')] }))).toEqual({ kernel: true, avendb: false });
+const none = { ci: false, run: '' };
+test('main reuses CI only from a green run on the very files it holds, and names that run',async()=>{
+ expect(await ask(github({ runs: [run('ci.yml', 'success', { id: 42 })] }))).toEqual({ ci: true, run: '42' });
+ expect(await ask(github({ runs: [run('ci.yml', 'failure')] }))).toEqual(none);
+ // another workflow's green run is no evidence
+ expect(await ask(github({ runs: [run('ops.yml')] }))).toEqual(none);
  // the latest run decides: a green older run does not cover a red re-run
- expect((await ask(github({ runs: [run('kernel.yml'), run('kernel.yml', 'failure', { run_number: 2 })] }))).kernel).toBe(false);
+ expect(await ask(github({ runs: [run('ci.yml'), run('ci.yml', 'failure', { run_number: 2 })] }))).toEqual(none);
  // a fork's run, or a run of another head, is never evidence
- expect((await ask(github({ runs: [run('kernel.yml', 'success', { head_repository: { full_name: 'x/r' } })] }))).kernel).toBe(false);
+ expect(await ask(github({ runs: [run('ci.yml', 'success', { head_repository: { full_name: 'x/r' } })] }))).toEqual(none);
 });
-test('a batch merge commit onto main with the PR head as second parent reuses its runs',async()=>{
- expect(await ask(github({ parents: ['p', 'h'], runs: [run('kernel.yml'), run('avendb-checks.yml')] }))).toEqual({ kernel: true, avendb: true });
+test('a goal merge commit onto main with the PR head as second parent reuses its run',async()=>{
+ expect((await ask(github({ parents: ['p', 'h'], runs: [run('ci.yml')] }))).ci).toBe(true);
 });
-test('different files, a stale head, another base or no single pull request validate on main',async()=>{
- const all = [run('kernel.yml'), run('avendb-checks.yml')];
- const none = { kernel: false, avendb: false };
+test('different files, a stale head, another base or no single pull request run CI on main',async()=>{
+ const all = [run('ci.yml')];
  expect(await ask(github({ headTree: 'other', runs: all }))).toEqual(none);
  expect(await ask(github({ compare: 'diverged', runs: all }))).toEqual(none);
  expect(await ask(github({ runs: all }), 'older')).toEqual(none);
@@ -256,10 +179,10 @@ test('different files, a stale head, another base or no single pull request vali
 });
 test('a run still going on the same files is waited for, never taken as passed',async()=>{
  let n = 0;
- const runs = () => [run('kernel.yml', n++ < 2 ? null : 'success', { status: n <= 2 ? 'in_progress' : 'completed' }), run('avendb-checks.yml')];
+ const runs = () => [run('ci.yml', n++ < 2 ? null : 'success', { status: n <= 2 ? 'in_progress' : 'completed' })];
  const gh = github({ runs });
- expect(await reusable({ api: gh.api, repo: 'o/r', sha: 'm', base: 'p', wait: 60000, sleep: async () => {} })).toEqual({ kernel: true, avendb: true });
- expect(await ask(github({ runs: [run('kernel.yml', null, { status: 'in_progress' })] }))).toEqual({ kernel: false, avendb: false });
+ expect(await reusable({ api: gh.api, repo: 'o/r', sha: 'm', base: 'p', wait: 60000, sleep: async () => {} })).toEqual({ ci: true, run: '1' });
+ expect(await ask(github({ runs: [run('ci.yml', null, { status: 'in_progress' })] }))).toEqual(none);
 });
 test('a suite marked off is never selected, not even by its own files or a full run', () => {
  expect(suites.find(s=>s.name==='physics').off).toBeTruthy();

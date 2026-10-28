@@ -4,7 +4,7 @@
 //   a firewall open on SSH, HTTP and HTTPS, and on UDP for avenDB's iroh endpoint.
 //
 // Docker arrives through cloud-init; the containers arrive over SSH from the
-// deploy job in .github/workflows/api.yml. No secrets are written here — the
+// API job in .github/workflows/release.yml (made by ops.yml's infra task). No secrets are written here — the
 // deploy step writes the .env, and the database password is generated once on
 // the server itself and never leaves it.
 //

@@ -34,8 +34,8 @@ function chosen(files, mode) {
  if (mode==='gate') return suites.filter(s=>s.tier==='gate'||s.name==='ci').map(s=>s.name);
  if (mode==='all' || files===null) return suites.map(s=>s.name);
  // Dependency/build/CI changes can affect any suite; missing base takes this path too.
- // Of .github/, only the kernel's own workflow and the shared actions run these suites; another workflow is the ci suite's.
- if (files.some(f=>/^(package\.json$|bun\.lock|\.bun-version$|\.github\/(workflows\/kernel\.yml$|actions\/)|aven\/ops\/(ci\/|paths\.)|maia\/site\/patches\/|vite|svelte|tsconfig)/.test(f))) return suites.map(s=>s.name);
+ // Of .github/, only the checks' own workflow (ci.yml) and the shared actions run these suites; another workflow is the ci suite's.
+ if (files.some(f=>/^(package\.json$|bun\.lock|\.bun-version$|\.github\/(workflows\/ci\.yml$|actions\/)|aven\/ops\/(ci\/|paths\.)|maia\/site\/patches\/|vite|svelte|tsconfig)/.test(f))) return suites.map(s=>s.name);
  return suites.filter(s=>s.tier==='gate'||s.name==='ci'||files.some(f=>s.impact.some(p=>matches(f,p)))).map(s=>s.name);
 }
 // File-level isolation keeps each simulation's staged state intact; every file belongs to exactly one shard. Files go to
@@ -64,11 +64,11 @@ export function matrix(names) {
    ? Array.from({length:shards[suite]},(_,i)=>({suite,shard:`${i+1}/${shards[suite]}`,label:`${suite} ${i+1}/${shards[suite]}`}))
    : [{suite,shard:'',label:suite}]);
 }
-// Each entry's pass marker (passes.mjs): the suite's own tests and what selects it, and the kernel's workflow.
+// Each entry's pass marker (passes.mjs, plan.mjs): the suite's own tests and what selects it, and the checks' workflow.
 export function keyed(entries) {
  return entries.map(e=>{
   const s=suites.find(x=>x.name===e.suite);
-  return {...e, key:`pass-app-${e.suite}-${e.shard.replace('/','of')||'all'}-${hash([...s.paths,...s.impact,'.github/workflows/kernel.yml'])}`};
+  return {...e, key:`pass-app-${e.suite}-${e.shard.replace('/','of')||'all'}-${hash([...s.paths,...s.impact,'.github/workflows/ci.yml'])}`};
  });
 }
 if (import.meta.main) {

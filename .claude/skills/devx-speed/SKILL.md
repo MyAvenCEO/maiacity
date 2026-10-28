@@ -98,22 +98,22 @@ bun aven/ops/devx/collect.mjs --tasks                  # "Task: <branch>" lines 
   ready, one CI run, fix only the culprits in one round, land it with a merge commit (never a squash: main keeps
   every task's commits) and an explicit message (title + body with the `Task:` lines, never a `[skip ci]`), then close the task PRs naming the final PR, and merge main back into the
   collector branch.
-- **Time budget: CI and release under 10 minutes each** (Samuel 2026-10-27). `.github/workflows/ci-budget.yml` turns
-  red when a run goes over (`aven/ops/ci/budget.mjs`, which names the slowest jobs and steps); fix that first. What
-  blew it on 2026-10-27 (35 min): a 100k-edit scale test in the core tests hanging to nextest's limit, five pushes to
-  the ready PR in 13 minutes (each push restarts every job), main not reusing the PR's green run (merge commit), and a
-  new job's first cold cache. So: push a ready PR once per fix round, not per fix; scale tests are benches
-  (`#[ignore]`, run by hand), never tests; a new CI job warms its cache on main before it gates anything.
-- **The goal gate guards the merge.** `.github/workflows/gate.yml` ("Goal gate", `aven/ops/ci/gate.mjs`) runs on a
-  ready PR only. It works out from the changed files which workflows must run, waits for them, and fails when one is
-  red or never started. A workflow file GitHub rejects never starts and shows no red job: batch 5 (2026-10-28) nearly
-  merged without its avenDB suite. Main's branch protection requires that one check. `bun aven/ops/ci/workflows.mjs`
-  lints workflow files locally (check.mjs runs it when one changed). `bun aven/ops/ci/gate.mjs --plan origin/main HEAD`
-  shows what the gate will wait for.
-- **The WebAssembly before ready** (Goal 6 D2): label the goal PR `goal` (or title it "Goal …"). CI then builds
-  and commits the page's WebAssembly while it is still a draft, where that commit restarts nothing. `collect.mjs` takes
-  that commit before each merge. Mark the PR ready only once "avenDB WebAssembly" on the draft's head has finished:
-  then the one CI run is not started a second time by the bot's commit.
+- **Time budget: CI and release under 10 minutes each** (Samuel 2026-10-27). The last job of `ci.yml` and of
+  `release.yml` names the run's slowest jobs and steps in its summary and warns when the run went over
+  (`aven/ops/ci/budget.mjs`); fix that first. What blew it on 2026-10-27 (35 min): a 100k-edit scale test in the core
+  tests hanging to nextest's limit, five pushes to the ready PR in 13 minutes (each push restarts every job), main not
+  reusing the PR's green run (merge commit), and a new job's first cold cache. So: push a ready PR once per fix round,
+  not per fix; scale tests are benches (`#[ignore]`, run by hand), never tests; a new CI job warms its cache on main
+  before it gates anything.
+- **The goal gate guards the merge.** One workflow checks everything (`.github/workflows/ci.yml`, stage 7): its plan
+  job (`aven/ops/ci/plan.mjs`) picks the jobs the PR's files need, keyed on the files each reads, and leaves out a job
+  whose key passed before; its last job, "CI required", fails when a job the plan named is red, cancelled or missing.
+  Main's branch protection requires that one check, and a workflow file GitHub rejects never reports it.
+  `bun aven/ops/ci/workflows.mjs` lints workflow files locally (check.mjs runs it when one changed);
+  `CI_BASE=origin/main bun aven/ops/ci/plan.mjs` shows what CI will run.
+- **The page's WebAssembly is no commit** (B1): `aven/db/page/device` is a build output. CI's wasm job fetches the
+  build for the tree's key from the release `avendb-page-device`, or builds it (5 min) when the goal changed avenDB's
+  sources; `release.yml` puts each new one on that release once main holds it.
 - **No benchmark in CI** (Goal 7a W1, Samuel 2026-10-28): a timing on a shared runner gates noise. A performance rule
   goes in as a count (pages, bytes, index rows, log edits read; bytes an edit) or on simulated time (tokio's paused
   clock, `avendb-net`'s `sim` link: a link's use, a live edit's delay), as a plain test with its limit in the test. The

@@ -10,7 +10,7 @@ if (import.meta.main) {
  try {
   const before=process.env.CI_BASE;
   if (before && /^[a-f0-9]{40}$/.test(before)) {
-   const response=JSON.parse(execFileSync('gh',['api',`repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/main.yml/runs?branch=main&event=push&status=success&per_page=100`],{encoding:'utf8',stdio:['ignore','pipe','pipe']}));
+   const response=JSON.parse(execFileSync('gh',['api',`repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?branch=main&event=push&status=success&per_page=100`],{encoding:'utf8',stdio:['ignore','pipe','pipe']}));
    base=releasedBase(before,response.workflow_runs);
   }
  } catch { /* Unavailable history or a new workflow: rebuild and validate every component. */ }

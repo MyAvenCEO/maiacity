@@ -6,7 +6,7 @@
 //   node aven/db/scripts/test-value.mjs --coverage <dir> [--mutants <dir> ...] --out <dir>
 //
 // --coverage: a folder of `<test id>.lcov` files, one per test, named `<binary id>__<test name>` with ':' as '~'
-// (avendb-assurance.yml's coverage job writes them), so each reads as nextest names it: `avendb::engine a_test`.
+// (ops.yml's test-value task, its coverage job, writes them), so each reads as nextest names it: `avendb::engine a_test`.
 // --mutants: cargo-mutants output folders (`mutants.out`), one per shard; each mutant's log names the tests that failed.
 // Writes test-value.json (every test) and test-value.md (the summary and the candidates) to --out.
 

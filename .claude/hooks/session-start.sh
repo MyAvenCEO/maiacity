@@ -1,6 +1,6 @@
 #!/bin/bash
 # A warm start for avenDB's Rust in Claude Code cloud sessions: the compiled test dependencies that
-# .github/workflows/avendb-dev-cache.yml puts on the release "avendb-dev-cache", unpacked into target/ (the one Cargo
+# .github/workflows/ops.yml (task avendb-dev-cache) puts on the release "avendb-dev-cache", unpacked into target/ (the one Cargo
 # workspace's, D3), with the Rust toolchain they were built with (cargo reuses nothing another rustc built). A
 # session's first test build then compiles only our own crates: avendb-net's tests in about 4 minutes instead of about
 # 10 (aven/db/CLAUDE.md).

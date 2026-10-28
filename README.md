@@ -23,7 +23,7 @@ cd aven/api && bun install --frozen-lockfile && cd ../..
 bun test ./aven/api/test
 ```
 
-`.github/workflows/kernel.yml` is the authoritative application test list and Chromium/WebKit probe gate. `avendb-checks.yml` checks avenDB's Rust/Lean workspace. Tests that exercise native devices, storage migrations or recovery must use isolated stores, never a live device directory.
+`.github/workflows/ci.yml` runs every check: the application suites (`aven/ops/ci/suites.json`), the Chromium/WebKit probes, avenDB's Rust tests and Lean spec, and theOS on macOS; `release.yml` ships main, `ops.yml` holds the scheduled and by-hand tasks. Tests that exercise native devices, storage migrations or recovery must use isolated stores, never a live device directory.
 
 ## Ownership map
 

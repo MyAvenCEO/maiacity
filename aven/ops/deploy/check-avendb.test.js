@@ -56,24 +56,24 @@ test('DNS/certificate readiness and feed failures remain warnings', () => {
 });
 
 test('independent deployments keep shared SSH, container locking and close ownership', () => {
-	const load = (name) => YAML.parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
-	const api = load('api'), avendb = load('avendb'), site = load('deploy');
-	expect(new Set([api, avendb, site].map((workflow) => workflow.concurrency.group)).size).toBe(3);
-	for (const workflow of [api, avendb]) {
-		expect(workflow.jobs.deploy.concurrency).toEqual({ group: 'maia-production-containers', 'cancel-in-progress': false });
-		const script = workflow.jobs.deploy.steps.map((step) => step.run ?? '').join('\n');
+	const release = YAML.parse(readFileSync('.github/workflows/release.yml', 'utf8'));
+	const { api, peer, site } = release.jobs;
+	expect(site.concurrency.group).toBe('site');
+	for (const job of [api, peer]) {
+		expect(job.concurrency).toEqual({ group: 'maia-production-containers', 'cancel-in-progress': false });
+		const script = job.steps.map((step) => step.run ?? '').join('\n');
 		expect(script).toContain('bash aven/ops/deploy/check-avendb.sh');
 		expect(script).toContain('exec 9>.env.lock; flock -w 300 9');
 		expect(script).not.toContain('flock -u');
 	}
-	for (const job of [api.jobs.deploy, avendb.jobs.deploy, site.jobs.site]) {
+	for (const job of [api, peer, site]) {
 		expect(job.steps.some((step) => step.uses === './.github/actions/prod-ssh')).toBe(true);
 	}
-	const server = avendb.jobs.deploy.steps.map((step) => step.run ?? '').join('\n');
+	const server = peer.steps.map((step) => step.run ?? '').join('\n');
 	expect(server).toContain('--lock-fd 9 --wait 300');
 	expect(server).toContain('--lock-fd 9 --verify-only');
 	expect(server).toContain('up -d --no-deps avendb');
-	const apiScript = api.jobs.deploy.steps.map((step) => step.run ?? '').join('\n');
+	const apiScript = api.steps.map((step) => step.run ?? '').join('\n');
 	expect(apiScript).toContain('exit "${BUCKETLESS:-0}"');
 	expect(apiScript).toContain('up -d --no-deps db api caddy');
 });

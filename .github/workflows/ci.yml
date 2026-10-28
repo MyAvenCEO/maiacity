@@ -1,0 +1,718 @@
+name: CI
+
+# Every check, in one workflow (stage 7 of the CI refactor). The plan job works out what a change can break
+# (aven/ops/ci/plan.mjs: impact.mjs's parts, test.mjs's suites, rust-tests.mjs's shards) and keys every job on the files
+# it really reads: a job whose key passed before, on this ref or on main, is left out. Each suite is a job here, and the
+# last one, "CI required", needs them all: it is the one check main's branch protection requires.
+#
+#   plan          what to run, and what passed before with the same files
+#   wasm          the page's avenDB device for this tree (B1): fetched from the release avendb-page-device by its key, or
+#                 built; every job that loads the page takes it from here (.github/actions/page-device)
+#   gate          svelte-check, the test inventory, and the suites every change runs (security, ci)
+#   js            the JS suites this change selects (aven/ops/ci/suites.json), with their shards
+#   probes        every way out of the asset box, a view and the math host, tried in Chromium and in WebKit (theOS's
+#                 engine), and avenDB's page in both
+#   rust-archive  avenDB's Rust tests built once into one nextest archive (W4), and the doc tests
+#   rust          the archive's shards, each on a runner of its own, building nothing
+#   spec          the Lean spec, avenDB's SSOT: it proves, and the committed vectors are the model's
+#   browser       avenDB's device as WebAssembly in a real Chromium, against a real relay and server
+#   protocol      the protocol models (Verifpal) and their negative controls
+#   images        the release's images (the peer's, the API's), built from this tree and pushed by digest from this
+#                 repository's branches: release.yml promotes them when main's files are this run's (B2)
+#   mac           theOS compiles on macOS, and its native contracts
+#   lean          Lean runs locked down on macOS, as theOS runs it
+#   site-same     the site builds byte for byte the same on Linux and on macOS (what a Mac's witness of a release rests on)
+#   small         the deploy's contracts (avenDB's close gate, the site's routes, the infrastructure) and the dependency
+#                 audits (bun audit, cargo-deny)
+#
+# Drafts run nothing (CLAUDE.md: one CI run per goal, on its PR once ready). release.yml calls it on main's commit when
+# the merged PR's run is not for main's very files. Weekly it runs everything; daily it runs the dependency audits,
+# as advisories appear without any change of ours.
+#
+# The repository is public, and so are these logs: nothing here prints a secret or vault data.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+  schedule:
+    # everything, every verdict read again
+    - cron: '23 3 * * 1'
+    # the dependency audits alone
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Every job, whatever changed, no verdict reused
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      base:
+        description: The commit to compare with (release.yml's last released commit); none checks everything
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+# a pull request's new push replaces its run; any other run is its own
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run_wasm: ${{ steps.plan.outputs.run_wasm }}
+      run_gate: ${{ steps.plan.outputs.run_gate }}
+      run_probes: ${{ steps.plan.outputs.run_probes }}
+      run_js: ${{ steps.plan.outputs.run_js }}
+      js: ${{ steps.plan.outputs.js }}
+      run_rust: ${{ steps.plan.outputs.run_rust }}
+      rust: ${{ steps.plan.outputs.rust }}
+      run_spec: ${{ steps.plan.outputs.run_spec }}
+      key_spec: ${{ steps.plan.outputs.key_spec }}
+      run_browser: ${{ steps.plan.outputs.run_browser }}
+      key_browser: ${{ steps.plan.outputs.key_browser }}
+      run_protocol: ${{ steps.plan.outputs.run_protocol }}
+      key_protocol: ${{ steps.plan.outputs.key_protocol }}
+      run_images: ${{ steps.plan.outputs.run_images }}
+      images: ${{ steps.plan.outputs.images }}
+      run_mac: ${{ steps.plan.outputs.run_mac }}
+      key_mac: ${{ steps.plan.outputs.key_mac }}
+      run_lean: ${{ steps.plan.outputs.run_lean }}
+      key_lean: ${{ steps.plan.outputs.key_lean }}
+      run_site_same: ${{ steps.plan.outputs.run_site_same }}
+      key_site_same: ${{ steps.plan.outputs.key_site_same }}
+      run_small: ${{ steps.plan.outputs.run_small }}
+      run_delivery: ${{ steps.plan.outputs.run_delivery }}
+      run_publish: ${{ steps.plan.outputs.run_publish }}
+      run_infra: ${{ steps.plan.outputs.run_infra }}
+      run_audit: ${{ steps.plan.outputs.run_audit }}
+      run_deny: ${{ steps.plan.outputs.run_deny }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: plan
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SCHEDULE: ${{ github.event.schedule }}
+          FULL: ${{ inputs.full || false }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || inputs.base }}
+        run: |
+          mode=changed
+          [ "$FULL" != true ] || mode=full
+          [ "$SCHEDULE" != '23 3 * * 1' ] || mode=full
+          [ "$SCHEDULE" != '17 5 * * *' ] || mode=audit
+          CI_MODE=$mode CI_BASE=$BASE CI_HEAD=$GITHUB_SHA bun aven/ops/ci/plan.mjs
+
+  wasm:
+    needs: plan
+    if: needs.plan.outputs.run_wasm == 'true'
+    name: The page's avenDB device
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # a tree whose avenDB sources some earlier release built is fetched in seconds; any other is built here
+      - id: fetch
+        run: |
+          echo "key=$(bun aven/ops/devx/wasm.mjs key)" >> "$GITHUB_OUTPUT"
+          if bun aven/ops/devx/wasm.mjs ensure --fetch; then echo "build=false" >> "$GITHUB_OUTPUT"; else echo "build=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.fetch.outputs.build == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - if: steps.fetch.outputs.build == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - if: steps.fetch.outputs.build == 'true'
+        uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: . -> target
+          key: wasm
+          cache-on-failure: true
+      - if: steps.fetch.outputs.build == 'true'
+        run: bun aven/ops/devx/wasm.mjs build
+      - run: bun aven/ops/devx/wasm.mjs pack page-device.tgz
+      # release.yml puts it on the release avendb-page-device once main holds this tree
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: page-device
+          path: page-device.tgz
+          retention-days: 7
+          compression-level: 0
+
+  gate:
+    needs: [plan, wasm]
+    if: needs.plan.outputs.run_gate == 'true'
+    name: Kernel tests and the security suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      # the API's own packages, for its tests (its Postgres, PGlite)
+      - run: bun install --frozen-lockfile
+        working-directory: aven/api
+      - uses: ./.github/actions/page-device
+      - name: Check application types
+        run: bun --bun run check
+      - name: Every test file belongs to a suite
+        run: bun aven/ops/ci/test.mjs --check
+      # the kernel's tests and what holds what we can't trust (suites.json's gate tier), and the CI's own
+      - name: The security and CI suites
+        run: bun aven/ops/ci/test.mjs --gate
+
+  js:
+    needs: [plan, wasm]
+    if: needs.plan.outputs.run_js == 'true'
+    name: JS tests (${{ matrix.label }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.js) }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/page-device
+      - run: bunx --bun svelte-kit sync
+      - env:
+          SUITE: ${{ matrix.suite }}
+          SHARD: ${{ matrix.shard }}
+        run: bun aven/ops/ci/test.mjs --suite "$SUITE" --shard "$SHARD"
+      # its verdict: the next run with the same files leaves this entry out (plan.mjs)
+      - run: echo passed > .pass
+      - uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ matrix.key }}
+
+  # In Playwright's own image, of the Playwright in package.json (impact.test.mjs holds the tag to it): its browsers and
+  # every system library they need come in it, where installing them on the runner hung on Ubuntu's mirrors (2026-10-26).
+  probes:
+    needs: [plan, wasm]
+    if: needs.plan.outputs.run_probes == 'true'
+    name: Every way out, tried in ${{ matrix.browser }}
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --ipc=host
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    env:
+      BROWSER: ${{ matrix.browser }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # the image has Node and npm but no unzip, which setup-bun needs
+      - run: npm install -g "bun@$(cat .bun-version)"
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/page-device
+      - if: matrix.browser == 'chromium'
+        run: bun aven/db/scripts/test-avendb-store.mjs
+      - run: bun aven/db/scripts/test-avendb-session.mjs --browser "$BROWSER"
+      - run: bun aven/db/scripts/test-avendb-local-write.mjs --browser "$BROWSER" --all
+      - run: bun aven/db/scripts/test-proof-worker.mjs --browser "$BROWSER"
+      # a way out WebKit itself lacks is named in the log, refused and green
+      - run: bun aven/kernel/probes.mjs --browser "$BROWSER"
+      # the OPFS reopen drives a newer WebKit than the probes' pinned one, as older Playwright WebKit lacks
+      # persistent-context OPFS (upstream #41984), fetched beside it into its own folder
+      - name: Derived views survive WebKit OPFS reopen
+        if: matrix.browser == 'webkit'
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/avendb-opfs/browsers
+        run: |
+          mkdir -p "$RUNNER_TEMP/avendb-opfs" && bun add --cwd "$RUNNER_TEMP/avendb-opfs" --ignore-scripts --exact playwright@1.64.1
+          node "$RUNNER_TEMP/avendb-opfs/node_modules/playwright/cli.js" install webkit
+          AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" bun aven/db/scripts/test-avendb-store.mjs --browser webkit
+
+  # One build of every avenDB test program (W4: one program a crate), into one nextest archive the shards run from. Our
+  # own crates at opt-level 1, not dev's 2 (the dependencies keep theirs): they build in about half the time and run as
+  # fast. mold links them in a fraction of ld's time.
+  rust-archive:
+    needs: plan
+    if: needs.plan.outputs.run_rust == 'true'
+    name: avenDB tests, built once
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CARGO_PROFILE_TEST_OPT_LEVEL: 1
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: . -> target
+          key: rust-tests
+          cache-on-failure: true
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - uses: rui314/setup-mold@v1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun aven/ops/ci/rust-tests.mjs archive "$RUNNER_TEMP/rust-tests.tar.zst"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: rust-tests
+          path: ${{ runner.temp }}/rust-tests.tar.zst
+          retention-days: 1
+          compression-level: 0
+      # nextest runs no doc tests; they build here, after the shards have their archive
+      - run: bun aven/ops/ci/rust-tests.mjs doc
+
+  rust:
+    needs: [plan, rust-archive]
+    if: needs.plan.outputs.run_rust == 'true'
+    name: avenDB tests (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.rust) }}
+    steps:
+      # the sources the tests read their fixtures from, as the archive's paths are remapped onto them
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: rust-tests
+          path: ${{ runner.temp }}
+      - env:
+          SHARD: ${{ matrix.shard }}
+        run: bun aven/ops/ci/rust-tests.mjs run "$SHARD" "$RUNNER_TEMP/rust-tests.tar.zst"
+      - run: echo passed > .pass
+      - uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ matrix.key }}
+
+  spec:
+    needs: plan
+    if: needs.plan.outputs.run_spec == 'true'
+    name: Lean spec and vectors
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ~/.elan
+          key: elan-${{ hashFiles('aven/db/spec/lean-toolchain') }}
+      - uses: actions/cache@v6.1.0
+        with:
+          path: aven/db/spec/.lake
+          key: lake-${{ hashFiles('aven/db/spec/lean-toolchain') }}-${{ hashFiles('aven/db/spec/**/*.lean', 'aven/db/spec/vectors/**') }}
+          restore-keys: lake-${{ hashFiles('aven/db/spec/lean-toolchain') }}-
+      - name: elan
+        run: |
+          if [ ! -x ~/.elan/bin/lake ]; then
+            curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: lake build
+        working-directory: aven/db/spec
+        run: lake build
+      - name: The committed vectors are the model's
+        working-directory: aven/db/spec
+        run: |
+          lake exe vectors
+          if ! git diff --exit-code -- vectors; then
+            echo "::error::aven/db/spec/vectors differ from what the model writes: run \`lake exe vectors\` in aven/db/spec and commit them"
+            exit 1
+          fi
+      - run: echo passed > .pass
+      - uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.plan.outputs.key_spec }}
+
+  browser:
+    needs: plan
+    if: needs.plan.outputs.run_browser == 'true'
+    name: avenDB in a real Chromium, as WebAssembly
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - uses: rui314/setup-mold@v1
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          # test-browser.sh builds the page's WebAssembly in target-wasm, beside the native tests in target
+          workspaces: |
+            . -> target
+            . -> target-wasm
+          key: real-browser-localhost
+          cache-on-failure: true
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      # the transport contract needs post-quantum WebTransport, which the probes' older Chromium lacks
+      - name: A current Chromium for the transports
+        run: |
+          mkdir -p "$RUNNER_TEMP/avendb-transports"
+          bun add --cwd "$RUNNER_TEMP/avendb-transports" --ignore-scripts --exact playwright@1.64.1
+          aven/ops/ci/browser-deps.sh "$RUNNER_TEMP/avendb-transports/node_modules/playwright/cli.js" chromium
+      - name: The real API with disposable localhost identities
+        env:
+          CARGO_PROFILE_TEST_OPT_LEVEL: 1
+        run: |
+          export AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-transports/node_modules/playwright/index.mjs"
+          export AVENDB_CHROMIUM="$(bun -e 'const { chromium } = await import(process.env.AVENDB_TEST_PLAYWRIGHT); console.log(chromium.executablePath())')"
+          test -x "$AVENDB_CHROMIUM"
+          export AVENDB_NODE="$(command -v bun)"
+          aven/db/scripts/test-browser.sh
+      - run: echo passed > .pass
+      - uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.plan.outputs.key_browser }}
+
+  protocol:
+    needs: plan
+    if: needs.plan.outputs.run_protocol == 'true'
+    name: Protocol models and negative controls
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Verifpal 1.6.5, checksum-pinned
+        run: |
+          archive="$RUNNER_TEMP/verifpal.zip"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            https://github.com/symbolicsoft/verifpal/releases/download/v1.6.5/verifpal_1.6.5_linux_amd64.zip -o "$archive"
+          echo "2591c48afd63871433197f6da199bde756b13dd6a0a51b6998799ee199061302  $archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/verifpal-bin"
+          unzip -q "$archive" verifpal -d "$RUNNER_TEMP/verifpal-bin"
+          chmod 755 "$RUNNER_TEMP/verifpal-bin/verifpal"
+          echo "$RUNNER_TEMP/verifpal-bin" >> "$GITHUB_PATH"
+      - run: aven/db/spec/protocol/check.sh
+      - run: echo passed > .pass
+      - uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.plan.outputs.key_protocol }}
+
+  # Built once (B2): from this run's files, pushed by digest, never under a tag a release reads. release.yml promotes an
+  # image only from the run whose files are byte for byte main's (reuse.mjs), by the digest that run's artifact names:
+  # a digest names its bytes, so no other run's push can stand in for it. A fork's pull request builds without pushing.
+  images:
+    needs: plan
+    if: needs.plan.outputs.run_images == 'true'
+    name: Image (${{ matrix.component }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.plan.outputs.images) }}
+    env:
+      COMPONENT: ${{ matrix.component }}
+      PUSH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - id: meta
+        run: |
+          case "$COMPONENT" in
+            api) FILE=aven/api/Dockerfile ;;
+            avendb) FILE=aven/db/Dockerfile.server ;;
+            *) echo "::error::no image $COMPONENT"; exit 1 ;;
+          esac
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-$COMPONENT" >> "$GITHUB_OUTPUT"
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4.4.1
+      - if: env.PUSH == 'true'
+        uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: build
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: ${{ steps.meta.outputs.file }}
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.image }}:ci-${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,scope=${{ matrix.component }},mode=max
+      - if: env.PUSH == 'true'
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::the build named no digest"; exit 1; }
+          jq -n --arg image "$IMAGE" --arg digest "$DIGEST" --arg sha "$GITHUB_SHA" '{image:$image,digest:$digest,sha:$sha}' > "image-$COMPONENT.json"
+          cat "image-$COMPONENT.json"
+      - if: env.PUSH == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: image-${{ matrix.component }}
+          path: image-${{ matrix.component }}.json
+          retention-days: 7
+
+  # theOS (Tauri) compiles on a Mac runner, so a change learns here whether its Rust builds there, not by queueing behind
+  # Samuel's Mac. A check only: it signs and ships nothing; theOS itself is built on the Mac. The Secure Enclave bridge
+  # needs macOS 26's SDK: where the runner's is older, build.rs builds without it and says so.
+  mac:
+    needs: plan
+    if: needs.plan.outputs.run_mac == 'true'
+    name: theOS compiles on macOS
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: . -> target
+          key: mac
+          cache-on-failure: true
+      # tauri::generate_context! reads the site's build folder (tauri.conf.json frontendDist): it needs to be there, not
+      # what it holds
+      - run: mkdir -p build && echo '<!doctype html>' > build/index.html
+      - run: cargo check --locked -p maiacity-studio
+      - name: Media reference contract
+        run: |
+          rustc --edition=2024 --test theos/app/src/media_ref.rs -o "$RUNNER_TEMP/media-ref-tests"
+          "$RUNNER_TEMP/media-ref-tests"
+      - name: Native color and media contracts
+        run: cargo test --locked -p vault-color -p vault-media -p vault-asr
+      - name: Render numerical contracts
+        run: cargo test --locked -p vault-render --test maths --test eq --test look --test creative
+      - run: echo passed > .pass
+      - uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.plan.outputs.key_mac }}
+
+  # Real Lean in theOS (avendb-device's lean.rs, N3): the device gets the pinned Lean release, checks its SHA-256 and
+  # BLAKE3, compiles the spec's objective module and checks objectives, and its sandbox stops a file that got past the
+  # input wall from reading the person's files, writing or starting anything. Only when it changed: Lean is 570 MB.
+  lean:
+    needs: plan
+    if: needs.plan.outputs.run_lean == 'true'
+    name: Lean runs locked down on macOS
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: . -> target
+          key: lean
+          cache-on-failure: true
+      - name: Lean got, checked and locked down
+        run: cargo test --locked -p avendb-device --lib lean::tests::lean_on_a_mac -- --ignored --nocapture
+      # what the sandbox denied Lean, by operation and path, and why Lean stopped (its crash report: the reason and the
+      # stopped thread's frames): Lean's own folder and the runner's, nothing of a person's
+      - name: What the sandbox stopped
+        if: failure()
+        run: |
+          sudo log show --last 20m --style compact --predicate 'eventMessage CONTAINS "deny(" AND eventMessage CONTAINS "lean"' | tail -60 || true
+          python3 - <<'PY' || true
+          import glob, json, os
+          for f in sorted(glob.glob(os.path.expanduser('~/Library/Logs/DiagnosticReports/lean*.ips')))[:2]:
+              body = json.loads(open(f).read().split('\n', 1)[1])
+              print(f, json.dumps(body.get('termination')), json.dumps(body.get('asi')), json.dumps(body.get('exception')))
+              images = body.get('usedImages', [])
+              thread = next((t for t in body.get('threads', []) if t.get('triggered')), {})
+              for frame in thread.get('frames', [])[:30]:
+                  i = frame.get('imageIndex')
+                  name = images[i].get('name') if i is not None and i < len(images) else None
+                  print('   ', name, frame.get('symbol'), frame.get('symbolLocation'))
+          PY
+      - run: echo passed > .pass
+      - uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.plan.outputs.key_lean }}
+
+  # A release Maia City accepts (aven/ops/release.mjs) rests on one fact: a commit builds the same site, byte for byte,
+  # wherever it is built, so a Mac of Maia City can build what maia.city names and find it the very same. Vite on Bun
+  # on both, as the deploy and Samuel's Mac each run it (Vite on Node lays out other bytes).
+  site-same:
+    needs: [plan, wasm]
+    if: needs.plan.outputs.run_site_same == 'true'
+    name: The site, built on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/page-device
+      # both name the build by the same commit (GITHUB_SHA), as the deploy and the Mac's witness each do
+      - run: bun --bun run build 2>&1 | tail -60
+        shell: bash
+      - run: bun aven/ops/release.mjs list build
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: list-${{ matrix.os }}
+          path: build/release.json
+          retention-days: 3
+
+  site-same-check:
+    needs: [plan, site-same]
+    if: needs.plan.outputs.run_site_same == 'true'
+    name: Every file of the site the same on Linux and macOS
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: list-*
+      - name: The two lists, file by file
+        run: |
+          node -e '
+            const fs = require("fs");
+            const a = JSON.parse(fs.readFileSync("list-ubuntu-latest/release.json", "utf8")).files;
+            const b = JSON.parse(fs.readFileSync("list-macos-15/release.json", "utf8")).files;
+            const names = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+            const off = names.filter((f) => a[f] !== b[f]).map((f) => `${f}: ${a[f] ? "linux " + a[f].slice(0, 12) : "not on linux"} / ${b[f] ? "macos " + b[f].slice(0, 12) : "not on macos"}`);
+            console.log(`${names.length} files, ${off.length} differ`);
+            if (off.length) { console.log(off.slice(0, 60).join("\n")); process.exit(1); }
+          '
+      - run: echo passed > .pass
+      - uses: actions/cache/save@v6.1.0
+        with:
+          path: .pass
+          key: ${{ needs.plan.outputs.key_site_same }}
+
+  # The short checks, folded into one runner (C4): each step runs when the plan says its files changed.
+  small:
+    needs: plan
+    if: needs.plan.outputs.run_small == 'true'
+    name: Deploy contracts and dependency audits
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # avenDB's peer closes cleanly before a new one starts, and the deploy owns that close (aven/ops/deploy/stop-avendb.py)
+      - name: The peer's close gate, and a real disposable Docker close and cancellation
+        if: needs.plan.outputs.run_delivery == 'true'
+        env:
+          AVENDB_DISPOSABLE_DOCKER: '1'
+        run: |
+          python3 -m unittest discover -s aven/ops/deploy -p 'test_stop_avendb.py' -v
+          python3 aven/ops/deploy/test_stop_avendb_docker.py -v
+      - name: The site's release retention and Caddy's real routing
+        if: needs.plan.outputs.run_publish == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/site-caddy"
+          docker run --rm -v "$RUNNER_TEMP/site-caddy:/out" --entrypoint cp caddy:2-alpine /usr/bin/caddy /out/caddy
+          CADDY="$RUNNER_TEMP/site-caddy/caddy" python3 -m unittest discover -s aven/ops/deploy -p 'test_publish_site.py' -v
+      - name: The infrastructure's contracts
+        if: needs.plan.outputs.run_infra == 'true'
+        working-directory: aven/ops/infra
+        run: |
+          bun install --frozen-lockfile
+          bun --bun run check && bun smoke.mjs
+      # The three bun lockfiles against GitHub's advisory database: moderate or worse fails, low ones are printed. Held
+      # back, by advisory: vite 8.3.0's dev-server advisories (the dev server alone, never a build). Vite 8.3.3 brings a
+      # newer rolldown, which bundles every asset recipe to other bytes, so each recipe's hash leaves ./cards.json and the
+      # vault's pins: that upgrade goes with new recipe cards, by AIP, not here. Package names and advisories only.
+      - name: bun audit
+        if: needs.plan.outputs.run_audit == 'true'
+        run: |
+          failed=0
+          for dir in . aven/api aven/ops/infra; do
+            ignore=()
+            [ "$dir" != . ] || ignore=(--ignore=GHSA-9jrq-w75r-8gcw --ignore=GHSA-rq7h-c2jc-7f22 --ignore=GHSA-698v-4r3x-3vcv --ignore=GHSA-r825-w8mm-5pxw --ignore=GHSA-587h-7wmj-h5pm --ignore=GHSA-vfpm-58rq-9qcg)
+            echo "== $dir"
+            (cd "$dir" && bun install --frozen-lockfile --ignore-scripts >/dev/null && { bun audit || true; } && bun audit --audit-level=moderate "${ignore[@]}") || failed=1
+          done
+          exit $failed
+      - if: needs.plan.outputs.run_deny == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      # the one workspace (avenDB and theOS, D3): no open RustSec advisory, only the licences deny.toml lists, crates
+      # from crates.io alone
+      - name: cargo-deny
+        if: needs.plan.outputs.run_deny == 'true'
+        run: cargo deny --locked check
+
+  required:
+    name: CI required
+    needs: [plan, wasm, gate, js, probes, rust-archive, rust, spec, browser, protocol, images, mac, lean, site-same, site-same-check, small]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: |
+            aven/ops/ci
+            .bun-version
+          sparse-checkout-cone-mode: false
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Every job the plan needed passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: bun aven/ops/ci/plan.mjs --verdict
+      # the run against its time budget (aven/ops/ci/budget.mjs): its slowest jobs and steps in the summary, a warning
+      # when it went over; it never holds a merge
+      - name: Time against budget
+        if: always()
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: bun aven/ops/ci/budget.mjs

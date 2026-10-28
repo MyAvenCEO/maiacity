@@ -14,6 +14,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "deploy/stop-avendb.py"
+# the repository's root, where the release workflow is
+REPO = Path(__file__).resolve().parents[3]
 DOCKER = r'''#!/usr/bin/env python3
 import io,json,os,pathlib,sys,tarfile,time
 root=pathlib.Path(os.environ['FAKE_ROOT']); args=sys.argv[1:]
@@ -84,7 +86,7 @@ shutil.copyfile(sys.argv[1],sys.argv[2].removeprefix('prod:'))
 
 
 def block(path, step):
-    lines = (ROOT / path).read_text().splitlines()
+    lines = (REPO / path).read_text().splitlines()
     start = next(i for i, line in enumerate(lines) if line.strip() == f"- name: {step}")
     begin = next(i for i in range(start, len(lines)) if lines[i].strip() == "run: |") + 1
     end = next((i for i in range(begin, len(lines)) if lines[i] and not lines[i].startswith("          ")), len(lines))
@@ -262,8 +264,8 @@ class Closing(unittest.TestCase):
         if fail: self.state['behavior'] = 'fail'; self.save()
         env = {**self.env, 'GITHUB_SHA': sha, 'APP_DIR': str(self.root), 'IMAGE': 'registry/test:' + sha,
                'GHCR_TOKEN': 'synthetic', 'ACTOR': 'fixture', 'BUCKET_ACCESS_KEY': 'synthetic', 'BUCKET_SECRET_KEY': 'synthetic',
-               'BUCKET_SEAL': 'different' if changed_seal else 'synthetic', 'BUCKET': 'retained', 'S3_ENDPOINT': 'https://example.test', 'S3_REGION': 'test', 'SNAPSHOTS': 'test'}
-        return subprocess.run(['bash', '-e', '-c', block('.github/workflows/avendb.yml', 'Roll out the new image')], env=env, capture_output=True, timeout=10)
+               'BUCKET_SEAL': 'different' if changed_seal else 'synthetic', 'AVENDB_BUCKET': 'retained', 'S3_ENDPOINT': 'https://example.test', 'S3_REGION': 'test', 'SNAPSHOTS': 'test'}
+        return subprocess.run(['bash', '-e', '-c', block('.github/workflows/release.yml', 'Roll out the new image')], env=env, capture_output=True, timeout=10)
 
     def test_actual_server_shell_gates_config_and_activation(self):
         done = self.workflow()
@@ -294,8 +296,8 @@ class Closing(unittest.TestCase):
         for name in ('docker-compose.yml','docker-compose.prod.yml','deploy/Caddyfile','deploy/backup.sh'):
             (self.root/name).write_text('previous')
         env={**self.env,'APP_DIR':str(self.root),'GITHUB_SHA':'f'*40}
-        done=subprocess.run(['bash','-e','-c',block('.github/workflows/api.yml','Copy the compose files')],
-                            env=env,cwd=ROOT,capture_output=True,timeout=5)
+        done=subprocess.run(['bash','-e','-c',block('.github/workflows/release.yml','Copy the compose files')],
+                            env=env,cwd=REPO,capture_output=True,timeout=5)
         self.assertNotEqual(done.returncode,0)
         for name in ('docker-compose.yml','docker-compose.prod.yml','deploy/Caddyfile','deploy/backup.sh'):
             self.assertEqual((self.root/name).read_text(),'previous')
@@ -303,7 +305,7 @@ class Closing(unittest.TestCase):
 
     def test_actual_api_shell_cannot_recreate_or_remove_avendb(self):
         env = {**self.env, 'APP_DIR': str(self.root), 'GHCR_TOKEN': 'synthetic', 'ACTOR': 'fixture'}
-        done = subprocess.run(['bash', '-e', '-c', block('.github/workflows/api.yml', 'Update the containers')], env=env, capture_output=True, timeout=5)
+        done = subprocess.run(['bash', '-e', '-c', block('.github/workflows/release.yml', 'Update the containers')], env=env, capture_output=True, timeout=5)
         self.assertEqual(done.returncode, 0, done.stderr.decode())
         for call in [c for c in self.calls() if c[0] == 'compose' and ('up' in c or 'pull' in c)]:
             self.assertEqual(call[-3:], ['db', 'api', 'caddy'])

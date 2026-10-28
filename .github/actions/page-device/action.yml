@@ -1,0 +1,22 @@
+name: The page's avenDB device
+description: >-
+  Puts the page's avenDB device (aven/db/page/device, a build output since B1) that ci.yml's wasm job fetched or built
+  for this tree where the site's checks, tests and build load it.
+
+# Every job of ci.yml that loads the page needs it: the kernel's gate, the JS suites, the probes in both browsers and the
+# site's builds. The wasm job packed it as the artifact page-device (bun aven/ops/devx/wasm.mjs pack), stamped with its
+# key, so `wasm.mjs ensure` takes it as in place. It lands in the checkout, not runner.temp, which in a container job
+# names the host's folder.
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v8.0.2
+      with:
+        name: page-device
+        path: .page-device
+    - shell: bash
+      run: |
+        rm -rf aven/db/page/device
+        mkdir -p aven/db/page/device
+        tar -xzf .page-device/page-device.tgz -C aven/db/page/device
+        rm -rf .page-device

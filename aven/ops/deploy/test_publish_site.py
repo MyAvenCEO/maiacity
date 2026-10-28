@@ -115,7 +115,7 @@ class Publishing(unittest.TestCase):
         self.assertFalse((self.site / "assets/index.html").exists())
 
     def test_caddy_activation_validates_retries_failures_and_skips_unchanged_routes(self):
-        workflow = (HERE.parent / ".github/workflows/deploy.yml").read_text()
+        workflow = (HERE.parents[2] / ".github/workflows/release.yml").read_text()
         body = workflow.split("<<'SH'\n", 1)[1].split("\n          SH", 1)[0]
         body = "\n".join(line.removeprefix("          ") for line in body.splitlines())
         host = self.site / "host"

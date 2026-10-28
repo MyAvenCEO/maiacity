@@ -33,8 +33,8 @@ async function ownPr(branch, repo = 'MyAvenCEO/maiacity') {
  return res?.ok ? (await res.json())[0] : undefined;
 }
 
-// Files CI builds and commits itself (avendb-wasm.yml): two branches that both rebuilt them always conflict, and either
-// copy is stale for the merged sources anyway. The goal keeps its own and the final PR's CI commits the right one.
+// Files CI built and committed itself before B1 took the page's device out of git: a branch from before still carries
+// them, two such branches always conflict, and either copy is stale for the merged sources anyway. The goal keeps its own.
 export const generated = /^aven\/db\/page\/device\/avendb_browser(_bg\.wasm|\.js)$/;
 
 // One merge in memory: the merged tree and a merge commit on top of `head`, or the conflicting files.
@@ -79,8 +79,8 @@ if (import.meta.main) {
   const pr = await ownPr(here);
   if (pr && !pr.draft) { console.error(`#${pr.number} is ready, so its CI is running: put these branches in the next goal (or pass --late for a fix this run needs).`); process.exit(2); }
  }
- // CI commits the goal's WebAssembly to its draft PR (avendb-wasm.yml): take that commit before merging more, so the
- // push stays a fast-forward
+ // a commit on the goal's branch that this checkout lacks (another collector's push): take it before merging more, so
+ // the push stays a fast-forward
  if (!flags.has('--plan')) {
   tryGit('fetch', '-q', 'origin', here);
   if (tryGit('merge-base', '--is-ancestor', 'HEAD', `origin/${here}`).ok && git('rev-parse', 'HEAD') !== tryGit('rev-parse', `origin/${here}`).out) {

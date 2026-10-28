@@ -35,7 +35,7 @@ encryption and passkeys, schemas and lenses, Loro documents and their history an
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node on its shelf, its bucket's S3 client (`bucket`), its relay, which lets in only the devices the server knows, and the Maia Universe's feed (`feed`) (see [The server](#the-server)) |
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay, `PageDevice.run` (see [A device in the browser](#a-device-in-the-browser)) |
 | `crates/avendb-device` | The same device run natively in the Mac app, hosted in the app's own process; also available as a standalone JSON-line device (see [Natively, beside the Mac app](#natively-beside-the-mac-app)); the agents' devices, each the MCP server of its harness (`agent`), and the drives it hosts (`drive`) |
-| `Dockerfile.server`, `compose.yml` | The server's image, built from the repository's root as the workspace's member (`Dockerfile.server.dockerignore` lets in only its crates and the manifests), which `avendb.yml` deploys (see [Deploying the server](#deploying-the-server)), and a compose file that runs it on this machine, which is not deployed |
+| `Dockerfile.server`, `compose.yml` | The server's image, built from the repository's root as the workspace's member (`Dockerfile.server.dockerignore` lets in only its crates and the manifests), which `release.yml`'s peer job deploys (see [Deploying the server](#deploying-the-server)), and a compose file that runs it on this machine, which is not deployed |
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `aven/db/page/device/` in the app: a build output, not in git; `bun aven/ops/devx/wasm.mjs ensure` takes CI's build of the same sources, so the app builds without Rust |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
 | `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T28, K1, H1, H2, O1 to O3, C1 to C4, CG1, G1, G2, M1, M2, D1 to D3, S1 to S4, L1 to L3) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
@@ -261,7 +261,7 @@ A Claude Code session in Anthropic's cloud runs no Mac, so it has no agentClaude
    environment's network reach `avendb.maia.city`.
 3. Each new cloud session starts it by itself: the repository's `.mcp.json` runs `aven/db/scripts/avendb-cloud.sh`, which,
    in a cloud session that holds the key alone (`CLAUDE_CODE_REMOTE`, `AVENDB_AGENT_KEY`), downloads the Linux build
-   from the release `avendb-agent` (`.github/workflows/avendb-agent.yml` builds it on every change to `aven/db/` on
+   from the release `avendb-agent` (`.github/workflows/ops.yml`'s avendb-agent task builds it, started by `release.yml` on every change to its code on
    main), checks its SHA-256, keeps it in `~/.cache/avendb`, and runs it. Elsewhere it exits at once.
 
 It has agentClaude's tools and acts as avenMAIA, with avenMAIA's rights and no more: a Suggester on Maia City, whose
@@ -340,37 +340,38 @@ plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 
 The server runs at `avendb.maia.city`, beside the media vault's server on the same machine, and changes nothing of it.
 
-1. **Its image**: `.github/workflows/avendb.yml` builds this image (`Dockerfile.server`) whenever the server's code
-   changes, pushes it to GHCR as `maiacity-avendb`, writes it (`AVENDB_IMAGE`) and the compose profile `avendb` into
+1. **Its image**: `.github/workflows/ci.yml` builds this image (`Dockerfile.server`) whenever the server's code
+   changes and pushes it to GHCR as `maiacity-avendb` by its digest; `.github/workflows/release.yml` promotes that digest to
+   main's commit and its peer job writes it (`AVENDB_IMAGE`) and the compose profile `avendb` into
    the server's `.env`, and pulls and restarts that one container: the API and the media vault never restart for it,
-   and a failed build holds up nothing of theirs. `api.yml` has to have run once before it can.
-2. **Everything else** comes from `.github/workflows/api.yml`: the Caddy site `avendb.maia.city` (`aven/ops/deploy/Caddyfile`,
+   and a failed build holds up nothing of theirs. The release's API job has to have run once before it can.
+2. **Everything else** comes from the release's API job (`.github/workflows/release.yml`): the Caddy site `avendb.maia.city` (`aven/ops/deploy/Caddyfile`,
    `reverse_proxy avendb:3350`, and `/feed/*` to `avendb:3351`; its TLS agrees keys by X25519MLKEM768 alone,
-   `curves x25519mlkem768`, the only key exchange a device offers, and `avendb.yml` checks a classical one is refused;
+   `curves x25519mlkem768`, the only key exchange a device offers, and the release checks a classical one is refused;
    it reads request headers up to 64 KB, as a browser's relay pass rides in the relay's URL wherever the page can't
-   show it first by a POST to `/feed/relay-pass`, and Caddy 2.11 turns it away otherwise, which both workflows check), UDP 7401 in the firewall (`aven/ops/infra/index.ts`), the service `avendb` in the
+   show it first by a POST to `/feed/relay-pass`, and Caddy 2.11 turns it away otherwise, which both jobs check), UDP 7401 in the firewall (`aven/ops/infra/index.ts`), the service `avendb` in the
    root compose files, and its settings in the server's `.env`: `AVENDB_RELAY_URL=https://avendb.maia.city`,
    `AVENDB_PUBLIC_ADDR` (the server's IP and port 7401), and its data folder on the Hetzner volume.
-3. **DNS**: an A record `avendb.maia.city` for the server. `api.yml`'s `dns` job sets it with a `HETZNER_DNS_TOKEN`;
+3. **DNS**: an A record `avendb.maia.city` for the server. `ops.yml`'s infra task sets it with a `HETZNER_DNS_TOKEN`;
    without one it is set by hand in the Hetzner DNS console. The relay needs a host name of its own: iroh's relay path
    is `/relay`, and `api.maia.city/relay` is the media vault's relay.
-4. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both workflows' logs) is filled
+4. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both jobs' logs) is filled
    in on **Your account** (`SERVER` in `aven/db/page/server.js`), beside its relay. It stays the same as long
    as the server keeps its device secret, in its bucket: avenDB is never reset, so it stays for good.
 5. **The claim**: the first person to found their vault on **Your account** claims the server, founding the seed, Maia
    City and avenMAIA, and makes it avenMAIA's device, so whoever runs a new server founds their vault there first.
-   Every device reads the server from that seed (`avendb::world::seeder`). Both workflows log whether it is claimed
+   Every device reads the server from that seed (`avendb::world::seeder`). Both jobs log whether it is claimed
    yet.
 6. **Its bucket** (`doc:docs/avendb` §14): with `AVENDB_BUCKET`, `AVENDB_BUCKET_ENDPOINT`,
    `AVENDB_BUCKET_REGION`, `AVENDB_BUCKET_ACCESS_KEY`, `AVENDB_BUCKET_SECRET_KEY` and `AVENDB_BUCKET_SEAL` (64 hex
    digits) in its environment, its shelf and its device's secret live in that bucket, every object sealed under the
-   seal, and its folder is only a cache: it logs at its start whether it keeps one. `avendb.yml` writes them into the
+   seal, and its folder is only a cache: it logs at its start whether it keeps one. The release's peer job writes them into the
    server's `.env` at each deploy, from the project's S3 keys (`HETZNER_S3_ACCESS_KEY`, `HETZNER_S3_SECRET_KEY`) and
    the GitHub secret `AVENDB_BUCKET_SEAL`, and the compose files pass them on; with one of those secrets unset, it
-   writes none. The bucket is avenDB's own, `maiacity-avendb` in `hel1`, beside the media vault's: `avendb.yml`'s
-   `bucket` job makes it with Object Lock, every object version locked for 7 days, or checks the one there.
-7. **Its backups** (`doc:docs/avendb`): `avendb.yml` also writes `AVENDB_SNAPSHOTS`, the bucket of
-   snapshots `maiacity-avendb-snapshots` beside it, which `avendb-backups.yml` makes with Object Lock. The server backs
+   writes none. The bucket is avenDB's own, `maiacity-avendb` in `hel1`, beside the media vault's: `ops.yml`'s
+   backups task makes it with Object Lock, every object version locked for 7 days, or checks the one there.
+7. **Its backups** (`doc:docs/avendb`): the peer job also writes `AVENDB_SNAPSHOTS`, the bucket of
+   snapshots `maiacity-avendb-snapshots` beside it, which `ops.yml`'s backups task makes with Object Lock. The server backs
    up every vault into it each day at 03:00 UTC, and on `docker kill -s USR1 maia-city-avendb`, then checks every
    folder from the bucket alone, each file's bytes once in 30 days; `avendb-server check` checks the same by hand, and
    `avendb-server restore --into <folder>` restores every vault into a new folder after a disaster, for a server
@@ -405,7 +406,7 @@ and lens entries, added holdings, one `run(op)` API and one shelf per place, as
 | P8d | A device in the browser: the network crate as WebAssembly, with X25519MLKEM768 in pure Rust; a new device with no UDP let onto the server's relay by its passkey's pass; big answers a page at a time, each edit after its past; two pages in Chromium that link through the relay alone, the second through the first one's code, and sync | Merged |
 | P8e | The tile as a real device: the browser's passkeys (WebAuthn with PRF) sign in ceremonies over each edit, and the Lab holds no secret of them; a new person's first browser founds their vault through the relay open to sign-up; a browser links in four ceremonies and learns the passkey's key from two; its store in IndexedDB, open again in one ceremony; the tile's This browser screen with QR codes; Chromium's virtual authenticator in the test | Merged |
 | P8f, vaults | Three kinds of vault, human, coop and aven, each owned only as its kind may be (T21); every act for a coop or an aven vault names the chain of owners it goes through; the server a device of avenCEO, claimed by the first human vault founded through it; the passkey of maiaCITY's sign-up, with PRF, as the vault's root; the example world reset around avenCEO | Merged |
-| P8f, deploy | The server at `avendb.maia.city`, beside the media vault: its own image and workflow (`avendb.yml`), its Caddy site, UDP port and settings from `api.yml`; This browser filled in with its relay and offer | Merged |
+| P8f, deploy | The server at `avendb.maia.city`, beside the media vault: its own image and release job (`release.yml`'s peer), its Caddy site, UDP port and settings from its API job; This browser filled in with its relay and offer | Merged |
 | P8f, one prompt | No setup code: the first human vault founded through the server owns avenCEO; edits drafted together signed in one ceremony over their batch, so a first browser founds its vault, adds itself and claims the server in one prompt after the unlock and the pass (three in all, four with a new passkey), and This browser says when its vault owns avenCEO | Merged |
 | P8f, account | The tile opens on the person's account, the Lab apart and made only when opened: their human vault, its root passkey and its devices, each by the name on its card, an end-to-end encrypted document the device writes itself; a new browser signs in with the passkey alone, through the server; the Lab's simulated person is Alice | Merged |
 | P8f, real vaults | Real vaults the person controls instead of the simulated Lab: the vaults this browser knows as a chat app's servers, each by the name on its profile; new aven and coop vaults their vault owns in one ceremony; acting as any of them, its caps deciding what the page shows and does; each vault's owners, devices, access and syncing devices; every node post-quantum only | Merged |

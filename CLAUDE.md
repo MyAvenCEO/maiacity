@@ -26,8 +26,9 @@ goal, not on each task.
   explicit commit message: the PR title plus the `Task:` lines, never a `[skip ci]`. Then close the task PRs it landed
   with a comment that names the final PR, and bring `main` back into the collector's branch with a merge (no force
   push).
-- **The goal gate.** `.github/workflows/gate.yml` waits on a ready PR for every workflow its files need and fails on a
-  red or missing one (a rejected workflow file, batch 5). It is the required check on main. Once the goal PR is ready,
+- **The goal gate.** One workflow checks everything (`.github/workflows/ci.yml`): its plan job picks the jobs a PR's
+  files need, and its last job, "CI required", fails when one of them is red, cancelled or missing. It is the required
+  check on main; a workflow file GitHub rejects never reports it, so nothing merges past one. Once the goal PR is ready,
   `collect.mjs` takes no more branches (`--late` only for a fix the run needs). A goal ships when its metric is
   met or Samuel says so, not on a timer.
 - **Exceptions** go through their own PR at once: production down, a security fix, or Samuel asks for it.

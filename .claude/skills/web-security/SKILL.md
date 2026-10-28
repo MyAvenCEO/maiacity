@@ -91,7 +91,7 @@ log before the fix is merged.
 
 - Read the handler, then the gate it calls; follow the request's fields to where they are used.
 - Local runs only: the site with `bun run dev`, the API with `bun run dev` in `aven/api/`, avenDB's server locally.
-- The kernel's tests are the gate every PR and deploy passes (`.github/workflows/kernel.yml`, H7): run the same
+- The kernel's tests are the gate every PR and deploy passes (`.github/workflows/ci.yml`'s gate and probes jobs, H7): run the same
   `bun test` list locally after `bunx svelte-kit sync`; `bun test ./aven/kernel/sandbox/` alone covers the frames and
   their policies.
 - Turn each confirmed finding into a test beside the code it fixes, then hand it to `fp-check` and the report.
