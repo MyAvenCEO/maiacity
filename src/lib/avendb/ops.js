@@ -80,12 +80,16 @@ const NOT_HELD_YET = /no blob [0-9a-f]{64} on the shelf|lacks \d+\.\.\d+|incompl
  * @returns {Promise<Uint8Array>}
  */
 export async function readLocalFile(run, root, size, from, to) {
+	/** @type {any} */
+	let out;
 	try {
-		const out = await run({ op: 'read_file', root, size, from, to, local: true });
+		out = await run({ op: 'read_file', root, size, from, to, local: true });
 		answer(out);
 		return out.bytes;
 	} catch (e) {
-		if (NOT_HELD_YET.test(e instanceof Error ? e.message : String(e))) {
+		// a refusal while the device is behind (avendb/spec/AvenDB/Freshness.lean): the entry that brings the file may
+		// not have arrived yet, so it is asked again, never shown as missing for good
+		if (out?.fresh?.state === 'behind' || NOT_HELD_YET.test(e instanceof Error ? e.message : String(e))) {
 			const err = e instanceof Error ? e : new Error(String(e));
 			/** @type {any} */ (err).passing = true;
 			throw err;

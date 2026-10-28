@@ -27,6 +27,12 @@ The contract applies to the generic avenDB session API:
    verify maximum concurrency one and the newer returned marker. Locking the
    device rejects its blocked explicit barrier before the held read is released.
 
+6. Pending writes (`--paint`, batch 5 G5): with the device taking 1.9 s a write, each
+   message typed and sent with Enter is in the page within 16 ms p95 and drawn in the
+   first frame after its key, faint while pending, shown once after the device holds
+   it. A refused one is shown at once, then goes without a trace, its text back in
+   the composer (`LocalWrite.lean` pending writes, `pending-writes.js`).
+
 `api.refresh()` remains an explicit barrier for code whose **next operation**
 needs the updated world. The vault-creation/public-name-sharing and missing-schema
 artifact flows use it. Generic write completion is local acceptance, not completion

@@ -3,14 +3,14 @@
 // The games' addresses as the repo has them (game/games.js `route`; the sandboxes' moved to match their names on
 // 2026-10-22, so Sandbox 3 is /app/games/sandbox-3/), proposed into the Maia City vault as one AIP by avenMAIA's agent
 // (./agent.mjs: the Mac's, or a cloud session's): each `game` entry whose `route` is another gets a proposal line
-// (`propose`) with the repo's set on it, and each game's manifest (`game-<id>`, src/lib/avendb/manifests.js) whose
+// (`propose`) with the repo's set on it, and each game's actor (`game-<id>`, src/lib/avendb/actors.js) whose
 // `routes` are others the same. One AIP opens over the lines (`aip_open`) with its objective (every game entry and
 // manifest names the repo's address), measured. An owner then accepts it in the Proposals app (/app/aips/). Without
 // --run it only says what it would do.
 //
 //   node scripts/propose-routes.mjs [--run] [--again] [--device <path of avendb-device>]
 import { GAMES } from '../game/games.js';
-import { gameManifest } from '../src/lib/avendb/manifests.js';
+import { gameActor } from '../src/lib/avendb/actors.js';
 import { device, session } from './agent.mjs';
 
 const args = process.argv.slice(2);
@@ -51,7 +51,7 @@ try {
 		const held = games.filter((r) => r.record?.id === g.id);
 		if (held.length > 1) throw new Error(`Maia City holds ${held.length} game entries of ${g.id}: nothing more was written`);
 		if (held[0]) await line(held[0], 'route', g.route, `game ${g.id}`);
-		const m = gameManifest(g);
+		const m = gameActor(g);
 		const mine = manifests.filter((r) => r.record?.id === m.id);
 		if (mine.length > 1) throw new Error(`Maia City holds ${mine.length} manifests ${m.id}: nothing more was written`);
 		if (mine[0]) await line(mine[0], 'routes', m.routes, `manifest ${m.id}`);

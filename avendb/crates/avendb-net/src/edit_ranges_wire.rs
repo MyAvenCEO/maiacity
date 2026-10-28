@@ -505,7 +505,7 @@ mod tests {
                     size: u64::MAX,
                 })
                 .collect(),
-            body: vec![127; n as usize * 4],
+            body: vec![127; n as usize * 4].into(),
         };
         let edit = Edit {
             parents: (0..n).map(EditId::from_u64).collect(),

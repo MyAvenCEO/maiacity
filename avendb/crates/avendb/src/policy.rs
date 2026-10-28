@@ -370,7 +370,7 @@ pub enum Action {
         via: Vec<VaultId>,
         create: Option<Creation>,
         files: Vec<FileRoot>,
-        body: Vec<u8>,
+        body: crate::bulk::Bulk,
     },
     /// A steward, acting for vault `vault`, marks its entry `entry`: with the audience of the shares `caps` (canonical
     /// order), which moves the entry there, begins a stay and keeps the writes it had seen (`keep`); with the keep
@@ -435,6 +435,26 @@ impl Action {
             Action::Keys { name, id, boxes, .. } => boxes.iter().map(|b| (*name, *id, b)).collect(),
             Action::Wraps { wraps, .. } => wraps.iter().map(|w| (w.name, w.id, &w.boxed)).collect(),
             _ => vec![],
+        }
+    }
+
+    /// About what it holds in memory beside itself: its key boxes and a write's body, the bulk of an edit (`Lab::perf`).
+    pub fn heap_bytes(&self) -> usize {
+        let boxes: usize = self.key_boxes().iter().map(|(.., b)| size_of::<KeyBox>() + b.bytes.heap_bytes()).sum();
+        let body = match self {
+            Action::Write { body, files, deps, .. } => body.heap_bytes() + files.len() * size_of::<FileRoot>() + deps.len() * 32,
+            Action::Checkpoint { covers, .. } => covers.len() * 32,
+            _ => 0,
+        };
+        boxes + body
+    }
+
+    /// Its `slot`th box of a key, as `key_boxes` counts them.
+    pub fn key_box(&self, slot: usize) -> Option<&KeyBox> {
+        match self {
+            Action::Keys { boxes, .. } => boxes.get(slot),
+            Action::Wraps { wraps, .. } => wraps.get(slot).map(|w| &w.boxed),
+            _ => None,
         }
     }
 
@@ -654,7 +674,7 @@ impl Entry {
 pub struct Write {
     pub edit: EditId,
     pub author: SignerId,
-    pub actor: VaultId,
+    pub signer: VaultId,
     pub entry: EntryId,
     pub stay: Option<EditId>,
     pub epoch: u64,
@@ -918,35 +938,92 @@ impl<T: Copy + Eq + Hash> Listed<T> {
 
 /// The seals made so far, in order, with what the schedule looks up in them. The long collections are shared like a
 /// state's, so a state copied before a change, as a replay keeps the one at its place, costs a few counts and not a
-/// copy of every seal made.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// copy of every seal made. Each seal is held once, in `list`: the lookups name it by its place there, under a hash of
+/// what they look up, every match checked against the seal itself, so they say exactly what sets of the seals would
+/// (a seal is two key names, 176 bytes; held in a list and two sets it cost 1.4 KB an edit of key upkeep).
+#[derive(Clone, Debug, Default)]
 struct Seals {
     list: imbl::Vector<Seal>,
-    set: imbl::HashSet<Seal>,
+    /// Each seal's place in `list`, by a hash of it.
+    set: Places,
     /// The family keys sealed to each key, by that key: what opening it opens of the families. An entry key opens no
     /// family key, so this is all `stale_keys` follows.
     fams: HashMap<KeyName, Vec<KeyName>>,
     /// Every family key sealed to anything.
     secrets: HashSet<KeyName>,
-    /// Each key sealed to a key of an entry's stay, with that entry and stay: what `link` checks for a move link.
-    linked: imbl::HashSet<(KeyName, EntryId, Option<EditId>)>,
+    /// Each key sealed to a key of an entry's stay, with that entry and stay, by a hash of the three: what `link`
+    /// checks for a move link.
+    linked: Places,
+}
+
+/// Places in a list of seals, by a hash of what they are looked up by: the first under each hash, and any other there
+/// beside it (two hashes the same are rare, never wrong).
+#[derive(Clone, Debug, Default)]
+struct Places {
+    first: imbl::HashMap<u64, u32>,
+    more: imbl::HashMap<u64, Vec<u32>>,
+}
+
+impl Places {
+    fn hash(x: &impl Hash) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        x.hash(&mut h);
+        std::hash::Hasher::finish(&h)
+    }
+
+    /// Whether a place under `key`'s hash holds what `is` says is it.
+    fn find(&self, key: &impl Hash, is: impl Fn(u32) -> bool) -> bool {
+        let h = Places::hash(key);
+        self.first.get(&h).is_some_and(|&i| is(i)) || self.more.get(&h).is_some_and(|m| m.iter().any(|&i| is(i)))
+    }
+
+    fn put(&mut self, key: &impl Hash, at: u32) {
+        let h = Places::hash(key);
+        if self.first.contains_key(&h) {
+            self.more.entry(h).or_default().push(at);
+        } else {
+            self.first.insert(h, at);
+        }
+    }
 }
 
 impl Seals {
+    fn contains(&self, s: &Seal) -> bool {
+        self.set.find(s, |i| self.list[i as usize] == *s)
+    }
+
+    fn is_linked(&self, l: &(KeyName, EntryId, Option<EditId>)) -> bool {
+        self.linked.find(l, |i| {
+            let s = self.list[i as usize];
+            matches!(s.to, KeyName::Entry(e, stay, _) if (s.secret, e, stay) == *l)
+        })
+    }
+
     fn add(&mut self, s: Seal) {
-        if self.set.insert(s).is_some() {
+        if self.contains(&s) {
             return;
         }
+        let at = u32::try_from(self.list.len()).expect("under 4 billion seals");
         self.list.push_back(s);
+        self.set.put(&s, at);
         if let KeyName::Scoped(..) = s.secret {
             self.fams.entry(s.to).or_default().push(s.secret);
             self.secrets.insert(s.secret);
         }
         if let KeyName::Entry(e, stay, _) = s.to {
-            self.linked.insert((s.secret, e, stay));
+            self.linked.put(&(s.secret, e, stay), at);
         }
     }
 }
+
+/// Two schedules are the same where they made the same seals in the same order: all else is looked up from them.
+impl PartialEq for Seals {
+    fn eq(&self, o: &Seals) -> bool {
+        self.list == o.list
+    }
+}
+
+impl Eq for Seals {}
 
 /// What a peer knows after replaying its edits: vaults, shares, entries and their audiences, accepted writes and the
 /// key schedule. No schema lane: its readers read it off the entries (`lane_of`), which no relay can (T25). Every
@@ -1405,10 +1482,10 @@ impl State {
     /// at its own place in the replay too, so a removal takes from a write only what it took from it there: a mark that
     /// moves the entry between them doesn't hand the removal writes that never rested on what it takes away.
     pub fn authorized(&self, w: &Write) -> bool {
-        self.acts_via(w.author, &w.via, w.actor)
+        self.acts_via(w.author, &w.via, w.signer)
             && self
                 .entry(w.entry)
-                .is_some_and(|en| self.may_write_in(w.actor, en.id, en.vault, self.shares_of(w.audience)))
+                .is_some_and(|en| self.may_write_in(w.signer, en.id, en.vault, self.shares_of(w.audience)))
     }
 
     /// Share `c` goes from its issuer to its own: it names a vault its issuer owns directly, as an aven's share to one
@@ -1672,7 +1749,7 @@ impl State {
             let counter = counters.entry(w.entry).or_insert_with(|| Counter::new(self, en, r));
             // a write the vault itself makes on its main line says what the group is, where its readers count it
             if counter.judge(self, w, r, &out)
-                && w.actor == en.vault
+                && w.signer == en.vault
                 && w.proposal == Proposal::Main
                 && let Some(g) = r.defines.get(&w.edit)
             {
@@ -1705,7 +1782,7 @@ impl State {
         let en = self.entry(e)?;
         let mut a = self.first_attrs(en, r)?;
         for w in self.entry_writes(e).take_while(|w| self.write_at[&w.edit] < place) {
-            if !w.first && w.actor == en.vault
+            if !w.first && w.signer == en.vault
                 && let Some(d) = r.tags.get(&w.edit)
             {
                 a.tags = d.apply(&a.tags);
@@ -1887,7 +1964,7 @@ impl State {
         let mut seen = HashSet::new();
         let counts = |en: &&Entry| {
             self.write(en.creation).is_some_and(|w| {
-                w.first && w.actor == v && w.proposal == Proposal::Main && !r.unfit.contains(&w.edit)
+                w.first && w.signer == v && w.proposal == Proposal::Main && !r.unfit.contains(&w.edit)
             })
         };
         self.entries
@@ -1950,7 +2027,7 @@ impl State {
 
     /// The schedule seals `secret` to `to`.
     pub fn sealed(&self, secret: KeyName, to: KeyName) -> bool {
-        self.seals.set.contains(&Seal { secret, to })
+        self.seals.contains(&Seal { secret, to })
     }
 
     /// Every published key, in the order published.
@@ -2487,7 +2564,7 @@ impl State {
                         let w = Write {
                             edit: id,
                             author: edit.author,
-                            actor,
+                            signer: actor,
                             entry: e,
                             stay: None,
                             epoch,
@@ -2523,7 +2600,7 @@ impl State {
                         let w = Write {
                             edit: id,
                             author: edit.author,
-                            actor,
+                            signer: actor,
                             entry: e,
                             stay,
                             epoch,
@@ -2872,6 +2949,36 @@ impl State {
         st
     }
 
+    /// Index the entries again, and count the audiences in use, its writes being the first `k` of `r`'s: the places of
+    /// its writes are `r`'s, but of the writes after them, so they share all but those with `r`'s, as `index_entries`
+    /// would make them.
+    fn index_first_writes(&mut self, r: &State, k: usize) {
+        let (mut write_at, mut by_entry) = (r.write_at.clone(), r.by_entry.clone());
+        for (i, w) in r.writes.iter().enumerate().skip(k).rev() {
+            write_at.remove(&w.edit);
+            if let Some(places) = by_entry.get_mut(&w.entry) {
+                debug_assert_eq!(places.last(), Some(&i), "an entry's places of its writes, in order");
+                places.pop();
+                if places.is_empty() {
+                    by_entry.remove(&w.entry);
+                }
+            }
+        }
+        self.entry_at = self.entries.iter().enumerate().map(|(i, en)| (en.id, i)).collect();
+        (self.write_at, self.by_entry) = (write_at, by_entry);
+        let mut in_use: HashMap<AudienceId, (VaultId, usize)> = HashMap::new();
+        for en in self.entries.iter() {
+            in_use.entry(en.audience()).or_insert((en.vault, 0)).1 += 1;
+        }
+        self.in_use = Arc::new(in_use);
+        #[cfg(all(debug_assertions, not(avendb_no_replay_checks)))]
+        {
+            let mut anew = self.clone();
+            anew.index_entries();
+            assert!(anew.write_at == self.write_at && anew.by_entry == self.by_entry, "indexed as anew");
+        }
+    }
+
     /// Index the entries and the writes again, and count the audiences in use.
     fn index_entries(&mut self) {
         self.entry_at = self.entries.iter().enumerate().map(|(i, en)| (en.id, i)).collect();
@@ -2913,8 +3020,8 @@ impl State {
                 let en = &self.entries[self.entry_at[&w.entry]];
                 let x = en.stay_audience(w.stay).expect("a write's stay");
                 let to = KeyName::Scoped(KeyFam::Audience(en.vault, x), w.epoch);
-                let linked = w.stay == en.stay() || self.seals.linked.contains(&(w.key(), en.id, en.stay()));
-                if !self.seals.set.contains(&Seal { secret: w.key(), to }) || !linked {
+                let linked = w.stay == en.stay() || self.seals.is_linked(&(w.key(), en.id, en.stay()));
+                if !self.seals.contains(&Seal { secret: w.key(), to }) || !linked {
                     let seals = Arc::make_mut(&mut self.seals);
                     link(seals, &self.epochs, &self.entries[self.entry_at[&self.writes[i].entry]], [&self.writes[i]]);
                 }
@@ -2994,7 +3101,7 @@ impl State {
             for to in self.targets(k) {
                 let s = Seal { secret, to };
                 // the seals are shared with the states before; copy them only to add one
-                if !self.seals.set.contains(&s) {
+                if !self.seals.contains(&s) {
                     Arc::make_mut(&mut self.seals).add(s);
                 }
             }
@@ -3083,7 +3190,7 @@ fn link<'a>(seals: &mut Seals, epochs: &HashMap<KeyFam, u64>, en: &Entry, ws: im
     for w in ws {
         let x = en.stay_audience(w.stay).unwrap_or_else(|| AudienceId::of(en.vault, &[]));
         seals.add(Seal { secret: w.key(), to: KeyName::Scoped(KeyFam::Audience(en.vault, x), w.epoch) });
-        if w.stay != en.stay() && !seals.linked.contains(&(w.key(), en.id, en.stay())) {
+        if w.stay != en.stay() && !seals.is_linked(&(w.key(), en.id, en.stay())) {
             seals.add(Seal { secret: w.key(), to: key });
         }
     }
@@ -3189,10 +3296,10 @@ impl Mine {
             return;
         }
         if w.first {
-            self.creator = Some(w.actor);
+            self.creator = Some(w.signer);
         }
         for l in adds {
-            self.adders.entry(l.clone()).or_default().push(w.actor);
+            self.adders.entry(l.clone()).or_default().push(w.signer);
         }
     }
 }
@@ -3218,7 +3325,7 @@ impl Counter {
         let e = self.entry;
         let main = |d: &EditId| st.write(*d).is_some_and(|x| x.entry == e && x.proposal == Proposal::Main);
         let at = At { attrs: self.attrs.as_ref(), place: st.place(w.edit), groups };
-        let marked = touches.map(|ts| self.mine.mark(w.actor, ts));
+        let marked = touches.map(|ts| self.mine.mark(w.signer, ts));
         let lets = !r.unfit.contains(&w.edit)
             && st.lets(w, r.proofs.get(&w.edit), marked.as_deref(), asks, at)
             && passes(w, touches, |d| self.accepts.contains(d), main)
@@ -3236,7 +3343,7 @@ impl Counter {
         }
         // its tags count from now on where it acts for the vault
         if !w.first
-            && w.actor == self.vault
+            && w.signer == self.vault
             && let (Some(a), Some(d)) = (&mut self.attrs, r.tags.get(&w.edit))
         {
             a.tags = d.apply(&a.tags);
@@ -3680,101 +3787,161 @@ fn run_from_using<const INDEXED_MOVES: bool, E: AsRef<Edit>>(
     watch: &HashMap<EditId, Vec<VaultId>>,
     snap: Option<usize>,
 ) -> Run {
-    let shares = std::cell::OnceCell::new();
-    let shares = || shares.get_or_init(|| shares_issued(edits.iter().map(AsRef::as_ref).zip(ids.iter().copied()))).clone();
-    // the moves apart, looked up by entry: an edit is checked again with them hidden only where one would answer
-    // otherwise (`Late`), not scanned for at every edit
-    let mut cuts: Vec<Cut> = vec![];
-    let mut moves = Moves::default();
-    for (at, r) in edits.iter().enumerate().filter(|(i, _)| rem.contains(&ids[*i])) {
-        let r = r.as_ref();
-        let keep: HashSet<EditId> = r.action.keep().unwrap_or(&[]).iter().copied().collect();
-        let facts = removes_among(r, shares);
-        if !facts.is_empty() && facts.iter().all(|f| matches!(f, Fact::Audience(..))) {
-            let keep = Arc::new(keep);
-            for f in facts {
-                if let Fact::Audience(e, to) = f {
-                    moves.0.entry(e).or_default().push((at, keep.clone(), to));
-                }
-            }
-        } else {
-            cuts.push(Cut { at, keep, facts });
-        }
-    }
-    let moves = (!moves.0.is_empty()).then(|| Arc::new(moves));
-    let stood = Vec::with_capacity(edits.len());
-    let mut out = Run { stood, state: from, states: vec![], acts: HashSet::new(), snap: None, moved_out: None };
-    if states {
-        out.states.push(out.state.clone());
-    }
-    for (i, edit) in edits.iter().enumerate() {
-        let (edit, id) = (edit.as_ref(), ids[i]);
-        if snap == Some(i) {
-            out.snap = Some(out.state.clone());
-        }
-        // which of the vaults whose checkpoints cover it each signer acts for just before it
-        let before: Vec<(VaultId, Vec<bool>)> = watch.get(&id).into_iter().flatten().map(|&v| {
-            (v, edit.sigs().map(|s| out.state.acts_for(s, v)).collect())
-        }).collect();
-        let mut stands = !edit.is_removal() || rem.contains(&id);
-        if stands {
-            let cut = cuts.iter().filter(|c| c.at > i && !c.keep.contains(&id));
-            let mut hidden: Vec<Fact> = cut.flat_map(|c| c.facts.iter().cloned()).collect();
-            out.state.late = moves.clone().map(|moves| Late { moves, at: i, id, differs: false.into() });
-            let checked = out.state.check(edit, id);
-            let late = out.state.late.take();
-            stands = match checked {
-                Err(_) => false,
-                Ok(change) => {
-                    let cut = hidden.len();
-                    let mut late_moves = None;
-                    if let Some(l) = late.filter(|l| !hidden.is_empty() || l.differs.load(std::sync::atomic::Ordering::Relaxed)) {
-                        if INDEXED_MOVES {
-                            // Only a non-creating write calls `in_audience`, always for its own entry. Genesis,
-                            // governance, shares, claims, marks, Keys, Wraps and checkpoints never read `narrow`.
-                            // Keep creating writes in this branch too, as the proved `writesEntry` predicate does.
-                            if let Action::Write { entry, .. } = &edit.action {
-                                hidden.extend(l.moves.unseen_for(*entry, i, id));
-                            }
-                        } else {
-                            hidden.extend(l.moves.unseen(i, id));
-                        }
-                        late_moves = Some(l.moves);
+    let mut running = Running::new(from, edits, ids, rem, states);
+    running.step::<INDEXED_MOVES, E>(edits, ids, rem, states, watch, snap);
+    running.finish(edits.len(), snap)
+}
+
+/// A `run_from` under way: what it keeps from one edit to the next, so that it can go on over the next of them later
+/// (`ReplayRun`, a whole replay a slice of its edits a step).
+struct Running {
+    cuts: Vec<Cut>,
+    moves: Option<Arc<Moves>>,
+    out: Run,
+    /// The places it notes the state just before, the last first (`marking`), and the states it noted there.
+    marks: Vec<usize>,
+    marked: Vec<(usize, State)>,
+}
+
+impl Running {
+    /// A run of `edits` in their order from `from`, none of them run yet.
+    fn new<E: AsRef<Edit>>(from: State, edits: &[E], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> Running {
+        let shares = std::cell::OnceCell::new();
+        let shares = || shares.get_or_init(|| shares_issued(edits.iter().map(AsRef::as_ref).zip(ids.iter().copied()))).clone();
+        // the moves apart, looked up by entry: an edit is checked again with them hidden only where one would answer
+        // otherwise (`Late`), not scanned for at every edit
+        let mut cuts: Vec<Cut> = vec![];
+        let mut moves = Moves::default();
+        for (at, r) in edits.iter().enumerate().filter(|(i, _)| rem.contains(&ids[*i])) {
+            let r = r.as_ref();
+            let keep: HashSet<EditId> = r.action.keep().unwrap_or(&[]).iter().copied().collect();
+            let facts = removes_among(r, shares);
+            if !facts.is_empty() && facts.iter().all(|f| matches!(f, Fact::Audience(..))) {
+                let keep = Arc::new(keep);
+                for f in facts {
+                    if let Fact::Audience(e, to) = f {
+                        moves.0.entry(e).or_default().push((at, keep.clone(), to));
                     }
-                    let ok = hidden.is_empty() || out.state.hide(&hidden).check(edit, id).is_ok();
-                    debug_assert!(!INDEXED_MOVES || {
-                        let mut all = hidden[..cut].to_vec();
-                        if let Some(moves) = &late_moves {
-                            all.extend(moves.unseen(i, id));
-                        }
-                        ok == (all.is_empty() || out.state.hide(&all).check(edit, id).is_ok())
-                    }, "entry-indexed move facts change acceptance");
-                    if ok {
-                        out.state.apply(change, edit, id);
-                    } else if let Some(moves) = late_moves.filter(|_| hidden.len() > cut)
-                        && (cut == 0 || out.state.hide(&hidden[..cut]).check(edit, id).is_ok())
-                    {
-                        // the moves that hadn't seen it alone kept it out
-                        out.moved_out = out.moved_out.max(moves.last_unseen(i, id));
-                    }
-                    ok
                 }
-            };
-        }
-        out.stood.push(stands);
-        for (v, pre) in before {
-            if edit.sigs().zip(pre).all(|(s, pre)| pre || out.state.acts_for(s, v)) {
-                out.acts.insert((id, v));
+            } else {
+                cuts.push(Cut { at, keep, facts });
             }
         }
+        let moves = (!moves.0.is_empty()).then(|| Arc::new(moves));
+        let stood = Vec::with_capacity(edits.len());
+        let mut out = Run { stood, state: from, states: vec![], acts: HashSet::new(), snap: None, moved_out: None };
         if states {
             out.states.push(out.state.clone());
         }
+        Running { cuts, moves, out, marks: vec![], marked: vec![] }
     }
-    if snap == Some(edits.len()) {
-        out.snap = Some(out.state.clone());
+
+    /// It, noting the state just before each place of `marks` too, as `snap` does (`Tail::rungs`).
+    fn marking(mut self, mut marks: Vec<usize>) -> Running {
+        marks.sort_unstable_by(|a, b| b.cmp(a));
+        marks.dedup();
+        self.marks = marks;
+        self
     }
-    out
+
+    /// How many of the edits it ran.
+    fn ran(&self) -> usize {
+        self.out.stood.len()
+    }
+
+    /// Runs on over `edits`, those of the order from the place it reached (`ran`) on, `ids` theirs.
+    #[allow(clippy::too_many_arguments)]
+    fn step<const INDEXED_MOVES: bool, E: AsRef<Edit>>(
+        &mut self,
+        edits: &[E],
+        ids: &[EditId],
+        rem: &HashSet<EditId>,
+        states: bool,
+        watch: &HashMap<EditId, Vec<VaultId>>,
+        snap: Option<usize>,
+    ) {
+        let Running { cuts, moves, out, marks, marked } = self;
+        let from = out.stood.len();
+        for (k, edit) in edits.iter().enumerate() {
+            let i = from + k;
+            let (edit, id) = (edit.as_ref(), ids[k]);
+            if snap == Some(i) {
+                out.snap = Some(out.state.clone());
+            }
+            while marks.last().is_some_and(|&m| m <= i) {
+                if marks.pop() == Some(i) {
+                    marked.push((i, out.state.clone()));
+                }
+            }
+            // which of the vaults whose checkpoints cover it each signer acts for just before it
+            let before: Vec<(VaultId, Vec<bool>)> = watch.get(&id).into_iter().flatten().map(|&v| {
+                (v, edit.sigs().map(|s| out.state.acts_for(s, v)).collect())
+            }).collect();
+            let mut stands = !edit.is_removal() || rem.contains(&id);
+            if stands {
+                let cut = cuts.iter().filter(|c| c.at > i && !c.keep.contains(&id));
+                let mut hidden: Vec<Fact> = cut.flat_map(|c| c.facts.iter().cloned()).collect();
+                out.state.late = moves.clone().map(|moves| Late { moves, at: i, id, differs: false.into() });
+                let checked = out.state.check(edit, id);
+                let late = out.state.late.take();
+                stands = match checked {
+                    Err(_) => false,
+                    Ok(change) => {
+                        let cut = hidden.len();
+                        let mut late_moves = None;
+                        if let Some(l) = late.filter(|l| !hidden.is_empty() || l.differs.load(std::sync::atomic::Ordering::Relaxed)) {
+                            if INDEXED_MOVES {
+                                // Only a non-creating write calls `in_audience`, always for its own entry. Genesis,
+                                // governance, shares, claims, marks, Keys, Wraps and checkpoints never read `narrow`.
+                                // Keep creating writes in this branch too, as the proved `writesEntry` predicate does.
+                                if let Action::Write { entry, .. } = &edit.action {
+                                    hidden.extend(l.moves.unseen_for(*entry, i, id));
+                                }
+                            } else {
+                                hidden.extend(l.moves.unseen(i, id));
+                            }
+                            late_moves = Some(l.moves);
+                        }
+                        let ok = hidden.is_empty() || out.state.hide(&hidden).check(edit, id).is_ok();
+                        debug_assert!(!INDEXED_MOVES || {
+                            let mut all = hidden[..cut].to_vec();
+                            if let Some(moves) = &late_moves {
+                                all.extend(moves.unseen(i, id));
+                            }
+                            ok == (all.is_empty() || out.state.hide(&all).check(edit, id).is_ok())
+                        }, "entry-indexed move facts change acceptance");
+                        if ok {
+                            out.state.apply(change, edit, id);
+                        } else if let Some(moves) = late_moves.filter(|_| hidden.len() > cut)
+                            && (cut == 0 || out.state.hide(&hidden[..cut]).check(edit, id).is_ok())
+                        {
+                            // the moves that hadn't seen it alone kept it out
+                            out.moved_out = out.moved_out.max(moves.last_unseen(i, id));
+                        }
+                        ok
+                    }
+                };
+            }
+            out.stood.push(stands);
+            for (v, pre) in before {
+                if edit.sigs().zip(pre).all(|(s, pre)| pre || out.state.acts_for(s, v)) {
+                    out.acts.insert((id, v));
+                }
+            }
+            if states {
+                out.states.push(out.state.clone());
+            }
+        }
+    }
+
+    /// The run, over `n` edits in all.
+    fn finish(self, n: usize, snap: Option<usize>) -> Run {
+        let mut out = self.out;
+        if snap == Some(n) {
+            out.snap = Some(out.state.clone());
+        }
+        out
+    }
 }
 
 /// Who stands when removals clash, the smallest first. A vault's removals (an owner or a device revoked, the root
@@ -3957,6 +4124,15 @@ pub struct Replay {
 
 /// Two replays are the same where they hold the same edits in the same order, the same ones stand, and they know the
 /// same; how far each could step on from is no part of it.
+impl Replay {
+    /// Lets go of the rungs it holds (`Tail::rungs`): how many. What they cost is what this frees
+    /// (`tests/peer_memory.rs`).
+    #[doc(hidden)]
+    pub fn drop_rungs(&mut self) -> usize {
+        self.tail.as_mut().map_or(0, |t| std::mem::take(&mut t.rungs).len())
+    }
+}
+
 impl PartialEq for Replay {
     fn eq(&self, o: &Self) -> bool {
         // the ids name the edits: two replays of the same edits that came in another order are the same
@@ -4002,6 +4178,66 @@ struct Tail {
     after: Passed,
     /// The grants among every edit held and the shares their revocations name (`rests_on_revoked`).
     grants: Grants,
+    /// Places before `at` it can step on from too, the first first: where new edits sort before `at` but after one,
+    /// the edits from that one on are replayed again with them, not every edit (`Rung`).
+    rungs: Vec<Rung>,
+}
+
+/// A place of a replay's order before its `Tail`'s, as the tail would be there: the state just before it, and the base
+/// of its removals there (`Tail::base`). Every edit after the last removal but the moves, before it as the replay
+/// holds them still: the new edits it took since sorted after its tail's place, which is after it. So stepping on from
+/// it is stepping on from a tail there (`V4_tail_replays`, `V4_tail_moves`, `V4_rung_replays` in `TailRuns.lean`),
+/// whose checks `step_tail` makes as it makes them from its tail's place.
+#[derive(Clone, Debug)]
+struct Rung {
+    at: usize,
+    state: State,
+    base: Option<State>,
+}
+
+/// How many edits apart the rungs nearest the end of the order are, at least: those further back each twice as far
+/// as the one after, so a replay from the nearest rung before a new edit replays twice as many edits as sort after it,
+/// at most. None is further back than `RUNG_REACH`: a rung holds the state as it was before every edit after it, which
+/// is about 120 bytes an edit (2026-10-28, `tests/peer_memory.rs`: 68 MB for five rungs back to 65,536 of 130,000
+/// edits), so a replay holds two or three, a few MB, however many edits it holds.
+const RUNG: usize = TAIL;
+/// How many of its last edits a replay steps on from a rung in one go, at most: further back, it replays every edit
+/// a step at a time (`ReplayRun`), as a catch-up's turn is bounded.
+const RUNG_REACH: usize = 2 * TAIL;
+
+impl Tail {
+    /// `rung` among its rungs, those it then holds being thinned: of those as far from `n`, the end of the order, in
+    /// steps of `RUNG` doubling, the one nearest it, and none at or past its place.
+    fn rung(&mut self, rung: Rung, n: usize) {
+        self.rungs.push(rung);
+        self.rungs.sort_by_key(|r| r.at);
+        let at = self.at;
+        // one further back than a replay steps on from holds the state of more edits, and is of no use
+        self.rungs.retain(|r| r.at < at && n - r.at <= RUNG_REACH);
+        let band = |r: &Rung| usize::BITS - ((n - r.at) / RUNG).leading_zeros();
+        let mut kept: Vec<Rung> = Vec::with_capacity(self.rungs.len());
+        for r in std::mem::take(&mut self.rungs).into_iter().rev() {
+            if kept.last().is_none_or(|k| band(k) != band(&r)) {
+                kept.push(r);
+            }
+        }
+        kept.reverse();
+        self.rungs = kept;
+    }
+}
+
+/// The places of a replay of `n` edits whose place is `at` its rungs are at, from `floor` on: `RUNG` before it, then
+/// twice as far each.
+fn rung_places(floor: usize, at: usize, n: usize) -> Vec<usize> {
+    let mut out = vec![];
+    let mut back = RUNG;
+    while let Some(p) = n.checked_sub(back).filter(|&p| p >= floor && back <= RUNG_REACH) {
+        if p < at {
+            out.push(p);
+        }
+        back = back.saturating_mul(2);
+    }
+    out
 }
 
 /// The grants among a replay's edits, each by its share with the share it rests on, and the shares the revocations
@@ -4073,6 +4309,33 @@ impl Passed {
 }
 
 impl Replay {
+    /// Lets go of one part of it, which it returns, the replay of no use after: what a memory probe weighs it by
+    /// (`Lab::probe_part`, `replay.<part>`, `replay.state.<part>`).
+    pub fn probe_part(&mut self, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
+        fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
+            Some(Box::new(t))
+        }
+        let st = &mut self.state;
+        match part {
+            "order" => out(std::mem::take(&mut self.order)),
+            "ids" => out(std::mem::take(&mut self.ids)),
+            "stood" => out(std::mem::take(&mut self.stood)),
+            "acts" => out(std::mem::take(&mut self.acts)),
+            "tail" => out(self.tail.take()),
+            "state.vaults" => out((std::mem::take(&mut st.vaults), std::mem::take(&mut st.vault_at))),
+            "state.shares" => out((std::mem::take(&mut st.shares), std::mem::take(&mut st.share_at),
+                std::mem::take(&mut st.held), std::mem::take(&mut st.over), std::mem::take(&mut st.revoked))),
+            "state.entries" => out((std::mem::take(&mut st.entries), std::mem::take(&mut st.entry_at), std::mem::take(&mut st.born))),
+            "state.writes" => out((std::mem::take(&mut st.writes), std::mem::take(&mut st.write_at), std::mem::take(&mut st.by_entry))),
+            "state.audiences" => out((std::mem::take(&mut st.audiences), std::mem::take(&mut st.in_use), std::mem::take(&mut st.marks))),
+            "state.epochs" => out((std::mem::take(&mut st.epochs), std::mem::take(&mut st.moved))),
+            "state.seals" => out(std::mem::take(&mut st.seals)),
+            "state.published" => out(std::mem::take(&mut st.published)),
+            "state.seal_keys" => out(std::mem::take(&mut st.seal_keys)),
+            _ => None,
+        }
+    }
+
     /// The edits the checkpoints that stand vouch for (`vouched` in `Checkpoint.lean`): each edit before a checkpoint
     /// that stands, that stands itself, that the checkpoint covers, and whose signers all acted for the checkpoint's
     /// vault just before or just after it.
@@ -4101,6 +4364,11 @@ impl Replay {
     pub fn edits<'a>(&'a self, held: &'a [Edit]) -> impl ExactSizeIterator<Item = &'a Edit> + DoubleEndedIterator + Clone + 'a {
         debug_assert!(self.of(held), "a replay read with other edits than it is of");
         self.order.iter().map(move |&p| &held[p])
+    }
+
+    /// Where each of its edits is among the edits it is the replay of, in the one order (`edits`).
+    pub fn places(&self) -> &[usize] {
+        &self.order
     }
 
     /// Its `i`th edit in the one order, of `held` (`edits`).
@@ -4155,13 +4423,22 @@ pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
 
 /// `replay_on`, and how it went: `Why::Whole` where it replayed every edit again, saying why.
 pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) {
-    let whole = || replay(edits);
-    let Some(fresh) = edits.get(held..) else { return (whole(), Why::Whole("replay whole: fewer edits than it held")) };
+    match replay_on_or(was, edits, held) {
+        Ok(stepped) => stepped,
+        Err((_, why)) => (replay(edits), Why::Whole(why)),
+    }
+}
+
+/// `replay_on_why`, but where it would replay every edit again, why, and the replay it was given where it is as it was
+/// (all but a move found late to keep not every write of its entry): what a step of a catch-up replays a slice at a
+/// time instead (`ReplayRun`, `Lab::step_replay`).
+pub fn replay_on_or(was: Replay, edits: &[Edit], held: usize) -> Result<(Replay, Why), (Option<Replay>, &'static str)> {
+    let Some(fresh) = edits.get(held..) else { return Err((Some(was), "replay whole: fewer edits than it held")) };
     if fresh.is_empty() {
-        return (was, Why::Nothing);
+        return Ok((was, Why::Nothing));
     }
     if held == 0 {
-        return (whole(), Why::Whole("replay whole: the first since it opened"));
+        return Err((Some(was), "replay whole: the first since it opened"));
     }
     debug_assert!(was.of(&edits[..held]), "a replay stepped on over other edits than it is of");
     // the replay holds its edits in their order, deepest last: no scan of every edit held for each page
@@ -4170,15 +4447,15 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
     let ids_fresh = ids(fresh);
     let by_id: HashMap<EditId, (usize, &Edit)> =
         ids_fresh.iter().copied().zip(fresh.iter().enumerate().map(|(k, e)| (held + k, e))).collect();
-    let Some(tail) = was.tail.as_ref() else { return (whole(), Why::Whole("replay whole: no place to step on from")) };
+    let Some(tail) = was.tail.as_ref() else { return Err((Some(was), "replay whole: no place to step on from")) };
     if ids_fresh.iter().any(|id| tail.depths.contains_key(id)) {
-        return (whole(), Why::Whole("replay whole: a new edit it held already"));
+        return Err((Some(was), "replay whole: a new edit it held already"));
     }
     if ids_fresh.iter().any(|id| tail.parents.contains(id)) {
-        return (whole(), Why::Whole("replay whole: an edit it held builds on a new one"));
+        return Err((Some(was), "replay whole: an edit it held builds on a new one"));
     }
     if ids_fresh.iter().any(|id| tail.covered.contains_key(id)) {
-        return (whole(), Why::Whole("replay whole: a checkpoint it held covers a new edit"));
+        return Err((Some(was), "replay whole: a checkpoint it held covers a new edit"));
     }
     let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
     let steps = |e: &Edit| {
@@ -4187,8 +4464,15 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
             && e.parents.iter().all(|p| by_id.get(p).is_none_or(|(_, parent)| parent.depth < e.depth))
     };
     let tail_or_whole = |was: Replay| match step_tail(was, edits, held, &ids_fresh) {
-        Ok(r) => (r, Why::Tail),
-        Err(why) => (whole(), Why::Whole(why)),
+        Ok(r) => Ok((r, Why::Tail)),
+        Err((was, SORTS_BEFORE)) => match on_rung(was, edits, fresh, &ids_fresh) {
+            Ok(was) => match step_tail(was, edits, held, &ids_fresh) {
+                Ok(r) => Ok((r, Why::Rung)),
+                Err((was, why)) => Err((Some(was), why)),
+            },
+            Err(was) => Err((Some(was), SORTS_BEFORE)),
+        },
+        Err((was, why)) => Err((Some(was), why)),
     };
     if !fresh.iter().all(steps) {
         return tail_or_whole(was);
@@ -4231,18 +4515,18 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
     let mut floor = None;
     for (depth, _, id, place, e) in order {
         if floor.is_some_and(|f| depth <= f) {
-            return (whole(), Why::Whole("replay whole: a new edit as deep as a new move"));
+            return Err((None, "replay whole: a new edit as deep as a new move"));
         }
         if let Action::Mark { entry, caps: Some(_), keep, .. } = &e.action {
             let keep: HashSet<&EditId> = keep.iter().collect();
             if !kept.get(entry).is_some_and(|ws| ws.iter().all(|w| keep.contains(w))) {
-                return (whole(), Why::Whole("replay whole: a move keeps not every write of its entry"));
+                return Err((None, "replay whole: a move keeps not every write of its entry"));
             }
         }
         let stands = out.state.step_mut(e, id).is_ok();
-        out.order.push(place);
-        out.ids.push(id);
-        out.stood.push(stands);
+        push_grown(&mut out.order, place);
+        push_grown(&mut out.ids, id);
+        push_grown(&mut out.stood, stands);
         let tail = out.tail.as_mut().expect("a replay to step on from");
         tail.depths.insert(id, e.depth);
         tail.parents.extend(e.parents.iter().filter(|p| !tail.depths.contains_key(*p)).copied());
@@ -4266,7 +4550,7 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
             _ => {}
         }
     }
-    (out, Why::Stepped)
+    Ok((out, Why::Stepped))
 }
 
 /// A replay's place to step on from moved past the move just stepped on, its last edit, which stood not: the moves
@@ -4284,6 +4568,42 @@ fn past_move(out: &mut Replay, edits: &[Edit]) {
     tail.passed.extend(after);
     tail.at = n;
     tail.state = out.state.clone();
+    // every rung is before the move that stood not
+    tail.rungs.clear();
+}
+
+/// Why `step_tail` didn't step on from its place: a new edit sorts before it, where it may step on from a rung
+/// (`on_rung`).
+const SORTS_BEFORE: &str = "replay whole: a new edit sorts before its place";
+
+/// `was` with its tail at its last rung that every edit of `fresh`, `ids` theirs, sorts after, no further back than
+/// `RUNG_REACH`, and no move from it on standing not: where `step_tail` steps on from it as from its place. `was` as it
+/// was where no rung is so.
+fn on_rung(mut was: Replay, edits: &[Edit], fresh: &[Edit], ids: &[EditId]) -> Result<Replay, Replay> {
+    let Some(first) = fresh.iter().zip(ids).map(|(e, id)| (e.depth, e.rank(), *id)).min() else { return Err(was) };
+    let n = was.len();
+    let key = |i: usize| {
+        let e = was.edit(edits, i);
+        (e.depth, e.rank(), was.ids[i])
+    };
+    let Some(tail) = was.tail.as_ref() else { return Err(was) };
+    let rung = tail.rungs.iter().rposition(|r| {
+        n - r.at <= RUNG_REACH && (r.at == 0 || key(r.at - 1) < first) && r.base.is_some() == tail.base.is_some()
+    });
+    let Some(k) = rung else { return Err(was) };
+    let p = tail.rungs[k].at;
+    let ordered: Vec<&Edit> = was.edits(edits).collect();
+    let after = Passed::of(sorted(&ordered, &was.ids, &was.stood, p, n));
+    if after.lost {
+        return Err(was);
+    }
+    let passed = Passed::of(sorted(&ordered, &was.ids, &was.stood, 0, p));
+    drop(ordered);
+    let tail = was.tail.as_mut().expect("its tail");
+    let rung = tail.rungs.remove(k);
+    tail.rungs.truncate(k);
+    (tail.at, tail.state, tail.base, tail.passed, tail.after) = (p, rung.state, rung.base, passed, after);
+    Ok(was)
 }
 
 /// How `replay_on_why` went: nothing new, the new edits stepped on one by one, the last edits replayed again with them
@@ -4293,20 +4613,22 @@ pub enum Why {
     Nothing,
     Stepped,
     Tail,
+    /// The edits from a rung before its place on replayed again with them (`Rung`).
+    Rung,
     Whole(&'static str),
 }
 
 /// `replay_on`'s replay of its last edits again with the edits of `edits` after the first `held`, each id in `ids`,
 /// from its `Tail`; why not where that isn't its replay.
-fn step_tail(was: Replay, edits: &[Edit], held: usize, ids: &[EditId]) -> Result<Replay, &'static str> {
+fn step_tail(was: Replay, edits: &[Edit], held: usize, ids: &[EditId]) -> Result<Replay, (Replay, &'static str)> {
     let fresh = &edits[held..];
-    let tail = was.tail.as_ref().ok_or("replay whole: no place to step on from")?;
+    let Some(tail) = was.tail.as_ref() else { return Err((was, "replay whole: no place to step on from")) };
     let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
     // a revocation or a root handed on cuts what it hadn't seen anywhere before it, and is tried again among the
     // removals that say who may do what: the whole is replayed. A first sync asks those logs first (`ask_differing`),
     // so its pages of entries' edits bring moves alone
     if fresh.iter().any(|e| e.is_removal() && !moving(e)) {
-        return Err("replay whole: a revocation or a root handed on came");
+        return Err((was, "replay whole: a revocation or a root handed on came"));
     }
     // a new move takes away its entry's audience, which only that entry's writes read: it hides nothing from the
     // edits before the place where it keeps every write of its entry that stood there, and with the moves among the
@@ -4317,18 +4639,18 @@ fn step_tail(was: Replay, edits: &[Edit], held: usize, ids: &[EditId]) -> Result
         {
             let keep: HashSet<&EditId> = keep.iter().collect();
             if !ws.iter().all(|w| keep.contains(w)) {
-                return Err("replay whole: a new move keeps not every write of its entry before its place");
+                return Err((was, "replay whole: a new move keeps not every write of its entry before its place"));
             }
         }
     }
     if fresh.iter().any(|e| matches!(e.action, Action::Checkpoint { .. })) {
-        return Err("replay whole: a checkpoint came");
+        return Err((was, "replay whole: a checkpoint came"));
     }
     if fresh.iter().any(|e| matches!(e.action, Action::Snapshot { .. })) {
-        return Err("replay whole: a snapshot came");
+        return Err((was, "replay whole: a snapshot came"));
     }
     if rests_on_revoked(&was, fresh, ids) {
-        return Err("replay whole: a new grant rests on one a revocation names");
+        return Err((was, "replay whole: a new grant rests on one a revocation names"));
     }
     let among = |p: &EditId| ids.iter().position(|i| i == p).map(|i| fresh[i].depth);
     let depth = |p: &EditId| tail.depths.get(p).copied().or_else(|| among(p));
@@ -4336,7 +4658,7 @@ fn step_tail(was: Replay, edits: &[Edit], held: usize, ids: &[EditId]) -> Result
     let mut new: Vec<(u64, u8, EditId, usize)> = Vec::with_capacity(fresh.len());
     for (k, (e, &id)) in fresh.iter().zip(ids).enumerate() {
         if !e.parents.iter().all(|p| depth(p).is_none_or(|d| d < e.depth)) {
-            return Err("replay whole: a new edit builds on another new one as deep");
+            return Err((was, "replay whole: a new edit builds on another new one as deep"));
         }
         new.push((e.depth, e.rank(), id, held + k));
     }
@@ -4347,7 +4669,7 @@ fn step_tail(was: Replay, edits: &[Edit], held: usize, ids: &[EditId]) -> Result
     };
     let at = tail.at;
     if at > 0 && new.first().is_some_and(|f| (f.0, f.1, f.2) <= key(at - 1)) {
-        return Err("replay whole: a new edit sorts before its place");
+        return Err((was, SORTS_BEFORE));
     }
     // the last edits and the new ones in the one order, each by its place among `edits`: only these few are copied
     let mut merged: Vec<(usize, EditId)> = Vec::with_capacity(was.len() - at + new.len());
@@ -4358,14 +4680,14 @@ fn step_tail(was: Replay, edits: &[Edit], held: usize, ids: &[EditId]) -> Result
         let next_old = old.peek().map(|&i| key(i));
         match (next_old, add.peek()) {
             (Some(k), Some(a)) if k < (a.0, a.1, a.2) => {
-                merged.push((was.order[old.next().ok_or("replay whole: its tail ran out")?], k.2))
+                merged.push((was.order[old.next().expect("peeked")], k.2))
             }
             (_, Some(_)) => {
-                let (.., id, p) = add.next().ok_or("replay whole: its tail ran out")?;
+                let (.., id, p) = add.next().expect("peeked");
                 merged.push((p, id));
                 past_new = merged.len();
             }
-            (Some(k), None) => merged.push((was.order[old.next().ok_or("replay whole: its tail ran out")?], k.2)),
+            (Some(k), None) => merged.push((was.order[old.next().expect("peeked")], k.2)),
             (None, None) => break,
         }
     }
@@ -4381,14 +4703,14 @@ fn step_tail(was: Replay, edits: &[Edit], held: usize, ids: &[EditId]) -> Result
     let mut base = None;
     if !tail.tried.is_empty() {
         // the base is of the edits that say who may do what alone (`resolve_at`)
-        let from = tail.base.clone().ok_or("replay whole: no base to resolve on")?;
+        let Some(from) = tail.base.clone() else { return Err((was, "replay whole: no base to resolve on")) };
         let trust = Trust::of(&tail_edits, &tail_ids);
         let snap = again.map(|s| trust.before(s));
         let Run { state, snap, .. } = run_from(from, &trust.edits, &trust.ids, &none, false, &HashMap::new(), snap);
         let mut tried = tail.cands.clone();
         tried.sort_by_key(|&i| priority(&state, was.edit(edits, i)));
         if tried != tail.tried {
-            return Err("replay whole: its removals rank otherwise");
+            return Err((was, "replay whole: its removals rank otherwise"));
         }
         base = Some(snap.unwrap_or_else(|| tail.base.clone().expect("its base")));
     }
@@ -4399,10 +4721,10 @@ fn step_tail(was: Replay, edits: &[Edit], held: usize, ids: &[EditId]) -> Result
         tail_edits.iter().zip(&tail_ids).filter(|(e, _)| moving(e)).map(|(_, id)| *id).collect();
     let run = run_from(tail.state.clone(), &tail_edits, &tail_ids, &moves, false, &tail.covered, again);
     if tail_edits.iter().zip(&run.stood).any(|(e, s)| moving(e) && !s) {
-        return Err("replay whole: a move among its last edits stood not");
+        return Err((was, "replay whole: a move among its last edits stood not"));
     }
     if run.moved_out.is_some() {
-        return Err("replay whole: a move among its last edits kept a new edit out");
+        return Err((was, "replay whole: a move among its last edits kept a new edit out"));
     }
     let Replay { mut order, ids: mut all, mut stood, mut acts, tail, .. } = was;
     let mut tail = tail.expect("a replay to step on from");
@@ -4429,7 +4751,10 @@ fn step_tail(was: Replay, edits: &[Edit], held: usize, ids: &[EditId]) -> Result
     if let Some(moved) = again {
         tail.passed.pass((at..at + moved).map(|i| (&edits[order[i]], all[i], stood[i])));
         tail.at = at + moved;
-        tail.state = run.snap.expect("the state at its new place");
+        // the place it leaves, a rung: every edit before it is as it was
+        let state = std::mem::replace(&mut tail.state, run.snap.expect("the state at its new place"));
+        let was = Rung { at, state, base: tail.base.take() };
+        tail.rung(was, order.len());
     }
     tail.after = Passed::of((tail.at..order.len()).map(|i| (&edits[order[i]], all[i], stood[i])));
     tail.base = base;
@@ -4470,36 +4795,99 @@ fn rests_on_revoked(was: &Replay, fresh: &[Edit], ids: &[EditId]) -> bool {
 
 /// `replay`, given each edit's id.
 fn replay_ids(edits: &[Edit], ids: &[EditId]) -> Replay {
-    let depths: HashMap<EditId, u64> = ids.iter().copied().zip(edits.iter().map(|e| e.depth)).collect();
-    let order = order_places(edits, ids);
-    // the edits in the one order, by reference: no copy of any
-    let (edits, ids): (Vec<&Edit>, Vec<EditId>) = order.iter().map(|&p| (&edits[p], ids[p])).unzip();
-    // the place it can step on from: after every removal but the moves, and the last `TAIL` edits
-    let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
-    let after = edits.iter().rposition(|e| e.is_removal() && !moving(e)).map_or(0, |i| i + 1);
-    let mut at = after.max(edits.len().saturating_sub(TAIL));
-    let Resolved { rem, cands, tried, mut base } = resolve_at(&edits, &ids, Some(at));
-    let covered = watched(edits.iter().copied());
-    let mut run = run_from(State::default(), &edits, &ids, &rem, false, &covered, Some(at));
-    // and after every move that stood not or alone kept an edit out: the moves after it all stand, and are inert
-    // (`V4_tail_replays`)
-    let lost = (at..edits.len()).rev().find(|&i| moving(&edits[i]) && !run.stood[i]).map(|i| i + 1);
-    if let Some(past) = lost.max(run.moved_out.map(|m| m + 1)).filter(|&p| p > at) {
-        at = past;
-        run = run_from(State::default(), &edits, &ids, &rem, false, &covered, Some(at));
-        if base.is_some() {
-            base = Some(trust_base(&edits, &ids, at));
-        }
+    let mut run = ReplayRun::start(edits, ids);
+    run.step(edits, usize::MAX);
+    run.finish(edits, ids)
+}
+
+/// `replay` of a log's first edits a slice at a time, each slice its own short turn (`Lab::step_replay`): their order,
+/// the removals that stand among them and the place to step on from chosen at the start, as `replay` chooses them,
+/// then the edits run a slice a step (`step`), then what steps on from it worked out (`finish`). The same replay as
+/// `replay` of them (`CatchUpBudget.lean`): a first sync's 130,000 edits were one turn of 10-24 s (2026-10-27).
+pub struct ReplayRun {
+    /// How many of the log's edits it is the replay of: its first.
+    n: usize,
+    order: Vec<usize>,
+    ids: Vec<EditId>,
+    rem: HashSet<EditId>,
+    covered: HashMap<EditId, Vec<VaultId>>,
+    at: usize,
+    cands: Vec<usize>,
+    tried: Vec<usize>,
+    base: Option<State>,
+    running: Running,
+}
+
+impl ReplayRun {
+    /// A replay of `edits`, `ids` theirs, none of them run yet: their order, the removals that stand, the place.
+    pub fn start(edits: &[Edit], ids: &[EditId]) -> ReplayRun {
+        let order = order_places(edits, ids);
+        // the edits in the one order, by reference: no copy of any
+        let (ordered, ids): (Vec<&Edit>, Vec<EditId>) = order.iter().map(|&p| (&edits[p], ids[p])).unzip();
+        // the place it can step on from: after every removal but the moves, and the last `TAIL` edits
+        let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
+        let after = ordered.iter().rposition(|e| e.is_removal() && !moving(e)).map_or(0, |i| i + 1);
+        let at = after.max(ordered.len().saturating_sub(TAIL));
+        let Resolved { rem, cands, tried, base } = resolve_at(&ordered, &ids, Some(at));
+        let covered = watched(ordered.iter().copied());
+        let running = Running::new(State::default(), &ordered, &ids, &rem, false).marking(rung_places(after, at, ordered.len()));
+        ReplayRun { n: edits.len(), order, ids, rem, covered, at, cands, tried, base, running }
     }
-    let Run { stood, state, acts, snap, .. } = run;
-    let parents = dangling(edits.iter().copied(), &depths);
-    let tail = snap.map(|state| {
-        let passed = Passed::of(sorted(&edits, &ids, &stood, 0, at));
-        let after = Passed::of(sorted(&edits, &ids, &stood, at, edits.len()));
-        let grants = Grants::of(edits.iter().copied().zip(ids.iter().copied()));
-        Tail { at, state, base, cands, tried, parents, covered, depths, passed, after, grants }
-    });
-    Replay { order, ids, stood, state, acts, tail }
+
+    /// How many of the log's edits it is the replay of.
+    pub fn of(&self) -> usize {
+        self.n
+    }
+
+    /// Runs at most `most` more of its edits, one at least, `edits` being the log's (its first `of` those it replays):
+    /// true once it ran them all.
+    pub fn step(&mut self, edits: &[Edit], most: usize) -> bool {
+        let from = self.running.ran();
+        let to = self.order.len().min(from.saturating_add(most.max(1)));
+        let slice: Vec<&Edit> = self.order[from..to].iter().map(|&p| &edits[p]).collect();
+        self.running.step::<true, &Edit>(&slice, &self.ids[from..to], &self.rem, false, &self.covered, Some(self.at));
+        to == self.order.len()
+    }
+
+    /// The replay, once it ran every edit (`step`), `edits` and `ids` being the log's.
+    pub fn finish(self, edits: &[Edit], all_ids: &[EditId]) -> Replay {
+        let ReplayRun { n, order, ids, rem, covered, mut at, cands, tried, mut base, mut running } = self;
+        let (edits, all_ids) = (&edits[..n], &all_ids[..n]);
+        let ordered: Vec<&Edit> = order.iter().map(|&p| &edits[p]).collect();
+        let mut marked = std::mem::take(&mut running.marked);
+        let mut run = running.finish(ordered.len(), Some(at));
+        let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
+        // and after every move that stood not or alone kept an edit out: the moves after it all stand, and are inert
+        // (`V4_tail_replays`)
+        let lost = (at..ordered.len()).rev().find(|&i| moving(ordered[i]) && !run.stood[i]).map(|i| i + 1);
+        if let Some(past) = lost.max(run.moved_out.map(|m| m + 1)).filter(|&p| p > at) {
+            at = past;
+            run = run_from(State::default(), &ordered, &ids, &rem, false, &covered, Some(at));
+            if base.is_some() {
+                base = Some(trust_base(&ordered, &ids, at));
+            }
+            // its rungs were before a move that stood not or kept an edit out: none steps on
+            marked.clear();
+        }
+        // nor one before a move that stood not, or kept an edit out, before its place
+        let lost = (0..ordered.len()).rev().find(|&i| moving(ordered[i]) && !run.stood[i]);
+        let floor = lost.max(run.moved_out).map_or(0, |m| m + 1);
+        marked.retain(|(p, _)| *p >= floor);
+        let rungs: Vec<Rung> = marked.into_iter().map(|(at, state)| {
+            let base = base.as_ref().map(|_| trust_base(&ordered, &ids, at));
+            Rung { at, state, base }
+        }).collect();
+        let Run { stood, state, acts, snap, .. } = run;
+        let depths: HashMap<EditId, u64> = all_ids.iter().copied().zip(edits.iter().map(|e| e.depth)).collect();
+        let parents = dangling(ordered.iter().copied(), &depths);
+        let tail = snap.map(|state| {
+            let passed = Passed::of(sorted(&ordered, &ids, &stood, 0, at));
+            let after = Passed::of(sorted(&ordered, &ids, &stood, at, ordered.len()));
+            let grants = Grants::of(ordered.iter().copied().zip(ids.iter().copied()));
+            Tail { at, state, base, cands, tried, parents, covered, depths, passed, after, grants, rungs }
+        });
+        Replay { order, ids, stood, state, acts, tail }
+    }
 }
 
 /// The edits `edits[from..to]` of an order, each with its id and whether it stood.
@@ -4541,6 +4929,16 @@ pub fn trace(edits: &[Edit]) -> Vec<State> {
     run(&edits, &ids, &rem, true).states
 }
 
+/// Push `x` onto `v`, which grows by an eighth when full rather than doubling: a log's and a replay's lists of its
+/// edits are the longest a device holds, a few hundred bytes an edit, and a list that doubles holds a third more than
+/// it needs on average and twice at worst (46 MB of a Mac's 151k edits' log alone). Still amortized constant.
+pub(crate) fn push_grown<T>(v: &mut Vec<T>, x: T) {
+    if v.len() == v.capacity() {
+        v.reserve_exact((v.len() / 8).max(256));
+    }
+    v.push(x);
+}
+
 /// A process-local revision of immutable log contents. Equality is allocation identity, not a shortened hash
 /// or a length: a restore or checkpoint withdrawal may replace a log with a different one of the same length.
 /// It is neither persisted nor sent to a peer, and cannot establish trust in data.
@@ -4568,6 +4966,9 @@ pub struct Log {
     /// asks no scan of every edit to tell which logs it holds or which edits an asker may receive.
     logs: Vec<Option<crate::sync::LogId>>,
     by_log: HashMap<crate::sync::LogId, Vec<usize>>,
+    /// The audiences of each vault it holds key edits of (each `LogId::Audience` of `by_log`), kept as edits arrive:
+    /// what a device's index tokens are in (`Lab::index_audiences`), with no walk of every edit held.
+    audience_logs: BTreeMap<VaultId, std::collections::BTreeSet<AudienceId>>,
     revision: LogRevision,
     /// Stable only while this particular log appends. A removal or a clone starts a new lineage.
     lineage: LogRevision,
@@ -4584,7 +4985,8 @@ impl Clone for Log {
         Self { edits: self.edits.clone(), ids: self.ids.clone(), held: self.held.clone(),
             revision: self.revision.clone(), lineage: LogRevision::default(),
             entry_order: self.entry_order.clone(), write_at: self.write_at.clone(), logs: self.logs.clone(),
-            by_log: self.by_log.clone(), gone: self.gone, next_depth: self.next_depth }
+            by_log: self.by_log.clone(), audience_logs: self.audience_logs.clone(), gone: self.gone,
+            next_depth: self.next_depth }
     }
 }
 
@@ -4596,9 +4998,12 @@ impl Log {
     fn index_write(&mut self, edit: &Edit, id: EditId, at: usize) {
         let log = crate::sync::log_of(edit, id);
         self.next_depth = self.next_depth.max(edit.depth.saturating_add(1));
-        self.logs.push(log);
+        push_grown(&mut self.logs, log);
         if let Some(l) = log {
             self.by_log.entry(l).or_default().push(at);
+            if let crate::sync::LogId::Audience(v, x) = l {
+                self.audience_logs.entry(v).or_default().insert(x);
+            }
         }
         if let Action::Write { entry, .. } = edit.action {
             self.write_at.entry(id).or_insert(at);
@@ -4612,6 +5017,7 @@ impl Log {
         self.write_at.clear();
         self.logs.clear();
         self.by_log.clear();
+        self.audience_logs.clear();
         self.next_depth = 0;
         let (edits, ids) = (std::mem::take(&mut self.edits), std::mem::take(&mut self.ids));
         for (at, (edit, &id)) in edits.iter().zip(&ids).enumerate() {
@@ -4620,9 +5026,32 @@ impl Log {
         (self.edits, self.ids) = (edits, ids);
     }
 
+    /// Lets go of one part of it, which it returns, the log of no use after: what a memory probe weighs it by
+    /// (`Lab::probe_part`, `log.<part>`).
+    pub fn probe_part(&mut self, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
+        fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
+            Some(Box::new(t))
+        }
+        match part {
+            "edits" => out(std::mem::take(&mut self.edits)),
+            "ids" => out(std::mem::take(&mut self.ids)),
+            "held" => out(std::mem::take(&mut self.held)),
+            "entry_order" => out(std::mem::take(&mut self.entry_order)),
+            "write_at" => out(std::mem::take(&mut self.write_at)),
+            "logs" => out(std::mem::take(&mut self.logs)),
+            "by_log" => out(std::mem::take(&mut self.by_log)),
+            _ => None,
+        }
+    }
+
     /// Each edit's log, by its place (`sync::log_of`).
     pub fn logs(&self) -> &[Option<crate::sync::LogId>] {
         &self.logs
+    }
+
+    /// The audiences of vault `vault` it holds key edits of (`audience_logs`).
+    pub fn audience_logs(&self, vault: VaultId) -> impl Iterator<Item = AudienceId> + '_ {
+        self.audience_logs.get(&vault).into_iter().flatten().copied()
     }
 
     /// Each log it holds edits of, and their places in it, in order.
@@ -4663,6 +5092,9 @@ impl Log {
 
     /// Changes exactly when the sequence of held edits changes, without scanning history.
     pub fn revision(&self) -> LogRevision { self.revision.clone() }
+
+    /// It holds edit `id`.
+    pub fn has(&self, id: EditId) -> bool { self.held.contains(&id) }
 
     /// An incremental index may append while this token stays equal; otherwise it must rebuild.
     pub fn lineage(&self) -> LogRevision { self.lineage.clone() }
@@ -4822,8 +5254,8 @@ impl Log {
         let edit = self.check(author, cosigners, action)?;
         let id = edit.id();
         self.index_write(&edit, id, self.edits.len());
-        self.edits.push(edit);
-        self.ids.push(id);
+        push_grown(&mut self.edits, edit);
+        push_grown(&mut self.ids, id);
         self.held.insert(id);
         self.revision = LogRevision::default();
         Ok(id)
@@ -4831,16 +5263,34 @@ impl Log {
 
     /// Add edits from a peer, each once, whether or not the view accepts them: acceptance is decided at replay.
     pub fn receive(&mut self, edits: impl IntoIterator<Item = Edit>) {
+        self.receive_ids(edits.into_iter().map(|e| {
+            let id = e.id();
+            (e, id)
+        }));
+    }
+
+    /// `receive`, each edit with its id, worked out already: no edit encoded again, its bulk bytes not read back.
+    pub fn receive_ids(&mut self, edits: impl IntoIterator<Item = (Edit, EditId)>) {
         let before = self.ids.len();
-        for edit in edits {
-            let id = edit.id();
+        for (edit, id) in edits {
+            debug_assert_eq!(edit.id(), id, "an edit received with its own id");
             if self.held.insert(id) {
                 self.index_write(&edit, id, self.edits.len());
-                self.edits.push(edit);
-                self.ids.push(id);
+                push_grown(&mut self.edits, edit);
+                push_grown(&mut self.ids, id);
             }
         }
         if self.ids.len() != before { self.revision = LogRevision::default(); }
+    }
+
+    /// Each edit's bulk bytes read back from where `place` says its record is, if it says (`Edit::shelve`): the same
+    /// edits, the same ids, their bytes off memory.
+    pub(crate) fn shelve(&mut self, place: impl Fn(&EditId) -> Option<crate::bulk::Place>) {
+        for (edit, id) in self.edits.iter_mut().zip(&self.ids) {
+            if let Some(p) = place(id) {
+                edit.shelve(p);
+            }
+        }
     }
 
     /// Let go of the edits `ids`: a device holding them on a checkpoint's word that no checkpoint vouches for any more.
@@ -4900,7 +5350,7 @@ mod tests {
                 action: Action::Write { vault: VaultId::from_u64(1), entry,
                     actor: VaultId::from_u64(1), stay: None, epoch: 0,
                     deps: vec![], proposal: Proposal::Main, via: vec![], create: None,
-                    files: vec![], body: vec![depth as u8; 1024] } }
+                    files: vec![], body: vec![depth as u8; 1024].into() } }
         }
         fn check(log: &Log, entry: EntryId, judged: &HashSet<EditId>) {
             let selected: Vec<_> = log.edits().iter().filter(|e|

@@ -2064,7 +2064,7 @@ def entryJson (st : State) (en : Entry) : String :=
          obj [("device", nat d), ("wants", bool (wants st d en)), ("keeps", bool (keeps st d en))]))]
 
 def write (w : Write) : String :=
-  obj [("edit", nat w.edit), ("author", nat w.author), ("actor", nat w.actor), ("entry", nat w.entry),
+  obj [("edit", nat w.edit), ("author", nat w.author), ("actor", nat w.signer), ("entry", nat w.entry),
        ("stay", opt nat w.stay), ("epoch", nat w.epoch), ("deps", ids w.deps), ("proposal", proposal w.proposal),
        ("via", ids w.via), ("first", bool w.first), ("audience", ids w.audience)]
 

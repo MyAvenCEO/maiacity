@@ -204,6 +204,24 @@ fn reachable(sdp: &str) -> String {
         .collect()
 }
 
+/// The media section id (`a=mid:`) of the data channel in a description it sent: str0m names it at random when it
+/// offers (`Mid::new`, three letters), the browser's own when it answers.
+fn mid(sdp: &str) -> Option<&str> {
+    sdp.lines().find_map(|line| line.trim_end().strip_prefix("a=mid:"))
+}
+
+/// One of its candidates as a browser signals one (`RTCIceCandidateInit`), for the media section `mid` names. A
+/// candidate for a section its description has none of is refused: Safari's `addIceCandidate` threw "Error processing
+/// ICE candidate" every 31 s on the iPhone while the Mac offered with a random mid and trickled for mid "0" (batch 4
+/// round, 2026-10-27), so no Mac-to-iPhone route ever opened. Without a mid, the first section's index alone.
+fn trickled(candidate: &Candidate, mid: Option<&str>) -> Value {
+    let mut init = json!({"candidate": candidate.to_sdp_string(), "sdpMLineIndex": 0});
+    if let Some(mid) = mid {
+        init["sdpMid"] = json!(mid);
+    }
+    json!({"candidate": init})
+}
+
 /// A remote candidate as a browser signals it (`RTCIceCandidate.toJSON()`), if a machine can reach it.
 fn candidate(signal: &Value) -> Option<Candidate> {
     let text = signal["candidate"]["candidate"].as_str()?;
@@ -267,8 +285,9 @@ impl<'a> Route<'a> {
             });
             let (offer, waiting) = api.apply().context("no RTC offer")?;
             pending = Some(waiting);
-            route.signal(json!({"description": {"type": "offer", "sdp": offer.to_sdp_string()}})).await?;
-            route.trickle(&offered).await?;
+            let sdp = offer.to_sdp_string();
+            route.signal(json!({"description": {"type": "offer", "sdp": sdp}})).await?;
+            route.trickle(&offered, mid(&sdp)).await?;
         }
         let mut buf = vec![0u8; DATAGRAM];
         let mut buf6 = vec![0u8; DATAGRAM];
@@ -306,9 +325,9 @@ impl<'a> Route<'a> {
                             } else {
                                 ensure!(kind == Some("offer"), "invalid RTC description");
                                 let offer = SdpOffer::from_sdp_string(&sdp).context("RTC offer")?;
-                                let answer = route.rtc.sdp_api().accept_offer(offer)?;
-                                route.signal(json!({"description": {"type": "answer", "sdp": answer.to_sdp_string()}})).await?;
-                                route.trickle(&offered).await?;
+                                let answer = route.rtc.sdp_api().accept_offer(offer)?.to_sdp_string();
+                                route.signal(json!({"description": {"type": "answer", "sdp": answer}})).await?;
+                                route.trickle(&offered, mid(&answer)).await?;
                             }
                             described = true;
                             for candidate in early.drain(..) { route.rtc.add_remote_candidate(candidate); }
@@ -376,10 +395,11 @@ impl<'a> Route<'a> {
         self.events.send(event(self.id, json!({"kind": "signal", "signal": signal}))).await.ok().context("node closed")
     }
 
-    /// Its candidates again, one by one, as a browser trickles them, for a peer that reads none in the SDP.
-    async fn trickle(&mut self, candidates: &[Candidate]) -> Result<()> {
+    /// Its candidates again, one by one, as a browser trickles them, for a peer that reads none in the SDP: each for
+    /// the data channel's media section, `mid` of its own description (`trickled`).
+    async fn trickle(&mut self, candidates: &[Candidate], mid: Option<&str>) -> Result<()> {
         for c in candidates {
-            self.signal(json!({"candidate": {"candidate": c.to_sdp_string(), "sdpMid": "0", "sdpMLineIndex": 0}})).await?;
+            self.signal(trickled(c, mid)).await?;
         }
         self.signal(json!({"candidate": null})).await
     }
@@ -467,6 +487,35 @@ mod tests {
         let seen = json!({"candidate": {"candidate": "candidate:2 1 udp 1677729535 198.51.100.7 54321 typ srflx raddr 0.0.0.0 rport 0", "sdpMid": "0"}});
         assert_eq!(candidate(&seen).unwrap().addr(), "198.51.100.7:54321".parse().unwrap());
         assert!(candidate(&json!({"candidate": null})).is_none());
+    }
+
+    /// Its trickled candidates name the media section of the description it sent, as the browser's
+    /// `addIceCandidate` requires, whether it offered (a mid of str0m's, at random) or answered (the browser's).
+    #[test]
+    fn its_candidates_name_its_own_descriptions_section() {
+        let mut rtc = Rtc::builder().build(Instant::now());
+        let host = Candidate::host("192.0.2.4:50000".parse().unwrap(), "udp").unwrap();
+        rtc.add_local_candidate(host.clone());
+        let mut api = rtc.sdp_api();
+        api.add_channel_with_config(ChannelConfig {
+            label: LABEL.into(),
+            ordered: false,
+            reliability: Reliability::MaxRetransmits { retransmits: 0 },
+            negotiated: None,
+            protocol: String::new(),
+        });
+        let (offer, _) = api.apply().unwrap();
+        let sdp = offer.to_sdp_string();
+        let section = mid(&sdp).expect("the offer's data channel section");
+        assert_eq!(sdp.matches(&format!("a=mid:{section}")).count(), 1);
+        let signal = trickled(&host, Some(section));
+        assert_eq!(signal["candidate"]["sdpMid"], section);
+        assert_eq!(signal["candidate"]["sdpMLineIndex"], 0);
+        assert_eq!(candidate(&signal).unwrap().addr(), host.addr(), "a peer reads it back");
+        // answering a browser's offer: the browser's own section id
+        let browser = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=mid:0\r\n";
+        assert_eq!(trickled(&host, mid(browser))["candidate"]["sdpMid"], "0");
+        assert!(trickled(&host, None)["candidate"].get("sdpMid").is_none());
     }
 
     #[test]

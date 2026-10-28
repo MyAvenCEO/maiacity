@@ -54,7 +54,7 @@ fn fixture(wide: bool) -> Fixture {
         add(DEVICE_A, vec![], Action::Write {
             vault: alice, entry, actor: alice, stay: None, epoch: 0, deps: vec![], proposal: Proposal::Main,
             via: vec![], create: Some(Creation { audience: if wide { vec![] } else { vec![share] }, nonce: [0; 32] }),
-            files: vec![], body: vec![],
+            files: vec![], body: Default::default(),
         });
     }
     Fixture { state: st, edits, alice, bob, share }
@@ -63,7 +63,7 @@ fn fixture(wide: bool) -> Fixture {
 fn write(f: &Fixture, entry: EntryId, actor: VaultId) -> Action {
     Action::Write {
         vault: f.alice, entry, actor, stay: None, epoch: 0, deps: vec![], proposal: Proposal::Main,
-        via: vec![], create: None, files: vec![], body: vec![],
+        via: vec![], create: None, files: vec![], body: Default::default(),
     }
 }
 
@@ -75,7 +75,7 @@ fn wraps(f: &Fixture, entry: EntryId) -> Action {
     let name = f.state.entry_key(entry).unwrap();
     let to = f.state.current(KeyFam::Audience(f.alice, f.state.entry(entry).unwrap().audience()));
     Action::Wraps { entry, wraps: vec![Wrap {
-        name, id: KeyId([0; 32]), boxed: KeyBox { to: Recipient::Key { name: to, id: KeyId([0; 32]) }, bytes: vec![] },
+        name, id: KeyId([0; 32]), boxed: KeyBox { to: Recipient::Key { name: to, id: KeyId([0; 32]) }, bytes: Default::default() },
     }] }
 }
 
@@ -125,7 +125,7 @@ fn every_action_reads_only_its_own_entry_move_facts() {
             (DEVICE_A, write(&f, FIRST, f.alice)),
             (DEVICE_A, Action::Write { vault: f.alice, entry: EntryId::from_u64(103), actor: f.alice,
                 stay: None, epoch: 0, deps: vec![], proposal: Proposal::Main, via: vec![],
-                create: Some(Creation { audience: vec![], nonce: [0; 32] }), files: vec![], body: vec![] }),
+                create: Some(Creation { audience: vec![], nonce: [0; 32] }), files: vec![], body: Default::default() }),
             (DEVICE_A, moved(&f, FIRST, vec![])),
             (DEVICE_A, Action::Mark { vault: f.alice, entry: FIRST, caps: None, wants: Some(vec![f.share]), keep: vec![], via: vec![] }),
             (DEVICE_A, key(&f, FIRST)),
@@ -222,7 +222,7 @@ fn materialized_replay(edits: &[Edit]) -> Replay {
         let passed = Passed::of(sorted(&edits, &ids, &stood, 0, at));
         let after = Passed::of(sorted(&edits, &ids, &stood, at, edits.len()));
         let grants = Grants::of(edits.iter().zip(ids.iter().copied()));
-        Tail { at, state, base, cands, tried, parents, covered, depths, passed, after, grants }
+        Tail { at, state, base, cands, tried, parents, covered, depths, passed, after, grants, rungs: vec![] }
     });
     Replay { order, ids, stood, state, acts, tail }
 }

@@ -3,6 +3,7 @@
 use super::*;
 use crate::{Node, Options};
 use avendb::cast::{document, handbook_ready, world};
+use avendb::id::EntryId;
 use avendb::wire::Wire;
 use n0_future::future;
 use std::time::Instant;
@@ -412,4 +413,248 @@ async fn a_query_is_partial_while_announced_logs_are_behind_and_complete_once_th
     assert_eq!(arrived["ok"]["count"].as_u64().unwrap() as usize, before["ok"]["count"].as_u64().unwrap() as usize + backlog.len());
     mac.shutdown().await.unwrap();
     phone.shutdown().await.unwrap();
+}
+
+/// Freshness.lean on a node, for any read alike (a query and `aips`, which has no coverage of its own): with no peer a
+/// read is offline as of the device's last current read; while a live peer holds logs the device lacks, behind, so a
+/// page never shows it as final and no action sheet opens; once they arrive, current. The 27 Oct iPhone's case.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn every_read_is_offline_behind_or_current_as_its_peers_say() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let mac = Node::spawn(w.lab.split(sender, &[], [55; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [56; 32]), receiver, Options::local()).await.unwrap();
+    let query = serde_json::json!({"op": "query", "vault": coop.to_hex(), "where": {"type": ["doc"]}});
+    let aips = serde_json::json!({"op": "aips"});
+    let alone = phone.op(aips.clone()).await.unwrap();
+    assert_eq!(alone["fresh"], serde_json::json!({"state": "offline", "asOf": 0}), "{alone}");
+
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.sync_with(mac.id()).await.unwrap();
+    wait_for(async || phone.shared.differ(sender).await.is_empty()).await;
+    for read in [&query, &aips] {
+        let answer = phone.op(read.clone()).await.unwrap();
+        assert_eq!(answer["fresh"], serde_json::json!({"state": "current"}), "{answer}");
+    }
+
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    let backlog = mac.act(move |lab, me| (0..pulls::LIVE_LOGS + 3).map(|i| lab.create(me, coop, coop, "doc", &[],
+        document(&format!("Behind {i}"), "history", me)).unwrap()).collect::<Vec<_>>()).await;
+    wait_for(async || phone.shared.differ(sender).await.len() > 1).await;
+    for read in [&query, &aips] {
+        let answer = phone.op(read.clone()).await.unwrap();
+        assert_eq!(answer["fresh"]["state"], "behind", "{answer}");
+        assert!(answer["fresh"]["logs"].as_u64().unwrap() > 0, "{answer}");
+    }
+    // a read that is behind asks for its scope first
+    assert!(!phone.shared.wanted.lock().unwrap().is_empty());
+
+    drop(stalled);
+    wait_for(async || {
+        let backlog = backlog.clone();
+        phone.read(move |lab, me| backlog.iter().all(|entry| lab.item(me, *entry).is_some())).await
+            && phone.shared.differ(sender).await.is_empty()
+    }).await;
+    let arrived = phone.op(aips.clone()).await.unwrap();
+    assert_eq!(arrived["fresh"], serde_json::json!({"state": "current"}), "{arrived}");
+    mac.shutdown().await.unwrap();
+    wait_for(async || phone.shared.peers.lock().unwrap().values().all(|p| p.conn.close_reason().is_some())).await;
+    let offline = phone.op(aips).await.unwrap();
+    assert_eq!(offline["fresh"]["state"], "offline", "{offline}");
+    assert!(offline["fresh"]["asOf"].as_u64().unwrap() > 0, "{offline}");
+    phone.shutdown().await.unwrap();
+}
+
+/// A chat round trip while a bulk catch-up runs (F2/F5), in process over the PQ transport, no server: the phone lacks
+/// `BULK` notes the Mac wrote; once it has taken some of them, the Mac edits a chat entry both hold, `MESSAGES` times,
+/// and each time waits until the phone's view shows the new text. 5505538 (the live view draining the whole catch-up):
+/// p95 2,970 ms; with `LIVE_VIEW`, ten runs 128-298 ms. The batch's gate is sync_bench's `bench_live`; this one asserts
+/// with room for loaded runners, and that no page from the Mac came back with nothing new (F12).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn chat_reaches_the_phone_quickly_while_it_catches_up() {
+    const BULK: usize = 1500;
+    const MESSAGES: usize = 12;
+    let mut w = world();
+    let (sender, receiver, alice) = (w.mac_a, w.phone_a, w.alice);
+    w.lab.sync_all(0);
+    let chat = w.lab.create(sender, alice, alice, "note", &[], document("Chat", "hello", sender)).unwrap();
+    w.lab.sync(sender, receiver);
+    let notes: Vec<EntryId> = (0..BULK)
+        .map(|i| w.lab.create(sender, alice, alice, "note", &[], document(&format!("Note {i}"), "In May.", sender)).unwrap())
+        .collect();
+    let mac = Node::spawn(w.lab.split(sender, &[], [61; 32]), sender, Options { page: 16 << 10, ..Options::local() }).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [62; 32]), receiver, Options { window: 1, ..Options::local() }).await.unwrap();
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    let kept = async |n: &Node| {
+        let logs = n.holdings().await.logs;
+        notes.iter().filter(|e| logs.contains_key(&LogId::Entry(**e))).count()
+    };
+    time::timeout(Duration::from_secs(60), async { while kept(&phone).await < 20 { time::sleep(Duration::from_millis(5)).await } })
+        .await
+        .expect("the catch-up starts");
+    let mut took = Vec::new();
+    for i in 0..MESSAGES {
+        let said = format!("message {i}");
+        let began = Instant::now();
+        let text = said.clone();
+        mac.act(move |lab, me| lab.edit(me, alice, chat, |item| item.set_text(2, &text)).unwrap()).await;
+        let shown = time::timeout(Duration::from_secs(30), async {
+            loop {
+                let said = said.clone();
+                if phone.read(move |lab, me| avendb::cast::text(lab, me, chat, 2).as_deref() == Some(said.as_str())).await {
+                    break began.elapsed();
+                }
+                time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .expect("the phone shows the chat message");
+        took.push(shown);
+        time::sleep(Duration::from_millis(150)).await;
+    }
+    let behind = BULK - kept(&phone).await;
+    let mut sorted = took.clone();
+    sorted.sort();
+    let at = |p: f64| sorted[((sorted.len() as f64 * p).ceil() as usize).saturating_sub(1)].as_secs_f64() * 1000.0;
+    let rows = phone.shared.traffic.recent();
+    let empty = rows.iter().filter(|r| r["new"] == 0 && r["edits"].as_u64() > Some(0)).count();
+    let live = phone.shared.traffic.live_json();
+    let trace = phone.shared.traffic.trace_json();
+    let traced = trace.as_array().map_or(0, |t| t.iter().filter(|s| s["stage"] == "taken").count());
+    eprintln!("CHAT_DURING_CATCH_UP {}", serde_json::json!({
+        "bulk": BULK, "messages": MESSAGES, "p50_ms": at(0.5), "p95_ms": at(0.95), "max_ms": at(1.0),
+        "notes_left_at_end": behind, "duplicate_pages": empty, "live_ends": live["ends"], "traced_taken": traced,
+    }));
+    assert!(at(0.95) < 1000.0, "a chat message shows within a second while the phone catches up: p95 {} ms", at(0.95));
+    assert_eq!(empty, 0, "no page from the Mac brought only what the phone held");
+    mac.shutdown().await.unwrap();
+    phone.shutdown().await.unwrap();
+}
+
+/// A live edit's page is told as soon as the step that shows it is done, while the bulk is still being shown: a
+/// reactive reader (the node's stirs, no polling) reads the new text within a second of the Mac's write, though the
+/// catch-up goes on (`LivePriority.lean`'s `fresh_entries_show_in_the_first_step`). It was stirred once, after the
+/// whole catch-up was caught.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_live_edits_page_is_told_while_the_bulk_is_still_shown() {
+    const BULK: usize = 1500;
+    let mut w = world();
+    let (sender, receiver, alice) = (w.mac_a, w.phone_a, w.alice);
+    w.lab.sync_all(0);
+    let chat = w.lab.create(sender, alice, alice, "note", &[], document("Chat", "hello", sender)).unwrap();
+    w.lab.sync(sender, receiver);
+    let notes: Vec<EntryId> = (0..BULK)
+        .map(|i| w.lab.create(sender, alice, alice, "note", &[], document(&format!("Note {i}"), "In May.", sender)).unwrap())
+        .collect();
+    let mac = Node::spawn(w.lab.split(sender, &[], [63; 32]), sender, Options { page: 16 << 10, ..Options::local() }).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [64; 32]), receiver, Options { window: 1, ..Options::local() }).await.unwrap();
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    let shown = async |n: &Node| {
+        let notes = notes.clone();
+        n.read(move |lab, me| notes.iter().filter(|e| lab.item(me, **e).is_some()).count()).await
+    };
+    time::timeout(Duration::from_secs(60), async { while shown(&phone).await < 20 { time::sleep(Duration::from_millis(5)).await } })
+        .await
+        .expect("the catch-up starts showing");
+    let mut stirs = phone.stirs();
+    let began = Instant::now();
+    mac.act(move |lab, me| lab.edit(me, alice, chat, |item| item.set_text(2, "live")).unwrap()).await;
+    let read = time::timeout(Duration::from_secs(1), async {
+        loop {
+            stirs.borrow_and_update();
+            if phone.read(move |lab, me| avendb::cast::text(lab, me, chat, 2).as_deref() == Some("live")).await {
+                break began.elapsed();
+            }
+            stirs.changed().await.expect("stirs stay open");
+        }
+    })
+    .await
+    .expect("a reader told by the node's stirs reads the live edit within a second");
+    let left = BULK - shown(&phone).await;
+    eprintln!("LIVE_STIRRED {}", serde_json::json!({ "read_ms": read.as_secs_f64() * 1000.0, "notes_not_shown_yet": left }));
+    assert!(left > 0, "the bulk was still being shown");
+    mac.shutdown().await.unwrap();
+    phone.shutdown().await.unwrap();
+}
+
+/// Freshness costs a walk per change, not per read (`fresh.rs`): a phone 600 logs behind a Mac, its background pages
+/// held, reads 1,000 times (3,028 logs measured the same once, 2026-10-27: 1 walk, 50 ms for the 1,000 reads; kept
+/// smaller here for CI's time) (a query and `aips` in turn). Every read is behind, and the walk of what the Mac holds
+/// against what the phone holds runs once per change of what either holds or of who is live, never once per read.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_thousand_reads_walk_once_per_change() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let phone_lab = w.lab.split(receiver, &[], [57; 32]);
+    for i in 0..600 {
+        w.lab.create(sender, coop, coop, "doc", &[], document(&format!("Log {i}"), "history", sender)).unwrap();
+    }
+    let mac = Node::spawn(w.lab.split(sender, &[], [58; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(phone_lab, receiver, Options::local()).await.unwrap();
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.shared.connection(mac.id()).await.unwrap();
+    wait_for(async || phone.shared.differ(sender).await.len() > 500).await;
+    let reads = [serde_json::json!({"op": "query", "vault": coop.to_hex(), "where": {"type": ["doc"]}}),
+        serde_json::json!({"op": "aips"})];
+    let key = || (phone.shared.fresh.walks.load(std::sync::atomic::Ordering::Relaxed), *phone.shared.size.borrow());
+    let (walks, _) = key();
+    let mut keys = std::collections::BTreeSet::new();
+    let moved = || phone.shared.fresh.moved_count();
+    let mut behind = 0;
+    let started = std::time::Instant::now();
+    for i in 0..1000 {
+        keys.insert((moved(), *phone.shared.size.borrow()));
+        let answer = phone.op(reads[i % 2].clone()).await.unwrap();
+        if answer["fresh"]["state"] == "behind" { behind += 1; }
+    }
+    let took = started.elapsed();
+    keys.insert((moved(), *phone.shared.size.borrow()));
+    let walked = key().0 - walks;
+    let logs = phone.shared.differ(sender).await.len();
+    drop(stalled);
+    phone.shutdown().await.unwrap();
+    mac.shutdown().await.unwrap();
+    eprintln!("1000 reads, {logs} logs behind: {walked} walks, {} changes seen, {behind} behind, {took:?}", keys.len());
+    assert_eq!(behind, 1000, "every read is behind while the logs are");
+    // at most one walk per change seen of what the peer or the device holds (an announcement may still land)
+    assert!(walked <= keys.len() as u64, "{walked} walks for {} changes", keys.len());
+}
+
+#[test]
+fn a_hint_tells_its_witnesses_from_the_logs_it_changed() {
+    use avendb::wire::Frontier;
+    let log = |n| LogId::Entry(EntryId::from_u64(n));
+    let at = |b: u8| Frontier { heads: vec![EditId([b; 32])], waiting: vec![] };
+    let held = Holdings { logs: [(log(1), at(1)), (log(2), at(2))].into_iter().collect(), ..Default::default() };
+    let announce = Announce { logs: vec![(log(1), at(9)), (log(2), at(2)), (log(3), at(3))], ..Default::default() };
+    let hinted = announced_hints(&held, &announce);
+    assert_eq!(
+        super::unchanged(&held, &announce, &hinted),
+        vec![(log(1), false), (log(2), true), (log(3), false)],
+        "a changed or new log is no witness; a repeated frontier is"
+    );
+    // a log any coalesced hint changed is no witness, whatever another repeated
+    let budget = pulls::Budget::default();
+    let peer = SignerId([7; 32]);
+    budget.note_witnesses(peer, vec![(log(1), false), (log(2), true), (log(4), true)]);
+    budget.note_witnesses(peer, vec![(log(1), true), (log(2), false)]);
+    assert_eq!(budget.take_witnesses(peer, &[log(1), log(2), log(4)].into()), [log(4)].into());
+    assert!(budget.take_witnesses(peer, &[log(4)].into()).is_empty(), "a log is taken once");
 }

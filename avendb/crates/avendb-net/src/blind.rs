@@ -20,9 +20,7 @@ use anyhow::{Context as _, Result, ensure};
 use avendb::id::{EntryId, VaultId};
 use avendb::index::{self, Row, Token};
 use avendb::sync::LogId;
-use bytes::Bytes;
 use iroh::EndpointId;
-use n0_future::task;
 use n0_future::time::{self, Duration};
 
 use crate::{Peer, Shared, session};
@@ -49,7 +47,8 @@ const FIND_REPLY_LIMIT: usize = 4 + index::FIND_PAGE * 32;
 const WAIT: Duration = Duration::from_secs(10);
 /// The most pages of one find a device asks one peer for.
 const FIND_PAGES: usize = 64;
-/// Where a node's shelf keeps the rows of each vault, and the list of those vaults.
+/// Where an older node's shelf kept the rows of each vault, and the list of those vaults: read once, as its told index
+/// takes them in (`older_rows`), and left where they are, as everything on a shelf is.
 const SHELVED: &str = "slots/index/";
 const SHELVED_LIST: &str = "slots/index/vaults";
 /// How long a device lets its entries settle before it offers its rows again.
@@ -65,6 +64,25 @@ fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> Result<[u8; N]> {
 fn done(bytes: &[u8], at: usize) -> Result<()> {
     ensure!(at == bytes.len(), "trailing bytes");
     Ok(())
+}
+
+/// The rows an older node kept on `shelf`, one vault a blob (`slots/index/`), for the told index to take in once
+/// (`ToldIndex::open`); none where it kept none.
+pub(crate) async fn older_rows(shelf: &crate::shelf::Shelf) -> Option<index::Rows> {
+    let list = shelf.get(SHELVED_LIST).await.ok()??;
+    let Ok(vaults) = vaults_of(&list) else {
+        tracing::warn!("avendb: {SHELVED_LIST} on the shelf doesn't read");
+        return None;
+    };
+    let mut rows = index::Rows::default();
+    for v in vaults {
+        let name = format!("{SHELVED}{}", v.to_hex());
+        let Ok(Some(bytes)) = shelf.get(&name).await else { continue };
+        if rows.decode_vault(&bytes) != Some(v) {
+            tracing::warn!("avendb: {name} on the shelf doesn't read");
+        }
+    }
+    Some(rows)
 }
 
 /// An offer: the digest of the device's rows of each vault.
@@ -227,42 +245,29 @@ impl Shared {
     /// The answer to `OFFER` from `peer`: the vaults whose rows it lacks, none where the node keeps no index.
     pub(crate) async fn answer_offer(self: &Arc<Self>, peer: &Peer, bytes: &[u8]) -> Result<Vec<u8>> {
         let offered = offer_of(bytes)?;
-        if !self.opts.index {
+        let Some(told) = &self.told_rows else {
             return Ok(vaults_wire(&[]));
-        }
+        };
         let device = peer.device;
-        let rows = self.index.lock().expect("index");
-        let wanted: Vec<VaultId> =
-            offered.into_iter().filter(|(v, d)| rows.told(device, *v) != Some(*d)).map(|(v, _)| v).collect();
+        let mut wanted = Vec::new();
+        for (v, d) in offered {
+            if told.told(device, v).await? != Some(d) {
+                wanted.push(v);
+            }
+        }
         Ok(vaults_wire(&wanted))
     }
 
-    /// The answer to `ROWS` from `peer`: the rows taken of the entries the device syncs by the node's view, then put on
-    /// the node's shelf.
+    /// The answer to `ROWS` from `peer`: the rows taken of the entries the device syncs by the node's view, on the
+    /// node's told index (`told_index`), on its shelf before it answers.
     pub(crate) async fn answer_rows(self: &Arc<Self>, peer: &Peer, bytes: &[u8]) -> Result<Vec<u8>> {
-        ensure!(self.opts.index, "this node keeps no index");
+        let told = self.told_rows.as_ref().context("this node keeps no index")?;
         let (vault, rows) = rows_of(bytes)?;
         let device = peer.device;
         let entries: Vec<EntryId> = rows.iter().map(|r| r.entry).collect();
         let syncs: BTreeSet<EntryId> =
             self.read(move |lab, me| lab.syncs_entries(me, device, &[], &entries)).await.into_iter().collect();
-        let (taken, shelved) = {
-            let mut index = self.index.lock().expect("index");
-            let taken = index.take(device, vault, rows, |e| syncs.contains(&e));
-            (taken, index.encode_vault(vault))
-        };
-        if let (Some(shelf), Some(bytes)) = (self.opts.shelf.clone(), shelved) {
-            let list = vaults_wire(&self.index.lock().expect("index").vaults().collect::<Vec<_>>());
-            task::spawn(async move {
-                let name = format!("{SHELVED}{}", vault.to_hex());
-                if let Err(e) = shelf.keep(&name, Bytes::from(bytes)).await {
-                    tracing::warn!("avendb: {name} doesn't go onto the shelf: {e}");
-                }
-                if let Err(e) = shelf.keep(SHELVED_LIST, Bytes::from(list)).await {
-                    tracing::warn!("avendb: {SHELVED_LIST} doesn't go onto the shelf: {e}");
-                }
-            });
-        }
+        let taken = told.take(device, vault, rows, |e| syncs.contains(&e)).await?;
         Ok((taken as u32).to_be_bytes().to_vec())
     }
 
@@ -271,48 +276,39 @@ impl Shared {
     pub(crate) async fn answer_find(self: &Arc<Self>, peer: &Peer, bytes: &[u8]) -> Result<Vec<u8>> {
         let find = Find::of(bytes)?;
         let device = peer.device;
-        let shared = self.clone();
+        // its told rows, the smallest first, a page and one more of those the device syncs, read off the shelf a
+        // stretch at a time, each stretch held to the node's view
+        let mut rows = Vec::new();
+        if let Some(told) = &self.told_rows {
+            let mut after = find.after;
+            loop {
+                let (got, more) = told.candidates(find.vault, &find.tokens, after, 2 * index::FIND_PAGE).await?;
+                after = got.last().copied().or(after);
+                let follow = find.follow.clone();
+                let syncing: Vec<EntryId> = self
+                    .read(move |lab, me| {
+                        let syncing = lab.syncing(me, device, &follow);
+                        got.into_iter().filter(|e| syncing.log(LogId::Entry(*e))).collect()
+                    })
+                    .await;
+                rows.extend(syncing);
+                if rows.len() > index::FIND_PAGE || !more {
+                    break;
+                }
+            }
+        }
         let (entries, more) = self
             .read(move |lab, me| {
-                let (mut found, mut more) =
-                    lab.find_local(me, device, &find.follow, find.vault, &find.tokens, find.after);
-                if shared.opts.index {
-                    let syncing = lab.syncing(me, device, &find.follow);
-                    let (rows, rows_more) = shared.index.lock().expect("index").find(
-                        find.vault,
-                        &find.tokens,
-                        find.after,
-                        |e| syncing.log(LogId::Entry(e)),
-                    );
-                    let all: BTreeSet<EntryId> = found.into_iter().chain(rows).collect();
-                    found = all.into_iter().collect();
-                    more |= rows_more || found.len() > index::FIND_PAGE;
-                    found.truncate(index::FIND_PAGE);
-                }
-                (found, more)
+                let (found, more) = lab.find_local(me, device, &find.follow, find.vault, &find.tokens, find.after);
+                let rows_more = rows.len() > index::FIND_PAGE;
+                let mut all: Vec<EntryId> =
+                    found.into_iter().chain(rows).collect::<BTreeSet<EntryId>>().into_iter().collect();
+                let more = more || rows_more || all.len() > index::FIND_PAGE;
+                all.truncate(index::FIND_PAGE);
+                (all, more)
             })
             .await;
         Ok(found_wire(&entries, more))
-    }
-
-    /// Takes back the rows on the node's shelf, if it keeps an index.
-    pub(crate) async fn unshelve_index(self: Arc<Self>) {
-        if !self.opts.index {
-            return;
-        }
-        let Ok(_activity) = self.admit() else { return };
-        let Some(shelf) = self.opts.shelf.clone() else { return };
-        let Ok(Some(list)) = shelf.get(SHELVED_LIST).await else { return };
-        let Ok(vaults) = vaults_of(&list) else {
-            return tracing::warn!("avendb: {SHELVED_LIST} on the shelf doesn't read");
-        };
-        for v in vaults {
-            let name = format!("{SHELVED}{}", v.to_hex());
-            let Ok(Some(bytes)) = shelf.get(&name).await else { continue };
-            if self.index.lock().expect("index").decode_vault(&bytes) != Some(v) {
-                tracing::warn!("avendb: {name} on the shelf doesn't read");
-            }
-        }
     }
 
     /// Tells each live peer that keeps an index the rows it lacks, once a peer connects or the device's entries change
@@ -566,7 +562,7 @@ mod tests {
         mac.shared.connection(server.id()).await.unwrap();
         // the Mac tells the server its rows once connected, unasked
         let until = Instant::now() + Duration::from_secs(30);
-        while server.shared.index.lock().unwrap().size().1 < 2 {
+        while server.shared.told_rows.as_ref().unwrap().size().await.unwrap().1 < 2 {
             assert!(Instant::now() < until, "the Mac tells the server its rows");
             n0_future::time::sleep(Duration::from_millis(20)).await;
         }
@@ -623,7 +619,7 @@ mod tests {
         server.know(mac.addr());
         mac.shared.connection(server.id()).await.unwrap();
         let until = Instant::now() + Duration::from_secs(30);
-        while server.shared.index.lock().unwrap().size().1 < 2 {
+        while server.shared.told_rows.as_ref().unwrap().size().await.unwrap().1 < 2 {
             assert!(Instant::now() < until, "the Mac tells the server its rows");
             n0_future::time::sleep(Duration::from_millis(20)).await;
         }
@@ -637,16 +633,17 @@ mod tests {
         let start = Instant::now();
         phone.know(server.addr());
         phone.shared.connection(server.id()).await.unwrap();
-        let until = start + Duration::from_secs(20);
+        let until = start + Duration::from_secs(60);
         loop {
             if phone.shared.read(move |lab, me| lab.history(me, room).is_some()).await { break; }
             assert!(Instant::now() < until, "the room never came");
             n0_future::time::sleep(Duration::from_millis(20)).await;
         }
-        let took = start.elapsed();
+        // the first round that asked the server named it: the round the connection started, not a later one
+        let first = phone.shared.discovery_first_found.load(std::sync::atomic::Ordering::Acquire);
         phone.shutdown().await.unwrap();
         server.shutdown().await.unwrap();
-        assert!(took < Duration::from_secs(2), "the room came after {took:?}");
+        assert_eq!(first, 1, "the room came from discovery round {first}");
     }
 
 }

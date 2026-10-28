@@ -439,7 +439,7 @@ impl Decode for bool {
 
 impl Decode for PublicKey {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(PublicKey { xwing: r.bytes()?, mceliece: BlobId::decode(r)? })
+        Ok(PublicKey { xwing: r.bytes()?.into(), mceliece: BlobId::decode(r)? })
     }
 }
 
@@ -484,7 +484,7 @@ impl Decode for Recipient {
 
 impl Decode for KeyBox {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(KeyBox { to: Recipient::decode(r)?, bytes: r.bytes()? })
+        Ok(KeyBox { to: Recipient::decode(r)?, bytes: r.bytes()?.into() })
     }
 }
 
@@ -684,7 +684,7 @@ impl Decode for Body {
             }
             defines = Some(CapGroup::decode(r)?);
         }
-        Ok(Body { header, tags, answers, content, proof, files, defines })
+        Ok(Body { header, tags, answers, content: content.into(), proof, files, defines })
     }
 }
 
@@ -875,7 +875,7 @@ impl Decode for Action {
                 via: r.seq(32)?,
                 create: r.option()?,
                 files: r.set(40)?,
-                body: r.bytes()?,
+                body: r.bytes()?.into(),
             },
             // its audience and its wants, each there or not; the rules, not the format, say a mark marks something
             5 => Action::Mark {
@@ -1540,7 +1540,7 @@ mod tests {
         let wrap = crate::policy::Wrap {
             name: KeyName::Entry(entry, None, 0),
             id: KeyId([8; 32]),
-            boxed: KeyBox { to: Recipient::Key { name: KeyName::Entry(entry, Some(EditId([9; 32])), 0), id: KeyId([10; 32]) }, bytes: vec![1, 2, 3] },
+            boxed: KeyBox { to: Recipient::Key { name: KeyName::Entry(entry, Some(EditId([9; 32])), 0), id: KeyId([10; 32]) }, bytes: vec![1, 2, 3].into() },
         };
         let wraps = Action::Wraps { entry, wraps: vec![wrap.clone(), wrap] };
         let checkpoint = Action::Checkpoint { vault: VaultId([5; 32]), covers: vec![EditId([11; 32]), EditId([12; 32])] };
@@ -1732,7 +1732,7 @@ mod tests {
             via: vec![],
             create: None,
             files,
-            body: vec![7],
+            body: vec![7].into(),
         };
         let edit = |files| {
             Edit { parents: vec![], depth: 0, author: SignerId([3; 32]), cosigners: vec![], action: action(files) }

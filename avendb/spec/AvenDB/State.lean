@@ -90,11 +90,11 @@ def Entry.stayAudience (en : Entry) (s : Option EditId) : Option Audience := (en
 /-- An accepted edit: one encrypted Loro update to one entry, on one line of its history (`history`), under the key of
     one of the entry's stays at one epoch of its audience. `deps` are the writes of the same entry it builds on (its
     Loro frontier when it was made): accepted writes stay causally closed (T14), so a write whose dependency is cut is
-    cut too. Its author, a device, acts for `actor` through the owners `via` (`actsVia`). -/
+    cut too. Its author, a device, acts for `signer` through the owners `via` (`actsVia`). -/
 structure Write where
   edit     : EditId
   author   : SignerId
-  actor    : VaultId
+  signer   : VaultId
   entry    : EntryId
   stay     : Option EditId
   epoch    : Nat
@@ -186,7 +186,7 @@ def counted (st : State) : List Write := st.writes.filter fun w => !st.uncounted
 
 /-- The vaults whose counted writes of entry `e` added the row at place `row` (`adds`). -/
 def addedBy (st : State) (e : EntryId) (row : Ops.Loc) : List VaultId :=
-  (st.counted.filter fun w => w.entry == e && (st.adds.lookup w.edit).any (·.contains row)).map (·.actor)
+  (st.counted.filter fun w => w.entry == e && (st.adds.lookup w.edit).any (·.contains row)).map (·.signer)
 
 /-- Place `l` of entry `e` is vault `a`'s own: the innermost row it lies in was added by `a`'s counted writes and no
     one else's, or it lies in no row and `a`'s counted write created the entry. Every reader of the entry holds its
@@ -195,7 +195,7 @@ def addedBy (st : State) (e : EntryId) (row : Ops.Loc) : List VaultId :=
 def owns (st : State) (a : VaultId) (e : EntryId) (l : Ops.Loc) : Bool :=
   match l.row? with
   | some r => let vs := st.addedBy e r; !vs.isEmpty && vs.all (· == a)
-  | none => st.counted.any fun w => w.entry == e && w.first && w.actor == a
+  | none => st.counted.any fun w => w.entry == e && w.first && w.signer == a
 
 /-- A write's touches as its readers judge them for vault `a` writing entry `e`: each set at a place that is `a`'s own
     marked own (`Touch.own`), each other set not, whatever the write claims, and every other touch as it is. -/
@@ -325,8 +325,8 @@ def mayCreate (st : State) (a v : VaultId) (x : Audience) : Bool :=
     its own place in the replay too, so a removal takes from a write only what it took from it there: a mark between
     them doesn't hand the removal writes that never rested on what it takes away. -/
 def authorized (st : State) (w : Write) : Bool :=
-  actsVia st w.author w.via w.actor && match st.entry? w.entry with
-    | some en => mayWrite st w.actor { en with stays := [(w.stay, w.audience)] }
+  actsVia st w.author w.via w.signer && match st.entry? w.entry with
+    | some en => mayWrite st w.signer { en with stays := [(w.stay, w.audience)] }
     | none    => false
 
 /-! ## Cap groups
@@ -624,7 +624,7 @@ stands for: what the schemas the write's entry was written under let it hold (`S
     read. -/
 def inLane (st : State) (v : VaultId) (en : Entry) : Bool :=
   en.vault == v && schemaTypes.contains en.attrs.type &&
-    st.counted.any fun w => w.entry == en.id && w.first && w.actor == v && w.proposal == .main
+    st.counted.any fun w => w.entry == en.id && w.first && w.signer == v && w.proposal == .main
 
 /-- Vault `v`'s schema lane, as its readers read it: the blob of each entry that puts one there, in the order the
     entries were created, each blob once, so a blob created again adds nothing. -/

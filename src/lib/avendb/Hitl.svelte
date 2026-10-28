@@ -11,7 +11,10 @@
 	(./ProposedAssets.svelte), so the vault sees what it would accept. At its foot, in the middle: Decline, Revise and
 	Accept, one review over every part. Revise asks for a few words that go back to whoever proposed. On a touch screen
 	a swipe answers too: right accepts, left declines, up revises. Accepting applies every part at once. "Later" puts the stack away until a new AIP arrives; a
-	pill above the nav brings it back.
+	pill above the nav brings it back. It stands behind the AIPs read's freshness (./fresh.js, avendb/spec/AvenDB/
+	Freshness.lean): it rises by itself only from current data; while the device is behind on the AIPs nothing shows or
+	counts, so an AIP accepted long ago never asks again; offline the pill brings it up, and an answer runs once the person
+	said they act on data as of then (./ActGuard.svelte).
 
 	Acting as a vault that proposed (an aven), the cards are the revisions asked of it, each with the words it was sent
 	and the AIP to open.
@@ -30,6 +33,9 @@
 	import { answering, asksOf, countsOf, detail, lead, newsOf, objectiveLine, revisionsOf, signed, top as topOf } from './hitl.js';
 	import { nameOf } from './vaults.js';
 	import { aips as held } from './aips.svelte.js';
+	import Fresh from './Fresh.svelte';
+	import ActGuard from './ActGuard.svelte';
+	import { mayAct, opensOn, showsFinal } from './fresh.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, vault: string, busy: boolean,
@@ -45,10 +51,14 @@
 	const aips = $derived(/** @type {import('./hitl.js').Aip[]} */ (held.list));
 	onMount(() => held.hold());
 
-	const asks = $derived(asksOf(vault, aips));
-	const revisions = $derived(revisionsOf(vault, aips));
+	// how fresh they are (Freshness.lean, ./fresh.js): while the device is behind on them, an AIP accepted long ago may
+	// still read as waiting, so nothing here is shown or counted from them; offline they show, said to be as of then
+	const fresh = $derived(held.fresh);
+	const final = $derived(showsFinal(fresh));
+	const asks = $derived(final ? asksOf(vault, aips) : []);
+	const revisions = $derived(final ? revisionsOf(vault, aips) : []);
 
-	$effect(() => oncounts(countsOf(answers, aips)));
+	$effect(() => oncounts(final ? countsOf(answers, aips) : {}));
 
 	/** the cards put away for later, by AIP and the version of its lines */
 	let later = $state(/** @type {string[]} */ ([]));
@@ -59,6 +69,11 @@
 	const waiting = $derived(asks.filter((a) => !later.includes(keyOf(a))));
 	const told = $derived(revisions.filter((r) => !seen.includes(reviewOf(r))));
 	let open = $state(true);
+	// whether the person brought the stack up (the pill): it rises by itself only from current data (`opensOn`), and
+	// offline only when asked, saying it acts on data as of then
+	let asked = $state(false);
+	let confirmed = $state(false);
+	const rises = $derived(opensOn(fresh, asked));
 	// an AIP that wasn't there before opens the stack again
 	let known = new Set();
 	$effect(() => {
@@ -70,6 +85,7 @@
 	$effect(() => {
 		vault;
 		open = true;
+		asked = false;
 	});
 
 	const top = $derived(waiting[0]);
@@ -85,7 +101,7 @@
 
 	/** Answer the top card with `verdict`: one review over every part. @param {import('./hitl.js').Verdict} verdict */
 	async function answer(verdict) {
-		if (!top || busy) return;
+		if (!top || busy || !mayAct(fresh, confirmed)) return;
 		if (verdict === 'revise' && !revising) return void (revising = true);
 		if (verdict === 'revise' && !words.trim()) return;
 		const what = { accepted: 'Accepting', declined: 'Declining', revise: 'Asking for a revision of' };
@@ -116,7 +132,7 @@
 	}
 </script>
 
-{#if open && (top || told.length)}
+{#if open && rises && (top || told.length)}
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 	<div class="scrim" transition:fade={{ duration: 180 }} onclick={() => (open = false)}></div>
 	<div class="stack" role="dialog" aria-modal="true" aria-labelledby="hitl-title" transition:fly={{ y: 640, duration: 280, opacity: 1 }}>
@@ -174,15 +190,17 @@
 					{#if top.reviews[0]}You answered an earlier version: {top.reviews[0].verdict}.{/if}
 				</p>
 
+				<Fresh {fresh} />
+				<ActGuard {fresh} bind:confirmed />
 				{#if revising}
 					<textarea bind:value={words} rows="3" placeholder="What should {nameOf(from)} change?"></textarea>
 				{/if}
 				<div class="answers">
-					<button class="btn" disabled={busy} onclick={() => answer('declined')}><Icon name="close" size={14} />Decline</button>
-					<button class="btn" disabled={busy || (revising && !words.trim())} onclick={() => answer('revise')}>
+					<button class="btn" disabled={busy || !mayAct(fresh, confirmed)} onclick={() => answer('declined')}><Icon name="close" size={14} />Decline</button>
+					<button class="btn" disabled={busy || !mayAct(fresh, confirmed) || (revising && !words.trim())} onclick={() => answer('revise')}>
 						<Icon name="proposal" size={14} />{revising ? 'Send' : 'Revise'}
 					</button>
-					<button class="btn primary" disabled={busy} onclick={() => answer('accepted')}><Icon name="check" size={14} />Accept</button>
+					<button class="btn primary" disabled={busy || !mayAct(fresh, confirmed)} onclick={() => answer('accepted')}><Icon name="check" size={14} />Accept</button>
 				</div>
 				<button class="later link" onclick={() => (later = [...later, ...waiting.map(keyOf)])}>Later</button>
 			</article>
@@ -205,8 +223,8 @@
 			</article>
 		{/if}
 	</div>
-{:else if !open && (waiting.length || told.length)}
-	<button class="waiting" use:foot={FOOT.waiting} transition:fade={{ duration: 150 }} onclick={() => ((later = []), (open = true))}>
+{:else if (!open || !rises) && (waiting.length || told.length)}
+	<button class="waiting" use:foot={FOOT.waiting} transition:fade={{ duration: 150 }} onclick={() => ((later = []), (open = true), (asked = true))}>
 		{waiting.length + told.length} waiting for you
 	</button>
 {/if}

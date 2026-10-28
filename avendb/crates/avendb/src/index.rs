@@ -209,6 +209,26 @@ impl Rows {
         (out, more)
     }
 
+    /// Every row it keeps, vault by vault: the digest each device last told, and each device's row of each entry, in
+    /// the order of the entries and then the devices. What a node's told index on its shelf takes in from it.
+    #[allow(clippy::type_complexity)]
+    pub fn told_rows(&self) -> Vec<(VaultId, Vec<(SignerId, [u8; 32])>, Vec<(SignerId, Row)>)> {
+        self.vaults
+            .iter()
+            .map(|(v, at)| {
+                let told = at.told.iter().map(|(d, x)| (*d, *x)).collect();
+                let rows = at
+                    .entries
+                    .iter()
+                    .flat_map(|(e, of)| {
+                        of.iter().map(|(d, (epoch, tokens))| (*d, Row { entry: *e, epoch: *epoch, tokens: tokens.clone() }))
+                    })
+                    .collect();
+                (*v, told, rows)
+            })
+            .collect()
+    }
+
     /// The vaults it keeps rows of.
     pub fn vaults(&self) -> impl Iterator<Item = VaultId> + '_ {
         self.vaults.keys().copied()
@@ -274,6 +294,123 @@ impl Rows {
         (r.at == bytes.len()).then_some(())?;
         self.vaults.insert(vault, at);
         Some(vault)
+    }
+}
+
+/// The label of a link to entry `entry`: an entry that links to it carries it, so the entries that link to one (a
+/// room's messages, a post's comments) are found as a type or a tag is.
+pub fn link_label(entry: EntryId) -> String {
+    format!("link:{}", entry.to_hex())
+}
+
+/// The shared index (B1, `SharedIndex.lean`): the rows a device derives from what its edits say, kept on its shelf
+/// (`avendb-net`'s `shared_index`), blind as the rows it tells are. Each key names its entry, last, so an entry's rows
+/// are its own, and its rows are a function of the state alone:
+///
+/// - `L` + a token (16 bytes) + the entry's creation, newest first (8) + the entry -> the epoch: one for each token of
+///   its row, its type's, its tags' and its links', so a scan of one token lists the entries of a type, a tag or a link
+///   in one audience, the newest first;
+/// - `O` + its audience + its creation, newest first + the entry -> the epoch: the entries of an audience, the newest
+///   first;
+/// - `E` + the entry -> its audience, epoch, creation and tokens, which say every other key of it, so that a save takes
+///   out what the index held of an entry without the state it held then.
+///
+/// An entry's creation is the depth of its creation edit, which every node holding it reads alike, then its id; a key
+/// holds it turned over (`newest`), so that a scan forward, the one way the index scans, comes to the newest first.
+pub mod shared {
+    use super::{AudienceId, EntryId, Token};
+
+    pub const LABEL: u8 = b'L';
+    pub const ORDER: u8 = b'O';
+    pub const ENTRY: u8 = b'E';
+
+    /// An entry's rows: what its `E` row holds.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Of {
+        pub entry: EntryId,
+        pub audience: AudienceId,
+        pub epoch: u64,
+        pub created: u64,
+        pub tokens: Vec<Token>,
+    }
+
+    /// A creation as a key holds it: the newest first.
+    pub fn newest(created: u64) -> [u8; 8] {
+        (!created).to_be_bytes()
+    }
+
+    /// The creation a key's 8 bytes from `newest` hold.
+    pub fn created(bytes: [u8; 8]) -> u64 {
+        !u64::from_be_bytes(bytes)
+    }
+
+    pub fn label_key(token: &Token, created: u64, entry: EntryId) -> Vec<u8> {
+        [&[LABEL][..], token, &newest(created), &entry.0].concat()
+    }
+
+    pub fn order_key(audience: AudienceId, created: u64, entry: EntryId) -> Vec<u8> {
+        [&[ORDER][..], &audience.0, &newest(created), &entry.0].concat()
+    }
+
+    pub fn entry_key(entry: EntryId) -> Vec<u8> {
+        [&[ENTRY][..], &entry.0].concat()
+    }
+
+    /// The first key of the rows of `token`, for a scan.
+    pub fn label_prefix(token: &Token) -> Vec<u8> {
+        [&[LABEL][..], token].concat()
+    }
+
+    /// The first key of the rows of audience `audience` in the order created, for a scan.
+    pub fn order_prefix(audience: AudienceId) -> Vec<u8> {
+        [&[ORDER][..], &audience.0].concat()
+    }
+
+    /// The entry a key of the index is a row of (`Rows.owner`): its last 32 bytes.
+    pub fn owner(key: &[u8]) -> Option<EntryId> {
+        let at = key.len().checked_sub(32)?;
+        Some(EntryId(key[at..].try_into().ok()?))
+    }
+
+    impl Of {
+        /// Its rows, its `E` row last.
+        pub fn rows(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
+            let epoch = self.epoch.to_be_bytes().to_vec();
+            let mut out: Vec<(Vec<u8>, Vec<u8>)> =
+                self.tokens.iter().map(|t| (label_key(t, self.created, self.entry), epoch.clone())).collect();
+            out.push((order_key(self.audience, self.created, self.entry), epoch));
+            out.push((entry_key(self.entry), self.to_bytes()));
+            out
+        }
+
+        /// Every key of its rows.
+        pub fn keys(&self) -> Vec<Vec<u8>> {
+            self.rows().into_iter().map(|(k, _)| k).collect()
+        }
+
+        pub fn to_bytes(&self) -> Vec<u8> {
+            let mut out = Vec::with_capacity(48 + 16 * self.tokens.len());
+            out.extend_from_slice(&self.audience.0);
+            out.extend_from_slice(&self.epoch.to_be_bytes());
+            out.extend_from_slice(&self.created.to_be_bytes());
+            for t in &self.tokens {
+                out.extend_from_slice(t);
+            }
+            out
+        }
+
+        /// Its `E` row's value read back; `None` for bytes `to_bytes` didn't write.
+        pub fn from_bytes(entry: EntryId, bytes: &[u8]) -> Option<Of> {
+            let (head, rest) = bytes.split_at_checked(48)?;
+            if rest.len() % 16 != 0 || rest.len() / 16 > super::ROW_TOKENS {
+                return None;
+            }
+            let audience = AudienceId(head[..32].try_into().ok()?);
+            let epoch = u64::from_be_bytes(head[32..40].try_into().ok()?);
+            let created = u64::from_be_bytes(head[40..48].try_into().ok()?);
+            let tokens = rest.chunks(16).map(|c| c.try_into().expect("16 bytes")).collect();
+            Some(Of { entry, audience, epoch, created, tokens })
+        }
     }
 }
 

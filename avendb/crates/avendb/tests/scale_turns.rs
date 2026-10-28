@@ -162,21 +162,62 @@ fn breakdown(before: &serde_json::Value, after: &serde_json::Value) -> String {
     )
 }
 
-/// A catch-up of device `d` a step at a time, each step timed as `what`, the last one, `Caught`, as `last`.
+/// The time a node aims a catch-up step at, with `SCALE_ADAPTIVE=1` (avendb-net's `CATCH_UP_TURN`).
+const CATCH_UP_TURN: Duration = Duration::from_millis(16);
+
+/// The budget of a catch-up's next step as a node sets it (avendb-net's `catch_up_budget`): scaled down to the step
+/// time it aims at, doubled when a step took under half of it.
+fn catch_up_budget(budget: usize, took: Duration) -> usize {
+    let (took, turn) = (took.as_micros().max(1), CATCH_UP_TURN.as_micros());
+    let next = if took > turn {
+        (budget as u128 * turn / took) as usize
+    } else if took * 2 < turn {
+        budget.saturating_mul(2)
+    } else {
+        budget
+    };
+    next.clamp(1, SHOW * 4)
+}
+
+/// Each step's time, with whether it showed entries, and its p50, p95 and max.
+fn percentiles(what: &str, steps: &[(Duration, bool)]) {
+    for (kind, only_show) in [("every step", false), ("show steps", true)] {
+        let mut t: Vec<Duration> = steps.iter().filter(|(_, s)| !only_show || *s).map(|(t, _)| *t).collect();
+        if t.is_empty() {
+            continue;
+        }
+        t.sort();
+        let at = |q: usize| t[((t.len() * q).div_ceil(100)).max(1) - 1];
+        let sum: Duration = t.iter().sum();
+        eprintln!("SCALE   {what}, {kind}: {} steps, in all {sum:.1?}, p50 {:.1?}, p95 {:.1?}, max {:.1?}", t.len(), at(50), at(95), t[t.len() - 1]);
+    }
+}
+
+/// A catch-up of device `d` a step at a time, each step timed as `what`, the last one, `Caught`, as `last`; with
+/// `SCALE_ADAPTIVE=1` each step's budget set by the last one's time, as a node sets it.
 fn catch_up(lab: &mut Lab, d: SignerId, turns: &mut Turns, [what, last]: [&'static str; 2]) {
+    let adaptive = env("SCALE_ADAPTIVE", 0) == 1;
+    let mut budget = SHOW;
+    let mut steps = vec![];
     for _ in 0..1_000_000 {
         let before = lab.perf(d);
         let at = Instant::now();
-        let step = lab.catch_up_step(d, SHOW);
+        let step = lab.catch_up_step(d, budget);
         let took = at.elapsed();
+        if adaptive {
+            budget = catch_up_budget(budget, took);
+        }
         let after = lab.perf(d);
         let why = breakdown(&before, &after);
         if took > TURN {
             eprintln!("SCALE   a long {what} ({took:.1?}, {step:?}): {why}");
         }
         let caught = matches!(step, CatchUp::Caught(_));
+        let shown = lab.perf(d)["timers"]["show items"]["total_ms"].as_f64() != before["timers"]["show items"]["total_ms"].as_f64();
+        steps.push((took, shown));
         turns.record(if caught { last } else { what }, took, why);
         if caught {
+            percentiles(what, &steps);
             return;
         }
     }
@@ -200,6 +241,7 @@ fn every_turn_is_short_at_a_servers_size() {
         }
     }
     catch_up(&mut lab, phone, &mut first, ["first sync: a catch-up step", "first sync: the last catch-up step"]);
+    eprintln!("SCALE the iPhone's first sync counts {}", lab.perf(phone)["counts"]);
     let held = lab.log(phone).edits().len();
     let entries = lab.entries(phone).len();
     eprintln!("SCALE the iPhone holds {held} edits, {entries} entries, set up in {:.1?}", setup.elapsed());

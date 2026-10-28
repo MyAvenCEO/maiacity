@@ -142,3 +142,59 @@ impl Drop for OpfsSpace {
         });
     }
 }
+
+/// A finished blob of the page's shelf as a file (`js/store.js`'s `file`), read in place by its spill
+/// (`avendb::lab::Placed`) through a `FileReaderSync`, which a worker alone has: the store's worker never holds a
+/// finished blob open, and never writes one again, so the file reads what it held.
+pub struct OpfsFile {
+    file: JsValue,
+    reader: JsValue,
+    size: u64,
+}
+
+// A page's WebAssembly runs on one thread, its worker's: the file never crosses to another.
+unsafe impl Send for OpfsFile {}
+unsafe impl Sync for OpfsFile {}
+
+impl std::fmt::Debug for OpfsFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpfsFile").field("size", &self.size).finish_non_exhaustive()
+    }
+}
+
+impl OpfsFile {
+    /// `file`, read where the page runs in a worker; none on a page's own thread, which has no `FileReaderSync`.
+    pub fn of(file: JsValue) -> Option<Arc<dyn Space>> {
+        let reader = get(&js_sys::global(), "FileReaderSync").ok()?.dyn_into::<Function>().ok()?;
+        let reader = Reflect::construct(&reader, &js_sys::Array::new()).ok()?;
+        let size = get(&file, "size").ok()?.as_f64()? as u64;
+        let file = OpfsFile { file, reader, size };
+        // read once here: a browser whose files of OPFS don't read in a worker spills its edits as it did, copied
+        file.read_at(0, &mut [0; 4][..size.min(4) as usize]).ok()?;
+        Some(Arc::new(file))
+    }
+}
+
+impl Space for OpfsFile {
+    fn append(&self, _: &[u8]) -> io::Result<u64> {
+        Err(io::Error::other("a shelf's file takes nothing"))
+    }
+
+    fn read_at(&self, at: u64, bytes: &mut [u8]) -> io::Result<()> {
+        let end = at + bytes.len() as u64;
+        if end > self.size {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+        let slice = call(&self.file, "slice", &[&(at as f64).into(), &(end as f64).into()]).map_err(io_error)?;
+        let read = Uint8Array::new(&call(&self.reader, "readAsArrayBuffer", &[&slice]).map_err(io_error)?);
+        if read.length() as usize != bytes.len() {
+            return Err(io::ErrorKind::UnexpectedEof.into());
+        }
+        read.copy_to(bytes);
+        Ok(())
+    }
+
+    fn len(&self) -> u64 {
+        self.size
+    }
+}

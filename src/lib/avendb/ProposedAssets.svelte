@@ -10,6 +10,7 @@
 <script>
 	import { untrack } from 'svelte';
 	import { proposedSource } from './assets.js';
+	import { onStir } from './stirs.svelte.js';
 
 	/**
 	 * @type {{ lines: { entry: string, line: string, type: string | null }[], ask: (op: any) => Promise<any>,
@@ -73,7 +74,7 @@
 		{/if}
 		{#if shown && viewer}
 			{#await viewer then { default: VaultAsset }}
-				<VaultAsset source={proposed.source} hash={shown.hash} title={shown.title} note={shown.note} {compact} />
+				<VaultAsset {onStir} source={proposed.source} hash={shown.hash} title={shown.title} note={shown.note} {compact} />
 			{/await}
 		{:else if !shown}
 			<p class="why">The asset it proposes is not shown: {proposed.why}</p>

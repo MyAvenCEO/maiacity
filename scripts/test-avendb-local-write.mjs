@@ -17,6 +17,8 @@ assert(!detailView || ['story','note'].includes(detailView));
 const worldView = process.argv.includes('--world-view');
 const coldChat = process.argv.includes('--cold-chat');
 const dmReuse = process.argv.includes('--dm-reuse');
+// G5 (batch 5): every message painted at once while the device takes 1.9 s to answer, as the iPhone's did on 27 Oct
+const paint = process.argv.includes('--paint');
 const remote = `
 const entry = 'a'.repeat(64), mine = 'b'.repeat(64);
 const messages = [], waiters = [];
@@ -82,9 +84,10 @@ export class Device {
    const rows=window.fixtureRoomDenied?[]:structuredClone(world.entries.filter(e=>e.type==='room'));
    const look=op.where?.all?.find(part=>part.path?.[0]==='look')?.eq;
    const selected=rows.filter(e=>(!op.vault || e.vault===op.vault) && (!look || e.record?.look===look));
-   // Pages by cursor as the engine does (Coverage.lean after_page): next names where the page ended.
-   const from=op.after?Number(JSON.parse(op.after)):(op.offset??0), to=from+(op.limit??50);
-   const reply={ok:{rows:selected.slice(from,to),count:selected.length,next:to<selected.length?JSON.stringify(to):null,coverage:{state:'complete'}}};
+   // Pages by cursor as the engine does (Coverage.lean after_page): next names where the page ended. A window
+   // (Chat's rooms, G1) is the newest n after its before, the next a full window answered, rows in order.
+   const from=op.window?Number(op.window.before?.split('.')[0]??0):op.after?Number(JSON.parse(op.after)):(op.offset??0), to=from+(op.window?.newest??op.limit??50);
+   const reply={ok:{rows:selected.slice(from,to),count:op.window?selected.slice(from,to).length:selected.length,next:to<selected.length?(op.window?to+'.'+selected[to-1].entry:JSON.stringify(to)):null,coverage:{state:'complete'}}};
    if(window.fixtureHoldQuery)await new Promise(resolve=>(window.queryWaiters??=[]).push(resolve));
    return reply;
   }
@@ -113,6 +116,7 @@ export class Device {
   if(op.op==='may')return {ok:op.ops.map(()=>true)};
   if(op.op==='creatable')return {ok:{tags:[]}};
   if(op.op==='taggable')return {ok:{tags:[]}};
+  if(op.op==='insert' && window.fixtureWriteDelay)await new Promise(r=>setTimeout(r,window.fixtureWriteDelay));
   if(op.op==='insert' && window.fixtureRefuse)return {refused:'NoCap',why:'NoCap'};
   if(op.op==='insert'){counts.writes++;messages.push({...op.value,by:{vault:mine},actor:mine});wake();return {ok:{entry}};}
   return {ok:null};
@@ -143,8 +147,9 @@ try {
   {worldView:true,collectionView:null,detailView:null},
   {worldView:false,collectionView:'sparks',detailView:null},
   {worldView:false,collectionView:'artifacts',detailView:null},
- ] : [{worldView,collectionView,detailView,coldChat,dmReuse}];
- for (const {worldView,collectionView,detailView,coldChat,dmReuse} of cases) {
+  {paint:true},
+ ] : [{worldView,collectionView,detailView,coldChat,dmReuse,paint}];
+ for (const {worldView,collectionView,detailView,coldChat,dmReuse,paint} of cases) {
  const context=await browser.newContext();
  try {
  await context.route('**/*',async route=>{
@@ -161,7 +166,56 @@ try {
  await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
  await page.getByRole('button',{name:'Unlock fixture'}).click();
  await page.getByTestId('phase').filter({hasText:'open'}).waitFor();
- if(dmReuse){
+ if(paint){
+  await page.waitForSelector('textarea');
+  await page.evaluate(()=>{window.fixtureWriteDelay=1900;});
+  // each message typed and sent from the keyboard: how long until it is in the page, and whether the next frame
+  // draws it (the frame after the key, measured in the page by requestAnimationFrame)
+  const sends=await page.evaluate(async n=>{
+   const box=document.querySelector('.composer textarea');
+   const frame=()=>new Promise(r=>requestAnimationFrame(()=>r(performance.now())));
+   const out=[];
+   for(let i=0;i<n;i++){
+    const text='Painted at once '+i;
+    box.value=text;box.dispatchEvent(new Event('input',{bubbles:true}));
+    await frame();await frame();
+    let shown=null;
+    const seen=new MutationObserver(()=>{if(shown===null&&[...document.querySelectorAll('.msg')].some(e=>e.textContent.includes(text)))shown=performance.now();});
+    seen.observe(document.body,{subtree:true,childList:true,characterData:true});
+    const t0=performance.now();
+    box.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+    const drawn=await frame();
+    await Promise.resolve();
+    seen.disconnect();
+    out.push({dom:shown===null?null:shown-t0,frame:drawn-t0,inFirstFrame:shown!==null&&shown<=drawn,cleared:box.value===''});
+   }
+   return out;
+  },40);
+  const dom=sends.map(s=>s.dom??Infinity).sort((a,b)=>a-b), frame=sends.map(s=>s.frame).sort((a,b)=>a-b);
+  const p=(xs,q)=>xs[Math.ceil(xs.length*q)-1];
+  const missed=sends.filter(s=>!s.inFirstFrame).length;
+  console.log('PAINT '+JSON.stringify({engine,sends:sends.length,device_ms:1900,dom_p50_ms:+p(dom,.5).toFixed(2),dom_p95_ms:+p(dom,.95).toFixed(2),frame_p95_ms:+p(frame,.95).toFixed(2),missed_first_frame:missed}));
+  assert(sends.every(s=>s.cleared),'the box empties as the message is sent');
+  assert.equal(missed,0,'every message is drawn in the frame after its key');
+  assert(p(dom,.95)<=16,'a message is in the page within 16 ms p95: '+p(dom,.95));
+  assert.equal(await page.locator('.msg').filter({hasText:'Painted at once'}).count(),40,'all 40 shown at once');
+  assert(await page.locator('.msg.pending').count()>0,'some still pending, the device still answering');
+  await page.waitForFunction(()=>window.fixtureCounts.writes===40,null,{timeout:10000});
+  await page.locator('.msg.pending').first().waitFor({state:'detached',timeout:5000});
+  assert.equal(await page.locator('.msg').filter({hasText:'Painted at once'}).count(),40,'each shown once, the answer holding it');
+  // W3: a refused message shows at once, then goes without a trace, its text back in the box
+  const before=await page.locator('.msg').count();
+  await page.evaluate(()=>{window.fixtureRefuse=true;window.fixtureWriteDelay=300;});
+  await page.locator('textarea').first().fill('refused but painted first');
+  await page.locator('textarea').first().press('Enter');
+  await page.locator('.msg.pending').filter({hasText:'refused but painted first'}).waitFor({timeout:100});
+  await page.waitForFunction(()=>window.fixtureSession.error.includes('Refused'));
+  await page.locator('.msg').filter({hasText:'refused but painted first'}).waitFor({state:'detached',timeout:1000});
+  assert.equal(await page.locator('.msg').count(),before);
+  assert.equal(await page.locator('textarea').first().inputValue(),'refused but painted first');
+  assert.deepEqual(errors,[]);
+  console.log('PASS '+engine+': 40 messages painted in the frame of their key while the device took 1.9 s each; a refused one rolled back with its draft');
+ } else if(dmReuse){
   await page.getByRole('button',{name:'More rooms',exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Existing friend DM',exact:true}).count(),0);
   await page.getByRole('button',{name:'New message',exact:true}).first().click();

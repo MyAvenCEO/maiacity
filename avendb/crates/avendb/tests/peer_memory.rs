@@ -76,7 +76,7 @@ impl Drafter {
         let via = st.via(MAC_A, en.vault).unwrap_or_default();
         let deps = st.heads(e, None);
         let action = Action::Write { vault: en.vault, entry: e, actor: en.vault, stay: en.stay(), epoch, deps,
-            proposal: Proposal::Main, via, create: None, files: vec![], body };
+            proposal: Proposal::Main, via, create: None, files: vec![], body: body.into() };
         let parents = self.last.get(&LogId::Entry(e)).into_iter().copied().collect();
         Edit { parents, depth: self.depth, author: MAC_A, cosigners: vec![], action }
     }
@@ -146,6 +146,10 @@ fn measure(n: usize) -> Value {
     let mut r = replay(again.edits());
     let replay_bytes = held() - h3;
     let replay_peak = PEAK.load(Ordering::Relaxed) - h3;
+    // its rungs, the states before its place it steps on from too: what letting go of them frees
+    let h_rungs = held();
+    let rungs = r.drop_rungs();
+    let rung_bytes = h_rungs - held();
     // the replay let go of but its state: what it holds beside its state
     let state = std::mem::take(&mut r.state);
     let h4 = held();
@@ -164,6 +168,9 @@ fn measure(n: usize) -> Value {
         "replay_peak_per_edit": per(replay_peak),
         "replay_without_state_per_edit": per(replay_bytes - state_bytes),
         "state_per_edit": per(state_bytes),
+        "rungs": rungs,
+        "rungs_mb": rung_bytes / 1_000_000,
+        "rungs_per_edit": per(rung_bytes),
     })
 }
 

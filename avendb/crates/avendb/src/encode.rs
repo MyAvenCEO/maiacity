@@ -3,6 +3,7 @@
 //! integers are big-endian and fixed-size, sequences carry their length, and every enum starts with a tag. The first
 //! byte is the format's version, so a later format can live beside this one.
 
+use std::sync::Arc;
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{
     Action, Creation, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who,
@@ -41,7 +42,7 @@ pub fn bytes(edit: &Edit) -> Vec<u8> {
 pub fn write_context(edit: &Edit) -> Vec<u8> {
     let mut edit = edit.clone();
     if let Action::Write { body, .. } = &mut edit.action {
-        body.clear();
+        *body = crate::bulk::Bulk::default();
     }
     bytes(&edit)
 }
@@ -147,6 +148,22 @@ impl Encode for Vec<u8> {
     fn encode(&self, out: &mut Vec<u8>) {
         (self.len() as u32).encode(out);
         out.extend_from_slice(self);
+    }
+}
+
+/// As the bytes it holds: shared, as a body's content is with the history judged of it (`slice::Body::content`).
+impl Encode for Arc<[u8]> {
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.len() as u32).encode(out);
+        out.extend_from_slice(self);
+    }
+}
+
+/// As the bytes it holds: shelved or not, the same encoding.
+impl Encode for crate::bulk::Bulk {
+    fn encode(&self, out: &mut Vec<u8>) {
+        (self.len() as u32).encode(out);
+        out.extend_from_slice(&self.bytes());
     }
 }
 
@@ -825,7 +842,7 @@ mod tests {
     fn write(stay: Option<EditId>, proposal: Proposal, via: Vec<VaultId>, create: Option<Creation>) -> Edit {
         let (vault, entry, actor) = (VaultId::from_u64(1), EntryId::from_u64(1), VaultId::from_u64(1));
         let (deps, files, body) = (vec![], vec![], vec![]);
-        let action = Action::Write { vault, entry, actor, stay, epoch: 0, deps, proposal, via, create, files, body };
+        let action = Action::Write { vault, entry, actor, stay, epoch: 0, deps, proposal, via, create, files, body: body.into() };
         Edit { action, ..genesis(0) }
     }
 

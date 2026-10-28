@@ -906,7 +906,7 @@ theorem authorized_revoke_unheld {st : State} {c : ShareId}
   unfold authorized
   rw [actsVia_revoked]
   show (_ && match st.entry? w.entry with
-    | some en => mayWrite { st with revoked := st.revoked ++ [c] } w.actor { en with stays := [(w.stay, w.audience)] }
+    | some en => mayWrite { st with revoked := st.revoked ++ [c] } w.signer { en with stays := [(w.stay, w.audience)] }
     | none => false) = _
   cases st.entry? w.entry with
   | none => rfl

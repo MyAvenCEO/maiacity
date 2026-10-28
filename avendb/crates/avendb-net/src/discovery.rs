@@ -1,6 +1,7 @@
 //! A view's positive-type selectors, found through the blind index (`blind`, P4 of sync v2): any peer answers, the
 //! server too. Found IDs are scheduling hints, never authority or completeness.
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use avendb::{id::{EntryId, VaultId}, sync::LogId};
 use n0_future::{task, time::{self, Duration, Instant}};
 use serde_json::Value;
@@ -140,6 +141,7 @@ impl Shared {
                     let peers: Vec<_> = shared.peers.lock().expect("peers").values()
                         .filter(|p| p.conn.close_reason().is_none()).take(4).cloned().collect();
                     let deadline = Instant::now() + Duration::from_secs(10);
+                    let round = if peers.is_empty() { 0 } else { shared.discovery_rounds.fetch_add(1, Ordering::AcqRel) + 1 };
                     for peer in peers {
                         let mut checkpoints_supported = true;
                         // Explicit active-view IDs also bootstrap without waiting for collection discovery.
@@ -158,6 +160,9 @@ impl Shared {
                             let Ok(Ok(ids)) = reply else { break 'finds }; // legacy/refusing peers remain incomplete
                             let ids: Vec<LogId> = ids.into_iter().take(avendb::index::FIND_PAGE).map(LogId::Entry).collect();
                             if !shared.interests.lock().expect("interests").discovered(&scope, revision, &ids) { break 'finds; }
+                            if !ids.is_empty() {
+                                let _ = shared.discovery_first_found.compare_exchange(0, round, Ordering::AcqRel, Ordering::Acquire);
+                            }
                             if manifests { shared.interests.lock().expect("interests").found_manifests(&ids); }
                             shared.size.send_modify(|_| {});
                             shared.bootstrap_due.notify_one();

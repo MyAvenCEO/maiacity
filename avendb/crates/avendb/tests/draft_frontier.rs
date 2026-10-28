@@ -33,7 +33,7 @@ fn write(log: &Log, e: EntryId, n: usize) -> Edit {
     let body = n.to_le_bytes().to_vec();
     let action = Action::Write {
         vault, entry: e, actor, stay, epoch, deps: vec![], proposal: Proposal::Main, via: vec![], create: None,
-        files: vec![], body,
+        files: vec![], body: body.into(),
     };
     log.draft_on(&st, MAC_A, &[], action)
 }
