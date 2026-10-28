@@ -2,7 +2,7 @@
 
 A world film is written as a shot list (`scripts/film/<film>.mjs`) before anything is rendered; Studio 2 then holds each shot as a `shot` entry in avenDB (every version an entry of its own, `src/lib/studio/avenshots.js`) that a cut plays live.
 
-## Shot list anatomy (`day-19-d.mjs`, `shoot.mjs`)
+## Shot list anatomy (`scripts/film/worlds/day-19-d.json`, `shoot.mjs`)
 
 | Field | Meaning |
 |---|---|

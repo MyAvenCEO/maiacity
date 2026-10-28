@@ -1,7 +1,7 @@
 //! The index's scale bench (plan D1, 2026-10-27): what opening a view costs on a vault's index at 1M, 10M or 100M
 //! edits, counted in pages and bytes read off the shelf and log edits stepped on, not only timed, so a regression
-//! shows on any machine. Lines of JSON (`BENCH {...}`) that `scripts/ci/avendb-bench.mjs` holds to the gates of
-//! `avendb/bench-gates.json`:
+//! shows on any machine. Each size prints a line of JSON (`BENCH {...}`) and is held to the counts of `held`; the net
+//! test shard of avendb-checks.yml runs it at 1M and 10M edits:
 //!
 //!   AVENDB_INDEX_N=1000000 cargo test --release -p avendb-net --lib -- --ignored --nocapture --exact shelf_index::bench::bench_index
 //!   AVENDB_INDEX_N=100000000 AVENDB_INDEX_DIR=/big/disk ...     (100M on a folder shelf: by hand, past CI's 5 minutes)
@@ -332,16 +332,33 @@ pub(crate) fn env_or(name: &str, default: &str) -> String {
 async fn the_bench_opens_a_small_index() {
     let line = index(20_000).await;
     println!("BENCH {line}");
-    assert_eq!(line["open_log_edits"], 0);
-    assert!(line["open_pages_p50"].as_f64().unwrap() <= line["depth"].as_f64().unwrap() + 1.0);
+    held(&line);
     assert_eq!(line["get_pages_read"], line["depth"]);
+}
+
+/// The index's gates (plan D1), counts alone, so they hold on any machine: a view opened cold steps on no log edit and
+/// reads pages as the tree is deep, not as the log is long (its depth within the model's; the median open at most one
+/// page past the depth, the worst of `OPENS` at most 6, as a page may hold few rows), at most 128 KB; a point read
+/// reads the depth; the index costs at most 64 bytes an edit. The times are printed only (Goal 7a W1: no timing gate).
+fn held(line: &Value) {
+    let n = |k: &str| line[k].as_f64().unwrap_or_else(|| panic!("{k} in {line}"));
+    let depth = n("depth");
+    assert_eq!(n("open_log_edits"), 0.0, "log edits stepped on opening a view: {line}");
+    assert!(depth <= n("depth_model"), "deeper than the model: {line}");
+    assert!(n("open_pages_p50") - depth <= 1.0, "pages read opening a view (median), past the depth: {line}");
+    assert!(n("open_pages_read") - depth <= 6.0, "pages read opening a view (most), past the depth: {line}");
+    assert!(n("get_pages_read") <= depth, "pages read by a point read: {line}");
+    assert!(n("open_bytes_read") <= (128 << 10) as f64, "bytes read opening a view: {line}");
+    assert!(n("index_bytes_per_edit") <= 64.0, "index bytes an edit: {line}");
 }
 
 #[tokio::test]
 #[ignore = "a bench: AVENDB_INDEX_N sizes, in release"]
 async fn bench_index() {
     for n in env_or("AVENDB_INDEX_N", "1000000").split(',') {
-        println!("BENCH {}", index(n.trim().parse().expect("AVENDB_INDEX_N: sizes")).await);
+        let line = index(n.trim().parse().expect("AVENDB_INDEX_N: sizes")).await;
+        println!("BENCH {line}");
+        held(&line);
     }
 }
 

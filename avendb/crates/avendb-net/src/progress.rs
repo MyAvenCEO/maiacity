@@ -8,7 +8,10 @@
 //!
 //! - `unlock`: the passkey's ceremony that unlocks the device, which is its pass for a new one;
 //! - `keys`: the device's keys, from its secret, and its person's passkey's, from the ceremony;
-//! - `restore`: what its store kept, replayed;
+//! - `restore`: what its store kept, replayed, in its parts: `shelf`, its edits taken back from its shelf a page at a
+//!   time, and `refresh`, what they say worked out from its stored view, or all of them where none opens, each step
+//!   noting how it went (`Progress::note`, `Lab::restore_report`), then `ledger`, what its shelf holds settled and its
+//!   signing ledger opened;
 //! - `node`: its node on an iroh endpoint, reaching its peers through the relay;
 //! - `relay`: the relay letting the node in, which a node with no socket of its own, a page's, waits for before it
 //!   reaches out (`Node::on_relay`);
@@ -28,12 +31,14 @@ use std::sync::Arc;
 use n0_future::time::Instant;
 use tokio::sync::watch;
 
-/// One step of a start: its name, when it began, and how long it took once over, in milliseconds since the start began.
+/// One step of a start: its name, when it began, and how long it took once over, in milliseconds since the start began;
+/// and how it went, in words for its person, where it says (`Progress::note`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stage {
     pub step: &'static str,
     pub at: u64,
     pub took: Option<u64>,
+    pub note: Option<String>,
 }
 
 /// The steps of a start so far, and whether it is over.
@@ -68,10 +73,28 @@ impl Progress {
         self.steps.send_if_modified(|s| {
             !s.over && {
                 ended(s, at);
-                s.steps.push(Stage { step, at, took: None });
+                s.steps.push(Stage { step, at, took: None, note: None });
                 true
             }
         });
+    }
+
+    /// How its last step named `step` went, in words for its person: what it started from, and what its parts took.
+    /// Kept once the start is over too, as a step's note comes as it ends.
+    pub fn note(&self, step: &'static str, note: String) {
+        self.steps.send_if_modified(|s| match s.steps.iter_mut().rev().find(|st| st.step == step) {
+            Some(stage) => {
+                stage.note = Some(note);
+                true
+            }
+            None => false,
+        });
+    }
+
+    /// The step under way, if any: none once the start is over.
+    pub fn current(&self) -> Option<&'static str> {
+        let s = self.steps.borrow();
+        s.steps.last().filter(|last| !s.over && last.took.is_none()).map(|last| last.step)
     }
 
     /// The start is over, and the step under way with it.

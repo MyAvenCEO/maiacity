@@ -1,12 +1,12 @@
 // The film camera from the command line: world shots rendered as log plates (ACEScct, 10-bit HEVC), or stills for the
 // storyboard — a thin CLI over Sandbox 4's film mode (src/lib/film) and the plate renderer (scripts/film/world).
 //
-//   node scripts/film/shoot.mjs scripts/film/day-19-d.mjs              every shot, as a plate (studio/film/<name>/NN-shot.mov)
+//   node scripts/film/shoot.mjs <shot list .mjs>                      every shot, as a plate (studio/film/<name>/NN-shot.mov)
 //   node scripts/film/shoot.mjs scripts/film/worlds/day-19-d.json --seconds 4   records (untimed ones need a length)
 //   node scripts/film/shoot.mjs … --stills | --mid                    the first, middle and last frame / the middle one, as PNG
 //   node scripts/film/shoot.mjs … --only 3,7 --shape 16:9 --size 1920x1080 --lut odt.cube
 //
-// A shot list written before shots were data (day-19-d.mjs: paths from camera.mjs, hour, blur, mood, grade…) is read
+// A shot list written before shots were data (a .mjs: paths from camera.mjs, hour, blur, mood, grade…) is read
 // as records by fromLegacy: its camera moves exactly as before; its look is no longer baked in (the plate is log, the
 // grade happens in the studio). Its timing comes from the voice's word timings (the vault, or LIBRARY=<dir>).
 // `--lut <file.cube>`: also a display preview beside each plate (ACEScct → the LUT → Rec.709 H.264) and the stills

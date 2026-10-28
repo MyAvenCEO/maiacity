@@ -1,6 +1,6 @@
 // Cut the film: the shots from shoot.mjs, the voice and the music from the media library, and captions.
 //
-//   node scripts/film/assemble.mjs scripts/film/day-19.mjs
+//   node scripts/film/assemble.mjs <shot list .mjs>
 //
 // The shots dissolve into one another where the shot list cuts them; each voice take comes in where the list places it; the music
 // sits under it at the levels the list gives and fades out at the end. The captions are the voice's own words, in

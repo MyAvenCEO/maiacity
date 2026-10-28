@@ -19,6 +19,11 @@ most `k` new bodies is read whole in the next read step (`fresh_first`).
 A device holding its owners' bases of entries steps the same way (until 2026-10-28 it took its whole catch-up in one
 step): after each step it lays the bases over again (`rebuild_owner_bases`), work of at most `c` that depends on the
 bases it holds (16 at most, each at most 1 MiB), not on the log. Its step stays bounded by `k + c` (`based_le`).
+
+A device's start (`Lab::restore_end_with`) does what is left past its stored view in one go only while that is at most
+`w` units (`RESTORE_WHOLE`); with more, it does one step and ends behind, its node's catch-up taking the rest a step at a
+time (until 2026-10-28 it did it all: an iPhone's unlock of a partial vault with no stored view took 313 s). Its work is
+at most `max w k` however much is left (`start_le`), and what it leaves ends like any catch-up (`start_ends`).
 -/
 
 namespace AvenDB.CatchUpBudget
@@ -103,6 +108,22 @@ theorem fresh_first (k : Nat) (fresh left : List Nat) (h : fresh.length ≤ k) :
   unfold readStep
   rw [List.drop_append, List.drop_eq_nil_of_le h, List.nil_append]
 
+/-- A start's work: what is left, in one go while that is at most `w`; else one step of at most `k`. -/
+def startWork (w k : Nat) (t : Todo) : Nat := if t.left ≤ w then t.left else work k t
+
+/-- What a start leaves to its catch-up: nothing, or what its one step left. -/
+def startLeaves (w k : Nat) (t : Todo) : Todo := if t.left ≤ w then { replay := 0, read := [], shows := [] } else step k t
+
+theorem start_le (w k : Nat) (t : Todo) : startWork w k t ≤ max w k := by
+  unfold startWork
+  split
+  · omega
+  · have := work_le k t; omega
+
+theorem start_ends (w k : Nat) (hk : 0 < k) (t : Todo) :
+    (steps k (startLeaves w k t).left (startLeaves w k t)).left = 0 :=
+  ends_within k hk _
+
 namespace Examples
 
 -- a first sync: 130,000 edits to replay, 130,000 bodies, 3,200 entries; 768 units a step
@@ -113,6 +134,9 @@ def first : Todo := { replay := 130000, read := List.range 130000, shows := List
 #guard work 768 { first with replay := 0 } == 768
 -- a live page of 5 bodies in the middle of the backlog is read in the next step
 #guard readStep 768 [1, 2, 3, 4, 5] (List.range 1000) == (List.range 1000).drop 763
+-- an unlock of that first sync with no stored view does 48 units, not all 263,200
+#guard startWork 4096 48 first == 48
+#guard startWork 4096 48 { replay := 100, read := [], shows := List.range 40 } == 140
 
 end Examples
 

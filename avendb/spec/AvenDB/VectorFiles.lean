@@ -7,6 +7,7 @@ import AvenDB.KeyTreeVectors
 import AvenDB.QueryViewVectors
 import AvenDB.FreshnessVectors
 import AvenDB.LocalWriteVectors
+import AvenDB.StepCostVectors
 
 /-- The complete model/runtime bridge, shared by the writer and build-time checker. -/
 def AvenDB.vectorFiles : List (String × String) :=
@@ -19,4 +20,5 @@ def AvenDB.vectorFiles : List (String × String) :=
    ("vectors/key_trees.json", AvenDB.KeyTreeVectors.render),
    ("vectors/query_views.json", AvenDB.QueryViewVectors.render),
    ("vectors/freshness.json", AvenDB.FreshnessVectors.render),
-   ("vectors/local_writes.json", AvenDB.LocalWriteVectors.render)]
+   ("vectors/local_writes.json", AvenDB.LocalWriteVectors.render),
+   ("vectors/step_costs.json", AvenDB.StepCostVectors.render)]

@@ -64,6 +64,7 @@ pub mod hash;
 pub mod history;
 pub mod id;
 pub mod index;
+pub(crate) mod kept;
 pub mod keys;
 pub mod lab;
 pub mod lazy;

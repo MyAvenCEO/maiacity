@@ -1,8 +1,8 @@
-// The phone-class row of avenDB's bench (the `bench-phone` job of avendb-checks.yml): avenDB's device as WebAssembly
+// The phone-class row of avenDB's bench, by hand (out of CI since Goal 7a W1): avenDB's device as WebAssembly
 // in a browser, as an iPhone's page runs it, taking a peer's signed edits with their signatures checked
 // (avendb-browser's `bench` feature, src/bench.rs). Serves the package wasm-bindgen wrote and the fixture
 // (avendb/crates/avendb/tests/phone_fixture.rs) on this machine, opens them in each browser named, and prints a
-// `BENCH {...}` line (`kind: "phone"`) for each, for avendb-bench.mjs. Synthetic data only; only numbers are printed.
+// `BENCH {...}` line (`kind: "phone"`) for each. Synthetic data only; only numbers are printed.
 //
 //   bun scripts/ci/avendb-bench-phone.mjs <pkg dir> <fixture> chromium,webkit
 //

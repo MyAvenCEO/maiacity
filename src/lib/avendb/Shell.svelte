@@ -28,7 +28,8 @@
 <script>
 	import { screenSlot } from '$lib/app/screen-slots.js';
 	import { setContext } from 'svelte';
-    import { needsWorldEntries, localNavigation } from './startup-summary.js';
+    import { shellView, localNavigation } from './startup-summary.js';
+	import Fresh from './Fresh.svelte';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { afterNavigate } from '$app/navigation';
 	import { wayBack } from '$lib/app/back.svelte.js';
@@ -153,6 +154,8 @@
 
 	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
 	const tab = $derived(route.page);
+	/** the view paints at once from what the device holds, marked while it is still reading or catching up */
+	const view = $derived(shellView(world, tab, session.worldFresh));
 	// a link to the dashboard itself (the nav pill's Home and Back, `/app/` with no hash) is the router's navigation, no
 	// hashchange: the page it leads to is read from the address after every navigation too
 	const navigated = () => localNavigation(() => { route = parse(location.hash); }, () => session.viewChanged());
@@ -297,9 +300,7 @@
 {/snippet}
 
 <div class="shell" class:reading={!!route.entry}>
-    {#if needsWorldEntries(world, tab)}
-        <p role="status">Loading this view’s local entries…</p>
-    {:else}
+	{#if view.fresh.state !== 'current'}<Fresh fresh={view.fresh} />{/if}
 	{#if route.entry}
 		{#key `${route.entry}${route.page}${route.edit}`}
 			{#if route.page === 'stories' && route.edit}
@@ -397,7 +398,6 @@
 			<Ask {world} {api} {busy} made={asks.made} to={here.id} />
 		</Panel>
 	{/if}
-    {/if}
 </div>
 
 <style>

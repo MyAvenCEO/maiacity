@@ -293,6 +293,13 @@ pub trait Space: Send + Sync + std::fmt::Debug {
 #[derive(Debug, Default)]
 pub struct MemorySpace(Mutex<Vec<u8>>);
 
+impl MemorySpace {
+    /// A space that holds `bytes`.
+    pub fn of(bytes: Vec<u8>) -> MemorySpace {
+        MemorySpace(Mutex::new(bytes))
+    }
+}
+
 impl Space for MemorySpace {
     fn append(&self, bytes: &[u8]) -> io::Result<u64> {
         let mut held = self.0.lock().expect("space");

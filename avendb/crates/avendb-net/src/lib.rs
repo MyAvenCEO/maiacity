@@ -229,6 +229,10 @@ const REDIAL: Duration = Duration::from_secs(2);
 /// (`Node::on_relay`).
 const RELAY_WAIT: Duration = Duration::from_secs(20);
 
+/// How long a claim holds with no page of its asking landing before a peer owed its logs takes them (`Claims::take`,
+/// `LivePriority.lean` `takes`): a few pages' time on a phone's relay, where a page took 5-14 s.
+const HANDOVER: Duration = Duration::from_secs(15);
+
 /// How long a node with no socket of its own waits for iroh to pick its relay before it has it pick again
 /// (`Node::on_relay`): iroh picks it by a report of how fast each relay answers, which a browser times by an HTTPS
 /// request; a report with no answer in its three seconds picks none, and the next comes only 20 to 26 seconds on.
@@ -721,13 +725,28 @@ impl Node {
         // its edits taken back from its shelf a page at a time, never all of them at once beside what it keeps (F9)
         let (edits, lab, stored) = match &opts.shelf {
             Some(shelf) => {
+                // a device opening again restores in parts, each its own step with how it went, so that its person sees
+                // which takes the time; a new one's empty shelf has none to show
+                let parts = opts.progress.current() == Some("restore");
+                let step = |step| if parts { opts.progress.step(step) };
+                step("shelf");
                 let mut to = Restorer { lab: Some(lab), me, checked: None, keys: Warm::default(), restoring: None };
                 let (edits, warm, stored, anchors) = edits::Edits::open_into(shelf.clone(), &mut to).await?;
-                (Some(edits), to.end(anchors, warm).await?, stored)
+                let taken = to.lab.as_ref().map_or(0, |lab| lab.size(me).0);
+                opts.progress.note("shelf", format!("{taken} edits, {} stored views, {} packs of kept showings", warm.views.len(), warm.shown.len()));
+                step("refresh");
+                let lab = to.end(anchors, warm).await?;
+                if let Some(report) = lab.restore_report(me) {
+                    opts.progress.note("refresh", report);
+                }
+                (Some(edits), lab, stored)
             }
             None => (None, lab, Vec::new()),
         };
         if let Some(edits) = &edits {
+            if opts.progress.current() == Some("refresh") {
+                opts.progress.step("ledger");
+            }
             edits.settle(&lab, me, &stored);
         }
         // Batch roots are optional: an unsupported shelf or damaged signer ledger must not
@@ -842,6 +861,9 @@ impl Node {
             }
             false => None,
         };
+        // a start that left part of its catch-up to the steps after it (`Lab::restore_end_with`) goes on with them at
+        // once, in the background, so that the device opens on what it shows before its whole log is read
+        let behind = lab.catching_up(me);
         let shared = Arc::new(Shared {
             lifecycle,
             writer: Mutex::new(writer),
@@ -900,6 +922,7 @@ impl Node {
             ranges: Mutex::default(),
             edit_transfer: edit_transfer::Runtime::default(),
             paced: Mutex::default(),
+            catch_up_due: AtomicBool::new(false),
             pieces: Mutex::default(),
             pool,
             changed: Notify::new(),
@@ -930,6 +953,9 @@ impl Node {
             task::spawn(transports::control::maintain(shared.clone())),
             task::spawn(node_loop::run(shared.clone(), inbox)),
         ];
+        if behind {
+            shared.catch_up_later(Instant::now());
+        }
         Ok(Node { shared, router, tasks: Mutex::new(tasks) })
     }
 
@@ -2073,7 +2099,7 @@ impl Restorer {
 
 impl edits::Taker for Restorer {
     async fn begin(&mut self, checked: Option<avendb::lab::Checked>, warm: &Warm) -> Result<()> {
-        (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new() });
+        (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new(), shown: Vec::new() });
         // what it took of a head that didn't read whole goes
         if self.restoring.is_some() {
             let mut lab = self.lab.take().expect("its Lab");
@@ -2377,6 +2403,8 @@ struct Shared {
     edit_transfer: edit_transfer::Runtime,
     /// The soonest a pull brings its device up to date again, unless it must (`Shared::catch_up_paced`).
     paced: Mutex<Option<Instant>>,
+    /// A catch-up waits for `paced` to pass, and runs then (`Shared::catch_up_later`).
+    catch_up_due: AtomicBool,
     /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out
     /// as those files.
     pieces: Mutex<HashMap<iroh_blobs::Hash, BTreeSet<avendb::sealed::FileRoot>>>,
@@ -2723,7 +2751,8 @@ impl Shared {
         }
         // Control owns peer selection and old-route retirement under its state→peers lock order.
         transports::control::connected(self, &peer);
-        self.told.lock().expect("told").remove(&device);
+        // what it last told `device`, kept: `tell` tells all again on a connection it told nothing yet, and a small
+        // change since it first
         self.outreach.send(node_loop::Msg::Reached { device });
         self.index_told.lock().expect("index told").remove(&endpoint);
         self.index_due.notify_one();
@@ -2848,6 +2877,7 @@ impl Shared {
             0
         };
         let device = peer.device;
+        let scope_logs = match &scope { Scope::Logs(logs) => Some(logs.clone()), _ => None };
         let kind = match scope {
             Scope::All => session::REQUEST,
             Scope::Logs(_) => session::ASK_LOGS,
@@ -2879,13 +2909,13 @@ impl Shared {
             })
             .await;
         self.traffic.asked(device, asking.elapsed().as_millis() as u64);
-        // what other pulls of the peer took while this asking runs, which each page asked after names loose: the peer
-        // sends none of it again (`LivePriority.lean` `withTaken`)
-        let others_took = self.pulls.taking(device);
+        // what other pulls of the peer, or of another peer for its logs, took while this asking runs, which each page
+        // asked after names loose: the peer sends none of it again (`LivePriority.lean` `withTaken`)
+        let others_took = self.pulls.taking(device, scope_logs);
         let took_meanwhile = &others_took;
         let wire = move |after: Option<avendb::sync::Place>| {
             let mut request = Request { after, ..base.0.clone() };
-            let took = took_meanwhile.lock().expect("taken").clone();
+            let took = took_meanwhile.ids.lock().expect("taken").clone();
             if !took.is_empty() {
                 request.ask.loose.extend(took);
                 request.ask.loose.sort();
@@ -3116,7 +3146,8 @@ impl Shared {
             // to its signer, each is a megabyte, and a page of a few edits waited ~10 s on them through a relay
             // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
             keys.extend(blobs);
-            let ids: Vec<EditId> = edits.iter().map(|s| s.edit.id()).collect();
+            let logged: Vec<(EditId, Option<LogId>)> = edits.iter().map(|s| (s.edit.id(), log_of(&s.edit, s.edit.id()))).collect();
+            let ids: Vec<EditId> = logged.iter().map(|(id, _)| *id).collect();
             let take = async {
                 // Native cryptography runs outside the Lab mutex. The owned page/admission survives
                 // cancellation until its blocking checker exits; current-state admission still runs below.
@@ -3134,6 +3165,8 @@ impl Shared {
                         (got, whose, lab.holding(me, ids))
                     })
                     .await?;
+                let held: BTreeSet<EditId> = held.into_iter().collect();
+                let held: Vec<_> = logged.into_iter().filter(|(id, _)| held.contains(id)).collect();
                 self.pulls.took(device, &others_took, &held);
                 let kept = taking.elapsed();
                 // its keys and items brought up to date now and then, not at each page (`CATCH_UP_PACE`)
@@ -3157,6 +3190,8 @@ impl Shared {
             };
             let (got, whose, [checked, kept, caught, took]) = taken?;
             let finished = Instant::now();
+            // a claim holds on while its pages land (`Claims::landed`)
+            self.claims.lock().expect("claims").landed(peer.endpoint, finished);
             self.traffic.page(traffic::Page {
                 device,
                 at: jobs::now_ms(),
@@ -3548,9 +3583,13 @@ impl Shared {
                 }
                 let claimable = server && lab.vault_of(me).is_none();
                 let invites = if server { open_invites(lab, me) } else { Vec::new() };
+                // worked out mid catch-up by a replay behind its log, whom to tell what is worked out again once it
+                // caught up, its log the same (`Lab::answers_current`): kept, a peer was never told of what the
+                // catch-up brought
+                let current = lab.answers_current(me).then_some(current);
                 Some(News {
                     size: now,
-                    revision: Some(current),
+                    revision: current,
                     reach: Arc::new(reach),
                     roots: lab.roots(me),
                     claimable,
@@ -3651,7 +3690,24 @@ impl Shared {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
         let on = peer.conn.stable_id();
-        let told = self.told.lock().expect("told").get(&device).filter(|(at, _)| *at == on).map(|(_, h)| h.clone());
+        let (told, before) = {
+            let told = self.told.lock().expect("told");
+            let told = told.get(&device);
+            (told.filter(|(at, _)| *at == on).map(|(_, h)| h.clone()), told.filter(|(at, _)| *at != on).map(|(_, h)| h.clone()))
+        };
+        // A new connection owes the device all it holds again, which can take range rounds (four round trips on a
+        // phone's link, behind a crossed dial at start); a small change since what it was told on the connection
+        // before goes first, as any live change does, so a live edit is not held behind the replacement
+        // (`LivePriority.lean` `changeFirst`).
+        if told.is_none()
+            && let Some(mut change) = want.since(before.as_ref()).filter(|a| !a.full && a.logs.len() <= pulls::LIVE_LOGS)
+        {
+            self.live_witnesses(&mut change, &want).await;
+            let heads = change.logs.iter().flat_map(|(_, f)| f.heads.iter().copied());
+            self.traffic.trace(traffic::Stage::Told, device, heads.collect::<Vec<_>>(), false);
+            session::exchange(&peer.conn, session::ANNOUNCE, &change.to_wire(), 0).await?;
+            self.sent.announcements.fetch_add(1, Ordering::Relaxed);
+        }
         if let Some(mut announce) = want.since(told.as_ref()) {
             self.live_witnesses(&mut announce, &want).await;
             // T1: a small change's heads, each the trace id of a live edit on its way to `device`
@@ -3789,8 +3845,19 @@ impl Shared {
         let peer = self.connection(endpoint).await?;
         // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends
         let differing = self.differ(peer.device).await;
-        let mut left = self.claims.lock().expect("claims").take(endpoint, differing);
+        let (mut left, owed) = self.claims.lock().expect("claims").take(endpoint, differing, Instant::now());
         let _claimed = Claimed { shared: self, endpoint };
+        // logs another peer's asking lands pages for: asked again once its claim may have stalled
+        // (`no_log_waits_past_the_handover`), and again then while it lands them
+        if owed {
+            let shared = Arc::downgrade(self);
+            task::spawn(async move {
+                time::sleep(HANDOVER).await;
+                if let Some(shared) = shared.upgrade() {
+                    shared.ask_soon(endpoint);
+                }
+            });
+        }
         let (mut new, mut keys, mut stage) = (0, BTreeSet::new(), AskingStage::Manifests);
         // a new device's views ask by selectors before they know an entry: the first asking waits a moment for what
         // peers name for them, Maia City's manifests first, else it would take every log at once and the views theirs
@@ -3879,7 +3946,9 @@ impl Shared {
     /// entries are shown first, `Lab::show_items`) reaches them at once rather than after the whole catch-up. Whether it
     /// did, and whether steps were left at the deadline.
     pub(crate) async fn catch_up_steps(self: &Arc<Self>, must: bool, class: lab_schedule::Class, until: Option<Instant>) -> (bool, bool) {
-        if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
+        let soonest = *self.paced.lock().expect("paced");
+        if !must && let Some(soonest) = soonest.filter(|soonest| Instant::now() < *soonest) {
+            self.catch_up_later(soonest);
             return (false, false);
         }
         // A turn of the Lab a step (`Lab::catch_up_step`), not one for the whole: its replay stepped on, then its
@@ -3916,6 +3985,25 @@ impl Shared {
             self.find_again_on_new_keys().await;
         }
         (caught, left)
+    }
+
+    /// A catch-up its pace put off runs at `soonest`, once however many were put off: a device left behind with nothing
+    /// to step it on answers its peers by a replay that lacks the edits it took since (`Lab::standing`), so a peer that
+    /// asked meanwhile never got them (a drive plugged in again never got the note written while it was away,
+    /// 2026-10-28). It holds no turn of the node while it waits, so a shutdown doesn't wait for it.
+    fn catch_up_later(self: &Arc<Self>, soonest: Instant) {
+        if self.catch_up_due.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let shared = Arc::downgrade(self);
+        task::spawn(async move {
+            time::sleep(soonest.saturating_duration_since(Instant::now())).await;
+            let Some(shared) = shared.upgrade() else { return };
+            shared.catch_up_due.store(false, Ordering::Release);
+            if let Ok(_activity) = shared.admit() {
+                shared.catch_up_paced_class(true, lab_schedule::Class::Background).await;
+            }
+        });
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by
@@ -3992,11 +4080,16 @@ impl Shared {
 /// it alone, not from both at once, which sent each of its edits twice and replayed them twice (the server's and
 /// the Mac's answers to a phone's first sync). A peer that held more of a log asked of another is owed an asking
 /// again once that other's ends (`release`), so what the first did not bring, the second still does, and a failed
-/// asking's logs go to the next peer at once rather than after its wait.
+/// asking's logs go to the next peer at once rather than after its wait. A claim holds only while its asking's pages
+/// land: one that landed none for `HANDOVER` goes to a peer owed its logs that asks then (`take`), as an iPhone's asking
+/// of the always-on peer landed one page and then none for 9 minutes, and the Mac that held the same logs was never
+/// asked (S1, 2026-10-28).
 #[derive(Default)]
 pub(crate) struct Claims {
     by: BTreeMap<LogId, EndpointId>,
     owed: BTreeSet<EndpointId>,
+    /// When each claiming peer's asking last landed a page, or began.
+    landed: BTreeMap<EndpointId, Instant>,
     /// The logs a live pull asks for now (`live::LiveClaimed`), and how many live pulls ask for each: no asking of
     /// the backlog names them meanwhile, from any peer, as its request would name what the device held before the live
     /// pull took them and the peer would send them again (`LivePriority.lean`'s `backlogTake`).
@@ -4004,24 +4097,37 @@ pub(crate) struct Claims {
 }
 
 impl Claims {
-    /// The logs of `differing` no other peer is asked for now, nor a live pull, claimed for `endpoint`; owes it an
-    /// asking again if it left any out.
-    fn take(&mut self, endpoint: EndpointId, differing: BTreeSet<LogId>) -> BTreeSet<LogId> {
+    /// The logs of `differing` no other peer's asking is landing pages for now (`LivePriority.lean` `takes`), nor a
+    /// live pull asks for, claimed for `endpoint` as of `now`; owes it an asking again if it left any out, and says so.
+    fn take(&mut self, endpoint: EndpointId, differing: BTreeSet<LogId>, now: Instant) -> (BTreeSet<LogId>, bool) {
+        let stalled = |e: &EndpointId| self.landed.get(e).is_none_or(|at| *at + HANDOVER <= now);
         let (mine, others): (BTreeSet<_>, BTreeSet<_>) = differing
             .into_iter()
-            .partition(|l| !self.live.contains_key(l) && self.by.get(l).is_none_or(|e| *e == endpoint));
-        if others.is_empty() {
-            self.owed.remove(&endpoint);
-        } else {
+            .partition(|l| !self.live.contains_key(l) && self.by.get(l).is_none_or(|e| *e == endpoint || stalled(e)));
+        let owed = !others.is_empty();
+        if owed {
             self.owed.insert(endpoint);
+        } else {
+            self.owed.remove(&endpoint);
+        }
+        if !mine.is_empty() {
+            self.landed.insert(endpoint, now);
         }
         self.by.extend(mine.iter().map(|l| (*l, endpoint)));
-        mine
+        (mine, owed)
+    }
+
+    /// A page of `endpoint`'s asking landed at `now`: its claims hold on (`a_landing_claim_is_kept`).
+    pub(crate) fn landed(&mut self, endpoint: EndpointId, now: Instant) {
+        if let Some(at) = self.landed.get_mut(&endpoint) {
+            *at = now;
+        }
     }
 
     /// Ends `endpoint`'s claims: the other peers owed an asking, to ask again now. One still owed for logs claimed
     /// by a third stays owed, so it is asked again when that one ends too.
     fn release(&mut self, endpoint: EndpointId) -> BTreeSet<EndpointId> {
+        self.landed.remove(&endpoint);
         let before = self.by.len();
         self.by.retain(|_, e| *e != endpoint);
         if self.by.len() == before {
@@ -4185,14 +4291,35 @@ mod tests {
     fn each_log_is_asked_of_one_peer_and_the_other_is_asked_again_after() {
         let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
         let log = |n: u8| LogId::Entry(EntryId([n; 32]));
-        let mut claims = Claims::default();
+        let (mut claims, now) = (Claims::default(), Instant::now());
         let both: BTreeSet<_> = [log(1), log(2)].into();
-        assert_eq!(claims.take(server, both.clone()), both, "the first asked takes all");
-        assert_eq!(claims.take(mac, [log(2), log(3)].into()), [log(3)].into(), "the other only what no one asks for");
+        assert_eq!(claims.take(server, both.clone(), now), (both, false), "the first asked takes all");
+        let other = claims.take(mac, [log(2), log(3)].into(), now);
+        assert_eq!(other, ([log(3)].into(), true), "the other only what no one asks for, owed the rest");
         assert_eq!(claims.release(server), [mac].into(), "its end asks the held-back peer again");
-        assert_eq!(claims.take(mac, [log(2)].into()), [log(2)].into(), "which takes what is left");
+        assert_eq!(claims.take(mac, [log(2)].into(), now), ([log(2)].into(), false), "which takes what is left");
         assert_eq!(claims.release(mac), BTreeSet::new(), "and is owed nothing more");
         assert_eq!(claims.release(server), BTreeSet::new(), "an asking that claimed nothing wakes no one");
+    }
+
+    /// S1: a claim holds while its asking's pages land (`a_landing_claim_is_kept`); once none landed for `HANDOVER`, a
+    /// peer owed its logs takes them (`a_stalled_claim_hands_over`), and the stalled asking's end wakes no one for them.
+    #[test]
+    fn a_claim_whose_pages_stop_landing_goes_to_the_peer_owed_it() {
+        let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
+        let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        let (mut claims, began) = (Claims::default(), Instant::now());
+        let both: BTreeSet<_> = [log(1), log(2)].into();
+        claims.take(server, both.clone(), began);
+        let soon = began + HANDOVER / 2;
+        assert_eq!(claims.take(mac, both.clone(), soon), (BTreeSet::new(), true), "a fresh claim holds");
+        claims.landed(server, soon);
+        let later = began + HANDOVER;
+        assert_eq!(claims.take(mac, both.clone(), later), (BTreeSet::new(), true), "a page landed: it holds on");
+        let stalled = soon + HANDOVER;
+        assert_eq!(claims.take(mac, both.clone(), stalled), (both, false), "no page for the handover: the Mac takes all");
+        assert_eq!(claims.release(server), BTreeSet::new(), "the stalled asking's end holds nothing back");
+        assert_eq!(claims.release(mac), BTreeSet::new());
     }
 
     /// F12: a log a live pull asks for is left out of every backlog asking meanwhile, of its own peer too, and the
@@ -4201,15 +4328,15 @@ mod tests {
     fn a_live_pulls_logs_are_not_asked_again_by_the_backlog() {
         let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
         let log = |n: u8| LogId::Entry(EntryId([n; 32]));
-        let mut claims = Claims::default();
+        let (mut claims, now) = (Claims::default(), Instant::now());
         let chat: BTreeSet<_> = [log(1)].into();
         claims.live(&chat);
         claims.live(&chat);
-        assert_eq!(claims.take(mac, [log(1), log(2)].into()), [log(2)].into(), "its own peer's backlog leaves it out");
-        assert_eq!(claims.take(server, [log(1)].into()), BTreeSet::new(), "and every other peer's");
+        assert_eq!(claims.take(mac, [log(1), log(2)].into(), now), ([log(2)].into(), true), "its own peer's backlog leaves it out");
+        assert_eq!(claims.take(server, [log(1)].into(), now), (BTreeSet::new(), true), "and every other peer's");
         assert_eq!(claims.live_done(&chat), BTreeSet::new(), "a second live pull still asks for it");
         assert_eq!(claims.live_done(&chat), [mac, server].into(), "the last one's end asks both again");
-        assert_eq!(claims.take(mac, [log(1)].into()), [log(1)].into(), "what it didn't bring, the backlog takes");
+        assert_eq!(claims.take(mac, [log(1)].into(), now), ([log(1)].into(), false), "what it didn't bring, the backlog takes");
         assert_eq!(claims.live_done(&chat), BTreeSet::new(), "an ended claim ends once");
     }
 
