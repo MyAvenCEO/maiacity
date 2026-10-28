@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{EditId, ShareId, SignerId, VaultId};
@@ -14,6 +15,7 @@ use avendb::sync::{LogId, log_of};
 use avendb::wire::{Announce, Claim, Join, Packed, Reply, Request, Statement, Wire};
 use iroh::endpoint::{Connection, RecvStream, VarInt};
 use iroh::protocol::{AcceptError, ProtocolHandler};
+use n0_future::time::{self, Instant};
 
 use crate::{ALPN, Peer, Shared, PAGE_WAIT, WAIT, unix_now};
 
@@ -160,6 +162,47 @@ pub(crate) async fn exchange(conn: &Connection, kind: u8, body: &[u8], limit: us
     Ok(recv.read_to_end(limit).await?)
 }
 
+/// Which way the bytes of a page go on its connection, for `unstalled` to watch: to this node (it asked the page) or
+/// from it (it answers it).
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Flow {
+    In,
+    Out,
+}
+
+/// The stream frames `conn` has carried `flow`'s way so far: they grow while any of its streams moves bytes that way,
+/// the one of a page queued behind another's included, as the link lets them.
+pub(crate) fn carried(conn: &Connection, flow: Flow) -> u64 {
+    let stats = conn.stats();
+    match flow {
+        Flow::In => stats.frame_rx.stream,
+        Flow::Out => stats.frame_tx.stream,
+    }
+}
+
+/// `work`, given up once `progress` stood still for `idle`: a page's wait is for its link to stop moving, not a time
+/// the whole page must fit in. A pull keeps pages in flight that the peer sends one after another, so over a slow link
+/// the second ends past any fixed time while bytes come all along (Samuel's iPhone 2026-10-28 over the relay at 66 to
+/// 214 KB/s: one 4 MiB page in some 60 s, the next past 180 s, so dropped by both ends, and asked again for ever).
+/// `None` once it stalled. `LivePriority.lean` is unchanged: what is asked and sent, and in what order, is the same.
+pub(crate) async fn unstalled<T>(progress: impl Fn() -> u64, idle: Duration, work: impl Future<Output = T>) -> Option<T> {
+    // looked at a few times within `idle`, so that a stall is found at most a step past it
+    let step = idle / 6;
+    let mut work = std::pin::pin!(work);
+    let (mut seen, mut since) = (progress(), Instant::now());
+    loop {
+        if let Ok(done) = time::timeout(step, &mut work).await {
+            return Some(done);
+        }
+        let now = progress();
+        if now != seen {
+            (seen, since) = (now, Instant::now());
+        } else if since.elapsed() >= idle {
+            return None;
+        }
+    }
+}
+
 /// Only this typed read error permits a large-page retry; resets, parse errors and connection failures do not.
 pub(crate) fn too_long(error: &anyhow::Error) -> bool {
     matches!(error.downcast_ref::<iroh::endpoint::ReadToEndError>(), Some(iroh::endpoint::ReadToEndError::TooLong))
@@ -188,7 +231,14 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
                     // same connection, not behind what is queued of them, and the pages in the order asked
                     // (`LivePriority.lean` `sendPriority`)
                     send.set_priority(priority(answer.bytes.len(), asked)).ok();
-                    if matches!(n0_future::time::timeout(deadline, send.write_all(&answer.bytes)).await, Ok(Ok(()))) {
+                    // a page waits on its link moving (`unstalled`), behind the pages asked before it included; a range
+                    // or a checkpoint keeps its own deadline
+                    let written = if answer._range.is_some() || answer._checkpoint.is_some() {
+                        n0_future::time::timeout(deadline, send.write_all(&answer.bytes)).await.ok()
+                    } else {
+                        unstalled(|| carried(&peer.conn, Flow::Out), deadline, send.write_all(&answer.bytes)).await
+                    };
+                    if matches!(written, Some(Ok(()))) {
                         send.finish().ok();
                     } else { send.reset(REFUSED).ok(); }
                 }
@@ -873,5 +923,39 @@ mod batch_session_tests {
             phone.shutdown().await.unwrap();
             raw.close().await;
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod unstalled_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    const IDLE: Duration = Duration::from_secs(180);
+
+    /// Work far longer than `idle` ends whole while its link moves, and a link that stops is given up within a step
+    /// past `idle` of its last move: the wait no slow link outlasts, and no stalled one escapes.
+    #[tokio::test(start_paused = true)]
+    async fn work_ends_while_its_link_moves_and_is_given_up_once_it_stands_still() {
+        let moved = AtomicU64::new(0);
+        let work = async {
+            for _ in 0..20 {
+                time::sleep(IDLE / 2).await;
+                moved.fetch_add(1, Ordering::SeqCst);
+            }
+            "a page"
+        };
+        assert_eq!(unstalled(|| moved.load(Ordering::SeqCst), IDLE, work).await, Some("a page"), "ten idles of moving");
+
+        let moved = AtomicU64::new(0);
+        let start = Instant::now();
+        let work = async {
+            time::sleep(IDLE).await;
+            moved.fetch_add(1, Ordering::SeqCst);
+            std::future::pending::<()>().await
+        };
+        assert_eq!(unstalled(|| moved.load(Ordering::SeqCst), IDLE, work).await, None, "a link that stopped");
+        let waited = start.elapsed();
+        assert!(waited >= 2 * IDLE && waited <= 2 * IDLE + IDLE / 6 * 2, "given up an idle past its last move: {waited:?}");
     }
 }
