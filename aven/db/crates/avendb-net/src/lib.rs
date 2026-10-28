@@ -170,7 +170,7 @@ mod writer;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -181,7 +181,7 @@ use avendb::keys::PublicKey;
 use avendb::lab::{Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
-use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
+use avendb::sign::{Ceremony, Passkey, RelayPass, Signed, SignerKeys};
 use avendb::sync::{LogId, log_of, place};
 use avendb::wire::{Announce, Claim, FileHold, Join, Packed, Reply, Request, Statement, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
@@ -230,8 +230,10 @@ const REDIAL: Duration = Duration::from_secs(2);
 const RELAY_WAIT: Duration = Duration::from_secs(20);
 
 /// How long a claim holds with no page of its asking landing before a peer owed its logs takes them (`Claims::take`,
-/// `LivePriority.lean` `takes`): a few pages' time on a phone's relay, where a page took 5-14 s.
-const HANDOVER: Duration = Duration::from_secs(15);
+/// `LivePriority.lean` `takes`): the stall the sync pill shows, not a phone relay's slowest page (5-14 s), as no device
+/// waits on one peer (Samuel 2026-10-28, the Mac "Waiting on Safari on iPhone · 29 s" with the always-on peer holding
+/// the same logs). A claim of a peer whose connection closed holds nothing (`Claims::gone`).
+const HANDOVER: Duration = Duration::from_secs(5);
 
 /// How many times slower than an owed peer's link a claiming asking's pages may come before that peer takes its logs
 /// (`Claims::take`, `LivePriority.lean` `takes`): since pages are sized to their asker (S1b), a slow link's pages land
@@ -1424,6 +1426,44 @@ impl Node {
         Ok(out)
     }
 
+    /// Passkey `added`, one its person holds outside the platform's keychain (a test browser's, scripts/devx/
+    /// passkey.mjs), added as one more owner of this device's vault, as their Touch ID key is (`Sharing::Owner` of a
+    /// signer): the owner key `passkey` approves in one ceremony of `authenticator`, and `added` consents over the
+    /// same edit, as every newcomer an owner share names does. Its keys come from its ceremony, so its PRF is the one
+    /// its browser answers with; this device forgets them after, so it never approves with it. Its id.
+    pub async fn add_owner_passkey(
+        &self,
+        added: &mut Passkey,
+        passkey: SignerId,
+        authenticator: &impl Authenticator,
+    ) -> Result<SignerId> {
+        let _activity = self.shared.admit()?;
+        let mut challenge = [0; 32];
+        getrandom::fill(&mut challenge).map_err(anyhow::Error::msg)?;
+        let (public, first) = (added.public(), added.ceremony(challenge));
+        let draft = move |lab: &mut Lab, me| {
+            let vault = lab.vault_of(me).ok_or(Refusal::NotActing)?;
+            let new = lab.web_passkey("a test browser", public, &first).ok_or(Refusal::BadSignature)?;
+            let add = Action::Share(Sharing::Owner { vault, owner: Principal::Signer(new), seal_to: None });
+            Ok::<_, Refusal>((new, lab.draft(me, &[passkey, new], add)?))
+        };
+        let drafted = self.shared.try_lab(draft).await?;
+        let (new, draft) = drafted.map_err(|why| anyhow!("the passkey is refused: {why:?}"))?;
+        let challenge = draft.challenge();
+        let keys = self.shared.read(move |lab, _| lab.keys_of(passkey)).await;
+        let ceremony = ceremony_of(authenticator, keys, challenge, Step::Approve).await?;
+        let consent = added.ceremony(challenge);
+        let complete = move |lab: &mut Lab, me| {
+            lab.take_in(passkey, &ceremony);
+            let done = lab.complete(me, draft, &[(passkey, &ceremony), (new, &consent)]);
+            lab.lose(new);
+            done
+        };
+        self.shared.try_lab(complete).await?.map_err(|why| anyhow!("the passkey isn't added: {why:?}"))?;
+        self.shared.changed.notify_one();
+        Ok(new)
+    }
+
     /// The connection to the device `offer` names, once its hello proved it the device offered.
     async fn offered(&self, offer: &Offer) -> Result<Peer> {
         let _activity = self.shared.admit()?;
@@ -2387,6 +2427,11 @@ struct Peer {
     endpoint: EndpointId,
     /// When its hellos proved it, in milliseconds since 1970.
     since: u64,
+    /// The bytes of the answers to this node's askings it brought so far (`session::exchange_timed`): what a page's
+    /// wait watches, the pages asked before it included, not every byte the connection carries. A peer that never
+    /// answered a page but announced its edits and asked its own kept that wait, and its pull, going for ever (the Mac
+    /// self-test 2026-10-28: a pull of the Mac at "other" 10 min, 0 pages).
+    answered: Arc<AtomicU64>,
 }
 
 /// What a node's tasks share.
@@ -2898,7 +2943,7 @@ impl Shared {
     /// connection for its caller to serve, even if it is not selected; the node announces its holdings again.
     fn connected(self: &Arc<Self>, conn: Connection, device: SignerId) -> Peer {
         let endpoint = conn.remote_id();
-        let peer = Peer { conn, device, endpoint, since: jobs::now_ms() };
+        let peer = Peer { conn, device, endpoint, since: jobs::now_ms(), answered: Arc::default() };
         if self.opts.relay.is_some() {
             self.lookup.add_endpoint_info(self.addr_of(endpoint));
         }
@@ -3125,15 +3170,19 @@ impl Shared {
                 let early = ahead.is_some();
                 let mut ahead = ahead;
                 // the wait for a page's slot is this node's own, bounded as it always was; the page's, from its asking on, lasts
-                // while its connection brings bytes (`session::unstalled`): those of the pages asked before it, which the
-                // peer sends first, then its own
+                // while answers to this node's askings come on its connection (`Peer::answered`, `session::unstalled`):
+                // those of the pages asked before it, which the peer sends first, then its own
                 let slot = async {
                     match ahead.take() {
                         Some(permit) => Ok(permit),
                         None => self.pulls.page(false, background).await,
                     }
                 };
-                let slot = time::timeout(PAGE_WAIT, slot).await.context("no page slot in time").and_then(|r| r);
+                // nor for a connection that closed meanwhile: its asking ends at once, not once a slot frees
+                let slot = tokio::select! {
+                    slot = time::timeout(PAGE_WAIT, slot) => slot.context("no page slot in time").and_then(|r| r),
+                    closed = peer.conn.closed() => Err(anyhow!("the connection closed: {closed}")),
+                };
                 let receive = async {
                     let mut permit = slot?;
                     let reply = {
@@ -3153,7 +3202,7 @@ impl Shared {
                     };
                     reply.map(|(reply, came)| (reply, came, permit))
                 };
-                let reply = session::unstalled(|| session::carried(&peer.conn, session::Flow::In), PAGE_WAIT, receive)
+                let reply = session::unstalled(|| peer.answered.load(Ordering::Relaxed), PAGE_WAIT, receive)
                     .await
                     .context("no page in time")
                     .and_then(|r| r);
@@ -3528,10 +3577,10 @@ impl Shared {
         let answer = async {
             let _activity = self.admit()?;
             anyhow::ensure!(asked.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
-            let bytes = session::exchange(&peer.conn, session::STUBS, &asked, session::STUBS_REPLY_LIMIT);
-            // as long as its connection brings bytes, as a page (`session::unstalled`): a big vault's stubs are many MB
-            let progress = || session::carried(&peer.conn, session::Flow::In);
-            let bytes = session::unstalled(progress, PAGE_WAIT, bytes).await.context("no stubs in time")??;
+            let bytes = session::exchange_timed(&peer.conn, session::STUBS, &asked, session::STUBS_REPLY_LIMIT, &peer.answered);
+            // as long as its answers come, as a page's (`session::unstalled`): a big vault's stubs are many MB
+            let progress = || peer.answered.load(Ordering::Relaxed);
+            let (bytes, _) = session::unstalled(progress, PAGE_WAIT, bytes).await.context("no stubs in time")??;
             Ok::<_, anyhow::Error>(avendb::wire::Stubs::from_wire(&bytes)?)
         };
         match answer.await {
@@ -3633,7 +3682,7 @@ impl Shared {
                 let paths = self.opts.paths;
                 let batch = proofs::Request { kind, request: request.to_vec(), known, paths, held }.encode()?;
                 if batch.len() < session::MESSAGE_LIMIT {
-                    match session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit).await {
+                    match session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit, &peer.answered).await {
                         Ok((bytes, sending)) => {
                             let came = pulls::Came { bytes: bytes.len() as u64, sending };
                             if let Ok(supplement) = proofs::Supplement::decode(&bytes) {
@@ -3668,7 +3717,7 @@ impl Shared {
                         break;
                     }
                     asked = true;
-                    let result = session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit).await;
+                    let result = session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit, &peer.answered).await;
                     drop(batch);
                     match result {
                         Ok((bytes, sending)) => {
@@ -3696,7 +3745,7 @@ impl Shared {
         }
         let packs = !self.unpacked.lock().expect("unpacked").contains(&id);
         if packs {
-            match session::exchange_timed(&peer.conn, kind | session::PACKED, request, limit).await {
+            match session::exchange_timed(&peer.conn, kind | session::PACKED, request, limit, &peer.answered).await {
                 Ok((bytes, sending)) => {
                     if let Ok(Packed(reply)) = Packed::from_wire(&bytes) {
                         return Ok((reply, pulls::Came { bytes: bytes.len() as u64, sending }));
@@ -3708,7 +3757,7 @@ impl Shared {
                 Err(_) => {}
             }
         }
-        let (bytes, sending) = session::exchange_timed(&peer.conn, kind, request, limit).await?;
+        let (bytes, sending) = session::exchange_timed(&peer.conn, kind, request, limit, &peer.answered).await?;
         let reply = Reply::from_wire(&bytes)?;
         if packs {
             self.unpacked.lock().expect("unpacked").insert(id);
@@ -4052,6 +4101,14 @@ impl Shared {
         }
         self.ranges.lock().expect("ranges").gone(peer.conn.stable_id(), peer.device, forget);
         drop(held);
+        // its claims hold nothing now, unless it is connected again (`a_gone_peers_claim_hands_over_at_once`): the
+        // peers they held back are asked at once, not once its asking fails
+        if self.live(peer.endpoint).is_none() {
+            let again = self.claims.lock().expect("claims").gone(peer.endpoint);
+            for endpoint in again {
+                self.outreach.send(node_loop::Msg::Ask { endpoint });
+            }
+        }
         self.jobs.stir();
     }
 
@@ -4423,6 +4480,12 @@ impl Claims {
         }
     }
 
+    /// `endpoint`'s connection closed: its claims end as its asking's would (`release`), though the asking itself
+    /// may still wait to fail.
+    fn gone(&mut self, endpoint: EndpointId) -> BTreeSet<EndpointId> {
+        self.release(endpoint)
+    }
+
     /// Ends `endpoint`'s claims: the other peers owed an asking, to ask again now. One still owed for logs claimed
     /// by a third stays owed, so it is asked again when that one ends too.
     fn release(&mut self, endpoint: EndpointId) -> BTreeSet<EndpointId> {
@@ -4673,6 +4736,23 @@ mod tests {
         assert_eq!(claims.take(mac, both.clone(), R, stalled), (both, false), "no page for the handover: the Mac takes all");
         assert_eq!(claims.release(server), BTreeSet::new(), "the stalled asking's end holds nothing back");
         assert_eq!(claims.release(mac), BTreeSet::new());
+    }
+
+    /// No device waits on one peer: once the iPhone's connection closed, the logs its asking claimed go to the always-on
+    /// peer at once, its asking still waiting to fail (`a_gone_peers_claim_hands_over_at_once`), and that asking's end
+    /// holds nothing back.
+    #[test]
+    fn a_closed_connections_claims_go_to_the_peer_owed_them_at_once() {
+        const R: u128 = 64_000;
+        let (phone, server) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
+        let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        let (mut claims, began) = (Claims::default(), Instant::now());
+        let both: BTreeSet<_> = [log(1), log(2)].into();
+        claims.take(phone, both.clone(), R, began);
+        assert_eq!(claims.take(server, both.clone(), R, began), (BTreeSet::new(), true), "the phone's fresh claim holds");
+        assert_eq!(claims.gone(phone), [server].into(), "its connection closed: the peer it held back is asked again");
+        assert_eq!(claims.take(server, both.clone(), R, began), (both, false), "which takes every log, no handover waited");
+        assert_eq!(claims.release(phone), BTreeSet::new(), "the phone's asking failing later holds nothing back");
     }
 
     /// F12: a log a live pull asks for is left out of every backlog asking meanwhile, of its own peer too, and the

@@ -309,6 +309,11 @@ jobs:
     name: The API
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # the server pulls this release's image from ghcr.io with this job's token: it needs to read packages (the
+    # workflow's token reads contents alone)
+    permissions:
+      contents: read
+      packages: read
     concurrency:
       group: maia-production-containers
       cancel-in-progress: false
@@ -539,6 +544,11 @@ jobs:
     name: avenDB's peer
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # the server pulls this release's image from ghcr.io with this job's token: it needs to read packages (the
+    # workflow's token reads contents alone)
+    permissions:
+      contents: read
+      packages: read
     concurrency:
       group: maia-production-containers
       cancel-in-progress: false

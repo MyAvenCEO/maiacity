@@ -467,6 +467,11 @@ jobs:
     name: Back to ${{ inputs.image }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # the server pulls this release's image from ghcr.io with this job's token: it needs to read packages (the
+    # workflow's token reads contents alone)
+    permissions:
+      contents: read
+      packages: read
     concurrency:
       group: maia-production-containers
       cancel-in-progress: false

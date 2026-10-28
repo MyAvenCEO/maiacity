@@ -1158,6 +1158,9 @@ impl DeviceKey {
 pub struct Passkey {
     key: p256::ecdsa::SigningKey,
     counter: u32,
+    /// CTAP2's hmac-secret, which its PRF outputs come from (`with_hmac_secret`); none for one `from_seed` makes, whose
+    /// outputs come from its key.
+    hmac: Option<Zeroizing<[u8; 32]>>,
     /// The post-quantum key, derived from the PRF output on `PRF_SALT`, as the app derives it in every ceremony.
     pq: PqSigner,
 }
@@ -1176,7 +1179,29 @@ impl Passkey {
             *bytes = hash::hash("software passkey seed", &*bytes);
         };
         let pq = PqSigner::derive("passkey", &prf(&key, PRF_SALT));
-        Self { key, counter: 0, pq }
+        Self { key, counter: 0, hmac: None, pq }
+    }
+
+    /// The passkey whose P-256 private key is `key` and whose hmac-secret is `hmac`, its PRF outputs CTAP2's:
+    /// HMAC-SHA256 under that secret over the salt the browser hashed under its label, as a platform authenticator answers, and the
+    /// software one a test browser holds (aven/ops/devx/passkey.mjs). None if `key` is no P-256 scalar.
+    pub fn with_hmac_secret(key: [u8; 32], hmac: [u8; 32]) -> Option<Self> {
+        let key = p256::ecdsa::SigningKey::from_slice(&*Zeroizing::new(key)).ok()?;
+        let hmac = Zeroizing::new(hmac);
+        let pq = PqSigner::derive("passkey", &hmac_prf(&hmac, PRF_SALT));
+        Some(Self { key, counter: 0, hmac: Some(hmac), pq })
+    }
+
+    /// Its P-256 public key's affine coordinates, x and y, as a JWK names them.
+    pub fn point(&self) -> ([u8; 32], [u8; 32]) {
+        let point = self.key.verifying_key().to_sec1_point(false);
+        let xy = &point.as_bytes()[1..];
+        (xy[..32].try_into().expect("32 bytes"), xy[32..].try_into().expect("32 bytes"))
+    }
+
+    /// Its hmac-secret (`with_hmac_secret`), which the authenticator holding it computes its PRF outputs with.
+    pub fn hmac_secret(&self) -> Option<Zeroizing<[u8; 32]>> {
+        self.hmac.clone()
     }
 
     /// The P-256 public key, SEC1 compressed.
@@ -1248,7 +1273,10 @@ impl Passkey {
     /// assertion. The browser hashes the salt with the label "WebAuthn PRF" and the authenticator answers with its
     /// `hmac-secret` over that hash; this one uses a keyed BLAKE3 hash with a secret of its own instead of HMAC.
     pub fn prf(&self, salt: &[u8]) -> Zeroizing<[u8; 32]> {
-        prf(&self.key, salt)
+        match &self.hmac {
+            Some(hmac) => hmac_prf(hmac, salt),
+            None => prf(&self.key, salt),
+        }
     }
 
     /// The key keys are sealed to for this passkey, derived from its PRF output on `PRF_SALT`: a device that uses the
@@ -1270,6 +1298,19 @@ fn prf(key: &p256::ecdsa::SigningKey, salt: &[u8]) -> Zeroizing<[u8; 32]> {
     let scalar: Zeroizing<[u8; 32]> = Zeroizing::new(key.to_bytes().into());
     let cred_random = Zeroizing::new(hash::keyed(&scalar, "software passkey credential", b""));
     Zeroizing::new(hash::keyed(&cred_random, "software passkey prf", &hashed))
+}
+
+/// CTAP2's hmac-secret answer to WebAuthn's PRF on `salt` (`Passkey::with_hmac_secret`): HMAC-SHA256 (RFC 2104) under
+/// `secret` over the salt hashed under the label "WebAuthn PRF".
+fn hmac_prf(secret: &[u8; 32], salt: &[u8]) -> Zeroizing<[u8; 32]> {
+    let hashed = sha256(&[&b"WebAuthn PRF\0"[..], salt].concat());
+    let pad = |byte: u8| -> Zeroizing<[u8; 64]> {
+        let mut pad = Zeroizing::new([byte; 64]);
+        pad.iter_mut().zip(secret).for_each(|(p, s)| *p ^= s);
+        pad
+    };
+    let inner = Zeroizing::new(sha256(&[&pad(0x36)[..], &hashed].concat()));
+    Zeroizing::new(sha256(&[&pad(0x5c)[..], &inner[..]].concat()))
 }
 
 /// A Touch ID key as the Lab and the tests hold it: a software Secure Enclave, whose ML-DSA-65 key signs a ceremony's
@@ -1362,6 +1403,18 @@ mod tests {
             body: vec![1, 2, 3].into(),
         };
         Edit { parents: vec![], depth: 0, author, cosigners: vec![], action }
+    }
+
+    #[test]
+    fn a_passkey_with_an_hmac_secret_answers_prf_as_ctap2_and_the_test_browser_do() {
+        // HMAC-SHA256 under [6; 32] over SHA-256("WebAuthn PRF\0" || PRF_SALT): WebCrypto's answer, as
+        // aven/ops/devx/passkey.mjs computes it
+        let passkey = Passkey::with_hmac_secret([5; 32], [6; 32]).expect("a P-256 scalar");
+        let webcrypto: [u8; 32] = [
+            196, 124, 12, 225, 62, 133, 184, 29, 242, 252, 202, 210, 71, 198, 103, 109, 156, 208, 232, 98, 213, 231, 134,
+            178, 7, 116, 190, 55, 189, 22, 179, 67,
+        ];
+        assert_eq!(*passkey.prf(PRF_SALT), webcrypto);
     }
 
     #[test]

@@ -194,6 +194,12 @@ fn first_sync(writers: usize, per: usize) -> (avendb::lab::Lab, SignerId) {
 /// `first_sync`, and with `removal` a device added to Alice's vault and removed again among the edits it takes, as
 /// Maia City's hold removals; with one of the writers, which lacks the others' edits.
 fn first_sync_of(writers: usize, per: usize, removal: bool) -> (avendb::lab::Lab, SignerId, SignerId) {
+    first_sync_with(writers, per, removal, false)
+}
+
+/// `first_sync_of`, and with `adds` the device removed having added another device to Alice's vault before, by her
+/// passkey's approval, as Maia City's old devices did.
+fn first_sync_with(writers: usize, per: usize, removal: bool, adds: bool) -> (avendb::lab::Lab, SignerId, SignerId) {
     use avendb::cast::paragraph;
     use avendb::id::VaultId;
     use avendb::policy::{Action, Kind, Principal, Sharing};
@@ -218,6 +224,11 @@ fn first_sync_of(writers: usize, per: usize, removal: bool) -> (avendb::lab::Lab
         let pad = lab.device_of(passkey, "Alice's old iPad");
         let add = Action::Share(Sharing::Device { vault: alice, device: pad, seal_to: None });
         lab.submit(mac, &[passkey, pad], add).expect("a device added");
+        if adds {
+            let tv = lab.device_of(passkey, "Alice's TV");
+            let add = Action::Share(Sharing::Device { vault: alice, device: tv, seal_to: None });
+            lab.submit(mac, &[passkey, tv, pad], add).expect("a device the iPad added");
+        }
         let remove = Action::Revoke(Revoking::Device { vault: alice, device: pad, keep: vec![] });
         lab.submit(mac, &[passkey], remove).expect("and removed");
         for &w in &ws {
@@ -459,6 +470,42 @@ fn a_key_index_made_again_is_made_a_slice_a_step() {
         (lab.log(d).ids().to_vec(), entries)
     };
     assert_eq!(seen(&once), seen(&steps), "the same edits, entries and items as one catch-up");
+}
+
+/// A removed device that once added another, by its vault's passkey, takes nothing away from a peer by its removal:
+/// a vault's approval is its passkey's, never a device's, so that addition stands with the iPad gone. In the middle of
+/// its catch-up the iPhone still answers its writer, a subset of what it answers once caught up (Fix E,
+/// `StandingKeep.lean`). Until 2026-10-28 it answered nothing till caught up: the Mac never got the iPhone's chat
+/// message while the iPhone caught up on Maia City.
+#[test]
+fn a_removal_of_a_device_that_added_another_still_lets_its_peers_be_answered_mid_catch_up() {
+    let (mut lab, d, writer) = first_sync_with(6, 40, true, true);
+    let asked = |lab: &mut avendb::lab::Lab| {
+        let request = lab.request(writer, d);
+        lab.reply(d, writer, &request, 1 << 30).0.into_iter().map(|s| s.edit.id()).collect::<Vec<_>>()
+    };
+    let (mut steps, mut mid) = (0, Vec::new());
+    loop {
+        let step = lab.catch_up_step(d, 1);
+        steps += 1;
+        assert!(steps < 10_000, "a catch-up in steps ends");
+        if matches!(step, CatchUp::Caught(_)) {
+            break;
+        }
+        // while the removal waits in its catch-up, which it answers no peer by (`Lab::answers_now`)
+        if !lab.answers_now(d) {
+            mid.push(asked(&mut lab));
+            assert!(!lab.answers_now(d), "a peer's ask at step {steps} replayed every edit");
+        }
+    }
+    let whole: std::collections::HashSet<_> = asked(&mut lab).into_iter().collect();
+    assert!(!whole.is_empty(), "caught up, it hands its peer what it lacks");
+    assert!(!mid.is_empty(), "the removal waits a step of its catch-up at least");
+    let answered = mid.iter().filter(|page| !page.is_empty()).count();
+    assert!(answered == mid.len(), "it answered the writer at {answered} of the {} steps the removal waited", mid.len());
+    for page in &mid {
+        assert!(page.iter().all(|id| whole.contains(id)), "mid its catch-up it hands over only what it hands once caught up");
+    }
 }
 
 /// A probe of a device's memory takes its store out whole (`Lab::probe_store`) and leaves the Lab an empty one, so a
