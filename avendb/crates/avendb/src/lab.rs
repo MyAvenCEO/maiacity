@@ -165,9 +165,6 @@ const REPLAY_WORK: usize = 4;
 /// The bodies a step of a catch-up opens for each entry of its budget (`read`).
 const READ_WORK: usize = 32;
 
-/// The keys of entries a step of a catch-up derives for each entry of its budget (`open_keys`).
-const KEY_WORK: usize = 4;
-
 /// The budget of the step a write of a device's own takes in the middle of a catch-up (`Lab::refresh_own`).
 const OWN_WRITE_BUDGET: usize = 8;
 
@@ -3021,7 +3018,10 @@ impl Lab {
         let own = self.keys.get(&d).and_then(Key::seal_secret);
         let unlocked = own.is_some();
         let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
-        let mut retained = if unlocked { self.take_owner_overlay(d) } else { None };
+        // the owners' base overlay of a device's based entries is kept out for a whole refresh and laid back as it was
+        // after it; a step of a catch-up lays it again after each step instead (`rebuild_owner_bases`: 16 bases at
+        // most, each at most 1 MiB, a bound of its own, not of the log's), so that every step stays bounded
+        let mut retained = if unlocked && budget.is_none() { self.take_owner_overlay(d) } else { None };
         let began = Perf::start();
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
@@ -3061,20 +3061,9 @@ impl Lab {
             let at = Perf::start();
             let ix = KeyIndexed::take(store);
             store.perf.add("keys: index", at);
-            // with a budget, at most `KEY_WORK` keys of entries derived for each of it, the rest at the next steps
-            let step = budget.filter(|_| retained.is_none());
-            let keyed = open_keys(store, &ix, &mine, step.map(|b| b.max(1).saturating_mul(KEY_WORK)));
+            open_keys(store, &ix, &mine);
             store.perf.add("open keys", at);
-            if !keyed {
-                KeyIndexed::put(store, ix);
-                store.behind = true;
-                store.perf.add("refresh", began);
-                self.rebuild_owner_bases(d);
-                return false;
-            }
             let at = Perf::start();
-            // an entry's owner base overlay is taken out for the whole of a refresh: one is read and shown in one go
-            let budget = budget.filter(|_| retained.is_none());
             let read_all = read(d, store, budget.map(|b| b.max(1).saturating_mul(READ_WORK)));
             store.perf.add("read", at);
             // a step that left bodies to open goes on with them at the next, showing nothing before they are open
@@ -3087,8 +3076,7 @@ impl Lab {
             }
             // what it shows, every write counted or not, before its upkeep: its stewards grant counted asks alone
             let at = Perf::start();
-            // an entry's owner base overlay is taken out for the whole of a refresh: one is shown in one go. A budgeted
-            // one shows one entry here, after its keys and reading, which take their own while, and the rest after it
+            // a budgeted one shows one entry here, after its keys and reading, which take their own while, and the rest after it
             // a budget a step (`show_more`)
             let shown = show_items(d, store, budget.map(|_| 1));
             store.perf.add("show items", at);
@@ -3176,6 +3164,11 @@ impl Lab {
         let at = Perf::start();
         let done = show_items(d, store, Some(budget));
         store.perf.add("show items", at);
+        // an entry it showed from its edits that its owners' base shows is laid over again (`rebuild_owner_bases`), so
+        // that between steps it shows as before them
+        if !store.bases.is_empty() {
+            self.rebuild_owner_bases(d);
+        }
         done
     }
 
@@ -5761,7 +5754,8 @@ impl Lab {
     /// leaves it (`receive_now`); then the catch-up itself, showing at most `budget` entries anew a step
     /// (`show_items`), the entries left shown a step at a time after it, and once they all are, the catch-up again,
     /// which finds them shown. `Stepped` while there is more to come, then `Caught` with what `catch_up` says. The same
-    /// keys, items and edits as one `catch_up`: a device with an entry's owner base takes it in one step still.
+    /// keys, items and edits as one `catch_up`, a device with owners' bases of entries too (until 2026-10-28 it took
+    /// its whole catch-up in one step).
     pub fn catch_up_step(&mut self, d: SignerId, budget: usize) -> CatchUp {
         let Some(store) = self.stores.get(&self.at(d)) else {
             return CatchUp::Caught(false);
@@ -5779,9 +5773,6 @@ impl Lab {
         if store.replayed < store.log.edits().len() && store.latest.get().is_none() {
             self.step_replay(d, budget.max(1).saturating_mul(REPLAY_WORK));
             return CatchUp::Stepped;
-        }
-        if !store.bases.is_empty() {
-            return CatchUp::Caught(self.catch_up(d));
         }
         match self.refresh_with(d, &[], Some(budget)) {
             true => CatchUp::Caught(true),
@@ -6356,10 +6347,7 @@ fn opened_box(info: &[u8], bytes: &[u8], with: &Secret) -> [u8; 32] {
 /// Open every box the device can: for one of `mine` (its own key, and what owners lend it), or for a key it already
 /// holds; then every key published in the clear; then derive the keys of the entries in each audience whose key it
 /// holds; and again, until nothing more opens. A box counts only if what opens is the key it names.
-/// With `most`, at most that many entries' keys derived (`derive`): false where it left some for the next step, and then
-/// what changed since it last derived stays what it is to derive on from.
-fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)], most: Option<usize>) -> bool {
-    let mut most = most;
+fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
     let at = Perf::start();
     // the stays each audience had, made only where `derive` needs them: of the entries whose stays may have changed
     // since it last derived, or of every entry
@@ -6413,13 +6401,8 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)], most
         }
         store.perf.add("keys: clear", at);
         let at = Perf::start();
-        let (derived, cut) = derive(store, changed.as_ref(), &mut all, &mut some, &mut most);
-        more |= derived;
+        more |= derive(store, changed.as_ref(), &mut all, &mut some);
         store.perf.add("keys: derive", at);
-        if cut {
-            store.perf.count("keys: left for a step", 1);
-            return false;
-        }
         if !more {
             break;
         }
@@ -6436,7 +6419,6 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)], most
             }
         }
     }
-    true
 }
 
 /// Each audience's stays: the entries in it, and in which stay, of the entries `of` alone, or of every one; in the order
@@ -6484,20 +6466,15 @@ fn stays_changed(store: &Store) -> Option<HashSet<EntryId>> {
 /// key's epoch (`keys::entry_key`): true if it derived any. An audience key it derived with before looks only at the
 /// stays of the entries `changed` since where there are such (`stays_changed`); else at every stay of its audience,
 /// those of every entry (`all`) made once for every key, but where they are as they were when it last did.
-#[allow(clippy::type_complexity)]
 fn derive(
     store: &mut Store,
     changed: Option<&HashSet<EntryId>>,
     all: &mut Option<HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>>,
     some: &mut Option<HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>>,
-    most: &mut Option<usize>,
-) -> (bool, bool) {
+) -> bool {
     let Store { keys, derived, derived_through, replay, .. } = store;
     let st = &replay.state;
     let mut new = vec![];
-    // with `most`, at most that many keys derived: an audience it left keys of is derived on at the next step, its
-    // print not noted till then (a first sync derived 3,200 entries' keys in one turn, 500 ms at 130,000 edits)
-    let mut cut = false;
     // each audience's stays by their print, made once for every key of it
     let mut prints: HashMap<AudienceId, [u8; 32]> = HashMap::new();
     for id in &keys.audiences {
@@ -6505,7 +6482,6 @@ fn derive(
         let KeyName::Scoped(KeyFam::Audience(_, x), g) = *name else {
             continue;
         };
-        let mut was = None;
         let stays = match changed.filter(|_| derived_through.contains_key(id)) {
             Some(ch) => some.get_or_insert_with(|| stays_of(st, Some(ch))),
             None => {
@@ -6517,41 +6493,23 @@ fn derive(
                     }
                     h.finalize()
                 });
-                was = Some(derived_through.insert(*id, print));
-                if was == Some(Some(print)) {
+                if derived_through.insert(*id, print) == Some(print) {
                     continue;
                 }
                 all
             }
         };
         for &(e, s) in stays.get(&x).into_iter().flatten() {
-            if derived.contains(&(*id, e, s)) {
-                continue;
+            if derived.insert((*id, e, s)) {
+                new.push((KeyName::Entry(e, s, g), keys::entry_key(audience, e, s)));
             }
-            if *most == Some(0) {
-                cut = true;
-                break;
-            }
-            derived.insert((*id, e, s));
-            new.push((KeyName::Entry(e, s, g), keys::entry_key(audience, e, s)));
-            if let Some(m) = most.as_mut() {
-                *m -= 1;
-            }
-        }
-        if cut {
-            match was {
-                Some(Some(before)) => _ = derived_through.insert(*id, before),
-                Some(None) => _ = derived_through.remove(id),
-                None => {}
-            }
-            break;
         }
     }
     let more = !new.is_empty();
     for (name, key) in new {
         keys.insert(name, key);
     }
-    (more, cut)
+    more
 }
 
 /// The key of entry `e` in its stay `stay`, in audience `x` of vault `v`, at epoch `g`: one the device holds, or one
