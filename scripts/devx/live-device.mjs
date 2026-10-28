@@ -2,13 +2,18 @@
  * The self-test device (Samuel 2026-10-28: "use a browser instead of the iPhone ... so you can self serve your own
  * testing, screenshots and timings"): Playwright WebKit (the iPhone's engine) on the Mac, on a profile of its own that
  * keeps its shelf between runs, opening maia.city against the always-on peer as a phone does. Its passkey is a
- * disposable software one (./passkey.mjs) kept in the Mac's login Keychain; it roots a small "Dev browser" vault that
- * Samuel makes a co-owner of his own, so it syncs what his phone syncs. Removing that owner disposes of it.
+ * disposable software one (./passkey.mjs) kept in the Mac's login Keychain, which theOS's Settings → "Add a test
+ * passkey" makes and adds as one more owner key of Samuel's own vault: the browser signs in as another device of his,
+ * admitted by his vault's standing, and syncs what his phone syncs. Revoking that owner disposes of it. (--setup and
+ * --accept, a dev vault of its own that co-owns his, are the older way.)
  *
  *   node scripts/devx/live-device.mjs --setup ['<invite link>'] once: found the dev vault (through the app's gate, or
  *                                                                an invite's join page), print its id for Settings → Owners
  *   node scripts/devx/live-device.mjs --accept                  once, after Samuel invited it: accept co-owning
  *   node scripts/devx/live-device.mjs                           a run: reopen + unlock, sync, Chat, Assets, report
+ *   node scripts/devx/live-device.mjs --roundtrip [Bla]         the release gate (Samuel 2026-10-28): a message in the
+ *                                                                room reaches the other device within 2 s, both ways,
+ *                                                                while the receiving one is still catching up
  *
  * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 60 (seconds to watch sync),
  * --profile <dir>. Each run writes build/live-device/<time>/: screenshots in order, run.json (step times, the unlock
@@ -17,8 +22,8 @@
  * don't run it beside a Rust build.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
-import { homedir, platform } from 'node:os';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { homedir, platform, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authenticator, passkey } from './passkey.mjs';
@@ -38,7 +43,7 @@ mkdirSync(profile, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** What a run must meet. */
-export const TARGETS = { unlock: 5, firstPaint: 0.5 };
+export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 2 };
 
 // ─── the key: in the login Keychain on the Mac, else a file only its owner reads ───
 
@@ -95,13 +100,13 @@ const go = (page, href) =>
 	}, href);
 const open = (page) => until(async () => !(await page.$('.gate')) && !!(await page.$('nav.pill')), 2);
 
-async function launch() {
+async function launch(dir = profile) {
 	const pw = await import('playwright');
 	const key = readKey();
 	if (!key) throw new Error(`no dev passkey yet: run with --setup '<invite link>' first`);
 	const options = { headless: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 };
 	if (engine === 'chromium' && existsSync('/opt/pw-browsers/chromium')) Object.assign(options, { executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
-	const context = await pw[engine].launchPersistentContext(profile, options).catch((e) => {
+	const context = await pw[engine].launchPersistentContext(dir, options).catch((e) => {
 		throw new Error(`${engine} didn't start (${e.message.split('\n')[0]}): on the Mac, once: npx playwright install ${engine}`);
 	});
 	await context.addInitScript(authenticator, key);
@@ -289,6 +294,103 @@ async function run() {
 	return Object.values(pass).every(Boolean);
 }
 
+// ─── the release gate: a message both ways while the receiving device catches up ───
+
+/** Opens avenDB on `page`: unlocks a device it holds, or signs in as a new one. When it opened, or null. */
+async function openOn(page) {
+	await page.goto(`${base}/app/`, { waitUntil: 'domcontentloaded' });
+	await until(async () => (await page.$('.gate button.pill-btn')) || (await open(page)), 60);
+	for (const t of ['Unlock now', 'Sign in with your passkey']) if (await press(page, t)) break;
+	return (await until(() => open(page), 180)) ? Date.now() : null;
+}
+
+/** Opens room `room` in Chat on `page`, once its device knows it: true, or false after `seconds`. */
+async function room(page, name, seconds) {
+	await go(page, `${base}/app/chat/`);
+	const picked = await until(
+		() =>
+			page.evaluate((name) => {
+				const b = [...document.querySelectorAll('.chat-page button.nav-item')].find((e) => e.textContent?.replace(/\s+/g, ' ').trim().replace(/^#\s*/, '') === name);
+				b?.click();
+				return !!b;
+			}, name),
+		seconds
+	);
+	return !!picked && !!(await until(() => page.$('.chat-page textarea'), 10));
+}
+
+/** The sync pill's words on `page`. */
+const pill = (page) => words(page, '.status');
+const catching = (text) => /behind|pulling|catching|syncing/i.test(text);
+
+/** Sends `text` from `from` and times it until `to` shows it, its own copy no longer pending: seconds, or null. */
+async function message(from, to, text, side) {
+	const toPill = await pill(to);
+	await from.fill('.chat-page textarea', text);
+	const t0 = Date.now();
+	await from.click('.chat-page button.send');
+	const shown = await until(
+		() => to.evaluate((text) => [...document.querySelectorAll('.chat-page article.msg')].some((m) => m.textContent?.includes(text) && !m.classList.contains('pending')), text),
+		30
+	);
+	const seconds = shown ? Number(((Date.now() - t0) / 1000).toFixed(2)) : null;
+	await shot(to, `roundtrip-${side}`);
+	return { seconds, receiverPill: toPill, receiverCatchingUp: catching(toPill) };
+}
+
+async function roundtrip(name) {
+	const home = await launch();
+	const freshDir = mkdtempSync(join(tmpdir(), 'maiacity-fresh-'));
+	let fresh = null;
+	const gate = (log.roundtrip = { name, fresh: freshDir });
+	try {
+		// the caught-up device: this profile's, the room open
+		if (!(await openOn(home.page))) throw new Error(`the caught-up device didn't open: ${(await words(home.page)).slice(0, 300)}`);
+		if (!(await room(home.page, name, 60))) throw new Error(`no room “${name}” on the caught-up device`);
+		await shot(home.page, 'roundtrip-home');
+		// a new device of the same vault, on a profile of nothing: it signs in and starts its catch-up
+		fresh = await launch(freshDir);
+		const t0 = Date.now();
+		const opened = await openOn(fresh.page);
+		if (!opened) throw new Error(`the fresh device didn't open: ${(await words(fresh.page)).slice(0, 300)}`);
+		gate.open = Number(((opened - t0) / 1000).toFixed(2));
+		await fresh.page.click('.status .pill').catch(() => {});
+		await shot(fresh.page, 'roundtrip-fresh-open');
+		if (!(await room(fresh.page, name, 60))) throw new Error(`the fresh device didn't get room “${name}” in 60 s`);
+		gate.room = Number(((Date.now() - t0) / 1000).toFixed(2));
+		const tag = `rt ${stamp}`;
+		// to the device catching up, then back from it while it still is
+		gate.toFresh = await message(home.page, fresh.page, `${tag} → fresh`, 'to-fresh');
+		gate.fromFresh = await message(fresh.page, home.page, `${tag} ← fresh`, 'from-fresh');
+		gate.freshPillAfter = await pill(fresh.page);
+	} catch (e) {
+		log.errors.push(`roundtrip: ${e instanceof Error ? e.message : e}`);
+		await shot((fresh ?? home).page, 'roundtrip-failed');
+	} finally {
+		await fresh?.context.close();
+		await home.context.close();
+	}
+	const ways = [gate.toFresh, gate.fromFresh];
+	const fast = ways.every((w) => w?.seconds != null && w.seconds < TARGETS.message);
+	// a valid gate run sends to the fresh device while it is still catching up
+	const valid = gate.toFresh?.receiverCatchingUp === true;
+	const pass = (log.pass = { message: fast, midCatchUp: valid, errors: !log.errors.length });
+	writeFileSync(join(out, 'run.json'), JSON.stringify(log, null, 1));
+	const line =
+		`${stamp} ${engine} roundtrip #${name}: fresh open ${gate.open ?? '-'}s room ${gate.room ?? '-'}s ` +
+		`→fresh ${gate.toFresh?.seconds ?? 'none'}s ←fresh ${gate.fromFresh?.seconds ?? 'none'}s ` +
+		`(fresh pill at send: ${gate.toFresh?.receiverPill || '?'}) errors ${log.errors.length} ` +
+		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')}`;
+	writeFileSync(join(out, 'line.txt'), `${line}\n`);
+	console.log(line);
+	console.log(`run folder: ${out}  (the fresh device stays a device of the vault: revoke it under Devices when done)`);
+	return Object.values(pass).every(Boolean);
+}
+
 if (args.includes('--setup')) await setup((option('--setup') ?? '').startsWith('http') ? option('--setup') : '');
 else if (args.includes('--accept')) await accept();
+else if (args.includes('--roundtrip')) {
+	const name = option('--roundtrip');
+	process.exit((await roundtrip(name && !name.startsWith('--') ? name : 'Bla')) ? 0 : 1);
+}
 else process.exit((await run()) ? 0 : 1);
