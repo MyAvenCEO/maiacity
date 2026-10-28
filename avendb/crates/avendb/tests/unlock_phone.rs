@@ -43,7 +43,7 @@ fn group(name: &str, op: Op, slice: Selector) -> CapGroup {
 /// Alice's vault and Maia City's, her Mac, her iPhone and `writers` devices more, Bob's vault, Maia City's three cap
 /// groups and its shares through them; then each of her devices writing its share of `entries` entries and `edits`
 /// edits, half in her vault and half in Maia City's, before it syncs, and the iPhone taking them all.
-fn written(writers: usize, entries: usize, edits: usize) -> (Lab, SignerId) {
+fn written(writers: usize, entries: usize, edits: usize) -> (Lab, SignerId, Vec<(SignerId, VaultId, EntryId)>) {
     let mut lab = Lab::new();
     let passkey = lab.passkey("Alice");
     let mac = lab.device_of(passkey, "Alice's Mac");
@@ -107,6 +107,7 @@ fn written(writers: usize, entries: usize, edits: usize) -> (Lab, SignerId) {
     let all: Vec<SignerId> = [mac].into_iter().chain(ws.iter().copied()).collect();
     let (per, per_edits) = (entries / all.len(), edits / all.len());
     let tags: [&[&str]; 4] = [&[], &["travel"], &["city"], &["travel", "city"]];
+    let mut written = vec![];
     for (i, &w) in all.iter().enumerate() {
         let made: Vec<EntryId> = (0..per)
             .map(|e| {
@@ -122,13 +123,14 @@ fn written(writers: usize, entries: usize, edits: usize) -> (Lab, SignerId) {
             lab.edit(w, vault, e, |item| item.push_block(paragraph(100 + k as u64, &text)))
                 .unwrap_or_else(|r| panic!("an edit in {vault:?}: {r:?}"));
         }
+        written.extend(made.iter().enumerate().map(|(k, e)| (w, if k % 2 == 0 { alice } else { coop }, *e)));
     }
     for &w in &all {
         lab.sync(w, phone);
     }
     // the iPhone works out all of it, as it does before it saves what it worked out
     lab.catch_up(phone);
-    (lab, phone)
+    (lab, phone, written)
 }
 
 fn timer(t: &Value, k: &str) -> f64 {
@@ -152,7 +154,7 @@ fn measure_unlock_phone() {
     let (writers, entries, edits) =
         (env("UNLOCK_PHONE_WRITERS", 5), env("UNLOCK_PHONE_ENTRIES", 3_028), env("UNLOCK_PHONE_EDITS", 21_500));
     let began = Instant::now();
-    let (mut lab, phone) = written(writers, entries, edits);
+    let (mut lab, phone, made) = written(writers, entries, edits);
     let held = lab.log(phone).ids().len();
     let shown = lab.entries(phone).iter().filter(|e| lab.item(phone, **e).is_some()).count();
     eprintln!("UNLOCK_PHONE fixture: {held} edits, {shown} entries shown, in {:.1?}", began.elapsed());
@@ -165,6 +167,22 @@ fn measure_unlock_phone() {
         shown: kept.iter().cloned().map(Into::into).collect(),
     };
     lab.warmed(phone, receipt);
+    // UNLOCK_PHONE_AFTER=n: n edits more, its other devices', taken after it saved what it worked out, as the iPhone's
+    // 723 past its stored view on 2026-10-28: its restore steps its view on by them
+    let after = env("UNLOCK_PHONE_AFTER", 0);
+    for k in 0..after {
+        let (w, vault, e) = made[k * 7 % made.len()];
+        let text = format!("Written after its save, {k}.");
+        lab.edit(w, vault, e, |item| item.push_block(paragraph(100_000 + k as u64, &text))).expect("an edit after");
+    }
+    let mut writers: Vec<SignerId> = made.iter().map(|m| m.0).collect();
+    writers.dedup();
+    for w in writers.iter().filter(|_| after > 0) {
+        lab.sync(*w, phone);
+    }
+    let held_before = held;
+    let held = lab.log(phone).ids().len();
+    eprintln!("UNLOCK_PHONE after its save: {} edits more", held - held_before);
     let backup = lab.backup(phone);
     if let Ok(path) = std::env::var("UNLOCK_PHONE_FIXTURE") {
         let list = |out: &mut Vec<u8>, items: Vec<Vec<u8>>| {
@@ -187,7 +205,7 @@ fn measure_unlock_phone() {
     }
     let perf = lab.perf(phone);
     let began = Instant::now();
-    lab.restore_warm(phone, backup, Some((checked, held)), &warm);
+    lab.restore_warm(phone, backup, Some((checked, held_before)), &warm);
     let took = began.elapsed();
     let after = lab.perf(phone);
     assert_eq!(lab.log(phone).ids().len(), held, "it took back every edit");

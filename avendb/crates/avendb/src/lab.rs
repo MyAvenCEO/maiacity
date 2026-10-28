@@ -1057,6 +1057,10 @@ struct Store {
     /// leaves out, and when it puts them all in one pack again.
     shown_given: HashMap<EntryId, [u8; 32]>,
     shown_packs: (usize, usize),
+    /// A pack its shelf lists didn't open as it started (sealed by a build of other show rules, or cut short): the next
+    /// pack it puts holds every showing it keeps, in place of every pack its shelf lists, so that no start tries it
+    /// again (the iPhone's 3 packs of before the show rules, tried at every unlock on 2026-10-28).
+    shown_stale: bool,
     /// How its last restore went (`restore_end_with`), for its person to read beside the step it took
     /// (`Lab::restore_report`).
     restored: Option<Restored>,
@@ -1123,6 +1127,7 @@ impl Default for Store {
             kept_shown: HashMap::new(),
             shown_given: HashMap::new(),
             shown_packs: (0, 0),
+            shown_stale: false,
             restored: None,
             digests: None,
             follow: vec![],
@@ -1188,6 +1193,11 @@ impl Store {
     /// holds, and none of a cap group, which it judges anew each time. None mid catch-up.
     fn shown_due(&self) -> Vec<EntryId> {
         self.keeps(true)
+    }
+
+    /// A pack its shelf lists didn't open (`shown_stale`), and it has showings to keep in place of them all.
+    fn shown_stale_due(&self) -> bool {
+        self.shown_stale && !self.keeps(false).is_empty()
     }
 
     /// The showings it keeps (`shown_due`), those its shelf holds too unless `fresh`.
@@ -6487,9 +6497,18 @@ impl Lab {
             (packs, 0) => format!("{} kept showings from {packs} packs", r.showings),
             (packs, failed) => format!("{} kept showings from {packs} packs, {failed} packs that don't open", r.showings),
         };
+        // what made it replay every edit, or read every body, where it did: the steps on its view it couldn't take
+        let wholes: Vec<String> = store.perf.counts_of("replay whole: ").map(|(why, n)| format!("{why} ({n})")).collect();
+        let wholes = match wholes.is_empty() {
+            true => String::new(),
+            false => format!(". Replayed every edit: {}", wholes.join(", ")),
+        };
+        let reads = store.perf.counts_of("read: whole").map(|(_, n)| n).sum::<u64>();
         Some(format!(
-            "{view}; {kept}. {} edits. Replay {:.1} s, read {:.1} s, show {:.1} s, upkeep {:.1} s",
-            r.edits, ms("replay") / 1000.0, ms("read") / 1000.0, ms("show items") / 1000.0, ms("upkeep") / 1000.0
+            "{view}; {kept}. {} edits. Open view {:.1} s, replay {:.1} s, read {:.1} s ({reads} of every body), show {:.1} s, \
+             upkeep {:.1} s{wholes}",
+            r.edits, ms("open view") / 1000.0, ms("replay") / 1000.0, ms("read") / 1000.0, ms("show items") / 1000.0,
+            ms("upkeep") / 1000.0
         ))
     }
 
@@ -6561,6 +6580,7 @@ impl Lab {
                 }
             }
             store.shown_packs.0 = packs;
+            store.shown_stale = restored.kept.1 > 0;
             store.perf.count("kept shown: showings", store.kept_shown.len() as u64);
             store.perf.add("open kept shown", at);
             (restored.kept.0, restored.showings) = (packs, store.kept_shown.len());
@@ -6643,13 +6663,15 @@ impl Lab {
         // the showings, as often as its view, and once it holds none on its shelf yet
         let fresh_shown =
             if current.is_some() && (view_due || store.shown_packs.0 == 0) { store.shown_due() } else { vec![] };
-        if !keys_due && !view_due && fresh_shown.is_empty() { return None; }
-        let (shown, shown_of) = match fresh_shown.is_empty() {
+        // and all of them, in place of a pack that doesn't open
+        let stale = current.is_some() && store.shown_stale_due();
+        if !keys_due && !view_due && fresh_shown.is_empty() && !stale { return None; }
+        let (shown, shown_of) = match fresh_shown.is_empty() && !stale {
             true => (None, None),
             false => {
                 // all in one pack again, where the packs before hold more than twice what it keeps
                 let (packs, held) = store.shown_packs;
-                let whole = packs >= SHOWN_PACKS || held + fresh_shown.len() > 2 * store.shown.len() + 64;
+                let whole = stale || packs >= SHOWN_PACKS || held + fresh_shown.len() > 2 * store.shown.len() + 64;
                 let es: Vec<EntryId> = match whole {
                     true => store.keeps(false),
                     false => fresh_shown,
@@ -6689,6 +6711,7 @@ impl Lab {
     pub fn warm_due(&self, d: SignerId) -> bool {
         self.stores.get(&d).is_some_and(|store| {
             store.keys_due(None) || store.view_due() || (store.shown_packs.0 == 0 && !store.shown_due().is_empty())
+                || store.shown_stale_due()
         })
     }
 
@@ -6718,6 +6741,7 @@ impl Lab {
             if whole {
                 store.shown_given.clear();
                 store.shown_packs = (0, 0);
+                store.shown_stale = false;
             }
             store.shown_packs = (store.shown_packs.0 + 1, store.shown_packs.1 + of.len());
             store.shown_given.extend(of);
