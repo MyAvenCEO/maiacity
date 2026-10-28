@@ -140,3 +140,16 @@ test('a device too old to tell edits or peers still reads as before', () => {
 	expect(liveSync(old, 1000).line).toBe('Syncing 2,291/2,483');
 	expect(liveSync(old, 1000 + STALL).line).toBe('Waiting on peers · 5 s');
 });
+
+test('a peer whose connection drops a moment keeps its coverage, marked reconnecting, so the counts hold', () => {
+	const peerOf = (device, name, reconnecting) => ({ device, name, reconnecting, pulling: null, pages: 0, edits: 0, last: 0 });
+	const both = [peerOf('36ee6eef', 'Mac', false), peerOf('85b01be4', null, false)];
+	const before = observeSync(emptySync(), report({ peers: 2, pulling: 0, from: both }), 1000);
+	// the always-on peer's connection drops: the device still counts it by what it told last, its logs and what it lacks
+	const dropped = observeSync(before, report({ peers: 2, reconnecting: 1, pulling: 0, from: [both[0], peerOf('85b01be4', null, true)] }), 2000);
+	expect([dropped.logs, dropped.behind, dropped.reconnecting]).toEqual([before.logs, before.behind, 1]);
+	expect(dropped.since).toBe(before.since);
+	expect(liveSync(dropped, 2000 + STALL).line).toBe('Waiting on Mac, 85b01be4 (reconnecting) · 6 s');
+	// a report can't say more peers reconnect than it counts
+	expect(observeSync(emptySync(), report({ peers: 1, reconnecting: 3 }), 1000).reconnecting).toBe(1);
+});

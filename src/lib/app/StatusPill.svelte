@@ -58,11 +58,12 @@
 	/**
 	 * Collapsed, one short line: the one thing that matters now, a number only where it says something (Samuel
 	 * 2026-10-26: "way more compact … reduced to the actual sync / offline / online numbers"). In order: not known yet,
-	 * offline, a sync running (the logs in of how many, the edits it took, or what it waits on: `liveSync`), files coming, the view unavailable, synced.
+	 * offline, every peer reconnecting (counted by what it told last, so the numbers hold), a sync running (the logs in of how many, the edits it took, or what it waits on: `liveSync`), files coming, the view unavailable, synced.
 	 */
 	const line = $derived(
 		!sync.known ? 'Connecting'
 		: !sync.peers ? 'Offline'
+		: sync.reconnecting >= sync.peers ? 'Reconnecting'
 		: live ? live.line
 		: files.waiting + files.reading > 0 ? `${n(files.waiting + files.reading)} files`
 		: view.state === 'unavailable' ? 'Not on this device'
@@ -71,7 +72,7 @@
 	const offline = $derived(sync.known && !sync.peers);
 	/** open, each number by its name: the ones that are not nought, and always the peers */
 	const details = $derived(/** @type {[string, string][]} */ ([
-		['Peers', sync.known ? n(sync.peers) : '…'],
+		['Peers', !sync.known ? '…' : sync.reconnecting ? `${n(sync.peers - sync.reconnecting)} connected · ${n(sync.reconnecting)} reconnecting` : n(sync.peers)],
 		...(sync.behind > 0 ? [['Logs left', `${n(sync.behind)} of ${n(sync.logs)}`]] : []),
 		...(sync.pulling > 0 ? [['Transfers', n(sync.pulling)]] : []),
 		...(live?.rows ?? []),
