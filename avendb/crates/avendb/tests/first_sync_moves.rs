@@ -169,14 +169,14 @@ fn a_first_sync_steps_each_page_with_moves_on() {
     assert!(late.is_empty(), "pages replayed every edit held:\n{r}");
 }
 
-/// The same at `AVENDB_MOVES_HELD` edits (100,000 by default; 30,000 in CI's bench job): no page replays every edit
+/// The same at `AVENDB_MOVES_HELD` edits (100,000 by default), by hand: no page replays every edit
 /// held, and a page held after 80% of them takes about what one held after 10-30% takes (`FIRST_SYNC_MOVES` lines,
 /// printed). Before pages stepped on, one held after 30,000 took 354 ms against 45 ms at the start, growing with
 /// every edit held (2026-10-27). A bench: building the vault steps a replay on each pair of edits, ~8 minutes at
 /// 100,000 even in a release build, so the core tests' debug build never runs it (it timed out at 360 s there) and
 /// `a_first_sync_steps_each_page_with_moves_on` holds the same rule at 6,000 in them.
 #[test]
-#[ignore = "a bench: the bench job of avendb-checks.yml runs it in a release build"]
+#[ignore = "a bench: by hand, in a release build"]
 fn a_page_with_moves_costs_the_same_however_much_is_held() {
     let held: usize = std::env::var("AVENDB_MOVES_HELD").ok().and_then(|n| n.parse().ok()).unwrap_or(100_000);
     let (log, _) = vault(held);

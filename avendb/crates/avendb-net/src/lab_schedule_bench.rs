@@ -1,8 +1,8 @@
-//! Gate G5 (batch 5, W2): how long a person's write waits while the Lab is busy, a catch-up slice of `TURN` running and
-//! a page's 32 reads of `TURN` each queued, as the iPhone's waited 1.9 s on 27 Oct. The harness is `writes_first`'s
-//! unit test, which asserts the order alone; this one times it, 20 rounds, and prints one `BENCH {"kind":"writes",...}`
-//! line, which `scripts/ci/avendb-bench.mjs` holds to a p95 under 50 ms. It runs in the bench job's live shard, on the
-//! live profile (optimised, no whole-log replays), never under the full suite's load:
+//! G5 (batch 5, W2): how long a person's write waits while the Lab is busy, a catch-up slice of `TURN` running and a
+//! page's 32 reads of `TURN` each queued, as the iPhone's waited 1.9 s on 27 Oct. The gate is `writes_first`'s unit
+//! test, which holds the order: the write ahead of every queued read. This one times it, 20 rounds, and prints one
+//! `BENCH {"kind":"writes",...}` line, gated by nothing since Goal 7a (W1: benchmarks out of CI), for a by-hand look on
+//! the live profile (optimised, no whole-log replays):
 //!
 //!   RUSTFLAGS="--cfg avendb_no_replay_checks" cargo test --profile live -p avendb-net --features test-fixtures --lib \
 //!     -- --ignored --nocapture --exact lab_schedule::bench::bench_writes_first
@@ -21,7 +21,7 @@ const READS: usize = 32;
 const ROUNDS: usize = 20;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "a bench: the live shard"]
+#[ignore = "a bench, printed only: writes_first holds the order"]
 async fn bench_writes_first() {
     let mut w = world();
     let vault = handbook_ready(&mut w);

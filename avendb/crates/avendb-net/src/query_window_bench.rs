@@ -1,8 +1,8 @@
 //! The window's scale bench (gate G1, batch 5, 2026-10-27): what a named query costs answered end to end, as
 //! `Node::windowed` answers it (`query_window::answer`: the window off the shared index, then the query over the
 //! entries it names), cold, on the index of a vault at 1M and 10M edits: pages and bytes read off the shelf, index rows
-//! read, log edits stepped on (0: the tail after the index's stamp is empty), and the time. Lines of JSON
-//! (`BENCH {"kind":"window",...}`) that `scripts/ci/avendb-bench.mjs --index` holds to `avendb/bench-gates.json`:
+//! read, log edits stepped on (0: the tail after the index's stamp is empty), and the time. Each size prints a line of
+//! JSON (`BENCH {"kind":"window",...}`) and is held to the counts of `held`; the net test shard runs it at 1M and 10M:
 //!
 //!   AVENDB_WINDOW_N=1000000,10000000 cargo test -p avendb-net --features test-fixtures --lib -- --ignored \
 //!     --nocapture --exact query_window::bench::bench_window
@@ -173,14 +173,26 @@ async fn bench(n: u64) -> Value {
 async fn the_bench_opens_a_small_window() {
     let line = bench(20_000).await;
     println!("BENCH {line}");
-    assert_eq!(line["window_log_edits"], 0);
-    assert!(line["window_rows_read"].as_u64().unwrap() <= W as u64);
+    held(&line);
+}
+
+/// G1's gates, counts alone, so they hold on any machine: a query answered cold steps on no log edit, reads no index
+/// row past its window's, and at most 10 pages and 128 KB off the shelf. The times are printed only (Goal 7a W1: no
+/// timing gate).
+fn held(line: &Value) {
+    let n = |k: &str| line[k].as_f64().unwrap_or_else(|| panic!("{k} in {line}"));
+    assert_eq!(n("window_log_edits"), 0.0, "log edits stepped on: {line}");
+    assert!(n("window_rows_read") <= W as f64, "index rows read past the window's: {line}");
+    assert!(n("window_pages_read") <= 10.0, "pages read (most): {line}");
+    assert!(n("window_bytes_read") <= (128 << 10) as f64, "bytes read: {line}");
 }
 
 #[tokio::test]
 #[ignore = "a bench: AVENDB_WINDOW_N sizes"]
 async fn bench_window() {
     for n in env_or("AVENDB_WINDOW_N", "1000000").split(',') {
-        println!("BENCH {}", bench(n.trim().parse().expect("AVENDB_WINDOW_N: sizes")).await);
+        let line = bench(n.trim().parse().expect("AVENDB_WINDOW_N: sizes")).await;
+        println!("BENCH {line}");
+        held(&line);
     }
 }
