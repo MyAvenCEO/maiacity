@@ -718,3 +718,7 @@ mod turn_tests {
         assert_eq!(said["slow"][0]["call"], "avendb_net::session::authorized_reply");
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "lab_schedule_bench.rs"]
+mod bench;

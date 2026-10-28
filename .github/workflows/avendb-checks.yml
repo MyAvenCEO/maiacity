@@ -488,6 +488,9 @@ jobs:
         run: |
           AVENDB_LIVE_LINK=calm,phone,phone_bulk,calm_bulk cargo test --locked --profile live -p avendb-net --features test-fixtures --test sync_bench -- --ignored --nocapture --exact bench_live \
             | tee -a "$RUNNER_TEMP/bench.log"
+          # G5: a person's write behind a catch-up slice and 32 queued reads (lab_schedule_bench.rs)
+          cargo test --locked --profile live -p avendb-net --features test-fixtures --lib -- --ignored --nocapture \
+            --exact lab_schedule::bench::bench_writes_first | tee -a "$RUNNER_TEMP/bench.log"
       - name: The gates
         run: bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/bench.log" ${{ matrix.shard == 'core' && '"$RUNNER_TEMP/pg.log"' || '' }} --shard ${{ matrix.shard }}
 
