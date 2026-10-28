@@ -28,8 +28,8 @@ The cut types:
 
 **Sound matches the picture:** you hear the geese when you see them (`sound-designer`).
 
-> The render (the Mac app, `vault/crates/vault-render`) cuts hard: shots that meet on V1 never crossfade.
-> `scripts/film/assemble.mjs` is the older, pre-studio cut and still dissolves — don't use it for new films. Still
+> The render (the Mac app, `theos/crates/vault-render`) cuts hard: shots that meet on V1 never crossfade.
+> `maia/content/scripts/film/assemble.mjs` is the older, pre-studio cut and still dissolves — don't use it for new films. Still
 > check every render for black frames.
 
 ## The catalogue

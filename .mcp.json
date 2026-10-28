@@ -2,7 +2,7 @@
 	"mcpServers": {
 		"avendb-cloud": {
 			"command": "sh",
-			"args": ["${CLAUDE_PROJECT_DIR:-.}/scripts/avendb-cloud.sh"]
+			"args": ["${CLAUDE_PROJECT_DIR:-.}/aven/db/scripts/avendb-cloud.sh"]
 		}
 	}
 }

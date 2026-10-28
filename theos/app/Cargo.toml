@@ -1,0 +1,57 @@
+[package]
+name = "maiacity-studio"
+version = "0.1.0"
+description = "maiaCITY Studio — the Mac app: avenDB's device, ingest, and every admin and studio function, native"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[dependencies]
+# avenDB's device, in the app's own process (avendb.rs): its node, its store in ~/avenDB/mac and its drives
+avendb-device = { path = "../../aven/db/crates/avendb-device" }
+# a studio worker's node, which the studio's jobs put what they make on by the worker's own key (aven.rs)
+avendb = { path = "../../aven/db/crates/avendb" }
+avendb-net = { path = "../../aven/db/crates/avendb-net" }
+bytes = "1.12"
+# the app's TLS for whatever names none: aws-lc-rs, as avenDB's (which names its own, post-quantum only)
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "std"] }
+tauri = { version = "2.12", features = [] }
+tokio.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+blake3.workspace = true
+vault-media = { path = "../crates/vault-media" }
+# speech to text, on-device: Phonon-2 through ONNX Runtime (transcripts.rs)
+vault-asr = { path = "../crates/vault-asr" }
+# the final film render, natively (render.rs: the app is the render worker)
+vault-render = { path = "../crates/vault-render" }
+png = "0.18"
+# the API's pause times (analyse/prem.rs)
+# the world window's WKWebView and NSWindow, and App Nap (world.rs)
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = "0.3"
+# the studio's playback through the whole grade (player.rs)
+objc2-av-foundation = { version = "0.3", features = ["objc2-quartz-core", "objc2-core-media", "objc2-core-video", "block2"] }
+objc2-core-video = "0.3"
+objc2-core-graphics = "0.3"
+objc2-core-foundation = "0.3"
+objc2-core-media = "0.3"
+# avenDB's passkey in a sign-in sheet on maia.city (passkey.rs)
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSAlert", "NSApplication", "NSButton", "NSControl", "NSOpenPanel", "NSPanel", "NSResponder", "NSSavePanel", "NSView", "NSWindow"] }
+objc2-authentication-services = { version = "0.3", default-features = false, features = ["std", "block2", "ASWebAuthenticationSession", "ASFoundation"] }
+# native-tls = the macOS Security framework
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "http2", "charset"] }
+
+[features]
+# The app's own pages, embedded (build/): what `tauri build` turns on. Without it the window loads the dev server
+# (devUrl, localhost:5173) — a white window when none runs. Build with `cargo build --release --features custom-protocol`.
+custom-protocol = ["tauri/custom-protocol"]

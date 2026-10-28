@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lean probe</title>
+<style>
+	:root { color-scheme: light dark; font: 15px/1.45 -apple-system, system-ui, sans-serif; }
+	body { margin: 0 auto; padding: 16px; max-width: 640px; }
+	button { font: inherit; padding: 10px 16px; border-radius: 10px; border: 1px solid #888; background: none; }
+	pre { white-space: pre-wrap; word-break: break-word; font: 12px/1.4 ui-monospace, monospace; }
+	.ok { color: #1a7f37; } .bad { color: #cf222e; }
+</style>
+</head>
+<body>
+<h1>Lean 4.35.0 in this browser</h1>
+<p>Checks the spec's AIP objectives with Lean's WebAssembly build, then a broken one Lean must reject, and measures each
+step. Keep this tab in front until it says done.</p>
+<p><button id="go">Run</button></p>
+<pre id="log"></pre>
+<script type="module">
+import { run, unbundle } from './run.js';
+
+const log = document.getElementById('log');
+const lines = [];
+const say = (s, cls) => {
+	lines.push(s);
+	const span = document.createElement('span');
+	if (cls) span.className = cls;
+	span.textContent = s + '\n';
+	log.append(span);
+};
+const result = { ua: navigator.userAgent, cores: navigator.hardwareConcurrency, steps: {}, checks: [] };
+const fetched = async (url, as) => {
+	const t = performance.now();
+	const r = await fetch(url, { cache: 'no-store' });
+	if (!r.ok) throw new Error(`${url}: ${r.status}`);
+	const v = as === 'json' ? await r.json() : as === 'text' ? await r.text() : new Uint8Array(await r.arrayBuffer());
+	result.steps['fetch ' + url] = Math.round(performance.now() - t);
+	return v;
+};
+
+document.getElementById('go').onclick = async (e) => {
+	e.target.disabled = true;
+	try {
+		say(navigator.userAgent);
+		const t0 = performance.now();
+		const [js, wasm, index, bin, objectives] = await Promise.all([
+			fetched('lean.js', 'text'),
+			fetched('lean.wasm'),
+			fetched('bundle.json', 'json'),
+			fetched('bundle.bin'),
+			fetched('objectives.json', 'json'),
+		]);
+		result.steps.download = Math.round(performance.now() - t0);
+		say(`downloaded ${(wasm.length / 1048576).toFixed(1)} MB wasm + ${(js.length / 1048576).toFixed(1)} MB js + ${(bin.length / 1048576).toFixed(1)} MB library in ${result.steps.download} ms`);
+
+		// lean.js is an emscripten module (MODULARIZE): evaluate it for its factory
+		const factory = new Function('module', 'exports', js + '\n;return createLean;');
+		const createLean = factory({}, {});
+
+		let t = performance.now();
+		const module = await WebAssembly.compile(wasm);
+		result.steps.compile = Math.round(performance.now() - t);
+		say(`compiled lean.wasm in ${result.steps.compile} ms`);
+
+		const files = unbundle(index, bin);
+		for (const o of objectives) {
+			files.set('/work/objective.lean', new TextEncoder().encode(o.lean));
+			t = performance.now();
+			const r = await run({
+				createLean,
+				module,
+				files,
+				args: ['--json', '-DmaxHeartbeats=200000', '/work/objective.lean'],
+				leanPath: '/lean:/obj',
+			});
+			const got = r.code === 0 ? 'ok' : 'error';
+			const check = { name: o.name, expect: o.expect, got, ms: r.ms, total: Math.round(performance.now() - t), heapMB: r.heapMB };
+			if (got !== o.expect) check.out = (r.out + '\n' + r.err).slice(0, 2000);
+			result.checks.push(check);
+			say(`${o.name}: ${got} (expected ${o.expect}), Lean ${r.ms.lean} ms, start ${r.ms.start} ms, files ${r.ms.files} ms, heap ${r.heapMB} MB`, got === o.expect ? 'ok' : 'bad');
+			if (check.out) say(check.out);
+		}
+		result.steps.all = Math.round(performance.now() - t0);
+		say(`done in ${(result.steps.all / 1000).toFixed(1)} s`, 'ok');
+	} catch (err) {
+		result.error = String(err && err.stack ? err.stack : err);
+		say('failed: ' + result.error, 'bad');
+	}
+	// the server that served this page keeps the numbers (serve.mjs), so nobody has to copy them
+	fetch('result', { method: 'POST', body: JSON.stringify(result) }).then(
+		(r) => say(r.ok ? 'numbers sent back' : 'could not send the numbers back'),
+		() => say('could not send the numbers back'),
+	);
+};
+</script>
+</body>
+</html>

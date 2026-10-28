@@ -158,7 +158,7 @@ The strongest opening is often **a strange, sharp question** — asked in the fi
 
 ## The title card — the hook as a picture
 
-The hook is also set into the day's title cards (`scripts/film/thumbnail.mjs`; four ratios 16:9, 1:1, 9:16, 5:2 — the
+The hook is also set into the day's title cards (`maia/content/scripts/film/thumbnail.mjs`; four ratios 16:9, 1:1, 9:16, 5:2 — the
 5:2 is the blog's wide header and the X Article cover):
 - **Set like a YouTube thumbnail:** few words, heavy, readable at phone size; the words that carry the end state big
   (gold for the new world).
@@ -205,7 +205,7 @@ label.
 
 ## In avenDB: a story's Hook tab
 
-A story is an avenDB entry of the `story` schema; its Hook tab (`src/lib/avendb/StoryHook.svelte`) shows every hook
+A story is an avenDB entry of the `story` schema; its Hook tab (`aven/db/page/StoryHook.svelte`) shows every hook
 tried, the one on the card, and how it looks on YouTube. Through the avenDB MCP an agent writes there as its shares
 allow:
 
@@ -239,6 +239,6 @@ inspire-me cards (`inspire-me/`).
 
 ## The first frame of a film
 
-Every day's title cards and hook layers come from `scripts/film/thumbnail.mjs` (`content-derivatives` skill): four
+Every day's title cards and hook layers come from `maia/content/scripts/film/thumbnail.mjs` (`content-derivatives` skill): four
 ratios, the hook set big like a YouTube thumbnail (above), the day's badge. The social copies carry the hook as
 text over their first 2.5 s of moving picture — never a still card at the start.

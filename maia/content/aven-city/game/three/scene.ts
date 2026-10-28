@@ -1,0 +1,647 @@
+/**
+ * Scene shell: renderer, camera, lights, sea, world mounting and picking — Sandbox 1's island.
+ *
+ * Client-only — import dynamically from onMount. The sky color here must
+ * match --color-sky in tokens.css so canvas and page blend seamlessly.
+ */
+import * as THREE from 'three'
+import { AXIAL_DIRS, generateMap, type HexTile, key, MAP_SIZE } from '../../../game/island/hexmap'
+import { makeRng } from '../../../game/island/rng'
+import {
+	type BuildingKind,
+	buildWorld,
+	canBuildOnTile,
+	EMPTY_STATS,
+	FACTORY_KINDS,
+	type FactoryKind,
+	SANDBOX_1,
+	type Settlements,
+	type WorldApi,
+	type WorldStats
+} from './buildWorld'
+import { createOrbitRig } from '$content/sandbox-kit/orbit.js'
+import { disposeObject } from '$content/render/core.js'
+import { worldRenderer } from '$content/render/world.js'
+import { createSky, sunAt } from '$content/sandbox-kit/sky.js'
+import { connectFilm, filmDraws } from '$content/sandbox-kit/film.js'
+
+/** The one sky ($content/sandbox-kit/sky) at an island's size, and the island's lens. */
+const ISLAND_SKY = {
+	shadowsAt: [0, 0] as [number, number],
+	shadowReach: 30,
+	shadowNear: 1,
+	shadowFar: 200,
+	shadowMap: 1024,
+	shadowBias: { bias: -0.0004, normal: 0 },
+	lightDistance: 120,
+	fog: { near: 130, far: 320 },
+	exposure: { day: 0.36, night: 0.8 }
+}
+const HEX_HEIGHT = 0.5 // keep in sync with buildWorld
+const WATER_LEVEL = 0.3 // sea surface laps against the island walls
+
+/**
+ * Super-simple faceted low-poly sea: a static displaced plane with flat
+ * shading — zero shader cost, zero per-frame work, instant load. Vertices
+ * displace by a position-hash (coincident verts move together) so the
+ * surface stays watertight while the triangles catch the light.
+ */
+function buildSimpleSea(size: number): THREE.Mesh {
+	const geo = new THREE.PlaneGeometry(size, size, 110, 110).toNonIndexed()
+	geo.rotateX(-Math.PI / 2)
+	const pos = geo.getAttribute('position')
+	for (let i = 0; i < pos.count; i++) {
+		const x = pos.getX(i)
+		const z = pos.getZ(i)
+		const h = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453
+		pos.setY(i, (h - Math.floor(h)) * 0.09)
+	}
+	geo.computeVertexNormals()
+	const mesh = new THREE.Mesh(
+		geo,
+		new THREE.MeshStandardMaterial({
+			color: '#5fa9bc',
+			roughness: 0.65,
+			metalness: 0,
+			flatShading: true
+		})
+	)
+	mesh.position.y = WATER_LEVEL - 0.09
+	mesh.receiveShadow = true
+	return mesh
+}
+
+export interface SceneApi<K extends string = BuildingKind> {
+	setWorld(seed: number): void
+	/** Founds a settlement level or a works on a hex, replacing what stood. */
+	placeBuilding(tile: HexTile, kind: K | FactoryKind): void
+	removeBuilding(tile: HexTile): void
+	buildingAt(tile: HexTile): K | FactoryKind | null
+	/** Everyone housed across the island. */
+	population(): number
+	/** What has been built across the island, in people and hectares. */
+	stats(): WorldStats
+	/** Designates hexes for a use, and shows or hides the colour wash that
+	 * makes the designation readable on the island. */
+	/** Travels the map from a touch joystick: x to the right, y ahead, each -1…1. */
+	move(x: number, y: number, hurry: boolean): void
+	dispose(): void
+}
+
+export interface SceneOptions<K extends string = BuildingKind> {
+	/** Fires with everything currently selected — empty when nothing is. */
+	onSelect?(tiles: HexTile[]): void
+	/** On film (maia/content/film): the island as its seed grows it, every time — nothing read from or kept in the browser. */
+	film?: boolean
+}
+
+/** Slim, semi-transparent ring around a selected hex — present, not loud. */
+function makeSelectionRingGeometry(): THREE.BufferGeometry {
+	const shape = new THREE.Shape()
+	const hole = new THREE.Path()
+	for (let i = 0; i < 6; i++) {
+		const a = (Math.PI / 3) * i
+		const target = i === 0 ? 'moveTo' : 'lineTo'
+		shape[target](Math.cos(a) * 0.99, Math.sin(a) * 0.99)
+		hole[target](Math.cos(a) * 0.93, Math.sin(a) * 0.93)
+	}
+	shape.closePath()
+	hole.closePath()
+	shape.holes.push(hole)
+	const geo = new THREE.ExtrudeGeometry(shape, {
+		depth: 0.012,
+		bevelEnabled: true,
+		bevelThickness: 0.008,
+		bevelSize: 0.008,
+		bevelSegments: 2
+	})
+	geo.rotateX(-Math.PI / 2)
+	return geo
+}
+
+/**
+ * The box you drag to select a span of hexes. It lives in the DOM rather
+ * than the scene: a selection marquee belongs to the screen, not the world,
+ * so it should not tilt with the camera.
+ */
+function makeMarquee(parent: HTMLElement): HTMLDivElement {
+	const box = document.createElement('div')
+	box.style.cssText = [
+		'position:absolute',
+		'pointer-events:none',
+		'display:none',
+		'border:1.5px solid rgba(255,253,246,0.95)',
+		'background:rgba(255,253,246,0.16)',
+		'border-radius:4px',
+		'box-shadow:0 2px 10px rgba(58,74,80,0.25)',
+		'z-index:5'
+	].join(';')
+	parent.appendChild(box)
+	return box
+}
+
+export function createScene<K extends string = BuildingKind>(
+	canvas: HTMLCanvasElement,
+	options: SceneOptions<K> = {}
+): SceneApi<K> {
+	/** what a hex carries: a settlement of this island's kinds, or a works */
+	type Placed = K | FactoryKind
+	const settlements = SANDBOX_1 as unknown as Settlements<K>
+	// the world renderer ($content/render/world.js): plain shadows, the island's lens, and at most 1.25 pixels per CSS
+	// pixel (where the extra pixels stop showing and keep costing)
+	const renderer = worldRenderer({ canvas, shadows: 'pcf', exposure: 1.05 })
+	if (import.meta.env.DEV) {
+		// a dev-only handle for reading draw counts from the console
+		;(globalThis as { __avencity?: unknown }).__avencity = {
+			renderer,
+			get scene() { return scene },
+			get camera() { return camera },
+			get rig() { return rig },
+			get world() { return world }
+		}
+	}
+
+	const scene = new THREE.Scene()
+
+	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 900)
+	// placeholder until the world exists — frameOpening() sets the real shot
+	camera.position.set(7, 2.8, 15)
+
+	// the map camera of every sandbox seen from above ($content/sandbox-kit/orbit)
+	const rig = createOrbitRig(camera, canvas, {
+		// close enough to stand among the domes of a single hex
+		minDistance: 0.35,
+		maxDistance: 200,
+		// eye height stays above the board, so you can walk the island but
+		// never end up under it looking at the sea from below
+		floorY: HEX_HEIGHT + 0.12,
+		moveSpeed: 30
+	})
+	const controls = rig.controls
+	/* a dev hook, like the planet's __world: inspect the island camera from the console */
+	;(window as unknown as { __island: unknown }).__island = { camera, controls }
+
+	// the one sky of every world ($content/sandbox-kit/sky), at the island's size: the shadow box only has to cover the
+	// island (a tight box spends its texels on the domes instead of the sea, so a smaller map looks the same), the fog
+	// closes where the sea ends, and the lens is the island's: its clay is lit brighter than a walk among the domes
+	const sky = createSky(renderer, scene, ISLAND_SKY)
+
+	// the sea — simple faceted low-poly, static
+	// only as far as the fog lets you see
+	const sea = buildSimpleSea(800)
+	scene.add(sea)
+
+	// selection rings: one instanced mesh, so selecting a hundred hexes costs
+	// the same draw as selecting one
+	const ringGeometry = makeSelectionRingGeometry()
+	const ringMaterial = new THREE.MeshStandardMaterial({
+		color: '#fffdf6',
+		roughness: 0.6,
+		metalness: 0,
+		transparent: true,
+		opacity: 0.75
+	})
+	let rings = new THREE.InstancedMesh(ringGeometry, ringMaterial, 1024)
+	rings.frustumCulled = false
+	rings.count = 0
+	scene.add(rings)
+
+	/**
+	 * Grows the ring mesh to hold a selection.
+	 *
+	 * An instanced mesh is allocated once at a fixed size, so a fixed size is a
+	 * silent cap: a span across the whole island drew its first few hundred
+	 * hexes and simply left the rest unmarked, while the count in the HUD said
+	 * otherwise. It now doubles until it fits.
+	 */
+	function ensureRings(needed: number): void {
+		if (needed <= rings.instanceMatrix.count) return
+		let size = rings.instanceMatrix.count
+		while (size < needed) size *= 2
+		scene.remove(rings)
+		rings.dispose()
+		rings = new THREE.InstancedMesh(ringGeometry, ringMaterial, size)
+		rings.frustumCulled = false
+		rings.count = 0
+		scene.add(rings)
+	}
+
+	const marquee = makeMarquee(canvas.parentElement ?? document.body)
+	let selection: HexTile[] = []
+
+	function showSelection(): void {
+		const m = new THREE.Matrix4()
+		const offset = world?.group.position ?? new THREE.Vector3()
+		ensureRings(selection.length)
+		for (let i = 0; i < selection.length; i++) {
+			const t = selection[i]
+			m.makeTranslation(t.x + offset.x, HEX_HEIGHT + 0.01, t.z + offset.z)
+			rings.setMatrixAt(i, m)
+		}
+		rings.count = selection.length
+		rings.instanceMatrix.needsUpdate = true
+		options.onSelect?.(selection)
+	}
+
+	let world: WorldApi<K> | null = null
+
+	// --- settlements survive a reload -----------------------------------
+	// every dome is written to localStorage per island, so a city you
+	// founded is still standing when you come back. Keyed by seed AND size:
+	// a resized island has different hexes, and old saves must not land on it.
+	interface Saved {
+		buildings: Record<string, Placed>
+	}
+	let saved: Saved = { buildings: {} }
+	let saveKey = ''
+
+	function persist(): void {
+		if (options.film) return
+		try {
+			localStorage.setItem(saveKey, JSON.stringify(saved))
+		} catch {
+			// private mode or a full quota: the city just won't survive a reload
+		}
+	}
+
+	/**
+	 * A new island never opens empty: 100 domes stand on it already, placed
+	 * from the seed so every visitor starts from the same one. Eighty dome
+	 * cells at every level, and twenty works — four of each trade.
+	 */
+	function seedSettlements(seed: number, tiles: readonly HexTile[]): Record<string, Placed> {
+		const rng = makeRng((seed ^ 0x5eed5) >>> 0)
+		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
+		const buildable = (q: number, r: number) => {
+			const t = byKey.get(key(q, r))
+			return t && canBuildOnTile(t) ? t : undefined
+		}
+		const open = tiles.filter(canBuildOnTile)
+		// Fisher–Yates, so the random domes spread across the whole island
+		for (let i = open.length - 1; i > 0; i--) {
+			const j = rng.int(0, i)
+			;[open[i], open[j]] = [open[j], open[i]]
+		}
+		const out: Record<string, Placed> = {}
+
+		// The hero: a level 5 dome cell with a neighbourhood around it — the
+		// opening shot frames it, so the hexes behind it can't be empty. It is
+		// written first, so the camera finds it first.
+		const hero = open.find(
+			(t) => AXIAL_DIRS.filter(([dq, dr]) => buildable(t.q + dq, t.r + dr)).length === 6
+		)
+		const { ring1, ring2 } = settlements.demo
+		if (hero) {
+			out[key(hero.q, hero.r)] = settlements.demo.hero
+			for (const [i, [dq, dr]] of AXIAL_DIRS.entries()) {
+				const t = buildable(hero.q + dq, hero.r + dr)
+				if (t) out[key(t.q, t.r)] = ring1[i]
+			}
+			// the second ring, walked hex by hex: a mix of levels and factories,
+			// with a few hexes left open so it reads as a neighbourhood, not a grid
+			let q = hero.q + AXIAL_DIRS[4][0] * 2
+			let r = hero.r + AXIAL_DIRS[4][1] * 2
+			let n = 0
+			for (let side = 0; side < 6; side++) {
+				for (let step = 0; step < 2; step++) {
+					const kind = ring2[n++]
+					const t = buildable(q, r)
+					if (t && kind) out[key(t.q, t.r)] = kind
+					q += AXIAL_DIRS[side][0]
+					r += AXIAL_DIRS[side][1]
+				}
+			}
+		}
+
+		// then the rest of the island: dome cells at every level and five
+		// factories of each trade, wherever the shuffle lands them
+		const kinds: Placed[] = [
+			...Array.from({ length: 100 }, () => rng.pick(settlements.demo.any)),
+			...FACTORY_KINDS.flatMap((k) => [k, k, k, k, k])
+		]
+		let i = 0
+		for (const tile of open) {
+			if (i >= kinds.length) break
+			const k = key(tile.q, tile.r)
+			if (k in out) continue
+			out[k] = kinds[i++]
+		}
+		return out
+	}
+
+	/**
+	 * The opening shot: close on a level 5 dome cell, low, looking straight
+	 * into the low sun — so it sits in the middle of the frame, far away,
+	 * behind the domes. Runs once per world; after that the camera is yours.
+	 */
+	function frameOpening(tiles: readonly HexTile[]): void {
+		if (!world) return
+		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
+		// the first standing of the settlements' own picks, in order
+		let pick: string | undefined
+		for (const kind of settlements.demo.focus) pick ??= Object.entries(saved.buildings).find(([, k]) => k === kind)?.[0]
+		const tile = pick ? byKey.get(pick) : undefined
+		const gx = world.group.position.x
+		const gz = world.group.position.z
+		const target = new THREE.Vector3(tile ? tile.x + gx : 0, 0.75, tile ? tile.z + gz : 0)
+		// toward the sun, exactly where the sky has it
+		const { dir } = sunAt(sky.hour())
+		const toSun = new THREE.Vector3(dir.x, 0, dir.z).normalize()
+		controls.target.copy(target)
+		camera.position.copy(target).addScaledVector(toSun, -2.3)
+		camera.position.y = 1.05
+		controls.update()
+	}
+
+	function restore(seed: number, tiles: readonly HexTile[]): void {
+		saveKey = `avencity.world.${seed}.${MAP_SIZE}.v6`
+		saved = { buildings: {} }
+		let fresh = true
+		try {
+			const raw = options.film ? null : localStorage.getItem(saveKey)
+			if (raw) {
+				saved = { buildings: JSON.parse(raw).buildings ?? {} }
+				fresh = false
+			}
+		} catch {
+			// storage unavailable: still seed the island, it just won't be kept
+		}
+		if (!world) return
+		if (fresh) {
+			saved.buildings = seedSettlements(seed, tiles)
+			persist()
+		}
+		placeAll(tiles)
+	}
+
+	function placeAll(tiles: readonly HexTile[]): void {
+		if (!world) return
+		const byKey = new Map(tiles.map((t) => [key(t.q, t.r), t]))
+		for (const [k, kind] of Object.entries(saved.buildings)) {
+			const tile = byKey.get(k)
+			if (!tile) continue
+			try {
+				world.placeBuilding(tile, kind)
+			} catch {
+				delete saved.buildings[k]
+			}
+		}
+	}
+
+	function setWorld(seed: number): void {
+		if (world) {
+			scene.remove(world.group)
+			world.dispose()
+		}
+		const t0 = performance.now()
+		const map = generateMap(seed)
+		const t1 = performance.now()
+		world = buildWorld(map, settlements)
+		if (import.meta.env.DEV) {
+			console.log(
+				`[perf] map ${(t1 - t0) | 0} ms · build ${(performance.now() - t1) | 0} ms · ${map.tiles.length} tiles`
+			)
+		}
+		// centre on the land itself, not the group's bounding box — the box can
+		// hold more than the island, which left the opening view on open water
+		let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity
+		for (const t of map.tiles) {
+			if (t.kind !== 'LAND') continue
+			minX = Math.min(minX, t.x); maxX = Math.max(maxX, t.x)
+			minZ = Math.min(minZ, t.z); maxZ = Math.max(maxZ, t.z)
+		}
+		world.group.position.x = -(minX + maxX) / 2
+		world.group.position.z = -(minZ + maxZ) / 2
+		scene.add(world.group)
+		restore(seed, map.tiles)
+		frameOpening(map.tiles)
+		selection = []
+		showSelection()
+	}
+
+	// --- picking: click selects, shift-click adds, shift-drag spans --------
+	const raycaster = new THREE.Raycaster()
+	const pointer = new THREE.Vector2()
+	const projected = new THREE.Vector3()
+	let downX = 0
+	let downY = 0
+	let boxing = false
+
+	/** The hex under a screen point, via the ground it lands on. */
+	function tileAtScreen(clientX: number, clientY: number): HexTile | null {
+		if (!world) return null
+		const rect = canvas.getBoundingClientRect()
+		pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1
+		pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1
+		raycaster.setFromCamera(pointer, camera)
+		for (const hit of raycaster.intersectObjects(world.group.children, true)) {
+			const owner = hit.object.userData.tile as HexTile | undefined
+			const tile = owner ?? world.tileAt(hit.point)
+			if (tile) return tile
+		}
+		return null
+	}
+
+	function onPointerDown(e: PointerEvent): void {
+		downX = e.clientX
+		downY = e.clientY
+		// shift takes the drag away from the camera and gives it to selection
+		if (e.shiftKey && e.button === 0) {
+			boxing = true
+			controls.enabled = false
+			marquee.style.display = 'block'
+			updateMarquee(e.clientX, e.clientY)
+			canvas.setPointerCapture?.(e.pointerId)
+		}
+	}
+
+	function updateMarquee(x: number, y: number): void {
+		const rect = canvas.getBoundingClientRect()
+		const left = Math.min(downX, x) - rect.left
+		const top = Math.min(downY, y) - rect.top
+		marquee.style.left = `${left}px`
+		marquee.style.top = `${top}px`
+		marquee.style.width = `${Math.abs(x - downX)}px`
+		marquee.style.height = `${Math.abs(y - downY)}px`
+	}
+
+	function onPointerMove(e: PointerEvent): void {
+		if (boxing) updateMarquee(e.clientX, e.clientY)
+	}
+
+	/**
+	 * Every land hex whose centre falls inside the dragged box.
+	 *
+	 * Projecting the tiles OUT to the screen beats casting rays back in: one
+	 * pass over the map answers any box, at any size, without a ray per pixel.
+	 */
+	function tilesInBox(x0: number, y0: number, x1: number, y1: number): HexTile[] {
+		if (!world) return []
+		const rect = canvas.getBoundingClientRect()
+		const left = Math.min(x0, x1) - rect.left
+		const right = Math.max(x0, x1) - rect.left
+		const top = Math.min(y0, y1) - rect.top
+		const bottom = Math.max(y0, y1) - rect.top
+		const offset = world.group.position
+		const found: HexTile[] = []
+		for (const tile of world.landTiles()) {
+			projected.set(tile.x + offset.x, HEX_HEIGHT, tile.z + offset.z).project(camera)
+			if (projected.z > 1) continue // behind the camera
+			const sx = ((projected.x + 1) / 2) * rect.width
+			const sy = ((1 - projected.y) / 2) * rect.height
+			if (sx >= left && sx <= right && sy >= top && sy <= bottom) found.push(tile)
+		}
+		return found
+	}
+
+	function onPointerUp(e: PointerEvent): void {
+		const moved = Math.hypot(e.clientX - downX, e.clientY - downY)
+
+		if (boxing) {
+			boxing = false
+			controls.enabled = true
+			marquee.style.display = 'none'
+			canvas.releasePointerCapture?.(e.pointerId)
+			const span = moved > 6 ? tilesInBox(downX, downY, e.clientX, e.clientY) : []
+			if (span.length > 0) {
+				// shift-drag ADDS to what is already held
+				const held = new Set(selection.map((t) => `${t.q},${t.r}`))
+				selection = [...selection, ...span.filter((t) => !held.has(`${t.q},${t.r}`))]
+				showSelection()
+				return
+			}
+		}
+
+		if (moved > 6) return // a camera drag, not a click
+
+		const tile = tileAtScreen(e.clientX, e.clientY)
+		if (e.shiftKey) {
+			// shift-click toggles one hex in or out of the span
+			if (tile) {
+				const k = `${tile.q},${tile.r}`
+				const at = selection.findIndex((t) => `${t.q},${t.r}` === k)
+				selection = at >= 0 ? selection.filter((_, i) => i !== at) : [...selection, tile]
+			}
+		} else if (!tile) {
+			selection = []
+		} else {
+			// Tapping the hex that is already the whole selection lets go of it, so
+			// the tap that picked a hex also drops it. Without this the only way to
+			// clear was to find open water — on a fully settled island there is none.
+			// A tap on ONE hex of a span still collapses the span onto it; that is a
+			// narrowing, not an undo.
+			const isOnlySelection =
+				selection.length === 1 && `${selection[0].q},${selection[0].r}` === `${tile.q},${tile.r}`
+			selection = isOnlySelection ? [] : [tile]
+		}
+		showSelection()
+	}
+
+	/** Escape clears the selection — the same way it dismisses anything else. */
+	function onKeyDown(e: KeyboardEvent): void {
+		if (e.key !== 'Escape' || selection.length === 0) return
+		selection = []
+		showSelection()
+	}
+
+	canvas.addEventListener('pointerdown', onPointerDown)
+	canvas.addEventListener('pointermove', onPointerMove)
+	canvas.addEventListener('pointerup', onPointerUp)
+	// on window, not the canvas: the canvas never holds focus, so a keydown on it
+	// would only ever arrive if the user had clicked it AND nothing else took focus
+	window.addEventListener('keydown', onKeyDown)
+
+	function resize(): void {
+		const w = canvas.clientWidth
+		const h = canvas.clientHeight
+		if (
+			canvas.width !== w * renderer.getPixelRatio() ||
+			canvas.height !== h * renderer.getPixelRatio()
+		) {
+			renderer.setSize(w, h, false)
+			camera.aspect = w / h
+			camera.updateProjectionMatrix()
+		}
+	}
+	// dev diagnostics handle (harmless in prod; enables live inspection)
+	;(window as unknown as Record<string, unknown>).__scene = {
+		renderer,
+		scene,
+		camera,
+		controls,
+		sea,
+		sky,
+		world: () => world
+	}
+
+	const clock = new THREE.Clock()
+	let raf = 0
+	function animate(): void {
+		raf = requestAnimationFrame(animate)
+		// while the film camera holds the island it draws the canvas itself, at the size it asks for
+		if (!filmDraws()) resize()
+		// the map camera, or where the film camera holds it
+		rig.update(clock.getDelta())
+		// detail follows the eye: blocks of the island rise and fall between
+		// full build, distant stand-in and bare ground as you travel
+		world?.updateLod(camera.position)
+		sky.tick()
+		if (!filmDraws()) renderer.render(scene, camera)
+	}
+	animate()
+
+	/* the film camera's hold on the island (maia/content/film, $content/sandbox-kit/film) */
+	const film = connectFilm({
+		sandbox: 'sandbox-1',
+		area: 'island',
+		renderer,
+		scene,
+		camera,
+		hold: rig,
+		sky,
+		place: () => rig.release(),
+		advance: () => world?.updateLod(camera.position)
+	})
+
+	const api: SceneApi<K> = {
+		setWorld,
+		placeBuilding(tile, kind) {
+			world?.placeBuilding(tile, kind)
+			saved.buildings[key(tile.q, tile.r)] = kind
+			persist()
+		},
+		removeBuilding(tile) {
+			world?.removeBuilding(tile)
+			delete saved.buildings[key(tile.q, tile.r)]
+			persist()
+		},
+		buildingAt(tile) {
+			return world?.buildingAt(tile) ?? null
+		},
+		population() {
+			return world?.population() ?? 0
+		},
+		stats() {
+			return world?.stats() ?? EMPTY_STATS
+		},
+		move(x, y, hurry) {
+			rig.move(x, y, hurry)
+		},
+		dispose(): void {
+			cancelAnimationFrame(raf)
+			canvas.removeEventListener('pointerdown', onPointerDown)
+			canvas.removeEventListener('pointermove', onPointerMove)
+			canvas.removeEventListener('pointerup', onPointerUp)
+			window.removeEventListener('keydown', onKeyDown)
+			marquee.remove()
+			film.disconnect()
+			rig.dispose()
+			sky.dispose()
+			if (world) world.dispose()
+			disposeObject(scene, { textures: false })
+			renderer.dispose()
+		}
+	}
+	;(window as unknown as { __island: Record<string, unknown> }).__island.api = api
+	return api
+}

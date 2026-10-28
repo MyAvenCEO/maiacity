@@ -1,11 +1,11 @@
 ---
 name: actor-skill
-description: The maiaCITY actor skill — people and animals rigged to move, in the Actors library (src/lib/actors, shown in avenDB's Assets): the stand-in a shot is blocked with and the animals of the worlds (chickens, rabbits, geese, goats, sheep, frogs, bees, ants, songbirds, fish), where an actor lives (a species on a body plan, a cast line, skins meshed off the page, crowds), clips and poses, how it composes (shared body plans, things in hands, actors placed in machines, buildings and worlds by ref), versions behind an argument or frozen files, the stand-in's face (always friendly with a slight sparkle; MakeHuman CC0 head, blend shapes joy and friendly from measured expression units, catchlights that survive the distance), checking and the lessons kept. Use it whenever a person or an animal is built, upgraded, posed or given an expression. Machines are machine-skill's (our notes in its ours.md). Part of asset-producer.
+description: The maiaCITY actor skill — people and animals rigged to move, in the Actors library (maia/content/actors, shown in avenDB's Assets): the stand-in a shot is blocked with and the animals of the worlds (chickens, rabbits, geese, goats, sheep, frogs, bees, ants, songbirds, fish), where an actor lives (a species on a body plan, a cast line, skins meshed off the page, crowds), clips and poses, how it composes (shared body plans, things in hands, actors placed in machines, buildings and worlds by ref), versions behind an argument or frozen files, the stand-in's face (always friendly with a slight sparkle; MakeHuman CC0 head, blend shapes joy and friendly from measured expression units, catchlights that survive the distance), checking and the lessons kept. Use it whenever a person or an animal is built, upgraded, posed or given an expression. Machines are machine-skill's (our notes in its ours.md). Part of asset-producer.
 ---
 
 # Actors: people and animals
 
-The Actors are the people and animals rigged to move, in `src/lib/actors`, shown in avenDB's Assets
+The Actors are the people and animals rigged to move, in `maia/content/actors`, shown in avenDB's Assets
 (`/app/avendb/#assets`): the stand-in a shot is blocked with, and the animals of the worlds kind by kind. The older
 machines are rigged the same way in the same folder, but listed apart as the Machines (`machine-skill`, our notes in
 its `ours.md`). The laws,
@@ -15,7 +15,7 @@ people and animals taught us since.
 
 ## Where it lives
 
-- A kind in `LIST` in `src/lib/actors/index.ts` (`{ id, label, note, from, variants }`) with its `HISTORY` there: the
+- A kind in `LIST` in `maia/content/actors/index.ts` (`{ id, label, note, from, variants }`) with its `HISTORY` there: the
   stand-in, or an animal's breeds and coats, each a line `animal(id, label, note)`.
 - An animal is its species (`./species/`: `goat.ts`, `goose.ts`, `songbird.js` …) on its body plan (`./plans/`:
   `quadruped.ts`, `bird.ts`) and a line in `./casts.ts`, which is what a world asks for and what the gallery lists.
@@ -40,7 +40,7 @@ people and animals taught us since.
   A new head, a new version or a new kind of person starts friendly; an animal with a face gets the same soft, bright
   eyes.
 - The head (`head.js`) is MakeHuman's CC0 base mesh for a man or a woman (`face`), written into `head.data.js` by
-  `scripts/make-head.mjs` from a sparse clone (`--filter=blob:none`; never `git ls-tree -l` on it). It is smoothed once
+  `maia/content/scripts/make-head.mjs` from a sparse clone (`--filter=blob:none`; never `git ls-tree -l` on it). It is smoothed once
   (`subdivide.js`); per-vertex values that must follow the smoothing (region marks, a second blend shape) ride it as
   extra channels, since the subdivision is linear.
 - Expressions are blend shapes built from MakeHuman's expression units at weights, plus a cheek lift: `joy` (the

@@ -1,6 +1,6 @@
 # Developer speed: measure, change, measure again
 
-Numbers come from `bun scripts/devx/measure.mjs` (GitHub's merged PRs and Actions runs; read-only). The method is in
+Numbers come from `bun aven/ops/devx/measure.mjs` (GitHub's merged PRs and Actions runs; read-only). The method is in
 `.claude/skills/devx-speed/SKILL.md`. One row per change; compare windows of the same kind.
 
 ## Cycle 0: baseline (measured 2026-10-27)
@@ -30,9 +30,9 @@ all of the drop is CI.
 
 Local tools, timed on a 4-core cloud box:
 
-| step | before | with scripts/devx |
+| step | before | with aven/ops/devx |
 |---|---|---|
-| check a change to `src/lib/avendb/` | a CI round, median 7.8 min, p75 15.5 (or the 137 s security suite) | `check.mjs`: 3.4 s nearby tests + 65 s svelte-check |
+| check a change to `aven/db/page/` | a CI round, median 7.8 min, p75 15.5 (or the 137 s security suite) | `check.mjs`: 3.4 s nearby tests + 65 s svelte-check |
 | land 10 task branches in one branch | 10 PRs, 10+ CI rounds | `collect.mjs`: 2.5 s; 3 conflicts named, 1 wasm-only conflict resolved |
 | see the numbers | by hand | `measure.mjs`: 20 s a day |
 
@@ -42,12 +42,12 @@ Target, 5x the Oct 22-27 rate: **90+ tasks a day**, under 2 CI minutes per task,
 
 | date | change | before | after | verdict |
 |---|---|---|---|---|
-| 2026-10-27 | drafts run no CI (#1340), goal rule, `scripts/devx` | 18-25 tasks/day, 75 CI min/task | measure after the first goal | |
+| 2026-10-27 | drafts run no CI (#1340), goal rule, `aven/ops/devx` | 18-25 tasks/day, 75 CI min/task | measure after the first goal  50 tasks/day, 21.8 CI min/task (Oct 27 16:00 to Oct 28 16:00 UTC: 15 PRs, 823 runs, 11 % cancelled, release 9.3 min) | 2x tasks, 3.4x less CI a task; 5x target (90/day, <2 min) not met. Next wait: a goal PR open to merge 75 min (CI 17.5 min plus red rounds), and the peer never deployed (`server` skipped on red avenDB checks) |
 
 ## Goals: CI time per goal PR
 
-From `bun scripts/devx/goal.mjs <pr>` (every push with CI on the goal PR, each workflow's time, merge, release).
-Budget: CI under 10 minutes, release under 10 (`scripts/ci/budget.mjs`).
+From `bun aven/ops/devx/goal.mjs <pr>` (every push with CI on the goal PR, each workflow's time, merge, release).
+Budget: CI under 10 minutes, release under 10 (`aven/ops/ci/budget.mjs`).
 
 | goal | PR | heads with CI (CI's wasm) | cancelled runs | first push → merged | release | why |
 |---|---|---|---|---|---|---|

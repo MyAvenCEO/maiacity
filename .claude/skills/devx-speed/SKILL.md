@@ -65,7 +65,7 @@ Sizing rule: keep that start under ~20% of a thread's work.
 
 1. Branch from `origin/main`. Own a clear set of files; say which in your first reply so the coordinator can keep
    other threads off them.
-2. Edit. Then `bun scripts/devx/check.mjs` (`--plan` to see it first). It runs only the test files next to your
+2. Edit. Then `bun aven/ops/devx/check.mjs` (`--plan` to see it first). It runs only the test files next to your
    change, svelte-check when page code changed (~70 s), and per touched crate `cargo check --tests` then only the test
    programs you touched, one command at a time. About 1-2 minutes against 8-15 for a CI round.
 3. Commit, push the branch. A draft PR is fine (drafts run no CI); never mark it ready, never dispatch a workflow
@@ -77,7 +77,7 @@ Sizing rule: keep that start under ~20% of a thread's work.
 ## Helpers inside one thread
 
 - Parallel helpers pay off for reading, searching, JS, docs and measuring. They don't for Rust: one cargo at a time
-  per box (`avendb/CLAUDE.md`). Give the build to one helper, or have the others use `cargo check` after it finishes.
+  per box (`aven/db/CLAUDE.md`). Give the build to one helper, or have the others use `cargo check` after it finishes.
 - No extra git worktrees for Rust work: each one starts a cold build folder (minutes, gigabytes).
 - Work that needs several Rust builds at once belongs in several threads (ask the coordinator), not in helpers.
 
@@ -85,48 +85,54 @@ Sizing rule: keep that start under ~20% of a thread's work.
 
 ```
 git fetch origin && git checkout <collector-branch>
-bun scripts/devx/collect.mjs --plan --drafts          # or name the branches; seconds, changes nothing
-bun scripts/devx/collect.mjs --check --drafts         # merges the clean ones, then the goal's local check
+bun aven/ops/devx/collect.mjs --plan --drafts          # or name the branches; seconds, changes nothing
+bun aven/ops/devx/collect.mjs --check --drafts         # merges the clean ones, then the goal's local check
 git push -u origin <collector-branch>
-bun scripts/devx/collect.mjs --tasks                  # "Task: <branch>" lines for the PR body
+bun aven/ops/devx/collect.mjs --tasks                  # "Task: <branch>" lines for the PR body
 ```
 
 - Every merge is made in memory first; a conflicting branch is left out and named with its files. Send it back to
-  its thread; don't hand-resolve someone else's logic. The CI-built WebAssembly (`src/lib/avendb/device/avendb_browser*`)
-  never blocks: the goal keeps its copy and the final PR's CI commits the right one.
+  its thread; don't hand-resolve someone else's logic. The page WebAssembly (`aven/db/page/device/`) is not in git
+  (B1), so it never conflicts: `bun aven/ops/devx/wasm.mjs ensure` takes the build of the merged sources.
 - When the goal is in (25-50 tasks, or the coordinator says so): put the `Task:` lines in the PR body, mark the PR
   ready, one CI run, fix only the culprits in one round, land it with a merge commit (never a squash: main keeps
   every task's commits) and an explicit message (title + body with the `Task:` lines, never a `[skip ci]`), then close the task PRs naming the final PR, and merge main back into the
   collector branch.
-- **Time budget: CI and release under 10 minutes each** (Samuel 2026-10-27). `.github/workflows/ci-budget.yml` turns
-  red when a run goes over (`scripts/ci/budget.mjs`, which names the slowest jobs and steps); fix that first. What
-  blew it on 2026-10-27 (35 min): a 100k-edit scale test in the core tests hanging to nextest's limit, five pushes to
-  the ready PR in 13 minutes (each push restarts every job), main not reusing the PR's green run (merge commit), and a
-  new job's first cold cache. So: push a ready PR once per fix round, not per fix; scale tests are benches
-  (`#[ignore]`, the performance gates), never tests; a new CI job warms its cache on main before it gates anything.
-- **The goal gate guards the merge.** `.github/workflows/gate.yml` ("Goal gate", `scripts/ci/gate.mjs`) runs on a
-  ready PR only. It works out from the changed files which workflows must run, waits for them, and fails when one is
-  red or never started. A workflow file GitHub rejects never starts and shows no red job: batch 5 (2026-10-28) nearly
-  merged without its avenDB suite. Main's branch protection requires that one check. `bun scripts/ci/workflows.mjs`
-  lints workflow files locally (check.mjs runs it when one changed). `bun scripts/ci/gate.mjs --plan origin/main HEAD`
-  shows what the gate will wait for.
-- **The WebAssembly before ready** (Goal 6 D2): label the goal PR `goal` (or title it "Goal …"). CI then builds
-  and commits the page's WebAssembly while it is still a draft, where that commit restarts nothing. `collect.mjs` takes
-  that commit before each merge. Mark the PR ready only once "avenDB WebAssembly" on the draft's head has finished:
-  then the one CI run is not started a second time by the bot's commit.
-- **Speed gates hold the goal against main on the same runner** (Goal 6 D3): each bench shard runs main's build and
-  the goal's in turn (`scripts/ci/avendb-bench-shard.mjs`), and every gate holds its fixed limit and no more than
-  `vs_main.tolerance` worse than main. Dispatch avenDB checks with `bench_only` and `bench_rounds: 5` to see a spread.
+- **Time budget: CI and release under 10 minutes each** (Samuel 2026-10-27). The last job of `ci.yml` and of
+  `release.yml` names the run's slowest jobs and steps in its summary and warns when the run went over
+  (`aven/ops/ci/budget.mjs`); fix that first. What blew it on 2026-10-27 (35 min): a 100k-edit scale test in the core
+  tests hanging to nextest's limit, five pushes to the ready PR in 13 minutes (each push restarts every job), main not
+  reusing the PR's green run (merge commit), and a new job's first cold cache. So: push a ready PR once per fix round,
+  not per fix; scale tests are benches (`#[ignore]`, run by hand), never tests; a new CI job warms its cache on main
+  before it gates anything.
+- **The goal gate guards the merge.** One workflow checks everything (`.github/workflows/ci.yml`, stage 7): its plan
+  job (`aven/ops/ci/plan.mjs`) picks the jobs the PR's files need, keyed on the files each reads, and leaves out a job
+  whose key passed before; its last job, "CI required", fails when a job the plan named is red, cancelled or missing.
+  Main's branch protection requires that one check, and a workflow file GitHub rejects never reports it.
+  `bun aven/ops/ci/workflows.mjs` lints workflow files locally (check.mjs runs it when one changed);
+  `CI_BASE=origin/main bun aven/ops/ci/plan.mjs` shows what CI will run.
+- **The page's WebAssembly is no commit** (B1): `aven/db/page/device` is a build output. CI's wasm job fetches the
+  build for the tree's key from the release `avendb-page-device`, or builds it (5 min) when the goal changed avenDB's
+  sources; `release.yml` puts each new one on that release once main holds it.
+- **No benchmark in CI** (Goal 7a W1, Samuel 2026-10-28): a timing on a shared runner gates noise. A performance rule
+  goes in as a count (pages, bytes, index rows, log edits read; bytes an edit) or on simulated time (tokio's paused
+  clock, `avendb-net`'s `sim` link: a link's use, a live edit's delay), as a plain test with its limit in the test. The
+  `#[ignore]` benches stay for a by-hand look.
+- **The fresh-device check before ready** (Goal 7 P2): the collector runs `node aven/ops/devx/fresh-device.mjs` on
+  its branch before the goal PR goes ready. A local peer, fresh browser profiles sharing one software passkey: found,
+  write 2,000 todos, sign in on a fresh device, catch up, live both ways, unlock after a restart, the peer killed
+  mid-pull and back, CPU settled; each step against its budget (`BUDGETS`), exit 1 on a miss. First run ~2 min plus
+  the localhost-passkeys builds (~9 min cold). `--fresh webkit` where WebKit is installed (the iPhone's engine).
 - **Once the PR is ready, the goal is closed.** `collect.mjs` refuses to merge more into a ready PR (each push restarts
   its CI). Late branches go in the next goal; `--late` only for a fix this run needs.
-- **Long benches and scale runs go to CI runners, never the 4-core box:** dispatch avenDB checks with `bench_only`
-  (30-min 130k runs on a thread's box held its cargo lock for half an hour, 2026-10-28).
+- **Long benches and scale runs never on a thread's 4-core box** (30-min 130k runs held its cargo lock for half an
+  hour, 2026-10-28): keep a test's size small enough for the shard, and a bench's for a machine of its own.
 - A failing task in the goal: revert its merge commit on the collector branch (`git revert -m 1 <merge>`), push,
   tell its thread; don't hold the goal for it.
 
 ## Improvement cycle: measure, change one thing, measure again
 
-1. Measure: `bun scripts/devx/measure.mjs --since <day> --until <day> --by-day` (read-only GitHub numbers: tasks a
+1. Measure: `bun aven/ops/devx/measure.mjs --since <day> --until <day> --by-day` (read-only GitHub numbers: tasks a
    day, PRs, open-to-merge, CI runner minutes per task, cancelled share, release time). Compare windows of the same
    length and kind (weekday vs weekday, same thread count).
 2. Find the biggest wait: CI minutes per task, conflicts per goal, time a thread waits on a check, cold starts,

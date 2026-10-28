@@ -1,0 +1,65 @@
+//! The Lean model's objective vectors (`aven/db/spec/vectors/objectives.json`, written by `lake exe vectors` from
+//! `spec/AvenDB/ObjectiveVectors.lean`): each case an objective file Lean elaborated, the metrics it holds, readings,
+//! the numbers found at the paths it names (`proposed`, `current`), the measuring logic it names, and what `check`
+//! answers. The engine reads each file to the same metrics and measures and checks them to the same results.
+
+use avendb::objective::{self, Dec};
+use avendb_testkit::vectors;
+use serde_json::Value;
+
+fn dec(v: &Value) -> Option<Dec> {
+    v.as_i64().map(Dec::from).or_else(|| v.as_u64().map(Dec::from))
+}
+
+#[test]
+fn objective_vectors() {
+    let file = vectors("objectives");
+    let cases = file["cases"].as_array().unwrap();
+    assert!(cases.len() >= 6);
+    assert!(cases.iter().any(|c| c.get("proposed").is_some_and(|p| p.as_array().is_some_and(|p| !p.is_empty()))));
+    assert!(cases.iter().any(|c| c["measures"].as_array().is_some_and(|m| !m.is_empty())));
+    for c in cases {
+        let name = c["name"].as_str().unwrap();
+        let read = objective::read(c["lean"].as_str().unwrap()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let measures: Vec<String> = serde_json::from_value(c["measures"].clone()).unwrap();
+        assert_eq!(read.measures, measures, "{name}: the measuring logic it names");
+        let metrics = read.metrics;
+        let model: Vec<Value> = c["metrics"].as_array().unwrap().clone();
+        assert_eq!(metrics.len(), model.len(), "{name}");
+        for (m, want) in metrics.iter().zip(&model) {
+            assert_eq!(m.name, want["name"].as_str().unwrap(), "{name}");
+            assert_eq!(m.goal.to_json(), want["goal"], "{name}: {}", m.id);
+        }
+        let named = |key: &str, by: &str| -> Vec<(String, Dec)> {
+            let rows = c.get(key).and_then(Value::as_array).cloned().unwrap_or_default();
+            rows.iter().map(|r| (r[by].as_str().unwrap().to_string(), dec(&r["value"]).unwrap())).collect()
+        };
+        let inputs = objective::Inputs {
+            readings: named("readings", "name"),
+            measured: named("measured", "name"),
+            proposed: named("proposed", "path"),
+            current: named("current", "path"),
+        };
+        let got = objective::check(&metrics, &inputs);
+        let want = &c["result"];
+        assert_eq!(got.met as u64, want["met"].as_u64().unwrap(), "{name}");
+        assert_eq!(got.total as u64, want["total"].as_u64().unwrap(), "{name}");
+        assert_eq!(Some(got.progress), dec(&want["progress"]), "{name}");
+        for (i, (r, w)) in got.results.iter().zip(want["metrics"].as_array().unwrap()).enumerate() {
+            assert_eq!(r.value, dec(&w["value"]), "{name} #{i} value");
+            assert_eq!(r.baseline, dec(&w["baseline"]), "{name} #{i} baseline");
+            let ts: Vec<Option<Dec>> = w["targets"].as_array().unwrap().iter().map(dec).collect();
+            assert_eq!(r.targets, ts, "{name} #{i} targets");
+            assert_eq!(r.met, w["met"].as_bool().unwrap(), "{name} #{i} met");
+            assert_eq!(Some(r.progress), dec(&w["progress"]), "{name} #{i} progress");
+        }
+    }
+}
+
+#[test]
+fn notes_are_doc_comments() {
+    let file = vectors("objectives");
+    let start = objective::parse(file["cases"][0]["lean"].as_str().unwrap()).unwrap();
+    assert_eq!(start[0].note.as_deref(), Some("V1 shows its first frame within 1.5 s on the 8 GB Mac."));
+    assert_eq!(start[1].id, "fps");
+}

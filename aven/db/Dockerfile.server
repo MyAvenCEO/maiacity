@@ -1,0 +1,30 @@
+# avendb-server: avenDB's server and its relay (crates/avendb-server). It builds in the one Cargo workspace (D3), so its
+# context is the repository's root, cut down by Dockerfile.server.dockerignore to the workspace's manifests, avenDB's
+# crates and the patched iroh, and theOS's manifests and sources, which cargo needs to read the workspace but never
+# compiles here. Build it from the root: docker build -f aven/db/Dockerfile.server .
+# cargo-chef keeps the compiled dependencies in their own layer, so a change to our code rebuilds only our crates, in
+# the `server` profile (Cargo.toml).
+FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
+WORKDIR /src
+
+FROM chef AS planner
+COPY . ./
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS build
+COPY --from=planner /src/recipe.json recipe.json
+# The patched dependency is outside the workspace, so chef does not include it in its recipe.
+COPY aven/db/vendor ./aven/db/vendor
+RUN cargo chef cook --profile server --locked --package avendb-server --recipe-path recipe.json
+COPY . ./
+RUN cargo build --profile server --locked -p avendb-server && cp target/server/avendb-server /avendb-server
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=build /avendb-server /usr/local/bin/avendb-server
+ENV AVENDB_DATA=/data
+VOLUME /data
+# 7401/udp: iroh, devices on UDP straight · 3350: the relay's plain HTTP, behind the proxy that ends TLS · 3351: the
+# Maia Universe's feed, plain HTTP behind the same proxy
+EXPOSE 7401/udp 3350 3351
+ENTRYPOINT ["/usr/local/bin/avendb-server"]

@@ -41,7 +41,7 @@ holds what each platform enforces, what it recommends, the file to render for it
 
 ## Our render targets (vault-render)
 
-What the Mac app renders today (`vault/crates/vault-render/src/render.rs`, `files_for`; `timeline.rs`, `Shape`):
+What the Mac app renders today (`theos/crates/vault-render/src/render.rs`, `files_for`; `timeline.rs`, `Shape`):
 
 | Delivery | File | For | Within every limit? |
 |---|---|---|---|
@@ -49,7 +49,7 @@ What the Mac app renders today (`vault/crates/vault-render/src/render.rs`, `file
 | 16:9 master + copy (every delivery) | 4K HEVC Main10 50 Mb/s, plus 1920×1080 H.264 ≤ 20 Mb/s, AAC 192 kb/s | YouTube; X, LinkedIn | Yes. The copy's 20 Mb/s: X allows 25, LinkedIn 30; a 140 s X video at 20 Mb/s is about 350 MB (under 512). LinkedIn's API caps a file at 500 MB: at 20 Mb/s that is about 3 min 20 s — longer LinkedIn films need about 10 Mb/s. |
 | 9:16 | 1080×1920 H.264 ≤ 12 Mb/s, AAC 192 kb/s | Instagram Reel; YouTube Short when ≤ 3 min | Yes. Instagram's API takes ≤ 25 Mb/s and ≤ 300 MB: a Reel of ≤ 90 s may go at 20–25 Mb/s. TikTok takes the same file. Bluesky needs its own ≤ 60 s, ≤ 50 MB cut. Instagram's API names AAC at 128 kb/s. |
 | 1:1, 4:5 | 1080 wide H.264 ≤ 20 Mb/s | Instagram "feed" video | **Not needed:** Instagram's API publishes every video as a Reel (`shareToFeed` puts it on the grid). 4:5 is for photos and carousel slides. |
-| Title cards (`scripts/film/thumbnail.mjs`) | 16:9, 9:16, 1:1, 5:2 | Thumbnails, Reel cover, feeds, X Article cover | YouTube's thumbnail through Zernio must be ≤ 2 MB (JPEG/PNG). |
+| Title cards (`maia/content/scripts/film/thumbnail.mjs`) | 16:9, 9:16, 1:1, 5:2 | Thumbnails, Reel cover, feeds, X Article cover | YouTube's thumbnail through Zernio must be ≤ 2 MB (JPEG/PNG). |
 
 The YouTube master is checked against YouTube's own recommendations, and holds: MP4 with the index in front
 (`vault_media::mp4::finish`), HEVC Main10 (accepted; YouTube's H.264 GOP rule of half the frame rate is for H.264),
