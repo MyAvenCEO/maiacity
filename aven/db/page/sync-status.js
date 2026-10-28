@@ -115,6 +115,9 @@ export function liveSync(sync, now) {
 	/** the peers it waits on: those it pulls from, else every peer it hears */
 	const on = running.length ? running : sync.from;
 	const who = on.length ? on.map(waited).join(', ') : 'peers';
+	/** the line names one peer; more it counts, their names in the details (Samuel 2026-10-28: three names ran the pill
+	 * off a phone's screen) */
+	const one = on.length > 1 ? `${on.length} peers` : who;
 	const last = Math.max(sync.paged, ...sync.from.map((p) => p.last));
 	const moved = Math.max(sync.since, last);
 	/** since when it waits: a running pull's last page or its start, the latest of them; else the last thing that moved */
@@ -125,7 +128,7 @@ export function liveSync(sync, now) {
 	const moving = running.filter((p) => taking(p, now)).length;
 	const failed = sync.from.reduce((sum, p) => sum + p.failed, 0);
 	const covered = Math.max(0, sync.logs - sync.behind);
-	const line = stalled ? `Waiting on ${who} · ${long(wait)}`
+	const line = stalled ? `Waiting on ${one} · ${long(wait)}`
 		: `Syncing${sync.behind > 0 ? ` ${n(covered)}/${n(sync.logs)}` : ''}${taken > 0 ? ` · +${n(taken)} edits` : ''}`;
 	/** @type {[string, string][]} */
 	const rows = running.map((p) => [named(p), [taking(p, now) ? p.pulling?.stage || 'pulling' : 'stalled', `${n(p.pulling?.took ?? 0)} edits`,

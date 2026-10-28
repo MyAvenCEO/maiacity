@@ -69,8 +69,9 @@ const PACK: &[u8] = b"avenDB edits 1\n";
 const JOURNALED: u64 = 64;
 /// How many edits of the journal a head comes after, however few entries hold them: a node checks the signature of
 /// every edit after its newest head as it starts (`Lab::restore_warm`), so a catch-up's few saves of thousands of edits
-/// each would have every start check them all (58 s of an iPhone's unlock, of 110k edits, on 2026-10-28).
-const TAIL_EDITS: usize = PAGE_EDITS;
+/// each would have every start check them all (58 s of an iPhone's unlock, of 110k edits, on 2026-10-28). With
+/// `test-fixtures`, a head after 64, so a test crosses one with a few hundred edits, not thousands.
+const TAIL_EDITS: usize = if cfg!(feature = "test-fixtures") { 64 } else { PAGE_EDITS };
 /// Once a head names this many packs, the next names one pack of the whole log.
 const PACKS: usize = 64;
 const HEADS: &str = "heads/";
