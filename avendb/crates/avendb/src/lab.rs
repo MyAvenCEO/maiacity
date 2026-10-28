@@ -366,6 +366,8 @@ struct Keyring {
     keyed_for_read: Vec<EntryId>,
     /// It took a key of an audience since `read` last looked: a body it lacked a key for may be under one it derives.
     audience_for_read: bool,
+    /// The audience key the last body each author wrote that it derived the key of was under (`entry_key_of`).
+    derived_by: HashMap<SignerId, KeyId>,
     by_id: HashMap<KeyId, (KeyName, Secret)>,
     /// Each name's keys, the smallest id first.
     by_name: HashMap<KeyName, Vec<KeyId>>,
@@ -4473,6 +4475,12 @@ impl Lab {
         self.held(d).keys.first(name).is_some()
     }
 
+    /// How many keys of `name` device `d` holds: more than one where devices made a family's key of one epoch at the
+    /// same time, each its own.
+    pub fn keys_held(&self, d: SignerId, name: KeyName) -> usize {
+        self.held(d).keys.held(name).count()
+    }
+
     /// The edits device `d` holds; `log(d).view()` is what they say, every write counted.
     pub fn log(&self, d: SignerId) -> &Log {
         &self.held(d).log
@@ -6377,9 +6385,10 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 // a box to an entry's key, a link of its earlier stay's, derives that key where it is to open it
                 Recipient::Key { name: to, id: under } => match store.keys.get(&under, to) {
                     Some(k) => Some(k.clone()),
-                    None => entry_key_of(&store.keys, &store.replay.state, to, under).inspect(|k| {
+                    None => entry_key_of(&store.keys, &store.replay.state, to, under, None).map(|(k, _)| {
                         store.perf.count("keys derived for a body or box", 1);
                         more |= store.keys.insert(to, k.clone());
+                        k
                     }),
                 },
             };
@@ -6469,13 +6478,20 @@ fn now_keys_of(st: &State, of: Option<&HashSet<EntryId>>) -> NowKeys {
 type NowKeys = HashMap<(AudienceId, u64), Vec<(EntryId, Option<EditId>)>>;
 
 /// The key `id` of entry key `name`, derived from a key of the audience of its stay at its epoch that the keyring `keys`
-/// holds (`keys::entry_key`), as a body under it or a box to it asks for it: none where no key it holds derives it. A
-/// family can have several keys of one epoch, as devices made them at the same time, each its writes under its own.
-fn entry_key_of(keys: &Keyring, st: &State, name: KeyName, id: KeyId) -> Option<Secret> {
+/// holds (`keys::entry_key`), as a body under it or a box to it asks for it, with the audience key it derives from: none
+/// where no key it holds derives it. A family can have several keys of one epoch, as devices made them at the same time,
+/// each its writes under its own: the audience key `hint` is tried first, the one the last write of the same author was
+/// under (`Keyring::derived_by`), so a body costs one derivation, not one for each key of its audience (65 at 32,000
+/// edits, 58 ms a step).
+fn entry_key_of(keys: &Keyring, st: &State, name: KeyName, id: KeyId, hint: Option<KeyId>) -> Option<(Secret, KeyId)> {
     let KeyName::Entry(e, s, g) = name else { return None };
     let en = st.entry(e)?;
     let audience = KeyName::Scoped(KeyFam::Audience(en.vault, en.stay_audience(s)?), g);
-    keys.held(audience).map(|a| keys::entry_key(a, e, s)).find(|k| k.id() == id)
+    let hinted = hint.and_then(|h| keys.by_id.get(&h)).filter(|(n, _)| *n == audience).map(|(_, a)| a);
+    hinted.into_iter().chain(keys.held(audience)).find_map(|a| {
+        let k = keys::entry_key(a, e, s);
+        (k.id() == id).then(|| (k, a.id()))
+    })
 }
 
 /// The entries whose stays may have changed since device's store `store` last derived its entry keys (`derive`): those
@@ -6670,9 +6686,10 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
             let name = KeyName::Entry(*entry, *stay, *epoch);
             let key = match store.keys.get(&key, name) {
                 Some(k) => k.clone(),
-                None => match entry_key_of(&store.keys, st, name, key) {
-                    Some(k) => {
+                None => match entry_key_of(&store.keys, st, name, key, store.keys.derived_by.get(&edit.author).copied()) {
+                    Some((k, from)) => {
                         store.perf.count("keys derived for a body or box", 1);
+                        store.keys.derived_by.insert(edit.author, from);
                         store.keys.insert(name, k.clone());
                         k
                     }
@@ -6707,7 +6724,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
             let Action::Write { entry, stay, epoch, body, .. } = &signed.edit.action else { continue };
             let name = KeyName::Entry(*entry, *stay, *epoch);
             let opens = keys::edit_key(&body.bytes())
-                .and_then(|k| store.keys.get(&k, name).cloned().or_else(|| entry_key_of(&store.keys, st, name, k)));
+                .and_then(|k| store.keys.get(&k, name).cloned().or_else(|| entry_key_of(&store.keys, st, name, k, None).map(|(k, _)| k)));
             debug_assert!(opens.is_none(), "read left {id:?} unopened, which it opens");
         }
     }
