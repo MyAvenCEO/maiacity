@@ -3507,6 +3507,37 @@ impl Lab {
         None
     }
 
+    /// What device `d` answers peer `asker` by (`StandingReplay.lean` `answerFor`): `standing_or`, and where that is none,
+    /// in the middle of a catch-up with a removal among the edits past its replay, the replay it holds, unless one of
+    /// those removals may concern `asker`: one that removes `asker`, or removes a device that ever shared anything
+    /// (what it shared may be cut, and others' reach with it), or any other kind of removal (an owner's, a grant's),
+    /// which concerns every peer. A Mac in the middle of its catch-up of Maia City, which holds removals, handed an
+    /// iPhone that lacked 2,569 logs no page, and the iPhone asked by requests that named nothing (Fix C, 2026-10-28).
+    fn standing_for(&self, d: SignerId, asker: SignerId) -> Option<&State> {
+        if let Some(st) = self.standing_or(d) {
+            return Some(st);
+        }
+        let store = self.held(d);
+        let edits = store.log.edits();
+        let shared_by = |device: SignerId| {
+            let vault_logs = store.log.by_log().iter().filter(|(l, _)| matches!(l, LogId::Vault(_)));
+            vault_logs.flat_map(|(_, places)| places.iter()).any(|&i| {
+                let e = &edits[i];
+                // its own addition, which it cosigns, is what the removal takes back
+                let own = matches!(e.action, Action::Share(Sharing::Device { device: added, .. }) if added == device);
+                matches!(e.action, Action::Share(_)) && !own && (e.author == device || e.cosigners.contains(&device))
+            })
+        };
+        let concerns = |e: &Edit| match &e.action {
+            Action::Revoke(crate::policy::Revoking::Device { device, .. }) => *device == asker || shared_by(*device),
+            _ => e.is_removal(),
+        };
+        if edits[store.replayed..].iter().any(concerns) {
+            return None;
+        }
+        Some(&store.replay.state)
+    }
+
     /// Whether device `d` answers what its edits say now without replaying every edit it holds (`standing_or`): a
     /// background reader, as a node's file keeper, waits for its catch-up while it doesn't.
     pub fn answers_now(&self, d: SignerId) -> bool {
@@ -5290,7 +5321,7 @@ impl Lab {
     /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
         let store = self.held(d);
-        let Some(st) = self.standing_or(d) else { return Arc::new(vec![]) };
+        let Some(st) = self.standing_for(d, asker) else { return Arc::new(vec![]) };
         Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow))
     }
 
@@ -5468,7 +5499,7 @@ impl Lab {
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         let store = self.held(d);
-        let Some(st) = self.standing_or(d) else { return vec![] };
+        let Some(st) = self.standing_for(d, asker) else { return vec![] };
         let mut needs = crate::lazy::Needs::new(st, asker);
         let mut out: Vec<Stub> = sends
             .places
@@ -5696,7 +5727,7 @@ impl Lab {
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
     /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        self.standing_or(d).is_some_and(|st| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow))
+        self.standing_for(d, asker).is_some_and(|st| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow))
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.

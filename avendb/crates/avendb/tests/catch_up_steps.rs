@@ -339,6 +339,38 @@ fn a_first_sync_with_a_removal_answers_its_peers_by_nothing_till_caught_up_not_b
     assert!(asked(&mut lab) > 0, "caught up, it hands its peer what it holds");
 }
 
+/// Mid such a catch-up it still answers a peer the removal doesn't concern, by the replay it holds: never more than it
+/// hands it once caught up (Fix C, 2026-10-28: a Mac in the middle of its catch-up of Maia City, which holds removals,
+/// handed an iPhone that lacked 2,569 logs no page, as it answered every peer by nothing till caught up).
+#[test]
+fn a_first_sync_with_a_removal_answers_the_peers_it_doesnt_concern_by_its_replay() {
+    let (mut lab, d, writer) = first_sync_of(6, 40, true);
+    let asked = |lab: &mut avendb::lab::Lab| {
+        let request = lab.request(writer, d);
+        lab.reply(d, writer, &request, 1 << 30).0.into_iter().map(|s| s.edit.id()).collect::<Vec<_>>()
+    };
+    let (mut steps, mut mid) = (0, Vec::new());
+    loop {
+        let step = lab.catch_up_step(d, 1);
+        steps += 1;
+        assert!(steps < 10_000, "a catch-up in steps ends");
+        if matches!(step, CatchUp::Caught(_)) {
+            break;
+        }
+        if !lab.replay_current(d) {
+            mid.push(asked(&mut lab));
+            assert!(!lab.replay_current(d), "a peer's ask at step {steps} replayed every edit");
+        }
+    }
+    let whole: std::collections::HashSet<_> = asked(&mut lab).into_iter().collect();
+    assert!(!whole.is_empty(), "caught up, it hands its peer what it lacks");
+    let answered = mid.iter().filter(|page| !page.is_empty()).count();
+    assert!(answered > 0, "it answered the writer mid its catch-up, at none of {} steps", mid.len());
+    for page in &mid {
+        assert!(page.iter().all(|id| whole.contains(id)), "mid its catch-up it hands over only what it hands once caught up");
+    }
+}
+
 /// A start of more than it does in one go (`Lab::set_restore_whole`), as an iPhone's unlock of a partial vault with no
 /// stored view (313 s, 2026-10-28): its restore replays and shows a step of it and ends catching up, a replay of a few
 /// edits; its catch-up a step at a time then brings it to what a start that did it all in one go shows.
