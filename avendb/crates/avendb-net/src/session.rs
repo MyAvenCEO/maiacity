@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{EditId, ShareId, SignerId, VaultId};
@@ -87,6 +88,53 @@ pub(crate) const CUTS_REPLY_LIMIT: usize = 2 + CUTS_LIMIT * 40;
 /// again without it, and from then on on that connection (`Shared::unpacked`).
 pub(crate) const PACKED: u8 = 0x80;
 
+/// The bit a request, an `ASK_LOGS` or an `ASK_VAULTS` sets in its kind (there, or as the kind a `CUTS`, a `STUBS` or
+/// a proofs request names) to state its page budget: its body starts with it, four bytes, and the peer makes each page
+/// of it that many bytes, within `LEAST_PAGE` and its own (`served`, S1b, `LivePriority.lean` "Pages sized to their
+/// asker"). A node asks only a peer that answered its `SIZING`, so no peer from before is sent it.
+pub(crate) const SIZED: u8 = 0x40;
+
+/// Whether the peer sizes pages to its askers (`SIZED`): an empty body, answered by the least and the most page it
+/// makes, four bytes each. A peer from before refuses this kind, and is asked unsized on that connection
+/// (`Shared::unsized`).
+pub(crate) const SIZING: u8 = 24;
+
+/// The least page a peer makes for an asking that states a budget: a page costs the peer its planning and the asker a
+/// round trip, so a budget of a few bytes would cost both more than it saves.
+pub(crate) const LEAST_PAGE: usize = 32 << 10;
+
+/// A `SIZING` answer: the least and the most page this node makes.
+pub(crate) fn sizing_wire(least: usize, most: usize) -> Vec<u8> {
+    let mut out = (least.min(u32::MAX as usize) as u32).to_be_bytes().to_vec();
+    out.extend_from_slice(&(most.min(u32::MAX as usize) as u32).to_be_bytes());
+    out
+}
+
+/// The least and the most page a `SIZING` answer names (`sizing_wire`).
+pub(crate) fn from_sizing_wire(bytes: &[u8]) -> Result<(usize, usize)> {
+    let [a, b, c, d, e, f, g, h] = bytes else { bail!("a malformed sizing answer") };
+    let (least, most) = (u32::from_be_bytes([*a, *b, *c, *d]) as usize, u32::from_be_bytes([*e, *f, *g, *h]) as usize);
+    anyhow::ensure!(0 < least && least <= most, "a malformed sizing answer");
+    Ok((least, most))
+}
+
+/// `body` stating page budget `budget` (`SIZED`).
+pub(crate) fn sized_body(budget: usize, body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(body.len() + 4);
+    out.extend_from_slice(&(budget.min(u32::MAX as usize) as u32).to_be_bytes());
+    out.extend_from_slice(body);
+    out
+}
+
+/// The page this node makes for an asking that states `budget`, or none: within `LEAST_PAGE` and its own, `most`
+/// (`LivePriority.lean` `served`). An asker from before is served as before.
+pub(crate) fn served(most: usize, budget: Option<usize>) -> usize {
+    match budget {
+        None => most,
+        Some(b) => most.min(b.max(LEAST_PAGE)),
+    }
+}
+
 /// The most vaults an `ASK_VAULTS` names.
 const VAULTS_LIMIT: usize = 4096;
 
@@ -158,6 +206,24 @@ pub(crate) async fn exchange(conn: &Connection, kind: u8, body: &[u8], limit: us
     send.write_all(body).await?;
     send.finish()?;
     Ok(recv.read_to_end(limit).await?)
+}
+
+/// `exchange`, and how long its answer took to come from its first byte to its last: the time the link took to send
+/// it, without the round trip or the peer's working it out (S1b, `pulls::Rate`).
+pub(crate) async fn exchange_timed(conn: &Connection, kind: u8, body: &[u8], limit: usize) -> Result<(Vec<u8>, Duration)> {
+    let (mut send, mut recv) = conn.open_bi().await?;
+    send.write_all(&[kind]).await?;
+    send.write_all(body).await?;
+    send.finish()?;
+    let mut first = [0u8; 1];
+    let Some(1) = recv.read(&mut first).await? else { return Ok((Vec::new(), Duration::ZERO)) };
+    let began = n0_future::time::Instant::now();
+    // the rest within what is left of the limit, so that an answer past it fails as `too_long` as `exchange`'s does
+    let rest = recv.read_to_end(limit.saturating_sub(1)).await?;
+    let mut answer = Vec::with_capacity(rest.len() + 1);
+    answer.push(first[0]);
+    answer.extend_from_slice(&rest);
+    Ok((answer, began.elapsed()))
 }
 
 /// Only this typed read error permits a large-page retry; resets, parse errors and connection failures do not.
@@ -273,8 +339,15 @@ fn to_old(mut edits: Vec<avendb::sign::Signed>) -> Vec<avendb::sign::Signed> {
     edits
 }
 
-fn authorized_request(kind: u8, body: &[u8]) -> Result<(Request, Option<ReplyScope>)> {
-    Ok(match kind {
+/// The request a body of `kind` makes, the logs or vaults it is scoped to, and the page budget it states (`SIZED`).
+fn authorized_request(kind: u8, body: &[u8]) -> Result<(Request, Option<ReplyScope>, Option<usize>)> {
+    let (budget, body) = if kind & SIZED != 0 {
+        let (budget, rest) = body.split_first_chunk::<4>().context("a sized request cut short")?;
+        (Some(u32::from_be_bytes(*budget) as usize), rest)
+    } else {
+        (None, body)
+    };
+    let (request, scope) = match kind & !SIZED {
         REQUEST => (Request::from_wire(body)?, None),
         ASK_LOGS => {
             let request = Request::from_wire(body)?;
@@ -286,7 +359,8 @@ fn authorized_request(kind: u8, body: &[u8]) -> Result<(Request, Option<ReplySco
             (request, Some(ReplyScope::Vaults(vaults)))
         }
         _ => bail!("unsupported authorized request kind"),
-    })
+    };
+    Ok((request, scope, budget))
 }
 
 /// The body of a `CUTS`: the kind it asks about, how many cuts, then that kind's body.
@@ -333,8 +407,8 @@ pub(crate) fn from_cuts_wire(bytes: &[u8]) -> Result<(Vec<avendb::sync::Place>, 
 
 async fn authorized_cuts(shared: &Arc<Shared>, peer: &Peer, body: &[u8]) -> Result<Vec<u8>> {
     let [kind, count, body @ ..] = body else { bail!("a cuts request cut short") };
-    let (request, scope) = authorized_request(*kind, body)?;
-    let (device, page, count) = (peer.device, shared.opts.page, (*count as usize).min(CUTS_LIMIT));
+    let (request, scope, budget) = authorized_request(*kind, body)?;
+    let (device, page, count) = (peer.device, served(shared.opts.page, budget), (*count as usize).min(CUTS_LIMIT));
     let (cuts, done) = shared
         .try_lab(move |lab, me| lab.reply_cuts(me, device, &request, page, &scope.unwrap_or_default(), count))
         .await?;
@@ -343,7 +417,7 @@ async fn authorized_cuts(shared: &Arc<Shared>, peer: &Peer, body: &[u8]) -> Resu
 
 async fn authorized_stubs(shared: &Arc<Shared>, peer: &Peer, body: &[u8]) -> Result<Vec<u8>> {
     let [kind, body @ ..] = body else { bail!("a stubs request cut short") };
-    let (request, scope) = authorized_request(*kind, body)?;
+    let (request, scope, _) = authorized_request(*kind, body)?;
     let device = peer.device;
     let stubs = shared
         .try_lab(move |lab, me| lab.withheld(me, device, &request, &scope.unwrap_or_default()))
@@ -352,9 +426,9 @@ async fn authorized_stubs(shared: &Arc<Shared>, peer: &Peer, body: &[u8]) -> Res
 }
 
 async fn authorized_reply(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], paths: bool) -> Result<Reply> {
-    let (request, scope) = authorized_request(kind, body)?;
+    let (request, scope, budget) = authorized_request(kind, body)?;
     shared.follows(peer, &request);
-    let (device, page) = (peer.device, shared.opts.page);
+    let (device, page) = (peer.device, served(shared.opts.page, budget));
     let (edits, ids, more) = shared.try_lab(move |lab, me| match scope {
         None => lab.reply(me, device, &request, page),
         Some(scope) => lab.reply_in(me, device, &request, page, &scope),
@@ -408,7 +482,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
 async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], range: Option<Arc<crate::edit_transfer::Serving>>, checkpoint: Option<Arc<tokio::sync::OwnedSemaphorePermit>>) -> Result<Vec<u8>> {
     let device = peer.device;
     // a reply packed where the request asks for it (K5), whole otherwise
-    let packed = kind & PACKED != 0 && matches!(kind & !PACKED, REQUEST | ASK_LOGS | ASK_VAULTS);
+    let packed = kind & PACKED != 0 && matches!(kind & !(PACKED | SIZED), REQUEST | ASK_LOGS | ASK_VAULTS);
     let replied = |reply: Reply| if packed { Packed(reply).to_wire() } else { reply.to_wire() };
     let kind = if packed { kind & !PACKED } else { kind };
     // how long a page takes this node to make, from the request read to the reply made (`Traffic::served`)
@@ -427,7 +501,8 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         crate::peer_receipts::UI_KIND => crate::peer_receipts::answer_ui(shared, peer, body).await,
         CUTS => authorized_cuts(shared, peer, body).await,
         STUBS => authorized_stubs(shared, peer, body).await,
-        REQUEST | ASK_LOGS | ASK_VAULTS => {
+        SIZING => Ok(sizing_wire(LEAST_PAGE.min(shared.opts.page), shared.opts.page)),
+        k if matches!(k & !SIZED, REQUEST | ASK_LOGS | ASK_VAULTS) => {
             let reply = authorized_reply(shared, peer, kind, body, false).await?;
             let n = reply.edits.len();
             Ok(served(n, replied(reply)))
@@ -631,6 +706,79 @@ mod batch_session_tests {
     }
     impl Drop for Folder {
         fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+    }
+
+    /// S1b (`LivePriority.lean` "Pages sized to their asker"): a peer names the pages it makes, sizes each page of an
+    /// asking that states its budget to it, on every way a page is asked (plain, packed, with proofs, its cuts), and
+    /// serves an asking that states none as before.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_sized_asking_gets_pages_of_its_budget_and_an_unsized_one_the_peers_own() {
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (sender, receiver) = (w.mac_a, w.phone_a);
+        let (a, b) = (Folder::new(), Folder::new());
+        let mac = Node::spawn(w.lab.split(sender, &[], [161; 32]), sender, a.options()).await.unwrap();
+        let phone = Node::spawn(w.lab.split(receiver, &[], [162; 32]), receiver, b.options()).await.unwrap();
+        let body = "a long note ".repeat(1700);
+        for i in 0..12 {
+            let body = body.clone();
+            mac.act(move |lab, me| lab.create(me, coop, coop, "doc", &[], document(&format!("Note {i}"), &body, me)))
+                .await
+                .unwrap();
+        }
+        phone.know(mac.addr());
+        let peer = phone.shared.connection(mac.id()).await.unwrap();
+        let most = mac.shared.opts.page;
+        let sizes = from_sizing_wire(&exchange(&peer.conn, SIZING, &[], 8).await.unwrap()).unwrap();
+        assert_eq!(sizes, (LEAST_PAGE.min(most), most));
+        let request = phone.read(move |lab, me| lab.request(me, sender)).await;
+        let at = |after| Request { after, ..request.clone() }.to_wire();
+        let bytes = |r: &Reply| r.edits.iter().map(|s| s.to_wire().len()).sum::<usize>();
+        let ids = |r: &Reply| r.edits.iter().map(|s| s.edit.id()).collect::<Vec<_>>();
+        // unsized: the peer's own page, every edit at once
+        let whole = Reply::from_wire(&exchange(&peer.conn, REQUEST, &at(None), REPLY_LIMIT).await.unwrap()).unwrap();
+        assert!(!whole.more && bytes(&whole) > 4 * LEAST_PAGE, "{} bytes in one page", bytes(&whole));
+        // sized at the least page: page after page, each within it or one edit alone, together the same edits
+        let (mut after, mut pages, mut got) = (None, Vec::new(), Vec::new());
+        loop {
+            let wire = exchange(&peer.conn, REQUEST | SIZED, &sized_body(1, &at(after)), REPLY_LIMIT).await.unwrap();
+            let page = Reply::from_wire(&wire).unwrap();
+            assert!(bytes(&page) <= LEAST_PAGE || page.edits.len() == 1, "{} bytes in a page", bytes(&page));
+            // packed and with proofs, the same page
+            let packed = exchange(&peer.conn, REQUEST | SIZED | PACKED, &sized_body(1, &at(after)), REPLY_LIMIT).await;
+            assert_eq!(ids(&Packed::from_wire(&packed.unwrap()).unwrap().0), ids(&page));
+            let v1 = proofs::Request { kind: REQUEST | SIZED, request: sized_body(1, &at(after)), known: Default::default(), paths: false, held: None };
+            let v1 = exchange(&peer.conn, proofs::KIND, &v1.encode().unwrap(), REPLY_LIMIT).await.unwrap();
+            let v1 = proofs::Supplement::decode(&v1).unwrap().verify(phone.shared.signers.as_ref().unwrap()).await.unwrap();
+            assert_eq!(ids(&v1), ids(&page));
+            got.extend(ids(&page));
+            let last = page.edits.iter().map(|s| avendb::sync::place(&s.edit)).max();
+            pages.push(last.unwrap());
+            if !page.more {
+                break;
+            }
+            after = last;
+        }
+        assert!(pages.len() > 4, "{} pages", pages.len());
+        assert_eq!(got, ids(&whole), "the sized pages bring what the whole page did, in its order");
+        // its cuts, asked at the same budget, end where its pages did
+        let asked = cuts_body(REQUEST | SIZED, CUTS_LIMIT, &sized_body(1, &at(None)));
+        let (cuts, done) = from_cuts_wire(&exchange(&peer.conn, CUTS, &asked, CUTS_REPLY_LIMIT).await.unwrap()).unwrap();
+        assert_eq!(cuts, pages[..cuts.len()], "cuts at the stated budget are its pages' ends");
+        assert_eq!(done, cuts.len() == pages.len());
+        // on a direct path the first pull waits for no question of the peer's sizes: it states none, served the peer's
+        // most, and asks the sizes beside it (`Shared::pages`, `startBudget` in `LivePriority.lean`)
+        phone.sync_with(mac.id()).await.unwrap();
+        let pulled = phone.shared.traffic.of(&sender).expect("pulled");
+        assert_eq!(pulled.budget, 0, "the first asking on a direct path states no budget");
+        let connection = peer.conn.stable_id();
+        avendb_testkit::until("the peer's sizes", || async { phone.shared.sizing.lock().unwrap().get(&connection).is_some() }).await;
+        assert_eq!(phone.shared.sizing.lock().unwrap().get(&connection), Some(&Some(sizes)));
+        // the next states one, within the peer's pages, and the budget it stated is in its traffic
+        mac.act(move |lab, me| lab.create(me, coop, coop, "doc", &[], document("Later", "a sized pull", me)).unwrap()).await;
+        phone.sync_with(mac.id()).await.unwrap();
+        let budget = phone.shared.traffic.of(&sender).expect("pulled").budget as usize;
+        assert!((sizes.0..=sizes.1).contains(&budget), "the next asking states a budget within the peer's pages: {budget}");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

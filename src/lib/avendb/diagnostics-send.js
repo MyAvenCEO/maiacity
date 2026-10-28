@@ -52,6 +52,19 @@ export function view() {
 	return `${location.pathname}${/^[a-z-]{1,32}$/.test(page) ? `#${page}` : ''}`;
 }
 
+/** Whether the page is seen now, and how long it was hidden, from the lifecycle's journal: a report goes only while the
+ *  page is seen (or from theOS), so `hiddenTotalMs` and `lastHiddenMs` say what the stretches before it were. */
+export function visibility() {
+	const context = lifecycle()?.timingContext();
+	return {
+		now: document.visibilityState,
+		native: native(),
+		elapsedMs: Math.round(context?.elapsedMs ?? 0),
+		hiddenTotalMs: Math.round(context?.hiddenTotalMs ?? 0),
+		lastHiddenMs: hiddenFor
+	};
+}
+
 /** A pass of this device for the server's reports, or null while its vault is closed. */
 async function pass() {
 	if (session.phase !== 'open') return null;
@@ -100,6 +113,9 @@ export async function keepReports() {
 let busy = false;
 let last = 0;
 let settling = null;
+/** When the page was last hidden (ms), and how long its last hidden stretch lasted. */
+let hiddenAt = null;
+let hiddenFor = 0;
 /** Sends this device's report now, `why` it went (`every`, `view`), and in theOS reads its person's back. A page in
  *  the background waits; theOS goes on with its window hidden, as it is the one that keeps every device's reports
  *  (Samuel 2026-10-27: the reports stopped whenever theOS was behind another window). */
@@ -108,7 +124,7 @@ async function tick(why) {
 	busy = true;
 	try {
 		last = Date.now();
-		await sendReport({ page: 'background', why, diagnostics: snapshot(), ...(await engine()) });
+		await sendReport({ why, visibility: visibility(), diagnostics: snapshot(), ...(await engine()) });
 		await keepReports();
 	} finally {
 		busy = false;
@@ -123,9 +139,26 @@ export function viewChanged() {
 	}, SETTLE);
 }
 
-/** While the vault is open: a report sent every `EVERY`, and in theOS its person's read back. Its stop. */
+/** The page was hidden or seen again: after a hidden stretch of `LEAST` or more, a report goes once it had `SETTLE`
+ *  to catch up, so what the stretch cost its sync (pages lost in flight, askings stalled) is seen (S1b). */
+function visibilityChanged() {
+	if (document.hidden) {
+		hiddenAt = Date.now();
+		return;
+	}
+	if (hiddenAt === null) return;
+	hiddenFor = Date.now() - hiddenAt;
+	hiddenAt = null;
+	if (hiddenFor < LEAST) return;
+	clearTimeout(settling);
+	settling = setTimeout(() => void tick('visible'), SETTLE);
+}
+
+/** While the vault is open: a report sent every `EVERY`, after a hidden stretch, and in theOS its person's read back.
+ *  Its stop. */
 export function sendEvery() {
 	const first = setTimeout(() => tick('every'), 20_000);
 	const timer = setInterval(() => tick('every'), EVERY);
-	return () => (clearTimeout(first), clearInterval(timer), clearTimeout(settling));
+	document.addEventListener('visibilitychange', visibilityChanged);
+	return () => (clearTimeout(first), clearInterval(timer), clearTimeout(settling), document.removeEventListener('visibilitychange', visibilityChanged));
 }
