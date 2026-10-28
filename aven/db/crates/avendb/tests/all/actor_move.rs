@@ -7,8 +7,6 @@
 //! back as written and v2 reads as a manifest with empty tiers. The schemas, both lenses and the `assets` manifest as
 //! the vault holds it come from tests/data/actors-v3.json (actors.test.js keeps it equal to the JS).
 
-#![cfg(debug_assertions)]
-
 use avendb::cast;
 use avendb::engine;
 use avendb::id::SignerId;

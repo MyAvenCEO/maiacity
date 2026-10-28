@@ -6,8 +6,6 @@
 //! The link runs on simulated time: one thread, tokio's clock paused, so time moves as the link's packets and the
 //! nodes' timers say (as `sync_bench`'s `_bulk` links), and minutes of the link take seconds.
 
-#![cfg(debug_assertions)]
-
 use std::collections::HashSet;
 use std::time::Duration;
 
