@@ -2730,7 +2730,8 @@ impl Shared {
         }
         // Control owns peer selection and old-route retirement under its state→peers lock order.
         transports::control::connected(self, &peer);
-        self.told.lock().expect("told").remove(&device);
+        // what it last told `device`, kept: `tell` tells all again on a connection it told nothing yet, and a small
+        // change since it first
         self.outreach.send(node_loop::Msg::Reached { device });
         self.index_told.lock().expect("index told").remove(&endpoint);
         self.index_due.notify_one();
@@ -3668,7 +3669,24 @@ impl Shared {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
         let on = peer.conn.stable_id();
-        let told = self.told.lock().expect("told").get(&device).filter(|(at, _)| *at == on).map(|(_, h)| h.clone());
+        let (told, before) = {
+            let told = self.told.lock().expect("told");
+            let told = told.get(&device);
+            (told.filter(|(at, _)| *at == on).map(|(_, h)| h.clone()), told.filter(|(at, _)| *at != on).map(|(_, h)| h.clone()))
+        };
+        // A new connection owes the device all it holds again, which can take range rounds (four round trips on a
+        // phone's link, behind a crossed dial at start); a small change since what it was told on the connection
+        // before goes first, as any live change does, so a live edit is not held behind the replacement
+        // (`LivePriority.lean` `changeFirst`).
+        if told.is_none()
+            && let Some(mut change) = want.since(before.as_ref()).filter(|a| !a.full && a.logs.len() <= pulls::LIVE_LOGS)
+        {
+            self.live_witnesses(&mut change, &want).await;
+            let heads = change.logs.iter().flat_map(|(_, f)| f.heads.iter().copied());
+            self.traffic.trace(traffic::Stage::Told, device, heads.collect::<Vec<_>>(), false);
+            session::exchange(&peer.conn, session::ANNOUNCE, &change.to_wire(), 0).await?;
+            self.sent.announcements.fetch_add(1, Ordering::Relaxed);
+        }
         if let Some(mut announce) = want.since(told.as_ref()) {
             self.live_witnesses(&mut announce, &want).await;
             // T1: a small change's heads, each the trace id of a live edit on its way to `device`

@@ -530,6 +530,34 @@ theorem either3_carries_no_less (asked link bbr cubic queue : Nat) :
     carried asked link (either3 bbr cubic queue) ≤ link := by
   simp only [carried, either, either3]; omega
 
+/-! ## A small change first on a new connection (Goal 6, G4)
+
+On a connection it told nothing yet, a node tells a device all it holds again, which can take range rounds: four round
+trips on a phone's link. Two nodes that know each other dial each other at once, and the crossed dial each keeps
+is a new connection: the live edits written meanwhile waited behind that replacement (`bench_live` phone_bulk: the
+first five live edits arrived together, 0.5-0.8 s after their writes). So a small change since what the device was
+told on the connection before goes first, then all of it. A device that kept what it was told takes the change at once;
+one that lost it (a restart) takes the change, then the replacement; either way it ends holding all of it. Holdings
+by log, a frontier each. Rust: lib.rs `tell`. -/
+
+/-- What a device holds once told `announce` (`Holdings::take`): that alone where it is all, else that over before. -/
+def take (full : Bool) (held announce : Nat → Option Nat) : Nat → Option Nat :=
+  fun l => match announce l with
+    | some f => some f
+    | none => if full then none else held l
+
+/-- The change goes first: every log it names, the device holds as told at once, whatever it held before. -/
+theorem change_heard_at_once (held change : Nat → Option Nat) (l f : Nat) (h : change l = some f) :
+    take false held change l = some f := by
+  simp [take, h]
+
+/-- Then all it holds: the device ends holding exactly that, whatever the change or what it kept. -/
+theorem change_first_ends_whole (held change all : Nat → Option Nat) :
+    take true (take false held change) all = all := by
+  funext l
+  simp only [take]
+  cases all l <;> simp
+
 /-! ## A stalled claim hands over (S1, 2026-10-28)
 
 A log that two peers hold more of is asked of one at a time (`Claims`, S5): the first asking takes it, and the other
