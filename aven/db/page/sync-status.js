@@ -1,9 +1,9 @@
 /** Peer-frontier observations, not a disk-save or file-download progress meter.
  * @typedef {{ since: number, stage: string, took: number }} Pull
- * @typedef {{ device: string, name: string | null, pulling: Pull | null, pages: number, edits: number, last: number, askings: number, failed: number }} From
+ * @typedef {{ device: string, name: string | null, reconnecting: boolean, pulling: Pull | null, pages: number, edits: number, last: number, askings: number, failed: number }} From
  * @typedef {{ log: unknown, held: unknown, lacked_heads: unknown, waiting: unknown }} LackedLog
  * @typedef {{ device: unknown, lacks: unknown, by_stub: unknown, stubs: unknown, sample: LackedLog[] }} Lacked
- * @typedef {{ peers: number, logs: number, behind: number, pulling: number, pages: number, edits: number, from: From[], lacked: Lacked[] }} PeerCounts
+ * @typedef {{ peers: number, reconnecting: number, logs: number, behind: number, pulling: number, pages: number, edits: number, from: From[], lacked: Lacked[] }} PeerCounts
  * @typedef {PeerCounts & { known: boolean, since: number, at: number, paged: number, base: number }} SyncState
  */
 /** @param {unknown} value */
@@ -15,6 +15,7 @@ const n = (value) => value.toLocaleString('en');
  * it took, and when its last page came (ms since 1970, the device's clock as `Date.now()`). @param {any} p @returns {From} */
 const peer = (p) => ({
 	device: typeof p?.device === 'string' ? p.device : '', name: typeof p?.name === 'string' && p.name ? p.name : null,
+	reconnecting: p?.reconnecting === true,
 	pulling: p?.pulling && typeof p.pulling === 'object'
 		? { since: count(p.pulling.since), stage: typeof p.pulling.stage === 'string' ? p.pulling.stage : '', took: count(p.pulling.took) } : null,
 	pages: count(p?.pages), edits: count(p?.edits), last: count(p?.last), askings: count(p?.askings), failed: count(p?.failed)
@@ -29,12 +30,12 @@ const pulls = (from) => from.map((p) => p.pulling ? `${p.device}:${p.pulling.sta
 export const taking = (p, now) => !!p.pulling && now - Math.max(p.last, p.pulling.since) < STALL;
 
 /** A new view/device starts its own observation window; native cumulative counters may already be large. */
-export const emptySync = () => ({ known: false, peers: 0, logs: 0, behind: 0, pulling: 0, pages: 0, edits: 0, from: [], lacked: [], since: 0, at: 0, paged: 0, base: 0 });
+export const emptySync = () => ({ known: false, peers: 0, reconnecting: 0, logs: 0, behind: 0, pulling: 0, pages: 0, edits: 0, from: [], lacked: [], since: 0, at: 0, paged: 0, base: 0 });
 
 /** @param {SyncState} previous @param {Partial<PeerCounts>} report @param {number} at */
 export function observeSync(previous, report, at) {
 	const next = {
-		peers: count(report.peers), logs: count(report.logs), behind: count(report.behind), pulling: count(report.pulling), pages: count(report.pages),
+		peers: count(report.peers), reconnecting: Math.min(count(report.peers), count(report.reconnecting)), logs: count(report.logs), behind: count(report.behind), pulling: count(report.pulling), pages: count(report.pages),
 		edits: count(report.edits), from: Array.isArray(report.from) ? report.from.map(peer) : [],
 		/** what the device says it lacks of each peer, as it said it, for the diagnostics report to project
 		 * (`diagnosticSnapshot`); the pill reads none of it */
@@ -95,6 +96,8 @@ export const STALL = 5000;
 
 /** A peer by its name, or its device's first eight hex. @param {From} p */
 const named = (p) => p.name ?? (p.device.slice(0, 8) || 'a peer');
+/** A peer as the pill says what it waits on: by its name, and whether its connection is coming back. @param {From} p */
+const waited = (p) => `${named(p)}${p.reconnecting ? ' (reconnecting)' : ''}`;
 
 /**
  * What the pill says while a sync runs, as of `now` (ms), ticking with it (Samuel 2026-10-28: "with zero visible
@@ -111,7 +114,7 @@ export function liveSync(sync, now) {
 	const running = sync.from.filter((p) => p.pulling);
 	/** the peers it waits on: those it pulls from, else every peer it hears */
 	const on = running.length ? running : sync.from;
-	const who = on.length ? on.map(named).join(', ') : 'peers';
+	const who = on.length ? on.map(waited).join(', ') : 'peers';
 	const last = Math.max(sync.paged, ...sync.from.map((p) => p.last));
 	const moved = Math.max(sync.since, last);
 	/** since when it waits: a running pull's last page or its start, the latest of them; else the last thing that moved */
