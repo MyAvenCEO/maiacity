@@ -115,6 +115,12 @@ async function launch(dir = profile) {
 	const options = { headless: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...(pageDir ? { serviceWorkers: 'block' } : {}) };
 	// WEBKIT_PATH: a newer WebKit than this Playwright's own, where its own opens no saved profile (macOS 26.1, build 2215)
 	if (engine === 'webkit' && process.env.WEBKIT_PATH) options.executablePath = process.env.WEBKIT_PATH;
+	// on the Mac, WebKit keeps a site's OPFS (the device's shelf) under ~/Library/WebKit/<its bundle>, outside the
+	// profile, so every profile reopened one shared store: a home of the profile's own makes a profile one device
+	if (engine === 'webkit' && mac) {
+		mkdirSync(join(dir, 'home'), { recursive: true });
+		options.env = { ...process.env, CFFIXED_USER_HOME: join(dir, 'home') };
+	}
 	if (engine === 'chromium' && existsSync('/opt/pw-browsers/chromium')) Object.assign(options, { executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
 	const context = await pw[engine].launchPersistentContext(dir, options).catch((e) => {
 		throw new Error(`${engine} didn't start (${e.message.split('\n')[0]}): on the Mac, once: npx playwright install ${engine}`);
