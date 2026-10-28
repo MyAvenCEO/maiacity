@@ -3551,9 +3551,13 @@ impl Shared {
                 }
                 let claimable = server && lab.vault_of(me).is_none();
                 let invites = if server { open_invites(lab, me) } else { Vec::new() };
+                // worked out mid catch-up by a replay behind its log, whom to tell what is worked out again once it
+                // caught up, its log the same (`Lab::answers_current`): kept, a peer was never told of what the
+                // catch-up brought
+                let current = lab.answers_current(me).then_some(current);
                 Some(News {
                     size: now,
-                    revision: Some(current),
+                    revision: current,
                     reach: Arc::new(reach),
                     roots: lab.roots(me),
                     claimable,
