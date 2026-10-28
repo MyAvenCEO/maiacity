@@ -352,7 +352,7 @@ impl Lab {
                 let Action::Write { body, .. } = &edit.action else {
                     continue 'anchor;
                 };
-                let Some(key_id) = keys::edit_key(body) else {
+                let Some(key_id) = keys::edit_key(&body.bytes()) else {
                     continue 'anchor;
                 };
                 let Some(key) = store.keys.get(&key_id, w.key()) else {
@@ -360,7 +360,7 @@ impl Lab {
                     pending.push_front(id);
                     break;
                 };
-                let Some(opened) = keys::open_edit(key, body, &write_context(&edit))
+                let Some(opened) = keys::open_edit(key, &body.bytes(), &write_context(&edit))
                     .and_then(|b| Body::from_wire(&b).ok())
                 else {
                     // The ciphertext is already held: a duplicate edit transfer cannot
@@ -571,9 +571,9 @@ mod tests {
         let mut bad_edit=signed.edit.clone();
         let mut bad_body=body.clone(); bad_body.proof=Some(tampered);
         let Action::Write { body: encrypted, .. }=&signed.edit.action else { unreachable!() };
-        let key=lab.held(guest_device).keys.get(&keys::edit_key(encrypted).unwrap(),write.key()).unwrap().clone();
+        let key=lab.held(guest_device).keys.get(&keys::edit_key(&encrypted.bytes()).unwrap(),write.key()).unwrap().clone();
         let encrypted=keys::seal_edit(&key,&bad_body.to_wire(),&write_context(&bad_edit),&mut lab.rng);
-        if let Action::Write { body, .. }=&mut bad_edit.action { *body=encrypted; }
+        if let Action::Write { body, .. }=&mut bad_edit.action { *body=encrypted.into(); }
         let bad_signed=lab.sign(bad_edit).unwrap(); let bad_id=bad_signed.edit.id();
         lab.receive(bad,vec![bad_signed],vec![]);
         assert!(lab.active_owner_base(bad,entry).is_some());
@@ -968,7 +968,7 @@ mod tests {
         let id = lab.edit(mac, vault, entry, |i| i.set_text(2, "after key")).unwrap();
         let signed = lab.signed_edit(mac, id).unwrap().clone();
         let Action::Write { body, .. } = &signed.edit.action else { panic!("write"); };
-        assert_eq!(keys::edit_key(body), Some(key_id));
+        assert_eq!(keys::edit_key(&body.bytes()), Some(key_id));
         for device in [phone, watcher] {
             lab.receive(device, vec![signed.clone()], vec![]);
             assert_eq!(lab.owner_base_wait_reason(device, entry), Some("missing-entry-key"));

@@ -475,7 +475,7 @@ mod tests {
                 via: vec![],
                 create: None,
                 files: vec![],
-                body: b"legacy bytes are unchanged".to_vec(),
+                body: b"legacy bytes are unchanged".to_vec().into(),
             },
         };
         let signed = Signed { sigs: vec![key.sign(edit.id())], edit };

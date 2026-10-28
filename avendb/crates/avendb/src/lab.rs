@@ -165,6 +165,9 @@ const REPLAY_WORK: usize = 4;
 /// The bodies a step of a catch-up opens for each entry of its budget (`read`).
 const READ_WORK: usize = 32;
 
+/// The keys of entries a step of a catch-up derives for each entry of its budget (`open_keys`).
+const KEY_WORK: usize = 4;
+
 /// The budget of the step a write of a device's own takes in the middle of a catch-up (`Lab::refresh_own`).
 const OWN_WRITE_BUDGET: usize = 8;
 
@@ -329,6 +332,7 @@ impl Drafting<'_> {
         self.log.receive([edit.clone()]);
         let was = std::mem::replace(&mut self.replay, Cow::Owned(replay(&[]))).into_owned();
         self.replay = Cow::Owned(replay_on(was, self.log.edits(), held));
+        #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(*self.replay == self.log.replay(), "a draft stepped on differs from the replay");
         self.drafts.push(Unsigned { edit, blobs, held, batch: vec![], pass: None });
         Ok(id)
@@ -524,6 +528,7 @@ fn why_counted(why: Why) -> &'static str {
         Why::Nothing => "replay: nothing new",
         Why::Stepped => "replay: stepped on",
         Why::Tail => "replay: last edits again",
+        Why::Rung => "replay: from a rung",
         Why::Whole(why) => why,
     }
 }
@@ -1181,7 +1186,7 @@ impl KeyIndex {
                 self.boxed.insert((name, id, b.to.name()));
                 let mut first = [0; 32];
                 let n = b.bytes.len().min(32);
-                first[..n].copy_from_slice(&b.bytes[..n]);
+                first[..n].copy_from_slice(&b.bytes.bytes()[..n]);
                 self.boxes.push(IndexedBox { name, id, to: b.to, place, slot, first });
             }
             if let Action::Keys { name, id, public, clear, .. } = &edit.action {
@@ -1226,8 +1231,8 @@ struct IndexedBox {
 
 impl IndexedBox {
     /// Its bytes, of `held`, the edits of the log its index is of.
-    fn bytes<'a>(&self, held: &'a [Edit]) -> &'a [u8] {
-        &held[self.place].action.key_box(self.slot).expect("an indexed box").bytes
+    fn bytes<'a>(&self, held: &'a [Edit]) -> std::borrow::Cow<'a, [u8]> {
+        held[self.place].action.key_box(self.slot).expect("an indexed box").bytes.bytes()
     }
 }
 
@@ -1265,6 +1270,7 @@ impl KeyIndexed {
             }
         }
         #[cfg(debug_assertions)]
+        #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(ix.same(&KeyIndex::of(r, log.edits())), "a key index grown on differs from one made whole");
         ix
     }
@@ -2502,17 +2508,23 @@ impl Lab {
                     store.blobs.insert(b, bytes.clone());
                 }
             }
-            store.log.receive([signed.edit.clone()]);
+            let mut edit = signed.edit.clone();
             match placed.and_then(|p| p.get(&id)) {
                 Some(p) => store.signed.insert_placed(id, signed, p),
                 None => store.signed.insert(id, signed),
             }
+            // spilled, the log's copy reads its bulk bytes back from the record that went in (`bulk`)
+            if let Some(place) = store.signed.place(&id) {
+                edit.shelve(place);
+            }
+            store.log.receive_ids([(edit, id)]);
             new = true;
         }
         if new {
             store.digests = None;
             store.latest = OnceLock::new();
             if let Some(state) = stepped {
+                #[cfg(not(avendb_no_replay_checks))]
                 debug_assert!(state == store.log.view(), "a write stepped on differs from the replay");
                 let _ = store.latest.set(state);
             }
@@ -2629,6 +2641,7 @@ impl Lab {
         // run tries no removal's cuts, which only name the edit
         let edit = match store.replayed == log.edits().len() {
             true => {
+                #[cfg(not(avendb_no_replay_checks))]
                 debug_assert!(store.replay == log.replay(), "the replay kept differs from the log's");
                 log.check_on(&store.replay, !self.dry, author, cosigners, action)?
             }
@@ -3030,6 +3043,7 @@ impl Lab {
             store.wholes += matches!(why, Why::Whole(_)) as u64;
             store.perf.count(why_counted(why), 1);
             store.replayed = store.log.edits().len();
+            #[cfg(not(avendb_no_replay_checks))]
             debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
             // the replay is of every edit it holds now, so it is `latest` itself: no second copy
             store.latest = OnceLock::new();
@@ -3047,8 +3061,17 @@ impl Lab {
             let at = Perf::start();
             let ix = KeyIndexed::take(store);
             store.perf.add("keys: index", at);
-            open_keys(store, &ix, &mine);
+            // with a budget, at most `KEY_WORK` keys of entries derived for each of it, the rest at the next steps
+            let step = budget.filter(|_| retained.is_none());
+            let keyed = open_keys(store, &ix, &mine, step.map(|b| b.max(1).saturating_mul(KEY_WORK)));
             store.perf.add("open keys", at);
+            if !keyed {
+                KeyIndexed::put(store, ix);
+                store.behind = true;
+                store.perf.add("refresh", began);
+                self.rebuild_owner_bases(d);
+                return false;
+            }
             let at = Perf::start();
             // an entry's owner base overlay is taken out for the whole of a refresh: one is read and shown in one go
             let budget = budget.filter(|_| retained.is_none());
@@ -3175,7 +3198,7 @@ impl Lab {
                     via: vec![],
                     create: None,
                     files: vec![],
-                    body: vec![],
+                    body: Default::default(),
                 };
                 let edit = self.held(d).log.draft_on(view, d, &[], action);
                 self.seal_write(d, edit, body, x).expect("an unlocked device signs");
@@ -3222,6 +3245,7 @@ impl Lab {
                         store.replay = replayed;
                         store.perf.count(why_counted(why), 1);
                         store.replayed = to;
+                        #[cfg(not(avendb_no_replay_checks))]
                         debug_assert!(store.replay == replay(&store.log.edits()[..to]), "a replay stepped on differs from the whole");
                         store.perf.add("replay", at);
                         return;
@@ -3262,11 +3286,28 @@ impl Lab {
             store.perf.add("replay: ended", ended);
             store.wholes += 1;
             store.replayed = n;
+            #[cfg(not(avendb_no_replay_checks))]
             debug_assert!(store.replay == replay(&store.log.edits()[..n]), "a replay run a slice a step differs from the whole");
         } else {
             store.replaying = Some((lineage, store.replayed, run));
         }
         store.perf.add("replay", at);
+    }
+
+    /// What device `d` answers its peers and checks its person's writes by in the middle of a catch-up: the replay it
+    /// holds, where the edits it took since hold no removal (they can only add to what anyone may do: it hands over and
+    /// accepts no more than all of them would, `StandingReplay.lean`), else `latest`. A peer's ask or a write in the
+    /// middle of a first sync replayed every edit first, 10-24 s at 130,000 (2026-10-27); the catch-up's next steps
+    /// bring the rest.
+    fn standing(&self, d: SignerId) -> &State {
+        let store = self.held(d);
+        if store.latest.get().is_none()
+            && store.replayed < store.log.edits().len()
+            && !store.log.edits()[store.replayed..].iter().any(Edit::is_removal)
+        {
+            return &store.replay.state;
+        }
+        self.latest(d)
     }
 
     fn latest(&self, d: SignerId) -> &State {
@@ -3551,7 +3592,7 @@ impl Lab {
         files.sort_by_key(|f| f.root);
         files.dedup_by_key(|f| f.root);
         let roots = files.iter().map(|f| f.root).collect();
-        let view = self.latest(on).clone();
+        let view = self.standing(on).clone();
         let x = AudienceId::of(vault, &create.audience);
         let epoch = view.epoch(KeyFam::Audience(vault, x)) + view.reenters(vault, x) as u64;
         let action = Action::Write {
@@ -3565,7 +3606,7 @@ impl Lab {
             via: vec![],
             create: Some(create),
             files: roots,
-            body: vec![],
+            body: Default::default(),
         };
         let (edit, w) = self.check_write(on, &view, action)?;
         let attrs = Attrs { ty: header.ty.clone(), author: actor, entry, created: header.created, tags: tags.clone() };
@@ -3712,7 +3753,7 @@ impl Lab {
     /// now. In a dry run, none is issued.
     fn schemas_share(&mut self, on: SignerId, vault: VaultId) -> Result<Option<ShareId>, Refusal> {
         let select = Selector::lane();
-        let (store, st) = (self.held(on), self.latest(on));
+        let (store, st) = (self.held(on), self.standing(on));
         let ours = |cp: &&Issued| {
             let s = &cp.share;
             let read = (s.who, s.level, s.wide, s.parent) == (Who::Everyone, Level::Read, false, None);
@@ -3746,7 +3787,7 @@ impl Lab {
         tags: &[Sym],
         main: bool,
     ) -> Result<Vec<ShareId>, Refusal> {
-        let (store, st) = (self.held(on), self.latest(on));
+        let (store, st) = (self.held(on), self.standing(on));
         let attrs = Attrs { ty: header.ty.clone(), author: actor, entry, created: header.created, tags: tags.to_vec() };
         if actor == vault {
             let complete = store.reads_shares(st, vault);
@@ -3909,7 +3950,7 @@ impl Lab {
     /// alone counts (the default policy, one of its owners), `NotOnProposal` if the device shows no such proposal.
     pub fn accept(&mut self, on: SignerId, actor: VaultId, entry: EntryId, line: EditId) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let vault = self.latest(on).entry(entry).ok_or(Refusal::UnknownEntry)?.vault;
+        let vault = self.standing(on).entry(entry).ok_or(Refusal::UnknownEntry)?.vault;
         if actor != vault {
             return Err(Refusal::NoCap);
         }
@@ -4045,14 +4086,14 @@ impl Lab {
         files.sort_by_key(|f| f.root);
         files.dedup_by_key(|f| f.root);
         let roots = files.iter().map(|f| f.root).collect();
-        let view = self.latest(on).clone();
+        let view = self.standing(on).clone();
         let en = view.entry(entry).ok_or(Refusal::UnknownEntry)?;
         let (vault, stay, x) = (en.vault, en.stay(), en.audience());
         let epoch = view.epoch(KeyFam::Audience(vault, x));
         let Draft { proposal, deps, body: content } = draft;
         let (via, create) = (vec![], None);
         let action =
-            Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files: roots, body: vec![] };
+            Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files: roots, body: Default::default() };
         let (edit, w) = self.check_write(on, &view, action)?;
         let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, (&content, &tags), needs, None)?;
         self.write(on, edit, Body { header: None, tags, answers: vec![], content: content.into(), proof, files, defines }, x)
@@ -4083,7 +4124,7 @@ impl Lab {
         let key = entry_key_for(store, rng, vault, x, entry, stay, epoch);
         let sealed = keys::seal_edit(&key, &body.to_wire(), &write_context(&edit), rng);
         if let Action::Write { body: b, .. } = &mut edit.action {
-            *b = sealed;
+            *b = sealed.into();
         }
         let id = edit.id();
         let signed = self.sign(edit)?;
@@ -4473,6 +4514,8 @@ impl Lab {
             "signed" => out(std::mem::take(&mut store.signed)),
             "blobs" => out(std::mem::take(&mut store.blobs)),
             "log" => out(std::mem::take(&mut store.log)),
+            p if p.starts_with("log.") => store.log.probe_part(&p[4..]),
+            p if p.starts_with("replay.") => store.replay.probe_part(&p[7..]),
             "replay" => out(std::mem::replace(&mut store.replay, replay(&[]))),
             "latest" => out(std::mem::take(&mut store.latest)),
             "key_index" => out(std::mem::take(&mut store.key_ix.ix)),
@@ -4939,7 +4982,7 @@ impl Lab {
     /// entry (T20); a passkey that owns no vault gets nothing.
     pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
         let store = self.held(d);
-        let places = link_places(store.log.edits(), self.latest(d), passkey);
+        let places = link_places(store.log.edits(), self.standing(d), passkey);
         places.into_iter().map(|i| store.signed.owned(&store.log.ids()[i])).collect()
     }
 
@@ -4974,6 +5017,13 @@ impl Lab {
         let added =
             vault.devices.contains(&d).then(|| edits.rev().find(|(edit, _)| adds(edit)).map(|(_, id)| *id)).flatten();
         Ok((vault.id, added))
+    }
+
+    /// Of the edits `ids`, those device `d` holds signed: what a pull's page brought it that another asking of the
+    /// same peer names loose (`LivePriority.lean` `withTaken`).
+    pub fn holding(&self, d: SignerId, ids: impl IntoIterator<Item = EditId>) -> Vec<EditId> {
+        let store = self.held(d);
+        ids.into_iter().filter(|id| store.signed.contains_key(id)).collect()
     }
 
     /// The join device `d` sends by edit `id`, which it holds and which adds it to its vault (`joining`): the edit and
@@ -5031,7 +5081,7 @@ impl Lab {
     /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
         let store = self.held(d);
-        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), self.latest(d), asker, follow))
+        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), self.standing(d), asker, follow))
     }
 
     /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
@@ -5205,7 +5255,7 @@ impl Lab {
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         let store = self.held(d);
-        let mut needs = crate::lazy::Needs::new(self.latest(d), asker);
+        let mut needs = crate::lazy::Needs::new(self.standing(d), asker);
         let mut out: Vec<Stub> = sends
             .places
             .iter()
@@ -5432,7 +5482,7 @@ impl Lab {
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
     /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        crate::sync::fetchable(self.held(d).log.edits(), self.latest(d), asker, file, follow)
+        crate::sync::fetchable(self.held(d).log.edits(), self.standing(d), asker, file, follow)
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
@@ -5446,7 +5496,7 @@ impl Lab {
     /// where its keep shares over the entry's vault say to keep them whole (`State::keeps`), or, with none there but
     /// never ones, where its own setting `keep` says. It fetches the rest a piece at a time as it reads them.
     pub fn kept_files(&self, d: SignerId, keep: bool) -> Vec<FileRoot> {
-        let (store, st) = (self.held(d), self.latest(d));
+        let (store, st) = (self.held(d), self.standing(d));
         let kept = |edit: &&Edit| {
             let en = edit.entry().and_then(|e| st.entry(e));
             en.is_some_and(|en| st.wants(d, en) && st.keeps(d, en).unwrap_or(keep))
@@ -5459,7 +5509,7 @@ impl Lab {
     /// Files needed by active local views. Demand grants nothing: both current keep selection and
     /// readable file keys must permit each file. Opened/light devices hydrate these in background.
     pub fn demanded_files(&self, d: SignerId, entries: &[EntryId]) -> Vec<FileRoot> {
-        let st = self.latest(d);
+        let st = self.standing(d);
         // Many active entries still require just one held-history pass. Selection
         // precedes grouping; file() inside the projection still checks readable keys.
         let selected = entries.iter().copied()
@@ -5491,11 +5541,11 @@ impl Lab {
         let store = self.held(d);
         let revision = store.log.revision();
         if scan.revision.as_ref() != Some(&revision) {
-            let st = self.latest(d);
+            let st = self.standing(d);
             let selected = scan.entries.iter().copied().filter(|e| st.entry(*e).is_some_and(|en| st.wants(d, en)));
             *scan = FileScan { revision: Some(revision), at: 0, selected: selected.collect(), ..FileScan::new(scan.keep, std::mem::take(&mut scan.entries)) };
         }
-        let st = self.latest(d);
+        let st = self.standing(d);
         let edits = store.log.edits();
         let end = edits.len().min(scan.at.saturating_add(budget.max(1)));
         for edit in &edits[scan.at..end] {
@@ -5841,6 +5891,8 @@ impl Lab {
     pub fn spill(&mut self, d: SignerId, spill: &Spill) -> std::io::Result<()> {
         let store = self.stores.get_mut(&self.at(d)).ok_or_else(|| std::io::Error::other("no such device"))?;
         store.signed.spill_edits(spill)?;
+        let signed = &store.signed;
+        store.log.shelve(|id| signed.place(id));
         store.blobs.spill_keys(spill)
     }
 
@@ -6264,9 +6316,11 @@ impl Lab {
                 let mut signed =
                     self.stores.values().find_map(|s| s.signed.get(&id)).map(|s| Signed::clone(&s)).expect("an edit some device holds");
                 if let Action::Write { body, .. } = &mut signed.edit.action
-                    && let Some(last) = body.last_mut()
+                    && !body.is_empty()
                 {
-                    *last ^= 1;
+                    let mut bytes = body.to_vec();
+                    *bytes.last_mut().expect("a byte") ^= 1;
+                    *body = bytes.into();
                 }
                 signed
             }
@@ -6279,7 +6333,7 @@ impl Lab {
                 let recipient = Recipient::Signer(victim);
                 let info = box_info(key, secret.id(), &recipient);
                 let bytes = keys::seal(&secret, &pk, &blob, &info, &mut self.rng).expect("a key");
-                let boxes = vec![KeyBox { to: recipient, bytes }];
+                let boxes = vec![KeyBox { to: recipient, bytes: bytes.into() }];
                 let action = Action::Keys { name: key, id: secret.id(), public: None, boxes, clear: None };
                 let edit = self.held(holder).log.draft(holder, &[], action);
                 self.sign(edit)?
@@ -6302,7 +6356,10 @@ fn opened_box(info: &[u8], bytes: &[u8], with: &Secret) -> [u8; 32] {
 /// Open every box the device can: for one of `mine` (its own key, and what owners lend it), or for a key it already
 /// holds; then every key published in the clear; then derive the keys of the entries in each audience whose key it
 /// holds; and again, until nothing more opens. A box counts only if what opens is the key it names.
-fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
+/// With `most`, at most that many entries' keys derived (`derive`): false where it left some for the next step, and then
+/// what changed since it last derived stays what it is to derive on from.
+fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)], most: Option<usize>) -> bool {
+    let mut most = most;
     let at = Perf::start();
     // the stays each audience had, made only where `derive` needs them: of the entries whose stays may have changed
     // since it last derived, or of every entry
@@ -6328,14 +6385,14 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
             }
             let bytes = b.bytes(store.log.edits());
             let info = box_info(*name, *id, &b.to);
-            let opened = opened_box(&info, bytes, &with);
+            let opened = opened_box(&info, &bytes, &with);
             // the same box it opened before with the same key, as its shelf keeps it: what opened, again
             if let Some(secret) = store.opened_before.get(&opened).filter(|k| k.id() == *id) {
                 more |= store.keys.insert(*name, secret.clone());
                 store.perf.count("keys from the shelf", 1);
                 continue;
             }
-            match keys::open(bytes, &with, &info) {
+            match keys::open(&bytes, &with, &info) {
                 Some(secret) if secret.id() == *id => {
                     store.perf.count("keys opened", 1);
                     store.opened_since.push((opened, secret.clone()));
@@ -6356,8 +6413,13 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
         }
         store.perf.add("keys: clear", at);
         let at = Perf::start();
-        more |= derive(store, changed.as_ref(), &mut all, &mut some);
+        let (derived, cut) = derive(store, changed.as_ref(), &mut all, &mut some, &mut most);
+        more |= derived;
         store.perf.add("keys: derive", at);
+        if cut {
+            store.perf.count("keys: left for a step", 1);
+            return false;
+        }
         if !more {
             break;
         }
@@ -6374,6 +6436,7 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
             }
         }
     }
+    true
 }
 
 /// Each audience's stays: the entries in it, and in which stay, of the entries `of` alone, or of every one; in the order
@@ -6421,15 +6484,20 @@ fn stays_changed(store: &Store) -> Option<HashSet<EntryId>> {
 /// key's epoch (`keys::entry_key`): true if it derived any. An audience key it derived with before looks only at the
 /// stays of the entries `changed` since where there are such (`stays_changed`); else at every stay of its audience,
 /// those of every entry (`all`) made once for every key, but where they are as they were when it last did.
+#[allow(clippy::type_complexity)]
 fn derive(
     store: &mut Store,
     changed: Option<&HashSet<EntryId>>,
     all: &mut Option<HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>>,
     some: &mut Option<HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>>>,
-) -> bool {
+    most: &mut Option<usize>,
+) -> (bool, bool) {
     let Store { keys, derived, derived_through, replay, .. } = store;
     let st = &replay.state;
     let mut new = vec![];
+    // with `most`, at most that many keys derived: an audience it left keys of is derived on at the next step, its
+    // print not noted till then (a first sync derived 3,200 entries' keys in one turn, 500 ms at 130,000 edits)
+    let mut cut = false;
     // each audience's stays by their print, made once for every key of it
     let mut prints: HashMap<AudienceId, [u8; 32]> = HashMap::new();
     for id in &keys.audiences {
@@ -6437,6 +6505,7 @@ fn derive(
         let KeyName::Scoped(KeyFam::Audience(_, x), g) = *name else {
             continue;
         };
+        let mut was = None;
         let stays = match changed.filter(|_| derived_through.contains_key(id)) {
             Some(ch) => some.get_or_insert_with(|| stays_of(st, Some(ch))),
             None => {
@@ -6448,23 +6517,41 @@ fn derive(
                     }
                     h.finalize()
                 });
-                if derived_through.insert(*id, print) == Some(print) {
+                was = Some(derived_through.insert(*id, print));
+                if was == Some(Some(print)) {
                     continue;
                 }
                 all
             }
         };
         for &(e, s) in stays.get(&x).into_iter().flatten() {
-            if derived.insert((*id, e, s)) {
-                new.push((KeyName::Entry(e, s, g), keys::entry_key(audience, e, s)));
+            if derived.contains(&(*id, e, s)) {
+                continue;
             }
+            if *most == Some(0) {
+                cut = true;
+                break;
+            }
+            derived.insert((*id, e, s));
+            new.push((KeyName::Entry(e, s, g), keys::entry_key(audience, e, s)));
+            if let Some(m) = most.as_mut() {
+                *m -= 1;
+            }
+        }
+        if cut {
+            match was {
+                Some(Some(before)) => _ = derived_through.insert(*id, before),
+                Some(None) => _ = derived_through.remove(id),
+                None => {}
+            }
+            break;
         }
     }
     let more = !new.is_empty();
     for (name, key) in new {
         keys.insert(name, key);
     }
-    more
+    (more, cut)
 }
 
 /// The key of entry `e` in its stay `stay`, in audience `x` of vault `v`, at epoch `g`: one the device holds, or one
@@ -6575,7 +6662,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
                 store.read_new.uncounted.insert(id);
                 continue;
             }
-            let Some(key) = keys::edit_key(body) else {
+            let Some(key) = keys::edit_key(&body.bytes()) else {
                 store.spoilt.insert(id);
                 continue;
             };
@@ -6583,7 +6670,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
                 store.read_new.lacking.entry(*entry).or_default().push(id);
                 continue;
             };
-            match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
+            match keys::open_edit(key, &body.bytes(), &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
                 Some(b) => {
                     store.bodies.insert(id, b);
                     store.read_new.bodies.push(id);
@@ -6606,7 +6693,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
             }
             let Some(signed) = store.signed.get(&id) else { continue };
             let Action::Write { entry, stay, epoch, body, .. } = &signed.edit.action else { continue };
-            let opens = keys::edit_key(body).and_then(|k| store.keys.get(&k, KeyName::Entry(*entry, *stay, *epoch)).cloned());
+            let opens = keys::edit_key(&body.bytes()).and_then(|k| store.keys.get(&k, KeyName::Entry(*entry, *stay, *epoch)).cloned());
             debug_assert!(opens.is_none(), "read left {id:?} unopened, which it opens");
         }
     }
@@ -6640,6 +6727,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
     // the cap groups in force follow from what the device counts (`show_items`)
     r.groups = std::mem::take(&mut store.readings.groups);
     #[cfg(debug_assertions)]
+    #[cfg(not(avendb_no_replay_checks))]
     debug_assert!(same_readings(&r, &readings_of(store)), "readings read on differ from readings read whole");
     store.readings = r;
     store.read_new.read(store.bodies.len(), store.slices.len(), &store.readings);
@@ -6809,7 +6897,7 @@ fn open_select(of: &Share, keys: &Keyring, steward: bool) -> Result<Option<Slice
         let Some(with) = keys.get(&under, name) else {
             continue;
         };
-        let key = keys::open(&b.bytes, with, &share_select_info(of, id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
+        let key = keys::open(&b.bytes.bytes(), with, &share_select_info(of, id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
         let plain = keys::open_edit(&key, &sealed, &share_context(of)).ok_or(())?;
         return Slice::from_wire(&plain).map(Some).map_err(drop);
     }
@@ -6892,7 +6980,7 @@ fn upkeep(
                 }
                 let to = Recipient::Key { name: next, id: under.id() };
                 let bytes = keys::wrap(secret, &under, &box_info(name, id, &to), rng);
-                let boxes = vec![KeyBox { to, bytes }];
+                let boxes = vec![KeyBox { to, bytes: bytes.into() }];
                 out.push(Work::Edit(Action::Keys { name, id, public: None, boxes, clear: None }));
             }
         }
@@ -6934,7 +7022,7 @@ fn upkeep(
                 }
                 let to = Recipient::Key { name: to_name, id: under.id() };
                 let bytes = keys::wrap(secret, &under, &box_info(name, id, &to), rng);
-                wraps.push(Wrap { name, id, boxed: KeyBox { to, bytes } });
+                wraps.push(Wrap { name, id, boxed: KeyBox { to, bytes: bytes.into() } });
             }
         }
         debug_assert!(!skip || wraps.is_empty(), "upkeep left out {:?}, which has keys to wrap", en.id);
@@ -7086,7 +7174,7 @@ fn key_box(
     };
     if let Some((to, under)) = held {
         let bytes = keys::wrap(secret, under, &info(&to), rng);
-        return Some(KeyBox { to, bytes });
+        return Some(KeyBox { to, bytes: bytes.into() });
     }
     let (to, pk) = match t {
         KeyName::Signer(s) => (Recipient::Signer(s), st.seal_key(s)?),
@@ -7099,7 +7187,7 @@ fn key_box(
     };
     let blob = store.blobs.get(&pk.mceliece).filter(|b| BlobId::of(b) == pk.mceliece)?;
     let bytes = keys::seal(secret, pk, &blob, &info(&to), rng)?;
-    Some(KeyBox { to, bytes })
+    Some(KeyBox { to, bytes: bytes.into() })
 }
 
 /// What a write that brings files into an entry needs a share it relies on to let it do, as it changes nothing its
@@ -7175,6 +7263,9 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// item it dropped (`SCRATCHES`): a step of a catch-up judges about this many writes whatever the
 /// entries hold, so that a step at a server's size takes as long as one at a phone's.
 const SHOW_WORK: usize = 6;
+/// The fewest writes of one entry a budgeted show judges in a step (`show_items`): an entry's writes past them wait for
+/// the next step.
+const SHOW_SLICE: usize = 16;
 const SHOW_ENTRY_WORK: usize = 4;
 
 /// Rebuild what device `d` shows of each entry whose writes, what it opened of them, its vault's lane or the cap groups
@@ -7206,6 +7297,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // of every vault, not of every entry's: a step costs what changed, not what the device holds
     for vt in st.vaults() {
         let blobs = lane_blobs(st, vt.id, r);
+        #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(blobs == st.lane_of(vt.id, r), "a lane read off its blobs differs from one read off every entry");
         let mut h = Hasher::new("lab lane");
         for b in &blobs {
@@ -7331,6 +7423,8 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // the rest of them for the next step
     let work = budget.map(|b| b.max(1) * SHOW_WORK);
     let mut spent = 0;
+    // an entry it judged part of its writes of, to go on with first at the next step
+    let mut part: Option<EntryId> = None;
     let ids_todo: Vec<EntryId> = todo.iter().map(|en| en.id).collect();
     for (k, en) in todo.into_iter().enumerate() {
         if work.is_some_and(|w| spent >= w) {
@@ -7345,7 +7439,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
             continue;
         }
         // one it left before is checked against all its writes as it was to be then
-        let reshow = reshow || (pending.reshow && waiting.contains(&en.id));
+        let reshow = reshow || (pending.reshow && waiting.contains(&en.id) && pending.part != Some(en.id));
         let tip = tip(en);
         // judged under the lane before it gained schemas none of its writes name: as if under this one
         if let Some((was, new)) = gained.get(&en.vault)
@@ -7356,6 +7450,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
             s.tip.lane = tip.lane;
             if !reshow && s.tip == tip && !opened.contains_key(&en.id) {
                 s.print = print(en, &groups_print);
+                #[cfg(not(avendb_no_replay_checks))]
                 debug_assert!(same_shown_in(s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
             }
         }
@@ -7400,18 +7495,45 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
             _ => (Judging::new(st, en, r, lane(en.vault)), 0, None),
         };
         store.perf.add("show: judging, set up", judging_at);
-        store.perf.count("show: writes judged", (writes.len() - from) as u64);
+        // with a budget, at most what is left of it of an entry's writes, `SHOW_SLICE` at least: an entry of a thousand
+        // writes is judged over several steps, each going on where the last left off (a step of four entries judged
+        // 300 writes, 200-300 ms on an iPhone, 2026-10-28)
+        let to = match work {
+            Some(w) => writes.len().min(from + w.saturating_sub(spent).max(SHOW_SLICE)),
+            None => writes.len(),
+        };
+        store.perf.count("show: writes judged", (to - from) as u64);
         store.perf.count("show: entries judged", 1);
-        for w in &writes[from..] {
+        for w in &writes[from..to] {
             j.judge(d, st, (r, bodies), w, &groups);
         }
-        spent += writes.len() - from + again + SHOW_ENTRY_WORK;
+        spent += to - from + again + SHOW_ENTRY_WORK;
         store.perf.add("show: judging", judging_at);
         let materialize_at = Perf::start();
+        if to < writes.len() {
+            // shown as far as it judged, with a print no whole showing has, so that it is never taken as shown whole
+            let tip = Tip { writes: to, last: Some(writes[to - 1].edit), ..tip };
+            let mut h = Hasher::new("lab shown in part");
+            h.update(&print).update(&(to as u64).to_le_bytes());
+            let print = h.finalize();
+            let s = j.shown_on(d, print, tip, items);
+            store.perf.add("show: materialize", materialize_at);
+            retain_recent_shown(&mut old, &mut recent, en.id, s);
+            shown_now.remove(&en.id);
+            part = Some(en.id);
+            let mut left = ids_todo[k + 1..].to_vec();
+            left.append(&mut rest);
+            rest = left;
+            break;
+        }
         let s = j.shown_on(d, print, tip, items);
         store.perf.add("show: materialize", materialize_at);
+        #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(from == 0 || same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
         retain_recent_shown(&mut old, &mut recent, en.id, s);
+    }
+    if let Some(e) = part {
+        rest.insert(0, e);
     }
     // only the entries judged last keep their scratch items
     let mut keep: HashSet<EntryId> = recent.iter().rev().take(SCRATCHES).copied().collect();
@@ -7438,8 +7560,12 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // what tells it what to show anew stays as it was for the entries left, until it shows them
     let left: HashSet<EntryId> = rest.iter().copied().collect();
     opened.retain(|e, _| left.contains(e));
+    // the bodies opened of the entry it judged part of were there as it judged them, or are of writes it judges next
+    if let Some(e) = part {
+        opened.remove(&e);
+    }
     let taken = store.log.edits().len();
-    store.showing = Some(Showing { rest, reshow: reshow || pending.reshow, opened, taken });
+    store.showing = Some(Showing { rest, reshow: reshow || pending.reshow, opened, taken, part });
     false
 }
 
@@ -7453,6 +7579,9 @@ struct Showing {
     /// How many edits it held when it left them: one taken since (a live page during a long catch-up) is replayed,
     /// read and its entry shown before them (`catch_up_step`).
     taken: usize,
+    /// The entry it judged part of the writes of (`SHOW_SLICE`), judged anew where it was to be: it goes on from
+    /// where it left off, though the others left are to be checked against all their writes.
+    part: Option<EntryId>,
 }
 
 /// What changed since the upkeep last looked at every entry's keys and stewardship (`upkeep`), so that it looks at
@@ -7749,7 +7878,7 @@ mod range_payload_tests {
                     via:(0..n).map(VaultId::from_u64).collect(),
                     create:Some(Creation{audience:(0..n).map(ShareId::from_u64).collect(),nonce}),
                     files:(0..n).map(|i|FileRoot{hash:EditId::from_u64(i).0,size:u64::MAX}).collect(),
-                    body:vec![0xAB;n as usize*129],
+                    body:vec![0xAB;n as usize*129].into(),
                 };
                 let edit=Edit{parents:(0..n).map(EditId::from_u64).collect(),depth:u64::MAX,author:key.id(),cosigners:vec![],action};
                 let signed=Signed{sigs:vec![key.sign(edit.id())],edit};

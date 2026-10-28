@@ -423,7 +423,7 @@ impl Names {
                 create: (!x["create"].is_null())
                     .then(|| Creation { audience: self.audience(&x["create"]["audience"]), nonce: [0; 32] }),
                 files: vec![],
-                body: serde_json::to_vec(&json!({"create": x["create"], "tags": x["tags"]})).unwrap(),
+                body: serde_json::to_vec(&json!({"create": x["create"], "tags": x["tags"]})).unwrap().into(),
             },
             // each part there, or `null` where the mark leaves it as it is
             "mark" => Action::Mark {
@@ -439,7 +439,7 @@ impl Names {
                 name: self.key_name(&x["secret"]),
                 id: KeyId([0; 32]),
                 public: None,
-                boxes: list(&x["to"]).iter().map(|t| KeyBox { to: self.recipient(t), bytes: vec![] }).collect(),
+                boxes: list(&x["to"]).iter().map(|t| KeyBox { to: self.recipient(t), bytes: Default::default() }).collect(),
                 clear: x["public"].as_bool().unwrap().then_some([0; 32]),
             },
             "wraps" => Action::Wraps {
@@ -449,7 +449,7 @@ impl Names {
                     .map(|w| Wrap {
                         name: self.key_name(&w["secret"]),
                         id: KeyId([0; 32]),
-                        boxed: KeyBox { to: self.recipient(&w["to"]), bytes: vec![] },
+                        boxed: KeyBox { to: self.recipient(&w["to"]), bytes: Default::default() },
                     })
                     .collect(),
             },

@@ -51,6 +51,7 @@ pub mod admission;
 pub mod aip;
 pub mod backup;
 pub mod batch;
+pub mod bulk;
 pub mod cast;
 pub mod data;
 pub mod doc;

@@ -243,7 +243,7 @@ fn a_forged_edit_is_refused() {
     // its ciphertext changed after it was signed: another edit, whose id nobody signed
     let mut changed = proof.clone();
     if let Action::Write { body, .. } = &mut changed[last].edit.action {
-        body[40] ^= 1;
+        { let mut b = body.to_vec(); b[40] ^= 1; *body = b.into(); }
     }
     let rows = observed(changed, c.city).expect("it proves the vault");
     let chart = rows.iter().find(|r| r["entry"] == c.views[0].to_hex()).expect("the chart");

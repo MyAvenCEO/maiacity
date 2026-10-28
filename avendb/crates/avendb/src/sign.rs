@@ -1359,7 +1359,7 @@ mod tests {
             via: vec![],
             create: None,
             files: vec![],
-            body: vec![1, 2, 3],
+            body: vec![1, 2, 3].into(),
         };
         Edit { parents: vec![], depth: 0, author, cosigners: vec![], action }
     }

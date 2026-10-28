@@ -69,7 +69,7 @@ pub fn by_id(e: EntryId) -> Selector {
 pub fn write(vault: VaultId, entry: EntryId, actor: VaultId, stay: Option<EditId>, epoch: u64) -> Action {
     let body = vec![0xc1, 0x9e, 0x47];
     let (proposal, files) = (Proposal::Main, vec![]);
-    Action::Write { vault, entry, actor, stay, epoch, deps: vec![], proposal, via: vec![], create: None, files, body }
+    Action::Write { vault, entry, actor, stay, epoch, deps: vec![], proposal, via: vec![], create: None, files, body: body.into() }
 }
 
 #[cfg(debug_assertions)]

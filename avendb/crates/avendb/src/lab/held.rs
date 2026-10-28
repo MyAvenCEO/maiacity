@@ -129,6 +129,16 @@ impl File {
     }
 }
 
+/// A shelved edit's bulk bytes are read back from the record of its edit in this file (`bulk`).
+impl crate::bulk::Source for File {
+    fn read(&self, at: u64, len: u32) -> io::Result<Vec<u8>> {
+        File::read(self, at, len)
+    }
+    fn edit(&self, bytes: &[u8]) -> Option<crate::policy::Edit> {
+        Signed::from_wire(bytes).ok().map(|s| s.edit)
+    }
+}
+
 #[cfg(unix)]
 fn read_at(file: &fs::File, bytes: &mut [u8], at: u64) -> io::Result<()> {
     std::os::unix::fs::FileExt::read_exact_at(file, bytes, at)
@@ -647,6 +657,16 @@ impl Signeds {
 
     pub(crate) fn is_spilled(&self) -> bool {
         self.held.spilled.is_some()
+    }
+
+    /// Where edit `id`'s record is in its spill, which the log's copy of it reads its bulk bytes back from
+    /// (`Edit::shelve`): none, unspilled.
+    pub(crate) fn place(&self, id: &EditId) -> Option<crate::bulk::Place> {
+        let s = self.held.spilled.as_ref()?;
+        let slot = s.slot(id)?;
+        // its own file, or the shelf's pack it reads the record of in place
+        let source: Arc<dyn crate::bulk::Source> = s.files[slot.file as usize].clone();
+        Some(crate::bulk::Place { source, at: slot.at, len: slot.len, sum: slot.sum, edit: *id })
     }
 }
 

@@ -2854,8 +2854,18 @@ impl Shared {
             })
             .await;
         self.traffic.asked(device, asking.elapsed().as_millis() as u64);
+        // what other pulls of the peer took while this asking runs, which each page asked after names loose: the peer
+        // sends none of it again (`LivePriority.lean` `withTaken`)
+        let others_took = self.pulls.taking(device);
+        let took_meanwhile = &others_took;
         let wire = move |after: Option<avendb::sync::Place>| {
-            let request = Request { after, ..base.0.clone() };
+            let mut request = Request { after, ..base.0.clone() };
+            let took = took_meanwhile.lock().expect("taken").clone();
+            if !took.is_empty() {
+                request.ask.loose.extend(took);
+                request.ask.loose.sort();
+                request.ask.loose.dedup();
+            }
             match &base.1 {
                 Some(vaults) => session::vaults_body(vaults, &request),
                 None => request.to_wire(),
@@ -3081,6 +3091,7 @@ impl Shared {
             // to its signer, each is a megabyte, and a page of a few edits waited ~10 s on them through a relay
             // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
             keys.extend(blobs);
+            let ids: Vec<EditId> = edits.iter().map(|s| s.edit.id()).collect();
             let take = async {
                 // Native cryptography runs outside the Lab mutex. The owned page/admission survives
                 // cancellation until its blocking checker exits; current-state admission still runs below.
@@ -3091,12 +3102,14 @@ impl Shared {
                 #[cfg(target_arch = "wasm32")]
                 let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, ()).await?;
                 let checked = taking.elapsed();
-                let (got, whose) = self
+                let (got, whose, held) = self
                     .try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| {
                         let (_permit, _activity) = (permit, activity);
-                        lab.receive_prepared(me, prepared, false)
+                        let (got, whose) = lab.receive_prepared(me, prepared, false);
+                        (got, whose, lab.holding(me, ids))
                     })
                     .await?;
+                self.pulls.took(device, &others_took, &held);
                 let kept = taking.elapsed();
                 // its keys and items brought up to date now and then, not at each page (`CATCH_UP_PACE`)
                 if next.is_some() {

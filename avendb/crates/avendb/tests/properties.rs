@@ -466,7 +466,7 @@ fn a_write(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     let deps = if lands { vec![en.creation] } else { vec![] };
     let (entry, via, create, body) = (en.id, vec![], None, vec![rng.next() as u8]);
     let files = vec![];
-    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body };
+    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body: body.into() };
     Some(Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Tags(some_tags(rng)) })
 }
 
@@ -533,7 +533,7 @@ fn a_creation(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     };
     let (stay, deps, via, body) = (None, vec![], vec![], vec![rng.next() as u8]);
     let (create, files) = (Some(Creation { audience, nonce: [0; 32] }), vec![]);
-    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body };
+    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body: body.into() };
     Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Created(header, tags) }
 }
 
@@ -2092,7 +2092,7 @@ impl Twin {
                 let create = create.map(|c| Creation { audience: self.new_audience(vault, &c.audience), ..c });
                 let (stay, deps, proposal) = (stay.map(|s| self.edit(s)), self.edits(&deps), self.proposal(proposal));
                 let (vault, actor, via) = (self.vault(vault), self.vault(actor), self.vaults(&via));
-                Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body }
+                Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body: body.into() }
             }
             Action::Mark { vault, entry, caps, wants, keep, via } => {
                 let caps = caps.map(|to| self.new_audience(vault, &to));
