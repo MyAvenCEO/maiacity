@@ -112,3 +112,40 @@ fn a_device_far_behind_takes_a_checkpoints_bare_edits_over_several_pulls() {
     assert!(ids.iter().all(|id| held.contains(id)), "every covered edit held once the last page came");
     assert!(lab.state(phone).acts_for(phone, alice), "the phone a device of Alice's");
 }
+
+/// A device catching up a step at a time that lets go of bare edits no checkpoint vouches for replays what it keeps
+/// again a slice a step, not in the step that let go of them (`CatchUpBudget.lean`): it did all of it in that one
+/// turn, a page's worker answering no peer meanwhile (2026-10-28). It ends where one catch-up ends.
+#[test]
+fn a_catch_up_that_lets_go_of_bare_edits_replays_again_a_slice_a_step() {
+    let (mut lab, _passkey, mac, alice) = alice();
+    let before = lab.backup(mac);
+    let ids: Vec<_> = before.signed().iter().map(|s| s.edit.id()).collect();
+    let forged = lab.sign_unchecked(mac, &[mac], Action::Checkpoint { vault: alice, covers: ids.clone() }).expect("signed");
+    let mut signed: Vec<Signed> = stripped(&before, &ids).signed().to_vec();
+    signed.push(forged);
+    let rounds = |lab: &Lab| lab.perf(mac)["counts"]["refresh rounds"].as_u64().unwrap_or(0);
+    let mut most = 0;
+    for whole in [true, false] {
+        lab.restore_from(mac, Backup::new(vec![], []));
+        lab.receive_whose_now(mac, signed.clone(), vec![], false);
+        if whole {
+            lab.catch_up(mac);
+        } else {
+            let mut taken = 0;
+            loop {
+                let at = rounds(&lab);
+                let step = lab.catch_up_step(mac, 1);
+                most = most.max(rounds(&lab) - at);
+                taken += 1;
+                assert!(taken < 10_000, "a catch-up in steps ends");
+                if matches!(step, avendb::lab::CatchUp::Caught(_)) {
+                    break;
+                }
+            }
+        }
+        assert!(lab.backup(mac).signed().iter().all(|s| !ids.contains(&s.edit.id())), "every bare edit let go of");
+        assert!(!lab.state(mac).acts_for(mac, alice));
+    }
+    assert!(most <= 1, "a step replayed again in the round after it let go of bare edits: {most} rounds");
+}
