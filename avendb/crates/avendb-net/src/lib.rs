@@ -900,6 +900,7 @@ impl Node {
             ranges: Mutex::default(),
             edit_transfer: edit_transfer::Runtime::default(),
             paced: Mutex::default(),
+            catch_up_due: AtomicBool::new(false),
             pieces: Mutex::default(),
             pool,
             changed: Notify::new(),
@@ -2377,6 +2378,8 @@ struct Shared {
     edit_transfer: edit_transfer::Runtime,
     /// The soonest a pull brings its device up to date again, unless it must (`Shared::catch_up_paced`).
     paced: Mutex<Option<Instant>>,
+    /// A catch-up waits for `paced` to pass, and runs then (`Shared::catch_up_later`).
+    catch_up_due: AtomicBool,
     /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out
     /// as those files.
     pieces: Mutex<HashMap<iroh_blobs::Hash, BTreeSet<avendb::sealed::FileRoot>>>,
@@ -3879,7 +3882,9 @@ impl Shared {
     /// entries are shown first, `Lab::show_items`) reaches them at once rather than after the whole catch-up. Whether it
     /// did, and whether steps were left at the deadline.
     pub(crate) async fn catch_up_steps(self: &Arc<Self>, must: bool, class: lab_schedule::Class, until: Option<Instant>) -> (bool, bool) {
-        if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
+        let soonest = *self.paced.lock().expect("paced");
+        if !must && let Some(soonest) = soonest.filter(|soonest| Instant::now() < *soonest) {
+            self.catch_up_later(soonest);
             return (false, false);
         }
         // A turn of the Lab a step (`Lab::catch_up_step`), not one for the whole: its replay stepped on, then its
@@ -3916,6 +3921,25 @@ impl Shared {
             self.find_again_on_new_keys().await;
         }
         (caught, left)
+    }
+
+    /// A catch-up its pace put off runs at `soonest`, once however many were put off: a device left behind with nothing
+    /// to step it on answers its peers by a replay that lacks the edits it took since (`Lab::standing`), so a peer that
+    /// asked meanwhile never got them (a drive plugged in again never got the note written while it was away,
+    /// 2026-10-28). It holds no turn of the node while it waits, so a shutdown doesn't wait for it.
+    fn catch_up_later(self: &Arc<Self>, soonest: Instant) {
+        if self.catch_up_due.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let shared = Arc::downgrade(self);
+        task::spawn(async move {
+            time::sleep(soonest.saturating_duration_since(Instant::now())).await;
+            let Some(shared) = shared.upgrade() else { return };
+            shared.catch_up_due.store(false, Ordering::Release);
+            if let Ok(_activity) = shared.admit() {
+                shared.catch_up_paced_class(true, lab_schedule::Class::Background).await;
+            }
+        });
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by

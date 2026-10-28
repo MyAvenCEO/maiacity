@@ -62,12 +62,36 @@ theorem write_safe (since held : List Edit) (h : since.all (fun e => !e.isRemova
     (ok : may held p = true) : may (since ++ held) p = true :=
   may_mono since held h p ok
 
+/-- What a device answers by (`Lab::standing`): the replay it holds only while a catch-up steps it on (`catching`) and
+    no removal came since, else all of its edits. -/
+def answerBy (catching : Bool) (since held : List Edit) : List Edit :=
+  if catching && since.all (fun e => !e.isRemoval) then held else since ++ held
+
+/-- A device that isn't catching up answers by every edit it holds: nothing steps a lagging replay on, so it never
+    answers from a state behind its log (2026-10-28: a drive asked after a receive was told nothing of the newest
+    note, for good). -/
+theorem answer_current (since held : List Edit) : answerBy false since held = since ++ held := by
+  simp [answerBy]
+
+/-- Whatever it answers by, it hands over nothing all its edits wouldn't. -/
+theorem answerBy_safe (catching : Bool) (since held : List Edit) (p : Nat) (hp : may (answerBy catching since held) p = true) :
+    may (since ++ held) p = true := by
+  unfold answerBy at hp
+  split at hp
+  · rename_i h
+    simp only [Bool.and_eq_true] at h
+    exact may_mono since held h.2 p hp
+  · exact hp
+
 namespace Examples
 
 -- a grant since: the held replay allows less, never more
 #guard may [.grant 1] 1 && !may [] 1
 -- a removal since: the held replay would allow what all of them don't, so it replays every edit first
 #guard may [.grant 1] 1 && !may ([.remove 1] ++ [.grant 1]) 1
+
+-- not catching up, a grant since is answered by: the newest edit is never left out
+#guard may (answerBy false [.grant 1] []) 1 && !may (answerBy true [.grant 1] []) 1
 
 end Examples
 

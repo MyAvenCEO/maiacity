@@ -3291,10 +3291,13 @@ impl Lab {
     /// holds, where the edits it took since hold no removal (they can only add to what anyone may do: it hands over and
     /// accepts no more than all of them would, `StandingReplay.lean`), else `latest`. A peer's ask or a write in the
     /// middle of a first sync replayed every edit first, 10-24 s at 130,000 (2026-10-27); the catch-up's next steps
-    /// bring the rest.
+    /// bring the rest. Only while a catch-up steps it on (`catching_up`): a device that isn't catching up has nothing
+    /// to step its replay on, and answered from it every ask after an edit it took came back without that edit, until
+    /// something else replayed (`answer_current`; a drive re-plugged never got the note written meanwhile, 2026-10-28).
     fn standing(&self, d: SignerId) -> &State {
         let store = self.held(d);
-        if store.latest.get().is_none()
+        if self.catching_up(d)
+            && store.latest.get().is_none()
             && store.replayed < store.log.edits().len()
             && !store.log.edits()[store.replayed..].iter().any(Edit::is_removal)
         {
