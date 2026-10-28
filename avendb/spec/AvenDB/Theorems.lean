@@ -10,6 +10,7 @@ import AvenDB.TrustRuns
 import AvenDB.MoveSteps
 import AvenDB.TailRuns
 import AvenDB.TailMoves
+import AvenDB.TailRungs
 import AvenDB.RangeSync
 import AvenDB.Batches
 import AvenDB.KeyTree

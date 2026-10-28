@@ -525,6 +525,7 @@ fn why_counted(why: Why) -> &'static str {
         Why::Nothing => "replay: nothing new",
         Why::Stepped => "replay: stepped on",
         Why::Tail => "replay: last edits again",
+        Why::Rung => "replay: from a rung",
         Why::Whole(why) => why,
     }
 }

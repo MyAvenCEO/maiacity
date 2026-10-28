@@ -563,7 +563,7 @@ impl Replay {
                     let passed = Passed::of(sorted(&held, &ids, &stood, 0, at));
                     let after = Passed::of(sorted(&held, &ids, &stood, at, n));
                     let grants = Grants::of(edits().zip(ids.iter().copied()));
-                    Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths, passed, after, grants })
+                    Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths, passed, after, grants, rungs: vec![] })
                 }
                 _ => return Err(WireError::Unknown),
             };
