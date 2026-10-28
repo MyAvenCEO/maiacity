@@ -409,9 +409,7 @@ fn sides_of(lab: &Lab, me: SignerId, lanes: &mut HashMap<VaultId, Lane>, l: &Lin
     let (old, new) = if l.merged {
         (h.item_at(&h.get(l.line)?.write.deps, me, MAIN).record(), item.record())
     } else {
-        let conflicts = h.merged(Some(l.line), MAIN, me, &BTreeSet::new()).conflicts;
-        let take = conflicts.into_iter().map(|c| c.place).collect();
-        let merged = Value::Object(h.merged(Some(l.line), MAIN, me, &take).record);
+        let merged = Value::Object(h.merged_theirs(Some(l.line), MAIN, me).record);
         (main.map_or_else(|| json!({}), |m| m.record()), merged)
     };
     let lane = lane_of(lanes, lab, me, vault);
