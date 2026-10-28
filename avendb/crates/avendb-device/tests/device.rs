@@ -561,7 +561,7 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
     assert_eq!((&status["open"], &status["meta"]["name"]), (&json!(false), &json!("Eve's MacBook")));
     let opened = app.call("open", json!([])).await.expect("it opens again");
     assert_eq!(app.asked(), ["unlock"]);
-    assert_eq!(steps(&mut app).await, ["unlock", "keys", "restore", "node", "check"]);
+    assert_eq!(steps(&mut app).await, ["unlock", "keys", "restore", "shelf", "refresh", "ledger", "node", "check"]);
     assert_eq!((&opened["id"], &opened["endpoint"]), (&device["id"], &device["endpoint"]), "the same device");
     assert_eq!(app.call("open", json!([])).await, Ok(opened), "open already");
     assert!(app.asked().is_empty());
