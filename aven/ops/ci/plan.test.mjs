@@ -43,11 +43,11 @@ test('the JS suites pass together: one verdict of every selected entry\'s key le
  expect(outputs(unpassed(p, new Set([p.keys.js])))).toMatchObject({ run_suites: 'false', run_js: 'true' });
 });
 
-test('a job folds its checks: it runs when any of them does', () => {
+test('a job folds its checks: it runs when any of them does; Lean and theOS each have their Mac', () => {
  const lean = outputs(plan(['aven/db/spec/AvenDB/Objective.lean'], { key }));
- expect(lean).toMatchObject({ run_lean: 'true', run_macos: 'true' });
+ expect(lean).toMatchObject({ run_lean: 'true', run_mac: 'false', run_spec: 'true', run_protocol: 'false', run_proofs: 'true' });
  const audit = outputs(plan(null, { mode: 'audit', key }));
- expect(audit).toMatchObject({ run_js: 'true', run_gate: 'false', run_suites: 'false', run_wasm: 'false', run_macos: 'false', run_proofs: 'false' });
+ expect(audit).toMatchObject({ run_js: 'true', run_gate: 'false', run_suites: 'false', run_wasm: 'false', run_mac: 'false', run_lean: 'false', run_proofs: 'false' });
 });
 
 test('a key that passed before leaves its job or matrix entry out, unless the run is full', () => {

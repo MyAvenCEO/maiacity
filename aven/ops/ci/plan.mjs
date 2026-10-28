@@ -99,7 +99,6 @@ export function unpassed(p, passed) {
 export const folds = {
  js: ['gate', 'suites', 'delivery', 'publish', 'infra', 'audit', 'deny'],
  proofs: ['spec', 'protocol'],
- macos: ['mac', 'lean'],
 };
 
 // the plan's outputs, as GitHub's job outputs read them: run_<check> for each job and step, key_<check>, and the
