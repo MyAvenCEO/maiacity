@@ -294,6 +294,26 @@ theorem same_class_same_priority (a b : Nat) (ha : a ≤ smallAnswer) (hb : b �
     priority a = priority b := by
   simp [priority, ha, hb]
 
+/-! ## Large answers in the order asked (Goal 6)
+
+Shared in turns, a pull's two pages in flight ended together, and the link idled while the next two were asked
+(`bench_live` phone_bulk: half a second at 0.55 of the link at each pair). Each request now takes a turn as it comes,
+counted down from -1, and a large answer goes at its turn: the one asked first is sent whole first, and a page asked
+ahead streams while the one before it is taken. Small answers stay ahead of all of them. Rust: session.rs `priority`. -/
+
+/-- The send priority of an answer of `bytes` asked in turn `turn` (0 for a connection's first): higher goes first. -/
+def sendPriority (bytes turn : Nat) : Int := if bytes ≤ smallAnswer then 1 else -((turn : Int) + 1)
+
+/-- Of two large answers, the one asked first goes first. -/
+theorem asked_first_sent_first (a b la lb : Nat) (ha : smallAnswer < la) (hb : smallAnswer < lb) (h : a < b) :
+    sendPriority lb b < sendPriority la a := by
+  simp only [sendPriority, Nat.not_le.mpr ha, Nat.not_le.mpr hb, ite_false]; omega
+
+/-- A small answer goes before every large one, whenever either was asked. -/
+theorem small_before_any_large (s l t u : Nat) (hs : s ≤ smallAnswer) (hl : smallAnswer < l) :
+    sendPriority l t < sendPriority s u := by
+  simp only [sendPriority, hs, Nat.not_le.mpr hl, ite_true, ite_false]; omega
+
 /-! ## The larger of two controllers' windows (batch 5)
 
 A round trip carries the least of the pages asked, the link's bandwidth × delay and the window its congestion
@@ -338,8 +358,9 @@ came again on its last page (`bench_live` phone_bulk at ten chat edits a second:
 names them loose too, which the peer sends none of again (`Logs.lean` `respondSince`). Rust: lib.rs `pages`,
 pulls.rs `Taken`. -/
 
-/-- An asking's request for its next page, naming loose too the edits `taken` that another pull of the same peer
-    brought this device since the asking began (a live pull's chat edits during a catch-up). -/
+/-- An asking's request for its next page, naming loose too the edits `taken` that another pull brought this device
+    since the asking began, of the same peer (a live pull's chat edits during a catch-up) or of another (a stalled
+    claim handed over). -/
 def withTaken (a : Ask) (taken : List EditId) : Ask := { a with loose := a.loose ++ taken }
 
 /-- The peer sends what it would have, less exactly the edits taken: none of them again, and nothing else held back. -/
@@ -363,5 +384,191 @@ theorem only_taken_is_held_back (edits : List Edit) (d : SignerId) (a : Ask) (ta
   refine List.mem_filter.mpr ⟨h, ?_⟩
   simp only [n, Bool.not_false]
 
+
+/-! ## A member that backs off on a queue, not on every loss
+
+BBR v3 takes 7/10 of its short-term rate and inflight at every round with a loss outside its probes, so at a phone's
+1 % random loss nearly every round cut it (`bench_live` phone_bulk: pacing 1.4-7.8 MB/s on a 6.25 MB/s link, 24-60 % of
+it). The third member of the pair holds the largest window BBR or Cubic reached in a round with no queue, and takes a
+round for congestion where its least round trip shows a queue past a target, or where it lost more than a tenth: a
+sender that fills a shared queue still backs off, and a loss with no queue behind it cuts nothing. With no queue it
+grows a sixteenth a round, to find where the queue begins. The pair keeps the largest window (`connWindow`, with its drains). Rust: avendb-net congestion.rs `Queue`. -/
+
+/-- What one round trip told the queue-gated member (µs, bytes, packets): the least round trip it measured, the least
+    ever, the larger of BBR's and Cubic's windows in it, the packets sent and lost in it, and whether the window
+    bounded it (`full`), not the application. -/
+structure Round where
+  rtt : Nat
+  minRtt : Nat
+  others : Nat
+  sent : Nat
+  lost : Nat
+  full : Bool
+
+/-- The queue a round shows: what its least round trip lies above the least ever. -/
+def Round.queue (r : Round) : Nat := r.rtt - r.minRtt
+
+/-- The queue it holds to: a quarter of the least round trip, 2 ms at least. -/
+def Round.target (r : Round) : Nat := max (r.minRtt / 4) 2000
+
+/-- A round is congested where it shows more queue than the target, or lost more than a tenth of what it sent. -/
+def Round.congested (r : Round) : Bool := decide (r.target < r.queue) || decide (r.sent < 10 * r.lost)
+
+/-- The window after a round: 7/10 of it when congested (a floor of `least`), else a sixteenth more where the window
+    bounded the round, or what the others reached, if more. -/
+def nextWindow (least w : Nat) (r : Round) : Nat :=
+  if r.congested then max least (w * 7 / 10) else max (if r.full then w + w / 16 else w) r.others
+
+/-- Congestion backs it off: past its floor, never more than before. -/
+theorem backs_off_when_congested (least w : Nat) (r : Round) (h : r.congested = true) (hl : least ≤ w) :
+    nextWindow least w r ≤ w := by
+  simp only [nextWindow, h, ite_true]; omega
+
+/-- A queue past the target is congestion, whatever was lost: a sender that fills a shared queue backs off. -/
+theorem a_queue_is_congestion (r : Round) (h : r.target < r.queue) : r.congested = true := by
+  simp [Round.congested, h]
+
+/-- A random loss with no queue and under a tenth of the round cuts nothing. -/
+theorem random_loss_keeps_the_window (least w : Nat) (r : Round)
+    (hq : r.queue ≤ r.target) (hl : 10 * r.lost ≤ r.sent) : w ≤ nextWindow least w r := by
+  have : r.congested = false := by
+    have h1 : ¬ r.target < r.queue := Nat.not_lt.mpr hq
+    have h2 : ¬ r.sent < 10 * r.lost := Nat.not_lt.mpr hl
+    simp [Round.congested, h1, h2]
+  simp only [nextWindow, this, Bool.false_eq_true, ite_false]; split <;> omega
+
+/-- It grows slowly: past its floor, never more than a sixteenth a round past what it held or the others reached. -/
+theorem grows_a_sixteenth_at_most (least w : Nat) (r : Round) (hl : least ≤ w) :
+    nextWindow least w r ≤ max (w + w / 16) r.others := by
+  simp only [nextWindow]; split <;> (try split) <;> omega
+
+/-- A round that sent all it had shows nothing past it: the window grows no further than the others reached. A
+    connection that grew its window in its hello's rounds drained at once, and sent its hello two packets a round. -/
+theorem sent_all_grows_no_further (least w : Nat) (r : Round) (hl : least ≤ w) (h : r.full = false) :
+    nextWindow least w r ≤ max w r.others := by
+  simp only [nextWindow, h, Bool.false_eq_true, ite_false]; split <;> omega
+
+/-- And it grows only with no queue: a round that shows one never leaves it more than it held. -/
+theorem grows_only_with_no_queue (least w : Nat) (r : Round) (hl : least ≤ w) (h : r.target < r.queue) :
+    nextWindow least w r ≤ w :=
+  backs_off_when_congested least w r (a_queue_is_congestion r h) hl
+
+/-! A queue is judged against the least round trip, which a flow that starts behind another's standing queue measures
+with that queue in it, and then never sees the queue it adds. So every `DRAIN_EVERY` the connection drains: it sends at its
+floor alone till what it sent before is acknowledged, which empties its own share of the queue, and then till a packet
+sent after that is; that packet's round trip is its least. Until a drain has confirmed it, the member's window counts
+for nothing. -/
+
+/-- Whether a round's end begins a drain: only where the member's window leads the others', and its least round trip
+    is unconfirmed or old. Where it doesn't lead, the connection sends at the others' window and a drain would only
+    slow it. -/
+def drainBegins (stale : Bool) (window others : Nat) : Bool := stale && decide (others < window)
+
+/-- A member that doesn't lead never drains the connection. -/
+theorem no_drain_unless_it_leads (stale : Bool) (window others : Nat) (h : window ≤ others) :
+    drainBegins stale window others = false := by
+  simp [drainBegins, Nat.not_lt.mpr h]
+
+/-- A drain under way: the packet number it waits on, and whether its own queue is gone. -/
+structure Drain where
+  ends : Nat
+  emptied : Bool
+
+/-- What an ack does to a drain, `largest` the largest packet number sent: an older packet changes nothing; the first
+    one past `ends` marks its queue gone and waits on the next packet sent; past that, the drain ends with the
+    packet's round trip (`inr`). -/
+def drainAck (d : Drain) (largest pn : Nat) : Drain ⊕ Unit :=
+  if pn < d.ends then .inl d
+  else if d.emptied then .inr ()
+  else .inl { ends := largest + 1, emptied := true }
+
+/-- A drain ends only on a packet sent once its queue was gone: never on the first ack that empties it. -/
+theorem a_drain_ends_on_a_clean_packet (d : Drain) (largest pn : Nat) (h : drainAck d largest pn = .inr ()) :
+    d.emptied = true ∧ d.ends ≤ pn := by
+  unfold drainAck at h
+  by_cases h1 : pn < d.ends
+  · simp [h1] at h
+  · by_cases h2 : d.emptied = true
+    · exact ⟨h2, by omega⟩
+    · simp [h1, h2] at h
+
+/-- Emptying waits on a packet not yet sent: one sent after every packet that could still sit in its queue. -/
+theorem emptied_waits_on_the_next_sent (d d' : Drain) (largest pn : Nat) (hd : d.emptied = false)
+    (h : drainAck d largest pn = .inl d') (hp : d.ends ≤ pn) : d'.emptied = true ∧ largest < d'.ends := by
+  unfold drainAck at h
+  have h1 : ¬ pn < d.ends := by omega
+  simp only [h1, hd, Bool.false_eq_true, ite_false] at h
+  cases h; simp
+
+/-- The connection's window: its floor while it drains, else the largest of BBR's, Cubic's, and the queue member's
+    once a drain confirmed its least round trip. -/
+def connWindow (drains confirmed : Bool) (least bbr cubic queue : Nat) : Nat :=
+  if drains then least else max (max bbr cubic) (if confirmed then queue else 0)
+
+/-- A drain sends at the floor alone, whatever the members hold: the queue it leaves is the others'. -/
+theorem a_drain_sends_its_floor (confirmed : Bool) (least bbr cubic queue : Nat) :
+    connWindow true confirmed least bbr cubic queue = least := by
+  simp [connWindow]
+
+/-- Unconfirmed, the member leads nowhere: the connection sends as BBR beside Cubic. -/
+theorem unconfirmed_never_leads (least bbr cubic queue : Nat) :
+    connWindow false false least bbr cubic queue = either bbr cubic := by
+  simp [connWindow, either]
+
+/-- Past a drain, the connection carries no less than BBR or Cubic alone would. -/
+theorem past_a_drain_no_less (confirmed : Bool) (least bbr cubic queue : Nat) :
+    either bbr cubic ≤ connWindow false confirmed least bbr cubic queue := by
+  simp only [connWindow, either, Bool.false_eq_true, ite_false]; omega
+
+/-- The pair with the queue-gated member: the largest of the three windows. -/
+def either3 (bbr cubic queue : Nat) : Nat := max (max bbr cubic) queue
+
+/-- It carries no less than BBR or Cubic alone, nor more than the link. -/
+theorem either3_carries_no_less (asked link bbr cubic queue : Nat) :
+    carried asked link (either bbr cubic) ≤ carried asked link (either3 bbr cubic queue) ∧
+    carried asked link (either3 bbr cubic queue) ≤ link := by
+  simp only [carried, either, either3]; omega
+
+/-! ## A stalled claim hands over (S1, 2026-10-28)
+
+A log that two peers hold more of is asked of one at a time (`Claims`, S5): the first asking takes it, and the other
+peer is owed an asking once that one ends. Samuel's iPhone, over a 66-214 KB/s relay and backgrounded, had an asking
+of the always-on peer land one page and then none for 9 minutes: it held every log the Mac advertised too, and the Mac
+was never asked all evening. So a claim holds only while its asking's pages land: once none landed for `handover`,
+a peer owed the log takes it, and every page asked after names loose what any pull took meanwhile (`withTaken`, from
+any peer), so the stalled asking, if it comes back, sends none of it again. Rust: avendb-net lib.rs `Claims::take`,
+`Claims::landed`, pulls.rs `Taken`. -/
+
+/-- A claim on a log: the peer asked for it, and when its asking last landed a page (or began). -/
+structure Claim where
+  peer : Nat
+  landed : Nat
+
+/-- Whether peer `me` takes a log claimed so at `now`: unclaimed, its own, or its asking stalled `handover` long. -/
+def takes (handover now me : Nat) : Option Claim → Bool
+  | none => true
+  | some c => c.peer == me || decide (c.landed + handover ≤ now)
+
+/-- A claim whose pages land is kept: no other peer is asked for its log, nothing comes twice (S5). -/
+theorem a_landing_claim_is_kept (handover now me : Nat) (c : Claim) (h : c.peer ≠ me)
+    (fresh : now < c.landed + handover) : takes handover now me (some c) = false := by
+  simp [takes, h, Nat.not_le.mpr fresh]
+
+/-- A stalled claim is handed over: a peer owed the log asks for it once `handover` passed with no page. -/
+theorem a_stalled_claim_hands_over (handover now me : Nat) (c : Claim) (h : c.landed + handover ≤ now) :
+    takes handover now me (some c) = true := by
+  simp [takes, h]
+
+/-- No log waits on a stalled asking for ever: an owed peer asking again at `landed + handover` takes it. -/
+theorem no_log_waits_past_the_handover (handover me : Nat) (c : Option Claim) :
+    ∃ t, ∀ now, t ≤ now → takes handover now me c = true := by
+  match c with
+  | none => exact ⟨0, fun _ _ => rfl⟩
+  | some c => exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover now me c h⟩
+
+/-- What the stalled asking sends if it comes back: none of what the peer that took over brought, by `withTaken`. -/
+theorem the_stalled_asking_sends_none_of_it_again (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId)
+    (e : Edit) (h : e ∈ respondSince edits d (withTaken a taken)) : taken.contains e.id = false :=
+  taken_is_never_sent edits d a taken e h
 
 end AvenDB.LivePriority

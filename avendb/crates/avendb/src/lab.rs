@@ -5973,15 +5973,18 @@ impl Lab {
         (new, whose)
     }
 
-    /// The digest of each log device `d` holds that `peer` may hold too by `d`'s view, following what `d` follows
-    /// (`sync::digests`, as `request` names them), smallest log first: what `d` tells `peer` whenever one changes, so
-    /// that `peer` asks it where they differ. Nothing about any other log.
+    /// The digest of each log device `d` holds that `peer` may hold too by `d`'s view (`sync::digests`, as `request`
+    /// names them), smallest log first: what `d` tells `peer` whenever one changes, so that `peer` asks it where they
+    /// differ. Nothing about any other log. The logs of what `d` sends `peer` following nothing (`Logs.lean`
+    /// `reachLogs`), which `peer`'s request is answered with whatever it follows. Told by what `d` follows, as it was, a
+    /// server that follows a vault told a phone that doesn't of its public logs, then answered the phone's asking for
+    /// them with nothing, and the phone counted them as lacking and asked again (S1, 2026-10-28).
     pub fn announce(&mut self, d: SignerId, peer: SignerId) -> Vec<(LogId, [u8; 32])> {
         self.digests(d);
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let logs = logs_of(edits, ids);
-        let shared: BTreeSet<LogId> = self.answered(d, peer, &store.follow).iter().filter_map(|&i| logs[i]).collect();
+        let shared: BTreeSet<LogId> = self.answered(d, peer, &[]).iter().filter_map(|&i| logs[i]).collect();
         let digests = store.digests.as_ref().expect("worked out");
         shared.into_iter().filter_map(|l| Some((l, *digests.get(&l)?))).collect()
     }

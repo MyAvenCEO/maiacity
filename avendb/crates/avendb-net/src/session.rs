@@ -167,7 +167,11 @@ pub(crate) fn too_long(error: &anyhow::Error) -> bool {
 
 /// Answers each message the peer sends on the connection, until it closes.
 pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
+    // the turn each request was asked in, counted down: of two large answers the one asked first goes first
+    let mut turn: i32 = 0;
     while let Ok((mut send, recv)) = peer.conn.accept_bi().await {
+        turn = turn.saturating_sub(1);
+        let asked = turn;
         let activity = match shared.admit() {
             Ok(activity) => activity,
             Err(_) => { send.reset(REFUSED).ok(); break; }
@@ -181,8 +185,9 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
                     // peer. Closing/cancellation releases only after every blocking worker drops its Arc too.
                     let deadline = if answer._range.is_some() { crate::edit_transfer::DEADLINE } else if answer._checkpoint.is_some() { crate::checkpoint_delivery::DEADLINE } else { PAGE_WAIT };
                     // a small answer (a live pull's edit, cuts, a card) goes out ahead of the pages of a catch-up on the
-                    // same connection, not behind what is queued of them (`LivePriority.lean` `smallFirst`)
-                    send.set_priority(priority(answer.bytes.len())).ok();
+                    // same connection, not behind what is queued of them, and the pages in the order asked
+                    // (`LivePriority.lean` `sendPriority`)
+                    send.set_priority(priority(answer.bytes.len(), asked)).ok();
                     if matches!(n0_future::time::timeout(deadline, send.write_all(&answer.bytes)).await, Ok(Ok(()))) {
                         send.finish().ok();
                     } else { send.reset(REFUSED).ok(); }
@@ -198,10 +203,12 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
 /// catch-up's page (`pulls::PAGE_BYTES`, `PAGE`).
 pub(crate) const SMALL_ANSWER: usize = 64 << 10;
 
-/// The send priority of an answer of `bytes`: higher goes first (`SendStream::set_priority`). Two levels only, so a
-/// connection's streams keep their round-robin within each.
-pub(crate) fn priority(bytes: usize) -> i32 {
-    i32::from(bytes <= SMALL_ANSWER)
+/// The send priority of an answer of `bytes` asked in turn `asked` (-1 for a connection's first request, then down):
+/// higher goes first (`SendStream::set_priority`). Small answers all at 1, keeping their round-robin; large ones in the
+/// order asked, each sent whole before the next. Shared in turns, a pull's two pages in flight (4 MiB each) ended
+/// together, and the link idled while the next two were asked: 0.55 of its rate for 0.5 s at each pair on phone_bulk.
+pub(crate) fn priority(bytes: usize, asked: i32) -> i32 {
+    if bytes <= SMALL_ANSWER { 1 } else { asked.min(0) }
 }
 
 struct Answer {
