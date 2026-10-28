@@ -39,9 +39,10 @@ export function commands(step, { shard, file, extracted } = {}) {
  const s = shards[shard];
  if (step !== 'run' || !s) throw new Error(`${step} ${shard ?? ''}: a step is archive, doc or run <${Object.keys(shards).join('|')}>`);
  const archive = ['--archive-file', file, '--workspace-remap', '.'];
- // the libtest shard's program, from the archive unpacked where it is run
+ // the libtest shard's program, from the archive unpacked where it is run: the full list, whose suites name the folder
+ // each program runs in (a binaries-only list names none, and keeps its programs under rust-binaries)
  if (s.binary) return [['cargo', 'nextest', 'list', ...archive, '--extract-to', extracted, '--extract-overwrite',
-  '--list-type', 'binaries-only', '--message-format', 'json']];
+  '--message-format', 'json']];
  return [['cargo', 'nextest', 'run', '--profile', 'ci', ...archive, '--no-fail-fast', '--no-tests=fail', '-E', s.filter,
   ...(s.partition ? ['--partition', s.partition] : [])]];
 }
