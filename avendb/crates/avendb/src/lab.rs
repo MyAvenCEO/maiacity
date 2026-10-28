@@ -6306,6 +6306,11 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
         // each edit by its id from the signed edits it holds, every one of which its replay is of: no map of every
         // edit made again for each reading
         for id in wanted {
+            // an id it is handed twice (new, and left by a step, or lacking its key before) is opened once: each one
+            // opened is counted once in what it reads on from (`ReadNew::basis`), or it reads every body again
+            if store.bodies.contains_key(&id) || store.spoilt.contains(&id) {
+                continue;
+            }
             let Some(signed) = store.signed.get(&id) else { continue };
             let edit = &signed.edit;
             let Action::Write { entry, stay, epoch, body, .. } = &edit.action else {
