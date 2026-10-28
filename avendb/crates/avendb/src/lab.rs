@@ -655,6 +655,9 @@ impl Touched {
 pub struct Warm {
     pub keys: Vec<Vec<u8>>,
     pub views: Vec<Vec<u8>>,
+    /// Its packs of kept showings, the oldest first: a later one's showing of an entry in place of an earlier one's
+    /// (`Warming::shown`).
+    pub shown: Vec<Vec<u8>>,
 }
 
 /// A restore a page at a time under way (`Lab::restore_start`): how many of the first edits it restores its shelf names
@@ -674,6 +677,9 @@ pub struct Restoring {
 pub struct Warming {
     pub keys: Option<Vec<u8>>,
     pub view: Option<Vec<u8>>,
+    /// A pack of the showings its shelf lacks, encrypted for it alone and this engine (`ShownView.lean`), and whether
+    /// it holds every showing it keeps, so that the packs before it go.
+    pub shown: Option<(Vec<u8>, bool)>,
     // Process-local receipt binding: no replacement store, lock, withdrawal or earlier acknowledgement may
     // make its counts describe a different key prefix or view. Appending edits alone keeps this receipt valid.
     revision: Arc<()>,
@@ -681,6 +687,8 @@ pub struct Warming {
     keys_of: Option<(Option<Checked>, usize)>,
     view_of: usize,
     view_wholes: u64,
+    /// The prints of the showings its pack holds, by entry, and whether they are all it keeps.
+    shown_of: Option<(Vec<(EntryId, [u8; 32])>, bool)>,
 }
 
 /// Immutable snapshot inputs, owned independently of Lab. Encoding consumes the keys
@@ -690,6 +698,8 @@ pub struct WarmCapture {
     rng: SeededRng,
     opened: Option<Vec<([u8; 32], Secret)>>,
     replay: Option<crate::policy::ViewCapture>,
+    /// The showings to keep, encoded (`Shown::kept`).
+    shown: Option<Zeroizing<Vec<u8>>>,
     receipt: Warming,
 }
 impl WarmCapture {
@@ -708,6 +718,9 @@ impl WarmCapture {
         if let Some(replay) = self.replay.take() {
             let bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
             self.receipt.view = Some(self.key.lock("view", &bytes, VIEW_RULES.as_bytes(), &mut self.rng));
+        }
+        if let (Some(bytes), Some((_, whole))) = (self.shown.take(), &self.receipt.shown_of) {
+            self.receipt.shown = Some((self.key.lock("kept shown", &bytes, ENGINE.as_bytes(), &mut self.rng), *whole));
         }
         self.receipt
     }
@@ -928,6 +941,13 @@ struct Store {
     shown_writes: (usize, Option<EditId>),
     shown_lanes: BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>,
     shown_groups: [u8; 32],
+    /// The showings its shelf kept (`Warm::shown`), by entry, till `show_items` takes each whose print is its entry's
+    /// print then, in place of judging the entry anew (`ShownView.lean`).
+    kept_shown: HashMap<EntryId, Shown>,
+    /// The print of each showing its shelf keeps, by entry, and how many packs and showings hold them: what a save
+    /// leaves out, and when it puts them all in one pack again.
+    shown_given: HashMap<EntryId, [u8; 32]>,
+    shown_packs: (usize, usize),
     /// The keys it opened from their boxes before, from its shelf (`Warm::keys`), each by the box it opened and the key
     /// it opened it with (`opened_box`): that box it doesn't open again. And those it opened since its shelf took them
     /// (`Lab::warming`, `Lab::warmed`).
@@ -986,6 +1006,9 @@ impl Default for Store {
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
+            kept_shown: HashMap::new(),
+            shown_given: HashMap::new(),
+            shown_packs: (0, 0),
             digests: None,
             follow: vec![],
             query_depth: lens::CEILING,
@@ -1043,6 +1066,28 @@ impl Store {
     /// Its shelf lacks its view (`Lab::warming`): the view its shelf keeps, if any, is of other edits, and it replayed
     /// every edit since or stepped `VIEW_STEPS` on it. Its replay is of the first `replayed` edits of its log, so it
     /// seals that view even while newer edits wait to step on it (VR3): a device that keeps taking edits keeps one too.
+    /// The showings it keeps on its shelf whose print its shelf lacks, by entry (`ShownView.lean`'s `keeps`): only of
+    /// every write of their entry, judged of its log, not from an owner's base, against its replay of every edit it
+    /// holds, and none of a cap group, which it judges anew each time. None mid catch-up.
+    fn shown_due(&self) -> Vec<EntryId> {
+        self.keeps(true)
+    }
+
+    /// The showings it keeps (`shown_due`), those its shelf holds too unless `fresh`.
+    fn keeps(&self, fresh: bool) -> Vec<EntryId> {
+        if self.replayed == 0 || self.replayed != self.log.edits().len() || self.showing.is_some() {
+            return vec![];
+        }
+        let st = &self.replay.state;
+        self.shown.iter().filter(|(e, s)| {
+            let (writes, last) = st.entry_tip(**e);
+            s.tip.writes == writes && s.tip.last == last
+                && (!fresh || self.shown_given.get(*e) != Some(&s.print))
+                && !self.based.contains_key(*e) && !self.bases.contains_key(*e)
+                && st.entry(**e).is_some_and(|en| !st.is_cap_group(en, &self.readings))
+        }).map(|(e, _)| *e).collect()
+    }
+
     fn view_due(&self) -> bool {
         let n = self.replayed;
         let since = n.abs_diff(self.view_given);
@@ -1110,6 +1155,83 @@ struct Shown {
     tip: Tip,
     /// Where judging its writes left off, to judge the writes that come after on (`Judging::resume`).
     after: After,
+}
+
+/// What a pack of kept showings starts with (`Warming::shown`), the version of its bytes.
+const KEPT_SHOWN: &[u8] = b"avenDB kept shown 1\n";
+
+/// How many packs of kept showings a shelf holds at most: past them a save puts every showing in one pack again.
+const SHOWN_PACKS: usize = 8;
+
+impl Shown {
+    /// Its bytes as a device keeps it on its shelf (`kept`), all but its scratch item, which judging builds again of
+    /// its writes: none where an item holds changes a Loro snapshot leaves out.
+    fn kept(&self, out: &mut Vec<u8>) -> Option<()> {
+        use crate::encode::Encode;
+        let mut b = vec![];
+        self.print.encode(&mut b);
+        (self.tip.writes as u64).encode(&mut b);
+        self.tip.last.encode(&mut b);
+        self.tip.lane.encode(&mut b);
+        self.tip.groups.encode(&mut b);
+        self.history.encode(&mut b);
+        (self.items.len() as u32).encode(&mut b);
+        for (line, item) in &self.items {
+            crate::kept::put_line(&mut b, line);
+            crate::kept::put_item(&mut b, item)?;
+        }
+        self.after.attrs.encode(&mut b);
+        self.after.mine.encode(&mut b);
+        crate::kept::put_imported(&mut b, &self.after.imported);
+        crate::kept::put_asked(&mut b, &self.after.asked);
+        b.encode(out);
+        Some(())
+    }
+
+    /// The showing `kept` made the bytes of.
+    fn of_kept(r: &mut crate::wire::Reader<'_>) -> Result<Shown, crate::wire::WireError> {
+        use crate::wire::{Decode, Reader, WireError};
+        let bytes = r.bytes()?;
+        let r = &mut Reader::new(&bytes);
+        let print = <[u8; 32]>::decode(r)?;
+        let tip = Tip {
+            writes: u64::decode(r)? as usize,
+            last: r.option()?,
+            lane: <[u8; 32]>::decode(r)?,
+            groups: <[u8; 32]>::decode(r)?,
+        };
+        let history = History::decode(r)?;
+        let n = r.count(9)?;
+        let mut items = BTreeMap::new();
+        for _ in 0..n {
+            let line = crate::kept::line_of(r)?;
+            items.insert(line, crate::kept::item_of(r)?);
+        }
+        let after = After {
+            scratch: None,
+            attrs: r.option()?,
+            mine: crate::policy::Mine::decode(r)?,
+            imported: crate::kept::imported_of(r)?,
+            asked: crate::kept::asked_of(r)?,
+        };
+        if !r.done() {
+            return Err(WireError::Trailing);
+        }
+        Ok(Shown { history, items, print, tip, after })
+    }
+}
+
+/// The showings a pack holds (`Warming::shown`), by entry: none of bytes that aren't one.
+fn kept_shown_of(bytes: &[u8]) -> Option<Vec<(EntryId, Shown)>> {
+    use crate::wire::{Decode, Reader};
+    let mut r = Reader::new(bytes.strip_prefix(KEPT_SHOWN)?);
+    let n = r.count(36).ok()?;
+    let mut out = Vec::with_capacity(n.min(4096));
+    for _ in 0..n {
+        let e = EntryId::decode(&mut r).ok()?;
+        out.push((e, Shown::of_kept(&mut r).ok()?));
+    }
+    r.done().then_some(out)
 }
 
 impl Shown {
@@ -6071,6 +6193,25 @@ impl Lab {
                 None => store.perf.count("stored view: none that opens", 1),
             }
             store.perf.add("open view", at);
+            // and the showings it kept, each its entry's from the newest pack that holds one, to take where its print
+            // is its entry's print as it shows them (`show_items`); a pack that doesn't open is none
+            let at = Perf::start();
+            let mut packs = 0;
+            for b in &warm.shown {
+                let Some(kept) = key.unlock("kept shown", b, ENGINE.as_bytes()).and_then(|b| kept_shown_of(&b)) else {
+                    store.perf.count("kept shown: a pack that doesn't open", 1);
+                    continue;
+                };
+                packs += 1;
+                store.shown_packs.1 += kept.len();
+                for (e, s) in kept {
+                    store.shown_given.insert(e, s.print);
+                    store.kept_shown.insert(e, s);
+                }
+            }
+            store.shown_packs.0 = packs;
+            store.perf.count("kept shown: showings", store.kept_shown.len() as u64);
+            store.perf.add("open kept shown", at);
         }
         self.refresh(d, &[]);
     }
@@ -6112,7 +6253,36 @@ impl Lab {
         let close_due = current && store.replayed > 0 && store.replayed <= store.log.edits().len()
             && store.replayed != store.view_given;
         let (keys_due, view_due) = (store.keys_due(checked), (store.view_due() || close_due) && store.replayed <= held);
-        if !keys_due && !view_due { return None; }
+        // the showings, as often as its view, and once it holds none on its shelf yet
+        let fresh_shown = if view_due || store.shown_packs.0 == 0 { store.shown_due() } else { vec![] };
+        if !keys_due && !view_due && fresh_shown.is_empty() { return None; }
+        let (shown, shown_of) = match fresh_shown.is_empty() {
+            true => (None, None),
+            false => {
+                // all in one pack again, where the packs before hold more than twice what it keeps
+                let (packs, held) = store.shown_packs;
+                let whole = packs >= SHOWN_PACKS || held + fresh_shown.len() > 2 * store.shown.len() + 64;
+                let es: Vec<EntryId> = match whole {
+                    true => store.keeps(false),
+                    false => fresh_shown,
+                };
+                let mut bytes = Zeroizing::new(KEPT_SHOWN.to_vec());
+                let mut body = Zeroizing::new(vec![]);
+                let mut of = vec![];
+                for e in es {
+                    let s = &store.shown[&e];
+                    let mut one = vec![];
+                    if s.kept(&mut one).is_some() {
+                        body.extend(e.0);
+                        body.extend(one);
+                        of.push((e, s.print));
+                    }
+                }
+                bytes.extend((of.len() as u32).to_be_bytes());
+                bytes.extend(body.iter());
+                (Some(bytes), Some((of, whole)))
+            }
+        };
         let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
         let opened = keys_due.then(|| store.opened_before.iter()
             .chain(store.opened_since.iter().map(|(b, k)| (b, k)))
@@ -6123,17 +6293,21 @@ impl Lab {
             revision: store.warm_revision.clone(), lineage: store.log.lineage(), keys_of,
             view_of: if view_due { store.replayed } else { 0 },
             view_wholes: if view_due { store.wholes } else { 0 },
+            shown: None,
+            shown_of,
         };
         let mut seed = Zeroizing::new([0u8; 32]);
         self.rng.fill_bytes(&mut *seed);
         let rng = SeededRng::new("warm snapshot encryption", &*seed);
-        Some(WarmCapture { key, rng, opened, replay, receipt })
+        Some(WarmCapture { key, rng, opened, replay, shown, receipt })
     }
 
     /// Whether device `d`'s shelf lacks something of `Warm` (`warming`), as cheaply as it tells: the node's saver is
     /// woken as it comes to, so a replay or a key opened with nothing else to save reaches the shelf too.
     pub fn warm_due(&self, d: SignerId) -> bool {
-        self.stores.get(&d).is_some_and(|store| store.keys_due(None) || store.view_due())
+        self.stores.get(&d).is_some_and(|store| {
+            store.keys_due(None) || store.view_due() || (store.shown_packs.0 == 0 && !store.shown_due().is_empty())
+        })
     }
 
     /// Device `d`'s shelf took `warming` (`warming`): what it gave, it holds given, only while the store and its
@@ -6157,6 +6331,14 @@ impl Lab {
             store.view_given = warming.view_of;
             store.view_lineage = Some(warming.lineage);
             store.view_wholes = warming.view_wholes;
+        }
+        if let Some((of, whole)) = warming.shown_of {
+            if whole {
+                store.shown_given.clear();
+                store.shown_packs = (0, 0);
+            }
+            store.shown_packs = (store.shown_packs.0 + 1, store.shown_packs.1 + of.len());
+            store.shown_given.extend(of);
         }
     }
 
@@ -7377,6 +7559,8 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     store.shown_lanes = lanes_now;
     store.shown_groups = groups_print;
     let mut shown_now: HashSet<EntryId> = HashSet::new();
+    // its replay is of every edit it holds: mid catch-up the replay lags, and a showing kept is taken only after
+    let standing = store.replayed == store.log.edits().len();
     // a budget bounds the work too: the writes it judges, and a few for each entry it judges, past which it leaves
     // the rest of them for the next step
     let work = budget.map(|b| b.max(1) * SHOW_WORK);
@@ -7426,6 +7610,19 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
         };
         if let Some(s) = old.get_mut(&en.id).filter(|s| s.print == print) {
             s.tip = tip;
+            continue;
+        }
+        // one its shelf kept whose print is this one, judged of the same writes, bodies, lane and cap groups: what
+        // judging them anew makes (`SV1_open`), against its replay of every edit it holds alone
+        if standing
+            && !old.contains_key(&en.id)
+            && let Some(s) = store.kept_shown.remove(&en.id).filter(|s| s.print == print)
+        {
+            let s = Shown { tip, ..s };
+            #[cfg(not(avendb_no_replay_checks))]
+            debug_assert!(same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
+            store.perf.count("show: entries taken as kept", 1);
+            old.insert(en.id, s);
             continue;
         }
         // writes that only came after those it judged, judged on where it left off: what judging all of them makes
@@ -7513,6 +7710,10 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // the entries shown anew, for the upkeep to look at again (`UpkeepDue`)
     store.upkeep_due.entries.extend(shown_now.iter().copied());
     if rest.is_empty() {
+        // what its shelf kept and it took not is of writes or bodies since: of no use again
+        if standing {
+            store.kept_shown = HashMap::new();
+        }
         return true;
     }
     // what tells it what to show anew stays as it was for the entries left, until it shows them

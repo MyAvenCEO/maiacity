@@ -282,6 +282,11 @@ impl History {
         Some(Scratch { item, holds, authored, tip: None })
     }
 
+    /// The history of these changes, as `changes` gives them (`kept`).
+    pub(crate) fn of_changes(changes: Vec<Change>) -> History {
+        History { changes }
+    }
+
     pub fn changes(&self) -> &[Change] {
         &self.changes
     }
