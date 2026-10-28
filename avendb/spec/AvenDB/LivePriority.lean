@@ -649,7 +649,11 @@ the cuts asked ahead (`pageLen` too) are asked again from the next page's start;
 bring every edit once, in order (`pages_at_any_budgets_bring_every_edit_once`). An asker from before states none and
 is served `most`, as before. A page that landed is taken whatever the asking does after, so a stop loses only the pages
 in flight, each within its budget. phone_bulk (2026-10-28) showed why the budget moves within an asking: one fixed at
-128 KB before any page came held a 6.25 MB/s link's whole catch-up to 128 KB pages.
+128 KB before any page came held a 6.25 MB/s link's whole catch-up to 128 KB pages. Before any page came the budget
+is by the path (`startBudget`): through a relay `START_PAGE`, the minute a page of `most` costs there being what sizing
+is for; on a direct path the first asking states none and waits for no question of the peer's sizes, and is served
+`most` as an unsized asking is (`a_direct_start_is_served_as_before`): waiting for the sizes and starting small cost
+phone_bulk 0.825 -> 0.786 of its link (2026-10-28).
 Rust: avendb-net lib.rs `pages`, `Shared::sizes`, `Flight`; pulls.rs `Rate::budget`; session.rs `SIZED`, `SIZING`,
 `served`, `authorized_request`; avendb lab.rs `page_end`. -/
 
@@ -714,6 +718,18 @@ theorem no_asker_makes_a_page_smaller (least most : Nat) (b : Option Nat) (h : l
 
 /-- The budget an asking states: what its link carried in `time` at the `rate` its pages last came. -/
 def budget (rate time : Nat) : Nat := rate * time
+
+/-- What an asking states before any page came: `start` through a relay, nothing on a direct path. -/
+def startBudget (relayed : Bool) (start : Nat) : Option Nat := if relayed then some start else none
+
+/-- On a direct path the first pages are the peer's `most`, as an unsized asking's. -/
+theorem a_direct_start_is_served_as_before (least most start : Nat) :
+    served least most (startBudget false start) = most := rfl
+
+/-- Through a relay they are `start`, where the peer's pages allow it. -/
+theorem a_relayed_start_is_its_start (least most start : Nat) (h : least ≤ start) (h' : start ≤ most) :
+    served least most (startBudget true start) = start := by
+  simp only [startBudget, served, ite_true]; omega
 
 /-- A page sized to the link lands within its time on that link: its bytes are at most `rate × time`, unless its first
 edit alone is larger, or the link is slower than `least` a time. -/

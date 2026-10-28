@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{EditId, ShareId, SignerId, VaultId};
@@ -205,6 +206,24 @@ pub(crate) async fn exchange(conn: &Connection, kind: u8, body: &[u8], limit: us
     send.write_all(body).await?;
     send.finish()?;
     Ok(recv.read_to_end(limit).await?)
+}
+
+/// `exchange`, and how long its answer took to come from its first byte to its last: the time the link took to send
+/// it, without the round trip or the peer's working it out (S1b, `pulls::Rate`).
+pub(crate) async fn exchange_timed(conn: &Connection, kind: u8, body: &[u8], limit: usize) -> Result<(Vec<u8>, Duration)> {
+    let (mut send, mut recv) = conn.open_bi().await?;
+    send.write_all(&[kind]).await?;
+    send.write_all(body).await?;
+    send.finish()?;
+    let mut first = [0u8; 1];
+    let Some(1) = recv.read(&mut first).await? else { return Ok((Vec::new(), Duration::ZERO)) };
+    let began = n0_future::time::Instant::now();
+    // the rest within what is left of the limit, so that an answer past it fails as `too_long` as `exchange`'s does
+    let rest = recv.read_to_end(limit.saturating_sub(1)).await?;
+    let mut answer = Vec::with_capacity(rest.len() + 1);
+    answer.push(first[0]);
+    answer.extend_from_slice(&rest);
+    Ok((answer, began.elapsed()))
 }
 
 /// Only this typed read error permits a large-page retry; resets, parse errors and connection failures do not.
@@ -747,11 +766,19 @@ mod batch_session_tests {
         let (cuts, done) = from_cuts_wire(&exchange(&peer.conn, CUTS, &asked, CUTS_REPLY_LIMIT).await.unwrap()).unwrap();
         assert_eq!(cuts, pages[..cuts.len()], "cuts at the stated budget are its pages' ends");
         assert_eq!(done, cuts.len() == pages.len());
-        // a pull states a budget, and the pages it took and the budget it stated are in its traffic
+        // on a direct path the first pull waits for no question of the peer's sizes: it states none, served the peer's
+        // most, and asks the sizes beside it (`Shared::pages`, `startBudget` in `LivePriority.lean`)
         phone.sync_with(mac.id()).await.unwrap();
         let pulled = phone.shared.traffic.of(&sender).expect("pulled");
-        assert_eq!(pulled.budget, crate::pulls::START_PAGE as u64, "the first asking of a peer states the start budget");
-        assert_eq!(phone.shared.sizing.lock().unwrap().get(&peer.conn.stable_id()), Some(&Some(sizes)));
+        assert_eq!(pulled.budget, 0, "the first asking on a direct path states no budget");
+        let connection = peer.conn.stable_id();
+        avendb_testkit::until("the peer's sizes", || async { phone.shared.sizing.lock().unwrap().get(&connection).is_some() }).await;
+        assert_eq!(phone.shared.sizing.lock().unwrap().get(&connection), Some(&Some(sizes)));
+        // the next states one, within the peer's pages, and the budget it stated is in its traffic
+        mac.act(move |lab, me| lab.create(me, coop, coop, "doc", &[], document("Later", "a sized pull", me)).unwrap()).await;
+        phone.sync_with(mac.id()).await.unwrap();
+        let budget = phone.shared.traffic.of(&sender).expect("pulled").budget as usize;
+        assert!((sizes.0..=sizes.1).contains(&budget), "the next asking states a budget within the peer's pages: {budget}");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

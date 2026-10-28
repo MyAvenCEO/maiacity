@@ -2901,13 +2901,35 @@ impl Shared {
         };
         // a fresh device asking for its first sync with the boxes held back asks the peer for their stubs first, to
         // count them as held (`session::STUBS`, `LazyBoxes.lean`), and for their bodies in the pull after this one
-        // and the peer's page sizes beside them, once a connection (`Shared::sizes`), so no round trip waits on the other
-        let (stubbed, sizes) = future::zip(self.stubs(&peer, kind, scope.clone()), self.sizes(&peer)).await;
+        // and the peer's page sizes beside them, once a connection (`Shared::sizes`), so no round trip waits on the other.
+        // On a direct path no asking waits for the sizes: one before they are in is asked unsized, served at the peer's
+        // most as a sized one there starts anyway (`pulls::START_PAGE`), and the next are sized (waiting for them cost
+        // phone_bulk 0.825 -> 0.801 of its link, 2026-10-28). Through a relay a page of the peer's most is the minute
+        // lost that sizing is for, and the round trip a small part of a page.
+        let relayed = way_of(&peer.conn) == "relay";
+        let known = self.sizing.lock().expect("sizing").get(&peer.conn.stable_id()).copied();
+        let sizes = async {
+            match known {
+                Some(sizes) => sizes,
+                None if relayed => self.sizes(&peer).await,
+                None => {
+                    if let Ok(activity) = self.admit() {
+                        let (shared, peer) = (self.clone(), peer.clone());
+                        task::spawn(async move {
+                            let _activity = activity;
+                            shared.sizes(&peer).await;
+                        });
+                    }
+                    None
+                }
+            }
+        };
+        let (stubbed, sizes) = future::zip(self.stubs(&peer, kind, scope.clone()), sizes).await;
         // the page budget its pages state (`session::SIZED`, S1b): what the peer's pages carried in `pulls::PAGE_TIME`
         // lately, so that a page lost in flight costs a couple of seconds of the link, not a minute of it; it moves with
         // the rate at a page's start, where its cuts are asked again (`pulls::RESIZE`); unsized to a peer from before
         let rate = || self.rates.lock().expect("rates").get(&device).cloned().unwrap_or_default();
-        let budget = sizes.map(|(least, most)| rate().budget(least, most));
+        let budget = sizes.map(|(least, most)| rate().budget(least, most, relayed));
         let sized = if budget.is_some() { kind | session::SIZED } else { kind };
         let stated = AtomicUsize::new(budget.unwrap_or(0));
         let stated = &stated;
@@ -2985,13 +3007,13 @@ impl Shared {
                         }
                         reply => reply,
                     };
-                    reply.map(|(reply, bytes)| (reply, bytes, permit))
+                    reply.map(|(reply, came)| (reply, came, permit))
                 };
                 let reply = time::timeout(PAGE_WAIT, receive).await.context("no page in time").and_then(|r| r);
                 if reply.is_err() && !early {
                     self.traffic.failed(device);
                 }
-                reply.map(|(reply, bytes, permit)| (reply, bytes, asked.elapsed(), permit))
+                reply.map(|(reply, came, permit)| (reply, came, asked.elapsed(), permit))
             }
         };
         // where the peer's next pages end (`session::CUTS`), for the pages after them to be asked at once
@@ -3043,7 +3065,7 @@ impl Shared {
         let (mut seq, mut asked_upto) = (0u64, None::<avendb::sync::Place>);
         macro_rules! pump {
             () => {
-                let size = window.size(sizes.map(|_| stated.load(Ordering::Relaxed)));
+                let size = window.size(sizes.map(|_| stated.load(Ordering::Relaxed)), rate().per_second());
                 while cutting && asked.len() < size && !cuts.is_empty() {
                     let Some(permit) = self.pulls.ahead() else { break };
                     let after = cuts.pop_front();
@@ -3062,12 +3084,11 @@ impl Shared {
         macro_rules! land {
             ($got:expr) => {
                 match $got {
-                    Landing::Page((at, count, page)) => {
+                    Landing::Page((at, _, page)) => {
                         if asked.iter().any(|(s, _, _)| *s == at) {
-                            if let Ok((_, bytes, wait, _)) = &page {
-                                window.page(*wait, count, *bytes);
-                                let latency = window.round_trip();
-                                self.rates.lock().expect("rates").entry(device).or_default().page(*bytes, *wait, count, latency);
+                            if let Ok((_, came, _, _)) = &page {
+                                window.page(came);
+                                self.rates.lock().expect("rates").entry(device).or_default().page(came);
                             }
                             landed.insert(at, page);
                         }
@@ -3140,7 +3161,8 @@ impl Shared {
                 }
                 coming => coming,
             };
-            let (Reply { mut edits, blobs, more }, bytes, wait, permit) = coming?;
+            let (Reply { mut edits, blobs, more }, came, wait, permit) = coming?;
+            let bytes = came.bytes;
             let (way, sent) = (way_of(&peer.conn), edits.len() as u64);
             let taking = Instant::now();
             self.sized(&mut edits);
@@ -3281,7 +3303,7 @@ impl Shared {
             // budget, and the pages in flight end where they were asked to (`LivePriority.lean` "Pages sized to their
             // asker"). With every cut it held asked, it waits for the next, whose page's end it doesn't know yet.
             if let (Some(_), Some((least, most))) = (next, sizes) {
-                let (now, was) = (rate().budget(least, most), stated.load(Ordering::Relaxed));
+                let (now, was) = (rate().budget(least, most, relayed), stated.load(Ordering::Relaxed));
                 let far = now >= was.saturating_mul(pulls::RESIZE) || now.saturating_mul(pulls::RESIZE) <= was;
                 if far && (!cutting || !cuts.is_empty()) {
                     stated.store(now, Ordering::Relaxed);
@@ -3447,7 +3469,7 @@ impl Shared {
     /// signed edits still take the ordinary verification path. Unsupported or invalid supplements fall
     /// back to packed, then original replies, with each capability remembered separately per connection.
     /// The byte limit and page admission remain the caller's, including typed oversized-response retries.
-    async fn reply_to(self: &Arc<Self>, peer: &Peer, kind: u8, request: &[u8], limit: usize) -> Result<(Reply, u64)> {
+    async fn reply_to(self: &Arc<Self>, peer: &Peer, kind: u8, request: &[u8], limit: usize) -> Result<(Reply, pulls::Came)> {
         let _activity = self.admit()?;
         let id = peer.conn.stable_id();
         if let Some(signers) = &self.signers {
@@ -3462,13 +3484,13 @@ impl Shared {
                 let paths = self.opts.paths;
                 let batch = proofs::Request { kind, request: request.to_vec(), known, paths, held }.encode()?;
                 if batch.len() < session::MESSAGE_LIMIT {
-                    match session::exchange(&peer.conn, proofs::KIND, &batch, limit).await {
-                        Ok(bytes) => {
-                            let size = bytes.len() as u64;
+                    match session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit).await {
+                        Ok((bytes, sending)) => {
+                            let came = pulls::Came { bytes: bytes.len() as u64, sending };
                             if let Ok(supplement) = proofs::Supplement::decode(&bytes) {
                                 drop(bytes);
                                 if let Ok(reply) = supplement.verify(signers).await {
-                                    return Ok((reply, size));
+                                    return Ok((reply, came));
                                 }
                             }
                         }
@@ -3497,16 +3519,16 @@ impl Shared {
                         break;
                     }
                     asked = true;
-                    let result = session::exchange(&peer.conn, proofs::KIND, &batch, limit).await;
+                    let result = session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit).await;
                     drop(batch);
                     match result {
-                        Ok(bytes) => {
-                            let size = bytes.len() as u64;
+                        Ok((bytes, sending)) => {
+                            let came = pulls::Came { bytes: bytes.len() as u64, sending };
                             let supplement = proofs::Supplement::decode(&bytes);
                             drop(bytes);
                             if let Ok(supplement) = supplement {
                                 if let Ok(reply) = supplement.verify(signers).await {
-                                    return Ok((reply, size));
+                                    return Ok((reply, came));
                                 }
                             }
                         }
@@ -3525,10 +3547,10 @@ impl Shared {
         }
         let packs = !self.unpacked.lock().expect("unpacked").contains(&id);
         if packs {
-            match session::exchange(&peer.conn, kind | session::PACKED, request, limit).await {
-                Ok(bytes) => {
+            match session::exchange_timed(&peer.conn, kind | session::PACKED, request, limit).await {
+                Ok((bytes, sending)) => {
                     if let Ok(Packed(reply)) = Packed::from_wire(&bytes) {
-                        return Ok((reply, bytes.len() as u64));
+                        return Ok((reply, pulls::Came { bytes: bytes.len() as u64, sending }));
                     }
                 }
                 // A size limit is not evidence that this peer lacks packed replies. Let page admission retry
@@ -3537,12 +3559,12 @@ impl Shared {
                 Err(_) => {}
             }
         }
-        let bytes = session::exchange(&peer.conn, kind, request, limit).await?;
+        let (bytes, sending) = session::exchange_timed(&peer.conn, kind, request, limit).await?;
         let reply = Reply::from_wire(&bytes)?;
         if packs {
             self.unpacked.lock().expect("unpacked").insert(id);
         }
-        Ok((reply, bytes.len() as u64))
+        Ok((reply, pulls::Came { bytes: bytes.len() as u64, sending }))
     }
 
     /// Asks `endpoint` for its contact card, and takes its vault logs. How many edits were new.
