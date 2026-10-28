@@ -21,8 +21,20 @@
 // entries the actors name (src/lib/avendb/actors.js `QUERIES`, schema "Query, v1", entry type `query`), or proposes the
 // repo's text on one Maia City holds already. "Query, v1" comes into the lane by the schemas AIP of task A2; until it
 // is there, `--run` prints its op and stops.
+//
+// An entry Maia City wrote under "Manifest, v1" and then moved to v2 (AIP-38) opens read-only through v3: a view joins
+// an app's schema to the ONE other schema an item was written under (avendb lens.rs `Lane::view`), never a chain of
+// lenses. So before writing anything the run reads every actor through v3 and stops on any it may not write, naming
+// them. Each draft it makes goes into a ledger (`--drafts <file>`, kept beside the run), keyed by query or actor id, so
+// a run cut short is taken up again without drafting twice: it reuses each draft it finds there, its line read from the
+// entry's history. A ledger may also be a run's log, its lines `query <id>: drafted as <entry>`.
+//
+//   node scripts/propose-actors.mjs --run [--drafts <ledger.json | run.log>]
 import { ACTOR_LENS, ACTOR_SCHEMA, ACTOR_TYPE, ACTOR_V3, MANIFEST_SCHEMA, MANIFEST_V1_SCHEMA, QUERY_SCHEMA, QUERY_TYPE, QUERY_V1, actorLens } from '../game/code/sources/actors.js';
 import { ACTORS, QUERIES } from '../src/lib/avendb/actors.js';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { device, session } from './agent.mjs';
 
 const args = process.argv.slice(2);
@@ -56,19 +68,43 @@ if (!flag('--run')) {
 }
 
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/**
+ * The drafts a run made, by key (`query:<id>`, `actor:<id>`) to entry, at `path`: a ledger this run keeps, or a run's
+ * log to take its drafts from (`<kind> <id>: drafted as <entry>`). `put` keeps a new draft there at once, so a run cut
+ * short leaves every draft it made named.
+ */
+function drafts(path) {
+	const got = {};
+	const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
+	if (path.endsWith('.json')) Object.assign(got, text ? JSON.parse(text) : {});
+	else for (const [, kind, id, entry] of text.matchAll(/^(query|actor) (\S+): drafted as ([0-9a-f]{64})$/gm)) got[`${kind}:${id}`] = entry;
+	const keep = path.endsWith('.json') ? path : `${path}.drafts.json`;
+	if (Object.keys(got).length) console.error(`${Object.keys(got).length} drafts of an earlier run named in ${path}`);
+	return {
+		got,
+		put(key, entry) {
+			got[key] = entry;
+			mkdirSync(dirname(keep), { recursive: true });
+			writeFileSync(keep, `${JSON.stringify(got, null, '\t')}\n`);
+		}
+	};
+}
+
 const agent = session(device(option('--device')), 'propose-actors');
+/** Set a reused draft's fields `fields` to the repo's `want` on its line, where they differ, through `schema`. */
+const redraft = async ({ entry, line }, want, fields, schema) => {
+	const now = await agent.call('avendb_ask', { op: { op: 'get', entry, line, schema } });
+	const sets = fields.filter((f) => want[f] !== undefined && !same(now?.record?.[f], want[f]));
+	if (sets.length) await agent.call('avendb_run', { op: { op: 'batch', ops: sets.map((f) => ({ op: 'set', entry, line, schema, path: [f], value: want[f] })) } });
+};
 try {
 	await agent.open();
 	const city = await agent.city();
 	const live = (rows) => (rows ?? []).filter((r) => !(r.tags ?? []).includes('avendb:deleted'));
-	// as stored, any version: a v1 one needs the chain, and says so before anything is written
+	// as stored, any version, for the count; what may be written is read through v3 below
 	const stored = live((await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, where: { type: [ACTOR_TYPE] } } })).rows);
-	const v1 = stored.filter((r) => r.record?.kind === 'manifest' && r.record?.v !== 2 && !r.record?.loads);
-	console.error(`Maia City holds ${stored.length} actors: ${stored.filter((r) => r.record?.loads).length} moved to v3, ${stored.filter((r) => !r.record?.loads && r.record?.v === 2).length} v2, ${v1.length} v1.`);
-	if (v1.length) {
-		console.error(`v1 manifests (${v1.map((r) => r.record?.id).join(', ')}) read in v3 only through "${MANIFEST_V1_SCHEMA}" to "${MANIFEST_SCHEMA}" to "${ACTOR_SCHEMA}", two lens hops: nothing was written. Move them to v2 first (git history: scripts/propose-manifests.mjs).`);
-		process.exit(1);
-	}
+	console.error(`Maia City holds ${stored.length} actors: ${stored.filter((r) => r.record?.loads).length} moved to v3, ${stored.filter((r) => !r.record?.loads && r.record?.v === 2).length} v2, ${stored.filter((r) => !r.record?.loads && r.record?.v !== 2).length} v1.`);
 	// a schema or a lens is no row a query reads: the `schemas` op lists those of the vault's lane
 	const lane = await agent.call('avendb_ask', { op: { op: 'schemas', vault: city.id } });
 	const v2 = (lane.schemas ?? []).find((s) => s.title === MANIFEST_SCHEMA);
@@ -87,8 +123,24 @@ try {
 	const schema = v3.id;
 	const held = new Map(live((await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, schema, where: { type: [ACTOR_TYPE] } } })).rows).map((r) => [r.record?.id, r]));
 	const was = new Map(stored.map((r) => [r.entry, r.record]));
+	// an actor once written under v1 and then v2 opens read-only through v3 (one lens hop): stop before any write
+	const locked = [...held.values()].filter((r) => r.readOnly && ACTORS.some((a) => a.id === r.record?.id));
+	if (locked.length) {
+		console.error(`${locked.length} actors open read-only through "${ACTOR_SCHEMA}": they were written under "${MANIFEST_V1_SCHEMA}" and "${MANIFEST_SCHEMA}", and a view joins one other schema, not a chain of lenses (lens.rs Lane::view). Nothing was written:`);
+		for (const r of locked) console.error(`  ${r.record?.id} ${r.entry}`);
+		process.exit(1);
+	}
 	const open = (await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } })).filter((a) => a.title === title && !a.outcome);
 	if (open.length && !flag('--again')) throw new Error(`"${title}" is open already (${open.map((a) => a.entry).join(', ')}): nothing was written (--again proposes all the same)`);
+	const ledger = drafts(option('--drafts') ?? join(homedir(), '.cache', 'maiacity', `propose-actors-${city.id.slice(0, 16)}.json`));
+	/** the draft `key` names in the ledger, with its line from the entry's history; none if the entry is gone */
+	const reuse = async (key) => {
+		const entry = ledger.got[key];
+		if (!entry) return null;
+		const h = await agent.call('avendb_ask', { op: { op: 'history', entry } }).catch(() => null);
+		const first = (h?.edits ?? []).find((e) => e.kind === 'draft');
+		return first?.line ? { entry, line: first.line } : null;
+	};
 	const proposals = [];
 	let fresh = 0, moved = 0, kept = 0;
 	// the query entries first: an actor names them
@@ -96,8 +148,17 @@ try {
 	for (const q of QUERIES) {
 		const r = heldQueries.get(q.id);
 		if (!r) {
+			const again = await reuse(`query:${q.id}`);
+			if (again) {
+				await redraft(again, q, QUERY_FIELDS, qv1.id);
+				proposals.push(again);
+				fresh++;
+				console.error(`query ${q.id}: its draft ${again.entry} again`);
+				continue;
+			}
 			const made = await agent.call('avendb_run', { op: { op: 'create', vault: city.id, type: QUERY_TYPE, schema: qv1.id, tags: ['query', `query:${q.id}`], value: q, draft: true } });
 			if (!made?.entry || !made?.line) throw new Error(`query ${q.id}: the draft named no entry and line (${JSON.stringify(made).slice(0, 300)})`);
+			ledger.put(`query:${q.id}`, made.entry);
 			proposals.push({ entry: made.entry, line: made.line });
 			fresh++;
 			console.error(`query ${q.id}: drafted as ${made.entry}`);
@@ -115,8 +176,17 @@ try {
 	for (const a of ACTORS) {
 		const r = held.get(a.id);
 		if (!r) {
+			const again = await reuse(`actor:${a.id}`);
+			if (again) {
+				await redraft(again, a, FIELDS, schema);
+				proposals.push(again);
+				fresh++;
+				console.error(`actor ${a.id}: its draft ${again.entry} again`);
+				continue;
+			}
 			const made = await agent.call('avendb_run', { op: { op: 'create', vault: city.id, type: ACTOR_TYPE, schema, tags: ['actor', `actor:${a.id}`], value: a, draft: true } });
 			if (!made?.entry || !made?.line) throw new Error(`actor ${a.id}: the draft named no entry and line (${JSON.stringify(made).slice(0, 300)})`);
+			ledger.put(`actor:${a.id}`, made.entry);
 			proposals.push({ entry: made.entry, line: made.line });
 			fresh++;
 			console.error(`actor ${a.id}: drafted as ${made.entry}`);
