@@ -469,7 +469,7 @@ impl Recipient {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct KeyBox {
     pub to: Recipient,
-    pub bytes: Vec<u8>,
+    pub bytes: crate::bulk::Bulk,
 }
 
 /// Seal `key` to `to`, bound to `info`, given the McEliece public key `to` names (`mceliece`): an X-Wing share and a

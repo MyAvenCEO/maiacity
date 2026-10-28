@@ -1181,7 +1181,7 @@ impl KeyIndex {
                 self.boxed.insert((name, id, b.to.name()));
                 let mut first = [0; 32];
                 let n = b.bytes.len().min(32);
-                first[..n].copy_from_slice(&b.bytes[..n]);
+                first[..n].copy_from_slice(&b.bytes.bytes()[..n]);
                 self.boxes.push(IndexedBox { name, id, to: b.to, place, slot, first });
             }
             if let Action::Keys { name, id, public, clear, .. } = &edit.action {
@@ -1226,8 +1226,8 @@ struct IndexedBox {
 
 impl IndexedBox {
     /// Its bytes, of `held`, the edits of the log its index is of.
-    fn bytes<'a>(&self, held: &'a [Edit]) -> &'a [u8] {
-        &held[self.place].action.key_box(self.slot).expect("an indexed box").bytes
+    fn bytes<'a>(&self, held: &'a [Edit]) -> std::borrow::Cow<'a, [u8]> {
+        held[self.place].action.key_box(self.slot).expect("an indexed box").bytes.bytes()
     }
 }
 
@@ -2502,11 +2502,16 @@ impl Lab {
                     store.blobs.insert(b, bytes.clone());
                 }
             }
-            store.log.receive([signed.edit.clone()]);
+            let mut edit = signed.edit.clone();
             match placed.and_then(|p| p.get(&id)) {
                 Some(p) => store.signed.insert_placed(id, signed, p),
                 None => store.signed.insert(id, signed),
             }
+            // spilled, the log's copy reads its bulk bytes back from the record that went in (`bulk`)
+            if let Some(place) = store.signed.place(&id) {
+                edit.shelve(place);
+            }
+            store.log.receive_ids([(edit, id)]);
             new = true;
         }
         if new {
@@ -3175,7 +3180,7 @@ impl Lab {
                     via: vec![],
                     create: None,
                     files: vec![],
-                    body: vec![],
+                    body: Default::default(),
                 };
                 let edit = self.held(d).log.draft_on(view, d, &[], action);
                 self.seal_write(d, edit, body, x).expect("an unlocked device signs");
@@ -3565,7 +3570,7 @@ impl Lab {
             via: vec![],
             create: Some(create),
             files: roots,
-            body: vec![],
+            body: Default::default(),
         };
         let (edit, w) = self.check_write(on, &view, action)?;
         let attrs = Attrs { ty: header.ty.clone(), author: actor, entry, created: header.created, tags: tags.clone() };
@@ -4052,7 +4057,7 @@ impl Lab {
         let Draft { proposal, deps, body: content } = draft;
         let (via, create) = (vec![], None);
         let action =
-            Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files: roots, body: vec![] };
+            Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files: roots, body: Default::default() };
         let (edit, w) = self.check_write(on, &view, action)?;
         let proof = self.proven(on, &view, (vault, self.shown(on, entry)), &w, (&content, &tags), needs, None)?;
         self.write(on, edit, Body { header: None, tags, answers: vec![], content, proof, files, defines }, x)
@@ -4083,7 +4088,7 @@ impl Lab {
         let key = entry_key_for(store, rng, vault, x, entry, stay, epoch);
         let sealed = keys::seal_edit(&key, &body.to_wire(), &write_context(&edit), rng);
         if let Action::Write { body: b, .. } = &mut edit.action {
-            *b = sealed;
+            *b = sealed.into();
         }
         let id = edit.id();
         let signed = self.sign(edit)?;
@@ -5841,6 +5846,8 @@ impl Lab {
     pub fn spill(&mut self, d: SignerId, spill: &Spill) -> std::io::Result<()> {
         let store = self.stores.get_mut(&self.at(d)).ok_or_else(|| std::io::Error::other("no such device"))?;
         store.signed.spill_edits(spill)?;
+        let signed = &store.signed;
+        store.log.shelve(|id| signed.place(id));
         store.blobs.spill_keys(spill)
     }
 
@@ -6264,9 +6271,11 @@ impl Lab {
                 let mut signed =
                     self.stores.values().find_map(|s| s.signed.get(&id)).map(|s| Signed::clone(&s)).expect("an edit some device holds");
                 if let Action::Write { body, .. } = &mut signed.edit.action
-                    && let Some(last) = body.last_mut()
+                    && !body.is_empty()
                 {
-                    *last ^= 1;
+                    let mut bytes = body.to_vec();
+                    *bytes.last_mut().expect("a byte") ^= 1;
+                    *body = bytes.into();
                 }
                 signed
             }
@@ -6279,7 +6288,7 @@ impl Lab {
                 let recipient = Recipient::Signer(victim);
                 let info = box_info(key, secret.id(), &recipient);
                 let bytes = keys::seal(&secret, &pk, &blob, &info, &mut self.rng).expect("a key");
-                let boxes = vec![KeyBox { to: recipient, bytes }];
+                let boxes = vec![KeyBox { to: recipient, bytes: bytes.into() }];
                 let action = Action::Keys { name: key, id: secret.id(), public: None, boxes, clear: None };
                 let edit = self.held(holder).log.draft(holder, &[], action);
                 self.sign(edit)?
@@ -6328,14 +6337,14 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
             }
             let bytes = b.bytes(store.log.edits());
             let info = box_info(*name, *id, &b.to);
-            let opened = opened_box(&info, bytes, &with);
+            let opened = opened_box(&info, &bytes, &with);
             // the same box it opened before with the same key, as its shelf keeps it: what opened, again
             if let Some(secret) = store.opened_before.get(&opened).filter(|k| k.id() == *id) {
                 more |= store.keys.insert(*name, secret.clone());
                 store.perf.count("keys from the shelf", 1);
                 continue;
             }
-            match keys::open(bytes, &with, &info) {
+            match keys::open(&bytes, &with, &info) {
                 Some(secret) if secret.id() == *id => {
                     store.perf.count("keys opened", 1);
                     store.opened_since.push((opened, secret.clone()));
@@ -6575,7 +6584,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
                 store.read_new.uncounted.insert(id);
                 continue;
             }
-            let Some(key) = keys::edit_key(body) else {
+            let Some(key) = keys::edit_key(&body.bytes()) else {
                 store.spoilt.insert(id);
                 continue;
             };
@@ -6583,7 +6592,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
                 store.read_new.lacking.entry(*entry).or_default().push(id);
                 continue;
             };
-            match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
+            match keys::open_edit(key, &body.bytes(), &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
                 Some(b) => {
                     store.bodies.insert(id, b);
                     store.read_new.bodies.push(id);
@@ -6606,7 +6615,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
             }
             let Some(signed) = store.signed.get(&id) else { continue };
             let Action::Write { entry, stay, epoch, body, .. } = &signed.edit.action else { continue };
-            let opens = keys::edit_key(body).and_then(|k| store.keys.get(&k, KeyName::Entry(*entry, *stay, *epoch)).cloned());
+            let opens = keys::edit_key(&body.bytes()).and_then(|k| store.keys.get(&k, KeyName::Entry(*entry, *stay, *epoch)).cloned());
             debug_assert!(opens.is_none(), "read left {id:?} unopened, which it opens");
         }
     }
@@ -6809,7 +6818,7 @@ fn open_select(of: &Share, keys: &Keyring, steward: bool) -> Result<Option<Slice
         let Some(with) = keys.get(&under, name) else {
             continue;
         };
-        let key = keys::open(&b.bytes, with, &share_select_info(of, id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
+        let key = keys::open(&b.bytes.bytes(), with, &share_select_info(of, id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
         let plain = keys::open_edit(&key, &sealed, &share_context(of)).ok_or(())?;
         return Slice::from_wire(&plain).map(Some).map_err(drop);
     }
@@ -6892,7 +6901,7 @@ fn upkeep(
                 }
                 let to = Recipient::Key { name: next, id: under.id() };
                 let bytes = keys::wrap(secret, &under, &box_info(name, id, &to), rng);
-                let boxes = vec![KeyBox { to, bytes }];
+                let boxes = vec![KeyBox { to, bytes: bytes.into() }];
                 out.push(Work::Edit(Action::Keys { name, id, public: None, boxes, clear: None }));
             }
         }
@@ -6934,7 +6943,7 @@ fn upkeep(
                 }
                 let to = Recipient::Key { name: to_name, id: under.id() };
                 let bytes = keys::wrap(secret, &under, &box_info(name, id, &to), rng);
-                wraps.push(Wrap { name, id, boxed: KeyBox { to, bytes } });
+                wraps.push(Wrap { name, id, boxed: KeyBox { to, bytes: bytes.into() } });
             }
         }
         debug_assert!(!skip || wraps.is_empty(), "upkeep left out {:?}, which has keys to wrap", en.id);
@@ -7086,7 +7095,7 @@ fn key_box(
     };
     if let Some((to, under)) = held {
         let bytes = keys::wrap(secret, under, &info(&to), rng);
-        return Some(KeyBox { to, bytes });
+        return Some(KeyBox { to, bytes: bytes.into() });
     }
     let (to, pk) = match t {
         KeyName::Signer(s) => (Recipient::Signer(s), st.seal_key(s)?),
@@ -7099,7 +7108,7 @@ fn key_box(
     };
     let blob = store.blobs.get(&pk.mceliece).filter(|b| BlobId::of(b) == pk.mceliece)?;
     let bytes = keys::seal(secret, pk, &blob, &info(&to), rng)?;
-    Some(KeyBox { to, bytes })
+    Some(KeyBox { to, bytes: bytes.into() })
 }
 
 /// What a write that brings files into an entry needs a share it relies on to let it do, as it changes nothing its
@@ -7749,7 +7758,7 @@ mod range_payload_tests {
                     via:(0..n).map(VaultId::from_u64).collect(),
                     create:Some(Creation{audience:(0..n).map(ShareId::from_u64).collect(),nonce}),
                     files:(0..n).map(|i|FileRoot{hash:EditId::from_u64(i).0,size:u64::MAX}).collect(),
-                    body:vec![0xAB;n as usize*129],
+                    body:vec![0xAB;n as usize*129].into(),
                 };
                 let edit=Edit{parents:(0..n).map(EditId::from_u64).collect(),depth:u64::MAX,author:key.id(),cosigners:vec![],action};
                 let signed=Signed{sigs:vec![key.sign(edit.id())],edit};

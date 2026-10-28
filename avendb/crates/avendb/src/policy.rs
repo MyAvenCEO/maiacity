@@ -370,7 +370,7 @@ pub enum Action {
         via: Vec<VaultId>,
         create: Option<Creation>,
         files: Vec<FileRoot>,
-        body: Vec<u8>,
+        body: crate::bulk::Bulk,
     },
     /// A steward, acting for vault `vault`, marks its entry `entry`: with the audience of the shares `caps` (canonical
     /// order), which moves the entry there, begins a stay and keeps the writes it had seen (`keep`); with the keep
@@ -440,9 +440,9 @@ impl Action {
 
     /// About what it holds in memory beside itself: its key boxes and a write's body, the bulk of an edit (`Lab::perf`).
     pub fn heap_bytes(&self) -> usize {
-        let boxes: usize = self.key_boxes().iter().map(|(.., b)| size_of::<KeyBox>() + b.bytes.len()).sum();
+        let boxes: usize = self.key_boxes().iter().map(|(.., b)| size_of::<KeyBox>() + b.bytes.heap_bytes()).sum();
         let body = match self {
-            Action::Write { body, files, deps, .. } => body.len() + files.len() * size_of::<FileRoot>() + deps.len() * 32,
+            Action::Write { body, files, deps, .. } => body.heap_bytes() + files.len() * size_of::<FileRoot>() + deps.len() * 32,
             Action::Checkpoint { covers, .. } => covers.len() * 32,
             _ => 0,
         };
@@ -4977,9 +4977,17 @@ impl Log {
 
     /// Add edits from a peer, each once, whether or not the view accepts them: acceptance is decided at replay.
     pub fn receive(&mut self, edits: impl IntoIterator<Item = Edit>) {
+        self.receive_ids(edits.into_iter().map(|e| {
+            let id = e.id();
+            (e, id)
+        }));
+    }
+
+    /// `receive`, each edit with its id, worked out already: no edit encoded again, its bulk bytes not read back.
+    pub fn receive_ids(&mut self, edits: impl IntoIterator<Item = (Edit, EditId)>) {
         let before = self.ids.len();
-        for edit in edits {
-            let id = edit.id();
+        for (edit, id) in edits {
+            debug_assert_eq!(edit.id(), id, "an edit received with its own id");
             if self.held.insert(id) {
                 self.index_write(&edit, id, self.edits.len());
                 self.edits.push(edit);
@@ -4987,6 +4995,16 @@ impl Log {
             }
         }
         if self.ids.len() != before { self.revision = LogRevision::default(); }
+    }
+
+    /// Each edit's bulk bytes read back from where `place` says its record is, if it says (`Edit::shelve`): the same
+    /// edits, the same ids, their bytes off memory.
+    pub(crate) fn shelve(&mut self, place: impl Fn(&EditId) -> Option<crate::bulk::Place>) {
+        for (edit, id) in self.edits.iter_mut().zip(&self.ids) {
+            if let Some(p) = place(id) {
+                edit.shelve(p);
+            }
+        }
     }
 
     /// Let go of the edits `ids`: a device holding them on a checkpoint's word that no checkpoint vouches for any more.
@@ -5046,7 +5064,7 @@ mod tests {
                 action: Action::Write { vault: VaultId::from_u64(1), entry,
                     actor: VaultId::from_u64(1), stay: None, epoch: 0,
                     deps: vec![], proposal: Proposal::Main, via: vec![], create: None,
-                    files: vec![], body: vec![depth as u8; 1024] } }
+                    files: vec![], body: vec![depth as u8; 1024].into() } }
         }
         fn check(log: &Log, entry: EntryId, judged: &HashSet<EditId>) {
             let selected: Vec<_> = log.edits().iter().filter(|e|

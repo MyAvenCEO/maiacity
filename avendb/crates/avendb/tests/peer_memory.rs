@@ -76,7 +76,7 @@ impl Drafter {
         let via = st.via(MAC_A, en.vault).unwrap_or_default();
         let deps = st.heads(e, None);
         let action = Action::Write { vault: en.vault, entry: e, actor: en.vault, stay: en.stay(), epoch, deps,
-            proposal: Proposal::Main, via, create: None, files: vec![], body };
+            proposal: Proposal::Main, via, create: None, files: vec![], body: body.into() };
         let parents = self.last.get(&LogId::Entry(e)).into_iter().copied().collect();
         Edit { parents, depth: self.depth, author: MAC_A, cosigners: vec![], action }
     }
