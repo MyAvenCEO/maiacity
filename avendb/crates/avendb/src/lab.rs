@@ -171,6 +171,10 @@ const READ_WORK: usize = 32;
 /// The budget of the step a write of a device's own takes in the middle of a catch-up (`Lab::refresh_own`).
 const OWN_WRITE_BUDGET: usize = 8;
 
+/// The budget of the step what a device takes from a peer brings it on in the middle of a catch-up
+/// (`receive_now_prepared`).
+const TAKEN_BUDGET: usize = 8;
+
 
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
 type Blobs = HashMap<BlobId, Arc<[u8]>>;
@@ -5924,6 +5928,8 @@ impl Lab {
     fn receive_now_prepared(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool, prepared: &HashMap<EditId, bool>) -> usize {
         let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
         let before = self.held(d).signed.len();
+        // in the middle of a catch-up a step at a time, what it takes brings it one step on, not the whole of it
+        let catching = self.catching_up(d);
         let mut changed = self.take_prepared(d, edits, &blobs, prepared);
         // Edit-only pages have no late-arriving keys to match. Taking their edits and flushing a deferred
         // replay still happen normally; only the otherwise unused full-history blob-name scan is omitted.
@@ -5940,8 +5946,15 @@ impl Lab {
         let new = self.held(d).signed.len() - before;
         let store = self.stores.get_mut(&self.at(d)).expect("a device");
         store.behind |= changed;
+        // (`CatchUpBudget.lean` `taken_le`): the keys a pull brought after its pages ran the phone's whole catch-up in
+        // one turn of 1.8 min, a whole replay, its key index and its bodies, and its worker answered no peer meanwhile
+        // (2026-10-28); the catch-up's own steps bring the rest
         if now && store.behind {
-            self.refresh(d, &[]);
+            if catching {
+                self.refresh_with(d, &[], Some(TAKEN_BUDGET));
+            } else {
+                self.refresh(d, &[]);
+            }
         }
         new
     }
