@@ -7210,8 +7210,14 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
         }
     };
     store.perf.count("read: writes looked at", wanted.len() as u64);
-    let mut wanted: Vec<EditId> =
-        wanted.into_iter().filter(|id| !store.bodies.contains_key(id) && !store.spoilt.contains(id)).collect();
+    // of the edits named, the writes alone have a body: the others (keys, wraps, marks, shares) are no body to open,
+    // and none of them is counted against `most` or left for a step (an iPhone's catch-up of one 712-edit page left
+    // its 108,000 keys, wraps and marks to look at 32 a step after a whole replay, 3,629 steps of 24 ms, 2026-10-28)
+    let mut wanted: Vec<EditId> = wanted
+        .into_iter()
+        .filter(|id| !store.bodies.contains_key(id) && !store.spoilt.contains(id))
+        .filter(|id| store.signed.get(id).is_some_and(|s| matches!(s.edit.action, Action::Write { .. })))
+        .collect();
     // a step of a catch-up opens at most `most` (a first sync's 130,000 bodies took 1.7 s in one turn, 2026-10-27):
     // the bodies of new edits first, then those it left before, the rest left for the next step, as they were
     if let Some(most) = most {
@@ -8637,6 +8643,10 @@ mod upkeep_family_tests;
 #[cfg(test)]
 #[path = "based_parity_tests.rs"]
 mod based_parity_tests;
+
+#[cfg(test)]
+#[path = "read_left_tests.rs"]
+mod read_left_tests;
 
 #[cfg(test)]
 #[path = "prepared_receive_tests.rs"]
