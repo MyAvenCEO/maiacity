@@ -593,6 +593,53 @@ mod slices {
         whole.shutdown().await.unwrap();
         sliced.shutdown().await.unwrap();
     }
+    /// The keys a pull brings after its pages, taken in the middle of the catch-up those pages left (`bring_keys`, a
+    /// `receive` that brings it up to date), hold the Lab one step, not the whole catch-up, and a peer's ask of the
+    /// device is answered between the catch-up's turns, while most are still to come. An iPhone took them in one turn
+    /// of 1.8 min (a whole replay, its key index made again, its bodies): a page's worker runs the Lab and its network
+    /// alike, so meanwhile it answered no peer, and every peer's asking of it, through the relay, waited out its
+    /// connection (2026-10-28). By the order of events, not by the clock.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn the_keys_a_pull_brings_hold_the_lab_a_step_and_a_peers_ask_is_answered_between() {
+        let mut w = world();
+        let coop = handbook_ready(&mut w);
+        let (sender, receiver) = (w.mac_a, w.phone_a);
+        let phone_lab = w.lab.split(receiver, &[], [78; 32]);
+        for i in 0..800 {
+            let doc = document(&format!("Doc {i}"), "Written while the iPhone was away.", sender);
+            w.lab.create(sender, coop, coop, "doc", &[], doc).unwrap();
+        }
+        let held: std::collections::HashSet<_> = phone_lab.log(receiver).ids().iter().copied().collect();
+        let fresh: Vec<_> = w.lab.backup(sender).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
+        let mac = Node::spawn(w.lab.split(sender, &[], [79; 32]), sender, Options::local()).await.unwrap();
+        // its tasks run, so it answers the Mac's connection
+        let phone = Node::spawn(phone_lab, receiver, Options::local()).await.unwrap();
+        for page in fresh.chunks(100) {
+            let page = page.to_vec();
+            phone.shared.try_lab(move |lab, me| lab.receive_whose_now(me, page, vec![], false)).await.unwrap();
+        }
+        mac.know(phone.addr());
+        // the keys, as `bring_keys` takes them after the last page
+        phone.shared.try_lab_class(Class::Background, |lab, me| { lab.receive(me, Vec::new(), Vec::new()); }).await.unwrap();
+        assert!(!phone.read(|lab, me| lab.replay_current(me)).await, "taking the keys ran the whole catch-up in one turn");
+        // then the catch-up, a step a turn, and the Mac asks the iPhone once its first turn ran
+        let before = catch_up_turns(&phone);
+        let shared = phone.shared.clone();
+        let running = tokio::spawn(async move { assert!(shared.catch_up_paced_class(true, Class::Background).await) });
+        while catch_up_turns(&phone) == before && !running.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        mac.sync_with(phone.id()).await.unwrap();
+        let answered = catch_up_turns(&phone) - before;
+        running.await.unwrap();
+        let turns = catch_up_turns(&phone) - before;
+        eprintln!("KEYS the catch-up after the keys took {turns} turns, the Mac's ask was answered after {answered}");
+        assert!(turns >= 8, "the catch-up goes a step a turn: {turns} turns");
+        assert!(answered + 4 <= turns, "the Mac's ask waits a slice, not the catch-up: answered after {answered} of {turns}");
+        assert!(phone.read(|lab, me| lab.entries(me).len()).await >= 800, "every document it took, shown");
+        mac.shutdown().await.unwrap();
+        phone.shutdown().await.unwrap();
+    }
 }
 
 /// A live edit that lands while a long catch-up is showing a backlog is shown by the real judge in the next step of

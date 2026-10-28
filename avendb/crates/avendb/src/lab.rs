@@ -171,6 +171,10 @@ const READ_WORK: usize = 32;
 /// The budget of the step a write of a device's own takes in the middle of a catch-up (`Lab::refresh_own`).
 const OWN_WRITE_BUDGET: usize = 8;
 
+/// The budget of the step what a device takes from a peer brings it on in the middle of a catch-up
+/// (`receive_now_prepared`).
+const TAKEN_BUDGET: usize = 8;
+
 
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
 type Blobs = HashMap<BlobId, Arc<[u8]>>;
@@ -603,6 +607,12 @@ const ENGINE: &str = env!("AVENDB_ENGINE");
 /// out under, not the engine's hash, so a release that keeps the rules keeps every device's view (VR1), and one that
 /// changes them names a new number, under which no older view opens (VR2).
 const VIEW_RULES: &str = concat!("avenDB view rules ", env!("AVENDB_VIEW_RULES"));
+
+/// What a device seals the showings it keeps to (`ShowRules.lean`, `build.rs`): the number of the show rules it judged
+/// them under, not the engine's hash, so a release that keeps the rules keeps every device's kept showings (SR1), and one
+/// that changes them names a new number, under which no older pack opens (SR2). Sealed to the engine's hash, every
+/// release left them shut, and a phone's first unlock after it judged every entry anew (2026-10-28).
+const SHOW_RULES: &str = concat!("avenDB show rules ", env!("AVENDB_SHOW_RULES"));
 
 /// The engine's hash as a fixed-size binding, for what a device seals to the engine that made it.
 pub fn engine() -> [u8; 32] {
@@ -3497,6 +3507,37 @@ impl Lab {
         None
     }
 
+    /// What device `d` answers peer `asker` by (`StandingReplay.lean` `answerFor`): `standing_or`, and where that is none,
+    /// in the middle of a catch-up with a removal among the edits past its replay, the replay it holds, unless one of
+    /// those removals may concern `asker`: one that removes `asker`, or removes a device that ever shared anything
+    /// (what it shared may be cut, and others' reach with it), or any other kind of removal (an owner's, a grant's),
+    /// which concerns every peer. A Mac in the middle of its catch-up of Maia City, which holds removals, handed an
+    /// iPhone that lacked 2,569 logs no page, and the iPhone asked by requests that named nothing (Fix C, 2026-10-28).
+    fn standing_for(&self, d: SignerId, asker: SignerId) -> Option<&State> {
+        if let Some(st) = self.standing_or(d) {
+            return Some(st);
+        }
+        let store = self.held(d);
+        let edits = store.log.edits();
+        let shared_by = |device: SignerId| {
+            let vault_logs = store.log.by_log().iter().filter(|(l, _)| matches!(l, LogId::Vault(_)));
+            vault_logs.flat_map(|(_, places)| places.iter()).any(|&i| {
+                let e = &edits[i];
+                // its own addition, which it cosigns, is what the removal takes back
+                let own = matches!(e.action, Action::Share(Sharing::Device { device: added, .. }) if added == device);
+                matches!(e.action, Action::Share(_)) && !own && (e.author == device || e.cosigners.contains(&device))
+            })
+        };
+        let concerns = |e: &Edit| match &e.action {
+            Action::Revoke(crate::policy::Revoking::Device { device, .. }) => *device == asker || shared_by(*device),
+            _ => e.is_removal(),
+        };
+        if edits[store.replayed..].iter().any(concerns) {
+            return None;
+        }
+        Some(&store.replay.state)
+    }
+
     /// Whether device `d` answers what its edits say now without replaying every edit it holds (`standing_or`): a
     /// background reader, as a node's file keeper, waits for its catch-up while it doesn't.
     pub fn answers_now(&self, d: SignerId) -> bool {
@@ -5280,7 +5321,7 @@ impl Lab {
     /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
         let store = self.held(d);
-        let Some(st) = self.standing_or(d) else { return Arc::new(vec![]) };
+        let Some(st) = self.standing_for(d, asker) else { return Arc::new(vec![]) };
         Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow))
     }
 
@@ -5458,7 +5499,7 @@ impl Lab {
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         let store = self.held(d);
-        let Some(st) = self.standing_or(d) else { return vec![] };
+        let Some(st) = self.standing_for(d, asker) else { return vec![] };
         let mut needs = crate::lazy::Needs::new(st, asker);
         let mut out: Vec<Stub> = sends
             .places
@@ -5686,7 +5727,7 @@ impl Lab {
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
     /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        self.standing_or(d).is_some_and(|st| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow))
+        self.standing_for(d, asker).is_some_and(|st| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow))
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
@@ -5924,6 +5965,8 @@ impl Lab {
     fn receive_now_prepared(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool, prepared: &HashMap<EditId, bool>) -> usize {
         let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
         let before = self.held(d).signed.len();
+        // in the middle of a catch-up a step at a time, what it takes brings it one step on, not the whole of it
+        let catching = self.catching_up(d);
         let mut changed = self.take_prepared(d, edits, &blobs, prepared);
         // Edit-only pages have no late-arriving keys to match. Taking their edits and flushing a deferred
         // replay still happen normally; only the otherwise unused full-history blob-name scan is omitted.
@@ -5940,8 +5983,15 @@ impl Lab {
         let new = self.held(d).signed.len() - before;
         let store = self.stores.get_mut(&self.at(d)).expect("a device");
         store.behind |= changed;
+        // (`CatchUpBudget.lean` `taken_le`): the keys a pull brought after its pages ran the phone's whole catch-up in
+        // one turn of 1.8 min, a whole replay, its key index and its bodies, and its worker answered no peer meanwhile
+        // (2026-10-28); the catch-up's own steps bring the rest
         if now && store.behind {
-            self.refresh(d, &[]);
+            if catching {
+                self.refresh_with(d, &[], Some(TAKEN_BUDGET));
+            } else {
+                self.refresh(d, &[]);
+            }
         }
         new
     }

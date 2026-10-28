@@ -109,6 +109,55 @@ theorem answerOr_safe (catching : Bool) (since held es : List Edit) (h : answerO
   · cases h
     exact answerBy_safe catching since held p hp
 
+/-! ## A removal stops the answers it concerns, not every answer (Fix C, 2026-10-28)
+
+`answerOr` answers nothing at all while a removal waits in the catch-up: a Mac in the middle of its catch-up of Maia
+City, which holds removals, handed an iPhone that lacked 2,569 logs no page, and asked by a request that named nothing,
+so its peers sent it again what it held; and a catch-up that long turns cut short never ended. A removal takes away one
+permission (`remove p`): what the replay it holds allows of any other, all its edits allow too (`may_mono_of`). So in
+the middle of a catch-up a device answers each permission by the replay it holds, but those a removal since concerns,
+which it answers nothing of till caught up (`answerFor`, `answerFor_safe`). Rust: `Lab::standing_for`, which counts a
+removal as concerning a peer when it removes that device, or removes any other device that ever granted anything, or is
+of an owner or a grant: every peer, as `answerOr`. -/
+
+/-- With no removal of `p` among the edits since, what the held replay allows of `p`, all of them allow. -/
+theorem may_mono_of (since held : List Edit) (p : Nat) (h : since.all (fun e => e != .remove p) = true)
+    (hp : may held p = true) : may (since ++ held) p = true := by
+  induction since with
+  | nil => simpa using hp
+  | cons e es ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    obtain ⟨he, hes⟩ := h
+    cases e with
+    | grant q => simp only [List.cons_append, may]; split <;> simp_all
+    | remove q =>
+      simp only [List.cons_append, may]
+      have : q ≠ p := by intro hq; subst hq; simp at he
+      simp [this, ih hes]
+    | other => simp only [List.cons_append, may]; exact ih hes
+
+/-- What a device answers of the permissions `asks` in the middle of a catch-up: by the replay it holds, but none a
+    removal since concerns; not catching up, by every edit it holds. -/
+def answerFor (catching : Bool) (since held : List Edit) (asks : List Nat) : List Nat :=
+  if catching then asks.filter (fun p => since.all (fun e => e != .remove p) && may held p)
+  else asks.filter (may (since ++ held))
+
+/-- Whatever it answers, all its edits allow. -/
+theorem answerFor_safe (catching : Bool) (since held : List Edit) (asks : List Nat) (p : Nat)
+    (hp : p ∈ answerFor catching since held asks) : may (since ++ held) p = true := by
+  unfold answerFor at hp
+  split at hp
+  · simp only [List.mem_filter, Bool.and_eq_true] at hp
+    exact may_mono_of since held p hp.2.1 hp.2.2
+  · simp only [List.mem_filter] at hp
+    exact hp.2
+
+/-- A permission no removal since concerns is answered as the replay it holds allows: the rest of what it holds isn't
+    held back by another peer's removal. -/
+theorem answerFor_unconcerned (since held : List Edit) (asks : List Nat) (p : Nat) (hask : p ∈ asks)
+    (h : since.all (fun e => e != .remove p) = true) (hp : may held p = true) : p ∈ answerFor true since held asks := by
+  simp [answerFor, hask, h, hp]
+
 namespace Examples
 
 -- a grant since: the held replay allows less, never more
@@ -121,6 +170,10 @@ namespace Examples
 
 -- in the middle of a catch-up, a removal since: nothing, not a replay of every edit; caught up: every edit
 #guard answerOr true [.remove 1] [.grant 1] == none && answerOr false [.remove 1] [.grant 1] == some [.remove 1, .grant 1]
+
+-- the Mac in the middle of its catch-up, a removal of permission 2 since: it still answers permission 1
+#guard answerFor true [.remove 2] [.grant 1, .grant 2] [1, 2] == [1]
+#guard answerFor false [.remove 2] [.grant 1, .grant 2] [1, 2] == [1]
 
 end Examples
 

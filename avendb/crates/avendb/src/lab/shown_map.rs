@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use zeroize::Zeroizing;
 
-use super::{ENGINE, ShelfKey, Shown, Tip};
+use super::{SHOW_RULES, ShelfKey, Shown, Tip};
 use crate::id::EntryId;
 use crate::keys::SeededRng;
 use crate::pages::Space;
@@ -318,12 +318,13 @@ impl std::ops::Index<&EntryId> for ShownMap {
     }
 }
 
-/// What a pack of kept showings starts with (`Warming::shown`), the version of its bytes.
-const KEPT_SHOWN: &[u8] = b"avenDB kept shown 2\n";
+/// What a pack of kept showings starts with (`Warming::shown`), the version of its bytes: a change of how a showing or
+/// its pack is written down names a new one here, a change of what judging gives bumps `showRules` (`SHOW_RULES`).
+const KEPT_SHOWN: &[u8] = b"avenDB kept shown 3\n";
 
-/// What a showing in a pack is sealed under: the engine, its entry and its print, so that it opens as no other.
+/// What a showing in a pack is sealed under: the show rules, its entry and its print, so that it opens as no other.
 fn context(e: &EntryId, print: &[u8; 32]) -> Vec<u8> {
-    [ENGINE.as_bytes(), &e.0, print].concat()
+    [SHOW_RULES.as_bytes(), &e.0, print].concat()
 }
 
 /// A pack of the showings `shown`, each its entry's, print and bytes (`Shown::record`): `KEPT_SHOWN`, the length of
@@ -342,7 +343,7 @@ pub(super) fn pack(key: &ShelfKey, rng: &mut SeededRng, shown: &[(EntryId, [u8; 
         (one.len() as u32).encode(&mut index);
         sealed.extend(one);
     }
-    let index = key.lock("kept shown index", &index, ENGINE.as_bytes(), rng);
+    let index = key.lock("kept shown index", &index, SHOW_RULES.as_bytes(), rng);
     let mut out = KEPT_SHOWN.to_vec();
     (index.len() as u32).encode(&mut out);
     out.extend(index);
@@ -363,7 +364,7 @@ pub(super) fn unpack(key: &ShelfKey, pack: &Arc<dyn Space>) -> Option<Vec<(Entry
     }
     let mut sealed = vec![0; n as usize];
     pack.read_at(head, &mut sealed).ok()?;
-    let index = key.unlock("kept shown index", &sealed, ENGINE.as_bytes())?;
+    let index = key.unlock("kept shown index", &sealed, SHOW_RULES.as_bytes())?;
     let base = head + n;
     let r = &mut Reader::new(&index);
     let count = r.count(76).ok()?;

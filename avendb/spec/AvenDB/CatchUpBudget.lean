@@ -24,6 +24,11 @@ A device's start (`Lab::restore_end_with`) does what is left past its stored vie
 `w` units (`RESTORE_WHOLE`); with more, it does one step and ends behind, its node's catch-up taking the rest a step at a
 time (until 2026-10-28 it did it all: an iPhone's unlock of a partial vault with no stored view took 313 s). Its work is
 at most `max w k` however much is left (`start_le`), and what it leaves ends like any catch-up (`start_ends`).
+
+What a device takes in the middle of a catch-up (a page, the keys a pull brought after its pages) adds to what is left
+and brings it one step on, not the whole of it (`take`, `taken_le`; `Lab::receive_now_prepared`). Until 2026-10-28 it
+brought the whole catch-up in one turn: 1.8 min on an iPhone, whose page's worker runs the Lab and answered no peer
+meanwhile, so every peer's asking of it waited out its connection.
 -/
 
 namespace AvenDB.CatchUpBudget
@@ -124,6 +129,17 @@ theorem start_ends (w k : Nat) (hk : 0 < k) (t : Todo) :
     (steps k (startLeaves w k t).left (startLeaves w k t)).left = 0 :=
   ends_within k hk _
 
+/-- What a device takes in the middle of a catch-up, `more`, added to what is left. -/
+def Todo.add (t more : Todo) : Todo :=
+  { replay := t.replay + more.replay, read := more.read ++ t.read, shows := t.shows ++ more.shows }
+
+/-- Taking `more` in the middle of a catch-up: what is left grows by it, and one step brings it on. -/
+def take (k : Nat) (t more : Todo) : Todo := step k (t.add more)
+
+/-- What a device takes mid catch-up costs its turn one step's work at most, however much is left, and leaves the rest
+to the catch-up's steps, which end (`ends_within`). -/
+theorem taken_le (k : Nat) (t more : Todo) : (t.add more).left - (take k t more).left ≤ k := work_le k (t.add more)
+
 namespace Examples
 
 -- a first sync: 130,000 edits to replay, 130,000 bodies, 3,200 entries; 768 units a step
@@ -137,6 +153,9 @@ def first : Todo := { replay := 130000, read := List.range 130000, shows := List
 -- an unlock of that first sync with no stored view does 48 units, not all 263,200
 #guard startWork 4096 48 first == 48
 #guard startWork 4096 48 { replay := 100, read := [], shows := List.range 40 } == 140
+
+-- the keys a pull brings in the middle of a first sync: one step, not the 263,200 units left
+#guard (first.add { replay := 0, read := [1, 2], shows := [] }).left - (take 768 first { replay := 0, read := [1, 2], shows := [] }).left == 768
 
 end Examples
 
