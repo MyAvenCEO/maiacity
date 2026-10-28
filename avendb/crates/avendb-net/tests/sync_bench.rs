@@ -167,7 +167,8 @@ fn fixture(bulk: usize, text: usize) -> Fixture {
 async fn live_on(case: String, f: Fixture) {
     let faults = match case.trim_end_matches("_bulk") {
         "calm" => Faults::CALM,
-        "phone" => Faults::PHONE,
+        // `AVENDB_LIVE_LOSE` (thousandths) sets the phone's loss instead of its 1 %, to compare
+        "phone" => Faults { lose: std::env::var("AVENDB_LIVE_LOSE").ok().and_then(|n| n.parse().ok()).unwrap_or(Faults::PHONE.lose), ..Faults::PHONE },
         other => panic!("AVENDB_LIVE_LINK: {other} is none of calm, phone, calm_bulk, phone_bulk"),
     };
     let Fixture { mut w, coop, live_entry, want, bytes, write_s } = f;
