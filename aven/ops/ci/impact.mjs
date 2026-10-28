@@ -1,6 +1,7 @@
 // One conservative dependency map for releases and local/CI selection. Unknown paths select everything.
 import { execFileSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
+import { read as deviceReads } from '../devx/wasm.mjs';
 export const components = ['site', 'api', 'avendb', 'server', 'agent', 'infra', 'browser', 'protocol', 'mac', 'native', 'image'];
 // ops.yml runs its tasks by hand and on its schedule alone, and checks nothing a change can break; ci.yml (the checks) and
 // release.yml (the deploys), like any other file under .github/, select everything.
@@ -15,6 +16,9 @@ export function impact(files) {
  for (const file of files) {
   const workflow = /^\.github\/workflows\/([^/]+)$/.exec(file)?.[1];
   if (workflow && checks[workflow]) { set(...checks[workflow]); continue; }
+  // a file the page's avenDB device is built from (wasm.mjs `inputs`, the one list): a new device, which the site serves
+  // and the API's image carries, whatever else the file starts below
+  if (deviceReads(file)) set('site', 'api');
   // the CI scripts, and the map of where the repo keeps what, which the site's build and the bundlers read
   if (/^(\.github\/|aven\/ops\/(ci\/|paths\.)|package\.json$|bun\.lock|\.bun-version$|\.dockerignore$)/.test(file)) { set(...components); continue; }
   // avenDB's page, the site's and the browser's: its device module the API loads too, and its op names are the engine's

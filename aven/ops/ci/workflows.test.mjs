@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { lint } from './workflows.mjs';
 
 test('every workflow uses each context only where GitHub allows it', () => {
@@ -60,4 +61,26 @@ test('every job that logs the server into ghcr.io may read packages', () => {
   }
  }
  expect(logins.sort()).toEqual(['ops.yml:rollback', 'release.yml:api', 'release.yml:peer']);
+});
+
+// "CI required" checks out aven/ops/ci alone: plan.mjs's imports reached past it once, and the verdict could not start
+// (#1378, impact.mjs importing aven/ops/devx/wasm.mjs)
+test('a job with a sparse checkout has every module its bun scripts import', () => {
+ const dir = '.github/workflows';
+ const imports = file => [...readFileSync(file, 'utf8').matchAll(/^import .* from '(\.{1,2}\/[^']+)';$/gm)].map(m => join(dirname(file), m[1]));
+ for (const f of readdirSync(dir).filter(f => f.endsWith('.yml'))) {
+  for (const [id, job] of Object.entries(Bun.YAML.parse(readFileSync(`${dir}/${f}`, 'utf8')).jobs ?? {})) {
+   const sparse = (job.steps ?? []).find(s => s.with?.['sparse-checkout'])?.with['sparse-checkout'].split('\n').filter(Boolean);
+   if (!sparse) continue;
+   const has = path => sparse.some(p => path === p || path.startsWith(`${p}/`));
+   const todo = (job.steps ?? []).flatMap(s => [...(s.run ?? '').matchAll(/\bbun ((?:aven|maia|theos)\/[^\s"']+\.mjs)/g)].map(m => m[1]));
+   for (const seen = new Set(); todo.length;) {
+    const file = todo.pop();
+    if (seen.has(file)) continue;
+    seen.add(file);
+    expect([`${f}:${id}`, file, has(file)]).toEqual([`${f}:${id}`, file, true]);
+    todo.push(...imports(file));
+   }
+  }
+ }
 });
