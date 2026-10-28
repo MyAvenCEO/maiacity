@@ -56,7 +56,7 @@ test('the report carries what a sync lacks of each peer and takes of it, as numb
  const sync = observeSync(emptySync(), synced, 2000);
  const report = diagnosticSnapshot({ phase: 'open', journal: null, lifecycle: null, manifests: null, sync, playback: null, device: 'iPhone' }).sync;
  expect(report).toMatchObject({ peers: 1, logs: 3090, behind: 2577, pulling: 1, pages: 40, edits: 812, base: 812, at: 2000 });
- expect(report.from).toEqual([{ device: '36ee6eef', pulling: { since: 1000, stage: 'taking edits', took: 812 }, pages: 40, edits: 812, last: 1900, askings: 0, failed: 0 }]);
+ expect(report.from).toEqual([{ device: '36ee6eef', reconnecting: false, pulling: { since: 1000, stage: 'taking edits', took: 812 }, pages: 40, edits: 812, last: 1900, askings: 0, failed: 0 }]);
  expect(report.lacked).toHaveLength(1);
  const [peer] = report.lacked;
  expect(peer).toMatchObject({ device: '85b01be4', lacks: 2577, byStub: 513, stubs: 900 });

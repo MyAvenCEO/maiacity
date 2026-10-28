@@ -162,3 +162,16 @@ test('a pull that runs on and brings nothing is stalled, not a transfer, and its
 	expect(failedAgain.since).toBe(361000);
 	expect(taking(failedAgain.from[1], 368000)).toBe(false);
 });
+
+test('a peer whose connection drops a moment keeps its coverage, marked reconnecting, so the counts hold', () => {
+	const peerOf = (device, name, reconnecting) => ({ device, name, reconnecting, pulling: null, pages: 0, edits: 0, last: 0 });
+	const both = [peerOf('36ee6eef', 'Mac', false), peerOf('85b01be4', null, false)];
+	const before = observeSync(emptySync(), report({ peers: 2, pulling: 0, from: both }), 1000);
+	// the always-on peer's connection drops: the device still counts it by what it told last, its logs and what it lacks
+	const dropped = observeSync(before, report({ peers: 2, reconnecting: 1, pulling: 0, from: [both[0], peerOf('85b01be4', null, true)] }), 2000);
+	expect([dropped.logs, dropped.behind, dropped.reconnecting]).toEqual([before.logs, before.behind, 1]);
+	expect(dropped.since).toBe(before.since);
+	expect(liveSync(dropped, 2000 + STALL).line).toBe('Waiting on Mac, 85b01be4 (reconnecting) · 6 s');
+	// a report can't say more peers reconnect than it counts
+	expect(observeSync(emptySync(), report({ peers: 1, reconnecting: 3 }), 1000).reconnecting).toBe(1);
+});
