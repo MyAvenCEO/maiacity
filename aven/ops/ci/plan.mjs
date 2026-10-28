@@ -32,7 +32,7 @@ export const reads = {
  protocol: ['aven/db/spec/protocol', 'aven/db/crates'],
  // theOS and what its crates read from outside theos/ (include_str!)
  mac: ['Cargo.toml', 'Cargo.lock', 'theos', 'aven/db/crates', 'aven/db/vendor', 'aven/db/spec/AvenDB/ViewRules.lean',
-  'aven/db/spec/AvenDB/ShowRules.lean', 'maia/content/models/models.json', 'maia/content/game/film/grade-tools.json',
+  'aven/db/spec/AvenDB/ShowRules.lean', 'aven/db/spec/AvenDB/StoredReadings.lean', 'maia/content/models/models.json', 'maia/content/game/film/grade-tools.json',
   'maia/site/lib/media/media-refs.tsv'],
  lean: ['Cargo.toml', 'Cargo.lock', 'aven/db/crates/avendb-device', 'aven/kernel/code/packages.json', 'aven/db/spec/AvenDB/Objective.lean',
   'aven/db/spec/lean-toolchain'],

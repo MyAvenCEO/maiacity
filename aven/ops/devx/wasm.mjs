@@ -20,11 +20,11 @@ const STAMP = '.build.json';
 const CACHE = join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'avendb-page-device');
 
 // What the build reads: the three crates it compiles (their tests aside), the patched iroh, the workspace's manifest
-// and lockfile, the WebAssembly's flags, the build script, and the two Lean numbers avendb's build.rs takes in.
+// and lockfile, the WebAssembly's flags, the build script, and the three Lean numbers avendb's build.rs takes in.
 export const inputs = [
  'Cargo.toml', 'Cargo.lock', 'aven/db/.cargo/config.toml', 'aven/db/scripts/build-web.sh',
  'aven/db/crates/avendb/', 'aven/db/crates/avendb-net/', 'aven/db/crates/avendb-browser/', 'aven/db/vendor/iroh/',
- 'aven/db/spec/AvenDB/ViewRules.lean', 'aven/db/spec/AvenDB/ShowRules.lean',
+ 'aven/db/spec/AvenDB/ViewRules.lean', 'aven/db/spec/AvenDB/ShowRules.lean', 'aven/db/spec/AvenDB/StoredReadings.lean',
 ];
 export const read = path => inputs.some(i => i.endsWith('/') ? path.startsWith(i) : path === i) && !/^aven\/db\/crates\/[^/]+\/tests\//.test(path);
 
