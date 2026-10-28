@@ -922,7 +922,7 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// With `window: n` in place of `order`, `limit`, `offset` and `after`, it is a window (`QueryView.lean` `window`): the
 /// newest `n` rows by creation (the depth of each entry's creation edit, then its id, as the shared index orders them),
 /// read newest first until `n` rows show, so `count` is the rows shown, and only the entries newer than the last row
-/// shown say what they wait on. A full window's `next` names its oldest row; `window: {"newest": n, "before": next}`
+/// shown say what they wait on; a draft its vault hasn't landed is none of them. A full window's `next` names its oldest row; `window: {"newest": n, "before": next}`
 /// is the page before it, the newest `n` created before that row (`QueryView.lean` `QW3_pages`, `QW3_older_page`),
 /// which entries made since never move, as they would a page by `offset`. Its answer is a function of those entries alone, so a node reads
 /// them off its shared index (`window_of`, `query_among`) and never the rest.
@@ -968,6 +968,14 @@ fn window_field(o: &Map<String, Value>) -> Result<Option<(usize, Option<(u64, En
 fn window_cursor_of(t: &str) -> Option<(u64, EntryId)> {
     let (at, e) = t.split_once('.')?;
     Some((at.parse().ok()?, EntryId::from_hex(e)?))
+}
+
+/// The entries query `v` may find on device `me` in vault `vault`, off its type index where its selector names types
+/// (`Lab::query_candidates`): what a node adds to a window for a vault its shared index may not list in full.
+pub fn query_candidates_in(lab: &Lab, me: SignerId, v: &Value, vault: VaultId) -> Vec<EntryId> {
+    let Ok((_, o)) = op_of(v) else { return vec![] };
+    let w = o.get("where").map(Where::of_json).transpose().ok().flatten().unwrap_or(Where::Yes);
+    lab.query_candidates(me, Some(vault), &w.plan())
 }
 
 /// Query `v` on device `me` over the entries `among` alone, as `read` answers it where those hold every entry it reads:
@@ -1034,6 +1042,9 @@ fn query_from(
         // the newest first; one whose creation the log doesn't place is read first, as it may be the newest
         found.sort_by_cached_key(|e| Reverse((lab.creation_depth(me, *e).unwrap_or(u64::MAX), *e)));
         found.dedup();
+        // a draft its vault hasn't landed holds nothing on main yet, so no window shows it or waits on it: a write that
+        // lands it touches it
+        found.retain(|e| lab.landed(me, *e));
         // an older page: the entries created before the cursor alone (`QW3_older_page`)
         if let Some(c) = before { found.retain(|e| (lab.creation_depth(me, *e).unwrap_or(u64::MAX), *e) < c); }
     }

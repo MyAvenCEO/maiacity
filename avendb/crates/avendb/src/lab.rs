@@ -4199,9 +4199,10 @@ impl Lab {
         self.held(d).view().vaults().iter().map(|v| v.id).collect()
     }
 
-    /// The vaults device `d` holds any key of: a seed, a share's or an audience's. Of any other it opens nothing.
-    pub fn key_vaults(&self, d: SignerId) -> BTreeSet<VaultId> {
-        self.held(d).keys.epochs.keys().map(|fam| fam.vault()).collect()
+    /// The vaults device `d` holds the seed of: its shared index holds a row of every entry of each that it reads and
+    /// has landed (`index_rows`), whatever audience, share or entry key it reads it by.
+    pub fn seed_vaults(&self, d: SignerId) -> BTreeSet<VaultId> {
+        self.held(d).keys.epochs.keys().filter_map(|fam| match fam { KeyFam::Seed(v) => Some(*v), _ => None }).collect()
     }
 
     /// Device `d`'s view knows vault `v` and gives it no standing there: it acts for no member or owner of `v`, and no
