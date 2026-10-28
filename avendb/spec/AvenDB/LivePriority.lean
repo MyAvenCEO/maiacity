@@ -396,7 +396,8 @@ grows a sixteenth a round, to find where the queue begins. The pair keeps the la
 
 /-- What one round trip told the queue-gated member (µs, bytes, packets): the least round trip it measured, the least
     ever, the larger of BBR's and Cubic's windows in it, the packets sent and lost in it, and whether the window
-    bounded it (`full`), not the application. -/
+    bounded it (`full`): the connection's window was full while the member's was no larger, so what was in flight
+    reached the member's (Rust: `on_cwnd_limited`). Not the application, the CPU or the pacer. -/
 structure Round where
   rtt : Nat
   minRtt : Nat
