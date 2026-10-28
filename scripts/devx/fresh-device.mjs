@@ -482,9 +482,13 @@ try {
 		await sleep(2000);
 		const back = Date.now();
 		peer = await startPeer(temp, ports);
-		const got = await until(() => caughtUp(c, total), BUDGETS.cut * 2);
+		// what the person sees (every todo shown) and when the device's pulls are over: a pull bound to the killed
+		// connection may hold `pulling` up after the todos are all there (2026-10-28: shown 4 s, over 40 s after)
+		const shown = await until(async () => (await todos(c, vault)).length >= total || null, BUDGETS.cut * 2);
+		const shownAfter = ((Date.now() - back) / 1000).toFixed(1);
+		const got = shown && (await until(() => caughtUp(c, total), BUDGETS.cut * 2));
 		if (!got) throw new Error(`after the cut C shows ${(await todos(c, vault)).length} of ${total}; synced ${JSON.stringify(await synced(c))}`);
-		return `cut at ${held} of ${total} todos; whole ${((Date.now() - back) / 1000).toFixed(1)} s after the peer came back`;
+		return `cut at ${held} of ${total} todos; all shown ${shownAfter} s, pulls over ${((Date.now() - back) / 1000).toFixed(1)} s after the peer came back`;
 	});
 	await step('settle', async () => {
 		const procs = tree(c).length;
