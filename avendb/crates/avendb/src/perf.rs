@@ -80,6 +80,11 @@ impl Perf {
         *self.counts.entry(what).or_default() += n;
     }
 
+    /// The counts of what starts with `prefix`, each with what follows it.
+    pub fn counts_of<'a>(&'a self, prefix: &'a str) -> impl Iterator<Item = (&'a str, u64)> + 'a {
+        self.counts.iter().filter_map(move |(k, n)| Some((k.strip_prefix(prefix)?, *n)))
+    }
+
     /// The timers as `{work: {count, total_ms, mean_ms, max_ms}}` and the counts as `{what: n}`.
     pub fn to_json(&self) -> Value {
         let ms = |us: u64| us as f64 / 1000.0;
