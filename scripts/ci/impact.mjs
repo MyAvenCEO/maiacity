@@ -9,7 +9,7 @@ const checks = {
  'avendb-wasm.yml': ['avendb', 'native'],
  'mac.yml': ['mac'],
  // these run on their own triggers alone
- 'avendb-backups.yml': [], 'lean-mac.yml': [], 'site-same.yml': [], 'full-checks.yml': [], 'infra-checks.yml': ['infra'],
+ 'avendb-backups.yml': [], 'site-same.yml': [], 'full-checks.yml': [], 'infra-checks.yml': ['infra'],
  'uptime.yml': [], 'network-audit.yml': [], 'ci-budget.yml': [], 'gate.yml': [], 'old-vault.yml': [], 'founders.yml': [], 'site-media.yml': [],
 };
 // What the server's image build reads beyond the code the tests compile (avendb/Dockerfile.server, cargo-chef's recipe).

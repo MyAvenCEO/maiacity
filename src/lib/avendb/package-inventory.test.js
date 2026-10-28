@@ -20,7 +20,7 @@ test('package inventories read local authorized files while peer demand remains 
   reads.push(op); return { ok: { rows: [], totalEntries: 0, readableEntries: 0 } };
  }), take: out => answers.push(out), timing: () => () => {} });
  try {
-  for (const route of ['models', 'code']) {
+  for (const route of ['models']) {
    assert.equal(summaryView('/app/', `#${route}/selected`), true);
    assert.equal(needsWorldEntries({ entriesComplete: false }, route), false);
   }
@@ -39,8 +39,8 @@ test('package inventory distinguishes loading, failed and incomplete absence', (
  assert.match(missingPackageLabel('ready'), /local entries/);
 });
 
-test('Models and Code compile with scoped inventory and preserve incomplete world', async () => {
- for (const name of ['Models', 'Code']) {
+test('Models compiles with scoped inventory and preserves incomplete world', async () => {
+ for (const name of ['Models']) {
   const source = await readFile(new URL(`./${name}.svelte`, import.meta.url), 'utf8');
   compile(source, { filename: `${name}.svelte`, generate: 'client' });
   assert.ok(source.includes('entryCollection(() => api, () => packageQuery(vault, actor))'));

@@ -9,7 +9,7 @@ export const completeEntries = world => !!world && world.entriesComplete !== fal
 
 /** Legacy consumers need a complete world; Assets, Docs and package pages own scoped inventories.
  * @param {any} world @param {string} tab */
-export const needsWorldEntries = (world, tab) => world?.entriesComplete === false && !['home', 'assets', 'docs', 'models', 'code', 'library'].includes(tab);
+export const needsWorldEntries = (world, tab) => world?.entriesComplete === false && !['home', 'assets', 'docs', 'models', 'library'].includes(tab);
 
 /** What the Shell shows for `tab`: the view at once, never a loading screen, with how fresh it is. While the world
  * in hand is the summary and the view needs entries, it paints what it has and says it is still reading this view's

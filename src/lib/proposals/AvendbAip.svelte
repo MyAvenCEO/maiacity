@@ -8,12 +8,10 @@
 	alone, and only that review counts). Accepting merges every line at once; a new entry's line (a draft) lands in main
 	only then, every field of it shown as added. Who accepts it measures it too, on this device: where its objective
 	names measuring logic, Measure runs that logic on its lines here and records the numbers as the vault's readings
-	(./measure.js), which its `measured "name"` metrics count; and in theOS on a Mac, with Lean got there (Get Lean,
-	which names its sizes), Measure checks the objective with real Lean too and records its verdict (./lean.js).
+	(./measure.js), which its `measured "name"` metrics count.
 -->
 <script>
 	// @ts-nocheck — plain JS
-	import { base } from '$app/paths';
 	import { linkHref } from '$lib/markdown/index.js';
 	import ProposedAssets from '$lib/avendb/ProposedAssets.svelte';
 	import Objective from './Objective.svelte';
@@ -25,7 +23,6 @@
 	import { acting, authorsLine, nameOf } from '$lib/avendb/vaults.js';
 	import { when } from './aips.js';
 	import { measureAip, readingsOf } from './measure.js';
-	import { leanDue, mb, verdictOf } from './lean.js';
 
 	/** a: the AIP in the app's shape (./aips.js fromAvendb); onchanged: after a change, to read the list again */
 	let { a, onchanged } = $props();
@@ -92,38 +89,7 @@
 	const measurable = $derived(
 		!aip.bare && ownVault && as !== aip.author && !!aip.objective?.measures?.length && ['objective', 'proposed'].includes(aip.stage)
 	);
-	// checking it with real Lean (N3): in theOS alone, by its vault, never its author, an objective that reads
-	const checkable = $derived(
-		!!session.mac && !aip.bare && ownVault && as !== aip.author && !!aip.objective && !aip.objective.error && ['objective', 'proposed'].includes(aip.stage)
-	);
-	/** what Lean is on this Mac (avendb-device's `leanEngine`): `{can, here, download, kept, getting, failed, engine}` */
-	let lean = $state(null);
-	const readLean = async () => (lean = (await session.mac?.call('leanEngine').catch(() => null)) ?? lean);
-	$effect(() => {
-		if (checkable && !lean) readLean();
-	});
-	const leanHere = $derived(checkable && !!lean?.here);
-	const measureWhat = $derived(
-		measurable && leanHere
-			? 'Runs its measuring logic on its lines and checks its objective with Lean'
-			: measurable
-				? 'Runs its measuring logic on its lines'
-				: 'Checks its objective with Lean'
-	);
-	async function getLean() {
-		const what = 'Getting Lean for this Mac';
-		const poll = setInterval(async () => {
-			const at = (await readLean())?.getting;
-			if (at && session.doing.startsWith(what)) session.doing = `${what}: ${mb(at.at)} of ${mb(at.of)}`;
-		}, 1000);
-		try {
-			await session.attempt(what, async () => (lean = await session.mac.call('leanGet')));
-		} finally {
-			clearInterval(poll);
-			await readLean();
-		}
-	}
-	/** what the last Measure found: a line per logic and side, Lean's verdict, or that nothing was new */
+	/** what the last Measure found: a line per logic and side, or that nothing was new */
 	let found = $state(null);
 	const asked = async (op) => {
 		const r = await session.ask(op);
@@ -133,20 +99,13 @@
 	async function measure() {
 		const label = aip.label ?? 'the idea';
 		let rows = [];
-		let checked = null;
 		const ran = await session.attempt(`Measuring ${label} on this ${session.mac ? 'Mac' : 'device'}`, async () => {
-			if (measurable) rows = await measureAip({ ask: asked, a: aip, vault: aip.vault, me: as });
-			if (leanHere && leanDue(aip.objective, as)) checked = await session.mac.call('leanCheck', aip.objective.lean);
+			rows = await measureAip({ ask: asked, a: aip, vault: aip.vault, me: as });
 		});
 		if (!ran) return;
-		found = [
-			...rows.map((r) => `${r.logic}${r.side ? ` on ${r.side === 'main' ? 'main' : 'the proposal'}` : ''}: ${r.error ?? r.readings.map(([n, v]) => `${n} ${v}`).join(', ')}`),
-			...(checked
-				? [checked.ok ? `Lean accepts its objective (${checked.ms} ms)` : `Lean rejects its objective at ${checked.error.line}:${checked.error.column}: ${checked.error.message}`]
-				: [])
-		];
+		found = rows.map((r) => `${r.logic}${r.side ? ` on ${r.side === 'main' ? 'main' : 'the proposal'}` : ''}: ${r.error ?? r.readings.map(([n, v]) => `${n} ${v}`).join(', ')}`);
 		if (!found.length) found = ['Nothing new to measure: it was measured on these lines already.'];
-		const ops = [...readingsOf(aip.entry, rows, as), ...(checked ? [verdictOf(aip.entry, checked, as)] : [])];
+		const ops = readingsOf(aip.entry, rows, as);
 		if (ops.length && (await session.runAll(`Recording what ${label} measured`, ops))) onchanged();
 	}
 </script>
@@ -161,21 +120,12 @@
 		<section class="target">
 			<h3>Objective</h3>
 			<Objective o={aip.objective} />
-			{#if measurable || leanHere}
+			{#if measurable}
 				<div class="measure">
 					<button disabled={!!session.doing} onclick={measure}>Measure</button>
-					<small class="dim">{measureWhat} here, on this {session.mac ? 'Mac' : 'device'}, and records what it finds.</small>
+					<small class="dim">Runs its measuring logic on its lines here, on this {session.mac ? 'Mac' : 'device'}, and records what it finds.</small>
 				</div>
 				{#if found}<ul class="found">{#each found as f, i (i)}<li>{f}</li>{/each}</ul>{/if}
-			{/if}
-			{#if checkable && lean?.can && !lean.here}
-				<div class="measure">
-					<button disabled={!!session.doing} onclick={getLean}>Get Lean</button>
-					<small class="dim"
-						>Lean {lean.version} checks objectives on this Mac, locked away from your files and the network: {mb(lean.download)} read from
-						Maia City in avenDB (<a href="{base}/app/#code/lean">Code</a>), {mb(lean.kept)} kept on this Mac.{lean.failed ? ` The last try failed: ${lean.failed}` : ''}</small
-					>
-				</div>
 			{/if}
 		</section>
 	{/if}
