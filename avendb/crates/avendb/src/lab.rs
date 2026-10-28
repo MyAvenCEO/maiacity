@@ -99,7 +99,7 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 mod blind_index;
 #[path = "lab/held.rs"]
 pub(crate) mod held;
-pub use held::{Placed, Spill};
+pub use held::{Placed, ShelfFile, Spill};
 #[cfg(test)]
 #[path = "lab/query_coverage.rs"]
 mod query_coverage;

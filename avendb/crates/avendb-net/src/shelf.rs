@@ -48,7 +48,9 @@ use iroh_blobs::hashseq::HashSeq;
 use iroh_blobs::protocol::ChunkRangesExt as _;
 use iroh_blobs::store::IROH_BLOCK_SIZE;
 use iroh_blobs::store::mem::MemStore;
-use iroh_blobs::{BlobFormat, Hash, HashAndFormat};
+use iroh_blobs::{BlobFormat, HashAndFormat};
+/// A blob's BLAKE3 hash, as a shelf names its blobs.
+pub use iroh_blobs::Hash;
 use n0_future::task;
 use range_collections::range_set::RangeSetRange;
 use tokio::sync::{mpsc, oneshot};
@@ -107,9 +109,16 @@ pub struct Shelf {
     bounded: Option<BoundedReader>,
     access: Option<Access>,
     readonly: bool,
-    /// The folder its blobs are files in, `blobs/<hash>`, where it is a folder's (`disk`): what a device's spill
-    /// reads its edits from in place (`local_blob`).
-    local: Option<Arc<std::path::PathBuf>>,
+    /// Where its finished blobs are files, a folder's (`disk`) or a page's OPFS: what a device's spill reads its edits
+    /// from in place (`blob_file`).
+    files: Option<Arc<dyn BlobFiles>>,
+}
+
+/// Where a shelf's finished blobs are files of their own, each read in place as a spill reads them
+/// (`avendb::lab::Placed`): a folder's `blobs/<hash>` (`disk`), a page's in OPFS.
+pub trait BlobFiles: Send + Sync + std::fmt::Debug {
+    /// The file finished blob `hash` is, held to be read, if it is one.
+    fn open(&self, hash: Hash) -> n0_future::boxed::BoxFuture<Option<Arc<dyn avendb::pages::Space>>>;
 }
 #[derive(Clone, Debug)]
 enum Route {
@@ -269,7 +278,7 @@ impl Shelf {
                 bounded: None,
                 access: None,
                 readonly: false,
-                local: None,
+                files: None,
             },
             rx,
         )
@@ -344,20 +353,19 @@ impl Shelf {
     }
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn native(queue: crate::disk_queue::Queue<Call>, source: crate::writer::Source) -> Self {
-        Self { route: Route::Native { queue, source }, atomic: true, bounded: None, access: None, readonly: true, local: None }
+        Self { route: Route::Native { queue, source }, atomic: true, bounded: None, access: None, readonly: true, files: None }
     }
 
-    /// It, its blobs files of folder `dir`'s `blobs/` (`local_blob`).
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn with_local(mut self, dir: std::path::PathBuf) -> Self {
-        self.local = Some(Arc::new(dir));
+    /// It, its finished blobs the files `files` opens (`blob_file`).
+    pub fn with_blob_files(mut self, files: Arc<dyn BlobFiles>) -> Self {
+        self.files = Some(files);
         self
     }
 
-    /// The file blob `hash` is, where its blobs are files in a folder (`disk`): finished blobs are never written to
-    /// again, so a reader holding the file open reads what the blob held, even after the shelf lets it go.
-    pub(crate) fn local_blob(&self, hash: Hash) -> Option<std::path::PathBuf> {
-        Some(self.local.as_ref()?.join("blobs").join(hash.to_hex()))
+    /// The file finished blob `hash` is, where its blobs are files: finished blobs are never written to again, so a
+    /// reader holding the file reads what the blob held.
+    pub(crate) async fn blob_file(&self, hash: Hash) -> Option<Arc<dyn avendb::pages::Space>> {
+        self.files.as_ref()?.open(hash).await
     }
     /// An independent read handle; it may be used to claim a later writer after
     /// this owner has completed shutdown, but cannot write through the current owner.

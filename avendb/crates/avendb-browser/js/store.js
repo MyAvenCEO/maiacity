@@ -94,6 +94,13 @@ export class Store {
 		return this.call('outboard', [hash]);
 	}
 
+	/** Finished blob `hash` as a file, which the device's spill reads its edits of in place.
+	 * @param {string} hash
+	 * @returns {Promise<File>} */
+	file(hash) {
+		return this.call('file', [hash]);
+	}
+
 	/** @param {string} name
 	 * @param {number} at
 	 * @param {Uint8Array<ArrayBuffer>} bytes */

@@ -90,12 +90,12 @@ pub fn open(root: &Path) -> Result<Shelf> {
     };
     let selected = generation(dir.file_name().and_then(|n| n.to_str()).expect("generation name")).expect("generation");
     let anchor = File::open(&dir)?;
-    let local = dir.clone();
+    let blobs = Arc::new(Blobs(dir.join("blobs")));
     let on = Arc::new(Folder { dir, anchor });
     let bounded = on.clone();
     let queue = crate::disk_queue::Queue::start(move |call| on.answer(call));
     let source = crate::writer::Source::for_generation(root, selected);
-    Ok(Shelf::native(queue, source).with_local(local).with_bounded_get(move |name, limit| {
+    Ok(Shelf::native(queue, source).with_blob_files(blobs).with_bounded_get(move |name, limit| {
         let on = bounded.clone();
         async move { tokio::task::spawn_blocking(move || on.get_bounded(&name, limit)).await.map_err(io::Error::other)? }
     }))
@@ -562,4 +562,15 @@ mod reader_tests {
         drop(folder); fs::remove_dir_all(root).unwrap();
     }
 
+}
+
+/// A folder's finished blobs, `blobs/<hash>`, each a file a spill reads in place (`crate::shelf::BlobFiles`).
+#[derive(Debug)]
+struct Blobs(PathBuf);
+
+impl crate::shelf::BlobFiles for Blobs {
+    fn open(&self, hash: Hash) -> n0_future::boxed::BoxFuture<Option<Arc<dyn avendb::pages::Space>>> {
+        let path = self.0.join(hash.to_hex());
+        Box::pin(async move { avendb::lab::ShelfFile::open(&path).ok() })
+    }
 }

@@ -80,7 +80,7 @@ enum File {
     Space(Arc<dyn Space>),
     /// A file of its shelf's that holds records as they went in, a pack of edits (`Placed`): read where they are, never
     /// written or removed by it.
-    Shelf(fs::File),
+    Shelf(Arc<dyn Space>),
 }
 
 impl File {
@@ -114,7 +114,7 @@ impl File {
         match self {
             File::Own { file, .. } => read_at(&file.lock().expect("a spill file").0, &mut bytes, at)?,
             File::Space(space) => space.read_at(at, &mut bytes)?,
-            File::Shelf(file) => read_at(file, &mut bytes, at)?,
+            File::Shelf(file) => file.read_at(at, &mut bytes)?,
         }
         Ok(bytes)
     }
@@ -229,14 +229,39 @@ impl Slot {
 }
 
 /// Where a signed edit is in a file of its device's shelf as the device takes it back (`Lab::restore_page`): the file,
-/// its place there, its length, and the BLAKE3 hash of its bytes, the edit on the wire. A spill in a folder of its own
-/// indexes it there instead of copying it into its file (`Signeds::insert_placed`).
+/// its place there, its length, and the BLAKE3 hash of its bytes, the edit on the wire. A spill indexes it there
+/// instead of copying it into its own file or space (`Signeds::insert_placed`). One file is one `Arc`: the spill holds
+/// each once, by it.
 #[derive(Clone, Debug)]
 pub struct Placed {
-    pub file: Arc<PathBuf>,
+    pub file: Arc<dyn Space>,
     pub at: u64,
     pub len: u32,
     pub sum: [u8; 32],
+}
+
+/// A finished file of a shelf in a folder, as a spill reads records of it in place (`Placed::file`): a shelf never
+/// writes a finished blob again, and the file held open reads what it held even after the shelf lets it go.
+#[derive(Debug)]
+pub struct ShelfFile(fs::File);
+
+impl ShelfFile {
+    /// The file at `path`, held open to be read.
+    pub fn open(path: &Path) -> io::Result<Arc<dyn Space>> {
+        Ok(Arc::new(ShelfFile(fs::File::open(path)?)))
+    }
+}
+
+impl Space for ShelfFile {
+    fn append(&self, _: &[u8]) -> io::Result<u64> {
+        Err(io::Error::other("a shelf's file takes nothing"))
+    }
+    fn read_at(&self, at: u64, bytes: &mut [u8]) -> io::Result<()> {
+        read_at(&self.0, bytes, at)
+    }
+    fn len(&self) -> u64 {
+        self.0.metadata().map_or(0, |m| m.len())
+    }
 }
 
 /// The records a spill read or took lately, each with when it was used last, `budget` bytes of them at most.
@@ -300,7 +325,7 @@ struct Spilled<V: Record> {
     file: Arc<File>,
     /// Its files: its own first, then those of its shelf it reads records of in place (`insert_at`), each once.
     files: Vec<Arc<File>>,
-    shelf_files: HashMap<Arc<PathBuf>, u32>,
+    shelf_files: HashMap<usize, u32>,
     at: Runs,
     count: usize,
     bytes: u64,
@@ -316,24 +341,14 @@ impl<V: Record> Spilled<V> {
         Ok(Spilled { spill: spill.clone(), what, file, files, shelf_files: HashMap::new(), at, count: 0, bytes: 0, hot })
     }
 
-    /// The record under `k` is `len` bytes at `at` in file `path` of its shelf, which hash to `sum`: indexed there, not
-    /// copied. A spill in a space (a page's OPFS) copies it, as it reads no files; so does one whose file doesn't open.
-    fn insert_at(&mut self, k: V::Key, v: V, path: &Arc<PathBuf>, at: u64, len: u32, sum: [u8; 32]) {
-        if self.spill.space.is_some() {
-            return self.insert(k, v);
+    /// The record under `k` is `len` bytes at `at` in `file` of its shelf, which hash to `sum`: indexed there, not
+    /// copied.
+    fn insert_at(&mut self, k: V::Key, shelf: &Arc<dyn Space>, at: u64, len: u32, sum: [u8; 32]) {
+        let next = self.files.len() as u32;
+        let file = *self.shelf_files.entry(Arc::as_ptr(shelf) as *const () as usize).or_insert(next);
+        if file == next {
+            self.files.push(Arc::new(File::Shelf(shelf.clone())));
         }
-        let file = match self.shelf_files.get(path) {
-            Some(&n) => n,
-            None => match fs::File::open(path.as_path()) {
-                Ok(f) => {
-                    let n = self.files.len() as u32;
-                    self.files.push(Arc::new(File::Shelf(f)));
-                    self.shelf_files.insert(path.clone(), n);
-                    n
-                }
-                Err(_) => return self.insert(k, v),
-            },
-        };
         self.set(&k, Some(Slot { file, at, len, sum }));
     }
 
@@ -584,7 +599,7 @@ impl Signeds {
             self.signers.entry(sig.keys.id()).or_insert_with(|| (sig.keys.clone(), 0)).1 += 1;
         }
         let spilled = self.held.spilled.as_mut().expect("spilled");
-        spilled.insert_at(id, Arc::new(signed), &placed.file, placed.at, placed.len, placed.sum);
+        spilled.insert_at(id, &placed.file, placed.at, placed.len, placed.sum);
     }
 
     pub(crate) fn remove(&mut self, id: &EditId) {
@@ -724,6 +739,31 @@ mod tests {
         assert_eq!(keys.keys().len(), 49_999);
         assert!(keys.memory() < 4 << 20, "{}", keys.memory());
         assert!(space.len() > 50_000 * 64, "the records and pages are in the space");
+    }
+
+    /// A spill in a space, as a page's, reads records where a file of its shelf holds them, each file held once
+    /// however many records it holds, and copies nothing of them into its space.
+    #[test]
+    fn a_spill_in_a_space_reads_records_in_place() {
+        let space = Arc::new(crate::pages::MemorySpace::default());
+        let spill = Spill::in_space(space.clone(), 64 << 10);
+        let mut keys = Keys::default();
+        keys.spill_keys(&spill).expect("spilled");
+        let key = |n: u32| -> Arc<[u8]> { Arc::from(&n.to_le_bytes().repeat(16)[..]) };
+        let pack = crate::pages::MemorySpace::default();
+        let placed: Vec<(BlobId, u64)> =
+            (0..1_000u32).map(|n| (BlobId::of(&key(n)), pack.append(&key(n)).expect("in the pack"))).collect();
+        let shelf: Arc<dyn Space> = Arc::new(pack);
+        let spilled = keys.spilled.as_mut().expect("spilled");
+        let before = space.len();
+        for (n, &(id, at)) in placed.iter().enumerate() {
+            spilled.insert_at(id, &shelf, at, 64, *blake3::hash(&key(n as u32)).as_bytes());
+        }
+        assert_eq!(spilled.files.len(), 2, "its own and the shelf's");
+        for (n, &(id, _)) in placed.iter().enumerate().step_by(37) {
+            assert_eq!(keys.get(&id).as_deref(), Some(&key(n as u32)[..]), "read from the shelf's file");
+        }
+        assert!(space.len() - before < 1_000 * 64, "no record copied into its space");
     }
 
     /// A record changed in the spill's file, as by its disk, is never read as another: the server stops.

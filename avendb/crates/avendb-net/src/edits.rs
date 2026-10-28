@@ -743,8 +743,8 @@ async fn take_head(shelf: &Shelf, n: u64, warm: &Warm, taking: &mut Taking, to: 
     to.begin(Some(named), warm).await?;
     taking.keys.extend(head.keys.iter().copied());
     for &(hash, size) in &head.packs {
-        // a pack in a file of a folder's shelf: its edits are read from it in place from now on (`Placed`)
-        let file = shelf.local_blob(hash).map(Arc::new);
+        // a pack that is a file of its shelf's: its edits are read from it in place from now on (`Placed`)
+        let file = shelf.blob_file(hash).await;
         let mut reader = shelf.blob_reader(hash, size);
         ensure!(reader.take(PACK.len()).await?.as_ref() == PACK, "its pack {hash} is no pack of edits");
         let mut page = Vec::new();
