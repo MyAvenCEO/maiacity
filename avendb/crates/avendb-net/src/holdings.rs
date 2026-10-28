@@ -176,6 +176,21 @@ impl Logs {
         self.size = size;
     }
 
+    /// `update` for the first `held` edits of a real device log, those its shelf holds (`edits::Edits::held`): while
+    /// the log appends it extends as `held` grows, so a node whose shelf lags indexes each edit once, not its whole
+    /// held past at every step (an iPhone's shelf lags most when it is busiest).
+    pub(crate) fn update_held(&mut self, log: &avendb::policy::Log, held: usize, size: (usize, usize)) {
+        let lineage = log.lineage();
+        let (edits, ids) = (&log.edits()[..held], &log.ids()[..held]);
+        if self.lineage.as_ref() == Some(&lineage) && self.indexed <= held {
+            self.extend(edits, ids, size);
+        } else {
+            *self = Self::of(edits, ids, size);
+            self.lineage = Some(lineage);
+        }
+        self.revision = None;
+    }
+
     /// Update an append-only sequence. Callers with a mutable device log must use `update` instead.
     /// `size` also includes keys, which require no re-indexing when no edit was appended.
     pub(crate) fn extend(&mut self, edits: &[Edit], ids: &[EditId], size: (usize, usize)) {
@@ -384,6 +399,43 @@ mod tests {
         log.let_go(&log.ids().iter().copied().collect());
         index.update(&log, (0, 0));
         assert!(index.of.is_empty() && index.at.is_empty() && index.closed.is_empty());
+    }
+
+    #[test]
+    fn a_held_index_that_grows_with_the_shelf_is_the_one_built_anew() {
+        let mut w = world();
+        let h = handbook(&mut w);
+        for i in 0..8 {
+            w.lab.edit(w.mac_a, h.coop, h.welcome, |item| item.set_text(2, &format!("version {i}"))).expect("edit");
+        }
+        let source = w.lab.log(w.mac_a).edits().to_vec();
+        let same = |index: &Logs, log: &avendb::policy::Log, held: usize| {
+            let expected = Logs::of(&log.edits()[..held], &log.ids()[..held], index.size);
+            assert_eq!(index.frontiers(), expected.frontiers(), "held {held}");
+            assert_eq!((&index.at, &index.closed), (&expected.at, &expected.closed), "held {held}");
+        };
+        // edits arriving out of order, the shelf a few behind, and keeping some steps
+        let mut order = source.clone();
+        order.reverse();
+        order.rotate_left(source.len() / 3);
+        let mut log = avendb::policy::Log::new();
+        let mut index = Logs::of(&[], &[], (0, 0));
+        for (n, edit) in order.iter().enumerate() {
+            log.receive([edit.clone()]);
+            for held in [n.saturating_sub(3), n.saturating_sub(1), n + 1] {
+                index.update_held(&log, held, (n + 1, 0));
+                same(&index, &log, held);
+            }
+        }
+        // a shelf written again from the start, a withdrawal, and a clone each build it anew
+        index.update_held(&log, 2, (log.ids().len(), 0));
+        same(&index, &log, 2);
+        log.let_go(&[log.ids()[0]].into());
+        index.update_held(&log, log.ids().len(), (log.ids().len(), 0));
+        same(&index, &log, log.ids().len());
+        let copy = log.clone();
+        index.update_held(&copy, copy.ids().len() - 1, (copy.ids().len(), 0));
+        same(&index, &copy, copy.ids().len() - 1);
     }
 
     #[test]
