@@ -1021,7 +1021,7 @@ impl Service {
             "variable": agent::KEY_VAR }))
     }
 
-    /// `addTestPasskey`: a disposable passkey for the test browser on this Mac (scripts/devx/live-device.mjs), made here
+    /// `addTestPasskey`: a disposable passkey for the test browser on this Mac (aven/ops/devx/live-device.mjs), made here
     /// and added as one more owner key of its person's vault, in one sheet of their passkey or a touch
     /// (`Node::add_owner_passkey`): the browser signs in with it as another device of theirs, admitted by their vault's
     /// standing. Its key goes nowhere but the login Keychain, as the script reads it (`{id, jwk, prf}`); revoking the
