@@ -12,7 +12,7 @@ name: avenDB WebAssembly
 # avendb.yml also runs before every deploy, only read.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths:
       - 'avendb/crates/**'
       - '!avendb/crates/*/tests/**'
@@ -33,8 +33,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A batch's PR (labelled `batch`, or titled "Batch …") gets its WebAssembly while it is still a draft (Goal 6 D2,
+  # Samuel 2026-10-28): a draft runs no other check, so the commit restarts nothing, and when the PR goes ready its
+  # WebAssembly is already the one its sources build, so the one CI run isn't started twice. Other drafts build none.
   wasm:
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft || contains(github.event.pull_request.labels.*.name, 'batch') || startsWith(github.event.pull_request.title, 'Batch ')
     name: The page's WebAssembly
     runs-on: ubuntu-latest
     timeout-minutes: 30

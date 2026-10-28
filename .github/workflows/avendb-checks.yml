@@ -55,6 +55,10 @@ on:
         description: Run the performance gates alone (a draft's branch, whose PR runs no suite)
         type: boolean
         default: false
+      bench_rounds:
+        description: Rounds of each bench, main's and the branch's in turn (the spread is printed)
+        type: number
+        default: 1
 
 permissions:
   contents: read
@@ -421,6 +425,10 @@ jobs:
   #   live      a live edit's delay while a device catches up, on a calm simulated link and a phone's (avendb-net's
   #             tests/sync_bench.rs, plan D3), one fixture for both
   # A gate missed fails the shard, and so the PR; a target not reached yet is printed and fails nothing.
+  # Each shard also times main's build on the same runner, the two taking turns (Goal 6 D3, Samuel 2026-10-28): a
+  # shared runner's speed swings from run to run, so every gate is also held against main's value of it
+  # (bench-gates.json vs_main). scripts/ci/avendb-bench-shard.mjs builds and runs both the same way; main's programs
+  # come from a cache keyed on main's commit (main's own runs fill it), else built here once in a worktree beside.
   bench:
     needs: impact
     name: avenDB performance gates (${{ matrix.shard }})
@@ -445,9 +453,15 @@ jobs:
       # profile's one unit and full LTO are for the tile's WebAssembly, and took minutes more to build
       CARGO_PROFILE_RELEASE_LTO: thin
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
+      # live: without the debug checks that replay a whole log on each write (lab.rs), so the gates time what a release
+      # does; on the job, so rust-cache's key takes it in. Every test shard keeps those checks.
+      RUSTFLAGS: ${{ matrix.shard == 'live' && '--cfg avendb_no_replay_checks' || '' }}
+      SHARD: ${{ matrix.shard }}
     # AVENDB_TEST_PAIRS is set on each step: a job's env can't read the runner context (runner.temp)
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.9.3
         with:
@@ -458,53 +472,70 @@ jobs:
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
-      - name: avenDB at 10k, 100k and 1M edits, a first sync, and Postgres beside it
+      # a pull request is checked out merged onto main's head, its base; a run of a branch is measured against where
+      # it left main; main itself against nothing
+      - name: main's commit to measure against
+        id: base
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base="$PR_BASE"
+          [ -n "$base" ] || base="$(git merge-base HEAD origin/main)"
+          [ "$base" != "$(git rev-parse HEAD)" ] || base=""
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "main's commit: ${base:-none (this is main)}"
+      - name: main's bench programs, from the cache
+        id: main-bin
+        if: steps.base.outputs.sha
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: ${{ runner.temp }}/bench-main
+          key: bench-bin-${{ matrix.shard }}-${{ steps.base.outputs.sha }}-${{ hashFiles('scripts/ci/avendb-bench-shard.mjs') }}
+      - name: main's bench programs, built here
+        if: steps.base.outputs.sha && steps.main-bin.outputs.cache-hit != 'true'
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/main" "$BASE"
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/avendb/target" bun scripts/ci/avendb-bench-shard.mjs build "$SHARD" "$RUNNER_TEMP/main/avendb" "$RUNNER_TEMP/bench-main"
+      - if: steps.base.outputs.sha && steps.main-bin.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ${{ runner.temp }}/bench-main
+          key: bench-bin-${{ matrix.shard }}-${{ steps.base.outputs.sha }}-${{ hashFiles('scripts/ci/avendb-bench-shard.mjs') }}
+      - name: This commit's bench programs
+        run: bun scripts/ci/avendb-bench-shard.mjs build "$SHARD" avendb "$RUNNER_TEMP/bench-branch"
+      # on main, this commit's programs are the next pull requests' main
+      - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ${{ runner.temp }}/bench-branch
+          key: bench-bin-${{ matrix.shard }}-${{ github.sha }}-${{ hashFiles('scripts/ci/avendb-bench-shard.mjs') }}
+      # main's and this commit's in turn, each round; a run of main's that fails warns and leaves its gates unheld
+      - name: The benches, main's and this commit's taking turns
+        env:
+          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+          ROUNDS: ${{ inputs.bench_rounds || 1 }}
+          HAS_MAIN: ${{ steps.base.outputs.sha != '' }}
+          PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        run: |
+          for i in $(seq 1 "$ROUNDS"); do
+            if [ "$HAS_MAIN" = true ]; then
+              AVENDB_TEST_PAIRS="$PAIRS-main" bun scripts/ci/avendb-bench-shard.mjs run "$SHARD" avendb "$RUNNER_TEMP/bench-main" "$RUNNER_TEMP/main.log" \
+                || echo "::warning::main's $SHARD bench failed in round $i: its gates are held by their fixed limits alone"
+            fi
+            AVENDB_TEST_PAIRS="$PAIRS" bun scripts/ci/avendb-bench-shard.mjs run "$SHARD" avendb "$RUNNER_TEMP/bench-branch" "$RUNNER_TEMP/bench.log"
+          done
+      - name: Postgres beside it
         if: matrix.shard == 'core'
         working-directory: avendb
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
-          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
-        run: |
-          cargo test --release --locked -p avendb --test bench_gates --no-run
-          cargo test --release --locked -p avendb --test first_sync_moves --no-run
-          for n in 10000 100000 1000000; do
-            AVENDB_BENCH_N=$n cargo test --release --locked -p avendb --test bench_gates -- --ignored --nocapture --exact bench_scale \
-              | tee -a "$RUNNER_TEMP/bench.log"
-          done
-          AVENDB_BENCH_FIRST=10000:2000,50000:3000 cargo test --release --locked -p avendb --test bench_gates -- --ignored --nocapture --exact bench_first_sync \
-            | tee -a "$RUNNER_TEMP/bench.log"
-          # a first sync's pages with moves cost the same however much is held (no whole replays): ~2 min at 30,000
-          AVENDB_MOVES_HELD=30000 cargo test --release --locked -p avendb --test first_sync_moves -- --ignored --nocapture --exact a_page_with_moves_costs_the_same_however_much_is_held \
-            | tee -a "$RUNNER_TEMP/bench.log"
-          bun ../scripts/ci/avendb-bench-pg.mjs 10000,100000,1000000 | tee "$RUNNER_TEMP/pg.log"
-      - name: The carriers, direct and through the relay
-        if: matrix.shard == 'carriers'
-        working-directory: avendb
-        env:
-          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
-        run: |
-          AVENDB_CARRIER=direct,relay,relay_link cargo test --locked -p avendb-server --features test-fixtures --test relay_bench -- --ignored --nocapture --exact bench_carrier \
-            | tee -a "$RUNNER_TEMP/bench.log"
-      # calm and phone: a live edit's delay during a catch-up of 600 edits (G4); phone_bulk and its control calm_bulk:
-      # the catch-up's use of the link on 20 MB of fat edits (G3), about 60 s on the phone link today, 4 s at 80 % of it
-      # optimised (--profile live) and without the debug checks that replay a whole log on each write (lab.rs), so the
-      # gates time what a release does; every other job keeps those checks
-      - name: Live sync during a catch-up, on a calm link and a phone's
-        if: matrix.shard == 'live'
-        working-directory: avendb
-        env:
-          RUSTFLAGS: --cfg avendb_no_replay_checks
-          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
-        # both test programs built in one cargo call, side by side: one after the other they took 3m06s and 2m39s
-        run: |
-          cargo test --locked --profile live -p avendb-net --features test-fixtures --test sync_bench --lib --no-run
-          AVENDB_LIVE_LINK=calm,phone,phone_bulk,calm_bulk cargo test --locked --profile live -p avendb-net --features test-fixtures --test sync_bench -- --ignored --nocapture --exact bench_live \
-            | tee -a "$RUNNER_TEMP/bench.log"
-          # G5: a person's write behind a catch-up slice and 32 queued reads (lab_schedule_bench.rs)
-          cargo test --locked --profile live -p avendb-net --features test-fixtures --lib -- --ignored --nocapture \
-            --exact lab_schedule::bench::bench_writes_first | tee -a "$RUNNER_TEMP/bench.log"
+        run: bun ../scripts/ci/avendb-bench-pg.mjs 10000,100000,1000000 | tee "$RUNNER_TEMP/pg.log"
       - name: The gates
-        run: bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/bench.log" ${{ matrix.shard == 'core' && '"$RUNNER_TEMP/pg.log"' || '' }} --shard ${{ matrix.shard }}
+        run: |
+          base=(); [ -s "$RUNNER_TEMP/main.log" ] && base=(--base "$RUNNER_TEMP/main.log")
+          bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/bench.log" ${{ matrix.shard == 'core' && '"$RUNNER_TEMP/pg.log"' || '' }} --shard "$SHARD" "${base[@]}"
 
   # The phone-class row: avenDB's device as WebAssembly in Chromium and WebKit, as an iPhone's page runs it, taking a
   # peer's signed edits with their signatures checked (avendb-browser's `bench` feature, scripts/ci/avendb-bench-phone.mjs)

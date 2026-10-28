@@ -110,6 +110,13 @@ bun scripts/devx/collect.mjs --tasks                  # "Task: <branch>" lines f
   merged without its avenDB suite. Main's branch protection requires that one check. `bun scripts/ci/workflows.mjs`
   lints workflow files locally (check.mjs runs it when one changed). `bun scripts/ci/gate.mjs --plan origin/main HEAD`
   shows what the gate will wait for.
+- **The WebAssembly before ready** (Goal 6 D2): label the batch PR `batch` (or title it "Batch …"). CI then builds
+  and commits the page's WebAssembly while it is still a draft, where that commit restarts nothing. `collect.mjs` takes
+  that commit before each merge. Mark the PR ready only once "avenDB WebAssembly" on the draft's head has finished:
+  then the one CI run is not started a second time by the bot's commit.
+- **Speed gates hold the batch against main on the same runner** (Goal 6 D3): each bench shard runs main's build and
+  the batch's in turn (`scripts/ci/avendb-bench-shard.mjs`), and every gate holds its fixed limit and no more than
+  `vs_main.tolerance` worse than main. Dispatch avenDB checks with `bench_only` and `bench_rounds: 5` to see a spread.
 - **Once the PR is ready, the batch is closed.** `collect.mjs` refuses to merge more into a ready PR (each push restarts
   its CI). Late branches go in the next batch; `--late` only for a fix this run needs.
 - **Long benches and scale runs go to CI runners, never the 4-core box:** dispatch avenDB checks with `bench_only`
