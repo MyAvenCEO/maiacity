@@ -1,12 +1,12 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { fade } from 'svelte/transition';
-	import { session } from '$avendb/session.svelte.js';
-	import { sync, watchSync } from '$avendb/sync.svelte.js';
-	import { peerStatus } from '$avendb/sync-status.js';
-	import { watchRecipes } from '$content/assets/vault.js';
-	import { viewStatus } from '$avendb/view-status.js';
-	import { watchActiveReads } from '$avendb/active-reads.js';
+	import { session } from '$lib/avendb/session.svelte.js';
+	import { sync, watchSync } from '$lib/avendb/sync.svelte.js';
+	import { peerStatus, liveSync } from '$lib/avendb/sync-status.js';
+	import { watchRecipes } from '$lib/assets/vault.js';
+	import { viewStatus } from '$lib/avendb/view-status.js';
+	import { watchActiveReads } from '$lib/avendb/active-reads.js';
 	import { screenSlot } from './screen-slots.js';
 
 	/** how long something must take before the pill shows, and how long it stays once nothing does (ms) */
@@ -41,19 +41,29 @@
 		if (!shown) open = false;
 	});
 
+	/** a clock of a second while a sync runs, so "last page 4 s ago" and "waiting on … for 12 s" move with time too */
+	let clock = $state(Date.now());
+	$effect(() => {
+		if (!peers.active) return;
+		clock = Date.now();
+		const t = setInterval(() => (clock = Date.now()), 1000);
+		return () => clearInterval(t);
+	});
+	/** what a running sync does now: the edits it takes, from which peer, or what it waits on and for how long */
+	const live = $derived(liveSync(sync, Math.max(clock, sync.at)));
+
 	const n = (/** @type {number} */ x) => x.toLocaleString('en');
 	const covered = $derived(Math.max(0, sync.logs - sync.behind));
 	const view = $derived(viewStatus(reads, files));
 	/**
 	 * Collapsed, one short line: the one thing that matters now, a number only where it says something (Samuel
 	 * 2026-10-26: "way more compact … reduced to the actual sync / offline / online numbers"). In order: not known yet,
-	 * offline, logs still coming (how many of how many), a transfer running, files coming, the view unavailable, synced.
+	 * offline, a sync running (the logs in of how many, the edits it took, or what it waits on: `liveSync`), files coming, the view unavailable, synced.
 	 */
 	const line = $derived(
 		!sync.known ? 'Connecting'
 		: !sync.peers ? 'Offline'
-		: sync.behind > 0 ? `Syncing ${n(covered)}/${n(sync.logs)}`
-		: sync.pulling > 0 ? 'Syncing'
+		: live ? live.line
 		: files.waiting + files.reading > 0 ? `${n(files.waiting + files.reading)} files`
 		: view.state === 'unavailable' ? 'Not on this device'
 		: 'Synced'
@@ -64,6 +74,7 @@
 		['Peers', sync.known ? n(sync.peers) : '…'],
 		...(sync.behind > 0 ? [['Logs left', `${n(sync.behind)} of ${n(sync.logs)}`]] : []),
 		...(sync.pulling > 0 ? [['Transfers', n(sync.pulling)]] : []),
+		...(live?.rows ?? []),
 		...(files.waiting + files.reading > 0 ? [['Files', `${n(files.reading)} loading · ${n(files.waiting)} waiting`]] : []),
 		['View', view.state === 'local' ? 'on this device' : view.state === 'unavailable' ? 'not on this device' : view.state === 'unknown' ? 'checking' : 'loading']
 	]));
@@ -79,7 +90,7 @@
 	<div class="status" use:screenSlot={'right'} transition:fade={{ duration: 200 }}>
 		{#if open}
 			<dl class="details">
-				{#each details as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
+				{#each details as [k, v], i (i)}<dt>{k}</dt><dd>{v}</dd>{/each}
 			</dl>
 		{/if}
 		<button class="pill" onclick={() => (open = !open)} aria-expanded={open} aria-live="polite" class:offline title="Sync with your other devices">

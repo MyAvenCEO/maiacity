@@ -233,6 +233,12 @@ const RELAY_WAIT: Duration = Duration::from_secs(20);
 /// `LivePriority.lean` `takes`): a few pages' time on a phone's relay, where a page took 5-14 s.
 const HANDOVER: Duration = Duration::from_secs(15);
 
+/// How many times slower than an owed peer's link a claiming asking's pages may come before that peer takes its logs
+/// (`Claims::take`, `LivePriority.lean` `takes`): since pages are sized to their asker (S1b), a slow link's pages land
+/// every couple of seconds and its claim never stalls, so a browser took every log over a 20 KB/s relay to its Mac while
+/// the server that held them too waited (sim `a_browser_takes_what_it_lacks_from_the_fast_peer`, 2026-10-28).
+const SLOWER: u128 = 2;
+
 /// How long a node with no socket of its own waits for iroh to pick its relay before it has it pick again
 /// (`Node::on_relay`): iroh picks it by a report of how fast each relay answers, which a browser times by an HTTPS
 /// request; a report with no answer in its three seconds picks none, and the next comes only 20 to 26 seconds on.
@@ -248,6 +254,8 @@ const IDLE: Duration = Duration::from_secs(30);
 /// connection kept open, would hold its pull, and the sync bar, for ever (Samuel's iPhone 2026-10-21, "syncing" at 19%
 /// with two pulls running). The asking fails, and the node asks again as it does any it failed (`node_loop`).
 const PAGE_WAIT: Duration = Duration::from_secs(180);
+/// The most an asking waits for its peer to say the pages it makes (`Shared::sizes`): eight bytes, answered at once.
+const SIZING_WAIT: Duration = Duration::from_secs(10);
 
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
 /// agrees the keys of every connection along with X25519, and a peer that offers only classical groups finds none in
@@ -916,6 +924,8 @@ impl Node {
             blob_peers: Mutex::default(),
             follows: Mutex::default(),
             unpacked: Mutex::default(),
+            sizing: Mutex::default(),
+            rates: Mutex::default(),
             unbatched: Mutex::default(),
             uncut: Mutex::default(),
             unstubbed: Mutex::default(),
@@ -932,6 +942,7 @@ impl Node {
             size: watch::Sender::new(size),
             warm: AtomicBool::new(false),
             unsaved: Mutex::new(None),
+            names: Mutex::default(),
             sent: Sent::default(),
             jobs: Jobs::default(),
             traffic: traffic::Traffic::default(),
@@ -1817,8 +1828,46 @@ impl Node {
             heard.iter().filter_map(|(d, _)| differed.get(d).map(|(l, t)| json!({ "device": d.to_hex()[..8].to_string(),
                 "lacks": l.len(), "by_stub": t.by_stub, "stubs": t.stubs, "sample": t.sample }))).collect()
         };
+        // per peer, what moves while a catch-up runs, long before a log is whole (Samuel 2026-10-28: "with zero visible
+        // feedback the syncing UI doesn't reflect what is actually happening in real time"): whether a pull of it runs
+        // and since when, what it does now, the edits it took so far and since this device started, and when its last
+        // page came
+        let names = self.peer_names(heard.iter().map(|(d, _)| *d).collect()).await;
+        let from: Vec<Value> = heard.iter().map(|(d, _)| {
+            let job = running.iter().find(|j| j.kind == "pull" && j.subject == d.to_hex());
+            let pulled = self.shared.traffic.of(d);
+            json!({ "device": d.to_hex(), "name": names.get(d).cloned().flatten(),
+                "pulling": job.map(|j| json!({ "since": j.started, "stage": j.stage, "took": j.done })),
+                "pages": pulled.as_ref().map_or(0, |p| p.pages), "edits": pulled.as_ref().map_or(0, |p| p.new),
+                "last": pulled.as_ref().map_or(0, |p| p.last) })
+        }).collect();
+        let edits: u64 = heard.iter().filter_map(|(d, _)| self.shared.traffic.of(d)).map(|p| p.new).sum();
         json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages,
-            "unsaved": unsaved, "lacked": lacked })
+            "edits": edits, "from": from, "unsaved": unsaved, "lacked": lacked })
+    }
+
+    /// The names of devices `devices` by their cards (`world::cards`), each read once and kept (`Shared::names`), in
+    /// one background turn of the Lab for those it hasn't read yet.
+    async fn peer_names(&self, devices: Vec<SignerId>) -> HashMap<SignerId, Option<String>> {
+        let unread: Vec<SignerId> = {
+            let names = self.shared.names.lock().expect("names");
+            devices.iter().filter(|d| !names.contains_key(d)).copied().collect()
+        };
+        if !unread.is_empty() {
+            let read = self.shared.read_class(lab_schedule::Class::Background, move |lab, me| {
+                let mut by_vault: HashMap<VaultId, BTreeMap<SignerId, (EntryId, String)>> = HashMap::new();
+                unread.into_iter().map(|d| {
+                    let vault = lab.state(me).vaults().iter().find(|v| v.devices.contains(&d)).map(|v| v.id);
+                    let name = vault.and_then(|v| {
+                        by_vault.entry(v).or_insert_with(|| avendb::world::cards(lab, me, v)).get(&d).map(|(_, n)| n.clone())
+                    });
+                    (d, name)
+                }).collect::<Vec<_>>()
+            }).await;
+            self.shared.names.lock().expect("names").extend(read);
+        }
+        let names = self.shared.names.lock().expect("names");
+        devices.into_iter().map(|d| (d, names.get(&d).cloned().flatten())).collect()
     }
 
     /// Where it syncs from and how (Samuel 2026-10-22: "the whole sync topology … what comes directly p2p and what via
@@ -1922,6 +1971,7 @@ impl Node {
             "peers": peers,
             "gone": gone,
             "recent": s.traffic.recent(),
+            "lost": s.traffic.lost_json(),
             "live": s.traffic.live_json(),
             "trace": s.traffic.trace_json(),
             "carriers": s.transport_control.json(),
@@ -2409,6 +2459,11 @@ struct Shared {
     /// The sync connections whose node refused a request for a packed reply (K5, `session::PACKED`), a node from before
     /// it, by the connection (`Connection::stable_id`): it asks those for whole replies.
     unpacked: Mutex<HashSet<usize>>,
+    /// The page sizes of each sync connection's peer, by the connection, as its `session::SIZING` answer named them
+    /// (the least and the most page it makes), or `None` where it refused it, a peer from before S1b: asked unsized.
+    sizing: Mutex<HashMap<usize, Option<(usize, usize)>>>,
+    /// How fast each device's pages came lately (`pulls::Rate`), which the budget of the next asking of it reads.
+    rates: Mutex<HashMap<SignerId, pulls::Rate>>,
     /// Connections without usable supplemental proofs, independent of their packed-reply support.
     unbatched: Mutex<HashSet<usize>>,
     /// The connections whose peer refused a `session::CUTS`, a peer from before S6: asked page after page.
@@ -2443,6 +2498,9 @@ struct Shared {
     /// Since when its saves fail, how many failed, and why the last did: a full disk or an OPFS quota leaves what the
     /// device took off its shelf, which its person is told (`Node::synced`), never a silent stall. None once one saves.
     unsaved: Mutex<Option<Unsaved>>,
+    /// Each peer device's name, by its card in its vault, as `Node::synced` names the peers it pulls from: read once
+    /// a device, `None` for one that wrote none it holds.
+    names: Mutex<HashMap<SignerId, Option<String>>>,
     /// How many messages it has sent.
     sent: Sent,
     /// What it does in the background, as its person watches it (`Node::jobs`).
@@ -2907,7 +2965,38 @@ impl Shared {
         };
         // a fresh device asking for its first sync with the boxes held back asks the peer for their stubs first, to
         // count them as held (`session::STUBS`, `LazyBoxes.lean`), and for their bodies in the pull after this one
-        let stubbed = self.stubs(&peer, kind, scope.clone()).await;
+        // and the peer's page sizes beside them, once a connection (`Shared::sizes`), so no round trip waits on the other.
+        // On a direct path no asking waits for the sizes: one before they are in is asked unsized, served at the peer's
+        // most as a sized one there starts anyway (`pulls::START_PAGE`), and the next are sized (waiting for them cost
+        // phone_bulk 0.825 -> 0.801 of its link, 2026-10-28). Through a relay a page of the peer's most is the minute
+        // lost that sizing is for, and the round trip a small part of a page.
+        let relayed = way_of(&peer.conn) == "relay";
+        let known = self.sizing.lock().expect("sizing").get(&peer.conn.stable_id()).copied();
+        let sizes = async {
+            match known {
+                Some(sizes) => sizes,
+                None if relayed => self.sizes(&peer).await,
+                None => {
+                    if let Ok(activity) = self.admit() {
+                        let (shared, peer) = (self.clone(), peer.clone());
+                        task::spawn(async move {
+                            let _activity = activity;
+                            shared.sizes(&peer).await;
+                        });
+                    }
+                    None
+                }
+            }
+        };
+        let (stubbed, sizes) = future::zip(self.stubs(&peer, kind, scope.clone()), sizes).await;
+        // the page budget its pages state (`session::SIZED`, S1b): what the peer's pages carried in `pulls::PAGE_TIME`
+        // lately, so that a page lost in flight costs a couple of seconds of the link, not a minute of it; it moves with
+        // the rate at a page's start, where its cuts are asked again (`pulls::RESIZE`); unsized to a peer from before
+        let rate = || self.rates.lock().expect("rates").get(&device).cloned().unwrap_or_default();
+        let budget = sizes.map(|(least, most)| rate().budget(least, most, relayed));
+        let sized = if budget.is_some() { kind | session::SIZED } else { kind };
+        let stated = AtomicUsize::new(budget.unwrap_or(0));
+        let stated = &stated;
         // the logs a pull for the bodies of stubs answers for: all, or those it names
         let answers = match &scope {
             Scope::All => Some(None),
@@ -2943,9 +3032,13 @@ impl Shared {
                 request.ask.loose.sort();
                 request.ask.loose.dedup();
             }
-            match &base.1 {
+            let body = match &base.1 {
                 Some(vaults) => session::vaults_body(vaults, &request),
                 None => request.to_wire(),
+            };
+            match sizes {
+                Some(_) => session::sized_body(stated.load(Ordering::Relaxed), &body),
+                None => body,
             }
         };
         // Acquire before serializing, and retain admission through decoding and validation. A page larger
@@ -2966,7 +3059,7 @@ impl Shared {
                     let reply = {
                         let request = wire(after);
                         anyhow::ensure!(request.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
-                        self.reply_to(&peer, kind, &request, pulls::PAGE_BYTES).await
+                        self.reply_to(&peer, sized, &request, pulls::PAGE_BYTES).await
                     };
                     let reply = match reply {
                         Err(error) if session::too_long(&error) && !early => {
@@ -2974,17 +3067,17 @@ impl Shared {
                             drop(permit);
                             permit = self.pulls.page(true, background).await?;
                             let request = wire(after);
-                            self.reply_to(&peer, kind, &request, session::REPLY_LIMIT).await
+                            self.reply_to(&peer, sized, &request, session::REPLY_LIMIT).await
                         }
                         reply => reply,
                     };
-                    reply.map(|(reply, bytes)| (reply, bytes, permit))
+                    reply.map(|(reply, came)| (reply, came, permit))
                 };
                 let reply = time::timeout(PAGE_WAIT, receive).await.context("no page in time").and_then(|r| r);
                 if reply.is_err() && !early {
                     self.traffic.failed(device);
                 }
-                reply.map(|(reply, bytes, permit)| (reply, bytes, asked.elapsed(), permit))
+                reply.map(|(reply, came, permit)| (reply, came, asked.elapsed(), permit))
             }
         };
         // where the peer's next pages end (`session::CUTS`), for the pages after them to be asked at once
@@ -2993,7 +3086,7 @@ impl Shared {
             async move {
                 let _activity = self.admit()?;
                 let asked = Instant::now();
-                let body = session::cuts_body(kind, count, &wire(after));
+                let body = session::cuts_body(sized, count, &wire(after));
                 anyhow::ensure!(body.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
                 let answer = session::exchange(&peer.conn, session::CUTS, &body, session::CUTS_REPLY_LIMIT);
                 let answer = time::timeout(PAGE_WAIT, answer).await.context("no cuts in time")??;
@@ -3024,6 +3117,8 @@ impl Shared {
         };
         let mut flying = FuturesUnordered::new();
         let mut cutting_flight = FuturesUnordered::new();
+        // the pages asked and not yet taken: those it ends with, however it ends, were lost in flight
+        let mut flight = Flight::new(&self.traffic, device, budget);
         // the pages asked, in order: each its number, where it starts, and whether it was asked ahead
         let mut asked: std::collections::VecDeque<(u64, Option<avendb::sync::Place>, bool)> = Default::default();
         let mut landed = BTreeMap::new();
@@ -3034,13 +3129,14 @@ impl Shared {
         let (mut seq, mut asked_upto) = (0u64, None::<avendb::sync::Place>);
         macro_rules! pump {
             () => {
-                let size = window.size();
+                let size = window.size(sizes.map(|_| stated.load(Ordering::Relaxed)), rate().per_second());
                 while cutting && asked.len() < size && !cuts.is_empty() {
                     let Some(permit) = self.pulls.ahead() else { break };
                     let after = cuts.pop_front();
                     seq += 1;
                     asked_upto = after.max(asked_upto);
                     asked.push_back((seq, after, true));
+                    flight.asked(seq, true);
                     flying.push(fly(seq, asked.len(), after, Some(permit)));
                 }
                 if cutting && !cut_busy && !cuts_end && cuts.len() < size {
@@ -3052,10 +3148,11 @@ impl Shared {
         macro_rules! land {
             ($got:expr) => {
                 match $got {
-                    Landing::Page((at, count, page)) => {
+                    Landing::Page((at, _, page)) => {
                         if asked.iter().any(|(s, _, _)| *s == at) {
-                            if let Ok((_, _, wait, _)) = &page {
-                                window.page(*wait, count);
+                            if let Ok((_, came, _, _)) = &page {
+                                window.page(came);
+                                self.rates.lock().expect("rates").entry(device).or_default().page(came);
                             }
                             landed.insert(at, page);
                         }
@@ -3097,6 +3194,7 @@ impl Shared {
         let mut since = Instant::now();
         seq += 1;
         asked.push_back((seq, None, false));
+        flight.asked(seq, false);
         flying.push(fly(seq, 1, None, None));
         pump!();
         loop {
@@ -3111,18 +3209,24 @@ impl Shared {
                 pump!();
             };
             asked.pop_front();
+            match &coming {
+                Ok(_) => flight.landed(at),
+                Err(error) => flight.lost(at, traffic::lost_why(error)),
+            }
             let coming = match coming {
                 Err(error) if early => {
                     // asked ahead and lost: asked again now, in its turn, as any page is
                     tracing::debug!(%error, "avendb: a page asked ahead failed; asking it again");
                     seq += 1;
                     asked.push_front((seq, after, false));
+                    flight.asked(seq, false);
                     flying.push(fly(seq, asked.len(), after, None));
                     continue;
                 }
                 coming => coming,
             };
-            let (Reply { mut edits, blobs, more }, bytes, wait, permit) = coming?;
+            let (Reply { mut edits, blobs, more }, came, wait, permit) = coming?;
+            let bytes = came.bytes;
             let (way, sent) = (way_of(&peer.conn), edits.len() as u64);
             let taking = Instant::now();
             self.sized(&mut edits);
@@ -3142,6 +3246,7 @@ impl Shared {
                         // the peer's pages ended elsewhere than it said: what was asked ahead goes unread
                         misses += 1;
                         cutting &= misses < MISSES;
+                        flight.all("missed");
                         (flying, landed, cutting_flight) = (FuturesUnordered::new(), BTreeMap::new(), FuturesUnordered::new());
                         asked.clear();
                         cuts.clear();
@@ -3154,10 +3259,12 @@ impl Shared {
                     seq += 1;
                     asked_upto = Some(next).max(asked_upto);
                     asked.push_back((seq, Some(next), false));
+                    flight.asked(seq, false);
                     flying.push(fly(seq, 1, Some(next), None));
                 }
                 (None, _) => {
-                    // the last page: nothing asked ahead of it is wanted
+                    // the last page: nothing asked ahead of it is wanted, nor lost
+                    flight.forget();
                     (flying, landed, cutting_flight) = (FuturesUnordered::new(), BTreeMap::new(), FuturesUnordered::new());
                     asked.clear();
                     cutting = false;
@@ -3170,17 +3277,22 @@ impl Shared {
             keys.extend(blobs);
             let logged: Vec<(EditId, Option<LogId>)> = edits.iter().map(|s| (s.edit.id(), log_of(&s.edit, s.edit.id()))).collect();
             let ids: Vec<EditId> = logged.iter().map(|(id, _)| *id).collect();
-            let take = async {
+            // a page that came whole is taken on a task of its own, so that it is kept even where the asking stops
+            // while it is taken (its caller dropped it, or gave up on it): a stop loses only the pages in flight (S1b,
+            // `a_stop_loses_at_most_its_pages_in_flight`)
+            let (shared, others) = (self.clone(), others_took.clone());
+            let take = task::spawn(async move {
+                let others_took = others;
                 // Native cryptography runs outside the Lab mutex. The owned page/admission survives
                 // cancellation until its blocking checker exits; current-state admission still runs below.
                 #[cfg(not(target_arch = "wasm32"))]
-                let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, (),
+                let (prepared, permit, activity, ()) = shared.prepare_received_page(edits, permit, (),
                     #[cfg(test)] None,
                 ).await?;
                 #[cfg(target_arch = "wasm32")]
-                let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, ()).await?;
+                let (prepared, permit, activity, ()) = shared.prepare_received_page(edits, permit, ()).await?;
                 let checked = taking.elapsed();
-                let (got, whose, held) = self
+                let (got, whose, held) = shared
                     .try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| {
                         let (_permit, _activity) = (permit, activity);
                         let (got, whose) = lab.receive_prepared(me, prepared, false);
@@ -3189,17 +3301,17 @@ impl Shared {
                     .await?;
                 let held: BTreeSet<EditId> = held.into_iter().collect();
                 let held: Vec<_> = logged.into_iter().filter(|(id, _)| held.contains(id)).collect();
-                self.pulls.took(device, &others_took, &held);
+                shared.pulls.took(device, &others_took, &held);
                 let kept = taking.elapsed();
                 // its keys and items brought up to date now and then, not at each page (`CATCH_UP_PACE`)
                 if next.is_some() {
-                    self.catch_up_paced_class(false, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
+                    shared.catch_up_paced_class(false, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
                 }
                 let took = taking.elapsed();
                 Ok::<_, anyhow::Error>((got, whose, [checked, kept - checked, took - kept, took]))
-            };
+            });
             // the pages in flight land (and more are asked) while this one is taken
-            let mut take = std::pin::pin!(take);
+            let mut take = std::pin::pin!(async { take.await.context("a page's taking ended")? });
             let taken = loop {
                 let first = future::or(async { Landing::Done(take.as_mut().await) }, landing(&mut flying, &mut cutting_flight));
                 match first.await {
@@ -3212,8 +3324,9 @@ impl Shared {
             };
             let (got, whose, [checked, kept, caught, took]) = taken?;
             let finished = Instant::now();
-            // a claim holds on while its pages land (`Claims::landed`)
-            self.claims.lock().expect("claims").landed(peer.endpoint, finished);
+            // a claim holds on while its pages land (`Claims::landed`), as fast as they came lately
+            let lately = self.rates.lock().expect("rates").get(&device).and_then(pulls::Rate::per_second);
+            self.claims.lock().expect("claims").landed(peer.endpoint, lately, finished);
             self.traffic.page(traffic::Page {
                 device,
                 at: jobs::now_ms(),
@@ -3227,6 +3340,7 @@ impl Shared {
                 catch_ms: caught.as_millis() as u64,
                 ms: finished.duration_since(since).as_millis() as u64,
                 way,
+                budget: stated.load(Ordering::Relaxed) as u64,
             });
             self.jobs.stir();
             since = finished;
@@ -3246,6 +3360,25 @@ impl Shared {
             // so none of a stub's bodies counts as not sent
             if next.is_some() && yielding.is_some_and(|y| y.due(self)) {
                 return Ok(new);
+            }
+            // the rate its pages come at moved far from the one their budget was worked out at: the pages it asks next
+            // state the budget of the rate now (`pulls::RESIZE`). A page may start anywhere, at any budget; only where it
+            // ends moves with it, so the cuts it holds past the next page's start are asked again from there, at the new
+            // budget, and the pages in flight end where they were asked to (`LivePriority.lean` "Pages sized to their
+            // asker"). With every cut it held asked, it waits for the next, whose page's end it doesn't know yet.
+            if let (Some(_), Some((least, most))) = (next, sizes) {
+                let (now, was) = (rate().budget(least, most, relayed), stated.load(Ordering::Relaxed));
+                let far = now >= was.saturating_mul(pulls::RESIZE) || now.saturating_mul(pulls::RESIZE) <= was;
+                if far && (!cutting || !cuts.is_empty()) {
+                    stated.store(now, Ordering::Relaxed);
+                    flight.budget = now as u64;
+                    if cutting {
+                        cuts.truncate(1);
+                        cut_after = cuts.front().copied();
+                        (cuts_end, cut_busy, generation, cutting_flight) = (false, false, generation + 1, FuturesUnordered::new());
+                        pump!();
+                    }
+                }
             }
             match next {
                 Some(last) => after = Some(last),
@@ -3269,6 +3402,20 @@ impl Shared {
             .await?;
         }
         Ok(new)
+    }
+
+    /// The least and the most page `peer` makes for an asking that states its budget (`session::SIZING`), asked once
+    /// a connection; `None` where it refused, a peer from before S1b, or didn't answer within `SIZING_WAIT`: it is
+    /// asked unsized on that connection, and no asking of it waits on the question again.
+    async fn sizes(self: &Arc<Self>, peer: &Peer) -> Option<(usize, usize)> {
+        let connection = peer.conn.stable_id();
+        if let Some(sizes) = self.sizing.lock().expect("sizing").get(&connection) {
+            return *sizes;
+        }
+        let answer = time::timeout(SIZING_WAIT, session::exchange(&peer.conn, session::SIZING, &[], 8)).await;
+        let sizes = answer.ok().and_then(|answer| answer.and_then(|bytes| session::from_sizing_wire(&bytes)).ok());
+        self.sizing.lock().expect("sizing").insert(connection, sizes);
+        sizes
     }
 
     /// Asks `peer` for the stubs of the boxes this device needs not now of what a pull of `kind` for `scope` brings, if
@@ -3386,7 +3533,7 @@ impl Shared {
     /// signed edits still take the ordinary verification path. Unsupported or invalid supplements fall
     /// back to packed, then original replies, with each capability remembered separately per connection.
     /// The byte limit and page admission remain the caller's, including typed oversized-response retries.
-    async fn reply_to(self: &Arc<Self>, peer: &Peer, kind: u8, request: &[u8], limit: usize) -> Result<(Reply, u64)> {
+    async fn reply_to(self: &Arc<Self>, peer: &Peer, kind: u8, request: &[u8], limit: usize) -> Result<(Reply, pulls::Came)> {
         let _activity = self.admit()?;
         let id = peer.conn.stable_id();
         if let Some(signers) = &self.signers {
@@ -3401,13 +3548,13 @@ impl Shared {
                 let paths = self.opts.paths;
                 let batch = proofs::Request { kind, request: request.to_vec(), known, paths, held }.encode()?;
                 if batch.len() < session::MESSAGE_LIMIT {
-                    match session::exchange(&peer.conn, proofs::KIND, &batch, limit).await {
-                        Ok(bytes) => {
-                            let size = bytes.len() as u64;
+                    match session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit).await {
+                        Ok((bytes, sending)) => {
+                            let came = pulls::Came { bytes: bytes.len() as u64, sending };
                             if let Ok(supplement) = proofs::Supplement::decode(&bytes) {
                                 drop(bytes);
                                 if let Ok(reply) = supplement.verify(signers).await {
-                                    return Ok((reply, size));
+                                    return Ok((reply, came));
                                 }
                             }
                         }
@@ -3436,16 +3583,16 @@ impl Shared {
                         break;
                     }
                     asked = true;
-                    let result = session::exchange(&peer.conn, proofs::KIND, &batch, limit).await;
+                    let result = session::exchange_timed(&peer.conn, proofs::KIND, &batch, limit).await;
                     drop(batch);
                     match result {
-                        Ok(bytes) => {
-                            let size = bytes.len() as u64;
+                        Ok((bytes, sending)) => {
+                            let came = pulls::Came { bytes: bytes.len() as u64, sending };
                             let supplement = proofs::Supplement::decode(&bytes);
                             drop(bytes);
                             if let Ok(supplement) = supplement {
                                 if let Ok(reply) = supplement.verify(signers).await {
-                                    return Ok((reply, size));
+                                    return Ok((reply, came));
                                 }
                             }
                         }
@@ -3464,10 +3611,10 @@ impl Shared {
         }
         let packs = !self.unpacked.lock().expect("unpacked").contains(&id);
         if packs {
-            match session::exchange(&peer.conn, kind | session::PACKED, request, limit).await {
-                Ok(bytes) => {
+            match session::exchange_timed(&peer.conn, kind | session::PACKED, request, limit).await {
+                Ok((bytes, sending)) => {
                     if let Ok(Packed(reply)) = Packed::from_wire(&bytes) {
-                        return Ok((reply, bytes.len() as u64));
+                        return Ok((reply, pulls::Came { bytes: bytes.len() as u64, sending }));
                     }
                 }
                 // A size limit is not evidence that this peer lacks packed replies. Let page admission retry
@@ -3476,12 +3623,12 @@ impl Shared {
                 Err(_) => {}
             }
         }
-        let bytes = session::exchange(&peer.conn, kind, request, limit).await?;
+        let (bytes, sending) = session::exchange_timed(&peer.conn, kind, request, limit).await?;
         let reply = Reply::from_wire(&bytes)?;
         if packs {
             self.unpacked.lock().expect("unpacked").insert(id);
         }
-        Ok((reply, bytes.len() as u64))
+        Ok((reply, pulls::Came { bytes: bytes.len() as u64, sending }))
     }
 
     /// Asks `endpoint` for its contact card, and takes its vault logs. How many edits were new.
@@ -3804,6 +3951,7 @@ impl Shared {
         transports::control::gone(self, peer);
         self.follows.lock().expect("follows").remove(&peer.conn.stable_id());
         self.unpacked.lock().expect("unpacked").remove(&peer.conn.stable_id());
+        self.sizing.lock().expect("sizing").remove(&peer.conn.stable_id());
         self.unbatched.lock().expect("unbatched").remove(&peer.conn.stable_id());
         self.uncut.lock().expect("uncut").remove(&peer.conn.stable_id());
         self.unstubbed.lock().expect("unstubbed").remove(&peer.conn.stable_id());
@@ -3900,7 +4048,10 @@ impl Shared {
         let peer = self.connection(endpoint).await?;
         // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends
         let differing = self.differ(peer.device).await;
-        let (mut left, owed) = self.claims.lock().expect("claims").take(endpoint, differing, Instant::now());
+        // how fast this peer's pages came lately, or as a new peer's are counted to (`pulls::Rate::start_per_second`)
+        let rate = self.rates.lock().expect("rates").get(&peer.device).and_then(pulls::Rate::per_second);
+        let rate = rate.unwrap_or_else(pulls::Rate::start_per_second);
+        let (mut left, owed) = self.claims.lock().expect("claims").take(endpoint, differing, rate, Instant::now());
         let _claimed = Claimed { shared: self, endpoint };
         // logs another peer's asking lands pages for: asked again once its claim may have stalled
         // (`no_log_waits_past_the_handover`), and again then while it lands them
@@ -4138,13 +4289,15 @@ impl Shared {
 /// asking's logs go to the next peer at once rather than after its wait. A claim holds only while its asking's pages
 /// land: one that landed none for `HANDOVER` goes to a peer owed its logs that asks then (`take`), as an iPhone's asking
 /// of the always-on peer landed one page and then none for 9 minutes, and the Mac that held the same logs was never
-/// asked (S1, 2026-10-28).
+/// asked (S1, 2026-10-28). Nor does it hold while its pages come `SLOWER` times slower than the link of a peer owed its
+/// logs, as pages sized to their asker land every couple of seconds over a slow link too (S1b).
 #[derive(Default)]
 pub(crate) struct Claims {
     by: BTreeMap<LogId, EndpointId>,
     owed: BTreeSet<EndpointId>,
-    /// When each claiming peer's asking last landed a page, or began.
-    landed: BTreeMap<EndpointId, Instant>,
+    /// When each claiming peer's asking last landed a page, or began, and how fast its pages came lately, in bytes a
+    /// second, if any did.
+    landed: BTreeMap<EndpointId, (Instant, Option<u128>)>,
     /// The logs a live pull asks for now (`live::LiveClaimed`), and how many live pulls ask for each: no asking of
     /// the backlog names them meanwhile, from any peer, as its request would name what the device held before the live
     /// pull took them and the peer would send them again (`LivePriority.lean`'s `backlogTake`).
@@ -4152,10 +4305,13 @@ pub(crate) struct Claims {
 }
 
 impl Claims {
-    /// The logs of `differing` no other peer's asking is landing pages for now (`LivePriority.lean` `takes`), nor a
-    /// live pull asks for, claimed for `endpoint` as of `now`; owes it an asking again if it left any out, and says so.
-    fn take(&mut self, endpoint: EndpointId, differing: BTreeSet<LogId>, now: Instant) -> (BTreeSet<LogId>, bool) {
-        let stalled = |e: &EndpointId| self.landed.get(e).is_none_or(|at| *at + HANDOVER <= now);
+    /// The logs of `differing` no other peer's asking is landing pages for now, at least a `SLOWER`th as fast as
+    /// `endpoint`'s link carries (`rate`, bytes a second; `LivePriority.lean` `takes`), nor a live pull asks for,
+    /// claimed for `endpoint` as of `now`; owes it an asking again if it left any out, and says so.
+    fn take(&mut self, endpoint: EndpointId, differing: BTreeSet<LogId>, rate: u128, now: Instant) -> (BTreeSet<LogId>, bool) {
+        let stalled = |e: &EndpointId| {
+            self.landed.get(e).is_none_or(|(at, theirs)| *at + HANDOVER <= now || theirs.is_some_and(|r| r * SLOWER < rate))
+        };
         let (mine, others): (BTreeSet<_>, BTreeSet<_>) = differing
             .into_iter()
             .partition(|l| !self.live.contains_key(l) && self.by.get(l).is_none_or(|e| *e == endpoint || stalled(e)));
@@ -4166,16 +4322,17 @@ impl Claims {
             self.owed.remove(&endpoint);
         }
         if !mine.is_empty() {
-            self.landed.insert(endpoint, now);
+            self.landed.insert(endpoint, (now, None));
         }
         self.by.extend(mine.iter().map(|l| (*l, endpoint)));
         (mine, owed)
     }
 
-    /// A page of `endpoint`'s asking landed at `now`: its claims hold on (`a_landing_claim_is_kept`).
-    pub(crate) fn landed(&mut self, endpoint: EndpointId, now: Instant) {
+    /// A page of `endpoint`'s asking landed at `now`, its pages coming at `rate` bytes a second lately: its claims hold
+    /// on (`a_landing_claim_is_kept`) while no peer owed them has a link `SLOWER` times as fast.
+    pub(crate) fn landed(&mut self, endpoint: EndpointId, rate: Option<u128>, now: Instant) {
         if let Some(at) = self.landed.get_mut(&endpoint) {
-            *at = now;
+            *at = (now, rate);
         }
     }
 
@@ -4227,6 +4384,58 @@ impl Drop for Claimed<'_> {
         for endpoint in again {
             self.shared.outreach.send(node_loop::Msg::Ask { endpoint });
         }
+    }
+}
+
+/// The pages an asking asked and didn't take yet, each by its number with when it was asked and whether ahead
+/// (`session::CUTS`): those it ends with, however it ends (failed, yielded, or dropped by its caller), were lost in
+/// flight, as are those it dropped unread, and each is told to `Traffic::lost` (S1b).
+struct Flight<'a> {
+    traffic: &'a traffic::Traffic,
+    device: SignerId,
+    budget: u64,
+    pages: BTreeMap<u64, (Instant, bool)>,
+}
+
+impl<'a> Flight<'a> {
+    fn new(traffic: &'a traffic::Traffic, device: SignerId, budget: Option<usize>) -> Self {
+        Flight { traffic, device, budget: budget.unwrap_or(0) as u64, pages: BTreeMap::new() }
+    }
+
+    /// Page `seq` was asked now, ahead or in its turn.
+    fn asked(&mut self, seq: u64, ahead: bool) {
+        self.pages.insert(seq, (Instant::now(), ahead));
+    }
+
+    /// Page `seq` came whole, and is taken.
+    fn landed(&mut self, seq: u64) {
+        self.pages.remove(&seq);
+    }
+
+    /// Page `seq` was lost, `why`.
+    fn lost(&mut self, seq: u64, why: &'static str) {
+        if let Some((asked, ahead)) = self.pages.remove(&seq) {
+            let flight_ms = asked.elapsed().as_millis() as u64;
+            let (device, budget) = (self.device, self.budget);
+            self.traffic.lost(traffic::Lost { device, at: jobs::now_ms(), why, flight_ms, budget, ahead });
+        }
+    }
+
+    /// Every page in flight was lost, `why`.
+    fn all(&mut self, why: &'static str) {
+        let seqs: Vec<u64> = self.pages.keys().copied().collect();
+        seqs.into_iter().for_each(|seq| self.lost(seq, why));
+    }
+
+    /// The pages in flight are wanted no more: the asking's last page came before them.
+    fn forget(&mut self) {
+        self.pages.clear();
+    }
+}
+
+impl Drop for Flight<'_> {
+    fn drop(&mut self) {
+        self.all("stopped");
     }
 }
 
@@ -4346,13 +4555,14 @@ mod tests {
     fn each_log_is_asked_of_one_peer_and_the_other_is_asked_again_after() {
         let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
         let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        const R: u128 = 64_000;
         let (mut claims, now) = (Claims::default(), Instant::now());
         let both: BTreeSet<_> = [log(1), log(2)].into();
-        assert_eq!(claims.take(server, both.clone(), now), (both, false), "the first asked takes all");
-        let other = claims.take(mac, [log(2), log(3)].into(), now);
+        assert_eq!(claims.take(server, both.clone(), R, now), (both, false), "the first asked takes all");
+        let other = claims.take(mac, [log(2), log(3)].into(), R, now);
         assert_eq!(other, ([log(3)].into(), true), "the other only what no one asks for, owed the rest");
         assert_eq!(claims.release(server), [mac].into(), "its end asks the held-back peer again");
-        assert_eq!(claims.take(mac, [log(2)].into(), now), ([log(2)].into(), false), "which takes what is left");
+        assert_eq!(claims.take(mac, [log(2)].into(), R, now), ([log(2)].into(), false), "which takes what is left");
         assert_eq!(claims.release(mac), BTreeSet::new(), "and is owed nothing more");
         assert_eq!(claims.release(server), BTreeSet::new(), "an asking that claimed nothing wakes no one");
     }
@@ -4363,16 +4573,17 @@ mod tests {
     fn a_claim_whose_pages_stop_landing_goes_to_the_peer_owed_it() {
         let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
         let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        const R: u128 = 64_000;
         let (mut claims, began) = (Claims::default(), Instant::now());
         let both: BTreeSet<_> = [log(1), log(2)].into();
-        claims.take(server, both.clone(), began);
+        claims.take(server, both.clone(), R, began);
         let soon = began + HANDOVER / 2;
-        assert_eq!(claims.take(mac, both.clone(), soon), (BTreeSet::new(), true), "a fresh claim holds");
-        claims.landed(server, soon);
+        assert_eq!(claims.take(mac, both.clone(), R, soon), (BTreeSet::new(), true), "a fresh claim holds");
+        claims.landed(server, Some(R), soon);
         let later = began + HANDOVER;
-        assert_eq!(claims.take(mac, both.clone(), later), (BTreeSet::new(), true), "a page landed: it holds on");
+        assert_eq!(claims.take(mac, both.clone(), R, later), (BTreeSet::new(), true), "a page landed: it holds on");
         let stalled = soon + HANDOVER;
-        assert_eq!(claims.take(mac, both.clone(), stalled), (both, false), "no page for the handover: the Mac takes all");
+        assert_eq!(claims.take(mac, both.clone(), R, stalled), (both, false), "no page for the handover: the Mac takes all");
         assert_eq!(claims.release(server), BTreeSet::new(), "the stalled asking's end holds nothing back");
         assert_eq!(claims.release(mac), BTreeSet::new());
     }
@@ -4383,16 +4594,38 @@ mod tests {
     fn a_live_pulls_logs_are_not_asked_again_by_the_backlog() {
         let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
         let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        const R: u128 = 64_000;
         let (mut claims, now) = (Claims::default(), Instant::now());
         let chat: BTreeSet<_> = [log(1)].into();
         claims.live(&chat);
         claims.live(&chat);
-        assert_eq!(claims.take(mac, [log(1), log(2)].into(), now), ([log(2)].into(), true), "its own peer's backlog leaves it out");
-        assert_eq!(claims.take(server, [log(1)].into(), now), (BTreeSet::new(), true), "and every other peer's");
+        assert_eq!(claims.take(mac, [log(1), log(2)].into(), R, now), ([log(2)].into(), true), "its own peer's backlog leaves it out");
+        assert_eq!(claims.take(server, [log(1)].into(), R, now), (BTreeSet::new(), true), "and every other peer's");
         assert_eq!(claims.live_done(&chat), BTreeSet::new(), "a second live pull still asks for it");
         assert_eq!(claims.live_done(&chat), [mac, server].into(), "the last one's end asks both again");
-        assert_eq!(claims.take(mac, [log(1)].into(), now), ([log(1)].into(), false), "what it didn't bring, the backlog takes");
+        assert_eq!(claims.take(mac, [log(1)].into(), R, now), ([log(1)].into(), false), "what it didn't bring, the backlog takes");
         assert_eq!(claims.live_done(&chat), BTreeSet::new(), "an ended claim ends once");
+    }
+
+    /// S1 with S1b: a claim whose pages land, each in its couple of seconds, but over a link `SLOWER` times slower than
+    /// an owed peer's goes to that peer (`a_slow_claim_hands_over`); one about as fast holds, and so does the faster
+    /// one's claim when the slow peer asks again, so the logs move once.
+    #[test]
+    fn a_claim_whose_pages_come_slower_than_an_owed_peers_link_goes_to_it() {
+        let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
+        let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        let (mut claims, began) = (Claims::default(), Instant::now());
+        let both: BTreeSet<_> = [log(1), log(2)].into();
+        let (relay, start) = (20_000, pulls::Rate::start_per_second());
+        claims.take(mac, both.clone(), relay, began);
+        let soon = began + HANDOVER / 4;
+        claims.landed(mac, Some(relay), soon);
+        assert_eq!(claims.take(server, both.clone(), relay * SLOWER, soon), (BTreeSet::new(), true), "about as fast: it holds");
+        assert_eq!(claims.take(server, both.clone(), start, soon), (both.clone(), false), "a new peer's link: it takes all");
+        claims.landed(server, Some(start), soon);
+        assert_eq!(claims.take(mac, both.clone(), relay, soon), (BTreeSet::new(), true), "and keeps them from the slow peer");
+        assert_eq!(claims.release(mac), BTreeSet::new());
+        assert_eq!(claims.release(server), [mac].into());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

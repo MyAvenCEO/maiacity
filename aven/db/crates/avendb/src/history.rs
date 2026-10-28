@@ -413,6 +413,37 @@ impl History {
         build(&self.version(version), signer, line).unwrap_or_else(|| Item::new_on(signer, line))
     }
 
+    /// What `read` reads off the item at each of `versions`, in turn, as `item_at` makes it there, `signer` editing it
+    /// on the version's line: one item carried from a version to the next where the next is on the same line and holds every write the
+    /// one before it held, as an asset's versions on main each build on the one before, and made afresh otherwise,
+    /// rather than each made from scratch (Goal 7, 2026-10-28: the Assets page's recipe read rebuilt every version).
+    pub fn read_at<T>(&self, versions: &[(EditId, Line)], signer: SignerId, mut read: impl FnMut(&Item) -> T) -> Vec<T> {
+        let mut carried: Option<(Line, HashSet<EditId>, Item, bool)> = None;
+        versions
+            .iter()
+            .map(|&(edit, line)| {
+                let changes = self.version(&[edit]);
+                let held: HashSet<EditId> = changes.iter().map(|c| c.write.edit).collect();
+                let (item, shown) = match carried.take() {
+                    Some((on, before, mut item, mut shown)) if on == line && before.is_subset(&held) => {
+                        for c in changes.iter().filter(|c| !before.contains(&c.write.edit)) {
+                            shown |= import(&mut item, c);
+                        }
+                        (item, shown)
+                    }
+                    _ => {
+                        let mut item = Item::new_on(signer, line);
+                        let shown = changes.iter().fold(false, |shown, c| import(&mut item, c) | shown);
+                        (item, shown)
+                    }
+                };
+                let out = if shown { read(&item) } else { read(&Item::new_on(signer, line)) };
+                carried = Some((line, held, item, shown));
+                out
+            })
+            .collect()
+    }
+
     /// The schemas the update of write `edit` was written under, imported on the version it builds on: none for a write
     /// the device can't open, a proposal's start, a merge, a restore or an undo, which name none.
     pub fn written_under(&self, edit: EditId, signer: SignerId) -> BTreeSet<BlobId> {
