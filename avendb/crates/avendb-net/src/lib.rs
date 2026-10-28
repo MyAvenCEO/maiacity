@@ -2073,7 +2073,7 @@ impl Restorer {
 
 impl edits::Taker for Restorer {
     async fn begin(&mut self, checked: Option<avendb::lab::Checked>, warm: &Warm) -> Result<()> {
-        (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new() });
+        (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new(), shown: Vec::new() });
         // what it took of a head that didn't read whole goes
         if self.restoring.is_some() {
             let mut lab = self.lab.take().expect("its Lab");

@@ -112,6 +112,21 @@ impl Item {
         Some(Item::on(doc, peer(signer, line)))
     }
 
+    /// The item a device kept of its own (`kept`): its Loro snapshot (`bytes`), edited as `peer`. None of other bytes.
+    pub(crate) fn kept(bytes: &[u8], peer: PeerID) -> Option<Item> {
+        let meta = LoroDoc::decode_import_blob_meta(bytes, true).ok()?;
+        if meta.mode != EncodedBlobMode::Snapshot { return None; }
+        let doc = LoroDoc::new();
+        let status = doc.import(bytes).ok()?;
+        if status.pending.as_ref().is_some_and(|p| !p.is_empty()) { return None; }
+        Some(Item::on(doc, peer))
+    }
+
+    /// The Loro peer it edits as.
+    pub(crate) fn peer_id(&self) -> PeerID {
+        self.peer
+    }
+
     /// An empty item on `signer`'s device, before it imports any write: it shows nothing until one is there.
     pub fn new(signer: SignerId) -> Item {
         Item::new_on(signer, None)
