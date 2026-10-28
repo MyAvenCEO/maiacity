@@ -6,9 +6,11 @@ name: avenDB checks
 #   tests  – the Rust tests of avenDB's workspace (the browser page test, `--ignored`, stays scripts/test-browser.sh's)
 #   spec   – the Lean spec, the SSOT (avendb/spec): `lake build` proves it, checks its scenarios and holds the committed
 #            vectors to the model; `lake exe vectors` must write nothing new (vectors regenerated and committed)
-#   bench  – the performance gates (avendb/bench-gates.json): writes, point reads, views and a first sync at 10k, 100k and
-#            1M edits, and the relay's carrier apart from the direct path, beside a Postgres doing the same work; and
-#            the phone-class row, the device as WebAssembly in Chromium and WebKit (bench-phone, printed, not gated)
+#
+# No benchmark runs here (Goal 7a W1, Samuel 2026-10-28): a timing on a shared runner gated noise, not avenDB. What a
+# bench held that is a count (pages, bytes and index rows read, log edits stepped on, bytes an edit) or holds on
+# simulated time (a catch-up's use of its link, a live edit's delay, none missed, edits sent again) is a plain test in
+# the tests job; the benches stay in the crates for a by-hand run.
 #
 # The page's WebAssembly, built and committed to a PR's branch, is avendb-wasm.yml's: it needs to write, and these
 # checks only read.
@@ -51,14 +53,6 @@ on:
         description: Run the disposable real Chromium/WASM fixture instead of repeating native suites
         type: boolean
         default: false
-      bench_only:
-        description: Run the performance gates alone (a draft's branch, whose PR runs no suite)
-        type: boolean
-        default: false
-      bench_rounds:
-        description: Rounds of each bench, main's and the branch's in turn (the spread is printed)
-        type: number
-        default: 1
 
 permissions:
   contents: read
@@ -92,8 +86,6 @@ jobs:
       browser_key: ${{ steps.passes.outputs.browser_key }}
       pass_protocol: ${{ steps.protocol.outputs.cache-hit }}
       protocol_key: ${{ steps.passes.outputs.protocol_key }}
-      pass_bench: ${{ steps.bench.outputs.cache-hit }}
-      bench_key: ${{ steps.passes.outputs.bench_key }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: oven-sh/setup-bun@v2.2.0
@@ -118,7 +110,6 @@ jobs:
         run: |
           bun scripts/ci/passes.mjs \
             "tests=avendb,$OUTSIDE,$SELF" "image=avendb,$SELF" "spec=avendb/spec,$SELF" "protocol=avendb,$SELF" \
-            "bench=avendb,$OUTSIDE,$SELF" \
             "browser=avendb,$OUTSIDE,src/lib/avendb,!src/lib/avendb/device,scripts/avendb-browser-transports.mjs,$SELF"
       - id: tests
         if: github.event_name == 'pull_request'
@@ -155,19 +146,12 @@ jobs:
           path: .pass
           key: ${{ steps.passes.outputs.protocol_key }}
           lookup-only: true
-      - id: bench
-        if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v6.1.0
-        with:
-          path: .pass
-          key: ${{ steps.passes.outputs.bench_key }}
-          lookup-only: true
   # Not on a draft (Samuel 2026-10-21): a thread's every push to its draft ran all three, ten minutes each. They run
   # once the PR is marked ready, and on every push after; merge only once they are green there
   tests:
     needs: impact
     name: avenDB tests (${{ matrix.name }})
-    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_tests != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only && !inputs.bench_only
+    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_tests != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -237,13 +221,10 @@ jobs:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
           AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
         run: cargo nextest run --profile ci --locked --no-fail-fast --no-tests=fail --features test-fixtures ${{ matrix.args }} ${{ matrix.filter }}
-      # The index's scale gates (avendb/bench-gates.json's index rows, plan D1): a bulk-built index of 1M and 10M edits
-      # opened cold, counted in pages and bytes read and log edits stepped on, and the bulk build's root held to the same
-      # rows written as they come at 100k. In this shard, as its test program is the one just built here: about 20 s.
-      - uses: oven-sh/setup-bun@v2.2.0
-        if: matrix.name == 'net'
-        with:
-          bun-version-file: .bun-version
+      # The index's scale gates (plan D1): a bulk-built index of 1M and 10M edits, a named query's window and the
+      # Universe's posts page on it, opened cold and held to what they read (pages, bytes, index rows, log edits stepped
+      # on; the times are printed only), and the bulk build's root held to the same rows written as they come at 100k.
+      # In this shard, as its test program is the one just built here: about 20 s.
       - name: The index, a named query's window and the Universe's posts page at 1M and 10M edits
         if: matrix.name == 'net'
         working-directory: avendb
@@ -254,13 +235,7 @@ jobs:
           AVENDB_WINDOW_N: 1000000,10000000
         run: |
           cargo nextest run --profile ci --locked --features test-fixtures -p avendb-net --run-ignored only --no-capture \
-            -E 'test(=shelf_index::bench::bench_index) | test(=shelf_index::bench::bench_parity) | test(=query_window::bench::bench_window) | test(=posts_page::bench::bench_posts_off_the_index)' \
-            | tee "$RUNNER_TEMP/index.log"
-          # both checks run, so that one red shows the other's numbers too
-          failed=0
-          bun ../scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/index.log" --index || failed=1
-          bun ../scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/index.log" --posts || failed=1
-          exit $failed
+            -E 'test(=shelf_index::bench::bench_index) | test(=shelf_index::bench::bench_parity) | test(=query_window::bench::bench_window) | test(=posts_page::bench::bench_posts_off_the_index)'
       # This binary shares immutable 40-seed histories via LazyLock. A process per property rebuilt them 37 times.
       - name: Shared-history properties (all seeds and invariants)
         if: matrix.properties
@@ -301,7 +276,7 @@ jobs:
 
   spec:
     needs: impact
-    if: ${{ needs.impact.outputs.pass_spec != 'true' && !inputs.real_browser_only && !inputs.frontend_only && !inputs.bench_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
+    if: ${{ needs.impact.outputs.pass_spec != 'true' && !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Lean spec and vectors
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -337,7 +312,7 @@ jobs:
   real-browser:
     needs: impact
     name: Disposable real Chromium and WASM
-    if: ${{ needs.impact.outputs.pass_browser != 'true' && !inputs.frontend_only && !inputs.bench_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.real_browser || inputs.real_browser_only || needs.impact.outputs.browser == 'true') }}
+    if: ${{ needs.impact.outputs.pass_browser != 'true' && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.real_browser || inputs.real_browser_only || needs.impact.outputs.browser == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -397,7 +372,7 @@ jobs:
   protocol:
     needs: impact
     name: Protocol models and negative controls
-    if: ${{ needs.impact.outputs.pass_protocol != 'true' && !inputs.real_browser_only && !inputs.frontend_only && !inputs.bench_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.protocol || needs.impact.outputs.protocol == 'true') }}
+    if: ${{ needs.impact.outputs.pass_protocol != 'true' && !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.protocol || needs.impact.outputs.protocol == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -414,236 +389,10 @@ jobs:
           echo "$RUNNER_TEMP/verifpal-bin" >> "$GITHUB_PATH"
       - run: avendb/spec/protocol/check.sh
 
-  # The performance gates (avendb/bench-gates.json, scripts/ci/avendb-bench.mjs), in three shards side by side so none
-  # takes more than about 5 minutes (Samuel, 2026-10-27), each holding its own lines to their gates:
-  #   core      avenDB's bench (tests/bench_gates.rs) at 10k, 100k and 1M edits, each size a process of its own so its
-  #             resident memory is its own, a first sync asked both ways, a first sync's pages with moves; then the same
-  #             work on a Postgres beside it, printed next to avenDB's numbers (to the job's summary too)
-  #   carriers  two real nodes taking a peer's edits directly and through the server's relay alone, at full speed and at
-  #             a set link rate (avendb-server's tests/relay_bench.rs, a debug build as the scenarios' world is the tests'
-  #             alone), one fixture for the three
-  #   live      a live edit's delay while a device catches up, on a calm simulated link and a phone's (avendb-net's
-  #             tests/sync_bench.rs, plan D3), one fixture for both
-  # A gate missed fails the shard, and so the PR; a target not reached yet is printed and fails nothing.
-  # Each shard also times main's build on the same runner, the two taking turns (Goal 6 D3, Samuel 2026-10-28): a
-  # shared runner's speed swings from run to run, so every gate is also held against main's value of it
-  # (bench-gates.json vs_main). scripts/ci/avendb-bench-shard.mjs builds and runs both the same way; main's programs
-  # come from a cache keyed on main's commit (main's own runs fill it), else built here once in a worktree beside.
-  bench:
-    needs: impact
-    name: avenDB performance gates (${{ matrix.shard }})
-    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_bench != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [core, carriers, live]
-    services:
-      postgres:
-        image: ${{ matrix.shard == 'core' && 'postgres:16' || '' }}
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 12
-    env:
-      # optimised as a release, but in parallel codegen units and thin LTO (the server profile's trade): the release
-      # profile's one unit and full LTO are for the tile's WebAssembly, and took minutes more to build
-      CARGO_PROFILE_RELEASE_LTO: thin
-      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
-      # live: without the debug checks that replay a whole log on each write (lab.rs), so the gates time what a release
-      # does; on the job, so rust-cache's key takes it in. Every test shard keeps those checks.
-      RUSTFLAGS: ${{ matrix.shard == 'live' && '--cfg avendb_no_replay_checks' || '' }}
-      SHARD: ${{ matrix.shard }}
-    # AVENDB_TEST_PAIRS is set on each step: a job's env can't read the runner context (runner.temp)
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2.9.3
-        with:
-          workspaces: avendb -> target
-          key: bench-${{ matrix.shard }}
-          cache-on-failure: true
-      - uses: rui314/setup-mold@v1
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version-file: .bun-version
-      # a pull request is checked out merged onto main's head, its base; a run of a branch is measured against where
-      # it left main; main itself against nothing
-      - name: main's commit to measure against
-        id: base
-        env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          base="$PR_BASE"
-          [ -n "$base" ] || base="$(git merge-base HEAD origin/main)"
-          [ "$base" != "$(git rev-parse HEAD)" ] || base=""
-          echo "sha=$base" >> "$GITHUB_OUTPUT"
-          echo "main's commit: ${base:-none (this is main)}"
-      - name: main's bench programs, from the cache
-        id: main-bin
-        if: steps.base.outputs.sha
-        uses: actions/cache/restore@v6.1.0
-        with:
-          path: ${{ runner.temp }}/bench-main
-          key: bench-bin-${{ matrix.shard }}-${{ steps.base.outputs.sha }}-${{ hashFiles('scripts/ci/avendb-bench-shard.mjs') }}
-      - name: main's bench programs, built here
-        if: steps.base.outputs.sha && steps.main-bin.outputs.cache-hit != 'true'
-        env:
-          BASE: ${{ steps.base.outputs.sha }}
-        run: |
-          git worktree add --detach "$RUNNER_TEMP/main" "$BASE"
-          # a target of its own: cargo names a workspace's own crates by their path inside it, so main's and this
-          # commit's share artifact names, and freshness is by mtime: main's avendb, built after this commit's sources
-          # were checked out, looked fresh to this commit's build, which then compiled against it (Goal 6, 2026-10-28)
-          CARGO_TARGET_DIR="$RUNNER_TEMP/main-target" bun scripts/ci/avendb-bench-shard.mjs build "$SHARD" "$RUNNER_TEMP/main/avendb" "$RUNNER_TEMP/bench-main"
-      - if: steps.base.outputs.sha && steps.main-bin.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6.1.0
-        with:
-          path: ${{ runner.temp }}/bench-main
-          key: bench-bin-${{ matrix.shard }}-${{ steps.base.outputs.sha }}-${{ hashFiles('scripts/ci/avendb-bench-shard.mjs') }}
-      - name: This commit's bench programs
-        run: bun scripts/ci/avendb-bench-shard.mjs build "$SHARD" avendb "$RUNNER_TEMP/bench-branch"
-      # on main, this commit's programs are the next pull requests' main
-      - if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        uses: actions/cache/save@v6.1.0
-        with:
-          path: ${{ runner.temp }}/bench-branch
-          key: bench-bin-${{ matrix.shard }}-${{ github.sha }}-${{ hashFiles('scripts/ci/avendb-bench-shard.mjs') }}
-      # main's and this commit's in turn, each round; a run of main's that fails warns and leaves its gates unheld
-      - name: The benches, main's and this commit's taking turns
-        env:
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
-          ROUNDS: ${{ inputs.bench_rounds || 1 }}
-          HAS_MAIN: ${{ steps.base.outputs.sha != '' }}
-          PAIRS: ${{ runner.temp }}/avendb-test-pairs
-        run: |
-          for i in $(seq 1 "$ROUNDS"); do
-            if [ "$HAS_MAIN" = true ]; then
-              AVENDB_TEST_PAIRS="$PAIRS-main" bun scripts/ci/avendb-bench-shard.mjs run "$SHARD" avendb "$RUNNER_TEMP/bench-main" "$RUNNER_TEMP/main.log" \
-                || echo "::warning::main's $SHARD bench failed in round $i: its gates are held by their fixed limits alone"
-            fi
-            AVENDB_TEST_PAIRS="$PAIRS" bun scripts/ci/avendb-bench-shard.mjs run "$SHARD" avendb "$RUNNER_TEMP/bench-branch" "$RUNNER_TEMP/bench.log"
-          done
-      - name: Postgres beside it
-        if: matrix.shard == 'core'
-        working-directory: avendb
-        env:
-          DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
-        run: bun ../scripts/ci/avendb-bench-pg.mjs 10000,100000,1000000 | tee "$RUNNER_TEMP/pg.log"
-      - name: The gates
-        run: |
-          base=(); [ -s "$RUNNER_TEMP/main.log" ] && base=(--base "$RUNNER_TEMP/main.log")
-          bun scripts/ci/avendb-bench.mjs "$RUNNER_TEMP/bench.log" ${{ matrix.shard == 'core' && '"$RUNNER_TEMP/pg.log"' || '' }} --shard "$SHARD" "${base[@]}"
-
-  # The phone-class row: avenDB's device as WebAssembly in Chromium and WebKit, as an iPhone's page runs it, taking a
-  # peer's signed edits with their signatures checked (avendb-browser's `bench` feature, scripts/ci/avendb-bench-phone.mjs)
-  # on a synthetic fixture (avendb/tests/phone_fixture.rs). It gates nothing yet (Samuel, 2026-10-27: print it, the
-  # target is 20k edits/s), so `required` doesn't wait on it.
-  bench-phone-build:
-    needs: impact
-    name: avenDB phone-class bench, its WebAssembly
-    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_bench != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-bindgen@0.2.129
-      - uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2.9.3
-        with:
-          workspaces: avendb -> target
-          key: bench-phone
-          cache-on-failure: true
-      - name: The page's WebAssembly, with the bench
-        working-directory: avendb
-        run: |
-          cargo build --locked -p avendb-browser --target wasm32-unknown-unknown --release --features bench
-          wasm-bindgen --target web --no-typescript --out-dir "$RUNNER_TEMP/phone-pkg" target/wasm32-unknown-unknown/release/avendb_browser.wasm
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: avendb-phone-pkg
-          path: ${{ runner.temp }}/phone-pkg
-          retention-days: 3
-
-  # The fixture on a runner of its own, beside the WebAssembly's build: one after the other they were the workflow's
-  # longest chain (9m20s on #1348, 2026-10-28). Built as the live shard's is, without the debug checks that replay the
-  # whole log on every write: with them the fixture's 2,000 writes took 251 s on the runner (345 s locally), without them 50 s locally, and the
-  # bytes come out the same. Those checks are for the tests; the fixture is only the input of a bench.
-  bench-phone-fixture:
-    needs: impact
-    name: avenDB phone-class bench, its fixture
-    if: needs.impact.outputs.native == 'true' && needs.impact.outputs.pass_bench != 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      # on the job, before rust-cache, whose key takes it in: a cache built with the checks wouldn't fit
-      RUSTFLAGS: --cfg avendb_no_replay_checks
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2.9.3
-        with:
-          workspaces: avendb -> target
-          key: bench-phone-fixture
-          cache-on-failure: true
-      - name: The fixture
-        working-directory: avendb
-        env:
-          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
-        run: AVENDB_PHONE_FIXTURE="$RUNNER_TEMP/phone.bin" cargo test --locked -p avendb --features test-fixtures --test phone_fixture -- --ignored --nocapture
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: avendb-phone-fixture
-          path: ${{ runner.temp }}/phone.bin
-          retention-days: 3
-
-  # the browsers run in Playwright's image, as the kernel's WebKit job does: its engines and every system library they
-  # need come in it, where installing WebKit's on the runner fetched 117 MB through a mirror that outran a 5-minute
-  # limit and left apt holding its lock (2026-10-27)
-  bench-phone:
-    needs: [bench-phone-build, bench-phone-fixture]
-    name: avenDB phone-class bench (WebAssembly in Chromium and WebKit)
-    runs-on: ubuntu-latest
-    container:
-      image: mcr.microsoft.com/playwright:v1.56.1-noble
-      options: --ipc=host
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7.0.1
-      # the image has Node and npm but no unzip, which setup-bun needs
-      - run: npm install -g "bun@$(cat .bun-version)"
-      - run: bun install --frozen-lockfile
-      # in the checkout: in a container job, runner.temp names the host's folder, not the container's
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: avendb-phone-pkg
-          path: phone-bench/phone-pkg
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: avendb-phone-fixture
-          path: phone-bench
-      - name: Chromium and WebKit
-        # pipefail: a browser that doesn't launch fails the job, not just the tee after it
-        shell: bash
-        run: |
-          bun scripts/ci/avendb-bench-phone.mjs phone-bench/phone-pkg phone-bench/phone.bin chromium,webkit | tee phone-bench/phone.log
-          bun scripts/ci/avendb-bench.mjs phone-bench/phone.log --phone
-
   required:
     name: avenDB required checks
     if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
-    needs: [impact, tests, image, spec, real-browser, protocol, frontend, bench]
+    needs: [impact, tests, image, spec, real-browser, protocol, frontend]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected suite to succeed
@@ -656,24 +405,22 @@ jobs:
           BROWSER_ONLY: ${{ inputs.real_browser_only || false }}
           BROWSER: ${{ inputs.real_browser || false }}
           PROTOCOL: ${{ inputs.protocol || false }}
-          BENCH_ONLY: ${{ inputs.bench_only || false }}
         run: |
           printf '%s' "$RESULTS" | jq -e '
             . as $r |
             [$r.impact.outputs] | .[0] as $p |
             (["impact"] +
               (if env.FRONTEND == "true" then ["frontend"] else [] end) +
-              (if env.DRAFT != "true" and env.FRONTEND != "true" and env.BENCH_ONLY != "true" then
+              (if env.DRAFT != "true" and env.FRONTEND != "true" then
                 (if env.BROWSER_ONLY != "true" then
                   ["spec"] + (if $p.native == "true" then ["tests"] else [] end) +
                   (if env.PROTOCOL == "true" or $p.protocol == "true" then ["protocol"] else [] end)
                  else [] end) +
                 (if env.BROWSER == "true" or env.BROWSER_ONLY == "true" or $p.browser == "true" then ["real-browser"] else [] end)
                else [] end) +
-              (if env.DRAFT != "true" and env.FRONTEND != "true" and env.BROWSER_ONLY != "true" and $p.native == "true" then ["bench"] else [] end) +
               (if env.PR == "true" and env.FORK == "true" and env.DRAFT != "true" and $p.image == "true" then ["image"] else [] end)
             ) as $expected |
-            {"tests":"tests","image":"image","spec":"spec","real-browser":"browser","protocol":"protocol","bench":"bench"} as $marker |
+            {"tests":"tests","image":"image","spec":"spec","real-browser":"browser","protocol":"protocol"} as $marker |
             all($r[]; .result == "success" or .result == "skipped") and
             all($expected[]; $r[.].result == "success" or
               ($r[.].result == "skipped" and env.PR == "true" and $marker[.] != null and $r.impact.outputs["pass_" + $marker[.]] == "true"))'
@@ -705,8 +452,3 @@ jobs:
         with:
           path: .pass
           key: ${{ needs.impact.outputs.protocol_key }}
-      - if: always() && github.event_name == 'pull_request' && needs.bench.result == 'success'
-        uses: actions/cache/save@v6.1.0
-        with:
-          path: .pass
-          key: ${{ needs.impact.outputs.bench_key }}

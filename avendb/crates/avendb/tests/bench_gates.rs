@@ -1,7 +1,7 @@
-//! avenDB's performance gates (2026-10-27): what a write, a point read, a view and a first sync cost at a size held,
-//! as lines of JSON (`BENCH {...}`) that `scripts/ci/avendb-bench.mjs` holds to the gates of `avendb/bench-gates.json`
-//! (the `bench` job of avendb-checks.yml, beside a Postgres doing the same work). Each size runs in a process of its
-//! own, so that its resident memory is its own:
+//! avenDB's scale bench (2026-10-27): what a write, a point read, a view and a first sync cost at a size held, as lines
+//! of JSON (`BENCH {...}`), printed only since Goal 7a (W1, Samuel 2026-10-28: benchmarks out of CI, timings on a
+//! shared runner gated nothing real). What is a count gates in `the_bench_measures_a_small_log`, a plain test: the log's
+//! bytes an edit. Each size runs in a process of its own, so that its resident memory is its own:
 //!
 //!   AVENDB_BENCH_N=100000 cargo test --release -p avendb --test bench_gates -- --ignored --nocapture scale
 //!   AVENDB_BENCH_FIRST=50000:3000 cargo test --release -p avendb --test bench_gates -- --ignored --nocapture first
@@ -32,6 +32,8 @@ const TYPES: u64 = 16;
 /// The last tenth of the writes, whose cost per edit is compared across sizes: what a write costs once about that much
 /// is held, over enough writes that a growth of the log's vectors falls in it as often as in all of them.
 const TENTH: usize = 10;
+/// The log's bytes an edit, at most: a count, so it gates (Goal 7a W1); every timing here is printed only.
+const LOG_BYTES_PER_EDIT_MAX: f64 = 4_000.0;
 /// The point reads, views and `draft_on`s timed, for their percentiles.
 const READS: usize = 20_000;
 const VIEWS: usize = 400;
@@ -395,6 +397,10 @@ fn the_bench_measures_a_small_log() {
     let line = scale(1_000);
     assert_eq!(line["n"], 1_000);
     assert!(line["view_rows"].as_u64().expect("rows") > 0, "a view lists entries");
+    // the log's bytes an edit, a count that holds on any machine (3,585 on 2026-10-27: 244 bytes an edit, its id, one
+    // ML-DSA-65 signature an edit while S8 is off)
+    let bytes = line["log_bytes_per_edit"].as_f64().expect("log bytes an edit");
+    assert!(bytes <= LOG_BYTES_PER_EDIT_MAX, "the log takes {bytes} bytes an edit, at most {LOG_BYTES_PER_EDIT_MAX}");
     let first = first_sync(1_000, 300);
     assert!(first["speedup"].as_f64().expect("a speedup") > 0.0);
 }

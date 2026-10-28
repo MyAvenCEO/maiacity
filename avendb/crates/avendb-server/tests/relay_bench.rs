@@ -1,8 +1,9 @@
 //! avenDB's carrier gates (2026-10-27): how fast a device takes a peer's edits over a real node pair, directly over
 //! loopback UDP and through the server's relay alone, as a device with no UDP of its own (an iPhone's page, a browser)
 //! takes them; and through a relay that reads each client at a set rate, the link's bandwidth, so the edits' bytes a
-//! second can be set against it. Each case prints one `BENCH {...}` line (`kind: "carrier"`) for
-//! `scripts/ci/avendb-bench.mjs`, which holds the relay's numbers apart from the direct path's. One case a process:
+//! second can be set against it. Each case prints one `BENCH {...}` line (`kind: "carrier"`), gated by nothing since
+//! Goal 7a (W1, Samuel 2026-10-28: benchmarks out of CI): real sockets on the wall clock, so a by-hand look. The use
+//! of a set-rate link is held on simulated time by avendb-net's tests/sync_bench.rs. One case a process:
 //!
 //!   AVENDB_CARRIER=relay AVENDB_CARRIER_EDITS=1000 cargo test -p avendb-server --features test-fixtures \
 //!     --test relay_bench -- --ignored --nocapture
@@ -30,8 +31,8 @@ const ENTRIES: u64 = 8;
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore]
 async fn bench_carrier() {
-    // one case or several (the bench job's carriers shard runs all three in one process): their worlds written side by
-    // side, each on a thread of its own, as writing one takes most of a minute in a debug build; then the cases one
+    // one case or several (`AVENDB_CARRIER=direct,relay,relay_link`, all three in one process): their worlds written
+    // side by side, each on a thread of its own, as writing one takes most of a minute in a debug build; then the cases one
     // after another, so no case's sync shares the machine with another's
     let edits: usize = std::env::var("AVENDB_CARRIER_EDITS").ok().and_then(|n| n.parse().ok()).unwrap_or(1000);
     let cases: Vec<String> =
