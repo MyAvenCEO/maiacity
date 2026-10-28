@@ -1819,8 +1819,9 @@ impl Node {
         };
         // per peer, what moves while a catch-up runs, long before a log is whole (Samuel 2026-10-28: "with zero visible
         // feedback the syncing UI doesn't reflect what is actually happening in real time"): whether a pull of it runs
-        // and since when, what it does now, the edits it took so far and since this device started, and when its last
-        // page came
+        // and since when, what it does now, the edits it took so far and since this device started, when its last
+        // page came, and its askings and the pages asked that never came, so a pull that runs on and brings nothing
+        // reads as such, not as a transfer (the iPhone's "pulling: 2" for 6 min of askings failing, 2026-10-28)
         let names = self.peer_names(heard.iter().map(|(d, _)| *d).collect()).await;
         let from: Vec<Value> = heard.iter().map(|(d, _)| {
             let job = running.iter().find(|j| j.kind == "pull" && j.subject == d.to_hex());
@@ -1828,7 +1829,8 @@ impl Node {
             json!({ "device": d.to_hex(), "name": names.get(d).cloned().flatten(),
                 "pulling": job.map(|j| json!({ "since": j.started, "stage": j.stage, "took": j.done })),
                 "pages": pulled.as_ref().map_or(0, |p| p.pages), "edits": pulled.as_ref().map_or(0, |p| p.new),
-                "last": pulled.as_ref().map_or(0, |p| p.last) })
+                "last": pulled.as_ref().map_or(0, |p| p.last), "askings": pulled.as_ref().map_or(0, |p| p.askings),
+                "failed": pulled.as_ref().map_or(0, |p| p.failed) })
         }).collect();
         let edits: u64 = heard.iter().filter_map(|(d, _)| self.shared.traffic.of(d)).map(|p| p.new).sum();
         json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages,
