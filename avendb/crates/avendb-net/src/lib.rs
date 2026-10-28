@@ -233,6 +233,12 @@ const RELAY_WAIT: Duration = Duration::from_secs(20);
 /// `LivePriority.lean` `takes`): a few pages' time on a phone's relay, where a page took 5-14 s.
 const HANDOVER: Duration = Duration::from_secs(15);
 
+/// How many times slower than an owed peer's link a claiming asking's pages may come before that peer takes its logs
+/// (`Claims::take`, `LivePriority.lean` `takes`): since pages are sized to their asker (S1b), a slow link's pages land
+/// every couple of seconds and its claim never stalls, so a browser took every log over a 20 KB/s relay to its Mac while
+/// the server that held them too waited (sim `a_browser_takes_what_it_lacks_from_the_fast_peer`, 2026-10-28).
+const SLOWER: u128 = 2;
+
 /// How long a node with no socket of its own waits for iroh to pick its relay before it has it pick again
 /// (`Node::on_relay`): iroh picks it by a report of how fast each relay answers, which a browser times by an HTTPS
 /// request; a report with no answer in its three seconds picks none, and the next comes only 20 to 26 seconds on.
@@ -3227,8 +3233,9 @@ impl Shared {
             };
             let (got, whose, [checked, kept, caught, took]) = taken?;
             let finished = Instant::now();
-            // a claim holds on while its pages land (`Claims::landed`)
-            self.claims.lock().expect("claims").landed(peer.endpoint, finished);
+            // a claim holds on while its pages land (`Claims::landed`), as fast as they came lately
+            let lately = self.rates.lock().expect("rates").get(&device).and_then(pulls::Rate::per_second);
+            self.claims.lock().expect("claims").landed(peer.endpoint, lately, finished);
             self.traffic.page(traffic::Page {
                 device,
                 at: jobs::now_ms(),
@@ -3907,7 +3914,10 @@ impl Shared {
         let peer = self.connection(endpoint).await?;
         // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends
         let differing = self.differ(peer.device).await;
-        let (mut left, owed) = self.claims.lock().expect("claims").take(endpoint, differing, Instant::now());
+        // how fast this peer's pages came lately, or as a new peer's are counted to (`pulls::Rate::start_per_second`)
+        let rate = self.rates.lock().expect("rates").get(&peer.device).and_then(pulls::Rate::per_second);
+        let rate = rate.unwrap_or_else(pulls::Rate::start_per_second);
+        let (mut left, owed) = self.claims.lock().expect("claims").take(endpoint, differing, rate, Instant::now());
         let _claimed = Claimed { shared: self, endpoint };
         // logs another peer's asking lands pages for: asked again once its claim may have stalled
         // (`no_log_waits_past_the_handover`), and again then while it lands them
@@ -4145,13 +4155,15 @@ impl Shared {
 /// asking's logs go to the next peer at once rather than after its wait. A claim holds only while its asking's pages
 /// land: one that landed none for `HANDOVER` goes to a peer owed its logs that asks then (`take`), as an iPhone's asking
 /// of the always-on peer landed one page and then none for 9 minutes, and the Mac that held the same logs was never
-/// asked (S1, 2026-10-28).
+/// asked (S1, 2026-10-28). Nor does it hold while its pages come `SLOWER` times slower than the link of a peer owed its
+/// logs, as pages sized to their asker land every couple of seconds over a slow link too (S1b).
 #[derive(Default)]
 pub(crate) struct Claims {
     by: BTreeMap<LogId, EndpointId>,
     owed: BTreeSet<EndpointId>,
-    /// When each claiming peer's asking last landed a page, or began.
-    landed: BTreeMap<EndpointId, Instant>,
+    /// When each claiming peer's asking last landed a page, or began, and how fast its pages came lately, in bytes a
+    /// second, if any did.
+    landed: BTreeMap<EndpointId, (Instant, Option<u128>)>,
     /// The logs a live pull asks for now (`live::LiveClaimed`), and how many live pulls ask for each: no asking of
     /// the backlog names them meanwhile, from any peer, as its request would name what the device held before the live
     /// pull took them and the peer would send them again (`LivePriority.lean`'s `backlogTake`).
@@ -4159,10 +4171,13 @@ pub(crate) struct Claims {
 }
 
 impl Claims {
-    /// The logs of `differing` no other peer's asking is landing pages for now (`LivePriority.lean` `takes`), nor a
-    /// live pull asks for, claimed for `endpoint` as of `now`; owes it an asking again if it left any out, and says so.
-    fn take(&mut self, endpoint: EndpointId, differing: BTreeSet<LogId>, now: Instant) -> (BTreeSet<LogId>, bool) {
-        let stalled = |e: &EndpointId| self.landed.get(e).is_none_or(|at| *at + HANDOVER <= now);
+    /// The logs of `differing` no other peer's asking is landing pages for now, at least a `SLOWER`th as fast as
+    /// `endpoint`'s link carries (`rate`, bytes a second; `LivePriority.lean` `takes`), nor a live pull asks for,
+    /// claimed for `endpoint` as of `now`; owes it an asking again if it left any out, and says so.
+    fn take(&mut self, endpoint: EndpointId, differing: BTreeSet<LogId>, rate: u128, now: Instant) -> (BTreeSet<LogId>, bool) {
+        let stalled = |e: &EndpointId| {
+            self.landed.get(e).is_none_or(|(at, theirs)| *at + HANDOVER <= now || theirs.is_some_and(|r| r * SLOWER < rate))
+        };
         let (mine, others): (BTreeSet<_>, BTreeSet<_>) = differing
             .into_iter()
             .partition(|l| !self.live.contains_key(l) && self.by.get(l).is_none_or(|e| *e == endpoint || stalled(e)));
@@ -4173,16 +4188,17 @@ impl Claims {
             self.owed.remove(&endpoint);
         }
         if !mine.is_empty() {
-            self.landed.insert(endpoint, now);
+            self.landed.insert(endpoint, (now, None));
         }
         self.by.extend(mine.iter().map(|l| (*l, endpoint)));
         (mine, owed)
     }
 
-    /// A page of `endpoint`'s asking landed at `now`: its claims hold on (`a_landing_claim_is_kept`).
-    pub(crate) fn landed(&mut self, endpoint: EndpointId, now: Instant) {
+    /// A page of `endpoint`'s asking landed at `now`, its pages coming at `rate` bytes a second lately: its claims hold
+    /// on (`a_landing_claim_is_kept`) while no peer owed them has a link `SLOWER` times as fast.
+    pub(crate) fn landed(&mut self, endpoint: EndpointId, rate: Option<u128>, now: Instant) {
         if let Some(at) = self.landed.get_mut(&endpoint) {
-            *at = now;
+            *at = (now, rate);
         }
     }
 
@@ -4410,13 +4426,14 @@ mod tests {
     fn each_log_is_asked_of_one_peer_and_the_other_is_asked_again_after() {
         let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
         let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        const R: u128 = 64_000;
         let (mut claims, now) = (Claims::default(), Instant::now());
         let both: BTreeSet<_> = [log(1), log(2)].into();
-        assert_eq!(claims.take(server, both.clone(), now), (both, false), "the first asked takes all");
-        let other = claims.take(mac, [log(2), log(3)].into(), now);
+        assert_eq!(claims.take(server, both.clone(), R, now), (both, false), "the first asked takes all");
+        let other = claims.take(mac, [log(2), log(3)].into(), R, now);
         assert_eq!(other, ([log(3)].into(), true), "the other only what no one asks for, owed the rest");
         assert_eq!(claims.release(server), [mac].into(), "its end asks the held-back peer again");
-        assert_eq!(claims.take(mac, [log(2)].into(), now), ([log(2)].into(), false), "which takes what is left");
+        assert_eq!(claims.take(mac, [log(2)].into(), R, now), ([log(2)].into(), false), "which takes what is left");
         assert_eq!(claims.release(mac), BTreeSet::new(), "and is owed nothing more");
         assert_eq!(claims.release(server), BTreeSet::new(), "an asking that claimed nothing wakes no one");
     }
@@ -4427,16 +4444,17 @@ mod tests {
     fn a_claim_whose_pages_stop_landing_goes_to_the_peer_owed_it() {
         let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
         let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        const R: u128 = 64_000;
         let (mut claims, began) = (Claims::default(), Instant::now());
         let both: BTreeSet<_> = [log(1), log(2)].into();
-        claims.take(server, both.clone(), began);
+        claims.take(server, both.clone(), R, began);
         let soon = began + HANDOVER / 2;
-        assert_eq!(claims.take(mac, both.clone(), soon), (BTreeSet::new(), true), "a fresh claim holds");
-        claims.landed(server, soon);
+        assert_eq!(claims.take(mac, both.clone(), R, soon), (BTreeSet::new(), true), "a fresh claim holds");
+        claims.landed(server, Some(R), soon);
         let later = began + HANDOVER;
-        assert_eq!(claims.take(mac, both.clone(), later), (BTreeSet::new(), true), "a page landed: it holds on");
+        assert_eq!(claims.take(mac, both.clone(), R, later), (BTreeSet::new(), true), "a page landed: it holds on");
         let stalled = soon + HANDOVER;
-        assert_eq!(claims.take(mac, both.clone(), stalled), (both, false), "no page for the handover: the Mac takes all");
+        assert_eq!(claims.take(mac, both.clone(), R, stalled), (both, false), "no page for the handover: the Mac takes all");
         assert_eq!(claims.release(server), BTreeSet::new(), "the stalled asking's end holds nothing back");
         assert_eq!(claims.release(mac), BTreeSet::new());
     }
@@ -4447,16 +4465,38 @@ mod tests {
     fn a_live_pulls_logs_are_not_asked_again_by_the_backlog() {
         let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
         let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        const R: u128 = 64_000;
         let (mut claims, now) = (Claims::default(), Instant::now());
         let chat: BTreeSet<_> = [log(1)].into();
         claims.live(&chat);
         claims.live(&chat);
-        assert_eq!(claims.take(mac, [log(1), log(2)].into(), now), ([log(2)].into(), true), "its own peer's backlog leaves it out");
-        assert_eq!(claims.take(server, [log(1)].into(), now), (BTreeSet::new(), true), "and every other peer's");
+        assert_eq!(claims.take(mac, [log(1), log(2)].into(), R, now), ([log(2)].into(), true), "its own peer's backlog leaves it out");
+        assert_eq!(claims.take(server, [log(1)].into(), R, now), (BTreeSet::new(), true), "and every other peer's");
         assert_eq!(claims.live_done(&chat), BTreeSet::new(), "a second live pull still asks for it");
         assert_eq!(claims.live_done(&chat), [mac, server].into(), "the last one's end asks both again");
-        assert_eq!(claims.take(mac, [log(1)].into(), now), ([log(1)].into(), false), "what it didn't bring, the backlog takes");
+        assert_eq!(claims.take(mac, [log(1)].into(), R, now), ([log(1)].into(), false), "what it didn't bring, the backlog takes");
         assert_eq!(claims.live_done(&chat), BTreeSet::new(), "an ended claim ends once");
+    }
+
+    /// S1 with S1b: a claim whose pages land, each in its couple of seconds, but over a link `SLOWER` times slower than
+    /// an owed peer's goes to that peer (`a_slow_claim_hands_over`); one about as fast holds, and so does the faster
+    /// one's claim when the slow peer asks again, so the logs move once.
+    #[test]
+    fn a_claim_whose_pages_come_slower_than_an_owed_peers_link_goes_to_it() {
+        let (server, mac) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
+        let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        let (mut claims, began) = (Claims::default(), Instant::now());
+        let both: BTreeSet<_> = [log(1), log(2)].into();
+        let (relay, start) = (20_000, pulls::Rate::start_per_second());
+        claims.take(mac, both.clone(), relay, began);
+        let soon = began + HANDOVER / 4;
+        claims.landed(mac, Some(relay), soon);
+        assert_eq!(claims.take(server, both.clone(), relay * SLOWER, soon), (BTreeSet::new(), true), "about as fast: it holds");
+        assert_eq!(claims.take(server, both.clone(), start, soon), (both.clone(), false), "a new peer's link: it takes all");
+        claims.landed(server, Some(start), soon);
+        assert_eq!(claims.take(mac, both.clone(), relay, soon), (BTreeSet::new(), true), "and keeps them from the slow peer");
+        assert_eq!(claims.release(mac), BTreeSet::new());
+        assert_eq!(claims.release(server), [mac].into());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

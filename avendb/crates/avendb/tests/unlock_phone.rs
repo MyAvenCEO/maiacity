@@ -158,10 +158,11 @@ fn measure_unlock_phone() {
     eprintln!("UNLOCK_PHONE fixture: {held} edits, {shown} entries shown, in {:.1?}", began.elapsed());
     let checked = [1; 40];
     let receipt = lab.warming(phone, held, Some(checked)).expect("what it worked out, to save");
+    let kept: Vec<Vec<u8>> = receipt.shown.clone().map(|(p, _)| p).into_iter().collect();
     let warm = Warm {
         keys: receipt.keys.clone().into_iter().collect(),
         views: receipt.view.clone().into_iter().collect(),
-        shown: receipt.shown.clone().map(|(p, _)| p).into_iter().collect(),
+        shown: kept.iter().cloned().map(Into::into).collect(),
     };
     lab.warmed(phone, receipt);
     let backup = lab.backup(phone);
@@ -180,7 +181,7 @@ fn measure_unlock_phone() {
         list(&mut out, lab.blob_ids(phone).into_iter().filter_map(|b| lab.blob(phone, b)).map(|b| b.to_vec()).collect());
         list(&mut out, warm.keys.clone());
         list(&mut out, warm.views.clone());
-        list(&mut out, warm.shown.clone());
+        list(&mut out, kept.clone());
         std::fs::write(&path, &out).expect("the fixture written");
         eprintln!("UNLOCK_PHONE fixture written: {} bytes", out.len());
     }
