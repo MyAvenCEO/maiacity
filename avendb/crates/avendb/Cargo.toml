@@ -60,3 +60,8 @@ blake3 = { version = "1.8.7", features = ["zeroize"] }
 [dev-dependencies]
 # the helpers the tests share (T3)
 avendb-testkit = { path = "../avendb-testkit" }
+
+# avendb_no_replay_checks: set by RUSTFLAGS in the bench job's live shard alone, it leaves out the debug checks
+# that replay a whole log on each write (lab.rs), so the live gates time what a release does; every other job keeps them
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(avendb_no_replay_checks)"] }

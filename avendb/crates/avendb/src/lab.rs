@@ -329,6 +329,7 @@ impl Drafting<'_> {
         self.log.receive([edit.clone()]);
         let was = std::mem::replace(&mut self.replay, Cow::Owned(replay(&[]))).into_owned();
         self.replay = Cow::Owned(replay_on(was, self.log.edits(), held));
+        #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(*self.replay == self.log.replay(), "a draft stepped on differs from the replay");
         self.drafts.push(Unsigned { edit, blobs, held, batch: vec![], pass: None });
         Ok(id)
@@ -1265,6 +1266,7 @@ impl KeyIndexed {
             }
         }
         #[cfg(debug_assertions)]
+        #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(ix.same(&KeyIndex::of(r, log.edits())), "a key index grown on differs from one made whole");
         ix
     }
@@ -2513,6 +2515,7 @@ impl Lab {
             store.digests = None;
             store.latest = OnceLock::new();
             if let Some(state) = stepped {
+                #[cfg(not(avendb_no_replay_checks))]
                 debug_assert!(state == store.log.view(), "a write stepped on differs from the replay");
                 let _ = store.latest.set(state);
             }
@@ -2629,6 +2632,7 @@ impl Lab {
         // run tries no removal's cuts, which only name the edit
         let edit = match store.replayed == log.edits().len() {
             true => {
+                #[cfg(not(avendb_no_replay_checks))]
                 debug_assert!(store.replay == log.replay(), "the replay kept differs from the log's");
                 log.check_on(&store.replay, !self.dry, author, cosigners, action)?
             }
@@ -3030,6 +3034,7 @@ impl Lab {
             store.wholes += matches!(why, Why::Whole(_)) as u64;
             store.perf.count(why_counted(why), 1);
             store.replayed = store.log.edits().len();
+            #[cfg(not(avendb_no_replay_checks))]
             debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
             // the replay is of every edit it holds now, so it is `latest` itself: no second copy
             store.latest = OnceLock::new();
@@ -3222,6 +3227,7 @@ impl Lab {
                         store.replay = replayed;
                         store.perf.count(why_counted(why), 1);
                         store.replayed = to;
+                        #[cfg(not(avendb_no_replay_checks))]
                         debug_assert!(store.replay == replay(&store.log.edits()[..to]), "a replay stepped on differs from the whole");
                         store.perf.add("replay", at);
                         return;
@@ -3262,6 +3268,7 @@ impl Lab {
             store.perf.add("replay: ended", ended);
             store.wholes += 1;
             store.replayed = n;
+            #[cfg(not(avendb_no_replay_checks))]
             debug_assert!(store.replay == replay(&store.log.edits()[..n]), "a replay run a slice a step differs from the whole");
         } else {
             store.replaying = Some((lineage, store.replayed, run));
@@ -6640,6 +6647,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
     // the cap groups in force follow from what the device counts (`show_items`)
     r.groups = std::mem::take(&mut store.readings.groups);
     #[cfg(debug_assertions)]
+    #[cfg(not(avendb_no_replay_checks))]
     debug_assert!(same_readings(&r, &readings_of(store)), "readings read on differ from readings read whole");
     store.readings = r;
     store.read_new.read(store.bodies.len(), store.slices.len(), &store.readings);
@@ -7206,6 +7214,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     // of every vault, not of every entry's: a step costs what changed, not what the device holds
     for vt in st.vaults() {
         let blobs = lane_blobs(st, vt.id, r);
+        #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(blobs == st.lane_of(vt.id, r), "a lane read off its blobs differs from one read off every entry");
         let mut h = Hasher::new("lab lane");
         for b in &blobs {
