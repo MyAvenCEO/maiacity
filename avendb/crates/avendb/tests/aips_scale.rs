@@ -4,6 +4,13 @@
 //! run on its own, on the Lab alone, so that it is the read's own cost. An `AIPS_SCALE {...}` line per run.
 //!
 //!   AIPS_SCALE_AIPS=60 AIPS_SCALE_NOTES=2000 cargo test --release -p avendb --test aips_scale -- --ignored --nocapture
+//!
+//! And the Assets page's first read (Goal 7, 2026-10-28: on the iPhone the first asset took long to show): `database`
+//! and `entry_views` of the vault's recipes, each an asset of a few versions, each a proposal whose one write is its
+//! record and its file, merged into main, and a variant beside main, as the seed writes them. An `ASSETS_SCALE {...}`
+//! line per run.
+//!
+//!   ASSETS_SCALE_RECIPES=200 ASSETS_SCALE_VERSIONS=6 cargo test --release -p avendb --test aips_scale measure_assets -- --ignored --nocapture
 #![cfg(not(debug_assertions))]
 
 use std::time::{Duration, Instant};
@@ -13,6 +20,7 @@ use avendb::lab::Lab;
 use avendb::engine;
 use avendb::id::{SignerId, VaultId};
 use avendb::policy::{Action, Kind, Level, Principal, Sharing};
+use avendb::sealed::{Brought, FileKey, seal};
 use avendb::slice::{Atom, Selector};
 use avendb_testkit::ok;
 use serde_json::{Value, json};
@@ -162,4 +170,66 @@ fn measure_aips_read() {
         "messages": messages, "room_ms": room_ms,
     });
     println!("AIPS_SCALE {out}");
+}
+
+/// A recipe's source, sealed under a key of its own, as a node's store seals it (`Node::store_file`).
+fn source(text: &str) -> Brought {
+    let (key, plain) = (FileKey::from_bytes([7; 32]), text.repeat(300).into_bytes());
+    let root = avendb::hash::hash("a test file's root", &seal(&key, &plain));
+    Brought::new(root, key, plain.len() as u64)
+}
+
+/// Recipe `label` at version `version`, as the asset thread keeps one: its card and its engine, its source in its file.
+fn recipe(label: &str, version: usize) -> Value {
+    json!({
+        "kind": "recipe", "title": label, "note": "Built in its parts.", "tags": [format!("ref:machines/{label}@{version}")],
+        "source": "", "engine": { "host": "box", "version": 4, "hash": "ab".repeat(32) },
+        "manifest": { "kit": ["box"], "presets": ["brass"], "controls": ["slider"] },
+        "card": { "format": "asset-card", "v": 1, "group": "machines", "label": label, "version": version },
+    })
+}
+
+#[test]
+#[ignore]
+fn measure_assets_read() {
+    let (recipes, versions, notes) = (env("ASSETS_SCALE_RECIPES", 200), env("ASSETS_SCALE_VERSIONS", 6), env("ASSETS_SCALE_NOTES", 1000));
+    let runs = env("AIPS_SCALE_RUNS", 5).max(1);
+    let began = Instant::now();
+    let mut f = fixture();
+    let alice = f.alice.to_hex();
+    for i in 0..notes {
+        f.create(i);
+    }
+    for r in 0..recipes {
+        let label = format!("Lamp {r}");
+        let first = source(&format!("{label} v1 "));
+        let create = json!({ "op": "create", "vault": alice, "type": "recipe", "value": recipe(&label, 1),
+            "file": { "len": first.len, "name": format!("{label}.js"), "media": "text/javascript" } });
+        let e = ok(engine::put_file(&mut f.lab, f.mac, &create, first))["entry"].as_str().expect("its id").to_string();
+        for v in 2..=versions {
+            let line = f.run(json!({ "op": "propose", "entry": e, "name": format!("v{v}") }))["line"].clone();
+            let file = source(&format!("{label} v{v} "));
+            let put = json!({ "op": "put_file", "entry": e, "line": line, "value": recipe(&label, v), "len": file.len });
+            ok(engine::put_file(&mut f.lab, f.mac, &put, file));
+            f.run(json!({ "op": "merge", "entry": e, "from": line, "into": null }));
+        }
+        let variant = f.run(json!({ "op": "variant", "entry": e, "name": "brass" }))["line"].clone();
+        let file = source(&format!("{label} brass "));
+        let put = json!({ "op": "put_file", "entry": e, "line": variant, "value": recipe(&label, versions), "len": file.len });
+        ok(engine::put_file(&mut f.lab, f.mac, &put, file));
+    }
+    let edits = f.lab.log(f.mac).edits().len();
+    eprintln!("ASSETS_SCALE fixture: {edits} edits, {recipes} recipes of {versions} versions, {notes} notes, in {:.1?}", began.elapsed());
+    let database = json!({ "op": "database", "vault": alice, "types": ["recipe"] });
+    let views = json!({ "op": "entry_views", "vault": alice, "types": ["recipe"] });
+    let answer = engine::read(&f.lab, f.mac, &database);
+    let rows = answer["ok"]["rows"].as_array().map_or(0, Vec::len);
+    let brought = answer["ok"]["rows"].as_array().map_or(0, |r| r.iter().map(|r| r["brought"].as_array().map_or(0, Vec::len)).sum());
+    assert_eq!(rows, recipes, "every recipe a row");
+    let out = json!({
+        "edits": edits, "recipes": recipes, "versions": versions, "rows": rows, "brought": brought,
+        "database_ms": timed(&mut f, &database, runs),
+        "entry_views_ms": timed(&mut f, &views, runs),
+    });
+    println!("ASSETS_SCALE {out}");
 }

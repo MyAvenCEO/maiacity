@@ -138,24 +138,27 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     // at it, as avenDB's server's feed lists them (`world::public_entries`); one that brought a file once on its main
     // line, the heads a pin of that version names (`at`)
     let brought = lab.brought(me, entry);
+    let main = history.filter(|_| !brought.is_empty()).map(|h| h.releases(MAIN)).unwrap_or_default();
     if let (Some(h), [(edit, None, _)]) = (history, brought.as_slice()) {
-        row["at"] = version_heads(h, *edit, None);
+        row["at"] = version_heads(h, &main, *edit, None);
     }
     if let (Some(h), true) = (history, brought.len() > 1) {
-        let version = |(edit, line, files): (EditId, Line, Vec<(FileRoot, Option<u64>)>)| {
+        let at: Vec<(EditId, Line)> = brought.iter().map(|(edit, line, _)| (*edit, *line)).collect();
+        let records = h.read_at(&at, me, Item::record);
+        let version = |((edit, line, files), record): ((EditId, Line, Vec<(FileRoot, Option<u64>)>), Value)| {
             let file = |(root, len): (FileRoot, Option<u64>)| {
                 json!({ "root": hex(&root.hash), "size": root.size, "len": len })
             };
             json!({
                 "edit": hex(&edit.0),
                 "line": line.map(|b| hex(&b.0)),
-                "version": main_version(h, edit, line),
-                "at": version_heads(h, edit, line),
+                "version": main_version(h, &main, edit, line),
+                "at": version_heads(h, &main, edit, line),
                 "files": files.into_iter().map(file).collect::<Vec<_>>(),
-                "record": h.item_at(&[edit], me, line).record(),
+                "record": record,
             })
         };
-        row["brought"] = brought.into_iter().map(version).collect();
+        row["brought"] = brought.into_iter().zip(records).map(version).collect();
     }
     row
 }
