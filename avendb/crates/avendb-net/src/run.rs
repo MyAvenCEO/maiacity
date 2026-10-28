@@ -140,6 +140,15 @@ impl Node {
                 }).await;
                 json!({"ok":{"registered":self.shared.ui_receipts.emitted(ids)}})
             },
+            Some("call") => {
+                // a call whose method reads is answered as the read it runs, on the read path (off the indexes)
+                let called = op.clone();
+                match self.read(move |lab, me| engine::call_reads(lab, me, &called)).await {
+                    Some(Ok(read)) => self.fresh_read(read).await,
+                    Some(Err(refused)) => refused,
+                    None => self.change(op, authenticator).await?,
+                }
+            }
             _ if engine::asks(&op) => self.try_dry(move |lab, me| engine::run(lab, me, &op)).await?,
             _ if engine::reads(&op) => self.fresh_read(op).await,
             _ => self.change(op, authenticator).await?,
@@ -164,9 +173,14 @@ impl Node {
     async fn fresh_read(&self, op: Value) -> Value {
         let vault = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex);
         let stamped = engine::name(&op) != Some("touched");
-        // a window comes off the shared index where that can say (`query_window`), else from the engine
-        let mut answer = match self.windowed(&op).await {
-            Some(got) => got,
+        // a window comes off the shared index where that can say (`query_window`, a page of posts `posts_page`),
+        // else from the engine
+        let indexed = match engine::name(&op) {
+            Some("posts") => self.posts_indexed(&op).await,
+            _ => self.windowed(&op).await,
+        };
+        let mut answer = match indexed {
+            Some(answer) => answer,
             None => self.read(move |lab, me| engine::read(lab, me, &op)).await,
         };
         if !stamped || answer.get("ok").is_none() { return answer; }

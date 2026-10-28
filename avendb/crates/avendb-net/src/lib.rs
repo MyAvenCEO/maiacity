@@ -146,6 +146,7 @@ mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
+mod posts_page;
 mod shared_index;
 pub mod query_window;
 mod told_index;
@@ -1517,6 +1518,19 @@ impl Node {
     pub(crate) async fn windowed(&self, op: &serde_json::Value) -> Option<serde_json::Value> {
         let index = self.shared.shared_index.as_ref()?;
         query_window::answer(index, &self.shared.lab, self.shared.me, op).await.ok().flatten().map(|(got, _)| got)
+    }
+
+    /// A page of posts (`{"op": "posts", "limit"?, "after"?}`, as the engine answers it) off its shared index and the
+    /// tail of edits after its last save (`posts_page`, `PostsPage.lean`), never a walk of every entry it holds; `None`
+    /// where the index can't say (no shelf, or the tail is of a key's or share's log), and the caller asks the engine.
+    pub(crate) async fn posts_indexed(&self, op: &Value) -> Option<Value> {
+        let index = self.shared.shared_index.as_ref()?;
+        let o = op.as_object()?;
+        let (limit, after) = match avendb::engine::posts_args(o) {
+            Ok(args) => args,
+            Err(why) => return Some(why.to_json()),
+        };
+        posts_page::page(index, &self.shared.lab, self.shared.me, limit, after).await.ok().flatten()
     }
 
     /// The root of its shared index and the head of the edits it is of, as its last save left them: what a peer holds

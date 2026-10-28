@@ -41,6 +41,8 @@ const SLICE: usize = 256;
 const MARK: &[u8] = b"M";
 /// The most rows one scan reads.
 const SCAN: usize = 4096;
+/// The most rows one scan of `find_by` reads: it reads on while the token's rows go on.
+const FIND_CHUNK: usize = 64;
 
 /// What the head of a log prefix is a hash of, in one stream.
 const HEAD: &str = "avenDB shared index head 3";
@@ -169,6 +171,9 @@ pub(crate) enum Stepped {
 pub(crate) struct SharedIndex {
     index: tokio::sync::Mutex<ShelfIndex>,
     heads: Mutex<Heads>,
+    /// The last stamp found to be of a prefix of the device's log, and the lineage of the log it was found in: while
+    /// that log only appends (`Log::lineage`), the stamp stays of its prefix, so a read checks it at no cost per edit.
+    checked: std::sync::Mutex<Option<(Stamp, avendb::policy::LogRevision)>>,
 }
 
 impl SharedIndex {
@@ -176,10 +181,26 @@ impl SharedIndex {
     pub(crate) async fn open(shelf: Shelf) -> io::Result<SharedIndex> {
         let (index, _) = ShelfIndex::open_kept(shelf, NAME, BUDGET, empty_head()).await?;
         let heads = Mutex::new(Heads::new(index.stamp()));
-        Ok(SharedIndex {
-            index: tokio::sync::Mutex::new(index),
-            heads,
-        })
+        Ok(SharedIndex { index: tokio::sync::Mutex::new(index), heads, checked: std::sync::Mutex::new(None) })
+    }
+
+    /// Stamp `stamp` is of a prefix of log `log`: the index reflects its first `stamp.at` edits, so a read may take the
+    /// edits after them as its tail. Hashed once per stamp and lineage of the log (`checked`), not once per read.
+    pub(crate) fn of_prefix(&self, stamp: Stamp, log: &avendb::policy::Log) -> bool {
+        let ids = log.ids();
+        if stamp.at as usize > ids.len() {
+            return false;
+        }
+        let lineage = log.lineage();
+        let mut checked = self.checked.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if checked.as_ref().is_some_and(|(s, l)| *s == stamp && *l == lineage) {
+            return true;
+        }
+        let of = head(&ids[..stamp.at as usize]) == stamp;
+        if of {
+            *checked = Some((stamp, lineage));
+        }
+        of
     }
 
     /// Steps it on to what device `me` of `lab` holds, if it is settled and the shelf holds `held` of its edits, every
@@ -260,30 +281,42 @@ impl SharedIndex {
         after: Option<(u64, EntryId)>,
         limit: usize,
     ) -> io::Result<Vec<(u64, EntryId)>> {
-        let tokens = lab
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .find_tokens(me, vault, labels);
+        let tokens = lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner).find_tokens(me, vault, labels);
+        self.find_by(&tokens, after, limit).await
+    }
+
+    /// `find`, of the rows of tokens `tokens`: the newest `limit` entries after `after` that carry one of them.
+    pub(crate) async fn find_by(
+        &self,
+        tokens: &[avendb::index::Token],
+        after: Option<(u64, EntryId)>,
+        limit: usize,
+    ) -> io::Result<Vec<(u64, EntryId)>> {
         let index = self.index.lock().await;
         // the newest first: the greatest creation, then the greatest entry, as the keys sort
         let mut found = BTreeSet::new();
         for t in tokens {
-            let prefix = shared::label_prefix(&t);
-            let from = match after {
-                Some((created, entry)) => {
-                    [&shared::label_key(&t, created, entry)[..], &[0]].concat()
-                }
+            let prefix = shared::label_prefix(t);
+            let mut from = match after {
+                Some((created, entry)) => [&shared::label_key(t, created, entry)[..], &[0]].concat(),
                 None => prefix.clone(),
             };
-            for (k, _) in index.scan(&from, limit).await? {
-                if !k.starts_with(&prefix) {
-                    break;
+            // a few rows a scan, so a token of few rows reads no rows of the tokens after it
+            let (chunk, mut got) = (limit.clamp(1, FIND_CHUNK), 0);
+            'token: loop {
+                let rows = index.scan(&from, chunk).await?;
+                for (k, _) in &rows {
+                    if !k.starts_with(&prefix) || got == limit {
+                        break 'token;
+                    }
+                    let created = shared::created(k[17..25].try_into().expect("8 bytes"));
+                    found.insert(std::cmp::Reverse((created, shared::owner(k).expect("an entry's row"))));
+                    got += 1;
                 }
-                let created = shared::created(k[17..25].try_into().expect("8 bytes"));
-                found.insert(std::cmp::Reverse((
-                    created,
-                    shared::owner(&k).expect("an entry's row"),
-                )));
+                match rows.last() {
+                    Some((k, _)) if rows.len() == chunk => from = [&k[..], &[0]].concat(),
+                    _ => break,
+                }
             }
         }
         Ok(found.into_iter().take(limit).map(|r| r.0).collect())
