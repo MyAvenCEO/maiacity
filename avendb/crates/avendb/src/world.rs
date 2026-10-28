@@ -1269,25 +1269,28 @@ fn public_row(
         "files": lab.line_files(me, en.id, MAIN).into_iter().filter_map(file_json).collect::<Vec<_>>(),
     });
     let brought = lab.brought(me, en.id);
+    let main = if brought.is_empty() { vec![] } else { history.releases(MAIN) };
     if let [(edit, None, _)] = brought.as_slice() {
-        row["at"] = engine::version_heads(history, *edit, None);
+        row["at"] = engine::version_heads(history, &main, *edit, None);
     }
     if brought.len() > 1 {
-        let version = |(edit, line, files): (EditId, Line, Vec<(FileRoot, Option<u64>)>)| {
-            let item = history.item_at(&[edit], me, line);
+        let at: Vec<(EditId, Line)> = brought.iter().map(|(edit, line, _)| (*edit, *line)).collect();
+        let records = history.read_at(&at, me, |item| {
             let stored = item.record();
-            let record = engine::own(lane, &stored).and_then(|app| lane.view(&app, &item.authored()).0.get(&stored));
+            engine::own(lane, &stored).and_then(|app| lane.view(&app, &item.authored()).0.get(&stored))
+        });
+        let version = |((edit, line, files), record): ((EditId, Line, Vec<(FileRoot, Option<u64>)>), Option<Value>)| {
             json!({
                 "edit": edit.to_hex(),
                 "line": line.map(|b| b.to_hex()),
-                "version": engine::main_version(history, edit, line),
-                "at": engine::version_heads(history, edit, line),
+                "version": engine::main_version(history, &main, edit, line),
+                "at": engine::version_heads(history, &main, edit, line),
                 "authors": authors_json(lab, me, &authors(lab, me, en.id, &[edit])),
                 "files": files.into_iter().filter_map(file_json).collect::<Vec<_>>(),
                 "record": record,
             })
         };
-        row["brought"] = brought.into_iter().map(version).collect();
+        row["brought"] = brought.into_iter().zip(records).map(version).collect();
     }
     Some((kind, deleted, row))
 }
