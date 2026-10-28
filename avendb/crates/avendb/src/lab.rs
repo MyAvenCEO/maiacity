@@ -165,6 +165,9 @@ const REPLAY_WORK: usize = 4;
 /// The bodies a step of a catch-up opens for each entry of its budget (`read`).
 const READ_WORK: usize = 32;
 
+/// The budget of the step a write of a device's own takes in the middle of a catch-up (`Lab::refresh_own`).
+const OWN_WRITE_BUDGET: usize = 8;
+
 
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
 type Blobs = HashMap<BlobId, Arc<[u8]>>;
@@ -2633,8 +2636,9 @@ impl Lab {
             }
             _ => vec![],
         };
+        let catching = self.catching_up(on);
         self.keep(on, vec![signed], &blobs);
-        self.refresh(on, &lent);
+        self.refresh_own(on, &lent, catching);
         Ok(id)
     }
 
@@ -2877,11 +2881,42 @@ impl Lab {
         self.refresh_with(d, lent, None);
     }
 
+    /// Whether device `d` is in the middle of a catch-up a step at a time (`catch_up_step`): behind, or with a replay
+    /// under way, entries left to show or bodies left to open.
+    fn catching_up(&self, d: SignerId) -> bool {
+        self.stores.get(&self.at(d)).is_some_and(|s| {
+            s.behind || s.replaying.is_some() || s.showing.is_some() || !s.read_new.left.is_empty()
+        })
+    }
+
+    /// `refresh` after a write of device `on`'s own: in the middle of a catch-up (`catching`), one step of it, which
+    /// shows the entries of new writes first (`show_items`), and the catch-up's next steps the rest. A person's write
+    /// waits for no showing of a whole page, nor a first sync's replay (`CatchUpBudget.lean`, G5, 2026-10-27: 400 ms
+    /// at 32,000 edits, the page it came in the middle of shown at once).
+    fn refresh_own(&mut self, on: SignerId, lent: &[(SignerId, Secret)], catching: bool) {
+        if catching {
+            self.refresh_with(on, lent, Some(OWN_WRITE_BUDGET));
+        } else {
+            self.refresh(on, lent);
+        }
+    }
+
     /// `refresh`, showing at most `budget` entries anew (`show_items`) if there is one: true if it is done, else it is
     /// still behind, and `show_more` and then another `refresh_with` go on from where it left off (`catch_up_step`).
     fn refresh_with(&mut self, d: SignerId, lent: &[(SignerId, Secret)], budget: Option<usize>) -> bool {
         // a session's store is its host's, which opens what it holds with its own keys
         let d = self.at(d);
+        // with a budget its replay steps on a slice at most (`step_replay`), and the rest waits for the next step
+        if let Some(b) = budget {
+            self.step_replay(d, b.max(1).saturating_mul(REPLAY_WORK));
+            if let Some(store) = self.stores.get_mut(&d)
+                && store.replayed < store.log.edits().len()
+                && store.latest.get().is_none()
+            {
+                store.behind = true;
+                return false;
+            }
+        }
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.behind = false;
         }
@@ -3091,22 +3126,30 @@ impl Lab {
         let (mut run, why) = match run {
             Some((_, _, run)) => (run, None),
             None => {
-                let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
+                // stepped on over at most `most` of the edits it took since (one by one, or the last `TAIL` with them):
+                // a first sync's 130,000 stepped on at once took 10 s (2026-10-27)
+                let to = store.log.edits().len().min(store.replayed.saturating_add(most.max(1)));
+                let fresh = &store.log.edits()[store.replayed..to];
                 store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
                 let was = std::mem::replace(&mut store.replay, replay(&[]));
-                match replay_on_or(was, store.log.edits(), store.replayed) {
+                match replay_on_or(was, &store.log.edits()[..to], store.replayed) {
                     Ok((replayed, why)) => {
                         store.replay = replayed;
                         store.perf.count(why_counted(why), 1);
-                        store.replayed = store.log.edits().len();
-                        debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
+                        store.replayed = to;
+                        debug_assert!(store.replay == replay(&store.log.edits()[..to]), "a replay stepped on differs from the whole");
                         store.perf.add("replay", at);
                         return;
                     }
-                    // the replay it held, as it was, stays what it shows until the whole one ends
+                    // the replay it held, as it was, stays what it shows until the whole one, of every edit it holds
+                    // (not of the slice: one whole replay, not one a slice), ends
                     Err((Some(was), why)) => {
                         store.replay = was;
-                        (ReplayRun::start(store.log.edits(), store.log.ids()), Some(why))
+                        store.reshow |= store.log.edits()[store.replayed..].iter().any(Edit::is_removal);
+                        let begun = Perf::start();
+                        let run = ReplayRun::start(store.log.edits(), store.log.ids());
+                        store.perf.add("replay: begun", begun);
+                        (run, Some(why))
                     }
                     // a move found late to keep not every write: rare, replayed whole at once as before
                     Err((None, why)) => {
@@ -3125,8 +3168,13 @@ impl Lab {
         }
         let n = run.of();
         let edits = &store.log.edits()[..n];
-        if run.step(edits, most) {
+        let ran = Perf::start();
+        let all = run.step(edits, most);
+        store.perf.add("replay: run", ran);
+        if all {
+            let ended = Perf::start();
             store.replay = run.finish(edits, &store.log.ids()[..n]);
+            store.perf.add("replay: ended", ended);
             store.wholes += 1;
             store.replayed = n;
             debug_assert!(store.replay == replay(&store.log.edits()[..n]), "a replay run a slice a step differs from the whole");
@@ -3931,10 +3979,11 @@ impl Lab {
         if self.dry {
             return Ok(edit.id());
         }
+        let catching = self.catching_up(on);
         let id = self.seal_write(on, edit, body, x)?;
         match &mut self.held_back {
             Some(devices) => _ = devices.insert(on),
-            None => self.refresh(on, &[]),
+            None => self.refresh_own(on, &[], catching),
         }
         Ok(id)
     }
@@ -6969,11 +7018,11 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     let fresh: Vec<&Entry> = if grew {
         let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
         let opened_since = opened.keys().copied().filter(|e| !waiting.contains(e));
-        // the entries of the new writes first, as a live edit's during a long catch-up, then the rest that moved
-        let mut es: Vec<EntryId> = all.iter().skip(n).map(|w| w.entry).collect();
-        es.sort();
-        es.dedup();
-        let first: HashSet<EntryId> = es.iter().copied().collect();
+        // the entries of the new writes first, the newest first, as a live edit's during a long catch-up whose
+        // backlog came just before it (its replay and reading a slice a step, `CatchUpBudget.lean`), then the rest
+        // that moved
+        let mut first: HashSet<EntryId> = HashSet::new();
+        let mut es: Vec<EntryId> = all.iter().skip(n).rev().map(|w| w.entry).filter(|e| first.insert(*e)).collect();
         let mut more: Vec<EntryId> = opened_since.chain(changed).filter(|e| !first.contains(e)).collect();
         more.sort();
         more.dedup();

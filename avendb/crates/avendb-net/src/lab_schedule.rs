@@ -609,10 +609,15 @@ mod live_first {
         let shows = |lab: &avendb::lab::Lab| {
             lab.item(phone, room).and_then(|i| i.as_document()).is_some_and(|d| format!("{d:?}").contains("Live from the Mac"))
         };
-        let (mut steps, mut shown_at) = (0, None);
+        // its replay steps on a slice a step (`CatchUpBudget.lean`), the live edit's among them: it is shown in the
+        // next step or two after the replay reaches it, before the backlog's entries are shown
+        let (mut steps, mut shown_at, mut replayed_at) = (0, None, None);
         loop {
             let step = lab.catch_up_step(phone, 48);
             steps += 1;
+            if replayed_at.is_none() && lab.replay_current(phone) {
+                replayed_at = Some(steps);
+            }
             if shown_at.is_none() && shows(&lab) {
                 shown_at = Some(steps);
             }
@@ -620,9 +625,13 @@ mod live_first {
                 break;
             }
         }
-        eprintln!("LIVE a live edit taken mid catch-up was shown after {shown_at:?} of the {steps} steps left");
-        assert!(steps >= 8, "the backlog takes many steps: {steps}");
-        assert!(shown_at.is_some_and(|s| s <= 2), "shown in the next step or two, not after the backlog: {shown_at:?} of {steps}");
+        eprintln!("LIVE a live edit taken mid catch-up was shown after {shown_at:?} of the {steps} steps left, replayed after {replayed_at:?}");
+        let replayed_at = replayed_at.expect("replayed");
+        assert!(steps >= replayed_at + 8, "the backlog's showing takes many steps after its replay: {steps}");
+        assert!(
+            shown_at.is_some_and(|s| s <= replayed_at + 2),
+            "shown in the next step or two once replayed, not after the backlog: {shown_at:?} of {steps}"
+        );
         // and it ends holding the backlog's entries and the live edit, as a whole catch-up does
         let made = w.lab.entries(mac);
         assert!(made.iter().all(|e| lab.entries(phone).contains(e)), "every entry of the backlog shown");
