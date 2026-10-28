@@ -120,6 +120,9 @@ struct Hub {
     links: BTreeMap<(EndpointId, EndpointId), Rng>,
     /// When each link (sender, receiver) is free again, at a set `rate`.
     busy: BTreeMap<(EndpointId, EndpointId), tokio::time::Instant>,
+    /// What each link has on its way, in the order sent, with when each arrives: a link delivers in order, as a wire
+    /// or a queue does, where one timer for each packet woke them in any order within a timer tick.
+    pipes: BTreeMap<(EndpointId, EndpointId), VecDeque<(tokio::time::Instant, Vec<u8>)>>,
     /// Links that carry nothing, both ways.
     cut: BTreeSet<(EndpointId, EndpointId)>,
     /// Nodes that reach only these peers, as a browser reaches only its relay.
@@ -127,6 +130,20 @@ struct Hub {
     names: BTreeMap<EndpointId, String>,
     counts: Counts,
     trace: VecDeque<String>,
+    bottleneck: Option<Bottleneck>,
+}
+
+/// One queue the packets of some senders share, at a set rate, holding at most `buffer` of waiting: a cell or a home
+/// router several flows meet at, past which it drops (`Net::bottleneck`).
+#[derive(Debug)]
+struct Bottleneck {
+    rate: u64,
+    buffer: Duration,
+    through: BTreeSet<EndpointId>,
+    free: tokio::time::Instant,
+    /// Each packet's wait in the queue, µs, and how many it dropped.
+    waits: Vec<u32>,
+    dropped: u64,
 }
 
 #[derive(Debug, Default)]
@@ -183,6 +200,8 @@ impl Net {
             inboxes: BTreeMap::new(),
             links: BTreeMap::new(),
             busy: BTreeMap::new(),
+            pipes: BTreeMap::new(),
+            bottleneck: None,
             cut: BTreeSet::new(),
             only: BTreeMap::new(),
             names: BTreeMap::new(),
@@ -271,6 +290,19 @@ impl Net {
         self.heal_all();
     }
 
+    /// From now on the packets `through` sends share one queue at `rate` bytes a second, which drops a packet that
+    /// would wait more than `buffer` in it: several flows meeting at one congested link.
+    pub fn bottleneck(&self, rate: u64, buffer: Duration, through: impl IntoIterator<Item = EndpointId>) {
+        let free = tokio::time::Instant::now();
+        let through = through.into_iter().collect();
+        self.hub().bottleneck = Some(Bottleneck { rate, buffer, through, free, waits: vec![], dropped: 0 });
+    }
+
+    /// The bottleneck's waits so far, µs, each packet's, and the packets it dropped.
+    pub fn queued(&self) -> (Vec<u32>, u64) {
+        self.hub().bottleneck.as_ref().map(|b| (b.waits.clone(), b.dropped)).unwrap_or_default()
+    }
+
     pub fn counts(&self) -> Counts {
         self.hub().counts
     }
@@ -298,7 +330,8 @@ impl Net {
             let rng = hub.links.entry((from, to)).or_insert_with(|| link_rng(seed, from, to));
             let (lose, duplicate, delayed) =
                 (rng.chance(faults.lose), rng.chance(faults.duplicate), rng.chance(faults.delayed));
-            let mut wait = if delayed && !faults.delay.is_zero() {
+            let held = delayed && !faults.delay.is_zero();
+            let mut wait = if held {
                 Duration::from_micros(rng.below(faults.delay.as_micros() as u64 + 1))
             } else {
                 Duration::ZERO
@@ -306,6 +339,19 @@ impl Net {
             if lose {
                 hub.counts.lost += 1;
                 continue;
+            }
+            // a shared queue first, where its senders meet: dropped past its buffer
+            if let Some(b) = hub.bottleneck.as_mut().filter(|b| b.through.contains(&from)) {
+                let now = tokio::time::Instant::now();
+                let queued = b.free.max(now) - now;
+                if queued > b.buffer {
+                    b.dropped += 1;
+                    hub.counts.lost += 1;
+                    continue;
+                }
+                b.waits.push(queued.as_micros() as u32);
+                b.free = b.free.max(now) + Duration::from_nanos(bytes.len() as u64 * 1_000_000_000 / b.rate);
+                wait += b.free - now;
             }
             // a link at a set rate sends a packet once the one before it is through, then its latency
             if faults.rate > 0 {
@@ -319,9 +365,19 @@ impl Net {
             let copies = if duplicate { 2 } else { 1 };
             hub.counts.duplicated += copies - 1;
             for _ in 0..copies {
-                if wait.is_zero() {
+                let pipe = hub.pipes.entry((from, to)).or_default();
+                if wait.is_zero() && pipe.is_empty() {
                     hub.deliver(to, Packet { from, bytes: bytes.to_vec() });
+                } else if !held {
+                    // in order behind what the link already carries
+                    hub.counts.delayed += 1;
+                    let first = pipe.is_empty();
+                    pipe.push_back((tokio::time::Instant::now() + wait, bytes.to_vec()));
+                    if first {
+                        tokio::spawn(self.clone().carry(from, to));
+                    }
                 } else {
+                    // a packet held back on purpose overtakes and is overtaken
                     hub.counts.delayed += 1;
                     let (net, bytes) = (self.clone(), bytes.to_vec());
                     tokio::spawn(async move {
@@ -336,6 +392,39 @@ impl Net {
                     });
                 }
             }
+        }
+    }
+}
+
+impl Net {
+    /// Delivers what one link carries, in the order sent, each once it arrives; done once the link is empty.
+    async fn carry(self, from: EndpointId, to: EndpointId) {
+        loop {
+            let next = {
+                let mut guard = self.hub();
+                let hub = &mut *guard;
+                let now = tokio::time::Instant::now();
+                loop {
+                    let Some(pipe) = hub.pipes.get_mut(&(from, to)) else { return };
+                    match pipe.front() {
+                        None => {
+                            hub.pipes.remove(&(from, to));
+                            return;
+                        }
+                        Some(&(at, _)) if at > now => break at,
+                        Some(_) => {
+                            let (_, bytes) = pipe.pop_front().expect("a front");
+                            // a link cut while the packet was on its way loses it
+                            if hub.blocks(from, to) {
+                                hub.counts.blocked += 1;
+                            } else {
+                                hub.deliver(to, Packet { from, bytes });
+                            }
+                        }
+                    }
+                }
+            };
+            tokio::time::sleep_until(next).await;
         }
     }
 }
