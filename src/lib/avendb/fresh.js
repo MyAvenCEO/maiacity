@@ -19,6 +19,9 @@ const at = (ms) => {
 
 /** The badge's words: nothing while current. @param {ReturnType<import('../../../game/code/sources/coverage.js').freshnessOf>} f */
 export function freshLine(f) {
+	if (f.reading) return f.state === 'offline'
+		? `Offline · reading this view’s entries on this device${f.asOf ? `, as of ${at(f.asOf)}` : ''}`
+		: 'Catching up · reading this view’s entries on this device';
 	if (f.state === 'offline') return f.asOf ? `Offline · as of ${at(f.asOf)}` : 'Offline · not synced with a peer yet';
 	if (f.state !== 'behind') return '';
 	if (f.logs) return `Catching up · ${n(f.logs)} ${f.logs === 1 ? 'log' : 'logs'} left for this view`;
