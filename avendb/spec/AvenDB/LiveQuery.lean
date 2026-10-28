@@ -115,3 +115,43 @@ theorem indexed_eq_scan (keyOf : Nat → Nat) (entries : List Nat) (k : Nat) :
   simpa using this
 
 end AvenDB.LiveQuery
+
+/-! ## Over query views (B4)
+
+A device keeps each query a page shows as a query view (`QueryView.lean`): its answer, and a version that moves only
+when a new answer is another (`putView`). The page passes the version it last read, and is told the read changed only
+where the view's version is another now (`changed`). So a read whose version stayed has the answer the page read
+(`same_version_same_answer`), and a page that re-runs only the reads it is told changed shows every query's answer.
+-/
+
+namespace Views
+
+/-- A view: its answer and its version. -/
+structure View (A : Type) where
+  answer : A
+  version : Nat
+
+/-- The view after a new answer worked out at tick `t`: the version stays where the answer is the same. -/
+def putView {A : Type} [DecidableEq A] (old : Option (View A)) (answer : A) (t : Nat) : View A :=
+  match old with
+  | some v => if v.answer = answer then v else ⟨answer, t⟩
+  | none => ⟨answer, t⟩
+
+/-- What `touched` tells a page that read version `seen`. -/
+def changed {A : Type} (v : View A) (seen : Option Nat) : Bool := seen != some v.version
+
+/-- Ticks only grow: each new answer's tick is past every version before it. -/
+theorem same_version_same_answer {A : Type} [DecidableEq A] (old : View A) (answer : A) (t : Nat)
+    (fresh : old.version < t) (h : (putView (some old) answer t).version = old.version) :
+    (putView (some old) answer t).answer = old.answer := by
+  by_cases he : old.answer = answer
+  · simp [putView, he]
+  · simp only [putView, he, ↓reduceIte] at h
+    omega
+
+/-- A read the page is not told changed has the version, so the answer, it read. -/
+theorem unchanged_read {A : Type} (v : View A) (seen : Nat) (h : changed v (some seen) = false) : v.version = seen := by
+  simp only [changed, bne_eq_false_iff_eq, Option.some.injEq] at h
+  exact h.symm
+
+end Views

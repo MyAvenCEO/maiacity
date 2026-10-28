@@ -2,8 +2,8 @@
 import { expect, test } from 'bun:test';
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { APP_ROUTES, appPages, coverage } from './manifest-coverage.js';
-import { MANIFESTS } from './manifests.js';
+import { APP_ROUTES, appPages, coverage } from './actor-coverage.js';
+import { ACTORS, QUERIES } from './actors.js';
 import { GAMES } from '../../../game/games.js';
 
 /** each folder under src/routes/app holding a `+page.svelte`, as its path */
@@ -22,16 +22,16 @@ test("the app's routes are the folders that hold a page, the games' aside", () =
 	expect(APP_ROUTES).toEqual(routes().filter((r) => !games.has(r)).sort());
 });
 
-test("a page's manifests are those whose routes cover it, the kernel's aside, and each tier's parts are counted", () => {
+test("a page's actors are those whose routes cover it, the kernel's aside, and each tier's parts are counted", () => {
 	const pages = appPages({ nav: [['', [['assets', 'Assets'], ['studio', 'Studio']]]], out: { studio: '/app/studio/' }, games: GAMES });
 	expect(pages.find((p) => p.path === '/app/#studio')).toBeUndefined();
-	const by = Object.fromEntries(coverage(MANIFESTS, pages).map((c) => [c.path, c]));
-	expect(by['/app/chat/'].manifests).toEqual(['chat']);
+	const by = Object.fromEntries(coverage([...ACTORS, ...QUERIES], pages).map((c) => [c.path, c]));
+	expect(by['/app/chat/'].actors).toEqual(['chat']);
 	expect(by['/app/chat/'].tiers.now).toBeGreaterThanOrEqual(3);
-	expect(by['/app/studio/'].manifests).toEqual(['studio']);
-	expect(by['/app/'].manifests).toEqual(['dashboard']);
-	expect(by['/app/#assets'].manifests).toEqual(['assets']);
+	expect(by['/app/studio/'].actors).toEqual(['studio']);
+	expect(by['/app/'].actors).toEqual(['dashboard']);
+	expect(by['/app/#assets'].actors).toEqual(['assets']);
 	expect(by['/app/#assets'].tiers.now).toBeGreaterThanOrEqual(3);
-	for (const g of GAMES) expect(by[g.route].manifests).toContain(`game-${g.id}`);
-	expect(by['/app/games/sandbox-7/'].manifests).toEqual(['game-sandbox-7']);
+	for (const g of GAMES) expect(by[g.route].actors).toContain(`game-${g.id}`);
+	expect(by['/app/games/sandbox-7/'].actors).toEqual(['game-sandbox-7']);
 });

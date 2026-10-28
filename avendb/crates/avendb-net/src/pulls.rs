@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
-use avendb::id::SignerId;
+use avendb::id::{BlobId, EditId, SignerId};
 use avendb::sync::LogId;
 use iroh::EndpointId;
 use n0_future::time::{self, Duration, Instant};
@@ -73,7 +73,22 @@ pub(crate) struct Budget {
     ahead: Arc<Semaphore>,
     recent: Mutex<VecDeque<(EndpointId, Estimate)>>,
     live: Arc<Mutex<LiveBook>>,
+    /// A background catch-up runs on for what live pulls left of their views (`live::LIVE_VIEW`): one at a time.
+    pub(crate) view_behind: AtomicBool,
+    /// For each log a peer's announcement hinted, whether it only repeated it (a witness, `LivePriority.lean`
+    /// `inStep`), till a live pull takes it.
+    witnesses: Mutex<BTreeMap<SignerId, BTreeMap<LogId, bool>>>,
+    /// One asking of each peer at a time (`Budget::one_asking`).
+    askings: Mutex<BTreeMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
+    /// One fetch of each McEliece key at a time (`Budget::fetching`).
+    fetches: Mutex<BTreeMap<BlobId, Arc<tokio::sync::Mutex<()>>>>,
+    /// The askings of each peer running now, each with the edits other pulls of that peer took meanwhile, for its next
+    /// page to name loose (`Budget::taking`).
+    taken: Mutex<BTreeMap<SignerId, Vec<Taken>>>,
 }
+
+/// What other pulls of an asking's peer took while it runs (`Budget::taking`), not yet named in its request.
+pub(crate) type Taken = Arc<Mutex<Vec<EditId>>>;
 
 /// The queue ticket is retained during service too, bounding all outstanding admissions, including waiters.
 pub(crate) struct Admission {
@@ -161,6 +176,11 @@ impl Budget {
             ahead: Arc::new(Semaphore::new(ahead)),
             recent: Mutex::default(),
             live: Arc::default(),
+            view_behind: AtomicBool::new(false),
+            witnesses: Mutex::default(),
+            askings: Mutex::default(),
+            fetches: Mutex::default(),
+            taken: Mutex::default(),
         }
     }
 
@@ -218,6 +238,64 @@ impl Budget {
         })
     }
 
+    /// The turn of an asking of `peer`, once no other asking of it runs (F12, `LivePriority.lean`'s `oneAsking`): two at
+    /// once named the same holdings in their requests, so the peer sent the second all the first took again (sync_bench
+    /// `bench_live`: 1,352 edits pulled for 675 new, an explicit `sync_with` beside the backlog's asking). The second
+    /// names what the first took. Taken before admission, so a waiter holds no slot; a live pull takes none
+    /// (`Claims::live` keeps the backlog off its logs).
+    pub(crate) async fn one_asking(&self, peer: EndpointId) -> tokio::sync::OwnedMutexGuard<()> {
+        let turn = {
+            let mut askings = self.askings.lock().expect("askings");
+            // a peer no asking holds or waits for any more is forgotten, so the book stays as small as the pulls
+            askings.retain(|_, turn| Arc::strong_count(turn) > 1);
+            askings.entry(peer).or_default().clone()
+        };
+        turn.lock_owned().await
+    }
+
+    /// The turns of fetching `keys` (smallest first, as `bring_keys` lists them), once no other fetch holds any: a live
+    /// pull and the backlog brought the same two keys at once, 2 MB each time on a phone's link (`bench_live`). Taken in
+    /// order, so two fetches never wait on each other.
+    pub(crate) async fn fetching(&self, keys: &[BlobId]) -> Vec<tokio::sync::OwnedMutexGuard<()>> {
+        let turns: Vec<_> = {
+            let mut fetches = self.fetches.lock().expect("fetches");
+            fetches.retain(|_, turn| Arc::strong_count(turn) > 1);
+            keys.iter().map(|key| fetches.entry(*key).or_default().clone()).collect()
+        };
+        let mut held = Vec::with_capacity(turns.len());
+        for turn in turns {
+            held.push(turn.lock_owned().await);
+        }
+        held
+    }
+
+    /// An asking of `peer` begins: what other pulls of `peer` take while it runs is added to what it returns, for each
+    /// page it asks after to name loose (`LivePriority.lean` `withTaken`). A catch-up asked every page as it began, so
+    /// the chat edits a live pull brought meanwhile came again on its last page (`bench_live` phone_bulk at ten a
+    /// second: 63 of its 94 edits). It ends as the asking drops it.
+    pub(crate) fn taking(&self, peer: SignerId) -> Taken {
+        let mine = Taken::default();
+        let mut taken = self.taken.lock().expect("taken");
+        taken.retain(|_, askings| {
+            askings.retain(|a| Arc::strong_count(a) > 1);
+            !askings.is_empty()
+        });
+        taken.entry(peer).or_default().push(mine.clone());
+        mine
+    }
+
+    /// A page of `peer`'s that the asking `by` took brought `ids`, which this device holds now: told to every other
+    /// asking of `peer`.
+    pub(crate) fn took(&self, peer: SignerId, by: &Taken, ids: &[EditId]) {
+        if ids.is_empty() {
+            return;
+        }
+        let taken = self.taken.lock().expect("taken");
+        for other in taken.get(&peer).into_iter().flatten().filter(|a| !Arc::ptr_eq(a, by)) {
+            other.lock().expect("taken").extend_from_slice(ids);
+        }
+    }
+
     /// A page asked ahead (S6), if a slot is free now: `None` rather than waiting, so a pull that finds none asks on
     /// one page at a time, as it did. Carried into validation as any page's admission is.
     pub(crate) fn ahead(&self) -> Option<Page> {
@@ -228,6 +306,38 @@ impl Budget {
     /// Scheduling hints only, received after the peer's authenticated announcement was admitted. The caller
     /// still intersects these IDs with ordinary authorized differences before asking; a hint grants no access.
     /// Overflow remains on normal reconciliation. Existing workers coalesce up to LIVE_LOGS pending logs.
+    /// Notes which logs `peer`'s hint repeated unchanged (witnesses) and which it changed, till a live pull takes them:
+    /// a log changed by any hint coalesced into the pull is no witness. A book grown past a few pulls' worth (hints no
+    /// pull took) starts again.
+    pub(crate) fn note_witnesses(&self, peer: SignerId, hinted: Vec<(LogId, bool)>) {
+        let mut book = self.witnesses.lock().expect("live witnesses");
+        let of = book.entry(peer).or_default();
+        if of.len() > 4 * LIVE_LOGS {
+            of.clear();
+        }
+        for (log, unchanged) in hinted {
+            if unchanged {
+                of.entry(log).or_insert(true);
+            } else {
+                of.insert(log, false);
+            }
+        }
+        if of.is_empty() {
+            book.remove(&peer);
+        }
+    }
+
+    /// The witnesses among `logs` for `peer`, each log taken out of the book.
+    pub(crate) fn take_witnesses(&self, peer: SignerId, logs: &BTreeSet<LogId>) -> BTreeSet<LogId> {
+        let mut book = self.witnesses.lock().expect("live witnesses");
+        let Some(of) = book.get_mut(&peer) else { return BTreeSet::new() };
+        let taken = logs.iter().filter(|l| of.remove(*l) == Some(true)).copied().collect();
+        if of.is_empty() {
+            book.remove(&peer);
+        }
+        taken
+    }
+
     pub(crate) fn live_announced(&self, peer: SignerId, full: bool, logs: &[LogId]) -> Option<LiveWork> {
         if full || logs.is_empty() || logs.len() > LIVE_LOGS { return None; }
         let mut book = self.live.lock().expect("live pulls");
@@ -951,6 +1061,24 @@ mod live_queue_tests {
     fn log(n: u64) -> LogId { LogId::Entry(EntryId::from_u64(n)) }
 
     #[test]
+    fn what_one_pull_takes_the_other_askings_of_its_peer_name_loose() {
+        // LivePriority.taken_not_sent_again: the catch-up's next page names what the live pull took, the live pull
+        // isn't told of its own page, another peer's asking hears nothing, and an asking that ended is told no more
+        let budget = Budget::default();
+        let (peer, other) = (SignerId::from_u64(1), SignerId::from_u64(2));
+        let (catch_up, live, elsewhere) = (budget.taking(peer), budget.taking(peer), budget.taking(other));
+        let ids = [EditId([7; 32]), EditId([8; 32])];
+        budget.took(peer, &live, &ids);
+        assert_eq!(*catch_up.lock().unwrap(), ids);
+        assert!(live.lock().unwrap().is_empty() && elsewhere.lock().unwrap().is_empty());
+        drop(catch_up);
+        let later = budget.taking(peer);
+        budget.took(peer, &live, &ids[..1]);
+        assert_eq!(*later.lock().unwrap(), ids[..1]);
+        assert_eq!(budget.taken.lock().unwrap()[&peer].len(), 2, "the asking that ended is gone");
+    }
+
+    #[test]
     fn live_hints_bound_full_inventories_peers_and_coalesced_logs() {
         // LivePriority.full_is_not_interactive / oversized_is_not_interactive / hints_are_bounded.
         let budget = Budget::default();
@@ -1378,13 +1506,19 @@ mod pipelined_tests {
             serve_slow(&conn, &mut w.lab, sender, receiver, RTT, Some(3), &asked).await;
             future::pending::<()>().await;
         };
-        let began = Instant::now();
-        let ended = time::timeout(Duration::from_secs(20), future::or(async { Some(pull.await) }, async { serving.await; None })).await;
-        let ended = ended.expect("the pull ends once its connection is gone").expect("the pull, not the peer, ends");
-        assert!(ended.is_err(), "a pull whose connection closed under it fails: {ended:?}");
-        assert!(began.elapsed() < Duration::from_secs(5), "it ends at once, not after a page's wait: {:?}", began.elapsed());
+        // it ends by its connection's loss, not by a page's wait running out (`PAGE_WAIT`, "no page in time"): the
+        // cause, not a wall clock a loaded machine misses (10.3 s once, batch 5); the timeout only stops a hang. The
+        // close's reason, "route gone", is in the error whichever call met the closed connection first: a page read
+        // under way ("connection lost: closed by peer: …") or the next page's stream ("closed by peer: …", seen under
+        // a loaded machine, batch 5 CI)
+        let ended = time::timeout(crate::PAGE_WAIT / 6, future::or(async { Some(pull.await) }, async { serving.await; None }))
+            .await
+            .expect("the pull ends once its connection is gone")
+            .expect("the pull, not the peer, ends");
+        let why = format!("{:#}", ended.as_ref().expect_err("a pull whose connection closed under it fails"));
+        assert!(why.contains("route gone") && !why.contains("no page in time"), "it ends by the route's loss: {why}");
         // its slots come back as its futures drop, the blocking checks of its pages included
-        time::timeout(Duration::from_secs(5), async {
+        time::timeout(Duration::from_secs(30), async {
             while slots(&phone.shared.pulls) != slots(&fresh) {
                 time::sleep(Duration::from_millis(5)).await;
             }

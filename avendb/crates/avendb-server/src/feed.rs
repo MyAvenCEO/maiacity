@@ -690,24 +690,31 @@ async fn fresh_or<T: Clone>(kept: &Kept<T>, work: impl Future<Output = T>) -> T 
     t
 }
 
-/// The posts everyone may read, newest first, as the server worked them out (`posts`): each post, and the feed's JSON
-/// of them all.
+/// The posts everyone may read, newest first, as the server worked them out (`posts`): the feed's JSON of the newest
+/// `MOST`.
 #[derive(Clone)]
 struct Posts {
-    posts: Arc<Vec<Value>>,
     whole: Bytes,
 }
 
-/// The feed's JSON: as the server last worked it out, if that was a moment ago (`FRESH`), else anew; whole, the newest
-/// `MOST`, for a query that asks nothing, else a page of them (`limit=<n>`, `after=<entry>`: `world::page_of_posts`), as
-/// the Maia Universe shows the newest first and asks for the next as its person scrolls; a bad request, as JSON, for a
-/// query that asks what isn't there to ask.
+/// A page of the posts everyone may read, `{"posts", "more"}`: the node's `posts` op, which it answers off each vault's
+/// shared index and the tail after it (`avendb-net`'s `posts_page`, `PostsPage.lean`), reading in full only the posts
+/// of the page, never every post it holds.
+async fn page_of_posts(node: &Node, limit: usize, after: Option<&str>) -> Value {
+    let answer = node.op(json!({ "op": "posts", "limit": limit, "after": after })).await.unwrap_or_default();
+    let ok = &answer["ok"];
+    json!({ "posts": ok.get("posts").cloned().unwrap_or(json!([])), "more": ok.get("more").cloned().unwrap_or(json!(false)) })
+}
+
+/// The feed's JSON: whole, the newest `MOST`, as the server last worked it out, if that was a moment ago (`FRESH`),
+/// else anew, for a query that asks nothing; else a page of them (`limit=<n>`, `after=<entry>`: the posts older than
+/// that one, a keyset cursor), as the Maia Universe shows the newest first and asks for the next as its person
+/// scrolls; a bad request, as JSON, for a query that asks what isn't there to ask.
 async fn posts(query: &str, node: &Node, kept: &Kept<Posts>) -> (StatusCode, Bytes) {
     let work = async {
-        let mut posts = node.read(world::public_posts).await;
-        posts.truncate(MOST);
-        let whole = Bytes::from(serde_json::to_vec(&json!({ "posts": posts })).expect("JSON writes"));
-        Posts { posts: Arc::new(posts), whole }
+        let page = page_of_posts(node, MOST, None).await;
+        let whole = Bytes::from(serde_json::to_vec(&json!({ "posts": page["posts"] })).expect("JSON writes"));
+        Posts { whole }
     };
     let (mut limit, mut after) = (None, None);
     for (k, v) in query.split('&').filter(|kv| !kv.is_empty()).map(|kv| kv.split_once('=').unwrap_or((kv, ""))) {
@@ -721,11 +728,10 @@ async fn posts(query: &str, node: &Node, kept: &Kept<Posts>) -> (StatusCode, Byt
             _ => return (StatusCode::BAD_REQUEST, error("the posts' feed asks limit and after alone")),
         }
     }
-    let kept = fresh_or(kept, work).await;
     if limit.is_none() && after.is_none() {
-        return (StatusCode::OK, kept.whole);
+        return (StatusCode::OK, fresh_or(kept, work).await.whole);
     }
-    let page = world::page_of_posts(kept.posts.to_vec(), limit.unwrap_or(MOST), after.as_deref());
+    let page = page_of_posts(node, limit.unwrap_or(MOST), after.as_deref()).await;
     (StatusCode::OK, Bytes::from(serde_json::to_vec(&page).expect("JSON writes")))
 }
 

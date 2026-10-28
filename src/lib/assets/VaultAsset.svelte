@@ -36,14 +36,15 @@
 	/**
 	 * @type {{ source: ReturnType<typeof import('./sources/avendb.js').vaultRecipes>, hash: string, title?: string,
 	 *   note?: string, about?: import('svelte').Snippet, catalog?: any, picked?: string | null, solo?: boolean,
-	 *   compact?: boolean }}
+	 *   compact?: boolean, onStir?: (read: () => void) => (() => void) }}
 	 *   `source` the vault's recipes ($lib/avendb/assets.js `vaultSource`), `hash` the recipe shown, `title` and `note`
 	 *   what its entry calls it and says of it, `about` what the page says of its entry, at the foot of the panel;
 	 *   `catalog` its parts as built (null where it lists none), `picked` the part picked, `solo` whether it is shown on
 	 *   its own; `compact`, its name, its moves and views and a short canvas alone, in a card with its own answers
-	 *   ($lib/avendb/Hitl.svelte, an AIP's)
+	 *   ($lib/avendb/Hitl.svelte, an AIP's); `onStir` the page's watch of the device's sync ($lib/avendb/stirs.svelte.js),
+	 *   so a file still arriving is read again as it moves
 	 */
-	let { source, hash, title = '', note = '', about, catalog = $bindable(null), picked = $bindable(null), solo = true, compact = false } = $props();
+	let { source, hash, title = '', note = '', about, catalog = $bindable(null), picked = $bindable(null), solo = true, compact = false, onStir } = $props();
 
 	const at = $derived(Object.hasOwn(source.index.recipes, hash) ? source.index.recipes[hash] : null);
 	/** what its recipe is built with, as its card declares it; detail is the renderer's */
@@ -71,6 +72,9 @@
 	let building = $state(false);
 	let buildPhase = $state('file');
 	let error = $state('');
+	/** its file is still arriving on this device (`Unread`: read while the device was behind, Freshness.lean): shown as
+	 *  loading, and built again by itself as the device's sync moves, never "Not shown" */
+	let arriving = $state(false);
 	let lost = $state(false);
 	/** where the build came from (this device's cache or the box), its measure, and a plant's above and below its soil */
 	let from = $state('');
@@ -185,6 +189,7 @@
 				// unless it grew or shrank by much; a plant growing, the camera follows it
 				cam.reframe(centre, s, { fresh: shownHash !== h0, growing });
 				shownHash = h0;
+				arriving = false;
 			} catch (e) {
 				if (!asks.is(ask)) return;
 				// nothing in its place: what failed is said, naming its ref
@@ -198,6 +203,8 @@
 				shownHash = '';
 				cam.framed = null;
 				growing = false;
+				arriving = e?.name === 'Unread';
+				if (arriving) return void (buildPhase = 'file');
 				error = String(e?.message ?? e);
 				console.error(e);
 			}
@@ -283,6 +290,11 @@
 	});
 	/** the part picked, as its catalog has it */
 	const part = $derived(catalog && picked ? (catalog.parts.find((p) => p.id === picked) ?? null) : null);
+	// a file still arriving is read again each time the device's sync moves, until it is here
+	// (the page passes onStir in: nothing of the assets imports avenDB, sources/avendb.test.js)
+	onMount(() => onStir?.(() => {
+		if (arriving && ready) untrack(() => show?.(hash, asked));
+	}));
 	// a new build asked for whenever the recipe shown or what it is built with changes
 	$effect(() => {
 		const w = wanted;
@@ -410,7 +422,8 @@
 		</div>
 	{:else if building && !growing}
 		<div class="canvas-note" role="status">
-			{#if buildPhase === 'file'}Reading {title || at?.label || 'its'} entry file…
+			{#if arriving}Catching up · the file of {title || at?.label || 'it'} is still arriving on this device…
+			{:else if buildPhase === 'file'}Reading {title || at?.label || 'its'} entry file…
 			{:else if buildPhase === 'cache'}Opening the saved build of {title || at?.label || 'it'}…
 			{:else if buildPhase === 'prepare'}Preparing {title || at?.label || 'it'} for display…
 			{:else}Building {title || at?.label || 'it'}…{/if}

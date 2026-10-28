@@ -180,6 +180,9 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
                     // The envelope retains range response memory admission through write_all, including a stalled
                     // peer. Closing/cancellation releases only after every blocking worker drops its Arc too.
                     let deadline = if answer._range.is_some() { crate::edit_transfer::DEADLINE } else if answer._checkpoint.is_some() { crate::checkpoint_delivery::DEADLINE } else { PAGE_WAIT };
+                    // a small answer (a live pull's edit, cuts, a card) goes out ahead of the pages of a catch-up on the
+                    // same connection, not behind what is queued of them (`LivePriority.lean` `smallFirst`)
+                    send.set_priority(priority(answer.bytes.len())).ok();
                     if matches!(n0_future::time::timeout(deadline, send.write_all(&answer.bytes)).await, Ok(Ok(()))) {
                         send.finish().ok();
                     } else { send.reset(REFUSED).ok(); }
@@ -189,6 +192,16 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
         });
     }
     shared.gone(&peer);
+}
+
+/// Answers up to this many bytes are sent ahead of larger ones on their connection: a live pull's few edits, not a
+/// catch-up's page (`pulls::PAGE_BYTES`, `PAGE`).
+pub(crate) const SMALL_ANSWER: usize = 64 << 10;
+
+/// The send priority of an answer of `bytes`: higher goes first (`SendStream::set_priority`). Two levels only, so a
+/// connection's streams keep their round-robin within each.
+pub(crate) fn priority(bytes: usize) -> i32 {
+    i32::from(bytes <= SMALL_ANSWER)
 }
 
 struct Answer {
@@ -448,7 +461,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
                 let mut ranges = shared.ranges.lock().expect("ranges");
                 let (answer, complete) = ranges.receive(peer.conn.stable_id(), device, body)?;
                 let done = complete.is_some();
-                if let Some(complete) = complete { complete.apply(held.entry(device).or_default()); }
+                if let Some(complete) = complete { complete.apply(held.entry(device).or_default()); shared.fresh.moved(); }
                 (answer, done)
             };
             if complete { shared.jobs.stir(); shared.ask_soon(peer.endpoint); shared.schedule_discoveries(); }

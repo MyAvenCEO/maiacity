@@ -1123,7 +1123,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     (post.writes = st.writes ∧ Keeps st post ∧ ∀ en ∈ post.entries, ∃ x ∈ st.entries, x.id = en.id) ∨
     (∃ w en, post.writes = st.writes ++ [w] ∧ post.entries = st.entries ++ [en] ∧ Keeps st post ∧
       w.edit = edit.id ∧ w.entry = en.id ∧ w.first = true ∧ w.deps = [] ∧
-      actsVia st w.author w.via w.actor = true ∧ mayCreate st w.actor en.vault en.audience = true) ∨
+      actsVia st w.author w.via w.signer = true ∧ mayCreate st w.signer en.vault en.audience = true) ∨
     (∃ w, post.writes = st.writes ++ [w] ∧ Keeps st post ∧ (∀ en ∈ post.entries, ∃ x ∈ st.entries, x.id = en.id) ∧
       w.first = false ∧ authorized st w = true ∧ depsIn st.writes w = true) ∨
     (∃ keep mid, edit.action.keep? = some keep ∧ post = dropUnseen st mid keep ∧ mid.writes = st.writes ∧
@@ -1389,7 +1389,7 @@ theorem mem_counting {st : State} {ok : Bool} {i d : EditId} (hd : d ≠ i) :
 
 theorem inLane_iff {st : State} {v : VaultId} {en : Entry} :
     inLane st v en = true ↔ en.vault = v ∧ en.attrs.type ∈ schemaTypes ∧
-      ∃ w ∈ st.counted, w.entry = en.id ∧ w.first = true ∧ w.actor = v ∧ w.proposal = .main := by
+      ∃ w ∈ st.counted, w.entry = en.id ∧ w.first = true ∧ w.signer = v ∧ w.proposal = .main := by
   simp only [inLane, Bool.and_eq_true, beq_iff_eq, List.contains_eq_mem, decide_eq_true_eq, List.any_eq_true,
     and_assoc]
 
@@ -1645,7 +1645,7 @@ theorem T1_authorized_writes {st st' : State} {edit : Edit} (h : step st edit = 
 theorem T1_created_entries {st st' : State} {edit : Edit} (h : step st edit = some st') {en : Entry}
     (hen : en ∈ st'.entries) (hnew : ∀ x ∈ st.entries, x.id ≠ en.id) :
     ∃ w ∈ st'.writes, w.edit = edit.id ∧ w.entry = en.id ∧ w.first = true ∧
-      actsVia st w.author w.via w.actor = true ∧ mayCreate st w.actor en.vault en.audience = true := by
+      actsVia st w.author w.via w.signer = true ∧ mayCreate st w.signer en.vault en.audience = true := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   rw [settle_entries] at hen

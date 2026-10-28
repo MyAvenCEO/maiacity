@@ -29,7 +29,7 @@ import {
  * @typedef {{ id: string, title: string, from: string, to: string, json: string }} LensView
  * @typedef {{ entry: string, type: string | null, tags: string[] | null, kind: string, title: string | null,
  *   record: any, authored: string[], edits: number, held: number, lines: number, proposals: (string | null)[],
- *   audience: string, epoch: number, bytes: number, author: string | null, actor: string | null, public: boolean,
+ *   audience: string, epoch: number, bytes: number, author: string | null, signer: string | null, actor: string | null, public: boolean,
  *   levels: Record<string, import('./vaults.js').Role>, at?: string[], brought?: { edit: string, line: string | null,
  *   version: number | null, at: string[], files: { root: string, size: number, len: number | null }[], record: any }[]
  *   }} RowView
@@ -510,12 +510,12 @@ export function describe(edit, s, edits) {
 		}
 		case 'revoke': {
 			const c = edits(f.share);
-			if (!c) return `${s.vaultName(f.actor)} revokes share ${short(f.share)}`;
+			if (!c) return `${s.vaultName(f.signer ?? f.actor)} revokes share ${short(f.share)}`;
 			const g = granted(c.id, c.fields);
-			const where = inside(f.actor, c.fields.over);
+			const where = inside(f.signer ?? f.actor, c.fields.over);
 			if (KEEPING[c.fields.level])
-				return `${s.vaultName(f.actor)} no longer has ${g.to} ${KEEPING[c.fields.level](g.what)}${where}`;
-			return `${s.vaultName(f.actor)} revokes ${g.to}’s share of ${g.what}${where} as ${g.level}`;
+				return `${s.vaultName(f.signer ?? f.actor)} no longer has ${g.to} ${KEEPING[c.fields.level](g.what)}${where}`;
+			return `${s.vaultName(f.signer ?? f.actor)} revokes ${g.to}’s share of ${g.what}${where} as ${g.level}`;
 		}
 		case 'write': {
 			const line = f.starts ? ', proposing a change' : f.line ? ', on a proposal' : '';
@@ -526,7 +526,7 @@ export function describe(edit, s, edits) {
 			const files = f.files ?? [];
 			const bytes = files.reduce((n, x) => n + x.size, 0);
 			const bringing = files.length ? `, bringing ${count(files.length, 'file')} (${size(bytes)})` : '';
-			return `${s.vaultName(f.actor)} ${made}${bringing}: ${size(f.sealed)} sealed`;
+			return `${s.vaultName(f.signer ?? f.actor)} ${made}${bringing}: ${size(f.sealed)} sealed`;
 		}
 		case 'mark': {
 			const entry = s.entry(f.entry);

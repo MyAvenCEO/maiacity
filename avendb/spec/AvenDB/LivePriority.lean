@@ -1,3 +1,5 @@
+import AvenDB.Logs
+
 /-!
 Live edits are ordinary signed edits. Local priority hints only choose the order of the same authorized
 reconciliation; they never authorize data, certify closure, or replace validation. Full inventories remain
@@ -138,5 +140,228 @@ theorem publication_closes_materialization_gap (s : Publication) :
 /-- Catch-up returning "no further change" does not mean the consumer saw an earlier replay. -/
 theorem earlier_catch_up_still_gets_a_wake (old current : Nat) :
     (publish ⟨current, old⟩).notified = current := rfl
+
+/-! ## One asking per log (F12, batch 5)
+
+A live pull and the backlog asked the SAME logs of the same peer at once: the backlog's request named what the device
+held before the live pull took the edit, so the peer sent it twice (Mac `network.recent`, batch 3: a live edit pulled
+new, then again with new 0, its duplicate's check up to 5.9 s). The live lane now claims its hinted logs as it is
+admitted, before the backlog is stirred; the backlog's asking leaves every live-claimed log out and is owed an asking
+again once the live pull ends, however it ends. Rust: avendb-net lib.rs `Claims::take` / `Claims::live` /
+`Claims::live_done`, live.rs `LiveClaimed`. -/
+
+/-- The backlog's share of `differing` while `live` is claimed: the logs it asks now, and whether it is owed another
+asking for those it left to the live lane. -/
+def backlogTake (live differing : List Nat) : List Nat × Bool :=
+  (differing.filter (fun l => !live.contains l), differing.any (fun l => live.contains l))
+
+theorem backlog_never_asks_a_live_log (live differing : List Nat) (l : Nat) (h : l ∈ live) :
+    l ∉ (backlogTake live differing).1 := by
+  simp [backlogTake, List.mem_filter, h]
+
+theorem backlog_asks_only_what_differs (live differing : List Nat) (l : Nat)
+    (h : l ∈ (backlogTake live differing).1) : l ∈ differing := by
+  simp [backlogTake, List.mem_filter] at h
+  exact h.1
+
+/-- Nothing is dropped: a differing log is asked by the backlog now, or the backlog is owed an asking again, which
+the live pull's end gives it (`Claims::live_done`) whether the live pull took the log, timed out or failed. -/
+theorem no_differing_log_is_lost (live differing : List Nat) (l : Nat) (h : l ∈ differing) :
+    l ∈ (backlogTake live differing).1 ∨ (backlogTake live differing).2 = true := by
+  by_cases hl : l ∈ live
+  · right
+    simp only [backlogTake, List.any_eq_true]
+    exact ⟨l, h, by simp [hl]⟩
+  · left
+    simp [backlogTake, List.mem_filter, h, hl]
+
+/-- With nothing live-claimed, the backlog asks exactly as before. -/
+theorem no_live_claim_changes_nothing (differing : List Nat) :
+    backlogTake [] differing = (differing, false) := by
+  simp [backlogTake]
+
+/-! ## A bounded live view (F2, batch 5)
+
+A live pull brought its view up to date by draining the WHOLE pending catch-up (`materialize_live` looped
+`Lab::catch_up_step` until caught), so during a bulk catch-up, or while a catch-up never settled, the live lane never
+ended and held its peer's slot (batch 4: one live start on the Mac in 25 min, never recorded). It now steps the view
+for at most `LIVE_VIEW`, and the background catch-up takes the rest. The same steps are done, only by another owner. -/
+
+/-- `work` steps of catch-up, of which the live lane takes at most `budget`. -/
+def liveSteps (work budget : Nat) : Nat := min work budget
+def backgroundSteps (work budget : Nat) : Nat := work - budget
+
+theorem live_view_is_bounded (work budget : Nat) : liveSteps work budget ≤ budget := Nat.min_le_right _ _
+
+theorem split_view_does_all_the_work (work budget : Nat) :
+    liveSteps work budget + backgroundSteps work budget = work := by
+  simp only [liveSteps, backgroundSteps]; omega
+
+/-! ## One asking of a peer at a time (F12, batch 5)
+
+A peer answers an asking with what it holds beyond what the request names. Two askings of one peer at once named the
+same holdings, so the second brought all the first took again (sync_bench `bench_live`, 1,352 edits pulled for 675
+new). The second now waits for the first's turn to end and names what it took. Rust: pulls.rs `Budget::one_asking`. -/
+
+/-- What a peer holding `theirs` sends to a request naming `named`. -/
+def reply (theirs named : List Nat) : List Nat := theirs.filter (fun e => !named.contains e)
+
+/-- The second asking, made once the first's reply is held: it brings nothing the first brought. -/
+theorem one_asking_resends_nothing (theirs held : List Nat) (e : Nat)
+    (first : e ∈ reply theirs held) : e ∉ reply theirs (held ++ reply theirs held) := by
+  simp [reply, List.mem_filter] at *
+  intro _ _
+  exact first
+
+/-! ## A live edit's pages told at the step that shows it (batch 5)
+
+The Lab shows a live edit's entries in the first steps of a catch-up (Writes.lean `live_in_first_step`). The live lane
+now stirs the pages after every step it takes (`Shared::catch_up_steps` with a deadline), so a reader is told then,
+not once after the whole catch-up was caught, as before. Its steps stay bounded by `live_view_is_bounded`. -/
+
+/-! ## A live pull asks no witness this device holds (batch 5)
+
+A live pull asks each hinted log for all this device lacks of it. The hint names the logs an announcement changed and,
+for a new audience key, the log of an earlier creation in that audience, its witness (`live_witnesses`), repeated
+unchanged. Asked of a device that already holds that creation, the witness brought the rest of its log, the backlog,
+with the change: during a bulk catch-up one chat edit's live pull carried 86 bulk edits, 2.0 s (`bench_live` phone, T1
+traces). A witness is now asked only of a device that holds none of its log (the creation is a log's first edit); a log
+any hint changed is asked as before. A log left out stays with the backlog, which still asks it
+(`backlog_asks_unclaimed`). Rust: live.rs `in_step`, pulls.rs `note_witnesses`. -/
+
+/-- A hinted log: whether every hint coalesced into the pull repeated it unchanged (a witness), and whether this device
+holds any of it. -/
+def inStep (witness heldAny : Bool) : Bool := !witness || !heldAny
+
+/-- A witness this device holds some of is never asked live. -/
+theorem held_witness_is_not_live : inStep true true = false := rfl
+
+/-- A log a hint changed is asked live, whatever this device holds of it. -/
+theorem changed_is_live (heldAny : Bool) : inStep false heldAny = true := rfl
+
+/-- A witness it holds none of is asked live: it needs the creation for the change. -/
+theorem missing_witness_is_live : inStep true false = true := rfl
+
+/-- The live logs: the hinted logs in step. -/
+def liveOf (hinted : List (Nat × Bool × Bool)) : List Nat :=
+  (hinted.filter (fun h => inStep h.2.1 h.2.2)).map (·.1)
+
+/-- A hinted log left out of the live pull is not claimed, so the backlog asks it if it differs. -/
+theorem backlog_asks_unclaimed (hinted : List (Nat × Bool × Bool)) (differing : List Nat) (l : Nat)
+    (h : l ∈ differing) (out : l ∉ liveOf hinted) : l ∈ (backlogTake (liveOf hinted) differing).1 := by
+  simp only [backlogTake, List.mem_filter]
+  exact ⟨h, by simp [out]⟩
+
+/-! ## A live pull waits for no key; one fetch of a key at a time (batch 5)
+
+The McEliece keys a pull's edits name come after its pages; a device needs one only to seal to its signer, so what
+the edits say shows without it. A live pull waited for them all the same, and the backlog fetched the same two keys at
+once (`bench_live` phone: 1.7 s of a chat edit's 1.8 s, 2 MB twice). A live pull now brings its keys after it ends;
+a fetch of a key another fetch holds waits for that one and brings only what is still lacking, the law of
+`one_asking_resends_nothing` with keys for edits. Rust: lib.rs `pull_expected`, `bring_keys`, pulls.rs
+`Budget::fetching`. -/
+
+/-- What a fetch brings: the keys asked that are not held once its turn comes. -/
+def fetched (asked held : List Nat) : List Nat := asked.filter (fun k => !held.contains k)
+
+/-- A second fetch, whose turn comes once the first's keys are held, brings none of them again. -/
+theorem one_fetch_of_a_key (asked held : List Nat) (k : Nat) (first : k ∈ fetched asked held) :
+    k ∉ fetched asked (held ++ fetched asked held) := by
+  simp [fetched, List.mem_filter] at *
+  intro _ _
+  exact first
+
+/-! ## Small answers first on a connection (batch 5)
+
+A peer answers each request on its own stream of one connection. A catch-up's page (up to 4 MiB) and a live pull's few
+edits shared the connection's sending in turn, so the live answer waited on what was queued of the page: on a phone link
+the first live pull of a catch-up took 450-650 ms for 2-3 edits (`bench_live` phone, 10 runs, T1 traces). An answer of
+at most `SMALL_ANSWER` bytes is now sent ahead of larger ones. Two levels only: within each, streams keep their turns,
+so no page waits on another page longer than before. Rust: session.rs `priority`, `serve`. -/
+
+def smallAnswer : Nat := 65536
+
+/-- The send priority of an answer of `bytes`: higher goes first. -/
+def priority (bytes : Nat) : Nat := if bytes ≤ smallAnswer then 1 else 0
+
+/-- A small answer never waits behind a large one's queued bytes. -/
+theorem small_goes_before_large (small large : Nat) (h : small ≤ smallAnswer) (h' : smallAnswer < large) :
+    priority large < priority small := by
+  simp [priority, h, Nat.not_le.mpr h']
+
+/-- Two answers of one size class keep their turns: neither goes before the other. -/
+theorem same_class_same_priority (a b : Nat) (ha : a ≤ smallAnswer) (hb : b ≤ smallAnswer) :
+    priority a = priority b := by
+  simp [priority, ha, hb]
+
+/-! ## The larger of two controllers' windows (batch 5)
+
+A round trip carries the least of the pages asked, the link's bandwidth × delay and the window its congestion
+controller allows. Cubic, a loss-based controller, halves its window at a loss, so on a phone link (1 % lost, 40 ms) it
+held a 20 MB catch-up to 6 % of the link (`bench_live` phone_bulk: 59.7 s, live p95 6.2 s). BBR v3 paces to the
+bandwidth it measures (36.7 %, 9.8 s, live p95 216 ms), but treats a round with more than 2 % lost as too much in flight
+and cuts toward 4 packets, where one loss is 25 %: under 11 % loss with reordering it stayed there (sim seed 1, no end in
+150 s; Cubic 50 s). Every connection now feeds each event to both and sends at the larger window: never less than
+either alone. Only the counting is modelled, not the controllers. Rust: avendb-net congestion.rs. -/
+
+/-- A round trip carries the least of the pages asked, the link and the window. -/
+def carried (asked link window : Nat) : Nat := min asked (min link window)
+
+/-- Asking more pages carries no more than the window. -/
+theorem asking_more_passes_no_window (asked link window : Nat) : carried asked link window ≤ window := by
+  simp only [carried]; omega
+
+/-- One period of a loss-based window: one packet more a round trip for `gap - 1` round trips, then halved. -/
+def lossPeriod (window gap : Nat) : Nat := (window + (gap - 1)) / 2
+
+/-- A loss every `gap` round trips holds a loss-based window within twice the gap, whatever the link. -/
+theorem loss_holds_the_window (window gap : Nat) (h : window ≤ 2 * gap) : lossPeriod window gap ≤ 2 * gap := by
+  simp only [lossPeriod]; omega
+
+/-- The window of the pair: the larger. -/
+def either (bbr cubic : Nat) : Nat := max bbr cubic
+
+/-- The pair carries at least what either controller alone would. -/
+theorem either_carries_no_less (asked link bbr cubic : Nat) :
+    carried asked link bbr ≤ carried asked link (either bbr cubic) ∧
+    carried asked link cubic ≤ carried asked link (either bbr cubic) := by
+  simp only [carried, either]; omega
+
+/-- And no more than the link: the pair's window never makes a round trip carry past it. -/
+theorem either_within_the_link (asked link bbr cubic : Nat) : carried asked link (either bbr cubic) ≤ link := by
+  simp only [carried]; omega
+
+/-! ## A catch-up's pages and a live pull of the same peer
+
+A catch-up asks every page with the request it began with, so edits a live pull of the same peer brought meanwhile
+came again on its last page (`bench_live` phone_bulk at ten chat edits a second: 63 of a page's 94 edits). Each page
+names them loose too, which the peer sends none of again (`Logs.lean` `respondSince`). Rust: lib.rs `pages`,
+pulls.rs `Taken`. -/
+
+/-- An asking's request for its next page, naming loose too the edits `taken` that another pull of the same peer
+    brought this device since the asking began (a live pull's chat edits during a catch-up). -/
+def withTaken (a : Ask) (taken : List EditId) : Ask := { a with loose := a.loose ++ taken }
+
+/-- The peer sends what it would have, less exactly the edits taken: none of them again, and nothing else held back. -/
+theorem taken_not_sent_again (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId) :
+    respondSince edits d (withTaken a taken) = (respondSince edits d a).filter fun e => !taken.contains e.id := by
+  unfold respondSince withTaken
+  rw [List.filter_filter]
+  congr 1
+  funext e
+  simp only [List.contains_append, Bool.not_or]
+  cases e.log? <;> simp [Bool.and_comm, Bool.and_assoc]
+
+theorem taken_is_never_sent (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId) (e : Edit)
+    (h : e ∈ respondSince edits d (withTaken a taken)) : taken.contains e.id = false := by
+  rw [taken_not_sent_again] at h
+  simpa using (List.mem_filter.mp h).2
+
+theorem only_taken_is_held_back (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId) (e : Edit)
+    (h : e ∈ respondSince edits d a) (n : taken.contains e.id = false) : e ∈ respondSince edits d (withTaken a taken) := by
+  rw [taken_not_sent_again]
+  refine List.mem_filter.mpr ⟨h, ?_⟩
+  simp only [n, Bool.not_false]
+
 
 end AvenDB.LivePriority

@@ -197,7 +197,7 @@ fn measured(lab: &Lab, me: SignerId, a: &Aip) -> Vec<Measured> {
     };
     let mut added = vec![];
     for c in h.history(MAIN) {
-        let by = c.write.actor;
+        let by = c.write.signer;
         if !*measures.entry(by).or_insert_with(|| lab.measures(me, vault, author, by)) {
             continue;
         }
@@ -635,7 +635,7 @@ impl<'a> Book<'a> {
                     Some((what, parts)) => l.summary(&what, &parts),
                     None => format!("{}: unread", l.ty.as_deref().unwrap_or("entry")),
                 };
-                let by = h.get(line).map(|c| c.write.actor.to_hex());
+                let by = h.get(line).map(|c| c.write.signer.to_hex());
                 let ty = l.ty.clone().unwrap_or_else(|| "entry".into());
                 let title = l.name.clone().or_else(|| l.title.clone()).unwrap_or_else(|| format!("A {ty} proposal"));
                 out.push(json!({

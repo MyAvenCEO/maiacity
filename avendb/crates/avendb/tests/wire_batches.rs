@@ -20,7 +20,7 @@ fn write(key: &DeviceKey, n: u64) -> Edit {
         via: vec![],
         create: None,
         files: vec![],
-        body: n.to_be_bytes().to_vec(),
+        body: n.to_be_bytes().to_vec().into(),
     };
     Edit { parents: vec![], depth: n, author: key.id(), cosigners: vec![], action }
 }

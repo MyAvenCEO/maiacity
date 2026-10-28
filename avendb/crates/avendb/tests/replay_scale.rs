@@ -23,7 +23,7 @@ fn write(log: &Log, st: &State, by: avendb::id::SignerId, e: EntryId, n: usize) 
     let epoch = st.epoch(KeyFam::Audience(en.vault, en.audience()));
     let body = n.to_le_bytes().to_vec();
     let (vault, actor, stay, deps, via, files) = (en.vault, en.vault, en.stay(), vec![], vec![], vec![]);
-    let action = Action::Write { vault, entry: e, actor, stay, epoch, deps, proposal: Proposal::Main, via, create: None, files, body };
+    let action = Action::Write { vault, entry: e, actor, stay, epoch, deps, proposal: Proposal::Main, via, create: None, files, body: body.into() };
     log.draft_on(st, by, &[], action)
 }
 

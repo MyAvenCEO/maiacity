@@ -1,11 +1,11 @@
-//! The node actor (sync v2, P7; `spec/AvenDB/NodeActor.lean`): one task owns the node's outreach to its peers, the
+//! The node loop (sync v2, P7; `spec/AvenDB/NodeLoop.lean`): one task owns the node's outreach to its peers, the
 //! telling of its holdings and the asking for theirs, which used to sit behind four shared locks (`telling`,
 //! `unreached`, `asking`, `owed`) and an announcer that looked every `retry`. Callers send it messages and never wait
 //! on it; it starts each attempt on a task of its own, which reports back when it ends; and it sleeps until the
 //! earliest lane is due, never polling.
 //!
 //! A lane's steps (`Lane::wake`, `finish`, `tick`, `reach`) are the Lean model's, over the milliseconds since the
-//! actor started, so they are a function of the messages a lane takes and the time it took them at.
+//! loop started, so they are a function of the messages a lane takes and the time it took them at.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ use tokio::sync::mpsc;
 use crate::{BACKOFF_MAX, Shared};
 
 /// One peer's lane: an attempt in flight, a wake owed to it, a wake waiting for the backoff, the failures in a row and
-/// the moment (ms) the lane may try again (`NodeActor.Lane`).
+/// the moment (ms) the lane may try again (`NodeLoop.Lane`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Lane {
     pub busy: bool,
@@ -30,7 +30,7 @@ pub(crate) struct Lane {
     pub due_at: u64,
 }
 
-/// After `n` failures in a row, `retry` doubled `n` times (16 at most), `BACKOFF_MAX` at most (`NodeActor.wait`).
+/// After `n` failures in a row, `retry` doubled `n` times (16 at most), `BACKOFF_MAX` at most (`NodeLoop.wait`).
 pub(crate) fn wait(retry: Duration, n: u32) -> u64 {
     let max = BACKOFF_MAX.as_millis() as u64;
     (retry.as_millis() as u64).saturating_mul(1 << n.min(16)).min(max)
@@ -79,7 +79,7 @@ impl Lane {
         (self.failures, self.due_at) = (0, 0);
     }
 
-    /// When the actor must wake next for this lane, if at all.
+    /// When the loop must wake next for this lane, if at all.
     pub fn due(&self) -> Option<u64> {
         (self.pending && !self.busy).then_some(self.due_at)
     }
@@ -90,7 +90,7 @@ impl Lane {
     }
 }
 
-/// What the actor is told.
+/// What the loop is told.
 #[derive(Debug)]
 pub(crate) enum Msg {
     /// Tell `device`, at `endpoint`, of the node's holdings (the announcer found them due).
@@ -116,7 +116,7 @@ pub(crate) struct Look {
     pub asks: BTreeMap<EndpointId, Lane>,
 }
 
-/// Where callers send the actor messages. Sending never waits; a message to an actor that ended is dropped, as the
+/// Where callers send the loop messages. Sending never waits; a message to a loop that ended is dropped, as the
 /// node is shutting down.
 #[derive(Clone, Debug)]
 pub(crate) struct Outreach(mpsc::UnboundedSender<Msg>);
@@ -134,13 +134,13 @@ impl Outreach {
     }
 }
 
-/// The actor's two ends: the handle for `Shared`, and the inbox its task takes.
+/// The loop's two ends: the handle for `Shared`, and the inbox its task takes.
 pub(crate) fn outreach() -> (Outreach, mpsc::UnboundedReceiver<Msg>) {
     let (tx, rx) = mpsc::unbounded_channel();
     (Outreach(tx), rx)
 }
 
-/// The actor's state: a lane per device told and per endpoint asked, with where each telling goes.
+/// The loop's state: a lane per device told and per endpoint asked, with where each telling goes.
 #[derive(Default)]
 struct Lanes {
     tells: BTreeMap<SignerId, (Lane, EndpointId)>,
@@ -161,13 +161,13 @@ impl Lanes {
     }
 }
 
-/// What woke the actor.
+/// What woke the loop.
 enum Step {
     Msg(Msg),
     Tick,
 }
 
-/// The actor's task: one message at a time, then the lanes whose wait is over, then sleep until the next is due or a
+/// The loop's task: one message at a time, then the lanes whose wait is over, then sleep until the next is due or a
 /// message comes. The node aborts it as it shuts down (`Node::begin_close`), between two steps.
 pub(crate) async fn run(shared: Arc<Shared>, mut inbox: mpsc::UnboundedReceiver<Msg>) {
     let (start, retry) = (Instant::now(), shared.opts.retry);

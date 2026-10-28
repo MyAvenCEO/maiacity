@@ -238,3 +238,16 @@ test('the runner queues, claims and finishes straight in the vault, as its actin
 	// the task is written as the vault's acting vault, by this Mac's own device: there is no worker of its own
 	expect(sent.filter((o) => o.op === 'batch').every((o) => o.as === V)).toBe(true);
 });
+
+test('a vault it may not write gets no create: the device is asked first, and the refusal said once', async () => {
+	const { Runner } = await import('./runner.js');
+	const d = fakeDevice([file(10, 'text/plain', ['jobs:test'])], {});
+	const lines = [];
+	const send = (op) => op.op === 'may' ? (d.sent.push(op), { ok: op.ops.map(() => ({ refused: 'NotAllowed', why: 'a reader may not create' })) }) : d.send(op);
+	const r = new Runner({ send, executors: { checksum: async () => ({}) }, now: () => 1000, log: (l) => lines.push(l) });
+	await r.tick();
+	await r.tick();
+	expect(d.sent.filter((o) => o.op === 'create' || o.op === 'batch')).toHaveLength(0);
+	expect(d.entries.filter((e) => e.type === 'schema')).toHaveLength(0);
+	expect(lines.filter((l) => l.includes('may not make'))).toHaveLength(1);
+});

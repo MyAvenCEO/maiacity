@@ -6,6 +6,8 @@
 //
 //   bun scripts/ci/avendb-bench.mjs bench.log [pg.log]
 //   bun scripts/ci/avendb-bench.mjs phone.log --phone      the phone-class rows alone (avendb-bench-phone.mjs)
+//   bun scripts/ci/avendb-bench.mjs bench.log [pg.log] --shard core|carriers|live   one shard of the bench job: only
+//                                                          its own runs are required present
 //   bun scripts/ci/avendb-bench.mjs index.log --index      the index's scale rows alone (avendb-net's shelf_index_bench.rs,
 //                                                          run in the net test shard, whose build it shares)
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -36,6 +38,39 @@ export function checkIndex(bench, gates) {
   add(true, `index ${s.n}: bytes read opening a view`, s.open_bytes_read, `≤ ${g.index_view_bytes_max}`, s.open_bytes_read <= g.index_view_bytes_max);
   add(true, `index ${s.n}: index bytes/edit`, s.index_bytes_per_edit, `≤ ${g.index_bytes_per_edit_max}`, s.index_bytes_per_edit <= g.index_bytes_per_edit_max);
   add(true, `index ${s.n}: view open p95 µs`, s.open_p95_us, `< ${g.index_open_p95_us_max}`, s.open_p95_us < g.index_open_p95_us_max);
+ }
+ // G1: a named query's window opened end to end (query_window_bench.rs), the head of the log at n edits counted in
+ const wins = bench.filter(b => b.kind === 'window');
+ for (const n of gates.window_sizes ?? []) if (!wins.some(s => s.n === n)) add(true, `window at ${n}`, null, 'present', false);
+ for (const s of wins) {
+  add(true, `window ${s.n}: log edits stepped on`, s.window_log_edits, `≤ ${g.window_log_edits_max}`, s.window_log_edits <= g.window_log_edits_max);
+  add(true, `window ${s.n}: index rows read`, s.window_rows_read, `≤ ${s.w}`, s.window_rows_read <= s.w);
+  add(true, `window ${s.n}: pages read (most)`, s.window_pages_read, `≤ ${g.window_pages_max}`, s.window_pages_read <= g.window_pages_max);
+  add(true, `window ${s.n}: bytes read`, s.window_bytes_read, `≤ ${g.window_bytes_max}`, s.window_bytes_read <= g.window_bytes_max);
+  add(true, `window ${s.n}: a query answered cold, p50 µs`, s.window_at_n_p50_us, `< ${g.window_at_n_p50_us_max}`, s.window_at_n_p50_us < g.window_at_n_p50_us_max);
+  if (s.node_open_head_ms != null) add(false, `window ${s.n}: the log's head a node works out as it opens, ms`, s.node_open_head_ms, `≤ ${gates.targets.node_open_head_ms}`, s.node_open_head_ms <= gates.targets.node_open_head_ms);
+ }
+ // a window's cost holds with the edits: the largest size's over the smallest's
+ const [lo, hi] = [wins.reduce((a, b) => (a && a.n < b.n ? a : b), null), wins.reduce((a, b) => (a && a.n > b.n ? a : b), null)];
+ if (lo && hi && lo !== hi) {
+  const r = Math.round(hi.window_at_n_p50_us / lo.window_at_n_p50_us * 100) / 100;
+  add(true, `window ${hi.n} p50 ÷ ${lo.n}'s`, r, `≤ ${g.window_growth_max}`, r <= g.window_growth_max);
+ }
+ return out;
+}
+
+// G1's named query of the Universe on a node (avendb-net's posts_page_bench.rs, the path the always-on peer's
+// /feed/posts and Node::run take): a page of posts off the shared index at 1M and 10M edits, from what it costs more per
+// entry held and per edit of a post; about 0 per edit where it reads no history.
+export function checkPosts(bench, gates) {
+ const out = [];
+ const add = (gate, name, value, limit, ok) => out.push({ gate, name, value, limit, ok: value != null && ok });
+ const g = gates.gates, p = bench.find(b => b.kind === 'posts_node');
+ if (!p) add(true, 'posts page on a node', null, 'present', false);
+ else {
+  add(true, 'posts page: µs more per edit of a post (reads history)', p.per_edit_us, `≤ ${g.posts_per_edit_us_max}`, p.per_edit_us <= g.posts_per_edit_us_max);
+  add(true, 'posts page: at 1M edits, ms', p.at_1m_ms, `≤ ${g.posts_page_ms_max}`, p.at_1m_ms <= g.posts_page_ms_max);
+  add(true, 'posts page: at 10M edits, ms', p.at_10m_ms, `≤ ${g.posts_page_ms_max}`, p.at_10m_ms <= g.posts_page_ms_max);
  }
  return out;
 }
@@ -101,6 +136,35 @@ export function check(bench, gates, pg = []) {
    add(false, `carrier ${c.carrier}: edit bytes/s ÷ link`, c.link_share, `≥ ${t.relay_link_share}`, c.link_share >= t.relay_link_share);
   }
  }
+ // live sync (avendb-net's sync_bench.rs, plan D3): a live edit's delay while a catch-up runs, and the catch-up's use of
+ // its link
+ const lives = bench.filter(b => b.kind === 'live');
+ for (const l of gates.live_links ?? []) if (!lives.some(x => x.link === l)) add(true, `live sync on a ${l} link`, null, 'present', false);
+ for (const l of lives) {
+  // a `_bulk` link's run (20 MB of fat edits) holds the link's use (G3); every run a live edit's delay (G4), whose p95
+  // means something only over enough live edits: the phone's bulk, whose catch-up runs longest, must give them
+  const bulk = l.link.endsWith('_bulk');
+  if (l.link === 'phone_bulk' && g.live_busy_samples_min != null) add(true, `live ${l.link}: live edits timed during the catch-up`, l.live_busy, `≥ ${g.live_busy_samples_min}`, l.live_busy >= g.live_busy_samples_min);
+  {
+   if (g.live_busy_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${g.live_busy_p95_ms_max}`, l.live_busy_p95_ms < g.live_busy_p95_ms_max);
+   add(false, `live ${l.link}: a live edit's delay during a catch-up, p95 ms`, l.live_busy_p95_ms, `< ${t.live_busy_p95_ms}`, l.live_busy_p95_ms < t.live_busy_p95_ms);
+   if (g.live_idle_p95_ms_max != null) add(true, `live ${l.link}: a live edit's delay, idle, p95 ms`, l.live_idle_p95_ms, `< ${g.live_idle_p95_ms_max}`, l.live_idle_p95_ms < g.live_idle_p95_ms_max);
+   if (g.live_missed_max != null) add(true, `live ${l.link}: live edits not there in 15 s`, l.live_missed, `≤ ${g.live_missed_max}`, l.live_missed <= g.live_missed_max);
+  }
+  if (bulk && l.link_share != null) {
+   if (g.live_link_share_min != null) add(true, `live ${l.link}: catch-up bytes/s ÷ link`, l.link_share, `≥ ${g.live_link_share_min}`, l.link_share >= g.live_link_share_min);
+   add(false, `live ${l.link}: catch-up bytes/s ÷ link`, l.link_share, `≥ ${t.live_link_share}`, l.link_share >= t.live_link_share);
+  }
+  if (g.live_resent_ratio_max != null) add(true, `live ${l.link}: edits sent again ÷ new`, l.resent_ratio, `≤ ${g.live_resent_ratio_max}`, l.resent_ratio <= g.live_resent_ratio_max);
+  add(false, `live ${l.link}: edits sent again ÷ new`, l.resent_ratio, `≤ ${t.live_resent_ratio}`, l.resent_ratio <= t.live_resent_ratio);
+ }
+ // G5: a person's write while the Lab is busy (avendb-net's lab_schedule_bench.rs): ahead of every queued read, and soon
+ const writes = bench.filter(b => b.kind === 'writes');
+ for (const k of gates.writes_runs ?? []) if (!writes.length) add(true, `${k}: a write behind a busy Lab`, null, 'present', false);
+ for (const x of writes) {
+  add(true, 'a write behind a catch-up slice and 32 queued reads: reads run before it', x.writes_behind_a_read, '≤ 0', x.writes_behind_a_read === 0);
+  if (g.write_p95_ms_max != null) add(true, 'a write behind a catch-up slice and 32 queued reads: p95 ms', x.write_p95_ms, `< ${g.write_p95_ms_max}`, x.write_p95_ms < g.write_p95_ms_max);
+ }
  const phones = bench.filter(b => b.kind === 'phone');
  for (const p of phones) {
   add(false, `phone ${p.engine}: edits/s taken, signatures checked`, p.intake_per_s, `≥ ${t.phone_edits_per_s}`, p.intake_per_s >= t.phone_edits_per_s);
@@ -125,10 +189,22 @@ export function report(bench, pg, results) {
  const ix = bench.filter(b => b.kind === 'index').sort((a, b) => a.n - b.n);
  if (ix.length) rows.push('', '| index of edits | rows | depth (model) | pages read, view (median) | bytes read, view | pages read, point | view open p50 µs | p95 µs | index bytes/edit | built s |', '|---|---|---|---|---|---|---|---|---|---|',
   ...ix.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.depth} (${s.depth_model}) | ${s.open_pages_p50}, at most ${s.open_pages_read} | ${fmt(s.open_bytes_read)} | ${s.get_pages_read} | ${s.open_p50_us} | ${s.open_p95_us} | ${s.index_bytes_per_edit} | ${s.build_s} |`));
+ const wins = bench.filter(b => b.kind === 'window').sort((a, b) => a.n - b.n);
+ if (wins.length) rows.push('', '| named query answered at edits | index rows | pages read (median, most) | bytes read | rows read | log edits | cold p50 / p95 µs | again p50 µs | log head at node open ms |', '|---|---|---|---|---|---|---|---|---|',
+  ...wins.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.window_pages_p50}, ${s.window_pages_read} | ${fmt(s.window_bytes_read)} | ${s.window_rows_read} | ${s.window_log_edits} | ${s.window_p50_us} / ${s.window_p95_us} | ${s.window_warm_p50_us ?? '–'} | ${fmt(s.node_open_head_ms)} |`));
+ const posts = bench.filter(b => b.kind === 'posts_node');
+ if (posts.length) rows.push('', '| posts page on a node | µs, base / 8x posts / 16 edits each / 480 more entries | µs more per post | per edit of a post | per other entry | at 1M ms | at 10M ms |', '|---|---|---|---|---|---|---|',
+  ...posts.map(p => `| ${p.page} posts | ${p.us.join(' / ')} | ${p.per_post_us} | ${p.per_edit_us} | ${p.per_entry_us} | ${p.at_1m_ms} | ${p.at_10m_ms} |`));
  const first = bench.filter(b => b.kind === 'first');
  const carriers = bench.filter(b => b.kind === 'carrier');
  if (carriers.length) rows.push('', '| carrier | edits | bytes/edit | sync s | asks | edits/s | KB/s | link KB/s | of link |', '|---|---|---|---|---|---|---|---|---|',
   ...carriers.map(c => `| ${c.carrier} | ${fmt(c.edits)} | ${fmt(c.bytes_per_edit)} | ${c.sync_s} | ${c.asks} | ${fmt(c.edits_per_s)} | ${fmt(Math.round(c.bytes_per_s / 1000))} | ${c.link_bytes_per_s ? fmt(c.link_bytes_per_s / 1000) : '–'} | ${c.link_share ?? '–'} |`));
+ const lives = bench.filter(b => b.kind === 'live');
+ if (lives.length) rows.push('', '| live sync link | edits | bytes/edit | catch-up s | edits/s | of link | sent again | live during catch-up p50 / p95 ms | idle p50 / p95 ms | missed | peak MB |', '|---|---|---|---|---|---|---|---|---|---|---|',
+  ...lives.map(l => `| ${l.link} | ${fmt(l.edits)} | ${fmt(l.bytes_per_edit)} | ${l.sync_s} | ${fmt(l.edits_per_s)} | ${l.link_share ?? '–'} | ${l.resent_ratio} | ${l.live_busy_p50_ms} / ${l.live_busy_p95_ms} | ${l.live_idle_p50_ms} / ${l.live_idle_p95_ms} | ${l.live_missed} | ${l.peak_kib ? Math.round(l.peak_kib / 1024) : '–'} |`));
+ const writes = bench.filter(b => b.kind === 'writes');
+ if (writes.length) rows.push('', '| a write behind a busy Lab | rounds | p50 ms | p95 ms | max ms | reads run before it |', '|---|---|---|---|---|---|',
+  ...writes.map(x => `| ${x.turn_ms} ms slice + ${x.reads_queued} reads of ${x.turn_ms} ms | ${x.rounds} | ${x.write_p50_ms} | ${x.write_p95_ms} | ${x.write_max_ms} | ${x.writes_behind_a_read} |`));
  const phones = bench.filter(b => b.kind === 'phone');
  if (phones.length) rows.push('', '| phone class (WebAssembly) | edits | bytes/edit | verified | signatures/s | held | taken/s |', '|---|---|---|---|---|---|---|',
   ...phones.map(p => `| ${p.engine} ${p.version} | ${fmt(p.edits)} | ${fmt(p.bytes_per_edit)} | ${fmt(p.verified)} | ${fmt(p.verify_per_s)} | ${fmt(p.held)} | ${fmt(p.intake_per_s)} |`));
@@ -136,14 +212,28 @@ export function report(bench, pg, results) {
  return rows.join('\n');
 }
 
+// The gates with only shard `--shard`'s runs required present (the bench job's shards, avendb-checks.yml).
+function shardOf(gates) {
+ const at = process.argv.indexOf('--shard');
+ if (at < 0) return gates;
+ const shard = process.argv[at + 1];
+ const keep = { core: ['sizes', 'first_sync'], carriers: ['carriers'], live: ['live_links', 'writes_runs'] }[shard];
+ if (!keep) throw new Error(`--shard ${shard}: none of core, carriers, live`);
+ const out = { ...gates };
+ for (const k of ['sizes', 'first_sync', 'carriers', 'live_links', 'writes_runs']) if (!keep.includes(k)) out[k] = [];
+ return out;
+}
+
 if (import.meta.main) {
- const [benchFile, pgFile] = process.argv.slice(2).filter(a => !a.startsWith('--'));
+ const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--shard');
+ const [benchFile, pgFile] = args;
  const bench = lines(readFileSync(benchFile, 'utf8'), 'BENCH');
  const pg = pgFile ? lines(readFileSync(pgFile, 'utf8'), 'PG') : [];
  const gates = JSON.parse(readFileSync(gatesFile, 'utf8'));
  const phoneOnly = process.argv.includes('--phone');
  const results = process.argv.includes('--index') ? checkIndex(bench, gates)
-  : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, gates, pg);
+  : process.argv.includes('--posts') ? checkPosts(bench, gates)
+  : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, shardOf(gates), pg);
  const text = report(bench, pg, results);
  console.log(text);
  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## avenDB bench\n\n${text}\n`);

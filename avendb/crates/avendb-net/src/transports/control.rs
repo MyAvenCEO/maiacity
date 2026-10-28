@@ -582,7 +582,7 @@ async fn negotiate(shared: Arc<Shared>, peer: Peer) -> Result<()> {
             .filter(|s| s.on == peer.conn.stable_id() && s.mine == mine)
             .and_then(|s| s.route.clone());
         if let Some(id) = id {
-            close_route(&shared, &id);
+            close_route(&shared, &id, "negotiation failed");
         }
     }
     result
@@ -617,8 +617,13 @@ fn close_locked(shared: &Shared, state: &mut State, id: &RouteId) {
     }
 }
 
-pub(crate) fn close_route(shared: &Arc<Shared>, id: &RouteId) {
+/// Closes route `id`, noting `why` in the diary (F14: the always-on peer ended 2 of the iPhone's 3 WebTransport
+/// sessions itself, `local`, ~2-3 s after ready, batch 4 round, and its diary said only "opening wt-client").
+pub(crate) fn close_route(shared: &Arc<Shared>, id: &RouteId, why: &str) {
     let control = &shared.transport_control;
+    if control.state.lock().expect("transport control").routes.contains_key(id) {
+        control.note(format!("route closed here: {why}"));
+    }
     close_locked(shared, &mut control.state.lock().expect("transport control"), id);
     control.changed.notify_one();
     shared.jobs.stir();
@@ -635,7 +640,7 @@ pub(crate) fn gone(shared: &Arc<Shared>, peer: &Peer) {
         .filter(|n| n.on == peer.conn.stable_id())
         .and_then(|n| n.route.clone());
     if let Some(id) = id {
-        close_route(shared, &id);
+        close_route(shared, &id, "its connection ended");
     }
     let mut state = control.state.lock().expect("transport control");
     if state.sessions.get(&peer.endpoint).is_some_and(|n| n.on == peer.conn.stable_id()) {
@@ -649,8 +654,8 @@ pub(crate) fn ready(shared: &Arc<Shared>, id: &RouteId, mtu: usize) -> Result<()
     let _operation = shared.admit()?;
     let address = shared.packets.ready(id, mtu)?;
     let result = ready_address(shared, id, address);
-    if result.is_err() {
-        close_route(shared, id);
+    if let Err(error) = &result {
+        close_route(shared, id, &format!("at ready: {error:#}"));
     }
     result
 }
@@ -704,7 +709,7 @@ pub(crate) async fn browser_event(shared: &Arc<Shared>, event: Value) -> Result<
         }
         Some("closed") => {
             shared.transport_control.note(format!("carrier closed: {}", event["reason"].as_str().unwrap_or("no reason")));
-            close_route(shared, &id);
+            close_route(shared, &id, "the browser closed it");
             Ok(())
         }
         Some("signal") => {
@@ -720,12 +725,12 @@ pub(crate) async fn browser_event(shared: &Arc<Shared>, event: Value) -> Result<
                 copy
             };
             let Some(peer) = shared.live(binding.peer).filter(|p| p.conn.stable_id() == binding.on) else {
-                close_route(shared, &id);
+                close_route(shared, &id, "signal on a replaced connection");
                 return Ok(());
             };
             let result = exchange(&peer, json!({"v":1,"op":"signal","epoch":hex(&binding.wire_epoch),"sequence":binding.sent,"signal":event["signal"]})).await;
-            if result.is_err() {
-                close_route(shared, &id);
+            if let Err(error) = &result {
+                close_route(shared, &id, &format!("signal not delivered: {error:#}"));
             }
             result.map(|_| ())
         }
@@ -898,11 +903,11 @@ pub(crate) async fn listen(shared: &Arc<Shared>, config: super::webtransport::Co
         while let Some(event) = incoming.recv().await {
             match event {
                 super::webtransport::WtEvent::Ready { id, address, .. } => {
-                    if ready_address(&device, &id, address).is_err() {
-                        close_route(&device, &id);
+                    if let Err(error) = ready_address(&device, &id, address) {
+                        close_route(&device, &id, &format!("WebTransport at ready: {error:#}"));
                     }
                 }
-                super::webtransport::WtEvent::Closed { id, .. } => close_route(&device, &id),
+                super::webtransport::WtEvent::Closed { id, .. } => close_route(&device, &id, "WebTransport session ended"),
             }
         }
     });

@@ -41,7 +41,8 @@ export const READS = [
 	'measure_peer_policy',
 	'measure_peer_visibility',
 	'observe_query_emission',
-	'api_pass'
+	'api_pass',
+	'describe'
 ];
 
 /** The ops that change nothing but ask what changes would do, by dry runs: `may`, and `shares`. */

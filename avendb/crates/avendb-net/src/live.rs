@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use avendb::id::SignerId;
+use avendb::id::{EditId, SignerId};
 use avendb::sync::LogId;
 use avendb::wire::Announce;
 use iroh::EndpointId;
@@ -15,12 +15,46 @@ use n0_future::{
     time::{self, Duration},
 };
 
-use crate::traffic::{Live, LiveEnd};
+use crate::traffic::{Live, LiveEnd, Stage};
 use crate::{Holdings, Scope, Shared, jobs, pulls};
 
 /// Bound one peer's interactive network attempt. An already admitted blocking validation may finish afterward;
 /// ordinary ownership fences retain it. Normal reconciliation covers overflow/timeouts and keeps verified records.
 const LIVE_WAIT: Duration = Duration::from_secs(10);
+
+/// How long a live pull steps its view up to date (`materialize_live`) before it leaves the rest to the background
+/// catch-up (`LivePriority.lean`'s `liveSteps`): it drained the whole pending catch-up, so during a bulk catch-up, or
+/// one that never settled (batch 4's upkeep loop), the live lane never ended and held its peer's slot.
+pub(crate) const LIVE_VIEW: Duration = Duration::from_millis(400);
+
+/// A live pull's logs, claimed so that no backlog asking names them meanwhile (`Claims::live`, F12), and released as
+/// it drops, however the pull ended: the peers its claim held back are asked again then.
+struct LiveClaimed {
+    shared: Arc<Shared>,
+    logs: BTreeSet<LogId>,
+}
+
+impl LiveClaimed {
+    fn new(shared: &Arc<Shared>) -> Self {
+        LiveClaimed { shared: shared.clone(), logs: BTreeSet::new() }
+    }
+
+    fn claim(&mut self, logs: &BTreeSet<LogId>) {
+        let fresh: BTreeSet<LogId> = logs.difference(&self.logs).copied().collect();
+        if fresh.is_empty() { return; }
+        self.shared.claims.lock().expect("claims").live(&fresh);
+        self.logs.extend(fresh);
+    }
+}
+
+impl Drop for LiveClaimed {
+    fn drop(&mut self) {
+        let again = self.shared.claims.lock().map(|mut c| c.live_done(&self.logs)).unwrap_or_default();
+        for endpoint in again {
+            self.shared.outreach.send(crate::node_loop::Msg::Ask { endpoint });
+        }
+    }
+}
 
 /// Where one live pull's time went, for `traffic::Live`.
 #[derive(Default)]
@@ -33,6 +67,8 @@ struct LiveTiming {
     view_ms: u64,
     /// It lacked too many rule logs, or some still after taking them: the backlog brings the rest.
     backlog: bool,
+    /// Its view was left to the background catch-up at `LIVE_VIEW`.
+    left: bool,
 }
 
 fn ms(since: time::Instant) -> u64 {
@@ -48,6 +84,13 @@ pub(crate) fn announced_hints(held: &Holdings, announce: &Announce) -> Vec<LogId
         return Vec::new();
     }
     announce.logs.iter().map(|(log, _)| *log).collect()
+}
+
+/// Of the logs `announce` hints, those whose frontier it repeats unchanged: witnesses (`add_witness_hints`), and how
+/// they were, as against those it changed.
+pub(crate) fn unchanged(held: &Holdings, announce: &Announce, hinted: &[LogId]) -> Vec<(LogId, bool)> {
+    announce.logs.iter().filter(|(log, _)| hinted.contains(log))
+        .map(|(log, frontier)| (*log, held.logs.get(log) == Some(frontier))).collect()
 }
 
 fn add_witness_hints(announce: &mut Announce, want: &Holdings, witnesses: impl IntoIterator<Item = LogId>) {
@@ -106,10 +149,13 @@ impl Shared {
         let Some(endpoint) = self.endpoint_of(device) else {
             return;
         };
+        let Ok(activity) = self.admit() else { return };
         let Some(mut work) = self.pulls.live_announced(device, full, logs) else {
             return;
         };
-        let Ok(activity) = self.admit() else { return };
+        // claimed now, before the caller stirs the backlog, which would ask for the same logs (F12)
+        let mut claimed = LiveClaimed::new(self);
+        claimed.claim(&logs.iter().copied().collect());
         let shared = self.clone();
         task::spawn(async move {
             let _activity = activity;
@@ -117,6 +163,7 @@ impl Shared {
             let mut timing = LiveTiming::default();
             let attempt = time::timeout(LIVE_WAIT, async {
                 while let Some(logs) = work.next() {
+                    claimed.claim(&logs);
                     timing.logs += logs.len() as u64;
                     shared.pull_live(endpoint, device, logs, &mut timing).await?;
                 }
@@ -137,9 +184,11 @@ impl Shared {
             }
             // A timed-out waiter can have accepted a partial page. Materialize it through the ordinary path too.
             let viewing = time::Instant::now();
-            shared.materialize_live().await;
+            shared.materialize_live(&mut timing).await;
             timing.view_ms += ms(viewing);
+            shared.trace_taken(device, &claimed.logs, timing.left).await;
             drop(work);
+            drop(claimed);
             shared.traffic.live(Live {
                 device,
                 at: jobs::now_ms(),
@@ -151,16 +200,75 @@ impl Shared {
                 view_ms: timing.view_ms,
                 ms: ms(began),
                 end,
+                left: timing.left,
             });
         });
     }
 
-    async fn materialize_live(self: &Arc<Self>) {
-        self.catch_up_paced(true).await;
+    /// T1: the heads `device` announced of `logs` that this device holds now, traced as taken (`traffic::Stage`).
+    async fn trace_taken(self: &Arc<Self>, device: SignerId, logs: &BTreeSet<LogId>, left: bool) {
+        let heads: Vec<(LogId, EditId)> = {
+            let held = self.held.lock().expect("held");
+            let Some(theirs) = held.get(&device) else { return };
+            logs.iter()
+                .filter_map(|log| Some((log, theirs.logs.get(log)?)))
+                .flat_map(|(log, frontier)| frontier.heads.iter().map(move |head| (*log, *head)))
+                .collect()
+        };
+        if heads.is_empty() { return; }
+        let taken = self.read(move |lab, me| {
+            let log = lab.log(me);
+            let (by, ids) = (log.by_log(), log.ids());
+            heads.into_iter()
+                .filter(|(l, e)| by.get(l).is_some_and(|at| at.iter().any(|&i| ids.get(i) == Some(e))))
+                .map(|(_, e)| e)
+                .collect::<Vec<_>>()
+        }).await;
+        self.traffic.trace(Stage::Taken, device, taken, left);
+    }
+
+    async fn materialize_live(self: &Arc<Self>, timing: &mut LiveTiming) {
+        // At most LIVE_VIEW of it here, the pages stirred after each step: no step is begun after it (each step one
+        // turn of the Lab), and the background catch-up, at most one at a time, goes on from where this one stopped.
+        let until = time::Instant::now() + LIVE_VIEW;
+        let (_, left) = self.catch_up_steps(true, crate::lab_schedule::Class::Foreground, Some(until)).await;
+        if left {
+            timing.left = true;
+            if !self.pulls.view_behind.swap(true, std::sync::atomic::Ordering::AcqRel)
+                && let Ok(activity) = self.admit()
+            {
+                let shared = self.clone();
+                task::spawn(async move {
+                    let _activity = activity;
+                    shared.catch_up_paced_class(true, crate::lab_schedule::Class::Background).await;
+                    shared.pulls.view_behind.store(false, std::sync::atomic::Ordering::Release);
+                    shared.jobs.stir();
+                });
+            }
+        }
         // Receive can wake a subscriber before replay. pull_expected may then apply that replay before this
         // barrier, making this catch-up return false. Publish after the barrier in either case, so an earlier
         // receive wake cannot be the consumer's last notification of the newly materialized view.
         self.jobs.stir();
+    }
+
+    /// The hinted `logs` a live pull asks (`LivePriority.lean` `inStep`): every log the announcement changed, and a
+    /// witness only if this device holds none of it. A witness is an earlier entry's log, named for its creation alone
+    /// (`live_witnesses`); asked of a device that holds that creation, it brought the rest of that log, the backlog, with
+    /// the change (`bench_live` phone: one chat edit's pull carried 86 bulk edits, 2.0 s). The backlog asks it once this
+    /// pull ends (`Claims::live_done`).
+    async fn in_step(self: &Arc<Self>, device: SignerId, logs: BTreeSet<LogId>) -> BTreeSet<LogId> {
+        let witnesses = self.pulls.take_witnesses(device, &logs);
+        if witnesses.is_empty() {
+            return logs;
+        }
+        let shared = self.clone();
+        self.try_lab(move |lab, me| {
+            let mine = shared.logs_of(lab, me);
+            logs.into_iter().filter(|log| !witnesses.contains(log) || !mine.of.contains_key(log)).collect()
+        })
+        .await
+        .unwrap_or_default()
     }
 
     async fn pull_live(
@@ -189,7 +297,7 @@ impl Shared {
             let at = time::Instant::now();
             timing.new += self.pull_expected(endpoint, Scope::Logs(rules), false, None, Some(device), None, None)
                 .await?;
-            self.materialize_live().await;
+            self.materialize_live(timing).await;
             missing = self.differ(device).await;
             timing.rules_ms += ms(at);
             if missing.iter().any(|log| !matches!(log, LogId::Entry(_))) {
@@ -201,6 +309,7 @@ impl Shared {
             .intersection(&missing)
             .copied()
             .collect::<BTreeSet<_>>();
+        let logs = self.in_step(device, logs).await;
         if !logs.is_empty() {
             let at = time::Instant::now();
             timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, None, Some(device), None, None)
@@ -208,7 +317,7 @@ impl Shared {
             timing.pull_ms += ms(at);
             // A single interactive edit must wake reactive subscribers before the unrelated backlog finishes.
             let at = time::Instant::now();
-            self.materialize_live().await;
+            self.materialize_live(timing).await;
             timing.view_ms += ms(at);
         }
         Ok(())

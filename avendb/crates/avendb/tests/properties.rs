@@ -466,7 +466,7 @@ fn a_write(rng: &mut Rng, h: &History, st: &State) -> Option<Attempt> {
     let deps = if lands { vec![en.creation] } else { vec![] };
     let (entry, via, create, body) = (en.id, vec![], None, vec![rng.next() as u8]);
     let files = vec![];
-    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body };
+    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body: body.into() };
     Some(Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Tags(some_tags(rng)) })
 }
 
@@ -533,7 +533,7 @@ fn a_creation(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     };
     let (stay, deps, via, body) = (None, vec![], vec![], vec![rng.next() as u8]);
     let (create, files) = (Some(Creation { audience, nonce: [0; 32] }), vec![]);
-    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body };
+    let action = Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body: body.into() };
     Attempt { author: author_for(rng, st, actor), cosigners: vec![], action, said: Said::Created(header, tags) }
 }
 
@@ -895,16 +895,16 @@ fn t1_authorized_writes() {
     for (seed, h) in every_history() {
         for (edit, before, after) in steps(h.log.edits()) {
             for w in after.all_writes().iter().filter(|w| before.write(w.edit).is_none()) {
-                assert!(before.acts_via(w.author, &w.via, w.actor), "seed {seed}: {w:?}");
+                assert!(before.acts_via(w.author, &w.via, w.signer), "seed {seed}: {w:?}");
                 through += usize::from(!w.via.is_empty());
                 let en = after.entry(w.entry).expect("a write's entry");
                 if w.first {
                     let audience = after.audience_shares(en.audience()).expect("the cell it is created in");
-                    assert!(before.may_create(w.actor, en.vault, audience), "seed {seed}: {w:?}");
+                    assert!(before.may_create(w.signer, en.vault, audience), "seed {seed}: {w:?}");
                     created += 1;
                 } else {
-                    assert!(before.authorized(w) && before.may_write(w.actor, w.entry), "seed {seed}: {w:?}");
-                    by_share += usize::from(w.actor != en.vault);
+                    assert!(before.authorized(w) && before.may_write(w.signer, w.entry), "seed {seed}: {w:?}");
+                    by_share += usize::from(w.signer != en.vault);
                 }
             }
             for en in after.entries().iter().filter(|en| before.entry(en.id).is_none()) {
@@ -1881,7 +1881,7 @@ fn d1_drafts_land_by_their_vault() {
                     continue;
                 }
                 let en = after.entry(w.entry).expect("a write's entry");
-                assert_eq!(w.actor, en.vault, "seed {seed}: {w:?}");
+                assert_eq!(w.signer, en.vault, "seed {seed}: {w:?}");
                 by_vault += 1;
             }
         }
@@ -2092,7 +2092,7 @@ impl Twin {
                 let create = create.map(|c| Creation { audience: self.new_audience(vault, &c.audience), ..c });
                 let (stay, deps, proposal) = (stay.map(|s| self.edit(s)), self.edits(&deps), self.proposal(proposal));
                 let (vault, actor, via) = (self.vault(vault), self.vault(actor), self.vaults(&via));
-                Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body }
+                Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, body: body.into() }
             }
             Action::Mark { vault, entry, caps, wants, keep, via } => {
                 let caps = caps.map(|to| self.new_audience(vault, &to));
@@ -2188,7 +2188,7 @@ fn ops(st: &State, t: &Twin) -> Ops {
     };
     let write = |w: &Write| Write {
         edit: t.edit(w.edit),
-        actor: t.vault(w.actor),
+        signer: t.vault(w.signer),
         stay: w.stay.map(|s| t.edit(s)),
         deps: t.edits(&w.deps),
         proposal: t.proposal(w.proposal),
