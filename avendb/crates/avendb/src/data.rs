@@ -577,10 +577,10 @@ fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, version: Option<&u
     json!({
         "id": hex(&w.edit.0),
         "author": hex(&w.author.0),
-        "signer": hex(&w.actor.0),
-        "actor": hex(&w.actor.0),
+        "signer": hex(&w.signer.0),
+        "actor": hex(&w.signer.0),
         "via": w.via.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
-        "chain": audit.chain(w.author, w.actor, &w.via),
+        "chain": audit.chain(w.author, w.signer, &w.via),
         "line": line.map(|b| hex(&b.0)),
         "deps": ids(&w.deps),
         "kind": kind,

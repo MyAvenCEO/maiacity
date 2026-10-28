@@ -113,7 +113,7 @@ impl Encode for Write {
     fn encode(&self, out: &mut Vec<u8>) {
         self.edit.encode(out);
         self.author.encode(out);
-        self.actor.encode(out);
+        self.signer.encode(out);
         self.entry.encode(out);
         self.stay.encode(out);
         self.epoch.encode(out);
@@ -131,7 +131,7 @@ impl Decode for Write {
         Ok(Write {
             edit: EditId::decode(r)?,
             author: SignerId::decode(r)?,
-            actor: VaultId::decode(r)?,
+            signer: VaultId::decode(r)?,
             entry: EntryId::decode(r)?,
             stay: r.option()?,
             epoch: u64::decode(r)?,

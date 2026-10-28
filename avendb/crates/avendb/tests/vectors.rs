@@ -677,7 +677,7 @@ impl Names {
             .iter()
             .map(|w| {
                 let audience = st.audience_shares(w.audience).expect("a write's audience").iter().copied().collect();
-                let row = (w.edit, w.author, w.actor, w.entry, w.stay, w.epoch, w.deps.clone(), w.proposal);
+                let row = (w.edit, w.author, w.signer, w.entry, w.stay, w.epoch, w.deps.clone(), w.proposal);
                 (row, (w.via.clone(), w.first, audience))
             })
             .collect();

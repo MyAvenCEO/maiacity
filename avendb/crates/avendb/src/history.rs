@@ -914,7 +914,7 @@ impl Repo {
         let (entry, actor) = (EntryId::from_u64(0), VaultId::from_u64(0));
         let (stay, epoch, audience, first) = (None, 0, AudienceId::of(actor, &[]), self.history.changes.is_empty());
         let (deps, proposal, via, shares) = (d.deps, d.proposal, vec![], vec![]);
-        let write = Write { edit, author, actor, entry, stay, epoch, deps, proposal, via, first, audience, shares };
+        let write = Write { edit, author, signer: actor, entry, stay, epoch, deps, proposal, via, first, audience, shares };
         self.history.push(Change { write, body: Some(d.body.into()), fits: true, touches: None, counted: true, adds: vec![] })?;
         Ok(edit)
     }

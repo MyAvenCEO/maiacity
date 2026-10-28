@@ -439,7 +439,7 @@ jobs:
       # profile's one unit and full LTO are for the tile's WebAssembly, and took minutes more to build
       CARGO_PROFILE_RELEASE_LTO: thin
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
-      AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+    # AVENDB_TEST_PAIRS is set on each step: a job's env can't read the runner context (runner.temp)
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
@@ -457,6 +457,7 @@ jobs:
         working-directory: avendb
         env:
           DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
         run: |
           cargo test --release --locked -p avendb --test bench_gates --no-run
           cargo test --release --locked -p avendb --test first_sync_moves --no-run
@@ -473,6 +474,8 @@ jobs:
       - name: The carriers, direct and through the relay
         if: matrix.shard == 'carriers'
         working-directory: avendb
+        env:
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
         run: |
           AVENDB_CARRIER=direct,relay,relay_link cargo test --locked -p avendb-server --features test-fixtures --test relay_bench -- --ignored --nocapture --exact bench_carrier \
             | tee -a "$RUNNER_TEMP/bench.log"
@@ -485,6 +488,7 @@ jobs:
         working-directory: avendb
         env:
           RUSTFLAGS: --cfg avendb_no_replay_checks
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
         run: |
           AVENDB_LIVE_LINK=calm,phone,phone_bulk,calm_bulk cargo test --locked --profile live -p avendb-net --features test-fixtures --test sync_bench -- --ignored --nocapture --exact bench_live \
             | tee -a "$RUNNER_TEMP/bench.log"

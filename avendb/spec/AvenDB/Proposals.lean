@@ -68,7 +68,7 @@ def avenOf (st : State) (c : VaultId) : Option VaultId :=
 
 /-- The vault write `w` was signed in: the vault its device belongs to, the last owner it acted through, or the vault it
     acted for where it acted directly, as an aven's server does. -/
-def signedIn (w : Write) : VaultId := w.via.getLast?.getD w.actor
+def signedIn (w : Write) : VaultId := w.via.getLast?.getD w.signer
 
 /-- Who wrote version `heads` of entry `e` (Samuel 2026-10-18: never the coop, always its aven and its human
     collaborators): the aven of the entry's vault, where that vault is a coop with one, first; then the vault each

@@ -1510,11 +1510,11 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
         json!({
             "id": w.edit.to_hex(),
             "author": w.author.to_hex(),
-            "signer": w.actor.to_hex(),
+            "signer": w.signer.to_hex(),
             // the old name, for one release (batch 5, R)
-            "actor": w.actor.to_hex(),
+            "actor": w.signer.to_hex(),
             "via": w.via.iter().map(VaultId::to_hex).collect::<Vec<_>>(),
-            "chain": audit.chain(w.author, w.actor, &w.via),
+            "chain": audit.chain(w.author, w.signer, &w.via),
             "line": line_json(w.line()),
             "deps": ids(&w.deps),
             "kind": x.kind,
@@ -1561,9 +1561,9 @@ fn room(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refuse
     // who added each row, by its place, as `policy::Mine` reads it: one vault, or none where two did
     let mut adders: HashMap<String, Option<(VaultId, VaultId)>> = HashMap::new();
     for c in h.changes().iter().filter(|c| c.counted) {
-        let signed = c.write.via.last().copied().unwrap_or(c.write.actor);
+        let signed = c.write.via.last().copied().unwrap_or(c.write.signer);
         for l in &c.adds {
-            let by = (c.write.actor, signed);
+            let by = (c.write.signer, signed);
             adders.entry(l.to_json().to_string()).and_modify(|x| *x = x.filter(|x| x.0 == by.0)).or_insert(Some(by));
         }
     }
@@ -2118,7 +2118,7 @@ fn review(
     }
     let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
     let start = h.get(line).filter(|c| c.write.proposal == Proposal::New).ok_or(Refused::NoEntry)?;
-    let (by, heads) = (start.write.actor, h.heads(Some(line)));
+    let (by, heads) = (start.write.signer, h.heads(Some(line)));
     let accept = match verdict {
         "accepted" => Some(lab.accept(me, actor, entry, line)?),
         _ => None,

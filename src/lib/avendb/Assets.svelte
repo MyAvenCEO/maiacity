@@ -21,6 +21,7 @@
 	import { windowRead } from './ops.js';
     import { readAssetInventory } from './asset-inventory.js';
     import { session } from './session.svelte.js';
+	import { onStir } from './stirs.svelte.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
@@ -345,7 +346,7 @@
 					<p class="soft">Opening the stage…</p>
 				{:then { default: VaultAsset }}
 					<div class="viewer">
-						<VaultAsset {source} hash={chosen.hash} title="{nameOfRecipe(chosen)} v{chosen.v}" note={chosen.note} bind:catalog bind:picked {solo} />
+						<VaultAsset {onStir} {source} hash={chosen.hash} title="{nameOfRecipe(chosen)} v{chosen.v}" note={chosen.note} bind:catalog bind:picked {solo} />
 					</div>
 				{:catch e}
 					<p class="error">The stage could not be opened: {e?.message ?? e}</p>

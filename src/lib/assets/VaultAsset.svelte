@@ -30,21 +30,21 @@
 	import { valuesOf } from './params.js';
 	import { soilOf } from './soil.js';
 	import { buildName, vaultBuild } from './sources/viewer.js';
-	import { onStir } from '$lib/avendb/stirs.svelte.js';
 	import { VIEWS, asker, camerawork, letGoOf, loop, measure, movesOf, onTap, openStage, safeArea, tabbed, viewsOf } from './viewer.js';
 	import { builtRows, heroReading, labRows, longNote, moveChips, paramTabs, scaleBar, tagLines, viewChips } from './ViewerParts.svelte';
 
 	/**
 	 * @type {{ source: ReturnType<typeof import('./sources/avendb.js').vaultRecipes>, hash: string, title?: string,
 	 *   note?: string, about?: import('svelte').Snippet, catalog?: any, picked?: string | null, solo?: boolean,
-	 *   compact?: boolean }}
+	 *   compact?: boolean, onStir?: (read: () => void) => (() => void) }}
 	 *   `source` the vault's recipes ($lib/avendb/assets.js `vaultSource`), `hash` the recipe shown, `title` and `note`
 	 *   what its entry calls it and says of it, `about` what the page says of its entry, at the foot of the panel;
 	 *   `catalog` its parts as built (null where it lists none), `picked` the part picked, `solo` whether it is shown on
 	 *   its own; `compact`, its name, its moves and views and a short canvas alone, in a card with its own answers
-	 *   ($lib/avendb/Hitl.svelte, an AIP's)
+	 *   ($lib/avendb/Hitl.svelte, an AIP's); `onStir` the page's watch of the device's sync ($lib/avendb/stirs.svelte.js),
+	 *   so a file still arriving is read again as it moves
 	 */
-	let { source, hash, title = '', note = '', about, catalog = $bindable(null), picked = $bindable(null), solo = true, compact = false } = $props();
+	let { source, hash, title = '', note = '', about, catalog = $bindable(null), picked = $bindable(null), solo = true, compact = false, onStir } = $props();
 
 	const at = $derived(Object.hasOwn(source.index.recipes, hash) ? source.index.recipes[hash] : null);
 	/** what its recipe is built with, as its card declares it; detail is the renderer's */
@@ -291,7 +291,8 @@
 	/** the part picked, as its catalog has it */
 	const part = $derived(catalog && picked ? (catalog.parts.find((p) => p.id === picked) ?? null) : null);
 	// a file still arriving is read again each time the device's sync moves, until it is here
-	onMount(() => onStir(() => {
+	// (the page passes onStir in: nothing of the assets imports avenDB, sources/avendb.test.js)
+	onMount(() => onStir?.(() => {
 		if (arriving && ready) untrack(() => show?.(hash, asked));
 	}));
 	// a new build asked for whenever the recipe shown or what it is built with changes
