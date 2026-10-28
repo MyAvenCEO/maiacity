@@ -442,7 +442,7 @@
 		flex-wrap: wrap;
 		align-items: baseline;
 		gap: 0.2rem 0.8rem;
-		padding: calc(1rem + env(safe-area-inset-top, 0px)) 1.2rem 0.6rem;
+		padding: 0.4rem 1.2rem 0.6rem;
 		border-bottom: 1px solid var(--edge);
 	}
 	h2 {
@@ -468,7 +468,7 @@
 		padding: 0.5rem 0.6rem 1rem;
 	}
 	.compose {
-		padding: 0.4rem 1rem calc(var(--nav-room, 5rem) + 0.2rem);
+		padding: 0.4rem 1rem 0.6rem;
 	}
 	.day {
 		position: sticky;
@@ -514,7 +514,7 @@
 	.welcome,
 	.making {
 		max-width: 34rem;
-		padding: calc(1.6rem + env(safe-area-inset-top, 0px)) 1.4rem 8rem;
+		padding: 0.6rem 1.4rem 1.5rem;
 		overflow-y: auto;
 	}
 	.making label {

@@ -36,12 +36,10 @@
 		--edge: rgb(0 0 0 / 0.1);
 		--card: #fff;
 		--accent: #2f6d62;
-		/* pinned to the screen, so the page under it (the app's room for the nav pill at its foot) never scrolls or
-		   bounces: only the rooms list, the timeline and the side panel scroll, each on its own */
-		position: fixed;
-		inset: var(--screen-head-room, 0px) 0 0;
+		/* the whole of the app's page container (src/routes/app/+layout.svelte), which never scrolls: only the rooms
+		   list, the timeline and the side panel scroll, each on its own */
+		height: 100%;
 		overflow: hidden;
-		overscroll-behavior: none;
 		background: var(--paper);
 	}
 	.closed {

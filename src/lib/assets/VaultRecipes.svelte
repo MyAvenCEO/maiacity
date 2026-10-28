@@ -68,8 +68,9 @@
 		align-items: center;
 		justify-content: center;
 		gap: 0.6rem;
-		min-height: 100svh;
-		padding: calc(2rem + env(safe-area-inset-top, 0px)) 1rem calc(2rem + env(safe-area-inset-bottom, 0px));
+		box-sizing: border-box;
+		min-height: 100%;
+		padding: 2rem 1rem;
 		text-align: center;
 	}
 

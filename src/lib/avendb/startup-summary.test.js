@@ -55,5 +55,5 @@ test('the Shell has no loading screen of its own: it paints the view under one f
  const shell = await Bun.file(new URL('./Shell.svelte', import.meta.url)).text();
  expect(shell).not.toContain('Loading this view’s local entries');
  expect(shell).toContain('shellView(world, tab, session.worldFresh)');
- expect(shell).toContain('<Fresh fresh={view.fresh} />');
+ expect(shell).toContain("<div use:screenSlot={'center'}><Fresh fresh={view.fresh} /></div>");
 });
