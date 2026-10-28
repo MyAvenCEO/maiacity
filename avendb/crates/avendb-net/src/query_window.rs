@@ -85,11 +85,11 @@ pub(crate) async fn window(
 
 /// What a window query `op` (`engine::window_of`) of device `me` answers, read off index `ix` and the tail after it:
 /// the engine's query over the newest entries with one of its labels, of its vault or of every vault its view knows
-/// whose seed it holds (each vault's window, merged by creation: one cursor orders them all), the candidates of every
-/// other vault (`engine::query_candidates_in`), and those whose header the device hasn't read
+/// whose entries its index lists in full (each vault's window, merged by creation: one cursor orders them all), the
+/// candidates of every other vault (`engine::query_candidates_in`), and those whose header the device hasn't read
 /// (`engine::query_among`); a window of `n` first and four times more while fewer than `n` rows show and some vault's
-/// index lists more; with the window it read last. `None` where the index can't say (`window`, or a vault it holds
-/// no seed of), or the log took edits between the windows and the query, and the caller asks the engine.
+/// index lists more; with the window it read last. `None` where the index can't say (`window`, or a vault it lists
+/// in part), or the log took edits between the windows and the query, and the caller asks the engine.
 pub(crate) async fn answer(
     ix: &SharedIndex,
     lab: &Mutex<Lab>,
@@ -97,15 +97,14 @@ pub(crate) async fn answer(
     op: &serde_json::Value,
 ) -> io::Result<Option<(serde_json::Value, Window)>> {
     let Some((vault, n, before, labels)) = avendb::engine::window_of(op) else { return Ok(None) };
-    // off the index, the vaults it holds the seed of, where it lists every entry the device reads; the others' by their
-    // candidates, as the engine finds them (an entry read by a share's, an audience's or its own key has no row there)
+    // off the index, the vaults where it lists every entry the device reads (`Lab::index_complete`); the others' by
+    // their candidates, as the engine finds them (an entry read by its own key alone has no row)
     let (vaults, others) = {
         let held = lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let seeded = held.seed_vaults(me);
         match vault {
-            Some(v) if !seeded.contains(&v) => return Ok(None),
+            Some(v) if !held.index_lists_all(me, v) => return Ok(None),
             Some(v) => (vec![v], vec![]),
-            None => held.view_vaults(me).into_iter().partition::<Vec<_>, _>(|v| seeded.contains(v)),
+            None => held.view_vaults(me).into_iter().partition::<Vec<_>, _>(|v| held.index_lists_all(me, *v)),
         }
     };
     let mut k = n.max(1);

@@ -937,6 +937,9 @@ struct Store {
     /// Its query views (`query_view`): the answers of the queries its pages asked, each at the head it was worked out
     /// at. Its own, never an edit's, and none in a store made anew.
     query_views: std::sync::Mutex<QueryViews>,
+    /// Whether its shared index lists every entry of a vault it reads (`index_complete`), each with the revision it
+    /// was worked out at.
+    complete: std::sync::Mutex<HashMap<VaultId, (u64, bool)>>,
 }
 
 impl Default for Store {
@@ -996,6 +999,7 @@ impl Default for Store {
             lazy: LazyBoxes::default(),
             revision: 0,
             query_views: std::sync::Mutex::new(QueryViews::default()),
+            complete: std::sync::Mutex::new(HashMap::new()),
         }
     }
 }
@@ -4188,10 +4192,16 @@ impl Lab {
         self.held(d).view().vaults().iter().map(|v| v.id).collect()
     }
 
-    /// The vaults device `d` holds the seed of: its shared index holds a row of every entry of each that it reads and
-    /// has landed (`index_rows`), whatever audience, share or entry key it reads it by.
-    pub fn seed_vaults(&self, d: SignerId) -> BTreeSet<VaultId> {
-        self.held(d).keys.epochs.keys().filter_map(|fam| match fam { KeyFam::Seed(v) => Some(*v), _ => None }).collect()
+    /// `index_complete`, kept while device `d`'s store takes no change (its revision): whether a view of vault `vault`
+    /// may list off the shared index alone.
+    pub fn index_lists_all(&self, d: SignerId, vault: VaultId) -> bool {
+        let store = self.held(d);
+        if let Some((at, yes)) = store.complete.lock().unwrap_or_else(|p| p.into_inner()).get(&vault) {
+            if *at == store.revision { return *yes; }
+        }
+        let yes = self.index_complete(d, vault);
+        store.complete.lock().unwrap_or_else(|p| p.into_inner()).insert(vault, (store.revision, yes));
+        yes
     }
 
     /// Device `d`'s view knows vault `v` and gives it no standing there: it acts for no member or owner of `v`, and no

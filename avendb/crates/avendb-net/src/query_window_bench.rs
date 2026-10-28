@@ -96,7 +96,7 @@ async fn bench(n: u64) -> Value {
     for q in 0..OPENS {
         let t = Instant::now();
         let ix = SharedIndex::open(shelf.clone()).await.expect("the index opens");
-        let got = window(&ix, &lab, mac, alice, &labels[q % TYPES], W).await.expect("a window").expect("the index says");
+        let got = window(&ix, &lab, mac, alice, &labels[q % TYPES], None, W).await.expect("a window").expect("the index says");
         opens.push(t.elapsed().as_secs_f64());
         let (p, b, _) = counts.take();
         pages.push(p as f64);
