@@ -2,8 +2,7 @@
 	One picture as an article's header (./PostLayout.svelte's `hero`), shown whole: a title card keeps its words and
 	its edges whatever its shape. Where its shape is not the header's (a 16:9 cover in the wide 5:2 header), the rest of
 	the header is the same picture, blurred and darkened behind it, so nothing is cut and nothing is left blank. Used
-	where an article has one picture only: a post of the Maia Universe and an article in avenDB. A blog post with a
-	5:2 banner of its own keeps ./Banner.svelte.
+	where an article has one picture only: a post of the Maia Universe and an article in avenDB.
 -->
 <script>
 	// @ts-nocheck — plain JS
