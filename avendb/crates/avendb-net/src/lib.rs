@@ -230,8 +230,10 @@ const REDIAL: Duration = Duration::from_secs(2);
 const RELAY_WAIT: Duration = Duration::from_secs(20);
 
 /// How long a claim holds with no page of its asking landing before a peer owed its logs takes them (`Claims::take`,
-/// `LivePriority.lean` `takes`): a few pages' time on a phone's relay, where a page took 5-14 s.
-const HANDOVER: Duration = Duration::from_secs(15);
+/// `LivePriority.lean` `takes`): the stall the sync pill shows, not a phone relay's slowest page (5-14 s), as no device
+/// waits on one peer (Samuel 2026-10-28, the Mac "Waiting on Safari on iPhone · 29 s" with the always-on peer holding
+/// the same logs). A claim of a peer whose connection closed holds nothing (`Claims::gone`).
+const HANDOVER: Duration = Duration::from_secs(5);
 
 /// How long a node with no socket of its own waits for iroh to pick its relay before it has it pick again
 /// (`Node::on_relay`): iroh picks it by a report of how fast each relay answers, which a browser times by an HTTPS
@@ -3081,7 +3083,11 @@ impl Shared {
                         None => self.pulls.page(false, background).await,
                     }
                 };
-                let slot = time::timeout(PAGE_WAIT, slot).await.context("no page slot in time").and_then(|r| r);
+                // nor for a connection that closed meanwhile: its asking ends at once, not once a slot frees
+                let slot = tokio::select! {
+                    slot = time::timeout(PAGE_WAIT, slot) => slot.context("no page slot in time").and_then(|r| r),
+                    closed = peer.conn.closed() => Err(anyhow!("the connection closed: {closed}")),
+                };
                 let receive = async {
                     let mut permit = slot?;
                     let reply = {
@@ -3945,6 +3951,14 @@ impl Shared {
         }
         self.ranges.lock().expect("ranges").gone(peer.conn.stable_id(), peer.device, forget);
         drop(held);
+        // its claims hold nothing now, unless it is connected again (`a_gone_peers_claim_hands_over_at_once`): the
+        // peers they held back are asked at once, not once its asking fails
+        if self.live(peer.endpoint).is_none() {
+            let again = self.claims.lock().expect("claims").gone(peer.endpoint);
+            for endpoint in again {
+                self.outreach.send(node_loop::Msg::Ask { endpoint });
+            }
+        }
         self.jobs.stir();
     }
 
@@ -4307,6 +4321,12 @@ impl Claims {
         }
     }
 
+    /// `endpoint`'s connection closed: its claims end as its asking's would (`release`), though the asking itself
+    /// may still wait to fail.
+    fn gone(&mut self, endpoint: EndpointId) -> BTreeSet<EndpointId> {
+        self.release(endpoint)
+    }
+
     /// Ends `endpoint`'s claims: the other peers owed an asking, to ask again now. One still owed for logs claimed
     /// by a third stays owed, so it is asked again when that one ends too.
     fn release(&mut self, endpoint: EndpointId) -> BTreeSet<EndpointId> {
@@ -4503,6 +4523,22 @@ mod tests {
         assert_eq!(claims.take(mac, both.clone(), stalled), (both, false), "no page for the handover: the Mac takes all");
         assert_eq!(claims.release(server), BTreeSet::new(), "the stalled asking's end holds nothing back");
         assert_eq!(claims.release(mac), BTreeSet::new());
+    }
+
+    /// No device waits on one peer: once the iPhone's connection closed, the logs its asking claimed go to the always-on
+    /// peer at once, its asking still waiting to fail (`a_gone_peers_claim_hands_over_at_once`), and that asking's end
+    /// holds nothing back.
+    #[test]
+    fn a_closed_connections_claims_go_to_the_peer_owed_them_at_once() {
+        let (phone, server) = (SecretKey::from_bytes(&[1; 32]).public(), SecretKey::from_bytes(&[2; 32]).public());
+        let log = |n: u8| LogId::Entry(EntryId([n; 32]));
+        let (mut claims, began) = (Claims::default(), Instant::now());
+        let both: BTreeSet<_> = [log(1), log(2)].into();
+        claims.take(phone, both.clone(), began);
+        assert_eq!(claims.take(server, both.clone(), began), (BTreeSet::new(), true), "the phone's fresh claim holds");
+        assert_eq!(claims.gone(phone), [server].into(), "its connection closed: the peer it held back is asked again");
+        assert_eq!(claims.take(server, both.clone(), began), (both, false), "which takes every log, no handover waited");
+        assert_eq!(claims.release(phone), BTreeSet::new(), "the phone's asking failing later holds nothing back");
     }
 
     /// F12: a log a live pull asks for is left out of every backlog asking meanwhile, of its own peer too, and the
