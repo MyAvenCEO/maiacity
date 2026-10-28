@@ -18,7 +18,7 @@ How the 3D worlds are lit: the sun by the hour, the sky, the practical lamps, an
   sets the sun at once; `shoot.mjs` calls it every frame of a time-lapse. Film towards +x with the disc clear.
 - Night skies read as a black bar in the square frame: prefer dusk, and fill the square with lit domes.
 - Looks for the low and the night are grade presets in the studio (`cold`, `night`, `dip`, `bright`, `warm` in
-  `game/film/color.js`, ASC CDL in ACEScct) — not filters on the shot.
+  `maia/content/game/film/color.js`, ASC CDL in ACEScct) — not filters on the shot.
 
 ## Lighting a real room (lessons from the room world, removed 2026-10-16)
 

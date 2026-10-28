@@ -1,7 +1,0 @@
-{
-  // The film's colour modules (plain JS with JSDoc types), checked strictly: bun run check:film. The render itself is
-  // the Mac app's, natively (vault/crates/vault-render, vault/app/src/render.rs).
-  "extends": "./tsconfig.json",
-  "compilerOptions": { "allowJs": true, "checkJs": true, "noEmit": true },
-  "include": ["../game/film/color.js", "../game/film/transforms.js"]
-}

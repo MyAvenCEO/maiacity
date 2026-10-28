@@ -11,10 +11,10 @@ The film camera of the sandbox worlds: how it captures, its helpers for moves, a
 - Film mode captures **log, never graded**: scene-linear half-float, metered like a camera (middle grey 18% on the
   lower 60% of the frame; `exposure.stops` over or under), shutter blur in linear light, 1.5× oversampled, then
   ACEScct 10-bit. No tone mapping, no contrast, no vignette — the look is made in the studio's Grade tab.
-- A shot is a record (`game/film/shot.js`): the studio plays it live on the timeline and the Mac app renders the plate
+- A shot is a record (`maia/content/game/film/shot.js`): the studio plays it live on the timeline and the Mac app renders the plate
   only at the final render.
 
-**Camera helpers** (`scripts/film/camera.mjs`; a pose is `[x, y, z, yaw, pitch]`):
+**Camera helpers** (`maia/content/scripts/film/camera.mjs`; a pose is `[x, y, z, yaw, pitch]`):
 - `move(from, to, aimFrom, aimTo, curve)`; `orbit(centre, a0, a1, r0, r1, y0, y1, aim)`; `turn(at, yaw0, yaw1,
   pitch0, pitch1)`; `look(p, q)`; `fly(keys)`; `whip(path, { out | into, d })`.
 - `glide` (even speed) is the default curve; `landing` settles softly — the last frame only. `ease` and `drift` start

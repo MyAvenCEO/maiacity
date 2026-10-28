@@ -1,0 +1,67 @@
+[package]
+name = "avendb"
+version = "0.1.0"
+description = "avenDB, the user-owned, end-to-end encrypted database: vaults, caps, keys, Loro documents and sync by caps, built test-first against the Lean spec in aven/db/spec"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Each phase brings the dependencies it uses (see src/lib.rs): P1 the hashes and signatures of vault logs, P3 the
+# sealing and encryption and the Loro documents the edits carry, P4b the post-quantum halves of both. iroh arrives with
+# the phase that uses it.
+[dependencies]
+# every hash of our own (ids, key derivation, commitments): BLAKE3, the hash iroh-blobs names every byte by; the
+# version iroh-blobs uses
+blake3 = { version = "1.8.7", features = ["zeroize"] }
+# device keys: ed25519, the device's iroh endpoint key; the version iroh uses
+ed25519-dalek = "3"
+# passkeys: WebAuthn assertions are ECDSA P-256 over SHA-256
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"] }
+sha2 = "0.11"
+# the hash-based half of every signature but a write's: SLH-DSA-SHA2-128f (FIPS 205); a release candidate, pinned
+# a Mac's Touch ID key (2026-10-19): its Secure Enclave signs with ML-DSA-65 (FIPS 204) beside its SLH-DSA half, which
+# every device checks; deterministic signing alone, for the software key of the tests
+ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc", "zeroize"] }
+# WebAuthn's clientDataJSON
+serde_json.workspace = true
+# sealed boxes: an X-Wing share (ML-KEM-768 + X25519) and a Classic McEliece 6688128f share in every box, edits under
+# XChaCha20-Poly1305
+x-wing = { version = "0.1.1", features = ["zeroize"] }
+classic-mceliece-rust = { version = "3.1.0", default-features = false, features = ["alloc", "zeroize", "mceliece6688128f"] }
+# McEliece takes its randomness through rand 0.8's traits
+rand_core_06 = { package = "rand_core", version = "0.6", default-features = false }
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc", "zeroize"] }
+rand_core = { version = "0.10.1", default-features = false }
+# the device's secure boundary (P8c): every secret wiped as it is dropped, the hash states that held one among them
+zeroize = "1.8"
+# the state a replay works out (policy::State): collections that share what two states hold alike, so a state kept at a
+# place to step on from costs only what changes after it, not a copy of every write held (sync plan S3c, 2026-10-27)
+imbl = "7"
+# each item is one Loro document, its updates what gets encrypted and synced; pinned exactly, upgraded on purpose
+loro = "=1.17.1"
+# the clock of its own timings (perf.rs): std's on a native target, the page's performance.now() in a browser
+
+# the page's clock in a browser (perf.rs)
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"
+
+[features]
+# Disposable synthetic key cache for tests; never enable in shipped builds.
+test-fixtures = []
+# passkeys of the relying party localhost also count, made by a test page's virtual authenticator
+# (scripts/test-browser.sh): never in a build that ships
+localhost-passkeys = []
+
+# the engine's own hash, of its sources (build.rs)
+[build-dependencies]
+blake3 = { version = "1.8.7", features = ["zeroize"] }
+
+[dev-dependencies]
+# the helpers the tests share (T3)
+avendb-testkit = { path = "../avendb-testkit" }
+
+# avendb_no_replay_checks: set by RUSTFLAGS for a bench run by hand alone, it leaves out the debug checks that replay a
+# whole log on each write (lab.rs), so a bench times what a release does; every test keeps them
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(avendb_no_replay_checks)"] }

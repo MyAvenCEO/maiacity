@@ -70,7 +70,7 @@ reference), `get_bytes`, `export_ranges(hash, ranges)`, `export_bao` (verified),
   if Postgres can't be read, so GC never runs blind.
 - **Deletion only through GC** (`Blobs::delete_with_opts` is crate-private). Whole blobs only.
 
-Our rule: every blob a node must hold gets a named tag `vault/<hex>`; GC is either off or protected by Postgres.
+Our rule: every blob a node must hold gets a named tag `theos/<hex>`; GC is either off or protected by Postgres.
 
 ## Moving files between nodes
 

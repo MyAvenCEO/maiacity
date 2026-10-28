@@ -1,12 +1,12 @@
 # Voice: the narrator and the takes
 
 - **Model:** ElevenLabs v3 through fal, `fal-ai/elevenlabs/tts/eleven-v3`, about $0.10 per 1000 characters.
-  `timestamps: true` returns per-character timings; `wordsOf()` in `api/scripts/voice.ts` joins them into words and
+  `timestamps: true` returns per-character timings; `wordsOf()` in `aven/api/scripts/voice.ts` joins them into words and
   drops audio tags.
 - **Audio tags** go in the text: `[softly] [warmly] [wistfully] [chuckles] [whispers] [with wonder] [proudly] [firmly]
   [quietly] [delighted]`. Use "…" for a breath.
 - **Narrator:** "Grandpa Spuds Oxley" from the ElevenLabs Voice Library, voice id `NOpBlnGInO9m6vDvFkFC`, kept as
-  `spuds` in `studio/voices.json`. fal needs the **voice ID, not the name**.
+  `spuds` in `maia/content/studio/voices.json`. fal needs the **voice ID, not the name**.
 - **One take per line**, named like `day-19-d-hook`, `day-19-d-01`:
   ```
   bun voice say "[quietly] Two hundred and thirty-three people live here… and almost nothing they eat comes from further than a few minutes' walk." --eleven NOpBlnGInO9m6vDvFkFC --stability 0.5 --name day-19-d-hook --local

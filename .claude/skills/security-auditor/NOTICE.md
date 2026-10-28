@@ -39,7 +39,7 @@ Paths are relative to `.claude/` here and to `plugins/` upstream.
   Swift and JavaScript references; `constant-time` builds Rust and reads JavaScript (any other language from an
   assembly listing); `zeroize` keeps only its Rust track. Its C/C++ track, its MCP resolver and its proof-of-concept
   and test generators were left out.
-- **Our context.** Notes added where our code differs: `spec-compliance` treats the Lean spec (`avendb/spec`) as the
+- **Our context.** Notes added where our code differs: `spec-compliance` treats the Lean spec (`aven/db/spec`) as the
   authoritative document; examples point at avenDB.
 - **Scripts → Rust.** Every Python and shell script the kept skills run is one Rust binary, `sec`, with a subcommand
   each (`tools/`); each keeps its original's rules, output format and messages. Golden tests hold the ports to the

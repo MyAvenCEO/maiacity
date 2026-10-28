@@ -111,7 +111,7 @@ banner: <the 5:2 title card, by CID>
 coverAlt: <short caption>
 excerpt: >-
   <1–2 sentences: a scene or a claim, never a summary>
-categories: [<ids from src/lib/inspire-me/categories.ts>]
+categories: [<ids from maia/site/lib/inspire-me/categories.ts>]
 draft: true
 ---
 

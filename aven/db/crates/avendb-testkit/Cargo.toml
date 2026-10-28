@@ -1,0 +1,16 @@
+[package]
+name = "avendb-testkit"
+version = "0.1.0"
+description = "The helpers every avenDB test shares, once: an op's answer or refusal, a list, a wait for a condition (T3), the memory tests' allocator and the check that every test file builds (W4)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# `until`, for the tests that wait on tasks: tokio's timer
+wait = ["dep:tokio"]
+
+[dependencies]
+serde_json.workspace = true
+tokio = { version = "1.44", default-features = false, features = ["time"], optional = true }

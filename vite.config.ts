@@ -5,8 +5,19 @@ import adapter from '@sveltejs/adapter-static';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
-import { assetBox } from './src/lib/assets/box/plugin.js';
-import { pageCsp } from './src/lib/sandbox/policy.js';
+import { aliases, paths } from './aven/ops/paths.js';
+import { assetBox } from './maia/content/assets/box/plugin.js';
+import { pageCsp } from './aven/kernel/sandbox/policy.js';
+import { frozenEngines } from './aven/kernel/fetch-engines.mjs';
+
+/** the folders the import aliases name beside the site, which the site's checks and dev server take in as the site's own */
+const beside = Object.values(paths.aliases).filter((dir) => !(dir + '/').startsWith(paths.site + '/'));
+/**
+ * what those folders and the site's hold besides the pages' code, which the type check reads only where a page imports
+ * it: the static files (the frozen engines' bytes among them, fetched by hash), the vault's code entries, and the game's and the
+ * scripts' folders, which the API and bun run as well
+ */
+const unchecked = [paths.static, 'maia/content/code', 'maia/content/game', 'maia/content/scripts'];
 
 function commit() {
 	try {
@@ -16,13 +27,26 @@ function commit() {
 	}
 }
 
-// a dev server's pages (`serve`) may also reach this machine; a build's never (src/lib/sandbox/policy.js pageCsp)
+// a dev server's pages (`serve`) may also reach this machine; a build's never (aven/kernel/sandbox/policy.js pageCsp)
 export default defineConfig(({ command }) => ({
 	plugins: [
+		// every frozen engine fetched by its hash into the static files first, as git does not carry them (aven/kernel/fetch-engines.mjs)
+		frozenEngines(),
 		tailwindcss(),
-		// the asset box's worker, bundled whole (src/lib/assets/box)
+		// the asset box's worker, bundled whole (maia/content/assets/box)
 		assetBox(),
 		sveltekit({
+			// where the site and its static files are, and the aliases of the folders that left its library
+			// (aven/ops/paths.json): $avendb the page's avenDB, $kernel the kernel, $content the content
+			files: { src: paths.site, assets: paths.static },
+			alias: Object.fromEntries(Object.entries(aliases).filter(([name]) => name !== '$lib')),
+			typescript: {
+				config: (c) => {
+					c.include.push(...beside.flatMap((dir) => ['js', 'ts', 'svelte'].map((e) => `../${dir}/**/*.${e}`)));
+					c.exclude.push(...unchecked.map((dir) => `../${dir}/**`));
+				}
+			},
+
 			compilerOptions: {
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
 				runes: ({ filename }) =>
@@ -45,24 +69,24 @@ export default defineConfig(({ command }) => ({
 			},
 
 			// the build named by its commit, not the time it ran: the same commit builds the same bytes wherever it is
-			// built, so a Mac of Maia City can witness the live site (scripts/release.mjs)
+			// built, so a Mac of Maia City can witness the live site (aven/ops/release.mjs)
 			version: { name: process.env.GITHUB_SHA || commit() },
 
-			// every page's own policy (src/lib/sandbox/policy.js): the scripts it may run, its own start script by its
-			// hash, written into each page as a <meta>, as a prerendered page has no headers of its own (deploy/Caddyfile
-			// sends what a <meta> can't hold, frame-ancestors; the Mac app sends it with its own, vault/app/tauri.conf.json)
+			// every page's own policy (aven/kernel/sandbox/policy.js): the scripts it may run, its own start script by its
+			// hash, written into each page as a <meta>, as a prerendered page has no headers of its own (aven/ops/deploy/Caddyfile
+			// sends what a <meta> can't hold, frame-ancestors; the Mac app sends it with its own, theos/app/tauri.conf.json)
 			csp: { mode: 'hash', directives: pageCsp((text) => createHash('sha256').update(text).digest('base64'), { dev: command === 'serve' }) }
 		})
 	],
 	server: {
-		// game/ holds the rules the site and the API share (policies, the calendar,
-		// the cap table, the globe); it sits beside src/, so Vite has to be told. So do the journal, which avenDB's pages
-		// read in the browser (src/lib/avendb/article.js), the inspire-me library and the journal's sources, and the documents
-		// the repository proposes: the skills (src/lib/avendb/docs.js).
-		fs: { allow: ['game', 'blog', 'inspire-me', 'sources', 'films', '.claude/skills'] },
+		// what sits beside the site, so Vite has to be told: the folders the aliases name, and what the pages read in the
+		// browser (paths.json `served`): the rules the site and the API share (maia/content/game/: policies, the calendar, the cap
+		// table, the globe), the journal, which avenDB's pages read (aven/db/page/article.js), the inspire-me library and
+		// the journal's sources, the films, and the documents the repository proposes: the skills (aven/db/page/docs.js)
+		fs: { allow: [...beside, ...paths.served] },
 		// other sessions' worktrees and the Mac app's build folder change all day: watched, each one reloaded the
 		// studio in the middle of a session
-		watch: { ignored: ['**/.claude/**', '**/.cargo/**', '**/vault/target/**', '**/avendb/target/**'] },
+		watch: { ignored: ['**/.claude/**', '**/.cargo/**', '**/target/**', '**/target-wasm/**'] },
 		// The preview harness assigns a free port via PORT.
 		port: Number(process.env.PORT) || 5173,
 		strictPort: !!process.env.PORT

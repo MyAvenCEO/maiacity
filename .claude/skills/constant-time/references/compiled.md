@@ -110,5 +110,5 @@ Rust uses `rustc --emit=asm` for assembly generation. The analyzer:
 The repo is public and has no PR CI, so run the sweep by hand or in a session, one file at a time; exit code 1 means violations were found:
 
 ```bash
-for f in $(find avendb/crates -name '*.rs' -path '*/src/*'); do .claude/skills/security-auditor/tools/sec ct --warnings --json "$f"; done
+for f in $(find aven/db/crates -name '*.rs' -path '*/src/*'); do .claude/skills/security-auditor/tools/sec ct --warnings --json "$f"; done
 ```

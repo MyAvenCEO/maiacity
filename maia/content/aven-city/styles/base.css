@@ -1,0 +1,182 @@
+/* avenCITY — base + HUD primitives. The world is the UI; this is just the
+ * thin floating layer above the canvas.
+ *
+ * Ported into avenOS: what the standalone repo put on `html`/`body` hangs off
+ * `.avencity`, the game's own root. The game is the only screen today, so this
+ * costs nothing — but a stylesheet that repaints `body` is a lib deciding what
+ * the host application looks like, and it would have to be unpicked the first
+ * time anything renders beside it. The focus ring and the reduced-motion rule
+ * are scoped the same way, for the same reason. */
+
+@layer base {
+	/* We deliberately skip Tailwind's preflight so the host site keeps its own
+	 * styling — which leaves the browser's default button chrome (ButtonFace
+	 * fill, 2px outset border) on every control in here. Reset it locally. */
+	.avencity button {
+		appearance: none;
+		-webkit-appearance: none;
+		margin: 0;
+		padding: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		text-align: inherit;
+	}
+
+	.avencity {
+		color-scheme: light;
+		height: 100%;
+		background-color: var(--color-sky);
+		color: var(--color-ink);
+		font-weight: 500;
+		-webkit-font-smoothing: antialiased;
+		overflow: hidden;
+	}
+
+	.avencity :focus-visible {
+		outline: 2px solid var(--color-coral);
+		outline-offset: 3px;
+		border-radius: 999px;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.avencity *,
+		.avencity *::before,
+		.avencity *::after {
+			animation-duration: 0.01ms !important;
+			transition-duration: 0.01ms !important;
+		}
+	}
+}
+
+@layer components {
+	/*
+	 * The HUD's frame over the canvas: clear of the screen's edges, and on a
+	 * phone of the notch and the home bar too (the page runs edge to edge,
+	 * viewport-fit=cover); at the foot, of the app's nav pill (--nav-room,
+	 * maia/site/app.css). `.hud-frame-tight` holds the top closer, for a readout
+	 * strip that reads as a status bar.
+	 */
+	.hud-frame {
+		--hud-edge: 1.25rem;
+		--hud-top: var(--hud-edge);
+		padding: calc(var(--hud-top) + env(safe-area-inset-top, 0px))
+			calc(var(--hud-edge) + env(safe-area-inset-right, 0px))
+			calc(var(--hud-edge) + var(--nav-room, env(safe-area-inset-bottom, 0px)))
+			calc(var(--hud-edge) + env(safe-area-inset-left, 0px));
+	}
+
+	.hud-frame-tight {
+		--hud-top: 0.5rem;
+	}
+
+	@media (min-width: 48rem) {
+		.hud-frame {
+			--hud-edge: 1.75rem;
+		}
+
+		.hud-frame-tight {
+			--hud-top: 0.75rem;
+		}
+	}
+
+	/*
+	 * One surface, used everywhere.
+	 *
+	 * Flat and see-through: a white wash over a light blur, a single hairline,
+	 * no inset highlights and no drop shadow. Stacking those effects was what
+	 * made the HUD read as bubbles — now a panel is a pane of frosted glass and
+	 * anything sitting inside it carries no surface of its own.
+	 */
+	.hud-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 0.875rem;
+		border-radius: 0.75rem;
+		background-color: rgb(255 255 255 / 0.72);
+		backdrop-filter: blur(10px);
+		-webkit-backdrop-filter: blur(10px);
+		border: 1px solid rgb(58 74 80 / 0.08);
+		color: var(--color-ink);
+		font-size: 0.8125rem;
+		line-height: 1.2;
+		white-space: nowrap;
+		transform: translateZ(0);
+	}
+
+	.hud-pill-sm {
+		gap: 0.375rem;
+		padding: 0.3125rem 0.625rem;
+		border-radius: 0.625rem;
+		font-size: 0.75rem;
+	}
+
+	.hud-pill-sm .hud-label {
+		font-size: 0.5625rem;
+		letter-spacing: 0.1em;
+	}
+
+	/* Buttons are the same surface; they only change tone. */
+	.hud-btn {
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease;
+	}
+
+	.hud-btn:hover {
+		background-color: rgb(255 255 255 / 0.92);
+	}
+
+	.hud-label {
+		font-family: var(--font-mono);
+		font-size: 0.6875rem;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+		color: var(--color-ink-soft);
+	}
+
+	/*
+	 * Segmented switch — one pane, one lit segment. The segments themselves
+	 * have no border and no shadow, so the control reads as a single object.
+	 */
+	.hud-switch {
+		display: inline-flex;
+		align-items: center;
+		padding: 0.1875rem;
+		border-radius: 0.625rem;
+		background-color: rgb(255 255 255 / 0.72);
+		backdrop-filter: blur(10px);
+		-webkit-backdrop-filter: blur(10px);
+		border: 1px solid rgb(58 74 80 / 0.08);
+		transform: translateZ(0);
+	}
+
+	.hud-switch button {
+		white-space: nowrap;
+		border: 0;
+		background: transparent;
+		border-radius: 0.4375rem;
+		padding: 0.25rem 0.75rem;
+		font-family: var(--font-mono);
+		font-size: 0.5625rem;
+		font-weight: 500;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--color-ink-soft);
+		cursor: pointer;
+		transition: background-color 140ms ease, color 140ms ease;
+	}
+
+	.hud-switch button:hover {
+		color: var(--color-ink);
+	}
+
+	.hud-switch button.on {
+		background-color: rgb(58 74 80 / 0.08);
+		color: var(--color-ink);
+	}
+
+}

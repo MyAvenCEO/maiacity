@@ -1,0 +1,621 @@
+<!--
+	The studio: a small post-production room for the journal films, over the media library, in three working steps —
+	like DaVinci Resolve's pages — sharing one timeline:
+
+	  Edit    picture and sound, on HD log proxies seen through the view transform, and the live world for world clips
+	          (a shot as data, drawn by Sandbox 4's film mode on the timeline's clock). The library is in the 3D
+	          tab: drag a file onto a track (or double-click it to drop it at the playhead); a click shows it in the
+	          source monitor, where I and O mark the part to use. Clips move by hand; a world clip opens its keyframe lanes.
+	          Space plays; the captions follow the voice clips word by word. "Lock the edit" ends the step.
+	  Grade   on the locked cut: conform status (originals, world plates per shape), the film's look and each clip's
+	          grade as ASC CDL in ACEScct, presets, scopes, and each delivery shape's framing. Grades are data.
+	  Render  the render queue and the last render's deliveries per shape (QC, loudness), each viewable.
+
+	Every change is saved to the timeline a moment after it is made. The pieces live in maia/content/studio/. The studio is
+	avenDB's (Samuel 2026-10-18): its timelines are cuts in avenDB, its files the vaults' Library (footage comes in
+	there), its jobs in avenDB's Jobs app; the legacy Data, Library and Jobs tabs are gone, and the Deliverables placeholder too (a film's posts are made in the story's Movie tab).
+-->
+<script lang="ts">
+	import { screenSlot } from '$lib/app/screen-slots.js';
+
+	import { onDestroy, onMount } from 'svelte';
+	import Deliveries from '$content/studio/Deliveries.svelte';
+	import Inspector from '$content/studio/Inspector.svelte';
+	import CueCard from '$content/studio/CueCard.svelte';
+	import Script from '$content/studio/Script.svelte';
+	import TimelinePicker from '$content/studio/TimelinePicker.svelte';
+	import GradeAside from '$content/studio/GradeAside.svelte';
+	import { forwardConsole, native } from '$lib/native';
+	import ProgramMonitor from '$content/studio/ProgramMonitor.svelte';
+	import RenderQueue from '$content/studio/RenderQueue.svelte';
+	import SourceMonitor from '$content/studio/SourceMonitor.svelte';
+	import StageBar from '$content/studio/StageBar.svelte';
+	import StoryNav from '$content/studio/StoryNav.svelte';
+	import Timeline from '$content/studio/Timeline.svelte';
+	import Transport from '$content/studio/Transport.svelte';
+	import { Studio } from '$content/studio/studio.svelte';
+	import { session as avendb } from '$avendb/session.svelte.js';
+
+	const s = new Studio();
+	// the vault picked in the nav pill: its cuts alone (Samuel 2026-10-18: Maia City's, not every vault's)
+	let pickedVault = '';
+	$effect(() => {
+		const v = avendb.vault ?? '';
+		if (v === pickedVault) return;
+		const first = !pickedVault;
+		pickedVault = v;
+		if (!first) void s.reloadTimelines();
+	});
+	let studio = $state<HTMLElement | null>(null);
+
+	// the studio lives in maiaCITY Studio, the Mac app, only: its media functions never run in a browser
+	let inApp = $state<boolean | null>(null);
+
+	// the timeline opens the first time a tab that shows it is opened
+	$effect(() => {
+		if (s.phase === 'ready') void s.openLater();
+	});
+
+	// if anything goes wrong on the way in, say what — a gate that only ever says "One moment…" hides it
+	onMount(() => {
+		inApp = native();
+		if (!inApp) return;
+		forwardConsole(window, 'studio');
+		// a link into one tab (?tab=script&timeline=<id> — a story's film)
+		const tab = new URLSearchParams(location.search).get('tab');
+		if (tab === 'render' || tab === 'script' || tab === 'edit') s.tab = tab;
+		const report = (e: ErrorEvent | PromiseRejectionEvent) => {
+			s.failed = String('reason' in e ? (e.reason?.stack ?? e.reason) : `${e.message} (${e.filename}:${e.lineno})`);
+		};
+		addEventListener('error', report);
+		addEventListener('unhandledrejection', report);
+		const slow = setTimeout(() => s.phase === 'loading' && !s.failed && (s.failed = 'Still waiting after 10 s for avenDB on this Mac (the library, the cuts and the stories).'), 10000);
+		s.load().catch((e) => (s.failed = (e as Error).stack ?? String(e)));
+		// for the tests and the console: the studio's state
+		(window as unknown as { __studio?: Studio }).__studio = s;
+		return () => (removeEventListener('error', report), removeEventListener('unhandledrejection', report), clearTimeout(slow));
+	});
+	onDestroy(() => {
+		if (typeof window === 'undefined') return; // also runs while the page is prerendered
+		s.destroy();
+	});
+
+	function onKey(e: KeyboardEvent) {
+		const target = e.target as HTMLElement | null;
+		if (target?.closest?.('input, textarea, select')) return;
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].includes(e.code)) {
+			e.preventDefault();
+			s.tab = (['script', '3d', 'edit', 'audio', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
+			return;
+		}
+		// inside the source player's own controls its keys are its own (Space plays it, arrows step through it)
+		if (target?.closest?.('.source audio, .source video')) return;
+		if (e.code === 'Space') (e.preventDefault(), s.toggle());
+		else if (e.code === 'Home') s.seek(0);
+		else if (e.code === 'ArrowLeft') s.seek(s.time - (e.shiftKey ? 1 : 0.1));
+		else if (e.code === 'ArrowRight') s.seek(s.time + (e.shiftKey ? 1 : 0.1));
+		// revert and reapply: ⌘Z, ⇧⌘Z
+		// a chapter starts at the playhead: M, as a marker in the other editors
+		else if (e.code === 'KeyM' && !e.metaKey && !e.ctrlKey && s.canEdit) (e.preventDefault(), s.addChapter());
+		else if (e.code === 'KeyZ' && (e.metaKey || e.ctrlKey)) (e.preventDefault(), e.shiftKey ? s.redo() : s.undo());
+		// the blade: B, or ⌘K as in the other editors — the selected clip (and its sound) cut at the playhead (Alt: alone)
+		else if ((e.code === 'KeyB' && !e.metaKey && !e.ctrlKey) || (e.code === 'KeyK' && (e.metaKey || e.ctrlKey))) (e.preventDefault(), s.splitAtPlayhead(e.altKey));
+		else if ((e.code === 'Delete' || e.code === 'Backspace') && s.canEdit) {
+			// a selected camera key goes first, then the clip
+			const c = s.sel;
+			if (c?.kind === 'world' && s.selectedKey !== null && s.specOf(c)?.camera.kind === 'keys') {
+				e.preventDefault();
+				const i = s.selectedKey;
+				s.editSpec(c, (sp) => void sp.camera.keys!.splice(i, 1));
+				s.selectedKey = null;
+			} else if (s.selected) (e.preventDefault(), s.remove(s.selected, e.altKey)); // a linked partner goes too (Alt: this one alone)
+		}
+	}
+
+	async function fullscreen() {
+		if (document.fullscreenElement) await document.exitFullscreen();
+		else await studio?.requestFullscreen().catch(() => {});
+	}
+</script>
+
+<svelte:window onkeydown={onKey} />
+
+<svelte:head>
+	<title>Studio · maiaCITY</title>
+	<meta name="robots" content="noindex" />
+</svelte:head>
+
+{#if inApp === false}
+	<main class="wrap gate">
+		<h1>Studio</h1>
+		<p>The studio — script, edit, grade and render — lives in <strong>maiaCITY Studio</strong>, the Mac app. Open it there.</p>
+	</main>
+{:else if s.phase !== 'ready'}
+	<main class="wrap gate">
+		<h1>Studio</h1>
+		<p>One moment…</p>
+		{#if s.failed}<pre class="failed">{s.failed}</pre>{/if}
+	</main>
+{:else}
+	<section class="studio tab-{s.tab}" bind:this={studio} aria-label="Studio">
+		<header class="bar" data-tauri-drag-region>
+			<div class="row" data-tauri-drag-region>
+				<div class="side" data-tauri-drag-region>
+					<strong use:screenSlot={'title'}>Studio</strong>
+				</div>
+				<div class="title" data-tauri-drag-region>
+					{#if s.current}
+						<h2>{s.current.name}</h2>
+						{#if s.current.description}<p title={s.current.description}>{s.current.description}</p>{/if}
+					{/if}
+				</div>
+				<div class="side end" data-tauri-drag-region>
+				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
+				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
+				<span class="picker"><TimelinePicker {s} /></span>
+				{#if s.active && s.tab !== 'render'}
+					<button class="rpill" style:--p="{Math.round(s.active.progress * 100)}%" onclick={() => (s.tab = 'render')}>
+						{s.active.status === 'queued' ? 'Render waiting…' : `Rendering ${Math.round(s.active.progress * 100)}%`}
+					</button>
+				{/if}
+				<button class="ghost small" onclick={fullscreen} title="Full screen">⛶</button>
+				</div>
+			</div>
+		</header>
+
+		{#if s.tab === '3d' || s.tab === 'edit'}
+			<!-- 3D and Edit play the live world (no library, Samuel 2026-10-18: the stories aside picks the cut; in 3D the
+			     timeline is the world's own lanes, in Edit the cut's own clips). One program monitor for both: going from
+			     one to the other keeps its world, where a monitor of each loaded the whole world again -->
+			<div class="monitors" class:split={s.tab === 'edit' && !!s.preview}>
+				{#if s.tab === 'edit'}<SourceMonitor {s} />{/if}
+				<ProgramMonitor {s} label={s.tab === '3d' ? '3D · the live world' : 'Program'} />
+			</div>
+			<Inspector {s} />
+		{:else if s.tab === 'script'}
+			<!-- the script beside the picture, half and half; under both the story's structure and the captions -->
+			<Script {s} />
+			<div class="monitors">
+				<ProgramMonitor {s} label="Program · script" />
+			</div>
+		{:else if s.tab === 'audio'}
+			<!-- the sound on the timeline itself: each clip's level, fades and loudness on it; the selected clip's EQ in the
+			     inspector -->
+			<div class="monitors">
+				<ProgramMonitor {s} label="Program · sound" />
+			</div>
+			<Inspector {s} />
+		{:else if s.tab === 'grade'}
+			<!-- the picture; the grade's layers on the timeline, a line each over the shots; the chosen one's controls beside -->
+			<div class="monitors">
+				<ProgramMonitor {s} label="Program · {s.shape}" />
+			</div>
+			<GradeAside {s} />
+		{:else}
+			<RenderQueue {s} />
+			<div class="monitors" class:split={!!s.preview}>
+				<SourceMonitor {s} />
+				<ProgramMonitor {s} />
+			</div>
+			<Deliveries {s} />
+		{/if}
+		<Transport {s} />
+		<Timeline {s} />
+		<!-- the stories and their timelines, on every tab -->
+		<StoryNav {s} />
+		<CueCard {s} />
+		<!-- The shared header owns the workspace switcher. -->
+		<div class="workspace-tabs" use:screenSlot={'center'}><StageBar {s} /></div>
+	</section>
+{/if}
+
+<style>
+	.gate {
+		padding-block: 3rem 6rem;
+	}
+
+	.failed {
+		max-width: 60rem;
+		padding: 0.8rem 1rem;
+		border-radius: 8px;
+		background: #fff3f0;
+		font-size: 0.75rem;
+		white-space: pre-wrap;
+		color: #8a2a12;
+	}
+
+	/* the editing room: the site's light brand (maia/site/app.css), and the whole window; only around the picture stays dark */
+	.studio {
+		color-scheme: light;
+		/* cream and paper, from the wells to the surface */
+		--abyss: #1c2620; /* around the picture: a deep green-black, so the picture reads true */
+		--bg: #e9e3d4; /* the deepest ground: the timeline's lanes, wells */
+		--lane: #eee9dd; /* a lane under a track */
+		--panel: var(--cream); /* the panels: bin, inspector, track heads */
+		--chrome: #f5f2ea; /* the bars: top bar, tab bar, ruler */
+		--raised: var(--paper); /* buttons, inputs, cards */
+		--hover: #e7e0cf; /* hover, open, elevated */
+		--sel: #d9e3cb; /* a chosen tab or toggle: sage, faint */
+		--chosen: rgb(239 181 77 / 0.24); /* a chosen row or item: the accent, faint */
+		--edge: var(--line); /* lines */
+		--edge-strong: #c2b89f;
+		/* text: the site's ink */
+		--dim: var(--muted);
+		--on-ink: var(--paper); /* text on a dark (ink) fill */
+		/* accents */
+		--accent: #e3a02f; /* mustard: selection, the grade */
+		--on-accent: #2a1d05;
+		--rec: #d6402c; /* the playhead, record */
+		--cyan: #1d8796; /* secondary highlights */
+		--ok: #2f7a52;
+		--ok-bg: rgb(60 150 100 / 0.14);
+		--ok-line: #86bb9b;
+		--warn: #93640f;
+		--warn-bg: rgb(239 181 77 / 0.22);
+		--warn-line: #d8b56c;
+		--bad: #b0432a;
+		--bad-bg: rgb(200 116 79 / 0.15);
+		--bad-line: #e0a68e;
+		--info: #3a5ea6;
+		--info-bg: rgb(80 120 210 / 0.13);
+		--violet: #6a4fb2;
+		--violet-bg: rgb(130 100 210 / 0.14);
+		position: fixed;
+		inset: var(--screen-head-room, 0px) 0 0;
+		z-index: 200;
+		/* on a phone: clear of the notch; at the foot, of the app's nav pill and the home bar under it (--nav-room,
+		   maia/site/app.css), so the working steps along the bottom edge stay in view */
+		padding: 0 env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+		display: grid;
+		grid-template-columns: 11rem 19rem 1fr 17rem;
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, auto);
+		grid-template-areas:
+			'bar bar bar bar'
+			'nav bin monitor inspector'
+			'nav bin transport transport'
+			'nav bin timeline timeline';
+		gap: 1px;
+		background: var(--edge);
+		color: var(--ink);
+		font-size: 0.85rem;
+	}
+
+	/* Grade: the program; the layers over V1 on the timeline, full width */
+	/* Grade: the picture, the transport and the layers' lanes; beside them, the full height, the chosen layer's controls */
+	.studio.tab-grade {
+		grid-template-columns: 11rem minmax(0, 1fr) 22rem;
+		grid-template-rows: auto minmax(0, 1fr) auto auto;
+		grid-template-areas:
+			'bar bar bar'
+			'nav monitor aside'
+			'nav transport aside'
+			'nav timeline aside';
+	}
+
+	.studio.tab-render {
+		grid-template-columns: 11rem 19rem 1fr 19rem;
+	}
+
+	/* Edit and 3D: the stories, the monitors and the inspector; no library */
+	.studio.tab-edit,
+	.studio.tab-3d {
+		grid-template-columns: 11rem 1fr 17rem;
+		grid-template-areas:
+			'bar bar bar'
+			'nav monitor inspector'
+			'nav transport transport'
+			'nav timeline timeline';
+	}
+
+	/* Script: the script (left half), the program (right half), the timeline full width under them */
+	.studio.tab-script {
+		grid-template-columns: 11rem 1fr 1fr;
+		grid-template-areas:
+			'bar bar bar'
+			'nav bin monitor'
+			'nav transport transport'
+			'nav timeline timeline';
+	}
+
+	/* Audio: the program and, beside it, the selected clip (its EQ) over the sound tracks, which carry the levels */
+	.studio.tab-audio {
+		grid-template-columns: 11rem 1fr 19rem;
+		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, auto);
+		grid-template-areas:
+			'bar bar bar'
+			'nav monitor inspector'
+			'nav transport transport'
+			'nav timeline timeline';
+	}
+
+
+
+	.bar {
+		grid-area: bar;
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		/* the window's title bar is ours (overlay): the traffic lights sit at its top left */
+		padding: 0.45rem 1rem;
+		background: var(--chrome);
+	}
+
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+		min-width: 0;
+	}
+
+	.bar strong {
+		font-family: var(--font-display);
+		font-size: 1.15rem;
+		font-weight: 500;
+	}
+
+	/* the open timeline: its name and what it is, once — in the middle of the window, whatever sits beside it */
+	/* three columns of equal sides: the title always in the window's middle */
+	.row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 44rem) minmax(0, 1fr);
+	}
+
+	.side {
+		display: flex;
+		gap: 0.8rem;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.side.end {
+		justify-content: flex-end;
+	}
+
+	.title {
+		min-width: 0;
+		text-align: center;
+	}
+
+	.title h2 {
+		margin: 0;
+		overflow: hidden;
+		font-size: 1rem;
+		font-weight: 600;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+
+	.title p {
+		margin: 0.05rem 0 0;
+		overflow: hidden;
+		font-size: 0.76rem;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--dim);
+	}
+
+	.sub {
+		font-size: 0.75rem;
+		color: var(--dim);
+		white-space: nowrap;
+	}
+
+	.err.note {
+		color: var(--ok);
+	}
+
+	.err {
+		overflow: hidden;
+		max-width: 26rem;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-size: 0.78rem;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--bad);
+		cursor: pointer;
+	}
+
+	.grow {
+		flex: 1;
+	}
+
+	.rpill {
+		padding: 0.3rem 0.8rem;
+		border: 0;
+		border-radius: 999px;
+		background: linear-gradient(90deg, var(--accent) var(--p), var(--warn-line) var(--p));
+		font: inherit;
+		font-size: 0.76rem;
+		font-weight: 600;
+		color: var(--on-accent);
+		cursor: pointer;
+	}
+
+	/* shared by every panel: controls take the room's ink, not the system's — a default only (no weight of its own:
+	   a control's own colour, a light pill's dark text, always wins) */
+	:global(:where(.studio) :where(button, input, select, textarea)) {
+		color: inherit;
+	}
+
+	/* every slider in the room: a thin line track, a mustard thumb — never the system's white */
+	.studio :global(input[type='range']) {
+		appearance: none;
+		height: 14px;
+		background: transparent;
+		accent-color: var(--accent);
+		cursor: ew-resize;
+	}
+
+	.studio :global(input[type='range']::-webkit-slider-runnable-track) {
+		height: 4px;
+		border-radius: 2px;
+		background: var(--edge);
+	}
+
+	.studio :global(input[type='range']::-webkit-slider-thumb) {
+		appearance: none;
+		width: 12px;
+		height: 12px;
+		margin-top: -4px;
+		border: 2px solid var(--bg);
+		border-radius: 50%;
+		background: var(--accent);
+		box-shadow: 0 0 0 1px var(--edge-strong);
+	}
+
+	.studio :global(input[type='range']:hover::-webkit-slider-thumb),
+	.studio :global(input[type='range']:focus-visible::-webkit-slider-thumb) {
+		box-shadow: 0 0 0 3px rgb(239 181 77 / 0.35);
+	}
+
+	.studio :global(.ghost) {
+		padding: 0.35rem 0.8rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: var(--raised);
+		font: inherit;
+		font-size: 0.78rem;
+		color: var(--ink);
+		cursor: pointer;
+	}
+
+	.studio :global(.ghost:hover:not(:disabled)) {
+		background: var(--hover);
+	}
+
+	.studio :global(.ghost:disabled) {
+		opacity: 0.5;
+		cursor: default;
+	}
+
+	.studio :global(.ghost.small) {
+		padding: 0.2rem 0.6rem;
+		font-size: 0.72rem;
+	}
+
+	.studio :global(.ghost.danger) {
+		margin-top: 0.8rem;
+		color: var(--bad);
+	}
+
+	/* the shared media pieces (Tile, Viewer, Details from admin/media) inside the room: what the tokens don't reach */
+	.studio :global(.tile:hover),
+	.studio :global(.tile:focus-visible) {
+		box-shadow: 0 8px 24px rgb(38 56 44 / 0.16);
+	}
+
+	.studio :global(.tile .play) {
+		background: rgb(0 0 0 / 0.6);
+		color: var(--ink);
+	}
+
+	.studio :global(.tile .role) {
+		background: rgb(250 248 242 / 0.9);
+	}
+
+	.studio :global(.tile .role.old),
+	.studio :global(.details .bad) {
+		color: var(--bad);
+	}
+
+	.studio :global(.details button.chip:hover) {
+		border-color: var(--accent);
+		background: var(--chosen);
+		color: var(--ink);
+	}
+
+	.studio :global(.details .confirm) {
+		color: var(--warn);
+	}
+
+	.studio :global(.details .confirm button:not(.no)) {
+		color: var(--on-ink);
+	}
+
+	.studio :global(.viewer .stage) {
+		background: var(--abyss);
+	}
+
+	/* the monitors: the program alone, or the source beside it; in Grade the program over the scopes */
+	.monitors {
+		grid-area: monitor;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 1px;
+		min-width: 0;
+		/* the picture never squeezed below this, however many tracks the timeline shows (they scroll) */
+		min-height: 42vh;
+		background: var(--edge);
+	}
+
+	.monitors.split {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	}
+
+	.monitors.column {
+		grid-template-rows: minmax(0, 1fr) minmax(9rem, 30%);
+	}
+
+	.bar select {
+		padding: 0.25rem 0.4rem;
+		border: 1px solid var(--edge);
+		border-radius: 6px;
+		background: var(--raised);
+		font: inherit;
+		font-size: 0.78rem;
+		color: var(--ink);
+	}
+
+	/* the stories aside opens the timelines; on a phone, where it doesn't show, the menu in the bar */
+	.picker {
+		display: none;
+	}
+
+	@media (max-width: 900px) {
+		/* a phone sets the monitor's row itself */
+		.monitors {
+			min-height: 0;
+		}
+
+		.studio,
+		.studio.tab-render {
+			grid-template-columns: 1fr;
+			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 30vh;
+			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'bin';
+		}
+
+		.studio.tab-grade {
+			grid-template-columns: 1fr;
+			grid-template-rows: auto 30vh auto minmax(10rem, 1fr) 40vh;
+			grid-template-areas: 'bar' 'monitor' 'transport' 'timeline' 'aside';
+		}
+
+		/* source above program */
+		.studio:has(.monitors.split) {
+			grid-template-rows: auto 64vh auto minmax(10rem, 1fr) 30vh;
+		}
+
+		.monitors.split {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+		}
+
+		.studio :global(.inspector),
+		.studio :global(.grade),
+		.studio :global(.dl),
+		.studio :global(.stories) {
+			display: none;
+		}
+
+		.picker {
+			display: contents;
+		}
+
+		.row {
+			flex-wrap: wrap;
+		}
+	}
+</style>

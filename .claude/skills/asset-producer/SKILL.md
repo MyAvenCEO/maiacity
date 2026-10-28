@@ -1,6 +1,6 @@
 ---
 name: asset-producer
-description: The maiaCITY asset producer — the meta skill over every asset we build: the asset laws (real size in metres, real numbers from real physics, built in its parts, everything composable, every upgrade its own frozen version, look like a critic), the shared core ($lib/assets — AirSup's kit, one part contract, carry and refs group/id@v, one version control and its test, where an asset is kept: recipes and schemas by hash, the box and the device cache, avenDB recipe entries later), the order of work, how we check (checking.md) and which sub skill to load, one per asset group — factory-skill (Factories, AirSup's; ours in its ours.md), machine-skill (Machines, AirSup's; ours in its ours.md), actor-skill (people and animals), world-skill (sandboxes, real places), building-skill (tents, domes, containers), thing-skill (still props, furniture), biome-skill (the floor) and plant-skill (grown from a seed). Use it whenever any asset is built, simulated, upgraded, composed into another or shown, or when it is unclear which asset skill a task needs.
+description: The maiaCITY asset producer — the meta skill over every asset we build: the asset laws (real size in metres, real numbers from real physics, built in its parts, everything composable, every upgrade its own frozen version, look like a critic), the shared core ($content/assets — AirSup's kit, one part contract, carry and refs group/id@v, one version control and its test, where an asset is kept: recipes and schemas by hash, the box and the device cache, avenDB recipe entries later), the order of work, how we check (checking.md) and which sub skill to load, one per asset group — factory-skill (Factories, AirSup's; ours in its ours.md), machine-skill (Machines, AirSup's; ours in its ours.md), actor-skill (people and animals), world-skill (sandboxes, real places), building-skill (tents, domes, containers), thing-skill (still props, furniture), biome-skill (the floor) and plant-skill (grown from a seed). Use it whenever any asset is built, simulated, upgraded, composed into another or shown, or when it is unclear which asset skill a task needs.
 ---
 
 # Asset producer
@@ -12,9 +12,9 @@ films.
 
 ## The asset laws (never break them)
 
-1. **The real thing at its real size.** One measure everywhere: 1 unit = 1 m (`src/lib/models/units.js`), never a
+1. **The real thing at its real size.** One measure everywhere: 1 unit = 1 m (`maia/content/models/units.js`), never a
    `scale.set` on a model's root; a bigger kind is its own builder, never a smaller one scaled up. A new thing or
-   machine goes into `REAL_SIZES` and the `BUILD` map of `src/lib/models/sizes.test.js`, so its outer box is checked
+   machine goes into `REAL_SIZES` and the `BUILD` map of `maia/content/models/sizes.test.js`, so its outer box is checked
    against the real one. Research the real dimensions, parts and materials before the first line of code
    (`machine-skill`, step 1).
 2. **Real numbers or nothing.** Every number an asset shows comes from a model of how the real thing works — a
@@ -23,7 +23,7 @@ films.
    its target is the finding.
 3. **Built in its parts.** An asset is the parts a mechanic would name, in assembly order, each where it really sits,
    each with its card; nothing floats, nothing clips, every part touches what holds it. New assets are built with
-   `$lib/assets` (below); the older ones keep their own way (a thing's `userData.catalog`, a rigged machine's bone per
+   `$content/assets` (below); the older ones keep their own way (a thing's `userData.catalog`, a rigged machine's bone per
    part, a plant's organs grown from its seed).
 4. **Everything composes.** Samuel (2026-10-14): "all are composeable" — things go into machines, machines into
    factories and buildings, everything into worlds and biomes, and the parts and moving pieces of one asset are
@@ -41,7 +41,7 @@ nor an engine's maker; an asset never changes a game's story — the game thread
 
 ## The shared core: one kit, one contract, one version control
 
-### One kit: `$lib/assets`
+### One kit: `$content/assets`
 
 AirSup's `kit/lab-kit.js`, ported into the app once for every group. It never scales anything: the studio is scaled
 to the asset, never the asset to the studio.
@@ -67,7 +67,7 @@ to the asset, never the asset to the studio.
   catalog, the lab, the cut) and the Things' handles (`userData.parts`, `catalog`, `explode`, `setBuild`), so the
   Things viewer, the Machines stage, a game and another asset all read the same thing.
 - A machine with a solver adds its lab: `hero`, `read`, `controls`, `how { text, eqs }`, `breakIt { label, run,
-  reset }`, `cut { a, b, center, reach }`. The Power Cube v3 (`src/lib/machines/powercube.js`) is the worked example.
+  reset }`, `cut { a, b, center, reach }`. The Power Cube v3 (`maia/content/machines/powercube.js`) is the worked example.
 
 ### Composable: three ways, from the whole to the piece
 
@@ -82,7 +82,7 @@ to the asset, never the asset to the studio.
    pickup's bed, a pallet on a forklift's forks, a machine in a building); with `explode` it first moves out as one
    unit. Any other object (an older thing, a rigged kind, a plant) comes whole, as one part with its `card`. Every
    part that came with a guest names it by its ref on its card (the turntable shows "Part of machines/powercube@3"),
-   and a part keeps the ref it came with when its host is carried in turn. `src/lib/assets/compose.test.js` holds it.
+   and a part keeps the ref it came with when its host is carried in turn. `maia/content/assets/compose.test.js` holds it.
 3. **A piece, shared.** A part smaller than an asset (a wheel, a door, a ClickLock, a hydraulic ram) is a builder
    function in one file that every asset needing it imports, each with its own measures. The older rigged machines
    do this by functions that add their parts to another rig (`powerCubeParts`, `forkliftParts`, `clickLockPieces`).
@@ -92,14 +92,14 @@ version of the host.
 
 ### One version control for every group
 
-- Every group lists its kinds with a `HISTORY` by id (`src/lib/app/versions.js`: `FIRST`, `versionsOf`, `versioned`):
+- Every group lists its kinds with a `HISTORY` by id (`maia/site/lib/app/versions.js`: `FIRST`, `versionsOf`, `versioned`):
   `{ ...FIRST, date, build }` for v1, then `{ v, date, note, build }`; the newest entry needs no `build`, the
   library's own builder is the latest.
 - Every older version keeps its own frozen builder: a `*.v<n>.js` file beside the live one, or a version argument
   whose old branch stays exactly as it was (`batteryPack(v)`, `human(look, h, v)`). A version without one is
   `kept: false`, listed for its note and never shown as something it was not; only a world's older versions may be
   notes alone, since a world is a page.
-- `bun test src/lib/assets/versions.test.js` holds every group to it: versions in order, dated, every older one kept,
+- `bun test maia/content/assets/versions.test.js` holds every group to it: versions in order, dated, every older one kept,
   every one found again by its ref.
 - One ask, one step, one version, one dated note. Never fold two asks into one version.
 
@@ -127,8 +127,8 @@ version of the host.
 - **Versions, variants and changes are avenDB's.** `@v` is the point in the entry's history whose card says version v.
   The versions go in in order, each as its recipe file reads in the repo, so a frozen version builds what it always
   built. The seed writes an asset once; a newer version of one the vault holds goes in as an AIP over a proposal on
-  its entry (`node scripts/propose-version.mjs <group>/<id>@<v> --run`, by the Mac's agent), and lands on main when an
-  owner accepts it. A new asset goes in the same way, drafted (`node scripts/propose-new.mjs <group>/<id>@1 ...
+  its entry (`node maia/content/scripts/propose-version.mjs <group>/<id>@<v> --run`, by the Mac's agent), and lands on main when an
+  owner accepts it. A new asset goes in the same way, drafted (`node maia/content/scripts/propose-new.mjs <group>/<id>@1 ...
   --title "..." --run`, one AIP for all of them), accepted before the PR that adds it merges, or the seed's top-up
   writes it itself. A variant is an avenDB variant, an entry linked to the version it came from. A change is a proposal merged
   under the vault's policy. Only a new engine capability (a kit op, a material preset, a control kind, a budget) still
@@ -137,31 +137,31 @@ version of the host.
   the COOP's vault by its keep shares, checks that its source hashes to its card's recipe and that the engine is one it
   has frozen, and then takes the same path as today: box, checks, our rebuild, its own cache under the same key. A
   build cached from the repo seed is the same build from the vault, because the bytes are the same.
-- **Every recipe's card is made in the repo** (`sources/cards.json`, by `bun scripts/recipe-cards.mjs`): the card of
+- **Every recipe's card is made in the repo** (`sources/cards.json`, by `bun maia/content/scripts/recipe-cards.mjs`): the card of
   a build at its own values, as the box hands it back, which the COOP keeps beside the recipe. **After changing an
   asset, run it**: `sources/cards.test.js` fails while a recipe's hash has no card there (only what moved is built).
 - **C10 switches it on** (the code architecture plan): `sources/avendb.js` reads the COOP's recipe entry for a vault
-  ref (as `game/code/sources/avendb.js` will read code entries), and the loaders hand vault refs to it instead of
+  ref (as `maia/content/game/code/sources/avendb.js` will read code entries), and the loaders hand vault refs to it instead of
   refusing them. Our recipes and the asset schema are copied into the COOP, and the repo copy stays as the offline
   seed. Its gate is a fresh device that draws every world with the seed removed from the bundle. Until then, nothing
   writes to avenDB.
 
 ## The workshop: one sub skill per asset group
 
-The asset groups (`GROUPS` of `src/lib/assets/index.js`), one sub skill each, in this order. Machines, actors, things
+The asset groups (`GROUPS` of `maia/content/assets/index.js`), one sub skill each, in this order. Machines, actors, things
 and plants are shown in avenDB's Assets (`/app/avendb/#assets`; their old addresses redirect there since #943);
 factories, worlds, buildings and biomes keep their own pages for now:
 
 | Group | Sub skill | Where it lives | Use it for |
 |---|---|---|---|
-| Factories | `factory-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `src/lib/factories/<factory>.js` on the runtime ported into `src/lib/factories`; `/app/factories` | a whole production line as a live 3D miniature on a real discrete event simulation: sizing a line, its bottleneck, "can this line make N a day" |
-| Machines | `machine-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `src/lib/machines/<machine>.js` with `$lib/assets`; the older ones rigged in `src/lib/actors`; avenDB's Assets | what works by moving parts: an engine, a pump, a vehicle, the pod, the LifeTrac, the cubes, the BatteryPack; "show how X works" as a page or a film |
-| Actors | `actor-skill` | `src/lib/actors`, avenDB's Assets | people and animals: the stand-in, its poses and its face, the animals of the worlds |
-| Worlds | `world-skill` | `src/lib/worlds`, `src/lib/sandbox-*`, `/app/worlds` | a world, a sandbox, a real place or a village: the sky, the walker, the film camera, many things drawn cheaply |
-| Buildings | `building-skill` | `src/lib/buildings`, `/app/buildings` | a tent, a dome, a container, a tower: sized, engineered, walked inside |
-| Things | `thing-skill` | `src/lib/models`, avenDB's Assets | the still things: a prop, a tent, equipment or furniture, built, versioned, resized, pitched, taken apart, walked into |
-| Biomes | `biome-skill` | `src/lib/biomes`, `/app/biomes` | the floor a world stands on: surfaces, cover in colonies, streamed round the eye |
-| Plants | `plant-skill` | `src/lib/plants`, avenDB's Assets | a plant, a tree, a crop, a herb or a fungus grown from its seed through its stages to fruit |
+| Factories | `factory-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `maia/content/factories/<factory>.js` on the runtime ported into `maia/content/factories`; `/app/factories` | a whole production line as a live 3D miniature on a real discrete event simulation: sizing a line, its bottleneck, "can this line make N a day" |
+| Machines | `machine-skill` (AirSup's, our library at its end) and its `ours.md` (ours) | `maia/content/machines/<machine>.js` with `$content/assets`; the older ones rigged in `maia/content/actors`; avenDB's Assets | what works by moving parts: an engine, a pump, a vehicle, the pod, the LifeTrac, the cubes, the BatteryPack; "show how X works" as a page or a film |
+| Actors | `actor-skill` | `maia/content/actors`, avenDB's Assets | people and animals: the stand-in, its poses and its face, the animals of the worlds |
+| Worlds | `world-skill` | `maia/content/worlds`, `maia/content/sandbox-*`, `/app/worlds` | a world, a sandbox, a real place or a village: the sky, the walker, the film camera, many things drawn cheaply |
+| Buildings | `building-skill` | `maia/content/buildings`, `/app/buildings` | a tent, a dome, a container, a tower: sized, engineered, walked inside |
+| Things | `thing-skill` | `maia/content/models`, avenDB's Assets | the still things: a prop, a tent, equipment or furniture, built, versioned, resized, pitched, taken apart, walked into |
+| Biomes | `biome-skill` | `maia/content/biomes`, `/app/biomes` | the floor a world stands on: surfaces, cover in colonies, streamed round the eye |
+| Plants | `plant-skill` | `maia/content/plants`, avenDB's Assets | a plant, a tree, a crop, a herb or a fungus grown from its seed through its stages to fruit |
 
 Every one of our sub skills has the same shape, so what one group learns is found in the same place in the next:
 **Where it lives**, **How it is built**, **Composable** (what goes into it, what it goes into), **Versions**,
@@ -195,7 +195,7 @@ Research before geometry, always.
 4. **Build** at real size, in its parts, from real materials (never one grey), with the solver or simulation driving
    every motion and number.
 5. **Check** (`checking.md`): the size test, the versions test, the type check, the skill's own headless check
-   (`factory-skill`'s `check.mjs`, a machine's solver script, `bun scripts/fruit-check.mjs` for a plant), and the
+   (`factory-skill`'s `check.mjs`, a machine's solver script, `bun maia/content/scripts/fruit-check.mjs` for a plant), and the
    fingerprint of every frozen version.
 6. **Look** at it like a critic (law 6), at least until the list of faults is empty.
 7. **Ship**: one pull request, merged when it is done; the shots in `/mnt/project-files/<group>/<asset>/`; the
@@ -205,8 +205,8 @@ Research before geometry, always.
 
 `factory-skill` and `machine-skill` each write one self-contained HTML file. Kept as it is, it is a finished
 explainer or a film. When the same machine or line must live in our app (a machine in avenDB's Assets or a game, a
-thing, a world; a line in `/app/factories`), port it into a JS module with `$lib/assets`: its parts through `part(...)`
+thing, a world; a line in `/app/factories`), port it into a JS module with `$content/assets`: its parts through `part(...)`
 with the same measures and cards, its solver and its lab as they were, its root at real size; a line as its spec on
-the runtime ported into `src/lib/factories`, its engine pure with the same equations. Then follow the laws above: a
+the runtime ported into `maia/content/factories`, its engine pure with the same equations. Then follow the laws above: a
 kind in its library's `LIST`, a frozen version, the size test, the versions test (`machine-skill`'s `ours.md` has the
 steps for a machine, `factory-skill`'s for a line).

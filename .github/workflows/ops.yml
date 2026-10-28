@@ -1,0 +1,971 @@
+name: Ops
+
+# What runs on a schedule or by hand, never on a change (stage 7 of the CI refactor): one workflow, a task each. Every
+# task that reaches the server does so through .github/actions/prod-ssh (its host keys pinned) and prints no secret;
+# the repository is public, and so are these logs.
+#
+#   uptime                  every 10 minutes: the site, the API's health and avenDB's feed health, one request each
+#   avendb-dev-cache        daily, and when release.yml sees the Rust dependencies change: avenDB's compiled test
+#                           dependencies on the release avendb-dev-cache, for cloud sessions (.claude/hooks/session-start.sh)
+#   avendb-agent            release.yml, for a commit on main: the cloud agent (avendb-device) on the release avendb-agent
+#   backups                 release.yml, when the backup code changed: the three buckets there and locked, then the full
+#                           recovery test against the test bucket
+#   infra                   by hand: Pulumi (the server, its volume, its firewall), the server on, and the DNS records
+#   rollback                by hand: the API or avenDB's peer back to an image the release named
+#   avendb-bucket-measure   by hand: what avenDB's bucket holds, sums only
+#   avendb-bucket-probe     by hand: whether the bucket refuses conditional writes (one small object under probe/)
+#   old-vault-measure       by hand: what the old media vault still stores (read only)
+#   old-vault-archive       by hand: its database and volume copied to ARCHIVE/old-vault/ (copies only)
+#   old-vault-forget        by hand: deletes the early old-vault-list artifact
+#   network-audit           by hand: the production host's own network, bounded probes
+#   founders                by hand: what each founder of the API holds, counts only, read only
+#   site-media              by hand: every file of the site's media read whole from avenDB's feed and hashed
+#   test-value              by hand: every avenDB test's coverage and mutant kills (hours of runners)
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: The task (the list at the top of .github/workflows/ops.yml)
+        type: choice
+        options: [uptime, avendb-dev-cache, avendb-agent, backups, infra, rollback, avendb-bucket-measure, avendb-bucket-probe,
+          old-vault-measure, old-vault-archive, old-vault-forget, network-audit, founders, site-media, test-value]
+      sha:
+        description: avendb-agent, the commit of main to build (empty = main's head)
+        type: string
+        default: ''
+      component:
+        description: rollback, what goes back
+        type: choice
+        options: [api, avendb]
+        default: api
+      image:
+        description: rollback, the image it goes back to (as the release named it, ghcr.io/…:<commit>)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-${{ inputs.task || github.event.schedule }}
+  cancel-in-progress: false
+
+env:
+  APP_DIR: /opt/maia-city
+  API_HOST: api.maia.city
+  AVENDB_HOST: avendb.maia.city
+  S3_ENDPOINT: https://hel1.your-objectstorage.com
+  S3_REGION: hel1
+  # Hetzner takes no default CRC32 checksums: one only where S3 asks for it
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+
+jobs:
+  # Whether maia.city is up, asked from outside: one request each with short timeouts, never a load. A run fails on any
+  # failure, and GitHub mails a failed scheduled run to whoever last changed the schedule. The log says each answer's
+  # status code and time, and of avenDB's health only whether a panic is recorded and how often it started in the last
+  # hour, never a body. avenDB's host agrees TLS keys by X25519MLKEM768 alone, which the runner's curl (OpenSSL 3.0)
+  # can't: every request goes through a curl on OpenSSL 3.5.
+  uptime:
+    if: inputs.task == 'uptime' || github.event.schedule == '*/10 * * * *'
+    name: The site, the API and avenDB answer
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SITE: https://maia.city/
+      API_HEALTH: https://api.maia.city/api/health
+      AVENDB_HEALTH: https://avendb.maia.city/feed/health
+      # avendb-server restarting more often than this in an hour is a crash loop
+      MOST_STARTS: 6
+    steps:
+      - name: Ask each once
+        run: |
+          docker pull -q curlimages/curl:8.16.0 >/dev/null
+          FAILED=0
+          # one GET, the body into BODY (never printed), and its status code and time in CODE and TOOK
+          ask() {
+            local said
+            said=$(docker run --rm curlimages/curl:8.16.0 -sS --connect-timeout 10 --max-time 20 \
+              -w '\n%{http_code} %{time_total}' "$@" 2>/dev/null) || true
+            BODY=$(printf '%s\n' "$said" | sed '$d')
+            read -r CODE TOOK <<< "$(printf '%s\n' "$said" | tail -n 1)"
+            CODE=${CODE:-000}
+          }
+          fail() { echo "::error::$1"; FAILED=1; }
+
+          ask "$SITE"
+          echo "$SITE: $CODE in ${TOOK}s"
+          [ "$CODE" = 200 ] || fail "$SITE answers $CODE, not 200"
+
+          ask "$API_HEALTH"
+          echo "$API_HEALTH: $CODE in ${TOOK}s"
+          if [ "$CODE" != 200 ]; then
+            fail "$API_HEALTH answers $CODE, not 200"
+          elif ! printf '%s' "$BODY" | jq -e '.ok == true' >/dev/null 2>&1; then
+            fail "$API_HEALTH does not say ok"
+          fi
+
+          ask --curves X25519MLKEM768 "$AVENDB_HEALTH"
+          echo "$AVENDB_HEALTH: $CODE in ${TOOK}s"
+          if [ "$CODE" != 200 ]; then
+            fail "$AVENDB_HEALTH answers $CODE, not 200"
+          elif ! HOUR=$(printf '%s' "$BODY" | jq -er '.starts.hour' 2>/dev/null); then
+            fail "$AVENDB_HEALTH does not say how the peer is doing"
+          else
+            PANIC=$(printf '%s' "$BODY" | jq -r 'if .panic == null then "no" else "yes" end')
+            echo "avenDB: a panic recorded this run: $PANIC; starts in the last hour: $HOUR"
+            [ "$PANIC" = no ] || fail "avenDB's peer recorded a panic this run (its health and logs say which)"
+            [ "$HOUR" -le "$MOST_STARTS" ] || fail "avenDB's peer started $HOUR times in the last hour"
+          fi
+
+          exit "$FAILED"
+
+  # A warm start for Claude Code sessions in Anthropic's cloud: avenDB's compiled dependencies, as each crate's tests
+  # build them, on the rolling release "avendb-dev-cache" in place of the last one; the session-start hook unpacks it into
+  # target/ (the one workspace's, D3), so a session's first test build compiles only our own crates. Only the
+  # dependencies, built with the toolchain the manifest names, the registry where a cloud session keeps it
+  # (/root/.cargo), and vendor/iroh dated back as the hook dates it. From main only: a session links what is in it.
+  avendb-dev-cache:
+    if: inputs.task == 'avendb-dev-cache' || github.event.schedule == '17 3 * * *'
+    name: Build the dev cache and put it on its release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      TAG: avendb-dev-cache
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+      - uses: dtolnay/rust-toolchain@stable
+      - name: The registry where cloud sessions keep it
+        run: |
+          sudo mkdir -p /root/.cargo
+          sudo chown -R "$(id -u):$(id -g)" /root/.cargo
+          sudo chmod 755 /root
+          echo "CARGO_HOME=/root/.cargo" >> "$GITHUB_ENV"
+      # nothing to do when the release already holds this toolchain and these manifests (the nightly run, mostly)
+      - id: key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          rustc=$(rustc -V | cut -d' ' -f2)
+          # this file is an input too: a change to how the cache is built rebuilds it
+          inputs=$(cat Cargo.lock Cargo.toml aven/db/crates/*/Cargo.toml aven/db/.cargo/config.toml .github/workflows/ops.yml | sha256sum | cut -d' ' -f1)
+          echo "rustc=$rustc" >> "$GITHUB_OUTPUT"
+          echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
+          held=$(gh release download "$TAG" -p manifest -O - 2>/dev/null || true)
+          if [ "$EVENT" = schedule ] && echo "$held" | grep -qx "rustc=$rustc" && echo "$held" | grep -qx "inputs=$inputs"; then
+            echo "fresh=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build each crate's tests
+        if: steps.key.outputs.fresh != 'true'
+        # each crate on its own, as a session builds them: the dependencies' features differ with the crates asked for
+        run: |
+          find aven/db/vendor/iroh -type f -exec touch -m -d '2001-01-01T00:00:00Z' {} +
+          for crates in "-p avendb" "-p avendb-net" "-p avendb-server" "-p avendb-device" "-p avendb-browser" "-p avendb-device -p avendb-browser"; do
+            cargo test --locked --features test-fixtures --no-run $crates
+            # `cargo check` keeps its own metadata for every dependency: without it a session's first check (the first
+            # step of aven/ops/devx/check.mjs) checked all of them again
+            cargo check --locked --features test-fixtures --tests $crates
+          done
+      - name: Pack the dependencies
+        if: steps.key.outputs.fresh != 'true'
+        run: |
+          cargo clean -p avendb -p avendb-net -p avendb-server -p avendb-device -p avendb-browser -p avendb-testkit
+          rm -rf target/debug/incremental target/avendb-test-pairs
+          du -sh target
+          tar -C target -czf dev-cache.tgz debug
+          ls -l dev-cache.tgz
+      - name: Put it on the release
+        if: steps.key.outputs.fresh != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUSTC: ${{ steps.key.outputs.rustc }}
+          INPUTS: ${{ steps.key.outputs.inputs }}
+        run: |
+          # a release asset holds at most 2 GiB
+          split -b 1900M -d -a 2 dev-cache.tgz dev-cache.tgz.
+          {
+            echo "rustc=$RUSTC"
+            echo "inputs=$INPUTS"
+            echo "commit=$GITHUB_SHA"
+            echo "cargo_home=$CARGO_HOME"
+            for part in dev-cache.tgz.*; do echo "part=$part $(sha256sum "$part" | cut -d' ' -f1)"; done
+          } > manifest
+          cat manifest
+          notes="avenDB's compiled test dependencies for cloud sessions (rustc $RUSTC), built from ${GITHUB_SHA} on $(date -u +%F). .claude/hooks/session-start.sh downloads them; see aven/db/CLAUDE.md."
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --title "avenDB dev cache" --notes "$notes" --prerelease --latest=false
+          fi
+          # parts first, the manifest last: a session reads the manifest and then only the parts it names
+          gh release upload "$TAG" dev-cache.tgz.* --clobber
+          gh release upload "$TAG" manifest --clobber
+          gh release edit "$TAG" --notes "$notes"
+
+  # avenDB's agent for Claude Code sessions in Anthropic's cloud (avendb-device agent cloud, agentCloud): a Linux x86_64
+  # build of avendb-device, on the rolling release "avendb-agent", which aven/db/scripts/avendb-cloud.sh downloads when a
+  # cloud session starts it. It holds no key. Built on Ubuntu 22.04, so its glibc is older than a cloud session's. Only
+  # a commit main holds: release.yml starts it for the commit it checked and shipped.
+  avendb-agent:
+    if: inputs.task == 'avendb-agent'
+    name: Build the cloud agent and put it on its release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      TAG: avendb-agent
+      ASSET: avendb-device-x86_64-linux
+    steps:
+      - id: sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          sha=${SHA:-$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)}
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::not a commit: $sha"; exit 1; }
+          status=$(gh api "repos/$GITHUB_REPOSITORY/compare/$sha...main" --jq .status)
+          [ "$status" = ahead ] || [ "$status" = identical ] || { echo "::error::$sha is not on main ($status): only main's commits are built"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: . -> target
+          key: agent
+      - name: Build avendb-device
+        run: cargo build --profile server --locked -p avendb-device
+      - name: Put it on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILT: ${{ steps.sha.outputs.sha }}
+        run: |
+          cp target/server/avendb-device "$ASSET"
+          strip "$ASSET"
+          ./"$ASSET" agent cloud < /dev/null
+          sha256sum "$ASSET" > "$ASSET.sha256"
+          notes="avendb-device agent cloud, built from ${BUILT} on $(date -u +%F). Cloud sessions of this repository download it through aven/db/scripts/avendb-cloud.sh (aven/db/README.md, Cloud sessions)."
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --title "avenDB cloud agent" --notes "$notes" --prerelease --latest=false
+          fi
+          gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
+          gh release edit "$TAG" --notes "$notes"
+
+  # avenDB's buckets, made with Object Lock (chosen when a bucket is made, or never) and checked: the peer's own
+  # (maiacity-avendb), its bucket of snapshots (every vault backed up into it each day) and the test bucket. Every object
+  # version in the first two is locked in compliance mode for 7 days, the test bucket's for 1. Then the full recovery test
+  # (avendb-server's backup tests) against the test bucket: three days of backups, the daily check of every vault, a
+  # rehearsal, a restore after a disaster, each under a prefix and a seal of its own, on test data alone. The project's
+  # S3 keys reach only these steps, and only main's code: this workflow runs by hand or from release.yml.
+  backups:
+    if: inputs.task == 'backups'
+    name: The buckets there and locked, and the full recovery test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TEST_BUCKET: maiacity-avendb-snapshots-test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+      - name: Make each bucket with Object Lock, or check the one there
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+        run: |
+          [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ] || { echo "::error::set HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY"; exit 1; }
+          s3() { aws s3api --endpoint-url "$S3_ENDPOINT" --region "$S3_REGION" --cli-connect-timeout 20 "$@"; }
+          locked() {
+            BUCKET=$1 DAYS=$2 LIFECYCLE=$3
+            if SAID=$(s3 head-bucket --bucket "$BUCKET" 2>&1); then
+              echo "$BUCKET is there"
+            elif printf '%s' "$SAID" | grep -q '404\|Not Found\|NoSuchBucket'; then
+              s3 create-bucket --bucket "$BUCKET" --object-lock-enabled-for-bucket >/dev/null \
+                || s3 create-bucket --bucket "$BUCKET" --object-lock-enabled-for-bucket \
+                     --create-bucket-configuration "LocationConstraint=$S3_REGION" >/dev/null
+              echo "$BUCKET is made, with Object Lock"
+            else
+              echo "::error::$BUCKET answers: $SAID (bucket names are unique across all of Hetzner: someone else's?)"; exit 1
+            fi
+            LOCK=$(s3 get-object-lock-configuration --bucket "$BUCKET" \
+              --query 'ObjectLockConfiguration.ObjectLockEnabled' --output text 2>&1 || true)
+            [ "$LOCK" = Enabled ] \
+              || { echo "::error::$BUCKET has no Object Lock ($LOCK), and no bucket can get it later: make it anew"; exit 1; }
+            s3 put-object-lock-configuration --bucket "$BUCKET" --object-lock-configuration \
+              "{\"ObjectLockEnabled\":\"Enabled\",\"Rule\":{\"DefaultRetention\":{\"Mode\":\"COMPLIANCE\",\"Days\":$DAYS}}}"
+            s3 put-bucket-lifecycle-configuration --bucket "$BUCKET" --lifecycle-configuration "$LIFECYCLE"
+            echo "What $BUCKET says:"
+            s3 get-object-lock-configuration --bucket "$BUCKET" --output json
+            s3 get-bucket-lifecycle-configuration --bucket "$BUCKET" --output json
+          }
+          # replaced or deleted versions go 7 days later, unfinished uploads after 2
+          for BUCKET in maiacity-avendb maiacity-avendb-snapshots; do
+            locked "$BUCKET" 7 '{"Rules":[
+              {"ID":"replaced-7-days","Status":"Enabled","Filter":{"Prefix":""},"NoncurrentVersionExpiration":{"NoncurrentDays":7}},
+              {"ID":"unfinished-2-days","Status":"Enabled","Filter":{"Prefix":""},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":2}}]}'
+          done
+          # what a run left goes after 2 days, what it deleted after 1
+          locked "$TEST_BUCKET" 1 '{"Rules":[
+            {"ID":"runs-2-days","Status":"Enabled","Filter":{"Prefix":""},"Expiration":{"Days":2}},
+            {"ID":"replaced-1-day","Status":"Enabled","Filter":{"Prefix":""},"NoncurrentVersionExpiration":{"NoncurrentDays":1}},
+            {"ID":"unfinished-1-day","Status":"Enabled","Filter":{"Prefix":""},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
+      - name: Does the buckets' endpoint offer post-quantum TLS?
+        run: |
+          # the peer offers X25519MLKEM768 alone; OpenSSL 3.5 (Alpine 3.22) offers it here too, and nothing else
+          HOST=${S3_ENDPOINT#https://}
+          SAID=$(docker run --rm alpine:3.22 sh -c "apk add -q openssl >/dev/null && \
+            openssl s_client -connect $HOST:443 -servername $HOST -groups X25519MLKEM768 -brief </dev/null 2>&1" || true)
+          printf '%s\n' "$SAID" | head -12
+          if printf '%s' "$SAID" | grep -q 'group: X25519MLKEM768'; then
+            echo "$HOST agrees X25519MLKEM768: the peer can reach its bucket post-quantum only"
+          else
+            echo "::warning::$HOST did not agree X25519MLKEM768: the peer reaches the bucket only if it also offers X25519"
+          fi
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: . -> target
+          key: backups
+      # the test runs seal under a seal of their own, so the peer's seal (AVENDB_BUCKET_SEAL) never reaches a runner
+      - name: Back up, check, rehearse and restore against the test bucket
+        env:
+          AVENDB_TEST_BUCKET: ${{ env.TEST_BUCKET }}
+          AVENDB_TEST_BUCKET_ENDPOINT: ${{ env.S3_ENDPOINT }}
+          AVENDB_TEST_BUCKET_REGION: ${{ env.S3_REGION }}
+          AVENDB_TEST_BUCKET_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          AVENDB_TEST_BUCKET_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+        run: cargo test --locked -p avendb-server --test all 'backup::' -- --nocapture
+
+  # The server, its volume and its firewall (aven/ops/infra, Pulumi; the state in the pulumi-state branch, so no Pulumi
+  # Cloud account is needed), the server on whatever pulumi up did, and api. and avendb. pointed at it (Hetzner DNS).
+  # By hand only: a release changes no infrastructure.
+  infra:
+    if: inputs.task == 'infra'
+    name: Hetzner (Pulumi) and DNS
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HETZNER_API_KEY }}
+      # encrypts the local Pulumi state that lives in the pulumi-state branch
+      PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_PASSPHRASE }}
+    steps:
+      - name: The Pulumi passphrase is set
+        run: |
+          [ -n "$PULUMI_CONFIG_PASSPHRASE" ] || { echo "::error::Secret PULUMI_PASSPHRASE is missing — without it the Pulumi state cannot be read."; exit 1; }
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: pulumi/actions@v7.0.0
+        with:
+          pulumi-version: 3.272.0
+      - name: Dependencies and type check
+        working-directory: aven/ops/infra
+        run: |
+          bun install --frozen-lockfile
+          bun --bun run check
+          bun smoke.mjs
+      - name: Derive the public deploy key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 600 /dev/null deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" > deploy_key
+          echo "SSH_PUBLIC_KEY=$(ssh-keygen -y -f deploy_key)" >> "$GITHUB_ENV"
+          rm deploy_key
+      - name: Fetch the Pulumi state from the pulumi-state branch
+        run: |
+          if git fetch origin pulumi-state:pulumi-state 2>/dev/null; then
+            git worktree add .pulumi-state pulumi-state
+          else
+            git worktree add --detach .pulumi-state
+            git -C .pulumi-state checkout --orphan pulumi-state
+            git -C .pulumi-state rm -rfq . || true
+          fi
+      - name: pulumi up
+        working-directory: aven/ops/infra
+        run: |
+          pulumi login "file://$GITHUB_WORKSPACE/.pulumi-state"
+          pulumi stack select prod --create
+          pulumi up --yes --skip-preview --non-interactive
+      # A resize shuts the server down first; when Hetzner then can't place the new type, it stays off (2026-10-27).
+      # Whatever pulumi up did, the server ends this job running.
+      - name: The server is on
+        if: always()
+        run: |
+          API=https://api.hetzner.cloud/v1
+          AUTH="Authorization: Bearer $HCLOUD_TOKEN"
+          SERVER=$(curl -fsS -H "$AUTH" "$API/servers?name=maia-city" | jq -r '.servers[0] | "\(.id) \(.status)"')
+          read -r ID STATUS <<< "$SERVER"
+          echo "maia-city is $STATUS"
+          if [ "$STATUS" != running ]; then
+            curl -fsS -X POST -H "$AUTH" "$API/servers/$ID/actions/poweron" >/dev/null
+            for _ in $(seq 60); do
+              STATUS=$(curl -fsS -H "$AUTH" "$API/servers/$ID" | jq -r .server.status)
+              [ "$STATUS" = running ] && break
+              sleep 5
+            done
+            echo "maia-city is $STATUS"
+            [ "$STATUS" = running ]
+          fi
+      - name: Write the Pulumi state back
+        if: always()
+        run: |
+          cd .pulumi-state
+          rm -rf .pulumi/backups
+          git add -A
+          if ! git diff --cached --quiet; then
+            git -c user.name=github-actions -c user.email=actions@github.com commit -qm "pulumi state ${GITHUB_SHA::7}"
+            git push origin HEAD:pulumi-state
+          fi
+      # Hetzner DNS has its own API and its own token. Without HETZNER_DNS_TOKEN the records are set by hand once.
+      - name: Point api.maia.city and avendb.maia.city at the server
+        env:
+          TOKEN: ${{ secrets.HETZNER_DNS_TOKEN }}
+        run: |
+          IP=$(jq -r '.checkpoint.latest.resources[] | select(.type == "pulumi:pulumi:Stack") | .outputs.ipv4 | strings' .pulumi-state/.pulumi/stacks/maiacity/prod.json)
+          [[ "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::no ipv4 in the Pulumi state"; exit 1; }
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::No HETZNER_DNS_TOKEN — add A records for $API_HOST and $AVENDB_HOST pointing at $IP by hand (Hetzner DNS console)."
+            exit 0
+          fi
+          ZONE=$(curl -fsS -H "Auth-API-Token: $TOKEN" 'https://dns.hetzner.com/api/v1/zones?name=maia.city' | jq -r '.zones[0].id')
+          [ -n "$ZONE" ] && [ "$ZONE" != null ] || { echo "::error::Zone maia.city not found under this DNS token."; exit 1; }
+          for NAME in api avendb; do
+            REC=$(curl -fsS -H "Auth-API-Token: $TOKEN" "https://dns.hetzner.com/api/v1/records?zone_id=$ZONE" \
+                  | jq -r --arg n "$NAME" '.records[] | select(.type=="A" and .name==$n) | .id' | head -1)
+            BODY=$(jq -nc --arg z "$ZONE" --arg v "$IP" --arg n "$NAME" '{zone_id:$z,type:"A",name:$n,value:$v,ttl:300}')
+            if [ -n "$REC" ]; then
+              curl -fsS -X PUT -H "Auth-API-Token: $TOKEN" -H 'Content-Type: application/json' \
+                -d "$BODY" "https://dns.hetzner.com/api/v1/records/$REC" >/dev/null
+              echo "A record updated: $NAME.maia.city -> $IP"
+            else
+              curl -fsS -X POST -H "Auth-API-Token: $TOKEN" -H 'Content-Type: application/json' \
+                -d "$BODY" 'https://dns.hetzner.com/api/v1/records' >/dev/null
+              echo "A record created: $NAME.maia.city -> $IP"
+            fi
+          done
+
+  # The API or avenDB's peer back to an image a release named (release.yml's health job says which), by hand: the API
+  # migrates its database as it starts and the peer writes its store, so an older build reading what a newer one wrote
+  # is a call to make, never a default. The peer goes back through its close gate, as it is deployed.
+  rollback:
+    if: inputs.task == 'rollback'
+    name: Back to ${{ inputs.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: maia-production-containers
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          sparse-checkout: |
+            .github/actions
+            aven/ops/deploy
+      - name: The image is one of ours
+        env:
+          COMPONENT: ${{ inputs.component }}
+          IMAGE: ${{ inputs.image }}
+        run: |
+          want="ghcr.io/${GITHUB_REPOSITORY,,}-$COMPONENT"
+          [[ "$IMAGE" =~ ^${want//./\\.}:[0-9a-f]{40}$ ]] || { echo "::error::$IMAGE is not $want:<commit>"; exit 1; }
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Put it back
+        env:
+          COMPONENT: ${{ inputs.component }}
+          IMAGE: ${{ inputs.image }}
+          GHCR_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null"
+          if [ "$COMPONENT" = api ]; then
+            ssh prod "cd $APP_DIR && bash -s" <<EOS
+          set -e
+          exec 9>.env.lock; flock -w 300 9
+          docker pull --quiet "$IMAGE"
+          sed -i '/^API_IMAGE=/d' .env && echo "API_IMAGE=$IMAGE" >> .env
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps api
+          docker logout ghcr.io >/dev/null
+          EOS
+          else
+            scp aven/ops/deploy/stop-avendb.py "prod:$APP_DIR/deploy/stop-avendb-rollback.py"
+            ssh prod "cd $APP_DIR && bash -s" <<EOS
+          set -e
+          exec 9>.env.lock; flock -w 300 9
+          docker pull --quiet "$IMAGE"
+          python3 deploy/stop-avendb-rollback.py "$APP_DIR" --lock-fd 9 --wait 300
+          sed -i '/^AVENDB_IMAGE=/d' .env && echo "AVENDB_IMAGE=$IMAGE" >> .env
+          python3 deploy/stop-avendb-rollback.py "$APP_DIR" --lock-fd 9 --verify-only
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps avendb
+          docker logout ghcr.io >/dev/null
+          EOS
+            bash aven/ops/deploy/check-avendb.sh
+          fi
+
+  # What avenDB's bucket (maiacity-avendb) holds: objects and bytes by kind (ids and hashes folded to *), the spread of
+  # their sizes, and how many object versions it keeps beside the current ones. Only these sums, never an object's name.
+  avendb-bucket-measure:
+    if: inputs.task == 'avendb-bucket-measure'
+    name: Measure avenDB's bucket (read only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BUCKET: maiacity-avendb
+      AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+      AWS_DEFAULT_REGION: hel1
+    steps:
+      - name: Objects by kind
+        run: |
+          [ -n "$AWS_ACCESS_KEY_ID" ] || { echo "::error::set HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY"; exit 1; }
+          s3() { aws s3api --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 "$@"; }
+          # size and key of every current object, tab between; the keys stay on the runner
+          s3 list-objects-v2 --bucket "$BUCKET" --query 'Contents[].[Size,Key]' --output text > objects.tsv
+          # a kind = the key with each id-like part (hex, digits, or 16+ characters) folded to *
+          awk -F'\t' '
+            function fold(k,   n, p, i, out, s) {
+              n = split(k, p, "/"); out = ""
+              for (i = 1; i <= n; i++) {
+                s = p[i]
+                if (s ~ /^g[0-9]+$/) s = "g*"
+                else if (s ~ /^[0-9a-f]+$/ || s ~ /^[0-9]+$/ || length(s) >= 16 || s ~ /-/) s = "*"
+                out = out (i > 1 ? "/" : "") s
+              }
+              return out
+            }
+            $2 != "" { k = fold($2); if (!(k in id)) { id[k] = ++N; print k > ("kind-" N) }
+                       c[k]++; b[k] += $1; C++; B += $1; print $1 > ("sizes-" id[k]) }
+            END {
+              printf "%-36s %10s %14s %12s\n", "kind", "objects", "bytes", "mean bytes"
+              for (k in c) printf "%-36s %10d %14d %12d\n", k, c[k], b[k], b[k] / c[k]
+              printf "%-36s %10d %14d\n", "(all)", C, B
+            }' objects.tsv | sort | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '== spread of sizes per kind (min, p50, p90, max bytes)' | tee -a "$GITHUB_STEP_SUMMARY"
+          for f in sizes-*; do
+            sort -n "$f" | awk -v k="$(cat "kind-${f#sizes-}")" '{ a[NR] = $1 }
+              END { p = int(NR * 0.9); if (p < 1) p = 1; printf "%-36s %10d %10d %10d %12d\n", k, a[1], a[int((NR + 1) / 2)], a[p], a[NR] }'
+          done | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Versions beside the current objects
+        run: |
+          s3() { aws s3api --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 "$@"; }
+          s3 list-object-versions --bucket "$BUCKET" --output json \
+            --query '{old: Versions[?IsLatest==`false`].Size, marks: length(DeleteMarkers || `[]`)}' > versions.json
+          jq -r '"older versions kept: \(.old // [] | length) (\(.old // [] | add // 0) bytes); delete markers: \(.marks)"' \
+            versions.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # May Hetzner refuse a write on a condition (If-None-Match, If-Match) in a versioned bucket with Object Lock, like
+  # ours? At most 3 versions of one small object under probe/<run>/, which the peer never reads. Nothing is deleted.
+  avendb-bucket-probe:
+    if: inputs.task == 'avendb-bucket-probe'
+    name: Probe conditional writes in avenDB's bucket
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BUCKET: maiacity-avendb
+      AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+      AWS_DEFAULT_REGION: hel1
+    steps:
+      - name: If-None-Match and If-Match on one small object
+        run: |
+          [ -n "$AWS_ACCESS_KEY_ID" ] || { echo "::error::set HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY"; exit 1; }
+          s3() { aws s3api --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 "$@"; }
+          KEY="probe/${GITHUB_RUN_ID}/conditional"
+          printf 'avenDB conditional-write probe %s\n' "$GITHUB_RUN_ID" > body
+          MD5=$(openssl md5 -binary body | base64)
+          # each try: what S3 said, in one word; a put without its condition is never sent
+          try() { if OUT=$(s3 put-object --bucket "$BUCKET" --key "$KEY" --body body --content-md5 "$MD5" "$@" 2>&1); then
+                    echo written; else printf '%s' "$OUT" | grep -o 'PreconditionFailed\|ConditionalRequestConflict\|NotImplemented\|InvalidArgument\|AccessDenied\|[0-9][0-9][0-9]' | head -n 1 | grep . || echo failed; fi; }
+          first=$(try --if-none-match '*')
+          again=$(try --if-none-match '*')
+          ETAG=$(s3 head-object --bucket "$BUCKET" --key "$KEY" --query ETag --output text 2>/dev/null || true)
+          wrong=$(try --if-match '"00000000000000000000000000000000"')
+          right=skipped
+          [ "$wrong" = PreconditionFailed ] && [ -n "$ETAG" ] && right=$(try --if-match "$ETAG")
+          {
+            echo "| try | expected if supported | Hetzner said |"
+            echo "| --- | --- | --- |"
+            echo "| If-None-Match: * on a new key | written | $first |"
+            echo "| If-None-Match: * on the same key again | PreconditionFailed | $again |"
+            echo "| If-Match with a wrong ETag | PreconditionFailed | $wrong |"
+            echo "| If-Match with the current ETag | written | $right |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$again" = PreconditionFailed ] && [ "$wrong" = PreconditionFailed ] && [ "$right" = written ]; then
+            echo "Conditional writes hold in this bucket: put-once and a writer guard can lean on them." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Conditional writes do not hold here: put-once stays read-then-write behind one writer."
+          fi
+
+  # The old iroh media vault ("Studio 1"), on its way out (#1112, Samuel 2026-10-20). measure reads only; archive copies
+  # only (a full database dump and the vaultdata volume as one tar, never its node's secret key, to ARCHIVE/old-vault/,
+  # with the list of LIBRARY/'s files; nothing expires there); forget deletes the early list artifact. Deleting anything
+  # else is a later step of its own, once Samuel OKs the list with sizes.
+  old-vault:
+    if: startsWith(inputs.task, 'old-vault-')
+    name: Old media vault (${{ inputs.task }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      # forget: to delete the list's artifact
+      actions: write
+    env:
+      S3_BUCKET: maiacity
+      ARCHIVE: ARCHIVE/old-vault
+      AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+      AWS_DEFAULT_REGION: hel1
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Measure the bucket
+        run: |
+          [ -n "$AWS_ACCESS_KEY_ID" ] || { echo "::error::set HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY"; exit 1; }
+          aws --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 s3 ls "s3://$S3_BUCKET/" --recursive > objects.txt
+          {
+            echo '== the bucket by its first two folders'
+            # a key is everything after the size, spaces and all
+            awk '{ k = substr($0, index($0, $4)); n = split(k, p, "/");
+                   f = n > 2 ? p[1] "/" p[2] "/" : (n > 1 ? p[1] "/" : "(top)"); s[f] += $3; c[f]++; S += $3; C++ }
+                 END { for (f in s) printf "%-44s %7d files %12.3f GB\n", f, c[f], s[f] / 1e9;
+                       printf "%-44s %7d files %12.3f GB\n", "(all)", C, S / 1e9 }' objects.txt | sort
+            echo '== the newest database dumps'
+            { grep ' BACKUPS/pg/' objects.txt || true; } | sort | tail -n 3
+            echo '== what ARCHIVE/old-vault/ holds'
+            grep " $ARCHIVE/" objects.txt || echo '(nothing yet)'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Measure the server
+        run: |
+          ssh prod 'bash -s' <<'SH' | tee -a "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          echo '== room on the server'
+          df -h / /var/lib/docker 2>/dev/null | uniq
+          echo '== the vault container'
+          docker ps -a --filter name=maia-city-vault --format '{{.Names}} {{.Image}} {{.Status}}'
+          VOL=$(docker volume ls -q | grep -E '(^|_)vaultdata$' | head -n 1 || true)
+          [ -n "$VOL" ] || { echo 'no vaultdata volume'; exit 0; }
+          echo "== the volume $VOL"
+          docker run --rm -v "$VOL:/d:ro" alpine:3.20 sh -c 'du -sb /d; du -sh /d/* 2>/dev/null; find /d -type f | wc -l'
+          SH
+          ssh prod 'docker exec -i maia-city-db psql -U maiacity -d maiacity -v ON_ERROR_STOP=1 -P pager=off' <<'SQL' | tee -a "$GITHUB_STEP_SUMMARY"
+          BEGIN READ ONLY;
+          \echo '== the database'
+          SELECT pg_size_pretty(pg_database_size(current_database())) AS size;
+          \echo '== the old vault''s tables (none once 0058 dropped them)'
+          SELECT relname AS "table", n_live_tup AS rows, pg_size_pretty(pg_total_relation_size(relid)) AS size
+          FROM pg_stat_user_tables WHERE relname IN ('vault_files', 'vault_devices', 'vault_config') ORDER BY relname;
+          COMMIT;
+          SQL
+      - name: Forget the list's artifact
+        if: inputs.task == 'old-vault-forget'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=old-vault-list&per_page=100" --jq '.artifacts[].id' |
+            while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" && echo "deleted artifact $id"; done
+      - name: Archive the database, a full dump
+        if: inputs.task == 'old-vault-archive'
+        run: |
+          OUT=$(ssh prod "timeout 3000 bash $APP_DIR/deploy/backup.sh old-vault-archive </dev/null")
+          printf '%s\n' "$OUT"
+          KEY=$(printf '%s\n' "$OUT" | sed -n 's|^backup: s3://[^/]*/\(BACKUPS/pg/[^ ]*\) .*|\1|p' | tail -n 1)
+          [ -n "$KEY" ] || { echo "::error::the dump named no key"; exit 1; }
+          aws --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 \
+            s3 cp "s3://$S3_BUCKET/$KEY" "s3://$S3_BUCKET/$ARCHIVE/${KEY##*/}" --only-show-errors
+      - name: Archive the vaultdata volume, one tar
+        if: inputs.task == 'old-vault-archive'
+        run: |
+          # from the server straight to the bucket with its backup key, as the dumps go: the volume never passes this runner
+          ssh prod "ARCHIVE=$ARCHIVE APP_DIR=$APP_DIR bash -s" <<'SH'
+          set -euo pipefail
+          cd "$APP_DIR"
+          set -a; . ./backup.env; set +a
+          VOL=$(docker volume ls -q | grep -E '(^|_)vaultdata$' | head -n 1)
+          SIZE=$(docker run --rm -v "$VOL:/d:ro" alpine:3.20 du -sb /d | cut -f1)
+          KEY="$ARCHIVE/vaultdata-$(date -u +%Y%m%dT%H%M%SZ).tar"
+          echo "archive: $VOL, $SIZE bytes, to s3://$BACKUP_BUCKET/$KEY …"
+          # GNU tar, whose --exclude is sure to match ./secret.key
+          timeout 3000 docker run --rm -v "$VOL:/d:ro" debian:bookworm-slim tar -C /d --exclude=./secret.key --exclude=./tmp -cf - . \
+            | timeout 3000 docker run --rm -i -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+                -e AWS_DEFAULT_REGION="$BACKUP_REGION" \
+                -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
+                amazon/aws-cli --endpoint-url "$BACKUP_ENDPOINT" --cli-connect-timeout 20 --cli-read-timeout 120 \
+                s3 cp - "s3://$BACKUP_BUCKET/$KEY" --expected-size "$SIZE" --only-show-errors
+          echo "archive: s3://$BACKUP_BUCKET/$KEY"
+          SH
+      - name: Archive the list of LIBRARY/'s files, and show the archive
+        if: inputs.task == 'old-vault-archive'
+        run: |
+          grep ' LIBRARY/' objects.txt > library-objects.txt || true
+          s3() { aws --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 "$@"; }
+          s3 s3 cp library-objects.txt "s3://$S3_BUCKET/$ARCHIVE/library-objects.txt" --only-show-errors
+          { echo '== ARCHIVE/old-vault/ now'; s3 s3 ls "s3://$S3_BUCKET/$ARCHIVE/" --recursive --human-readable --summarize; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # Bounded synthetic traffic from the production host itself. It deploys, restarts, changes and reads nothing of the
+  # application; the results hold allowlisted provider state and metrics and byte timings only.
+  network-audit:
+    if: inputs.task == 'network-audit'
+    name: Measure the server's internet connection
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: |
+            .github/actions/prod-ssh
+            aven/ops/diagnostics
+      - name: Check provider diagnostic boundaries
+        run: |
+          python3 aven/ops/diagnostics/provider-health.test.py
+          python3 aven/ops/diagnostics/guest-health.test.py
+      - name: Read provider status and metrics without touching the guest
+        continue-on-error: true
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HETZNER_API_KEY }}
+        run: python3 aven/ops/diagnostics/provider-health.py > provider-health.json
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Read bounded guest health without changing services
+        continue-on-error: true
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 prod 'timeout 80s python3 -' \
+            < aven/ops/diagnostics/guest-health.py > guest-health.json
+      - name: One bounded probe, running on the server
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The script travels over trusted SSH stdin; it is not installed. curl is bounded per request; timeout also
+          # bounds the whole remote job.
+          ssh -o BatchMode=yes -o ConnectTimeout=10 prod 'timeout 110s python3 -' \
+            < aven/ops/diagnostics/network-probe.py > server-network.json
+      - name: Preserve measurements, including incomplete probes
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: server-network-${{ github.run_id }}
+          path: |
+            server-network.json
+            provider-health.json
+            guest-health.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Show measured rates
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          path = Path('server-network.json')
+          if not path.exists() or not path.stat().st_size:
+              print('No server measurement was produced. Check the SSH/probe step.')
+          else:
+              data = json.loads(path.read_text())
+              print('Bounded single-stream measurements from the production host. These are not a maximum-line-rate or avenDB-throughput claim.\n')
+              print('| Test | Complete | Mbps | Seconds |')
+              print('|---|---|---:|---:|')
+              for row in data.get('results', []):
+                  rate = row.get('end_to_end_mbps')
+                  seconds = row.get('time_total')
+                  rate = f'{rate:.2f}' if row.get('complete') and rate is not None else '—'
+                  seconds = f'{seconds:.3f}' if seconds is not None else '—'
+                  print(f"| {row['name']} | {row['complete']} | {rate} | {seconds} |")
+          PY
+
+  # What each founder of the API holds in the live Postgres, read only, counts alone: no name, id, label, hash, code or
+  # key is printed. One READ ONLY transaction over SSH, as the backup reads the database.
+  founders:
+    if: inputs.task == 'founders'
+    name: List what each founder holds
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Read the founders, read only
+        run: |
+          ssh prod 'docker exec -i maia-city-db psql -U maiacity -d maiacity -v ON_ERROR_STOP=1 -P pager=off' <<'SQL'
+          BEGIN READ ONLY;
+          \echo '== founders, and what each holds (counts)'
+          SELECT f.number, f.role,
+            (SELECT count(*) FROM passkeys p WHERE p.founder_id = f.id) AS passkeys,
+            (SELECT count(*) FROM api_keys k WHERE k.founder_id = f.id) AS api_keys,
+            (SELECT count(*) FROM device_codes d WHERE d.founder_id = f.id) AS device_codes,
+            (SELECT count(*) FROM signup_invites i WHERE i.made_by = f.id) AS invites_made,
+            (SELECT count(*) FROM signup_invites i WHERE i.used_by = f.id) AS invites_used
+          FROM founders f ORDER BY f.number;
+          \echo '== API keys of founders after the first, by scope (counts)'
+          SELECT f.number, k.scope, count(*) AS keys FROM api_keys k JOIN founders f ON f.id = k.founder_id
+          WHERE f.number > 1 GROUP BY f.number, k.scope ORDER BY f.number, k.scope;
+          \echo '== every table that points at a founder: its rows of each founder after the first, and what a delete does'
+          SELECT format('SELECT %L AS "table", %L AS "column", %L AS on_delete, f.number, count(*) AS rows FROM %s t JOIN founders f ON f.id = t.%I WHERE f.number > 1 GROUP BY f.number ORDER BY f.number',
+            c.conrelid::regclass, a.attname, CASE c.confdeltype WHEN 'c' THEN 'cascade' WHEN 'n' THEN 'set null' ELSE 'blocks' END,
+            c.conrelid::regclass, a.attname)
+          FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+          WHERE c.contype = 'f' AND c.confrelid = 'founders'::regclass ORDER BY c.conrelid::regclass::text \gexec
+          \echo '== MaiaCity V1 seats, by the founder number in each (counts)'
+          SELECT (SELECT f.number FROM founders f WHERE f.id = s.p->>'founder') AS number, count(*) AS seats,
+            count(DISTINCT g.id) AS games
+          FROM v1_games g, jsonb_each(g.state->'players') AS s(seat, p) GROUP BY 1 ORDER BY 1;
+          COMMIT;
+          SQL
+
+  # The site's media as everyone reads them: every file of the media manifest by its hash from avenDB's feed, read
+  # whole by ranges and hashed (BLAKE3), a picture asked whole too and a sound or a film from its middle.
+  site-media:
+    if: inputs.task == 'site-media'
+    name: Read every file of the site's media
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun maia/site/scripts/site-media-check.mjs
+
+  # What avenDB's tests are worth: every test's own lines (one coverage profile per test), cargo-mutants on the security
+  # core (each mutant's log naming the tests that killed it), and both read together (aven/db/scripts/test-value.mjs):
+  # the tests that cover no line and kill no mutant another test doesn't, the candidates to drop or merge. Code and test
+  # names only, never vault data.
+  coverage:
+    if: inputs.task == 'test-value'
+    name: avenDB coverage per test (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: core, args: -p avendb }
+          - { name: net-server, args: -p avendb-net -p avendb-server }
+          - { name: device-browser, args: -p avendb-device -p avendb-browser }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Every test on its own profile
+        env:
+          RUSTFLAGS: -C instrument-coverage
+          CARGO_PROFILE_TEST_OPT_LEVEL: 1
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: ${{ github.workspace }}/aven/db/scripts/ci/per-test-profile.sh
+          AVENDB_PROFILES: ${{ runner.temp }}/profiles
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+          ARGS: ${{ matrix.args }}
+        run: |
+          mkdir -p "$AVENDB_PROFILES/_other"
+          cargo nextest run --locked --no-fail-fast --features test-fixtures $ARGS || true
+          cargo nextest list --locked --features test-fixtures $ARGS --message-format json \
+            | jq -r '."rust-suites"[]."binary-path"' > "$RUNNER_TEMP/binaries"
+      - name: One lcov file per test
+        env:
+          PROFILES: ${{ runner.temp }}/profiles
+          OUT: ${{ runner.temp }}/lcov
+        run: |
+          tools="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin"
+          objects=$(sed 's/^/-object=/' "$RUNNER_TEMP/binaries" | tr '\n' ' ')
+          mkdir -p "$OUT"
+          for raw in "$PROFILES"/*.profraw; do
+            test=$(basename "$raw" .profraw)
+            "$tools/llvm-profdata" merge -sparse "$raw" -o "$RUNNER_TEMP/one.profdata"
+            "$tools/llvm-cov" export -format=lcov -instr-profile="$RUNNER_TEMP/one.profdata" $objects \
+              -ignore-filename-regex='/.cargo/|/rustc/' > "$OUT/$test.lcov" || true
+          done
+          ls "$OUT" | wc -l
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: coverage-${{ matrix.name }}
+          path: ${{ runner.temp }}/lcov
+          retention-days: 14
+
+  mutants:
+    if: inputs.task == 'test-value'
+    name: avenDB mutants (shard ${{ matrix.shard }} of 48)
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,cargo-mutants
+      # the security core: who may write, keys and key trees, signatures, sealed files, batch logs, selectors, sync
+      - name: cargo mutants
+        env:
+          CARGO_PROFILE_TEST_OPT_LEVEL: 1
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+          SHARD: ${{ matrix.shard }}
+        run: |
+          cargo mutants --test-tool nextest --features test-fixtures -p avendb --no-shuffle \
+            $(for f in policy rules slice keys tree sign sealed batch sync gate; do printf -- '-f aven/db/crates/avendb/src/%s.rs ' $f; done) \
+            --shard "$SHARD/48" --timeout 600 --output "$RUNNER_TEMP/shard" || true
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: mutants-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard/mutants.out
+          retention-days: 14
+
+  value:
+    needs: [coverage, mutants]
+    if: ${{ !cancelled() && inputs.task == 'test-value' }}
+    name: avenDB test value
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          path: ${{ runner.temp }}/in
+      - name: Each test's unique lines and kills
+        run: |
+          mutants=$(for d in "$RUNNER_TEMP"/in/mutants-*; do printf -- '--mutants %s ' "$d"; done)
+          node aven/db/scripts/test-value.mjs --coverage "$RUNNER_TEMP/in" $mutants --out "$RUNNER_TEMP/value"
+          cat "$RUNNER_TEMP/value/test-value.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: test-value
+          path: ${{ runner.temp }}/value
+          retention-days: 30
