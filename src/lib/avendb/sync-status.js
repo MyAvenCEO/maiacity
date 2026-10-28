@@ -1,22 +1,42 @@
 /** Peer-frontier observations, not a disk-save or file-download progress meter.
- * @typedef {{ peers: number, logs: number, behind: number, pulling: number, pages: number }} PeerCounts
- * @typedef {PeerCounts & { known: boolean, since: number, at: number, paged: number }} SyncState
+ * @typedef {{ since: number, stage: string, took: number }} Pull
+ * @typedef {{ device: string, name: string | null, pulling: Pull | null, pages: number, edits: number, last: number }} From
+ * @typedef {{ peers: number, logs: number, behind: number, pulling: number, pages: number, edits: number, from: From[] }} PeerCounts
+ * @typedef {PeerCounts & { known: boolean, since: number, at: number, paged: number, base: number }} SyncState
  */
 /** @param {unknown} value */
 const count = (value) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 /** @param {number} value */
 const n = (value) => value.toLocaleString('en');
 
+/** One peer as the device tells it (avendb's `synced` op, `from`): whether a pull of it runs, what it does, the edits
+ * it took, and when its last page came (ms since 1970, the device's clock as `Date.now()`). @param {any} p @returns {From} */
+const peer = (p) => ({
+	device: typeof p?.device === 'string' ? p.device : '', name: typeof p?.name === 'string' && p.name ? p.name : null,
+	pulling: p?.pulling && typeof p.pulling === 'object'
+		? { since: count(p.pulling.since), stage: typeof p.pulling.stage === 'string' ? p.pulling.stage : '', took: count(p.pulling.took) } : null,
+	pages: count(p?.pages), edits: count(p?.edits), last: count(p?.last)
+});
+/** What of the pulls running moves without a log or a page: their stage and the edits they took. @param {From[]} from */
+const pulls = (from) => from.map((p) => p.pulling ? `${p.device}:${p.pulling.stage}:${p.pulling.took}` : '').join('|');
+
 /** A new view/device starts its own observation window; native cumulative counters may already be large. */
-export const emptySync = () => ({ known: false, peers: 0, logs: 0, behind: 0, pulling: 0, pages: 0, since: 0, at: 0, paged: 0 });
+export const emptySync = () => ({ known: false, peers: 0, logs: 0, behind: 0, pulling: 0, pages: 0, edits: 0, from: [], since: 0, at: 0, paged: 0, base: 0 });
 
 /** @param {SyncState} previous @param {Partial<PeerCounts>} report @param {number} at */
 export function observeSync(previous, report, at) {
-	const next = { peers: count(report.peers), logs: count(report.logs), behind: count(report.behind), pulling: count(report.pulling), pages: count(report.pages) };
-	const reset = !previous.known || next.pages < previous.pages;
+	const next = {
+		peers: count(report.peers), logs: count(report.logs), behind: count(report.behind), pulling: count(report.pulling), pages: count(report.pages),
+		edits: count(report.edits), from: Array.isArray(report.from) ? report.from.map(peer) : []
+	};
+	const reset = !previous.known || next.pages < previous.pages || next.edits < previous.edits;
 	const paged = !reset && next.pages > previous.pages;
-	const moved = reset || paged || next.behind !== previous.behind || next.logs !== previous.logs;
-	return { ...next, known: true, at, since: moved ? at : previous.since, paged: paged ? at : reset ? 0 : previous.paged };
+	const moved = reset || paged || next.edits !== previous.edits || next.behind !== previous.behind || next.logs !== previous.logs
+		|| pulls(next.from) !== pulls(previous.from);
+	return {
+		...next, known: true, at, since: moved ? at : previous.since, paged: paged ? at : reset ? 0 : previous.paged,
+		base: reset ? next.edits : previous.base
+	};
 }
 
 /** Unknown, disconnected, empty and inconsistent snapshots cannot establish complete coverage.
@@ -58,6 +78,49 @@ export function peerStatus(sync) {
 	details.push('Peer log coverage does not measure local disk saves or file downloads. New announcements may change coverage without deleting local data.');
 	return { active: sync.behind > 0 || sync.pulling > 0, fraction, label, details };
 }
+
+/** How long nothing may move before the pill says what it waits on (ms). */
+export const STALL = 5000;
+
+/** A peer by its name, or its device's first eight hex. @param {From} p */
+const named = (p) => p.name ?? (p.device.slice(0, 8) || 'a peer');
+
+/**
+ * What the pill says while a sync runs, as of `now` (ms), ticking with it (Samuel 2026-10-28: "with zero visible
+ * feedback the syncing UI doesn't reflect what is actually happening in real time"): a log counts only once whole, so
+ * on a big vault the logs stand still for minutes while edits come in. So it tells the edits taken since this view
+ * watched, from which peer, when the last page came, and, once nothing moved for `STALL`, which peer it waits on and
+ * for how long. Null while no sync runs.
+ * @param {SyncState} sync @param {number} now
+ * @returns {null | { line: string, stalled: boolean, who: string, wait: number, last: number, taken: number, rows: [string, string][] }}
+ */
+export function liveSync(sync, now) {
+	if (!sync.known || (sync.behind <= 0 && sync.pulling <= 0)) return null;
+	const running = sync.from.filter((p) => p.pulling);
+	/** the peers it waits on: those it pulls from, else every peer it hears */
+	const on = running.length ? running : sync.from;
+	const who = on.length ? on.map(named).join(', ') : 'peers';
+	const last = Math.max(sync.paged, ...sync.from.map((p) => p.last));
+	const moved = Math.max(sync.since, last);
+	/** since when it waits: a running pull's last page or its start, the latest of them; else the last thing that moved */
+	const from = running.length ? Math.max(...running.map((p) => Math.max(p.last, p.pulling?.since ?? 0))) : moved;
+	const stalled = moved > 0 && now - moved >= STALL;
+	const wait = Math.max(0, now - (stalled ? from : moved));
+	const taken = Math.max(0, sync.edits - sync.base);
+	const covered = Math.max(0, sync.logs - sync.behind);
+	const line = stalled ? `Waiting on ${who} · ${long(wait)}`
+		: `Syncing${sync.behind > 0 ? ` ${n(covered)}/${n(sync.logs)}` : ''}${taken > 0 ? ` · +${n(taken)} edits` : ''}`;
+	/** @type {[string, string][]} */
+	const rows = running.map((p) => [named(p), [p.pulling?.stage || 'pulling', `${n(p.pulling?.took ?? 0)} edits`,
+		p.last ? `page ${ago(Math.max(0, now - p.last))}` : 'no page yet'].join(' · ')]);
+	rows.push(['Edits taken', taken > 0 ? `${n(sync.edits)} (+${n(taken)} now)` : n(sync.edits)]);
+	rows.push(['Last page', last > 0 ? ago(Math.max(0, now - last)) : 'none yet']);
+	if (stalled) rows.push(['Waiting on', `${who} for ${long(wait)}`]);
+	return { line, stalled, who, wait, last, taken, rows };
+}
+
+/** @param {number} ms */
+const long = (ms) => ms < 60000 ? `${Math.floor(ms / 1000)} s` : ms < 7200000 ? `${Math.floor(ms / 60000)} min` : `${Math.floor(ms / 3600000)} h`;
 
 /** @param {number} ms */
 const ago = (ms) => ms < 2000 ? 'just now' : ms < 120000 ? `${Math.round(ms / 1000)} s ago` : `${Math.round(ms / 60000)} min ago`;
