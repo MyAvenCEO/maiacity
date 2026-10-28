@@ -497,7 +497,9 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           git worktree add --detach "$RUNNER_TEMP/main" "$BASE"
-          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/avendb/target" bun scripts/ci/avendb-bench-shard.mjs build "$SHARD" "$RUNNER_TEMP/main/avendb" "$RUNNER_TEMP/bench-main"
+          # its own target folder: cargo names a workspace crate's build by its path within the workspace, so main's
+          # crates built into this commit's folder were taken as fresh for this commit's (#1349's live shard, E0432)
+          CARGO_TARGET_DIR="$RUNNER_TEMP/main-target" bun scripts/ci/avendb-bench-shard.mjs build "$SHARD" "$RUNNER_TEMP/main/avendb" "$RUNNER_TEMP/bench-main"
       - if: steps.base.outputs.sha && steps.main-bin.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
