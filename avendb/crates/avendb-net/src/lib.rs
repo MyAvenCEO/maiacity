@@ -861,6 +861,9 @@ impl Node {
             }
             false => None,
         };
+        // a start that left part of its catch-up to the steps after it (`Lab::restore_end_with`) goes on with them at
+        // once, in the background, so that the device opens on what it shows before its whole log is read
+        let behind = lab.catching_up(me);
         let shared = Arc::new(Shared {
             lifecycle,
             writer: Mutex::new(writer),
@@ -952,6 +955,9 @@ impl Node {
             task::spawn(transports::control::maintain(shared.clone())),
             task::spawn(node_loop::run(shared.clone(), inbox)),
         ];
+        if behind {
+            shared.catch_up_later(Instant::now());
+        }
         Ok(Node { shared, router, tasks: Mutex::new(tasks) })
     }
 
