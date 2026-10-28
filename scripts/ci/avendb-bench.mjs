@@ -8,6 +8,9 @@
 //   bun scripts/ci/avendb-bench.mjs phone.log --phone      the phone-class rows alone (avendb-bench-phone.mjs)
 //   bun scripts/ci/avendb-bench.mjs bench.log [pg.log] --shard core|carriers|live   one shard of the bench job: only
 //                                                          its own runs are required present
+//   bun scripts/ci/avendb-bench.mjs bench.log --shard live --base base.log   also hold each gate's value against main's
+//                                                          build timed on the same runner (avendb-bench-shard.mjs):
+//                                                          no worse than main's by more than vs_main.tolerance
 //   bun scripts/ci/avendb-bench.mjs index.log --index      the index's scale rows alone (avendb-net's shelf_index_bench.rs,
 //                                                          run in the net test shard, whose build it shares)
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -60,17 +63,39 @@ export function checkIndex(bench, gates) {
 }
 
 // G1's named query of the Universe on a node (avendb-net's posts_page_bench.rs, the path the always-on peer's
-// /feed/posts and Node::run take): a page of posts off the shared index at 1M and 10M edits, from what it costs more per
-// entry held and per edit of a post; about 0 per edit where it reads no history.
+// /feed/posts and Node::run take): a page of posts off the shared index, held by what it reads as well as its time, so a
+// slow runner can neither hide a regression nor make one up: pages, bytes and index rows read (no row past those a page
+// needs, as a find reading past its token's rows did before fab0a86d). Across vaults of more posts and of posts with history, a
+// page reads the same pages (it reads no history); at 1M and 10M edits, measured there, not drawn from slopes, it reads
+// at most posts_pages_max pages and posts_bytes_max bytes cold, its p50 under posts_page_ms_max, and both grow little.
 export function checkPosts(bench, gates) {
  const out = [];
  const add = (gate, name, value, limit, ok) => out.push({ gate, name, value, limit, ok: value != null && ok });
  const g = gates.gates, p = bench.find(b => b.kind === 'posts_node');
  if (!p) add(true, 'posts page on a node', null, 'present', false);
  else {
-  add(true, 'posts page: µs more per edit of a post (reads history)', p.per_edit_us, `≤ ${g.posts_per_edit_us_max}`, p.per_edit_us <= g.posts_per_edit_us_max);
-  add(true, 'posts page: at 1M edits, ms', p.at_1m_ms, `≤ ${g.posts_page_ms_max}`, p.at_1m_ms <= g.posts_page_ms_max);
-  add(true, 'posts page: at 10M edits, ms', p.at_10m_ms, `≤ ${g.posts_page_ms_max}`, p.at_10m_ms <= g.posts_page_ms_max);
+  const more = Math.max(...p.pages, ...p.next_pages) - p.pages[0];
+  add(true, 'posts page: pages read more with 8x the posts or 16 edits each (reads no history)', more, `≤ ${g.posts_shape_pages_more_max}`, more <= g.posts_shape_pages_more_max);
+  const over = Math.max(...p.rows, ...p.next_rows) - p.rows_needed;
+  add(true, 'posts page: index rows read past those it needs, any shape', over, `≤ ${g.posts_rows_over_max}`, over <= g.posts_rows_over_max);
+ }
+ const sized = new Map(bench.filter(b => b.kind === 'posts_at').map(b => [b.n, b]));
+ for (const n of gates.window_sizes) {
+  const s = sized.get(n);
+  if (!s) { add(true, `posts page ${n}`, null, 'present', false); continue; }
+  const pages = Math.max(s.pages_read, s.next_pages_read);
+  add(true, `posts page ${n}: pages read cold (most)`, pages, `≤ ${g.posts_pages_max}`, pages <= g.posts_pages_max);
+  add(true, `posts page ${n}: bytes read cold`, s.bytes_read, `≤ ${g.posts_bytes_max}`, s.bytes_read <= g.posts_bytes_max);
+  const over = Math.max(s.rows_read, s.next_rows_read) - s.rows_needed;
+  add(true, `posts page ${n}: index rows read past the ${s.rows_needed} it needs`, over, `≤ ${g.posts_rows_over_max}`, over <= g.posts_rows_over_max);
+  add(true, `posts page ${n}: a page cold, p50 ms`, Math.round(s.p50_us / 100) / 10, `< ${g.posts_page_ms_max}`, s.p50_us < g.posts_page_ms_max * 1000);
+ }
+ const [lo, hi] = [Math.min(...gates.window_sizes), Math.max(...gates.window_sizes)].map(n => sized.get(n));
+ if (lo && hi && lo !== hi) {
+  const pages = hi.pages_read - lo.pages_read;
+  add(true, `posts page ${hi.n}: pages read more than at ${lo.n}`, pages, `≤ ${g.posts_growth_pages_max}`, pages <= g.posts_growth_pages_max);
+  const r = Math.round(hi.p50_us / lo.p50_us * 100) / 100;
+  add(true, `posts page ${hi.n} p50 ÷ ${lo.n}'s`, r, `≤ ${g.window_growth_max}`, r <= g.window_growth_max);
  }
  return out;
 }
@@ -173,6 +198,42 @@ export function check(bench, gates, pg = []) {
  return out;
 }
 
+// A run repeated (the shard's rounds) gives one line each time: one line per run, each number the median of its
+// repeats, and the repeats' spread (fewest, median, most) of each number that varied.
+const runKey = b => [b.kind, b.n, b.link, b.carrier, b.engine, b.turn_ms].join('|');
+export function collapse(bench) {
+ const groups = new Map();
+ for (const b of bench) groups.set(runKey(b), [...(groups.get(runKey(b)) ?? []), b]);
+ const median = xs => { const v = [...xs].sort((a, b) => a - b), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+ const lines = [], spread = [];
+ for (const runs of groups.values()) {
+  const out = { ...runs[0] };
+  for (const k of Object.keys(out)) {
+   const xs = runs.map(r => r[k]);
+   if (!xs.every(x => typeof x === 'number')) continue;
+   out[k] = Math.round(median(xs) * 1000) / 1000;
+   if (runs.length > 1 && Math.min(...xs) !== Math.max(...xs)) spread.push({ run: runKey(runs[0]).replace(/\|+$/, '').replace(/\|+/g, ' '), field: k, runs: runs.length, min: Math.min(...xs), median: out[k], max: Math.max(...xs) });
+  }
+  lines.push(out);
+ }
+ return { lines, spread };
+}
+
+// The branch against main, run for run on the same runner: each gate's value no worse than main's by more than
+// `tolerance` (a share of main's value), in the gate's own direction (≥ higher is better, ≤ and < lower). A gate main
+// doesn't measure, or measures as 0, is held by its fixed limit alone.
+export function vsMain(results, baseResults, tolerance) {
+ const base = new Map(baseResults.filter(r => r.gate).map(r => [r.name, r.value]));
+ const out = [];
+ for (const r of results.filter(r => r.gate && typeof r.value === 'number')) {
+  const b = base.get(r.name), dir = r.limit.startsWith('≥') || r.limit.startsWith('>') ? 1 : r.limit.startsWith('≤') || r.limit.startsWith('<') ? -1 : 0;
+  if (typeof b !== 'number' || b === 0 || !dir) continue;
+  const worse = Math.round(dir * (b - r.value) / Math.abs(b) * 1000) / 1000;
+  out.push({ gate: true, name: `${r.name}, against main's ${fmt(b)}`, value: r.value, limit: `${worse > 0 ? `${Math.round(worse * 100)} % worse` : 'not worse'}, ≤ ${Math.round(tolerance * 100)} % allowed`, ok: worse <= tolerance });
+ }
+ return out;
+}
+
 // The tables: the gates and targets, then avenDB beside Postgres at each size.
 export function report(bench, pg, results) {
  const rows = [
@@ -193,8 +254,12 @@ export function report(bench, pg, results) {
  if (wins.length) rows.push('', '| named query answered at edits | index rows | pages read (median, most) | bytes read | rows read | log edits | cold p50 / p95 µs | again p50 µs | log head at node open ms |', '|---|---|---|---|---|---|---|---|---|',
   ...wins.map(s => `| ${fmt(s.n)} | ${fmt(s.rows)} | ${s.window_pages_p50}, ${s.window_pages_read} | ${fmt(s.window_bytes_read)} | ${s.window_rows_read} | ${s.window_log_edits} | ${s.window_p50_us} / ${s.window_p95_us} | ${s.window_warm_p50_us ?? '–'} | ${fmt(s.node_open_head_ms)} |`));
  const posts = bench.filter(b => b.kind === 'posts_node');
- if (posts.length) rows.push('', '| posts page on a node | µs, base / 8x posts / 16 edits each / 480 more entries | µs more per post | per edit of a post | per other entry | at 1M ms | at 10M ms |', '|---|---|---|---|---|---|---|',
-  ...posts.map(p => `| ${p.page} posts | ${p.us.join(' / ')} | ${p.per_post_us} | ${p.per_edit_us} | ${p.per_entry_us} | ${p.at_1m_ms} | ${p.at_10m_ms} |`));
+ if (posts.length) rows.push('', '| posts page on a node, cold | base | 8x posts | 16 edits each |', '|---|---|---|---|',
+  ...posts.flatMap(p => [`| pages read, first / next page | ${p.pages.map((x, i) => `${x} / ${p.next_pages[i]}`).join(' | ')} |`,
+   `| bytes read | ${p.bytes.map(fmt).join(' | ')} |`, `| index rows read (needs ${p.rows_needed}) | ${p.rows.join(' | ')} |`, `| p50 µs | ${p.us.join(' | ')} |`]));
+ const postsAt = bench.filter(b => b.kind === 'posts_at').sort((a, b) => a.n - b.n);
+ if (postsAt.length) rows.push('', '| posts page at edits | pages read, first / next page | bytes read | index rows read (needed) | cold p50 / p95 µs | built s |', '|---|---|---|---|---|---|',
+  ...postsAt.map(s => `| ${fmt(s.n)} | ${s.pages_read} / ${s.next_pages_read} | ${fmt(s.bytes_read)} | ${s.rows_read} (${s.rows_needed}) | ${s.p50_us} / ${s.p95_us} | ${s.build_s} |`));
  const first = bench.filter(b => b.kind === 'first');
  const carriers = bench.filter(b => b.kind === 'carrier');
  if (carriers.length) rows.push('', '| carrier | edits | bytes/edit | sync s | asks | edits/s | KB/s | link KB/s | of link |', '|---|---|---|---|---|---|---|---|---|',
@@ -225,16 +290,29 @@ function shardOf(gates) {
 }
 
 if (import.meta.main) {
- const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--shard');
+ const args = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && all[i - 1] !== '--shard' && all[i - 1] !== '--base');
  const [benchFile, pgFile] = args;
- const bench = lines(readFileSync(benchFile, 'utf8'), 'BENCH');
+ const { lines: bench, spread } = collapse(lines(readFileSync(benchFile, 'utf8'), 'BENCH'));
  const pg = pgFile ? lines(readFileSync(pgFile, 'utf8'), 'PG') : [];
  const gates = JSON.parse(readFileSync(gatesFile, 'utf8'));
  const phoneOnly = process.argv.includes('--phone');
  const results = process.argv.includes('--index') ? checkIndex(bench, gates)
   : process.argv.includes('--posts') ? checkPosts(bench, gates)
   : phoneOnly ? check(bench, { ...gates, sizes: [], first_sync: [], carriers: [] }).filter(r => !r.gate) : check(bench, shardOf(gates), pg);
- const text = report(bench, pg, results);
+ const baseAt = process.argv.indexOf('--base');
+ let baseSpread = [];
+ if (baseAt > 0) {
+  const base = collapse(lines(readFileSync(process.argv[baseAt + 1], 'utf8'), 'BENCH'));
+  baseSpread = base.spread;
+  const held = vsMain(results, check(base.lines, shardOf(gates)), gates.vs_main?.tolerance ?? 0.15);
+  // printed and not failing while vs_main.gate is false (see its "about")
+  results.push(...held.map(r => ({ ...r, gate: gates.vs_main?.gate !== false })));
+ }
+ let text = report(bench, pg, results);
+ if (spread.length) text += ['', '| repeated run | number | runs | fewest | median | most |', '|---|---|---|---|---|---|',
+  ...spread.map(x => `| ${x.run} | ${x.field} | ${x.runs} | ${fmt(x.min)} | ${fmt(x.median)} | ${fmt(x.max)} |`)].join('\n');
+ if (baseSpread.length) text += ['', '| main\'s repeated run | number | runs | fewest | median | most |', '|---|---|---|---|---|---|',
+  ...baseSpread.map(x => `| ${x.run} | ${x.field} | ${x.runs} | ${fmt(x.min)} | ${fmt(x.median)} | ${fmt(x.max)} |`)].join('\n');
  console.log(text);
  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## avenDB bench\n\n${text}\n`);
  const failed = results.filter(r => r.gate && !r.ok);
