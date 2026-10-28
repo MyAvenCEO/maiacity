@@ -164,7 +164,7 @@ function carry(s, seat, action, now) {
 }
 
 const engine = createEngine(V2);
-export const { DAY_MS, MONTH_MS, TOKENS, MINDS, TOKEN_LABEL, EURO, TOKEN_COLOUR, VERSION, SEATS, COOPS, SEEDLINGS, PLOT, DEFAULT_SETTINGS, defaultSettings, RENTS_WEEKLY, RENTED, SUBLET, SETTING_NAMES, SETTING_LIMITS, newGame, monthsAt, monthMs, timeOfMonth, dayAt, MONTHS, MONTHS_A_YEAR, DAYS_A_MONTH, WEEKDAYS, dateOf, calendar, dateText, nameOf, weights, invariant, price, quote, WEEKS_A_MONTH, nextPayDay, advance, mintState, equilibriumOf, SIGNATURES, signaturesOf, PAYERS, PAYEES, describe, act, ledgerOf, rents, dividendsOf, payDaysOf, supply, heartsValue, inHearts } = engine;
+export const { POOL, HOME, DAY_MS, MONTH_MS, TOKENS, MINDS, TOKEN_LABEL, EURO, TOKEN_COLOUR, VERSION, SEATS, COOPS, SEEDLINGS, PLOT, DEFAULT_SETTINGS, defaultSettings, RENTS_WEEKLY, RENTED, SUBLET, SETTING_NAMES, SETTING_LIMITS, newGame, monthsAt, monthMs, timeOfMonth, dayAt, MONTHS, MONTHS_A_YEAR, DAYS_A_MONTH, WEEKDAYS, dateOf, calendar, dateText, nameOf, weights, invariant, price, quote, WEEKS_A_MONTH, nextPayDay, advance, mintState, equilibriumOf, SIGNATURES, signaturesOf, PAYERS, PAYEES, describe, act, ledgerOf, rents, dividendsOf, payDaysOf, supply, heartsValue, inHearts } = engine;
 export { GameError };
 const { clone } = engine;
 

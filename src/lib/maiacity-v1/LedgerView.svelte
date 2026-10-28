@@ -1,17 +1,18 @@
 <!--
 	One wallet's ledger in MaiaCity V1: a player's, a COOP's or the pool's. Its rent subscriptions in and out for each
 	weekly pay day, the dividends it can expect, what the next pay day nets it, what the last pay days actually moved,
-	and every transaction, newest first. All of it read off the one game (game/maiacity-v1/engine.js): the game's
-	Ledger card and the dashboard's Ledger app both show this.
+	and every transaction, newest first. All of it read off the one game (game/maiacity-v1/engine.js, or the game's own
+	`engine`, as V2 gives it): the game's Ledger card and the dashboard's Ledger app both show this.
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import Mark from './Mark.svelte';
-	import { MINDS, TOKEN_LABEL, dateOf, dateText, dividendsOf, heartsValue, ledgerOf, nameOf, payDaysOf, rents } from '../../../game/maiacity-v1/engine.js';
+	import * as V1 from '../../../game/maiacity-v1/engine.js';
 
 	/** show: 'all'; the 'cash' flow of a week (rents, dividends); the 'flow' (that and the last pay days); or only the
 	 * 'tx' (every transaction, under the heading `txTitle`) */
-	let { view, who, limit = 200, show = 'all', tall = false, txTitle = 'Every transaction' } = $props();
+	let { view, who, limit = 200, show = 'all', tall = false, txTitle = 'Every transaction', engine = V1 } = $props();
+	const { MINDS, TOKEN_LABEL, dateOf, dateText, dividendsOf, heartsValue, ledgerOf, nameOf, payDaysOf, rents } = $derived(engine);
 
 	const f = (n, d = 2) => (n == null ? '—' : Number(n).toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: Math.min(d, 2) }));
 	const vdate = (vm) => dateText(dateOf(vm));

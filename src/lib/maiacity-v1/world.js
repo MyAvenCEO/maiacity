@@ -22,6 +22,10 @@
  * frames it rides in (the van, the pickup) as the shots say, while the moment moves the world as it always did; given
  * none, by the moves coded here, which the intro's shots are made from (./intro.js, ./film.js). The same world, on the
  * film's clock, is the film world of /games/maiacity-v1/?film (`clock`, `own: false`, `tick`, `film`).
+ *
+ * MaiaCity V2 plays in this same world (Goal 7, 2026-10-28): what is its own comes in as its `edition` (its seats and
+ * cast, its things and plants at their refs, the third settler's second tent and the shared water can, its touch
+ * controls, tree markers and its own cuts of a few shots); without one, the world is V1's.
  */
 import * as THREE from 'three';
 import { worldRenderer } from '$lib/render/world.js';
@@ -32,19 +36,22 @@ import { blend } from '$lib/assets/clips.js';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
 import { ME_SEAT, packedVan, seeThrough, wearFace } from './van.js';
-import { PLOT } from '../../../game/maiacity-v1/engine.js';
+import { PLOT, SEATS as V1_SEATS } from '../../../game/maiacity-v1/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
-import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, WALK_CYCLE, stakeRef, standInRef, tentWork } from './things.js';
+import * as V1_THINGS from './things.js';
+import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, WALK_CYCLE, tentWork } from './things.js';
 import { createDrawn } from './drawn.js';
 import { aim, filmHoldsSize, poseIn } from '$lib/sandbox-kit/film.js';
 import { frameAt as reelFrame } from '../../../game/film/reel.js';
-import { plantRef } from './plants.js';
+import { plantRef as v1PlantRef } from './plants.js';
+import { growthFrame } from './tree-camera.js';
+import { orbitTarget } from './watering.js';
 
 /** the hex's radius in metres: 114.75, one and a half times 76.5 again (Samuel 2026-10-13, 17:49) */
 const HEX_R = 114.75;
 /** how much larger than the 76.5 m hexes the hand-drawn track and the far views were laid out for */
 const K = HEX_R / 76.5;
-const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
+const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a, C: 0x71965b };
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 /** V1's lens under the kit's sky, by day and by night: its own colours as they were (it was drawn without tone mapping
  *  before it came under the one sky), metered against screenshots of it at noon, at dusk and at night */
@@ -438,12 +445,12 @@ const STAKE_AT = V(0.13, -0.25, -0.12);
  * as built).
  * @param {ReturnType<typeof createDrawn>} drawn
  */
-function spotKit(drawn, { name = '', seed = '', pick } = {}) {
+function spotKit(drawn, things, { name = '', seed = '', pick } = {}) {
 	const g = new THREE.Group();
 	const earth = new THREE.Group();
 	g.add(earth);
 	let wet = 0, poser = null;
-	drawn.load(THINGS.earth, earth, { pick, cast: !!pick }).then(
+	drawn.load(things.THINGS.earth, earth, { pick, cast: !!pick }).then(
 		(got) => {
 			poser = got.poser;
 			if (wet) poser.set('wet', wet);
@@ -456,7 +463,7 @@ function spotKit(drawn, { name = '', seed = '', pick } = {}) {
 		wet = k;
 		poser?.set('wet', k);
 	};
-	g.userData = { earth, setWet, stake: null, drawn, pick };
+	g.userData = { earth, setWet, stake: null, drawn, things, pick };
 	labelKit(g, name, seed);
 	return g;
 }
@@ -468,8 +475,8 @@ function labelKit(kit, name, seed) {
 		if (stake) kit.remove(stake);
 		stake = new THREE.Group();
 		stake.userData = { seed: seed || 'apple', name, flag: null, flown: !!seed };
-		const { drawn, pick } = kit.userData;
-		drawn.load(stakeRef(name, seed || 'apple'), stake, { pick, cast: true }).then(
+		const { drawn, things, pick } = kit.userData;
+		drawn.load(things.stakeRef(name, seed || 'apple'), stake, { pick, cast: true }).then(
 			(got) => {
 				stake.userData.flag = STAKE_FLAG.path.reduce((x, i) => x?.children[i], got.obj) ?? null;
 				if (stake.userData.flag) stake.userData.flag.visible = stake.userData.flown;
@@ -492,7 +499,7 @@ function labelKit(kit, name, seed) {
  * once it is, the build's own take over where those were put.
  * @param {ReturnType<typeof createDrawn>} drawn @param {string} pick
  */
-function openPack(drawn, pick) {
+function openPack(drawn, things, pick) {
 	const g = new THREE.Group();
 	const inside = new THREE.Group(), bottle = new THREE.Group(), cap = new THREE.Group();
 	bottle.add(cap);
@@ -517,7 +524,7 @@ function openPack(drawn, pick) {
 			poser?.set('open', k);
 		}
 	};
-	drawn.load(THINGS.pack, g, { pick }).then(
+	drawn.load(things.THINGS.pack, g, { pick }).then(
 		(got) => {
 			const u = g.userData, at = (n) => got.named.get(n);
 			const real = { inside: at('inside'), bottle: at('water-bottle'), cap: at('cap') };
@@ -585,7 +592,7 @@ export function wearPack(chest, pack, root) {
  *  standInRef), their one backpack on (things/backpack@2, shut by its control `open`). It plays what it does (act): a
  *  clip of the stand-in (idle, walk, wave), one of its poses (kneel, point, look up, think) or one of the player's own
  *  (carry, push), walking on as it moves; until it is here, nothing of them shows but the heart over them */
-function person(seat, drawn) {
+function person(seat, drawn, { things, cast: castOf }) {
 	const g = new THREE.Group();
 	g.name = `player:${seat}`;
 	const body = new THREE.Group();
@@ -593,16 +600,17 @@ function person(seat, drawn) {
 	glow.position.y = 2.3;
 	glow.name = g.name;
 	const pack = new THREE.Group();
-	drawn.load(THINGS.pack, pack, { pick: g.name, cast: false }).then((got) => got.poser.set('open', 0), () => {});
-	const look = { shirt: `#${SEAT_COLOUR[seat].toString(16).padStart(6, '0')}`, trousers: seat === 'A' ? '#5b5145' : '#3d4a5c' };
+	drawn.load(things.THINGS.pack, pack, { pick: g.name, cast: false }).then((got) => got.poser.set('open', 0), () => {});
+	// who plays the seat: the game's cast, else the stand-in at 1.8 m in the seat's colours
+	const { height = PLAYER_HEIGHT, look = { shirt: `#${SEAT_COLOUR[seat].toString(16).padStart(6, '0')}`, trousers: seat === 'A' ? '#5b5145' : '#3d4a5c' }, actor } = castOf?.[seat] ?? {};
 	// casting its shadow, none on it: the sun's shadow map is far too coarse for a face (it drew a dark band over the eyes)
-	const cast = drawn.actor(standInRef(PLAYER_HEIGHT, look), body, { pick: g.name, shadow: true, receive: false, cycles: { walk: WALK_CYCLE } }, (c) => {
+	const cast = drawn.actor(actor ?? things.standInRef(height, look), body, { pick: g.name, shadow: true, receive: false, cycles: { walk: WALK_CYCLE } }, (c) => {
 		const chest = c.rig.bones.chest ?? c.rig.bones.spine;
 		if (chest) wearPack(chest, pack, c.mesh);
 		else (pack.position.copy(PACK_ON), pack.rotation.set(0, Math.PI, 0), body.add(pack));
 	});
 	g.add(body, glow);
-	g.userData = { glow, cast, pack, act: 'idle', t: Math.random() * 9, walked: 0, last: null };
+	g.userData = { playerSeat: seat, glow, cast, pack, act: 'idle', t: Math.random() * 9, walked: 0, last: null };
 	return g;
 }
 
@@ -673,7 +681,8 @@ const VAN_LOOK = V(0.0, 1.45, 14);
  * (a film world runs none: the film asks for each, `tick`); film: it is the film's world (no room kept for the
  * story's card; the hour the shot's where the film sets one, `hourOf`); random: its chance (seeded, on film).
  */
-export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {}, onGround = () => {}, onRoam = () => {}, clock: clockOf = null, own = true, film = false, hourOf = () => undefined, random = Math.random } = {}) {
+export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {}, onGround = () => {}, onRoam = () => {}, clock: clockOf = null, own = true, film = false, hourOf = () => undefined, random = Math.random, edition = {} } = {}) {
+	const { seats: SEATS = V1_SEATS, things = V1_THINGS, plantRef = v1PlantRef, water: WATER = null, shelter: SHELTER = null, markers = false, touch = false, cuts = {} } = edition;
 	/** the world's clock, in seconds */
 	const now = clockOf ?? (() => performance.now() / 1000);
 	let rand = random;
@@ -726,7 +735,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the tent as the box built it, once it is here: its controls, its packs, its canvas and its lantern */
 	let pitched = null;
 	let homePitch = 1;
-	drawn.load(THINGS.tent, home, { pick: 'asset:tent', cast: false }).then(
+	drawn.load(things.THINGS.tent, home, { pick: 'asset:tent', cast: false }).then(
 		(got) => {
 			overLand(got.obj);
 			const lamp = TENT_LAMP.path.reduce((x, i) => x?.children[i], got.named.get(TENT_LAMP.part));
@@ -756,7 +765,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	world.add(fire);
 	/** how far it is built and lit (0 … 1), and the control's value they come to */
 	const hearth = { built: 1, lit: 0, b: -1, hero: null, t: null };
-	drawn.cast(THINGS.fire, fire, { cast: false }, (got) => overLand(got.obj)).then(
+	drawn.cast(things.THINGS.fire, fire, { cast: false }, (got) => overLand(got.obj)).then(
 		(h) => {
 			hearth.hero = h;
 			hearth.b = -1;
@@ -797,13 +806,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	}
 	world.add(centre);
 	// the village store: the old shed, the solar row and the battery the Village COOP keeps at its centre hex
-	const shed = anchor(THINGS.shed, 'asset:shed');
+	const shed = anchor(things.THINGS.shed, 'asset:shed');
 	shed.position.set(STORE.x, 0, STORE.z);
 	// the Village COOP's solar panel on its rack and its BatteryCube (four BatteryPacks and an inverter in the Power
 	// Cube's frame, standing off as it is built) beside the shed: the second player fetches them home (placeBattery,
 	// placePanel)
-	const solar = anchor(THINGS.solar, 'asset:solar');
-	const battery = anchor(THINGS.battery, 'asset:battery');
+	const solar = anchor(things.THINGS.solar, 'asset:solar');
+	const battery = anchor(things.THINGS.battery, 'asset:battery');
 	world.add(shed, solar, battery);
 	// once both are home: one cable from the panel to the BatteryCube, and one on to the tent
 	const cables = new THREE.Group();
@@ -821,14 +830,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// open (v3), and the powercube it fetches: drawn by the renderer, its tailgate and its doors its controls
 	// (`tailgate`, `door.<name>`: 0 shut … 1 open)
 	const truck = new THREE.Group();
-	const truckCopy = drawn.follow(THINGS.pickup, truck, { pick: 'asset:pickup' });
+	const truckCopy = drawn.follow(things.THINGS.pickup, truck, { pick: 'asset:pickup' });
 	const setTruck = (id, k) => drawn.pose(truckCopy, id, k);
 	// the powercube: the ElectroCube, OSE's Power Cube frame with an alternator in place of its hydraulics (#608): the
 	// tent's power, built in the box and kept running there, its clip `run` while it hums at home, `off` elsewhere
 	const cube = new THREE.Group();
 	cube.name = 'asset:powercube';
 	let cubeHero = null;
-	drawn.cast(THINGS.cube, cube, { pick: 'asset:powercube' }).then(
+	drawn.cast(things.THINGS.cube, cube, { pick: 'asset:powercube' }).then(
 		(h) => {
 			cubeHero = h;
 			if (stage.cube !== 'home') h.hold('off');
@@ -842,7 +851,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the bag as the box built it, once it is here: its controls and what is in it */
 	let bag = null;
 	let bagOpen = 0;
-	drawn.load(THINGS.bag, bundle, { pick: 'asset:tent' }).then(
+	drawn.load(things.THINGS.bag, bundle, { pick: 'asset:tent' }).then(
 		(got) => {
 			overLand(got.obj, true); // its canvas lies flat on the ground once it is opened
 			const kids = got.obj.children.slice(-BAG_PARTS.length);
@@ -861,7 +870,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const bagParts = () => bag?.parts ?? {};
 	world.add(truck, cube, bundle);
 	// the loading ramp behind it while a machine goes on or off, its lip on the tailgate let down flat
-	const ramp = anchor(THINGS.ramp, 'asset:pickup');
+	const ramp = anchor(things.THINGS.ramp, 'asset:pickup');
 	ramp.position.z = FOOT_Z;
 	ramp.visible = false;
 	truck.add(ramp);
@@ -872,16 +881,57 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	}
 	/** a machine on its way up or down the ramp: turned on the pickup (yaw, from its own) and tipped to its slope (k) */
 	const tipOn = (o, yaw, k) => o.quaternion.copy(truck.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-SLOPE * k, yaw, 0)));
+	// V2's third settler's supplies (edition.shelter): a second tent with its bag, and the shared ten-litre water can
+	// (edition.water), objects of their own, so the first home and the power system stay where they are
+	const secondHome = new THREE.Group(), secondBag = new THREE.Group(), waterCan = new THREE.Group();
+	let secondPoser = null, secondPitch = 1, secondPitched = null;
+	const shelterPitch = (k) => { secondPitch = k; secondPoser?.set('pitch', k); };
+	const EXTRA_BED = V(0.35, 1.16, -1.45), WATER_BED = V(-0.5, 1.16, -1.8);
+	const EXTRA_SHED = V(STORE.x - 0.4, 0, STORE.z + 0.6);
+	const WATER_SHED = EXTRA_SHED.clone().add(V(0.8, 0, 0));
+	const WATER_HOME = WATER ? V(WATER.home.x, 0, WATER.home.z) : V(0, 0, 0);
+	/** the can where everyone sees it (the game's water: where it stands, who carries it) */
+	let sharedWater = null;
+	if (SHELTER) {
+		secondHome.position.set(SHELTER.x, 0, SHELTER.z);
+		world.add(secondHome, secondBag, waterCan);
+		drawn.load(things.THINGS.tent, secondHome, { pick: 'asset:tent-2', cast: false }).then((g) => {
+			secondPoser = g.poser;
+			secondPoser.set('pitch', secondPitch);
+			overLand(g.obj);
+			const lamp = TENT_LAMP.path.reduce((x, i) => x?.children[i], g.named.get(TENT_LAMP.part));
+			let canvas = null;
+			g.obj.traverse((o) => o.isMesh && [].concat(o.material).forEach((m) => m.emissive?.getHex() === TENT_CLOTH.emissive && (canvas = m)));
+			secondPitched = { canvas, lamp: lamp?.isLight ? lamp : null };
+			for (const c of g.named.get('packs')?.children ?? []) for (const pk of c.children) pk.visible = false;
+		}, () => {});
+		drawn.load(things.THINGS.bag, secondBag, { pick: 'asset:tent-2' });
+		drawn.load(things.THINGS.water, waterCan, { pick: 'asset:water-canister' });
+	}
+	/** where the second tent and the can are: hidden, at the shed, in the pickup's bed, or at home */
+	function placeShelter(where) {
+		if (!SHELTER) return;
+		secondHome.visible = where === 'home';
+		secondBag.visible = where === 'shed' || where === 'bed';
+		waterCan.visible = where !== 'hidden';
+		if (where === 'home') shelterPitch(1);
+		for (const [o, at] of [[secondBag, where === 'bed' ? EXTRA_BED : EXTRA_SHED], [waterCan, where === 'bed' ? WATER_BED : where === 'home' ? WATER_HOME : WATER_SHED]]) {
+			(where === 'bed' ? truck : world).add(o);
+			o.position.copy(at);
+			o.rotation.set(0, 0, 0);
+		}
+	}
+
 	// each player's backpack off their back and open, the seeds and the bottle in it; the dug earth and the stake at
 	// the spot marked
-	const packs = { A: openPack(drawn, 'asset:pack:A'), B: openPack(drawn, 'asset:pack:B') };
-	for (const k of ['A', 'B']) (packs[k].visible = false), world.add(named(packs[k], `asset:pack:${k}`));
+	const packs = Object.fromEntries(SEATS.map((s) => [s, openPack(drawn, things, `asset:pack:${s}`)]));
+	for (const k of SEATS) (packs[k].visible = false), world.add(named(packs[k], `asset:pack:${k}`));
 	// the seed itself as it is planted, as long as the seed picked (cm, a pip a little larger than life so it reads):
 	// a pip, a stone or a nut
 	const SEED_CM = { apple: 1.2, pear: 1.2, quince: 1.2, mulberry: 0.8, cherry: 1.4, plum: 2, apricot: 2.4, hazel: 1.8, chestnut: 2.8, walnut: 3.4 };
 	const seed = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8).scale(0.006, 0.0045, 0.01), new THREE.MeshStandardMaterial({ color: '#3a2010', roughness: 0.3 }));
 	seed.visible = false;
-	const myKit = spotKit(drawn);
+	const myKit = spotKit(drawn, things);
 	myKit.visible = false;
 	world.add(myKit);
 	// the water poured from the bottle: a thin clear stream down to the earth
@@ -901,12 +951,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	world.add(core, marker);
 	// the travel van of the arrival, packed: the minibus itself built in the box, its glass see-through
 	// (its people stay out of the sun's coarse shadow map: ./van.js)
-	const van = named(packedVan(drawn, 'asset:van'), 'asset:van');
-	drawn.load(THINGS.van, van, { pick: 'asset:van' }).then((got) => seeThrough(got.obj), () => {});
+	const van = named(packedVan(drawn, 'asset:van', things.standInRef), 'asset:van');
+	drawn.load(things.THINGS.van, van, { pick: 'asset:van' }).then((got) => seeThrough(got.obj), () => {});
 	van.visible = false;
 	world.add(van);
-	const people = { A: person('A', drawn), B: person('B', drawn) };
-	world.add(people.A, people.B);
+	const people = Object.fromEntries(SEATS.map((s) => [s, person(s, drawn, edition)]));
+	world.add(...Object.values(people));
 
 	/** a place on the track (0 the highway, 1 the lot) and the way it heads */
 	const along = (u) => {
@@ -921,10 +971,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	};
 	// a point beside the pickup, out of its left (+x) side
 	const beside = (o, side, ahead = 0) => o.localToWorld(V(side * 2.6, 0, ahead)).setY(0);
-	const HOME = { A: V(-5.5, 0, 7), B: V(5.5, 0, 6) };
+	const HOME = { A: V(-5.5, 0, 7), B: V(5.5, 0, 6), C: V(0, 0, 10) };
 	/** where the players sit in the pickup's cab (its own frame): the driver on the left (+x), the other beside; their
 	 *  hips on its seats (PICKUP), set back against the seat's back, the stand-in's 0.5 m sitting edge under them */
-	const CAB = { driver: V(PICKUP.driver.x, PICKUP.driver.y - 0.5, PICKUP.driver.z - 0.04), passenger: V(PICKUP.passenger.x, PICKUP.passenger.y - 0.5, PICKUP.passenger.z - 0.04) };
+	const CAB = { rearL: V(0.42, PICKUP.driver.y - 0.5, -0.2), driver: V(PICKUP.driver.x, PICKUP.driver.y - 0.5, PICKUP.driver.z - 0.04), passenger: V(PICKUP.passenger.x, PICKUP.passenger.y - 0.5, PICKUP.passenger.z - 0.04) };
 	/** the yaw that turns a spot's own frame (spotAt) to the world: its +z on toward the hex's middle */
 	const spotYaw = (S) => Math.atan2(-S.x, -S.z);
 
@@ -960,21 +1010,23 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	}
 	/** whose backpack stays in the tent (Samuel 2026-10-14): once a player's home stands, their pack is put down in
 	 *  it and they go on without it (fetching the second player, walking about), out again only to plant or water */
-	const homed = (p) => !!stage.homed?.[p === people.A ? 'A' : 'B'];
+	const homed = (p) => !!stage.homed?.[p.userData.playerSeat];
 	/** the backpack on their back (on) or not; on, it is no longer in the tent */
 	function wear(p, on) {
 		p.userData.pack.visible = on;
-		const pk = packs[p === people.A ? 'A' : 'B'];
+		const pk = packs[p.userData.playerSeat];
 		if (on && pk.userData.inTent) (pk.visible = false), (pk.userData.inTent = false);
 	}
 	/** the bell tent's own two packs stand in for ours: hidden, our players' backpacks leant on its wall where they
 	 *  stand (the tent's frame) */
-	const TENT_PACKS = { A: [-1.3, 0.1, -1.2], B: [-1.25, 0.55, -1.4] };
+	const TENT_PACKS = { A: [-1.3, 0.1, -1.2], B: [-1.25, 0.55, -1.4], C: [1.3, 0.1, -1.2] };
 	function packInTent(seat) {
 		const pk = packs[seat], [x, z, ry] = TENT_PACKS[seat];
 		if (pk.parent !== world) world.attach(pk);
-		home.updateMatrixWorld(true);
-		pk.position.copy(home.localToWorld(V(x, 0, z)));
+		// the third settler's pack goes in the second tent
+		const tentHome = seat === 'C' && SHELTER ? secondHome : home;
+		tentHome.updateMatrixWorld(true);
+		pk.position.copy(tentHome.localToWorld(V(x, 0, z)));
 		pk.rotation.set(0, home.rotation.y + ry + Math.PI / 2, 0);
 		pk.userData.setOpen(0);
 		stowBottle(pk);
@@ -988,6 +1040,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const me = people[stage.me], other = stage.other ? people[stage.other] : null;
 		const sit = (p, where) => p.parent !== truck && seatIn(p, where);
 		// walking freely, the player is not sat back in it
+		if (stage.me === 'C') {
+			// the third rides with both: the first drives, the second sits behind
+			sit(people.A, 'driver');
+			sit(people.B, 'rearL');
+			if (!roaming) sit(me, 'passenger');
+			return;
+		}
 		if (stage.me === 'A' || !other) return roaming || sit(me, 'driver');
 		if (!roaming) sit(me, 'passenger');
 		sit(other, 'driver');
@@ -1003,9 +1062,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// a held shot keeps the player as it put them, and so does walking or driving freely; the pickup driven freely
 		// stays where it was left, and whoever sits in it
 		const keepMe = (held || roam) && (people[me].parent === world || driving || !!boarding);
-		for (const s of ['A', 'B']) if (!(keepMe && s === me) && !(freeTruck && people[s].parent === truck)) seatOut(people[s]);
-		// the second player is fetched: until then the pickup stands at home with the first
-		const fetched = me === 'B';
+		for (const s of SEATS) if (!(keepMe && s === me) && !(freeTruck && people[s].parent === truck)) seatOut(people[s]);
+		// the second player (and the third) is fetched: until then the pickup stands at home with the first
+		const fetched = me !== 'A';
 		if (at !== 'cruise') cruising = null;
 		if (freeTruck) {
 			// left where they drove it
@@ -1019,8 +1078,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		placeCube(stage.cube);
 		placeTent(stage.tent);
 		placeBattery(stage.battery);
+		placeShelter(stage.shelter ?? 'hidden');
 		rampOut(false);
-		for (const s of ['A', 'B']) {
+		for (const s of SEATS) {
 			const p = people[s];
 			if (keepMe && s === me) continue;
 			if (freeTruck && p.parent === truck) continue;
@@ -1028,7 +1088,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			act(p, 'idle');
 			wear(p, !homed(p));
 			p.rotation.y = s === 'A' ? 0.4 : -0.4;
-			if (s !== me && s !== other) p.visible = false;
+			if (s !== me && s !== other) {
+				// the others on the hex stand at their homes (stage.present); the second rides behind when the third is fetched
+				p.visible = !!stage.present?.includes(s);
+				p.position.copy(HOME[s]);
+				if (me === 'C' && s === 'B' && ['cab', 'cruise', 'village'].includes(at)) seatIn(p, 'rearL');
+			}
 			else if (s === me && errand) continue; // walking to where the first tree grows: the loop moves them
 			else if (s === me && at === 'home' && stage.by === 'spot' && stage.spot) standAt(p, stage.spot);
 			else if (at === 'home' || (s === other && !rides)) p.position.copy(HOME[s]);
@@ -1043,7 +1108,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (!riding) ((rideHold = ''), talking && talkShow(false));
 		if (riding) {
 			for (const p of van.userData.people) p.visible = true;
-			for (const s of ['A', 'B']) people[s].visible = false;
+			for (const s of SEATS) people[s].visible = false;
 			if (RIDE_SHOTS[rideHold]?.me) seatMe(true, RIDE_SHOTS[rideHold]);
 			controls.enabled = false;
 			lensIn();
@@ -1063,8 +1128,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the backpack off and open beside the spot while the seed is chosen and sown, the seed picked lifted a little out
 	 *  of it; the dug earth and its stake at the spot once it is marked, until the tree stands there with its own */
 	function placeKit() {
-		for (const k of ['A', 'B']) if (packs[k].parent !== world) world.attach(packs[k]);
-		for (const k of ['A', 'B']) (packs[k].visible = false), (packs[k].userData.inTent = false);
+		for (const k of SEATS) if (packs[k].parent !== world) world.attach(packs[k]);
+		for (const k of SEATS) (packs[k].visible = false), (packs[k].userData.inTent = false);
 		const S = stage.spot, me = stage.me;
 		myKit.visible = !!(S && stage.marked && !trees[me]);
 		if (myKit.visible) (myKit.position.set(S.x, 0, S.z), (myKit.rotation.y = spotYaw(S)));
@@ -1083,7 +1148,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			people[me].userData.pack.visible = false;
 		}
 		// a pack not on its player's back nor out at the spot is in the tent, once the tent stands
-		for (const k of ['A', 'B']) if (homed(people[k]) && !people[k].userData.pack.visible && !packs[k].visible && home.visible && homePitch >= 1) packInTent(k);
+		for (const k of SEATS) if (homed(people[k]) && !people[k].userData.pack.visible && !packs[k].visible && home.visible && homePitch >= 1) packInTent(k);
 	}
 	/** still on the road (at 'van'): the van rolls on down the highway at its real speed, the camera in its back seat,
 	 *  while the story tells what lies ahead; the road loops far out on the steppe, so the van never reaches the stop */
@@ -1228,14 +1293,17 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// it stands on its watered months now; a watering grows it in place (grows)
 	const trees = {};
 	/** the trees a new one takes the place of, standing till it is drawn */
-	const standing = { A: [], B: [] };
+	const standing = Object.fromEntries(SEATS.map((s) => [s, []]));
 	const grows = [];
-	/** the players' trees (list: { seat, plant, seed, stage, x, z, grown }), regrown when a stage moves on */
-	function setTrees(list = []) {
-		for (const seat of ['A', 'B']) {
+	/** the players' trees (list: { seat, plant, seed, stage, x, z, grown, markerOnly: a spot marked, nothing planted
+	 *  yet }), regrown when a stage moves on; holdGrowth: a watered tree waits, hidden, until its close-up starts it
+	 *  (`startGrowth`). Done once every new one is drawn */
+	function setTrees(list = [], { holdGrowth = false } = {}) {
+		const ready = [];
+		for (const seat of SEATS) {
 			const t = list.find((x) => x.seat === seat);
 			const had = trees[seat];
-			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(3)}:${t.x}:${t.z}:${t.name}` : '';
+			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(3)}:${t.x}:${t.z}:${t.name}:${!!t.markerOnly}` : '';
 			if (had?.userData.key === key) continue;
 			// the one it takes the place of stands until it is there to draw (no gap while it is built)
 			const away = () => {
@@ -1251,8 +1319,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// the plant at its stage from its seed, built in the asset box and drawn by the renderer where this anchor
 			// stands (./plants.js)
 			const plant = new THREE.Group();
-			const copy = drawn.follow(plantRef(t.plant, t.stage, t.seed), plant, { pick: `tree:${seat}`, receive: true });
-			const kit = spotKit(drawn, { name: t.name ?? '', seed: t.plant.id, pick: `tree:${seat}` });
+			if (holdGrowth && had) plant.visible = false;
+			const copy = t.markerOnly ? { ready: Promise.resolve(null) } : drawn.follow(plantRef(t.plant, t.stage, t.seed), plant, { pick: `tree:${seat}`, receive: true });
+			const kit = spotKit(drawn, things, { name: t.name ?? '', seed: t.plant.id, pick: `tree:${seat}` });
 			kit.userData.setWet(0.6);
 			g.add(plant, kit);
 			g.position.set(t.x, 0, t.z);
@@ -1263,23 +1332,37 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 2.2, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xa8e07a, transparent: true, opacity: 0.95, depthWrite: false, depthTest: false }));
 			ring.position.y = 0.08;
 			ring.renderOrder = 5;
-			ring.visible = false;
+			// shown in free play where the game marks the trees (edition.markers)
+			ring.visible = markers && !film;
+			ring.name = `tree:${seat}`;
 			g.add(ring);
 			// how tall it stands is read off the build once it is there
 			g.userData = { key, top: 0.7, grown: t.grown, height: 0, ring, drawn: copy };
 			const was = had?.userData;
-			copy.ready.then((box) => {
+			ready.push(copy.ready.then((box) => {
 				const height = Math.max(0, box?.max.y ?? 0);
-				Object.assign(g.userData, { top: Math.max(0.7, height + 0.35), height });
+				Object.assign(g.userData, { top: Math.max(0.7, height + 0.35), height, bounds: box?.clone() });
 				if (trees[seat] !== g) return;
-				away();
 				// watered: it grows in place, from the height it had to its new one (Samuel 2026-10-14)
-				if (was && t.grown > was.grown && height > 0.002) grows.push({ plant, t0: now(), from: Math.min(1, was.height / height) });
-			});
+				const startGrowth = () => {
+					plant.visible = true;
+					away();
+					if (was && t.grown > was.grown && height > 0.002) {
+						const from = Math.min(1, was.height / height);
+						plant.scale.setScalar(from);
+						grows.push({ plant, t0: now(), from, seconds: holdGrowth ? 4 : 1.8 });
+					}
+				};
+				if (holdGrowth && was && t.grown > was.grown) {
+					plant.visible = false;
+					g.userData.startGrowth = startGrowth;
+				} else startGrowth();
+			}));
 			world.add(g);
 			trees[seat] = g;
 		}
 		if (trees[stage.me]) myKit.visible = false;
+		return Promise.all(ready);
 	}
 
 	function placeBattery(where) {
@@ -1500,7 +1583,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		camera.fov = camera.aspect < 0.8 ? 58 : 42;
 		camera.updateProjectionMatrix();
 		// the orbit picks up from where the camera looks now; what the moment moved stays where it ended, and the page sets the next stage
-		controls.target.copy(camera.position).add(camera.getWorldDirection(V(0, 0, 0)).multiplyScalar(40));
+		controls.target.copy(orbitTarget(camera.position, camera.getWorldDirection(V(0, 0, 0))));
+		controls.minDistance = Math.min(controls.minDistance, camera.position.distanceTo(controls.target));
 		frameView();
 		if (riding) (holdRide(rideHold), (controls.enabled = false));
 		else if (stage.at === 'cruise') ((controls.enabled = false), lensFor(DRIVE_SHOTS[cruiseHold] ?? DRIVE_SHOTS.ots));
@@ -1655,7 +1739,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** walk a player along points (world, on the ground), s seconds after setting off; holding something (hold: an act
 	 *  for the arms) or not; once there they stand, holding it still. Returns whether they have arrived */
 	function walkOn(p, pts, s, hold) {
-		let left = s * WALK;
+		let left = Math.max(0, s) * WALK;
 		for (let i = 1; i < pts.length; i++) {
 			const a = pts[i - 1], b = pts[i], d = a.distanceTo(b);
 			if (left <= d) {
@@ -1674,7 +1758,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// on the pickup (its own frame, +z ahead, the driver's door on its left, +x): the doors, the tailgate, beside it
 	const atTruck = (x, z) => (truck.updateMatrixWorld(true), truck.localToWorld(V(x, 0, z)).setY(0));
 	// at their door: just behind it when it is open (pickup v3's doors hinge at their front edge), clear of the B pillar
-	const DRIVER = [1.3, 0.8], PASSENGER = [-1.3, 0.8], TAIL = [0.5, -3.3], BESIDE = [2.6, 1], BESIDE_2 = [2.6, -1.6];
+	const DRIVER = [1.3, 0.8], PASSENGER = [-1.3, 0.8], REAR_L = [1.3, -0.25], TAIL = [0.5, -3.3], BESIDE = [2.6, 1], BESIDE_2 = [2.6, -1.6];
 	/** getting in at their door (where: 'driver' or 'passenger'), k from 0 to 1 over GET_IN seconds: the door swung
 	 *  open (the pickup's doors, once it has them: setDoor), a turn towards the seat, a step up and in, sitting down
 	 *  onto it, turning to face ahead, the door pulled shut. At 1 they sit in it */
@@ -1684,7 +1768,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		setTruck(`door.${where}`, Math.min(1, k / 0.2) * (1 - Math.min(1, Math.max(0, (k - 0.8) / 0.2))));
 		if (k >= 1) return void (p.parent !== truck && seatIn(p, where));
 		if (p.parent === truck) seatOut(p);
-		const door = atTruck(...(where === 'driver' ? DRIVER : PASSENGER));
+		const door = atTruck(...(where === 'rearL' ? REAR_L : where === 'driver' ? DRIVER : PASSENGER));
 		const seat = truck.localToWorld(CAB[where].clone());
 		const e = ease(Math.min(1, Math.max(0, (k - 0.2) / 0.6)));
 		p.position.lerpVectors(door, seat, e);
@@ -1704,7 +1788,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		truck.updateMatrixWorld(true);
 		setTruck(`door.${where}`, Math.min(1, k / 0.2) * (1 - Math.min(1, Math.max(0, (k - 0.8) / 0.2))));
 		if (p.parent === truck) seatOut(p);
-		const door = atTruck(...(where === 'driver' ? DRIVER : PASSENGER));
+		const door = atTruck(...(where === 'rearL' ? REAR_L : where === 'driver' ? DRIVER : PASSENGER));
 		const seat = truck.localToWorld(CAB[where].clone());
 		const e = ease(Math.min(1, Math.max(0, (k - 0.15) / 0.6)));
 		p.position.lerpVectors(seat, door, e);
@@ -2061,11 +2145,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				putTruck(at);
 				truck.updateMatrixWorld(true);
 				for (const p of [me, other]) if (p) seatOut(p);
+				if (stage.me === 'C') seatIn(people.B, 'rearL');
 				me.visible = true;
 				const door = atTruck(...(drivesMe ? DRIVER : PASSENGER));
-				// the passenger goes round the front of the pickup
+				// the passenger goes round the front of the pickup (V2's cut: one fetched at the village stands at their door)
 				const local = truck.worldToLocal(me.position.clone());
-				mine = [me.position.clone(), ...(!drivesMe && local.x > 0 ? [atTruck(1.6, 3.4), atTruck(-1.6, 3.4)] : []), door];
+				const atDoor = cuts.fetchAtDoor && fetch && leg === 'village';
+				if (atDoor) (me.position.copy(door.clone().add(V(-1.8, 0, 0).applyAxisAngle(V(0, 1, 0), truck.rotation.y))), face(me, door), (me.userData.last = null));
+				mine = [me.position.clone(), ...(!(cuts.fetchAtDoor && fetch) && !drivesMe && local.x > 0 ? [atTruck(1.6, 3.4), atTruck(-1.6, 3.4)] : []), door];
 				theirs = other && other.visible && (stage.rides || fetch) ? [other.position.clone(), atTruck(...DRIVER)] : null;
 				t1 = Math.max(walkTime(mine), theirs ? walkTime(theirs) : 0) + GET_IN + 0.3;
 				st.dur = Math.max(st.dur, t1 + (pull ? 3.2 : 0.6));
@@ -2108,6 +2195,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				}, () => {
 					back = true;
 					if (other) seatIn(other, 'driver');
+					if (stage.me === 'C') seatIn(people.B, 'rearL');
 					me.visible = true;
 					me.position.copy(STOP);
 					eye = STOP.clone().add(V(-6, 2.2, -4.5));
@@ -2229,7 +2317,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	function station({ lines } = {}) {
 		const me = people[stage.me];
 		let path = [], eye = V(0, 0, 0), eye2 = V(0, 0, 0);
-		const away = beat(4, (s) => (walkOn(me, path, s), still(eye, head(me))), () => {
+		// V2's cut (cuts.station): a shorter walk, then straight up to the driver's door
+		const short = !!cuts.station;
+		const away = beat(short ? 2 : 4, (s) => (walkOn(me, path, s), still(eye, head(me))), () => {
 			lensOut();
 			putTruck(U_START);
 			truck.updateMatrixWorld(true);
@@ -2242,15 +2332,106 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			controls.target.copy(head(me));
 		});
 		const getIn = beat(2, (s) => {
-			if (me.parent !== truck && walkOn(me, path, s + away.dur)) climbIn(me, 'driver', (s + away.dur - walkTime(path)) / GET_IN);
+			const on = short ? s : s + away.dur;
+			if (me.parent !== truck && walkOn(me, path, on)) climbIn(me, 'driver', (on - walkTime(path)) / GET_IN);
 			still(eye2, me.parent === truck ? truck.localToWorld(V(0.42, 1.5, 0.7)) : head(me));
 		}, () => {
 			eye2 = atTruck(5.5, 4.2).setY(1.7);
 			camera.position.copy(eye2);
-			getIn.dur = Math.max(getIn.dur, walkTime(path) - away.dur + GET_IN + 0.6);
+			if (!short) return void (getIn.dur = Math.max(getIn.dur, walkTime(path) - away.dur + GET_IN + 0.6));
+			const door = atTruck(...DRIVER);
+			const approach = door.clone().add(V(0, 0, 1.5).applyAxisAngle(V(0, 1, 0), truck.rotation.y));
+			path = [approach, door];
+			me.position.copy(approach);
+			face(me, door);
+			me.userData.last = null;
+			getIn.dur = walkTime(path) + GET_IN + 0.3;
 		});
 		const ots = beat(3.5, (s, k, dur) => (inTruck('ots', k), whipCam(s, dur, { out: 0.9 })), () => (inCab(), lensFor(DRIVE_SHOTS.ots)));
 		return play(told([away, getIn, ots], lines));
+	}
+
+	/** the third settler's supply run at the shed (V2), four clear beats: the supplies, the two-person tent, the ten
+	 *  litres, all three ready to leave */
+	function loadShelter({ lines } = {}) {
+		const me = people.C, helper = people.B;
+		const tail = () => atTruck(-0.5, -3.3);
+		let from, to;
+		const carry = (obj, who, s, dur, bed) => {
+			const lift = 0.65, k = Math.min(1, s / dur);
+			who.position.lerpVectors(from, to, k);
+			face(who, to);
+			act(who, k < 1 ? 'carry+walk' : 'carry');
+			world.attach(obj);
+			obj.position.copy(who.position).add(V(Math.sin(who.rotation.y) * 0.4, lift, Math.cos(who.rotation.y) * 0.4));
+			if (k >= 1) (truck.add(obj), obj.position.copy(bed), act(who, 'idle'));
+		};
+		return play(told([
+			beat(3, () => still(EXTRA_SHED.clone().add(V(2, 1.2, 2.8)), EXTRA_SHED.clone().add(V(0.4, 0.3, 0))), () => {
+				placeShelter('shed');
+				seatOut(me);
+				seatOut(helper);
+				me.visible = helper.visible = true;
+				me.position.copy(EXTRA_SHED.clone().add(V(0, 0, 1)));
+				helper.position.copy(WATER_SHED.clone().add(V(0, 0, 1)));
+				face(me, EXTRA_SHED);
+				face(helper, WATER_SHED);
+				lensFor({ fov: 42 });
+			}),
+			beat(4, (s, k, dur) => (carry(secondBag, me, s, dur, EXTRA_BED), still(atTruck(-5, -4).setY(1.7), head(me, 1))), () => {
+				from = tail().add(V(-3, 0, 0));
+				to = tail();
+				me.position.copy(from);
+				me.userData.last = null;
+			}),
+			beat(3.5, (s, k, dur) => (carry(waterCan, helper, s, dur, WATER_BED), still(atTruck(-3.8, -3.4).setY(1.1), waterCan.getWorldPosition(V(0, 0, 0)).add(V(0, 0.2, 0)))), () => {
+				from = tail().add(V(-2.5, 0, 0));
+				to = tail();
+				helper.position.copy(from);
+				helper.userData.last = null;
+			}),
+			beat(2.5, () => still(atTruck(-4, -5).setY(2.1), truck.position.clone().setY(1.2)), () => {
+				stage.shelter = 'bed';
+				placeShelter('bed');
+				inCab();
+			})
+		], lines));
+	}
+	/** the two settlers already here help raise the second tent (V2); the first tent is always in the wide shot */
+	function raiseShelter({ lines } = {}) {
+		const c = V(SHELTER.x, 0, SHELTER.z), me = people.C;
+		const wide = () => still(c.clone().add(V(-11, 6, 13)), c.clone().add(V(-4, 1, 0)));
+		return play(told([
+			beat(3, wide, () => {
+				placeShelter('bed');
+				for (const p of Object.values(people)) seatOut(p);
+				world.attach(secondBag);
+				secondBag.position.copy(c.clone().add(V(-1, 0, 3)));
+				for (const [i, p] of Object.values(people).entries()) ((p.visible = true), p.position.copy(c.clone().add(V((i - 1) * 2.8, 0, 3))), face(p, c), act(p, 'kneel'));
+				lensFor({ fov: 48 });
+			}),
+			beat(8, (s, k) => {
+				secondHome.visible = true;
+				secondBag.visible = false;
+				shelterPitch(k);
+				for (const p of Object.values(people)) (face(p, c), act(p, k < 0.35 ? 'kneel' : k < 0.8 ? 'reach' : 'idle'));
+				wide();
+			}),
+			beat(3, (s, k) => {
+				waterCan.position.lerpVectors(WATER_HOME.clone().add(V(0, 0.65, 0)), WATER_HOME, k);
+				still(WATER_HOME.clone().add(V(2, 1.1, 2)), WATER_HOME.clone().add(V(0, 0.25, 0)));
+			}, () => {
+				world.attach(waterCan);
+				me.position.copy(WATER_HOME.clone().add(V(0, 0, 0.7)));
+				face(me, WATER_HOME);
+				act(me, 'kneel');
+			}),
+			beat(3.5, wide, () => {
+				stage.shelter = 'home';
+				placeShelter('home');
+				for (const p of Object.values(people)) act(p, 'idle');
+			})
+		], lines));
 	}
 
 	/** loading at the village's shed (the script 2026-10-14): from inside the shed, the newcomer walking in against the
@@ -2258,6 +2439,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  frame; the packed tent carried over and swung in. The second loads the BatteryCube and the solar panel, which
 	 *  stand beside the shed */
 	function load({ lines, what } = {}) {
+		if (what === 'shelter') return loadShelter({ lines });
 		const me = people[stage.me];
 		truck.updateMatrixWorld(true);
 		const power = what === 'power';
@@ -2441,6 +2623,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  afternoon goes (a time-lapse), the tent glowing from within at dusk and the fire lit */
 	function pitch({ lines, what } = {}) {
 		if (what === 'power') return setUp({ lines });
+		if (what === 'shelter') return raiseShelter({ lines });
 		const me = people[stage.me];
 		truck.updateMatrixWorld(true);
 		const { R, steps: S } = BELL_TENT;
@@ -2748,24 +2931,110 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the bottle in the hand, its cap off, tipped over the seed, the water running down, the earth darkening (L: the
 	 *  spot's frame; wet: how wet the earth gets, or none) */
 	function pourAt(L, S, k, bottle, wet, me) {
-		const tip = ease(Math.min(1, k / 0.25));
+		// V2's cut (cuts.pour): the bottle held in the hand and tipped back at the end, seen from the side
+		const inHand = !!cuts.pour;
+		const tip = ease(Math.min(1, k / 0.25)) * (inHand ? 1 - ease(Math.max(0, (k - 0.78) / 0.22)) : 1);
+		if (inHand) (act(me, 'pour'), acting(me, now()), me.updateMatrixWorld(true));
 		bottle.userData.cap.visible = false;
-		bottle.position.copy(L(0.04, 0.36, -0.15));
+		if (!inHand) bottle.position.copy(L(0.04, 0.36, -0.15));
 		bottle.rotation.set(0, spotYaw(S), 0);
 		bottle.rotateX(2.1 * tip);
+		if (inHand) {
+			// the middle of the bottle in the palm as it tips, not floating over the soil
+			const hand = me.userData.cast.rig.bones.handR;
+			const grip = hand ? hand.localToWorld(V(0, -0.04, 0.02)) : L(0.04, 0.48, -0.15);
+			bottle.position.copy(grip).sub(V(0, 0.12, 0).applyQuaternion(bottle.quaternion));
+		}
 		bottle.updateMatrixWorld(true);
 		const mouth = bottle.localToWorld(bottle.userData.mouth.clone());
 		pour.visible = tip > 0.9 && k < 0.92;
 		pour.position.copy(mouth);
 		pour.scale.set(1, Math.max(0.01, mouth.y - 0.01), 1);
 		wet?.(Math.min(1, Math.max(0, (k - 0.3) / 0.55)));
-		act(me, 'pour');
-		camera.position.copy(L(0.46, 0.42, 0.2));
-		camera.lookAt(L(0.02, 0.12, -0.05));
+		if (!inHand) {
+			act(me, 'pour');
+			camera.position.copy(L(0.46, 0.42, 0.2));
+			camera.lookAt(L(0.02, 0.12, -0.05));
+			return;
+		}
+		// a side view holds the kneeling player, the bottle and the water landing, on a phone too
+		const target = L(0, 0.65, -0.25);
+		camera.position.copy(L(2.1, 1.5, 1.9)).sub(target).multiplyScalar(camera.aspect < 0.8 ? 1.55 : 1).add(target);
+		controls.target.copy(target);
+		camera.lookAt(target);
 	}
-	/** watering the first tree (once a game month, Samuel 2026-10-14): kneeling at it, the bottle pouring; then a little
-	 *  way back as it grows in place */
-	function waterTree(seat) {
+	/** watering the first tree: from the shared can where the game has one (V2: a locked close-up of the growth, the
+	 *  next stage drawn before the camera starts, `onWatered`), else from the bottle (V1) */
+	function waterTree(seat, onWatered) {
+		return WATER ? waterFromCan(seat, onWatered) : waterFromBottle(seat);
+	}
+	/** V2: a locked close-up of the saved before and after, built before the camera starts */
+	async function waterFromCan(seat, onWatered = () => Promise.resolve()) {
+		const me = people[seat], before = trees[seat];
+		if (!before || busy || !me) return;
+		const saved = { eye: camera.position.clone(), target: controls.target.clone(), fov: camera.fov, near: camera.near };
+		await onWatered(); // the next stage must be ready before its growth is shown
+		const g = trees[seat];
+		if (!g) return;
+		const bounds = g.userData.bounds?.clone() ?? new THREE.Box3(V(-0.1, 0, -0.1), V(0.1, 0.3, 0.1));
+		if (before.userData.bounds) bounds.union(before.userData.bounds);
+		g.updateWorldMatrix(true, false);
+		const { eye, target } = growthFrame(bounds, g.matrixWorld, saved.eye, camera.aspect);
+		const hold = () => (camera.position.copy(eye), controls.target.copy(target), camera.lookAt(target));
+		const S = { x: g.position.x, z: g.position.z }, L = spotAt(S);
+		const grow = () => (g.userData.startGrowth?.(), delete g.userData.startGrowth);
+		world.attach(waterCan);
+		try {
+			await play([
+				beat(3.2, (s, k) => {
+					act(me, 'pour');
+					acting(me, now());
+					me.updateMatrixWorld(true);
+					waterCan.rotation.set(0, spotYaw(S), 0);
+					waterCan.rotateZ(-1.3 * Math.sin(Math.PI * k));
+					pour.visible = k > 0.2 && k < 0.85;
+					const hand = me.userData.cast.rig.bones.handR;
+					const grip = hand ? hand.localToWorld(V(0, -0.04, 0.02)) : L(0.16, 0.8, -0.15);
+					waterCan.position.copy(grip).sub(V(0, 0.3845, 0).applyQuaternion(waterCan.quaternion));
+					waterCan.updateMatrixWorld(true);
+					const outlet = waterCan.localToWorld(V(0.159, 0.045, 0));
+					pour.position.copy(outlet);
+					pour.scale.set(1, Math.max(0.01, outlet.y - 0.01), 1);
+					hold();
+				}, () => {
+					lensFor({ fov: 42, near: 0.01 });
+					seatOut(me);
+					me.visible = true;
+					me.position.copy(L(0, 0, -0.65));
+					me.rotation.y = spotYaw(S);
+				}),
+				beat(5.5, hold, () => {
+					pour.visible = false;
+					waterCan.position.copy(WATER_HOME);
+					waterCan.rotation.set(0, 0, 0);
+					act(me, 'stand');
+					grow();
+				})
+			]);
+		} finally {
+			// the saved stage shows too where the player skipped the close-up
+			grow();
+			pour.visible = false;
+			world.add(waterCan);
+			waterCan.position.copy(WATER_HOME);
+			waterCan.rotation.set(0, 0, 0);
+			goal = null;
+			camera.position.copy(saved.eye);
+			controls.target.copy(saved.target);
+			camera.fov = saved.fov;
+			camera.near = saved.near;
+			camera.updateProjectionMatrix();
+			camera.lookAt(saved.target);
+		}
+	}
+	/** V1: watering the first tree (once a game month, Samuel 2026-10-14): kneeling at it, the bottle pouring; then a
+	 *  little way back as it grows in place */
+	function waterFromBottle(seat) {
 		const me = people[seat];
 		const g = trees[seat];
 		if (!g || busy || !me) return Promise.resolve();
@@ -2927,6 +3196,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const me = people[stage.me];
 		if (busy || !me) return;
 		const S = { x, z };
+		// walking about freely (V2's way to the can or a tree): there on foot, the way any tap walks
+		if (roam && !tourOn) {
+			if (driving || boarding) return;
+			boardNext = false;
+			roamTo = wayTo(me, spotAt(S)(0, 0, -0.62));
+			return;
+		}
 		seatOut(me);
 		me.visible = true;
 		wear(me, true); // out of the tent with them, for the seed and the bottle
@@ -2945,6 +3221,28 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (!on && roam) walk(false);
 	}
 	const keys = new Set();
+	/** the touch stick ($lib/touch/TouchStick.svelte, V2's touch controls): a direction (x, y) to walk or drive, hurried
+	 *  or not, beside the keys */
+	const stick = { x: 0, y: 0, hurry: false };
+	function move(x, y, hurry) {
+		if ((x || y) && (!wantRoam || busy || (!roam && !walk(true)))) return;
+		Object.assign(stick, { x, y, hurry });
+		if (x || y) ((roamTo = []), (boardNext = false), (driveTo = null));
+	}
+	/** the stick's look: the camera turned round and tilted over what it looks at */
+	function look(dx, dy) {
+		if (!roam || busy) return;
+		goal = null;
+		drift = false;
+		const offset = camera.position.clone().sub(controls.target);
+		const spherical = new THREE.Spherical().setFromVector3(offset);
+		spherical.theta -= dx * 0.0065;
+		spherical.phi = Math.max(0.12, Math.min(Math.PI / 2 - 0.04, spherical.phi - dy * 0.0065));
+		camera.position.copy(controls.target).add(offset.setFromSpherical(spherical));
+		controls.update();
+	}
+	const stopInput = () => (keys.clear(), Object.assign(stick, { x: 0, y: 0, hurry: false }));
+	window.addEventListener('blur', stopInput);
 	const KEYS = { ArrowUp: [0, 1], KeyW: [0, 1], ArrowDown: [0, -1], KeyS: [0, -1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
 	const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName ?? '') || e.target?.isContentEditable;
 	const onKey = (e) => {
@@ -2965,7 +3263,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		roamTo = [];
 		if (inTent) lensOut();
 		inTent = false;
-		keys.clear();
+		stopInput();
 		errand = null;
 		if (roam) {
 			const sat = me.parent === truck ? me.userData.seat : null;
@@ -3066,7 +3364,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (home.visible) list.push([home.position, 3.7]);
 		if (fire.visible) list.push([fire.position, 1.9]);
 		for (const o of [cube, battery, solar]) if (o.parent === world && o.visible) list.push([o.position, 1]);
-		for (const s of ['A', 'B']) if (people[s].parent === world && people[s].visible) list.push([people[s].position, 0.5]);
+		for (const s of SEATS) if (people[s].parent === world && people[s].visible) list.push([people[s].position, 0.5]);
 		for (const t of Object.values(trees)) if (t?.position) list.push([t.position, 0.6]);
 		return list;
 	}
@@ -3087,10 +3385,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the free drive, a frame of it: on along the keys, or on to where they tapped, slowing as it comes and as it turns */
 	function drivingStep(step) {
 		let throttle = 0, turn = 0;
-		if (keys.size) {
+		if (keys.size || stick.x || stick.y) {
 			const k = [...keys].reduce((a, c) => [a[0] + KEYS[c][0], a[1] + KEYS[c][1]], [0, 0]);
-			throttle = Math.sign(k[1]);
-			turn = -Math.sign(k[0]); // left (+x, the driver's side) turns it left
+			throttle = Math.max(-1, Math.min(1, k[1] + stick.y));
+			turn = -Math.max(-1, Math.min(1, k[0] + stick.x)); // left (+x, the driver's side) turns it left
 			driveTo = null;
 		} else if (driveTo) {
 			const dx = driveTo.x - truck.position.x, dz = driveTo.z - truck.position.z, dist = Math.hypot(dx, dz);
@@ -3134,7 +3432,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** how far from the pole a grown-up stands upright in it */
 	const upright = (w) => Math.min(w.headroom ?? w.r - BODY, w.r - BODY);
 	/** what is in the way, in and round the tent: its own things and its fire place's */
-	const things = (w) => {
+	const inTheWay = (w) => {
 		if (!fire.visible) return w.colliders ?? [];
 		const f = home.worldToLocal(fire.position.clone());
 		return [...(w.colliders ?? []), ...FIRE_WALK.colliders.map((c) => ({ x: c.x + f.x, z: c.z + f.z, r: c.r }))];
@@ -3154,7 +3452,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			(b.x *= r / rb), (b.z *= r / rb);
 		}
 		const step = Math.hypot(b.x - a.x, b.z - a.z);
-		for (const c of things(w)) {
+		for (const c of inTheWay(w)) {
 			const d = Math.hypot(b.x - c.x, b.z - c.z), m = c.r + BODY;
 			if (d >= m) continue;
 			if (d < 1e-6) return from;
@@ -3250,14 +3548,17 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (!me || me.parent !== world) return;
 		const was = me.position.clone();
 		let dir = null;
-		if (keys.size) {
+		if (keys.size || stick.x || stick.y) {
 			const ahead = controls.target.clone().sub(camera.position).setY(0).normalize(), right = V(-ahead.z, 0, ahead.x);
 			const k = [...keys].reduce((a, c) => [a[0] + KEYS[c][0], a[1] + KEYS[c][1]], [0, 0]);
-			dir = ahead.multiplyScalar(k[1]).addScaledVector(right, k[0]);
+			dir = ahead.multiplyScalar(k[1] + stick.y).addScaledVector(right, k[0] + stick.x);
 		} else if (roamTo.length) dir = roamTo[0].clone().sub(me.position).setY(0);
 		const left = dir?.length() ?? 0;
 		if (left > 0.05) {
-			const d = Math.min(keys.size ? Infinity : left, ROAM * step);
+			// the keys at full pace, the stick as far as it is pushed (at half, unhurried)
+			const manual = keys.size || stick.x || stick.y;
+			const pace = keys.size ? 1 : manual ? Math.min(1, left) * (stick.hurry ? 1 : 0.5) : 1;
+			const d = Math.min(manual ? Infinity : left, ROAM * pace * step);
 			dir.normalize();
 			me.position.copy(walkable(was, me.position.clone().addScaledVector(dir, d)));
 			me.rotation.y = Math.atan2(dir.x, dir.z);
@@ -3293,7 +3594,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	function update(view, h) {
 		if (h != null) hour = h;
 		if (!view) return;
-		for (const seat of ['A', 'B']) {
+		sharedWater = view.water ?? null;
+		for (const seat of SEATS) {
 			const hearts = view.players[seat].wallet.HEARTS;
 			const glow = people[seat].userData.glow;
 			glow.visible = hearts > 0.01 && !busy && !held && people[seat].parent === world && !(roam && seat === stage.me);
@@ -3355,11 +3657,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const glow = (lit ? Math.min(1, Math.max(0, (0.8 - up) / 0.55)) : 0) * (cold ? 0.35 : 1);
 		// seen from inside, the canvas is lit by the lantern only, not glowing as it does to whoever is outside
 		const within = roam && inTent ? 0.3 : 1;
-		if (pitched?.canvas) {
-			pitched.canvas.emissive.copy(CLOTH_DAY).lerp(CLOTH_NIGHT, glow * within);
-			pitched.canvas.emissiveIntensity = (0.35 + 0.2 * glow) * within;
+		for (const tent of [pitched, secondPitched]) {
+			if (tent?.canvas) {
+				tent.canvas.emissive.copy(CLOTH_DAY).lerp(CLOTH_NIGHT, glow * within);
+				tent.canvas.emissiveIntensity = (0.35 + 0.2 * glow) * within;
+			}
 		}
 		if (pitched?.lamp && homePitch >= 1) pitched.lamp.intensity = LANTERN * (1 + 3 * glow); // while it is pitched, its own
+		if (secondPitched?.lamp) secondPitched.lamp.intensity = LANTERN * (1 + 3 * glow);
 		const flame = fire.visible && hearth.built >= 1 ? Math.min(1, Math.max(0, (0.62 - up) / 0.3)) : 0;
 		if (Math.abs(flame - hearth.lit) > 0.005) ((hearth.lit = flame), burnTo());
 		// its burning: its flames and their light flicker in the box while it burns
@@ -3370,7 +3675,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const d = camera.position.distanceTo(controls.target);
 		scene.fog.near = Math.max(260, d * 0.75);
 		scene.fog.far = Math.max(1600, d * 2.6);
-		for (const seat of ['A', 'B']) {
+		for (const seat of SEATS) {
 			const g = people[seat].userData.glow;
 			g.rotation.y = t * 1.5;
 			g.position.y = 2.3 + Math.sin(t * 2 + (seat === 'A' ? 0 : 1.5)) * 0.1;
@@ -3409,6 +3714,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// a machine, a thing or a tree tapped shows what it is, as before; the ground, the tent and the buildings are
 			// walked to
 			const thing = ray.intersectObjects(world.children, true).find((h) => h.object.visible && /^(asset|tree):/.test(h.object.name) && !/^asset:(tent|busStop|gasStation|shed)$/.test(h.object.name));
+			// the shared can, set down: walked to
+			if (thing?.object.name === 'asset:water-canister' && sharedWater && !sharedWater.carriedBy) {
+				boardNext = false;
+				walkTo(sharedWater.x, sharedWater.z);
+				return;
+			}
 			if (thing) return void onPick(thing.object.name);
 			boardNext = false;
 			if (at) roamTo = wayTo(people[stage.me], at);
@@ -3422,6 +3733,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const hit = ray.intersectObjects(world.children, true).find((h) => h.object.name && h.object.visible);
 		onPick(hit ? hit.object.name : null);
 	};
+	// with the touch stick (edition.touch) it owns the touch gestures while walking freely: the orbit and tap-to-walk
+	// take none of them
+	const touchPointer = (e) => {
+		if (touch && e.pointerType === 'touch' && wantRoam && !tourOn && !film) e.stopImmediatePropagation();
+	};
+	for (const event of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) canvas.addEventListener(event, touchPointer, true);
 	canvas.addEventListener('pointerdown', onDown);
 	canvas.addEventListener('pointerup', onUp);
 
@@ -3451,9 +3768,20 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const me = people[stage.me];
 			if (walkOn(me, errand.pts, t - errand.t0)) me.rotation.y = errand.yaw;
 		}
+		// the shared can where the game says it is: in my hands as I walk, else where it stands or is carried
+		if (SHELTER && !film && !tourOn && !busy && sharedWater) {
+			world.attach(waterCan);
+			waterCan.visible = true;
+			waterCan.rotation.set(0, 0, 0);
+			if (sharedWater.carriedBy === stage.me) {
+				const me = people[stage.me];
+				waterCan.position.copy(me.localToWorld(V(0.36, 0.55, 0.05)));
+				waterCan.rotation.y = me.rotation.y;
+			} else waterCan.position.set(sharedWater.x, sharedWater.carriedBy ? 0.55 : 0, sharedWater.z);
+		}
 		for (let i = grows.length - 1; i >= 0; i--) {
 			// a watered tree grows in place
-			const g = grows[i], k = Math.min(1, (t - g.t0) / 1.8);
+			const g = grows[i], k = Math.min(1, (t - g.t0) / (g.seconds ?? 1.8));
 			g.plant.scale.setScalar(g.from + (1 - g.from) * easeOut(k));
 			if (k >= 1) grows.splice(i, 1);
 		}
@@ -3489,22 +3817,35 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const w = canvas.clientWidth;
 			const h = canvas.clientHeight;
 			const out = {};
-			for (const k of ['A', 'B']) {
+			for (const k of SEATS) {
 				const o = people[k];
 				const p = o.localToWorld(V(0, 2.8, 0)).project(camera);
 				out[`player:${k}`] = { x: ((p.x + 1) / 2) * w, y: ((1 - p.y) / 2) * h, on: o.visible && !busy && !held && !riding && stage.at !== 'cruise' && p.z < 1 };
 				const tree = trees[k];
 				if (tree) {
 					// another's tree, while a spot is chosen: ringed and named however far off the camera is
-					const marked = core.visible && k !== stage.me;
+					// (where the game marks every tree, edition.markers: all of them in free play, kept on the screen's edge)
+					const marked = (core.visible && k !== stage.me) || (markers && !film && !tourOn);
 					tree.userData.ring.visible = marked;
 					const q = tree.position.clone().setY(tree.userData.top).project(camera);
-					out[`tree:${k}`] = { x: ((q.x + 1) / 2) * w, y: ((1 - q.y) / 2) * h, on: !riding && q.z < 1 && (marked || (!busy && camera.position.distanceTo(tree.position) < 60)) };
+					if (!markers) out[`tree:${k}`] = { x: ((q.x + 1) / 2) * w, y: ((1 - q.y) / 2) * h, on: !riding && q.z < 1 && (marked || (!busy && camera.position.distanceTo(tree.position) < 60)) };
+					else {
+						const behind = q.z > 1;
+						const sx = behind ? -q.x : q.x, sy = behind ? -q.y : q.y;
+						out[`tree:${k}`] = { x: Math.max(90, Math.min(w - 90, ((sx + 1) / 2) * w)), y: Math.max(80, Math.min(h - 80, ((1 - sy) / 2) * h)), on: !riding && marked, edge: behind || Math.abs(q.x) > 0.85 || Math.abs(q.y) > 0.85, distance: Math.round(people[stage.me].getWorldPosition(V()).distanceTo(tree.position)) };
+					}
 				}
 			}
 			onLabels(out);
+			// and, where the game has the shared can, how near I am to it and to my own tree
+			const at = people[stage.me].getWorldPosition(V()), mine = trees[stage.me], reach = WATER?.reach ?? 0;
 			const r = { on: roam, near: byPickup(), driving: driving || !!boarding?.into };
-			if (r.on !== roamSeen.on || r.near !== roamSeen.near || r.driving !== roamSeen.driving) ((roamSeen = r), onRoam(r));
+			if (WATER) {
+				r.waterNear = !!sharedWater && Math.hypot(at.x - sharedWater.x, at.z - sharedWater.z) <= reach;
+				r.waterDistance = sharedWater ? Math.ceil(Math.hypot(at.x - sharedWater.x, at.z - sharedWater.z)) : null;
+				r.treeNear = !!mine && Math.hypot(at.x - mine.position.x, at.z - mine.position.z) <= reach;
+			}
+			if (['on', 'near', 'driving', 'waterNear', 'waterDistance', 'treeNear'].some((k) => r[k] !== roamSeen[k])) ((roamSeen = r), onRoam(r));
 		}
 	}
 	if (own) loop();
@@ -3588,6 +3929,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		sticks: markIt,
 		sow,
 		water: waterTree,
+		move,
+		look,
+		/** where I stand now, on the ground */
+		position: () => {
+			const p = people[stage.me].getWorldPosition(V());
+			return { x: p.x, z: p.z };
+		},
 		skip,
 		get busy() {
 			return busy;
@@ -3607,6 +3955,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			cancelAnimationFrame(raf);
 			drawn.dispose();
 			ro.disconnect();
+			window.removeEventListener('blur', stopInput);
+			for (const event of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) canvas.removeEventListener(event, touchPointer, true);
 			canvas.removeEventListener('pointerdown', onDown);
 			canvas.removeEventListener('pointerup', onUp);
 			window.removeEventListener('keydown', onKey);

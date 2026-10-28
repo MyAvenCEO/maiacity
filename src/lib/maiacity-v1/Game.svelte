@@ -8,32 +8,42 @@
 	The server holds the game (api/src/maiacity-v1.js); the page reads it every few seconds and, in between, runs the
 	same rules (game/maiacity-v1/engine.js) forward to the second, so the clock, the melt and the HEARTS growing count
 	live. Every move goes to the server. Every decision is a MIP that needs both players' signatures.
+	MaiaCity V2 plays on this same screen (Goal 7, 2026-10-28), handing it its own `edition` (../maiacity-v2/game.js:
+	its rules, server, story and world, its three seats, the shared water can, the touch stick and its Proposals page);
+	without one, the screen is V1's (./game.js).
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import { screenSlot } from '$lib/app/screen-slots.js';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
-	import { RENTED, SUBLET, COOPS, DAY_MS, act, newGame, MINDS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
-	import { loadGame, sendMove, takeSeat } from './store.js';
-	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
-	import { STORY_INVESTS, TOLD, momentOf, revealOf, story, worldStage } from './tour.js';
-	import { reelFor } from './intro.js';
-	import { treeNow } from './trees.js';
-	import { plantOf } from './plants.js';
-	import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
 	import ViewHost from '$lib/sandbox/ViewHost.svelte';
 	import ViewSlot, { standing } from '$lib/sandbox/ViewSlot.svelte';
 	import { viewOfCard } from '$lib/sandbox/view-host.js';
-	import { screenDataOf } from './screen.js';
 	import { base } from '$app/paths';
 	import { REPLACES, SLOT_NAMES, slotsOf, viewsOf } from '../../../game/maiacity-v1/views.js';
-	import { rents } from '../../../game/maiacity-v1/engine.js';
 	import Mark from './Mark.svelte';
 	import { pillAccounts, pillCenter } from '$lib/app/pill.svelte.js';
+	import V1 from './game.js';
+
+	/** the game this screen plays (./game.js), V1's unless another's is given
+	 *  @type {{ edition?: Record<string, any> }} */
+	let { edition = V1 } = $props();
+	// a game's edition stays the same while its screen is open
+	const ed = untrack(() => edition);
+	const { engine, createWorld, reelFor, treeNow, plantOf, screenDataOf } = ed;
+	const { loadGame, sendMove, takeSeat } = ed.store;
+	const { STORY_INVESTS, TOLD, momentOf, revealOf, story, worldStage } = ed.tour;
+	const { RENTED, SUBLET, COOPS, DAY_MS, HOME, POOL, SEEDLINGS, act, newGame, MINDS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, rents, signaturesOf, supply, timeOfMonth, weights } = engine;
+	const nextWaterAt = engine.nextWaterAt ?? (() => Infinity);
+	/** the shared can's care (V2) or the bottle's (V1) */
+	const byCan = ed.care === 'can';
+	/** the home COOP's MIND, the one the home rent is paid in */
+	const homeMind = TOKEN_LABEL[COOPS[HOME].mind];
 
 	let game = $state.raw(null);
 	let me = $state('');
@@ -55,10 +65,10 @@
 	let roamNow = $state({ on: false, near: false, driving: false }); // walking, by the pickup, or at its wheel
 	let amount = $state(12);
 	let swapToken = $state('MAIA');
-	let swapTo = $state('TRIBE');
+	let swapTo = $state(MINDS[1]);
 	let swapAmount = $state(1);
 	let labels = $state({});
-	let canvas;
+	let canvas = $state();
 	let world;
 
 	const now = $derived(tick + skew);
@@ -87,15 +97,19 @@
 	});
 	// the players' first trees as they stand on the game clock now, each named after its planter
 	// (an admin's growth preview, Samuel 2026-10-14: my tree shown at any number of watered months, for testing; nothing
-	// is saved, and the game's own tree comes back when it ends)
+	// is saved, and the game's own tree comes back when it ends; V1's). Where the can waters them (V2), a spot marked and
+	// not planted yet shows too, a marker only
 	let growth = $state(null);
-	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree).map((s) => {
-		const t = view.players[s].tree;
+	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree || (byCan && view.players[s].spot)).map((s) => {
+		const p = view.players[s];
+		if (!p.tree) return { seat: s, name: p.name, ...treeNow(view, { ...p.spot, plant: p.seedling || 'apple', name: p.name, grown: 0 }, now), markerOnly: true, label: 'Planting spot · not planted' };
+		const t = p.tree;
 		return { seat: s, name: t.name, ...treeNow(view, s === seat && growth != null ? { ...t, grown: growth } : t, now) };
 	}) : []);
 	$effect(() => {
 		const t = trees;
-		world?.trees(t);
+		// the can's close-up draws the watered tree itself, when its growth is ready to show
+		if (!(byCan && playing === 'water')) world?.trees(t);
 	});
 	// the land still to unlock shows its rims as the welcome story reaches it (all of it once the story is done or skipped)
 	const otherSeat = $derived(seat === 'A' ? 'B' : 'A');
@@ -155,16 +169,35 @@
 		doMove({ type: 'mark', x: at.x, z: at.z }).then(() => (chosen = null));
 	}
 	const plantIt = () => doMove({ type: 'plant', v: plantOf(player.seedling)?.version });
-	const myTree = $derived(trees.find((x) => x.seat === seat));
+	const myTree = $derived(trees.find((x) => x.seat === seat && !x.markerOnly));
 	const shownMonths = $derived(growth ?? player?.tree?.grown ?? 0);
 	const stepPreview = (d) => (growth = Math.max(0, Math.min(400, shownMonths + d)));
 	const growthOf = $derived(`${seat}:${game?.started ?? 0}`);
 	$effect(() => void (growthOf, (growth = null))); // a new seat or game ends the preview
 	function waterIt() {
+		if (byCan) return waterFromCan();
 		if (!world || playing || !myTree?.due) return;
 		playing = 'water';
 		world.water(seat).then(() => (playing = ''));
 		doMove({ type: 'water' });
+	}
+	// the shared can (V2): carried to my own tree, a litre once a real day; it goes where I walk while I carry it
+	const waterCountdown = $derived(byCan && player?.tree ? dur(Math.max(0, nextWaterAt(view, player.tree) - now)) : '');
+	const carryingWater = $derived(view?.water?.carriedBy === seat);
+	const waterNear = $derived(roamNow.waterNear ?? false);
+	const treeNear = $derived(roamNow.treeNear ?? false);
+	const waterMove = (type) => world && doMove({ type, ...world.position(), tree: seat });
+	const goToWater = () => world?.walkTo(view.water.x, view.water.z);
+	async function waterFromCan() {
+		if (!world || playing || !myTree?.due || !carryingWater || !treeNear) return;
+		// only a move the server took grows the tree; a failed one never plays a growth
+		playing = 'water';
+		if ((await waterMove('water')) === false) return void (playing = '');
+		try {
+			await world.water(seat, () => world.trees(trees, { holdGrowth: true }));
+		} finally {
+			playing = '';
+		}
 	}
 	function skipShot() {
 		caption = null;
@@ -198,8 +231,13 @@
 			momentOf(world, step, reel).then(() => ((playing = ''), mark(step.id)));
 		} else if (step.kind === 'station' || step.kind === 'drive' || step.kind === 'load' || step.kind === 'build') {
 			playing = step.kind;
-			// the moment cuts a shot a line and carries the voice-over itself, so each action lands on its words
-			momentOf(world, step, reel).then(() => ((playing = ''), mark(step.id)));
+			// the moment cuts a shot a line and carries the voice-over itself, so each action lands on its words; the
+			// third settler's supply run and second tent (V2) go to the game as their moments end
+			momentOf(world, step, reel).then(async () => {
+				if (seat === 'C' && step.what === 'shelter' && (await doMove({ type: step.kind === 'load' ? 'collectShelter' : 'settleShelter' })) === false) return void (playing = 'retry');
+				playing = '';
+				mark(step.id);
+			});
 		} else if (step.kind === 'sow' && !told[step.id] && player?.seedling) {
 			// the seed into the earth and the water over it; the move goes to the game as the moment ends, the film held
 			// till it is there (no "Plant it" prompt flashing up between the last shot and the next)
@@ -229,10 +267,15 @@
 		tick = Date.now();
 	}
 
+	// a read sent before a move came back is older than the move: it is dropped
+	let moveRevision = 0;
 	async function refresh() {
 		if (demo) return; // a demo plays on its own copy of the game
 		try {
-			take(await loadGame());
+			const revision = moveRevision;
+			const result = await loadGame();
+			if (revision !== moveRevision || busy) return;
+			take(result);
 			error = '';
 		} catch (e) {
 			error = e?.message ?? String(e);
@@ -242,6 +285,7 @@
 	async function run(fn) {
 		if (busy) return false;
 		busy = true;
+		moveRevision++;
 		error = '';
 		try {
 			take(await fn());
@@ -267,13 +311,13 @@
 		const g = newGame(now - 60e3);
 		g.players.A.founder = s === 'A' ? me : 'demo';
 		g.players.A.name = realGame.players.A.name;
-		if (s === 'B') (g.players.B.founder = me), (g.players.B.name = realGame.players.B.founder ? realGame.players.B.name : 'Player B');
+		if (s !== 'A') (g.players[s].founder = me), (g.players[s].name = realGame.players[s].founder ? realGame.players[s].name : `Player ${s}`);
 		// the second's journey comes after the first's: they minted, invested, pitched the tent and planted their first
 		// tree (where and what the real first did, if they did), so its plant stake and flag stand on the hex
 		let first = g;
-		if (s === 'B') {
+		if (s !== 'A') {
 			const t = realGame.players.A.tree;
-			const moves = [{ type: 'mint' }, { type: 'invest', coop: 'maia', amount: STORY_INVESTS.maia }, { type: 'invest', coop: 'village', amount: STORY_INVESTS.village }, { type: 'invest', coop: 'tribe', amount: STORY_INVESTS.tribe }, { type: 'mark', x: t?.x ?? 0, z: t?.z ?? 40 }, { type: 'seedling', plant: SEEDLINGS.some((x) => x.id === t?.plant) ? t.plant : 'apple' }, { type: 'plant', v: t?.v ?? 1 }];
+			const moves = [{ type: 'mint' }, ...Object.entries(STORY_INVESTS).map(([coop, amount]) => ({ type: 'invest', coop, amount })), { type: 'mark', x: t?.x ?? 0, z: t?.z ?? 40 }, { type: 'seedling', plant: SEEDLINGS.some((x) => x.id === t?.plant) ? t.plant : 'apple' }, { type: 'plant', v: t?.v ?? 1 }];
 			try {
 				moves.forEach((m, i) => (first = act(first, 'A', m, now - 50e3 + i * 1e3)));
 			} catch {
@@ -307,6 +351,13 @@
 		world = createWorld(canvas, {
 			onPick: (name) => {
 				// a Village COOP machine opens its own card
+				// the shared can and a tree are walked to, in free play where the can waters them (V2)
+				if (byCan && name === 'asset:water-canister' && !tour) return void world.walkTo(game.water.x, game.water.z);
+				if (byCan && name?.startsWith('tree:') && !tour) {
+					const p = game.players[name.split(':')[1]], t = p?.tree ?? p?.spot;
+					if (t) world.walkTo(t.x, t.z);
+					return;
+				}
 				if (name?.startsWith('asset:')) return void ((panel = name), (chose = true), (wallet = null));
 				if (!name?.startsWith('player:')) return;
 				openWallet('home', name);
@@ -327,8 +378,10 @@
 			if (mySeat) seat = mySeat;
 		});
 		const t = setInterval(() => (tick = Date.now()), 1000);
-		const r = setInterval(refresh, 10000);
-		return () => (clearInterval(t), clearInterval(r), world.dispose());
+		const r = setInterval(refresh, ed.refreshMs);
+		// the can I carry goes where I walk
+		const carry = byCan ? setInterval(() => carryingWater && !busy && !playing && !tour && void waterMove('carryWater'), 2000) : null;
+		return () => (clearInterval(t), clearInterval(r), clearInterval(carry), world.dispose());
 	});
 
 	let chose = $state(false); // the player opened a card themselves: while the story plays, only then does one show
@@ -368,11 +421,11 @@
 		}
 		return { id: 'pool', label: 'AMM pool', sub: 'The MaiaCity COOP’s pool', text: 'AMM', colour: '#8a7a55', shape: 'coop', bal: view.pool };
 	};
-	const accounts = $derived(view ? [`player:${seat}`, `player:${otherSeat}`, ...Object.keys(COOPS).map((k) => `coop:${k}`), 'pool'].map(accountOf) : []);
+	const accounts = $derived(view ? [`player:${seat}`, ...SEATS.filter((s) => s !== seat).map((s) => `player:${s}`), ...Object.keys(COOPS).map((k) => `coop:${k}`), 'pool'].map(accountOf) : []);
 	const here = $derived(accounts.find((a) => a.id === acct) ?? accounts[0]);
-	// the rent chain of a week, player → Tribe → Village → MaiaCity (engine.js rents): one link per payer and payee,
-	// the two players' home rents as one
-	const CHAIN = ['players', 'coop:tribe', 'coop:village', 'coop:maia'];
+	// the rent chain of a week, player → Tribe → Village → MaiaCity (engine.js rents; the game's own, ed.chain): one
+	// link per payer and payee, the players' home rents as one
+	const CHAIN = ed.chain;
 	const chain = $derived.by(() => {
 		if (!view) return [];
 		const by = new Map();
@@ -421,9 +474,10 @@
 		['coops', '◇', 'COOPs'],
 		['rules', '⚙', 'Rules']
 	];
-	/** the Proposals app, on this game's AIPs; with `draft`, on a new one for it (a payout already filled in) */
-	// proposals are made by agents through the MCP for now (Samuel 2026-10-20): the game only links to the app
-	const aipsLink = () => `${base}/app/aips/`;
+	/** the Proposals app, on this game's AIPs; with `draft`, on a new one for it (a payout already filled in): the game's
+	 *  own page where it has one (V2), else the AIPs app (V1: proposals are made by agents through the MCP for now,
+	 *  Samuel 2026-10-20) */
+	const aipsLink = (draft) => (ed.proposals ? ed.proposals(base, draft) : `${base}/app/aips/`);
 	// the game's screens (game/maiacity-v1/views.js): view cards a MIP brings, each a tool of its own, run sandboxed
 	const screens = $derived(view ? viewsOf(view).filter((v) => (v.data?.slot ?? 'panel') === 'panel') : []);
 	// a screen a MIP stood in one of the page's panels (views.js SLOTS): it replaces a panel that only shows and stands
@@ -461,6 +515,17 @@
 		return on;
 	});
 	const shows = (what) => !unlocked || unlocked.has('all') || unlocked.has(what) || (what.startsWith('view:') && unlocked.has('mips'));
+	/** "Plant your tree" (V2): the story skipped on to the planting, its steps before it marked told */
+	function plantFromBackpack() {
+		const state = { ...(seen[seat] ?? {}), off: false };
+		for (const step of steps) {
+			if (step.id === 'spot') break;
+			state[step.id] = true;
+		}
+		seen = { ...seen, [seat]: state };
+		resumed = started;
+		if (!demo) try { localStorage.setItem(storyKey(seat), JSON.stringify(state)); } catch {}
+	}
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
 		if (!demo) try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
@@ -468,10 +533,12 @@
 	};
 	// remembered per game: a fresh game (a reset) starts every story from its first step again
 	const started = $derived(game?.started ?? 0);
-	const storyKey = (s) => `v1-story-${started}-${s}`;
+	const storyKey = (s, key = ed.storyKey) => `${key}-${started}-${s}`;
 	$effect(() => {
 		if (!started) return;
-		try { seen = Object.fromEntries(SEATS.map((s) => [s, JSON.parse(localStorage.getItem(storyKey(s)) ?? '{}')])); } catch {}
+		// (a game forked from another reads the other's story where it has none of its own yet)
+		const kept = (s) => localStorage.getItem(storyKey(s)) ?? (game?.fork && ed.storyFallback ? localStorage.getItem(storyKey(s, ed.storyFallback)) : null);
+		try { seen = Object.fromEntries(SEATS.map((s) => [s, JSON.parse(kept(s) ?? '{}')])); } catch {}
 		seenOf = started;
 	});
 	// coming back halfway through a chapter (Samuel 2026-10-13: the story began at "They ripen like fruit"), the chapter
@@ -493,8 +560,11 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && wallet && (wallet = null)} />
 
-<div class="v1" class:cinema={!!playing}>
+<div class="v1" class:cinema={!!playing} class:touch={!!ed.touch}>
 	<canvas class="stage" bind:this={canvas}></canvas>
+	{#if ed.touch && canMove && !tour && !playing && !wallet && !panel && !tools}
+		<TouchStick move={(x, y, hurry) => world?.move(x, y, hurry)} look={(dx, dy) => world?.look(dx, dy)} stage={canvas} taps="button, a, [role='button']" />
+	{/if}
 	{#if demo}<div class="demo panel" role="status">Test run · {view?.players[seat].name}’s journey, nothing is saved <button class="link" onclick={endDemo}>End</button></div>
 {/if}
 
@@ -503,7 +573,8 @@
 		{#each Object.entries(labels) as [k, l] (k)}
 			{#if l.on && k.startsWith('tree:')}
 				{@const t = trees.find((x) => x.seat === k.slice(5))}
-				{#if t}<div class="tag tree" style="left:{l.x}px;top:{l.y}px">{t.name}<small>{t.label} · {t.now}</small></div>{/if}
+				{#if t && byCan}<div class="tag tree" style="left:{l.x}px;top:{l.y}px">{l.edge ? '↗ ' : ''}{t.name}<small>{t.label} · {l.distance} m</small><small>({f(t.x, 0)}, {f(t.z, 0)})</small></div>
+				{:else if t}<div class="tag tree" style="left:{l.x}px;top:{l.y}px">{t.name}<small>{t.label} · {t.now}</small></div>{/if}
 			{:else if l.on}
 				<button class="tag" class:me={k === `player:${seat}`} style="left:{l.x}px;top:{l.y}px" onclick={() => openWallet('home', k)}>
 					{view.players[k.slice(7)].name}
@@ -513,7 +584,7 @@
 		{/each}
 	{/if}
 
-	{#if !view || shows('brand')}<div class="brand panel" use:screenSlot={'title'}>MaiaCity <b>V1</b></div>{/if}
+	{#if !view || shows('brand')}<div class="brand panel" use:screenSlot={'title'}>MaiaCity <b>{ed.label}</b></div>{/if}
 
 	{#if view && player}
 		{#if shows('clock')}
@@ -525,6 +596,7 @@
 				<button class:on={panel === id} class:hint={tour?.hint === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}</button>
 			{/each}
 			{#if shows('coops')}<a href={aipsLink()} title="This game's proposals, in the Proposals app"><span class="ic">✎</span>Proposals{#if openMips.length}<span class="badge">{openMips.length}</span>{/if}</a>{/if}
+			{#if ed.plantShortcut && canMove && !tour && !player.tree}<button onclick={plantFromBackpack}>Plant your tree</button>{/if}
 			{#if shows('you')}<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>{/if}
 		</nav>{/if}
 		{#if canMove && shows('mint') && !tour && !wallet}
@@ -539,13 +611,37 @@
 			<div class="walkbar">
 				{#if walking && (roamNow.near || roamNow.driving)}<button class="walkbtn" onclick={() => world?.board(!roamNow.driving)}>{roamNow.driving ? 'Get out' : 'Get in the pickup'}</button>{/if}
 			</div>
-			{#if walking}<p class="walkhint">Tap the ground to {roamNow.driving ? 'drive' : 'walk'} there, or use the arrow keys</p>{/if}
+			{#if walking && !ed.touch}<p class="walkhint">Tap the ground to {roamNow.driving ? 'drive' : 'walk'} there, or use the arrow keys</p>{/if}
 		{/if}
-		{#if canMove && !tour && !playing && myTree?.due}
+		{#if byCan && canMove && !tour && !playing}
+			<!-- the shared can (V2): picked up, carried to my own tree and a litre poured, once a real day -->
+			<section use:foot={FOOT.status} class="water-care panel" aria-label="Plant care">
+				<div class="care-heading">
+					<strong>{player.tree ? (myTree?.due ? 'Time to water your plant' : `Water again in ${waterCountdown}`) : 'Plant your first seed'}</strong>
+					<span class="water-level" aria-label="Canister water">💧 {view.water.litres} / {view.water.capacityLitres} L</span>
+				</div>
+				<div class="care-actions">
+					{#if roamNow.driving}
+						<span>Get out of the pickup to care for your plant.</span>
+					{:else if carryingWater}
+						{#if myTree?.due && treeNear}<button class="primary" disabled={busy || view.water.litres < 1} onclick={waterIt}>{view.water.litres < 1 ? 'Canister empty' : 'Water plant · 1 L'}</button>
+						{:else if myTree?.due}<button disabled={busy} onclick={() => world?.walkTo(myTree.x, myTree.z)}>Go to plant</button>{/if}
+						<button disabled={busy} onclick={() => waterMove('putWater')}>Put down</button>
+					{:else if view.water.carriedBy}
+						<span>{view.players[view.water.carriedBy].name} has the canister.</span>
+					{:else if waterNear}
+						<button disabled={busy} onclick={() => waterMove('takeWater')}>Pick up canister</button>
+					{:else}
+						<button disabled={busy} onclick={goToWater}>Go to canister{roamNow.waterDistance != null ? ` · ${roamNow.waterDistance} m` : ''}</button>
+					{/if}
+				</div>
+			</section>
+		{/if}
+		{#if !byCan && canMove && !tour && !playing && myTree?.due}
 			<!-- the first tree waits for its water: once a game month (a real day), a month of its growth each time -->
 			<button class="mintbar waterbar" class:dock-hidden={!!playing} use:foot={FOOT.waiting} disabled={busy} title="Water {myTree.name}: a game month of growth" onclick={waterIt}><span class="drop">💧</span> Water <b>{myTree.name}</b></button>
 		{/if}
-		{#if admin && canMove && !tour && !playing && player.tree}
+		{#if !byCan && admin && canMove && !tour && !playing && player.tree}
 			<!-- the admin's growth preview: step my tree through its watered months (a test; nothing is saved) -->
 			<div class="growth panel" role="group" aria-label="Growth preview" title="Admin only: how {myTree?.name ?? 'your tree'} grows, a game month of growth for each watering. A preview, nothing is saved.">
 				<span class="what">Growth preview</span>
@@ -658,11 +754,11 @@
 								{/each}
 								{#if here.bal.EURO > 0.005}<li title="System minted: each player's first mint brings €12,500 in (the euro ingest)"><span>€uro<small>the euro ingest</small></span><strong>{f(here.bal.EURO)} €</strong></li>{/if}
 							</ul>
-							{#if isPlayer && here.p.arrears > 0.001}<p class="bad small">{f(here.p.arrears)} tribeMIND home rent owed</p>{/if}
-							<LedgerView {view} who={here.id} show="tx" limit={5} txTitle="Recent transactions" />
+							{#if isPlayer && here.p.arrears > 0.001}<p class="bad small">{f(here.p.arrears)} {homeMind} home rent owed</p>{/if}
+							<LedgerView {view} {engine} who={here.id} show="tx" limit={5} txTitle="Recent transactions" />
 							{#if view.ledger.some((e) => e.from === here.id || e.to === here.id)}<button class="link" onclick={() => (wallet = 'all')}>See every transaction</button>{/if}
 						{:else if wallet === 'all'}
-							<LedgerView {view} who={here.id} show="tx" tall />
+							<LedgerView {view} {engine} who={here.id} show="tx" tall />
 						{:else if wallet === 'invest'}
 							{@const into = here.c ? [here.c.id] : Object.keys(COOPS)}
 							<p class="w-balance small-b">{f(player.wallet.HEARTS)} <span>❤︎ to invest</span></p>
@@ -693,9 +789,10 @@
 								{/each}
 							</ol>
 							<p class="small">{f(view.settings.dividendShare * 100, 0)} % of every rent goes on to the holders of the MIND it is paid in: your dividend.</p>
-							<LedgerView {view} who={here.id} show="flow" />
+							<LedgerView {view} {engine} who={here.id} show="flow" />
 						{:else if wallet === 'swap'}
-							<p class="about">A Balancer weighted pool of the MaiaCity COOP: one basket of all three MINDs, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}. Any MIND swaps for any other; a {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>
+							{#if POOL === 'weighted'}<p class="about">A Balancer weighted pool of the MaiaCity COOP: one basket of all three MINDs, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}. Any MIND swaps for any other; a {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>
+							{:else}<p class="about">A two-asset constant-product pool: maiaMIND × villageMIND = k. Swap between the two MINDs; a {f(view.settings.swapFee * 100, 1)} % fee stays in the pool.</p>{/if}
 							{#if canMove}
 								<div class="swapbox">
 									<label><span>You pay<small>you hold {f(player.wallet[swapToken], 3)}</small></span>
@@ -773,9 +870,10 @@
 										{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(view.pool[t], 3)}</dd>{/each}
 										{#each MINDS.filter((t) => t !== 'MAIA') as t (t)}<dt>1 {TOKEN_LABEL[t]}</dt><dd>{price(view, t) == null ? 'needs both sides' : `${f(price(view, t), 4)} maiaMIND`}</dd>{/each}
 									</dl>
-									<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every HEART invested flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
+									{#if POOL === 'weighted'}<small>A Balancer weighted basket, weights {MINDS.map((t) => `${f(weights(view)[t] * 100, 0)} %`).join(' / ')}, invariant {f(invariant(view), 3)}. {f(view.settings.poolShare * 100, 0)} % of every HEART invested flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>
+									{:else}<small>A two-asset pool: maiaMIND × villageMIND = k ({f(invariant(view), 3)}). {f(view.settings.poolShare * 100, 0)} % of every HEART invested flows in; it is never paid out. Rent payers swap through it when they lack a MIND.</small>{/if}
 								{:else if a.id === 'tent'}
-									<small>{f(view.settings.tentRent)} tribeMIND a week, inside the home rent: each player pays {f(view.settings.homeRent)} tribeMIND a week and uses everything.</small>
+									<small>{f(view.settings.tentRent)} {homeMind} a week, inside the home rent: each player pays {f(view.settings.homeRent)} {homeMind} a week and uses everything.</small>
 								{:else if rentOf(a.id) && c.id !== rentOf(a.id).payer}
 									<small>Rented to the {view.coops[rentOf(a.id).payer].name} for {f(view.settings[rentOf(a.id).setting] ?? 0)} {TOKEN_LABEL[c.mind]} a week, paid each pay day.</small>
 								{/if}
@@ -786,7 +884,7 @@
 					<dl>
 						{#each MINDS as t (t)}<dt>{TOKEN_LABEL[t]}</dt><dd>{f(c.treasury[t])}</dd>{/each}
 						{#if c.treasury.EURO > 0}<dt title="System minted: each player's first mint brings €12,500 in (the euro ingest)">€uro</dt><dd>{f(c.treasury.EURO)}</dd>{/if}
-						{#if c.id === 'tribe'}<dt>Gets home rent, a week</dt><dd>{f(view.settings.homeRent)} × 2 tribeMIND</dd>{/if}
+						{#if c.id === HOME}<dt>Gets home rent, a week</dt><dd>{f(view.settings.homeRent)} × {rents(view).filter((r) => r.what === 'Home rent').length} {homeMind}</dd>{/if}
 						{#each RENTED.filter((r) => ownerOf(r.asset)?.[0] === c.id && r.payer !== c.id) as r (r.asset)}<dt>Gets {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[c.mind]}</dd>{/each}
 						{#each RENTED.filter((r) => r.payer === c.id && ownerOf(r.asset) && ownerOf(r.asset)[0] !== c.id) as r (r.asset)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} {TOKEN_LABEL[ownerOf(r.asset)[1].mind]}</dd>{/each}
 						{#each SUBLET.filter((r) => r.payer === c.id) as r (r.key)}<dt>Pays {r.label} rent, a week</dt><dd>{f(view.settings[r.setting] ?? 0)} × 2 {TOKEN_LABEL[view.coops[rentOf(r.asset)?.payer]?.mind ?? 'VILLAGE']}</dd>{/each}
@@ -797,6 +895,7 @@
 						{#if canMove}<button class="primary" onclick={() => openWallet('invest', panel)}>Invest</button>{/if}
 						<button onclick={() => openWallet('home', panel)}>Its wallet</button>
 						{#if c.id === 'maia'}<button onclick={() => openWallet('swap', '')}>Swap in the pool</button><button onclick={() => openWallet('home', 'pool')}>The pool’s wallet</button>{/if}
+						{#if ed.proposals && canMove}<a class="button" href={aipsLink({ from: panel, to: `player:${seat}`, token: c.mind, amount: 1 })}>Propose a payout</a>{/if}
 					</div>
 				{:else if isViewPanel(panel)}
 					{@const card = screens.find((v) => panel === `view:${v.id}`)}
@@ -815,16 +914,17 @@
 					<dl class="settings">
 						{#each Object.keys(SETTING_LIMITS) as k (k)}<dt>{SETTING_NAMES[k]}</dt><dd>{view.settings[k]}</dd>{/each}
 					</dl>
-					<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts continuously at {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a proposal with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}, made by an agent and signed in the Proposals app.</p>
+					<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts continuously at {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a proposal with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}, {ed.proposals ? 'made and signed in the Proposals app' : 'made by an agent and signed in the Proposals app'}.</p>
+					{#if ed.proposals && canMove}<div class="buttons"><a class="button primary" href={aipsLink({})}>Propose a change</a></div>{/if}
 				{/if}
 			</ViewSlot>
 			{#if error}<p class="error">{error}</p>{/if}
 		</aside>
 		{:else if error}
-			<p class="error toast" use:foot={FOOT.toast}>{error}</p>
+			<p class="error toast" use:foot={FOOT.toast}>{error}{#if playing === 'retry'} <button onclick={() => ((playing = ''), (error = ''))}>Retry</button>{/if}</p>
 		{/if}
 	{:else}
-		<div class="loading" role="status"><p class="eyebrow">MaiaCity V1</p><strong>One hex, one tent, two players</strong><span>{error || 'Opening the game…'}</span></div>
+		<div class="loading" role="status"><p class="eyebrow">MaiaCity {ed.label}</p><strong>{ed.tagline}</strong><span>{error || 'Opening the game…'}</span></div>
 	{/if}
 </div>
 
@@ -1400,13 +1500,19 @@
 		flex-direction: column;
 	}
 	.buttons button,
+	.buttons a.button,
 	.row button {
 		padding: 0.5rem 0.8rem;
 		border: 1px solid rgb(31 42 35 / 0.15);
 		border-radius: 999px;
 		background: #fff;
 	}
-	.buttons button.primary {
+	.buttons a.button {
+		color: inherit;
+		text-decoration: none;
+	}
+	.buttons button.primary,
+	.buttons a.button.primary {
 		background: #24452f;
 		border-color: #24452f;
 		color: #f4f1e8;
@@ -1945,6 +2051,98 @@
 	@keyframes aside {
 		from {
 			transform: translateX(100%);
+		}
+	}
+
+	/* the shared can's care (V2) */
+	.water-care {
+		width: min(25rem, 100%);
+		box-sizing: border-box;
+		padding: 0.8rem 1rem;
+		border: 1px solid #d9d1bf;
+		border-radius: 1.5rem;
+		background: var(--overlay-paper, rgb(250 248 242 / 0.75));
+		color: #263c2e;
+		box-shadow: 0 5px 24px #18271e20;
+		backdrop-filter: blur(12px);
+		font-size: 0.8rem;
+		text-align: center;
+	}
+	.care-heading {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.3rem;
+	}
+	.care-heading strong {
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+	.water-level {
+		font-size: 0.75rem;
+		color: #526557;
+	}
+	.care-actions {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: 0.45rem;
+		margin-top: 0.6rem;
+	}
+	.care-actions button {
+		min-height: 44px;
+		padding: 0.5rem 1rem;
+		border: 1px solid #b9c9b5;
+		border-radius: 999px;
+		background: #e8eddf;
+		color: #24452f;
+		font: inherit;
+		font-weight: 600;
+		text-align: center;
+		cursor: pointer;
+	}
+	.care-actions button.primary {
+		background: #24452f;
+		color: #faf8f0;
+		border-color: #24452f;
+	}
+	.care-actions button:hover:not(:disabled) {
+		background: #d6e2ca;
+		color: #24452f;
+	}
+	.care-actions button:focus-visible {
+		outline: 3px solid #d99b32;
+		outline-offset: 3px;
+	}
+	.care-actions button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.care-actions span {
+		font-size: 0.75rem;
+	}
+	/* with the touch stick (V2), on a phone: the numbers off the top, the walk bar and the stick clear of the nav pill */
+	@media (max-width: 720px), (max-height: 500px) {
+		.touch .walkbar {
+			left: auto;
+			right: 0.5rem;
+			bottom: calc(var(--nav-room, 4rem) + 4rem);
+		}
+		.touch .tag small {
+			display: none;
+		}
+		.touch .tag.tree small:first-of-type {
+			display: block;
+		}
+		.touch :global(.stick) {
+			bottom: calc(var(--nav-room, 4rem) + 4.2rem);
+		}
+	}
+	@media (max-height: 500px) {
+		.touch :global(.stick) {
+			bottom: var(--nav-room, 4rem);
+			--stick-size: 5rem;
 		}
 	}
 </style>

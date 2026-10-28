@@ -9,9 +9,10 @@ https://maia.city/app/aips/?aip=f6564f7154e7636c8a9152a180af2ab532169e612abe31d2
 
 An owner must accept that AIP to apply the timeline revision. Deploy the matching V2 world and sync the `actors/elder-woman@1` and `things/water-canister@1` recipes before production playback. Narration clips contain editable text, not recorded voice audio. Studio loads live 3D worlds in every tab, prepares the active world's shots together, and waits at world transitions. Game tree markers remain visible during free play, including at screen edges.
 
-To remeasure intro timing locally:
+V2 now runs V1's code (Goal 7, 2026-10-28): its engine is V1's rules (game/maiacity-v1/core.js) with V2's config
+(game/maiacity-v2/engine.js), and its game screen and world are V1's with V2's edition (src/lib/maiacity-v2/game.js,
+src/lib/maiacity-v2/world.js).
 
-```sh
-VITE_RECIPE_FEED=dev bun run dev --port 5197
-CHROME='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' bun scripts/maiacity-v2/bake-intro.mjs --base http://localhost:5197 A B C
-```
+To remeasure intro timing locally, open `/games/maiacity-v2/?film&area=A|B|C&remeasure` on a dev server
+(`VITE_RECIPE_FEED=dev bun run dev --port 5197`), wait for `window.__world.intro`, and write
+`window.__world.intro.schedule()` to `src/lib/maiacity-v2/intro/<seat>.json`.

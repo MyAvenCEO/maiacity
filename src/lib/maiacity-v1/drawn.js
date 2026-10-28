@@ -218,7 +218,7 @@ export function createDrawn({ renderer, camera, scene }) {
 					if (!gone) anchor.add(got.obj);
 					return got;
 				});
-			const done = p.catch((e) => console.warn(`maiacity-v1: ${ref} did not load: ${e?.message ?? e}`));
+			const done = p.catch((e) => console.warn(`maiacity: ${ref} did not load: ${e?.message ?? e}`));
 			loads.push(done);
 			asks.push({ anchor, done });
 			return p;
@@ -288,7 +288,7 @@ export function createDrawn({ renderer, camera, scene }) {
 				return cast;
 			});
 			// (one that did not come stands as nothing)
-			loads.push(cast.loaded.catch((e) => console.warn(`maiacity-v1: ${ref} is not moved: ${e?.message ?? e}`)));
+			loads.push(cast.loaded.catch((e) => console.warn(`maiacity: ${ref} is not moved: ${e?.message ?? e}`)));
 			return cast;
 		},
 		/** where each copy stands now: before every frame */

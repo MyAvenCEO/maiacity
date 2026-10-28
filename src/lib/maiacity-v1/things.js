@@ -134,8 +134,10 @@ export function tentWork(k) {
 	return at(x, z);
 }
 
-/** a tree's plant stake, its flag printed with the tree's name and its plant (things/plant-stake@2) */
-export const stakeRef = (name, seed) => `${THINGS.stake}?${new URLSearchParams({ name, seed })}`;
+/** a tree's plant stake, its flag printed with the tree's name and its plant (things/plant-stake@2), from a game's own
+ *  things (V2 names its refs as they stand, ../maiacity-v2/things.js) */
+export const stakeOf = (things) => (name, seed) => `${things.stake}?${new URLSearchParams({ name, seed })}`;
+export const stakeRef = stakeOf(THINGS);
 /** the stake's flag (the cloth on its wire, shown once a seed is picked): the path of children down to it */
 export const STAKE_FLAG = { path: [14] };
 
@@ -147,9 +149,11 @@ export const BOTTLE_MOUTH = 0.268;
 /** the people: the rigged stand-in (actors/stand-in@11), built with how tall they are and their look (./van.js PEOPLE,
  *  the players in their seat's colours), its moves played from the tables the box wrote down ($lib/assets/clips.js) */
 export const STAND_IN = asset('stand-in');
-/** a person's ref: their height (m) and what of their look is not the stand-in's, by name, in a steady order */
-export const standInRef = (height, look = {}) =>
-	`${STAND_IN}?${new URLSearchParams(Object.entries({ height, ...look }).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => [k, String(v)]))}`;
+/** a person's ref: their height (m) and what of their look is not the stand-in's, by name, in a steady order (from a
+ *  game's own stand-in) */
+export const standInOf = (standIn) => (height, look = {}) =>
+	`${standIn}?${new URLSearchParams(Object.entries({ height, ...look }).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => [k, String(v)]))}`;
+export const standInRef = standInOf(STAND_IN);
 /** the stand-in's walk comes round every 1.05 s of its clip: played within one round of it, so its tables (written over
  *  32 s, their end blended into their start) are never read across that seam */
 export const WALK_CYCLE = 1.05;

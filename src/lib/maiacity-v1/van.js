@@ -171,9 +171,10 @@ export function seeThrough(body) {
 }
 
 /** all that is in the van, and its people (stand-ins built in the box, each of their height and look: ./things.js
- *  standInRef; `drawn` puts them in, `pick` what a tap on them finds): the body itself (seeThrough) goes in beside them
- *  @param {ReturnType<typeof import('./drawn.js').createDrawn>} drawn @param {string} [pick] */
-export function packedVan(drawn, pick) {
+ *  standInRef, or the game's own `standIn`; `drawn` puts them in, `pick` what a tap on them finds): the body itself
+ *  (seeThrough) goes in beside them
+ *  @param {ReturnType<typeof import('./drawn.js').createDrawn>} drawn @param {string} [pick] @param {typeof standInRef} [standIn] */
+export function packedVan(drawn, pick, standIn = standInRef) {
 	const van = new THREE.Group();
 	// every fixed piece goes into one mesh a material
 	const bins = new Map();
@@ -354,7 +355,7 @@ export function packedVan(drawn, pick) {
 		const o = new THREE.Group();
 		o.position.set(p.x, FLOOR, ROW[p.row]);
 		// in the van's shade, no shadow cast or taken: a sun's shadow map is far too coarse for a face
-		const cast = drawn.actor(standInRef(p.h, p.look), o, { pick, shadow: false, receive: false }, (c) => {
+		const cast = drawn.actor(standIn(p.h, p.look), o, { pick, shadow: false, receive: false }, (c) => {
 			o.userData.base = seated(c, p.sits, side);
 			c.rig.pose(o.userData.base);
 		});

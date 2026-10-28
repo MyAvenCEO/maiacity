@@ -1,14 +1,16 @@
 <!--
-	PoolBasket: the AMM pool basket the MaiaCity COOP owns, MIND by MIND: what lies in it, its Balancer weight, what that
-	is worth in HEARTS, the display currency (engine heartsValue), and its share of the basket's value. With `treasury`, it also adds
-	the treasury and the basket together, so the COOP's whole holding reads in one place.
+	PoolBasket: the AMM pool basket the MaiaCity COOP owns, MIND by MIND: what lies in it, its Balancer weight (in a
+	weighted pool), what that is worth in HEARTS, the display currency (engine heartsValue), and its share of the basket's
+	value. With `treasury`, it also adds the treasury and the basket together, so the COOP's whole holding reads in one
+	place. `engine`: the game's rules (V1's unless another game's are given, as V2 gives its own).
 -->
 <script>
 	// @ts-nocheck — plain JS
-	import { MINDS, TOKEN_COLOUR, TOKEN_LABEL, heartsValue, weights } from '../../../game/maiacity-v1/engine.js';
+	import * as V1 from '../../../game/maiacity-v1/engine.js';
 
-	let { view, treasury = null } = $props();
+	let { view, treasury = null, engine = V1 } = $props();
 
+	const { MINDS, POOL, TOKEN_COLOUR, TOKEN_LABEL, heartsValue, weights } = $derived(engine);
 	const w = $derived(weights(view));
 	const hv = $derived(heartsValue(view));
 	const worth = $derived(Object.fromEntries(MINDS.map((t) => [t, view.pool[t] * hv[t]])));
@@ -20,11 +22,11 @@
 <ul class="basket">
 	{#each MINDS as t (t)}
 		<li>
-			<span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}<small>weight {pct(w[t])} · {pct(total ? worth[t] / total : 0)} of its value</small></span>
+			<span><i style="background:{TOKEN_COLOUR[t]}"></i>{TOKEN_LABEL[t]}<small>{#if POOL === 'weighted'}weight {pct(w[t])} · {/if}{pct(total ? worth[t] / total : 0)} of its value</small></span>
 			<strong>{f(worth[t])} ❤︎<small>{f(view.pool[t])} {TOKEN_LABEL[t]}</small></strong>
 		</li>
 	{/each}
-	<li class="sum"><span>Basket value</span><strong>{f(total)} <small class="inline">❤︎</small></strong></li>
+	<li class="sum"><span>{POOL === 'weighted' ? 'Basket value' : 'Pool value'}</span><strong>{f(total)} <small class="inline">❤︎</small></strong></li>
 </ul>
 {#if treasury}
 	<p class="label">Treasury and basket together</p>

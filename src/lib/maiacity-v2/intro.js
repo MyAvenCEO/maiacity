@@ -11,7 +11,7 @@
  * where the world stands for it (./tour.js `worldStage`), and the segments its moment plays as (the moment; the hold
  * while the game waits on the player's move; what follows the move). How long each segment runs, where each shot cuts
  * and when each line is told are measured by playing the world itself (./film.js `measure`) and kept per seat in
- * ./intro/A.json and ./intro/B.json (`bun run scripts/maiacity-v2/bake-intro.mjs`), each step under a key of what it
+ * ./intro/A.json and ./intro/B.json (the film page with &remeasure times them afresh; its `window.__world.intro.schedule()` is what goes in the file), each step under a key of what it
  * tells and shows, so a step whose words or moment changed is measured again rather than played to old times.
  *
  * Until a shot is tuned in the studio it is the world's own camera (camera kind `world`): the moves coded in ./world.js,
