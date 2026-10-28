@@ -41,14 +41,14 @@ const BUDGET: usize = 64 << 20;
 
 /// What a counting shelf read: page gets and their bytes, slot gets, and listings.
 #[derive(Default)]
-struct Counts {
+pub(crate) struct Counts {
     pages: AtomicU64,
     page_bytes: AtomicU64,
     slots: AtomicU64,
 }
 
 impl Counts {
-    fn take(&self) -> (u64, u64, u64) {
+    pub(crate) fn take(&self) -> (u64, u64, u64) {
         (
             self.pages.swap(0, Ordering::SeqCst),
             self.page_bytes.swap(0, Ordering::SeqCst),
@@ -58,7 +58,7 @@ impl Counts {
 }
 
 /// A shelf in memory, or in a folder (a file an object), that counts what is read off it.
-fn shelf(dir: Option<std::path::PathBuf>, counts: Arc<Counts>) -> Shelf {
+pub(crate) fn shelf(dir: Option<std::path::PathBuf>, counts: Arc<Counts>) -> Shelf {
     let (shelf, mut calls) = Shelf::new();
     let mut held: HashMap<String, Bytes> = HashMap::new();
     if let Some(d) = &dir {
@@ -156,9 +156,9 @@ impl Log for FixtureLog {
 }
 
 /// A small seeded generator, as `bench_gates.rs`'s.
-struct Lcg(u64);
+pub(crate) struct Lcg(pub(crate) u64);
 impl Lcg {
-    fn next(&mut self) -> u64 {
+    pub(crate) fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
         self.0 >> 11
     }
@@ -239,13 +239,13 @@ async fn tree(ix: &ShelfIndex) -> io::Result<(u8, u64, u64)> {
     Ok((top.level + 1, pages, bytes))
 }
 
-fn pct(xs: &[f64], p: f64) -> f64 {
+pub(crate) fn pct(xs: &[f64], p: f64) -> f64 {
     let mut s = xs.to_vec();
     s.sort_by(f64::total_cmp);
     s[((s.len() as f64 * p).ceil() as usize).saturating_sub(1).min(s.len() - 1)]
 }
 
-fn round(x: f64, places: i32) -> f64 {
+pub(crate) fn round(x: f64, places: i32) -> f64 {
     let f = 10f64.powi(places);
     (x * f).round() / f
 }
@@ -324,7 +324,7 @@ async fn index(n: u64) -> Value {
     })
 }
 
-fn env_or(name: &str, default: &str) -> String {
+pub(crate) fn env_or(name: &str, default: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.to_string())
 }
 

@@ -500,4 +500,4 @@ pub(crate) mod tests;
 
 #[cfg(test)]
 #[path = "shelf_index_bench.rs"]
-mod bench;
+pub(crate) mod bench;

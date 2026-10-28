@@ -24,7 +24,11 @@ one of each entry standing (`rows`, the index of `ShelfIndex.lean` with one row 
   every one before them, so the window after them is the window of the old window and the new entries that pass
   (`QW1_append`): it reads the old window and the new edits, never the older entries. A change within the part of the
   order the window spans takes the window again from that part and as many older entries as it no longer fills
-  (`QW2_refill`); that refill reads at most `w` entries from the index, never the log (`lastN_length`).
+  (`QW2_refill`); that refill reads at most `w` entries from the index, never the log (`lastN_length`). An older page
+  is the window of the entries created before a cursor, the oldest entry the page before it showed (`page`): the
+  pages tile the window of their sizes together (`QW3_pages`), and entries created after the cursor never move an
+  older page (`QW3_older_page`), as they would move a page by its offset; so each page reads its own `w` entries
+  from the index and the tail, as the first does.
 - **Follow.** A query follows the links of the rows it shows, at most `k` hops (`reach`). What it reaches reads only
   the links of the entries it reaches, so a change that names none of them leaves it as it was (`QF1_untouched`), and
   where no row holds more than `f` links it reaches at most `r · (f + 1) ^ k` entries from `r` (`QF2_bound`).
@@ -236,6 +240,25 @@ theorem QW2_refill (w : Nat) (p p' : Nat → Bool) (older recent : List Nat) (sa
 theorem window_full_stays (w : Nat) (p : Nat → Bool) (order added : List Nat) (hnone : added.filter p = []) :
     window w p (order ++ added) = window w p order := by
   rw [QW1_append, hnone, List.append_nil, window, lastN_lastN, Nat.min_self]
+
+/-- The page of `w` before cursor `k`: the window of the entries created before the `k`th (`k` the order's length for
+    the newest page). -/
+def page (w : Nat) (p : Nat → Bool) (order : List Nat) (k : Nat) : List Nat := window w p (order.take k)
+
+/-- The newest page is the window. -/
+theorem page_newest (w : Nat) (p : Nat → Bool) (order : List Nat) : page w p order order.length = window w p order := by
+  simp [page]
+
+/-- The `m` before the newest `n` of what passes, then those `n`, are its newest `n + m`: the page after a page, by
+    the cursor its oldest row gives, takes on where it ended, missing and repeating none. -/
+theorem QW3_pages (m n : Nat) (l : List Nat) : lastN m (l.take (l.length - n)) ++ lastN n l = lastN (n + m) l := by
+  simp only [lastN]
+  rw [← List.reverse_append, List.take_add, List.drop_reverse]
+
+/-- Entries created after cursor `k` leave the page before it as it was. -/
+theorem QW3_older_page (w : Nat) (p : Nat → Bool) (order added : List Nat) (k : Nat) (h : k ≤ order.length) :
+    page w p (order ++ added) k = page w p order k := by
+  simp [page, List.take_append_of_le_length h]
 
 /-! ## Follow -/
 
