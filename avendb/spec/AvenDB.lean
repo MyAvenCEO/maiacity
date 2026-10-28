@@ -24,6 +24,7 @@ import AvenDB.KeyTree
 import AvenDB.HandedView
 import AvenDB.ViewRules
 import AvenDB.ShowRules
+import AvenDB.StoredReadings
 import AvenDB.Examples
 import AvenDB.Checkpoint
 import AvenDB.Batches
@@ -124,4 +125,5 @@ import AvenDB.KeyDerivation
 import AvenDB.CapGroupsOnce
 import AvenDB.StepCostVectors
 import AvenDB.ShowRulesVectors
+import AvenDB.StoredReadingsVectors
 import AvenDB.StandingReplay

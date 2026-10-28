@@ -91,13 +91,31 @@ pub use entry_offer::EntryBaseOffer;
 /// which no engine reads any more (P6, `EntryState.lean`: a device keeps its history and its stored view, nothing else).
 fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
     const ADJUNCT: &[u8] = b"avenDB own materialization 1\n";
+    let bytes = view_parts(bytes)?.0;
     let Some(rest) = bytes.strip_prefix(ADJUNCT) else { return Some(bytes) };
     let (n, rest) = rest.split_first_chunk::<4>()?;
     rest.get(..u32::from_be_bytes(*n) as usize)
 }
 
+/// What a stored view holds beside its replay, behind a header: what its device read (`stored_readings`).
+const VIEW_READ: &[u8] = b"avenDB view and readings 1\n";
+
+/// A stored view's replay, and what its device read where it holds that (`VIEW_READ`).
+fn view_parts(bytes: &[u8]) -> Option<(&[u8], Option<&[u8]>)> {
+    let Some(rest) = bytes.strip_prefix(VIEW_READ) else { return Some((bytes, None)) };
+    let (n, rest) = rest.split_first_chunk::<4>()?;
+    let (replay, read) = rest.split_at_checked(u32::from_be_bytes(*n) as usize)?;
+    Some((replay, Some(read)))
+}
+
 #[path = "lab/blind_index.rs"]
 mod blind_index;
+#[path = "lab/bodies.rs"]
+mod bodies;
+#[path = "lab/stored_readings.rs"]
+mod stored_readings;
+pub(crate) use bodies::BodyOf;
+use bodies::{Bodies, Opener, StoreBodies};
 #[path = "lab/held.rs"]
 pub(crate) mod held;
 mod shown_map;
@@ -618,6 +636,10 @@ const VIEW_RULES: &str = concat!("avenDB view rules ", env!("AVENDB_VIEW_RULES")
 /// release left them shut, and a phone's first unlock after it judged every entry anew (2026-10-28).
 const SHOW_RULES: &str = concat!("avenDB show rules ", env!("AVENDB_SHOW_RULES"));
 
+/// What a device seals what it read to, in its stored view (`StoredReadings.lean`, `build.rs`): the number of the read
+/// rules, so that what a release reads otherwise of a body is read anew (RR2).
+const READ_RULES: &str = concat!("avenDB read rules ", env!("AVENDB_READ_RULES"));
+
 /// The engine's hash as a fixed-size binding, for what a device seals to the engine that made it.
 pub fn engine() -> [u8; 32] {
     crate::hash::content(ENGINE.as_bytes())
@@ -765,6 +787,8 @@ pub struct WarmCapture {
     rng: SeededRng,
     opened: Option<Vec<([u8; 32], Secret)>>,
     replay: Option<crate::policy::ViewCapture>,
+    /// What it read of the edits its view is of, sealed beside it (`stored_readings::seal`), where it read them all.
+    read: Option<Vec<u8>>,
     /// The showings to keep, each its entry's, print and bytes (`Shown::record`), to seal one by one
     /// (`shown_map::pack`).
     shown: Option<Vec<(EntryId, [u8; 32], Zeroizing<Vec<u8>>)>>,
@@ -784,7 +808,14 @@ impl WarmCapture {
             self.receipt.keys = Some(self.key.lock("keys", &bytes, b"stored keys", &mut self.rng));
         }
         if let Some(replay) = self.replay.take() {
-            let bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
+            let mut bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
+            if let Some(read) = self.read.take() {
+                let mut both = Zeroizing::new(VIEW_READ.to_vec());
+                both.extend((bytes.len() as u32).to_be_bytes());
+                both.extend(bytes.iter());
+                both.extend(read);
+                bytes = both;
+            }
             self.receipt.view = Some(self.key.lock("view", &bytes, VIEW_RULES.as_bytes(), &mut self.rng));
         }
         if let (Some(shown), Some((_, whole))) = (self.shown.take(), &self.receipt.shown_of) {
@@ -967,8 +998,9 @@ struct Store {
     /// The boxes it tried with the key they are to and that didn't open to their key, each by its key's id, whom it
     /// is to and its first bytes: tried once, not again at every refresh.
     unopened: HashSet<(KeyId, Recipient, [u8; 32])>,
-    /// The bodies of the writes it opened, and the writes whose bodies never open: garbled under the key they name.
-    bodies: HashMap<EditId, Body>,
+    /// The bodies of the writes it opened, each opened as it is asked for where its stored view says it opened it
+    /// (`Bodies`), and the writes whose bodies never open: garbled under the key they name.
+    bodies: Bodies,
     spoilt: HashSet<EditId>,
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
@@ -1051,6 +1083,9 @@ struct Store {
     view_lineage: Option<crate::policy::LogRevision>,
     wholes: u64,
     view_wholes: u64,
+    /// The view its shelf keeps holds not what it read (`stored_readings`): one of an older engine, or none, so it gives
+    /// one again once it read every body it counts.
+    view_read_due: bool,
     /// Its first sync with the boxes held back, if it asks for one (`Lab::set_lazy_boxes`).
     lazy: LazyBoxes,
     /// How many times it was taken mutably (`Stores::get_mut`): a query view stamped with the revision now saw every
@@ -1088,7 +1123,7 @@ impl Default for Store {
             slices: HashMap::new(),
             unreadable: HashSet::new(),
             unopened: HashSet::new(),
-            bodies: HashMap::new(),
+            bodies: Bodies::default(),
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: ShownMap::default(),
@@ -1126,6 +1161,7 @@ impl Default for Store {
             view_lineage: None,
             wholes: 0,
             view_wholes: 0,
+            view_read_due: false,
             lazy: LazyBoxes::default(),
             revision: 0,
             query_views: std::sync::Mutex::new(QueryViews::default()),
@@ -1144,10 +1180,26 @@ impl Store {
     }
 
     fn body_metadata(&self, id: EditId) -> Option<&Body> {
-        self.bodies.get(&id)
+        self.bodies.get(&id, &self.opener())
     }
     fn metadata_bodies(&self) -> impl Iterator<Item = (&EditId, &Body)> {
-        self.bodies.iter()
+        self.bodies.iter(self.opener())
+    }
+    /// The bodies of the writes it opened that name files in the clear (`Edit::files`), each opened as it is asked for:
+    /// no other body is opened to find a file.
+    fn bodies_bringing_files(&self) -> impl Iterator<Item = (&EditId, &Body)> {
+        let with = self.opener();
+        let brings = |id: &EditId| self.log.entry_write(*id).is_some_and(|e| !e.files().is_empty());
+        self.bodies.ids().filter(move |id| brings(id)).filter_map(move |id| Some((id, self.bodies.get(id, &with)?)))
+    }
+
+    /// What its bodies open with, each as it is asked for (`Bodies::get`).
+    fn opener(&self) -> Opener<'_> {
+        Opener { signed: &self.signed, keys: &self.keys, st: &self.replay.state }
+    }
+    /// Its bodies as judging reads them (`BodyOf`).
+    fn body_of(&self) -> StoreBodies<'_> {
+        StoreBodies { bodies: &self.bodies, with: self.opener() }
     }
     fn view(&self) -> &State {
         self.bootstrap_state.as_ref().unwrap_or(&self.replay.state)
@@ -1187,7 +1239,8 @@ impl Store {
         let n = self.replayed;
         let since = n.abs_diff(self.view_given);
         let stale = self.wholes != self.view_wholes || self.view_lineage.as_ref() != Some(&self.log.lineage());
-        n > 0 && n <= self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS)
+        let read_due = self.view_read_due && n == self.log.edits().len() && self.read_new.left.is_empty();
+        n > 0 && n <= self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS || read_due)
     }
 
     /// Its shelf lacks its keys (`Lab::warming`): it opened a key since its shelf took them, or its shelf names the
@@ -4858,12 +4911,31 @@ impl Lab {
 
     /// What device `d`'s work cost since it started (`perf`), and how much it holds: its edits, the bodies it opened,
     /// the entries it shows and the blobs it keeps.
+    /// Stored view `sealed` of device `d` as an engine before `stored_readings` sealed it: its replay alone.
+    #[cfg(feature = "test-fixtures")]
+    pub fn view_without_readings(&mut self, d: SignerId, sealed: &[u8]) -> Option<Vec<u8>> {
+        let key = self.shelf_key(d)?;
+        let view = key.unlock("view", sealed, VIEW_RULES.as_bytes())?;
+        let replay = Zeroizing::new(view_parts(&view)?.0.to_vec());
+        Some(key.lock("view", &replay, VIEW_RULES.as_bytes(), &mut self.rng))
+    }
+
+    /// The hash of what device `d` read as its stored view seals it (`stored_readings::seal`), where it read every body
+    /// its replay counts: what `tests/read_rules.rs` pins under the read rules' number.
+    #[cfg(feature = "test-fixtures")]
+    pub fn read_print(&self, d: SignerId) -> Option<String> {
+        let store = self.held(d);
+        Some(blake3::hash(&stored_readings::seal(store, store.replayed)?).to_hex().to_string())
+    }
+
     pub fn perf(&self, d: SignerId) -> Value {
         let store = self.held(d);
         let mut out = store.perf.to_json();
         out["held"] = serde_json::json!({
             "edits": store.log.edits().len(),
             "bodies": store.bodies.len(),
+            // of those its stored view said it opened, how many it opened as they were asked for (`Bodies::get`)
+            "bodies_opened_late": store.bodies.opened_late(),
             "shown": store.shown.len(),
             "blobs": store.blobs.len(),
             "blob_bytes": store.blobs.bytes(),
@@ -4969,7 +5041,7 @@ impl Lab {
         for secret in store.keys.secrets() {
             out.extend(secret.bytes());
         }
-        for body in store.bodies.values() {
+        for body in store.bodies.held() {
             out.extend(body.to_wire());
         }
         for slice in store.slices.values() {
@@ -5995,12 +6067,12 @@ impl Lab {
                 let f = body.files.iter().find(|f| f.root == *root && named.contains(&f.root) && f.fits())?;
                 self.sees(d, entry).then(|| (*id, f.clone()))
             };
-            return store.metadata_bodies().filter_map(brings).min_by_key(|(id, _)| *id).map(|(_, f)| f);
+            return store.bodies_bringing_files().filter_map(brings).min_by_key(|(id, _)| *id).map(|(_, f)| f);
         }
         // the first write by id that names the file and holds its key, each file once, rather than every body sorted
         // again at every file asked for (an entry list asks for thousands)
         let at = store.files_at.get_or_init(|| {
-            let mut writes: Vec<(&EditId, &Body)> = store.metadata_bodies().collect();
+            let mut writes: Vec<(&EditId, &Body)> = store.bodies_bringing_files().collect();
             writes.sort_by_key(|(id, _)| **id);
             let mut at = HashMap::new();
             for (id, body) in writes {
@@ -6448,12 +6520,15 @@ impl Lab {
                 let view = key.unlock("view", b, VIEW_RULES.as_bytes())?;
                 opened += 1;
                 let older = view.starts_with(b"avenDB own materialization 1\n");
-                Replay::from_view(view_replay(&view)?, edits, ids).map(|(replay, held)| (replay, held, older))
+                let (replay, held) = Replay::from_view(view_replay(&view)?, edits, ids)?;
+                // and what it read of those edits, where it holds that
+                let read = view_parts(&view)?.1.and_then(|read| stored_readings::open(read, held));
+                Some((replay, held, older, read))
             });
             let mut restored = Restored {
                 edits: edits.len(),
                 view: match (&found, warm.views.len(), opened) {
-                    (Some((_, held, _)), ..) => ViewOpened::Of { held: *held },
+                    (Some((_, held, ..)), ..) => ViewOpened::Of { held: *held },
                     (None, 0, _) => ViewOpened::NoneKept,
                     (None, n, 0) => ViewOpened::NoneOpens(n),
                     (None, n, _) => ViewOpened::NoneOfThese(n),
@@ -6461,10 +6536,21 @@ impl Lab {
                 kept: (0, 0),
                 showings: 0,
             };
+            store.view_read_due = true;
             match found {
-                Some((replay, held, older)) => {
+                Some((replay, held, older, read)) => {
                     store.replay = replay;
                     store.replayed = held;
+                    // it reads on from what it read of them, opening each body it opened then only as it is asked for
+                    if let Some(mut read) = read {
+                        store.readings = std::mem::take(&mut read.readings);
+                        store.bodies.close(read.opened.iter().copied());
+                        store.spoilt.extend(read.spoilt.iter().copied());
+                        let opened = store.bodies.len();
+                        store.read_new.sealed(&read, opened, &store.readings, &store.log, held, store.wholes);
+                        store.view_read_due = false;
+                        store.perf.count("read: from its stored view", 1);
+                    }
                     // a view an older engine kept with its adjunct is kept again without it
                     store.view_given = if older { 0 } else { held };
                     store.view_lineage = Some(store.log.lineage());
@@ -6604,6 +6690,7 @@ impl Lab {
             .chain(store.opened_since.iter().map(|(b, k)| (b, k)))
             .map(|(b, k)| (*b, k.clone())).collect());
         let replay = view_due.then(|| store.replay.capture_view());
+        let read = if view_due { stored_readings::seal(store, store.replayed) } else { None };
         let receipt = Warming {
             keys: None, view: None,
             revision: store.warm_revision.clone(), lineage: store.log.lineage(), keys_of,
@@ -6615,7 +6702,7 @@ impl Lab {
         let mut seed = Zeroizing::new([0u8; 32]);
         self.rng.fill_bytes(&mut *seed);
         let rng = SeededRng::new("warm snapshot encryption", &*seed);
-        Some(WarmCapture { key, rng, opened, replay, shown, receipt })
+        Some(WarmCapture { key, rng, opened, replay, read, shown, receipt })
     }
 
     /// Whether device `d`'s shelf lacks something of `Warm` (`warming`), as cheaply as it tells: the node's saver is
@@ -6645,6 +6732,7 @@ impl Lab {
             store.opened_before.extend(given);
         }
         if warming.view_of > 0 {
+            store.view_read_due = false;
             store.view_given = warming.view_of;
             store.view_lineage = Some(warming.lineage);
             store.view_wholes = warming.view_wholes;
@@ -7227,7 +7315,8 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
             for (c, slice) in store.read_new.slices.iter().filter_map(|c| Some((c, store.slices.get(c)?))) {
                 r.selectors.insert(*c, slice.select.clone());
             }
-            for (id, b) in store.read_new.bodies.iter().filter_map(|id| Some((id, store.bodies.get(id)?))) {
+            let with = Opener { signed: &store.signed, keys: &store.keys, st };
+            for (id, b) in store.read_new.bodies.iter().filter_map(|id| Some((id, store.bodies.get(id, &with)?))) {
                 read_body(&mut r, *id, b);
             }
             r
@@ -7807,7 +7896,8 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
         opened.entry(e).or_default().extend(ids);
     }
     let waiting: HashSet<EntryId> = pending.rest.iter().copied().collect();
-    let (st, r, bodies) = (&store.replay.state, &store.readings, &store.bodies);
+    let (st, r) = (&store.replay.state, &store.readings);
+    let bodies = &StoreBodies { bodies: &store.bodies, with: Opener { signed: &store.signed, keys: &store.keys, st } };
     let mut old = std::mem::take(&mut store.shown);
     // a showing whose bytes didn't open is none: its entry is judged anew, as after a removal
     let reshow = reshow | !old.take_spoilt().is_empty();
@@ -7839,7 +7929,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     let print = |en: &Entry, groups: &[u8; 32]| {
         let mut h = Hasher::new("lab shown");
         for w in st.entry_writes(en.id) {
-            h.update(&w.edit.0).update(&[bodies.contains_key(&w.edit) as u8]);
+            h.update(&w.edit.0).update(&[bodies.has(&w.edit) as u8]);
         }
         h.update(&lanes[&en.vault].1).update(groups);
         h.finalize()
@@ -7858,7 +7948,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
         h.update(&en.id.0).update(&lanes[&en.vault].1);
     }
     for w in &writes {
-        h.update(&w.edit.0).update(&[bodies.contains_key(&w.edit) as u8]);
+        h.update(&w.edit.0).update(&[bodies.has(&w.edit) as u8]);
     }
     let caps_print = h.finalize();
     let cap_groups: HashSet<EntryId> = caps.iter().map(|en| en.id).collect();
@@ -8129,7 +8219,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
 fn judge_caps<'a>(
     d: SignerId,
     st: &State,
-    (r, bodies): (&Readings, &HashMap<EditId, Body>),
+    (r, bodies): (&Readings, &dyn BodyOf),
     caps: &[&Entry],
     writes: &[&Write],
     lane: &impl Fn(VaultId) -> &'a Lane,
@@ -8255,7 +8345,7 @@ fn lanes_of(lanes: &BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>) -> Vec<(Vau
 fn judged_anew(
     d: SignerId,
     st: &State,
-    rb: (&Readings, &HashMap<EditId, Body>),
+    rb: (&Readings, &dyn BodyOf),
     groups: &Groups,
     en: &Entry,
     lane: &Lane,
@@ -8322,13 +8412,13 @@ impl<'a> Judging<'a> {
         &mut self,
         d: SignerId,
         st: &State,
-        (r, bodies): (&Readings, &HashMap<EditId, Body>),
+        (r, bodies): (&Readings, &dyn BodyOf),
         w: &Write,
         groups: &Groups,
     ) -> bool {
         let none = TagDelta::default();
         let Judging { vault, of_lane, lane, history, scratch, attrs, mine, asked, .. } = self;
-        let body = bodies.get(&w.edit);
+        let body = bodies.body(&w.edit);
         let (proof, content) = (body.and_then(|b| b.proof.as_ref()), body.map(|b| &b.content[..]));
         let asks = body.map(|b| &b.tags).unwrap_or(&none);
         let counts = |d: &EditId| history.get(*d).is_some_and(|c| c.counted);
