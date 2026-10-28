@@ -650,6 +650,14 @@ impl Authenticator for InLab {
     }
 }
 
+/// Saves that fail (`Shared::unsaved`): since when, by `unix_now`, how many in a row, and the last one's error.
+#[derive(Clone, Debug)]
+struct Unsaved {
+    since: u64,
+    tries: u64,
+    error: String,
+}
+
 /// The time by this machine's clock, or the browser's: seconds since 1970.
 pub(crate) fn unix_now() -> u64 {
     time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())
@@ -897,6 +905,7 @@ impl Node {
             bootstrap_due: Notify::new(),
             size: watch::Sender::new(size),
             warm: AtomicBool::new(false),
+            unsaved: Mutex::new(None),
             sent: Sent::default(),
             jobs: Jobs::default(),
             traffic: traffic::Traffic::default(),
@@ -1752,7 +1761,8 @@ impl Node {
     /// logs they hold between them that this device may hold, how many of those hold edits this device lacks (`differ`),
     /// which it asks them for, how many pulls from them run now (`jobs`), and how many pages of edits it took since it
     /// started: a log counts once whole, and a page brings edits of many, so the pages show a pull moving while the
-    /// logs don't. What a page's sync bar shows.
+    /// logs don't; and `unsaved`, where its shelf can't be written (a full disk, an OPFS quota): since when (Unix
+    /// seconds), how many saves failed in a row and why the last did, else null. What a page's sync bar shows.
     pub async fn synced(&self) -> Value {
         let live: BTreeSet<SignerId> = {
             let peers = self.shared.peers.lock().expect("peers");
@@ -1770,7 +1780,10 @@ impl Node {
         let (running, _) = self.jobs().snapshot();
         let pulling = running.iter().filter(|j| j.kind == "pull").count();
         let pages = self.shared.sent.requests.load(Ordering::Relaxed);
-        json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages })
+        let unsaved = self.shared.unsaved.lock().expect("unsaved").clone()
+            .map(|u| json!({ "since": u.since, "tries": u.tries, "error": u.error }));
+        json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages,
+            "unsaved": unsaved })
     }
 
     /// Where it syncs from and how (Samuel 2026-10-22: "the whole sync topology … what comes directly p2p and what via
@@ -2374,6 +2387,9 @@ struct Shared {
     size: watch::Sender<(usize, usize)>,
     /// Whether its device worked out something its shelf lacks, as last seen (`Lab::warm_due`).
     warm: AtomicBool,
+    /// Since when its saves fail, how many failed, and why the last did: a full disk or an OPFS quota leaves what the
+    /// device took off its shelf, which its person is told (`Node::synced`), never a silent stall. None once one saves.
+    unsaved: Mutex<Option<Unsaved>>,
     /// How many messages it has sent.
     sent: Sent,
     /// What it does in the background, as its person watches it (`Node::jobs`).

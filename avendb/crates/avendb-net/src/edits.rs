@@ -953,11 +953,18 @@ impl Shared {
                     if saved {
                         self.changed.notify_one();
                     }
+                    *self.unsaved.lock().expect("unsaved") = None;
                     wait = self.opts.retry;
                     edits.due.notified().await;
                 }
                 Err(e) => {
                     tracing::warn!("avendb: the shelf can't be written, trying again in {wait:?}: {e:#}");
+                    {
+                        let mut unsaved = self.unsaved.lock().expect("unsaved");
+                        let u = unsaved.get_or_insert_with(|| crate::Unsaved { since: crate::unix_now(), tries: 0, error: String::new() });
+                        u.tries += 1;
+                        u.error = format!("{e:#}");
+                    }
                     time::sleep(wait).await;
                     wait = wait.saturating_mul(2).min(BACKOFF_MAX);
                 }
@@ -1421,6 +1428,71 @@ mod tests {
         let (_, (signed, keys, anchors))=Edits::open(shelf).await.unwrap();
         assert!(!anchors.is_empty());
         assert!(avendb::lab::Backup::new(signed,keys).with_bootstrap_bytes(&anchors).is_some());
+        node.shutdown().await.unwrap();
+        std::fs::remove_dir_all(folder).ok();
+    }
+
+    /// A shelf that takes no write while `full` holds, as a full disk or an OPFS quota: every other call goes through.
+    fn full_when(shelf: Shelf, full: Arc<std::sync::atomic::AtomicBool>) -> Shelf {
+        let (proxy, mut calls) = Shelf::new();
+        tokio::spawn(async move {
+            let no = || Err(std::io::Error::new(ErrorKind::StorageFull, "no space left on the shelf"));
+            while let Some(call) = calls.recv().await {
+                let full = full.load(Ordering::Relaxed);
+                match call {
+                    Call::Keep { name, bytes, tx } => drop(tx.send(if full { no() } else { shelf.keep(&name, bytes).await })),
+                    Call::Put { name, bytes, tx } => drop(tx.send(if full { no() } else { shelf.put(&name, bytes).await })),
+                    Call::Write { name, at, bytes, tx } => {
+                        drop(tx.send(if full { no() } else { shelf.write(&name, at, bytes).await }))
+                    }
+                    Call::Finish { name, hash, size, outboard, tx } => {
+                        drop(tx.send(if full { no() } else { shelf.finish(&name, hash, size, outboard).await }))
+                    }
+                    Call::List(tx) => drop(tx.send(shelf.list().await)),
+                    Call::Outboard { hash, tx } => drop(tx.send(shelf.outboard(hash).await)),
+                    Call::Drop { name, tx } => drop(tx.send(shelf.drop(&name).await)),
+                    Call::Read { name, at, len, tx } => drop(tx.send(shelf.read(&name, at, len).await)),
+                    Call::Get { name, tx } => drop(tx.send(shelf.get(&name).await)),
+                    Call::Names { prefix, tx } => drop(tx.send(shelf.names(&prefix).await)),
+                }
+            }
+        });
+        proxy
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_shelf_that_takes_no_write_is_told_not_stalled_on() {
+        use crate::{Node, Options};
+        use avendb::cast::{document, human_on};
+        use std::time::Duration;
+        let folder = std::env::temp_dir().join(format!("avendb-full-shelf-{}", crate::shelf::fresh()));
+        let mut lab = Lab::new();
+        let passkey = lab.passkey("Alice");
+        let me = lab.device_of(passkey, "Alice's phone");
+        let vault = human_on(&mut lab, passkey, &[me]);
+        let full = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let writer = crate::disk::open(&folder).unwrap().writer().unwrap();
+        let shelf = full_when(writer.shelf(), full.clone());
+        let opts = Options { shelf: Some(shelf), retry: Duration::from_millis(20), ..Options::local() };
+        let node = Node::spawn(lab.split(me, &[passkey], [83; 32]), me, opts).await.unwrap();
+        avendb_testkit::until("it saves", || async { !node.behind().await }).await;
+        assert!(node.synced().await["unsaved"].is_null(), "a shelf that takes its writes is no news");
+        // the disk fills: what it takes now stays off its shelf, and its person is told so, with why
+        full.store(true, Ordering::Relaxed);
+        node.act(move |lab, me| lab.create(me, vault, vault, "note", &[], document("Unsaved", "kept in memory", me)).unwrap())
+            .await;
+        avendb_testkit::until("it says its shelf takes no write", || async {
+            node.synced().await["unsaved"]["tries"].as_u64().is_some_and(|n| n >= 2)
+        })
+        .await;
+        let unsaved = node.synced().await["unsaved"].clone();
+        assert!(unsaved["error"].as_str().unwrap().contains("no space left"), "{unsaved}");
+        assert!(unsaved["since"].as_u64().unwrap() > 0);
+        assert!(node.behind().await);
+        // room again: the next try saves it, and the news goes
+        full.store(false, Ordering::Relaxed);
+        avendb_testkit::until("it saves once there is room", || async { !node.behind().await }).await;
+        avendb_testkit::until("the news goes", || async { node.synced().await["unsaved"].is_null() }).await;
         node.shutdown().await.unwrap();
         std::fs::remove_dir_all(folder).ok();
     }
