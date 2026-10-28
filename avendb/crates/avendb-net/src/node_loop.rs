@@ -108,11 +108,10 @@ pub(crate) enum Msg {
     Look(tokio::sync::oneshot::Sender<Look>),
 }
 
-/// The lanes as a test sees them.
+/// The lanes as a test sees them: the asks' (a tell's lane is the device's own business, which no test reads).
 #[cfg(test)]
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Look {
-    pub tells: BTreeMap<SignerId, Lane>,
     pub asks: BTreeMap<EndpointId, Lane>,
 }
 
@@ -215,8 +214,7 @@ pub(crate) async fn run(shared: Arc<Shared>, mut inbox: mpsc::UnboundedReceiver<
             }
             #[cfg(test)]
             Step::Msg(Msg::Look(answer)) => {
-                let tells = lanes.tells.iter().map(|(d, (lane, _))| (*d, *lane)).collect();
-                let _ = answer.send(Look { tells, asks: lanes.asks.clone() });
+                let _ = answer.send(Look { asks: lanes.asks.clone() });
             }
             Step::Tick => {}
         }

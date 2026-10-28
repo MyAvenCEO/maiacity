@@ -339,7 +339,7 @@ async fn a_fresh_device_syncs_its_boxes_later_and_converges() {
     seeds("box stubs", SEEDS, LIMIT, |net| async move {
         let mut w = world();
         let h = handbook(&mut w);
-        let mut add = |w: &mut World, name: &str| {
+        let add = |w: &mut World, name: &str| {
             let ipad = w.lab.device_of(w.passkey_a, name);
             let share = avendb::policy::Action::Share(avendb::policy::Sharing::Device { vault: w.alice, device: ipad, seal_to: None });
             w.lab.submit(w.mac_a, &[w.passkey_a, ipad], share).expect("Alice adds an iPad");

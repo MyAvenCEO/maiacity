@@ -449,13 +449,16 @@ mod writes_first {
             .unwrap();
         let mut behind = Vec::new();
         for round in 0..20 {
-            // a catch-up slice holds the Lab, then the page's reads queue
+            // a catch-up slice holds the Lab, then the page's reads queue; it holds it till the person's write waits too,
+            // not for a set time: a 20 ms slice ended before the 32 reads had queued under the full suite's load, they
+            // ran, and the wait for 32 queued below never ended (N1, 2026-10-28)
             let shared = node.shared.clone();
             let (entered, entering) = tokio::sync::oneshot::channel();
+            let (release, released) = std::sync::mpsc::channel::<()>();
             let slice = tokio::spawn(async move {
                 shared.try_lab_class(Class::Background, move |_, _| {
                     entered.send(()).unwrap();
-                    std::thread::sleep(TURN);
+                    released.recv().unwrap();
                 }).await.unwrap()
             });
             entering.await.unwrap();
@@ -480,11 +483,20 @@ mod writes_first {
             }
             let asked = Instant::now();
             let ahead = ran.clone();
-            let (entry, reads_before) = node.try_act(move |lab, me| {
+            let write = node.try_act(move |lab, me| {
                 let reads_before = ahead.load(std::sync::atomic::Ordering::SeqCst);
                 (lab.create(me, vault, vault, "doc", &[], document(&format!("Write {round}"), "while busy", me)).unwrap(),
                     reads_before)
-            }).await.unwrap();
+            });
+            // the slice ends once the write waits behind it, and every read and background turn with it
+            let ends = async {
+                while node.shared.lab_schedule.state.lock().unwrap().writes.is_empty() {
+                    tokio::task::yield_now().await;
+                }
+                release.send(()).unwrap();
+            };
+            let (written, ()) = tokio::join!(write, ends);
+            let (entry, reads_before) = written.unwrap();
             behind.push(asked.elapsed());
             assert_eq!(reads_before, 0, "round {round}: the write ran after {reads_before} of the 32 queued reads");
             assert!(node.read(move |lab, me| lab.item(me, entry).is_some()).await);
@@ -494,7 +506,7 @@ mod writes_first {
         }
         behind.sort();
         let p95 = behind[(behind.len() * 95).div_ceil(100) - 1];
-        eprintln!("WRITES behind a {TURN:?} slice and 32 queued {TURN:?} reads: p50 {:?}, p95 {p95:?}, max {:?}",
+        eprintln!("WRITES behind a slice and 32 queued {TURN:?} reads: p50 {:?}, p95 {p95:?}, max {:?}",
             behind[behind.len() / 2], behind[behind.len() - 1]);
         node.shutdown().await.unwrap();
     }

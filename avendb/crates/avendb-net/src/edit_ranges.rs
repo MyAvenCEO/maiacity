@@ -218,6 +218,8 @@ impl Budget {
             limit,
         }
     }
+    // `fetch_update`'s new name, `try_update`, is newer than the workspace's rust-version (1.91), which has only this one
+    #[allow(deprecated)]
     pub(crate) fn reserve(&self, bytes: usize) -> Result<Charge> {
         self.used
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
@@ -241,6 +243,8 @@ pub(crate) struct Charge {
     limit: usize,
 }
 impl Charge {
+    // as `reserve`: `try_update` is newer than rust-version 1.91
+    #[allow(deprecated)]
     fn grow(&mut self, bytes: usize) -> Result<()> {
         self.used
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
