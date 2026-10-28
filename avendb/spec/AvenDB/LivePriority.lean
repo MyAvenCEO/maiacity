@@ -292,4 +292,41 @@ theorem same_class_same_priority (a b : Nat) (ha : a ≤ smallAnswer) (hb : b �
     priority a = priority b := by
   simp [priority, ha, hb]
 
+/-! ## The larger of two controllers' windows (batch 5)
+
+A round trip carries the least of the pages asked, the link's bandwidth × delay and the window its congestion
+controller allows. Cubic, a loss-based controller, halves its window at a loss, so on a phone link (1 % lost, 40 ms) it
+held a 20 MB catch-up to 6 % of the link (`bench_live` phone_bulk: 59.7 s, live p95 6.2 s). BBR v3 paces to the
+bandwidth it measures (36.7 %, 9.8 s, live p95 216 ms), but treats a round with more than 2 % lost as too much in flight
+and cuts toward 4 packets, where one loss is 25 %: under 11 % loss with reordering it stayed there (sim seed 1, no end in
+150 s; Cubic 50 s). Every connection now feeds each event to both and sends at the larger window: never less than
+either alone. Only the counting is modelled, not the controllers. Rust: avendb-net congestion.rs. -/
+
+/-- A round trip carries the least of the pages asked, the link and the window. -/
+def carried (asked link window : Nat) : Nat := min asked (min link window)
+
+/-- Asking more pages carries no more than the window. -/
+theorem asking_more_passes_no_window (asked link window : Nat) : carried asked link window ≤ window := by
+  simp only [carried]; omega
+
+/-- One period of a loss-based window: one packet more a round trip for `gap - 1` round trips, then halved. -/
+def lossPeriod (window gap : Nat) : Nat := (window + (gap - 1)) / 2
+
+/-- A loss every `gap` round trips holds a loss-based window within twice the gap, whatever the link. -/
+theorem loss_holds_the_window (window gap : Nat) (h : window ≤ 2 * gap) : lossPeriod window gap ≤ 2 * gap := by
+  simp only [lossPeriod]; omega
+
+/-- The window of the pair: the larger. -/
+def either (bbr cubic : Nat) : Nat := max bbr cubic
+
+/-- The pair carries at least what either controller alone would. -/
+theorem either_carries_no_less (asked link bbr cubic : Nat) :
+    carried asked link bbr ≤ carried asked link (either bbr cubic) ∧
+    carried asked link cubic ≤ carried asked link (either bbr cubic) := by
+  simp only [carried, either]; omega
+
+/-- And no more than the link: the pair's window never makes a round trip carry past it. -/
+theorem either_within_the_link (asked link bbr cubic : Nat) : carried asked link (either bbr cubic) ≤ link := by
+  simp only [carried]; omega
+
 end AvenDB.LivePriority
