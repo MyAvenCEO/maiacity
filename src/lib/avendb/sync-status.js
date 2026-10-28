@@ -1,7 +1,9 @@
 /** Peer-frontier observations, not a disk-save or file-download progress meter.
  * @typedef {{ since: number, stage: string, took: number }} Pull
  * @typedef {{ device: string, name: string | null, pulling: Pull | null, pages: number, edits: number, last: number }} From
- * @typedef {{ peers: number, logs: number, behind: number, pulling: number, pages: number, edits: number, from: From[] }} PeerCounts
+ * @typedef {{ log: unknown, held: unknown, lacked_heads: unknown, waiting: unknown }} LackedLog
+ * @typedef {{ device: unknown, lacks: unknown, by_stub: unknown, stubs: unknown, sample: LackedLog[] }} Lacked
+ * @typedef {{ peers: number, logs: number, behind: number, pulling: number, pages: number, edits: number, from: From[], lacked: Lacked[] }} PeerCounts
  * @typedef {PeerCounts & { known: boolean, since: number, at: number, paged: number, base: number }} SyncState
  */
 /** @param {unknown} value */
@@ -21,13 +23,16 @@ const peer = (p) => ({
 const pulls = (from) => from.map((p) => p.pulling ? `${p.device}:${p.pulling.stage}:${p.pulling.took}` : '').join('|');
 
 /** A new view/device starts its own observation window; native cumulative counters may already be large. */
-export const emptySync = () => ({ known: false, peers: 0, logs: 0, behind: 0, pulling: 0, pages: 0, edits: 0, from: [], since: 0, at: 0, paged: 0, base: 0 });
+export const emptySync = () => ({ known: false, peers: 0, logs: 0, behind: 0, pulling: 0, pages: 0, edits: 0, from: [], lacked: [], since: 0, at: 0, paged: 0, base: 0 });
 
 /** @param {SyncState} previous @param {Partial<PeerCounts>} report @param {number} at */
 export function observeSync(previous, report, at) {
 	const next = {
 		peers: count(report.peers), logs: count(report.logs), behind: count(report.behind), pulling: count(report.pulling), pages: count(report.pages),
-		edits: count(report.edits), from: Array.isArray(report.from) ? report.from.map(peer) : []
+		edits: count(report.edits), from: Array.isArray(report.from) ? report.from.map(peer) : [],
+		/** what the device says it lacks of each peer, as it said it, for the diagnostics report to project
+		 * (`diagnosticSnapshot`); the pill reads none of it */
+		lacked: Array.isArray(report.lacked) ? report.lacked : []
 	};
 	const reset = !previous.known || next.pages < previous.pages || next.edits < previous.edits;
 	const paged = !reset && next.pages > previous.pages;
