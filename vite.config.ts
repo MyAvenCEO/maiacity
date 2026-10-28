@@ -8,12 +8,13 @@ import { defineConfig } from 'vite';
 import { aliases, paths } from './aven/ops/paths.js';
 import { assetBox } from './maia/content/assets/box/plugin.js';
 import { pageCsp } from './aven/kernel/sandbox/policy.js';
+import { frozenEngines } from './aven/kernel/fetch-engines.mjs';
 
 /** the folders the import aliases name beside the site, which the site's checks and dev server take in as the site's own */
 const beside = Object.values(paths.aliases).filter((dir) => !(dir + '/').startsWith(paths.site + '/'));
 /**
  * what those folders and the site's hold besides the pages' code, which the type check reads only where a page imports
- * it: the static files (the frozen engines' bytes among them), the vault's code entries, and the game's and the
+ * it: the static files (the frozen engines' bytes among them, fetched by hash), the vault's code entries, and the game's and the
  * scripts' folders, which the API and bun run as well
  */
 const unchecked = [paths.static, 'maia/content/code', 'maia/content/game', 'maia/content/scripts'];
@@ -29,6 +30,8 @@ function commit() {
 // a dev server's pages (`serve`) may also reach this machine; a build's never (aven/kernel/sandbox/policy.js pageCsp)
 export default defineConfig(({ command }) => ({
 	plugins: [
+		// every frozen engine fetched by its hash into the static files first, as git does not carry them (aven/kernel/fetch-engines.mjs)
+		frozenEngines(),
 		tailwindcss(),
 		// the asset box's worker, bundled whole (maia/content/assets/box)
 		assetBox(),

@@ -13,6 +13,7 @@ import { hashText } from '../../../maia/content/game/hash.js';
 import { LIMITS, OPTIONS, UNKNOWN } from './math.js';
 import { ELEMENTS, MATHML, MAX, check, draw, serialise } from './mathml.js';
 import { typeset } from './math-host.js';
+import { engineBytes } from '../fetch-engines.mjs';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
 
@@ -104,9 +105,11 @@ function outside(tree) {
 
 const settle = async (items) => typeset(items.map(([tex, display]) => ({ tex, display })));
 
+const e = MANIFEST.math.at(-1);
+// git does not carry the engine: it is fetched by its hash where it is kept (../fetch-engines.mjs)
+const bytes = Buffer.from(await engineBytes('math', e.v));
+
 describe('the frozen math engine', () => {
-	const e = MANIFEST.math.at(-1);
-	const bytes = readFileSync(`${ROOT}maia/site/static/engines/math-v${e.v}.js`);
 	test('its file is the bytes its hash in engines.json names, KaTeX the version package.json pins', () => {
 		expect(bytes.length).toBe(e.bytes);
 		expect(hashText(bytes.toString('utf8'))).toBe(e.blake3);

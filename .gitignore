@@ -28,6 +28,10 @@ Thumbs.db
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# The frozen engines are kept by their hash at a commit of main, not in the tree: aven/kernel/fetch-engines.mjs fetches
+# each one, checked, where the site serves it
+/maia/site/static/engines/
+
 # Video masters live in Bunny Stream, not in git
 maia/site/static/**/*.mp4
 maia/site/static/**/*.mov
