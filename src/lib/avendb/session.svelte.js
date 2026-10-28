@@ -88,6 +88,12 @@ const QUIET = { step: () => {}, device: () => () => {} };
 
 /** @type {any} the device's WebAssembly, as the page reaches it in its worker (./remote.js) */
 let avendb = null;
+
+/** The steps of this tab's last unlock as its device reported them, each with when it began and how long it took (ms
+ *  since the device began, `from` ms after the unlock did) and its note, and when the unlock began (ms since 1970): what
+ *  its diagnostics carry, so that a slow unlock says which step took the time (./diagnostics-report.js `unlockReport`).
+ *  @type {{ began: number, from: number, steps: { step: string, at: number, took: number | null, note?: string | null }[], over: boolean } | null} */
+let lastUnlock = null;
 /** @type {any} in the Mac app, its device beside it (./native.js): null where the page runs the device; state, as
  *  pages read it to know whose device it is */
 let mac = $state.raw(null);
@@ -539,7 +545,18 @@ function unlock(at = QUIET) {
 
 /** Opens the device this browser, or the app, holds, in the unlock alone: it marks its own steps with `step` and hands
  *  the device the function it shows its own by with `device`. @param {Steps} at */
-async function opening({ step, device: shown }) {
+async function opening({ step, device: shows }) {
+	const began = Date.now();
+	// each report of the device's steps is also kept, as the last unlock's, for its diagnostics (`lastUnlock`)
+	const shown = () => {
+		const show = shows();
+		// the device's steps count from when it was handed this, after the page's own (the passkey's, in a browser)
+		const from = Date.now() - began;
+		return (/** @type {any} */ report) => {
+			lastUnlock = { began, from, steps: report?.steps ?? [], over: report?.over === true };
+			show(report);
+		};
+	};
 	if (mac) return macOpened(await stepping(shown(), 'open'));
 	noteLifecycle('unlocking');
 	// the store first, so that a tab that can't open it never asks for the passkey: one tab at a time holds it
@@ -1054,6 +1071,10 @@ const api = {
 
 /** This tab's avenDB session: what it is now, read as state, and what it does. */
 export const session = {
+	/** The steps of this tab's last unlock, as its device reported them, or null (`lastUnlock`). */
+	get lastUnlock() {
+		return lastUnlock;
+	},
 	/** Invalidates targeted local reads without waiting for the full world summary. */
 	get revision() { return revision; },
 	/** @returns {Phase} */

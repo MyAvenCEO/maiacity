@@ -39,14 +39,28 @@ const syncReport = sync => ({
   sample: (Array.isArray(p?.sample) ? p.sample : []).slice(0, 5).map(l => ({ log: logRef(l?.log), held: l?.held === true,
    lackedHeads: (Array.isArray(l?.lacked_heads) ? l.lacked_heads : []).slice(0, 8).map(short).filter(Boolean), waiting: number(l?.waiting) })) }))
 });
+/** A step's note as a report carries it: the device's own words and numbers for its person (`Progress::note`), cut
+ *  short, any run of 16 hex or more cut out. */
+const note = value => typeof value === 'string' ? value.slice(0, 600).replace(/[0-9a-f]{16,}/gi, '…') : null;
+/** This tab's last unlock as a report carries it (session.svelte.js `lastUnlock`): when it began, and each step of
+ *  the device's, by its name, when it began and how long it took (ms since the unlock began) and its note, so that a
+ *  slow unlock says which step took the time and how it went (2026-10-28: an iPhone's 97.5 s "Taking back your edits"
+ *  that no report told of). */
+export function unlockReport(unlock) {
+ if (!unlock || !Array.isArray(unlock.steps)) return unavailable('no-unlock-in-this-tab');
+ const from = number(unlock.from) ?? 0;
+ return { began: number(unlock.began), over: unlock.over === true, deviceFrom: from,
+  steps: unlock.steps.slice(0, 24).filter(s => typeof s?.step === 'string' && /^[a-z][a-zA-Z]{0,15}$/.test(s.step))
+   .map(s => ({ step: s.step, at: number(s.at) === null ? null : from + s.at, took: number(s.took), note: note(s.note) })) };
+}
 /** Existing sources already redact lifecycle and stage names; bound their final report too.
- * @param {{phase: string, journal: any, lifecycle: any, calls?: any[], manifests: any, sync: any, playback: any, device: string, build?: string}} options */
-export function diagnosticSnapshot({ phase, journal, lifecycle, calls = [], manifests, sync, playback, device, build }) {
+ * @param {{phase: string, journal: any, lifecycle: any, calls?: any[], manifests: any, sync: any, playback: any, device: string, build?: string, unlock?: any}} options */
+export function diagnosticSnapshot({ phase, journal, lifecycle, calls = [], manifests, sync, playback, device, build, unlock = null }) {
  return { version: 2, kind: 'maia-unified-diagnostics', capturedAt: Date.now(),
   build: {frontend: /^[a-f0-9]{40}$/.test(build ?? '') ? build : 'unavailable', nativeEngine: 'unavailable'},
   device: ['iPhone', 'iPad', 'Mac', 'other'].includes(device) ? device : 'other',
   phase: ['open', 'locked', 'loading', 'new', 'error', 'unlocking'].includes(phase) ? phase : 'unknown',
-  timings: journal ?? unavailable('no-retained-timing-journal'), lifecycle: lifecycle ?? unavailable('lifecycle-unavailable'),
+  timings: journal ?? unavailable('no-retained-timing-journal'), unlock: unlockReport(unlock), lifecycle: lifecycle ?? unavailable('lifecycle-unavailable'),
   localCalls: calls.filter(row => TIMED_OPS.has(row.op)).slice(0, 40).map(row => ({ op: row.op, count: number(row.count), median: number(row.median), p95: number(row.p95), failed: number(row.failed), pending: number(row.pending), waiting: number(row.waiting) })),
   manifests: manifests ? { pending: number(manifests.pending), running: (Array.isArray(manifests.running) ? manifests.running : []).slice(0, 4).map(manifestRun), runs: manifests.runs.slice(-20).map(manifestRun) } : unavailable('manifest-observations-unavailable'),
   sync: sync?.known ? syncReport(sync) : unavailable('peer-log-coverage-unavailable'),

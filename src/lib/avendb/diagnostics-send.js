@@ -41,7 +41,8 @@ export function snapshot() {
 		viewReadiness: viewReadiness.snapshot(),
 		...diagnosticSnapshot({
 			phase: session.phase, build: version, device: deviceKind(), journal: latencyJournal.snapshot(), lifecycle: lifecycle()?.snapshot(),
-			calls: localTimings.snapshot(), manifests: actorDiagnostics(), sync, playback: playbackMetrics.snapshot()
+			calls: localTimings.snapshot(), manifests: actorDiagnostics(), sync, playback: playbackMetrics.snapshot(),
+			unlock: session.lastUnlock
 		})
 	};
 }
