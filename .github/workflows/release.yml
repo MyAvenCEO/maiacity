@@ -161,8 +161,8 @@ jobs:
           gh release upload avendb-page-device "$RUNNER_TEMP/$asset"
 
   images:
-    needs: [base, ci]
-    if: ${{ !cancelled() && needs.base.outputs.run_images == 'true' && (needs.ci.result == 'success' || (needs.ci.result == 'skipped' && needs.base.outputs.reuse_ci == 'true')) }}
+    needs: [base, ci, device]
+    if: ${{ !cancelled() && needs.base.outputs.run_images == 'true' && (needs.ci.result == 'success' || (needs.ci.result == 'skipped' && needs.base.outputs.reuse_ci == 'true')) && needs.device.result == 'success' }}
     name: Image (${{ matrix.component }}), this commit's
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -210,6 +210,13 @@ jobs:
           echo "::notice::$IMAGE:${GITHUB_SHA::7} is $DIGEST, built and checked in run ${{ needs.base.outputs.run }}"
       - if: ${{ !steps.meta.outputs.digest }}
         uses: actions/checkout@v7.0.1
+      # the API's image carries the page's device (aven/api/Dockerfile): the device job put this tree's on its release
+      - if: ${{ !steps.meta.outputs.digest && matrix.component == 'api' }}
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - if: ${{ !steps.meta.outputs.digest && matrix.component == 'api' }}
+        run: bun aven/ops/devx/wasm.mjs ensure --fetch
       - if: ${{ !steps.meta.outputs.digest }}
         uses: docker/build-push-action@v7.4.0
         with:
