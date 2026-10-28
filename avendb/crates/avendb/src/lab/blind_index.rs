@@ -214,14 +214,7 @@ impl Lab {
     /// The vaults device `d` may tell rows of and find in: those it holds a seed, a share or an audience key of.
     pub fn index_vaults(&self, d: SignerId) -> Vec<VaultId> {
         let keys = &self.held(d).keys;
-        let vaults: BTreeSet<VaultId> = keys
-            .epochs
-            .keys()
-            .filter_map(|fam| match fam {
-                KeyFam::Seed(v) | KeyFam::Share(v, _) | KeyFam::Audience(v, _) => Some(*v),
-                _ => None,
-            })
-            .collect();
+        let vaults: BTreeSet<VaultId> = keys.epochs.keys().map(|fam| fam.vault()).collect();
         vaults.into_iter().collect()
     }
 

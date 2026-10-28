@@ -386,3 +386,49 @@ async fn a_fresh_device_syncs_its_boxes_later_and_converges() {
     })
     .await;
 }
+
+/// Alice's iPhone, a browser that reaches only the server and, through a slow relay, her Mac, has been offline while
+/// her Mac wrote notes and while it wrote one of its own. It meets the Mac first, whose asking crawls at 20 KB/s, then
+/// the server, which holds every note too: it must take what it lacks from whichever peer brings it, not wait out the
+/// slow one past the handover, and its own note must reach the server and the Mac (S1, 2026-10-28: Samuel's iPhone advertised-to by the
+/// always-on peer and his Mac held 240-350 of 3,025 logs and never grew, its own writes never left it).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_browser_takes_what_it_lacks_from_the_fast_peer_and_pushes_its_writes() {
+    seeds("browser beside a slow peer", SEEDS, LIMIT, |net| async move {
+        let mut w = world();
+        let (mac_a, phone_a, server_d, alice) = (w.mac_a, w.phone_a, w.server, w.alice);
+        relay_on(&mut w, alice);
+        w.lab.sync_all(1);
+        w.lab.set_online(phone_a, false);
+        let body = "a garden bed's notes, long enough to weigh on a slow link. ".repeat(300);
+        let mut notes = Vec::new();
+        for i in 0..40 {
+            let note = w.lab.create(mac_a, alice, alice, "note", &[], document(&format!("Bed {i}"), &body, mac_a));
+            notes.push(note.map_err(|e| anyhow::anyhow!("the Mac's note {i}: {e:?}"))?);
+        }
+        let mine = w.lab.create(phone_a, alice, alice, "note", &[], document("From the iPhone", "Shade.", phone_a));
+        let mine = mine.map_err(|e| anyhow::anyhow!("the iPhone's note: {e:?}"))?;
+        w.lab.sync_all(2);
+        w.lab.set_online(phone_a, true);
+        let mac = node(&mut w, &net, mac_a, &[], 1, Options::simulated(&net)).await?;
+        let server = node(&mut w, &net, server_d, &[], 2, Options { card: true, ..Options::simulated(&net) }).await?;
+        let phone = node(&mut w, &net, phone_a, &[], 3, Options::simulated(&net)).await?;
+        net.only(phone.id(), &[mac.id(), server.id()]);
+        net.rate(phone.id(), mac.id(), 20_000);
+        mac.know(server.addr());
+        server.know(mac.addr());
+        phone.know(mac.addr());
+        // the slow peer's asking under way first, as the Mac's was over the relay
+        let told = || async { phone.live_peers().await.get(&mac_a).is_some_and(|lacks| lacks.is_some_and(|n| n > 0)) };
+        within(Duration::from_secs(20), "the Mac tells the iPhone what it holds", told).await?;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        phone.know(server.addr());
+        for &note in &notes {
+            within(Duration::from_secs(30), "the iPhone holds every note, from the server", || holds(&phone, note)).await?;
+        }
+        within(Duration::from_secs(20), "the server keeps the iPhone's note", || keeps(&server, mine)).await?;
+        within(Duration::from_secs(20), "the Mac holds the iPhone's note", || holds(&mac, mine)).await?;
+        stop(vec![phone, mac, server]).await
+    })
+    .await;
+}

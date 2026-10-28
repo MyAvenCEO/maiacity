@@ -3264,6 +3264,16 @@ pub struct Mine {
 }
 
 impl Mine {
+    /// Its adders of each row and its creator, to keep (`kept`).
+    pub(crate) fn parts(&self) -> (&HashMap<crate::ops::Loc, Vec<VaultId>>, Option<VaultId>) {
+        (&self.adders, self.creator)
+    }
+
+    /// The owners `parts` gave.
+    pub(crate) fn of_parts(adders: HashMap<crate::ops::Loc, Vec<VaultId>>, creator: Option<VaultId>) -> Mine {
+        Mine { adders, creator }
+    }
+
     /// Place `l` is vault `a`'s own.
     pub fn owns(&self, a: VaultId, l: &crate::ops::Loc) -> bool {
         match l.row() {
