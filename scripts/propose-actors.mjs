@@ -73,7 +73,9 @@ if (!flag('--run')) {
 	process.exit(0);
 }
 
-const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/** a value with its object keys sorted: the vault hands a record's maps back in its own key order, not the repo's */
+const sorted = (v) => (Array.isArray(v) ? v.map(sorted) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sorted(v[k])])) : v);
+const same = (a, b) => JSON.stringify(sorted(a ?? null)) === JSON.stringify(sorted(b ?? null));
 
 /**
  * The drafts a run made, by key (`query:<id>`, `actor:<id>`) to entry, at `path`: a ledger this run keeps, or a run's
