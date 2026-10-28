@@ -5,8 +5,8 @@
  * disposable software one (./passkey.mjs) kept in the Mac's login Keychain; it roots a small "Dev browser" vault that
  * Samuel makes a co-owner of his own, so it syncs what his phone syncs. Removing that owner disposes of it.
  *
- *   node scripts/devx/live-device.mjs --setup '<invite link>'   once: sign up with Samuel's traveler invite, found the
- *                                                                dev vault, print its id for Settings → Owners
+ *   node scripts/devx/live-device.mjs --setup ['<invite link>'] once: found the dev vault (through the app's gate, or
+ *                                                                an invite's join page), print its id for Settings → Owners
  *   node scripts/devx/live-device.mjs --accept                  once, after Samuel invited it: accept co-owning
  *   node scripts/devx/live-device.mjs                           a run: reopen + unlock, sync, Chat, Assets, report
  *
@@ -133,11 +133,18 @@ async function setup(link) {
 	if (!readKey()) keepKey(passkey());
 	const { context, page } = await launch();
 	try {
-		await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
-		await page.goto(link, { waitUntil: 'domcontentloaded' });
-		if (!(await until(() => page.$('#name'), 30))) throw new Error(`no sign-up form: ${(await words(page)).slice(0, 300)}`);
-		await page.fill('#name', 'Dev browser');
-		await press(page, 'Join as a founder');
+		if (link) {
+			// with an invite link: the join page signs up first
+			await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+			await page.goto(link, { waitUntil: 'domcontentloaded' });
+			if (!(await until(() => page.$('#name'), 30))) throw new Error(`no sign-up form: ${(await words(page)).slice(0, 300)}`);
+			await page.fill('#name', 'Dev browser');
+			await press(page, 'Join as a founder');
+		} else {
+			// without one: the app's gate founds the vault for the name the tab signed up with, as the join page leaves it
+			await page.addInitScript(() => sessionStorage.setItem('maia:signup', 'Dev browser'));
+			await page.goto(`${base}/app/`, { waitUntil: 'domcontentloaded' });
+		}
 		if (!(await until(() => press(page, 'Set up my human vault'), 60))) throw new Error(`no “Set up my human vault”: ${(await words(page)).slice(0, 300)}`);
 		await shot(page, 'setup-founding');
 		if (!(await until(() => open(page), 180))) throw new Error(`the dev vault didn't open: ${(await words(page)).slice(0, 300)}`);
@@ -282,6 +289,6 @@ async function run() {
 	return Object.values(pass).every(Boolean);
 }
 
-if (args.includes('--setup')) await setup(option('--setup'));
+if (args.includes('--setup')) await setup((option('--setup') ?? '').startsWith('http') ? option('--setup') : '');
 else if (args.includes('--accept')) await accept();
 else process.exit((await run()) ? 0 : 1);
