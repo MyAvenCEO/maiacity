@@ -211,4 +211,10 @@ theorem one_asking_resends_nothing (theirs held : List Nat) (e : Nat)
   intro _ _
   exact first
 
+/-! ## A live edit's pages told at the step that shows it (batch 5)
+
+The Lab shows a live edit's entries in the first steps of a catch-up (Writes.lean `live_in_first_step`). The live lane
+now stirs the pages after every step it takes (`Shared::catch_up_steps` with a deadline), so a reader is told then,
+not once after the whole catch-up was caught, as before. Its steps stay bounded by `live_view_is_bounded`. -/
+
 end AvenDB.LivePriority

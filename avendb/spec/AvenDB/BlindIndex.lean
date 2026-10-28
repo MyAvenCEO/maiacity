@@ -14,7 +14,9 @@ syncs with the tokens of its labels, under the newest epoch of each of those key
 the entries of some labels computes their tokens for every audience of the vault it knows of, under each key it holds,
 and asks any peer `find`: which entries carry one of these tokens. A peer that reads answers from its own entries; the
 server answers from the rows it was told. Audience keys themselves would not do: a device opens an audience's key
-only once it holds an entry of it, so a new device would find nothing.
+only once it holds an entry of it, so a new device would find nothing. A device that reads an entry by no seed or share
+key (a DM in a friend's vault) tells its row under the audience's own key, the one key it holds of it, and finds such
+rows by that key: a key family like the others here (`Key`), with the same guarantees.
 
 What a token reveals (Samuel accepted this on 2026-10-26): to a peer without the key, only which rows of one audience
 under one key epoch carry the same label (the equality pattern), never the label, and nothing that links a token of one audience
@@ -38,7 +40,7 @@ namespace BlindIndex
 /-- A label an entry is found by: its type or one of its tags, as a number here. -/
 abbrev Label := Nat
 
-/-- The key a token is made under: a key family (the vault's seed or a share) and the epoch. -/
+/-- The key a token is made under: a key family (the vault's seed, a share, or the audience's own) and the epoch. -/
 abbrev Key := KeyFam × Nat
 
 variable {Tok : Type} [DecidableEq Tok]

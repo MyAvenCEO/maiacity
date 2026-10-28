@@ -227,4 +227,20 @@ export const INLINE = [
  * version}, bind }` in place of the want), and those query entries, one per meaning. Both go into Maia City by one AIP
  * (scripts/propose-actors.mjs); a route's Interests are the same as from `INLINE` (game/code/sources/actors.test.js).
  */
-export const { actors: ACTORS, queries: QUERIES } = withQueries(INLINE);
+const named = withQueries(INLINE);
+export const ACTORS = named.actors;
+
+/** The published posts everyone may read, newest first, a page at a time (`limit`, `after`, null for none): the posts
+ *  op behind the Universe's stream (src/lib/universe/stream.svelte.js). Its footprint keeps to the published tag, so a
+ *  reader through Maia City's Public share alone is let in; a footprint of every post would be outside its cap. */
+const POSTS_WHERE = { all: [{ type: ['post'] }, { tag: 'content:published' }] };
+export const QUERY_POSTS = {
+	kind: 'query', v: 1, id: 'query-posts', title: 'query-posts', note: 'The Universe reads its stream by this query.',
+	interface: { version: 1, description: 'Reads the published posts, newest first.', events: [], needs: [], methods: [
+		{ name: 'read', params: ['limit', 'after'], ops: [{ op: 'read' }], where: POSTS_WHERE, run: { op: 'posts', limit: { $: 'limit' }, after: { $: 'after' } } }
+	] },
+	where: POSTS_WHERE
+};
+
+/** The query entries the actors name, and those pages read by of their own (`QUERY_POSTS`). */
+export const QUERIES = [...named.queries, QUERY_POSTS];

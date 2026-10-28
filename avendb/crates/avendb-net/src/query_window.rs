@@ -358,3 +358,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "query_window_bench.rs"]
+mod bench;

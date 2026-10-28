@@ -288,8 +288,19 @@ test('a want as a query entry and back: its slot a param bound to the slot, the 
 	expect(asQuery({ want: { type: ['room'], vault: '*' }, part: 'headers' }, ids).query.id).toBe('query-room');
 	expect(asQuery({ want: { type: ['room'] } }, ids).part).toEqual({ query: { entry: 'query-room', version: 1 } });
 	// the read op, args bound: the same local query the walk runs
-	expect(queryOp(query, { room: id(4) })).toEqual({ op: 'query', where: { entry: [id(4)] }, select: [], order: [['created', 'desc']], limit: 50 });
+	expect(queryOp(query, { room: id(4) })).toEqual({ op: 'query', where: { entry: [id(4)] }, select: [], window: 50 });
 	expect(() => queryOp(query, {})).toThrow(/no room/);
 	const rooms = QUERIES.find((q) => q.id === 'query-room');
 	expect(queryOp(rooms, {}, { offset: 50, limit: 50 })).toEqual({ op: 'query', where: { type: ['room'] }, select: [], order: [['created', 'desc']], limit: 50, offset: 50 });
+});
+
+test('the posts query: a page of published posts, `after` left out on the first page', () => {
+	const posts = QUERIES.find((q) => q.id === 'query-posts');
+	expect(queryOp(posts, { limit: 20, after: null })).toEqual({ op: 'posts', limit: 20 });
+	expect(queryOp(posts, { limit: 20, after: 'p1' })).toEqual({ op: 'posts', limit: 20, after: 'p1' });
+	expect(() => queryOp(posts, { limit: 20 })).toThrow(/no after/);
+	// its footprint keeps to the published tag, which a Public share's cap holds
+	expect(posts.interface.methods[0].where).toEqual({ all: [{ type: ['post'] }, { tag: 'content:published' }] });
+	// no actor loads it: the stream reads it a page at a time
+	expect(ACTORS.some((a) => Object.values(a.loads).flat().some((p) => p.query?.entry === 'query-posts'))).toBe(false);
 });

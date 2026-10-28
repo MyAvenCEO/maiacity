@@ -539,6 +539,53 @@ async fn chat_reaches_the_phone_quickly_while_it_catches_up() {
     phone.shutdown().await.unwrap();
 }
 
+/// A live edit's page is told as soon as the step that shows it is done, while the bulk is still being shown: a
+/// reactive reader (the node's stirs, no polling) reads the new text within a second of the Mac's write, though the
+/// catch-up goes on (`LivePriority.lean`'s `fresh_entries_show_in_the_first_step`). It was stirred once, after the
+/// whole catch-up was caught.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_live_edits_page_is_told_while_the_bulk_is_still_shown() {
+    const BULK: usize = 1500;
+    let mut w = world();
+    let (sender, receiver, alice) = (w.mac_a, w.phone_a, w.alice);
+    w.lab.sync_all(0);
+    let chat = w.lab.create(sender, alice, alice, "note", &[], document("Chat", "hello", sender)).unwrap();
+    w.lab.sync(sender, receiver);
+    let notes: Vec<EntryId> = (0..BULK)
+        .map(|i| w.lab.create(sender, alice, alice, "note", &[], document(&format!("Note {i}"), "In May.", sender)).unwrap())
+        .collect();
+    let mac = Node::spawn(w.lab.split(sender, &[], [63; 32]), sender, Options { page: 16 << 10, ..Options::local() }).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [64; 32]), receiver, Options { window: 1, ..Options::local() }).await.unwrap();
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    let shown = async |n: &Node| {
+        let notes = notes.clone();
+        n.read(move |lab, me| notes.iter().filter(|e| lab.item(me, **e).is_some()).count()).await
+    };
+    time::timeout(Duration::from_secs(60), async { while shown(&phone).await < 20 { time::sleep(Duration::from_millis(5)).await } })
+        .await
+        .expect("the catch-up starts showing");
+    let mut stirs = phone.stirs();
+    let began = Instant::now();
+    mac.act(move |lab, me| lab.edit(me, alice, chat, |item| item.set_text(2, "live")).unwrap()).await;
+    let read = time::timeout(Duration::from_secs(1), async {
+        loop {
+            stirs.borrow_and_update();
+            if phone.read(move |lab, me| avendb::cast::text(lab, me, chat, 2).as_deref() == Some("live")).await {
+                break began.elapsed();
+            }
+            stirs.changed().await.expect("stirs stay open");
+        }
+    })
+    .await
+    .expect("a reader told by the node's stirs reads the live edit within a second");
+    let left = BULK - shown(&phone).await;
+    eprintln!("LIVE_STIRRED {}", serde_json::json!({ "read_ms": read.as_secs_f64() * 1000.0, "notes_not_shown_yet": left }));
+    assert!(left > 0, "the bulk was still being shown");
+    mac.shutdown().await.unwrap();
+    phone.shutdown().await.unwrap();
+}
+
 /// Freshness costs a walk per change, not per read (`fresh.rs`): a phone 600 logs behind a Mac, its background pages
 /// held, reads 1,000 times (3,028 logs measured the same once, 2026-10-27: 1 walk, 50 ms for the 1,000 reads; kept
 /// smaller here for CI's time) (a query and `aips` in turn). Every read is behind, and the walk of what the Mac holds

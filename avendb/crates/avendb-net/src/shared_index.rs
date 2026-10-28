@@ -42,92 +42,115 @@ const MARK: &[u8] = b"M";
 /// The most rows one scan reads.
 const SCAN: usize = 4096;
 
+/// What the head of a log prefix is a hash of, in one stream.
+const HEAD: &str = "avenDB shared index head 3";
+/// How many ids a hash of them takes at once: a run of them, so it hashes them as fast as it hashes any bytes.
+const RUN: usize = 4096;
+
+/// A head being worked out: the hash of the first `at` ids of a log, in one stream, which goes on as the log grows.
+#[derive(Clone)]
+struct Running {
+    at: u64,
+    hasher: avendb::hash::Hasher,
+}
+
+impl Running {
+    fn new() -> Running {
+        Running { at: 0, hasher: avendb::hash::Hasher::new(HEAD) }
+    }
+
+    /// The same, `more` ids on.
+    fn on(&mut self, more: &[EditId]) {
+        #[cfg(test)]
+        tests::HASHED.with(|n| n.set(n.get() + more.len()));
+        let mut run = Vec::with_capacity(32 * RUN.min(more.len()));
+        for ids in more.chunks(RUN) {
+            run.clear();
+            run.extend(ids.iter().flat_map(|id| id.0));
+            self.hasher.update(&run);
+        }
+        self.at += more.len() as u64;
+    }
+
+    fn stamp(&self) -> Stamp {
+        Stamp { at: self.at, head: self.hasher.clone().finalize() }
+    }
+}
+
 /// The head of a device's log with no edits.
 pub(crate) fn empty_head() -> Stamp {
-    Stamp {
-        at: 0,
-        head: avendb::hash::Hasher::new("avenDB shared index head 2").finalize(),
-    }
+    Running::new().stamp()
 }
 
-/// The head of a log `from` is the head of, with `more` edits after: a hash chain, one link an edit, so that the head
-/// of a prefix is a function of its edits alone (`ShelfIndex.Sound`), and a log that only grew is stepped on from the
-/// head it had, never hashed again from its first edit.
-pub(crate) fn head_on(from: Stamp, more: &[EditId]) -> Stamp {
-    let mut head = from.head;
-    #[cfg(test)]
-    tests::HASHED.with(|n| n.set(n.get() + more.len()));
-    for id in more {
-        let mut h = avendb::hash::Hasher::new("avenDB shared index head 2");
-        h.update(&head).update(&id.0);
-        head = h.finalize();
-    }
-    Stamp {
-        at: from.at + more.len() as u64,
-        head,
-    }
-}
-
-/// The head of the first edits `ids` of a device's log, from its first edit on: what a node does once, as it opens.
+/// The head of the first edits `ids` of a device's log: their number and a hash of their ids, in one stream, so that
+/// the head of a prefix is a function of its edits alone (`ShelfIndex.Sound`). What a node works out once as it
+/// opens, and goes on with as the log grows (`Heads`), never hashing an edit twice while its log only grows.
 pub(crate) fn head(ids: &[EditId]) -> Stamp {
-    head_on(empty_head(), ids)
+    let mut r = Running::new();
+    r.on(ids);
+    r.stamp()
 }
 
-/// What it knows of the device's log, so that it hashes no edit twice: the index's stamp and the log (its lineage,
-/// `Log::lineage`, which changes when the log is anything but appended to) it is known to be a prefix of; and the
-/// newest head it worked out, of which log.
+/// What it knows of the device's log, so that it hashes no edit twice: the index's stamp and whether it is the head of
+/// a prefix of a log (by its lineage, `Log::lineage`, which changes when the log is anything but appended to), and the
+/// head it worked out last, of which log, to go on from.
 struct Heads {
     index: Stamp,
     index_of: Option<LogRevision>,
     /// A log the index's stamp was found not to be the head of a prefix of.
     not_of: Option<LogRevision>,
-    newest: Option<(LogRevision, Stamp)>,
+    newest: Option<(LogRevision, Running)>,
 }
 
 impl Heads {
-    /// The head of device `me`'s log now: stepped on from the newest it knows of that log, or the index's, else from
-    /// its first edit.
-    fn now(&mut self, lab: &Lab, me: SignerId) -> Stamp {
-        let (log, ids) = (lab.log(me), lab.log(me).ids());
-        let lineage = log.lineage();
-        let from = match &self.newest {
-            Some((l, s)) if *l == lineage && s.at as usize <= ids.len() => *s,
-            _ if self.index_of.as_ref() == Some(&lineage)
-                && self.index.at as usize <= ids.len() =>
-            {
-                self.index
-            }
-            _ => empty_head(),
+    fn new(index: Stamp) -> Heads {
+        Heads { index, index_of: None, not_of: None, newest: None }
+    }
+
+    /// Its head of device `me`'s log, gone on to the first `to` of its edits: from the head it worked out last where
+    /// that is of this log and no further, else from the first edit. Passing the index's stamp, it notes whether the
+    /// stamp is the head there.
+    fn to(&mut self, lab: &Lab, me: SignerId, to: usize) -> Stamp {
+        let log = lab.log(me);
+        let (lineage, ids) = (log.lineage(), log.ids());
+        let mut r = match self.newest.take() {
+            Some((l, r)) if l == lineage && r.at as usize <= to => r,
+            _ => Running::new(),
         };
-        let now = head_on(from, &ids[from.at as usize..]);
-        self.newest = Some((lineage, now));
-        now
+        let unknown = self.index_of.as_ref() != Some(&lineage) && self.not_of.as_ref() != Some(&lineage);
+        let index = self.index.at as usize;
+        if unknown && (r.at as usize) <= index && index <= to {
+            r.on(&ids[r.at as usize..index]);
+            if r.stamp() == self.index {
+                self.index_of = Some(lineage.clone());
+            } else {
+                self.not_of = Some(lineage.clone());
+            }
+        }
+        r.on(&ids[r.at as usize..to]);
+        let stamp = r.stamp();
+        self.newest = Some((lineage, r));
+        stamp
+    }
+
+    /// The head of device `me`'s log now.
+    fn now(&mut self, lab: &Lab, me: SignerId) -> Stamp {
+        let len = lab.log(me).ids().len();
+        self.to(lab, me, len)
     }
 
     /// The index's stamp, if it is the head of a prefix of device `me`'s log: at once where it is known to be of this
-    /// log, else by hashing the prefix, once a log.
+    /// log or not, else by hashing that prefix, once a log, from the head worked out last where it can.
     fn of_log(&mut self, lab: &Lab, me: SignerId) -> Option<Stamp> {
-        let (log, ids) = (lab.log(me), lab.log(me).ids());
+        let log = lab.log(me);
         let lineage = log.lineage();
-        if self.index.at as usize > ids.len() {
+        if self.index.at as usize > log.ids().len() {
             return None;
         }
-        if self.index_of.as_ref() == Some(&lineage) {
-            return Some(self.index);
+        if self.index_of.as_ref() != Some(&lineage) && self.not_of.as_ref() != Some(&lineage) {
+            self.to(lab, me, self.index.at as usize);
         }
-        if self.not_of.as_ref() == Some(&lineage) {
-            return None;
-        }
-        let at = match &self.newest {
-            Some((l, s)) if *l == lineage && s.at == self.index.at => *s,
-            _ => head(&ids[..self.index.at as usize]),
-        };
-        if at != self.index {
-            self.not_of = Some(lineage);
-            return None;
-        }
-        self.index_of = Some(lineage);
-        Some(self.index)
+        (self.index_of.as_ref() == Some(&lineage)).then_some(self.index)
     }
 }
 
@@ -152,12 +175,7 @@ impl SharedIndex {
     /// The index on `shelf`, as its newest slot that opens left it: stepped on at the next save.
     pub(crate) async fn open(shelf: Shelf) -> io::Result<SharedIndex> {
         let (index, _) = ShelfIndex::open_kept(shelf, NAME, BUDGET, empty_head()).await?;
-        let heads = Mutex::new(Heads {
-            index: index.stamp(),
-            index_of: None,
-            not_of: None,
-            newest: None,
-        });
+        let heads = Mutex::new(Heads::new(index.stamp()));
         Ok(SharedIndex {
             index: tokio::sync::Mutex::new(index),
             heads,
@@ -185,12 +203,7 @@ impl SharedIndex {
                     "avendb: the shared index doesn't read whole, so it is built again: {e}"
                 );
                 index.clear(empty_head());
-                *self.heads.lock().expect("heads") = Heads {
-                    index: empty_head(),
-                    index_of: None,
-                    not_of: None,
-                    newest: None,
-                };
+                *self.heads.lock().expect("heads") = Heads::new(empty_head());
                 step_on(&mut index, &self.heads, lab, me, held).await
             }
             other => other,
@@ -354,12 +367,10 @@ async fn step_on(
     changes.push((MARK.to_vec(), Some(mark)));
     index.apply(changes, stamp).await?;
     // the index is of the log of `lineage`, as its stamp was worked out from it
-    *heads() = Heads {
-        index: stamp,
-        index_of: Some(lineage.clone()),
-        not_of: None,
-        newest: Some((lineage, stamp)),
-    };
+    {
+        let mut heads = heads();
+        (heads.index, heads.index_of, heads.not_of) = (stamp, Some(lineage), None);
+    }
     Ok(if every {
         Stepped::Every(entries.len())
     } else {

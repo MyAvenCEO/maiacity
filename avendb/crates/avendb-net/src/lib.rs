@@ -175,7 +175,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine::follow_standing;
 use avendb::id::{BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::PublicKey;
-use avendb::lab::{Backup, Checked, Drafting, Lab, Unsigned, Warm};
+use avendb::lab::{Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
 use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
@@ -679,25 +679,15 @@ impl Node {
         if opts.shelf.is_none() {
             bail!("a node in a browser keeps a shelf");
         }
-        let (edits, stored) = match &opts.shelf {
+        // its edits taken back from its shelf a page at a time, never all of them at once beside what it keeps (F9)
+        let (edits, lab, stored) = match &opts.shelf {
             Some(shelf) => {
-                let (edits, stored) = edits::Edits::open(shelf.clone()).await?;
-                (Some(edits), stored)
+                let mut to = Restorer { lab: Some(lab), me, checked: None, keys: Warm::default(), restoring: None };
+                let (edits, warm, stored, anchors) = edits::Edits::open_into(shelf.clone(), &mut to).await?;
+                (Some(edits), to.end(anchors, warm).await?, stored)
             }
-            None => (None, edits::Stored::default()),
+            None => (None, lab, Vec::new()),
         };
-        // what it worked out from them before (`Edits::warm`)
-        let warm = match &edits {
-            Some(edits) => edits.warm().await,
-            None => Warm::default(),
-        };
-        let started = edits.as_ref().and_then(|edits| edits.started());
-        let restore = move || restore(lab, me, stored, started, &warm);
-        #[cfg(not(target_arch = "wasm32"))]
-        let (lab, stored) = tokio::task::spawn_blocking(restore).await?;
-        // a page has no threads to spare
-        #[cfg(target_arch = "wasm32")]
-        let (lab, stored) = restore();
         if let Some(edits) = &edits {
             edits.settle(&lab, me, &stored);
         }
@@ -1981,26 +1971,77 @@ impl Drop for Node {
     }
 }
 
-/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`), from what it worked out
-/// before (`Lab::restore_warm`), the first edits of the head it started from (`Edits::started`); and the ids of the
-/// edits the shelf held, in its order.
-fn restore(
-    mut lab: Lab,
+/// A node's Lab taking its device's edits back from its shelf a page at a time (`edits::Taker`, `Lab::restore_page`):
+/// its restore begun at the first page, so a shelf that holds none leaves it as it was.
+struct Restorer {
+    lab: Option<Lab>,
     me: SignerId,
-    (signed, keys, anchors): edits::Stored,
-    started: Option<(Checked, usize)>,
-    warm: &Warm,
-) -> (Lab, Vec<EditId>) {
-    let stored = signed.iter().map(|s| s.edit.id()).collect();
-    if !signed.is_empty() {
-        let backup = Backup::new(signed, keys);
-        let backup = if anchors.is_empty() { backup } else {
-            // Invalid companion never invalidates or discards the ordinary signed log.
-            backup.clone().with_bootstrap_bytes(&anchors).unwrap_or(backup)
+    /// The head it begins from, and the keys the device worked out before (`Warm::keys`), what its restore begins with.
+    checked: Option<avendb::lab::Checked>,
+    keys: Warm,
+    restoring: Option<avendb::lab::Restoring>,
+}
+
+impl Restorer {
+    /// Its Lab and its restore, taken out to work on (`Lab::restore_start` where it began none yet).
+    fn take(&mut self) -> (Lab, avendb::lab::Restoring) {
+        let mut lab = self.lab.take().expect("its Lab");
+        let restoring = match self.restoring.take() {
+            Some(r) => r,
+            None => lab.restore_start(self.me, self.checked, &self.keys),
         };
-        lab.restore_warm(me, backup, started, warm);
+        (lab, restoring)
     }
-    (lab, stored)
+
+    /// Its Lab, its restore ended (`Lab::restore_end`) with `anchors` and `warm`, where it began one.
+    async fn end(mut self, anchors: Vec<u8>, warm: Warm) -> Result<Lab> {
+        let Some(r) = self.restoring.take() else { return Ok(self.lab.take().expect("its Lab")) };
+        let (mut lab, me) = (self.lab.take().expect("its Lab"), self.me);
+        let end = move || {
+            lab.restore_end(me, r, &anchors, &warm);
+            lab
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let lab = tokio::task::spawn_blocking(end).await?;
+        // a page has no threads to spare
+        #[cfg(target_arch = "wasm32")]
+        let lab = end();
+        Ok(lab)
+    }
+}
+
+impl edits::Taker for Restorer {
+    async fn begin(&mut self, checked: Option<avendb::lab::Checked>, warm: &Warm) -> Result<()> {
+        (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new() });
+        // what it took of a head that didn't read whole goes
+        if self.restoring.is_some() {
+            let mut lab = self.lab.take().expect("its Lab");
+            self.restoring = Some(lab.restore_start(self.me, checked, &self.keys));
+            self.lab = Some(lab);
+        }
+        Ok(())
+    }
+
+    async fn page(&mut self, page: Vec<Signed>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()> {
+        let ((mut lab, mut r), me) = (self.take(), self.me);
+        let take = move || {
+            lab.restore_page(me, &mut r, page, keys, of_head);
+            (lab, r)
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let (lab, r) = tokio::task::spawn_blocking(take).await?;
+        #[cfg(target_arch = "wasm32")]
+        let (lab, r) = take();
+        (self.lab, self.restoring) = (Some(lab), Some(r));
+        Ok(())
+    }
+
+    async fn keys(&mut self, keys: Vec<Arc<[u8]>>) -> Result<()> {
+        if let (Some(lab), Some(r)) = (self.lab.as_mut(), self.restoring.as_mut()) {
+            lab.restore_keys(self.me, r, keys);
+        }
+        Ok(())
+    }
 }
 
 /// `s` is an edit of a vault's log (`sync::log_of`), all that a card carries.
@@ -3724,19 +3765,27 @@ impl Shared {
 
     /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
     /// else once it waited `CATCH_UP_PACE` times as long as the last one took since it ended. True if it did.
-    async fn catch_up_paced(self: &Arc<Self>, must: bool) -> bool {
-        self.catch_up_paced_class(must, lab_schedule::Class::Foreground).await
+    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+        self.catch_up_steps(must, class, None).await.0
     }
 
-    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
+    /// `catch_up_paced_class`, and for a live pull (`live::materialize_live`) `until` a deadline: no step begins after
+    /// it, and the pages are stirred after every step, so the step that shows the live edit's entries (a new write's
+    /// entries are shown first, `Lab::show_items`) reaches them at once rather than after the whole catch-up. Whether it
+    /// did, and whether steps were left at the deadline.
+    pub(crate) async fn catch_up_steps(self: &Arc<Self>, must: bool, class: lab_schedule::Class, until: Option<Instant>) -> (bool, bool) {
         if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
-            return false;
+            return (false, false);
         }
         // A turn of the Lab a step (`Lab::catch_up_step`), not one for the whole: its replay stepped on, then its
         // entries shown anew `CATCH_UP_SLICE` at a time, so a page's turn comes between them rather than after all of
         // them (a catch-up held the server's Lab 5.5 s, 2026-10-27).
-        let (mut caught, mut work) = (false, Duration::ZERO);
+        let (mut caught, mut work, mut left) = (false, Duration::ZERO, false);
         loop {
+            if until.is_some_and(|until| Instant::now() >= until) {
+                left = true;
+                break;
+            }
             let (step, took) = self.try_lab_class(class, |lab, me| {
                 // Queue waiting is not computation cost: foreground priority must not
                 // multiply a busy queue into another long background-sync cooldown.
@@ -3744,12 +3793,15 @@ impl Shared {
                 (lab.catch_up_step(me, CATCH_UP_SLICE), started.elapsed())
             }).await.unwrap_or((avendb::lab::CatchUp::Caught(false), Duration::ZERO));
             work += took;
-            match step {
-                avendb::lab::CatchUp::Stepped => caught = true,
-                avendb::lab::CatchUp::Caught(any) => {
-                    caught |= any;
-                    break;
-                }
+            let done = match step {
+                avendb::lab::CatchUp::Stepped => { caught = true; false }
+                avendb::lab::CatchUp::Caught(any) => { caught |= any; true }
+            };
+            if until.is_some() && caught {
+                self.jobs.stir();
+            }
+            if done {
+                break;
             }
         }
         if caught {
@@ -3757,7 +3809,7 @@ impl Shared {
             self.changed.notify_one();
             self.find_again_on_new_keys().await;
         }
-        caught
+        (caught, left)
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by

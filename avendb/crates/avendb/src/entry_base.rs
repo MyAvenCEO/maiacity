@@ -11,7 +11,7 @@ mod suffix;
 #[path = "entry_judgment.rs"]
 mod judgment;
 pub use judgment::RestoredOwnerJudgment;
-pub(crate) use judgment::{Anchors, Based, OverlayBasis};
+pub(crate) use judgment::{Anchors, Based, OverlayBasis, anchors_of, frontier_of};
 
 const FORMAT: &[u8] = b"avenDB entry base 2\n";
 const MAX_BYTES: usize = 1 << 20;
