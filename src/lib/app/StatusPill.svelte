@@ -138,6 +138,14 @@
 		font-variant-numeric: tabular-nums;
 		text-align: left;
 		cursor: pointer;
+		/* never past the screen's edge, however long what it says (a phone, 2026-10-28) */
+		max-width: calc(100vw - 32px);
+		min-width: 0;
+	}
+
+	.pill span {
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.details {
@@ -145,24 +153,29 @@
 		top: calc(100% + 8px);
 		right: 0;
 		display: grid;
-		grid-template-columns: max-content max-content;
+		grid-template-columns: max-content minmax(0, 1fr);
 		gap: 0.2rem 0.8rem;
 		margin: 0;
 		padding: 0.5rem 0.75rem;
 		border-radius: 12px;
 		font-size: 0.7rem;
 		line-height: 1.4;
-		white-space: nowrap;
 		font-variant-numeric: tabular-nums;
+		/* the names and numbers wrap inside the screen rather than run off its left edge */
+		width: max-content;
+		max-width: min(22rem, calc(100vw - 32px));
 	}
 
 	.details dt {
 		opacity: 0.65;
+		white-space: nowrap;
 	}
 
 	.details dd {
 		margin: 0;
 		text-align: right;
+		min-width: 0;
+		overflow-wrap: anywhere;
 	}
 
 	.offline {

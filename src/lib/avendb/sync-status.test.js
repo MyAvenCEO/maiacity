@@ -129,7 +129,8 @@ test('with no pull running it waits on the peers it hears, named by their device
 	const peerOf = (device) => ({ device, name: null, pulling: null, pages: 0, edits: 0, last: 0 });
 	const idle = observeSync(emptySync(), report({ pulling: 0, edits: 0, from: [peerOf('85b01be4' + '0'.repeat(56)), peerOf('2f74eca3' + '0'.repeat(56))] }), 1000);
 	const live = liveSync(idle, 1000 + STALL + 1000);
-	expect(live.line).toBe('Waiting on 85b01be4, 2f74eca3 · 6 s');
+	expect(live.line).toBe('Waiting on 2 peers · 6 s');
+	expect(live.rows).toContainEqual(['Waiting on', '85b01be4, 2f74eca3 for 6 s']);
 	expect(live.rows).toContainEqual(['Last page', 'none yet']);
 });
 
@@ -156,7 +157,7 @@ test('a pull that runs on and brings nothing is stalled, not a transfer, and its
 	live = liveSync(sync, 361000 + STALL + 2000);
 	expect(live.moving).toBe(0);
 	expect(live.rows).toContainEqual(['Transfers', '0 taking · 2 stalled']);
-	expect(live.line).toBe('Waiting on Mac, 85b01be4 · 7 s');
+	expect(live.line).toBe('Waiting on 2 peers · 7 s');
 	// a failed asking alone moves nothing
 	const failedAgain = observeSync(sync, report({ pulling: 2, edits: 60, from: [from[0], { ...from[1], failed: 15, askings: 16 }] }), 368000);
 	expect(failedAgain.since).toBe(361000);
@@ -171,7 +172,8 @@ test('a peer whose connection drops a moment keeps its coverage, marked reconnec
 	const dropped = observeSync(before, report({ peers: 2, reconnecting: 1, pulling: 0, from: [both[0], peerOf('85b01be4', null, true)] }), 2000);
 	expect([dropped.logs, dropped.behind, dropped.reconnecting]).toEqual([before.logs, before.behind, 1]);
 	expect(dropped.since).toBe(before.since);
-	expect(liveSync(dropped, 2000 + STALL).line).toBe('Waiting on Mac, 85b01be4 (reconnecting) · 6 s');
+	expect(liveSync(dropped, 2000 + STALL).line).toBe('Waiting on 2 peers · 6 s');
+	expect(liveSync(dropped, 2000 + STALL).rows).toContainEqual(['Waiting on', 'Mac, 85b01be4 (reconnecting) for 6 s']);
 	// a report can't say more peers reconnect than it counts
 	expect(observeSync(emptySync(), report({ peers: 1, reconnecting: 3 }), 1000).reconnecting).toBe(1);
 });
