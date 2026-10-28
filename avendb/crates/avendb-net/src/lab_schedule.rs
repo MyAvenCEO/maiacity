@@ -530,7 +530,7 @@ mod slices {
 
     /// Any device's rule: a catch-up its pace puts off still comes, so it never answers its peers from a replay behind
     /// its log for good. Left behind with nothing to step it on, a device answered by a replay without the edits it took
-    /// since (`Lab::standing`): a second device of the same vault was never handed the note written while it was away
+    /// since (`Lab::standing`): a peer was never handed the note written while it was away
     /// (the drive test `eves_drive_…` caught it, 2026-10-28).
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_put_off_catch_up_still_runs_so_no_peer_is_answered_from_a_stale_replay() {
