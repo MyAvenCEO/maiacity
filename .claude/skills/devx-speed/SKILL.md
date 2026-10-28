@@ -118,6 +118,11 @@ bun scripts/devx/collect.mjs --tasks                  # "Task: <branch>" lines f
   goes in as a count (pages, bytes, index rows, log edits read; bytes an edit) or on simulated time (tokio's paused
   clock, `avendb-net`'s `sim` link: a link's use, a live edit's delay), as a plain test with its limit in the test. The
   `#[ignore]` benches stay for a by-hand look.
+- **The fresh-device check before ready** (Goal 7 P2): the collector runs `node scripts/devx/fresh-device.mjs` on
+  its branch before the goal PR goes ready. A local peer, fresh browser profiles sharing one software passkey: found,
+  write 2,000 todos, sign in on a fresh device, catch up, live both ways, unlock after a restart, the peer killed
+  mid-pull and back, CPU settled; each step against its budget (`BUDGETS`), exit 1 on a miss. First run ~2 min plus
+  the localhost-passkeys builds (~9 min cold). `--fresh webkit` where WebKit is installed (the iPhone's engine).
 - **Once the PR is ready, the goal is closed.** `collect.mjs` refuses to merge more into a ready PR (each push restarts
   its CI). Late branches go in the next goal; `--late` only for a fix this run needs.
 - **Long benches and scale runs never on a thread's 4-core box** (30-min 130k runs held its cargo lock for half an
