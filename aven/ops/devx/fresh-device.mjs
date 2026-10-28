@@ -25,7 +25,7 @@
  *
  * --build rebuilds the device (wasm-bindgen 0.2.129) and the peer with `localhost-passkeys` first; without it, the
  * builds of a run before are taken, and made where none is. The device's package goes to target/fresh-device/,
- * never aven/db/page/device/, which holds the committed build: the dev server answers its two files from there.
+ * never aven/db/page/device/, which holds the shipped build: the dev server answers its two files from there.
  * --keep leaves the peer's shelf and the profiles in place and prints where. Exit 1 when a step fails or overruns.
  */
 import { spawn, spawnSync } from 'node:child_process';

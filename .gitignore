@@ -13,6 +13,8 @@ node_modules
 /theos/target/
 /aven/db/target/
 /aven/db/target-wasm/
+# the page's avenDB device, built from avenDB's sources (B1: bun aven/ops/devx/wasm.mjs ensure)
+/aven/db/page/device/
 /theos/app/gen/
 # Leftover generated sidecars from older app builds
 /theos/app/binaries/

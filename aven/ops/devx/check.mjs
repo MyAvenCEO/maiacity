@@ -38,6 +38,9 @@ export function plan(files, { wide = false, merge = false } = {}) {
  }
  if (js.some(f => /^(maia\/(site|content)|aven\/(kernel|db\/page))\//.test(f)) || files.some(f => /^(svelte|vite|tsconfig)/.test(f)))
   steps.push({ why: 'types (svelte-check, ~80 s)', cmd: ['bun', '--bun', 'run', 'check'] });
+ // the page's avenDB device, a build output (B1), before any JS that loads it: CI's build of these sources, else built here
+ const lint = steps.findIndex(s => s.cmd[1] !== 'aven/ops/ci/workflows.mjs');
+ if (lint >= 0) steps.splice(lint, 0, { why: 'the page\'s avenDB device for these sources', cmd: ['bun', 'aven/ops/devx/wasm.mjs', 'ensure'] });
  // Rust: type check per touched crate first, then only the tests the change names (aven/db/CLAUDE.md). A crate's test
  // files are the modules of one program (`tests/all/`, and `tests/memory/` for those that need the process to
  // themselves): a touched file runs its module's tests, each in a run of its own as each file was a program of its own,

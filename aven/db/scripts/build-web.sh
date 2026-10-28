@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # avenDB's page's WebAssembly: avendb-browser, the page's own device (Your account), with its JS modules, into
-# aven/db/page/device/. The package is committed, so the site builds without Rust: run this after changing avendb,
-# avendb-net or avendb-browser, and commit what it writes.
+# aven/db/page/device/. A build output, not in git (B1): `bun aven/ops/devx/wasm.mjs ensure` fills the folder from
+# CI's build of the same sources, or runs this where there is none (uncommitted Rust changes); `wasm.mjs build` runs
+# it and stamps what it wrote.
 #
 #   aven/db/scripts/build-web.sh
 #
