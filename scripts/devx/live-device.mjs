@@ -12,8 +12,9 @@
  *   node scripts/devx/live-device.mjs --accept                  once, after Samuel invited it: accept co-owning
  *   node scripts/devx/live-device.mjs                           a run: reopen + unlock, sync, Chat, Assets, report
  *   node scripts/devx/live-device.mjs --roundtrip [Bla]         the release gate (Samuel 2026-10-28): a message in the
- *                                                                room reaches the other device within 1 s, both ways,
- *                                                                whenever both are online, catching up or not
+ *                                                                room reaches the other device within 3 s (--gate;
+ *                                                                the target is 1 s), both ways, whenever both are
+ *                                                                online, catching up or not
  *
  * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 60 (seconds to watch sync),
  * --profile <dir>, --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
@@ -48,6 +49,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** What a run must meet. */
 export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 1 };
+/** What the roundtrip gates at now (--gate, Samuel 2026-10-28: 3 s for this sync build), the 1 s target still reported. */
+const GATE = Number(option('--gate', '3'));
 
 // ─── the key: in the login Keychain on the Mac, else a file only its owner reads ───
 
@@ -409,7 +412,7 @@ async function roundtrip(name) {
 		await home.context.close();
 	}
 	const ways = [...(gate.to ?? [gate.toFresh]), ...(gate.from ?? [gate.fromFresh])];
-	const fast = ways.every((w) => w?.seconds != null && w.seconds < TARGETS.message);
+	const under = (limit) => ways.every((w) => w?.seconds != null && w.seconds < limit);
 	/** The p-th percentile of a direction's times (null for one that never arrived counts as the slowest). */
 	const pct = (list, p) => {
 		const xs = (list ?? []).map((w) => w?.seconds ?? Infinity).sort((a, b) => a - b);
@@ -417,14 +420,16 @@ async function roundtrip(name) {
 	};
 	gate.stats = { to: { p50: pct(gate.to, 50), p95: pct(gate.to, 95) }, from: { p50: pct(gate.from, 50), p95: pct(gate.from, 95) } };
 	// the gate holds whenever both are online; whether the fresh one was still catching up is said, not gated
-	const pass = (log.pass = { message: fast, errors: !log.errors.length });
+	const pass = (log.pass = { [`message<${GATE}s`]: under(GATE), errors: !log.errors.length });
+	log.target = { [`message<${TARGETS.message}s`]: under(TARGETS.message) };
 	writeFileSync(join(out, 'run.json'), JSON.stringify(log, null, 1));
 	const line =
 		`${stamp} ${engine} roundtrip #${name}: fresh open ${gate.open ?? '-'}s room ${gate.room ?? '-'}s ` +
 		`first →fresh ${gate.toFresh?.seconds ?? 'none'}s ←fresh ${gate.fromFresh?.seconds ?? 'none'}s ` +
 		(messages > 1 ? `| ${messages} each way →fresh p50 ${gate.stats.to.p50}s p95 ${gate.stats.to.p95}s ←fresh p50 ${gate.stats.from.p50}s p95 ${gate.stats.from.p95}s ` : '') +
 		`(fresh pill at send: ${gate.toFresh?.receiverPill || '?'}) errors ${log.errors.length} ` +
-		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')}`;
+		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')} ` +
+		`(target message<${TARGETS.message}s ${log.target[`message<${TARGETS.message}s`] ? 'met' : 'not met'})`;
 	writeFileSync(join(out, 'line.txt'), `${line}\n`);
 	console.log(line);
 	console.log(`run folder: ${out}  (the fresh device stays a device of the vault: revoke it under Devices when done)`);
