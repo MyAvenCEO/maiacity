@@ -8,8 +8,8 @@
 //   bun aven/ops/move.mjs --move          commit 2: every folder to its new place, then every relative import and every
 //                                         path written as text, and paths.json's places to `after`
 //   bun aven/ops/move.mjs --check         the cut-over's search: fails on any old path still named in the tree
-//   bun aven/ops/move.mjs --fix [<merge>] a branch started before the move, right after it merged it (HEAD): the files
-//                                         it added moved too, and the old paths in the lines it wrote rewritten
+//   bun aven/ops/move.mjs --fix [<merge>] right after a merge (HEAD) of a branch started before the move, either way round:
+//                                         the files it added moved too, and the old paths in the lines it wrote rewritten
 //
 // A reference is rewritten only when it names a file or folder the repo holds: imports (relative or $lib), Rust
 // include_str! and Cargo paths, and every path in text (comments, docs, JSON, TOML, YAML, shell). A path relative to its
@@ -575,9 +575,15 @@ async function check() {
  */
 async function fix(merge, tree) {
 	if (git('status', '--porcelain').trim()) throw new Error('commit the merge first: --fix reads what the branch committed');
-	let mine, theirs;
-	try { [mine, theirs] = ['^1', '^2'].map((p) => git('rev-parse', '--verify', '--quiet', merge + p).trim()); }
+	let sides;
+	try { sides = ['^1', '^2'].map((p) => git('rev-parse', '--verify', '--quiet', merge + p).trim()); }
 	catch { throw new Error(`--fix [<merge>]: ${merge} is no merge; name the commit that merged the move into this branch`); }
+	// mine = the side the move is still ahead of: its paths.json plans the move (`after`), or it has none yet. Either side
+	// may be it: a branch merges the refactor branch, the refactor branch merges a branch, the move takes in newer work
+	const ahead = (rev) => { const t = textAt(rev, MAP); return t == null || 'after' in JSON.parse(t); };
+	const [mine, theirs] = ahead(sides[0]) ? sides : [sides[1], sides[0]];
+	if (ahead(mine) === ahead(theirs))
+		throw new Error(`--fix: both sides of ${merge} are ${ahead(mine) ? 'before' : 'after'} the move; it fixes a merge of one of each`);
 	const fork = git('merge-base', mine, theirs).trim();
 	const own = git('diff', '--name-only', '--no-renames', '--diff-filter=AM', fork, mine).split('\n').filter(Boolean);
 	// the branch's tree before the merge ignores what the tree now ignores where it went
