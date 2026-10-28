@@ -7365,6 +7365,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
             s.tip.lane = tip.lane;
             if !reshow && s.tip == tip && !opened.contains_key(&en.id) {
                 s.print = print(en, &groups_print);
+                #[cfg(not(avendb_no_replay_checks))]
                 debug_assert!(same_shown_in(s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
             }
         }
@@ -7419,6 +7420,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
         let materialize_at = Perf::start();
         let s = j.shown_on(d, print, tip, items);
         store.perf.add("show: materialize", materialize_at);
+        #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(from == 0 || same_shown_in(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault)), Some(store)));
         retain_recent_shown(&mut old, &mut recent, en.id, s);
     }
