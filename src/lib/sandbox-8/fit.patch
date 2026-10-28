@@ -1,0 +1,674 @@
+diff -ruN a/apps/web/src/client.ts b/apps/web/src/client.ts
+--- a/apps/web/src/client.ts
++++ b/apps/web/src/client.ts
+@@ -7,7 +7,7 @@
+  *   - SocketTransport: the simulation runs in the game server (apps/server) shared with other
+  *     browsers and AI agents; messages travel over a WebSocket (wire.ts)
+  */
+-import type { CommandResult } from '@cc/kernel';
++import type { CommandResult } from '../../../packages/kernel/src/index.ts';
+ import type { ActionEntry, AgentView, Frame, FromWorker, ProposalVerdict, Query, StaticWorld, ToWorker } from './protocol.ts';
+ import { decodeMessage } from './wire.ts';
+ 
+@@ -24,6 +24,8 @@
+   onError(l: (message: string) => void): void;
+   /** connection lost / restored (remote only) */
+   onStatus?(l: (connected: boolean) => void): void;
++  /** end the transport (the worker) */
++  dispose?(): void;
+ }
+ 
+ export class WorkerTransport implements Transport {
+@@ -33,6 +35,9 @@
+     const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+     this.worker = new Worker(url);
+   }
++  dispose(): void {
++    this.worker.terminate();
++  }
+   send(msg: ToWorker): void {
+     this.worker.postMessage(msg);
+   }
+@@ -132,6 +137,11 @@
+   readonly remote: boolean;
+   private readonly transport: Transport;
+ 
++  /** end the simulation (the worker) */
++  dispose(): void {
++    this.transport.dispose?.();
++  }
++
+   constructor(transport: Transport = defaultTransport()) {
+     this.transport = transport;
+     this.remote = transport.remote;
+diff -ruN a/apps/web/src/host.ts b/apps/web/src/host.ts
+--- a/apps/web/src/host.ts
++++ b/apps/web/src/host.ts
+@@ -0,0 +1,21 @@
++/**
++ * What the page that mounts the client lends it (`mountCity`'s `host`): maiaCITY's one render core (its renderer and
++ * orbit controls) and its screen slots, where the app's layout places the client's top bar. The client keeps no copy.
++ */
++export interface Host {
++  createRenderer(o: { antialias: boolean; power: string; preserve: boolean }): any;
++  createControls(camera: any, dom: HTMLElement): any;
++  screenSlot(node: HTMLElement, name: string): { update(name: string): void; destroy(): void };
++}
++
++export const host: Host = {
++  createRenderer: () => {
++    throw new Error('mounted without a host');
++  },
++  createControls: () => {
++    throw new Error('mounted without a host');
++  },
++  screenSlot: () => {
++    throw new Error('mounted without a host');
++  },
++};
+diff -ruN a/apps/web/src/main.tsx b/apps/web/src/main.tsx
+--- a/apps/web/src/main.tsx
++++ b/apps/web/src/main.tsx
+@@ -1,113 +1,148 @@
+ /**
+  * Browser entry: boots the simulation worker, the 3D scene and the Preact UI, and wires the
+- * worker streams (world / patches / frames) into both.
++ * worker streams (world / patches / frames) into both. In maiaCITY (Sandbox 8) it mounts into a
++ * root it is given and returns what takes it down again.
+  */
+ import { render } from 'preact';
+-import type { LogEntry } from '@cc/kernel';
++import type { LogEntry } from '../../../packages/kernel/src/index.ts';
+ import { SimClient } from './client.ts';
+ import { createScene } from './render/scene.ts';
+ import { App } from './ui/App.tsx';
+ import { setCalendar } from './ui/format.ts';
+ import { onFrameAutosave, readAutosave } from './ui/persistence.ts';
+-import { app, booting, fatal, frame, load, logHistory, options, save, toast, world, worldRev } from './ui/state.ts';
++import { app, booting, explainPopover, fatal, following, frame, helpOpen, hoverId, inspectorFocus, load, logHistory, menuOpen, moveTargetFor, options, overlay, save, scoutGoal, scoutOpen, scoutPlaces, selection, toast, toasts, tool, world, worldRev } from './ui/state.ts';
+ import { installController } from './ui/tools/controller.ts';
++import { host, type Host } from './host.ts';
+ 
+-const root = document.getElementById('app')!;
+-root.innerHTML = '';
+-const sceneEl = document.createElement('div');
+-sceneEl.id = 'scene';
+-const uiEl = document.createElement('div');
+-uiEl.id = 'ui';
+-root.append(sceneEl, uiEl);
+-
+-const params = new URLSearchParams(location.search);
+-const client = new SimClient();
+-const scene = createScene(sceneEl);
+-app.client = client;
+-app.scene = scene;
+-{
+-  const { worldLabels: _w, autosave: _a, ...sceneOpts } = options.peek();
+-  scene.setOptions(sceneOpts);
+-}
+-
+-// ------------------------------------------------------------------ log → toasts
+-let seenLog = new Set<string>();
+-let logPrimed = false;
+-const logKey = (e: LogEntry) => `${e.t}|${e.module}|${e.message}`;
+-function onLog(entries: LogEntry[]): void {
+-  const fresh: LogEntry[] = [];
+-  for (const e of entries) {
+-    const k = logKey(e);
+-    if (seenLog.has(k)) continue;
+-    seenLog.add(k);
+-    fresh.push(e);
++export function mountCity(root: HTMLElement, lent: Host): () => void {
++  Object.assign(host, lent);
++  root.innerHTML = '';
++  const sceneEl = document.createElement('div');
++  sceneEl.id = 'scene';
++  const uiEl = document.createElement('div');
++  uiEl.id = 'ui';
++  root.append(sceneEl, uiEl);
++
++  const params = new URLSearchParams(location.search);
++  const client = new SimClient();
++  const scene = createScene(sceneEl);
++  app.client = client;
++  app.scene = scene;
++  {
++    const { worldLabels: _w, autosave: _a, ...sceneOpts } = options.peek();
++    scene.setOptions(sceneOpts);
+   }
+-  if (seenLog.size > 5000) seenLog = new Set([...seenLog].slice(-2000));
+-  if (!fresh.length) return;
+-  logHistory.value = [...logHistory.peek(), ...fresh].slice(-1000);
+-  if (!logPrimed) return;
+-  for (const e of fresh.slice(-4)) {
+-    if (e.level === 'warn' || e.level === 'success' || e.level === 'error') toast(e.level, e.message, undefined, e.refs);
++
++  // ------------------------------------------------------------------ log → toasts
++  let seenLog = new Set<string>();
++  let logPrimed = false;
++  const logKey = (e: LogEntry) => `${e.t}|${e.module}|${e.message}`;
++  function onLog(entries: LogEntry[]): void {
++    const fresh: LogEntry[] = [];
++    for (const e of entries) {
++      const k = logKey(e);
++      if (seenLog.has(k)) continue;
++      seenLog.add(k);
++      fresh.push(e);
++    }
++    if (seenLog.size > 5000) seenLog = new Set([...seenLog].slice(-2000));
++    if (!fresh.length) return;
++    logHistory.value = [...logHistory.peek(), ...fresh].slice(-1000);
++    if (!logPrimed) return;
++    for (const e of fresh.slice(-4)) {
++      if (e.level === 'warn' || e.level === 'success' || e.level === 'error') toast(e.level, e.message, undefined, e.refs);
++    }
+   }
+-}
+ 
+-// ------------------------------------------------------------------ streams
+-let resumedFromAutosave = false;
+-client.onWorld((w) => {
+-  setCalendar(w.calendar.epochDay, w.calendar.locale);
+-  scene.setWorld(w);
+-  world.value = { ...w };
+-  worldRev.value += 1;
+-  booting.value = false;
+-  fatal.value = null;
+-  logPrimed = false;
+-  seenLog = new Set();
+-  resumedFromAutosave = false;
+-});
+-client.onPatch((p) => {
+-  scene.applyPatch(p);
+-  if (client.world) world.value = { ...client.world };
+-  worldRev.value += 1;
+-});
+-client.onFrame((f) => {
+-  scene.setFrame(f);
+-  frame.value = f;
+-  onLog(f.log);
+-  logPrimed = true;
+-  onFrameAutosave(f);
+-});
+-client.onError((msg) => {
+-  if (booting.peek() && resumedFromAutosave) {
+-    // an autosave from an incompatible build: start fresh instead
++  // ------------------------------------------------------------------ streams
++  let resumedFromAutosave = false;
++  client.onWorld((w) => {
++    setCalendar(w.calendar.epochDay, w.calendar.locale);
++    scene.setWorld(w);
++    world.value = { ...w };
++    worldRev.value += 1;
++    booting.value = false;
++    fatal.value = null;
++    logPrimed = false;
++    seenLog = new Set();
+     resumedFromAutosave = false;
+-    toast('warn', 'Autosave could not be restored', 'Starting a new game instead.');
++  });
++  client.onPatch((p) => {
++    scene.applyPatch(p);
++    if (client.world) world.value = { ...client.world };
++    worldRev.value += 1;
++  });
++  client.onFrame((f) => {
++    scene.setFrame(f);
++    frame.value = f;
++    onLog(f.log);
++    logPrimed = true;
++    onFrameAutosave(f);
++  });
++  client.onError((msg) => {
++    if (booting.peek() && resumedFromAutosave) {
++      // an autosave from an incompatible build: start fresh instead
++      resumedFromAutosave = false;
++      toast('warn', 'Autosave could not be restored', 'Starting a new game instead.');
++      client.init(app.seed);
++      return;
++    }
++    if (booting.peek()) fatal.value = msg;
++    else toast('error', 'Simulation error', msg.split('\n')[0]);
++  });
++
++  client.onStatus((connected) => {
++    if (connected) toast('success', 'Reconnected to the game server');
++    else toast('warn', 'Connection to the game server lost', 'Reconnecting…');
++  });
++
++  // ------------------------------------------------------------------ boot
++  const seedParam = Number(params.get('seed'));
++  app.seed = Number.isFinite(seedParam) && seedParam > 0 ? seedParam : load('seed', 2027);
++  save('seed', app.seed);
++  // server mode: the server owns the world (and its saves); the browser only joins it
++  const auto = client.remote || params.has('fresh') || params.has('seed') ? null : readAutosave();
++  if (auto && auto.snapshot) {
++    resumedFromAutosave = true;
++    app.seed = auto.seed;
++    client.init(auto.seed, auto.snapshot);
++  } else {
+     client.init(app.seed);
+-    return;
+   }
+-  if (booting.peek()) fatal.value = msg;
+-  else toast('error', 'Simulation error', msg.split('\n')[0]);
+-});
+-
+-client.onStatus((connected) => {
+-  if (connected) toast('success', 'Reconnected to the game server');
+-  else toast('warn', 'Connection to the game server lost', 'Reconnecting…');
+-});
+-
+-// ------------------------------------------------------------------ boot
+-const seedParam = Number(params.get('seed'));
+-app.seed = Number.isFinite(seedParam) && seedParam > 0 ? seedParam : load('seed', 2027);
+-save('seed', app.seed);
+-// server mode: the server owns the world (and its saves); the browser only joins it
+-const auto = client.remote || params.has('fresh') || params.has('seed') ? null : readAutosave();
+-if (auto && auto.snapshot) {
+-  resumedFromAutosave = true;
+-  app.seed = auto.seed;
+-  client.init(auto.seed, auto.snapshot);
+-} else {
+-  client.init(app.seed);
+-}
+ 
+-installController(sceneEl);
+-render(<App />, uiEl);
++  const uninstall = installController(sceneEl);
++  render(<App />, uiEl);
++
++  (window as unknown as { __cc: unknown }).__cc = { client, scene, app };
+ 
+-(window as unknown as { __cc: unknown }).__cc = { client, scene, app };
++  return () => {
++    render(null, uiEl);
++    uninstall();
++    scene.dispose();
++    client.dispose();
++    delete (window as unknown as { __cc?: unknown }).__cc;
++    document.body.classList.remove('dragging');
++    // the session's state goes back to how a page starts (what is saved stays saved)
++    world.value = null;
++    worldRev.value = 0;
++    frame.value = null;
++    booting.value = true;
++    fatal.value = null;
++    logHistory.value = [];
++    tool.value = 'select';
++    moveTargetFor.value = null;
++    selection.value = null;
++    following.value = null;
++    hoverId.value = null;
++    inspectorFocus.value = null;
++    overlay.value = 'none';
++    scoutOpen.value = false;
++    scoutGoal.value = null;
++    scoutPlaces.value = [];
++    helpOpen.value = false;
++    menuOpen.value = false;
++    explainPopover.value = null;
++    toasts.value = [];
++    root.innerHTML = '';
++  };
++}
+diff -ruN a/apps/web/src/render/camera.ts b/apps/web/src/render/camera.ts
+--- a/apps/web/src/render/camera.ts
++++ b/apps/web/src/render/camera.ts
+@@ -4,7 +4,8 @@
+  * and smooth focus animations.
+  */
+ import { MOUSE, type PerspectiveCamera, Spherical, TOUCH, Vector3 } from 'three';
+-import { MapControls } from 'three/addons/controls/MapControls.js';
++import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
++import { host } from '../host.ts';
+ import type { Heightfield } from './heightfield.ts';
+ 
+ const MIN_DIST = .7;
+@@ -21,7 +22,7 @@
+ }
+ 
+ export class CameraRig {
+-  readonly controls: MapControls;
++  readonly controls: OrbitControls;
+   private keys = new Set<string>();
+   private anim: FocusAnim | null = null;
+   private sph = new Spherical();
+@@ -40,7 +41,7 @@
+     readonly camera: PerspectiveCamera,
+     private dom: HTMLElement,
+   ) {
+-    const c = new MapControls(camera, dom);
++    const c = host.createControls(camera, dom);
+     c.enableDamping = true;
+     c.dampingFactor = 0.09;
+     c.screenSpacePanning = false;
+diff -ruN a/apps/web/src/render/scene.ts b/apps/web/src/render/scene.ts
+--- a/apps/web/src/render/scene.ts
++++ b/apps/web/src/render/scene.ts
+@@ -3,6 +3,7 @@
+  * and pointer events. Static world data is (re)built only when its revision changes; frames
+  * update dynamic objects and the environment.
+  */
++import { host } from '../host.ts';
+ import {
+   ACESFilmicToneMapping,
+   Mesh,
+@@ -93,7 +94,7 @@
+   private firstWorld = true;
+ 
+   constructor(private container: HTMLElement) {
+-    const r = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
++    const r = host.createRenderer({ antialias: true, power: 'high-performance', preserve: false });
+     r.outputColorSpace = SRGBColorSpace;
+     r.toneMapping = ACESFilmicToneMapping;
+     r.toneMappingExposure = 1.0;
+diff -ruN a/apps/web/src/styles.css b/apps/web/src/styles.css
+--- a/apps/web/src/styles.css
++++ b/apps/web/src/styles.css
+@@ -1,7 +1,9 @@
+ /* Constructible City — UI styles. Dark glass panels over the 3D view; colour only for meaning. */
+-:root {
+-  --glass: rgba(17, 23, 28, 0.86);
+-  --glass-2: rgba(28, 36, 43, 0.92);
++/* maiaCITY (Sandbox 8): every rule scoped to the game's root (main.tsx mountCity), so none reaches the app's other pages; the keyframes, which cannot nest, follow it. */
++.cc-city {
++& {
++  --glass: rgb(17 23 28 / var(--overlay-alpha, .75));
++  --glass-2: rgb(28 36 43 / var(--overlay-alpha, .75));
+   --line: rgba(255, 255, 255, 0.08);
+   --line-2: rgba(255, 255, 255, 0.14);
+   --ink: #e6edf2;
+@@ -28,7 +30,7 @@
+   color-scheme: dark;
+ }
+ @media (max-width: 1400px) {
+-  :root {
++  & {
+     --side-w: 352px;
+   }
+ }
+@@ -36,8 +38,7 @@
+ * {
+   box-sizing: border-box;
+ }
+-html,
+-body {
++& {
+   margin: 0;
+   height: 100%;
+   overflow: hidden;
+@@ -46,7 +47,7 @@
+   font: 12px/1.4 var(--font);
+   -webkit-font-smoothing: antialiased;
+ }
+-#app,
++&,
+ #scene,
+ #ui {
+   position: absolute;
+@@ -287,11 +288,6 @@
+   padding: 16px;
+   text-align: center;
+ }
+-@keyframes spin {
+-  to {
+-    transform: rotate(360deg);
+-  }
+-}
+ 
+ /* tooltips (data-tip) */
+ [data-tip] {
+@@ -1251,11 +1247,6 @@
+ .btn.armed {
+   animation: pulse 0.8s ease-in-out infinite alternate;
+ }
+-@keyframes pulse {
+-  to {
+-    filter: brightness(1.3);
+-  }
+-}
+ 
+ /* ------------------------------------------------------------ design panel */
+ .cls-grid {
+@@ -1979,18 +1970,18 @@
+   background: var(--accent);
+   color: #fff;
+ }
+-body.dragging .rh,
+-body.dragging .wl {
++body.dragging & .rh,
++body.dragging & .wl {
+   pointer-events: none;
+ }
+-body.dragging {
++body.dragging & {
+   cursor: grabbing;
+ }
+-body[data-tool='road'] #scene {
++body[data-tool='road'] & #scene {
+   cursor: crosshair;
+ }
+-body[data-tool='moveTarget'] #scene,
+-body[data-tool='inspect'] #scene {
++body[data-tool='moveTarget'] & #scene,
++body[data-tool='inspect'] & #scene {
+   cursor: cell;
+ }
+ 
+@@ -2042,11 +2033,6 @@
+   color: var(--ink-2);
+   font-size: 11.5px;
+ }
+-@keyframes slidein {
+-  from {
+-    transform: translateX(16px);
+-  }
+-}
+ .onboard {
+   position: absolute;
+   left: calc(var(--rail-w) + 2 * var(--gap));
+@@ -2636,20 +2622,12 @@
+   background: radial-gradient(ellipse at center, rgba(20, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.96) 70%);
+   animation: death-in 1.6s ease-out both;
+ }
+-@keyframes death-in {
+-  from { opacity: 0; backdrop-filter: grayscale(0); }
+-  to { opacity: 1; backdrop-filter: grayscale(1); }
+-}
+ .death-card {
+   max-width: 560px;
+   color: #eee;
+   text-align: center;
+   animation: death-card-in 2.4s ease-out both;
+ }
+-@keyframes death-card-in {
+-  0%, 35% { opacity: 0; transform: translateY(12px); }
+-  100% { opacity: 1; transform: none; }
+-}
+ .death-mark {
+   font-size: 64px;
+   line-height: 1;
+@@ -2715,3 +2693,28 @@
+   margin: 0;
+   cursor: pointer;
+ }
++}
++
++@keyframes spin {
++  to {
++    transform: rotate(360deg);
++  }
++}
++@keyframes pulse {
++  to {
++    filter: brightness(1.3);
++  }
++}
++@keyframes slidein {
++  from {
++    transform: translateX(16px);
++  }
++}
++@keyframes death-in {
++  from { opacity: 0; backdrop-filter: grayscale(0); }
++  to { opacity: 1; backdrop-filter: grayscale(1); }
++}
++@keyframes death-card-in {
++  0%, 35% { opacity: 0; transform: translateY(12px); }
++  100% { opacity: 1; transform: none; }
++}
+diff -ruN a/apps/web/src/ui/panels/TopBar.tsx b/apps/web/src/ui/panels/TopBar.tsx
+--- a/apps/web/src/ui/panels/TopBar.tsx
++++ b/apps/web/src/ui/panels/TopBar.tsx
+@@ -1,3 +1,6 @@
++import { useLayoutEffect, useRef } from 'preact/hooks';
++import type { ComponentChildren } from 'preact';
++import { host } from '../../host.ts';
+ /** Top bar: calendar, shift, weather, money, alerts and time controls. */
+ import { SPEEDS, SPEED_LABELS, type Hud } from '../../protocol.ts';
+ import { cx, Icon, Kbd } from '../components/common.tsx';
+@@ -5,6 +8,17 @@
+ import { app, frame, menuOpen, openDrawer, setSpeed, togglePause, world } from '../state.ts';
+ import { agentPanelOpen, toggleAgentPanel } from './AgentPanel.tsx';
+ 
++/** Shared app chrome; standalone previews keep these controls in place. */
++function ScreenSlot({ name, children }: { name: string; children: ComponentChildren }) {
++  const node = useRef<HTMLDivElement>(null);
++  useLayoutEffect(() => {
++    if (!node.current) return;
++    const action = host.screenSlot(node.current, name);
++    return () => action.destroy();
++  }, [name]);
++  return <div ref={node} class="cc-city screen-slot-theme">{children}</div>;
++}
++
+ const SHORT = ['1m', '10m', '1h', '6h', '1d'];
+ const WEATHER_LABEL: Record<string, string> = { clear: 'Clear', fair: 'Fair', overcast: 'Overcast', rain: 'Rain', heavyRain: 'Heavy rain', snow: 'Snow' };
+ 
+@@ -47,14 +61,17 @@
+   const icon = !wx.daylight && (wx.kind === 'clear' || wx.kind === 'fair') ? 'moon' : precipNow && wx.kind !== 'snow' && wx.kind !== 'rain' && wx.kind !== 'heavyRain' ? 'rain' : wx.kind;
+   const lowLiquidity = h.liquidity < 20_000;
+   return (
+-    <div class="topbar glass">
++    <div class="topbar-slots">
++      <ScreenSlot name="title">
+       <div class="tb-group tb-brand" title={w ? `${w.world.label} — ${w.location.name} · ${w.location.lat.toFixed(2)}° N ${w.location.lon.toFixed(2)}° E\n${Object.entries(w.world.bound).map(([c, b]) => `${c}: ${b}`).join('\n')}` : ''}>
+         <button class="icon-btn" onClick={() => (menuOpen.value = !menuOpen.value)} title="Game menu: save, load, new game, options">
+           <Icon name="menu" />
+         </button>
+-        <span class="tb-loc">{w?.location.name.split(' (')[0] ?? '…'}</span>
++        <span class="tb-loc">Sandbox 8</span>
+       </div>
++      </ScreenSlot>
+ 
++      <ScreenSlot name="center">
+       <div class="tb-group tb-time" title="Simulation date and time">
+         <span class="tb-clock num">{clock(f.t)}</span>
+         <span class="tb-date num">
+@@ -65,7 +82,9 @@
+           {h.onShift ? 'On shift' : 'Off shift'}
+         </span>
+       </div>
++      </ScreenSlot>
+ 
++      <ScreenSlot name="stats">
+       <div class="tb-group tb-weather" tabIndex={0} aria-label="Weather now and forecast">
+         <span class={cx('wx-ico', `wx-${wx.kind}`)}>
+           <Icon name={icon} size={18} />
+@@ -115,6 +134,8 @@
+         </button>
+       </div>
+ 
++      </ScreenSlot>
++      <ScreenSlot name="center">
+       <div class="tb-group tb-speed">
+         <button class={cx('btn', 'btn-play', paused && 'is-paused')} onClick={togglePause} title="Pause / resume (Space)">
+           <Icon name={paused ? 'play' : 'pause'} size={14} />
+@@ -133,6 +154,7 @@
+           +1 d
+         </button>
+       </div>
++      </ScreenSlot>
+       {f.dataWait && (
+         <div class="data-wait" title={f.dataWait}>
+           <Icon name="pause" size={11} /> Waiting for data — {f.dataWait}
+diff -ruN a/apps/web/src/ui/tools/controller.ts b/apps/web/src/ui/tools/controller.ts
+--- a/apps/web/src/ui/tools/controller.ts
++++ b/apps/web/src/ui/tools/controller.ts
+@@ -2,9 +2,10 @@
+  * Tool controller: routes scene pointer events and the keyboard to the active tool, composes
+  * the tool visuals for the scene and keeps the overlay layer loaded.
+  */
++// @ts-ignore — a .tsx module (Preact JSX): Vite compiles it (src/lib/sandbox-8/tsconfig.json), the app's type check does not
+ import { toggleAgentPanel } from '../panels/AgentPanel.tsx';
+ import { effect, signal } from '@preact/signals';
+-import type { Vec2 } from '@cc/geo';
++import type { Vec2 } from '../../../../../packages/geo/src/index.ts';
+ import type { OverlayData, PointerHit, ToolVisuals } from '../../render/api.ts';
+ import { SPEEDS } from '../../protocol.ts';
+ import {
+@@ -32,6 +33,7 @@
+   tool,
+   type ToolId,
+ } from '../state.ts';
++// @ts-ignore — a .tsx module (Preact JSX): Vite compiles it (src/lib/sandbox-8/tsconfig.json), the app's type check does not
+ import { orderDialog } from '../panels/drawer/MaterialsTab.tsx';
+ import { alignToRoad, bCursor, bPlaced, buildingDraftVisuals, cancelBuilding, commitBuilding, installBuildingTool, place, rotate } from './building.ts';
+ import { addPoint, cancelDraft, commit, dragIndex, draftCursor, hoverStation, installRoadTool, movePoint, noSnap, onDoubleClick, removeLast, roadDraftVisuals } from './road.ts';
+@@ -307,8 +309,8 @@
+ /** last loaded overlay (legend) */
+ export const overlayData = signal<OverlayData | null>(null);
+ 
+-/** Install event routing (once, after the scene exists). */
+-export function installController(container: HTMLElement): void {
++/** Install event routing (once, after the scene exists); returns what takes it down again. */
++export function installController(container: HTMLElement): () => void {
+   installRoadTool();
+   installBuildingTool();
+   // Alt + wheel rotates the building footprint (capture: keep the camera from zooming)
+@@ -340,13 +342,14 @@
+       scene.setHover(null);
+     }
+   });
++  const onBlur = () => (noSnap.value = false);
+   window.addEventListener('keydown', onKey, true);
+   window.addEventListener('keyup', onKeyUp);
+-  window.addEventListener('blur', () => (noSnap.value = false));
++  window.addEventListener('blur', onBlur);
+   window.addEventListener('pointerup', endDrag);
+ 
+   // compose tool visuals
+-  effect(() => {
++  const stops = [effect(() => {
+     const t = tool.value;
+     const v: ToolVisuals = {};
+     if (t === 'road') {
+@@ -363,16 +366,24 @@
+     else if (t === 'inspect' && g) v.cursorRing = { x: g[0], z: g[1], radius: 15, color: '#5aa9e6' };
+     else if (t === 'moveTarget' && g) v.cursorRing = { x: g[0], z: g[1], radius: 6, color: '#fab219' };
+     scene.setTool(v);
+-  });
++  }),
+   // leaving the road tool drops the live cursor
+   effect(() => {
+     if (tool.value !== 'road') draftCursor.value = null;
+     if (tool.value !== 'building') bCursor.value = null;
+     document.body.dataset.tool = tool.value;
+-  });
++  }),
+   effect(() => {
+     // a custom goal's overlay follows the edits in the Scout panel
+     void scoutGoal.value;
+     void loadOverlay(overlay.value);
+-  });
++  })];
++  return () => {
++    window.removeEventListener('keydown', onKey, true);
++    window.removeEventListener('keyup', onKeyUp);
++    window.removeEventListener('blur', onBlur);
++    window.removeEventListener('pointerup', endDrag);
++    for (const stop of stops) stop();
++    delete document.body.dataset.tool;
++  };
+ }

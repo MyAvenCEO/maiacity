@@ -1,12 +1,14 @@
 <!--
-	Constructible City on a page: its client (./cc/apps/web, Preact and three.js, the simulation in a worker) mounted
-	into one full-screen layer over the app (./cc/apps/web/src/main.tsx mountCity), taken down again when the page is
-	left.
+	Constructible City on a page: its pinned build (./pinned.js: one module, made by ./build.mjs from its upstream,
+	brought from the Maia City vault by this page's avenDB device and run only when its bytes hash to ./build.json's
+	pin) mounted into one full-screen layer over the app, with the app's render core and screen slots lent to it, and
+	taken down again when the page is left.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
-	// the client's stylesheet, which its own build inlines into its page; every rule is scoped to .cc-city
-	import './cc/apps/web/src/styles.css';
+	import { screenSlot } from '$lib/app/screen-slots.js';
+	import { createControls, createRenderer } from '$lib/render/core.js';
+	import { pinnedCity } from './pinned.js';
 
 	/** @type {HTMLDivElement | undefined} */
 	let root = $state();
@@ -16,11 +18,10 @@
 	let failed = $state('');
 
 	onMount(() => {
-		// @ts-ignore — a .tsx module (Preact JSX): Vite compiles it (./tsconfig.json), the app's type check does not
-		import('./cc/apps/web/src/main.tsx').then(
+		pinnedCity().then(
 			({ mountCity }) => {
 				if (gone || !root) return;
-				unmount = mountCity(root);
+				unmount = mountCity(root, { createRenderer, createControls, screenSlot });
 			},
 			(error) => {
 				failed = `Could not start Constructible City: ${error.message}`;

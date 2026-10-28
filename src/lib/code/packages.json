@@ -19,6 +19,24 @@
 					"blake3": "ede479bd3982ea2dc2e6fc01aff1404081c9c06574b35476e73c53261431eda6"
 				}
 			]
+		},
+		{
+			"id": "sandbox-8",
+			"label": "Constructible City",
+			"task": "Sandbox 8's game",
+			"version": "d0ea88e",
+			"note": "The browser client of github.com/MyAvenCEO/constructible-city-3d-prototype at d0ea88e, with the app's fit (src/lib/sandbox-8/fit.patch), built by src/lib/sandbox-8/build.mjs with Bun 1.4.4. The Sandbox 8 page runs it only when its bytes hash to its pin.",
+			"files": [
+				{
+					"name": "constructible-city-d0ea88e.js",
+					"os": "web",
+					"arch": "any",
+					"source": "github.com/MyAvenCEO/constructible-city-3d-prototype@d0ea88e686cd83953a90aa6bcca78ecdf4d4482d",
+					"size": 6213376,
+					"sha256": "64b7b3586301c5ca90d05e3f5951d823b26ac5ce9cc06f79cfd7c5c065ebafc4",
+					"blake3": "36814d9eccb9b21c377643769926e6e9a205e7061c64a2bfd0d767fba8c219d0"
+				}
+			]
 		}
 	]
 }

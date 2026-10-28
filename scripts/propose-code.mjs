@@ -10,7 +10,10 @@
 // accepts it in the Proposals app (/app/aips/), and the files land in Maia City. Without --run it only says what it
 // would do.
 //
-//   bun scripts/propose-code.mjs [--from <folder>] [--run] [--again] [--device <path of avendb-device>]
+//   bun scripts/propose-code.mjs [--package <id>] [--from <folder>] [--run] [--again] [--device <path of avendb-device>]
+//
+// --package proposes that package alone (`sandbox-8`, Sandbox 8's pinned build, which src/lib/sandbox-8/build.mjs
+// makes into --from; a page runs it, not theOS).
 //
 // --from is where the files are looked for, by hash or by name, and where a missing one is fetched to: a folder in the
 // system's temporary folder unless given (never theOS's own folder, ~/Library/Application Support/city.maia.studio,
@@ -27,12 +30,15 @@ import { device, session } from './agent.mjs';
 const args = process.argv.slice(2);
 const flag = (f) => args.includes(f);
 const option = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
-const { packages } = JSON.parse(readFileSync(new URL('../src/lib/code/packages.json', import.meta.url), 'utf8'));
+const pinned = JSON.parse(readFileSync(new URL('../src/lib/code/packages.json', import.meta.url), 'utf8')).packages;
+const only = option('--package');
+const packages = only ? pinned.filter((p) => p.id === only) : pinned;
+if (!packages.length) throw new Error(`no code package ${only} in src/lib/code/packages.json`);
 // the agent takes only absolute paths
 const folder = resolve(option('--from') ?? join(tmpdir(), 'maiacity-code'));
 
 /** what a file's bytes are, for the Library */
-const mediaOf = (name) => (name.endsWith('.zst') ? 'application/zstd' : 'application/octet-stream');
+const mediaOf = (name) => (name.endsWith('.zst') ? 'application/zstd' : name.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
 
 /** the SHA-256 and BLAKE3 of the file at `path`, read in pieces (Lean's archive is 570 MB) */
 async function hashesOf(path) {
@@ -105,15 +111,15 @@ try {
 		'import AvenDB.Objective',
 		'open AvenDB.Objective',
 		'',
-		`/-- Maia City holds every code package file theOS pins (src/lib/code/packages.json). -/`,
+		`/-- Maia City holds every file of ${packages.map((p) => p.label).join(' and ')} the app pins (src/lib/code/packages.json). -/`,
 		`def files : Metric := metric "Pinned code package files in Maia City" (equals (reading "files") ${count})`,
 		'',
 		'def objective : List Metric := [files]',
 		''
 	].join('\n');
 	const note = [
-		`The code packages theOS runs on the Mac beside its own code, as Maia City's own files: ${packages.map((p) => `${p.label} ${p.version} (${p.task})`).join('; ')}. theOS brings them only from avenDB.`,
-		`Each file is tagged with the BLAKE3 of its bytes and pinned by its publisher's SHA-256 too (src/lib/code/packages.json); theOS unpacks one only when its bytes hash to both. ${proposals.length} of ${count} are new here, ${(files.reduce((s, x) => s + x.file.size, 0) / 1e6).toFixed(0)} MB in all.`
+		`The code packages the app runs beside its own code (theOS on the Mac, or a page), as Maia City's own files: ${packages.map((p) => `${p.label} ${p.version} (${p.task})`).join('; ')}. The app brings them only from avenDB.`,
+		`Each file is tagged with the BLAKE3 of its bytes and pinned by its SHA-256 too (src/lib/code/packages.json); the app runs or unpacks one only when its bytes hash to its pins. ${proposals.length} of ${count} are new here, ${(files.reduce((s, x) => s + x.file.size, 0) / 1e6).toFixed(0)} MB in all.`
 	].join('\n\n');
 	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals, objective } });
 	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'files', value: count - proposals.length, note: 'Maia City before this AIP' } });

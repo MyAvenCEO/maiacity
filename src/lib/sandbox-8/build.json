@@ -1,0 +1,10 @@
+{
+	"upstream": "github.com/MyAvenCEO/constructible-city-3d-prototype",
+	"commit": "d0ea88e686cd83953a90aa6bcca78ecdf4d4482d",
+	"file": {
+		"name": "constructible-city-d0ea88e.js",
+		"size": 6213376,
+		"blake3": "36814d9eccb9b21c377643769926e6e9a205e7061c64a2bfd0d767fba8c219d0"
+	},
+	"bun": "1.4.4"
+}

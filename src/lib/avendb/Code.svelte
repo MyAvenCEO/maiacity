@@ -42,7 +42,7 @@
 	const count = (p) => p.files.filter((f) => held.has(f.blake3)).length;
 	const total = (p) => p.files.reduce((s, f) => s + f.size, 0);
 	/** the systems a file runs on, as a person names them */
-	const SYSTEMS = { 'macos aarch64': 'Mac, Apple silicon', 'macos x86_64': 'Mac, Intel', 'linux x86_64': 'Linux' };
+	const SYSTEMS = { 'macos aarch64': 'Mac, Apple silicon', 'macos x86_64': 'Mac, Intel', 'linux x86_64': 'Linux', 'web any': 'Any browser' };
 	const system = (f) => SYSTEMS[`${f.os} ${f.arch}`] ?? `${f.os} ${f.arch}`;
 
 	/** Lean on this Mac, in theOS (avendb-device's `leanEngine`): `{version, can, here, download, kept, getting, failed}` */
