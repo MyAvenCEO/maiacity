@@ -439,7 +439,7 @@ impl Decode for bool {
 
 impl Decode for PublicKey {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(PublicKey { xwing: r.bytes()?, mceliece: BlobId::decode(r)? })
+        Ok(PublicKey { xwing: r.bytes()?.into(), mceliece: BlobId::decode(r)? })
     }
 }
 

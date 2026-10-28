@@ -4645,6 +4645,24 @@ impl Log {
         (self.edits, self.ids) = (edits, ids);
     }
 
+    /// Lets go of one part of it, which it returns, the log of no use after: what a memory probe weighs it by
+    /// (`Lab::probe_part`, `log.<part>`).
+    pub fn probe_part(&mut self, part: &str) -> Option<Box<dyn std::any::Any + Send>> {
+        fn out<T: Send + 'static>(t: T) -> Option<Box<dyn std::any::Any + Send>> {
+            Some(Box::new(t))
+        }
+        match part {
+            "edits" => out(std::mem::take(&mut self.edits)),
+            "ids" => out(std::mem::take(&mut self.ids)),
+            "held" => out(std::mem::take(&mut self.held)),
+            "entry_order" => out(std::mem::take(&mut self.entry_order)),
+            "write_at" => out(std::mem::take(&mut self.write_at)),
+            "logs" => out(std::mem::take(&mut self.logs)),
+            "by_log" => out(std::mem::take(&mut self.by_log)),
+            _ => None,
+        }
+    }
+
     /// Each edit's log, by its place (`sync::log_of`).
     pub fn logs(&self) -> &[Option<crate::sync::LogId>] {
         &self.logs
