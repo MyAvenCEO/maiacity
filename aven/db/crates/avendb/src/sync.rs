@@ -225,15 +225,23 @@ pub fn respond(edits: &[Edit], d: SignerId, follow: &[VaultId]) -> Vec<Edit> {
 /// sends `d` an edit that brings the file (T27), a write of an entry `d` may receive, or a snapshot whose state of an
 /// entry `d` syncs travels as it (`Stated::slice`). Holding the bytes is the peer's store's to say.
 pub fn may_fetch(edits: &[Edit], d: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-    fetchable(edits, &view(edits), d, file, follow)
+    fetchable(edits, &view(edits), d, file, follow, &HashSet::new())
 }
 
 /// `may_fetch`, by the view `st` of `edits`.
-pub(crate) fn fetchable(edits: &[Edit], st: &State, d: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
+/// None of the logs `held_back` names counts (`Lab::standing_for`: those a removal its catch-up hasn't replayed yet may
+/// take away).
+pub(crate) fn fetchable(
+    edits: &[Edit], st: &State, d: SignerId, file: &FileRoot, follow: &[VaultId], held_back: &HashSet<LogId>,
+) -> bool {
     let reach = Reach::new(st, d, follow);
+    let log = |l: LogId| reach.log(l) && !held_back.contains(&l);
     answer(edits, st, d, follow).into_iter().any(|i| {
         let edit = &edits[i];
-        edit.files().contains(file) || edit.stated().any(|x| x.slice == *file && reach.log(LogId::Entry(x.entry)))
+        if log_of(edit, edit.id()).is_some_and(|l| held_back.contains(&l)) {
+            return false;
+        }
+        edit.files().contains(file) || edit.stated().any(|x| x.slice == *file && log(LogId::Entry(x.entry)))
     })
 }
 

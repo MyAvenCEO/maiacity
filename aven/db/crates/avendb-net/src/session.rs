@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -210,39 +211,42 @@ pub(crate) async fn exchange(conn: &Connection, kind: u8, body: &[u8], limit: us
 }
 
 /// `exchange`, and how long its answer took to come from its first byte to its last: the time the link took to send
-/// it, without the round trip or the peer's working it out (S1b, `pulls::Rate`).
-pub(crate) async fn exchange_timed(conn: &Connection, kind: u8, body: &[u8], limit: usize) -> Result<(Vec<u8>, Duration)> {
+/// it, without the round trip or the peer's working it out (S1b, `pulls::Rate`). Each byte of the answer is counted in
+/// `answered` as it comes, the connection's count of the answers to this node's askings (`Peer::answered`), which is
+/// what a page's wait watches (`unstalled`).
+pub(crate) async fn exchange_timed(
+    conn: &Connection,
+    kind: u8,
+    body: &[u8],
+    limit: usize,
+    answered: &AtomicU64,
+) -> Result<(Vec<u8>, Duration)> {
     let (mut send, mut recv) = conn.open_bi().await?;
     send.write_all(&[kind]).await?;
     send.write_all(body).await?;
     send.finish()?;
-    let mut first = [0u8; 1];
-    let Some(1) = recv.read(&mut first).await? else { return Ok((Vec::new(), Duration::ZERO)) };
-    let began = n0_future::time::Instant::now();
-    // the rest within what is left of the limit, so that an answer past it fails as `too_long` as `exchange`'s does
-    let rest = recv.read_to_end(limit.saturating_sub(1)).await?;
-    let mut answer = Vec::with_capacity(rest.len() + 1);
-    answer.push(first[0]);
-    answer.extend_from_slice(&rest);
-    Ok((answer, began.elapsed()))
-}
-
-/// Which way the bytes of a page go on its connection, for `unstalled` to watch: to this node (it asked the page) or
-/// from it (it answers it).
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Flow {
-    In,
-    Out,
-}
-
-/// The stream frames `conn` has carried `flow`'s way so far: they grow while any of its streams moves bytes that way,
-/// the one of a page queued behind another's included, as the link lets them.
-pub(crate) fn carried(conn: &Connection, flow: Flow) -> u64 {
-    let stats = conn.stats();
-    match flow {
-        Flow::In => stats.frame_rx.stream,
-        Flow::Out => stats.frame_tx.stream,
+    let mut answer = Vec::new();
+    let mut began = None;
+    while let Some(chunk) = recv.read_chunk(ANSWER_CHUNK).await? {
+        began.get_or_insert_with(n0_future::time::Instant::now);
+        answered.fetch_add(chunk.len() as u64, Ordering::Relaxed);
+        // an answer past the limit fails as `too_long`, as `exchange`'s does
+        if answer.len() + chunk.len() > limit {
+            return Err(iroh::endpoint::ReadToEndError::TooLong.into());
+        }
+        answer.extend_from_slice(&chunk);
     }
+    Ok((answer, began.map_or(Duration::ZERO, |b| b.elapsed())))
+}
+
+/// The most of an answer `exchange_timed` takes off its stream at a time.
+const ANSWER_CHUNK: usize = 64 << 10;
+
+/// The stream frames `conn` has sent so far, for an answer's wait (`unstalled`) to watch: they grow while any of its
+/// streams moves bytes out, the answer queued behind another's included, as the link lets them. A page asked waits on
+/// the answers to this node's askings alone (`Peer::answered`).
+pub(crate) fn sent(conn: &Connection) -> u64 {
+    conn.stats().frame_tx.stream
 }
 
 /// `work`, given up once `progress` stood still for `idle`: a page's wait is for its link to stop moving, not a time
@@ -301,7 +305,7 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
                     let written = if answer._range.is_some() || answer._checkpoint.is_some() {
                         n0_future::time::timeout(deadline, send.write_all(&answer.bytes)).await.ok()
                     } else {
-                        unstalled(|| carried(&peer.conn, Flow::Out), deadline, send.write_all(&answer.bytes)).await
+                        unstalled(|| sent(&peer.conn), deadline, send.write_all(&answer.bytes)).await
                     };
                     if matches!(written, Some(Ok(()))) {
                         send.finish().ok();

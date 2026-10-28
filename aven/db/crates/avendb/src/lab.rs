@@ -821,6 +821,38 @@ struct Answers {
     sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32], ReplyScope), (crate::policy::LogRevision, Arc<ReplyPlan>)>>,
     /// The writers `Lab::writers_shown` names to each peer, kept for the log's revision and the follow list.
     writers: std::sync::Mutex<HashMap<SignerId, (crate::policy::LogRevision, Vec<VaultId>, Arc<BTreeSet<SignerId>>)>>,
+    /// What the removals its catch-up hasn't replayed yet may take away (`Lab::cuts`), for the log's revision and how
+    /// far its replay is.
+    cuts: std::sync::Mutex<Option<(crate::policy::LogRevision, usize, Arc<Cuts>)>>,
+}
+
+/// What the removals among a device's edits that its replay hasn't reached may take away from a peer it answers in
+/// the middle of its catch-up (`Lab::standing_for`, `StandingKeep.lean`): a device's removal takes away the device,
+/// and every act for a vault it signed that the removal doesn't keep (`Revoking::keep`), which falls with it. A signed
+/// act counts whether or not it would fall: more held back, never less.
+#[derive(Default, Debug)]
+struct Cuts {
+    /// A removal that may take anything from anyone: of an owner, a grant or a root, or of a device that signed an
+    /// act it doesn't keep that may change where an entry stands or what a share or an audience holds (a creation, a
+    /// mark, a grant, a claim, an audience's keys), on which any peer's standing may rest.
+    all: bool,
+    /// The devices removed: what is theirs goes.
+    removed: HashSet<SignerId>,
+    /// The entries' logs that hold a write (not a creation), keys or wraps a removed device signed that its removal
+    /// doesn't keep: what a peer may be handed of them may change, and of no other log.
+    logs: HashSet<LogId>,
+}
+
+/// An edit that rests on its signer being a member of a vault, acting for it: a write, a mark, a grant issued or
+/// revoked, a claim, a key's boxes or wraps (which only a signer that may open the key gives). Not governance, which a
+/// vault's root or owners approve (`State::approves`), nor a checkpoint or a snapshot, which they give.
+fn acts(action: &Action) -> bool {
+    match action {
+        Action::Write { .. } | Action::Mark { .. } | Action::Claim { .. } | Action::Keys { .. } | Action::Wraps { .. } => true,
+        Action::Share(Sharing::Grant(..)) | Action::Revoke(crate::policy::Revoking::Grant { .. }) => true,
+        Action::Genesis { .. } | Action::Settings { .. } | Action::Share(_) | Action::Revoke(_) => false,
+        Action::Checkpoint { .. } | Action::Snapshot { .. } => false,
+    }
 }
 
 /// Disposable structural work, shared across peers only while the exact held edits/IDs stay unchanged.
@@ -3615,29 +3647,78 @@ impl Lab {
     /// (what it shared may be cut, and others' reach with it), or any other kind of removal (an owner's, a grant's),
     /// which concerns every peer. A Mac in the middle of its catch-up of Maia City, which holds removals, handed an
     /// iPhone that lacked 2,569 logs no page, and the iPhone asked by requests that named nothing (Fix C, 2026-10-28).
-    fn standing_for(&self, d: SignerId, asker: SignerId) -> Option<&State> {
+    fn standing_for(&self, d: SignerId, asker: SignerId) -> Option<(&State, Arc<Cuts>)> {
         if let Some(st) = self.standing_or(d) {
-            return Some(st);
+            return Some((st, Arc::default()));
         }
-        let store = self.held(d);
-        let edits = store.log.edits();
-        let shared_by = |device: SignerId| {
-            let vault_logs = store.log.by_log().iter().filter(|(l, _)| matches!(l, LogId::Vault(_)));
-            vault_logs.flat_map(|(_, places)| places.iter()).any(|&i| {
-                let e = &edits[i];
-                // its own addition, which it cosigns, is what the removal takes back
-                let own = matches!(e.action, Action::Share(Sharing::Device { device: added, .. }) if added == device);
-                matches!(e.action, Action::Share(_)) && !own && (e.author == device || e.cosigners.contains(&device))
-            })
-        };
-        let concerns = |e: &Edit| match &e.action {
-            Action::Revoke(crate::policy::Revoking::Device { device, .. }) => *device == asker || shared_by(*device),
-            _ => e.is_removal(),
-        };
-        if edits[store.replayed..].iter().any(concerns) {
+        let cuts = self.cuts(d);
+        if cuts.all || cuts.removed.contains(&asker) {
             return None;
         }
-        Some(&store.replay.state)
+        Some((&self.held(d).replay.state, cuts))
+    }
+
+    /// What the removals among device `d`'s edits that its replay hasn't reached may take away (`Cuts`), kept for its
+    /// log's revision and how far its replay is: one pass over its edits for the device removals among them, each
+    /// with the edits the removed device signed that it doesn't keep. Until 2026-10-28 a device's removal took away
+    /// everything from everyone wherever the removed device had ever signed a vault's share, kept or not: an iPhone in
+    /// the middle of its catch-up of Maia City, whose history holds such removals, handed its Mac nothing, its own new
+    /// chat message among it, for as long as the catch-up ran (Fix E).
+    fn cuts(&self, d: SignerId) -> Arc<Cuts> {
+        let store = self.held(d);
+        let revision = store.log.revision();
+        let mut cached = store.answers.cuts.lock().expect("cuts");
+        if let Some((at, replayed, cuts)) = cached.as_ref()
+            && *at == revision
+            && *replayed == store.replayed
+        {
+            return cuts.clone();
+        }
+        let (edits, ids, logs) = (store.log.edits(), store.log.ids(), store.log.logs());
+        let mut cuts = Cuts::default();
+        let mut keeps: HashMap<SignerId, Vec<HashSet<EditId>>> = HashMap::new();
+        for r in edits[store.replayed..].iter().filter(|e| e.is_removal()) {
+            match &r.action {
+                Action::Revoke(crate::policy::Revoking::Device { device, keep, .. }) => {
+                    cuts.removed.insert(*device);
+                    keeps.entry(*device).or_default().push(keep.iter().copied().collect());
+                }
+                _ => cuts.all = true,
+            }
+        }
+        if !cuts.all && !keeps.is_empty() {
+            for (i, e) in edits.iter().enumerate() {
+                // a vault's approval is its root's or its owners' signatures, never a device's (`State::approves`): an
+                // edit of governance (a setting, an owner or a device given or taken, a checkpoint) stands whether or
+                // not a device that signed it stays, its own addition among them; what rests on a device is what it
+                // did acting for a vault, as a member of one
+                if !acts(&e.action) {
+                    continue;
+                }
+                for x in e.sigs().filter(|s| keeps.contains_key(s)) {
+                    if keeps[&x].iter().all(|keep| keep.contains(&ids[i])) {
+                        continue;
+                    }
+                    // a write to an entry, or its keys, changes what that entry's log holds alone; its creation or a
+                    // mark changes where the entry stands, which shares a peer is handed rest on (`sync::Reach`)
+                    let alone = matches!(&e.action, Action::Write { create: None, .. } | Action::Keys { .. } | Action::Wraps { .. });
+                    match logs[i] {
+                        Some(l @ LogId::Entry(_)) if alone => {
+                            cuts.logs.insert(l);
+                        }
+                        // a signer's own key, of no log, is no part of anyone's standing
+                        None => {}
+                        Some(_) => cuts.all = true,
+                    }
+                }
+                if cuts.all {
+                    break;
+                }
+            }
+        }
+        let cuts = Arc::new(cuts);
+        *cached = Some((revision, store.replayed, cuts.clone()));
+        cuts
     }
 
     /// Whether device `d` answers what its edits say now without replaying every edit it holds (`standing_or`): a
@@ -5411,8 +5492,14 @@ impl Lab {
     /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
         let store = self.held(d);
-        let Some(st) = self.standing_for(d, asker) else { return Arc::new(vec![]) };
-        Arc::new(answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow))
+        let Some((st, cuts)) = self.standing_for(d, asker) else { return Arc::new(vec![]) };
+        let mut places = answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow);
+        // none of the logs a removal not replayed yet may take away from it (`Cuts::logs`), till caught up
+        if !cuts.logs.is_empty() {
+            let logs = store.log.logs();
+            places.retain(|&i| logs[i].is_none_or(|l| !cuts.logs.contains(&l)));
+        }
+        Arc::new(places)
     }
 
     /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
@@ -5589,7 +5676,7 @@ impl Lab {
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         let store = self.held(d);
-        let Some(st) = self.standing_for(d, asker) else { return vec![] };
+        let Some((st, _)) = self.standing_for(d, asker) else { return vec![] };
         let mut needs = crate::lazy::Needs::new(st, asker);
         let mut out: Vec<Stub> = sends
             .places
@@ -5824,7 +5911,8 @@ impl Lab {
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
     /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        self.standing_for(d, asker).is_some_and(|st| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow))
+        self.standing_for(d, asker)
+            .is_some_and(|(st, cuts)| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow, &cuts.logs))
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
