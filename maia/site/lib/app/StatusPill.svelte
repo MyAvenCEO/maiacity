@@ -73,7 +73,7 @@
 	const details = $derived(/** @type {[string, string][]} */ ([
 		['Peers', sync.known ? n(sync.peers) : '…'],
 		...(sync.behind > 0 ? [['Logs left', `${n(sync.behind)} of ${n(sync.logs)}`]] : []),
-		...(sync.pulling > 0 ? [['Transfers', n(sync.pulling)]] : []),
+		...(sync.pulling > 0 && !live?.rows.some(([k]) => k === 'Transfers') ? [['Transfers', n(sync.pulling)]] : []),
 		...(live?.rows ?? []),
 		...(files.waiting + files.reading > 0 ? [['Files', `${n(files.reading)} loading · ${n(files.waiting)} waiting`]] : []),
 		['View', view.state === 'local' ? 'on this device' : view.state === 'unavailable' ? 'not on this device' : view.state === 'unknown' ? 'checking' : 'loading']
