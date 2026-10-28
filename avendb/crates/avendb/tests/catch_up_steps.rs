@@ -153,3 +153,100 @@ fn a_catch_up_whose_upkeep_leaves_a_lane_for_later_still_ends() {
     assert!(once.lab.state(d) == steps.lab.state(d), "the same view");
     assert_eq!(steps.lab.catch_up_step(d, 7), CatchUp::Caught(false));
 }
+
+/// A whole replay run a slice a step (`ReplayRun`, as a catch-up's step replays where stepping on would replay every
+/// edit) is the replay of them all, however small its slices, and steps on from where the whole one would.
+#[test]
+fn a_whole_replay_run_a_slice_a_step_is_the_whole_replay() {
+    let (w, phone, _, _) = behind(90);
+    let log = w.lab.log(phone);
+    let (edits, ids) = (log.edits(), log.ids());
+    let whole = avendb::policy::replay(edits);
+    for most in [1, 3, 64, usize::MAX] {
+        let mut run = avendb::policy::ReplayRun::start(edits, ids);
+        assert_eq!(run.of(), edits.len());
+        let mut steps = 1;
+        while !run.step(edits, most) {
+            steps += 1;
+            assert!(steps <= edits.len(), "it runs at least one edit a step");
+        }
+        assert!(most == usize::MAX || steps >= edits.len().div_ceil(most).min(edits.len()) - 1, "{steps} steps of {most}");
+        let stepped = run.finish(edits, ids);
+        assert!(stepped == whole, "slices of {most}: the same replay as the whole");
+        // and the edits after them step on it as on the whole one
+        let n = edits.len() - 5;
+        let mut part = avendb::policy::ReplayRun::start(&edits[..n], &ids[..n]);
+        while !part.step(&edits[..n], most) {}
+        let on = avendb::policy::replay_on(part.finish(&edits[..n], &ids[..n]), edits, n);
+        assert!(on == whole, "slices of {most}: stepped on to the whole");
+    }
+}
+
+/// Alice's iPhone, which took her vault early, then the edits `writers` devices of hers made since, a page at a time
+/// as a node takes them, not yet caught up: as the server's, interleaved, they sort before where its replay steps on
+/// from, so its catch-up replays them all (`scale_turns.rs`, a first sync of 130,000 edits).
+fn first_sync(writers: usize, per: usize) -> (avendb::lab::Lab, SignerId) {
+    use avendb::cast::paragraph;
+    use avendb::id::VaultId;
+    use avendb::policy::{Action, Kind, Principal, Sharing};
+    let mut lab = avendb::lab::Lab::new();
+    let passkey = lab.passkey("Alice");
+    let mac = lab.device_of(passkey, "Alice's Mac");
+    let phone = lab.device_of(passkey, "Alice's iPhone");
+    let ws: Vec<SignerId> = (0..writers).map(|i| lab.device_of(passkey, &format!("Alice's writer {i}"))).collect();
+    let genesis = Action::Genesis {
+        kind: Kind::Human, owners: vec![Principal::Signer(passkey)], threshold: 1, root: Some(passkey), nonce: 0, seal_to: vec![],
+    };
+    let alice = VaultId::from(lab.submit(mac, &[passkey], genesis).expect("a vault"));
+    for &d in [phone].iter().chain(&ws) {
+        let add = Action::Share(Sharing::Device { vault: alice, device: d, seal_to: None });
+        lab.submit(mac, &[passkey, d], add).expect("a device added");
+    }
+    for &d in [phone].iter().chain(&ws) {
+        lab.sync(mac, d);
+    }
+    for (i, &w) in ws.iter().enumerate() {
+        let doc = document(&format!("Doc {i}"), "Written by one of Alice's devices.", w);
+        let entry = lab.create(w, alice, alice, "doc", &[], doc).expect("a document");
+        for k in 0..per {
+            lab.edit(w, alice, entry, |item| item.push_block(paragraph(100 + k as u64, &format!("Edit {k}.")))).expect("an edit");
+        }
+    }
+    for &w in &ws {
+        let held: std::collections::HashSet<_> = lab.log(phone).ids().iter().copied().collect();
+        let fresh: Vec<Signed> = lab.backup(w).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
+        for page in fresh.chunks(40) {
+            let prepared = lab.prepare_receive(phone, page.to_vec()).check();
+            lab.receive_prepared(phone, prepared, false);
+        }
+    }
+    (lab, phone)
+}
+
+/// Such a catch-up replays every edit a slice a step (`ReplayRun`), the replay it held standing till the whole one
+/// ends, and opens their bodies a slice a step: more steps than one each, and the same as one catch-up.
+#[test]
+fn a_first_sync_replays_and_reads_a_slice_a_step() {
+    let (mut once, d) = first_sync(6, 40);
+    let (mut steps, _) = first_sync(6, 40);
+    assert!(!steps.replay_current(d));
+    assert!(once.catch_up(d));
+    let count = |lab: &avendb::lab::Lab, k: &str| lab.perf(d)["timers"][k]["count"].as_u64().unwrap_or(0);
+    let (replays, reads) = (count(&steps, "replay"), count(&steps, "read"));
+    let mut taken = 0;
+    while let CatchUp::Stepped = steps.catch_up_step(d, 1) {
+        taken += 1;
+        assert!(taken < 10_000, "a catch-up in steps ends");
+    }
+    let n = steps.log(d).edits().len();
+    let (replays, reads) = (count(&steps, "replay") - replays, count(&steps, "read") - reads);
+    let counts = &steps.perf(d)["counts"];
+    assert!(replays > 10, "{n} edits replayed in {replays} steps: {counts}");
+    assert!(reads > 2, "their bodies read in {reads} steps: {counts}");
+    assert!(once.state(d) == steps.state(d), "the same view");
+    let seen = |lab: &avendb::lab::Lab| {
+        let entries: Vec<_> = lab.entries(d).into_iter().map(|e| (e, lab.item(d, e).map(|i| i.record()))).collect();
+        (lab.log(d).ids().to_vec(), entries)
+    };
+    assert_eq!(seen(&once), seen(&steps), "the same edits, entries and items as one catch-up");
+}

@@ -511,17 +511,63 @@ fn code(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refuse
 /// The most posts one `posts` op hands out.
 const MOST_POSTS: usize = 200;
 
-/// `{"op": "posts", "limit"?, "after"?}` (either `null` as left out, so a query entry's `read` binds both): the posts device `me` opens that everyone may read, newest first, as avenDB's
-/// server serves them (`world::public_posts`): `limit` of them (`MOST_POSTS` at most, and by default), the newest or
-/// those after post `after` (an entry id; none where it lists it no more: `world::page_of_posts`), as a page that shows the newest first asks for the next ones as
-/// its person scrolls. `{"posts": [...], "more"}`, `more` whether more come after the last.
+/// `{"op": "posts", "limit"?, "after"?}` (either `null` as left out, so a query entry's `read` binds both): the posts
+/// device `me` opens that everyone may read, newest first by creation, as avenDB's server serves them
+/// (`world::public_posts`): `limit` of them (`MOST_POSTS` at most, and by default), the newest or those older than post
+/// `after` (an entry id: a keyset cursor, `PostsPage.lean`'s `before`; none where the device holds no such entry), as a
+/// page that shows the newest first asks for the next ones as its person scrolls. `{"posts": [...], "more"}`, `more`
+/// whether more come after the last. Only the posts of the page are read in full (`world::posts_page`); a node reads
+/// its candidates off each vault's shared index instead of this walk (`avendb-net`'s `posts_page`).
 fn posts(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let (limit, after) = posts_args(o)?;
+    let cursor = match after {
+        None => None,
+        Some(a) => match world::post_key(lab, me, a) {
+            Some(k) => Some(k),
+            None => return Ok(json!({ "posts": [], "more": false })),
+        },
+    };
+    let keys = world::post_keys(lab, me).into_iter().filter(|k| cursor.is_none_or(|c| *k < c));
+    let files = world::public_files(lab, me);
+    let mut named = |v| world::profile_of(lab, me, v).map(|(_, name)| name);
+    let (page, more) = world::posts_page(lab, me, keys, limit, &mut |v| world::names_in(&files, v), &mut named);
+    Ok(json!({ "posts": page, "more": more }))
+}
+
+/// Op `v`, a `call` of a method whose template reads, as the read it runs, admitted and bound
+/// (`actors::call_reads`): `Some(Ok(read))`, which a node answers as it answers that read; `Some(Err(refusal))`, the
+/// call refused; `None` for anything else, which `run` makes as ever.
+pub fn call_reads(lab: &Lab, me: SignerId, v: &Value) -> Option<Result<Value, Value>> {
+    let (name, o) = op_of(v).ok()?;
+    if name != "call" {
+        return None;
+    }
+    actors::call_reads(lab, me, o).map(|r| r.map_err(|why| why.to_json()))
+}
+
+/// A `posts` op's page size and cursor: `limit` (`MOST_POSTS` at most, and by default) and `after`, an entry.
+pub fn posts_args(o: &Map<String, Value>) -> Result<(usize, Option<EntryId>), Refused> {
     let limit = count_of(o, "limit")?.unwrap_or(MOST_POSTS).clamp(1, MOST_POSTS);
     let after = match o.get("after") {
         None | Some(Value::Null) => None,
-        Some(v) => Some(id_of(Some(v), "after", EntryId::from_hex)?.to_hex()),
+        Some(v) => Some(id_of(Some(v), "after", EntryId::from_hex)?),
     };
-    Ok(world::page_of_posts(world::public_posts(lab, me), limit, after.as_deref()))
+    Ok((limit, after))
+}
+
+/// A page of posts off candidates `keys`, the newest first and all older than the page's cursor, as the `posts` op
+/// answers (`world::posts_page`), with the names of each vault's files everyone may read from `files` and its profile's
+/// from `named`: what a node answers from its shared index.
+pub fn posts_among(
+    lab: &Lab,
+    me: SignerId,
+    keys: Vec<(u64, EntryId)>,
+    limit: usize,
+    files: &mut dyn FnMut(VaultId) -> Vec<String>,
+    named: &mut dyn FnMut(VaultId) -> Option<String>,
+) -> Value {
+    let (page, more) = world::posts_page(lab, me, keys, limit, files, named);
+    json!({ "ok": { "posts": page, "more": more } })
 }
 
 // The fields ops share.
@@ -922,7 +968,7 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// With `window: n` in place of `order`, `limit`, `offset` and `after`, it is a window (`QueryView.lean` `window`): the
 /// newest `n` rows by creation (the depth of each entry's creation edit, then its id, as the shared index orders them),
 /// read newest first until `n` rows show, so `count` is the rows shown, and only the entries newer than the last row
-/// shown say what they wait on. A full window's `next` names its oldest row; `window: {"newest": n, "before": next}`
+/// shown say what they wait on; a draft its vault hasn't landed is none of them. A full window's `next` names its oldest row; `window: {"newest": n, "before": next}`
 /// is the page before it, the newest `n` created before that row (`QueryView.lean` `QW3_pages`, `QW3_older_page`),
 /// which entries made since never move, as they would a page by `offset`. Its answer is a function of those entries alone, so a node reads
 /// them off its shared index (`window_of`, `query_among`) and never the rest.
@@ -968,6 +1014,14 @@ fn window_field(o: &Map<String, Value>) -> Result<Option<(usize, Option<(u64, En
 fn window_cursor_of(t: &str) -> Option<(u64, EntryId)> {
     let (at, e) = t.split_once('.')?;
     Some((at.parse().ok()?, EntryId::from_hex(e)?))
+}
+
+/// The entries query `v` may find on device `me` in vault `vault`, off its type index where its selector names types
+/// (`Lab::query_candidates`): what a node adds to a window for a vault its shared index may not list in full.
+pub fn query_candidates_in(lab: &Lab, me: SignerId, v: &Value, vault: VaultId) -> Vec<EntryId> {
+    let Ok((_, o)) = op_of(v) else { return vec![] };
+    let w = o.get("where").map(Where::of_json).transpose().ok().flatten().unwrap_or(Where::Yes);
+    lab.query_candidates(me, Some(vault), &w.plan())
 }
 
 /// Query `v` on device `me` over the entries `among` alone, as `read` answers it where those hold every entry it reads:
@@ -1034,6 +1088,9 @@ fn query_from(
         // the newest first; one whose creation the log doesn't place is read first, as it may be the newest
         found.sort_by_cached_key(|e| Reverse((lab.creation_depth(me, *e).unwrap_or(u64::MAX), *e)));
         found.dedup();
+        // a draft its vault hasn't landed holds nothing on main yet, so no window shows it or waits on it: a write that
+        // lands it touches it
+        found.retain(|e| lab.landed(me, *e));
         // an older page: the entries created before the cursor alone (`QW3_older_page`)
         if let Some(c) = before { found.retain(|e| (lab.creation_depth(me, *e).unwrap_or(u64::MAX), *e) < c); }
     }

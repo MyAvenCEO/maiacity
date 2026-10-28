@@ -459,55 +459,76 @@ impl Backup {
         encode_anchors(&self.bases, self.signed.iter())
     }
     pub fn with_bootstrap_bytes(mut self, bytes: &[u8]) -> Option<Self> {
-        if bytes.is_empty() {
-            self.bases.clear();
-            return Some(self);
-        }
-        if bytes.len() > 16 * (MAX_BYTES + 256 + 1024 * 32) {
-            return None;
-        }
-        let mut r = WireReader::new(bytes);
-        let v1 = b"avenDB bootstrap anchors 1\n";
-        let v2 = b"avenDB bootstrap anchors 2\n";
-        let prefix = r.take(v2.len()).ok()?;
-        if prefix != v1 && prefix != v2 {
-            return None;
-        }
-        let digest_fence = prefix == v2;
-        let mut anchors = BTreeMap::new();
-        for _ in 0..bounded_count(&mut r, 68, 16)? {
-            let entry = EntryId::decode(&mut r).ok()?;
-            let snapshot = EditId::decode(&mut r).ok()?;
-            let sealed = r.bytes().ok()?;
-            if !self.signed.iter().any(|s| s.edit.id() == snapshot) {
-                return None;
-            }
-            if digest_fence {
-                let count = u64::decode(&mut r).ok()?;
-                let root: [u8; 32] = r.take(32).ok()?.try_into().ok()?;
-                if (count, root) != anchor_frontier(entry, self.signed.iter()) {
-                    return None;
-                }
-            } else {
-                let suffix = seq::<EditId>(&mut r, 32, 1024)?;
-                if !suffix
-                    .iter()
-                    .all(|id| self.signed.iter().any(|s| s.edit.id() == *id))
-                {
-                    return None;
-                }
-            }
-            if sealed.len() > MAX_BYTES + 128 || anchors.insert(entry, Base { snapshot, sealed, saved: true }).is_some()
-            {
-                return None;
-            }
-        }
-        if !r.done() {
-            return None;
-        }
-        self.bases = anchors;
+        let signed = &self.signed;
+        self.bases = anchors_of(bytes, |id| signed.iter().any(|s| s.edit.id() == id), |entry| {
+            anchor_frontier(entry, signed.iter())
+        })?;
         Some(self)
     }
+}
+
+/// The anchors `bytes` hold (`Backup::bootstrap_bytes`), of edits `has` tells it holds, and of entries whose writes'
+/// count and frontier `frontier` gives (`anchor_frontier`): none where they don't read whole or don't match.
+pub(crate) fn anchors_of(
+    bytes: &[u8],
+    has: impl Fn(EditId) -> bool,
+    frontier: impl Fn(EntryId) -> (u64, [u8; 32]),
+) -> Option<Anchors> {
+    if bytes.is_empty() {
+        return Some(BTreeMap::new());
+    }
+    if bytes.len() > 16 * (MAX_BYTES + 256 + 1024 * 32) {
+        return None;
+    }
+    let mut r = WireReader::new(bytes);
+    let v1 = b"avenDB bootstrap anchors 1\n";
+    let v2 = b"avenDB bootstrap anchors 2\n";
+    let prefix = r.take(v2.len()).ok()?;
+    if prefix != v1 && prefix != v2 {
+        return None;
+    }
+    let digest_fence = prefix == v2;
+    let mut anchors = BTreeMap::new();
+    for _ in 0..bounded_count(&mut r, 68, 16)? {
+        let entry = EntryId::decode(&mut r).ok()?;
+        let snapshot = EditId::decode(&mut r).ok()?;
+        let sealed = r.bytes().ok()?;
+        if !has(snapshot) {
+            return None;
+        }
+        if digest_fence {
+            let count = u64::decode(&mut r).ok()?;
+            let root: [u8; 32] = r.take(32).ok()?.try_into().ok()?;
+            if (count, root) != frontier(entry) {
+                return None;
+            }
+        } else {
+            let suffix = seq::<EditId>(&mut r, 32, 1024)?;
+            if !suffix.iter().all(|id| has(*id)) {
+                return None;
+            }
+        }
+        if sealed.len() > MAX_BYTES + 128 || anchors.insert(entry, Base { snapshot, sealed, saved: true }).is_some() {
+            return None;
+        }
+    }
+    if !r.done() {
+        return None;
+    }
+    Some(anchors)
+}
+
+/// `anchor_frontier`, of edits as a log holds them, each beside its id.
+pub(crate) fn frontier_of<'a>(entry: EntryId, edits: impl Iterator<Item = (&'a Edit, &'a EditId)>) -> (u64, [u8; 32]) {
+    let mut h = blake3::Hasher::new_derive_key("avenDB durable entry anchor frontier 2");
+    h.update(&entry.0);
+    let mut count = 0u64;
+    for (_, id) in edits.filter(|(e, _)| matches!(e.action, Action::Write { entry: e, .. } if e == entry)) {
+        h.update(&id.0);
+        count += 1;
+    }
+    h.update(&count.to_be_bytes());
+    (count, *h.finalize().as_bytes())
 }
 
 #[cfg(test)]

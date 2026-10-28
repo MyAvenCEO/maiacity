@@ -11,22 +11,26 @@
 
 use serde_json::{Map, Value, json};
 
-use super::{Prepared, Refused, bad, entry_of, get, prepare, read_op, reads, vault_of};
+use super::{Prepared, Refused, bad, entry_of, prepare, read_op, reads, vault_of};
 use crate::address::{self, Address, Call, Interface, Target, Write};
-use crate::id::{SignerId, VaultId};
+use crate::id::{EntryId, SignerId, VaultId};
 use crate::lab::Lab;
 use crate::policy::{Principal, Refusal, Who};
 use crate::rules::Cap;
 use crate::selector::Attrs;
 use crate::slice::Sym;
 
-/// The record of entry `entry` as device `me` reads it, and its vault.
+/// The record of entry `entry` as device `me` holds it on its main line, and its vault: an actor's interface is read
+/// as its record stores it, through no schema (a schema's defaults add nothing an interface needs), so a call costs
+/// what one record costs. Refused where `me` holds no landed entry of that id.
 fn record(lab: &Lab, me: SignerId, entry: &str) -> Result<(Value, VaultId), Refused> {
-    let mut o = Map::new();
-    o.insert("entry".into(), entry.into());
-    let got = get(lab, me, &o)?;
-    let vault = got["vault"].as_str().and_then(VaultId::from_hex).ok_or(Refused::NoEntry)?;
-    Ok((got["record"].clone(), vault))
+    let e = EntryId::from_hex(entry).ok_or_else(|| bad("entry is an id, 64 hex digits"))?;
+    if !lab.landed(me, e) {
+        return Err(Refused::NoEntry);
+    }
+    let record = lab.item(me, e).map(|i| i.record()).ok_or(Refused::NoEntry)?;
+    let vault = lab.vault_of_entry(me, e).ok_or(Refused::NoEntry)?;
+    Ok((record, vault))
 }
 
 /// The interface an actor's record holds.
@@ -96,7 +100,9 @@ fn writes(lab: &Lab, me: SignerId, op: &Value) -> Result<Vec<Write>, Refused> {
     Ok(out)
 }
 
-pub(super) fn call(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
+/// A call admitted (`Interface::admit`) and its method's template bound with the args: the method, the op it runs
+/// (`None` for a method with no template), and the vault that calls.
+fn admitted(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<(address::Method, Option<Value>, VaultId), Refused> {
     let to = Address::of_json(o.get("to").ok_or_else(|| bad("a call names its actor: to"))?).map_err(bad)?;
     let method = o.get("method").and_then(Value::as_str).ok_or_else(|| bad("a call names its method"))?;
     let empty = Map::new();
@@ -120,8 +126,24 @@ pub(super) fn call(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Resul
     let c = Call { to, method: method.into(), args: args.keys().cloned().collect(), caller, against };
     let caps = caps_of(lab, me, caller, vault);
     let m = i.admit(caps.as_deref(), &c).map_err(Refused::Call)?.clone();
-    let Some(run) = &m.run else { return Ok(Prepared::Done(json!({ "admitted": m.name }))) };
-    let mut op = address::bind(run, args).map_err(bad)?;
+    let op = m.run.as_ref().map(|run| address::bind(run, args).map_err(bad)).transpose()?;
+    Ok((m, op, caller))
+}
+
+/// The read a call of a method whose template reads runs, admitted and bound: `Some(Ok(op))`, which a node answers as
+/// it answers that read (off its indexes where it keeps them); `Some(Err(_))` for a call refused; `None` for one whose
+/// method writes, or has no template, which `call` makes as a change.
+pub(super) fn call_reads(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Option<Result<Value, Refused>> {
+    match admitted(lab, me, o) {
+        Err(why) => Some(Err(why)),
+        Ok((_, Some(op), _)) if reads(&op) => Some(Ok(op)),
+        Ok(_) => None,
+    }
+}
+
+pub(super) fn call(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
+    let (m, op, caller) = admitted(lab, me, o)?;
+    let Some(mut op) = op else { return Ok(Prepared::Done(json!({ "admitted": m.name }))) };
     if reads(&op) {
         return read_op(lab, me, &op).map(Prepared::Done);
     }

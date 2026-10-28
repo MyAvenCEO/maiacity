@@ -1493,6 +1493,8 @@ async fn new_shelf(store: &JsValue) -> Result<Shelf, JsError> {
 /// reads and writes itself.
 fn shelf_of(store: JsValue) -> Shelf {
     let (shelf, mut calls) = Shelf::new();
+    #[cfg(target_arch = "wasm32")]
+    let shelf = shelf.with_blob_files(Arc::new(StoreFiles(store.clone())));
     wasm_bindgen_futures::spawn_local(async move {
         while let Some(call) = calls.recv().await {
             let store = store.clone();
@@ -1500,6 +1502,26 @@ fn shelf_of(store: JsValue) -> Shelf {
         }
     });
     shelf
+}
+
+/// The page's store's finished blobs, each a file its device's spill reads its edits of in place (`js/store.js`'s
+/// `file`, `opfs_space::OpfsFile`).
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug)]
+struct StoreFiles(JsValue);
+
+// A page's WebAssembly runs on one thread, its worker's: the store never crosses to another.
+#[cfg(target_arch = "wasm32")]
+unsafe impl Send for StoreFiles {}
+#[cfg(target_arch = "wasm32")]
+unsafe impl Sync for StoreFiles {}
+
+#[cfg(target_arch = "wasm32")]
+impl avendb_net::shelf::BlobFiles for StoreFiles {
+    fn open(&self, hash: avendb_net::shelf::Hash) -> n0_future::boxed::BoxFuture<Option<Arc<dyn avendb::pages::Space>>> {
+        let store = self.0.clone();
+        Box::pin(async move { opfs_space::OpfsFile::of(ask_store(&store, "file", &[hash.to_hex().into()]).await.ok()?) })
+    }
 }
 
 /// What the page's store answers `method` with, called with `args`.

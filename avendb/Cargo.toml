@@ -39,6 +39,15 @@ opt-level = 2
 [profile.dev.package.classic-mceliece-rust]
 opt-level = 3
 
+# The bench job's live shard (avendb-checks.yml): the dev build's checks, optimised as a release is, so the live sync
+# gates time the code and not the debug build (test-fixtures, which the live bench needs, refuses a release build)
+[profile.live]
+inherits = "dev"
+opt-level = 3
+
+[profile.live.package."*"]
+opt-level = 3
+
 # Release builds are the tile's WebAssembly (scripts/build-web.sh): one codegen unit, optimised across crates.
 [profile.release]
 codegen-units = 1

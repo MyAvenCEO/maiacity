@@ -82,3 +82,13 @@ at most 22.9 ms during a catch-up, catch-up steps at most 34.6 ms (one first-syn
 lane). Chromium fixture (`--paint`), the device taking 1.9 s a write: 40 messages each in the page p50 4.4 ms, p95
 8.5 ms, every one in the first frame after its key; a refused one rolled back with its draft. WebKit could not be
 installed here; it runs in kernel CI. No device numbers yet.
+
+## Live edits during a long catch-up (batch 5, lane 8 follow-up)
+
+`Writes.lean` `Showing`: edits taken while a catch-up shows a backlog are replayed and read at once, and the entries of
+their writes go first in the next step (`live_in_first_step`); the order changes nothing of what is shown
+(`order_mem`, `shown_same`). lab.rs: `Showing::taken` remembers how many edits the showing held, `catch_up_step` goes
+the refresh way (replay, read, show) when more came since, and `show_items` puts the entries of new writes before the
+other moved entries. avendb-net `lab_schedule::live_first`: a live edit taken two steps into an 800-document catch-up
+was shown after 19 of 31 steps before, after 2 now. The page wake after that step is the live lane's (`live.rs`
+`materialize_live`).
