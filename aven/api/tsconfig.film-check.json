@@ -1,0 +1,7 @@
+{
+  // The film's colour modules (plain JS with JSDoc types), checked strictly: bun run check:film. The render itself is
+  // the Mac app's, natively (theos/crates/vault-render, theos/app/src/render.rs).
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "allowJs": true, "checkJs": true, "noEmit": true },
+  "include": ["../../maia/content/game/film/color.js", "../../maia/content/game/film/transforms.js"]
+}

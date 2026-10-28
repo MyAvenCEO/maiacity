@@ -14,16 +14,16 @@ work and which skill to load.
 
 | Asset | Where it lives | What breaks it |
 |---|---|---|
-| A person's vault and keys | avenDB (`avendb/crates/avendb`: `keys.rs`, `sign.rs`, `sealed.rs`, `recovery.rs`; `avendb-net/src/kx.rs`) | a key or seed left in memory, a timing leak, a signature or sealed box that verifies what it should refuse, a recovery path that skips the owner |
-| Who may do what | caps and shares (`policy.rs`, `gate.rs`, `rules.rs`), the Lean spec (`avendb/spec`) | a rule the Rust engine applies differently from the Lean spec, a share that reaches further than its cap |
-| Which code runs | the trustless hosts (`src/lib/sandbox`) and provenance (`game/code/sources/anchor.js`, hardening H1–H8) | vault code reaching keys, network, storage or the page; a page running code Maia City's signed edits did not name |
-| Sign-in and admin | the Bun API (`api/src`), the avenDB feed (`avendb/crates/avendb-server/src/feed.rs`) | a forged session, a passkey ceremony that accepts the wrong origin or a replay, an admin route without its gate |
-| The Mac | The OS (`vault/app`: Tauri commands, the `aven:` protocol, the Touch ID bridge `enclave.rs` / `enclave/Enclave.swift`) | the web view reaching a command or a file it should not, a CSP looser than the site's |
+| A person's vault and keys | avenDB (`aven/db/crates/avendb`: `keys.rs`, `sign.rs`, `sealed.rs`, `recovery.rs`; `avendb-net/src/kx.rs`) | a key or seed left in memory, a timing leak, a signature or sealed box that verifies what it should refuse, a recovery path that skips the owner |
+| Who may do what | caps and shares (`policy.rs`, `gate.rs`, `rules.rs`), the Lean spec (`aven/db/spec`) | a rule the Rust engine applies differently from the Lean spec, a share that reaches further than its cap |
+| Which code runs | the trustless hosts (`aven/kernel/sandbox`) and provenance (`maia/content/game/code/sources/anchor.js`, hardening H1–H8) | vault code reaching keys, network, storage or the page; a page running code Maia City's signed edits did not name |
+| Sign-in and admin | the Bun API (`aven/api/src`), the avenDB feed (`aven/db/crates/avendb-server/src/feed.rs`) | a forged session, a passkey ceremony that accepts the wrong origin or a replay, an admin route without its gate |
+| The Mac | The OS (`theos/app`: Tauri commands, the `aven:` protocol, the Touch ID bridge `enclave.rs` / `enclave/Enclave.swift`) | the web view reaching a command or a file it should not, a CSP looser than the site's |
 | The pipeline | `.github/workflows` | a workflow that runs untrusted input, an agent in CI steered by a comment, a secret printed to a public log |
 
 The crypto, by name: BLAKE3, Ed25519 (device keys), ECDSA P-256 over SHA-256 (WebAuthn), ML-DSA-65 (FIPS 204, every
 new signer), SLH-DSA-SHA2-128f (being retired), X-Wing (ML-KEM-768 + X25519) and Classic McEliece 6688128f in sealed
-boxes, XChaCha20-Poly1305 for edits (`avendb/crates/avendb/Cargo.toml` names each with why).
+boxes, XChaCha20-Poly1305 for edits (`aven/db/crates/avendb/Cargo.toml` names each with why).
 
 ## The auditor's laws (never break them)
 
@@ -33,7 +33,7 @@ boxes, XChaCha20-Poly1305 for edits (`avendb/crates/avendb/Cargo.toml` names eac
    workflow never prints a finding, a key or a vault's data (seal it first).
 2. **Every finding is checked before it is reported.** Run `fp-check` on each one; a finding without a concrete path
    from attacker input to harm is a lead, and is reported as one.
-3. **Lean is the truth for avenDB.** A finding about avenDB's rules is checked against `avendb/spec` first
+3. **Lean is the truth for avenDB.** A finding about avenDB's rules is checked against `aven/db/spec` first
    (`spec-compliance`). Where the Rust and the Lean disagree, the fix starts in the spec; vectors are regenerated,
    never marked pending.
 4. **Fixes are pull requests; vault changes are proposals.** Code is fixed by a PR. Anything in a vault (a code entry,
@@ -79,7 +79,7 @@ boxes, XChaCha20-Poly1305 for edits (`avendb/crates/avendb/Cargo.toml` names eac
 | `property-tests` | tests over a whole input domain (proptest in Rust, fast-check in JavaScript) |
 | `cargo-fuzz`, `fuzz-harness` | fuzzing Rust, and designing the harness |
 | `wycheproof` | crypto against known-attack vectors |
-| `lean-proofs` | writing and reviewing Lean proofs in `avendb/spec` |
+| `lean-proofs` | writing and reviewing Lean proofs in `aven/db/spec` |
 
 `spec-compliance` and `audit-context` run as saved workflows (`.claude/workflows/`); loading the skill is the opt-in,
 and each says what it costs.

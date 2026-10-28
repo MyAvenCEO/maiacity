@@ -1,0 +1,96 @@
+//! The repo seed's top-up of the Maia City vault (the page's `aven/db/page/seed.js`: the code, games, settings and
+//! recipes the repository adds) through the ops engine, with the docs as `maia/content/scripts/propose-doc.mjs` drafts them for an
+//! AIP: every op the page would write into a vault that holds none of it yet, piece by piece, each `"$n"` naming the entry op n of its piece made (and `"$n.line"` the line it started),
+//! as the page's `refs` resolves it. Every create must fit its schema; each doc post links its story, which reads
+//! back; and each code entry reads back with its `ref:` tag. The ops come from the repository as it is
+//! (`node aven/db/scripts/seed-ops.mjs <vault> <out.json>`), so the test runs where they are given, by the path in `SEED_OPS`:
+//!
+//!   node aven/db/scripts/seed-ops.mjs 0000…0000 /tmp/seed.json && SEED_OPS=/tmp/seed.json cargo test --test seed -- --ignored
+//!
+//! The vault the ops name is swapped for Alice's, where her Mac writes them. An op that brings a file (a recipe's
+//! create, a version's `put_file`) runs with that many bytes beside it, as a node brings them (`engine::put_file`).
+
+use avendb::cast;
+use avendb::engine;
+use avendb::sealed::{Brought, FileKey, seal};
+use serde_json::{Value, json};
+
+/// A file of `len` bytes, sealed as a node's store seals one (`Node::store_file`), in place of the recipe whose text
+/// the ops leave out: op `op`'s own text over and over, so no two files of the seed are one.
+fn file_of(op: &Value, len: u64) -> Brought {
+    let text = op.to_string().into_bytes();
+    let (key, plain) = (FileKey::from_bytes([7; 32]), text.iter().copied().cycle().take(len as usize).collect::<Vec<_>>());
+    Brought::new(avendb::hash::hash("a seed file's root", &seal(&key, &plain)), key, len)
+}
+
+/// Op `op` with each `"$n"` the entry the op n before it made, of `done`, and each `"$n.line"` the line it started,
+/// as the page's `refs` has it.
+fn refs(op: &Value, done: &[Value]) -> Value {
+    let at = |s: &str| s.strip_prefix('$').and_then(|n| n.parse::<usize>().ok());
+    match op {
+        Value::String(s) if at(s).is_some() => done[at(s).unwrap()]["entry"].clone(),
+        Value::String(s) if s.strip_suffix(".line").and_then(at).is_some() => {
+            done[s.strip_suffix(".line").and_then(at).unwrap()]["line"].clone()
+        }
+        Value::Array(xs) => Value::Array(xs.iter().map(|x| refs(x, done)).collect()),
+        Value::Object(o) => Value::Object(o.iter().map(|(k, v)| (k.clone(), refs(v, done))).collect()),
+        v => v.clone(),
+    }
+}
+
+/// Text `text` with every 64-hex-digit vault id `from` as `to`.
+fn swapped(v: &Value, from: &str, to: &str) -> Value {
+    serde_json::from_str(&v.to_string().replace(from, to)).expect("JSON")
+}
+
+#[test]
+#[ignore = "runs on the ops aven/db/scripts/seed-ops.mjs writes, by the path in SEED_OPS"]
+fn the_repo_seed_fits_its_schemas() {
+    let path = std::env::var("SEED_OPS").expect("SEED_OPS names the ops aven/db/scripts/seed-ops.mjs wrote");
+    let pieces: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(path).expect("the seed's ops")).expect("JSON");
+    let mut w = cast::world();
+    cast::library(&mut w);
+    let (mac, alice) = (w.mac_a, w.alice.to_hex());
+    let from = pieces.iter().flat_map(|p| p["ops"].as_array().unwrap()).find_map(|o| o["vault"].as_str()).unwrap().to_string();
+    let (mut made, mut posts, mut code, mut refused) = (0, vec![], vec![], vec![]);
+    'pieces: for p in &pieces {
+        let mut done: Vec<Value> = vec![];
+        for op in p["ops"].as_array().unwrap() {
+            let mut op = refs(&swapped(op, &from, &alice), &done);
+            op.as_object_mut().unwrap().remove("as");
+            let answer = match engine::len_of(&op) {
+                Ok(len) if engine::brings(&op) => engine::put_file(&mut w.lab, mac, &op, file_of(&op, len)),
+                _ => engine::run(&mut w.lab, mac, &op),
+            };
+            let Some(ok) = answer.get("ok") else {
+                refused.push(format!("{}: {} refused: {answer}", p["key"], op["type"]));
+                continue 'pieces;
+            };
+            match op["type"].as_str() {
+                Some("post") => posts.push((p["key"].clone(), ok["entry"].clone())),
+                Some("view" | "logic") => code.push((p["key"].clone(), ok["entry"].clone())),
+                _ => {}
+            }
+            done.push(ok.clone());
+            made += 1;
+        }
+    }
+    assert!(refused.is_empty(), "every piece fits its schemas:\n{}", refused.join("\n"));
+    assert!(made > 200, "the seed writes its pieces: {made} entries");
+    for (key, entry) in &posts {
+        let got = engine::run(&mut w.lab, mac, &json!({ "op": "get", "entry": entry }));
+        let story = got["ok"]["record"]["story"]["entry"].clone();
+        assert!(story.is_string(), "{key}: its post links its story: {got}");
+        let story = engine::run(&mut w.lab, mac, &json!({ "op": "get", "entry": story, "schema": "story" }));
+        assert_eq!(story["ok"]["record"]["kind"], "story", "{key}: its story reads back: {story}");
+    }
+    for (key, entry) in &code {
+        let got = engine::run(&mut w.lab, mac, &json!({ "op": "get", "entry": entry }));
+        let tags = got["ok"]["tags"].as_array().cloned().unwrap_or_default();
+        assert!(tags.contains(&json!(format!("ref:{}", key.as_str().unwrap()))), "{key}: its ref tag: {got}");
+    }
+    let docs = pieces.iter().filter(|p| p["kind"] == "doc").count();
+    assert!(docs >= 3, "the skills, the theOS paper and the avenDB architecture: {docs}");
+    assert_eq!(posts.len(), docs, "each doc is a post of its story");
+    assert!(!code.is_empty(), "the seed writes the code of maia/content/code/");
+}

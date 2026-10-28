@@ -212,21 +212,21 @@ truck yard, parking, trees, a sign. Machines are cream with one accent colour pe
 This section is maiaCITY's, added to AirSup's text; everything above it is theirs, word for word (`SOURCE.md`). In
 maiaCITY a factory is built from the assets we already have and is kept where every game and world can take it from.
 
-- **Built from our libraries, never its own copies:** its machines from Machines (`src/lib/machines`, the new ones
-  built with `$content/assets`, the older ones rigged in `src/lib/actors`), its hall from Buildings
-  (`src/lib/buildings`), its people from Actors (`src/lib/actors`), its goods and pallets from Things
-  (`src/lib/models`), its vehicles from Machines. Each station names what stands there by its ref at a version
+- **Built from our libraries, never its own copies:** its machines from Machines (`maia/content/machines`, the new ones
+  built with `$content/assets`, the older ones rigged in `maia/content/actors`), its hall from Buildings
+  (`maia/content/buildings`), its people from Actors (`maia/content/actors`), its goods and pallets from Things
+  (`maia/content/models`), its vehicles from Machines. Each station names what stands there by its ref at a version
   (`machines/powercube@3`, `$content/assets/index.js`), so the line stays as it was built. A machine the line needs that
   we do not have yet is built first as a machine (`machine-skill`), then placed in the line; until it is, the station
   may stand in AirSup's kit machine, said so on the station (`standIn: { kit, for, label }`) and in its inspector.
 - **Real size:** 1 unit = 1 m, the same measure as every other asset; nothing is scaled to fit the table.
 - **What the tools make stays out of the repository:** the spec as `spec.js`, the built page, `check.mjs`'s numbers,
   the shots and the film go to `/mnt/project-files/factories/<factory>/`.
-- **In the app:** the Factories library, kept the way every group is: `src/lib/factories/<factory>.js` in JavaScript,
-  a kind in `LIST` of `src/lib/factories/index.js` with its versions in `HISTORY` (`src/lib/app/versions.js`), the
+- **In the app:** the Factories library, kept the way every group is: `maia/content/factories/<factory>.js` in JavaScript,
+  a kind in `LIST` of `maia/content/factories/index.js` with its versions in `HISTORY` (`maia/site/lib/app/versions.js`), the
   page `/app/factories` (opened by its address since Game Assets left the dashboard, #942; `FACTORIES_TILE` in
-  `src/lib/app/places.ts`). The runtime is ported into
-  `src/lib/factories` (the engine pure, with the same equations, so the numbers stay what `check.mjs` showed; a test
+  `maia/site/lib/app/places.ts`). The runtime is ported into
+  `maia/content/factories` (the engine pure, with the same equations, so the numbers stay what `check.mjs` showed; a test
   holds it to them). The first, the BatteryPack line (2026-10-15), and what it taught us: `ours.md` beside this file.
 - **Its versions:** every upgrade is a new version with a dated note; the old one stays frozen, and a group of its
   own in `GROUPS` (`$content/assets/index.js`) puts it under the versions test with every other asset.

@@ -1,18 +1,18 @@
 ---
 name: plant-skill
-description: The maiaCITY plant skill — every plant grown from code in the Plants library (src/lib/plants, shown in avenDB's Assets): a plant as a recipe that grows from its seed through ten stages to ripe fruit, its food-forest layer, organs drawn by their own chance, swept tubes and sheets merged in a Bag, branching limbs and crowns, stamped leaves, fruit and leaves that keep clear (Space, Clear), fruit marks for the fruit view and fruit-check, lite detail for worlds of hundreds, how it composes (planted in biomes, buildings and worlds by ref, plants@v), versions a world anchors to, checking and the lessons kept. Use it whenever a plant, a tree, a crop, a herb or a fungus is grown, upgraded or planted in a world. Part of asset-producer.
+description: The maiaCITY plant skill — every plant grown from code in the Plants library (maia/content/plants, shown in avenDB's Assets): a plant as a recipe that grows from its seed through ten stages to ripe fruit, its food-forest layer, organs drawn by their own chance, swept tubes and sheets merged in a Bag, branching limbs and crowns, stamped leaves, fruit and leaves that keep clear (Space, Clear), fruit marks for the fruit view and fruit-check, lite detail for worlds of hundreds, how it composes (planted in biomes, buildings and worlds by ref, plants@v), versions a world anchors to, checking and the lessons kept. Use it whenever a plant, a tree, a crop, a herb or a fungus is grown, upgraded or planted in a world. Part of asset-producer.
 ---
 
 # Plants: grown from a seed
 
-Every plant is grown from code in `src/lib/plants` and shown in avenDB's Assets (`/app/avendb/#assets`) at each
+Every plant is grown from code in `maia/content/plants` and shown in avenDB's Assets (`/app/avendb/#assets`) at each
 stage, with its fruit on its own (Plant | Fruit in its bar). The laws, the shared core (refs, one version control) and how we check are the
 `asset-producer`'s; this is what growing plants taught us on top of them. Trees for worlds, impostors and the ground
 cover (biomes) are in `production-designer`'s `models.md`.
 
 ## Where it lives
 
-- `src/lib/plants/index.js` lists each plant: `{ id, label, latin, note, from, stages, grow(stage, seed), layer }`,
+- `maia/content/plants/index.js` lists each plant: `{ id, label, latin, note, from, stages, grow(stage, seed), layer }`,
   with its versions (`versioned` and `HISTORY` there). A new plant is a file and a line there.
 - Its food-forest `layer`: canopy, sub-canopy, shrub, herbaceous, ground, root, climber or fungi. The temperate
   forest garden's plants are grouped by layer (`wald-canopy.js`, `wald-lowtrees.js`, `wald-berries.js`,
@@ -40,7 +40,7 @@ cover (biomes) are in `production-designer`'s `models.md`.
 ### Fruit
 
 - Mark every fruit a plant draws: `bag.fruit(key, at, dir)` … `bag.fruitDone()` around its stalk and body. Without
-  the marks the Fruit view stays disabled. `src/lib/plants/fruit.js` varies one fruit by seed (size, shape, colour);
+  the marks the Fruit view stays disabled. `maia/content/plants/fruit.js` varies one fruit by seed (size, shape, colour);
   `DETAIL.fruit` draws it as finely as the close-up needs.
 
 ### Many plants in a world
@@ -67,7 +67,7 @@ cover (biomes) are in `production-designer`'s `models.md`.
 
 ## Checking
 
-- `bun scripts/fruit-check.mjs [id]`: every fruit marked and clear of the leaves and stems.
+- `bun maia/content/scripts/fruit-check.mjs [id]`: every fruit marked and clear of the leaves and stems.
 - avenDB's Assets on the dev feed (asset-producer's `checking.md`): every stage in order (it must grow, not be
   redrawn), the fruit view, a sister seed; then planted in its world at the distance it is seen at. The versions test
   and the type check (asset-producer's `checking.md`).

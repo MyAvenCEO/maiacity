@@ -1,6 +1,6 @@
 # The score: an original one per film
 
-`bun scripts/film/score.ts scripts/film/<film>.mjs --local [--only music|cues] [--take b]`
+`bun maia/content/scripts/film/score.ts maia/content/scripts/film/<film>.mjs --local [--only music|cues] [--take b]`
 
 - ElevenLabs Music v2.5 on fal (`elevenlabs/music/v2.5`) with a `composition_plan` of chunks (3–120 s each, at most
   30). `music.chunks` in the shot list gives each section's `until` on the film's clock and its `styles`; negative

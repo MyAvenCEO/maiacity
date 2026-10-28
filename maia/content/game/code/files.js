@@ -1,0 +1,54 @@
+// @ts-nocheck — plain JS, kept loose on purpose
+/**
+ * CODE ENTRIES AS FILES — how what we keep in code/ is written as files and read back, one way for every kind, so the
+ * later move to avenDB is a copy (each folder with an entry.json is one entry; its other files are its files):
+ *
+ *   views/<id>/                        a view: entry.json, view.html or a2ui.json, data.json, input.json, logic.js
+ *
+ * Nothing here touches a disk: maia/content/scripts/code-index.mjs reads and writes.
+ */
+
+/** JSON as we write it into code/: tabs, a closing newline */
+export const jsonFile = (v) => `${JSON.stringify(v, null, '\t')}\n`;
+
+/** JSON with its keys in order, so the same entry always hashes the same */
+export const canonical = (v) => (Array.isArray(v) ? `[${v.map(canonical).join(',')}]` : v && typeof v === 'object' ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}` : JSON.stringify(v));
+
+/** a Generated UI view (as the one checker keeps it) as an entry and its files; viewOfEntry (./index.js) reads it back */
+export function viewToFiles(v, place = 'genui') {
+	const { data, input, logic, ...rest } = v.spec ?? {};
+	const entry = { type: 'view', for: place, title: v.title, ...(v.note ? { note: v.note } : {}), kind: v.kind };
+	const files = {};
+	if (v.kind === 'a2ui') files['a2ui.json'] = jsonFile(rest);
+	else {
+		entry.libs = rest.libs ?? [];
+		entry.height = rest.height ?? 420;
+		files['view.html'] = rest.html ?? '';
+	}
+	if (data && Object.keys(data).length) files['data.json'] = jsonFile(data);
+	if (input && Object.keys(input).length) files['input.json'] = jsonFile(input);
+	if (logic) files['logic.js'] = logic;
+	files['entry.json'] = jsonFile(entry);
+	return files;
+}
+
+/**
+ * Every entry in a set of files ({ 'views/x/entry.json': text, ... }, paths relative to code/): { ref: { ref, ...entry,
+ * files, hash } }, `hash` from `hashOf(canonical text)` when given. A folder with an entry.json is one entry; its
+ * other files are its files (none of them an entry's own folder).
+ */
+export function entriesOfFiles(all, hashOf = null) {
+	const out = {};
+	for (const path of Object.keys(all).sort()) {
+		if (!path.endsWith('/entry.json')) continue;
+		const ref = path.slice(0, -'/entry.json'.length);
+		const entry = JSON.parse(all[path]);
+		const files = {};
+		for (const p of Object.keys(all).sort()) {
+			const name = p.slice(ref.length + 1);
+			if (p.startsWith(`${ref}/`) && name !== 'entry.json' && !name.includes('/')) files[name] = all[p];
+		}
+		out[ref] = { ref, ...entry, files, ...(hashOf ? { hash: hashOf(canonical({ entry, files })) } : {}) };
+	}
+	return out;
+}

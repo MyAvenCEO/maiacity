@@ -15,7 +15,7 @@ like a camera, not by grading a finished image:
    day — `storyteller`, `retention.md`), judged on hero frames.
 - **Brightness alone isn't a grade.** Match the black level of dark shots to the day shots (lift the offset, add
   contrast with power), and check the storyboard through the output transform, not the raw log still.
-- `scripts/film/grade.mjs` is the old pre-grade on finished Rec.709 shots. It stays only for re-grading legacy shots
+- `maia/content/scripts/film/grade.mjs` is the old pre-grade on finished Rec.709 shots. It stays only for re-grading legacy shots
   shot before film mode; never use it for new shots.
 
 ## The iPhone in Apple Log

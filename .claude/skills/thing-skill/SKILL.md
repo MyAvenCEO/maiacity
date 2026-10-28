@@ -1,12 +1,12 @@
 ---
 name: thing-skill
-description: The maiaCITY thing skill — the still things the worlds are built from (props, tents, equipment and furniture) in the Things library (src/lib/models, shown in avenDB's Assets; the code keeps the name models): where a thing lives (LIST, HISTORY, REAL_SIZES and the size test), how it is built (a new one with $content/assets so the Things viewer and every other asset read it; size as a measure never a scale; models that pitch, open and build in named steps; parts and the catalog; walking in; lamps at night), how it composes (a thing goes into machines, buildings and worlds by carry or ref), versions that never break a game, checking and the lessons kept. Use it whenever a thing is built, upgraded, resized, taken apart, put into another asset or handed to a game. What works by moving parts is a machine (machine-skill); people and animals are actors (actor-skill). Part of asset-producer.
+description: The maiaCITY thing skill — the still things the worlds are built from (props, tents, equipment and furniture) in the Things library (maia/content/models, shown in avenDB's Assets; the code keeps the name models): where a thing lives (LIST, HISTORY, REAL_SIZES and the size test), how it is built (a new one with $content/assets so the Things viewer and every other asset read it; size as a measure never a scale; models that pitch, open and build in named steps; parts and the catalog; walking in; lamps at night), how it composes (a thing goes into machines, buildings and worlds by carry or ref), versions that never break a game, checking and the lessons kept. Use it whenever a thing is built, upgraded, resized, taken apart, put into another asset or handed to a game. What works by moving parts is a machine (machine-skill); people and animals are actors (actor-skill). Part of asset-producer.
 ---
 
 # Things: the still things worlds are built from
 
 The Things are the still models, shown in avenDB's Assets (`/app/avendb/#assets`). They were called Models, and the
-code's names (`src/lib/models`, `MODELS`) are kept. What works by moving parts — an engine, a vehicle that drives —
+code's names (`maia/content/models`, `MODELS`) are kept. What works by moving parts — an engine, a vehicle that drives —
 is a machine (`machine-skill`, our notes in its `ours.md`); people and animals are actors (`actor-skill`). The laws,
 the shared core (`$content/assets`, refs, one version control) and how we check are the `asset-producer`'s; this is what
 the Things taught us on top of them. The conventions every model keeps (origin on the floor, back towards −z, shared
@@ -14,15 +14,15 @@ materials, seeded randomness, handles in `userData`) are in `production-designer
 
 ## Where it lives
 
-- A builder in `src/lib/models/*.js` (new code in JavaScript; older files are TypeScript), one file per family:
+- A builder in `maia/content/models/*.js` (new code in JavaScript; older files are TypeScript), one file per family:
   `village.js` (pickup, loading ramp, solar panel), `planting.js` (backpack, bottle, seed packets, plant stake, dug
   earth), `tent.js` (dome and storage tent, their bags), `belltent.js` (bell tent, fire place, bag), `wayside.js`,
   `containers.js`.
-- A line in `LIST` in `src/lib/models/index.ts`: `{ id, label, note, usedIn, make, variants }`. The note says what it
+- A line in `LIST` in `maia/content/models/index.ts`: `{ id, label, note, usedIn, make, variants }`. The note says what it
   is and its measures in words; variants are the same builder with other options (`{ pitch: 0.5 }`, `{ open: 1 }`).
 - Its versions in `HISTORY` there (asset-producer: one version control).
-- Its real size in `REAL_SIZES` (`src/lib/models/units.js`) and its builder in the `BUILD` map of
-  `src/lib/models/sizes.test.js`. Write sizes as `1.8 * M` or `686 * MM`; the test allows 12 %.
+- Its real size in `REAL_SIZES` (`maia/content/models/units.js`) and its builder in the `BUILD` map of
+  `maia/content/models/sizes.test.js`. Write sizes as `1.8 * M` or `686 * MM`; the test allows 12 %.
 - Its ref: `things/<id>@<v>`.
 
 ## How it is built
@@ -34,7 +34,7 @@ materials, seeded randomness, handles in `userData`) are in `production-designer
   Things viewer shows it, a machine or a building can carry it, and its parts have cards.
 - The older things keep their own handles: each part a group tagged `userData.part = id`, listed in
   `userData.parts`, moved apart by `userData.explode(k)`, named by `userData.catalog = { assemblies, parts, steps,
-  ranges, sources, play, seconds }`. With it avenDB's Assets (`src/lib/assets/VaultAsset.svelte`) picks a part on tap,
+  ranges, sources, play, seconds }`. With it avenDB's Assets (`maia/content/assets/VaultAsset.svelte`) picks a part on tap,
   shows it on its own, explodes the model and plays or scrubs its steps.
 
 ### Size is a measure, not a scale

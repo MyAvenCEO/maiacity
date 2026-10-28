@@ -164,18 +164,18 @@ This section is maiaCITY's, added to AirSup's text; everything above it is their
 maiaCITY a machine is never only a page: it joins the Machines library, and every game, world, building, factory and
 film takes it from there. How to build it into the library is in `ours.md` beside this file.
 
-- **The builder:** `src/lib/machines/<machine>.js`, in JavaScript, at its real size in metres (1 unit = 1 m, never a
+- **The builder:** `maia/content/machines/<machine>.js`, in JavaScript, at its real size in metres (1 unit = 1 m, never a
   `scale.set` on its root: the viewer frames it, the model is never resized), standing on y 0, its front towards +z.
   It is built with this skill's kit as ported into the app, `$content/assets`: `kit.js` (the math, materials, geometry
   and studio of `kit/lab-kit.js`), `parts.js` (`assetKit(root)`: `part`, `label`, `onTick`, `carry`, `seal`; your
   `lab.add` as one contract every asset group shares) and `stage.js` (your Lab's studio, post and modes at the
   machine's real size). The Machines page shows it on that stage with its parts, its hero, sliders and how, its moves
   (Run, its own `lab.moves`, Assemble, its break) apart from its views (Explode, Cut away, X-ray, Labels, Slow). The
-  Power Cube (`src/lib/machines/powercube.js`, v3) is the worked example. Older machines are rigged meshes in
-  `src/lib/actors/` and stay there, frozen.
-- **The library line:** a kind in `LIST` of `src/lib/machines/index.js`, its versions in `HISTORY` there; once the seed
+  Power Cube (`maia/content/machines/powercube.js`, v3) is the worked example. Older machines are rigged meshes in
+  `maia/content/actors/` and stay there, frozen.
+- **The library line:** a kind in `LIST` of `maia/content/machines/index.js`, its versions in `HISTORY` there; once the seed
   has written its recipe into the Maia City vault, it shows in avenDB's Assets (`/app/avendb/#assets`).
-- **Its size:** in `REAL_SIZES` (`src/lib/models/units.js`) and the `BUILD` map of `src/lib/models/sizes.test.js`.
+- **Its size:** in `REAL_SIZES` (`maia/content/models/units.js`) and the `BUILD` map of `maia/content/models/sizes.test.js`.
 - **Its parts:** every part a mechanic would name is its own, with its card (what it is, what moves it, its numbers,
   where they come from).
 - **Composable:** a sealed machine goes whole into another asset with `carry` (its parts, labels, x-ray shells and
@@ -183,7 +183,7 @@ film takes it from there. How to build it into the library is in `ours.md` besid
   ClickLock) is one builder they all import; a building, a factory or a world names it by its ref,
   `machines/<id>@<v>`, and builds it with `objectAt` (`$content/assets/index.js`).
 - **Its versions:** every upgrade is a new version with a dated note in `HISTORY`; the old builder stays frozen and
-  keeps building exactly what it built (`bun test src/lib/assets/versions.test.js` holds every version to it).
+  keeps building exactly what it built (`bun test maia/content/assets/versions.test.js` holds every version to it).
 - **What you hand over:** the shots, this skill's page and its film go to `/mnt/project-files/machines/<machine>/`,
   never into the repository.
 - Never name the brand or startup that inspired a machine.

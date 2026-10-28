@@ -1,0 +1,182 @@
+[
+  {
+    "name": "security",
+    "tier": "gate",
+    "paths": [
+      "aven/kernel/sandbox/",
+      "maia/content/assets/engines.test.js",
+      "maia/content/assets/box/",
+      "maia/content/assets/schemas/",
+      "maia/content/assets/sources/",
+      "maia/content/assets/vault.test.js",
+      "maia/content/assets/worlds.test.js",
+      "maia/content/assets/params.test.js",
+      "maia/content/assets/register.test.js",
+      "maia/content/assets/versions.test.js",
+      "maia/content/models/timber.test.js",
+      "aven/kernel/code/",
+      "maia/content/game/code/sources/proof-worker.test.js",
+      "maia/content/render/lint.test.js",
+      "maia/site/lib/markdown/",
+      "aven/db/page/",
+      "maia/site/lib/media/",
+      "maia/content/studio/aven.test.js",
+      "maia/content/studio/cuts.test.js",
+      "maia/content/studio/refresh.test.js",
+      "maia/content/studio/media-sources.test.js",
+      "maia/content/game/places.test.js",
+      "aven/ops/deploy/check-avendb.test.js",
+      "maia/content/studio/media-proxies.test.js",
+      "maia/content/scripts/film/avendb.test.mjs",
+      "aven/ops/diagnostics/network-probe.test.mjs",
+      "aven/api/test/"
+    ],
+    "impact": [
+      "maia/site/app.html",
+      "maia/site/app.css",
+      "maia/site/app.d.ts",
+      "maia/site/routes/",
+      "maia/site/params/",
+      "maia/site/lib/",
+      "maia/site/scripts/",
+      "maia/content/",
+      "maia/research/sandbox-7/",
+      "maia/research/lean-wasm/",
+      "maia/research/theos-e2e-sim.mjs",
+      "aven/kernel/",
+      "aven/db/page/",
+      "aven/db/scripts/",
+      "aven/ops/ci/",
+      "aven/ops/devx/",
+      "aven/ops/checks/",
+      "aven/ops/diagnostics/",
+      "aven/ops/diagnostics.mjs",
+      "aven/ops/release.mjs",
+      "aven/ops/watch-main.mjs",
+      "aven/api/",
+      "aven/ops/deploy/",
+      "package.json",
+      "bun.lock",
+      "maia/site/patches/"
+    ]
+  },
+  {
+    "name": "ci",
+    "tier": "targeted",
+    "paths": [
+      "aven/ops/ci/"
+    ],
+    "impact": [
+      ".github/",
+      "aven/ops/ci/",
+      ".bun-version",
+      "aven/api/Dockerfile"
+    ]
+  },
+  {
+    "name": "assets",
+    "tier": "targeted",
+    "paths": [
+      "maia/content/assets/",
+      "maia/content/models/",
+      "maia/content/actors/",
+      "maia/content/plants/",
+      "maia/content/biomes/",
+      "maia/content/buildings/",
+      "maia/content/render/"
+    ],
+    "impact": [
+      "maia/content/assets/",
+      "maia/content/models/",
+      "maia/content/actors/",
+      "maia/content/plants/",
+      "maia/content/biomes/",
+      "maia/content/buildings/",
+      "maia/content/render/"
+    ]
+  },
+  {
+    "name": "studio",
+    "tier": "targeted",
+    "paths": [
+      "maia/content/studio/",
+      "maia/content/film/"
+    ],
+    "impact": [
+      "maia/content/studio/",
+      "maia/content/film/",
+      "maia/content/game/film/",
+      "maia/content/films/"
+    ]
+  },
+  {
+    "name": "games",
+    "tier": "targeted",
+    "paths": [
+      "maia/content/maiacity-v1/",
+      "maia/content/maiacity-v2/",
+      "maia/content/factories/",
+      "maia/content/sandbox-2/",
+      "maia/content/sandbox-kit/"
+    ],
+    "impact": [
+      "maia/content/maiacity-v1/",
+      "maia/content/maiacity-v2/",
+      "maia/content/factories/",
+      "maia/content/sandbox-2/",
+      "maia/content/sandbox-kit/",
+      "maia/content/models/",
+      "maia/content/plants/",
+      "maia/content/game/",
+      "aven/kernel/engines.js",
+      "maia/content/maiacity-testing/"
+    ]
+  },
+  {
+    "name": "physics",
+    "tier": "targeted",
+    "off": "Samuel 2026-10-27: Sandbox 7's physics does not run in CI for now; its tests stay, run them with bun aven/ops/ci/test.mjs --suite physics",
+    "paths": [
+      "maia/content/sandbox-7/"
+    ],
+    "impact": [
+      "maia/content/sandbox-7/",
+      "maia/research/sandbox-7/"
+    ]
+  },
+  {
+    "name": "application",
+    "tier": "targeted",
+    "paths": [
+      "maia/site/lib/ids.test.js",
+      "maia/site/lib/app/",
+      "maia/site/lib/chat/",
+      "maia/site/lib/universe/",
+      "maia/site/lib/proposals/",
+      "maia/content/game/code/"
+    ],
+    "impact": [
+      "maia/site/app.html",
+      "maia/site/app.css",
+      "maia/site/app.d.ts",
+      "maia/site/routes/",
+      "maia/site/params/",
+      "maia/site/lib/",
+      "maia/site/scripts/",
+      "maia/content/",
+      "maia/research/sandbox-7/",
+      "maia/research/lean-wasm/",
+      "maia/research/theos-e2e-sim.mjs",
+      "aven/kernel/",
+      "aven/db/page/",
+      "aven/db/scripts/",
+      "aven/ops/ci/",
+      "aven/ops/devx/",
+      "aven/ops/checks/",
+      "aven/ops/diagnostics/",
+      "aven/ops/diagnostics.mjs",
+      "aven/ops/release.mjs",
+      "aven/ops/watch-main.mjs"
+    ]
+  }
+]

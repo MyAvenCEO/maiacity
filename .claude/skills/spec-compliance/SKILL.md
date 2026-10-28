@@ -33,7 +33,7 @@ Not for writing or improving documentation, though it produces the list of what 
 
 Run the saved workflow `spec-compliance` (`.claude/workflows/spec-compliance.js`): call the Workflow tool with
 `name: "spec-compliance"` and `args` set to a path, or to `{path, spec, limit}` to name the specification and widen
-the fan-out — "run spec-compliance on avendb/crates/avendb against avendb/spec, checking 20 requirements". Invoking
+the fan-out — "run spec-compliance on aven/db/crates/avendb against aven/db/spec, checking 20 requirements". Invoking
 this skill is the user's opt-in to that workflow; it fans out one agent per requirement, so say how many before
 starting.
 
@@ -65,8 +65,8 @@ run, without it never. The section is here so a human knows what runs and why.
 
 ## In this repo
 
-avenDB's architecture lives first in Lean (`avendb/spec`, the single source of truth): a rule changes there, the
-vectors are regenerated, and the Rust in `avendb/crates` follows. That makes the Lean spec the authoritative document
+avenDB's architecture lives first in Lean (`aven/db/spec`, the single source of truth): a rule changes there, the
+vectors are regenerated, and the Rust in `aven/db/crates` follows. That makes the Lean spec the authoritative document
 for this skill: a Rust path that does more or less than the spec states is a finding against the code, and a spec
 statement too vague to check is a finding against the spec. Use `lean-proofs` for the Lean side itself.
 

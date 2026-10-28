@@ -38,7 +38,7 @@
     },
   },
   "patchedDependencies": {
-    "@sveltejs/kit@2.70.3": "patches/@sveltejs%2Fkit@2.70.3.patch",
+    "@sveltejs/kit@2.70.3": "maia/site/patches/@sveltejs%2Fkit@2.70.3.patch",
   },
   "packages": {
     "@dimforge/rapier3d-compat": ["@dimforge/rapier3d-compat@0.21.0", "", {}, "sha512-tCl1HPGwOhn5aCQbgqWbOH+Nx/5fnr3IPAnzQuR7zIhC/raqi2yxC6LhvZqjdI2El5hQgY5RDAwDrAjAi2FdPA=="],

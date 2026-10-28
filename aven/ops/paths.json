@@ -1,23 +1,18 @@
 {
 	"note": "Where the repo keeps what, in one place: the site's folder and its static files, the import aliases, the folders outside the site its dev server serves, and the one map of the stage 2 move (old path to new). Read by vite.config.ts, by the bundlers of the frozen engines and of the asset box, and by aven/ops/move.mjs, which makes the move from `moves`, puts `after` in place of today's places, and then checks that no old path is left.",
-	"site": "src",
-	"static": "static",
+	"site": "maia/site",
+	"static": "maia/site/static",
 	"aliases": {
-		"$avendb": "src/lib/avendb",
-		"$kernel": "src/lib",
-		"$content": "src/lib"
+		"$avendb": "aven/db/page",
+		"$kernel": "aven/kernel",
+		"$content": "maia/content"
 	},
-	"served": ["game", "blog", "inspire-me", "sources", "films", ".claude/skills"],
-	"after": {
-		"site": "maia/site",
-		"static": "maia/site/static",
-		"aliases": {
-			"$avendb": "aven/db/page",
-			"$kernel": "aven/kernel",
-			"$content": "maia/content"
-		},
-		"served": ["maia/research/sources", "blog", "inspire-me", ".claude/skills"]
-	},
+	"served": [
+		"maia/research/sources",
+		"blog",
+		"inspire-me",
+		".claude/skills"
+	],
 	"moves": {
 		"avendb/": "aven/db/",
 		"src/lib/avendb/": "aven/db/page/",

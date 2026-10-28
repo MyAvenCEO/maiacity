@@ -50,7 +50,7 @@ The emitters take `--crate <pkg>`, `--bin <name>` or `--lib`, and extra cargo ar
 
 ### Build cost and disk
 
-All four emitters build with `cargo +nightly` into **one shared folder per crate**: `<cargo target dir>/zeroize` (for avenDB, `avendb/target/zeroize`), or the folder `--target-dir` names. The first run builds every dependency there once; later runs rebuild only the crate. Each output is written straight to `zeroize-emit/<kind>-O<n>-<settings hash>.<ext>` in that folder and copied to `--out`.
+All four emitters build with `cargo +nightly` into **one shared folder per crate**: `<cargo target dir>/zeroize` (for avenDB, `aven/db/target/zeroize`), or the folder `--target-dir` names. The first run builds every dependency there once; later runs rebuild only the crate. Each output is written straight to `zeroize-emit/<kind>-O<n>-<settings hash>.<ext>` in that folder and copied to `--out`.
 
 The originals built each run in a new `$TMPDIR/zeroize_rust_*` folder, every dependency again, and left it behind (33 MB a run for a one-file crate, gigabytes for avenDB). They also concatenated the incremental cache's copy with the real output, so every function appeared twice in the IR and assembly.
 
@@ -63,7 +63,7 @@ The originals built each run in a new `$TMPDIR/zeroize_rust_*` folder, every dep
 | Field | Required | Default | Description |
 |---|---|---|---|
 | `path` | yes | — | Repo root |
-| `cargo_manifest` | yes | — | The crate's `Cargo.toml` (in a workspace, the member's, e.g. `avendb/crates/avendb/Cargo.toml`) |
+| `cargo_manifest` | yes | — | The crate's `Cargo.toml` (in a workspace, the member's, e.g. `aven/db/crates/avendb/Cargo.toml`) |
 | `crate` | no | — | Package name, when the manifest is a workspace root |
 | `target` | no | `--lib` | `--lib` or `--bin <name>`; needed when the package has both |
 | `config` | no | — | YAML whose keys override [configs/rust.yaml](configs/rust.yaml) |

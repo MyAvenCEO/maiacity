@@ -1,33 +1,33 @@
 ---
 name: building-skill
-description: The maiaCITY building skill — what a settlement lives and works in, in the Buildings library (src/lib/buildings, /app/buildings): the tents a settler starts in, the domes of a village in the order it grows them (glamp, home, large, grand, master, the glass factory) with their walkable interiors, the fitted-out containers and the wayside buildings, all on one round grid ground and stepped inside; how a building is built (research, real size, its shell first), how it composes (furnished from Things, machines and plants by ref or carry, floored with a biome, placed in worlds), dome sizes and engineering (geodesic caps, the hemp north third), the 1 hex = settlement and 7 hexes = village terms, versions kept walkable as they were, checking and the lessons kept. Use it whenever a tent, a dome, a container, a tower or any building is built, changed, sized, furnished or walked. Part of asset-producer.
+description: The maiaCITY building skill — what a settlement lives and works in, in the Buildings library (maia/content/buildings, /app/buildings): the tents a settler starts in, the domes of a village in the order it grows them (glamp, home, large, grand, master, the glass factory) with their walkable interiors, the fitted-out containers and the wayside buildings, all on one round grid ground and stepped inside; how a building is built (research, real size, its shell first), how it composes (furnished from Things, machines and plants by ref or carry, floored with a biome, placed in worlds), dome sizes and engineering (geodesic caps, the hemp north third), the 1 hex = settlement and 7 hexes = village terms, versions kept walkable as they were, checking and the lessons kept. Use it whenever a tent, a dome, a container, a tower or any building is built, changed, sized, furnished or walked. Part of asset-producer.
 ---
 
 # Buildings: what a settlement lives and works in
 
-Every building stands alone in `/app/buildings` (admin) on the same round ground (`src/lib/buildings/ground.js`: a
+Every building stands alone in `/app/buildings` (admin) on the same round ground (`maia/content/buildings/ground.js`: a
 disc of light earth, 1 m grid squares, every 10 m darker, a rim), made as large as it needs, and opens straight
 inside to be walked. The laws, the shared core (`$content/assets`, refs, one version control) and how we check are the
 `asset-producer`'s; this is what the buildings taught us on top of them.
 
 ## Where it lives
 
-- `src/lib/buildings/index.js`: `BUILDINGS` = the domes (versioned), the containers and the wayside buildings, each
+- `maia/content/buildings/index.js`: `BUILDINGS` = the domes (versioned), the containers and the wayside buildings, each
   `{ id, label, note, usedIn, size, versions }`, grouped as "Tents and domes", "Containers" and the wayside group;
   their `HISTORY` there.
-- `src/lib/buildings/domes.js`: `DOMES_IN_ORDER`, the domes in the order a village grows them, each with its picture
+- `maia/content/buildings/domes.js`: `DOMES_IN_ORDER`, the domes in the order a village grows them, each with its picture
   from inside (a media vault hash) and what it is: the tent, glamp (16 m), home (40 m), large (70 m), grand (100 m),
   master (136 m) and the factory that makes their glass.
-- Their interiors are Sandbox 3's (`src/lib/sandbox-2/interior`: `interior.ts`, `tent.ts`, `factory.ts`, `rooms.ts`,
+- Their interiors are Sandbox 3's (`maia/content/sandbox-2/interior`: `interior.ts`, `tent.ts`, `factory.ts`, `rooms.ts`,
   `water.ts`, `spaces.ts`): galleries of private rooms round the edge facing out through the glass, a shared ground
   floor of plaza, food forest, stream and pond, kitchens and aquaponics under the gallery.
-- Containers are models (`src/lib/models/containers.js`, 40-foot high cubes, 12.19 × 2.44 × 2.90 m, walkable,
+- Containers are models (`maia/content/models/containers.js`, 40-foot high cubes, 12.19 × 2.44 × 2.90 m, walkable,
   `userData.roof`, `userData.walk`); the wayside buildings too (`wayside.js`: bus stop, gas station, the village
   store, the old shed). A building that is also handed to a game as a thing follows `thing-skill`.
-- The buildings built as one object (the containers and the wayside) are listed in `src/lib/buildings/built.js`
+- The buildings built as one object (the containers and the wayside) are listed in `maia/content/buildings/built.js`
   (`BUILT`, their `HISTORY`): each a recipe of the `buildings` group the asset box builds, shown in the one asset
   viewer like any thing. The tent and the domes are worlds in disguise (Sandbox 3's interiors, with their sky, lamps,
-  animals and forest): `src/lib/buildings/inside.js` raises one alone on the viewer's canvas, by the interior's own
+  animals and forest): `maia/content/buildings/inside.js` raises one alone on the viewer's canvas, by the interior's own
   code, never in the box, until an interior is an asset of its own.
 - Its ref: `buildings/<id>@<v>`.
 
@@ -51,7 +51,7 @@ inside to be walked. The laws, the shared core (`$content/assets`, refs, one ver
 - The engineered 150 m dome (research): a 50 m high geodesic cap of about 6 m struts (frequency 16, 2,390 struts,
   830 hubs), larch or Douglas glulam struts, recycled cast-steel hubs, all joints steel, mineral glass, a hemp-fibre
   north shell, the floor at ground level.
-- The one-village sandbox (`src/lib/sandbox-6`, label Sandbox 6) builds hexes 665.6 m across flats at real scale, with
+- The one-village sandbox (`maia/content/sandbox-6`, label Sandbox 6) builds hexes 665.6 m across flats at real scale, with
   Dome40/80/120 and one tower; its numbers and their sources are in `specs.js`.
 
 ## Composable

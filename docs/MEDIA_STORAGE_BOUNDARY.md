@@ -8,15 +8,15 @@ Do not restore a fallback to the retired catalog. A legacy film reference must b
 
 ## Reference contract
 
-- `src/lib/media/ref.js` is the page's typed boundary, independent of auth and studio. It distinguishes avenDB files, public hash aliases and external HTTP(S) URLs. Unrecognized values are not media references.
+- `maia/site/lib/media/ref.js` is the page's typed boundary, independent of auth and studio. It distinguishes avenDB files, public hash aliases and external HTTP(S) URLs. Unrecognized values are not media references.
 - Private references retain their existing wire format: `aven:<root>:<sealed-size>:<plain-length>[:<percent-encoded-media>]`. Four-field references remain readable. Roots are 64 lowercase hexadecimal characters. Sizes are nonnegative decimal safe integers; sealed size cannot be smaller than plain length. Unknown lengths are not silently replaced by zero. Empty files remain supported.
-- `vault/app/src/media_ref.rs` implements the same private-file contract. Playback, colour/LUT readers, rendering and the `aven://` handler use this parser. Malformed encodings, extra fields, unsafe numbers and control characters fail before storage access. Both runtimes exercise `tests/fixtures/media-refs.tsv`.
+- `theos/app/src/media_ref.rs` implements the same private-file contract. Playback, colour/LUT readers, rendering and the `aven://` handler use this parser. Malformed encodings, extra fields, unsafe numbers and control characters fail before storage access. Both runtimes exercise `maia/site/lib/media/media-refs.tsv`.
 - Native readers enter through `aven::source_of_ref` (or `source_on` for a dedicated runtime), producing the existing `vault_media::Source`/`ByteSource`. Storage access stays in avenDB; media processing does not choose a backend.
 - `aven://localhost/<root>?size=…&len=…&media=…` is a private, ranged device transport. Its existing origin restrictions, passive-content allowlist and bounded Range handling remain in force.
 
 ## Public compatibility is a separate contract
 
-`src/lib/media/url.ts` resolves public plaintext-hash aliases to `https://api.maia.city/vault/files/<hash>[.<extension>]`. These hashes are not avenDB sealed roots. `deploy/Caddyfile` already forwards this stable public route to avenDB's `/feed/media/…`, including the existing Range/CORS handling. Keep the URL, manifest and publication alias mapping intact. Never manufacture a private file reference from a public hash or publish a private reference through this gateway.
+`maia/site/lib/media/url.ts` resolves public plaintext-hash aliases to `https://api.maia.city/vault/files/<hash>[.<extension>]`. These hashes are not avenDB sealed roots. `aven/ops/deploy/Caddyfile` already forwards this stable public route to avenDB's `/feed/media/…`, including the existing Range/CORS handling. Keep the URL, manifest and publication alias mapping intact. Never manufacture a private file reference from a public hash or publish a private reference through this gateway.
 
 External URLs and static paths retain their existing `asset()` pass-through behavior. The public adapter cannot be used to read private avenDB files.
 

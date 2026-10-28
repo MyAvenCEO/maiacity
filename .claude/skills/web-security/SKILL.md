@@ -14,15 +14,15 @@ log before the fix is merged.
 
 | Surface | Code | What it must hold |
 |---|---|---|
-| Sign-in | `api/src/passkey.ts` (`@simplewebauthn/server`), `src/lib/avendb/server.js`, `vault/app/src/passkey.rs`, `vault/app/src/auth.rs` | one ceremony, the right origins and RP ID, each challenge used once |
-| Sessions | `api/src/session.ts` (a signed cookie: `founderId.expiry.signature`) | no forged, replayed or outlived session |
-| Admin and caps | `api/src/index.ts` (`allowed(req, cap)`), `api/src/caps.ts`, `api/src/acl.ts` | every protected route through `allowed`, least access, no role checked by name |
-| CORS | `api/src/index.ts` (`cors`, an allowlist from `SITE_ORIGIN`) | credentials only for an origin on the list, `Vary: Origin` |
-| SQL | `api/src/db.ts`, `api/src/pg.ts` (`sql` tagged templates; `.unsafe` for migrations and the admin reader) | no request text reaches `.unsafe` |
-| The feed | `avendb/crates/avendb-server/src/feed.rs` (public reads with `Access-Control-Allow-Origin: *`; the signed `POST /feed/pass` and `/feed/vaults`) | public reads return only what a Public share reaches; every POST checks a signed pass, not a header |
-| Vault code | `src/lib/sandbox/` (`policy.js`, `frame.js`, `lockdown.js`, `view-host.js`, `ViewHost.svelte`), provenance in `game/code/sources/feed.js` and `anchor.js` | third-party code reaches no key, network, storage or page, and only code Maia City's signed edits name runs |
-| Page policy | `pageCsp` in `src/lib/sandbox/policy.js`, applied in `vite.config.ts`; kept in step with The OS by `policy.test.js` | no `unsafe-eval`, scripts by hash, `object-src 'none'` |
-| The OS | `vault/app/tauri.conf.json` (CSP), `vault/app/capabilities/default.json`, `vault/app/src/main.rs` (`invoke_handler`, the `aven:` protocol), `enclave.rs` | the web view reaches only the commands and files it needs |
+| Sign-in | `aven/api/src/passkey.ts` (`@simplewebauthn/server`), `aven/db/page/server.js`, `theos/app/src/passkey.rs`, `theos/app/src/auth.rs` | one ceremony, the right origins and RP ID, each challenge used once |
+| Sessions | `aven/api/src/session.ts` (a signed cookie: `founderId.expiry.signature`) | no forged, replayed or outlived session |
+| Admin and caps | `aven/api/src/index.ts` (`allowed(req, cap)`), `aven/api/src/caps.ts`, `aven/api/src/acl.ts` | every protected route through `allowed`, least access, no role checked by name |
+| CORS | `aven/api/src/index.ts` (`cors`, an allowlist from `SITE_ORIGIN`) | credentials only for an origin on the list, `Vary: Origin` |
+| SQL | `aven/api/src/db.ts`, `aven/api/src/pg.ts` (`sql` tagged templates; `.unsafe` for migrations and the admin reader) | no request text reaches `.unsafe` |
+| The feed | `aven/db/crates/avendb-server/src/feed.rs` (public reads with `Access-Control-Allow-Origin: *`; the signed `POST /feed/pass` and `/feed/vaults`) | public reads return only what a Public share reaches; every POST checks a signed pass, not a header |
+| Vault code | `aven/kernel/sandbox/` (`policy.js`, `frame.js`, `lockdown.js`, `view-host.js`, `ViewHost.svelte`), provenance in `maia/content/game/code/sources/feed.js` and `anchor.js` | third-party code reaches no key, network, storage or page, and only code Maia City's signed edits name runs |
+| Page policy | `pageCsp` in `aven/kernel/sandbox/policy.js`, applied in `vite.config.ts`; kept in step with The OS by `policy.test.js` | no `unsafe-eval`, scripts by hash, `object-src 'none'` |
+| The OS | `theos/app/tauri.conf.json` (CSP), `theos/app/capabilities/default.json`, `theos/app/src/main.rs` (`invoke_handler`, the `aven:` protocol), `enclave.rs` | the web view reaches only the commands and files it needs |
 
 ## Checks
 
@@ -65,7 +65,7 @@ log before the fix is merged.
 - Every `message` handler checks `e.source` is the frame or the worker it expects and caps the size (`BUDGETS.message`);
   nothing a frame sends is used as HTML, a URL or a path without being cleaned.
 - Code runs only after provenance: its record and file hashes are among the edits Maia City signed (anchor pinned in
-  `game/code/sources/anchor.js`); a check that trusts the server's word is a finding.
+  `maia/content/game/code/sources/anchor.js`); a check that trusts the server's word is a finding.
 - A frozen engine is never edited; a fix is a new engine version beside it.
 
 ### The OS
@@ -90,8 +90,8 @@ log before the fix is merged.
 ## How to check
 
 - Read the handler, then the gate it calls; follow the request's fields to where they are used.
-- Local runs only: the site with `bun run dev`, the API with `bun run dev` in `api/`, avenDB's server locally.
+- Local runs only: the site with `bun run dev`, the API with `bun run dev` in `aven/api/`, avenDB's server locally.
 - The kernel's tests are the gate every PR and deploy passes (`.github/workflows/kernel.yml`, H7): run the same
-  `bun test` list locally after `bunx svelte-kit sync`; `bun test ./src/lib/sandbox/` alone covers the frames and
+  `bun test` list locally after `bunx svelte-kit sync`; `bun test ./aven/kernel/sandbox/` alone covers the frames and
   their policies.
 - Turn each confirmed finding into a test beside the code it fixes, then hand it to `fp-check` and the report.

@@ -1,8 +1,8 @@
 #!/bin/bash
 # A warm start for avenDB's Rust in Claude Code cloud sessions: the compiled test dependencies that
-# .github/workflows/avendb-dev-cache.yml puts on the release "avendb-dev-cache", unpacked into avendb/target, with the
+# .github/workflows/avendb-dev-cache.yml puts on the release "avendb-dev-cache", unpacked into aven/db/target, with the
 # Rust toolchain they were built with (cargo reuses nothing another rustc built). A session's first test build then
-# compiles only our own crates: avendb-net's tests in about 4 minutes instead of about 10 (avendb/CLAUDE.md).
+# compiles only our own crates: avendb-net's tests in about 4 minutes instead of about 10 (aven/db/CLAUDE.md).
 #
 # Cloud sessions only. It never replaces a build folder it did not make, and anything that fails leaves the session as
 # it was: a cold build, as before. What it says goes to stderr, but for one line on stdout for the session.
@@ -10,7 +10,7 @@ set -uo pipefail
 [ "${CLAUDE_CODE_REMOTE:-}" = true ] && [ "$(uname -s)-$(uname -m)" = Linux-x86_64 ] || exit 0
 
 release="${AVENDB_DEV_CACHE_URL:-https://github.com/MyAvenCEO/maiacity/releases/download/avendb-dev-cache}"
-target="${CLAUDE_PROJECT_DIR:-$(pwd)}/avendb/target"
+target="${CLAUDE_PROJECT_DIR:-$(pwd)}/aven/db/target"
 stamp="$target/.dev-cache"
 say() { echo "avendb dev cache: $*" >&2; }
 
@@ -37,13 +37,13 @@ rustup default "$rustc" >&2 || exit 0
 repo="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 commit=$(sed -n 's/^commit=//p' <<< "$manifest")
 if [[ "$commit" =~ ^[0-9a-f]{40}$ ]] && git -C "$repo" cat-file -e "$commit^{commit}" 2>/dev/null \
-	&& git -C "$repo" diff --quiet "$commit" -- avendb/vendor/iroh 2>/dev/null; then
-	find "$repo/avendb/vendor/iroh" -type f -exec touch -m -d '2001-01-01T00:00:00Z' {} + 2>/dev/null
+	&& git -C "$repo" diff --quiet "$commit" -- aven/db/vendor/iroh 2>/dev/null; then
+	find "$repo/aven/db/vendor/iroh" -type f -exec touch -m -d '2001-01-01T00:00:00Z' {} + 2>/dev/null
 fi
 
 # only into an empty build folder: one that holds a build already (the cache's, or the session's own) stays as it is
 if [ -e "$target/debug" ]; then
-	[ -f "$stamp" ] && echo "avenDB dev cache already in avendb/target (rustc $rustc)."
+	[ -f "$stamp" ] && echo "avenDB dev cache already in aven/db/target (rustc $rustc)."
 	exit 0
 fi
 
@@ -51,7 +51,7 @@ fi
 if [ -d "$snapshot/debug" ] && [ "$manifest" = "$(cat "$snapshot/manifest" 2>/dev/null)" ] \
 	&& mkdir -p "$target" && mv "$snapshot/debug" "$target/debug" 2>/dev/null; then
 	printf '%s\n' "$manifest" > "$stamp"
-	echo "avenDB dev cache moved into avendb/target from the environment snapshot (rustc $rustc)."
+	echo "avenDB dev cache moved into aven/db/target from the environment snapshot (rustc $rustc)."
 	exit 0
 fi
 
@@ -70,7 +70,7 @@ done < <(sed -n 's/^part=//p' <<< "$manifest")
 mkdir -p "$work/unpacked" "$target" || exit 0
 if cat "${parts[@]}" | tar -xz -C "$work/unpacked" && [ ! -e "$target/debug" ] && mv "$work/unpacked/debug" "$target/debug"; then
 	printf '%s\n' "$manifest" > "$stamp"
-	echo "avenDB dev cache unpacked into avendb/target (rustc $rustc): the first test build compiles only our own crates."
+	echo "avenDB dev cache unpacked into aven/db/target (rustc $rustc): the first test build compiles only our own crates."
 else
 	say "unpacking failed"
 fi

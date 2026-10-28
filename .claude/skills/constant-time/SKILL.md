@@ -85,7 +85,7 @@ Since findings and silence both depend on the configuration, say which compiler,
 To sweep a directory, loop in the shell — the analyzer is deterministic, one invocation per file:
 
 ```bash
-for f in $(find avendb/crates -name '*.rs' -path '*/src/*'); do .claude/skills/security-auditor/tools/sec ct --warnings --json "$f"; done
+for f in $(find aven/db/crates -name '*.rs' -path '*/src/*'); do .claude/skills/security-auditor/tools/sec ct --warnings --json "$f"; done
 ```
 
 ### Prerequisites

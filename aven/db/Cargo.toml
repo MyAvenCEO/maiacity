@@ -1,0 +1,74 @@
+# avenDB: the user-owned, end-to-end encrypted database, with its own workspace for standalone tools and the server.
+# The Mac app in theos/ links its device crates directly and builds them with the app workspace's lockfile and profiles.
+# See README.md.
+[workspace]
+resolver = "3"
+exclude = ["vendor/iroh"]
+members = [
+    "crates/avendb",
+    "crates/avendb-browser",
+    "crates/avendb-device",
+    "crates/avendb-net",
+    "crates/avendb-server",
+    "crates/avendb-testkit",
+]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.91"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+serde_json = "1"
+
+# Debug builds: line tables for our code (backtraces keep their lines), none for the dependencies; everything
+# optimised, as the property tests replay thousands of histories, each through every rule and the key schedule.
+# Our own crates at opt-level 1, the dependencies at 2: on a 4-core cloud session (2026-10-27) avendb-net's tests built
+# from nothing in 9.7 min and 7.5 GB at 1, against 17 min and 12 GB at 2, and ran as fast (CI had built them at 1 since
+# 2026-10-21). At 0 a one-line change rebuilt in 18 s instead of 42, but the tests ran half again as long.
+[profile.dev]
+debug = "line-tables-only"
+opt-level = 1
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 2
+
+# Classic McEliece makes a key pair in about 0.6 s at opt-level 3 and twice that at 2, and the tests make many
+[profile.dev.package.classic-mceliece-rust]
+opt-level = 3
+
+# The bench job's live shard (avendb-checks.yml): the dev build's checks, optimised as a release is, so the live sync
+# gates time the code and not the debug build (test-fixtures, which the live bench needs, refuses a release build)
+[profile.live]
+inherits = "dev"
+opt-level = 3
+
+[profile.live.package."*"]
+opt-level = 3
+
+# Release builds are the tile's WebAssembly (scripts/build-web.sh): one codegen unit, optimised across crates.
+[profile.release]
+codegen-units = 1
+lto = true
+
+# The server's image (Dockerfile.server): optimised as a release, but in parallel codegen units and with thin LTO, as
+# the one codegen unit and full LTO above, which make the tile's WebAssembly small, made each image build of our
+# crates take minutes on one core of the runner
+[profile.server]
+inherits = "release"
+codegen-units = 16
+lto = "thin"
+
+# The standalone native device: optimised as a release, with parallel codegen units and incremental builds.
+# The embedded device uses theos/'s profiles instead.
+[profile.app]
+inherits = "release"
+codegen-units = 16
+lto = false
+incremental = true
+
+# Open authenticated custom carriers on already-connected peers; see vendor/iroh/AVENDB-PATCH.md.
+[patch.crates-io]
+iroh = { path = "vendor/iroh" }

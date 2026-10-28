@@ -1,6 +1,6 @@
 ---
 name: biome-skill
-description: The maiaCITY biome skill — the floor a world stands on, in the Biomes library (src/lib/biomes, /app/biomes): a biome as a recipe of surfaces (leaf litter, humus, needles, moss, the living mat, bare soil) blended by one shader and cover kinds in colonies on the surface they belong on, why a forest floor looks the way it does, how it composes (plants and things as its cover, mixing two biomes, laid into worlds and under domes by ref), streaming dense cover in tiles round the eye without edges or pops, versions, checking and the lessons kept. Use it whenever a world's ground, a forest floor, a meadow, a lawn or the ground under a dome is made, changed or tuned. Part of asset-producer.
+description: The maiaCITY biome skill — the floor a world stands on, in the Biomes library (maia/content/biomes, /app/biomes): a biome as a recipe of surfaces (leaf litter, humus, needles, moss, the living mat, bare soil) blended by one shader and cover kinds in colonies on the surface they belong on, why a forest floor looks the way it does, how it composes (plants and things as its cover, mixing two biomes, laid into worlds and under domes by ref), streaming dense cover in tiles round the eye without edges or pops, versions, checking and the lessons kept. Use it whenever a world's ground, a forest floor, a meadow, a lawn or the ground under a dome is made, changed or tuned. Part of asset-producer.
 ---
 
 # Biomes: the floor a world stands on
@@ -13,7 +13,7 @@ floors taught us on top of them.
 
 ## Where it lives
 
-- `src/lib/biomes/surfaces.js`: the surfaces (`SURFACES`: litter, humus, needles, moss, green, soil), each a texture
+- `maia/content/biomes/surfaces.js`: the surfaces (`SURFACES`: litter, humus, needles, moss, green, soil), each a texture
   at its real size, blended by one shader in patches of their own size (`groundMaterial(weights)`, `surfacesAt`).
 - `cover.js`: the kinds that grow or lie on it (`COVER`: grasses, sedge, moss cushions, low flowers, woodruff, wood
   sorrel, ramsons, strawberries, blueberry, ferns, leaves and twigs, deadwood, stones, mushrooms), each built once
@@ -74,7 +74,7 @@ between the plants, leaf litter under the trees. A new floor starts from what re
 - Two biomes compose into one: `mix(a, b, t)` runs both together (a forest edge is half the beech wood and half the
   meadow).
 - What it goes into: worlds and the ground under domes, named there by its ref (`biomes/food-forest@1`), so a world
-  keeps the floor it was made on. Sandbox 5's floor is the food forest's (`src/lib/sandbox-2/interior/village.ts`),
+  keeps the floor it was made on. Sandbox 5's floor is the food forest's (`maia/content/sandbox-2/interior/village.ts`),
   and under its domes' glass the warm food forest's (`interior.ts`). The trees of a whole forest (near in full, far as
   impostors) are in `production-designer`'s `models.md`.
 

@@ -5,8 +5,8 @@ every asset group.
 
 ## Numbers first (headless)
 
-- `bun test src/lib/models/sizes.test.js`: every thing's and machine's outer box against `REAL_SIZES` (12 %).
-- `bun test src/lib/assets/versions.test.js`: every group's versions in order and dated, every older one with its own
+- `bun test maia/content/models/sizes.test.js`: every thing's and machine's outer box against `REAL_SIZES` (12 %).
+- `bun test maia/content/assets/versions.test.js`: every group's versions in order and dated, every older one with its own
   frozen builder, every one found again by its ref.
 - `timeout 300 npx svelte-check --threshold error`: 0 errors. JSDoc types in JS: annotate what it calls implicit
   `any`, cast with `/** @type {any} */ (x)` where three's types are narrower than the code.
@@ -19,7 +19,7 @@ every asset group.
 - **Fingerprint frozen versions.** Before a refactor, hash every older version's geometry (each attribute's bytes,
   each blend shape's, the groups) in a throwaway test; after it, the hashes must match. (The stand-in v6 man is not
   deterministic between calls; its other versions are.)
-- `bun test src/lib/assets/compose.test.js`: an asset built by its ref, carried, its parts naming it, a host carried
+- `bun test maia/content/assets/compose.test.js`: an asset built by its ref, carried, its parts naming it, a host carried
   in turn, an older object carried whole. For a new host, check that the guest's parts are in its catalog under the
   prefix with their ref, and that the host's outer box still matches its real size with the guest in it.
 
@@ -61,7 +61,7 @@ every asset group.
 - **Loading on a phone**: shoot the page at 390 × 844 with `deviceScaleFactor: 3, isMobile: true, hasTouch: true`;
   the canvas says "Building the …" while a model is built and its shaders compiled. Pick ten models in a row and count
   the live WebGL buffers (wrap `createBuffer`/`deleteBuffer` in an init script): the count must stay bounded, or a
-  phone loses its canvas after a few (`createStageRenderer` in `src/lib/render/stage.js` lets each model go).
+  phone loses its canvas after a few (`createStageRenderer` in `maia/content/render/stage.js` lets each model go).
 
 ## Seen before
 
@@ -79,8 +79,8 @@ every asset group.
   columns outside the asset's outline, inside the room the panels leave (`stage.labels(w, h, safe)`), and hands them
   to the other side when one has no room. Check Labels on the longest asset and on one beside a panel.
 - A new asset app needs every place that names one: its route (`+page.js` prerendered, `+page.svelte`), a tile in
-  `gameAt` and a title in `placeOf` (`src/lib/app/places.ts`), its address in `ASSET_PAGES` (`src/lib/assets/vault.js`),
-  the full-screen list `immersive` in `src/routes/app/+layout.svelte` (Machines first opened inside the page frame
-  without it), and a group in `GROUPS` of `src/lib/assets/index.js`. No app has a dashboard tile or a cover since
+  `gameAt` and a title in `placeOf` (`maia/site/lib/app/places.ts`), its address in `ASSET_PAGES` (`maia/content/assets/vault.js`),
+  the full-screen list `immersive` in `maia/site/routes/app/+layout.svelte` (Machines first opened inside the page frame
+  without it), and a group in `GROUPS` of `maia/content/assets/index.js`. No app has a dashboard tile or a cover since
   #942, and a group avenDB's Assets shows (machines, actors, things, plants) needs no app at all: its recipes in the
   Maia City vault are enough.
