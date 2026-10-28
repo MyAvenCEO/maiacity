@@ -13,7 +13,8 @@ const checks = {
  'uptime.yml': [], 'network-audit.yml': [], 'ci-budget.yml': [], 'gate.yml': [], 'old-vault.yml': [], 'founders.yml': [], 'site-media.yml': [],
 };
 // What the server's image build reads beyond the code the tests compile (aven/db/Dockerfile.server, cargo-chef's recipe).
-const imageInputs = /^aven\/db\/(Dockerfile[^/]*|\.dockerignore|Cargo\.(toml|lock)|rust-toolchain[^/]*|\.cargo\/.*|vendor\/.*|crates\/[^/]+\/(Cargo\.toml|build\.rs))$/;
+// The workspace's own manifest and lockfile (the root's, D3) select every check, the image's among them.
+const imageInputs = /^aven\/db\/(Dockerfile[^/]*|rust-toolchain[^/]*|\.cargo\/.*|vendor\/.*|crates\/[^/]+\/(Cargo\.toml|build\.rs))$/;
 export function impact(files) {
  const out = Object.fromEntries(components.map(k => [k, false]));
  const set = (...keys) => keys.forEach(k => out[k] = true);

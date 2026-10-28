@@ -10,7 +10,7 @@ test('a browser change requires validation but cannot rebuild the unrelated serv
  expect(next.avendb && next.browser).toBe(true); expect(next.server).toBe(false);
 });
 test('cryptographic and vendored transport changes require protocol and browser checks',()=>{
- for(const file of ['aven/db/crates/avendb/src/keys.rs','aven/db/vendor/iroh/src/endpoint.rs','aven/db/Cargo.lock']) {
+ for(const file of ['aven/db/crates/avendb/src/keys.rs','aven/db/vendor/iroh/src/endpoint.rs','Cargo.lock']) {
   const next=impact([file]); expect(next.protocol && next.browser && next.server).toBe(true);
  }
 });
@@ -202,7 +202,7 @@ test('a workflow edit selects what that workflow checks; a release workflow or a
 });
 
 test('the server image builds on a PR only when its build reads something new', () => {
- for (const f of ['aven/db/Dockerfile.server','aven/db/Cargo.lock','aven/db/crates/avendb-net/Cargo.toml','aven/db/vendor/iroh/src/lib.rs','aven/db/.dockerignore'])
+ for (const f of ['aven/db/Dockerfile.server','Cargo.lock','Cargo.toml','aven/db/crates/avendb-net/Cargo.toml','aven/db/vendor/iroh/src/lib.rs','aven/db/Dockerfile.server.dockerignore'])
   expect(impact([f]).image).toBe(true);
  for (const f of ['aven/db/crates/avendb-server/src/main.rs','aven/db/crates/avendb/tests/all/properties.rs','aven/db/spec/AvenDB/Wire.lean'])
   expect(impact([f]).image).toBe(false);

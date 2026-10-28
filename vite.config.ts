@@ -86,7 +86,7 @@ export default defineConfig(({ command }) => ({
 		fs: { allow: [...beside, ...paths.served] },
 		// other sessions' worktrees and the Mac app's build folder change all day: watched, each one reloaded the
 		// studio in the middle of a session
-		watch: { ignored: ['**/.claude/**', '**/.cargo/**', '**/theos/target/**', '**/aven/db/target/**'] },
+		watch: { ignored: ['**/.claude/**', '**/.cargo/**', '**/target/**', '**/target-wasm/**'] },
 		// The preview harness assigns a free port via PORT.
 		port: Number(process.env.PORT) || 5173,
 		strictPort: !!process.env.PORT

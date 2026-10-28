@@ -8,4 +8,4 @@ rustflags = ["-C", "target-feature=+simd128", "-C", "link-arg=-zstack-size=83886
 # the same pairs again, and on a 4-core cloud session avendb-net's `live` test ran past its 60 s deadline (2026-10-27).
 # Read only by test-fixtures debug builds; an AVENDB_TEST_PAIRS already set (CI's) wins.
 [env]
-AVENDB_TEST_PAIRS = { value = "target/avendb-test-pairs", relative = true }
+AVENDB_TEST_PAIRS = { value = "../../target/avendb-test-pairs", relative = true }

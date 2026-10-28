@@ -19,10 +19,10 @@ if [ "$have" != "$want" ]; then
 fi
 
 # the page's own device (Your account, P8e): avendb-browser and its JS modules, for passkeys of maia.city
-cargo build -p avendb-browser --target wasm32-unknown-unknown --release
+cargo build -p avendb-browser --target wasm32-unknown-unknown --profile wasm
 device=./page/device
 rm -rf "$device"
-wasm-bindgen --target web --no-typescript --out-dir "$device" "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/avendb_browser.wasm"
+wasm-bindgen --target web --no-typescript --out-dir "$device" "${CARGO_TARGET_DIR:-../../target}/wasm32-unknown-unknown/wasm/avendb_browser.wasm"
 # smaller and quicker where binaryen's wasm-opt is installed (the features Rust's wasm32 target uses, which it reads
 # from the module itself); left as wasm-bindgen wrote it where it isn't
 if command -v wasm-opt >/dev/null 2>&1; then

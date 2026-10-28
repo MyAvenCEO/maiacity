@@ -19,9 +19,10 @@ where a new device asks to join too. Least access is the default, and the server
 [`spec/README.md`](spec/README.md) lists every theorem with the Rust tests that guard it. This file says how to build,
 test, run and deploy it.
 
-avenDB is its own package in the maiacity repo, apart from the media vault in `theos/`: it has its own Cargo workspace
-and lockfile, so the two never build together, and nothing here changes what the media vault or its server run. The
-Studio app is the one place they meet: it builds avenDB's device into itself. Everything avenDB needs lives here: its
+avenDB's crates and theOS's (`theos/`) are members of the repository's one Cargo workspace (`Cargo.toml` at the root,
+D3): one lockfile, one build folder (`target/`), one cargo-deny run (`deny.toml`). A plain `cargo build` or `cargo test`
+builds avenDB alone (the workspace's default members), as theOS's crates build only on a Mac. The Mac app is the one
+place they meet: it builds avenDB's device into itself. Everything avenDB needs lives here: its
 encryption and passkeys, schemas and lenses, Loro documents and their history and proposals, and its own iroh networking
 (its own ALPN, its own iroh versions and TLS crypto).
 
@@ -34,7 +35,7 @@ encryption and passkeys, schemas and lenses, Loro documents and their history an
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node on its shelf, its bucket's S3 client (`bucket`), its relay, which lets in only the devices the server knows, and the Maia Universe's feed (`feed`) (see [The server](#the-server)) |
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay, `PageDevice.run` (see [A device in the browser](#a-device-in-the-browser)) |
 | `crates/avendb-device` | The same device run natively in the Mac app, hosted in the app's own process; also available as a standalone JSON-line device (see [Natively, beside the Mac app](#natively-beside-the-mac-app)); the agents' devices, each the MCP server of its harness (`agent`), and the drives it hosts (`drive`) |
-| `Dockerfile.server`, `compose.yml` | The server's image, built from `aven/db/` alone, which `avendb.yml` deploys (see [Deploying the server](#deploying-the-server)), and a compose file that runs it on this machine, which is not deployed |
+| `Dockerfile.server`, `compose.yml` | The server's image, built from the repository's root as the workspace's member (`Dockerfile.server.dockerignore` lets in only its crates and the manifests), which `avendb.yml` deploys (see [Deploying the server](#deploying-the-server)), and a compose file that runs it on this machine, which is not deployed |
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `aven/db/page/device/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
 | `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T28, K1, H1, H2, O1 to O3, C1 to C4, CG1, G1, G2, M1, M2, D1 to D3, S1 to S4, L1 to L3) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
@@ -214,7 +215,7 @@ own device, each call answered by the device itself, with no lines of JSON betwe
 in `avendb-device --dir <folder> [--volumes <folder>]`, the sidecar (`serve`), each call a line on the device's stdin,
 each answer one on its stdout; it logs on its stderr as `RUST_LOG` says, else its warnings. This standalone binary
 is built separately when needed; the app neither builds nor bundles it. The app links the device library through
-`theos/app/Cargo.toml`, using the app workspace's lockfile and profiles. Its calls include
+`theos/app/Cargo.toml`, in the one workspace's lockfile and profiles. Its calls include
 `found`, `link`, `open`, `steps`, `run [op]`, `fileStart`, `fileChunk`, `fileEnd`, `fileAgain` and `fileDrop`
 to hand `put_file` a file's bytes, and `drives`, `joinDrive`, `openDrive` and `ejectDrive` for the drives it hosts.
 

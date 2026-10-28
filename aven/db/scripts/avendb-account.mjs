@@ -20,9 +20,9 @@
  * Passkeys of localhost count only in a device built with avendb's `localhost-passkeys`, never in one that ships, so
  * this runs on a dev server whose aven/db/page/device/ holds such a build, and a server built likewise:
  *
- *   cd aven/db && cargo build -p avendb-browser --target wasm32-unknown-unknown --release --features localhost-passkeys
+ *   cd aven/db && cargo build -p avendb-browser --target wasm32-unknown-unknown --profile wasm --features localhost-passkeys
  *   wasm-bindgen --target web --no-typescript --out-dir page/device \
- *     target/wasm32-unknown-unknown/release/avendb_browser.wasm          (git checkout page/device after)
+ *     ../../target/wasm32-unknown-unknown/wasm/avendb_browser.wasm          (git checkout page/device after)
  *   cargo build -p avendb-server --features avendb/localhost-passkeys
  *   AVENDB_DATA=$(mktemp -d) AVENDB_BIND=127.0.0.1:7421 AVENDB_RELAY_BIND=127.0.0.1:3360 \
  *     AVENDB_RELAY_URL=http://localhost:3360 target/debug/avendb-server     (it logs its offer)

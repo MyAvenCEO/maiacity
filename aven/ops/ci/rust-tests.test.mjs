@@ -8,7 +8,7 @@ test('every crate the archive holds is some shard\'s, the core\'s in two halves 
  expect(Object.values(shards).filter(s => s.filter === 'package(avendb)').map(s => s.partition)).toEqual(['hash:1/2', 'hash:2/2']);
  expect(shards['core-properties']).toMatchObject({ binary: 'avendb::all', args: ['--test-threads=2', 'properties::'] });
  // and nextest's default filter leaves exactly those out of every other shard
- expect(readFileSync(new URL('../../db/.config/nextest.toml', import.meta.url), 'utf8'))
+ expect(readFileSync(new URL('../../../.config/nextest.toml', import.meta.url), 'utf8'))
   .toContain(`default-filter = 'not (binary_id(avendb::all) & test(/^properties::/))'`);
 });
 

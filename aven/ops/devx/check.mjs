@@ -7,7 +7,7 @@
 //   bun aven/ops/devx/check.mjs --merge      a collector's check after a merge: JS tests + types, Rust `cargo check` only.
 //                                           The task thread already ran its Rust tests and Lean; the goal CI runs them all.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { impact } from '../ci/impact.mjs';
 import { inventory, matches, suites } from '../ci/test.mjs';
@@ -55,6 +55,9 @@ export function plan(files, { wide = false, merge = false } = {}) {
    c.tests.set(`tests/${mod[1]}/${mod[2]}${mod[3] === '.rs' ? '.rs' : '/'}`, [mod[1], mod[2] === 'main' ? 'every_file_is_a_module' : `${mod[2]}::`]);
   else c.src = c.src || m[2].startsWith('src/');
  }
+ // the one workspace's manifest or lockfile (the root's, D3): every avenDB crate type checks against it
+ if (files.some(f => f === 'Cargo.toml' || f === 'Cargo.lock'))
+  for (const c of readdirSync('aven/db/crates')) if (!crates.has(c)) crates.set(c, { tests: new Map(), src: false });
  const feat = c => c === 'avendb-testkit' ? [] : ['--features', 'test-fixtures'];
  for (const [c, { tests, src }] of crates) {
   steps.push({ why: `rust ${c}: types`, cmd: ['cargo', 'check', '--locked', '-p', c, ...feat(c), '--tests'], cwd: 'aven/db' });

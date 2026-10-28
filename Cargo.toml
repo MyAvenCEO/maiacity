@@ -1,0 +1,122 @@
+# The one Cargo workspace (D3): avenDB (aven/db/: the core, its network, the browser's and the native device, the
+# server and the test kit) and theOS (theos/: the Mac app and its native media crates), with one lockfile, one build
+# folder (target/) and one cargo-deny run. A plain `cargo build` or `cargo test`, here or in aven/db/, builds avenDB
+# alone (default-members): theOS's crates link Apple's frameworks and build only on a Mac (`-p maiacity-studio`,
+# `bunx tauri dev` in theos/app).
+[workspace]
+resolver = "3"
+members = [
+    "aven/db/crates/avendb",
+    "aven/db/crates/avendb-browser",
+    "aven/db/crates/avendb-device",
+    "aven/db/crates/avendb-net",
+    "aven/db/crates/avendb-server",
+    "aven/db/crates/avendb-testkit",
+    "theos/app",
+    "theos/crates/vault-asr",
+    "theos/crates/vault-color",
+    "theos/crates/vault-media",
+    "theos/crates/vault-render",
+]
+default-members = [
+    "aven/db/crates/avendb",
+    "aven/db/crates/avendb-browser",
+    "aven/db/crates/avendb-device",
+    "aven/db/crates/avendb-net",
+    "aven/db/crates/avendb-server",
+    "aven/db/crates/avendb-testkit",
+]
+# the patched iroh (below), and the security tools' own workspace (.claude/skills/security-auditor/tools)
+exclude = ["aven/db/vendor/iroh", ".claude/skills/security-auditor/tools"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.91"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+blake3 = { version = "1.8", features = ["rayon"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Debug builds: line tables for our code (backtraces keep their lines), none for the dependencies; everything
+# optimised, as the property tests replay thousands of histories, each through every rule and the key schedule, and a
+# debug app against the dev server (Svelte changes live, no release build) still measures 4K pictures and runs iroh at
+# a usable speed. Our own crates at opt-level 1, the dependencies at 2: on a 4-core cloud session (2026-10-27)
+# avendb-net's tests built from nothing in 9.7 min and 7.5 GB at 1, against 17 min and 12 GB at 2, and ran as fast (CI
+# had built them at 1 since 2026-10-21). At 0 a one-line change rebuilt in 18 s instead of 42, but the tests ran half
+# again as long.
+[profile.dev]
+debug = "line-tables-only"
+opt-level = 1
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 2
+
+# Classic McEliece makes a key pair in about 0.6 s at opt-level 3 and twice that at 2, and the tests make many
+[profile.dev.package.classic-mceliece-rust]
+opt-level = 3
+
+# theOS's picture crates at 2: the player builds the grade's 129³ output cube in them, 0.6 s at opt-level 0 and 18 ms
+# at 2, and at 0 that alone stalled playback for a second at a time
+[profile.dev.package.vault-render]
+opt-level = 2
+
+[profile.dev.package.vault-color]
+opt-level = 2
+
+[profile.dev.package.vault-media]
+opt-level = 2
+
+# The live sync benches: the dev build's checks, optimised as a release is, so the live sync gates time the code and not
+# the debug build (test-fixtures, which the live bench needs, refuses a release build)
+[profile.live]
+inherits = "dev"
+opt-level = 3
+
+[profile.live.package."*"]
+opt-level = 3
+
+# Release builds are theOS's (a release build on the Mac at every main) and the by-hand benches. No LTO: the app's heavy
+# work runs in Apple's frameworks (Metal, Core Image, VideoToolbox) and iroh, not in our own code, and cross-crate
+# optimisation at link time cost minutes on every build of the app for little. Incremental, so that an update compiles
+# again only what changed in our crates: without it each update compiled the app and avenDB's crates whole, 2 to 6
+# minutes on the Mac. The dependencies are never incremental.
+[profile.release]
+lto = false
+incremental = true
+
+# The tile's WebAssembly (aven/db/scripts/build-web.sh, `--profile wasm`): one codegen unit, optimised across crates,
+# which makes it small
+[profile.wasm]
+inherits = "release"
+codegen-units = 1
+lto = true
+incremental = false
+
+# The server's image (aven/db/Dockerfile.server): optimised as a release, in parallel codegen units and with thin LTO, as
+# one codegen unit and full LTO made each image build of our crates take minutes on one core of the runner
+[profile.server]
+inherits = "release"
+codegen-units = 16
+lto = "thin"
+incremental = false
+
+# The standalone native device: optimised as a release, with parallel codegen units and incremental builds
+[profile.app]
+inherits = "release"
+codegen-units = 16
+lto = false
+incremental = true
+
+# Open authenticated custom carriers on already-connected peers; see aven/db/vendor/iroh/AVENDB-PATCH.md. theOS's
+# in-process avenDB node takes the same fix.
+[patch.crates-io]
+iroh = { path = "aven/db/vendor/iroh" }

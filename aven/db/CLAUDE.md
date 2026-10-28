@@ -39,10 +39,13 @@ builds in one container share 4 cores and wait on each other's build-folder lock
 
 ## Settings that make this fast (already in the repo)
 
-- `Cargo.toml`: our crates at opt-level 1, dependencies at 2, McEliece at 3; line tables only. Same as CI.
-- `.cargo/config.toml`: `AVENDB_TEST_PAIRS` defaults to `target/avendb-test-pairs`, so the test programs share the
-  McEliece pairs instead of each making them again (without it `live` ran past its 60 s deadline).
+- One Cargo workspace for avenDB and theOS (D3): the root's `Cargo.toml`, `Cargo.lock` and build folder `target/`.
+  Our crates at opt-level 1, dependencies at 2, McEliece at 3; line tables only. Same as CI. A plain `cargo test`
+  builds avenDB alone; theOS's crates build only on a Mac.
+- `aven/db/.cargo/config.toml`: `AVENDB_TEST_PAIRS` defaults to the root's `target/avendb-test-pairs`, so the test
+  programs share the McEliece pairs instead of each making them again (without it `live` ran past its 60 s deadline).
+  Cargo reads it, and the page WebAssembly's flags, only when run from `aven/db/`: run cargo there.
 - `.claude/hooks/session-start.sh`: a cloud session starts with avenDB's compiled dependencies from the release
-  "avendb-dev-cache" (`.github/workflows/avendb-dev-cache.yml`) in `aven/db/target`, and with the Rust version they
+  "avendb-dev-cache" (`.github/workflows/avendb-dev-cache.yml`) in `target/`, and with the Rust version they
   were built with as its default; only our own crates are built then.
 - The linker is already rust-lld (Rust's default on x86_64 Linux since 1.90); mold would gain little more.

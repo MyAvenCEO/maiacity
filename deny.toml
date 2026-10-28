@@ -1,6 +1,7 @@
-# cargo-deny for avenDB's workspace (the supply-chain gate, step T7a of the tests and architecture audit): every crate
-# avenDB links comes from crates.io or our own vendored iroh, carries a licence from the list below, and has no open
-# RustSec advisory. Duplicate versions are reported, not refused, until step T7b brings each to one.
+# cargo-deny for the one Cargo workspace, avenDB's and theOS's crates (the supply-chain gate, step T7a of the tests and
+# architecture audit; one run since D3): every crate they link comes from crates.io or our own vendored iroh, carries a
+# licence from the list below, and has no open RustSec advisory. Duplicate versions are reported, not refused, until
+# step T7b brings each to one.
 [graph]
 all-features = true
 
