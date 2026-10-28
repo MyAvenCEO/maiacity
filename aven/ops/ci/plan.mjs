@@ -1,6 +1,7 @@
 // The plan of one CI run (.github/workflows/ci.yml, stage 7 of the CI refactor): which of its jobs this change needs,
 // each keyed on the files it really reads, and, at the end, whether every job it needed passed. One workflow, one plan
-// job, one job per suite, one last job that needs them all ("CI required", the check main requires).
+// job, a few jobs that each fold what shares a runner, and one last job that needs them all ("CI required", the check
+// main requires).
 //
 //   bun aven/ops/ci/plan.mjs                 the plan of this checkout's change (CI_BASE..CI_HEAD; CI_MODE)
 //   bun aven/ops/ci/plan.mjs --verdict       "CI required": every job the plan named passed (NEEDS = toJSON(needs))
@@ -11,6 +12,7 @@
 // A verdict: a job (or one entry of a matrix) that passed saves an empty cache entry named by its key, the hash of the
 // files it reads (passes.mjs). The plan asks GitHub for those entries, on this ref and on main, and leaves out each job
 // whose key already passed: a new push to a pull request runs only what its new files can change. A full run reads none.
+import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { changed, impact } from './impact.mjs';
 import { hash } from './passes.mjs';
@@ -78,6 +80,8 @@ export function plan(files, { mode = 'changed', key = paths => hash([...paths, S
  const rustKey = key(RUST);
  const rust = jobs.rust ? Object.entries(shards).map(([shard, s]) => ({ shard, name: s.name, key: `pass-rust-${shard}-${rustKey}` })) : [];
  const keys = Object.fromEntries(Object.entries(reads).filter(([j]) => j !== 'rust').map(([j, paths]) => [j, `pass-${j}-${key(paths)}`]));
+ // the JS suites run one after another in one job, so they pass together: one verdict, of every entry's own key
+ if (js.length) keys.js = `pass-js-${createHash('sha256').update(js.map(e => e.key).sort().join('\n')).digest('hex').slice(0, 32)}`;
  return { mode, files, parts, jobs, images, js, rust, keys };
 }
 
@@ -88,16 +92,25 @@ export function unpassed(p, passed) {
  for (const [j, k] of Object.entries(p.keys)) if (jobs[j] && passed.has(k)) jobs[j] = false;
  const rust = p.rust.filter(s => !passed.has(s.key));
  jobs.rust = jobs.rust && rust.length > 0;
- return { ...p, jobs, rust, js: p.js.filter(e => !passed.has(e.key)) };
+ return { ...p, jobs, rust, js: passed.has(p.keys.js) ? [] : p.js };
 }
 
-// the plan's outputs, as GitHub's job outputs read them: run_<job>, key_<job>, and the matrices as JSON
+// the jobs of ci.yml that fold several checks, and the checks each runs as steps
+export const folds = {
+ js: ['gate', 'suites', 'delivery', 'publish', 'infra', 'audit', 'deny'],
+ proofs: ['spec', 'protocol'],
+ macos: ['mac', 'lean'],
+};
+
+// the plan's outputs, as GitHub's job outputs read them: run_<check> for each job and step, key_<check>, and the
+// matrices as JSON
 export function outputs(p) {
  const out = {};
- for (const [j, v] of Object.entries(p.jobs)) out[`run_${j.replace(/-/g, '_')}`] = String(v);
+ const run = { ...p.jobs, suites: p.js.length > 0 };
+ for (const [j, v] of Object.entries(run)) out[`run_${j.replace(/-/g, '_')}`] = String(v);
  for (const [j, k] of Object.entries(p.keys)) out[`key_${j.replace(/-/g, '_')}`] = k;
- out.run_small = String(['delivery', 'publish', 'infra', 'audit', 'deny'].some(j => p.jobs[j]));
- out.run_js = String(p.js.length > 0);
+ for (const [job, checks] of Object.entries(folds)) out[`run_${job}`] = String(checks.some(c => run[c]));
+ out.key_js ??= '';
  out.js = JSON.stringify(p.js);
  out.rust = JSON.stringify(p.rust);
  out.images = JSON.stringify(p.images);
@@ -112,11 +125,7 @@ export function verdict(needs) {
  const plan = needs.plan;
  if (plan?.result !== 'success') return [`plan: ${plan?.result ?? 'missing'}`];
  const out = plan.outputs ?? {};
- const wanted = id => {
-  if (id === 'rust-archive') return out.run_rust === 'true';
-  if (id === 'site-same-check') return out.run_site_same === 'true';
-  return out[`run_${id.replace(/-/g, '_')}`] === 'true';
- };
+ const wanted = id => out[`run_${(id === 'rust-archive' ? 'rust' : id).replace(/-/g, '_')}`] === 'true';
  for (const [id, job] of Object.entries(needs)) {
   if (id === 'plan') continue;
   if (job.result === 'success') continue;
@@ -149,7 +158,7 @@ if (import.meta.main) {
  let p = plan(mode === 'changed' ? changed(process.env.CI_BASE, process.env.CI_HEAD || 'HEAD') : null, { mode });
  const { GITHUB_REPOSITORY: repo, GITHUB_TOKEN: token, GITHUB_REF: ref } = process.env;
  if (mode === 'changed' && repo && token) {
-  const keys = [...Object.entries(p.keys).filter(([j]) => p.jobs[j]).map(([, k]) => k), ...p.rust.map(s => s.key), ...p.js.map(e => e.key)];
+  const keys = [...Object.entries(p.keys).filter(([j]) => p.jobs[j]).map(([, k]) => k), ...p.rust.map(s => s.key), ...(p.keys.js ? [p.keys.js] : [])];
   try {
    const passed = await verdicts(keys, { repo, token, refs: [...new Set([ref, 'refs/heads/main'].filter(Boolean))] });
    for (const k of passed) console.log(`passed before with these files: ${k}`);

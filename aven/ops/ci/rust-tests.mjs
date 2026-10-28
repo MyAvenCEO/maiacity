@@ -20,16 +20,15 @@ const ROOT = resolve(import.meta.dir, '../../..');
 export const crates = ['avendb', 'avendb-net', 'avendb-server', 'avendb-device', 'avendb-browser'];
 const build = [...crates.flatMap(c => ['-p', c]), '--features', crates.map(c => `${c}/test-fixtures`).join(',')];
 
-// Each shard on a runner of its own, its tests a nextest filter. The core's tests take most of the time, so two runners
-// share them (nextest's hash partition), and its property tests run under libtest in one process: .config/nextest.toml
-// says why, and its default filter leaves them out of every other shard.
+// Each shard on a runner of its own, its tests a nextest filter, sized to about three minutes of tests each (run of
+// 2026-10-28): the core's (4.3 min), net's (3.4), and the server's with the device's and the browser's (2.6 + 2.0).
+// The core's property tests run under libtest in one process: .config/nextest.toml says why, and its default filter
+// leaves them out of every other shard.
 export const shards = {
- 'core-1': { name: 'core 1 of 2', filter: 'package(avendb)', partition: 'hash:1/2' },
- 'core-2': { name: 'core 2 of 2', filter: 'package(avendb)', partition: 'hash:2/2' },
+ core: { name: 'core', filter: 'package(avendb)' },
  'core-properties': { name: 'core properties', binary: 'avendb::all', args: ['--test-threads=2', 'properties::'] },
  net: { name: 'net', filter: 'package(avendb-net)' },
- server: { name: 'server', filter: 'package(avendb-server)' },
- 'device-browser': { name: 'device, browser', filter: 'package(avendb-device) | package(avendb-browser)' },
+ 'server-device': { name: 'server, device, browser', filter: 'package(avendb-server) | package(avendb-device) | package(avendb-browser)' },
 };
 
 // what a step runs, at the workspace's root: each command as [program, ...arguments]
@@ -43,8 +42,7 @@ export function commands(step, { shard, file, extracted } = {}) {
  // each program runs in (a binaries-only list names none, and keeps its programs under rust-binaries)
  if (s.binary) return [['cargo', 'nextest', 'list', ...archive, '--extract-to', extracted, '--extract-overwrite',
   '--message-format', 'json']];
- return [['cargo', 'nextest', 'run', '--profile', 'ci', ...archive, '--no-fail-fast', '--no-tests=fail', '-E', s.filter,
-  ...(s.partition ? ['--partition', s.partition] : [])]];
+ return [['cargo', 'nextest', 'run', '--profile', 'ci', ...archive, '--no-fail-fast', '--no-tests=fail', '-E', s.filter]];
 }
 
 // the program `id` in a nextest list's JSON: where it is, and the folder cargo runs its tests in (its crate's)
