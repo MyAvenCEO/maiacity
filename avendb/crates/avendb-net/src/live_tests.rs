@@ -539,6 +539,90 @@ async fn chat_reaches_the_phone_quickly_while_it_catches_up() {
     phone.shutdown().await.unwrap();
 }
 
+/// A chat message reaches the other device within a second, both ways, while the phone catches up a history that
+/// holds more grants than a live pull takes at once and the removal of a device that once added another (Samuel
+/// 2026-10-28: "within 1 sec, as long as both are online"). A live pull asks for the rules its entry rests on (its
+/// vault's, its audience's and that audience's shares' logs), not every rule the phone lacks; it left the message to
+/// the bulk catch-up while more than `LIVE_LOGS` were missing. And the phone, mid its catch-up, answers the Mac its own
+/// message (Fix E): it answered nothing while a device's removal waited in its catch-up.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn chat_crosses_both_ways_within_a_second_while_the_phone_catches_up_grants_and_a_removal() {
+    use avendb::cast::{by_id, paragraph, share, vault};
+    use avendb::policy::{Action, Level, Revoking, Sharing};
+    const BULK: usize = 3000;
+    const GRANTS: usize = 3 * pulls::LIVE_LOGS;
+    const MESSAGES: usize = 8;
+    let mut w = world();
+    let (sender, receiver, alice, passkey) = (w.mac_a, w.phone_a, w.alice, w.passkey_a);
+    w.lab.sync_all(0);
+    let chat = w.lab.create(sender, alice, alice, "note", &[], document("Chat", "hello", sender)).unwrap();
+    w.lab.sync(sender, receiver);
+    // an old iPad that added a TV, removed since, as Maia City's old devices
+    let (pad, tv) = (w.lab.device_of(passkey, "Alice's old iPad"), w.lab.device_of(passkey, "Alice's TV"));
+    let add = |d| Action::Share(Sharing::Device { vault: alice, device: d, seal_to: None });
+    w.lab.submit(sender, &[passkey, pad], add(pad)).unwrap();
+    w.lab.submit(sender, &[passkey, tv, pad], add(tv)).unwrap();
+    let notes: Vec<EntryId> = (0..BULK)
+        .map(|i| w.lab.create(sender, alice, alice, "note", &[], document(&format!("Note {i}"), "In May.", sender)).unwrap())
+        .collect();
+    for note in &notes[..GRANTS] {
+        w.lab.issue(sender, &[sender], share(alice, vault(w.bob), Level::Read, by_id(*note))).unwrap();
+    }
+    w.lab.submit(sender, &[passkey], Action::Revoke(Revoking::Device { vault: alice, device: pad, keep: vec![] })).unwrap();
+    let mac = Node::spawn(w.lab.split(sender, &[], [63; 32]), sender, Options { page: 16 << 10, ..Options::local() }).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [64; 32]), receiver, Options { window: 1, ..Options::local() }).await.unwrap();
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    let kept = async |n: &Node| {
+        let logs = n.holdings().await.logs;
+        notes.iter().filter(|e| logs.contains_key(&LogId::Entry(**e))).count()
+    };
+    time::timeout(Duration::from_secs(60), async { while kept(&phone).await < 20 { time::sleep(Duration::from_millis(5)).await } })
+        .await
+        .expect("the catch-up starts");
+    let shows = async |on: &Node, block: u64, said: String, began: Instant| {
+        time::timeout(Duration::from_secs(30), async {
+            loop {
+                let said = said.clone();
+                if on.read(move |lab, me| avendb::cast::text(lab, me, chat, block).as_deref() == Some(said.as_str())).await {
+                    break began.elapsed();
+                }
+                time::sleep(Duration::from_millis(2)).await;
+            }
+        })
+        .await
+        .ok()
+    };
+    let (mut to_phone, mut to_mac) = (Vec::new(), Vec::new());
+    for i in 0..MESSAGES {
+        let said = format!("from the Mac {i}");
+        let (text, began) = (said.clone(), Instant::now());
+        mac.act(move |lab, me| lab.edit(me, alice, chat, |item| item.set_text(2, &text)).unwrap()).await;
+        to_phone.push(shows(&phone, 2, said, began).await.unwrap_or(Duration::from_secs(30)));
+        let (block, said) = (1000 + i as u64, format!("from the phone {i}"));
+        let (text, began) = (said.clone(), Instant::now());
+        phone.act(move |lab, me| lab.edit(me, alice, chat, |item| item.push_block(paragraph(block, &text))).unwrap()).await;
+        to_mac.push(shows(&mac, block, said, began).await.unwrap_or(Duration::from_secs(30)));
+        time::sleep(Duration::from_millis(150)).await;
+    }
+    let behind = BULK - kept(&phone).await;
+    let p95 = |took: &[Duration]| {
+        let mut sorted = took.to_vec();
+        sorted.sort();
+        sorted[((sorted.len() as f64 * 0.95).ceil() as usize).saturating_sub(1)].as_secs_f64() * 1000.0
+    };
+    eprintln!("CHAT_BOTH_WAYS_DURING_CATCH_UP {}", serde_json::json!({
+        "bulk": BULK, "grants": GRANTS, "to_phone_ms": to_phone.iter().map(|d| d.as_millis() as u64).collect::<Vec<_>>(),
+        "to_mac_ms": to_mac.iter().map(|d| d.as_millis() as u64).collect::<Vec<_>>(), "notes_left_at_end": behind,
+        "phone_live": phone.shared.traffic.live_json(), "mac_live": mac.shared.traffic.live_json(),
+    }));
+    assert!(behind > 0, "the phone still caught up as the last message crossed");
+    assert!(p95(&to_phone) < 1000.0, "the Mac's message shows on the phone within a second: {to_phone:?}");
+    assert!(p95(&to_mac) < 1000.0, "the phone's message shows on the Mac within a second: {to_mac:?}");
+    mac.shutdown().await.unwrap();
+    phone.shutdown().await.unwrap();
+}
+
 /// A live edit's page is told as soon as the step that shows it is done, while the bulk is still being shown: a
 /// reactive reader (the node's stirs, no polling) reads the new text within a second of the Mac's write, though the
 /// catch-up goes on (`LivePriority.lean`'s `fresh_entries_show_in_the_first_step`). It was stirred once, after the
