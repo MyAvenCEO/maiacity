@@ -187,8 +187,8 @@ sample exists (after M2); **M10** closes each milestone's docs as it lands.
     per shape, or an automatic rule (keep the subject, widen for vertical) — no more centre crops.
 - [ ] Record by flying: in Sandbox 4, record the walker's flight as camera keyframes (smoothed, thinned), optionally
       while the timeline plays with sound so a move is timed to the voice.
-- [ ] Migrate the existing shot lists (`scripts/film/day-19.mjs` and the others) into records, so old films live on
-      the new system.
+- [x] Migrate the existing shot lists into records: Day 19 D's 42 shots are `scripts/film/worlds/day-19-d.json`. The
+      old .mjs lists were removed on 2026-10-28 (Goal 7); the others, day-19.mjs among them, live only in git history.
 - **Done when:** Day 19's thirteen shots exist as records, render identically to their film-mode captures, and a new
   camera move can be flown, recorded and edited as keyframes.
 
