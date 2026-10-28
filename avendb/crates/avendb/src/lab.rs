@@ -4983,6 +4983,13 @@ impl Lab {
         Ok((vault.id, added))
     }
 
+    /// Of the edits `ids`, those device `d` holds signed: what a pull's page brought it that another asking of the
+    /// same peer names loose (`LivePriority.lean` `withTaken`).
+    pub fn holding(&self, d: SignerId, ids: impl IntoIterator<Item = EditId>) -> Vec<EditId> {
+        let store = self.held(d);
+        ids.into_iter().filter(|id| store.signed.contains_key(id)).collect()
+    }
+
     /// The join device `d` sends by edit `id`, which it holds and which adds it to its vault (`joining`): the edit and
     /// the McEliece key it names.
     pub fn joined(&self, d: SignerId, id: EditId) -> Join {
