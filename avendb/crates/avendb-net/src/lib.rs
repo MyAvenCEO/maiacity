@@ -2999,11 +2999,18 @@ impl Shared {
                 let asked = Instant::now();
                 let early = ahead.is_some();
                 let mut ahead = ahead;
+                // the wait for a page's slot is this node's own, bounded as it always was; the page's, from its asking on, lasts
+                // while its connection brings bytes (`session::unstalled`): those of the pages asked before it, which the
+                // peer sends first, then its own
+                let slot = async {
+                    match ahead.take() {
+                        Some(permit) => Ok(permit),
+                        None => self.pulls.page(false, background).await,
+                    }
+                };
+                let slot = time::timeout(PAGE_WAIT, slot).await.context("no page slot in time").and_then(|r| r);
                 let receive = async {
-                    let mut permit = match ahead.take() {
-                        Some(permit) => permit,
-                        None => self.pulls.page(false, background).await?,
-                    };
+                    let mut permit = slot?;
                     let reply = {
                         let request = wire(after);
                         anyhow::ensure!(request.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
@@ -3021,7 +3028,10 @@ impl Shared {
                     };
                     reply.map(|(reply, bytes)| (reply, bytes, permit))
                 };
-                let reply = time::timeout(PAGE_WAIT, receive).await.context("no page in time").and_then(|r| r);
+                let reply = session::unstalled(|| session::carried(&peer.conn, session::Flow::In), PAGE_WAIT, receive)
+                    .await
+                    .context("no page in time")
+                    .and_then(|r| r);
                 if reply.is_err() && !early {
                     self.traffic.failed(device);
                 }
@@ -3340,7 +3350,9 @@ impl Shared {
             let _activity = self.admit()?;
             anyhow::ensure!(asked.len() < session::MESSAGE_LIMIT, "sync request exceeds message limit");
             let bytes = session::exchange(&peer.conn, session::STUBS, &asked, session::STUBS_REPLY_LIMIT);
-            let bytes = time::timeout(PAGE_WAIT, bytes).await.context("no stubs in time")??;
+            // as long as its connection brings bytes, as a page (`session::unstalled`): a big vault's stubs are many MB
+            let progress = || session::carried(&peer.conn, session::Flow::In);
+            let bytes = session::unstalled(progress, PAGE_WAIT, bytes).await.context("no stubs in time")??;
             Ok::<_, anyhow::Error>(avendb::wire::Stubs::from_wire(&bytes)?)
         };
         match answer.await {
