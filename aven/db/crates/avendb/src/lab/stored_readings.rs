@@ -44,19 +44,25 @@ fn put_ids<'a>(out: &mut Vec<u8>, ids: impl ExactSizeIterator<Item = &'a EditId>
     ids.for_each(|id| out.extend(id.0));
 }
 
-/// What `store` read, sealed with the view it seals of its first `held` edits: where it read every body its replay of
-/// them counts and no more (it read on to the edits its replay is of, left no body for a later step, and reads nothing
-/// in from an owner's base), else none.
-pub(super) fn seal(store: &Store, held: usize) -> Option<Vec<u8>> {
+/// `store` read every body its replay of its first `held` edits counts and no more, so that `seal` seals what it read
+/// with a view of them: it read on to the edits its replay is of, left no body for a later step, and reads nothing in
+/// from an owner's base.
+pub(super) fn sealable(store: &Store, held: usize) -> bool {
     let rn = &store.read_new;
     let read_to = rn.log.as_ref().is_some_and(|(lineage, len, wholes)| {
         *lineage == store.log.lineage() && *len == held && *wholes == store.wholes
     });
     let r = &store.readings;
-    let all = r.tags.len() == store.bodies.len() && store.bodies.ids().all(|id| r.tags.contains_key(id));
-    if !read_to || !rn.left.is_empty() || !rn.bodies.is_empty() || !store.based.is_empty() || !all {
+    let all = || r.tags.len() == store.bodies.len() && store.bodies.ids().all(|id| r.tags.contains_key(id));
+    read_to && rn.left.is_empty() && rn.bodies.is_empty() && store.based.is_empty() && all()
+}
+
+/// What `store` read, sealed with the view it seals of its first `held` edits, where it can (`sealable`), else none.
+pub(super) fn seal(store: &Store, held: usize) -> Option<Vec<u8>> {
+    if !sealable(store, held) {
         return None;
     }
+    let (rn, r) = (&store.read_new, &store.readings);
     let mut out = [READ_RULES.as_bytes(), b"\n"].concat();
     out.extend((held as u64).to_be_bytes());
     let mut ids: Vec<&EditId> = r.tags.keys().collect();
