@@ -55,7 +55,7 @@ theorem T1_authorized_writes {st st' : State} {edit : Edit} (h : step st edit = 
 theorem T1_created_entries {st st' : State} {edit : Edit} (h : step st edit = some st') {en : Entry}
     (hen : en ∈ st'.entries) (hnew : ∀ x ∈ st.entries, x.id ≠ en.id) :
     ∃ w ∈ st'.writes, w.edit = edit.id ∧ w.entry = en.id ∧ w.first = true ∧
-      actsVia st w.author w.via w.actor = true ∧ mayCreate st w.actor en.vault en.audience = true :=
+      actsVia st w.author w.via w.signer = true ∧ mayCreate st w.signer en.vault en.audience = true :=
   Core.T1_created_entries h hen hnew
 
 /-- T1, second half (revocation wins): an older write that a step takes the authorization from survives only if

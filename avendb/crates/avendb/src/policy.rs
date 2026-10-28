@@ -674,7 +674,7 @@ impl Entry {
 pub struct Write {
     pub edit: EditId,
     pub author: SignerId,
-    pub actor: VaultId,
+    pub signer: VaultId,
     pub entry: EntryId,
     pub stay: Option<EditId>,
     pub epoch: u64,
@@ -1482,10 +1482,10 @@ impl State {
     /// at its own place in the replay too, so a removal takes from a write only what it took from it there: a mark that
     /// moves the entry between them doesn't hand the removal writes that never rested on what it takes away.
     pub fn authorized(&self, w: &Write) -> bool {
-        self.acts_via(w.author, &w.via, w.actor)
+        self.acts_via(w.author, &w.via, w.signer)
             && self
                 .entry(w.entry)
-                .is_some_and(|en| self.may_write_in(w.actor, en.id, en.vault, self.shares_of(w.audience)))
+                .is_some_and(|en| self.may_write_in(w.signer, en.id, en.vault, self.shares_of(w.audience)))
     }
 
     /// Share `c` goes from its issuer to its own: it names a vault its issuer owns directly, as an aven's share to one
@@ -1749,7 +1749,7 @@ impl State {
             let counter = counters.entry(w.entry).or_insert_with(|| Counter::new(self, en, r));
             // a write the vault itself makes on its main line says what the group is, where its readers count it
             if counter.judge(self, w, r, &out)
-                && w.actor == en.vault
+                && w.signer == en.vault
                 && w.proposal == Proposal::Main
                 && let Some(g) = r.defines.get(&w.edit)
             {
@@ -1782,7 +1782,7 @@ impl State {
         let en = self.entry(e)?;
         let mut a = self.first_attrs(en, r)?;
         for w in self.entry_writes(e).take_while(|w| self.write_at[&w.edit] < place) {
-            if !w.first && w.actor == en.vault
+            if !w.first && w.signer == en.vault
                 && let Some(d) = r.tags.get(&w.edit)
             {
                 a.tags = d.apply(&a.tags);
@@ -1964,7 +1964,7 @@ impl State {
         let mut seen = HashSet::new();
         let counts = |en: &&Entry| {
             self.write(en.creation).is_some_and(|w| {
-                w.first && w.actor == v && w.proposal == Proposal::Main && !r.unfit.contains(&w.edit)
+                w.first && w.signer == v && w.proposal == Proposal::Main && !r.unfit.contains(&w.edit)
             })
         };
         self.entries
@@ -2564,7 +2564,7 @@ impl State {
                         let w = Write {
                             edit: id,
                             author: edit.author,
-                            actor,
+                            signer: actor,
                             entry: e,
                             stay: None,
                             epoch,
@@ -2600,7 +2600,7 @@ impl State {
                         let w = Write {
                             edit: id,
                             author: edit.author,
-                            actor,
+                            signer: actor,
                             entry: e,
                             stay,
                             epoch,
@@ -3296,10 +3296,10 @@ impl Mine {
             return;
         }
         if w.first {
-            self.creator = Some(w.actor);
+            self.creator = Some(w.signer);
         }
         for l in adds {
-            self.adders.entry(l.clone()).or_default().push(w.actor);
+            self.adders.entry(l.clone()).or_default().push(w.signer);
         }
     }
 }
@@ -3325,7 +3325,7 @@ impl Counter {
         let e = self.entry;
         let main = |d: &EditId| st.write(*d).is_some_and(|x| x.entry == e && x.proposal == Proposal::Main);
         let at = At { attrs: self.attrs.as_ref(), place: st.place(w.edit), groups };
-        let marked = touches.map(|ts| self.mine.mark(w.actor, ts));
+        let marked = touches.map(|ts| self.mine.mark(w.signer, ts));
         let lets = !r.unfit.contains(&w.edit)
             && st.lets(w, r.proofs.get(&w.edit), marked.as_deref(), asks, at)
             && passes(w, touches, |d| self.accepts.contains(d), main)
@@ -3343,7 +3343,7 @@ impl Counter {
         }
         // its tags count from now on where it acts for the vault
         if !w.first
-            && w.actor == self.vault
+            && w.signer == self.vault
             && let (Some(a), Some(d)) = (&mut self.attrs, r.tags.get(&w.edit))
         {
             a.tags = d.apply(&a.tags);

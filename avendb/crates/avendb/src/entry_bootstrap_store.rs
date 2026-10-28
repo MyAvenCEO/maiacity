@@ -95,7 +95,7 @@ fn canonical_owner_replacement(on: SignerId, store: &Store, base: &RestoredOwner
 // Fixed grant commitments are self-contained; group-based grants require historical
 // group readiness beyond this slice. Ordinary State::lets still checks every op.
 fn bootstrap_share_proof(state: &State, vault: VaultId, write: &Write, proof: Option<&Proof>) -> bool {
-    if write.actor == vault && write.shares.is_empty() { return true; }
+    if write.signer == vault && write.shares.is_empty() { return true; }
     let Some(proof)=proof.filter(|p| write.shares.contains(&p.share)) else { return false; };
     let Some(issued)=state.share(proof.share) else { return false; };
     issued.chain.len()==proof.grants.len() && !issued.chain.is_empty()

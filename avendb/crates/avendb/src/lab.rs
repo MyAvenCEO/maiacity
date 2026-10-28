@@ -3390,7 +3390,7 @@ impl Lab {
         let mut at = shown.and_then(|s| s.after.scratch.as_ref()).map(Scratch::fork);
         let read = h.reading_on(&mut at, w, Some(content), on, &lane);
         // each set marked own or not as its readers will mark it, by whose each row is (`policy::Mine`)
-        let touches = read.touches.as_deref().map(|ts| h.mine().mark(w.actor, &[ts, needs].concat()));
+        let touches = read.touches.as_deref().map(|ts| h.mine().mark(w.signer, &[ts, needs].concat()));
         let attrs = if w.first { first.cloned() } else { view.at_write(w, readings).0 };
         let authorize = || self.prove(on, view, w, (touches.as_deref(), asks), attrs.as_ref());
         // Existing patched-app test mode remains explicit; ordinary local and remote
@@ -7045,12 +7045,12 @@ fn steward(
             let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else {
                 break 'one;
             };
-            let ours = st.entry_writes(en.id).filter(|w| w.actor == v);
+            let ours = st.entry_writes(en.id).filter(|w| w.signer == v);
             let answered: HashSet<EditId> =
                 ours.filter_map(|w| store.body_metadata(w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
             let asks: Vec<&Write> = st
                 .entry_writes(en.id)
-                .filter(|w| w.actor != v && !w.first && !answered.contains(&w.edit))
+                .filter(|w| w.signer != v && !w.first && !answered.contains(&w.edit))
                 .filter(|w| store.body_metadata(w.edit).is_some_and(|b| !b.tags.is_empty()))
                 .collect();
             if asks.is_empty() {
@@ -7097,7 +7097,7 @@ fn granted(st: &State, store: &Store, w: &Write, attrs: &Attrs) -> bool {
     let after = Attrs { tags: store.body_metadata(w.edit).expect("read tag metadata").tags.apply(&attrs.tags), ..attrs.clone() };
     let share = r.proofs.get(&w.edit).and_then(|p| st.share(p.share));
     share.is_some_and(|cp| {
-        st.holds(w.actor, cp, Level::Write) && st.eff_selects(cp, attrs, r) && st.eff_selects(cp, &after, r)
+        st.holds(w.signer, cp, Level::Write) && st.eff_selects(cp, attrs, r) && st.eff_selects(cp, &after, r)
     })
 }
 
@@ -7185,7 +7185,7 @@ fn landed_in(store: &Store, e: EntryId) -> bool {
 /// Vault `v`'s lane as `State::lane_of` reads it, read off the schemas and lenses `r` holds (`Readings::blobs`), not
 /// off every entry: those whose creation is of an entry of `v` as it is now, in the order the entries were created.
 fn lane_blobs<'a>(st: &'a State, v: VaultId, r: &'a Readings) -> Vec<&'a [u8]> {
-    let counts = |w: &Write| w.first && w.actor == v && w.proposal == Proposal::Main && !r.unfit.contains(&w.edit);
+    let counts = |w: &Write| w.first && w.signer == v && w.proposal == Proposal::Main && !r.unfit.contains(&w.edit);
     let mut of: Vec<(usize, &[u8])> = r
         .blobs
         .iter()
@@ -7292,7 +7292,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     for w in writes {
         let j = judging.get_mut(&w.entry).expect("a cap group entry");
         if j.judge(d, st, (r, bodies), w, &groups)
-            && w.actor == j.vault
+            && w.signer == j.vault
             && w.proposal == Proposal::Main
             && let Some(g) = r.defines.get(&w.edit)
         {
@@ -7721,7 +7721,7 @@ impl<'a> Judging<'a> {
         let fits = read.as_ref().is_none_or(|r| r.fits);
         let at = At { attrs: attrs.as_ref(), place: st.place(w.edit), groups };
         let counted = read.as_ref().is_some_and(|r| {
-            let marked = r.touches.as_deref().map(|ts| mine.mark(w.actor, ts));
+            let marked = r.touches.as_deref().map(|ts| mine.mark(w.signer, ts));
             history.admit(w, r, || {
                 st.lets(w, proof, marked.as_deref(), asks, at)
                     .then_some(()).ok_or(Refusal::NotAllowed)
@@ -7735,7 +7735,7 @@ impl<'a> Judging<'a> {
         history.push(change).expect("the view's writes are causally closed");
         // its tags count from now on where it acts for the vault
         if !w.first
-            && w.actor == *vault
+            && w.signer == *vault
             && let (Some(a), Some(b)) = (attrs.as_mut(), body)
         {
             a.tags = b.tags.apply(&a.tags);
