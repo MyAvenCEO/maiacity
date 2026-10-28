@@ -1,0 +1,1 @@
+{"showRules": 1, "cases": [{"name": "the build that sealed it", "sameBuild": true, "writtenSince": 0, "takes": "kept"}, {"name": "another build", "sameBuild": false, "writtenSince": 0, "takes": "kept"}, {"name": "another build, a write to the entry since", "sameBuild": false, "writtenSince": 1, "takes": "judged"}]}

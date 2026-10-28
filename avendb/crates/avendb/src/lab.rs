@@ -604,6 +604,12 @@ const ENGINE: &str = env!("AVENDB_ENGINE");
 /// changes them names a new number, under which no older view opens (VR2).
 const VIEW_RULES: &str = concat!("avenDB view rules ", env!("AVENDB_VIEW_RULES"));
 
+/// What a device seals the showings it keeps to (`ShowRules.lean`, `build.rs`): the number of the show rules it judged
+/// them under, not the engine's hash, so a release that keeps the rules keeps every device's kept showings (SR1), and one
+/// that changes them names a new number, under which no older pack opens (SR2). Sealed to the engine's hash, every
+/// release left them shut, and a phone's first unlock after it judged every entry anew (2026-10-28).
+const SHOW_RULES: &str = concat!("avenDB show rules ", env!("AVENDB_SHOW_RULES"));
+
 /// The engine's hash as a fixed-size binding, for what a device seals to the engine that made it.
 pub fn engine() -> [u8; 32] {
     crate::hash::content(ENGINE.as_bytes())
