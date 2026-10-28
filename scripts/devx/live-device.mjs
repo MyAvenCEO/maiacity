@@ -16,7 +16,7 @@
  *                                                                the target is 1 s), both ways, whenever both are
  *                                                                online, catching up or not
  *
- * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 60 (seconds to watch sync),
+ * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 240 (seconds to watch sync: 4 min finds most stalls, Samuel 2026-10-28),
  * --profile <dir>, --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
  * its `build/` folder), served at --base's own origin so the always-on peer takes the passkey as it takes the live
  * site's; the peer stays the live one. Each run writes build/live-device/<time>/: screenshots in order, run.json (step times, the unlock
@@ -36,7 +36,7 @@ const args = process.argv.slice(2);
 const option = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback);
 const engine = option('--engine', 'webkit');
 const base = option('--base', 'https://maia.city').replace(/\/$/, '');
-const watchSync = Number(option('--sync', '60'));
+const watchSync = Number(option('--sync', '240'));
 const pageDir = args.includes('--page') ? resolve(option('--page')) : null;
 const messages = Math.max(1, Number(option('--messages', '1')));
 const mac = platform() === 'darwin';
