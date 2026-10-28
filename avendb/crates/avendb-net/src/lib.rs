@@ -248,6 +248,8 @@ const IDLE: Duration = Duration::from_secs(30);
 /// connection kept open, would hold its pull, and the sync bar, for ever (Samuel's iPhone 2026-10-21, "syncing" at 19%
 /// with two pulls running). The asking fails, and the node asks again as it does any it failed (`node_loop`).
 const PAGE_WAIT: Duration = Duration::from_secs(180);
+/// The most an asking waits for its peer to say the pages it makes (`Shared::sizes`): eight bytes, answered at once.
+const SIZING_WAIT: Duration = Duration::from_secs(10);
 
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
 /// agrees the keys of every connection along with X25519, and a peer that offers only classical groups finds none in
@@ -2868,14 +2870,16 @@ impl Shared {
         };
         // a fresh device asking for its first sync with the boxes held back asks the peer for their stubs first, to
         // count them as held (`session::STUBS`, `LazyBoxes.lean`), and for their bodies in the pull after this one
-        let stubbed = self.stubs(&peer, kind, scope.clone()).await;
-        // the page budget this asking states, fixed for the whole of it so that its cuts and its pages end at the same
-        // places (`session::SIZED`, S1b): what the peer's pages carried in `pulls::PAGE_TIME` lately, so that a page
-        // lost in flight costs a couple of seconds of the link, not a minute of it; unsized to a peer from before
-        let sizes = self.sizes(&peer).await;
+        // and the peer's page sizes beside them, once a connection (`Shared::sizes`), so no round trip waits on the other
+        let (stubbed, sizes) = future::zip(self.stubs(&peer, kind, scope.clone()), self.sizes(&peer)).await;
+        // the page budget its pages state (`session::SIZED`, S1b): what the peer's pages carried in `pulls::PAGE_TIME`
+        // lately, so that a page lost in flight costs a couple of seconds of the link, not a minute of it; it moves with
+        // the rate at a page's start, where its cuts are asked again (`pulls::RESIZE`); unsized to a peer from before
         let rate = || self.rates.lock().expect("rates").get(&device).cloned().unwrap_or_default();
         let budget = sizes.map(|(least, most)| rate().budget(least, most));
         let sized = if budget.is_some() { kind | session::SIZED } else { kind };
+        let stated = AtomicUsize::new(budget.unwrap_or(0));
+        let stated = &stated;
         // the logs a pull for the bodies of stubs answers for: all, or those it names
         let answers = match &scope {
             Scope::All => Some(None),
@@ -2915,8 +2919,8 @@ impl Shared {
                 Some(vaults) => session::vaults_body(vaults, &request),
                 None => request.to_wire(),
             };
-            match budget {
-                Some(budget) => session::sized_body(budget, &body),
+            match sizes {
+                Some(_) => session::sized_body(stated.load(Ordering::Relaxed), &body),
                 None => body,
             }
         };
@@ -3008,7 +3012,7 @@ impl Shared {
         let (mut seq, mut asked_upto) = (0u64, None::<avendb::sync::Place>);
         macro_rules! pump {
             () => {
-                let size = window.size();
+                let size = window.size(sizes.map(|_| stated.load(Ordering::Relaxed)));
                 while cutting && asked.len() < size && !cuts.is_empty() {
                     let Some(permit) = self.pulls.ahead() else { break };
                     let after = cuts.pop_front();
@@ -3030,8 +3034,9 @@ impl Shared {
                     Landing::Page((at, count, page)) => {
                         if asked.iter().any(|(s, _, _)| *s == at) {
                             if let Ok((_, bytes, wait, _)) = &page {
-                                window.page(*wait, count);
-                                self.rates.lock().expect("rates").entry(device).or_default().page(*bytes, *wait, count);
+                                window.page(*wait, count, *bytes);
+                                let latency = window.round_trip();
+                                self.rates.lock().expect("rates").entry(device).or_default().page(*bytes, *wait, count, latency);
                             }
                             landed.insert(at, page);
                         }
@@ -3217,7 +3222,7 @@ impl Shared {
                 catch_ms: caught.as_millis() as u64,
                 ms: finished.duration_since(since).as_millis() as u64,
                 way,
-                budget: budget.unwrap_or(0) as u64,
+                budget: stated.load(Ordering::Relaxed) as u64,
             });
             self.jobs.stir();
             since = finished;
@@ -3238,13 +3243,23 @@ impl Shared {
             if next.is_some() && yielding.is_some_and(|y| y.due(self)) {
                 return Ok(new);
             }
-            // the rate its pages come at moved far from the one its budget was worked out at: it ends here too, and its
-            // logs are asked again at once, at a budget of the rate now (`pulls::RESIZE`)
-            if let (Some(_), Some(y), Some(stated), Some((least, most))) = (next, yielding, budget, sizes) {
-                let now = rate().budget(least, most);
-                if now >= stated.saturating_mul(pulls::RESIZE) || now.saturating_mul(pulls::RESIZE) <= stated {
-                    y.resize();
-                    return Ok(new);
+            // the rate its pages come at moved far from the one their budget was worked out at: the pages it asks next
+            // state the budget of the rate now (`pulls::RESIZE`). A page may start anywhere, at any budget; only where it
+            // ends moves with it, so the cuts it holds past the next page's start are asked again from there, at the new
+            // budget, and the pages in flight end where they were asked to (`LivePriority.lean` "Pages sized to their
+            // asker"). With every cut it held asked, it waits for the next, whose page's end it doesn't know yet.
+            if let (Some(_), Some((least, most))) = (next, sizes) {
+                let (now, was) = (rate().budget(least, most), stated.load(Ordering::Relaxed));
+                let far = now >= was.saturating_mul(pulls::RESIZE) || now.saturating_mul(pulls::RESIZE) <= was;
+                if far && (!cutting || !cuts.is_empty()) {
+                    stated.store(now, Ordering::Relaxed);
+                    flight.budget = now as u64;
+                    if cutting {
+                        cuts.truncate(1);
+                        cut_after = cuts.front().copied();
+                        (cuts_end, cut_busy, generation, cutting_flight) = (false, false, generation + 1, FuturesUnordered::new());
+                        pump!();
+                    }
                 }
             }
             match next {
@@ -3272,15 +3287,15 @@ impl Shared {
     }
 
     /// The least and the most page `peer` makes for an asking that states its budget (`session::SIZING`), asked once
-    /// a connection; `None` where it refused, a peer from before S1b, which is asked unsized on that connection, or
-    /// didn't answer in time, which is asked again by the next asking.
+    /// a connection; `None` where it refused, a peer from before S1b, or didn't answer within `SIZING_WAIT`: it is
+    /// asked unsized on that connection, and no asking of it waits on the question again.
     async fn sizes(self: &Arc<Self>, peer: &Peer) -> Option<(usize, usize)> {
         let connection = peer.conn.stable_id();
         if let Some(sizes) = self.sizing.lock().expect("sizing").get(&connection) {
             return *sizes;
         }
-        let answer = time::timeout(PAGE_WAIT, session::exchange(&peer.conn, session::SIZING, &[], 8)).await.ok()?;
-        let sizes = answer.and_then(|bytes| session::from_sizing_wire(&bytes)).ok();
+        let answer = time::timeout(SIZING_WAIT, session::exchange(&peer.conn, session::SIZING, &[], 8)).await;
+        let sizes = answer.ok().and_then(|answer| answer.and_then(|bytes| session::from_sizing_wire(&bytes)).ok());
         self.sizing.lock().expect("sizing").insert(connection, sizes);
         sizes
     }
@@ -4258,11 +4273,6 @@ impl Yield {
 
     fn yielded(&self) -> bool {
         self.yielded.load(Ordering::Relaxed)
-    }
-
-    /// Its asking ends to be asked again at the budget its pages' rate says now (`pulls::RESIZE`), as a yield does.
-    fn resize(&self) {
-        self.yielded.store(true, Ordering::Relaxed);
     }
 }
 

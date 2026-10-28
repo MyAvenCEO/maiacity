@@ -574,11 +574,15 @@ theorem the_stalled_asking_sends_none_of_it_again (edits : List Edit) (d : Signe
 /-! ## Pages sized to their asker (S1b, 2026-10-28)
 
 A peer made every page 4 MiB (`Options::page`). Samuel's iPhone took 66-214 KB/s through a relay, so one page was 20-60 s
-on the wire, and a page in flight when the asking stopped (the app hidden, a reload, a lost path) was lost whole. An
-asking now states its page budget, fixed for the whole asking (so its cuts and its pages end at the same places, both
-by `pageLen`): the bytes its link carried in `PAGE_TIME` at the rate its pages last came, between `least` and the peer's
-`most`. The peer sizes each page to it. An asker from before states none and is served `most`, as before. A page that
-landed is taken whatever the asking does after, so a stop loses only the pages in flight, each within its budget.
+on the wire, and a page in flight when the asking stopped (the app hidden, a reload, a lost path) was lost whole. Each
+page now states its budget: the bytes its link carried in `PAGE_TIME` at the rate its pages last came (their time to
+send, beyond the round trip), between `least` and the peer's `most`. The peer sizes the page to it. A page may start
+anywhere at any budget, only its end moves with it: so where the rate moves, the next pages state the new budget, and
+the cuts asked ahead (`pageLen` too) are asked again from the next page's start; whatever each page states, the pages
+bring every edit once, in order (`pages_at_any_budgets_bring_every_edit_once`). An asker from before states none and
+is served `most`, as before. A page that landed is taken whatever the asking does after, so a stop loses only the pages
+in flight, each within its budget. phone_bulk (2026-10-28) showed why the budget moves within an asking: one fixed at
+128 KB before any page came held a 6.25 MB/s link's whole catch-up to 128 KB pages.
 Rust: avendb-net lib.rs `pages`, `Shared::sizes`, `Flight`; pulls.rs `Rate::budget`; session.rs `SIZED`, `SIZING`,
 `served`, `authorized_request`; avendb lab.rs `page_end`. -/
 
@@ -652,6 +656,24 @@ theorem a_sized_page_lands_in_its_time (least most rate time : Nat) (l : List Na
   have := a_page_is_within_its_budget (served least most (some (budget rate time))) l
   have : served least most (some (budget rate time)) ≤ budget rate time := by simp [served]; omega
   omega
+
+/-- The pages of an asking whose `i`-th page states budget `b i`, each starting where the one before ended. -/
+def pagesAt (b : Nat → Nat) (i : Nat) : Nat → List Nat → List (List Nat)
+  | 0, l => [l]
+  | _ + 1, [] => []
+  | n + 1, s :: rest =>
+    (s :: rest).take (pageLen (b i) (s :: rest)) :: pagesAt b (i + 1) n ((s :: rest).drop (pageLen (b i) (s :: rest)))
+
+/-- Whatever budget each page states, the pages bring every edit once, in order: a budget moves where a page ends,
+never what the asking brings. -/
+theorem pages_at_any_budgets_bring_every_edit_once (b : Nat → Nat) (i n : Nat) (l : List Nat) :
+    (pagesAt b i n l).flatten = l := by
+  induction n generalizing i l with
+  | zero => simp [pagesAt]
+  | succ n ih =>
+    cases l with
+    | nil => simp [pagesAt]
+    | cons s rest => simp only [pagesAt, List.flatten_cons, ih, List.take_append_drop]
 
 /-- What a stopped asking loses: the pages in flight, as the pages that landed are taken. -/
 def lost (flying : List (List Nat)) : Nat := (flying.map List.sum).sum
