@@ -2926,7 +2926,10 @@ impl Lab {
         let own = self.keys.get(&d).and_then(Key::seal_secret);
         let unlocked = own.is_some();
         let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
-        let mut retained = if unlocked { self.take_owner_overlay(d) } else { None };
+        // the owners' base overlay of a device's based entries is kept out for a whole refresh and laid back as it was
+        // after it; a step of a catch-up lays it again after each step instead (`rebuild_owner_bases`: 16 bases at
+        // most, each at most 1 MiB, a bound of its own, not of the log's), so that every step stays bounded
+        let mut retained = if unlocked && budget.is_none() { self.take_owner_overlay(d) } else { None };
         let began = Perf::start();
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
@@ -2966,8 +2969,7 @@ impl Lab {
             let ix = KeyIndexed::take(store);
             store.perf.add("keys: index", at);
             // with a budget, at most `KEY_WORK` keys of entries derived for each of it, the rest at the next steps
-            let step = budget.filter(|_| retained.is_none());
-            let keyed = open_keys(store, &ix, &mine, step.map(|b| b.max(1).saturating_mul(KEY_WORK)));
+            let keyed = open_keys(store, &ix, &mine, budget.map(|b| b.max(1).saturating_mul(KEY_WORK)));
             store.perf.add("open keys", at);
             if !keyed {
                 KeyIndexed::put(store, ix);
@@ -2977,8 +2979,6 @@ impl Lab {
                 return false;
             }
             let at = Perf::start();
-            // an entry's owner base overlay is taken out for the whole of a refresh: one is read and shown in one go
-            let budget = budget.filter(|_| retained.is_none());
             let read_all = read(d, store, budget.map(|b| b.max(1).saturating_mul(READ_WORK)));
             store.perf.add("read", at);
             // a step that left bodies to open goes on with them at the next, showing nothing before they are open
@@ -2991,8 +2991,7 @@ impl Lab {
             }
             // what it shows, every write counted or not, before its upkeep: its stewards grant counted asks alone
             let at = Perf::start();
-            // an entry's owner base overlay is taken out for the whole of a refresh: one is shown in one go. A budgeted
-            // one shows one entry here, after its keys and reading, which take their own while, and the rest after it
+            // a budgeted one shows one entry here, after its keys and reading, which take their own while, and the rest after it
             // a budget a step (`show_more`)
             let shown = show_items(d, store, budget.map(|_| 1));
             store.perf.add("show items", at);
@@ -3080,6 +3079,11 @@ impl Lab {
         let at = Perf::start();
         let done = show_items(d, store, Some(budget));
         store.perf.add("show items", at);
+        // an entry it showed from its edits that its owners' base shows is laid over again (`rebuild_owner_bases`), so
+        // that between steps it shows as before them
+        if !store.bases.is_empty() {
+            self.rebuild_owner_bases(d);
+        }
         done
     }
 
@@ -5584,7 +5588,8 @@ impl Lab {
     /// leaves it (`receive_now`); then the catch-up itself, showing at most `budget` entries anew a step
     /// (`show_items`), the entries left shown a step at a time after it, and once they all are, the catch-up again,
     /// which finds them shown. `Stepped` while there is more to come, then `Caught` with what `catch_up` says. The same
-    /// keys, items and edits as one `catch_up`: a device with an entry's owner base takes it in one step still.
+    /// keys, items and edits as one `catch_up`, a device with owners' bases of entries too (until 2026-10-28 it took
+    /// its whole catch-up in one step).
     pub fn catch_up_step(&mut self, d: SignerId, budget: usize) -> CatchUp {
         let Some(store) = self.stores.get(&self.at(d)) else {
             return CatchUp::Caught(false);
@@ -5602,9 +5607,6 @@ impl Lab {
         if store.replayed < store.log.edits().len() && store.latest.get().is_none() {
             self.step_replay(d, budget.max(1).saturating_mul(REPLAY_WORK));
             return CatchUp::Stepped;
-        }
-        if !store.bases.is_empty() {
-            return CatchUp::Caught(self.catch_up(d));
         }
         match self.refresh_with(d, &[], Some(budget)) {
             true => CatchUp::Caught(true),

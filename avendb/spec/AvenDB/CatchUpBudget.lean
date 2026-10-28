@@ -17,6 +17,10 @@ Now a step does one of four kinds of work, each at most `k` units of it:
 `step` models one step. Its work is at most `k` (`work_le`). Without new edits, each step leaves strictly less to do
 (`step_shrinks`), so the catch-up ends within `left` steps (`ends_within`). Bodies of new edits go first: a page of at
 most `k` new bodies is read whole in the next read step (`fresh_first`).
+
+A device holding its owners' bases of entries steps the same way (until 2026-10-28 it took its whole catch-up in one
+step): after each step it lays the bases over again (`rebuild_owner_bases`), work of at most `c` that depends on the
+bases it holds (16 at most, each at most 1 MiB), not on the log. Its step stays bounded by `k + c` (`based_le`).
 -/
 
 namespace AvenDB.CatchUpBudget
@@ -54,6 +58,12 @@ theorem work_le (k : Nat) (t : Todo) : work k t ≤ k := by
     · split
       · simp only [List.nil_append, List.length_drop]; omega
       · simp only [List.length_drop]; omega
+
+/-- A based device's step: the step's work and the bases laid over again, at most `c`. -/
+def basedWork (k c : Nat) (t : Todo) : Nat := work k t + c
+
+theorem based_le (k c : Nat) (t : Todo) : basedWork k c t ≤ k + c := by
+  unfold basedWork; have := work_le k t; omega
 
 /-- A step with anything left to do, and `0 < k`, leaves strictly less. -/
 theorem step_shrinks (k : Nat) (hk : 0 < k) (t : Todo) (h : 0 < t.left) : (step k t).left < t.left := by

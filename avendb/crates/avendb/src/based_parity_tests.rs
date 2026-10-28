@@ -79,3 +79,58 @@ fn a_reader_starts_from_the_judged_base_read_only() {
     lab.sync(mac, reader);
     assert_eq!(lab.item(reader, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
 }
+
+/// A device with its owners' base of an entry catches up a step at a time too (until 2026-10-28 it took the whole
+/// catch-up in one step): the based entry shows what its base shows between the steps, and it ends with the same view
+/// as one catch-up.
+#[test]
+fn a_based_device_catches_up_a_step_at_a_time() {
+    let make = || {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Owner");
+        let mac = lab.device_of(owner, "Mac");
+        let pad = lab.device_of(owner, "Pad");
+        let vault = human_on(&mut lab, owner, &[mac, pad]);
+        lab.sync(mac, pad);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Based", "initial", mac)).unwrap();
+        for n in 0..8 {
+            lab.edit(mac, vault, entry, |item| item.set_text(2, &format!("latest {n}"))).unwrap();
+        }
+        let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        let judged = lab.complete(mac, draft, &[]).unwrap();
+        let offer = lab.entry_base_offer(mac, pad, entry).unwrap();
+        lab.receive(pad, offer.evidence, vec![]);
+        assert!(lab.adopt_owner_entry_base(pad, judged, entry, sealed));
+        let before: HashSet<EditId> = lab.log(mac).ids().iter().copied().collect();
+        for i in 0..12 {
+            let other = lab.create(mac, vault, vault, "note", &[], document(&format!("Other {i}"), "x", mac)).unwrap();
+            for n in 0..6 {
+                lab.edit(mac, vault, other, |item| item.set_text(2, &format!("edit {n}"))).unwrap();
+            }
+        }
+        let fresh: Vec<Signed> = lab.backup(mac).signed().iter().filter(|s| !before.contains(&s.edit.id())).cloned().collect();
+        for page in fresh.chunks(20) {
+            lab.receive_whose_now(pad, page.to_vec(), vec![], false);
+        }
+        (lab, pad, entry)
+    };
+    let (mut once, pad, entry) = make();
+    let (mut steps, _, _) = make();
+    let based = steps.item(pad, entry).unwrap().record();
+    assert!(steps.held(pad).bases.contains_key(&entry) && steps.held(pad).behind, "a based device behind");
+    assert!(once.catch_up(pad));
+    let mut taken = 0;
+    while let CatchUp::Stepped = steps.catch_up_step(pad, 1) {
+        taken += 1;
+        assert!(taken < 10_000, "a catch-up in steps ends");
+        assert_eq!(steps.item(pad, entry).unwrap().record(), based, "the based entry as its base shows it, step {taken}");
+    }
+    assert!(taken > 4, "more than one step: {taken}");
+    assert!(once.state(pad) == steps.state(pad), "the same state");
+    let view = |lab: &Lab| {
+        let entries: Vec<_> = lab.entries(pad).into_iter().map(|e| (e, lab.item(pad, e).map(|i| i.record()))).collect();
+        (lab.log(pad).ids().to_vec(), entries)
+    };
+    assert_eq!(view(&once), view(&steps), "the same edits, entries and items as one catch-up");
+    assert_eq!(rows(&once, pad, entry), rows(&steps, pad, entry));
+}
