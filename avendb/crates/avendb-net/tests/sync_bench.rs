@@ -4,8 +4,12 @@
 //! What failed on the iPhone on 2026-10-27 was this: live pulls that waited out their 10 s while the Mac caught up.
 //! Each case prints one `BENCH {...}` line (`kind: "live"`) for `scripts/ci/avendb-bench.mjs`:
 //!
-//!   AVENDB_LIVE_LINK=phone AVENDB_LIVE_BULK=600 cargo test -p avendb-net --features test-fixtures \
-//!     --test sync_bench -- --ignored --nocapture
+//!   AVENDB_LIVE_LINK=phone AVENDB_LIVE_BULK=600 RUSTFLAGS="--cfg avendb_no_replay_checks" cargo test --profile live \
+//!     -p avendb-net --features test-fixtures --test sync_bench -- --ignored --nocapture
+//!
+//! `--profile live` optimises as a release does, and `avendb_no_replay_checks` leaves out the debug checks that replay
+//! a device's whole log on each write (`lab.rs`): with them, the live gates timed the debug build (2026-10-28, phone_bulk
+//! 60 s and 0.06 of the link in debug, 5.7 s and 0.64 without them). `test-fixtures` refuses a release build.
 //!
 //! The bulk is 600 edits by default: the Lab checks each write against a replay of its whole log in a debug build (as
 //! `test-fixtures` needs), so writing the bulk grows with its square, about 18 s at 600 and 50 s at 1,000.
@@ -31,10 +35,9 @@ use serde_json::json;
 /// The entries the bulk goes to, in turn.
 const ENTRIES: u64 = 8;
 /// How often Alice's Mac writes a live edit during a catch-up: often enough that one of four seconds gives the 40 a p95
-/// needs. A `_bulk` link's catch-up runs a minute today, so it writes one every `BULK_EVERY`: each write replays the
-/// 20 MB log in a debug build, and ten a second left the Mac no time to send the catch-up.
+/// needs. (In a debug build each write replays the whole log, which starved a 20 MB catch-up; the live shard builds
+/// with `--profile live` and `--cfg avendb_no_replay_checks`, as the doc above says.)
 const EVERY: Duration = Duration::from_millis(100);
-const BULK_EVERY: Duration = Duration::from_millis(250);
 /// How often it writes one once the catch-up is over: as a person types, for the idle round trip.
 const IDLE_EVERY: Duration = Duration::from_millis(250);
 /// The live edits written once the catch-up is over, for the idle round trip.
@@ -193,7 +196,7 @@ async fn live_on(case: String, f: Fixture) {
     while !caught.load(Ordering::SeqCst) {
         busy.push(tokio::spawn(live(mac.clone(), bob.clone(), coop, live_entry, k)));
         k += 1;
-        tokio::time::sleep(if case.ends_with("_bulk") { BULK_EVERY } else { EVERY }).await;
+        tokio::time::sleep(EVERY).await;
     }
     let (sync_s, asks) = catch_up.await.expect("the catch-up");
     for _ in 0..AFTER {
