@@ -1,0 +1,152 @@
+//! A vault's signed checkpoint (`Checkpoint.lean`): a device holds the edits it covers without their signatures
+//! ("bare") while one that stands vouches for them, lets go of their signatures once it does, and lets go of a bare
+//! edit no checkpoint that stands vouches for.
+#![cfg(debug_assertions)]
+
+use crate::common;
+
+use avendb::id::{SignerId, VaultId};
+use avendb::lab::{Backup, Lab};
+use avendb::policy::Action;
+use avendb::sign::Signed;
+use common::*;
+
+/// Alice with a passkey and a Mac, her vault founded.
+fn alice() -> (Lab, SignerId, SignerId, VaultId) {
+    let mut lab = Lab::new();
+    let passkey = lab.passkey("Alice");
+    let mac = lab.device_of(passkey, "Alice's Mac");
+    let alice = human_on(&mut lab, passkey, &[mac]);
+    (lab, passkey, mac, alice)
+}
+
+/// `signed` with no signature left, its signers' keys kept: what a device holds on a checkpoint's word.
+fn bare(mut signed: Signed) -> Signed {
+    for sig in &mut signed.sigs {
+        sig.pq = vec![];
+        sig.webauthn = None;
+        sig.enclave = None;
+    }
+    signed
+}
+
+fn stripped(backup: &Backup, ids: &[avendb::id::EditId]) -> Backup {
+    let signed = backup.signed().iter().map(|s| if ids.contains(&s.edit.id()) { bare(s.clone()) } else { s.clone() });
+    Backup::new(signed.collect(), [])
+}
+
+#[test]
+fn a_device_holds_bare_what_its_vaults_checkpoint_vouches_for() {
+    let (mut lab, passkey, mac, alice) = alice();
+    let before = lab.backup(mac);
+    let ids: Vec<_> = before.signed().iter().map(|s| s.edit.id()).collect();
+    assert!(!ids.is_empty());
+    lab.submit(mac, &[passkey], Action::Checkpoint { vault: alice, covers: ids.clone() }).expect("her passkey's");
+    let checked = lab.backup(mac);
+    // every edit it covers held without a signature: the device takes them all on the checkpoint's word
+    lab.restore_from(mac, stripped(&checked, &ids));
+    assert_eq!(lab.backup(mac).signed().len(), checked.signed().len(), "every edit held");
+    assert!(lab.state(mac).acts_for(mac, alice), "the Mac a device of Alice's");
+    // and a device holding them signed lets go of their signatures once the checkpoint vouches for them
+    lab.restore_from(mac, Backup::new(checked.signed().to_vec(), []));
+    let held = lab.backup(mac);
+    for s in held.signed().iter().filter(|s| ids.contains(&s.edit.id())) {
+        assert!(s.sigs.iter().all(|x| x.pq.is_empty() && x.webauthn.is_none()), "no signature kept");
+        assert_eq!(s.sigs.len(), s.edit.sigs().count(), "each signer's keys kept");
+    }
+}
+
+#[test]
+fn a_bare_edit_no_checkpoint_vouches_for_is_let_go_of() {
+    let (mut lab, _passkey, mac, alice) = alice();
+    let before = lab.backup(mac);
+    let ids: Vec<_> = before.signed().iter().map(|s| s.edit.id()).collect();
+    // with no checkpoint, an edit without its signatures is refused
+    lab.restore_from(mac, stripped(&before, &ids));
+    assert_eq!(lab.backup(mac).signed().len(), 0, "nothing taken");
+    // the Mac's own checkpoint over them: a device is no owner, so it stands nowhere and vouches for nothing
+    lab.restore_from(mac, Backup::new(before.signed().to_vec(), []));
+    let forged = lab.sign_unchecked(mac, &[mac], Action::Checkpoint { vault: alice, covers: ids.clone() }).expect("signed");
+    let mut signed: Vec<Signed> = stripped(&before, &ids).signed().to_vec();
+    signed.push(forged);
+    lab.restore_from(mac, Backup::new(signed, []));
+    assert!(lab.backup(mac).signed().iter().all(|s| !ids.contains(&s.edit.id())), "every bare edit let go of");
+    assert!(!lab.state(mac).acts_for(mac, alice));
+}
+
+#[test]
+fn a_covered_edit_with_its_signatures_stays_where_no_checkpoint_stands() {
+    let (mut lab, _passkey, mac, alice) = alice();
+    let before = lab.backup(mac);
+    let ids: Vec<_> = before.signed().iter().map(|s| s.edit.id()).collect();
+    lab.restore_from(mac, Backup::new(before.signed().to_vec(), []));
+    let forged = lab.sign_unchecked(mac, &[mac], Action::Checkpoint { vault: alice, covers: ids.clone() }).expect("signed");
+    let mut signed = before.signed().to_vec();
+    signed.push(forged);
+    lab.restore_from(mac, Backup::new(signed, []));
+    // covered by a checkpoint that doesn't stand, each edit is held by its own signatures, which check out
+    let held: Vec<_> = lab.backup(mac).signed().iter().map(|s| s.edit.id()).collect();
+    assert!(ids.iter().all(|id| held.contains(id)), "every signed edit kept");
+    assert!(lab.state(mac).acts_for(mac, alice));
+}
+
+#[test]
+fn a_device_far_behind_takes_a_checkpoints_bare_edits_over_several_pulls() {
+    let mut lab = Lab::new();
+    let passkey = lab.passkey("Alice");
+    let mac = lab.device_of(passkey, "Alice's Mac");
+    let phone = lab.device_of(passkey, "Alice's iPhone");
+    let alice = human_on(&mut lab, passkey, &[mac, phone]);
+    let before = lab.backup(mac);
+    let ids: Vec<_> = before.signed().iter().map(|s| s.edit.id()).collect();
+    lab.submit(mac, &[passkey], Action::Checkpoint { vault: alice, covers: ids.clone() }).expect("her passkey's");
+    // what a server holding them on the checkpoint's word sends: the covered edits bare, the checkpoint signed
+    let sent = stripped(&lab.backup(mac), &ids).signed().to_vec();
+    let (checkpoint, covered): (Vec<Signed>, Vec<Signed>) =
+        sent.into_iter().partition(|s| matches!(s.edit.action, Action::Checkpoint { .. }));
+    lab.restore_from(phone, Backup::new(vec![], []));
+    // the phone, behind, pulls a page at a time: the checkpoint and the first half of what it covers, then the rest
+    let half = covered.len() / 2;
+    lab.receive(phone, checkpoint.iter().chain(&covered[..half]).cloned().collect(), vec![]);
+    lab.receive(phone, covered[half..].to_vec(), vec![]);
+    let held: Vec<_> = lab.backup(phone).signed().iter().map(|s| s.edit.id()).collect();
+    assert!(ids.iter().all(|id| held.contains(id)), "every covered edit held once the last page came");
+    assert!(lab.state(phone).acts_for(phone, alice), "the phone a device of Alice's");
+}
+
+/// A device catching up a step at a time that lets go of bare edits no checkpoint vouches for replays what it keeps
+/// again a slice a step, not in the step that let go of them (`CatchUpBudget.lean`): it did all of it in that one
+/// turn, a page's worker answering no peer meanwhile (2026-10-28). It ends where one catch-up ends.
+#[test]
+fn a_catch_up_that_lets_go_of_bare_edits_replays_again_a_slice_a_step() {
+    let (mut lab, _passkey, mac, alice) = alice();
+    let before = lab.backup(mac);
+    let ids: Vec<_> = before.signed().iter().map(|s| s.edit.id()).collect();
+    let forged = lab.sign_unchecked(mac, &[mac], Action::Checkpoint { vault: alice, covers: ids.clone() }).expect("signed");
+    let mut signed: Vec<Signed> = stripped(&before, &ids).signed().to_vec();
+    signed.push(forged);
+    let rounds = |lab: &Lab| lab.perf(mac)["counts"]["refresh rounds"].as_u64().unwrap_or(0);
+    let mut most = 0;
+    for whole in [true, false] {
+        lab.restore_from(mac, Backup::new(vec![], []));
+        lab.receive_whose_now(mac, signed.clone(), vec![], false);
+        if whole {
+            lab.catch_up(mac);
+        } else {
+            let mut taken = 0;
+            loop {
+                let at = rounds(&lab);
+                let step = lab.catch_up_step(mac, 1);
+                most = most.max(rounds(&lab) - at);
+                taken += 1;
+                assert!(taken < 10_000, "a catch-up in steps ends");
+                if matches!(step, avendb::lab::CatchUp::Caught(_)) {
+                    break;
+                }
+            }
+        }
+        assert!(lab.backup(mac).signed().iter().all(|s| !ids.contains(&s.edit.id())), "every bare edit let go of");
+        assert!(!lab.state(mac).acts_for(mac, alice));
+    }
+    assert!(most <= 1, "a step replayed again in the round after it let go of bare edits: {most} rounds");
+}

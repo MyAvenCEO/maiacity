@@ -1,8 +1,0 @@
-# The server's image is built from avenDB's sources alone (Dockerfile.server): never their build output, nor the
-# proofs, the plans or the tile's scripts.
-target
-spec
-docs
-scripts
-# each crate's tests, which a release build never compiles: a change to one leaves the image as it was
-crates/*/tests

@@ -3,12 +3,12 @@ description: >-
   Makes `ssh prod` reach the production server as deploy, trusting only the host keys pinned in DEPLOY_KNOWN_HOSTS,
   never whatever answers at its address.
 
-# Every workflow that reaches the server over SSH prepares it here (deploy.yml, api.yml, avendb.yml, founders.yml,
-# old-vault.yml), so they all trust the same pinned keys. The keys are written under the alias `prod`
+# Every job that reaches the server over SSH prepares it here (release.yml's site, API and peer jobs, ops.yml's
+# tasks), so they all trust the same pinned keys. The keys are written under the alias `prod`
 # (HostKeyAlias), so one secret holds whether the server is reached by its name or its address.
 #
 # DEPLOY_KNOWN_HOSTS takes the server's keys as `ssh-keyscan` prints them, as known_hosts lines (hashed or not), or as
-# its .pub files hold them; every line is a key the server may answer with. A server made anew (api.yml's Pulumi) has
+# its .pub files hold them; every line is a key the server may answer with. A server made anew (ops.yml's infra task, Pulumi) has
 # new keys: the secret is filled again before its first deploy.
 inputs:
   host:

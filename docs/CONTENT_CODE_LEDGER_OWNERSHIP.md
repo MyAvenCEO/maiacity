@@ -6,7 +6,7 @@ The audit described an older working checkout. This reconciliation is against ma
 
 The obsolete cryptographic ledger's API, keys/notes implementation and table startup already disappeared upstream (#1025, commit `ef6042ac`). Migration `0053-drop-sandbox-2-economy` records that historical retirement. It is not edited or rerun by this change.
 
-The remaining BabyJubjub, Poseidon and Ethereum client dependencies had no importers. They and their unused monetary policy, mint/demurrage conversion and amount-formatting helpers are removed. The worlds still use `game/time.ts` for calendar and sky time; its epoch, speed and month boundaries are preserved by regression tests. MaiaCity V1/V2 simulation balances and ledgers are separate and unchanged.
+The remaining BabyJubjub, Poseidon and Ethereum client dependencies had no importers. They and their unused monetary policy, mint/demurrage conversion and amount-formatting helpers are removed. The worlds still use `maia/content/game/time.ts` for calendar and sky time; its epoch, speed and month boundaries are preserved by regression tests. MaiaCity V1/V2 simulation balances and ledgers are separate and unchanged.
 
 Historical database restoration must use the backups and the code revision appropriate to those records. Removing runtime code does not authorize deleting backups or imply that a financial archive has been independently verified.
 
@@ -22,7 +22,7 @@ Migration `0054-drop-content-board-and-timelines` already records the prior boar
 
 ## A06: avenDB publication, repo bootstrap
 
-The Postgres Generated UI writer and scheduled code-landing/export pipeline already disappeared upstream (#1013, commit `d0fa42d0`). The repository's `code/` is the reviewed bootstrap/recovery seed. Live dynamic code belongs to the anchored Maia City vault; the existing proof, freshness and frozen-engine checks still apply.
+The Postgres Generated UI writer and scheduled code-landing/export pipeline already disappeared upstream (#1013, commit `d0fa42d0`). The repository's `maia/content/code/` is the reviewed bootstrap/recovery seed. Live dynamic code belongs to the anchored Maia City vault; the existing proof, freshness and frozen-engine checks still apply.
 
 `codeAt()` and `codeIn()` now return explicit provenance: source, content revision and exact pin. Repository results are marked `role: bootstrap`; vault results also identify the vault, entry and sorted heads. Pinning to heads preserves a vault revision even where its engine metadata differs from a repo-equivalent content hash.
 

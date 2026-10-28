@@ -6,7 +6,7 @@ Decided 2026-09-29. Update this file whenever a decision changes, with the date 
 every file from avenDB (Maia City's Library; the site through avenDB's feed behind `api.maia.city/vault/files`). The
 server peer `vault-server`, its relay on `api.maia.city/relay`, its gateway and UDP 7400 are gone; `LIBRARY/` in the
 bucket and the server's `vaultdata` volume stay until Samuel OKs deleting them. What follows is the history of that
-design; avenDB's own iroh use lives in `avendb/`.
+design; avenDB's own iroh use lives in `aven/db/`.
 
 ## Decisions
 
@@ -32,7 +32,7 @@ design; avenDB's own iroh use lives in `avendb/`.
 ## The code
 
 ```
-vault/                         Rust workspace (iroh pinned exactly) · PLAN.md = the task list
+theos/                         Rust workspace (iroh pinned exactly) · PLAN.md = the task list
   crates/vault-core/           the node: private endpoint (allowlist, relay added at join), FsStore, gossip,
                                iroh-docs catalog (join, describe), three-hash ingest
   crates/vault-media/          native media: probe (AVFoundation), proxies (VideoToolbox HEVC Main10), mp4.rs
@@ -46,8 +46,7 @@ vault/                         Rust workspace (iroh pinned exactly) · PLAN.md =
   app/                         maiaCITY Studio (Tauri 2): native commands, vault:// (local, Range), maiaapi:// (API +
                                gateway with the app's key), passkey device-flow sign-in (Keychain), sync.rs (pair,
                                join, keep complete from the gateway), mcp.rs (the studio for agents)
-  migration/                   cid-to-blake3.json (old CID → hash, only for rewriting) and rewrite.ts
-src/lib/studio/                the studio's Ingest, Library, CopiesBadge, Devices — inside the app only
+maia/content/studio/                the studio's Ingest, Library, CopiesBadge, Devices — inside the app only
 api/src/vault.ts               pairing, joining, the mirror (migration 0028) — routes /api/vault/*
 ```
 
@@ -58,11 +57,11 @@ The app's vault lives in `~/Library/Application Support/city.maia.vault`, or whe
 
 Agents no longer reach the legacy vault: the Mac app's own MCP on `127.0.0.1:4545/mcp` and its `mcp-token` are
 retired for agents and scripts. An agent is a device of the coop's aven, avenMAIA, through the avendb MCP
-(`avendb-device agent <harness>`, `avendb/crates/avendb-device/src/agent.rs`; Claude Code's is
+(`avendb-device agent <harness>`, `aven/db/crates/avendb-device/src/agent.rs`; Claude Code's is
 `claude mcp add --scope user avendb -- <The OS app's avendb-device> agent claude`), approved once in The OS app, and
 acts with avenMAIA's rights: by default a Suggester on Maia City (proposals, drafts, AIPs). Its files are avenDB's
 Library — read with `avendb_read_file`, saved with `put_file` or a draft `create` with `file` — sealed and synced over
-iroh by avenDB's own store, not by this catalog. The scripts are the device agentScripts (`scripts/film/vault.mjs`).
+iroh by avenDB's own store, not by this catalog. The scripts are the device agentScripts (`maia/content/scripts/film/vault.mjs`).
 How cuts, renders and proxies are asked there: `story-producer` `pipeline.md`, "Studio 2 through avenDB".
 
 ## The catalog (iroh-docs namespace "maiaCITY vault")

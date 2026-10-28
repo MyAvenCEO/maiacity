@@ -75,7 +75,7 @@ colours advance, cool ones recede. **Skin stays true in both worlds:** the world
 
 These are house starting points, tuned on the colour script. Get the high's colour from light and separation before the
 saturation knob. The third hue keeps the high out of the two-colour formula of teal and orange. Our presets map onto
-this: `dip`/`cold` for the low, `bright`/`warm` for the high (`game/film/color.js`).
+this: `dip`/`cold` for the low, `bright`/`warm` for the high (`maia/content/game/film/color.js`).
 
 ## Making renders sit with iPhone footage
 

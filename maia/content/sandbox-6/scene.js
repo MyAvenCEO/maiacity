@@ -1,0 +1,1114 @@
+/**
+ * SANDBOX 6 · ONE VILLAGE · THE WORLD — the village's seven hexes in three.js at their real size, a metre a unit: the
+ * land painted from its land-use raster (./layout.js), the domes as glazed geodesic caps with their cold north side
+ * closed in hemp, the blocks of homes, the tower with its floors, the works as plain pitched-roof halls with solar on
+ * their south roofs (design packages 3–4: ./specs.js DESIGN), and what grows on the land and under the glass. The
+ * six living hexes are alike: one is built and the other five are copies of it.
+ *
+ * Everything an overlay can hide sits in its own group (`layers`), so the page toggles them: the land-use colours,
+ * the glass shells, what is inside, the plants, the hex outlines, the dimension lines. Labels are anchors the page
+ * draws in HTML (./world.js).
+ *
+ * The build-out timeline (./buildout.js) shows the village month by month: `timeline(state)` hides the domes not yet
+ * begun, shows those going up as their plinth (the footing), their struts (the frame) or their shell, grows the
+ * planted land, sets the camp's containers, a tower crane in each big dome being framed or glazed, and the geothermal
+ * rig in the centre. `timeline(null)` brings back the finished village.
+ */
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { materialCache } from '$content/render/core.js';
+import { seededLcg as rng } from '$content/sandbox-kit/random.js';
+import { BATTERY_KWH, capOf, CORE_R, DF, FACADE, FACTORIES, INSIDES, KINDS, POND_BAND, POND_HALF, POND_IN, geodesicOf, siteHall, towerGridOf, towerLevels, towerRadius } from './specs.js';
+import { CELL, HEX_S, HEX_W, USES, USE_IDS, corners, landOf } from './layout.js';
+
+/** one material per colour (the core's material cache) */
+const mats = materialCache();
+const mat = (/** @type {string} */ color, rough = 0.85, flat = true) => mats(`${color}/${rough}/${flat}`, () => new THREE.MeshStandardMaterial({ color, roughness: rough, flatShading: flat }));
+/** the three kinds of panel: clear glass (the plants' daylight), solar panels (dark blue, their cells see-through), white hemp */
+const GLASS = new THREE.MeshStandardMaterial({ color: '#d4ecf0', transparent: true, opacity: 0.17, roughness: 0.06, metalness: 0.25, side: THREE.DoubleSide, depthWrite: false });
+const SOLAR = new THREE.MeshStandardMaterial({ color: '#1f3a5c', transparent: true, opacity: 0.8, roughness: 0.22, metalness: 0.45, side: THREE.DoubleSide, depthWrite: false });
+const HEMP = new THREE.MeshStandardMaterial({ color: '#eee8dc', roughness: 0.95, flatShading: true, side: THREE.DoubleSide });
+const STRUT = new THREE.LineBasicMaterial({ color: '#6b5236', transparent: true, opacity: 0.55 });
+const DIM = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, depthTest: false });
+const STONE = '#9d978c';
+
+/**
+ * How high a dome's floor (and what lies on it) stands over the land outside, m: half a metre, so the depth buffer can
+ * tell them apart from a kilometre off (a few centimetres flickered)
+ */
+const FLOOR_Y = 0.5;
+
+/** the colours of the tower's floors, by use (the land-use map's where they match) */
+export const FLOOR_COLOURS = { utilities: USES.utilities.map, factory: USES.factory.map, park: '#5fae4a', community: '#e07a5f', offices: '#4a90c2', hotel: '#d9a03f', apartments: '#c2557a', sky: '#f2d16b' };
+
+/** @param {THREE.BufferGeometry} geo @param {THREE.Material} m */
+function part(geo, m, x = 0, y = 0, z = 0, shadow = true) {
+	const mesh = new THREE.Mesh(geo, m);
+	mesh.position.set(x, y, z);
+	mesh.castShadow = shadow;
+	mesh.receiveShadow = true;
+	return mesh;
+}
+
+
+/**
+ * A sector of an annulus standing on the floor, `y0` to `y1`, from bearing `b0` to `b1` (degrees, clockwise from
+ * north): galleries of homes, a pond, a crescent of offices.
+ */
+function sector(/** @type {number} */ rIn, /** @type {number} */ rOut, /** @type {number} */ y0, /** @type {number} */ y1, /** @type {number} */ b0, /** @type {number} */ b1, /** @type {THREE.Material} */ m) {
+	// in the shape's plane, angle t sits at bearing 90 − t once the shape is laid down (x east, −z north)
+	const t0 = ((90 - b1) * Math.PI) / 180, t1 = ((90 - b0) * Math.PI) / 180;
+	const s = new THREE.Shape();
+	s.absarc(0, 0, rOut, t0, t1, false);
+	s.absarc(0, 0, rIn, t1, t0, true);
+	const geo = new THREE.ExtrudeGeometry(s, { depth: Math.max(0.05, y1 - y0), bevelEnabled: false, curveSegments: 24 });
+	geo.rotateX(-Math.PI / 2);
+	const mesh = part(geo, m, 0, y0, 0);
+	return mesh;
+}
+
+/**
+ * A shell's panels drawn one by one: a mesh for each kind (hemp, glass, solar) and the struts along every panel edge.
+ * @param {{ p: number[], kind: 'hemp' | 'glass' | 'solar' }[]} panels
+ */
+function panelParts(panels) {
+	/** @type {Record<string, number[]>} */
+	const by = { hemp: [], glass: [], solar: [] };
+	/** @type {Set<string>} */
+	const seen = new Set();
+	/** @type {number[]} */
+	const lines = [];
+	for (const { p, kind } of panels) {
+		by[kind].push(...p);
+		for (let e = 0; e < 3; e++) {
+			const a = p.slice(e * 3, e * 3 + 3), b = p.slice(((e + 1) % 3) * 3, ((e + 1) % 3) * 3 + 3);
+			const ka = a.map((x) => Math.round(x * 100)).join(','), kb = b.map((x) => Math.round(x * 100)).join(',');
+			const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			lines.push(...a, ...b);
+		}
+	}
+	const mesh = (/** @type {number[]} */ pos) => {
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+		geo.computeVertexNormals();
+		return geo;
+	};
+	const strutGeo = new THREE.BufferGeometry();
+	strutGeo.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
+	return { hemp: mesh(by.hemp), glass: mesh(by.glass), solar: mesh(by.solar), struts: strutGeo };
+}
+/** each dome size's panels, built once @type {Map<number, ReturnType<typeof panelParts>>} */
+const domeParts = new Map();
+/** the meshes of a shell's panels and struts */
+function shellMeshes(/** @type {ReturnType<typeof panelParts>} */ pp) {
+	const glass = new THREE.Mesh(pp.glass, GLASS), solar = new THREE.Mesh(pp.solar, SOLAR), hemp = new THREE.Mesh(pp.hemp, HEMP);
+	glass.renderOrder = solar.renderOrder = 2;
+	hemp.castShadow = hemp.receiveShadow = true;
+	return [glass, solar, hemp, new THREE.LineSegments(pp.struts, STRUT)];
+}
+
+/** the parts of a building the overlays switch: its shell (glass, hemp, struts), its inside, its dimension lines */
+function siteGroups() {
+	return { root: new THREE.Group(), shell: new THREE.Group(), inside: new THREE.Group(), dims: new THREE.Group() };
+}
+
+/**
+ * A geodesic cap D across on its stone plinth, panel by panel: white hemp on its cold north side, glass and solar
+ * panels alternating everywhere else.
+ * @param {number} D
+ */
+function domeShell(D) {
+	const c = capOf(D);
+	const g = siteGroups();
+	g.root.add(g.shell, g.inside, g.dims);
+	const plinth = part(new THREE.CylinderGeometry(c.a + 0.5, c.a + 0.9, 1.2, 64, 1, true), mat(STONE), 0, 0.6, 0);
+	plinth.userData.part = 'plinth';
+	g.root.add(plinth);
+	let pp = domeParts.get(D);
+	if (!pp) domeParts.set(D, (pp = panelParts(geodesicOf(D).panels)));
+	g.shell.add(...shellMeshes(pp));
+	// the dimension lines: across the foot west to east, and up the middle to the crown
+	const dimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-c.a, 1.5, 0), new THREE.Vector3(c.a, 1.5, 0), new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, c.h, 0)]);
+	g.dims.add(new THREE.LineSegments(dimGeo, DIM));
+	// the hit volume for picking
+	const hit = new THREE.Mesh(new THREE.CylinderGeometry(c.a, c.a, c.h, 24), new THREE.MeshBasicMaterial({ visible: false }));
+	hit.position.y = c.h / 2;
+	g.root.add(hit);
+	return { ...g, hit, height: c.h, r: c.a };
+}
+
+/**
+ * The homes, the pond and the garden floor of a home dome: one straight block across the north, each storey as long as
+ * the shell lets it, with its glass front, a timber slab over it and small balconies on the south face; the roofs where
+ * the block narrows are gardens. North of the block, the pond.
+ */
+function homeInside(/** @type {any} */ K, /** @type {THREE.Group} */ inside) {
+	const c = capOf(K.D);
+	const b = K.block;
+	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, FLOOR_Y, 0, false));
+	// the pond: the floor's segment north of the block
+	const pondShape = new THREE.Shape();
+	const t0 = Math.acos(b.pondIn / b.pondOut);
+	pondShape.absarc(0, 0, b.pondOut, Math.PI / 2 - t0, Math.PI / 2 + t0, false);
+	pondShape.closePath();
+	inside.add(part(new THREE.ExtrudeGeometry(pondShape, { depth: 0.2, bevelEnabled: false, curveSegments: 24 }).rotateX(-Math.PI / 2), mat('#3f86a6', 0.2), 0, FLOOR_Y + 0.05, 0, false));
+	const levels = /** @type {{ k: number, y: number, h: number, half: number }[]} */ (K.levels);
+	const zMid = -(b.front + b.back) / 2;
+	for (const L of levels) {
+		const len = 2 * L.half, next = levels[L.k + 1];
+		inside.add(part(new THREE.BoxGeometry(len, L.h - 0.35, b.depth - 0.3), mat(L.k % 2 ? '#ece0c4' : '#f2e8d0'), 0, L.y + (L.h - 0.35) / 2, zMid - 0.15));
+		inside.add(part(new THREE.BoxGeometry(len - 0.6, L.h - 1.1, 0.3), mat('#6f8f9c', 0.25), 0, L.y + 0.45 + (L.h - 1.1) / 2, -b.front - 0.15));
+		inside.add(part(new THREE.BoxGeometry(len + 0.2, 0.35, b.depth + 0.2), mat('#9a7650'), 0, L.y + L.h - 0.175, zMid));
+		// where the storey above is shorter, its roof ends are gardens; the top roof is one
+		const roofLen = next ? (len - 2 * next.half) / 2 : len;
+		if (roofLen > 0.5)
+			for (const s of next ? [-1, 1] : [0]) inside.add(part(new THREE.BoxGeometry(roofLen, 0.4, b.depth), mat('#6aa048', 1), s * (L.half - roofLen / 2), L.y + L.h + 0.2, zMid));
+		// small balconies on the south face, a 4 m one for every 6 m of front, from the first floor up
+		if (L.k > 0)
+			for (let x = -L.half + 3; x <= L.half - 3; x += 6) {
+				inside.add(part(new THREE.BoxGeometry(4, 0.2, b.balcony), mat('#9a7650'), x, L.y + 0.1, -b.front + b.balcony / 2));
+				inside.add(part(new THREE.BoxGeometry(4, 1, 0.1), mat('#5f9a45', 1), x, L.y + 0.7, -b.front + b.balcony));
+			}
+	}
+}
+
+/** a box on the floor of a dome */
+const box = (/** @type {number} */ w, /** @type {number} */ h, /** @type {number} */ d, /** @type {string} */ color, /** @type {number} */ x, /** @type {number} */ z, rough = 0.8) => part(new THREE.BoxGeometry(w, h, d), mat(color, rough), x, h / 2, z);
+
+/**
+ * the utilities dome: pond, data center, batteries (and, in the first design package, the hydrogen), water works,
+ * workshops, the office crescent, stores
+ * @param {THREE.Group} outer
+ * @param {number} kwh the batteries it holds (./specs.js BATTERY_KWH)
+ */
+function utilInside(outer, kwh) {
+	const c120 = capOf(120);
+	outer.add(part(new THREE.CircleGeometry(c120.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#b9b3a8', 1), 0, FLOOR_Y, 0, false));
+	outer.add(part(new THREE.CircleGeometry(c120.a - 5, 72, Math.PI * 1.1, Math.PI * 0.8).rotateX(-Math.PI / 2), mat('#5e8a3e', 1), 0, FLOOR_Y + 0.12, 0, false));
+	outer.add(sector(c120.a - POND_IN - POND_BAND, c120.a - POND_IN, FLOOR_Y + 0.05, FLOOR_Y + 0.25, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
+	// the machines laid out for a dome 150 m across, set in at four fifths
+	const inside = new THREE.Group();
+	inside.scale.set(0.8, 1, 0.8);
+	outer.add(inside);
+	const c = capOf(150);
+	// the office crescent either side of the pond, two storeys
+	for (const s of [-1, 1]) inside.add(sector(c.a - 22, c.a - 8, 0, 7, s > 0 ? 36 : -72, s > 0 ? 72 : -36, mat('#e8dcc0')));
+	// the data center: a hall of racks, its dry coolers on the roof
+	inside.add(box(28, 7, 25, '#4b4f57', -22, -18, 0.5));
+	for (let k = 0; k < 4; k++) inside.add(box(5, 1.6, 4, '#9aa3ad', -32 + k * 7, -18, 0.4).translateY(7));
+	// batteries in 40 ft containers: three in the first package; from the second, one for every ~4 MWh of LFP cells
+	// (a 40 ft container holds ~3.7–5 MWh)
+	const containers = INSIDES ? Math.max(1, Math.round(kwh / 4000)) : 3;
+	for (let k = 0; k < containers; k++) inside.add(box(12.2, 2.6, 2.4, '#e9eef2', 8, -28 + k * 4.2, 0.5));
+	// hydrogen (first package only): the electrolyser and fuel cell house, and three tanks lying down
+	if (!INSIDES) {
+		inside.add(box(14, 5, 10, '#d9d9d2', 30, -20));
+		for (let k = 0; k < 3; k++) {
+			const tank = part(new THREE.CylinderGeometry(1.8, 1.8, 14, 16).rotateX(Math.PI / 2), mat('#f2f2ee', 0.4), 42 + k * 4.2, 1.9, -20);
+			inside.add(tank);
+		}
+	}
+	// the water works: the bioreactor's tanks and a planted wetland
+	inside.add(box(16, 4, 10, '#c9c2b2', -45, 8));
+	inside.add(part(new THREE.BoxGeometry(44, 0.3, 34), mat('#4f8f7a', 0.3), -38, FLOOR_Y + 0.2, 32, false));
+	// prototyping workshops: three timber sheds
+	for (let k = 0; k < 3; k++) inside.add(box(36, 8, 20, '#b98a5a', -6 + k * 0.1, 14 + k * 23 - 4, 0.9).translateX(20));
+	// stores and the parcel hub
+	inside.add(box(30, 7, 28, '#a8a196', 0, 52 - 10));
+}
+
+/** the colour of what each works makes @type {Record<string, string>} */
+const WORKS_COL = { timber: '#c8955a', hemp: '#b8b06a', bamboo: '#8fb05a', steel: '#6d7782', lime: '#e6e2d6', clay: '#c4734f', glass: '#9fd0dc', recycling: '#7e8f6a' };
+
+/** the machines of a factory dome, in the colours of what it makes */
+function factoryInside(/** @type {string} */ id, /** @type {THREE.Group} */ inside) {
+	const c = capOf(120);
+	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#a49d90', 1), 0, FLOOR_Y, 0, false));
+	const col = WORKS_COL[id] ?? '#999';
+	// the line down the middle: a long hall, two machines either side, a stack of what it made at the door
+	inside.add(box(60, 9, 18, '#d8d2c6', 0, -6));
+	for (const s of [-1, 1]) for (let k = 0; k < 2; k++) inside.add(box(10, 6 + k * 3, 10, col, -18 + k * 30, -6 + s * 18, 0.6));
+	if (id === 'lime' || id === 'clay' || id === 'steel' || id === 'glass') inside.add(part(new THREE.CylinderGeometry(3.5, 4, 22, 16), mat(col, 0.6), 22, 11, 14));
+	for (let k = 0; k < 6; k++) inside.add(box(4, 2 + (k % 3), 6, col, -12 + k * 5, 26));
+}
+
+/**
+ * What stands in each of the dome factory's lines, west to east (drawn only: ./specs.js DF_LINES has the machines and
+ * their prices): [kind, length along the line, height]. m a machine in the line's colour, b a light machine, s stacks of
+ * stock, r glass racks, a an autoclave lying on its side, c a robot welding cell, k the clean room.
+ * @type {Record<string, [string, number, number][]>}
+ */
+const DF_DRAW = {
+	glulam: [['s', 8, 2], ['m', 8, 2.4], ['b', 5, 2], ['m', 18, 2.6], ['s', 5, 1.6], ['b', 5, 2], ['m', 12, 3.2], ['m', 12, 3.2], ['b', 7, 5], ['s', 8, 2.2]],
+	hubs: [['s', 8, 1.2], ['m', 12, 1.4], ['c', 5, 3], ['c', 5, 3], ['c', 5, 3], ['c', 5, 3], ['c', 5, 3], ['c', 5, 3], ['b', 4, 2], ['b', 4, 2], ['m', 7, 3], ['b', 5, 2.5], ['s', 8, 1.5]],
+	glazing: [['r', 6, 3.4], ['m', 7, 1], ['b', 5, 2], ['k', 12, 4], ['a', 10, 3.2], ['a', 10, 3.2], ['m', 30, 3], ['r', 8, 3]],
+	solar: [['m', 6, 2], ['m', 6, 2], ['b', 10, 1], ['b', 10, 1], ['r', 5, 2.6]],
+	cassettes: [['b', 10, 1], ['b', 10, 1], ['s', 8, 2.5], ['s', 8, 2]],
+	small: [['b', 6, 1.5], ['b', 6, 1.5], ['m', 8, 3]]
+};
+
+/**
+ * The dome factory (./specs.js DF): its lines laid across the floor in bands from north to south, each band as deep as
+ * its share of the floor (DF_LINES' m²) and painted in the line's colour, its machines along it from west to east: the
+ * glulam line (lamellas, finger-jointing, the press, the beam joinery, coating), the hub shop under its hall crane (the
+ * plasma table, six robot cells, the welding bays), the glazing (racks of float, cutting, the clean room, two
+ * autoclaves, the insulating-glass line), the solar panes, the cassettes, the small parts and the test lab.
+ */
+function dfInside(/** @type {THREE.Group} */ inside) {
+	const c = capOf(120);
+	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 64).rotateX(-Math.PI / 2), mat('#a49d90', 1), 0, FLOOR_Y, 0, false));
+	const R = 56;
+	const lines = DF.lines.filter((l) => l.floor.length);
+	const weight = lines.map((l) => Math.max(600, l.floor.reduce((a, x) => a + x.m2, 0)));
+	const total = weight.reduce((a, b) => a + b, 0);
+	// the area of the floor's circle north of z (z grows to the south)
+	const seg = (/** @type {number} */ z) => {
+		const t = Math.max(-R, Math.min(R, z));
+		return t * Math.sqrt(R * R - t * t) + R * R * Math.asin(t / R) + (Math.PI * R * R) / 2;
+	};
+	let z0 = -R;
+	for (const [i, l] of lines.entries()) {
+		// the band's south edge: where the floor north of it holds this line's share
+		const want = seg(z0) + (Math.PI * R * R * weight[i]) / total;
+		let lo = z0, hi = R;
+		for (let k = 0; k < 40; k++) {
+			const mid = (lo + hi) / 2;
+			if (seg(mid) < want) lo = mid;
+			else hi = mid;
+		}
+		const z1 = i === lines.length - 1 ? R : lo;
+		const depth = z1 - z0;
+		// the band painted on the floor in the line's colour: the circle between its edges, a metre in from each
+		const a0 = z0 + 1, a1 = z1 - 1, Rin = R - 1;
+		const band = new THREE.Shape();
+		const N = 16;
+		for (let j = 0; j <= N; j++) {
+			const z = a0 + ((a1 - a0) * j) / N;
+			band[j ? 'lineTo' : 'moveTo'](-Math.sqrt(Math.max(0, Rin * Rin - z * z)), -z);
+		}
+		for (let j = N; j >= 0; j--) {
+			const z = a0 + ((a1 - a0) * j) / N;
+			band.lineTo(Math.sqrt(Math.max(0, Rin * Rin - z * z)), -z);
+		}
+		inside.add(part(new THREE.ShapeGeometry(band).rotateX(-Math.PI / 2), mat(l.color, 1), 0, FLOOR_Y + 0.03, 0, false));
+		// the machines in a row along the band's middle (in the widest part of the outermost bands), as long as the
+		// circle leaves room at the row's outer edge
+		const d = Math.max(2, Math.min(8, depth * 0.5));
+		const zm = z0 <= -R + 1e-6 ? Math.max(z0 + d / 2 + 1.5, z1 - d / 2 - 2) : z1 >= R - 1e-6 ? Math.min(z1 - d / 2 - 1.5, z0 + d / 2 + 2) : (z0 + z1) / 2;
+		const half = Math.sqrt(Math.max(0, Rin * Rin - (Math.abs(zm) + d / 2) ** 2));
+		const items = DF_DRAW[l.id] ?? [];
+		const need = items.reduce((a, [, w]) => a + w + 1.5, -1.5);
+		const k = Math.min(1, (2 * half - 6) / Math.max(1, need));
+		let x = -half + 3;
+		const y0 = FLOOR_Y;
+		for (const [kind, w0, h] of items) {
+			const w = w0 * k, mx = x + w / 2;
+			if (kind === 's') {
+				const n = Math.max(1, Math.floor(w / 2.2));
+				for (let j = 0; j < n; j++) inside.add(box(1.8, h * (0.6 + ((j * 7) % 5) * 0.1), d, j % 2 ? '#cfc6b4' : l.color, x + 1.1 + j * 2.2, zm, 0.9).translateY(y0));
+			} else if (kind === 'r') {
+				const n = Math.max(1, Math.floor(w / 1.4));
+				for (let j = 0; j < n; j++) inside.add(box(0.5, h, d, l.color, x + 0.7 + j * 1.4, zm, 0.4).translateY(y0));
+			} else if (kind === 'a') {
+				const tank = new THREE.CylinderGeometry(h / 2, h / 2, w, 20).rotateZ(Math.PI / 2);
+				inside.add(part(tank, mat('#b8bec4', 0.35), mx, y0 + h / 2 + 0.3, zm));
+			} else if (kind === 'c') {
+				// a robot cell: its fence and the robot in it
+				inside.add(box(w - 0.4, 2, d, '#e0b23a', mx, zm, 0.6).translateY(y0));
+				inside.add(box(0.8, h, 0.8, l.color, mx, zm, 0.5).translateY(y0));
+			} else if (kind === 'k') inside.add(box(w, h, d + 1, '#e6eef0', mx, zm, 0.5).translateY(y0));
+			else inside.add(box(w, h, d, kind === 'm' ? l.color : '#d8d2c6', mx, zm, 0.6).translateY(y0));
+			x += w + 1.5 * k;
+		}
+		// the hub shop's hall crane: a girder across its band, under the shell
+		if (l.id === 'hubs') inside.add(part(new THREE.BoxGeometry(0.8, 1, depth - 1), mat('#e0b23a', 0.5), -half * 0.4, y0 + 9, zm));
+		z0 = z1;
+	}
+}
+
+// ── the works halls (design packages 3–4) ──────────────────────────────────────────────────────────────────────
+
+/** the halls' sandwich panels (light grey walls, a darker roof), their solar panels and their glulam frames */
+const PANEL = new THREE.MeshStandardMaterial({ color: '#dfe1dd', roughness: 0.7, flatShading: true, side: THREE.DoubleSide });
+const HALL_PV = new THREE.MeshStandardMaterial({ color: '#22405f', roughness: 0.3, metalness: 0.35, flatShading: true });
+const HALL_ROOF = '#80858a';
+const GLULAM = '#c49a64';
+
+/**
+ * Boxes merged into one mesh of one material, each [w, h, d, x, y, z] and a tilt about the east–west axis (radians).
+ * @param {number[][]} list @param {THREE.Material} m
+ */
+function boxes(list, m) {
+	const geos = list.map(([w, h, d, x, y, z, rx = 0]) => {
+		const geo = new THREE.BoxGeometry(w, h, d);
+		if (rx) geo.rotateX(rx);
+		return geo.translate(x, y, z);
+	});
+	return part(mergeGeometries(geos) ?? new THREE.BufferGeometry(), m);
+}
+
+/**
+ * A works hall (./specs.js hallOf): its slab, its glulam portal frames every 6 m, sandwich-panel walls with a band in
+ * the colour of what the works makes, a 10° roof with its ridge east to west, and solar panels in rows on its south
+ * slope. Its shell's parts go walls, solar, roof, frames: the order the timeline reads a dome's glass, solar, hemp,
+ * struts in.
+ * @param {any} h the hall @param {string} id the works
+ */
+function hallModel(h, id) {
+	const g = siteGroups();
+	g.root.add(g.shell, g.inside, g.dims);
+	const L = h.length, W = h.span, e = h.eaves, top = h.ridge, rise = top - e;
+	const p = (h.pitch * Math.PI) / 180;
+	const slope = W / 2 / Math.cos(p);
+	// the slab on its gravel, its top half a metre over the land like a dome's floor
+	const slab = part(new THREE.BoxGeometry(L + 1, FLOOR_Y, W + 1), mat('#bab5ab', 0.95), 0, FLOOR_Y / 2, 0);
+	slab.userData.part = 'plinth';
+	g.root.add(slab);
+	// the walls: the long sides to the eaves, the gables to the ridge, a roller door in each gable, the band under the eaves
+	const walls = new THREE.Group();
+	const t = 0.15;
+	walls.add(boxes([[L, e, t, 0, e / 2, -W / 2], [L, e, t, 0, e / 2, W / 2]], PANEL));
+	const shape = new THREE.Shape([new THREE.Vector2(-W / 2, 0), new THREE.Vector2(W / 2, 0), new THREE.Vector2(W / 2, e), new THREE.Vector2(0, top), new THREE.Vector2(-W / 2, e)]);
+	for (const s of [-1, 1]) walls.add(part(new THREE.ShapeGeometry(shape).rotateY(Math.PI / 2), PANEL, (s * L) / 2, 0, 0));
+	walls.add(boxes([[t + 0.1, 5.5, 6, -L / 2, 2.75, 0], [t + 0.1, 5.5, 6, L / 2, 2.75, 0]], mat('#8d9297', 0.6)));
+	walls.add(boxes([[L + 0.1, 1.2, t + 0.1, 0, e - 0.9, -W / 2], [L + 0.1, 1.2, t + 0.1, 0, e - 0.9, W / 2]], mat(WORKS_COL[id] ?? '#999', 0.7)));
+	// the roof: two slopes of sandwich panels, a little over the walls
+	const roof = boxes([[L + 0.8, 0.25, slope + 0.4, 0, e + rise / 2 + 0.15, -W / 4, -p], [L + 0.8, 0.25, slope + 0.4, 0, e + rise / 2 + 0.15, W / 4, p]], mat(HALL_ROOF, 0.6));
+	// the solar panels: rows down the south slope, a block a bay, walkways between the rows and at the ridge and eaves
+	const rows = Math.max(1, Math.round(slope / 5));
+	const rowD = (slope - 0.8 - (rows - 1) * 0.5) / rows;
+	/** @type {number[][]} */
+	const pv = [];
+	for (let b = 0; b < h.bays; b++)
+		for (let k = 0; k < rows; k++) {
+			const u = 0.4 + k * (rowD + 0.5) + rowD / 2;
+			pv.push([5.8, 0.08, rowD, -L / 2 + 3 + b * 6, e + u * Math.sin(p) + 0.37, W / 2 - u * Math.cos(p), p]);
+		}
+	const solar = boxes(pv, HALL_PV);
+	// the portal frames: a glulam column each side and a beam up each slope, every 6 m
+	const d = W / 20;
+	/** @type {number[][]} */
+	const fr = [];
+	for (let f = 0; f <= h.bays; f++) {
+		const x = Math.max(-L / 2 + 0.3, Math.min(L / 2 - 0.3, -L / 2 + f * 6));
+		for (const s of [-1, 1]) {
+			fr.push([0.2, e, 0.6, x, e / 2, s * (W / 2 - 0.45)]);
+			fr.push([0.2, d, slope, x, e + rise / 2 - d / 2 - 0.05, (s * W) / 4, s * p]);
+		}
+	}
+	const frames = boxes(fr, mat(GLULAM, 0.8));
+	g.shell.add(walls, solar, roof, frames);
+	// the dimension lines: along the south wall, across the west gable, up the middle to the ridge
+	const v = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => new THREE.Vector3(x, y, z);
+	const dimGeo = new THREE.BufferGeometry().setFromPoints([v(-L / 2, 1.5, W / 2 + 1.5), v(L / 2, 1.5, W / 2 + 1.5), v(-L / 2 - 1.5, 1.5, -W / 2), v(-L / 2 - 1.5, 1.5, W / 2), v(0, 0, 0), v(0, top, 0)]);
+	g.dims.add(new THREE.LineSegments(dimGeo, DIM));
+	// the hit volume for picking
+	const hit = new THREE.Mesh(new THREE.BoxGeometry(L, top, W), new THREE.MeshBasicMaterial({ visible: false }));
+	hit.position.y = top / 2;
+	g.root.add(hit);
+	return { ...g, hit, height: top, r: Math.hypot(L, W) / 2 };
+}
+
+/**
+ * What stands in a works hall: its parts (./specs.js WORKS_FLOOR) one after another from west to east, each on its share
+ * of the floor, the machines in the colour of what the works makes and the stores as stacks; the lime kiln's shaft
+ * through the roof, the steel works' hall crane.
+ * @param {any} h the hall @param {string} id the works @param {THREE.Group} inside
+ */
+function hallInside(h, id, inside) {
+	const col = WORKS_COL[id] ?? '#999';
+	const L = h.length, W = h.span;
+	let x0 = -L / 2 + 1;
+	for (const [k, q] of h.parts.entries()) {
+		const len = ((L - 2) * q.m2) / h.need;
+		const mid = x0 + len / 2;
+		if (/store|stock|racks|bales|in racks/i.test(q.label)) {
+			// stacks along the north wall, an aisle to the south
+			const n = Math.max(1, Math.floor((len - 1) / 3.5));
+			for (let i = 0; i < n; i++) for (let j = 0; j < 2; j++) inside.add(box(3, 2 + ((i + j) % 3) * 0.8, 3, j ? '#cfc6b4' : col, x0 + 2 + i * 3.5, -W / 2 + 3 + j * 4, 0.9));
+		} else inside.add(box(Math.max(2, len - 2), 3 + (k % 3) * 1.5, W * 0.45, k % 2 ? '#d8d2c6' : col, mid, -W * 0.12, 0.6));
+		if (id === 'lime' && /kiln/i.test(q.label)) inside.add(part(new THREE.CylinderGeometry(2.2, 2.6, h.ridge + 6, 16), mat(col, 0.6), mid, (h.ridge + 6) / 2, -W * 0.12));
+		x0 += len;
+	}
+	// the steel works' hall crane: a girder across the span, under the eaves
+	if (id === 'steel') inside.add(part(new THREE.BoxGeometry(0.6, 0.9, W - 1.2), mat('#e0b23a', 0.5), -L / 2 + 8, h.eaves - 1.4, 0));
+}
+
+/** the tropical food domes' pond and floor */
+function foodInside(/** @type {THREE.Group} */ inside) {
+	const c = capOf(120);
+	inside.add(part(new THREE.CircleGeometry(c.a - 0.3, 72).rotateX(-Math.PI / 2), mat('#4a7a33', 1), 0, FLOOR_Y, 0, false));
+	inside.add(sector(c.a - POND_IN - POND_BAND, c.a - POND_IN, FLOOR_Y + 0.05, FLOOR_Y + 0.25, (-POND_HALF * 180) / Math.PI, (POND_HALF * 180) / Math.PI, mat('#3f86a6', 0.2)));
+	// packing, the cold store and the nursery, under the north shell west of the pond
+	inside.add(box(22, 6, 12, '#e8dcc0', -36, -32));
+}
+
+/**
+ * The tower: its diagrid of panels (white hemp to the north, glass and solar alternating), and inside it the factory floor, the garden
+ * deck on its roof, the core and the stack of floors coloured by use.
+ * @param {import('./specs.js').Tower} T
+ * @param {(x: number, y: number, z: number, kind: string, s?: number) => void} plant
+ */
+function towerModel(T, plant) {
+	const g = siteGroups();
+	g.root.add(g.shell, g.inside, g.dims);
+	const R = T.D / 2;
+	g.root.add(part(new THREE.CylinderGeometry(R + 0.6, R + 1.0, 1.4, 96, 1, true), mat(STONE), 0, 0.7, 0));
+	// panel by panel on the diagrid: white hemp on the cold north side up to about where the apartments start, glass
+	// and solar panels alternating everywhere else
+	g.shell.add(...shellMeshes(panelParts(towerGridOf(T).panels)));
+	// inside: the factory hall, the deck on its roof, the core, the floors
+	const levels = towerLevels(T);
+	const rim0 = towerRadius(T, 12) - FACADE;
+	g.inside.add(part(new THREE.CylinderGeometry(rim0, rim0, 12, 96), mat('#cfc6b4'), 0, 6, 0));
+	g.inside.add(part(new THREE.RingGeometry(T.stack, rim0, 96).rotateX(-Math.PI / 2), mat('#5fae4a', 1), 0, 12.4, 0, false));
+	// a football pitch (105 × 68 m) and an amphitheatre on the deck, south of the stack
+	const pitchZ = T.stack + 8 + 34;
+	if (pitchZ + 34 < rim0 - 4) {
+		g.inside.add(part(new THREE.PlaneGeometry(68, 105).rotateX(-Math.PI / 2).rotateY(Math.PI / 2), mat('#3f9a4a', 1), 0, 12.7, pitchZ, false));
+		const lines = new THREE.EdgesGeometry(new THREE.PlaneGeometry(64, 101).rotateX(-Math.PI / 2).rotateY(Math.PI / 2));
+		const l = new THREE.LineSegments(lines, new THREE.LineBasicMaterial({ color: '#ffffff' }));
+		l.position.set(0, 12.8, pitchZ);
+		g.inside.add(l);
+	}
+	for (let k = 0; k < 6; k++) {
+		const r0 = 14 + k * 3.2;
+		const step = sector(r0, r0 + 3.2, 12, 12.6 + k * 0.8, 210, 330, mat('#d9cdb4'));
+		step.position.set(-rim0 * 0.55, 0, -rim0 * 0.1);
+		g.inside.add(step);
+	}
+	// trees on the deck, round its edge and between the fields
+	const r = rng(T.D);
+	for (let k = 0; k < 900; k++) {
+		const a = r() * Math.PI * 2, rr = T.stack + 6 + r() * (rim0 - T.stack - 8);
+		const x = Math.sin(a) * rr, z = Math.cos(a) * rr;
+		if (Math.abs(x) < 40 && z > T.stack + 2 && z < pitchZ + 58) continue;
+		if (Math.hypot(x + rim0 * 0.55, z + rim0 * 0.1) < 36) continue;
+		plant(x, 12, z, r() < 0.5 ? 'palm' : 'broad', 0.6 + r() * 0.5);
+	}
+	const top = levels[levels.length - 1];
+	const coreTop = top.y + top.n * top.h;
+	g.inside.add(part(new THREE.CylinderGeometry(CORE_R, CORE_R, coreTop + 8, 24), mat('#ddd5c6'), 0, (coreTop + 8) / 2 - 8, 0));
+	for (const L of levels) {
+		if (L.id === 'base' || L.id === 'factory' || L.id === 'deck') continue;
+		const col = /** @type {Record<string, string>} */ (FLOOR_COLOURS)[L.use];
+		for (let k = 0; k < L.n; k++) {
+			const y = L.y + k * L.h;
+			const rr = Math.min(T.stack, Math.min(towerRadius(T, y), towerRadius(T, y + L.h)) - FACADE);
+			g.inside.add(part(new THREE.CylinderGeometry(rr, rr, 0.45, 40), mat(col, 0.7), 0, y + 0.22, 0));
+			// the storey's own glass, tinted by its use
+			const wall = new THREE.Mesh(new THREE.CylinderGeometry(rr - 0.4, rr - 0.4, L.h - 0.5, 40, 1, true), new THREE.MeshStandardMaterial({ color: col, transparent: true, opacity: 0.32, roughness: 0.3, depthWrite: false, side: THREE.DoubleSide }));
+			wall.position.y = y + 0.45 + (L.h - 0.5) / 2;
+			g.inside.add(wall);
+		}
+	}
+	const dimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-R, 1.5, 0), new THREE.Vector3(R, 1.5, 0), new THREE.Vector3(R + 12, 0, 0), new THREE.Vector3(R + 12, T.H, 0), new THREE.Vector3(0, T.H, 0), new THREE.Vector3(R + 12, T.H, 0)]);
+	g.dims.add(new THREE.LineSegments(dimGeo, DIM));
+	const hit = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.6, R, T.H, 24), new THREE.MeshBasicMaterial({ visible: false }));
+	hit.position.y = T.H / 2;
+	g.root.add(hit);
+	return { ...g, hit, height: T.H, r: R };
+}
+
+// ── what grows ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** the plant kinds: a crown, a trunk, their size in metres and colours */
+const PLANTS = {
+	broad: { crown: () => new THREE.IcosahedronGeometry(1, 0), trunk: true, h: 7, w: 2.8, colors: ['#4f8a3a', '#5e9a42', '#6aa048', '#7aa84e', '#8bb35a'] },
+	conifer: { crown: () => new THREE.ConeGeometry(1, 1, 7), trunk: true, h: 24, w: 3.4, colors: ['#2f5a33', '#355f38', '#3d6a3c'] },
+	palm: { crown: () => new THREE.IcosahedronGeometry(1, 0), trunk: true, h: 9, w: 3.6, colors: ['#3f8f3a', '#4b9a3c', '#2f7d36'] },
+	bamboo: { crown: () => new THREE.CylinderGeometry(0.55, 1, 1, 6), trunk: false, h: 10, w: 2.4, colors: ['#7fae4a', '#8fbb52', '#6f9f44'] },
+	shrub: { crown: () => new THREE.IcosahedronGeometry(1, 0), trunk: false, h: 1.6, w: 1.3, colors: ['#6aa048', '#86b05a', '#a8b85a', '#c56b4a', '#d9b24a'] },
+	hedge: { crown: () => new THREE.IcosahedronGeometry(1, 0), trunk: false, h: 3.5, w: 2.4, colors: ['#4f7f3a', '#5d8a40'] }
+};
+
+/**
+ * What each plant instance is, for the timeline: its tag ('' always there, 'site:<id>' under a dome's glass, 'forest',
+ * 'woods' or 'bamboo' planted land), its first matrices and where it stands; by its instanced mesh's geometry, which a
+ * hex's copies share
+ * @type {WeakMap<THREE.BufferGeometry, { tags: string[], base: Float32Array, at: Float32Array }>}
+ */
+const PLANT_META = new WeakMap();
+
+/** every plant of the world, as instanced meshes, one per kind */
+function createPlants() {
+	/** @type {Record<string, { x: number, y: number, z: number, s: number, tag: string }[]>} */
+	const list = Object.fromEntries(Object.keys(PLANTS).map((k) => [k, []]));
+	return {
+		add(/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z, /** @type {string} */ kind, s = 1, tag = '') {
+			list[kind].push({ x, y, z, s, tag });
+		},
+		build() {
+			const group = new THREE.Group();
+			const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+			const c = new THREE.Color();
+			const r = rng(7);
+			for (const [kind, items] of Object.entries(list)) {
+				if (!items.length) continue;
+				const P = /** @type {any} */ (PLANTS)[kind];
+				const crown = new THREE.InstancedMesh(P.crown(), new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }), items.length);
+				const trunk = P.trunk ? new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.18, 1, 5), mat('#6b4a30'), items.length) : null;
+				items.forEach((it, k) => {
+					const h = P.h * it.s * (0.8 + r() * 0.4), w = P.w * it.s * (0.8 + r() * 0.4);
+					q.setFromAxisAngle(v.set(0, 1, 0), r() * Math.PI * 2);
+					if (kind === 'conifer') {
+						m.compose(v.set(it.x, it.y + h * 0.62, it.z), q, sc.set(w, h * 0.8, w));
+					} else if (kind === 'palm') {
+						m.compose(v.set(it.x, it.y + h * 0.92, it.z), q, sc.set(w, w * 0.35, w));
+					} else if (kind === 'bamboo') {
+						m.compose(v.set(it.x, it.y + h / 2, it.z), q, sc.set(w, h, w));
+					} else {
+						const ch = P.trunk ? h * 0.42 : h / 2;
+						m.compose(v.set(it.x, it.y + (P.trunk ? h - ch : ch), it.z), q, sc.set(w, ch, w));
+					}
+					crown.setMatrixAt(k, m);
+					crown.setColorAt(k, c.set(P.colors[Math.floor(r() * P.colors.length)]));
+					if (trunk) {
+						const th = kind === 'palm' ? h * 0.9 : kind === 'conifer' ? h * 0.3 : h * 0.62;
+						m.compose(v.set(it.x, it.y + th / 2, it.z), q, sc.set(it.s * (kind === 'palm' ? 1.6 : 2.2), th, it.s * (kind === 'palm' ? 1.6 : 2.2)));
+						trunk.setMatrixAt(k, m);
+					}
+				});
+				const tags = items.map((it) => it.tag), at = new Float32Array(items.flatMap((it) => [it.x, it.y, it.z]));
+				PLANT_META.set(crown.geometry, { tags, base: new Float32Array(crown.instanceMatrix.array), at });
+				if (trunk) PLANT_META.set(trunk.geometry, { tags, base: new Float32Array(trunk.instanceMatrix.array), at });
+				crown.castShadow = true;
+				crown.receiveShadow = true;
+				group.add(crown);
+				if (trunk) {
+					trunk.castShadow = true;
+					group.add(trunk);
+				}
+			}
+			return group;
+		}
+	};
+}
+
+// ── the land ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** paint a hex's land onto a canvas: as it looks, or in the land-use map's colours @param {ReturnType<typeof landOf>} land */
+function paint(land, /** @type {boolean} */ asMap) {
+	const cv = document.createElement('canvas');
+	cv.width = land.nx;
+	cv.height = land.nz;
+	const ctx = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'));
+	const img = ctx.createImageData(land.nx, land.nz);
+	const cols = USE_IDS.map((u) => new THREE.Color(asMap ? USES[u].map : USES[u].ground));
+	const r = rng(3);
+	for (let j = 0; j < land.nz; j++)
+		for (let i = 0; i < land.nx; i++) {
+			const c = land.cells[j * land.nx + i];
+			const o = (j * land.nx + i) * 4;
+			if (c === 255) {
+				img.data[o + 3] = 0;
+				continue;
+			}
+			const col = cols[c];
+			let k = 1;
+			if (!asMap) {
+				const u = USE_IDS[c];
+				k = 0.94 + r() * 0.12;
+				// rows: hemp is sown in strips
+				if (u === 'hemp' && i % 3 === 0) k *= 0.86;
+				if (u === 'mine') k *= 0.8 + 0.2 * Math.abs(Math.sin(i * 0.35 + j * 0.2));
+			}
+			img.data[o] = Math.min(255, col.r * 255 * k);
+			img.data[o + 1] = Math.min(255, col.g * 255 * k);
+			img.data[o + 2] = Math.min(255, col.b * 255 * k);
+			img.data[o + 3] = 255;
+		}
+	ctx.putImageData(img, 0, 0);
+	const tex = new THREE.CanvasTexture(cv);
+	tex.colorSpace = THREE.SRGBColorSpace;
+	tex.magFilter = asMap ? THREE.NearestFilter : THREE.LinearFilter;
+	tex.anisotropy = 4;
+	return tex;
+}
+
+/** a hex of ground with the land painted on it @param {import('./layout.js').HexPlan} plan @param {ReturnType<typeof landOf>} land */
+function hexGround(plan, land) {
+	const cs = corners(plan.cx, plan.cz);
+	const W = land.nx * CELL, H = land.nz * CELL;
+	/** @type {number[]} */
+	const pos = [];
+	/** @type {number[]} */
+	const uv = [];
+	const at = (/** @type {number} */ x, /** @type {number} */ z) => {
+		pos.push(x, 0, z);
+		uv.push((x - land.x0) / W, 1 - (z - land.z0) / H);
+	};
+	for (let k = 0; k < 6; k++) {
+		at(plan.cx, plan.cz);
+		const [ax, az] = cs[(k + 1) % 6], [bx, bz] = cs[k];
+		at(ax, az);
+		at(bx, bz);
+	}
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+	geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+	geo.computeVertexNormals();
+	const natural = paint(land, false), map = paint(land, true);
+	const m = new THREE.MeshStandardMaterial({ map: natural, roughness: 1, transparent: true, alphaTest: 0.5 });
+	const mesh = new THREE.Mesh(geo, m);
+	mesh.position.y = 0.04;
+	mesh.receiveShadow = true;
+	return { mesh, natural, map };
+}
+
+/** the outline of a hex, a little over the ground */
+function outline(/** @type {number} */ cx, /** @type {number} */ cz, /** @type {string} */ color, opacity = 1) {
+	const pts = corners(cx, cz).map(([x, z]) => new THREE.Vector3(x, 0.6, z));
+	return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+}
+
+/** plants on a hex's land, by what it is used for @param {ReturnType<typeof landOf>} land @param {ReturnType<typeof createPlants>} plants @param {import('./layout.js').HexPlan} plan */
+function sow(land, plants, /** @type {number} */ seed, plan) {
+	const r = rng(seed);
+	/** @type {Record<string, [number, string, number][]>} spacing, kind, chance */
+	const SOW = { foodForest: [[8, 'broad', 0.75], [5, 'shrub', 0.3]], woodland: [[5.5, 'conifer', 0.95]], bamboo: [[4, 'bamboo', 0.9]], nature: [[14, 'broad', 0.35], [9, 'shrub', 0.2]], yard: [[30, 'broad', 0.3]], indoorFood: [[5, 'shrub', 0.7], [8, 'broad', 0.3], [9, 'palm', 0.3]] };
+	const id = Object.fromEntries(USE_IDS.map((u, k) => [k, u]));
+	const W = land.nx * CELL, H = land.nz * CELL;
+	// for the timeline: which dome a plant under the glass grows in, and what planting the outdoor ones wait for
+	const domes = plan.sites.filter((s) => s.kind !== 'tower' && !siteHall(s)).map((s) => ({ id: s.id, x: s.x, z: s.z, r: capOf(KINDS[s.kind].D).a }));
+	/** @type {Record<string, string>} */
+	const OUT = { foodForest: 'forest', woodland: 'woods', bamboo: 'bamboo' };
+	const tagOf = (/** @type {string} */ use, /** @type {number} */ x, /** @type {number} */ z) => {
+		if (use !== 'indoorFood') return OUT[use] ?? '';
+		const d = domes.find((q) => Math.hypot(x - q.x, z - q.z) < q.r);
+		return d ? `site:${d.id}` : '';
+	};
+	for (const [use, list] of Object.entries(SOW))
+		for (const [sp, kind, chance] of list) {
+			for (let z = land.z0; z < land.z0 + H; z += sp)
+				for (let x = land.x0; x < land.x0 + W; x += sp) {
+					const px = x + (r() - 0.5) * sp * 0.8, pz = z + (r() - 0.5) * sp * 0.8;
+					const i = Math.floor((px - land.x0) / CELL), j = Math.floor((pz - land.z0) / CELL);
+					if (i < 0 || j < 0 || i >= land.nx || j >= land.nz) continue;
+					const c = land.cells[j * land.nx + i];
+					if (c === 255 || id[c] !== use || r() > chance) continue;
+					// under the glass the plants stay small enough for the dome
+					const inside = use === 'indoorFood';
+					plants.add(px, 0, pz, kind, inside && kind === 'broad' ? 0.7 : 1, tagOf(use, px, pz));
+				}
+		}
+	// a hedge along the hex's edge
+	return r;
+}
+
+
+// ── the build-out: the camp, the cranes, the drill rig ──────────────────────────────────────────────────────────
+
+/** what a 20 ft container is, m: 6.06 long, 2.44 wide, 2.59 high */
+const BOX20 = { l: 6.06, w: 2.44, h: 2.59 };
+/** the containers' colours by what they hold */
+const CONTAINER = { live: '#ece6d6', sanitary: '#7fb0c8', kitchen: '#d98b4a', workshop: '#8a8f7a', office: '#c94f3d' };
+
+/**
+ * The camp: up to `max` containers in back-to-back rows twelve long round its middle (the living hex's green between
+ * the utilities dome and the homes), the solar containers' fold-out panels and the battery beside them.
+ */
+function campModel(max = 320) {
+	const group = new THREE.Group();
+	const boxes = new THREE.InstancedMesh(new THREE.BoxGeometry(BOX20.l, BOX20.h, BOX20.w), new THREE.MeshStandardMaterial({ roughness: 0.7 }), max);
+	boxes.castShadow = boxes.receiveShadow = true;
+	boxes.count = 0;
+	group.add(boxes);
+	// the slots, middle out: rows along x, pairs of rows back to back with a 4 m lane between pairs
+	/** @type {[number, number][]} */
+	const slots = [];
+	const perRow = 12, pitchX = BOX20.l + 1.2, pair = 2 * BOX20.w + 4.5;
+	for (let r = 0; slots.length < max; r++) {
+		const zr = (r >> 1) * pair + (r & 1 ? BOX20.w : 0);
+		for (let k = 0; k < perRow && slots.length < max; k++) slots.push([(k - (perRow - 1) / 2) * pitchX, zr]);
+	}
+	// the power: the solar containers with their panels folded out to the south, the battery container
+	const power = new THREE.Group();
+	for (let k = 0; k < 2; k++) {
+		power.add(part(new THREE.BoxGeometry(BOX20.l * 2, BOX20.h, BOX20.w), mat('#d9dcd6'), -14 + k * 28, BOX20.h / 2, 0));
+		const panels = part(new THREE.BoxGeometry(BOX20.l * 2 + 4, 0.15, 20), SOLAR, -14 + k * 28, 1.6, 12);
+		panels.rotation.x = 0.2;
+		power.add(panels);
+	}
+	power.add(part(new THREE.BoxGeometry(BOX20.l * 2, BOX20.h, BOX20.w), mat('#f2f2ee', 0.5), 0, BOX20.h / 2, -6));
+	group.add(power);
+	const m = new THREE.Matrix4(), c = new THREE.Color();
+	return {
+		group,
+		/** set the camp's containers: how many of each, by kind, in that order from the north row */
+		set(/** @type {Record<string, number>} */ n) {
+			const all = Math.min(max, Object.keys(CONTAINER).reduce((a, k) => a + (n[k] ?? 0), 0));
+			const z0 = -(Math.ceil(Math.ceil(all / perRow) / 2) * pair) / 2;
+			let i = 0;
+			for (const [kind, col] of Object.entries(CONTAINER))
+				for (let k = 0; k < (n[kind] ?? 0) && i < max; k++, i++) {
+					const [x, z] = slots[i];
+					boxes.setMatrixAt(i, m.makeTranslation(x, BOX20.h / 2, z0 + z));
+					boxes.setColorAt(i, c.set(col));
+				}
+			boxes.count = i;
+			boxes.instanceMatrix.needsUpdate = true;
+			if (boxes.instanceColor) boxes.instanceColor.needsUpdate = true;
+			boxes.computeBoundingSphere();
+			power.position.z = z0 - 30;
+		}
+	};
+}
+
+/** a tower crane: a lattice mast as a slim box, the jib and counter-jib, the counterweight, the cab; `h` its hook height, `L` its jib */
+function towerCrane() {
+	const g = new THREE.Group();
+	const yellow = mat('#e3b23c', 0.6);
+	const mast = part(new THREE.BoxGeometry(1.8, 1, 1.8), yellow);
+	const jib = part(new THREE.BoxGeometry(1, 1.4, 1.4), yellow);
+	const counter = part(new THREE.BoxGeometry(1, 1.2, 1.6), yellow);
+	const weight = part(new THREE.BoxGeometry(4, 3, 2.2), mat('#8d8a82'));
+	const cab = part(new THREE.BoxGeometry(2.6, 2.6, 2.6), mat('#f2f2ee', 0.5));
+	const line = part(new THREE.BoxGeometry(0.15, 1, 0.15), mat('#333333'));
+	g.add(mast, jib, counter, weight, cab, line);
+	return {
+		g,
+		set(/** @type {number} */ h, /** @type {number} */ L, /** @type {number} */ turn) {
+			mast.scale.y = h;
+			mast.position.y = h / 2;
+			jib.scale.x = L;
+			jib.position.set(L / 2, h + 0.7, 0);
+			counter.scale.x = L * 0.3;
+			counter.position.set(-L * 0.15, h + 0.6, 0);
+			weight.position.set(-L * 0.28, h - 0.5, 0);
+			cab.position.set(0, h + 2.6, 0);
+			// the hook hangs two thirds out, down to about the dome's crown
+			line.scale.y = h * 0.45;
+			line.position.set(L * 0.66, h - h * 0.225, 0);
+			g.rotation.y = turn;
+		}
+	};
+}
+
+/** the geothermal works: the drill pad and its rig while the wells are drilled, the ORC plant and the wellheads after */
+function geoModel() {
+	const g = new THREE.Group();
+	g.add(part(new THREE.BoxGeometry(46, 0.4, 34), mat('#a9a397', 1), 0, 0.2, 0, false));
+	const rig = new THREE.Group();
+	// a land rig for wells ~7 km deep: its mast ~45 m over a substructure, the pipe rack, the mud tanks
+	rig.add(part(new THREE.BoxGeometry(12, 8, 10), mat('#c9452e', 0.6), -8, 4, 0));
+	rig.add(part(new THREE.CylinderGeometry(1.2, 3.6, 46, 4), mat('#c9452e', 0.6), -8, 8 + 23, 0));
+	rig.add(part(new THREE.BoxGeometry(18, 2, 4), mat('#6d7782', 0.5), 10, 1, -10));
+	for (let k = 0; k < 3; k++) rig.add(part(new THREE.BoxGeometry(12, 3, 2.6), mat('#d8d2c6'), 10, 1.5, 4 + k * 3.4));
+	const plant = new THREE.Group();
+	// the ORC plant: its turbine hall and the air coolers' row of fans on legs
+	plant.add(part(new THREE.BoxGeometry(22, 9, 12), mat('#d9d9d2'), 8, 4.5, 6));
+	plant.add(part(new THREE.BoxGeometry(34, 2.5, 9), mat('#9aa3ad', 0.5), 4, 9, -9));
+	for (let k = 0; k < 4; k++) plant.add(part(new THREE.BoxGeometry(0.6, 8, 0.6), mat('#6d7782'), -12 + k * 10.6, 4, -9));
+	const heads = new THREE.Group();
+	for (let k = 0; k < 3; k++) heads.add(part(new THREE.CylinderGeometry(0.8, 1, 3, 10), mat('#5a7a8c', 0.4), -16 + k * 7, 1.9, -2));
+	g.add(rig, plant, heads);
+	return { g, rig, plant, heads };
+}
+
+/**
+ * @typedef {{ phase: string, f?: number }} SiteAt the phase a dome is in ('none', 'footing', 'frame', 'shell', 'inside',
+ *   'done') and how far through that phase (0..1)
+ * @typedef {{ sites: Record<string, Record<string, SiteAt>>, camp: { hex: string, n: Record<string, number> } | null,
+ *   grow: Record<string, Record<string, number>>, geothermal: string, cranes?: boolean, begun?: Record<string, boolean> }} Timeline
+ *   begun: whether a hex's settlement has started; before, its land is the valley's meadow
+ */
+
+// ── the world ───────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Bakes a building's inside into one mesh a material (the homes alone are dozens of parts a dome, and the village
+ * has ~100 domes): the same picture in a tenth of the draw calls.
+ */
+function bake(/** @type {THREE.Group} */ group) {
+	group.updateMatrixWorld(true);
+	const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+	/** @type {Map<THREE.Material, THREE.BufferGeometry[]>} */
+	const by = new Map();
+	/** @type {THREE.Object3D[]} */
+	const done = [];
+	group.traverse((o) => {
+		if (!(o instanceof THREE.Mesh) || o instanceof THREE.InstancedMesh || Array.isArray(o.material)) return;
+		const geo = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+		for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal') geo.deleteAttribute(k);
+		geo.clearGroups();
+		geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+		const list = by.get(o.material) ?? [];
+		list.push(geo);
+		by.set(o.material, list);
+		done.push(o);
+	});
+	for (const o of done) o.removeFromParent();
+	for (const [m, geos] of by) {
+		const merged = mergeGeometries(geos);
+		if (!merged) continue;
+		group.add(part(merged, m));
+	}
+}
+
+/**
+ * @typedef {{ id: string, plan: import('./layout.js').HexPlan, site: import('./layout.js').Site, x: number, z: number, height: number, r: number, hit: THREE.Object3D, small: boolean, hall?: any, only?: 'timeline' | 'finished' }} Built
+ *   only: the centre's Dome120 shows on the timeline only (the village without the tower), the tower on the finished village only
+ *   hall: a works hall's numbers (./specs.js hallOf), when the works stand in halls
+ */
+
+/**
+ * One hex: its ground, its buildings, its plants, laid out round its own middle.
+ * @param {import('./layout.js').HexPlan} plan
+ */
+function buildHex(plan, /** @type {number} */ seed) {
+	const group = new THREE.Group();
+	const land = landOf(plan);
+	const ground = hexGround(plan, land);
+	group.add(ground.mesh);
+	const line = outline(plan.cx, plan.cz, '#fff6d8', 0.9);
+	line.userData.layer = 'outline';
+	group.add(line);
+	const plants = createPlants();
+	/** @type {Built[]} */
+	const built = [];
+	for (const site of plan.sites) {
+		const K = KINDS[site.kind];
+		const hall = siteHall(site);
+		const b = site.kind === 'tower' && plan.tower ? towerModel(plan.tower, (x, y, z, kind, s) => plants.add(x + site.x, y, z + site.z, kind, s, `site:${site.id}`)) : hall ? hallModel(hall, site.factory ?? '') : domeShell(K.D);
+		b.root.position.set(site.x, 0, site.z);
+		b.root.userData.siteRoot = site.id;
+		if (site.kind === 'dome40' || site.kind === 'dome80') homeInside(K, b.inside);
+		else if (site.kind === 'util120') utilInside(b.inside, BATTERY_KWH.util);
+		else if (site.kind === 'food120') foodInside(b.inside);
+		else if (hall) hallInside(hall, site.factory ?? '', b.inside);
+		else if (site.kind === 'factory120' && FACTORIES.find((f) => f.id === site.factory)?.dome) dfInside(b.inside);
+		else if (site.kind === 'factory120') factoryInside(site.factory ?? '', b.inside);
+		if (site.kind !== 'tower') bake(b.inside);
+		group.add(b.root);
+		b.hit.userData.site = site.id;
+		b.shell.userData.layer = 'shell';
+		b.inside.userData.layer = 'inside';
+		b.dims.userData.layer = 'dims';
+		built.push({ id: site.id, plan, site, x: site.x, z: site.z, height: b.height, r: b.r, hit: b.hit, small: site.kind === 'dome40', ...(hall ? { hall } : {}) });
+	}
+	sow(land, plants, seed, plan);
+	const pg = plants.build();
+	pg.userData.layer = 'plants';
+	group.add(pg);
+	return { group, land, ground, built };
+}
+
+/**
+ * Builds the village into the scene: each plan once, the living hex then copied to its six places round the tower hex.
+ * @param {THREE.Scene} scene
+ * @param {typeof import('./layout.js').VILLAGE} village
+ * @param {(label: string) => void} [progress]
+ */
+export function buildWorld(scene, village, progress) {
+	/** @type {Record<string, THREE.Object3D[]>} */
+	const layers = { shell: [], inside: [], plants: [], outline: [], dims: [] };
+	/** @type {Record<string, { group: THREE.Group, land: ReturnType<typeof landOf>, ground: ReturnType<typeof hexGround>, plan: import('./layout.js').HexPlan, label: string, x: number, z: number, built: Built[] }>} */
+	const hexes = {};
+	// the valley round the village, and the hexes beyond it
+	const valley = new THREE.Mesh(new THREE.CircleGeometry(7000, 64).rotateX(-Math.PI / 2), mat('#83a05e', 1));
+	// well under the hexes' ground: two surfaces only centimetres apart flicker against each other from afar
+	valley.position.y = -1.5;
+	valley.receiveShadow = true;
+	scene.add(valley);
+	const around = new THREE.Group();
+	for (let q = -6; q <= 6; q++)
+		for (let rr = -6; rr <= 6; rr++) {
+			const cx = q * HEX_W + (Math.abs(rr) % 2 ? HEX_W / 2 : 0), cz = rr * HEX_S * 1.5;
+			if (Math.hypot(cx, cz) > 3400 || Math.hypot(cx, cz) < HEX_W * 1.2) continue;
+			around.add(outline(cx, cz, '#ffffff', 0.18));
+		}
+	scene.add(around);
+	layers.outline.push(around);
+
+	/** @type {Map<import('./layout.js').HexPlan, ReturnType<typeof buildHex>>} */
+	const once = new Map();
+	for (const h of village) {
+		let base = once.get(h.plan);
+		let group;
+		if (!base) {
+			progress?.(h.plan.tower ? `Raising ${h.plan.tower.label}` : 'Laying out the living hexes');
+			base = buildHex(h.plan, h.plan.tower ? 23 : 11);
+			once.set(h.plan, base);
+			group = base.group;
+		} else group = base.group.clone();
+		group.position.set(h.x, 0, h.z);
+		scene.add(group);
+		/** @type {Map<string, THREE.Object3D>} */
+		const hits = new Map();
+		group.traverse((o) => {
+			if (o.userData.layer) layers[o.userData.layer]?.push(o);
+			if (o.userData.site) hits.set(o.userData.site, o);
+		});
+		hexes[h.key] = { group, land: base.land, ground: base.ground, plan: h.plan, label: h.label, x: h.x, z: h.z, built: base.built.map((b) => ({ ...b, x: b.x + h.x, z: b.z + h.z, hit: hits.get(b.id) ?? b.hit })) };
+	}
+
+	// ── the timeline's parts, per hex: each site's root, shell and inside, the plants, and in the centre the Dome120
+	// that stands in the tower's place in the village without the tower (sandbox-9's village.js) ──
+	/** @type {Record<string, { sites: Map<string, { root: THREE.Object3D, shell: THREE.Object3D | undefined, inside: THREE.Object3D | undefined }>, plants: THREE.InstancedMesh[], sig: string, ground: THREE.Object3D | undefined }>} */
+	const parts = {};
+	for (const [key, h] of Object.entries(hexes)) {
+		/** @type {Map<string, { root: THREE.Object3D, shell: THREE.Object3D | undefined, inside: THREE.Object3D | undefined }>} */
+		const sites = new Map();
+		/** @type {THREE.InstancedMesh[]} */
+		const plants = [];
+		h.group.traverse((o) => {
+			if (o.userData.siteRoot) sites.set(o.userData.siteRoot, { root: o, shell: o.children.find((c) => c.userData.layer === 'shell'), inside: o.children.find((c) => c.userData.layer === 'inside') });
+			if (o instanceof THREE.InstancedMesh && PLANT_META.has(o.geometry)) plants.push(o);
+		});
+		// the hex's painted ground: the first thing buildHex adds, in a copy too
+		parts[key] = { sites, plants, sig: '', ground: h.group.children[0] };
+		const t = h.plan.sites.find((x) => x.kind === 'tower');
+		if (t && h.plan.tower) {
+			const c = domeShell(120);
+			utilInside(c.inside, BATTERY_KWH.centre);
+			bake(c.inside);
+			c.root.position.set(t.x, 0, t.z);
+			c.root.userData.siteRoot = 'centre';
+			c.shell.userData.layer = 'shell';
+			c.inside.userData.layer = 'inside';
+			c.dims.userData.layer = 'dims';
+			layers.shell.push(c.shell);
+			layers.inside.push(c.inside);
+			layers.dims.push(c.dims);
+			c.hit.userData.site = 'centre';
+			c.root.visible = false;
+			h.group.add(c.root);
+			sites.set('centre', { root: c.root, shell: c.shell, inside: c.inside });
+			h.built.push({ id: 'centre', plan: h.plan, site: /** @type {import('./layout.js').Site} */ ({ ...t, id: 'centre', kind: 'util120', name: 'Centre: utilities and community halls' }), x: t.x + h.x, z: t.z + h.z, height: c.height, r: c.r, hit: c.hit, small: false, only: 'timeline' });
+			const tb = h.built.find((b) => b.id === t.id);
+			if (tb) tb.only = 'finished';
+		}
+	}
+	// the camp, the cranes and the geothermal works, hidden until the timeline sets them
+	const camp = campModel();
+	camp.group.visible = false;
+	scene.add(camp.group);
+	/** @type {ReturnType<typeof towerCrane>[]} */
+	const cranes = [];
+	const geo = geoModel();
+	geo.g.visible = false;
+	const centreKey = Object.keys(hexes).find((k) => hexes[k].plan.tower) ?? 'tower';
+	if (hexes[centreKey]) {
+		// on the yard north of the works, between the steelworks and the timber works
+		geo.g.position.set(0, 0, -232);
+		hexes[centreKey].group.add(geo.g);
+	}
+	/** scale a plant's matrix by k about where it stands */
+	const scaleAt = (/** @type {Float32Array} */ base, /** @type {Float32Array} */ out, /** @type {number} */ i, /** @type {number} */ k, /** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => {
+		const o = i * 16;
+		for (let j = 0; j < 12; j++) if (j % 4 !== 3) out[o + j] = base[o + j] * k;
+		out[o + 3] = base[o + 3];
+		out[o + 7] = base[o + 7];
+		out[o + 11] = base[o + 11];
+		out[o + 12] = x + (base[o + 12] - x) * k;
+		out[o + 13] = y + (base[o + 13] - y) * k;
+		out[o + 14] = z + (base[o + 14] - z) * k;
+		out[o + 15] = 1;
+	};
+
+	/** @param {Timeline | null} T */
+	function timeline(T) {
+		for (const [key, h] of Object.entries(hexes)) {
+			const P = parts[key];
+			const at = T?.sites[key] ?? {};
+			if (P.ground) P.ground.visible = !T || T.begun?.[key] !== false;
+			for (const [id, s] of P.sites) {
+				// the finished village: every site but the centre's stand-in; the timeline: the tower gives way to it
+				const isTower = h.plan.tower && h.plan.sites.some((x) => x.id === id && x.kind === 'tower');
+				const st = !T ? (id === 'centre' ? 'none' : 'done') : isTower ? 'none' : (at[id]?.phase ?? 'done');
+				const f = at[id]?.f ?? 1;
+				s.root.visible = st !== 'none';
+				if (st === 'none') continue;
+				const shellKids = s.shell?.children ?? [];
+				// the shell's parts: glass, solar, hemp, struts (shellMeshes' order); a tower's the same; a works hall's
+				// walls, solar, roof, frames (hallModel)
+				const [glass, solar, hemp, struts] = shellKids;
+				const up = st === 'inside' || st === 'done';
+				if (struts) struts.visible = st !== 'footing';
+				if (hemp) hemp.visible = up || (st === 'shell' && f > 0.15);
+				if (glass) glass.visible = up || (st === 'shell' && f > 0.55);
+				if (solar) solar.visible = up || (st === 'shell' && f > 0.55);
+				for (const c of s.inside?.children ?? []) c.visible = st === 'done' || (st === 'inside' && f > 0.35);
+			}
+			// the plants: under a dome's glass once its garden is in, outdoors as the planted land grows
+			const grow = T?.grow[key] ?? {};
+			/** @type {Record<string, number>} */
+			const k = {};
+			const factor = (/** @type {string} */ tag) => {
+				if (k[tag] !== undefined) return k[tag];
+				let v = 1;
+				if (T && tag.startsWith('site:')) {
+					const id = tag.slice(5);
+					const isTower = h.plan.sites.some((x) => x.id === id && x.kind === 'tower');
+					const st = at[id];
+					v = isTower ? 0 : !st || st.phase === 'done' ? 1 : st.phase === 'inside' ? Math.max(0, ((st.f ?? 0) - 0.5) * 2) : 0;
+				} else if (T && tag) v = grow[tag] ?? 1;
+				return (k[tag] = Math.round(v * 20) / 20);
+			};
+			const tags = ['forest', 'woods', 'bamboo', ...[...P.sites.keys()].map((id) => `site:${id}`)];
+			const sig = T ? tags.map(factor).join(',') : 'all';
+			if (sig === P.sig) continue;
+			P.sig = sig;
+			for (const im of P.plants) {
+				const meta = PLANT_META.get(im.geometry);
+				if (!meta) continue;
+				const out = /** @type {Float32Array} */ (im.instanceMatrix.array);
+				if (!T) out.set(meta.base);
+				else for (let i = 0; i < meta.tags.length; i++) scaleAt(meta.base, out, i, factor(meta.tags[i]), meta.at[i * 3], meta.at[i * 3 + 1], meta.at[i * 3 + 2]);
+				im.instanceMatrix.needsUpdate = true;
+			}
+		}
+		// the camp
+		const c = T?.camp;
+		camp.group.visible = !!c && !!hexes[c.hex];
+		if (c && hexes[c.hex]) {
+			const h = hexes[c.hex];
+			camp.group.position.set(h.x, 0, h.z - 120);
+			camp.set(c.n);
+		}
+		// a tower crane in each big dome being framed or glazed (mobile cranes put up the works halls)
+		let n = 0;
+		if (T && T.cranes !== false)
+			for (const [key, h] of Object.entries(hexes))
+				for (const b of h.built) {
+					const st = T.sites[key]?.[b.id];
+					if (!st || (st.phase !== 'frame' && st.phase !== 'shell') || b.small || b.hall) continue;
+					if (!cranes[n]) {
+						cranes[n] = towerCrane();
+						scene.add(cranes[n].g);
+					}
+					const cr = cranes[n++];
+					cr.g.visible = true;
+					// to one side of the middle, its jib over the dome and beyond its rim
+					cr.g.position.set(b.x + 4, 0, b.z + 4);
+					cr.set(b.height + 14, b.r + 12, ((b.x * 7 + b.z * 13) % 360) * (Math.PI / 180));
+				}
+		for (let i = n; i < cranes.length; i++) cranes[i].g.visible = false;
+		// the geothermal works
+		const g = T?.geothermal ?? 'none';
+		geo.g.visible = !!T && g !== 'none';
+		geo.rig.visible = g === 'drill';
+		geo.plant.visible = g === 'plant' || g === 'done';
+		geo.heads.visible = g === 'plant' || g === 'done';
+	}
+
+	return {
+		hexes,
+		/** show the village at a moment of its build-out, or (null) finished */
+		timeline,
+		/** switch an overlay */
+		set(/** @type {string} */ name, /** @type {boolean} */ on) {
+			if (name === 'landuse')
+				for (const h of Object.values(hexes)) {
+					const m = /** @type {THREE.MeshStandardMaterial} */ (h.ground.mesh.material);
+					m.map = on ? h.ground.map : h.ground.natural;
+					m.needsUpdate = true;
+				}
+			const list = layers[name];
+			if (list) for (const o of list) o.visible = on;
+		}
+	};
+}

@@ -1,0 +1,39 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 855b2a8..3165356 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -172,8 +172,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Emscripten")
+ 
+   # From https://emscripten.org/docs/compiling/WebAssembly.html#backends:
+   # > The simple and safe thing is to pass all -s flags at both compile and link time.
+-  set(EMSCRIPTEN_SETTINGS "-s ALLOW_MEMORY_GROWTH=1 -fwasm-exceptions -pthread -flto")
+-  string(APPEND LEANC_EXTRA_CC_FLAGS " -pthread")
++  set(EMSCRIPTEN_SETTINGS "-s ALLOW_MEMORY_GROWTH=1 -fwasm-exceptions")
+   string(APPEND LEAN_EXTRA_CXX_FLAGS " -D LEAN_EMSCRIPTEN ${EMSCRIPTEN_SETTINGS}")
+   string(APPEND LEAN_EXTRA_LINKER_FLAGS " ${EMSCRIPTEN_SETTINGS}")
+ endif()
+@@ -910,7 +909,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Emscripten")
+   # in this file.
+   string(
+     APPEND LEAN_EXE_LINKER_FLAGS
+-    " ${LIB}/temp/libleanshell.a ${TOOLCHAIN_STATIC_LINKER_FLAGS} ${EMSCRIPTEN_SETTINGS} -lnodefs.js -s EXIT_RUNTIME=1 -s MAIN_MODULE=1 -s LINKABLE=1 -s EXPORT_ALL=1 -s ERROR_ON_UNDEFINED_SYMBOLS=0"
++    " ${LIB}/temp/libleanshell.a ${TOOLCHAIN_STATIC_LINKER_FLAGS} ${EMSCRIPTEN_SETTINGS} -lnodefs.js -s EXIT_RUNTIME=1 -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s MODULARIZE=1 -s EXPORT_NAME=createLean -s INVOKE_RUN=0 -s ENVIRONMENT=web,worker,node -s MAXIMUM_MEMORY=4GB -s STACK_SIZE=16MB -s EXPORTED_RUNTIME_METHODS=FS,callMain,ENV,HEAP8"
+   )
+ endif()
+ 
+diff --git a/src/util/shell.cpp b/src/util/shell.cpp
+index 29b8598..c341bb0 100644
+--- a/src/util/shell.cpp
++++ b/src/util/shell.cpp
+@@ -287,8 +287,9 @@ extern "C" LEAN_EXPORT int lean_main(int argc, char ** argv) {
+     // When running in command-line mode under Node.js, we make system directories available in the virtual filesystem.
+     // This mode is used to compile 32-bit oleans.
+     EM_ASM(
+-        if ((typeof process === "undefined") || (process.release.name !== "node")) {
+-            throw new Error("The Lean command-line driver can only run under Node.js. For the embeddable WASM library, see lean_wasm.cpp.");
++        // in a browser the page fills the virtual filesystem (MEMFS) and ENV itself
++        if ((typeof process === "undefined") || !process.release || (process.release.name !== "node")) {
++            return;
+         }
+ 
+         var lean_path = process.env["LEAN_PATH"];

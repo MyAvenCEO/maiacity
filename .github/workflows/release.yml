@@ -1,0 +1,749 @@
+name: Release
+
+# Every push to main ships what it changed (stage 7 of the CI refactor), checked once and built once:
+#
+#   base     what changed since the last commit this workflow released (release-base.mjs, impact.mjs), and whether the
+#            merged pull request's CI run passed on byte for byte main's files (reuse.mjs): then that run is the check,
+#            and what it built is what ships
+#   ci       otherwise ci.yml on main's commit itself
+#   device   the page's avenDB device that run built or fetched, put on the release avendb-page-device by its key, where
+#            the site's build, the Mac's watcher and every thread fetch it (B1)
+#   images   the peer's and the API's images that run pushed, promoted by digest to this commit's tag (B2); built here
+#            only when no such run pushed one
+#   site     maia.city: built from this commit, put beside the last build, switched to
+#   api      the API at api.maia.city, over SSH, with its database backed up first
+#   peer     avenDB's always-on peer at avendb.maia.city, through its close gate
+#   health   the site names this commit, the API and the peer answer; a red site goes back to the build before
+#   ops      the runs of ops.yml this commit calls for: the cloud agent, the dev cache, the backups' recovery test
+#
+# Infrastructure (Pulumi, DNS) is no part of a release: it changes by hand, with ops.yml's infra task. The deploys read
+# the server's address and its volume from the Pulumi state (the pulumi-state branch).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  APP_DIR: /opt/maia-city
+  SITE: maia.city
+  API_HOST: api.maia.city
+  AVENDB_HOST: avendb.maia.city
+  # Hetzner Object Storage: BACKUPS/ the database dumps; LIBRARY/ the retired media vault's files (#1112)
+  S3_BUCKET: maiacity
+  S3_ENDPOINT: https://hel1.your-objectstorage.com
+  S3_REGION: hel1
+  # the peer's own bucket, and its bucket of snapshots (ops.yml's buckets task makes both)
+  AVENDB_BUCKET: maiacity-avendb
+  SNAPSHOTS: maiacity-avendb-snapshots
+
+jobs:
+  base:
+    name: What changed, and the run that checked it
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      base: ${{ steps.base.outputs.base }}
+      site: ${{ steps.base.outputs.site }}
+      api: ${{ steps.base.outputs.api }}
+      server: ${{ steps.base.outputs.server }}
+      agent: ${{ steps.base.outputs.agent }}
+      images: ${{ steps.base.outputs.images }}
+      run_images: ${{ steps.base.outputs.run_images }}
+      dev_cache: ${{ steps.base.outputs.dev_cache }}
+      backups: ${{ steps.base.outputs.backups }}
+      reuse_ci: ${{ steps.base.outputs.reuse_ci }}
+      # the run whose artifacts ship: the merged pull request's, or this one's
+      run: ${{ steps.base.outputs.reuse_ci == 'true' && steps.base.outputs.reuse_run || github.run_id }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_BASE: ${{ github.event.before }}
+          CI_HEAD: ${{ github.sha }}
+        run: |
+          CI_BASE=$(bun aven/ops/ci/release-base.mjs)
+          export CI_BASE
+          echo "base=$CI_BASE" >> "$GITHUB_OUTPUT"
+          bun aven/ops/ci/impact.mjs > "$RUNNER_TEMP/impact.json"
+          bun aven/ops/ci/reuse.mjs
+          files=$(jq -r '.files // empty | .[]' "$RUNNER_TEMP/impact.json")
+          all=$(jq -r '.full_validation' "$RUNNER_TEMP/impact.json")
+          changed() { [ "$all" = true ] || grep -qE "$1" <<< "$files"; }
+          images=$(jq -c '[if .server then "avendb" else empty end, if .api then "api" else empty end]' "$RUNNER_TEMP/impact.json")
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "run_images=$([ "$images" != '[]' ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          # what the cloud sessions' dev cache is built from (ops.yml's avendb-dev-cache task)
+          changed '^(Cargo\.(toml|lock)|aven/db/crates/[^/]+/Cargo\.toml|aven/db/\.cargo/)' && echo "dev_cache=true" >> "$GITHUB_OUTPUT" || true
+          # what the backups' recovery test runs on (ops.yml's backups task)
+          changed '^aven/db/crates/(avendb/src/backup\.rs|avendb-net/src/backup\.rs|avendb-server/)' && echo "backups=true" >> "$GITHUB_OUTPUT" || true
+
+  ci:
+    needs: base
+    if: needs.base.outputs.reuse_ci != 'true'
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      base: ${{ needs.base.outputs.base }}
+
+  device:
+    needs: [base, ci]
+    if: ${{ !cancelled() && (needs.ci.result == 'success' || (needs.ci.result == 'skipped' && needs.base.outputs.reuse_ci == 'true')) }}
+    name: The page's avenDB device, on its release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # the run's build, taken only when it is this tree's (its stamp names the key of main's sources); an expired
+      # artifact falls back to the release, and else to a build here
+      - uses: actions/download-artifact@v8.0.2
+        continue-on-error: true
+        with:
+          name: page-device
+          path: ${{ runner.temp }}/page-device
+          run-id: ${{ needs.base.outputs.run }}
+          github-token: ${{ github.token }}
+      - id: device
+        run: |
+          if [ -f "$RUNNER_TEMP/page-device/page-device.tgz" ]; then
+            mkdir -p aven/db/page/device && tar -xzf "$RUNNER_TEMP/page-device/page-device.tgz" -C aven/db/page/device
+          fi
+          key=$(bun aven/ops/devx/wasm.mjs key)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          if bun aven/ops/devx/wasm.mjs ensure --fetch; then echo "build=false" >> "$GITHUB_OUTPUT"; else echo "build=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.device.outputs.build == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - if: steps.device.outputs.build == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - if: steps.device.outputs.build == 'true'
+        run: bun aven/ops/devx/wasm.mjs build
+      - name: On the release avendb-page-device
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEY: ${{ steps.device.outputs.key }}
+        run: |
+          asset="page-device-$KEY.tgz"
+          if ! gh release view avendb-page-device > /dev/null 2>&1; then
+            gh release create avendb-page-device --title "avenDB page device" --prerelease --latest=false \
+              --notes "The page's avenDB device (aven/db/page/device), one asset per key of the sources it is built from: bun aven/ops/devx/wasm.mjs ensure fetches it."
+          fi
+          if gh release view avendb-page-device --json assets --jq '.assets[].name' | grep -qx "$asset"; then
+            echo "$asset is there already"; exit 0
+          fi
+          bun aven/ops/devx/wasm.mjs pack "$RUNNER_TEMP/$asset"
+          gh release upload avendb-page-device "$RUNNER_TEMP/$asset"
+
+  images:
+    needs: [base, ci, device]
+    if: ${{ !cancelled() && needs.base.outputs.run_images == 'true' && (needs.ci.result == 'success' || (needs.ci.result == 'skipped' && needs.base.outputs.reuse_ci == 'true')) && needs.device.result == 'success' }}
+    name: Image (${{ matrix.component }}), this commit's
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        component: ${{ fromJSON(needs.base.outputs.images) }}
+    env:
+      COMPONENT: ${{ matrix.component }}
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        continue-on-error: true
+        with:
+          name: image-${{ matrix.component }}
+          path: ${{ runner.temp }}/image
+          run-id: ${{ needs.base.outputs.run }}
+          github-token: ${{ github.token }}
+      - id: meta
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-$COMPONENT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          said="$RUNNER_TEMP/image/image-$COMPONENT.json"
+          if [ -f "$said" ] && [ "$(jq -r .image "$said")" = "$image" ] && [[ "$(jq -r .digest "$said")" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "digest=$(jq -r .digest "$said")" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::no image of $COMPONENT from the checked run: building it here"
+          fi
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Promote the checked run's image by its digest
+        if: steps.meta.outputs.digest
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          DIGEST: ${{ steps.meta.outputs.digest }}
+        run: |
+          docker buildx imagetools create --tag "$IMAGE:$GITHUB_SHA" "$IMAGE@$DIGEST"
+          echo "::notice::$IMAGE:${GITHUB_SHA::7} is $DIGEST, built and checked in run ${{ needs.base.outputs.run }}"
+      - if: ${{ !steps.meta.outputs.digest }}
+        uses: actions/checkout@v7.0.1
+      # the API's image carries the page's device (aven/api/Dockerfile): the device job put this tree's on its release
+      - if: ${{ !steps.meta.outputs.digest && matrix.component == 'api' }}
+        uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - if: ${{ !steps.meta.outputs.digest && matrix.component == 'api' }}
+        run: bun aven/ops/devx/wasm.mjs ensure --fetch
+      - if: ${{ !steps.meta.outputs.digest }}
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: ${{ matrix.component == 'api' && 'aven/api/Dockerfile' || 'aven/db/Dockerfile.server' }}
+          push: true
+          tags: ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,scope=${{ matrix.component }},mode=max
+
+  # maia.city is served by our own server: its Caddy serves the built site from /opt/maia-city/site (and the API, and
+  # the site's media from avenDB's feed). Each build goes up beside the last and a link switches to it, so a page never
+  # points at missing chunks: their immutable assets are published at shared URLs before the switch. Five builds stay
+  # for a quick way back; their chunks stay at least 30 days for open pages.
+  site:
+    needs: [base, ci, device]
+    if: ${{ !cancelled() && needs.base.outputs.site == 'true' && needs.device.result == 'success' }}
+    name: The site
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: site
+      cancel-in-progress: false
+    outputs:
+      previous: ${{ steps.switch.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun aven/ops/devx/wasm.mjs ensure --fetch
+      # stops if a published post names a file the site's media list does not hold
+      - run: bun maia/site/scripts/media-manifest.mjs
+      # Vite on Bun, as a Mac of Maia City builds it to witness this release (aven/ops/release.mjs)
+      - run: bun --bun run build
+      # the release list: the commit and the hash of every file built, up as /release.json for the Mac's witness
+      - run: bun aven/ops/release.mjs list build
+      - run: tar -C build -czf "$RUNNER_TEMP/site.tgz" .
+      # the server's own action: its host keys pinned, never taken on trust
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Validate and activate the immutable asset route
+        run: |
+          # Fail before changing routing if the publisher's standard-library runtime is absent.
+          ssh prod "python3 --version && mkdir -p '$APP_DIR/site/releases'"
+          # The candidate is outside every public file root. Validate with the running
+          # container's actual modules and environment before updating its bound file.
+          scp aven/ops/deploy/Caddyfile "prod:$APP_DIR/site/.Caddyfile-$GITHUB_SHA"
+          ssh prod "bash -s -- '$APP_DIR' '$GITHUB_SHA'" <<'SH'
+          set -euo pipefail
+          site_root="$1/site"
+          config="$1/deploy/Caddyfile"
+          candidate="$site_root/.Caddyfile-$2"
+          digest=$(sha256sum "$candidate" | cut -d ' ' -f 1)
+          applied="$site_root/.caddy-applied"
+          # Reusing unchanged routes avoids reconnecting relay WebSockets on every site deploy.
+          # Record only a successful reload: an interrupted/failed attempt is retried next time.
+          if cmp -s "$candidate" "$config" && [ "$(cat "$applied" 2>/dev/null || true)" = "$digest" ]; then
+            rm "$candidate"
+            exit 0
+          fi
+          docker exec maia-city-caddy caddy validate --config "/srv/site/.Caddyfile-$2" --adapter caddyfile
+          # Preserve the inode mounted into the running container.
+          cat "$candidate" > "$config"
+          docker exec maia-city-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          printf '%s\n' "$digest" > "$applied.next"
+          mv -f "$applied.next" "$applied"
+          rm "$candidate"
+          SH
+      - name: Put the build on the server and switch to it
+        id: switch
+        run: |
+          previous=$(ssh prod "readlink $APP_DIR/site/current 2>/dev/null || true" | grep -oE '[0-9a-f]{40}' || true)
+          echo "previous=$previous" >> "$GITHUB_OUTPUT"
+          ssh prod "mkdir -p $APP_DIR/site/releases/$GITHUB_SHA"
+          ssh prod "tar -xzf - -C $APP_DIR/site/releases/$GITHUB_SHA" < "$RUNNER_TEMP/site.tgz"
+          # Python's standard library publishes complete immutable assets, then switches the
+          # relative current symlink atomically and applies the five-release cleanup window.
+          ssh prod "python3 - '$APP_DIR/site' '$GITHUB_SHA'" < aven/ops/deploy/publish-site.py
+
+  # The signup service at api.maia.city: the API's image, its compose files and .env, then pull and up. The peer gets its
+  # settings, its Caddy site and its firewall port from here, and its image from `peer`, which restarts it alone.
+  api:
+    needs: [base, ci, images]
+    if: ${{ !cancelled() && needs.base.outputs.api == 'true' && needs.images.result == 'success' }}
+    name: The API
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: maia-production-containers
+      cancel-in-progress: false
+    outputs:
+      previous: ${{ steps.env.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # the server's address and volume as the Pulumi state holds them (plain values, not secrets): a release changes
+      # no infrastructure (ops.yml's infra task does)
+      - name: The server, from the Pulumi state
+        id: infra
+        run: |
+          git fetch --depth=1 origin pulumi-state
+          out=$(git show FETCH_HEAD:.pulumi/stacks/maiacity/prod.json | jq -c '.checkpoint.latest.resources[] | select(.type == "pulumi:pulumi:Stack") | .outputs')
+          ipv4=$(jq -r '.ipv4 | strings' <<< "$out")
+          mount=$(jq -r '.dataMount | strings' <<< "$out")
+          [[ "$ipv4" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ && -n "$mount" ]] || { echo "::error::no ipv4/dataMount in the Pulumi state"; exit 1; }
+          echo "ipv4=$ipv4" >> "$GITHUB_OUTPUT"
+          echo "data_mount=$mount" >> "$GITHUB_OUTPUT"
+      # its host keys pinned (.github/actions/prod-ssh), never taken on trust
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ steps.infra.outputs.ipv4 }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          wait: 'true'
+      - name: Wait for cloud-init (is Docker there yet?)
+        run: ssh prod 'sudo cloud-init status --wait >/dev/null || true; docker --version'
+      - name: Mount the Hetzner volume (fstab by stable device id; automount is not reliable)
+        env:
+          DATA_MOUNT: ${{ steps.infra.outputs.data_mount }}
+        run: |
+          ssh prod "bash -s" <<EOS
+          set -e
+          M="$DATA_MOUNT"; DEV="/dev/disk/by-id/scsi-0HC_Volume_\${M##*_}"
+          if ! mountpoint -q "\$M"; then
+            sudo mkdir -p "\$M"
+            grep -q "\$DEV" /etc/fstab || echo "\$DEV \$M ext4 discard,nofail,defaults 0 0" | sudo tee -a /etc/fstab >/dev/null
+            sudo systemctl daemon-reload
+            sudo mount "\$M"
+          fi
+          mountpoint "\$M" && df -h "\$M" | tail -1
+          EOS
+      - name: Copy the compose files
+        run: |
+          # site/ before compose mounts it (Docker would make it root's); the site job fills it
+          ssh prod "mkdir -p $APP_DIR/deploy $APP_DIR/site/releases"
+          # Staging does not alter active configuration while a detached avenDB
+          # close still owns the host lock after its CI observer has disappeared.
+          for FILE in docker-compose.yml docker-compose.prod.yml; do
+            scp "$FILE" "prod:$APP_DIR/deploy/$FILE-$GITHUB_SHA"
+          done
+          for FILE in Caddyfile backup.sh; do
+            scp "aven/ops/deploy/$FILE" "prod:$APP_DIR/deploy/$FILE-$GITHUB_SHA"
+          done
+          ssh prod "cd $APP_DIR && bash -s" <<EOS
+          set -e
+          exec 9>.env.lock; flock -w 300 9
+          mv "deploy/docker-compose.yml-$GITHUB_SHA" docker-compose.yml
+          mv "deploy/docker-compose.prod.yml-$GITHUB_SHA" docker-compose.prod.yml
+          # Keep Caddy's bind-mounted inode; only its contents are replaced.
+          cat "deploy/Caddyfile-$GITHUB_SHA" > deploy/Caddyfile
+          rm "deploy/Caddyfile-$GITHUB_SHA"
+          mv "deploy/backup.sh-$GITHUB_SHA" deploy/backup.sh
+          EOS
+      - name: Write .env (the database password is generated once and stays on the server)
+        id: env
+        env:
+          DATA_MOUNT: ${{ steps.infra.outputs.data_mount }}
+          HOST: ${{ steps.infra.outputs.ipv4 }}
+          # speech to text (Prem, Deepgram Nova 3): only the API container gets it — never a Mac
+          PREMAI_API_KEY: ${{ secrets.PREMAI_API_KEY }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}-api:$GITHUB_SHA"
+          [ -n "$PREMAI_API_KEY" ] || echo "::notice::No PREMAI_API_KEY — recordings get no transcripts until it is set."
+          echo "previous=$(ssh prod "grep '^API_IMAGE=' $APP_DIR/.env 2>/dev/null | cut -d= -f2-" || true)" >> "$GITHUB_OUTPUT"
+          ssh prod "cd $APP_DIR && bash -s" <<EOS
+          set -e
+          # the peer's job writes AVENDB_IMAGE here too: one writer at a time
+          exec 9>.env.lock; flock -w 300 9
+          # Postgres keeps this password inside its own data directory, so it is
+          # created once next to that data and never rotated automatically.
+          PWFILE="$DATA_MOUNT/.postgres_password"
+          if [ ! -f "\$PWFILE" ]; then
+            if [ -f .env ] && grep -q '^POSTGRES_PASSWORD=' .env; then
+              grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2- | sudo tee "\$PWFILE" >/dev/null
+            else
+              openssl rand -hex 24 | sudo tee "\$PWFILE" >/dev/null
+            fi
+            sudo chown deploy "\$PWFILE"; sudo chmod 600 "\$PWFILE"
+          fi
+          PW=\$(cat "\$PWFILE")
+          # avenDB's peer takes no setup code any more: the first human vault founded through it claims it
+          sudo rm -f "$DATA_MOUNT/.avendb_setup_code"
+          # avenDB's image is the peer job's to set: kept as it is, and its peer runs once there is one
+          AVI=\$(grep '^AVENDB_IMAGE=' .env 2>/dev/null | cut -d= -f2- || true)
+          # and so are its bucket and its bucket of snapshots: without these lines its peer starts on its volume, a
+          # shelf and a device nobody knows, and backs nothing up
+          AVB=\$(grep -E '^AVENDB_(BUCKET|SNAPSHOTS)' .env 2>/dev/null || true)
+          PROFILES=""
+          if [ -n "\$AVI" ]; then PROFILES=avendb; fi
+          cat > .env <<EOF2
+          POSTGRES_DB=maiacity
+          POSTGRES_USER=maiacity
+          POSTGRES_PASSWORD=\$PW
+          PGDATA_PATH=$DATA_MOUNT/postgres
+          API_IMAGE=$IMAGE
+          API_ADDRESS=$API_HOST
+          RP_ID=maia.city
+          RP_NAME=maiaCITY
+          SITE_ORIGIN=https://maia.city,https://www.maia.city
+          COOKIE_DOMAIN=.maia.city
+          PREMAI_API_KEY=$PREMAI_API_KEY
+          AVENDB_IMAGE=\$AVI
+          AVENDB_ADDRESS=$AVENDB_HOST
+          AVENDB_RELAY_URL=https://$AVENDB_HOST
+          AVENDB_PUBLIC_ADDR=$HOST:7401
+          AVENDB_WT_BIND=0.0.0.0:7402
+          AVENDB_WT_URL=https://$AVENDB_HOST:7402/wt
+          AVENDB_WT_ORIGINS=["https://maia.city","https://www.maia.city"]
+          AVENDB_DATA_PATH=$DATA_MOUNT/avendb
+          COMPOSE_PROFILES=\$PROFILES
+          EOF2
+          [ -z "\$AVB" ] || printf '%s\n' "\$AVB" >> .env
+          chmod 600 .env
+          sudo mkdir -p "$DATA_MOUNT/postgres" "$DATA_MOUNT/avendb"
+          EOS
+      - name: Rotate SSH keys (if set, exactly this list is authorised)
+        env:
+          AUTHORIZED_KEYS: ${{ secrets.DEPLOY_SSH_AUTHORIZED_KEYS }}
+        run: |
+          if [ -n "$AUTHORIZED_KEYS" ]; then
+            printf '%s\n' "$AUTHORIZED_KEYS" | ssh prod 'umask 077; cat > ~/.ssh/authorized_keys.new && mv ~/.ssh/authorized_keys.new ~/.ssh/authorized_keys'
+          fi
+      # Before anything changes: the database goes to the bucket (BACKUPS/pg/). The same script runs daily at
+      # 03:15 UTC from cron; dumps expire after 30 days. Skipped, with a notice, while the S3 secrets are missing.
+      - name: Back up the database
+        env:
+          S3_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          S3_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+        run: |
+          if [ -z "$S3_ACCESS_KEY" ] || [ -z "$S3_SECRET_KEY" ]; then
+            echo "::notice::No database backup: set HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY."; exit 0
+          fi
+          # the keys travel over stdin into a file only deploy can read — never as arguments
+          printf 'BACKUP_BUCKET=%s\nBACKUP_ENDPOINT=%s\nBACKUP_REGION=%s\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' \
+            "$S3_BUCKET" "$S3_ENDPOINT" "$S3_REGION" "$S3_ACCESS_KEY" "$S3_SECRET_KEY" \
+            | ssh prod "umask 077; cat > $APP_DIR/backup.env"
+          ssh prod "bash -s" <<EOS
+          set -e
+          chmod +x $APP_DIR/deploy/backup.sh
+          # daily, 03:15 UTC
+          echo '15 3 * * * deploy bash $APP_DIR/deploy/backup.sh daily --no-media >> /var/log/maia-city-backup.log 2>&1' \
+            | sudo tee /etc/cron.d/maia-city-backup >/dev/null
+          sudo touch /var/log/maia-city-backup.log && sudo chown deploy /var/log/maia-city-backup.log
+          # keep 30 days of dumps; nothing outside BACKUPS/pg/ ever expires (LIBRARY/ and ARCHIVE/ are the old vault's)
+          set -a; . $APP_DIR/backup.env; set +a
+          timeout 120 docker run --rm -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION="\$BACKUP_REGION" \
+            -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
+            amazon/aws-cli --endpoint-url "\$BACKUP_ENDPOINT" --cli-connect-timeout 20 s3api put-bucket-lifecycle-configuration --bucket "\$BACKUP_BUCKET" \
+            --lifecycle-configuration '{"Rules":[{"ID":"pg-dumps-30-days","Status":"Enabled","Filter":{"Prefix":"BACKUPS/pg/"},"Expiration":{"Days":30}}]}' \
+            </dev/null && echo "backup: 30-day rule on BACKUPS/pg/ is set" \
+            || echo "::warning::The 30-day rule for BACKUPS/pg/ could not be set; dumps are kept until it is."
+          EOS
+          # its own SSH call with no input: nothing in the backup can wait for the rest of a script on stdin.
+          # A failed backup is a warning, not a stopped release — the next deploy and the daily run try again.
+          ssh prod "timeout 900 bash $APP_DIR/deploy/backup.sh before-deploy-${GITHUB_SHA::7} --no-media </dev/null" \
+            || echo "::warning::The database backup before this deploy failed — see the step's log."
+      # avenDB's peer alone owns its image changes and close gate (the peer job). Do not
+      # recreate it or remove it as an orphan during an unrelated API release.
+      - name: Update the containers
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # The token goes to the server over stdin, never as a process argument.
+          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null"
+          ssh prod "cd $APP_DIR
+            set -e
+            exec 9>.env.lock; flock -w 300 9
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q db api caddy
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps db api caddy
+            # a running Caddy keeps its old routes until told: read the Caddyfile again
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+            docker logout ghcr.io >/dev/null
+            docker image prune -f >/dev/null"
+      # avenDB's peer comes up with its first image from the peer job; from then on every deploy here keeps it running
+      - name: avenDB's peer (when it runs)
+        env:
+          HOST: ${{ steps.infra.outputs.ipv4 }}
+        run: |
+          if ! ssh prod "docker ps -q --filter name=^maia-city-avendb$ --filter status=running" | grep -q .; then
+            echo "::notice::avenDB's peer is not running yet: the release's peer job starts it."; exit 0
+          fi
+          # its device, endpoint, whether a vault has claimed it, and its offer, all public
+          SAID=$(ssh prod "docker logs maia-city-avendb 2>&1" | grep 'avenDB server:' | tail -4 || true)
+          printf '%s\n' "$SAID"
+          # on its volume, not its bucket, it is another device with another offer than the one the apps link through
+          if printf '%s\n' "$SAID" | grep -q 'avenDB server: no bucket'; then
+            echo "::error::avenDB's peer started without its bucket: run ops.yml's peer task to give it back"
+            BUCKETLESS=1
+          fi
+          bash aven/ops/deploy/check-avendb.sh
+          exit "${BUCKETLESS:-0}"
+      # Health is judged on the server, not through DNS: a missing A record must not make a good deploy look broken.
+      - name: Health check (on the server)
+        run: |
+          for i in $(seq 1 30); do
+            if ssh prod "cd $APP_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api \
+                 bun -e \"fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"" 2>/dev/null; then
+              echo "api is healthy on the server"; exit 0
+            fi
+            sleep 5
+          done
+          ssh prod "cd $APP_DIR && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail 50 api"
+          exit 1
+
+  # avenDB's always-on peer at avendb.maia.city: the new image, its bucket's settings into the server's .env, then this
+  # one container restarted through its close gate (aven/ops/deploy/stop-avendb.py), so a change to avenDB never
+  # restarts the API. The bucket's settings, every secret set, or no deploy at all: a peer started without its bucket
+  # would be a new, empty device on its volume, every app cut off from Maia City (Samuel 2026-10-19: "so no accidental
+  # resets can happen anymore").
+  # after the API's job when both ship (the API writes the .env the peer's settings go into), whatever its result:
+  # a failed API deploy never holds up the peer's
+  peer:
+    needs: [base, ci, images, api]
+    if: ${{ !cancelled() && needs.base.outputs.server == 'true' && needs.images.result == 'success' }}
+    name: avenDB's peer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: maia-production-containers
+      cancel-in-progress: false
+    outputs:
+      previous: ${{ steps.roll.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: |
+            .github/actions
+            aven/ops/deploy
+      # the server's own action: its host keys pinned, never taken on trust
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Prepare the close gate
+        run: |
+          ssh prod "python3 --version && mkdir -p '$APP_DIR/deploy'"
+          scp aven/ops/deploy/stop-avendb.py "prod:$APP_DIR/deploy/stop-avendb-$GITHUB_SHA.py"
+      - name: The image, and the one it replaces
+        id: roll
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-avendb:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "previous=$(ssh prod "grep '^AVENDB_IMAGE=' $APP_DIR/.env 2>/dev/null | cut -d= -f2-" || true)" >> "$GITHUB_OUTPUT"
+      - name: Roll out the new image
+        env:
+          IMAGE: ${{ steps.roll.outputs.image }}
+          GHCR_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          # the peer's bucket (blobs B3a): its store lives there, every object sealed under AVENDB_BUCKET_SEAL
+          BUCKET_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          BUCKET_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+          BUCKET_SEAL: ${{ secrets.AVENDB_BUCKET_SEAL }}
+        run: |
+          # The token goes to the server over stdin, never as a process argument.
+          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null"
+          if [ -z "$BUCKET_ACCESS_KEY" ] || [ -z "$BUCKET_SECRET_KEY" ] || [ -z "$BUCKET_SEAL" ]; then
+            echo "::error::No bucket for avenDB's peer: set HETZNER_S3_ACCESS_KEY, HETZNER_S3_SECRET_KEY and AVENDB_BUCKET_SEAL. Nothing was deployed."
+            exit 1
+          fi
+          # and its bucket of snapshots, at the same endpoint with the same key and seal: every vault backed up into it
+          # each day at 03:00 UTC, then checked. They go to the server over stdin too, and never into the log.
+          BUCKET_ENV=$(printf 'AVENDB_BUCKET=%s\nAVENDB_BUCKET_ENDPOINT=%s\nAVENDB_BUCKET_REGION=%s\nAVENDB_BUCKET_ACCESS_KEY=%s\nAVENDB_BUCKET_SECRET_KEY=%s\nAVENDB_BUCKET_SEAL=%s\nAVENDB_SNAPSHOTS=%s' \
+            "$AVENDB_BUCKET" "$S3_ENDPOINT" "$S3_REGION" "$BUCKET_ACCESS_KEY" "$BUCKET_SECRET_KEY" "$BUCKET_SEAL" "$SNAPSHOTS")
+          ssh prod "cd $APP_DIR && bash -s" <<EOS
+          set -e
+          # the API job rewrites this .env too: one writer at a time
+          exec 9>.env.lock; flock -w 300 9
+          # Pull first; a registry failure must not stop the running device.
+          docker pull --quiet "$IMAGE"
+          # The child owns close independently of this SSH/CI observer and retains fd 9.
+          # A failed/expired monitor exits before changing config or starting a writer.
+          python3 "deploy/stop-avendb-$GITHUB_SHA.py" "$APP_DIR" --lock-fd 9 --wait 300
+          grep -q '^AVENDB_DATA_PATH=' .env 2>/dev/null \
+            || { echo "::error::$APP_DIR/.env has no avenDB settings yet: the API job writes them first."; exit 1; }
+          sed -i '/^AVENDB_IMAGE=/d' .env && echo "AVENDB_IMAGE=$IMAGE" >> .env
+          sed -i '/^AVENDB_BUCKET/d; /^AVENDB_SNAPSHOTS=/d' .env
+          cat >> .env <<'BUCKET'
+          $BUCKET_ENV
+          BUCKET
+          P=\$(grep '^COMPOSE_PROFILES=' .env | cut -d= -f2- || true)
+          case ",\$P," in
+            *,avendb,*) ;;
+            *) sed -i '/^COMPOSE_PROFILES=/d' .env && echo "COMPOSE_PROFILES=\${P:+\$P,}avendb" >> .env ;;
+          esac
+          # Recheck the proposed settings too: a changed mount/bucket/seal cannot
+          # activate a different device even after the old one closed cleanly.
+          python3 "deploy/stop-avendb-$GITHUB_SHA.py" "$APP_DIR" --lock-fd 9 --verify-only
+          # this one container: the API and Caddy stay as they are
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps avendb
+          docker logout ghcr.io >/dev/null
+          docker image prune -f >/dev/null
+          EOS
+      - name: What the peer says
+        env:
+          HAS_BUCKET: ${{ secrets.HETZNER_S3_ACCESS_KEY != '' && secrets.HETZNER_S3_SECRET_KEY != '' && secrets.AVENDB_BUCKET_SEAL != '' }}
+        run: |
+          # its device, its endpoint, whether a vault has claimed it, and its offer, all public (what the apps link through).
+          # Replaying an existing cold store can take minutes: 120 polls of 5 s before failing; the ready offer is required.
+          for i in $(seq 1 120); do
+            SAID=$(ssh prod "docker logs maia-city-avendb 2>&1" | grep 'avenDB server:' || true)
+            if printf '%s\n' "$SAID" | grep -q 'avenDB server: offer '; then printf '%s\n' "$SAID" | tail -4; break; fi
+            if [ "$i" = 120 ]; then
+              echo "::error::avenDB's peer has not said its offer:"
+              ssh prod "docker ps -a --filter name=^maia-city-avendb$; docker logs --tail 50 maia-city-avendb 2>&1"
+              exit 1
+            fi
+            sleep 5
+          done
+          # where its store lives (blobs B3a), and whether its bucket takes what it puts there
+          sleep 10
+          SAID=$(ssh prod "docker logs maia-city-avendb 2>&1" | grep -E 'avenDB server: (its store|no bucket)|bucket' || true)
+          printf '%s\n' "$SAID" | tail -6
+          if printf '%s\n' "$SAID" | grep -q "the bucket can't be written"; then
+            echo "::warning::avenDB's peer can't write its bucket: it announces nothing new until it can"
+          fi
+          # on its volume it is another device, with another offer than the one the apps link through
+          if [ "$HAS_BUCKET" = true ] && printf '%s\n' "$SAID" | grep -q 'avenDB server: no bucket'; then
+            echo "::error::avenDB's peer started without its bucket, though its settings are set: is AVENDB_BUCKET in its .env?"
+            exit 1
+          fi
+          bash aven/ops/deploy/check-avendb.sh
+
+  # From outside, as everyone reaches them: the site names this commit, the API and the peer answer. A red site goes
+  # back to the build before (its release dir is kept; aven/ops/release.mjs's witness on the Mac then says an older
+  # release is served). The API and the peer are not rolled back by themselves: the API migrates its database as it
+  # starts and the peer writes its store, and an older build reading what a newer one wrote is no safe default. Their
+  # previous image is named here, and ops.yml's rollback task puts it back by hand.
+  health:
+    needs: [base, site, api, peer]
+    if: ${{ !cancelled() && (needs.site.result != 'skipped' || needs.api.result != 'skipped' || needs.peer.result != 'skipped') }}
+    name: Live, or back
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          sparse-checkout: |
+            .github/actions
+            aven/ops
+            .bun-version
+      - id: health
+        env:
+          SITE_RESULT: ${{ needs.site.result }}
+          API_RESULT: ${{ needs.api.result }}
+          PEER_RESULT: ${{ needs.peer.result }}
+        run: |
+          docker pull -q curlimages/curl:8.16.0 >/dev/null
+          site_ok=true; red=0
+          if [ "$SITE_RESULT" != skipped ]; then
+            commit=""
+            for i in $(seq 1 24); do
+              commit=$(curl -fsS --max-time 10 "https://$SITE/release.json" | jq -r .commit 2>/dev/null || true)
+              [ "$commit" = "$GITHUB_SHA" ] && break
+              sleep 5
+            done
+            if [ "$SITE_RESULT" = success ] && [ "$commit" = "$GITHUB_SHA" ]; then echo "https://$SITE/ names ${GITHUB_SHA::7}"
+            else echo "::error::the site job $SITE_RESULT; https://$SITE/release.json names ${commit:-nothing}, not ${GITHUB_SHA::7}"; site_ok=false; red=1; fi
+          fi
+          if [ "$API_RESULT" != skipped ]; then
+            if [ "$API_RESULT" = success ] && curl -fsS --max-time 20 "https://$API_HOST/api/health" | jq -e '.ok == true' >/dev/null; then echo "https://$API_HOST/api/health says ok"
+            else echo "::error::the API job $API_RESULT, or https://$API_HOST/api/health does not say ok"; red=1; fi
+          fi
+          if [ "$PEER_RESULT" != skipped ]; then
+            # the peer agrees TLS keys by X25519MLKEM768 alone: a curl on OpenSSL 3.5 asks it
+            if [ "$PEER_RESULT" = success ] && docker run --rm curlimages/curl:8.16.0 -fsS --curves X25519MLKEM768 --max-time 20 "https://$AVENDB_HOST/feed/health" | jq -e '.panic == null' >/dev/null; then echo "https://$AVENDB_HOST/feed/health answers, no panic"
+            else echo "::error::the peer job $PEER_RESULT, or https://$AVENDB_HOST/feed/health says a panic or nothing"; red=1; fi
+          fi
+          echo "site_ok=$site_ok" >> "$GITHUB_OUTPUT"
+          echo "red=$red" >> "$GITHUB_OUTPUT"
+      - if: steps.health.outputs.site_ok == 'false' && needs.site.outputs.previous != ''
+        uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: The site, back to the build before
+        if: steps.health.outputs.site_ok == 'false' && needs.site.outputs.previous != ''
+        env:
+          PREVIOUS: ${{ needs.site.outputs.previous }}
+        run: |
+          ssh prod "python3 - '$APP_DIR/site' '$PREVIOUS'" < aven/ops/deploy/publish-site.py
+          echo "::error::maia.city is back on ${PREVIOUS::7}"
+      - name: What goes back by hand
+        if: steps.health.outputs.red == '1'
+        env:
+          API_PREVIOUS: ${{ needs.api.outputs.previous }}
+          PEER_PREVIOUS: ${{ needs.peer.outputs.previous }}
+        run: |
+          [ -z "$API_PREVIOUS" ] || echo "::error::the API before this release: $API_PREVIOUS (ops.yml, task rollback, component api, image that)"
+          [ -z "$PEER_PREVIOUS" ] || echo "::error::the peer before this release: $PEER_PREVIOUS (ops.yml, task rollback, component avendb, image that)"
+          exit 1
+      - uses: oven-sh/setup-bun@v2.2.0
+        if: always()
+        with:
+          bun-version-file: .bun-version
+      - name: Time against budget
+        if: always()
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: bun aven/ops/ci/budget.mjs
+
+  # the runs of ops.yml this commit calls for, each of this very commit, outside the release's lock
+  ops:
+    needs: [base, ci]
+    if: ${{ !cancelled() && (needs.ci.result == 'success' || (needs.ci.result == 'skipped' && needs.base.outputs.reuse_ci == 'true')) && (needs.base.outputs.agent == 'true' || needs.base.outputs.dev_cache == 'true' || needs.base.outputs.backups == 'true') }}
+    name: Ops this commit calls for
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          AGENT: ${{ needs.base.outputs.agent }}
+          DEV_CACHE: ${{ needs.base.outputs.dev_cache }}
+          BACKUPS: ${{ needs.base.outputs.backups }}
+        run: |
+          [ "$AGENT" != true ] || gh workflow run ops.yml --repo "$GITHUB_REPOSITORY" --ref main -f task=avendb-agent -f sha="$GITHUB_SHA"
+          [ "$DEV_CACHE" != true ] || gh workflow run ops.yml --repo "$GITHUB_REPOSITORY" --ref main -f task=avendb-dev-cache
+          [ "$BACKUPS" != true ] || gh workflow run ops.yml --repo "$GITHUB_REPOSITORY" --ref main -f task=backups

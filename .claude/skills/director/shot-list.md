@@ -1,8 +1,8 @@
 # The shot list: a film as data
 
-A world film is written as a shot list (`scripts/film/<film>.mjs`) before anything is rendered; Studio 2 then holds each shot as a `shot` entry in avenDB (every version an entry of its own, `src/lib/studio/avenshots.js`) that a cut plays live.
+A world film is written as a shot list (`maia/content/scripts/film/<film>.mjs`) before anything is rendered; Studio 2 then holds each shot as a `shot` entry in avenDB (every version an entry of its own, `maia/content/studio/avenshots.js`) that a cut plays live.
 
-## Shot list anatomy (`day-19-d.mjs`, `shoot.mjs`)
+## Shot list anatomy (`maia/content/scripts/film/worlds/day-19-d.json`, `shoot.mjs`)
 
 | Field | Meaning |
 |---|---|
@@ -23,8 +23,8 @@ start to the next shot's start; the last to `total` = the last line's end + `TAI
 
 ## The shot list in avenDB: a story's Movie tab
 
-Before a shoot, a story's planned shots live in its script (`src/lib/studio/scripts.js`, the Movie tab in
-`src/lib/avendb/StoryMovie.svelte`; the storyteller skill names the record). Each scene's `shots` are rows, in order:
+Before a shoot, a story's planned shots live in its script (`maia/content/studio/scripts.js`, the Movie tab in
+`aven/db/page/StoryMovie.svelte`; the storyteller skill names the record). Each scene's `shots` are rows, in order:
 `{ id, size, angle, move, shows, line, take, shot }`. `size` is one of `ews`, `ws`, `ms`, `mcu`, `cu`, `ecu`, `insert`;
 `angle` one of `eye`, `high`, `low`, `overhead`, `dutch`; `move` one of `static`, `pan`, `tilt`, `push`, `pull`,
 `track`, `handheld`, `orbit`. `shows` is what the frame holds, in a sentence; `line` is the id of the scene's line it

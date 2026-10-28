@@ -20,7 +20,7 @@ The angle of view is α = 2·atan(d / 2f). On full frame a 16:9 image is 36 × 2
 | 135 | 8.6° | 15.2° |
 
 **Our world camera:** a shot's `lens.fov` is the short side's angle of the shape it is composed for (wider shapes keep
-the height, taller shapes keep the width; check `game/film/shot.js`). So the default **fov 45 ≈ 24 mm** — the iPhone's
+the height, taller shapes keep the width; check `maia/content/game/film/shot.js`). So the default **fov 45 ≈ 24 mm** — the iPhone's
 main lens — and **fov 10 ≈ 116 mm**, the 5× tele. The old rule of thumb (wide 45–55, long 10–20) skips the band the
 masters live in: **fov 23–35 (≈ 50–32 mm)** is the band for faces and the room.
 

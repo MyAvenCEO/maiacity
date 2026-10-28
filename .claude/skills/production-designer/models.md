@@ -11,14 +11,14 @@ on its own in the 3D models viewer and placed in any world.
   (the coop, the hutch, the playground) and `domerooms.js` (what furnishes the domes). `furniture.ts` keeps only the
   truck (the Machines' `machines/truck`); the room's, the apartment's, the Isar's and the backyard's things went with
   those worlds on 2026-10-16.
-- `src/lib/models/containers.js` — Sandbox 1's settlement containers, 40-foot high cubes (12.19 × 2.44 × 2.90 m) fitted
+- `maia/content/models/containers.js` — Sandbox 1's settlement containers, 40-foot high cubes (12.19 × 2.44 × 2.90 m) fitted
   out and walkable: the kitchen (range, combi steamer, sinks, fridges, the serving hatch, the pantry behind a
   partition), the workshop (bench and pegboard, timber rack, the machines and power tools), the tech container (solar on
   the roof and fold-out wings, batteries, inverters, a hydrogen fuel cell and electrolyser, Starlink, the AI server
   room) and the sanitary container (washers and dryers, basins, three showers and three toilets; its WC and basin
   from `bathroom.ts`). The open cargo end is the way in; each has `userData.roof` (the viewer lifts it off) and
   `userData.walk` (where to start, `canStand`, `floorAt`, the ceiling lamps) for the walker.
-- `src/lib/biomes/` — the floors the worlds stand on, as recipes that mix (`/app/biomes`, admin): **surfaces**
+- `maia/content/biomes/` — the floors the worlds stand on, as recipes that mix (`/app/biomes`, admin): **surfaces**
   (`surfaces.js`: leaf litter, humus, needles, moss carpet, the living mat, bare soil) blended by one shader in
   patches of their own size, and **cover** (`cover.js`: grasses, sedge, moss cushions, low flowers, woodruff, wood
   sorrel, ramsons, strawberries, blueberry, ferns, leaves and twigs, deadwood, stones, mushrooms), each kind in its
@@ -29,13 +29,13 @@ on its own in the 3D models viewer and placed in any world.
   distance (`near`, `thin`) and grows out of the ground as you come (no edge, no pop); `origin` lays it in a dome's
   own ground. Sandbox 5's floor is the food forest biome, under its domes' glass the warm food forest. A new floor is
   a recipe there.
-- Sandbox 5's forest (`src/lib/sandbox-2/interior/flora.js`) draws each tree in full near you, coarser further off,
+- Sandbox 5's forest (`maia/content/sandbox-2/interior/flora.js`) draws each tree in full near you, coarser further off,
   and beyond that as an impostor (`impostors.js`): each kind photographed from eight sides into one texture once
   grown, each far tree one card turned to the eye that also throws the tree's shadow. `forest.mask(circles)` leaves
   out ground whose own forest is shown (a dome's full inside).
-- `src/lib/models/textures.ts` — `canvasTexture`: a surface drawn once on a canvas, seeded by its key and shared;
+- `maia/content/models/textures.ts` — `canvasTexture`: a surface drawn once on a canvas, seeded by its key and shared;
   each family paints its own with it (the tents' canvas, the seed packets' prints, the containers' stencils).
-- `src/lib/models/index.ts` — `MODELS`: each model's id, label, note (its measure and what it is), where it is used,
+- `maia/content/models/index.ts` — `MODELS`: each model's id, label, note (its measure and what it is), where it is used,
   and the function that makes it. A new model is a function in its family's file and a line here.
 - avenDB's Assets (`/app/avendb/#assets`, the Things) — the viewer: each model as the Maia City vault keeps it, on a
   turntable with its measure and the scale, its parts to pick one by one. Check every new model there before placing
@@ -58,10 +58,10 @@ on its own in the 3D models viewer and placed in any world.
 - **Handles for the world:** whatever a world needs to drive (a lamp's glass, where its light sits, how far a tent
   is pitched) is in `userData`.
 
-## The actors: rigged to move (`src/lib/actors`)
+## The actors: rigged to move (`maia/content/actors`)
 
 Whatever moves — the stand-in a shot is blocked with, and the animals — is an actor, not a model (the machines are
-rigged the same way and built here too, but listed apart: `src/lib/machines`, the Machines in avenDB's Assets): a skeleton of bones
+rigged the same way and built here too, but listed apart: `maia/content/machines`, the Machines in avenDB's Assets): a skeleton of bones
 under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts riding a bone each or a chain of bones
 (blended over a few centimetres either side of a joint, so an elbow, a knee or a neck bends smoothly).
 - `rig.ts` — the rig: `rig(bones, parts, materials)` builds it; `pose()` turns the bones (radians from the rest
@@ -84,7 +84,7 @@ under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts ri
   great tit, the house sparrow and the chaffinch. Two bones of their own: a `jaw`, which opens as it sings, and a
   whole wing riding each wing bone — folded along the flank, swung out flat and beaten to fly (`wingTurn`). Their
   moves: fly (bounding: beats, then the wings shut), hop (both feet together), peck, sing, sit, idle. In Sandbox 5
-  they live round a few trees each (`src/lib/sandbox-2/interior/birds.js`).
+  they live round a few trees each (`maia/content/sandbox-2/interior/birds.js`).
 - `animals.ts` — Sandbox 4's creatures, rigged: the hen (pecks, flaps), the goose (waddles, grazes, hisses), the
   goat and the sheep (walk, graze), the frog (croaks, hops), the bee (hovers, flies), the carp and the tilapia (swim).
 - `crowd.ts` — how a world holds many of them (Sandbox 4's flocks, hives and ponds; Sandbox 3's): the nearest to the
@@ -94,7 +94,7 @@ under one skinned mesh, built in its rest pose (facing +z, on y 0), its parts ri
 - `index.ts` — `FAMILIES`, the people and animals as avenDB's Assets shows them: each on its turntable playing its
   clips and poses (the old Actors viewer also turned any joint by hand and copied the pose out as data; avenDB's
   Assets does not yet). The machines (the excavators, the pod, the forklift, the LifeTrac, the cubes, the BatteryPack)
-  are `MACHINES` in `src/lib/machines/index.js`, shown there the same way.
+  are `MACHINES` in `maia/content/machines/index.js`, shown there the same way.
 
 Pose a stand-in by turning bones: x forward is negative (a thigh forward, an arm forward), the left arm out is +z,
 the right −z; a forearm's y twists it about itself. Check a new pose in the viewer, or measure it: pose a rig, update

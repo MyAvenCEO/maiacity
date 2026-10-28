@@ -1,0 +1,16 @@
+/** Shared static module mapping for the disposable production-worker browser fixture. */
+import { join } from 'node:path';
+export function fixturePath(path, root, pkg) {
+    if (path.includes('..')) throw new Error('invalid path');
+    if (path === '/fixture.js') return join(root, 'aven/db/crates/avendb-browser/tests/transports/device.js');
+    if (path === '/passkey.js') return join(root, 'aven/db/crates/avendb-browser/js/passkey.js');
+    // remote.js shares this production read policy with the native adapter. Relative
+    // module resolution leaves /client/, so it needs its actual repository URL.
+    if (path === '/maia/content/game/code/sources/local-policy.js') return join(root, path.slice(1));
+    if (path.startsWith('/client/device/avendb_browser') || path.startsWith('/client/device/snippets/')) return join(pkg, path.slice('/client/device/'.length));
+    // the device's own modules, from their source: aven/db/page/device is a build output (B1) that this fixture's
+    // freshly built package stands in for, and build-web.sh only copies these into it
+    if (/^\/client\/device\/(passkey|store|store\.worker)\.js$/.test(path)) return join(root, 'aven/db/crates/avendb-browser/js', path.slice('/client/device/'.length));
+    if (path.startsWith('/client/')) return join(root, 'aven/db/page', path.slice('/client/'.length));
+    throw new Error(`fixture module not found: ${path}`);
+}

@@ -25,7 +25,7 @@ The twin was the 3D model on its stand and its beam at the reflector, so a world
 
 ## Switching it on in a shot
 
-A shot's lights lane names it: `lights: [{ id: 'cb60', intensity: k, color? }]` (`game/film/shot.js`; the studio's
+A shot's lights lane names it: `lights: [{ id: 'cb60', intensity: k, color? }]` (`maia/content/game/film/shot.js`; the studio's
 Inspector lists it).
 - **Off** unless a shot names it.
 - **`intensity`** is its dimmer: 1 = full, 0.1 = 10 %; a curve (`[[t, k], …]`) fades it during the shot.
