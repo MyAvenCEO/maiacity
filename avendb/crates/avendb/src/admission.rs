@@ -5,7 +5,7 @@
 //! vault's alone. While nobody has claimed the server it honours any, for the device that claims it.
 
 use crate::id::{ShareId, SignerId, VaultId};
-use crate::policy::{State, Who};
+use crate::policy::{Principal, State, Who};
 
 /// How the server signs people up (`Signup`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -13,15 +13,28 @@ pub enum Signup {
     /// Any passkey's pass (P8e): a person's first device founds their vault through it.
     #[default]
     Anyone,
-    /// A pass of a passkey that roots a vault it knows, or one shown with an open invite of its vault.
+    /// A pass of a key that owns a vault it knows, or one shown with an open invite of its vault.
     Invited,
-    /// A pass of a passkey that roots a vault it knows, and no other.
+    /// A pass of a key that owns a vault it knows, and no other.
     Known,
 }
 
 /// The passkeys that root a vault in `st` (`roots`, `Lab::roots`).
 pub fn roots(st: &State) -> Vec<SignerId> {
     st.vaults().iter().filter_map(|v| v.root).collect()
+}
+
+/// The keys that own a vault in `st`, its root among them (`ownerKeys`, `Lab::owner_keys`): a vault's standing lets
+/// its person in by any of them, not its root alone (Samuel 2026-10-28).
+pub fn owner_keys(st: &State) -> Vec<SignerId> {
+    let owners = st.vaults().iter().flat_map(|v| v.owners.iter()).filter_map(|p| match p {
+        Principal::Signer(s) => Some(*s),
+        Principal::Vault(_) => None,
+    });
+    let mut out: Vec<SignerId> = roots(st).into_iter().chain(owners).collect();
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 /// Share `c` is an invite of `home` that no vault claimed yet: a live share over `home` to an invite key
@@ -41,7 +54,7 @@ pub fn open_invites(st: &State, home: VaultId) -> Vec<ShareId> {
 
 /// The relay of the server of `home`, knowing `st` and signing people up as `signup` says, honours a pass of passkey
 /// `passkey` shown with invite `invite` (`honours`): any while nobody has claimed the server (`claimable`) or under
-/// `Anyone`; one that roots a vault the server knows; and under `Invited`, one shown with an open invite of `home`.
+/// `Anyone`; one of a key that owns a vault the server knows; and under `Invited`, one shown with an open invite of `home`.
 pub fn honours(
     st: &State,
     home: VaultId,
@@ -52,6 +65,6 @@ pub fn honours(
 ) -> bool {
     claimable
         || signup == Signup::Anyone
-        || roots(st).contains(&passkey)
+        || owner_keys(st).contains(&passkey)
         || (signup == Signup::Invited && invite.is_some_and(|c| open_invite(st, home, c)))
 }

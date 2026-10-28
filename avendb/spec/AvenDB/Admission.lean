@@ -11,9 +11,12 @@ people the server takes.
 The server signs people up in one of three ways (`Signup`, `AVENDB_SIGNUP`):
 
 - `anyone`: it honours a pass of any passkey, so a person's first device founds their vault through it (P8e);
-- `invited`: it honours a pass of a passkey that roots a vault it knows, or one shown with an invite of `home` that no
-  vault claimed yet, for the newcomer whose device claims it in those minutes (`Node::claim_invite`);
-- `known`: it honours a pass of a passkey that roots a vault it knows, and no other.
+- `invited`: it honours a pass of a key that owns a vault it knows, or one shown with an invite of `home` that no vault
+  claimed yet, for the newcomer whose device claims it in those minutes (`Node::claim_invite`);
+- `known`: it honours a pass of a key that owns a vault it knows, and no other.
+
+A vault's standing lets its person in, not one key of theirs (Samuel 2026-10-28): any of its owner keys, its root, a
+second passkey, signs a pass the relay honours, as any of them approves for the vault alone.
 
 While nobody has claimed the server (P8f) it honours any pass, for the device that claims it. With the gate on, a vault
 the server knows is one it welcomed (G2), so under `invited` the relay lets in by a pass only the passkeys of vaults the
@@ -30,8 +33,24 @@ inductive Signup where
   | known
   deriving DecidableEq, Repr
 
-/-- The passkeys that root a vault in `st`: whose passes count as a vault the server knows (`Lab::roots`). -/
+/-- The passkeys that root a vault in `st` (`Lab::roots`). -/
 def roots (st : State) : List SignerId := st.vaults.filterMap (·.root)
+
+/-- A principal's signer, if it is one. -/
+def Principal.signer? : Principal → Option SignerId
+  | .signer s => some s
+  | .vault _ => none
+
+/-- The keys that own a vault in `st`, its root among them: whose passes count as a vault the server knows
+    (`Lab::owner_keys`). -/
+def ownerKeys (st : State) : List SignerId :=
+  roots st ++ st.vaults.flatMap fun v => v.owners.filterMap Principal.signer?
+
+/-- Every root is an owner key: a vault's root lets its person in as it always did. -/
+theorem roots_ownerKeys {st : State} {p : SignerId} (h : (roots st).contains p = true) :
+    (ownerKeys st).contains p = true := by
+  unfold ownerKeys
+  simp only [List.contains_append, h, Bool.true_or]
 
 /-- Share `c` is an invite of `home` that no vault claimed yet: a live share over `home` to an invite key
     (`world::open_invite`). -/
@@ -40,19 +59,19 @@ def openInvite (st : State) (home : VaultId) (c : ShareId) : Bool :=
 
 /-- The relay of the server of `home`, knowing `st` and signing people up as `s` says, honours a pass of passkey
     `passkey` shown with invite `invite`, if any: any while nobody has claimed the server (`claimable`) or under
-    `anyone`; one that roots a vault the server knows; and under `invited`, one shown with an open invite of `home`
+    `anyone`; one of a key that owns a vault the server knows; and under `invited`, one shown with an open invite of `home`
     (`Admission::honours`). -/
 def honours (st : State) (home : VaultId) (s : Signup) (claimable : Bool) (passkey : SignerId)
     (invite : Option ShareId) : Bool :=
-  claimable || s == .anyone || (roots st).contains passkey || (s == .invited && invite.any (openInvite st home))
+  claimable || s == .anyone || (ownerKeys st).contains passkey || (s == .invited && invite.any (openInvite st home))
 
 namespace Admitting
 
 /-- G5 (the relay follows the gate): a server that signs people up by invite, once claimed, honours a pass only of a
-    passkey that roots a vault it knows, or one shown with an invite of `home` that no vault claimed yet. -/
+    key that owns a vault it knows, or one shown with an invite of `home` that no vault claimed yet. -/
 theorem invited_only {st : State} {home : VaultId} {p : SignerId} {i : Option ShareId}
     (h : honours st home .invited false p i = true) :
-    (roots st).contains p = true ∨ ∃ c, i = some c ∧ openInvite st home c = true := by
+    (ownerKeys st).contains p = true ∨ ∃ c, i = some c ∧ openInvite st home c = true := by
   unfold honours at h
   simp only [Bool.false_or, Bool.or_eq_true, beq_iff_eq, reduceCtorEq, false_or, Bool.and_eq_true,
     true_and] at h
@@ -62,10 +81,10 @@ theorem invited_only {st : State} {home : VaultId} {p : SignerId} {i : Option Sh
     | none => simp at h
     | some c => exact .inr ⟨c, rfl, by simpa using h⟩
 
-/-- G5, closed: a server that signs nobody up, once claimed, honours a pass only of a passkey that roots a vault it
+/-- G5, closed: a server that signs nobody up, once claimed, honours a pass only of a key that owns a vault it
     knows, whatever invite it is shown with. -/
 theorem known_only {st : State} {home : VaultId} {p : SignerId} {i : Option ShareId}
-    (h : honours st home .known false p i = true) : (roots st).contains p = true := by
+    (h : honours st home .known false p i = true) : (ownerKeys st).contains p = true := by
   unfold honours at h
   simpa using h
 
