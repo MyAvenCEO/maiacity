@@ -47,10 +47,6 @@ pub struct Pulled {
     pub keys: (u64, u64, u64, u64),
     /// Pages it asked for that never came, or came broken.
     pub failed: u64,
-    /// Pages lost in flight (`Lost`): asked and never taken.
-    pub lost: u64,
-    /// The page budget its last sized asking stated (`session::SIZED`), 0 where its peer was asked unsized.
-    pub budget: u64,
     /// When its first and its last page came, in milliseconds since 1970.
     pub first: u64,
     pub last: u64,
@@ -75,43 +71,6 @@ pub struct Page {
     pub ms: u64,
     /// `direct`, `relay`, or `` where the connection named no selected path.
     pub way: &'static str,
-    /// The page budget its asking stated (`session::SIZED`), 0 where it asked unsized.
-    pub budget: u64,
-}
-
-/// Why a page asked never came (`Lost`), by its error: named, never its text.
-pub fn lost_why(error: &anyhow::Error) -> &'static str {
-    if crate::session::too_long(error) {
-        "too_long"
-    } else if error.is::<n0_future::time::Elapsed>() {
-        "timeout"
-    } else if error.is::<iroh::endpoint::ReadToEndError>()
-        || error.is::<iroh::endpoint::ConnectionError>()
-        || error.is::<iroh::endpoint::WriteError>()
-        || error.is::<iroh::endpoint::ClosedStream>()
-    {
-        "connection"
-    } else {
-        "broken"
-    }
-}
-
-/// The newest pages lost in flight a node keeps, across all its peers.
-pub const LOST: usize = 32;
-
-/// A page asked of a device and never taken (S1b): it never came whole in time (`timeout`), came too long for its
-/// admission (`too_long`), its connection failed (`connection`), it came broken (`broken`), its asking stopped with
-/// it in flight (`stopped`: the asking failed, yielded or was dropped), or it was asked ahead at a cut its peer's pages
-/// didn't end at (`missed`). When, how long it had been in flight, the budget its asking stated, and whether it was
-/// asked ahead (`session::CUTS`). What a phone loses each time it is hidden or reloaded, as the report reads it.
-#[derive(Clone, Debug)]
-pub struct Lost {
-    pub device: SignerId,
-    pub at: u64,
-    pub why: &'static str,
-    pub flight_ms: u64,
-    pub budget: u64,
-    pub ahead: bool,
 }
 
 #[derive(Default)]
@@ -121,7 +80,6 @@ struct Book {
     served: Served,
     live: LiveBook,
     trace: VecDeque<Trace>,
-    lost: VecDeque<Lost>,
 }
 
 /// One step of a live edit on its way (T1): its id is the trace id on every device, as the edit's id is the same
@@ -239,7 +197,6 @@ impl Traffic {
             "relay" => p.relayed = (p.relayed.0 + 1, p.relayed.1 + page.bytes),
             _ => {}
         }
-        p.budget = page.budget;
         if p.first == 0 {
             p.first = page.at;
         }
@@ -342,32 +299,6 @@ impl Traffic {
         self.0.lock().expect("traffic").by.entry(device).or_default().failed += 1;
     }
 
-    /// A page asked of its device was lost in flight (`Lost`).
-    pub fn lost(&self, lost: Lost) {
-        let mut book = self.0.lock().expect("traffic");
-        book.by.entry(lost.device).or_default().lost += 1;
-        book.lost.push_front(lost);
-        book.lost.truncate(LOST);
-    }
-
-    /// The newest pages lost in flight, the newest first.
-    pub fn lost_json(&self) -> Vec<Value> {
-        let book = self.0.lock().expect("traffic");
-        book.lost
-            .iter()
-            .map(|l| {
-                json!({
-                    "device": l.device.to_hex(),
-                    "at": l.at,
-                    "why": l.why,
-                    "flight_ms": l.flight_ms,
-                    "budget": l.budget,
-                    "ahead": l.ahead,
-                })
-            })
-            .collect()
-    }
-
     /// What it took from `device`, if anything.
     pub fn of(&self, device: &SignerId) -> Option<Pulled> {
         self.0.lock().expect("traffic").by.get(device).cloned()
@@ -397,7 +328,6 @@ impl Traffic {
                     "catch_ms": p.catch_ms,
                     "ms": p.ms,
                     "way": p.way,
-                    "budget": p.budget,
                 })
             })
             .collect()
@@ -425,8 +355,6 @@ impl Pulled {
             "relay": { "pages": self.relayed.0, "bytes": self.relayed.1 },
             "keys": { "asked": self.keys.0, "got": self.keys.1, "bytes": self.keys.2, "ms": self.keys.3 },
             "failed": self.failed,
-            "lost": self.lost,
-            "budget": self.budget,
             "first": self.first,
             "last": self.last,
         })
@@ -441,7 +369,7 @@ mod tests {
     fn pages_add_up_by_device_and_way_and_the_newest_are_kept() {
         let t = Traffic::default();
         let d = SignerId([7; 32]);
-        let page = |way, bytes| Page { device: d, at: 1000, bytes, edits: 10, new: 4, wait_ms: 900, take_ms: 100, check_ms: 0, lab_ms: 0, catch_ms: 0, ms: 1000, way, budget: 0 };
+        let page = |way, bytes| Page { device: d, at: 1000, bytes, edits: 10, new: 4, wait_ms: 900, take_ms: 100, check_ms: 0, lab_ms: 0, catch_ms: 0, ms: 1000, way };
         t.page(page("relay", 4000));
         t.page(page("direct", 1000));
         t.failed(d);
@@ -457,23 +385,5 @@ mod tests {
             t.page(page("relay", 1));
         }
         assert_eq!(t.recent().len(), RECENT);
-    }
-
-    #[test]
-    fn pages_lost_in_flight_are_counted_by_device_and_the_newest_kept() {
-        let t = Traffic::default();
-        let d = SignerId([7; 32]);
-        let lost = |why, at| Lost { device: d, at, why, flight_ms: 1500, budget: 128 << 10, ahead: true };
-        t.lost(lost("stopped", 1));
-        t.lost(lost("timeout", 2));
-        assert_eq!(t.of(&d).expect("pulled").lost, 2);
-        assert_eq!(t.of(&d).expect("pulled").to_json()["lost"], 2);
-        let json = t.lost_json();
-        assert_eq!((json[0]["why"].as_str(), json[0]["at"].as_u64()), (Some("timeout"), Some(2)));
-        assert_eq!((json[1]["flight_ms"].as_u64(), json[1]["budget"].as_u64()), (Some(1500), Some(128 << 10)));
-        for at in 0..LOST as u64 + 5 {
-            t.lost(lost("missed", at));
-        }
-        assert_eq!(t.lost_json().len(), LOST);
     }
 }

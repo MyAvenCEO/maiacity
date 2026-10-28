@@ -568,170 +568,36 @@ a peer owed the log takes it, and every page asked after names loose what any pu
 any peer), so the stalled asking, if it comes back, sends none of it again. Rust: avendb-net lib.rs `Claims::take`,
 `Claims::landed`, pulls.rs `Taken`. -/
 
-
-/-! Since pages are sized to their asker (S1b, below), a page over a slow link lands in its couple of seconds too, so
-a claim on a 20 KB/s relay never stalled: a browser took every log from its Mac at that rate while the server that held
-them waited (sim `a_browser_takes_what_it_lacks_from_the_fast_peer`, 2026-10-28). So a claim holds only while its pages
-also come at least a `slower`th as fast as the link of the peer owed the log (its pages lately, or a new peer's start
-rate): a log comes from the peer that brings it faster. The faster peer's claim then holds when the slow one asks
-again, so the log moves once (`a_faster_claim_is_kept`). Rust: `Claims::take` with `SLOWER`, `pulls::Rate::per_second`. -/
-
-/-- A claim on a log: the peer asked for it, when its asking last landed a page (or began), and how fast its pages came
-lately, in bytes a second, if any did. -/
+/-- A claim on a log: the peer asked for it, and when its asking last landed a page (or began). -/
 structure Claim where
   peer : Nat
   landed : Nat
-  rate : Option Nat := none
 
-/-- Whether its pages come `slower` times slower than a link of `rate`. -/
-def Claim.slow (slower rate : Nat) (c : Claim) : Bool := c.rate.any (fun r => r * slower < rate)
-
-/-- Whether peer `me`, its link carrying `rate`, takes a log claimed so at `now`: unclaimed, its own, its asking
-stalled `handover` long, or its pages `slower` times slower than `me`'s link. -/
-def takes (handover slower now me rate : Nat) : Option Claim → Bool
+/-- Whether peer `me` takes a log claimed so at `now`: unclaimed, its own, or its asking stalled `handover` long. -/
+def takes (handover now me : Nat) : Option Claim → Bool
   | none => true
-  | some c => c.peer == me || decide (c.landed + handover ≤ now) || c.slow slower rate
+  | some c => c.peer == me || decide (c.landed + handover ≤ now)
 
-/-- A claim whose pages land, about as fast as `me`'s link would bring them, is kept: no other peer is asked for its
-log, nothing comes twice (S5). -/
-theorem a_landing_claim_is_kept (handover slower now me rate : Nat) (c : Claim) (h : c.peer ≠ me)
-    (fresh : now < c.landed + handover) (fast : c.slow slower rate = false) :
-    takes handover slower now me rate (some c) = false := by
-  simp [takes, h, Nat.not_le.mpr fresh, fast]
+/-- A claim whose pages land is kept: no other peer is asked for its log, nothing comes twice (S5). -/
+theorem a_landing_claim_is_kept (handover now me : Nat) (c : Claim) (h : c.peer ≠ me)
+    (fresh : now < c.landed + handover) : takes handover now me (some c) = false := by
+  simp [takes, h, Nat.not_le.mpr fresh]
 
 /-- A stalled claim is handed over: a peer owed the log asks for it once `handover` passed with no page. -/
-theorem a_stalled_claim_hands_over (handover slower now me rate : Nat) (c : Claim) (h : c.landed + handover ≤ now) :
-    takes handover slower now me rate (some c) = true := by
+theorem a_stalled_claim_hands_over (handover now me : Nat) (c : Claim) (h : c.landed + handover ≤ now) :
+    takes handover now me (some c) = true := by
   simp [takes, h]
-
-/-- A slow claim is handed over: a peer owed the log whose link is `slower` times as fast takes it, however its pages
-land. -/
-theorem a_slow_claim_hands_over (handover slower now me rate : Nat) (c : Claim) (h : c.slow slower rate = true) :
-    takes handover slower now me rate (some c) = true := by
-  simp [takes, h]
-
-/-- The faster peer's claim holds when the slower one asks again: with `1 ≤ slower`, a claim at `r` that took the log
-from a peer at `q < r` (`q * slower < r`) isn't slow to it, so the log moves once. -/
-theorem a_faster_claim_is_kept (slower q r : Nat) (hs : 1 ≤ slower) (h : q * slower < r) (c : Claim)
-    (hc : c.rate = some r) : c.slow slower q = false := by
-  have : q ≤ r * slower := by
-    have := Nat.le_mul_of_pos_right q hs
-    have := Nat.le_mul_of_pos_right r hs
-    omega
-  simp [Claim.slow, hc]
-  omega
 
 /-- No log waits on a stalled asking for ever: an owed peer asking again at `landed + handover` takes it. -/
-theorem no_log_waits_past_the_handover (handover slower me rate : Nat) (c : Option Claim) :
-    ∃ t, ∀ now, t ≤ now → takes handover slower now me rate c = true := by
+theorem no_log_waits_past_the_handover (handover me : Nat) (c : Option Claim) :
+    ∃ t, ∀ now, t ≤ now → takes handover now me c = true := by
   match c with
   | none => exact ⟨0, fun _ _ => rfl⟩
-  | some c => exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover slower now me rate c h⟩
-
--- the sim's browser: the Mac's pages at 20 KB/s, the server new (128 KiB in 2 s), `SLOWER` 2
-#guard takes 15 2 3 2 65536 (some { peer := 1, landed := 2, rate := some 20000 }) == true
-#guard takes 15 2 3 2 40000 (some { peer := 1, landed := 2, rate := some 20000 }) == false
-#guard takes 15 2 3 1 20000 (some { peer := 2, landed := 3, rate := some 65536 }) == false
+  | some c => exact ⟨c.landed + handover, fun now h => a_stalled_claim_hands_over handover now me c h⟩
 
 /-- What the stalled asking sends if it comes back: none of what the peer that took over brought, by `withTaken`. -/
 theorem the_stalled_asking_sends_none_of_it_again (edits : List Edit) (d : SignerId) (a : Ask) (taken : List EditId)
     (e : Edit) (h : e ∈ respondSince edits d (withTaken a taken)) : taken.contains e.id = false :=
   taken_is_never_sent edits d a taken e h
-
-/-! ## Pages sized to their asker (S1b, 2026-10-28)
-
-A peer made every page 4 MiB (`Options::page`). Samuel's iPhone took 66-214 KB/s through a relay, so one page was 20-60 s
-on the wire, and a page in flight when the asking stopped (the app hidden, a reload, a lost path) was lost whole. An
-asking now states its page budget, fixed for the whole asking (so its cuts and its pages end at the same places, both
-by `pageLen`): the bytes its link carried in `PAGE_TIME` at the rate its pages last came, between `least` and the peer's
-`most`. The peer sizes each page to it. An asker from before states none and is served `most`, as before. A page that
-landed is taken whatever the asking does after, so a stop loses only the pages in flight, each within its budget.
-Rust: avendb-net lib.rs `pages`, `Shared::sizes`, `Flight`; pulls.rs `Rate::budget`; session.rs `SIZED`, `SIZING`,
-`served`, `authorized_request`; avendb lab.rs `page_end`. -/
-
-/-- How many more edits of sizes `l` a page that holds `used` bytes takes, within `page` bytes. -/
-def fitMore (page used : Nat) : List Nat → Nat
-  | [] => 0
-  | s :: rest => if used + s ≤ page then fitMore page (used + s) rest + 1 else 0
-
-/-- How many edits of sizes `l` a page of `page` bytes holds: as many as fit, and at least one (`lab.rs` `page_end`). -/
-def pageLen (page : Nat) : List Nat → Nat
-  | [] => 0
-  | s :: rest => fitMore page s rest + 1
-
-theorem fitMore_within (page used : Nat) (l : List Nat) (h : used ≤ page) :
-    used + (l.take (fitMore page used l)).sum ≤ page := by
-  induction l generalizing used with
-  | nil => simpa [fitMore] using h
-  | cons s rest ih =>
-    by_cases hs : used + s ≤ page
-    · simp only [fitMore, hs, ite_true, List.take_succ_cons, List.sum_cons]
-      have := ih (used + s) hs; omega
-    · simp only [fitMore, hs, ite_false, List.take_zero, List.sum_nil]; omega
-
-theorem fitMore_past (page used : Nat) (l : List Nat) (h : page < used) : fitMore page used l = 0 := by
-  cases l with
-  | nil => rfl
-  | cons s rest => simp only [fitMore]; split <;> omega
-
-/-- A page is within its budget, or one edit larger than it, alone. -/
-theorem a_page_is_within_its_budget (page : Nat) (l : List Nat) :
-    (l.take (pageLen page l)).sum ≤ max page (l.headD 0) := by
-  cases l with
-  | nil => simp [pageLen]
-  | cons s rest =>
-    simp only [pageLen, List.take_succ_cons, List.sum_cons, List.headD_cons]
-    by_cases hs : s ≤ page
-    · have := fitMore_within page s rest hs; omega
-    · rw [fitMore_past page s rest (by omega)]; simp; omega
-
-/-- Every page brings at least one edit, so an asking always moves on. -/
-theorem a_page_moves_on (page : Nat) (l : List Nat) (h : l ≠ []) : 0 < pageLen page l := by
-  cases l with
-  | nil => exact absurd rfl h
-  | cons s rest => simp [pageLen]
-
-/-- The page a peer makes for an asking that states budget `b`, or none: between `least` and its `most`. -/
-def served (least most : Nat) : Option Nat → Nat
-  | none => most
-  | some b => min most (max least b)
-
-/-- An asker from before is served as before. -/
-theorem an_old_asker_is_served_as_before (least most : Nat) : served least most none = most := rfl
-
-/-- No asker makes a peer's page larger than its own. -/
-theorem no_asker_makes_a_page_larger (least most : Nat) (b : Option Nat) : served least most b ≤ most := by
-  cases b <;> simp only [served] <;> omega
-
-/-- Nor smaller than `least`, so a budget of nothing costs the peer no more pages than `least` allows. -/
-theorem no_asker_makes_a_page_smaller (least most : Nat) (b : Option Nat) (h : least ≤ most) :
-    least ≤ served least most b := by
-  cases b <;> simp [served] <;> omega
-
-/-- The budget an asking states: what its link carried in `time` at the `rate` its pages last came. -/
-def budget (rate time : Nat) : Nat := rate * time
-
-/-- A page sized to the link lands within its time on that link: its bytes are at most `rate × time`, unless its first
-edit alone is larger, or the link is slower than `least` a time. -/
-theorem a_sized_page_lands_in_its_time (least most rate time : Nat) (l : List Nat)
-    (hl : least ≤ budget rate time) (hd : l.headD 0 ≤ budget rate time) :
-    (l.take (pageLen (served least most (some (budget rate time))) l)).sum ≤ budget rate time := by
-  have := a_page_is_within_its_budget (served least most (some (budget rate time))) l
-  have : served least most (some (budget rate time)) ≤ budget rate time := by simp [served]; omega
-  omega
-
-/-- What a stopped asking loses: the pages in flight, as the pages that landed are taken. -/
-def lost (flying : List (List Nat)) : Nat := (flying.map List.sum).sum
-
-/-- So a stop loses at most its pages in flight, each within the budget its asking stated. -/
-theorem a_stop_loses_at_most_its_pages_in_flight (flying : List (List Nat)) (p : Nat)
-    (h : ∀ page ∈ flying, page.sum ≤ p) : lost flying ≤ flying.length * p := by
-  induction flying with
-  | nil => simp [lost]
-  | cons x rest ih =>
-    simp only [lost, List.map_cons, List.sum_cons, List.length_cons] at *
-    have hx := h x (List.mem_cons_self ..)
-    have := ih (fun q hq => h q (List.mem_cons_of_mem _ hq))
-    rw [Nat.succ_mul]; omega
 
 end AvenDB.LivePriority
