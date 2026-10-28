@@ -44,3 +44,20 @@ jobs:
 `;
  expect(lint(yml, 'w.yml')).toEqual([]);
 });
+
+// the first release's peer and API were denied their images (2026-10-28): a job that logs the server into ghcr.io
+// with its token must be granted packages, as the workflow's own token reads contents alone
+test('every job that logs the server into ghcr.io may read packages', () => {
+ const dir = '.github/workflows';
+ const logins = [];
+ for (const f of readdirSync(dir).filter(f => f.endsWith('.yml'))) {
+  const wf = Bun.YAML.parse(readFileSync(`${dir}/${f}`, 'utf8'));
+  for (const [id, job] of Object.entries(wf.jobs ?? {})) {
+   if (!JSON.stringify(job.steps ?? []).includes('docker login ghcr.io')) continue;
+   logins.push(`${f}:${id}`);
+   const packages = (job.permissions ?? wf.permissions ?? {}).packages;
+   expect([`${f}:${id}`, packages === 'read' || packages === 'write']).toEqual([`${f}:${id}`, true]);
+  }
+ }
+ expect(logins.sort()).toEqual(['ops.yml:rollback', 'release.yml:api', 'release.yml:peer']);
+});
