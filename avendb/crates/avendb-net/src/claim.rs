@@ -51,6 +51,8 @@ pub struct Claim {
     id: String,
     lost: watch::Receiver<bool>,
     beat: tokio::task::JoinHandle<()>,
+    /// How many times it waited for another's claim to go stale before it took it.
+    waits: u32,
 }
 
 fn now() -> u64 {
@@ -76,6 +78,7 @@ impl Claim {
         let own: PathBuf = data.join(OWN);
         let before = std::fs::read_to_string(&own).ok().map(|s| s.trim().to_string());
         let waited = std::time::Instant::now();
+        let mut waits = 0;
         loop {
             match read(bucket).await? {
                 None => break,
@@ -90,6 +93,7 @@ impl Claim {
                         );
                     }
                     tracing::warn!("avenDB: another server holds the bucket; waiting for its claim to go stale");
+                    waits += 1;
                     sleep(timing.beat.min(timing.stale) / 4).await;
                 }
             }
@@ -125,7 +129,12 @@ impl Claim {
                 }
             }
         });
-        Ok(Claim { bucket: bucket.clone(), id, lost, beat })
+        Ok(Claim { bucket: bucket.clone(), id, lost, beat, waits })
+    }
+
+    /// How many times it waited for another's claim to go stale: none where it took the bucket at once.
+    pub fn waits(&self) -> u32 {
+        self.waits
     }
 
     /// Answers once another server's claim is found in its place.
@@ -176,15 +185,13 @@ mod tests {
 
         // the first stops as at a deploy: the next takes it at once
         first.release().await.expect("released");
-        let started = std::time::Instant::now();
         let second = Claim::take(&bucket, &b, quick()).await.expect("a released claim is taken");
-        assert!(started.elapsed() < quick().stale, "at once");
+        assert_eq!(second.waits(), 0, "at once");
 
         // the second is killed, and comes back on its own folder: its own claim, taken back at once
         drop(second);
-        let started = std::time::Instant::now();
         let second = Claim::take(&bucket, &b, quick()).await.expect("its own claim, taken back");
-        assert!(started.elapsed() < quick().stale, "at once");
+        assert_eq!(second.waits(), 0, "at once");
 
         // killed again: another server, on a folder of its own, takes it once it went stale
         drop(second);
