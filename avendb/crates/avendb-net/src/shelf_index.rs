@@ -374,6 +374,12 @@ impl ShelfIndex {
 
     /// Up to `limit` rows from key `from` on, in order.
     pub(crate) async fn scan(&self, from: &[u8], limit: usize) -> io::Result<Vec<Item>> {
+        self.scan_within(from, &[], limit).await
+    }
+
+    /// `scan`, of the rows whose keys start with `prefix` alone: it stops at the first row past them, so a prefix of
+    /// few rows reads no row after them, however many there are.
+    pub(crate) async fn scan_within(&self, from: &[u8], prefix: &[u8], limit: usize) -> io::Result<Vec<Item>> {
         let mut out = Vec::new();
         let Some(root) = self.root else {
             return Ok(out);
@@ -385,7 +391,12 @@ impl ShelfIndex {
             }
             let start = next.max(node.items.partition_point(|(k, _)| k.as_slice() < from));
             if node.level == 0 {
-                out.extend(node.items[start..].iter().take(limit - out.len()).cloned());
+                let rows = &node.items[start..];
+                let within = rows.iter().take(limit - out.len()).take_while(|(k, _)| k.starts_with(prefix)).count();
+                out.extend(rows[..within].iter().cloned());
+                if within < rows.len() && out.len() < limit {
+                    break;
+                }
                 continue;
             }
             if start < node.items.len() {
