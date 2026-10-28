@@ -83,6 +83,32 @@ theorem answerBy_safe (catching : Bool) (since held : List Edit) (p : Nat) (hp :
     exact may_mono since held h.2 p hp
   · exact hp
 
+/-- What a device answers its peers by (`Lab::standing_or`): as `answerBy`, but nothing where that would be every edit
+    it holds in the middle of a catch-up, a removal among those since, rather than replay them all for each ask. A
+    first sync of Maia City, its pages holding removals, replayed every edit for each page's announce and never ended
+    (S2, 2026-10-28). -/
+def answerOr (catching : Bool) (since held : List Edit) : Option (List Edit) :=
+  if catching && !since.all (fun e => !e.isRemoval) then none else some (answerBy catching since held)
+
+/-- A device not catching up answers by every edit it holds, as `answer_current` says: never nothing. -/
+theorem answerOr_current (since held : List Edit) : answerOr false since held = some (since ++ held) := by
+  simp [answerOr, answerBy]
+
+/-- It answers nothing only in the middle of a catch-up, whose steps end it (`CatchUpBudget.ends_within`). -/
+theorem answerOr_none_catching (catching : Bool) (since held : List Edit) (h : answerOr catching since held = none) :
+    catching = true := by
+  unfold answerOr at h
+  cases catching <;> simp_all
+
+/-- What it answers by, when it answers, hands over nothing all its edits wouldn't. -/
+theorem answerOr_safe (catching : Bool) (since held es : List Edit) (h : answerOr catching since held = some es) (p : Nat)
+    (hp : may es p = true) : may (since ++ held) p = true := by
+  unfold answerOr at h
+  split at h
+  · cases h
+  · cases h
+    exact answerBy_safe catching since held p hp
+
 namespace Examples
 
 -- a grant since: the held replay allows less, never more
@@ -92,6 +118,9 @@ namespace Examples
 
 -- not catching up, a grant since is answered by: the newest edit is never left out
 #guard may (answerBy false [.grant 1] []) 1 && !may (answerBy true [.grant 1] []) 1
+
+-- in the middle of a catch-up, a removal since: nothing, not a replay of every edit; caught up: every edit
+#guard answerOr true [.remove 1] [.grant 1] == none && answerOr false [.remove 1] [.grant 1] == some [.remove 1, .grant 1]
 
 end Examples
 
