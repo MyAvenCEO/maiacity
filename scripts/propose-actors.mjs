@@ -22,15 +22,16 @@
 // repo's text on one Maia City holds already. "Query, v1" comes into the lane by the schemas AIP of task A2; until it
 // is there, `--run` prints its op and stops.
 //
-// An entry Maia City wrote under "Manifest, v1" and then moved to v2 (AIP-38) opens read-only through v3: a view joins
-// an app's schema to the ONE other schema an item was written under (avendb lens.rs `Lane::view`), never a chain of
-// lenses. So before writing anything the run reads every actor through v3 and stops on any it may not write, naming
-// them. Each draft it makes goes into a ledger (`--drafts <file>`, kept beside the run), keyed by query or actor id, so
-// a run cut short is taken up again without drafting twice: it reuses each draft it finds there, its line read from the
-// entry's history. A ledger may also be a run's log, its lines `query <id>: drafted as <entry>`.
+// An entry Maia City wrote under "Manifest, v1" and then moved to v2 (AIP-38) is written under two schemas besides v3.
+// avendb lens.rs `Lane::view` opens it writable through the lens from v2 only where v1 is spent on it (its record holds
+// nothing the lens from v1 would still translate), and read-only otherwise, as every such entry did before the engine
+// learnt that (2026-10-28). So before writing anything the run reads every actor through v3 and stops on any it may not
+// write, naming them. Each draft it makes goes into a ledger (`--drafts <file>`, kept beside the run), keyed by query or
+// actor id, so a run cut short is taken up again without drafting twice: it reuses each draft it finds there, its line
+// read from the entry's history. A ledger may also be a run's log, its lines `query <id>: drafted as <entry>`.
 //
 // With `--skip-locked` it leaves those out instead (they stay v2, which pages read lifted) and proposes the rest; a
-// later run, once the engine reads through a chain, moves them in an AIP of their own.
+// later run, on an engine that opens them, moves them in an AIP of their own, which names only what it moves.
 //
 //   node scripts/propose-actors.mjs --run [--drafts <ledger.json | run.log>] [--skip-locked]
 import { ACTOR_LENS, ACTOR_SCHEMA, ACTOR_TYPE, ACTOR_V3, MANIFEST_SCHEMA, MANIFEST_V1_SCHEMA, QUERY_SCHEMA, QUERY_TYPE, QUERY_V1, actorLens } from '../game/code/sources/actors.js';
@@ -44,7 +45,7 @@ const args = process.argv.slice(2);
 const flag = (f) => args.includes(f);
 const option = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
 /** the AIP's title, for `n` actors */
-const titleOf = (n) => `Actors v3: each app and the queries it loads, in tiers (${n} actors, ${QUERIES.length} queries)`;
+const titleOf = (n, q = QUERIES.length) => `Actors v3: each app and the queries it loads, in tiers (${n} actors, ${q} queries)`;
 const title = titleOf(ACTORS.length);
 /** the fields a v3 actor holds: `kind` and `v` too, so the stored record names v3 after the write */
 const FIELDS = ['kind', 'v', 'id', 'title', 'note', 'routes', 'slots', 'interface', 'needs', 'code', 'loads'];
@@ -145,15 +146,20 @@ try {
 		if (!skipping) process.exit(1);
 	}
 	const skipped = new Set(locked.map((r) => r.record?.id));
-	const moving = ACTORS.filter((a) => !skipped.has(a.id));
-	const title = titleOf(moving.length);
+	// what this run writes: the actors and query entries Maia City doesn't hold as the repo declares them (an AIP after
+	// one that moved the rest names only what it moves: the 14 actors once v1 was spent on them, 2026-10-28)
+	const setsOf = (a, r) => FIELDS.filter((f) => a[f] !== undefined && (!was.get(r.entry)?.loads || !same(r.record?.[f], a[f])));
+	const heldQueries = new Map(live((await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, schema: qv1.id, where: { type: [QUERY_TYPE] } } })).rows).map((r) => [r.record?.id, r]));
+	const pendingQuery = (q) => !heldQueries.has(q.id) || QUERY_FIELDS.some((f) => q[f] !== undefined && !same(heldQueries.get(q.id).record?.[f], q[f]));
+	const moving = ACTORS.filter((a) => !skipped.has(a.id) && (!held.has(a.id) || setsOf(a, held.get(a.id)).length));
+	const queries = QUERIES.filter(pendingQuery);
+	const title = titleOf(moving.length, queries.length);
 	const open = (await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } })).filter((a) => a.title === title && !a.outcome);
 	if (open.length && !flag('--again')) throw new Error(`"${title}" is open already (${open.map((a) => a.entry).join(', ')}): nothing was written (--again proposes all the same)`);
 	// every actor write, asked before any is made (`may`: a dry run the rules judge as they would the write). A v3 write
 	// whose record neither schema reads (a lens that moves kind, v and tiers apart) is refused here, with no record
 	// written. Each actor's write goes on a line of its own: the empty "actor v3" line a refused run left, else a new one
 	// (a proposal's start writes no record), so a run refused here and run again starts no line twice.
-	const setsOf = (a, r) => FIELDS.filter((f) => a[f] !== undefined && (!was.get(r.entry)?.loads || !same(r.record?.[f], a[f])));
 	/** the "actor v3" line on entry `entry` that holds no write but its start, where a run left one */
 	const emptyLine = async (entry) => {
 		const edits = (await agent.call('avendb_ask', { op: { op: 'history', entry } }))?.edits ?? [];
@@ -192,9 +198,8 @@ try {
 		return first?.line ? { entry, line: first.line } : null;
 	};
 	const proposals = [];
-	let fresh = 0, moved = 0, kept = 0;
+	let fresh = 0, moved = 0;
 	// the query entries first: an actor names them
-	const heldQueries = new Map(live((await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, schema: qv1.id, where: { type: [QUERY_TYPE] } } })).rows).map((r) => [r.record?.id, r]));
 	for (const q of QUERIES) {
 		const r = heldQueries.get(q.id);
 		if (!r) {
@@ -215,7 +220,7 @@ try {
 			continue;
 		}
 		const sets = QUERY_FIELDS.filter((f) => q[f] !== undefined && !same(r.record?.[f], q[f]));
-		if (!sets.length) { kept++; continue; }
+		if (!sets.length) continue;
 		const { line } = await agent.call('avendb_run', { op: { op: 'propose', entry: r.entry, name: 'query v1' } });
 		if (!line) throw new Error(`the proposal on query ${q.id} (${r.entry}) started no line`);
 		await agent.call('avendb_run', { op: { op: 'batch', ops: sets.map((f) => ({ op: 'set', entry: r.entry, line, schema: qv1.id, path: [f], value: q[f] })) } });
@@ -243,7 +248,7 @@ try {
 			continue;
 		}
 		const w = writes.find((w) => w.a === a);
-		if (!w) { kept++; continue; }
+		if (!w) continue;
 		await agent.call('avendb_run', { op: w.op });
 		proposals.push({ entry: r.entry, line: w.line });
 		moved++;
@@ -258,21 +263,21 @@ try {
 		'open AvenDB.Objective',
 		'',
 		`/-- Maia City holds every actor and query entry the repo declares (src/lib/avendb/actors.js), as "${ACTOR_SCHEMA}" and "${QUERY_SCHEMA}". -/`,
-		`def actors : Metric := metric "Actors v3 and their queries in Maia City" (equals (reading "actors") ${moving.length + QUERIES.length})`,
+		`def actors : Metric := metric "Actors v3 and their queries in Maia City" (equals (reading "actors") ${ACTORS.length - skipped.size + QUERIES.length})`,
 		'',
 		'def objective : List Metric := [actors]',
 		''
 	].join('\n');
 	const note = [
 		'One query engine, tasks M and C1 (Samuel 2026-10-27: "Actor" means one thing everywhere, and an app is an actor): each page\'s manifest becomes its app\'s actor. "Manifest, v2" evolves into "Actor, v3" through one lens: the same entries, ids and history, each with one v3 write; no copies, nothing superseded. v3 renames the kind to actor and tiers to loads (a held part names `actor`), and adds the actor\'s interface (no methods: these actors only load) and code. Each part names a query entry ("Query, v1", an actor of one read method) by its address, its params bound to the actor\'s slots. Every route loads exactly what it loaded before: a golden test compiles each route\'s Interests from the manifests and from the actors and their queries (game/code/sources/actors.test.js). Lean: avendb/spec/AvenDB/Interest.lean, Address.lean.',
-		QUERIES.map((q) => `${q.id}: ${JSON.stringify(q.where)}${q.window ? `, newest ${q.window.limit}` : q.order?.[1] === 'asc' ? ', oldest first' : ''}${q.follow ? `, follow ${q.follow}` : ''}`).join('\n'),
+		queries.map((q) => `${q.id}: ${JSON.stringify(q.where)}${q.window ? `, newest ${q.window.limit}` : q.order?.[1] === 'asc' ? ', oldest first' : ''}${q.follow ? `, follow ${q.follow}` : ''}`).join('\n'),
 		moving.map((a) => `${a.id}: ${a.note}`).join('\n'),
 		...(skipped.size ? [`Not in this AIP: ${[...skipped].join(', ')}. Each was written under "${MANIFEST_V1_SCHEMA}" and "${MANIFEST_SCHEMA}", so it opens read-only through v3 until the engine reads through a chain of lenses; it stays v2, which pages read lifted, and moves by an AIP of its own.`] : []),
-		`${fresh} new, ${moved} moved to v3 or changed, ${kept} as they were.`
+		`${fresh} new, ${moved} moved to v3 or changed; the other ${ACTORS.length - skipped.size + QUERIES.length - moving.length - queries.length} Maia City holds as declared.`
 	].join('\n\n');
 	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals, objective } });
-	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'actors', value: kept, note: 'Maia City before this AIP' } });
-	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'actors', value: moving.length + QUERIES.length, note: 'with the proposals of this AIP' } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'actors', value: ACTORS.length - skipped.size + QUERIES.length - moving.length - queries.length, note: 'Maia City before this AIP' } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'actors', value: ACTORS.length - skipped.size + QUERIES.length, note: 'with the proposals of this AIP' } });
 	// straight to Proposed (Samuel 2026-10-26): it holds its objective, so it is promoted at once, ready for an Accept
 	const promoted = await agent.call('avendb_run', { op: { op: 'aip_promote', entry: aip.entry } })
 		.catch((e) => { console.error(`not promoted (${e.message}): an owner puts it forward ("Propose it")`); return null; });
