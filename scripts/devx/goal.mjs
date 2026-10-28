@@ -1,8 +1,8 @@
-// One batch PR's CI timeline, to keep each batch inside the time budget (Samuel 2026-10-27: CI and release under 10
-// minutes) and to see at once why a batch took longer than the last: every push (whose, CI's WebAssembly commit or a
+// One goal PR's CI timeline, to keep each goal inside the time budget (Samuel 2026-10-27: CI and release under 10
+// minutes) and to see at once why a goal took longer than the last: every push (whose, CI's WebAssembly commit or a
 // person's), each budgeted workflow's run on it with its time and its slowest job, then the merge and main's release.
-//   bun scripts/devx/batch.mjs <pr-number> [--json]
-// The rows go into docs/devx/cycles.md's batch table. Read-only.
+//   bun scripts/devx/goal.mjs <pr-number> [--json]
+// The rows go into docs/devx/cycles.md's goal table. Read-only.
 import { budgets } from '../ci/budget.mjs';
 
 const repo = 'MyAvenCEO/maiacity';
@@ -32,7 +32,7 @@ if (import.meta.main) {
  const pr = await get(`/pulls/${n}`);
  const commits = await get(`/pulls/${n}/commits?per_page=250`);
  const since = pr.created_at;
- // a collector's branch carries batch after batch: only this PR's lifetime
+ // a collector's branch carries goal after goal: only this PR's lifetime
  const until = pr.merged_at || pr.closed_at || new Date().toISOString();
  const prRuns = (await runs(`branch=${encodeURIComponent(pr.head.ref)}&created=${since}..${until}`)).filter(r => r.event === 'pull_request');
  const heads = [...new Set(prRuns.map(r => r.head_sha))].reverse();
