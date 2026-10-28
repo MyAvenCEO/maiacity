@@ -435,7 +435,7 @@ jobs:
   # image only from the run whose files are byte for byte main's (reuse.mjs), by the digest that run's artifact names:
   # a digest names its bytes, so no other run's push can stand in for it. A fork's pull request builds without pushing.
   images:
-    needs: plan
+    needs: [plan, wasm]
     if: needs.plan.outputs.run_images == 'true'
     name: Image (${{ matrix.component }})
     runs-on: ubuntu-latest
@@ -452,6 +452,9 @@ jobs:
       PUSH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     steps:
       - uses: actions/checkout@v7.0.1
+      # the API's image carries the page's device, which checks the proof of the code it runs (aven/api/Dockerfile)
+      - if: matrix.component == 'api'
+        uses: ./.github/actions/page-device
       - id: meta
         run: |
           case "$COMPONENT" in

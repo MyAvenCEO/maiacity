@@ -19,6 +19,8 @@ test('a shard runs from the archive and builds nothing', () => {
  expect(args.join(' ')).toContain('-E package(avendb-net)');
  const [[, , list]] = commands('run', { shard: 'core-properties', file: '/t/a.tar.zst', extracted: '/t/x' });
  expect(list).toBe('list');
+ // a binaries-only list has no suites, so no folder to run the program in
+ expect(commands('run', { shard: 'core-properties', file: '/t/a.tar.zst', extracted: '/t/x' })[0]).not.toContain('binaries-only');
  expect(() => commands('run', { shard: 'nope' })).toThrow('a step is archive, doc or run');
  expect(commands('archive', { file: '/t/a.tar.zst' })[0].slice(0, 4)).toEqual(['cargo', 'nextest', 'archive', '--locked']);
 });
@@ -27,4 +29,5 @@ test('the libtest shard finds its program in a nextest list', () => {
  const list = JSON.stringify({ 'rust-suites': { 'avendb::all': { 'binary-id': 'avendb::all', 'binary-path': '/x/target/debug/deps/all-1f', cwd: '/x/crates/avendb' } } });
  expect(program(list, 'avendb::all')).toEqual({ path: '/x/target/debug/deps/all-1f', cwd: '/x/crates/avendb' });
  expect(() => program(list, 'avendb::memory')).toThrow('the archive holds no avendb::memory');
+ expect(() => program(JSON.stringify({ 'rust-binaries': { 'avendb::all': {} } }), 'avendb::all')).toThrow('the archive holds no avendb::all');
 });

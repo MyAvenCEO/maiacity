@@ -259,7 +259,7 @@ test("rows the acting vault doesn't read, another vault's database and other typ
 	const v = vaultSource(d.world, { ...d.db, rows: [...d.db.rows, notes] }, VAULT, ACTOR, d.readFile);
 	expect(v.refused).toEqual([]);
 	expect(Object.keys(v.index.recipes).length).toBe(338);
-	expect(() => v.hashOf('plants/apple@2')).toThrow(/plants\/apple@2 is not in the Maia City theos/);
+	expect(() => v.hashOf('plants/apple@2')).toThrow(/plants\/apple@2 is not in the Maia City vault/);
 });
 
 test('the shelf lists every recipe of the vault once, by group, asset (its entry), version and variant, from its entries alone', () => {
