@@ -161,14 +161,14 @@ fn proxies() -> Slice {
 fn door_created() -> Body {
     let header = Some(Header { ty: Sym::new("todo"), created: 1_791_500_000 });
     let tags = TagDelta { add: vec![Sym::new("work")], remove: vec![] };
-    Body { header, tags, answers: vec![], content: b"Fix the door".to_vec(), proof: None, files: vec![], defines: None }
+    Body { header, tags, answers: vec![], content: b"Fix the door".to_vec().into(), proof: None, files: vec![], defines: None }
 }
 
 /// The body of a write of tags alone, by a steward answering what two writes asked for.
 fn door_retagged() -> Body {
     let tags = TagDelta { add: vec![Sym::new("done")], remove: vec![Sym::new("work")] };
     let answers = vec![EditId::from_u64(4), EditId::from_u64(6)];
-    Body { header: None, tags, answers, content: vec![], proof: None, files: vec![], defines: None }
+    Body { header: None, tags, answers, content: vec![].into(), proof: None, files: vec![], defines: None }
 }
 
 /// Alice's work todos as a narrower share shares them (`rules`): its own ops, to draft a todo, tick one done on the

@@ -52,7 +52,7 @@ pub(super) fn put_anchor_metadata(store: &Store, entry: EntryId) -> Option<Vec<u
     for id in ids {
         // the body's metadata alone, its content left out
         let body = store.body_metadata(id)?;
-        let body = Body { content: Vec::new(), ..body.clone() };
+        let body = Body { content: Arc::from([]), ..body.clone() };
         id.encode(&mut b);
         body.to_wire().encode(&mut b);
     }
