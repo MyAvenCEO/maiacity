@@ -5,9 +5,17 @@
 //! `UNLOCK_PHONE {...}` line gives what the restore took, split into deriving keys, reading and showing.
 //!
 //!   UNLOCK_PHONE_EDITS=21500 cargo test --release -p avendb --test unlock_phone -- --ignored --nocapture
+//!
+//! With `UNLOCK_PHONE_FIXTURE` set, it writes what the iPhone opens from there too, for avendb-browser's `benchUnlock`
+//! to open the same in WebAssembly (`scripts/ci/avendb-bench-unlock.mjs`): its device's secret, the 40 bytes its shelf
+//! names the edits it checked by, how many, then its signed edits, its McEliece keys, and its shelf's keys, views and
+//! kept showings, each a count in 4 bytes, big-endian, and each item its length in 4 bytes, then its bytes. Synthetic:
+//! fixed keys, no one's data.
 #![cfg(not(debug_assertions))]
 
 use std::time::Instant;
+
+use avendb::wire::Wire;
 
 use avendb::cast::{document, paragraph};
 use avendb::id::{EntryId, SignerId, VaultId};
@@ -16,6 +24,9 @@ use avendb::policy::{Action, Kind, Level, Principal, Sharing, Who};
 use avendb::rules::{Cap, CapGroup, Op};
 use avendb::slice::{Atom, Selector};
 use serde_json::{Value, json};
+
+/// The iPhone's device secret, so that a fixture of it opens as the same device elsewhere.
+const PHONE: [u8; 32] = [7; 32];
 
 fn env(name: &str, default: usize) -> usize {
     std::env::var(name).ok().and_then(|n| n.parse().ok()).unwrap_or(default)
@@ -36,7 +47,7 @@ fn written(writers: usize, entries: usize, edits: usize) -> (Lab, SignerId) {
     let mut lab = Lab::new();
     let passkey = lab.passkey("Alice");
     let mac = lab.device_of(passkey, "Alice's Mac");
-    let phone = lab.device_of(passkey, "Alice's iPhone");
+    let phone = lab.device_with("Alice's iPhone", PHONE);
     let ws: Vec<SignerId> = (0..writers).map(|i| lab.device_of(passkey, &format!("Alice's writer {i}"))).collect();
     let bob_key = lab.passkey("Bob");
     let bob_mac = lab.device_of(bob_key, "Bob's Mac");
@@ -150,10 +161,29 @@ fn measure_unlock_phone() {
     let warm = Warm {
         keys: receipt.keys.clone().into_iter().collect(),
         views: receipt.view.clone().into_iter().collect(),
-        ..Default::default()
+        shown: receipt.shown.clone().map(|(p, _)| p).into_iter().collect(),
     };
     lab.warmed(phone, receipt);
     let backup = lab.backup(phone);
+    if let Ok(path) = std::env::var("UNLOCK_PHONE_FIXTURE") {
+        let list = |out: &mut Vec<u8>, items: Vec<Vec<u8>>| {
+            out.extend_from_slice(&(items.len() as u32).to_be_bytes());
+            for i in items {
+                out.extend_from_slice(&(i.len() as u32).to_be_bytes());
+                out.extend_from_slice(&i);
+            }
+        };
+        let mut out = PHONE.to_vec();
+        out.extend_from_slice(&checked);
+        out.extend_from_slice(&(held as u32).to_be_bytes());
+        list(&mut out, backup.signed().iter().map(|s| s.to_wire()).collect());
+        list(&mut out, lab.blob_ids(phone).into_iter().filter_map(|b| lab.blob(phone, b)).map(|b| b.to_vec()).collect());
+        list(&mut out, warm.keys.clone());
+        list(&mut out, warm.views.clone());
+        list(&mut out, warm.shown.clone());
+        std::fs::write(&path, &out).expect("the fixture written");
+        eprintln!("UNLOCK_PHONE fixture written: {} bytes", out.len());
+    }
     let perf = lab.perf(phone);
     let began = Instant::now();
     lab.restore_warm(phone, backup, Some((checked, held)), &warm);
