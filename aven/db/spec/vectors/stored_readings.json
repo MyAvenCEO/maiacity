@@ -1,0 +1,1 @@
+{"readRules": 1, "cases": [{"name": "sealed under these read rules", "sameRules": true, "reads": "on", "readsAsAnew": true}, {"name": "sealed under other read rules", "sameRules": false, "reads": "whole", "readsAsAnew": true}]}

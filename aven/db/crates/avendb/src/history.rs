@@ -229,10 +229,10 @@ impl History {
     }
 
     /// Hydrate omitted bodies only from locally authenticated opened edits.
-    pub(crate) fn restore_held_bodies(&mut self, bodies: &HashMap<EditId, crate::slice::Body>) {
+    pub(crate) fn restore_held_bodies(&mut self, bodies: &dyn crate::lab::BodyOf) {
         for change in &mut self.changes {
             if change.body.is_none() {
-                if let Some(body) = bodies.get(&change.write.edit) {
+                if let Some(body) = bodies.body(&change.write.edit) {
                     change.body = Some(body.content.clone());
                 }
             }

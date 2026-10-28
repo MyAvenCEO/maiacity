@@ -132,6 +132,36 @@ fn a_showing_that_does_not_open_is_judged_anew() {
     }
 }
 
+/// A pack its shelf lists that doesn't open, beside one that does (the iPhone's 3 packs sealed before the show rules,
+/// tried at every unlock on 2026-10-28): the next save keeps every showing in one pack in place of them all, so the
+/// unlock after takes every one from it alone, and tries no pack that doesn't open.
+#[test]
+fn a_pack_that_does_not_open_is_put_again_whole() {
+    let (mut lab, _, phone, vault, notes) = alice(4);
+    for (i, e) in notes.iter().enumerate() {
+        lab.edit(phone, vault, *e, |it| it.set_text(2, &format!("Written {i}."))).unwrap();
+    }
+    let held = lab.log(phone).ids().len();
+    let w: Warming = lab.warming(phone, held, Some([1; 40])).expect("the shelf lacks work");
+    let pack = w.shown.clone().expect("a pack").0;
+    let mut stale = pack.clone();
+    stale[0] ^= 1;
+    let warm = Warm { keys: w.keys.clone().into_iter().collect(), views: w.view.clone().into_iter().collect(), shown: vec![stale.into(), pack.into()] };
+    lab.warmed(phone, w);
+    let backup = lab.backup(phone);
+    lab.restore_warm(phone, backup, Some(([1; 40], held)), &warm);
+    assert_eq!(count(&lab, phone, "kept shown: a pack that doesn't open"), 1);
+    let expected = records(&lab, phone, &notes);
+    let (again, held) = save(&mut lab, phone).expect("its showings, put again in one pack");
+    assert_eq!(again.shown.len(), 1, "one pack of them all");
+    let (failed, taken) = (count(&lab, phone, "kept shown: a pack that doesn't open"), count(&lab, phone, "show: entries taken as kept"));
+    let backup = lab.backup(phone);
+    lab.restore_warm(phone, backup, Some(([1; 40], held)), &Warm { shown: again.shown, ..warm });
+    assert_eq!(count(&lab, phone, "kept shown: a pack that doesn't open"), failed, "no pack that doesn't open");
+    assert!(count(&lab, phone, "show: entries taken as kept") >= taken + notes.len() as u64, "every note taken from it");
+    assert_eq!(records(&lab, phone, &notes), expected);
+}
+
 /// A random walk: notes written on both devices, saves in between, each unlock with the last save's showings; every
 /// note shows as the device showed it before it locked, which in a debug build is checked against judging it anew.
 #[test]
