@@ -87,8 +87,23 @@ function check() {
 			process.exit(0); // launchd's KeepAlive starts it again; the app runs on by itself
 		}
 	}
+	ensureDevice();
 	if (!appRunning()) startApp();
 	witnessRelease();
+}
+
+// The page's avenDB device is a build output (B1): CI's build of this checkout's sources, fetched, never built here.
+// Each check, as a pull that took the old one away may have restarted this watcher; said once each time it changes.
+let device = '';
+function ensureDevice() {
+	let now;
+	try {
+		now = execFileSync('bun', ['aven/ops/devx/wasm.mjs', 'ensure', '--fetch'], { cwd: ROOT, env: ENV, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: NETWORK }).trim();
+	} catch (e) {
+		now = `the page's avenDB device: ${(e.stderr || e.message || e).toString().trim()}`;
+	}
+	if (now !== device && !now.endsWith(': in place')) log(now);
+	device = now;
 }
 
 // the release Maia City accepts (aven/ops/release.mjs): every 10 minutes this Mac witnesses maia.city, building a commit
