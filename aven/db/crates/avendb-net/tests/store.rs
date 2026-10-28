@@ -219,6 +219,35 @@ async fn the_edits_its_keys_name_are_not_checked_again_and_forged_keys_vouch_for
     node.shutdown().await.expect("it stops");
 }
 
+/// A catch-up: thousands of edits taken in a few saves, far fewer than the 64 a head follows. A head follows them
+/// all the same, and the next start checks only the edits after it, fewer than a page of them, not every one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_catch_up_in_few_saves_is_not_checked_again() {
+    let dir = Folder::new("caught-up");
+    let (node, _, coop) = mac(dir.path()).await;
+    write(&node, coop, "Welcome", WELCOME_TEXT).await;
+    for chunk in 0..3 {
+        node.act(move |lab: &mut Lab, me| {
+            for n in 0..1500 {
+                let doc = document(&format!("Note {chunk}-{n}"), "taken", me);
+                lab.create(me, coop, coop, "doc", &[], doc).expect("a note");
+            }
+        })
+        .await;
+        until("the shelf holds them", || async { !node.behind().await }).await;
+    }
+    warmed(&node).await;
+    let held = node.read(|lab, me| lab.log(me).ids().to_vec()).await;
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    let (node, _, _) = mac(dir.path()).await;
+    assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
+    let (checked, offered) = node.read(|lab, me| checks(lab, me)).await;
+    assert!(offered as usize >= held.len(), "offered {offered} of {}", held.len());
+    assert!(checked < 2048, "only the edits after its newest head are checked: {checked} of {offered}");
+    node.shutdown().await.expect("it stops");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_journal_entry_cut_short_is_passed_and_never_replaced() {
     let dir = Folder::new("torn");
