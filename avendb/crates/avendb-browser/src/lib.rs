@@ -795,7 +795,7 @@ fn done(out: Value) -> Result<Value> {
 /// "over"}`, each step by its name, when it began and how long it took, in milliseconds since the start began; `took`
 /// is null for the step under way.
 pub fn steps_json(steps: &Steps) -> Value {
-    let stage = |s: &Stage| json!({ "step": s.step, "at": s.at, "took": s.took });
+    let stage = |s: &Stage| json!({ "step": s.step, "at": s.at, "took": s.took, "note": s.note });
     json!({ "steps": steps.steps.iter().map(stage).collect::<Vec<_>>(), "over": steps.over })
 }
 

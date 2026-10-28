@@ -31,7 +31,8 @@ import { ENTRIES } from '../../../code/index.js';
 import { recordOf } from '../../../game/code/sources/avendb.js';
 import { stageTag } from './flows.js';
 import { POST_TYPES, postTag } from './posttypes.js';
-import { DOCS, readable } from './docs.js';
+import { DOCS } from './docs.js';
+import { postText } from './doc-text.js';
 import { brings } from './ops.js';
 import { GAME, GAMES, gameTag } from '../../../game/games.js';
 import { INDEX, recipeAt } from '../assets/recipes.js';
@@ -382,7 +383,7 @@ export async function docRecords(key) {
 	const value = filled({
 		kind: postTag('doc'),
 		title,
-		text: d.section === 'skill' ? readable(text) : text,
+		text: postText(key, text),
 		channel: POST_TYPES.doc.channel,
 		...filled({ excerpt, language: 'en', section: d.section, slug: d.slug, page: d.page }),
 		tags: []

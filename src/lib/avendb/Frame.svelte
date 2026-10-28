@@ -127,7 +127,7 @@
 	}
 
 	.middle {
-		padding: calc(1.4rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2.4rem) 10rem;
+		padding: 0.4rem clamp(1rem, 3vw, 2.4rem) 1.5rem;
 	}
 
 	.middle.flush {
@@ -135,7 +135,7 @@
 	}
 
 	.side {
-		padding: calc(1.2rem + env(safe-area-inset-top, 0px)) 0.8rem 7rem;
+		padding: 0.4rem 0.8rem 1.5rem;
 		background: #efebe3;
 	}
 
@@ -385,10 +385,6 @@
 		.drawer.left,
 		.left .shut {
 			display: grid;
-		}
-
-		.middle:not(.flush) {
-			padding-top: calc(1rem + env(safe-area-inset-top, 0px));
 		}
 	}
 

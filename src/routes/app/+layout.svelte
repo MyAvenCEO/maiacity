@@ -81,7 +81,10 @@
 			: []
 	);
 
-	afterNavigate(() => {
+	/** the one part of the screen that scrolls (`.page`): a page moved to starts at its top, as a document would */
+	let scroller = $state<HTMLElement | null>(null);
+	afterNavigate(({ from, to, type }) => {
+		if (scroller && type !== 'popstate' && from?.url.pathname !== to?.url.pathname) scroller.scrollTop = 0;
 		if (!native()) noteLifecycle('route-navigation');
 		viewChanged();
 	});
@@ -392,7 +395,7 @@
 		{#if invited}<p class="invite-note" use:foot={FOOT.toast} role="status">{invited} <button class="quiet later" onclick={() => (invited = '')}>OK</button></p>
 {/if}
 		<div class="app screen-content" class:immersive>
-			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>
+			<div class="page" bind:this={scroller}><VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes></div>
 		</div>
 	{/if}
 	<div class="app-dock">
@@ -518,15 +521,51 @@
 		text-decoration: none;
 	}
 
-	/* Every page of the app sits in it. Its own layers stay inside it (isolation), so the nav pill is always over them;
-	   a page that is not full screen keeps clear of the status bar of the pinned app (see-through over the page) and
-	   has room at its foot for the pill */
+	/* The one page container (Goal 7 task 16, Samuel 2026-10-28): every page of the app sits in it, one screen high,
+	   and it never scrolls, nor does the document. Its rows are the head's room (the measured ScreenChrome,
+	   $lib/app/screen-slots.js), the page, and the nav pill's room (--nav-room, src/app.css); only the page scrolls
+	   (`.page`), and a page that fills the screen (avenDB's Frame, the Proposals board) takes `height: 100%` of it and
+	   scrolls its own columns. No page pads its own top or foot for the head or the pill. Its own layers stay inside it
+	   (isolation), so the nav pill is always over them. A full-screen page (a sandbox, a world, the studio) has the
+	   whole screen, no rows. */
 	.app {
+		position: fixed;
+		inset: 0;
+		display: grid;
+		grid-template-rows: minmax(0, 1fr);
 		isolation: isolate;
+		overflow: hidden;
 	}
 
 	.app:not(.immersive) {
 		padding-top: var(--screen-head-room);
-		padding-bottom: calc(var(--nav-room) + 1.5rem);
+		padding-bottom: var(--nav-room);
+	}
+
+	.page {
+		min-width: 0;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.app:not(.immersive) > .page {
+		overflow-y: auto;
+		overscroll-behavior: contain;
+	}
+
+	/* an ordinary page's column: as wide as it says (--page-width), clear of the screen's sides, no room of its own at
+	   its top or foot; `fill` makes it one screen high for a page whose parts scroll on their own */
+	.page :global(.app-page) {
+		box-sizing: border-box;
+		max-width: var(--page-width, 60rem);
+		margin: 0 auto;
+		padding: 0.4rem clamp(1rem, 4vw, 2rem) 1.5rem;
+	}
+
+	.page :global(.app-page.fill) {
+		display: flex;
+		flex-direction: column;
+		height: 100%;
+		padding-bottom: 0.6rem;
 	}
 </style>

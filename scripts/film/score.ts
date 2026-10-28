@@ -1,7 +1,7 @@
 // Compose a film's score and make its sound effects, with ElevenLabs through fal, into the vault.
 //
-//   bun scripts/film/score.ts scripts/film/day-19-d.mjs [--only music|cues] [--take b]
-//   bun scripts/film/score.ts scripts/film/day-19-d.mjs --sfx <name>
+//   bun scripts/film/score.ts <shot list .mjs> [--only music|cues] [--take b]
+//   bun scripts/film/score.ts <shot list .mjs> --sfx <name>
 //
 // The score follows the film's arc: every section of `music.chunks` (see the shot list) ends where the list says,
 // in the style it asks for — so the swell lands on the sunrise and the drop on the tired land. Instrumental, one

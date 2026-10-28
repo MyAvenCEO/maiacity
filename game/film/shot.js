@@ -344,7 +344,7 @@ export function fingerprint(spec, extra = {}) {
 /** Two specs the same shot (as the shots table decides whether a save is a new version). */
 export const sameSpec = (/** @type {Spec} */ a, /** @type {Spec} */ b) => stable(a) === stable(b);
 
-// ── the shot lists written before shots were data (scripts/film/day-19-d.mjs …) ──────────────────────────────────
+// ── the shot lists written before shots were data (.mjs files of camera.mjs moves) ──────────────────────────────────
 
 /**
  * How far over or under middle grey a legacy shot is metered, in stops: grade.mjs's per-hour brightness targets
@@ -369,7 +369,7 @@ export function legacyLook(/** @type {{ mood?: string, grade?: string, extra?: s
 }
 
 /**
- * A shot of a legacy shot list (scripts/film/day-19-d.mjs: name, size, hour, hourTo, fov, fovTo, stand, dome, props,
+ * A shot of a legacy shot list (a .mjs of camera.mjs moves: name, size, hour, hourTo, fov, fovTo, stand, dome, props,
  * exposure, blur, mood, grade, extra, sfx, path built with camera.mjs, start, seconds) as a spec.
  *   · its path's `.spec` (camera.mjs attaches it) becomes the camera;
  *   · `start` (its place on the film's clock) becomes world.clock: the trucks of a set drive on the same clock;

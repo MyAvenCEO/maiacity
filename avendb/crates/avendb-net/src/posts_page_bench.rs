@@ -11,8 +11,8 @@
 //!   `query_window_bench.rs` builds them, stamped as Bob's log is, so a page steps on no edit. Each page cold: pages,
 //!   bytes and index rows read, and its time, p50 and p95 of `OPENS`.
 //!
-//! Lines of JSON (`BENCH {"kind":"posts_node",...}`, `{"kind":"posts_at",...}`) that `scripts/ci/avendb-bench.mjs
-//! --posts` holds to `avendb/bench-gates.json`:
+//! Lines of JSON (`BENCH {"kind":"posts_node",...}`, `{"kind":"posts_at",...}`), each run held to its counts as it
+//! goes (`held`; the times are printed only); the net test shard of avendb-checks.yml runs it at 1M and 10M:
 //!
 //!   AVENDB_WINDOW_N=1000000,10000000 cargo test -p avendb-net --features test-fixtures --lib -- --ignored \
 //!     --nocapture --exact posts_page::bench::bench_posts_off_the_index
@@ -141,6 +141,7 @@ async fn the_bench_reads_a_page() {
     let (lab, shelf, counts, me) = fixture(2 * PAGE, 1, 2_000).await;
     let r = read(&lab, &shelf, &counts, me).await;
     assert!(r.pages[0] > 0 && r.bytes[0] > 0, "a page reads off the shelf");
+    held(&r, &json!({ "pages": r.pages, "bytes": r.bytes, "rows": r.rows }));
 }
 
 #[tokio::test]
@@ -166,6 +167,14 @@ async fn bench_posts_off_the_index() {
         "pages_more_per_edit": round((edits.pages[0] as f64 - base.pages[0] as f64) / ((EDITS - 1) * POSTS) as f64, 3),
     });
     println!("BENCH {line}");
+    // across the shapes: a page reads at most one page more with 8x the posts or 16 edits on each (it reads no history),
+    // and never an index row past those it needs
+    let most = shapes.iter().flat_map(|r| r.pages).max().unwrap();
+    assert!(most - base.pages[0] <= 1, "a page reads more pages with more posts or history: {line}");
+    for r in &shapes {
+        assert!(r.rows.iter().all(|&x| x <= ROWS_NEEDED as u64), "index rows read past the {ROWS_NEEDED} a page needs: {line}");
+    }
+    let mut first_pages = None;
     for n in env_or("AVENDB_WINDOW_N", "1000000").split(',') {
         let n: u64 = n.trim().parse().expect("AVENDB_WINDOW_N: sizes");
         let t = Instant::now();
@@ -187,5 +196,18 @@ async fn bench_posts_off_the_index() {
             "p95_us": round(pct(&r.us, 0.95), 1),
         });
         println!("BENCH {line}");
+        held(&r, &line);
+        // from the first size to each larger one, at most 3 pages more: a page reads as the tree is deep
+        let first = *first_pages.get_or_insert(r.pages[0]);
+        assert!(r.pages[0] <= first + 3, "a page reads more pages as the vault grows: {line}");
     }
+}
+
+/// A page's gates at a size, counts alone, so they hold on any machine: cold, a first page and the next read at most 12
+/// pages and 192 KB off the shelf, and no index row past the `ROWS_NEEDED` a page needs (before fab0a86d a find read
+/// on up to 64 rows past each token's own, 1,224 rows a page). The time is printed only (Goal 7a W1: no timing gate).
+fn held(r: &Read, line: &serde_json::Value) {
+    assert!(r.pages.iter().all(|&p| p <= 12), "pages read cold: {line}");
+    assert!(r.bytes[0] <= 192 << 10, "bytes read cold: {line}");
+    assert!(r.rows.iter().all(|&x| x <= ROWS_NEEDED as u64), "index rows read past the {ROWS_NEEDED} a page needs: {line}");
 }

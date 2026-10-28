@@ -121,11 +121,6 @@
 </main>
 
 <style>
-	.app-page {
-		max-width: 60rem;
-		margin: 0 auto;
-		padding: calc(4rem + env(safe-area-inset-top, 0px)) clamp(1rem, 4vw, 2rem) 10rem;
-	}
 	.dim {
 		color: var(--muted);
 	}

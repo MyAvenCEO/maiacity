@@ -374,10 +374,8 @@ export async function describe(hash, patch, o = {}) {
 
 /**
  * Each voice take's word timings, by hash — or null where none are known: its about's meta.words (written by
- * `bun voice say`), else the words its transcript task heard. Where avenDB does not answer, or a take has no words
- * there, the old library/ folder beside the repo is read, still named by CID: <cid>.json, by the migration's map
- * (vault/migration/cid-to-blake3.json) inverted. LIBRARY=<dir> reads only that folder (a fixture: <hash>.json).
- * So a shot list always loads; without any of them its timing is simply unknown.
+ * `bun voice say`), else the words its transcript task heard. LIBRARY=<dir> reads only that folder instead (a
+ * fixture: <hash>.json). So a shot list always loads; without any of them its timing is simply unknown.
  * @param {string[]} hashes
  * @returns {Promise<Map<string, { word: string, start: number, end: number }[] | null>>}
  */
@@ -400,16 +398,12 @@ export async function wordsOf(hashes) {
 		}
 		if ([...out.values()].every(Boolean)) return out;
 	}
-	// the files by name: a fixture by hash, library/ by CID
-	const lib = dir ?? new URL('../../library/', import.meta.url).pathname;
-	const mapFile = new URL('../../vault/migration/cid-to-blake3.json', import.meta.url);
-	/** @type {Record<string, string>} */
-	const cidOf = {};
-	if (existsSync(mapFile)) for (const [cid, v] of Object.entries(JSON.parse(readFileSync(mapFile, 'utf8')))) cidOf[/** @type {any} */ (v).hash] = cid;
+	// a fixture's files, by hash
+	if (!dir) return out;
 	for (const h of out.keys()) {
 		if (out.get(h)) continue;
-		const f = [join(lib, `${h}.json`), ...(cidOf[h] ? [join(lib, `${cidOf[h]}.json`)] : [])].find((p) => existsSync(p));
-		if (f) out.set(h, JSON.parse(readFileSync(f, 'utf8')).meta?.words ?? null);
+		const f = join(dir, `${h}.json`);
+		if (existsSync(f)) out.set(h, JSON.parse(readFileSync(f, 'utf8')).meta?.words ?? null);
 	}
 	return out;
 }
