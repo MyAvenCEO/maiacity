@@ -189,3 +189,15 @@ test('a suite marked off is never selected, not even by its own files or a full 
  for (const run of [selected(['maia/content/sandbox-7/shed.ts']), selected(null), selected([], 'all')]) expect(run).not.toContain('physics');
  expect(inventory().physics.length).toBeGreaterThan(0);
 });
+
+test('every file the page device is built from ships a new site and API image', () => {
+ // #1377's release skipped the site: its fix was in avendb's Rust, which the page device is built from
+ for (const f of ['aven/db/crates/avendb/src/lab.rs', 'aven/db/crates/avendb-net/src/sync.rs', 'aven/db/crates/avendb-browser/src/lib.rs',
+  'aven/db/vendor/iroh/src/lib.rs', 'aven/db/spec/AvenDB/StoredReadings.lean', 'aven/db/scripts/build-web.sh']) {
+  expect([f, impact([f])]).toMatchObject([f, { site: true, api: true }]);
+ }
+ // its tests build no device; the server's crate is not in it
+ for (const f of ['aven/db/crates/avendb/tests/all/live.rs', 'aven/db/crates/avendb-server/src/main.rs']) {
+  expect([f, impact([f]).site]).toEqual([f, false]);
+ }
+});
