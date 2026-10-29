@@ -67,7 +67,14 @@ async fn a_new_iphone_links_by_scanning_the_code_alices_mac_shows() {
     assert_eq!(scanned, mac.offer());
     assert_eq!(phone.link(&scanned, passkey_a).await.expect("the new iPhone links"), alice, "to Alice's vault");
     let knows = move |lab: &Lab, me| lab.state(me).vault(alice).is_some_and(|v| v.devices.contains(&new));
-    assert!(mac.read(knows).await, "and the Mac counts it among Alice's devices");
+    // linked as its own Lab took the join, which the Mac takes after, never waited on (a `join` job)
+    assert!(phone.read(knows).await, "the new iPhone counts itself among Alice's devices at once");
+    until("the Mac counts it among Alice's devices", || mac.read(knows)).await;
+    let joined = || async {
+        let (_, ended) = phone.jobs().snapshot();
+        ended.iter().any(|j| j.kind == "join" && j.state == avendb_net::JobState::Done)
+    };
+    until("its join job is done", joined).await;
     let (coop, welcome) = (h.coop, h.welcome);
     until("the new iPhone reads Welcome", || reads(&phone, welcome, WELCOME_TEXT)).await;
     let edit = move |lab: &mut Lab, me| lab.edit(me, coop, welcome, |i| i.set_text(2, AFTER_TEXT));

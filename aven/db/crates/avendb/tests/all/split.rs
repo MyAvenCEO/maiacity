@@ -149,11 +149,13 @@ fn mceliece_keys_go_only_within_reach() {
         let outside = [w.mac_c, w.stranger].iter().all(|&d| !mac.may_fetch(w.mac_a, d, b, &[]));
         assert!(outside, "not Carol, nor a stranger");
     }
+    // a key is needed only to seal to its signer (`LazyBoxes.lean` `reads_without_keys`): the server, which seals to
+    // no one, takes the vault logs and none of their keys, and hands them on to Bob's Mac, which opens the new seed by
+    // what is sealed to it
     ask((&mut server, w.server), (&mut mac, w.mac_a));
-    assert!(new.iter().all(|b| server.blob(w.server, *b).is_some()), "the server fetched each with the vault logs");
+    assert!(new.iter().all(|b| server.blob(w.server, *b).is_none()), "the server takes the vault logs, no key");
     ask((&mut bob, w.mac_b), (&mut server, w.server));
-    assert!(new.iter().all(|b| bob.blob(w.mac_b, *b).is_some()), "and hands it on to Bob's Mac");
-    assert_eq!(bob.state(w.mac_b).epoch(KeyFam::Seed(coop)), 1, "which learns the coop's key rotated");
+    assert_eq!(bob.state(w.mac_b).epoch(KeyFam::Seed(coop)), 1, "Bob's Mac learns the coop's key rotated");
     assert!(bob.opens(w.mac_b, KeyFam::Seed(coop)), "and opens the new one");
     assert!(!server.opens(w.server, KeyFam::Seed(coop)), "which the server doesn't");
 }

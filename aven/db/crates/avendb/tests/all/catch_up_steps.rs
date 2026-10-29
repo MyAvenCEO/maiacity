@@ -418,7 +418,7 @@ fn a_start_of_more_than_it_does_in_one_go_ends_behind_and_its_catch_up_shows_the
 }
 
 /// What a device takes in the middle of a catch-up a step at a time brings it one step on, not the whole of it: the
-/// keys a pull brought after its pages (`Shared::bring_keys`, a `receive` that brings it up to date) ran an iPhone's
+/// keys a pull brought after its pages (`Shared::seal_keys`, a `receive` that brings it up to date) ran an iPhone's
 /// whole catch-up in one turn of 1.8 min, a whole replay of 47.6 s, its key index made again 27.9 s and its bodies
 /// 26.3 s, and its page's worker, which runs the Lab, answered no peer meanwhile (2026-10-28, `taken_le` in
 /// `CatchUpBudget.lean`). The catch-up's own steps bring the rest, to what one catch-up brings.
@@ -428,7 +428,7 @@ fn what_a_device_takes_mid_catch_up_brings_it_one_step_on_not_the_whole() {
     let (mut steps, _) = first_sync(6, 40);
     assert!(once.catch_up(d));
     assert!(matches!(steps.catch_up_step(d, 1), CatchUp::Stepped), "a catch-up under way");
-    // the keys a pull brings after its last page, as `bring_keys` takes them
+    // the keys a pull brings after its last page, as `seal_keys` takes them
     steps.receive(d, vec![], vec![]);
     assert!(!steps.replay_current(d), "taking its keys replayed every edit in one turn");
     let mut taken = 0;

@@ -232,6 +232,32 @@ fn a_devices_pass_shows_the_api_its_vault_and_whether_it_is_an_admin() {
     assert_eq!(engine::run(&mut s.w.lab, mac_a, &json!({ "op": "api_pass", "audience": "" }))["refused"], "BadOp");
 }
 
+/// The API takes each pass once (`aven/api/src/standing.ts`), so no two passes of a device are alike: not two its Lab
+/// makes in one second, nor two of two Labs of it opened in the same second, each with its machine's randomness.
+#[test]
+fn a_device_never_makes_the_same_pass_twice() {
+    let mut s = served();
+    let (mac_a, server) = (s.w.mac_a, s.w.server);
+    s.w.lab.set_now(1_791_500_000);
+    let now = s.w.lab.now();
+    let first = pass_of(&mut s.w, mac_a);
+    let second = pass_of(&mut s.w, mac_a);
+    assert_ne!(first.to_wire(), second.to_wire(), "two passes in one second");
+    let mut opened = s.w.lab.split(mac_a, &[], [1; 32]);
+    let ask = json!({ "op": "api_pass", "audience": API });
+    let of = |made: &serde_json::Value| ApiPass::from_wire(&unbase64url(made["ok"]["pass"].as_str().unwrap()).unwrap()).unwrap();
+    let third = of(&engine::run(&mut opened, mac_a, &ask));
+    let mut again = opened.split(mac_a, &[], [2; 32]);
+    let fourth = of(&engine::run(&mut again, mac_a, &ask));
+    assert_eq!((third.made, fourth.made), (now, now));
+    assert_ne!(third.to_wire(), fourth.to_wire(), "two Labs of one device, opened in the same second");
+    let passes = [&first, &second, &third, &fourth].map(|p| p.to_wire());
+    assert!(passes.iter().enumerate().all(|(i, p)| !passes[..i].contains(p)));
+    for pass in [&first, &second, &third, &fourth] {
+        assert_eq!(world::pass_standing(&s.w.lab, server, pass, API, now), Some((s.w.alice, true)), "each counts");
+    }
+}
+
 #[test]
 fn the_server_lists_the_vaults_it_knows_to_an_admins_pass_for_that_alone() {
     let mut s = served();

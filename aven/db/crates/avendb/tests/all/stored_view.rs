@@ -92,6 +92,31 @@ fn a_view_of_other_edits_or_cut_short_is_no_view() {
 }
 
 #[test]
+fn a_view_of_the_format_before_reads_as_one_without_rungs_or_marks() {
+    let mut c = cast();
+    let alice = c.alice;
+    for i in 0..5 {
+        c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+    }
+    let held = c.log.edits().len();
+    let mut was = replay(c.log.edits());
+    was.drop_rungs();
+    // version 3 was version 4 with no rung and no mark counted after its tail's places
+    let bytes = was.to_view(held);
+    let body = bytes.strip_prefix(b"avenDB view 4\n").expect("version 4");
+    let (body, counts) = body.split_at(body.len() - 8);
+    assert_eq!(counts, [0; 8], "its tail keeps no rungs and no marks");
+    let old = [&b"avenDB view 3\n"[..], body].concat();
+    let (back, n) = Replay::from_view(&old, c.log.edits(), c.log.ids()).expect("a view of version 3 reads");
+    assert_eq!(n, held);
+    assert!(back == was && back.same_tail(&was), "read back, it differs");
+    // and the edits after it step on it as on the replay
+    let e = EntryId::from_u64(1000);
+    c.log.receive([write(&c.log, &was.state, MAC_A, e, 1)]);
+    assert!(replay_on(back, c.log.edits(), held) == replay(c.log.edits()));
+}
+
+#[test]
 fn stored_views_preserve_cap_group_bindings_in_current_and_tail_states() {
     use avendb::policy::{Level, Share, Sharing, Who};
     let mut c = cast();

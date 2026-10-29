@@ -8,7 +8,8 @@
 //! checkpoints of the edits, are worked out again as the view is read.
 //!
 //! The bytes are the device's own, sealed with its shelf key to the replay rules they were worked out under
-//! (`Lab::warming`, `ViewRules.lean`): a view is read by any build of the same rules and the same format (`VIEW`). One
+//! (`Lab::warming`, `ViewRules.lean`): a view is read by any build of the same rules and the same format (`VIEW`), or the
+//! one before it (`VIEW_3`). One
 //! that doesn't read back whole, or names other edits than the device holds, is no view, and the device replays every
 //! edit again.
 
@@ -27,8 +28,13 @@ use crate::wire::{Decode, Reader, WireError};
 /// Version 3 preserves cap-group bindings, which the canonical Share codec deliberately omits because the
 /// enclosing Sharing edit carries them; version 4 keeps the rungs and marks before the place it steps on from
 /// (`Tail::rungs`, `Marks`), so that a late edit after an unlock replays from the one before it, not every edit.
-/// Earlier derived views are rejected and rebuilt from signed history.
+/// A view of version 3 still reads, as one whose tail keeps no rungs and no marks (`VIEW_3`): what a device made of
+/// its edits can't always be worked out again from them, as edits held on a checkpoint's word stand only where a
+/// replay that stood them says so, so a newer format never turns a device's own view into none.
 const VIEW: &[u8] = b"avenDB view 4\n";
+
+/// The format before `VIEW`: the same, its tail without rungs or marks.
+const VIEW_3: &[u8] = b"avenDB view 3\n";
 
 impl Encode for Vault {
     fn encode(&self, out: &mut Vec<u8>) {
@@ -561,7 +567,12 @@ impl Replay {
     /// The replay `to_view` made `bytes` of, of the first edits of `edits`, `ids` being their ids, and how many: none
     /// where the bytes are no view, or of other edits.
     pub fn from_view(bytes: &[u8], edits: &[Edit], ids: &[EditId]) -> Option<(Replay, usize)> {
-        let mut rd = Reader::new(bytes.strip_prefix(VIEW)?);
+        // a view of version 3 is one whose tail keeps no rungs and no marks
+        let (rest, laddered) = match bytes.strip_prefix(VIEW) {
+            Some(rest) => (rest, true),
+            None => (bytes.strip_prefix(VIEW_3)?, false),
+        };
+        let mut rd = Reader::new(rest);
         let held = u64::decode(&mut rd).ok()? as usize;
         let (held_edits, held_ids) = (edits.get(..held)?, ids.get(..held)?);
         let order = order_places(held_edits, held_ids);
@@ -596,7 +607,7 @@ impl Replay {
                     // its rungs, each state as it differs from the tail's, and its marks as they are, every place before
                     // the next and the tail's
                     let mut rungs = vec![];
-                    for _ in 0..rd.count(9)? {
+                    for _ in 0..if laddered { rd.count(9)? } else { 0 } {
                         let at = u64::decode(&mut rd)? as usize;
                         let state = state_of(&mut rd, &tail_state)?;
                         let base = match rd.u8()? {
@@ -607,7 +618,7 @@ impl Replay {
                         rungs.push(Rung { at, state, base });
                     }
                     let mut marks = Marks::default();
-                    for _ in 0..rd.count(12)? {
+                    for _ in 0..if laddered { rd.count(12)? } else { 0 } {
                         let at = u64::decode(&mut rd)? as usize;
                         let len = u32::decode(&mut rd)? as usize;
                         marks.list.push((at, rd.take(len)?.into()));

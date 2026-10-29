@@ -335,7 +335,7 @@ async fn a_torn_slot_a_lost_page_or_a_rewritten_log_never_reads_as_the_index() {
     .unwrap();
 
     // the newest slot torn: the older one opens, and the rest is stepped on
-    let newest = ix.slot_name(ix.kept);
+    let newest = format!("slots/{}-{}", ix.slot_name(), ix.kept % 2);
     let torn = {
         let mut objects = mem.objects.lock().unwrap();
         let held = objects.get(&newest).unwrap().clone();
@@ -429,7 +429,7 @@ fn pages_and_slots_refuse_bytes_that_are_not_one_whole() {
     assert!(Node::from_bytes(&unsorted).is_none());
     // a page above the rows names children by 32-byte hashes only
     assert!(Node::from_bytes(&Node::to_bytes(1, &items)).is_none());
-    assert!(slot_of(b"short").is_none());
+    assert!(root_of(b"short").is_none() && root_of(&[2; 33]).is_none());
 }
 
 #[tokio::test(flavor = "multi_thread")]

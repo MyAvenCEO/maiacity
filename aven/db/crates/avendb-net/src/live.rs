@@ -496,7 +496,7 @@ impl Shared {
     ) -> anyhow::Result<()> {
         let at = time::Instant::now();
         timing.asked = Some(logs.clone());
-        timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, Some(device), None, None).await?;
+        timing.new += self.pull_expected(endpoint, Scope::Logs(logs), false, Some(device), None).await?;
         timing.pull_ms += ms(at);
         // A single interactive edit must wake reactive subscribers before the unrelated backlog finishes.
         let at = time::Instant::now();
