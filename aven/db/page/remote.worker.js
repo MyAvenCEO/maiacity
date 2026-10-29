@@ -80,6 +80,21 @@ function taken(arg) {
 	return arg;
 }
 
+/** The pair worker, started for the first pair the device wants (./pair.worker.js). */
+let pairs = null;
+
+/** The device wants McEliece pairs (`avendbPairsWanted`, called from its WebAssembly as it wants one): their seeds go to
+ *  the pair worker, which makes them while the device goes on, and each comes back handed in (`handInPair`). One
+ *  that never comes the device makes itself when it needs it. */
+globalThis.avendbPairsWanted = () => queueMicrotask(() => {
+	const seeds = avendb.wantedPairs();
+	if (!seeds.length) return;
+	pairs ??= Object.assign(new Worker(new URL('./pair.worker.js', import.meta.url), { type: 'module' }), {
+		onmessage: ({ data: { seed, pair } }) => pair && avendb.handInPair(seed, pair)
+	});
+	for (let at = 0; at < seeds.length; at += 32) pairs.postMessage(seeds.slice(at, at + 32));
+});
+
 /** What goes back to the page: a device as its number and what it says of itself at once, else as it is. */
 function given(ok) {
 	if (!(ok instanceof avendb.Device)) return ok;
