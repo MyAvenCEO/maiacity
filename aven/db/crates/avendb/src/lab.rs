@@ -600,6 +600,7 @@ fn trust(store: &mut Store) -> bool {
     if gone.is_empty() {
         return false;
     }
+    store.perf.count("edits let go: unvouched", gone.len() as u64);
     store.log.let_go(&gone);
     for id in &gone {
         store.signed.remove(id);
@@ -2686,11 +2687,19 @@ impl Lab {
 
     fn checked_prepared(&mut self, to: SignerId, edits: Vec<Signed>, prepared: &HashMap<EditId, bool>) -> Vec<Signed> {
         let (at, offered) = (Perf::start(), edits.len() as u64);
+        let new = self.stores.get(&self.at(to)).map_or(0, |store| {
+            edits.iter().map(|s| s.edit.id()).filter(|id| !store.signed.contains_key(id)).collect::<HashSet<_>>().len()
+        });
         let fresh = self.fresh_prepared(to, edits, &HashSet::new(), prepared);
         if let Some(store) = self.stores.get_mut(&self.at(to)) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
             store.perf.count("edits checked", fresh.len() as u64);
+            // new edits whose signatures didn't check out: a peer sends them again on every asking, and their log reads
+            // as lacked for good
+            if new > fresh.len() {
+                store.perf.count("edits dropped: signatures", (new - fresh.len()) as u64);
+            }
         }
         fresh
     }
@@ -2758,7 +2767,11 @@ impl Lab {
             let batch = fresh.iter().map(|s| s.edit.clone()).collect();
             let taken = gate::takes(home, store.log.edits(), self.latest(to), batch, &store.readings);
             let ids: HashSet<EditId> = taken.unwrap_or_default().iter().map(Edit::id).collect();
+            let before = fresh.len();
             fresh.retain(|s| ids.contains(&s.edit.id()));
+            if fresh.len() < before && let Some(store) = self.stores.get_mut(&self.at(to)) {
+                store.perf.count("edits dropped: gate", (before - fresh.len()) as u64);
+            }
         }
         self.keep_fresh(to, fresh, blobs)
     }
