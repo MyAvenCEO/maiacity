@@ -4712,6 +4712,25 @@ impl Lab {
         Some(self.held(d).view().entry(entry)?.vault)
     }
 
+    /// Whether log `log`, where device `d` lacks edits a peer holds, may change what a read of vault `vault` (none:
+    /// every vault) that picks entries by `picks` shows (`Coverage.lean` `mayMatch`, conservative): the vault's own
+    /// log and its audiences', and any share's, which decide who reads what; an entry's log of that vault whose
+    /// creation `picks` may match (`Selector::may_match`); and an entry's `d` can't place yet, which may be any entry
+    /// unless `picks` names its entries by id alone. A read's footprint is `engine::footprint`.
+    pub fn may_change(&self, d: SignerId, log: LogId, vault: Option<VaultId>, picks: &Selector) -> bool {
+        let store = self.held(d);
+        let view = store.view();
+        match log {
+            LogId::Vault(v) | LogId::Audience(v, _) => vault.is_none_or(|x| x == v),
+            LogId::Share(_) => true,
+            LogId::Entry(e) => match view.entry(e) {
+                None => picks.named().is_none_or(|(types, ids)| !types.is_empty() || ids.contains(&e)),
+                Some(en) => vault.is_none_or(|x| x == en.vault)
+                    && view.first_attrs(en, &store.readings).is_none_or(|a| picks.may_match(&a)),
+            },
+        }
+    }
+
     /// The vault log `log` is about, by device `d`'s view, and its entry where it is one's: a vault's own log's or one
     /// of its audiences', the vault a share is over, or an entry's.
     pub fn whose_log(&self, d: SignerId, log: LogId) -> Option<(VaultId, Option<EntryId>)> {
