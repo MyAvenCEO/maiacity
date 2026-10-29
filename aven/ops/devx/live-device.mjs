@@ -50,10 +50,10 @@ const viewRoom = option('--room', 'Bla');
 // devices". A device can't remove itself, so each run removes the ones before it.
 const removeIds = (option('--remove', '') ?? '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
 const headed = args.includes('--headed');
-// the name this run's device carries in Devices (Samuel 2026-10-29: test devices get proper "test-device" names)
-const deviceName = option('--name', `test-device ${basename(profile)}`);
 const mac = platform() === 'darwin';
 const profile = option('--profile', mac ? join(homedir(), 'Library/Application Support/maiacity-live-device', engine) : join(homedir(), '.maiacity-live-device', engine));
+// the name this run's device carries in Devices (Samuel 2026-10-29: test devices get proper "test-device" names)
+const deviceName = option('--name', `test-device ${basename(profile)}`);
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const out = join(root, 'build/live-device', stamp);
 mkdirSync(out, { recursive: true });
