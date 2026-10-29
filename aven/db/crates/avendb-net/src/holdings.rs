@@ -107,7 +107,7 @@ struct Graph {
 
 impl Graph {
     /// Edit `id`, waiting for its parents outside the closed part: the edits it closes.
-    fn add(&mut self, id: EditId, edit: &Edit, edits: &[Edit], at: &HashMap<EditId, usize>) -> Vec<EditId> {
+    fn add(&mut self, id: EditId, edit: &Edit, edits: &avendb::policy::Edits, at: &HashMap<EditId, usize>) -> Vec<EditId> {
         let parents: HashSet<EditId> = edit.parents.iter().copied().collect();
         let missing: Vec<EditId> = parents.into_iter().filter(|p| !self.closed.contains(p)).collect();
         self.waiting.insert(id, missing.len());
@@ -118,7 +118,7 @@ impl Graph {
         self.close(ready, edits, at)
     }
 
-    fn close(&mut self, mut ready: Vec<EditId>, edits: &[Edit], at: &HashMap<EditId, usize>) -> Vec<EditId> {
+    fn close(&mut self, mut ready: Vec<EditId>, edits: &avendb::policy::Edits, at: &HashMap<EditId, usize>) -> Vec<EditId> {
         let mut closed = vec![];
         while let Some(id) = ready.pop() {
             if !self.closed.insert(id) { continue; }
@@ -156,7 +156,7 @@ pub(crate) struct Logs {
 impl Logs {
     /// The logs of `edits`, `ids[i]` being `edits[i]`'s id, cut as `sync` cuts them: an edit is in its log's closed
     /// part once each of its parents is; a parent the log doesn't hold keeps it waiting.
-    pub(crate) fn of(edits: &[Edit], ids: &[EditId], size: (usize, usize)) -> Logs {
+    pub(crate) fn of(edits: &avendb::policy::Edits, ids: &[EditId], size: (usize, usize)) -> Logs {
         let mut logs = Logs { size, of: BTreeMap::new(), at: HashMap::new(), closed: HashSet::new(), indexed: 0, head: None };
         logs.extend(edits, ids, size);
         logs
@@ -196,7 +196,7 @@ impl Logs {
 
     /// Update an append-only sequence. Callers with a mutable device log must use `update` instead.
     /// `size` also includes keys, which require no re-indexing when no edit was appended.
-    pub(crate) fn extend(&mut self, edits: &[Edit], ids: &[EditId], size: (usize, usize)) {
+    pub(crate) fn extend(&mut self, edits: &avendb::policy::Edits, ids: &[EditId], size: (usize, usize)) {
         assert_eq!(edits.len(), ids.len());
         assert!(self.indexed <= ids.len(), "a node's edit log is append-only");
         let mut changed = BTreeSet::new();
@@ -288,7 +288,7 @@ impl Logs {
     /// this one's edits show it. It holds all of them when it covers the log: when each head of this one's frontier is
     /// one of its heads or one they build on, and so is each edit this one holds waiting, unless it holds it waiting
     /// too (`covers` in the model); short of that, one fewer at most.
-    pub(crate) fn held(&self, edits: &[Edit], l: &LogId, theirs: &Frontier) -> (u64, u64) {
+    pub(crate) fn held(&self, edits: &avendb::policy::Edits, l: &LogId, theirs: &Frontier) -> (u64, u64) {
         let Some(log) = self.of.get(l) else { return (0, 0) };
         let of = log.edits.len() as u64;
         if log.frontier == *theirs {
@@ -316,7 +316,7 @@ impl Logs {
 /// The frontier of the log whose edits are at `places` among `edits`, `ids[i]` being `edits[i]`'s id, and its closed
 /// part: as `sync` works them out, so that a device's holdings of a log agree with its digest.
 #[cfg(test)]
-fn frontier(edits: &[Edit], ids: &[EditId], places: &[usize]) -> (Frontier, HashSet<EditId>) {
+fn frontier(edits: &avendb::policy::Edits, ids: &[EditId], places: &[usize]) -> (Frontier, HashSet<EditId>) {
     let by_id: HashMap<EditId, usize> = places.iter().map(|&i| (ids[i], i)).collect();
     let mut waiting: HashMap<EditId, usize> = HashMap::new();
     let mut children: HashMap<EditId, Vec<EditId>> = HashMap::new();
@@ -399,8 +399,9 @@ mod tests {
             }
             // Duplicate delivery must not alter the frontier or grow a log's positions.
             edits.push(edits[0].clone());
+            let edits = avendb::policy::EditsVec::from(edits);
             let ids: Vec<_> = edits.iter().map(Edit::id).collect();
-            let mut incremental = Logs::of(&[], &[], (0, 0));
+            let mut incremental = Logs::of(avendb::policy::Edits::empty(), &[], (0, 0));
             for n in 1..=edits.len() {
                 incremental.extend(&edits[..n], &ids[..n], (n, 0));
                 let mut all_closed = HashSet::new();
@@ -426,7 +427,7 @@ mod tests {
         w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
         let source = w.lab.log(w.mac_a).edits().to_vec();
         let mut log = avendb::policy::Log::from_edits(source[..source.len() - 1].to_vec());
-        let mut index = Logs::of(&[], &[], (0, 0));
+        let mut index = Logs::of(avendb::policy::Edits::empty(), &[], (0, 0));
         let size = (log.ids().len(), 0);
         index.update(&log, size);
         let removed = log.ids()[0];
@@ -442,7 +443,7 @@ mod tests {
         assert_eq!(index.closed, expected.closed);
         assert!(!index.at.contains_key(&removed));
         // A restored sequence of the same length can have entirely different positions too.
-        let restored = avendb::policy::Log::from_edits(source[..source.len() - 1].iter().rev().cloned().collect());
+        let restored = avendb::policy::Log::from_edits(source[..source.len() - 1].iter().rev().cloned().collect::<Vec<_>>());
         assert!(!index.current(&restored, size));
         index.update(&restored, size);
         let expected = Logs::of(restored.edits(), restored.ids(), size);
@@ -472,7 +473,7 @@ mod tests {
         order.reverse();
         order.rotate_left(source.len() / 3);
         let mut log = avendb::policy::Log::new();
-        let mut index = Logs::of(&[], &[], (0, 0));
+        let mut index = Logs::of(avendb::policy::Edits::empty(), &[], (0, 0));
         for (n, edit) in order.iter().enumerate() {
             log.receive([edit.clone()]);
             for held in [n.saturating_sub(3), n.saturating_sub(1), n + 1] {
@@ -505,7 +506,7 @@ mod tests {
         assert_eq!(heads, frontiers(edits), "each log's heads are its frontier");
         // with the first edit of Welcome's log gone, the rest of it waits for its past
         let first = logs.of[&LogId::Entry(h.welcome)].edits[0];
-        let rest: Vec<Edit> = edits.iter().enumerate().filter(|(i, _)| *i != first).map(|(_, e)| e.clone()).collect();
+        let rest: avendb::policy::EditsVec = edits.iter().enumerate().filter(|(i, _)| *i != first).map(|(_, e)| e.clone()).collect();
         let rest_ids: Vec<EditId> = rest.iter().map(Edit::id).collect();
         let cut = Logs::of(&rest, &rest_ids, (0, 0));
         let welcome = &cut.of[&LogId::Entry(h.welcome)].frontier;

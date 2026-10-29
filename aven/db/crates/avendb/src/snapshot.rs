@@ -23,7 +23,7 @@ pub struct Taken<'a> {
 }
 
 /// The edits of entry `x.entry`'s log the snapshot had seen (`seenOf`): its basis and all it builds on.
-pub fn seen_of(edits: &[Edit], x: &Stated) -> HashSet<EditId> {
+pub fn seen_of(edits: &crate::policy::Edits, x: &Stated) -> HashSet<EditId> {
     let by: HashMap<EditId, &Edit> = edits.iter().map(|e| (e.id(), e)).collect();
     let mut seen = HashSet::new();
     let mut todo = x.basis.clone();
@@ -37,7 +37,7 @@ pub fn seen_of(edits: &[Edit], x: &Stated) -> HashSet<EditId> {
 
 /// The edits a state of snapshot `c` rests on (`pastOf`): of its entry's log the ones it had seen, of every other log
 /// the ones that sort before it.
-pub fn past_of(edits: &[Edit], c: &Edit, x: &Stated) -> Vec<Edit> {
+pub fn past_of(edits: &crate::policy::Edits, c: &Edit, x: &Stated) -> crate::policy::EditsVec {
     let seen = seen_of(edits, x);
     let mine = Some(LogId::Entry(x.entry));
     edits
@@ -52,15 +52,15 @@ pub fn past_of(edits: &[Edit], c: &Edit, x: &Stated) -> Vec<Edit> {
 
 /// A state of snapshot `c` is honest toward `edits` (`honest`): each edit of its basis is held, of its entry's log, and
 /// comes before it, and its slice is what the edits it rests on make of its entry.
-pub fn honest(edits: &[Edit], c: &Edit, x: &Stated, slice: &Slice) -> bool {
+pub fn honest(edits: &crate::policy::Edits, c: &Edit, x: &Stated, slice: &Slice) -> bool {
     let mine = Some(LogId::Entry(x.entry));
     let held = |b: &EditId| edits.iter().any(|o| o.id() == *b && log_of(o, *b) == mine && o.depth < c.depth);
-    x.basis.iter().all(held) && view(&past_of(edits, c, x)).slice_of(x.entry) == *slice
+    x.basis.iter().all(held) && view(&crate::policy::EditsVec::from(past_of(edits, c, x))).slice_of(x.entry) == *slice
 }
 
 /// The states a device holding `edits` takes (`statedIn`): of each snapshot that stands, with its vault, the states
 /// scoped to it whose slices `slices` holds.
-pub fn stated_in<'a>(edits: &'a [Edit], slices: &'a HashMap<FileRoot, Slice>) -> Vec<Taken<'a>> {
+pub fn stated_in<'a>(edits: &'a crate::policy::Edits, slices: &'a HashMap<FileRoot, Slice>) -> Vec<Taken<'a>> {
     let standing: HashSet<EditId> = replay(edits).standing().into_iter().collect();
     let mut out = vec![];
     for edit in edits {
@@ -79,14 +79,14 @@ pub fn stated_in<'a>(edits: &'a [Edit], slices: &'a HashMap<FileRoot, Slice>) ->
 }
 
 /// The lies a device holding the history finds (`lies`): each snapshot and entry whose state isn't honest.
-pub fn lies(edits: &[Edit], slices: &HashMap<FileRoot, Slice>) -> Vec<(EditId, crate::id::EntryId)> {
+pub fn lies(edits: &crate::policy::Edits, slices: &HashMap<FileRoot, Slice>) -> Vec<(EditId, crate::id::EntryId)> {
     let taken = stated_in(edits, slices);
     taken.iter().filter(|t| !honest(edits, t.edit, t.stated, t.slice)).map(|t| (t.id, t.stated.entry)).collect()
 }
 
 /// A removal stands after snapshot `c`, outside its entry's log (`stale`): what it took away may change the entry's
 /// state, which the snapshot hadn't seen, so a device opens the entry from its history.
-pub fn stale(edits: &[Edit], standing: &HashSet<EditId>, c: &Edit, x: &Stated) -> bool {
+pub fn stale(edits: &crate::policy::Edits, standing: &HashSet<EditId>, c: &Edit, x: &Stated) -> bool {
     let mine = Some(LogId::Entry(x.entry));
     edits.iter().any(|o| {
         let id = o.id();
@@ -96,7 +96,7 @@ pub fn stale(edits: &[Edit], standing: &HashSet<EditId>, c: &Edit, x: &Stated) -
 
 /// The states a device starting from `edits` takes (`startStates`): the latest standing one of each entry that isn't
 /// stale.
-pub fn start_states<'a>(edits: &'a [Edit], slices: &'a HashMap<FileRoot, Slice>) -> Vec<Taken<'a>> {
+pub fn start_states<'a>(edits: &'a crate::policy::Edits, slices: &'a HashMap<FileRoot, Slice>) -> Vec<Taken<'a>> {
     let standing: HashSet<EditId> = replay(edits).standing().into_iter().collect();
     let ok: Vec<Taken<'a>> =
         stated_in(edits, slices).into_iter().filter(|t| !stale(edits, &standing, t.edit, t.stated)).collect();
@@ -107,7 +107,7 @@ pub fn start_states<'a>(edits: &'a [Edit], slices: &'a HashMap<FileRoot, Slice>)
 /// What a device knows starting from snapshots (`startView`): the edits of every log but the taken entries' replayed,
 /// each taken state put in place, then each taken entry's edits its snapshot hadn't seen replayed on top, a refused
 /// one changing nothing.
-pub fn start_view(edits: &[Edit], slices: &HashMap<FileRoot, Slice>) -> State {
+pub fn start_view(edits: &crate::policy::Edits, slices: &HashMap<FileRoot, Slice>) -> State {
     let taken = start_states(edits, slices);
     let seen: Vec<HashSet<EditId>> = taken.iter().map(|t| seen_of(edits, t.stated)).collect();
     let mine = |o: &Edit| {
@@ -115,10 +115,10 @@ pub fn start_view(edits: &[Edit], slices: &HashMap<FileRoot, Slice>) -> State {
         taken.iter().position(|t| log == Some(LogId::Entry(t.stated.entry)))
     };
     let base: Vec<Edit> = edits.iter().filter(|o| mine(o).is_none()).cloned().collect();
-    let mut st = taken.iter().fold(view(&base), |st, t| st.with_slice(t.stated.entry, t.slice));
+    let mut st = taken.iter().fold(view(&crate::policy::EditsVec::from(&base[..])), |st, t| st.with_slice(t.stated.entry, t.slice));
     let past: Vec<Edit> =
         edits.iter().filter(|o| mine(o).is_some_and(|i| !seen[i].contains(&o.id()))).cloned().collect();
-    for o in order(&past) {
+    for o in order(&crate::policy::EditsVec::from(&past[..])) {
         let _ = st.step_mut(&o, o.id());
     }
     st
@@ -126,13 +126,13 @@ pub fn start_view(edits: &[Edit], slices: &HashMap<FileRoot, Slice>) -> State {
 
 /// What a full copy checks of a start (`startsRight`): every entry a device takes from snapshots is as the history
 /// makes it.
-pub fn starts_right(edits: &[Edit], slices: &HashMap<FileRoot, Slice>) -> bool {
+pub fn starts_right(edits: &crate::policy::Edits, slices: &HashMap<FileRoot, Slice>) -> bool {
     let (start, full) = (start_view(edits, slices), view(edits));
     start_states(edits, slices).iter().all(|t| start.slice_of(t.stated.entry) == full.slice_of(t.stated.entry))
 }
 
 /// A device that holds `held` and whose peers hold `edits` was away too long when more than `most` of their edits are
 /// new to it (`awayTooLong`): it then starts from snapshots over `edits`, and what it held counts for nothing.
-pub fn away_too_long(held: &HashSet<EditId>, edits: &[Edit], most: usize) -> bool {
+pub fn away_too_long(held: &HashSet<EditId>, edits: &crate::policy::Edits, most: usize) -> bool {
     edits.iter().filter(|o| !held.contains(&o.id())).count() > most
 }

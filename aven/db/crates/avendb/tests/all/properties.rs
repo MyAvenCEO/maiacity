@@ -869,7 +869,7 @@ fn vault_histories() -> impl Iterator<Item = (u64, &'static History)> {
 
 /// Each edit that stands, in replay order, with the states just before and just after it. The view is the replay of
 /// the edits that stand, each accepted where it stands.
-fn steps(edits: &[Edit]) -> Vec<(Edit, State, State)> {
+fn steps(edits: &avendb::policy::Edits) -> Vec<(Edit, State, State)> {
     let r = replay(edits);
     let mut st = State::default();
     let mut out = vec![];
@@ -883,7 +883,7 @@ fn steps(edits: &[Edit]) -> Vec<(Edit, State, State)> {
 }
 
 /// The empty state, then the state after each edit that stands, in replay order: every state along the view.
-fn states(edits: &[Edit]) -> Vec<State> {
+fn states(edits: &avendb::policy::Edits) -> Vec<State> {
     std::iter::once(State::default()).chain(steps(edits).into_iter().map(|(_, _, after)| after)).collect()
 }
 
@@ -1077,13 +1077,13 @@ fn t11_vault_logs_converge() {
     // the same vault edits, received in any order, give the same vaults (T11 for vaults alone)
     for p in VAULTS.iter() {
         let (seed, edits) = (p.seed, p.forked.log.edits().to_vec());
-        let st = view(&edits);
+        let st = view(&avendb::policy::EditsVec::from(&edits[..]));
         let mut rng = Rng(seed);
         for _ in 0..3 {
             let mut shuffled = edits.clone();
             rng.shuffle(&mut shuffled);
-            assert!(view(&shuffled) == st, "seed {seed}");
-            assert_eq!(order(&shuffled), order(&edits), "seed {seed}");
+            assert!(view(&avendb::policy::EditsVec::from(&shuffled[..])) == st, "seed {seed}");
+            assert_eq!(order(&avendb::policy::EditsVec::from(&shuffled[..])), order(&avendb::policy::EditsVec::from(&edits[..])), "seed {seed}");
         }
     }
 }
@@ -1116,8 +1116,8 @@ fn t4_shares_name_vaults_and_t8_everyone_only_reads() {
     let (mut tried, mut kept) = (0, 0);
     for (seed, h) in every_history() {
         let steps = steps(h.log.edits());
-        let with_refused: Vec<Edit> = h.log.edits().iter().chain(&h.refused).cloned().collect();
-        for st in steps.iter().map(|(_, _, after)| after).chain([&view(&with_refused)]) {
+        let with_refused: avendb::policy::EditsVec = h.log.edits().iter().chain(&h.refused).cloned().collect();
+        for st in steps.iter().map(|(_, _, after)| after).chain([&view(&avendb::policy::EditsVec::from(&with_refused[..]))]) {
             for cp in st.shares() {
                 assert_eq!(matches!(cp.share.who, Who::Device(_)), cp.share.level.is_keep(), "seed {seed}: {cp:?}");
                 assert!(cp.share.who != Who::Everyone || cp.share.level == Level::Read, "seed {seed}: {cp:?}");
@@ -1149,12 +1149,12 @@ fn t11_convergence() {
     // the same edits in any order: the same view, and the same edits stand
     for (seed, h) in every_history() {
         let edits = h.log.edits().to_vec();
-        let r = replay(&edits);
+        let r = replay(&avendb::policy::EditsVec::from(&edits[..]));
         let mut rng = Rng(seed);
         for _ in 0..3 {
             let mut shuffled = edits.clone();
             rng.shuffle(&mut shuffled);
-            let s = replay(&shuffled);
+            let s = replay(&avendb::policy::EditsVec::from(&shuffled[..]));
             assert!(s.state == r.state, "seed {seed}");
             assert_eq!(s.standing(), r.standing(), "seed {seed}");
         }
@@ -1183,13 +1183,13 @@ fn t14_causally_closed() {
 }
 
 /// What each removal of replay `r` takes away (`removes`), by place.
-fn facts(r: &Replay, held: &[Edit]) -> Vec<Vec<Fact>> {
-    let edits: Vec<Edit> = r.edits(held).cloned().collect();
+fn facts(r: &Replay, held: &avendb::policy::Edits) -> Vec<Vec<Fact>> {
+    let edits: avendb::policy::EditsVec = r.edits(held).cloned().collect();
     edits.iter().map(|o| if o.is_removal() { removes(&edits, o) } else { vec![] }).collect()
 }
 
 /// What each removal after place `i` of replay `r` that stands, and hadn't seen the edit there, takes away (`facts`).
-fn hidden(r: &Replay, held: &[Edit], facts: &[Vec<Fact>], i: usize) -> Vec<Fact> {
+fn hidden(r: &Replay, held: &avendb::policy::Edits, facts: &[Vec<Fact>], i: usize) -> Vec<Fact> {
     let edits: Vec<&Edit> = r.edits(held).collect();
     let unseen = |j: &usize| r.stood[*j] && edits[*j].action.keep().is_some_and(|k| !k.contains(&r.ids[i]));
     (i + 1..r.len()).filter(unseen).flat_map(|j| facts[j].iter().cloned()).collect()
@@ -1247,7 +1247,7 @@ fn honest_logs_keep_all_they_accepted() {
 }
 
 /// A random part of `edits`: each edit with even odds.
-fn part(rng: &mut Rng, edits: &[Edit]) -> Vec<Edit> {
+fn part(rng: &mut Rng, edits: &avendb::policy::Edits) -> Vec<Edit> {
     edits.iter().filter(|_| rng.below(2) == 0).cloned().collect()
 }
 
@@ -1257,7 +1257,7 @@ fn part_after_start(rng: &mut Rng, h: &History) -> Vec<Edit> {
     edits[..h.start].iter().cloned().chain(part(rng, &edits[h.start..])).collect()
 }
 
-fn ids(edits: &[Edit]) -> HashSet<EditId> {
+fn ids(edits: &avendb::policy::Edits) -> HashSet<EditId> {
     edits.iter().map(Edit::id).collect()
 }
 
@@ -1341,7 +1341,7 @@ fn t12_sync_sends_only_what_shares_reach() {
         for d in SIGNERS {
             let mut may: HashMap<LogId, bool> = HashMap::new();
             let follow = some_follow(&mut rng, &h);
-            let asked = asks(&part(&mut rng, edits), &follow);
+            let asked = asks(&avendb::policy::EditsVec::from(part(&mut rng, edits)), &follow);
             for edit in respond(edits, d, &follow).iter().chain(&respond_since(edits, d, &asked)) {
                 assert!(held.contains(&edit.id()), "seed {seed}: {d:?} was sent an edit the peer doesn't hold");
                 let l = log_of(edit, edit.id()).expect("an edit of a log");
@@ -1378,11 +1378,12 @@ fn t19_frontier_sync_loses_nothing() {
         for _ in 0..3 {
             let a = part(&mut rng, edits);
             let r = if rng.below(2) == 0 { edits.to_vec() } else { part(&mut rng, edits) };
+            let a = avendb::policy::EditsVec::from(a);
             let (held, asked) = (ids(&a), asks(&a, &[]));
-            let alone = Ask { haves: frontiers(&a), loose: vec![], follow: vec![] };
+            let alone = Ask { haves: frontiers(&avendb::policy::EditsVec::from(&a[..])), loose: vec![], follow: vec![] };
             for d in SIGNERS {
-                let whole = respond(&r, d, &[]);
-                for sent in [respond_since(&r, d, &asked), respond_since(&r, d, &alone)] {
+                let whole = respond(&avendb::policy::EditsVec::from(&r[..]), d, &[]);
+                for sent in [respond_since(&avendb::policy::EditsVec::from(&r[..]), d, &asked), respond_since(&avendb::policy::EditsVec::from(&r[..]), d, &alone)] {
                     let lacks = whole.iter().find(|edit| !held.contains(&edit.id()) && !sent.contains(edit));
                     assert!(lacks.is_none(), "seed {seed}: {d:?} lacks {lacks:?}");
                     let beyond = sent.iter().find(|edit| !whole.contains(edit));
@@ -1404,16 +1405,16 @@ fn t19_partial_delivery() {
         let edits = h.log.edits();
         let mut rng = Rng(seed);
         let d = rng.pick(&[MAC_A, PHONE_A, MAC_B, MAC_C, MAC_D]);
-        let mut held: Vec<Edit> = vec![];
+        let mut held = avendb::policy::EditsVec::new();
         for round in 0.. {
-            let sent = respond_since(edits, d, &asks(&held, &[]));
+            let sent = respond_since(edits, d, &asks(&avendb::policy::EditsVec::from(&held[..]), &[]));
             if sent.is_empty() {
                 break;
             }
             assert!(round < 200, "seed {seed}: the answers never run out");
             let mut got = part(&mut rng, &sent);
             rng.shuffle(&mut got);
-            held = receive(&held, &got);
+            held = receive(&held, &avendb::policy::EditsVec::from(got));
         }
         let held = ids(&held);
         assert!(respond(edits, d, &[]).iter().all(|edit| held.contains(&edit.id())), "seed {seed}");
@@ -1440,9 +1441,9 @@ fn t13_sync_converges() {
         for _ in 0..3 {
             let (p, q) = (part_after_start(&mut rng, h), part_after_start(&mut rng, h));
             let (flp, flq) = (some_follow(&mut rng, h), some_follow(&mut rng, h));
-            let (vp, vq, ap, aq) = (view(&p), view(&q), asks(&p, &flp), asks(&q, &flq));
-            let got_p: Vec<HashSet<EditId>> = devices.map(|d| ids(&receive(&p, &respond_since(&q, d, &ap)))).into();
-            let got_q: Vec<HashSet<EditId>> = devices.map(|d| ids(&receive(&q, &respond_since(&p, d, &aq)))).into();
+            let (vp, vq, ap, aq) = (view(&avendb::policy::EditsVec::from(&p[..])), view(&avendb::policy::EditsVec::from(&q[..])), asks(&avendb::policy::EditsVec::from(&p[..]), &flp), asks(&avendb::policy::EditsVec::from(&q[..]), &flq));
+            let got_p: Vec<HashSet<EditId>> = devices.map(|d| ids(&receive(&avendb::policy::EditsVec::from(&p[..]), &respond_since(&avendb::policy::EditsVec::from(&q[..]), d, &ap)))).into();
+            let got_q: Vec<HashSet<EditId>> = devices.map(|d| ids(&receive(&avendb::policy::EditsVec::from(&q[..]), &respond_since(&avendb::policy::EditsVec::from(&p[..]), d, &aq)))).into();
             for (i, &dp) in devices.iter().enumerate() {
                 for (j, &dq) in devices.iter().enumerate().filter(|&(j, _)| j != i) {
                     for &(e, id) in &entry_logs {
@@ -1553,12 +1554,12 @@ fn t19_one_digest_per_log() {
     for (seed, h) in forked_histories() {
         let edits = h.log.edits();
         let mut rng = Rng(seed);
-        let a = part(&mut rng, edits);
+        let a = avendb::policy::EditsVec::from(part(&mut rng, edits));
         // and the same edits with about a quarter more: many logs untouched, some grown
         let more = part(&mut rng, edits);
-        let b = receive(&a, &part(&mut rng, &more));
-        let (da, db) = (digests(&a), digests(&b));
-        let of = |x: &[Edit], l: LogId| -> Vec<EditId> {
+        let b = receive(&a, &avendb::policy::EditsVec::from(part(&mut rng, &avendb::policy::EditsVec::from(more))));
+        let (da, db) = (digests(&avendb::policy::EditsVec::from(&a[..])), digests(&avendb::policy::EditsVec::from(&b[..])));
+        let of = |x: &avendb::policy::Edits, l: LogId| -> Vec<EditId> {
             let mut v: Vec<EditId> = x.iter().filter(|o| log_of(o, o.id()) == Some(l)).map(Edit::id).collect();
             v.sort();
             v
@@ -1779,8 +1780,8 @@ fn t22_shares_narrow_down_their_chain() {
     // unless it is a keep share, which rests on none
     let mut rested = 0;
     for (seed, h) in every_history() {
-        let with_refused: Vec<Edit> = h.log.edits().iter().chain(&h.refused).cloned().collect();
-        for st in [h.log.view(), view(&with_refused)] {
+        let with_refused: avendb::policy::EditsVec = h.log.edits().iter().chain(&h.refused).cloned().collect();
+        for st in [h.log.view(), view(&avendb::policy::EditsVec::from(&with_refused[..]))] {
             let attrs = some_attrs(&st, &h.readings);
             for cp in st.shares() {
                 assert_eq!(cp.chain.last(), Some(&cp.id), "seed {seed}: {cp:?}");
@@ -2222,8 +2223,8 @@ fn t25_blind_relays() {
     for (seed, h) in every_history() {
         let r = replay(h.log.edits());
         let mut twin = Twin::default();
-        let blind: Vec<Edit> = r.edits(h.log.edits()).map(|o| twin.blind(o)).collect();
-        let b = replay(&blind);
+        let blind: avendb::policy::EditsVec = r.edits(h.log.edits()).map(|o| twin.blind(o)).collect();
+        let b = replay(&avendb::policy::EditsVec::from(&blind[..]));
         let standing: Vec<EditId> = r.standing().into_iter().map(|id| twin.edit(id)).collect();
         assert_eq!(b.standing(), standing, "seed {seed}");
         assert_eq!(ops(&b.state, &Twin::default()), ops(&r.state, &twin), "seed {seed}");

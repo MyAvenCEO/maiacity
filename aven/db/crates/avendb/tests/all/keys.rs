@@ -361,7 +361,7 @@ fn keys_follow_shares(w: &World, step: &str) {
             }
         }
     }
-    let st = view(&all);
+    let st = view(&avendb::policy::EditsVec::from(&all[..]));
     let named = |d, cp: &avendb::policy::Issued| matches!(cp.share.who, Who::Vault(g) if st.acts_for(d, g));
     let interested = |d, v| {
         st.acts_for(d, v) || w.lab.follows(d).contains(&v) || st.shares_over(v).any(|cp| st.live(cp.id) && named(d, cp))

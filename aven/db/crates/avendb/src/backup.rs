@@ -36,7 +36,7 @@ fn of_vault(st: &State, shares: &HashSet<crate::id::ShareId>, v: VaultId, l: Log
 
 /// The places in `edits` of vault `v`'s snapshot, by the view `st` of `edits`: those of its own logs, then those of
 /// the logs of the vault and every vault they name, up their owners, each in the order of `edits`.
-pub fn snapshot_places(edits: &[Edit], st: &State, v: VaultId) -> Vec<usize> {
+pub fn snapshot_places(edits: &crate::policy::Edits, st: &State, v: VaultId) -> Vec<usize> {
     // the shares a share of `v` rests on: every share of the chain of one over it, issued by it or naming it
     let ours = |cp: &&crate::policy::Issued| {
         cp.share.over == v || cp.share.issuer == v || cp.share.who == Who::Vault(v)
@@ -52,12 +52,12 @@ pub fn snapshot_places(edits: &[Edit], st: &State, v: VaultId) -> Vec<usize> {
 }
 
 /// Vault `v`'s snapshot of a node holding `edits` (`Backup.snapshot`).
-pub fn snapshot(edits: &[Edit], v: VaultId) -> Vec<Edit> {
+pub fn snapshot(edits: &crate::policy::Edits, v: VaultId) -> crate::policy::EditsVec {
     snapshot_places(edits, &view(edits), v).into_iter().map(|i| edits[i].clone()).collect()
 }
 
 /// The files the edits `snap` bring, each once, in the order they first come (`Backup.snapshotFiles`).
-pub fn files(snap: &[Edit]) -> Vec<FileRoot> {
+pub fn files(snap: &crate::policy::Edits) -> Vec<FileRoot> {
     let mut seen = HashSet::new();
     snap.iter().flat_map(|edit| edit.files().iter().copied()).filter(|f| seen.insert(*f)).collect()
 }
@@ -84,7 +84,7 @@ pub fn due(packs: usize) -> bool {
 /// newest snapshot names `base` (`sync::asks_by_frontiers` of what it restores), if any. It builds on it unless it is
 /// made whole (`compact`) or `base` names an edit, at or below its frontiers or loose, that the snapshot lacks; then it
 /// adds what of the snapshot lies beyond `base` (`sync::respond_since`'s `beyond`), else the whole snapshot.
-pub fn plan(edits: &[Edit], snap: &[usize], base: Option<&Ask>, compact: bool) -> Plan {
+pub fn plan(edits: &crate::policy::Edits, snap: &[usize], base: Option<&Ask>, compact: bool) -> Plan {
     let whole = Plan { base: false, news: snap.to_vec() };
     let Some(base) = base.filter(|_| !compact) else { return whole };
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();

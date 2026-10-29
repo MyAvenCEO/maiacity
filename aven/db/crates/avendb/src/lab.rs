@@ -356,7 +356,7 @@ impl Drafting<'_> {
         let edit = self.log.check_on(&self.replay, true, author, cosigners, action)?;
         let (id, held) = (edit.id(), self.log.ids().len());
         self.log.receive([edit.clone()]);
-        let was = std::mem::replace(&mut self.replay, Cow::Owned(replay(&[]))).into_owned();
+        let was = std::mem::replace(&mut self.replay, Cow::Owned(replay(crate::policy::Edits::empty()))).into_owned();
         self.replay = Cow::Owned(replay_on(was, self.log.edits(), held));
         #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(*self.replay == self.log.replay(), "a draft stepped on differs from the replay");
@@ -643,7 +643,7 @@ fn trust(store: &mut Store) -> bool {
         store.spoilt.remove(id);
     }
     store.read_new.forget();
-    store.replay = replay(&[]);
+    store.replay = replay(crate::policy::Edits::empty());
     store.replayed = 0;
     store.latest = OnceLock::new();
     store.digests = None;
@@ -1326,7 +1326,7 @@ impl Probed {
             "log" => out(std::mem::take(&mut store.log)),
             p if p.starts_with("log.") => store.log.probe_part(&p[4..]),
             p if p.starts_with("replay.") => store.replay.probe_part(&p[7..]),
-            "replay" => out(std::mem::replace(&mut store.replay, replay(&[]))),
+            "replay" => out(std::mem::replace(&mut store.replay, replay(crate::policy::Edits::empty()))),
             "latest" => out(std::mem::take(&mut store.latest)),
             "key_index" => out(std::mem::take(&mut store.key_ix.ix)),
             "keys" => out(std::mem::take(&mut store.keys)),
@@ -1352,7 +1352,7 @@ impl Default for Store {
             log: Log::new(),
             signed: held::Signeds::default(),
             blobs: held::Keys::default(),
-            replay: replay(&[]),
+            replay: replay(crate::policy::Edits::empty()),
             key_ix: KeyIndexed::default(),
             bases: BTreeMap::new(),
             bootstrap_state: None,
@@ -1691,7 +1691,7 @@ struct KeyIndex {
 
 impl KeyIndex {
     /// `held` being the edits `r` is the replay of (`Replay::edits`), which its boxes are read of again.
-    fn of(r: &Replay, held: &[Edit]) -> KeyIndex {
+    fn of(r: &Replay, held: &crate::policy::Edits) -> KeyIndex {
         let mut ix = KeyIndex::default();
         ix.grow(r, held, 0);
         ix
@@ -1699,13 +1699,13 @@ impl KeyIndex {
 
     /// What `r`'s standing edits from the `from`th on add to it, as `of` reads them, `held` being the edits `r` is the
     /// replay of.
-    fn grow(&mut self, r: &Replay, held: &[Edit], from: usize) {
+    fn grow(&mut self, r: &Replay, held: &crate::policy::Edits, from: usize) {
         self.grow_to(r, held, from, r.places().len());
     }
 
     /// `grow` by `r`'s standing edits from the `from`th up to the `to`th alone: a slice of them, so that an index made
     /// again of every edit is made a step at a time (`KeyIndexed::step`).
-    fn grow_to(&mut self, r: &Replay, held: &[Edit], from: usize, to: usize) {
+    fn grow_to(&mut self, r: &Replay, held: &crate::policy::Edits, from: usize, to: usize) {
         let (places, ids) = (&r.places()[from.min(to)..to], &r.ids[from.min(to)..to]);
         let stood = &r.stood[from.min(to)..to];
         let edits = places.iter().zip(ids).zip(stood).filter(|(_, stood)| **stood).map(|((place, id), _)| (&held[*place], place, *id));
@@ -1760,7 +1760,7 @@ struct IndexedBox {
 
 impl IndexedBox {
     /// Its bytes, of `held`, the edits of the log its index is of.
-    fn bytes<'a>(&self, held: &'a [Edit]) -> std::borrow::Cow<'a, [u8]> {
+    fn bytes<'a>(&self, held: &'a crate::policy::Edits) -> std::borrow::Cow<'a, [u8]> {
         held[self.place].action.key_box(self.slot).expect("an indexed box").bytes.bytes()
     }
 }
@@ -3622,7 +3622,7 @@ impl Lab {
             // a removal may take writes from the middle of an entry's: what it shows is checked against them all
             let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
             store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
-            let was = std::mem::replace(&mut store.replay, replay(&[]));
+            let was = std::mem::replace(&mut store.replay, replay(crate::policy::Edits::empty()));
             let back = (store.replayed > 0 && store.replayed < store.log.edits().len())
                 .then(|| was.back(&store.log.edits()[..store.replayed], &store.log.edits()[store.replayed..]));
             let (replayed, why) = replay_on_why(was, store.log.edits(), store.replayed);
@@ -3831,7 +3831,7 @@ impl Lab {
                 let to = store.log.edits().len().min(store.replayed.saturating_add(most.max(1)));
                 let fresh = &store.log.edits()[store.replayed..to];
                 store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
-                let was = std::mem::replace(&mut store.replay, replay(&[]));
+                let was = std::mem::replace(&mut store.replay, replay(crate::policy::Edits::empty()));
                 let back = (store.replayed > 0).then(|| was.back(&store.log.edits()[..store.replayed], fresh));
                 match replay_on_or(was, &store.log.edits()[..to], store.replayed, most) {
                     Ok((replayed, why)) => {
@@ -3901,7 +3901,7 @@ impl Lab {
                 store.replay = r.finish(edits, &store.log.ids()[..n]);
                 store.wholes += 1;
             }
-            Replaying::From(r) => match r.finish(std::mem::replace(&mut store.replay, replay(&[])), edits) {
+            Replaying::From(r) => match r.finish(std::mem::replace(&mut store.replay, replay(crate::policy::Edits::empty())), edits) {
                 Ok(r) => store.replay = r,
                 // its moves stood not all: every edit replayed, a slice a step, from the next
                 Err((was, why)) => {

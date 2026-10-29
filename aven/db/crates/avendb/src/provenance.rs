@@ -32,7 +32,7 @@ use serde_json::Value;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::Lab;
-use crate::policy::{Edit, Entry, State};
+use crate::policy::{Entry, State};
 use crate::sealed::{seal, FileRoot};
 use crate::sign::Signed;
 use crate::sync::{self, LogId};
@@ -112,7 +112,7 @@ pub fn proof(lab: &Lab, me: SignerId, vault: VaultId, code: &BTreeSet<EntryId>) 
 /// (`at`, each edit's place in `edits`).
 struct Stays<'a> {
     st: &'a State,
-    edits: &'a [Edit],
+    edits: &'a crate::policy::Edits,
     at: &'a HashMap<EditId, usize>,
 }
 

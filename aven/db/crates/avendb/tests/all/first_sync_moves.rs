@@ -110,7 +110,7 @@ fn first_sync(log: &Log) -> Vec<Took> {
     };
     let mut pages = paged(log.edits().iter().filter(|e| !entry(e)).cloned().collect());
     pages.extend(paged(log.edits().iter().filter(|e| entry(e)).cloned().collect()));
-    let (mut held, mut r) = (Log::new(), replay(&[]));
+    let (mut held, mut r) = (Log::new(), replay(avendb::policy::Edits::empty()));
     let mut took = vec![];
     for page in pages {
         let before = held.edits().len();
