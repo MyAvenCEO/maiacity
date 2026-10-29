@@ -830,8 +830,9 @@ theorem Keeps.setVault {st : State} {v : VaultId} {vt vt' : Vault} (hv : st.vaul
   narrow _ h := h
   entries _ en h := ⟨en, h, rfl, rfl⟩
 
-/-- A new share keeps the others. -/
-theorem Keeps.addShare (st : State) (c : Share) : Keeps st { st with shares := st.shares ++ [c] } where
+/-- A new share keeps the others, whatever its selector key is sealed to. -/
+theorem Keeps.addShare (st : State) (c : Share) (ss : List Seal) :
+    Keeps st { st with shares := st.shares ++ [c], seals := ss } where
   vaults _ vt hx := ⟨vt, hx, fun _ h => h, fun _ h => h⟩
   shares _ h _ := List.mem_append_left _ h
   revoked _ h := h
@@ -1181,7 +1182,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
   · -- a grant
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, -, -, -, -, -, rfl⟩ := h
-    exact .inl ⟨rfl, .addShare _ _, same st⟩
+    exact .inl ⟨rfl, .addShare _ _ _, same st⟩
   · -- revoke
     split at h
     · simp at h

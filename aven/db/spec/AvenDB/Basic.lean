@@ -206,6 +206,9 @@ inductive KeyName where
   | signer (s : SignerId)
   | scoped (k : KeyFam) (epoch : Nat)
   | entry  (e : EntryId) (stay : Option EditId) (epoch : Nat)
+  /-- Share `c`'s selector key: what its sealed selector is sealed under, itself sealed to the seeds of the vaults that
+      read it (`selectReaders`), so that a reader's device boxes it to a seed whose key its issuer lacked. -/
+  | select (c : ShareId)
   deriving DecidableEq, Repr
 
 end AvenDB

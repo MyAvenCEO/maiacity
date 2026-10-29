@@ -62,7 +62,7 @@ theorem actsForN_setNarrow : actsForN (setNarrow st n) = actsForN st := by
 theorem entitled_setNarrow : entitled (setNarrow st n) = entitled st := by
   funext d k; simp only [entitled, actsFor, actsForN_setNarrow]; rfl
 theorem mayBox_setNarrow : mayBox (setNarrow st n) = mayBox st := by
-  funext d k; cases k <;> simp only [mayBox, entitled_setNarrow, entry?_setNarrow] <;> rfl
+  funext d k; cases k <;> simp only [mayBox, entitled_setNarrow, entry?_setNarrow, actsFor, actsForN_setNarrow] <;> rfl
 theorem writes_setNarrow : (setNarrow st n).writes = st.writes := rfl
 theorem born_setNarrow : (setNarrow st n).born = st.born := rfl
 theorem seals_setNarrow : (setNarrow st n).seals = st.seals := rfl

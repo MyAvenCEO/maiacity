@@ -324,6 +324,8 @@ impl Names {
             KeyName::Signer(signer(s))
         } else if let Some(e) = v.get("entry") {
             KeyName::Entry(entry(e), self.opt_edit(&v["stay"]), num(&v["epoch"]))
+        } else if let Some(c) = v.get("selector") {
+            KeyName::Select(self.share(c))
         } else {
             KeyName::Scoped(self.key_fam(&v["key"]), num(&v["epoch"]))
         }

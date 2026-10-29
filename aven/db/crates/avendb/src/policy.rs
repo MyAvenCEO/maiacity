@@ -956,6 +956,8 @@ struct Seals {
     /// Each key sealed to a key of an entry's stay, with that entry and stay, by a hash of the three: what `link`
     /// checks for a move link.
     linked: Places,
+    /// The keys each share's selector key is sealed to, by the share: what upkeep boxes it to.
+    selects: HashMap<ShareId, Vec<KeyName>>,
 }
 
 /// Places in a list of seals, by a hash of what they are looked up by: the first under each hash, and any other there
@@ -1014,6 +1016,9 @@ impl Seals {
         }
         if let KeyName::Entry(e, stay, _) = s.to {
             self.linked.put(&(s.secret, e, stay), at);
+        }
+        if let KeyName::Select(c) = s.secret {
+            self.selects.entry(c).or_default().push(s.to);
         }
     }
 }
@@ -2229,7 +2234,20 @@ impl State {
                 }
                 en.stay_audience(s).map(drop).ok_or(Refusal::UnknownKey)
             }
+            KeyName::Select(c) => {
+                let cp = self.share(c).ok_or(Refusal::UnknownKey)?;
+                if !select_readers(&cp.share).into_iter().any(|r| self.acts_for(d, r)) {
+                    return Err(Refusal::NotEntitled);
+                }
+                Ok(())
+            }
         }
+    }
+
+    /// The keys share `c`'s selector key is sealed to: the seeds of its readers (`select_readers`) as they were when it
+    /// was made.
+    pub fn select_seals(&self, c: ShareId) -> &[KeyName] {
+        self.seals.selects.get(&c).map_or(&[], Vec::as_slice)
     }
 
     /* Steps */
@@ -2803,6 +2821,16 @@ impl State {
                 }
                 Arc::make_mut(&mut self.over).entry(v).or_default().push(i);
                 Arc::make_mut(&mut self.share_at).insert(c, i);
+                // its selector key, where it is sealed, to the seed of each of its readers there is now: a box the edit
+                // lacks, for a seed whose key its issuer didn't hold, any reader's device adds later (`Action::Keys`)
+                let readers: Vec<VaultId> =
+                    select_readers(&issued.share).into_iter().filter(|&r| self.vault(r).is_some()).collect();
+                for r in readers {
+                    let s = Seal { secret: KeyName::Select(c), to: self.current(KeyFam::Seed(r)) };
+                    if !self.seals.contains(&s) {
+                        Arc::make_mut(&mut self.seals).add(s);
+                    }
+                }
                 Arc::make_mut(&mut self.shares).push(issued);
                 Touch::Grew(grew)
             }
@@ -3178,6 +3206,22 @@ fn reach(by_to: &HashMap<KeyName, Vec<KeyName>>, start: impl Iterator<Item = Key
         }
     }
     open
+}
+
+/// The vaults that read share `share`'s selector where it is sealed (`slice::Select`), its key sealed to their seeds:
+/// the vault it is over, its grantee unless the share only relays, and its issuer. None where it is in the clear: a share
+/// to everyone or to an invite key, whose holder has no vault until it claims the share. A keep share's grantee is a
+/// device, which reads it through its issuer.
+pub fn select_readers(share: &Share) -> Vec<VaultId> {
+    let who = match share.who {
+        Who::Everyone | Who::Invite(_) => return vec![],
+        Who::Vault(g) if share.level.allows(Level::Read) => Some(g),
+        Who::Vault(_) | Who::Device(_) => None,
+    };
+    let mut readers = vec![share.over];
+    readers.extend(who.into_iter().chain([share.issuer]).filter(|v| *v != share.over));
+    readers.dedup();
+    readers
 }
 
 /// The model's `linkAll` for one entry `en` and its writes `ws`: its key in its current stay derives from its

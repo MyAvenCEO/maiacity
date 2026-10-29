@@ -78,7 +78,7 @@ theorem entitled_narrowTo (st : State) (e : EntryId) (to : Audience) : entitled 
   funext d k; simp only [entitled, actsFor, actsForN_narrowTo]; rfl
 
 theorem mayBox_narrowTo (st : State) (e : EntryId) (to : Audience) : mayBox (narrowTo st e to) = mayBox st := by
-  funext d k; cases k <;> simp only [mayBox, entitled_narrowTo, entry?_narrowTo] <;> rfl
+  funext d k; cases k <;> simp only [mayBox, entitled_narrowTo, entry?_narrowTo, actsFor, actsForN_narrowTo] <;> rfl
 
 theorem writes_narrowTo (st : State) (e : EntryId) (to : Audience) : (narrowTo st e to).writes = st.writes := rfl
 theorem born_narrowTo (st : State) (e : EntryId) (to : Audience) : (narrowTo st e to).born = st.born := rfl
