@@ -32,7 +32,9 @@
 	by its device's name and key, and why. An agent always joins its coop's one aven, avenMAIA for Maia City, as one of
 	its devices beside its server (Samuel 2026-10-18: no agent vaults, no sub caps): it acts as the aven, with exactly
 	what the aven holds, by default a Suggester on the coop. Approving takes one touch of their passkey, which the
-	agent's own device cosigns; removing its device from the aven takes it out again.
+	agent's own device cosigns, at once where it runs, else as it next runs: the passkey's part waits on the Mac
+	(`granted`), the sheet says "Approved, joins when it runs" and rises no more for it; removing its device from the
+	aven takes it out again.
 
 	It rises as a sheet from the foot of the page, as the passkey's does (./Signing.svelte), one request at a time, the
 	agents' files first, with pills to pick from rather than the browser's own selects and radios. "Later" puts it away
@@ -272,9 +274,13 @@
 		return shares(a).length || a.all ? `${words}, each resting on ${avenName(a) || 'your aven'}’s own share.` : words;
 	}
 
+	/** the agents' requests approved on this sheet while their device was away, by their key: shown once more, as
+	 *  approved, until put away */
+	let approved = $state(/** @type {string[]} */ ([]));
+
 	/** @param {Request} r */
 	function approve(r) {
-		const a = answers[key(r)];
+		if (!r.online) approved = [...approved, key(r)];
 		ongrant(r.name, r.device, [], '', '');
 	}
 
@@ -355,7 +361,9 @@
 	const queue = $derived(
 		/** @type {Item[]} */ ([
 			...(joining && !later.includes('join') ? [{ key: 'join', j: joining }] : []),
-			...requests.filter((r) => !later.includes(key(r)) && answers[key(r)]).map((r) => ({ key: key(r), r })),
+			...requests
+				.filter((r) => !later.includes(key(r)) && answers[key(r)] && (!r.granted || approved.includes(key(r))))
+				.map((r) => ({ key: key(r), r })),
 			...asked
 				.filter((q) => !later.includes(q.entry) && !answered.includes(q.entry) && picks[q.entry])
 				.map((q) => ({ key: q.entry, q })),
@@ -463,7 +471,9 @@
 					An agent device on this Mac · its key <span class="mono">{short(r.device)}</span>{more}
 				</p>
 			</div>
-			<span class="state" class:on={member || r.online}>{member || r.online ? 'Running' : 'Not running'}</span>
+			<span class="state" class:on={member || r.online}
+				>{r.granted ? 'Approved' : member || r.online ? 'Running' : 'Not running'}</span
+			>
 		</header>
 
 		{#if r.why}<blockquote>“{r.why}”</blockquote>{/if}
@@ -487,21 +497,19 @@
 			{#if !member}One touch of your passkey adds {r.name} to {aven ? nameOf(aven) : 'the aven'}.{/if}
 			Removing its device from {aven ? nameOf(aven) : 'the aven'} takes it out again.
 		</p>
-		{#if !member && !r.online}
-			<p class="offline">
-				{r.name} isn't running right now. Joining takes its own device, which signs it too: open a Claude Code session (or
-				the harness it belongs to), and Approve turns on.
-			</p>
+		{#if r.granted}
+			<p class="joined">Approved, joins when it runs.</p>
+			<div class="actions">
+				<button class="btn quiet danger" disabled={busy} onclick={() => ondeny(r.name, r.device)}>Deny</button>
+				<button class="btn primary" onclick={() => (later = [...later, key(r)])}>Done</button>
+			</div>
+		{:else}
+			<div class="actions">
+				<button class="btn quiet" disabled={busy} onclick={() => (later = [...later, key(r)])}>Later</button>
+				<button class="btn quiet danger" disabled={busy} onclick={() => ondeny(r.name, r.device)}>Deny</button>
+				<button class="btn primary" disabled={busy || !aven} onclick={() => approve(r)}>Approve</button>
+			</div>
 		{/if}
-		<div class="actions">
-			<button class="btn quiet" disabled={busy} onclick={() => (later = [...later, key(r)])}>Later</button>
-			<button class="btn quiet danger" disabled={busy} onclick={() => ondeny(r.name, r.device)}>Deny</button>
-			<button
-				class="btn primary"
-				disabled={busy || !aven || (!member && !r.online)}
-				onclick={() => approve(r)}>Approve</button
-			>
-		</div>
 	</div>
 {:else if q && owning(q)}
 	{@const from = vaultName(q.from)}
@@ -915,10 +923,10 @@
 		line-height: 1.45;
 	}
 
-	.offline {
+	.joined {
 		padding: 0.6rem 0.8rem;
 		border-radius: 10px;
-		background: #f6efe0;
+		background: color-mix(in srgb, var(--accent) 7%, transparent);
 		line-height: 1.45;
 	}
 

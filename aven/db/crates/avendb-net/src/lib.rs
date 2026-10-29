@@ -1357,9 +1357,9 @@ impl Node {
 
     /// Add session `device`, an agent this device hosts on its Mac (`Lab::host`), which runs no device of its own, to
     /// aven `aven` as a device of it, its key to seal to `key`, with `mceliece` the McEliece key it names, both handed
-    /// by the agent as it connected: drafted here and signed in one ceremony of the passkey `passkey` made by
-    /// `authenticator`, then signed by the agent too, asked through its session (`Lab::accept_hosted`), as a server
-    /// signs its claim. The aven. Fails as `add_device_vault_with` does, or if the agent doesn't sign.
+    /// by the agent as it connected: the passkey's part (`sign_hosted_device`), then the agent's, asked through its
+    /// session (`accept_hosted`), as a server signs its claim. The aven. Fails as `add_device_vault_with` does, or if
+    /// the agent doesn't sign.
     pub async fn add_hosted_device(
         &self,
         device: SignerId,
@@ -1369,6 +1369,24 @@ impl Node {
         passkey: SignerId,
         authenticator: &impl Authenticator,
     ) -> Result<VaultId> {
+        let claim = self.sign_hosted_device(device, key, aven, passkey, authenticator).await?;
+        let vault = self.accept_hosted(claim, mceliece).await?;
+        vault.map_err(|why| anyhow!("the agent's join is refused: {why:?}"))
+    }
+
+    /// The passkey's part of adding agent `device` to aven `aven` (`add_hosted_device`), its key to seal to `key`:
+    /// the edit drafted here and signed in one ceremony of the passkey `passkey` made by `authenticator`, as the claim
+    /// the agent signs last (`accept_hosted`), whether it runs now or only later. It needs nothing of the agent's but
+    /// the key it handed, so its person approves it while the agent is away, and it joins when it next runs. Fails if
+    /// this device belongs to no vault, the passkey isn't at hand, or the vaults' rules refuse it.
+    pub async fn sign_hosted_device(
+        &self,
+        device: SignerId,
+        key: PublicKey,
+        aven: VaultId,
+        passkey: SignerId,
+        authenticator: &impl Authenticator,
+    ) -> Result<Claim> {
         let _activity = self.shared.admit()?;
         let human = self.shared.read(|lab, me| lab.vault_of(me)).await.context("this device belongs to no vault")?;
         let draft = move |lab: &mut Lab, me| {
@@ -1379,11 +1397,21 @@ impl Node {
         };
         let drafts = self.shared.try_lab(draft).await?.map_err(|why| anyhow!("the device is refused: {why:?}"))?;
         let (_, (), claim) = self.sign(vec![(passkey, (), drafts)], true, Step::Approve, authenticator).await?;
-        let claim = claim.context("a claim")?;
+        claim.context("a claim")
+    }
+
+    /// The agent's part of its join (`Lab::accept_hosted`), claim `claim` signed by the passkey (`sign_hosted_device`),
+    /// `mceliece` the McEliece key it names: the agent, hosted now, signs it over its session, and this device keeps
+    /// it. A claim signed while the agent was away steps on this device's view as it is now, however far it moved on:
+    /// an edit's rules read the vaults as they stand, never the heads it was drafted on. The aven, or why it's refused:
+    /// `Locked` where the agent didn't sign.
+    pub async fn accept_hosted(&self, claim: Claim, mceliece: Arc<[u8]>) -> Result<Result<VaultId, Refusal>> {
+        let _activity = self.shared.admit()?;
         let kept = self.shared.try_lab(move |lab, me| lab.accept_hosted(me, claim, mceliece)).await?;
-        let vault = kept.map_err(|why| anyhow!("the agent's join is refused: {why:?}"))?;
-        self.shared.changed.notify_one();
-        Ok(vault)
+        if kept.is_ok() {
+            self.shared.changed.notify_one();
+        }
+        Ok(kept)
     }
 
     /// Add the device `offer` names, which handed `key` to seal to (`claim_key`), to a device vault at `place`
