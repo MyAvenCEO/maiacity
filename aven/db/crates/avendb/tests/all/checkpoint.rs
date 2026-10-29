@@ -150,3 +150,34 @@ fn a_catch_up_that_lets_go_of_bare_edits_replays_again_a_slice_a_step() {
     }
     assert!(most <= 1, "a step replayed again in the round after it let go of bare edits: {most} rounds");
 }
+
+/// A device far behind asks a peer that holds a checkpoint's edits bare, and takes the pages in the order the peer
+/// sends them (`sync::place`): the covered edits first, the checkpoint, deeper, last. Every asking after the first
+/// brings what it lacks again: the first drops the covered edits (no checkpoint held yet), the second takes them.
+#[test]
+fn a_device_takes_bare_edits_sent_before_their_checkpoint() {
+    let mut lab = Lab::new();
+    let passkey = lab.passkey("Alice");
+    let mac = lab.device_of(passkey, "Alice's Mac");
+    let phone = lab.device_of(passkey, "Alice's iPhone");
+    let alice = human_on(&mut lab, passkey, &[mac, phone]);
+    let before = lab.backup(mac);
+    let ids: Vec<_> = before.signed().iter().map(|s| s.edit.id()).collect();
+    lab.submit(mac, &[passkey], Action::Checkpoint { vault: alice, covers: ids.clone() }).expect("her passkey's");
+    let mut sent = stripped(&lab.backup(mac), &ids).signed().to_vec();
+    sent.sort_by_key(|s| avendb::sync::place(&s.edit));
+    assert!(matches!(sent.last().unwrap().edit.action, Action::Checkpoint { .. }), "the checkpoint sorts last");
+    lab.restore_from(phone, Backup::new(vec![], []));
+    let holds = |lab: &Lab| -> Vec<_> { lab.backup(phone).signed().iter().map(|s| s.edit.id()).collect() };
+    for _ in 0..2 {
+        let held = holds(&lab);
+        let page: Vec<Signed> = sent.iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
+        for s in page {
+            lab.receive_whose_now(phone, vec![s], vec![], false);
+        }
+        lab.catch_up(phone);
+    }
+    let held = holds(&lab);
+    assert!(ids.iter().all(|id| held.contains(id)), "every covered edit held");
+    assert!(lab.state(phone).acts_for(phone, alice));
+}
