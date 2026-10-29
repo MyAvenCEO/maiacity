@@ -108,7 +108,7 @@ impl Shared {
                 };
                 let mut behind = BTreeSet::new();
                 for device in &live {
-                    behind.extend(self.differ(*device).await);
+                    behind.extend(self.differ(*device));
                 }
                 let behind = Arc::new(behind);
                 *self.fresh.walk.lock().expect("walk") =

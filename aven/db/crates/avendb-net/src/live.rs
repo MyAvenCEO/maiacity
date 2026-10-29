@@ -444,7 +444,7 @@ impl Shared {
         timing: &mut LiveTiming,
     ) -> anyhow::Result<()> {
         let at = time::Instant::now();
-        let missing = self.differ(device).await;
+        let missing = self.differ(device);
         timing.differ_ms += ms(at);
         // the rules the hinted entries rest on (`rests_on`), those it lacks: not every rule the device lacks, which a
         // device catching up a history of many grants always lacks more than `LIVE_LOGS` of, so a chat message waited

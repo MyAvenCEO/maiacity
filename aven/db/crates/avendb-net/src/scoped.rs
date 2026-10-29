@@ -64,7 +64,7 @@ impl Shared {
             self.peers.lock().expect("peers").values().filter(|p| p.conn.close_reason().is_none()).cloned().collect();
         let mut lacking = BTreeMap::new();
         for p in &peers {
-            let differ: BTreeSet<LogId> = self.differ(p.device).await.intersection(&scope).copied().collect();
+            let differ: BTreeSet<LogId> = self.differ(p.device).intersection(&scope).copied().collect();
             if !differ.is_empty() {
                 lacking.insert(p.endpoint, differ);
             }
