@@ -390,15 +390,17 @@ const WALKS = [
 	{
 		app: 'proposals',
 		steps: [
-			{ level: 'board', go: `${base}/app/aips/`, painted: 'ul.cards li button' },
-			{ level: 'aip', click: 'ul.cards li button', painted: 'section.detail h2' }
+			// the board drawn: a card, or a column's own empty words once it isn't catching up ("Nothing waits for a yes.")
+			{ level: 'board', go: `${base}/app/aips/`, painted: '.board ul.cards li', not: 'Catching up' },
+			{ level: 'aip', click: '.board ul.cards li button', painted: 'section.detail h2' }
 		]
 	},
 	{
 		app: 'settings',
 		steps: [
 			{ level: 'settings', go: `${base}/app/#settings`, painted: 'section.part' },
-			{ level: 'devices', go: `${base}/app/#settings/devices`, painted: '#settings-devices li.device' }
+			// the person's own devices are their human vault's, not the coop's the Assets walk picked
+			{ level: 'devices', go: `${base}/app/#settings/devices`, painted: '#settings-devices li.device', vault: '\\bYou\\b' }
 		]
 	}
 ];
