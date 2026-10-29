@@ -533,3 +533,27 @@ fn a_store_taken_out_for_a_probe_leaves_a_device_its_catch_up_steps_on() {
     assert!(held > 0 && lab.log(d).edits().is_empty(), "the Lab holds an empty store in its place");
     assert!(lab.entries(d).is_empty(), "and shows nothing of the store taken out");
 }
+
+/// An ask in the middle of a catch-up (`shares`, `may`: run dry, `Lab::dry`) judges by every edit its device holds by
+/// stepping the device's own replay on to them, kept for the asks after it and its catch-up, not on a copy of the
+/// whole state replayed again at each ask (fresh9, 2026-10-29: a fresh browser's asks held its worker 283.8 s in 12
+/// turns): the asks after the first replay nothing, and the catch-up ends where one catch-up does.
+#[test]
+fn an_ask_mid_catch_up_steps_its_devices_replay_on_once() {
+    let (mut w, d, _, coop) = behind(60);
+    let (mut once, ..) = behind(60);
+    assert!(!w.lab.replay_current(d), "behind");
+    let replays = |lab: &avendb::lab::Lab| lab.perf(d)["timers"]["replay"]["count"].as_u64().unwrap_or(0);
+    let ask = serde_json::json!({ "op": "shares", "over": coop.to_hex() });
+    let before = replays(&w.lab);
+    let first = avendb::engine::run(&mut w.lab, d, &ask);
+    assert!(first.get("ok").is_some(), "{first}");
+    assert_eq!(replays(&w.lab), before + 1, "the first ask steps the replay on");
+    for _ in 0..3 {
+        assert_eq!(avendb::engine::run(&mut w.lab, d, &ask), first, "the same answer");
+    }
+    assert_eq!(replays(&w.lab), before + 1, "the asks after it replay nothing");
+    while !matches!(w.lab.catch_up_step(d, 7), CatchUp::Caught(_)) {}
+    assert!(once.lab.catch_up(d));
+    assert_eq!(seen(&w, d), seen(&once, d));
+}

@@ -4086,9 +4086,14 @@ impl Lab {
         if self.lawless { authorize() } else { h.admit(w, &read, authorize) }
     }
 
-    /// Run `f` dry: every edit it asks for, a write, a share, any edit it completes (`complete`), is checked, proven
-    /// and refused as ever, and then not made (`may`).
-    pub fn dry<T>(&mut self, f: impl FnOnce(&mut Lab) -> T) -> T {
+    /// Run `f` dry for device `d`: every edit it asks for, a write, a share, any edit it completes (`complete`), is
+    /// checked, proven and refused as ever, and then not made (`may`). What it is checked by, every edit `d` holds
+    /// (`latest`), is `d`'s own replay stepped on to them in place first (`step_replay`, from the rung or mark before the
+    /// first it lacks), kept for its catch-up and for every ask after it. Mid catch-up each ask replayed them on a copy
+    /// of the whole state that the next page threw away: a fresh browser's `may` asks held its one worker 283.8 s in 12
+    /// turns, 122.8 s the longest (fresh9, 2026-10-29; `CatchUpBudget.asks_cost_once`).
+    pub fn dry<T>(&mut self, d: SignerId, f: impl FnOnce(&mut Lab) -> T) -> T {
+        self.step_replay(d, usize::MAX);
         let was = std::mem::replace(&mut self.dry, true);
         let out = f(self);
         self.dry = was;

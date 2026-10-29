@@ -31,7 +31,7 @@
 
 <script>
 	import Mark from './Mark.svelte';
-	import { allowed, may } from './ops.js';
+	import { may, refused } from './ops.js';
 	import {
 		count,
 		isStanding,
@@ -111,7 +111,8 @@
 	const listed = $derived(own.flatMap((x) => [x, ...under(x)]));
 	/**
 	 * Remove and Revoke as the device answers a dry run of each, by `device <vault> <id>` and `share <id>`: asked again
-	 * only once what they ask changed, and never while the device still works on the last ask. Asked at every change of
+	 * only once what they ask changed, and never while the device still works on the last ask. Each shows unless the
+	 * device refused it (./ops.js `refused`): none waits for the answer, or asks again because none came. Asked at every change of
 	 * the world, each a dry run over a coop's whole vault, they kept Samuel's Mac busy for good (2026-10-21: theOS at
 	 * full CPU, every call answered 30-50 s late).
 	 */
@@ -137,14 +138,11 @@
 		may(api, world.mine, asks.map(([, op]) => op)).then((answers) => {
 			asking = false;
 			can = Object.fromEntries(asks.map(([k], i) => [k, answers[i]]));
-			// what the device didn't answer is asked again a little later; what changed meanwhile, now
-			if (answers.some((a) => /** @type {any} */ (a)?.refused === 'NoAnswer')) {
-				asked = '';
-				setTimeout(() => again++, 15000);
-			} else again++;
+			// what changed meanwhile is asked now
+			again++;
 		});
 	});
-	const lets = (/** @type {string} */ what) => allowed(can[what]);
+	const lets = (/** @type {string} */ what) => !refused(can[what]);
 </script>
 
 <!-- a vault it owns: its mark, name and kind, its devices, and the shares it holds -->

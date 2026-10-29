@@ -145,7 +145,6 @@ mod pulls;
 mod live;
 mod ranges;
 mod run;
-mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;
@@ -1680,7 +1679,7 @@ impl Node {
         &self,
         f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static,
     ) -> Result<T> {
-        self.shared.try_lab(|lab, me| lab.dry(|lab| f(lab, me))).await
+        self.shared.try_lab(|lab, me| lab.dry(me, |lab| f(lab, me))).await
     }
 
     /// Ask the device at endpoint `peer` now, whatever it announced: the edits and McEliece keys it may send this one.

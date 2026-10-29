@@ -116,6 +116,13 @@ export function refs(op, done) {
 export const allowed = (v) => v === true || (!!v && typeof v === 'object' && 'approve' in v);
 
 /**
+ * Whether the device refused an op, as `may` answered: only a refusal it gave, never one it hasn't answered yet or
+ * didn't answer (`NoAnswer`). A button waits on no dry run and is never greyed out because the device is slow: the
+ * device checks each op as it makes it, on what it holds, and says why where it won't. @param {any} v
+ */
+export const refused = (v) => v !== undefined && v !== null && v?.refused !== 'NoAnswer' && !allowed(v);
+
+/**
  * Whether the acting vault `actor` may make each of the change ops `ops` now, as the device answers by a dry run of
  * each that checks, proves and refuses as running it would, and makes nothing (the engine's `may`): `true`,
  * `{ approve }` where its vault's owners approve it, or the refusal, `{ refused, why }`. What a page asks before it

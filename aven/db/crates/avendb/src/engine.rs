@@ -341,7 +341,7 @@ pub fn asks(v: &Value) -> bool {
 /// which a node brings (avendb-net's `Node::run`).
 pub fn run(lab: &mut Lab, me: SignerId, v: &Value) -> Value {
     if asks(v) {
-        return lab.dry(|lab| answer(ask(lab, me, v)));
+        return lab.dry(me, |lab| answer(ask(lab, me, v)));
     }
     if reads(v) {
         return read(lab, me, v);
@@ -1945,7 +1945,7 @@ fn may(lab: &mut Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
 /// What `may` answers of change op `v` on device `me`, by a dry run: `true`, `{"approve": {signers}}` or the
 /// refusal.
 pub fn verdict(lab: &mut Lab, me: SignerId, v: &Value) -> Value {
-    vaults::verdict_of(lab.dry(|lab| prepare(lab, me, v)))
+    vaults::verdict_of(lab.dry(me, |lab| prepare(lab, me, v)))
 }
 
 /// Step `s`, acting for `actor`, on device `me`.

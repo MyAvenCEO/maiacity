@@ -11,7 +11,7 @@
 <script>
 	import { BEATS } from '$content/studio/types.js';
 	import { BEAT_COLOR, BEAT_LABEL, BEAT_NOTE } from '$lib/stories/stories.js';
-	import { allowed, may } from './ops.js';
+	import { may, refused } from './ops.js';
 	import { newId } from './sparks.js';
 
 	/**
@@ -53,12 +53,12 @@
 	);
 
 	/** whether the acting vault's ops let it change the journey, as the device says */
-	let changes = $state(false);
+	let changes = $state(true);
 	$effect(() => {
 		void world;
 		let gone = false;
 		const probe = { op: 'insert', entry, path: ['beats'], value: { id: newId(beats), type: 'hook' } };
-		if (writes) may(api, actor, [probe]).then(([a]) => !gone && (changes = allowed(a)));
+		if (writes) may(api, actor, [probe]).then(([a]) => !gone && (changes = !refused(a)));
 		else changes = false;
 		return () => {
 			gone = true;

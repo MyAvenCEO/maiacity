@@ -1,6 +1,6 @@
 // @ts-nocheck — Bun, as the other plain JS suites.
 import { expect, test } from 'bun:test';
-import { emptySync, observeSync, peerCoverage, peerStatus, missingUpdates, liveSync, STALL, taking } from './sync-status.js';
+import { emptySync, observeSync, peerCoverage, peerStatus, missingUpdates, liveSync } from './sync-status.js';
 const report = (change = {}) => ({ peers: 3, logs: 2483, behind: 192, pulling: 5, pages: 1200, ...change });
 const sample = (change = {}, at = 1000) => observeSync(emptySync(), report(change), at);
 
@@ -106,14 +106,14 @@ test('the pill moves with every edit and page while no log is whole yet, and say
 	live = liveSync(paged, 4000);
 	expect(live.rows).toContainEqual(['Last page', '2 s ago']);
 
-	// a second answer with the same counts moves nothing; the clock alone brings it to waiting, by name and for how long
+	// a second answer with the same counts moves nothing; a pull still running is no wait, however long its page takes
+	// (a page over a relay takes 10-14 s): it says when its last page came
 	const same = at({ edits: 5800, last: 2000, counts: { pages: 1201 } }, paged, 3000);
 	expect(same.since).toBe(2000);
-	live = liveSync(same, 2000 + STALL + 7000);
-	expect(live.stalled).toBe(true);
-	expect(live.line).toBe('Waiting on Mac · 12 s');
-	expect(live.rows).toContainEqual(['Waiting on', 'Mac for 12 s']);
-	expect(liveSync(same, 2000 + 125000).line).toBe('Waiting on Mac · 2 min');
+	live = liveSync(same, 2000 + 12000);
+	expect(live.stalled).toBe(false);
+	expect(live.line).toBe('Syncing 2,291/2,483 · +800 edits');
+	expect(live.rows).toContainEqual(['Mac', 'taking edits · 5,800 edits · page 12 s ago']);
 
 	// the next edits end the wait at once
 	const more = at({ edits: 5810, last: 20000, counts: { pages: 1202 } }, same, 20000);
@@ -128,7 +128,7 @@ test('the pill moves with every edit and page while no log is whole yet, and say
 test('with no pull running it waits on the peers it hears, named by their device when they wrote no card', () => {
 	const peerOf = (device) => ({ device, name: null, pulling: null, pages: 0, edits: 0, last: 0 });
 	const idle = observeSync(emptySync(), report({ pulling: 0, edits: 0, from: [peerOf('85b01be4' + '0'.repeat(56)), peerOf('2f74eca3' + '0'.repeat(56))] }), 1000);
-	const live = liveSync(idle, 1000 + STALL + 1000);
+	const live = liveSync(idle, 1000 + 6000);
 	expect(live.line).toBe('Waiting on 2 peers · 6 s');
 	expect(live.rows).toContainEqual(['Waiting on', '85b01be4, 2f74eca3 for 6 s']);
 	expect(live.rows).toContainEqual(['Last page', 'none yet']);
@@ -139,29 +139,24 @@ test('a device too old to tell edits or peers still reads as before', () => {
 	expect(old.edits).toBe(0);
 	expect(old.from).toEqual([]);
 	expect(liveSync(old, 1000).line).toBe('Syncing 2,291/2,483');
-	expect(liveSync(old, 1000 + STALL).line).toBe('Waiting on peers · 5 s');
+	expect(liveSync(old, 1000 + 5000).line).toBe('Syncing 2,291/2,483');
 });
 
-test('a pull that runs on and brings nothing is stalled, not a transfer, and its failed askings are counted', () => {
+test('a pull that runs on and brings nothing is no guess of a timer: it says when its last page came and its failed askings', () => {
 	const peerOf = (device, name, last, failed, askings) => ({ device, name, pages: 3, edits: 30, last, askings, failed,
 		pulling: { since: 1000, stage: 'taking edits', took: 30 } });
 	// two pulls run: the Mac's brought a page a second ago, the always-on peer's none for 6 min, every asking failing
 	const from = [peerOf('36ee6eef', 'Mac', 361000, 0, 4), peerOf('85b01be4', null, 1500, 14, 15)];
 	const sync = observeSync(emptySync(), report({ pulling: 2, edits: 60, from }), 361000);
-	let live = liveSync(sync, 362000);
-	expect(live.moving).toBe(1);
-	expect(live.rows).toContainEqual(['Transfers', '1 taking · 1 stalled']);
-	expect(live.rows).toContainEqual(['85b01be4', 'stalled · 30 edits · page 6 min ago · 14 failed']);
+	const live = liveSync(sync, 362000);
+	expect(live.moving).toBe(2);
+	expect(live.rows).toContainEqual(['Transfers', '2']);
+	expect(live.rows).toContainEqual(['85b01be4', 'taking edits · 30 edits · page 6 min ago · 14 failed']);
 	expect(live.rows).toContainEqual(['Failed askings', '14 of 19']);
-	// once the Mac's pages stop too, nothing is a transfer and the pill says what it waits on
-	live = liveSync(sync, 361000 + STALL + 2000);
-	expect(live.moving).toBe(0);
-	expect(live.rows).toContainEqual(['Transfers', '0 taking · 2 stalled']);
-	expect(live.line).toBe('Waiting on 2 peers · 7 s');
+	expect(live.stalled).toBe(false);
 	// a failed asking alone moves nothing
 	const failedAgain = observeSync(sync, report({ pulling: 2, edits: 60, from: [from[0], { ...from[1], failed: 15, askings: 16 }] }), 368000);
 	expect(failedAgain.since).toBe(361000);
-	expect(taking(failedAgain.from[1], 368000)).toBe(false);
 });
 
 test('a peer whose connection drops a moment keeps its coverage, marked reconnecting, so the counts hold', () => {
@@ -172,8 +167,8 @@ test('a peer whose connection drops a moment keeps its coverage, marked reconnec
 	const dropped = observeSync(before, report({ peers: 2, reconnecting: 1, pulling: 0, from: [both[0], peerOf('85b01be4', null, true)] }), 2000);
 	expect([dropped.logs, dropped.behind, dropped.reconnecting]).toEqual([before.logs, before.behind, 1]);
 	expect(dropped.since).toBe(before.since);
-	expect(liveSync(dropped, 2000 + STALL).line).toBe('Waiting on 2 peers · 6 s');
-	expect(liveSync(dropped, 2000 + STALL).rows).toContainEqual(['Waiting on', 'Mac, 85b01be4 (reconnecting) for 6 s']);
+	expect(liveSync(dropped, 7000).line).toBe('Waiting on 2 peers · 6 s');
+	expect(liveSync(dropped, 7000).rows).toContainEqual(['Waiting on', 'Mac, 85b01be4 (reconnecting) for 6 s']);
 	// a report can't say more peers reconnect than it counts
 	expect(observeSync(emptySync(), report({ peers: 1, reconnecting: 3 }), 1000).reconnecting).toBe(1);
 });

@@ -29,7 +29,6 @@
 	import { screenSlot } from '$lib/app/screen-slots.js';
 	import { setContext } from 'svelte';
     import { shellView, localNavigation } from './startup-summary.js';
-	import Fresh from './Fresh.svelte';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { afterNavigate } from '$app/navigation';
 	import { wayBack } from '$lib/app/back.svelte.js';
@@ -153,6 +152,11 @@
 	const tab = $derived(route.page);
 	/** the view paints at once from what the device holds, marked while it is still reading or catching up */
 	const view = $derived(shellView(world, tab, session.worldFresh));
+	// how fresh the view is goes to the app's one sync pill, the one place the page says it (never a badge of its own)
+	$effect(() => {
+		session.viewFresh = view.fresh;
+		return () => (session.viewFresh = null);
+	});
 	// a link to the dashboard itself (the nav pill's Home and Back, `/app/` with no hash) is the router's navigation, no
 	// hashchange: the page it leads to is read from the address after every navigation too
 	const navigated = () => localNavigation(() => { route = parse(location.hash); }, () => session.viewChanged());
@@ -296,8 +300,6 @@
 	<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 {/snippet}
 
-<!-- how fresh the view is, in the one screen head (catching up, offline), never a row of the view's own -->
-{#if view.fresh.state !== 'current'}<div use:screenSlot={'center'}><Fresh fresh={view.fresh} /></div>{/if}
 
 <div class="shell" class:reading={!!route.entry}>
 	{#if route.entry}

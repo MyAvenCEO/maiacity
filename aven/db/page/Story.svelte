@@ -22,7 +22,7 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
-	import { allowed, may } from './ops.js';
+	import { may, refused } from './ops.js';
 	import StoryHook from './StoryHook.svelte';
 	import StoryJourney from './StoryJourney.svelte';
 	import StoryMovie from './StoryMovie.svelte';
@@ -108,7 +108,7 @@
 		const names = Object.keys(asks);
 		let gone = false;
 		may(api, actor, Object.values(asks)).then((answers) => {
-			if (!gone) can = Object.fromEntries(names.map((n, i) => [n, allowed(answers[i])]));
+			if (!gone) can = Object.fromEntries(names.map((n, i) => [n, !refused(answers[i])]));
 		});
 		return () => {
 			gone = true;
