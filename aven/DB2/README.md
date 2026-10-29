@@ -71,7 +71,7 @@ Each rule is held by a test or a check once there is code to hold.
   refuses unknown ones. Membership only opens the door; what a member may read or write inside is decided per document
   by caps, and data stays sealed. A direct connection shows a member's IP address to the member it talks to; the relay
   path hides it. Any member's Peer can run a relay, so the members' network doesn't depend on the Aven Peer.
-- **Pluggable storage.** The core defines one small, object-shaped contract, `Store`. Behind it: object storage for the
+- **Pluggable storage.** The core defines one small contract of blobs and refs, `Store`. Behind it: object storage for the
   Aven Peer, a folder for a Peer, OPFS for a Peer-Light, memory for tests. Apache OpenDAL provides the first backends;
   our own OPFS backend comes where speed needs it ([`SANDBOX.md`](SANDBOX.md#storage-one-contract-pluggable-backends)).
 - **One primitive underneath: the sealed blob.** Everything at rest and on the wire is an immutable, sealed object
@@ -79,7 +79,8 @@ Each rule is held by a test or a check once there is code to hold.
   the hashes of its pieces) over blobs: sealed segments of edits and, now and then, a snapshot. Both live in the same
   `Store` and travel by the same blob transfer. Only the edits being made right now travel live over our sync protocol,
   until they are sealed into the next segment. The Aven Peer can store, verify and serve every byte without reading
-  any of it. Loro is the document model, so iroh-docs is not needed.
+  any of it. Loro is the document model, so iroh-docs is not needed. The only other thing in storage is a ref: a name
+  pointing at a blob, such as a document's latest head, changed atomically, as in git.
 - **Encryption:** X-Wing (ML-KEM-768 with X25519) is the only key encapsulation. Every sealed box carries a suite byte,
   so a second scheme can join if lattices ever look weak: HQC, NIST's 2025 code-based backup, with keys of a few KB.
   No Classic McEliece: v1 derived a pair for every key, each with a 1 MB public half that took most of a second to

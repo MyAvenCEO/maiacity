@@ -54,9 +54,10 @@ its key. Each place gets a backend:
 | Peer-Lights | OPFS |
 | tests and the simulation | memory |
 
-- **The contract is object-shaped:** put an object once, read it whole or a range of it, list by prefix, delete, and
-  one atomic head per log. Files, buckets and OPFS all do that well, so every backend behaves the same. No appends:
-  object storage has none.
+- **The contract is blobs and refs,** like git's objects and refs. A blob is put once and never changes: read it whole
+  or a range of it, list, delete. A ref is a name pointing at a blob's hash, changed atomically: a document's head, a
+  peer's key. Files, buckets and OPFS all do that well, so every backend behaves the same. No appends: object storage
+  has none.
 - **One writer per store** (rule 1 in the [README](README.md#the-rules)): a store never has two writers, so we don't
   depend on a bucket's locking.
 - **The first backends come from Apache OpenDAL,** Rust's "one layer, all storage" library. Its release 0.59.5 (18 Oct
@@ -121,7 +122,8 @@ One image holds every tool; every command runs in it.
 
   It's built for amd64 (cloud, CI) and arm64 (OrbStack on Apple Silicon, natively). A GitHub workflow builds it when
   the box's files change and with every daily version bump. The repository is public, so the image is too, and it
-  pulls without a token.
+  pulls without a token. Each image is tagged with the hash of the box's inputs, so every checkout runs exactly its
+  own box; `latest` is main's.
 - **Containers** (`box/compose.yml`):
   - `aven`: the Aven Peer, the Peer binary with `--relay`;
   - `alice`: Alice Peer, the same binary with the relay off;
@@ -261,10 +263,29 @@ aven/DB2/
   `doctor` passes, and every pin is at its newest release.
 - The loop's times are measured and written into this file.
 
-## Threads
+## Execution plan
 
-- **Box:** the image, compose, the setup script and hook, the workflow, `doctor`, `bump`.
-- **Rust:** the core, the store, the Peer and the Peer-Light.
-- **Page:** the landing page and the control room.
+**Step 0, in this thread:** a clickable mock of the landing page and the control room, a page Samuel opens on any
+device. The UX is settled before any code.
 
-The avenDB2 Goal thread leads them and collects their branches.
+**Step 1, four threads in parallel.** Each works on a task branch with a draft PR and no CI, sized by
+`.claude/skills/devx-speed`.
+
+| Thread | Builds | Its own check |
+|---|---|---|
+| **Box** | the Dockerfile and the image workflow (GitHub's registry, amd64 and arm64, tagged by the hash of the box's inputs); `compose.yml`; `bun run up`, `down`, `logs`, `doctor`, `shot` and `up --check`; the cloud setup script and the session hook; the fence check (no legacy imports, the folder's spelling); the root `Cargo.toml` excluding `aven/DB2`; `check.mjs` and the goal CI running `bun run up --check` | `bun run up` brings up the five containers with placeholder peers, and `doctor` passes in a cloud session |
+| **Store** (Rust) | `crates/store`: the contract (blobs and refs), its backends through OpenDAL (s3, fs, opfs, memory) and the conformance suite | the suite passes on memory and fs, on s3 against the box's S3 server, and on opfs in Chromium |
+| **Peers** (Rust and Lean) | `crates/core`: the status phases, presence and progress counters, pure. `crates/peer`: the binary, with the iroh endpoint, the `Router`, our ALPN `avendb2/1` (hello and presence), `--relay` and `--store`. `crates/web`: the Peer-Light, the core as wasm in a worker, relay-only, storing in OPFS. `spec/` with its one check. | unit tests; two Peers and a Peer-Light connect over iroh in a test; `lake build` |
+| **Page** (JS) | `app/`: the landing page and the control room, first on recorded status, then on the real peers | `svelte-check`; the pages render the recorded status |
+
+The Store thread's first commit is the `Store` trait, so the Peers thread builds on it from the start.
+
+**Step 2, in this thread as the avenDB2 Goal thread:** collect the four branches (`collect.mjs`), bring the box up in a
+cloud session, run `bun run up --check`, measure the loop and write the times into this file. Then the goal PR runs CI
+once and merges.
+
+**Samuel's part,** the settings no agent can change:
+
+1. Create the cloud environment avenSANDBOX: the setup script above, Trusted network access, `AVEN_DB2=1`.
+2. In OrbStack's Docker engine config, set `"allow-direct-routing": true`.
+3. Once the first image is pushed, check that the `avensandbox` package on GitHub is public.
