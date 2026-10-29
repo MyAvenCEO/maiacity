@@ -605,7 +605,7 @@ mod slices {
         whole.shutdown().await.unwrap();
         sliced.shutdown().await.unwrap();
     }
-    /// The keys a pull brings after its pages, taken in the middle of the catch-up those pages left (`bring_keys`, a
+    /// The keys a pull brings after its pages, taken in the middle of the catch-up those pages left (`seal_keys`, a
     /// `receive` that brings it up to date), hold the Lab one step, not the whole catch-up, and a peer's ask of the
     /// device is answered between the catch-up's turns, while most are still to come. An iPhone took them in one turn
     /// of 1.8 min (a whole replay, its key index made again, its bodies): a page's worker runs the Lab and its network
@@ -631,7 +631,7 @@ mod slices {
             phone.shared.try_lab(move |lab, me| lab.receive_whose_now(me, page, vec![], false)).await.unwrap();
         }
         mac.know(phone.addr());
-        // the keys, as `bring_keys` takes them after the last page
+        // the keys, as `seal_keys` takes them after a pull
         phone.shared.try_lab_class(Class::Background, |lab, me| { lab.receive(me, Vec::new(), Vec::new()); }).await.unwrap();
         assert!(!phone.read(|lab, me| lab.replay_current(me)).await, "taking the keys ran the whole catch-up in one turn");
         // then the catch-up, a step a turn, and the Mac asks the iPhone once its first turn ran

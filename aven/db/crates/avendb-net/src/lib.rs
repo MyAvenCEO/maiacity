@@ -2988,7 +2988,7 @@ impl Shared {
         scope: Scope,
         background: bool,
     ) -> Result<usize> {
-        self.pull_expected(endpoint, scope, background, None, None, None).await
+        self.pull_expected(endpoint, scope, background, None, None).await
     }
 
     /// A live hint belongs to the authenticated identity that announced it. Fence that identity before building
@@ -2999,7 +2999,6 @@ impl Shared {
         scope: Scope,
         background: bool,
         expected: Option<SignerId>,
-        keys: Option<&mut BTreeSet<BlobId>>,
         yielding: Option<&Yield>,
     ) -> Result<usize> {
         let _activity = self.admit()?;
@@ -3013,25 +3012,18 @@ impl Shared {
         // an asking of some logs among more to come (`ask_differing`) leaves the last bringing up to date to its caller
         let must = !matches!(scope, Scope::Logs(_));
         let device = peer.device;
-        let mut named = BTreeSet::new();
-        let mut asked = self.pages(peer, scope, &mut job, admission, background, keys.unwrap_or(&mut named), yielding).await;
-        if asked.is_ok() {
-            if expected.is_some() {
-                // a live pull's edits show without the keys they name (one is needed only to seal to its signer), and a
-                // key is a megabyte: brought after, not waited for (`bench_live` phone: a chat edit's pull waited 1.7 s
-                // on two keys the backlog was bringing too)
-                if !named.is_empty() && let Ok(activity) = self.admit() {
-                    let shared = self.clone();
-                    task::spawn(async move {
-                        let _activity = activity;
-                        if let Err(error) = shared.bring_keys(endpoint, device, named, background).await {
-                            tracing::debug!(%error, "avendb: a live pull's keys come with a later pull");
-                        }
-                    });
+        let mut sealing = BTreeSet::new();
+        let asked = self.pages(peer, scope, &mut job, admission, background, &mut sealing, yielding).await;
+        // the keys it seals to that the peer named, brought on a task of their own at the background's class, never
+        // waited for: its edits show and its views open without any (`Lab::request`'s wants, `seal_keys`)
+        if asked.is_ok() && !sealing.is_empty() && let Ok(activity) = self.admit() {
+            let shared = self.clone();
+            task::spawn(async move {
+                let _activity = activity;
+                if let Err(error) = shared.seal_keys(endpoint, device, sealing).await {
+                    tracing::debug!(%error, "avendb: the keys it seals to come with a later pull");
                 }
-            } else if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
-                asked = Err(error);
-            }
+            });
         }
         // the next asking of this peer names what these pages brought; bringing it up to date needs no turn
         drop(turn);
@@ -3049,7 +3041,7 @@ impl Shared {
     }
 
     /// `asking` of `peer`: page after page, each told to `job`, with how many of the edits it took are each vault's and
-    /// each entry's, and the McEliece keys its pages named added to `keys` (`bring_keys`). It ends after a page where
+    /// each entry's, and the McEliece keys it asked for to seal to added to `sealing` (`seal_keys`). It ends after a page where
     /// `yielding` says the open views want now a log it asks for that they didn't when it began (`Yield`).
     #[allow(clippy::too_many_arguments)]
     async fn pages(
@@ -3059,7 +3051,7 @@ impl Shared {
         job: &mut Running,
         admission: Arc<pulls::Admission>,
         background: bool,
-        keys: &mut BTreeSet<BlobId>,
+        sealing: &mut BTreeSet<BlobId>,
         yielding: Option<&Yield>,
     ) -> Result<usize> {
         // Only the authority-first background scheduler uses the optional payload pass. A refusal, unsupported
@@ -3411,10 +3403,8 @@ impl Shared {
                 }
             }
             pump!();
-            // the McEliece keys its edits name come after the last page, not with each: a device needs one only to seal
-            // to its signer, each is a megabyte, and a page of a few edits waited ~10 s on them through a relay
-            // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
-            keys.extend(blobs);
+            // the McEliece keys it asked for, those it lacks to seal to (`Lab::request`): brought after its pages
+            sealing.extend(blobs);
             let logged: Vec<(EditId, Option<LogId>)> = edits.iter().map(|s| (s.edit.id(), log_of(&s.edit, s.edit.id()))).collect();
             let ids: Vec<EditId> = logged.iter().map(|(id, _)| *id).collect();
             // a page that came whole is taken on a task of its own, so that it is kept even where the asking stops
@@ -3601,10 +3591,12 @@ impl Shared {
         }
     }
 
-    /// The McEliece keys a pull's pages named that this device lacks, from `device` at `endpoint` in one request, once
-    /// every page of the asking is taken: an asking of many logs (`ask_differing`) brings them after its last log, so
-    /// no log waits on another's keys (a new human's six keys, ~6 MB, held the next log ~40 s on a lossy link).
-    async fn bring_keys(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, keys: BTreeSet<BlobId>, background: bool) -> Result<()> {
+    /// The McEliece keys this device lacks to seal to that `device` at `endpoint` named in a pull's pages, in one
+    /// request, at the background's class: the one way a key comes to it, as each is a megabyte and one is needed only
+    /// to seal to its signer (`Store::sealing`), so no pull, read or view waits on one, and a vault of many devices
+    /// costs a new device none (a sign-in fetched ~1 MB for each of 30 devices before its first sync ended,
+    /// 2026-10-29). Its upkeep makes the box it couldn't once the key comes.
+    async fn seal_keys(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, keys: BTreeSet<BlobId>) -> Result<()> {
         if keys.is_empty() {
             return Ok(());
         }
@@ -3624,7 +3616,7 @@ impl Shared {
             let bytes = got.iter().map(|k| k.len() as u64).sum();
             self.traffic.keys(device, asked, got.len() as u64, bytes, fetching.elapsed().as_millis() as u64);
             if !got.is_empty() {
-                self.try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| lab.receive(me, Vec::new(), got)).await?;
+                self.try_lab_class(lab_schedule::Class::Background, move |lab, me| lab.receive(me, Vec::new(), got)).await?;
                 self.changed.notify_one();
             }
         }
@@ -3926,14 +3918,13 @@ impl Shared {
         let mut logs = self.logs.lock().expect("logs");
         if let Some(known) = logs.as_mut() {
             if !known.current(lab.log(me), size) {
-                Arc::make_mut(known).update(lab.log(me), size, &|k| lab.blob(me, *k).is_some());
+                Arc::make_mut(known).update(lab.log(me), size);
             }
             known.clone()
         } else {
             let log = lab.log(me);
-            let holds = |k: &BlobId| lab.blob(me, *k).is_some();
-            let mut fresh = Logs::of(&[], &[], (0, 0), &holds);
-            fresh.update(log, size, &holds);
+            let mut fresh = Logs::of(&[], &[], (0, 0));
+            fresh.update(log, size);
             let fresh = Arc::new(fresh);
             *logs = Some(fresh.clone());
             fresh
@@ -3960,9 +3951,8 @@ impl Shared {
                     true => shared.logs_of(lab, me).frontiers(),
                     false => {
                         let mut index = shared.held_logs.lock().expect("held logs");
-                        let holds = |k: &BlobId| lab.blob(me, *k).is_some();
-                        let index = index.get_or_insert_with(|| Logs::of(&[], &[], (0, 0), &holds));
-                        index.update_held(lab.log(me), held, size, &holds);
+                        let index = index.get_or_insert_with(|| Logs::of(&[], &[], (0, 0)));
+                        index.update_held(lab.log(me), held, size);
                         index.frontiers()
                     }
                 };
@@ -4222,7 +4212,7 @@ impl Shared {
                 }
             });
         }
-        let (mut new, mut keys, mut stage) = (0, BTreeSet::new(), AskingStage::Manifests);
+        let (mut new, mut stage) = (0, AskingStage::Manifests);
         // a new device's views ask by selectors before they know an entry: the first asking waits a moment for what
         // peers name for them, Maia City's manifests first, else it would take every log at once and the views theirs
         // only at its end; a catch-up of a few logs asks for them at once
@@ -4252,7 +4242,7 @@ impl Shared {
             let wants = self.views_want();
             let yielding = left.is_empty().then(|| Yield::new(logs.clone(), wants.clone()));
             let (began, at) = (Instant::now(), jobs::now_ms());
-            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, Some(&mut keys), yielding.as_ref()).await;
+            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, yielding.as_ref()).await;
             // which logs it asked, and which of them the views want, before every other: whether a page's room came first
             let wanted_first: Vec<&LogId> = logs.iter().filter(|l| wants.contains(l)).chain(logs.iter().filter(|l| !wants.contains(l))).take(8).collect();
             self.traffic.asking(traffic::Asking {
@@ -4278,31 +4268,7 @@ impl Shared {
                 left.extend(logs);
                 stage = AskingStage::Manifests;
             }
-            // an asking of the manifests or the views, which leaves logs for a later one
-            let early = !left.is_empty();
-            // the keys the manifests' and the views' batches named, on a task of their own while the next batches
-            // come: it is the logs no entry's (who may do what, the audiences' keys), so a new device's views open and
-            // find what they want at once instead of after the last log of a whole catch-up, and no log waits behind a
-            // key fetch (`a_new_humans_keys_hold_no_log_back`); the last batch's keys come after its last log
-            if early && !keys.is_empty() {
-                let (now, shared, device) = (std::mem::take(&mut keys), self.clone(), peer.device);
-                if let Ok(activity) = self.admit() {
-                    task::spawn(async move {
-                        let _activity = activity;
-                        if shared.bring_keys(endpoint, device, now, true).await.is_ok() {
-                            shared.catch_up_paced_class(true, lab_schedule::Class::Background).await;
-                        }
-                    });
-                }
-            }
         };
-        // the keys every log named, after the last log (`bring_keys`); after a failed asking only while its connection
-        // lives, so no fetch waits out its timeouts on a dead one
-        if asked.is_err() && self.live(endpoint).is_none() {
-            keys.clear();
-        }
-        let brought = self.bring_keys(endpoint, peer.device, keys, true).await;
-        let asked = asked.and_then(|new| brought.map(|()| new));
         // what every asking brought, brought up to date at last, however it ended
         self.catch_up_paced_class(true, lab_schedule::Class::Background).await;
         asked

@@ -1185,6 +1185,11 @@ struct Store {
     read_new: ReadNew,
     /// What changed since its upkeep last looked at its entries (`UpkeepDue`).
     upkeep_due: UpkeepDue,
+    /// The McEliece keys it lacks to seal to, as its upkeep last looked: of each target it would box a key for and
+    /// can't, and of each vault's seed a share's selector was to be sealed to and couldn't (`seal_slice`). What it asks a
+    /// peer for (`request`), the one way a key comes to it: it reads and holds all it may without any
+    /// (`LazyBoxes.lean` `reads_without_keys`), and the box it couldn't make its upkeep makes once the key comes.
+    sealing: BTreeSet<BlobId>,
     /// The entries whose shown items keep their scratch items (`SCRATCHES`).
     scratched: HashSet<EntryId>,
     /// How many writes its view held when it last showed its items, and the last of them, with the hashes of the
@@ -1328,6 +1333,7 @@ impl Default for Store {
             showing: None,
             read_new: ReadNew::default(),
             upkeep_due: UpkeepDue::default(),
+            sealing: BTreeSet::new(),
             scratched: HashSet::new(),
             shown_writes: (0, None),
             shown_lanes: BTreeMap::new(),
@@ -1439,6 +1445,7 @@ impl Store {
         self.readings = Readings::default();
         self.read_new.forget();
         self.upkeep_due = UpkeepDue::default();
+        self.sealing.clear();
         self.shown.clear();
         self.bootstrap_state=None;
         self.based.clear();
@@ -1946,8 +1953,8 @@ pub struct Lab {
     /// The randomness of new keys, seals and nonces, which keeps nothing that draws again what it drew
     /// (`keys::SeededRng`).
     rng: SeededRng,
-    /// The nonce of the next pass a device signs (`api_pass`), counted on from a draw of its randomness as the Lab
-    /// opens: no two passes of a device are ever alike, though made in one second, by one Lab or by two of it opened
+    /// The nonce of the next pass a device signs (`api_pass`), counted on from a draw of the randomness the Lab opens
+    /// with, of its own so that the Lab's own draws stay as they were (`passes_from`): no two passes of a device are ever alike, though made in one second, by one Lab or by two of it opened
     /// alike, so a service that takes each pass once takes every one. Atomic, as a pass is signed on a Lab held to read.
     passes: AtomicU64,
     /// A Lab on a machine of its own (`with_entropy`, `split`): every key it makes draws from its randomness too, so
@@ -2015,7 +2022,7 @@ impl Lab {
             stores: Stores::default(),
             made: 0,
             rng: SeededRng::new("lab randomness", entropy.as_ref().map_or(&[][..], |e| &e[..])),
-            passes: AtomicU64::new(0),
+            passes: passes_from(entropy.as_ref().map_or(&[][..], |e| &e[..])),
             on_machine: entropy.is_some(),
             spares: Spares::default(),
             offline: HashSet::new(),
@@ -2028,7 +2035,6 @@ impl Lab {
             batches: HashMap::new(),
             signing_events: HashMap::new(),
         };
-        lab.passes = AtomicU64::new(lab.rng.next_u64());
         lab.keep_spares(SPARES.load(Ordering::Relaxed));
         lab
     }
@@ -3446,16 +3452,20 @@ impl Lab {
         let mut boxes = vec![];
         let st = store.view();
         let mut unknown = false;
+        let mut lacking = None;
         for v in readers {
-            match key_box(&key, st.current(KeyFam::Seed(v)), &bound, st, store, &ix, &[], rng) {
+            let seed = st.current(KeyFam::Seed(v));
+            match key_box(&key, seed, &bound, st, store, &ix, &[], rng) {
                 Some(b) => boxes.push(b),
                 None if needed.contains(&v) => {
-                    unknown = true;
+                    (unknown, lacking) = (true, seal_key(seed, st, &ix));
                     break;
                 }
                 None => {}
             }
         }
+        // a seed's key it lacks it asks a peer for (`Store::sealing`), and the share goes once it came
+        store.sealing.extend(lacking.filter(|b| !store.blobs.contains_key(b)));
         KeyIndexed::put(store, ix);
         if unknown {
             return Err(Refusal::UnknownKey);
@@ -5486,7 +5496,7 @@ impl Lab {
             hand_keys: self.hand_keys.get(&d).map(|key| (d, key.clone())).into_iter().collect(),
             stores: Stores::from([(d, store)]),
             made: 0,
-            passes: AtomicU64::new(rng.next_u64()),
+            passes: passes_from(&*seed),
             rng,
             on_machine: true,
             spares,
@@ -5813,8 +5823,8 @@ impl Lab {
     }
 
     /// What device `d` asks `peer` when it syncs with it on the network (`wire::Request`): its frontier of each log and
-    /// a few edits further back, and the vaults it follows (`sync::asks`), and the McEliece keys it lacks that the
-    /// edits of those logs name, but only of the logs `peer` may hold by `d`'s view, following what `d` follows: `d`
+    /// a few edits further back, and the vaults it follows (`sync::asks`), and the McEliece keys it lacks to seal to
+    /// (`Store::sealing`) that the edits of those logs name, but only of the logs `peer` may hold by `d`'s view, following what `d` follows: `d`
     /// tells a peer nothing about the rest. The public logs of a vault it follows it names too, as it names the vault
     /// in its request anyway, so a peer that holds them through a follow of its own sends only what `d` lacks of them,
     /// not each whole again on every asking (`RequestBasis.lean`'s `permittedWith`). A log it names nothing of comes
@@ -5837,8 +5847,9 @@ impl Lab {
         ask.follow = store.follow.clone();
         ask.haves.retain(|l, _| shared.contains(l));
         ask.loose.retain(|id| theirs.contains(id));
-        let wants: BTreeSet<BlobId> =
-            places.iter().flat_map(|&i| edits[i].blobs()).filter(|b| !store.blobs.contains_key(b)).collect();
+        // of those, the keys it lacks to seal to alone: it reads what its edits say without any (`Store::sealing`)
+        let sealing = |b: &BlobId| store.sealing.contains(b) && !store.blobs.contains_key(b);
+        let wants: BTreeSet<BlobId> = places.iter().flat_map(|&i| edits[i].blobs()).filter(sealing).collect();
         Request { ask, wants: wants.into_iter().collect(), after: None }
     }
 
@@ -5906,12 +5917,8 @@ impl Lab {
         let from = request.after.map_or(0, |after| sends.places.partition_point(|p| *p <= after));
         let (end, more) = page_end(store, &sends.places, from, page);
         let signed: Vec<Signed> = sends.places[from..end].iter().map(|(_, id)| store.signed.owned(id)).collect();
-        let blobs: BTreeSet<BlobId> = signed
-            .iter()
-            .flat_map(|s| s.edit.blobs())
-            .chain(sends.wanted.iter().copied())
-            .filter(|b| store.blobs.contains_key(b))
-            .collect();
+        // the keys it was asked for alone: an asker takes edits without the keys they name (`Store::sealing`)
+        let blobs: BTreeSet<BlobId> = sends.wanted.iter().copied().filter(|b| store.blobs.contains_key(b)).collect();
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.perf.add("sync: reply", at);
             store.perf.count("sync: edits sent", signed.len() as u64);
@@ -7903,6 +7910,8 @@ fn upkeep(
         }
     }
     let mut out = vec![];
+    // and those a share's selector found lacking (`seal_slice`), till they come
+    let mut sealing: BTreeSet<BlobId> = store.sealing.iter().filter(|b| !store.blobs.contains_key(b)).copied().collect();
     for &k in &families {
         let e = st.epoch(k);
         let name = KeyName::Scoped(k, e);
@@ -7917,10 +7926,12 @@ fn upkeep(
             let info = |to: &Recipient| box_info(name, id, to);
             let mut boxes = vec![];
             for t in st.targets(k) {
-                if !ix.boxed.contains(&(name, id, t))
-                    && let Some(b) = key_box(&secret, t, &info, &st, store, ix, mine, rng)
-                {
-                    boxes.push(b);
+                if ix.boxed.contains(&(name, id, t)) {
+                    continue;
+                }
+                match key_box(&secret, t, &info, &st, store, ix, mine, rng) {
+                    Some(b) => boxes.push(b),
+                    None => sealing.extend(seal_key(t, &st, ix)),
                 }
             }
             let clear = (st.public_key(k) && !ix.cleared.contains(&id)).then(|| secret.bytes());
@@ -7947,6 +7958,8 @@ fn upkeep(
             }
         }
     }
+    sealing.retain(|b| !store.blobs.contains_key(b));
+    store.sealing = sealing;
     store.perf.add("upkeep: families", at);
     let at = Perf::start();
     // Every current entry audience occurs in key_fams. Reuse this round's exact entitlement
@@ -8150,6 +8163,21 @@ fn key_box(
     let blob = store.blobs.get(&pk.mceliece).filter(|b| BlobId::of(b) == pk.mceliece)?;
     let bytes = keys::seal(secret, pk, &blob, &info(&to), rng)?;
     Some(KeyBox { to, bytes: bytes.into() })
+}
+
+/// Where a Lab opened with `entropy` counts its passes' nonces from (`Lab::passes`).
+fn passes_from(entropy: &[u8]) -> AtomicU64 {
+    AtomicU64::new(SeededRng::new("lab passes", entropy).next_u64())
+}
+
+/// The McEliece key `key_box` seals to for target `t` where it holds no key to wrap under: the signer's own, or the
+/// oldest made of a seed's epoch.
+fn seal_key(t: KeyName, st: &State, ix: &KeyIndex) -> Option<BlobId> {
+    match t {
+        KeyName::Signer(s) => Some(st.seal_key(s)?.mceliece),
+        KeyName::Scoped(KeyFam::Seed(_), _) => Some(ix.made.get(&t)?.iter().min_by_key(|m| m.0)?.1.mceliece),
+        _ => None,
+    }
 }
 
 /// What a write that brings files into an entry needs a share it relies on to let it do, as it changes nothing its

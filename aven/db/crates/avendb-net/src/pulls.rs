@@ -228,7 +228,7 @@ impl Budget {
         turn.lock_owned().await
     }
 
-    /// The turns of fetching `keys` (smallest first, as `bring_keys` lists them), once no other fetch holds any: a live
+    /// The turns of fetching `keys` (smallest first, as `seal_keys` lists them), once no other fetch holds any: a live
     /// pull and the backlog brought the same two keys at once, 2 MB each time on a phone's link (`bench_live`). Taken in
     /// order, so two fetches never wait on each other.
     pub(crate) async fn fetching(&self, keys: &[BlobId]) -> Vec<tokio::sync::OwnedMutexGuard<()>> {

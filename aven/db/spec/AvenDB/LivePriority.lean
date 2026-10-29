@@ -258,7 +258,7 @@ The McEliece keys a pull's edits name come after its pages; a device needs one o
 the edits say shows without it. A live pull waited for them all the same, and the backlog fetched the same two keys at
 once (`bench_live` phone: 1.7 s of a chat edit's 1.8 s, 2 MB twice). A live pull now brings its keys after it ends;
 a fetch of a key another fetch holds waits for that one and brings only what is still lacking, the law of
-`one_asking_resends_nothing` with keys for edits. Rust: lib.rs `pull_expected`, `bring_keys`, pulls.rs
+`one_asking_resends_nothing` with keys for edits. Rust: lib.rs `seal_keys`, pulls.rs
 `Budget::fetching`. -/
 
 /-- What a fetch brings: the keys asked that are not held once its turn comes. -/
@@ -270,48 +270,6 @@ theorem one_fetch_of_a_key (asked held : List Nat) (k : Nat) (first : k ∈ fetc
   simp [fetched, List.mem_filter] at *
   intro _ _
   exact first
-
-/-! ## An edit is held for good only with the keys it names (Goal 8, A3)
-
-A peer sends on edits it took before their keys came (those come after its pages), and names only the keys it holds:
-a device that took the edits there lacked their keys for good, as its holdings named every log alike with every
-peer's, so no peer was asked again (`mceliece_keys_go_over_iroh_blobs_only_within_reach`, red on main for #1378 and
-#1379: 3 of 7 keys). An edit now counts as held for good, in the closed part its holdings state, only once each of
-its parents is and the device holds each key it names; a key it lacks keeps it waiting, as a missing parent does. A
-peer that holds the key states the edit as a head the device lacks, so the ordinary asking asks it, and the key comes
-with that asking (the request wants it). Two devices that both lack the key state the same frontier: neither asks
-the other. Rust: holdings.rs `Graph::add`, `Logs::keyed`. -/
-
-/-- An edit stands closed: each parent closed, each key it names held. -/
-def closedWith (parentsClosed : Bool) (keys held : List Nat) : Bool :=
-  parentsClosed && keys.all (fun k => held.contains k)
-
-/-- A peer whose closed part holds an edit the device's doesn't differs from it: the device asks it. -/
-def differs (mine theirs : Bool) : Bool := theirs && !mine
-
-/-- A lacked key keeps the edit out of the closed part, as a missing parent does. -/
-theorem lacked_key_keeps_it_waiting (keys held : List Nat) (k : Nat) (hk : k ∈ keys) (hh : k ∉ held) :
-    closedWith true keys held = false := by
-  simp only [closedWith, Bool.true_and, List.all_eq_false]
-  exact ⟨k, hk, by simp [hh]⟩
-
-/-- A device lacking a key a peer holds, of an edit both hold with its past, differs from that peer: it asks it. -/
-theorem a_peer_with_the_key_is_asked (keys mine theirs : List Nat) (k : Nat) (hk : k ∈ keys) (hm : k ∉ mine)
-    (ht : ∀ x ∈ keys, x ∈ theirs) : differs (closedWith true keys mine) (closedWith true keys theirs) = true := by
-  have h1 : closedWith true keys mine = false := lacked_key_keeps_it_waiting keys mine k hk hm
-  have h2 : closedWith true keys theirs = true := by simp [closedWith, List.all_eq_true]; exact ht
-  simp [differs, h1, h2]
-
-/-- Two devices that both lack the key state it alike: neither asks the other for it. -/
-theorem lacking_alike_asks_no_one (keys a b : List Nat) (k : Nat) (hk : k ∈ keys) (ha : k ∉ a) (hb : k ∉ b) :
-    differs (closedWith true keys a) (closedWith true keys b) = false ∧
-      differs (closedWith true keys b) (closedWith true keys a) = false := by
-  simp [differs, lacked_key_keeps_it_waiting keys a k hk ha, lacked_key_keeps_it_waiting keys b k hk hb]
-
-/-- Once the device holds every key, the edit stands closed as sync's closed part has it. -/
-theorem every_key_held_closes_it (keys held : List Nat) (h : ∀ x ∈ keys, x ∈ held) :
-    closedWith true keys held = true := by
-  simp [closedWith, List.all_eq_true]; exact h
 
 /-! ## Small answers first on a connection (batch 5)
 
