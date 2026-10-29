@@ -107,6 +107,7 @@ async fn bench_keys() {
                 KeyName::Scoped(KeyFam::Share(..), _) => "share".into(),
                 KeyName::Scoped(KeyFam::Audience(..), _) => "audience".into(),
                 KeyName::Entry(..) => "entry".into(),
+                KeyName::Select(_) => "select".into(),
             };
             let k = format!(
                 "{k} boxes={} public={}",
