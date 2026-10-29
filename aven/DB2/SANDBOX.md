@@ -90,7 +90,7 @@ browser too, and needs a folder and OPFS as well.
 ## The landing page
 
 ```
-                      avenDB
+                      avenOS
                     coming soon
 
         ● live · 4 peers · Aven Peer 3 ms
@@ -112,7 +112,7 @@ The page is a real Peer-Light:
 ```
 localhost:5173 · avenSANDBOX                          4 live · up 2 m
 ┌─ Alice Peer-Light ───────────┐ ┌─ Bob's Peer-Light ───────────┐
-│     avenDB coming soon      │ │     avenDB coming soon      │
+│      avenOS coming soon      │ │      avenOS coming soon      │
 │  ● live · 4 peers            │ │  ● live · 4 peers            │
 └──────────────────────────────┘ └──────────────────────────────┘
 ┌─ Alice Peer · Rust ──────────┐ ┌─ Aven Peer · Rust + relay ───┐
@@ -129,7 +129,7 @@ per run. A cloud session can't show a window, so `bun run shot` takes a screensh
 
 One image holds every tool; every command runs in it.
 
-- **The image** is `ghcr.io/myavenceo/aven/sandbox`, built from `box/Dockerfile`. It holds:
+- **The image** is `ghcr.io/myavenceo/avensandbox`, built from `box/Dockerfile`. It holds:
   - Playwright's image from Microsoft's registry, at the newest release;
   - stable Rust with the wasm target and wasm-bindgen;
   - bun;
@@ -200,12 +200,12 @@ OrbStack runs it natively instead of through Rosetta, comes next.
   the next day.
 - **Its deliverables are on the release page.** For now there are two:
   - **avenSANDBOX:** the exact image its check ran in, tagged with the release's name
-    (`ghcr.io/myavenceo/aven/sandbox:26.10.29v1`) and named with its digest, ready to pull;
-  - **avenDB:** the landing page, built by `bun run build`, as `aven-db-landing-26.10.29v1.tar.gz` with its
+    (`ghcr.io/myavenceo/avensandbox:26.10.29v1`) and named with its digest, ready to pull;
+  - **avenOS:** the landing page, built by `bun run build`, as `aven-os-landing-26.10.29v1.tar.gz` with its
     checksum in `SHA256SUMS`.
 
   The Peer's binaries and the Peer-Light's wasm join them as they come. On any host but the box's, the released page
-  shows only "avenDB · coming soon".
+  shows only "avenOS · coming soon".
 - **Its changes** are listed on the release page: the pull requests since the release before, with the compare link.
   The releases page is the changelog.
 
@@ -336,7 +336,7 @@ once and merges.
    **New environment**: Trusted network access, `AVEN_DB2=1`, and [`box/cloud-setup.sh`](box/cloud-setup.sh) as its
    setup script.
 2. **OrbStack:** in its Docker engine config, `"allow-direct-routing": true`.
-3. **The `aven/sandbox` package public** (done for the first, `avensandbox`, 29 Oct 2026): its settings on GitHub, **Danger Zone**, **Change visibility**; the organization must allow public packages first.
+3. **The `avensandbox` package public** (done 29 Oct 2026): its settings on GitHub, **Danger Zone**, **Change visibility**; the organization must allow public packages first.
 4. **`main`'s ruleset without "CI required"** (done 29 Oct 2026): v1's CI is parked, so that check never reports.
 5. **A `production` ruleset** (Settings, Rules, New branch ruleset): target `production`, Active, nobody on the bypass
    list. Rules:

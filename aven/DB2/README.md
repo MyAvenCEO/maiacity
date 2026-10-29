@@ -8,8 +8,8 @@ this folder: its crates, its Lean spec, its pages and avenSANDBOX, the local net
 v1 stays as the testing and learning battleground until the new avenDB is ready. Then v1 is deprecated, and the new
 avenDB moves into `aven/db`.
 
-**Status (29 Oct 2026): milestone 1 has started.** avenSANDBOX's box runs: its image, `bun run up --check`, the
-landing page on two Peer-Lights' origins and the control room; the peers themselves come next. The plan:
+**Status (29 Oct 2026): milestone 1 has started.** avenSANDBOX's box runs: its image, `bun run up --check`,
+avenOS's landing page on two Peer-Lights' origins and the control room; the peers themselves come next. The plan:
 [`SANDBOX.md`](SANDBOX.md).
 
 ## Why a rebuild
@@ -52,9 +52,11 @@ Each rule is held by a test or a check once there is code to hold.
 
 | Name | What |
 |---|---|
-| avenDB | the database: this rebuild. v1, in `aven/db/`, is the old one |
-| `aven/DB2` | its folder while v1 still lives in `aven/db`. A Mac's disk ignores case, so `aven/DB` couldn't sit beside `aven/db`, and a path spelled `aven/db2` works on a Mac and fails on Linux and CI; a check will reject any other spelling. When v1 is deprecated, the new avenDB moves into `aven/db` |
-| avenSANDBOX | the local network avenDB is built and tested in: Peers and Peer-Lights in containers on one machine ([`SANDBOX.md`](SANDBOX.md)) |
+| avenDB | the database: this rebuild |
+| avenDB-old | the old database, in `aven/db/`: the testing and learning battleground until avenDB is ready, then deprecated. "v1" still names the whole old stack (its site, API and peer) |
+| avenOS | what people see, running on avenDB. For now its landing page, "avenOS · coming soon" |
+| `aven/DB2` | the new avenDB's folder while avenDB-old still lives in `aven/db`. A Mac's disk ignores case, so `aven/DB` couldn't sit beside `aven/db`, and a path spelled `aven/db2` works on a Mac and fails on Linux and CI; a check will reject any other spelling. When avenDB-old is deprecated, the new avenDB moves into `aven/db` |
+| avenSANDBOX | the local network avenDB is built and tested in: Peers and Peer-Lights in containers on one machine ([`SANDBOX.md`](SANDBOX.md)). It is part of this repository, not a package of its own |
 | Peer | the native Rust peer, one binary |
 | Aven Peer | the server: a Peer with its relay on |
 | Alice Peer | a person's Peer with the relay off, the core of the future Mac app |
@@ -63,19 +65,20 @@ Each rule is held by a test or a check once there is code to hold.
 ### Namespaces: everything under `@aven`
 
 Every product gets one id under the key namespace `@aven`, the same in every ecosystem. Ids are lowercase, because
-npm, container images and crates require it; the capitals live in prose and the UI.
+npm, container images and crates require it; the capitals live in prose and the UI. Everything stays in this one
+repository: an id names a product, not a separate repository.
 
-| Where | avenDB | avenSANDBOX | later |
+| Where | avenDB | avenOS | avenSANDBOX |
 |---|---|---|---|
-| JS packages (npm scope `@aven`) | `@aven/db` | `@aven/sandbox` | `@aven/maia` |
-| Rust crates | `aven-db-core`, `aven-db-store`, `aven-db-peer`, `aven-db-web` | `aven-sandbox-…`, if the box ever needs Rust | |
-| Container images | `ghcr.io/myavenceo/aven/db-peer`, the Aven Peer's (later) | `ghcr.io/myavenceo/aven/sandbox` | |
+| JS packages (npm scope `@aven`) | `@aven/db` (`aven/DB2/package.json`) | `@aven/os`, once the app has a package of its own | none: tooling of this repository |
+| Rust crates | `aven-db-core`, `aven-db-store`, `aven-db-peer`, `aven-db-web` | | |
+| Container images | `ghcr.io/myavenceo/aven-db-peer`, the Aven Peer's (later) | | `ghcr.io/myavenceo/avensandbox`, the box built from this repository's Dockerfile so machines can download it |
 | Lean | `Aven.DB` | | |
 | Our protocol's ALPN | `aven/db/1` | | |
-| Release files | `aven-db-landing-<tag>.tar.gz`, later `aven-db-peer-<tag>-<platform>.tar.gz` | the image, tagged with the release | |
+| Release files | later `aven-db-peer-<tag>-<platform>.tar.gz` | `aven-os-landing-<tag>.tar.gz` | the image, tagged with the release |
 
-None of these names had public packages on npm on 29 Oct 2026; creating the npm organization `aven` reserves the
-scope before anything is published.
+`@aven/maia` comes later. None of these names had public packages on npm on 29 Oct 2026; creating the npm
+organization `aven` reserves the scope before anything is published.
 
 ## Decisions so far
 
