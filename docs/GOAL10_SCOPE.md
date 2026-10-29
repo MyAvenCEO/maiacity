@@ -172,3 +172,11 @@ edits 151 MB, keys 150 MB, key_index 53 MB, log 114 MB in RAM, plus 188 MB spill
 | 35 | A rules bump is judged once and handed (with B): the always-on peer must not spend 22 min on key boxes per release; restarts open the stored view | F1 | open, P0 |
 
 Priority after these findings (*(guess)* order by impact): 33 (local first broken), 35 + A2 (every release costs 25+ min), 15 (phone relay 19 s), 25 (live pulls bring nothing), 8 + 26 (honest status), then B.
+
+### F8. Self-test on the Goal 9 build (19:28-19:41 Berlin, fresh WebKit test device on maia.city)
+- During catch-up no app showed its data: Chat at 19:29 empty intro, no rooms, pill "Syncing 35/3,111 · +4,276 edits".
+- After the 4-min sync watch (~19:33): Logs left 959 of 3,111 vs This view 1,022 logs left (same view, same moment); last page "4 min ago"; **"failed askings 10 of 7"** (more failures than askings: counter bug); edits taken 10,938; only peer 85b01be4.
+- Assets after sync: still "Reading Maia City's recipe entries…", empty (same as the Mac).
+- Settings → Devices listed the devices.
+- Always-on peer at 19:41: `replay latest:false`, 157,747 edits, **1 h 39 min after its 18:02 restart**. *(guess)* while it replays it stops answering askings (the test device's pages stopped after 6).
+- Mac theOS 19:38: behind 10 of 3,111, but query p95 33 s, entry_views 41 s: catch-up lock waited **7,073 s in total**, max wait 40.7 s, max hold 33.8 s, 2,090 steps. Reads stay slow after the device is nearly caught up.
