@@ -162,6 +162,7 @@ impl Lab {
         let shown = based.keys().filter_map(|e| store.shown.remove(e).map(|s| (*e, s))).collect();
         let readings = std::mem::take(&mut store.readings);
         store.readings.groups = readings.groups.clone();
+        store.recontext();
         Some(RetainedOverlay { basis, state, shown, based, readings })
     }
 
@@ -180,6 +181,7 @@ impl Lab {
         store.bootstrap_state = Some(retained.state);
         store.based = retained.based;
         store.bootstrap_basis = Some(retained.basis);
+        store.recontext();
         store.perf.count("bootstrap: unchanged overlay reused", 1);
         true
     }
@@ -269,6 +271,7 @@ impl Lab {
         store.latest = OnceLock::new();
         store.based.clear();
         store.bootstrap_basis = None;
+        store.recontext();
         if restored.is_empty() {
             return;
         }
@@ -449,8 +452,8 @@ impl Lab {
                 let basis = OverlayBasis::of(store);
                 store.based.get_mut(&entry).expect("progress").basis = basis;
             }
-
         }
+        store.recontext();
     }
 }
 
