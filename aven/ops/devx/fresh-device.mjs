@@ -16,10 +16,8 @@
  *                shelf: C still ends with every todo
  *  10. settle    C's processes (page, worker, network) come back under 10 % of one core, as an idle phone must
  *
- * The passkey is one software authenticator shared by every device, as a passkey synced by iCloud Keychain is: P-256
- * assertions and PRF outputs (CTAP2 hmac-secret, as WebAuthn's PRF hashes its salts) made with WebCrypto in the page,
- * the same in Chromium and WebKit. A browser's own virtual authenticator can't hand a passkey to another profile with
- * its PRF secret, and WebKit has none. Nothing here reaches a live peer, an account or a secret.
+ * The passkey is one software authenticator shared by every device (./passkey.mjs), as a passkey synced by iCloud
+ * Keychain is. Nothing here reaches a live peer, an account or a secret.
  *
  *   node aven/ops/devx/fresh-device.mjs [--fresh chromium|webkit] [--entries 2000] [--json] [--keep] [--build]
  *
@@ -31,10 +29,10 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { createServer as listen } from 'node:net';
-import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { authenticator, passkey } from './passkey.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const avendb = join(root, 'aven/db');
@@ -140,93 +138,6 @@ async function startSite() {
 	const server = await createServer({ root, logLevel: 'silent', clearScreen: false, plugins: [swap], server: { host: 'localhost', port: await free(), strictPort: true } });
 	await server.listen();
 	return { server, base: `http://localhost:${server.config.server.port}` };
-}
-
-// ─── the passkey: one software authenticator for every device ───
-
-/** Runs in the page, before any of its own code: navigator.credentials as an authenticator holding passkey `key`. */
-function authenticator(key) {
-	const b64u = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-	const unb64u = (t) => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
-	const bytes = (b) => (b instanceof ArrayBuffer ? new Uint8Array(b) : new Uint8Array(b.buffer, b.byteOffset, b.byteLength));
-	const join = (...parts) => {
-		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-		let at = 0;
-		for (const p of parts) out.set(p, (at += p.length) - p.length);
-		return out;
-	};
-	const sha = async (b) => new Uint8Array(await crypto.subtle.digest('SHA-256', b));
-	const enc = new TextEncoder();
-	const id = unb64u(key.id);
-	const signing = crypto.subtle.importKey('jwk', key.jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
-	const { d: _, ...pub } = key.jwk;
-	const spki = crypto.subtle
-		.importKey('jwk', { ...pub, key_ops: ['verify'] }, { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify'])
-		.then((k) => crypto.subtle.exportKey('spki', k));
-	const hmac = crypto.subtle.importKey('raw', unb64u(key.prf), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-	/** WebAuthn's PRF: the salt hashed under its label, then the credential's hmac-secret over it */
-	const prf = async (salt) =>
-		crypto.subtle.sign('HMAC', await hmac, await sha(join(enc.encode('WebAuthn PRF'), new Uint8Array([0]), bytes(salt))));
-	/** rpIdHash, flags (UP, UV, backup eligible and backed up, as a synced passkey), a zero counter */
-	const authData = async (rpId) => join(await sha(enc.encode(rpId)), new Uint8Array([0x01 | 0x04 | 0x08 | 0x10, 0, 0, 0, 0]));
-	/** WebCrypto's r‖s as the DER WebAuthn's assertions carry */
-	const der = (rs) => {
-		const int = (x) => {
-			let i = 0;
-			while (i < x.length - 1 && x[i] === 0) i++;
-			x = x.slice(i);
-			return x[0] & 0x80 ? join(new Uint8Array([0]), x) : x;
-		};
-		const [r, s] = [int(rs.slice(0, 32)), int(rs.slice(32))];
-		return join(new Uint8Array([0x30, r.length + s.length + 4, 2, r.length]), r, new Uint8Array([2, s.length]), s);
-	};
-	const clientData = (type, challenge) =>
-		enc.encode(JSON.stringify({ type, challenge: b64u(bytes(challenge)), origin: location.origin, crossOrigin: false }));
-	const counts = (globalThis.__ceremonies = { created: 0, asserted: 0 });
-	const credential = (response, extensions) => ({
-		id: key.id,
-		rawId: id.buffer,
-		type: 'public-key',
-		authenticatorAttachment: 'platform',
-		response,
-		getClientExtensionResults: () => extensions,
-		toJSON: () => ({ id: key.id })
-	});
-	const credentials = {
-		async create({ publicKey }) {
-			counts.created++;
-			const data = clientData('webauthn.create', publicKey.challenge);
-			const key = await spki;
-			return credential(
-				{ clientDataJSON: data.buffer, attestationObject: new ArrayBuffer(0), getPublicKey: () => key, getPublicKeyAlgorithm: () => -7, getTransports: () => ['internal'] },
-				{ prf: { enabled: true } }
-			);
-		},
-		async get({ publicKey }) {
-			const allowed = publicKey.allowCredentials ?? [];
-			if (allowed.length && !allowed.some((c) => b64u(bytes(c.id)) === key.id)) throw new DOMException('no such passkey here', 'NotAllowedError');
-			counts.asserted++;
-			const data = clientData('webauthn.get', publicKey.challenge);
-			const auth = await authData(publicKey.rpId ?? location.hostname);
-			const signed = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, await signing, join(auth, await sha(data))));
-			const ask = publicKey.extensions?.prf?.eval;
-			const results = ask ? { first: await prf(ask.first), ...(ask.second ? { second: await prf(ask.second) } : {}) } : undefined;
-			return credential(
-				{ clientDataJSON: data.buffer, authenticatorData: auth.buffer, signature: der(signed).buffer, userHandle: null },
-				results ? { prf: { results } } : {}
-			);
-		}
-	};
-	Object.defineProperty(navigator, 'credentials', { configurable: true, value: credentials });
-	globalThis.PublicKeyCredential ??= /** @type {any} */ (class PublicKeyCredential {});
-	PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = async () => true;
-	PublicKeyCredential.getClientCapabilities = async () => ({ prf: true, extension_prf: true, passkeyPlatformAuthenticator: true, userVerifyingPlatformAuthenticator: true });
-}
-
-/** A new passkey: its credential id, its P-256 key and its hmac-secret, which every device's authenticator holds. */
-function passkey() {
-	const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
-	return { id: randomBytes(16).toString('base64url'), jwk: privateKey.export({ format: 'jwk' }), prf: randomBytes(32).toString('base64url') };
 }
 
 // ─── the devices ───

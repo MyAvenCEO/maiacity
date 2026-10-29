@@ -50,6 +50,12 @@ pub(crate) struct Stamp {
     pub(crate) head: Sum,
 }
 
+impl From<avendb::log_head::Head> for Stamp {
+    fn from(h: avendb::log_head::Head) -> Stamp {
+        Stamp { at: h.at, head: h.sum }
+    }
+}
+
 /// A log an index is of: its length, the hash of each of its prefixes (its head there, one no other prefix has), and
 /// its entries.
 pub(crate) trait Log {

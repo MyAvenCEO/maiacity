@@ -140,4 +140,30 @@ theorem I5_trusted_reads [DecidableEq R] (build : Index K V → R) (hb : ∀ a b
   intro k
   rw [this]
 
+/-! ## The log's one head
+
+The one stamp of a device's log (`Log::head`, `avendb/src/log_head.rs`), which every index of it is stamped with: a
+hash over its entries in one stream from a seed, an entry at a time (`chain`). The head of a longer log goes on from
+the head of its prefix (`chain_append`), so the log keeps its head as it appends, hashing each entry once; and from
+the stream's state kept at every `k`th entry (a mark), the head of any prefix goes on from the mark at or before it
+(`chain_from_mark`), never from the first entry. A log rewritten from a place (a withdrawal) works its head out again:
+none of its marks after that place is of it. -/
+
+/-- The stream's state after `log`, from `seed`, an entry at a time. -/
+def chain {S : Type} (link : S → E → S) (seed : S) (log : List E) : S :=
+  log.foldl link seed
+
+/-- The head of a longer log goes on from its prefix's. -/
+theorem chain_append {S : Type} (link : S → E → S) (seed : S) (p q : List E) :
+    chain link seed (p ++ q) = chain link (chain link seed p) q := by
+  simp [chain, List.foldl_append]
+
+/-- The state after the first `n` entries is the state after the first `m ≤ n` (a mark) gone on with the entries
+    between: what `Log::head_at` works out from the mark before `n`. -/
+theorem chain_from_mark {S : Type} (link : S → E → S) (seed : S) (log : List E) {m n : Nat} (h : m ≤ n) :
+    chain link (chain link seed (log.take m)) ((log.take n).drop m) = chain link seed (log.take n) := by
+  have hm : (log.take n).take m = log.take m := by
+    rw [List.take_take, Nat.min_eq_left h]
+  rw [← chain_append, ← hm, List.take_append_drop]
+
 end AvenDB.ShelfIndex

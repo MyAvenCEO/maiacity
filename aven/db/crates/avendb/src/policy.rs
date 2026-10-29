@@ -4386,6 +4386,23 @@ impl Replay {
         &held[self.order[i]]
     }
 
+    /// How many of its edits, `held` being those it is the replay of, the first of `fresh` in the one order sorts
+    /// before: how far back a replay stepped on from its last edit would have to go for them (`Lab` counts it where it
+    /// replays every edit again).
+    pub fn back(&self, held: &[Edit], fresh: &[Edit]) -> usize {
+        let Some(first) = fresh.iter().zip(ids(fresh)).map(|(e, id)| (e.depth, e.rank(), id)).min() else { return 0 };
+        let before = |i: usize| {
+            let e = self.edit(held, i);
+            (e.depth, e.rank(), self.ids[i]) < first
+        };
+        let (mut lo, mut hi) = (0, self.len());
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if before(mid) { lo = mid + 1 } else { hi = mid }
+        }
+        self.len() - lo
+    }
+
     /// How many edits it orders.
     pub fn len(&self) -> usize {
         self.order.len()
@@ -4982,6 +4999,8 @@ pub struct Log {
     revision: LogRevision,
     /// Stable only while this particular log appends. A removal or a clone starts a new lineage.
     lineage: LogRevision,
+    /// Its one head (`log_head`): what every index of it is stamped with, kept as edits arrive.
+    head: crate::log_head::LogHead,
     /// How many times it let edits go (`let_go`), the one way edits leave it: what a reader of its tail since a size
     /// tells a removal by (`Lab::touched`).
     gone: u64,
@@ -4996,7 +5015,7 @@ impl Clone for Log {
             revision: self.revision.clone(), lineage: LogRevision::default(),
             entry_order: self.entry_order.clone(), write_at: self.write_at.clone(), logs: self.logs.clone(),
             by_log: self.by_log.clone(), audience_logs: self.audience_logs.clone(), gone: self.gone,
-            next_depth: self.next_depth }
+            next_depth: self.next_depth, head: self.head.clone() }
     }
 }
 
@@ -5098,6 +5117,16 @@ impl Log {
     /// Each edit's id, `ids()[i]` being `edits()[i]`'s.
     pub fn ids(&self) -> &[EditId] {
         &self.ids
+    }
+
+    /// The head of all its edits (`log_head`): the stamp of every index of it.
+    pub fn head(&self) -> crate::log_head::Head {
+        self.head.now()
+    }
+
+    /// The head of its first `n` edits, if it holds that many: hashing fewer than a mark's worth of ids.
+    pub fn head_at(&self, n: u64) -> Option<crate::log_head::Head> {
+        self.head.at(n, &self.ids)
     }
 
     /// Changes exactly when the sequence of held edits changes, without scanning history.
@@ -5267,6 +5296,7 @@ impl Log {
         push_grown(&mut self.edits, edit);
         push_grown(&mut self.ids, id);
         self.held.insert(id);
+        self.head.on(&[id]);
         self.revision = LogRevision::default();
         Ok(id)
     }
@@ -5290,7 +5320,10 @@ impl Log {
                 push_grown(&mut self.ids, id);
             }
         }
-        if self.ids.len() != before { self.revision = LogRevision::default(); }
+        if self.ids.len() != before {
+            self.head.on(&self.ids[before..]);
+            self.revision = LogRevision::default();
+        }
     }
 
     /// Each edit's bulk bytes read back from where `place` says its record is, if it says (`Edit::shelve`): the same
@@ -5315,6 +5348,7 @@ impl Log {
             self.revision = LogRevision::default();
             self.lineage = LogRevision::default();
             self.gone += 1;
+            self.head = crate::log_head::LogHead::of(&self.ids);
             self.rebuild_index();
         }
     }

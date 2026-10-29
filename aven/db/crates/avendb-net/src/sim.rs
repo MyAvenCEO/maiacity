@@ -25,7 +25,7 @@ use iroh::endpoint::transports::{CustomEndpoint, CustomSender, CustomTransport, 
 use iroh_base::CustomAddr;
 
 /// Its transport id, apart from iroh's test transport (0x20) and our carriers (`transports::Carrier`).
-const SIM: u64 = 0x6176_656e_5349_0001;
+pub(crate) const SIM: u64 = 0x6176_656e_5349_0001;
 /// The most packets waiting for a node, as a socket's receive buffer: more are lost, as there.
 const INBOX: usize = 1024;
 /// The events kept for a failure's report.
@@ -178,44 +178,6 @@ fn custom(id: EndpointId) -> CustomAddr {
 /// Where endpoint `id` is reached on a simulated network (`Node::addr`).
 pub(crate) fn addr(id: EndpointId) -> iroh_base::TransportAddr {
     iroh_base::TransportAddr::Custom(custom(id))
-}
-
-/// How a node on a simulated network picks among its paths to a peer (`Node::spawn`): its simulated paths in the
-/// relay's place, as the network stands in for every socket and relay (`Options::sim`). iroh ranks a relay path below
-/// every other, kept for while no other path is up, and moves to another the moment it is validated; a custom
-/// transport it ranks as a direct path. Ranked so, a simulated path, about 0 ms each way, kept a connection on it past
-/// a WebRTC route both ends had reported ready, and once the network was cut, a sync waited out the path's 15 s idle
-/// timeout before the route took over (webrtc_route, N1: past its 40 s wait under CI's load). Otherwise as iroh's own
-/// choice (`BiasedRttPathSelector`): the lowest round trip, and another of the same rank only once 5 ms better.
-#[derive(Debug)]
-pub(crate) struct AsRelay;
-
-impl iroh::endpoint::transports::PathSelector for AsRelay {
-    fn select(&self, ctx: &iroh::endpoint::transports::PathSelectionContext<'_>) -> iroh::endpoint::transports::PathSelection {
-        const STICK: Duration = Duration::from_millis(5);
-        let key = |path: &iroh::endpoint::transports::FourTuple, rtt: Duration| {
-            (matches!(path.addr_kind(), iroh::endpoint::transports::AddrKind::Custom(SIM)), rtt)
-        };
-        let current = ctx.current();
-        let (mut best, mut now) = (None, None::<(bool, Duration)>);
-        for data in ctx.paths() {
-            let Some(stats) = data.stats() else { continue };
-            let k = key(data.network_path(), stats.rtt);
-            if Some(data.network_path()) == current && now.is_none_or(|c| k < c) {
-                now = Some(k);
-            }
-            if best.as_ref().is_none_or(|(_, b)| k < *b) {
-                best = Some((data, k));
-            }
-        }
-        let mut selection = iroh::endpoint::transports::PathSelection::none();
-        if let Some((data, (relay, rtt))) = best
-            && now.is_none_or(|(was_relay, was)| was_relay != relay || rtt + STICK <= was)
-        {
-            selection.set(&data);
-        }
-        selection
-    }
 }
 
 fn endpoint(addr: &CustomAddr) -> io::Result<EndpointId> {

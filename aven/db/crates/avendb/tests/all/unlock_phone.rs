@@ -236,6 +236,12 @@ fn measure_unlock_phone() {
         std::fs::write(&path, &out).expect("the fixture written");
         eprintln!("UNLOCK_PHONE fixture written: {} bytes", out.len());
     }
+    // UNLOCK_PHONE_SPILL: its edits spilled to a folder, as a page's are to OPFS, with a cache of that many MiB
+    let spill_dir = std::env::temp_dir().join(format!("avendb-unlock-phone-{}", std::process::id()));
+    if let Ok(mib) = std::env::var("UNLOCK_PHONE_SPILL") {
+        let budget = mib.parse::<usize>().expect("UNLOCK_PHONE_SPILL in MiB") << 20;
+        lab.spill(phone, &avendb::lab::Spill::new(&spill_dir, budget).expect("a spill")).expect("spilled");
+    }
     let perf = lab.perf(phone);
     let began = Instant::now();
     lab.restore_warm(phone, backup, Some((checked, held_before)), &warm);
@@ -266,4 +272,5 @@ fn measure_unlock_phone() {
         "timers": t,
         "counts": counts,
     }));
+    std::fs::remove_dir_all(&spill_dir).ok();
 }

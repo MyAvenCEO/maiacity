@@ -555,6 +555,17 @@ fn checked_refs(signed: &[&Signed]) -> Vec<bool> {
 /// of any.
 /// The count `refresh` adds to for how its replay went (`policy::replay_on_why`): where it replayed every edit again,
 /// why.
+/// The count a whole replay adds to for how far back the first edit it took since sorts (`Replay::back`): a replay
+/// that could rewind that far would step on instead.
+fn back_counted(back: usize) -> &'static str {
+    match back {
+        0..=64 => "replay whole: back 64 at most",
+        65..=1024 => "replay whole: back 1k at most",
+        1025..=8192 => "replay whole: back 8k at most",
+        _ => "replay whole: back more than 8k",
+    }
+}
+
 fn why_counted(why: Why) -> &'static str {
     match why {
         Why::Nothing => "replay: nothing new",
@@ -1029,9 +1040,9 @@ struct Store {
     /// the vault the share is over.
     slices: HashMap<ShareId, Slice>,
     unreadable: HashSet<ShareId>,
-    /// The boxes it tried with the key they are to and that didn't open to their key, each by its key's id, whom it
-    /// is to and its first bytes: tried once, not again at every refresh.
-    unopened: HashSet<(KeyId, Recipient, [u8; 32])>,
+    /// The boxes it tried with the key they are to and that didn't open to their key, each by the edit it is of and
+    /// which of its boxes it is (`IndexedBox`): tried once, not again at every refresh.
+    unopened: HashSet<(EditId, usize)>,
     /// The bodies of the writes it opened, each opened as it is asked for where its stored view says it opened it
     /// (`Bodies`), and the writes whose bodies never open: garbled under the key they name.
     bodies: Bodies,
@@ -1507,17 +1518,15 @@ impl KeyIndex {
     /// `grow` by `r`'s standing edits from the `from`th up to the `to`th alone: a slice of them, so that an index made
     /// again of every edit is made a step at a time (`KeyIndexed::step`).
     fn grow_to(&mut self, r: &Replay, held: &[Edit], from: usize, to: usize) {
-        let places = &r.places()[from.min(to)..to];
-        let edits = places.iter().zip(&r.stood[from.min(to)..to]).filter(|(_, stood)| **stood).map(|(place, _)| (&held[*place], place));
-        for (edit, &place) in edits {
+        let (places, ids) = (&r.places()[from.min(to)..to], &r.ids[from.min(to)..to]);
+        let stood = &r.stood[from.min(to)..to];
+        let edits = places.iter().zip(ids).zip(stood).filter(|(_, stood)| **stood).map(|((place, id), _)| (&held[*place], place, *id));
+        for (edit, &place, of) in edits {
             for (slot, (name, id, b)) in edit.action.key_boxes().into_iter().enumerate() {
                 self.exists.insert(name);
                 self.exists.insert(b.to.name());
                 self.boxed.insert((name, id, b.to.name()));
-                let mut first = [0; 32];
-                let n = b.bytes.len().min(32);
-                first[..n].copy_from_slice(&b.bytes.bytes()[..n]);
-                self.boxes.push(IndexedBox { name, id, to: b.to, place, slot, first });
+                self.boxes.push(IndexedBox { name, id, to: b.to, place, slot, of });
             }
             if let Action::Keys { name, id, public, clear, .. } = &edit.action {
                 self.exists.insert(*name);
@@ -1546,9 +1555,11 @@ impl KeyIndex {
 }
 
 /// A box of a key in a `KeyIndex`: the name and the id of the key it holds, whom it is to, the edit it is of by its
-/// place in the log the index is of and which of that edit's boxes it is (`Action::key_box`), and its first bytes, what
-/// tells a box tried before (`Store::unopened`). Its bytes stay in the log alone: a key box is ~1.4 KB, and a copy of
-/// each in the index doubled what a device holds of them (F9).
+/// place in the log the index is of and by its id, and which of that edit's boxes it is (`Action::key_box`): its id and
+/// slot tell a box tried before (`Store::unopened`), as an edit's id is a hash of its boxes' bytes. Its bytes stay in
+/// the log alone, never read to index it: a key box is ~1.4 KB, and a copy of each in the index doubled what a device
+/// holds of them (F9); read back from a spill to index it, each box read and checked its whole edit's record, which
+/// made the index 6.6 s of a Mac's unlock in WebKit and 29 s of a phone's turn (2026-10-28).
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct IndexedBox {
     name: KeyName,
@@ -1556,7 +1567,7 @@ struct IndexedBox {
     to: Recipient,
     place: usize,
     slot: usize,
-    first: [u8; 32],
+    of: EditId,
 }
 
 impl IndexedBox {
@@ -1585,6 +1596,7 @@ impl KeyIndexed {
         let from = Self::from(store);
         store.key_ix.of = None;
         let mut ix = std::mem::take(&mut store.key_ix.ix);
+        let had = if from.is_some() { ix.boxes.len() } else { 0 };
         match from {
             Some(n) => {
                 ix.grow(r, log.edits(), n);
@@ -1598,6 +1610,7 @@ impl KeyIndexed {
         #[cfg(debug_assertions)]
         #[cfg(not(avendb_no_replay_checks))]
         debug_assert!(ix.same(&KeyIndex::of(r, log.edits())), "a key index grown on differs from one made whole");
+        store.perf.count("keys: boxes indexed", (ix.boxes.len() - had) as u64);
         ix
     }
 
@@ -1625,7 +1638,9 @@ impl KeyIndexed {
         }
         let mut ix = if from.is_some() { std::mem::take(&mut store.key_ix.ix) } else { KeyIndex::default() };
         let to = n + most.max(1);
+        let had = ix.boxes.len();
         ix.grow_to(&store.replay, store.log.edits(), n, to);
+        store.perf.count("keys: boxes indexed", (ix.boxes.len() - had) as u64);
         store.perf.count(if from.is_some() { "keys: index grown a step" } else { "keys: index begun a step" }, 1);
         let (log, r) = (&store.log, &store.replay);
         store.key_ix.of = Some((log.lineage(), log.edits().len(), store.wholes, to, r.ids[to - 1]));
@@ -3403,7 +3418,12 @@ impl Lab {
             let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
             store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
             let was = std::mem::replace(&mut store.replay, replay(&[]));
+            let back = (store.replayed > 0 && store.replayed < store.log.edits().len())
+                .then(|| was.back(&store.log.edits()[..store.replayed], &store.log.edits()[store.replayed..]));
             let (replayed, why) = replay_on_why(was, store.log.edits(), store.replayed);
+            if let (Why::Whole(_), Some(back)) = (why, back) {
+                store.perf.count(back_counted(back), 1);
+            }
             // a whole replay a step at a time under way is of fewer edits than this one: it goes
             store.replaying = None;
             store.replay = replayed;
@@ -3608,6 +3628,7 @@ impl Lab {
                 let fresh = &store.log.edits()[store.replayed..to];
                 store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
                 let was = std::mem::replace(&mut store.replay, replay(&[]));
+                let back = (store.replayed > 0).then(|| was.back(&store.log.edits()[..store.replayed], fresh));
                 match replay_on_or(was, &store.log.edits()[..to], store.replayed) {
                     Ok((replayed, why)) => {
                         store.replay = replayed;
@@ -3621,6 +3642,9 @@ impl Lab {
                     // the replay it held, as it was, stays what it shows until the whole one, of every edit it holds
                     // (not of the slice: one whole replay, not one a slice), ends
                     Err((Some(was), why)) => {
+                        if let Some(back) = back {
+                            store.perf.count(back_counted(back), 1);
+                        }
                         store.replay = was;
                         store.reshow |= store.log.edits()[store.replayed..].iter().any(Edit::is_removal);
                         let begun = Perf::start();
@@ -7083,7 +7107,7 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 },
             };
             let Some(with) = with else { continue };
-            if store.unopened.contains(&(*id, b.to, b.first)) {
+            if store.unopened.contains(&(b.of, b.slot)) {
                 continue;
             }
             let bytes = b.bytes(store.log.edits());
@@ -7102,7 +7126,7 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                     more |= store.keys.insert(*name, secret);
                 }
                 _ => {
-                    store.unopened.insert((*id, b.to, b.first));
+                    store.unopened.insert((b.of, b.slot));
                 }
             }
         }

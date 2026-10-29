@@ -140,6 +140,7 @@ mod progress;
 mod proofs;
 mod peer_receipts;
 mod receipt_tracker;
+mod path_choice;
 mod pulls;
 mod live;
 mod ranges;
@@ -800,7 +801,9 @@ impl Node {
             .crypto_provider(provider())
             .address_lookup(lookup.clone())
             .transport_config(quic())
-            .add_custom_transport(Arc::new(packets.clone()));
+            .add_custom_transport(Arc::new(packets.clone()))
+            // the path that delivers soonest by what it measured, a relay's or a direct one alike (`path_choice`)
+            .path_selector(Arc::new(path_choice::Measured::new(None)));
         // iroh's own sockets, on every interface, and its port mapping, for a node that reaches out directly; else
         // the one socket it binds, if any
         #[cfg(not(target_arch = "wasm32"))]
@@ -823,7 +826,7 @@ impl Node {
                 .portmapper_config(PortmapperConfig::Disabled)
                 .clear_ip_transports()
                 .add_custom_transport(net.transport(SecretKey::from_bytes(&secret).public()))
-                .path_selector(Arc::new(sim::AsRelay));
+                .path_selector(Arc::new(path_choice::Measured::new(Some(sim::SIM))));
         }
         if let Some(relay) = &opts.relay {
             builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(relay_config(relay, &opts))));
@@ -2024,6 +2027,7 @@ impl Node {
             "gone": gone,
             "recent": s.traffic.recent(),
             "lost": s.traffic.lost_json(),
+            "askings": s.traffic.askings_json(),
             "live": s.traffic.live_json(),
             "trace": s.traffic.trace_json(),
             "carriers": s.transport_control.json(),
@@ -4225,17 +4229,36 @@ impl Shared {
                 };
                 let mut priority = bootstrap_dependencies::key_logs(&active, &key_waits);
                 priority.extend(active);
-                let logs = next_asking(&mut left, &wanted, &priority, &manifests, &mut stage);
+                let (logs, asked_as) = next_asking_as(&mut left, &wanted, &priority, &manifests, &mut stage);
                 wanted.retain(|l| !logs.contains(l));
-                logs
+                (logs, asked_as)
             };
+            let (logs, asked_as) = logs;
             if logs.is_empty() {
                 break Ok(new);
             }
             // an asking of every log left yields to what the open views come to want now while it runs (`Yield`):
             // a view opened, or peers named the entries a new device's view asks for by its selectors
-            let yielding = left.is_empty().then(|| Yield::new(logs.clone(), self.views_want()));
-            match self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, None, Some(&mut keys), yielding.as_ref()).await {
+            let wants = self.views_want();
+            let yielding = left.is_empty().then(|| Yield::new(logs.clone(), wants.clone()));
+            let (began, at) = (Instant::now(), jobs::now_ms());
+            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, None, Some(&mut keys), yielding.as_ref()).await;
+            // which logs it asked, and which of them the views want, before every other: whether a page's room came first
+            let wanted_first: Vec<&LogId> = logs.iter().filter(|l| wants.contains(l)).chain(logs.iter().filter(|l| !wants.contains(l))).take(8).collect();
+            self.traffic.asking(traffic::Asking {
+                device: peer.device,
+                at,
+                stage: asked_as,
+                logs: logs.len(),
+                first: wanted_first.into_iter().map(traffic::log_name).collect(),
+                wanted: logs.iter().filter(|l| wants.contains(l)).count(),
+                wants: wants.len(),
+                ms: began.elapsed().as_millis() as u64,
+                new: *got.as_ref().unwrap_or(&0) as u64,
+                yielded: yielding.as_ref().is_some_and(Yield::yielded),
+                failed: got.is_err(),
+            });
+            match got {
                 Ok(got) => new += got,
                 Err(e) => break Err(e),
             }
@@ -4656,6 +4679,7 @@ enum AskingStage {
     Rest,
 }
 
+
 /// How long a connection's first asking waits for what peers name for the views' selectors (`Shared::first_finds`),
 /// at most: a find's round trip over the relay, the device's keys of the vaults found on the way.
 const FIRST_FINDS: Duration = Duration::from_millis(1500);
@@ -4669,14 +4693,21 @@ const FIRST_FINDS_LOGS: usize = 64;
 /// every vault's and share's log not asked yet, which say who may do what and are few, at most `VIEW_LOGS`; else, and
 /// then, every log left, in one asking. None once `left` is empty. Not every audience's log: those hold the keys and
 /// their wraps, most of a vault's edits (2026-10-27, with them in the first asking an iPhone's views never opened).
+#[cfg(test)]
 fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> BTreeSet<LogId> {
+    next_asking_as(left, wanted, active, manifests, stage).0
+}
+
+/// `next_asking`, and what it asked: `manifests`, `views` or `rest` (`traffic::Asking`).
+fn next_asking_as(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> (BTreeSet<LogId>, &'static str) {
     let rules = |left: &BTreeSet<LogId>| left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_))).copied().collect::<Vec<_>>();
-    let mut next = BTreeSet::new();
+    let (mut next, mut asked) = (BTreeSet::new(), "rest");
     if *stage == AskingStage::Manifests {
         *stage = AskingStage::Views;
         let first: Vec<LogId> = manifests.iter().filter(|l| left.contains(l)).copied().collect();
         if !first.is_empty() {
             next = first.into_iter().chain(rules(left)).take(VIEW_LOGS).collect();
+            asked = "manifests";
         }
     }
     if next.is_empty() && *stage == AskingStage::Views {
@@ -4684,6 +4715,7 @@ fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[L
         let viewed: Vec<LogId> = active.iter().chain(wanted).filter(|l| left.contains(l)).copied().collect();
         if !viewed.is_empty() {
             next = viewed.into_iter().chain(rules(left)).take(VIEW_LOGS).collect();
+            asked = "views";
         }
     }
     if next.is_empty() {
@@ -4691,7 +4723,7 @@ fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[L
         next = std::mem::take(left);
     }
     left.retain(|l| !next.contains(l));
-    next
+    (next, asked)
 }
 
 #[cfg(test)]
@@ -5023,3 +5055,4 @@ mod catch_up_budget_tests {
         assert_eq!(catch_up_budget(CATCH_UP_SLICE * 4, Duration::ZERO), CATCH_UP_SLICE * 4);
     }
 }
+

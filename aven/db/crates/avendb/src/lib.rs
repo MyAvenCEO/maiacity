@@ -70,6 +70,7 @@ pub mod lab;
 pub mod lazy;
 pub mod legacy;
 pub mod lens;
+pub mod log_head;
 pub mod merge;
 pub mod objective;
 pub mod ops;

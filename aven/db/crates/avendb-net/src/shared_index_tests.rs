@@ -7,17 +7,9 @@ use std::sync::atomic::Ordering;
 use super::*;
 use crate::shelf_index::tests::Memory;
 use avendb::cast::{World, document, world};
+use avendb::id::EditId;
 use avendb::index::{link_label, tag_label, type_label};
 use serde_json::json;
-
-thread_local! {
-    /// How many edits `head_on` hashed on this thread.
-    pub(super) static HASHED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-fn hashed() -> usize {
-    HASHED.with(std::cell::Cell::get)
-}
 
 /// The rows a rebuild from device `me`'s edits holds, in key order (`SharedIndex.full`).
 fn rebuilt(lab: &Lab, me: SignerId) -> Vec<(Vec<u8>, Vec<u8>)> {
@@ -322,7 +314,7 @@ async fn a_view_lists_a_rooms_messages_newest_first_off_the_shelf() {
 }
 
 #[tokio::test]
-async fn a_log_that_grew_is_checked_at_once_and_a_rewritten_one_is_refused() {
+async fn a_log_that_grew_is_checked_from_its_head_and_a_rewritten_one_is_refused() {
     let (mut w, rooms) = alices(2);
     let mac = w.mac_a;
     for n in 0..20 {
@@ -333,35 +325,22 @@ async fn a_log_that_grew_is_checked_at_once_and_a_rewritten_one_is_refused() {
     save(&ix, &lab, mac).await.unwrap();
     let stamp = ix.stamp().await;
     assert_eq!(stamp, head(lab.lock().unwrap().log(mac).ids()));
-    // the log grows: the index is still of its first edits, told without hashing one
+    // the log grows: the index is still of its first edits, told from the log's mark before them, hashing fewer ids
+    // than a mark's worth (`log_head`'s `a_head_hashes_each_id_once_and_a_prefix_from_its_mark`)
     w.lab = lab.into_inner().unwrap();
     for n in 0..5 {
         message(&mut w, rooms[n % 2], 100 + n as u64);
     }
-    let before = hashed();
     assert_eq!(ix.of_log(&w.lab, mac), Some(stamp));
-    assert_eq!(
-        hashed(),
-        before,
-        "a log that grew is checked without hashing its edits"
-    );
-    // a save of the grown log hashes the new edits alone
+    // a save of the grown log stamps it with the log's head, which the log kept as the edits came
     let lab = Mutex::new(std::mem::replace(&mut w.lab, Lab::new()));
-    let (held, grown) = {
-        let l = lab.lock().unwrap();
-        (l.log(mac).ids().len(), head(l.log(mac).ids()))
-    };
-    let before = hashed();
+    let grown = head(lab.lock().unwrap().log(mac).ids());
     assert!(matches!(
         save(&ix, &lab, mac).await.unwrap(),
         Stepped::Entries(_)
     ));
-    assert_eq!(
-        hashed(),
-        before + held - stamp.at as usize,
-        "the save chains on from the head it had"
-    );
     assert_eq!(ix.stamp().await, grown);
+    assert_eq!(Stamp::from(lab.lock().unwrap().log(mac).head()), grown);
     // the same device's log written otherwise, as long or longer: not of it
     let (mut other, other_rooms) = alices(1);
     for n in 0..40 {
@@ -373,9 +352,6 @@ async fn a_log_that_grew_is_checked_at_once_and_a_rewritten_one_is_refused() {
         None,
         "a rewritten log is not one the index is of"
     );
-    let before = hashed();
-    assert_eq!(ix.of_log(&other.lab, mac), None);
-    assert_eq!(hashed(), before, "and asked again, it is refused at once");
     // and the log it is of still is, after the refusal
     assert_eq!(ix.of_log(&lab.lock().unwrap(), mac), Some(grown));
 }

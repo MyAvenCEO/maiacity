@@ -1184,7 +1184,7 @@ impl Passkey {
 
     /// The passkey whose P-256 private key is `key` and whose hmac-secret is `hmac`, its PRF outputs CTAP2's:
     /// HMAC-SHA256 under that secret over the salt the browser hashed under its label, as a platform authenticator answers, and the
-    /// software one a test browser holds (scripts/devx/passkey.mjs). None if `key` is no P-256 scalar.
+    /// software one a test browser holds (aven/ops/devx/passkey.mjs). None if `key` is no P-256 scalar.
     pub fn with_hmac_secret(key: [u8; 32], hmac: [u8; 32]) -> Option<Self> {
         let key = p256::ecdsa::SigningKey::from_slice(&*Zeroizing::new(key)).ok()?;
         let hmac = Zeroizing::new(hmac);
@@ -1408,7 +1408,7 @@ mod tests {
     #[test]
     fn a_passkey_with_an_hmac_secret_answers_prf_as_ctap2_and_the_test_browser_do() {
         // HMAC-SHA256 under [6; 32] over SHA-256("WebAuthn PRF\0" || PRF_SALT): WebCrypto's answer, as
-        // scripts/devx/passkey.mjs computes it
+        // aven/ops/devx/passkey.mjs computes it
         let passkey = Passkey::with_hmac_secret([5; 32], [6; 32]).expect("a P-256 scalar");
         let webcrypto: [u8; 32] = [
             196, 124, 12, 225, 62, 133, 184, 29, 242, 252, 202, 210, 71, 198, 103, 109, 156, 208, 232, 98, 213, 231, 134,
