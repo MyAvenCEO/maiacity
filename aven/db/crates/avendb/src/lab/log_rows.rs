@@ -11,6 +11,7 @@
 use crate::encode::Encode;
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::policy::{Action, Edit};
+use crate::sealed::FileRoot;
 use crate::sign::SignerKeys;
 use crate::sync::LogId;
 use crate::wire::{Decode, Reader, WireError};
@@ -20,18 +21,24 @@ const ROWS: &[u8] = b"avenDB pack rows 1\n";
 
 /// One edit of a pack, as its log and store keep it.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Row {
+pub struct Row {
     pub id: EditId,
     /// Its record in the pack: its length and the hash of its bytes.
     pub len: u32,
     pub sum: [u8; 32],
     pub depth: u64,
+    /// Its rank (`Edit::rank`), and the edits it rests on: where the one order of a replay puts it (`Log::order_of`).
+    pub rank: u8,
+    pub parents: Vec<EditId>,
     pub log: Option<LogId>,
-    /// The entry it writes, and its rank (`Edit::rank`), for a write.
-    pub write: Option<(EntryId, u8)>,
+    /// The entry it writes, for a write.
+    pub entry: Option<EntryId>,
     /// Who signed it, each a place in the rows' keys.
     pub signers: Vec<u32>,
     pub blobs: Vec<BlobId>,
+    /// The files it brings, for a write, and the files a snapshot's states of entries travel as (`Edit::stated`).
+    pub files: Vec<FileRoot>,
+    pub stated: Vec<(FileRoot, EntryId)>,
     /// What it covers, for a checkpoint (`lab::covered`).
     pub covers: Vec<EditId>,
 }
@@ -102,17 +109,14 @@ impl LogRows {
             r.len.encode(&mut out);
             r.sum.encode(&mut out);
             r.depth.encode(&mut out);
+            out.push(r.rank);
+            r.parents[..].encode(&mut out);
             encode_log(&r.log, &mut out);
-            match &r.write {
-                None => out.push(0),
-                Some((e, rank)) => {
-                    out.push(1);
-                    e.encode(&mut out);
-                    out.push(*rank);
-                }
-            }
+            r.entry.encode(&mut out);
             r.signers[..].encode(&mut out);
             r.blobs[..].encode(&mut out);
+            r.files[..].encode(&mut out);
+            r.stated[..].encode(&mut out);
             r.covers[..].encode(&mut out);
         }
         out
@@ -130,17 +134,14 @@ impl LogRows {
             let mut rows = Vec::with_capacity(n.min(1 << 16));
             for _ in 0..n {
                 let (id, len, sum, depth) = (EditId::decode(&mut r)?, u32::decode(&mut r)?, r.array()?, u64::decode(&mut r)?);
+                let (rank, parents) = (r.u8()?, r.seq(0)?);
                 let log = decode_log(&mut r)?;
-                let write = match r.u8()? {
-                    0 => None,
-                    1 => Some((EntryId::decode(&mut r)?, r.u8()?)),
-                    _ => return Err(WireError::Unknown),
-                };
+                let entry = r.option()?;
                 let signers: Vec<u32> = r.seq(0)?;
                 if signers.iter().any(|&i| i as usize >= keys.len()) {
                     return Err(WireError::Unknown);
                 }
-                rows.push(Row { id, len, sum, depth, log, write, signers, blobs: r.seq(0)?, covers: r.seq(0)? });
+                rows.push(Row { id, len, sum, depth, rank, parents, log, entry, signers, blobs: r.seq(0)?, files: r.seq(0)?, stated: r.seq(0)?, covers: r.seq(0)? });
             }
             Ok(LogRows { keys, rows })
         })()
@@ -151,8 +152,8 @@ impl LogRows {
 
 /// Edit `edit`'s row, whose id is `id`, its log `log` and its record `record`; who signed it, each by its keys in `keys`.
 pub(crate) fn row(edit: &Edit, id: EditId, log: Option<LogId>, record: &[u8], signers: Vec<u32>) -> Row {
-    let write = match edit.action {
-        Action::Write { entry, .. } => Some((entry, edit.rank())),
+    let entry = match edit.action {
+        Action::Write { entry, .. } => Some(entry),
         _ => None,
     };
     let covers = crate::policy::covered(std::iter::once(edit)).into_iter().collect();
@@ -161,10 +162,14 @@ pub(crate) fn row(edit: &Edit, id: EditId, log: Option<LogId>, record: &[u8], si
         len: u32::try_from(record.len()).expect("a record under 4 GB"),
         sum: *blake3::hash(record).as_bytes(),
         depth: edit.depth,
+        rank: edit.rank(),
+        parents: edit.parents.clone(),
         log,
-        write,
+        entry,
         signers,
         blobs: edit.blobs(),
+        files: edit.files().to_vec(),
+        stated: edit.stated().map(|x| (x.slice, x.entry)).collect(),
         covers,
     }
 }
@@ -214,10 +219,14 @@ mod tests {
             len,
             sum: [n; 32],
             depth: n as u64,
+            rank: 1,
+            parents: vec![EditId([n + 2; 32])],
             log: Some(LogId::Audience(VaultId([n; 32]), AudienceId([n; 32]))),
-            write: (n % 2 == 0).then_some((EntryId([n; 32]), 1)),
+            entry: (n % 2 == 0).then_some(EntryId([n; 32])),
             signers: vec![],
             blobs: vec![BlobId([n; 32])],
+            files: vec![],
+            stated: vec![],
             covers: vec![EditId([n + 1; 32])],
         };
         let rows = LogRows { keys: vec![], rows: vec![row(1, 10), row(2, 20)] };

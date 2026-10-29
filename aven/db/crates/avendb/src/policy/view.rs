@@ -567,6 +567,17 @@ impl Replay {
     /// The replay `to_view` made `bytes` of, of the first edits of `edits`, `ids` being their ids, and how many: none
     /// where the bytes are no view, or of other edits.
     pub fn from_view(bytes: &[u8], edits: &crate::policy::Edits, ids: &[EditId]) -> Option<(Replay, usize)> {
+        Replay::from_view_ordered(bytes, edits, ids, |held| order_places(&edits[..held], &ids[..held]))
+    }
+
+    /// `from_view`, the one order of the first `held` edits being `order(held)`, as a log keeps it (`Log::order_of`):
+    /// no edit read to order them.
+    pub fn from_view_ordered(
+        bytes: &[u8],
+        edits: &crate::policy::Edits,
+        ids: &[EditId],
+        order: impl FnOnce(usize) -> Vec<usize>,
+    ) -> Option<(Replay, usize)> {
         // a view of version 3 is one whose tail keeps no rungs and no marks
         let (rest, laddered) = match bytes.strip_prefix(VIEW) {
             Some(rest) => (rest, true),
@@ -575,7 +586,7 @@ impl Replay {
         let mut rd = Reader::new(rest);
         let held = u64::decode(&mut rd).ok()? as usize;
         let (held_edits, held_ids) = (edits.get(..held)?, ids.get(..held)?);
-        let order = order_places(held_edits, held_ids);
+        let order = order(held);
         let ids: Vec<EditId> = order.iter().map(|&p| held_ids[p]).collect();
         let edits = || order.iter().map(|&p| &held_edits[p]);
         if <[u8; 32]>::decode(&mut rd).ok()? != ids_hash(&ids) {

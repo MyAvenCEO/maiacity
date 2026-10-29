@@ -596,30 +596,28 @@ impl Edits {
             return Ok(());
         }
         let (mut records, mut keys) = (&due.records[..], brought);
-        // a pack due with this save takes its edits straight, after those of the journal's entries since the newest
-        // head, read back: not through an entry of their own, put and read back again at once (a catch-up's page is a
-        // pack's worth of edits)
+        // a pack due with this save takes the records of its own entry straight, after those of the journal's entries
+        // since the newest head, read back: its entry is put all the same, so the journal holds every edit a head does
+        // and a start whose head doesn't read whole takes them from the journal alone, but never read back at once (a
+        // catch-up's page is a pack's worth of edits)
         let new = !records.is_empty() || !keys.is_empty() || book.anchors != due.anchors;
-        if book.next + u64::from(new) - book.mark >= JOURNALED || book.tail + records_in(records) >= TAIL_EDITS {
-            book.keys.extend(keys);
-            book.anchors = due.anchors.clone();
-            self.pack_head_on(on, book, records, due.rows.as_deref()).await?;
-            let mut kept = self.kept.lock().expect("kept");
-            kept.written = due.to;
-            kept.anchor_stamp = due.anchor_stamp;
-            kept.head = Some(due.head);
-            kept.keys.extend(ids);
-            return Ok(());
-        }
+        let packing = book.next + u64::from(new) - book.mark >= JOURNALED || book.tail + records_in(records) >= TAIL_EDITS;
+        let mut straight: (&[u8], Option<&[u8]>) = (&[], Some(&[]));
         // the rows of `records`, while they are all of them
-        let mut rows = due.rows.clone();
+        let mut rows = due.rows.as_deref();
         while !records.is_empty() || !keys.is_empty() || book.anchors != due.anchors {
             let name = journal_name(book.next);
             let entry = Entry { anchors: due.anchors.clone(), keys: keys.clone(), records: records.to_vec() };
             match on.put(&name, entry.to_bytes()).await {
                 Ok(()) => {
-                    book.pending.push(book.next);
-                    book.pending_rows.push(if records.is_empty() { Some(Vec::new()) } else { rows.take() });
+                    let of = if records.is_empty() { Some(&[][..]) } else { rows.take() };
+                    match packing {
+                        true => straight = (records, of),
+                        false => {
+                            book.pending.push(book.next);
+                            book.pending_rows.push(of.map(<[u8]>::to_vec));
+                        }
+                    }
                     book.next += 1;
                     book.tail += records_in(records);
                     book.anchors = due.anchors.clone();
@@ -650,17 +648,15 @@ impl Edits {
                 Err(e) => return Err(e.into()),
             }
         }
-        {
-            let mut kept = self.kept.lock().expect("kept");
-            kept.written = due.to;
-            kept.anchor_stamp = due.anchor_stamp;
-            kept.head = Some(due.head);
-            kept.keys.extend(ids);
-        }
         // a save cut short put more entries than it knew of
-        if book.next - book.mark >= JOURNALED || book.tail >= TAIL_EDITS {
-            self.pack_head_on(on, book, &[], Some(&[])).await?;
+        if packing || book.next - book.mark >= JOURNALED || book.tail >= TAIL_EDITS {
+            self.pack_head_on(on, book, straight.0, straight.1).await?;
         }
+        let mut kept = self.kept.lock().expect("kept");
+        kept.written = due.to;
+        kept.anchor_stamp = due.anchor_stamp;
+        kept.head = Some(due.head);
+        kept.keys.extend(ids);
         Ok(())
     }
 
