@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
@@ -19,7 +19,6 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 /// retried under exclusive page admission with the existing protocol ceiling, never silently truncated.
 pub(crate) const PAGE_BYTES: usize = 8 << 20;
 pub(crate) const FANOUT: usize = if cfg!(target_arch = "wasm32") { 2 } else { 3 };
-pub(crate) const CATCH_UP_FANOUT: usize = if cfg!(target_arch = "wasm32") { 4 } else { 8 };
 const HISTORY: usize = 128;
 /// A small change on an established connection can bypass a backlog round. A full announcement or a large
 /// catch-up delta stays on that round; a peer cannot grow the interactive queue without bound.
@@ -120,43 +119,6 @@ pub(crate) struct Page {
     _page: OwnedSemaphorePermit,
 }
 
-/// Removal catch-up must distinguish an attempted unreachable peer from one never admitted locally.
-pub(crate) struct CatchUp {
-    required: usize,
-    admitted: AtomicUsize,
-    reached: AtomicBool,
-}
-
-pub(crate) struct Readiness {
-    pub(crate) admitted: bool,
-    pub(crate) reached: bool,
-}
-
-impl CatchUp {
-    pub(crate) fn new(required: usize) -> Self {
-        Self {
-            required,
-            admitted: AtomicUsize::new(0),
-            reached: AtomicBool::new(false),
-        }
-    }
-    pub(crate) fn reached(&self) {
-        self.reached.store(true, Ordering::Relaxed);
-    }
-    pub(crate) fn finish(&self) -> Readiness {
-        Readiness {
-            admitted: self.admitted.load(Ordering::Relaxed) == self.required,
-            reached: self.reached.load(Ordering::Relaxed),
-        }
-    }
-}
-
-impl Readiness {
-    pub(crate) fn ready(&self) -> bool {
-        self.admitted && self.reached
-    }
-}
-
 #[derive(Clone, Copy)]
 struct Estimate {
     micros: u64,
@@ -202,12 +164,11 @@ impl Budget {
     }
 
     /// Acquired before a connection or a Lab request is built. Two active slots stay available to foreground
-    /// brings and removal catch-up even while background peers stall. FIFO semaphore queues give admitted peers
+    /// brings even while background peers stall. FIFO semaphore queues give admitted peers
     /// turns; a full bounded queue asks the existing retry path to try again later.
     pub(crate) async fn enter(
         &self,
         background: bool,
-        catch_up: Option<&CatchUp>,
     ) -> Result<Arc<Admission>> {
         let queue = if background {
             &self.background_queue
@@ -224,9 +185,6 @@ impl Budget {
             None
         };
         let active = self.active.clone().acquire_owned().await?;
-        if let Some(catch_up) = catch_up {
-            catch_up.admitted.fetch_add(1, Ordering::Relaxed);
-        }
         Ok(Arc::new(Admission {
             _ticket: ticket,
             _background: background,
@@ -558,29 +516,6 @@ impl Rate {
 /// shrink the next.
 const WINDOW_SAMPLES: usize = 8;
 
-/// Visit every candidate with bounded fanout; unlike the foreground race, one success does not cancel peers
-/// required by a removal check. A shared caller deadline may stop dispatch before all were admitted.
-pub(crate) async fn each_bounded<I, F, Fut>(
-    peers: impl IntoIterator<Item = I>,
-    width: usize,
-    mut ask: F,
-) where
-    F: FnMut(I) -> Fut,
-    Fut: Future<Output = ()>,
-{
-    assert!(width > 0);
-    let mut peers = peers.into_iter();
-    let mut active = FuturesUnordered::new();
-    for peer in peers.by_ref().take(width) {
-        active.push(ask(peer));
-    }
-    while active.next().await.is_some() {
-        if let Some(peer) = peers.next() {
-            active.push(ask(peer));
-        }
-    }
-}
-
 /// First complete successful candidate, with at most `width` requests alive. Start one, hedge a slow candidate
 /// after `delay`, and replace a failed candidate immediately. Dropping this future or finding a success cancels
 /// the remaining requests in the caller's task, preserving its task-local acting identity. The caller supplies
@@ -640,93 +575,25 @@ mod tests {
     #[tokio::test]
     async fn admission_bounds_waiters_and_reserves_foreground_then_recovers_on_cancellation() {
         let budget = Budget::new(2, 1, 2, 2, 2, 0);
-        let background = budget.enter(true, None).await.unwrap();
-        let mut waiting = Box::pin(budget.enter(true, None));
+        let background = budget.enter(true).await.unwrap();
+        let mut waiting = Box::pin(budget.enter(true));
         assert!(matches!(future::poll_once(&mut waiting).await, None));
         assert!(
-            budget.enter(true, None).await.is_err(),
+            budget.enter(true).await.is_err(),
             "background tickets include their waiters"
         );
-        let foreground = budget.enter(false, None).await.unwrap();
+        let foreground = budget.enter(false).await.unwrap();
         assert_eq!(budget.active.available_permits(), 0);
         drop(waiting);
         drop(background);
         assert!(
-            budget.enter(true, None).await.is_ok(),
+            budget.enter(true).await.is_ok(),
             "cancelled waiters return their ticket"
         );
         drop(foreground);
         assert_eq!(budget.active.available_permits(), 2);
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn removal_catch_up_fails_closed_if_any_peer_never_enters_admission() {
-        let budget = Budget::new(2, 1, 2, 4, 4, 0);
-        let catch_up = CatchUp::new(12); // More candidates than foreground queue tickets.
-        let attempts = each_bounded(0..12, 3, |peer| {
-            let (budget, catch_up) = (&budget, &catch_up);
-            async move {
-                if let Ok(_admission) = budget.enter(false, Some(catch_up)).await {
-                    if peer == 0 {
-                        catch_up.reached();
-                        return;
-                    }
-                    time::sleep(Duration::from_secs(20)).await;
-                }
-            }
-        });
-        assert!(
-            time::timeout(Duration::from_secs(5), attempts)
-                .await
-                .is_err()
-        );
-        let readiness = catch_up.finish();
-        assert!(
-            readiness.reached,
-            "one peer completed but other required peers were skipped or queued"
-        );
-        assert!(
-            !readiness.admitted && !readiness.ready(),
-            "neither catch-up nor removal may treat that as ready"
-        );
-        assert_eq!(
-            budget.active.available_permits(),
-            2,
-            "timeout returns active admission"
-        );
-        assert_eq!(
-            budget.foreground_queue.available_permits(),
-            4,
-            "timeout returns waiting tickets"
-        );
-        let many = CatchUp::new(12);
-        each_bounded(0..12, 3, |peer| {
-            let (budget, many) = (&budget, &many);
-            async move {
-                let _admission = budget.enter(false, Some(many)).await.unwrap();
-                time::sleep(Duration::from_millis(1)).await;
-                if peer == 0 {
-                    many.reached();
-                }
-            }
-        })
-        .await;
-        assert!(
-            many.finish().ready(),
-            "more healthy candidates than queue tickets still all get a turn"
-        );
-        let catch_up = CatchUp::new(2);
-        for peer in 0..2 {
-            let _admission = budget.enter(false, Some(&catch_up)).await.unwrap();
-            if peer == 0 {
-                catch_up.reached();
-            }
-        }
-        assert!(
-            catch_up.finish().ready(),
-            "an attempted unreachable peer retains the previous behavior"
-        );
-    }
 
     #[tokio::test]
     async fn stalled_background_pages_leave_one_normal_page_for_foreground() {
@@ -874,49 +741,6 @@ mod tests {
         assert_eq!(budget.hedge_after(peer), Duration::from_millis(750));
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn a_saturated_node_refuses_removal_even_with_an_up_to_date_live_claim() {
-        use crate::{Node, Options};
-        use avendb::cast::{handbook_ready, world};
-        let mut w = world();
-        handbook_ready(&mut w);
-        let (sender, receiver) = (w.mac_a, w.phone_a);
-        let options = || Options {
-            lazy: true,
-            ..Options::local()
-        };
-        let mac = Node::spawn(w.lab.split(sender, &[], [35; 32]), sender, options())
-            .await
-            .unwrap();
-        let phone = Node::spawn(w.lab.split(receiver, &[], [36; 32]), receiver, options())
-            .await
-            .unwrap();
-        phone.know(mac.addr());
-        mac.know(phone.addr());
-        phone.shared.connection(mac.id()).await.unwrap();
-        phone.shared.hear(
-            sender,
-            avendb::wire::Announce {
-                full: true,
-                logs: vec![],
-                files: vec![],
-            },
-        );
-        let queue = phone.shared.pulls.foreground_queue.clone();
-        let _full = queue
-            .clone()
-            .acquire_many_owned(queue.available_permits() as u32)
-            .await
-            .unwrap();
-        let refusal = phone
-            .removal_waits()
-            .await
-            .expect("a skipped required peer prevents removal");
-        assert!(refusal.contains("sync queue is busy"), "{refusal}");
-        drop(_full);
-        mac.shutdown().await.unwrap();
-        phone.shutdown().await.unwrap();
-    }
 
     /// A real single-page exchange whose first admission is held deliberately. This
     /// catches placing the service clock after the first reply (the old bug).
@@ -935,7 +759,7 @@ mod tests {
         phone.shared.connection(mac.id()).await.unwrap();
         let budget = phone.shared.pulls.pages.clone();
         let held = budget.clone().acquire_many_owned(budget.available_permits() as u32).await.unwrap();
-        let pull = phone.shared.pull(mac.id(), Scope::Logs(BTreeSet::new()), false, None);
+        let pull = phone.shared.pull(mac.id(), Scope::Logs(BTreeSet::new()), false);
         let release = async {
             while phone.shared.traffic.of(&sender).is_none_or(|p| p.askings == 0) {
                 time::sleep(Duration::from_millis(1)).await;
@@ -1098,7 +922,6 @@ mod tests {
                         .collect(),
                 ),
                 legacy,
-                None,
             );
             let got = time::timeout(Duration::from_secs(30), future::or(pull, serving))
                 .await
@@ -1245,11 +1068,11 @@ mod live_queue_tests {
     async fn later_live_admissions_cannot_overtake_a_queued_background_pull() {
         // LivePriority.later_arrival_cannot_overtake / queued_background_eventually_first.
         let budget = Budget::new(2, 1, 2, 4, 4, 0);
-        let first = budget.enter(false, None).await.unwrap();
-        let second = budget.enter(false, None).await.unwrap();
-        let mut background = Box::pin(budget.enter(true, None));
+        let first = budget.enter(false).await.unwrap();
+        let second = budget.enter(false).await.unwrap();
+        let mut background = Box::pin(budget.enter(true));
         assert!(future::poll_once(&mut background).await.is_none());
-        let mut later_live = Box::pin(budget.enter(false, None));
+        let mut later_live = Box::pin(budget.enter(false));
         assert!(future::poll_once(&mut later_live).await.is_none());
         drop(first);
         assert!(future::poll_once(&mut later_live).await.is_none());
@@ -1264,6 +1087,7 @@ mod live_queue_tests {
 #[cfg(test)]
 mod pipelined_tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::collections::BTreeSet;
 
     #[test]
@@ -1516,7 +1340,7 @@ mod pipelined_tests {
             };
             // the refused packed request costs no round trip (an immediate reset), so each page is one
             let began = Instant::now();
-            let pull = phone.shared.pull(raw.id(), crate::Scope::Logs(logs.clone()), false, None);
+            let pull = phone.shared.pull(raw.id(), crate::Scope::Logs(logs.clone()), false);
             let got = time::timeout(Duration::from_secs(60), future::or(pull, serving)).await.unwrap().unwrap();
             let took = began.elapsed();
             assert_eq!(got, PAGES, "every page's edit is taken, whatever the window");
@@ -1673,7 +1497,7 @@ mod pipelined_tests {
         // the route closes once three pages were asked: the cuts are in, and pages are in flight ahead
         let conn = greet(&raw, &phone, &mut w.lab, sender).await;
         let asked = AtomicUsize::new(0);
-        let pull = phone.shared.pull(raw.id(), crate::Scope::Logs(logs.clone()), false, None);
+        let pull = phone.shared.pull(raw.id(), crate::Scope::Logs(logs.clone()), false);
         let serving = async {
             serve_slow(&conn, &mut w.lab, sender, receiver, RTT, Some(3), &asked).await;
             future::pending::<()>().await;
@@ -1700,7 +1524,7 @@ mod pipelined_tests {
         // the route comes back: the next pull, on the new connection, brings what the first didn't
         let conn = greet(&raw, &phone, &mut w.lab, sender).await;
         let asked = AtomicUsize::new(0);
-        let pull = phone.shared.pull(raw.id(), crate::Scope::Logs(logs.clone()), false, None);
+        let pull = phone.shared.pull(raw.id(), crate::Scope::Logs(logs.clone()), false);
         let serving = async {
             serve_slow(&conn, &mut w.lab, sender, receiver, RTT, None, &asked).await;
             future::pending::<()>().await;

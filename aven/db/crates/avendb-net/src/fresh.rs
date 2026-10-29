@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use avendb::engine::coverage::Heard;
 use avendb::id::{SignerId, VaultId};
+use avendb::slice::Selector;
 use avendb::sync::LogId;
 use bytes::Bytes;
 use n0_future::task;
@@ -56,12 +57,12 @@ struct Stamp {
 type Key = (u64, (usize, usize), Vec<SignerId>);
 
 /// One walk: the live peers, how many were not heard, the logs they hold that the device lacks, and of those, per
-/// scope read, the ones that may hold what it reads.
+/// scope read (a vault, or none, and the entries it picks), the ones that may change what it reads.
 struct Walk {
     key: Key,
     unheard: usize,
     behind: Arc<BTreeSet<LogId>>,
-    scoped: HashMap<Option<VaultId>, Arc<Vec<LogId>>>,
+    scoped: HashMap<(Option<VaultId>, Selector), Arc<Vec<LogId>>>,
 }
 
 impl Fresh {
@@ -78,13 +79,14 @@ impl Fresh {
 }
 
 impl Shared {
-    /// What the node hears now for a read of scope `vault` (a vault, or `None` for every one): its live peers, those of
-    /// them that have not told what they hold, and its stamp; and the logs where a live peer holds an edit its device
-    /// lacks that may hold what the read reads: an entry's log of the vault, or of a vault the device can't place yet,
-    /// that vault's own log, and any share's or audience's, which may change what it sees. A device that holds all its
+    /// What the node hears now for a read of vault `vault` (`None` for every one) that picks entries by `picks`
+    /// (`engine::footprint`): its live peers, those of them that have not told what they hold, and its stamp; and the
+    /// logs where a live peer holds an edit its device lacks that may change what the read shows (`Lab::may_change`):
+    /// the log of an entry it may pick, or of one the device can't place yet, the vault's own log, and any share's or
+    /// audience's. Logs of entries the read can't pick, as other types or other entries, never make it behind. A device that holds all its
     /// live peers announced, every one heard, is current now: the stamp moves to now. Whether those logs were worked
     /// out now, for the first read of the scope since what the peers or the device hold changed.
-    pub(crate) async fn heard(self: &Arc<Self>, vault: Option<VaultId>) -> (Heard, Arc<Vec<LogId>>, bool) {
+    pub(crate) async fn heard(self: &Arc<Self>, vault: Option<VaultId>, picks: Selector) -> (Heard, Arc<Vec<LogId>>, bool) {
         let live: Vec<SignerId> = {
             let peers = self.peers.lock().expect("peers");
             let set: BTreeSet<SignerId> =
@@ -94,7 +96,7 @@ impl Shared {
         let key: Key = (self.fresh.moved.load(Ordering::Relaxed), *self.size.borrow(), live.clone());
         let cached = {
             let walk = self.fresh.walk.lock().expect("walk");
-            walk.as_ref().filter(|w| w.key == key).map(|w| (w.unheard, w.behind.clone(), w.scoped.get(&vault).cloned()))
+            walk.as_ref().filter(|w| w.key == key).map(|w| (w.unheard, w.behind.clone(), w.scoped.get(&(vault, picks.clone())).cloned()))
         };
         let (unheard, behind, scoped) = match cached {
             Some(found) => found,
@@ -117,17 +119,13 @@ impl Shared {
         let (scoped, new) = match scoped {
             Some(scoped) => (scoped, false),
             None => {
-                let logs = behind.clone();
+                let (logs, by) = (behind.clone(), picks.clone());
                 let scoped: Arc<Vec<LogId>> = Arc::new(if logs.is_empty() { vec![] } else {
-                    self.read(move |lab, me| logs.iter().filter(|log| match log {
-                        LogId::Entry(e) => lab.vault_of_entry(me, *e).is_none_or(|v| vault.is_none_or(|x| x == v)),
-                        LogId::Vault(v) | LogId::Audience(v, _) => vault.is_none_or(|x| x == *v),
-                        LogId::Share(_) => true,
-                    }).copied().collect()).await
+                    self.read(move |lab, me| logs.iter().filter(|log| lab.may_change(me, **log, vault, &by)).copied().collect()).await
                 });
                 let mut walk = self.fresh.walk.lock().expect("walk");
                 if let Some(w) = walk.as_mut().filter(|w| w.key == key) {
-                    w.scoped.insert(vault, scoped.clone());
+                    w.scoped.insert((vault, picks), scoped.clone());
                 }
                 (scoped, true)
             }

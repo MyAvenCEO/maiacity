@@ -19,6 +19,7 @@ use avendb::id::{BlobId, EntryId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::Refusal;
 use avendb::sign::Ceremony;
+use avendb::slice::Selector;
 use avendb::sync::LogId;
 use bytes::Bytes;
 use iroh::EndpointId;
@@ -33,14 +34,6 @@ pub type NoBytes = fn() -> stream::Empty<io::Result<Bytes>>;
 
 /// The total deadline for a foreground bring, including admission and bounded peer hedges.
 const BRING: Duration = Duration::from_secs(60);
-
-/// How long a removal asks its device's peers for what they hold before it checks it holds it all (`catch_up`), at
-/// most: a peer that can't be reached by then is given up on.
-const CATCHING_UP: Duration = Duration::from_secs(5);
-
-/// How long a removal waits, once it caught up with a peer, for what that peer holds to be told (`removal_waits`), at
-/// most.
-const HEARD: Duration = Duration::from_secs(3);
 
 /// The most vaults, or entries, one `bring` names.
 const MOST_BROUGHT: usize = 64;
@@ -108,7 +101,7 @@ impl Node {
                 // while a peer holds more, never waiting for the whole catch-up
                 let mut world = self.world_encoded(engine::WorldSnapshot::into_json).await?;
                 if world.get("ok").is_some() {
-                    let (heard, behind, _) = self.shared.heard(None).await;
+                    let (heard, behind, _) = self.shared.heard(None, Selector::All).await;
                     engine::coverage::add_freshness(&mut world, heard, behind.len());
                 }
                 world
@@ -171,14 +164,15 @@ impl Node {
 
     /// A read on what the device holds, stamped with its freshness (`Freshness.lean`), whatever it reads: `current`,
     /// `offline` as of the device's last current read, or `behind` with the logs its live peers announced that it lacks
-    /// and that may hold what it reads: an entry's log of the read's vault, or of a vault the device can't place yet,
-    /// that vault's own log, and any share's or audience's, which may change what it sees. A query's coverage counts
+    /// and that may change what it shows (`Shared::heard`, `engine::footprint`): the log of an entry it may pick, or
+    /// of one the device can't place yet, its vault's own log, and any share's or audience's. A query's coverage counts
     /// those logs too (`Coverage.lean` `answer`): complete only once none is behind. A read that is behind asks for
     /// those logs first (`wanted`), so its scope arrives before the rest. No clock: the announcements and the holdings
     /// decide. `touched`, which says what changed and shows nothing, is not stamped. A read looks the walk up
     /// (`Shared::heard`): it runs once per change of what the peers or the device hold, not once per read.
     async fn fresh_read(&self, op: Value) -> Value {
         let vault = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex);
+        let picks = engine::footprint(&op);
         let stamped = engine::name(&op) != Some("touched");
         // a window comes off the shared index where that can say (`query_window`, a page of posts `posts_page`),
         // else from the engine
@@ -191,7 +185,7 @@ impl Node {
             None => self.read(move |lab, me| engine::read(lab, me, &op)).await,
         };
         if !stamped || answer.get("ok").is_none() { return answer; }
-        let (heard, matching, new) = self.shared.heard(vault).await;
+        let (heard, matching, new) = self.shared.heard(vault, picks).await;
         if engine::coverage::reads_open(&answer) { engine::coverage::add_logs(&mut answer, matching.len()); }
         engine::coverage::add_freshness(&mut answer, heard, matching.len());
         if new && heard.live > 0 && !matching.is_empty() {
@@ -324,7 +318,7 @@ impl Node {
         if !self.read(move |lab, me| lab.file(me, &root).is_some()).await {
             // the entry that brings it may not have arrived yet: the refusal says how fresh the device is
             // (`Freshness.lean`), so a page tells a file still arriving (behind) from one it may not read
-            let (heard, behind, _) = self.shared.heard(None).await;
+            let (heard, behind, _) = self.shared.heard(None, Selector::All).await;
             let mut refused = Refused::Rule(Refusal::NoCap).to_json();
             refused["fresh"] = engine::coverage::Freshness::of(heard, (0, behind.len())).to_json();
             return Ok((refused, None));
@@ -477,83 +471,6 @@ impl Node {
         Ok(answer)
     }
 
-    /// Asks each device that holds its vaults (`avendb::lab::Lab::peers`), and each it is connected to now, for what it
-    /// holds, for a few seconds at most (`CATCHING_UP`). Every peer it is connected to as the check starts is required:
-    /// each must enter bounded admission and at least one peer must hand over its complete reply in that time. Local
-    /// overload therefore postpones removal rather than treating a connected peer that was never asked as an
-    /// unreachable peer. A peer it isn't connected to is asked after those, as it gets a turn: a device gone for good
-    /// (a lost phone, the very one being removed) dials until `WAIT` runs out, and several of them must not keep
-    /// every removal waiting on peers that were never going to answer. One that answers still counts as reached.
-    pub async fn catch_up(&self) -> bool {
-        self.catching_up().await.ready()
-    }
-
-    async fn catching_up(&self) -> crate::pulls::Readiness {
-        let Ok(_activity) = self.shared.admit() else { return crate::pulls::Readiness { admitted: false, reached: false }; };
-        let known = self.read(|lab, me| lab.peers(me)).await;
-        let mut endpoints: BTreeSet<EndpointId> =
-            known.into_iter().filter_map(|(_, key)| EndpointId::from_bytes(&key).ok()).collect();
-        endpoints.extend(self.shared.peers.lock().expect("peers").keys().copied());
-        let mut endpoints: Vec<_> =
-            endpoints.into_iter().map(|peer| (self.shared.live(peer).is_some(), peer)).collect();
-        endpoints.sort_by_key(|&(live, peer)| (!live, self.shared.pulls.rank(peer)));
-        let caught = crate::pulls::CatchUp::new(endpoints.iter().filter(|(live, _)| *live).count());
-        let asks = crate::pulls::each_bounded(endpoints, crate::pulls::CATCH_UP_FANOUT, |(live, peer)| {
-            let caught = &caught;
-            async move {
-                let required = live.then_some(caught);
-                if self.shared.pull(peer, crate::Scope::All, false, required).await.is_ok() {
-                    caught.reached();
-                }
-            }
-        });
-        let _ = time::timeout(CATCHING_UP, asks).await;
-        caught.finish()
-    }
-
-    /// Why a removal waits (`engine::removes`), or `None` where it needn't: it cuts every edit resting on what it
-    /// removes that its device doesn't hold, for everyone (T16), so the device first catches up with its peers
-    /// (`catch_up`) and then holds what each it is connected to told it holds (`live_peers`), reaching at least one: a
-    /// peer it caught up with whole that told nothing yet, as its announcement comes on its own, it waits for a moment
-    /// (`HEARD`), and else takes the catch-up as its word. A device that knows no peer, the only one that holds its
-    /// vaults, waits for nothing.
-    pub async fn removal_waits(&self) -> Option<String> {
-        let Ok(_activity) = self.shared.admit() else { return Some("This device is closed; reopen it before making a removal".to_string()); };
-        let known = self.read(|lab, me| !lab.peers(me).is_empty()).await;
-        let caught = self.catching_up().await;
-        if !caught.admitted {
-            return Some("Sync first: this device's sync queue is busy and could not ask every required peer before the removal check. Let it sync, then try again".to_string());
-        }
-        let reached = caught.reached;
-        let until = Instant::now() + HEARD;
-        let live = loop {
-            let live = self.live_peers().await;
-            if !reached || live.values().any(Option::is_some) || Instant::now() >= until {
-                break live;
-            }
-            time::sleep(Duration::from_millis(100)).await;
-        };
-        let told: Vec<usize> = live.values().filter_map(|&lacks| lacks).collect();
-        let lacking: usize = told.iter().sum();
-        if lacking > 0 {
-            let logs = if lacking == 1 { "1 log".to_string() } else { format!("{lacking} logs") };
-            return Some(format!(
-                "Sync first: this device hasn't seen the edits in {logs} that its peers hold, and a removal drops \
-                 every edit resting on what it removes that this device doesn't hold, for everyone. Let it sync, then \
-                 try again"
-            ));
-        }
-        if told.is_empty() && !reached && (known || !live.is_empty()) {
-            return Some(
-                "Sync first: this device reaches none of the devices that hold its vaults right now, so it can't tell \
-                 what it hasn't seen, and a removal drops every edit resting on what it removes that this device \
-                 doesn't hold, for everyone. Connect it, let it sync, then try again"
-                    .to_string(),
-            );
-        }
-        None
-    }
-
     async fn entry_views_encoded(&self, op: Value) -> Result<Value> {
         let operation = self.shared.admit()?;
         let encoding = self.shared.entry_encoding.clone().lock_owned().await;
@@ -598,15 +515,10 @@ impl Node {
         Ok(work())
     }
 
-    /// A change: made, or drafted for the passkey to approve and, with a ceremony at hand, signed in it and made. A
-    /// removal (`engine::removes`), whichever way it comes (the page, an agent, the command line), is refused while
-    /// its device is behind its peers (`removal_waits`).
+    /// A change: made, or drafted for the passkey to approve and, with a ceremony at hand, signed in it and made. Any
+    /// change, a removal too, is judged against what its device holds, at its own heads, and never waits on a peer:
+    /// local first (Samuel 2026-10-29). Its edit's deps carry the heads it saw.
     async fn change<A: Authenticator>(&self, op: Value, authenticator: Option<&A>) -> Result<Value> {
-        if engine::removes(&op)
-            && let Some(why) = self.removal_waits().await
-        {
-            return Ok(Refused::Behind(why).to_json());
-        }
         let prepare = move |lab: &mut Lab, me| {
             let prepared = engine::prepare(lab, me, &op);
             let keys = match &prepared {

@@ -43,15 +43,10 @@ export function freshnessOf(answer) {
 	return { state: 'current', asOf: 0, logs: 0, waits: 0, unheard: 0 };
 }
 
-/** What an action (approve, accept, decline, delete) does with a read's freshness (`Freshness.act`): `go` on current,
- * `wait` while behind, and offline `confirm`: it says plainly it acts on data as of `asOf`.
- * @param {ReturnType<typeof freshnessOf>} f @returns {'go'|'wait'|'confirm'} */
-export const actOf = (f) => (f.state === 'current' ? 'go' : f.state === 'behind' ? 'wait' : 'confirm');
-
-/** Whether an action's sheet opens (`Freshness.opens`): by itself (`asked` false) only on current data; when the person
- * asked, offline too, said to be as of then; never while behind.
+/** Whether an action's sheet opens (`Freshness.opens`): whenever the person asks, and by itself (`asked` false) only on
+ * current data. An action itself never waits on freshness: it goes on what the device holds (local first).
  * @param {ReturnType<typeof freshnessOf>} f @param {boolean} [asked] */
-export const opensOn = (f, asked = false) => { const a = actOf(f); return a === 'go' || (a === 'confirm' && asked); };
+export const opensOn = (f, asked = false) => asked || f.state === 'current';
 
 /** Whether a read's rows may show as they are: current, or offline and said to be as of then. Behind, they are an
  * older state still catching up: a page shows the catching up, never them as final.

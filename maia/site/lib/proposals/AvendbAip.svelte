@@ -17,8 +17,8 @@
 	import Objective from './Objective.svelte';
 	import { session } from '$avendb/session.svelte.js';
 	import { aips } from '$avendb/aips.svelte.js';
-	import ActGuard from '$avendb/ActGuard.svelte';
-	import { mayAct, worst } from '$avendb/fresh.js';
+	import AsOf from '$avendb/AsOf.svelte';
+	import { worst } from '$avendb/fresh.js';
 	import { freshnessOf } from '../../../content/game/code/sources/coverage.js';
 	import { acting, authorsLine, nameOf } from '$avendb/vaults.js';
 	import { when } from './aips.js';
@@ -58,14 +58,12 @@
 	const shown = $derived(lines ?? aip.lines);
 
 	let text = $state('');
-	// every action here stands behind one guard ($avendb/ActGuard.svelte): it runs on current data, waits while the
-	// device is behind on this AIP, and offline runs only once the person said they act on data as of then
+	// every action here goes at once on what the device holds (local first); the line beside them says as of when
+	// ($avendb/AsOf.svelte)
 	const fresh = $derived(worst(aips.fresh, linesFresh));
-	let confirmed = $state(false);
-	const blocked = $derived(!!session.doing || !mayAct(fresh, confirmed));
+	const blocked = $derived(!!session.doing);
 	// what it does, as the page's toast says it, names the AIP (AIP-n), so a toast that stays shows which one waits
 	async function act(what, op) {
-		if (!mayAct(fresh, confirmed)) return;
 		const done = await session.run(`${what} ${aip.label ?? 'the idea'}`, { ...op, entry: aip.entry, as });
 		if (done) (text = ''), onchanged();
 	}
@@ -173,7 +171,7 @@
 	{/if}
 
 	{#if !aip.bare && aip.stage !== 'archived'}
-		<ActGuard {fresh} bind:confirmed />
+		<AsOf {fresh} />
 		<div class="actions">
 			{#if aip.stage === 'proposed' && ownVault}
 				<input placeholder="A note (needed for a revision)" bind:value={text} />
