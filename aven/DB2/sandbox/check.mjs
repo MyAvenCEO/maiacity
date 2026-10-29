@@ -7,20 +7,22 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 const expected = {
-	// the vaults a host may act as: the box's own view any, a Peer-Light its vault and what it governs, a visitor none
+	// the people a host may act as: the box's own view anyone, a Peer-Light the person it serves, a visitor no one.
+	// Nobody acts as Aven: a network's vault has no key of its own
 	accounts: {
-		localhost: ['alice', 'bob', 'aven'],
-		'alice.localhost': ['alice', 'aven'],
+		localhost: ['alice', 'bob'],
+		'alice.localhost': ['alice'],
 		'bob.localhost': ['bob'],
 		'os.localhost': [],
 	},
-	// the peers each vault's Control Room shows: those it governs, nothing else
-	sees: { alice: ['aven-peer', 'alice-peer', 'alice-peer-light'], bob: ['bob-peer-light'], aven: ['aven-peer'] },
-	// each vault's tree in the Vault app, depth first
+	// the peers each person's Control Room shows: those their vault governs, nothing else
+	sees: { alice: ['aven-peer', 'alice-peer', 'alice-peer-light'], bob: ['bob-peer-light'] },
+	// the Vault app's tree at #/<person>/vault/<vault>, depth first: a vault one governs opens, any other doesn't
 	tree: {
 		alice: ['alice', 'aven', 'aven-peer', 'alice-peer', 'alice-peer-light'],
+		'alice/aven': ['aven', 'aven-peer'],
 		bob: ['bob', 'bob-peer-light'],
-		aven: ['aven', 'aven-peer'],
+		'bob/aven': ['bob', 'bob-peer-light'],
 	},
 	// the vault each Peer-Light serves
 	serves: { 'alice-peer-light': "Alice's vault", 'bob-peer-light': "Bob's vault" },
@@ -42,7 +44,7 @@ const accounts = {};
 for (const host of Object.keys(expected.accounts)) {
 	await page.goto(`http://${host}:5173/`);
 	await page.getByText('Control Room').first().waitFor({ timeout: 20_000 });
-	accounts[host] = await ids('[data-account]', 'account');
+	accounts[host] = await ids('#accounts [data-account]', 'account');
 	differ(`${host} may act as`, accounts[host], expected.accounts[host]);
 	await page.screenshot({ path: `${out}/dashboard-${host.split('.')[0]}.png` });
 }
@@ -76,11 +78,20 @@ const views = {};
 for (const vault of Object.keys(expected.sees)) {
 	views[vault] = await controlRoom(vault, true);
 	differ(`${vault}'s Control Room`, views[vault].peers, expected.sees[vault]);
-	await page.goto(`http://localhost:5173/#/${vault}/vault`);
-	await page.locator(`[data-view="vault"][data-account="${vault}"]`).waitFor();
-	differ(`${vault}'s Vault`, await ids('[data-vault]', 'vault'), expected.tree[vault]);
-	if (vault === 'alice') await page.screenshot({ path: `${out}/vault-alice.png`, fullPage: true });
 }
+for (const [path, tree] of Object.entries(expected.tree)) {
+	const [vault, target] = path.split('/');
+	await page.goto(`http://localhost:5173/#/${vault}/vault${target ? `/${target}` : ''}`);
+	await page.locator(`[data-view="vault"][data-account="${vault}"][data-shown="${tree[0]}"]`).waitFor();
+	differ(`${path}'s Vault`, await ids('[data-vault]', 'vault'), tree);
+	if (vault === 'alice') await page.screenshot({ path: `${out}/vault-${path.replace('/', '-')}.png`, fullPage: true });
+}
+// An address naming Aven as the one acting lands on the box's first person's dashboard
+await page.goto('http://localhost:5173/#/aven/control-room');
+await page
+	.locator('[data-view="dashboard"][data-account="alice"]')
+	.waitFor({ timeout: 5_000 })
+	.catch(() => problems.push('#/aven/control-room opened something as Aven'));
 
 const lights = Object.assign({}, ...Object.values(views).map((view) => view.lights));
 differ('Peer-Lights framed', Object.keys(lights).sort(), Object.keys(expected.serves).sort());

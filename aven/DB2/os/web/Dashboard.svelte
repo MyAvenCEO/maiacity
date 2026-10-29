@@ -35,7 +35,7 @@
 	const count = (n, one) => `${n} ${one}${n === 1 ? '' : 's'}`;
 </script>
 
-<main>
+<main data-view="dashboard" data-account={account}>
 	{#if account}
 		<section class="account">
 			<Avatar {cast} id={account} size={40} />

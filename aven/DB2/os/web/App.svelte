@@ -1,8 +1,8 @@
 <script>
-	// avenOS, the shell: a dashboard of apps, and the account switcher, which picks the vault you act as. An address
-	// names both: #/<vault>/<app>. The host decides which vaults you may act as: a Peer-Light's origin from the cast is
-	// that device, localhost is the box's own view, which holds every test key, and any other host is a visitor without
-	// a vault.
+	// avenOS, the shell: a dashboard of apps, and the account switcher, which picks the person you act as. An address
+	// names both, and what the app shows: #/<vault>/<app>/<target>. An address naming anyone you may not act as, Aven
+	// included, lands on your own dashboard. The host decides whom you may act as: a Peer-Light's origin from the cast is
+	// that device, localhost is the box's own view, which holds every test key, and any other host is a visitor.
 	import Avatar from './Avatar.svelte';
 	import Dashboard from './Dashboard.svelte';
 	import ControlRoom from './apps/ControlRoom.svelte';
@@ -27,7 +27,7 @@
 
 	const named = $derived(mine.includes(route[0]));
 	const account = $derived(named ? route[0] : mine[0]);
-	const open = $derived(account && apps.find((app) => app.id === route[named ? 1 : 0]));
+	const open = $derived(named && apps.find((app) => app.id === route[1]));
 	const where = $derived(device ? `on ${cast.peers[device].name}` : account ? 'avenSANDBOX' : '');
 
 	let menu = $state();
@@ -73,7 +73,7 @@
 
 {#if open}
 	{@const App = open.component}
-	<App {cast} {account} {device} />
+	<App {cast} {account} {device} target={route[2]} />
 {:else}
 	<Dashboard {cast} {device} {account} {apps} />
 {/if}

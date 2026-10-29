@@ -63,7 +63,7 @@ avenSANDBOX   the box all of it is built and tested in
 
 | Name | What |
 |---|---|
-| avenOS | the client app over everything below it: a dashboard of apps, the first two Vault and Control Room, and an account switcher for the vaults you may act as. Off the box, its browser client shows "avenOS · coming soon" for now; a Mac app with Tauri follows |
+| avenOS | the client app over everything below it: a dashboard of apps, the first two Vault and Control Room, and an account switcher for the people you may act as. Off the box, its browser client shows "avenOS · coming soon" for now; a Mac app with Tauri follows |
 | avenPEER | the peer: the native Peer and the Peer-Light, one core in two builds |
 | avenDB | the database: this rebuild |
 | avenID | identity, a package of its own: keys and their suites, vaults that own vaults, owners acting k of n, recovery and rotation. avenDB asks it who may act for a vault, avenPEER whom to let in, and avenOS shows it |
@@ -128,7 +128,9 @@ organization `aven` reserves the scope before anything is published.
   person's vault is owned by its owner key. A device's vault is owned by the vault it serves; the device's key signs for
   that vault and governs nothing, so a lost device is revoked by its vault, and the vault loses nothing. A network's
   vault is owned by the vault that runs it: Aven by Alice's vault, which makes **Alice's vault the admin, not her key.**
-  Authority runs down the tree, never up: a vault governs everything below it, and an app shows a vault only that.
+  **Nobody acts as a network's vault:** it has no key of its own and is never an account. Its admin manages it as
+  herself; every act on Aven is signed by one of Alice's devices for Alice's vault, and its authority comes from the
+  tree. Authority runs down the tree, never up: a vault governs everything below it, and an app shows a vault only that.
   avenID also holds what decides who may act: owners acting k of n (multisig), recovery (guardian vaults that can
   replace a vault's owners, after a delay in which the owners can cancel), key rotation, and the cryptographic suites
   below. avenDB checks every write against it, avenPEER's door every peer.
