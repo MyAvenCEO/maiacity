@@ -1178,15 +1178,22 @@ impl Node {
         let Action::Share(Sharing::Device { vault, .. }) = join.edit.edit.action else {
             bail!("a join that adds no device")
         };
-        let sent = session::exchange(&peer.conn, session::JOIN, &join.to_wire(), 0).await;
-        sent.context("the peer refuses the join")?;
         self.shared.changed.notify_one();
-        // what the peer keeps for the vault comes in the background, a `pull` job: nobody waits on it
-        let (shared, endpoint) = (self.shared.clone(), peer.endpoint);
+        // the join is the vault's own once this device's Lab took it, so the start goes on: a local step never waits on
+        // a peer's turn (the peer took 15.6 s of a fresh sign-in, 2026-10-29). The peer takes it in the background, a
+        // `join` job its person sees fail where the peer refuses it, and then hands over what it keeps for the vault,
+        // a `pull` job, which waits for the join, as a peer serves the devices it knows
+        let (shared, Peer { conn, endpoint, .. }) = (self.shared.clone(), peer);
         let activity = shared.admit()?;
         task::spawn(async move {
             let _activity = activity;
-            shared.ask(endpoint).await.ok()
+            let job = shared.jobs.begin("join", vault.to_hex(), String::new(), 1, "edits");
+            let sent = session::exchange(&conn, session::JOIN, &join.to_wire(), 0).await.context("the peer refuses the join");
+            let joined = sent.is_ok();
+            job.ended(&sent);
+            if joined {
+                shared.ask(endpoint).await.ok();
+            }
         });
         Ok(Some((passkey, vault)))
     }

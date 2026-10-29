@@ -14,7 +14,9 @@
 //!   fetched nothing, as its pieces were all there, is forgotten, and so is one that failed before it fetched any:
 //!   the keeper tries it again;
 //! - `pull`: the edits a peer holds for the node, asked for page by page and taken, in edits; one that took none is
-//!   forgotten.
+//!   forgotten;
+//! - `join`: the edit that adds a new device to its vault, taken by the peer it signed in through, in edits (one): it
+//!   fails where the peer refuses it, and the pull of the vault follows it.
 
 use std::collections::{BTreeMap, VecDeque};
 
