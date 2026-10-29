@@ -3840,6 +3840,7 @@ impl Lab {
                         let run = match rewind(&mut store.replay, store.log.edits(), store.replayed) {
                             Ok(run) => {
                                 store.perf.count(why_counted(Why::Rung), 1);
+                                store.perf.add("replay: begun from a mark", begun);
                                 Replaying::From(run)
                             }
                             Err(_) => {
@@ -3847,7 +3848,10 @@ impl Lab {
                                     store.perf.count(back_counted(back), 1);
                                 }
                                 store.perf.count(why_counted(Why::Whole(why)), 1);
-                                Replaying::Whole(ReplayRun::start(store.log.edits(), store.log.ids()))
+                                let whole = Perf::start();
+                                let run = Replaying::Whole(ReplayRun::start(store.log.edits(), store.log.ids()));
+                                store.perf.add("replay: begun whole", whole);
+                                run
                             }
                         };
                         store.perf.add("replay: begun", begun);

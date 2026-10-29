@@ -21,6 +21,12 @@ use crate::Abort;
 /// The file in the server's folder each run says how it is doing in.
 const FILE: &str = "health.json";
 
+/// The git tree this server was built from (`git rev-parse HEAD^{tree}`), as its image's build was told it
+/// (`Dockerfile.server`'s `TREE`): what a release checks it runs, where the relay's own `/healthz` says "unknown"
+/// (iroh-relay names no commit of ours). A tree, not a commit: CI builds the image on a pull request's merge ref and
+/// the release promotes it to main's merge commit, another commit of the same tree.
+const TREE: Option<&str> = option_env!("AVENDB_TREE");
+
 /// How often a run says it is alive.
 const BEAT: Duration = Duration::from_secs(5);
 
@@ -121,7 +127,8 @@ impl Health {
         self.write(json!({ "how": how, "at": now(), "why": why }));
     }
 
-    /// How it is doing, as `GET /feed/health` says it: this run's start and how long it has run, the memory it holds,
+    /// How it is doing, as `GET /feed/health` says it: the tree it was built from (`TREE`, null for a build that
+    /// wasn't told one), this run's start and how long it has run, the memory it holds,
     /// its last panic, how many times it started in the last hour and the last few starts, and how the run before
     /// ended; what its shelf takes, and how the last check of its snapshots went; how it opened its shelf, and what it
     /// read from its buckets since it started, with the cached parts it found spoiled (`bucket::reads`).
@@ -130,6 +137,7 @@ impl Health {
         let hour = self.starts.iter().filter(|&&s| now.saturating_sub(s) < 3600).count();
         let recent: Vec<u64> = self.starts.iter().rev().take(10).copied().collect();
         json!({
+            "tree": TREE,
             "started": self.started,
             "up": now.saturating_sub(self.started),
             "memory": memory(),

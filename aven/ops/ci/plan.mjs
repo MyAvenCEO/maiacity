@@ -113,8 +113,7 @@ export function outputs(p) {
  out.key_js ??= '';
  out.js = JSON.stringify(p.js);
  out.rust = JSON.stringify(p.rust);
- out.images = JSON.stringify(p.images);
- out.run_images = String(p.images.length > 0);
+ for (const image of ['avendb', 'api']) out[`run_image_${image}`] = String(p.images.includes(image));
  return out;
 }
 

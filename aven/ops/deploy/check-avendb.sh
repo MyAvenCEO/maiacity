@@ -18,6 +18,17 @@ if FEED=$(pq -fsS --max-time 10 "https://$AVENDB_HOST/feed/posts"); then
 else
   echo "::warning::https://$AVENDB_HOST/feed/posts does not answer: the server before its feed, or Caddy's route?"
 fi
+# the git tree it was built from, by its own health (its relay's /healthz above names none of ours): a release says
+# which it put up, by tree, as CI built its image on another commit of the same tree
+if HEALTH=$(pq -fsS --max-time 10 "https://$AVENDB_HOST/feed/health"); then
+  TREE=$(printf '%s' "$HEALTH" | jq -r '.tree // empty')
+  echo "${TREE:-no tree} ← the tree https://$AVENDB_HOST/feed/health names"
+  if [ -n "${EXPECT_TREE:-}" ] && [ "$TREE" != "$EXPECT_TREE" ]; then
+    echo "::error::https://$AVENDB_HOST runs ${TREE:-a build that names no tree}, not tree $EXPECT_TREE"; exit 1
+  fi
+else
+  echo "::warning::https://$AVENDB_HOST/feed/health does not answer"
+fi
 PASS=$(head -c 24000 /dev/zero | tr '\0' A)
 CODE=$(pq -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 5 "https://$AVENDB_HOST/relay?token=$PASS" \
   -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \

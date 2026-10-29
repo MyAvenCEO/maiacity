@@ -334,6 +334,13 @@ async function run() {
 			if (!opened) throw new Error(`didn't open: ${(await words(page)).slice(0, 300)}`);
 		} else log.steps.unlock = 0;
 
+		// first, while the page surely still answers: this device's own id, for the next run's --remove, its name, and the
+		// earlier runs' devices this one removes (fresh10 2026-10-29 stalled and was closed before a cleanup at its end)
+		await own(page);
+		log.named = await nameDevice(page, deviceName);
+		log.device = await page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
+		for (const id of removeIds) log.removed.push({ id, ...(await removeDevice(page, id, log.device)) });
+
 		// the reference walks, right away while the device still catches up (each view's actor manifest asks for its own
 		// data first: Samuel 2026-10-29, "do you actually open the routes/actor views?"), then again once caught up
 		log.views.catchingUp = await views(page, 'catching');
@@ -398,11 +405,6 @@ async function run() {
 		// the report the phone would send: the page sends one ~10 s after a view opens
 		await until(async () => log.reports.length > 0 || null, 45);
 
-		// this device's own id, for the next run's --remove, its name, and the earlier runs' devices this one removes
-		await own(page);
-		log.named = await nameDevice(page, deviceName);
-		log.device = await page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
-		for (const id of removeIds) log.removed.push({ id, ...(await removeDevice(page, id, log.device)) });
 	} catch (e) {
 		log.errors.push(`run: ${e instanceof Error ? e.message : e}`);
 		await shot(page, 'failed');
@@ -607,11 +609,16 @@ async function nameDevice(page, name) {
 	return (await until(async () => ((await now()) === name ? name : null), 30)) ?? null;
 }
 
+/** This page's device id, from its lease ("avendb:lease:v1"), or null. */
+const lease = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('avendb:lease:v1') ?? 'null')?.device ?? null).catch(() => null);
+/** A device id as Settings → Devices shows it: its first 8 hex in two fours. */
+const short = (id) => (id ? `${id.slice(0, 4)} ${id.slice(4, 8)}` : null);
+
 /** Removes the device `id` (a full id, or at least its first 8 hex) from Settings → Devices on `page`: only where
  *  exactly one row shows its short id and that row isn't this device (`me`, its short id): { result, why? }. */
 async function removeDevice(page, id, me) {
 	if (!/^[0-9a-f]{8,}$/.test(id)) return { result: 'skipped', why: 'not an id' };
-	const shortId = `${id.slice(0, 4)} ${id.slice(4, 8)}`;
+	const shortId = short(id);
 	if (shortId === me) return { result: 'skipped', why: 'this device' };
 	const rows = await page.evaluate((shortId) => [...document.querySelectorAll('#settings-devices li.device')].filter((li) => li.querySelector('.soft.mono')?.textContent?.trim() === shortId).length, shortId);
 	if (rows !== 1) return { result: 'skipped', why: rows ? `${rows} rows show ${shortId}` : 'not listed' };
@@ -693,6 +700,8 @@ async function roundtrip(name) {
 		const opened = await openOn(fresh.page);
 		if (!opened) throw new Error(`the fresh device didn't open: ${(await words(fresh.page)).slice(0, 300)}`);
 		gate.open = Number(((opened - t0) / 1000).toFixed(2));
+		// its id, as soon as it is one of the vault's, so the home device can remove it however the roundtrip ends
+		gate.freshDevice = await lease(fresh.page);
 		await fresh.page.click('.status .pill').catch(() => {});
 		await shot(fresh.page, 'roundtrip-fresh-open');
 		if (!(await room(fresh.page, name, 60))) throw new Error(`the fresh device didn't get room “${name}” in 60 s`);
@@ -709,10 +718,6 @@ async function roundtrip(name) {
 			gate.from.push(await message(fresh.page, home.page, `${tag} ← fresh ${i}`, `from-fresh-${i}`));
 		}
 		gate.freshPillAfter = await pill(fresh.page);
-		// the fresh device stays one of the vault's: name it so it's known in Devices, and record its id for the next --remove
-		await own(fresh.page);
-		gate.freshDevice = await fresh.page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
-		gate.freshNamed = await nameDevice(fresh.page, `test-device roundtrip ${stamp.slice(5, 16)}`);
 	} catch (e) {
 		log.errors.push(`roundtrip: ${e instanceof Error ? e.message : e}`);
 		// what each device's pill said as it failed, with its report beside it (a "Synced" with no room is read against its counts)
@@ -721,6 +726,15 @@ async function roundtrip(name) {
 		await shot((fresh ?? home).page, 'roundtrip-failed');
 	} finally {
 		await fresh?.context.close();
+		// the fresh device was this roundtrip's alone: the home device removes it (a device can't remove itself), so no
+		// test device outlives the run that made it
+		if (gate.freshDevice)
+			try {
+				await own(home.page);
+				gate.freshRemoved = await removeDevice(home.page, gate.freshDevice, short(await lease(home.page)));
+			} catch (e) {
+				gate.freshRemoved = { result: 'not removed', why: e instanceof Error ? e.message : String(e) };
+			}
 		await home.context.close();
 	}
 	const ways = [...(gate.to ?? [gate.toFresh]), ...(gate.from ?? [gate.fromFresh])];
@@ -740,7 +754,7 @@ async function roundtrip(name) {
 		`${stamp} ${engine} roundtrip #${name}: fresh open ${gate.open ?? '-'}s room ${gate.room ?? '-'}s ` +
 		`first →fresh ${gate.toFresh?.seconds ?? 'none'}s ←fresh ${gate.fromFresh?.seconds ?? 'none'}s ` +
 		(messages > 1 ? `| ${messages} each way →fresh p50 ${gate.stats.to.p50}s p95 ${gate.stats.to.p95}s ←fresh p50 ${gate.stats.from.p50}s p95 ${gate.stats.from.p95}s ` : '') +
-		`(fresh pill at send: ${gate.toFresh?.receiverPill || '?'}) errors ${log.errors.length} ` +
+		`(fresh pill at send: ${gate.toFresh?.receiverPill || '?'}) fresh device ${short(gate.freshDevice) ?? '-'} ${gate.freshRemoved?.result ?? ''} errors ${log.errors.length} ` +
 		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')} ` +
 		`(target message<${TARGETS.message}s ${log.target[`message<${TARGETS.message}s`] ? 'met' : 'not met'})`;
 	writeFileSync(join(out, 'line.txt'), `${line}\n`);

@@ -6,6 +6,7 @@
 	import { peerStatus, liveSync } from '$avendb/sync-status.js';
 	import { watchRecipes } from '$content/assets/vault.js';
 	import { viewStatus } from '$avendb/view-status.js';
+	import { freshLine, viewPill } from '$avendb/fresh.js';
 	import { watchActiveReads } from '$avendb/active-reads.js';
 	import { screenSlot } from './screen-slots.js';
 
@@ -27,7 +28,10 @@
 
 	/** what the page waits for now: avenDB syncing, the server answering again, or its files */
 	const peers = $derived(peerStatus(sync));
-	const now = $derived(peers.active ? 'sync' : files.waiting > 0 ? 'wait' : files.reading > 0 ? 'files' : session.phase === 'open' ? 'sync' : '');
+	/** the view on screen, as it says how fresh it is (`session.viewFresh`): this pill is the one place the page says it */
+	const viewFresh = $derived(session.viewFresh);
+	const viewShort = $derived(viewPill(viewFresh));
+	const now = $derived(peers.active || viewShort ? 'sync' : files.waiting > 0 ? 'wait' : files.reading > 0 ? 'files' : session.phase === 'open' ? 'sync' : '');
 	/** what the pill shows: `now`, once it held for `SHOW` (or nothing once nothing held for `HIDE`) */
 	let shown = $state('');
 	$effect(() => {
@@ -58,12 +62,13 @@
 	/**
 	 * Collapsed, one short line: the one thing that matters now, a number only where it says something (Samuel
 	 * 2026-10-26: "way more compact … reduced to the actual sync / offline / online numbers"). In order: not known yet,
-	 * offline, every peer reconnecting (counted by what it told last, so the numbers hold), a sync running (the logs in of how many, the edits it took, or what it waits on: `liveSync`), files coming, the view unavailable, synced.
+	 * offline, every peer reconnecting (counted by what it told last, so the numbers hold), what the view on screen still lacks (`viewPill`, the one place a page says it), a sync running (the logs in of how many, the edits it took, or what it waits on: `liveSync`), files coming, the view unavailable, synced.
 	 */
 	const line = $derived(
 		!sync.known ? 'Connecting'
 		: !sync.peers ? 'Offline'
 		: sync.reconnecting >= sync.peers ? 'Reconnecting'
+		: viewShort ? viewShort
 		: live ? live.line
 		: files.waiting + files.reading > 0 ? `${n(files.waiting + files.reading)} files`
 		: view.state === 'unavailable' ? 'Not on this device'
@@ -77,7 +82,9 @@
 		...(sync.pulling > 0 && !live?.rows.some(([k]) => k === 'Transfers') ? [['Transfers', n(sync.pulling)]] : []),
 		...(live?.rows ?? []),
 		...(files.waiting + files.reading > 0 ? [['Files', `${n(files.reading)} loading · ${n(files.waiting)} waiting`]] : []),
-		['View', view.state === 'local' ? 'on this device' : view.state === 'unavailable' ? 'not on this device' : view.state === 'unknown' ? 'checking' : 'loading']
+		['This view', viewFresh && freshLine(viewFresh) ? freshLine(viewFresh)
+			: view.state === 'local' ? 'on this device' : view.state === 'unavailable' ? 'not on this device' : view.state === 'unknown' ? 'checking' : 'loading'],
+		...(viewShort && live ? [['All logs', live.line]] : [])
 	]));
 	const busy = $derived(!sync.known || sync.pulling > 0 || view.state === 'loading' || view.state === 'waiting');
 	/** the ring: the share of logs in while syncing, full when synced, empty offline, a turning arc while it can't say */
