@@ -55,5 +55,15 @@ test('the Shell has no loading screen of its own: it paints the view under one f
  const shell = await Bun.file(new URL('./Shell.svelte', import.meta.url)).text();
  expect(shell).not.toContain('Loading this view’s local entries');
  expect(shell).toContain('shellView(world, tab, session.worldFresh)');
- expect(shell).toContain("<div use:screenSlot={'center'}><Fresh fresh={view.fresh} /></div>");
+ expect(shell).toContain('session.viewFresh = view.fresh');
+ expect(shell).not.toContain('<Fresh');
+});
+
+test('the one sync pill says first what the view on screen still lacks, in a short line', async () => {
+ const { viewPill } = await import('./fresh.js');
+ expect(viewPill({ state: 'behind', logs: 1058, waits: 0, asOf: 0, unheard: 0 })).toBe('This view · 1,058 logs left');
+ expect(viewPill({ state: 'behind', logs: 0, waits: 0, asOf: 0, unheard: 0, reading: true })).toBe('Reading this view on this device');
+ expect(viewPill({ state: 'current', logs: 0, waits: 0, asOf: 0, unheard: 0 })).toBe('');
+ expect(viewPill({ state: 'offline', logs: 0, waits: 0, asOf: 5, unheard: 0 })).toBe('');
+ expect(viewPill(null)).toBe('');
 });
