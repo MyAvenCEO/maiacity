@@ -165,6 +165,7 @@ designed now and tested from milestone 2 on.
 | UDP blocked | the router drops UDP | relay only, over HTTPS |
 | roaming | the Peer moves to another network mid-connection | migrates its path |
 | bad links | `netem` delay, loss and jitter on a link | keeps working, more slowly |
+| browser direct (later) | each Peer-Light in its own Chromium container, behind its own router | a direct WebRTC path between Peer-Lights, plugged in under iroh; the relay as fallback |
 
 iroh in the box runs fully private: our own relay, addresses handed out by the box, no n0 services and no public DNS.
 

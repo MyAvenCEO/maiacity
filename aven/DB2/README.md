@@ -62,7 +62,8 @@ Each rule is held by a test or a check once there is code to hold.
 - **Two kinds of peer, one core.** A Peer is the native Rust binary: the Aven Peer (the server) is a Peer with its relay
   on, and Alice Peer, the future Mac app's core, is one with it off. A Peer-Light is the same core compiled to wasm, in a
   browser. They differ only at the edge: storage, network, relay or not. No Mac app yet.
-- **iroh everywhere.** Browsers can't send UDP, so Peer-Lights reach every peer through the Aven Peer's relay.
+- **iroh everywhere.** Browsers can't send UDP, so Peer-Lights reach every peer through the Aven Peer's relay. A
+  direct path between browsers (WebRTC, plugged in under iroh) can come later as a shortcut; nothing may depend on it.
 - **Pluggable storage.** The core defines one small, object-shaped contract, `Store`. Behind it: object storage for the
   Aven Peer, a folder for a Peer, OPFS for a Peer-Light, memory for tests. Apache OpenDAL provides the first backends;
   our own OPFS backend comes where speed needs it ([`SANDBOX.md`](SANDBOX.md#storage-one-contract-pluggable-backends)).
