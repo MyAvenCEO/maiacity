@@ -334,6 +334,13 @@ async function run() {
 			if (!opened) throw new Error(`didn't open: ${(await words(page)).slice(0, 300)}`);
 		} else log.steps.unlock = 0;
 
+		// first, while the page surely still answers: this device's own id, for the next run's --remove, its name, and the
+		// earlier runs' devices this one removes (fresh10 2026-10-29 stalled and was closed before a cleanup at its end)
+		await own(page);
+		log.named = await nameDevice(page, deviceName);
+		log.device = await page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
+		for (const id of removeIds) log.removed.push({ id, ...(await removeDevice(page, id, log.device)) });
+
 		// the reference walks, right away while the device still catches up (each view's actor manifest asks for its own
 		// data first: Samuel 2026-10-29, "do you actually open the routes/actor views?"), then again once caught up
 		log.views.catchingUp = await views(page, 'catching');
@@ -398,11 +405,6 @@ async function run() {
 		// the report the phone would send: the page sends one ~10 s after a view opens
 		await until(async () => log.reports.length > 0 || null, 45);
 
-		// this device's own id, for the next run's --remove, its name, and the earlier runs' devices this one removes
-		await own(page);
-		log.named = await nameDevice(page, deviceName);
-		log.device = await page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
-		for (const id of removeIds) log.removed.push({ id, ...(await removeDevice(page, id, log.device)) });
 	} catch (e) {
 		log.errors.push(`run: ${e instanceof Error ? e.message : e}`);
 		await shot(page, 'failed');
