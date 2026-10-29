@@ -215,8 +215,13 @@ The image never holds our code. It holds the tools; our crates and pages come fr
 
 So a Rust edit costs one incremental build in `builder` and a restart of the peers that run it, about a second; a page
 edit is a hot reload; and nothing is ever re-imaged for our own changes. The Peers run the binary straight from the
-build folder, and Vite serves the Peer-Light's wasm from it, reloading the pages when it changes. The Aven Peer's
-production image comes later and is a separate, slim one: just the binary.
+build folder, and Vite serves the Peer-Light's wasm from it, reloading the pages when it changes.
+
+The box is never deployed. What ships is avenPEER's own image, `ghcr.io/myavenceo/aven/peer`, built in two stages:
+the binary is compiled in the box's image, then copied onto a minimal base, tens of MB rather than the box's 5 GB.
+Production runs it with its live configuration (the real relay, Hetzner's S3); the box's `aven` and `alice` can run
+the same image with the box's (its relay, `http://s3:8014`), so what is tested is byte for byte what ships. It comes
+once the Peer runs, built and released by the Goal thread like the box.
 
 ### Where it runs
 
@@ -260,8 +265,8 @@ didn't change gets no new version; a push that changes none releases nothing.
   `26.10.29v2`, `26.10.29v3`; the next day starts again at `26.10.30`.
 - **Each release lists only its own package's changes:** the commits that touched it since its previous version, with
   the compare link. The releases page is the changelog.
-- **avenPEER's builds** (the native Peer and the Peer-Light's wasm) and **avenDB's** join as packages of their own once
-  they exist. On any host but the box's, the released avenOS shows only "avenOS · coming soon".
+- **avenPEER's builds** join as a package of its own once they exist: the native Peer for each platform, the
+  Peer-Light's wasm, and the node's image, `ghcr.io/myavenceo/aven/peer:<version>`. On any host but the box's, the released avenOS shows only "avenOS · coming soon".
 
 [`avensandbox-image.yml`](../../.github/workflows/avensandbox-image.yml) builds the box's image whenever its
 Dockerfile changes, on any branch, and tags main's as `latest`.
