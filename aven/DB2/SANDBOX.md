@@ -62,10 +62,11 @@ Bob's vault             person    owned by Bob's owner key
 - **A device's vault** is owned by the vault it serves. The device's key signs for that vault and governs nothing: a
   lost device is revoked by its vault, and the vault loses nothing.
 - **Aven, the network's vault,** is owned by Alice's vault. **So Alice's vault is the admin, not Alice's key:** her key
-  governs her vault, and through it Aven and the Aven Peer. From milestone 2 on, invites into the network are Aven's,
+  governs her vault, and through it Aven and the Aven Peer. **Nobody ever acts as Aven:** it has no key of its own, and
+  Alice manages it as herself. From milestone 2 on, invites into the network are Aven's,
   given with the authority of Alice's vault; Bob is a member because Alice invited him.
 - **A vault governs everything below it, and sees only that.** avenOS shows a vault what it governs: Alice's Control
-  Room has her two devices and the Aven Peer, Bob's his Peer-Light, Aven's the Aven Peer.
+  Room has her two devices and the Aven Peer, Bob's his Peer-Light.
 
 Every key is a test key: its Ed25519 seed is `sha256("avenSANDBOX test signer: <id>")`, public on purpose and valid
 only inside the box. Invites, caps, Loro and sync logic come in later milestones.
@@ -106,22 +107,24 @@ avenOS                                    on Alice Peer-Light  ( A  Alice's vaul
                                                      ┌──────────────────────────────────┐
  A  Alice's vault                                    │ Alice Peer-Light can act as      │
     person · governs 4 vaults · 3 peers              │  A  Alice's vault              ✓ │
-                                                     │  A  Aven  network · owned by     │
-┌────────────────┐ ┌────────────────┐                │           Alice's vault          │
-│ Vault          │ │ Control Room   │                └──────────────────────────────────┘
+                                                     └──────────────────────────────────┘
+┌────────────────┐ ┌────────────────┐
+│ Vault          │ │ Control Room   │
 └────────────────┘ └────────────────┘
 
 This device   Alice Peer-Light · serves Alice's vault · key 9f78… · OPFS · mark 3fa1c2d0
 ● live · 4 peers
 ```
 
-- **The dashboard** is a grid of apps, two for now: **Vault**, the vault you act as, who owns it and everything below
-  it as a tree; and the **Control Room**, below.
-- **The account switcher**, the pill at the top right, picks the vault you act as. A Peer-Light acts as the vault it
-  serves and what that vault governs: Alice Peer-Light as Alice's vault or Aven, Bob's Peer-Light as Bob's vault only.
-  `localhost`, the box's own view, holds every test key, so it can act as any vault and show what each one sees. Any
-  other host is a visitor's, without a vault: there avenOS is "coming soon", its apps closed.
-- **An address names the vault and the app:** `#/alice/control-room`, `#/bob/vault`.
+- **The dashboard** is a grid of apps, two for now: **Vault**, your vault, who owns it and everything below it as a
+  tree, and the **Control Room**, below. Any vault in the tree opens in Vault: Alice manages Aven at
+  `#/alice/vault/aven`, as herself.
+- **The account switcher**, the pill at the top right, picks the person you act as, never a network or a device. A
+  Peer-Light acts as the person it serves: Alice Peer-Light as Alice's vault, Bob's Peer-Light as Bob's. `localhost`,
+  the box's own view, holds every test key, so it can act as Alice or Bob and show what each one sees. Any other host
+  is a visitor's: there avenOS is "coming soon", its apps closed.
+- **An address names the person and the app:** `#/alice/control-room`, `#/bob/vault`. One naming anyone you may not act
+  as, Aven included, lands on your own dashboard.
 
 The page becomes a real Peer-Light:
 
@@ -150,15 +153,15 @@ timeline  20:14:03.120  Alice Peer → Aven Peer  connected, direct (UDP)
 ```
 
 The Control Room shows every peer the vault you act as governs, side by side, and nothing else. Switch to Bob's vault
-and it shows his Peer-Light; to Aven, the Aven Peer. Each Peer-Light runs avenOS in a frame on its own origin; on a
+and it shows his Peer-Light. Each Peer-Light runs avenOS in a frame on its own origin; on a
 Peer-Light itself, its own pane reads "this device".
 
 Every peer writes its events as JSON lines. The box gathers them into one timeline: one stream on screen and one file
 per run. A cloud session can't show a window, so `bun run shot` takes a screenshot of the Control Room to share in the
 session.
 
-`bun run up --check` walks through avenOS on every host: the vaults each may act as, what each vault's Control Room
-and Vault show, the vault each Peer-Light serves and its own OPFS, all held to values written out by hand from the
+`bun run up --check` walks through avenOS on every host: whom each may act as (never Aven), what each person's Control
+Room and Vault show, the vault each Peer-Light serves and its own OPFS, all held to values written out by hand from the
 tree above. It photographs every screen into the run's folder.
 
 ## The box
@@ -372,7 +375,7 @@ account switcher, Vault and Control Room. The UX is settled before the peers run
 | **Box** | the Dockerfile and the image workflow (GitHub's registry, amd64 and arm64, tagged by the hash of the box's inputs); `compose.yml`; `bun run up`, `down`, `logs`, `doctor`, `shot` and `up --check`; the cloud setup script and the session hook; the fence check (no legacy imports, the folder's spelling); the root `Cargo.toml` excluding `aven/DB2`; `check.mjs` and the goal CI running `bun run up --check` | `bun run up` brings up the five containers with placeholder peers, and `doctor` passes in a cloud session |
 | **Store** (Rust) | `db/store`: the contract (blobs and refs), its backends through OpenDAL (s3, fs, opfs, memory) and the conformance suite | the suite passes on memory and fs, on s3 against the box's S3 server, and on opfs in Chromium |
 | **Peers** (Rust and Lean) | `db/core`: the status phases, presence and progress counters, pure. `peer/native`: the binary, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence), `--relay` and `--store`. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only, storing in OPFS. `db/spec/` with its one check. | unit tests; two Peers and a Peer-Light connect over iroh in a test; `lake build` |
-| **avenID** (Lean and Rust) | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for, which vaults a host may act as; theorems that authority never runs up the tree and a device governs nothing. `id/core/`: `aven-id`, pure, its tests against the model on random trees. avenOS then reads the tree from it, through the Peer-Light, instead of from the cast. | `lake build`; `cargo test`; `up --check` unchanged |
+| **avenID** (Lean and Rust) | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and nobody acts as a network. `id/core/`: `aven-id`, pure, its tests against the model on random trees. avenOS then reads the tree from it, through the Peer-Light, instead of from the cast. | `lake build`; `cargo test`; `up --check` unchanged |
 | **Page** (JS) | `os/web/`: avenOS and its apps, first on recorded status, then on the real peers | `svelte-check`; the pages render the recorded status |
 
 The Store thread's first commit is the `Store` trait, so the Peers thread builds on it from the start.
