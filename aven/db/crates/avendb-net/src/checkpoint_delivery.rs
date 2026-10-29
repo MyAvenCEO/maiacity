@@ -8,7 +8,7 @@ use avendb::{
     engine::{self, Approval, Refused, Then},
     id::{EditId, EntryId},
     lab::PreparedEntryBase,
-    policy::LogRevision,
+    log_head::Head,
     sealed::FileRoot,
     wire::{Reply, Wire},
 };
@@ -213,7 +213,7 @@ pub(crate) async fn answer(
         .read(move |lab, me| {
             let _preparing = preparing;
             (
-                lab.log(me).revision(),
+                lab.log(me).head(),
                 lab.entry_base_offer_for_root(me, requester, entry, known, compatible_root),
             )
         })
@@ -256,7 +256,7 @@ pub(crate) async fn answer(
     shared
         .read(move |lab, me| {
             let _permit = permit;
-            finish(lab.log(me).revision(), revision, body)
+            finish(lab.log(me).head(), revision, body)
         })
         .await
 }
@@ -266,7 +266,7 @@ fn take_base(lab: &mut avendb::lab::Lab, me: avendb::id::SignerId, snapshot: Edi
     if journal { lab.stage_owner_entry_base(me, snapshot, entry, sealed) } else { lab.adopt_owner_entry_base(me, snapshot, entry, sealed) }
 }
 
-fn finish(current: LogRevision, prepared: LogRevision, body: Vec<u8>) -> Result<Vec<u8>> {
+fn finish(current: Head, prepared: Head, body: Vec<u8>) -> Result<Vec<u8>> {
     ensure!(
         current == prepared,
         "checkpoint authorization changed during preparation"
@@ -522,17 +522,17 @@ mod tests {
         let revoked = w.lab.backup(w.mac_a).signed().to_vec();
         let mut provider = w.lab.split(w.mac_a, &[], [133; 32]);
         provider.restore_from(w.mac_a, before);
-        let revision = provider.log(w.mac_a).revision();
+        let revision = provider.log(w.mac_a).head();
         assert!(
             finish(
-                provider.log(w.mac_a).revision(),
+                provider.log(w.mac_a).head(),
                 revision.clone(),
                 body.clone()
             )
             .is_ok()
         );
         provider.receive_whose_now(w.mac_a, revoked, vec![], false);
-        assert!(finish(provider.log(w.mac_a).revision(), revision, body).is_err());
+        assert!(finish(provider.log(w.mac_a).head(), revision, body).is_err());
         assert!(
             provider
                 .entry_base_offer(w.mac_a, w.phone_a, entry)
