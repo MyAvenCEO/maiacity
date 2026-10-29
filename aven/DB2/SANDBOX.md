@@ -2,8 +2,8 @@
 
 avenSANDBOX is the network avenDB2 is built and tested in: two Peer-Lights in one Chromium and two Peers, one of them
 the Aven Peer with its relay on, in containers on one machine, started with one command. Milestone 1 builds the sandbox
-itself and one example app, a simple chat between the four peers, as the starter every later primitive grows from.
-**No test scenarios yet.**
+itself and one page, a "coming soon" landing page, as the starter every later primitive grows from. The first example
+app, a chat, comes in milestone 2. **No test scenarios yet.**
 
 ## The loop
 
@@ -69,32 +69,25 @@ its key. Each place gets a backend:
 StorageSDK (storagesdk.dev) was considered: it is a TypeScript library for cloud buckets, and the core is Rust, in the
 browser too, and needs a folder and OPFS as well.
 
-## The example app: chat
+## The landing page
 
 ```
-             avenDB2 · coming soon
+                      avenDB2
+                    coming soon
 
-┌ room: sandbox ───────────── ● live · 4 here┐
-│ Bob's Peer-Light   hi from the browser     │
-│ Alice Peer         hi from the Mac         │
-│ Alice Peer-Light   both my devices see this│
-│ ────────────────────────────────────────── │
-│ > type a message                      Send │
-└────────────────────────────────────────────┘
+        ● live · 4 peers · Aven Peer 3 ms
+        you: Alice Peer-Light · key 7f3a…
 ```
 
-One room, and every peer is in it:
+The page is a real Peer-Light:
 
-- **The Peer-Lights** chat in their pages. **Alice Peer** chats through its pane in the control room, which talks to
-  the Peer's local app API, the way the future Mac app's window will.
-- **Messages and presence travel over iroh-gossip,** the members' network. "4 here" comes from gossip's neighbor
-  events. The Aven Peer is the room's first contact; the Peer-Lights reach it through the relay.
-- **Live only, for now:** a message reaches whoever is online. History comes when rooms become Loro documents
-  (milestone 4); signed and sealed messages come with accounts and caps.
-- **Each peer's key** is made on its first start and kept through the store: a reload keeps it, a wipe makes a new one.
-- **Status names a phase:** starting, connecting, live, offline, stalled.
+- **Its key** is made on first load and kept in OPFS through the store: a reload keeps it, a wipe makes a new one.
+  Alice Peer and the Aven Peer keep theirs the same way, in a folder and in S3.
+- **It connects** to the Aven Peer over iroh, through the relay.
+- **"4 peers"** is presence: the Aven Peer counts who is connected and tells each peer.
+- **Its status names a phase:** starting, connecting, live, offline, stalled.
 - **The network is private by construction:** nothing outside the machine reaches the box. The invite-only door comes
-  in milestone 2.
+  in milestone 2, with the first example app: a live chat over iroh-gossip.
 
 ## The control room
 
@@ -102,14 +95,13 @@ One room, and every peer is in it:
 localhost:5173 · avenSANDBOX                          4 live · up 2 m
 ┌─ Alice Peer-Light ───────────┐ ┌─ Bob's Peer-Light ───────────┐
 │     avenDB2 coming soon      │ │     avenDB2 coming soon      │
-│  ● live · 4 here             │ │  ● live · 4 here             │
-│  Bob: hi from the browser    │ │  Alice: hi from the Mac      │
+│  ● live · 4 peers            │ │  ● live · 4 peers            │
 └──────────────────────────────┘ └──────────────────────────────┘
 ┌─ Alice Peer · Rust ──────────┐ ┌─ Aven Peer · Rust + relay ───┐
-│ ● live · direct to Aven Peer │ │ ● live · 4 in the room       │
-│ > chat as Alice Peer         │ │ stores in S3 · relays 2      │
+│ ● live · direct to Aven Peer │ │ ● live · 4 connected         │
+│ stores in a folder           │ │ stores in S3 · relays 2      │
 └──────────────────────────────┘ └──────────────────────────────┘
-timeline  20:14:03.120  Bob's Peer-Light → room · all 3 others in 21 ms
+timeline  20:14:03.120  Alice Peer → Aven Peer  connected, direct (UDP)
 ```
 
 Every peer writes its events as JSON lines. The box gathers them into one timeline: one stream on screen and one file
@@ -222,7 +214,6 @@ The newest releases on 29 Oct 2026:
 |---|---|
 | Rust | 1.99.1 |
 | iroh, iroh-relay | 1.4.1 (v1 is on 1.3.0) |
-| iroh-gossip | 0.101.0 |
 | loro, loro-crdt | 1.17.1 |
 | OpenDAL | 0.59.5 |
 | wasm-bindgen | 0.2.129 |
@@ -256,15 +247,14 @@ aven/DB2/
   crates/web       the Peer-Light: the core as wasm in a worker
   spec/            Lean
   sandbox/         the runner: up, down, doctor, shot, the timeline
-  app/             the chat page and the control room (Svelte 5 + Vite)
+  app/             the landing page and the control room (Svelte 5 + Vite)
 ```
 
 ## Done when
 
 - `bun run up` brings up all four peers from the one image: on a Mac (OrbStack), in a cloud session and in CI.
-- All four peers are in the chat room. A message from any of them reaches the other three live, and "4 here" is right
-  on every peer. Alice Peer connects to the Aven Peer directly over UDP. The control room shows all four peers and one
-  timeline.
+- Both Peer-Lights show the landing page live, with "4 peers" right on each. Alice Peer connects to the Aven Peer
+  directly over UDP. The control room shows all four peers and one timeline.
 - Each peer keeps its key through the store: the Aven Peer in the box's S3 server, Alice Peer in a folder, the
   Peer-Lights in OPFS. A reload keeps a key; a wipe makes a new one.
 - The store's conformance suite passes on all four backends. Lean and Rust each run their one check in the box,
@@ -275,6 +265,6 @@ aven/DB2/
 
 - **Box:** the image, compose, the setup script and hook, the workflow, `doctor`, `bump`.
 - **Rust:** the core, the store, the Peer and the Peer-Light.
-- **Page:** the chat page and the control room.
+- **Page:** the landing page and the control room.
 
 The avenDB2 Goal thread leads them and collects their branches.

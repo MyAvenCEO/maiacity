@@ -5,7 +5,7 @@ with it. It grows one primitive at a time, each a package of its own and each pr
 and its theorems first, then Rust tests checked against that model, then the code. Everything it needs lives in this
 folder: its crates, its Lean spec, its pages and avenSANDBOX, the local network it is built and tested in.
 
-**Status (29 Oct 2026): planning, no code yet.** Milestone 1 is avenSANDBOX, with a simple chat as its example app:
+**Status (29 Oct 2026): planning, no code yet.** Milestone 1 is avenSANDBOX with a "coming soon" page:
 [`SANDBOX.md`](SANDBOX.md).
 
 ## Why a rebuild
@@ -89,7 +89,7 @@ the `ProtocolHandler` registered for its ALPN. avenDB2's own protocol plugs in t
 |---|---|---|
 | iroh: endpoint, `Router`, `ProtocolHandler`, hooks | 1.4.1, stable | Every peer: its identity, encrypted connections, hole punching, relay fallback. The door: `after_handshake` admits members only. |
 | iroh-relay | 1.4.1, stable | Inside the Aven Peer, or any Peer with its relay on; admits members' keys only |
-| iroh-gossip | 0.101 | Chat and presence among members, from milestone 1 |
+| iroh-gossip | 0.101 | Chat and presence among members, from milestone 2 |
 | iroh-tickets | 1.0.0, stable | Invites |
 | iroh-metrics | 1.0.2 | The progress counters behind status and the stall alarm |
 | iroh-blobs | 0.104, "not yet production quality" (its README) | Files, later: its protocol and verified streaming, with a store written on our `Store`. Fallback: `bao-tree`, the library under it, used directly. |
@@ -99,8 +99,9 @@ the `ProtocolHandler` registered for its ALPN. avenDB2's own protocol plugs in t
 
 ## Milestones
 
-1. **avenSANDBOX** with a simple chat as its example app: live, over iroh-gossip ([`SANDBOX.md`](SANDBOX.md)).
-2. **Network:** the invite-only door (invites, the relay's allow-list, the device handshake) and members-only gossip.
+1. **avenSANDBOX** with a "coming soon" page ([`SANDBOX.md`](SANDBOX.md)).
+2. **Network:** the invite-only door (invites, the relay's allow-list, the device handshake) and members-only gossip,
+   with the first example app: a live chat.
 3. **Accounts and caps:** owner keys (passkeys), devices, roles, delegation, revocation.
 4. **Docs:** Loro documents in signed, sealed envelopes; the one writer and its snapshots; the store; one document
    synced. The chat gets its history.
