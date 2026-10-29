@@ -3,9 +3,9 @@
 //! the edge where iroh and the clock meet them (README, rule 2).
 
 pub mod cast;
-pub mod link;
 #[cfg(feature = "native")]
 pub mod hub;
+pub mod link;
 
 /// Where a peer's events go: the timeline's lines (`aven_db_core::timeline`), already shaped.
 pub type Notes = std::sync::Arc<dyn Fn(String) + Send + Sync>;

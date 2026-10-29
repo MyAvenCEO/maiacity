@@ -40,8 +40,14 @@ pub async fn start(me: String, relay: String, notes: js_sys::Function) -> Result
         .bind()
         .await
         .map_err(|e| JsError::new(&e.to_string()))?;
-    notes(timeline::line(now(), &me, "started", serde_json::json!({ "key": endpoint.id().to_string(), "relay": relay.to_string() })));
-    let aven_key = cast::public(cast::AVEN_PEER).ok_or_else(|| JsError::new("the cast has no Aven Peer"))?;
+    notes(timeline::line(
+        now(),
+        &me,
+        "started",
+        serde_json::json!({ "key": endpoint.id().to_string(), "relay": relay.to_string() }),
+    ));
+    let aven_key =
+        cast::public(cast::AVEN_PEER).ok_or_else(|| JsError::new("the cast has no Aven Peer"))?;
     let aven = EndpointAddr::new(aven_key).with_relay_url(relay);
     wasm_bindgen_futures::spawn_local(link::run(endpoint, me, aven, notes));
     Ok(())

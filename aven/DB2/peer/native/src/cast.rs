@@ -25,12 +25,17 @@ pub fn public(id: &str) -> Option<PublicKey> {
 
 /// The peers of the cast, in its order.
 pub fn peers() -> Vec<String> {
-    cast()["peers"].as_object().map(|p| p.keys().cloned().collect()).unwrap_or_default()
+    cast()["peers"]
+        .as_object()
+        .map(|p| p.keys().cloned().collect())
+        .unwrap_or_default()
 }
 
 /// The peer of the cast that holds `key`.
 pub fn peer_of(key: &PublicKey) -> Option<String> {
-    peers().into_iter().find(|id| public(id).as_ref() == Some(key))
+    peers()
+        .into_iter()
+        .find(|id| public(id).as_ref() == Some(key))
 }
 
 pub const AVEN_PEER: &str = "aven-peer";
@@ -52,7 +57,15 @@ mod tests {
     fn four_peers_each_with_a_key() {
         let mut ids = peers();
         ids.sort();
-        assert_eq!(ids, ["alice-peer", "alice-peer-light", "aven-peer", "bob-peer-light"]);
+        assert_eq!(
+            ids,
+            [
+                "alice-peer",
+                "alice-peer-light",
+                "aven-peer",
+                "bob-peer-light"
+            ]
+        );
         for id in peers() {
             assert_eq!(peer_of(&secret(&id).public()), Some(id));
         }

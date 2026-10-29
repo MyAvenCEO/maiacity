@@ -19,7 +19,15 @@ pub fn line(t: u64, peer: &str, event: &str, fields: Value) -> String {
 mod tests {
     #[test]
     fn one_shape() {
-        let l = super::line(5, "aven-peer", "phase", serde_json::json!({ "phase": "live" }));
-        assert_eq!(l, r#"{"event":"phase","peer":"aven-peer","phase":"live","t":5}"#);
+        let l = super::line(
+            5,
+            "aven-peer",
+            "phase",
+            serde_json::json!({ "phase": "live" }),
+        );
+        assert_eq!(
+            l,
+            r#"{"event":"phase","peer":"aven-peer","phase":"live","t":5}"#
+        );
     }
 }

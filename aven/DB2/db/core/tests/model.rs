@@ -46,8 +46,14 @@ fn trace(seed: u64) -> Trace {
             _ => Event::Tick,
         })
         .collect();
-    let changes = (0..rng.below(60)).map(|_| (rng.below(3) != 0, rng.below(6) as u32)).collect();
-    Trace { limit, events, changes }
+    let changes = (0..rng.below(60))
+        .map(|_| (rng.below(3) != 0, rng.below(6) as u32))
+        .collect();
+    Trace {
+        limit,
+        events,
+        changes,
+    }
 }
 
 fn rust(t: &Trace) -> Value {
@@ -65,7 +71,11 @@ fn rust(t: &Trace) -> Value {
         .changes
         .iter()
         .map(|&(join, p)| {
-            if join { presence.join(p) } else { presence.leave(&p) }
+            if join {
+                presence.join(p)
+            } else {
+                presence.leave(&p)
+            }
             json!(presence.present().copied().collect::<Vec<_>>())
         })
         .collect();
@@ -74,14 +84,23 @@ fn rust(t: &Trace) -> Value {
 
 fn input(t: &Trace) -> String {
     let events: Vec<&str> = t.events.iter().map(|e| e.name()).collect();
-    let changes: Vec<Value> = t.changes.iter().map(|&(join, p)| json!([if join { "join" } else { "leave" }, p])).collect();
+    let changes: Vec<Value> = t
+        .changes
+        .iter()
+        .map(|&(join, p)| json!([if join { "join" } else { "leave" }, p]))
+        .collect();
     json!({ "limit": t.limit, "status": events, "presence": changes }).to_string()
 }
 
 /// The model lists presence in its own order; the count and the members are what must agree.
 fn sorted(mut v: Value) -> Value {
     for p in v["presence"].as_array_mut().unwrap() {
-        let mut ids: Vec<u64> = p.as_array().unwrap().iter().map(|id| id.as_u64().unwrap()).collect();
+        let mut ids: Vec<u64> = p
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| id.as_u64().unwrap())
+            .collect();
         ids.sort();
         *p = json!(ids);
     }
@@ -102,7 +121,11 @@ fn model() -> std::path::PathBuf {
 #[test]
 fn rust_follows_the_model_on_random_traces() {
     let traces: Vec<Trace> = (1..=TRACES as u64).map(trace).collect();
-    let mut child = Command::new(model()).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut child = Command::new(model())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let lines: String = traces.iter().map(|t| input(t) + "\n").collect();
     let writer = std::thread::spawn(move || stdin.write_all(lines.as_bytes()).unwrap());
@@ -113,6 +136,13 @@ fn rust_follows_the_model_on_random_traces() {
     assert_eq!(replies.len(), TRACES);
     for (i, (t, reply)) in traces.iter().zip(replies).enumerate() {
         let lean = sorted(serde_json::from_str(reply).unwrap());
-        assert_eq!(rust(t), lean, "trace {} (seed {}) differs: {}", i, i + 1, input(t));
+        assert_eq!(
+            rust(t),
+            lean,
+            "trace {} (seed {}) differs: {}",
+            i,
+            i + 1,
+            input(t)
+        );
     }
 }

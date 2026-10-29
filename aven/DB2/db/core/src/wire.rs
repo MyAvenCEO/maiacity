@@ -43,7 +43,9 @@ impl Decoder {
         let mut frames = Vec::new();
         while let Some(end) = self.buf.iter().position(|&b| b == b'\n') {
             let line: Vec<u8> = self.buf.drain(..=end).collect();
-            frames.push(serde_json::from_slice(&line[..end]).map_err(|e| WireError::Bad(e.to_string()))?);
+            frames.push(
+                serde_json::from_slice(&line[..end]).map_err(|e| WireError::Bad(e.to_string()))?,
+            );
         }
         if self.buf.len() > MAX_FRAME {
             return Err(WireError::TooLong);
@@ -58,7 +60,15 @@ mod tests {
 
     #[test]
     fn frames_survive_any_split() {
-        let frames = [Frame::Hello { peer: "alice-peer".into() }, Frame::Presence { peers: vec!["a".into()] }, Frame::Beat { n: 7 }];
+        let frames = [
+            Frame::Hello {
+                peer: "alice-peer".into(),
+            },
+            Frame::Presence {
+                peers: vec!["a".into()],
+            },
+            Frame::Beat { n: 7 },
+        ];
         let bytes: Vec<u8> = frames.iter().flat_map(encode).collect();
         for cut in 0..bytes.len() {
             let mut d = Decoder::default();
@@ -70,6 +80,9 @@ mod tests {
 
     #[test]
     fn refuses_endless_lines() {
-        assert_eq!(Decoder::default().push(&vec![b'x'; MAX_FRAME + 1]), Err(WireError::TooLong));
+        assert_eq!(
+            Decoder::default().push(&vec![b'x'; MAX_FRAME + 1]),
+            Err(WireError::TooLong)
+        );
     }
 }

@@ -40,7 +40,12 @@ impl Hub {
         let mut presence = Presence::default();
         presence.join(me.clone());
         let (told, _) = watch::channel(presence.present().cloned().collect());
-        let hub = Hub { me, presence: Arc::new(Mutex::new(presence)), told, notes };
+        let hub = Hub {
+            me,
+            presence: Arc::new(Mutex::new(presence)),
+            told,
+            notes,
+        };
         hub.tell();
         hub
     }
@@ -52,7 +57,11 @@ impl Hub {
     fn change(&self, join: bool, peer: &str) {
         let present: Vec<String> = {
             let mut presence = self.presence.lock().unwrap();
-            if join { presence.join(peer.to_string()) } else { presence.leave(&peer.to_string()) }
+            if join {
+                presence.join(peer.to_string())
+            } else {
+                presence.leave(&peer.to_string())
+            }
             presence.present().cloned().collect()
         };
         self.told.send_if_modified(|told| {
@@ -66,7 +75,10 @@ impl Hub {
     /// The Aven Peer's own status line: live, and how many are connected.
     fn tell(&self) {
         let present = self.told.borrow().clone();
-        self.note("status", json!({ "phase": "live", "peers": present.len(), "present": present, "path": null }));
+        self.note(
+            "status",
+            json!({ "phase": "live", "peers": present.len(), "present": present, "path": null }),
+        );
     }
 
     async fn serve(&self, conn: &Connection, peer: &str) -> Result<(), AcceptError> {
@@ -75,15 +87,32 @@ impl Hub {
         let mut buf = vec![0u8; 16 * 1024];
         // the first frame names the peer, and it must be the peer whose key this connection proved
         let said = loop {
-            let n = recv.read(&mut buf).await.map_err(fail)?.ok_or_else(|| fail("closed before hello"))?;
-            if let Some(frame) = decoder.push(&buf[..n]).map_err(|e| fail(format!("{e:?}")))?.into_iter().next() {
+            let n = recv
+                .read(&mut buf)
+                .await
+                .map_err(fail)?
+                .ok_or_else(|| fail("closed before hello"))?;
+            if let Some(frame) = decoder
+                .push(&buf[..n])
+                .map_err(|e| fail(format!("{e:?}")))?
+                .into_iter()
+                .next()
+            {
                 break frame;
             }
         };
-        if said != (Frame::Hello { peer: peer.to_string() }) {
+        if said
+            != (Frame::Hello {
+                peer: peer.to_string(),
+            })
+        {
             return Err(fail(format!("{peer} said {said:?}")));
         }
-        send.write_all(&encode(&Frame::Hello { peer: self.me.clone() })).await.map_err(fail)?;
+        send.write_all(&encode(&Frame::Hello {
+            peer: self.me.clone(),
+        }))
+        .await
+        .map_err(fail)?;
         let mut told = self.told.subscribe();
         told.mark_changed();
         let mut beat = interval(Duration::from_millis(TICK_MS));
@@ -120,7 +149,10 @@ impl ProtocolHandler for Hub {
         self.note("joined", json!({ "from": peer, "path": link::path(&conn) }));
         let served = self.serve(&conn, &peer).await;
         self.change(false, &peer);
-        self.note("left", json!({ "from": peer, "why": served.as_ref().err().map(|e| e.to_string()) }));
+        self.note(
+            "left",
+            json!({ "from": peer, "why": served.as_ref().err().map(|e| e.to_string()) }),
+        );
         served
     }
 }

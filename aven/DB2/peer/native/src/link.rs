@@ -64,17 +64,32 @@ impl Link {
 
 /// The path a connection sends on now: `direct` over UDP, or through the `relay`.
 pub fn path(conn: &Connection) -> Option<&'static str> {
-    conn.paths().iter().find(|p| p.is_selected()).map(|p| if p.is_ip() { "direct" } else { "relay" })
+    conn.paths()
+        .iter()
+        .find(|p| p.is_selected())
+        .map(|p| if p.is_ip() { "direct" } else { "relay" })
 }
 
 /// Runs the link for ever: dial, follow, and dial again.
 pub async fn run(endpoint: Endpoint, me: String, aven: EndpointAddr, notes: Notes) {
-    let mut link = Link { me, notes, view: View { status: Status::start(), peers: vec![], path: None }, told: None };
+    let mut link = Link {
+        me,
+        notes,
+        view: View {
+            status: Status::start(),
+            peers: vec![],
+            path: None,
+        },
+        told: None,
+    };
     link.tell();
     loop {
         link.step(Event::Dial);
         link.tell();
-        let why = follow(&endpoint, &aven, &mut link).await.err().unwrap_or_default();
+        let why = follow(&endpoint, &aven, &mut link)
+            .await
+            .err()
+            .unwrap_or_default();
         link.step(Event::Lost);
         link.tell();
         link.note("lost", json!({ "to": cast::AVEN_PEER, "why": why }));
@@ -83,23 +98,39 @@ pub async fn run(endpoint: Endpoint, me: String, aven: EndpointAddr, notes: Note
 }
 
 async fn follow(endpoint: &Endpoint, aven: &EndpointAddr, link: &mut Link) -> Result<(), String> {
-    let conn = timeout(Duration::from_secs(10), endpoint.connect(aven.clone(), ALPN))
-        .await
-        .map_err(|_| "no answer in 10 s".to_string())?
-        .map_err(|e| e.to_string())?;
+    let conn = timeout(
+        Duration::from_secs(10),
+        endpoint.connect(aven.clone(), ALPN),
+    )
+    .await
+    .map_err(|_| "no answer in 10 s".to_string())?
+    .map_err(|e| e.to_string())?;
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-    send.write_all(&encode(&Frame::Hello { peer: link.me.clone() })).await.map_err(|e| e.to_string())?;
+    send.write_all(&encode(&Frame::Hello {
+        peer: link.me.clone(),
+    }))
+    .await
+    .map_err(|e| e.to_string())?;
     link.view.path = path(&conn);
-    link.note("connected", json!({ "to": cast::AVEN_PEER, "path": link.view.path }));
+    link.note(
+        "connected",
+        json!({ "to": cast::AVEN_PEER, "path": link.view.path }),
+    );
     let mut decoder = Decoder::default();
     let mut buf = vec![0u8; 16 * 1024];
     let mut next = Instant::now() + TICK;
     loop {
-        match timeout(next.saturating_duration_since(Instant::now()), recv.read(&mut buf)).await {
+        match timeout(
+            next.saturating_duration_since(Instant::now()),
+            recv.read(&mut buf),
+        )
+        .await
+        {
             Err(_) => {
                 next += TICK;
                 link.step(Event::Tick);
-                if link.view.status.phase == Phase::Stalled && link.view.status.idle >= REDIAL_AFTER {
+                if link.view.status.phase == Phase::Stalled && link.view.status.idle >= REDIAL_AFTER
+                {
                     link.tell();
                     return Err(format!("no progress in {} steps", link.view.status.idle));
                 }

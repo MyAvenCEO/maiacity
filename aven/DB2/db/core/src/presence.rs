@@ -11,7 +11,9 @@ pub struct Presence<P: Ord> {
 
 impl<P: Ord> Default for Presence<P> {
     fn default() -> Self {
-        Presence { conns: BTreeMap::new() }
+        Presence {
+            conns: BTreeMap::new(),
+        }
     }
 }
 
