@@ -74,6 +74,12 @@ Each rule is held by a test or a check once there is code to hold.
 - **Pluggable storage.** The core defines one small, object-shaped contract, `Store`. Behind it: object storage for the
   Aven Peer, a folder for a Peer, OPFS for a Peer-Light, memory for tests. Apache OpenDAL provides the first backends;
   our own OPFS backend comes where speed needs it ([`SANDBOX.md`](SANDBOX.md#storage-one-contract-pluggable-backends)).
+- **One primitive underneath: the sealed blob.** Everything at rest and on the wire is an immutable, sealed object
+  named by the BLAKE3 hash of its bytes. A file is one blob. A Loro document is a small head (its id, its version and
+  the hashes of its pieces) over blobs: sealed segments of edits and, now and then, a snapshot. Both live in the same
+  `Store` and travel by the same blob transfer. Only the edits being made right now travel live over our sync protocol,
+  until they are sealed into the next segment. The Aven Peer can store, verify and serve every byte without reading
+  any of it. Loro is the document model, so iroh-docs is not needed.
 - **Encryption:** X-Wing (ML-KEM-768 with X25519) is the only key encapsulation. Every sealed box carries a suite byte,
   so a second scheme can join if lattices ever look weak: HQC, NIST's 2025 code-based backup, with keys of a few KB.
   No Classic McEliece: v1 derived a pair for every key, each with a 1 MB public half that took most of a second to
@@ -92,7 +98,7 @@ the `ProtocolHandler` registered for its ALPN. avenDB2's own protocol plugs in t
 | iroh-gossip | 0.101 | Chat and presence among members, from milestone 2 |
 | iroh-tickets | 1.0.0, stable | Invites |
 | iroh-metrics | 1.0.2 | The progress counters behind status and the stall alarm |
-| iroh-blobs | 0.104, "not yet production quality" (its README) | Files, later: its protocol and verified streaming, with a store written on our `Store`. Fallback: `bao-tree`, the library under it, used directly. |
+| iroh-blobs | 0.104, "not yet production quality" (its README) | Files and the pieces of documents, later: its protocol and verified streaming, with a store written on our `Store`. Fallback: `bao-tree`, the library under it, used directly. |
 | iroh-docs | 0.101, last release in June | Not the crate: it is a last-writer-wins key-value table, without roles or revocation, with its own storage, pinned to an older iroh-blobs. Its patterns: range-based set reconciliation, entries signed by document and author, download policies, live events. |
 | iroh-willow | 0.0.1, February 2025 | Not the crate. Meadowcap's caps and areas of interest as a reference. |
 | `unstable-custom-transports` | outside iroh's semver | Later: a direct WebRTC path between browsers |
