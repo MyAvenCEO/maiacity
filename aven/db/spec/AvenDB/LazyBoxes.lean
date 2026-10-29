@@ -1039,9 +1039,9 @@ theorem S6_bodies_change_no_view (H B : List Edit) (hB : ∀ b ∈ B, b.isBox = 
     (hH : ((order H).map Edit.id).Nodup) (hbH : boxesUnder H)
     (hHB : ((order (H ++ B)).map Edit.id).Nodup) (hbHB : boxesUnder (H ++ B)) :
     AvenDB.view (H ++ B) = AvenDB.view H := by
+  have hnB : B.filter nb = [] := List.filter_eq_nil_iff.2 (fun b hb' => by simp [nb, hB b hb'])
   have hf : (H ++ B).filter nb = H.filter nb := by
-    have hnil : B.filter nb = [] := List.filter_eq_nil_iff.2 (fun b hb' => by simp [nb, hB b hb'])
-    rw [List.filter_append, hnil, List.append_nil]
+    rw [List.filter_append, hnB, List.append_nil]
   rw [← (L1_lazy_view (H ++ B) hHB hbHB).1, hf, (L1_lazy_view H hH hbH).1]
 
 /-- The heads of a peer's log a device lacks, for what a read waits on: those it neither holds nor holds a stub of. -/

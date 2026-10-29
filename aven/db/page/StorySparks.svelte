@@ -7,7 +7,7 @@
 <script>
 	import Icon from './Icon.svelte';
 	import { linkHref } from '$lib/markdown/index.js';
-	import { allowed, creatable, may } from './ops.js';
+	import { creatable, may, refused } from './ops.js';
 	import { addingArtifact, ARTIFACT, entryOf, fromLink, fromWords, isArtifact } from './artifacts.js';
 	import SparkRow from './SparkRow.svelte';
 	import { addingSpark, fromLine, hostOf, isSpark, itemsOf, linkIn, placing, SPARK, sparkRecord } from './sparks.js';
@@ -51,14 +51,14 @@
 	);
 
 	/** whether the acting vault's ops let it add and take out sparks, and add a new spark, as the device says */
-	let links = $state(false);
+	let links = $state(true);
 	let asked = $state(/** @type {string[] | null} */ (null));
 	let askedArtifact = $state(/** @type {string[] | null} */ (null));
 	$effect(() => {
 		void world;
 		let gone = false;
 		const probe = others[0]?.entry ?? linked[0] ?? entry;
-		if (writes) may(api, actor, [{ op: 'insert', entry, path: ['sparks'], value: probe }]).then(([a]) => !gone && (links = allowed(a)));
+		if (writes) may(api, actor, [{ op: 'insert', entry, path: ['sparks'], value: probe }]).then(([a]) => !gone && (links = !refused(a)));
 		else links = false;
 		creatable(api, actor, item.vault, SPARK).then((t) => !gone && (asked = t));
 		creatable(api, actor, item.vault, ARTIFACT).then((t) => !gone && (askedArtifact = t));

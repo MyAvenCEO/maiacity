@@ -10,7 +10,7 @@
 <script>
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
-	import { allowed, answer, creatable, may } from './ops.js';
+	import { answer, creatable, may, refused } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
 	import {
@@ -113,7 +113,7 @@
 		const op = adding('A todo');
 		let gone = false;
 		may(api, actor, [op]).then(([a]) => {
-			if (!gone) unadded = allowed(a) ? '' : why(/** @type {any} */ (a));
+			if (!gone) unadded = refused(a) ? why(/** @type {any} */ (a)) : '';
 		});
 		return () => {
 			gone = true;
@@ -172,15 +172,15 @@
 				{#each shown as it (it.entry)}
 					{@const changes = writes(it, actor)}
 					{@const answer = ticks[it.entry]}
-					{@const refused = answer === undefined || allowed(answer) ? null : /** @type {any} */ (answer)}
+					{@const barred = refused(answer) ? /** @type {any} */ (answer) : null}
 					<li class={it.status ?? 'open'}>
 						<button
 							class="tick"
-							disabled={busy || !changes || !!refused}
+							disabled={busy || !changes || !!barred}
 							title={!changes
 								? `${nameOf(as)} may only view it`
-								: refused
-									? `It can't be marked ${NEXT[it.status ?? 'open']}: ${why(refused)}`
+								: barred
+									? `It can't be marked ${NEXT[it.status ?? 'open']}: ${why(barred)}`
 									: `Mark it ${NEXT[it.status ?? 'open']}`}
 							onclick={() => tick(it.entry, NEXT[it.status ?? 'open'])}
 						>

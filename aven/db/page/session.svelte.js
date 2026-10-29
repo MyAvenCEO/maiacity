@@ -41,7 +41,7 @@ import { observedWindow } from './observed-window.js';
 import { tick } from 'svelte';
 import { localMediaWorld } from './local-media.svelte.js';
 import { command, native } from '$lib/native';
-import { allowed, answer, readLocalFile, reads, refs } from './ops.js';
+import { answer, readLocalFile, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
 import { createPendingWrites, paints } from './pending-writes.js';
@@ -68,10 +68,6 @@ export const asks = native() ? 'a sign-in sheet asks for your passkey' : 'your b
 
 /** This device, as the person sees it, and the same at the start of a sentence. */
 export const [here, Here] = native() ? ['this Mac', 'This Mac'] : ['this browser', 'This browser'];
-
-/** The changes a vault's owners may have to approve, with the passkey: owners, devices, Owner shares, settings and
- *  new vaults (doc:docs/avendb §8). */
-const APPROVED = ['share', 'share_group', 'revoke', 'settings', 'found'];
 
 /** @typedef {'loading' | 'new' | 'closed' | 'open' | 'broken'} Phase */
 /**
@@ -758,8 +754,8 @@ function queueRefresh(/** @type {any} */ d) {
 /**
  * Op `op` on the device: the one way a page reads or changes the database (./ops.js, doc:docs/avendb
  * §8), on the page's own device and on the Mac app's alike. A change takes the passkey's ceremony, which the device
- * runs only where the vault's owners approve it (in the Mac app, in its sign-in sheet); asked first, the device says
- * whether it will, and what the page shows it doing says so. `read` hands over a file's bytes, for `put_file` and a
+ * runs only where the vault's owners approve it (in the Mac app, in its sign-in sheet). A change waits on no dry run
+ * (`may`) first: the device judges it as it makes it, on what it holds. `read` hands over a file's bytes, for `put_file` and a
  * `create` that brings a file (./ops.js `brings`). The device's answer: `{ ok }`, or `{ refused, why }`.
  * @param {any} op @param {(at: number, n: number) => Promise<Uint8Array>} [read]
  */
@@ -767,10 +763,6 @@ async function send(op, read) {
 	const d = device;
 	if (!d) throw new Error('avenDB isn’t open on this page yet');
 	if (reads(op)) return near(d, op);
-	if (APPROVED.includes(op?.op) && doing) {
-		const [verdict] = (await d.run({ op: 'may', ops: [op] }))?.ok ?? [];
-		if (allowed(verdict) && verdict !== true) doing = `${doing}: ${asks} once`;
-	}
 	return d.run(op, mac ? undefined : (await ceremonies(meta.credential)).sign, read);
 }
 
