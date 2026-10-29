@@ -9,6 +9,7 @@ ARG WASM_BINDGEN_VERSION=0.2.129
 ARG BUN_VERSION=1.4.4
 ARG ELAN_VERSION=v4.2.4
 ARG LEAN_VERSION=v4.35.0
+ARG S3S_FS_VERSION=0.17.0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates xz-utils \
@@ -38,5 +39,11 @@ RUN arch=$(uname -m) \
     && rm /tmp/elan-init \
     && elan toolchain install "leanprover/lean4:${LEAN_VERSION}" \
     && lean --version
+
+# The box's own S3 server: s3s-fs, S3 over a folder (Rust, Apache-2.0), with conditional writes (If-Match,
+# If-None-Match) and atomic puts. compose.yml runs it as the service `s3`, so the box needs no third-party image.
+RUN cargo install s3s-fs --version "${S3S_FS_VERSION}" --features binary --locked \
+    && rm -rf /opt/cargo/registry /opt/cargo/git \
+    && s3s-fs --help > /dev/null
 
 WORKDIR /work

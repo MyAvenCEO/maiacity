@@ -1,6 +1,6 @@
 # avenSANDBOX's containers (aven/DB2/SANDBOX.md, "The box"). Only aven/DB2 is mounted, so nothing else of the
-# repository is reachable inside the box. Milestone 1 grows into aven, alice, s3 and builder; for now the browsers'
-# container serves avenOS.
+# repository is reachable inside the box. Milestone 1 grows into aven, alice, s3 and builder; for now `browsers`
+# serves avenOS and `s3` is the box's S3.
 name: avensandbox
 
 services:
@@ -17,10 +17,25 @@ services:
       - "${AVENSANDBOX_PORT:-5173}:5173"
     networks: [wan]
 
+  # The box's S3 (SANDBOX.md, "Storage"): s3s-fs from the box's own image, over a folder in its own volume, at
+  # http://s3:8014, path-style. Test credentials, valid only inside the box; `down --wipe` empties it.
+  s3:
+    image: ${AVENSANDBOX_IMAGE:?bun run up sets it}
+    command: ["s3s-fs", "--host", "0.0.0.0", "--port", "8014", "--access-key", "avensandbox", "--secret-key", "avensandbox-test-secret", "/data"]
+    init: true
+    volumes:
+      - s3:/data
+    networks: [wan]
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://localhost:8014/"]
+      interval: 2s
+      retries: 15
+
 networks:
   wan: {}
 
 volumes:
+  s3: {}
   # made by `bun run up`, which installs into it before the containers start
   node_modules:
     name: avensandbox_node_modules
