@@ -3562,6 +3562,14 @@ impl Lab {
     /// at 32,000 edits, the page it came in the middle of shown at once).
     fn refresh_own(&mut self, on: SignerId, lent: &[(SignerId, Secret)], catching: bool) {
         if catching {
+            // a removal of its own can't step on (it goes back over what it holds): its replay is stepped on in place to
+            // every edit once, as an ask's (`dry`), and its catch-up goes on from there, so the person sees what they
+            // removed gone at once, not after a whole replay run a slice a step (a removed device listed on, fresh11)
+            let store = self.held(on);
+            let mine = |e: &Edit| (e.author == on || e.cosigners.contains(&on)) && e.is_removal();
+            if store.log.edits().get(store.replayed..).unwrap_or_default().iter().any(mine) {
+                self.step_replay(on, usize::MAX);
+            }
             self.refresh_with(on, lent, Some(OWN_WRITE_BUDGET));
         } else {
             self.refresh(on, lent);

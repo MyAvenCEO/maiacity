@@ -153,3 +153,21 @@ fn the_vault_a_device_belongs_to_read_dry_is_of_every_edit_while_its_replay_is_u
     let store = w.lab.held(d);
     assert_eq!(store.replayed, store.log.edits().len(), "stepped on in place, once");
 }
+
+#[test]
+fn an_own_removal_mid_catch_up_shows_at_once() {
+    let mut w = world();
+    let todos = todos_on(&mut w);
+    let d = w.mac_a;
+    let snapshot = w.lab.backup(d);
+    // mid catch-up: every edit taken, none replayed yet
+    w.lab.restore_backup(d, &Backup { signed: vec![], blobs: snapshot.blobs.clone(), bases: BTreeMap::new() });
+    w.lab.receive_now(d, snapshot.signed.clone(), vec![], false);
+    assert!(w.lab.catching_up(d));
+    w.lab.submit(d, &[d], Action::Revoke(Revoking::Grant {
+        share: todos.carol_read, actor: w.alice, keep: vec![], via: vec![],
+    })).unwrap();
+    let store = w.lab.held(d);
+    assert_eq!(store.replayed, store.log.edits().len(), "its replay stepped on in place to every edit, its removal with them");
+    assert!(w.lab.state(d) == w.lab.latest(d), "what it shows is what its edits say");
+}
