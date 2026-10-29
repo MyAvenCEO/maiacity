@@ -100,7 +100,7 @@ async function up(args) {
 	if (args.includes('--check')) process.exit(await check());
 }
 
-// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS's landing page, built in the box.
+// Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box.
 async function build() {
 	await ensureDocker();
 	await ensureImage();
@@ -110,11 +110,11 @@ async function build() {
 	const out = join(db2, 'deliverables');
 	rmSync(out, { recursive: true, force: true });
 	await $`mkdir -p ${out}`;
-	const page = join(out, 'aven-os-landing.tar.gz');
+	const page = join(out, 'aven-os-web.tar.gz');
 	await $`tar -czf ${page} -C ${join(db2, 'dist')} .`;
 	const sum = createHash('sha256').update(readFileSync(page)).digest('hex');
-	await Bun.write(join(out, 'SHA256SUMS'), `${sum}  aven-os-landing.tar.gz\n`);
-	say(`deliverables in aven/DB2/deliverables/: aven-os-landing.tar.gz (sha256 ${sum.slice(0, 16)}…)`);
+	await Bun.write(join(out, 'SHA256SUMS'), `${sum}  aven-os-web.tar.gz\n`);
+	say(`deliverables in aven/DB2/deliverables/: aven-os-web.tar.gz (sha256 ${sum.slice(0, 16)}…)`);
 }
 
 async function doctor() {

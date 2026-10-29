@@ -144,9 +144,9 @@ jobs:
           docker buildx imagetools create --tag "$box:$tag" "$IMAGE"
           digest=$(docker buildx imagetools inspect "$box:$tag" --format '{{json .Manifest}}' | jq -r .digest)
 
-          # avenOS: the landing page, named for the release
-          page="aven-os-landing-$tag.tar.gz"
-          mv deliverables/aven-os-landing.tar.gz "deliverables/$page"
+          # avenOS: the browser client, named for the release
+          page="aven-os-web-$tag.tar.gz"
+          mv deliverables/aven-os-web.tar.gz "deliverables/$page"
           (cd deliverables && sha256sum "$page" > SHA256SUMS)
 
           # the release before is the newest dated one; v1's releases (avendb-page-device, avendb-dev-cache) don't count
@@ -155,7 +155,7 @@ jobs:
           {
             echo "## Deliverables"
             echo
-            echo "**avenSANDBOX**, the box this release was checked in:"
+            echo "**avenSANDBOX**, the box this release was checked in (amd64 and arm64):"
             echo
             echo '```bash'
             echo "docker pull $box:$tag"
@@ -163,7 +163,7 @@ jobs:
             echo
             echo "Digest: \`$box@$digest\`"
             echo
-            echo "**avenOS**, the landing page: \`$page\` below, checksum in \`SHA256SUMS\`."
+            echo "**avenOS**, the browser client: \`$page\` below, checksum in \`SHA256SUMS\`."
             echo
             if [ -n "$previous" ]; then
               gh api "repos/$REPO/releases/generate-notes" -f tag_name="$tag" -f target_commitish="$SHA" \
