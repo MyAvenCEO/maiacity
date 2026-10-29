@@ -43,7 +43,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
-      packages: write
+      packages: read
     outputs:
       image: ${{ steps.box.outputs.image }}
     steps:
@@ -77,11 +77,6 @@ jobs:
         env:
           AVENSANDBOX_IMAGE: ${{ steps.box.outputs.image }}
         run: bun run up --check
-      - name: Publish the box this run built, so the release can pin it
-        if: github.event_name == 'push'
-        env:
-          IMAGE: ${{ steps.box.outputs.image }}
-        run: docker buildx imagetools inspect "$IMAGE" > /dev/null 2>&1 || docker push "$IMAGE"
       - name: Build the release's deliverables
         if: github.event_name == 'push'
         working-directory: aven/DB2
