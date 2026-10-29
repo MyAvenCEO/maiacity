@@ -632,6 +632,12 @@ impl ShelfKey {
     fn unlock(&self, purpose: &str, bytes: &[u8], context: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         keys::decrypt(&self.0.child("shelf box", purpose.as_bytes()), bytes, context).map(Zeroizing::new)
     }
+
+    /// The key of entry `e`'s row in its shelf's index of kept showings (`KeptShown::rows`): the same for the entry at
+    /// every save, and naming it to nobody without the key.
+    fn shown_row(&self, e: &EntryId) -> [u8; 32] {
+        self.0.child("kept shown row", &e.0).bytes()
+    }
 }
 
 /// The engine's own hash, of its sources (`build.rs`): what a device worked out with another engine it works out again.
@@ -712,20 +718,42 @@ impl Touched {
 pub struct Warm {
     pub keys: Vec<Vec<u8>>,
     pub views: Vec<Vec<u8>>,
-    /// Its packs of kept showings, the oldest first: a later one's showing of an entry in place of an earlier one's
-    /// (`Warming::shown`).
+    /// The packs of kept showings its shelf's index of them names (`Warming::shown`), each with the rows that name it:
+    /// a showing is taken from the pack its entry's row names, and from no other.
     pub shown: Vec<ShownPack>,
 }
 
 /// A pack of kept showings as a shelf holds it (`Warm::shown`): the file it is, read where it is as the showings it
-/// holds open (`shown_map::unpack`), or its bytes.
+/// holds open (`shown_map::unpack`), or its bytes; and the rows of the shelf's index that name it (`KeptShown::rows`),
+/// whose entries' showings it is taken for. With none named (a pack given as bytes alone), every showing it holds is
+/// taken, a later pack's in place of an earlier one's, and none counts as kept on the shelf.
 #[derive(Clone, Debug)]
-pub struct ShownPack(pub Arc<dyn crate::pages::Space>);
+pub struct ShownPack {
+    pub file: Arc<dyn crate::pages::Space>,
+    pub rows: Option<Vec<[u8; 32]>>,
+}
 
 impl From<Vec<u8>> for ShownPack {
     fn from(bytes: Vec<u8>) -> ShownPack {
-        ShownPack(Arc::new(crate::pages::MemorySpace::of(bytes)))
+        ShownPack { file: Arc::new(crate::pages::MemorySpace::of(bytes)), rows: None }
     }
+}
+
+impl From<KeptShown> for ShownPack {
+    fn from(kept: KeptShown) -> ShownPack {
+        ShownPack { file: Arc::new(crate::pages::MemorySpace::of(kept.pack)), rows: Some(kept.rows) }
+    }
+}
+
+/// The showings a save keeps (`Warming::shown`): a pack of them, encrypted for the device alone and its show rules,
+/// to go on its shelf as a blob; the key of each one's row in the shelf's index of kept showings, which names the pack
+/// from then on (`ShelfKey::shown_row`), in place of whatever pack it named before; and the log head they were judged
+/// at, which the index is stamped with.
+#[derive(Clone, Debug)]
+pub struct KeptShown {
+    pub pack: Vec<u8>,
+    pub rows: Vec<[u8; 32]>,
+    pub head: crate::log_head::Head,
 }
 
 /// A restore a page at a time under way (`Lab::restore_start`): how many of the first edits it restores its shelf names
@@ -778,9 +806,8 @@ enum ViewOpened {
 pub struct Warming {
     pub keys: Option<Vec<u8>>,
     pub view: Option<Vec<u8>>,
-    /// A pack of the showings its shelf lacks, encrypted for it alone and this engine (`ShownView.lean`), and whether
-    /// it holds every showing it keeps, so that the packs before it go.
-    pub shown: Option<(Vec<u8>, bool)>,
+    /// The showings its shelf lacks, a pack of them and their rows (`ShownView.lean`).
+    pub shown: Option<KeptShown>,
     // Process-local receipt binding: no replacement store, lock, withdrawal or earlier acknowledgement may
     // make its counts describe a different key prefix or view. Appending edits alone keeps this receipt valid.
     revision: Arc<()>,
@@ -791,8 +818,8 @@ pub struct Warming {
     view_wholes: u64,
     /// Its view holds what it read (`stored_readings::seal`).
     view_read: bool,
-    /// The prints of the showings its pack holds, by entry, and whether they are all it keeps.
-    shown_of: Option<(Vec<(EntryId, [u8; 32])>, bool)>,
+    /// The prints of the showings its pack holds, by entry, and the log head they were judged at.
+    shown_of: Option<(Vec<(EntryId, [u8; 32])>, crate::log_head::Head)>,
 }
 
 /// Immutable snapshot inputs, owned independently of Lab. Encoding consumes the keys
@@ -833,8 +860,10 @@ impl WarmCapture {
             }
             self.receipt.view = Some(self.key.lock("view", &bytes, VIEW_RULES.as_bytes(), &mut self.rng));
         }
-        if let (Some(shown), Some((_, whole))) = (self.shown.take(), &self.receipt.shown_of) {
-            self.receipt.shown = Some((shown_map::pack(&self.key, &mut self.rng, &shown), *whole));
+        if let (Some(shown), Some((_, head))) = (self.shown.take(), &self.receipt.shown_of) {
+            let rows = shown.iter().map(|(e, _, _)| self.key.shown_row(e)).collect();
+            let pack = shown_map::pack(&self.key, &mut self.rng, &shown);
+            self.receipt.shown = Some(KeptShown { pack, rows, head: *head });
         }
         self.receipt
     }
@@ -1160,14 +1189,10 @@ struct Store {
     /// The showings its shelf kept (`Warm::shown`), by entry, till `show_items` takes each whose print is its entry's
     /// print then, in place of judging the entry anew (`ShownView.lean`).
     kept_shown: HashMap<EntryId, Closed>,
-    /// The print of each showing its shelf keeps, by entry, and how many packs and showings hold them: what a save
-    /// leaves out, and when it puts them all in one pack again.
+    /// The print of each showing its shelf keeps, by entry, as its shelf's index of them names it: what a save leaves
+    /// out. One whose row names a pack that doesn't open (sealed under other show rules, or cut short) is none, so the
+    /// next save keeps that entry's showing again, and its row names the new pack from then on.
     shown_given: HashMap<EntryId, [u8; 32]>,
-    shown_packs: (usize, usize),
-    /// A pack its shelf lists didn't open as it started (sealed by a build of other show rules, or cut short): the next
-    /// pack it puts holds every showing it keeps, in place of every pack its shelf lists, so that no start tries it
-    /// again (the iPhone's 3 packs of before the show rules, tried at every unlock on 2026-10-28).
-    shown_stale: bool,
     /// How its last restore went (`restore_end_with`), for its person to read beside the step it took
     /// (`Lab::restore_report`).
     restored: Option<Restored>,
@@ -1275,8 +1300,6 @@ impl Default for Store {
             shown: ShownMap::default(),
             kept_shown: HashMap::new(),
             shown_given: HashMap::new(),
-            shown_packs: (0, 0),
-            shown_stale: false,
             restored: None,
             digests: None,
             follow: vec![],
@@ -1358,16 +1381,6 @@ impl Store {
     /// every write of their entry, judged of its log, not from an owner's base, against its replay of every edit it
     /// holds, and none of a cap group, which it judges anew each time. None mid catch-up.
     fn shown_due(&self) -> Vec<EntryId> {
-        self.keeps(true)
-    }
-
-    /// A pack its shelf lists didn't open (`shown_stale`), and it has showings to keep in place of them all.
-    fn shown_stale_due(&self) -> bool {
-        self.shown_stale && !self.keeps(false).is_empty()
-    }
-
-    /// The showings it keeps (`shown_due`), those its shelf holds too unless `fresh`.
-    fn keeps(&self, fresh: bool) -> Vec<EntryId> {
         if self.replayed == 0 || self.replayed != self.log.edits().len() || self.showing.is_some() {
             return vec![];
         }
@@ -1375,7 +1388,7 @@ impl Store {
         self.shown.tips().filter(|(e, print, tip)| {
             let (writes, last) = st.entry_tip(**e);
             tip.writes == writes && tip.last == last
-                && (!fresh || self.shown_given.get(*e) != Some(print))
+                && self.shown_given.get(*e) != Some(print)
                 && !self.based.contains_key(*e) && !self.bases.contains_key(*e)
                 && st.entry(**e).is_some_and(|en| !st.is_cap_group(en, &self.readings))
         }).map(|(e, _, _)| *e).collect()
@@ -1450,9 +1463,6 @@ struct Shown {
     /// Where judging its writes left off, to judge the writes that come after on (`Judging::resume`).
     after: After,
 }
-
-/// How many packs of kept showings a shelf holds at most: past them a save puts every showing in one pack again.
-const SHOWN_PACKS: usize = 8;
 
 impl Shown {
     /// Its bytes as a device keeps it on its shelf (`Warming::shown`) and closes it to (`shown_map::Closed`), all but
@@ -6862,25 +6872,30 @@ impl Lab {
                 None => store.perf.count("stored view: none that opens", 1),
             }
             store.perf.add("open view", at);
-            // and the showings it kept, each its entry's from the newest pack that holds one, to take where its print
-            // is its entry's print as it shows them (`show_items`); a pack that doesn't open is none
+            // and the showings it kept, each its entry's from the pack its row names, to take where its print is its
+            // entry's print as it shows them (`show_items`); a pack that doesn't open is none, and the next save keeps
+            // its entries' showings again
             let at = Perf::start();
             let mut packs = 0;
             for pack in &warm.shown {
-                let Some(kept) = shown_map::unpack(&key, &pack.0) else {
+                let Some(kept) = shown_map::unpack(&key, &pack.file) else {
                     store.perf.count("kept shown: a pack that doesn't open", 1);
                     restored.kept.1 += 1;
                     continue;
                 };
                 packs += 1;
-                store.shown_packs.1 += kept.len();
+                let named: Option<HashSet<[u8; 32]>> = pack.rows.as_ref().map(|rows| rows.iter().copied().collect());
                 for (e, s) in kept {
-                    store.shown_given.insert(e, s.print);
+                    match &named {
+                        Some(named) if !named.contains(&key.shown_row(&e)) => continue,
+                        Some(_) => {
+                            store.shown_given.insert(e, s.print);
+                        }
+                        None => {}
+                    }
                     store.kept_shown.insert(e, s);
                 }
             }
-            store.shown_packs.0 = packs;
-            store.shown_stale = restored.kept.1 > 0;
             store.perf.count("kept shown: showings", store.kept_shown.len() as u64);
             store.perf.add("open kept shown", at);
             (restored.kept.0, restored.showings) = (packs, store.kept_shown.len());
@@ -6960,31 +6975,22 @@ impl Lab {
             && store.replayed != store.view_given;
         let keys_due = store.keys_due(checked);
         let view_due = current.is_some() && (store.view_due() || close_due) && store.replayed <= held;
-        // the showings, as often as its view, and once it holds none on its shelf yet
+        // the showings its shelf lacks, as often as its view, and once its shelf holds none of them yet
         let fresh_shown =
-            if current.is_some() && (view_due || store.shown_packs.0 == 0) { store.shown_due() } else { vec![] };
-        // and all of them, in place of a pack that doesn't open
-        let stale = current.is_some() && store.shown_stale_due();
-        if !keys_due && !view_due && fresh_shown.is_empty() && !stale { return None; }
-        let (shown, shown_of) = match fresh_shown.is_empty() && !stale {
+            if current.is_some() && (view_due || store.shown_given.is_empty()) { store.shown_due() } else { vec![] };
+        if !keys_due && !view_due && fresh_shown.is_empty() { return None; }
+        let (shown, shown_of) = match fresh_shown.is_empty() {
             true => (None, None),
             false => {
-                // all in one pack again, where the packs before hold more than twice what it keeps
-                let (packs, held) = store.shown_packs;
-                let whole = stale || packs >= SHOWN_PACKS || held + fresh_shown.len() > 2 * store.shown.len() + 64;
-                let es: Vec<EntryId> = match whole {
-                    true => store.keeps(false),
-                    false => fresh_shown,
-                };
                 let mut shown = vec![];
                 let mut of = vec![];
-                for e in es {
+                for e in fresh_shown {
                     if let (Some(record), Some(print)) = (store.shown.record(&e), store.shown.print(&e)) {
                         shown.push((e, print, record));
                         of.push((e, print));
                     }
                 }
-                (Some(shown), Some((of, whole)))
+                (Some(shown), Some((of, store.log.head())))
             }
         };
         let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
@@ -7012,8 +7018,7 @@ impl Lab {
     /// woken as it comes to, so a replay or a key opened with nothing else to save reaches the shelf too.
     pub fn warm_due(&self, d: SignerId) -> bool {
         self.stores.get(&d).is_some_and(|store| {
-            store.keys_due(None) || store.view_due() || (store.shown_packs.0 == 0 && !store.shown_due().is_empty())
-                || store.shown_stale_due()
+            store.keys_due(None) || store.view_due() || (store.shown_given.is_empty() && !store.shown_due().is_empty())
         })
     }
 
@@ -7041,13 +7046,7 @@ impl Lab {
             store.view_head = Some(warming.head);
             store.view_wholes = warming.view_wholes;
         }
-        if let Some((of, whole)) = warming.shown_of {
-            if whole {
-                store.shown_given.clear();
-                store.shown_packs = (0, 0);
-                store.shown_stale = false;
-            }
-            store.shown_packs = (store.shown_packs.0 + 1, store.shown_packs.1 + of.len());
+        if let Some((of, _)) = warming.shown_of {
             store.shown_given.extend(of);
         }
     }

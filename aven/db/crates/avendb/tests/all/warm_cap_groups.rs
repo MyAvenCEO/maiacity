@@ -73,7 +73,7 @@ fn restore_unchanged(lab: &mut Lab, device: SignerId) {
     let warm = Warm {
         keys: receipt.keys.clone().into_iter().collect(),
         views: receipt.view.clone().into_iter().collect(),
-        shown: receipt.shown.clone().map(|(pack, _)| pack.into()).into_iter().collect(),
+        shown: receipt.shown.clone().map(Into::into).into_iter().collect(),
     };
     lab.warmed(device, receipt);
     let used = count(lab, device, "replay: from its stored view");
