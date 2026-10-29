@@ -239,7 +239,7 @@ impl Shared {
                     claimed.claim(&logs);
                     timing.logs += logs.len() as u64;
                     let at = time::Instant::now();
-                    let missing = shared.differ(device).await;
+                    let missing = shared.differ(device);
                     timing.differ_ms += ms(at);
                     shared.pull_live(endpoint, device, logs, &missing, pulls::LIVE_LOGS, &mut timing).await?;
                 }
@@ -384,7 +384,7 @@ impl Shared {
         let mut claimed = LiveClaimed::new(self);
         let mut timing = LiveTiming::default();
         let at = time::Instant::now();
-        let missing = self.differ(device).await;
+        let missing = self.differ(device);
         timing.differ_ms += ms(at);
         let logs: Vec<LogId> = logs.into_iter().collect();
         for chunk in logs.chunks(pulls::LIVE_LOGS) {

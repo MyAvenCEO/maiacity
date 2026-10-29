@@ -528,7 +528,8 @@
 	};
 </script>
 
-{#if phase === 'open' && world}
+<!-- open, the layout paints at once, before the device answered its first read (./Shell.svelte `ready`) -->
+{#if phase === 'open'}
 	<Shell
 		{world}
 		{api}
@@ -555,8 +556,6 @@
 			<p class="soft">Loading your account…</p>
 		{:else if phase === 'broken'}
 			<p class="soft">Restart the Mac app once its avenDB builds.</p>
-		{:else if phase === 'open'}
-			<p class="soft">Opening your vaults…</p>
 		{:else if phase === 'closed'}
 			<div class="cards">
 				<article class="card">
