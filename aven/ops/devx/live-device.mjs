@@ -20,7 +20,8 @@
  *                                                                online, catching up or not
  *
  * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 240 (seconds to watch sync: 4 min finds most stalls, Samuel 2026-10-28),
- * --profile <dir>, --room Bla (the room the views open), --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
+ * --profile <dir>, --room Bla (the room the views open), --remove <id,…> (earlier runs' test devices to remove, by
+ * recorded id), --headed (a visible WebKit window), --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
  * its `build/` folder), served at --base's own origin so the always-on peer takes the passkey as it takes the live
  * site's; the peer stays the live one. Each run writes build/live-device/<time>/: screenshots in order, run.json (step times, the unlock
  * sheet's steps, the sync pill over time, first paints, every diagnostics report the page sent, which is the phone's),
@@ -43,6 +44,11 @@ const watchSync = Number(option('--sync', '240'));
 const pageDir = args.includes('--page') ? resolve(option('--page')) : null;
 const messages = Math.max(1, Number(option('--messages', '1')));
 const viewRoom = option('--room', 'Bla');
+// --remove <id,id,…>: devices of the person's own vault this run removes once its walks are done, each named by its
+// recorded id (an earlier run's test device), never by name: Samuel 2026-10-29, "be careful to only remove your test
+// devices". A device can't remove itself, so each run removes the ones before it.
+const removeIds = (option('--remove', '') ?? '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+const headed = args.includes('--headed');
 const mac = platform() === 'darwin';
 const profile = option('--profile', mac ? join(homedir(), 'Library/Application Support/maiacity-live-device', engine) : join(homedir(), '.maiacity-live-device', engine));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -78,7 +84,7 @@ function keepKey(key) {
 
 // ─── the browser ───
 
-const log = { engine, base, started: new Date().toISOString(), steps: {}, sheet: [], views: {}, sync: [], reports: [], errors: [], shots: [] };
+const log = { engine, base, started: new Date().toISOString(), steps: {}, sheet: [], views: {}, sync: [], memory: [], removed: [], reports: [], errors: [], shots: [] };
 let shotNo = 0;
 async function shot(page, name) {
 	const file = `${String(++shotNo).padStart(2, '0')}-${name}.png`;
@@ -116,7 +122,7 @@ async function launch(dir = profile) {
 	const key = readKey();
 	if (!key) throw new Error(`no dev passkey yet: run with --setup '<invite link>' first`);
 	// a service worker would answer the page's requests past --page's routes
-	const options = { headless: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...(pageDir ? { serviceWorkers: 'block' } : {}) };
+	const options = { headless: !headed, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...(pageDir ? { serviceWorkers: 'block' } : {}) };
 	// WEBKIT_PATH: a newer WebKit than this Playwright's own, where its own opens no saved profile (macOS 26.1, build 2215)
 	if (engine === 'webkit' && process.env.WEBKIT_PATH) options.executablePath = process.env.WEBKIT_PATH;
 	// on the Mac, WebKit keeps a site's OPFS (the device's shelf) under ~/Library/WebKit/<its bundle>, outside the
@@ -267,6 +273,12 @@ async function run() {
 			const pill = await words(page, '.status');
 			log.sync.push({ s: t(t0), pill });
 			if (i % 10 === 0) await shot(page, `sync-${Math.round(t(t0))}s`);
+			// the Mac's memory pressure beside it (one heavy job at a time on the 8 GB Mac)
+			if (i % 10 === 0 && mac)
+				try {
+					const free = /(\d+)%/.exec(execFileSync('memory_pressure', ['-Q'], { encoding: 'utf8' }))?.[1];
+					log.memory.push({ s: t(t0), free: free == null ? null : Number(free) });
+				} catch {}
 			if (/synced|up to date/i.test(pill) && !/behind|pulling|catching/i.test(pill) && i > 2) break;
 			await sleep(1000);
 		}
@@ -313,6 +325,11 @@ async function run() {
 
 		// the report the phone would send: the page sends one ~10 s after a view opens
 		await until(async () => log.reports.length > 0 || null, 45);
+
+		// this device's own id, for the next run's --remove, and the earlier runs' devices this one removes
+		await own(page);
+		log.device = await page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
+		for (const id of removeIds) log.removed.push({ id, ...(await removeDevice(page, id, log.device)) });
 	} catch (e) {
 		log.errors.push(`run: ${e instanceof Error ? e.message : e}`);
 		await shot(page, 'failed');
@@ -339,6 +356,8 @@ async function run() {
 		`chat rooms ${s.chatRooms}s room ${s.chatRoom}s assets list ${s.assetsList}s asset ${s.asset}s ` +
 		`views ${Object.entries(log.views).map(([when, vs]) => `${when} ${vs.map((v) => `${v.app}/${v.level} ${v.paint ?? '-'}s`).join(' ')}`).join(', ')} ` +
 		`behind ${behind.length ? `${behind[0]}→${behind.at(-1)}` : 'n/a'} reports ${log.reports.length} errors ${log.errors.length} ` +
+		`device ${log.device ?? '-'} removed ${log.removed.map((r) => `${r.id.slice(0, 8)} ${r.result}`).join(' ') || '-'} ` +
+		`memory free ${log.memory.length ? `${Math.min(...log.memory.map((m) => m.free ?? 100))}% min` : 'n/a'} ` +
 		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')}`;
 	writeFileSync(join(out, 'line.txt'), `${line}\n`);
 	console.log(line);
@@ -450,6 +469,53 @@ async function views(page, when) {
 		}
 	}
 	return seen;
+}
+
+/** Opens Settings → Devices of the person's own vault on `page` (the entry that reads "…You" in the vault menu). */
+async function own(page) {
+	await go(page, `${base}/app/#settings/devices`);
+	if (await until(() => page.$('#settings-devices li.device'), 5)) return;
+	await page.evaluate(() => document.querySelector('button.item.identity')?.click());
+	await sleep(300);
+	await page.evaluate(() => [...document.querySelectorAll('button.acct[role=menuitemradio]')].find((b) => /You\s*$/.test(b.textContent?.replace(/\s+/g, ' ') ?? ''))?.click());
+	await sleep(300);
+	await go(page, `${base}/app/#settings/devices`);
+	await until(() => page.$('#settings-devices li.device'), 30);
+}
+
+/** Removes the device `id` (a full id, or at least its first 8 hex) from Settings → Devices on `page`: only where
+ *  exactly one row shows its short id and that row isn't this device (`me`, its short id): { result, why? }. */
+async function removeDevice(page, id, me) {
+	if (!/^[0-9a-f]{8,}$/.test(id)) return { result: 'skipped', why: 'not an id' };
+	const shortId = `${id.slice(0, 4)} ${id.slice(4, 8)}`;
+	if (shortId === me) return { result: 'skipped', why: 'this device' };
+	const rows = await page.evaluate((shortId) => [...document.querySelectorAll('#settings-devices li.device')].filter((li) => li.querySelector('.soft.mono')?.textContent?.trim() === shortId).length, shortId);
+	if (rows !== 1) return { result: 'skipped', why: rows ? `${rows} rows show ${shortId}` : 'not listed' };
+	// the page asks first (window.confirm in a browser): yes only to removing this one device
+	const answer = (d) => (d.message().startsWith('Remove ') ? d.accept() : d.dismiss());
+	page.once('dialog', answer);
+	const clicked = await page.evaluate((shortId) => {
+		const li = [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.soft.mono')?.textContent?.trim() === shortId);
+		const b = [...(li?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === 'Remove' && !b.disabled);
+		b?.click();
+		return !!b || (li?.querySelector('.remover .why')?.textContent?.trim() ?? 'no Remove button');
+	}, shortId);
+	if (clicked !== true) {
+		page.off('dialog', answer);
+		return { result: 'skipped', why: String(clicked) };
+	}
+	const said = await until(
+		() =>
+			page.evaluate((shortId) => {
+				const li = [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.soft.mono')?.textContent?.trim() === shortId);
+				if (!li) return 'Removed';
+				const t = li.querySelector('.remover .why')?.textContent?.trim() ?? '';
+				return /^(Removed|Not removed)/.test(t) ? t : null;
+			}, shortId),
+		120
+	);
+	await shot(page, `removed-${id.slice(0, 8)}`);
+	return { result: said === 'Removed' ? 'removed' : 'not removed', why: said ?? 'no answer in 120 s' };
 }
 
 /** Opens room `room` in Chat on `page`, once its device knows it: true, or false after `seconds`. */
