@@ -1,26 +1,9 @@
-/-! Foreground entry freshness is required only for explicitly head-conditional
-operations. Ordinary local writes never wait for peer catch-up. This model covers
+/-! No write waits for a peer: a write is judged only against what its device holds,
+at its own heads, and its deps carry the heads it saw. There is no peer gate to
+model, so this file keeps only what follows from local acceptance. This model covers
 UI scheduling, not local execution latency, durable storage, or authorization;
 the unchanged engine must still validate and accept every operation. -/
 namespace AvenDB.LocalWrite
-
-def waitsForPeer (hasEntry conditional behind : Bool) : Bool :=
-  hasEntry && conditional && behind
-
-theorem ordinary_is_local (hasEntry behind : Bool) :
-    waitsForPeer hasEntry false behind = false := by simp [waitsForPeer]
-
-theorem caught_up_is_local (hasEntry conditional : Bool) :
-    waitsForPeer hasEntry conditional false = false := by simp [waitsForPeer]
-
-theorem creation_is_local (conditional behind : Bool) :
-    waitsForPeer false conditional behind = false := by simp [waitsForPeer]
-
-theorem conditional_behind_still_waits : waitsForPeer true true true = true := rfl
-
-theorem ordinary_peer_independent (hasEntry a b : Bool) :
-    waitsForPeer hasEntry false a = waitsForPeer hasEntry false b := by
-  simp [waitsForPeer]
 
 -- A local-acceptance API returns only the engine's result. Summary readiness
 -- is deliberately not an input; consumers needing a new world use an explicit

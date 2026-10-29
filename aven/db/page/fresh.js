@@ -1,12 +1,13 @@
 // @ts-nocheck — plain JS
 /**
  * What a page says of a read's freshness (aven/db/spec/AvenDB/Freshness.lean, maia/content/game/code/sources/coverage.js
- * `freshnessOf`), and what an action (approve, accept, decline, delete) may do with it: one wording and one guard for
- * every page, query, schema and type. Shown by ./Fresh.svelte (the badge) and ./ActGuard.svelte (the guard's line).
+ * `freshnessOf`), and what an action (approve, accept, decline, delete) says beside it: one wording for every page,
+ * query, schema and type. Shown by ./Fresh.svelte (the badge) and ./AsOf.svelte (an action's line). Never a gate: an
+ * action goes on what the device holds (local first).
  */
-import { actOf, opensOn, showsFinal } from '../../../maia/content/game/code/sources/coverage.js';
+import { opensOn, showsFinal } from '../../../maia/content/game/code/sources/coverage.js';
 
-export { actOf, opensOn, showsFinal };
+export { opensOn, showsFinal };
 
 const n = (x) => x.toLocaleString('en');
 const at = (ms) => {
@@ -29,20 +30,15 @@ export function freshLine(f) {
 	return 'Catching up · waiting to hear from a peer';
 }
 
-/** What an action says beside its buttons: why it waits, or that it acts on data as of then.
+/** What an action says beside its buttons: what it acts on, as of when; nothing on current data. It never waits.
  * @param {ReturnType<import('../../../maia/content/game/code/sources/coverage.js').freshnessOf>} f */
 export function actionLine(f) {
-	const a = actOf(f);
-	if (a === 'wait') return 'This device is catching up on this. Answering waits until it holds the latest.';
-	if (a === 'confirm') return f.asOf
-		? `This device is offline. You would act on what it held as of ${at(f.asOf)}.`
-		: 'This device is offline and has not synced with a peer yet. You would act on what it holds.';
+	if (f.state === 'behind') return 'This device is still catching up on this: an answer goes on what it holds now and syncs on.';
+	if (f.state === 'offline') return f.asOf
+		? `This device is offline: an answer goes on what it held as of ${at(f.asOf)} and syncs once a peer is back.`
+		: 'This device is offline and has not synced with a peer yet: an answer goes on what it holds.';
 	return '';
 }
-
-/** Whether an action may run now: on current data, or offline once the person said they act on data as of then.
- * @param {ReturnType<import('../../../maia/content/game/code/sources/coverage.js').freshnessOf>} f @param {boolean} confirmed */
-export const mayAct = (f, confirmed) => opensOn(f, confirmed);
 
 const RANK = { current: 0, offline: 1, behind: 2 };
 /** The freshness of what several reads show together: behind if any is, offline if any is, else current. */
