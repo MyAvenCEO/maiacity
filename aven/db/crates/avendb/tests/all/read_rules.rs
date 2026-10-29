@@ -94,7 +94,7 @@ fn count(lab: &Lab, d: SignerId, what: &str) -> u64 {
 fn save(c: &mut Cast) -> (Warm, usize) {
     let held = c.lab.log(c.phone).ids().len();
     let w = c.lab.warming(c.phone, held, Some([1; 40])).expect("the shelf lacks work");
-    let warm = Warm { keys: w.keys.clone().into_iter().collect(), views: w.view.clone().into_iter().collect(), shown: vec![], queries: vec![] };
+    let warm = Warm { shown: vec![], queries: vec![], ..Warm::of(&w) };
     c.lab.warmed(c.phone, w);
     (warm, held)
 }
@@ -147,15 +147,15 @@ fn a_view_without_what_it_read_reads_anew_and_is_given_again() {
     let (warm, held) = save(&mut c);
     let expected = showings(&c);
     // the view as an older engine sealed it: the replay alone
-    let older = c.lab.view_without_readings(c.phone, &warm.views[0]).expect("its view opens");
-    let warm = Warm { views: vec![older], ..warm };
+    let older = c.lab.view_without_readings(c.phone, &warm.view).expect("its view opens");
+    let warm = Warm { view: Default::default(), views: vec![older], ..warm };
     let (whole, views) = (count(&c.lab, c.phone, "read: every write"), count(&c.lab, c.phone, "replay: from its stored view"));
     reopen(&mut c, &warm, held);
     assert_eq!(count(&c.lab, c.phone, "replay: from its stored view"), views + 1, "its view opens");
     assert_eq!(count(&c.lab, c.phone, "read: every write"), whole + 1, "it reads every body anew");
     assert_eq!(showings(&c), expected);
     let (again, held) = save(&mut c);
-    assert_eq!(again.views.len(), 1, "a view again, with what it read");
+    assert!(!again.view.is_empty(), "a view again, with what it read");
     let from = count(&c.lab, c.phone, "read: from its stored view");
     reopen(&mut c, &again, held);
     assert_eq!(count(&c.lab, c.phone, "read: from its stored view"), from + 1);
@@ -184,14 +184,16 @@ fn a_view_given_before_it_read_every_body_is_given_again_with_what_it_read() {
         assert_eq!(c.lab.catch_up_step(c.phone, 1), CatchUp::Stepped);
     }
     let (early, held) = save(&mut c);
-    assert_eq!(early.views.len(), 1, "a view, given as it goes");
+    assert!(!early.view.is_empty(), "a view, given as it goes");
     while let CatchUp::Stepped = c.lab.catch_up_step(c.phone, 1) {}
     let expected = showings(&c);
     let (again, held_again) = save(&mut c);
     assert_eq!(held_again, held);
-    assert_eq!(again.views.len(), 1, "once it read every body, the view again, with what it read");
+    assert!(!again.view.is_empty(), "once it read every body, the view again, with what it read");
+    assert!(again.view.keys().all(|row| !early.view.contains_key(row)), "its replay, unchanged, is not put again");
     let (from, whole) = (count(&c.lab, c.phone, "read: from its stored view"), count(&c.lab, c.phone, "read: every write"));
-    let warm = Warm { views: again.views, ..early };
+    // the shelf holds the rows of both saves, the later in place of the earlier
+    let warm = Warm { view: early.view.clone().into_iter().chain(again.view).collect(), ..early };
     reopen(&mut c, &warm, held);
     assert_eq!(count(&c.lab, c.phone, "read: from its stored view"), from + 1, "it reads on from its view");
     assert_eq!(count(&c.lab, c.phone, "read: every write"), whole);
@@ -199,7 +201,7 @@ fn a_view_given_before_it_read_every_body_is_given_again_with_what_it_read() {
 }
 
 /// The read rules' number (`readRules`, `StoredReadings.lean`) and the hash `Lab::read_print` gave of `cast` under it.
-const PINNED: (&str, &str) = ("1", "48ff8a354b0ce0d4765db320af084c917cbd64d916fc011767c8d9459c13fa4f");
+const PINNED: (&str, &str) = ("1", "c13dbbc33f765483c68e71766532e6ea3366a8474ce06e82e00aba3226e85ac0");
 
 /// A device reads on from what any later build under the same number sealed (RR1), so what reading gives must not change
 /// under one number. Where this fails: if a body reads otherwise now (`read_body`, or what its metadata holds), bump

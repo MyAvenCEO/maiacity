@@ -70,12 +70,7 @@ fn restore_unchanged(lab: &mut Lab, device: SignerId) {
         .warming(device, held, Some(checked))
         .expect("a cold open has a derived view to save");
     assert!(receipt.view.is_some());
-    let warm = Warm {
-        keys: receipt.keys.clone().into_iter().collect(),
-        views: receipt.view.clone().into_iter().collect(),
-        shown: receipt.shown.clone().map(Into::into).into_iter().collect(),
-        queries: receipt.queries.clone().map(Into::into).into_iter().collect(),
-    };
+    let warm = Warm::of(&receipt);
     lab.warmed(device, receipt);
     let used = count(lab, device, "replay: from its stored view");
     lab.restore_warm(device, backup.clone(), Some((checked, held)), &warm);
@@ -84,7 +79,9 @@ fn restore_unchanged(lab: &mut Lab, device: SignerId) {
 
     // Invalid derived bytes fall back to the same authoritative journal and opened-key cache.
     let mut broken = warm;
-    *broken.views[0].last_mut().expect("an encrypted view") ^= 1;
+    for row in broken.view.values_mut() {
+        *row.last_mut().expect("an encrypted row of its view") ^= 1;
+    }
     let absent = count(lab, device, "stored view: none that opens");
     lab.restore_warm(device, backup, Some((checked, held)), &broken);
     assert_eq!(count(lab, device, "replay: from its stored view"), used + 1);

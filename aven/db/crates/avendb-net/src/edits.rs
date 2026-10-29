@@ -22,10 +22,13 @@
 //!   from their boxes, so that it doesn't open them again, and its newest head of edits it checked, by its number and
 //!   the hash of its bytes (`Checked`), so that it doesn't check their signatures again as it starts from that head
 //!   (`Lab::restore_warm`); kept after every key it opens and every head it puts or takes back whole.
-//! - `slots/view-0` and `slots/view-1`: the device's stored view, what its edits said when it last kept one, encrypted
-//!   for it alone and its replay rules (`Replay::to_view`), with what it read of them, for a node to step on from there
-//!   rather than replay every edit, kept after a replay of every edit, or 4096 edits stepped on: the one slot an index
-//!   keeps its root in (`slot`), stamped with the head of the edits the view is of.
+//! - the index `view` (`ShelfIndex`, `slots/index-view-0` and `-1`): the device's stored view, what its edits said when
+//!   it last kept one, for a node to step on from there rather than replay every edit, kept after a replay of every
+//!   edit, or 4096 edits stepped on, stamped with the head of the edits the view is of: its rows (`ViewRows`), each
+//!   naming the blob that holds it, encrypted for the device alone, its replay to its replay rules (`Replay::to_view`)
+//!   and what it read of them to its read rules, a row of bodies a run of the log's places, so a save puts the rows
+//!   that changed and no more (`ViewOnShelf`). The slots it was kept in before, whole (`slots/view-0` and `-1`), are
+//!   read where the index holds no view, and kept again as rows.
 //!
 //! The keys' slots are what they start with (`KEYS`), the number they were kept as, in 8
 //! bytes, big-endian, then what they keep; the next goes in place of the older of the two (`Shelf::keep`), put after the edits it names, so the newest
@@ -45,7 +48,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, EntryId, SignerId};
-use avendb::lab::{Checked, KeptPack, Lab, Placed, PackFile, Warm, Warming};
+use avendb::lab::{Checked, KeptPack, Lab, Placed, PackFile, ViewChanges, ViewRows, Warm, Warming};
 use avendb::log_head::Head as LogHead;
 use avendb::policy::Log;
 use avendb::sign::Signed;
@@ -84,7 +87,8 @@ const HEADS: &str = "heads/";
 const JOURNAL: &str = "journal/";
 /// The two slots a device's keys are kept in, in turn, and what each starts with.
 const KEYS: ([&str; 2], &[u8]) = (["slots/keys-0", "slots/keys-1"], b"avenDB keys 1\n");
-/// The slots a device's stored view is kept in, in turn, each stamped with the head of the edits it is of (`slot`).
+/// The slots a device's stored view was kept in before its rows, each stamped with the head of the edits it is of
+/// (`slot`), read alone; and the index its rows are in now (`ViewOnShelf`).
 const VIEW: &str = "view";
 /// The indexes on the shelf that name, by each kept showing's or query view's row (`KeptPack::rows`), the pack it is
 /// in, a blob by its hash and size (`Warming::shown`, `Warming::queries`), and how many bytes of their pages stay in
@@ -104,11 +108,12 @@ pub(crate) struct Edits {
     /// What the shelf holds, which one save at a time reads and writes.
     book: tokio::sync::Mutex<Book>,
     kept: Mutex<Kept>,
-    /// The numbers its next keys and its next stored view are kept as, `n` in slot `n % 2` of theirs (`warm`).
-    slots: Mutex<(u64, u64)>,
-    /// Its kept showings and query views on its shelf (`PacksOnShelf`).
+    /// The number its next keys are kept as, `n` in slot `n % 2` of theirs (`warm`).
+    slots: Mutex<u64>,
+    /// Its kept showings and query views on its shelf (`PacksOnShelf`), and its stored view's rows (`ViewOnShelf`).
     shown: tokio::sync::Mutex<PacksOnShelf>,
     queries: tokio::sync::Mutex<PacksOnShelf>,
+    view: tokio::sync::Mutex<ViewOnShelf>,
     /// The head it started from and how many edits it holds, the first it took back (`started`); and its newest head
     /// of edits its device checked, each one (`checked`).
     started: Option<(Checked, usize)>,
@@ -429,7 +434,8 @@ impl Edits {
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
         let (slots, checked) = (Mutex::new(slots), Mutex::new(None));
         let (shown, queries) = (tokio::sync::Mutex::new(packs.0), tokio::sync::Mutex::new(packs.1));
-        let edits = Edits { shelf, book, kept, slots, shown, queries, started, checked, due: Notify::new() };
+        let view = tokio::sync::Mutex::new(packs.2);
+        let edits = Edits { shelf, book, kept, slots, shown, queries, view, started, checked, due: Notify::new() };
         Ok((edits, warm, ids, anchors))
     }
 
@@ -437,25 +443,24 @@ impl Edits {
     /// newest first. Nothing, where the shelf can't be read.
     #[cfg(test)]
     pub(crate) async fn warm(&self) -> Warm {
-        let (warm, next, (shown, queries)) = read_warm(&self.shelf).await;
+        let (warm, next, (shown, queries, view)) = read_warm(&self.shelf).await;
         *self.slots.lock().expect("slots") = next;
         *self.shown.lock().await = shown;
         *self.queries.lock().await = queries;
+        *self.view.lock().await = view;
         warm
     }
 
     /// Keeps on the shelf what the device worked out (`Shared::save`), as `warming` gives it, each in place of the older
-    /// of the two its slots keep: its keys, then its view.
+    /// of the two its slots keep: its keys, then its view's rows that changed.
     async fn put_warm_on(&self, on: &Shelf, warming: &mut Warming) -> Result<()> {
         if let Some(keys) = warming.keys.take() {
-            let n = self.slots.lock().expect("slots").0;
+            let n = *self.slots.lock().expect("slots");
             self.keep_on(on, KEYS, n, &keys).await?;
-            self.slots.lock().expect("slots").0 = n + 1;
+            *self.slots.lock().expect("slots") = n + 1;
         }
-        if let (Some(view), Some(head)) = (warming.view.take(), warming.view_head()) {
-            let n = self.slots.lock().expect("slots").1;
-            slot::keep(on, VIEW, n, head.into(), &view).await?;
-            self.slots.lock().expect("slots").1 = n + 1;
+        if let Some(view) = warming.view.take() {
+            self.view.lock().await.put(on, view).await?;
         }
         if let Some(kept) = warming.shown.take() {
             self.shown.lock().await.put(on, kept).await?;
@@ -848,22 +853,105 @@ async fn take_head(shelf: &Shelf, n: u64, warm: &Warm, taking: &mut Taking, to: 
     Ok((head, named))
 }
 
-/// What the device worked out before, as `shelf` keeps it (`Edits::warm`), and the numbers its next keys and view are
-/// kept as.
-async fn read_warm(shelf: &Shelf) -> (Warm, (u64, u64), (PacksOnShelf, PacksOnShelf)) {
+/// What the device worked out before, as `shelf` keeps it (`Edits::warm`), the number its next keys are kept as, and
+/// its packs and view's rows on its shelf.
+async fn read_warm(shelf: &Shelf) -> (Warm, u64, (PacksOnShelf, PacksOnShelf, ViewOnShelf)) {
     let read = async {
         let (keys, next_keys) = slots_of(shelf, KEYS).await?;
-        let views = slot::read(shelf, VIEW).await?;
-        let next_view = slot::next(&views);
-        let views = views.into_iter().map(|k| k.bytes).collect();
+        let (view, view_on) = read_view(shelf).await;
+        // the view as it was kept before its rows, where its rows hold none
+        let views = match view.is_empty() {
+            true => slot::read(shelf, VIEW).await?.into_iter().map(|k| k.bytes).collect(),
+            false => vec![],
+        };
         let (shown, shown_on) = read_packs(shelf, SHOWN).await;
         let (queries, queries_on) = read_packs(shelf, QUERIES).await;
-        anyhow::Ok((Warm { keys, views, shown, queries }, (next_keys, next_view), (shown_on, queries_on)))
+        anyhow::Ok((Warm { keys, view, views, shown, queries }, next_keys, (shown_on, queries_on, view_on)))
     };
     read.await.unwrap_or_else(|e| {
         tracing::warn!("avendb: what the device worked out before can't be read from its shelf: {e:#}");
-        (Warm::default(), (0, 0), (PacksOnShelf::none(shelf, SHOWN), PacksOnShelf::none(shelf, QUERIES)))
+        (Warm::default(), 0, (PacksOnShelf::none(shelf, SHOWN), PacksOnShelf::none(shelf, QUERIES), ViewOnShelf::none(shelf)))
     })
+}
+
+/// A device's stored view on its shelf (`Warming::view`): the index of its rows, each naming the blob that holds it, by
+/// its hash and size, and the blob each row names, so that one a row no longer names goes.
+pub(crate) struct ViewOnShelf {
+    index: ShelfIndex,
+    blobs: HashMap<[u8; 32], Blob>,
+}
+
+impl ViewOnShelf {
+    /// None on `shelf`.
+    fn none(shelf: &Shelf) -> ViewOnShelf {
+        let index = ShelfIndex::empty(shelf.clone(), VIEW, PACKS_BUDGET, empty_head().head).expect("the name of an index");
+        ViewOnShelf { index, blobs: HashMap::new() }
+    }
+
+    /// Puts each row `view` gives anew on the shelf through `on` as a blob, then the rows in the index, each naming its
+    /// blob in place of the one it named before, and those it takes away gone, stamped with the head of the edits the
+    /// view is of; and lets go of the blobs no row names then. A crash before the index's slot leaves the rows as they
+    /// were, each naming a blob the shelf holds still.
+    async fn put(&mut self, on: &Shelf, view: ViewChanges) -> Result<()> {
+        let mut changes = Vec::with_capacity(view.rows.len());
+        let mut named = Vec::with_capacity(view.rows.len());
+        for (row, bytes) in view.rows {
+            let blob = match bytes {
+                Some(bytes) => Some(on.put_blob(&Bytes::from(bytes)).await?),
+                None => None,
+            };
+            let value = blob.map(|(hash, size)| hash.as_bytes().iter().copied().chain(size.to_be_bytes()).collect());
+            changes.push((row.to_vec(), value));
+            named.push((row, blob));
+        }
+        self.index.apply_on(on, changes, view.head.into()).await?;
+        for (row, blob) in named {
+            let was = match blob {
+                Some(blob) => self.blobs.insert(row, blob),
+                None => self.blobs.remove(&row),
+            };
+            if let Some((hash, _)) = was.filter(|b| Some(*b) != blob) {
+                on.drop(&hash.to_hex()).await.ok();
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The rows of the stored view its shelf's index names, each read from its blob, where they all read whole; else none,
+/// and the device replays its edits as it would with no view, and keeps its view anew.
+async fn read_view(shelf: &Shelf) -> (ViewRows, ViewOnShelf) {
+    let mut on = ViewOnShelf::none(shelf);
+    match ShelfIndex::open_kept(shelf.clone(), VIEW, PACKS_BUDGET, empty_head()).await {
+        Ok((index, true)) => on.index = index,
+        Ok((_, false)) => return (ViewRows::new(), on),
+        Err(e) => {
+            tracing::warn!("avendb: the index of the stored view can't be read, so it is worked out anew: {e:#}");
+            return (ViewRows::new(), on);
+        }
+    }
+    let read = async {
+        let (mut view, mut from) = (ViewRows::new(), Vec::new());
+        loop {
+            let rows = on.index.scan(&from, 4096).await?;
+            let Some((last, _)) = rows.last() else { break };
+            from = [last.as_slice(), &[0]].concat();
+            for (row, value) in rows {
+                let row = <[u8; 32]>::try_from(row.as_slice()).map_err(|_| anyhow!("a row of the view isn't 32 bytes"))?;
+                let blob = blob_of(&value).ok_or_else(|| anyhow!("a row of the view names no blob"))?;
+                view.insert(row, shelf.read_blob(blob.0, blob.1).await?.to_vec());
+                on.blobs.insert(row, blob);
+            }
+        }
+        anyhow::Ok(view)
+    };
+    match read.await {
+        Ok(view) => (view, on),
+        Err(e) => {
+            tracing::warn!("avendb: the stored view's rows don't read whole, so it is worked out anew: {e:#}");
+            (ViewRows::new(), ViewOnShelf::none(shelf))
+        }
+    }
 }
 
 /// A device's kept showings or query views on its shelf (`Warming::shown`, `Warming::queries`): the index that names,
@@ -1396,8 +1484,9 @@ mod tests {
                             "heads/0000000000000002" => Some(heads[1].clone()),
                             "journal/0000000000000000" => None,
                             // what it worked out before, read first now (`Edits::open_into`): none
-                            "slots/keys-0" | "slots/keys-1" | "slots/view-0" | "slots/view-1" | "slots/index-shown-0"
-                            | "slots/index-shown-1" | "slots/index-queries-0" | "slots/index-queries-1" => None,
+                            "slots/keys-0" | "slots/keys-1" | "slots/view-0" | "slots/view-1" | "slots/index-view-0"
+                            | "slots/index-view-1" | "slots/index-shown-0" | "slots/index-shown-1"
+                            | "slots/index-queries-0" | "slots/index-queries-1" => None,
                             _ => panic!("unexpected object {name}"),
                         };
                         tx.send(Ok(bytes)).ok();
@@ -1636,7 +1725,7 @@ mod tests {
             while let Some(call) = calls.recv().await {
                 match call {
                     Call::Keep { name, bytes, tx } => {
-                        let view = name.starts_with("slots/view-");
+                        let view = name.starts_with("slots/index-view-");
                         if view && enabled.load(Ordering::Relaxed) && let Some((entered, released)) = pause.take() {
                             entered.send(()).ok();
                             released.await.expect("the test releases the view");
@@ -1837,11 +1926,11 @@ mod tests {
         let opts = Options { shelf: Some(shelf.clone()), ..Options::local() };
         let node = Node::spawn(lab.split(me, &[passkey], [91;32]), me, opts).await.unwrap();
         node.shared.save().await.unwrap();
-        let before = node.shared.edits.as_ref().unwrap().warm().await.views;
+        let before = node.shared.edits.as_ref().unwrap().warm().await.view;
         assert!(!before.is_empty());
         node.act(move |lab, me| { lab.edit(me, vault, entry, |it| it.set_text(2,"recent durable edit")).unwrap(); }).await;
         node.shared.save().await.unwrap();
-        assert_eq!(node.shared.edits.as_ref().unwrap().warm().await.views, before,
+        assert_eq!(node.shared.edits.as_ref().unwrap().warm().await.view, before,
             "ordinary saver must retain its snapshot interval after a single write");
         let expected = node.read(move |lab,me| lab.item(me,entry).unwrap().record()).await;
         node.shutdown().await.unwrap();
@@ -1849,7 +1938,7 @@ mod tests {
         assert!(anchors.is_empty(), "ordinary warm reopen has no bootstrap companion");
         let count = signed.len();
         let warm = reopened.warm().await;
-        assert_ne!(warm.views, before, "clean shutdown publishes the current derived frontier");
+        assert_ne!(warm.view, before, "clean shutdown publishes the current derived frontier");
         // split moved the original device into Node; reopen with its same test identity.
         let mut lab = Lab::new();
         let restored_passkey = lab.passkey("Shutdown materialization");
