@@ -128,9 +128,10 @@ organization `aven` reserves the scope before anything is published.
   person's vault is owned by its owner key. A device's vault is owned by the vault it serves; the device's key signs for
   that vault and governs nothing, so a lost device is revoked by its vault, and the vault loses nothing. A network's
   vault is owned by the vault that runs it: Aven by Alice's vault, which makes **Alice's vault the admin, not her key.**
-  **Nobody acts as a network's vault:** it has no key of its own and is never an account. Its admin manages it as
-  herself; every act on Aven is signed by one of Alice's devices for Alice's vault, and its authority comes from the
-  tree. Authority runs down the tree, never up: a vault governs everything below it, and an app shows a vault only that.
+  **A network acts through its own devices, and no person switches into it.** Aven has its own vault; the Aven Peer,
+  its device, signs for Aven within the rights Alice's vault gives it and can take back. People act on Aven only as
+  themselves: Alice manages it as Alice's vault, signing with her own devices, and a network is never an account.
+  Authority runs down the tree, never up: a vault governs everything below it, and an app shows a vault only that.
   avenID also holds what decides who may act: owners acting k of n (multisig), recovery (guardian vaults that can
   replace a vault's owners, after a delay in which the owners can cancel), key rotation, and the cryptographic suites
   below. avenDB checks every write against it, avenPEER's door every peer.
