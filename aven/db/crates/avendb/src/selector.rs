@@ -139,6 +139,20 @@ impl Selector {
         }
     }
 
+    /// Whether an entry whose creation gave it `a` may match it, now or after edits it lacks: the type, author, id
+    /// and creation of an entry stay as its creation gave them, while its tags change by later writes to it, so a tag
+    /// test may come to hold either way (`Coverage.lean` `mayMatch`, conservative).
+    pub fn may_match(&self, a: &Attrs) -> bool {
+        let fixed = |t: &Atom| match t {
+            Atom::TagHas(_) | Atom::TagNone(_) | Atom::TagsWithin(_) => true,
+            _ => t.test(a),
+        };
+        match self {
+            Selector::All => true,
+            Selector::AnyOf(ds) => ds.iter().any(|d| d.iter().all(fixed)),
+        }
+    }
+
     /// Within the bounds a peer accepts (`MAX_CONJUNCTIONS`, `MAX_TESTS`, `MAX_IDS`).
     pub fn bounded(&self) -> bool {
         let atom = |t: &Atom| match t {
@@ -311,6 +325,19 @@ mod tests {
         assert!(Atom::TagsWithin(vec!["a".into(), "b".into(), "c".into()]).test(&a));
         assert!(!Atom::TagsWithin(vec!["a".into()]).test(&a));
         assert!(Selector::All.matches(&a) && !Selector::AnyOf(vec![]).matches(&a));
+    }
+
+    /// An entry may come to match by its tags, which later writes change, never by its type, author, id or creation,
+    /// which its creation fixed (`may_match`, what a read's freshness counts a lacked log by).
+    #[test]
+    fn an_entry_may_come_to_match_by_its_tags_alone() {
+        let work_todos = Selector::AnyOf(vec![vec![Atom::TypeIn(vec!["todo".into()]), Atom::TagHas("work".into())]]);
+        assert!(!work_todos.matches(&attrs("todo", &["home"])) && work_todos.may_match(&attrs("todo", &["home"])));
+        assert!(!work_todos.may_match(&attrs("note", &["work"])), "a note stays a note");
+        let untagged = Selector::AnyOf(vec![vec![Atom::TagNone(vec!["done".into()]), Atom::CreatedIn(0, 5)]]);
+        assert!(!untagged.may_match(&attrs("todo", &[])), "created at 10 stays so");
+        assert!(!Selector::AnyOf(vec![vec![Atom::EntryIn(vec![EntryId::from_u64(8)])]]).may_match(&attrs("note", &[])));
+        assert!(Selector::All.may_match(&attrs("note", &[])) && !Selector::AnyOf(vec![]).may_match(&attrs("note", &[])));
     }
 
     fn sel(ds: &[&[Atom]]) -> Selector {

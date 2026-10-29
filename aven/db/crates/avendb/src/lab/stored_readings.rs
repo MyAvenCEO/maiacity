@@ -49,8 +49,8 @@ fn put_ids<'a>(out: &mut Vec<u8>, ids: impl ExactSizeIterator<Item = &'a EditId>
 /// from an owner's base.
 pub(super) fn sealable(store: &Store, held: usize) -> bool {
     let rn = &store.read_new;
-    let read_to = rn.log.as_ref().is_some_and(|(lineage, len, wholes)| {
-        *lineage == store.log.lineage() && *len == held && *wholes == store.wholes
+    let read_to = rn.log.as_ref().is_some_and(|(head, wholes)| {
+        store.log.of_log(*head) && head.at as usize == held && *wholes == store.wholes
     });
     let r = &store.readings;
     let all = || r.tags.len() == store.bodies.len() && store.bodies.ids().all(|id| r.tags.contains_key(id));
@@ -154,6 +154,6 @@ impl ReadNew {
         self.uncounted = s.uncounted.clone();
         self.lacking = s.lacking.clone();
         self.then = Some((opened, 0, r.headers.len(), r.tags.len()));
-        self.log = Some((log.lineage(), held, wholes));
+        self.log = log.head_at(held as u64).map(|head| (head, wholes));
     }
 }

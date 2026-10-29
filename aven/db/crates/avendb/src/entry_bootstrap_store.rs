@@ -33,7 +33,7 @@ pub(crate) struct Based {
 // Bodies/blobs/signed entries are content-addressed and append-only between forgets;
 // key insertions and anchor replacement have explicit allocation-identity revisions.
 pub(crate) struct OverlayBasis {
-    log: crate::policy::LogRevision,
+    log: crate::log_head::Head,
     keys: Arc<()>,
     anchors: Arc<()>,
     warm: Arc<()>,
@@ -46,13 +46,13 @@ pub(crate) struct OverlayBasis {
 }
 impl OverlayBasis {
     pub(crate) fn of(store: &Store) -> Self {
-        Self { log: store.log.revision(), keys: store.keys.revision.clone(),
+        Self { log: store.log.head(), keys: store.keys.revision.clone(),
             anchors: store.bootstrap_revision.clone(), warm: store.warm_revision.clone(),
             bodies: store.bodies.len(), blobs: store.blobs.len(), signed: store.signed.len(),
             follow: store.follow.clone(), depth: store.query_depth, gate: store.gate }
     }
     fn matches(&self, store: &Store) -> bool {
-        self.log == store.log.revision() && Arc::ptr_eq(&self.keys, &store.keys.revision)
+        self.log == store.log.head() && Arc::ptr_eq(&self.keys, &store.keys.revision)
             && Arc::ptr_eq(&self.anchors, &store.bootstrap_revision)
             && Arc::ptr_eq(&self.warm, &store.warm_revision)
             && self.bodies == store.bodies.len() && self.blobs == store.blobs.len()
@@ -923,7 +923,7 @@ mod tests {
         let basis = OverlayBasis::of(&store);
         assert!(basis.matches(&store));
         store.log = crate::policy::Log::default();
-        assert!(!basis.matches(&store), "same-length replacement is not the same signed-log revision");
+        assert!(basis.matches(&store), "a log of the same edits has the same head");
         let basis = OverlayBasis::of(&store);
         store.keys.revision = Arc::new(());
         assert!(!basis.matches(&store), "key invalidation is not inferred from cardinality");

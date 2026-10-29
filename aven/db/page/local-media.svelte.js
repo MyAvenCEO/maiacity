@@ -8,11 +8,15 @@ import { localDevice } from './local.js';
 import { native } from '$lib/native';
 import { avenRef, avenUrl } from '$lib/media/ref.js';
 import { whole, mediaOf, serve, address } from './files.js';
+import { watchStirs } from './stirs.js';
 const urls = $state({});
 const wanted = new Map();
 let loading;
-let timer;
 let owner;
+/** the stop of the watch on the owner's stirs, which reads again what isn't shown yet as the device's files land */
+let unstir;
+/** whether the device stirred while a read was under way, which then reads once more */
+let stirred = false;
 let streaming;
 let snapshot;
 let snapshotDevice;
@@ -20,6 +24,7 @@ function useMediaDevice(device) {
     if (device === owner) return;
     resetMedia(urls, wanted, url => URL.revokeObjectURL(url));
     streaming?.stop(); streaming = null; owner = device;
+    unstir?.(); unstir = null;
 }
 // Reuse the session's world snapshot; no separate metadata fetch on every profile render.
 export function localMediaWorld(world) {
@@ -53,6 +58,13 @@ export function refreshLocalMedia() {
         if (d !== deviceOf()) return;
         useMediaDevice(d);
 		if (!d || !wanted.size) return;
+		// a file not held yet is read again when the device says something changed (a file it keeps landed, a page of
+		// edits), never on a timer
+		unstir ??= watchStirs(d, () => {
+			if (d !== owner || ![...wanted.keys()].some((key) => !urls[key])) return;
+			if (loading) stirred = true;
+			else void refreshLocalMedia();
+		});
         // Freeze demand across awaits: a newly requested vault is not an empty result.
         const requests = [...wanted];
         let world = snapshotDevice === d && snapshot;
@@ -103,11 +115,13 @@ export function refreshLocalMedia() {
 			} catch { /* Retry after background sync; never fetch from a peer here. */ }
 		}
 	})().catch(() => {}).finally(() => {
+		// Only what isn't shown yet is asked again, on the device's stirs (`unstir`); what changes later comes with the
+		// session's next world (localMediaWorld), so a shown picture costs nothing more.
 		loading = null;
-		// Only what isn't shown yet is asked again; what changes later comes with the session's next world
-		// (localMediaWorld), so a shown picture costs nothing more.
-		const waiting = [...wanted.keys()].some((key) => !urls[key]);
-		if (!timer && waiting) timer = setTimeout(() => { timer = null; void refreshLocalMedia(); }, snapshot ? 15000 : 5000);
+		if (stirred) {
+			stirred = false;
+			void refreshLocalMedia();
+		}
 	});
 	return loading;
 }

@@ -44,7 +44,8 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, EntryId, SignerId};
 use avendb::lab::{Checked, Lab, Placed, ShownPack, Warm, Warming};
-use avendb::policy::{Log, LogRevision};
+use avendb::log_head::Head as LogHead;
+use avendb::policy::Log;
 use avendb::sign::Signed;
 use avendb::wire::Wire;
 use bytes::Bytes;
@@ -131,9 +132,10 @@ struct Kept {
     /// The first `written` edits of the device's log.
     written: usize,
     anchor_stamp: Vec<(EntryId, EditId)>,
-    /// The log whose first `written` edits were persisted. Withdrawals and restores start a new lineage, even
-    /// when the number of edits stays the same; an in-flight save acknowledges only the lineage it wrote.
-    lineage: Option<LogRevision>,
+    /// The head of the log's first `written` edits, those persisted. A withdrawal or a restore gives the log another
+    /// head there, even where the number of edits stays the same; an in-flight save acknowledges only the head it
+    /// wrote.
+    head: Option<LogHead>,
     keys: HashSet<BlobId>,
     /// The next save puts a head of the whole log: the device didn't take back every edit the shelf held.
     whole: bool,
@@ -141,7 +143,7 @@ struct Kept {
 
 impl Kept {
     fn continues(&self, log: &Log) -> bool {
-        !self.whole && self.lineage.as_ref() == Some(&log.lineage())
+        !self.whole && self.head.is_some_and(|h| log.of_log(h))
     }
 }
 
@@ -151,7 +153,8 @@ struct Due {
     to: usize,
     anchor_stamp: Vec<(EntryId, EditId)>,
     anchors: Vec<u8>,
-    lineage: LogRevision,
+    /// The head of the log's first `to` edits, as it took them.
+    head: LogHead,
     records: Vec<u8>,
     keys: Vec<(BlobId, Arc<[u8]>)>,
     whole: bool,
@@ -412,7 +415,7 @@ impl Edits {
             to.keys(keys).await?;
         }
         let Taking { ids, keys, .. } = taking;
-        let kept = Kept { anchor_stamp: Vec::new(), written: 0, lineage: None, keys: keys.keys().copied().collect(), whole: false };
+        let kept = Kept { anchor_stamp: Vec::new(), written: 0, head: None, keys: keys.keys().copied().collect(), whole: false };
         let book = Book { packs: head.packs, keys, mark: head.journal, next, tail, head: next_head, pending, anchors: anchors.clone() };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
         let (slots, shown, checked) = (Mutex::new(slots), Mutex::new(shown), Mutex::new(None));
@@ -491,7 +494,7 @@ impl Edits {
         match lab.log(me).ids().starts_with(stored) {
             true => {
                 kept.written = stored.len();
-                kept.lineage = Some(lab.log(me).lineage());
+                kept.head = lab.log(me).head_at(stored.len() as u64);
                 *self.checked.lock().expect("checked") = self.started.map(|(named, _)| named);
             }
             false => kept.whole = true,
@@ -536,7 +539,7 @@ impl Edits {
         }
         let anchors = lab.bootstrap_bytes(me).context("bootstrap anchor cannot be encoded within durable bounds; previous durable state retained")?;
         ensure!(anchors.len() <= MAX_ANCHORS, "bootstrap anchor save exceeds its bound");
-        Ok(Some(Due { anchors, anchor_stamp, to: ids.len(), lineage: lab.log(me).lineage(), records, keys, whole }))
+        Ok(Some(Due { anchors, anchor_stamp, to: ids.len(), head: lab.log(me).head(), records, keys, whole }))
     }
 
     /// Puts `due` on the shelf: each new McEliece key as a blob, then the new edits and keys in the next journal
@@ -570,7 +573,7 @@ impl Edits {
             book.anchors = due.anchors.clone();
             let mut kept = self.kept.lock().expect("kept");
             (kept.written, kept.whole) = (due.to, false);
-            kept.lineage = Some(due.lineage);
+            kept.head = Some(due.head);
             kept.anchor_stamp = due.anchor_stamp;
             kept.keys.extend(ids);
             return Ok(());
@@ -614,7 +617,7 @@ impl Edits {
             let mut kept = self.kept.lock().expect("kept");
             kept.written = due.to;
             kept.anchor_stamp = due.anchor_stamp;
-            kept.lineage = Some(due.lineage);
+            kept.head = Some(due.head);
             kept.keys.extend(ids);
         }
         if book.next - book.mark >= JOURNALED || book.tail >= TAIL_EDITS {
@@ -1153,7 +1156,7 @@ mod tests {
         // Simulate a completed object write whose acknowledgement was lost.
         shelf.put(&journal_name(0), Entry { keys: vec![], records: records.clone(), anchors: anchors.clone() }.to_bytes()).await.unwrap();
         let mut book = edits.book.lock().await;
-        let due = Due { to: 1, lineage: log_lab.log(me).lineage(), records, keys: vec![], whole: false, anchors: anchors.clone(), anchor_stamp: vec![] };
+        let due = Due { to: 1, head: log_lab.log(me).head(), records, keys: vec![], whole: false, anchors: anchors.clone(), anchor_stamp: vec![] };
         edits.put(&mut book, due).await.unwrap();
         drop(book);
         let (_, (saved, _, retained)) = Edits::open(shelf.clone()).await.unwrap();
@@ -1170,7 +1173,7 @@ mod tests {
         let mut book = edits.book.lock().await;
         let mut records = Vec::new();
         record(&mut records, &signed(0));
-        edits.put(&mut book, Due { to: 1, lineage: log_lab.log(me).lineage(), records, keys: vec![], whole: true, anchors: anchors.clone(), anchor_stamp: vec![] }).await.unwrap();
+        edits.put(&mut book, Due { to: 1, head: log_lab.log(me).head(), records, keys: vec![], whole: true, anchors: anchors.clone(), anchor_stamp: vec![] }).await.unwrap();
         drop(book);
         let (_, (saved, _, retained)) = Edits::open(shelf.clone()).await.unwrap();
         assert_eq!(saved.len(), 1);
@@ -1301,13 +1304,13 @@ mod tests {
         let first = signed(0).edit;
         let second = signed(1).edit;
         let mut log = Log::from_edits(vec![first.clone(), second]);
-        let kept = Kept { anchor_stamp: Vec::new(), written: 2, lineage: Some(log.lineage()), keys: HashSet::new(), whole: false };
+        let kept = Kept { anchor_stamp: Vec::new(), written: 2, head: Some(log.head()), keys: HashSet::new(), whole: false };
         assert!(kept.continues(&log));
         log.let_go(&[first.id()].into());
         log.receive([signed(2).edit]);
         assert_eq!(log.ids().len(), kept.written);
         assert!(!kept.continues(&log), "equal counts do not make a replacement prefix durable");
-        let kept = Kept { lineage: Some(log.lineage()), ..kept };
+        let kept = Kept { head: Some(log.head()), ..kept };
         log.receive([signed(3).edit]);
         assert!(kept.continues(&log), "ordinary appends preserve the saved prefix");
     }
@@ -1357,7 +1360,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_delayed_save_acknowledges_only_its_lineage_and_recovery_keeps_every_old_head() {
+    async fn a_delayed_save_acknowledges_only_its_head_and_recovery_keeps_every_old_head() {
         use avendb::cast::{handbook, text, world};
         use avendb::lab::Backup;
 
@@ -1367,7 +1370,7 @@ mod tests {
                 std::fs::remove_dir_all(&self.0).ok();
             }
         }
-        let folder = Folder(std::env::temp_dir().join(format!("avendb-lineage-{}", crate::shelf::fresh())));
+        let folder = Folder(std::env::temp_dir().join(format!("avendb-one-head-{}", crate::shelf::fresh())));
         let mut w = world();
         let h = handbook(&mut w);
         let me = w.mac_a;
@@ -1419,14 +1422,14 @@ mod tests {
             release.send(()).expect("release persistence");
             writing.await.expect("the second head is durable");
         }
-        assert_eq!(edits.held(&w.lab, me), 0, "an old save cannot acknowledge the current lineage");
+        assert_eq!(edits.held(&w.lab, me), 0, "an old save cannot acknowledge the current head");
         assert!(edits.lacks(&w.lab, me), "the saver must run again");
         let second_head = shelf.get(&head_name(2)).await.unwrap().unwrap();
         {
             let mut book = edits.book.lock().await;
             let due = edits.due(&w.lab, me, (book.next - book.mark, book.tail, book.packs.len())).unwrap().unwrap();
             assert!(due.whole);
-            edits.put(&mut book, due).await.expect("the current lineage is durable");
+            edits.put(&mut book, due).await.expect("the current head is durable");
         }
         let expected = w.lab.log(me).ids().to_vec();
         assert_eq!(edits.held(&w.lab, me), expected.len());
@@ -1543,9 +1546,9 @@ mod tests {
         node.shared.save().await.unwrap();
         let edits=node.shared.edits.as_ref().unwrap();
         while tokio::time::timeout(Duration::ZERO,edits.due.notified()).await.is_ok() {}
-        let before=node.read(|lab,me|lab.log(me).revision()).await;
+        let before=node.read(|lab,me|lab.log(me).head()).await;
         assert!(node.act(move |lab,me|lab.adopt_owner_entry_base(me,snapshot,entry,prepared.sealed)).await);
-        assert_eq!(before,node.read(|lab,me|lab.log(me).revision()).await,"adoption adds no signed edit");
+        assert_eq!(before,node.read(|lab,me|lab.log(me).head()).await,"adoption adds no signed edit");
         tokio::time::timeout(Duration::from_millis(100),edits.due.notified()).await.expect("anchor-only adoption wakes idle saver");
         node.shared.save().await.unwrap();
         let (_, (signed, keys, anchors))=Edits::open(shelf).await.unwrap();
@@ -1735,7 +1738,7 @@ mod tests {
             // No already-pending permit or rising dirty edge may rescue the stale acknowledgement by accident.
             while tokio::time::timeout(Duration::ZERO, edits.due.notified()).await.is_ok() {}
             node.shared.warm.store(true, Ordering::Relaxed);
-            let revision = node.shared.locked_lab().log(me).revision();
+            let head = node.shared.locked_lab().log(me).head();
             node.act(move |lab, me| {
                 lab.lock(me);
                 if unlock_before_receipt {
@@ -1743,7 +1746,7 @@ mod tests {
                 }
             })
             .await;
-            assert_eq!(node.shared.locked_lab().log(me).revision(), revision, "no edit wakeup");
+            assert_eq!(node.shared.locked_lab().log(me).head(), head, "no edit wakeup");
             release.send(()).unwrap();
             tokio::time::timeout(Duration::from_secs(15), views.recv()).await.unwrap().unwrap();
             if !unlock_before_receipt {
