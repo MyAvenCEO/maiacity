@@ -4,9 +4,9 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-	root: 'app',
+	root: 'os/web',
 	plugins: [svelte()],
 	// avenOS for the browser (`bun run build`), a deliverable of every release
-	build: { outDir: '../dist', emptyOutDir: true },
+	build: { outDir: '../../dist', emptyOutDir: true },
 	server: { host: '0.0.0.0', port: 5173, strictPort: true, allowedHosts: ['localhost', '.localhost'] },
 });

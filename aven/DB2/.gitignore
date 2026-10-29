@@ -3,5 +3,5 @@
 runs/
 dist/
 deliverables/
-box/extra-ca/*.crt
+sandbox/box/extra-ca/*.crt
 node_modules/

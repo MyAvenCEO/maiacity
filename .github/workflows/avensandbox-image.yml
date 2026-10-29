@@ -8,8 +8,8 @@ name: avenSANDBOX image
 on:
   push:
     paths:
-      - aven/DB2/box/Dockerfile
-      - aven/DB2/box/extra-ca/**
+      - aven/DB2/sandbox/box/Dockerfile
+      - aven/DB2/sandbox/box/extra-ca/**
       - .github/workflows/avensandbox-image.yml
   workflow_dispatch:
 
@@ -38,7 +38,7 @@ jobs:
         run: |
           name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox"
           echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "image=$name:$(sha256sum aven/DB2/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          echo "image=$name:$(sha256sum aven/DB2/sandbox/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@v4.7.0
         with:
           registry: ghcr.io
@@ -82,7 +82,7 @@ jobs:
         id: push
         uses: docker/build-push-action@v7.4.0
         with:
-          context: aven/DB2/box
+          context: aven/DB2/sandbox/box
           platforms: linux/${{ matrix.arch }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}

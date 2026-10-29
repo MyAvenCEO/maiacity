@@ -11,7 +11,7 @@ services:
     init: true
     shm_size: 1gb
     volumes:
-      - ..:/work
+      - ../..:/work
       - node_modules:/work/node_modules
     ports:
       - "${AVENSANDBOX_PORT:-5173}:5173"
