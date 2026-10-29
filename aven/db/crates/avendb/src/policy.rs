@@ -4612,7 +4612,8 @@ pub fn replay_on_or(
         },
         Err((was, why)) => Err((Some(was), why)),
     };
-    if !fresh.iter().all(steps) {
+    // one a checkpoint it holds covers is run where what its signers did for the checkpoint's vault is worked out
+    if !fresh.iter().all(steps) || ids_fresh.iter().any(|id| tail.covered.contains_key(id)) {
         return tail_or_whole(was);
     }
     let mut order: Vec<(u64, u8, EditId, usize, &Edit)> =
@@ -4646,6 +4647,18 @@ pub fn replay_on_or(
         for (entry, ws) in kept.iter_mut() {
             let (before, after) = (tail.passed.wrote.get(entry), tail.after.wrote.get(entry));
             ws.extend(before.into_iter().chain(after).flatten().copied());
+        }
+        // a new move that keeps not every write it holds of its entry is tried with the edits from before the first
+        // such write on (`on_rung`)
+        let keeps_held = fresh.iter().all(|e| match &e.action {
+            Action::Mark { entry, caps: Some(_), keep, .. } => {
+                let keep: HashSet<&EditId> = keep.iter().collect();
+                kept.get(entry).is_none_or(|ws| ws.iter().all(|w| keep.contains(w)))
+            }
+            _ => true,
+        });
+        if !keeps_held {
+            return tail_or_whole(was);
         }
     }
     let mut out = was;
@@ -4732,7 +4745,8 @@ fn to_end(out: &mut Replay, edits: &[Edit]) -> Rung {
     Rung { at, state, base }
 }
 
-/// Why `step_tail` didn't step on from its place: a new edit sorts before it, where it may step on from a rung
+/// Why `step_tail` didn't step on from its place: a new edit sorts before it, or an edit it holds there that a new
+/// edit bears on (a checkpoint covers it, a move keeps it not), where it may step on from a rung or mark before them
 /// (`on_rung`).
 const SORTS_BEFORE: &str = "replay whole: a new edit sorts before its place";
 
@@ -4746,7 +4760,19 @@ fn on_rung(mut was: Replay, edits: &[Edit], fresh: &[Edit], ids: &[EditId], reac
         let e = was.edit(edits, i);
         (e.depth, e.rank(), was.ids[i])
     };
+    // and the first edit it holds that a new checkpoint covers, or a write a new move keeps not, each replayed again
+    // with them (`TailRun::begin`)
     let Some(tail) = was.tail.as_ref() else { return Err(was) };
+    let mut affected: HashSet<EditId> = watched(fresh).into_keys().collect();
+    for e in fresh {
+        if let Action::Mark { entry, caps: Some(_), keep, .. } = &e.action {
+            let keep: HashSet<&EditId> = keep.iter().collect();
+            let wrote = [&tail.passed, &tail.after].into_iter().filter_map(|p| p.wrote.get(entry)).flatten();
+            affected.extend(wrote.filter(|w| !keep.contains(w)));
+        }
+    }
+    let held = (!affected.is_empty()).then(|| was.ids.iter().position(|id| affected.contains(id))).flatten();
+    let first = held.map_or(first, |i| first.min(key(i)));
     let before = |p: usize| p == 0 || key(p - 1) < first;
     let rung = tail.rungs.iter().rposition(|r| {
         n - r.at <= RUNG_REACH && before(r.at) && r.base.is_some() == tail.base.is_some()
@@ -4844,17 +4870,13 @@ pub fn rewind(was: &mut Replay, edits: &[Edit], held: usize) -> Result<TailRun, 
     TailRun::begin(was, edits, held, &ids_fresh)
 }
 
-/// None of the new edits, `ids` theirs, is one the replay whose place is `tail` holds already, one an edit it holds
-/// builds on, or one a checkpoint it holds covers: else it replays every edit again, and why.
+/// None of the new edits, `ids` theirs, is one the replay whose place is `tail` holds already: else it replays every
+/// edit again, and why. A new edit an edit it holds builds on, or a checkpoint it holds covers, sorts before that edit,
+/// so the edits from the rung or mark before it on are replayed again with it, that edit among them, and what the
+/// checkpoint's signers did for its vault worked out as it is run (`Tail::covered`): the edits before it are as they were.
 fn held_builds_not_on(tail: &Tail, ids: &[EditId]) -> Result<(), &'static str> {
     if ids.iter().any(|id| tail.depths.contains_key(id)) {
         return Err("replay whole: a new edit it held already");
-    }
-    if ids.iter().any(|id| tail.parents.contains(id)) {
-        return Err("replay whole: an edit it held builds on a new one");
-    }
-    if ids.iter().any(|id| tail.covered.contains_key(id)) {
-        return Err("replay whole: a checkpoint it held covers a new edit");
     }
     Ok(())
 }
@@ -4877,6 +4899,8 @@ pub struct TailRun {
     base: Option<State>,
     /// The moves among them, the removals it tries all at once.
     moves: HashSet<EditId>,
+    /// The edits the checkpoints cover, where new ones came: else those of the place it steps on from.
+    covered: Option<HashMap<EditId, Vec<VaultId>>>,
     running: Running,
 }
 
@@ -4899,18 +4923,28 @@ impl TailRun {
             if let Action::Mark { entry, caps: Some(_), keep, .. } = &e.action
                 && let Some(ws) = tail.passed.wrote.get(entry)
             {
+                // else it steps on from a rung or mark before the first it keeps not (`on_rung`)
                 let keep: HashSet<&EditId> = keep.iter().collect();
                 if !ws.iter().all(|w| keep.contains(w)) {
-                    return Err("replay whole: a new move keeps not every write of its entry before its place");
+                    return Err(SORTS_BEFORE);
                 }
             }
         }
-        if fresh.iter().any(|e| matches!(e.action, Action::Checkpoint { .. })) {
-            return Err("replay whole: a checkpoint came");
+        // a new checkpoint changes nothing in the state (`State::check`), only what its signers did for its vault at
+        // each edit it covers, worked out as that edit is run (`Tail::covered`): each it covers that the replay holds
+        // is among those replayed again, at or after its place, else it steps on from a rung or mark before them
+        // (`on_rung`). A snapshot changes nothing in the state either.
+        let watch_new = watched(fresh);
+        if !watch_new.is_empty() && was.ids[..tail.at].iter().any(|id| watch_new.contains_key(id)) {
+            return Err(SORTS_BEFORE);
         }
-        if fresh.iter().any(|e| matches!(e.action, Action::Snapshot { .. })) {
-            return Err("replay whole: a snapshot came");
-        }
+        let covered = (!watch_new.is_empty()).then(|| {
+            let mut covered = tail.covered.clone();
+            for (id, vaults) in watch_new {
+                covered.entry(id).or_default().extend(vaults);
+            }
+            covered
+        });
         if rests_on_revoked(was, fresh, ids) {
             return Err("replay whole: a new grant rests on one a revocation names");
         }
@@ -4983,7 +5017,7 @@ impl TailRun {
             tail_edits.iter().zip(&tail_ids).filter(|(e, _)| moving(e)).map(|(_, id)| *id).collect();
         let running = Running::new(tail.state.clone(), &tail_edits, &tail_ids, &moves, false);
         let fresh = ids.to_vec();
-        Ok(TailRun { n: edits.len(), held, fresh, at, order: tail_order, ids: tail_ids, again, base, moves, running })
+        Ok(TailRun { n: edits.len(), held, fresh, at, order: tail_order, ids: tail_ids, again, base, moves, covered, running })
     }
 
     /// How many of the log's edits it is the replay of: its first.
@@ -4998,14 +5032,15 @@ impl TailRun {
         let from = self.running.ran();
         let to = self.order.len().min(from.saturating_add(most.max(1)));
         let slice: Vec<&Edit> = self.order[from..to].iter().map(|&p| &edits[p]).collect();
-        self.running.step::<true, &Edit>(&slice, &self.ids[from..to], &self.moves, false, &tail.covered, self.again);
+        let watch = self.covered.as_ref().unwrap_or(&tail.covered);
+        self.running.step::<true, &Edit>(&slice, &self.ids[from..to], &self.moves, false, watch, self.again);
         to == self.order.len()
     }
 
     /// The replay, once it ran every edit (`step`), `was` being the one it steps on and `edits` the log's; why not and
     /// `was` as it was where its moves didn't all stand, or kept an edit out.
     pub fn finish(self, was: Replay, edits: &[Edit]) -> Result<Replay, (Replay, &'static str)> {
-        let TailRun { n, held, fresh: ids, at, order: tail_order, ids: tail_ids, again, base, running, .. } = self;
+        let TailRun { n, held, fresh: ids, at, order: tail_order, ids: tail_ids, again, base, covered, running, .. } = self;
         let (edits, fresh) = (&edits[..n], &edits[held..n]);
         let run = running.finish(tail_order.len(), again);
         let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
@@ -5017,6 +5052,9 @@ impl TailRun {
         }
         let Replay { mut order, ids: mut all, mut stood, mut acts, tail, .. } = was;
         let mut tail = tail.expect("a replay to step on from");
+        if let Some(covered) = covered {
+            tail.covered = covered;
+        }
         // only an edit a checkpoint covers is among them, with a vault of one that covers it: no scan of them all
         for id in &all[at..] {
             for &v in tail.covered.get(id).into_iter().flatten() {
@@ -5029,6 +5067,7 @@ impl TailRun {
         stood.truncate(at);
         for (e, id) in fresh.iter().zip(&ids) {
             tail.depths.insert(*id, e.depth);
+            tail.parents.remove(id);
             tail.grants.note(e, *id);
         }
         for e in fresh {
