@@ -2016,6 +2016,8 @@ impl Node {
             .collect();
         json!({
             "served": s.traffic.served_json(),
+            // what held its Lab, by the call, and the slowest turns lately: on a page, what held its one worker
+            "lab": s.lab_turns.json(),
             "policy_observations": s.receipts.json(),
             "reactive_observations": s.ui_receipts.json(),
             "me": { "endpoint": me.id.to_string(), "relays": relays, "direct": direct },
@@ -2768,7 +2770,7 @@ impl Shared {
         let me = acting().unwrap_or(self.me);
         let work = move || {
             let (_operation, _turn) = (operation, turn);
-            let mut lab = shared.locked_lab();
+            let mut lab = shared.turn_lab();
             let _timed = Timed::new(&shared.lab_turns, what, asked);
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
@@ -2861,7 +2863,7 @@ impl Shared {
         let me = acting().unwrap_or(self.me);
         let work = move || {
             let _turn = turn;
-            let lab = shared.locked_lab();
+            let lab = shared.turn_lab();
             let _timed = Timed::new(&shared.lab_turns, what, asked);
             f(&lab, me)
         };
@@ -2881,7 +2883,19 @@ impl Shared {
     /// The Lab, locked. A call that changes it never poisons the lock (`lab` catches its panic first); one that only
     /// reads it (the saver's) changed nothing if it panicked, so the Lab it leaves is taken as it is rather than lost
     /// to every later call.
-    pub(crate) fn locked_lab(&self) -> std::sync::MutexGuard<'_, Lab> {
+    /// Its Lab, held outside a turn of its own (`try_lab`, `read`): the save lane and a signer's record. The hold is
+    /// timed among its Lab's turns by where it was taken (`file:line`), so a page's report names it when it holds the
+    /// one worker (a fresh browser's worker answered nothing for 4 min twice, with 9 s of its timed work, 2026-10-29).
+    #[track_caller]
+    pub(crate) fn locked_lab(&self) -> HeldLab<'_> {
+        let at = std::panic::Location::caller();
+        let asked = Instant::now();
+        let lab = self.lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        HeldLab { lab, _timed: Timed::new(&self.lab_turns, lab_schedule::place(at), asked) }
+    }
+
+    /// Its Lab, for a turn that times itself (`Timed`).
+    fn turn_lab(&self) -> std::sync::MutexGuard<'_, Lab> {
         self.lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
@@ -5046,7 +5060,26 @@ mod admission_tests {
 mod prepared_receive_tests;
 
 /// One Lab call's turn, timed from when it asked for it: its wait ends as it holds the Lab, its hold as this drops.
-struct Timed<'a> {
+/// The Lab held outside a turn (`Shared::locked_lab`), timed as long as it is held.
+pub(crate) struct HeldLab<'a> {
+    lab: std::sync::MutexGuard<'a, Lab>,
+    _timed: Timed<'a>,
+}
+
+impl std::ops::Deref for HeldLab<'_> {
+    type Target = Lab;
+    fn deref(&self) -> &Lab {
+        &self.lab
+    }
+}
+
+impl std::ops::DerefMut for HeldLab<'_> {
+    fn deref_mut(&mut self) -> &mut Lab {
+        &mut self.lab
+    }
+}
+
+pub(crate) struct Timed<'a> {
     turns: &'a lab_schedule::Turns,
     what: &'static str,
     asked: Instant,
@@ -5054,7 +5087,7 @@ struct Timed<'a> {
 }
 
 impl<'a> Timed<'a> {
-    fn new(turns: &'a lab_schedule::Turns, what: &'static str, asked: Instant) -> Self {
+    pub(crate) fn new(turns: &'a lab_schedule::Turns, what: &'static str, asked: Instant) -> Self {
         Self { turns, what, asked, held: Instant::now() }
     }
 }
