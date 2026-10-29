@@ -249,8 +249,8 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
 }
 
 /// A peer sends on edits it took before the McEliece keys they name came (those come after its pages), naming none of
-/// them: the device that took the edits there asks its other peers for those keys, and one that holds them hands them
-/// over, though no log differs between them.
+/// them: the device that took the edits there holds them waiting for those keys, as for a parent, so a peer that holds
+/// them differs from it, is asked, and hands them over (`holdings::Logs`).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn keys_a_peer_sent_edits_without_come_from_another_peer() {
     let mut w = world();
@@ -278,7 +278,7 @@ async fn keys_a_peer_sent_edits_without_come_from_another_peer() {
     assert!(!holds(&server, new.clone()).await, "and none of its keys: Bob's Mac named none");
     let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
     meet(&[&mac, &server, &bob]);
-    until("the server brings them from Alice's Mac, of whose logs it lacks nothing", || holds(&server, new.clone())).await;
+    until("the server brings them from Alice's Mac", || holds(&server, new.clone())).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
