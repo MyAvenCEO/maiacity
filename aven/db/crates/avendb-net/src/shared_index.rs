@@ -7,37 +7,38 @@
 //!   right after them (`Shared::save_on`), its slot stamped with the head of the edits it is of: the log's one head
 //!   (`Log::head`, `avendb::log_head`), the number of them and a hash of their ids in one stream. A save steps on it only where the device worked out all they say
 //!   (`Lab::settled`) and the shelf holds every one of them; else the next save does.
-//! - A save puts again each entry its new edits are of (`Lab::shared_touched`): what the index held of it, read from
-//!   its own `E` row, taken out, and its rows as its edits say now put (`SharedIndex.X3_changes`). Where an edit of
-//!   another log came (a key, a share), or the index's stamp names no prefix of the device's log (a withdrawal, a log
-//!   restored otherwise), or the keys the tokens are under changed (`Lab::index_mark`), it puts again every entry its
-//!   edits say exist and every entry the index holds (`X1_step`, `X2_rebuild`).
+//! - Beside each entry's rows, the index keeps what they were worked out of (`I` rows, `Lab::shared_inputs`): a hash
+//!   of the index keys of its vault and audience, and one of everything else they read of it. A save works out the
+//!   inputs of every entry as they are now and puts again exactly those whose inputs changed, and takes out those gone
+//!   (`SharedIndex.X5_step`): what the index held of each, read from its own `E` row, taken out, and its rows as its
+//!   edits say now put (`X3_changes`). Wherever the edits that changed them were (a key, a share, a schema, a log
+//!   rewritten), the rows that changed are those whose inputs did, so no save builds it again of every entry but one
+//!   of an index of none (`X2_rebuild`).
 //! - A crash between the edits and the slot leaves the slot before, of a prefix of the edits, which the next save
 //!   steps on (`ShelfIndex.I3_crash`); a page that doesn't read whole makes it build the index again.
 //!
 //! Its rows are blind, as the rows a device tells are: the pages tell a peer without the keys which entries share a
 //! label, never the label (`BlindIndex.blind_reveals_equality_only`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use avendb::id::{EntryId, SignerId, VaultId};
-use avendb::index::shared::{self, Of};
+use avendb::index::shared::{self, Inputs, Of};
 use avendb::lab::Lab;
 use avendb::pages::{Change, Sum};
 
 use crate::shelf::Shelf;
 use crate::shelf_index::{ShelfIndex, Stamp};
 
-/// Its name on the shelf: `index/shared/<page>`, `slots/index-shared-0` and `-1`.
-pub(crate) const NAME: &str = "shared";
+/// Its name on the shelf: `index/shared-2/<page>`, `slots/index-shared-2-0` and `-1`. `shared` was the index before its
+/// rows kept their inputs, which no node reads now: its first save builds this one.
+pub(crate) const NAME: &str = "shared-2";
 /// The bytes of its pages it holds in memory at most.
 const BUDGET: usize = 8 << 20;
 /// How many entries it works out under one hold of the Lab.
 const SLICE: usize = 256;
-/// The key of its one row of no entry: the keys its tokens are under (`Lab::index_mark`).
-const MARK: &[u8] = b"M";
 /// The most rows one scan reads.
 const SCAN: usize = 4096;
 
@@ -56,32 +57,41 @@ pub(crate) fn head(ids: &[avendb::id::EditId]) -> Stamp {
 pub(crate) enum Stepped {
     /// It was of the edits already, or the device wasn't settled, or the shelf lacked some of them.
     Not,
-    /// It put again the entries the new edits are of, this many.
+    /// It put again the entries whose inputs changed, this many.
     Entries(usize),
-    /// It put again every entry, this many.
-    Every(usize),
 }
+
+/// What it holds the rows of, by entry: the inputs they were worked out of, as its `I` rows hold them.
+pub(crate) type Held = Arc<BTreeMap<EntryId, Inputs>>;
 
 /// The index, as the module says.
 pub(crate) struct SharedIndex {
     index: tokio::sync::Mutex<ShelfIndex>,
-    /// The head of the edits it is of, as its slot holds it: what a reader asks under its hold of the Lab.
-    stamp: Mutex<Stamp>,
+    /// The head of the edits it is of, as its slot holds it, and the inputs of its rows then: what a reader asks under
+    /// its hold of the Lab.
+    held: Mutex<(Stamp, Held)>,
 }
 
 impl SharedIndex {
     /// The index on `shelf`, as its newest slot that opens left it: stepped on at the next save. Where its slots can't
     /// be read, the index of no edits, which the next save builds again of every entry (I3): a node always keeps one.
     pub(crate) async fn open(shelf: Shelf) -> io::Result<SharedIndex> {
-        let index = match ShelfIndex::open_kept(shelf.clone(), NAME, BUDGET, empty_head()).await {
-            Ok((index, _)) => index,
+        let opened = match ShelfIndex::open_kept(shelf.clone(), NAME, BUDGET, empty_head()).await {
+            Ok((index, _)) => match held_inputs(&index).await {
+                Ok(held) => Ok((index, held)),
+                Err(e) => Err(e),
+            },
+            Err(e) => Err(e),
+        };
+        let (index, held) = match opened {
+            Ok(opened) => opened,
             Err(e) => {
                 tracing::warn!("avendb: the shared index can't be read on the shelf, so it is built again: {e:#}");
-                ShelfIndex::empty(shelf, NAME, BUDGET, empty_head().head)?
+                (ShelfIndex::empty(shelf, NAME, BUDGET, empty_head().head)?, BTreeMap::new())
             }
         };
-        let stamp = Mutex::new(index.stamp());
-        Ok(SharedIndex { index: tokio::sync::Mutex::new(index), stamp })
+        let held = Mutex::new((index.stamp(), Arc::new(held)));
+        Ok(SharedIndex { index: tokio::sync::Mutex::new(index), held })
     }
 
     /// Steps it on to what device `me` of `lab` holds, if it is settled and the shelf holds `held` of its edits, every
@@ -93,7 +103,7 @@ impl SharedIndex {
         held: usize,
     ) -> io::Result<Stepped> {
         let mut index = self.index.lock().await;
-        match step_on(&mut index, &self.stamp, lab, me, held).await {
+        match step_on(&mut index, &self.held, lab, me, held).await {
             Err(e)
                 if matches!(
                     e.kind(),
@@ -105,8 +115,8 @@ impl SharedIndex {
                     "avendb: the shared index doesn't read whole, so it is built again: {e}"
                 );
                 index.clear(empty_head());
-                *self.stamp.lock().expect("stamp") = empty_head();
-                step_on(&mut index, &self.stamp, lab, me, held).await
+                *self.held.lock().expect("held") = (empty_head(), Held::default());
+                step_on(&mut index, &self.held, lab, me, held).await
             }
             other => other,
         }
@@ -117,12 +127,20 @@ impl SharedIndex {
         self.index.lock().await.stamp()
     }
 
-    /// The head of the edits it is of, if they are the first edits of device `me`'s log in `lab` now; `None` where its
-    /// log isn't one they begin (a withdrawal, a log restored otherwise): what a reader asks under its hold of the Lab
-    /// before it reads through the index and the tail of edits after it (`Log::of_log`).
-    pub(crate) fn of_log(&self, lab: &Lab, me: SignerId) -> Option<Stamp> {
-        let stamp = *self.stamp.lock().expect("stamp");
-        lab.log(me).of_log(stamp.into()).then_some(stamp)
+    /// The head of the edits it is of and the inputs of its rows then (`Lab::shared_inputs`): what a reader that reads
+    /// through the index and the entries whose rows changed since compares with the Lab under its hold of it.
+    pub(crate) fn held(&self) -> (Stamp, Held) {
+        self.held.lock().expect("held").clone()
+    }
+
+    /// The entries whose rows in device `me`'s index of `stamp`, its inputs then `held`, may differ from what `lab`
+    /// says now, under a hold of it: none where the index is of its log's head, which stamps every view of it; else
+    /// those whose inputs changed (`SharedIndex.X5_inputs_cover`), wherever the edits that changed them were.
+    pub(crate) fn changed(lab: &Lab, me: SignerId, stamp: Stamp, held: &BTreeMap<EntryId, Inputs>) -> BTreeSet<EntryId> {
+        if Stamp::from(lab.log(me).head()) == stamp {
+            return BTreeSet::new();
+        }
+        shared::differ(held, &lab.shared_inputs(me))
     }
 
     /// The rows its finds have read off the index so far, all told: a bench's count of what a read reads.
@@ -139,19 +157,7 @@ impl SharedIndex {
     /// Every row it holds, in key order: what a test compares with a rebuild.
     #[cfg(test)]
     pub(crate) async fn rows(&self) -> io::Result<Vec<(Vec<u8>, Vec<u8>)>> {
-        let index = self.index.lock().await;
-        let (mut out, mut from) = (Vec::new(), Vec::new());
-        loop {
-            let got = index.scan(&from, SCAN).await?;
-            let last = got.len() < SCAN;
-            if let Some((k, _)) = got.last() {
-                from = [&k[..], &[0]].concat();
-            }
-            out.extend(got);
-            if last {
-                return Ok(out);
-            }
-        }
+        all_rows(&*self.index.lock().await).await
     }
 
     /// The entries whose rows carry one of `labels` (`index::type_label`, `tag_label`, `link_label`) in any audience of
@@ -199,7 +205,7 @@ impl SharedIndex {
 
 async fn step_on(
     index: &mut ShelfIndex,
-    kept: &Mutex<Stamp>,
+    kept: &Mutex<(Stamp, Held)>,
     lab: &Mutex<Lab>,
     me: SignerId,
     held: usize,
@@ -208,37 +214,20 @@ async fn step_on(
         lab.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     };
-    let was = index.stamp();
-    let mark_was = index.get(MARK).await?;
+    let (was, inputs_was) = kept.lock().expect("held").clone();
     // what it puts again, worked out under one hold of the Lab with the stamp it will be of
-    let (stamp, mark, touched) = {
+    let (stamp, inputs) = {
         let lab = locked();
         if !lab.settled(me) || held != lab.log(me).ids().len() {
             return Ok(Stepped::Not);
         }
         let stamp: Stamp = lab.log(me).head().into();
-        let mark = (lab.index_mark(me) as u64).to_be_bytes().to_vec();
-        let goes_on = lab.log(me).of_log(was.into());
-        let touched = if goes_on && mark_was.as_deref() == Some(&mark[..]) {
-            lab.shared_touched(me, was.at as usize)
-        } else {
-            None
-        };
-        (stamp, mark, touched)
-    };
-    if stamp == was && touched.as_ref().is_some_and(BTreeSet::is_empty) {
-        return Ok(Stepped::Not);
-    }
-    let every = touched.is_none();
-    let entries: Vec<EntryId> = match touched {
-        Some(t) => t.into_iter().collect(),
-        None => {
-            // every entry its edits say exist, and every entry the index holds
-            let mut all: BTreeSet<EntryId> = locked().shared_entries(me).into_iter().collect();
-            all.extend(held_entries(index).await?);
-            all.into_iter().collect()
+        if stamp == was {
+            return Ok(Stepped::Not);
         }
+        (stamp, lab.shared_inputs(me))
     };
+    let entries: Vec<EntryId> = shared::differ(&inputs_was, &inputs).into_iter().collect();
     let mut changes: Vec<Change> = Vec::new();
     for slice in entries.chunks(SLICE) {
         let mut old = Vec::with_capacity(slice.len());
@@ -258,7 +247,8 @@ async fn step_on(
             }
             slice.iter().map(|e| lab.shared_of(me, *e)).collect()
         };
-        for (old, new) in old.into_iter().zip(new) {
+        for ((e, old), new) in slice.iter().zip(old).zip(new) {
+            changes.push((shared::inputs_key(*e), inputs.get(e).map(Inputs::to_bytes)));
             if old == new {
                 continue;
             }
@@ -266,34 +256,69 @@ async fn step_on(
             changes.extend(new.iter().flat_map(Of::rows).map(|(k, v)| (k, Some(v))));
         }
     }
-    changes.push((MARK.to_vec(), Some(mark)));
     index.apply(changes, stamp).await?;
-    *kept.lock().expect("stamp") = stamp;
-    Ok(if every {
-        Stepped::Every(entries.len())
-    } else {
-        Stepped::Entries(entries.len())
-    })
+    *kept.lock().expect("held") = (stamp, Arc::new(inputs));
+    #[cfg(all(debug_assertions, not(avendb_no_replay_checks)))]
+    {
+        let full = {
+            let lab = locked();
+            (Stamp::from(lab.log(me).head()) == stamp && lab.settled(me)).then(|| full_rows(&lab, me))
+        };
+        if let Some(full) = full {
+            assert!(all_rows(index).await? == full, "the shared index stepped on over the entries whose inputs changed is its rebuild");
+        }
+    }
+    Ok(Stepped::Entries(entries.len()))
 }
 
-/// Every entry the index holds rows of: its `E` rows'.
-async fn held_entries(index: &ShelfIndex) -> io::Result<Vec<EntryId>> {
-    let prefix = [shared::ENTRY];
-    let (mut out, mut from) = (Vec::new(), prefix.to_vec());
+/// The inputs of every entry the index holds the rows of: its `I` rows'.
+async fn held_inputs(index: &ShelfIndex) -> io::Result<BTreeMap<EntryId, Inputs>> {
+    let prefix = [shared::INPUTS];
+    let mut out = BTreeMap::new();
+    let mut from = prefix.to_vec();
     loop {
-        let got = index.scan(&from, SCAN).await?;
+        let got = index.scan_within(&from, &prefix, SCAN).await?;
         let last = got.len() < SCAN;
-        for (k, _) in &got {
-            if !k.starts_with(&prefix) {
-                return Ok(out);
-            }
-            out.push(shared::owner(k).ok_or_else(|| invalid("an entry's row"))?);
+        for (k, v) in &got {
+            let e = shared::owner(k).ok_or_else(|| invalid("an entry's inputs"))?;
+            out.insert(e, Inputs::from_bytes(v).ok_or_else(|| invalid("an entry's inputs"))?);
         }
         match got.last() {
             Some((k, _)) if !last => from = [&k[..], &[0]].concat(),
             _ => return Ok(out),
         }
     }
+}
+
+/// Every row it holds, in key order.
+async fn all_rows(index: &ShelfIndex) -> io::Result<Vec<(Vec<u8>, Vec<u8>)>> {
+    let (mut out, mut from) = (Vec::new(), Vec::new());
+    loop {
+        let got = index.scan(&from, SCAN).await?;
+        let last = got.len() < SCAN;
+        if let Some((k, _)) = got.last() {
+            from = [&k[..], &[0]].concat();
+        }
+        out.extend(got);
+        if last {
+            return Ok(out);
+        }
+    }
+}
+
+/// The rows a rebuild from what device `me`'s edits say holds, in key order (`SharedIndex.full`): each entry's, and
+/// its inputs.
+pub(crate) fn full_rows(lab: &Lab, me: SignerId) -> Vec<(Vec<u8>, Vec<u8>)> {
+    let mut rows: Vec<(Vec<u8>, Vec<u8>)> = lab
+        .shared_inputs(me)
+        .into_iter()
+        .flat_map(|(e, i)| {
+            let of = lab.shared_of(me, e).map(|o| o.rows()).unwrap_or_default();
+            of.into_iter().chain([(shared::inputs_key(e), i.to_bytes())])
+        })
+        .collect();
+    rows.sort();
+    rows
 }
 
 fn invalid(what: &str) -> io::Error {

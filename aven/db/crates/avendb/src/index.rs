@@ -313,7 +313,9 @@ pub fn link_label(entry: EntryId) -> String {
 /// - `O` + its audience + its creation, newest first + the entry -> the epoch: the entries of an audience, the newest
 ///   first;
 /// - `E` + the entry -> its audience, epoch, creation and tokens, which say every other key of it, so that a save takes
-///   out what the index held of an entry without the state it held then.
+///   out what the index held of an entry without the state it held then;
+/// - `I` + the entry -> what its rows were worked out of (`Inputs`), one for each entry the state says exists, rows or
+///   none, so that a save puts again exactly the entries whose inputs changed (`SharedIndex.X5_step`).
 ///
 /// An entry's creation is the depth of its creation edit, which every node holding it reads alike, then its id; a key
 /// holds it turned over (`newest`), so that a scan forward, the one way the index scans, comes to the newest first.
@@ -323,6 +325,38 @@ pub mod shared {
     pub const LABEL: u8 = b'L';
     pub const ORDER: u8 = b'O';
     pub const ENTRY: u8 = b'E';
+    pub const INPUTS: u8 = b'I';
+
+    /// What an entry's rows are worked out of, as two hashes (`Lab::shared_inputs`): its group's, of the index keys
+    /// its vault and audience's rows are under, and its own, of everything else its rows read. An entry whose two are
+    /// as they were has the rows it had.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct Inputs {
+        pub own: [u8; 32],
+        pub group: [u8; 32],
+    }
+
+    impl Inputs {
+        pub fn to_bytes(&self) -> Vec<u8> {
+            [&self.own[..], &self.group[..]].concat()
+        }
+
+        /// Its `I` row's value read back; `None` for bytes `to_bytes` didn't write.
+        pub fn from_bytes(bytes: &[u8]) -> Option<Inputs> {
+            let (own, group) = bytes.split_at_checked(32)?;
+            Some(Inputs { own: own.try_into().ok()?, group: group.try_into().ok()? })
+        }
+    }
+
+    /// The entries whose inputs differ between `was` and `now`, an entry in one alone too: those whose rows may have
+    /// changed (`SharedIndex.X5_inputs_cover`).
+    pub fn differ(
+        was: &std::collections::BTreeMap<EntryId, Inputs>,
+        now: &std::collections::BTreeMap<EntryId, Inputs>,
+    ) -> std::collections::BTreeSet<EntryId> {
+        let gone = was.keys().filter(|e| !now.contains_key(e));
+        now.iter().filter(|(e, i)| was.get(e) != Some(i)).map(|(e, _)| e).chain(gone).copied().collect()
+    }
 
     /// An entry's rows: what its `E` row holds.
     #[derive(Clone, Debug, PartialEq, Eq)]
@@ -354,6 +388,10 @@ pub mod shared {
 
     pub fn entry_key(entry: EntryId) -> Vec<u8> {
         [&[ENTRY][..], &entry.0].concat()
+    }
+
+    pub fn inputs_key(entry: EntryId) -> Vec<u8> {
+        [&[INPUTS][..], &entry.0].concat()
     }
 
     /// The first key of the rows of `token`, for a scan.
