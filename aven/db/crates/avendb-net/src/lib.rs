@@ -2502,7 +2502,7 @@ struct Mine {
 
 impl Default for Mine {
     fn default() -> Mine {
-        Mine { at: None, logs: Arc::new(Logs::of(&[], &[], (0, 0), &|_| false)), stubs: HashSet::new(), asks_bodies: false }
+        Mine { at: None, logs: Arc::new(Logs::of(&[], &[], (0, 0))), stubs: HashSet::new(), asks_bodies: false }
     }
 }
 
