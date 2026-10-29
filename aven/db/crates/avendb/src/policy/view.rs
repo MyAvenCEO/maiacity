@@ -4,8 +4,10 @@
 //! one order, and takes them back from there. What the device made of them comes whole: which stood, the state, which
 //! signers acted for the vaults the checkpoints cover, its resolve's choice, and the place it steps on from (`Tail`),
 //! whose states, close to the state at the end, come as the runs of items they share with it and their own items
-//! between (`put_items`). Nothing that follows from the rest is kept: a state's lookups, and the parents, depths and
-//! checkpoints of the edits, are worked out again as the view is read.
+//! between (`put_items`), with what its tail made of the edits it holds (`put_derived`): their depths, the parents they
+//! build on that it doesn't hold, what the checkpoints among them cover, the writes that stood before and after its
+//! place, and the grants among them, so that a view opens without reading an edit it is of. Nothing else that follows
+//! from the rest is kept: a state's lookups, and the order of the edits, are worked out again as the view is read.
 //!
 //! The bytes are the device's own, sealed with its shelf key to the replay rules they were worked out under
 //! (`Lab::warming`, `ViewRules.lean`): a view is read by any build of the same rules and the same format (`VIEW`), or the
@@ -13,7 +15,7 @@
 //! that doesn't read back whole, or names other edits than the device holds, is no view, and the device replays every
 //! edit again.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -27,13 +29,16 @@ use crate::wire::{Decode, Reader, WireError};
 
 /// Version 3 preserves cap-group bindings, which the canonical Share codec deliberately omits because the
 /// enclosing Sharing edit carries them; version 4 keeps the rungs and marks before the place it steps on from
-/// (`Tail::rungs`, `Marks`), so that a late edit after an unlock replays from the one before it, not every edit.
-/// A view of version 3 still reads, as one whose tail keeps no rungs and no marks (`VIEW_3`): what a device made of
-/// its edits can't always be worked out again from them, as edits held on a checkpoint's word stand only where a
-/// replay that stood them says so, so a newer format never turns a device's own view into none.
-const VIEW: &[u8] = b"avenDB view 4\n";
+/// (`Tail::rungs`, `Marks`), so that a late edit after an unlock replays from the one before it, not every edit;
+/// version 5 keeps what its tail made of the edits (`put_derived`), so that it opens without reading them.
+/// A view of version 3 or 4 still reads, its tail's derivations worked out again from its edits, and one of version 3
+/// as one whose tail keeps no rungs and no marks (`VIEW_3`): what a device made of its edits can't always be worked out
+/// again from them, as edits held on a checkpoint's word stand only where a replay that stood them says so, so a newer
+/// format never turns a device's own view into none.
+const VIEW: &[u8] = b"avenDB view 5\n";
 
-/// The format before `VIEW`: the same, its tail without rungs or marks.
+/// The formats before `VIEW`: the same, without its tail's derivations, and before that without rungs or marks.
+const VIEW_4: &[u8] = b"avenDB view 4\n";
 const VIEW_3: &[u8] = b"avenDB view 3\n";
 
 impl Encode for Vault {
@@ -553,7 +558,13 @@ impl Replay {
     /// their ids in the one order, which stood, the state, the signers that acted for the checkpoints' vaults, and the
     /// place it steps on from, each of whose states as it differs from the state after it.
     pub fn to_view(&self, held: usize) -> Vec<u8> {
-        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts, self.tail.as_ref().map(TailView::of).as_ref())
+        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts, self.tail.as_ref().map(TailView::of).as_ref(), true)
+    }
+
+    /// `to_view` as the format before (`VIEW_4`) wrote it: its tail without its derivations.
+    #[doc(hidden)]
+    pub fn to_view_4(&self, held: usize) -> Vec<u8> {
+        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts, self.tail.as_ref().map(TailView::of).as_ref(), false)
     }
 
     /// Only the owned inputs the canonical view encoder needs: no edit bodies or derived indexes.
@@ -567,10 +578,11 @@ impl Replay {
     /// The replay `to_view` made `bytes` of, of the first edits of `edits`, `ids` being their ids, and how many: none
     /// where the bytes are no view, or of other edits.
     pub fn from_view(bytes: &[u8], edits: &crate::policy::Edits, ids: &[EditId]) -> Option<(Replay, usize)> {
-        // a view of version 3 is one whose tail keeps no rungs and no marks
-        let (rest, laddered) = match bytes.strip_prefix(VIEW) {
-            Some(rest) => (rest, true),
-            None => (bytes.strip_prefix(VIEW_3)?, false),
+        // a view of version 4 is one whose tail keeps no derivations, of version 3 no rungs and no marks either
+        let (rest, laddered, derived) = match (bytes.strip_prefix(VIEW), bytes.strip_prefix(VIEW_4)) {
+            (Some(rest), _) => (rest, true, true),
+            (None, Some(rest)) => (rest, true, false),
+            (None, None) => (bytes.strip_prefix(VIEW_3)?, false, false),
         };
         let mut rd = Reader::new(rest);
         let held = u64::decode(&mut rd).ok()? as usize;
@@ -627,15 +639,24 @@ impl Replay {
                     if !places.clone().zip(places.skip(1)).all(|(a, b)| a < b) {
                         return Err(WireError::Unknown);
                     }
-                    // what follows from the edits: as `replay_ids` works it out, and each replay stepped on keeps
-                    let depths: HashMap<EditId, u64> =
-                        held_ids.iter().copied().zip(held_edits.iter().map(|e| e.depth)).collect();
-                    let parents = dangling(edits(), &depths);
-                    let covered = watched(edits());
-                    let held: Vec<&Edit> = edits().collect();
-                    let passed = Passed::of(sorted(&held, &ids, &stood, 0, at));
-                    let after = Passed::of(sorted(&held, &ids, &stood, at, n));
-                    let grants = Grants::of(edits().zip(ids.iter().copied()));
+                    // what its tail made of the edits, as it kept it; else as `replay_ids` works it out, and each replay
+                    // stepped on keeps
+                    let Derived { parents, covered, depths, passed, after, grants } = match derived {
+                        true => derived_of(&mut rd, &ids)?,
+                        false => {
+                            let depths: HashMap<EditId, u64> =
+                                held_ids.iter().copied().zip(held_edits.iter().map(|e| e.depth)).collect();
+                            let held: Vec<&Edit> = edits().collect();
+                            Derived {
+                                parents: dangling(edits(), &depths),
+                                covered: watched(edits()),
+                                passed: Passed::of(sorted(&held, &ids, &stood, 0, at)),
+                                after: Passed::of(sorted(&held, &ids, &stood, at, n)),
+                                grants: Grants::of(edits().zip(ids.iter().copied())),
+                                depths,
+                            }
+                        }
+                    };
                     Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths, passed, after, grants, rungs, marks })
                 }
                 _ => return Err(WireError::Unknown),
@@ -677,12 +698,12 @@ pub struct ViewCapture {
 }
 impl ViewCapture {
     pub fn encode(self, held: usize) -> Vec<u8> {
-        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts, self.tail.as_ref())
+        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts, self.tail.as_ref(), true)
     }
 }
 
 /// What a view keeps of the place a replay steps on from (`Tail`): its place, its state and base, its resolve's choice,
-/// its rungs and its marks; their states share their items with the replay's.
+/// its rungs and its marks, their states sharing their items with the replay's; and what it made of the edits.
 struct TailView {
     at: usize,
     state: State,
@@ -691,6 +712,7 @@ struct TailView {
     tried: Vec<usize>,
     rungs: Vec<Rung>,
     marks: Vec<(usize, Arc<[u8]>)>,
+    derived: Derived,
 }
 
 impl TailView {
@@ -698,14 +720,137 @@ impl TailView {
         TailView {
             at: t.at, state: t.state.clone(), base: t.base.clone(), cands: t.cands.clone(), tried: t.tried.clone(),
             rungs: t.rungs.clone(), marks: t.marks.list.clone(),
+            derived: Derived {
+                parents: t.parents.clone(), covered: t.covered.clone(), depths: t.depths.clone(),
+                passed: t.passed.clone(), after: t.after.clone(), grants: t.grants.clone(),
+            },
         }
     }
 }
 
+/// What a replay's tail made of the edits it holds (`Tail`): the parents they build on that it doesn't hold, what the
+/// checkpoints among them cover, the depth of each, the writes that stood before its place and after, and the grants.
+struct Derived {
+    parents: HashSet<EditId>,
+    covered: HashMap<EditId, Vec<VaultId>>,
+    depths: HashMap<EditId, u64>,
+    passed: Passed,
+    after: Passed,
+    grants: Grants,
+}
+
+/// An edit a view names, by its place in the replay's order where it is one of its edits (`ids`), as most are, else by
+/// its id behind `NOT_HELD`.
+const NOT_HELD: u32 = u32::MAX;
+
+fn put_edit(out: &mut Vec<u8>, id: &EditId, places: &HashMap<EditId, u32>) {
+    match places.get(id) {
+        Some(p) => p.encode(out),
+        None => {
+            NOT_HELD.encode(out);
+            id.encode(out);
+        }
+    }
+}
+
+fn edit_of(rd: &mut Reader<'_>, ids: &[EditId]) -> Result<EditId, WireError> {
+    match u32::decode(rd)? {
+        NOT_HELD => EditId::decode(rd),
+        p => ids.get(p as usize).copied().ok_or(WireError::Unknown),
+    }
+}
+
+fn put_passed(out: &mut Vec<u8>, p: &Passed, places: &HashMap<EditId, u32>) {
+    let mut wrote: Vec<(&EntryId, &Vec<EditId>)> = p.wrote.iter().collect();
+    wrote.sort_by_key(|(e, _)| **e);
+    (wrote.len() as u32).encode(out);
+    for (e, ws) in wrote {
+        e.encode(out);
+        (ws.len() as u32).encode(out);
+        ws.iter().for_each(|w| put_edit(out, w, places));
+    }
+    p.lost.encode(out);
+}
+
+fn passed_of(rd: &mut Reader<'_>, ids: &[EditId]) -> Result<Passed, WireError> {
+    let mut wrote = HashMap::new();
+    for _ in 0..rd.count(36)? {
+        let e = EntryId::decode(rd)?;
+        let ws = (0..rd.count(4)?).map(|_| edit_of(rd, ids)).collect::<Result<Vec<_>, _>>()?;
+        wrote.insert(e, ws);
+    }
+    Ok(Passed { wrote, lost: bool::decode(rd)? })
+}
+
+/// What its tail made of the edits (`Derived`), the edits each by its place in `ids`, the replay's order: the depth of
+/// each of `ids` in their order, where it holds one of each and no other, else each with its id; the rest each in the
+/// order of its keys.
+fn put_derived(out: &mut Vec<u8>, d: &Derived, ids: &[EditId]) {
+    let places: HashMap<EditId, u32> = ids.iter().enumerate().map(|(p, id)| (*id, p as u32)).collect();
+    let aligned = d.depths.len() == ids.len() && ids.iter().all(|id| d.depths.contains_key(id));
+    match aligned {
+        true => {
+            out.push(0);
+            ids.iter().for_each(|id| d.depths[id].encode(out));
+        }
+        false => {
+            out.push(1);
+            let mut depths: Vec<(&EditId, &u64)> = d.depths.iter().collect();
+            depths.sort();
+            (depths.len() as u32).encode(out);
+            for (id, depth) in depths {
+                put_edit(out, id, &places);
+                depth.encode(out);
+            }
+        }
+    }
+    let mut parents: Vec<&EditId> = d.parents.iter().collect();
+    parents.sort();
+    (parents.len() as u32).encode(out);
+    parents.iter().for_each(|p| p.encode(out));
+    let mut covered: Vec<(&EditId, &Vec<VaultId>)> = d.covered.iter().collect();
+    covered.sort();
+    (covered.len() as u32).encode(out);
+    for (id, vaults) in covered {
+        put_edit(out, id, &places);
+        vaults.encode(out);
+    }
+    put_passed(out, &d.passed, &places);
+    put_passed(out, &d.after, &places);
+    let mut parent: Vec<(&ShareId, &Option<ShareId>)> = d.grants.parent.iter().collect();
+    parent.sort();
+    (parent.len() as u32).encode(out);
+    for (share, on) in parent {
+        share.encode(out);
+        on.encode(out);
+    }
+    let mut taken: Vec<&ShareId> = d.grants.taken.iter().collect();
+    taken.sort();
+    (taken.len() as u32).encode(out);
+    taken.iter().for_each(|t| t.encode(out));
+}
+
+fn derived_of(rd: &mut Reader<'_>, ids: &[EditId]) -> Result<Derived, WireError> {
+    let depths = match rd.u8()? {
+        0 => ids.iter().map(|id| Ok((*id, u64::decode(rd)?))).collect::<Result<_, WireError>>()?,
+        1 => (0..rd.count(12)?).map(|_| Ok((edit_of(rd, ids)?, u64::decode(rd)?))).collect::<Result<_, WireError>>()?,
+        _ => return Err(WireError::Unknown),
+    };
+    let parents = rd.seq::<EditId>(32)?.into_iter().collect();
+    let covered = (0..rd.count(8)?).map(|_| Ok((edit_of(rd, ids)?, rd.seq::<VaultId>(32)?)))
+        .collect::<Result<_, WireError>>()?;
+    let passed = passed_of(rd, ids)?;
+    let after = passed_of(rd, ids)?;
+    let parent = (0..rd.count(33)?).map(|_| Ok((ShareId::decode(rd)?, rd.option::<ShareId>()?)))
+        .collect::<Result<_, WireError>>()?;
+    let taken = rd.seq::<ShareId>(32)?.into_iter().collect();
+    Ok(Derived { parents, covered, depths, passed, after, grants: Grants { parent, taken } })
+}
+
 fn encode_view(held: usize, ids: &[EditId], stood: &[bool], state: &State,
     acts: &std::collections::HashSet<(EditId, VaultId)>,
-    tail: Option<&TailView>) -> Vec<u8> {
-        let mut out = VIEW.to_vec();
+    tail: Option<&TailView>, derived: bool) -> Vec<u8> {
+        let mut out = if derived { VIEW } else { VIEW_4 }.to_vec();
         (held as u64).encode(&mut out);
         ids_hash(ids).encode(&mut out);
         (stood.len() as u32).encode(&mut out);
@@ -752,6 +897,9 @@ fn encode_view(held: usize, ids: &[EditId], stood: &[bool], state: &State,
                     (*at as u64).encode(&mut out);
                     (bytes.len() as u32).encode(&mut out);
                     out.extend_from_slice(bytes);
+                }
+                if derived {
+                    put_derived(&mut out, &t.derived, ids);
                 }
             }
         }
