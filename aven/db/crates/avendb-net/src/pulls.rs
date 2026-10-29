@@ -280,6 +280,16 @@ impl Budget {
         Some(Page { _background: None, _page: page })
     }
 
+    /// Every background page slot, for a test to hold, each taken as soon as the page that holds it now is let go.
+    #[cfg(test)]
+    pub(crate) async fn hold_background_pages(&self) -> Vec<Page> {
+        let mut held = Vec::new();
+        for _ in 0..self.page_slots.saturating_sub(1).max(1) {
+            held.push(self.page(false, true).await.expect("a page slot"));
+        }
+        held
+    }
+
     /// Scheduling hints only, received after the peer's authenticated announcement was admitted. The caller
     /// still intersects these IDs with ordinary authorized differences before asking; a hint grants no access.
     /// Overflow remains on normal reconciliation. Existing workers coalesce up to LIVE_LOGS pending logs.
