@@ -6113,7 +6113,7 @@ impl Lab {
             reachable.into_iter().collect()
         };
         let logs = logs_of(edits, ids);
-        let scoped;
+        let mut scoped;
         let places = match scope {
             ReplyScope::All => places,
             _ => {
@@ -6131,6 +6131,14 @@ impl Lab {
                         ReplyScope::All => true,
                     })
                     .collect::<Vec<_>>();
+                // what it holds bare of these logs travels with the checkpoints that vouch for it, which the asker
+                // takes it on, as it took it (`Checkpoint.lean` `cutReply_covering`): else the asker drops it on every
+                // asking, a vault's checkpoint being of no entry's log (A2, 2026-10-29)
+                let bare: HashSet<EditId> = scoped.iter().map(|&i| ids[i]).filter(|id| store.bare.contains(id)).collect();
+                if !bare.is_empty() {
+                    let vouches = |i: &usize| matches!(&edits[*i].action, Action::Checkpoint { covers, .. } if covers.iter().any(|c| bare.contains(c)));
+                    scoped.extend(places.iter().filter(|i| vouches(i)));
+                }
                 &scoped
             }
         };
