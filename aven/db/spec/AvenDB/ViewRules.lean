@@ -14,6 +14,9 @@ in the same change as any edit to those that changes what they give, and as any 
 its replay gives (the Rust core's pinned views, `tests/all/stored_view.rs`, fail until it is bumped). A change of how the
 engine writes a view down is not a change of the rules: the view's own format line names that (`policy/view.rs`).
 
+A handed view (`Lab::handing`, M6, `V7_handed_view`) is the same view, given to a new device of the person's passkey,
+and is sealed the same way, to `viewRules`: a release that keeps the rules keeps what a device hands.
+
 The engine reads the number from this file as it builds (`crates/avendb/build.rs`), so this line is its one source.
 
 The proof of VR1: a view opens only under the rules it was sealed to, only against edits whose first ones are the

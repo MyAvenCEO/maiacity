@@ -6910,9 +6910,11 @@ impl Lab {
         Some(HandKey::of(&p.seal_secret()))
     }
 
-    /// What device `d` hands a new device of its passkey to start from (`start_handed`, M6), locked for that passkey's
-    /// devices alone (`HandKey`) and this engine: the ids of the edits it holds, each checked as it took it, and its
-    /// replay of them as its stored view (`Replay::to_view`). The new device then neither checks them again nor replays
+    /// What device `d` hands a new device of its passkey to start from (`start_handed`, M6): the ids of the edits it
+    /// holds, each checked as it took it, and its replay of them as its stored view (`Replay::to_view`), locked for that
+    /// passkey's devices alone (`HandKey`) and, as a stored view is, for the replay rules it was worked out under
+    /// (`VIEW_RULES`, `ViewRules.lean`): locked for the engine's hash, every release left each handed view shut, and a
+    /// new device replayed every edit itself (2026-10-29). The new device then neither checks them again nor replays
     /// them. `None` while it is locked, for a device of no passkey, and while its replay is not of every edit it holds.
     pub fn handing(&mut self, d: SignerId) -> Option<Vec<u8>> {
         let key = self.hand_key(d)?;
@@ -6927,7 +6929,7 @@ impl Lab {
         bytes.extend((n as u64).to_le_bytes());
         store.log.ids().iter().for_each(|id| bytes.extend(id.0));
         bytes.extend(store.replay.to_view(n));
-        let handed = key.0.lock("handed view", &bytes, ENGINE.as_bytes(), rng);
+        let handed = key.0.lock("handed view", &bytes, VIEW_RULES.as_bytes(), rng);
         if let Some(store) = stores.get_mut(&d) {
             store.perf.add("hand view", at);
         }
@@ -6938,11 +6940,11 @@ impl Lab {
     /// (`handing`) beside the edits it took (`backup`): it doesn't check the signatures of the edits the handed view is
     /// of, which its giver checked, and its replay starts from that view, the others stepped on it, the last ones
     /// replayed again or all of them, as they fall (`V7_handed_view`). True where it took the view: one that opens with
-    /// its passkey's key, for this engine, of edits it took every one of; else it starts as `restore_from` does.
+    /// its passkey's key, under these replay rules, of edits it took every one of; else it starts as `restore_from` does.
     pub fn start_handed(&mut self, d: SignerId, backup: Backup, handed: &[u8]) -> bool {
         let at = Perf::start();
         let key = self.hand_key(d);
-        let opened = key.and_then(|key| key.0.unlock("handed view", handed, ENGINE.as_bytes()));
+        let opened = key.and_then(|key| key.0.unlock("handed view", handed, VIEW_RULES.as_bytes()));
         let Some((ids, view)) = opened.as_ref().and_then(|b| handed_of(b)) else {
             self.restore_from(d, backup);
             return false;
