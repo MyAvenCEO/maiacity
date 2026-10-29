@@ -4,7 +4,7 @@
 	let { cast } = $props();
 
 	const port = location.port ? `:${location.port}` : '';
-	const peers = Object.entries(cast.peers);
+	const peers = $derived(Object.entries(cast.peers));
 	const vaultOf = (id) => Object.values(cast.vaults).find((v) => v.owners.includes(id))?.name ?? 'no vault';
 	const kind = (peer) => (peer.kind === 'peer-light' ? 'Peer-Light' : peer.relay ? 'Peer + relay' : 'Peer');
 </script>

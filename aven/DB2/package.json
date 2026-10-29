@@ -7,6 +7,7 @@
 		"down": "bun sandbox/up.mjs down",
 		"logs": "bun sandbox/up.mjs logs",
 		"shot": "bun sandbox/up.mjs shot",
+		"build": "bun sandbox/up.mjs build",
 		"doctor": "bun sandbox/up.mjs doctor"
 	},
 	"devDependencies": {

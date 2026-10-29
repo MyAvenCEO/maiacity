@@ -1,10 +1,10 @@
 <script>
-	// The landing page on a Peer-Light's origin. Until the Peer-Light itself (crates/web) runs here, the page shows what
-	// the box already gives it: its place in the cast, its vault and signer, and its own OPFS, which keeps a mark
-	// across reloads.
+	// The landing page. On a Peer-Light's origin, until the Peer-Light itself (crates/web) runs there, it also shows what
+	// the box gives that peer: its place in the cast, its vault and signer, and its own OPFS, which keeps a mark across
+	// reloads. Without a peer, where the released page is served, it is the public page alone.
 	let { id, peer, cast } = $props();
 
-	const vault = Object.values(cast.vaults).find((v) => v.owners.includes(id));
+	const vault = $derived(peer ? Object.values(cast.vaults).find((v) => v.owners.includes(id)) : undefined);
 	let mark = $state('');
 	let storage = $state('reading OPFS');
 
@@ -26,25 +26,29 @@
 		}
 	}
 
-	keepMark();
+	$effect(() => {
+		if (peer) keepMark();
+	});
 </script>
 
 <main>
 	<h1>avenDB2</h1>
 	<p class="soon">coming soon</p>
 
-	<p class="status"><span class="dot"></span> page live · the Peer-Light comes next</p>
+	{#if peer}
+		<p class="status"><span class="dot"></span> page live · the Peer-Light comes next</p>
 
-	<dl>
-		<dt>you</dt>
-		<dd data-testid="who">{peer.name}</dd>
-		<dt>vault</dt>
-		<dd data-testid="vault">{vault?.name ?? 'none'}</dd>
-		<dt>signer</dt>
-		<dd><code>{peer.signer.slice(0, 8)}…</code></dd>
-		<dt>stores in</dt>
-		<dd data-testid="mark">{storage}{mark ? ` · mark ${mark}` : ''}</dd>
-	</dl>
+		<dl>
+			<dt>you</dt>
+			<dd data-testid="who">{peer.name}</dd>
+			<dt>vault</dt>
+			<dd data-testid="vault">{vault?.name ?? 'none'}</dd>
+			<dt>signer</dt>
+			<dd><code>{peer.signer.slice(0, 8)}…</code></dd>
+			<dt>stores in</dt>
+			<dd data-testid="mark">{storage}{mark ? ` · mark ${mark}` : ''}</dd>
+		</dl>
+	{/if}
 </main>
 
 <style>

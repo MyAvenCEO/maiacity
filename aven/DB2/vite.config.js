@@ -6,5 +6,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
 	root: 'app',
 	plugins: [svelte()],
+	// the released landing page (`bun run build`), a deliverable of every release
+	build: { outDir: '../dist', emptyOutDir: true },
 	server: { host: '0.0.0.0', port: 5173, strictPort: true, allowedHosts: ['localhost', '.localhost'] },
 });

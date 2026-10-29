@@ -51,6 +51,9 @@ Each peer has its own signer, and each signer owns one of two vaults:
 | Alice's vault | the Aven Peer (the server and relay is Alice's), Alice Peer, Alice Peer-Light |
 | Bob's vault | Bob's Peer-Light |
 
+**Alice is the network's admin.** Her vault owns the Aven Peer, the server and relay, so she controls the network.
+From milestone 2 on, invites into it are signed by her vault; Bob is a member because Alice invited him.
+
 The signers are test keys written into the cast: each seed is `sha256("avenSANDBOX test signer: <peer>")`, public on
 purpose and valid only inside the box. Ownership is just this fixed list for now; invites, caps, Loro and sync logic
 come in later milestones.
@@ -190,6 +193,21 @@ OrbStack runs it natively instead of through Rosetta, comes next.
 |---|---|
 | `main` | Nothing on GitHub: work is checked in the box, in the session that makes it. |
 | `production` | Takes changes from `main` only. Every pull request into it and every push to it runs [`avensandbox.yml`](../../.github/workflows/avensandbox.yml): **Only from main** fails a pull request from any other branch, and **avenSANDBOX** runs `bun run up --check`. Later, production also deploys from here. |
+
+**Every push to `production` that passes becomes a release, with no step by hand:**
+
+- **Its tag** is the date in Berlin and the release's number that day: `26.10.29v1`, `26.10.29v2`, and `26.10.30v1`
+  the next day.
+- **Its deliverables are on the release page.** For now there are two:
+  - **avenSANDBOX:** the exact image its check ran in, tagged with the release's name
+    (`ghcr.io/myavenceo/avensandbox:26.10.29v1`) and named with its digest, ready to pull;
+  - **avenDB2:** the landing page, built by `bun run build`, as `avendb2-landing-26.10.29v1.tar.gz` with its
+    checksum in `SHA256SUMS`.
+
+  The Peer's binaries and the Peer-Light's wasm join them as they come. On any host but the box's, the released page
+  shows only "avenDB2 · coming soon".
+- **Its changes** are listed on the release page: the pull requests since the release before, with the compare link.
+  The releases page is the changelog.
 
 [`avensandbox-image.yml`](../../.github/workflows/avensandbox-image.yml) builds the box's image whenever its
 Dockerfile changes, on any branch, and tags main's as `latest`.

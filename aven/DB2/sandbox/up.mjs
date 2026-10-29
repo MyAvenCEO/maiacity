@@ -1,4 +1,5 @@
-// avenSANDBOX's runner (SANDBOX.md, "The box"): `bun run up [--check]`, `down [--wipe]`, `logs`, `shot`, `doctor`.
+// avenSANDBOX's runner (SANDBOX.md, "The box"): `bun run up [--check]`, `down [--wipe]`, `logs`, `shot`, `build`,
+// `doctor`.
 // It runs on the host (a Mac with OrbStack, a Claude cloud session, a CI runner) and drives Docker; everything else
 // runs in the box's image, whose tag is the first 16 hex digits of its Dockerfile's SHA-256, as the image workflow
 // (.github/workflows/avensandbox-image.yml) tags it.
@@ -99,6 +100,23 @@ async function up(args) {
 	if (args.includes('--check')) process.exit(await check());
 }
 
+// Every release's deliverables (SANDBOX.md, "Production"): for now avenDB2's landing page, built in the box.
+async function build() {
+	await ensureDocker();
+	await ensureImage();
+	await install();
+	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules'];
+	await $`docker run --rm ${volumes} -w /work ${image} node_modules/.bin/vite build --config vite.config.js`.env(env);
+	const out = join(db2, 'deliverables');
+	rmSync(out, { recursive: true, force: true });
+	await $`mkdir -p ${out}`;
+	const page = join(out, 'avendb2-landing.tar.gz');
+	await $`tar -czf ${page} -C ${join(db2, 'dist')} .`;
+	const sum = createHash('sha256').update(readFileSync(page)).digest('hex');
+	await Bun.write(join(out, 'SHA256SUMS'), `${sum}  avendb2-landing.tar.gz\n`);
+	say(`deliverables in aven/DB2/deliverables/: avendb2-landing.tar.gz (sha256 ${sum.slice(0, 16)}…)`);
+}
+
 async function doctor() {
 	const line = async (label, cmd) => say(`${label}: ${(await cmd.nothrow().quiet().text()).trim().split('\n')[0] || 'missing'}`);
 	await line('docker', $`docker version --format '{{.Server.Version}}'`);
@@ -116,7 +134,8 @@ try {
 	else if (command === 'logs') await $`${compose} logs -f --tail 100`.env(env);
 	else if (command === 'shot') process.exit(await check());
 	else if (command === 'doctor') await doctor();
-	else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, doctor`);
+	else if (command === 'build') await build();
+	else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor`);
 } catch (error) {
 	console.error(`avenSANDBOX: ${error.message}`);
 	process.exit(1);
