@@ -85,32 +85,23 @@ export function normalizeWants(wants) {
 /**
  * One mounted view's Interests on device `run` (its `run(op)`). `set(wants)` replaces them, published once a turn
  * (a burst of sets is one op); `clear()` empties them; `close()` empties them for good. A node that knows no
- * `interest` op (an app a release older) gets `demand`, the op before it, once a set: no renewal; one that knows
- * neither is sent nothing more.
+ * `interest` op is sent nothing more.
  * @param {(op: object) => Promise<any>} run @param {{ scope?: string }} [options]
  */
 export function createInterest(run, { scope = crypto.randomUUID().replaceAll('-', '') } = {}) {
-	let wants = [], published = '[]', revision = 0, closed = false, queued = false, legacy = false, declined = false;
+	let wants = [], published = '[]', revision = 0, closed = false, queued = false, declined = false;
 	let pending = Promise.resolve(false);
 	const publish = async () => {
 		queued = false;
 		const key = JSON.stringify(wants);
 		if (key === published) return true;
 		published = key;
-		// a node that knows neither op holds no view metadata: reads go on, nothing is sent again
+		// a node that knows no `interest` op holds no view metadata: reads go on, nothing is sent again
 		if (declined) return false;
-		const current = ++revision;
 		try {
-			if (!legacy) {
-				const got = await run({ op: 'interest', scope, revision: current, wants });
-				// this node's own refusals of a bad interest start so (avendb-net run.rs `view_interest`)
-				if (got?.refused !== 'BadOp' || /^(an interest|a want)/.test(String(got?.why ?? ''))) return got?.ok?.accepted === true;
-				legacy = true;
-			}
-			const entries = wants.flatMap((w) => w.entries).slice(0, MOST_ENTRIES);
-			const queries = wants.flatMap((w) => w.queries).slice(0, MOST_QUERIES);
-			const got = await run({ op: 'demand', scope, revision: ++revision, entries, ...(queries.length ? { queries } : {}) });
-			if (got?.refused === 'BadOp') declined = true;
+			const got = await run({ op: 'interest', scope, revision: ++revision, wants });
+			// this node's own refusals of a bad interest start so (avendb-net run.rs `view_interest`)
+			if (got?.refused === 'BadOp' && !/^(an interest|a want)/.test(String(got?.why ?? ''))) declined = true;
 			return got?.ok?.accepted === true;
 		} catch {
 			// a device that went away: its views went with it

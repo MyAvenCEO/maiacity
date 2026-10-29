@@ -35,9 +35,9 @@ window.fixture = {
         return { ...out.ok, len, seed };
     },
     async readFile(file) {
-        // Production reads are local-only. Register view demand so the normal
+        // Production reads are local-only. Register the view's Interest so the normal
         // authorized background file lane hydrates this entry before reading it.
-        await run({ op: 'demand', scope: fileScope, revision: ++fileRevision, entries: [file.entry] });
+        await run({ op: 'interest', scope: fileScope, revision: ++fileRevision, wants: [{ tier: 'now', entries: [file.entry] }] });
         let out;
         try { out = await device.run({ op: 'read_file', root: file.root, size: file.size, from: 0, to: file.len }); }
         catch (error) {
@@ -48,7 +48,7 @@ window.fixture = {
         // non-success until the bounded outer wait sees an authorized exact read.
         if (!out.ok) return false;
         if (out.bytes?.length !== file.len || !out.bytes.every((b, i) => b === (i * file.seed) % 251)) throw new Error('carrier file bytes differ');
-        await run({ op: 'demand', scope: fileScope, revision: ++fileRevision, entries: [] });
+        await run({ op: 'interest', scope: fileScope, revision: ++fileRevision, wants: [] });
         return true;
     },
     async close() { await device.close(); device.free(); },

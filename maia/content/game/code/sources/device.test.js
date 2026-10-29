@@ -56,7 +56,7 @@ test('a page sets its Interest at once, then its manifest tiers; no bring, no le
 	expect(all.at(-1).wants).toEqual([
 		{ tier: 'now', entries: [id(9), id(1), id(2)], queries: [{ types: ['manifest'], vault: MAIA_CITY }, { types: ['room'], vault: MAIA_CITY }] }
 	]);
-	expect(d.calls.some((c) => c.op === 'bring' || c.op === 'demand')).toBe(false);
+	expect(d.calls.some((c) => c.op === 'bring')).toBe(false);
 	expect(globalThis.localStorage).toBeUndefined();
 });
 

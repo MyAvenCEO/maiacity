@@ -90,26 +90,17 @@ test('one handle: a burst of sets is one op, an unmount clears it, and nothing r
 	expect(await h.set([{ tier: 'now', entries: [id(9)] }])).toBe(false);
 });
 
-test('a node a release older gets the demand op instead, once a set', async () => {
-	const calls = [];
-	const h = createInterest(async (op) => {
-		calls.push(op);
-		return op.op === 'interest' ? { refused: 'BadOp', why: 'interest changes what the device holds: run it' } : { ok: { accepted: true, lease_ms: 90000 } };
-	}, { scope: 'b'.repeat(32) });
-	expect(await h.set([{ tier: 'now', entries: [id(1)], queries: [{ types: ['room'] }] }])).toBe(true);
-	expect(calls.map((c) => c.op)).toEqual(['interest', 'demand']);
-	expect(calls[1]).toMatchObject({ entries: [id(1)], queries: [{ types: ['room'] }] });
-	await h.set([{ tier: 'now', entries: [id(2)] }]);
-	expect(calls.map((c) => c.op)).toEqual(['interest', 'demand', 'demand']);
+test('a node that knows no interest op is sent nothing more; a bad interest of its own is no sign of that', async () => {
 	// a bad interest of this node's is no sign of an older one
 	const mine = [];
 	const g = createInterest(async (op) => (mine.push(op), { refused: 'BadOp', why: "an interest's revision is a positive safe integer" }));
 	expect(await g.set([{ tier: 'now', entries: [id(1)] }])).toBe(false);
-	expect(mine.map((c) => c.op)).toEqual(['interest']);
-	// a node that knows neither op is sent nothing more
+	expect(await g.set([{ tier: 'now', entries: [id(2)] }])).toBe(false);
+	expect(mine.map((c) => c.op)).toEqual(['interest', 'interest']);
+	// a node that knows no interest op is sent nothing more
 	const none = [];
 	const k = createInterest(async (op) => (none.push(op), { refused: 'BadOp' }));
 	expect(await k.set([{ tier: 'now', entries: [id(1)] }])).toBe(false);
 	expect(await k.set([{ tier: 'now', entries: [id(2)] }])).toBe(false);
-	expect(none.map((c) => c.op)).toEqual(['interest', 'demand']);
+	expect(none.map((c) => c.op)).toEqual(['interest']);
 });

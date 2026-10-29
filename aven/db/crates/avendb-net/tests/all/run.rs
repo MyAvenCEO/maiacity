@@ -234,7 +234,7 @@ async fn a_node_brings_the_entries_a_page_names_alone_and_refuses_a_bring_naming
     assert!(brought["new"].as_u64() > Some(0), "{brought}");
     assert!(phone.read(holds(first)).await, "the entry it named");
     assert!(!phone.read(holds(other)).await, "and nothing else");
-    // a bring names vaults or entries, 1 to 64, each by its id
+    // a bring names entries, 1 to 64, each by its id, and never a vault
     let both = json!({ "op": "bring", "vaults": [coop.to_hex()], "entries": [first.to_hex()] });
     for bad in [both, json!({ "op": "bring" }), json!({ "op": "bring", "entries": [] }), json!({ "op": "bring", "entries": ["x"] })] {
         assert_eq!(run(&phone, bad).await.expect_err("refused")["refused"], "BadOp");
@@ -245,7 +245,7 @@ async fn a_node_brings_the_entries_a_page_names_alone_and_refuses_a_bring_naming
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how_far_it_is_synced() {
+async fn a_node_brings_the_entries_a_page_reads_first_and_tells_how_far_it_is_synced() {
     let mut w = world();
     let h = handbook(&mut w);
     let (mac_a, phone_a, coop) = (w.mac_a, w.phone_a, h.coop);
@@ -268,11 +268,9 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     assert_eq!(synced["peers"], 1);
     assert!(synced["logs"].as_u64() > synced["behind"].as_u64(), "{synced}");
     let pages = synced["pages"].as_u64().expect("how many pages it took");
-    // a bring of the coop: each device it knows asked at once, the Mac, the one it reaches, answers whole, and the
-    // phone reads Notes
-    let known = phone.read(|lab, me| lab.peers(me).len()).await;
-    let brought = run(&phone, json!({ "op": "bring", "vaults": [coop.to_hex()] })).await.expect("brought");
-    assert_eq!((&brought["peers"], &brought["reached"]), (&json!(known), &json!(true)), "{brought}");
+    // a bring of Notes: each live peer asked at once, the Mac answers whole, and the phone reads Notes
+    let brought = run(&phone, json!({ "op": "bring", "entries": [notes.to_hex()] })).await.expect("brought");
+    assert_eq!((&brought["peers"], &brought["reached"]), (&json!(1), &json!(true)), "{brought}");
     assert!(brought["new"].as_u64() > Some(0), "{brought}");
     assert!(phone.read(reads).await, "brought first");
     // the pages it took tell the bring moving, as a log counts only once whole
@@ -306,8 +304,8 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     let recent = net["recent"].as_array().expect("its newest pages");
     assert!(!recent.is_empty() && recent.iter().all(|r| r["device"] == json!(mac_a.to_hex())), "{net}");
     assert_eq!(net["me"]["endpoint"], json!(phone.addr().id.to_string()), "{net}");
-    // a bring names 1 to 64 vaults, each by its id
-    for bad in [json!({ "op": "bring", "vaults": [] }), json!({ "op": "bring", "vaults": ["coop"] })] {
+    // a bring names no vault
+    for bad in [json!({ "op": "bring", "vaults": [] }), json!({ "op": "bring", "vaults": [coop.to_hex()] })] {
         assert_eq!(run(&phone, bad).await.expect_err("refused")["refused"], "BadOp");
     }
     for n in [&mac, &phone] {
@@ -379,9 +377,8 @@ async fn view_interests_are_revisioned_local_metadata_and_never_a_vault_edit() {
     assert_eq!(clear["ok"]["accepted"], true);
     let late = n.op(json!({"op": "interest", "scope": scope, "revision": 2, "wants": [{"tier": "now", "entries": [entry]}]})).await.unwrap();
     assert_eq!(late["ok"]["accepted"], false, "a cleared view stays cleared");
-    // the op before it, for one release: one Interest on screen now
-    let old = n.op(json!({"op": "demand", "scope": "c".repeat(32), "revision": 1, "entries": [entry]})).await.unwrap();
-    assert_eq!(old["ok"]["accepted"], true);
+    let other = n.op(json!({"op": "interest", "scope": "c".repeat(32), "revision": 1, "wants": [{"tier": "now", "entries": [entry]}]})).await.unwrap();
+    assert_eq!(other["ok"]["accepted"], true);
     let released = n.op(json!({"op": "interest", "release": "all"})).await.unwrap();
     assert_eq!(released["ok"]["released"], 1);
     for invalid in [
@@ -391,7 +388,7 @@ async fn view_interests_are_revisioned_local_metadata_and_never_a_vault_edit() {
         json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "now", "entries": ["bad"]}]}),
         json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "now", "entries": vec![entry.clone(); 513]}]}),
         json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "now", "where": {}}]}),
-        json!({"op": "demand", "scope": scope, "revision": 4, "entries": ["bad"]}),
+        json!({"op": "demand", "scope": scope, "revision": 4, "entries": [entry]}),
     ] {
         let got = n.op(invalid.clone()).await.unwrap();
         assert_eq!(got["refused"], "BadOp", "{invalid}");
