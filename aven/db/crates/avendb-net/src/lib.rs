@@ -145,7 +145,6 @@ mod pulls;
 mod live;
 mod ranges;
 mod run;
-mod scoped;
 pub mod server;
 mod session;
 pub mod shelf;

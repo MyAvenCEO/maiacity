@@ -29,7 +29,7 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
-	import { allowed, may, read } from './ops.js';
+	import { allowed, may, read, refused } from './ops.js';
 	import Ops from './Ops.svelte';
 	import Owned, { ownedTitle } from './Owned.svelte';
 	import { mediaOf, whole } from './files.js';
@@ -432,8 +432,9 @@
 	 * the vault's owners approve it, or why not. Each is asked again only once what it asks changes, or who asks, or
 	 * how the vault is governed, and never while the device still works on the last ask of it: a device busy with a
 	 * big vault answers slowly, and asking again on a timer only handed it the same dry runs again. An answer to what
-	 * changed meanwhile is asked again at once. A Remove doesn't wait for its answer (Samuel's Mac 2026-10-21: every
-	 * one on "checking" for good), only for a refusal. Nor is how far this device has synced asked anywhere: a removal goes on
+	 * changed meanwhile is asked again at once. No button waits for its answer (Samuel's Mac 2026-10-21: every Remove
+	 * on "checking" for good), nor is one asked again because the device didn't answer: only a refusal it gave greys a
+	 * button out (./ops.js `refused`), and the device checks each op as it makes it. Nor is how far this device has synced asked anywhere: a removal goes on
 	 * what the device holds, at its own heads, and syncs on. Removals aren't asked on the person's own vault, where every Remove shows anyway
 	 * and the device checks each as it makes it: a dry run of each, over the whole vault, kept Samuel's Mac at full CPU
 	 * (2026-10-21, every call answered 30-50 s late).
@@ -442,17 +443,14 @@
 	/** what each answer in `can` answers, or what is being asked, by its name: this device, the acting vault, the
 	 *  vault's root and threshold, and the op, as JSON */
 	const askedOf = /** @type {Record<string, string>} */ ({});
-	/** the names asked and not answered yet, each with when it was asked (ms): one ask of each at a time, but one
-	 *  unanswered in `MAY_LOST` counts as lost, as by a device that closed meanwhile */
+	/** the names asked and not answered yet, each with when it was asked (ms): one ask of each at a time */
 	const asking = /** @type {Map<string, number>} */ (new Map());
 	/** what the page asks now, by name, as `askedOf` keys it */
 	let wants = /** @type {Record<string, string>} */ ({});
 	/** the names whose ask changed while the device worked on it, told in the app's log once */
 	const changed = new Set();
-	/** counts the times it asks again: what the device failed to answer, or what changed while it answered */
+	/** counts the times it asks again: what changed while the device answered */
 	let again = $state(0);
-	const MAY_AGAIN = 15000;
-	const MAY_LOST = 180000;
 	$effect(() => {
 		void again;
 		/** @type {Record<string, object>} */
@@ -470,10 +468,9 @@
 		const by = JSON.stringify([world.me, actor, v.root, v.threshold]);
 		wants = Object.fromEntries(Object.entries(asks).map(([name, op]) => [name, `${by} ${JSON.stringify(op)}`]));
 		const at = Date.now();
-		const pending = (/** @type {string} */ name) => at - (asking.get(name) ?? -Infinity) < MAY_LOST;
 		const fresh = Object.entries(asks)
 			.map(([name, op]) => ({ name, op, key: wants[name] }))
-			.filter((x) => !pending(x.name) && askedOf[x.name] !== x.key);
+			.filter((x) => !asking.has(x.name) && askedOf[x.name] !== x.key);
 		if (!fresh.length) return;
 		for (const x of fresh) {
 			askedOf[x.name] = x.key;
@@ -484,18 +481,14 @@
 			actor,
 			fresh.map((x) => x.op)
 		).then((answers) => {
-			// only the last ask of each counts: one counted as lost (`MAY_LOST`) that answers late doesn't
+			// only the last ask of each counts
 			const got = fresh.map((x, i) => ({ ...x, verdict: /** @type {any} */ (answers[i]) })).filter((x) => asking.get(x.name) === at);
 			for (const x of got) asking.delete(x.name);
-			const kept = got.filter((x) => x.verdict?.refused !== 'NoAnswer' && wants[x.name] === x.key);
+			const kept = got.filter((x) => wants[x.name] === x.key);
 			if (kept.length) can = { ...can, ...Object.fromEntries(kept.map((x) => [x.name, x.verdict])) };
 			let now = false;
-			let later = false;
 			for (const { name, key, verdict } of got) {
-				if (verdict?.refused === 'NoAnswer') {
-					delete askedOf[name];
-					later = true;
-				} else if (wants[name] !== key) {
+				if (wants[name] !== key) {
 					delete askedOf[name];
 					now ||= name in wants;
 					if (name in wants && !changed.has(name)) {
@@ -504,14 +497,13 @@
 					}
 				}
 				// a removal it refuses goes into the Mac app's log too, with why (Samuel 2026-10-21: no Remove on any device)
-				else if (/^(owner|device) /.test(name) && !allowed(verdict)) console.warn(`avenDB: Settings may not remove ${name}:`, verdict);
+				else if (/^(owner|device) /.test(name) && refused(verdict)) console.warn(`avenDB: Settings may not remove ${name}:`, verdict);
 			}
 			if (now) again++;
-			else if (later) setTimeout(() => again++, MAY_AGAIN);
 		});
 	});
-	/** Whether the device would make `what` (`can`). @param {string} what */
-	const lets = (what) => allowed(can[what]);
+	/** Whether a button for `what` is offered: unless the device refused it (`can`). @param {string} what */
+	const lets = (what) => !refused(can[what]);
 	/**
 	 * Why a Remove of `what` can't be, in words, as the device refuses it; '' where it may be pressed. One the device
 	 * hasn't answered yet may: the device checks the removal itself as it makes it, what it must hold first included,
@@ -519,7 +511,7 @@
 	 */
 	const whyNot = (what) => {
 		const verdict = /** @type {any} */ (can[what]);
-		if (verdict !== undefined && !allowed(verdict)) return verdict.why ?? verdict.refused ?? 'refused';
+		if (refused(verdict)) return verdict.why ?? verdict.refused ?? 'refused';
 		return '';
 	};
 
