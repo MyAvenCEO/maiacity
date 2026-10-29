@@ -11,14 +11,17 @@ export const suites = { ci: '.github/workflows/ci.yml' };
 const WAIT_MS = 15 * 60 * 1000, POLL_MS = 20 * 1000;
 
 export async function reusable({ api, repo, sha, base, wait = WAIT_MS, poll = POLL_MS, sleep = ms => new Promise(r => setTimeout(r, ms)), log = () => {} }) {
- const none = { ...Object.fromEntries(Object.keys(suites).map(k => [k, false])), run: '' };
  const commit = await api(`repos/${repo}/commits/${sha}`);
+ const pulls = (await api(`repos/${repo}/commits/${sha}/pulls`)).filter(p => p.merged_at && p.merge_commit_sha === sha && p.head?.repo?.full_name === repo);
+ // the merged pull request's ref: when its run cannot stand for main's, the verdicts its jobs saved there still count
+ // for the jobs main's run would key on the very same files (plan.mjs)
+ const ref = pulls.length === 1 ? `refs/pull/${pulls[0].number}/merge` : '';
+ const none = { ...Object.fromEntries(Object.keys(suites).map(k => [k, false])), run: '', ref };
  // a squash has one parent; a batch PR lands as a merge commit (CLAUDE.md) whose second parent must be the PR's head
  const [first, second, ...more] = commit.parents ?? [];
  const parent = first && !more.length ? first.sha : '';
  if (!parent || base !== parent) { log(`release base ${base || 'none'} is not main's parent ${parent || '(several)'}: validate`); return none; }
  const tree = commit.commit.tree.sha;
- const pulls = (await api(`repos/${repo}/commits/${sha}/pulls`)).filter(p => p.merged_at && p.merge_commit_sha === sha && p.head?.repo?.full_name === repo);
  if (pulls.length !== 1) { log(`no single pull request merged as ${sha}: validate`); return none; }
  const head = pulls[0].head.sha;
  if (second && second.sha !== head) { log(`#${pulls[0].number} merged as ${sha} onto another commit than its head ${head}: validate`); return none; }
@@ -48,8 +51,8 @@ if (import.meta.main) {
  const { execFileSync } = await import('node:child_process');
  const repo = process.env.GITHUB_REPOSITORY;
  const api = async path => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
- let out = { ...Object.fromEntries(Object.keys(suites).map(k => [k, false])), run: '' };
+ let out = { ...Object.fromEntries(Object.keys(suites).map(k => [k, false])), run: '', ref: '' };
  try { out = await reusable({ api, repo, sha: process.env.CI_HEAD, base: process.env.CI_BASE, log: m => console.log(m) }); }
  catch (e) { console.log(`reuse unavailable (${e.message.split('\n')[0]}): run CI on main's commit`); }
- if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(out).map(([k, v]) => k === 'run' ? `reuse_run=${v}` : `reuse_${k}=${v}`).join('\n') + '\n');
+ if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, Object.entries(out).map(([k, v]) => k === 'run' ? `reuse_run=${v}` : k === 'ref' ? `verdicts_ref=${v}` : `reuse_${k}=${v}`).join('\n') + '\n');
 }
