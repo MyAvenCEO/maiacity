@@ -32,8 +32,8 @@ jobs:
         id: box
         run: |
           tag=$(sha256sum aven/DB2/box/Dockerfile | cut -c1-16)
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox:$tag" >> "$GITHUB_OUTPUT"
-          echo "latest=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox:latest" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox:$tag" >> "$GITHUB_OUTPUT"
+          echo "latest=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox:latest" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4.4.1
       - uses: docker/login-action@v4.7.0
         with:

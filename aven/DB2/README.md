@@ -50,11 +50,22 @@ Each rule is held by a test or a check once there is code to hold.
 
 ## Names
 
+The products, top to bottom:
+
+```
+avenOS        the client app: one UI, several targets. The browser now, the Mac app (Tauri) later
+  avenPEER    the peer inside each target: a Peer-Light (wasm) in the browser, a native Peer in the Mac app.
+              The Aven Peer on the server is avenPEER alone, headless, with its relay on
+    avenDB    the database every peer runs: vaults, documents, caps, sync, storage
+avenSANDBOX   the box all of it is built and tested in
+```
+
 | Name | What |
 |---|---|
+| avenOS | the client app over everything below it. Its browser target serves the landing page for now, "avenOS · coming soon"; a Mac app with Tauri follows |
+| avenPEER | the peer: the native Peer and the Peer-Light, one core in two builds |
 | avenDB | the database: this rebuild |
 | avenDB-old | the old database, in `aven/db/`: the testing and learning battleground until avenDB is ready, then deprecated. "v1" still names the whole old stack (its site, API and peer) |
-| avenOS | what people see, running on avenDB. For now its landing page, "avenOS · coming soon" |
 | `aven/DB2` | the new avenDB's folder while avenDB-old still lives in `aven/db`. A Mac's disk ignores case, so `aven/DB` couldn't sit beside `aven/db`, and a path spelled `aven/db2` works on a Mac and fails on Linux and CI; a check will reject any other spelling. When avenDB-old is deprecated, the new avenDB moves into `aven/db` |
 | avenSANDBOX | the local network avenDB is built and tested in: Peers and Peer-Lights in containers on one machine ([`SANDBOX.md`](SANDBOX.md)). It is part of this repository, not a package of its own |
 | Peer | the native Rust peer, one binary |
@@ -68,14 +79,14 @@ Every product gets one id under the key namespace `@aven`, the same in every eco
 npm, container images and crates require it; the capitals live in prose and the UI. Everything stays in this one
 repository: an id names a product, not a separate repository.
 
-| Where | avenDB | avenOS | avenSANDBOX |
-|---|---|---|---|
-| JS packages (npm scope `@aven`) | `@aven/db` (`aven/DB2/package.json`) | `@aven/os`, once the app has a package of its own | none: tooling of this repository |
-| Rust crates | `aven-db-core`, `aven-db-store`, `aven-db-peer`, `aven-db-web` | | |
-| Container images | `ghcr.io/myavenceo/aven-db-peer`, the Aven Peer's (later) | | `ghcr.io/myavenceo/avensandbox`, the box built from this repository's Dockerfile so machines can download it |
-| Lean | `Aven.DB` | | |
-| Our protocol's ALPN | `aven/db/1` | | |
-| Release files | later `aven-db-peer-<tag>-<platform>.tar.gz` | `aven-os-landing-<tag>.tar.gz` | the image, tagged with the release |
+| Where | avenOS | avenPEER | avenDB | avenSANDBOX |
+|---|---|---|---|---|
+| JS packages (npm scope `@aven`) | `@aven/os` (`aven/DB2/package.json`) | `@aven/peer`, the Peer-Light for pages (later) | | none: tooling of this repository |
+| Rust crates | | `aven-peer` (native), `aven-peer-light` (wasm) | `aven-db-core`, `aven-db-store` | |
+| Container images | | `ghcr.io/myavenceo/aven/peer`, the Aven Peer's (later) | | `ghcr.io/myavenceo/aven/sandbox`, the box built from this repository's Dockerfile so machines can download it |
+| Lean | | | `Aven.DB` | |
+| Protocol (ALPN) | | | `aven/db/1`, which avenPEER carries | |
+| Release files | `aven-os-landing-<tag>.tar.gz` (browser), later the Mac app | later `aven-peer-<tag>-<platform>.tar.gz` | | the image, tagged with the release |
 
 `@aven/maia` comes later. None of these names had public packages on npm on 29 Oct 2026; creating the npm
 organization `aven` reserves the scope before anything is published.

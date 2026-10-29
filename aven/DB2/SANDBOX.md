@@ -129,7 +129,7 @@ per run. A cloud session can't show a window, so `bun run shot` takes a screensh
 
 One image holds every tool; every command runs in it.
 
-- **The image** is `ghcr.io/myavenceo/avensandbox`, built from `box/Dockerfile`. It holds:
+- **The image** is `ghcr.io/myavenceo/aven/sandbox`, built from `box/Dockerfile`. It holds:
   - Playwright's image from Microsoft's registry, at the newest release;
   - stable Rust with the wasm target and wasm-bindgen;
   - bun;
@@ -200,7 +200,7 @@ OrbStack runs it natively instead of through Rosetta, comes next.
   the next day.
 - **Its deliverables are on the release page.** For now there are two:
   - **avenSANDBOX:** the exact image its check ran in, tagged with the release's name
-    (`ghcr.io/myavenceo/avensandbox:26.10.29v1`) and named with its digest, ready to pull;
+    (`ghcr.io/myavenceo/aven/sandbox:26.10.29v1`) and named with its digest, ready to pull;
   - **avenOS:** the landing page, built by `bun run build`, as `aven-os-landing-26.10.29v1.tar.gz` with its
     checksum in `SHA256SUMS`.
 
@@ -291,11 +291,11 @@ aven/DB2/
   box/             Dockerfile, compose.yml, the cloud setup script
   crates/core      aven-db-core: the pure core every peer runs, without I/O
   crates/store     aven-db-store: the Store contract, its backends and their conformance suite
-  crates/peer      aven-db-peer: the Peer, one binary; --relay makes it the Aven Peer
-  crates/web       aven-db-web: the Peer-Light, the core as wasm in a worker
+  crates/peer      aven-peer: avenPEER's native Peer, one binary; --relay makes it the Aven Peer
+  crates/light     aven-peer-light: avenPEER's Peer-Light, the core as wasm in a worker
   spec/            Lean
   sandbox/         the runner: up, down, doctor, shot, the timeline
-  app/             the landing page and the control room (Svelte 5 + Vite)
+  app/             avenOS's browser target: the landing page; and the control room (Svelte 5 + Vite)
 ```
 
 ## Done when
@@ -321,7 +321,7 @@ device. The UX is settled before any code.
 |---|---|---|
 | **Box** | the Dockerfile and the image workflow (GitHub's registry, amd64 and arm64, tagged by the hash of the box's inputs); `compose.yml`; `bun run up`, `down`, `logs`, `doctor`, `shot` and `up --check`; the cloud setup script and the session hook; the fence check (no legacy imports, the folder's spelling); the root `Cargo.toml` excluding `aven/DB2`; `check.mjs` and the goal CI running `bun run up --check` | `bun run up` brings up the five containers with placeholder peers, and `doctor` passes in a cloud session |
 | **Store** (Rust) | `crates/store`: the contract (blobs and refs), its backends through OpenDAL (s3, fs, opfs, memory) and the conformance suite | the suite passes on memory and fs, on s3 against the box's S3 server, and on opfs in Chromium |
-| **Peers** (Rust and Lean) | `crates/core`: the status phases, presence and progress counters, pure. `crates/peer`: the binary, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence), `--relay` and `--store`. `crates/web`: the Peer-Light, the core as wasm in a worker, relay-only, storing in OPFS. `spec/` with its one check. | unit tests; two Peers and a Peer-Light connect over iroh in a test; `lake build` |
+| **Peers** (Rust and Lean) | `crates/core`: the status phases, presence and progress counters, pure. `crates/peer`: the binary, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence), `--relay` and `--store`. `crates/light`: the Peer-Light, the core as wasm in a worker, relay-only, storing in OPFS. `spec/` with its one check. | unit tests; two Peers and a Peer-Light connect over iroh in a test; `lake build` |
 | **Page** (JS) | `app/`: the landing page and the control room, first on recorded status, then on the real peers | `svelte-check`; the pages render the recorded status |
 
 The Store thread's first commit is the `Store` trait, so the Peers thread builds on it from the start.
@@ -336,7 +336,7 @@ once and merges.
    **New environment**: Trusted network access, `AVEN_DB2=1`, and [`box/cloud-setup.sh`](box/cloud-setup.sh) as its
    setup script.
 2. **OrbStack:** in its Docker engine config, `"allow-direct-routing": true`.
-3. **The `avensandbox` package public** (done 29 Oct 2026): its settings on GitHub, **Danger Zone**, **Change visibility**; the organization must allow public packages first.
+3. **The `aven/sandbox` package public** (the organization allows it since 29 Oct 2026; the first name, `avensandbox`, was made public that day and keeps the first two releases' boxes): its settings on GitHub, **Danger Zone**, **Change visibility**; the organization must allow public packages first.
 4. **`main`'s ruleset without "CI required"** (done 29 Oct 2026): v1's CI is parked, so that check never reports.
 5. **A `production` ruleset** (Settings, Rules, New branch ruleset): target `production`, Active, nobody on the bypass
    list. Rules:

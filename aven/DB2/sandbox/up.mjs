@@ -11,7 +11,7 @@ import { $ } from 'bun';
 const db2 = resolve(import.meta.dir, '..');
 const box = join(db2, 'box');
 const tag = createHash('sha256').update(readFileSync(join(box, 'Dockerfile'))).digest('hex').slice(0, 16);
-const image = process.env.AVENSANDBOX_IMAGE ?? `ghcr.io/myavenceo/avensandbox:${tag}`;
+const image = process.env.AVENSANDBOX_IMAGE ?? `ghcr.io/myavenceo/aven/sandbox:${tag}`;
 const port = process.env.AVENSANDBOX_PORT ?? '5173';
 const proxyCa = '/root/.ccr/ca-bundle.crt';
 const env = { ...process.env, AVENSANDBOX_IMAGE: image, AVENSANDBOX_PORT: port };
