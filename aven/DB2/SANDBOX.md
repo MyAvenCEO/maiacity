@@ -369,25 +369,23 @@ aven/DB2/
 
 ## Execution plan
 
-**Step 0, in this thread (done 29 Oct 2026):** avenOS's screens in the box, on the cast's vaults: the dashboard, the
-account switcher, Vault and Control Room. The UX is settled before the peers run under it.
+**Step 0, in this thread (done 29 Oct 2026):** the box (its image and workflow, `up`, `down`, `logs`, `doctor`,
+`shot`, `build`, `box`, the check and its fence against v1's code, the cloud setup script, avenDB's Cargo workspace
+with its five crates as stubs) and avenOS's screens on the cast's vaults: the dashboard, the account switcher, Vault
+and Control Room. The UX is settled before the peers run under it.
 
-**Step 1, five threads in parallel.** Each works on a task branch with a draft PR and no CI, sized by
-`.claude/skills/devx-speed`.
+**Step 1, three threads in parallel (started 29 Oct 2026).** Each works on its own branch with a draft PR, sized by
+`.claude/skills/devx-speed`, stays in its own folders and writes what the plan should learn into its PR's body.
 
-| Thread | Builds | Its own check |
+| Thread, branch | Builds | Its own check |
 |---|---|---|
-| **Box** | the Dockerfile and the image workflow (GitHub's registry, amd64 and arm64, tagged by the hash of the box's inputs); `compose.yml`; `bun run up`, `down`, `logs`, `doctor`, `shot` and `up --check`; the cloud setup script and the session hook; the fence check (no legacy imports, the folder's spelling); the root `Cargo.toml` excluding `aven/DB2`; `check.mjs` and the goal CI running `bun run up --check` | `bun run up` brings up the five containers with placeholder peers, and `doctor` passes in a cloud session |
-| **Store** (Rust) | `db/store`: the contract (blobs and refs), its backends through OpenDAL (s3, fs, opfs, memory) and the conformance suite | the suite passes on memory and fs, on s3 against the box's S3 server, and on opfs in Chromium |
-| **Peers** (Rust and Lean) | `db/core`: the status phases, presence and progress counters, pure. `peer/native`: the binary, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence), `--relay` and `--store`. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only, storing in OPFS. `db/spec/` with its one check. | unit tests; two Peers and a Peer-Light connect over iroh in a test; `lake build` |
-| **avenID** (Lean and Rust) | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and no person acts as a network: it acts only through its own devices. `id/core/`: `aven-id`, pure, its tests against the model on random trees. avenOS then reads the tree from it, through the Peer-Light, instead of from the cast. | `lake build`; `cargo test`; `up --check` unchanged |
-| **Page** (JS) | `os/web/`: avenOS and its apps, first on recorded status, then on the real peers | `svelte-check`; the pages render the recorded status |
+| **Peers** (Rust and Lean), `claude/avendb-peers` | `db/core`: the status phases, presence and progress counters, pure. `db/spec/`: `Aven.DB`, their model. `peer/native`: the Peer, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence) and `--relay`; its endpoint key is its device key from the cast. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only. The box's wiring for them (`compose.yml`, `up.mjs`, the check) and avenOS's live parts: the status line, the Control Room's panes, the timeline. State in memory until the store lands. | `lake build`; Rust tests against the model; `bun run up --check` waits for all four peers live, Alice Peer direct over UDP, "4 peers" on each Peer-Light |
+| **avenID** (Lean and Rust), `claude/avendb-id` | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for and may act on, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and no person acts as a network. `id/core/`: `aven-id`, pure, with the cast's keys derived and checked, and a wasm build of its queries for avenOS. | `lake build` without `sorry`; `cargo test`, its property tests checked against the running Lean model |
+| **Store** (Rust), `claude/avendb-store` | `db/store`: the conformance suite first, then the `Store` contract (blobs and refs) and its backends through OpenDAL (memory, fs, s3, opfs), with an S3-compatible server in the box | the suite passes on all four backends in the box |
 
-The Store thread's first commit is the `Store` trait, so the Peers thread builds on it from the start.
-
-**Step 2, in this thread as the avenDB Goal thread:** collect the five branches (`collect.mjs`), bring the box up in a
-cloud session, run `bun run up --check`, measure the loop and write the times into this file. Then the goal PR runs CI
-once and merges.
+**Step 2, in this thread as the avenDB Goal thread:** collect the three branches, each a merge commit; settle the
+lockfile; wire avenOS to avenID's wasm and the peers to the store; run `bun run up --check`, measure the loop and write
+the times into this file. Then the change merges into `main`, and `production` releases what changed.
 
 **Samuel's part,** the settings no agent can change:
 

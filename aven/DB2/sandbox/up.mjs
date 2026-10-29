@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { $ } from 'bun';
+import { fence } from './fence.mjs';
 
 const db2 = resolve(import.meta.dir, '..');
 const box = join(db2, 'sandbox', 'box');
@@ -103,10 +104,13 @@ async function waitForPage() {
 }
 
 async function check() {
+	const fenced = fence();
+	for (const problem of fenced) say(`fence: ${problem}`);
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
-	say(`${result.exitCode === 0 ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
-	return result.exitCode;
+	const passed = fenced.length === 0 && result.exitCode === 0;
+	say(`${passed ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
+	return passed ? 0 : 1;
 }
 
 async function up(args) {
