@@ -29,12 +29,12 @@ pub(crate) struct Based {
 }
 
 
-// Process-local identity of immutable inputs, never persisted or accepted from a peer.
-// Bodies/blobs/signed entries are content-addressed and append-only between forgets;
-// key insertions and anchor replacement have explicit allocation-identity revisions.
+// Identity of immutable inputs, never persisted or accepted from a peer.
+// The log by its head and the keys by their sum; bodies/blobs/signed entries are content-addressed
+// and append-only between forgets; anchor replacement has an explicit allocation-identity revision.
 pub(crate) struct OverlayBasis {
     log: crate::log_head::Head,
-    keys: Arc<()>,
+    keys: [u8; 32],
     anchors: Arc<()>,
     warm: Arc<()>,
     bodies: usize,
@@ -46,13 +46,13 @@ pub(crate) struct OverlayBasis {
 }
 impl OverlayBasis {
     pub(crate) fn of(store: &Store) -> Self {
-        Self { log: store.log.head(), keys: store.keys.revision.clone(),
+        Self { log: store.log.head(), keys: store.keys.sum,
             anchors: store.bootstrap_revision.clone(), warm: store.warm_revision.clone(),
             bodies: store.bodies.len(), blobs: store.blobs.len(), signed: store.signed.len(),
             follow: store.follow.clone(), depth: store.query_depth, gate: store.gate }
     }
     fn matches(&self, store: &Store) -> bool {
-        self.log == store.log.head() && Arc::ptr_eq(&self.keys, &store.keys.revision)
+        self.log == store.log.head() && self.keys == store.keys.sum
             && Arc::ptr_eq(&self.anchors, &store.bootstrap_revision)
             && Arc::ptr_eq(&self.warm, &store.warm_revision)
             && self.bodies == store.bodies.len() && self.blobs == store.blobs.len()
@@ -925,8 +925,8 @@ mod tests {
         store.log = crate::policy::Log::default();
         assert!(basis.matches(&store), "a log of the same edits has the same head");
         let basis = OverlayBasis::of(&store);
-        store.keys.revision = Arc::new(());
-        assert!(!basis.matches(&store), "key invalidation is not inferred from cardinality");
+        store.keys.insert(crate::keys::KeyName::Entry(EntryId([1; 32]), None, 0), crate::keys::Secret::from_bytes([7; 32]));
+        assert!(!basis.matches(&store), "a key taken changes the basis");
         let basis = OverlayBasis::of(&store);
         store.bootstrap_revision = Arc::new(());
         assert!(!basis.matches(&store), "same-entry anchor replacement invalidates derived judgment");

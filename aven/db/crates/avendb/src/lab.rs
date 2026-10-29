@@ -386,7 +386,8 @@ impl Drafting<'_> {
 /// as devices that make a family's key at the same time each make one; its keys are told apart by their ids.
 #[derive(Default)]
 struct Keyring {
-    revision: Arc<()>,
+    /// The sum of the ids of the keys it holds (`held::key_sum`): the same for the same keys, however they came.
+    sum: [u8; 32],
     /// Changes with each key it takes but an entry's: what the upkeep of every entry turns on (`UpkeepDue`).
     scoped: Arc<()>,
     /// The entries whose keys it took since the upkeep last looked (`UpkeepDue`), and since `read` last looked.
@@ -413,7 +414,7 @@ impl Keyring {
         if self.by_id.contains_key(&id) {
             return false;
         }
-        self.revision = Arc::new(());
+        held::key_sum(&mut self.sum, &id.0);
         match name {
             KeyName::Entry(e, ..) => {
                 self.entries_keyed.push(e);
@@ -667,10 +668,15 @@ impl ShelfKey {
         keys::decrypt(&self.0.child("shelf box", purpose.as_bytes()), bytes, context).map(Zeroizing::new)
     }
 
-    /// The key of entry `e`'s row in its shelf's index of kept showings (`KeptShown::rows`): the same for the entry at
+    /// The key of entry `e`'s row in its shelf's index of kept showings (`KeptPack::rows`): the same for the entry at
     /// every save, and naming it to nobody without the key.
     fn shown_row(&self, e: &EntryId) -> [u8; 32] {
         self.0.child("kept shown row", &e.0).bytes()
+    }
+
+    /// The key of query `key`'s row in its shelf's index of kept query views (`Warming::queries`), as `shown_row`.
+    fn query_row(&self, key: &str) -> [u8; 32] {
+        self.0.child("kept query row", key.as_bytes()).bytes()
     }
 }
 
@@ -754,37 +760,40 @@ pub struct Warm {
     pub views: Vec<Vec<u8>>,
     /// The packs of kept showings its shelf's index of them names (`Warming::shown`), each with the rows that name it:
     /// a showing is taken from the pack its entry's row names, and from no other.
-    pub shown: Vec<ShownPack>,
+    pub shown: Vec<PackFile>,
+    /// The packs of kept query views its shelf's index of them names (`Warming::queries`), as `shown`.
+    pub queries: Vec<PackFile>,
 }
 
-/// A pack of kept showings as a shelf holds it (`Warm::shown`): the file it is, read where it is as the showings it
-/// holds open (`shown_map::unpack`), or its bytes; and the rows of the shelf's index that name it (`KeptShown::rows`),
-/// whose entries' showings it is taken for. With none named (a pack given as bytes alone), every showing it holds is
-/// taken, a later pack's in place of an earlier one's, and none counts as kept on the shelf.
+/// A pack of kept showings or query views as a shelf holds it (`Warm::shown`, `Warm::queries`): the file it is, read
+/// where it is as the showings it holds open (`shown_map::unpack`), or its bytes; and the rows of the shelf's index that
+/// name it (`KeptPack::rows`), whose entries' showings or queries' views it is taken for. With none named (a pack given
+/// as bytes alone), every one it holds is taken, a later pack's in place of an earlier one's, and none counts as kept
+/// on the shelf.
 #[derive(Clone, Debug)]
-pub struct ShownPack {
+pub struct PackFile {
     pub file: Arc<dyn crate::pages::Space>,
     pub rows: Option<Vec<[u8; 32]>>,
 }
 
-impl From<Vec<u8>> for ShownPack {
-    fn from(bytes: Vec<u8>) -> ShownPack {
-        ShownPack { file: Arc::new(crate::pages::MemorySpace::of(bytes)), rows: None }
+impl From<Vec<u8>> for PackFile {
+    fn from(bytes: Vec<u8>) -> PackFile {
+        PackFile { file: Arc::new(crate::pages::MemorySpace::of(bytes)), rows: None }
     }
 }
 
-impl From<KeptShown> for ShownPack {
-    fn from(kept: KeptShown) -> ShownPack {
-        ShownPack { file: Arc::new(crate::pages::MemorySpace::of(kept.pack)), rows: Some(kept.rows) }
+impl From<KeptPack> for PackFile {
+    fn from(kept: KeptPack) -> PackFile {
+        PackFile { file: Arc::new(crate::pages::MemorySpace::of(kept.pack)), rows: Some(kept.rows) }
     }
 }
 
-/// The showings a save keeps (`Warming::shown`): a pack of them, encrypted for the device alone and its show rules,
-/// to go on its shelf as a blob; the key of each one's row in the shelf's index of kept showings, which names the pack
-/// from then on (`ShelfKey::shown_row`), in place of whatever pack it named before; and the log head they were judged
-/// at, which the index is stamped with.
+/// The showings or query views a save keeps (`Warming::shown`, `Warming::queries`): a pack of them, encrypted for the
+/// device alone, to go on its shelf as a blob; the key of each one's row in the shelf's index of them, which names the
+/// pack from then on (`ShelfKey::shown_row`, `ShelfKey::query_row`), in place of whatever pack it named before; and the
+/// log head they were worked out at, which the index is stamped with.
 #[derive(Clone, Debug)]
-pub struct KeptShown {
+pub struct KeptPack {
     pub pack: Vec<u8>,
     pub rows: Vec<[u8; 32]>,
     pub head: crate::log_head::Head,
@@ -841,7 +850,9 @@ pub struct Warming {
     pub keys: Option<Vec<u8>>,
     pub view: Option<Vec<u8>>,
     /// The showings its shelf lacks, a pack of them and their rows (`ShownView.lean`).
-    pub shown: Option<KeptShown>,
+    pub shown: Option<KeptPack>,
+    /// The query views its shelf lacks (`query_view`), a pack of them and their rows, sealed to this engine.
+    pub queries: Option<KeptPack>,
     // Process-local receipt binding: no replacement store, lock, withdrawal or earlier acknowledgement may
     // make its counts describe a different key prefix or view. Appending edits alone keeps this receipt valid.
     revision: Arc<()>,
@@ -854,6 +865,8 @@ pub struct Warming {
     view_read: bool,
     /// The prints of the showings its pack holds, by entry, and the log head they were judged at.
     shown_of: Option<(Vec<(EntryId, [u8; 32])>, crate::log_head::Head)>,
+    /// The queries whose views its pack holds, each with the stamp it is of.
+    queries_of: Option<Vec<(String, query_view::Stamp)>>,
 }
 
 /// Immutable snapshot inputs, owned independently of Lab. Encoding consumes the keys
@@ -868,6 +881,8 @@ pub struct WarmCapture {
     /// The showings to keep, each its entry's, print and bytes (`Shown::record`), to seal one by one
     /// (`shown_map::pack`).
     shown: Option<Vec<(EntryId, [u8; 32], Zeroizing<Vec<u8>>)>>,
+    /// The query views to keep, each in its pack bytes (`QueryViews::due`).
+    queries: Option<Vec<Vec<u8>>>,
     receipt: Warming,
 }
 impl WarmCapture {
@@ -897,7 +912,13 @@ impl WarmCapture {
         if let (Some(shown), Some((_, head))) = (self.shown.take(), &self.receipt.shown_of) {
             let rows = shown.iter().map(|(e, _, _)| self.key.shown_row(e)).collect();
             let pack = shown_map::pack(&self.key, &mut self.rng, &shown);
-            self.receipt.shown = Some(KeptShown { pack, rows, head: *head });
+            self.receipt.shown = Some(KeptPack { pack, rows, head: *head });
+        }
+        if let (Some(queries), Some(of)) = (self.queries.take(), &self.receipt.queries_of) {
+            let rows = of.iter().map(|(key, _)| self.key.query_row(key)).collect();
+            let head = of.first().map_or(crate::log_head::head(&[]), |(_, stamp)| stamp.head);
+            let pack = self.key.lock("query views", &queries.concat(), ENGINE.as_bytes(), &mut self.rng);
+            self.receipt.queries = Some(KeptPack { pack, rows, head });
         }
         self.receipt
     }
@@ -1255,15 +1276,12 @@ struct Store {
     view_read_due: bool,
     /// Its first sync with the boxes held back, if it asks for one (`Lab::set_lazy_boxes`).
     lazy: LazyBoxes,
-    /// How many times it was taken mutably (`Stores::get_mut`): a query view stamped with the revision now saw every
-    /// change the store took (`query_view::Stamp`).
-    revision: u64,
     /// Its query views (`query_view`): the answers of the queries its pages asked, each at the head it was worked out
-    /// at. Its own, never an edit's, and none in a store made anew.
+    /// at. Its own, never an edit's.
     query_views: std::sync::Mutex<QueryViews>,
-    /// Whether its shared index lists every entry of a vault it reads (`index_complete`), each with the revision it
-    /// was worked out at.
-    complete: std::sync::Mutex<HashMap<VaultId, (u64, bool)>>,
+    /// Whether its shared index lists every entry of a vault it reads (`index_complete`), each with the stamp it was
+    /// worked out at.
+    complete: std::sync::Mutex<HashMap<VaultId, (query_view::Stamp, bool)>>,
 }
 
 /// A device's store taken out of its Lab for a probe of its memory (`Lab::probe_store`): of no use but to let go of.
@@ -1366,7 +1384,6 @@ impl Default for Store {
             view_wholes: 0,
             view_read_due: true,
             lazy: LazyBoxes::default(),
-            revision: 0,
             query_views: std::sync::Mutex::new(QueryViews::default()),
             complete: std::sync::Mutex::new(HashMap::new()),
         }
@@ -1911,39 +1928,8 @@ enum Work {
     Retag { vault: VaultId, entry: EntryId, body: Body },
 }
 
-/// The devices' stores, by device: read as a map; each one taken mutably counts on its revision, so that no query view
-/// stamped before it is read as current (`query_view`).
-#[derive(Default)]
-struct Stores(HashMap<SignerId, Store>);
-
-impl std::ops::Deref for Stores {
-    type Target = HashMap<SignerId, Store>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Stores {
-    fn get_mut(&mut self, d: &SignerId) -> Option<&mut Store> {
-        let store = self.0.get_mut(d)?;
-        store.revision += 1;
-        Some(store)
-    }
-
-    fn insert(&mut self, d: SignerId, store: Store) -> Option<Store> {
-        self.0.insert(d, store)
-    }
-
-    fn remove(&mut self, d: &SignerId) -> Option<Store> {
-        self.0.remove(d)
-    }
-}
-
-impl<const N: usize> From<[(SignerId, Store); N]> for Stores {
-    fn from(stores: [(SignerId, Store); N]) -> Stores {
-        Stores(HashMap::from(stores))
-    }
-}
+/// The devices' stores, by device.
+type Stores = HashMap<SignerId, Store>;
 
 pub struct Lab {
     /// The keys at hand: passkeys, owner keys, and unlocked devices.
@@ -5032,15 +5018,16 @@ impl Lab {
         self.held(d).view().vaults().iter().map(|v| v.id).collect()
     }
 
-    /// `index_complete`, kept while device `d`'s store takes no change (its revision): whether a view of vault `vault`
-    /// may list off the shared index alone.
+    /// `index_complete`, kept while device `d`'s query views are stamped as they were (`query_view_stamp`): whether a
+    /// view of vault `vault` may list off the shared index alone.
     pub fn index_lists_all(&self, d: SignerId, vault: VaultId) -> bool {
         let store = self.held(d);
+        let now = self.query_view_stamp(d);
         if let Some((at, yes)) = store.complete.lock().unwrap_or_else(|p| p.into_inner()).get(&vault) {
-            if *at == store.revision { return *yes; }
+            if *at == now { return *yes; }
         }
         let yes = self.index_complete(d, vault);
-        store.complete.lock().unwrap_or_else(|p| p.into_inner()).insert(vault, (store.revision, yes));
+        store.complete.lock().unwrap_or_else(|p| p.into_inner()).insert(vault, (now, yes));
         yes
     }
 
@@ -5088,23 +5075,41 @@ impl Lab {
         &self.held(d).query_views
     }
 
-    /// The head a query view of device `d` is stamped with now (`query_view::Stamp`): its store's revision, its size
-    /// and removals as `touched` reads them, and a digest of what a read depends on beside its log: its shares and the
-    /// selectors it opened, its cap groups, its lanes, its keys, the entries whose header it hasn't read, its query depth
-    /// and its own starts.
+    /// The head a query view of device `d` is stamped with now (`query_view::Stamp`): its log's head, and its size and
+    /// removals as `touched` reads them; the sum of what it works its items out of beside its log (`inputs`): the keys
+    /// it holds, its McEliece keys, its owner bases, what it follows, its query depth and its gate; the sum of what a
+    /// read depends on beside its log as it worked those out (`context`): its shares and the selectors it opened, its
+    /// cap groups and lanes, the entries whose header it hasn't read and those it shows from a base; and whether it
+    /// worked them all out of every edit it holds (`settled`).
     pub(crate) fn query_view_stamp(&self, d: SignerId) -> query_view::Stamp {
-        use std::hash::{Hash, Hasher as _};
+        use crate::hash::Hasher;
         let store = self.held(d);
+        let mut inputs = Hasher::new("avenDB query view inputs 1");
+        inputs.update(&store.keys.sum).update(&store.blobs.sum());
+        for (e, base) in &store.bases {
+            inputs.update(&e.0).update(&base.snapshot.0).update(&crate::hash::content(&base.sealed));
+        }
+        inputs.update(&(store.follow.len() as u64).to_be_bytes());
+        for v in &store.follow { inputs.update(&v.0); }
+        inputs.update(&(store.query_depth as u64).to_be_bytes()).update(&[store.gate as u8]);
         let r = &store.readings;
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        (r.selectors.len(), r.defines.len(), store.shown_groups, store.query_depth, store.keys.ids().count()).hash(&mut h);
-        // the entries whose header it hasn't read: one read since is no edit `touched` names
-        r.untyped.hash(&mut h);
-        (store.slices.len(), store.unreadable.len(), store.based.len(), store.follow.len()).hash(&mut h);
-        (Arc::as_ptr(&store.bootstrap_revision) as usize, Arc::as_ptr(&store.warm_revision) as usize).hash(&mut h);
-        for (v, (lane, _)) in &store.shown_lanes { (v, lane).hash(&mut h); }
-        query_view::Stamp { revision: store.revision, size: self.size(d), gone: store.log.gone(), aux: h.finish(),
-            settled: store.showing.is_none() && !store.behind }
+        let mut context = Hasher::new("avenDB query view context 1");
+        let sorted = |mut ids: Vec<[u8; 32]>| { ids.sort_unstable(); ids };
+        for part in [
+            sorted(r.selectors.keys().map(|s| s.0).collect()),
+            sorted(r.defines.keys().map(|e| e.0).collect()),
+            sorted(store.slices.keys().map(|s| s.0).collect()),
+            sorted(store.unreadable.iter().map(|s| s.0).collect()),
+            sorted(store.based.keys().map(|e| e.0).collect()),
+            r.untyped.iter().map(|e| e.0).collect(),
+        ] {
+            context.update(&(part.len() as u64).to_be_bytes());
+            part.iter().for_each(|id| { context.update(id); });
+        }
+        context.update(&store.shown_groups);
+        for (v, (lane, _)) in &store.shown_lanes { context.update(&v.0).update(lane); }
+        query_view::Stamp { head: store.log.head(), size: self.size(d), gone: store.log.gone(), inputs: inputs.finalize(),
+            context: context.finalize(), settled: store.showing.is_none() && !store.behind }
     }
 
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
@@ -6971,6 +6976,21 @@ impl Lab {
             }
             store.perf.count("kept shown: showings", store.kept_shown.len() as u64);
             store.perf.add("open kept shown", at);
+            // and the query views it kept, each its query's from the pack its row names, to answer from while current
+            let at = Perf::start();
+            let views = store.query_views.get_mut().unwrap_or_else(|p| p.into_inner());
+            for pack in &warm.queries {
+                let named: Option<HashSet<[u8; 32]>> = pack.rows.as_ref().map(|rows| rows.iter().copied().collect());
+                let mut bytes = vec![0; pack.file.len() as usize];
+                let took = pack.file.read_at(0, &mut bytes).ok().map(|()| bytes)
+                    .and_then(|bytes| key.unlock("query views", &bytes, ENGINE.as_bytes()))
+                    .and_then(|bytes| views.take_kept(&bytes, |q| named.as_ref().is_none_or(|n| n.contains(&key.query_row(q)))));
+                match took {
+                    Some(n) => store.perf.count("kept query views: views", n as u64),
+                    None => store.perf.count("kept query views: a pack that doesn't open", 1),
+                }
+            }
+            store.perf.add("open kept query views", at);
             (restored.kept.0, restored.showings) = (packs, store.kept_shown.len());
             store.restored = Some(restored);
         } else if let Some(store) = self.stores.get_mut(&d) {
@@ -7051,7 +7071,19 @@ impl Lab {
         // the showings its shelf lacks, as often as its view, and once its shelf holds none of them yet
         let fresh_shown =
             if current.is_some() && (view_due || store.shown_given.is_empty()) { store.shown_due() } else { vec![] };
-        if !keys_due && !view_due && fresh_shown.is_empty() { return None; }
+        // and the query views its shelf lacks, as they are now
+        let queries = match current.is_some() {
+            true => store.query_views.lock().unwrap_or_else(|p| p.into_inner()).due(&self.query_view_stamp(d)),
+            false => vec![],
+        };
+        if !keys_due && !view_due && fresh_shown.is_empty() && queries.is_empty() { return None; }
+        let (queries_of, queries) = match queries.is_empty() {
+            true => (None, None),
+            false => {
+                let (of, packs): (Vec<_>, Vec<_>) = queries.into_iter().map(|(key, stamp, b)| ((key, stamp), b)).unzip();
+                (Some(of), Some(packs))
+            }
+        };
         let (shown, shown_of) = match fresh_shown.is_empty() {
             true => (None, None),
             false => {
@@ -7080,11 +7112,13 @@ impl Lab {
             view_read: read.is_some(),
             shown: None,
             shown_of,
+            queries: None,
+            queries_of,
         };
         let mut seed = Zeroizing::new([0u8; 32]);
         self.rng.fill_bytes(&mut *seed);
         let rng = SeededRng::new("warm snapshot encryption", &*seed);
-        Some(WarmCapture { key, rng, opened, replay, read, shown, receipt })
+        Some(WarmCapture { key, rng, opened, replay, read, shown, queries, receipt })
     }
 
     /// Whether device `d`'s shelf lacks something of `Warm` (`warming`), as cheaply as it tells: the node's saver is
@@ -7092,6 +7126,7 @@ impl Lab {
     pub fn warm_due(&self, d: SignerId) -> bool {
         self.stores.get(&d).is_some_and(|store| {
             store.keys_due(None) || store.view_due() || (store.shown_given.is_empty() && !store.shown_due().is_empty())
+                || !store.query_views.lock().unwrap_or_else(|p| p.into_inner()).due(&self.query_view_stamp(d)).is_empty()
         })
     }
 
@@ -7121,6 +7156,9 @@ impl Lab {
         }
         if let Some((of, _)) = warming.shown_of {
             store.shown_given.extend(of);
+        }
+        if let Some(of) = warming.queries_of {
+            store.query_views.get_mut().unwrap_or_else(|p| p.into_inner()).given(&of);
         }
     }
 

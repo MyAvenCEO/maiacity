@@ -7,11 +7,11 @@ import { reactiveObservation } from './reactive-observation.js';
  * without invalidating in-flight answers. Query/owner changes abort the previous
  * scope and start independently; old engine work may finish but cannot publish.
  * There is at most one read per scope, without a timeout spawning duplicate work.
- * With `kept` (./kept-answers.js), a new scope first takes the answer that query last had on that owner, then reads.
+ * A query's first answer comes from the device's own view of it at once, where it holds one that is current
+ * (crates/avendb/src/query_view.rs), its shelf keeping them across unlocks: the page keeps none of its own.
  * @param {{ read: (owner: any, query: any, signal: AbortSignal) => Promise<any>,
- *   take: (answer: any) => void, failed?: (error: Error) => void, timing?: typeof beginReactiveTiming, observed?: (revisions: ReturnType<typeof observedRevisions>) => void,
- *   kept?: ReturnType<typeof import('./kept-answers.js').keptAnswers> }} options */
-export function createReactiveRead({ read, take, failed = () => {}, timing = beginReactiveTiming, observed = () => {}, kept }) {
+ *   take: (answer: any) => void, failed?: (error: Error) => void, timing?: typeof beginReactiveTiming, observed?: (revisions: ReturnType<typeof observedRevisions>) => void }} options */
+export function createReactiveRead({ read, take, failed = () => {}, timing = beginReactiveTiming, observed = () => {} }) {
 	let closed = false;
 	/** @type {{ owner: any, query: any, key: string, controller: AbortController, running: boolean, again: boolean, emitted: (answer: any) => void } | null} */
 	let scope = null;
@@ -26,7 +26,6 @@ export function createReactiveRead({ read, take, failed = () => {}, timing = beg
 					if (!reads(s.query)) throw new Error('An avenDB observer accepts read operations only.');
 					const answer = await read(s.owner, reactiveObservation.query(s.owner, s.query), s.controller.signal);
 					if (scope === s && !closed) {
-						kept?.keep(s.owner, s.key, answer);
 						take(answer); s.emitted(answer);
 						reactiveObservation.emitted(s.owner, answer);
 						if (s.query?.observeRevision === true) {
@@ -48,8 +47,6 @@ export function createReactiveRead({ read, take, failed = () => {}, timing = beg
 			if (!scope || scope.owner !== owner || scope.key !== key) {
 				scope?.controller.abort();
 				scope = { owner, query, key, controller: new AbortController(), running: false, again: false, emitted: timing(query) };
-				const was = query && owner ? kept?.get(owner, key) : undefined;
-				if (was !== undefined) take(was);
 			}
 			if (!query || !owner) return;
 			scope.again = true;
