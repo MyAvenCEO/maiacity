@@ -416,10 +416,15 @@ async fn a_views_now_tier_is_asked_alone_before_any_bulk_page() {
     until("the iPhone keeps the note its view wants", || async { phone.holdings().await.logs.contains_key(&LogId::Entry(last)) }).await;
     let then = kept(&phone, &notes).await;
     assert!(then < NOTES * 9 / 10, "the wanted note came before the rest: {then} of {NOTES} notes held when it came");
-    let net = phone.op(serde_json::json!({"op": "network"})).await.expect("network");
-    let askings = net["ok"]["askings"].as_array().expect("its askings");
+    // an asking is told once it ends, after the pages it took: the note is held as its page is taken, before that
+    let brought = || async {
+        let net = phone.op(serde_json::json!({"op": "network"})).await.expect("network");
+        net["ok"]["askings"].as_array().expect("its askings").clone()
+    };
+    let told = |askings: &[serde_json::Value]| askings.iter().any(|a| a["stage"] == "now" && a["new"].as_u64() > Some(0));
+    until("the now tier was asked on its own", || async { told(&brought().await) }).await;
+    let askings = brought().await;
     let now: Vec<_> = askings.iter().filter(|a| a["stage"] == "now" && a["new"].as_u64() > Some(0)).collect();
-    assert!(!now.is_empty(), "the now tier was asked on its own: {askings:?}");
     assert!(now.iter().all(|a| a["logs"].as_u64() < Some(64)), "fewer than 64 logs: {askings:?}");
     let first_now = now.iter().filter_map(|a| a["at"].as_u64()).min().expect("when");
     let bulk = askings.iter().filter(|a| a["stage"] == "rest").filter_map(|a| a["at"].as_u64()).min();
