@@ -2408,6 +2408,8 @@ impl Lab {
     /// signature doesn't verify, or one is missing or left over; otherwise why `d`'s view, with the logs the claim
     /// brings, refuses the edit.
     pub fn accept_claim(&mut self, d: SignerId, claim: Claim) -> Result<Join, Refusal> {
+        // of every edit it holds, not of a replay under way (`vault_of`)
+        self.step_replay(d, usize::MAX);
         if self.vault_of(d).is_some() {
             return Err(Refusal::AlreadyMember);
         }
@@ -2621,7 +2623,10 @@ impl Lab {
         Some(seed.child("avendb file convergence", b"").bytes())
     }
 
-    /// The vault device `d` belongs to, by its view.
+    /// The vault device `d` belongs to, by its replay: of every edit it holds, but while a replay is under way, of the
+    /// edits run so far, none at all after a restore whose stored view didn't open. Where "no vault" is acted on, it is
+    /// read dry (`dry`), its replay stepped on in place to every edit first: a Mac that asked mid replay put its shelf
+    /// aside (theOS 296eefce, 2026-10-29).
     pub fn vault_of(&self, d: SignerId) -> Option<VaultId> {
         self.held(d).view().vaults().iter().find(|v| v.devices.contains(&d)).map(|v| v.id)
     }
@@ -3557,6 +3562,14 @@ impl Lab {
     /// at 32,000 edits, the page it came in the middle of shown at once).
     fn refresh_own(&mut self, on: SignerId, lent: &[(SignerId, Secret)], catching: bool) {
         if catching {
+            // a removal of its own can't step on (it goes back over what it holds): its replay is stepped on in place to
+            // every edit once, as an ask's (`dry`), and its catch-up goes on from there, so the person sees what they
+            // removed gone at once, not after a whole replay run a slice a step (a removed device listed on, fresh11)
+            let store = self.held(on);
+            let mine = |e: &Edit| (e.author == on || e.cosigners.contains(&on)) && e.is_removal();
+            if store.log.edits().get(store.replayed..).unwrap_or_default().iter().any(mine) {
+                self.step_replay(on, usize::MAX);
+            }
             self.refresh_with(on, lent, Some(OWN_WRITE_BUDGET));
         } else {
             self.refresh(on, lent);
