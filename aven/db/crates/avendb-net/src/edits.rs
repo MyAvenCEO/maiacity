@@ -971,23 +971,25 @@ async fn read_warm(shelf: &Shelf) -> (Warm, u64, (PacksOnShelf, PacksOnShelf, Vi
 }
 
 /// A device's stored view on its shelf (`Warming::view`): the index of its rows, each naming the blob that holds it, by
-/// its hash and size, and the blob each row names, so that one a row no longer names goes.
+/// its hash and size; the blob each row names; and those the rows of its slot before named, which a node falls back to
+/// where the newer slot doesn't read whole: a blob goes once neither of its two slots names it.
 pub(crate) struct ViewOnShelf {
     index: ShelfIndex,
     blobs: HashMap<[u8; 32], Blob>,
+    before: HashSet<Blob>,
 }
 
 impl ViewOnShelf {
     /// None on `shelf`.
     fn none(shelf: &Shelf) -> ViewOnShelf {
         let index = ShelfIndex::empty(shelf.clone(), VIEW, PACKS_BUDGET, empty_head().head).expect("the name of an index");
-        ViewOnShelf { index, blobs: HashMap::new() }
+        ViewOnShelf { index, blobs: HashMap::new(), before: HashSet::new() }
     }
 
     /// Puts each row `view` gives anew on the shelf through `on` as a blob, then the rows in the index, each naming its
     /// blob in place of the one it named before, and those it takes away gone, stamped with the head of the edits the
-    /// view is of; and lets go of the blobs no row names then. A crash before the index's slot leaves the rows as they
-    /// were, each naming a blob the shelf holds still.
+    /// view is of; and lets go of the blobs neither its new slot nor the one before it names. A crash before the
+    /// index's slot leaves the rows as they were, each naming a blob the shelf holds still.
     async fn put(&mut self, on: &Shelf, view: ViewChanges) -> Result<()> {
         let mut changes = Vec::with_capacity(view.rows.len());
         let mut named = Vec::with_capacity(view.rows.len());
@@ -1001,14 +1003,18 @@ impl ViewOnShelf {
             named.push((row, blob));
         }
         self.index.apply_on(on, changes, view.head.into()).await?;
+        let was: HashSet<Blob> = self.blobs.values().copied().collect();
         for (row, blob) in named {
-            let was = match blob {
+            match blob {
                 Some(blob) => self.blobs.insert(row, blob),
                 None => self.blobs.remove(&row),
             };
-            if let Some((hash, _)) = was.filter(|b| Some(*b) != blob) {
-                on.drop(&hash.to_hex()).await.ok();
-            }
+        }
+        let now: HashSet<Blob> = self.blobs.values().copied().collect();
+        let gone: Vec<Blob> = self.before.iter().filter(|b| !now.contains(*b) && !was.contains(*b)).copied().collect();
+        self.before = was;
+        for (hash, _) in gone {
+            on.drop(&hash.to_hex()).await.ok();
         }
         Ok(())
     }
