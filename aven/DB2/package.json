@@ -8,7 +8,8 @@
 		"logs": "bun sandbox/up.mjs logs",
 		"shot": "bun sandbox/up.mjs shot",
 		"build": "bun sandbox/up.mjs build",
-		"doctor": "bun sandbox/up.mjs doctor"
+		"doctor": "bun sandbox/up.mjs doctor",
+		"box": "bun sandbox/up.mjs box"
 	},
 	"devDependencies": {
 		"@sveltejs/vite-plugin-svelte": "7.3.1",

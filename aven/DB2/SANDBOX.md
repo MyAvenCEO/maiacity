@@ -193,7 +193,10 @@ One image holds every tool; every command runs in it.
   - `bun run down`;
   - `bun run logs`;
   - `bun run doctor`: checks versions, Docker settings and kernel features;
-  - `bun run shot`: a screenshot of the Control Room.
+  - `bun run shot`: a screenshot of the Control Room;
+  - `bun run box <command>`: any command in the box, from `aven/DB2`: `bun run box cargo test`, `bun run box sh -c
+    'cd id/spec && lake build'`. Rust's build folder and its crate downloads live in volumes, kept across runs; in a
+    cloud session the box reaches crates.io through the session's proxy.
 - **One Docker setting:** `allow-direct-routing`, as a flag to `dockerd` or `"allow-direct-routing": true` in its
   config. Docker 28 and later drop routed traffic between its networks; in our NAT test it dropped exactly those
   packets until the setting was on.
@@ -300,6 +303,7 @@ iroh in the box runs fully private: our own relay, addresses handed out by the b
 | NAT | A Peer behind a router container reached a server on another network. The server saw the router's address with the Peer's port kept, the endpoint-independent NAT that hole punching needs. Docker dropped these packets until `allow-direct-routing` was on. |
 | Bad links | This kernel has no `netem` ("Specified qdisc kind is unknown"). Check it on OrbStack and in CI; in the cloud, a small UDP delay-and-drop hop in the router can stand in. |
 | Session size | 4 vCPUs, 16 GB of RAM, 30 GB of disk (Claude Code's cloud docs) |
+| Lean | elan fetches a toolchain on first use, from GitHub's release storage, which the session's proxy refuses (403). So the image holds the toolchain itself. crates.io answers through the proxy. |
 
 ## Latest versions, always
 

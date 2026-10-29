@@ -1,0 +1,12 @@
+# avenDB's own Cargo workspace (README, "Names"): every crate of avenDB, avenID and avenPEER, with one lockfile and one
+# build folder (target/, a volume in the box). Each crate is its own folder (SANDBOX.md, "Layout"); the Lean specs sit
+# beside them, outside the workspace. The repository's root workspace, v1's, excludes this folder.
+[workspace]
+resolver = "3"
+members = ["db/core", "db/store", "id/core", "peer/native", "peer/light"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+license = "UNLICENSED"
+publish = false

@@ -1,5 +1,5 @@
 // avenSANDBOX's runner (SANDBOX.md, "The box"): `bun run up [--check]`, `down [--wipe]`, `logs`, `shot`, `build`,
-// `doctor`.
+// `doctor`, and `box <command>`, which runs any command in the box: `bun run box cargo test`.
 // It runs on the host (a Mac with OrbStack, a Claude cloud session, a CI runner) and drives Docker; everything else
 // runs in the box's image, whose tag is the first 16 hex digits of its Dockerfile's SHA-256, as the image workflow
 // (.github/workflows/avensandbox-image.yml) tags it.
@@ -55,6 +55,29 @@ async function ensureImage() {
 	}
 }
 
+// What a container needs to reach the internet: through a cloud session's proxy, which it must trust, or directly.
+function network() {
+	if (!process.env.HTTPS_PROXY || !existsSync(proxyCa)) return [];
+	const ca = '/etc/ssl/certs/proxy-ca.crt';
+	const trust = ['NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE', 'CARGO_HTTP_CAINFO', 'GIT_SSL_CAINFO'].flatMap((name) => ['-e', `${name}=${ca}`]);
+	return ['--network', 'host', '-v', `${proxyCa}:${ca}:ro`, ...trust, ...proxyNames().flatMap((name) => ['-e', name])];
+}
+
+// The Rust builds and crate downloads live in volumes, kept across runs: a Mac's shared folders are slow for them.
+const rustVolumes = [
+	'-v', 'avensandbox_target:/work/target',
+	'-v', 'avensandbox_cargo_registry:/opt/cargo/registry',
+	'-v', 'avensandbox_cargo_git:/opt/cargo/git',
+];
+
+async function inBox(args) {
+	await ensureDocker();
+	await ensureImage();
+	const tty = process.stdout.isTTY ? ['-t'] : [];
+	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules', ...rustVolumes];
+	return (await $`docker run --rm -i ${tty} ${network()} ${volumes} -w /work ${image} ${args}`.env(env).nothrow()).exitCode;
+}
+
 async function install() {
 	// node_modules lives in a volume, installed by the image's bun for Linux, and again only when bun.lock changes
 	const lock = existsSync(join(db2, 'bun.lock')) ? createHash('sha256').update(readFileSync(join(db2, 'bun.lock'))).digest('hex') : 'none';
@@ -63,12 +86,9 @@ async function install() {
 	const stamp = await $`docker run --rm ${volumes} -w /work ${image} cat node_modules/.avensandbox-lock`.nothrow().quiet().text();
 	if (lock !== 'none' && stamp.trim() === lock) return;
 	say('installing the page dependencies');
-	const proxied = Boolean(process.env.HTTPS_PROXY) && existsSync(proxyCa);
-	const net = proxied ? ['--network', 'host', '-v', `${proxyCa}:/etc/ssl/certs/proxy-ca.crt:ro`, '-e', 'NODE_EXTRA_CA_CERTS=/etc/ssl/certs/proxy-ca.crt'] : [];
-	const proxy = proxyNames().flatMap((name) => ['-e', name]);
 	const frozen = lock === 'none' ? '' : '--frozen-lockfile';
 	const script = `bun install ${frozen} && sha256sum bun.lock | cut -d' ' -f1 > node_modules/.avensandbox-lock`;
-	await $`docker run --rm ${net} ${proxy} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
+	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
 }
 
 async function waitForPage() {
@@ -124,7 +144,7 @@ async function doctor() {
 	say(`bun: ${Bun.version}`);
 	say(`image: ${image} ${(await ok($`docker image inspect ${image}`)) ? '(here)' : '(not here yet: bun run up pulls or builds it)'}`);
 	const cast = JSON.parse(readFileSync(join(db2, 'sandbox', 'cast.json'), 'utf8'));
-	for (const [id, vault] of Object.entries(cast.vaults)) say(`${vault.name}: ${vault.owners.map((o) => cast.peers[o].name).join(', ')} (${id})`);
+	for (const [id, vault] of Object.entries(cast.vaults)) say(`${vault.name} (${id}, ${vault.kind}): owned by ${vault.owners.join(', ')}`);
 }
 
 const [command = 'up', ...args] = process.argv.slice(2);
@@ -135,7 +155,8 @@ try {
 	else if (command === 'shot') process.exit(await check());
 	else if (command === 'doctor') await doctor();
 	else if (command === 'build') await build();
-	else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor`);
+	else if (command === 'box') process.exit(await inBox(args.length ? args : ['bash']));
+	else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor, box <command>`);
 } catch (error) {
 	console.error(`avenSANDBOX: ${error.message}`);
 	process.exit(1);

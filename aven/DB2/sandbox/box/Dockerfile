@@ -36,10 +36,14 @@ RUN cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked 
 
 RUN npm install -g "bun@${BUN_VERSION}"
 
+# Lean's toolchain itself, not only elan: elan fetches a toolchain on first use, from GitHub's release storage,
+# which a cloud session's network doesn't reach.
 RUN arch=$(uname -m) \
     && curl -fsSL "https://github.com/leanprover/elan/releases/download/${ELAN_VERSION}/elan-${arch}-unknown-linux-gnu.tar.gz" \
         | tar -xz -C /tmp \
     && /tmp/elan-init -y --no-modify-path --default-toolchain "leanprover/lean4:${LEAN_VERSION}" \
-    && rm /tmp/elan-init
+    && rm /tmp/elan-init \
+    && elan toolchain install "leanprover/lean4:${LEAN_VERSION}" \
+    && lean --version
 
 WORKDIR /work
