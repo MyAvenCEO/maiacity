@@ -1282,6 +1282,8 @@ struct Store {
     /// Whether its shared index lists every entry of a vault it reads (`index_complete`), each with the stamp it was
     /// worked out at.
     complete: std::sync::Mutex<HashMap<VaultId, (query_view::Stamp, bool)>>,
+    /// The sum of what a read depends on beside its log as it worked its items out (`context_sum`).
+    context: [u8; 32],
 }
 
 /// A device's store taken out of its Lab for a probe of its memory (`Lab::probe_store`): of no use but to let go of.
@@ -1324,7 +1326,7 @@ impl Probed {
 
 impl Default for Store {
     fn default() -> Store {
-        Store {
+        let mut store = Store {
             log: Log::new(),
             signed: held::Signeds::default(),
             blobs: held::Keys::default(),
@@ -1386,7 +1388,10 @@ impl Default for Store {
             lazy: LazyBoxes::default(),
             query_views: std::sync::Mutex::new(QueryViews::default()),
             complete: std::sync::Mutex::new(HashMap::new()),
-        }
+            context: [0; 32],
+        };
+        store.recontext();
+        store
     }
 }
 
@@ -1459,6 +1464,36 @@ impl Store {
         !self.opened_since.is_empty() || (checked.is_some() && checked != self.checked_given)
     }
 
+    /// The sum of what a read depends on beside its log as it worked its items out (`query_view::Stamp::context`): its
+    /// shares and the selectors it opened, its cap groups and lanes, the entries whose header it hasn't read and those
+    /// it shows from a base. Kept as `context`, worked out again each time one of those changes (`recontext`), never on
+    /// a read.
+    fn context_sum(&self) -> [u8; 32] {
+        use crate::hash::Hasher;
+        let (store, r) = (self, &self.readings);
+        let mut context = Hasher::new("avenDB query view context 1");
+        let sorted = |mut ids: Vec<[u8; 32]>| { ids.sort_unstable(); ids };
+        for part in [
+            sorted(r.selectors.keys().map(|s| s.0).collect()),
+            sorted(r.defines.keys().map(|e| e.0).collect()),
+            sorted(store.slices.keys().map(|s| s.0).collect()),
+            sorted(store.unreadable.iter().map(|s| s.0).collect()),
+            sorted(store.based.keys().map(|e| e.0).collect()),
+            r.untyped.iter().map(|e| e.0).collect(),
+        ] {
+            context.update(&(part.len() as u64).to_be_bytes());
+            part.iter().for_each(|id| { context.update(id); });
+        }
+        context.update(&store.shown_groups);
+        for (v, (lane, _)) in &store.shown_lanes { context.update(&v.0).update(lane); }
+        context.finalize()
+    }
+
+    /// Works `context` out again, as what a read depends on beside its log changed.
+    fn recontext(&mut self) {
+        self.context = self.context_sum();
+    }
+
     /// Forget every key and everything a key opened, as it locks.
     fn forget(&mut self) {
         self.warm_revision = Arc::new(());
@@ -1483,6 +1518,7 @@ impl Store {
         self.reshow = true;
         self.opened.clear();
         self.opened_before.clear();
+        self.recontext();
         self.opened_since.clear();
     }
 
@@ -3516,6 +3552,7 @@ impl Lab {
             };
             store.bootstrap_state=None;
             store.based.clear();
+            store.recontext();
             store.perf.count("refresh rounds", 1);
             let at = Perf::start();
             // a removal may take writes from the middle of an entry's: what it shows is checked against them all
@@ -5092,24 +5129,10 @@ impl Lab {
         inputs.update(&(store.follow.len() as u64).to_be_bytes());
         for v in &store.follow { inputs.update(&v.0); }
         inputs.update(&(store.query_depth as u64).to_be_bytes()).update(&[store.gate as u8]);
-        let r = &store.readings;
-        let mut context = Hasher::new("avenDB query view context 1");
-        let sorted = |mut ids: Vec<[u8; 32]>| { ids.sort_unstable(); ids };
-        for part in [
-            sorted(r.selectors.keys().map(|s| s.0).collect()),
-            sorted(r.defines.keys().map(|e| e.0).collect()),
-            sorted(store.slices.keys().map(|s| s.0).collect()),
-            sorted(store.unreadable.iter().map(|s| s.0).collect()),
-            sorted(store.based.keys().map(|e| e.0).collect()),
-            r.untyped.iter().map(|e| e.0).collect(),
-        ] {
-            context.update(&(part.len() as u64).to_be_bytes());
-            part.iter().for_each(|id| { context.update(id); });
-        }
-        context.update(&store.shown_groups);
-        for (v, (lane, _)) in &store.shown_lanes { context.update(&v.0).update(lane); }
+        #[cfg(debug_assertions)]
+        assert_eq!(store.context, store.context_sum(), "its context sum is kept as what it reads through changes");
         query_view::Stamp { head: store.log.head(), size: self.size(d), gone: store.log.gone(), inputs: inputs.finalize(),
-            context: context.finalize(), settled: store.showing.is_none() && !store.behind }
+            context: store.context, settled: store.showing.is_none() && !store.behind }
     }
 
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
@@ -6934,6 +6957,7 @@ impl Lab {
                     // it reads on from what it read of them, opening each body it opened then only as it is asked for
                     if let Some(mut read) = read {
                         store.readings = std::mem::take(&mut read.readings);
+                        store.recontext();
                         store.bodies.close(read.opened.iter().copied());
                         store.spoilt.extend(read.spoilt.iter().copied());
                         let opened = store.bodies.len();
@@ -7762,6 +7786,7 @@ fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
     #[cfg(not(avendb_no_replay_checks))]
     debug_assert!(same_readings(&r, &readings_of(store)), "readings read on differ from readings read whole");
     store.readings = r;
+    store.recontext();
     store.read_new.read(store.bodies.len(), store.slices.len(), &store.readings);
     store.read_new.looked(&store.log, store.wholes);
     store.perf.add("read: readings", at);
@@ -8624,6 +8649,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
         if standing {
             store.kept_shown = HashMap::new();
         }
+        store.recontext();
         return true;
     }
     // what tells it what to show anew stays as it was for the entries left, until it shows them
@@ -8635,6 +8661,7 @@ fn show_items(d: SignerId, store: &mut Store, budget: Option<usize>) -> bool {
     }
     let taken = store.log.edits().len();
     store.showing = Some(Showing { rest, reshow: reshow || pending.reshow, opened, taken, part });
+    store.recontext();
     false
 }
 
