@@ -80,7 +80,7 @@ its key. Each place gets a backend:
 
 | Peer | Backend |
 |---|---|
-| Aven Peer | object storage over the S3 API: Hetzner in production; in the box, s3s-fs (S3 over a folder, Rust), shipped in the box's image and run as the service `s3` |
+| Aven Peer | object storage over the S3 API: Hetzner in production; in the box, versitygw (Versity's S3 gateway over a folder), shipped in the box's image and run as the service `s3` |
 | Alice Peer | a folder on disk |
 | Peer-Lights | OPFS |
 | tests and the simulation | memory |
@@ -184,7 +184,7 @@ One image holds every tool; every command runs in it.
 - **Containers** (`sandbox/box/compose.yml`):
   - `aven`: the Aven Peer, the Peer binary with `--relay`;
   - `alice`: Alice Peer, the same binary with the relay off;
-  - `s3`: the Aven Peer's object storage, s3s-fs from the box's own image, at `http://s3:8014`;
+  - `s3`: the Aven Peer's object storage, versitygw from the box's own image, at `http://s3:7070`;
   - `browsers`: Chromium with both Peer-Lights and the Vite dev server for avenOS;
   - `builder`: compiles the Peer and the Peer-Light's wasm once, into one shared build folder.
 - **Networks:** milestone 1 uses one, `wan`. The P2P lanes add homes behind routers ([below](#real-world-iroh-inside-the-box)).
@@ -220,7 +220,7 @@ build folder, and Vite serves the Peer-Light's wasm from it, reloading the pages
 The box is never deployed. What ships is avenPEER's own image, `ghcr.io/myavenceo/aven/peer`, built in two stages:
 the binary is compiled in the box's image, then copied onto a minimal base, tens of MB rather than the box's 5 GB.
 Production runs it with its live configuration (the real relay, Hetzner's S3); the box's `aven` and `alice` can run
-the same image with the box's (its relay, `http://s3:8014`), so what is tested is byte for byte what ships. It comes
+the same image with the box's (its relay, `http://s3:7070`), so what is tested is byte for byte what ships. It comes
 once the Peer runs, built and released by the Goal thread like the box.
 
 ### Where it runs
@@ -324,7 +324,7 @@ The newest releases on 29 Oct 2026:
 | iroh, iroh-relay | 1.4.1 (v1 is on 1.3.0) |
 | loro, loro-crdt | 1.17.1 |
 | OpenDAL | 0.59.5 |
-| s3s, s3s-fs (the box's S3) | 0.17.0 |
+| versitygw (the box's S3, pinned by digest) | 1.10.0 |
 | wasm-bindgen | 0.2.129 |
 | Playwright and its image (amd64 and arm64) | 1.64.1 |
 | bun | 1.4.4 |

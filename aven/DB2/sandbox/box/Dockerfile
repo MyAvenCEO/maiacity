@@ -2,6 +2,12 @@
 # Every version is pinned at its newest stable release. The image's tag is the first 16 hex digits of this file's
 # SHA-256 (.github/workflows/avensandbox-image.yml, aven/DB2/sandbox/up.mjs), so a change here is a new box. Only
 # GitHub builds it, on every push that changes this file; `bun run up` only pulls it.
+
+# The box's S3 server, versitygw (Versity's S3 gateway, Apache-2.0), taken from its own image, pinned by digest. The
+# binary is copied into the box below, so the box needs no third-party image at runtime.
+FROM ghcr.io/versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316 AS versitygw
+RUN cp "$(command -v versitygw)" /versitygw
+
 FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 ARG RUST_VERSION=1.99.1
@@ -9,7 +15,6 @@ ARG WASM_BINDGEN_VERSION=0.2.129
 ARG BUN_VERSION=1.4.4
 ARG ELAN_VERSION=v4.2.4
 ARG LEAN_VERSION=v4.35.0
-ARG S3S_FS_VERSION=0.17.0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates xz-utils \
@@ -40,10 +45,9 @@ RUN arch=$(uname -m) \
     && elan toolchain install "leanprover/lean4:${LEAN_VERSION}" \
     && lean --version
 
-# The box's own S3 server: s3s-fs, S3 over a folder (Rust, Apache-2.0), with conditional writes (If-Match,
-# If-None-Match) and atomic puts. compose.yml runs it as the service `s3`, so the box needs no third-party image.
-RUN cargo install s3s-fs --version "${S3S_FS_VERSION}" --features binary --locked \
-    && rm -rf /opt/cargo/registry /opt/cargo/git \
-    && s3s-fs --help > /dev/null
+# versitygw: S3 over a folder, with conditional writes on PUT and DELETE (If-Match, If-None-Match), which avenDB's
+# store relies on. compose.yml runs it as the service `s3`. The build fails here if the binary can't run on this base.
+COPY --from=versitygw /versitygw /usr/local/bin/versitygw
+RUN versitygw --help > /dev/null
 
 WORKDIR /work

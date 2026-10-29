@@ -17,17 +17,24 @@ services:
       - "${AVENSANDBOX_PORT:-5173}:5173"
     networks: [wan]
 
-  # The box's S3 (SANDBOX.md, "Storage"): s3s-fs from the box's own image, over a folder in its own volume, at
-  # http://s3:8014, path-style. Test credentials, valid only inside the box; `down --wipe` empties it.
+  # The box's S3 (SANDBOX.md, "Storage"): versitygw, shipped in the box's own image, over a folder in its own volume,
+  # never a real cloud bucket. At http://s3:7070 on `wan`, and at 127.0.0.1:7070 for the box's commands, which run on
+  # the host's network in a cloud session. Test credentials, valid only in the box; the store's tests use the bucket
+  # aven-db-store, the Aven Peer will use aven. `down --wipe` empties it.
   s3:
     image: ${AVENSANDBOX_IMAGE:?bun run up sets it}
-    command: ["s3s-fs", "--host", "0.0.0.0", "--port", "8014", "--access-key", "avensandbox", "--secret-key", "avensandbox-test-secret", "/data"]
+    entrypoint: ["sh", "-c", "mkdir -p /data/aven /data/aven-db-store && exec versitygw --port :7070 posix /data"]
+    environment:
+      ROOT_ACCESS_KEY: avensandbox
+      ROOT_SECRET_KEY: avensandbox-test-secret
     init: true
     volumes:
       - s3:/data
+    ports:
+      - "127.0.0.1:7070:7070"
     networks: [wan]
     healthcheck:
-      test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://localhost:8014/"]
+      test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://localhost:7070/"]
       interval: 2s
       retries: 15
 
