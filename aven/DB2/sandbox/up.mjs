@@ -79,13 +79,13 @@ async function waitForPage() {
 		} catch {}
 		await Bun.sleep(500);
 	}
-	throw new Error(`the control room didn't answer on localhost:${port}`);
+	throw new Error(`avenOS didn't answer on localhost:${port}`);
 }
 
 async function check() {
 	const run = `runs/${new Date().toISOString().replace(/[:.]/g, '-')}`;
 	const result = await $`${compose} exec -T browsers node sandbox/check.mjs ${run}`.env(env).nothrow();
-	say(`${result.exitCode === 0 ? 'check passed' : 'check FAILED'}; screenshot and report in aven/DB2/${run}/`);
+	say(`${result.exitCode === 0 ? 'check passed' : 'check FAILED'}; screenshots and report in aven/DB2/${run}/`);
 	return result.exitCode;
 }
 
@@ -96,7 +96,7 @@ async function up(args) {
 	await install();
 	await $`${compose} up -d --remove-orphans`.env(env);
 	await waitForPage();
-	say(`up in ${((Date.now() - started) / 1000).toFixed(1)} s · control room: http://localhost:${port}`);
+	say(`up in ${((Date.now() - started) / 1000).toFixed(1)} s · avenOS: http://localhost:${port}`);
 	if (args.includes('--check')) process.exit(await check());
 }
 

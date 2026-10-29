@@ -2,7 +2,8 @@
 
 avenSANDBOX is the network avenDB is built and tested in: two Peer-Lights in one Chromium and two Peers, one of them
 the Aven Peer with its relay on, in containers on one machine, started with one command. Milestone 1 builds the sandbox
-itself and avenOS in the browser, for now "avenOS · coming soon", as the starter every later primitive grows from. The first example
+itself and avenOS in the browser (its dashboard, the account switcher and two apps, Vault and Control Room) as the
+starter every later primitive grows from. The first example
 app, a chat, comes in milestone 2. **No test scenarios yet.**
 
 ## The loop
@@ -42,21 +43,32 @@ Aven Peer keeps for others will come from caps, not from a code path of its own.
 Each Peer runs in its own container. Both Peer-Lights share one Chromium, as two origins with two separate storages.
 The cast is one file, [`sandbox/cast.json`](sandbox/cast.json); adding a peer is one entry.
 
-### Two vaults, hard-coded signers
+### Vaults own vaults
 
-Each peer has its own signer, and each signer owns one of two vaults:
+Who may act for whom is avenID's ([README](README.md#decisions-so-far)). The box starts it with a fixed tree in the
+cast. As in avenDB-old, vaults own vaults; the concept comes over, no code does.
 
-| Vault | Owned by the signers of |
-|---|---|
-| Alice's vault | the Aven Peer (the server and relay is Alice's), Alice Peer, Alice Peer-Light |
-| Bob's vault | Bob's Peer-Light |
+```
+Alice's vault           person    owned by Alice's owner key
+├── Aven                network   the network's own vault
+│   └── Aven Peer       device
+├── Alice Peer          device
+└── Alice Peer-Light    device
+Bob's vault             person    owned by Bob's owner key
+└── Bob's Peer-Light    device
+```
 
-**Alice is the network's admin.** Her vault owns the Aven Peer, the server and relay, so she controls the network.
-From milestone 2 on, invites into it are signed by her vault; Bob is a member because Alice invited him.
+- **A person's vault** is owned by its owner key; later by keys and passkeys acting k of n, with recovery.
+- **A device's vault** is owned by the vault it serves. The device's key signs for that vault and governs nothing: a
+  lost device is revoked by its vault, and the vault loses nothing.
+- **Aven, the network's vault,** is owned by Alice's vault. **So Alice's vault is the admin, not Alice's key:** her key
+  governs her vault, and through it Aven and the Aven Peer. From milestone 2 on, invites into the network are Aven's,
+  given with the authority of Alice's vault; Bob is a member because Alice invited him.
+- **A vault governs everything below it, and sees only that.** avenOS shows a vault what it governs: Alice's Control
+  Room has her two devices and the Aven Peer, Bob's his Peer-Light, Aven's the Aven Peer.
 
-The signers are test keys written into the cast: each seed is `sha256("avenSANDBOX test signer: <peer>")`, public on
-purpose and valid only inside the box. Ownership is just this fixed list for now; invites, caps, Loro and sync logic
-come in later milestones.
+Every key is a test key: its Ed25519 seed is `sha256("avenSANDBOX test signer: <id>")`, public on purpose and valid
+only inside the box. Invites, caps, Loro and sync logic come in later milestones.
 
 ## Storage: one contract, pluggable backends
 
@@ -90,40 +102,64 @@ browser too, and needs a folder and OPFS as well.
 ## avenOS in the browser
 
 ```
-                      avenOS
-                    coming soon
+avenOS                                    on Alice Peer-Light  ( A  Alice's vault ▾ )
+                                                     ┌──────────────────────────────────┐
+ A  Alice's vault                                    │ Alice Peer-Light can act as      │
+    person · governs 4 vaults · 3 peers              │  A  Alice's vault              ✓ │
+                                                     │  A  Aven  network · owned by     │
+┌────────────────┐ ┌────────────────┐                │           Alice's vault          │
+│ Vault          │ │ Control Room   │                └──────────────────────────────────┘
+└────────────────┘ └────────────────┘
 
-        ● live · 4 peers · Aven Peer 3 ms
-        you: Alice Peer-Light · Alice's vault · signer 9f78…
+This device   Alice Peer-Light · serves Alice's vault · key 9f78… · OPFS · mark 3fa1c2d0
+● live · 4 peers
 ```
 
-The page is a real Peer-Light:
+- **The dashboard** is a grid of apps, two for now: **Vault**, the vault you act as, who owns it and everything below
+  it as a tree; and the **Control Room**, below.
+- **The account switcher**, the pill at the top right, picks the vault you act as. A Peer-Light acts as the vault it
+  serves and what that vault governs: Alice Peer-Light as Alice's vault or Aven, Bob's Peer-Light as Bob's vault only.
+  `localhost`, the box's own view, holds every test key, so it can act as any vault and show what each one sees. Any
+  other host is a visitor's, without a vault: there avenOS is "coming soon", its apps closed.
+- **An address names the vault and the app:** `#/alice/control-room`, `#/bob/vault`.
 
-- **Its signer** comes from the cast and owns its vault. **Its data** is kept in OPFS through the store: a reload
-  keeps it, a wipe empties it. Alice Peer and the Aven Peer keep theirs the same way, in a folder and in S3.
+The page becomes a real Peer-Light:
+
+- **Its key** comes from the cast and signs for the vault it serves. **Its data** is kept in OPFS through the store: a
+  reload keeps it, a wipe empties it. Alice Peer and the Aven Peer keep theirs the same way, in a folder and in S3.
 - **It connects** to the Aven Peer over iroh, through the relay.
 - **"4 peers"** is presence: the Aven Peer counts who is connected and tells each peer.
 - **Its status names a phase:** starting, connecting, live, offline, stalled.
 - **The network is private by construction:** nothing outside the machine reaches the box. The invite-only door comes
   in milestone 2, with the first example app: a live chat over iroh-gossip.
 
-## The control room
+## The Control Room
 
 ```
-localhost:5173 · avenSANDBOX                          4 live · up 2 m
-┌─ Alice Peer-Light ───────────┐ ┌─ Bob's Peer-Light ───────────┐
-│      avenOS coming soon      │ │      avenOS coming soon      │
-│  ● live · 4 peers            │ │  ● live · 4 peers            │
+localhost:5173/#/alice/control-room                         ( A  Alice's vault ▾ )
+Alice's vault governs 3 peers                                     3 live · up 2 m
+┌─ Aven Peer · Peer + relay ───┐ ┌─ Alice Peer · Peer ──────────┐
+│ ● live · 4 connected         │ │ ● live · direct to Aven Peer │
+│ stores in S3 · relays 2      │ │ stores in a folder           │
 └──────────────────────────────┘ └──────────────────────────────┘
-┌─ Alice Peer · Rust ──────────┐ ┌─ Aven Peer · Rust + relay ───┐
-│ ● live · direct to Aven Peer │ │ ● live · 4 connected         │
-│ stores in a folder           │ │ stores in S3 · relays 2      │
-└──────────────────────────────┘ └──────────────────────────────┘
+┌─ Alice Peer-Light ───────────┐
+│  avenOS, on its own origin   │
+│  ● live · 4 peers            │
+└──────────────────────────────┘
 timeline  20:14:03.120  Alice Peer → Aven Peer  connected, direct (UDP)
 ```
 
+The Control Room shows every peer the vault you act as governs, side by side, and nothing else. Switch to Bob's vault
+and it shows his Peer-Light; to Aven, the Aven Peer. Each Peer-Light runs avenOS in a frame on its own origin; on a
+Peer-Light itself, its own pane reads "this device".
+
 Every peer writes its events as JSON lines. The box gathers them into one timeline: one stream on screen and one file
-per run. A cloud session can't show a window, so `bun run shot` takes a screenshot of the control room to share in the session.
+per run. A cloud session can't show a window, so `bun run shot` takes a screenshot of the Control Room to share in the
+session.
+
+`bun run up --check` walks through avenOS on every host: the vaults each may act as, what each vault's Control Room
+and Vault show, the vault each Peer-Light serves and its own OPFS, all held to values written out by hand from the
+tree above. It photographs every screen into the run's folder.
 
 ## The box
 
@@ -145,15 +181,15 @@ One image holds every tool; every command runs in it.
   - `aven`: the Aven Peer, the Peer binary with `--relay`;
   - `alice`: Alice Peer, the same binary with the relay off;
   - `s3`: a local S3-compatible server, the Aven Peer's object storage;
-  - `browsers`: Chromium with both Peer-Lights, the Vite dev server and the control room;
+  - `browsers`: Chromium with both Peer-Lights and the Vite dev server for avenOS;
   - `builder`: compiles the Peer and the Peer-Light's wasm once, into one shared build folder.
 - **Networks:** milestone 1 uses one, `wan`. The P2P lanes add homes behind routers ([below](#real-world-iroh-inside-the-box)).
 - **Commands**, from `aven/DB2`:
-  - `bun run up`: starts the box and prints the control room's address;
+  - `bun run up`: starts the box and prints avenOS's address;
   - `bun run down`;
   - `bun run logs`;
   - `bun run doctor`: checks versions, Docker settings and kernel features;
-  - `bun run shot`: a screenshot of the control room.
+  - `bun run shot`: a screenshot of the Control Room.
 - **One Docker setting:** `allow-direct-routing`, as a flag to `dockerd` or `"allow-direct-routing": true` in its
   config. Docker 28 and later drop routed traffic between its networks; in our NAT test it dropped exactly those
   packets until the setting was on.
@@ -179,7 +215,7 @@ production image comes later and is a separate, slim one: just the binary.
 
 | Place | How |
 |---|---|
-| **Mac** (OrbStack) | `bun run up` in `aven/DB2`. OrbStack's Docker engine config gets `"allow-direct-routing": true`. The control room opens in any Mac browser, and the Peer-Lights can then run in your browser too. The build folder lives in a Docker volume, not in a folder shared with the Mac, where many small writes are slower. |
+| **Mac** (OrbStack) | `bun run up` in `aven/DB2`. OrbStack's Docker engine config gets `"allow-direct-routing": true`. avenOS opens in any Mac browser, and the Peer-Lights can then run in your browser too. The build folder lives in a Docker volume, not in a folder shared with the Mac, where many small writes are slower. |
 | **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so `bun run up` starts `dockerd` itself when it isn't running, in a session of its own so it outlives the command. Until the image is published, `bun run up` builds it here, through the session's proxy. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
 | **GitHub CI** | The `production` branch's checks run `bun run up --check` on a Linux runner, from the same image (macOS runners have no Docker). |
 
@@ -299,12 +335,15 @@ aven/DB2/
   CLAUDE.md        the rules agents load here
   package.json     @aven/os, its own JS, with bun.lock
   Cargo.toml       its own Cargo workspace, with Cargo.lock and target/ (with the first crate)
-  os/web/          avenOS's browser client, its control room included (Svelte 5 + Vite)
+  os/web/          avenOS's browser client: the dashboard, the account switcher, and its apps in os/web/apps,
+                   Vault and Control Room (Svelte 5 + Vite)
   peer/native/     aven-peer: avenPEER's native Peer, one binary; --relay makes it the Aven Peer
   peer/light/      aven-peer-light: avenPEER's Peer-Light, the same core as wasm in a worker
   db/core/         aven-db-core: the pure core every peer runs, without I/O
   db/store/        aven-db-store: the Store contract, its backends and their conformance suite
   db/spec/         Lean: Aven.DB
+  id/core/         aven-id: avenID, who may act for a vault, pure
+  id/spec/         Lean: Aven.ID
   sandbox/         avenSANDBOX: the runner (up, down, logs, shot, build, doctor), the check, the cast
   sandbox/box/     the image: Dockerfile, compose.yml, the cloud setup script
 ```
@@ -313,8 +352,8 @@ aven/DB2/
 
 - `bun run up` brings up all four peers from the one image: on a Mac (OrbStack), in a cloud session and in CI.
 - Both Peer-Lights show avenOS live, with "4 peers" right on each. Alice Peer connects to the Aven Peer
-  directly over UDP. The control room shows all four peers and one timeline.
-- Each peer signs as its cast signer and shows its vault, and keeps its data through the store: the Aven Peer in the
+  directly over UDP. The Control Room shows each vault the peers it governs, and one timeline.
+- Each peer signs with its cast key for the vault it serves, and keeps its data through the store: the Aven Peer in the
   box's S3 server, Alice Peer in a folder, the Peer-Lights in OPFS. A reload keeps the data; a wipe empties it.
 - The store's conformance suite passes on all four backends. Lean and Rust each run their one check in the box,
   `doctor` passes, and every pin is at its newest release.
@@ -322,10 +361,10 @@ aven/DB2/
 
 ## Execution plan
 
-**Step 0, in this thread:** a clickable mock of avenOS and the control room, a page Samuel opens on any
-device. The UX is settled before any code.
+**Step 0, in this thread (done 29 Oct 2026):** avenOS's screens in the box, on the cast's vaults: the dashboard, the
+account switcher, Vault and Control Room. The UX is settled before the peers run under it.
 
-**Step 1, four threads in parallel.** Each works on a task branch with a draft PR and no CI, sized by
+**Step 1, five threads in parallel.** Each works on a task branch with a draft PR and no CI, sized by
 `.claude/skills/devx-speed`.
 
 | Thread | Builds | Its own check |
@@ -333,11 +372,12 @@ device. The UX is settled before any code.
 | **Box** | the Dockerfile and the image workflow (GitHub's registry, amd64 and arm64, tagged by the hash of the box's inputs); `compose.yml`; `bun run up`, `down`, `logs`, `doctor`, `shot` and `up --check`; the cloud setup script and the session hook; the fence check (no legacy imports, the folder's spelling); the root `Cargo.toml` excluding `aven/DB2`; `check.mjs` and the goal CI running `bun run up --check` | `bun run up` brings up the five containers with placeholder peers, and `doctor` passes in a cloud session |
 | **Store** (Rust) | `db/store`: the contract (blobs and refs), its backends through OpenDAL (s3, fs, opfs, memory) and the conformance suite | the suite passes on memory and fs, on s3 against the box's S3 server, and on opfs in Chromium |
 | **Peers** (Rust and Lean) | `db/core`: the status phases, presence and progress counters, pure. `peer/native`: the binary, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence), `--relay` and `--store`. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only, storing in OPFS. `db/spec/` with its one check. | unit tests; two Peers and a Peer-Light connect over iroh in a test; `lake build` |
-| **Page** (JS) | `os/web/`: avenOS and its control room, first on recorded status, then on the real peers | `svelte-check`; the pages render the recorded status |
+| **avenID** (Lean and Rust) | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for, which vaults a host may act as; theorems that authority never runs up the tree and a device governs nothing. `id/core/`: `aven-id`, pure, its tests against the model on random trees. avenOS then reads the tree from it, through the Peer-Light, instead of from the cast. | `lake build`; `cargo test`; `up --check` unchanged |
+| **Page** (JS) | `os/web/`: avenOS and its apps, first on recorded status, then on the real peers | `svelte-check`; the pages render the recorded status |
 
 The Store thread's first commit is the `Store` trait, so the Peers thread builds on it from the start.
 
-**Step 2, in this thread as the avenDB Goal thread:** collect the four branches (`collect.mjs`), bring the box up in a
+**Step 2, in this thread as the avenDB Goal thread:** collect the five branches (`collect.mjs`), bring the box up in a
 cloud session, run `bun run up --check`, measure the loop and write the times into this file. Then the goal PR runs CI
 once and merges.
 
