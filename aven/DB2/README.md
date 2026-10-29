@@ -50,22 +50,23 @@ Each rule is held by a test or a check once there is code to hold.
 
 ## Names
 
-The products, top to bottom:
+The products, top to bottom. Each depends only on those below it:
 
 ```
 avenOS        the client app: one UI, several targets. The browser now, the Mac app (Tauri) later
-  avenPEER    the peer inside each target: a Peer-Light (wasm) in the browser, a native Peer in the Mac app.
-              The Aven Peer on the server is avenPEER alone, headless, with its relay on
-    avenDB    the database every peer runs: documents, caps, sync, storage
-      avenID  identity: keys, vaults that own vaults, multisig, recovery. Every peer and every write answers to it
+  avenPEER    the node: everything about the network (iroh, the relay, the members-only door), installing and running
+              a node, and its one writer. Two builds: the Peer (native) and the Peer-Light (wasm, in a browser).
+              The Aven Peer on the server is a Peer, headless, with its relay on
+    avenDB    the database every peer runs: documents, caps and sync (its pure core) and the store its bytes rest in
+      avenID  identity: keys, vaults that own vaults, signatures, multisig, recovery
 avenSANDBOX   the box all of it is built and tested in
 ```
 
 | Name | What |
 |---|---|
 | avenOS | the client app over everything below it: a dashboard of apps, the first two Vault and Control Room, and an account switcher for the people you may act as. Off the box, its browser client shows "avenOS · coming soon" for now; a Mac app with Tauri follows |
-| avenPEER | the peer: the native Peer and the Peer-Light, one core in two builds |
-| avenDB | the database: this rebuild |
+| avenPEER | the node: the network, installing and running a node, and the one writer, on avenDB. The native Peer and the Peer-Light, one core in two builds |
+| avenDB | the database: this rebuild. Its core (`db/core`) holds the rules for documents, caps and sync without I/O; its store (`db/store`) is the one contract of blobs and refs, with a backend per place: S3, a folder, OPFS, memory |
 | avenID | identity, a package of its own: keys and their suites, vaults that own vaults, owners acting k of n, recovery and rotation. avenDB asks it who may act for a vault, avenPEER whom to let in, and avenOS shows it |
 | avenDB-old | the old database, in `aven/db/`: the testing and learning battleground until avenDB is ready, then deprecated. "v1" still names the whole old stack (its site, API and peer) |
 | `aven/DB2` | the new avenDB's folder while avenDB-old still lives in `aven/db`. A Mac's disk ignores case, so `aven/DB` couldn't sit beside `aven/db`, and a path spelled `aven/db2` works on a Mac and fails on Linux and CI; a check will reject any other spelling. When avenDB-old is deprecated, the new avenDB moves into `aven/db` |
@@ -74,6 +75,43 @@ avenSANDBOX   the box all of it is built and tested in
 | Aven Peer | the server: a Peer with its relay on |
 | Alice Peer | a person's Peer with the relay off, the core of the future Mac app |
 | Peer-Light | the same core compiled to wasm, in a browser (Alice Peer-Light, Bob's Peer-Light) |
+
+### Terms
+
+**Who (avenID)**
+
+- **key:** a signing key. An **owner key** governs a person's vault; a **device key** signs for the vault its device
+  serves.
+- **vault:** an identity that can own things. A **person's vault** is owned by keys; a **network's vault** (Aven) by a
+  person's vault; a **device's vault** by the vault it serves.
+- **owns, governs:** a vault owns what is directly below it and governs everything below it. Authority runs only down.
+- **admin:** the vault that owns a network's vault: Alice's vault is Aven's.
+- **acts through:** a vault acts through its own devices, within the rights its owner gives it: Aven through the Aven
+  Peer.
+- **account:** a person's vault, which one acts as in avenOS. Never a network's or a device's.
+
+**Data (avenDB)**
+
+- **blob:** immutable bytes named by their BLAKE3 hash, sealed unless published.
+- **ref:** a name pointing at a blob, changed atomically: a document's head.
+- **document:** a Loro document: a head over sealed segments and snapshots.
+- **store:** where a peer's blobs and refs rest, behind one contract.
+- **cap:** a signed grant: which vault may read or write which document.
+- **member, invite:** a vault let into a network, and the ticket that lets it in (milestone 2).
+
+**Running (avenPEER)**
+
+- **Peer:** the native program. The **Aven Peer** is a Peer with its relay on, on the server; **Alice Peer** one with it
+  off, the core of the future Mac app.
+- **Peer-Light:** the same core as wasm in a browser, on its own origin.
+- **relay:** iroh's relay, for members only.
+- **the one writer:** the single task in each peer that changes its data.
+
+**Around them**
+
+- **app:** a tile on avenOS's dashboard: Vault and Control Room for now.
+- **the box, the cast, the check:** avenSANDBOX's image and containers, its fixed test setup (`sandbox/cast.json`) and
+  `bun run up --check`.
 
 ### Namespaces: everything under `@aven`
 

@@ -20,7 +20,7 @@ Targets, measured in this milestone and reported on every run:
 | A change to the page, visible | < 1 s (hot reload) | |
 | A Rust change, running on every peer | < 30 s | |
 | A new cloud session, image already on disk, until every peer is live | < 2 min | |
-| A first `bun run up --check` that builds the image itself | (none) | 237 s |
+| A change to the box's Dockerfile, pushed, until the new image pulls | (none) | 227 s: GitHub builds both platforms |
 
 ## The cast
 
@@ -193,7 +193,10 @@ One image holds every tool; every command runs in it.
   - `bun run down`;
   - `bun run logs`;
   - `bun run doctor`: checks versions, Docker settings and kernel features;
-  - `bun run shot`: a screenshot of the Control Room.
+  - `bun run shot`: a screenshot of the Control Room;
+  - `bun run box <command>`: any command in the box, from `aven/DB2`: `bun run box cargo test`, `bun run box sh -c
+    'cd id/spec && lake build'`. Rust's build folder and its crate downloads live in volumes, kept across runs; in a
+    cloud session the box reaches crates.io through the session's proxy.
 - **One Docker setting:** `allow-direct-routing`, as a flag to `dockerd` or `"allow-direct-routing": true` in its
   config. Docker 28 and later drop routed traffic between its networks; in our NAT test it dropped exactly those
   packets until the setting was on.
@@ -220,7 +223,7 @@ production image comes later and is a separate, slim one: just the binary.
 | Place | How |
 |---|---|
 | **Mac** (OrbStack) | `bun run up` in `aven/DB2`. OrbStack's Docker engine config gets `"allow-direct-routing": true`. avenOS opens in any Mac browser, and the Peer-Lights can then run in your browser too. The build folder lives in a Docker volume, not in a folder shared with the Mac, where many small writes are slower. |
-| **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so `bun run up` starts `dockerd` itself when it isn't running, in a session of its own so it outlives the command. Until the image is published, `bun run up` builds it here, through the session's proxy. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
+| **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so `bun run up` starts `dockerd` itself when it isn't running, in a session of its own so it outlives the command. `bun run up` only pulls the image: GitHub builds it, and a pull that fails names why. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
 | **GitHub CI** | The `production` branch's checks run `bun run up --check` on a Linux runner, from the same image (macOS runners have no Docker). |
 
 The box is a whole development machine in one image, the same on every platform that runs Docker: a Mac (OrbStack),
@@ -300,6 +303,7 @@ iroh in the box runs fully private: our own relay, addresses handed out by the b
 | NAT | A Peer behind a router container reached a server on another network. The server saw the router's address with the Peer's port kept, the endpoint-independent NAT that hole punching needs. Docker dropped these packets until `allow-direct-routing` was on. |
 | Bad links | This kernel has no `netem` ("Specified qdisc kind is unknown"). Check it on OrbStack and in CI; in the cloud, a small UDP delay-and-drop hop in the router can stand in. |
 | Session size | 4 vCPUs, 16 GB of RAM, 30 GB of disk (Claude Code's cloud docs) |
+| Lean | elan fetches a toolchain on first use, from GitHub's release storage, which the session's proxy refuses (403). So the image holds the toolchain itself. crates.io answers through the proxy. |
 
 ## Latest versions, always
 
@@ -365,25 +369,23 @@ aven/DB2/
 
 ## Execution plan
 
-**Step 0, in this thread (done 29 Oct 2026):** avenOS's screens in the box, on the cast's vaults: the dashboard, the
-account switcher, Vault and Control Room. The UX is settled before the peers run under it.
+**Step 0, in this thread (done 29 Oct 2026):** the box (its image and workflow, `up`, `down`, `logs`, `doctor`,
+`shot`, `build`, `box`, the check and its fence against v1's code, the cloud setup script, avenDB's Cargo workspace
+with its five crates as stubs) and avenOS's screens on the cast's vaults: the dashboard, the account switcher, Vault
+and Control Room. The UX is settled before the peers run under it.
 
-**Step 1, five threads in parallel.** Each works on a task branch with a draft PR and no CI, sized by
-`.claude/skills/devx-speed`.
+**Step 1, three threads in parallel (started 29 Oct 2026).** Each works on its own branch with a draft PR, sized by
+`.claude/skills/devx-speed`, stays in its own folders and writes what the plan should learn into its PR's body.
 
-| Thread | Builds | Its own check |
+| Thread, branch | Builds | Its own check |
 |---|---|---|
-| **Box** | the Dockerfile and the image workflow (GitHub's registry, amd64 and arm64, tagged by the hash of the box's inputs); `compose.yml`; `bun run up`, `down`, `logs`, `doctor`, `shot` and `up --check`; the cloud setup script and the session hook; the fence check (no legacy imports, the folder's spelling); the root `Cargo.toml` excluding `aven/DB2`; `check.mjs` and the goal CI running `bun run up --check` | `bun run up` brings up the five containers with placeholder peers, and `doctor` passes in a cloud session |
-| **Store** (Rust) | `db/store`: the contract (blobs and refs), its backends through OpenDAL (s3, fs, opfs, memory) and the conformance suite | the suite passes on memory and fs, on s3 against the box's S3 server, and on opfs in Chromium |
-| **Peers** (Rust and Lean) | `db/core`: the status phases, presence and progress counters, pure. `peer/native`: the binary, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence), `--relay` and `--store`. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only, storing in OPFS. `db/spec/` with its one check. | unit tests; two Peers and a Peer-Light connect over iroh in a test; `lake build` |
-| **avenID** (Lean and Rust) | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and no person acts as a network: it acts only through its own devices. `id/core/`: `aven-id`, pure, its tests against the model on random trees. avenOS then reads the tree from it, through the Peer-Light, instead of from the cast. | `lake build`; `cargo test`; `up --check` unchanged |
-| **Page** (JS) | `os/web/`: avenOS and its apps, first on recorded status, then on the real peers | `svelte-check`; the pages render the recorded status |
+| **Peers** (Rust and Lean), `claude/avendb-peers` | `db/core`: the status phases, presence and progress counters, pure. `db/spec/`: `Aven.DB`, their model. `peer/native`: the Peer, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence) and `--relay`; its endpoint key is its device key from the cast. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only. The box's wiring for them (`compose.yml`, `up.mjs`, the check) and avenOS's live parts: the status line, the Control Room's panes, the timeline. State in memory until the store lands. | `lake build`; Rust tests against the model; `bun run up --check` waits for all four peers live, Alice Peer direct over UDP, "4 peers" on each Peer-Light |
+| **avenID** (Lean and Rust), `claude/avendb-id` | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for and may act on, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and no person acts as a network. `id/core/`: `aven-id`, pure, with the cast's keys derived and checked, and a wasm build of its queries for avenOS. | `lake build` without `sorry`; `cargo test`, its property tests checked against the running Lean model |
+| **Store** (Rust), `claude/avendb-store` | `db/store`: the conformance suite first, then the `Store` contract (blobs and refs) and its backends through OpenDAL (memory, fs, s3, opfs), with an S3-compatible server in the box | the suite passes on all four backends in the box |
 
-The Store thread's first commit is the `Store` trait, so the Peers thread builds on it from the start.
-
-**Step 2, in this thread as the avenDB Goal thread:** collect the five branches (`collect.mjs`), bring the box up in a
-cloud session, run `bun run up --check`, measure the loop and write the times into this file. Then the goal PR runs CI
-once and merges.
+**Step 2, in this thread as the avenDB Goal thread:** collect the three branches, each a merge commit; settle the
+lockfile; wire avenOS to avenID's wasm and the peers to the store; run `bun run up --check`, measure the loop and write
+the times into this file. Then the change merges into `main`, and `production` releases what changed.
 
 **Samuel's part,** the settings no agent can change:
 
