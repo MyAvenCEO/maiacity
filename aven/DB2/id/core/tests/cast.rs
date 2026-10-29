@@ -165,10 +165,15 @@ fn may_act_on() {
     }
 }
 
+/// A real public half (alice-owner's), so every key in these trees reads as an Ed25519 key.
+const K: &str = "0254086bfa6b7557cc22939766aae0cf6314a383264d19c705a936673b677c85";
+
 #[test]
 fn refuses_trees_that_are_not_well_formed() {
     let with = |vaults: &str| {
-        Tree::from_cast(&format!(r#"{{"keys":{{"k":"00"}},"vaults":{{{vaults}}}}}"#))
+        Tree::from_cast(&format!(
+            r#"{{"keys":{{"k":"{K}","d":"{K}"}},"vaults":{{{vaults}}}}}"#
+        ))
     };
     let invalid = |vaults: &str| match with(vaults) {
         Err(CastError::Invalid(why)) => why,
@@ -221,6 +226,34 @@ fn refuses_trees_that_are_not_well_formed() {
     ));
     assert!(matches!(
         with(r#""a":{"kind":"person","owners":["k"]}"#),
+        Err(CastError::Format(_))
+    ));
+    // a device has its own key, the key with its id, and that key owns nothing
+    assert_eq!(
+        invalid(
+            r#""a":{"kind":"person","owners":["key:k"]},"e":{"kind":"device","owners":["vault:a"]}"#
+        ),
+        Invalid::DeviceKeyless("e".into())
+    );
+    assert_eq!(
+        invalid(
+            r#""a":{"kind":"person","owners":["key:k"]},"d":{"kind":"device","owners":["vault:a"]},"b":{"kind":"person","owners":["key:d"]}"#
+        ),
+        Invalid::DeviceKeyOwns {
+            device: "d".into(),
+            vault: "b".into()
+        }
+    );
+    assert!(
+        with(
+            r#""a":{"kind":"person","owners":["key:k"]},"d":{"kind":"device","owners":["vault:a"]}"#
+        )
+        .is_ok()
+    );
+    assert!(matches!(
+        Tree::from_cast(
+            r#"{"keys":{"k":"00"},"vaults":{"a":{"kind":"person","owners":["key:k"]}}}"#
+        ),
         Err(CastError::Format(_))
     ));
 }

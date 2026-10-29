@@ -1,10 +1,12 @@
 //! The cast's format (`sandbox/cast.json`): `keys`, each id to its public half, and `vaults`, each id to its name,
-//! kind and owners, which read `"key:<id>"` or `"vault:<id>"`. The file's order is the tree's.
+//! kind and owners, which read `"key:<id>"` or `"vault:<id>"`. The file's order is the tree's. Every key must be an
+//! Ed25519 public key; the model knows keys only by id, so that check is the cast's.
 
 use std::fmt;
 
 use serde_json::{Map, Value};
 
+use crate::keys::parse_public;
 use crate::tree::{Invalid, Kind, Owner, Tree, Vault};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,7 +49,13 @@ impl Tree {
         let empty = Value::Object(Map::new());
         let mut keys = Vec::new();
         for (id, public) in object(cast.get("keys").unwrap_or(&empty), "keys")? {
-            keys.push((id.clone(), text(public, &format!("key {id}"))?.to_string()));
+            let public = text(public, &format!("key {id}"))?;
+            if parse_public(public).is_none() {
+                return Err(CastError::Format(format!(
+                    "key {id} is not an Ed25519 public key in hex"
+                )));
+            }
+            keys.push((id.clone(), public.to_string()));
         }
         let mut vaults = Vec::new();
         for (id, vault) in object(cast.get("vaults").unwrap_or(&empty), "vaults")? {

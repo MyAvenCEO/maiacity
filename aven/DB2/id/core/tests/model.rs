@@ -72,7 +72,8 @@ impl Model {
 const KEYS: [&str; 2] = ["k0", "k1"];
 
 /// A raw tree: keys, then vaults with ids `v0`, `v1`, … in a shuffled order. Owners mostly point at earlier vaults,
-/// so many trees are well formed; now and then at any vault, an unknown one or an unknown key, so many are not.
+/// so many trees are well formed; now and then at any vault, an unknown one, an unknown key or a device's key, and
+/// now and then a device lacks its key, so many are not.
 fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
     let vault = (
         0u8..3,
@@ -83,9 +84,13 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
     (1usize..8)
         .prop_flat_map(move |n| (Just(n), proptest::collection::vec(vault.clone(), n)))
         .prop_map(|(n, specs)| {
+            let ups: Vec<u8> = specs.iter().map(|s| s.3).collect();
             let kinds: Vec<Kind> = specs
                 .iter()
                 .map(|s| [Kind::Person, Kind::Network, Kind::Device][s.0 as usize])
+                .collect();
+            let devices: Vec<usize> = (0..kinds.len())
+                .filter(|&j| kinds[j] == Kind::Device)
                 .collect();
             // an earlier vault, mostly one that may own (not a device)
             let earlier = |i: usize, at: u8, any: bool| {
@@ -114,8 +119,14 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
                             .map(|(tag, at)| match tag {
                                 0..12 => Owner::Key(KEYS[at as usize % 2].into()),
                                 12 => Owner::Key("k9".into()),
-                                13..38 => {
-                                    earlier(i, at, tag == 13).unwrap_or(Owner::Key("k0".into()))
+                                // a device's key as an owner, which no well-formed tree has
+                                13 => devices
+                                    .get(at as usize % devices.len().max(1))
+                                    .map_or(Owner::Key("k9".into()), |j| {
+                                        Owner::Key(format!("v{j}"))
+                                    }),
+                                14..38 => {
+                                    earlier(i, at, tag == 14).unwrap_or(Owner::Key("k0".into()))
                                 }
                                 _ => Owner::Vault(format!("v{}", at as usize % (n + 1))),
                             })
@@ -129,10 +140,17 @@ fn trees() -> impl Strategy<Value = (Vec<String>, Vec<Vault>)> {
                     }
                 })
                 .collect();
-            vaults
+            let mut keys: Vec<String> = KEYS.iter().map(|k| k.to_string()).collect();
+            keys.extend(
+                vaults
+                    .iter()
+                    .zip(&ups)
+                    .filter(|(v, up)| v.kind == Kind::Device && **up != 7)
+                    .map(|(v, _)| v.id.clone()),
+            );
+            (keys, vaults)
         })
-        .prop_shuffle()
-        .prop_map(|vaults| (KEYS.iter().map(|k| k.to_string()).collect(), vaults))
+        .prop_flat_map(|(keys, vaults)| (Just(keys), Just(vaults).prop_shuffle()))
 }
 
 /// Every query on every vault, an unknown one included, and every pair for `mayActOn`.

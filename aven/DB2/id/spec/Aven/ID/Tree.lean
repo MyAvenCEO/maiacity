@@ -21,6 +21,10 @@ def Owner.vault? : Owner → Option String
   | .vault id => some id
   | .key _ => none
 
+def Owner.key? : Owner → Option String
+  | .key id => some id
+  | .vault _ => none
+
 structure Vault where
   id : String
   kind : Kind
@@ -29,6 +33,9 @@ structure Vault where
 
 /-- The vaults among a vault's owners. -/
 def Vault.ownerVaults (v : Vault) : List String := v.owners.filterMap Owner.vault?
+
+/-- The keys among a vault's owners. -/
+def Vault.ownerKeys (v : Vault) : List String := v.owners.filterMap Owner.key?
 
 structure Tree where
   keys : List String
@@ -45,6 +52,9 @@ def kind? (t : Tree) (id : String) : Option Kind := (t.get? id).map (·.kind)
 
 /-- The vaults that own the vault `b` directly. -/
 def ownersOf (t : Tree) (b : String) : List String := ((t.get? b).map (·.ownerVaults)).getD []
+
+/-- `k` owns `b`: the key `k` is one of `b`'s owners. -/
+def KeyOwns (t : Tree) (k b : String) : Prop := ∃ v, t.get? b = some v ∧ k ∈ v.ownerKeys
 
 /-- `a` owns `b`: the vault `a` is one of `b`'s owners. -/
 def Owns (t : Tree) (a b : String) : Prop := a ∈ t.ownersOf b

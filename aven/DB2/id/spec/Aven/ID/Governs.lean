@@ -3,7 +3,8 @@ import Aven.ID.WF
 /-! # Governs
 
 A vault owns what is directly below it and governs everything below it (README, "Terms"). Authority runs only down:
-in a well-formed tree, `Governs` is irreflexive, asymmetric and transitive, and a device governs nothing. -/
+in a well-formed tree, `Governs` is irreflexive, asymmetric and transitive, and neither a device nor its key governs
+anything. -/
 
 namespace Aven.ID
 namespace Tree
@@ -64,6 +65,14 @@ theorem governs_asymm (w : t.WF) {a b : String} (h : t.Governs a b) : ¬ t.Gover
 /-- A device governs nothing. -/
 theorem device_governs_nothing (w : t.WF) {d x : String} (h : t.kind? d = some .device) : ¬ t.Governs d x :=
   fun g => let ⟨_, o⟩ := g.head; w.not_device o h
+
+/-- `KeyGoverns t k x`: the key `k` owns `x`, or a vault that governs `x`. -/
+def KeyGoverns (t : Tree) (k x : String) : Prop := ∃ v, t.KeyOwns k v ∧ (x = v ∨ t.Governs v x)
+
+/-- A device's key governs nothing: it signs for the vault its device serves, and owns no vault. -/
+theorem device_key_governs_nothing (w : t.WF) {k x : String} (h : t.kind? k = some .device) :
+    ¬ t.KeyGoverns k x :=
+  fun ⟨_, o, _⟩ => w.not_device_key o h
 
 end Tree
 end Aven.ID

@@ -52,6 +52,13 @@ impl Owner {
             Owner::Key(_) => None,
         }
     }
+
+    pub fn key(&self) -> Option<&str> {
+        match self {
+            Owner::Key(id) => Some(id),
+            Owner::Vault(_) => None,
+        }
+    }
 }
 
 impl fmt::Display for Owner {
@@ -75,6 +82,10 @@ impl Vault {
     pub fn owner_vaults(&self) -> impl Iterator<Item = &str> {
         self.owners.iter().filter_map(Owner::vault)
     }
+
+    pub fn owner_keys(&self) -> impl Iterator<Item = &str> {
+        self.owners.iter().filter_map(Owner::key)
+    }
 }
 
 /// Why a tree is not well formed.
@@ -90,6 +101,10 @@ pub enum Invalid {
     DeviceOwners(String),
     /// A device's vault owns another vault.
     DeviceOwns { device: String, vault: String },
+    /// A device has no key of its own: none with its id.
+    DeviceKeyless(String),
+    /// A device's key owns a vault.
+    DeviceKeyOwns { device: String, vault: String },
     /// A vault is above itself.
     Cycle(String),
 }
@@ -104,6 +119,10 @@ impl fmt::Display for Invalid {
                 write!(f, "the device {id} must be owned by exactly one vault")
             }
             Invalid::DeviceOwns { device, vault } => write!(f, "the device {device} owns {vault}"),
+            Invalid::DeviceKeyless(id) => write!(f, "the device {id} has no key"),
+            Invalid::DeviceKeyOwns { device, vault } => {
+                write!(f, "the device {device}'s key owns {vault}")
+            }
             Invalid::Cycle(id) => write!(f, "{id} is above itself"),
         }
     }
@@ -123,7 +142,8 @@ pub struct Tree {
 
 impl Tree {
     /// A tree, if it is well formed (`Aven.ID.Tree.WF`): each id once; every vault owned, by known keys and vaults;
-    /// a device's vault owned by exactly one vault and owning nothing; and no vault above itself.
+    /// a device's vault owned by exactly one vault and owning nothing, with its own key, the key with its id, which
+    /// owns nothing either; and no vault above itself.
     pub fn new(keys: Vec<(String, String)>, vaults: Vec<Vault>) -> Result<Tree, Invalid> {
         let mut index = HashMap::new();
         for (at, vault) in vaults.iter().enumerate() {
@@ -154,6 +174,20 @@ impl Tree {
                 if vaults[index[owner]].kind == Kind::Device {
                     return Err(Invalid::DeviceOwns {
                         device: owner.to_string(),
+                        vault: vault.id.clone(),
+                    });
+                }
+            }
+            if vault.kind == Kind::Device && !keys.iter().any(|(id, _)| *id == vault.id) {
+                return Err(Invalid::DeviceKeyless(vault.id.clone()));
+            }
+            for key in vault.owner_keys() {
+                if index
+                    .get(key)
+                    .is_some_and(|&at| vaults[at].kind == Kind::Device)
+                {
+                    return Err(Invalid::DeviceKeyOwns {
+                        device: key.to_string(),
                         vault: vault.id.clone(),
                     });
                 }
