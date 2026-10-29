@@ -68,29 +68,24 @@ pub(crate) type Held = Arc<BTreeMap<EntryId, Inputs>>;
 pub(crate) struct SharedIndex {
     index: tokio::sync::Mutex<ShelfIndex>,
     /// The head of the edits it is of, as its slot holds it, and the inputs of its rows then: what a reader asks under
-    /// its hold of the Lab.
-    held: Mutex<(Stamp, Held)>,
+    /// its hold of the Lab. The inputs are read off its `I` rows only once something asks for them (`inputs`): a save
+    /// steps on from them, and a reader of an index behind its log's head takes the entries they changed; an open,
+    /// and a reader of an index of its log's head, reads none of them, only the rows it needs.
+    held: Mutex<(Stamp, Option<Held>)>,
 }
 
 impl SharedIndex {
     /// The index on `shelf`, as its newest slot that opens left it: stepped on at the next save. Where its slots can't
     /// be read, the index of no edits, which the next save builds again of every entry (I3): a node always keeps one.
     pub(crate) async fn open(shelf: Shelf) -> io::Result<SharedIndex> {
-        let opened = match ShelfIndex::open_kept(shelf.clone(), NAME, BUDGET, empty_head()).await {
-            Ok((index, _)) => match held_inputs(&index).await {
-                Ok(held) => Ok((index, held)),
-                Err(e) => Err(e),
-            },
-            Err(e) => Err(e),
-        };
-        let (index, held) = match opened {
-            Ok(opened) => opened,
+        let (index, held) = match ShelfIndex::open_kept(shelf.clone(), NAME, BUDGET, empty_head()).await {
+            Ok((index, _)) => (index, None),
             Err(e) => {
                 tracing::warn!("avendb: the shared index can't be read on the shelf, so it is built again: {e:#}");
-                (ShelfIndex::empty(shelf, NAME, BUDGET, empty_head().head)?, BTreeMap::new())
+                (ShelfIndex::empty(shelf, NAME, BUDGET, empty_head().head)?, Some(Held::default()))
             }
         };
-        let held = Mutex::new((index.stamp(), Arc::new(held)));
+        let held = Mutex::new((index.stamp(), held));
         Ok(SharedIndex { index: tokio::sync::Mutex::new(index), held })
     }
 
@@ -103,6 +98,11 @@ impl SharedIndex {
         held: usize,
     ) -> io::Result<Stepped> {
         let mut index = self.index.lock().await;
+        if let Err(e) = self.inputs_of(&index).await {
+            tracing::warn!("avendb: the shared index's inputs don't read whole, so it is built again: {e}");
+            index.clear(empty_head());
+            *self.held.lock().expect("held") = (empty_head(), Some(Held::default()));
+        }
         match step_on(&mut index, &self.held, lab, me, held).await {
             Err(e)
                 if matches!(
@@ -115,7 +115,7 @@ impl SharedIndex {
                     "avendb: the shared index doesn't read whole, so it is built again: {e}"
                 );
                 index.clear(empty_head());
-                *self.held.lock().expect("held") = (empty_head(), Held::default());
+                *self.held.lock().expect("held") = (empty_head(), Some(Held::default()));
                 step_on(&mut index, &self.held, lab, me, held).await
             }
             other => other,
@@ -129,18 +129,36 @@ impl SharedIndex {
 
     /// The head of the edits it is of and the inputs of its rows then (`Lab::shared_inputs`): what a reader that reads
     /// through the index and the entries whose rows changed since compares with the Lab under its hold of it.
-    pub(crate) fn held(&self) -> (Stamp, Held) {
+    /// Its inputs not read yet (`inputs`), none.
+    pub(crate) fn held(&self) -> (Stamp, Option<Held>) {
         self.held.lock().expect("held").clone()
+    }
+
+    /// The inputs of its rows (`held`), read off its `I` rows the first time they are asked for.
+    pub(crate) async fn inputs(&self) -> io::Result<Held> {
+        let index = self.index.lock().await;
+        self.inputs_of(&index).await
+    }
+
+    async fn inputs_of(&self, index: &ShelfIndex) -> io::Result<Held> {
+        if let (_, Some(held)) = &*self.held.lock().expect("held") {
+            return Ok(held.clone());
+        }
+        let read = Arc::new(held_inputs(index).await?);
+        let mut held = self.held.lock().expect("held");
+        // of the index as it is: the lock on it held, no save stepped it on meanwhile
+        Ok(held.1.get_or_insert(read).clone())
     }
 
     /// The entries whose rows in device `me`'s index of `stamp`, its inputs then `held`, may differ from what `lab`
     /// says now, under a hold of it: none where the index is of its log's head, which stamps every view of it; else
     /// those whose inputs changed (`SharedIndex.X5_inputs_cover`), wherever the edits that changed them were.
-    pub(crate) fn changed(lab: &Lab, me: SignerId, stamp: Stamp, held: &BTreeMap<EntryId, Inputs>) -> BTreeSet<EntryId> {
+    /// None where it is behind and its inputs aren't read yet: its reader reads them (`inputs`) and asks again.
+    pub(crate) fn changed(lab: &Lab, me: SignerId, stamp: Stamp, held: Option<&BTreeMap<EntryId, Inputs>>) -> Option<BTreeSet<EntryId>> {
         if Stamp::from(lab.log(me).head()) == stamp {
-            return BTreeSet::new();
+            return Some(BTreeSet::new());
         }
-        shared::differ(held, &lab.shared_inputs(me))
+        Some(shared::differ(held?, &lab.shared_inputs(me)))
     }
 
     /// The rows its finds have read off the index so far, all told: a bench's count of what a read reads.
@@ -205,7 +223,7 @@ impl SharedIndex {
 
 async fn step_on(
     index: &mut ShelfIndex,
-    kept: &Mutex<(Stamp, Held)>,
+    kept: &Mutex<(Stamp, Option<Held>)>,
     lab: &Mutex<Lab>,
     me: SignerId,
     held: usize,
@@ -215,6 +233,7 @@ async fn step_on(
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     };
     let (was, inputs_was) = kept.lock().expect("held").clone();
+    let inputs_was = inputs_was.expect("its inputs, read as it steps on (`SharedIndex::step`)");
     // what it puts again, worked out under one hold of the Lab with the stamp it will be of
     let (stamp, inputs) = {
         let lab = locked();
@@ -257,7 +276,7 @@ async fn step_on(
         }
     }
     index.apply(changes, stamp).await?;
-    *kept.lock().expect("held") = (stamp, Arc::new(inputs));
+    *kept.lock().expect("held") = (stamp, Some(Arc::new(inputs)));
     #[cfg(all(debug_assertions, not(avendb_no_replay_checks)))]
     {
         let full = {
