@@ -186,3 +186,24 @@ Priority after these findings (*(guess)* order by impact): 33 (local first broke
   Pill at the same moment: "Failed askings 10 of 7"; Logs left 959 vs This view 1,022 vs synced.behind 3,057; "Syncing 2,152/3,111" while behind 3,057.
   Cause (measured): the always-on peer, still in its whole replay (latest:false, 157,747 edits, 1 h 40 min after restart), stops serving pages to a fresh device after ~8k edits. Only Settings and cached Stories paint from local data.
 - Lesson -> task 35 is P0: a release must never leave the always-on peer replaying for hours; it must open its stored view (or a handed one) and serve at once.
+
+### F9. The catch-up never ends: a busy loop that holds the Lab lock (19:42-19:45 Berlin, the root of F1-F8)
+Measured:
+- **Always-on peer** (/feed/health 19:42:26, up 6,002 s since 18:02:24): `replay: edits 157,747, latest:false`, the same 157,747 at 19:38 and 19:42 (not growing). `refresh` **118,740 rounds, 5,767 s = 96 % of uptime** (~48 ms each, max 3.1 s); `replay: nothing new` ~100k times; each round still redoes key work: `open keys` 118,740 calls (1,819 s), `keys: boxes` 118,770 (1,574 s), `keys: derive` 229 s, `read` 78 s.
+- Peer lock: `catch_up_steps` 120,386 holds, 5,762 s held, 11,890 s waited; the Lab lock held 5,922 of 6,002 s. Last 40 lock events all catch_up_steps (45-65 ms holds, 700-900 ms waits). `files_to_keep` waited 4,775 s, `own_logs` 223 s, `news` 186 s, `authorized_reply` up to 5 s per call. `save: put what it worked out` 12 saves, max hold 50.9 s.
+- Peer serves almost nothing: **84 pages / 24,519 edits in 1 h 40 min**, mean 519 ms, max 5.1 s, last page 19:30:37 (= the test device's "page 6, then nothing"). Opened 101 MB shelf in 94 s; RSS 1.57 GB (peak 2.54 GB); 10 restarts in its recent list.
+- **Mac** (19:41:12, behind 10 of 3,111): the same loop: `refresh` 2,086 rounds, 364 s, max 33.8 s; `replay: nothing new` 2,081. Lock 2,629 holds, 394 s held, **8,650 s waited**, max wait 40.7 s. Reads with behind ≈ 10: world p95 **55.6 s**, cap_groups 39.5 s, query 33 s, entry_views 13.4 s. Peer d3e2b174: 7 of 15 askings failed.
+- **iPhone** (last report 19:18:07): the same loop in small: `refresh` 171 rounds, 53 s, max 27.6 s.
+
+Code path *(guess, strongly indicated by the counters, not proven)*: `Lab::catch_up_step` (aven/db/crates/avendb/src/lab.rs ~6677) -> `refresh_with(d, &[], Some(budget))` (~3604). With a budget it returns `false` (still behind) while `KeyIndexed::step` has more to grow (~3620), so `catch_up_step` answers `Stepped` and the node schedules another step; each step first re-enters `step_replay` and the refresh path (`replay: nothing new`, open keys, boxes) before the key index grows its slice. If the key index's slice never finishes (or restarts each round), `latest` is never reached and the loop runs forever, holding the one Lab lock: peers can't serve pages and local reads wait 30-55 s.
+
+Lessons:
+- A stepped catch-up must make measurable progress each step or stop; a step that finds "nothing new" must not redo key work (task 36).
+- The Lab lock is one global lock for catch-up, serving pages and local reads: catch-up must never starve serving or reads (task 33).
+- Diagnostics already held the answer (refresh rounds vs replay nothing new) but nothing alarms on it: a health check must flag "refresh rounds rising, replay not growing" (task 37).
+
+| # | Task | Source | State |
+|---|---|---|---|
+| 36 | Find and fix why `catch_up_step` never reaches latest after a whole replay (KeyIndexed::step / refresh_with loop): reproduce in a net-sim from a viewRules-bumped shelf; each step must advance or end; "nothing new" does no key work | F9 | open, P0 |
+| 37 | Health: the peer's /feed/health and device reports flag a catch-up that loops (rounds up, replay flat) and the release gate fails on it | F9 | open |
+| 38 | Test device 3cce27ff ("test-device 2026-10-29") still in the vault: remove in theOS Settings -> Devices | F8 | open, Samuel |
