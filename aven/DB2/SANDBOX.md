@@ -391,7 +391,22 @@ the times into this file. Then the change merges into `main`, and `production` r
 
 1. **The cloud environment avenSANDBOX:** at claude.ai/code, the environment selector under the message box, then
    **New environment**: Custom network access with the default package managers and the two domains above,
-   `AVEN_DB2=1`, and [`sandbox/box/cloud-setup.sh`](sandbox/box/cloud-setup.sh) as its setup script.
+   `AVEN_DB2=1`, and this setup script. It only finds the repository's
+   [`sandbox/box/cloud-setup.sh`](sandbox/box/cloud-setup.sh) and runs it, so that file can move without breaking a
+   session. A setup script that exits non-zero stops every new session before Claude starts: on 29 Oct 2026 an old
+   path did that to four at once.
+
+   ```bash
+   #!/bin/bash
+   # avenSANDBOX: warms the box for new sessions. The real script is the repository's
+   # aven/DB2/sandbox/box/cloud-setup.sh; this only finds it, wherever the repository is cloned,
+   # and never fails a session.
+   for f in aven/DB2/sandbox/box/cloud-setup.sh */aven/DB2/sandbox/box/cloud-setup.sh /home/user/*/aven/DB2/sandbox/box/cloud-setup.sh; do
+     if [ -f "$f" ]; then bash "$f"; exit 0; fi
+   done
+   echo "avenSANDBOX: aven/DB2/sandbox/box/cloud-setup.sh not found; sessions start without a warm box"
+   exit 0
+   ```
 2. **OrbStack:** in its Docker engine config, `"allow-direct-routing": true`.
 3. **The `aven/sandbox` package public** (done 29 Oct 2026, after the organization allowed public packages).
 4. **`main`'s ruleset without "CI required"** (done 29 Oct 2026): v1's CI is parked, so that check never reports.
