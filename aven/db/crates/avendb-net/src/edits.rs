@@ -87,9 +87,6 @@ const VIEW: ([&str; 2], &[u8]) = (["slots/view-0", "slots/view-1"], b"avenDB slo
 /// blob by its hash and size (`Warming::shown`), and how many bytes of its pages stay in memory.
 const SHOWN: &str = "shown";
 const SHOWN_BUDGET: usize = 1 << 20;
-/// The two slots a shelf listed its packs of kept showings in before that index, each pack by its hash and size, the
-/// oldest first: read where the index has no slot yet, and gone with their packs once it has.
-const SHOWN_LISTS: ([&str; 2], &[u8]) = (["slots/shown-0", "slots/shown-1"], b"avenDB shown packs 1\n");
 
 /// A blob on the shelf: its hash and its size.
 pub(crate) type Blob = (Hash, u64);
@@ -828,25 +825,25 @@ async fn read_warm(shelf: &Shelf) -> (Warm, (u64, u64), ShownOnShelf) {
 }
 
 /// A device's kept showings on its shelf (`Warming::shown`): the index that names, by each showing's row, the pack it
-/// is in; how many rows name each pack, so that a pack no row names goes; and the packs a list of before the index
-/// names (`SHOWN_LISTS`), which go once a pack is put.
+/// is in; and how many rows name each pack, so that a pack no row names goes. The list slots of before the index
+/// (`slots/shown-0`, `-1`) are read by nothing: a shelf with only those keeps no showing, and its view's next
+/// derivation keeps them all again; their packs stay unnamed till a sweep.
 pub(crate) struct ShownOnShelf {
     index: ShelfIndex,
     packs: HashMap<Blob, usize>,
-    listed: Vec<Blob>,
 }
 
 impl ShownOnShelf {
     /// None on `shelf`.
     fn none(shelf: &Shelf) -> ShownOnShelf {
         let index = ShelfIndex::empty(shelf.clone(), SHOWN, SHOWN_BUDGET, empty_head().head).expect("the name of an index");
-        ShownOnShelf { index, packs: HashMap::new(), listed: vec![] }
+        ShownOnShelf { index, packs: HashMap::new() }
     }
 
     /// Puts the pack of `kept` on the shelf through `on` as a blob, then its rows in the index, each naming it in place
     /// of the pack it named before, stamped with the log head they were judged at; and lets go of each pack no row
-    /// names then, and of every pack a list of before the index names. A crash before the index's slot leaves the rows
-    /// as they were, each naming a pack the shelf holds still.
+    /// names then. A crash before the index's slot leaves the rows as they were, each naming a pack the shelf holds
+    /// still.
     async fn put(&mut self, on: &Shelf, kept: KeptShown) -> Result<()> {
         let blob = on.put_blob(&Bytes::from(kept.pack)).await?;
         let value: Vec<u8> = blob.0.as_bytes().iter().copied().chain(blob.1.to_be_bytes()).collect();
@@ -857,7 +854,7 @@ impl ShownOnShelf {
         let changes = kept.rows.iter().map(|row| (row.to_vec(), Some(value.clone()))).collect();
         self.index.apply_on(on, changes, kept.head.into()).await?;
         *self.packs.entry(blob).or_default() += kept.rows.len();
-        let mut gone = std::mem::take(&mut self.listed);
+        let mut gone = vec![];
         for b in was {
             let rows = self.packs.get_mut(&b).expect("a pack its rows name");
             *rows -= 1;
@@ -875,8 +872,6 @@ impl ShownOnShelf {
 
 /// The packs of kept showings its shelf holds, each with the rows of its index that name it (`ShownPack::rows`), and
 /// those rows: a pack that doesn't read whole is none, and the showings its rows name are judged anew and kept again.
-/// Where the index has no slot yet, the packs the newest list of before it names (`SHOWN_LISTS`), the oldest first,
-/// each with no rows, so that the next save keeps every showing in the index.
 async fn read_shown(shelf: &Shelf) -> (Vec<ShownPack>, ShownOnShelf) {
     let mut on = ShownOnShelf::none(shelf);
     let kept = match ShelfIndex::open_kept(shelf.clone(), SHOWN, SHOWN_BUDGET, empty_head()).await {
@@ -890,16 +885,7 @@ async fn read_shown(shelf: &Shelf) -> (Vec<ShownPack>, ShownOnShelf) {
         }
     };
     if !kept {
-        let listed = slots_of(shelf, SHOWN_LISTS).await.ok().and_then(|(lists, _)| lists.first().and_then(|b| packs_of(b)));
-        on.listed = listed.unwrap_or_default();
-        let mut out = Vec::with_capacity(on.listed.len());
-        for &blob in &on.listed {
-            match read_shown_pack(shelf, blob).await {
-                Ok(file) => out.push(ShownPack { file, rows: None }),
-                Err(e) => tracing::warn!("avendb: a pack of kept showings doesn't read whole, so its showings are judged anew: {e:#}"),
-            }
-        }
-        return (out, on);
+        return (vec![], on);
     }
     let mut named: BTreeMap<Blob, Vec<[u8; 32]>> = BTreeMap::new();
     let mut from = Vec::new();
@@ -944,14 +930,6 @@ async fn read_shown_pack(shelf: &Shelf, (hash, size): Blob) -> Result<Arc<dyn av
 fn blob_of(value: &[u8]) -> Option<Blob> {
     let (hash, size) = value.split_first_chunk::<32>()?;
     Some((Hash::from_bytes(*hash), u64::from_be_bytes(size.try_into().ok()?)))
-}
-
-/// The packs a list of before the index names (`SHOWN_LISTS`), each its hash and size.
-fn packs_of(bytes: &[u8]) -> Option<Vec<Blob>> {
-    if bytes.len() % 40 != 0 {
-        return None;
-    }
-    bytes.chunks(40).map(blob_of).collect()
 }
 
 /// What the two slots `which` of `shelf` keep, the newest first, and the number the next is kept as.
@@ -1362,7 +1340,7 @@ mod tests {
                             "journal/0000000000000000" => None,
                             // what it worked out before, read first now (`Edits::open_into`): none
                             "slots/keys-0" | "slots/keys-1" | "slots/view-0" | "slots/view-1" | "slots/index-shown-0"
-                            | "slots/index-shown-1" | "slots/shown-0" | "slots/shown-1" => None,
+                            | "slots/index-shown-1" => None,
                             _ => panic!("unexpected object {name}"),
                         };
                         tx.send(Ok(bytes)).ok();
@@ -1382,9 +1360,8 @@ mod tests {
         assert!(keys.is_empty());
         assert_eq!(edits.started(), Some((expected_start, expected.len())));
     }
-    /// Kept showings on a shelf (`ShownOnShelf`): a shelf with only a list of before the index gives its packs with no
-    /// rows, and they go with the first pack put; each row names the pack it was last put in, and a pack no row names
-    /// any more goes.
+    /// Kept showings on a shelf (`ShownOnShelf`): a shelf with only a list of before the index gives none; each row
+    /// names the pack it was last put in, and a pack no row names any more goes.
     #[tokio::test]
     async fn each_kept_showing_is_read_from_the_pack_its_row_names_and_a_pack_none_names_goes() {
         struct Folder(std::path::PathBuf);
@@ -1397,20 +1374,19 @@ mod tests {
         let writer = crate::disk::open(&folder.0).expect("the test shelf").writer().unwrap();
         let shelf = writer.shelf();
         let listed = shelf.put_blob(&Bytes::from_static(b"a pack listed before the index")).await.unwrap();
-        let list = [SHOWN_LISTS.1, &0u64.to_be_bytes(), listed.0.as_bytes(), &listed.1.to_be_bytes()].concat();
-        shelf.keep(SHOWN_LISTS.0[0], Bytes::from(list)).await.unwrap();
+        let list = [&b"avenDB shown packs 1\n"[..], &0u64.to_be_bytes(), listed.0.as_bytes(), &listed.1.to_be_bytes()].concat();
+        shelf.keep("slots/shown-0", Bytes::from(list)).await.unwrap();
         let rows = |packs: &[ShownPack]| -> Vec<Option<Vec<[u8; 32]>>> {
             let mut rows: Vec<_> = packs.iter().map(|p| p.rows.clone()).collect();
             rows.sort();
             rows
         };
         let (packs, mut on) = read_shown(&shelf).await;
-        assert_eq!(rows(&packs), vec![None], "the listed pack, with no rows");
+        assert!(packs.is_empty(), "a list of before the index is read by nothing");
         let head = avendb::log_head::head(&[]);
         let kept = |pack: &[u8], rows: &[[u8; 32]]| KeptShown { pack: pack.to_vec(), rows: rows.to_vec(), head };
         let (a, b) = ([1; 32], [2; 32]);
         on.put(&shelf, kept(b"first", &[a, b])).await.unwrap();
-        assert!(shelf.read_blob(listed.0, listed.1).await.is_err(), "the listed pack goes");
         let (packs, mut on) = read_shown(&shelf).await;
         assert_eq!(rows(&packs), vec![Some(vec![a, b])]);
         on.put(&shelf, kept(b"second", &[b])).await.unwrap();
