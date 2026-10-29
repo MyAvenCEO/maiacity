@@ -12,11 +12,11 @@ const light = Object.entries(cast.peers).find(([, peer]) => peer.origin === host
 
 if (light) {
 	const [id, peer] = light;
-	document.title = 'avenDB2 · coming soon';
+	document.title = 'avenDB · coming soon';
 	mount(Landing, { target, props: { id, peer, cast } });
 } else if (host === 'localhost' || host === '127.0.0.1') {
 	mount(ControlRoom, { target, props: { cast } });
 } else {
-	document.title = 'avenDB2 · coming soon';
+	document.title = 'avenDB · coming soon';
 	mount(Landing, { target, props: {} });
 }

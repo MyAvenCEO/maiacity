@@ -1,4 +1,4 @@
-# Working in avenDB2
+# Working in avenDB
 
 - Read [`README.md`](README.md) first: its rules hold for every change here. [`SANDBOX.md`](SANDBOX.md) is the plan
   for avenSANDBOX, milestone 1.

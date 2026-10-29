@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "avendb2",
+      "name": "@aven/db",
       "devDependencies": {
         "@sveltejs/vite-plugin-svelte": "7.3.1",
         "playwright": "1.64.1",

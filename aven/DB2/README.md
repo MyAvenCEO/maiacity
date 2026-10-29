@@ -1,9 +1,12 @@
-# avenDB2
+# avenDB
 
-avenDB2 is avenDB rebuilt from first principles, beside v1 (`aven/db/`) in the same repository and sharing no code
-with it. It grows one primitive at a time, each a package of its own and each proven before it is built: a Lean model
-and its theorems first, then Rust tests checked against that model, then the code. Everything it needs lives in this
-folder: its crates, its Lean spec, its pages and avenSANDBOX, the local network it is built and tested in.
+This is the new avenDB, rebuilt from first principles beside v1 (`aven/db/`) in the same repository and sharing no
+code with it. It grows one primitive at a time, each a package of its own and each proven before it is built: a Lean
+model and its theorems first, then Rust tests checked against that model, then the code. Everything it needs lives in
+this folder: its crates, its Lean spec, its pages and avenSANDBOX, the local network it is built and tested in.
+
+v1 stays as the testing and learning battleground until the new avenDB is ready. Then v1 is deprecated, and the new
+avenDB moves into `aven/db`.
 
 **Status (29 Oct 2026): milestone 1 has started.** avenSANDBOX's box runs: its image, `bun run up --check`, the
 landing page on two Peer-Lights' origins and the control room; the peers themselves come next. The plan:
@@ -15,7 +18,7 @@ The architecture audit of 29 Oct 2026 traced v1's sync, loading and display fail
 bugs. One Lab behind one lock serves reads, peers, catch-up and writes in turn. Catch-up runs in budgeted steps that
 can loop without progress. Derived state lives only in the writer's memory and is bound to code versions. Status
 numbers come from different moments. Each of the last 250 changes made one path inside that shape faster; none could
-change the shape. avenDB2 starts with the shape.
+change the shape. avenDB starts with the shape.
 
 ## The rules
 
@@ -49,13 +52,30 @@ Each rule is held by a test or a check once there is code to hold.
 
 | Name | What |
 |---|---|
-| avenDB2 | the database, this rebuild |
-| `aven/DB2` | its folder. A Mac's disk ignores case, so a path spelled `aven/db2` works there and fails on Linux and CI; a check will reject any other spelling |
-| avenSANDBOX | the local network avenDB2 is built and tested in: Peers and Peer-Lights in containers on one machine ([`SANDBOX.md`](SANDBOX.md)) |
+| avenDB | the database: this rebuild. v1, in `aven/db/`, is the old one |
+| `aven/DB2` | its folder while v1 still lives in `aven/db`. A Mac's disk ignores case, so `aven/DB` couldn't sit beside `aven/db`, and a path spelled `aven/db2` works on a Mac and fails on Linux and CI; a check will reject any other spelling. When v1 is deprecated, the new avenDB moves into `aven/db` |
+| avenSANDBOX | the local network avenDB is built and tested in: Peers and Peer-Lights in containers on one machine ([`SANDBOX.md`](SANDBOX.md)) |
 | Peer | the native Rust peer, one binary |
 | Aven Peer | the server: a Peer with its relay on |
 | Alice Peer | a person's Peer with the relay off, the core of the future Mac app |
 | Peer-Light | the same core compiled to wasm, in a browser (Alice Peer-Light, Bob's Peer-Light) |
+
+### Namespaces: everything under `@aven`
+
+Every product gets one id under the key namespace `@aven`, the same in every ecosystem. Ids are lowercase, because
+npm, container images and crates require it; the capitals live in prose and the UI.
+
+| Where | avenDB | avenSANDBOX | later |
+|---|---|---|---|
+| JS packages (npm scope `@aven`) | `@aven/db` | `@aven/sandbox` | `@aven/maia` |
+| Rust crates | `aven-db-core`, `aven-db-store`, `aven-db-peer`, `aven-db-web` | `aven-sandbox-…`, if the box ever needs Rust | |
+| Container images | `ghcr.io/myavenceo/aven/db-peer`, the Aven Peer's (later) | `ghcr.io/myavenceo/aven/sandbox` | |
+| Lean | `Aven.DB` | | |
+| Our protocol's ALPN | `aven/db/1` | | |
+| Release files | `aven-db-landing-<tag>.tar.gz`, later `aven-db-peer-<tag>-<platform>.tar.gz` | the image, tagged with the release | |
+
+None of these names had public packages on npm on 29 Oct 2026; creating the npm organization `aven` reserves the
+scope before anything is published.
 
 ## Decisions so far
 
@@ -97,7 +117,7 @@ Each rule is held by a test or a check once there is code to hold.
 ## What we take from iroh
 
 iroh is built from pluggable protocols. Each peer has one endpoint, and a `Router` hands every incoming connection to
-the `ProtocolHandler` registered for its ALPN. avenDB2's own protocol plugs in the same way, beside iroh's.
+the `ProtocolHandler` registered for its ALPN. avenDB's own protocol plugs in the same way, beside iroh's.
 
 | Piece | Status (29 Oct 2026) | How we use it |
 |---|---|---|

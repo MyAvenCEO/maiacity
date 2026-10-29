@@ -70,7 +70,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: The box's image
         id: box
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox:$(sha256sum aven/DB2/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox:$(sha256sum aven/DB2/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
       - name: bun run up --check
         working-directory: aven/DB2
         env:
@@ -134,13 +134,13 @@ jobs:
           tag="${day}v$(( ${last:-0} + 1 ))"
 
           # avenSANDBOX: the exact box the check ran in, tagged with the release's name
-          box="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox"
+          box="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox"
           docker buildx imagetools create --tag "$box:$tag" "$IMAGE"
           digest=$(docker buildx imagetools inspect "$box:$tag" --format '{{json .Manifest}}' | jq -r .digest)
 
-          # avenDB2: the landing page, named for the release
-          page="avendb2-landing-$tag.tar.gz"
-          mv deliverables/avendb2-landing.tar.gz "deliverables/$page"
+          # avenDB: the landing page, named for the release
+          page="aven-db-landing-$tag.tar.gz"
+          mv deliverables/aven-db-landing.tar.gz "deliverables/$page"
           (cd deliverables && sha256sum "$page" > SHA256SUMS)
 
           # the release before is the newest dated one; v1's releases (avendb-page-device, avendb-dev-cache) don't count
@@ -157,7 +157,7 @@ jobs:
             echo
             echo "Digest: \`$box@$digest\`"
             echo
-            echo "**avenDB2**, the landing page: \`$page\` below, checksum in \`SHA256SUMS\`."
+            echo "**avenDB**, the landing page: \`$page\` below, checksum in \`SHA256SUMS\`."
             echo
             if [ -n "$previous" ]; then
               gh api "repos/$REPO/releases/generate-notes" -f tag_name="$tag" -f target_commitish="$SHA" \
