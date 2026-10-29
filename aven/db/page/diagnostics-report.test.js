@@ -47,11 +47,11 @@ test('copied report retains bounded manifest stages without exporting identities
 test('the report carries what a sync lacks of each peer and takes of it, as numbers and 8-hex ids alone', async () => {
  const { observeSync, emptySync } = await import('./sync-status.js');
  const hex = '36ee6eef' + 'a'.repeat(56);
- const sample = n => ({ log: `Entry(EntryId(${String(n).padStart(8, '0')}…))`, held: n % 2 === 0, lacked_heads: ['deadbeef', 'not hex', 'cafebabe1234'], waiting: 2 });
+ const sample = n => ({ log: `Entry(EntryId(${String(n).padStart(8, '0')}…))`, held: n % 2 === 0, lacked_heads: ['deadbeef', 'not hex', 'cafebabe1234'], held_unclosed: ['deadbeef', 'nope'], waiting: 2 });
  // the device's `synced` answer, as the page's sync state keeps it (sync.svelte.js), with what a report must not copy
  const synced = { peers: 1, logs: 3090, behind: 2577, pulling: 1, pages: 40, edits: 812,
   from: [{ device: hex, name: "Samuel's Mac", address: '10.0.0.2:443', pulling: { since: 1000, stage: 'taking edits', took: 812 }, pages: 40, edits: 812, last: 1900 }],
-  lacked: [{ device: '85b01be4', lacks: 2577, by_stub: 513, stubs: 900, address: 'secret', sample: Array.from({ length: 9 }, (_, n) => sample(n)) }],
+  lacked: [{ device: '85b01be4', lacks: 2577, bodies: 40, by_stub: 513, stubs: 900, address: 'secret', sample: Array.from({ length: 9 }, (_, n) => sample(n)) }],
   unsaved: { since: 1, tries: 2, error: 'secret path /Users/samuel' } };
  const sync = observeSync(emptySync(), synced, 2000);
  const report = diagnosticSnapshot({ phase: 'open', journal: null, lifecycle: null, manifests: null, sync, playback: null, device: 'iPhone' }).sync;
@@ -59,9 +59,9 @@ test('the report carries what a sync lacks of each peer and takes of it, as numb
  expect(report.from).toEqual([{ device: '36ee6eef', reconnecting: false, pulling: { since: 1000, stage: 'taking edits', took: 812 }, pages: 40, edits: 812, last: 1900, askings: 0, failed: 0 }]);
  expect(report.lacked).toHaveLength(1);
  const [peer] = report.lacked;
- expect(peer).toMatchObject({ device: '85b01be4', lacks: 2577, byStub: 513, stubs: 900 });
+ expect(peer).toMatchObject({ device: '85b01be4', lacks: 2577, bodies: 40, byStub: 513, stubs: 900 });
  expect(peer.sample).toHaveLength(5);
- expect(peer.sample[0]).toEqual({ log: { kind: 'Entry', ids: ['00000000'] }, held: true, lackedHeads: ['deadbeef', 'cafebabe'], waiting: 2 });
+ expect(peer.sample[0]).toEqual({ log: { kind: 'Entry', ids: ['00000000'] }, held: true, lackedHeads: ['deadbeef', 'cafebabe'], heldUnclosed: ['deadbeef'], waiting: 2 });
  const text = JSON.stringify(report);
  for (const secret of ['Samuel', 'address', '10.0.0.2', 'secret', 'Users', 'a'.repeat(9)]) expect(text).not.toContain(secret);
  // an engine stage that isn't its own few words is not copied
@@ -81,4 +81,14 @@ test('a report carries each step of the last unlock, its time and its note, on t
  expect(r.steps[1].note).toBe('115719 edits, 2048 of its head and 3 after it; key …');
  expect(r.steps[2].note.length).toBe(600);
  expect(unlockReport(null)).toEqual({status:'unavailable',reason:'no-unlock-in-this-tab'});
+});
+
+test('a report names what held the Lab by its calls and numbers alone', () => {
+ const lab = { held_ms: 9000, by: { 'avendb_net::Shared::lacked::{{closure}}': { count: 3, wait_ms: 10, hold_ms: 8000, max_hold_ms: 7000 }, 'secret https://x.y/z': { count: 1 } },
+  slow: [{ at: 5, call: 'avendb_net::Shared::lacked::{{closure}}', wait_ms: 1, hold_ms: 7000 }, { at: 6, call: '/Users/samuel', hold_ms: 1 }] };
+ const said = peerDiagnostics({ peers: [], lab }, null).labTurns;
+ expect(said.heldMs).toBe(9000);
+ expect(said.by).toEqual([{ call: 'avendb_net::Shared::lacked::{{closure}}', count: 3, waitMs: 10, holdMs: 8000, maxHoldMs: 7000 }]);
+ expect(said.slow).toEqual([{ at: 5, call: 'avendb_net::Shared::lacked::{{closure}}', waitMs: 1, holdMs: 7000 }]);
+ expect(peerDiagnostics({ peers: [] }, null).labTurns).toBeNull();
 });
