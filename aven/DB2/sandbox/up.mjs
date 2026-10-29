@@ -91,6 +91,31 @@ async function install() {
 	await $`docker run --rm ${network()} ${volumes} -w /work ${image} sh -c ${script}`.env(env);
 }
 
+// The builder (SANDBOX.md, "The box"): compiles the Peer and the Peer-Light's wasm once, into the shared build folder,
+// incrementally. The Peers run that binary and restart when it changes; Vite reloads the pages when the wasm does.
+const peerBinary = '/work/target/debug/aven-peer';
+const lightWasm = 'target/wasm32-unknown-unknown/debug/aven_peer_light.wasm';
+const buildPeers = [
+	'set -e',
+	'cargo build -q -p aven-peer',
+	'cargo build -q -p aven-peer-light --lib --target wasm32-unknown-unknown',
+	`wasm-bindgen --target web --no-typescript --out-dir target/light.next ${lightWasm}`,
+	// one swap, so Vite never serves half a build
+	'if ! cmp -s target/light.next/aven_peer_light_bg.wasm target/light/aven_peer_light_bg.wasm 2>/dev/null; then rm -rf target/light && mv target/light.next target/light; else rm -rf target/light.next; fi',
+	`sha256sum ${peerBinary} | cut -c1-16`,
+].join(' && ');
+
+async function build() {
+	await $`docker volume create avensandbox_target`.quiet();
+	const started = Date.now();
+	const tty = process.stdout.isTTY ? ['-t'] : [];
+	const volumes = ['-v', `${db2}:/work`, ...rustVolumes];
+	const out = await $`docker run --rm ${tty} ${network()} ${volumes} -w /work ${image} sh -c ${buildPeers}`.env(env).nothrow();
+	if (out.exitCode !== 0) throw new Error('the peers did not build');
+	say(`peers built in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+	return out.stdout.toString().trim().split('\n').at(-1);
+}
+
 async function waitForPage() {
 	const deadline = Date.now() + 90_000;
 	while (Date.now() < deadline) {
@@ -117,14 +142,25 @@ async function up(args) {
 	await ensureDocker();
 	await ensureImage();
 	await install();
+	const binary = await build();
+	// a new binary restarts the peers that run it: the loop's "a Rust change, running on every peer"
+	const stamp = join(db2, 'runs', '.peer-running');
+	const running = existsSync(stamp) ? readFileSync(stamp, 'utf8').trim() : '';
+	const peersUp = (await $`${compose} ps -q aven alice`.env(env).nothrow().quiet().text()).trim().split('\n').filter(Boolean).length;
 	await $`${compose} up -d --remove-orphans`.env(env);
+	if (peersUp && running !== binary) {
+		say('the Peer changed: restarting aven and alice');
+		await $`${compose} restart aven alice`.env(env).quiet();
+	}
+	await $`mkdir -p ${join(db2, 'runs')}`;
+	await Bun.write(stamp, `${binary}\n`);
 	await waitForPage();
 	say(`up in ${((Date.now() - started) / 1000).toFixed(1)} s · avenOS: http://localhost:${port}`);
 	if (args.includes('--check')) process.exit(await check());
 }
 
 // Every release's deliverables (SANDBOX.md, "Production"): for now avenOS for the browser, built in the box.
-async function build() {
+async function deliverables() {
 	await ensureDocker();
 	await ensureImage();
 	await install();
@@ -157,7 +193,7 @@ try {
 	else if (command === 'logs') await $`${compose} logs -f --tail 100`.env(env);
 	else if (command === 'shot') process.exit(await check());
 	else if (command === 'doctor') await doctor();
-	else if (command === 'build') await build();
+	else if (command === 'build') await deliverables();
 	else if (command === 'box') process.exit(await inBox(args.length ? args : ['bash']));
 	else throw new Error(`unknown command ${command}: up [--check], down [--wipe], logs, shot, build, doctor, box <command>`);
 } catch (error) {

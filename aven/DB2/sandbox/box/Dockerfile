@@ -10,8 +10,9 @@ ARG BUN_VERSION=1.4.4
 ARG ELAN_VERSION=v4.2.4
 ARG LEAN_VERSION=v4.35.0
 
+# clang and llvm: ring, under iroh, compiles C for the Peer-Light's wasm32 target, which gcc can't
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates xz-utils \
+    && apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates xz-utils clang llvm \
     && rm -rf /var/lib/apt/lists/*
 
 ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo ELAN_HOME=/opt/elan \
