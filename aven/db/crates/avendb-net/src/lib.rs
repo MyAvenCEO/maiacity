@@ -2969,7 +2969,7 @@ impl Shared {
     /// `ask`, of what `scope` names alone: once connected, a `pull` job of the peer's device, forgotten if it took
     /// nothing.
     async fn asking(self: &Arc<Self>, endpoint: EndpointId, scope: Scope) -> Result<usize> {
-        self.pull(endpoint, scope, false, None).await
+        self.pull(endpoint, scope, false).await
     }
 
     async fn pull(
@@ -2977,9 +2977,8 @@ impl Shared {
         endpoint: EndpointId,
         scope: Scope,
         background: bool,
-        catch_up: Option<&pulls::CatchUp>,
     ) -> Result<usize> {
-        self.pull_expected(endpoint, scope, background, catch_up, None, None, None).await
+        self.pull_expected(endpoint, scope, background, None, None, None).await
     }
 
     /// A live hint belongs to the authenticated identity that announced it. Fence that identity before building
@@ -2989,14 +2988,13 @@ impl Shared {
         endpoint: EndpointId,
         scope: Scope,
         background: bool,
-        catch_up: Option<&pulls::CatchUp>,
         expected: Option<SignerId>,
         keys: Option<&mut BTreeSet<BlobId>>,
         yielding: Option<&Yield>,
     ) -> Result<usize> {
         let _activity = self.admit()?;
         let turn = if expected.is_none() { Some(self.pulls.one_asking(endpoint).await) } else { None };
-        let admission = self.pulls.enter(background, catch_up).await?;
+        let admission = self.pulls.enter(background).await?;
         let peer = self.connection(endpoint).await?;
         if expected.is_some_and(|device| device != peer.device) {
             anyhow::bail!("sync peer identity changed before live pull");
@@ -4244,7 +4242,7 @@ impl Shared {
             let wants = self.views_want();
             let yielding = left.is_empty().then(|| Yield::new(logs.clone(), wants.clone()));
             let (began, at) = (Instant::now(), jobs::now_ms());
-            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, None, Some(&mut keys), yielding.as_ref()).await;
+            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, Some(&mut keys), yielding.as_ref()).await;
             // which logs it asked, and which of them the views want, before every other: whether a page's room came first
             let wanted_first: Vec<&LogId> = logs.iter().filter(|l| wants.contains(l)).chain(logs.iter().filter(|l| !wants.contains(l))).take(8).collect();
             self.traffic.asking(traffic::Asking {

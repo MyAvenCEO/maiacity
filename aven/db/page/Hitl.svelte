@@ -13,8 +13,8 @@
 	a swipe answers too: right accepts, left declines, up revises. Accepting applies every part at once. "Later" puts the stack away until a new AIP arrives; a
 	pill above the nav brings it back. It stands behind the AIPs read's freshness (./fresh.js, aven/db/spec/AvenDB/
 	Freshness.lean): it rises by itself only from current data; while the device is behind on the AIPs nothing shows or
-	counts, so an AIP accepted long ago never asks again; offline the pill brings it up, and an answer runs once the person
-	said they act on data as of then (./ActGuard.svelte).
+	counts, so an AIP accepted long ago never asks again; the pill brings it up whenever asked, and an answer goes at once
+	on what the device holds, the line beside it saying as of when (./AsOf.svelte).
 
 	Acting as a vault that proposed (an aven), the cards are the revisions asked of it, each with the words it was sent
 	and the AIP to open.
@@ -34,8 +34,8 @@
 	import { nameOf } from './vaults.js';
 	import { aips as held } from './aips.svelte.js';
 	import Fresh from './Fresh.svelte';
-	import ActGuard from './ActGuard.svelte';
-	import { mayAct, opensOn, showsFinal } from './fresh.js';
+	import AsOf from './AsOf.svelte';
+	import { opensOn, showsFinal } from './fresh.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, vault: string, busy: boolean,
@@ -70,9 +70,8 @@
 	const told = $derived(revisions.filter((r) => !seen.includes(reviewOf(r))));
 	let open = $state(true);
 	// whether the person brought the stack up (the pill): it rises by itself only from current data (`opensOn`), and
-	// offline only when asked, saying it acts on data as of then
+	// whenever asked
 	let asked = $state(false);
-	let confirmed = $state(false);
 	const rises = $derived(opensOn(fresh, asked));
 	// an AIP that wasn't there before opens the stack again
 	let known = new Set();
@@ -101,7 +100,7 @@
 
 	/** Answer the top card with `verdict`: one review over every part. @param {import('./hitl.js').Verdict} verdict */
 	async function answer(verdict) {
-		if (!top || busy || !mayAct(fresh, confirmed)) return;
+		if (!top || busy) return;
 		if (verdict === 'revise' && !revising) return void (revising = true);
 		if (verdict === 'revise' && !words.trim()) return;
 		const what = { accepted: 'Accepting', declined: 'Declining', revise: 'Asking for a revision of' };
@@ -191,16 +190,16 @@
 				</p>
 
 				<Fresh {fresh} />
-				<ActGuard {fresh} bind:confirmed />
+				<AsOf {fresh} />
 				{#if revising}
 					<textarea bind:value={words} rows="3" placeholder="What should {nameOf(from)} change?"></textarea>
 				{/if}
 				<div class="answers">
-					<button class="btn" disabled={busy || !mayAct(fresh, confirmed)} onclick={() => answer('declined')}><Icon name="close" size={14} />Decline</button>
-					<button class="btn" disabled={busy || !mayAct(fresh, confirmed) || (revising && !words.trim())} onclick={() => answer('revise')}>
+					<button class="btn" disabled={busy} onclick={() => answer('declined')}><Icon name="close" size={14} />Decline</button>
+					<button class="btn" disabled={busy || (revising && !words.trim())} onclick={() => answer('revise')}>
 						<Icon name="proposal" size={14} />{revising ? 'Send' : 'Revise'}
 					</button>
-					<button class="btn primary" disabled={busy || !mayAct(fresh, confirmed)} onclick={() => answer('accepted')}><Icon name="check" size={14} />Accept</button>
+					<button class="btn primary" disabled={busy} onclick={() => answer('accepted')}><Icon name="check" size={14} />Accept</button>
 				</div>
 				<button class="later link" onclick={() => (later = [...later, ...waiting.map(keyOf)])}>Later</button>
 			</article>

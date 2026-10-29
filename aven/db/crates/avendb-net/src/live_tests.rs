@@ -194,7 +194,6 @@ async fn a_live_hint_does_not_authorize_a_private_entry() {
             bob.id(),
             Scope::Logs([LogId::Entry(secret)].into()),
             false,
-            None,
             Some(SignerId::from_u64(999)),
             None,
             None,

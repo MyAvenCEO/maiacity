@@ -642,7 +642,7 @@ mod tests {
         loop {
             // Hold every ordinary history pull, including the live lane. Checkpoint transport
             // has its own bounded page admission and must independently establish first view.
-            let mut permit = Box::pin(phone.shared.pulls.enter(false, None));
+            let mut permit = Box::pin(phone.shared.pulls.enter(false));
             let Some(permit) = future::poll_once(&mut permit).await else {
                 break;
             };
