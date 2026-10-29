@@ -107,7 +107,12 @@ async fn main() -> Result<(), Error> {
         Router::builder(endpoint.clone()).spawn()
     };
 
-    tokio::signal::ctrl_c().await?;
+    // `docker stop` sends SIGTERM, a terminal SIGINT: either way the timeline hears that this peer stopped
+    let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = term.recv() => {}
+    }
     note("stopped", json!({}));
     router.shutdown().await?;
     Ok(())
