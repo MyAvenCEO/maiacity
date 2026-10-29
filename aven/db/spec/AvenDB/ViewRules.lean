@@ -30,8 +30,8 @@ namespace AvenDB.ViewRules
 
 open Syncing
 
-/-- The number of the replay rules. -/
-def viewRules : Nat := 1
+/-- The number of the replay rules: 2 since a share seals its selector key to its readers' seeds (Goal 9 row 9). -/
+def viewRules : Nat := 2
 
 /-- A view as a device seals it: the rules it was worked out under, the ids of the edits it is of, in the order the
     device took them, what it knows of them and the edits that stand. -/
