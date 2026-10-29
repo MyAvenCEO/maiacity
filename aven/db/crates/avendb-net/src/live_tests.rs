@@ -373,6 +373,47 @@ async fn an_active_type_query_discovers_existing_entries_without_unrelated_histo
     assert!(useful, "an authenticated type-only active query must discover its existing entry before background admission is released");
 }
 
+/// Freshness with no clock (A4): a peer that told what it holds and stalls, its connection then closing, counts on by
+/// what it told, reconnecting, as long as this device lacks it: the logs left never fall to none while nothing came
+/// (fresh7: lacked 0, behind 0 from about 90 s with 9.8k of 52k edits in).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_stalled_peer_that_drops_its_connection_still_counts_what_it_holds() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let phone_lab = w.lab.split(receiver, &[], [131; 32]);
+    for i in 0..4 {
+        w.lab.create(sender, coop, coop, "doc", &[], document(&format!("Held back {i}"), "body", sender)).unwrap();
+    }
+    let mac = Node::spawn(w.lab.split(sender, &[], [132; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(phone_lab, receiver, Options::local()).await.unwrap();
+    // every pull held back: the phone hears what the Mac holds, and takes none of it
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    let mut live = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(true, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        live.push(page.unwrap());
+    }
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.shared.connection(mac.id()).await.unwrap();
+    wait_for(async || phone.synced().await["behind"].as_u64().is_some_and(|b| b > 0)).await;
+    let before = phone.synced().await;
+    mac.shutdown().await.unwrap();
+    wait_for(async || phone.synced().await["reconnecting"].as_u64() == Some(1)).await;
+    let after = phone.synced().await;
+    drop((stalled, live));
+    phone.shutdown().await.unwrap();
+    assert_eq!(after["peers"], 1, "{after}");
+    assert_eq!(after["behind"], before["behind"], "what it lacks of the Mac counts on: {before} then {after}");
+}
+
 /// Coverage.lean `behind_is_partial` and `arrived_is_complete`, on a node: while a peer has announced logs this
 /// device lacks, a query of their vault answers partial with those logs; once they arrive, complete. The iPhone's case.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
