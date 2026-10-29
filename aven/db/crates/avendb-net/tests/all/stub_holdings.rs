@@ -52,3 +52,33 @@ async fn a_log_whose_head_is_a_box_held_back_is_reported_by_its_heads_and_ends_l
     mac.shutdown().await.expect("it stops");
     lazy.shutdown().await.expect("it stops");
 }
+
+/// After its first sync held boxes back, the node's own loops bring their bodies, no caller asking again: no log stays
+/// lacked by a box it held back (fresh browser 2026-10-29, 2,517 logs lacked once its stubs stopped counting).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_bodies_of_boxes_held_back_come_by_themselves() {
+    let mut w = world();
+    let _h = handbook(&mut w);
+    let ipad = w.lab.device_of(w.passkey_a, "Alice's iPad");
+    let share = Action::Share(Sharing::Device { vault: w.alice, device: ipad, seal_to: None });
+    w.lab.submit(w.mac_a, &[w.passkey_a, ipad], share).expect("Alice adds an iPad");
+    w.lab.set_online(ipad, false);
+    w.lab.sync_all(7);
+    w.lab.set_online(ipad, true);
+    w.lab.set_lazy_boxes(ipad, true);
+    let mac_d = w.mac_a;
+    let mac = Node::spawn(w.lab.split(mac_d, &[w.passkey_a], [1; 32]), mac_d, Options::local()).await.expect("Alice's Mac");
+    let lazy = Node::spawn(w.lab.split(ipad, &[], [2; 32]), ipad, Options::local()).await.expect("Alice's iPad");
+    lazy.know(mac.addr());
+    mac.know(lazy.addr());
+    let start = std::time::Instant::now();
+    loop {
+        let synced = lazy.synced().await;
+        let stubs = lazy.read(|lab: &Lab, me: SignerId| (lab.stubs_taken(me), lab.stubs(me).len(), lab.lazy_boxes(me))).await;
+        if stubs.0 > 0 && synced["behind"] == 0 && stubs.1 == 0 { break; }
+        assert!(start.elapsed() < std::time::Duration::from_secs(40), "bodies never came: {synced}");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    mac.shutdown().await.expect("it stops");
+    lazy.shutdown().await.expect("it stops");
+}

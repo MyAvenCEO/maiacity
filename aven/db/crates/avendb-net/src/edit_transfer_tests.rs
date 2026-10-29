@@ -328,7 +328,7 @@ async fn sparse_payloads_are_followed_by_reconstructed_legacy_reconciliation() {
     phone.know(mac.addr());
     let peer = phone.shared.connection(mac.id()).await.unwrap();
     let logs = [LogId::Entry(entry)].into();
-    let admission = phone.shared.pulls.enter(false, None).await.unwrap();
+    let admission = phone.shared.pulls.enter(false).await.unwrap();
     let serving_peer = mac.shared.live(phone.id()).expect("authenticated server peer");
     let request = Request::Begin { asking: asking(entry), known: None }.encode().unwrap();
     handle(&mac.shared, &serving_peer, &request, mac.shared.edit_transfer.serving().unwrap()).await.expect("sparse direct BEGIN");
@@ -361,7 +361,7 @@ async fn sparse_payloads_are_followed_by_reconstructed_legacy_reconciliation() {
         .unwrap();
     let new = phone
         .shared
-        .pull(mac.id(), crate::Scope::Logs(logs), true, None)
+        .pull(mac.id(), crate::Scope::Logs(logs), true)
         .await
         .unwrap();
     assert!(new >= 1);
@@ -496,7 +496,7 @@ async fn actual_legacy_peer_refusal_reconstructs_original_request_and_is_remembe
     assert!(
         phone
             .shared
-            .pull(endpoint, crate::Scope::Logs(logs), true, None)
+            .pull(endpoint, crate::Scope::Logs(logs), true)
             .await
             .unwrap()
             > 0
@@ -510,7 +510,6 @@ async fn actual_legacy_peer_refusal_reconstructs_original_request_and_is_remembe
             endpoint,
             crate::Scope::Logs([LogId::Entry(entry)].into()),
             true,
-            None,
         )
         .await
         .unwrap();
@@ -629,13 +628,13 @@ async fn accepted_sparse_page_then_reset_counts_with_legacy_completion() {
         }
     });
     let scope = crate::Scope::Logs([LogId::Entry(entry)].into());
-    let new = phone.shared.pull(raw.id(), scope, true, None).await.unwrap();
+    let new = phone.shared.pull(raw.id(), scope, true).await.unwrap();
     assert_eq!(fetches.load(Ordering::Relaxed), 2, "one real sparse page succeeds before a forced reset");
     assert_eq!(legacy_edits.load(Ordering::Relaxed), 1, "legacy completes the other edit");
     assert_eq!(new, 2, "a failed optional attempt must retain its already accepted edit count");
     assert!(phone.read(move |lab, me| [first, second].iter().all(|id| lab.signed_edit(me, *id).is_some())).await);
     let before = legacy_pages.load(Ordering::Relaxed);
-    let again = phone.shared.pull(raw.id(), crate::Scope::Logs([LogId::Entry(entry)].into()), true, None).await.unwrap();
+    let again = phone.shared.pull(raw.id(), crate::Scope::Logs([LogId::Entry(entry)].into()), true).await.unwrap();
     assert_eq!(again, 0, "completed edits are not counted twice");
     assert!(legacy_pages.load(Ordering::Relaxed) > before, "legacy still runs when sparse reconciliation finds nothing missing");
     phone.shutdown().await.unwrap();
@@ -674,7 +673,7 @@ async fn cancelled_range_signature_check_retains_admission_and_count_until_worke
         w.lab.split(me, &[], [225; 32]), me,
         Options { lazy: true, ..Options::local() },
     ).await.unwrap());
-    let admission = node.shared.pulls.enter(true, None).await.unwrap();
+    let admission = node.shared.pulls.enter(true).await.unwrap();
     let admission_alive = Arc::downgrade(&admission);
     let permit = node.shared.pulls.page(false, true).await.unwrap();
     let (accepted, mut done) = Accepted::channel();

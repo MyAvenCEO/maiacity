@@ -6,11 +6,11 @@
 //! logs a reachable peer announced that the device lacks and that may match (`logs`, which the node adds, `with_logs`);
 //! `denied` where the device has no standing. No clock: the same state answers the same.
 //!
-//! Freshness (`spec/AvenDB/Freshness.lean`) is the one value a page shows and acts by, beside every read: `current`
+//! Freshness (`spec/AvenDB/Freshness.lean`) is the one value a page shows beside every read, never a gate: `current`
 //! (a live peer, every live peer heard, the read complete), `offline` as of the stamp of the device's last current
 //! read (no live peer), or `behind` (a live peer holds newer data for the read's scope, candidates wait, or a live peer
-//! has not told what it holds yet). An action goes only on `current`, waits while `behind`, and on `offline` asks the
-//! person to confirm it acts on data as of then (`Act`).
+//! has not told what it holds yet). An action goes on what the device holds whatever it says (local first); only a
+//! sheet that would pop up by itself waits for `current` (`Freshness::opens`).
 
 use serde_json::{json, Value};
 
@@ -175,14 +175,6 @@ pub enum Freshness {
     Behind { logs: usize, waits: usize, unheard: usize },
 }
 
-/// `Freshness.Act`: what an action (approve, accept, decline, delete) does with a read's freshness.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Act {
-    Go,
-    Wait,
-    Confirm { as_of: u64 },
-}
-
 /// What a read's coverage (its JSON, as `Coverage::to_json` writes it) still lacks (`Freshness.pending`): the
 /// candidates that wait (`known - have`) and the announced logs it lacks that may match. A read that names no coverage
 /// counts as complete for what the device holds, so it lacks only the logs the node counted for its scope
@@ -205,22 +197,10 @@ impl Freshness {
         Freshness::Behind { logs, waits, unheard: heard.unheard }
     }
 
-    /// `Freshness.act`.
-    pub fn act(self) -> Act {
-        match self {
-            Freshness::Current => Act::Go,
-            Freshness::Behind { .. } => Act::Wait,
-            Freshness::Offline { as_of } => Act::Confirm { as_of },
-        }
-    }
-
-    /// `Freshness.opens`: whether an action's sheet opens, by itself (`asked` false) or because the person asked.
+    /// `Freshness.opens`: whether an action's sheet opens, by itself (`asked` false) or because the person asked:
+    /// whenever asked, and by itself only on current data.
     pub fn opens(self, asked: bool) -> bool {
-        match self.act() {
-            Act::Go => true,
-            Act::Wait => false,
-            Act::Confirm { .. } => asked,
-        }
+        asked || self == Freshness::Current
     }
 
     pub fn to_json(self) -> Value {
@@ -229,16 +209,6 @@ impl Freshness {
             Freshness::Offline { as_of } => json!({ "state": "offline", "asOf": as_of }),
             Freshness::Behind { logs, waits, unheard } =>
                 json!({ "state": "behind", "logs": logs, "waits": waits, "unheard": unheard }),
-        }
-    }
-}
-
-impl Act {
-    pub fn name(self) -> &'static str {
-        match self {
-            Act::Go => "go",
-            Act::Wait => "wait",
-            Act::Confirm { .. } => "confirm",
         }
     }
 }

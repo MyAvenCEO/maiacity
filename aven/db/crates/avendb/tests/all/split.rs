@@ -118,6 +118,22 @@ fn announcements_tell_each_peer_of_its_own_logs_alone() {
     assert!(!server.differs(w.server, &again), "once it has asked, the digests agree");
 }
 
+/// The key gate answers by where its keys are named and what each asker is answered, kept between asks (2.3-2.5 s an
+/// ask on the always-on peer before, 2026-10-29), and answers anew as soon as the view it was worked out by changes: a
+/// device removed may fetch none of the keys it fetched a moment before.
+#[test]
+fn the_key_gate_answers_anew_once_the_view_changes() {
+    let (w, _coop, mut mac, _server, _bob) = split();
+    let held = mac.blob_ids(w.mac_a);
+    let phone_may: Vec<_> = held.iter().copied().filter(|b| mac.may_fetch(w.mac_a, w.phone_a, *b, &[])).collect();
+    assert!(!phone_may.is_empty(), "Alice's iPhone may fetch her vault's keys");
+    assert!(phone_may.iter().all(|b| mac.may_fetch(w.mac_a, w.phone_a, *b, &[])), "asked again, the same");
+    let remove = Action::Revoke(Revoking::Device { vault: w.alice, device: w.phone_a, keep: vec![] });
+    mac.submit(w.mac_a, &[w.passkey_a], remove).expect("Alice's passkey removes the iPhone");
+    assert!(phone_may.iter().all(|b| !mac.may_fetch(w.mac_a, w.phone_a, *b, &[])), "removed, it may fetch none of them");
+    assert!(mac.blob_ids(w.mac_a).iter().all(|b| !mac.may_fetch(w.mac_a, w.phone_a, *b, &[])), "nor the new seeds' keys");
+}
+
 #[test]
 fn mceliece_keys_go_only_within_reach() {
     let (w, coop, mut mac, mut server, mut bob) = split();

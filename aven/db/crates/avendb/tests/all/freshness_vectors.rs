@@ -34,7 +34,6 @@ fn every_read_is_stamped_as_the_model_says() {
         let (mut read, logs) = answer(&case["coverage"]);
         let fresh = add_freshness(&mut read, heard, logs).expect("a read answer is stamped");
         assert_eq!(read["fresh"], case["fresh"], "{name}: freshness");
-        assert_eq!(fresh.act().name(), case["act"].as_str().unwrap(), "{name}: action");
         assert_eq!(fresh.opens(false), case["pops"].as_bool().unwrap(), "{name}: sheet by itself");
         assert_eq!(fresh.opens(true), case["asked"].as_bool().unwrap(), "{name}: sheet when asked");
     }
@@ -46,7 +45,8 @@ fn a_read_without_coverage_is_behind_by_its_scope() {
     let heard = Heard { live: 3, unheard: 0, as_of: 0 };
     let mut aips = json!({ "ok": [{ "number": 29, "stage": "proposed" }] });
     assert_eq!(add_freshness(&mut aips, heard, 2778), Some(Freshness::Behind { logs: 2778, waits: 0, unheard: 0 }));
-    assert!(!Freshness::Behind { logs: 2778, waits: 0, unheard: 0 }.opens(true));
+    assert!(!Freshness::Behind { logs: 2778, waits: 0, unheard: 0 }.opens(false));
+    assert!(Freshness::Behind { logs: 2778, waits: 0, unheard: 0 }.opens(true), "asked, it opens, saying how current");
     let mut done = json!({ "ok": [] });
     assert_eq!(add_freshness(&mut done, heard, 0), Some(Freshness::Current));
     let mut refused = json!({ "refused": "bad_op", "why": "x" });
