@@ -1,6 +1,7 @@
 # avenSANDBOX's image: the tools, never our code (aven/DB2/SANDBOX.md, "Tools in the image, our code outside it").
 # Every version is pinned at its newest stable release. The image's tag is the first 16 hex digits of this file's
-# SHA-256 (.github/workflows/avensandbox-image.yml, aven/DB2/sandbox/up.mjs), so a change here is a new box.
+# SHA-256 (.github/workflows/avensandbox-image.yml, aven/DB2/sandbox/up.mjs), so a change here is a new box. Only
+# GitHub builds it, on every push that changes this file; `bun run up` only pulls it.
 FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 ARG RUST_VERSION=1.99.1
@@ -8,14 +9,6 @@ ARG WASM_BINDGEN_VERSION=0.2.129
 ARG BUN_VERSION=1.4.4
 ARG ELAN_VERSION=v4.2.4
 ARG LEAN_VERSION=v4.35.0
-
-# A proxy's certificate authority, present only when a Claude cloud session builds the box itself (up.mjs puts it in
-# extra-ca/ for that build and removes it after); GitHub's builds have none.
-COPY extra-ca/ /usr/local/share/ca-certificates/extra/
-RUN update-ca-certificates
-ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
-    NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
-    CARGO_HTTP_CAINFO=/etc/ssl/certs/ca-certificates.crt
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates xz-utils \
@@ -36,10 +29,14 @@ RUN cargo install wasm-bindgen-cli --version "${WASM_BINDGEN_VERSION}" --locked 
 
 RUN npm install -g "bun@${BUN_VERSION}"
 
+# Lean's toolchain itself, not only elan: elan fetches a toolchain on first use, from GitHub's release storage,
+# which a cloud session's network doesn't reach.
 RUN arch=$(uname -m) \
     && curl -fsSL "https://github.com/leanprover/elan/releases/download/${ELAN_VERSION}/elan-${arch}-unknown-linux-gnu.tar.gz" \
         | tar -xz -C /tmp \
     && /tmp/elan-init -y --no-modify-path --default-toolchain "leanprover/lean4:${LEAN_VERSION}" \
-    && rm /tmp/elan-init
+    && rm /tmp/elan-init \
+    && elan toolchain install "leanprover/lean4:${LEAN_VERSION}" \
+    && lean --version
 
 WORKDIR /work

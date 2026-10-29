@@ -1,0 +1,193 @@
+<script>
+	// avenOS's dashboard: the vault you act as, a grid of its apps and, on a Peer-Light's origin, this device. Until the
+	// Peer-Light itself (peer/light) runs there, the device is what the box gives it: the vault it serves, its key and
+	// its own OPFS, which keeps a mark across reloads.
+	import Avatar from './Avatar.svelte';
+	import { actsFor, governs, key, peersOf, vaultName } from './cast.js';
+
+	let { cast, device, account, apps } = $props();
+
+	let mark = $state('');
+	let storage = $state('reading OPFS');
+
+	async function keepMark() {
+		try {
+			const root = await navigator.storage.getDirectory();
+			const handle = await root.getFileHandle('mark', { create: true });
+			let text = await (await handle.getFile()).text();
+			if (!text) {
+				text = crypto.randomUUID().slice(0, 8);
+				const writable = await handle.createWritable();
+				await writable.write(text);
+				await writable.close();
+			}
+			mark = text;
+			storage = 'OPFS';
+		} catch (error) {
+			storage = `no OPFS (${error.name})`;
+		}
+	}
+
+	$effect(() => {
+		if (device) keepMark();
+	});
+
+	const count = (n, one) => `${n} ${one}${n === 1 ? '' : 's'}`;
+</script>
+
+<main data-view="dashboard" data-account={account}>
+	{#if account}
+		<section class="account">
+			<Avatar {cast} id={account} size={40} />
+			<div>
+				<h1>{vaultName(cast, account)}</h1>
+				<small>
+					{cast.vaults[account].kind} · governs {count(governs(cast, account).length, 'vault')} ·
+					{count(peersOf(cast, account).length, 'peer')}
+				</small>
+			</div>
+		</section>
+	{:else}
+		<p class="soon">avenOS is coming soon.</p>
+	{/if}
+
+	<section class="apps" aria-label="Apps">
+		{#each apps as app (app.id)}
+			<a class="app" class:off={!account} href={account ? `#/${account}/${app.id}` : undefined}>
+				<span class="glyph" aria-hidden="true">
+					<svg viewBox="0 0 24 24" width="22" height="22"
+						><rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="8" rx="2" /><rect
+							x="3"
+							y="13"
+							width="8"
+							height="8"
+							rx="2"
+						/><rect x="13" y="13" width="8" height="8" rx="2" /></svg
+					>
+				</span>
+				<strong>{app.name}</strong>
+				<small>{account ? app.what : 'needs a vault: runs in avenSANDBOX for now'}</small>
+			</a>
+		{/each}
+	</section>
+
+	{#if device}
+		<section class="device" aria-label="This device">
+			<h2>This device</h2>
+			<dl>
+				<dt>device</dt>
+				<dd data-testid="device">{cast.peers[device].name}</dd>
+				<dt>serves</dt>
+				<dd data-testid="serves">{vaultName(cast, actsFor(cast, device))}</dd>
+				<dt>key</dt>
+				<dd><code>{key(cast, device).slice(0, 8)}…</code></dd>
+				<dt>stores in</dt>
+				<dd data-testid="mark">{storage}{mark ? ` · mark ${mark}` : ''}</dd>
+			</dl>
+			<p class="status"><span class="dot"></span> page live · the Peer-Light comes next</p>
+		</section>
+	{/if}
+</main>
+
+<style>
+	main {
+		display: grid;
+		gap: 20px;
+		padding: 20px 16px;
+	}
+
+	.soon {
+		margin: 0;
+		color: var(--muted);
+	}
+
+	.account {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	}
+
+	h1 {
+		margin: 0;
+		font-size: 20px;
+		line-height: 1.2;
+	}
+
+	.apps {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+		gap: 12px;
+	}
+
+	.app {
+		display: grid;
+		gap: 4px;
+		padding: 14px;
+		color: var(--text);
+		text-decoration: none;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: 10px;
+	}
+
+	.app:hover:not(.off) {
+		border-color: var(--muted);
+	}
+
+	.app.off {
+		opacity: 0.55;
+		cursor: default;
+	}
+
+	.glyph svg {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.6;
+	}
+
+	small,
+	dt,
+	.status {
+		color: var(--muted);
+		font-size: 13px;
+	}
+
+	.device {
+		padding: 14px;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: 10px;
+	}
+
+	h2 {
+		margin: 0 0 8px;
+		font-size: 15px;
+	}
+
+	dl {
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		gap: 2px 14px;
+		margin: 0;
+		font-size: 14px;
+	}
+
+	dd {
+		margin: 0;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+
+	.status {
+		margin: 10px 0 0;
+	}
+
+	.dot {
+		display: inline-block;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--pending);
+		vertical-align: 1px;
+	}
+</style>

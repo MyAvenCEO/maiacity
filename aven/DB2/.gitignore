@@ -1,7 +1,8 @@
-# avenSANDBOX's runs (screenshots, reports), the proxy certificate a cloud build copies in, and installs made outside
-# the box
+# avenSANDBOX's runs (screenshots, reports), the page's builds and deliverables, installs made outside the box, and
+# Rust's and Lean's build folders
 runs/
 dist/
 deliverables/
-sandbox/box/extra-ca/*.crt
 node_modules/
+target/
+.lake/

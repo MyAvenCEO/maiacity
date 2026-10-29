@@ -1,22 +1,11 @@
-// One page, three places: `localhost` is the sandbox's control room, a Peer-Light's origin from the cast runs avenOS
-// as that peer, and any other host (where the released avenOS is served) shows avenOS alone.
+// avenOS in the browser. A Peer-Light's origin from the cast runs avenOS as that device; any other host is the box's own
+// view (localhost) or a visitor's (App.svelte).
 import { mount } from 'svelte';
 import cast from '../../sandbox/cast.json';
-import ControlRoom from './ControlRoom.svelte';
-import AvenOS from './AvenOS.svelte';
+import App from './App.svelte';
 import './style.css';
 
-const target = document.getElementById('app');
-const host = location.hostname;
-const light = Object.entries(cast.peers).find(([, peer]) => peer.origin === host);
+const device = Object.keys(cast.peers).find((id) => cast.peers[id].origin === location.hostname);
 
-if (light) {
-	const [id, peer] = light;
-	document.title = 'avenOS · coming soon';
-	mount(AvenOS, { target, props: { id, peer, cast } });
-} else if (host === 'localhost' || host === '127.0.0.1') {
-	mount(ControlRoom, { target, props: { cast } });
-} else {
-	document.title = 'avenOS · coming soon';
-	mount(AvenOS, { target, props: {} });
-}
+document.title = device ? `avenOS · ${cast.peers[device].name}` : 'avenOS';
+mount(App, { target: document.getElementById('app'), props: { cast, device } });
