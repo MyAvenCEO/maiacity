@@ -1,0 +1,37 @@
+{
+  "about": "avenSANDBOX's cast (aven/DB2/SANDBOX.md). Every signer is a test key: its Ed25519 seed is sha256(\"avenSANDBOX test signer: <peer id>\"), public on purpose and valid only inside the box. The public keys below follow from that rule.",
+  "vaults": {
+    "alice": { "name": "Alice's vault", "owners": ["aven-peer", "alice-peer", "alice-peer-light"] },
+    "bob": { "name": "Bob's vault", "owners": ["bob-peer-light"] }
+  },
+  "peers": {
+    "aven-peer": {
+      "name": "Aven Peer",
+      "kind": "peer",
+      "relay": true,
+      "store": "S3",
+      "signer": "e8200646a82490e11e2acbc3abb16c4a0b67f14a10d4ab2e595ccbe2b5988b43"
+    },
+    "alice-peer": {
+      "name": "Alice Peer",
+      "kind": "peer",
+      "relay": false,
+      "store": "a folder",
+      "signer": "a69305c53e67189c1a973f1fb90a2ee4152bc5cd53fec0589eb3e78bb17a36b3"
+    },
+    "alice-peer-light": {
+      "name": "Alice Peer-Light",
+      "kind": "peer-light",
+      "origin": "alice.localhost",
+      "store": "OPFS",
+      "signer": "9f78814b6ea9f2bb99fbbf738de54eb7dbf257ec6121c43c5d5c24d6b004fd55"
+    },
+    "bob-peer-light": {
+      "name": "Bob's Peer-Light",
+      "kind": "peer-light",
+      "origin": "bob.localhost",
+      "store": "OPFS",
+      "signer": "ced7ea594cbc184b49583508840a85e8f6e63ce9c48a8c618a42e39e2d2d74ab"
+    }
+  }
+}
