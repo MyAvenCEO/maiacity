@@ -120,6 +120,39 @@ const go = (page, href) =>
 	}, href);
 const open = (page) => until(async () => !(await page.$('.gate')) && !!(await page.$('nav.pill')), 2);
 
+/** Each page's profile, by which its samples and reports are paired. */
+const device = new WeakMap();
+/** When a sample of `page` was taken and on which profile, for its report beside it (`beside`). */
+const moment = (page) => ({ at: Date.now(), device: device.get(page) ?? null });
+
+/** Pairs each sample of `samples` that has a `moment` with the report its device sent nearest to it: the report's index,
+ *  how far apart they were (ms, + after the sample), and that report's sync counts, so a pill or a view and the counts
+ *  it is read with come from one moment, and how near that moment is is said. A page sends a report only every few
+ *  minutes and ~10 s after a view opens (aven/db/page/diagnostics-send.js), so the gap can be large: it is never hidden. */
+function beside(samples) {
+	for (const x of samples) {
+		if (!x?.at) continue;
+		let near = null;
+		log.reports.forEach((r, i) => {
+			if (r.device === x.device && (!near || Math.abs(r.at - x.at) < Math.abs(near.gapMs))) near = { i, gapMs: r.at - x.at };
+		});
+		if (!near) {
+			x.report = null;
+			continue;
+		}
+		const sync = log.reports[near.i].body?.report?.diagnostics?.sync;
+		x.report = {
+			...near,
+			sync: sync?.status === 'unavailable' || !sync
+				? null
+				: {
+						peers: sync.peers, reconnecting: sync.reconnecting, logs: sync.logs, behind: sync.behind, pulling: sync.pulling,
+						lacked: (sync.lacked ?? []).map((p) => ({ device: p.device, lacks: p.lacks, byStub: p.byStub }))
+					}
+		};
+	}
+}
+
 async function launch(dir = profile) {
 	const pw = await import('playwright');
 	const key = readKey();
@@ -148,14 +181,15 @@ async function launch(dir = profile) {
 			if (signup) sessionStorage.setItem('maia:signup', signup);
 		}, [process.env.RELAY, process.env.SERVER, process.env.SIGNUP ?? '']);
 	const page = context.pages()[0] ?? (await context.newPage());
+	device.set(page, basename(dir));
 	page.on('pageerror', (e) => log.errors.push(e.message));
 	// the diagnostics report the page sends the peer, as the phone does: kept whole
 	page.on('request', (r) => {
 		if (r.method() === 'POST' && r.url().includes('/feed/diagnostics')) {
 			try {
-				log.reports.push({ at: Date.now(), body: JSON.parse(r.postData() ?? 'null') });
+				log.reports.push({ at: Date.now(), device: basename(dir), body: JSON.parse(r.postData() ?? 'null') });
 			} catch {
-				log.reports.push({ at: Date.now(), raw: (r.postData() ?? '').slice(0, 200000) });
+				log.reports.push({ at: Date.now(), device: basename(dir), raw: (r.postData() ?? '').slice(0, 200000) });
 			}
 		}
 	});
@@ -274,7 +308,7 @@ async function run() {
 		await page.click('.status .pill').catch(() => {});
 		for (let i = 0; Date.now() - t0 < watchSync * 1000; i++) {
 			const pill = await words(page, '.status');
-			log.sync.push({ s: t(t0), pill });
+			log.sync.push({ s: t(t0), pill, ...moment(page) });
 			if (i % 10 === 0) await shot(page, `sync-${Math.round(t(t0))}s`);
 			// the Mac's memory pressure beside it (one heavy job at a time on the 8 GB Mac)
 			if (i % 10 === 0 && mac)
@@ -354,6 +388,7 @@ async function run() {
 		errors: !log.errors.length
 	};
 	log.pass = pass;
+	beside([...log.sync, ...opened]);
 	writeFileSync(join(out, 'run.json'), JSON.stringify(log, null, 1));
 	const line =
 		`${stamp} ${engine} load ${s.load}s gate ${s.gate}s unlock ${s.unlock}s (${s.ceremonies ?? 0} ceremony) ` +
@@ -467,7 +502,7 @@ async function views(page, when) {
 				await go(page, step.go);
 				done = await until(painted, left());
 			}
-			seen.push({ app: w.app, level: step.level, paint: done ? Number(((Date.now() - t0) / 1000).toFixed(2)) : null, pill: await pill(page) });
+			seen.push({ app: w.app, level: step.level, paint: done ? Number(((Date.now() - t0) / 1000).toFixed(2)) : null, pill: await pill(page), ...moment(page) });
 			await shot(page, `view-${when}-${w.app}-${step.level.replace(/\W/g, '')}`);
 			if (!done) break;
 		}
@@ -560,6 +595,7 @@ const catching = (text) => /behind|pulling|catching|syncing/i.test(text);
 /** Sends `text` from `from` and times it until `to` shows it, its own copy no longer pending: seconds, or null. */
 async function message(from, to, text, side) {
 	const toPill = await pill(to);
+	const toAt = moment(to);
 	await from.fill('.chat-page textarea', text);
 	const t0 = Date.now();
 	await from.click('.chat-page button.send');
@@ -569,7 +605,7 @@ async function message(from, to, text, side) {
 	);
 	const seconds = shown ? Number(((Date.now() - t0) / 1000).toFixed(2)) : null;
 	await shot(to, `roundtrip-${side}`);
-	return { seconds, receiverPill: toPill, receiverCatchingUp: catching(toPill) };
+	return { seconds, receiverPill: toPill, receiverCatchingUp: catching(toPill), ...toAt };
 }
 
 async function roundtrip(name) {
@@ -610,6 +646,9 @@ async function roundtrip(name) {
 		gate.freshNamed = await nameDevice(fresh.page, `test-device roundtrip ${stamp.slice(5, 16)}`);
 	} catch (e) {
 		log.errors.push(`roundtrip: ${e instanceof Error ? e.message : e}`);
+		// what each device's pill said as it failed, with its report beside it (a "Synced" with no room is read against its counts)
+		gate.failed = [{ side: 'home', pill: await pill(home.page).catch(() => null), ...moment(home.page) }];
+		if (fresh) gate.failed.push({ side: 'fresh', pill: await pill(fresh.page).catch(() => null), ...moment(fresh.page) });
 		await shot((fresh ?? home).page, 'roundtrip-failed');
 	} finally {
 		await fresh?.context.close();
@@ -625,6 +664,7 @@ async function roundtrip(name) {
 	gate.stats = { to: { p50: pct(gate.to, 50), p95: pct(gate.to, 95) }, from: { p50: pct(gate.from, 50), p95: pct(gate.from, 95) } };
 	// the gate holds whenever both are online; whether the fresh one was still catching up is said, not gated
 	const pass = (log.pass = { [`message<${GATE}s`]: under(GATE), errors: !log.errors.length });
+	beside([...ways, ...(gate.failed ?? [])]);
 	log.target = { [`message<${TARGETS.message}s`]: under(TARGETS.message) };
 	writeFileSync(join(out, 'run.json'), JSON.stringify(log, null, 1));
 	const line =
