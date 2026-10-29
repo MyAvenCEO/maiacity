@@ -837,12 +837,9 @@ async fn a_read_is_behind_only_on_the_logs_it_may_show() {
             && phone.shared.differ(sender).await.is_empty()
     }).await;
 
-    let mut stalled = Vec::new();
-    loop {
-        let mut page = Box::pin(phone.shared.pulls.page(false, true));
-        let Some(page) = future::poll_once(&mut page).await else { break };
-        stalled.push(page.unwrap());
-    }
+    // every background page slot held, the one a pull from the first sync still uses too, once it lets it go: held
+    // only while free, a pull still under way kept a slot and carried the docs' edits past the hold
+    let stalled = phone.shared.pulls.hold_background_pages().await;
     let edited = docs.clone();
     mac.act(move |lab, me| for d in &edited {
         lab.edit(me, coop, *d, |item| item.set_text(2, "newer")).unwrap();
