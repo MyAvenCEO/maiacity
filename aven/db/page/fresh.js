@@ -2,7 +2,8 @@
 /**
  * What a page says of a read's freshness (aven/db/spec/AvenDB/Freshness.lean, maia/content/game/code/sources/coverage.js
  * `freshnessOf`), and what an action (approve, accept, decline, delete) says beside it: one wording for every page,
- * query, schema and type. Shown by ./Fresh.svelte (the badge) and ./AsOf.svelte (an action's line). Never a gate: an
+ * query, schema and type. Shown by the app's one sync pill (maia/site/lib/app/StatusPill.svelte) and ./AsOf.svelte (an
+ * action's line). Never a gate: an
  * action goes on what the device holds (local first).
  */
 import { opensOn, showsFinal } from '../../../maia/content/game/code/sources/coverage.js';
@@ -18,7 +19,7 @@ const at = (ms) => {
 		: d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
-/** The badge's words: nothing while current. @param {ReturnType<import('../../../maia/content/game/code/sources/coverage.js').freshnessOf>} f */
+/** The view's freshness in words, the sync pill's "This view" row: nothing while current. @param {ReturnType<import('../../../maia/content/game/code/sources/coverage.js').freshnessOf>} f */
 export function freshLine(f) {
 	if (f.reading) return f.state === 'offline'
 		? `Offline · reading this view’s entries on this device${f.asOf ? `, as of ${at(f.asOf)}` : ''}`
@@ -28,6 +29,18 @@ export function freshLine(f) {
 	if (f.logs) return `Catching up · ${n(f.logs)} ${f.logs === 1 ? 'log' : 'logs'} left for this view`;
 	if (f.waits) return `Catching up · ${n(f.waits)} still arriving`;
 	return 'Catching up · waiting to hear from a peer';
+}
+
+/** The sync pill's short line for the view on screen (maia/site/lib/app/StatusPill.svelte, the page's one sync UI):
+ * what it still lacks, while it does; nothing while current or offline, which the pill says of the device.
+ * @param {ReturnType<import('../../../maia/content/game/code/sources/coverage.js').freshnessOf> | null} f */
+export function viewPill(f) {
+	if (!f || f.state === 'offline') return '';
+	if (f.reading) return 'Reading this view on this device';
+	if (f.state !== 'behind') return '';
+	if (f.logs) return `This view · ${n(f.logs)} ${f.logs === 1 ? 'log' : 'logs'} left`;
+	if (f.waits) return `This view · ${n(f.waits)} still arriving`;
+	return 'This view · waiting to hear from a peer';
 }
 
 /** What an action says beside its buttons: what it acts on, as of when; nothing on current data. It never waits.

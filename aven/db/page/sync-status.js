@@ -24,11 +24,6 @@ const peer = (p) => ({
  * no movement. @param {From[]} from */
 const pulls = (from) => from.map((p) => p.pulling ? `${p.device}:${p.pulling.stage}:${p.pulling.took}` : '').join('|');
 
-/** A pull is a transfer while it brings pages: its last page, or its start before any came, within `STALL` of `now`.
- * One that runs on and brings nothing, its askings failing or coming back empty, is stalled, not a transfer.
- * @param {From} p @param {number} now */
-export const taking = (p, now) => !!p.pulling && now - Math.max(p.last, p.pulling.since) < STALL;
-
 /** A new view/device starts its own observation window; native cumulative counters may already be large. */
 export const emptySync = () => ({ known: false, peers: 0, reconnecting: 0, logs: 0, behind: 0, pulling: 0, pages: 0, edits: 0, from: [], lacked: [], since: 0, at: 0, paged: 0, base: 0 });
 
@@ -91,9 +86,6 @@ export function peerStatus(sync) {
 	return { active: sync.behind > 0 || sync.pulling > 0, fraction, label, details };
 }
 
-/** How long nothing may move before the pill says what it waits on (ms). */
-export const STALL = 5000;
-
 /** A peer by its name, or its device's first eight hex. @param {From} p */
 const named = (p) => p.name ?? (p.device.slice(0, 8) || 'a peer');
 /** A peer as the pill says what it waits on: by its name, and whether its connection is coming back. @param {From} p */
@@ -103,9 +95,10 @@ const waited = (p) => `${named(p)}${p.reconnecting ? ' (reconnecting)' : ''}`;
  * What the pill says while a sync runs, as of `now` (ms), ticking with it (Samuel 2026-10-28: "with zero visible
  * feedback the syncing UI doesn't reflect what is actually happening in real time"): a log counts only once whole, so
  * on a big vault the logs stand still for minutes while edits come in. So it tells the edits taken since this view
- * watched, from which peer, when the last page came, and, once nothing moved for `STALL`, which peer it waits on and
- * for how long. A pull counts as a transfer only while it brings pages (`taking`), and the askings whose pages never
- * came are counted apart. Null while no sync runs.
+ * watched, from which peer, when the last page came, and, while it is behind with no pull running, which peers it
+ * waits on and for how long. It judges no pull by a timer: a page over a relay takes 10-14 s (Samuel's iPhone,
+ * 2026-10-29: three pulls landing pages read "3 stalled" at 5 s), so each pull says what it does, the edits it took,
+ * when its last page came and its failed askings, as facts. Null while no sync runs.
  * @param {SyncState} sync @param {number} now
  * @returns {null | { line: string, stalled: boolean, who: string, wait: number, last: number, taken: number, moving: number, failed: number, rows: [string, string][] }}
  */
@@ -120,20 +113,19 @@ export function liveSync(sync, now) {
 	const one = on.length > 1 ? `${on.length} peers` : who;
 	const last = Math.max(sync.paged, ...sync.from.map((p) => p.last));
 	const moved = Math.max(sync.since, last);
-	/** since when it waits: a running pull's last page or its start, the latest of them; else the last thing that moved */
-	const from = running.length ? Math.max(...running.map((p) => Math.max(p.last, p.pulling?.since ?? 0))) : moved;
-	const stalled = moved > 0 && now - moved >= STALL;
-	const wait = Math.max(0, now - (stalled ? from : moved));
+	/** behind with no pull running: it waits on the peers it hears, since the last thing that moved */
+	const stalled = running.length === 0 && sync.pulling <= 0;
+	const wait = Math.max(0, now - moved);
 	const taken = Math.max(0, sync.edits - sync.base);
-	const moving = running.filter((p) => taking(p, now)).length;
+	const moving = running.length;
 	const failed = sync.from.reduce((sum, p) => sum + p.failed, 0);
 	const covered = Math.max(0, sync.logs - sync.behind);
 	const line = stalled ? `Waiting on ${one} · ${long(wait)}`
 		: `Syncing${sync.behind > 0 ? ` ${n(covered)}/${n(sync.logs)}` : ''}${taken > 0 ? ` · +${n(taken)} edits` : ''}`;
 	/** @type {[string, string][]} */
-	const rows = running.map((p) => [named(p), [taking(p, now) ? p.pulling?.stage || 'pulling' : 'stalled', `${n(p.pulling?.took ?? 0)} edits`,
+	const rows = running.map((p) => [named(p), [p.pulling?.stage || 'pulling', `${n(p.pulling?.took ?? 0)} edits`,
 		p.last ? `page ${ago(Math.max(0, now - p.last))}` : 'no page yet', ...(p.failed ? [`${n(p.failed)} failed`] : [])].join(' · ')]);
-	if (running.length) rows.unshift(['Transfers', `${n(moving)} taking${running.length > moving ? ` · ${n(running.length - moving)} stalled` : ''}`]);
+	if (running.length) rows.unshift(['Transfers', n(moving)]);
 	if (failed) rows.push(['Failed askings', `${n(failed)} of ${n(sync.from.reduce((sum, p) => sum + p.askings, 0))}`]);
 	rows.push(['Edits taken', taken > 0 ? `${n(sync.edits)} (+${n(taken)} now)` : n(sync.edits)]);
 	rows.push(['Last page', last > 0 ? ago(Math.max(0, now - last)) : 'none yet']);

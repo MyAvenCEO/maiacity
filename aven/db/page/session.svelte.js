@@ -118,6 +118,10 @@ const HEARD = Symbol('heard at');
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 /** how fresh that world is, as the device stamped its read (`freshnessOf`): a page paints it at once, marked behind */
 let worldFresh = $state.raw(freshnessOf(null));
+/** how fresh what the view on screen shows is, as the view says (./Shell.svelte, the AIPs board): the app's one sync
+ *  pill reads it beside the device's sync (maia/site/lib/app/StatusPill.svelte), the one place the page says it;
+ *  null while no view says */
+let viewFresh = $state.raw(/** @type {ReturnType<typeof freshnessOf> | null} */ (null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
 const context = createVaultContext({ world: () => world, read: () => vault, write: (id) => (vault = id) });
@@ -1055,6 +1059,13 @@ export const session = {
 	/** how fresh `world` is (`freshnessOf` of its read): behind while a peer holds more, offline with none */
 	get worldFresh() {
 		return worldFresh;
+	},
+	/** how fresh the view on screen is, as it said (`viewFresh`), or null */
+	get viewFresh() {
+		return viewFresh;
+	},
+	set viewFresh(f) {
+		viewFresh = f;
 	},
 	/** the vault the person looks at: the one they picked in avenDB's nav pill, else their own */
 	get vault() {
