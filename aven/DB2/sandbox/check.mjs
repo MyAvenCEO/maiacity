@@ -1,5 +1,5 @@
 // avenSANDBOX's health check (`bun run up --check`, SANDBOX.md). Runs in the browsers' container: the control room
-// shows every Peer-Light's landing page, each on its own origin with the vault the cast gives it and its own OPFS,
+// shows avenOS on every Peer-Light's origin, each with the vault the cast gives it and its own OPFS,
 // whose mark survives a reload and differs from every other origin's. Writes a screenshot of the control room.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
@@ -33,6 +33,13 @@ const started = Date.now();
 const first = await read();
 const second = await read();
 await page.screenshot({ path: `${out}/control-room.png`, fullPage: true });
+
+// avenOS on its own: as a visitor sees it (any host that is no peer's), and as Alice's Peer-Light
+for (const [name, host] of [['avenos', 'os.localhost'], ['avenos-alice', 'alice.localhost']]) {
+	await page.goto(`http://${host}:5173/`);
+	await page.getByRole('heading', { name: 'avenOS' }).waitFor({ timeout: 20_000 });
+	await page.screenshot({ path: `${out}/${name}.png` });
+}
 await browser.close();
 
 for (const [id, peer] of lights) {

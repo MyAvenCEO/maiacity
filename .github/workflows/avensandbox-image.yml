@@ -1,14 +1,15 @@
-# avenSANDBOX's image (aven/DB2/SANDBOX.md, "The box"): the tools only, never our code. Built when its Dockerfile
-# changes and tagged with the first 16 hex digits of the Dockerfile's SHA-256, so every checkout runs exactly its own
-# box (aven/DB2/sandbox/up.mjs computes the same tag); main's build is also tagged "latest". The package is public, so
-# a cloud session, a Mac and CI pull it without a token.
+# avenSANDBOX's image (aven/DB2/SANDBOX.md, "The box"): the tools only, never our code. Built for amd64 (cloud sessions,
+# CI) and arm64 (OrbStack on Apple Silicon), each on a runner of its own kind, and joined into one image when its
+# Dockerfile changes. Tagged with the first 16 hex digits of the Dockerfile's SHA-256, so every checkout runs exactly its
+# own box (aven/DB2/sandbox/up.mjs computes the same tag); main's build is also "latest". Public, so it pulls without a
+# token.
 name: avenSANDBOX image
 
 on:
   push:
     paths:
-      - aven/DB2/box/Dockerfile
-      - aven/DB2/box/extra-ca/**
+      - aven/DB2/sandbox/box/Dockerfile
+      - aven/DB2/sandbox/box/extra-ca/**
       - .github/workflows/avensandbox-image.yml
   workflow_dispatch:
 
@@ -19,49 +20,132 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  image:
-    name: Image
+  plan:
+    name: Plan
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      name: ${{ steps.box.outputs.name }}
+      image: ${{ steps.box.outputs.image }}
+      complete: ${{ steps.built.outputs.complete }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: The box's tag
+        id: box
+        run: |
+          name="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "image=$name:$(sha256sum aven/DB2/sandbox/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Built for both platforms already?
+        id: built
+        env:
+          IMAGE: ${{ steps.box.outputs.image }}
+        run: |
+          has=$(docker buildx imagetools inspect --raw "$IMAGE" 2>/dev/null \
+            | jq -r '[.manifests[]?.platform | select(.os == "linux") | .architecture] | sort | join(",")' || true)
+          echo "$IMAGE has: ${has:-nothing yet}"
+          if [ "$has" = "amd64,arm64" ]; then echo "complete=true" >> "$GITHUB_OUTPUT"; fi
+
+  build:
+    name: Build (${{ matrix.arch }})
+    needs: plan
+    if: needs.plan.outputs.complete != 'true'
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v7.0.1
-      - name: The box's tag
-        id: box
-        run: |
-          tag=$(sha256sum aven/DB2/box/Dockerfile | cut -c1-16)
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox:$tag" >> "$GITHUB_OUTPUT"
-          echo "latest=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox:latest" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4.4.1
       - uses: docker/login-action@v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Already built?
-        id: built
-        env:
-          IMAGE: ${{ steps.box.outputs.image }}
-        run: |
-          if docker buildx imagetools inspect "$IMAGE" > /dev/null 2>&1; then echo "yes=true" >> "$GITHUB_OUTPUT"; fi
-      - name: Build and push
-        if: steps.built.outputs.yes != 'true'
+      - name: Build and push by digest
+        id: push
         uses: docker/build-push-action@v7.4.0
         with:
-          context: aven/DB2/box
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.box.outputs.image }}
+          context: aven/DB2/sandbox/box
+          platforms: linux/${{ matrix.arch }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.description=avenSANDBOX: the tools avenDB is built and tested with
-          cache-from: type=gha,scope=avensandbox
-          cache-to: type=gha,mode=max,scope=avensandbox
-      - name: main's box is latest
-        if: github.ref == 'refs/heads/main'
+          outputs: type=image,name=${{ needs.plan.outputs.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=avensandbox-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=avensandbox-${{ matrix.arch }}
+      - name: Keep the digest
         env:
-          IMAGE: ${{ steps.box.outputs.image }}
-          LATEST: ${{ steps.box.outputs.latest }}
-        run: docker buildx imagetools create --tag "$LATEST" "$IMAGE"
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: mkdir -p digests && touch "digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: digest-${{ matrix.arch }}
+          path: digests/*
+          if-no-files-found: error
+
+  publish:
+    name: One image for both platforms
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Join the platforms under the box's tag
+        working-directory: digests
+        env:
+          NAME: ${{ needs.plan.outputs.name }}
+          IMAGE: ${{ needs.plan.outputs.image }}
+        run: |
+          docker buildx imagetools create --tag "$IMAGE" $(printf "$NAME@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE"
+
+  latest:
+    name: main's box is latest
+    needs: [plan, publish]
+    if: >-
+      always() && github.ref == 'refs/heads/main' && needs.plan.result == 'success'
+      && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag it latest
+        env:
+          NAME: ${{ needs.plan.outputs.name }}
+          IMAGE: ${{ needs.plan.outputs.image }}
+        run: docker buildx imagetools create --tag "$NAME:latest" "$IMAGE"

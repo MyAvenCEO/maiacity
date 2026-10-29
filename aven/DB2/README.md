@@ -9,7 +9,7 @@ v1 stays as the testing and learning battleground until the new avenDB is ready.
 avenDB moves into `aven/db`.
 
 **Status (29 Oct 2026): milestone 1 has started.** avenSANDBOX's box runs: its image, `bun run up --check`,
-avenOS's landing page on two Peer-Lights' origins and the control room; the peers themselves come next. The plan:
+avenOS on two Peer-Lights' origins and the control room; the peers themselves come next. The plan:
 [`SANDBOX.md`](SANDBOX.md).
 
 ## Why a rebuild
@@ -62,7 +62,7 @@ avenSANDBOX   the box all of it is built and tested in
 
 | Name | What |
 |---|---|
-| avenOS | the client app over everything below it. Its browser target serves the landing page for now, "avenOS · coming soon"; a Mac app with Tauri follows |
+| avenOS | the client app over everything below it. Its browser client shows "avenOS · coming soon" for now; a Mac app with Tauri follows |
 | avenPEER | the peer: the native Peer and the Peer-Light, one core in two builds |
 | avenDB | the database: this rebuild |
 | avenDB-old | the old database, in `aven/db/`: the testing and learning battleground until avenDB is ready, then deprecated. "v1" still names the whole old stack (its site, API and peer) |
@@ -86,7 +86,7 @@ repository: an id names a product, not a separate repository.
 | Container images | | `ghcr.io/myavenceo/aven/peer`, the Aven Peer's (later) | | `ghcr.io/myavenceo/aven/sandbox`, the box built from this repository's Dockerfile so machines can download it |
 | Lean | | | `Aven.DB` | |
 | Protocol (ALPN) | | | `aven/db/1`, which avenPEER carries | |
-| Release files | `aven-os-landing-<tag>.tar.gz` (browser), later the Mac app | later `aven-peer-<tag>-<platform>.tar.gz` | | the image, tagged with the release |
+| Releases (one per package, only when it changed) | `@aven/os@<version>`: `aven-os-web-<version>.tar.gz` (the browser client), later `aven-os-mac-…` | later `@aven/peer@<version>`: `aven-peer-<version>-<platform>.tar.gz` | | `@aven/sandbox@<version>`: the image, tagged `<version>` |
 
 `@aven/maia` comes later. None of these names had public packages on npm on 29 Oct 2026; creating the npm
 organization `aven` reserves the scope before anything is published.

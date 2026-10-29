@@ -1,6 +1,6 @@
 <script>
 	// The control room: every peer of the cast side by side. The Peer-Lights run in frames on their own origins; the
-	// Peers' panes fill in once crates/peer runs them.
+	// Peers' panes fill in once peer/native runs them.
 	let { cast } = $props();
 
 	const port = location.port ? `:${location.port}` : '';
@@ -22,7 +22,7 @@
 			{#if peer.origin}
 				<iframe title={peer.name} src={`${location.protocol}//${peer.origin}${port}/`}></iframe>
 			{:else}
-				<p class="pending">not running yet: it comes with crates/peer</p>
+				<p class="pending">not running yet: it comes with peer/native</p>
 			{/if}
 		</article>
 	{/each}

@@ -1,6 +1,6 @@
 # avenSANDBOX's containers (aven/DB2/SANDBOX.md, "The box"). Only aven/DB2 is mounted, so nothing else of the
 # repository is reachable inside the box. Milestone 1 grows into aven, alice, s3 and builder; for now the browsers'
-# container serves the landing page and the control room.
+# container serves avenOS and the control room.
 name: avensandbox
 
 services:
@@ -11,7 +11,7 @@ services:
     init: true
     shm_size: 1gb
     volumes:
-      - ..:/work
+      - ../..:/work
       - node_modules:/work/node_modules
     ports:
       - "${AVENSANDBOX_PORT:-5173}:5173"
