@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use super::{dangling, order_places, sorted, watched, Edit, Entry, Grants, Issued, Listed, Passed, Replay, Seals, State, Tail, Vault,
-    Write};
+use super::{dangling, order_places, sorted, watched, Edit, Entry, Grants, Issued, Listed, Marks, Passed, Replay, Rung, Seals, State,
+    Tail, Vault, Write};
 use crate::encode::Encode;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, PublicKey, Seal};
@@ -25,8 +25,10 @@ use crate::policy::{Kind, Principal, Proposal, Share};
 use crate::wire::{Decode, Reader, WireError};
 
 /// Version 3 preserves cap-group bindings, which the canonical Share codec deliberately omits because the
-/// enclosing Sharing edit carries them. Earlier derived views are rejected and rebuilt from signed history.
-const VIEW: &[u8] = b"avenDB view 3\n";
+/// enclosing Sharing edit carries them; version 4 keeps the rungs and marks before the place it steps on from
+/// (`Tail::rungs`, `Marks`), so that a late edit after an unlock replays from the one before it, not every edit.
+/// Earlier derived views are rejected and rebuilt from signed history.
+const VIEW: &[u8] = b"avenDB view 4\n";
 
 impl Encode for Vault {
     fn encode(&self, out: &mut Vec<u8>) {
@@ -515,6 +517,20 @@ fn state_of(rd: &mut Reader<'_>, r: &State) -> Result<State, WireError> {
     Ok(st)
 }
 
+/// A mark's state `t` as bytes, as it differs from the state `r` of the mark before it (`Marks`).
+pub(super) fn put_mark(r: &State, t: &State) -> Vec<u8> {
+    let mut out = vec![];
+    put_state(&mut out, r, t);
+    out
+}
+
+/// The state `put_mark` wrote against `r`: none where the bytes are no such state.
+pub(super) fn mark_of(bytes: &[u8], r: &State) -> Option<State> {
+    let mut rd = Reader::new(bytes);
+    let st = state_of(&mut rd, r).ok()?;
+    rd.done().then_some(st)
+}
+
 /* Replays */
 
 /// The hash of the ids of a replay's edits, in their order: which edits a view is of.
@@ -531,15 +547,14 @@ impl Replay {
     /// their ids in the one order, which stood, the state, the signers that acted for the checkpoints' vaults, and the
     /// place it steps on from, each of whose states as it differs from the state after it.
     pub fn to_view(&self, held: usize) -> Vec<u8> {
-        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts,
-            self.tail.as_ref().map(|t| (t.at, &t.state, t.base.as_ref(), t.cands.as_slice(), t.tried.as_slice())))
+        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts, self.tail.as_ref().map(TailView::of).as_ref())
     }
 
     /// Only the owned inputs the canonical view encoder needs: no edit bodies or derived indexes.
     pub fn capture_view(&self) -> ViewCapture {
         ViewCapture {
             ids: self.ids.clone(), stood: self.stood.clone(), state: self.state.clone(), acts: self.acts.clone(),
-            tail: self.tail.as_ref().map(|t| (t.at, t.state.clone(), t.base.clone(), t.cands.clone(), t.tried.clone())),
+            tail: self.tail.as_ref().map(TailView::of),
         }
     }
 
@@ -578,6 +593,29 @@ impl Replay {
                     if at > n || cands.iter().chain(&tried).any(|&i| i >= n) {
                         return Err(WireError::Unknown);
                     }
+                    // its rungs, each state as it differs from the tail's, and its marks as they are, every place before
+                    // the next and the tail's
+                    let mut rungs = vec![];
+                    for _ in 0..rd.count(9)? {
+                        let at = u64::decode(&mut rd)? as usize;
+                        let state = state_of(&mut rd, &tail_state)?;
+                        let base = match rd.u8()? {
+                            0 => None,
+                            1 => Some(state_of(&mut rd, &state)?),
+                            _ => return Err(WireError::Unknown),
+                        };
+                        rungs.push(Rung { at, state, base });
+                    }
+                    let mut marks = Marks::default();
+                    for _ in 0..rd.count(12)? {
+                        let at = u64::decode(&mut rd)? as usize;
+                        let len = u32::decode(&mut rd)? as usize;
+                        marks.list.push((at, rd.take(len)?.into()));
+                    }
+                    let places = marks.list.iter().map(|m| m.0).chain(rungs.iter().map(|r| r.at)).chain([at]);
+                    if !places.clone().zip(places.skip(1)).all(|(a, b)| a < b) {
+                        return Err(WireError::Unknown);
+                    }
                     // what follows from the edits: as `replay_ids` works it out, and each replay stepped on keeps
                     let depths: HashMap<EditId, u64> =
                         held_ids.iter().copied().zip(held_edits.iter().map(|e| e.depth)).collect();
@@ -587,7 +625,7 @@ impl Replay {
                     let passed = Passed::of(sorted(&held, &ids, &stood, 0, at));
                     let after = Passed::of(sorted(&held, &ids, &stood, at, n));
                     let grants = Grants::of(edits().zip(ids.iter().copied()));
-                    Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths, passed, after, grants, rungs: vec![] })
+                    Some(Tail { at, state: tail_state, base, cands, tried, parents, covered, depths, passed, after, grants, rungs, marks })
                 }
                 _ => return Err(WireError::Unknown),
             };
@@ -606,8 +644,11 @@ impl Replay {
         match (&self.tail, &o.tail) {
             (None, None) => true,
             (Some(a), Some(b)) => {
+                let rungs = |t: &Tail| t.rungs.iter().map(|r| (r.at, r.state.clone(), r.base.clone())).collect::<Vec<_>>();
                 (a.at, &a.state, &a.base, &a.cands, &a.tried, &a.parents, &a.covered, &a.depths, &a.passed, &a.after, &a.grants)
                     == (b.at, &b.state, &b.base, &b.cands, &b.tried, &b.parents, &b.covered, &b.depths, &b.passed, &b.after, &b.grants)
+                    && rungs(a) == rungs(b)
+                    && a.marks.list == b.marks.list
             }
             _ => false,
         }
@@ -621,17 +662,38 @@ pub struct ViewCapture {
     stood: Vec<bool>,
     state: State,
     acts: std::collections::HashSet<(EditId, VaultId)>,
-    tail: Option<(usize, State, Option<State>, Vec<usize>, Vec<usize>)>,
+    tail: Option<TailView>,
 }
 impl ViewCapture {
     pub fn encode(self, held: usize) -> Vec<u8> {
-        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts,
-            self.tail.as_ref().map(|t| (t.0, &t.1, t.2.as_ref(), t.3.as_slice(), t.4.as_slice())))
+        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts, self.tail.as_ref())
     }
 }
+
+/// What a view keeps of the place a replay steps on from (`Tail`): its place, its state and base, its resolve's choice,
+/// its rungs and its marks; their states share their items with the replay's.
+struct TailView {
+    at: usize,
+    state: State,
+    base: Option<State>,
+    cands: Vec<usize>,
+    tried: Vec<usize>,
+    rungs: Vec<Rung>,
+    marks: Vec<(usize, Arc<[u8]>)>,
+}
+
+impl TailView {
+    fn of(t: &Tail) -> TailView {
+        TailView {
+            at: t.at, state: t.state.clone(), base: t.base.clone(), cands: t.cands.clone(), tried: t.tried.clone(),
+            rungs: t.rungs.clone(), marks: t.marks.list.clone(),
+        }
+    }
+}
+
 fn encode_view(held: usize, ids: &[EditId], stood: &[bool], state: &State,
     acts: &std::collections::HashSet<(EditId, VaultId)>,
-    tail: Option<(usize, &State, Option<&State>, &[usize], &[usize])>) -> Vec<u8> {
+    tail: Option<&TailView>) -> Vec<u8> {
         let mut out = VIEW.to_vec();
         (held as u64).encode(&mut out);
         ids_hash(ids).encode(&mut out);
@@ -648,19 +710,37 @@ fn encode_view(held: usize, ids: &[EditId], stood: &[bool], state: &State,
         acts.iter().for_each(|a| a.encode(&mut out));
         match tail {
             None => out.push(0),
-            Some((at, tail_state, base, cands, tried)) => {
+            Some(t) => {
                 out.push(1);
-                (at as u64).encode(&mut out);
-                put_state(&mut out, state, tail_state);
-                match base {
+                (t.at as u64).encode(&mut out);
+                put_state(&mut out, state, &t.state);
+                match &t.base {
                     None => out.push(0),
                     Some(base) => {
                         out.push(1);
-                        put_state(&mut out, tail_state, base);
+                        put_state(&mut out, &t.state, base);
                     }
                 }
-                for places in [cands, tried] {
+                for places in [&t.cands, &t.tried] {
                     put_places(places, &mut out);
+                }
+                (t.rungs.len() as u32).encode(&mut out);
+                for r in &t.rungs {
+                    (r.at as u64).encode(&mut out);
+                    put_state(&mut out, &t.state, &r.state);
+                    match &r.base {
+                        None => out.push(0),
+                        Some(base) => {
+                            out.push(1);
+                            put_state(&mut out, &r.state, base);
+                        }
+                    }
+                }
+                (t.marks.len() as u32).encode(&mut out);
+                for (at, bytes) in &t.marks {
+                    (*at as u64).encode(&mut out);
+                    (bytes.len() as u32).encode(&mut out);
+                    out.extend_from_slice(bytes);
                 }
             }
         }
