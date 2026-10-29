@@ -69,6 +69,10 @@ pub struct Page {
     /// Where `take_ms` went: checking its edits (signatures, outside the Lab), the Lab (its turn's wait and keeping
     /// them), and bringing keys and items up to date after it, in milliseconds.
     pub check_ms: u64,
+    /// Of `check_ms`: checking the signatures, and the time a browser's one thread did other work between their groups
+    /// (`PreparedReceive::spent`); the rest is the wait for its turn to check (the other pages', and the Lab's).
+    pub verify_ms: u64,
+    pub yield_ms: u64,
     pub lab_ms: u64,
     pub catch_ms: u64,
     /// Pipeline interval through the processing/lookahead join; not this page's individual latency.
@@ -459,6 +463,8 @@ impl Traffic {
                     "wait_ms": p.wait_ms,
                     "take_ms": p.take_ms,
                     "check_ms": p.check_ms,
+                    "verify_ms": p.verify_ms,
+                    "yield_ms": p.yield_ms,
                     "lab_ms": p.lab_ms,
                     "catch_ms": p.catch_ms,
                     "ms": p.ms,
@@ -507,7 +513,7 @@ mod tests {
     fn pages_add_up_by_device_and_way_and_the_newest_are_kept() {
         let t = Traffic::default();
         let d = SignerId([7; 32]);
-        let page = |way, bytes| Page { device: d, at: 1000, bytes, edits: 10, new: 4, wait_ms: 900, take_ms: 100, check_ms: 0, lab_ms: 0, catch_ms: 0, ms: 1000, way, budget: 0 };
+        let page = |way, bytes| Page { device: d, at: 1000, bytes, edits: 10, new: 4, wait_ms: 900, take_ms: 100, check_ms: 0, verify_ms: 0, yield_ms: 0, lab_ms: 0, catch_ms: 0, ms: 1000, way, budget: 0 };
         t.page(page("relay", 4000));
         t.page(page("direct", 1000));
         t.failed(d);

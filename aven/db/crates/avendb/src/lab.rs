@@ -479,6 +479,17 @@ pub struct PreparedReceive {
     edits: Vec<Signed>,
     signatures: HashMap<EditId, bool>,
     perf: Perf,
+    /// How long checking the signatures took, and how long the thread was away between its groups (`check_cooperatively`).
+    verifying: std::time::Duration,
+    yielded: std::time::Duration,
+}
+
+impl PreparedReceive {
+    /// How long its signature checks took, and how long a browser's one thread did other work between their groups: a
+    /// page's check time is these and the wait for its turn (`check_ms`).
+    pub fn spent(&self) -> (std::time::Duration, std::time::Duration) {
+        (self.verifying, self.yielded)
+    }
 }
 
 impl ReceivePreparation {
@@ -492,33 +503,39 @@ impl ReceivePreparation {
     {
         let mut signatures = HashMap::new();
         let mut perf = Perf::default();
+        let (mut verifying, mut yielded) = (std::time::Duration::ZERO, std::time::Duration::ZERO);
         let mut chunks = self.checking.chunks(8).peekable();
         while let Some(chunk) = chunks.next() {
             let at = Perf::start();
+            let began = crate::perf::now_us();
             for &i in chunk {
                 let signed = &self.edits[i];
                 signatures.insert(signed.edit.id(), signed.verify().is_ok());
             }
+            verifying += std::time::Duration::from_micros(crate::perf::now_us().saturating_sub(began));
             perf.add("prepared signature check", at);
             perf.count("prepared signatures", chunk.len() as u64);
             if chunks.peek().is_some() {
                 perf.count("prepared verification yields", 1);
+                let away = crate::perf::now_us();
                 yield_turn().await;
+                yielded += std::time::Duration::from_micros(crate::perf::now_us().saturating_sub(away));
             }
         }
-        PreparedReceive { edits: self.edits, signatures, perf }
+        PreparedReceive { edits: self.edits, signatures, perf, verifying, yielded }
     }
 
     /// Expensive pure cryptography, deliberately independent of the Lab and its current policy.
     pub fn check(self) -> PreparedReceive {
         let at = Perf::start();
+        let began = crate::perf::now_us();
         let checking: Vec<_> = self.checking.iter().map(|&i| self.edits[i].clone()).collect();
         let signatures = checking.iter().zip(checked_all(&checking))
             .map(|(signed, valid)| (signed.edit.id(), valid)).collect();
         let mut perf = Perf::default();
         perf.add("prepared signature check", at);
         perf.count("prepared signatures", checking.len() as u64);
-        PreparedReceive { edits: self.edits, signatures, perf }
+        PreparedReceive { edits: self.edits, signatures, perf, verifying: std::time::Duration::from_micros(crate::perf::now_us().saturating_sub(began)), yielded: std::time::Duration::ZERO }
     }
 }
 
