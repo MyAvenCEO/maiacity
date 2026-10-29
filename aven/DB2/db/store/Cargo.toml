@@ -21,4 +21,5 @@ opendal = { version = "=0.59.5", default-features = false, features = ["services
 opendal = { version = "=0.59.5", default-features = false, features = ["services-memory", "services-opfs"] }
 
 [dev-dependencies]
+futures = { version = "=0.3.34", default-features = false, features = ["std", "async-await"] }
 tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread"] }

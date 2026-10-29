@@ -17,10 +17,27 @@ services:
       - "${AVENSANDBOX_PORT:-5173}:5173"
     networks: [wan]
 
+
+  # The Aven Peer's object storage (SANDBOX.md, "The box"): Versity's S3 gateway over a folder, never a real cloud
+  # bucket. Its image comes from ghcr.io, which a cloud session reaches. Test credentials, valid only in the box;
+  # the store's tests use the bucket aven-db-store, the Aven Peer will use aven.
+  s3:
+    image: ghcr.io/versity/versitygw:v1.10.0
+    entrypoint: ["sh", "-c", "mkdir -p /data/aven /data/aven-db-store && exec versitygw --port :7070 posix /data"]
+    environment:
+      ROOT_ACCESS_KEY: avensandbox
+      ROOT_SECRET_KEY: avensandbox-test-secret
+    volumes:
+      - s3:/data
+    ports:
+      - "127.0.0.1:7070:7070"
+    networks: [wan]
+
 networks:
   wan: {}
 
 volumes:
+  s3: {}
   # made by `bun run up`, which installs into it before the containers start
   node_modules:
     name: avensandbox_node_modules

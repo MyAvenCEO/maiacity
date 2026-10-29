@@ -41,6 +41,8 @@ pub struct S3 {
 /// writes (`If-Match`, `If-None-Match: *`) and conditional deletes.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn s3(at: &S3) -> Result<DalStore> {
+    // OpenDAL's HTTP client (reqwest), process-wide; installing it again changes nothing
+    opendal::install_default();
     let builder = services::S3::default()
         .endpoint(&at.endpoint)
         .region(&at.region)
