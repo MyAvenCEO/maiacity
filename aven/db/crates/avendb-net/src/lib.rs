@@ -3432,6 +3432,7 @@ impl Shared {
                 #[cfg(target_arch = "wasm32")]
                 let (prepared, permit, activity, ()) = shared.prepare_received_page(edits, permit, ()).await?;
                 let checked = taking.elapsed();
+                let spent = prepared.spent();
                 let (got, whose, held) = shared
                     .try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| {
                         let (_permit, _activity) = (permit, activity);
@@ -3448,7 +3449,7 @@ impl Shared {
                     shared.catch_up_paced_class(false, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
                 }
                 let took = taking.elapsed();
-                Ok::<_, anyhow::Error>((got, whose, [checked, kept - checked, took - kept, took]))
+                Ok::<_, anyhow::Error>((got, whose, [checked, kept - checked, took - kept, took], spent))
             });
             // the pages in flight land (and more are asked) while this one is taken
             let mut take = std::pin::pin!(async { take.await.context("a page's taking ended")? });
@@ -3462,7 +3463,7 @@ impl Shared {
                     }
                 }
             };
-            let (got, whose, [checked, kept, caught, took]) = taken?;
+            let (got, whose, [checked, kept, caught, took], (verified, yielded)) = taken?;
             let finished = Instant::now();
             // a claim holds on while its pages land (`Claims::landed`), as fast as they came lately
             let lately = self.rates.lock().expect("rates").get(&device).and_then(pulls::Rate::per_second);
@@ -3476,6 +3477,8 @@ impl Shared {
                 wait_ms: wait.as_millis() as u64,
                 take_ms: took.as_millis() as u64,
                 check_ms: checked.as_millis() as u64,
+                verify_ms: verified.as_millis() as u64,
+                yield_ms: yielded.as_millis() as u64,
                 lab_ms: kept.as_millis() as u64,
                 catch_ms: caught.as_millis() as u64,
                 ms: finished.duration_since(since).as_millis() as u64,
