@@ -1,6 +1,7 @@
 //! The one slot a node keeps what it derived of its log in (the index gate, `ShelfIndex.lean` I3): two of each, kept
 //! in turn (`slots/<name>-0`, `-1`), each stamped with the head of the log it is of (`Log::head_at`), whole or read as
-//! none. An index keeps its root in its slots (`shelf_index`), a device its stored view (`edits`).
+//! none. An index keeps its root in its slots (`shelf_index`); a device kept its stored view in them before its rows
+//! (`edits`), which it reads still.
 //!
 //! A slot is what it starts with (`SLOT`), the number it was kept as, the stamp's place and head, what it keeps, and
 //! the hash of all that; the next goes in place of the older of the two (`Shelf::keep`), so a crash at any point leaves
@@ -55,11 +56,6 @@ pub(crate) async fn read(shelf: &Shelf, of: &str) -> io::Result<Vec<Kept>> {
     Ok(found)
 }
 
-/// The number the next slot of `of`'s is kept as, after `found`, those that read.
-pub(crate) fn next(found: &[Kept]) -> u64 {
-    found.first().map_or(0, |k| k.n + 1)
-}
-
 /// The slot `bytes` hold, if they hold one whole.
 fn kept(bytes: &[u8]) -> Option<Kept> {
     let (body, check) = bytes.split_at_checked(bytes.len().checked_sub(32)?)?;
@@ -89,7 +85,6 @@ mod tests {
         let found = read(&shelf, "view").await.unwrap();
         assert_eq!(found.iter().map(|k| (k.n, k.stamp, &k.bytes[..])).collect::<Vec<_>>(),
             [(1, stamp(9), &b"second"[..]), (0, stamp(3), &b"first"[..])]);
-        assert_eq!(next(&found), 2);
         let mut torn = shelf.get("slots/view-1").await.unwrap().unwrap().to_vec();
         torn[SLOT.len() + 20] ^= 1;
         shelf.keep("slots/view-1", Bytes::from(torn)).await.unwrap();

@@ -194,12 +194,7 @@ fn measure_unlock_phone() {
     let checked = [1; 40];
     let receipt = lab.warming(phone, held, Some(checked)).expect("what it worked out, to save");
     let kept: Vec<Vec<u8>> = receipt.shown.clone().map(|k| k.pack).into_iter().collect();
-    let warm = Warm {
-        keys: receipt.keys.clone().into_iter().collect(),
-        views: receipt.view.clone().into_iter().collect(),
-        shown: kept.iter().cloned().map(Into::into).collect(),
-        queries: receipt.queries.clone().map(Into::into).into_iter().collect(),
-    };
+    let warm = Warm { shown: kept.iter().cloned().map(Into::into).collect(), ..Warm::of(&receipt) };
     lab.warmed(phone, receipt);
     // UNLOCK_PHONE_AFTER=n: n edits more, its other devices', taken after it saved what it worked out, as the iPhone's
     // 723 past its stored view on 2026-10-28: its restore steps its view on by them
@@ -232,7 +227,8 @@ fn measure_unlock_phone() {
         list(&mut out, backup.signed().iter().map(|s| s.to_wire()).collect());
         list(&mut out, lab.blob_ids(phone).into_iter().filter_map(|b| lab.blob(phone, b)).map(|b| b.to_vec()).collect());
         list(&mut out, warm.keys.clone());
-        list(&mut out, warm.views.clone());
+        // its view's rows, each its key and its bytes
+        list(&mut out, warm.view.iter().map(|(row, bytes)| [&row[..], bytes].concat()).collect());
         list(&mut out, kept.clone());
         std::fs::write(&path, &out).expect("the fixture written");
         eprintln!("UNLOCK_PHONE fixture written: {} bytes", out.len());

@@ -35,12 +35,7 @@ fn warming(lab: &mut Lab, d: SignerId, checked: u8) -> Warming {
 }
 
 fn bytes(warming: &Warming) -> Warm {
-    Warm {
-        keys: warming.keys.clone().into_iter().collect(),
-        views: warming.view.clone().into_iter().collect(),
-        shown: warming.shown.clone().map(Into::into).into_iter().collect(),
-        queries: warming.queries.clone().map(Into::into).into_iter().collect(),
-    }
+    Warm::of(&warming)
 }
 
 fn count(lab: &Lab, d: SignerId, what: &str) -> u64 {

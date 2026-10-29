@@ -24,12 +24,7 @@ fn alice(notes: usize) -> (Lab, SignerId, SignerId, VaultId, Vec<EntryId>) {
 fn save(lab: &mut Lab, d: SignerId) -> Option<(Warm, usize)> {
     let held = lab.log(d).ids().len();
     let w: Warming = lab.warming(d, held, Some([1; 40]))?;
-    let warm = Warm {
-        keys: w.keys.clone().into_iter().collect(),
-        views: w.view.clone().into_iter().collect(),
-        shown: w.shown.clone().map(Into::into).into_iter().collect(),
-        queries: w.queries.clone().map(Into::into).into_iter().collect(),
-    };
+    let warm = Warm::of(&w);
     lab.warmed(d, w);
     Some((warm, held))
 }
@@ -114,7 +109,7 @@ fn a_showing_that_does_not_open_is_judged_anew() {
     let w: Warming = lab.warming(phone, held, Some([1; 40])).expect("the shelf lacks work");
     let mut pack = w.shown.clone().expect("a pack").pack;
     *pack.last_mut().unwrap() ^= 1;
-    let warm = Warm { keys: w.keys.clone().into_iter().collect(), views: w.view.clone().into_iter().collect(), shown: vec![pack.into()], queries: vec![] };
+    let warm = Warm { shown: vec![pack.into()], queries: vec![], ..Warm::of(&w) };
     lab.warmed(phone, w);
     let expected = records(&lab, phone, &notes);
     let backup = lab.backup(phone);
@@ -147,7 +142,7 @@ fn a_pack_that_does_not_open_is_put_again_whole() {
     let pack = w.shown.clone().expect("a pack").pack;
     let mut stale = pack.clone();
     stale[0] ^= 1;
-    let warm = Warm { keys: w.keys.clone().into_iter().collect(), views: w.view.clone().into_iter().collect(), shown: vec![stale.into(), pack.into()], queries: vec![] };
+    let warm = Warm { shown: vec![stale.into(), pack.into()], queries: vec![], ..Warm::of(&w) };
     lab.warmed(phone, w);
     let backup = lab.backup(phone);
     lab.restore_warm(phone, backup, Some(([1; 40], held)), &warm);
