@@ -170,8 +170,9 @@ impl Tell<'_> {
     }
 }
 
-/// A shelf in this process's memory, of named objects alone, for a node that keeps an index and no shelf (a test's,
-/// a simulation's): its told index is what it would be on a shelf, gone as the node goes.
+/// A shelf in this process's memory, of named objects alone, for a unit test's node that keeps an index and no shelf:
+/// its told index is what it would be on a shelf, gone as the node goes.
+#[cfg(test)]
 pub(crate) fn memory_shelf() -> Shelf {
     use crate::shelf::Call;
     let (shelf, mut calls) = Shelf::new();

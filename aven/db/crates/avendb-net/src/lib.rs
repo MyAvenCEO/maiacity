@@ -852,25 +852,21 @@ impl Node {
         let pool = ConnectionPool::new(endpoint.clone(), iroh_blobs::ALPN, pool);
         let transport_control = transports::control::Control::new(packets.clone());
         let (outreach, inbox) = node_loop::outreach();
-        // its shared index, stepped on at its first save (`shared_index`); a shelf that can't read it costs it the
-        // index, never the node
+        // its shared index, stepped on at its first save (`shared_index`), built again where its shelf can't read it
         let shared_index = match &opts.shelf {
-            Some(shelf) => match shared_index::SharedIndex::open(shelf.clone()).await {
-                Ok(ix) => Some(ix),
-                Err(e) => {
-                    tracing::warn!("avendb: the shared index can't be opened on the shelf: {e:#}");
-                    None
-                }
-            },
+            Some(shelf) => Some(shared_index::SharedIndex::open(shelf.clone()).await?),
             None => None,
         };
-        // the rows its peers told it, if it keeps an index (`told_index`): on its shelf, or in memory for a node that
-        // keeps none
+        // the rows its peers told it, if it keeps an index (`told_index`): on its shelf, never only in memory; a unit
+        // test's node of no shelf keeps it on a shelf in memory
         let told_rows = match opts.index {
             true => {
                 let (on, older) = match &opts.shelf {
                     Some(shelf) => (shelf.clone(), blind::older_rows(shelf).await),
+                    #[cfg(test)]
                     None => (told_index::memory_shelf(), None),
+                    #[cfg(not(test))]
+                    None => bail!("a node keeps its index on its shelf"),
                 };
                 Some(told_index::ToldIndex::open(on, older).await?)
             }
@@ -2680,7 +2676,7 @@ impl<K: Hash + Eq + Copy> Backoff<K> {
 /// size (`Lab::size`), and how many of its edits its shelf held (`edits::Edits::held`).
 struct Own {
     at: ((usize, usize), usize),
-    revision: Option<avendb::policy::LogRevision>,
+    revision: Option<avendb::log_head::Head>,
     holdings: Holdings,
 }
 
@@ -2695,7 +2691,7 @@ struct Reach {
 /// Whom a node tells what, as worked out for the device's edits when they were as many as `size` says (`Lab::size`).
 struct News {
     size: (usize, usize),
-    revision: Option<avendb::policy::LogRevision>,
+    revision: Option<avendb::log_head::Head>,
     reach: Arc<BTreeMap<SignerId, Reach>>,
     /// The keys that own the vaults in the device's view, their roots among them, whose passes a server's relay
     /// honours.
@@ -2766,7 +2762,7 @@ impl Shared {
             let _timed = Timed::new(&shared.lab_turns, what, asked);
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
-                let before = lab.log(shared.me).revision();
+                let before = lab.log(shared.me).head();
                 let bootstrap_before = lab.owner_bases_pending(shared.me);
                 let missing_before = lab.owner_base_missing(shared.me);
                 let keys_before = lab.owner_base_key_waits(shared.me);
@@ -2776,7 +2772,7 @@ impl Shared {
                 let now = lab.size(shared.me);
                 // Restore and checkpoint withdrawal can replace edits without changing their count. Wake
                 // subscriptions and the saver for those changes too; an ordinary read stays quiet.
-                let revised = before != lab.log(shared.me).revision();
+                let revised = before != lab.log(shared.me).head();
                 let grew = shared.size.send_if_modified(|size| {
                     if *size == now && !revised {
                         return false;
@@ -3869,14 +3865,14 @@ impl Shared {
     async fn news(
         self: &Arc<Self>,
         size: (usize, usize),
-        revision: Option<avendb::policy::LogRevision>,
+        revision: Option<avendb::log_head::Head>,
     ) -> Option<News> {
         let _activity = self.admit().ok()?;
         let (server, shared) = (self.opts.card, self.clone());
         let news = self
             .try_lab(move |lab, me| {
                 let now = lab.size(me);
-                let current = lab.log(me).revision();
+                let current = lab.log(me).head();
                 if now == size && revision.as_ref() == Some(&current) {
                     return None;
                 }
@@ -3945,7 +3941,7 @@ impl Shared {
             .read(move |lab, me| {
                 let size = lab.size(me);
                 let held = shared.edits.as_ref().map_or(size.0, |edits| edits.held(lab, me));
-                let revision = lab.log(me).revision();
+                let revision = lab.log(me).head();
                 {
                     let own = shared.own.lock().expect("own");
                     if own.at == (size, held) && own.revision.as_ref() == Some(&revision) {

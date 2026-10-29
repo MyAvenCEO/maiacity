@@ -85,7 +85,7 @@ fn follow_and_blob_changes_are_current_without_rebuilding_history() {
 }
 
 #[test]
-fn revocation_and_same_length_restore_do_not_reuse_an_old_basis() {
+fn revocation_changes_the_basis_and_a_restore_of_the_same_edits_gives_it_back() {
     let mut w = world();
     let todos = todos_on(&mut w);
     let (d, peer) = (w.mac_a, w.mac_c);
@@ -101,11 +101,12 @@ fn revocation_and_same_length_restore_do_not_reuse_an_old_basis() {
     w.lab.restore_backup(d, &snapshot);
     same(&w.lab, d, &[peer]);
     let restored = w.lab.request_basis(d);
-    assert_ne!(old.revision, restored.revision);
-    // Even replacing with the same-length, same-content backup cannot reuse a process-local basis.
+    // The same edits as before the revocation: the same head, and the basis worked out of them is the same.
+    assert_eq!(old.head, restored.head);
+    assert_eq!(old.ask, restored.ask);
     w.lab.restore_backup(d, &snapshot);
     same(&w.lab, d, &[peer]);
-    assert_ne!(restored.revision, w.lab.request_basis(d).revision);
+    assert_eq!(restored.ask, w.lab.request_basis(d).ask);
 }
 
 #[test]
@@ -126,7 +127,7 @@ fn equal_length_different_restored_histories_produce_their_own_requests() {
     let basis_a = w.lab.request_basis(d);
     w.lab.restore_backup(d, &b);
     same(&w.lab, d, &[peer]);
-    assert_ne!(basis_a.revision, w.lab.request_basis(d).revision);
+    assert_ne!(basis_a.head, w.lab.request_basis(d).head);
     assert_ne!(request_a, w.lab.request(d, peer).to_wire());
 }
 
@@ -146,11 +147,11 @@ fn missing_parent_arrival_and_withdrawal_rebuild_structural_closure() {
     let parent = full.edits()[0].clone();
     w.lab.stores.get_mut(&at).unwrap().log.receive([parent]);
     let repaired = w.lab.request_basis(d);
-    assert_ne!(incomplete.revision, repaired.revision);
+    assert_ne!(incomplete.head, repaired.head);
     assert_eq!(repaired.ask, asks_ids(w.lab.held(d).log.edits(), w.lab.held(d).log.ids(), &[]));
     w.lab.stores.get_mut(&at).unwrap().log.let_go(&[removed].into());
     let withdrawn = w.lab.request_basis(d);
-    assert_ne!(repaired.revision, withdrawn.revision);
+    assert_ne!(repaired.head, withdrawn.head);
     assert_eq!(withdrawn.ask, incomplete.ask);
 }
 

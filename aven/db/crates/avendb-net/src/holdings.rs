@@ -15,7 +15,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use avendb::id::{BlobId, EditId};
-use avendb::policy::{Edit, LogRevision};
+use avendb::log_head::Head;
+use avendb::policy::Edit;
 use avendb::sealed::FileRoot;
 use avendb::sync::{LogId, log_of};
 use avendb::wire::{Announce, FileHold, Frontier};
@@ -161,8 +162,8 @@ pub(crate) struct Logs {
     /// key comes with that asking (`Lab::request`'s wants).
     keys: HashMap<BlobId, Vec<(LogId, EditId)>>,
     indexed: usize,
-    revision: Option<LogRevision>,
-    lineage: Option<LogRevision>,
+    /// The head of the device's log it indexed the first edits of (`update`, `update_held`).
+    head: Option<Head>,
 }
 
 /// Whether the device holds a McEliece key.
@@ -174,29 +175,27 @@ impl Logs {
     /// hold, or a key it lacks, keeps it waiting.
     pub(crate) fn of(edits: &[Edit], ids: &[EditId], size: (usize, usize), holds: HoldsKey) -> Logs {
         let mut logs = Logs {
-            size, of: BTreeMap::new(), at: HashMap::new(), closed: HashSet::new(), keys: HashMap::new(), indexed: 0, revision: None, lineage: None,
+            size, of: BTreeMap::new(), at: HashMap::new(), closed: HashSet::new(), keys: HashMap::new(), indexed: 0, head: None,
         };
         logs.extend(edits, ids, size, holds);
         logs
     }
 
     pub(crate) fn current(&self, log: &avendb::policy::Log, size: (usize, usize)) -> bool {
-        self.size == size && self.revision.as_ref() == Some(&log.revision())
+        self.size == size && self.head == Some(log.head())
     }
 
-    /// Extend a real device log, rebuilding after a checkpoint withdrawal, replacement, or clone. Log length
-    /// alone cannot detect a removal followed by an append of the same count.
+    /// Extend a real device log, rebuilding after a checkpoint withdrawal or replacement: where the log goes on from
+    /// the head it indexed (`Log::of_log`). Log length alone cannot detect a removal followed by an append of the same
+    /// count.
     pub(crate) fn update(&mut self, log: &avendb::policy::Log, size: (usize, usize), holds: HoldsKey) {
-        let revision = log.revision();
-        if self.revision.as_ref() != Some(&revision) {
-            let lineage = log.lineage();
-            if self.lineage.as_ref() == Some(&lineage) {
-                self.extend(log.edits(), log.ids(), size, holds);
-            } else {
-                *self = Self::of(log.edits(), log.ids(), size, holds);
+        let head = log.head();
+        if self.head != Some(head) {
+            match self.head.is_some_and(|h| log.of_log(h)) {
+                true => self.extend(log.edits(), log.ids(), size, holds),
+                false => *self = Self::of(log.edits(), log.ids(), size, holds),
             }
-            self.revision = Some(revision);
-            self.lineage = Some(lineage);
+            self.head = Some(head);
         }
         self.keyed(log.edits(), holds);
         self.size = size;
@@ -206,16 +205,14 @@ impl Logs {
     /// the log appends it extends as `held` grows, so a node whose shelf lags indexes each edit once, not its whole
     /// held past at every step (an iPhone's shelf lags most when it is busiest).
     pub(crate) fn update_held(&mut self, log: &avendb::policy::Log, held: usize, size: (usize, usize), holds: HoldsKey) {
-        let lineage = log.lineage();
         let (edits, ids) = (&log.edits()[..held], &log.ids()[..held]);
-        if self.lineage.as_ref() == Some(&lineage) && self.indexed <= held {
+        if self.head.is_some_and(|h| log.of_log(h)) && self.indexed <= held {
             self.extend(edits, ids, size, holds);
         } else {
             *self = Self::of(edits, ids, size, holds);
-            self.lineage = Some(lineage);
         }
         self.keyed(edits, holds);
-        self.revision = None;
+        self.head = log.head_at(held as u64);
     }
 
     /// The edits waiting for keys that came since (`holds`), and what they close, of `edits`.

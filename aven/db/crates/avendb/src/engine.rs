@@ -310,6 +310,33 @@ pub fn reads(v: &Value) -> bool {
     name(v).is_some_and(|name| READS.contains(&name))
 }
 
+/// What read `v` may show of its vault (`Lab::may_change`): a query's entries by the selector of its where's labels
+/// (`Where::plan`), the entry or entries a read of one names, each with the schemas and lenses they are read through
+/// (`Selector::lane`); the whole vault for a query that follows links, which lead anywhere, and for every other read.
+pub fn footprint(v: &Value) -> crate::slice::Selector {
+    use crate::slice::{Atom, Selector};
+    let Ok((name, o)) = op_of(v) else { return Selector::All };
+    let picks = match name {
+        "query" if o.get("follow").is_none_or(Value::is_null) => match o.get("where") {
+            None => Selector::All,
+            Some(w) => Where::of_json(w).map_or(Selector::All, |w| w.plan()),
+        },
+        "get" | "pin" | "history" | "room" => match entry_of(o) {
+            Ok(e) => Selector::AnyOf(vec![vec![Atom::EntryIn(vec![e])]]),
+            Err(_) => Selector::All,
+        },
+        "entry_views" if !o.contains_key("vault") => {
+            let ids = o.get("entries").and_then(Value::as_array).map(|a| a.iter().map(|x| x.as_str().and_then(EntryId::from_hex)).collect::<Option<Vec<_>>>());
+            match ids.flatten() {
+                Some(ids) => Selector::AnyOf(vec![vec![Atom::EntryIn(ids)]]),
+                None => Selector::All,
+            }
+        }
+        _ => Selector::All,
+    };
+    picks.either(&Selector::lane())
+}
+
 /// Whether op `v` takes something out of a vault: it ends a share, takes an owner or a device out, or sets a vault's
 /// root, alone or in a batch. Such an edit cuts every edit resting on what it removes that its drafter doesn't hold
 /// (T16), so a node makes it only once its device holds what its peers hold (avendb-net's `Node::removal_waits`); a
@@ -1512,8 +1539,6 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             "id": w.edit.to_hex(),
             "author": w.author.to_hex(),
             "signer": w.signer.to_hex(),
-            // the old name, for one release (batch 5, R)
-            "actor": w.signer.to_hex(),
             "via": w.via.iter().map(VaultId::to_hex).collect::<Vec<_>>(),
             "chain": audit.chain(w.author, w.signer, &w.via),
             "line": line_json(w.line()),
@@ -1583,8 +1608,6 @@ fn room(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refuse
             let who = adders.get(&Value::Array(place.clone()).to_string()).copied().flatten();
             row["by"] = who.map_or(Value::Null, |(_, signed)| by(signed));
             row["signer"] = who.map_or(Value::Null, |(actor, _)| actor.to_hex().into());
-            // the old name, for one release (batch 5, R)
-            row["actor"] = row["signer"].clone();
             for inner in ["thread", "reactions"] {
                 mark(row, &place, inner, adders, by);
             }

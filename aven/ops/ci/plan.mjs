@@ -11,7 +11,8 @@
 //
 // A verdict: a job (or one entry of a matrix) that passed saves an empty cache entry named by its key, the hash of the
 // files it reads (passes.mjs). The plan asks GitHub for those entries, on this ref and on main, and leaves out each job
-// whose key already passed: a new push to a pull request runs only what its new files can change. A full run reads none.
+// whose key already passed: a new push to a pull request runs only what its new files can change, and a release's run
+// leaves out what its merged pull request's run passed on the same files. A full run reads none.
 import { createHash } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { changed, impact } from './impact.mjs';
@@ -134,6 +135,12 @@ export function verdict(needs) {
  return problems;
 }
 
+// the refs whose verdicts count: this run's, main's, and a release's merged pull request's (release.yml passes the one
+// reuse.mjs found, of this repository: its jobs ran on the very files their keys name)
+export function verdictRefs(ref, pulled) {
+ return [...new Set([ref, /^refs\/pull\/\d+\/merge$/.test(pulled ?? '') ? pulled : '', 'refs/heads/main'].filter(Boolean))];
+}
+
 // the keys GitHub holds a passed verdict for, on this ref or main's (actions/caches; a ref sees main's caches too)
 async function verdicts(keys, { repo, token, refs }) {
  const passed = new Set();
@@ -159,7 +166,7 @@ if (import.meta.main) {
  if (mode === 'changed' && repo && token) {
   const keys = [...Object.entries(p.keys).filter(([j]) => p.jobs[j]).map(([, k]) => k), ...p.rust.map(s => s.key), ...(p.keys.js ? [p.keys.js] : [])];
   try {
-   const passed = await verdicts(keys, { repo, token, refs: [...new Set([ref, 'refs/heads/main'].filter(Boolean))] });
+   const passed = await verdicts(keys, { repo, token, refs: verdictRefs(ref, process.env.CI_VERDICTS_REF) });
    for (const k of passed) console.log(`passed before with these files: ${k}`);
    p = unpassed(p, passed);
   } catch (e) { console.log(`no verdicts read (${e.message}): every selected job runs`); }

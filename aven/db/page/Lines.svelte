@@ -99,7 +99,7 @@
 	/** Line `l` quoted, as a sentence names it. @param {string | null} l */
 	const quoted = (l) => `“${lineName(lineOf(l))}”`;
 	/** Who made edit `e`: its device by name, the vault it acted for and the owners it acted through. @param {Numbered} e */
-	const who = (e) => actingWords(world, e.author, e.signer ?? e.actor, e.via);
+	const who = (e) => actingWords(world, e.author, e.signer, e.via);
 
 	/** What edit `e` did, in the view's words where it has them, else avenDB's. @param {Numbered} e */
 	const what = (e) => said?.(e) || editWords(e, lines, here?.line, thing);

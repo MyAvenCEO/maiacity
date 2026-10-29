@@ -19,6 +19,7 @@ use avendb::id::{BlobId, EntryId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::Refusal;
 use avendb::sign::Ceremony;
+use avendb::slice::Selector;
 use avendb::sync::LogId;
 use bytes::Bytes;
 use iroh::EndpointId;
@@ -108,7 +109,7 @@ impl Node {
                 // while a peer holds more, never waiting for the whole catch-up
                 let mut world = self.world_encoded(engine::WorldSnapshot::into_json).await?;
                 if world.get("ok").is_some() {
-                    let (heard, behind, _) = self.shared.heard(None).await;
+                    let (heard, behind, _) = self.shared.heard(None, Selector::All).await;
                     engine::coverage::add_freshness(&mut world, heard, behind.len());
                 }
                 world
@@ -171,14 +172,15 @@ impl Node {
 
     /// A read on what the device holds, stamped with its freshness (`Freshness.lean`), whatever it reads: `current`,
     /// `offline` as of the device's last current read, or `behind` with the logs its live peers announced that it lacks
-    /// and that may hold what it reads: an entry's log of the read's vault, or of a vault the device can't place yet,
-    /// that vault's own log, and any share's or audience's, which may change what it sees. A query's coverage counts
+    /// and that may change what it shows (`Shared::heard`, `engine::footprint`): the log of an entry it may pick, or
+    /// of one the device can't place yet, its vault's own log, and any share's or audience's. A query's coverage counts
     /// those logs too (`Coverage.lean` `answer`): complete only once none is behind. A read that is behind asks for
     /// those logs first (`wanted`), so its scope arrives before the rest. No clock: the announcements and the holdings
     /// decide. `touched`, which says what changed and shows nothing, is not stamped. A read looks the walk up
     /// (`Shared::heard`): it runs once per change of what the peers or the device hold, not once per read.
     async fn fresh_read(&self, op: Value) -> Value {
         let vault = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex);
+        let picks = engine::footprint(&op);
         let stamped = engine::name(&op) != Some("touched");
         // a window comes off the shared index where that can say (`query_window`, a page of posts `posts_page`),
         // else from the engine
@@ -191,7 +193,7 @@ impl Node {
             None => self.read(move |lab, me| engine::read(lab, me, &op)).await,
         };
         if !stamped || answer.get("ok").is_none() { return answer; }
-        let (heard, matching, new) = self.shared.heard(vault).await;
+        let (heard, matching, new) = self.shared.heard(vault, picks).await;
         if engine::coverage::reads_open(&answer) { engine::coverage::add_logs(&mut answer, matching.len()); }
         engine::coverage::add_freshness(&mut answer, heard, matching.len());
         if new && heard.live > 0 && !matching.is_empty() {
@@ -324,7 +326,7 @@ impl Node {
         if !self.read(move |lab, me| lab.file(me, &root).is_some()).await {
             // the entry that brings it may not have arrived yet: the refusal says how fresh the device is
             // (`Freshness.lean`), so a page tells a file still arriving (behind) from one it may not read
-            let (heard, behind, _) = self.shared.heard(None).await;
+            let (heard, behind, _) = self.shared.heard(None, Selector::All).await;
             let mut refused = Refused::Rule(Refusal::NoCap).to_json();
             refused["fresh"] = engine::coverage::Freshness::of(heard, (0, behind.len())).to_json();
             return Ok((refused, None));
