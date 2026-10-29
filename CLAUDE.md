@@ -14,17 +14,19 @@ goal, not on each task.
 - **Check locally, and only what you touched.** Before you push, run `bun aven/ops/devx/check.mjs` (`--plan` to see
   what it runs): the tests next to your change, svelte-check for page code, and per touched crate `cargo check --tests`
   and the test programs you touched. More commands in `docs/CI.md`. Do not run the full suite.
-- **One collector thread per goal.** The collector merges the finished task branches into its own branch with
-  `bun aven/ops/devx/collect.mjs --check <task-branches>` (or `--drafts`; `--plan` changes nothing): an ordinary
-  `--no-ff` merge commit per branch, made in memory first, so a conflicting branch is left out and named instead of
-  half-merged (send it back to its thread). It then runs the targeted checks for the merged files. Task threads tell
-  the collector (or the coordinator) when their branch is ready. They do not push to the collector's branch.
-- **One final PR to main.** The collector's draft PR goes ready for review once the goal is in, its body listing the
-  `Task:` lines from `bun aven/ops/devx/collect.mjs --tasks` (`aven/ops/devx/measure.mjs` counts them). CI runs once. Fix
-  what fails in one round, push, and merge with a **merge commit** (not a squash or a rebase, Samuel 2026-10-27: every
-  task's own commits stay in main's history; `git log --first-parent main` reads one line per goal). Give it an
-  explicit commit message: the PR title plus the `Task:` lines, never a `[skip ci]`. Then close the task PRs it landed
-  with a comment that names the final PR, and bring `main` back into the collector's branch with a merge (no force
+- **The Goal thread leads, collects and ships** (Samuel 2026-10-29: no separate collector role). Each goal has one
+  thread, and Goal N+1 gets a new thread when it starts. That thread merges the finished task branches into its own
+  branch with `bun aven/ops/devx/collect.mjs --check <task-branches>` (or `--drafts`; `--plan` changes nothing). Each
+  branch becomes an ordinary `--no-ff` merge commit, made in memory first, so a conflicting branch is left out and
+  named instead of half-merged; send it back to its thread. The thread then runs the targeted checks for the merged
+  files. Task threads tell the Goal thread (or the coordinator) when their branch is ready. They do not push to the
+  Goal thread's branch.
+- **One final PR to main.** The Goal thread's draft PR goes ready for review once the goal is in. Its body lists the
+  `Task:` lines from `bun aven/ops/devx/collect.mjs --tasks` (`aven/ops/devx/measure.mjs` counts them). CI runs once.
+  Fix what fails in one round, push, and merge with a **merge commit**, not a squash or a rebase (Samuel 2026-10-27:
+  every task's own commits stay in main's history, and `git log --first-parent main` reads one line per goal). Give it
+  an explicit commit message, the PR title plus the `Task:` lines, never a `[skip ci]`. Then close the task PRs it
+  landed with a comment that names the final PR, and bring `main` back into the goal's branch with a merge (no force
   push).
 - **The goal gate.** One workflow checks everything (`.github/workflows/ci.yml`): its plan job picks the jobs a PR's
   files need, and its last job, "CI required", fails when one of them is red, cancelled or missing. It is the required
