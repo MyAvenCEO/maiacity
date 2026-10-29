@@ -1220,11 +1220,10 @@ fn coop_of_alice(w: &mut World, nonce: u64) -> VaultId {
 }
 
 /// A vault founded before views had a v2 holds the schemas and lenses avenDB shipped then, as Maia City held them
-/// (the page's `standardize`), and neither View v2 nor its lens: `create` naming `"view"` makes a view of v2 there all
+/// (a page once copied them in), and neither View v2 nor its lens: `create` naming `"view"` makes a view of v2 there all
 /// the same, as every app reads through its own shipped schemas beside the vault's lane (`Lane::with_built_ins`), and
 /// a view of v1 written before opens in v2 through the shipped lens and edits on. The vault's database shows the two
-/// among the built-in ones it doesn't hold, which the founder's page adds as it adds every one it lacks; once they are
-/// in its lane, every view reads as before.
+/// among the built-in ones it doesn't hold; once they are in its lane, every view reads as before.
 #[test]
 fn a_vault_founded_before_views_of_v2_makes_them_all_the_same() {
     let mut w = cast::world();
