@@ -296,14 +296,22 @@ pub fn owned_by(st: &State, p: SignerId) -> Vec<VaultId> {
 /// them to add itself to its vault. Nothing about any share, audience or entry (T20): the device asks for the rest once
 /// it acts for the vault.
 pub fn link_card(edits: &[Edit], p: SignerId) -> Vec<Edit> {
-    link_places(edits, &view(edits), p).into_iter().map(|i| edits[i].clone()).collect()
+    let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
+    link_places(edits, &ids, &view(edits), p).into_iter().map(|i| edits[i].clone()).collect()
 }
 
-/// `link_card`, by the view `st` of `edits`: the places in `edits` of what it hands over.
-pub(crate) fn link_places(edits: &[Edit], st: &State, p: SignerId) -> Vec<usize> {
-    let vaults: HashSet<VaultId> = close_vaults(st, owned_by(st, p)).into_iter().collect();
+/// `link_card`, by the view `st` of `edits`, whose ids are `ids`: the places in `edits` of what it hands over.
+pub(crate) fn link_places(edits: &[Edit], ids: &[EditId], st: &State, p: SignerId) -> Vec<usize> {
+    vault_places(edits, ids, st, owned_by(st, p))
+}
+
+/// `vault_logs`, by the ids `ids` of `edits`: the places in `edits` of the logs of `vs` and of every vault that owns
+/// one of them, up the chains. No edit is hashed for its id: a peer's link card hashed every edit of its log, 1.4 GB
+/// of them for a pass (5.5 s of fresh10's sign-in, 2026-10-29).
+pub(crate) fn vault_places(edits: &[Edit], ids: &[EditId], st: &State, vs: Vec<VaultId>) -> Vec<usize> {
+    let vaults: HashSet<VaultId> = close_vaults(st, vs).into_iter().collect();
     (0..edits.len())
-        .filter(|&i| matches!(log_of(&edits[i], edits[i].id()), Some(LogId::Vault(v)) if vaults.contains(&v)))
+        .filter(|&i| matches!(log_of(&edits[i], ids[i]), Some(LogId::Vault(v)) if vaults.contains(&v)))
         .collect()
 }
 

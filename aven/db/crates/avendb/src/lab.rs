@@ -163,12 +163,18 @@ use crate::slice::{
     Attrs, Body, CAP_GROUP_TYPE, Header, LENS_TYPE, SCHEMA_TYPE, Select, Selector, Slice, Sym, TagDelta,
 };
 use crate::sync::{
-    LogId, Place, Stub, answer_by_log, asks_with_stubs, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs,
+    LogId, Place, Stub, answer_by_log, asks_with_stubs, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_places,
 };
 use crate::wire::{Claim, FileHold, Frontier, Join, Request, Statement, Wire as _};
 #[cfg(test)]
 use crate::sync::asks_ids;
 use crate::world;
+
+/// The ids of the edits of `log` of the logs of `vs` and of every vault that owns one of them, up the chains, as `st`
+/// knows them (`sync::vault_places`): what a contact card carries.
+fn vault_ids(log: &Log, st: &State, vs: Vec<VaultId>) -> Vec<EditId> {
+    vault_places(log.edits(), log.ids(), st, vs).into_iter().map(|i| log.ids()[i]).collect()
+}
 
 /// A device keeps its keys and audiences up to date in a few rounds at most: one to make and seal keys and move
 /// entries, one to seal the keys of the audiences they moved to and link their history, one to answer what moved, one
@@ -2375,7 +2381,7 @@ impl Lab {
         let signature = |s| self.sign_by(s, id, ceremonies, &batch, None, &[]);
         let sigs = signers.into_iter().map(signature).collect::<Result<_, _>>()?;
         let store = self.held(on);
-        let logs: Vec<EditId> = vault_logs(store.log.edits(), store.view(), vec![vault]).iter().map(Edit::id).collect();
+        let logs = vault_ids(&store.log, store.view(), vec![vault]);
         let (card, _) = self.outgoing(on, &logs);
         Ok(Claim { card, add: edit, sigs })
     }
@@ -2662,7 +2668,7 @@ impl Lab {
         let store = self.held(d);
         let st = store.view();
         let vs = st.vaults().iter().map(|v| v.id).filter(|&v| st.acts_for(d, v)).collect();
-        vault_logs(store.log.edits(), st, vs).iter().map(Edit::id).collect()
+        vault_ids(&store.log, st, vs)
     }
 
     /// Lock device `d`: its keys, and every key and item they opened, leave its memory, each key wiped, and so do the
@@ -3111,7 +3117,7 @@ impl Lab {
     /// vault's log before it accepts a share to that vault.
     pub fn share_contact(&mut self, from: SignerId, to: SignerId, v: VaultId) {
         let store = self.held(from);
-        let ids: Vec<EditId> = vault_logs(store.log.edits(), store.view(), vec![v]).iter().map(Edit::id).collect();
+        let ids = vault_ids(&store.log, store.view(), vec![v]);
         let (signed, blobs) = self.outgoing(from, &ids);
         self.deliver(to, signed, &blobs);
     }
@@ -3148,8 +3154,8 @@ impl Lab {
         }
         let named = |c: &ShareId| st.share(*c).map(|x| [x.share.over, x.share.issuer]);
         let vaults: Vec<VaultId> = cp.chain.iter().filter_map(named).flatten().collect();
-        let logs = vault_logs(store.log.edits(), st, vaults);
-        Ok(logs.iter().map(Edit::id).chain(cp.chain.iter().map(|c| EditId(c.0))).collect())
+        let logs = vault_ids(&store.log, st, vaults);
+        Ok(logs.into_iter().chain(cp.chain.iter().map(|c| EditId(c.0))).collect())
     }
 
     /// What a newcomer's device `d` hands the server at sign-up: its card (`card`), the logs of its vault, and the
@@ -5764,7 +5770,7 @@ impl Lab {
     /// entry (T20); a passkey that owns no vault gets nothing.
     pub fn link_card(&self, d: SignerId, passkey: SignerId) -> Vec<Signed> {
         let store = self.held(d);
-        let places = link_places(store.log.edits(), self.standing(d), passkey);
+        let places = link_places(store.log.edits(), store.log.ids(), self.standing(d), passkey);
         places.into_iter().map(|i| store.signed.owned(&store.log.ids()[i])).collect()
     }
 
