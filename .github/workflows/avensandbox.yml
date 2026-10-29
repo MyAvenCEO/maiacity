@@ -50,11 +50,19 @@ jobs:
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version: 1.4.4
+      # The P2P lanes route between Docker networks, which Docker 28.2 and later block unless allowed. Milestone 1 runs
+      # on one network, so a runner whose Docker refuses the setting goes on without it, with a warning.
       - name: Docker routes between its networks
         run: |
-          conf=$(sudo cat /etc/docker/daemon.json 2>/dev/null || echo '{}')
-          echo "$conf" | jq '. + {"allow-direct-routing": true}' | sudo tee /etc/docker/daemon.json > /dev/null
-          sudo systemctl restart docker
+          sudo cat /etc/docker/daemon.json > /tmp/daemon.json 2>/dev/null || echo '{}' > /tmp/daemon.json
+          jq '. + {"allow-direct-routing": true}' /tmp/daemon.json | sudo tee /etc/docker/daemon.json > /dev/null
+          if ! sudo systemctl restart docker; then
+            echo "::warning::Docker $(docker version --format '{{.Client.Version}}') refused allow-direct-routing; running without it"
+            sudo cp /tmp/daemon.json /etc/docker/daemon.json
+            sudo systemctl reset-failed docker
+            sudo systemctl restart docker
+          fi
+          docker version --format 'Docker {{.Server.Version}}'
       - uses: docker/login-action@v4.7.0
         with:
           registry: ghcr.io
