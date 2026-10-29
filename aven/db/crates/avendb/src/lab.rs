@@ -190,10 +190,12 @@ const INDEX_WORK: usize = 32;
 /// The bodies a step of a catch-up opens for each entry of its budget (`read`).
 const READ_WORK: usize = 32;
 
-/// The budget of one turn of a Lab whose turns are bounded (`Lab::bound_turns`), and of the step a write of a
-/// device's own, or what it takes from a peer, brings it on in the middle of a catch-up (`refresh_own`,
-/// `receive_now_prepared`; `turn` in `CatchUpBudget.lean`).
-const TURN_BUDGET: usize = 8;
+/// The budget of the step a write of a device's own takes in the middle of a catch-up (`Lab::refresh_own`).
+const OWN_WRITE_BUDGET: usize = 8;
+
+/// The budget of the step what a device takes from a peer brings it on in the middle of a catch-up
+/// (`receive_now_prepared`).
+const TAKEN_BUDGET: usize = 8;
 
 
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
@@ -1866,10 +1868,6 @@ pub struct Lab {
     dry: bool,
     /// The devices whose writes were kept while catching up was held back (`together`): each catches up once it ends.
     held_back: Option<BTreeSet<SignerId>>,
-    /// Every turn of it is bounded (`bound_turns`): a node's, whose turns its pages and peers wait on.
-    bounded: bool,
-    /// A bounded turn left a device behind (`take_left_behind`).
-    left_behind: bool,
     /// Its devices are a patched app's (`patched`): they ignore the ops of the shares they write through, and the
     /// schemas of what they write.
     lawless: bool,
@@ -1929,8 +1927,6 @@ impl Lab {
             now: 0,
             dry: false,
             held_back: None,
-            bounded: false,
-            left_behind: false,
             lawless: false,
             recovery: None,
             hosted: HashMap::new(),
@@ -3352,29 +3348,8 @@ impl Lab {
     /// Bring device `d`'s keys, audiences and items up to date with its edits, `lent` holding the keys of owners
     /// signing on it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and
     /// makes the edits its upkeep calls for (`upkeep`). A locked device only replays.
-    ///
-    /// In a Lab whose turns are bounded (`bound_turns`) it is one step of a catch-up, whichever call it ends: what is
-    /// left waits, behind, for the steps after it (`catch_up_step`). Until 2026-10-28 a page that came to a device not
-    /// already catching up brought it all in one turn, a whole replay, its key index made again and every body read:
-    /// 131.9 s on a Mac's page, whose worker answered no peer meanwhile (`every_turn_le` in `CatchUpBudget.lean`).
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
-        let budget = self.bounded.then_some(TURN_BUDGET);
-        if !self.refresh_with(d, lent, budget) && self.bounded {
-            self.left_behind = true;
-        }
-    }
-
-    /// Whether a turn since it was last asked left a device behind where it would have caught up but for its bound
-    /// (`refresh`): its node's catch-up steps it on. A page taken without catching up (`receive_now`), or a step of
-    /// a catch-up, leaves it to the pull or the catch-up that made it.
-    pub fn take_left_behind(&mut self) -> bool {
-        std::mem::take(&mut self.left_behind)
-    }
-
-    /// Bound every turn of this Lab (`refresh`): a node's, which steps its catch-ups on a turn at a time
-    /// (`catch_up_step`) between the turns its pages and peers ask for.
-    pub fn bound_turns(&mut self) {
-        self.bounded = true;
+        self.refresh_with(d, lent, None);
     }
 
     /// Whether device `d` is in the middle of a catch-up a step at a time (`catch_up_step`): behind, or with a replay
@@ -3391,7 +3366,7 @@ impl Lab {
     /// at 32,000 edits, the page it came in the middle of shown at once).
     fn refresh_own(&mut self, on: SignerId, lent: &[(SignerId, Secret)], catching: bool) {
         if catching {
-            self.refresh_with(on, lent, Some(TURN_BUDGET));
+            self.refresh_with(on, lent, Some(OWN_WRITE_BUDGET));
         } else {
             self.refresh(on, lent);
         }
@@ -5382,8 +5357,6 @@ impl Lab {
             now: self.now,
             dry: false,
             held_back: None,
-            bounded: self.bounded,
-            left_behind: false,
             lawless: false,
             recovery: self.recovery.clone(),
             hosted: HashMap::new(),
@@ -6314,7 +6287,7 @@ impl Lab {
         // (2026-10-28); the catch-up's own steps bring the rest
         if now && store.behind {
             if catching {
-                self.refresh_with(d, &[], Some(TURN_BUDGET));
+                self.refresh_with(d, &[], Some(TAKEN_BUDGET));
             } else {
                 self.refresh(d, &[]);
             }
@@ -6322,8 +6295,8 @@ impl Lab {
         new
     }
 
-    /// Brings device `d`'s keys and items up to date with the edits it took since it last did (`receive_now`), or in
-    /// a Lab whose turns are bounded one step on (`refresh`). True if there were any.
+    /// Brings device `d`'s keys and items up to date with the edits it took since it last did (`receive_now`). True if
+    /// there were any.
     pub fn catch_up(&mut self, d: SignerId) -> bool {
         let Some(store) = self.stores.get_mut(&self.at(d)) else {
             return false;
@@ -6758,14 +6731,11 @@ impl Lab {
         // what is left to do: the edits past its stored view, and the entries no showing it kept stands for. A start
         // of little does it in one go; one of more does a step of it and ends behind, its node's catch-up steps doing
         // the rest a turn at a time as its pages read (`CatchUpBudget.lean`): an iPhone's unlock with no view of a
-        // partial vault replayed, read and showed it all inside the start, 313 s (2026-10-28). A Lab whose turns are
-        // bounded always does a step: what is left counts no bodies to read nor a key index to make, and a warm Mac
-        // whose start counted little read every body in it, 31 s (2026-10-28)
-        let bounded = self.bounded;
+        // partial vault replayed, read and showed it all inside the start, 313 s (2026-10-28)
         let Some(store) = self.stores.get_mut(&d) else { return };
         let unshown = store.replay.state.entries().len().saturating_sub(store.kept_shown.len());
         let left = store.log.edits().len().saturating_sub(store.replayed) + unshown;
-        if left <= store.restore_whole && !bounded {
+        if left <= store.restore_whole {
             self.refresh(d, &[]);
             return;
         }

@@ -540,26 +540,6 @@ mod slices {
         node
     }
 
-    /// The Lab of `behind(n)`'s iPhone outside a node, its turns not bounded, caught up in one whole catch-up: what
-    /// every catch-up in steps comes to.
-    fn caught_up_whole(n: usize) -> (avendb::lab::Lab, avendb::id::SignerId) {
-        let mut w = world();
-        let coop = handbook_ready(&mut w);
-        let (mac, phone) = (w.mac_a, w.phone_a);
-        let mut lab = w.lab.split(phone, &[], [77; 32]);
-        for i in 0..n {
-            let doc = document(&format!("Doc {i}"), "Written while the iPhone was away.", mac);
-            w.lab.create(mac, coop, coop, "doc", &[], doc).unwrap();
-        }
-        let held: std::collections::HashSet<_> = lab.log(phone).ids().iter().copied().collect();
-        let fresh: Vec<_> = w.lab.backup(mac).signed().iter().filter(|s| !held.contains(&s.edit.id())).cloned().collect();
-        for page in fresh.chunks(100) {
-            lab.receive_whose_now(phone, page.to_vec(), vec![], false);
-        }
-        while lab.catch_up(phone) {}
-        (lab, phone)
-    }
-
     /// Any device's rule: a catch-up its pace puts off still comes, so it never answers its peers from a replay behind
     /// its log for good. Left behind with nothing to step it on, a device answered by a replay without the edits it took
     /// since (`Lab::standing`): a peer was never handed the note written while it was away
@@ -606,11 +586,10 @@ mod slices {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn a_page_waits_for_one_slice_of_a_catch_up_not_the_whole() {
         let n = 800;
-        // a node's Lab has no whole catch-up: a call of one is a step (`Lab::bound_turns`)
-        let stepped = behind(n).await;
-        stepped.shared.try_lab_class(Class::Background, |lab, me| { lab.catch_up(me); }).await.unwrap();
-        assert!(!stepped.read(|lab, me| lab.replay_current(me)).await, "a catch-up of 800 documents in one turn of a node's Lab");
-        stepped.shutdown().await.unwrap();
+        let whole = behind(n).await;
+        let before = catch_up_turns(&whole);
+        whole.shared.try_lab_class(Class::Background, |lab, me| { lab.catch_up(me); }).await.unwrap();
+        assert_eq!(catch_up_turns(&whole) - before, 1, "a whole catch-up is one turn");
         let sliced = behind(n).await;
         let shared = sliced.shared.clone();
         let (answered, turns) = read_between(&sliced, async move {
@@ -622,8 +601,8 @@ mod slices {
         assert!(answered + 4 <= turns, "a read waits a slice, not the catch-up: answered after {answered} of {turns} turns");
         // and it brought what one catch-up brings
         let seen = |lab: &avendb::lab::Lab, me| (lab.entries(me), lab.log(me).ids().to_vec());
-        let (whole, me) = caught_up_whole(n);
-        assert_eq!(seen(&whole, me), sliced.read(seen).await);
+        assert_eq!(whole.read(seen).await, sliced.read(seen).await);
+        whole.shutdown().await.unwrap();
         sliced.shutdown().await.unwrap();
     }
     /// The keys a pull brings after its pages, taken in the middle of the catch-up those pages left (`bring_keys`, a

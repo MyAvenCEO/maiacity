@@ -34,13 +34,6 @@ What a device takes in the middle of a catch-up (a page, the keys a pull brought
 and brings it one step on, not the whole of it (`take`, `taken_le`; `Lab::receive_now_prepared`). Until 2026-10-28 it
 brought the whole catch-up in one turn: 1.8 min on an iPhone, whose page's worker runs the Lab and answered no peer
 meanwhile, so every peer's asking of it waited out its connection.
-
-Every call on a node's Lab is one `turn`, whichever it is: a page taken, the keys a pull brought, a write of its own, a
-start, a step of its catch-up (`Lab::bound_turns`, `Lab::refresh`). What it adds joins what is left and one step brings
-it on, at most `k` (`every_turn_le`), however much it added or was left, and its catch-up's steps end the rest
-(`turns_end`). Until 2026-10-28 that held only while the device was already catching up: a page that came to a device
-caught up did the whole of what it brought in one turn, a whole replay, its key index made again and every body read,
-131.9 s on a Mac's page, whose worker answered no peer meanwhile (`whole`, `a_whole_turn_is_unbounded`).
 -/
 
 namespace AvenDB.CatchUpBudget
@@ -159,25 +152,6 @@ def take (k : Nat) (t more : Todo) : Todo := step k (t.add more)
 to the catch-up's steps, which end (`ends_within`). -/
 theorem taken_le (k : Nat) (t more : Todo) : (t.add more).left - (take k t more).left ≤ k := work_le k (t.add more)
 
-/-- A turn of a node's Lab: whatever the call added, `more`, joins what is left, and one step brings it on. -/
-def turn (k : Nat) (t more : Todo) : Todo := step k (t.add more)
-
-/-- Every turn of a node's Lab does one step's work at most, whichever call it is and however much it added. -/
-theorem every_turn_le (k : Nat) (t more : Todo) : (t.add more).left - (turn k t more).left ≤ k :=
-  work_le k (t.add more)
-
-/-- What its turns leave, its catch-up's steps end. -/
-theorem turns_end (k : Nat) (hk : 0 < k) (t more : Todo) :
-    (steps k (turn k t more).left (turn k t more)).left = 0 :=
-  ends_within k hk _
-
-/-- The turn a call on a device caught up made until 2026-10-28: all of what it added, in one go. -/
-def whole (more : Todo) : Nat := more.left
-
-/-- That turn had no bound: a page can bring any amount of work to a device caught up. -/
-theorem a_whole_turn_is_unbounded (b : Nat) : ∃ more : Todo, b < whole more :=
-  ⟨{ replay := b + 1, index := 0, read := [], shows := [] }, by simp [whole, Todo.left]⟩
-
 namespace Examples
 
 -- a first sync: 130,000 edits to replay and to index, 130,000 bodies, 3,200 entries; 768 units a step
@@ -196,13 +170,6 @@ def first : Todo := { replay := 130000, index := 130000, read := List.range 1300
 
 -- the keys a pull brings in the middle of a first sync: one step, not the 393,200 units left
 #guard (first.add { replay := 0, index := 0, read := [1, 2], shows := [] }).left - (take 768 first { replay := 0, index := 0, read := [1, 2], shows := [] }).left == 768
-
--- a Mac's page that came while it was caught up on 25,357 edits and made it replay, index and read them all again:
--- 76,071 units in one turn until 2026-10-28 (131.9 s), one step of 8 now
-def mac : Todo := { replay := 25357, index := 25357, read := List.range 25357, shows := [] }
-def caught : Todo := { replay := 0, index := 0, read := [], shows := [] }
-#guard whole mac == 76071
-#guard (caught.add mac).left - (turn 8 caught mac).left == 8
 
 end Examples
 

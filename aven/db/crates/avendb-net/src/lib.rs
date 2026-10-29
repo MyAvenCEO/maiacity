@@ -722,10 +722,7 @@ impl Node {
     }
 
     /// Startup already owns the shelf before writing identity or restoring state.
-    pub(crate) async fn spawn_owned(mut lab: Lab, me: SignerId, mut opts: Options, writer: Option<Writer>) -> Result<Node> {
-        // every turn of its Lab is bounded, its start's too: what one leaves waits for its catch-up's steps, between the
-        // turns its pages and peers ask for (`Lab::bound_turns`)
-        lab.bound_turns();
+    pub(crate) async fn spawn_owned(lab: Lab, me: SignerId, mut opts: Options, writer: Option<Writer>) -> Result<Node> {
         let lifecycle = writer.as_ref().map_or_else(lifecycle::Lifecycle::new, Writer::lifecycle);
         if let Some(writer) = &writer {
             opts.shelf = Some(writer.shelf());
@@ -945,7 +942,6 @@ impl Node {
             edit_transfer: edit_transfer::Runtime::default(),
             paced: Mutex::default(),
             catch_up_due: AtomicBool::new(false),
-            stepping: AtomicUsize::new(0),
             pieces: Mutex::default(),
             pool,
             changed: Notify::new(),
@@ -2607,8 +2603,6 @@ struct Shared {
     paced: Mutex<Option<Instant>>,
     /// A catch-up waits for `paced` to pass, and runs then (`Shared::catch_up_later`).
     catch_up_due: AtomicBool,
-    /// The catch-ups stepping its device on now (`catch_up_steps`): a turn left behind waits for theirs, not one more.
-    stepping: AtomicUsize,
     /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out
     /// as those files.
     pieces: Mutex<HashMap<iroh_blobs::Hash, BTreeSet<avendb::sealed::FileRoot>>>,
@@ -2816,7 +2810,7 @@ impl Shared {
                 if !warm {
                     shared.warm.store(false, Ordering::Relaxed);
                 }
-                (out, lab.take_left_behind())
+                out
             }));
             drop(lab);
             ran.unwrap_or_else(|panic| {
@@ -2826,25 +2820,18 @@ impl Shared {
             })
         };
         #[cfg(not(target_arch = "wasm32"))]
-        let (out, behind) = tokio::task::spawn_blocking(work).await.context("the Lab's task")?;
+        return Ok(tokio::task::spawn_blocking(work).await.context("the Lab's task")?);
         // a page's node runs in a worker of its own, which the Lab may hold up: after a long turn the worker's event
         // loop runs before the next, so the carrier's packets waiting in its socket are drained, not dropped
         #[cfg(target_arch = "wasm32")]
-        let (out, behind) = {
+        {
             let began = Instant::now();
             let out = work();
             if began.elapsed() > LONG_TURN {
                 time::sleep(Duration::ZERO).await;
             }
-            out
-        };
-        // a turn its bound left behind (`Lab::bound_turns`: whichever call it was, it did one step) is stepped on by
-        // its catch-up, unless one is stepping it on now
-        if behind && !self.stepping.load(Ordering::Acquire) > 0 {
-            let soonest = (*self.paced.lock().expect("paced")).unwrap_or_else(Instant::now);
-            self.catch_up_later(soonest);
+            Ok(out)
         }
-        Ok(out)
     }
 
     /// Pure observation: does not set the clock, mutate the view, or wake persistence.
@@ -4341,7 +4328,6 @@ impl Shared {
         // entries shown anew `CATCH_UP_SLICE` at a time, so a page's turn comes between them rather than after all of
         // them (a catch-up held the server's Lab 5.5 s, 2026-10-27).
         let (mut caught, mut work, mut left, mut budget) = (false, Duration::ZERO, false, CATCH_UP_SLICE);
-        let _stepping = Stepping::on(&self.stepping);
         loop {
             if until.is_some_and(|until| Instant::now() >= until) {
                 left = true;
@@ -5070,18 +5056,3 @@ mod catch_up_budget_tests {
     }
 }
 
-/// A catch-up stepping its device on (`Shared::stepping`), counted while it lasts.
-struct Stepping<'a>(&'a AtomicUsize);
-
-impl<'a> Stepping<'a> {
-    fn on(count: &'a AtomicUsize) -> Self {
-        count.fetch_add(1, Ordering::AcqRel);
-        Stepping(count)
-    }
-}
-
-impl Drop for Stepping<'_> {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::AcqRel);
-    }
-}
