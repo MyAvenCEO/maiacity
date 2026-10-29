@@ -4,7 +4,7 @@
 // runs in the box's image, whose tag is the first 16 hex digits of its Dockerfile's SHA-256, as the image workflow
 // (.github/workflows/avensandbox-image.yml) tags it.
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { $ } from 'bun';
 import { fence } from './fence.mjs';
@@ -38,22 +38,21 @@ async function ensureDocker() {
 	throw new Error("Docker isn't running: start OrbStack on a Mac, or dockerd here");
 }
 
+// Only GitHub builds the box (.github/workflows/avensandbox-image.yml), after every push that changes its Dockerfile;
+// nothing builds it here. A pull that fails says why.
 async function ensureImage() {
 	if (await ok($`docker image inspect ${image}`)) return;
 	say(`pulling ${image}`);
-	if (await ok($`docker pull ${image}`)) return;
-	// Not published yet (a Dockerfile changed on this branch): build it here. Behind a cloud session's proxy, the
-	// build goes through the host's network and trusts the proxy's certificate authority, only in this local copy.
-	say(`building ${image} here`);
-	const ca = join(box, 'extra-ca', 'proxy.crt');
-	const proxied = Boolean(process.env.HTTPS_PROXY) && existsSync(proxyCa);
-	if (proxied) copyFileSync(proxyCa, ca);
-	try {
-		const net = proxied ? ['--network', 'host', ...proxyNames().flatMap((name) => ['--build-arg', `${name}=${process.env[name]}`])] : [];
-		await $`docker build ${net} -t ${image} ${box}`.env(env);
-	} finally {
-		rmSync(ca, { force: true });
-	}
+	const pull = await $`docker pull ${image}`.nothrow().quiet();
+	if (pull.exitCode === 0) return;
+	const why = `${pull.stdout}${pull.stderr}`;
+	if (/pkg-containers\.githubusercontent\.com[^\n]*Forbidden/.test(why))
+		throw new Error(
+			"this environment's network refuses pkg-containers.githubusercontent.com, where GitHub's registry keeps the image's layers: allow it (SANDBOX.md, \"Where it runs\")",
+		);
+	if (/manifest unknown|not found/i.test(why))
+		throw new Error(`${image} isn't published yet: GitHub builds it after the push that changes the Dockerfile, in about 4 minutes`);
+	throw new Error(`can't pull ${image}: ${why.trim().split('\n').at(-1)}`);
 }
 
 // What a container needs to reach the internet: through a cloud session's proxy, which it must trust, or directly.

@@ -9,7 +9,6 @@ on:
   push:
     paths:
       - aven/DB2/sandbox/box/Dockerfile
-      - aven/DB2/sandbox/box/extra-ca/**
       - .github/workflows/avensandbox-image.yml
   workflow_dispatch:
 

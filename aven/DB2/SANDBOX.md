@@ -20,7 +20,7 @@ Targets, measured in this milestone and reported on every run:
 | A change to the page, visible | < 1 s (hot reload) | |
 | A Rust change, running on every peer | < 30 s | |
 | A new cloud session, image already on disk, until every peer is live | < 2 min | |
-| A first `bun run up --check` that builds the image itself | (none) | 237 s |
+| A change to the box's Dockerfile, pushed, until the new image pulls | (none) | 227 s: GitHub builds both platforms |
 
 ## The cast
 
@@ -223,7 +223,7 @@ production image comes later and is a separate, slim one: just the binary.
 | Place | How |
 |---|---|
 | **Mac** (OrbStack) | `bun run up` in `aven/DB2`. OrbStack's Docker engine config gets `"allow-direct-routing": true`. avenOS opens in any Mac browser, and the Peer-Lights can then run in your browser too. The build folder lives in a Docker volume, not in a folder shared with the Mac, where many small writes are slower. |
-| **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so `bun run up` starts `dockerd` itself when it isn't running, in a session of its own so it outlives the command. Until the image is published, `bun run up` builds it here, through the session's proxy. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
+| **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so `bun run up` starts `dockerd` itself when it isn't running, in a session of its own so it outlives the command. `bun run up` only pulls the image: GitHub builds it, and a pull that fails names why. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
 | **GitHub CI** | The `production` branch's checks run `bun run up --check` on a Linux runner, from the same image (macOS runners have no Docker). |
 
 The box is a whole development machine in one image, the same on every platform that runs Docker: a Mac (OrbStack),
