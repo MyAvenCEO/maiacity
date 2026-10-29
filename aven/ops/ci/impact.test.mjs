@@ -64,8 +64,12 @@ test('a release compares with the newest first parent that shipped: a red, cance
  const sha = c => c.repeat(40);
  // main: a <- b <- c <- d (first parents); d is the release now running
  const parents = { [sha('d')]: sha('c'), [sha('c')]: sha('b'), [sha('b')]: sha('a') };
- const at = runs => async path => path.includes('/actions/workflows/release.yml/runs') ? { workflow_runs: runs }
-  : { parents: parents[path.split('/').pop()] ? [{ sha: parents[path.split('/').pop()] }, { sha: sha('9') }] : [] };
+ // the runs by the fields read, a commit as its git object: a commit's full answer carries every file's patch
+ const at = runs => async (path, jq) => {
+  if (path.includes('/actions/workflows/release.yml/runs')) { if (!jq) throw new Error('unprojected ' + path); return { workflow_runs: runs }; }
+  if (!path.startsWith('repos/o/r/git/commits/')) throw new Error('unexpected ' + path);
+  return { parents: parents[path.split('/').pop()] ? [{ sha: parents[path.split('/').pop()] }, { sha: sha('9') }] : [] };
+ };
  const ran = (c, conclusion, status = 'completed') => ({ head_sha: sha(c), status, conclusion });
  const base = runs => releasedBase({ api: at(runs), repo: 'o/r', head: sha('d') });
  expect(await base([ran('c', 'success'), ran('b', 'success')])).toBe(sha('c'));
@@ -155,11 +159,13 @@ test('each Playwright image is the Playwright its job drives', () => {
 import { reusable } from './reuse.mjs';
 function github({ parents = ['p'], tree = 't', headTree = 't', pulls, compare = 'ahead', runs }) {
  const calls = [];
- const api = async path => {
+ const api = async (path, jq) => {
   calls.push(path);
-  if (path === 'repos/o/r/commits/m') return { parents: parents.map(sha => ({ sha })), commit: { tree: { sha: tree } } };
+  // a commit is asked as its git object, and a list or a compare by the fields read: never a commit with its patches
+  if (path === 'repos/o/r/git/commits/m') return { parents: parents.map(sha => ({ sha })), tree: { sha: tree } };
+  if (path === 'repos/o/r/git/commits/h') return { tree: { sha: headTree } };
+  if (!jq) throw new Error('unprojected ' + path);
   if (path === 'repos/o/r/commits/m/pulls') return pulls ?? [{ number: 7, merged_at: 'x', merge_commit_sha: 'm', head: { sha: 'h', repo: { full_name: 'o/r' } } }];
-  if (path === 'repos/o/r/commits/h') return { commit: { tree: { sha: headTree } } };
   if (path === 'repos/o/r/compare/p...h') return { status: compare };
   if (path.startsWith('repos/o/r/actions/runs?head_sha=h')) return { workflow_runs: typeof runs === 'function' ? runs() : runs };
   throw new Error('unexpected ' + path);

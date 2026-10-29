@@ -77,12 +77,13 @@ pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
             KeyName::Scoped(KeyFam::Share(_, c), _) => LogId::Share(c),
             KeyName::Scoped(KeyFam::Audience(v, x), _) => LogId::Audience(v, x),
             KeyName::Entry(e, ..) => LogId::Entry(e),
+            KeyName::Select(c) => LogId::Share(c),
         },
     })
 }
 
 /// The log of each of `edits` (`ids[i]` being `edits[i]`'s id).
-pub(crate) fn logs_of(edits: &[Edit], ids: &[EditId]) -> Vec<Option<LogId>> {
+pub(crate) fn logs_of(edits: &crate::policy::Edits, ids: &[EditId]) -> Vec<Option<LogId>> {
     edits.iter().zip(ids).map(|(edit, &id)| log_of(edit, id)).collect()
 }
 
@@ -217,14 +218,14 @@ impl<'a> Syncing<'a> {
 /// What a peer holding `edits` sends device `d`, which follows the vaults `follow`: the edits of every entry log `d`
 /// syncs and every audience and share log it may receive, and of the logs of the vaults `d` acts for and that those
 /// edits name, up their owners. A vault it follows adds no log of its own: only what its public edits name.
-pub fn respond(edits: &[Edit], d: SignerId, follow: &[VaultId]) -> Vec<Edit> {
+pub fn respond(edits: &crate::policy::Edits, d: SignerId, follow: &[VaultId]) -> crate::policy::EditsVec {
     answer(edits, &view(edits), d, follow).into_iter().map(|i| edits[i].clone()).collect()
 }
 
 /// A peer holding `edits` may hand device `d`, which follows the vaults `follow`, the sealed bytes of file `file`: it
 /// sends `d` an edit that brings the file (T27), a write of an entry `d` may receive, or a snapshot whose state of an
 /// entry `d` syncs travels as it (`Stated::slice`). Holding the bytes is the peer's store's to say.
-pub fn may_fetch(edits: &[Edit], d: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
+pub fn may_fetch(edits: &crate::policy::Edits, d: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
     let st = view(edits);
     let reach = Reach::new(&st, d, follow);
     answer(edits, &st, d, follow).into_iter().any(|i| {
@@ -235,14 +236,14 @@ pub fn may_fetch(edits: &[Edit], d: SignerId, file: &FileRoot, follow: &[VaultId
 
 /// `respond`, by the view `st` of `edits`: the places in `edits` of what it sends, the entry, audience and share logs'
 /// first.
-pub(crate) fn answer(edits: &[Edit], st: &State, d: SignerId, follow: &[VaultId]) -> Vec<usize> {
+pub(crate) fn answer(edits: &crate::policy::Edits, st: &State, d: SignerId, follow: &[VaultId]) -> Vec<usize> {
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
     answer_ids(edits, &ids, st, d, follow)
 }
 
 /// `answer`, given each edit's id (`ids[i]` being `edits[i]`'s), as a store keeps them: an edit's id is a hash of all
 /// of it, which every page of a reply worked out again for every edit its device held.
-pub(crate) fn answer_ids(edits: &[Edit], ids: &[EditId], st: &State, d: SignerId, follow: &[VaultId]) -> Vec<usize> {
+pub(crate) fn answer_ids(edits: &crate::policy::Edits, ids: &[EditId], st: &State, d: SignerId, follow: &[VaultId]) -> Vec<usize> {
     let mut by_log: HashMap<LogId, Vec<usize>> = HashMap::new();
     for (i, (edit, &id)) in edits.iter().zip(ids).enumerate() {
         if let Some(l) = log_of(edit, id) {
@@ -255,7 +256,7 @@ pub(crate) fn answer_ids(edits: &[Edit], ids: &[EditId], st: &State, d: SignerId
 /// `answer`, given each log's places in `edits` (`Log::by_log`, kept as edits arrive): it visits the logs, not every
 /// edit, so what it costs grows with the logs held and what it sends.
 pub(crate) fn answer_by_log(
-    edits: &[Edit], by_log: &HashMap<LogId, Vec<usize>>, st: &State, d: SignerId, follow: &[VaultId],
+    edits: &crate::policy::Edits, by_log: &HashMap<LogId, Vec<usize>>, st: &State, d: SignerId, follow: &[VaultId],
 ) -> Vec<usize> {
     let reach = Reach::new(st, d, follow);
     let mut items: Vec<usize> =
@@ -276,7 +277,7 @@ pub(crate) fn answer_by_log(
 
 /// The edits of the logs of `vs` and of every vault that owns one of them, up the chains, as `st` knows them: what a
 /// contact card carries.
-pub fn vault_logs(edits: &[Edit], st: &State, vs: Vec<VaultId>) -> Vec<Edit> {
+pub fn vault_logs(edits: &crate::policy::Edits, st: &State, vs: Vec<VaultId>) -> crate::policy::EditsVec {
     let vaults: HashSet<VaultId> = close_vaults(st, vs).into_iter().collect();
     edits
         .iter()
@@ -295,15 +296,23 @@ pub fn owned_by(st: &State, p: SignerId) -> Vec<VaultId> {
 /// the vaults `p` owns, and of every vault that owns one of them, up the chains, as a new device of `p`'s person needs
 /// them to add itself to its vault. Nothing about any share, audience or entry (T20): the device asks for the rest once
 /// it acts for the vault.
-pub fn link_card(edits: &[Edit], p: SignerId) -> Vec<Edit> {
-    link_places(edits, &view(edits), p).into_iter().map(|i| edits[i].clone()).collect()
+pub fn link_card(edits: &crate::policy::Edits, p: SignerId) -> crate::policy::EditsVec {
+    let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
+    link_places(edits, &ids, &view(edits), p).into_iter().map(|i| edits[i].clone()).collect()
 }
 
-/// `link_card`, by the view `st` of `edits`: the places in `edits` of what it hands over.
-pub(crate) fn link_places(edits: &[Edit], st: &State, p: SignerId) -> Vec<usize> {
-    let vaults: HashSet<VaultId> = close_vaults(st, owned_by(st, p)).into_iter().collect();
+/// `link_card`, by the view `st` of `edits`, whose ids are `ids`: the places in `edits` of what it hands over.
+pub(crate) fn link_places(edits: &crate::policy::Edits, ids: &[EditId], st: &State, p: SignerId) -> Vec<usize> {
+    vault_places(edits, ids, st, owned_by(st, p))
+}
+
+/// `vault_logs`, by the ids `ids` of `edits`: the places in `edits` of the logs of `vs` and of every vault that owns
+/// one of them, up the chains. No edit is hashed for its id: a peer's link card hashed every edit of its log, 1.4 GB
+/// of them for a pass (5.5 s of fresh10's sign-in, 2026-10-29).
+pub(crate) fn vault_places(edits: &crate::policy::Edits, ids: &[EditId], st: &State, vs: Vec<VaultId>) -> Vec<usize> {
+    let vaults: HashSet<VaultId> = close_vaults(st, vs).into_iter().collect();
     (0..edits.len())
-        .filter(|&i| matches!(log_of(&edits[i], edits[i].id()), Some(LogId::Vault(v)) if vaults.contains(&v)))
+        .filter(|&i| matches!(log_of(&edits[i], ids[i]), Some(LogId::Vault(v)) if vaults.contains(&v)))
         .collect()
 }
 
@@ -328,18 +337,18 @@ pub fn close_vaults(st: &State, mut vs: Vec<VaultId>) -> Vec<VaultId> {
 }
 
 /// A peer's edits after receiving `incoming`: each edit once.
-pub fn receive(edits: &[Edit], incoming: &[Edit]) -> Vec<Edit> {
+pub fn receive(edits: &crate::policy::Edits, incoming: &crate::policy::Edits) -> crate::policy::EditsVec {
     let mut out = edits.to_vec();
     for edit in incoming {
         if !out.contains(edit) {
             out.push(edit.clone());
         }
     }
-    out
+    out.into()
 }
 
 /// The writes one entry has in the view of `edits`, in replay order.
-pub fn entry_writes(edits: &[Edit], e: EntryId) -> Vec<EditId> {
+pub fn entry_writes(edits: &crate::policy::Edits, e: EntryId) -> Vec<EditId> {
     view(edits).writes(e)
 }
 
@@ -351,7 +360,7 @@ struct LogEdits<'a> {
 
 impl<'a> LogEdits<'a> {
     /// The edits of log `l` among `edits` (`ids[i]` being `edits[i]`'s id).
-    fn new(edits: &'a [Edit], ids: &[EditId], l: LogId) -> LogEdits<'a> {
+    fn new(edits: &'a crate::policy::Edits, ids: &[EditId], l: LogId) -> LogEdits<'a> {
         let mut log = LogEdits::default();
         for (edit, &id) in edits.iter().zip(ids) {
             if log_of(edit, id) == Some(l) {
@@ -362,7 +371,7 @@ impl<'a> LogEdits<'a> {
     }
 
     /// Every log's edits, `logs[i]` being the log of `edits[i]` and `ids[i]` its id.
-    fn all(edits: &'a [Edit], ids: &[EditId], logs: &[Option<LogId>]) -> BTreeMap<LogId, LogEdits<'a>> {
+    fn all(edits: &'a crate::policy::Edits, ids: &[EditId], logs: &[Option<LogId>]) -> BTreeMap<LogId, LogEdits<'a>> {
         let mut all: BTreeMap<LogId, LogEdits<'a>> = BTreeMap::new();
         for ((edit, &id), lg) in edits.iter().zip(ids).zip(logs) {
             if let Some(l) = *lg {
@@ -467,7 +476,7 @@ impl<'a> LogEdits<'a> {
 /// The frontier of the log whose edits are those at `places` among `edits` (`ids[i]` being `edits[i]`'s id, the places
 /// `Log::by_log` keeps of it): the ids of the edits of its closed part that no edit of it builds on, smallest first.
 /// What an edit made now builds on, read in the log's size, not in every edit held.
-pub(crate) fn frontier_at(edits: &[Edit], ids: &[EditId], places: &[usize]) -> Vec<EditId> {
+pub(crate) fn frontier_at(edits: &crate::policy::Edits, ids: &[EditId], places: &[usize]) -> Vec<EditId> {
     let mut log = LogEdits::default();
     for &at in places {
         log.by_id.entry(ids[at]).or_insert(&edits[at]);
@@ -476,26 +485,26 @@ pub(crate) fn frontier_at(edits: &[Edit], ids: &[EditId], places: &[usize]) -> V
 }
 
 /// The part of log `l` among `edits` whose whole past is held, as ids: what a peer counts in the log's frontier.
-pub fn closed_part(edits: &[Edit], l: LogId) -> HashSet<EditId> {
+pub fn closed_part(edits: &crate::policy::Edits, l: LogId) -> HashSet<EditId> {
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
     LogEdits::new(edits, &ids, l).closed()
 }
 
 /// The frontier of every log among `edits`: what an edit made now builds on, and what each log's digest hashes.
-pub fn frontiers(edits: &[Edit]) -> BTreeMap<LogId, Vec<EditId>> {
+pub fn frontiers(edits: &crate::policy::Edits) -> BTreeMap<LogId, Vec<EditId>> {
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
     frontiers_ids(edits, &ids)
 }
 
 /// `frontiers`, given each edit's id.
-pub(crate) fn frontiers_ids(edits: &[Edit], ids: &[EditId]) -> BTreeMap<LogId, Vec<EditId>> {
+pub(crate) fn frontiers_ids(edits: &crate::policy::Edits, ids: &[EditId]) -> BTreeMap<LogId, Vec<EditId>> {
     LogEdits::all(edits, ids, &logs_of(edits, ids)).into_iter().map(|(l, log)| (l, log.frontier().0)).collect()
 }
 
 /// One hash for each log among `edits` (`ids[i]` being `edits[i]`'s id): of its frontier, and of the edits held outside
 /// its closed part, waiting for their past. Two copies of a log with the same digest hold the same edits (T19), so
 /// devices gossip digests and ask a peer only when one differs.
-pub(crate) fn digests_ids(edits: &[Edit], ids: &[EditId]) -> BTreeMap<LogId, [u8; 32]> {
+pub(crate) fn digests_ids(edits: &crate::policy::Edits, ids: &[EditId]) -> BTreeMap<LogId, [u8; 32]> {
     let digest = |(f, waiting): (Vec<EditId>, Vec<EditId>)| {
         let mut h = Hasher::new("avendb log digest");
         h.update(&(f.len() as u64).to_be_bytes());
@@ -508,7 +517,7 @@ pub(crate) fn digests_ids(edits: &[Edit], ids: &[EditId]) -> BTreeMap<LogId, [u8
 }
 
 /// The digest of every log among `edits`: what a device gossips.
-pub fn digests(edits: &[Edit]) -> BTreeMap<LogId, [u8; 32]> {
+pub fn digests(edits: &crate::policy::Edits) -> BTreeMap<LogId, [u8; 32]> {
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
     digests_ids(edits, &ids)
 }
@@ -530,19 +539,19 @@ pub struct Ask {
 /// What a device holding `edits` and following the vaults `follow` sends when it asks a peer: of each log, its frontier
 /// and a few edits further back, so a peer that lacks its latest edits still sends back little it holds; its loose
 /// edits; and what it follows.
-pub fn asks(edits: &[Edit], follow: &[VaultId]) -> Ask {
+pub fn asks(edits: &crate::policy::Edits, follow: &[VaultId]) -> Ask {
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
     asks_ids(edits, &ids, follow)
 }
 
 /// `asks`, given each edit's id.
-pub(crate) fn asks_ids(edits: &[Edit], ids: &[EditId], follow: &[VaultId]) -> Ask {
+pub(crate) fn asks_ids(edits: &crate::policy::Edits, ids: &[EditId], follow: &[VaultId]) -> Ask {
     let logs = logs_of(edits, ids);
     asks_with_logs(edits, ids, &logs, follow)
 }
 
 /// The same structural request with log assignments already derived from these exact edits/IDs.
-pub(crate) fn asks_with_logs(edits: &[Edit], ids: &[EditId], logs: &[Option<LogId>], follow: &[VaultId]) -> Ask {
+pub(crate) fn asks_with_logs(edits: &crate::policy::Edits, ids: &[EditId], logs: &[Option<LogId>], follow: &[VaultId]) -> Ask {
     asks_with_stubs(edits, ids, logs, &[], follow)
 }
 
@@ -589,7 +598,7 @@ impl Stub {
 /// `asks_with_logs`, counting the stubs `stubs` as held: each in its log, built on what it says it builds on. A stub
 /// of an edit it holds counts for nothing.
 pub(crate) fn asks_with_stubs(
-    edits: &[Edit],
+    edits: &crate::policy::Edits,
     ids: &[EditId],
     logs: &[Option<LogId>],
     stubs: &[Stub],
@@ -618,7 +627,7 @@ pub(crate) fn asks_with_stubs(
 /// What a device holding `edits` sends when it asks by frontiers alone (`Logs.lean`'s `⟨frontiers, loose, []⟩`): of
 /// each log its frontier, and its loose edits. A peer that holds all it holds, as the node a backup is made of holds
 /// what its last snapshot held, sends back exactly what it lacks (T19). What a backup's manifest names (`backup`).
-pub fn asks_by_frontiers(edits: &[Edit]) -> Ask {
+pub fn asks_by_frontiers(edits: &crate::policy::Edits) -> Ask {
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
     let logs = logs_of(edits, &ids);
     let mut ask = Ask::default();
@@ -637,7 +646,7 @@ pub fn asks_by_frontiers(edits: &[Edit]) -> Ask {
 /// Of the edits `edits` (`ids[i]` being `edits[i]`'s id and `logs[i]` its log), every id at or below what `asked`
 /// names: its loose edits, and of each log the edits it names there and every edit of the log they build on. What a
 /// peer would send it none of (`beyond`); of a log the peer holds none of, the ids named alone.
-pub(crate) fn named_below(edits: &[Edit], ids: &[EditId], logs: &[Option<LogId>], asked: &Ask) -> HashSet<EditId> {
+pub(crate) fn named_below(edits: &crate::policy::Edits, ids: &[EditId], logs: &[Option<LogId>], asked: &Ask) -> HashSet<EditId> {
     let all = LogEdits::all(edits, ids, logs);
     let mut below: HashSet<EditId> = asked.loose.iter().copied().collect();
     for (l, named) in &asked.haves {
@@ -652,7 +661,7 @@ pub(crate) fn named_below(edits: &[Edit], ids: &[EditId], logs: &[Option<LogId>]
 /// What a peer holding `edits` sends device `d` that asked with `asked` (`asks`): what `respond` sends it, following
 /// what it asked with, but none of the device's loose edits, and of each log only what lies beyond the edits it named
 /// of it: those not among them and that none of them builds on. A log it named nothing of is sent whole.
-pub fn respond_since(edits: &[Edit], d: SignerId, asked: &Ask) -> Vec<Edit> {
+pub fn respond_since(edits: &crate::policy::Edits, d: SignerId, asked: &Ask) -> crate::policy::EditsVec {
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
     let logs = logs_of(edits, &ids);
     let places = answer(edits, &view(edits), d, &asked.follow);
@@ -662,7 +671,7 @@ pub fn respond_since(edits: &[Edit], d: SignerId, asked: &Ask) -> Vec<Edit> {
 /// Of the edits at the places `answer` among `edits` (`ids[i]` being `edits[i]`'s id and `logs[i]` its log), those
 /// beyond what the asker sent, `asked`: what `respond_since` sends.
 pub(crate) fn beyond(
-    edits: &[Edit],
+    edits: &crate::policy::Edits,
     ids: &[EditId],
     logs: &[Option<LogId>],
     answer: &[usize],
@@ -698,13 +707,13 @@ pub fn place(edit: &Edit) -> Place {
 /// Every fork among `edits`: two edits of one device in one log where neither builds on the other, the smaller id
 /// first. Only each log's closed part counts, where the whole past of both is held, and only the signers some vault in
 /// what `edits` say lists as its devices: a passkey signs on several devices at once.
-pub fn forks(edits: &[Edit]) -> Vec<(EditId, EditId)> {
+pub fn forks(edits: &crate::policy::Edits) -> Vec<(EditId, EditId)> {
     let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
     forks_in(edits, &ids, &view(edits))
 }
 
 /// `forks`, given each edit's id and the view `st` of `edits`.
-pub(crate) fn forks_in(edits: &[Edit], ids: &[EditId], st: &State) -> Vec<(EditId, EditId)> {
+pub(crate) fn forks_in(edits: &crate::policy::Edits, ids: &[EditId], st: &State) -> Vec<(EditId, EditId)> {
     let device = |s: SignerId| st.vaults().iter().any(|v| v.devices.contains(&s));
     let mut out = vec![];
     for log in LogEdits::all(edits, ids, &logs_of(edits, ids)).values() {

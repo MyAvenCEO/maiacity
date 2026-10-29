@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use avendb::cast::{document, human_on};
 use avendb::id::{EditId, EntryId, SignerId, VaultId};
 use avendb::lab::Lab;
-use avendb::policy::{view, Action, Edit, Refusal, Revoking, Slice, Stated};
+use avendb::policy::{view, Action, Refusal, Revoking, Slice, Stated};
 use avendb::sealed::FileRoot;
 use avendb::snapshot::{away_too_long, honest, lies, start_states, start_view, starts_right, stale, stated_in};
 
@@ -33,8 +33,8 @@ fn note() -> Note {
     Note { lab, passkey, mac, phone, alice, welcome }
 }
 
-fn edits(n: &Note) -> Vec<Edit> {
-    n.lab.log(n.mac).edits().to_vec()
+fn edits(n: &Note) -> avendb::policy::EditsVec {
+    n.lab.log(n.mac).edits().into()
 }
 
 fn root(b: u8) -> FileRoot {
@@ -66,12 +66,12 @@ fn an_honest_snapshot_stands_and_a_start_from_it_is_right() {
     assert_eq!(stated_in(&held, &slices).len(), 1);
     assert!(lies(&held, &slices).is_empty(), "honest toward the history");
     assert_eq!(start_states(&held, &slices).len(), 1);
-    let start = start_view(&held, &slices);
-    assert_eq!(start.slice_of(n.welcome), view(&held).slice_of(n.welcome));
+    let start = start_view(&avendb::policy::EditsVec::from(&held[..]), &slices);
+    assert_eq!(start.slice_of(n.welcome), view(&avendb::policy::EditsVec::from(&held[..])).slice_of(n.welcome));
     assert!(start.acts_for(n.mac, n.alice) && start.acts_for(n.phone, n.alice), "the kernel as it is");
-    assert!(starts_right(&held, &slices));
+    assert!(starts_right(&avendb::policy::EditsVec::from(&held[..]), &slices));
     // its slice taken over the kernel alone holds the note as the history makes it
-    assert_eq!(view(&[]).with_slice(n.welcome, &slice).slice_of(n.welcome), slice);
+    assert_eq!(view(avendb::policy::Edits::empty()).with_slice(n.welcome, &slice).slice_of(n.welcome), slice);
 }
 
 #[test]
@@ -83,10 +83,10 @@ fn a_write_after_the_snapshot_is_replayed_on_top() {
     n.lab.edit(n.mac, n.alice, n.welcome, |i| i.set_text(2, "Hello, once more.")).expect("a third write");
     let slices = HashMap::from([(root(1), slice)]);
     let held = edits(&n);
-    let start = start_view(&held, &slices);
+    let start = start_view(&avendb::policy::EditsVec::from(&held[..]), &slices);
     assert_eq!(start.writes(n.welcome).len(), 3);
-    assert_eq!(start.slice_of(n.welcome), view(&held).slice_of(n.welcome));
-    assert!(starts_right(&held, &slices));
+    assert_eq!(start.slice_of(n.welcome), view(&avendb::policy::EditsVec::from(&held[..])).slice_of(n.welcome));
+    assert!(starts_right(&avendb::policy::EditsVec::from(&held[..]), &slices));
     let had: HashSet<EditId> = before.iter().map(|e| e.id()).collect();
     assert!(!away_too_long(&had, &held, 1) && away_too_long(&HashSet::new(), &held, 1));
 }
@@ -106,7 +106,7 @@ fn a_lie_is_caught_and_a_wide_slice_never_taken() {
     assert_eq!(stated_in(&held, &slices).len(), 1, "only the lie is scoped");
     assert_eq!(lies(&held, &slices), vec![(c, n.welcome)]);
     let snapshot = held.iter().find(|e| e.id() == c).expect("held");
-    assert!(!honest(&held, snapshot, &x, &lie) && honest(&held, snapshot, &x, &slice));
+    assert!(!honest(&avendb::policy::EditsVec::from(&held[..]), snapshot, &x, &lie) && honest(&avendb::policy::EditsVec::from(&held[..]), snapshot, &x, &slice));
 }
 
 #[test]
@@ -125,8 +125,8 @@ fn a_removal_after_the_snapshot_sends_a_device_to_the_history() {
     let standing: HashSet<EditId> = held.iter().map(|e| e.id()).collect();
     assert!(stale(&held, &standing, &snapshot, &x));
     assert!(start_states(&held, &slices).is_empty());
-    let start = start_view(&held, &slices);
-    assert_eq!(start.slice_of(n.welcome), view(&held).slice_of(n.welcome));
+    let start = start_view(&avendb::policy::EditsVec::from(&held[..]), &slices);
+    assert_eq!(start.slice_of(n.welcome), view(&avendb::policy::EditsVec::from(&held[..])).slice_of(n.welcome));
     assert!(!start.acts_for(n.phone, n.alice));
-    assert!(starts_right(&held, &slices));
+    assert!(starts_right(&avendb::policy::EditsVec::from(&held[..]), &slices));
 }

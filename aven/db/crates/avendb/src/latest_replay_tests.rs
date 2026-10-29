@@ -135,3 +135,39 @@ fn measure(lab: &Lab, d: SignerId, label: &str) {
     eprintln!("latest {label}: held={} prefix={} iterations=8 full={:?} guarded_including_clone={:?}",
         store.log.edits().len(), store.replayed, full, guarded_at.elapsed());
 }
+
+#[test]
+fn the_vault_a_device_belongs_to_read_dry_is_of_every_edit_while_its_replay_is_under_way() {
+    let mut w = world();
+    todos_on(&mut w);
+    let d = w.mac_a;
+    let vault = w.lab.vault_of(d).expect("Alice's Mac belongs to her vault");
+    let snapshot = w.lab.backup(d);
+    // a restore with no stored view: every edit taken, none replayed yet, then a whole replay a slice a step
+    w.lab.restore_backup(d, &Backup { signed: vec![], blobs: snapshot.blobs.clone(), bases: BTreeMap::new() });
+    w.lab.receive_now(d, snapshot.signed.clone(), vec![], false);
+    w.lab.step_replay(d, 1);
+    let store = w.lab.held(d);
+    assert!(store.replayed < store.log.edits().len(), "its replay is under way");
+    assert_eq!(w.lab.dry(d, |lab| lab.vault_of(d)), Some(vault), "read dry, every edit it holds names its vault");
+    let store = w.lab.held(d);
+    assert_eq!(store.replayed, store.log.edits().len(), "stepped on in place, once");
+}
+
+#[test]
+fn an_own_removal_mid_catch_up_shows_at_once() {
+    let mut w = world();
+    let todos = todos_on(&mut w);
+    let d = w.mac_a;
+    let snapshot = w.lab.backup(d);
+    // mid catch-up: every edit taken, none replayed yet
+    w.lab.restore_backup(d, &Backup { signed: vec![], blobs: snapshot.blobs.clone(), bases: BTreeMap::new() });
+    w.lab.receive_now(d, snapshot.signed.clone(), vec![], false);
+    assert!(w.lab.catching_up(d));
+    w.lab.submit(d, &[d], Action::Revoke(Revoking::Grant {
+        share: todos.carol_read, actor: w.alice, keep: vec![], via: vec![],
+    })).unwrap();
+    let store = w.lab.held(d);
+    assert_eq!(store.replayed, store.log.edits().len(), "its replay stepped on in place to every edit, its removal with them");
+    assert!(w.lab.state(d) == w.lab.latest(d), "what it shows is what its edits say");
+}

@@ -605,7 +605,7 @@ mod slices {
         whole.shutdown().await.unwrap();
         sliced.shutdown().await.unwrap();
     }
-    /// The keys a pull brings after its pages, taken in the middle of the catch-up those pages left (`bring_keys`, a
+    /// The keys a pull brings after its pages, taken in the middle of the catch-up those pages left (`seal_keys`, a
     /// `receive` that brings it up to date), hold the Lab one step, not the whole catch-up, and a peer's ask of the
     /// device is answered between the catch-up's turns, while most are still to come. An iPhone took them in one turn
     /// of 1.8 min (a whole replay, its key index made again, its bodies): a page's worker runs the Lab and its network
@@ -631,7 +631,7 @@ mod slices {
             phone.shared.try_lab(move |lab, me| lab.receive_whose_now(me, page, vec![], false)).await.unwrap();
         }
         mac.know(phone.addr());
-        // the keys, as `bring_keys` takes them after the last page
+        // the keys, as `seal_keys` takes them after a pull
         phone.shared.try_lab_class(Class::Background, |lab, me| { lab.receive(me, Vec::new(), Vec::new()); }).await.unwrap();
         assert!(!phone.read(|lab, me| lab.replay_current(me)).await, "taking the keys ran the whole catch-up in one turn");
         // then the catch-up, a step a turn, and the Mac asks the iPhone once its first turn ran
@@ -731,7 +731,7 @@ pub(crate) struct Turns(Mutex<TurnBook>);
 
 #[derive(Default)]
 struct TurnBook {
-    by: std::collections::BTreeMap<&'static str, (u64, u64, u64, u64)>,
+    by: std::collections::BTreeMap<&'static str, (u64, u64, u64, u64, u64)>,
     slow: VecDeque<(u64, &'static str, u64, u64)>,
 }
 
@@ -754,7 +754,7 @@ impl Turns {
         let what = what.trim_end_matches("::{{closure}}");
         let mut book = self.0.lock().expect("Lab turns");
         let t = book.by.entry(what).or_default();
-        *t = (t.0 + 1, t.1 + wait_ms, t.2 + hold_ms, t.3.max(hold_ms));
+        *t = (t.0 + 1, t.1 + wait_ms, t.2 + hold_ms, t.3.max(hold_ms), t.4.max(wait_ms));
         if hold_ms >= SLOW_MS || wait_ms >= SLOW_MS {
             let at = crate::jobs::now_ms();
             book.slow.push_front((at, what, wait_ms, hold_ms));
@@ -762,17 +762,18 @@ impl Turns {
         }
     }
 
-    /// `{held_ms, by: {call: {count, wait_ms, hold_ms, max_hold_ms}}, slow: [{at, call, wait_ms, hold_ms}]}`, the calls
-    /// that held the Lab longest first.
+    /// `{held_ms, by: {call: {count, wait_ms, hold_ms, max_hold_ms, max_wait_ms}}, slow: [{at, call, wait_ms, hold_ms}]}`, the calls
+    /// that held the Lab or waited longest first: a wait of its own with no hold (a page's worker away, `give_way`)
+    /// leads as a hold does, rather than falling past the 24 it names (fresh9, 2026-10-29: a 298 s wait named nowhere).
     pub(crate) fn json(&self) -> serde_json::Value {
         let book = self.0.lock().expect("Lab turns");
         let mut by: Vec<_> = book.by.iter().collect();
-        by.sort_by_key(|(_, t)| std::cmp::Reverse(t.2));
+        by.sort_by_key(|(_, t)| std::cmp::Reverse(t.1.max(t.2)));
         let held: u64 = by.iter().map(|(_, t)| t.2).sum();
         let by: serde_json::Map<String, serde_json::Value> = by
             .into_iter()
             .take(24)
-            .map(|(k, t)| (k.to_string(), serde_json::json!({"count": t.0, "wait_ms": t.1, "hold_ms": t.2, "max_hold_ms": t.3})))
+            .map(|(k, t)| (k.to_string(), serde_json::json!({"count": t.0, "wait_ms": t.1, "hold_ms": t.2, "max_hold_ms": t.3, "max_wait_ms": t.4})))
             .collect();
         let slow: Vec<_> = book
             .slow
@@ -798,6 +799,21 @@ mod turn_tests {
         assert_eq!(said["by"]["avendb_net::session::authorized_reply"]["max_hold_ms"], 900);
         assert_eq!(said["slow"].as_array().map(Vec::len), Some(1), "only the slow one is kept");
         assert_eq!(said["slow"][0]["call"], "avendb_net::session::authorized_reply");
+    }
+
+    /// A long wait with no hold, a page's worker away (`give_way`), is named with its longest however many calls held
+    /// the Lab, and however many slow ones came after it.
+    #[test]
+    fn a_long_wait_with_no_hold_is_named_past_every_hold() {
+        let turns = Turns::default();
+        turns.took("worker away", 298_537, 0);
+        let calls: Vec<&'static str> = (0..64).map(|i| &*Box::leak(format!("call {i}").into_boxed_str())).collect();
+        for &call in &calls {
+            turns.took(call, 0, 300);
+        }
+        let said = turns.json();
+        assert_eq!(said["by"]["worker away"]["max_wait_ms"], 298_537, "{said}");
+        assert!(!said["slow"].as_array().unwrap().iter().any(|s| s["call"] == "worker away"), "the slow ones moved past it");
     }
 }
 

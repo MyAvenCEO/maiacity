@@ -54,7 +54,7 @@ fn page_costs(held: usize) -> (f64, f64) {
         phone.receive([edit]);
         on = replay_on(on, phone.edits(), before);
     }
-    let late: Vec<Edit> = phone.edits().iter().filter(|e| e.author == PHONE_A).cloned().collect();
+    let late: avendb::policy::EditsVec = phone.edits().iter().filter(|e| e.author == PHONE_A).cloned().collect();
     let before = c.log.edits().len();
     c.log.receive(late);
     let t = Instant::now();
@@ -111,7 +111,7 @@ fn first_sync(held: usize, entries: u64) -> (f64, f64, f64) {
     let all: Vec<(Option<avendb::sync::LogId>, Edit)> =
         c.log.edits().iter().zip(c.log.ids()).map(|(e, id)| (log_of(e, *id), e.clone())).collect();
     let take = |pages: Vec<Vec<Edit>>| {
-        let (mut log, mut r) = (Log::new(), replay(&[]));
+        let (mut log, mut r) = (Log::new(), replay(avendb::policy::Edits::empty()));
         let t = Instant::now();
         let mut why = std::collections::BTreeMap::<String, usize>::new();
         for page in pages {

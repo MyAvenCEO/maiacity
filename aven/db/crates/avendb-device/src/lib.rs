@@ -884,6 +884,9 @@ impl Service {
         for ((name, asked), joined) in asking.into_iter().zip(joined) {
             if joined {
                 std::fs::remove_file(agent::request(&self.config.dir, &name)).ok();
+                if let Some(device) = asked["device"].as_str() {
+                    std::fs::remove_file(agent::granted(&self.config.dir, &name, device)).ok();
+                }
             } else {
                 open.push(asked);
             }
@@ -931,20 +934,23 @@ impl Service {
         let vaults: Vec<String> =
             asked["vaults"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
         let mut asking = agent::asking(name, device, offer, &agent::Asking { level, why, vaults });
-        // whether it runs now, to cosign its being added under the aven
+        // whether it runs now, to cosign its being added under the aven, and whether its person approved it while it was
+        // away, which it joins by as it next runs (`sessions::join_granted`)
         asking["online"] = agent::online(&self.config.dir, name, device).into();
+        asking["granted"] = agent::granted(&self.config.dir, name, device).exists().into();
         Some(asking)
     }
 
     /// Grants agent device `name`'s access request (`agents`), the one its device `device` left. The agent's key joins
     /// its coop's one aven, avenMAIA, which Maia City owns and the seed founded (`agent::aven_of`), as a device of it
     /// beside its server, in one ceremony of their passkey in the sheet, which the agent cosigns over the session theOS
-    /// hosts it in (`Node::add_hosted_device`): from then on it acts as avenMAIA, with avenMAIA's rights, no
+    /// hosts it in (`Node::add_hosted_device`), at once where it runs, else as it next runs, the passkey's part kept
+    /// till then (`sessions::grant_later`), so approving never waits on the agent: from then on it acts as avenMAIA, with avenMAIA's rights, no
     /// more and no less (Samuel 2026-10-18: no agent vaults under an aven, no sub caps). Maia City decides what
     /// avenMAIA holds: given Suggester and an AIP author's share, an agent proposes, drafts and opens AIPs, which a
     /// human of Maia City accepts. One already a device of it, as the same harness asking again, is granted at once.
-    /// `shares` and `aven_name` name nothing any more. `{aven, vault}`: the aven both, as the agent acts as the aven
-    /// itself.
+    /// `shares` and `aven_name` name nothing any more. `{aven, vault, later}`: the aven both, as the agent acts as the
+    /// aven itself, and whether it joins only as it next runs.
     async fn grant(
         self: &Arc<Self>,
         d: &Arc<Device>,
@@ -966,20 +972,44 @@ impl Service {
         // server, and acts as it with its rights, no more and no less (Samuel 2026-10-18)
         let (aven, joined) = found.await;
         let Some(aven) = aven else { bail!("your coop has no aven yet: {name} joins its coop's aven, avenMAIA") };
+        let mut later = false;
         if !joined {
-            // the agent's own device cosigns its being added: say so rather than wait for it in vain
-            let asked = asked.context("no such request: it changed")?;
-            let offline = "isn't running: open a Claude Code session (or its harness), then approve";
-            anyhow::ensure!(asked["online"] == true, "{name} {offline}");
-            // theOS hosts it (`sessions`): it signs its join over its session, with the key it handed to seal to
-            let (key, mceliece) = sessions::seal_of(&self.hosted, agent).with_context(|| format!("{name} {offline}"))?;
+            asked.context("no such request: it changed")?;
             let approver = self.approver().await?;
             // the owner key that approves: the Mac's Touch ID key where it is one, else the passkey
             let owner = d.node().read(engine::passkey_of).await.unwrap_or(d.passkey());
-            d.node().add_hosted_device(agent, key, mceliece, aven, owner, &approver).await?;
+            match sessions::seal_of(&self.hosted, agent) {
+                // theOS hosts it (`sessions`): it signs its join over its session at once, with the key it handed to
+                // seal to
+                Some((key, mceliece)) => {
+                    d.node().add_hosted_device(agent, key, mceliece, aven, owner, &approver).await?;
+                }
+                // away: the passkey signs its part now, by the key to seal to its request names, and the agent its own
+                // as it next runs (`sessions::join_granted`), however far this device's view moved on meanwhile
+                None => {
+                    let (key, mceliece) = self.request_seal(name, device).with_context(|| {
+                        format!("{name} named no key to seal to: open a Claude Code session (or its harness) once")
+                    })?;
+                    let claim = d.node().sign_hosted_device(agent, key, aven, owner, &approver).await?;
+                    sessions::grant_later(&self.config.dir, name, agent, claim, &mceliece)?;
+                    // it may have started since: then it signs now
+                    let hosted = sessions::seal_of(&self.hosted, agent).is_some();
+                    later = !(hosted && sessions::join_granted(d.node(), &self.config.dir, name, agent).await);
+                }
+            }
         }
-        std::fs::remove_file(agent::request(&self.config.dir, name)).ok();
-        Ok(json!({ "aven": hex(&aven.0), "vault": hex(&aven.0) }))
+        if !later {
+            std::fs::remove_file(agent::request(&self.config.dir, name)).ok();
+        }
+        Ok(json!({ "aven": hex(&aven.0), "vault": hex(&aven.0), "later": later }))
+    }
+
+    /// The key to seal to agent `name`'s request names, its device's `device` (`agent::ask_by_default`): what its join
+    /// names, approved while it is away (`grant`).
+    fn request_seal(&self, name: &str, device: &str) -> Option<sessions::Seal> {
+        let text = std::fs::read_to_string(agent::request(&self.config.dir, name)).ok()?;
+        let asked: Value = serde_json::from_str(&text).ok().filter(|a: &Value| a["device"] == device)?;
+        sessions::seal_in(&asked)
     }
 
     /// `addCloudAgent`: a new agent for its person's cloud sessions, agentCloud (`agent::serve_cloud`), whose key this
@@ -1057,6 +1087,8 @@ impl Service {
         agent::named(name)?;
         self.request(name).filter(|a| a["device"] == device).context("no such request: it changed")?;
         std::fs::write(agent::denied(&self.config.dir, name), device)?;
+        // a yes given while it was away is taken back with it: its join is never signed
+        std::fs::remove_file(agent::granted(&self.config.dir, name, device)).ok();
         std::fs::remove_file(agent::request(&self.config.dir, name))?;
         Ok(())
     }

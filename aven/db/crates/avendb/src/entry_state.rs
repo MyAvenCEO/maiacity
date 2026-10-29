@@ -26,7 +26,7 @@ impl EntryState {
 }
 
 /// Entry `e`'s state for a device holding `edits`, with the slices it opened by root (`entryState`).
-pub fn entry_state(edits: &[Edit], slices: &HashMap<FileRoot, Slice>, e: EntryId) -> EntryState {
+pub fn entry_state(edits: &crate::policy::Edits, slices: &HashMap<FileRoot, Slice>, e: EntryId) -> EntryState {
     based(&start_states(edits, slices), e)
 }
 
@@ -39,14 +39,14 @@ pub fn based(taken: &[Taken<'_>], e: EntryId) -> EntryState {
 }
 
 /// The edits of entry `e`'s log (`logOf`).
-pub fn log_edits(edits: &[Edit], e: EntryId) -> Vec<&Edit> {
+pub fn log_edits(edits: &crate::policy::Edits, e: EntryId) -> Vec<&Edit> {
     let mine = Some(LogId::Entry(e));
     edits.iter().filter(|o| log_of(o, o.id()) == mine).collect()
 }
 
 /// The edits of entry `e`'s log a device replays to open it (`needs`): every one when full, those its snapshot hadn't
 /// seen when based.
-pub fn needs<'a>(edits: &'a [Edit], state: &EntryState, e: EntryId) -> Vec<&'a Edit> {
+pub fn needs<'a>(edits: &'a crate::policy::Edits, state: &EntryState, e: EntryId) -> Vec<&'a Edit> {
     let log = log_edits(edits, e);
     match state {
         EntryState::Full => log,

@@ -81,7 +81,14 @@ pub fn bench_unlock(fixture: &[u8]) -> Result<String, JsError> {
         .map_err(|e| JsError::new(&format!("no signed edit: {e:?}")))?;
     let blobs: Vec<Arc<[u8]>> = r.list()?.into_iter().map(Arc::from).collect();
     let owned = |l: Vec<&[u8]>| l.into_iter().map(<[u8]>::to_vec).collect();
-    let warm = Warm { keys: owned(r.list()?), views: owned(r.list()?), shown: r.list()?.into_iter().map(|p| p.to_vec().into()).collect(), queries: vec![] };
+    let keys = owned(r.list()?);
+    // its view's rows, each its key and then its bytes
+    let view = r.list()?.into_iter().map(|row| {
+        let (key, bytes) = row.split_first_chunk::<32>().ok_or_else(|| JsError::new("a row of the view is short"))?;
+        Ok((*key, bytes.to_vec()))
+    }).collect::<Result<_, JsError>>()?;
+    let shown = r.list()?.into_iter().map(|p| p.to_vec().into()).collect();
+    let warm = Warm { keys, view, shown, ..Warm::default() };
     let mut lab = Lab::new();
     let me = lab.device_with("Alice's iPhone", secret);
     lab.restore_warm(me, Backup::new(signed, blobs), Some((checked, held)), &warm);

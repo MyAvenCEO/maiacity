@@ -24,7 +24,7 @@ pub fn is_box(edit: &Edit) -> bool {
 }
 
 /// `boxesUnder`: no edit but a box names a box edit as a parent as deep as itself.
-pub fn boxes_under(edits: &[Edit]) -> bool {
+pub fn boxes_under(edits: &crate::policy::Edits) -> bool {
     let boxes: std::collections::HashMap<EditId, u64> =
         edits.iter().filter(|e| is_box(e)).map(|e| (e.id(), e.depth)).collect();
     edits
@@ -35,9 +35,9 @@ pub fn boxes_under(edits: &[Edit]) -> bool {
 
 /// The replay of every edit but the boxes: what a device holding them all knows (L1), and the same edits standing but
 /// the boxes.
-pub fn first_view(edits: &[Edit]) -> Replay {
+pub fn first_view(edits: &crate::policy::Edits) -> Replay {
     let kept: Vec<Edit> = edits.iter().filter(|e| !is_box(e)).cloned().collect();
-    replay(&kept)
+    replay(&crate::policy::EditsVec::from(kept))
 }
 
 /// A first sync's edits by their place in the edits a peer holds: what a new device takes now, and what it may fetch
@@ -102,7 +102,7 @@ impl<'a> Needs<'a> {
 
 /// Which of `edits` device `d` takes in its first sync, with `view` the state of every edit but the boxes
 /// (`first_view`): it opens what the schedule seals to its own key, and down from there.
-pub fn first_sync(edits: &[Edit], view: &Replay, d: SignerId) -> FirstSync {
+pub fn first_sync(edits: &crate::policy::Edits, view: &Replay, d: SignerId) -> FirstSync {
     let mut needs = Needs::new(&view.state, d);
     let mut out = FirstSync::default();
     for (i, e) in edits.iter().enumerate() {
@@ -129,8 +129,9 @@ pub struct Fetched {
 
 /// Take the boxes `fetched` beside the edits `held`, which a device took as `first`: replay them all, and say which
 /// boxes stood and whether the state is still the one it took (L1, L3).
-pub fn with_fetched(held: &[Edit], first: &Replay, fetched: &[Edit]) -> Fetched {
+pub fn with_fetched(held: &crate::policy::Edits, first: &Replay, fetched: &crate::policy::Edits) -> Fetched {
     let all: Vec<Edit> = held.iter().chain(fetched.iter().filter(|e| is_box(e))).cloned().collect();
+    let all = crate::policy::EditsVec::from(all);
     let replay = replay(&all);
     let fetched_ids: HashSet<EditId> = fetched.iter().filter(|e| is_box(e)).map(Edit::id).collect();
     let stood = replay.standing().into_iter().filter(|id| fetched_ids.contains(id)).collect();

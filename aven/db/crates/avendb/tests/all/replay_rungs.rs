@@ -170,16 +170,23 @@ fn a_second_devices_pages_step_on_from_a_rung() {
 /// Alice's Mac writes `writes` edits over 20 entries, then takes a page of her iPhone's drafted on what it held `back`
 /// edits before: its log, its replay of what it held before the page, and how many that was.
 fn far_page(writes: usize, back: usize) -> (Log, Replay, usize) {
+    far_pages(writes, &[back]).pop().expect("a page")
+}
+
+/// `far_page` for each of `backs`, of the one log Alice's Mac wrote: each the log with that page taken.
+fn far_pages(writes: usize, backs: &[usize]) -> Vec<(Log, Replay, usize)> {
     let mut c = cast();
     let alice = c.alice;
     for i in 0..20 {
         c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
     }
     let mut st = c.log.view();
-    let mut then = None;
+    let mut then = vec![None; backs.len()];
     for n in 0..writes as u32 {
-        if writes - n as usize == back {
-            then = Some((c.log.clone(), st.clone()));
+        for (at, &back) in then.iter_mut().zip(backs) {
+            if writes - n as usize == back {
+                *at = Some((c.log.clone(), st.clone()));
+            }
         }
         let w = write(&c.log, &st, MAC_A, EntryId::from_u64(1000 + n as u64 % 20), n);
         c.log.receive([w]);
@@ -189,17 +196,22 @@ fn far_page(writes: usize, back: usize) -> (Log, Replay, usize) {
     }
     let was = replay(c.log.edits());
     let held = c.log.edits().len();
-    let (then, then_st) = then.expect("what it held then");
-    let page: Vec<Edit> =
-        (0..5).map(|i| write(&then, &then_st, PHONE_A, EntryId::from_u64(1000 + i), 2_000_000 + i as u32)).collect();
-    c.log.receive(page);
-    (c.log, was, held)
+    then.into_iter()
+        .map(|then| {
+            let (then, then_st) = then.expect("what it held then");
+            let page: Vec<Edit> = (0..5)
+                .map(|i| write(&then, &then_st, PHONE_A, EntryId::from_u64(1000 + i), 2_000_000 + i as u32))
+                .collect();
+            let mut log = c.log.clone();
+            log.receive(page);
+            (log, was.clone(), held)
+        })
+        .collect()
 }
 
 /// `far_page`'s page, further back than a rung reaches, stepped on, from its replay or from its stored view of it: it
 /// replays from the mark before them (`Marks`), as the whole, and how each went.
-fn far_back(writes: usize, back: usize) -> (Why, Why) {
-    let (log, was, held) = far_page(writes, back);
+fn far_back((log, was, held): (Log, Replay, usize)) -> (Why, Why) {
     let view = Replay::from_view(&was.to_view(held), log.edits(), log.ids()).expect("its stored view").0;
     let whole = replay(log.edits());
     let (stepped, why) = replay_on_why(was, log.edits(), held);
@@ -228,8 +240,10 @@ fn a_rewind_run_a_slice_a_step_is_the_whole_replay() {
 
 #[test]
 fn a_page_drafted_further_back_than_a_rung_replays_from_a_mark() {
-    for back in [9_000, 14_000, 21_000] {
-        let (why, opened) = far_back(24_000, back);
+    // the three pages of one log the Mac wrote: what each tests is the page, not the log it builds again
+    let backs = [9_000, 14_000, 21_000];
+    for (back, page) in backs.into_iter().zip(far_pages(24_000, &backs)) {
+        let (why, opened) = far_back(page);
         assert_eq!((why, opened), (Why::Rung, Why::Rung), "a page {back} back, stepped on and from its stored view");
     }
 }
@@ -347,4 +361,68 @@ fn a_checkpoint_and_the_edits_it_covers_replay_from_the_mark_before_them() {
         let whys = take_each(&mut c.log, was, edits);
         assert!(!whys.iter().any(|w| matches!(w, Why::Whole(_))), "checkpoint first {checkpoint_first}: {whys:?}");
     }
+}
+
+/// `far_page`, with Carol's Mac revoked 1,000 edits from the end: past the page's place, so before the fix every
+/// page of a peer's edits drafted further back than the last revocation replayed every edit (45 such on Samuel's Mac,
+/// 2026-10-29).
+fn far_page_before_a_revocation(writes: usize, back: usize) -> (Log, Replay, usize) {
+    let mut c = cast();
+    let alice = c.alice;
+    for i in 0..20 {
+        c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+    }
+    let mut st = c.log.view();
+    let mut then = None;
+    for n in 0..writes as u32 {
+        if writes - n as usize == back {
+            then = Some((c.log.clone(), st.clone()));
+        }
+        let w = write(&c.log, &st, MAC_A, EntryId::from_u64(1000 + n as u64 % 20), n);
+        c.log.receive([w]);
+        if n % 500 == 499 {
+            st = c.log.view();
+        }
+        if writes - n as usize == 1000 {
+            let leave = Action::Revoke(Revoking::Device { vault: c.carol, device: MAC_C, keep: vec![] });
+            c.log.append(PASSKEY_C, &[], leave).expect("Carol's passkey revokes her Mac");
+            st = c.log.view();
+        }
+    }
+    let was = replay(c.log.edits());
+    let held = c.log.edits().len();
+    let (then, then_st) = then.expect("what it held then");
+    let page: Vec<Edit> =
+        (0..5).map(|i| write(&then, &then_st, PHONE_A, EntryId::from_u64(1000 + i), 2_000_000 + i as u32)).collect();
+    c.log.receive(page);
+    (c.log, was, held)
+}
+
+/// A page of writes drafted before a revocation it sorts before replays from the mark before it, not every edit, and
+/// is the whole replayed, stepped on, from its stored view, and run a slice a step: no edit of it says who may do what,
+/// so the removals after the mark stand as they stood and take away what they took (`resolve_from_a_place`).
+#[test]
+fn a_page_before_a_later_revocation_replays_from_the_mark_before_it() {
+    let (log, was, held) = far_page_before_a_revocation(12_000, 6_000);
+    let whole = replay(log.edits());
+    let view = Replay::from_view(&was.to_view(held), log.edits(), log.ids()).expect("its stored view").0;
+    let mut sliced = was.clone();
+    let (stepped, why) = replay_on_why(was, log.edits(), held);
+    assert_eq!(why, Why::Rung, "stepped on");
+    assert!(stepped == whole, "stepped on, it differs from the whole");
+    let (opened, why) = replay_on_why(view, log.edits(), held);
+    assert_eq!(why, Why::Rung, "from its stored view");
+    assert!(opened == whole, "from its stored view, it differs from the whole");
+    let mut run = rewind(&mut sliced, log.edits(), held).expect("a rewind from a mark");
+    while !run.step(&sliced, log.edits(), 500) {}
+    let rewound = run.finish(sliced, log.edits()).unwrap_or_else(|(_, why)| panic!("{why}"));
+    assert!(rewound == whole, "rewound a slice a step, it differs from the whole");
+    // and the next page, after the revocation now, steps on from its place past it
+    let mut log = log;
+    let st = log.view();
+    let next = write(&log, &st, MAC_A, EntryId::from_u64(1000), 3_000_000);
+    let held = log.edits().len();
+    log.receive([next]);
+    let (stepped, why) = replay_on_why(rewound, log.edits(), held);
+    assert!(stepped == replay(log.edits()), "{why:?}: the next page, stepped on, differs from the whole");
 }

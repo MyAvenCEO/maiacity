@@ -419,7 +419,8 @@
 		 * person's one aven, named `avenName`, which the Mac founds first where their vault owns no aven yet, as a device
 		 * vault of its own under it, its device in it, in one ceremony of their passkey where it has none yet; and it
 		 * gets each of `shares`, `{over, level}`, a sub cap resting on the aven's own share over that vault
-		 * (avendb-device's `grant`). The Mac answers the aven and the agent's device vault, `{aven, vault}`. With
+		 * (avendb-device's `grant`). The Mac answers the aven and the agent's device vault, `{aven, vault, later}`, with
+		 * `later` where the agent was away and joins as it next runs. With
 		 * `standing`, a level, it gets all the person's vaults, now and later, too: a standing grant of their vault to
 		 * the aven, and the aven's, resting on it, to the agent's device vault (the `share` op's `standing`), which every
 		 * vault they own follows now and every vault they found later follows.
@@ -429,7 +430,10 @@
 		grant: (name, device, shares, avenName, standing = '') =>
 			act(`Granting ${name}`, async () => {
 				const joined = await mac.call('grant', name, device, shares, avenName);
-				requests = requests.filter((r) => r.device !== device);
+				// approved while it is away, it joins as it next runs: its request stays, as approved, until then
+				requests = joined.later
+					? requests.map((r) => (r.device === device ? { ...r, granted: true } : r))
+					: requests.filter((r) => r.device !== device);
 				const w = session.world;
 				if (!standing || !w) return;
 				for (const op of standingOps(w, joined.aven, joined.vault, standing)) answer(await session.ask(op));
@@ -528,7 +532,8 @@
 	};
 </script>
 
-{#if phase === 'open' && world}
+<!-- open, the layout paints at once, before the device answered its first read (./Shell.svelte `ready`) -->
+{#if phase === 'open'}
 	<Shell
 		{world}
 		{api}
@@ -555,8 +560,6 @@
 			<p class="soft">Loading your account…</p>
 		{:else if phase === 'broken'}
 			<p class="soft">Restart the Mac app once its avenDB builds.</p>
-		{:else if phase === 'open'}
-			<p class="soft">Opening your vaults…</p>
 		{:else if phase === 'closed'}
 			<div class="cards">
 				<article class="card">

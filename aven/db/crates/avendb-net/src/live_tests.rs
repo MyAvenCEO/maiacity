@@ -39,7 +39,7 @@ async fn a_live_edit_reaches_an_authorized_peer_while_its_background_pages_are_s
     mac.know(phone.addr());
     phone.sync_with(mac.id()).await.unwrap();
     wait_for(async || mac.shared.told.lock().unwrap().contains_key(&receiver)).await;
-    wait_for(async || phone.shared.differ(sender).await.is_empty()).await;
+    wait_for(async || phone.shared.differ(sender).is_empty()).await;
 
     // Occupy all background page slots, leaving the reserved interactive slot free. An existing broad pull is
     // now unable to finish; simply setting asking.again (the previous behavior) cannot deliver the next edit.
@@ -196,7 +196,6 @@ async fn a_live_hint_does_not_authorize_a_private_entry() {
             false,
             Some(SignerId::from_u64(999)),
             None,
-            None,
         )
         .await
         .expect_err("a hint cannot be routed under another authenticated identity");
@@ -225,9 +224,10 @@ async fn a_live_hint_does_not_authorize_a_private_entry() {
             files: vec![],
         },
     );
+    let missing = alice.shared.differ(sender);
     alice
         .shared
-        .pull_live(bob.id(), sender, [LogId::Entry(secret)].into(), crate::pulls::LIVE_LOGS, &mut super::LiveTiming::default())
+        .pull_live(bob.id(), sender, [LogId::Entry(secret)].into(), &missing, crate::pulls::LIVE_LOGS, &mut super::LiveTiming::default())
         .await
         .unwrap();
     assert!(
@@ -414,6 +414,51 @@ async fn a_stalled_peer_that_drops_its_connection_still_counts_what_it_holds() {
     assert_eq!(after["behind"], before["behind"], "what it lacks of the Mac counts on: {before} then {after}");
 }
 
+/// What a device lacks of a peer is told while a long turn holds its Lab, the same as before it: the sync pill never
+/// waits behind the Lab (fresh9, 2026-10-29: "Synced" shown 70 s after a reopen, the pill's `synced` waiting behind a
+/// turn of the Lab while both peers had told of ~3,030 logs it lacked).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn what_a_device_lacks_is_told_while_a_long_turn_holds_its_lab() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let phone_lab = w.lab.split(receiver, &[], [133; 32]);
+    for i in 0..4 {
+        w.lab.create(sender, coop, coop, "doc", &[], document(&format!("Held back {i}"), "body", sender)).unwrap();
+    }
+    let mac = Node::spawn(w.lab.split(sender, &[], [134; 32]), sender, Options::local()).await.unwrap();
+    let phone = Arc::new(Node::spawn(phone_lab, receiver, Options::local()).await.unwrap());
+    // every pull held back: the phone hears what the Mac holds, and takes none of it
+    let mut held_back = Vec::new();
+    for live in [false, true] {
+        loop {
+            let mut page = Box::pin(phone.shared.pulls.page(live, true));
+            let Some(page) = future::poll_once(&mut page).await else { break };
+            held_back.push(page.unwrap());
+        }
+    }
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.shared.connection(mac.id()).await.unwrap();
+    wait_for(async || phone.synced().await["behind"].as_u64().is_some_and(|b| b > 0)).await;
+    let before = phone.synced().await;
+    let (holding, held) = (Arc::new(std::sync::Barrier::new(2)), Arc::new(std::sync::Barrier::new(2)));
+    let turn = {
+        let (phone, holding, held) = (phone.clone(), holding.clone(), held.clone());
+        tokio::spawn(async move { phone.act(move |_, _| { holding.wait(); held.wait(); }).await })
+    };
+    tokio::task::block_in_place(|| holding.wait());
+    let during = tokio::time::timeout(Duration::from_secs(5), phone.synced()).await;
+    tokio::task::block_in_place(|| held.wait());
+    turn.await.unwrap();
+    let during = during.expect("told while the Lab is held");
+    drop(held_back);
+    phone.shutdown().await.unwrap();
+    mac.shutdown().await.unwrap();
+    assert_eq!(during["behind"], before["behind"], "{before} then {during}");
+    assert_eq!(during["peers"], 1, "{during}");
+}
+
 /// Coverage.lean `behind_is_partial` and `arrived_is_complete`, on a node: while a peer has announced logs this
 /// device lacks, a query of their vault answers partial with those logs; once they arrive, complete. The iPhone's case.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -427,7 +472,7 @@ async fn a_query_is_partial_while_announced_logs_are_behind_and_complete_once_th
     mac.know(phone.addr());
     phone.sync_with(mac.id()).await.unwrap();
     wait_for(async || mac.shared.told.lock().unwrap().contains_key(&receiver)).await;
-    wait_for(async || phone.shared.differ(sender).await.is_empty()).await;
+    wait_for(async || phone.shared.differ(sender).is_empty()).await;
     let query = serde_json::json!({"op": "query", "vault": coop.to_hex(), "where": {"type": ["doc"]}});
     let before = phone.op(query.clone()).await.unwrap();
     assert_eq!(before["ok"]["coverage"], serde_json::json!({"state": "complete"}), "{before}");
@@ -441,7 +486,7 @@ async fn a_query_is_partial_while_announced_logs_are_behind_and_complete_once_th
     }
     let backlog = mac.act(move |lab, me| (0..pulls::LIVE_LOGS + 3).map(|i| lab.create(me, coop, coop, "doc", &[],
         document(&format!("Behind {i}"), "history", me)).unwrap()).collect::<Vec<_>>()).await;
-    wait_for(async || phone.shared.differ(sender).await.len() > 1).await;
+    wait_for(async || phone.shared.differ(sender).len() > 1).await;
     let behind = phone.op(query.clone()).await.unwrap();
     let coverage = &behind["ok"]["coverage"];
     assert_eq!(coverage["state"], "partial", "{behind}");
@@ -451,7 +496,7 @@ async fn a_query_is_partial_while_announced_logs_are_behind_and_complete_once_th
     wait_for(async || {
         let backlog = backlog.clone();
         phone.read(move |lab, me| backlog.iter().all(|entry| lab.item(me, *entry).is_some())).await
-            && phone.shared.differ(sender).await.is_empty()
+            && phone.shared.differ(sender).is_empty()
     }).await;
     let arrived = phone.op(query).await.unwrap();
     assert_eq!(arrived["ok"]["coverage"], serde_json::json!({"state": "complete"}), "{arrived}");
@@ -478,7 +523,7 @@ async fn every_read_is_offline_behind_or_current_as_its_peers_say() {
     phone.know(mac.addr());
     mac.know(phone.addr());
     phone.sync_with(mac.id()).await.unwrap();
-    wait_for(async || phone.shared.differ(sender).await.is_empty()).await;
+    wait_for(async || phone.shared.differ(sender).is_empty()).await;
     for read in [&query, &aips] {
         let answer = phone.op(read.clone()).await.unwrap();
         assert_eq!(answer["fresh"], serde_json::json!({"state": "current"}), "{answer}");
@@ -492,7 +537,7 @@ async fn every_read_is_offline_behind_or_current_as_its_peers_say() {
     }
     let backlog = mac.act(move |lab, me| (0..pulls::LIVE_LOGS + 3).map(|i| lab.create(me, coop, coop, "doc", &[],
         document(&format!("Behind {i}"), "history", me)).unwrap()).collect::<Vec<_>>()).await;
-    wait_for(async || phone.shared.differ(sender).await.len() > 1).await;
+    wait_for(async || phone.shared.differ(sender).len() > 1).await;
     for read in [&query, &aips] {
         let answer = phone.op(read.clone()).await.unwrap();
         assert_eq!(answer["fresh"]["state"], "behind", "{answer}");
@@ -503,7 +548,7 @@ async fn every_read_is_offline_behind_or_current_as_its_peers_say() {
     wait_for(async || {
         let backlog = backlog.clone();
         phone.read(move |lab, me| backlog.iter().all(|entry| lab.item(me, *entry).is_some())).await
-            && phone.shared.differ(sender).await.is_empty()
+            && phone.shared.differ(sender).is_empty()
     }).await;
     let arrived = phone.op(aips.clone()).await.unwrap();
     assert_eq!(arrived["fresh"], serde_json::json!({"state": "current"}), "{arrived}");
@@ -751,7 +796,7 @@ async fn a_thousand_reads_walk_once_per_change() {
     phone.know(mac.addr());
     mac.know(phone.addr());
     phone.shared.connection(mac.id()).await.unwrap();
-    wait_for(async || phone.shared.differ(sender).await.len() > 500).await;
+    wait_for(async || phone.shared.differ(sender).len() > 500).await;
     let reads = [serde_json::json!({"op": "query", "vault": coop.to_hex(), "where": {"type": ["doc"]}}),
         serde_json::json!({"op": "aips"})];
     let key = || (phone.shared.fresh.walks.load(std::sync::atomic::Ordering::Relaxed), *phone.shared.size.borrow());
@@ -768,7 +813,7 @@ async fn a_thousand_reads_walk_once_per_change() {
     let took = started.elapsed();
     keys.insert((moved(), *phone.shared.size.borrow()));
     let walked = key().0 - walks;
-    let logs = phone.shared.differ(sender).await.len();
+    let logs = phone.shared.differ(sender).len();
     drop(stalled);
     phone.shutdown().await.unwrap();
     mac.shutdown().await.unwrap();
@@ -819,7 +864,7 @@ async fn the_world_paints_from_local_entries_while_catching_up() {
     wait_for(async || {
         let local = local.clone();
         phone.read(move |lab, me| local.iter().all(|e| lab.item(me, *e).is_some())).await
-            && phone.shared.differ(sender).await.is_empty()
+            && phone.shared.differ(sender).is_empty()
     }).await;
     let held = phone.op(serde_json::json!({"op": "world"})).await.unwrap()["ok"]["entries"].as_array().unwrap().len();
     assert!(held > 0);
@@ -833,7 +878,7 @@ async fn the_world_paints_from_local_entries_while_catching_up() {
     mac.act(move |lab, me| for i in 0..pulls::LIVE_LOGS + 40 {
         lab.create(me, coop, coop, "doc", &[], document(&format!("Behind {i}"), "history", me)).unwrap();
     }).await;
-    wait_for(async || phone.shared.differ(sender).await.len() > pulls::LIVE_LOGS).await;
+    wait_for(async || phone.shared.differ(sender).len() > pulls::LIVE_LOGS).await;
     for op in ["world", "world_summary"] {
         let started = std::time::Instant::now();
         let answer = time::timeout(Duration::from_secs(5), phone.op(serde_json::json!({"op": op}))).await
@@ -845,7 +890,7 @@ async fn the_world_paints_from_local_entries_while_catching_up() {
             assert!(answer["ok"]["entries"].as_array().unwrap().len() >= held, "the entries it holds, shown now");
         }
     }
-    assert!(phone.shared.differ(sender).await.len() > pulls::LIVE_LOGS, "the catch-up is still under way");
+    assert!(phone.shared.differ(sender).len() > pulls::LIVE_LOGS, "the catch-up is still under way");
     drop(stalled);
     phone.shutdown().await.unwrap();
     mac.shutdown().await.unwrap();
@@ -872,7 +917,7 @@ async fn a_read_is_behind_only_on_the_logs_it_may_show() {
     wait_for(async || {
         let all: Vec<EntryId> = docs.iter().copied().chain([note]).collect();
         phone.read(move |lab, me| all.iter().all(|e| lab.item(me, *e).is_some())).await
-            && phone.shared.differ(sender).await.is_empty()
+            && phone.shared.differ(sender).is_empty()
     }).await;
 
     // every background page slot held, the one a pull from the first sync still uses too, once it lets it go: held
@@ -883,7 +928,7 @@ async fn a_read_is_behind_only_on_the_logs_it_may_show() {
         lab.edit(me, coop, *d, |item| item.set_text(2, "newer")).unwrap();
     }).await;
     // more logs at once than a live change carries, so they wait for the held pages
-    wait_for(async || phone.shared.differ(sender).await.len() == docs.len()).await;
+    wait_for(async || phone.shared.differ(sender).len() == docs.len()).await;
     let vault = coop.to_hex();
     let state = async |op: serde_json::Value| {
         let answer = phone.op(op.clone()).await.unwrap();
@@ -925,7 +970,7 @@ async fn probe_world_cost_holding_many() {
         for op in ["world_summary", "world"] {
             let t = std::time::Instant::now();
             phone.op(serde_json::json!({"op": op})).await.unwrap();
-            eprintln!("catching up {op}: {:?} behind={}", t.elapsed(), phone.shared.differ(sender).await.len());
+            eprintln!("catching up {op}: {:?} behind={}", t.elapsed(), phone.shared.differ(sender).len());
         }
         time::sleep(Duration::from_millis(300)).await;
     }

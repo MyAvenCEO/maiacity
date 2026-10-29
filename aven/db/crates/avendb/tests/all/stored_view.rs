@@ -83,12 +83,58 @@ fn a_view_of_other_edits_or_cut_short_is_no_view() {
     let mut ids = c.log.ids().to_vec();
     edits.swap(0, held - 1);
     ids[0] = ids[held - 1];
-    assert!(Replay::from_view(&bytes, &edits, &ids).is_none());
+    assert!(Replay::from_view(&bytes, &avendb::policy::EditsVec::from(edits), &ids).is_none());
     // cut short, or with a byte more
     assert!(Replay::from_view(&bytes[..bytes.len() - 1], c.log.edits(), c.log.ids()).is_none());
     let mut more = bytes.clone();
     more.push(0);
     assert!(Replay::from_view(&more, c.log.edits(), c.log.ids()).is_none());
+}
+
+#[test]
+fn a_view_of_the_format_before_reads_as_one_without_rungs_or_marks() {
+    let mut c = cast();
+    let alice = c.alice;
+    for i in 0..5 {
+        c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+    }
+    let held = c.log.edits().len();
+    let mut was = replay(c.log.edits());
+    was.drop_rungs();
+    // version 3 was version 4 with no rung and no mark counted after its tail's places
+    let bytes = was.to_view_4(held);
+    let body = bytes.strip_prefix(b"avenDB view 4\n").expect("version 4");
+    let (body, counts) = body.split_at(body.len() - 8);
+    assert_eq!(counts, [0; 8], "its tail keeps no rungs and no marks");
+    let old = [&b"avenDB view 3\n"[..], body].concat();
+    let (back, n) = Replay::from_view(&old, c.log.edits(), c.log.ids()).expect("a view of version 3 reads");
+    assert_eq!(n, held);
+    assert!(back == was && back.same_tail(&was), "read back, it differs");
+    // and the edits after it step on it as on the replay
+    let e = EntryId::from_u64(1000);
+    c.log.receive([write(&c.log, &was.state, MAC_A, e, 1)]);
+    assert!(replay_on(back, c.log.edits(), held) == replay(c.log.edits()));
+}
+
+/// A view of version 4 reads as the same replay, its tail's derivations worked out again from its edits; one of
+/// version 5 keeps them, and reads as the same without reading an edit it is of.
+#[test]
+fn a_view_of_version_4_reads_its_derivations_from_its_edits() {
+    let mut c = cast();
+    let alice = c.alice;
+    for i in 0..5 {
+        c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+    }
+    let e = EntryId::from_u64(1000);
+    let st = c.log.view();
+    c.log.receive([write(&c.log, &st, MAC_A, e, 1)]);
+    let held = c.log.edits().len();
+    let was = replay(c.log.edits());
+    for bytes in [was.to_view_4(held), was.to_view(held)] {
+        let (back, n) = Replay::from_view(&bytes, c.log.edits(), c.log.ids()).expect("the view reads");
+        assert_eq!(n, held);
+        assert!(back == was && back.same_tail(&was), "read back, it differs");
+    }
 }
 
 #[test]
@@ -152,9 +198,9 @@ fn stored_views_preserve_cap_group_bindings_in_current_and_tail_states() {
 fn previous_derived_view_version_is_rejected_for_full_replay() {
     let c = cast();
     let mut bytes = replay(c.log.edits()).to_view(c.log.ids().len());
-    let current = b"avenDB view 4\n";
+    let current = b"avenDB view 5\n";
     assert!(bytes.starts_with(current));
-    bytes[..current.len()].copy_from_slice(b"avenDB view 3\n");
+    bytes[..current.len()].copy_from_slice(b"avenDB view 4\n");
     assert!(Replay::from_view(&bytes, c.log.edits(), c.log.ids()).is_none());
 }
 
@@ -186,7 +232,7 @@ fn pinned_views() -> String {
 }
 
 /// The replay rules' number (`viewRules`, `ViewRules.lean`) and the hash `pinned_views` gave under them.
-const PINNED: (&str, &str) = ("1", "86adb6a0403e63f6b77695ce0f11d65e3853f14adcef9d78ca69c2e025516bec");
+const PINNED: (&str, &str) = ("2", "20640b9ba0230725d0804420125e7895aa1d1eb2e3cb7580e4527845a44e342d");
 
 /// A device opens a view sealed to the same rules number with any later build (VR1), so what the rules give must not
 /// change under one number. Where this fails: if the replay gives other views now (a rule changed, or a fix changed

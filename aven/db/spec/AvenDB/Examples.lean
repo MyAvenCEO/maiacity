@@ -1718,7 +1718,7 @@ def sAdmin : List Edit := sInvite ++ chain 620 [
 #guard takes city sAdmin bobsCoop == some bobsCoop
 
 -- a pass Bob's Mac signs for maiaCITY's API: the server answers his vault, an admin once he holds the Admin group
-def bobsPass : ApiPass := { device := macB, audience := "maiaCITY API", made := 1000, signer := some macB }
+def bobsPass : ApiPass := { device := macB, audience := "maiaCITY API", made := 1000, nonce := 0, signer := some macB }
 #guard passStanding (view sAdmin) city "maiaCITY API" 1000 bobsPass == some (bob, true)
 #guard passStanding (view sInvite) city "maiaCITY API" 1000 bobsPass == some (bob, false)
 -- Alice's Mac: her vault owns Maia City

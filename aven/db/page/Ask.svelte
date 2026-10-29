@@ -12,7 +12,7 @@
 -->
 <script>
 	import Mark from './Mark.svelte';
-	import { allowed, may } from './ops.js';
+	import { may, refused } from './ops.js';
 	import { ago, avenOf, kindRules, mayOwn, nameOf, short, why } from './vaults.js';
 
 	/**
@@ -90,7 +90,7 @@
 		if (!o) return;
 		if (o.to === o.as) return void (barred = 'a vault asks another, never itself');
 		let gone = false;
-		may(api, o.as, [o]).then(([v]) => !gone && (barred = allowed(v) ? '' : why(/** @type {any} */ (v))));
+		may(api, o.as, [o]).then(([v]) => !gone && (barred = refused(v) ? why(/** @type {any} */ (v)) : ''));
 		return () => {
 			gone = true;
 		};

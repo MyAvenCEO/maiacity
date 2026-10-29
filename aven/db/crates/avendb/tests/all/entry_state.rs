@@ -31,8 +31,8 @@ fn note() -> Note {
     Note { lab, passkey, mac, phone, alice, welcome }
 }
 
-fn edits(n: &Note) -> Vec<Edit> {
-    n.lab.log(n.mac).edits().to_vec()
+fn edits(n: &Note) -> avendb::policy::EditsVec {
+    n.lab.log(n.mac).edits().into()
 }
 
 fn root(b: u8) -> FileRoot {
@@ -57,7 +57,7 @@ fn full_before_a_snapshot_based_after_it() {
     let mut n = note();
     let held = edits(&n);
     let none = HashMap::new();
-    assert_eq!(entry_state(&held, &none, n.welcome), EntryState::Full);
+    assert_eq!(entry_state(&avendb::policy::EditsVec::from(&held[..]), &none, n.welcome), EntryState::Full);
     let log = ids(log_edits(&held, n.welcome));
     assert!(log.len() >= 2, "the note's log holds both writes");
     assert_eq!(ids(needs(&held, &EntryState::Full, n.welcome)), log, "full: the whole log");
@@ -66,13 +66,13 @@ fn full_before_a_snapshot_based_after_it() {
     let c = snap(&mut n, vec![x.clone()]);
     let held = edits(&n);
     let slices = HashMap::from([(root(1), slice)]);
-    let state = entry_state(&held, &slices, n.welcome);
+    let state = entry_state(&avendb::policy::EditsVec::from(&held[..]), &slices, n.welcome);
     assert_eq!(state, EntryState::Based { id: c, stated: x });
     assert!(needs(&held, &state, n.welcome).is_empty(), "a fresh snapshot: nothing to replay");
     assert!(writable(true, &state) && !writable(false, &state), "an owner writes a based entry, a reader reads it");
     assert!(writable(false, &EntryState::Full));
     // a slice the device hasn't opened yet leaves the entry full
-    assert_eq!(entry_state(&held, &HashMap::new(), n.welcome), EntryState::Full);
+    assert_eq!(entry_state(&avendb::policy::EditsVec::from(&held[..]), &HashMap::new(), n.welcome), EntryState::Full);
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn a_write_after_the_snapshot_is_the_whole_suffix() {
     let held = edits(&n);
     let third = held[before..].iter().map(|e| e.id()).collect::<Vec<_>>();
     let slices = HashMap::from([(root(1), slice)]);
-    let state = entry_state(&held, &slices, n.welcome);
+    let state = entry_state(&avendb::policy::EditsVec::from(&held[..]), &slices, n.welcome);
     assert!(state.is_based());
     assert_eq!(ids(needs(&held, &state, n.welcome)), third);
 }
@@ -100,7 +100,7 @@ fn a_newer_snapshot_wins() {
     let c = snap(&mut n, vec![y.clone()]);
     let held = edits(&n);
     let slices = HashMap::from([(root(1), slice), (root(2), newer)]);
-    let state = entry_state(&held, &slices, n.welcome);
+    let state = entry_state(&avendb::policy::EditsVec::from(&held[..]), &slices, n.welcome);
     assert_eq!(state, EntryState::Based { id: c, stated: y }, "the owners' newest word");
     assert!(needs(&held, &state, n.welcome).is_empty());
 }
@@ -114,5 +114,5 @@ fn a_removal_after_the_snapshot_makes_it_full_again() {
     n.lab.submit(n.mac, &[n.passkey], remove).expect("the passkey removes the phone");
     let held = edits(&n);
     let slices = HashMap::from([(root(1), slice)]);
-    assert_eq!(entry_state(&held, &slices, n.welcome), EntryState::Full);
+    assert_eq!(entry_state(&avendb::policy::EditsVec::from(&held[..]), &slices, n.welcome), EntryState::Full);
 }

@@ -17,7 +17,6 @@
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
 	import { session } from '$avendb/session.svelte.js';
 	import { aips } from '$avendb/aips.svelte.js';
-	import Fresh from '$avendb/Fresh.svelte';
 	import { showsFinal } from '$avendb/fresh.js';
 	import { localMedia } from '$avendb/local-media.svelte.js';
 	import { shaped } from '$lib/app/shapes.js';
@@ -44,6 +43,11 @@
 	// device is behind on them (Freshness.lean), a stage they show may be one they left long ago, so the board shows
 	// them catching up, never an older stage as final ($avendb/fresh.js)
 	const final = $derived(showsFinal(aips.fresh));
+	// how fresh the board is goes to the app's one sync pill, the one place the page says it
+	$effect(() => {
+		session.viewFresh = avendbOn ? aips.fresh : null;
+		return () => (session.viewFresh = null);
+	});
 	const all = $derived(allOf(g.view, final ? aips.list : [], session.world));
 	const count = (id) => all.filter((a) => a.stage === id).length;
 	const current = $derived(all.find((a) => a.key === open) ?? null);
@@ -111,7 +115,6 @@
 		{:else if aips.why && !aips.read}
 			<p class="dim center">avenDB's AIPs didn't read: {aips.why}. <button class="link" onclick={loadAvendb}>Read again</button></p>
 		{:else}
-			{#if avendbOn}<p class="center"><Fresh fresh={aips.fresh} /></p>{/if}
 			<!-- the board: a column per stage, side by side; on a narrow screen the stage bar picks the one column shown -->
 			<div class="board">
 				{#each STAGES as s (s.id)}

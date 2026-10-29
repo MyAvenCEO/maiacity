@@ -33,7 +33,6 @@
 	import { answering, asksOf, countsOf, detail, lead, newsOf, objectiveLine, revisionsOf, signed, top as topOf } from './hitl.js';
 	import { nameOf } from './vaults.js';
 	import { aips as held } from './aips.svelte.js';
-	import Fresh from './Fresh.svelte';
 	import AsOf from './AsOf.svelte';
 	import { opensOn, showsFinal } from './fresh.js';
 
@@ -189,7 +188,6 @@
 					{#if top.reviews[0]}You answered an earlier version: {top.reviews[0].verdict}.{/if}
 				</p>
 
-				<Fresh {fresh} />
 				<AsOf {fresh} />
 				{#if revising}
 					<textarea bind:value={words} rows="3" placeholder="What should {nameOf(from)} change?"></textarea>

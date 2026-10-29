@@ -13,18 +13,7 @@ use serde_json::json;
 
 /// The rows a rebuild from device `me`'s edits holds, in key order (`SharedIndex.full`).
 fn rebuilt(lab: &Lab, me: SignerId) -> Vec<(Vec<u8>, Vec<u8>)> {
-    let mut rows: Vec<(Vec<u8>, Vec<u8>)> = lab
-        .shared_entries(me)
-        .into_iter()
-        .filter_map(|e| lab.shared_of(me, e))
-        .flat_map(|o| o.rows())
-        .collect();
-    rows.push((
-        MARK.to_vec(),
-        (lab.index_mark(me) as u64).to_be_bytes().to_vec(),
-    ));
-    rows.sort();
-    rows
+    full_rows(lab, me)
 }
 
 /// A fresh index of what `me` holds, on a shelf of its own: its root.
@@ -32,7 +21,7 @@ async fn fresh_root(lab: &Mutex<Lab>, me: SignerId) -> Option<Sum> {
     let ix = SharedIndex::open(Memory::new().shelf()).await.unwrap();
     let held = lab.lock().unwrap().log(me).ids().len();
     assert!(
-        matches!(ix.step(lab, me, held).await.unwrap(), Stepped::Every(_)),
+        matches!(ix.step(lab, me, held).await.unwrap(), Stepped::Entries(_)),
         "a new index puts every entry"
     );
     ix.root().await
@@ -104,7 +93,7 @@ async fn after_every_save_the_index_is_the_rebuild_with_its_root() {
         seed % n
     };
     let mut made: Vec<EntryId> = rooms.clone();
-    let (mut entries, mut every) = (0, 0);
+    let mut entries = 0;
     for step in 0..40u64 {
         match next(4) {
             0 => made.push(message(
@@ -138,7 +127,6 @@ async fn after_every_save_the_index_is_the_rebuild_with_its_root() {
         let lab = Mutex::new(std::mem::replace(&mut w.lab, Lab::new()));
         match save(&ix, &lab, mac).await.unwrap() {
             Stepped::Entries(n) => entries += n,
-            Stepped::Every(n) => every += n,
             Stepped::Not => {}
         }
         assert_eq!(
@@ -155,12 +143,8 @@ async fn after_every_save_the_index_is_the_rebuild_with_its_root() {
         w.lab = lab.into_inner().unwrap();
     }
     assert!(
-        entries > 0,
-        "a save of an entry's edits puts again that entry alone"
-    );
-    assert!(
-        every < 40 * made.len(),
-        "and not every entry each time: {every}"
+        entries > 0 && entries < 40 * made.len() / 4,
+        "a save of an entry's edits puts again that entry alone, not every entry each time: {entries}"
     );
 }
 
@@ -219,7 +203,7 @@ async fn a_lost_page_or_a_rewritten_log_builds_the_index_again() {
     }
     assert!(matches!(
         save(&ix, &lab, mac).await.unwrap(),
-        Stepped::Every(_)
+        Stepped::Entries(_)
     ));
     assert_eq!(ix.rows().await.unwrap(), rebuilt(&lab.lock().unwrap(), mac));
     // a stamp of another log of the same length: every entry put again
@@ -231,14 +215,11 @@ async fn a_lost_page_or_a_rewritten_log_builds_the_index_again() {
             at: ids.len() as u64,
             head: [1; 32],
         };
-        index
-            .apply(vec![(MARK.to_vec(), Some(vec![0; 8]))], wrong)
-            .await
-            .unwrap();
+        index.apply(vec![], wrong).await.unwrap();
     }
     assert!(matches!(
         save(&other, &lab, mac).await.unwrap(),
-        Stepped::Every(_)
+        Stepped::Entries(_)
     ));
     assert_eq!(
         other.rows().await.unwrap(),
@@ -331,7 +312,7 @@ async fn a_log_that_grew_is_checked_from_its_head_and_a_rewritten_one_is_refused
     for n in 0..5 {
         message(&mut w, rooms[n % 2], 100 + n as u64);
     }
-    assert_eq!(ix.of_log(&w.lab, mac), Some(stamp));
+    assert!(w.lab.log(mac).of_log(stamp.into()));
     // a save of the grown log stamps it with the log's head, which the log kept as the edits came
     let lab = Mutex::new(std::mem::replace(&mut w.lab, Lab::new()));
     let grown = head(lab.lock().unwrap().log(mac).ids());
@@ -347,13 +328,44 @@ async fn a_log_that_grew_is_checked_from_its_head_and_a_rewritten_one_is_refused
         message(&mut other, other_rooms[0], 1000 + n as u64);
     }
     assert_eq!(other.mac_a, mac);
-    assert_eq!(
-        ix.of_log(&other.lab, mac),
-        None,
+    assert!(
+        !other.lab.log(mac).of_log(stamp.into()),
         "a rewritten log is not one the index is of"
     );
     // and the log it is of still is, after the refusal
-    assert_eq!(ix.of_log(&lab.lock().unwrap(), mac), Some(grown));
+    assert!(lab.lock().unwrap().log(mac).of_log(grown.into()));
+}
+
+/// A device catching up takes keys, shares and vaults' edits between its entries' (`SharedIndex.X5_step`): after every
+/// save its index is the rebuild, though the edits it took were of other logs, and a save puts again the entries whose
+/// inputs changed, never every entry each time.
+#[tokio::test]
+async fn a_device_catching_up_on_keys_shares_and_vaults_puts_again_the_entries_they_change() {
+    let (mut w, rooms) = alices(3);
+    for n in 0..12 {
+        message(&mut w, rooms[n % 3], n as u64);
+    }
+    avendb::cast::todos_on(&mut w);
+    let (mac, phone) = (w.mac_a, w.phone_a);
+    let ids = w.lab.log(mac).ids().to_vec();
+    let blobs: Vec<std::sync::Arc<[u8]>> = w.lab.blob_ids(mac).into_iter().filter_map(|b| w.lab.blob(mac, b)).collect();
+    let ix = SharedIndex::open(Memory::new().shelf()).await.unwrap();
+    let (mut saves, mut put, mut most) = (0, 0, 0);
+    for chunk in ids.chunks(5) {
+        let signed = chunk.iter().map(|id| w.lab.signed_edit(mac, *id).expect("an edit it holds")).collect();
+        w.lab.receive(phone, signed, blobs.clone());
+        let lab = Mutex::new(std::mem::replace(&mut w.lab, Lab::new()));
+        if let Stepped::Entries(n) = save(&ix, &lab, phone).await.unwrap() {
+            saves += 1;
+            put += n;
+        }
+        let lab = lab.into_inner().unwrap();
+        most = most.max(lab.shared_entries(phone).len());
+        assert_eq!(ix.rows().await.unwrap(), rebuilt(&lab, phone), "after {} of {} edits", saves, ids.len());
+        w.lab = lab;
+    }
+    assert!(saves > 4, "it saved as it caught up: {saves}");
+    assert!(put < saves * most / 2, "and put again the entries whose inputs changed, not each every time: {put} of {saves} x {most}");
 }
 
 /// What the head of a log costs to work out once, as a node opens: `AVENDB_HEAD_N` ids (10M if unset).
@@ -369,4 +381,34 @@ fn bench_head() {
     let t = std::time::Instant::now();
     let h = head(&ids);
     println!("BENCH {}", json!({ "bench": "shared_index_head", "ids": n, "ms": t.elapsed().as_secs_f64() * 1e3, "at": h.at }));
+}
+
+/// What a save's step holds the Lab for at `AVENDB_INPUTS_N` entries (20k if unset): working out every entry's inputs,
+/// against working out every entry's rows, what a step of every entry did under the Lab; and a step after one message.
+///
+///   cargo test -p avendb-net --features test-fixtures --lib -- --ignored --nocapture bench_inputs
+#[tokio::test]
+#[ignore]
+async fn bench_inputs() {
+    let n: usize = std::env::var("AVENDB_INPUTS_N").ok().and_then(|n| n.parse().ok()).unwrap_or(20_000);
+    let (mut w, rooms) = alices(1);
+    let (mac, alice) = (w.mac_a, w.alice);
+    for i in 0..n {
+        w.lab.create(mac, alice, alice, "note", &["t"], document(&format!("Note {i}"), "x", mac)).unwrap();
+    }
+    let ms = |t: std::time::Instant| t.elapsed().as_secs_f64() * 1e3;
+    let t = std::time::Instant::now();
+    let inputs = w.lab.shared_inputs(mac).len();
+    let inputs_ms = ms(t);
+    let t = std::time::Instant::now();
+    let rows = w.lab.shared_entries(mac).into_iter().filter_map(|e| w.lab.shared_of(mac, e)).count();
+    let rows_ms = ms(t);
+    message(&mut w, rooms[0], 1);
+    let was = w.lab.shared_inputs(mac);
+    message(&mut w, rooms[0], 2);
+    let t = std::time::Instant::now();
+    let changed = shared::differ(&was, &w.lab.shared_inputs(mac)).len();
+    let step_ms = ms(t);
+    println!("BENCH {}", json!({ "bench": "shared_index_inputs", "entries": inputs, "inputs_ms": inputs_ms, "rows": rows,
+        "rows_ms": rows_ms, "after_a_message_ms": step_ms, "changed": changed }));
 }

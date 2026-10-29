@@ -51,7 +51,7 @@ async fn bench_replay() {
         .unwrap_or(3);
     let shelf = disk::open(std::path::Path::new(&root)).expect("the shelf");
     let (_edits, (signed, _, _)) = edits::Edits::open(shelf).await.expect("its edits");
-    let edits: Vec<_> = signed.into_iter().map(|s| s.edit).collect();
+    let edits: avendb::policy::EditsVec = signed.into_iter().map(|s| s.edit).collect();
     let removals = edits.iter().filter(|e| e.is_removal()).count();
     for _ in 0..rounds {
         let began = Instant::now();
@@ -107,6 +107,7 @@ async fn bench_keys() {
                 KeyName::Scoped(KeyFam::Share(..), _) => "share".into(),
                 KeyName::Scoped(KeyFam::Audience(..), _) => "audience".into(),
                 KeyName::Entry(..) => "entry".into(),
+                KeyName::Select(_) => "select".into(),
             };
             let k = format!(
                 "{k} boxes={} public={}",
@@ -258,7 +259,7 @@ async fn rehearsal_saved_delta() -> anyhow::Result<()> {
     }
     let ka: BTreeSet<_> = before_keys.iter().map(|k| BlobId::of(k)).collect();
     let kb: BTreeSet<_> = after_keys.iter().map(|k| BlobId::of(k)).collect();
-    let before_edits: Vec<_> = before.iter().map(|s| s.edit.clone()).collect();
+    let before_edits: avendb::policy::EditsVec = before.iter().map(|s| s.edit.clone()).collect();
     let before_ids: Vec<_> = before.iter().map(|s| s.edit.id()).collect();
     let replay = policy::replay(&before_edits);
     let roundtrip =
@@ -295,7 +296,7 @@ async fn rehearsal_saved_delta() -> anyhow::Result<()> {
         "raw stored-view roundtrip changed replay semantics"
     );
     let sa = replay.state;
-    let sb = policy::view(&after.iter().map(|s| s.edit.clone()).collect::<Vec<_>>());
+    let sb = policy::view(&after.iter().map(|s| s.edit.clone()).collect::<avendb::policy::EditsVec>());
     eprintln!(
         "REHEARSAL delta before={} after={} removed={} added={} own_added={} valid_added={} actions={actions:?} keys_before={} keys_after={} keys_removed={} keys_added={} policy_equal={} vaults_equal={} shares_equal={} entries_equal={}",
         a.len(),

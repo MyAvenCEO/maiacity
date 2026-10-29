@@ -23,7 +23,6 @@ use avendb::slice::Selector;
 use avendb::sync::LogId;
 use bytes::Bytes;
 use iroh::EndpointId;
-use n0_future::time::{self, Duration};
 use n0_future::{StreamExt as _, stream, task};
 use serde_json::{Value, json};
 
@@ -31,9 +30,6 @@ use crate::{Authenticator, Node, Shared, Source, Step};
 
 /// No bytes beside an op: what `Node::run` takes for every op but one that brings a file (`engine::brings`).
 pub type NoBytes = fn() -> stream::Empty<io::Result<Bytes>>;
-
-/// The total deadline for a foreground bring, including admission and bounded peer hedges.
-const BRING: Duration = Duration::from_secs(60);
 
 /// The most entries one `bring` names.
 const MOST_BROUGHT: usize = 64;
@@ -230,9 +226,10 @@ impl Node {
 
     /// `find {vault, types?, tags?, follow?, bring?}`: the entries of vault `vault` of one of the types `types` or with
     /// one of the tags `tags`, by the blind index (`blind`, P4 of sync v2): those the device reads, and those each live
-    /// peer names, the server too, which reads none of them. With `bring` (the default), the device then brings the
-    /// logs of those from every peer that holds more of them at once (`scoped`). Answers `{entries, asked, answered,
-    /// new}`: the entries in hex, how many live peers answered of how many it asked, and how many edits it brought.
+    /// peer names, the always-on peer too, which reads none of them. With `bring` (the default), their logs are asked
+    /// of every live peer at once, as a view's now-tier want is (`ask_now`, with the rules they rest on), and come as
+    /// they come: find answers what it found and never waits on a peer to bring it. Answers `{entries, asked,
+    /// answered}`: the entries in hex, and how many live peers answered of how many it asked.
     async fn find(&self, op: &Value) -> Result<Value> {
         let bad = |why: &str| Ok(Refused::BadOp(why.to_string()).to_json());
         let Some(vault) = op.get("vault").and_then(Value::as_str).and_then(VaultId::from_hex) else {
@@ -260,21 +257,17 @@ impl Node {
             },
         };
         let found = self.shared.find(vault, labels, follow).await;
-        let brought = if op.get("bring").and_then(Value::as_bool) != Some(false) {
-            // the logs no entry's first, which say who may do what, then the found entries' own, from every peer that
-            // holds more of them at once (`scoped`)
-            let named: BTreeMap<LogId, EndpointId> =
-                found.entries.iter().filter_map(|(e, p)| p.map(|p| (LogId::Entry(*e), p))).collect();
-            for peer in named.values().copied().collect::<BTreeSet<_>>() {
-                let _ = time::timeout(BRING, self.bring(peer, BTreeSet::new())).await;
-            }
-            let scope: BTreeSet<LogId> = found.entries.iter().map(|(e, _)| LogId::Entry(*e)).collect();
-            time::timeout(BRING, self.shared.sync_scoped(scope, named)).await.ok().map(|s| s.new)
-        } else {
-            None
-        };
+        if op.get("bring").and_then(Value::as_bool) != Some(false)
+            && let Ok(activity) = self.shared.admit()
+        {
+            let (shared, logs) = (self.shared.clone(), found.entries.iter().map(|(e, _)| LogId::Entry(*e)).collect());
+            task::spawn(async move {
+                let _activity = activity;
+                shared.ask_now(logs).await;
+            });
+        }
         let entries: Vec<String> = found.entries.iter().map(|(e, _)| e.to_hex()).collect();
-        Ok(json!({"ok": {"entries": entries, "asked": found.asked, "answered": found.answered, "new": brought}}))
+        Ok(json!({"ok": {"entries": entries, "asked": found.asked, "answered": found.answered}}))
     }
 
     /// `read_file`: the answer, and the bytes beside.
@@ -486,6 +479,7 @@ impl Shared {
 mod world_snapshot_tests {
     use super::*;
     use std::sync::Arc;
+    use n0_future::time::{self, Duration};
     use avendb::cast::{document, human_on};
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

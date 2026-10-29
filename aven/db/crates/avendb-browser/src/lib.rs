@@ -703,7 +703,8 @@ impl Device {
 
     /// The vault it belongs to, by its view.
     pub async fn vault(&self) -> Option<VaultId> {
-        self.node.read(|lab, me| lab.vault_of(me)).await
+        // read dry: of every edit it holds, its replay stepped on in place first, never of one under way (`Lab::vault_of`)
+        self.node.dry(|lab, me| lab.vault_of(me)).await
     }
 
     /// Runs op `op` of the ops engine (`avendb::engine`, `doc:docs/avendb` §8), as its node does
@@ -937,6 +938,45 @@ pub fn start() {
         fn error(s: &str);
     }
     std::panic::set_hook(Box::new(|info| error(&format!("avenDB: {info}"))));
+    keys::on_want(pairs_wanted);
+}
+
+/// The page hears that McEliece pairs are wanted (`keys::on_want`): its device's worker takes their seeds
+/// (`wantedPairs`), has a pair worker make each (`makePair`) and hands it in (`handInPair`), all while the device goes
+/// on. Where nothing listens, or a pair never comes, the device makes it itself when it needs it, as before.
+fn pairs_wanted() {
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(catch, js_namespace = globalThis, js_name = avendbPairsWanted)]
+        fn told() -> Result<(), JsValue>;
+    }
+    told().ok();
+}
+
+/// The seeds of the McEliece pairs wanted and not handed out yet (`keys::wanted_pairs`), 32 bytes each, one after
+/// another: each is handed out once.
+#[wasm_bindgen(js_name = wantedPairs)]
+pub fn wanted_pairs() -> Vec<u8> {
+    keys::wanted_pairs().concat()
+}
+
+/// The McEliece pair seed `seed` makes (`keys::make_pair`): its public key and then its secret key, in one buffer.
+#[wasm_bindgen(js_name = makePair)]
+pub fn make_pair(seed: &[u8]) -> Result<Vec<u8>, JsError> {
+    let seed: [u8; 32] = seed.try_into().map_err(|_| JsError::new("a pair's seed is 32 bytes"))?;
+    let (public, secret) = keys::make_pair(&seed);
+    Ok([public, secret].concat())
+}
+
+/// Hands in the pair `makePair` made of seed `seed` (`keys::hand_in_pair`): false where no key wants it any more.
+#[wasm_bindgen(js_name = handInPair)]
+pub fn hand_in_pair(seed: &[u8], pair: &[u8]) -> Result<bool, JsError> {
+    let seed: [u8; 32] = seed.try_into().map_err(|_| JsError::new("a pair's seed is 32 bytes"))?;
+    if pair.len() <= keys::MCELIECE_PUBLIC_BYTES {
+        return Ok(false);
+    }
+    let (public, secret) = pair.split_at(keys::MCELIECE_PUBLIC_BYTES);
+    Ok(keys::hand_in_pair(&seed, public, secret))
 }
 
 /// The device as the page holds it (`Device`), with the page's store its shelf is on (`js/store.js`): every call that

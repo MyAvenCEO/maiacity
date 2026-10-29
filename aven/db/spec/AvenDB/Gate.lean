@@ -57,11 +57,15 @@ def passLife : Nat := 600
     (`sign::PASS_SKEW`). -/
 def passSkew : Nat := 300
 
-/-- A device's pass to service `audience`, made at `made`, in seconds since 1970 by the device's clock. -/
+/-- A device's pass to service `audience`, made at `made`, in seconds since 1970 by the device's clock, under `nonce`:
+    its device's own, never on another of its passes (`Lab::api_pass`), so a service that takes each pass once, as
+    maiaCITY's API does, takes every one. What counts of a pass, and what the server says of it, the nonce never
+    changes. -/
 structure ApiPass where
   device   : SignerId
   audience : String
   made     : Nat
+  nonce    : Nat
   signer   : Option SignerId
   deriving DecidableEq, Repr
 

@@ -119,7 +119,7 @@ fn whole_replay_with_removals() {
     let edits = lab.log(mac).edits().to_vec();
     let removals = edits.iter().filter(|e| e.is_removal()).count();
     let t = Instant::now();
-    let whole = replay(&edits);
+    let whole = replay(&avendb::policy::EditsVec::from(&edits[..]));
     eprintln!("PROBE edits={} removals={removals} stood={} replay_ms={:.0}", edits.len(), whole.stood.iter().filter(|s| **s).count(), t.elapsed().as_secs_f64() * 1e3);
 }
 

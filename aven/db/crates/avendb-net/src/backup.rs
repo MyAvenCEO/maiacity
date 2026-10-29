@@ -430,12 +430,12 @@ impl Node {
             // The v1 vault export does not carry owner-attested base anchors. Refuse a
             // misleading successful backup until that format can restore partial holders.
             ensure!(lab.bootstrap_stamp(me).is_empty(), "vault export of adopted partial bases is not supported yet");
-            let edits: &[Edit] = lab.log(me).edits();
+            let edits: &avendb::policy::Edits = lab.log(me).edits();
             let snap = core::snapshot_places(edits, lab.state(me), v);
             let plan = core::plan(edits, &snap, base_ask.as_ref(), compact);
             let signed = |i: usize| lab.signed_edit(me, edits[i].id()).context("an edit the device holds");
             let news = plan.news.iter().map(|&i| signed(i)).collect::<Result<Vec<_>>>()?;
-            let snap_edits: Vec<Edit> = snap.iter().map(|&i| edits[i].clone()).collect();
+            let snap_edits: avendb::policy::EditsVec = snap.iter().map(|&i| edits[i].clone()).collect();
             let named: HashSet<BlobId> = snap_edits.iter().flat_map(Edit::blobs).collect();
             let mut keys = Vec::with_capacity(named.len());
             for b in named {

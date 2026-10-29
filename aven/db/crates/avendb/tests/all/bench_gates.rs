@@ -171,7 +171,7 @@ fn intake(log: Log, writes: usize) -> f64 {
     let mut edits = log.edits().to_vec();
     drop(log);
     edits.sort_by_key(place);
-    let (mut to, mut r) = (Log::new(), replay(&[]));
+    let (mut to, mut r) = (Log::new(), replay(avendb::policy::Edits::empty()));
     let t = Instant::now();
     for page in edits.chunks(PAGE) {
         let before = to.edits().len();
@@ -325,7 +325,7 @@ fn first_sync(n: usize, entries: u64) -> Value {
     let all: Vec<(Option<LogId>, Edit)> =
         log.edits().iter().zip(log.ids()).map(|(e, id)| (log_of(e, *id), e.clone())).collect();
     let take = |pages: Vec<Vec<Edit>>| {
-        let (mut log, mut r) = (Log::new(), replay(&[]));
+        let (mut log, mut r) = (Log::new(), replay(avendb::policy::Edits::empty()));
         let t = Instant::now();
         for page in pages {
             let before = log.edits().len();

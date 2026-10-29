@@ -453,6 +453,7 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
             KeyName::Signer(_) => vec![],
             KeyName::Scoped(k, _) => vec![k.vault()],
             KeyName::Entry(e, ..) => of(&e).into_iter().collect(),
+            KeyName::Select(c) => shares.get(&c).copied().into_iter().collect(),
         },
         Action::Wraps { entry, .. } => of(entry).into_iter().collect(),
         Action::Checkpoint { vault, .. } | Action::Snapshot { vault, .. } => vec![*vault],
@@ -476,7 +477,7 @@ fn share_ids(xs: &[ShareId]) -> Vec<String> {
 
 /// A key of the schedule as the History view names it: a signer's own key, one epoch of a vault's seed, of a
 /// share's key or of an audience's key, or the key of an entry in one of its stays at one epoch of that stay's
-/// audience.
+/// audience, or the key of a share's selector.
 fn key_name(k: KeyName) -> Value {
     match k {
         KeyName::Signer(s) => json!({ "signer": hex(&s.0) }),
@@ -486,6 +487,7 @@ fn key_name(k: KeyName) -> Value {
         KeyName::Entry(e, stay, g) => {
             json!({ "entry": hex(&e.0), "stay": stay.map(|s| hex(&s.0)), "epoch": g })
         }
+        KeyName::Select(c) => json!({ "selector": hex(&c.0) }),
     }
 }
 

@@ -71,13 +71,17 @@ impl KeyFam {
     }
 }
 
-/// A signer's own key, one epoch of a key family, or the key of an entry in one of its stays (`None` for the stay its
-/// creation began, else the move that began it) at an epoch of that stay's audience: what the schedule seals keys to.
+/// A signer's own key, one epoch of a key family, the key of an entry in one of its stays (`None` for the stay its
+/// creation began, else the move that began it) at an epoch of that stay's audience, or the key a share's selector is
+/// sealed under (`slice::Select`): what the schedule seals keys to. A selector's key is sealed to the seed of each vault
+/// that reads it as the share is issued, and boxed there by whoever holds it, then or later (`Lab::upkeep`), so a share
+/// never waits for the key of a vault its issuer can't seal to yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KeyName {
     Signer(SignerId),
     Scoped(KeyFam, u64),
     Entry(EntryId, Option<EditId>, u64),
+    Select(ShareId),
 }
 
 /// `secret` sealed or wrapped to the key `to`, or derived from it: whoever can open `to` can open `secret`.
@@ -228,10 +232,17 @@ impl Secret {
         if pairs().lock().expect("the pairs").get(&id).is_some_and(|slot| slot.get().is_some()) {
             return;
         }
-        let mut wanted = WANTED.lock().expect("the wanted pairs");
         let seed = self.pair_seed();
-        if !wanted.iter().any(|w| w.0 == seed) {
+        {
+            let mut wanted = WANTED.lock().expect("the wanted pairs");
+            if wanted.iter().any(|w| w.0 == seed) {
+                return;
+            }
             wanted.push((seed, id, false));
+        }
+        // the page that makes pairs in its workers hears of it now, while the device goes on (`on_want`)
+        if let Some(told) = TOLD.get() {
+            told();
         }
     }
 
@@ -272,6 +283,16 @@ type Slot = Arc<OnceLock<Arc<McEliece>>>;
 fn pairs() -> &'static Mutex<HashMap<KeyId, Slot>> {
     static PAIRS: OnceLock<Mutex<HashMap<KeyId, Slot>>> = OnceLock::new();
     PAIRS.get_or_init(Default::default)
+}
+
+/// Whom to tell as a pair is wanted (`on_want`): a web page's device, which makes it in a worker beside the one it runs
+/// in, so that the pair is made by the time it is needed: a new browser's own key's, wanted as it makes its keys, was
+/// made only as it joined, holding its one worker 7.8 s (fresh10, 2026-10-29).
+static TOLD: OnceLock<fn()> = OnceLock::new();
+
+/// Have `told` called each time a pair is wanted (`Secret::want`), which then hands out its seed (`wanted_pairs`).
+pub fn on_want(told: fn()) {
+    let _ = TOLD.set(told);
 }
 
 /// The pairs wanted and not yet handed in: each seed, the key it is for, and whether `wanted_pairs` handed it out.

@@ -73,7 +73,7 @@ async fn a_first_pull_cut_off_goes_on_from_its_shelf_when_started_again() {
     let generations = std::fs::read_dir(dir.path()).expect("the shelf's folder").map(|g| g.expect("a generation").path());
     let mut gone = 0;
     for generation in generations.filter(|g| g.is_dir()) {
-        for slot in ["view-0", "view-1", "shown-0", "shown-1"] {
+        for slot in ["view-0", "view-1", "index-view-0", "index-view-1", "shown-0", "shown-1"] {
             gone += std::fs::remove_file(generation.join("slots").join(slot)).is_ok() as usize;
         }
     }

@@ -546,7 +546,7 @@ export async function plan(leaves, { device: d, vault = MAIA_CITY, signals = {},
 	// the kernel's read and their own so, tens of seconds on an iPhone).
 	for (const { part, want, tier } of leaves) {
 		const at = where(want);
-		if (want.type?.length) queries.get(tier)?.push(...normalizeDiscovery([{ types: want.type, ...(at ? { vault: at } : {}) }]));
+		if (want.type?.length) queries.get(tier)?.push(...normalizeDiscovery([{ types: want.type, ...(at ? { vault: at } : {}), ...(part.window?.newest ? { newest: part.window.newest } : {}) }]));
 		if (want.entry && part.part !== 'files') early.push({ entry: want.entry, tier, dist: 0 });
 	}
 	if (leaves.length) publish(wants());

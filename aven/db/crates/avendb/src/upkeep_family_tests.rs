@@ -98,8 +98,8 @@ fn profile_same_engine_synthetic_warm_restore() {
     eprintln!("synthetic fixture edits={count} boxes={} cloned_box_bytes={}", index.boxes.len(), index.boxes.iter().map(|b| b.bytes(lab.held(phone).log.edits()).len()).sum::<usize>());
     drop(index);
     let pending = lab.warming(phone, count, Some([77; 40])).unwrap();
-    let warm = Warm { keys: pending.keys.clone().into_iter().collect(), views: pending.view.clone().into_iter().collect(), shown: pending.shown.clone().map(Into::into).into_iter().collect(), queries: vec![] };
-    assert!(warm.views.len() == 1 && warm.keys.len() == 1);
+    let warm = Warm { queries: vec![], ..Warm::of(&pending) };
+    assert!(!warm.view.is_empty() && warm.keys.len() == 1);
     lab.warmed(phone, pending);
     let records: Vec<_> = entries.iter().map(|e| lab.item(phone, *e).unwrap().record()).collect();
     for trial in 0..3 {
@@ -205,12 +205,12 @@ fn unchanged_warm_restore_does_not_reencode_and_corrupt_views_recover() {
     let count = backup.signed.len();
     let marker = [81; 40];
     let saved = lab.warming(device, count, Some(marker)).unwrap();
-    let warm = Warm { keys: saved.keys.clone().into_iter().collect(), views: saved.view.clone().into_iter().collect(), shown: saved.shown.clone().map(Into::into).into_iter().collect(), queries: vec![] };
-    assert_eq!(warm.views.len(), 1);
+    let warm = Warm { queries: vec![], ..Warm::of(&saved) };
+    assert!(!warm.view.is_empty());
     lab.warmed(device, saved);
     lab.restore_warm(device, backup.clone(), Some((marker, count)), &warm);
     let restored = lab.held(device);
-    assert!(!lab.warm_due(device), "validated unchanged state is already represented on its shelf: replayed={} saved={} wholes={} saved_wholes={} newkeys={} checked={:?} counts={}",
+    assert!(!lab.warm_due(device), "validated unchanged state is already represented on its shelf: replayed={} saved={:?} wholes={} saved_wholes={} newkeys={} checked={:?} counts={}",
         restored.replayed, restored.view_given, restored.wholes, restored.view_wholes, restored.opened_since.len(), restored.checked_given, lab.work_metrics(device));
     assert!(lab.capture_warm(device, count, Some(marker)).is_none(), "no capture means no redundant encode/encrypt");
 
@@ -222,13 +222,14 @@ fn unchanged_warm_restore_does_not_reencode_and_corrupt_views_recover() {
     let pending = lab.warming(device, next_count, Some(next_marker)).unwrap();
     assert!(pending.keys.is_some(), "new durable frontier must update signature-check receipt");
     let mut next_warm = warm.clone();
-    if let Some(keys) = &pending.keys { next_warm.keys.insert(0, keys.clone()); }
-    if let Some(view) = &pending.view { next_warm.views.insert(0, view.clone()); }
+    next_warm.took(&pending);
     lab.warmed(device, pending);
     lab.restore_warm(device, next.clone(), Some((next_marker, next_count)), &next_warm);
     assert_eq!(lab.item(device, entry).unwrap().record(), expected, "next edit survives stored-prefix replay");
 
-    let broken = Warm { keys: next_warm.keys, views: vec![vec![0, 1, 2]], shown: vec![], queries: vec![] };
+    // its view's rows, and a view kept before them, none of which read whole
+    let view = next_warm.view.keys().map(|row| (*row, vec![0, 1, 2])).collect();
+    let broken = Warm { keys: next_warm.keys, view, views: vec![vec![0, 1, 2]], ..Warm::default() };
     lab.restore_warm(device, next, Some((next_marker, next_count)), &broken);
     assert_eq!(lab.item(device, entry).unwrap().record(), expected);
     assert!(lab.capture_warm(device, next_count, Some(next_marker)).is_some(), "invalid derived view must be regenerated");
@@ -294,25 +295,25 @@ fn stored_view_shows_what_replay_shows() {
     lab.restore_from(d, backup.clone());
     let replayed = shows(&lab);
     let saved = lab.warming(d, held, Some([84; 40])).unwrap();
-    let warm = Warm { keys: saved.keys.into_iter().collect(), views: saved.view.into_iter().collect(), shown: saved.shown.into_iter().map(Into::into).collect(), queries: vec![] };
+    let warm = Warm { queries: vec![], ..Warm::of(&saved) };
     lab.restore_warm(d, backup.clone(), Some(([84; 40], held)), &warm);
     assert!(lab.work_metrics(d)["counts"]["replay: from its stored view"].as_u64().unwrap_or(0) > 0);
     assert_eq!(shows(&lab), replayed, "the stored view shows what replay shows");
 
     // the view an older engine kept, its replay behind the adjunct header, opens as the replay alone, once
     let key = lab.shelf_key(d).unwrap();
-    let opened = key.unlock("view", &warm.views[0], VIEW_RULES.as_bytes()).unwrap();
+    let opened = key.unlock("view", &warm.view[&key.replay_row()], VIEW_RULES.as_bytes()).unwrap();
     let mut older = b"avenDB own materialization 1\n".to_vec();
     older.extend((opened.len() as u32).to_be_bytes());
     older.extend(opened.iter().copied());
     older.extend([7; 64]);
-    let older = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", &older, VIEW_RULES.as_bytes(), &mut lab.rng)], shown: vec![], queries: vec![] };
+    let older = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", &older, VIEW_RULES.as_bytes(), &mut lab.rng)], ..Warm::default() };
     lab.restore_warm(d, backup.clone(), Some(([84; 40], held)), &older);
     assert_eq!(shows(&lab), replayed);
     assert!(lab.capture_warm(d, held, Some([84; 40])).is_some(), "kept again without the adjunct");
 
     // sealed under other replay rules, the same view stays shut and the device replays (VR2)
-    let other = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", &opened, b"avenDB view rules 0", &mut lab.rng)], shown: vec![], queries: vec![] };
+    let other = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", &opened, b"avenDB view rules 0", &mut lab.rng)], ..Warm::default() };
     let shut = lab.work_metrics(d)["counts"]["stored view: none that opens"].as_u64().unwrap_or(0);
     lab.restore_warm(d, backup.clone(), Some(([84; 40], held)), &other);
     assert_eq!(lab.work_metrics(d)["counts"]["stored view: none that opens"].as_u64().unwrap_or(0), shut + 1);

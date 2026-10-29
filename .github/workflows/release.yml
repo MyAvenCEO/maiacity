@@ -219,6 +219,10 @@ jobs:
           bun-version-file: .bun-version
       - if: ${{ !steps.meta.outputs.digest && matrix.component == 'api' }}
         run: bun aven/ops/devx/wasm.mjs ensure --fetch
+      # the tree it is built from, which the peer names (health.rs `TREE`), as .github/actions/image's build does
+      - if: ${{ !steps.meta.outputs.digest }}
+        id: tree
+        run: echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
       - if: ${{ !steps.meta.outputs.digest }}
         uses: docker/build-push-action@v7.4.0
         with:
@@ -226,6 +230,7 @@ jobs:
           file: ${{ matrix.component == 'api' && 'aven/api/Dockerfile' || 'aven/db/Dockerfile.server' }}
           push: true
           tags: ${{ steps.meta.outputs.image }}:${{ github.sha }}
+          build-args: TREE=${{ steps.tree.outputs.tree }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,scope=${{ matrix.component }},mode=max
 
@@ -654,7 +659,7 @@ jobs:
             echo "::error::avenDB's peer started without its bucket, though its settings are set: is AVENDB_BUCKET in its .env?"
             exit 1
           fi
-          bash aven/ops/deploy/check-avendb.sh
+          EXPECT_TREE="$(git rev-parse 'HEAD^{tree}')" bash aven/ops/deploy/check-avendb.sh
 
   # From outside, as everyone reaches them: the site names this commit, the API and the peer answer. A red site goes
   # back to the build before (its release dir is kept; aven/ops/release.mjs's witness on the Mac then says an older
