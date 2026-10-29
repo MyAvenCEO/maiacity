@@ -124,7 +124,8 @@ One image holds every tool; every command runs in it.
   - stable Rust with the wasm target and wasm-bindgen;
   - bun;
   - Lean, through elan;
-  - avenDB2's dependencies, already compiled.
+  - the third-party crates (iroh, Loro, OpenDAL and the rest), already compiled, so a fresh box builds only our own
+    code.
 
   It's built for amd64 (cloud, CI) and arm64 (OrbStack on Apple Silicon, natively). A GitHub workflow builds it when
   the box's files change and with every daily version bump. The repository is public, so the image is too, and it
@@ -146,11 +147,28 @@ One image holds every tool; every command runs in it.
   config. Docker 28 and later drop routed traffic between its networks; in our NAT test it dropped exactly those
   packets until the setting was on.
 
+### Tools in the image, our code outside it
+
+The image never holds our code. It holds the tools; our crates and pages come from the checkout:
+
+| Layer | Where it lives | Changes when |
+|---|---|---|
+| Tools: Rust, wasm-bindgen, bun, Lean, Chromium | the image | a version bump, at most daily |
+| Third-party crates, compiled | the image, keyed by `Cargo.lock` | a dependency changes |
+| Our code: crates, pages, spec | the checkout, mounted into the containers | every edit |
+| Our builds | one build folder in a Docker volume, kept across `up` and `down` | every build, incrementally |
+| Each peer's data | a volume per peer, the S3 server's included; `wipe` empties one | the peers write |
+
+So a Rust edit costs one incremental build in `builder` and a restart of the peers that run it, about a second; a page
+edit is a hot reload; and nothing is ever re-imaged for our own changes. The Peers run the binary straight from the
+build folder, and Vite serves the Peer-Light's wasm from it, reloading the pages when it changes. The Aven Peer's
+production image comes later and is a separate, slim one: just the binary.
+
 ### Where it runs
 
 | Place | How |
 |---|---|
-| **Mac** (OrbStack) | `bun run up` in `aven/DB2`. OrbStack's Docker engine config gets `"allow-direct-routing": true`. The control room opens in any Mac browser, and the Peer-Lights can then run in your browser too. |
+| **Mac** (OrbStack) | `bun run up` in `aven/DB2`. OrbStack's Docker engine config gets `"allow-direct-routing": true`. The control room opens in any Mac browser, and the Peer-Lights can then run in your browser too. The build folder lives in a Docker volume, not in a folder shared with the Mac, where many small writes are slower. |
 | **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so a session-start hook starts `dockerd` again. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
 | **GitHub CI** | The same image as the job's container, on Linux runners (macOS runners have no Docker). Once per goal, like everything else. |
 
