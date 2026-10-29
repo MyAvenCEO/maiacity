@@ -10,9 +10,10 @@
  *   node aven/ops/devx/live-device.mjs --setup ['<invite link>'] once: found the dev vault (through the app's gate, or
  *                                                                an invite's join page), print its id for Settings → Owners
  *   node aven/ops/devx/live-device.mjs --accept                  once, after Samuel invited it: accept co-owning
- *   node aven/ops/devx/live-device.mjs                           a run: reopen + unlock, the views (#Bla, Devices,
- *                                                                Assets) while catching up, sync, the views again,
- *                                                                Chat, Assets, report
+ *   node aven/ops/devx/live-device.mjs                           a run: reopen + unlock, 5 reference walks (Chat →
+ *                                                                #Bla, Assets → asset → variant, Studio → timeline,
+ *                                                                Proposals → AIP, Settings → Devices) while catching
+ *                                                                up, sync, the walks again, Chat, Assets, report
  *   node aven/ops/devx/live-device.mjs --roundtrip [Bla]         the release gate (Samuel 2026-10-28): a message in the
  *                                                                room reaches the other device within 3 s (--gate;
  *                                                                the target is 1 s), both ways, whenever both are
@@ -255,9 +256,8 @@ async function run() {
 			if (!opened) throw new Error(`didn't open: ${(await words(page)).slice(0, 300)}`);
 		} else log.steps.unlock = 0;
 
-		// the views a person opens, right away while the device still catches up (each view's actor manifest asks for
-		// its own data first: Samuel 2026-10-29, "do you actually open the routes/actor views?"), then again once
-		// caught up
+		// the reference walks, right away while the device still catches up (each view's actor manifest asks for its own
+		// data first: Samuel 2026-10-29, "do you actually open the routes/actor views?"), then again once caught up
 		log.views.catchingUp = await views(page, 'catching');
 
 		// sync: the pill and its details, as they move
@@ -337,7 +337,7 @@ async function run() {
 	const line =
 		`${stamp} ${engine} load ${s.load}s gate ${s.gate}s unlock ${s.unlock}s (${s.ceremonies ?? 0} ceremony) ` +
 		`chat rooms ${s.chatRooms}s room ${s.chatRoom}s assets list ${s.assetsList}s asset ${s.asset}s ` +
-		`views ${Object.entries(log.views).map(([when, vs]) => `${when} ${vs.map((v) => `${v.view} ${v.paint ?? '-'}s`).join(' ')}`).join(', ')} ` +
+		`views ${Object.entries(log.views).map(([when, vs]) => `${when} ${vs.map((v) => `${v.app}/${v.level} ${v.paint ?? '-'}s`).join(' ')}`).join(', ')} ` +
 		`behind ${behind.length ? `${behind[0]}→${behind.at(-1)}` : 'n/a'} reports ${log.reports.length} errors ${log.errors.length} ` +
 		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')}`;
 	writeFileSync(join(out, 'line.txt'), `${line}\n`);
@@ -356,34 +356,90 @@ async function openOn(page) {
 	return (await until(() => open(page), 180)) ? Date.now() : null;
 }
 
-/** The views a run opens, each with what shows it painted: #room's messages in Chat, the vault's devices in Settings,
- *  the assets list. A view's first paint is from the device's own data (local first): the 2 s target holds while the
- *  device still catches up, never waiting on a peer. */
-const VIEWS = [
-	{ view: `#${viewRoom}`, href: `${base}/app/chat/`, pick: viewRoom, painted: '.chat-page article.msg' },
-	{ view: 'devices', href: `${base}/app/#settings/devices`, painted: '#settings-devices li.device' },
-	{ view: 'assets', href: `${base}/app/#assets`, painted: 'a.nav-item[href^="#assets/"]' }
+/** The reference walks (Samuel 2026-10-29: "just a few reference examples ... clicking sub items, like chat actor/room
+ *  or assets/select asset item/variant ... 5 actor apps ... their composite leaf pattern like sub interests"): each
+ *  goes from an app's composite view down to a leaf, a click at a time, so each level's sub-interest is asked for
+ *  (a slot binds on select: Chat's room, Assets' asset, Studio's timeline). A step goes to `go` or clicks `click` (the
+ *  first element it matches), and has painted once `painted` matches, with `text` in it where given. A view's first
+ *  paint is from the device's own data (local first): the 2 s target holds while the device still catches up. */
+const WALKS = [
+	{
+		app: 'chat',
+		steps: [
+			{ level: 'rooms', go: `${base}/app/chat/`, painted: '.chat-page button.nav-item' },
+			{ level: `#${viewRoom}`, room: viewRoom, painted: '.chat-page article.msg' }
+		]
+	},
+	{
+		app: 'assets',
+		steps: [
+			{ level: 'list', go: `${base}/app/#assets`, painted: 'a.nav-item[href^="#assets/"]', vault: 'Maia City' },
+			{ level: 'asset', click: 'a.nav-item[href^="#assets/"]', painted: '.about-head h3' },
+			{ level: 'variant', click: '.lines a.line:has(> i.dot:not(.main))', painted: '.about-head p.soft', text: 'a variant' }
+		]
+	},
+	{
+		app: 'studio',
+		steps: [
+			{ level: 'timelines', go: `${base}/app/studio/`, painted: '.picker button.now' },
+			{ level: 'timeline', click: '.picker button.now', then: '.picker .menu .row > button:first-child', painted: '.picker .menu .row.on' }
+		]
+	},
+	{
+		app: 'proposals',
+		steps: [
+			{ level: 'board', go: `${base}/app/aips/`, painted: 'ul.cards li button' },
+			{ level: 'aip', click: 'ul.cards li button', painted: 'section.detail h2' }
+		]
+	},
+	{
+		app: 'settings',
+		steps: [
+			{ level: 'settings', go: `${base}/app/#settings`, painted: 'section.part' },
+			{ level: 'devices', go: `${base}/app/#settings/devices`, painted: '#settings-devices li.device' }
+		]
+	}
 ];
 
-/** Opens each of VIEWS on `page` and times it to its first paint, up to 30 s each: [{ view, paint (s or null), pill }]. */
+/** Walks each of WALKS on `page`, timing each step to its first paint, up to 30 s a step; a step that didn't paint
+ *  ends its walk: [{ app, level, paint (s or null), pill }]. */
 async function views(page, when) {
 	const seen = [];
-	for (const v of VIEWS) {
-		const t0 = Date.now();
-		await go(page, v.href);
-		// a room the device doesn't know yet hasn't painted, whatever other room Chat shows
-		const picked = !v.pick || (await until(
-				() =>
-					page.evaluate((name) => {
-						const b = [...document.querySelectorAll('.chat-page button.nav-item')].find((e) => e.textContent?.replace(/\s+/g, ' ').trim().replace(/^#\s*/, '') === name);
-						b?.click();
-						return !!b;
-					}, v.pick),
-				30
-			));
-		const painted = picked && (await until(() => page.$(v.painted), Math.max(0.1, 30 - (Date.now() - t0) / 1000)));
-		seen.push({ view: v.view, paint: painted ? Number(((Date.now() - t0) / 1000).toFixed(2)) : null, pill: await pill(page) });
-		await shot(page, `view-${when}-${v.view.replace(/\W/g, '')}`);
+	const first = (sel) => page.evaluate((sel) => !!document.querySelector(sel)?.click() || !!document.querySelector(sel), sel);
+	for (const w of WALKS) {
+		for (const step of w.steps) {
+			const t0 = Date.now();
+			const left = () => Math.max(0.1, 30 - (Date.now() - t0) / 1000);
+			let ready = true;
+			if (step.go) await go(page, step.go);
+			if (step.click) ready = !!(await until(() => first(step.click), left()));
+			if (ready && step.then) ready = !!(await until(() => first(step.then), left()));
+			// a room the device doesn't know yet hasn't painted, whatever other room Chat shows
+			if (step.room)
+				ready = !!(await until(
+					() =>
+						page.evaluate((name) => {
+							const b = [...document.querySelectorAll('.chat-page button.nav-item')].find((e) => e.textContent?.replace(/\s+/g, ' ').trim().replace(/^#\s*/, '') === name);
+							b?.click();
+							return !!b;
+						}, step.room),
+					left()
+				));
+			const painted = () => page.evaluate(({ sel, text }) => [...document.querySelectorAll(sel)].some((e) => !text || e.textContent?.includes(text)), { sel: step.painted, text: step.text ?? '' });
+			let done = ready && (await until(painted, step.vault ? Math.min(5, left()) : left()));
+			// the recipes live in Maia City: where the vault picked holds none, pick it in the nav pill's vaults, as a person does
+			if (ready && !done && step.vault) {
+				await page.evaluate(() => document.querySelector('button.item.identity')?.click());
+				await sleep(300);
+				await page.evaluate((name) => [...document.querySelectorAll('button.acct[role=menuitemradio]')].find((b) => b.textContent?.includes(name) && !/COOP/.test(b.textContent ?? ''))?.click(), step.vault);
+				await sleep(300);
+				await go(page, step.go);
+				done = await until(painted, left());
+			}
+			seen.push({ app: w.app, level: step.level, paint: done ? Number(((Date.now() - t0) / 1000).toFixed(2)) : null, pill: await pill(page) });
+			await shot(page, `view-${when}-${w.app}-${step.level.replace(/\W/g, '')}`);
+			if (!done) break;
+		}
 	}
 	return seen;
 }
