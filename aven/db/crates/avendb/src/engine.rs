@@ -1539,8 +1539,6 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             "id": w.edit.to_hex(),
             "author": w.author.to_hex(),
             "signer": w.signer.to_hex(),
-            // the old name, for one release (batch 5, R)
-            "actor": w.signer.to_hex(),
             "via": w.via.iter().map(VaultId::to_hex).collect::<Vec<_>>(),
             "chain": audit.chain(w.author, w.signer, &w.via),
             "line": line_json(w.line()),
@@ -1610,8 +1608,6 @@ fn room(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refuse
             let who = adders.get(&Value::Array(place.clone()).to_string()).copied().flatten();
             row["by"] = who.map_or(Value::Null, |(_, signed)| by(signed));
             row["signer"] = who.map_or(Value::Null, |(actor, _)| actor.to_hex().into());
-            // the old name, for one release (batch 5, R)
-            row["actor"] = row["signer"].clone();
             for inner in ["thread", "reactions"] {
                 mark(row, &place, inner, adders, by);
             }
