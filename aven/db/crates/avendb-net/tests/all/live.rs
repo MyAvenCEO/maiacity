@@ -405,6 +405,38 @@ async fn a_views_now_tier_is_asked_alone_before_any_bulk_page() {
     phone.shutdown().await.expect("shut down");
 }
 
+/// A now asking whose pages came while its device's Lab was held by another turn longer than ten seconds ends once it
+/// took them, counted, not cut and asked again (fresh10, 2026-10-29: every now asking failed at 10 s with 0 new while
+/// 4,081 of their edits were taken, the device's turns held up to 12.6 s by saves).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_now_asking_held_up_by_a_long_lab_turn_ends_with_what_it_took() {
+    let mut w = world();
+    let (mac_a, phone_a, alice) = (w.mac_a, w.phone_a, w.alice);
+    w.lab.sync_all(0);
+    let notes: Vec<EntryId> = (0..40)
+        .map(|i| w.lab.create(mac_a, alice, alice, "note", &[], document(&format!("Note {i}"), "In May.", mac_a)).expect("a note"))
+        .collect();
+    // pages of a few edits each, so that the now tier's askings take many
+    let mac = Node::spawn(w.lab.split(mac_a, &[], [1; 32]), mac_a, Options { page: 4 << 10, ..Options::local() }).await.expect("a node");
+    let phone = Node::spawn(w.lab.split(phone_a, &[], [2; 32]), phone_a, Options { window: 1, ..Options::local() }).await.expect("a node");
+    let entries: Vec<String> = notes.iter().map(|n| n.to_hex()).collect();
+    let want = serde_json::json!({"op": "interest", "scope": "2e".repeat(16), "revision": 1, "wants": [{"tier": "now", "entries": entries}]});
+    assert_eq!(phone.op(want).await.expect("an interest")["ok"]["accepted"], true);
+    meet(&[&mac, &phone]);
+    // once the iPhone asked a page, a turn of its Lab holds it past the ten seconds an asking had
+    until("the iPhone asks a page", || async { phone.synced().await["pages"].as_u64() > Some(0) }).await;
+    phone.read(|_, _| std::thread::sleep(std::time::Duration::from_millis(10_500))).await;
+    until("the iPhone keeps the notes its view wants", || async { kept(&phone, &notes).await == notes.len() }).await;
+    let net = phone.op(serde_json::json!({"op": "network"})).await.expect("network");
+    let askings = net["ok"]["askings"].as_array().expect("its askings").clone();
+    let now: Vec<_> = askings.iter().filter(|a| a["stage"] == "now").collect();
+    assert!(!now.is_empty(), "the now tier was asked: {askings:?}");
+    assert!(now.iter().all(|a| a["failed"] == false), "no now asking was cut: {askings:?}");
+    assert!(now.iter().any(|a| a["new"].as_u64() > Some(0)), "and what it took is counted: {askings:?}");
+    mac.shutdown().await.expect("shut down");
+    phone.shutdown().await.expect("shut down");
+}
+
 /// A view that opens while a device asks a peer for every log it lacks gets its entry at once: the asking yields to it
 /// after the page it is taking (`Yield`, `Interest.lean`'s `yields`), where the entry's log came only with the asking's
 /// last pages before, as its place sorts last. Alice's Mac wrote notes her iPhone lacks; once a few came, a page of the

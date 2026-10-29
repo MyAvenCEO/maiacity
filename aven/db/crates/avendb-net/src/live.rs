@@ -238,7 +238,10 @@ impl Shared {
                 while let Some(logs) = work.next(&shared.views_want()) {
                     claimed.claim(&logs);
                     timing.logs += logs.len() as u64;
-                    shared.pull_live(endpoint, device, logs, pulls::LIVE_LOGS, &mut timing).await?;
+                    let at = time::Instant::now();
+                    let missing = shared.differ(device).await;
+                    timing.differ_ms += ms(at);
+                    shared.pull_live(endpoint, device, logs, &missing, pulls::LIVE_LOGS, &mut timing).await?;
                 }
                 Ok::<(), anyhow::Error>(())
             })
@@ -373,17 +376,26 @@ impl Shared {
     }
 
     /// `ask_now` of the peer at `endpoint`, `device`: how many edits were new, and whether it left rules to the backlog.
+    /// What the device lacks of the peer is worked out once for all its askings (`differ`), not again for each. No
+    /// asking is cut at a deadline: each ends once its pages are taken, or a page doesn't come (`PAGE_WAIT`). Cut at
+    /// 10 s, an asking whose pages came but whose taking waited behind the device's other Lab turns failed with all
+    /// it took uncounted, and the next began again (fresh10, 2026-10-29: 10 of 10 failed, 4,081 edits taken).
     async fn ask_now_of(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, logs: BTreeSet<LogId>) -> anyhow::Result<(usize, bool)> {
         let mut claimed = LiveClaimed::new(self);
         let mut timing = LiveTiming::default();
+        let at = time::Instant::now();
+        let missing = self.differ(device).await;
+        timing.differ_ms += ms(at);
         let logs: Vec<LogId> = logs.into_iter().collect();
         for chunk in logs.chunks(pulls::LIVE_LOGS) {
             let hints: BTreeSet<LogId> = chunk.iter().copied().collect();
             claimed.claim(&hints);
             let (began, at) = (time::Instant::now(), jobs::now_ms());
             let new = timing.new;
-            let got = time::timeout(LIVE_WAIT, self.pull_live(endpoint, device, hints, NOW_RULES, &mut timing)).await
-                .unwrap_or_else(|_| Err(anyhow::anyhow!("its now tier took longer than {LIVE_WAIT:?}")));
+            let got = self.pull_live(endpoint, device, hints, &missing, NOW_RULES, &mut timing).await;
+            if got.is_err() {
+                self.traffic.failed(device);
+            }
             if let Some(asked) = timing.asked.take() {
                 self.traffic.asking(crate::traffic::Asking {
                     device,
@@ -440,12 +452,10 @@ impl Shared {
         endpoint: EndpointId,
         device: SignerId,
         hints: BTreeSet<LogId>,
+        missing: &BTreeSet<LogId>,
         most_rules: usize,
         timing: &mut LiveTiming,
     ) -> anyhow::Result<()> {
-        let at = time::Instant::now();
-        let missing = self.differ(device).await;
-        timing.differ_ms += ms(at);
         // the rules the hinted entries rest on (`rests_on`), those it lacks: not every rule the device lacks, which a
         // device catching up a history of many grants always lacks more than `LIVE_LOGS` of, so a chat message waited
         // for the whole backlog (24.8 s, 2026-10-28). A hint is no permission: what comes is checked as any edit, and
@@ -467,7 +477,7 @@ impl Shared {
         // (`sync::place`), each rule before what rests on it: asked first on their own, they were a moving target, a
         // device catching up writing its key upkeep on the very audience logs a chat entry rests on, which the Mac
         // chased 1.3 s and then left the message to the backlog
-        let mut logs = self.in_step(device, hints.intersection(&missing).copied().collect()).await;
+        let mut logs = self.in_step(device, hints.intersection(missing).copied().collect()).await;
         timing.rules = rules.len() as u64;
         logs.extend(rules);
         if logs.is_empty() {

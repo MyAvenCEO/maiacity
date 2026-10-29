@@ -225,9 +225,10 @@ async fn a_live_hint_does_not_authorize_a_private_entry() {
             files: vec![],
         },
     );
+    let missing = alice.shared.differ(sender).await;
     alice
         .shared
-        .pull_live(bob.id(), sender, [LogId::Entry(secret)].into(), crate::pulls::LIVE_LOGS, &mut super::LiveTiming::default())
+        .pull_live(bob.id(), sender, [LogId::Entry(secret)].into(), &missing, crate::pulls::LIVE_LOGS, &mut super::LiveTiming::default())
         .await
         .unwrap();
     assert!(
