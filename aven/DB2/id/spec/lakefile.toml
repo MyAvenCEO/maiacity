@@ -1,0 +1,14 @@
+# Aven.ID, avenID's Lean model (aven/DB2/README.md, "Identity is a package of its own"). Core Lean only: the box has no
+# network for Lean packages. `lake build` proves every theorem; `aven-id-model` runs the model for aven-id's property
+# tests (README rule 10).
+name = "aven-id-spec"
+version = "0.1.0"
+defaultTargets = ["AvenID", "aven-id-model"]
+
+[[lean_lib]]
+name = "AvenID"
+roots = ["Aven.ID"]
+
+[[lean_exe]]
+name = "aven-id-model"
+root = "Main"
