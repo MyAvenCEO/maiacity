@@ -25,6 +25,10 @@ runs:
       env:
         COMPONENT: ${{ inputs.component }}
       run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-$COMPONENT" >> "$GITHUB_OUTPUT"
+    # the tree it is built from, which the peer names (health.rs `TREE`): the same on main's merge commit
+    - id: tree
+      shell: bash
+      run: echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
     - uses: docker/setup-buildx-action@v4.4.1
     - if: inputs.push == 'true'
       uses: docker/login-action@v4.7.0
@@ -39,6 +43,7 @@ runs:
         file: ${{ inputs.dockerfile }}
         push: ${{ inputs.push == 'true' }}
         tags: ${{ steps.name.outputs.image }}:ci-${{ github.sha }}
+        build-args: TREE=${{ steps.tree.outputs.tree }}
         cache-from: type=gha,scope=${{ inputs.component }}
         cache-to: type=gha,scope=${{ inputs.component }},mode=max
     # the image's name and digest, as release.yml reads them
