@@ -1,7 +1,8 @@
 # avenSANDBOX on GitHub (aven/DB2/SANDBOX.md, "Production"). production takes changes from main only, and every change
 # to it boots the sandbox from the box's image and checks it: the same `bun run up --check` a Claude cloud session or a
 # Mac runs. Every push to production that passes becomes a release on its own: tagged by its date in Berlin and its
-# number that day (26.10.29v1, 26.10.29v2, ...), its changes listed, and the box it was checked in pinned to it.
+# number that day (26.10.29, then 26.10.29v2, 26.10.29v3, ...), its changes listed, and the box it was checked in
+# pinned to it.
 name: avenSANDBOX
 
 on:
@@ -70,7 +71,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: The box's image
         id: box
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox:$(sha256sum aven/DB2/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox:$(sha256sum aven/DB2/box/Dockerfile | cut -c1-16)" >> "$GITHUB_OUTPUT"
       - name: bun run up --check
         working-directory: aven/DB2
         env:
@@ -128,24 +129,29 @@ jobs:
           SHA: ${{ github.sha }}
           IMAGE: ${{ needs.sandbox.outputs.image }}
         run: |
+          # a day's first release is the date alone (26.10.29), the next ones 26.10.29v2, 26.10.29v3, ...
           day=$(TZ=Europe/Berlin date +%y.%m.%d)
-          last=$(gh api "repos/$REPO/git/matching-refs/tags/${day}v" --jq '.[].ref' \
-            | sed -n "s#^refs/tags/${day}v\([0-9][0-9]*\)\$#\1#p" | sort -n | tail -1)
-          tag="${day}v$(( ${last:-0} + 1 ))"
+          taken=$(gh api "repos/$REPO/git/matching-refs/tags/${day}" --jq '.[].ref')
+          if ! grep -qx "refs/tags/$day" <<< "$taken"; then
+            tag="$day"
+          else
+            last=$(sed -n "s#^refs/tags/${day}v\([0-9][0-9]*\)\$#\1#p" <<< "$taken" | sort -n | tail -1)
+            tag="${day}v$(( ${last:-1} + 1 ))"
+          fi
 
           # avenSANDBOX: the exact box the check ran in, tagged with the release's name
-          box="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox"
+          box="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox"
           docker buildx imagetools create --tag "$box:$tag" "$IMAGE"
           digest=$(docker buildx imagetools inspect "$box:$tag" --format '{{json .Manifest}}' | jq -r .digest)
 
-          # avenDB2: the landing page, named for the release
-          page="avendb2-landing-$tag.tar.gz"
-          mv deliverables/avendb2-landing.tar.gz "deliverables/$page"
+          # avenOS: the landing page, named for the release
+          page="aven-os-landing-$tag.tar.gz"
+          mv deliverables/aven-os-landing.tar.gz "deliverables/$page"
           (cd deliverables && sha256sum "$page" > SHA256SUMS)
 
           # the release before is the newest dated one; v1's releases (avendb-page-device, avendb-dev-cache) don't count
           previous=$(gh release list --repo "$REPO" --limit 100 --json tagName \
-            --jq '[.[].tagName | select(test("^[0-9]{2}[.][0-9]{2}[.][0-9]{2}v[0-9]+$"))][0] // empty')
+            --jq '[.[].tagName | select(test("^[0-9]{2}[.][0-9]{2}[.][0-9]{2}(v[0-9]+)?$"))][0] // empty')
           {
             echo "## Deliverables"
             echo
@@ -157,7 +163,7 @@ jobs:
             echo
             echo "Digest: \`$box@$digest\`"
             echo
-            echo "**avenDB2**, the landing page: \`$page\` below, checksum in \`SHA256SUMS\`."
+            echo "**avenOS**, the landing page: \`$page\` below, checksum in \`SHA256SUMS\`."
             echo
             if [ -n "$previous" ]; then
               gh api "repos/$REPO/releases/generate-notes" -f tag_name="$tag" -f target_commitish="$SHA" \

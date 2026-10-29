@@ -1,5 +1,5 @@
 {
-	"name": "avendb2",
+	"name": "@aven/os",
 	"private": true,
 	"type": "module",
 	"scripts": {

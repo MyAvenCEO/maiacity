@@ -32,7 +32,7 @@
 </script>
 
 <main>
-	<h1>avenDB2</h1>
+	<h1>avenOS</h1>
 	<p class="soon">coming soon</p>
 
 	{#if peer}
