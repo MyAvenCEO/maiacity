@@ -6,8 +6,8 @@ import AvenDB.Json
 
 `vectors/freshness.json`, the cases the Rust engine replays (`crates/avendb/tests/all/freshness_vectors.rs`): what a device
 hears (its live peers, those of them not yet heard, the stamp of its last current read) against each kind of coverage,
-with the freshness the model gives the read (`Freshness.of`), what an action does with it (`act`), and whether its
-sheet opens by itself (`pops`) or when the person asks (`asked`).
+with the freshness the model gives the read (`Freshness.of`), and whether its sheet opens by itself (`pops`) or when
+the person asks (`asked`). An action never reads it: it goes on what the device holds.
 -/
 
 namespace AvenDB.FreshnessVectors
@@ -26,11 +26,6 @@ def freshJson : Freshness → String
   | .offline t => obj [("state", str "offline"), ("asOf", nat t)]
   | .behind l w u => obj [("state", str "behind"), ("logs", nat l), ("waits", nat w), ("unheard", nat u)]
 
-def actJson : Act → String
-  | .go => str "go"
-  | .wait => str "wait"
-  | .confirm _ => str "confirm"
-
 def heards : List (String × Heard) :=
   [("no peer, never current", ⟨0, 0, 0⟩), ("no peer, current before", ⟨0, 0, 1793120000000⟩),
    ("3 peers heard", ⟨3, 0, 1793120000000⟩), ("3 peers, 1 not heard yet", ⟨3, 1, 1793120000000⟩)]
@@ -43,7 +38,7 @@ def coverages : List (String × Coverage) :=
 def caseJson (hn : String) (h : Heard) (cn : String) (c : Coverage) : String :=
   let f := of h c
   obj [("name", str (hn ++ "; " ++ cn)), ("live", nat h.live), ("unheard", nat h.unheard), ("asOf", nat h.asOf),
-       ("coverage", coverageJson c), ("fresh", freshJson f), ("act", actJson (act f)), ("pops", bool (opens f false)),
+       ("coverage", coverageJson c), ("fresh", freshJson f), ("pops", bool (opens f false)),
        ("asked", bool (opens f true))]
 
 def render : String :=

@@ -56,6 +56,12 @@ impl From<avendb::log_head::Head> for Stamp {
     }
 }
 
+impl From<Stamp> for avendb::log_head::Head {
+    fn from(s: Stamp) -> avendb::log_head::Head {
+        avendb::log_head::Head { at: s.at, sum: s.head }
+    }
+}
+
 /// A log an index is of: its length, the hash of each of its prefixes (its head there, one no other prefix has), and
 /// its entries.
 pub(crate) trait Log {
@@ -65,6 +71,22 @@ pub(crate) trait Log {
     fn head_at(&self, n: u64) -> Option<Sum>;
     /// Its entries from place `from` up to place `to`.
     fn entries(&self, from: u64, to: u64) -> Vec<Self::Entry>;
+}
+
+/// A device's log as an index of it reads it: its edits by their ids, the head of each prefix the log's one head
+/// (`policy::Log::head_at`), so a slot stamped at a prefix opens while the log goes on from it, and not once the log
+/// is rewritten there.
+impl Log for avendb::policy::Log {
+    type Entry = avendb::id::EditId;
+    fn len(&self) -> u64 {
+        self.ids().len() as u64
+    }
+    fn head_at(&self, n: u64) -> Option<Sum> {
+        avendb::policy::Log::head_at(self, n).map(|h| h.sum)
+    }
+    fn entries(&self, from: u64, to: u64) -> Vec<avendb::id::EditId> {
+        self.ids()[from as usize..to as usize].to_vec()
+    }
 }
 
 /// How a node opened an index (`ShelfIndex::open`).
@@ -98,7 +120,7 @@ pub(crate) struct ShelfIndex {
 
 impl ShelfIndex {
     /// The empty index `name` on `shelf`, of no entries of its log, holding `budget` bytes of pages at most in memory.
-    fn empty(shelf: Shelf, name: &str, budget: usize, head: Sum) -> io::Result<ShelfIndex> {
+    pub(crate) fn empty(shelf: Shelf, name: &str, budget: usize, head: Sum) -> io::Result<ShelfIndex> {
         if !named(&format!("index/{name}")) || name.contains('/') {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -237,6 +259,13 @@ impl ShelfIndex {
     /// Applies `changes`, in order, the last of each key's standing, as of log head `stamp`: on the same path as the
     /// log's append, right after it. Its new pages go on the shelf, then its slot.
     pub(crate) async fn apply(&mut self, changes: Vec<Change>, stamp: Stamp) -> io::Result<()> {
+        let shelf = self.shelf.clone();
+        self.apply_on(&shelf, changes, stamp).await
+    }
+
+    /// `apply`, its pages and slot put through `on`, the same shelf as its own as a node's final save holds it
+    /// (`Shelf::finalizing`), which takes writes once its own handle no longer does.
+    pub(crate) async fn apply_on(&mut self, on: &Shelf, changes: Vec<Change>, stamp: Stamp) -> io::Result<()> {
         let mut last: BTreeMap<Vec<u8>, Option<Vec<u8>>> = BTreeMap::new();
         for (k, v) in changes {
             if k.len() > KEY_MAX || v.as_ref().is_some_and(|v| v.len() > VALUE_MAX) {
@@ -256,15 +285,14 @@ impl ShelfIndex {
         let put: Vec<_> = put.into_iter().collect();
         for group in put.chunks(PUTS) {
             let puts = group.iter().map(|(hash, bytes)| {
-                let (shelf, name, bytes) =
-                    (self.shelf.clone(), self.page_name(hash), bytes.clone());
+                let (shelf, name, bytes) = (on.clone(), self.page_name(hash), bytes.clone());
                 async move { shelf.put(&name, bytes).await }
             });
             for done in crate::blind::join_all(puts.collect()).await {
                 done?;
             }
         }
-        self.keep_slot(root, stamp).await?;
+        self.keep_slot(on, root, stamp).await?;
         self.root = root;
         self.stamp = stamp;
         Ok(())
@@ -449,7 +477,7 @@ impl ShelfIndex {
     }
 
     /// Keeps `root` and `stamp` in its next slot, in place of the older of the two.
-    async fn keep_slot(&mut self, root: Option<Sum>, stamp: Stamp) -> io::Result<()> {
+    async fn keep_slot(&mut self, on: &Shelf, root: Option<Sum>, stamp: Stamp) -> io::Result<()> {
         let n = self.kept + 1;
         let mut out = Vec::with_capacity(SLOT.len() + 8 + 8 + 32 + 33 + 32);
         out.extend_from_slice(SLOT);
@@ -460,7 +488,7 @@ impl ShelfIndex {
         out.extend_from_slice(&root.unwrap_or_default());
         let check = sum(&out);
         out.extend_from_slice(&check);
-        self.shelf.keep(&self.slot_name(n), out.into()).await?;
+        on.keep(&self.slot_name(n), out.into()).await?;
         self.kept = n;
         Ok(())
     }

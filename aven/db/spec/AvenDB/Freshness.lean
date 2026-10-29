@@ -15,9 +15,9 @@ schema or type alike; no page decides it for itself:
   candidates wait (`waits`), or a live peer has not yet told what it holds (`unheard`). The node fetches that scope
   first; a page says "catching up" and never shows the rows as final.
 
-An action (approve, accept, decline, delete) reads the same value (`act`): `go` only on `current`, `wait` while
-`behind`, and on `offline` it asks the person to confirm that it acts on data as of `asOf`. A sheet that opens by itself
-opens only on `current` (`pops_iff`): never from data that is behind or offline. No clock decides any of it: `asOf` is a
+An action (approve, accept, decline, delete) never waits on it: it is judged on what the device holds and goes, the
+value shown beside it. A sheet that opens by itself opens only on `current` (`pops_iff`): never from data that is
+behind or offline; one the person asks for always opens (`asked_opens`). No clock decides any of it: `asOf` is a
 stamp the node keeps, never compared with the time now. -/
 namespace AvenDB.Freshness
 
@@ -121,53 +121,38 @@ theorem unheard_is_behind (h : Heard) (hl : h.live ≠ 0) (hu : h.unheard ≠ 0)
   simp only [this, ↓reduceIte]
   exact ⟨_, _, _, rfl⟩
 
-/-! ## Actions read the same value -/
+/-! ## What a sheet does with it
 
-inductive Act where
-  | go
-  | wait
-  | confirm (asOf : Nat)
-  deriving DecidableEq, Repr
-
-def act : Freshness → Act
-  | .current => .go
-  | .behind .. => .wait
-  | .offline t => .confirm t
-
-theorem go_iff (f : Freshness) : act f = .go ↔ f = .current := by
-  cases f <;> simp [act]
-
-theorem behind_waits (l w u : Nat) : act (.behind l w u) = .wait := rfl
-
-theorem offline_confirms (t : Nat) : act (.offline t) = .confirm t := rfl
+Freshness is a value a page shows, never a gate: an action (approve, accept, decline, delete) is judged on what the
+device holds, at its own heads, and goes whatever the freshness says (local first, Samuel 2026-10-29); the page shows
+how current its data is beside it. Only a sheet that would pop up by itself, unasked, waits for current data, so
+nothing settled elsewhere is put to the person as open. -/
 
 /-- Whether an action's sheet opens: by itself (`asked` false) or because the person asked for it (`asked` true). It
-opens by itself only on `current`; on `offline` only when the person asked and is told the data is as of `asOf`; never
-while `behind`. -/
+opens whenever the person asks, and by itself only on `current`. -/
 def opens (f : Freshness) (asked : Bool) : Bool :=
-  match act f with
-  | .go => true
-  | .wait => false
-  | .confirm _ => asked
+  asked || decide (f = .current)
 
 /-- A sheet that pops up by itself does so only from current data. -/
 theorem pops_iff (f : Freshness) : opens f false = true ↔ f = .current := by
-  cases f <;> simp [opens, act]
+  cases f <;> simp [opens]
 
-theorem behind_never_opens (l w u : Nat) (asked : Bool) : opens (.behind l w u) asked = false := rfl
+/-- A sheet the person asks for opens, however current its data. -/
+theorem asked_opens (f : Freshness) : opens f true = true := by
+  simp [opens]
 
 /-! ## The 27 Oct iPhone
 
 Three live peers, all heard; the AIPs read holds AIP-29 as proposed, while 2,778 of the 3,028 announced logs, some of
 which may hold its acceptance, have not arrived. The read is behind: the page shows it catching up, and the approval
-sheet neither pops up nor opens when asked. -/
+sheet doesn't pop up by itself; asked for, it opens, saying how current it is. -/
 
 def iphone : Heard := ⟨3, 0, 0⟩
 def aipsRead : Coverage := .«partial» 4 4 [] 2778
 
 example : of iphone aipsRead = .behind 2778 0 0 := by decide
 example : opens (of iphone aipsRead) false = false := by decide
-example : opens (of iphone aipsRead) true = false := by decide
+example : opens (of iphone aipsRead) true = true := by decide
 /-- Once the logs arrived, the same read is current and the sheet goes by the AIP's real stage. -/
 example : of iphone .complete = .current := by decide
 /-- Offline, the same device shows what it holds as of its stamp; the sheet opens only when asked, said so. -/

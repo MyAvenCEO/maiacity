@@ -437,7 +437,8 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         // the rest as a local node's: no shelf of its own here, its start nobody's to watch
         ..Options::local()
     };
-    // its edits and keys spilled into its folder, a cache emptied at each start and filled again from its shelf (S7)
+    // its edits and keys spilled into its folder, a cache emptied at each start and filled again from its shelf (S7):
+    // the edits of its head's packs read in place, where its bucket's cache holds them pinned (`bucket::PackFile`)
     let spill = avendb::lab::Spill::new(config.data.join(SPILL), config.memory as usize).context("its spill")?;
     let node = Arc::new(server::open_spilled(shelf, opts, spill).await?);
     let (ms, after) = (opening.elapsed().as_millis() as u64, avendb_net::bucket::reads());

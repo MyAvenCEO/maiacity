@@ -562,7 +562,7 @@ mod tests {
         let backup = lab.backup(mac);
         let n = backup.signed.len();
         let receipt = lab.capture_warm_current(mac, n, Some([27; 40])).unwrap().encode();
-        let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect(), shown: receipt.shown.clone().map(|(p, _)| p.into()).into_iter().collect() };
+        let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect(), shown: receipt.shown.clone().map(Into::into).into_iter().collect() };
         lab.warmed(mac, receipt);
         lab.restore_warm(mac, backup, Some(([27; 40], n)), &warm);
         // Judged publication uses current snapshots without an empty fallback and
@@ -574,7 +574,7 @@ mod tests {
         let backup = lab.backup(phone);
         let n = backup.signed.len();
         let receipt = lab.capture_warm_current(phone, n, Some([28; 40])).unwrap().encode();
-        let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect(), shown: receipt.shown.clone().map(|(p, _)| p.into()).into_iter().collect() };
+        let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect(), shown: receipt.shown.clone().map(Into::into).into_iter().collect() };
         lab.warmed(phone, receipt);
         lab.restore_warm(phone, backup, Some(([28; 40], n)), &warm);
         let restored = lab.restore_owner_judgment(phone, snapshot, entry, &sealed).unwrap();

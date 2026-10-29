@@ -38,7 +38,7 @@ fn bytes(warming: &Warming) -> Warm {
     Warm {
         keys: warming.keys.clone().into_iter().collect(),
         views: warming.view.clone().into_iter().collect(),
-        shown: warming.shown.clone().map(|(pack, _)| pack.into()).into_iter().collect(),
+        shown: warming.shown.clone().map(Into::into).into_iter().collect(),
     }
 }
 

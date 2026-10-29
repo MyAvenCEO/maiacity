@@ -5277,20 +5277,9 @@ pub(crate) fn push_grown<T>(v: &mut Vec<T>, x: T) {
     v.push(x);
 }
 
-/// A process-local revision of immutable log contents. Equality is allocation identity, not a shortened hash
-/// or a length: a restore or checkpoint withdrawal may replace a log with a different one of the same length.
-/// It is neither persisted nor sent to a peer, and cannot establish trust in data.
-#[derive(Clone, Debug, Default)]
-pub struct LogRevision(Arc<()>);
-
-impl PartialEq for LogRevision {
-    fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.0, &other.0) }
-}
-impl Eq for LogRevision {}
-
 /// A peer's edits. Each edit appended builds on the frontier of its own log and sorts after everything the peer holds;
 /// edits from other peers are added as they arrive.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Log {
     edits: Vec<Edit>,
     /// Each edit's id, hashed once.
@@ -5307,10 +5296,8 @@ pub struct Log {
     /// The audiences of each vault it holds key edits of (each `LogId::Audience` of `by_log`), kept as edits arrive:
     /// what a device's index tokens are in (`Lab::index_audiences`), with no walk of every edit held.
     audience_logs: BTreeMap<VaultId, std::collections::BTreeSet<AudienceId>>,
-    revision: LogRevision,
-    /// Stable only while this particular log appends. A removal or a clone starts a new lineage.
-    lineage: LogRevision,
-    /// Its one head (`log_head`): what every index of it is stamped with, kept as edits arrive.
+    /// Its one head (`log_head`): what everything worked out of it is stamped with, kept as edits arrive. Two logs of
+    /// the same edits in the same order have the same head, and a log rewritten from a place another there.
     head: crate::log_head::LogHead,
     /// How many times it let edits go (`let_go`), the one way edits leave it: what a reader of its tail since a size
     /// tells a removal by (`Lab::touched`).
@@ -5318,16 +5305,6 @@ pub struct Log {
     /// One more than the deepest edit it holds, 0 for none: the depth of an edit drafted here, kept as edits arrive so
     /// a draft scans no edit held (a device's own write cost 59 ms with a million held, 2026-10-27).
     next_depth: u64,
-}
-
-impl Clone for Log {
-    fn clone(&self) -> Self {
-        Self { edits: self.edits.clone(), ids: self.ids.clone(), held: self.held.clone(),
-            revision: self.revision.clone(), lineage: LogRevision::default(),
-            entry_order: self.entry_order.clone(), write_at: self.write_at.clone(), logs: self.logs.clone(),
-            by_log: self.by_log.clone(), audience_logs: self.audience_logs.clone(), gone: self.gone,
-            next_depth: self.next_depth, head: self.head.clone() }
-    }
 }
 
 impl Log {
@@ -5359,6 +5336,7 @@ impl Log {
         self.by_log.clear();
         self.audience_logs.clear();
         self.next_depth = 0;
+        self.head = crate::log_head::LogHead::of(&self.ids);
         let (edits, ids) = (std::mem::take(&mut self.edits), std::mem::take(&mut self.ids));
         for (at, (edit, &id)) in edits.iter().zip(&ids).enumerate() {
             self.index_write(edit, id, at);
@@ -5440,14 +5418,16 @@ impl Log {
         self.head.at(n, &self.ids)
     }
 
-    /// Changes exactly when the sequence of held edits changes, without scanning history.
-    pub fn revision(&self) -> LogRevision { self.revision.clone() }
 
     /// It holds edit `id`.
     pub fn has(&self, id: EditId) -> bool { self.held.contains(&id) }
 
-    /// An incremental index may append while this token stays equal; otherwise it must rebuild.
-    pub fn lineage(&self) -> LogRevision { self.lineage.clone() }
+    /// Head `h` is of it: the head of its first `h.at` edits, so what was worked out at `h` is of a prefix of it, and
+    /// steps on by the edits after (`ShelfIndex.lean` I2). From the log's mark before them, never hashing its edits from
+    /// the first.
+    pub fn of_log(&self, h: crate::log_head::Head) -> bool {
+        self.head_at(h.at) == Some(h)
+    }
 
     /// How many times it let edits go (`let_go`).
     pub fn gone(&self) -> u64 { self.gone }
@@ -5608,7 +5588,6 @@ impl Log {
         push_grown(&mut self.ids, id);
         self.held.insert(id);
         self.head.on(&[id]);
-        self.revision = LogRevision::default();
         Ok(id)
     }
 
@@ -5633,7 +5612,6 @@ impl Log {
         }
         if self.ids.len() != before {
             self.head.on(&self.ids[before..]);
-            self.revision = LogRevision::default();
         }
     }
 
@@ -5656,10 +5634,7 @@ impl Log {
         self.ids.retain(|id| !ids.contains(id));
         self.held.retain(|id| !ids.contains(id));
         if self.ids.len() != before {
-            self.revision = LogRevision::default();
-            self.lineage = LogRevision::default();
             self.gone += 1;
-            self.head = crate::log_head::LogHead::of(&self.ids);
             self.rebuild_index();
         }
     }

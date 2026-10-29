@@ -1,24 +1,17 @@
 # Local-write scheduling and reactive reads
 
-`AvenDB/LocalWrite.lean` specifies the foreground freshness branch and local
-acceptance/summary independence. The first five lemmas were checked before the
-foreground gate was changed. The accepted-result model was added while extending
-the slice to generic completion and subscriptions; it is not a proof extracted
-from JavaScript or the Rust engine.
+`AvenDB/LocalWrite.lean` specifies local acceptance/summary independence and
+pending writes. No write waits for a peer: a write is judged only against what its
+device holds, at its own heads (Goal 8 deleted the foreground bring gate,
+`waitsForPeer` and `local-write.js`, along with it). The models are not proofs
+extracted from JavaScript or the Rust engine.
 
 ## Correspondence
 
-- `waitsForPeer` maps to `aven/db/page/local-write.js`: only an entry operation
-  carrying explicit heads while behind enters the bounded foreground bring.
-  `ordinary_is_local`, `caught_up_is_local`, `creation_is_local`,
-  `conditional_behind_still_waits`, and `ordinary_peer_independent` preserve the
-  guarded-review behavior while allowing ordinary insert/set through immediately.
 - `acceptedResult`, `refusal_never_succeeds`, and
   `acceptance_independent_of_summary` describe generic session run/runAll
   completion: return the engine result without waiting for world redraw. They
   assume engine authorization and acceptance, which this patch does not alter.
-- `local-write.test.js` tests the gate with a never-answering peer, unchanged and
-  changed guarded reviews, and deadline cleanup.
 - `reactive-read.test.js` tests generic scoped query coalescing, completed-answer
   progress during repeated invalidations, owner/context/query cancellation,
   A→B→A isolation, disposal, refusal/errors and mutation rejection before any
@@ -26,7 +19,7 @@ from JavaScript or the Rust engine.
   behind unresolved old scopes. Native work already submitted may finish.
 - `aven/db/scripts/test-avendb-local-write.mjs` compiles actual Svelte Session, Chat,
   Composer and a non-chat subscriber with only the device/passkey boundary
-  synthetic. Full-world reads and peer bring are held; real insert/set run calls
+  synthetic. Full-world reads and peer bring are held (no write waits on either); real insert/set run calls
   complete, authorized reads render, refusal preserves the draft, a replica
   change invalidates the view, and an explicit refresh cannot join a held older
   summary (single-flight followup: `WorldReads.md`). See `aven/db/scripts/fixtures/local-write/CONTRACT.md`.

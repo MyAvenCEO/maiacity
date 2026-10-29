@@ -141,7 +141,7 @@
 	const title = (r) => R.titleOf(r, recordOf(r), world, (v) => (v ? nameOf(v) : ''));
 	const readers = $derived((here?.readers ?? []).map((v) => byId.get(v) ?? { id: v, name: `Vault ${v.slice(0, 8)}…`, kind: 'unknown' }));
 	const mentionable = $derived(readers.filter((v) => v.id !== world?.mine).map((v) => ({ id: v.id, name: v.name ?? '' })));
-	const mine = (m) => !!m?.by && (m.by.vault === world?.mine || (m.signer ?? m.actor) === actor);
+	const mine = (m) => !!m?.by && (m.by.vault === world?.mine || m.signer === actor);
 
 	// changes
 	async function send(text, mentions, threadOf = null) {

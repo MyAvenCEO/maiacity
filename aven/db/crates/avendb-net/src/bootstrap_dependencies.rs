@@ -38,7 +38,7 @@ pub(crate) async fn answer(
         .read(move |lab, me| {
             let _permit = permit;
             (
-                lab.log(me).revision(),
+                lab.log(me).head(),
                 lab.owner_base_dependency_reply(me, requester, entry, &ids),
             )
         })
@@ -53,7 +53,7 @@ pub(crate) async fn answer(
     anyhow::ensure!(bytes.len() <= RESPONSE, "dependency response size");
     anyhow::ensure!(
         shared
-            .read(move |lab, me| lab.log(me).revision() == revision)
+            .read(move |lab, me| lab.log(me).head() == revision)
             .await,
         "dependency policy changed"
     );
@@ -288,7 +288,7 @@ mod network_tests {
             .unwrap();
         let mut stalled = Vec::new();
         loop {
-            let mut p = Box::pin(receiver.shared.pulls.enter(false, None));
+            let mut p = Box::pin(receiver.shared.pulls.enter(false));
             let Some(p) = future::poll_once(&mut p).await else {
                 break;
             };

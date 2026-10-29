@@ -649,6 +649,12 @@ impl ShelfKey {
     fn unlock(&self, purpose: &str, bytes: &[u8], context: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
         keys::decrypt(&self.0.child("shelf box", purpose.as_bytes()), bytes, context).map(Zeroizing::new)
     }
+
+    /// The key of entry `e`'s row in its shelf's index of kept showings (`KeptShown::rows`): the same for the entry at
+    /// every save, and naming it to nobody without the key.
+    fn shown_row(&self, e: &EntryId) -> [u8; 32] {
+        self.0.child("kept shown row", &e.0).bytes()
+    }
 }
 
 /// The engine's own hash, of its sources (`build.rs`): what a device worked out with another engine it works out again.
@@ -729,20 +735,42 @@ impl Touched {
 pub struct Warm {
     pub keys: Vec<Vec<u8>>,
     pub views: Vec<Vec<u8>>,
-    /// Its packs of kept showings, the oldest first: a later one's showing of an entry in place of an earlier one's
-    /// (`Warming::shown`).
+    /// The packs of kept showings its shelf's index of them names (`Warming::shown`), each with the rows that name it:
+    /// a showing is taken from the pack its entry's row names, and from no other.
     pub shown: Vec<ShownPack>,
 }
 
 /// A pack of kept showings as a shelf holds it (`Warm::shown`): the file it is, read where it is as the showings it
-/// holds open (`shown_map::unpack`), or its bytes.
+/// holds open (`shown_map::unpack`), or its bytes; and the rows of the shelf's index that name it (`KeptShown::rows`),
+/// whose entries' showings it is taken for. With none named (a pack given as bytes alone), every showing it holds is
+/// taken, a later pack's in place of an earlier one's, and none counts as kept on the shelf.
 #[derive(Clone, Debug)]
-pub struct ShownPack(pub Arc<dyn crate::pages::Space>);
+pub struct ShownPack {
+    pub file: Arc<dyn crate::pages::Space>,
+    pub rows: Option<Vec<[u8; 32]>>,
+}
 
 impl From<Vec<u8>> for ShownPack {
     fn from(bytes: Vec<u8>) -> ShownPack {
-        ShownPack(Arc::new(crate::pages::MemorySpace::of(bytes)))
+        ShownPack { file: Arc::new(crate::pages::MemorySpace::of(bytes)), rows: None }
     }
+}
+
+impl From<KeptShown> for ShownPack {
+    fn from(kept: KeptShown) -> ShownPack {
+        ShownPack { file: Arc::new(crate::pages::MemorySpace::of(kept.pack)), rows: Some(kept.rows) }
+    }
+}
+
+/// The showings a save keeps (`Warming::shown`): a pack of them, encrypted for the device alone and its show rules,
+/// to go on its shelf as a blob; the key of each one's row in the shelf's index of kept showings, which names the pack
+/// from then on (`ShelfKey::shown_row`), in place of whatever pack it named before; and the log head they were judged
+/// at, which the index is stamped with.
+#[derive(Clone, Debug)]
+pub struct KeptShown {
+    pub pack: Vec<u8>,
+    pub rows: Vec<[u8; 32]>,
+    pub head: crate::log_head::Head,
 }
 
 /// A restore a page at a time under way (`Lab::restore_start`): how many of the first edits it restores its shelf names
@@ -795,20 +823,20 @@ enum ViewOpened {
 pub struct Warming {
     pub keys: Option<Vec<u8>>,
     pub view: Option<Vec<u8>>,
-    /// A pack of the showings its shelf lacks, encrypted for it alone and this engine (`ShownView.lean`), and whether
-    /// it holds every showing it keeps, so that the packs before it go.
-    pub shown: Option<(Vec<u8>, bool)>,
+    /// The showings its shelf lacks, a pack of them and their rows (`ShownView.lean`).
+    pub shown: Option<KeptShown>,
     // Process-local receipt binding: no replacement store, lock, withdrawal or earlier acknowledgement may
     // make its counts describe a different key prefix or view. Appending edits alone keeps this receipt valid.
     revision: Arc<()>,
-    lineage: crate::policy::LogRevision,
+    /// The head of its log as it captured it: an acknowledgement counts only while the log goes on from it.
+    head: crate::log_head::Head,
     keys_of: Option<(Option<Checked>, usize)>,
     view_of: usize,
     view_wholes: u64,
     /// Its view holds what it read (`stored_readings::seal`).
     view_read: bool,
-    /// The prints of the showings its pack holds, by entry, and whether they are all it keeps.
-    shown_of: Option<(Vec<(EntryId, [u8; 32])>, bool)>,
+    /// The prints of the showings its pack holds, by entry, and the log head they were judged at.
+    shown_of: Option<(Vec<(EntryId, [u8; 32])>, crate::log_head::Head)>,
 }
 
 /// Immutable snapshot inputs, owned independently of Lab. Encoding consumes the keys
@@ -849,8 +877,10 @@ impl WarmCapture {
             }
             self.receipt.view = Some(self.key.lock("view", &bytes, VIEW_RULES.as_bytes(), &mut self.rng));
         }
-        if let (Some(shown), Some((_, whole))) = (self.shown.take(), &self.receipt.shown_of) {
-            self.receipt.shown = Some((shown_map::pack(&self.key, &mut self.rng, &shown), *whole));
+        if let (Some(shown), Some((_, head))) = (self.shown.take(), &self.receipt.shown_of) {
+            let rows = shown.iter().map(|(e, _, _)| self.key.shown_row(e)).collect();
+            let pack = shown_map::pack(&self.key, &mut self.rng, &shown);
+            self.receipt.shown = Some(KeptShown { pack, rows, head: *head });
         }
         self.receipt
     }
@@ -872,20 +902,80 @@ pub enum ReplyScope {
 /// What a device worked out of its edits for its peers' syncs, while its edits stay as they were (Samuel's iPhone
 /// 2026-10-22, a page every 9 s): its frontiers, and, for each asking a peer makes page after page with the same
 /// request, the places of all it sends, in order (`Lab::reply`). Which edits an asker may receive needs no keeping: the
-/// log keeps each log's places as edits arrive (`Log::by_log`). Each is kept with the process-local revision of its log,
-/// checked in constant time. A changed log, including a checkpoint withdrawal or a restore of the same length,
-/// invalidates it without a history scan or hash collision.
+/// log keeps each log's places as edits arrive (`Log::by_log`). Each is kept with the head of its log (`Log::head`),
+/// checked in constant time: a log of other edits, a checkpoint withdrawal or a restore of the same length among them,
+/// has another head, and a log of the same edits works out the same.
 #[derive(Default)]
 struct Answers {
     basis: std::sync::Mutex<Option<Arc<RequestBasis>>>,
     #[cfg(test)]
     basis_builds: std::sync::atomic::AtomicUsize,
-    sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32], ReplyScope), (crate::policy::LogRevision, Arc<ReplyPlan>)>>,
-    /// The writers `Lab::writers_shown` names to each peer, kept for the log's revision and the follow list.
-    writers: std::sync::Mutex<HashMap<SignerId, (crate::policy::LogRevision, Vec<VaultId>, Arc<BTreeSet<SignerId>>)>>,
-    /// What the removals its catch-up hasn't replayed yet may take away (`Lab::cuts`), for the log's revision and how
+    sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32], ReplyScope), (crate::log_head::Head, Arc<ReplyPlan>)>>,
+    /// The writers `Lab::writers_shown` names to each peer, kept for the log's head and the follow list.
+    writers: std::sync::Mutex<HashMap<SignerId, (crate::log_head::Head, Vec<VaultId>, Arc<BTreeSet<SignerId>>)>>,
+    /// What the removals its catch-up hasn't replayed yet may take away (`Lab::cuts`), for the log's head and how
     /// far its replay is.
-    cuts: std::sync::Mutex<Option<(crate::policy::LogRevision, usize, Arc<Cuts>)>>,
+    cuts: std::sync::Mutex<Option<(crate::log_head::Head, usize, Arc<Cuts>)>>,
+    /// What each asker is answered (`Lab::answered`), by the asker and the vaults it follows: stamped with the head of
+    /// the log it was worked out of and how far the replay it was worked out by is.
+    answered: std::sync::Mutex<HashMap<(SignerId, Vec<VaultId>), (crate::log_head::Head, usize, Arc<Answered>)>>,
+    /// Where the edits name each McEliece key and file (`Named`), stamped with the head of the log it indexes.
+    named: std::sync::Mutex<Option<Arc<Named>>>,
+}
+
+/// What a device answers one asker (`Lab::answered`): the places of the edits it sends, and their logs. It sends a log
+/// whole or none of it, so a place is answered exactly when its log is among `logs`.
+struct Answered {
+    places: Arc<Vec<usize>>,
+    logs: HashSet<LogId>,
+}
+
+/// Where a device's edits name each McEliece key and each file (`Lab::may_fetch`, `Lab::may_fetch_file`), as places
+/// in its log, the first `head.at` of them: the key gate looks up the few edits that name what it is asked for, not
+/// every edit an asker may receive (2.3-2.5 s a call on the always-on peer, 2026-10-29). Kept as the log appends,
+/// worked out anew once its first `head.at` edits are no longer those it indexed (`Log::head_at`).
+#[derive(Clone)]
+struct Named {
+    head: crate::log_head::Head,
+    /// The edits that name each McEliece key (`Edit::blobs`).
+    blobs: HashMap<BlobId, Vec<usize>>,
+    /// The writes that bring each file (`Edit::files`).
+    files: HashMap<FileRoot, Vec<usize>>,
+    /// The snapshots whose state of an entry travels as each file (`Edit::stated`), with that entry.
+    stated: HashMap<FileRoot, Vec<(usize, EntryId)>>,
+    /// The files the writes bring, by their root's hash.
+    by_hash: HashMap<[u8; 32], BTreeSet<FileRoot>>,
+}
+
+impl Named {
+    fn of(log: &crate::policy::Log) -> Named {
+        let mut named = Named {
+            head: log.head_at(0).expect("an empty prefix"),
+            blobs: HashMap::new(),
+            files: HashMap::new(),
+            stated: HashMap::new(),
+            by_hash: HashMap::new(),
+        };
+        named.extend(log);
+        named
+    }
+
+    /// The same, of the edits `log` appended since.
+    fn extend(&mut self, log: &crate::policy::Log) {
+        for (i, edit) in log.edits().iter().enumerate().skip(self.head.at as usize) {
+            for b in edit.blobs() {
+                self.blobs.entry(b).or_default().push(i);
+            }
+            for f in edit.files() {
+                self.files.entry(*f).or_default().push(i);
+                self.by_hash.entry(f.hash).or_default().insert(*f);
+            }
+            for x in edit.stated() {
+                self.stated.entry(x.slice).or_default().push((i, x.entry));
+            }
+        }
+        self.head = log.head();
+    }
 }
 
 /// What the removals among a device's edits that its replay hasn't reached may take away from a peer it answers in
@@ -920,7 +1010,7 @@ fn acts(action: &Action) -> bool {
 /// Disposable structural work, shared across peers only while the exact held edits/IDs stay unchanged.
 /// It contains NO permission decision, follow list, available-key state or persisted authority.
 struct RequestBasis {
-    revision: crate::policy::LogRevision,
+    head: crate::log_head::Head,
     ask: crate::sync::Ask,
 }
 
@@ -1037,8 +1127,9 @@ struct Store {
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
     replayed: usize,
     /// A replay of every edit it held when it began, run a slice a step of a catch-up where stepping on would replay
-    /// them all (`step_replay`): of a log of that lineage, the replay before it being of `replayed` edits then.
-    replaying: Option<(crate::policy::LogRevision, usize, Replaying)>,
+    /// them all (`step_replay`): of a log that goes on from that head, the replay before it being of `replayed` edits
+    /// then.
+    replaying: Option<(crate::log_head::Head, usize, Replaying)>,
     /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
     /// holds now, not on every ask, announce and fetch. Empty while the replay is of every edit it holds and no entry is
     /// based, the replay then being `latest` itself.
@@ -1050,9 +1141,8 @@ struct Store {
     /// The stays of its audience, by their print, each audience key it derived for every one of them (`derive`): a key
     /// whose audience's stays are as they were then derives nothing new, and is left alone.
     derived_through: HashMap<KeyId, [u8; 32]>,
-    /// What its log and replay were when it last derived (`stays_changed`): its log's lineage and length, and its whole
-    /// replays.
-    stays_seen: Option<(crate::policy::LogRevision, usize, u64)>,
+    /// What its log and replay were when it last derived (`stays_changed`): its log's head, and its whole replays.
+    stays_seen: Option<(crate::log_head::Head, u64)>,
     /// The slices of the shares, keep shares among them, whose selectors it opened, and those whose selectors never
     /// open for it: garbled, or with no box for a key it holds that opens, or, where it is a steward, for no seed of
     /// the vault the share is over.
@@ -1116,14 +1206,10 @@ struct Store {
     /// The showings its shelf kept (`Warm::shown`), by entry, till `show_items` takes each whose print is its entry's
     /// print then, in place of judging the entry anew (`ShownView.lean`).
     kept_shown: HashMap<EntryId, Closed>,
-    /// The print of each showing its shelf keeps, by entry, and how many packs and showings hold them: what a save
-    /// leaves out, and when it puts them all in one pack again.
+    /// The print of each showing its shelf keeps, by entry, as its shelf's index of them names it: what a save leaves
+    /// out. One whose row names a pack that doesn't open (sealed under other show rules, or cut short) is none, so the
+    /// next save keeps that entry's showing again, and its row names the new pack from then on.
     shown_given: HashMap<EntryId, [u8; 32]>,
-    shown_packs: (usize, usize),
-    /// A pack its shelf lists didn't open as it started (sealed by a build of other show rules, or cut short): the next
-    /// pack it puts holds every showing it keeps, in place of every pack its shelf lists, so that no start tries it
-    /// again (the iPhone's 3 packs of before the show rules, tried at every unlock on 2026-10-28).
-    shown_stale: bool,
     /// How its last restore went (`restore_end_with`), for its person to read beside the step it took
     /// (`Lab::restore_report`).
     restored: Option<Restored>,
@@ -1143,7 +1229,7 @@ struct Store {
     /// How many edits the view its shelf keeps is of, as it last gave it or took it from there, none if 0; how many
     /// times it replayed every edit, and how many times when its shelf took that view (`Lab::warming`).
     view_given: usize,
-    view_lineage: Option<crate::policy::LogRevision>,
+    view_head: Option<crate::log_head::Head>,
     wholes: u64,
     view_wholes: u64,
     /// The view its shelf keeps holds not what it read (`stored_readings`): one of an older engine, one given before it
@@ -1231,8 +1317,6 @@ impl Default for Store {
             shown: ShownMap::default(),
             kept_shown: HashMap::new(),
             shown_given: HashMap::new(),
-            shown_packs: (0, 0),
-            shown_stale: false,
             restored: None,
             digests: None,
             follow: vec![],
@@ -1260,7 +1344,7 @@ impl Default for Store {
             checked_given: None,
             view_given: 0,
             restore_whole: RESTORE_WHOLE,
-            view_lineage: None,
+            view_head: None,
             wholes: 0,
             view_wholes: 0,
             view_read_due: true,
@@ -1314,16 +1398,6 @@ impl Store {
     /// every write of their entry, judged of its log, not from an owner's base, against its replay of every edit it
     /// holds, and none of a cap group, which it judges anew each time. None mid catch-up.
     fn shown_due(&self) -> Vec<EntryId> {
-        self.keeps(true)
-    }
-
-    /// A pack its shelf lists didn't open (`shown_stale`), and it has showings to keep in place of them all.
-    fn shown_stale_due(&self) -> bool {
-        self.shown_stale && !self.keeps(false).is_empty()
-    }
-
-    /// The showings it keeps (`shown_due`), those its shelf holds too unless `fresh`.
-    fn keeps(&self, fresh: bool) -> Vec<EntryId> {
         if self.replayed == 0 || self.replayed != self.log.edits().len() || self.showing.is_some() {
             return vec![];
         }
@@ -1331,7 +1405,7 @@ impl Store {
         self.shown.tips().filter(|(e, print, tip)| {
             let (writes, last) = st.entry_tip(**e);
             tip.writes == writes && tip.last == last
-                && (!fresh || self.shown_given.get(*e) != Some(print))
+                && self.shown_given.get(*e) != Some(print)
                 && !self.based.contains_key(*e) && !self.bases.contains_key(*e)
                 && st.entry(**e).is_some_and(|en| !st.is_cap_group(en, &self.readings))
         }).map(|(e, _, _)| *e).collect()
@@ -1340,7 +1414,7 @@ impl Store {
     fn view_due(&self) -> bool {
         let n = self.replayed;
         let since = n.abs_diff(self.view_given);
-        let stale = self.wholes != self.view_wholes || self.view_lineage.as_ref() != Some(&self.log.lineage());
+        let stale = self.wholes != self.view_wholes || !self.view_head.is_some_and(|h| self.log.of_log(h));
         let read_due = self.view_read_due && stored_readings::sealable(self, n);
         n > 0 && n <= self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS || read_due)
     }
@@ -1406,9 +1480,6 @@ struct Shown {
     /// Where judging its writes left off, to judge the writes that come after on (`Judging::resume`).
     after: After,
 }
-
-/// How many packs of kept showings a shelf holds at most: past them a save puts every showing in one pack again.
-const SHOWN_PACKS: usize = 8;
 
 impl Shown {
     /// Its bytes as a device keeps it on its shelf (`Warming::shown`) and closes it to (`shown_map::Closed`), all but
@@ -1600,8 +1671,8 @@ impl IndexedBox {
 #[derive(Default)]
 struct KeyIndexed {
     ix: KeyIndex,
-    /// What it is of: the log's lineage and length, the store's whole replays, and the replay's length and last edit.
-    of: Option<(crate::policy::LogRevision, usize, u64, usize, EditId)>,
+    /// What it is of: the log's head, the store's whole replays, and the replay's length and last edit.
+    of: Option<(crate::log_head::Head, u64, usize, EditId)>,
 }
 
 impl KeyIndexed {
@@ -1635,9 +1706,9 @@ impl KeyIndexed {
     /// How many of the edits of `store`'s replay its index is of, if it grows on from there (`take`).
     fn from(store: &Store) -> Option<usize> {
         let (log, r) = (&store.log, &store.replay);
-        store.key_ix.of.as_ref().and_then(|(lineage, len, wholes, n, last)| {
-            let (len, n) = (*len, *n);
-            let grown = *lineage == log.lineage() && len <= log.edits().len() && *wholes == store.wholes;
+        store.key_ix.of.as_ref().and_then(|(head, wholes, n, last)| {
+            let (len, n) = (head.at as usize, *n);
+            let grown = log.of_log(*head) && *wholes == store.wholes;
             let kept = 0 < n && n <= r.ids.len() && r.ids[n - 1] == *last;
             let removes = log.edits()[len.min(log.edits().len())..].iter().any(Edit::is_removal);
             (grown && kept && !removes).then_some(n)
@@ -1661,7 +1732,7 @@ impl KeyIndexed {
         store.perf.count("keys: boxes indexed", (ix.boxes.len() - had) as u64);
         store.perf.count(if from.is_some() { "keys: index grown a step" } else { "keys: index begun a step" }, 1);
         let (log, r) = (&store.log, &store.replay);
-        store.key_ix.of = Some((log.lineage(), log.edits().len(), store.wholes, to, r.ids[to - 1]));
+        store.key_ix.of = Some((log.head(), store.wholes, to, r.ids[to - 1]));
         store.key_ix.ix = ix;
         true
     }
@@ -1669,7 +1740,7 @@ impl KeyIndexed {
     /// `ix`, taken of `store`'s replay as it is now, back.
     fn put(store: &mut Store, ix: KeyIndex) {
         let (log, r) = (&store.log, &store.replay);
-        store.key_ix.of = r.ids.last().map(|&last| (log.lineage(), log.edits().len(), store.wholes, r.ids.len(), last));
+        store.key_ix.of = r.ids.last().map(|&last| (log.head(), store.wholes, r.ids.len(), last));
         store.key_ix.ix = ix;
     }
 }
@@ -1717,7 +1788,7 @@ impl Spares {
 pub struct FileScan {
     keep: bool,
     entries: Vec<EntryId>,
-    revision: Option<crate::policy::LogRevision>,
+    head: Option<crate::log_head::Head>,
     at: usize,
     selected: HashSet<EntryId>,
     files: BTreeSet<FileRoot>,
@@ -3645,9 +3716,8 @@ impl Lab {
         }
         let at = Perf::start();
         // a replay of them all under way goes on, where its log and the replay it began after are as they were
-        let lineage = store.log.lineage();
-        let run = store.replaying.take().filter(|(l, from, run)| {
-            *l == lineage && *from == store.replayed && run.of() <= store.log.edits().len()
+        let run = store.replaying.take().filter(|(head, from, run)| {
+            store.log.of_log(*head) && *from == store.replayed && run.of() <= head.at as usize
         });
         let mut run = match run {
             Some((_, _, run)) => run,
@@ -3713,7 +3783,7 @@ impl Lab {
         };
         store.perf.add("replay: run", ran);
         if !all {
-            store.replaying = Some((lineage, store.replayed, run));
+            store.replaying = Some((store.log.head(), store.replayed, run));
             store.perf.add("replay", at);
             return;
         }
@@ -3730,7 +3800,7 @@ impl Lab {
                     store.replay = was;
                     store.perf.count(why_counted(Why::Whole(why)), 1);
                     let run = Replaying::Whole(ReplayRun::start(store.log.edits(), store.log.ids()));
-                    store.replaying = Some((lineage, store.replayed, run));
+                    store.replaying = Some((store.log.head(), store.replayed, run));
                     store.perf.add("replay", at);
                     return;
                 }
@@ -3765,7 +3835,7 @@ impl Lab {
 
     /// Whether what device `d` answers its peers (`announce`, `request`) is by every edit it holds: false in the middle
     /// of a catch-up whose replay lags its log (`standing`), or where it answers nothing till then (`standing_or`).
-    /// Whatever is worked out of its answers then and kept for its log's revision is to be worked out again once it
+    /// Whatever is worked out of its answers then and kept for its log's head is to be worked out again once it
     /// caught up, though its log didn't change: a node that kept whom to tell what so never told a peer of the edits
     /// the catch-up brought (2026-10-28, `answer_current`).
     pub fn answers_current(&self, d: SignerId) -> bool {
@@ -3806,17 +3876,17 @@ impl Lab {
     }
 
     /// What the removals among device `d`'s edits that its replay hasn't reached may take away (`Cuts`), kept for its
-    /// log's revision and how far its replay is: one pass over its edits for the device removals among them, each
+    /// log's head and how far its replay is: one pass over its edits for the device removals among them, each
     /// with the edits the removed device signed that it doesn't keep. Until 2026-10-28 a device's removal took away
     /// everything from everyone wherever the removed device had ever signed a vault's share, kept or not: an iPhone in
     /// the middle of its catch-up of Maia City, whose history holds such removals, handed its Mac nothing, its own new
     /// chat message among it, for as long as the catch-up ran (Fix E).
     fn cuts(&self, d: SignerId) -> Arc<Cuts> {
         let store = self.held(d);
-        let revision = store.log.revision();
+        let head = store.log.head();
         let mut cached = store.answers.cuts.lock().expect("cuts");
         if let Some((at, replayed, cuts)) = cached.as_ref()
-            && *at == revision
+            && *at == head
             && *replayed == store.replayed
         {
             return cuts.clone();
@@ -3864,7 +3934,7 @@ impl Lab {
             }
         }
         let cuts = Arc::new(cuts);
-        *cached = Some((revision, store.replayed, cuts.clone()));
+        *cached = Some((head, store.replayed, cuts.clone()));
         cuts
     }
 
@@ -4754,6 +4824,25 @@ impl Lab {
     /// The vault entry `entry` is of, by device `d`'s view.
     pub fn vault_of_entry(&self, d: SignerId, entry: EntryId) -> Option<VaultId> {
         Some(self.held(d).view().entry(entry)?.vault)
+    }
+
+    /// Whether log `log`, where device `d` lacks edits a peer holds, may change what a read of vault `vault` (none:
+    /// every vault) that picks entries by `picks` shows (`Coverage.lean` `mayMatch`, conservative): the vault's own
+    /// log and its audiences', and any share's, which decide who reads what; an entry's log of that vault whose
+    /// creation `picks` may match (`Selector::may_match`); and an entry's `d` can't place yet, which may be any entry
+    /// unless `picks` names its entries by id alone. A read's footprint is `engine::footprint`.
+    pub fn may_change(&self, d: SignerId, log: LogId, vault: Option<VaultId>, picks: &Selector) -> bool {
+        let store = self.held(d);
+        let view = store.view();
+        match log {
+            LogId::Vault(v) | LogId::Audience(v, _) => vault.is_none_or(|x| x == v),
+            LogId::Share(_) => true,
+            LogId::Entry(e) => match view.entry(e) {
+                None => picks.named().is_none_or(|(types, ids)| !types.is_empty() || ids.contains(&e)),
+                Some(en) => vault.is_none_or(|x| x == en.vault)
+                    && view.first_attrs(en, &store.readings).is_none_or(|a| picks.may_match(&a)),
+            },
+        }
     }
 
     /// The vault log `log` is about, by device `d`'s view, and its entry where it is one's: a vault's own log's or one
@@ -5657,30 +5746,75 @@ impl Lab {
     /// `sync::answer` of device `d`'s edits for `asker`, which follows `follow`, by the logs its log keeps the places
     /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
-        let store = self.held(d);
-        let Some((st, cuts)) = self.standing_for(d, asker) else { return Arc::new(vec![]) };
-        let mut places = answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow);
-        // none of the logs a removal not replayed yet may take away from it (`Cuts::logs`), till caught up
-        if !cuts.logs.is_empty() {
-            let logs = store.log.logs();
-            places.retain(|&i| logs[i].is_none_or(|l| !cuts.logs.contains(&l)));
-        }
-        Arc::new(places)
+        self.answering(d, asker, follow).places.clone()
     }
 
-    /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
+    /// `answered`, with the logs it sends: worked out once for the log's head and how far the replay is, whatever asks
+    /// it in between (a request, each page of a reply, the key gate).
+    fn answering(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Answered> {
+        let store = self.held(d);
+        let (head, replayed) = (store.log.head(), store.replayed);
+        let key = (asker, follow.to_vec());
+        if let Some((at, by, got)) = store.answers.answered.lock().expect("answered").get(&key)
+            && *at == head
+            && *by == replayed
+        {
+            return got.clone();
+        }
+        let places = match self.standing_for(d, asker) {
+            None => vec![],
+            Some((st, cuts)) => {
+                let mut places = answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow);
+                // none of the logs a removal not replayed yet may take away from it (`Cuts::logs`), till caught up
+                if !cuts.logs.is_empty() {
+                    let logs = store.log.logs();
+                    places.retain(|&i| logs[i].is_none_or(|l| !cuts.logs.contains(&l)));
+                }
+                places
+            }
+        };
+        let logs = places.iter().filter_map(|&i| store.log.logs()[i]).collect();
+        let got = Arc::new(Answered { places: Arc::new(places), logs });
+        let mut kept = store.answers.answered.lock().expect("answered");
+        if kept.len() >= ANSWERS_KEPT {
+            kept.clear();
+        }
+        kept.insert(key, (head, replayed, got.clone()));
+        got
+    }
+
+    /// Where device `d`'s edits name each McEliece key and file (`Named`), as its log is now.
+    fn named(&self, d: SignerId) -> Arc<Named> {
+        let log = &self.held(d).log;
+        let mut kept = self.held(d).answers.named.lock().expect("named");
+        let head = log.head();
+        if let Some(named) = kept.as_ref().filter(|n| n.head == head) {
+            return named.clone();
+        }
+        let named = match kept.take() {
+            Some(mut named) if log.head_at(named.head.at) == Some(named.head) => {
+                Arc::make_mut(&mut named).extend(log);
+                named
+            }
+            _ => Arc::new(Named::of(log)),
+        };
+        *kept = Some(named.clone());
+        named
+    }
+
+    /// Log append/new receive/withdrawal give another head; replacing a Store drops this basis. Signature,
     /// key and view changes do not alter these structural inputs. Disclosure is still filtered per request.
     fn request_basis(&self, d: SignerId) -> Arc<RequestBasis> {
         let store = self.held(d);
-        let revision = store.log.revision();
+        let head = store.log.head();
         let mut cached = store.answers.basis.lock().expect("request basis");
-        if let Some(basis) = cached.as_ref().filter(|basis| basis.revision == revision) {
+        if let Some(basis) = cached.as_ref().filter(|basis| basis.head == head) {
             return basis.clone();
         }
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let stubs = store.counted_stubs();
         let ask = crate::sync::asks_with_stubs(edits, ids, store.log.logs(), &stubs, &[]);
-        let basis = Arc::new(RequestBasis { revision, ask });
+        let basis = Arc::new(RequestBasis { head, ask });
         #[cfg(test)]
         store.answers.basis_builds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         *cached = Some(basis.clone());
@@ -5720,12 +5854,12 @@ impl Lab {
     /// The writers device `d` may name to `peer` as those it holds segments of (S8, `Segments.lean`'s `shown`): the
     /// signers of the edits of the logs its request names to `peer` (`request`), whose ids it tells `peer` already, so
     /// naming their writers tells nothing more. Not the writers of any other log it holds, which would tell `peer` whom
-    /// `d` knows in vaults `peer` has no part in. Kept for the log's revision and `d`'s follow list.
+    /// `d` knows in vaults `peer` has no part in. Kept for the log's head and `d`'s follow list.
     pub fn writers_shown(&self, d: SignerId, peer: SignerId) -> Arc<BTreeSet<SignerId>> {
         let store = self.held(d);
-        let revision = store.log.revision();
+        let head = store.log.head();
         if let Some((at, follow, got)) = store.answers.writers.lock().expect("writers").get(&peer)
-            && *at == revision
+            && *at == head
             && *follow == store.follow
         {
             return got.clone();
@@ -5743,7 +5877,7 @@ impl Lab {
         let out = Arc::new(out);
         // worked out by a replay that lags, it is worked out again once caught up (`answers_current`)
         if self.answers_current(d) {
-            store.answers.writers.lock().expect("writers").insert(peer, (revision, store.follow.clone(), out.clone()));
+            store.answers.writers.lock().expect("writers").insert(peer, (head, store.follow.clone(), out.clone()));
         }
         out
     }
@@ -5950,7 +6084,7 @@ impl Lab {
     pub fn range_inventory(
         &self, d: SignerId, asker: SignerId, signer: SignerId, request: &Request,
         scope: &ReplyScope, max_edits: usize, max_wire: usize,
-    ) -> Option<(crate::policy::LogRevision, Vec<EditId>)> {
+    ) -> Option<(crate::log_head::Head, Vec<EditId>)> {
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         // Bounds additional inventory work. Initial legacy authorization-plan construction still examines the
@@ -5965,7 +6099,7 @@ impl Lab {
             }
         }
         ids.sort_unstable();
-        Some((store.log.revision(), ids))
+        Some((store.log.head(), ids))
     }
 
     /// Select a requested subset through the SAME current authorization plan, with exact revision fencing.
@@ -5974,11 +6108,11 @@ impl Lab {
     /// Keys and excluded records are reconciled by the mandatory legacy pass after optional ranges.
     pub fn range_select(
         &self, d: SignerId, asker: SignerId, signer: SignerId, request: &Request,
-        scope: &ReplyScope, revision: &crate::policy::LogRevision, wanted: &BTreeSet<EditId>,
+        scope: &ReplyScope, revision: &crate::log_head::Head, wanted: &BTreeSet<EditId>,
         max_edits: usize, max_wire: usize,
     ) -> Option<(Vec<Signed>, bool)> {
         let store = self.held(d);
-        if &store.log.revision() != revision || wanted.is_empty() || wanted.len() > max_edits { return None; }
+        if &store.log.head() != revision || wanted.is_empty() || wanted.len() > max_edits { return None; }
         let places = self.answered(d, asker, &request.ask.follow);
         let sends = self.sends(d, asker, request, &places, scope);
         let mut selected = BTreeMap::new();
@@ -6014,7 +6148,7 @@ impl Lab {
     ) -> Arc<ReplyPlan> {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let fp = store.log.revision();
+        let fp = store.log.head();
         let mut h = Hasher::new("asking");
         h.update(&Request { after: None, ..request.clone() }.to_wire());
         let asked = h.finalize();
@@ -6033,7 +6167,7 @@ impl Lab {
             reachable.into_iter().collect()
         };
         let logs = logs_of(edits, ids);
-        let scoped;
+        let mut scoped;
         let places = match scope {
             ReplyScope::All => places,
             _ => {
@@ -6051,6 +6185,14 @@ impl Lab {
                         ReplyScope::All => true,
                     })
                     .collect::<Vec<_>>();
+                // what it holds bare of these logs travels with the checkpoints that vouch for it, which the asker
+                // takes it on, as it took it (`Checkpoint.lean` `cutReply_covering`): else the asker drops it on every
+                // asking, a vault's checkpoint being of no entry's log (A2, 2026-10-29)
+                let bare: HashSet<EditId> = scoped.iter().map(|&i| ids[i]).filter(|id| store.bare.contains(id)).collect();
+                if !bare.is_empty() {
+                    let vouches = |i: &usize| matches!(&edits[*i].action, Action::Checkpoint { covers, .. } if covers.iter().any(|c| bare.contains(c)));
+                    scoped.extend(places.iter().filter(|i| vouches(i)));
+                }
                 &scoped
             }
         };
@@ -6067,18 +6209,42 @@ impl Lab {
 
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the McEliece key `blob`: it holds it, and an
     /// edit `asker` may receive by `d`'s view names it.
+    /// The edits that name it, looked up where they are (`Named`), each answered as its log is (`answering`).
     pub fn may_fetch(&self, d: SignerId, asker: SignerId, blob: BlobId, follow: &[VaultId]) -> bool {
         let store = self.held(d);
-        let edits = store.log.edits();
-        store.blobs.contains_key(&blob)
-            && self.answered(d, asker, follow).iter().any(|&i| edits[i].blobs().contains(&blob))
+        if !store.blobs.contains_key(&blob) {
+            return false;
+        }
+        let named = self.named(d);
+        let Some(places) = named.blobs.get(&blob) else { return false };
+        let answered = self.answering(d, asker, follow);
+        let logs = store.log.logs();
+        places.iter().any(|&i| logs[i].is_some_and(|l| answered.logs.contains(&l)))
     }
 
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
-    /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
+    /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27, `sync::may_fetch`).
+    /// Whether `d` holds them is its store's to say. The edits that bring it looked up where they are (`Named`).
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        self.standing_for(d, asker)
-            .is_some_and(|(st, cuts)| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow, &cuts.logs))
+        let Some((st, cuts)) = self.standing_for(d, asker) else { return false };
+        let named = self.named(d);
+        let answered = self.answering(d, asker, follow);
+        let logs = self.held(d).log.logs();
+        let sent = |i: usize| logs[i].is_some_and(|l| answered.logs.contains(&l));
+        if named.files.get(file).is_some_and(|at| at.iter().any(|&i| sent(i))) {
+            return true;
+        }
+        let Some(stated) = named.stated.get(file).filter(|at| at.iter().any(|&(i, _)| sent(i))) else { return false };
+        let syncing = crate::sync::Syncing::new(st, asker, follow);
+        stated.iter().any(|&(i, entry)| {
+            let l = LogId::Entry(entry);
+            sent(i) && syncing.log(l) && !cuts.logs.contains(&l)
+        })
+    }
+
+    /// The files the edits device `d` holds bring whose root's hash is `hash`: what a fetch by that hash may be of.
+    pub fn files_hashed(&self, d: SignerId, hash: &[u8; 32]) -> Vec<FileRoot> {
+        self.named(d).by_hash.get(hash).map(|roots| roots.iter().copied().collect()).unwrap_or_default()
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
@@ -6135,11 +6301,11 @@ impl Lab {
             return FileScanned::Behind;
         }
         let store = self.held(d);
-        let revision = store.log.revision();
-        if scan.revision.as_ref() != Some(&revision) {
+        let head = store.log.head();
+        if scan.head.as_ref() != Some(&head) {
             let st = self.standing(d);
             let selected = scan.entries.iter().copied().filter(|e| st.entry(*e).is_some_and(|en| st.wants(d, en)));
-            *scan = FileScan { revision: Some(revision), at: 0, selected: selected.collect(), ..FileScan::new(scan.keep, std::mem::take(&mut scan.entries)) };
+            *scan = FileScan { head: Some(head), at: 0, selected: selected.collect(), ..FileScan::new(scan.keep, std::mem::take(&mut scan.entries)) };
         }
         let st = self.standing(d);
         let edits = store.log.edits();
@@ -6298,7 +6464,7 @@ impl Lab {
     }
 
     /// How many edits and McEliece keys device `d` holds. Counts alone are not a revision: checkpoint withdrawal
-    /// and restore can remove edits. Use `log(d).revision()` to invalidate derived work.
+    /// and restore can remove edits. Use `log(d).head()` to invalidate derived work.
     pub fn size(&self, d: SignerId) -> (usize, usize) {
         let store = self.held(d);
         (store.log.ids().len(), store.blobs.len())
@@ -6752,32 +6918,37 @@ impl Lab {
                     }
                     // a view an older engine kept with its adjunct is kept again without it
                     store.view_given = if older { 0 } else { held };
-                    store.view_lineage = Some(store.log.lineage());
+                    store.view_head = Some(store.log.head());
                     store.view_wholes = store.wholes;
                     store.perf.count("replay: from its stored view", 1);
                 }
                 None => store.perf.count("stored view: none that opens", 1),
             }
             store.perf.add("open view", at);
-            // and the showings it kept, each its entry's from the newest pack that holds one, to take where its print
-            // is its entry's print as it shows them (`show_items`); a pack that doesn't open is none
+            // and the showings it kept, each its entry's from the pack its row names, to take where its print is its
+            // entry's print as it shows them (`show_items`); a pack that doesn't open is none, and the next save keeps
+            // its entries' showings again
             let at = Perf::start();
             let mut packs = 0;
             for pack in &warm.shown {
-                let Some(kept) = shown_map::unpack(&key, &pack.0) else {
+                let Some(kept) = shown_map::unpack(&key, &pack.file) else {
                     store.perf.count("kept shown: a pack that doesn't open", 1);
                     restored.kept.1 += 1;
                     continue;
                 };
                 packs += 1;
-                store.shown_packs.1 += kept.len();
+                let named: Option<HashSet<[u8; 32]>> = pack.rows.as_ref().map(|rows| rows.iter().copied().collect());
                 for (e, s) in kept {
-                    store.shown_given.insert(e, s.print);
+                    match &named {
+                        Some(named) if !named.contains(&key.shown_row(&e)) => continue,
+                        Some(_) => {
+                            store.shown_given.insert(e, s.print);
+                        }
+                        None => {}
+                    }
                     store.kept_shown.insert(e, s);
                 }
             }
-            store.shown_packs.0 = packs;
-            store.shown_stale = restored.kept.1 > 0;
             store.perf.count("kept shown: showings", store.kept_shown.len() as u64);
             store.perf.add("open kept shown", at);
             (restored.kept.0, restored.showings) = (packs, store.kept_shown.len());
@@ -6857,31 +7028,22 @@ impl Lab {
             && store.replayed != store.view_given;
         let keys_due = store.keys_due(checked);
         let view_due = current.is_some() && (store.view_due() || close_due) && store.replayed <= held;
-        // the showings, as often as its view, and once it holds none on its shelf yet
+        // the showings its shelf lacks, as often as its view, and once its shelf holds none of them yet
         let fresh_shown =
-            if current.is_some() && (view_due || store.shown_packs.0 == 0) { store.shown_due() } else { vec![] };
-        // and all of them, in place of a pack that doesn't open
-        let stale = current.is_some() && store.shown_stale_due();
-        if !keys_due && !view_due && fresh_shown.is_empty() && !stale { return None; }
-        let (shown, shown_of) = match fresh_shown.is_empty() && !stale {
+            if current.is_some() && (view_due || store.shown_given.is_empty()) { store.shown_due() } else { vec![] };
+        if !keys_due && !view_due && fresh_shown.is_empty() { return None; }
+        let (shown, shown_of) = match fresh_shown.is_empty() {
             true => (None, None),
             false => {
-                // all in one pack again, where the packs before hold more than twice what it keeps
-                let (packs, held) = store.shown_packs;
-                let whole = stale || packs >= SHOWN_PACKS || held + fresh_shown.len() > 2 * store.shown.len() + 64;
-                let es: Vec<EntryId> = match whole {
-                    true => store.keeps(false),
-                    false => fresh_shown,
-                };
                 let mut shown = vec![];
                 let mut of = vec![];
-                for e in es {
+                for e in fresh_shown {
                     if let (Some(record), Some(print)) = (store.shown.record(&e), store.shown.print(&e)) {
                         shown.push((e, print, record));
                         of.push((e, print));
                     }
                 }
-                (Some(shown), Some((of, whole)))
+                (Some(shown), Some((of, store.log.head())))
             }
         };
         let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
@@ -6892,7 +7054,7 @@ impl Lab {
         let read = if view_due { stored_readings::seal(store, store.replayed) } else { None };
         let receipt = Warming {
             keys: None, view: None,
-            revision: store.warm_revision.clone(), lineage: store.log.lineage(), keys_of,
+            revision: store.warm_revision.clone(), head: store.log.head(), keys_of,
             view_of: if view_due { store.replayed } else { 0 },
             view_wholes: if view_due { store.wholes } else { 0 },
             view_read: read.is_some(),
@@ -6909,8 +7071,7 @@ impl Lab {
     /// woken as it comes to, so a replay or a key opened with nothing else to save reaches the shelf too.
     pub fn warm_due(&self, d: SignerId) -> bool {
         self.stores.get(&d).is_some_and(|store| {
-            store.keys_due(None) || store.view_due() || (store.shown_packs.0 == 0 && !store.shown_due().is_empty())
-                || store.shown_stale_due()
+            store.keys_due(None) || store.view_due() || (store.shown_given.is_empty() && !store.shown_due().is_empty())
         })
     }
 
@@ -6921,7 +7082,7 @@ impl Lab {
         let Some(store) = self.stores.get_mut(&d) else {
             return;
         };
-        if !Arc::ptr_eq(&store.warm_revision, &warming.revision) || store.log.lineage() != warming.lineage {
+        if !Arc::ptr_eq(&store.warm_revision, &warming.revision) || !store.log.of_log(warming.head) {
             return;
         }
         store.warm_revision = Arc::new(());
@@ -6935,16 +7096,10 @@ impl Lab {
             // a view given without what it read is given again once it can seal that beside it
             store.view_read_due = !warming.view_read;
             store.view_given = warming.view_of;
-            store.view_lineage = Some(warming.lineage);
+            store.view_head = Some(warming.head);
             store.view_wholes = warming.view_wholes;
         }
-        if let Some((of, whole)) = warming.shown_of {
-            if whole {
-                store.shown_given.clear();
-                store.shown_packs = (0, 0);
-                store.shown_stale = false;
-            }
-            store.shown_packs = (store.shown_packs.0 + 1, store.shown_packs.1 + of.len());
+        if let Some((of, _)) = warming.shown_of {
             store.shown_given.extend(of);
         }
     }
@@ -6988,9 +7143,11 @@ impl Lab {
         Some(HandKey::of(&p.seal_secret()))
     }
 
-    /// What device `d` hands a new device of its passkey to start from (`start_handed`, M6), locked for that passkey's
-    /// devices alone (`HandKey`) and this engine: the ids of the edits it holds, each checked as it took it, and its
-    /// replay of them as its stored view (`Replay::to_view`). The new device then neither checks them again nor replays
+    /// What device `d` hands a new device of its passkey to start from (`start_handed`, M6): the ids of the edits it
+    /// holds, each checked as it took it, and its replay of them as its stored view (`Replay::to_view`), locked for that
+    /// passkey's devices alone (`HandKey`) and, as a stored view is, for the replay rules it was worked out under
+    /// (`VIEW_RULES`, `ViewRules.lean`): locked for the engine's hash, every release left each handed view shut, and a
+    /// new device replayed every edit itself (2026-10-29). The new device then neither checks them again nor replays
     /// them. `None` while it is locked, for a device of no passkey, and while its replay is not of every edit it holds.
     pub fn handing(&mut self, d: SignerId) -> Option<Vec<u8>> {
         let key = self.hand_key(d)?;
@@ -7005,7 +7162,7 @@ impl Lab {
         bytes.extend((n as u64).to_le_bytes());
         store.log.ids().iter().for_each(|id| bytes.extend(id.0));
         bytes.extend(store.replay.to_view(n));
-        let handed = key.0.lock("handed view", &bytes, ENGINE.as_bytes(), rng);
+        let handed = key.0.lock("handed view", &bytes, VIEW_RULES.as_bytes(), rng);
         if let Some(store) = stores.get_mut(&d) {
             store.perf.add("hand view", at);
         }
@@ -7016,11 +7173,11 @@ impl Lab {
     /// (`handing`) beside the edits it took (`backup`): it doesn't check the signatures of the edits the handed view is
     /// of, which its giver checked, and its replay starts from that view, the others stepped on it, the last ones
     /// replayed again or all of them, as they fall (`V7_handed_view`). True where it took the view: one that opens with
-    /// its passkey's key, for this engine, of edits it took every one of; else it starts as `restore_from` does.
+    /// its passkey's key, under these replay rules, of edits it took every one of; else it starts as `restore_from` does.
     pub fn start_handed(&mut self, d: SignerId, backup: Backup, handed: &[u8]) -> bool {
         let at = Perf::start();
         let key = self.hand_key(d);
-        let opened = key.and_then(|key| key.0.unlock("handed view", handed, ENGINE.as_bytes()));
+        let opened = key.and_then(|key| key.0.unlock("handed view", handed, VIEW_RULES.as_bytes()));
         let Some((ids, view)) = opened.as_ref().and_then(|b| handed_of(b)) else {
             self.restore_from(d, backup);
             return false;
@@ -7206,7 +7363,7 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
             break;
         }
     }
-    store.stays_seen = Some((store.log.lineage(), store.log.edits().len(), store.wholes));
+    store.stays_seen = Some((store.log.head(), store.wholes));
     // every entry's key now that the first key it holds of its audience at its epoch derives, it derived
     #[cfg(debug_assertions)]
     {
@@ -7274,11 +7431,12 @@ fn entry_key_of(keys: &Keyring, st: &State, name: KeyName, id: KeyId, by: Option
 /// of the edits it took since, where each is of an entry's own log and no removal, which alone moves an entry or takes
 /// one away. `None` where it is to look at every entry: another edit came, its log began again, or its replay did.
 fn stays_changed(store: &Store) -> Option<HashSet<EntryId>> {
-    let (lineage, len, wholes) = store.stays_seen.as_ref()?;
+    let (head, wholes) = store.stays_seen.as_ref()?;
     let log = &store.log;
-    if log.lineage() != *lineage || log.edits().len() < *len || store.wholes != *wholes {
+    if !log.of_log(*head) || store.wholes != *wholes {
         return None;
     }
+    let len = &(head.at as usize);
     let mut out = HashSet::new();
     for (edit, place) in log.edits()[*len..].iter().zip(&log.logs()[*len..]) {
         match place {
@@ -7626,8 +7784,8 @@ struct ReadNew {
     then: Option<(usize, usize, usize, usize)>,
     bodies: Vec<EditId>,
     slices: Vec<ShareId>,
-    /// The log's lineage and length, and how many times the store replayed every edit, when it last looked.
-    log: Option<(crate::policy::LogRevision, usize, u64)>,
+    /// The log's head, and how many times the store replayed every edit, when it last looked.
+    log: Option<(crate::log_head::Head, u64)>,
     /// The writes it held whose bodies it didn't open as its replay didn't count them.
     uncounted: HashSet<EditId>,
     /// The writes whose bodies it didn't open as it lacked their entry's key, by the entry.
@@ -7641,7 +7799,7 @@ impl ReadNew {
     /// `None` where it is to look at every write its replay counts.
     fn since(&mut self, log: &Log, wholes: u64, keyed: Vec<EntryId>) -> Option<Vec<EditId>> {
         let fresh = match self.log.as_ref() {
-            Some((lineage, len, w)) if log.lineage() == *lineage && *len <= log.edits().len() && *w == wholes => *len,
+            Some((head, w)) if log.of_log(*head) && *w == wholes => head.at as usize,
             _ => {
                 self.uncounted.clear();
                 self.lacking.clear();
@@ -7659,7 +7817,7 @@ impl ReadNew {
 
     /// It looked at `log` and its replay now.
     fn looked(&mut self, log: &Log, wholes: u64) {
-        self.log = Some((log.lineage(), log.edits().len(), wholes));
+        self.log = Some((log.head(), wholes));
     }
 
     /// It reads on from what it read last time: what it holds now is that, and what it opened since, alone.
@@ -8479,18 +8637,18 @@ struct UpkeepDue {
     /// at the same first slice of every entry some 40 times a second, a lane among the rest each time, and never ended;
     /// `UpkeepSlices.lean`: it moves on and ends).
     unlooked: HashSet<EntryId>,
-    /// When it last looked: the log's lineage and length, the keys' revision, the selectors it read, the cap groups'
-    /// and the lanes' hashes.
-    then: Option<(crate::policy::LogRevision, usize, Arc<()>, usize, [u8; 32], Vec<(VaultId, [u8; 32])>)>,
+    /// When it last looked: the log's head, the keys' revision, the selectors it read, the cap groups' and the lanes'
+    /// hashes.
+    then: Option<(crate::log_head::Head, Arc<()>, usize, [u8; 32], Vec<(VaultId, [u8; 32])>)>,
 }
 
 impl UpkeepDue {
     /// The entries its upkeep is to look at, or `None` for every one.
     fn scope(&self, store: &Store) -> Option<HashSet<EntryId>> {
-        let (lineage, len, keys, slices, groups, lanes) = self.then.as_ref()?;
+        let (head, keys, slices, groups, lanes) = self.then.as_ref()?;
         let log = &store.log;
-        if log.lineage() != *lineage
-            || log.edits().len() < *len
+        let len = &(head.at as usize);
+        if !log.of_log(*head)
             || !Arc::ptr_eq(keys, &store.keys.scoped)
             || store.slices.len() != *slices
             || store.shown_groups != *groups
@@ -8541,7 +8699,7 @@ impl UpkeepDue {
     ) {
         self.entries = waiting;
         self.unlooked = unlooked;
-        self.then = Some((log.lineage(), log.edits().len(), keys.clone(), slices, groups, lanes_of(lanes)));
+        self.then = Some((log.head(), keys.clone(), slices, groups, lanes_of(lanes)));
     }
 }
 
@@ -8782,26 +8940,28 @@ mod range_payload_tests {
         let scope=ReplyScope::Logs([LogId::Entry(todos.door),LogId::Entry(todos.seeds)].into());
         let mut request=Request::default();
         request.ask.haves=[(LogId::Entry(todos.door),vec![]),(LogId::Entry(todos.seeds),vec![])].into();
-        let (revision,ids)=w.lab.range_inventory(from,to,from,&request,&scope,65536,usize::MAX).unwrap();
+        let (head,ids)=w.lab.range_inventory(from,to,from,&request,&scope,65536,usize::MAX).unwrap();
         assert!(!ids.is_empty());
         let expected:BTreeSet<_>=w.lab.reply_in(from,to,&request,usize::MAX,&scope).0.into_iter()
             .filter(|s|s.edit.author==from && range_write_bound(s).is_some()).map(|s|s.edit.id()).collect();
         assert_eq!(ids.iter().copied().collect::<BTreeSet<_>>(),expected);
         let wanted:BTreeSet<_>=ids.iter().copied().collect();
-        let (selected,more)=w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).unwrap();
+        let (selected,more)=w.lab.range_select(from,to,from,&request,&scope,&head,&wanted,256,usize::MAX).unwrap();
         assert!(!more);assert_eq!(selected.iter().map(|s|s.edit.id()).collect::<BTreeSet<_>>(),expected);
         let narrow=ReplyScope::Logs([LogId::Entry(todos.seeds)].into());
-        assert!(w.lab.range_select(from,to,from,&request,&narrow,&revision,&wanted,256,usize::MAX).is_none(),"narrowed scope rejects even with the same revision");
-        assert!(w.lab.range_select(from,w.stranger,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"another peer cannot reuse its authorization plan");
-        assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,1).is_none(),"size eligibility never permits an oversized clone");
+        assert!(w.lab.range_select(from,to,from,&request,&narrow,&head,&wanted,256,usize::MAX).is_none(),"narrowed scope rejects even with the same head");
+        assert!(w.lab.range_select(from,w.stranger,from,&request,&scope,&head,&wanted,256,usize::MAX).is_none(),"another peer cannot reuse its authorization plan");
+        assert!(w.lab.range_select(from,to,from,&request,&scope,&head,&wanted,256,1).is_none(),"size eligibility never permits an oversized clone");
         assert!(w.lab.range_inventory(from,to,from,&request,&scope,0,usize::MAX).is_none());
         let snapshot=w.lab.backup(from);
         w.lab.submit(from,&[from],Action::Revoke(Revoking::Grant{share:todos.carol_read,actor:w.alice,keep:vec![],via:vec![]})).unwrap();
-        assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"revocation fences the captured set");
+        assert!(w.lab.range_select(from,to,from,&request,&scope,&head,&wanted,256,usize::MAX).is_none(),"revocation fences the captured set");
         let (_,now)=w.lab.range_inventory(from,to,from,&request,&scope,65536,usize::MAX).unwrap();
         assert!(now.is_empty(),"current permission also removes the entry from root/count/leaf disclosure");
         w.lab.restore_backup(from,&snapshot);
-        assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"restoring prior contents does not resurrect a process-local revision");
+        assert_eq!(w.lab.log(from).head(),head,"restoring the same edits gives the same head");
+        let (again,_)=w.lab.range_select(from,to,from,&request,&scope,&head,&wanted,256,usize::MAX).expect("the same edits, judged anew");
+        assert_eq!(again.iter().map(|s|s.edit.id()).collect::<BTreeSet<_>>(),expected,"what it sends is worked out of the edits it holds, never of an earlier capture");
     }
 }
 
