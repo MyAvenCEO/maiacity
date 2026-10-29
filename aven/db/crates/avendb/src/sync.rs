@@ -77,6 +77,7 @@ pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
             KeyName::Scoped(KeyFam::Share(_, c), _) => LogId::Share(c),
             KeyName::Scoped(KeyFam::Audience(v, x), _) => LogId::Audience(v, x),
             KeyName::Entry(e, ..) => LogId::Entry(e),
+            KeyName::Select(c) => LogId::Share(c),
         },
     })
 }

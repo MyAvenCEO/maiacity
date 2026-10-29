@@ -1722,6 +1722,14 @@ impl KeyIndex {
                 self.boxed.insert((name, id, b.to.name()));
                 self.boxes.push(IndexedBox { name, id, to: b.to, place, slot, of });
             }
+            // a sealed selector's own boxes, which its key needs no other box for
+            if let Action::Share(Sharing::Grant(share, _)) = &edit.action
+                && let Ok(Select::Sealed { boxes, slice, .. }) = Select::from_wire(&share.select)
+                && let Some(id) = keys::edit_key(&slice)
+            {
+                let name = KeyName::Select(ShareId::from(of));
+                self.boxed.extend(boxes.iter().map(|b| (name, id, b.to.name())));
+            }
             if let Action::Keys { name, id, public, clear, .. } = &edit.action {
                 self.exists.insert(*name);
                 if let Some(p) = public {
@@ -3481,40 +3489,21 @@ impl Lab {
     /// The `select` of `share`, holding `slice`: in the clear for a share to everyone or to an invite key, whose
     /// holder has no vault to seal it to until it claims the share, and whose grantee its claim changes, so that a
     /// sealed selector, bound to the share (`encode::share_context`), would never open again; else sealed under a key
-    /// of its own, which is boxed to the seed of each vault that reads it: the vault the share is over, its grantee
-    /// unless the share only relays, and its issuer where `on` holds or knows the issuer's seed (`slice::Select`). A
-    /// keep share's grantee is a device, which reads it through its issuer; the stewards of the vault it is over read
-    /// it to mark what it picks, and a wide one they never mark by.
+    /// of its own (`KeyName::Select`), which the schedule seals to the seed of each vault that reads it
+    /// (`policy::select_readers`).
     fn seal_select(&mut self, on: SignerId, share: &Share, slice: &Slice) -> Result<Vec<u8>, Refusal> {
-        if matches!(share.who, Who::Everyone | Who::Invite(_)) {
+        let readers = crate::policy::select_readers(share);
+        if readers.is_empty() {
             return Ok(Select::Clear(slice.clone()).to_wire());
         }
-        let who = match share.who {
-            Who::Vault(g) if share.level.allows(Level::Read) => Some(g),
-            _ => None,
-        };
-        let readers: Vec<VaultId> = [Some(share.over), who, Some(share.issuer)].into_iter().flatten().collect();
-        let needed: Vec<VaultId> = if share.level.is_keep() && share.wide {
-            vec![]
-        } else {
-            [Some(share.over), who].into_iter().flatten().collect()
-        };
-        self.seal_slice(on, share, slice, &readers, &needed)
+        self.seal_slice(on, share, slice, &readers)
     }
 
     /// `slice`, the slice of share `of`'s selector, sealed under a key of its own, which is boxed to the seed of each
-    /// vault of `readers` that `on` holds or knows the seed of (`slice::Select`). `UnknownKey` if it can't box it for
-    /// one of `needed`.
-    fn seal_slice(
-        &mut self,
-        on: SignerId,
-        of: &Share,
-        slice: &Slice,
-        readers: &[VaultId],
-        needed: &[VaultId],
-    ) -> Result<Vec<u8>, Refusal> {
-        let mut seen = HashSet::new();
-        let readers = readers.iter().copied().filter(|v| seen.insert(*v));
+    /// vault of `readers` that `on` holds or knows the seed of (`slice::Select`). A seed whose key it lacks it asks a
+    /// peer for (`Store::sealing`), and any reader's device boxes the key to it once it came (`upkeep`): the share never
+    /// waits for it. `UnknownKey` only where it boxes it to none of them, as nobody would ever read it.
+    fn seal_slice(&mut self, on: SignerId, of: &Share, slice: &Slice, readers: &[VaultId]) -> Result<Vec<u8>, Refusal> {
         let at = self.at(on);
         let Lab { stores, rng, .. } = self;
         let store = stores.get_mut(&at).unwrap_or_else(|| panic!("{on:?} is no device of the Lab"));
@@ -3525,23 +3514,17 @@ impl Lab {
         let bound = |to: &Recipient| share_select_info(of, key.id(), to);
         let mut boxes = vec![];
         let st = store.view();
-        let mut unknown = false;
-        let mut lacking = None;
-        for v in readers {
+        let mut lacking = vec![];
+        for &v in readers {
             let seed = st.current(KeyFam::Seed(v));
             match key_box(&key, seed, &bound, st, store, &ix, &[], rng) {
                 Some(b) => boxes.push(b),
-                None if needed.contains(&v) => {
-                    (unknown, lacking) = (true, seal_key(seed, st, &ix));
-                    break;
-                }
-                None => {}
+                None => lacking.extend(seal_key(seed, st, &ix)),
             }
         }
-        // a seed's key it lacks it asks a peer for (`Store::sealing`), and the share goes once it came
-        store.sealing.extend(lacking.filter(|b| !store.blobs.contains_key(b)));
+        store.sealing.extend(lacking.into_iter().filter(|b| !store.blobs.contains_key(b)));
         KeyIndexed::put(store, ix);
-        if unknown {
+        if boxes.is_empty() {
             return Err(Refusal::UnknownKey);
         }
         Ok(Select::Sealed { boxes, slice: sealed, commitment: slice.grant.commitment() }.to_wire())
@@ -3670,7 +3653,7 @@ impl Lab {
             open_keys(store, &ix, &mine);
             store.perf.add("open keys", at);
             let at = Perf::start();
-            let read_all = read(d, store, budget.map(|b| b.max(1).saturating_mul(READ_WORK)));
+            let read_all = read(store, budget.map(|b| b.max(1).saturating_mul(READ_WORK)));
             store.perf.add("read", at);
             // a step that left bodies to open goes on with them at the next, showing nothing before they are open
             if !read_all && budget.is_some() {
@@ -7727,14 +7710,14 @@ fn entry_key_for(
 /// it reads in them.
 /// At most `most` bodies opened, if there is one: those of new edits first, then those a step left before
 /// (`ReadNew::left`), the rest left for the next step; with none, those of new edits alone. True if it left none.
-fn read(d: SignerId, store: &mut Store, most: Option<usize>) -> bool {
+fn read(store: &mut Store, most: Option<usize>) -> bool {
     let st = &store.replay.state;
     for cp in st.shares() {
         let (id, of) = (cp.id, &cp.share);
         if store.slices.contains_key(&id) || store.unreadable.contains(&id) {
             continue;
         }
-        match open_select(of, &store.keys, st.acts_for(d, of.over)) {
+        match open_select(id, of, &mut store.keys) {
             Ok(Some(slice)) => {
                 store.slices.insert(id, slice);
                 store.read_new.slices.push(id);
@@ -8048,31 +8031,32 @@ fn lane_fits(ty: &Sym, blob: &[u8]) -> bool {
     }
 }
 
-/// The slice share `of`'s selector holds (`slice::Select`), opened with the keys `keys`: `Ok(None)` while none of its
-/// boxes goes to a key held, `Err` if it never opens: it is garbled, a box for a key held doesn't open, or what that
-/// opens doesn't, or, for a steward of the vault it is over (`steward`), no box goes to any seed of that vault.
-fn open_select(of: &Share, keys: &Keyring, steward: bool) -> Result<Option<Slice>, ()> {
+/// The slice share `c`, `of`, holds in its selector (`slice::Select`), opened with the keys `keys`: by a box of the edit's
+/// own to a key held, or by its key (`KeyName::Select`) where a box of a `Keys` edit since handed it in, the key kept
+/// either way, so that its device boxes it to the readers the edit had no box for (`upkeep`). `Ok(None)` while none
+/// opens, `Err` if it never opens: it is garbled, a box for a key held doesn't open, or what that opens doesn't.
+fn open_select(c: ShareId, of: &Share, keys: &mut Keyring) -> Result<Option<Slice>, ()> {
     let (boxes, sealed) = match Select::from_wire(&of.select).map_err(drop)? {
         Select::Clear(slice) => return Ok(Some(slice)),
         Select::Sealed { boxes, slice, .. } => (boxes, slice),
     };
     let id = keys::edit_key(&sealed).ok_or(())?;
-    let to_over = |b: &&KeyBox| matches!(b.to.name(), KeyName::Scoped(KeyFam::Seed(v), _) if v == of.over);
-    if steward && !boxes.iter().any(|b| to_over(&b)) {
-        return Err(());
-    }
-    for b in &boxes {
-        let Recipient::Key { name, id: under } = b.to else {
-            continue;
-        };
-        let Some(with) = keys.get(&under, name) else {
-            continue;
-        };
-        let key = keys::open(&b.bytes.bytes(), with, &share_select_info(of, id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
-        let plain = keys::open_edit(&key, &sealed, &share_context(of)).ok_or(())?;
-        return Slice::from_wire(&plain).map(Some).map_err(drop);
-    }
-    Ok(None)
+    let name = KeyName::Select(c);
+    let key = match keys.get(&id, name) {
+        Some(key) => key.clone(),
+        None => {
+            let held = boxes.iter().find_map(|b| match b.to {
+                Recipient::Key { name, id: under } => Some((b, keys.get(&under, name)?)),
+                Recipient::Signer(_) => None,
+            });
+            let Some((b, with)) = held else { return Ok(None) };
+            let key = keys::open(&b.bytes.bytes(), with, &share_select_info(of, id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
+            keys.insert(name, key.clone());
+            key
+        }
+    };
+    let plain = keys::open_edit(&key, &sealed, &share_context(of)).ok_or(())?;
+    Slice::from_wire(&plain).map(Some).map_err(drop)
 }
 
 /// The edits device `d` should make, by its view: the `Keys` edits its keys call for, and, for each vault it acts for,
@@ -8156,6 +8140,28 @@ fn upkeep(
                 let to = Recipient::Key { name: next, id: under.id() };
                 let bytes = keys::wrap(secret, &under, &box_info(name, id, &to), rng);
                 let boxes = vec![KeyBox { to, bytes: bytes.into() }];
+                out.push(Work::Edit(Action::Keys { name, id, public: None, boxes, clear: None }));
+            }
+        }
+    }
+    // each share's selector key it holds, boxed to each seed the schedule seals it to that has no box yet: those the
+    // share's issuer lacked the key of as it made it (`Lab::seal_slice`)
+    for cp in st.shares() {
+        let name = KeyName::Select(cp.id);
+        for secret in store.keys.held(name).cloned().collect::<Vec<_>>() {
+            let id = secret.id();
+            let info = |to: &Recipient| box_info(name, id, to);
+            let mut boxes = vec![];
+            for &t in st.select_seals(cp.id) {
+                if ix.boxed.contains(&(name, id, t)) {
+                    continue;
+                }
+                match key_box(&secret, t, &info, &st, store, ix, mine, rng) {
+                    Some(b) => boxes.push(b),
+                    None => sealing.extend(seal_key(t, &st, ix)),
+                }
+            }
+            if !boxes.is_empty() {
                 out.push(Work::Edit(Action::Keys { name, id, public: None, boxes, clear: None }));
             }
         }

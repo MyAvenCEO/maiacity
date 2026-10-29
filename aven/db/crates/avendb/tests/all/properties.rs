@@ -703,7 +703,7 @@ fn some_keys(rng: &mut Rng, st: &State) -> Option<Attempt> {
     let v = match name {
         KeyName::Scoped(k, _) => k.vault(),
         KeyName::Entry(e, ..) => st.entry(e)?.vault,
-        KeyName::Signer(_) => return None,
+        KeyName::Signer(_) | KeyName::Select(_) => return None,
     };
     let id = KeyId(BlobId::of(&rng.next().to_be_bytes()).0);
     let action = Action::Keys { name, id, public: None, boxes: vec![], clear: None };
@@ -2020,6 +2020,7 @@ impl Twin {
             KeyName::Signer(s) => KeyName::Signer(s),
             KeyName::Scoped(k, e) => KeyName::Scoped(self.fam(k), e),
             KeyName::Entry(e, stay, g) => KeyName::Entry(e, stay.map(|s| self.edit(s)), g),
+            KeyName::Select(c) => KeyName::Select(self.share(c)),
         }
     }
 

@@ -53,6 +53,7 @@ def Edit.log? (edit : Edit) : Option LogId :=
     | .scoped (.share _ c) _ => some (.share c)
     | .scoped (.audience v x) _ => some (.audience v x)
     | .entry e _ _ => some (.entry e)
+    | .select c => some (.share c)
 
 /-- Device `d` has an interest in vault `v`: it acts for `v`, or for a vault that holds a live share over `v`, at any
     level. -/

@@ -376,6 +376,14 @@ theorem mayRevokeN_ops (st : State) (a : VaultId) :
 theorem mayRevoke_ops (st : State) (a : VaultId) (c : Share) : mayRevoke st.ops a c.blind = mayRevoke st a c := by
   simp only [mayRevoke, blind_level, blind_issuer, mayRevokeN_ops, ops_shares, List.length_map]
 
+/-- Who reads a share's selector reads only its level, its vaults and its grantee. -/
+theorem selectReaders_blind (c : Share) : selectReaders c.blind = selectReaders c := by
+  simp only [selectReaders, blind_who, blind_level, blind_over, blind_issuer]
+
+/-- Where a share's selector key is sealed reads no selector. -/
+theorem selectSeals_ops (st : State) (c : Share) : selectSeals st.ops c.blind = selectSeals st c := by
+  simp only [selectSeals, selectReaders_blind, blind_id, ops_seals, curKey_ops]
+
 /-- Who may box a key reads no selector, type or tag. -/
 theorem mayBox_ops (st : State) : mayBox st.ops = mayBox st := by
   funext d k
@@ -383,6 +391,7 @@ theorem mayBox_ops (st : State) : mayBox st.ops = mayBox st := by
   | signer s => rfl
   | «scoped» k ε => simp only [mayBox, keyFams_ops, entitled_ops]; rfl
   | entry e s _ => simp only [mayBox, entry?_ops, entitled_ops]; cases st.entry? e <;> rfl
+  | select c => simp only [mayBox, share?_ops, actsFor_ops]; cases st.share? c <;> simp [selectReaders_blind]
 
 /-- How senior a revoker is reads only the share's chain of issuers. -/
 theorem seniority_ops (st : State) (a : VaultId) (c : Share) : seniority st.ops a c.blind = seniority st a c := by
@@ -608,7 +617,7 @@ theorem apply_ops (st : State) (edit : Edit) :
       -- the checks read no selector, and the new share is kept as a relay sees it
       simp only [Edit.blind, Action.blind]
       simp only [apply, sigs_mk, vault?_ops, share?_ops, Option.isSome_map, actsVia_ops, isDevice_ops, restsOk_ops,
-        approves_ops, ops_shares, blind_id, blind_over, blind_who, blind_level, blind_wide, blind_issuer]
+        approves_ops, ops_shares, blind_id, blind_over, blind_who, blind_level, blind_wide, blind_issuer, selectSeals_ops]
       simp only [map_ite_none, Option.map_some, ops_eq, List.map_map, List.map_append, blind_comp_blind,
         eblind_comp_eblind, List.map_cons, List.map_nil, blind_blind]
     | owner v p =>

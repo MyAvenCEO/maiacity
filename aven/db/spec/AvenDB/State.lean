@@ -779,6 +779,9 @@ def bump (st : State) (k : KeyFam) : State :=
   { st with epochs := (k, e + 1) :: st.epochs.filter (·.1 != k),
             seals  := st.seals ++ [⟨.scoped k e, .scoped k (e + 1)⟩] }
 
+/-- Seals `ss` with seal `s`, unless they hold it already. -/
+def addSealTo (ss : List Seal) (s : Seal) : List Seal := if ss.contains s then ss else ss ++ [s]
+
 def addSeal (st : State) (s : Seal) : State :=
   if st.seals.contains s then st else { st with seals := st.seals ++ [s] }
 

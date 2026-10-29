@@ -530,3 +530,40 @@ fn a_broken_curve_signs_nothing() {
     assert_eq!(text(&w.lab, w.mac_c, h.welcome, 2), None);
     keys_follow_shares(&w, "the curves fell");
 }
+
+/// A share's selector key is a key of its own (`KeyName::Select`), sealed to the seed of each vault that reads it: a
+/// share to a vault whose seed's public half its issuer's device doesn't hold yet goes at once, never refused while the
+/// key is fetched, and once it came a reader's device boxes the selector key to that seed, so its grantee reads it.
+#[test]
+fn a_share_to_a_vault_whose_seed_key_is_not_held_yet_goes_and_its_grantee_reads_it_later() {
+    let mut lab = Lab::new();
+    let passkey_a = lab.passkey("Alice");
+    let mac_a = lab.device_of(passkey_a, "Alice's Mac");
+    let alice = human_on(&mut lab, passkey_a, &[mac_a]);
+    let passkey_b = lab.passkey("Bob");
+    let mac_b = lab.device_of(passkey_b, "Bob's Mac");
+    let bob = human_on(&mut lab, passkey_b, &[mac_b]);
+    // Alice's Mac holds Bob's vault's edits, its seed announced, but not the McEliece key the seed is sealed to
+    let bobs = lab.backup(mac_b).signed().to_vec();
+    lab.receive(mac_a, bobs, vec![]);
+    assert!(lab.state(mac_a).vault(bob).is_some());
+    let select = Selector::AnyOf(vec![vec![]]);
+    let c = lab.issue(mac_a, &[mac_a], share(alice, vault(bob), Level::Read, select.clone())).expect("never waits on a key");
+    assert_eq!(lab.slice(mac_a, c).map(|s| &s.select), Some(&select), "its issuer reads it at once");
+    let name = KeyName::Select(c);
+    let st = lab.state(mac_a);
+    let seeds = [alice, bob].map(|v| st.current(KeyFam::Seed(v)));
+    assert_eq!(st.select_seals(c), seeds.as_slice(), "sealed to the seeds of the vault it is over and of its grantee");
+    // the key it lacks it asks its peers for (`Store::sealing`): here it comes
+    let wants = lab.request(mac_a, mac_b).wants;
+    assert_eq!(wants.len(), 1, "it asks for Bob's seed's McEliece key");
+    let came = wants.iter().filter_map(|&b| lab.blob(mac_b, b)).collect();
+    lab.receive(mac_a, vec![], came);
+    lab.sync_all(9);
+    assert_eq!(lab.slice(mac_b, c).map(|s| &s.select), Some(&select), "its grantee reads it once the key came");
+    let boxed = lab.backup(mac_b).signed().iter().any(|s| match &s.edit.action {
+        Action::Keys { name: n, boxes, .. } => *n == name && boxes.iter().any(|b| b.to.name() == seeds[1]),
+        _ => false,
+    });
+    assert!(boxed, "the selector key boxed to Bob's seed by a Keys edit");
+}
