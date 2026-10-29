@@ -1,9 +1,11 @@
 <script>
-	// avenOS's dashboard: the vault you act as, a grid of its apps and, on a Peer-Light's origin, this device. Until the
-	// Peer-Light itself (peer/light) runs there, the device is what the box gives it: the vault it serves, its key and
-	// its own OPFS, which keeps a mark across reloads.
+	// avenOS's dashboard: the vault you act as, a grid of its apps and, on a Peer-Light's origin, this device: the vault
+	// it serves, its key, its own OPFS, which keeps a mark across reloads, and the Peer-Light's status line, its phase
+	// and "N peers" from presence, pushed by its worker.
 	import Avatar from './Avatar.svelte';
+	import Phase from './Phase.svelte';
 	import { actsFor, governs, key, peersOf, vaultName } from './cast.js';
+	import { describe, live } from './peers.svelte.js';
 
 	let { cast, device, account, apps } = $props();
 
@@ -84,7 +86,7 @@
 				<dt>stores in</dt>
 				<dd data-testid="mark">{storage}{mark ? ` · mark ${mark}` : ''}</dd>
 			</dl>
-			<p class="status"><span class="dot"></span> page live · the Peer-Light comes next</p>
+			<p class="status"><Phase phase={live.own?.phase} text={describe(live.own)} testid="status" /></p>
 		</section>
 	{/if}
 </main>
@@ -180,14 +182,5 @@
 
 	.status {
 		margin: 10px 0 0;
-	}
-
-	.dot {
-		display: inline-block;
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--pending);
-		vertical-align: 1px;
 	}
 </style>
