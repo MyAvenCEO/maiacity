@@ -22,8 +22,9 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::id::{BlobId, EditId, SignerId};
 use avendb::keys::PublicKey;
 use avendb::lab::Remote;
+use avendb::policy::Refusal;
 use avendb::sign::{DeviceKey, Hello, Signature, SignerKeys};
-use avendb::wire::Wire;
+use avendb::wire::{Claim, Wire};
 use avendb_net::{Node, disk, server};
 use n0_future::task::AbortOnDropHandle;
 use serde_json::{Value, json};
@@ -71,10 +72,61 @@ pub fn seal_of(hosted: &Hosted, device: SignerId) -> Option<Seal> {
 
 /// The key to seal to an agent's hello names, `{seal, mceliece}`, each in hex: the public key, and the McEliece key whose
 /// id it names. None where it names none, or one that doesn't match.
-fn seal_in(said: &Value) -> Option<Seal> {
+pub(crate) fn seal_in(said: &Value) -> Option<Seal> {
     let key = PublicKey::from_wire(&unhex(said["seal"].as_str()?)?).ok()?;
     let mceliece: Arc<[u8]> = unhex(said["mceliece"].as_str()?)?.into();
     (BlobId::of(&mceliece) == key.mceliece).then_some((key, mceliece))
+}
+
+/// `seal` into `into` as `seal_in` reads it back, `{seal, mceliece}`, each in hex: what an access request names
+/// (`agent::ask_by_default`), for its person to approve it by while it is away (`grant_later`).
+pub(crate) fn seal_into(seal: &Seal, into: &mut Value) {
+    into["seal"] = hex(&seal.0.to_wire()).into();
+    into["mceliece"] = hex(&seal.1).into();
+}
+
+/// Keeps the join `claim` of agent `name`'s device `device`, its passkey's part signed while the agent was away
+/// (`Node::sign_hosted_device`), with `mceliece`, the McEliece key it names, for the agent to sign as it next runs
+/// (`join_granted`): in its `granted` file (`agent::granted`), as `{claim, mceliece}`, each in hex. The claim keeps no
+/// card: theOS's device holds every edit the agent's join needs, and the agent holds no log of its own.
+pub(crate) fn grant_later(host: &Path, name: &str, device: SignerId, claim: Claim, mceliece: &[u8]) -> Result<()> {
+    let claim = Claim { card: vec![], ..claim };
+    let kept = json!({ "claim": hex(&claim.to_wire()), "mceliece": hex(mceliece) });
+    std::fs::create_dir_all(agent::agents(host))?;
+    std::fs::write(agent::granted(host, name, &hex(&device.0)), kept.to_string())?;
+    Ok(())
+}
+
+/// The join agent `name`'s device `device` was granted while it was away (`grant_later`), which it signs now that it
+/// is hosted (`Node::accept_hosted`): it lands, and its `granted` file and request go. One the agent didn't sign stays,
+/// for its next session; one the vaults refuse now, as its person's passkey or the aven moved on meanwhile, goes, and
+/// its request stands for its person to answer again. Whether it joined.
+pub(crate) async fn join_granted(node: &Node, host: &Path, name: &str, device: SignerId) -> bool {
+    let file = agent::granted(host, name, &hex(&device.0));
+    let Some(kept) = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) else {
+        return false;
+    };
+    let claim = kept["claim"].as_str().and_then(unhex).and_then(|b| Claim::from_wire(&b).ok());
+    let mceliece: Option<Arc<[u8]>> = kept["mceliece"].as_str().and_then(unhex).map(Arc::from);
+    let joined = match (claim, mceliece) {
+        (Some(claim), Some(mceliece)) => node.accept_hosted(claim, mceliece).await,
+        _ => Ok(Err(Refusal::NotClaiming)),
+    };
+    match joined {
+        Ok(Ok(_)) => {
+            tracing::info!("avendb: {name} {device:?} joined, as its person approved while it was away");
+            std::fs::remove_file(&file).ok();
+            std::fs::remove_file(agent::request(host, name)).ok();
+            true
+        }
+        // it didn't sign, or this device is closing: its next session signs it
+        Ok(Err(Refusal::Locked)) | Err(_) => false,
+        Ok(Err(why)) => {
+            tracing::info!("avendb: {name}'s join, approved while it was away, is refused now: {why:?}");
+            std::fs::remove_file(&file).ok();
+            false
+        }
+    }
 }
 
 /// The sessions `hosted` holds now, each `{id, name, device, since}`, the oldest first.
@@ -159,7 +211,7 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
     let seal = proven.into_iter().find(|(p, ..)| *p == s).and_then(|(.., seal)| seal);
     if !member {
         // it asks for access as it starts, until its person answers (`agent::ask_by_default`)
-        agent::ask_by_default(&host, &name, &hex(&s.0));
+        agent::ask_by_default(&host, &name, &hex(&s.0), seal.as_ref());
     }
     // what it writes, it signs: the host asks it on the socket and waits, its Lab held, a moment at most
     let (out, mut outgoing) = mpsc::unbounded_channel::<Value>();
@@ -177,7 +229,7 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
     };
     // listed before it is hosted, so that another session of its key that ends meanwhile leaves it hosted
     let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    let live = Live { name: name.clone(), device: s, since, seal, keys, sign: sign.clone() };
+    let live = Live { name: name.clone(), device: s, since, seal: seal.clone(), keys, sign: sign.clone() };
     hosted.lock().expect("the sessions").insert(id, live);
     if let Err(error) = node.try_act(move |lab, me| lab.host(me, s, keys, sign)).await {
         hosted.lock().expect("the sessions").remove(&id);
@@ -208,7 +260,12 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
             }
         }
     });
-    let agent = Agent::session(node.clone(), host, name.clone(), roots);
+    // a join its person approved while it was away, which it signs over this session (`join_granted`)
+    if !member {
+        let (node, host, name) = (node.clone(), host.clone(), name.clone());
+        tokio::spawn(async move { join_granted(&node, &host, &name, s).await });
+    }
+    let agent = Agent::session(node.clone(), host, name.clone(), roots, seal);
     let ended = async {
         while let Some(line) = lines.next_line().await? {
             let m: Value = serde_json::from_str(&line).unwrap_or_default();

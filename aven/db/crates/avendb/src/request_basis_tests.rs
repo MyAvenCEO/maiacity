@@ -69,7 +69,9 @@ fn follow_and_blob_changes_are_current_without_rebuilding_history() {
     let blob = *named.iter().find(|id| w.lab.held(d).blobs.contains_key(*id)).expect("fixture has an authorized key blob");
     let at = w.lab.at(d);
     let bytes = w.lab.stores.get_mut(&at).unwrap().blobs.remove(&blob).unwrap();
-    assert!(w.lab.request(d, peer).wants.contains(&blob));
+    assert!(!w.lab.request(d, peer).wants.contains(&blob), "a key it lacks but seals to no one is wanted by none");
+    w.lab.stores.get_mut(&at).unwrap().sealing.insert(blob);
+    assert!(w.lab.request(d, peer).wants.contains(&blob), "a key it lacks to seal to is asked for");
     same(&w.lab, d, &[peer]);
     w.lab.receive_now(d, vec![], vec![bytes], false);
     assert!(!w.lab.request(d, peer).wants.contains(&blob));

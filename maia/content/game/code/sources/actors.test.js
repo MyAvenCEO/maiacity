@@ -114,19 +114,20 @@ test('plan: windows, follows, files by tag and signals, in tiers', async () => {
 	];
 	const published = [], readsBefore = [];
 	const wants = await plan(leaves, { device: d, vault: id(100), signals: { playhead: () => 4 }, publish: (w) => (published.push(w), readsBefore.push(d.calls.length)) });
+	// the window goes with its selector: the node asks peers only for the newest two rooms, never every room
 	expect(wants).toEqual([
-		{ tier: 'now', entries: [id(10), id(11), room], queries: [{ types: ['room'], vault: id(100) }] },
+		{ tier: 'now', entries: [id(10), id(11), room], queries: [{ types: ['room'], vault: id(100), newest: 2 }] },
 		{ tier: 'next', entries: [cut, shot], queries: [] },
 		{ tier: 'later', entries: [id(20), id(21)], queries: [] }
 	]);
 	// every selector and bound entry went out first, before any read of the device: they need none
 	expect(readsBefore[0]).toBe(0);
 	expect(published[0]).toEqual([
-		{ tier: 'now', entries: [room], queries: [{ types: ['room'], vault: id(100) }] },
+		{ tier: 'now', entries: [room], queries: [{ types: ['room'], vault: id(100), newest: 2 }] },
 		{ tier: 'next', entries: [cut], queries: [] }
 	]);
 	// then what is on screen, before the slower walks of the lower tiers
-	expect(published[1][0]).toEqual({ tier: 'now', entries: [id(10), id(11), room], queries: [{ types: ['room'], vault: id(100) }] });
+	expect(published[1][0]).toEqual({ tier: 'now', entries: [id(10), id(11), room], queries: [{ types: ['room'], vault: id(100), newest: 2 }] });
 	expect(published.length).toBe(leaves.length + 1);
 	// the window went to the local query, newest first
 	expect(d.calls.find((c) => c.op === 'query')).toMatchObject({ order: [['created', 'desc']], limit: 2 });

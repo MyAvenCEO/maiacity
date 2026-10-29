@@ -1,6 +1,6 @@
 ---
 name: devx-speed
-description: "How to work fast in this repository with many Claude threads at once: one task branch per thread, a one-command local check, a collector that lands 25-50 tasks in one PR with one CI run, and the measure-change-measure cycle for developer speed. Use when starting or finishing any code task here, when acting as a goal collector, when splitting work across threads or helpers, or when asked to make development, CI or shipping faster."
+description: "How to work fast in this repository with many Claude threads at once: one task branch per thread, a one-command local check, the Goal thread that lands 25-50 tasks in one PR with one CI run, and the measure-change-measure cycle for developer speed. Use when starting or finishing any code task here, when leading a Goal thread, when splitting work across threads or helpers, or when asked to make development, CI or shipping faster."
 allowed-tools: Read Write Edit Grep Glob Bash
 ---
 
@@ -19,7 +19,7 @@ once per goal of 25-50 tasks (repository `CLAUDE.md`). Measured baseline and his
   ~10 min of Rust before its first test (~4 min with the dev cache).
 
 So the wins are (1) no CI per task, (2) parallelism across threads (each has its own box), not across helpers in a
-box, (3) a collector that lands branches in seconds, and (4) checks that run only what a task touched.
+box, (3) a Goal thread that lands branches in seconds, and (4) checks that run only what a task touched.
 
 ## Coordinator: how to size and hand out work (Samuel 2026-10-27)
 
@@ -45,12 +45,13 @@ Sizing rule: keep that start under ~20% of a thread's work.
   searching, JS, docs and measuring.
 - **How many at once:** as many as there are independent, big-enough chunks, typically 5-15 threads in flight, each
   doing several tasks. Fewer threads also means fewer replies for Samuel to read.
-- **Name the collector up front.** Task threads report "branch ready" to the coordinator, which routes it to the
-  collector; they never merge to main or mark PRs ready.
+- **The Goal thread leads, collects and ships** (Samuel 2026-10-29: no separate collector role). Each goal has one
+  thread; Goal N+1 gets a new one when it starts. Task threads report "branch ready" to it (or to the coordinator, which
+  routes it there); they never merge to main or mark PRs ready.
 - **A goal ships when its metric is met, not on a clock** (Samuel 2026-10-28: "define a batch metric instead, or
   manually trigger by me"; "goal" since his rename the same day). Each goal starts with one line: its metric (e.g. "130k catch-up under 60 s, suite green", or "25
   tasks in") and its tasks. It ships when that goal is met, or when Samuel says ship. Not on a timer. Stragglers never
-  hold it: a lane that misses the goal goes in the next goal. Fast feedback without CI: the collector merges each
+  hold it: a lane that misses the goal goes in the next goal. Fast feedback without CI: the Goal thread merges each
   branch into the draft goal the moment it's reported ready (`collect.mjs --check`, no CI), so conflicts and
   local failures go back to the thread within minutes. That check is deliberately small (`check.mjs --merge`: the
   merge in seconds, JS tests, svelte-check ~65 s, `cargo check` ~6-40 s per crate) and never re-runs a thread's Rust
@@ -71,7 +72,7 @@ Sizing rule: keep that start under ~20% of a thread's work.
 3. Commit, push the branch. A draft PR is fine (drafts run no CI); never mark it ready, never dispatch a workflow
    for a task, never merge it yourself.
 4. Tell the coordinator the branch is ready for the goal, with one line on what it does and what you checked.
-5. If the collector reports a conflict with your branch: `git merge origin/main` (or the collector's branch) into
+5. If the Goal thread reports a conflict with your branch: `git merge origin/main` (or the Goal thread's branch) into
    yours, fix, check, push, say so. Otherwise don't merge main into a task branch "just in case".
 
 ## Helpers inside one thread
@@ -81,13 +82,13 @@ Sizing rule: keep that start under ~20% of a thread's work.
 - No extra git worktrees for Rust work: each one starts a cold build folder (minutes, gigabytes).
 - Work that needs several Rust builds at once belongs in several threads (ask the coordinator), not in helpers.
 
-## Collector: one PR per goal
+## Goal thread: one PR per goal
 
 ```
-git fetch origin && git checkout <collector-branch>
+git fetch origin && git checkout <goal-branch>
 bun aven/ops/devx/collect.mjs --plan --drafts          # or name the branches; seconds, changes nothing
 bun aven/ops/devx/collect.mjs --check --drafts         # merges the clean ones, then the goal's local check
-git push -u origin <collector-branch>
+git push -u origin <goal-branch>
 bun aven/ops/devx/collect.mjs --tasks                  # "Task: <branch>" lines for the PR body
 ```
 
@@ -97,7 +98,7 @@ bun aven/ops/devx/collect.mjs --tasks                  # "Task: <branch>" lines 
 - When the goal is in (25-50 tasks, or the coordinator says so): put the `Task:` lines in the PR body, mark the PR
   ready, one CI run, fix only the culprits in one round, land it with a merge commit (never a squash: main keeps
   every task's commits) and an explicit message (title + body with the `Task:` lines, never a `[skip ci]`), then close the task PRs naming the final PR, and merge main back into the
-  collector branch.
+  goal's branch.
 - **Time budget: CI and release under 10 minutes each** (Samuel 2026-10-27). The last job of `ci.yml` and of
   `release.yml` names the run's slowest jobs and steps in its summary and warns when the run went over
   (`aven/ops/ci/budget.mjs`); fix that first. What blew it on 2026-10-27 (35 min): a 100k-edit scale test in the core
@@ -118,7 +119,7 @@ bun aven/ops/devx/collect.mjs --tasks                  # "Task: <branch>" lines 
   goes in as a count (pages, bytes, index rows, log edits read; bytes an edit) or on simulated time (tokio's paused
   clock, `avendb-net`'s `sim` link: a link's use, a live edit's delay), as a plain test with its limit in the test. The
   `#[ignore]` benches stay for a by-hand look.
-- **The fresh-device check before ready** (Goal 7 P2): the collector runs `node aven/ops/devx/fresh-device.mjs` on
+- **The fresh-device check before ready** (Goal 7 P2): the Goal thread runs `node aven/ops/devx/fresh-device.mjs` on
   its branch before the goal PR goes ready. A local peer, fresh browser profiles sharing one software passkey: found,
   write 2,000 todos, sign in on a fresh device, catch up, live both ways, unlock after a restart, the peer killed
   mid-pull and back, CPU settled; each step against its budget (`BUDGETS`), exit 1 on a miss. First run ~2 min plus
@@ -127,7 +128,7 @@ bun aven/ops/devx/collect.mjs --tasks                  # "Task: <branch>" lines 
   its CI). Late branches go in the next goal; `--late` only for a fix this run needs.
 - **Long benches and scale runs never on a thread's 4-core box** (30-min 130k runs held its cargo lock for half an
   hour, 2026-10-28): keep a test's size small enough for the shard, and a bench's for a machine of its own.
-- A failing task in the goal: revert its merge commit on the collector branch (`git revert -m 1 <merge>`), push,
+- A failing task in the goal: revert its merge commit on the goal's branch (`git revert -m 1 <merge>`), push,
   tell its thread; don't hold the goal for it.
 
 ## Improvement cycle: measure, change one thing, measure again
@@ -136,7 +137,7 @@ bun aven/ops/devx/collect.mjs --tasks                  # "Task: <branch>" lines 
    day, PRs, open-to-merge, CI runner minutes per task, cancelled share, release time). Compare windows of the same
    length and kind (weekday vs weekday, same thread count).
 2. Find the biggest wait: CI minutes per task, conflicts per goal, time a thread waits on a check, cold starts,
-   collector time, Samuel's review queue. Time one real example end to end before changing anything.
+   Goal thread time, Samuel's review queue. Time one real example end to end before changing anything.
 3. Change one thing, on a task branch like any other work.
 4. Measure again over a window after the change landed; write a row into `docs/devx/cycles.md` (date, change,
    before, after, verdict). Keep what moved the number, revert what didn't.

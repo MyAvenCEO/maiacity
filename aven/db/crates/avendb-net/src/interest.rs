@@ -56,8 +56,11 @@ pub(crate) fn selector(q: &crate::discovery::Query) -> Selector {
 struct Scope {
     revision: u64,
     wants: Vec<Want>,
-    /// Entries peers named for the scope's selectors, at the tier of its best selector.
+    /// Entries peers named for the scope's selectors of every entry, at the tier of its best selector.
     discovered: Vec<LogId>,
+    /// Of each of its windowed selectors (`Query::newest`), the newest entries peers named for it, the newest first, at
+    /// most its window (Lean `Window.keep`), at the same tier.
+    windows: Vec<(crate::discovery::Query, Vec<LogId>)>,
     /// When it last changed, by `Interests::clock`: the oldest makes room for a new scope.
     changed: u64,
 }
@@ -82,11 +85,20 @@ impl Scope {
     }
     fn at(&self, tier: Tier) -> Vec<LogId> {
         let mut out: Vec<LogId> = self.wants.iter().filter(|w| w.tier == tier).flat_map(|w| w.entries.iter().copied()).collect();
-        if self.discovery_tier() == Some(tier) { out.extend(self.discovered.iter().copied()); }
+        if self.discovery_tier() == Some(tier) {
+            out.extend(self.windowed());
+            out.extend(self.discovered.iter().copied());
+        }
         out
     }
-    fn named(&self) -> usize { self.wants.iter().map(|w| w.entries.len()).sum::<usize>() + self.discovered.len() }
-    fn holds(&self, log: &LogId) -> bool { self.wants.iter().any(|w| w.entries.contains(log)) || self.discovered.contains(log) }
+    /// The entries its windows keep, each window's newest first.
+    fn windowed(&self) -> impl Iterator<Item = LogId> + '_ { self.windows.iter().flat_map(|(_, w)| w.iter().copied()) }
+    fn named(&self) -> usize {
+        self.wants.iter().map(|w| w.entries.len()).sum::<usize>() + self.discovered.len() + self.windowed().count()
+    }
+    fn holds(&self, log: &LogId) -> bool {
+        self.wants.iter().any(|w| w.entries.contains(log)) || self.discovered.contains(log) || self.windowed().any(|l| l == *log)
+    }
 }
 
 /// The type of the entries that say what each page wants (maiaCITY's manifests, game/code/sources/manifests.js): what
@@ -116,8 +128,9 @@ impl Interests {
             if let Some(oldest) = self.scopes.iter().min_by_key(|(_, s)| s.changed).map(|(k, _)| k.clone()) { self.scopes.remove(&oldest); }
         }
         self.clock += 1;
-        let mut next = Scope { revision, wants, discovered: vec![], changed: self.clock };
+        let mut next = Scope { revision, wants, discovered: vec![], windows: vec![], changed: self.clock };
         if let Some(held) = held.filter(|h| h.live() && h.queries() == next.queries()) {
+            next.windows = held.windows;
             let kept: Vec<_> = held.discovered.into_iter().filter(|l| !next.holds(l)).collect();
             let room = MOST_ENTRIES.saturating_sub(next.named());
             next.discovered = kept.into_iter().take(room).collect();
@@ -160,7 +173,7 @@ impl Interests {
     }
     pub(crate) fn dependency_entries(&self, scope: &str, revision: u64) -> Vec<LogId> {
         self.scopes.get(scope).filter(|s| s.revision == revision)
-            .map(|s| s.ordered().into_iter().flat_map(|w| w.entries.iter().copied()).chain(s.discovered.iter().copied()).collect())
+            .map(|s| s.ordered().into_iter().flat_map(|w| w.entries.iter().copied()).chain(s.windowed()).chain(s.discovered.iter().copied()).collect())
             .unwrap_or_default()
     }
 
@@ -171,6 +184,22 @@ impl Interests {
             if held.named() >= MOST_ENTRIES { break; }
             if !held.holds(log) { held.discovered.push(*log); }
         }
+        true
+    }
+
+    /// The newest entries peers named for scope `scope`'s windowed selector `query` at `revision`, the newest first: they
+    /// replace those it named before, at most its window, and those the scope names already otherwise left out. False
+    /// once that revision is gone.
+    pub(crate) fn found_newest(&mut self, scope: &str, revision: u64, query: &crate::discovery::Query, logs: Vec<LogId>) -> bool {
+        let Some(held) = self.scopes.get_mut(scope).filter(|s| s.revision == revision && s.live()) else { return false };
+        let n = query.newest.map_or(0, usize::from);
+        held.windows.retain(|(q, _)| q != query);
+        let named: Vec<LogId> = logs.into_iter()
+            .filter(|l| !held.wants.iter().any(|w| w.entries.contains(l)) && !held.windowed().any(|w| w == *l))
+            .take(n.min(MOST_ENTRIES.saturating_sub(held.named())))
+            .collect();
+        held.discovered.retain(|l| !named.contains(l));
+        held.windows.push((query.clone(), named));
         true
     }
 
@@ -217,7 +246,7 @@ mod tests {
     use crate::discovery::Query;
     fn log(n: u8) -> LogId { LogId::Entry(EntryId([n; 32])) }
     fn want(tier: Tier, ids: &[u8]) -> Want { Want { tier, entries: ids.iter().map(|&n| log(n)).collect(), queries: vec![] } }
-    fn query(ty: &str) -> Vec<Query> { vec![Query { types: vec![ty.into()], vault: None }] }
+    fn query(ty: &str) -> Vec<Query> { vec![Query { types: vec![ty.into()], vault: None, newest: None }] }
 
     #[test]
     fn higher_tiers_come_first_and_each_entry_once_at_its_best_tier() {
@@ -281,22 +310,39 @@ mod tests {
     }
 
     #[test]
+    fn a_window_keeps_the_newest_peers_named_replacing_what_it_kept_before() {
+        let mut i = Interests::default();
+        let window = Query { types: vec!["message".into()], vault: None, newest: Some(2) };
+        let messages = Want { tier: Tier::Now, entries: vec![], queries: vec![window.clone()] };
+        i.replace("v".into(), 1, vec![want(Tier::Now, &[1]), messages.clone()]).unwrap();
+        assert!(i.found_newest("v", 1, &window, vec![log(9), log(1), log(8), log(7)]));
+        assert_eq!(i.entries(), vec![log(1), log(9), log(8)], "the newest two the view does not name already");
+        assert!(i.found_newest("v", 1, &window, vec![log(6), log(9)]));
+        assert_eq!(i.entries(), vec![log(1), log(6), log(9)], "a newer answer replaces the window");
+        i.replace("v".into(), 2, vec![want(Tier::Now, &[3]), messages]).unwrap();
+        assert_eq!(i.entries(), vec![log(3), log(6), log(9)], "an unchanged window keeps what peers named");
+        assert!(!i.found_newest("v", 1, &window, vec![log(5)]), "old work stays cancelled");
+        i.replace("v".into(), 3, vec![Want { tier: Tier::Now, entries: vec![], queries: query("message") }]).unwrap();
+        assert!(i.entries().is_empty(), "a changed window drops them");
+    }
+
+    #[test]
     fn manifests_peers_name_are_kept_while_a_view_asks_for_them_and_go_with_the_scopes() {
         let mut i = Interests::default();
-        let manifests = vec![Query { types: vec![MANIFEST_TYPE.into()], vault: None }];
+        let manifests = vec![Query { types: vec![MANIFEST_TYPE.into()], vault: None, newest: None }];
         i.replace("v".into(), 1, vec![Want { tier: Tier::Now, entries: vec![], queries: manifests }]).unwrap();
         i.found_manifests(&[log(7), log(8)]);
         assert_eq!(i.manifests(), [log(7), log(8)].into());
         i.replace("v".into(), 2, vec![want(Tier::Now, &[1])]).unwrap();
         assert!(i.manifests().is_empty(), "no view asks for manifests now");
         i.release_all();
-        i.replace("v".into(), 3, vec![Want { tier: Tier::Now, entries: vec![], queries: vec![Query { types: vec![MANIFEST_TYPE.into()], vault: None }] }]).unwrap();
+        i.replace("v".into(), 3, vec![Want { tier: Tier::Now, entries: vec![], queries: vec![Query { types: vec![MANIFEST_TYPE.into()], vault: None, newest: None }] }]).unwrap();
         assert!(i.manifests().is_empty(), "released with the scopes");
     }
 
     #[test]
     fn a_want_is_a_selector_found_blind_by_its_types() {
-        let q = Query { types: vec!["room".into(), MANIFEST_TYPE.into()], vault: None };
+        let q = Query { types: vec!["room".into(), MANIFEST_TYPE.into()], vault: None, newest: None };
         let labels = selector(&q).blind().expect("a type selector is found blind");
         assert_eq!(labels, vec![Label::Type(Sym::new("room")), Label::Type(Sym::new(MANIFEST_TYPE))]);
         let mut i = Interests::default();

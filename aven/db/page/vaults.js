@@ -148,10 +148,10 @@ import { contextVaults } from './context.js';
 /**
  * An access request an agent device on the Mac left (avendb-device's `agent`, ./AccessRequest.svelte): its device's
  * name (agentClaude) and key, its offer while it belongs to no vault yet, the level it asks for, why, the vaults it
- * names, and whether its device runs now, to cosign its joining. It names no aven: an agent always joins its person's
- * one aven.
+ * names, whether its device runs now, to cosign its joining at once, and whether its person approved it while it was
+ * away (`granted`), which it joins by as it next runs. It names no aven: an agent always joins its person's one aven.
  * @typedef {{ name: string, kind: string, device: string, offer: string | null, level: string, why: string,
- *   vaults: string[], online: boolean }} AccessRequestView
+ *   vaults: string[], online: boolean, granted?: boolean }} AccessRequestView
  */
 
 /**

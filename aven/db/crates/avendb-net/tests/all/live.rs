@@ -205,34 +205,56 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     // its seed, which shares over it are sealed to, is a new McEliece key; and it gives the server relay on all of it
     let (owners, nonce) = (vec![Principal::Vault(coop)], 7);
     let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
-    let garden = w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("the Garden");
-    let garden = VaultId::from(garden);
+    let founded = w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("the Garden");
+    let garden = VaultId::from(founded);
     relay_on(&mut w, garden);
     let server_holds = w.lab.blob_ids(w.server);
     let new: Vec<BlobId> = w.lab.blob_ids(w.mac_a).into_iter().filter(|b| !server_holds.contains(b)).collect();
     assert!(!new.is_empty(), "the Garden's seed brings McEliece keys the server lacks");
     let key = |b| w.lab.blob(w.mac_a, b).expect("a key").to_vec();
     let keys: Vec<(BlobId, Vec<u8>)> = new.iter().map(|&b| (b, key(b))).collect();
-    let (mac_a, passkey_a, server_d, mac_b, passkey_b, mac_c, passkey_c) =
-        (w.mac_a, w.passkey_a, w.server, w.mac_b, w.passkey_b, w.mac_c, w.passkey_c);
+    let (bob_secret, carol_secret) = (*w.lab.endpoint_secret(w.mac_b).expect("Bob's Mac's key"), *w.lab.endpoint_secret(w.mac_c).expect("Carol's"));
+    let (mac_a, passkey_a, server_d, mac_b, mac_c) = (w.mac_a, w.passkey_a, w.server, w.mac_b, w.mac_c);
     let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
     let server = node(&mut w, server_d, &[], 2).await;
-    let bob = node(&mut w, mac_b, &[passkey_b], 3).await;
-    let carol = node(&mut w, mac_c, &[passkey_c], 4).await;
-    meet(&[&mac, &server, &bob, &carol]);
-    until("the server fetches each new McEliece key with the Garden's log", || holds(&server, new.clone())).await;
-    until("and Bob's Mac", || holds(&bob, new.clone())).await;
-    until("which opens the Garden's seed", || bob.read(move |lab, me| lab.opens(me, KeyFam::Seed(garden)))).await;
-    assert!(!holds(&carol, new.clone()).await, "Carol's Mac, outside the coop, holds none of them");
-    // by hand: over iroh-blobs, the server, which fetched every new key, hands each to Bob's Mac and to no other; each
-    // asks the server first, so its hello proves it there. (Not Alice's Mac: it offers a key only once a reply of its
-    // own named it, and the server may have taken some keys from another peer first.)
-    bob.sync_with(server.id()).await.expect("Bob's Mac asks the server, and its hello proves it");
-    carol.sync_with(server.id()).await.expect("Carol's Mac asks the server, and its hello proves it");
+    meet(&[&mac, &server]);
+    // a key is needed only to seal to its signer (`LazyBoxes.lean` `reads_without_keys`): the server, which relays the
+    // Garden and seals to no one, takes its log and none of its keys
+    let relays = move |lab: &Lab, me| lab.log(me).ids().contains(&founded);
+    until("the server takes the Garden's log", || server.read(relays)).await;
+    assert!(!holds(&server, new.clone()).await, "the server holds none of its keys");
+    // by hand: a device asks Alice's Mac for the keys in a request, its hello proving it on that connection; Alice's
+    // Mac names them to Bob's Mac, acting for the coop, and to no other, and hands each over iroh-blobs to it alone
+    let lab = &w.lab;
+    let asks = |secret: [u8; 32], d: SignerId| {
+        let (to, hello) = (mac.addr(), move |exporter: &[u8; 32]| lab.hello(d, exporter, true).expect("a hello").to_wire());
+        let mut wants = new.clone();
+        wants.sort();
+        async move {
+            let raw = client(secret, pq_provider()).await;
+            let conn = raw.connect(to, ALPN).await.expect("it connects");
+            let exporter = exporter(&conn).expect("an exporter");
+            let (mut send, mut recv) = conn.open_bi().await.expect("a stream");
+            send.write_all(&hello(&exporter)).await.expect("its hello");
+            send.finish().expect("and ends");
+            recv.read_to_end(64 << 10).await.expect("a hello back");
+            let request = avendb::wire::Request { wants, ..Default::default() };
+            let (mut send, mut recv) = conn.open_bi().await.expect("a stream");
+            send.write_all(&[0]).await.expect("its kind");
+            send.write_all(&request.to_wire()).await.expect("its request");
+            send.finish().expect("and ends");
+            let reply = Reply::from_wire(&recv.read_to_end(64 << 20).await.expect("a reply")).expect("a reply");
+            (raw, conn, reply.blobs)
+        }
+    };
+    let (bob, _bobs, named) = asks(bob_secret, mac_b).await;
+    assert_eq!(named.iter().copied().collect::<std::collections::BTreeSet<_>>(), new.iter().copied().collect(), "named to Bob's Mac");
+    let (carol, _carols, named) = asks(carol_secret, mac_c).await;
+    assert!(named.is_empty(), "and to Carol's Mac, outside the coop, none");
     for (b, key) in &keys {
         let hash = Hash::new(key);
         let fetch = |from: &Endpoint| {
-            let (from, to) = (from.clone(), server.addr());
+            let (from, to) = (from.clone(), mac.addr());
             async move {
                 let conn = from.connect(to, iroh_blobs::ALPN).await.ok()?;
                 let store = MemStore::new();
@@ -240,19 +262,19 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
                 store.get_bytes(hash).await.ok()
             }
         };
-        let got = fetch(bob.endpoint()).await.expect("Bob's Mac fetches the key by hand");
+        let got = fetch(&bob).await.expect("Bob's Mac fetches the key by hand");
         assert_eq!((BlobId::of(&got), &got[..]), (*b, &key[..]), "the very key");
-        assert!(fetch(carol.endpoint()).await.is_none(), "Carol's Mac, its hello proven, may not fetch it");
+        assert!(fetch(&carol).await.is_none(), "Carol's Mac, its hello proven, may not fetch it");
         let unproven = client([9; 32], pq_provider()).await;
         assert!(fetch(&unproven).await.is_none(), "nor may an endpoint no hello proved");
     }
 }
 
-/// A peer sends on edits it took before the McEliece keys they name came (those come after its pages), naming none of
-/// them: the device that took the edits there holds them waiting for those keys, as for a parent, so a peer that holds
-/// them differs from it, is asked, and hands them over (`holdings::Logs`).
+/// A peer sends on edits without the McEliece keys they name: the device that took them there holds them for good all
+/// the same, as reading needs no key (`LazyBoxes.lean` `reads_without_keys`, in place of A3), so it lacks nothing of a
+/// peer that holds the keys, asks it for none of them again, and takes none: it seals to none of their signers.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn keys_a_peer_sent_edits_without_come_from_another_peer() {
+async fn edits_taken_without_their_keys_are_held_for_good_and_bring_no_key() {
     let mut w = world();
     let coop = handbook_ready(&mut w);
     let (owners, nonce) = (vec![Principal::Vault(coop)], 7);
@@ -278,7 +300,9 @@ async fn keys_a_peer_sent_edits_without_come_from_another_peer() {
     assert!(!holds(&server, new.clone()).await, "and none of its keys: Bob's Mac named none");
     let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
     meet(&[&mac, &server, &bob]);
-    until("the server brings them from Alice's Mac", || holds(&server, new.clone())).await;
+    let lacks_nothing = || async { server.sync_with(mac.id()).await.is_ok() && server.synced().await["behind"] == 0 };
+    until("the server lacks no log of Alice's Mac", lacks_nothing).await;
+    assert!(!holds(&server, new.clone()).await, "and holds none of the keys: it seals to none of their signers");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -401,6 +425,38 @@ async fn a_views_now_tier_is_asked_alone_before_any_bulk_page() {
     let bulk = askings.iter().filter(|a| a["stage"] == "rest").filter_map(|a| a["at"].as_u64()).min();
     assert!(bulk.is_none_or(|bulk| first_now <= bulk), "before any bulk asking: {askings:?}");
     until("and every other note after it", || async { kept(&phone, &notes).await == NOTES }).await;
+    mac.shutdown().await.expect("shut down");
+    phone.shutdown().await.expect("shut down");
+}
+
+/// A now asking whose pages came while its device's Lab was held by another turn longer than ten seconds ends once it
+/// took them, counted, not cut and asked again (fresh10, 2026-10-29: every now asking failed at 10 s with 0 new while
+/// 4,081 of their edits were taken, the device's turns held up to 12.6 s by saves).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_now_asking_held_up_by_a_long_lab_turn_ends_with_what_it_took() {
+    let mut w = world();
+    let (mac_a, phone_a, alice) = (w.mac_a, w.phone_a, w.alice);
+    w.lab.sync_all(0);
+    let notes: Vec<EntryId> = (0..40)
+        .map(|i| w.lab.create(mac_a, alice, alice, "note", &[], document(&format!("Note {i}"), "In May.", mac_a)).expect("a note"))
+        .collect();
+    // pages of a few edits each, so that the now tier's askings take many
+    let mac = Node::spawn(w.lab.split(mac_a, &[], [1; 32]), mac_a, Options { page: 4 << 10, ..Options::local() }).await.expect("a node");
+    let phone = Node::spawn(w.lab.split(phone_a, &[], [2; 32]), phone_a, Options { window: 1, ..Options::local() }).await.expect("a node");
+    let entries: Vec<String> = notes.iter().map(|n| n.to_hex()).collect();
+    let want = serde_json::json!({"op": "interest", "scope": "2e".repeat(16), "revision": 1, "wants": [{"tier": "now", "entries": entries}]});
+    assert_eq!(phone.op(want).await.expect("an interest")["ok"]["accepted"], true);
+    meet(&[&mac, &phone]);
+    // once the iPhone asked a page, a turn of its Lab holds it past the ten seconds an asking had
+    until("the iPhone asks a page", || async { phone.synced().await["pages"].as_u64() > Some(0) }).await;
+    phone.read(|_, _| std::thread::sleep(std::time::Duration::from_millis(10_500))).await;
+    until("the iPhone keeps the notes its view wants", || async { kept(&phone, &notes).await == notes.len() }).await;
+    let net = phone.op(serde_json::json!({"op": "network"})).await.expect("network");
+    let askings = net["ok"]["askings"].as_array().expect("its askings").clone();
+    let now: Vec<_> = askings.iter().filter(|a| a["stage"] == "now").collect();
+    assert!(!now.is_empty(), "the now tier was asked: {askings:?}");
+    assert!(now.iter().all(|a| a["failed"] == false), "no now asking was cut: {askings:?}");
+    assert!(now.iter().any(|a| a["new"].as_u64() > Some(0)), "and what it took is counted: {askings:?}");
     mac.shutdown().await.expect("shut down");
     phone.shutdown().await.expect("shut down");
 }

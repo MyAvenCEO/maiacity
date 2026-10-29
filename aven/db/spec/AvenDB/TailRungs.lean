@@ -15,6 +15,10 @@ audience alone (`removes_aud`), which an inert replay hides from no edit that st
 there is the same whatever the edits after it (`kept_rung`). Then stepping on from the rung is stepping on from a tail
 there (`V4_tail_replays`): the replay of every edit (`V4_rung_replays`).
 
+A place before a revocation or a root handed on keeps its state too where the edits after it leave the removals chosen
+and what each hides from the edits before it as they were (`resolve_from_a_place`): a page of writes drafted before a
+revocation replays from the mark before it, not every edit.
+
 Nothing here bounds how far back a rung is. A replay keeps its rungs near its place as states and, further back, a
 mark every 4,096 places of its order (`Marks` in `policy.rs`), as bytes its stored view keeps too: each mark is a rung,
 the state the edits before it made when it was kept, so `V4_rung_replays` is the law of stepping on from it, and a late
@@ -61,6 +65,23 @@ theorem kept_rung {p s₀ s : List Edit}
   · unfold stripTail
     rw [hiddenAt_append', hiddenAt_append', hiddenAt_strip, hiddenAt_strip, plain_hiddenAt_moves _ _ _ hm,
       plain_hiddenAt_moves _ _ _ hm₀, cutsAt_congr hrem hrm]
+
+/-- **Resolve from a place** (Goal 9, 2026-10-29; written, not yet built): what the edits `p` before a place make
+    turns only on which of them are removals that stand and on what the removals chosen after them hide from each of
+    them, not on whether those are moves. So a place before a revocation or a root handed on keeps its state where the
+    edits after it changed neither: none of the new edits says who may do what or is a removal, so the same removals
+    are chosen (`V2_removals_read_trust`) and each takes away what it took (`removes` reads the grants alone). That is
+    `on_rung`'s rung or mark before the last revocation in `policy.rs`, which `kept_rung` (every removal after the
+    place a move) left out: 45 replays of every edit on one Mac's catch-up, a page drafted before a revocation each. -/
+theorem resolve_from_a_place {p s₀ s : List Edit}
+    (hrem : ∀ x ∈ p, (resolve (p ++ s)).any (·.id == x.id) = (resolve (p ++ s₀)).any (·.id == x.id))
+    (hhid : ∀ q ∈ p.zipIdx, hiddenAt (stripTail (p ++ s) (resolve (p ++ s)) p s) q.2 q.1 =
+      hiddenAt (stripTail (p ++ s₀) (resolve (p ++ s₀)) p s₀) q.2 q.1)
+    (hi₀ : runFrom (resolve (p ++ s₀)) (stripTail (p ++ s₀) (resolve (p ++ s₀)) p s₀) {} p.zipIdx = kept p s₀)
+    (hi : runFrom (resolve (p ++ s)) (stripTail (p ++ s) (resolve (p ++ s)) p s) {} p.zipIdx = kept p s) :
+    kept p s = kept p s₀ := by
+  rw [← hi, ← hi₀]
+  exact runFrom_congr _ _ _ _ {} p.zipIdx fun q hq => ⟨hrem q.1 (List.fst_mem_of_mem_zipIdx hq), hhid q hq⟩
 
 /-- **V4r (a late page replays from a rung)**: a device that kept, at a place it had, `p` before it, the state `k`
     the edits `p ++ s₀` it held then made there, and holds `p ++ s` now, every removal after the place a move, and

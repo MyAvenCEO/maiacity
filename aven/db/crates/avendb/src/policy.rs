@@ -3821,6 +3821,19 @@ impl Running {
     fn new<E: AsRef<Edit>>(from: State, edits: &[E], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> Running {
         let shares = std::cell::OnceCell::new();
         let shares = || shares.get_or_init(|| shares_issued(edits.iter().map(AsRef::as_ref).zip(ids.iter().copied()))).clone();
+        Running::new_issued(from, edits, ids, rem, states, shares)
+    }
+
+    /// `new`, what a revocation of a grant takes away read among the grants `shares` issues: those of every edit of the
+    /// order where `edits` are its last ones (`TailRun`), not of those alone.
+    fn new_issued<E: AsRef<Edit>>(
+        from: State,
+        edits: &[E],
+        ids: &[EditId],
+        rem: &HashSet<EditId>,
+        states: bool,
+        shares: impl Fn() -> Vec<Issue>,
+    ) -> Running {
         // the moves apart, looked up by entry: an edit is checked again with them hidden only where one would answer
         // otherwise (`Late`), not scanned for at every edit
         let mut cuts: Vec<Cut> = vec![];
@@ -3828,7 +3841,7 @@ impl Running {
         for (at, r) in edits.iter().enumerate().filter(|(i, _)| rem.contains(&ids[*i])) {
             let r = r.as_ref();
             let keep: HashSet<EditId> = r.action.keep().unwrap_or(&[]).iter().copied().collect();
-            let facts = removes_among(r, shares);
+            let facts = removes_among(r, &shares);
             if !facts.is_empty() && facts.iter().all(|f| matches!(f, Fact::Audience(..))) {
                 let keep = Arc::new(keep);
                 for f in facts {
@@ -4788,7 +4801,11 @@ fn on_rung(mut was: Replay, edits: &[Edit], fresh: &[Edit], ids: &[EditId], reac
     }
     let held = (!affected.is_empty()).then(|| was.ids.iter().position(|id| affected.contains(id))).flatten();
     let first = held.map_or(first, |i| first.min(key(i)));
-    let before = |p: usize| p == 0 || key(p - 1) < first;
+    // a place before a revocation or a root handed on is one to step on from where the new edits leave which removals
+    // stand, and what each takes away, as they were: none of them says who may do what (`resolve_from_a_place`)
+    let removed = tail.cands.iter().max().map_or(0, |&c| c + 1);
+    let resolved = fresh.iter().all(|e| !e.action.is_trust() && !e.is_removal());
+    let before = |p: usize| (p == 0 || key(p - 1) < first) && (p >= removed || resolved);
     let rung = tail.rungs.iter().rposition(|r| {
         n - r.at <= RUNG_REACH && before(r.at) && r.base.is_some() == tail.base.is_some()
     });
@@ -4929,9 +4946,9 @@ impl TailRun {
         // removals that say who may do what: the whole is replayed. A first sync asks those logs first
         // (`ask_differing`), so its pages of entries' edits bring moves alone. So with the other removal exits here
         // and after the run (a grant resting on a revoked one, removals ranking otherwise, a move keeping an edit out):
-        // which removals stand is chosen by rank among every removal (`resolve`), and a rung is one only past the last
-        // removal (`hrem`, `hm` in `TailRungs.lean`), so none steps on from a rung or mark until a law says the removals
-        // before a place keep their standing when one comes after it ("resolve from a place", Goal 9)
+        // which removals stand is chosen by rank among every removal (`resolve`): a new one may choose otherwise, so it
+        // replays every edit; a place before the removals it holds is one to step on from only where no new edit says
+        // who may do what (`resolve_from_a_place` in `TailRungs.lean`, `on_rung`)
         if fresh.iter().any(|e| e.is_removal() && !moving(e)) {
             return Err("replay whole: a revocation or a root handed on came");
         }
@@ -5013,7 +5030,19 @@ impl TailRun {
         // replays the few after it, not the last `TAIL` again and again
         let streamed = if fresh.len() >= STREAM { past_new.saturating_sub(MARGIN) } else { 0 };
         let to = tail_edits.len().saturating_sub(TAIL).max(streamed);
-        let again = (to >= MOVE).then_some(to);
+        // from a place before a revocation or a root handed on (`on_rung`, where no new edit says who may do what):
+        // those that stood stand again, each hiding what it took away from the edits before it as it did, and the
+        // place it leaves is past the last of them, as every place is (`resolve_from_a_place`)
+        let removal = |e: &Edit| e.is_removal() && !moving(e);
+        let last_removal = tail_edits.iter().rposition(|e| removal(e));
+        let standing: HashSet<EditId> = (at..was.len())
+            .filter(|&i| was.stood[i] && removal(was.edit(edits, i)))
+            .map(|i| was.ids[i])
+            .collect();
+        let again = match last_removal {
+            Some(r) => Some(to.max(r + 1)),
+            None => (to >= MOVE).then_some(to),
+        };
         let none = HashSet::new();
         let mut base = None;
         if !tail.tried.is_empty() {
@@ -5032,9 +5061,16 @@ impl TailRun {
         // the moves among its last edits, held or new, are tried all at once again (`resolve_moves`): they must all
         // stand, and be inert, as the place steps on from only past the others (`replay_ids`, `V4_tail_replays`,
         // `V4_tail_moves`)
-        let moves: HashSet<EditId> =
+        let mut moves: HashSet<EditId> =
             tail_edits.iter().zip(&tail_ids).filter(|(e, _)| moving(e)).map(|(_, id)| *id).collect();
-        let running = Running::new(tail.state.clone(), &tail_edits, &tail_ids, &moves, false);
+        moves.extend(standing.iter().copied());
+        let running = if standing.is_empty() {
+            Running::new(tail.state.clone(), &tail_edits, &tail_ids, &moves, false)
+        } else {
+            // what a revocation of a grant takes away is read among every grant of the order, not the last edits'
+            let issued = shares_issued(was.order.iter().zip(&was.ids).map(|(&p, id)| (&edits[p], *id)));
+            Running::new_issued(tail.state.clone(), &tail_edits, &tail_ids, &moves, false, || issued.clone())
+        };
         let fresh = ids.to_vec();
         Ok(TailRun { n: edits.len(), held, fresh, at, order: tail_order, ids: tail_ids, again, base, moves, covered, running })
     }
@@ -5059,12 +5095,16 @@ impl TailRun {
     /// The replay, once it ran every edit (`step`), `was` being the one it steps on and `edits` the log's; why not and
     /// `was` as it was where its moves didn't all stand, or kept an edit out.
     pub fn finish(self, was: Replay, edits: &[Edit]) -> Result<Replay, (Replay, &'static str)> {
-        let TailRun { n, held, fresh: ids, at, order: tail_order, ids: tail_ids, again, base, covered, running, .. } = self;
+        let TailRun { n, held, fresh: ids, at, order: tail_order, ids: tail_ids, again, base, moves, covered, running, .. } = self;
         let (edits, fresh) = (&edits[..n], &edits[held..n]);
         let run = running.finish(tail_order.len(), again);
         let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
         if tail_order.iter().zip(&run.stood).any(|(&p, s)| moving(&edits[p]) && !s) {
             return Err((was, "replay whole: a move among its last edits stood not"));
+        }
+        // a revocation or a root handed on after a place before it stands again as it stood (`resolve_from_a_place`)
+        if tail_ids.iter().zip(&run.stood).any(|(id, s)| !s && moves.contains(id)) {
+            return Err((was, "replay whole: a removal after its place stood not"));
         }
         if run.moved_out.is_some() {
             return Err((was, "replay whole: a move among its last edits kept a new edit out"));
@@ -5081,6 +5121,8 @@ impl TailRun {
             }
         }
         acts.extend(run.acts);
+        // the removals after the place it stepped on from, by their places, which the new edits among them move on
+        let renamed: HashMap<usize, EditId> = tail.cands.iter().filter(|&&c| c >= at).map(|&c| (c, all[c])).collect();
         order.truncate(at);
         all.truncate(at);
         stood.truncate(at);
@@ -5095,6 +5137,12 @@ impl TailRun {
         order.extend(tail_order);
         all.extend(tail_ids);
         stood.extend(run.stood);
+        if !renamed.is_empty() {
+            let now: HashMap<EditId, usize> = (at..all.len()).map(|i| (all[i], i)).collect();
+            let place = |c: usize| renamed.get(&c).map_or(c, |id| now[id]);
+            tail.cands = tail.cands.iter().map(|&c| place(c)).collect();
+            tail.tried = tail.tried.iter().map(|&c| place(c)).collect();
+        }
         if let Some(moved) = again {
             tail.passed.pass((at..at + moved).map(|i| (&edits[order[i]], all[i], stood[i])));
             tail.at = at + moved;
@@ -5180,7 +5228,7 @@ impl ReplayRun {
         let covered = watched(ordered.iter().copied());
         let running = Running::new(State::default(), &ordered, &ids, &rem, false)
             .marking(rung_places(after, at, ordered.len()))
-            .keeping(Marks::places(after, at, ordered.len()));
+            .keeping(Marks::places(0, at, ordered.len()));
         ReplayRun { n: edits.len(), order, ids, rem, covered, at, cands, tried, base, running }
     }
 

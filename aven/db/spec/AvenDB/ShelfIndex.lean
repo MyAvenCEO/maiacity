@@ -17,6 +17,9 @@ is not of its log. This is the Rust `shelf_index` module (`avendb-net/src/shelf_
   case: the stamp names no prefix of it, so the node rebuilds.
 - I4: the tree's root is a function of the index alone (`root_canonical`), so the root of an index stepped on page by
   page is the root of one built from scratch, and two nodes that hold the same log hold the same root (`I4_same_root`).
+- The one exception, written here so the gate names it: a device's key index (`KeyIndexed` in `lab.rs`) is a memo of
+  its stepped replay, kept in memory alone and made again at a start, as making it (85 ms of a phone's 116,000 edits,
+  reading no box's bytes) costs less than reading it back; it is made again only where the replay replayed every edit.
 - I5: an index a node fetched from a peer is a hint: it reads through it only once its root is the root of the index it
   builds from its own log (`trusted`), and then it reads what its own log says (`I5_trusted_reads`).
 -/

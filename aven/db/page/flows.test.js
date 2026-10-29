@@ -174,16 +174,16 @@ describe('a function asks for its own slice, and nothing wider', () => {
 		],
 		'a create that brings a file': [{ op: 'create', type: 'file', value: {}, file: { len: 1 } }]
 	};
-	test('a function asks only for the ops its footprint declares: one outside it makes the whole run nothing', async () => {
-		const tagOnly = { ...fn('Mine', returning([{ op: 'tag', entry: POST, add: ['fine'] }, { op: 'set', entry: POST, path: ['title'], value: 'x' }])), footprint: { ops: ['tag'] } };
+	test('a function asks only for the ops its manifest names: one outside it makes the whole run nothing', async () => {
+		const tagOnly = { ...fn('Mine', returning([{ op: 'tag', entry: POST, add: ['fine'] }, { op: 'set', entry: POST, path: ['title'], value: 'x' }])), manifest: { ops: ['tag'] } };
 		const { ops, errors } = await move('published', { fns: { [CITY]: [tagOnly] } });
 		expect(ops).toEqual([]);
 		expect(errors).toEqual(['Mine: it asks for set, outside its footprint']);
 		const fits = { ...tagOnly, code: returning([{ op: 'tag', entry: POST, add: ['fine'] }]) };
 		expect((await move('published', { fns: { [CITY]: [fits] } })).errors).toEqual([]);
 	});
-	test('the built-in functions declare their footprints: tags alone', () => {
-		expect(FUNCTIONS.map((f) => f.footprint)).toEqual([{ ops: ['tag'] }, { ops: ['tag'] }]);
+	test('the built-in functions name their ops in their manifests: tags alone', () => {
+		expect(FUNCTIONS.map((f) => f.manifest)).toEqual([{ ops: ['tag'] }, { ops: ['tag'] }]);
 	});
 	for (const [what, list] of Object.entries(OUTSIDE))
 		test(`${what} is refused, and the function makes nothing`, async () => {

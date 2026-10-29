@@ -703,7 +703,8 @@ impl Device {
 
     /// The vault it belongs to, by its view.
     pub async fn vault(&self) -> Option<VaultId> {
-        self.node.read(|lab, me| lab.vault_of(me)).await
+        // read dry: of every edit it holds, its replay stepped on in place first, never of one under way (`Lab::vault_of`)
+        self.node.dry(|lab, me| lab.vault_of(me)).await
     }
 
     /// Runs op `op` of the ops engine (`avendb::engine`, `doc:docs/avendb` §8), as its node does

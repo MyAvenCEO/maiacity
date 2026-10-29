@@ -17,6 +17,10 @@ COPY --from=planner /src/recipe.json recipe.json
 COPY aven/db/vendor ./aven/db/vendor
 RUN cargo chef cook --profile server --locked --package avendb-server --recipe-path recipe.json
 COPY . ./
+# the git tree it is built from, which its /feed/health names (health.rs `TREE`): after the dependencies' layer, so a
+# new tree rebuilds only our crates, as any change to them does
+ARG TREE
+ENV AVENDB_TREE=$TREE
 RUN cargo build --profile server --locked -p avendb-server && cp target/server/avendb-server /avendb-server
 
 FROM debian:bookworm-slim

@@ -145,6 +145,8 @@ mod pulls;
 mod live;
 mod ranges;
 mod run;
+#[cfg(test)]
+mod reopen_probe;
 pub mod server;
 mod session;
 pub mod shelf;
@@ -158,6 +160,7 @@ mod shelf_index;
 #[cfg(test)]
 mod shelf_contract;
 mod signers;
+mod slot;
 #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
 pub mod sim;
 mod statements;
@@ -901,6 +904,7 @@ impl Node {
             receive_checking: Arc::default(),
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
+            mine: Mutex::default(),
             differed: Mutex::default(),
             held: Mutex::default(),
             told: Mutex::default(),
@@ -1175,15 +1179,22 @@ impl Node {
         let Action::Share(Sharing::Device { vault, .. }) = join.edit.edit.action else {
             bail!("a join that adds no device")
         };
-        let sent = session::exchange(&peer.conn, session::JOIN, &join.to_wire(), 0).await;
-        sent.context("the peer refuses the join")?;
         self.shared.changed.notify_one();
-        // what the peer keeps for the vault comes in the background, a `pull` job: nobody waits on it
-        let (shared, endpoint) = (self.shared.clone(), peer.endpoint);
+        // the join is the vault's own once this device's Lab took it, so the start goes on: a local step never waits on
+        // a peer's turn (the peer took 15.6 s of a fresh sign-in, 2026-10-29). The peer takes it in the background, a
+        // `join` job its person sees fail where the peer refuses it, and then hands over what it keeps for the vault,
+        // a `pull` job, which waits for the join, as a peer serves the devices it knows
+        let (shared, Peer { conn, endpoint, .. }) = (self.shared.clone(), peer);
         let activity = shared.admit()?;
         task::spawn(async move {
             let _activity = activity;
-            shared.ask(endpoint).await.ok()
+            let job = shared.jobs.begin("join", vault.to_hex(), String::new(), 1, "edits");
+            let sent = session::exchange(&conn, session::JOIN, &join.to_wire(), 0).await.context("the peer refuses the join");
+            let joined = sent.is_ok();
+            job.ended(&sent);
+            if joined {
+                shared.ask(endpoint).await.ok();
+            }
         });
         Ok(Some((passkey, vault)))
     }
@@ -1346,9 +1357,9 @@ impl Node {
 
     /// Add session `device`, an agent this device hosts on its Mac (`Lab::host`), which runs no device of its own, to
     /// aven `aven` as a device of it, its key to seal to `key`, with `mceliece` the McEliece key it names, both handed
-    /// by the agent as it connected: drafted here and signed in one ceremony of the passkey `passkey` made by
-    /// `authenticator`, then signed by the agent too, asked through its session (`Lab::accept_hosted`), as a server
-    /// signs its claim. The aven. Fails as `add_device_vault_with` does, or if the agent doesn't sign.
+    /// by the agent as it connected: the passkey's part (`sign_hosted_device`), then the agent's, asked through its
+    /// session (`accept_hosted`), as a server signs its claim. The aven. Fails as `add_device_vault_with` does, or if
+    /// the agent doesn't sign.
     pub async fn add_hosted_device(
         &self,
         device: SignerId,
@@ -1358,6 +1369,24 @@ impl Node {
         passkey: SignerId,
         authenticator: &impl Authenticator,
     ) -> Result<VaultId> {
+        let claim = self.sign_hosted_device(device, key, aven, passkey, authenticator).await?;
+        let vault = self.accept_hosted(claim, mceliece).await?;
+        vault.map_err(|why| anyhow!("the agent's join is refused: {why:?}"))
+    }
+
+    /// The passkey's part of adding agent `device` to aven `aven` (`add_hosted_device`), its key to seal to `key`:
+    /// the edit drafted here and signed in one ceremony of the passkey `passkey` made by `authenticator`, as the claim
+    /// the agent signs last (`accept_hosted`), whether it runs now or only later. It needs nothing of the agent's but
+    /// the key it handed, so its person approves it while the agent is away, and it joins when it next runs. Fails if
+    /// this device belongs to no vault, the passkey isn't at hand, or the vaults' rules refuse it.
+    pub async fn sign_hosted_device(
+        &self,
+        device: SignerId,
+        key: PublicKey,
+        aven: VaultId,
+        passkey: SignerId,
+        authenticator: &impl Authenticator,
+    ) -> Result<Claim> {
         let _activity = self.shared.admit()?;
         let human = self.shared.read(|lab, me| lab.vault_of(me)).await.context("this device belongs to no vault")?;
         let draft = move |lab: &mut Lab, me| {
@@ -1368,11 +1397,21 @@ impl Node {
         };
         let drafts = self.shared.try_lab(draft).await?.map_err(|why| anyhow!("the device is refused: {why:?}"))?;
         let (_, (), claim) = self.sign(vec![(passkey, (), drafts)], true, Step::Approve, authenticator).await?;
-        let claim = claim.context("a claim")?;
+        claim.context("a claim")
+    }
+
+    /// The agent's part of its join (`Lab::accept_hosted`), claim `claim` signed by the passkey (`sign_hosted_device`),
+    /// `mceliece` the McEliece key it names: the agent, hosted now, signs it over its session, and this device keeps
+    /// it. A claim signed while the agent was away steps on this device's view as it is now, however far it moved on:
+    /// an edit's rules read the vaults as they stand, never the heads it was drafted on. The aven, or why it's refused:
+    /// `Locked` where the agent didn't sign.
+    pub async fn accept_hosted(&self, claim: Claim, mceliece: Arc<[u8]>) -> Result<Result<VaultId, Refusal>> {
+        let _activity = self.shared.admit()?;
         let kept = self.shared.try_lab(move |lab, me| lab.accept_hosted(me, claim, mceliece)).await?;
-        let vault = kept.map_err(|why| anyhow!("the agent's join is refused: {why:?}"))?;
-        self.shared.changed.notify_one();
-        Ok(vault)
+        if kept.is_ok() {
+            self.shared.changed.notify_one();
+        }
+        Ok(kept)
     }
 
     /// Add the device `offer` names, which handed `key` to seal to (`claim_key`), to a device vault at `place`
@@ -1852,7 +1891,7 @@ impl Node {
         let (mut logs, mut behind) = (BTreeSet::new(), BTreeSet::new());
         for (device, theirs) in &heard {
             logs.extend(theirs.iter().copied());
-            behind.extend(self.shared.differ(*device).await);
+            behind.extend(self.shared.differ(*device));
         }
         let (running, _) = self.jobs().snapshot();
         let pulling = running.iter().filter(|j| j.kind == "pull").count();
@@ -1962,7 +2001,7 @@ impl Node {
         for p in &live {
             seen.insert(p.device);
             let told = s.held.lock().expect("held").get(&p.device).map(|h| h.logs.len());
-            let lacks = if told.is_some() { Some(s.differ(p.device).await.len()) } else { None };
+            let lacks = if told.is_some() { Some(s.differ(p.device).len()) } else { None };
             let paths: Vec<Value> = p
                 .conn
                 .paths()
@@ -2032,7 +2071,7 @@ impl Node {
         let mut out = BTreeMap::new();
         for device in live {
             let told = self.shared.held.lock().expect("held").contains_key(&device);
-            let lacks = if told { Some(self.shared.differ(device).await.len()) } else { None };
+            let lacks = if told { Some(self.shared.differ(device).len()) } else { None };
             out.insert(device, lacks);
         }
         out
@@ -2478,6 +2517,23 @@ struct Lacked {
     bodies: BTreeSet<LogId>,
 }
 
+/// What a node's device holds, as `Shared::lacked` tells a peer's holdings against it: its edits by their logs, the
+/// stubs it holds whose past it holds (`Logs::closed_stubs`), and whether it asks for their bodies (`Lab::held_stubs`);
+/// worked out by `own_logs` once its log's head, the McEliece keys it holds or the stubs it took changed (`at`), so that no ask of what a peer holds
+/// takes a turn of the Lab. Before the first, it holds nothing, so every log a peer told of counts as lacked.
+struct Mine {
+    at: Option<(avendb::log_head::Head, (usize, usize), usize, bool)>,
+    logs: Arc<Logs>,
+    stubs: HashSet<EditId>,
+    asks_bodies: bool,
+}
+
+impl Default for Mine {
+    fn default() -> Mine {
+        Mine { at: None, logs: Arc::new(Logs::of(&[], &[], (0, 0))), stubs: HashSet::new(), asks_bodies: false }
+    }
+}
+
 struct Shared {
     /// Admission remains open until the one owned shutdown finalizer closes it.
     lifecycle: Arc<lifecycle::Lifecycle>,
@@ -2521,7 +2577,9 @@ struct Shared {
     own: Mutex<Own>,
     /// Each device it may tell, by its device's view, and what of its holdings it tells it.
     reach: Mutex<Arc<BTreeMap<SignerId, Reach>>>,
-    /// What `differ` worked out last for each device, for when the Lab's turn can't be had, and what it told of it.
+    /// What its device holds as a peer's holdings are told against it (`lacked`), as `own_logs` worked it out last.
+    mine: Mutex<Arc<Mine>>,
+    /// What `differ` worked out last for each device, and what it told of it, for its report.
     differed: Mutex<HashMap<SignerId, (Lacked, Differed)>>,
     /// What each device told it it holds, on a connection whose hello proved that device.
     held: Mutex<HashMap<SignerId, Holdings>>,
@@ -3000,7 +3058,7 @@ impl Shared {
         scope: Scope,
         background: bool,
     ) -> Result<usize> {
-        self.pull_expected(endpoint, scope, background, None, None, None).await
+        self.pull_expected(endpoint, scope, background, None, None).await
     }
 
     /// A live hint belongs to the authenticated identity that announced it. Fence that identity before building
@@ -3011,7 +3069,6 @@ impl Shared {
         scope: Scope,
         background: bool,
         expected: Option<SignerId>,
-        keys: Option<&mut BTreeSet<BlobId>>,
         yielding: Option<&Yield>,
     ) -> Result<usize> {
         let _activity = self.admit()?;
@@ -3025,25 +3082,18 @@ impl Shared {
         // an asking of some logs among more to come (`ask_differing`) leaves the last bringing up to date to its caller
         let must = !matches!(scope, Scope::Logs(_));
         let device = peer.device;
-        let mut named = BTreeSet::new();
-        let mut asked = self.pages(peer, scope, &mut job, admission, background, keys.unwrap_or(&mut named), yielding).await;
-        if asked.is_ok() {
-            if expected.is_some() {
-                // a live pull's edits show without the keys they name (one is needed only to seal to its signer), and a
-                // key is a megabyte: brought after, not waited for (`bench_live` phone: a chat edit's pull waited 1.7 s
-                // on two keys the backlog was bringing too)
-                if !named.is_empty() && let Ok(activity) = self.admit() {
-                    let shared = self.clone();
-                    task::spawn(async move {
-                        let _activity = activity;
-                        if let Err(error) = shared.bring_keys(endpoint, device, named, background).await {
-                            tracing::debug!(%error, "avendb: a live pull's keys come with a later pull");
-                        }
-                    });
+        let mut sealing = BTreeSet::new();
+        let asked = self.pages(peer, scope, &mut job, admission, background, &mut sealing, yielding).await;
+        // the keys it seals to that the peer named, brought on a task of their own at the background's class, never
+        // waited for: its edits show and its views open without any (`Lab::request`'s wants, `seal_keys`)
+        if asked.is_ok() && !sealing.is_empty() && let Ok(activity) = self.admit() {
+            let shared = self.clone();
+            task::spawn(async move {
+                let _activity = activity;
+                if let Err(error) = shared.seal_keys(endpoint, device, sealing).await {
+                    tracing::debug!(%error, "avendb: the keys it seals to come with a later pull");
                 }
-            } else if let Err(error) = self.bring_keys(endpoint, device, named, background).await {
-                asked = Err(error);
-            }
+            });
         }
         // the next asking of this peer names what these pages brought; bringing it up to date needs no turn
         drop(turn);
@@ -3061,7 +3111,7 @@ impl Shared {
     }
 
     /// `asking` of `peer`: page after page, each told to `job`, with how many of the edits it took are each vault's and
-    /// each entry's, and the McEliece keys its pages named added to `keys` (`bring_keys`). It ends after a page where
+    /// each entry's, and the McEliece keys it asked for to seal to added to `sealing` (`seal_keys`). It ends after a page where
     /// `yielding` says the open views want now a log it asks for that they didn't when it began (`Yield`).
     #[allow(clippy::too_many_arguments)]
     async fn pages(
@@ -3071,7 +3121,7 @@ impl Shared {
         job: &mut Running,
         admission: Arc<pulls::Admission>,
         background: bool,
-        keys: &mut BTreeSet<BlobId>,
+        sealing: &mut BTreeSet<BlobId>,
         yielding: Option<&Yield>,
     ) -> Result<usize> {
         // Only the authority-first background scheduler uses the optional payload pass. A refusal, unsupported
@@ -3423,10 +3473,8 @@ impl Shared {
                 }
             }
             pump!();
-            // the McEliece keys its edits name come after the last page, not with each: a device needs one only to seal
-            // to its signer, each is a megabyte, and a page of a few edits waited ~10 s on them through a relay
-            // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
-            keys.extend(blobs);
+            // the McEliece keys it asked for, those it lacks to seal to (`Lab::request`): brought after its pages
+            sealing.extend(blobs);
             let logged: Vec<(EditId, Option<LogId>)> = edits.iter().map(|s| (s.edit.id(), log_of(&s.edit, s.edit.id()))).collect();
             let ids: Vec<EditId> = logged.iter().map(|(id, _)| *id).collect();
             // a page that came whole is taken on a task of its own, so that it is kept even where the asking stops
@@ -3616,10 +3664,12 @@ impl Shared {
         }
     }
 
-    /// The McEliece keys a pull's pages named that this device lacks, from `device` at `endpoint` in one request, once
-    /// every page of the asking is taken: an asking of many logs (`ask_differing`) brings them after its last log, so
-    /// no log waits on another's keys (a new human's six keys, ~6 MB, held the next log ~40 s on a lossy link).
-    async fn bring_keys(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, keys: BTreeSet<BlobId>, background: bool) -> Result<()> {
+    /// The McEliece keys this device lacks to seal to that `device` at `endpoint` named in a pull's pages, in one
+    /// request, at the background's class: the one way a key comes to it, as each is a megabyte and one is needed only
+    /// to seal to its signer (`Store::sealing`), so no pull, read or view waits on one, and a vault of many devices
+    /// costs a new device none (a sign-in fetched ~1 MB for each of 30 devices before its first sync ended,
+    /// 2026-10-29). Its upkeep makes the box it couldn't once the key comes.
+    async fn seal_keys(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, keys: BTreeSet<BlobId>) -> Result<()> {
         if keys.is_empty() {
             return Ok(());
         }
@@ -3639,7 +3689,7 @@ impl Shared {
             let bytes = got.iter().map(|k| k.len() as u64).sum();
             self.traffic.keys(device, asked, got.len() as u64, bytes, fetching.elapsed().as_millis() as u64);
             if !got.is_empty() {
-                self.try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| lab.receive(me, Vec::new(), got)).await?;
+                self.try_lab_class(lab_schedule::Class::Background, move |lab, me| lab.receive(me, Vec::new(), got)).await?;
                 self.changed.notify_one();
             }
         }
@@ -3935,14 +3985,13 @@ impl Shared {
         let mut logs = self.logs.lock().expect("logs");
         if let Some(known) = logs.as_mut() {
             if !known.current(lab.log(me), size) {
-                Arc::make_mut(known).update(lab.log(me), size, &|k| lab.blob(me, *k).is_some());
+                Arc::make_mut(known).update(lab.log(me), size);
             }
             known.clone()
         } else {
             let log = lab.log(me);
-            let holds = |k: &BlobId| lab.blob(me, *k).is_some();
-            let mut fresh = Logs::of(&[], &[], (0, 0), &holds);
-            fresh.update(log, size, &holds);
+            let mut fresh = Logs::of(&[], &[], (0, 0));
+            fresh.update(log, size);
             let fresh = Arc::new(fresh);
             *logs = Some(fresh.clone());
             fresh
@@ -3959,6 +4008,13 @@ impl Shared {
                 let size = lab.size(me);
                 let held = shared.edits.as_ref().map_or(size.0, |edits| edits.held(lab, me));
                 let revision = lab.log(me).head();
+                let at = Some((revision, size, lab.stubs_taken(me), lab.lazy_boxes(me)));
+                if shared.mine.lock().expect("mine").at != at {
+                    let logs = shared.logs_of(lab, me);
+                    let (held_stubs, asks_bodies) = lab.held_stubs(me);
+                    let stubs = logs.closed_stubs(&held_stubs);
+                    *shared.mine.lock().expect("mine") = Arc::new(Mine { at, logs, stubs, asks_bodies });
+                }
                 {
                     let own = shared.own.lock().expect("own");
                     if own.at == (size, held) && own.revision.as_ref() == Some(&revision) {
@@ -3969,9 +4025,8 @@ impl Shared {
                     true => shared.logs_of(lab, me).frontiers(),
                     false => {
                         let mut index = shared.held_logs.lock().expect("held logs");
-                        let holds = |k: &BlobId| lab.blob(me, *k).is_some();
-                        let index = index.get_or_insert_with(|| Logs::of(&[], &[], (0, 0), &holds));
-                        index.update_held(lab.log(me), held, size, &holds);
+                        let index = index.get_or_insert_with(|| Logs::of(&[], &[], (0, 0)));
+                        index.update_held(lab.log(me), held, size);
                         index.frontiers()
                     }
                 };
@@ -4142,68 +4197,56 @@ impl Shared {
     /// not: a box's body changes nothing its device knows (`LazyBoxes.lean` S6). Else a log whose head on the peer is
     /// such a box read as lacked, its asking brought nothing new, and the views waited on it (an iPhone lacking 2,577 of
     /// 3,090 logs, 2026-10-28, Fix D); and once it asked for their bodies, 2,517 vault and share logs read as lacked
-    /// again, every read of their vaults behind while the bodies came (a fresh browser, 2026-10-29). Where the Lab's
-    /// turn can't be had, it answers what it worked out last for the device, not nothing, so the count the views wait
-    /// on doesn't drop to nothing and back.
-    async fn differ(self: &Arc<Self>, device: SignerId) -> BTreeSet<LogId> {
-        self.lacked(device).await.logs
+    /// again, every read of their vaults behind while the bodies came (a fresh browser, 2026-10-29). Told against what
+    /// its device holds as `own_logs` last worked it out (`lacked`), with no turn of the Lab.
+    fn differ(&self, device: SignerId) -> BTreeSet<LogId> {
+        self.lacked(device).logs
     }
 
     /// The logs where `device` holds an edit this node's device lacks (`differ`), and apart from them, while it asks
-    /// for the bodies of the boxes it holds stubs of, the logs where `device` holds no more than those (`Lacked`).
-    async fn lacked(self: &Arc<Self>, device: SignerId) -> Lacked {
+    /// for the bodies of the boxes it holds stubs of, the logs where `device` holds no more than those (`Lacked`): told
+    /// against what its device holds as `own_logs` worked it out last (`Mine`), with no turn of the Lab, so a page's
+    /// sync pill never waits behind one (fresh9, 2026-10-29: "Synced" shown 70 s after a reopen while its `synced`
+    /// waited behind a turn of the Lab). Of a device its view tells nothing, every log that device told of counts.
+    fn lacked(&self, device: SignerId) -> Lacked {
         let Some(theirs) = self.held.lock().expect("held").get(&device).map(|h| h.logs.clone()) else {
             return Lacked::default();
         };
-        let (shared, known) = (self.clone(), self.reach.lock().expect("reach").clone());
-        let worked = self.try_lab(move |lab, me| {
-            let mine = shared.logs_of(lab, me);
-            let (held_stubs, asks_bodies) = lab.held_stubs(me);
-            let stubs = mine.closed_stubs(&held_stubs);
-            let mut now: Option<BTreeSet<LogId>> = None;
-            let mut within = |l: &LogId| {
-                let reach = |lab: &mut Lab| lab.announce(me, device).into_iter().map(|(l, _)| l).collect();
-                known.get(&device).is_some_and(|r| r.logs.contains(l))
-                    || now.get_or_insert_with(|| reach(lab)).contains(l)
-            };
-            let (mut lacking, mut bodies, mut by_stub, mut sample) = (BTreeSet::new(), BTreeSet::new(), 0, Vec::new());
-            for (l, f) in theirs {
-                if !mine.lacks(&f) {
-                    continue;
-                }
-                if !mine.lacks_with(&f, &stubs) {
-                    by_stub += 1;
-                    if asks_bodies {
-                        bodies.insert(l);
-                    }
-                    continue;
-                }
-                if mine.of.contains_key(&l) && !within(&l) {
-                    continue;
-                }
-                if sample.len() < DIFFER_SAMPLE {
-                    let held = |h: &EditId| mine.closed.contains(h) || stubs.contains(h);
-                    let heads: Vec<String> = f.heads.iter().filter(|h| !held(h)).map(|h| h.to_hex()[..8].to_string()).collect();
-                    // of those, the heads it holds whose past it lacks: a peer that sends nothing more of them leaves
-                    // them so, as against heads it never took
-                    let unclosed: Vec<String> = f.heads.iter().filter(|h| !held(h) && mine.at.contains_key(h))
-                        .map(|h| h.to_hex()[..8].to_string()).collect();
-                    sample.push(json!({ "log": format!("{l:?}"), "held": mine.of.contains_key(&l), "lacked_heads": heads,
-                        "held_unclosed": unclosed, "waiting": f.waiting.len() }));
-                }
-                lacking.insert(l);
+        let kept = self.mine.lock().expect("mine").clone();
+        let reach = self.reach.lock().expect("reach").get(&device).map(|r| r.logs.clone());
+        let within = |l: &LogId| reach.as_ref().is_none_or(|logs| logs.contains(l));
+        let Mine { logs: mine, stubs, asks_bodies, .. } = &*kept;
+        let (mut lacking, mut bodies, mut by_stub, mut sample) = (BTreeSet::new(), BTreeSet::new(), 0, Vec::new());
+        for (l, f) in theirs {
+            if !mine.lacks(&f) {
+                continue;
             }
-            (Lacked { logs: lacking, bodies }, Differed { by_stub, stubs: stubs.len(), sample })
-        });
-        let worked = worked.await;
-        let mut last = self.differed.lock().expect("differed");
-        match worked {
-            Ok((lacked, told)) => {
-                last.insert(device, (lacked.clone(), told));
-                lacked
+            if !mine.lacks_with(&f, stubs) {
+                by_stub += 1;
+                if *asks_bodies {
+                    bodies.insert(l);
+                }
+                continue;
             }
-            Err(_) => last.get(&device).map(|(l, _)| l.clone()).unwrap_or_default(),
+            if mine.of.contains_key(&l) && !within(&l) {
+                continue;
+            }
+            if sample.len() < DIFFER_SAMPLE {
+                let held = |h: &EditId| mine.closed.contains(h) || stubs.contains(h);
+                let heads: Vec<String> = f.heads.iter().filter(|h| !held(h)).map(|h| h.to_hex()[..8].to_string()).collect();
+                // of those, the heads it holds whose past it lacks: a peer that sends nothing more of them leaves
+                // them so, as against heads it never took
+                let unclosed: Vec<String> = f.heads.iter().filter(|h| !held(h) && mine.at.contains_key(h))
+                    .map(|h| h.to_hex()[..8].to_string()).collect();
+                sample.push(json!({ "log": format!("{l:?}"), "held": mine.of.contains_key(&l), "lacked_heads": heads,
+                    "held_unclosed": unclosed, "waiting": f.waiting.len() }));
+            }
+            lacking.insert(l);
         }
+        let lacked = Lacked { logs: lacking, bodies };
+        let told = Differed { by_stub, stubs: stubs.len(), sample };
+        self.differed.lock().expect("differed").insert(device, (lacked.clone(), told));
+        lacked
     }
 
     /// The endpoint of the live connection whose hellos proved `device`, if there is one.
@@ -4226,9 +4269,11 @@ impl Shared {
     async fn ask_differing(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
+        // what its device holds now, as it asks by it (`lacked`)
+        self.own_logs().await;
         // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends: those that
         // may change a read, and the bodies of the boxes it holds stubs of, which no read waits on
-        let Lacked { logs: mut differing, bodies } = self.lacked(peer.device).await;
+        let Lacked { logs: mut differing, bodies } = self.lacked(peer.device);
         differing.extend(bodies);
         // how fast this peer's pages came lately, or as a new peer's are counted to (`pulls::Rate::start_per_second`)
         let rate = self.rates.lock().expect("rates").get(&peer.device).and_then(pulls::Rate::per_second);
@@ -4246,7 +4291,7 @@ impl Shared {
                 }
             });
         }
-        let (mut new, mut keys, mut stage) = (0, BTreeSet::new(), AskingStage::Manifests);
+        let (mut new, mut stage) = (0, AskingStage::Manifests);
         let asked = loop {
             let (logs, asked_as) = {
                 let interests = self.interests.lock().expect("interests");
@@ -4260,7 +4305,7 @@ impl Shared {
             let wants = self.views_want();
             let yielding = left.is_empty().then(|| Yield::new(logs.clone(), wants.clone(), *self.wants.borrow()));
             let (began, at) = (Instant::now(), jobs::now_ms());
-            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, Some(&mut keys), yielding.as_ref()).await;
+            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, yielding.as_ref()).await;
             // which logs it asked, and which of them the views want, before every other: whether a page's room came first
             let wanted_first: Vec<&LogId> = logs.iter().filter(|l| wants.contains(l)).chain(logs.iter().filter(|l| !wants.contains(l))).take(8).collect();
             self.traffic.asking(traffic::Asking {
@@ -4286,31 +4331,7 @@ impl Shared {
                 left.extend(logs);
                 stage = AskingStage::Manifests;
             }
-            // an asking of the manifests or the views, which leaves logs for a later one
-            let early = !left.is_empty();
-            // the keys the manifests' and the views' batches named, on a task of their own while the next batches
-            // come: it is the logs no entry's (who may do what, the audiences' keys), so a new device's views open and
-            // find what they want at once instead of after the last log of a whole catch-up, and no log waits behind a
-            // key fetch (`a_new_humans_keys_hold_no_log_back`); the last batch's keys come after its last log
-            if early && !keys.is_empty() {
-                let (now, shared, device) = (std::mem::take(&mut keys), self.clone(), peer.device);
-                if let Ok(activity) = self.admit() {
-                    task::spawn(async move {
-                        let _activity = activity;
-                        if shared.bring_keys(endpoint, device, now, true).await.is_ok() {
-                            shared.catch_up_paced_class(true, lab_schedule::Class::Background).await;
-                        }
-                    });
-                }
-            }
         };
-        // the keys every log named, after the last log (`bring_keys`); after a failed asking only while its connection
-        // lives, so no fetch waits out its timeouts on a dead one
-        if asked.is_err() && self.live(endpoint).is_none() {
-            keys.clear();
-        }
-        let brought = self.bring_keys(endpoint, peer.device, keys, true).await;
-        let asked = asked.and_then(|new| brought.map(|()| new));
         // what every asking brought, brought up to date at last, however it ended
         self.catch_up_paced_class(true, lab_schedule::Class::Background).await;
         asked

@@ -1200,6 +1200,7 @@ impl Encode for ApiPass {
         self.keys.encode(out);
         self.audience.encode(out);
         self.made.encode(out);
+        self.nonce.encode(out);
         self.sig.encode(out);
     }
 }
@@ -1210,7 +1211,8 @@ impl Decode for ApiPass {
         if audience.len() > sign::MAX_AUDIENCE {
             return Err(WireError::Unknown);
         }
-        Ok(ApiPass { keys, audience, made: u64::decode(r)?, sig: r.bytes()? })
+        let (made, nonce) = (u64::decode(r)?, u64::decode(r)?);
+        Ok(ApiPass { keys, audience, made, nonce, sig: r.bytes()? })
     }
 }
 
@@ -1967,14 +1969,14 @@ mod tests {
     #[test]
     fn a_devices_pass_reads_back_only_from_its_own_bytes() {
         let mac = DeviceKey::from_secret([7; 32]);
-        let pass = mac.api_pass("maiaCITY API", 1_791_500_000);
+        let pass = mac.api_pass("maiaCITY API", 1_791_500_000, 1);
         let bytes = pass.to_wire();
         assert_eq!(ApiPass::from_wire(&bytes), Ok(pass.clone()));
         assert_eq!(ApiPass::from_wire(&bytes).unwrap().device("maiaCITY API", 1_791_500_000), Some(mac.id()));
         assert_eq!(ApiPass::from_wire(&bytes[..bytes.len() - 1]), Err(WireError::Short));
         assert_eq!(ApiPass::from_wire(&[&bytes[..], &[0]].concat()), Err(WireError::Trailing));
         // a name longer than any service's is no pass
-        let long = mac.api_pass(&"a".repeat(crate::sign::MAX_AUDIENCE + 1), 1_791_500_000);
+        let long = mac.api_pass(&"a".repeat(crate::sign::MAX_AUDIENCE + 1), 1_791_500_000, 1);
         assert_eq!(ApiPass::from_wire(&long.to_wire()), Err(WireError::Unknown));
     }
 

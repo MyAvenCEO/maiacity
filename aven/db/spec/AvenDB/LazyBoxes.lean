@@ -1055,6 +1055,44 @@ theorem lacks_stub (d : Device) (heads : List EditId) {s : Stub} (hs : s ∈ d.s
   have hany : d.stubs.any (·.id == s.id) = true := List.any_eq_true.2 ⟨s, hs, beq_self_eq_true _⟩
   simp [hany] at this
 
+/-! ## Reading never needs a McEliece key (Goal 8, in place of A3)
+
+A signer's McEliece key is needed only to seal a key to that signer: what a device reads, holds and states it holds is
+what its edits say, whatever keys it holds. So no key keeps an edit out of the closed part its holdings state (A3 had
+an edit wait for each key it names, and every log naming a key a device lacked was asked again on every connect), and
+a device asks a peer for a key only where it seals to it: of each target its upkeep would box a key for and can't, and
+of each vault's seed a share's selector was to be sealed to and couldn't (that share is refused, `UnknownKey`, till the
+key came). It brings those at the background's class, never
+waited on by a pull, a read or a view, and its upkeep makes the box it couldn't once the key comes; so a vault of many
+devices, each with a key of a megabyte, costs a new device none of them (a sign-in fetched ~1 MB for each of 30
+devices before its first sync ended, 2026-10-29). Rust: holdings.rs `Graph::add`, lab.rs `Store::sealing`,
+`Lab::request`, avendb-net lib.rs `seal_keys`. -/
+
+/-- An edit stands in the closed part a device states once each of its parents does: the keys it holds play no part. -/
+def closedHeld (parentsClosed : Bool) (_held : List Nat) : Bool := parentsClosed
+
+/-- **Reading needs no key**: two devices holding the same edits state the same closed part, whatever keys each holds. -/
+theorem reads_without_keys (parentsClosed : Bool) (a b : List Nat) :
+    closedHeld parentsClosed a = closedHeld parentsClosed b := rfl
+
+/-- So keys alone never make a device ask a peer: a peer differs only by an edit it holds that the device doesn't. -/
+theorem keys_alone_ask_no_one (parentsClosed : Bool) (a b : List Nat) :
+    (closedHeld parentsClosed b && !closedHeld parentsClosed a) = false := by
+  cases parentsClosed <;> rfl
+
+/-- What a device asks a peer for: the keys it seals to (`sealing`) that it doesn't hold. -/
+def keysAsked (sealing held : List Nat) : List Nat := sealing.filter (fun k => !held.contains k)
+
+/-- A key is asked only to seal to it, and never once held. -/
+theorem asked_only_to_seal (sealing held : List Nat) (k : Nat) (h : k ∈ keysAsked sealing held) :
+    k ∈ sealing ∧ k ∉ held := by
+  simp [keysAsked, List.mem_filter] at h
+  exact ⟨h.1, h.2⟩
+
+/-- A device that seals to no one asks no key: a new device joining a vault of any number of devices, which each hold
+    their boxes already. -/
+theorem sealing_none_asks_none (held : List Nat) : keysAsked [] held = [] := rfl
+
 end Lazy
 
 end AvenDB

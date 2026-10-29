@@ -89,6 +89,8 @@ use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader};
 use tokio::sync::watch;
 
+use crate::sessions::{self, Seal};
+
 /// The MCP version it speaks, unless its client asks for another.
 const PROTOCOL: &str = "2025-06-18";
 
@@ -212,6 +214,13 @@ pub fn online(host: &Path, name: &str, device: &str) -> bool {
     fresh && std::fs::read_to_string(&file).is_ok_and(|d| d.trim() == device)
 }
 
+/// The file in the agents' folder beside the app's `host` folder where its person's yes to agent `name`'s device
+/// `device`, its key in hex, waits while the agent is away: the join their passkey signed (`Node::sign_hosted_device`),
+/// which the agent signs too as it next runs (`sessions::join_granted`), and the McEliece key it names.
+pub fn granted(host: &Path, name: &str, device: &str) -> PathBuf {
+    agents(host).join(format!("{name}.{device}.granted"))
+}
+
 /// The file in the agents' folder beside the app's `host` folder where its person's no to agent `name` is left: the
 /// device it said no to.
 pub fn denied(host: &Path, name: &str) -> PathBuf {
@@ -226,17 +235,25 @@ pub fn asking(name: &str, device: &str, offer: Option<String>, ask: &Asking) -> 
 }
 
 /// Leaves agent `name`'s request for access by default for its person's page, its device `device` in hex, as theOS
-/// hosts it while it belongs to no vault (`sessions`): unless it left one for that device already, or its person said
-/// no to that device.
-pub(crate) fn ask_by_default(host: &Path, name: &str, device: &str) {
+/// hosts it while it belongs to no vault (`sessions`), with `seal`, the key it handed to seal to, for its person to
+/// approve it by while it is away (`sessions::seal_into`): unless it left one for that device already that names its
+/// key to seal to, or its person said no to that device. One it left without that key gets it.
+pub(crate) fn ask_by_default(host: &Path, name: &str, device: &str, seal: Option<&Seal>) {
     let (file, no) = (request(host, name), denied(host, name));
     let asked = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok());
-    if std::fs::read_to_string(no).is_ok_and(|d| d.trim() == device) || asked.is_some_and(|a| a["device"] == device) {
+    let mine = asked.filter(|a| a["device"] == device);
+    if std::fs::read_to_string(no).is_ok_and(|d| d.trim() == device)
+        || mine.as_ref().is_some_and(|a| seal.is_none() || a["seal"].is_string())
+    {
         return;
     }
     let ask = Asking { level: ASKS.to_string(), why: WHY.to_string(), vaults: vec![] };
+    let mut asked = mine.unwrap_or_else(|| asking(name, device, None, &ask));
+    if let Some(seal) = seal {
+        sessions::seal_into(seal, &mut asked);
+    }
     std::fs::create_dir_all(agents(host)).ok();
-    std::fs::write(&file, asking(name, device, None, &ask).to_string()).ok();
+    std::fs::write(&file, asked.to_string()).ok();
 }
 
 /// What an access request asks for: a level of `LEVELS`; why; and the vaults it names, by their ids, if any.
@@ -484,7 +501,7 @@ impl Cloud {
         }
         let looking = AbortOnDropHandle::new(tokio::spawn(look_cloud(node.clone(), server)));
         let cloud = Some(Arc::new(Bringing::new(at)));
-        let agent = Arc::new(Agent { node, host: folder, name: name.to_string(), cloud, roots: self.roots.clone() });
+        let agent = Arc::new(Agent { node, host: folder, name: name.to_string(), cloud, roots: self.roots.clone(), seal: None });
         let used = tokio::time::Instant::now();
         *open = Some(Opened { agent: agent.clone(), _looking: looking, used });
         Ok(agent)
@@ -843,12 +860,15 @@ pub(crate) struct Agent {
     cloud: Option<Arc<Bringing>>,
     /// the folders its harness's session may read files from and write them to (`allowed`)
     roots: Vec<PathBuf>,
+    /// a session's agent's key to seal to, as it handed it, which its access request names (`ask_access`)
+    seal: Option<Seal>,
 }
 
 impl Agent {
-    /// A session's agent, `name`, hosted by theOS's `node` (`sessions`), its harness's files inside `roots` alone.
-    pub(crate) fn session(node: Arc<Node>, host: PathBuf, name: String, roots: Vec<PathBuf>) -> Agent {
-        Agent { node, host, name, cloud: None, roots }
+    /// A session's agent, `name`, hosted by theOS's `node` (`sessions`), its harness's files inside `roots` alone, its
+    /// key to seal to `seal` as it handed it.
+    pub(crate) fn session(node: Arc<Node>, host: PathBuf, name: String, roots: Vec<PathBuf>, seal: Option<Seal>) -> Agent {
+        Agent { node, host, name, cloud: None, roots, seal }
     }
 
     /// The answer to MCP message `m`: none for a notification.
@@ -1565,7 +1585,11 @@ impl Agent {
         // hosted by theOS, it has no offer of its own: theOS's device has its join signed over its session
         let device = hex(&self.node.acting_as().0);
         let ask = Asking { level: level.to_string(), why: why.to_string(), vaults };
-        let asked = asking(&self.name, &device, None, &ask);
+        let mut asked = asking(&self.name, &device, None, &ask);
+        // the key to seal to that its join names, for its person to approve it by while it is away
+        if let Some(seal) = &self.seal {
+            sessions::seal_into(seal, &mut asked);
+        }
         std::fs::create_dir_all(agents(&self.host))?;
         std::fs::remove_file(denied(&self.host, &self.name)).ok();
         std::fs::write(request(&self.host, &self.name), asked.to_string())?;

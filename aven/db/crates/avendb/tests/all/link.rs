@@ -287,3 +287,31 @@ fn a_second_passkey_that_owns_alices_vault_links_a_new_device_as_her_first_does(
     assert_eq!(browser.vault_of(new), Some(alice), "into Alice's vault, the one the passkey owns");
     assert!(mac.state(w.mac_a).vault(alice).expect("Alice's vault").devices.contains(&new), "and the Mac counts it");
 }
+
+/// What linking one more device costs as Alice's vault holds more: for each new device, the peer's link card (its
+/// edits and bytes), the new device taking it, its join and the peer accepting that.
+///   LINK_DEVICES=40 cargo test --release -p avendb --test all link::probe_link_by_device_count -- --ignored --nocapture
+#[test]
+#[ignore]
+fn probe_link_by_device_count() {
+    let n: usize = std::env::var("LINK_DEVICES").ok().and_then(|v| v.parse().ok()).unwrap_or(20);
+    let mut w = world();
+    let ms = |t: std::time::Instant| t.elapsed().as_secs_f64() * 1000.0;
+    for i in 0..n {
+        let new = w.lab.device_of(w.passkey_a, &format!("Alice's test browser {i}"));
+        let t = std::time::Instant::now();
+        let card = w.lab.link_card(w.mac_a, w.passkey_a);
+        let (card_ms, edits) = (ms(t), card.len());
+        let bytes = Reply { edits: card.clone(), ..Reply::default() }.to_wire().len();
+        let t = std::time::Instant::now();
+        w.lab.receive(new, card, vec![]);
+        let take_ms = ms(t);
+        let t = std::time::Instant::now();
+        let join = w.lab.join(new, w.passkey_a).expect("a join");
+        let join_ms = ms(t);
+        let t = std::time::Instant::now();
+        w.lab.accept_join(w.mac_a, new, join).expect("the Mac accepts it");
+        eprintln!("LINK device {}: card {edits} edits {bytes} B {card_ms:.1} ms, take {take_ms:.1} ms, join {join_ms:.1} ms, accept {:.1} ms",
+            i + 3, ms(t));
+    }
+}
