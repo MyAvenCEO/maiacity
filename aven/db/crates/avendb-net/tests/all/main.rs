@@ -22,6 +22,7 @@ mod run;
 mod server;
 mod sim;
 mod slow_link;
+mod spill_save;
 mod statements;
 mod store;
 mod stub_holdings;

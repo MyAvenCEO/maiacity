@@ -8,7 +8,8 @@
 //!   the packs that hold the device's edits up to an entry of the journal, and every McEliece key: a node starts from
 //!   its newest head and the journal after it, a few dozen objects and fewer than `TAIL_EDITS` edits, however long its
 //!   device's log;
-//! - a pack: a blob of `PACK` and then edits, as a journal entry holds them.
+//! - a pack: a blob of `PACK` and then edits, as a journal entry holds them: those of the entries since the head before,
+//!   and a save's own new edits where the pack is due with it, which then go in the pack alone, in no entry.
 //!
 //! An edit is a record: its length in 4 bytes, big-endian, then its bytes on the wire. A head and a journal entry end
 //! with the BLAKE3 hash of all before it, so one cut short or changed reads as none: the node starts from the newest
@@ -531,8 +532,9 @@ impl Edits {
             return Ok(None);
         }
         let mut records = Vec::new();
-        for id in &ids[if whole { 0 } else { kept.written }..] {
-            record(&mut records, &lab.signed_edit(me, *id).context("an edit the device holds")?);
+        for bytes in lab.signed_wire(me, &ids[if whole { 0 } else { kept.written }..]).context("an edit the device holds")? {
+            records.extend((bytes.len() as u32).to_be_bytes());
+            records.extend(bytes);
         }
         let anchors = lab.bootstrap_bytes(me).context("bootstrap anchor cannot be encoded within durable bounds; previous durable state retained")?;
         ensure!(anchors.len() <= MAX_ANCHORS, "bootstrap anchor save exceeds its bound");
@@ -576,6 +578,21 @@ impl Edits {
             return Ok(());
         }
         let (mut records, mut keys) = (&due.records[..], brought);
+        // a pack due with this save takes its edits straight, after those of the journal's entries since the newest
+        // head, read back: not through an entry of their own, put and read back again at once (a catch-up's page is a
+        // pack's worth of edits)
+        let new = !records.is_empty() || !keys.is_empty() || book.anchors != due.anchors;
+        if book.next + u64::from(new) - book.mark >= JOURNALED || book.tail + records_in(records) >= TAIL_EDITS {
+            book.keys.extend(keys);
+            book.anchors = due.anchors.clone();
+            self.pack_head_on(on, book, records).await?;
+            let mut kept = self.kept.lock().expect("kept");
+            kept.written = due.to;
+            kept.anchor_stamp = due.anchor_stamp;
+            kept.head = Some(due.head);
+            kept.keys.extend(ids);
+            return Ok(());
+        }
         while !records.is_empty() || !keys.is_empty() || book.anchors != due.anchors {
             let name = journal_name(book.next);
             let entry = Entry { anchors: due.anchors.clone(), keys: keys.clone(), records: records.to_vec() };
@@ -617,15 +634,23 @@ impl Edits {
             kept.head = Some(due.head);
             kept.keys.extend(ids);
         }
+        // a save cut short put more entries than it knew of
         if book.next - book.mark >= JOURNALED || book.tail >= TAIL_EDITS {
-            let pack = self.pack_of_entries(on, &book.pending).await?;
-            let mut packs = book.packs.clone();
-            packs.push(pack);
-            let keys = book.keys.clone().into_iter().collect();
-            self.put_head_on(on, book, &Head { anchors: book.anchors.clone(), journal: book.next, packs: packs.clone(), keys }).await?;
-            (book.packs, book.mark, book.tail) = (packs, book.next, 0);
-            book.pending.clear();
+            self.pack_head_on(on, book, &[]).await?;
         }
+        Ok(())
+    }
+
+    /// Puts a pack of the records of the journal's entries since the newest head and then `records`, and a head that
+    /// names it after the packs before, of the journal from its next entry on.
+    async fn pack_head_on(&self, on: &Shelf, book: &mut Book, records: &[u8]) -> Result<()> {
+        let pack = self.pack_of_entries(on, &book.pending, records).await?;
+        let mut packs = book.packs.clone();
+        packs.push(pack);
+        let keys = book.keys.clone().into_iter().collect();
+        self.put_head_on(on, book, &Head { anchors: book.anchors.clone(), journal: book.next, packs: packs.clone(), keys }).await?;
+        (book.packs, book.mark, book.tail) = (packs, book.next, 0);
+        book.pending.clear();
         Ok(())
     }
 
@@ -637,8 +662,9 @@ impl Edits {
         Ok(pack.finish().await?)
     }
 
-    /// A pack of the records of journal entries `entries`, on the shelf, read back from it an entry at a time.
-    async fn pack_of_entries(&self, on: &Shelf, entries: &[u64]) -> Result<Blob> {
+    /// A pack of the records of journal entries `entries`, read back from the shelf an entry at a time, then `records`,
+    /// on the shelf.
+    async fn pack_of_entries(&self, on: &Shelf, entries: &[u64], records: &[u8]) -> Result<Blob> {
         let mut pack = on.blob_writer();
         pack.push(Bytes::from_static(PACK)).await?;
         for &n in entries {
@@ -646,6 +672,9 @@ impl Edits {
             let entry = Entry::from_bytes(&bytes).ok_or_else(|| anyhow!("journal entry {n} doesn't read whole"))?;
             drop(bytes);
             pack.push(Bytes::from(entry.records)).await?;
+        }
+        if !records.is_empty() {
+            pack.push(Bytes::copy_from_slice(records)).await?;
         }
         Ok(pack.finish().await?)
     }
@@ -1069,10 +1098,12 @@ impl Shared {
         // Only the once-only quiescent finalizer has an override shelf. The normal
         // save lane retains its bounded snapshot interval; authoritative data is already durable.
         let current = override_shelf.is_some();
-        let warming = move || if current {
-            shared.prepare_warm_at(true, avendb::lab::WarmCapture::encode)
-        } else {
-            shared.prepare_warm_with(avendb::lab::WarmCapture::encode)
+        let warming = move || {
+            let _timed = crate::Timed::new(&shared.lab_turns, "save: work out what to keep", n0_future::time::Instant::now());
+            match current {
+                true => shared.prepare_warm_at(true, avendb::lab::WarmCapture::encode),
+                false => shared.prepare_warm_with(avendb::lab::WarmCapture::encode),
+            }
         };
         #[cfg(not(target_arch = "wasm32"))]
         let warming = tokio::task::spawn_blocking(warming).await?;
@@ -1123,6 +1154,7 @@ impl Shared {
         let edits = self.edits.as_ref().expect("its edits");
         let shared = self.clone();
         let capture = move || {
+            let _timed = crate::Timed::new(&shared.lab_turns, "save: work out its keys", n0_future::time::Instant::now());
             let checked = shared.edits.as_ref().expect("its edits").checked();
             shared.locked_lab().capture_warm_keys(shared.me, checked).map(avendb::lab::WarmCapture::encode)
         };
@@ -1134,7 +1166,10 @@ impl Shared {
         #[cfg(target_arch = "wasm32")]
         let warming = capture();
         let Some(mut warming) = warming else { return };
-        match edits.put_warm_on(on, &mut warming).await {
+        let timed = crate::Timed::new(&self.lab_turns, "save: put its keys", n0_future::time::Instant::now());
+        let put = edits.put_warm_on(on, &mut warming).await;
+        drop(timed);
+        match put {
             Ok(()) => {
                 let shared = self.clone();
                 let warmed = move || shared.locked_lab().warmed(shared.me, warming);

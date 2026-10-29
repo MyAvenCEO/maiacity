@@ -73,6 +73,9 @@ impl Spill {
 /// The numbers of the spill files made in this process, each new one's.
 static FILES: AtomicU64 = AtomicU64::new(0);
 
+/// The most bytes one read of a run of records reads (`Spilled::bytes_of`).
+const RUN: usize = 8 << 20;
+
 /// A spill's file of records, appended to and read at; removed once nothing names it. In a spill's space, the space
 /// itself, whose places it reads: what it appended stays till the space goes.
 enum File {
@@ -397,6 +400,47 @@ impl<V: Record> Spilled<V> {
         Some(v)
     }
 
+    /// The bytes of the records under `ks`, each it holds, in order: those at hand as they are, the others read where
+    /// they lie, a run of them that lie one after the other in a file read at once, each checked by its hash. What a
+    /// save reads of the edits a page just put in, which lie so: once, not a read for each.
+    fn bytes_of(&self, ks: &[V::Key]) -> Option<Vec<Vec<u8>>> {
+        let mut out: Vec<Option<Vec<u8>>> = vec![None; ks.len()];
+        let mut lie: Vec<(usize, Slot)> = Vec::new();
+        {
+            let mut hot = self.hot.lock().expect("hot");
+            for (i, k) in ks.iter().enumerate() {
+                let slot = self.slot(k)?;
+                match hot.get(k) {
+                    Some(v) => out[i] = Some(v.bytes()),
+                    None => lie.push((i, slot)),
+                }
+            }
+        }
+        lie.sort_by_key(|(_, s)| (s.file, s.at));
+        let mut at = 0;
+        while at < lie.len() {
+            // the run from `at`: the slots that follow each other in one file, a budget's worth at most
+            let (file, from) = (lie[at].1.file, lie[at].1.at);
+            let mut end = at + 1;
+            let mut to = from + lie[at].1.len as u64;
+            while end < lie.len() && lie[end].1.file == file && lie[end].1.at == to && to - from < RUN as u64 {
+                to += lie[end].1.len as u64;
+                end += 1;
+            }
+            let run = self.files[file as usize].read(from, u32::try_from(to - from).expect("a run under 4 GB"))
+                .unwrap_or_else(|e| panic!("avendb: its spill of {} doesn't read: {e}", self.what));
+            for (i, slot) in &lie[at..end] {
+                let bytes = &run[(slot.at - from) as usize..(slot.at - from) as usize + slot.len as usize];
+                if *blake3::hash(bytes).as_bytes() != slot.sum {
+                    panic!("avendb: its spill of {} changed in its folder: a disk it can't trust", self.what);
+                }
+                out[*i] = Some(bytes.to_vec());
+            }
+            at = end;
+        }
+        out.into_iter().collect()
+    }
+
     fn insert(&mut self, k: V::Key, v: V) {
         let bytes = v.bytes();
         let at = self.file.append(&bytes).unwrap_or_else(|e| panic!("avendb: its spill of {} takes nothing: {e}", self.what));
@@ -485,6 +529,15 @@ impl<V: Record> Held<V> {
         match &self.spilled {
             Some(s) => s.get(k),
             None => self.mem.get(k).cloned(),
+        }
+    }
+
+    /// The bytes of the records under `ks` (`Record::bytes`), if it holds each, in order: spilled, read as
+    /// `Spilled::bytes_of` reads them.
+    pub(crate) fn bytes_of(&self, ks: &[V::Key]) -> Option<Vec<Vec<u8>>> {
+        match &self.spilled {
+            Some(s) => s.bytes_of(ks),
+            None => ks.iter().map(|k| self.mem.get(k).map(Record::bytes)).collect(),
         }
     }
 
@@ -602,6 +655,12 @@ impl Signeds {
     /// Edit `id`, which it holds, as a value of its own.
     pub(crate) fn owned(&self, id: &EditId) -> Signed {
         Signed::clone(&self.get(id).expect("an edit the store holds"))
+    }
+
+    /// Edits `ids` on the wire, if it holds each, in order: read back from its spill a run at a time
+    /// (`Held::bytes_of`), never decoded.
+    pub(crate) fn wire_of(&self, ids: &[EditId]) -> Option<Vec<Vec<u8>>> {
+        self.held.bytes_of(ids)
     }
 
     /// Edit `id`, if it holds it, as a value of its own.

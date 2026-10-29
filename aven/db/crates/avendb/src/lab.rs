@@ -5370,6 +5370,12 @@ impl Lab {
         self.held(d).signed.owned_get(&edit)
     }
 
+    /// Edits `ids` of device `d` on the wire (`Wire::to_wire`), if it holds each, in order: what a save puts on its
+    /// shelf, read back from its spill a run at a time, as a page it took lies there, never decoded.
+    pub fn signed_wire(&self, d: SignerId, ids: &[EditId]) -> Option<Vec<Vec<u8>>> {
+        self.held(d).signed.wire_of(ids)
+    }
+
     /// Diagnostic policy observation only: no authority, persistence or rendered-state claim.
     /// Unknown/unauthorized/not-yet-replayed all have the same unavailable result.
     pub fn peer_edit_outcome(&self, d: SignerId, peer: SignerId, id: EditId) -> Option<bool> {
