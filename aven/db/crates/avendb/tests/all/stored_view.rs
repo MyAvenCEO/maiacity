@@ -232,7 +232,7 @@ fn pinned_views() -> String {
 }
 
 /// The replay rules' number (`viewRules`, `ViewRules.lean`) and the hash `pinned_views` gave under them.
-const PINNED: (&str, &str) = ("1", "83399cc71f6a405a4d82150b7120c0263dac12e00715f3e62b55523e7d2679e7");
+const PINNED: (&str, &str) = ("2", "20640b9ba0230725d0804420125e7895aa1d1eb2e3cb7580e4527845a44e342d");
 
 /// A device opens a view sealed to the same rules number with any later build (VR1), so what the rules give must not
 /// change under one number. Where this fails: if the replay gives other views now (a rule changed, or a fix changed
