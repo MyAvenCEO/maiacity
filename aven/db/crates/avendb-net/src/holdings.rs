@@ -226,29 +226,51 @@ impl Logs {
         self.of.iter().map(|(l, log)| (*l, log.frontier.clone())).collect()
     }
 
-    /// The stubs of `stubs` (each an id with what it builds on) that stand closed on what this one holds: each of
-    /// their parents in a closed part or such a stub. A held stub counts as held (`LazyBoxes.lean`), as a request
-    /// counts it (`Lab::held_stubs`).
+    /// What stands closed once the held stubs `stubs` (each an id with what it builds on) count as held: each stub whose
+    /// parents are in a closed part or so, and each edit held whose past is whole but for such stubs, and whose keys it
+    /// holds. A held stub counts as held (`LazyBoxes.lean`), and so does what this one holds on top of it: else an edit
+    /// written after a key box held back read as lacked till the box's body came, its log and every read of its vault
+    /// behind (a fresh browser's vault logs, `held_unclosed`, 2026-10-29).
     pub(crate) fn closed_stubs(&self, stubs: &[(EditId, Vec<EditId>)]) -> HashSet<EditId> {
-        let mut closed: HashSet<EditId> = HashSet::new();
-        let mut left: Vec<&(EditId, Vec<EditId>)> = stubs.iter().collect();
-        loop {
-            let before = left.len();
-            left.retain(|(id, parents)| {
-                let stands = parents.iter().all(|p| self.closed.contains(p) || closed.contains(p));
-                if stands {
-                    closed.insert(*id);
-                }
-                !stands
-            });
-            if left.len() == before {
-                return closed;
+        let mut children: HashMap<EditId, Vec<EditId>> = HashMap::new();
+        let mut waiting: HashMap<EditId, usize> = HashMap::new();
+        for log in self.of.values() {
+            for (parent, held) in &log.graph.children {
+                children.entry(*parent).or_default().extend(held.iter().copied());
+            }
+            waiting.extend(log.graph.waiting.iter().map(|(id, n)| (*id, *n)));
+        }
+        let mut ready = vec![];
+        for (id, parents) in stubs {
+            let missing: HashSet<EditId> = parents.iter().copied().filter(|p| !self.closed.contains(p)).collect();
+            if missing.is_empty() {
+                ready.push(*id);
+                continue;
+            }
+            waiting.insert(*id, missing.len());
+            for parent in missing {
+                children.entry(parent).or_default().push(*id);
             }
         }
+        let mut closed = HashSet::new();
+        while let Some(id) = ready.pop() {
+            if !closed.insert(id) {
+                continue;
+            }
+            for child in children.get(&id).into_iter().flatten() {
+                let count = waiting.get_mut(child).expect("a child waits for its parent");
+                *count -= 1;
+                if *count == 0 {
+                    ready.push(*child);
+                }
+            }
+        }
+        closed
     }
 
-    /// `lacks`, counting the held stubs `stubs` (`closed_stubs`) as held: a head that is one of them is no edit
-    /// this one lacks, so a log whose head on the peer is a key box it held back doesn't read as lacked for good.
+    /// `lacks`, counting what the held stubs close (`closed_stubs`) as held: a head that is one of them is no edit
+    /// this one lacks, so a log whose head on the peer is a key box it held back, or an edit on top of one, doesn't read
+    /// as lacked for good.
     pub(crate) fn lacks_with(&self, theirs: &Frontier, stubs: &HashSet<EditId>) -> bool {
         theirs.heads.iter().any(|h| !self.closed.contains(h) && !stubs.contains(h))
             || theirs.waiting.iter().any(|w| !self.at.contains_key(w) && !stubs.contains(w))

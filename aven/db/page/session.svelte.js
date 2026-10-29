@@ -49,7 +49,6 @@ import { noteLifecycle } from './lifecycle.js';
 import { lease, RENEW } from './lease.js';
 import { measureLatency } from './latency-journal.js';
 import { createReactiveRead } from './reactive-read.js';
-import { keptAnswers } from './kept-answers.js';
 import { createWorldReader } from './world-reader.js';
 import { createEntryWindow, createReadWindow } from './query-window.js';
 import { useBuiltInActors, useDevice, refreshActiveView, wantNow } from '../../../maia/content/game/code/sources/device.js';
@@ -604,7 +603,7 @@ function running(d) {
 	if (!mac) noteLifecycle('open');
 	useDevice({
 		// Interest disposal belongs to this device even while a replacement is opening. Never send stale work to it.
-		run: (/** @type {any} */ op) => op?.op === 'interest' || op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
+		run: (/** @type {any} */ op) => op?.op === 'interest' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
 		read: api.readFile
 	});
 	if (holders) watch();
@@ -907,9 +906,6 @@ async function touch(on) {
  *  @param {string} text @param {number} size @returns {Promise<string>} */
 const qr = async (text, size) => (mac ? mac.call('qrSvg', text, size) : avendb.qrSvg(text, size));
 
-/** What each mounted read last took on this page's device (./kept-answers.js): a view that comes back paints it at once. */
-const answers = keptAnswers();
-
 /** What the vaults' screens do, each acting for the vault it names (./Shell.svelte's `api`, beside what its page adds). */
 const api = {
 	/** Subscribe to any targeted local query, independent of the world summary.
@@ -930,7 +926,7 @@ const api = {
 			if (got && typeof got === 'object') Object.defineProperty(got, HEARD, { value: at });
 			return got;
 		};
-		const reader = createReactiveRead({ read: observedWindow(asked), take: kept, failed, observed, kept: answers });
+		const reader = createReactiveRead({ read: observedWindow(asked), take: kept, failed, observed });
 		observers.add(watched);
 		const dispose = $effect.root(() => {
 			$effect(() => {

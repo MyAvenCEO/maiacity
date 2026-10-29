@@ -198,6 +198,7 @@ fn measure_unlock_phone() {
         keys: receipt.keys.clone().into_iter().collect(),
         views: receipt.view.clone().into_iter().collect(),
         shown: kept.iter().cloned().map(Into::into).collect(),
+        queries: receipt.queries.clone().map(Into::into).into_iter().collect(),
     };
     lab.warmed(phone, receipt);
     // UNLOCK_PHONE_AFTER=n: n edits more, its other devices', taken after it saved what it worked out, as the iPhone's

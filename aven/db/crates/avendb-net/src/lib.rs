@@ -906,17 +906,18 @@ impl Node {
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
             differed: Mutex::default(),
-            went: Mutex::default(),
             held: Mutex::default(),
             told: Mutex::default(),
             statements: Mutex::default(),
             receipts: peer_receipts::Receipts::default(),
             ui_receipts: peer_receipts::Receipts::for_ui(),
             outreach,
-            wanted: Mutex::default(),
             fresh: fresh::Fresh::default(),
             claims: Mutex::default(),
             interests: Mutex::default(),
+            wants: watch::Sender::new(0),
+            waits_asked: Mutex::default(),
+            brings: AtomicU64::new(0),
             discovery_running: Mutex::default(),
             discovery_rounds: AtomicUsize::new(0),
             discovery_first_found: AtomicUsize::new(0),
@@ -1713,20 +1714,6 @@ impl Node {
         self.shared.asking(peer, Scope::Logs(logs)).await
     }
 
-    /// Mark the entry logs `logs` as what a page reads now: an asking of what a peer holds more of takes them before
-    /// the other entries' (`Shared::ask_differing`), until one asked for them. Logs that are no entry's come first
-    /// anyway.
-    pub fn want(&self, logs: impl IntoIterator<Item = LogId>) {
-        self.try_want(logs).expect("want requires an open node");
-    }
-
-    pub fn try_want(&self, logs: impl IntoIterator<Item = LogId>) -> Result<()> {
-        let _activity = self.shared.admit()?;
-        let entries = logs.into_iter().filter(|l| matches!(l, LogId::Entry(_)));
-        self.shared.wanted.lock().expect("wanted").extend(entries);
-        Ok(())
-    }
-
     /// Ask the device at endpoint `peer` for its contact card (`Lab::card`), as a device asks the server for its
     /// vault's log before a vault gives the server relay on its entries. How many edits were new.
     pub async fn contact(&self, peer: EndpointId) -> Result<usize> {
@@ -1859,12 +1846,14 @@ impl Node {
             let peers = self.shared.peers.lock().expect("peers");
             peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| p.device).collect()
         };
-        // and those whose connection closed a moment ago, by what they told last, marked reconnecting: else every short
-        // drop of a connection took its logs out of the counts and back, "behind" jumping 294, 2,504, 294 seconds
-        // apart (the iPhone, 2026-10-28), which reads as the UI lying
+        // and those whose connection closed, by what they told last, marked reconnecting, while the view names them:
+        // else every drop of a connection took its logs out of the counts and back ("behind" jumping 294, 2,504, 294
+        // seconds apart, the iPhone 2026-10-28), and a stalled peer gone a minute read as caught up (fresh7: lacked 0,
+        // behind 0 from about 90 s with 9.8k of 52k edits in)
         let counted = {
-            let mut went = self.shared.went.lock().expect("went");
-            counted(&live, &mut went, jobs::now_ms())
+            let reach = self.shared.reach.lock().expect("reach").clone();
+            let held = self.shared.held.lock().expect("held");
+            counted(held.keys().copied(), &live, &reach)
         };
         let heard: Vec<(SignerId, Vec<LogId>)> = {
             let held = self.shared.held.lock().expect("held");
@@ -1885,7 +1874,7 @@ impl Node {
         let lacked: Vec<Value> = {
             let differed = self.shared.differed.lock().expect("differed");
             heard.iter().filter_map(|(d, _)| differed.get(d).map(|(l, t)| json!({ "device": d.to_hex()[..8].to_string(),
-                "lacks": l.len(), "by_stub": t.by_stub, "stubs": t.stubs, "sample": t.sample }))).collect()
+                "lacks": l.logs.len(), "bodies": l.bodies.len(), "by_stub": t.by_stub, "stubs": t.stubs, "sample": t.sample }))).collect()
         };
         // per peer, what moves while a catch-up runs, long before a log is whole (Samuel 2026-10-28: "with zero visible
         // feedback the syncing UI doesn't reflect what is actually happening in real time"): whether a pull of it runs
@@ -2026,6 +2015,8 @@ impl Node {
             .collect();
         json!({
             "served": s.traffic.served_json(),
+            // what held its Lab, by the call, and the slowest turns lately: on a page, what held its one worker
+            "lab": s.lab_turns.json(),
             "policy_observations": s.receipts.json(),
             "reactive_observations": s.ui_receipts.json(),
             "me": { "endpoint": me.id.to_string(), "relays": relays, "direct": direct },
@@ -2237,7 +2228,7 @@ impl Restorer {
 
 impl edits::Taker for Restorer {
     async fn begin(&mut self, checked: Option<avendb::lab::Checked>, warm: &Warm) -> Result<()> {
-        (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new(), shown: Vec::new() });
+        (self.checked, self.keys) = (checked, Warm { keys: warm.keys.clone(), views: Vec::new(), shown: Vec::new(), queries: Vec::new() });
         (self.of_head, self.after) = (0, 0);
         // what it took of a head that didn't read whole goes
         if self.restoring.is_some() {
@@ -2445,38 +2436,34 @@ struct Peer {
 }
 
 /// What a node's tasks share.
-/// How long a known device whose connection closed still counts in `Node::synced`, by what it told last, marked
-/// reconnecting: a phone's connections drop and come back within seconds as it moves between networks or sleeps.
-const RECONNECTING_MS: u64 = 60_000;
-
-/// The devices `Node::synced` counts at `now` (ms since 1970), each with whether it is reconnecting: those connected
-/// (`live`), and those whose last connection closed (`went`) less than `RECONNECTING_MS` ago. It lets go of those gone
-/// longer, and of those connected again.
-fn counted(live: &BTreeSet<SignerId>, went: &mut HashMap<SignerId, u64>, now: u64) -> BTreeMap<SignerId, bool> {
-    went.retain(|d, at| !live.contains(d) && now.saturating_sub(*at) < RECONNECTING_MS);
-    live.iter().map(|d| (*d, false)).chain(went.keys().map(|d| (*d, true))).collect()
+/// The devices `Node::synced` counts, each with whether it is reconnecting: every device whose holdings it heard
+/// (`heard`, `Shared::held`) that is connected (`live`) or that its device's view names (`reach`), by what it told
+/// last. No clock: a connection that drops and comes back moves no count, a peer that stalls counts what it holds till
+/// this device holds it, and a device the view no longer names leaves the counts once its connection closes.
+fn counted(heard: impl Iterator<Item = SignerId>, live: &BTreeSet<SignerId>, reach: &BTreeMap<SignerId, Reach>)
+    -> BTreeMap<SignerId, bool> {
+    heard.filter(|d| live.contains(d) || reach.contains_key(d)).map(|d| (d, !live.contains(&d))).collect()
 }
 
 #[cfg(test)]
 mod counted_tests {
     use super::*;
 
-    /// A device whose connection closes keeps counting, reconnecting, for `RECONNECTING_MS`, then not; once connected
-    /// again it counts as connected, and its closing a moment before is let go of.
+    /// A device whose connection closes counts on, reconnecting, for as long as the view names it, with no clock; one
+    /// connected counts connected; one the view no longer names counts no more once its connection closed.
     #[test]
-    fn a_device_that_drops_its_connection_a_moment_still_counts_reconnecting() {
-        let (mac, phone, peer) = (SignerId([1; 32]), SignerId([2; 32]), SignerId([3; 32]));
-        let mut went = HashMap::from([(peer, 1_000), (phone, 1_000)]);
-        let live = BTreeSet::from([mac]);
-        let now = counted(&live, &mut went, 1_000 + RECONNECTING_MS - 1);
-        assert_eq!(now, BTreeMap::from([(mac, false), (phone, true), (peer, true)]));
-        let later = counted(&live, &mut went, 1_000 + RECONNECTING_MS);
-        assert_eq!(later, BTreeMap::from([(mac, false)]), "gone a minute, it counts no more");
-        assert!(went.is_empty());
-        let mut went = HashMap::from([(peer, 1_000)]);
-        let back = counted(&BTreeSet::from([mac, peer]), &mut went, 2_000);
-        assert_eq!(back, BTreeMap::from([(mac, false), (peer, false)]), "connected again, it counts connected");
-        assert!(went.is_empty());
+    fn a_device_counts_by_what_it_told_while_the_view_names_it() {
+        let (mac, phone, peer, removed) = (SignerId([1; 32]), SignerId([2; 32]), SignerId([3; 32]), SignerId([4; 32]));
+        let named = |d: SignerId| (d, Reach { endpoint: EndpointId::from_bytes(&[0; 32]).expect("an endpoint id"),
+            logs: BTreeSet::new(), files: BTreeSet::new() });
+        let reach = BTreeMap::from([named(mac), named(phone), named(peer)]);
+        let heard = [mac, phone, peer, removed];
+        let now = counted(heard.into_iter(), &BTreeSet::from([mac]), &reach);
+        assert_eq!(now, BTreeMap::from([(mac, false), (phone, true), (peer, true)]), "gone, they count on, reconnecting");
+        let back = counted(heard.into_iter(), &BTreeSet::from([mac, peer, removed]), &reach);
+        assert_eq!(back, BTreeMap::from([(mac, false), (phone, true), (peer, false), (removed, false)]));
+        let gone = counted(heard.into_iter(), &BTreeSet::from([mac, peer]), &reach);
+        assert!(!gone.contains_key(&removed), "a device the view no longer names leaves once its connection closed");
     }
 }
 
@@ -2490,6 +2477,16 @@ struct Differed {
     by_stub: usize,
     stubs: usize,
     sample: Vec<Value>,
+}
+
+/// What a device holds that this node's device lacks (`Shared::lacked`): the logs where that may change what a read
+/// shows (`differ`), and those where it lacks only the bodies of boxes it holds stubs of, while it asks for them
+/// (`Lab::fetch_withheld`). A box's body changes nothing the device knows (`LazyBoxes.lean` S6): no read waits on
+/// `bodies`, and its askings bring them all the same.
+#[derive(Clone, Debug, Default)]
+struct Lacked {
+    logs: BTreeSet<LogId>,
+    bodies: BTreeSet<LogId>,
 }
 
 struct Shared {
@@ -2536,10 +2533,7 @@ struct Shared {
     /// Each device it may tell, by its device's view, and what of its holdings it tells it.
     reach: Mutex<Arc<BTreeMap<SignerId, Reach>>>,
     /// What `differ` worked out last for each device, for when the Lab's turn can't be had, and what it told of it.
-    differed: Mutex<HashMap<SignerId, (BTreeSet<LogId>, Differed)>>,
-    /// When each known device's last connection closed (ms since 1970), as `Node::synced` keeps counting it a while,
-    /// reconnecting (`counted`).
-    went: Mutex<HashMap<SignerId, u64>>,
+    differed: Mutex<HashMap<SignerId, (Lacked, Differed)>>,
     /// What each device told it it holds, on a connection whose hello proved that device.
     held: Mutex<HashMap<SignerId, Holdings>>,
     /// What each peer was last told, and on which connection (`Connection::stable_id`).
@@ -2550,8 +2544,6 @@ struct Shared {
     ui_receipts: peer_receipts::Receipts,
     /// The node loop's handle: the telling of each peer and the asking of each, with their waits (`node_loop`).
     outreach: node_loop::Outreach,
-    /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
-    wanted: Mutex<BTreeSet<LogId>>,
     /// How fresh its reads are (`fresh`): the stamp of its last current read, and the walk of what its live peers
     /// hold that it lacks, kept until what they hold or what it holds changes.
     fresh: fresh::Fresh,
@@ -2559,6 +2551,14 @@ struct Shared {
     pub(crate) claims: Mutex<Claims>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
     interests: Mutex<interest::Interests>,
+    /// How many times the Interests changed (`Shared::change_interests`): what an asking of every log left yields to
+    /// (`Yield`) is read again only once it moved.
+    wants: watch::Sender<u64>,
+    /// The entries of the Interests waiting for their key, and the entries waiting for their vault's schemas and lenses,
+    /// as last asked for (`Shared::ask_waits`): each is asked once as it comes to wait.
+    waits_asked: Mutex<(BTreeSet<LogId>, Vec<(EntryId, VaultId)>)>,
+    /// How many `bring`s it took: each one's Interest is a scope of its own (`Shared::bring_now`).
+    brings: AtomicU64,
     discovery_running: Mutex<HashMap<String, bool>>,
     /// The discovery rounds that asked a peer, and the one whose find first named something (0 = none yet): a test
     /// tells by them that the round a connection started brought a view's entries, never a later one.
@@ -2761,14 +2761,14 @@ impl Shared {
         // A real browser task boundary lets pending page messages register foreground
         // work; immediately-ready Rust futures alone cannot yield the worker event loop.
         #[cfg(target_arch = "wasm32")]
-        if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
+        if class == lab_schedule::Class::Background { self.give_way().await; }
         let (what, asked) = (std::any::type_name_of_val(&f), Instant::now());
         let turn = self.lab_schedule.acquire(class).await;
         let shared = self.clone();
         let me = acting().unwrap_or(self.me);
         let work = move || {
             let (_operation, _turn) = (operation, turn);
-            let mut lab = shared.locked_lab();
+            let mut lab = shared.turn_lab();
             let _timed = Timed::new(&shared.lab_turns, what, asked);
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
@@ -2834,7 +2834,7 @@ impl Shared {
             let began = Instant::now();
             let out = work();
             if began.elapsed() > LONG_TURN {
-                time::sleep(Duration::ZERO).await;
+                self.give_way().await;
             }
             Ok(out)
         }
@@ -2854,14 +2854,14 @@ impl Shared {
         f: impl FnOnce(&Lab, SignerId) -> T + Send + 'static,
     ) -> T {
         #[cfg(target_arch = "wasm32")]
-        if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
+        if class == lab_schedule::Class::Background { self.give_way().await; }
         let (what, asked) = (std::any::type_name_of_val(&f), Instant::now());
         let turn = self.lab_schedule.acquire(class).await;
         let shared = self.clone();
         let me = acting().unwrap_or(self.me);
         let work = move || {
             let _turn = turn;
-            let lab = shared.locked_lab();
+            let lab = shared.turn_lab();
             let _timed = Timed::new(&shared.lab_turns, what, asked);
             f(&lab, me)
         };
@@ -2872,7 +2872,7 @@ impl Shared {
             let began = Instant::now();
             let out = work();
             if began.elapsed() > LONG_TURN {
-                time::sleep(Duration::ZERO).await;
+                self.give_way().await;
             }
             out
         }
@@ -2881,7 +2881,30 @@ impl Shared {
     /// The Lab, locked. A call that changes it never poisons the lock (`lab` catches its panic first); one that only
     /// reads it (the saver's) changed nothing if it panicked, so the Lab it leaves is taken as it is rather than lost
     /// to every later call.
-    pub(crate) fn locked_lab(&self) -> std::sync::MutexGuard<'_, Lab> {
+    /// Its Lab, held outside a turn of its own (`try_lab`, `read`): the save lane and a signer's record. The hold is
+    /// timed among its Lab's turns by where it was taken (`file:line`), so a page's report names it when it holds the
+    /// one worker (a fresh browser's worker answered nothing for 4 min twice, with 9 s of its timed work, 2026-10-29).
+    #[track_caller]
+    pub(crate) fn locked_lab(&self) -> HeldLab<'_> {
+        let at = std::panic::Location::caller();
+        let asked = Instant::now();
+        let lab = self.lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        HeldLab { lab, _timed: Timed::new(&self.lab_turns, lab_schedule::place(at), asked) }
+    }
+
+    /// Lets a page's worker run its event loop once (its packets, the page's messages), timed among its Lab's turns as
+    /// "worker away": how long the worker was gone before this task ran again. A long one with little Lab work held
+    /// meanwhile is the worker held by something else, or not run at all (fresh8, 2026-10-29: 239 s of these on one
+    /// page, 9 s of timed Lab work).
+    #[cfg(target_arch = "wasm32")]
+    async fn give_way(&self) {
+        let away = Instant::now();
+        time::sleep(Duration::ZERO).await;
+        self.lab_turns.took("worker away", away.elapsed().as_millis() as u64, 0);
+    }
+
+    /// Its Lab, for a turn that times itself (`Timed`).
+    fn turn_lab(&self) -> std::sync::MutexGuard<'_, Lab> {
         self.lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
@@ -3422,6 +3445,7 @@ impl Shared {
                 #[cfg(target_arch = "wasm32")]
                 let (prepared, permit, activity, ()) = shared.prepare_received_page(edits, permit, ()).await?;
                 let checked = taking.elapsed();
+                let spent = prepared.spent();
                 let (got, whose, held) = shared
                     .try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| {
                         let (_permit, _activity) = (permit, activity);
@@ -3438,7 +3462,7 @@ impl Shared {
                     shared.catch_up_paced_class(false, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
                 }
                 let took = taking.elapsed();
-                Ok::<_, anyhow::Error>((got, whose, [checked, kept - checked, took - kept, took]))
+                Ok::<_, anyhow::Error>((got, whose, [checked, kept - checked, took - kept, took], spent))
             });
             // the pages in flight land (and more are asked) while this one is taken
             let mut take = std::pin::pin!(async { take.await.context("a page's taking ended")? });
@@ -3452,7 +3476,7 @@ impl Shared {
                     }
                 }
             };
-            let (got, whose, [checked, kept, caught, took]) = taken?;
+            let (got, whose, [checked, kept, caught, took], (verified, yielded)) = taken?;
             let finished = Instant::now();
             // a claim holds on while its pages land (`Claims::landed`), as fast as they came lately
             let lately = self.rates.lock().expect("rates").get(&device).and_then(pulls::Rate::per_second);
@@ -3466,6 +3490,8 @@ impl Shared {
                 wait_ms: wait.as_millis() as u64,
                 take_ms: took.as_millis() as u64,
                 check_ms: checked.as_millis() as u64,
+                verify_ms: verified.as_millis() as u64,
+                yield_ms: yielded.as_millis() as u64,
                 lab_ms: kept.as_millis() as u64,
                 catch_ms: caught.as_millis() as u64,
                 ms: finished.duration_since(since).as_millis() as u64,
@@ -3659,7 +3685,7 @@ impl Shared {
         let activity = self.admit()?;
         let _checking = self.receive_checking.clone().lock_owned().await;
         let preparation = self.read(move |lab, me| lab.prepare_receive(me, edits)).await;
-        let prepared = preparation.check_cooperatively(|| time::sleep(Duration::ZERO)).await;
+        let prepared = preparation.check_cooperatively(|| self.give_way()).await;
         Ok((prepared, permit, activity, owner))
     }
 
@@ -3812,16 +3838,10 @@ impl Shared {
             if pending {
                 tokio::task::yield_now().await;
             } else {
-                let missing=self.fetch_owner_dependencies().await;
-                let key_wait=self.prioritize_owner_keys().await;
-                let lane_wait=self.prioritize_owner_lanes().await;
-                if missing || key_wait || lane_wait {
-                    // Network failure is an explicit wait, not a tight reconstruction loop.
-                    tokio::select! {
-                        _=self.bootstrap_due.notified()=>{},
-                        _=time::sleep(self.opts.retry.max(Duration::from_millis(250)))=>{},
-                    }
-                } else { self.bootstrap_due.notified().await; }
+                // what no peer gave yet is asked again once one connects or announces (`hear`), not on a timer
+                while self.fetch_owner_dependencies().await {}
+                self.ask_waits().await;
+                self.bootstrap_due.notified().await;
             }
         }
     }
@@ -4075,6 +4095,9 @@ impl Shared {
         drop(ranges);
         drop(held);
         if admitted { self.live_announced(device, full, &live_logs); }
+        if admitted && full { self.ask_now_of_device(device); }
+        // a peer that connected or announced may hold the dependencies no peer gave yet (`bootstrap_pump`)
+        if admitted { self.bootstrap_due.notify_one(); }
         self.jobs.stir();
     }
 
@@ -4096,8 +4119,6 @@ impl Shared {
         self.fresh.moved();
         if forget {
             held.remove(&peer.device);
-        } else {
-            self.went.lock().expect("went").insert(peer.device, jobs::now_ms());
         }
         self.ranges.lock().expect("ranges").gone(peer.conn.stable_id(), peer.device, forget);
         drop(held);
@@ -4118,32 +4139,44 @@ impl Shared {
     /// holds of it. A log the node holds nothing of, which its view can't place, it asks for naming nothing of it
     /// (`session::only`), as its request on a new connection does: else it would never learn of a new entry. A device
     ///
-    /// The stubs it holds of key boxes a peer held back count as held, as its request counts them (`Lab::held_stubs`):
-    /// else a log whose head on the peer is such a box read as lacked for good, its asking brought nothing new, and the
-    /// views waited on it (an iPhone lacking 2,577 of 3,090 logs, 2026-10-28, Fix D). Where the Lab's turn can't be had,
-    /// it answers what it worked out last for the device, not nothing, so the count the views wait on doesn't drop
-    /// to nothing and back.
+    /// The stubs it holds of key boxes a peer held back count as held (`Lab::held_stubs`), their bodies asked for or
+    /// not: a box's body changes nothing its device knows (`LazyBoxes.lean` S6). Else a log whose head on the peer is
+    /// such a box read as lacked, its asking brought nothing new, and the views waited on it (an iPhone lacking 2,577 of
+    /// 3,090 logs, 2026-10-28, Fix D); and once it asked for their bodies, 2,517 vault and share logs read as lacked
+    /// again, every read of their vaults behind while the bodies came (a fresh browser, 2026-10-29). Where the Lab's
+    /// turn can't be had, it answers what it worked out last for the device, not nothing, so the count the views wait
+    /// on doesn't drop to nothing and back.
     async fn differ(self: &Arc<Self>, device: SignerId) -> BTreeSet<LogId> {
+        self.lacked(device).await.logs
+    }
+
+    /// The logs where `device` holds an edit this node's device lacks (`differ`), and apart from them, while it asks
+    /// for the bodies of the boxes it holds stubs of, the logs where `device` holds no more than those (`Lacked`).
+    async fn lacked(self: &Arc<Self>, device: SignerId) -> Lacked {
         let Some(theirs) = self.held.lock().expect("held").get(&device).map(|h| h.logs.clone()) else {
-            return BTreeSet::new();
+            return Lacked::default();
         };
         let (shared, known) = (self.clone(), self.reach.lock().expect("reach").clone());
         let worked = self.try_lab(move |lab, me| {
             let mine = shared.logs_of(lab, me);
-            let stubs = mine.closed_stubs(&lab.held_stubs(me));
+            let (held_stubs, asks_bodies) = lab.held_stubs(me);
+            let stubs = mine.closed_stubs(&held_stubs);
             let mut now: Option<BTreeSet<LogId>> = None;
             let mut within = |l: &LogId| {
                 let reach = |lab: &mut Lab| lab.announce(me, device).into_iter().map(|(l, _)| l).collect();
                 known.get(&device).is_some_and(|r| r.logs.contains(l))
                     || now.get_or_insert_with(|| reach(lab)).contains(l)
             };
-            let (mut lacking, mut by_stub, mut sample) = (BTreeSet::new(), 0, Vec::new());
+            let (mut lacking, mut bodies, mut by_stub, mut sample) = (BTreeSet::new(), BTreeSet::new(), 0, Vec::new());
             for (l, f) in theirs {
                 if !mine.lacks(&f) {
                     continue;
                 }
                 if !mine.lacks_with(&f, &stubs) {
                     by_stub += 1;
+                    if asks_bodies {
+                        bodies.insert(l);
+                    }
                     continue;
                 }
                 if mine.of.contains_key(&l) && !within(&l) {
@@ -4161,14 +4194,14 @@ impl Shared {
                 }
                 lacking.insert(l);
             }
-            (lacking, Differed { by_stub, stubs: stubs.len(), sample })
+            (Lacked { logs: lacking, bodies }, Differed { by_stub, stubs: stubs.len(), sample })
         });
         let worked = worked.await;
         let mut last = self.differed.lock().expect("differed");
         match worked {
-            Ok((lacking, told)) => {
-                last.insert(device, (lacking.clone(), told));
-                lacking
+            Ok((lacked, told)) => {
+                last.insert(device, (lacked.clone(), told));
+                lacked
             }
             Err(_) => last.get(&device).map(|(l, _)| l.clone()).unwrap_or_default(),
         }
@@ -4194,8 +4227,10 @@ impl Shared {
     async fn ask_differing(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
-        // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends
-        let differing = self.differ(peer.device).await;
+        // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends: those that
+        // may change a read, and the bodies of the boxes it holds stubs of, which no read waits on
+        let Lacked { logs: mut differing, bodies } = self.lacked(peer.device).await;
+        differing.extend(bodies);
         // how fast this peer's pages came lately, or as a new peer's are counted to (`pulls::Rate::start_per_second`)
         let rate = self.rates.lock().expect("rates").get(&peer.device).and_then(pulls::Rate::per_second);
         let rate = rate.unwrap_or_else(pulls::Rate::start_per_second);
@@ -4213,34 +4248,18 @@ impl Shared {
             });
         }
         let (mut new, mut stage) = (0, AskingStage::Manifests);
-        // a new device's views ask by selectors before they know an entry: the first asking waits a moment for what
-        // peers name for them, Maia City's manifests first, else it would take every log at once and the views theirs
-        // only at its end; a catch-up of a few logs asks for them at once
-        if left.len() > FIRST_FINDS_LOGS {
-            self.first_finds().await;
-        }
         let asked = loop {
-            let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
-            let logs = {
-                let mut wanted = self.wanted.lock().expect("wanted");
-                let (active, manifests) = {
-                    let interests = self.interests.lock().expect("interests");
-                    (interests.entries(), interests.manifests())
-                };
-                let mut priority = bootstrap_dependencies::key_logs(&active, &key_waits);
-                priority.extend(active);
-                let (logs, asked_as) = next_asking_as(&mut left, &wanted, &priority, &manifests, &mut stage);
-                wanted.retain(|l| !logs.contains(l));
-                (logs, asked_as)
+            let (logs, asked_as) = {
+                let interests = self.interests.lock().expect("interests");
+                next_asking_as(&mut left, &interests.entries(), &interests.manifests(), &mut stage)
             };
-            let (logs, asked_as) = logs;
             if logs.is_empty() {
                 break Ok(new);
             }
             // an asking of every log left yields to what the open views come to want now while it runs (`Yield`):
             // a view opened, or peers named the entries a new device's view asks for by its selectors
             let wants = self.views_want();
-            let yielding = left.is_empty().then(|| Yield::new(logs.clone(), wants.clone()));
+            let yielding = left.is_empty().then(|| Yield::new(logs.clone(), wants.clone(), *self.wants.borrow()));
             let (began, at) = (Instant::now(), jobs::now_ms());
             let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, yielding.as_ref()).await;
             // which logs it asked, and which of them the views want, before every other: whether a page's room came first
@@ -4272,16 +4291,6 @@ impl Shared {
         // what every asking brought, brought up to date at last, however it ended
         self.catch_up_paced_class(true, lab_schedule::Class::Background).await;
         asked
-    }
-
-    /// Waits, at most `FIRST_FINDS`, until peers named something for the open views' selectors, while they ask by
-    /// selectors alone (`Interests::finding`): a new device's pages, which know no entry before their first find came
-    /// back. At once where no view asks so, or one names an entry.
-    async fn first_finds(self: &Arc<Self>) {
-        let until = Instant::now() + FIRST_FINDS;
-        while self.interests.lock().expect("interests").finding() && Instant::now() < until {
-            time::sleep(Duration::from_millis(20)).await;
-        }
     }
 
     /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
@@ -4601,11 +4610,13 @@ pub(crate) struct Yield {
     asked: BTreeSet<LogId>,
     before: BTreeSet<LogId>,
     yielded: AtomicBool,
+    /// How many times the Interests had changed when it last read what the views want (`Shared::wants`).
+    seen: AtomicU64,
 }
 
 impl Yield {
-    fn new(asked: BTreeSet<LogId>, before: BTreeSet<LogId>) -> Self {
-        Self { asked, before, yielded: AtomicBool::new(false) }
+    fn new(asked: BTreeSet<LogId>, before: BTreeSet<LogId>, seen: u64) -> Self {
+        Self { asked, before, yielded: AtomicBool::new(false), seen: AtomicU64::new(seen) }
     }
 
     /// Whether `now`, what the views want now, holds a log it asks for that they didn't want when it began.
@@ -4613,8 +4624,12 @@ impl Yield {
         now.iter().any(|l| self.asked.contains(l) && !self.before.contains(l))
     }
 
-    /// Whether it yields now to what `shared`'s views want; once it did, it stays yielded.
+    /// Whether it yields now to what `shared`'s views want; once it did, it stays yielded. What they want is read
+    /// again only once the Interests changed since it last read it.
     fn due(&self, shared: &Shared) -> bool {
+        if self.yielded() { return true; }
+        let now = *shared.wants.borrow();
+        if self.seen.swap(now, Ordering::Relaxed) == now { return false; }
         let due = self.yields_to(&shared.views_want());
         if due {
             self.yielded.store(true, Ordering::Relaxed);
@@ -4628,15 +4643,63 @@ impl Yield {
 }
 
 impl Shared {
-    /// What the open views want: the entries their Interests name or peers named for their selectors, the manifests
-    /// peers named for them, and the entries pages asked for (`Node::want`). An asking's `Yield` reads it.
+    /// What the open views want: the entries their Interests name or peers named for their selectors, and the
+    /// manifests peers named for them. An asking's `Yield` reads it.
     fn views_want(&self) -> BTreeSet<LogId> {
-        let mut out: BTreeSet<LogId> = {
-            let interests = self.interests.lock().expect("interests");
-            interests.entries().into_iter().chain(interests.manifests()).collect()
-        };
-        out.extend(self.wanted.lock().expect("wanted").iter().copied());
+        let interests = self.interests.lock().expect("interests");
+        interests.entries().into_iter().chain(interests.manifests()).collect()
+    }
+
+    /// Changes the views' Interests by `change` (`interest.rs`): what yields to them reads them again (`wants`), and
+    /// the logs the change newly wants now are asked at once of every live peer that holds more of them (`ask_now`).
+    pub(crate) fn change_interests<T>(self: &Arc<Self>, change: impl FnOnce(&mut interest::Interests) -> T) -> T {
+        let (out, now) = self.interests_changed(change);
+        if !now.is_empty()
+            && !self.opts.lazy
+            && let Ok(activity) = self.admit()
+        {
+            let shared = self.clone();
+            task::spawn(async move {
+                let _activity = activity;
+                shared.ask_now(now).await;
+            });
+        }
         out
+    }
+
+    /// `change_interests`, but the logs the change newly wants now are left to the caller to ask: they are returned.
+    pub(crate) fn interests_changed<T>(&self, change: impl FnOnce(&mut interest::Interests) -> T) -> (T, BTreeSet<LogId>) {
+        let (out, now) = {
+            let mut interests = self.interests.lock().expect("interests");
+            let before = interests.now();
+            let out = change(&mut interests);
+            let now: BTreeSet<LogId> = interests.now().difference(&before).copied().collect();
+            (out, now)
+        };
+        self.wants.send_modify(|n| *n += 1);
+        (out, now)
+    }
+
+    /// The entries of the views' Interests that came to wait for their key, asked at once (`ask_now`): their key
+    /// comes in their own log. And where the entries a scope names wait for their vault's schemas and lenses, that
+    /// scope finds them (`discovery::lane_queries`). Each once, as it comes to wait.
+    pub(crate) async fn ask_waits(self: &Arc<Self>) {
+        let (keys, lanes) = self.read(|lab, me| (lab.owner_base_key_waits(me), lab.owner_base_lane_waits(me))).await;
+        let viewed: BTreeSet<LogId> = self.interests.lock().expect("interests").entries().into_iter().collect();
+        let keyed: BTreeSet<LogId> = keys.into_iter().map(LogId::Entry).filter(|l| viewed.contains(l)).collect();
+        let (fresh, lanes_moved) = {
+            let mut asked = self.waits_asked.lock().expect("waits asked");
+            let fresh: BTreeSet<LogId> = keyed.difference(&asked.0).copied().collect();
+            let moved = asked.1 != lanes;
+            *asked = (keyed, lanes.clone());
+            (fresh, moved)
+        };
+        if !fresh.is_empty() && !self.opts.lazy {
+            self.ask_now(fresh).await;
+        }
+        if lanes_moved && !lanes.is_empty() {
+            self.find_lanes(&lanes);
+        }
     }
 }
 
@@ -4656,26 +4719,19 @@ enum AskingStage {
 }
 
 
-/// How long a connection's first asking waits for what peers name for the views' selectors (`Shared::first_finds`),
-/// at most: a find's round trip over the relay, the device's keys of the vaults found on the way.
-const FIRST_FINDS: Duration = Duration::from_millis(1500);
-/// The fewest logs a connection's askings take for its first to wait for the views' finds (`FIRST_FINDS`): a catch-up
-/// of fewer comes at once, whatever the views want.
-const FIRST_FINDS_LOGS: usize = 64;
-
 /// The logs of `left` to ask for next, taken out of it (`Shared::ask_differing`), by `stage`, which it moves on. First
-/// the manifests peers named for the views (`manifests`), if any are left; then the logs the open views want now
-/// (`active`, with their audiences' keys) and the entry logs pages asked for (`wanted`), if any are left; each with
+/// the manifests peers named for the views (`manifests`), if any are left; then the logs the open views want
+/// (`active`, their Interests' entries), if any are left; each with
 /// every vault's and share's log not asked yet, which say who may do what and are few, at most `VIEW_LOGS`; else, and
 /// then, every log left, in one asking. None once `left` is empty. Not every audience's log: those hold the keys and
 /// their wraps, most of a vault's edits (2026-10-27, with them in the first asking an iPhone's views never opened).
 #[cfg(test)]
-fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> BTreeSet<LogId> {
-    next_asking_as(left, wanted, active, manifests, stage).0
+fn next_asking(left: &mut BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> BTreeSet<LogId> {
+    next_asking_as(left, active, manifests, stage).0
 }
 
 /// `next_asking`, and what it asked: `manifests`, `views` or `rest` (`traffic::Asking`).
-fn next_asking_as(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> (BTreeSet<LogId>, &'static str) {
+fn next_asking_as(left: &mut BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> (BTreeSet<LogId>, &'static str) {
     let rules = |left: &BTreeSet<LogId>| left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_))).copied().collect::<Vec<_>>();
     let (mut next, mut asked) = (BTreeSet::new(), "rest");
     if *stage == AskingStage::Manifests {
@@ -4688,7 +4744,7 @@ fn next_asking_as(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: 
     }
     if next.is_empty() && *stage == AskingStage::Views {
         *stage = AskingStage::Rest;
-        let viewed: Vec<LogId> = active.iter().chain(wanted).filter(|l| left.contains(l)).copied().collect();
+        let viewed: Vec<LogId> = active.iter().filter(|l| left.contains(l)).copied().collect();
         if !viewed.is_empty() {
             next = viewed.into_iter().chain(rules(left)).take(VIEW_LOGS).collect();
             asked = "views";
@@ -4885,17 +4941,17 @@ mod tests {
         let entry = |i: u8| LogId::Entry(EntryId([i; 32]));
         let mut left: BTreeSet<LogId> = (1..=5).map(entry).collect();
         left.extend([LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32])), LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]))]);
-        let (wanted, view) = ([entry(1)].into(), [entry(99), entry(4)]);
-        // the view's logs left and the old wants, with the vaults' and shares' logs; a log it doesn't lack isn't asked
+        let view = [entry(1), entry(99), entry(4)];
+        // the view's logs left, with the vaults' and shares' logs; a log it doesn't lack isn't asked
         let mut stage = AskingStage::Manifests;
         let none = BTreeSet::new();
-        let first = next_asking(&mut left, &wanted, &view, &none, &mut stage);
+        let first = next_asking(&mut left, &view, &none, &mut stage);
         let audience = LogId::Audience(VaultId([9; 32]), avendb::id::AudienceId([7; 32]));
         assert_eq!(first, [entry(1), entry(4), LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32]))].into());
         // then the rest in one asking, an audience's keys among them, so its pages come by their places across every log
-        let rest = next_asking(&mut left, &wanted, &view, &none, &mut stage);
+        let rest = next_asking(&mut left, &view, &none, &mut stage);
         assert_eq!(rest, [entry(2), entry(3), entry(5), audience].into());
-        assert!(left.is_empty() && next_asking(&mut left, &wanted, &view, &none, &mut stage).is_empty());
+        assert!(left.is_empty() && next_asking(&mut left, &view, &none, &mut stage).is_empty());
     }
 
     #[test]
@@ -4908,18 +4964,18 @@ mod tests {
         // entry 5 and 6 are manifests (6 held already: not left), entry 2 and 3 the view's rooms
         let (manifests, view) = ([entry(5), entry(60)].into(), [entry(2), entry(3), entry(5)]);
         let mut stage = AskingStage::Manifests;
-        let first = next_asking(&mut left, &BTreeSet::new(), &view, &manifests, &mut stage);
+        let first = next_asking(&mut left, &view, &manifests, &mut stage);
         assert_eq!(first, [entry(5), vault, share].into(), "the manifests first, with who may do what");
-        let views = next_asking(&mut left, &BTreeSet::new(), &view, &manifests, &mut stage);
+        let views = next_asking(&mut left, &view, &manifests, &mut stage);
         assert_eq!(views, [entry(2), entry(3)].into(), "then the view's own");
-        let rest = next_asking(&mut left, &BTreeSet::new(), &view, &manifests, &mut stage);
+        let rest = next_asking(&mut left, &view, &manifests, &mut stage);
         assert_eq!(rest, [entry(1), entry(4), entry(6), audience].into(), "then every other log at once");
         assert!(left.is_empty());
         // no manifest named yet: the views first, as before
         let mut left: BTreeSet<LogId> = (1..=3).map(entry).collect();
         let mut stage = AskingStage::Manifests;
-        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[entry(2)], &BTreeSet::new(), &mut stage), [entry(2)].into());
-        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[entry(2)], &BTreeSet::new(), &mut stage), [entry(1), entry(3)].into());
+        assert_eq!(next_asking(&mut left, &[entry(2)], &BTreeSet::new(), &mut stage), [entry(2)].into());
+        assert_eq!(next_asking(&mut left, &[entry(2)], &BTreeSet::new(), &mut stage), [entry(1), entry(3)].into());
     }
 
     #[test]
@@ -4928,7 +4984,7 @@ mod tests {
         let mut left: BTreeSet<LogId> = (1..=300).map(|i| entry(i as u8)).collect();
         left.insert(LogId::Vault(VaultId([9; 32])));
         let all = left.clone();
-        assert_eq!(next_asking(&mut left, &BTreeSet::new(), &[], &BTreeSet::new(), &mut AskingStage::Manifests), all);
+        assert_eq!(next_asking(&mut left, &[], &BTreeSet::new(), &mut AskingStage::Manifests), all);
     }
 
     #[test]
@@ -4995,7 +5051,26 @@ mod admission_tests {
 mod prepared_receive_tests;
 
 /// One Lab call's turn, timed from when it asked for it: its wait ends as it holds the Lab, its hold as this drops.
-struct Timed<'a> {
+/// The Lab held outside a turn (`Shared::locked_lab`), timed as long as it is held.
+pub(crate) struct HeldLab<'a> {
+    lab: std::sync::MutexGuard<'a, Lab>,
+    _timed: Timed<'a>,
+}
+
+impl std::ops::Deref for HeldLab<'_> {
+    type Target = Lab;
+    fn deref(&self) -> &Lab {
+        &self.lab
+    }
+}
+
+impl std::ops::DerefMut for HeldLab<'_> {
+    fn deref_mut(&mut self) -> &mut Lab {
+        &mut self.lab
+    }
+}
+
+pub(crate) struct Timed<'a> {
     turns: &'a lab_schedule::Turns,
     what: &'static str,
     asked: Instant,
@@ -5003,7 +5078,7 @@ struct Timed<'a> {
 }
 
 impl<'a> Timed<'a> {
-    fn new(turns: &'a lab_schedule::Turns, what: &'static str, asked: Instant) -> Self {
+    pub(crate) fn new(turns: &'a lab_schedule::Turns, what: &'static str, asked: Instant) -> Self {
         Self { turns, what, asked, held: Instant::now() }
     }
 }

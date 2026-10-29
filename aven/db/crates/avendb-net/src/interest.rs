@@ -134,6 +134,17 @@ impl Interests {
         n
     }
 
+    /// Drops scope `scope` with no tombstone: a node's own scope (`bring`), which no late update can revive.
+    pub(crate) fn remove(&mut self, scope: &str) {
+        self.scopes.remove(scope);
+    }
+
+    /// Every entry some scope wants now, by id or by what peers named for its selectors at that tier: what a change
+    /// newly adds of it is asked at once (`Shared::ask_now`, Lean `Interest.lean`'s `asksNow`).
+    pub(crate) fn now(&self) -> BTreeSet<LogId> {
+        self.scopes.values().flat_map(|s| s.at(Tier::Now)).collect()
+    }
+
     pub(crate) fn current(&self, scope: &str, revision: u64) -> bool {
         self.scopes.get(scope).is_some_and(|s| s.revision == revision && s.live())
     }
@@ -181,12 +192,6 @@ impl Interests {
         let manifest = Label::Type(Sym::new(MANIFEST_TYPE));
         self.scopes.values().filter(|s| s.live())
             .any(|s| s.queries().iter().any(|q| selector(q).blind().is_some_and(|ls| ls.contains(&manifest))))
-    }
-    /// Whether the live scopes name no entry yet, by id or by what peers named for their selectors, though some ask by
-    /// a selector: a new device's views, before its first find came back.
-    pub(crate) fn finding(&self) -> bool {
-        let live: Vec<_> = self.scopes.values().filter(|s| s.live()).collect();
-        live.iter().any(|s| !s.queries().is_empty()) && live.iter().all(|s| s.named() == 0) && self.manifests.is_empty()
     }
 
     /// Every entry the scopes want, in the scheduler's order (Lean `schedule`).
@@ -238,7 +243,9 @@ mod tests {
         let mut i = Interests::default();
         i.replace("v".into(), 1, vec![Want::now(vec![log(1)])]).unwrap();
         assert!(i.current("v", 1));
+        assert_eq!(i.now(), [log(1)].into());
         assert_eq!(i.replace("v".into(), 2, vec![]), Ok(true));
+        assert!(i.now().is_empty());
         assert!(!i.current("v", 1) && !i.current("v", 2));
         assert!(i.entries().is_empty(), "closed_brings_nothing");
         assert_eq!(i.replace("v".into(), 1, vec![Want::now(vec![log(1)])]), Ok(false), "a cleared view stays cleared");
@@ -265,6 +272,7 @@ mod tests {
         i.replace("v".into(), 1, vec![want(Tier::Now, &[1]), rooms.clone(), want(Tier::Later, &[2])]).unwrap();
         assert!(i.discovered("v", 1, &[log(9), log(1)]));
         assert_eq!(i.entries(), vec![log(1), log(9), log(2)]);
+        assert_eq!(i.now(), [log(1)].into(), "named at the selector's tier, next");
         i.replace("v".into(), 2, vec![want(Tier::Now, &[3]), rooms]).unwrap();
         assert_eq!(i.entries(), vec![log(3), log(9)], "an unchanged selector keeps what peers named");
         assert!(!i.discovered("v", 1, &[log(8)]), "old work stays cancelled");
@@ -277,9 +285,7 @@ mod tests {
         let mut i = Interests::default();
         let manifests = vec![Query { types: vec![MANIFEST_TYPE.into()], vault: None }];
         i.replace("v".into(), 1, vec![Want { tier: Tier::Now, entries: vec![], queries: manifests }]).unwrap();
-        assert!(i.finding(), "a view that asks by selectors alone, before any find came back");
         i.found_manifests(&[log(7), log(8)]);
-        assert!(!i.finding());
         assert_eq!(i.manifests(), [log(7), log(8)].into());
         i.replace("v".into(), 2, vec![want(Tier::Now, &[1])]).unwrap();
         assert!(i.manifests().is_empty(), "no view asks for manifests now");

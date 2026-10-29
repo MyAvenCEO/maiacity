@@ -14,6 +14,11 @@ stand, on the facts those take away, and on the facts the removals after it hide
 audience alone (`removes_aud`), which an inert replay hides from no edit that stands (`hinertP`), so the state kept
 there is the same whatever the edits after it (`kept_rung`). Then stepping on from the rung is stepping on from a tail
 there (`V4_tail_replays`): the replay of every edit (`V4_rung_replays`).
+
+Nothing here bounds how far back a rung is. A replay keeps its rungs near its place as states and, further back, a
+mark every 4,096 places of its order (`Marks` in `policy.rs`), as bytes its stored view keeps too: each mark is a rung,
+the state the edits before it made when it was kept, so `V4_rung_replays` is the law of stepping on from it, and a late
+edit costs the edits from the mark before it on, not every edit.
 -/
 
 namespace AvenDB

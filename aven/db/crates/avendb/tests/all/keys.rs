@@ -89,6 +89,26 @@ fn entry_reader_cannot_open_other_entries() {
     assert!(!contains(&w.lab.store(w.mac_c), ONBOARDING_TEXT));
 }
 
+/// A box to an entry's key that a device derives from none of the audience keys it holds is tried once, and again only
+/// once it holds another key of that audience: a refresh after an edit it reads tries none of them again. A fresh
+/// browser tried each of thousands of such boxes with each of its audience's keys at every step of its catch-up, 1.4 s a
+/// step (fresh8, 2026-10-29).
+#[test]
+fn a_box_whose_key_derives_from_none_held_is_not_tried_at_every_refresh() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let read = share(h.coop, vault(w.carol), Level::Read, by_id(h.welcome));
+    w.lab.issue(w.mac_a, &[w.mac_a], read).unwrap();
+    w.lab.sync_all(1);
+    let underived = |lab: &Lab| lab.perf(w.mac_c)["counts"]["keys: boxes underived"].as_u64().unwrap_or(0);
+    let before = underived(&w.lab);
+    assert!(before > 0, "Carol's Mac holds boxes to keys it derives from none it holds");
+    w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
+    w.lab.sync(w.mac_a, w.mac_c);
+    assert_eq!(text(&w.lab, w.mac_c, h.welcome, 2).as_deref(), Some(AFTER_TEXT), "Carol reads the edit");
+    assert_eq!(underived(&w.lab), before, "no box tried again with the same keys");
+}
+
 #[test]
 fn server_holds_only_ciphertext() {
     let mut w = world();

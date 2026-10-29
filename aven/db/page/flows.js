@@ -14,8 +14,8 @@
  * alone, so every cap still holds: a function asks, the vault decides.
  *
  * Every app knows the content flow and its two functions, and the story flow, by heart (`FLOWS`, `FUNCTIONS`), as it
- * knows avenDB's own schemas, and Maia City, the coop of the seed the person's claim founded, holds each as an entry
- * of its own (./Account.svelte `standardize`). A vault's own flows and functions come first, then Maia City's where
+ * knows avenDB's own schemas: no page writes them into a vault as it opens (a view only reads; one that goes in
+ * goes as an AIP). A vault's own flows and functions come first, then Maia City's where
  * this device knows it as the person's seed (./vaults.js `seedCity`), then the app's: only those, so no one else's
  * code runs on a person's entries.
  */

@@ -44,7 +44,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, EntryId, SignerId};
-use avendb::lab::{Checked, KeptShown, Lab, Placed, ShownPack, Warm, Warming};
+use avendb::lab::{Checked, KeptPack, Lab, Placed, PackFile, Warm, Warming};
 use avendb::log_head::Head as LogHead;
 use avendb::policy::Log;
 use avendb::sign::Signed;
@@ -85,10 +85,12 @@ const JOURNAL: &str = "journal/";
 const KEYS: ([&str; 2], &[u8]) = (["slots/keys-0", "slots/keys-1"], b"avenDB keys 1\n");
 /// The slots a device's stored view is kept in, in turn, each stamped with the head of the edits it is of (`slot`).
 const VIEW: &str = "view";
-/// The index on the shelf that names, by each kept showing's row (`KeptShown::rows`), the pack of showings it is in, a
-/// blob by its hash and size (`Warming::shown`), and how many bytes of its pages stay in memory.
+/// The indexes on the shelf that name, by each kept showing's or query view's row (`KeptPack::rows`), the pack it is
+/// in, a blob by its hash and size (`Warming::shown`, `Warming::queries`), and how many bytes of their pages stay in
+/// memory.
 const SHOWN: &str = "shown";
-const SHOWN_BUDGET: usize = 1 << 20;
+const QUERIES: &str = "queries";
+const PACKS_BUDGET: usize = 1 << 20;
 
 /// A blob on the shelf: its hash and its size.
 pub(crate) type Blob = (Hash, u64);
@@ -103,8 +105,9 @@ pub(crate) struct Edits {
     kept: Mutex<Kept>,
     /// The numbers its next keys and its next stored view are kept as, `n` in slot `n % 2` of theirs (`warm`).
     slots: Mutex<(u64, u64)>,
-    /// Its kept showings on its shelf (`ShownOnShelf`).
-    shown: tokio::sync::Mutex<ShownOnShelf>,
+    /// Its kept showings and query views on its shelf (`PacksOnShelf`).
+    shown: tokio::sync::Mutex<PacksOnShelf>,
+    queries: tokio::sync::Mutex<PacksOnShelf>,
     /// The head it started from and how many edits it holds, the first it took back (`started`); and its newest head
     /// of edits its device checked, each one (`checked`).
     started: Option<(Checked, usize)>,
@@ -367,7 +370,7 @@ impl Edits {
     /// `open`, its edits given to `to` a page at a time as it reads them (`Taker`), never all of them at once: what it
     /// worked out before (`warm`), and the ids of the edits it gave, in their order, and the anchors its shelf names.
     pub(crate) async fn open_into(shelf: Shelf, to: &mut impl Taker) -> Result<(Edits, Warm, Vec<EditId>, Vec<u8>)> {
-        let (warm, slots, shown) = read_warm(&shelf).await;
+        let (warm, slots, packs) = read_warm(&shelf).await;
         let heads: Vec<u64> =
             numbered(&shelf, HEADS).await?.into_iter().filter(|(_, after)| after.is_empty()).map(|(n, _)| n).collect();
         let next_head = heads.last().map_or(1, |n| n + 1);
@@ -423,8 +426,9 @@ impl Edits {
         let kept = Kept { anchor_stamp: Vec::new(), written: 0, head: None, keys: keys.keys().copied().collect(), whole: false };
         let book = Book { packs: head.packs, keys, mark: head.journal, next, tail, head: next_head, pending, anchors: anchors.clone() };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
-        let (slots, shown, checked) = (Mutex::new(slots), tokio::sync::Mutex::new(shown), Mutex::new(None));
-        let edits = Edits { shelf, book, kept, slots, shown, started, checked, due: Notify::new() };
+        let (slots, checked) = (Mutex::new(slots), Mutex::new(None));
+        let (shown, queries) = (tokio::sync::Mutex::new(packs.0), tokio::sync::Mutex::new(packs.1));
+        let edits = Edits { shelf, book, kept, slots, shown, queries, started, checked, due: Notify::new() };
         Ok((edits, warm, ids, anchors))
     }
 
@@ -432,9 +436,10 @@ impl Edits {
     /// newest first. Nothing, where the shelf can't be read.
     #[cfg(test)]
     pub(crate) async fn warm(&self) -> Warm {
-        let (warm, next, shown) = read_warm(&self.shelf).await;
+        let (warm, next, (shown, queries)) = read_warm(&self.shelf).await;
         *self.slots.lock().expect("slots") = next;
         *self.shown.lock().await = shown;
+        *self.queries.lock().await = queries;
         warm
     }
 
@@ -453,6 +458,9 @@ impl Edits {
         }
         if let Some(kept) = warming.shown.take() {
             self.shown.lock().await.put(on, kept).await?;
+        }
+        if let Some(kept) = warming.queries.take() {
+            self.queries.lock().await.put(on, kept).await?;
         }
         Ok(())
     }
@@ -813,42 +821,43 @@ async fn take_head(shelf: &Shelf, n: u64, warm: &Warm, taking: &mut Taking, to: 
 
 /// What the device worked out before, as `shelf` keeps it (`Edits::warm`), and the numbers its next keys and view are
 /// kept as.
-async fn read_warm(shelf: &Shelf) -> (Warm, (u64, u64), ShownOnShelf) {
+async fn read_warm(shelf: &Shelf) -> (Warm, (u64, u64), (PacksOnShelf, PacksOnShelf)) {
     let read = async {
         let (keys, next_keys) = slots_of(shelf, KEYS).await?;
         let views = slot::read(shelf, VIEW).await?;
         let next_view = slot::next(&views);
         let views = views.into_iter().map(|k| k.bytes).collect();
-        let (shown, packs) = read_shown(shelf).await;
-        anyhow::Ok((Warm { keys, views, shown }, (next_keys, next_view), packs))
+        let (shown, shown_on) = read_packs(shelf, SHOWN).await;
+        let (queries, queries_on) = read_packs(shelf, QUERIES).await;
+        anyhow::Ok((Warm { keys, views, shown, queries }, (next_keys, next_view), (shown_on, queries_on)))
     };
     read.await.unwrap_or_else(|e| {
         tracing::warn!("avendb: what the device worked out before can't be read from its shelf: {e:#}");
-        (Warm::default(), (0, 0), ShownOnShelf::none(shelf))
+        (Warm::default(), (0, 0), (PacksOnShelf::none(shelf, SHOWN), PacksOnShelf::none(shelf, QUERIES)))
     })
 }
 
-/// A device's kept showings on its shelf (`Warming::shown`): the index that names, by each showing's row, the pack it
-/// is in; and how many rows name each pack, so that a pack no row names goes. The list slots of before the index
-/// (`slots/shown-0`, `-1`) are read by nothing: a shelf with only those keeps no showing, and its view's next
-/// derivation keeps them all again; their packs stay unnamed till a sweep.
-pub(crate) struct ShownOnShelf {
+/// A device's kept showings or query views on its shelf (`Warming::shown`, `Warming::queries`): the index that names,
+/// by each one's row, the pack it is in; and how many rows name each pack, so that a pack no row names goes. The list
+/// slots of showings of before the index (`slots/shown-0`, `-1`) are read by nothing: a shelf with only those keeps no
+/// showing, and its view's next derivation keeps them all again; their packs stay unnamed till a sweep.
+pub(crate) struct PacksOnShelf {
     index: ShelfIndex,
     packs: HashMap<Blob, usize>,
 }
 
-impl ShownOnShelf {
-    /// None on `shelf`.
-    fn none(shelf: &Shelf) -> ShownOnShelf {
-        let index = ShelfIndex::empty(shelf.clone(), SHOWN, SHOWN_BUDGET, empty_head().head).expect("the name of an index");
-        ShownOnShelf { index, packs: HashMap::new() }
+impl PacksOnShelf {
+    /// None on `shelf`, of index `name`.
+    fn none(shelf: &Shelf, name: &str) -> PacksOnShelf {
+        let index = ShelfIndex::empty(shelf.clone(), name, PACKS_BUDGET, empty_head().head).expect("the name of an index");
+        PacksOnShelf { index, packs: HashMap::new() }
     }
 
     /// Puts the pack of `kept` on the shelf through `on` as a blob, then its rows in the index, each naming it in place
     /// of the pack it named before, stamped with the log head they were judged at; and lets go of each pack no row
     /// names then. A crash before the index's slot leaves the rows as they were, each naming a pack the shelf holds
     /// still.
-    async fn put(&mut self, on: &Shelf, kept: KeptShown) -> Result<()> {
+    async fn put(&mut self, on: &Shelf, kept: KeptPack) -> Result<()> {
         let blob = on.put_blob(&Bytes::from(kept.pack)).await?;
         let value: Vec<u8> = blob.0.as_bytes().iter().copied().chain(blob.1.to_be_bytes()).collect();
         let mut was = Vec::new();
@@ -874,17 +883,17 @@ impl ShownOnShelf {
     }
 }
 
-/// The packs of kept showings its shelf holds, each with the rows of its index that name it (`ShownPack::rows`), and
-/// those rows: a pack that doesn't read whole is none, and the showings its rows name are judged anew and kept again.
-async fn read_shown(shelf: &Shelf) -> (Vec<ShownPack>, ShownOnShelf) {
-    let mut on = ShownOnShelf::none(shelf);
-    let kept = match ShelfIndex::open_kept(shelf.clone(), SHOWN, SHOWN_BUDGET, empty_head()).await {
+/// The packs its shelf's index `name` names, each with the rows that name it (`PackFile::rows`): a pack that doesn't
+/// read whole is none, and the showings or views its rows name are worked out anew and kept again.
+async fn read_packs(shelf: &Shelf, name: &str) -> (Vec<PackFile>, PacksOnShelf) {
+    let mut on = PacksOnShelf::none(shelf, name);
+    let kept = match ShelfIndex::open_kept(shelf.clone(), name, PACKS_BUDGET, empty_head()).await {
         Ok((index, kept)) => {
             on.index = index;
             kept
         }
         Err(e) => {
-            tracing::warn!("avendb: the index of kept showings can't be read, so they are judged anew: {e:#}");
+            tracing::warn!("avendb: the index of kept {name} can't be read, so they are worked out anew: {e:#}");
             return (vec![], on);
         }
     };
@@ -897,8 +906,8 @@ async fn read_shown(shelf: &Shelf) -> (Vec<ShownPack>, ShownOnShelf) {
         let rows = match on.index.scan(&from, 4096).await {
             Ok(rows) => rows,
             Err(e) => {
-                tracing::warn!("avendb: the index of kept showings doesn't read whole, so they are judged anew: {e:#}");
-                return (vec![], ShownOnShelf::none(shelf));
+                tracing::warn!("avendb: the index of kept {name} doesn't read whole, so they are worked out anew: {e:#}");
+                return (vec![], PacksOnShelf::none(shelf, name));
             }
         };
         let Some((last, _)) = rows.last() else { break };
@@ -912,22 +921,22 @@ async fn read_shown(shelf: &Shelf) -> (Vec<ShownPack>, ShownOnShelf) {
     let mut out = Vec::with_capacity(named.len());
     for (blob, rows) in named {
         on.packs.insert(blob, rows.len());
-        match read_shown_pack(shelf, blob).await {
-            Ok(file) => out.push(ShownPack { file, rows: Some(rows) }),
-            Err(e) => tracing::warn!("avendb: a pack of kept showings doesn't read whole, so its showings are judged anew: {e:#}"),
+        match read_pack_file(shelf, blob).await {
+            Ok(file) => out.push(PackFile { file, rows: Some(rows) }),
+            Err(e) => tracing::warn!("avendb: a pack of kept {name} doesn't read whole, so they are worked out anew: {e:#}"),
         }
     }
     (out, on)
 }
 
-/// Pack `blob` of kept showings: the file it is, where its shelf keeps blobs as files, its showings read there as they
-/// open; else its bytes.
-async fn read_shown_pack(shelf: &Shelf, (hash, size): Blob) -> Result<Arc<dyn avendb::pages::Space>> {
+/// Pack `blob` of kept showings or views: the file it is, where its shelf keeps blobs as files, its showings read there
+/// as they open; else its bytes.
+async fn read_pack_file(shelf: &Shelf, (hash, size): Blob) -> Result<Arc<dyn avendb::pages::Space>> {
     if let Some(file) = shelf.blob_file(hash).await.filter(|f| f.len() == size) {
         return Ok(file);
     }
     let bytes = shelf.read_blob(hash, size).await?;
-    Ok(ShownPack::from(bytes.to_vec()).file)
+    Ok(PackFile::from(bytes.to_vec()).file)
 }
 
 /// The pack a row of the index of kept showings names, its hash and size.
@@ -1018,7 +1027,11 @@ impl Shared {
         let mut put = due.is_some();
         if let Some(due) = due {
             let before = edits.checked();
+            // timed among the Lab's turns, as the save's other steps: a shelf write that blocks a page's one worker
+            // names itself in its report
+            let _timed = crate::Timed::new(&self.lab_turns, "save: put edits", n0_future::time::Instant::now());
             edits.put_on(on, &mut book, due).await?;
+            drop(_timed);
             // a head it put, named by its keys at once (`keep_checked`)
             if edits.checked() != before {
                 self.keep_checked(on).await;
@@ -1047,6 +1060,7 @@ impl Shared {
         // is derived, so a shelf that can't take it costs the next save that step, never this one
         if let Some(index) = &self.shared_index {
             let held = edits.held(&self.locked_lab(), self.me);
+            let _timed = crate::Timed::new(&self.lab_turns, "save: step the shared index", n0_future::time::Instant::now());
             if let Err(e) = index.step(&self.lab, self.me, held).await {
                 tracing::warn!("avendb: the shared index can't be stepped on: {e:#}");
             }
@@ -1067,7 +1081,10 @@ impl Shared {
         // what it worked out only spares it time: a shelf that can't take it costs it that time, no more, and the
         // device gives it again at the next save
         if let Some(mut warming) = warming {
-            match edits.put_warm_on(on, &mut warming).await {
+            let timed = crate::Timed::new(&self.lab_turns, "save: put what it worked out", n0_future::time::Instant::now());
+            let put = edits.put_warm_on(on, &mut warming).await;
+            drop(timed);
+            match put {
                 Ok(()) => {
                     let shared = self.clone();
                     let warmed = move || {
@@ -1091,6 +1108,7 @@ impl Shared {
             }
         }
         // Derived summaries share the authoritative save lane but cannot prevent a clean shutdown.
+        let _timed = crate::Timed::new(&self.lab_turns, "save: range summaries", n0_future::time::Instant::now());
         if let Err(error) = self.edit_transfer.summaries.flush(on).await {
             tracing::warn!(%error, "avendb: optional range summary remains pending");
         }
@@ -1344,7 +1362,7 @@ mod tests {
                             "journal/0000000000000000" => None,
                             // what it worked out before, read first now (`Edits::open_into`): none
                             "slots/keys-0" | "slots/keys-1" | "slots/view-0" | "slots/view-1" | "slots/index-shown-0"
-                            | "slots/index-shown-1" => None,
+                            | "slots/index-shown-1" | "slots/index-queries-0" | "slots/index-queries-1" => None,
                             _ => panic!("unexpected object {name}"),
                         };
                         tx.send(Ok(bytes)).ok();
@@ -1364,7 +1382,7 @@ mod tests {
         assert!(keys.is_empty());
         assert_eq!(edits.started(), Some((expected_start, expected.len())));
     }
-    /// Kept showings on a shelf (`ShownOnShelf`): a shelf with only a list of before the index gives none; each row
+    /// Kept showings on a shelf (`PacksOnShelf`): a shelf with only a list of before the index gives none; each row
     /// names the pack it was last put in, and a pack no row names any more goes.
     #[tokio::test]
     async fn each_kept_showing_is_read_from_the_pack_its_row_names_and_a_pack_none_names_goes() {
@@ -1380,24 +1398,24 @@ mod tests {
         let listed = shelf.put_blob(&Bytes::from_static(b"a pack listed before the index")).await.unwrap();
         let list = [&b"avenDB shown packs 1\n"[..], &0u64.to_be_bytes(), listed.0.as_bytes(), &listed.1.to_be_bytes()].concat();
         shelf.keep("slots/shown-0", Bytes::from(list)).await.unwrap();
-        let rows = |packs: &[ShownPack]| -> Vec<Option<Vec<[u8; 32]>>> {
+        let rows = |packs: &[PackFile]| -> Vec<Option<Vec<[u8; 32]>>> {
             let mut rows: Vec<_> = packs.iter().map(|p| p.rows.clone()).collect();
             rows.sort();
             rows
         };
-        let (packs, mut on) = read_shown(&shelf).await;
+        let (packs, mut on) = read_packs(&shelf, SHOWN).await;
         assert!(packs.is_empty(), "a list of before the index is read by nothing");
         let head = avendb::log_head::head(&[]);
-        let kept = |pack: &[u8], rows: &[[u8; 32]]| KeptShown { pack: pack.to_vec(), rows: rows.to_vec(), head };
+        let kept = |pack: &[u8], rows: &[[u8; 32]]| KeptPack { pack: pack.to_vec(), rows: rows.to_vec(), head };
         let (a, b) = ([1; 32], [2; 32]);
         on.put(&shelf, kept(b"first", &[a, b])).await.unwrap();
-        let (packs, mut on) = read_shown(&shelf).await;
+        let (packs, mut on) = read_packs(&shelf, SHOWN).await;
         assert_eq!(rows(&packs), vec![Some(vec![a, b])]);
         on.put(&shelf, kept(b"second", &[b])).await.unwrap();
-        let (packs, mut on) = read_shown(&shelf).await;
+        let (packs, mut on) = read_packs(&shelf, SHOWN).await;
         assert_eq!(rows(&packs), vec![Some(vec![a]), Some(vec![b])], "each row names the pack it was last put in");
         on.put(&shelf, kept(b"third", &[a])).await.unwrap();
-        let (packs, on) = read_shown(&shelf).await;
+        let (packs, on) = read_packs(&shelf, SHOWN).await;
         assert_eq!(rows(&packs), vec![Some(vec![a]), Some(vec![b])]);
         assert!(!on.packs.contains_key(&(Hash::new(b"first"), 5)), "the first pack, named by no row");
         assert!(shelf.read_blob(Hash::new(b"first"), 5).await.is_err(), "goes");

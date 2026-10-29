@@ -1,5 +1,5 @@
 // The repo seed's top-up of the Maia City vault: what the repository adds to the live architecture, written into the
-// vault by whichever of the person's devices comes first (./Account.svelte, as it writes avenCEO GmbH's schemas), only
+// vault by whichever of the person's devices comes first (./Account.svelte), only
 // where Maia City never held it. avenDB is never reset (Samuel 2026-10-19: "all the data we have now in avenDB Maia City
 // is the one we want to keep and that has been correctly seeded"), so the vault is the truth: the seed never writes
 // over an entry, never brings back one the vault deleted, and never grants or shares anything. Each piece carries a tag

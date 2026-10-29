@@ -24,6 +24,7 @@ fn entries_whose_header_is_unread_wait_and_the_rest_answers_at_once() {
         for c in &creations { r.headers.remove(c); }
         for ids in r.typed.values_mut() { ids.retain(|c| !creations.contains(c)); }
         r.untyped.extend(entries[..4].iter().copied());
+        w.lab.stores.get_mut(&w.mac_a).unwrap().recontext();
     }
     for entry in &entries[..4] { assert!(w.lab.meaning(w.mac_a, *entry).is_none()); }
     let query = json!({"op":"query","vault":w.alice.to_hex(),"where":{"type":["note"]},"depth":1,"select":[],"limit":1});
@@ -41,6 +42,7 @@ fn entries_whose_header_is_unread_wait_and_the_rest_answers_at_once() {
     assert_eq!(result, crate::engine::full_query_oracle(&w.lab, w.mac_a, &query), "the index misses none that waits");
     // Once the headers are read, nothing waits.
     w.lab.stores.get_mut(&w.mac_a).unwrap().readings = readings;
+    w.lab.stores.get_mut(&w.mac_a).unwrap().recontext();
     let arrived = read(&w.lab, w.mac_a, &query);
     assert_eq!(arrived["ok"]["count"], 12);
     assert_eq!(arrived["ok"]["coverage"], json!({"state":"complete"}));
@@ -64,7 +66,7 @@ fn a_cold_restored_device_answers_the_exact_page_in_one_read() {
     let backup = lab.backup(device);
     let count = backup.signed.len();
     let receipt = lab.warming(device, count, Some([91; 40])).unwrap();
-    let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect(), shown: receipt.shown.clone().map(Into::into).into_iter().collect() };
+    let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect(), shown: receipt.shown.clone().map(Into::into).into_iter().collect(), queries: vec![] };
     lab.warmed(device, receipt);
     for (query, expected) in queries.into_iter().zip(expected) {
         lab.restore_warm(device, backup.clone(), Some(([91; 40], count)), &warm);
@@ -191,4 +193,37 @@ fn a_change_names_what_it_touched_and_untouched_queries_stay() {
         select: crate::cast::by_id(todo), group, level: Level::Read, parent: None, issuer: vault,
     }).unwrap();
     assert_eq!(read(&w.lab, me, &json!({"op":"touched","since":since}))["ok"]["all"], true);
+}
+
+/// What a stamp costs where a device holds as much beside its log as a large vault does: run with
+/// `cargo test -p avendb --features test-fixtures --lib the_stamp_of -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn the_stamp_of_a_large_vault() {
+    use crate::id::{EditId, EntryId, ShareId};
+    let mut w = crate::cast::world();
+    let me = w.mac_a;
+    let at = w.lab.at(me);
+    let store = w.lab.stores.get_mut(&at).unwrap();
+    let (shares, groups, untyped) = (2_000u64, 500u64, 20_000u64);
+    for n in 0..shares {
+        store.readings.selectors.insert(ShareId::from_u64(n), crate::slice::Selector::AnyOf(vec![]));
+        store.unreadable.insert(ShareId::from_u64(shares + n));
+    }
+    for n in 0..groups {
+        store.readings.defines.insert(EditId::from_u64(n), crate::rules::CapGroup { name: String::new(), caps: vec![], includes: vec![] });
+    }
+    store.readings.untyped.extend((0..untyped).map(EntryId::from_u64));
+    let runs = 200;
+    let start = std::time::Instant::now();
+    for _ in 0..runs {
+        store.recontext();
+    }
+    let change = start.elapsed() / runs;
+    let start = std::time::Instant::now();
+    for _ in 0..runs {
+        std::hint::black_box(w.lab.query_view_stamp(me));
+    }
+    let read = start.elapsed() / runs;
+    eprintln!("{shares} shares and {shares} unreadable, {groups} cap groups, {untyped} headers unread: {change:?} a change, {read:?} a read");
 }

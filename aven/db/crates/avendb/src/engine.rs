@@ -202,9 +202,8 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "observe_query_emission" => &["rows"],
         "code" => &["vault", "type"],
         "posts" => &["limit", "after"],
-        "bring" => &["vaults", "entries", "prioritize"],
+        "bring" => &["entries"],
         "interest" => &["scope", "revision", "wants", "release"],
-        "demand" => &["scope", "revision", "entries", "queries"],
         "find" => &["vault", "types", "tags", "follow", "bring"],
         "shares" => &["over", "as"],
         "database" => &["vault", "types"],
@@ -238,7 +237,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing. The page's list
 /// (aven/db/page/op-names.js) is written from this one and `ASKS` (tests/all/op_names.rs), never by hand.
-pub const READS: [&str; 40] = [
+pub const READS: [&str; 39] = [
     "entry_views",
     "query",
     "touched",
@@ -270,7 +269,6 @@ pub const READS: [&str; 40] = [
     "posts",
     "bring",
     "interest",
-    "demand",
     "find",
     "synced",
     "network",
@@ -409,8 +407,7 @@ fn read_op(lab: &Lab, me: SignerId, v: &Value) -> Result<Value, Refused> {
         "read_file" => Err(bad("read_file reads a file's bytes from a node's store: a node runs it (Node::run)")),
         "jobs" => Err(bad("jobs tells what a node does in the background: a node runs it (Node::run)")),
         "interest" => Err(bad("interest orders what a node brings for its mounted views: a node runs it (Node::run)")),
-        "demand" => Err(bad("demand changes a node's local scheduling priorities: a node runs it (Node::run)")),
-        "bring" => Err(bad("bring asks a node's peers for vaults or entries: a node runs it (Node::run)")),
+        "bring" => Err(bad("bring asks a node's peers for entries now: a node runs it (Node::run)")),
         "find" => Err(bad("find asks a node's peers by the blind index: a node runs it (Node::run)")),
         "synced" => Err(bad("synced tells what a node's peers hold: a node runs it (Node::run)")),
         "measure_peer_policy" | "measure_peer_visibility" | "observe_query_emission" => Err(bad("peer policy measurements require a node (Node::run)")),

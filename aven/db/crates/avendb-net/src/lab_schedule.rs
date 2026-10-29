@@ -735,6 +735,14 @@ struct TurnBook {
     slow: VecDeque<(u64, &'static str, u64, u64)>,
 }
 
+/// Where in the code a hold of the Lab outside a turn was taken, as its name among the turns: `file:line`, each one
+/// made once (a node holds the Lab so from a few places alone).
+pub(crate) fn place(at: &'static std::panic::Location<'static>) -> &'static str {
+    static PLACES: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<(&'static str, u32), &'static str>>> = std::sync::OnceLock::new();
+    let mut places = PLACES.get_or_init(Default::default).lock().expect("places");
+    places.entry((at.file(), at.line())).or_insert_with(|| Box::leak(format!("held at {}:{}", at.file(), at.line()).into_boxed_str()))
+}
+
 /// Holds and waits at least this long are kept among the slow ones.
 const SLOW_MS: u64 = 250;
 /// How many slow ones it keeps.
