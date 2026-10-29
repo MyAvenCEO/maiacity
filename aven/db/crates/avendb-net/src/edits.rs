@@ -22,11 +22,12 @@
 //!   the hash of its bytes (`Checked`), so that it doesn't check their signatures again as it starts from that head
 //!   (`Lab::restore_warm`); kept after every key it opens and every head it puts or takes back whole.
 //! - `slots/view-0` and `slots/view-1`: the device's stored view, what its edits said when it last kept one, encrypted
-//!   for it alone and this engine (`Replay::to_view`), for a node to step on from there rather than replay every edit,
-//!   kept after a replay of every edit, or 4096 edits stepped on.
+//!   for it alone and its replay rules (`Replay::to_view`), with what it read of them, for a node to step on from there
+//!   rather than replay every edit, kept after a replay of every edit, or 4096 edits stepped on: the one slot an index
+//!   keeps its root in (`slot`), stamped with the head of the edits the view is of.
 //!
-//! Each slot is what it starts with (`KEYS`, `VIEW`), the number it was kept as, in 8 bytes, big-endian, then what it
-//! keeps; the next goes in place of the older of the two (`Shelf::keep`), put after the edits it names, so the newest
+//! The keys' and the showings' slots are what they start with (`KEYS`, `SHOWN`), the number they were kept as, in 8
+//! bytes, big-endian, then what they keep; the next goes in place of the older of the two (`Shelf::keep`), put after the edits it names, so the newest
 //! that opens names edits the shelf holds. A slot is no history: every edit stays on the shelf as it was put, and one
 //! that doesn't open costs the node a check of the signatures, the keys opened again or a replay of every edit, no
 //! more.
@@ -53,6 +54,7 @@ use iroh_blobs::Hash;
 use n0_future::time;
 use tokio::sync::Notify;
 
+use crate::slot;
 use crate::shelf::Shelf;
 use crate::{BACKOFF_MAX, Cursor, Shared};
 
@@ -79,8 +81,8 @@ const HEADS: &str = "heads/";
 const JOURNAL: &str = "journal/";
 /// The two slots a device's keys are kept in, in turn, and what each starts with.
 const KEYS: ([&str; 2], &[u8]) = (["slots/keys-0", "slots/keys-1"], b"avenDB keys 1\n");
-/// The two slots a device's stored view is kept in, in turn, and what each starts with.
-const VIEW: ([&str; 2], &[u8]) = (["slots/view-0", "slots/view-1"], b"avenDB slot 1\n");
+/// The slots a device's stored view is kept in, in turn, each stamped with the head of the edits it is of (`slot`).
+const VIEW: &str = "view";
 /// The two slots the list of a device's packs of kept showings is kept in, in turn, and what each starts with: each
 /// pack a blob, by its hash and size, the oldest first (`Warming::shown`).
 const SHOWN: ([&str; 2], &[u8]) = (["slots/shown-0", "slots/shown-1"], b"avenDB shown packs 1\n");
@@ -441,9 +443,9 @@ impl Edits {
             self.keep_on(on, KEYS, n, &keys).await?;
             self.slots.lock().expect("slots").0 = n + 1;
         }
-        if let Some(view) = warming.view.take() {
+        if let (Some(view), Some(head)) = (warming.view.take(), warming.view_head()) {
             let n = self.slots.lock().expect("slots").1;
-            self.keep_on(on, VIEW, n, &view).await?;
+            slot::keep(on, VIEW, n, head.into(), &view).await?;
             self.slots.lock().expect("slots").1 = n + 1;
         }
         // a pack of showings as a blob, then the list that names it beside those before it, or alone where it holds
@@ -827,7 +829,9 @@ async fn take_head(shelf: &Shelf, n: u64, warm: &Warm, taking: &mut Taking, to: 
 async fn read_warm(shelf: &Shelf) -> (Warm, (u64, u64), (u64, Vec<(Hash, u64)>)) {
     let read = async {
         let (keys, next_keys) = slots_of(shelf, KEYS).await?;
-        let (views, next_view) = slots_of(shelf, VIEW).await?;
+        let views = slot::read(shelf, VIEW).await?;
+        let next_view = slot::next(&views);
+        let views = views.into_iter().map(|k| k.bytes).collect();
         let (shown, packs) = read_shown(shelf).await;
         anyhow::Ok((Warm { keys, views, shown }, (next_keys, next_view), packs))
     };
@@ -1478,7 +1482,7 @@ mod tests {
             while let Some(call) = calls.recv().await {
                 match call {
                     Call::Keep { name, bytes, tx } => {
-                        let view = VIEW.0.contains(&name.as_str());
+                        let view = name.starts_with("slots/view-");
                         if view && enabled.load(Ordering::Relaxed) && let Some((entered, released)) = pause.take() {
                             entered.send(()).ok();
                             released.await.expect("the test releases the view");

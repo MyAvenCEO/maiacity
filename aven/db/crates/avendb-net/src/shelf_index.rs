@@ -35,9 +35,8 @@ use bytes::Bytes;
 use data_encoding::HEXLOWER;
 
 use crate::shelf::{Shelf, named};
+use crate::slot;
 
-/// What every slot starts with.
-const SLOT: &[u8] = b"avenDB index slot 1\n";
 /// How many entries of a log a node steps on at once as it catches up or builds an index again.
 const BATCH: u64 = 4096;
 /// How many pages it puts at once.
@@ -466,69 +465,36 @@ impl ShelfIndex {
         format!("index/{}/{}", self.name, HEXLOWER.encode(hash))
     }
 
-    fn slot_name(&self, n: u64) -> String {
-        format!("slots/index-{}-{}", self.name, n % 2)
+    /// The name its slots go under (`slot`).
+    fn slot_name(&self) -> String {
+        format!("index-{}", self.name)
     }
 
     /// Keeps `root` and `stamp` in its next slot, in place of the older of the two.
     async fn keep_slot(&mut self, root: Option<Sum>, stamp: Stamp) -> io::Result<()> {
         let n = self.kept + 1;
-        let mut out = Vec::with_capacity(SLOT.len() + 8 + 8 + 32 + 33 + 32);
-        out.extend_from_slice(SLOT);
-        out.extend_from_slice(&n.to_be_bytes());
-        out.extend_from_slice(&stamp.at.to_be_bytes());
-        out.extend_from_slice(&stamp.head);
-        out.push(root.is_some() as u8);
-        out.extend_from_slice(&root.unwrap_or_default());
-        let check = sum(&out);
-        out.extend_from_slice(&check);
-        self.shelf.keep(&self.slot_name(n), out.into()).await?;
+        let kept = [&[root.is_some() as u8][..], &root.unwrap_or_default()].concat();
+        slot::keep(&self.shelf, &self.slot_name(), n, stamp, &kept).await?;
         self.kept = n;
         Ok(())
     }
 
     /// The slots that open, the newest first: each one's number, root and stamp.
     async fn slots(&self) -> io::Result<Vec<(u64, Option<Sum>, Stamp)>> {
-        let mut found = Vec::new();
-        for i in 0..2 {
-            let Some(bytes) = self
-                .shelf
-                .get(&format!("slots/index-{}-{i}", self.name))
-                .await?
-            else {
-                continue;
-            };
-            if let Some(slot) = slot_of(&bytes)
-                && slot.0 % 2 == i
-            {
-                found.push(slot);
-            }
-        }
-        found.sort_by_key(|s| std::cmp::Reverse(s.0));
-        Ok(found)
+        let found = slot::read(&self.shelf, &self.slot_name()).await?;
+        Ok(found.into_iter().filter_map(|k| Some((k.n, root_of(&k.bytes)?, k.stamp))).collect())
     }
 }
 
-/// The slot `bytes` hold, if they hold one whole.
-fn slot_of(bytes: &[u8]) -> Option<(u64, Option<Sum>, Stamp)> {
-    let (body, check) = bytes.split_at_checked(bytes.len().checked_sub(32)?)?;
-    if sum(body) != *check {
-        return None;
+/// The root a slot keeps, if it keeps one whole: none, or the hash of its root page.
+fn root_of(bytes: &[u8]) -> Option<Option<Sum>> {
+    let (&some, root) = bytes.split_first()?;
+    let root: Sum = root.try_into().ok()?;
+    match some {
+        0 => Some(None),
+        1 => Some(Some(root)),
+        _ => None,
     }
-    let r = body.strip_prefix(SLOT)?;
-    if r.len() != 8 + 8 + 32 + 1 + 32 {
-        return None;
-    }
-    let n = u64::from_be_bytes(r[..8].try_into().ok()?);
-    let at = u64::from_be_bytes(r[8..16].try_into().ok()?);
-    let head: Sum = r[16..48].try_into().ok()?;
-    let root: Sum = r[49..81].try_into().ok()?;
-    let root = match r[48] {
-        0 => None,
-        1 => Some(root),
-        _ => return None,
-    };
-    Some((n, root, Stamp { at, head }))
 }
 
 /// The rows a log's entries give, from scratch: what every index of it must hold (I1).

@@ -161,6 +161,7 @@ mod shelf_index;
 #[cfg(test)]
 mod shelf_contract;
 mod signers;
+mod slot;
 #[cfg(all(feature = "sim", not(target_arch = "wasm32")))]
 pub mod sim;
 mod statements;

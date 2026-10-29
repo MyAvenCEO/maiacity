@@ -210,7 +210,7 @@ fn unchanged_warm_restore_does_not_reencode_and_corrupt_views_recover() {
     lab.warmed(device, saved);
     lab.restore_warm(device, backup.clone(), Some((marker, count)), &warm);
     let restored = lab.held(device);
-    assert!(!lab.warm_due(device), "validated unchanged state is already represented on its shelf: replayed={} saved={} wholes={} saved_wholes={} newkeys={} checked={:?} counts={}",
+    assert!(!lab.warm_due(device), "validated unchanged state is already represented on its shelf: replayed={} saved={:?} wholes={} saved_wholes={} newkeys={} checked={:?} counts={}",
         restored.replayed, restored.view_given, restored.wholes, restored.view_wholes, restored.opened_since.len(), restored.checked_given, lab.work_metrics(device));
     assert!(lab.capture_warm(device, count, Some(marker)).is_none(), "no capture means no redundant encode/encrypt");
 

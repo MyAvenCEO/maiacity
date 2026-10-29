@@ -787,12 +787,19 @@ pub struct Warming {
     /// The head of its log as it captured it: an acknowledgement counts only while the log goes on from it.
     head: crate::log_head::Head,
     keys_of: Option<(Option<Checked>, usize)>,
-    view_of: usize,
-    view_wholes: u64,
-    /// Its view holds what it read (`stored_readings::seal`).
+    /// The head of the edits its view is of, the stamp its shelf keeps it under (`Log::head_at`), with how many times
+    /// its store had replayed every edit then; and whether the view holds what it read (`stored_readings::seal`).
+    view_of: Option<(crate::log_head::Head, u64)>,
     view_read: bool,
     /// The prints of the showings its pack holds, by entry, and whether they are all it keeps.
     shown_of: Option<(Vec<(EntryId, [u8; 32])>, bool)>,
+}
+
+impl Warming {
+    /// The head of the edits its view is of, if it gives one: the stamp its shelf keeps the view under.
+    pub fn view_head(&self) -> Option<crate::log_head::Head> {
+        self.view_of.map(|(head, _)| head)
+    }
 }
 
 /// Immutable snapshot inputs, owned independently of Lab. Encoding consumes the keys
@@ -823,7 +830,8 @@ impl WarmCapture {
             self.receipt.keys = Some(self.key.lock("keys", &bytes, b"stored keys", &mut self.rng));
         }
         if let Some(replay) = self.replay.take() {
-            let mut bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
+            let of = self.receipt.view_of.map_or(0, |(head, _)| head.at as usize);
+            let mut bytes = Zeroizing::new(replay.encode(of));
             if let Some(read) = self.read.take() {
                 let mut both = Zeroizing::new(VIEW_READ.to_vec());
                 both.extend((bytes.len() as u32).to_be_bytes());
@@ -967,7 +975,9 @@ fn range_write_bound(signed: &Signed) -> Option<usize> {
 }
 
 /// How many edits a device steps on its replay before its shelf takes its view again (`Lab::warming`): as many as it
-/// steps on again as it starts from the view before. A replay of every edit puts the view on its shelf at once.
+/// steps on again as it starts from the view before. A replay of every edit puts the view on its shelf at once. The
+/// cadence of writing a whole view, which a view kept as rows of a `ShelfIndex` steps on edit by edit in place of it
+/// (Goal 9); no rule of what is fresh.
 const VIEW_STEPS: usize = 4096;
 
 /// The work a start does in one go, in edits to replay past its stored view and entries to show (`restore_end_with`):
@@ -1124,16 +1134,18 @@ struct Store {
     checked_given: Option<Checked>,
     /// The work its start does in one go (`restore_end_with`), `RESTORE_WHOLE` but in a test.
     restore_whole: usize,
-    /// How many edits the view its shelf keeps is of, as it last gave it or took it from there, none if 0; how many
-    /// times it replayed every edit, and how many times when its shelf took that view (`Lab::warming`).
-    view_given: usize,
-    view_head: Option<crate::log_head::Head>,
+    /// The head of the edits the view its shelf keeps is of (`Log::head_at`), as it last gave it or took it from there,
+    /// none for none; and the head of the edits what it read beside that view is of (`stored_readings`), none where
+    /// the view holds none: one of an older engine, or one given before it read every body it counts (a first sync's,
+    /// given as it goes), which it gives again once it can seal what it read (`stored_readings::sealable`).
+    view_given: Option<crate::log_head::Head>,
+    read_given: Option<crate::log_head::Head>,
+    /// How many times it replayed every edit, and how many times when its shelf took its view. A whole replay changes
+    /// no edit of its log, so no head tells of it: it means an edit after the view's edits sorts among them, and the
+    /// view, still the replay of its edits (VR3), would have the next start replay every edit again. Till a step back
+    /// costs the distance back alone (Goal 8 lane C), the count tells it.
     wholes: u64,
     view_wholes: u64,
-    /// The view its shelf keeps holds not what it read (`stored_readings`): one of an older engine, one given before it
-    /// read every body it counts (a first sync's, given as it goes), or none, so it gives one again once it can seal what
-    /// it read beside it (`stored_readings::sealable`).
-    view_read_due: bool,
     /// Its first sync with the boxes held back, if it asks for one (`Lab::set_lazy_boxes`).
     lazy: LazyBoxes,
     /// How many times it was taken mutably (`Stores::get_mut`): a query view stamped with the revision now saw every
@@ -1242,12 +1254,11 @@ impl Default for Store {
             opened_since: vec![],
             warm_revision: Arc::new(()),
             checked_given: None,
-            view_given: 0,
+            view_given: None,
+            read_given: None,
             restore_whole: RESTORE_WHOLE,
-            view_head: None,
             wholes: 0,
             view_wholes: 0,
-            view_read_due: true,
             lazy: LazyBoxes::default(),
             revision: 0,
             query_views: std::sync::Mutex::new(QueryViews::default()),
@@ -1323,10 +1334,14 @@ impl Store {
 
     fn view_due(&self) -> bool {
         let n = self.replayed;
-        let since = n.abs_diff(self.view_given);
-        let stale = self.wholes != self.view_wholes || !self.view_head.is_some_and(|h| self.log.of_log(h));
-        let read_due = self.view_read_due && stored_readings::sealable(self, n);
-        n > 0 && n <= self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS || read_due)
+        if n == 0 || n > self.log.edits().len() {
+            return false;
+        }
+        // the view its shelf keeps, where it is of the first edits of its log
+        let Some(given) = self.view_given.filter(|h| self.log.of_log(*h)) else { return true };
+        let since = n.abs_diff(given.at as usize);
+        let read_due = self.read_given != Some(given) && stored_readings::sealable(self, n);
+        self.wholes != self.view_wholes || since >= VIEW_STEPS || read_due
     }
 
     /// Its shelf lacks its keys (`Lab::warming`): it opened a key since its shelf took them, or its shelf names the
@@ -1580,7 +1595,10 @@ impl IndexedBox {
 }
 
 /// A device's `KeyIndex`, kept between refreshes and grown by the edits its replay took since (`KeyIndexed::take`),
-/// not made again of every edit it holds each time (3.6 ms a refresh at 130,000 edits, 2026-10-27).
+/// not made again of every edit it holds each time (3.6 ms a refresh at 130,000 edits, 2026-10-27). A memo of the
+/// stepped replay, never kept on the shelf: the index gate's one written exception (`ShelfIndex.lean`), as it reads no
+/// box's bytes and is made at a start in 85 ms of a phone's 116,000 edits (2026-10-29), less than reading it back, and
+/// made again only where its replay replayed every edit, which a step back of the distance back removes (Goal 8 lane C).
 #[derive(Default)]
 struct KeyIndexed {
     ix: KeyIndex,
@@ -3343,18 +3361,28 @@ impl Lab {
         let readers = readers.iter().copied().filter(|v| seen.insert(*v));
         let at = self.at(on);
         let Lab { stores, rng, .. } = self;
-        let store = stores.get(&at).unwrap_or_else(|| panic!("{on:?} is no device of the Lab"));
-        let (st, ix) = (store.view(), KeyIndex::of(&store.replay, store.log.edits()));
+        let store = stores.get_mut(&at).unwrap_or_else(|| panic!("{on:?} is no device of the Lab"));
+        // the store's key index, grown on to its replay, never one made again of every edit for each share
+        let ix = KeyIndexed::take(store);
         let key = Secret::generate(rng);
         let sealed = keys::seal_edit(&key, &slice.to_wire(), &share_context(of), rng);
         let bound = |to: &Recipient| share_select_info(of, key.id(), to);
         let mut boxes = vec![];
+        let st = store.view();
+        let mut unknown = false;
         for v in readers {
             match key_box(&key, st.current(KeyFam::Seed(v)), &bound, st, store, &ix, &[], rng) {
                 Some(b) => boxes.push(b),
-                None if needed.contains(&v) => return Err(Refusal::UnknownKey),
+                None if needed.contains(&v) => {
+                    unknown = true;
+                    break;
+                }
                 None => {}
             }
+        }
+        KeyIndexed::put(store, ix);
+        if unknown {
+            return Err(Refusal::UnknownKey);
         }
         Ok(Select::Sealed { boxes, slice: sealed, commitment: slice.grant.commitment() }.to_wire())
     }
@@ -6709,7 +6737,7 @@ impl Lab {
                 kept: (0, 0),
                 showings: 0,
             };
-            store.view_read_due = true;
+            (store.view_given, store.read_given) = (None, None);
             match found {
                 Some((replay, held, older, read)) => {
                     store.replay = replay;
@@ -6721,12 +6749,14 @@ impl Lab {
                         store.spoilt.extend(read.spoilt.iter().copied());
                         let opened = store.bodies.len();
                         store.read_new.sealed(&read, opened, &store.readings, &store.log, held, store.wholes);
-                        store.view_read_due = false;
+                        store.read_given = store.log.head_at(held as u64);
                         store.perf.count("read: from its stored view", 1);
                     }
                     // a view an older engine kept with its adjunct is kept again without it
-                    store.view_given = if older { 0 } else { held };
-                    store.view_head = Some(store.log.head());
+                    store.view_given = if older { None } else { store.log.head_at(held as u64) };
+                    if older {
+                        store.read_given = None;
+                    }
                     store.view_wholes = store.wholes;
                     store.perf.count("replay: from its stored view", 1);
                 }
@@ -6828,7 +6858,7 @@ impl Lab {
         let key = self.shelf_key(d)?;
         let store = self.stores.get(&d)?;
         let close_due = current == Some(true) && store.replayed > 0 && store.replayed <= store.log.edits().len()
-            && store.replayed != store.view_given;
+            && store.view_given.map(|h| h.at as usize) != Some(store.replayed);
         let keys_due = store.keys_due(checked);
         let view_due = current.is_some() && (store.view_due() || close_due) && store.replayed <= held;
         // the showings, as often as its view, and once it holds none on its shelf yet
@@ -6867,8 +6897,7 @@ impl Lab {
         let receipt = Warming {
             keys: None, view: None,
             revision: store.warm_revision.clone(), head: store.log.head(), keys_of,
-            view_of: if view_due { store.replayed } else { 0 },
-            view_wholes: if view_due { store.wholes } else { 0 },
+            view_of: if view_due { store.log.head_at(store.replayed as u64).map(|h| (h, store.wholes)) } else { None },
             view_read: read.is_some(),
             shown: None,
             shown_of,
@@ -6905,12 +6934,11 @@ impl Lab {
                 store.opened_since.drain(..opened.min(store.opened_since.len())).collect();
             store.opened_before.extend(given);
         }
-        if warming.view_of > 0 {
+        if let Some((head, wholes)) = warming.view_of {
             // a view given without what it read is given again once it can seal that beside it
-            store.view_read_due = !warming.view_read;
-            store.view_given = warming.view_of;
-            store.view_head = Some(warming.head);
-            store.view_wholes = warming.view_wholes;
+            store.view_given = Some(head);
+            store.read_given = warming.view_read.then_some(head);
+            store.view_wholes = wholes;
         }
         if let Some((of, whole)) = warming.shown_of {
             if whole {
