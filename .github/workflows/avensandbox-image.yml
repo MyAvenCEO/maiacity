@@ -1,0 +1,67 @@
+# avenSANDBOX's image (aven/DB2/SANDBOX.md, "The box"): the tools only, never our code. Built when its Dockerfile
+# changes and tagged with the first 16 hex digits of the Dockerfile's SHA-256, so every checkout runs exactly its own
+# box (aven/DB2/sandbox/up.mjs computes the same tag); main's build is also tagged "latest". The package is public, so
+# a cloud session, a Mac and CI pull it without a token.
+name: avenSANDBOX image
+
+on:
+  push:
+    paths:
+      - aven/DB2/box/Dockerfile
+      - aven/DB2/box/extra-ca/**
+      - .github/workflows/avensandbox-image.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: avensandbox-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: Image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: The box's tag
+        id: box
+        run: |
+          tag=$(sha256sum aven/DB2/box/Dockerfile | cut -c1-16)
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox:$tag" >> "$GITHUB_OUTPUT"
+          echo "latest=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/avensandbox:latest" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Already built?
+        id: built
+        env:
+          IMAGE: ${{ steps.box.outputs.image }}
+        run: |
+          if docker buildx imagetools inspect "$IMAGE" > /dev/null 2>&1; then echo "yes=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Build and push
+        if: steps.built.outputs.yes != 'true'
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: aven/DB2/box
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.box.outputs.image }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=avenSANDBOX: the tools avenDB2 is built and tested with
+          cache-from: type=gha,scope=avensandbox
+          cache-to: type=gha,mode=max,scope=avensandbox
+      - name: main's box is latest
+        if: github.ref == 'refs/heads/main'
+        env:
+          IMAGE: ${{ steps.box.outputs.image }}
+          LATEST: ${{ steps.box.outputs.latest }}
+        run: docker buildx imagetools create --tag "$LATEST" "$IMAGE"

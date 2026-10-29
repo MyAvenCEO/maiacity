@@ -5,7 +5,8 @@ with it. It grows one primitive at a time, each a package of its own and each pr
 and its theorems first, then Rust tests checked against that model, then the code. Everything it needs lives in this
 folder: its crates, its Lean spec, its pages and avenSANDBOX, the local network it is built and tested in.
 
-**Status (29 Oct 2026): planning, no code yet.** Milestone 1 is avenSANDBOX with a "coming soon" page:
+**Status (29 Oct 2026): milestone 1 has started.** avenSANDBOX's box runs: its image, `bun run up --check`, the
+landing page on two Peer-Lights' origins and the control room; the peers themselves come next. The plan:
 [`SANDBOX.md`](SANDBOX.md).
 
 ## Why a rebuild

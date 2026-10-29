@@ -1,0 +1,5 @@
+# avenSANDBOX's runs (screenshots, reports), the proxy certificate a cloud build copies in, and installs made outside
+# the box
+runs/
+box/extra-ca/*.crt
+node_modules/

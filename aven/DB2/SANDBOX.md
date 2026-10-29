@@ -39,7 +39,20 @@ They differ only at the edge: where they store, how they reach the network, and 
 Aven Peer keeps for others will come from caps, not from a code path of its own.
 
 Each Peer runs in its own container. Both Peer-Lights share one Chromium, as two origins with two separate storages.
-The cast is one list in the sandbox's config; adding a peer is one line.
+The cast is one file, [`sandbox/cast.json`](sandbox/cast.json); adding a peer is one entry.
+
+### Two vaults, hard-coded signers
+
+Each peer has its own signer, and each signer owns one of two vaults:
+
+| Vault | Owned by the signers of |
+|---|---|
+| Alice's vault | the Aven Peer (the server and relay is Alice's), Alice Peer, Alice Peer-Light |
+| Bob's vault | Bob's Peer-Light |
+
+The signers are test keys written into the cast: each seed is `sha256("avenSANDBOX test signer: <peer>")`, public on
+purpose and valid only inside the box. Ownership is just this fixed list for now; invites, caps, Loro and sync logic
+come in later milestones.
 
 ## Storage: one contract, pluggable backends
 
@@ -77,13 +90,13 @@ browser too, and needs a folder and OPFS as well.
                     coming soon
 
         ● live · 4 peers · Aven Peer 3 ms
-        you: Alice Peer-Light · key 7f3a…
+        you: Alice Peer-Light · Alice's vault · signer 9f78…
 ```
 
 The page is a real Peer-Light:
 
-- **Its key** is made on first load and kept in OPFS through the store: a reload keeps it, a wipe makes a new one.
-  Alice Peer and the Aven Peer keep theirs the same way, in a folder and in S3.
+- **Its signer** comes from the cast and owns its vault. **Its data** is kept in OPFS through the store: a reload
+  keeps it, a wipe empties it. Alice Peer and the Aven Peer keep theirs the same way, in a folder and in S3.
 - **It connects** to the Aven Peer over iroh, through the relay.
 - **"4 peers"** is presence: the Aven Peer counts who is connected and tells each peer.
 - **Its status names a phase:** starting, connecting, live, offline, stalled.
@@ -163,8 +176,26 @@ production image comes later and is a separate, slim one: just the binary.
 | Place | How |
 |---|---|
 | **Mac** (OrbStack) | `bun run up` in `aven/DB2`. OrbStack's Docker engine config gets `"allow-direct-routing": true`. The control room opens in any Mac browser, and the Peer-Lights can then run in your browser too. The build folder lives in a Docker volume, not in a folder shared with the Mac, where many small writes are slower. |
-| **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so a session-start hook starts `dockerd` again. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
-| **GitHub CI** | The same image as the job's container, on Linux runners (macOS runners have no Docker). Once per goal, like everything else. |
+| **Claude cloud session** | A cloud environment named avenSANDBOX. Its setup script starts `dockerd` with the setting and pulls the image. Anthropic snapshots the disk, image included, and new sessions start from that snapshot for about 7 days; the script must finish in about 5 minutes. The snapshot keeps files, not processes, so `bun run up` starts `dockerd` itself when it isn't running, in a session of its own so it outlives the command. Until the image is published, `bun run up` builds it here, through the session's proxy. The environment sets `AVEN_DB2=1`, so the repository's hook skips v1's Rust cache. |
+| **GitHub CI** | The `production` branch's checks run `bun run up --check` on a Linux runner, from the same image (macOS runners have no Docker). |
+
+The box is a whole development machine in one image, the same on every platform that runs Docker: a Mac (OrbStack),
+Linux, a Claude cloud session, CI, and Windows through Docker Desktop. The image is amd64 for now; an arm64 build, so
+OrbStack runs it natively instead of through Rosetta, comes next.
+
+### Production
+
+| Branch | What runs there |
+|---|---|
+| `main` | Nothing on GitHub: work is checked in the box, in the session that makes it. |
+| `production` | Takes changes from `main` only. Every pull request into it and every push to it runs [`avensandbox.yml`](../../.github/workflows/avensandbox.yml): **Only from main** fails a pull request from any other branch, and **avenSANDBOX** runs `bun run up --check`. Later, production also deploys from here. |
+
+[`avensandbox-image.yml`](../../.github/workflows/avensandbox-image.yml) builds the box's image whenever its
+Dockerfile changes, on any branch, and tags main's as `latest`.
+
+v1's three workflows (`ci.yml`, `release.yml` and `ops.yml`) are to be parked: moved out of `.github/workflows/`,
+not deleted, so `main` runs no CI and deploys nothing. v1's site, API and peer keep running as they are; they just
+stop being redeployed, and uptime checks and rollbacks stop with them.
 
 The cloud environment's setup script, once the image exists:
 
@@ -257,8 +288,8 @@ aven/DB2/
 - `bun run up` brings up all four peers from the one image: on a Mac (OrbStack), in a cloud session and in CI.
 - Both Peer-Lights show the landing page live, with "4 peers" right on each. Alice Peer connects to the Aven Peer
   directly over UDP. The control room shows all four peers and one timeline.
-- Each peer keeps its key through the store: the Aven Peer in the box's S3 server, Alice Peer in a folder, the
-  Peer-Lights in OPFS. A reload keeps a key; a wipe makes a new one.
+- Each peer signs as its cast signer and shows its vault, and keeps its data through the store: the Aven Peer in the
+  box's S3 server, Alice Peer in a folder, the Peer-Lights in OPFS. A reload keeps the data; a wipe empties it.
 - The store's conformance suite passes on all four backends. Lean and Rust each run their one check in the box,
   `doctor` passes, and every pin is at its newest release.
 - The loop's times are measured and written into this file.
