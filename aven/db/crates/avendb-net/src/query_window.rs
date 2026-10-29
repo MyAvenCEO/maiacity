@@ -44,11 +44,16 @@ pub(crate) async fn window(
     let locked = || lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     for _ in 0..4 {
         let (stamp, held) = ix.held();
+        // behind its log's head with its inputs not read yet: read them, and ask again
+        if held.is_none() && SharedIndex::changed(&locked(), me, stamp, None).is_none() {
+            ix.inputs().await?;
+            continue;
+        }
         // the tail after the index, and the rows its entries have now, under one hold of the Lab
         let (tokens, tail, log_at) = {
             let lab = locked();
             let ids = lab.log(me).ids();
-            let touched = SharedIndex::changed(&lab, me, stamp, &held);
+            let Some(touched) = SharedIndex::changed(&lab, me, stamp, held.as_deref()) else { continue };
             let tokens: BTreeSet<_> = lab.find_tokens(me, vault, labels).into_iter().collect();
             let tail: Vec<(EntryId, Option<avendb::index::shared::Of>)> =
                 touched.into_iter().map(|e| (e, lab.shared_of(me, e))).collect();

@@ -54,9 +54,14 @@ pub(crate) async fn page(
     let mut want = limit + 1;
     for _ in 0..8 {
         let (stamp, held) = ix.held();
+        // behind its log's head with its inputs not read yet: read them, and plan again
+        if held.is_none() && SharedIndex::changed(&locked(), me, stamp, None).is_none() {
+            ix.inputs().await?;
+            continue;
+        }
         let plan = {
             let lab = locked();
-            let named = SharedIndex::changed(&lab, me, stamp, &held);
+            let Some(named) = SharedIndex::changed(&lab, me, stamp, held.as_deref()) else { continue };
             let cursor = match after {
                 None => None,
                 Some(a) => match world::post_key(&lab, me, a) {

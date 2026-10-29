@@ -170,16 +170,23 @@ fn a_second_devices_pages_step_on_from_a_rung() {
 /// Alice's Mac writes `writes` edits over 20 entries, then takes a page of her iPhone's drafted on what it held `back`
 /// edits before: its log, its replay of what it held before the page, and how many that was.
 fn far_page(writes: usize, back: usize) -> (Log, Replay, usize) {
+    far_pages(writes, &[back]).pop().expect("a page")
+}
+
+/// `far_page` for each of `backs`, of the one log Alice's Mac wrote: each the log with that page taken.
+fn far_pages(writes: usize, backs: &[usize]) -> Vec<(Log, Replay, usize)> {
     let mut c = cast();
     let alice = c.alice;
     for i in 0..20 {
         c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
     }
     let mut st = c.log.view();
-    let mut then = None;
+    let mut then = vec![None; backs.len()];
     for n in 0..writes as u32 {
-        if writes - n as usize == back {
-            then = Some((c.log.clone(), st.clone()));
+        for (at, &back) in then.iter_mut().zip(backs) {
+            if writes - n as usize == back {
+                *at = Some((c.log.clone(), st.clone()));
+            }
         }
         let w = write(&c.log, &st, MAC_A, EntryId::from_u64(1000 + n as u64 % 20), n);
         c.log.receive([w]);
@@ -189,17 +196,22 @@ fn far_page(writes: usize, back: usize) -> (Log, Replay, usize) {
     }
     let was = replay(c.log.edits());
     let held = c.log.edits().len();
-    let (then, then_st) = then.expect("what it held then");
-    let page: Vec<Edit> =
-        (0..5).map(|i| write(&then, &then_st, PHONE_A, EntryId::from_u64(1000 + i), 2_000_000 + i as u32)).collect();
-    c.log.receive(page);
-    (c.log, was, held)
+    then.into_iter()
+        .map(|then| {
+            let (then, then_st) = then.expect("what it held then");
+            let page: Vec<Edit> = (0..5)
+                .map(|i| write(&then, &then_st, PHONE_A, EntryId::from_u64(1000 + i), 2_000_000 + i as u32))
+                .collect();
+            let mut log = c.log.clone();
+            log.receive(page);
+            (log, was.clone(), held)
+        })
+        .collect()
 }
 
 /// `far_page`'s page, further back than a rung reaches, stepped on, from its replay or from its stored view of it: it
 /// replays from the mark before them (`Marks`), as the whole, and how each went.
-fn far_back(writes: usize, back: usize) -> (Why, Why) {
-    let (log, was, held) = far_page(writes, back);
+fn far_back((log, was, held): (Log, Replay, usize)) -> (Why, Why) {
     let view = Replay::from_view(&was.to_view(held), log.edits(), log.ids()).expect("its stored view").0;
     let whole = replay(log.edits());
     let (stepped, why) = replay_on_why(was, log.edits(), held);
@@ -228,8 +240,10 @@ fn a_rewind_run_a_slice_a_step_is_the_whole_replay() {
 
 #[test]
 fn a_page_drafted_further_back_than_a_rung_replays_from_a_mark() {
-    for back in [9_000, 14_000, 21_000] {
-        let (why, opened) = far_back(24_000, back);
+    // the three pages of one log the Mac wrote: what each tests is the page, not the log it builds again
+    let backs = [9_000, 14_000, 21_000];
+    for (back, page) in backs.into_iter().zip(far_pages(24_000, &backs)) {
+        let (why, opened) = far_back(page);
         assert_eq!((why, opened), (Why::Rung, Why::Rung), "a page {back} back, stepped on and from its stored view");
     }
 }
