@@ -74,18 +74,24 @@ Each rule is held by a test or a check once there is code to hold.
 - **Pluggable storage.** The core defines one small contract of blobs and refs, `Store`. Behind it: object storage for the
   Aven Peer, a folder for a Peer, OPFS for a Peer-Light, memory for tests. Apache OpenDAL provides the first backends;
   our own OPFS backend comes where speed needs it ([`SANDBOX.md`](SANDBOX.md#storage-one-contract-pluggable-backends)).
-- **One primitive underneath: the sealed blob.** Everything at rest and on the wire is an immutable, sealed object
-  named by the BLAKE3 hash of its bytes. A file is one blob. A Loro document is a small head (its id, its version and
+- **One primitive underneath: the sealed blob.** Everything at rest and on the wire is an immutable object named by
+  the BLAKE3 hash of its bytes, sealed unless it is published. A file is one blob. A Loro document is a small head (its id, its version and
   the hashes of its pieces) over blobs: sealed segments of edits and, now and then, a snapshot. Both live in the same
   `Store` and travel by the same blob transfer. Only the edits being made right now travel live over our sync protocol,
-  until they are sealed into the next segment. The Aven Peer can store, verify and serve every byte without reading
-  any of it. Loro is the document model, so iroh-docs is not needed. The only other thing in storage is a ref: a name
+  until they are sealed into the next segment. The Aven Peer can store, verify and serve every sealed byte without
+  reading it. Loro is the document model, so iroh-docs is not needed. The only other thing in storage is a ref: a name
   pointing at a blob, such as a document's latest head, changed atomically, as in git.
+- **Deduplication follows who may know a file.** Published files are signed, not encrypted, and dedup with everyone,
+  like IPFS. Files shared in a space are sealed convergently with the space's secret (`key = hash(space secret,
+  file)`): the space's peers store each file once, and outsiders, the Aven Peer included, can't even test a guess.
+  This is Tahoe-LAFS's convergence secret, with symmetric crypto only. Private documents stay sealed with random keys;
+  their segments are unique anyway. Dedup across all peers through the Aven Peer (DupLESS-style) stays an option, not
+  the default. It takes effect in the milestone that brings files; nothing changes before it.
 - **Encryption:** X-Wing (ML-KEM-768 with X25519) is the only key encapsulation. Every sealed box carries a suite byte,
   so a second scheme can join if lattices ever look weak: HQC, NIST's 2025 code-based backup, with keys of a few KB.
   No Classic McEliece: v1 derived a pair for every key, each with a 1 MB public half that took most of a second to
   make. Signatures: Ed25519 and passkeys now, ML-DSA later through the same suite byte.
-- **The Aven Peer only ever sees ciphertext.**
+- **The Aven Peer only ever sees ciphertext,** except what is published.
 
 ## What we take from iroh
 
