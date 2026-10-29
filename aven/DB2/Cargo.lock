@@ -61,9 +61,12 @@ dependencies = [
  "blake3",
  "bytes",
  "futures",
+ "js-sys",
  "opendal",
  "thiserror",
  "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

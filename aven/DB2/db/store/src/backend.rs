@@ -8,7 +8,8 @@ pub use crate::dal::DalStore;
 use crate::{Error, Result};
 
 fn build(op: opendal::Result<Operator>) -> Result<DalStore> {
-    op.map(DalStore::new).map_err(|e| Error::Backend(e.to_string()))
+    op.map(DalStore::new)
+        .map_err(|e| Error::Backend(e.to_string()))
 }
 
 /// Memory, for tests and the simulation: gone with the process.
@@ -21,8 +22,16 @@ pub fn memory() -> Result<DalStore> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn fs(root: &std::path::Path) -> Result<DalStore> {
     let tmp = root.join(".tmp");
-    let path = |p: &std::path::Path| p.to_str().map(str::to_owned).ok_or_else(|| Error::Backend(format!("{p:?} isn't UTF-8")));
-    build(Operator::new(services::Fs::default().root(&path(root)?).atomic_write_dir(&path(&tmp)?)))
+    let path = |p: &std::path::Path| {
+        p.to_str()
+            .map(str::to_owned)
+            .ok_or_else(|| Error::Backend(format!("{p:?} isn't UTF-8")))
+    };
+    build(Operator::new(
+        services::Fs::default()
+            .root(&path(root)?)
+            .atomic_write_dir(&path(&tmp)?),
+    ))
 }
 
 /// Where an S3 store lives: a bucket and a prefix in it, on one endpoint.

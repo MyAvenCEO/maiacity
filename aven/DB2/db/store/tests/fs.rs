@@ -1,5 +1,7 @@
 //! The conformance suite on a folder, and what a crash mid-write leaves there.
 
+#![cfg(not(target_arch = "wasm32"))]
+
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -8,7 +10,11 @@ use bytes::Bytes;
 
 fn fresh_dir() -> PathBuf {
     static N: AtomicU32 = AtomicU32::new(0);
-    let dir = std::env::temp_dir().join(format!("aven-db-store-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+    let dir = std::env::temp_dir().join(format!(
+        "aven-db-store-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
@@ -18,6 +24,7 @@ fn fresh_dir() -> PathBuf {
 async fn fs_passes_the_suite() {
     let report = conformance::run(async || backend::fs(&fresh_dir()).unwrap()).await;
     println!("{report}");
+    bench(&backend::fs(&fresh_dir()).unwrap()).await;
     assert!(report.passed());
 }
 
@@ -25,10 +32,21 @@ async fn fs_passes_the_suite() {
 async fn a_folder_store_survives_a_restart() {
     let dir = fresh_dir();
     let head = RefName::new("head").unwrap();
-    let hash = backend::fs(&dir).unwrap().put(Bytes::from_static(b"kept")).await.unwrap();
-    backend::fs(&dir).unwrap().set_ref(&head, None, hash).await.unwrap();
+    let hash = backend::fs(&dir)
+        .unwrap()
+        .put(Bytes::from_static(b"kept"))
+        .await
+        .unwrap();
+    backend::fs(&dir)
+        .unwrap()
+        .set_ref(&head, None, hash)
+        .await
+        .unwrap();
     let again = backend::fs(&dir).unwrap();
-    assert_eq!(again.get(&hash).await.unwrap().unwrap(), Bytes::from_static(b"kept"));
+    assert_eq!(
+        again.get(&hash).await.unwrap().unwrap(),
+        Bytes::from_static(b"kept")
+    );
     assert_eq!(again.get_ref(&head).await.unwrap(), Some(hash));
 }
 
@@ -47,7 +65,10 @@ async fn a_crash_mid_write_corrupts_nothing() {
     assert_eq!(store.list().await.unwrap(), vec![hash]);
     assert_eq!(store.list_refs().await.unwrap(), vec![head.clone()]);
     assert_eq!(store.get_ref(&head).await.unwrap(), Some(hash));
-    assert_eq!(store.get(&hash).await.unwrap().unwrap(), Bytes::from_static(b"whole"));
+    assert_eq!(
+        store.get(&hash).await.unwrap().unwrap(),
+        Bytes::from_static(b"whole")
+    );
 }
 
 /// Bytes changed on disk behind the store's back are caught when the blob is read whole.
@@ -57,6 +78,20 @@ async fn a_blob_changed_on_disk_reads_as_corrupt() {
     let store = backend::fs(&dir).unwrap();
     let hash = store.put(Bytes::from_static(b"original")).await.unwrap();
     std::fs::write(dir.join("blobs").join(hash.to_hex()), b"tampered").unwrap();
-    assert!(matches!(store.get(&hash).await, Err(aven_db_store::Error::Corrupt(_))));
+    assert!(matches!(
+        store.get(&hash).await,
+        Err(aven_db_store::Error::Corrupt(_))
+    ));
     assert_ne!(Hash::of(b"tampered"), hash);
+}
+
+/// The bench's times, printed beside the suite's report (`-- --nocapture` shows them).
+async fn bench(store: &impl aven_db_store::Store) {
+    let start = std::time::Instant::now();
+    let times = conformance::bench(store, || start.elapsed().as_secs_f64() * 1000.0)
+        .await
+        .unwrap();
+    for (what, ms) in times {
+        println!("bench {what}: {ms:.1} ms");
+    }
 }

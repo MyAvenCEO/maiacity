@@ -21,8 +21,13 @@ pub struct DalStore {
 impl DalStore {
     pub(crate) fn new(op: Operator) -> Self {
         let cap = op.info().capability();
-        let conditional = cap.write_with_if_match && cap.write_with_if_not_exists && cap.delete_with_if_match;
-        Self { op, writes: Mutex::new(()), conditional }
+        let conditional =
+            cap.write_with_if_match && cap.write_with_if_not_exists && cap.delete_with_if_match;
+        Self {
+            op,
+            writes: Mutex::new(()),
+            conditional,
+        }
     }
 
     /// Whether the backend itself refuses stale ref writes.
@@ -34,26 +39,50 @@ impl DalStore {
     async fn read_ref(&self, name: &RefName) -> Result<(Option<Hash>, Option<String>)> {
         let path = ref_path(name);
         if !self.conditional {
-            return match self.op.read(&path).await {
-                Ok(buf) => Ok((Some(parse_ref(&buf.to_bytes())?), None)),
-                Err(e) if e.kind() == ErrorKind::NotFound => Ok((None, None)),
-                Err(e) => Err(backend(e)),
+            // A read racing a write sees the old value or the new one, but OPFS can also refuse it: the `File` it
+            // read from went stale when the write committed, which it reports as `NotReadableError` or even
+            // `NotFoundError`. So a ref is missing only if its file is; otherwise reading again sees the new value.
+            let mut tries = 0;
+            return loop {
+                let refused = match self.op.read(&path).await {
+                    Ok(buf) => break Ok((Some(parse_ref(&buf.to_bytes())?), None)),
+                    Err(e)
+                        if e.kind() == ErrorKind::NotFound
+                            && !self.op.exists(&path).await.map_err(backend)? =>
+                    {
+                        break Ok((None, None));
+                    }
+                    Err(e) => e,
+                };
+                if tries == 8 {
+                    break Err(backend(refused));
+                }
+                tries += 1;
             };
         }
         // stat, then read that same version; a change in between only means reading again
         for _ in 0..8 {
             let tag = match self.op.stat(&path).await {
-                Ok(meta) => meta.etag().map(str::to_owned).ok_or_else(|| Error::Backend("no ETag".into()))?,
+                Ok(meta) => meta
+                    .etag()
+                    .map(str::to_owned)
+                    .ok_or_else(|| Error::Backend("no ETag".into()))?,
                 Err(e) if e.kind() == ErrorKind::NotFound => return Ok((None, None)),
                 Err(e) => return Err(backend(e)),
             };
             match self.op.read_with(&path).if_match(&tag).await {
                 Ok(buf) => return Ok((Some(parse_ref(&buf.to_bytes())?), Some(tag))),
-                Err(e) if matches!(e.kind(), ErrorKind::ConditionNotMatch | ErrorKind::NotFound) => continue,
+                Err(e)
+                    if matches!(e.kind(), ErrorKind::ConditionNotMatch | ErrorKind::NotFound) =>
+                {
+                    continue;
+                }
                 Err(e) => return Err(backend(e)),
             }
         }
-        Err(Error::Backend(format!("ref {name} kept changing while read")))
+        Err(Error::Backend(format!(
+            "ref {name} kept changing while read"
+        )))
     }
 
     async fn stale(&self, name: &RefName) -> Error {
@@ -104,7 +133,12 @@ impl Store for DalStore {
         if start == end {
             return Ok(Some(Bytes::new()));
         }
-        let buf = self.op.read_with(&path).range(start..end).await.map_err(backend)?;
+        let buf = self
+            .op
+            .read_with(&path)
+            .range(start..end)
+            .await
+            .map_err(backend)?;
         Ok(Some(buf.to_bytes()))
     }
 
@@ -114,13 +148,22 @@ impl Store for DalStore {
 
     async fn list(&self) -> Result<Vec<Hash>> {
         // only names that are hashes: a crash's leftovers, if a backend leaves any, are never blobs
-        let mut hashes: Vec<Hash> = self.names("blobs/").await?.iter().filter_map(|n| n.parse().ok()).collect();
+        let mut hashes: Vec<Hash> = self
+            .names("blobs/")
+            .await?
+            .iter()
+            .filter_map(|n| n.parse().ok())
+            .collect();
         hashes.sort();
         Ok(hashes)
     }
 
     async fn delete(&self, hash: &Hash) -> Result<()> {
-        self.op.delete(&blob_path(hash)).await.map_err(backend)
+        // gone already is fine; OPFS says NotFound where the others say nothing
+        match self.op.delete(&blob_path(hash)).await {
+            Err(e) if e.kind() != ErrorKind::NotFound => Err(backend(e)),
+            _ => Ok(()),
+        }
     }
 
     async fn get_ref(&self, name: &RefName) -> Result<Option<Hash>> {
@@ -168,7 +211,12 @@ impl Store for DalStore {
     }
 
     async fn list_refs(&self) -> Result<Vec<RefName>> {
-        let mut names: Vec<RefName> = self.names("refs/").await?.into_iter().filter_map(|n| RefName::new(n).ok()).collect();
+        let mut names: Vec<RefName> = self
+            .names("refs/")
+            .await?
+            .into_iter()
+            .filter_map(|n| RefName::new(n).ok())
+            .collect();
         names.sort();
         Ok(names)
     }
@@ -198,12 +246,16 @@ fn ref_path(name: &RefName) -> String {
 }
 
 fn parse_ref(bytes: &[u8]) -> Result<Hash> {
-    let text = std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("a ref that isn't text".into()))?;
+    let text =
+        std::str::from_utf8(bytes).map_err(|_| Error::Corrupt("a ref that isn't text".into()))?;
     text.strip_suffix('\n').unwrap_or(text).parse()
 }
 
 fn is_refused(e: &opendal::Error) -> bool {
-    matches!(e.kind(), ErrorKind::ConditionNotMatch | ErrorKind::AlreadyExists)
+    matches!(
+        e.kind(),
+        ErrorKind::ConditionNotMatch | ErrorKind::AlreadyExists
+    )
 }
 
 fn backend(e: opendal::Error) -> Error {

@@ -22,4 +22,16 @@ opendal = { version = "=0.59.5", default-features = false, features = ["services
 
 [dev-dependencies]
 futures = { version = "=0.3.34", default-features = false, features = ["std", "async-await"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+js-sys = "=0.3.106"
+wasm-bindgen = "=0.2.129"
+wasm-bindgen-futures = "=0.4.79"
+
+# The suite on OPFS, as wasm for a browser: `opfs/run.sh` builds it and runs it in Chromium.
+[[example]]
+name = "opfs_conformance"
+crate-type = ["cdylib"]

@@ -13,8 +13,14 @@ impl RefName {
         let name = name.into();
         let ok = (1..=128).contains(&name.len())
             && !name.starts_with('.')
-            && name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
-        if ok { Ok(Self(name)) } else { Err(Error::InvalidName(name)) }
+            && name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+        if ok {
+            Ok(Self(name))
+        } else {
+            Err(Error::InvalidName(name))
+        }
     }
 
     pub fn as_str(&self) -> &str {
