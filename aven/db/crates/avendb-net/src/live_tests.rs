@@ -130,7 +130,9 @@ async fn a_live_edit_reaches_an_authorized_peer_while_its_background_pages_are_s
         "durable_ms": null, "remote_accept_ms": null,
         "durability": "in-memory fixture; no disk fence measured"
     }));
-    assert!(phone.read(move |lab, me| lab.item(me, backlog_first).is_some()).await,
+    // the witness is held and replayed, which reading the live body needs; its own entry is shown by the catch-up's
+    // steps after the live edit's (`Lab::show_items`, new writes first), so whether it is shown yet is a race
+    assert!(phone.read(move |lab, me| lab.state(me).entry(backlog_first).is_some()).await,
         "the first creation is the required audience-key witness");
     let unrelated = backlog[1..].to_vec();
     assert!(phone.read(move |lab, me| unrelated.iter().all(|entry| lab.item(me, *entry).is_none())).await,
