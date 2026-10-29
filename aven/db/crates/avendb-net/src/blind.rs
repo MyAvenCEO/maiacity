@@ -41,8 +41,10 @@ const VAULT_ROWS: usize = 1 << 20;
 pub(crate) const ROWS_LIMIT: usize = 32 << 20;
 /// The most vaults a find request names to follow.
 const FIND_FOLLOW: usize = 64;
-pub(crate) const FIND_LIMIT: usize = 4 + 32 + 32 + 1 + FIND_FOLLOW * 32 + 2 + index::FIND_TOKENS * 16;
+pub(crate) const FIND_LIMIT: usize = 4 + 32 + 32 + 2 + 1 + FIND_FOLLOW * 32 + 2 + index::FIND_TOKENS * 16;
 const FIND_REPLY_LIMIT: usize = 4 + index::FIND_PAGE * 32;
+/// A find of the newest's answer at most: each entry with its creation's depth.
+const NEWEST_REPLY_LIMIT: usize = 3 + index::FIND_PAGE * (32 + 8);
 /// How long a peer has to answer one message.
 const WAIT: Duration = Duration::from_secs(10);
 /// The most pages of one find a device asks one peer for.
@@ -163,23 +165,29 @@ fn rows_of(bytes: &[u8]) -> Result<(VaultId, Vec<Row>)> {
 }
 
 /// A find request: the vault it asks of (all it may receive of, for `None`), after which entry, the vaults the asking
-/// device follows, and the tokens.
+/// device follows, the tokens, and whether it asks for the newest `n` alone (a view's window, Lean `Interest.lean`'s
+/// `Window.newest`), answered in one page, each entry with its creation's depth (`Lab::find_newest`), never after one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Find {
     pub vault: Option<VaultId>,
     pub after: Option<EntryId>,
     pub follow: Vec<VaultId>,
     pub tokens: Vec<Token>,
+    pub newest: Option<u16>,
 }
 
 impl Find {
     fn wire(&self) -> Vec<u8> {
-        let mut out = vec![VERSION, self.vault.is_some() as u8 | (self.after.is_some() as u8) << 1];
+        let flags = self.vault.is_some() as u8 | (self.after.is_some() as u8) << 1 | (self.newest.is_some() as u8) << 2;
+        let mut out = vec![VERSION, flags];
         if let Some(v) = self.vault {
             out.extend_from_slice(&v.0);
         }
         if let Some(a) = self.after {
             out.extend_from_slice(&a.0);
+        }
+        if let Some(n) = self.newest {
+            out.extend_from_slice(&n.to_be_bytes());
         }
         out.push(self.follow.len() as u8);
         for v in &self.follow {
@@ -197,9 +205,12 @@ impl Find {
         ensure!(bytes.first() == Some(&VERSION), "unsupported find");
         let mut at = 1;
         let flags = read_array::<1>(bytes, &mut at)?[0];
-        ensure!(flags < 4, "unknown find flags");
+        ensure!(flags < 8, "unknown find flags");
         let vault = (flags & 1 != 0).then(|| read_array(bytes, &mut at).map(VaultId)).transpose()?;
         let after = (flags & 2 != 0).then(|| read_array(bytes, &mut at).map(EntryId)).transpose()?;
+        let newest = (flags & 4 != 0).then(|| read_array(bytes, &mut at).map(u16::from_be_bytes)).transpose()?;
+        ensure!(newest.is_none_or(|n| n > 0 && n as usize <= index::FIND_PAGE && after.is_none()),
+            "a find of the newest asks for 1 to {} of them, after none", index::FIND_PAGE);
         let nf = read_array::<1>(bytes, &mut at)?[0] as usize;
         ensure!(nf <= FIND_FOLLOW, "too many followed vaults");
         let follow = (0..nf).map(|_| read_array(bytes, &mut at).map(VaultId)).collect::<Result<Vec<_>>>()?;
@@ -207,7 +218,7 @@ impl Find {
         ensure!(nt > 0 && nt <= index::FIND_TOKENS, "a find asks for 1 to {} tokens", index::FIND_TOKENS);
         let tokens = (0..nt).map(|_| read_array(bytes, &mut at)).collect::<Result<Vec<Token>>>()?;
         done(bytes, at)?;
-        Ok(Find { vault, after, follow, tokens })
+        Ok(Find { vault, after, follow, tokens, newest })
     }
 }
 
@@ -218,6 +229,29 @@ fn found_wire(entries: &[EntryId], more: bool) -> Vec<u8> {
         out.extend_from_slice(&e.0);
     }
     out
+}
+
+/// The answer to a find of the newest: each entry with its creation's depth, the newest first.
+fn newest_wire(entries: &[(EntryId, u64)]) -> Vec<u8> {
+    let mut out = vec![VERSION];
+    out.extend_from_slice(&(entries.len() as u16).to_be_bytes());
+    for (e, depth) in entries {
+        out.extend_from_slice(&e.0);
+        out.extend_from_slice(&depth.to_be_bytes());
+    }
+    out
+}
+
+fn newest_of(bytes: &[u8], n: u16) -> Result<Vec<(EntryId, u64)>> {
+    ensure!(bytes.first() == Some(&VERSION), "unsupported find answer");
+    let mut at = 1;
+    let k = u16::from_be_bytes(read_array(bytes, &mut at)?);
+    ensure!(k <= n, "more entries than the newest asked for");
+    let entries = (0..k)
+        .map(|_| Ok((EntryId(read_array(bytes, &mut at)?), u64::from_be_bytes(read_array(bytes, &mut at)?))))
+        .collect::<Result<Vec<_>>>()?;
+    done(bytes, at)?;
+    Ok(entries)
 }
 
 fn found_of(bytes: &[u8]) -> Result<(Vec<EntryId>, bool)> {
@@ -276,6 +310,9 @@ impl Shared {
     pub(crate) async fn answer_find(self: &Arc<Self>, peer: &Peer, bytes: &[u8]) -> Result<Vec<u8>> {
         let find = Find::of(bytes)?;
         let device = peer.device;
+        if let Some(n) = find.newest {
+            return self.answer_newest(device, find, n).await;
+        }
         // its told rows, the smallest first, a page and one more of those the device syncs, read off the shelf a
         // stretch at a time, each stretch held to the node's view
         let mut rows = Vec::new();
@@ -309,6 +346,27 @@ impl Shared {
             })
             .await;
         Ok(found_wire(&entries, more))
+    }
+
+    /// `answer_find` for the newest `n`: every entry its told rows and its own name for the tokens, ranked by creation
+    /// (`Lab::find_newest`), in one answer.
+    async fn answer_newest(self: &Arc<Self>, device: avendb::id::SignerId, find: Find, n: u16) -> Result<Vec<u8>> {
+        let mut told_hits = Vec::new();
+        if let Some(told) = &self.told_rows {
+            let mut after = None;
+            loop {
+                let (got, more) = told.candidates(find.vault, &find.tokens, after, 2 * index::FIND_PAGE).await?;
+                after = got.last().copied().or(after);
+                told_hits.extend(got);
+                if !more {
+                    break;
+                }
+            }
+        }
+        let entries = self
+            .read(move |lab, me| lab.find_newest(me, device, &find.follow, find.vault, &find.tokens, told_hits, n as usize))
+            .await;
+        Ok(newest_wire(&entries))
     }
 
     /// Tells each live peer that keeps an index the rows it lacks, once a peer connects or the device's entries change
@@ -459,7 +517,7 @@ impl Shared {
         for peer in peers {
             let requests: Vec<Find> = tokens
                 .chunks(index::FIND_TOKENS)
-                .map(|t| Find { vault: Some(vault), after: None, follow: follow.clone(), tokens: t.to_vec() })
+                .map(|t| Find { vault: Some(vault), after: None, follow: follow.clone(), tokens: t.to_vec(), newest: None })
                 .collect();
             tasks.push(async move {
                 let mut all = Vec::new();
@@ -492,6 +550,15 @@ pub(crate) async fn join_all<F: std::future::Future>(tasks: Vec<F>) -> Vec<F::Ou
         out.push(x);
     }
     out
+}
+
+/// The newest `request.newest` entries `peer` names for `request`, each with its creation's depth, the newest first.
+pub(crate) async fn find_newest(peer: &Peer, request: Find) -> Result<Vec<(EntryId, u64)>> {
+    let n = request.newest.context("a find of the newest names how many")?;
+    let answer = time::timeout(WAIT, session::exchange(&peer.conn, FIND, &request.wire(), NEWEST_REPLY_LIMIT))
+        .await
+        .context("find deadline")??;
+    newest_of(&answer, n)
 }
 
 /// Every page `peer` answers `request` with.
@@ -527,9 +594,15 @@ mod tests {
         let mut long = rows_wire(v, &rows);
         long.push(0);
         assert!(rows_of(&long).is_err());
-        let find = Find { vault: Some(v), after: Some(e), follow: vec![v], tokens: vec![[6; 16]] };
+        let find = Find { vault: Some(v), after: Some(e), follow: vec![v], tokens: vec![[6; 16]], newest: None };
         assert_eq!(Find::of(&find.wire()).unwrap(), find);
-        let bare = Find { vault: None, after: None, follow: vec![], tokens: vec![[6; 16]] };
+        let bare = Find { vault: None, after: None, follow: vec![], tokens: vec![[6; 16]], newest: None };
+        let newest = Find { newest: Some(20), ..bare.clone() };
+        assert_eq!(Find::of(&newest.wire()).unwrap(), newest, "a find of the newest reads back");
+        assert!(Find::of(&Find { newest: Some(0), ..bare.clone() }.wire()).is_err(), "it asks for one at least");
+        assert!(Find::of(&Find { after: Some(e), ..newest.clone() }.wire()).is_err(), "and after none");
+        assert_eq!(newest_of(&newest_wire(&[(e, 9)]), 20).unwrap(), vec![(e, 9)]);
+        assert!(newest_of(&newest_wire(&[(e, 9), (e, 8)]), 1).is_err(), "no more than it asked for");
         assert_eq!(Find::of(&bare.wire()).unwrap(), bare);
         assert!(Find::of(&Find { tokens: vec![], ..bare.clone() }.wire()).is_err(), "a find asks for a token");
         assert_eq!(found_of(&found_wire(&[e], true)).unwrap(), (vec![e], true));

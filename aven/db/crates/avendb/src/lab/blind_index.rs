@@ -285,20 +285,57 @@ impl Lab {
         tokens: &[Token],
         after: Option<EntryId>,
     ) -> (Vec<EntryId>, bool) {
-        let wanted: HashSet<&Token> = tokens.iter().collect();
-        let st = self.held(me).view();
-        let mut hits: Vec<EntryId> = st
-            .entries()
-            .iter()
-            .filter(|en| vault.is_none_or(|v| en.vault == v) && after.is_none_or(|a| en.id > a))
-            .filter(|en| self.row(me, en).is_some_and(|r| r.tokens.iter().any(|t| wanted.contains(t))))
-            .map(|en| en.id)
-            .collect();
+        let mut hits = self.rows_carrying(me, vault, tokens, after);
         hits.sort();
         let mut found = self.syncs_entries(me, asker, follow, &hits);
         let more = found.len() > index::FIND_PAGE;
         found.truncate(index::FIND_PAGE);
         (found, more)
+    }
+
+    /// The entries of `vault` (every vault for `None`) device `me` reads whose row carries one of `tokens`, after
+    /// `after`, in no order.
+    fn rows_carrying(&self, me: SignerId, vault: Option<VaultId>, tokens: &[Token], after: Option<EntryId>) -> Vec<EntryId> {
+        let wanted: HashSet<&Token> = tokens.iter().collect();
+        let st = self.held(me).view();
+        st.entries()
+            .iter()
+            .filter(|en| vault.is_none_or(|v| en.vault == v) && after.is_none_or(|a| en.id > a))
+            .filter(|en| self.row(me, en).is_some_and(|r| r.tokens.iter().any(|t| wanted.contains(t))))
+            .map(|en| en.id)
+            .collect()
+    }
+
+    /// Device `me`'s answer to a `find` from `asker` for the newest `n` (Lean `Interest.lean`'s `Window.newest`): of the
+    /// entries it reads whose row carries one of `tokens` and of `told` (those its peers' rows name for them), those
+    /// `asker` syncs by its view, the `n` created last, each with its creation's depth (`created_depth`), the newest
+    /// first. A blind peer orders by depth too, as it reads no entry's attributes.
+    pub fn find_newest(
+        &self,
+        me: SignerId,
+        asker: SignerId,
+        follow: &[VaultId],
+        vault: Option<VaultId>,
+        tokens: &[Token],
+        told: Vec<EntryId>,
+        n: usize,
+    ) -> Vec<(EntryId, u64)> {
+        let hits: BTreeSet<EntryId> = self.rows_carrying(me, vault, tokens, None).into_iter().chain(told).collect();
+        let hits: Vec<EntryId> = hits.into_iter().collect();
+        let mut found: Vec<(EntryId, u64)> =
+            self.syncs_entries(me, asker, follow, &hits).into_iter().map(|e| (e, self.created_depth(me, e))).collect();
+        found.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        found.truncate(n.min(index::FIND_PAGE));
+        found
+    }
+
+    /// When entry `entry` was created, by the causal depth of the first edit of its log device `me` holds (`Edit::depth`):
+    /// whatever a device had seen sorts before what it creates next, the same on every peer, blind or not. 0 where it
+    /// holds none of it.
+    pub fn created_depth(&self, me: SignerId, entry: EntryId) -> u64 {
+        let log = self.log(me);
+        let edits = log.edits();
+        log.by_log().get(&LogId::Entry(entry)).and_then(|at| at.iter().map(|&i| edits[i].depth).min()).unwrap_or(0)
     }
 }
 
@@ -349,6 +386,24 @@ mod tests {
         relay_on(&mut w, alice);
         assert!(w.lab.index_rows(w.server, w.alice).is_empty());
         assert!(w.lab.find_tokens(w.server, w.alice, &[type_label("room")]).is_empty());
+    }
+
+    #[test]
+    fn a_window_finds_the_newest_n_by_creation_and_only_for_a_device_that_syncs_them() {
+        let mut w = world();
+        let (mac, alice) = (w.mac_a, w.alice);
+        let rooms: Vec<_> = (0..5)
+            .map(|i| w.lab.create(mac, alice, alice, "room", &[], document("Room", &i.to_string(), mac)).unwrap())
+            .collect();
+        let tokens = w.lab.find_tokens(mac, alice, &[type_label("room")]);
+        let depths: Vec<u64> = rooms.iter().map(|&r| w.lab.created_depth(mac, r)).collect();
+        assert!(depths.windows(2).all(|d| d[0] < d[1]), "each made after the last sorts after it: {depths:?}");
+        let newest = w.lab.find_newest(mac, w.phone_a, &[], Some(alice), &tokens, vec![], 2);
+        assert_eq!(newest, vec![(rooms[4], depths[4]), (rooms[3], depths[3])]);
+        // what a peer's rows told it counts as one of its own, once
+        let told = w.lab.find_newest(mac, w.phone_a, &[], Some(alice), &tokens, vec![rooms[4], rooms[0]], 9);
+        assert_eq!(told.iter().map(|f| f.0).collect::<Vec<_>>(), rooms.iter().rev().copied().collect::<Vec<_>>());
+        assert!(w.lab.find_newest(mac, w.stranger, &[], None, &tokens, vec![], 2).is_empty());
     }
 
     #[test]
