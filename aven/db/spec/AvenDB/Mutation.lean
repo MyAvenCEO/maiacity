@@ -17,7 +17,8 @@ there. Three nested bounds hold every write a call makes:
    ever (`Rules.lean`, `State.lean`); the footprint is a bound a reader can check before running anything, and the
    reason a refused write never starts.
 
-Functions and flows (`aven/db/page/functions.js`, `flows.js`) declare their footprints the same way.
+Functions and flows (`aven/db/page/functions.js`, `flows.js`) declare their footprints the same way: a function's
+ops are its manifest's `ops` (the function schema's "ops it may ask for"), and its entries the move's own.
 
 Rust: `avendb::address::Footprint`, the engine's `call` of a mutation.
 -/
