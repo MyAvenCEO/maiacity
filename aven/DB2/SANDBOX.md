@@ -105,7 +105,7 @@ timeline  20:14:03.120  Alice Peer → Aven Peer  connected, direct (UDP)
 ```
 
 Every peer writes its events as JSON lines. The box gathers them into one timeline: one stream on screen and one file
-per run. A cloud session can't show a window, so `bun run shot` takes a screenshot of the control room for the chat.
+per run. A cloud session can't show a window, so `bun run shot` takes a screenshot of the control room to share in the session.
 
 ## The box
 
