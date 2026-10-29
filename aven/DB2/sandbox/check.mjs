@@ -8,7 +8,7 @@ import { chromium } from 'playwright';
 
 const expected = {
 	// the people a host may act as: the box's own view anyone, a Peer-Light the person it serves, a visitor no one.
-	// Nobody acts as Aven: a network's vault has no key of its own
+	// No person switches into Aven: it acts only through its own device, the Aven Peer
 	accounts: {
 		localhost: ['alice', 'bob'],
 		'alice.localhost': ['alice'],
@@ -24,6 +24,8 @@ const expected = {
 		bob: ['bob', 'bob-peer-light'],
 		'bob/aven': ['bob', 'bob-peer-light'],
 	},
+	// the devices a vault acts through, in the Vault app: Aven only through the Aven Peer
+	actsThrough: { alice: 'Alice Peer, Alice Peer-Light', 'alice/aven': 'Aven Peer', bob: "Bob's Peer-Light" },
 	// the vault each Peer-Light serves
 	serves: { 'alice-peer-light': "Alice's vault", 'bob-peer-light': "Bob's vault" },
 };
@@ -84,6 +86,8 @@ for (const [path, tree] of Object.entries(expected.tree)) {
 	await page.goto(`http://localhost:5173/#/${vault}/vault${target ? `/${target}` : ''}`);
 	await page.locator(`[data-view="vault"][data-account="${vault}"][data-shown="${tree[0]}"]`).waitFor();
 	differ(`${path}'s Vault`, await ids('[data-vault]', 'vault'), tree);
+	if (expected.actsThrough[path])
+		differ(`${path} acts through`, (await page.getByTestId('acts-through').textContent()).trim(), expected.actsThrough[path]);
 	if (vault === 'alice') await page.screenshot({ path: `${out}/vault-${path.replace('/', '-')}.png`, fullPage: true });
 }
 // An address naming Aven as the one acting lands on the box's first person's dashboard

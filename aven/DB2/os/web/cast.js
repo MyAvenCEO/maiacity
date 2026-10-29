@@ -29,11 +29,14 @@ export function chain(cast, id) {
 // The vault a device acts for: the vault that owns its device vault.
 export const actsFor = (cast, device) => ownerVaults(cast, device)[0];
 
-// The vaults one can act as: people's only. A network's vault (Aven) has no key of its own, and nobody acts as it: its
-// admin manages it as herself, through the tree. A device acts as the person it serves; without a device, the box's
+// The vaults one can act as: people's only. A network's vault (Aven) acts through its own devices, within the rights
+// its owner gives it, and no person switches into it: its admin manages it as herself, through the tree. A device acts as the person it serves; without a device, the box's
 // own view holds every test key and can act as any person.
 export const accounts = (cast, device) =>
 	(device ? [actsFor(cast, device)] : Object.keys(cast.vaults)).filter((id) => cast.vaults[id]?.kind === 'person');
+
+// The devices a vault acts through: the device vaults it owns directly (the Aven Peer for Aven).
+export const devicesOf = (cast, id) => owned(cast, id).filter((child) => cast.vaults[child].kind === 'device');
 
 // The peers a vault sees: those whose device vaults it governs.
 export const peersOf = (cast, id) => Object.keys(cast.peers).filter((peer) => governs(cast, id).includes(peer));

@@ -62,9 +62,10 @@ Bob's vault             person    owned by Bob's owner key
 - **A device's vault** is owned by the vault it serves. The device's key signs for that vault and governs nothing: a
   lost device is revoked by its vault, and the vault loses nothing.
 - **Aven, the network's vault,** is owned by Alice's vault. **So Alice's vault is the admin, not Alice's key:** her key
-  governs her vault, and through it Aven and the Aven Peer. **Nobody ever acts as Aven:** it has no key of its own, and
-  Alice manages it as herself. From milestone 2 on, invites into the network are Aven's,
-  given with the authority of Alice's vault; Bob is a member because Alice invited him.
+  governs her vault, and through it Aven and the Aven Peer. **Aven acts through its own device:** the Aven Peer signs
+  for Aven, within the rights Alice's vault gives it and can take back. No person ever switches into Aven; Alice
+  manages it as herself. From milestone 2 on, invites into the network are Aven's, within those rights; Bob is a member
+  because Alice invited him.
 - **A vault governs everything below it, and sees only that.** avenOS shows a vault what it governs: Alice's Control
   Room has her two devices and the Aven Peer, Bob's his Peer-Light.
 
@@ -375,7 +376,7 @@ account switcher, Vault and Control Room. The UX is settled before the peers run
 | **Box** | the Dockerfile and the image workflow (GitHub's registry, amd64 and arm64, tagged by the hash of the box's inputs); `compose.yml`; `bun run up`, `down`, `logs`, `doctor`, `shot` and `up --check`; the cloud setup script and the session hook; the fence check (no legacy imports, the folder's spelling); the root `Cargo.toml` excluding `aven/DB2`; `check.mjs` and the goal CI running `bun run up --check` | `bun run up` brings up the five containers with placeholder peers, and `doctor` passes in a cloud session |
 | **Store** (Rust) | `db/store`: the contract (blobs and refs), its backends through OpenDAL (s3, fs, opfs, memory) and the conformance suite | the suite passes on memory and fs, on s3 against the box's S3 server, and on opfs in Chromium |
 | **Peers** (Rust and Lean) | `db/core`: the status phases, presence and progress counters, pure. `peer/native`: the binary, with the iroh endpoint, the `Router`, our ALPN `aven/db/1` (hello and presence), `--relay` and `--store`. `peer/light`: the Peer-Light, the core as wasm in a worker, relay-only, storing in OPFS. `db/spec/` with its one check. | unit tests; two Peers and a Peer-Light connect over iroh in a test; `lake build` |
-| **avenID** (Lean and Rust) | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and nobody acts as a network. `id/core/`: `aven-id`, pure, its tests against the model on random trees. avenOS then reads the tree from it, through the Peer-Light, instead of from the cast. | `lake build`; `cargo test`; `up --check` unchanged |
+| **avenID** (Lean and Rust) | `id/spec/`: `Aven.ID`, vaults owning vaults, what a vault governs, whom a device acts for, whom a host may act as; theorems that authority never runs up the tree, a device governs nothing, and no person acts as a network: it acts only through its own devices. `id/core/`: `aven-id`, pure, its tests against the model on random trees. avenOS then reads the tree from it, through the Peer-Light, instead of from the cast. | `lake build`; `cargo test`; `up --check` unchanged |
 | **Page** (JS) | `os/web/`: avenOS and its apps, first on recorded status, then on the real peers | `svelte-check`; the pages render the recorded status |
 
 The Store thread's first commit is the `Store` trait, so the Peers thread builds on it from the start.
