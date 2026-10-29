@@ -869,6 +869,66 @@ struct Answers {
     /// What the removals its catch-up hasn't replayed yet may take away (`Lab::cuts`), for the log's revision and how
     /// far its replay is.
     cuts: std::sync::Mutex<Option<(crate::policy::LogRevision, usize, Arc<Cuts>)>>,
+    /// What each asker is answered (`Lab::answered`), by the asker and the vaults it follows: stamped with the head of
+    /// the log it was worked out of and how far the replay it was worked out by is.
+    answered: std::sync::Mutex<HashMap<(SignerId, Vec<VaultId>), (crate::log_head::Head, usize, Arc<Answered>)>>,
+    /// Where the edits name each McEliece key and file (`Named`), stamped with the head of the log it indexes.
+    named: std::sync::Mutex<Option<Arc<Named>>>,
+}
+
+/// What a device answers one asker (`Lab::answered`): the places of the edits it sends, and their logs. It sends a log
+/// whole or none of it, so a place is answered exactly when its log is among `logs`.
+struct Answered {
+    places: Arc<Vec<usize>>,
+    logs: HashSet<LogId>,
+}
+
+/// Where a device's edits name each McEliece key and each file (`Lab::may_fetch`, `Lab::may_fetch_file`), as places
+/// in its log, the first `head.at` of them: the key gate looks up the few edits that name what it is asked for, not
+/// every edit an asker may receive (2.3-2.5 s a call on the always-on peer, 2026-10-29). Kept as the log appends,
+/// worked out anew once its first `head.at` edits are no longer those it indexed (`Log::head_at`).
+#[derive(Clone)]
+struct Named {
+    head: crate::log_head::Head,
+    /// The edits that name each McEliece key (`Edit::blobs`).
+    blobs: HashMap<BlobId, Vec<usize>>,
+    /// The writes that bring each file (`Edit::files`).
+    files: HashMap<FileRoot, Vec<usize>>,
+    /// The snapshots whose state of an entry travels as each file (`Edit::stated`), with that entry.
+    stated: HashMap<FileRoot, Vec<(usize, EntryId)>>,
+    /// The files the writes bring, by their root's hash.
+    by_hash: HashMap<[u8; 32], BTreeSet<FileRoot>>,
+}
+
+impl Named {
+    fn of(log: &crate::policy::Log) -> Named {
+        let mut named = Named {
+            head: log.head_at(0).expect("an empty prefix"),
+            blobs: HashMap::new(),
+            files: HashMap::new(),
+            stated: HashMap::new(),
+            by_hash: HashMap::new(),
+        };
+        named.extend(log);
+        named
+    }
+
+    /// The same, of the edits `log` appended since.
+    fn extend(&mut self, log: &crate::policy::Log) {
+        for (i, edit) in log.edits().iter().enumerate().skip(self.head.at as usize) {
+            for b in edit.blobs() {
+                self.blobs.entry(b).or_default().push(i);
+            }
+            for f in edit.files() {
+                self.files.entry(*f).or_default().push(i);
+                self.by_hash.entry(f.hash).or_default().insert(*f);
+            }
+            for x in edit.stated() {
+                self.stated.entry(x.slice).or_default().push((i, x.entry));
+            }
+        }
+        self.head = log.head();
+    }
 }
 
 /// What the removals among a device's edits that its replay hasn't reached may take away from a peer it answers in
@@ -5613,15 +5673,60 @@ impl Lab {
     /// `sync::answer` of device `d`'s edits for `asker`, which follows `follow`, by the logs its log keeps the places
     /// of (`Log::by_log`): no scan of every edit it holds.
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
+        self.answering(d, asker, follow).places.clone()
+    }
+
+    /// `answered`, with the logs it sends: worked out once for the log's head and how far the replay is, whatever asks
+    /// it in between (a request, each page of a reply, the key gate).
+    fn answering(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Answered> {
         let store = self.held(d);
-        let Some((st, cuts)) = self.standing_for(d, asker) else { return Arc::new(vec![]) };
-        let mut places = answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow);
-        // none of the logs a removal not replayed yet may take away from it (`Cuts::logs`), till caught up
-        if !cuts.logs.is_empty() {
-            let logs = store.log.logs();
-            places.retain(|&i| logs[i].is_none_or(|l| !cuts.logs.contains(&l)));
+        let (head, replayed) = (store.log.head(), store.replayed);
+        let key = (asker, follow.to_vec());
+        if let Some((at, by, got)) = store.answers.answered.lock().expect("answered").get(&key)
+            && *at == head
+            && *by == replayed
+        {
+            return got.clone();
         }
-        Arc::new(places)
+        let places = match self.standing_for(d, asker) {
+            None => vec![],
+            Some((st, cuts)) => {
+                let mut places = answer_by_log(store.log.edits(), store.log.by_log(), st, asker, follow);
+                // none of the logs a removal not replayed yet may take away from it (`Cuts::logs`), till caught up
+                if !cuts.logs.is_empty() {
+                    let logs = store.log.logs();
+                    places.retain(|&i| logs[i].is_none_or(|l| !cuts.logs.contains(&l)));
+                }
+                places
+            }
+        };
+        let logs = places.iter().filter_map(|&i| store.log.logs()[i]).collect();
+        let got = Arc::new(Answered { places: Arc::new(places), logs });
+        let mut kept = store.answers.answered.lock().expect("answered");
+        if kept.len() >= ANSWERS_KEPT {
+            kept.clear();
+        }
+        kept.insert(key, (head, replayed, got.clone()));
+        got
+    }
+
+    /// Where device `d`'s edits name each McEliece key and file (`Named`), as its log is now.
+    fn named(&self, d: SignerId) -> Arc<Named> {
+        let log = &self.held(d).log;
+        let mut kept = self.held(d).answers.named.lock().expect("named");
+        let head = log.head();
+        if let Some(named) = kept.as_ref().filter(|n| n.head == head) {
+            return named.clone();
+        }
+        let named = match kept.take() {
+            Some(mut named) if log.head_at(named.head.at) == Some(named.head) => {
+                Arc::make_mut(&mut named).extend(log);
+                named
+            }
+            _ => Arc::new(Named::of(log)),
+        };
+        *kept = Some(named.clone());
+        named
     }
 
     /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
@@ -6023,18 +6128,42 @@ impl Lab {
 
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the McEliece key `blob`: it holds it, and an
     /// edit `asker` may receive by `d`'s view names it.
+    /// The edits that name it, looked up where they are (`Named`), each answered as its log is (`answering`).
     pub fn may_fetch(&self, d: SignerId, asker: SignerId, blob: BlobId, follow: &[VaultId]) -> bool {
         let store = self.held(d);
-        let edits = store.log.edits();
-        store.blobs.contains_key(&blob)
-            && self.answered(d, asker, follow).iter().any(|&i| edits[i].blobs().contains(&blob))
+        if !store.blobs.contains_key(&blob) {
+            return false;
+        }
+        let named = self.named(d);
+        let Some(places) = named.blobs.get(&blob) else { return false };
+        let answered = self.answering(d, asker, follow);
+        let logs = store.log.logs();
+        places.iter().any(|&i| logs[i].is_some_and(|l| answered.logs.contains(&l)))
     }
 
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
-    /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
+    /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27, `sync::may_fetch`).
+    /// Whether `d` holds them is its store's to say. The edits that bring it looked up where they are (`Named`).
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        self.standing_for(d, asker)
-            .is_some_and(|(st, cuts)| crate::sync::fetchable(self.held(d).log.edits(), st, asker, file, follow, &cuts.logs))
+        let Some((st, cuts)) = self.standing_for(d, asker) else { return false };
+        let named = self.named(d);
+        let answered = self.answering(d, asker, follow);
+        let logs = self.held(d).log.logs();
+        let sent = |i: usize| logs[i].is_some_and(|l| answered.logs.contains(&l));
+        if named.files.get(file).is_some_and(|at| at.iter().any(|&i| sent(i))) {
+            return true;
+        }
+        let Some(stated) = named.stated.get(file).filter(|at| at.iter().any(|&(i, _)| sent(i))) else { return false };
+        let syncing = crate::sync::Syncing::new(st, asker, follow);
+        stated.iter().any(|&(i, entry)| {
+            let l = LogId::Entry(entry);
+            sent(i) && syncing.log(l) && !cuts.logs.contains(&l)
+        })
+    }
+
+    /// The files the edits device `d` holds bring whose root's hash is `hash`: what a fetch by that hash may be of.
+    pub fn files_hashed(&self, d: SignerId, hash: &[u8; 32]) -> Vec<FileRoot> {
+        self.named(d).by_hash.get(hash).map(|roots| roots.iter().copied().collect()).unwrap_or_default()
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
