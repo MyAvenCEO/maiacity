@@ -2621,9 +2621,12 @@ impl Lab {
         Some(seed.child("avendb file convergence", b"").bytes())
     }
 
-    /// The vault device `d` belongs to, by its view.
+    /// The vault device `d` belongs to, as every edit it holds says (`latest`): never by a replay still under way, whose
+    /// state is of the edits it replayed so far, none at all after a restore whose stored view didn't open. A device
+    /// that answered "no vault" from that put its shelf aside (theOS 296eefce on the Mac, 2026-10-29), and a server
+    /// mid replay would take a second claim.
     pub fn vault_of(&self, d: SignerId) -> Option<VaultId> {
-        self.held(d).view().vaults().iter().find(|v| v.devices.contains(&d)).map(|v| v.id)
+        self.latest(d).vaults().iter().find(|v| v.devices.contains(&d)).map(|v| v.id)
     }
 
     /// Device `d`, a server, takes a new vault from its peers only where it welcomes it, or again any (`gate::takes`):
