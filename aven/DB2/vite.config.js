@@ -1,5 +1,6 @@
-// avenOS in the browser, and the control room (SANDBOX.md). One server for both: `localhost` is the control room, and
-// each Peer-Light's own origin (`alice.localhost`, `bob.localhost`) runs avenOS, so each keeps its own OPFS.
+// avenOS in the browser (SANDBOX.md). One server for every view: `localhost` is the box's own, which can act as any
+// vault, and each Peer-Light's own origin (`alice.localhost`, `bob.localhost`) runs avenOS as that device, so each keeps
+// its own OPFS.
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vite';
 
