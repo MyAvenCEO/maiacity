@@ -180,3 +180,9 @@ Priority after these findings (*(guess)* order by impact): 33 (local first broke
 - Settings → Devices listed the devices.
 - Always-on peer at 19:41: `replay latest:false`, 157,747 edits, **1 h 39 min after its 18:02 restart**. *(guess)* while it replays it stops answering askings (the test device's pages stopped after 6).
 - Mac theOS 19:38: behind 10 of 3,111, but query p95 33 s, entry_views 41 s: catch-up lock waited **7,073 s in total**, max wait 40.7 s, max hold 33.8 s, 2,090 steps. Reads stay slow after the device is nearly caught up.
+- **Walk result (run 19:28:40-19:41:01, WebKit, fresh device): FAILED.** Page load 0.56 s, gate 2.85 s, unlock 10.33 s (target 5 s).
+  Paint per level, during catch-up / after the 4-min sync watch (gate 0.1 s, "–" never painted): Chat rooms –/–; Assets list 1.79 s/– ("Reading recipe entries…"); asset 0.13 s/–; variant –/– (tap waited 30 s); Stories list 5.52 s/0.035 s; story 0.26 s/–; Proposals board –/– ("waiting to hear from a peer"); Settings 0.056/0.028 s; Devices 0/0 s.
+  Sync over 238 samples: behind 2,687, then 3,057 of 3,111 from 19:30 to the end: nothing moved. The one peer stopped at page 6 (7,956 edits). Lacked 3,057, byStub 9.
+  Pill at the same moment: "Failed askings 10 of 7"; Logs left 959 vs This view 1,022 vs synced.behind 3,057; "Syncing 2,152/3,111" while behind 3,057.
+  Cause (measured): the always-on peer, still in its whole replay (latest:false, 157,747 edits, 1 h 40 min after restart), stops serving pages to a fresh device after ~8k edits. Only Settings and cached Stories paint from local data.
+- Lesson -> task 35 is P0: a release must never leave the always-on peer replaying for hours; it must open its stored view (or a handed one) and serve at once.
