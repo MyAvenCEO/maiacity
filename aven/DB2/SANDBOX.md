@@ -205,20 +205,20 @@ pkg-containers.githubusercontent.com
 | `main` | Nothing on GitHub: work is checked in the box, in the session that makes it. |
 | `production` | Takes changes from `main` only. Every pull request into it and every push to it runs [`avensandbox.yml`](../../.github/workflows/avensandbox.yml): **Only from main** fails a pull request from any other branch, and **avenSANDBOX** runs `bun run up --check`. Later, production also deploys from here. |
 
-**Every push to `production` that passes becomes a release, with no step by hand:**
+**Every push to `production` that passes releases each package that changed, with no step by hand.** A package that
+didn't change gets no new version; a push that changes none releases nothing.
 
-- **Its tag** is the date in Berlin, numbered from the day's second release on: `26.10.29`, then `26.10.29v2`,
-  `26.10.29v3`; the next day starts again at `26.10.30`.
-- **Its deliverables are on the release page.** For now there are two:
-  - **avenSANDBOX:** the exact image its check ran in, tagged with the release's name
-    (`ghcr.io/myavenceo/aven/sandbox:26.10.29`) and named with its digest, ready to pull;
-  - **avenOS:** the browser client, built by `bun run build`, as `aven-os-web-26.10.29.tar.gz` with its
-    checksum in `SHA256SUMS`.
+| Package | Changes when | Its release |
+|---|---|---|
+| avenOS | its sources change: `os/`, `vite.config.js`, `package.json`, `bun.lock`, the cast | `@aven/os@<version>`, "avenOS &lt;version&gt;": `aven-os-web-<version>.tar.gz`, built by `bun run build`, with `SHA256SUMS` |
+| avenSANDBOX | the box's image changes (its digest, so a new platform counts too) | `@aven/sandbox@<version>`, "avenSANDBOX &lt;version&gt;": `ghcr.io/myavenceo/aven/sandbox:<version>`, amd64 and arm64, named with its digest |
 
-  The Peer's binaries and the Peer-Light's wasm join them as they come. On any host but the box's, the released page
-  shows only "avenOS · coming soon".
-- **Its changes** are listed on the release page: the pull requests since the release before, with the compare link.
-  The releases page is the changelog.
+- **A package's versions are its own:** the date in Berlin for its first release that day (`26.10.29`), then
+  `26.10.29v2`, `26.10.29v3`; the next day starts again at `26.10.30`.
+- **Each release lists only its own package's changes:** the commits that touched it since its previous version, with
+  the compare link. The releases page is the changelog.
+- **avenPEER's builds** (the native Peer and the Peer-Light's wasm) and **avenDB's** join as packages of their own once
+  they exist. On any host but the box's, the released avenOS shows only "avenOS · coming soon".
 
 [`avensandbox-image.yml`](../../.github/workflows/avensandbox-image.yml) builds the box's image whenever its
 Dockerfile changes, on any branch, and tags main's as `latest`.

@@ -1,8 +1,8 @@
 # avenSANDBOX on GitHub (aven/DB2/SANDBOX.md, "Production"). production takes changes from main only, and every change
 # to it boots the sandbox from the box's image and checks it: the same `bun run up --check` a Claude cloud session or a
-# Mac runs. Every push to production that passes becomes a release on its own: tagged by its date in Berlin and its
-# number that day (26.10.29, then 26.10.29v2, 26.10.29v3, ...), its changes listed, and the box it was checked in
-# pinned to it.
+# Mac runs. Then each package that changed gets a release of its own, tagged @aven/<package>@<version>: the date in
+# Berlin for its first release that day (26.10.29), then 26.10.29v2, 26.10.29v3, ... A package that didn't change gets
+# no new version, and a push that changes none releases nothing.
 name: avenSANDBOX
 
 on:
@@ -113,6 +113,9 @@ jobs:
       contents: write
       packages: write
     steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
       - uses: docker/login-action@v4.7.0
         with:
           registry: ghcr.io
@@ -122,58 +125,83 @@ jobs:
         with:
           name: deliverables
           path: deliverables
-      - name: Tag the commit, pin the box, attach the deliverables, write the changes
+      - name: Release each package that changed
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           IMAGE: ${{ needs.sandbox.outputs.image }}
         run: |
-          # a day's first release is the date alone (26.10.29), the next ones 26.10.29v2, 26.10.29v3, ...
+          set -euo pipefail
           day=$(TZ=Europe/Berlin date +%y.%m.%d)
-          taken=$(gh api "repos/$REPO/git/matching-refs/tags/${day}" --jq '.[].ref')
-          if ! grep -qx "refs/tags/$day" <<< "$taken"; then
-            tag="$day"
-          else
-            last=$(sed -n "s#^refs/tags/${day}v\([0-9][0-9]*\)\$#\1#p" <<< "$taken" | sort -n | tail -1)
-            tag="${day}v$(( ${last:-1} + 1 ))"
+
+          # A package's versions are its own tags, @aven/<package>@<version>: the date alone for its first release that
+          # day (26.10.29), then 26.10.29v2, 26.10.29v3, ...
+          next() {
+            local taken last
+            taken=$(git tag -l "@aven/$1@$day" "@aven/$1@${day}v*")
+            if ! grep -qx "@aven/$1@$day" <<< "$taken"; then echo "$day"; return; fi
+            last=$(sed -n "s#^@aven/$1@${day}v\([0-9][0-9]*\)\$#\1#p" <<< "$taken" | sort -n | tail -1)
+            echo "${day}v$(( ${last:-1} + 1 ))"
+          }
+          latest() { git tag -l "@aven/$1@*" | sort -V | tail -1; }
+          changes() {
+            local prev=$1; shift
+            if [ -z "$prev" ]; then echo "- The first release."; return; fi
+            git log --no-merges --format='- %s (%h)' "$prev..$SHA" -- "$@"
+            echo
+            echo "**Full compare**: https://github.com/$REPO/compare/$prev...$SHA"
+          }
+          released=()
+
+          # avenOS for the browser: released when its sources changed
+          os_paths=(aven/DB2/os aven/DB2/vite.config.js aven/DB2/package.json aven/DB2/bun.lock aven/DB2/sandbox/cast.json)
+          prev=$(latest os)
+          if [ -z "$prev" ] || ! git diff --quiet "$prev" "$SHA" -- "${os_paths[@]}"; then
+            v=$(next os)
+            file="aven-os-web-$v.tar.gz"
+            mv deliverables/aven-os-web.tar.gz "deliverables/$file"
+            (cd deliverables && sha256sum "$file" > SHA256SUMS)
+            {
+              echo "**avenOS** for the browser: \`$file\` below, checksum in \`SHA256SUMS\`."
+              echo
+              echo "## Changes"
+              echo
+              changes "$prev" "${os_paths[@]}"
+            } > os.md
+            gh release create "@aven/os@$v" --repo "$REPO" --target "$SHA" --title "avenOS $v" --notes-file os.md \
+              "deliverables/$file" deliverables/SHA256SUMS
+            released+=("avenOS $v")
           fi
 
-          # avenSANDBOX: the exact box the check ran in, tagged with the release's name
+          # avenSANDBOX: released when the box's image changed (its digest, so a new platform counts too)
           box="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aven/sandbox"
-          docker buildx imagetools create --tag "$box:$tag" "$IMAGE"
-          digest=$(docker buildx imagetools inspect "$box:$tag" --format '{{json .Manifest}}' | jq -r .digest)
-
-          # avenOS: the browser client, named for the release
-          page="aven-os-web-$tag.tar.gz"
-          mv deliverables/aven-os-web.tar.gz "deliverables/$page"
-          (cd deliverables && sha256sum "$page" > SHA256SUMS)
-
-          # the release before is the newest dated one; v1's releases (avendb-page-device, avendb-dev-cache) don't count
-          previous=$(gh release list --repo "$REPO" --limit 100 --json tagName \
-            --jq '[.[].tagName | select(test("^[0-9]{2}[.][0-9]{2}[.][0-9]{2}(v[0-9]+)?$"))][0] // empty')
-          {
-            echo "## Deliverables"
-            echo
-            echo "**avenSANDBOX**, the box this release was checked in (amd64 and arm64):"
-            echo
-            echo '```bash'
-            echo "docker pull $box:$tag"
-            echo '```'
-            echo
-            echo "Digest: \`$box@$digest\`"
-            echo
-            echo "**avenOS**, the browser client: \`$page\` below, checksum in \`SHA256SUMS\`."
-            echo
-            if [ -n "$previous" ]; then
-              gh api "repos/$REPO/releases/generate-notes" -f tag_name="$tag" -f target_commitish="$SHA" \
-                -f previous_tag_name="$previous" --jq .body
-            else
-              echo "## What's changed"
+          digest() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' 2>/dev/null | jq -r '.digest // empty'; }
+          prev=$(latest sandbox)
+          now=$(digest "$IMAGE")
+          if [ -z "$prev" ] || [ "$(digest "$box:${prev#@aven/sandbox@}")" != "$now" ]; then
+            v=$(next sandbox)
+            docker buildx imagetools create --tag "$box:$v" "$IMAGE"
+            {
+              echo "**avenSANDBOX**, the box (amd64 and arm64):"
               echo
-              echo "The first production release."
-            fi
-          } > notes.md
-          gh release create "$tag" --repo "$REPO" --target "$SHA" --title "$tag" --notes-file notes.md \
-            "deliverables/$page" deliverables/SHA256SUMS
-          echo "Released **$tag** at \`$SHA\`: \`$box:$tag\` and \`$page\`" >> "$GITHUB_STEP_SUMMARY"
+              echo '```bash'
+              echo "docker pull $box:$v"
+              echo '```'
+              echo
+              echo "Digest: \`$box@$now\`"
+              echo
+              echo "## Changes"
+              echo
+              changes "$prev" aven/DB2/sandbox/box
+            } > sandbox.md
+            gh release create "@aven/sandbox@$v" --repo "$REPO" --target "$SHA" --title "avenSANDBOX $v" \
+              --notes-file sandbox.md
+            released+=("avenSANDBOX $v")
+          fi
+
+          if [ ${#released[@]} -eq 0 ]; then
+            echo "No package changed, so nothing is released." >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf 'Released **%s**\n\n' "${released[@]}" >> "$GITHUB_STEP_SUMMARY"
+          fi

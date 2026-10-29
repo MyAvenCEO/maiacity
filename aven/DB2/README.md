@@ -86,7 +86,7 @@ repository: an id names a product, not a separate repository.
 | Container images | | `ghcr.io/myavenceo/aven/peer`, the Aven Peer's (later) | | `ghcr.io/myavenceo/aven/sandbox`, the box built from this repository's Dockerfile so machines can download it |
 | Lean | | | `Aven.DB` | |
 | Protocol (ALPN) | | | `aven/db/1`, which avenPEER carries | |
-| Release files | `aven-os-web-<tag>.tar.gz` (the browser client), later `aven-os-mac-…` | later `aven-peer-<tag>-<platform>.tar.gz` | | the image, tagged with the release |
+| Releases (one per package, only when it changed) | `@aven/os@<version>`: `aven-os-web-<version>.tar.gz` (the browser client), later `aven-os-mac-…` | later `@aven/peer@<version>`: `aven-peer-<version>-<platform>.tar.gz` | | `@aven/sandbox@<version>`: the image, tagged `<version>` |
 
 `@aven/maia` comes later. None of these names had public packages on npm on 29 Oct 2026; creating the npm
 organization `aven` reserves the scope before anything is published.
