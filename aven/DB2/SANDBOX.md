@@ -196,12 +196,12 @@ OrbStack runs it natively instead of through Rosetta, comes next.
 
 **Every push to `production` that passes becomes a release, with no step by hand:**
 
-- **Its tag** is the date in Berlin and the release's number that day: `26.10.29v1`, `26.10.29v2`, and `26.10.30v1`
-  the next day.
+- **Its tag** is the date in Berlin, numbered from the day's second release on: `26.10.29`, then `26.10.29v2`,
+  `26.10.29v3`; the next day starts again at `26.10.30`.
 - **Its deliverables are on the release page.** For now there are two:
   - **avenSANDBOX:** the exact image its check ran in, tagged with the release's name
-    (`ghcr.io/myavenceo/aven/sandbox:26.10.29v1`) and named with its digest, ready to pull;
-  - **avenOS:** the landing page, built by `bun run build`, as `aven-os-landing-26.10.29v1.tar.gz` with its
+    (`ghcr.io/myavenceo/aven/sandbox:26.10.29`) and named with its digest, ready to pull;
+  - **avenOS:** the landing page, built by `bun run build`, as `aven-os-landing-26.10.29.tar.gz` with its
     checksum in `SHA256SUMS`.
 
   The Peer's binaries and the Peer-Light's wasm join them as they come. On any host but the box's, the released page
@@ -344,5 +344,5 @@ once and merges.
    - require a pull request, with 0 approvals and merge commits only;
    - require the status checks **Only from main** and **avenSANDBOX**, both from GitHub Actions.
 
-   Optionally, a tag ruleset `releases` on `??.??.??v*` that restricts updates and deletions (not creations), so a
+   Optionally, a tag ruleset `releases` on `??.??.??*` that restricts updates and deletions (not creations), so a
    release's tag never moves.
