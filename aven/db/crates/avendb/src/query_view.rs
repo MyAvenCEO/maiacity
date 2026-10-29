@@ -402,12 +402,7 @@ mod tests {
             let held = w.lab.log(me).ids().len();
             let receipt = w.lab.warming(me, held, Some([1; 40])).expect("what it worked out, to save");
             assert!(receipt.queries.is_some(), "a save keeps the view");
-            let warm = crate::lab::Warm {
-                keys: receipt.keys.clone().into_iter().collect(),
-                views: receipt.view.clone().into_iter().collect(),
-                shown: receipt.shown.clone().map(Into::into).into_iter().collect(),
-                queries: receipt.queries.clone().map(Into::into).into_iter().collect(),
-            };
+            let warm = crate::lab::Warm::of(&receipt);
             w.lab.warmed(me, receipt);
             assert!(w.lab.warming(me, held, Some([1; 40])).is_none_or(|r| r.queries.is_none()), "kept once");
             if !whole {

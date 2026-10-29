@@ -684,6 +684,23 @@ impl ShelfKey {
     fn query_row(&self, key: &str) -> [u8; 32] {
         self.0.child("kept query row", key.as_bytes()).bytes()
     }
+
+    /// The key of the row `name` names in its shelf's index of its stored view (`ViewRows`), as `shown_row`.
+    fn view_row(&self, name: &[u8]) -> [u8; 32] {
+        self.0.child("stored view row", name).bytes()
+    }
+
+    /// The row of its stored view's replay, of the rest of what it read, and of the `k`th row of the bodies it read
+    /// (`stored_readings`).
+    fn replay_row(&self) -> [u8; 32] {
+        self.view_row(b"replay")
+    }
+    fn read_row(&self) -> [u8; 32] {
+        self.view_row(b"read")
+    }
+    fn bodies_row(&self, k: u64) -> [u8; 32] {
+        self.view_row(&[&b"bodies "[..], &k.to_be_bytes()].concat())
+    }
 }
 
 /// The engine's own hash, of its sources (`build.rs`): what a device worked out with another engine it works out again.
@@ -753,22 +770,69 @@ impl Touched {
     pub const MOST: usize = 512;
 }
 
-/// What a device keeps on its shelf of what it worked out, to start again from it quickly (`Lab::restore_warm`), each
-/// the newest first, as `Lab::warming` gave it, encrypted for it alone: its keys, for any engine, which hold the keys it
-/// opened from their boxes and what its shelf names the edits it checked by (`Checked`); and its stored views, for this
-/// replay rules alone (`VIEW_RULES`), each its replay of the edits its log started with (`Replay::to_view`). It vouches for
-/// nothing it doesn't check: a key counts only for the very box it opened, with the key it opens it with now, and where
-/// its id is the one that box names; the edits only where its shelf names them the same now; and a view only where it
-/// reads back whole and is of the very edits its log starts with (`Replay::from_view`).
+/// What a device keeps on its shelf of what it worked out, to start again from it quickly (`Lab::restore_warm`), as
+/// `Lab::warming` gave it, encrypted for it alone: its keys, the newest first, for any engine, which hold the keys it
+/// opened from their boxes and what its shelf names the edits it checked by (`Checked`); and its stored view, for this
+/// replay rules alone (`VIEW_RULES`), its replay of the edits its log started with (`Replay::to_view`) and what it read
+/// of them, in rows (`ViewRows`). It vouches for nothing it doesn't check: a key counts only for the very box it opened,
+/// with the key it opens it with now, and where its id is the one that box names; the edits only where its shelf names
+/// them the same now; and a view only where it reads back whole and is of the very edits its log starts with
+/// (`Replay::from_view`).
 #[derive(Clone, Debug, Default)]
 pub struct Warm {
     pub keys: Vec<Vec<u8>>,
+    pub view: ViewRows,
+    /// The stored views its shelf kept before their rows, each one sealed slot of its replay and what it read, the
+    /// newest first: read where its rows hold no view that opens, never kept again, so a device's own view of before
+    /// is never none.
     pub views: Vec<Vec<u8>>,
     /// The packs of kept showings its shelf's index of them names (`Warming::shown`), each with the rows that name it:
     /// a showing is taken from the pack its entry's row names, and from no other.
     pub shown: Vec<PackFile>,
     /// The packs of kept query views its shelf's index of them names (`Warming::queries`), as `shown`.
     pub queries: Vec<PackFile>,
+}
+
+impl Warm {
+    /// It took what `warming` gives, as a shelf takes it (`Edits::put_warm_on`): its keys as the newest, its view's
+    /// rows each in place of the one before, and its packs of showings and query views beside those it holds.
+    pub fn took(&mut self, warming: &Warming) {
+        if let Some(keys) = &warming.keys {
+            self.keys.insert(0, keys.clone());
+        }
+        if let Some(view) = &warming.view {
+            for (row, bytes) in &view.rows {
+                match bytes {
+                    Some(bytes) => self.view.insert(*row, bytes.clone()),
+                    None => self.view.remove(row),
+                };
+            }
+        }
+        self.shown.extend(warming.shown.clone().map(PackFile::from));
+        self.queries.extend(warming.queries.clone().map(PackFile::from));
+    }
+
+    /// What a shelf holds that took `warming` alone.
+    pub fn of(warming: &Warming) -> Warm {
+        let mut warm = Warm::default();
+        warm.took(warming);
+        warm
+    }
+}
+
+/// A device's stored view as its shelf keeps it (`Warm::view`): the rows of its shelf's index of it, each by its key
+/// (`ShelfKey::view_row`), sealed for the device alone: its replay, sealed to the replay rules (`VIEW_RULES`), and what
+/// it read of the edits the replay is of, the rows `stored_readings` makes, sealed to the read rules (`READ_RULES`). A
+/// save puts the rows whose bytes changed alone, so a save after a few edits puts its replay and one row of bodies, not
+/// every body it read.
+pub type ViewRows = BTreeMap<[u8; 32], Vec<u8>>;
+
+/// What a save changes of its shelf's rows of its stored view (`Warming::view`): each row, sealed, in place of the one
+/// before, or none where it goes; and the head of the edits the view is of, which the index is stamped with.
+#[derive(Clone, Debug)]
+pub struct ViewChanges {
+    pub rows: Vec<([u8; 32], Option<Vec<u8>>)>,
+    pub head: crate::log_head::Head,
 }
 
 /// A pack of kept showings or query views as a shelf holds it (`Warm::shown`, `Warm::queries`): the file it is, read
@@ -854,7 +918,7 @@ enum ViewOpened {
 /// What of `Warm` a device's shelf lacks (`Lab::warming`), for its shelf to take, and what it is of, for `Lab::warmed`.
 pub struct Warming {
     pub keys: Option<Vec<u8>>,
-    pub view: Option<Vec<u8>>,
+    pub view: Option<ViewChanges>,
     /// The showings its shelf lacks, a pack of them and their rows (`ShownView.lean`).
     pub shown: Option<KeptPack>,
     /// The query views its shelf lacks (`query_view`), a pack of them and their rows, sealed to this engine.
@@ -869,6 +933,8 @@ pub struct Warming {
     /// its store had replayed every edit then; and whether the view holds what it read (`stored_readings::seal`).
     view_of: Option<(crate::log_head::Head, u64)>,
     view_read: bool,
+    /// The hash of each row of bodies its shelf holds once it took the view's rows, where it sealed what it read.
+    read_rows: Option<Vec<[u8; 32]>>,
     /// The prints of the showings its pack holds, by entry, and the log head they were judged at.
     shown_of: Option<(Vec<(EntryId, [u8; 32])>, crate::log_head::Head)>,
     /// The queries whose views its pack holds, each with the stamp it is of.
@@ -888,9 +954,11 @@ pub struct WarmCapture {
     key: ShelfKey,
     rng: SeededRng,
     opened: Option<Vec<([u8; 32], Secret)>>,
+    /// Its replay, where it changed since the view its shelf holds.
     replay: Option<crate::policy::ViewCapture>,
-    /// What it read of the edits its view is of, sealed beside it (`stored_readings::seal`), where it read them all.
-    read: Option<Vec<u8>>,
+    /// What it read of the edits its view is of, the rows of it that changed (`stored_readings::seal`), where it read
+    /// them all; none, where it gives a view without them, and its shelf's row of the rest goes.
+    read: Option<stored_readings::Rows>,
     /// The showings to keep, each its entry's, print and bytes (`Shown::record`), to seal one by one
     /// (`shown_map::pack`).
     shown: Option<Vec<(EntryId, [u8; 32], Zeroizing<Vec<u8>>)>>,
@@ -911,17 +979,24 @@ impl WarmCapture {
             }
             self.receipt.keys = Some(self.key.lock("keys", &bytes, b"stored keys", &mut self.rng));
         }
-        if let Some(replay) = self.replay.take() {
-            let of = self.receipt.view_of.map_or(0, |(head, _)| head.at as usize);
-            let mut bytes = Zeroizing::new(replay.encode(of));
-            if let Some(read) = self.read.take() {
-                let mut both = Zeroizing::new(VIEW_READ.to_vec());
-                both.extend((bytes.len() as u32).to_be_bytes());
-                both.extend(bytes.iter());
-                both.extend(read);
-                bytes = both;
+        if let Some((head, _)) = self.receipt.view_of {
+            let mut rows = vec![];
+            if let Some(replay) = self.replay.take() {
+                let bytes = Zeroizing::new(replay.encode(head.at as usize));
+                rows.push((self.key.replay_row(), Some(self.key.lock("view", &bytes, VIEW_RULES.as_bytes(), &mut self.rng))));
             }
-            self.receipt.view = Some(self.key.lock("view", &bytes, VIEW_RULES.as_bytes(), &mut self.rng));
+            match self.read.take() {
+                Some(read) => {
+                    for (k, bytes) in read.bodies {
+                        let bytes = Zeroizing::new(bytes);
+                        rows.push((self.key.bodies_row(k), Some(self.key.lock("view read", &bytes, READ_RULES.as_bytes(), &mut self.rng))));
+                    }
+                    let rest = Zeroizing::new(read.rest);
+                    rows.push((self.key.read_row(), Some(self.key.lock("view read", &rest, READ_RULES.as_bytes(), &mut self.rng))));
+                }
+                None => rows.push((self.key.read_row(), None)),
+            }
+            self.receipt.view = Some(ViewChanges { rows, head });
         }
         if let (Some(shown), Some((_, head))) = (self.shown.take(), &self.receipt.shown_of) {
             let rows = shown.iter().map(|(e, _, _)| self.key.shown_row(e)).collect();
@@ -1296,6 +1371,9 @@ struct Store {
     /// given as it goes), which it gives again once it can seal what it read (`stored_readings::sealable`).
     view_given: Option<crate::log_head::Head>,
     read_given: Option<crate::log_head::Head>,
+    /// The hash of each row of bodies of what it read its shelf holds (`stored_readings::Rows`), as it last gave them
+    /// or took them from there: a save puts those whose bytes are other now alone.
+    read_rows: Vec<[u8; 32]>,
     /// How many times it replayed every edit, and how many times when its shelf took its view. A whole replay changes
     /// no edit of its log, so no head tells of it: it means an edit after the view's edits sorts among them, and the
     /// view, still the replay of its edits (VR3), would have the next start replay every edit again. Till a step back
@@ -1411,6 +1489,7 @@ impl Default for Store {
             checked_given: None,
             view_given: None,
             read_given: None,
+            read_rows: Vec::new(),
             restore_whole: RESTORE_WHOLE,
             wholes: 0,
             view_wholes: 0,
@@ -5289,13 +5368,11 @@ impl Lab {
 
     /// What device `d`'s work cost since it started (`perf`), and how much it holds: its edits, the bodies it opened,
     /// the entries it shows and the blobs it keeps.
-    /// Stored view `sealed` of device `d` as an engine before `stored_readings` sealed it: its replay alone.
+    /// Stored view `rows` of device `d` as an engine before `stored_readings` sealed it kept it, one slot (`Warm::views`):
+    /// its replay alone.
     #[cfg(feature = "test-fixtures")]
-    pub fn view_without_readings(&mut self, d: SignerId, sealed: &[u8]) -> Option<Vec<u8>> {
-        let key = self.shelf_key(d)?;
-        let view = key.unlock("view", sealed, VIEW_RULES.as_bytes())?;
-        let replay = Zeroizing::new(view_parts(&view)?.0.to_vec());
-        Some(key.lock("view", &replay, VIEW_RULES.as_bytes(), &mut self.rng))
+    pub fn view_without_readings(&self, d: SignerId, rows: &ViewRows) -> Option<Vec<u8>> {
+        rows.get(&self.shelf_key(d)?.replay_row()).cloned()
     }
 
     /// The hash of what device `d` read as its stored view seals it (`stored_readings::seal`), where it read every body
@@ -5303,7 +5380,7 @@ impl Lab {
     #[cfg(feature = "test-fixtures")]
     pub fn read_print(&self, d: SignerId) -> Option<String> {
         let store = self.held(d);
-        Some(blake3::hash(&stored_readings::seal(store, store.replayed)?).to_hex().to_string())
+        Some(blake3::hash(&stored_readings::seal(store, store.replayed, &[])?.rest).to_hex().to_string())
     }
 
     pub fn perf(&self, d: SignerId) -> Value {
@@ -6998,18 +7075,30 @@ impl Lab {
             let at = Perf::start();
             let (edits, ids) = (store.log.edits(), store.log.ids());
             let mut opened = 0;
-            let found = warm.views.iter().find_map(|b| {
+            // its view's rows: its replay, and what it read of its edits, where its rows hold that
+            let rows = warm.view.get(&key.replay_row()).and_then(|b| {
                 let view = key.unlock("view", b, VIEW_RULES.as_bytes())?;
                 opened += 1;
-                let older = view.starts_with(b"avenDB own materialization 1\n");
-                let (replay, held) = Replay::from_view(view_replay(&view)?, edits, ids)?;
-                // and what it read of those edits, where it holds that
-                let read = view_parts(&view)?.1.and_then(|read| stored_readings::open(read, held));
-                Some((replay, held, older, read))
+                let (replay, held) = Replay::from_view(&view, edits, ids)?;
+                let read = warm.view.get(&key.read_row()).and_then(|b| {
+                    let rest = key.unlock("view read", b, READ_RULES.as_bytes())?;
+                    let row = |k| key.unlock("view read", warm.view.get(&key.bodies_row(k))?, READ_RULES.as_bytes());
+                    stored_readings::open(&rest, held, row)
+                });
+                Some((replay, held, false, read))
             });
+            // else a view its shelf kept before its rows, kept again as rows at its next save
+            let found = rows.or_else(|| warm.views.iter().find_map(|b| {
+                let view = key.unlock("view", b, VIEW_RULES.as_bytes())?;
+                opened += 1;
+                let (replay, held) = Replay::from_view(view_replay(&view)?, edits, ids)?;
+                let read = view_parts(&view)?.1.and_then(|read| stored_readings::open_whole(read, held));
+                Some((replay, held, true, read.map(|read| (read, vec![]))))
+            }));
+            let kept = warm.views.len() + usize::from(warm.view.contains_key(&key.replay_row()));
             let mut restored = Restored {
                 edits: edits.len(),
-                view: match (&found, warm.views.len(), opened) {
+                view: match (&found, kept, opened) {
                     (Some((_, held, ..)), ..) => ViewOpened::Of { held: *held },
                     (None, 0, _) => ViewOpened::NoneKept,
                     (None, n, 0) => ViewOpened::NoneOpens(n),
@@ -7018,14 +7107,15 @@ impl Lab {
                 kept: (0, 0),
                 showings: 0,
             };
-            (store.view_given, store.read_given) = (None, None);
+            (store.view_given, store.read_given, store.read_rows) = (None, None, vec![]);
             match found {
                 Some((replay, held, older, read)) => {
                     store.replaying = None;
                     store.replay = replay;
                     store.replayed = held;
                     // it reads on from what it read of them, opening each body it opened then only as it is asked for
-                    if let Some(mut read) = read {
+                    if let Some((mut read, prints)) = read {
+                        store.read_rows = prints;
                         store.readings = std::mem::take(&mut read.readings);
                         store.recontext();
                         store.bodies.close(read.opened.iter().copied());
@@ -7035,7 +7125,7 @@ impl Lab {
                         store.read_given = store.log.head_at(held as u64);
                         store.perf.count("read: from its stored view", 1);
                     }
-                    // a view an older engine kept with its adjunct is kept again without it
+                    // a view kept before its rows is kept again as rows
                     store.view_given = if older { None } else { store.log.head_at(held as u64) };
                     if older {
                         store.read_given = None;
@@ -7198,13 +7288,17 @@ impl Lab {
         let opened = keys_due.then(|| store.opened_before.iter()
             .chain(store.opened_since.iter().map(|(b, k)| (b, k)))
             .map(|(b, k)| (*b, k.clone())).collect());
-        let replay = view_due.then(|| store.replay.capture_view());
-        let read = if view_due { stored_readings::seal(store, store.replayed) } else { None };
+        let view_of = if view_due { store.log.head_at(store.replayed as u64).map(|h| (h, store.wholes)) } else { None };
+        // its replay where it isn't the one its shelf holds, and the rows of what it read that changed
+        let replay_due = view_of.is_some_and(|(head, wholes)| store.view_given != Some(head) || store.view_wholes != wholes);
+        let replay = replay_due.then(|| store.replay.capture_view());
+        let read = view_of.and_then(|_| stored_readings::seal(store, store.replayed, &store.read_rows));
         let receipt = Warming {
             keys: None, view: None,
             revision: store.warm_revision.clone(), head: store.log.head(), keys_of,
-            view_of: if view_due { store.log.head_at(store.replayed as u64).map(|h| (h, store.wholes)) } else { None },
+            view_of,
             view_read: read.is_some(),
+            read_rows: read.as_ref().map(|r| r.prints.clone()),
             shown: None,
             shown_of,
             queries: None,
@@ -7247,6 +7341,9 @@ impl Lab {
             store.view_given = Some(head);
             store.read_given = warming.view_read.then_some(head);
             store.view_wholes = wholes;
+            if let Some(prints) = warming.read_rows {
+                store.read_rows = prints;
+            }
         }
         if let Some((of, _)) = warming.shown_of {
             store.shown_given.extend(of);
