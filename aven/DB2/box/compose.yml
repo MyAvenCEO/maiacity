@@ -21,4 +21,7 @@ networks:
   wan: {}
 
 volumes:
-  node_modules: {}
+  # made by `bun run up`, which installs into it before the containers start
+  node_modules:
+    name: avensandbox_node_modules
+    external: true

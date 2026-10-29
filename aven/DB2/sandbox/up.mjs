@@ -57,6 +57,7 @@ async function ensureImage() {
 async function install() {
 	// node_modules lives in a volume, installed by the image's bun for Linux, and again only when bun.lock changes
 	const lock = existsSync(join(db2, 'bun.lock')) ? createHash('sha256').update(readFileSync(join(db2, 'bun.lock'))).digest('hex') : 'none';
+	await $`docker volume create avensandbox_node_modules`.quiet();
 	const volumes = ['-v', `${db2}:/work`, '-v', 'avensandbox_node_modules:/work/node_modules'];
 	const stamp = await $`docker run --rm ${volumes} -w /work ${image} cat node_modules/.avensandbox-lock`.nothrow().quiet().text();
 	if (lock !== 'none' && stamp.trim() === lock) return;

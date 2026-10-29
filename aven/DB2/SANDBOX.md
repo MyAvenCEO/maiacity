@@ -13,12 +13,13 @@ container.
 
 Targets, measured in this milestone and reported on every run:
 
-| Step | Target |
-|---|---|
-| `bun run up` with a warm build, until every peer is live | < 10 s |
-| A change to the page, visible | < 1 s (hot reload) |
-| A Rust change, running on every peer | < 30 s |
-| A new cloud session, image already on disk, until every peer is live | < 2 min |
+| Step | Target | Measured (cloud session, 29 Oct) |
+|---|---|---|
+| `bun run up` with a warm build, until every peer is live | < 10 s | 1.9 s; with `--check`, 3.6 s (the page only, no peers yet) |
+| A change to the page, visible | < 1 s (hot reload) | |
+| A Rust change, running on every peer | < 30 s | |
+| A new cloud session, image already on disk, until every peer is live | < 2 min | |
+| A first `bun run up --check` that builds the image itself | (none) | 237 s |
 
 ## The cast
 
