@@ -67,3 +67,12 @@ test('the one sync pill says first what the view on screen still lacks, in a sho
  expect(viewPill({ state: 'offline', logs: 0, waits: 0, asOf: 5, unheard: 0 })).toBe('');
  expect(viewPill(null)).toBe('');
 });
+
+test('the account paints its Shell at once when open, never "Opening your vaults…" while the first read is out', async () => {
+ const account = await Bun.file(new URL('./Account.svelte', import.meta.url)).text();
+ const shell = await Bun.file(new URL('./Shell.svelte', import.meta.url)).text();
+ expect(account).not.toContain('Opening your vaults');
+ expect(account).toContain("{#if phase === 'open'}\n\t<Shell");
+ expect(shell).toContain('const world = $derived(answered ?? UNREAD)');
+ expect(shell).toContain("{#if !ready && tab !== 'home'}");
+});
