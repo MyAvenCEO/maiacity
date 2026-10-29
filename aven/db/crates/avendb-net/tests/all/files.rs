@@ -185,15 +185,15 @@ async fn files_follow_their_edits_over_iroh() {
     assert!(server.holds_file(photo_root).await && server.holds_file(scan_root).await, "both still on its shelf");
     carol.know(server.addr());
     carol.sync_with(server.id()).await.expect("Carol's Mac reaches the server again");
-    let demand = carol.op(serde_json::json!({
-        "op": "demand", "scope": "0123456789abcdef0123456789abcdef", "revision": 1,
-        "entries": [welcome.to_hex(), onboarding.to_hex()]
+    let interest = carol.op(serde_json::json!({
+        "op": "interest", "scope": "0123456789abcdef0123456789abcdef", "revision": 1,
+        "wants": [{"tier": "now", "entries": [welcome.to_hex(), onboarding.to_hex()]}]
     })).await.expect("an active local view requests its dependencies");
-    assert!(demand.get("ok").is_some(), "{demand}");
+    assert!(interest.get("ok").is_some(), "{interest}");
     until("background sync hydrates the light device's demanded file", || async {
         carol.holds_file(photo_root).await
     }).await;
-    assert!(!carol.holds_file(scan_root).await, "demand cannot grant access to the private scan");
+    assert!(!carol.holds_file(scan_root).await, "an interest cannot grant access to the private scan");
     let all = carol.read_local_file(photo_root, 0..u64::MAX).await.expect("the frontend reads the whole photo locally");
     assert_eq!(all, bytes(1, 0, photo_len), "every byte");
     assert!(carol.holds_file(photo_root).await, "and holds it whole now");
@@ -205,7 +205,9 @@ async fn files_follow_their_edits_over_iroh() {
 /// A page reads a file off its device alone, which its device opens but doesn't hold and no keep share or view names
 /// (the iPhone's asset viewer, 2026-10-27: "no blob … on the shelf" again and again while the keeper waited for a
 /// catch-up): the read fails at once, fetching nothing, and the keeper fetches the file whole in the background, so
-/// the page's next local read has it; the `network` op says what it did.
+/// the page's next local read has it; the `network` op says what it did. Carol's Mac gets the write from a server
+/// that keeps no file, and reaches Alice's Mac, which holds the photo, only after its reads: what they fetch is
+/// nothing, not a race with the keeper.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_file_a_page_reads_locally_and_lacks_is_fetched_by_the_keeper() {
     let mut w = world();
@@ -216,7 +218,7 @@ async fn a_file_a_page_reads_locally_and_lacks_is_fetched_by_the_keeper() {
     let (mac_a, passkey_a, server_d, mac_c, passkey_c) = (w.mac_a, w.passkey_a, w.server, w.mac_c, w.passkey_c);
     let (coop, welcome) = (h.coop, h.welcome);
     let mac = node(&mut w, mac_a, &[passkey_a], 1, Options::local()).await;
-    let server = node(&mut w, server_d, &[], 2, Options { keep: true, ..Options::local() }).await;
+    let server = node(&mut w, server_d, &[], 2, Options::local()).await;
     let carol = node(&mut w, mac_c, &[passkey_c], 3, Options::local()).await;
     for n in [&mac, &carol] {
         n.know(server.addr());
@@ -226,23 +228,30 @@ async fn a_file_a_page_reads_locally_and_lacks_is_fetched_by_the_keeper() {
     let photo = mac.store_file(photo_len, reading(1, photo_len)).await.expect("Alice's Mac seals the photo");
     let root = photo.root;
     mac.act(move |lab, me| lab.bring(me, coop, welcome, vec![photo], |_| {})).await.expect("brought into Welcome");
-    until("the server keeps it whole", || server.holds_file(root)).await;
     until("Carol's Mac gets the write that brings the photo", || async {
         carol.sync_with(server.id()).await.ok();
         carol.read(move |lab, me| lab.file(me, &root).is_some()).await
     })
     .await;
+    assert!(!server.holds_file(root).await, "the server keeps no file: Carol's Mac reaches no one that holds it");
     let files = |n: serde_json::Value| n["files"].clone();
     assert_eq!(files(carol.network().await)["asked"], 0, "no page asked for a file yet");
     assert!(carol.read_local_file(root, 70_000..70_010).await.is_err(), "a local read fetches nothing itself");
     assert!(carol.read_local_file(root, 0..10).await.is_err(), "nor does it again");
     assert_eq!(files(carol.network().await)["asked"], 1, "the keeper keeps the file in mind once");
-    until("the keeper fetches the photo whole", || carol.holds_file(root)).await;
+    until("with no one that holds it, the keeper fails to fetch it, and keeps it in mind", || async {
+        let told = files(carol.network().await);
+        told["failed"].as_u64() > Some(0) && told["waiting"] == 1
+    })
+    .await;
+    carol.know(mac.addr());
+    mac.know(carol.addr());
+    until("the keeper fetches the photo whole from Alice's Mac", || carol.holds_file(root)).await;
     let all = carol.read_local_file(root, 0..u64::MAX).await.expect("the page's next local read has it");
     assert_eq!(all, bytes(1, 0, photo_len), "every byte");
     until("the network op says the keeper fetched it", || async {
         let told = files(carol.network().await);
-        (told["fetched"].clone(), told["waiting"].clone(), told["failed"].clone()) == (1.into(), 0.into(), 0.into())
+        (told["fetched"].clone(), told["waiting"].clone()) == (1.into(), 0.into())
     })
     .await;
     for n in [mac, carol, server] {

@@ -38,7 +38,7 @@ pub(crate) async fn answer(
         .read(move |lab, me| {
             let _permit = permit;
             (
-                lab.log(me).revision(),
+                lab.log(me).head(),
                 lab.owner_base_dependency_reply(me, requester, entry, &ids),
             )
         })
@@ -53,7 +53,7 @@ pub(crate) async fn answer(
     anyhow::ensure!(bytes.len() <= RESPONSE, "dependency response size");
     anyhow::ensure!(
         shared
-            .read(move |lab, me| lab.log(me).revision() == revision)
+            .read(move |lab, me| lab.log(me).head() == revision)
             .await,
         "dependency policy changed"
     );
@@ -95,31 +95,23 @@ pub(crate) fn missing_batch(lab: &Lab, me: SignerId, entry: EntryId) -> Vec<Edit
         .unwrap_or_default()
 }
 impl Shared {
-    /// One bounded sweep; disconnected/legacy peers leave the exact wait visible.
-    /// The caller backs off between unresolved sweeps, while new local work wakes it.
+    /// One sweep over every entry whose owner base still misses edits, asking up to three peers for each. True if it
+    /// brought some of them and some are missing still: the caller sweeps again at once, and otherwise waits until a
+    /// peer connects or announces, or new local work wakes it (`bootstrap_due`).
     pub(crate) async fn fetch_owner_dependencies(self: &Arc<Self>) -> bool {
-        let mut missing = self
-            .read_class(lab_schedule::Class::Background, |lab, me| {
-                lab.owner_base_missing(me)
-                    .into_iter()
-                    .filter_map(|(entry, ids)| {
-                        let ids: Vec<_> = ids
-                            .into_iter()
-                            .filter(|id| lab.signed_edit(me, *id).is_none())
-                            .take(32)
-                            .collect();
-                        (!ids.is_empty()).then_some((entry, ids))
-                    })
-                    .take(16)
-                    .collect::<Vec<_>>()
+        let missing_ids = |lab: &Lab, me| -> usize {
+            lab.owner_base_missing(me).into_iter()
+                .map(|(_, ids)| ids.into_iter().filter(|id| lab.signed_edit(me, *id).is_none()).count()).sum()
+        };
+        let (missing, before) = self
+            .read_class(lab_schedule::Class::Background, move |lab, me| {
+                let entries: Vec<_> = lab.owner_base_missing(me).into_iter().map(|(entry, _)| entry).collect();
+                (entries, missing_ids(lab, me))
             })
             .await;
-        if missing.is_empty() {
+        if before == 0 {
             return false;
         }
-        let offset = self.dependency_peer_turn.load(Ordering::Relaxed) % missing.len();
-        missing.rotate_left(offset);
-        missing.truncate(4);
         let peers: Vec<_> = {
             let peers = self.peers.lock().expect("peers");
             let start =
@@ -132,7 +124,7 @@ impl Shared {
                 .cloned()
                 .collect()
         };
-        for (entry, _) in missing {
+        for entry in missing {
             for peer in &peers {
                 let ids = self
                     .read_class(lab_schedule::Class::Background, move |lab, me| {
@@ -155,8 +147,8 @@ impl Shared {
                 }
             }
         }
-        self.read(|lab, me| !lab.owner_base_missing(me).is_empty())
-            .await
+        let after = self.read(move |lab, me| missing_ids(lab, me)).await;
+        after > 0 && after < before
     }
     async fn fetch_owner_dependency_batch(
         self: &Arc<Self>,
@@ -288,7 +280,7 @@ mod network_tests {
             .unwrap();
         let mut stalled = Vec::new();
         loop {
-            let mut p = Box::pin(receiver.shared.pulls.enter(false, None));
+            let mut p = Box::pin(receiver.shared.pulls.enter(false));
             let Some(p) = future::poll_once(&mut p).await else {
                 break;
             };
@@ -350,39 +342,5 @@ mod network_tests {
         replacement.shutdown().await.unwrap();
         drop(stalled);
         receiver.shutdown().await.unwrap();
-    }
-}
-
-
-/// Key edits share the existing entry log. Never resend held ciphertext to recover a key.
-/// Active leases and current owner authority bound this scheduling hint.
-pub(crate) fn key_logs(active: &[LogId], waits: &[EntryId]) -> Vec<LogId> {
-    active.iter().copied().filter(|log| matches!(log, LogId::Entry(entry) if waits.contains(entry))).collect()
-}
-impl Shared {
-    pub(crate) async fn prioritize_owner_keys(self: &Arc<Self>) -> bool {
-        let waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
-        let active = self.interests.lock().expect("interests").entries();
-        if key_logs(&active, &waits).is_empty() { return false; }
-        // Reuse the existing coalesced pull scheduler and ordinary authorized delta protocol.
-        let mut peers: Vec<_> = self.peers.lock().expect("peers").values()
-            .filter(|peer| peer.conn.close_reason().is_none()).map(|peer| peer.endpoint).collect();
-        if !peers.is_empty() {
-            let turn = self.dependency_peer_turn.fetch_add(1, Ordering::Relaxed) % peers.len();
-            peers.rotate_left(turn);
-        }
-        for endpoint in peers.into_iter().take(3) { self.ask_soon(endpoint); }
-        true
-    }
-}
-#[cfg(test)]
-mod key_priority_tests {
-    use super::*;
-    #[test]
-    fn key_wait_priority_is_limited_to_current_view_and_removes_resolved_wait() {
-        let a=EntryId([1;32]); let b=EntryId([2;32]);
-        assert_eq!(key_logs(&[LogId::Entry(a)], &[a,b]), vec![LogId::Entry(a)]);
-        assert!(key_logs(&[], &[a]).is_empty());
-        assert!(key_logs(&[LogId::Entry(a)], &[]).is_empty());
     }
 }

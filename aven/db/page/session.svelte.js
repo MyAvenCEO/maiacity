@@ -44,13 +44,11 @@ import { command, native } from '$lib/native';
 import { allowed, answer, readLocalFile, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
-import { beforeLocalWrite } from './local-write.js';
 import { createPendingWrites, paints } from './pending-writes.js';
 import { noteLifecycle } from './lifecycle.js';
 import { lease, RENEW } from './lease.js';
 import { measureLatency } from './latency-journal.js';
 import { createReactiveRead } from './reactive-read.js';
-import { keptAnswers } from './kept-answers.js';
 import { createWorldReader } from './world-reader.js';
 import { createEntryWindow, createReadWindow } from './query-window.js';
 import { useBuiltInActors, useDevice, refreshActiveView, wantNow } from '../../../maia/content/game/code/sources/device.js';
@@ -58,7 +56,6 @@ import { ACTORS, QUERIES } from './actors.js';
 import { touches } from '../../../maia/content/game/code/sources/touched.js';
 import { freshnessOf } from '../../../maia/content/game/code/sources/coverage.js';
 import { watchStirs } from './stirs.js';
-import { sync } from './sync.svelte.js';
 
 // until Maia City holds an actor of an id, the app's own of it says what a page asks for first
 useBuiltInActors([...ACTORS, ...QUERIES]);
@@ -606,7 +603,7 @@ function running(d) {
 	if (!mac) noteLifecycle('open');
 	useDevice({
 		// Interest disposal belongs to this device even while a replacement is opening. Never send stale work to it.
-		run: (/** @type {any} */ op) => op?.op === 'interest' || op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
+		run: (/** @type {any} */ op) => op?.op === 'interest' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
 		read: api.readFile
 	});
 	if (holders) watch();
@@ -770,7 +767,6 @@ async function send(op, read) {
 	const d = device;
 	if (!d) throw new Error('avenDB isn’t open on this page yet');
 	if (reads(op)) return near(d, op);
-	await current(d, op);
 	if (APPROVED.includes(op?.op) && doing) {
 		const [verdict] = (await d.run({ op: 'may', ops: [op] }))?.ok ?? [];
 		if (allowed(verdict) && verdict !== true) doing = `${doing}: ${asks} once`;
@@ -787,24 +783,6 @@ async function near(d, op) {
 	const got = await d.run(op);
 	if (got?.refused === 'NoEntry' && /^[0-9a-f]{64}$/.test(String(op?.entry)) && d === device) wantNow([op.entry]);
 	return got;
-}
-
-/** Whether the device is still behind its peers, as the status pill last heard (./sync.svelte.js). */
-const behind = () => sync.known && sync.behind > 0;
-
-/** A head-conditional review retains its freshness guard. Ordinary edits never wait for peers.
- * @param {any} d @param {any} op */
-async function current(d, op) {
-	const what = doing;
-	await beforeLocalWrite(op, {
-		behind: behind(),
-		bring: (entry) => d.run({ op: 'bring', entries: [entry] }),
-		refresh,
-		waiting: (on) => {
-			if (!what || !doing.startsWith(what)) return;
-			doing = on ? `${what}: bringing it up to date first, as this device still syncs` : what;
-		}
-	});
 }
 
 /**
@@ -928,9 +906,6 @@ async function touch(on) {
  *  @param {string} text @param {number} size @returns {Promise<string>} */
 const qr = async (text, size) => (mac ? mac.call('qrSvg', text, size) : avendb.qrSvg(text, size));
 
-/** What each mounted read last took on this page's device (./kept-answers.js): a view that comes back paints it at once. */
-const answers = keptAnswers();
-
 /** What the vaults' screens do, each acting for the vault it names (./Shell.svelte's `api`, beside what its page adds). */
 const api = {
 	/** Subscribe to any targeted local query, independent of the world summary.
@@ -951,7 +926,7 @@ const api = {
 			if (got && typeof got === 'object') Object.defineProperty(got, HEARD, { value: at });
 			return got;
 		};
-		const reader = createReactiveRead({ read: observedWindow(asked), take: kept, failed, observed, kept: answers });
+		const reader = createReactiveRead({ read: observedWindow(asked), take: kept, failed, observed });
 		observers.add(watched);
 		const dispose = $effect.root(() => {
 			$effect(() => {

@@ -39,8 +39,8 @@
     {
       "model": "aven/db/spec/AvenDB/LocalWrite.lean",
       "invariant": "local acceptance does not wait for summary publication",
-      "implementation": "aven/db/page/local-write.js",
-      "test": "aven/db/page/local-write.test.js",
+      "implementation": "aven/db/page/session.svelte.js",
+      "test": "aven/db/scripts/test-avendb-local-write.mjs",
       "testName": ""
     },
     {

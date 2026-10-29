@@ -79,7 +79,7 @@ fn late_parent_and_restore_match_whole_replay() {
 }
 
 #[test]
-fn deferred_checkpoint_keeps_canonical_fallback() {
+fn deferred_checkpoint_steps_on_as_the_canonical_replay() {
     let mut w = world();
     todos_on(&mut w);
     let d = w.mac_a;
@@ -90,7 +90,9 @@ fn deferred_checkpoint_keeps_canonical_fallback() {
     let fresh = after.signed.iter().filter(|s| !known.contains(&s.edit.id())).cloned().collect();
     w.lab.restore_backup(d, &base);
     w.lab.receive_now(d, fresh, vec![], false);
-    assert!(matches!(check(&w.lab, d, &[w.mac_c, w.stranger]), Why::Whole(_)));
+    // a checkpoint changes nothing in the state: the edits from its place on are replayed with it, not every edit
+    let why = check(&w.lab, d, &[w.mac_c, w.stranger]);
+    assert!(!matches!(why, Why::Whole(_)), "{why:?}");
 }
 
 #[test]
@@ -101,7 +103,7 @@ fn trust_withdrawal_resets_prefix_before_next_latest() {
     check(&w.lab, d, &[w.mac_c, w.stranger]);
     let at = w.lab.at(d);
     let store = w.lab.stores.get_mut(&at).unwrap();
-    let old_revision = store.log.revision();
+    let old_head = store.log.head();
     let id = *store.log.ids().iter().find(|id| {
         store.signed.get(id).unwrap().edit.entry() == Some(todos.door)
     }).unwrap();
@@ -113,7 +115,7 @@ fn trust_withdrawal_resets_prefix_before_next_latest() {
     store.signed.insert(id, signed);
     store.bare.insert(id);
     assert!(trust(store));
-    assert_ne!(old_revision, store.log.revision());
+    assert_ne!(old_head, store.log.head());
     assert_eq!(store.replayed, 0);
     assert!(store.latest.get().is_none());
     assert!(!store.log.ids().contains(&id));

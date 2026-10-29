@@ -94,7 +94,7 @@ fn count(lab: &Lab, d: SignerId, what: &str) -> u64 {
 fn save(c: &mut Cast) -> (Warm, usize) {
     let held = c.lab.log(c.phone).ids().len();
     let w = c.lab.warming(c.phone, held, Some([1; 40])).expect("the shelf lacks work");
-    let warm = Warm { keys: w.keys.clone().into_iter().collect(), views: w.view.clone().into_iter().collect(), shown: vec![] };
+    let warm = Warm { keys: w.keys.clone().into_iter().collect(), views: w.view.clone().into_iter().collect(), shown: vec![], queries: vec![] };
     c.lab.warmed(c.phone, w);
     (warm, held)
 }

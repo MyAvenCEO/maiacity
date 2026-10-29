@@ -87,7 +87,7 @@ test('older native apps can decline metadata without blocking viewport reads or 
 	try {
 		expect(await window.replace([id(1)])).toBe(false);
 		expect(await window.replace([id(2)])).toBe(false);
-		// the interest op, then the demand op once: a node that knows neither is sent nothing more
-		expect(calls.map((c) => c.op)).toEqual(['interest', 'demand']);
+		// the interest op once: a node that declines it is sent nothing more as the viewport moves
+		expect(calls.map((c) => c.op)).toEqual(['interest']);
 	} finally { window.close(); }
 });

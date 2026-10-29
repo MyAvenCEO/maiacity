@@ -29,12 +29,12 @@ pub(crate) struct Based {
 }
 
 
-// Process-local identity of immutable inputs, never persisted or accepted from a peer.
-// Bodies/blobs/signed entries are content-addressed and append-only between forgets;
-// key insertions and anchor replacement have explicit allocation-identity revisions.
+// Identity of immutable inputs, never persisted or accepted from a peer.
+// The log by its head and the keys by their sum; bodies/blobs/signed entries are content-addressed
+// and append-only between forgets; anchor replacement has an explicit allocation-identity revision.
 pub(crate) struct OverlayBasis {
-    log: crate::policy::LogRevision,
-    keys: Arc<()>,
+    log: crate::log_head::Head,
+    keys: [u8; 32],
     anchors: Arc<()>,
     warm: Arc<()>,
     bodies: usize,
@@ -46,13 +46,13 @@ pub(crate) struct OverlayBasis {
 }
 impl OverlayBasis {
     pub(crate) fn of(store: &Store) -> Self {
-        Self { log: store.log.revision(), keys: store.keys.revision.clone(),
+        Self { log: store.log.head(), keys: store.keys.sum,
             anchors: store.bootstrap_revision.clone(), warm: store.warm_revision.clone(),
             bodies: store.bodies.len(), blobs: store.blobs.len(), signed: store.signed.len(),
             follow: store.follow.clone(), depth: store.query_depth, gate: store.gate }
     }
     fn matches(&self, store: &Store) -> bool {
-        self.log == store.log.revision() && Arc::ptr_eq(&self.keys, &store.keys.revision)
+        self.log == store.log.head() && self.keys == store.keys.sum
             && Arc::ptr_eq(&self.anchors, &store.bootstrap_revision)
             && Arc::ptr_eq(&self.warm, &store.warm_revision)
             && self.bodies == store.bodies.len() && self.blobs == store.blobs.len()
@@ -162,6 +162,7 @@ impl Lab {
         let shown = based.keys().filter_map(|e| store.shown.remove(e).map(|s| (*e, s))).collect();
         let readings = std::mem::take(&mut store.readings);
         store.readings.groups = readings.groups.clone();
+        store.recontext();
         Some(RetainedOverlay { basis, state, shown, based, readings })
     }
 
@@ -180,6 +181,7 @@ impl Lab {
         store.bootstrap_state = Some(retained.state);
         store.based = retained.based;
         store.bootstrap_basis = Some(retained.basis);
+        store.recontext();
         store.perf.count("bootstrap: unchanged overlay reused", 1);
         true
     }
@@ -269,6 +271,7 @@ impl Lab {
         store.latest = OnceLock::new();
         store.based.clear();
         store.bootstrap_basis = None;
+        store.recontext();
         if restored.is_empty() {
             return;
         }
@@ -449,8 +452,8 @@ impl Lab {
                 let basis = OverlayBasis::of(store);
                 store.based.get_mut(&entry).expect("progress").basis = basis;
             }
-
         }
+        store.recontext();
     }
 }
 
@@ -923,10 +926,10 @@ mod tests {
         let basis = OverlayBasis::of(&store);
         assert!(basis.matches(&store));
         store.log = crate::policy::Log::default();
-        assert!(!basis.matches(&store), "same-length replacement is not the same signed-log revision");
+        assert!(basis.matches(&store), "a log of the same edits has the same head");
         let basis = OverlayBasis::of(&store);
-        store.keys.revision = Arc::new(());
-        assert!(!basis.matches(&store), "key invalidation is not inferred from cardinality");
+        store.keys.insert(crate::keys::KeyName::Entry(EntryId([1; 32]), None, 0), crate::keys::Secret::from_bytes([7; 32]));
+        assert!(!basis.matches(&store), "a key taken changes the basis");
         let basis = OverlayBasis::of(&store);
         store.bootstrap_revision = Arc::new(());
         assert!(!basis.matches(&store), "same-entry anchor replacement invalidates derived judgment");

@@ -638,6 +638,8 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
             let join = Join::from_wire(body)?;
             let accepted = shared.try_lab(move |lab, me| lab.accept_join(me, device, join)).await?;
             accepted.map_err(|why| anyhow!("the join is refused: {why:?}"))?;
+            // its catch-up a step a turn, after this answer (`Lab::accept_join`)
+            shared.catch_up_later(Instant::now());
             shared.changed.notify_one();
             Ok(Vec::new())
         }

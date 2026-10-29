@@ -248,6 +248,39 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     }
 }
 
+/// A peer sends on edits it took before the McEliece keys they name came (those come after its pages), naming none of
+/// them: the device that took the edits there holds them waiting for those keys, as for a parent, so a peer that holds
+/// them differs from it, is asked, and hands them over (`holdings::Logs`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn keys_a_peer_sent_edits_without_come_from_another_peer() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (owners, nonce) = (vec![Principal::Vault(coop)], 7);
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+    let garden = w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("the Garden");
+    relay_on(&mut w, VaultId::from(garden));
+    // of the new McEliece keys its seed brings, those of Alice's devices, which Bob's Mac lacks too
+    let held = [w.lab.blob_ids(w.server), w.lab.blob_ids(w.mac_b)].concat();
+    let new: Vec<BlobId> = w.lab.blob_ids(w.mac_a).into_iter().filter(|b| !held.contains(b)).collect();
+    assert!(!new.is_empty(), "the Garden's seed brings McEliece keys the server and Bob's Mac lack");
+    // Bob's Mac takes the Garden's edits from Alice's Mac, and none of their keys yet
+    let request = w.lab.request(w.mac_b, w.mac_a);
+    let (edits, _, more) = w.lab.reply(w.mac_a, w.mac_b, &request, usize::MAX);
+    assert!(!more, "in one reply");
+    w.lab.receive(w.mac_b, edits, Vec::new());
+    assert!(new.iter().all(|&b| w.lab.blob(w.mac_b, b).is_none()), "Bob's Mac holds the edits, not the keys");
+    let (mac_a, passkey_a, server_d, mac_b, passkey_b) = (w.mac_a, w.passkey_a, w.server, w.mac_b, w.passkey_b);
+    let server = node(&mut w, server_d, &[], 2).await;
+    let bob = node(&mut w, mac_b, &[passkey_b], 3).await;
+    meet(&[&server, &bob]);
+    let took = || server.read(move |lab, me| lab.log(me).ids().contains(&garden));
+    until("the server takes the Garden's log from Bob's Mac", took).await;
+    assert!(!holds(&server, new.clone()).await, "and none of its keys: Bob's Mac named none");
+    let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
+    meet(&[&mac, &server, &bob]);
+    until("the server brings them from Alice's Mac", || holds(&server, new.clone())).await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_request_that_asks_for_its_reply_packed_gets_each_key_once() {
     let mut w = world();
@@ -336,6 +369,42 @@ async fn kept(n: &Node, notes: &[EntryId]) -> usize {
     notes.iter().filter(|e| logs.contains_key(&avendb::sync::LogId::Entry(**e))).count()
 }
 
+/// A view's now tier is asked alone, at once, of a peer as it connects (`Shared::ask_now`, `Interest.lean`'s `asksNow`):
+/// the asking names the view's entry and the rules it rests on, fewer than 64 logs, and it comes before any page of the
+/// backlog's asking of every log the device lacks. Alice's Mac wrote notes her new iPhone lacks; the iPhone's view
+/// wants the last she wrote before the two meet.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_views_now_tier_is_asked_alone_before_any_bulk_page() {
+    use avendb::sync::LogId;
+    const NOTES: usize = 600;
+    let mut w = world();
+    let (mac_a, phone_a, alice) = (w.mac_a, w.phone_a, w.alice);
+    w.lab.sync_all(0);
+    let notes: Vec<EntryId> = (0..NOTES)
+        .map(|i| w.lab.create(mac_a, alice, alice, "note", &[], document(&format!("Note {i}"), "In May.", mac_a)).expect("a note"))
+        .collect();
+    let mac = Node::spawn(w.lab.split(mac_a, &[], [1; 32]), mac_a, Options { page: 16 << 10, ..Options::local() }).await.expect("a node");
+    let phone = Node::spawn(w.lab.split(phone_a, &[], [2; 32]), phone_a, Options { window: 1, ..Options::local() }).await.expect("a node");
+    let last = *notes.last().expect("notes");
+    let want = serde_json::json!({"op": "interest", "scope": "1e".repeat(16), "revision": 1, "wants": [{"tier": "now", "entries": [last.to_hex()]}]});
+    assert_eq!(phone.op(want).await.expect("an interest")["ok"]["accepted"], true);
+    meet(&[&mac, &phone]);
+    until("the iPhone keeps the note its view wants", || async { phone.holdings().await.logs.contains_key(&LogId::Entry(last)) }).await;
+    let then = kept(&phone, &notes).await;
+    assert!(then < NOTES * 9 / 10, "the wanted note came before the rest: {then} of {NOTES} notes held when it came");
+    let net = phone.op(serde_json::json!({"op": "network"})).await.expect("network");
+    let askings = net["ok"]["askings"].as_array().expect("its askings");
+    let now: Vec<_> = askings.iter().filter(|a| a["stage"] == "now" && a["new"].as_u64() > Some(0)).collect();
+    assert!(!now.is_empty(), "the now tier was asked on its own: {askings:?}");
+    assert!(now.iter().all(|a| a["logs"].as_u64() < Some(64)), "fewer than 64 logs: {askings:?}");
+    let first_now = now.iter().filter_map(|a| a["at"].as_u64()).min().expect("when");
+    let bulk = askings.iter().filter(|a| a["stage"] == "rest").filter_map(|a| a["at"].as_u64()).min();
+    assert!(bulk.is_none_or(|bulk| first_now <= bulk), "before any bulk asking: {askings:?}");
+    until("and every other note after it", || async { kept(&phone, &notes).await == NOTES }).await;
+    mac.shutdown().await.expect("shut down");
+    phone.shutdown().await.expect("shut down");
+}
+
 /// A view that opens while a device asks a peer for every log it lacks gets its entry at once: the asking yields to it
 /// after the page it is taking (`Yield`, `Interest.lean`'s `yields`), where the entry's log came only with the asking's
 /// last pages before, as its place sorts last. Alice's Mac wrote notes her iPhone lacks; once a few came, a page of the
@@ -355,7 +424,8 @@ async fn a_view_opened_during_a_catch_up_gets_its_entry_before_the_rest() {
     let last = *notes.last().expect("notes");
     meet(&[&mac, &phone]);
     until("the iPhone takes its first notes", || async { kept(&phone, &notes).await >= 20 }).await;
-    phone.want([LogId::Entry(last)]);
+    let want = serde_json::json!({"op": "interest", "scope": "0f".repeat(16), "revision": 1, "wants": [{"tier": "now", "entries": [last.to_hex()]}]});
+    assert_eq!(phone.op(want).await.expect("an interest")["ok"]["accepted"], true);
     until("the iPhone keeps the note its view wants", || async { phone.holdings().await.logs.contains_key(&LogId::Entry(last)) }).await;
     let then = kept(&phone, &notes).await;
     assert!(then < NOTES * 9 / 10, "the wanted note came before the rest: {then} of {NOTES} notes held when it came");

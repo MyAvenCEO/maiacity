@@ -1,6 +1,4 @@
-import { untrack } from 'svelte';
 import { answer } from './ops.js';
-import { stillNamed } from './kept-answers.js';
 import { coverageOf } from '../../../maia/content/game/code/sources/coverage.js';
 
 /** One mounted canonical collection, driven by the shared authorized local observer.
@@ -18,14 +16,10 @@ export function entryCollection(api, query) {
 	let phase = $state(/** @type {'loading' | 'ready' | 'error'} */ ('loading'));
 	let error = $state('');
 	let coverage = $state(coverageOf(null));
-	let last = /** @type {{ owner: any, op: any } | null} */ (null);
 	$effect(() => {
 		const owner = api();
 		const op = query();
-		const still = last?.owner === owner ? stillNamed(last.op, op) : null;
-		last = { owner, op };
-		const kept = still ? untrack(() => rows).filter((r) => still.has(r?.entry)) : [];
-		rows = kept;
+		rows = [];
 		coverage = coverageOf(null);
 		totalEntries = readableEntries = 0;
 		phase = 'loading';

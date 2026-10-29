@@ -34,7 +34,6 @@ export const READS = [
 	'posts',
 	'bring',
 	'interest',
-	'demand',
 	'find',
 	'synced',
 	'network',

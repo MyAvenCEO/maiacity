@@ -10,14 +10,19 @@
  *   node aven/ops/devx/live-device.mjs --setup ['<invite link>'] once: found the dev vault (through the app's gate, or
  *                                                                an invite's join page), print its id for Settings → Owners
  *   node aven/ops/devx/live-device.mjs --accept                  once, after Samuel invited it: accept co-owning
- *   node aven/ops/devx/live-device.mjs                           a run: reopen + unlock, sync, Chat, Assets, report
+ *   node aven/ops/devx/live-device.mjs                           a run: reopen + unlock, 5 reference walks (Chat →
+ *                                                                #Bla, Assets → asset → variant, Stories → story,
+ *                                                                Proposals → AIP, Settings → Devices) while catching
+ *                                                                up, sync, the walks again, Chat, Assets, report
  *   node aven/ops/devx/live-device.mjs --roundtrip [Bla]         the release gate (Samuel 2026-10-28): a message in the
  *                                                                room reaches the other device within 3 s (--gate;
  *                                                                the target is 1 s), both ways, whenever both are
  *                                                                online, catching up or not
  *
  * Options: --engine webkit|chromium (webkit), --base https://maia.city, --sync 240 (seconds to watch sync: 4 min finds most stalls, Samuel 2026-10-28),
- * --profile <dir>, --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
+ * --profile <dir>, --room Bla (the room the views open), --remove <id,…> (earlier runs' test devices to remove, by
+ * recorded id), --headed (a visible WebKit window), --name <name> (this device's
+ * name in Devices: test-device <profile>), --page <dir>: a candidate page not released yet, the static build of a branch (`bun run build`,
  * its `build/` folder), served at --base's own origin so the always-on peer takes the passkey as it takes the live
  * site's; the peer stays the live one. Each run writes build/live-device/<time>/: screenshots in order, run.json (step times, the unlock
  * sheet's steps, the sync pill over time, first paints, every diagnostics report the page sent, which is the phone's),
@@ -27,7 +32,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync, chmodSync } from 'node:fs';
 import { homedir, platform, tmpdir } from 'node:os';
-import { dirname, extname, join, normalize, resolve } from 'node:path';
+import { basename, dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { authenticator, passkey } from './passkey.mjs';
 
@@ -39,8 +44,16 @@ const base = option('--base', 'https://maia.city').replace(/\/$/, '');
 const watchSync = Number(option('--sync', '240'));
 const pageDir = args.includes('--page') ? resolve(option('--page')) : null;
 const messages = Math.max(1, Number(option('--messages', '1')));
+const viewRoom = option('--room', 'Bla');
+// --remove <id,id,…>: devices of the person's own vault this run removes once its walks are done, each named by its
+// recorded id (an earlier run's test device), never by name: Samuel 2026-10-29, "be careful to only remove your test
+// devices". A device can't remove itself, so each run removes the ones before it.
+const removeIds = (option('--remove', '') ?? '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+const headed = args.includes('--headed');
 const mac = platform() === 'darwin';
 const profile = option('--profile', mac ? join(homedir(), 'Library/Application Support/maiacity-live-device', engine) : join(homedir(), '.maiacity-live-device', engine));
+// the name this run's device carries in Devices (Samuel 2026-10-29: test devices get proper "test-device" names)
+const deviceName = option('--name', `test-device ${basename(profile)}`);
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const out = join(root, 'build/live-device', stamp);
 mkdirSync(out, { recursive: true });
@@ -48,7 +61,7 @@ mkdirSync(profile, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** What a run must meet. */
-export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 1 };
+export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 1, view: 2 };
 /** What the roundtrip gates at now (--gate, Samuel 2026-10-28: 3 s for this sync build), the 1 s target still reported. */
 const GATE = Number(option('--gate', '3'));
 
@@ -74,7 +87,7 @@ function keepKey(key) {
 
 // ─── the browser ───
 
-const log = { engine, base, started: new Date().toISOString(), steps: {}, sheet: [], sync: [], reports: [], errors: [], shots: [] };
+const log = { engine, base, started: new Date().toISOString(), steps: {}, sheet: [], views: {}, sync: [], memory: [], removed: [], reports: [], errors: [], shots: [] };
 let shotNo = 0;
 async function shot(page, name) {
 	const file = `${String(++shotNo).padStart(2, '0')}-${name}.png`;
@@ -112,7 +125,7 @@ async function launch(dir = profile) {
 	const key = readKey();
 	if (!key) throw new Error(`no dev passkey yet: run with --setup '<invite link>' first`);
 	// a service worker would answer the page's requests past --page's routes
-	const options = { headless: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...(pageDir ? { serviceWorkers: 'block' } : {}) };
+	const options = { headless: !headed, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, ...(pageDir ? { serviceWorkers: 'block' } : {}) };
 	// WEBKIT_PATH: a newer WebKit than this Playwright's own, where its own opens no saved profile (macOS 26.1, build 2215)
 	if (engine === 'webkit' && process.env.WEBKIT_PATH) options.executablePath = process.env.WEBKIT_PATH;
 	// on the Mac, WebKit keeps a site's OPFS (the device's shelf) under ~/Library/WebKit/<its bundle>, outside the
@@ -252,6 +265,10 @@ async function run() {
 			if (!opened) throw new Error(`didn't open: ${(await words(page)).slice(0, 300)}`);
 		} else log.steps.unlock = 0;
 
+		// the reference walks, right away while the device still catches up (each view's actor manifest asks for its own
+		// data first: Samuel 2026-10-29, "do you actually open the routes/actor views?"), then again once caught up
+		log.views.catchingUp = await views(page, 'catching');
+
 		// sync: the pill and its details, as they move
 		t0 = Date.now();
 		await page.click('.status .pill').catch(() => {});
@@ -259,11 +276,18 @@ async function run() {
 			const pill = await words(page, '.status');
 			log.sync.push({ s: t(t0), pill });
 			if (i % 10 === 0) await shot(page, `sync-${Math.round(t(t0))}s`);
+			// the Mac's memory pressure beside it (one heavy job at a time on the 8 GB Mac)
+			if (i % 10 === 0 && mac)
+				try {
+					const free = /(\d+)%/.exec(execFileSync('memory_pressure', ['-Q'], { encoding: 'utf8' }))?.[1];
+					log.memory.push({ s: t(t0), free: free == null ? null : Number(free) });
+				} catch {}
 			if (/synced|up to date/i.test(pill) && !/behind|pulling|catching/i.test(pill) && i > 2) break;
 			await sleep(1000);
 		}
 		await shot(page, 'sync-end');
 		await page.click('.status .pill').catch(() => {});
+		log.views.caughtUp = await views(page, 'synced');
 
 		// Chat: the room list, then the first room's messages
 		t0 = Date.now();
@@ -304,6 +328,12 @@ async function run() {
 
 		// the report the phone would send: the page sends one ~10 s after a view opens
 		await until(async () => log.reports.length > 0 || null, 45);
+
+		// this device's own id, for the next run's --remove, its name, and the earlier runs' devices this one removes
+		await own(page);
+		log.named = await nameDevice(page, deviceName);
+		log.device = await page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
+		for (const id of removeIds) log.removed.push({ id, ...(await removeDevice(page, id, log.device)) });
 	} catch (e) {
 		log.errors.push(`run: ${e instanceof Error ? e.message : e}`);
 		await shot(page, 'failed');
@@ -315,9 +345,11 @@ async function run() {
 	const behind = log.sync.map((x) => Number(/(\d+)\s*(?:logs?\s*)?behind/i.exec(x.pill)?.[1] ?? NaN)).filter((n) => !Number.isNaN(n));
 	const closing = !behind.length || behind.at(-1) === 0 || behind.at(-1) < behind[0];
 	const paint = [s.chatRoom, s.assetsList].filter((x) => x != null);
+	const opened = Object.values(log.views).flat();
 	const pass = {
 		unlock: s.unlock != null && s.unlock < TARGETS.unlock && (s.ceremonies ?? 1) <= 1,
 		firstPaint: paint.length === 2 && paint.every((x) => x < TARGETS.firstPaint),
+		[`views<${TARGETS.view}s`]: opened.length > 0 && opened.every((v) => v.paint != null && v.paint < TARGETS.view),
 		behind: closing,
 		errors: !log.errors.length
 	};
@@ -326,7 +358,10 @@ async function run() {
 	const line =
 		`${stamp} ${engine} load ${s.load}s gate ${s.gate}s unlock ${s.unlock}s (${s.ceremonies ?? 0} ceremony) ` +
 		`chat rooms ${s.chatRooms}s room ${s.chatRoom}s assets list ${s.assetsList}s asset ${s.asset}s ` +
+		`views ${Object.entries(log.views).map(([when, vs]) => `${when} ${vs.map((v) => `${v.app}/${v.level} ${v.paint ?? '-'}s`).join(' ')}`).join(', ')} ` +
 		`behind ${behind.length ? `${behind[0]}→${behind.at(-1)}` : 'n/a'} reports ${log.reports.length} errors ${log.errors.length} ` +
+		`device ${log.device ?? '-'} named ${log.named ?? '-'} removed ${log.removed.map((r) => `${r.id.slice(0, 8)} ${r.result}`).join(' ') || '-'} ` +
+		`memory free ${log.memory.length ? `${Math.min(...log.memory.map((m) => m.free ?? 100))}% min` : 'n/a'} ` +
 		`| ${Object.entries(pass).map(([k, v]) => `${k} ${v ? 'PASS' : 'FAIL'}`).join(', ')}`;
 	writeFileSync(join(out, 'line.txt'), `${line}\n`);
 	console.log(line);
@@ -342,6 +377,165 @@ async function openOn(page) {
 	await until(async () => (await page.$('.gate button.pill-btn')) || (await open(page)), 60);
 	for (const t of ['Unlock now', 'Sign in with your passkey']) if (await press(page, t)) break;
 	return (await until(() => open(page), 180)) ? Date.now() : null;
+}
+
+/** The reference walks (Samuel 2026-10-29: "just a few reference examples ... clicking sub items, like chat actor/room
+ *  or assets/select asset item/variant ... 5 actor apps ... their composite leaf pattern like sub interests"): each
+ *  goes from an app's composite view down to a leaf, a click at a time, so each level's sub-interest is asked for
+ *  (a slot binds on select: Chat's room, Assets' asset). A step goes to `go` or clicks `click` (the
+ *  first element it matches), and has painted once `painted` matches, with `text` in it where given. A view's first
+ *  paint is from the device's own data (local first): the 2 s target holds while the device still catches up. */
+const WALKS = [
+	{
+		app: 'chat',
+		steps: [
+			// a room row, not the composite's own New message / New group / Note to self
+			{ level: 'rooms', go: `${base}/app/chat/`, painted: '.chat-page button.nav-item:not([disabled])', not: 'New |Note to self' },
+			{ level: `#${viewRoom}`, room: viewRoom, painted: '.chat-page article.msg' }
+		]
+	},
+	{
+		app: 'assets',
+		steps: [
+			// the recipes live in Maia City's coop vault, picked by its id where its name hasn't arrived yet
+			{ level: 'list', go: `${base}/app/#assets`, painted: 'a.nav-item[href^="#assets/"]', vault: 'Maia City|aee5 ?73fe' },
+			{ level: 'asset', click: 'a.nav-item[href^="#assets/"]', painted: '.about-head h3' },
+			{ level: 'variant', click: '.lines a.line:has(> i.dot:not(.main))', painted: '.about-head p.soft', text: 'a variant' }
+		]
+	},
+	{
+		app: 'stories',
+		steps: [
+			{ level: 'list', go: `${base}/app/#stories`, painted: 'a.card[href^="#stories/"]' },
+			{ level: 'story', click: 'a.card[href^="#stories/"]', painted: 'header.top input.title' }
+		]
+	},
+	{
+		app: 'proposals',
+		steps: [
+			// the board drawn: a card, or a column's own empty words once it isn't catching up ("Nothing waits for a yes.")
+			{ level: 'board', go: `${base}/app/aips/`, painted: '.board ul.cards li', not: 'Catching up' },
+			{ level: 'aip', click: '.board ul.cards li button', painted: 'section.detail h2' }
+		]
+	},
+	{
+		app: 'settings',
+		steps: [
+			{ level: 'settings', go: `${base}/app/#settings`, painted: 'section.part' },
+			// the person's own devices are their human vault's, not the coop's the Assets walk picked
+			{ level: 'devices', go: `${base}/app/#settings/devices`, painted: '#settings-devices li.device', vault: 'You\\s*$' }
+		]
+	}
+];
+
+/** Walks each of WALKS on `page`, timing each step to its first paint, up to 30 s a step; a step that didn't paint
+ *  ends its walk: [{ app, level, paint (s or null), pill }]. */
+async function views(page, when) {
+	const seen = [];
+	const first = (sel) => page.evaluate((sel) => !!document.querySelector(sel)?.click() || !!document.querySelector(sel), sel);
+	for (const w of WALKS) {
+		for (const step of w.steps) {
+			const t0 = Date.now();
+			const left = () => Math.max(0.1, 30 - (Date.now() - t0) / 1000);
+			let ready = true;
+			if (step.go) await go(page, step.go);
+			if (step.click) ready = !!(await until(() => first(step.click), left()));
+			if (ready && step.then) ready = !!(await until(() => first(step.then), left()));
+			// a room the device doesn't know yet hasn't painted, whatever other room Chat shows
+			if (step.room)
+				ready = !!(await until(
+					() =>
+						page.evaluate((name) => {
+							const b = [...document.querySelectorAll('.chat-page button.nav-item')].find((e) => e.textContent?.replace(/\s+/g, ' ').trim().replace(/^#\s*/, '') === name);
+							b?.click();
+							return !!b;
+						}, step.room),
+					left()
+				));
+			const painted = () =>
+				page.evaluate(
+					({ sel, text, not }) => [...document.querySelectorAll(sel)].some((e) => (!text || e.textContent?.includes(text)) && (!not || !new RegExp(not).test(e.textContent ?? ''))),
+					{ sel: step.painted, text: step.text ?? '', not: step.not ?? '' }
+				);
+			let done = ready && (await until(painted, step.vault ? Math.min(5, left()) : left()));
+			// the recipes live in Maia City: where the vault picked holds none, pick it in the nav pill's vaults, as a person does
+			if (ready && !done && step.vault) {
+				await page.evaluate(() => document.querySelector('button.item.identity')?.click());
+				await sleep(300);
+				await page.evaluate((name) => [...document.querySelectorAll('button.acct[role=menuitemradio]')].find((b) => new RegExp(name).test(b.textContent?.replace(/\s+/g, ' ') ?? ''))?.click(), step.vault);
+				await sleep(300);
+				await go(page, step.go);
+				done = await until(painted, left());
+			}
+			seen.push({ app: w.app, level: step.level, paint: done ? Number(((Date.now() - t0) / 1000).toFixed(2)) : null, pill: await pill(page) });
+			await shot(page, `view-${when}-${w.app}-${step.level.replace(/\W/g, '')}`);
+			if (!done) break;
+		}
+	}
+	return seen;
+}
+
+/** Opens Settings → Devices of the person's own vault on `page` (the entry that reads "…You" in the vault menu). */
+async function own(page) {
+	await go(page, `${base}/app/#settings/devices`);
+	if (await until(() => page.$('#settings-devices li.device'), 5)) return;
+	await page.evaluate(() => document.querySelector('button.item.identity')?.click());
+	await sleep(300);
+	await page.evaluate(() => [...document.querySelectorAll('button.acct[role=menuitemradio]')].find((b) => /You\s*$/.test(b.textContent?.replace(/\s+/g, ' ') ?? ''))?.click());
+	await sleep(300);
+	await go(page, `${base}/app/#settings/devices`);
+	await until(() => page.$('#settings-devices li.device'), 30);
+}
+
+/** Names this device `name` in Settings → Devices on `page` (its own row's Rename), unless it is named so already. */
+async function nameDevice(page, name) {
+	const now = () => page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.who b')?.textContent?.trim() ?? null);
+	if ((await now()) === name) return name;
+	const opened = await page.evaluate(() => {
+		const li = [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'));
+		const b = [...(li?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === 'Rename' && !b.disabled);
+		b?.click();
+		return !!b;
+	});
+	if (!opened || !(await until(() => page.$('#settings-devices li.device input.field'), 5))) return null;
+	await page.fill('#settings-devices li.device input.field', name);
+	await page.click('#settings-devices li.device input.field ~ button.btn.primary');
+	return (await until(async () => ((await now()) === name ? name : null), 30)) ?? null;
+}
+
+/** Removes the device `id` (a full id, or at least its first 8 hex) from Settings → Devices on `page`: only where
+ *  exactly one row shows its short id and that row isn't this device (`me`, its short id): { result, why? }. */
+async function removeDevice(page, id, me) {
+	if (!/^[0-9a-f]{8,}$/.test(id)) return { result: 'skipped', why: 'not an id' };
+	const shortId = `${id.slice(0, 4)} ${id.slice(4, 8)}`;
+	if (shortId === me) return { result: 'skipped', why: 'this device' };
+	const rows = await page.evaluate((shortId) => [...document.querySelectorAll('#settings-devices li.device')].filter((li) => li.querySelector('.soft.mono')?.textContent?.trim() === shortId).length, shortId);
+	if (rows !== 1) return { result: 'skipped', why: rows ? `${rows} rows show ${shortId}` : 'not listed' };
+	// the page asks first (window.confirm in a browser): yes only to removing this one device
+	const answer = (d) => (d.message().startsWith('Remove ') ? d.accept() : d.dismiss());
+	page.once('dialog', answer);
+	const clicked = await page.evaluate((shortId) => {
+		const li = [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.soft.mono')?.textContent?.trim() === shortId);
+		const b = [...(li?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.trim() === 'Remove' && !b.disabled);
+		b?.click();
+		return !!b || (li?.querySelector('.remover .why')?.textContent?.trim() ?? 'no Remove button');
+	}, shortId);
+	if (clicked !== true) {
+		page.off('dialog', answer);
+		return { result: 'skipped', why: String(clicked) };
+	}
+	const said = await until(
+		() =>
+			page.evaluate((shortId) => {
+				const li = [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.soft.mono')?.textContent?.trim() === shortId);
+				if (!li) return 'Removed';
+				const t = li.querySelector('.remover .why')?.textContent?.trim() ?? '';
+				return /^(Removed|Not removed)/.test(t) ? t : null;
+			}, shortId),
+		120
+	);
+	await shot(page, `removed-${id.slice(0, 8)}`);
+	return { result: said === 'Removed' ? 'removed' : 'not removed', why: said ?? 'no answer in 120 s' };
 }
 
 /** Opens room `room` in Chat on `page`, once its device knows it: true, or false after `seconds`. */
@@ -410,6 +604,10 @@ async function roundtrip(name) {
 			gate.from.push(await message(fresh.page, home.page, `${tag} ← fresh ${i}`, `from-fresh-${i}`));
 		}
 		gate.freshPillAfter = await pill(fresh.page);
+		// the fresh device stays one of the vault's: name it so it's known in Devices, and record its id for the next --remove
+		await own(fresh.page);
+		gate.freshDevice = await fresh.page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
+		gate.freshNamed = await nameDevice(fresh.page, `test-device roundtrip ${stamp.slice(5, 16)}`);
 	} catch (e) {
 		log.errors.push(`roundtrip: ${e instanceof Error ? e.message : e}`);
 		await shot((fresh ?? home).page, 'roundtrip-failed');

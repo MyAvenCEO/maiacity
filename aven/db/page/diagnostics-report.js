@@ -8,7 +8,20 @@ export function peerDiagnostics(network, perf) {
  return { transportRttMs: peers.flatMap(peer => (Array.isArray(peer.paths) ? peer.paths : []).slice(0, 8)
    .filter(path => path.selected && number(path.rtt_ms) !== null).map(path => path.rtt_ms)),
   policy: policyObservations(network), reactive: policyObservations({ policy_observations: network?.reactive_observations }, 'local-completion-to-peer-reactive-consumer'),
-  receiveWork: receiveWork(perf) };
+  receiveWork: receiveWork(perf), labTurns: labTurns(network?.lab) };
+}
+/** A Rust call's name as the engine's Lab turns name it (its closure's type path): letters, digits and the path's own
+ *  marks alone, cut short, else not copied. */
+const call = value => typeof value === 'string' && /^[A-Za-z0-9_:<>{}(), &]{1,200}$/.test(value) ? value.slice(0, 160) : null;
+/** What held the device's Lab (`Node::network`'s `lab`): per call its turns, their wait and their hold, the longest
+ *  first, and the slowest turns lately, so a stall names the work that held the worker. Numbers and call names only. */
+function labTurns(lab) {
+ if (!lab || typeof lab !== 'object') return null;
+ const by = Object.entries(lab.by && typeof lab.by === 'object' ? lab.by : {}).slice(0, 24).flatMap(([name, t]) => call(name)
+  ? [{ call: call(name), count: number(t?.count), waitMs: number(t?.wait_ms), holdMs: number(t?.hold_ms), maxHoldMs: number(t?.max_hold_ms) }] : []);
+ const slow = (Array.isArray(lab.slow) ? lab.slow : []).slice(0, 16).flatMap(t => call(t?.call)
+  ? [{ at: number(t.at), call: call(t.call), waitMs: number(t.wait_ms), holdMs: number(t.hold_ms) }] : []);
+ return { heldMs: number(lab.held_ms), by, slow };
 }
 /** A walk of a view's manifests as a report carries it: counts and times, and the ids of the manifests it matched
  *  (`kernel`, `chat`: the app's names, never a route, vault or entry). */
@@ -35,9 +48,10 @@ const syncReport = sync => ({
   pulling: p?.pulling ? { since: number(p.pulling.since), stage: stage(p.pulling.stage), took: number(p.pulling.took) } : null,
   pages: number(p?.pages), edits: number(p?.edits), last: number(p?.last), askings: number(p?.askings), failed: number(p?.failed) })),
  lacked: (Array.isArray(sync.lacked) ? sync.lacked : []).slice(0, 32).map(p => ({ device: short(p?.device),
-  lacks: number(p?.lacks), byStub: number(p?.by_stub), stubs: number(p?.stubs),
+  lacks: number(p?.lacks), bodies: number(p?.bodies), byStub: number(p?.by_stub), stubs: number(p?.stubs),
   sample: (Array.isArray(p?.sample) ? p.sample : []).slice(0, 5).map(l => ({ log: logRef(l?.log), held: l?.held === true,
-   lackedHeads: (Array.isArray(l?.lacked_heads) ? l.lacked_heads : []).slice(0, 8).map(short).filter(Boolean), waiting: number(l?.waiting) })) }))
+   lackedHeads: (Array.isArray(l?.lacked_heads) ? l.lacked_heads : []).slice(0, 8).map(short).filter(Boolean),
+   heldUnclosed: (Array.isArray(l?.held_unclosed) ? l.held_unclosed : []).slice(0, 8).map(short).filter(Boolean), waiting: number(l?.waiting) })) }))
 });
 /** A step's note as a report carries it: the device's own words and numbers for its person (`Progress::note`), cut
  *  short, any run of 16 hex or more cut out. */

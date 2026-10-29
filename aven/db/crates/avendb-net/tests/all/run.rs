@@ -234,7 +234,7 @@ async fn a_node_brings_the_entries_a_page_names_alone_and_refuses_a_bring_naming
     assert!(brought["new"].as_u64() > Some(0), "{brought}");
     assert!(phone.read(holds(first)).await, "the entry it named");
     assert!(!phone.read(holds(other)).await, "and nothing else");
-    // a bring names vaults or entries, 1 to 64, each by its id
+    // a bring names entries, 1 to 64, each by its id, and never a vault
     let both = json!({ "op": "bring", "vaults": [coop.to_hex()], "entries": [first.to_hex()] });
     for bad in [both, json!({ "op": "bring" }), json!({ "op": "bring", "entries": [] }), json!({ "op": "bring", "entries": ["x"] })] {
         assert_eq!(run(&phone, bad).await.expect_err("refused")["refused"], "BadOp");
@@ -245,7 +245,7 @@ async fn a_node_brings_the_entries_a_page_names_alone_and_refuses_a_bring_naming
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how_far_it_is_synced() {
+async fn a_node_brings_the_entries_a_page_reads_first_and_tells_how_far_it_is_synced() {
     let mut w = world();
     let h = handbook(&mut w);
     let (mac_a, phone_a, coop) = (w.mac_a, w.phone_a, h.coop);
@@ -268,11 +268,9 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     assert_eq!(synced["peers"], 1);
     assert!(synced["logs"].as_u64() > synced["behind"].as_u64(), "{synced}");
     let pages = synced["pages"].as_u64().expect("how many pages it took");
-    // a bring of the coop: each device it knows asked at once, the Mac, the one it reaches, answers whole, and the
-    // phone reads Notes
-    let known = phone.read(|lab, me| lab.peers(me).len()).await;
-    let brought = run(&phone, json!({ "op": "bring", "vaults": [coop.to_hex()] })).await.expect("brought");
-    assert_eq!((&brought["peers"], &brought["reached"]), (&json!(known), &json!(true)), "{brought}");
+    // a bring of Notes: each live peer asked at once, the Mac answers whole, and the phone reads Notes
+    let brought = run(&phone, json!({ "op": "bring", "entries": [notes.to_hex()] })).await.expect("brought");
+    assert_eq!((&brought["peers"], &brought["reached"]), (&json!(1), &json!(true)), "{brought}");
     assert!(brought["new"].as_u64() > Some(0), "{brought}");
     assert!(phone.read(reads).await, "brought first");
     // the pages it took tell the bring moving, as a log counts only once whole
@@ -306,8 +304,8 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     let recent = net["recent"].as_array().expect("its newest pages");
     assert!(!recent.is_empty() && recent.iter().all(|r| r["device"] == json!(mac_a.to_hex())), "{net}");
     assert_eq!(net["me"]["endpoint"], json!(phone.addr().id.to_string()), "{net}");
-    // a bring names 1 to 64 vaults, each by its id
-    for bad in [json!({ "op": "bring", "vaults": [] }), json!({ "op": "bring", "vaults": ["coop"] })] {
+    // a bring names no vault
+    for bad in [json!({ "op": "bring", "vaults": [] }), json!({ "op": "bring", "vaults": [coop.to_hex()] })] {
         assert_eq!(run(&phone, bad).await.expect_err("refused")["refused"], "BadOp");
     }
     for n in [&mac, &phone] {
@@ -315,8 +313,11 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     }
 }
 
+/// A removal is a local write, judged on what its device holds at its own heads, and made at once: never refused, nor
+/// held up, by a peer it can't reach or a sync still under way (local first, Samuel 2026-10-29). What it never saw
+/// syncs in later.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_removal_waits_until_its_device_holds_what_its_peers_hold() {
+async fn a_removal_goes_on_what_the_device_holds() {
     let mut w = world();
     let (mac_a, phone_a, alice, bob) = (w.mac_a, w.phone_a, w.alice, w.bob);
     let plan = w.lab.create(mac_a, alice, alice, "doc", &[], document("Plan", "Bob reads it.", mac_a)).expect("Plan");
@@ -326,65 +327,19 @@ async fn a_removal_waits_until_its_device_holds_what_its_peers_hold() {
     let later = document("Later", "Her phone hasn't seen me.", mac_a);
     let later = w.lab.create(mac_a, alice, alice, "doc", &[], later).expect("Later");
     let phone = node(&mut w, phone_a, &[], 2).await;
-    let end = json!({ "op": "revoke", "share": read.to_hex() });
     let live = move |lab: &Lab, me| lab.state(me).live(read);
-    // her phone knows her Mac holds her vault, and reaches it not: the removal is refused, saying what to do
-    let refused = run(&phone, end.clone()).await.expect_err("refused while it can't catch up");
-    assert_eq!(refused["refused"], "Behind", "{refused}");
-    assert!(refused["why"].as_str().is_some_and(|w| w.starts_with("Sync first")), "{refused}");
-    assert!(phone.read(live).await, "Bob still reads it");
-    // a removal that names an owner or a device waits alike; a change that removes nothing doesn't
-    let device = json!({ "op": "revoke", "vault": alice.to_hex(), "device": mac_a.to_hex() });
-    assert_eq!(run(&phone, device).await.expect_err("refused")["refused"], "Behind");
-    let card = run(&phone, json!({ "op": "card", "name": "Her phone" })).await;
-    assert!(card.is_ok(), "{card:?}");
-    // her Mac comes online: the phone catches up with it first, then the removal goes through
-    let mac = node(&mut w, mac_a, &[], 1).await;
-    phone.know(mac.addr());
-    mac.know(phone.addr());
-    let made = run(&phone, end).await.expect("made once it caught up");
+    // her phone knows her Mac holds her vault, and reaches it not: the removal is made at once all the same
+    let made = run(&phone, json!({ "op": "revoke", "share": read.to_hex() })).await.expect("made at once");
     assert!(made["edit"].is_string(), "{made}");
     assert!(!phone.read(live).await, "Bob's share ended");
-    let holds = move |lab: &Lab, me| text(lab, me, later, 2).is_some();
-    assert!(phone.read(holds).await, "it took what her Mac wrote before it removed anything");
-    for n in [&mac, &phone] {
-        n.shutdown().await.expect("the node shuts down");
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn devices_gone_for_good_never_keep_a_removal_waiting() {
-    use avendb::policy::{Action, Sharing};
-    let mut w = world();
-    let (passkey_a, mac_a, phone_a, alice) = (w.passkey_a, w.mac_a, w.phone_a, w.alice);
-    // more old phones of hers than the catch-up asks at once, each still holding her vault and none ever answering
-    let gone: Vec<SignerId> = (0..12).map(|n| w.lab.device_of(passkey_a, &format!("Alice's old iPhone {n}"))).collect();
-    for &d in &gone {
-        let add = Action::Share(Sharing::Device { vault: alice, device: d, seal_to: None });
-        w.lab.submit(mac_a, &[passkey_a, d], add).expect("her passkey adds the phone");
-    }
-    w.lab.sync_all(0);
+    // her Mac comes online: what it wrote syncs in, and the removal stands
     let mac = node(&mut w, mac_a, &[], 1).await;
-    let phone = node(&mut w, phone_a, &[], 2).await;
     phone.know(mac.addr());
     mac.know(phone.addr());
-    let keys = phone.read(|lab, me| lab.peers(me)).await;
-    // where each old phone was: a socket that takes every packet and answers none, so each dial runs to its timeout
-    let silent = std::net::UdpSocket::bind("127.0.0.1:0").expect("a silent socket");
-    let at = silent.local_addr().expect("its address");
-    let mut silent_ones = 0;
-    for (device, key) in keys {
-        if gone.contains(&device) {
-            let id = iroh::EndpointId::from_bytes(&key).expect("a device key is an endpoint id");
-            phone.know(iroh::EndpointAddr::from_parts(id, [iroh::TransportAddr::Ip(at)]));
-            silent_ones += 1;
-        }
-    }
-    assert_eq!(silent_ones, gone.len(), "the phone counts every old phone among its peers");
-    // it is connected to her Mac and holds all it holds: the old phones, never reached, don't hold the removal up
-    let waits = phone.removal_waits().await;
-    assert_eq!(waits, None, "a removal goes ahead though the old phones never answer");
-    drop(silent);
+    let holds = move |lab: &Lab, me| text(lab, me, later, 2).is_some();
+    until("the phone takes what her Mac wrote", async || phone.read(holds).await).await;
+    until("the Mac takes the removal", async || !mac.read(live).await).await;
+    assert!(!phone.read(live).await, "the removal stands");
     for n in [&mac, &phone] {
         n.shutdown().await.expect("the node shuts down");
     }
@@ -422,9 +377,8 @@ async fn view_interests_are_revisioned_local_metadata_and_never_a_vault_edit() {
     assert_eq!(clear["ok"]["accepted"], true);
     let late = n.op(json!({"op": "interest", "scope": scope, "revision": 2, "wants": [{"tier": "now", "entries": [entry]}]})).await.unwrap();
     assert_eq!(late["ok"]["accepted"], false, "a cleared view stays cleared");
-    // the op before it, for one release: one Interest on screen now
-    let old = n.op(json!({"op": "demand", "scope": "c".repeat(32), "revision": 1, "entries": [entry]})).await.unwrap();
-    assert_eq!(old["ok"]["accepted"], true);
+    let other = n.op(json!({"op": "interest", "scope": "c".repeat(32), "revision": 1, "wants": [{"tier": "now", "entries": [entry]}]})).await.unwrap();
+    assert_eq!(other["ok"]["accepted"], true);
     let released = n.op(json!({"op": "interest", "release": "all"})).await.unwrap();
     assert_eq!(released["ok"]["released"], 1);
     for invalid in [
@@ -434,7 +388,7 @@ async fn view_interests_are_revisioned_local_metadata_and_never_a_vault_edit() {
         json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "now", "entries": ["bad"]}]}),
         json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "now", "entries": vec![entry.clone(); 513]}]}),
         json!({"op": "interest", "scope": scope, "revision": 4, "wants": [{"tier": "now", "where": {}}]}),
-        json!({"op": "demand", "scope": scope, "revision": 4, "entries": ["bad"]}),
+        json!({"op": "demand", "scope": scope, "revision": 4, "entries": [entry]}),
     ] {
         let got = n.op(invalid.clone()).await.unwrap();
         assert_eq!(got["refused"], "BadOp", "{invalid}");

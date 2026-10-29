@@ -17,7 +17,9 @@ id (`entry_key_of`), from whichever audience key it holds derives that id (`deri
 What it derives it derived before too (`derives_sub_before`): it holds nothing it couldn't hold. Every key a write or a
 link is under, and the key now, it derives where it holds the audience key they derive from (`derives_writes`,
 `derives_links`, `derives_now`): it opens every body it opened before. It derives at most one key for the key now and
-one for each write and link, however many keys of the audience it holds (`derives_le`). A body's key is derived as the
+one for each write and link, however many keys of the audience it holds (`derives_le`). Holding as many keys of the
+audience as when it last tried, it derives the same, so a box it found no key for waits for another audience key, not
+for the next refresh (`as_many_held_derives_the_same`). A body's key is derived as the
 body is read, so it takes the step budget the reading of bodies takes, the bodies of new edits first
 (`CatchUpBudget.lean`).
 -/
@@ -78,6 +80,19 @@ theorem derives_le (held : List Nat) (e : Ent) : (wanted held e).length ≤ 1 + 
   simp only [List.length_cons, List.length_append] at this
   unfold wanted
   omega
+
+/-- What a device derives turns on the audience keys it holds alone, and it holds more of them only by taking more
+(`more`): where it holds as many as when it tried, it took none and derives what it derived then. So a box to a key it
+derived from none of them is tried again only once it holds another key of that audience, not at every refresh
+(`Store::underived`, `box_audience` in lab.rs; a fresh browser tried each of thousands of such boxes with each of its
+audience's keys at every step of its catch-up, 1.4 s a step, fresh8 2026-10-29). -/
+theorem as_many_held_derives_the_same (held more : List Nat) (e : Ent)
+    (h : (held ++ more).length = held.length) : derives (held ++ more) e = derives held e := by
+  cases more with
+  | nil => rw [List.append_nil]
+  | cons x xs =>
+    simp only [List.length_append, List.length_cons] at h
+    omega
 
 namespace Examples
 

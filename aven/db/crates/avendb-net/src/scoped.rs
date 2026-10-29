@@ -92,7 +92,7 @@ impl Shared {
                 async move {
                     // every log of its share in one asking, whose pages come by their places across all of them, so
                     // each steps on what came before (`Shared::ask_differing`)
-                    shared.pull(peer, Scope::Logs(logs), true, None).await.unwrap_or(0)
+                    shared.pull(peer, Scope::Logs(logs), true).await.unwrap_or(0)
                 }
             })
             .collect();

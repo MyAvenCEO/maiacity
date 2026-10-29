@@ -3,19 +3,24 @@
 //! the same query from it again while that answer is still the query on what the device holds now. Opening a view
 //! that is current reads no entry and no edit of the log.
 //!
-//! A view is current where the device took no change since its stamp (`Stamp::revision`: nothing took the store
-//! mutably since). Where it took one, the view is kept by the delta rule (`QV4_untouched`, `QF1_untouched`,
-//! `answer_untouched`): it stays where the change was entry edits alone (`Lab::touched`, never `all`), none of them
-//! named an entry the answer read (its rows, its waiting entries, what its links led to: `Reads::entries`), none of
-//! them is an entry the query's selector may now pick (`Reads::plan`) or a schema or lens its answer read through, and
-//! nothing beside the log that a read depends on moved (`Stamp::aux`: shares, cap groups, lanes, keys, depth, a
-//! showing left half done). Anything else works the answer out again. So the answer served is always the query's
+//! A view is current where it was worked out of every edit its device held (`Stamp::settled`), and the device holds
+//! the same log now (`Stamp::head`, the log's one head), works its items out of the same inputs beside it
+//! (`Stamp::inputs`: its keys, its owner bases, what it follows, its depth) and read them through the same shares, cap
+//! groups, lanes and headers (`Stamp::context`): the answer is a function of those alone (`QV3_open`), in this process
+//! or another. Where the
+//! log moved on, the view is kept by the delta rule (`QV4_untouched`, `QF1_untouched`, `answer_untouched`): it stays
+//! where the change was entry edits alone (`Lab::touched`, never `all`), none of them named an entry the answer read
+//! (its rows, its waiting entries, what its links led to: `Reads::entries`), none of them is an entry the query's
+//! selector may now pick (`Reads::plan`) or a schema or lens its answer read through, and nothing beside the log that
+//! a read depends on moved (`Stamp::inputs`, `Stamp::context`: shares, cap groups, lanes, keys, depth). Anything else
+//! works the answer out again. So the answer served is always the query's
 //! answer on the device's state; with `AVENDB_VIEW_ORACLE` set (and in this crate's own tests) every served view is
 //! checked against a run of the query, and a difference is a bug that panics.
 //!
 //! The views of a device live in its store, within a byte budget (`BUDGET`, `MOST`): past it, the least recently read
-//! view goes first (LRU); a view let go is worked out again on its next read, which gives the same answer. A store
-//! made anew (restore, unlock) starts with none.
+//! view goes first (LRU); a view let go is worked out again on its next read, which gives the same answer. Its shelf
+//! keeps those worked out of every edit, as it keeps its stored view (`Warming::queries`), so that a store made anew
+//! (restore, unlock) answers from them at once where they are current: a page paints them before it caught up.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -31,16 +36,48 @@ pub const BUDGET: usize = 8 << 20;
 /// The most query views a device keeps.
 pub const MOST: usize = 256;
 
-/// The head a view was worked out at: the store's revision (how many times it was taken mutably), the log's size and
-/// removals as `Lab::touched` reads them, a digest of what a read depends on beside the log, and whether the device's
-/// items were all shown then.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+/// The head a view was worked out at (`Lab::query_view_stamp`): the log's head, and its size and removals as
+/// `Lab::touched` reads them; the sum of what the device works its items out of beside the log, and of what a read
+/// depends on beside the log as it worked them out; and whether it worked them out of every edit it held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Stamp {
-    pub revision: u64,
+    pub head: crate::log_head::Head,
     pub size: (usize, usize),
     pub gone: u64,
-    pub aux: u64,
+    pub inputs: [u8; 32],
+    pub context: [u8; 32],
     pub settled: bool,
+}
+
+impl Stamp {
+    /// How many bytes it is as a shelf keeps it (`bytes`).
+    const BYTES: usize = 8 + 32 + 8 + 8 + 8 + 32 + 32 + 1;
+
+    fn bytes(&self) -> [u8; Self::BYTES] {
+        let mut out = [0; Self::BYTES];
+        let parts: [&[u8]; 8] = [&self.head.at.to_be_bytes(), &self.head.sum, &(self.size.0 as u64).to_be_bytes(),
+            &(self.size.1 as u64).to_be_bytes(), &self.gone.to_be_bytes(), &self.inputs, &self.context, &[self.settled as u8]];
+        let mut at = 0;
+        for part in parts {
+            out[at..at + part.len()].copy_from_slice(part);
+            at += part.len();
+        }
+        out
+    }
+
+    fn of_bytes(b: &[u8; Self::BYTES]) -> Option<Stamp> {
+        let u = |at: usize| u64::from_be_bytes(b[at..at + 8].try_into().expect("8 bytes"));
+        let h = |at: usize| -> [u8; 32] { b[at..at + 32].try_into().expect("32 bytes") };
+        let settled = match b[128] { 0 => false, 1 => true, _ => return None };
+        Some(Stamp { head: crate::log_head::Head { at: u(0), sum: h(8) }, size: (u(40) as usize, u(48) as usize), gone: u(56),
+            inputs: h(64), context: h(96), settled })
+    }
+
+    /// A view stamped `self` is the query's answer at `now`: worked out of every edit, of the same log and inputs,
+    /// through the same shares, cap groups, lanes and headers read.
+    fn current(&self, now: &Stamp) -> bool {
+        self.settled && self.head == now.head && self.inputs == now.inputs && self.context == now.context
+    }
 }
 
 /// What a query's answer read: the entries it showed or counted, waited on or followed a link to; the vaults whose
@@ -63,6 +100,8 @@ struct View {
     used: u64,
     /// When its answer last became another (a tick of its device's views): what a page that read it says it saw.
     version: u64,
+    /// The stamp its device's shelf holds it at, if it holds it (`QueryViews::due`).
+    given: Option<Stamp>,
 }
 
 /// How a device's views answered: from a view at its stamp, from one the delta rule kept, by working the answer out
@@ -113,7 +152,8 @@ impl QueryViews {
         if bytes > BUDGET { return; }
         self.tick += 1;
         let version = self.views.get(&key).filter(|old| old.answer == answer).map_or(self.tick, |old| old.version);
-        if let Some(old) = self.views.insert(key, View { stamp, reads, answer, bytes, used: self.tick, version }) {
+        let given = self.views.get(&key).and_then(|old| old.given);
+        if let Some(old) = self.views.insert(key, View { stamp, reads, answer, bytes, used: self.tick, version, given }) {
             self.bytes -= old.bytes;
         }
         self.bytes += bytes;
@@ -126,6 +166,67 @@ impl QueryViews {
     }
 }
 
+/// What a device's shelf keeps of its query views (`Warming::queries`): each query as the page asked it, the stamp its
+/// answer is of, and the answer, one after another, each part's length before it.
+impl QueryViews {
+    /// The views its shelf lacks: those worked out of every edit and current at `now`, the shelf holding none of them
+    /// at that stamp yet; the query, its stamp and the pack bytes of each.
+    pub(crate) fn due(&self, now: &Stamp) -> Vec<(String, Stamp, Vec<u8>)> {
+        self.views.iter().filter(|(_, v)| v.stamp.current(now) && v.given != Some(v.stamp)).map(|(key, v)| {
+            let answer = v.answer.to_string();
+            let mut bytes = Vec::with_capacity(8 + key.len() + Stamp::BYTES + answer.len());
+            bytes.extend((key.len() as u32).to_be_bytes());
+            bytes.extend(key.as_bytes());
+            bytes.extend(v.stamp.bytes());
+            bytes.extend((answer.len() as u32).to_be_bytes());
+            bytes.extend(answer.as_bytes());
+            (key.clone(), v.stamp, bytes)
+        }).collect()
+    }
+
+    /// Its shelf took `given`, each query's view at its stamp.
+    pub(crate) fn given(&mut self, given: &[(String, Stamp)]) {
+        for (key, stamp) in given {
+            if let Some(v) = self.views.get_mut(key) {
+                v.given = Some(*stamp);
+            }
+        }
+    }
+
+    /// Takes the views a pack its shelf kept holds (`due`), each where `take` says of its query, as its shelf holds
+    /// them: none where the pack doesn't read whole. What each read is it doesn't know, so each answers only while it
+    /// is current, and is worked out again once the log moves on (`Reads::opaque`). How many it took.
+    pub(crate) fn take_kept(&mut self, mut pack: &[u8], take: impl Fn(&str) -> bool) -> Option<usize> {
+        let mut views = vec![];
+        let part = |pack: &mut &[u8]| -> Option<Vec<u8>> {
+            let (n, rest) = pack.split_first_chunk::<4>()?;
+            let (part, rest) = rest.split_at_checked(u32::from_be_bytes(*n) as usize)?;
+            *pack = rest;
+            Some(part.to_vec())
+        };
+        while !pack.is_empty() {
+            let key = String::from_utf8(part(&mut pack)?).ok()?;
+            let (stamp, rest) = pack.split_first_chunk::<{ Stamp::BYTES }>()?;
+            pack = rest;
+            let stamp = Stamp::of_bytes(stamp)?;
+            let answer: Value = serde_json::from_slice(&part(&mut pack)?).ok()?;
+            views.push((key, stamp, answer));
+        }
+        let mut took = 0;
+        for (key, stamp, answer) in views {
+            if !take(&key) {
+                continue;
+            }
+            self.put(key.clone(), stamp, Reads { opaque: true, ..Reads::default() }, answer);
+            if let Some(v) = self.views.get_mut(&key) {
+                v.given = Some(stamp);
+                took += 1;
+            }
+        }
+        Some(took)
+    }
+}
+
 fn oracle() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     cfg!(test) || *ON.get_or_init(|| std::env::var_os("AVENDB_VIEW_ORACLE").is_some())
@@ -134,7 +235,8 @@ fn oracle() -> bool {
 /// Whether a change since `view`'s stamp, to `now`, leaves its answer as it was (`answer_untouched`).
 fn kept(lab: &Lab, me: SignerId, view: &View, now: &Stamp) -> bool {
     let was = &view.stamp;
-    if view.reads.opaque || !was.settled || !now.settled || was.aux != now.aux || was.gone != now.gone { return false; }
+    if view.reads.opaque || !was.settled || !now.settled || was.inputs != now.inputs || was.context != now.context
+        || was.gone != now.gone { return false; }
     let t = lab.touched(me, was.size.0, was.size.1, Some(was.gone));
     if t.all { return false; }
     let reads = &view.reads;
@@ -155,7 +257,7 @@ fn held(lab: &Lab, me: SignerId, key: &str, now: &Stamp) -> Option<(Value, u64)>
     let mut views = lab.query_views(me).lock().unwrap_or_else(|p| p.into_inner());
     views.tick += 1;
     let tick = views.tick;
-    let found = views.views.get(key).and_then(|v| if v.stamp == *now { Some(true) } else if kept(lab, me, v, now) {
+    let found = views.views.get(key).and_then(|v| if v.stamp.current(now) { Some(true) } else if kept(lab, me, v, now) {
         Some(false) } else { None });
     let Some(current) = found else {
         views.stats.worked += 1;
@@ -180,8 +282,10 @@ fn work<E>(lab: &Lab, me: SignerId, key: String, now: Stamp, run: impl Fn(&mut R
     Ok((answer, version))
 }
 
-fn checked<E>(key: &str, answer: &Value, run: impl Fn(&mut Reads) -> Result<Value, E>) {
-    if oracle() && let Ok(fresh) = run(&mut Reads::default()) {
+/// With the oracle on, that `answer` is what `run` works out, where the device worked its items out of every edit
+/// (`now`): before that, `run` reads a derivation half done, and a view kept of the log it holds is the answer.
+fn checked<E>(key: &str, answer: &Value, now: &Stamp, run: impl Fn(&mut Reads) -> Result<Value, E>) {
+    if oracle() && now.settled && let Ok(fresh) = run(&mut Reads::default()) {
         assert_eq!(*answer, fresh, "query view {key} is not the query's answer at its head");
     }
 }
@@ -193,7 +297,7 @@ pub fn read<E>(lab: &Lab, me: SignerId, o: &Map<String, Value>, run: impl Fn(&mu
     let key = serde_json::to_string(o).expect("a query is JSON");
     let now = lab.query_view_stamp(me);
     if let Some((answer, _)) = held(lab, me, &key, &now) {
-        checked(&key, &answer, &run);
+        checked(&key, &answer, &now, &run);
         return Ok(answer);
     }
     work(lab, me, key, now, run).map(|(answer, _)| answer)
@@ -210,7 +314,7 @@ pub fn changed<E>(lab: &Lab, me: SignerId, o: &Map<String, Value>, seen: Option<
     let now = lab.query_view_stamp(me);
     let version = match held(lab, me, &key, &now) {
         Some((answer, version)) => {
-            checked(&key, &answer, &run);
+            checked(&key, &answer, &now, &run);
             Some(version)
         }
         None => work(lab, me, key, now, run).ok().and_then(|(_, version)| version),
@@ -280,6 +384,42 @@ mod tests {
         assert!(stats.current > 0, "{stats:?}");
         let kept: u64 = devices.iter().map(|d| w.lab.query_views(*d).lock().unwrap().stats().kept).sum();
         assert!(kept > 0, "the delta rule kept views: {:?}", devices.map(|d| w.lab.query_views(d).lock().unwrap().stats()));
+    }
+
+    /// A device's shelf keeps the views worked out of every edit (`Warming::queries`), each once: a store made anew from
+    /// it answers from them at once, before it worked its items out again, while it holds the same log and keys; and
+    /// what it answers is the query's.
+    #[test]
+    fn a_restored_device_answers_from_the_views_its_shelf_kept() {
+        for whole in [true, false] {
+            let mut w = crate::cast::world();
+            let (me, vault) = (w.mac_a, w.alice);
+            for i in 0..6 {
+                w.lab.create(me, vault, vault, "note", &[], document(&format!("Note {i}"), "body", me)).unwrap();
+            }
+            let q = json!({"op":"query","vault":vault.to_hex(),"where":{"type":["note"]},"order":[["created","desc"]],"limit":3});
+            let answer = read(&w.lab, me, &q);
+            let held = w.lab.log(me).ids().len();
+            let receipt = w.lab.warming(me, held, Some([1; 40])).expect("what it worked out, to save");
+            assert!(receipt.queries.is_some(), "a save keeps the view");
+            let warm = crate::lab::Warm {
+                keys: receipt.keys.clone().into_iter().collect(),
+                views: receipt.view.clone().into_iter().collect(),
+                shown: receipt.shown.clone().map(Into::into).into_iter().collect(),
+                queries: receipt.queries.clone().map(Into::into).into_iter().collect(),
+            };
+            w.lab.warmed(me, receipt);
+            assert!(w.lab.warming(me, held, Some([1; 40])).is_none_or(|r| r.queries.is_none()), "kept once");
+            if !whole {
+                // a start of more than it does in one go ends behind, its catch-up doing the rest
+                w.lab.set_restore_whole(me, 0);
+            }
+            let backup = w.lab.backup(me);
+            w.lab.restore_warm(me, backup, Some(([1; 40], held)), &warm);
+            let current = w.lab.query_views(me).lock().unwrap().stats().current;
+            assert_eq!(read(&w.lab, me, &q), answer, "whole {whole}");
+            assert_eq!(w.lab.query_views(me).lock().unwrap().stats().current, current + 1, "whole {whole}: from its kept view");
+        }
     }
 
     /// A view stays out of what its device holds beyond the budget: the least recently read goes, and its query answers

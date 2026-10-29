@@ -1,18 +1,28 @@
-// A superseded pending main run may contain changes absent from event.before..HEAD.
-// Narrow release selection only when that exact predecessor completed the entire release graph.
-import { execFileSync } from 'node:child_process';
-export function releasedBase(base, runs) {
- if (!base || !/^[a-f0-9]{40}$/.test(base) || /^0+$/.test(base)) return '';
- return runs.some(run => run.head_sha === base && run.conclusion === 'success' && run.status === 'completed') ? base : '';
+// The last commit release.yml shipped: the newest of main's first parents (before this commit) whose release run
+// completed green. A release that failed, was cancelled or still runs shipped nothing for sure, so its changes are not
+// out yet: the next release compares with the last commit that did ship and ships (and checks) all of them. Nothing in
+// reach, or no history: an empty base, which rebuilds and validates every component.
+const REACH = 30;
+
+export async function releasedBase({ api, repo, head, reach = REACH }) {
+ if (!/^[a-f0-9]{40}$/.test(head ?? '')) return '';
+ const runs = (await api(`repos/${repo}/actions/workflows/release.yml/runs?branch=main&event=push&status=success&per_page=100`)).workflow_runs ?? [];
+ const shipped = new Set(runs.filter(run => run.status === 'completed' && run.conclusion === 'success').map(run => run.head_sha));
+ let sha = head;
+ for (let step = 0; step < reach; step++) {
+  sha = (await api(`repos/${repo}/commits/${sha}`)).parents?.[0]?.sha;
+  if (!sha) return '';
+  if (shipped.has(sha)) return sha;
+ }
+ return '';
 }
+
 if (import.meta.main) {
- let base='';
- try {
-  const before=process.env.CI_BASE;
-  if (before && /^[a-f0-9]{40}$/.test(before)) {
-   const response=JSON.parse(execFileSync('gh',['api',`repos/${process.env.GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?branch=main&event=push&status=success&per_page=100`],{encoding:'utf8',stdio:['ignore','pipe','pipe']}));
-   base=releasedBase(before,response.workflow_runs);
-  }
- } catch { /* Unavailable history or a new workflow: rebuild and validate every component. */ }
+ const { execFileSync } = await import('node:child_process');
+ const api = async path => JSON.parse(execFileSync('gh', ['api', path], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+ let base = '';
+ try { base = await releasedBase({ api, repo: process.env.GITHUB_REPOSITORY, head: process.env.CI_HEAD }); }
+ catch { /* Unavailable history or a new workflow: rebuild and validate every component. */ }
+ console.error(base ? `last commit shipped: ${base}` : `no shipped commit among ${REACH} first parents: validate everything`);
  console.log(base);
 }

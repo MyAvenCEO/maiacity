@@ -8,7 +8,7 @@ use crate::{Peer, Shared, pulls, session};
 use anyhow::{Context as _, Result, ensure};
 use avendb::id::SignerId;
 use avendb::lab::ReplyScope;
-use avendb::policy::LogRevision;
+use avendb::log_head::Head;
 use avendb::sync::LogId;
 use avendb::wire::Request as Asking;
 use bao_tree::blake3;
@@ -65,7 +65,7 @@ struct Stage {
     binding: Binding,
     asking: Asking,
     scope: ReplyScope,
-    revision: LogRevision,
+    revision: Head,
     published: Published,
     tree: Arc<Tree>,
     began: Instant,
@@ -235,7 +235,7 @@ async fn current(
             let _permit = permit;
             shared2.edits.as_ref().is_some_and(|e| {
                 e.held(lab, me) == lab.log(me).edits().len()
-            }) && lab.log(me).revision() == stage2.revision
+            }) && lab.log(me).head() == stage2.revision
         })
         .await;
     ensure!(
@@ -290,7 +290,7 @@ async fn handle_inner(
                         return None;
                     }
                     Some((
-                        lab.log(me).revision(),
+                        lab.log(me).head(),
                         crate::edit_summaries::history(lab.log(me).ids()),
                         lab.own_key(me, "edit range summaries 1", &[]),
                     ))
@@ -345,7 +345,7 @@ async fn handle_inner(
                             let _permit = permit2;
                             let edits = shared2.edits.as_ref()?;
                             if edits.held(lab, me) != lab.log(me).edits().len()
-                                || lab.log(me).revision() != captured_revision
+                                || lab.log(me).head() != captured_revision
                             {
                                 return None;
                             }

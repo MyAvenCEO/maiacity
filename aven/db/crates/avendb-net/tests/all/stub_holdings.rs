@@ -31,7 +31,7 @@ async fn a_log_whose_head_is_a_box_held_back_is_reported_by_its_heads_and_ends_l
     assert!(lazy.read(move |lab: &Lab, me: SignerId| lab.reads(me, welcome)).await, "it reads Welcome");
     let taken = lazy.read(|lab: &Lab, me: SignerId| lab.stubs_taken(me)).await;
     assert!(taken > 0, "its first sync held boxes back");
-    // while their bodies are on their way, the logs they head read lacked, and the report names them by their heads
+    // the report names each log lacked by the heads it lacks; a log lacking only bodies on their way is not lacked
     let synced = lazy.synced().await;
     eprintln!("STUBS taken {taken}; synced {synced}");
     let lacked = &synced["lacked"][0];
@@ -49,6 +49,81 @@ async fn a_log_whose_head_is_a_box_held_back_is_reported_by_its_heads_and_ends_l
     let synced = lazy.synced().await;
     assert_eq!(synced["behind"], 0, "{synced}");
     assert_eq!(synced["lacked"][0]["by_stub"], 0, "{synced}");
+    mac.shutdown().await.expect("it stops");
+    lazy.shutdown().await.expect("it stops");
+}
+
+/// After its first sync held boxes back, the node's own loops bring their bodies, no caller asking again: no log stays
+/// lacked by a box it held back (fresh browser 2026-10-29, 2,517 logs lacked once its stubs stopped counting).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_bodies_of_boxes_held_back_come_by_themselves() {
+    let mut w = world();
+    let _h = handbook(&mut w);
+    let ipad = w.lab.device_of(w.passkey_a, "Alice's iPad");
+    let share = Action::Share(Sharing::Device { vault: w.alice, device: ipad, seal_to: None });
+    w.lab.submit(w.mac_a, &[w.passkey_a, ipad], share).expect("Alice adds an iPad");
+    w.lab.set_online(ipad, false);
+    w.lab.sync_all(7);
+    w.lab.set_online(ipad, true);
+    w.lab.set_lazy_boxes(ipad, true);
+    let mac_d = w.mac_a;
+    let mac = Node::spawn(w.lab.split(mac_d, &[w.passkey_a], [1; 32]), mac_d, Options::local()).await.expect("Alice's Mac");
+    let lazy = Node::spawn(w.lab.split(ipad, &[], [2; 32]), ipad, Options::local()).await.expect("Alice's iPad");
+    lazy.know(mac.addr());
+    mac.know(lazy.addr());
+    let start = std::time::Instant::now();
+    loop {
+        let synced = lazy.synced().await;
+        let stubs = lazy.read(|lab: &Lab, me: SignerId| (lab.stubs_taken(me), lab.stubs(me).len(), lab.lazy_boxes(me))).await;
+        if stubs.0 > 0 && synced["behind"] == 0 && stubs.1 == 0 { break; }
+        assert!(start.elapsed() < std::time::Duration::from_secs(40), "bodies never came: {synced}");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    mac.shutdown().await.expect("it stops");
+    lazy.shutdown().await.expect("it stops");
+}
+
+/// While a fresh device asks for the bodies of the boxes its first sync held back, no log is lacked by them: a box's body
+/// changes nothing it knows (`LazyBoxes.lean` S6), so no read waits on it, and the bodies come all the same. Counting
+/// them lacked once it asked put a fresh browser's 2,517 vault and share logs, and every read of their vaults, behind
+/// for minutes (2026-10-29).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn while_the_bodies_come_no_log_is_lacked_by_them() {
+    let mut w = world();
+    let _h = handbook(&mut w);
+    let ipad = w.lab.device_of(w.passkey_a, "Alice's iPad");
+    let share = Action::Share(Sharing::Device { vault: w.alice, device: ipad, seal_to: None });
+    w.lab.submit(w.mac_a, &[w.passkey_a, ipad], share).expect("Alice adds an iPad");
+    w.lab.set_online(ipad, false);
+    w.lab.sync_all(7);
+    w.lab.set_online(ipad, true);
+    w.lab.set_lazy_boxes(ipad, true);
+    let mac_d = w.mac_a;
+    let mac = Node::spawn(w.lab.split(mac_d, &[w.passkey_a], [1; 32]), mac_d, Options::local()).await.expect("Alice's Mac");
+    // it asks for nothing on its own: the bodies come only when it syncs again
+    let lazy = Node::spawn(w.lab.split(ipad, &[], [2; 32]), ipad, Options { lazy: true, ..Options::local() })
+        .await
+        .expect("Alice's iPad");
+    lazy.know(mac.addr());
+    mac.know(lazy.addr());
+    lazy.sync_with(mac.id()).await.expect("its first sync");
+    let (taken, held, asks) =
+        lazy.read(|lab: &Lab, me: SignerId| (lab.stubs_taken(me), lab.stubs(me).len(), !lab.lazy_boxes(me))).await;
+    assert!(taken > 0 && held > 0, "its first sync held boxes back: {taken} taken, {held} held");
+    assert!(asks, "its first view is in: it asks for the bodies");
+    let synced = lazy.synced().await;
+    assert_eq!(synced["behind"], 0, "no log is lacked by a body on its way: {synced}");
+    assert!(synced["lacked"][0]["bodies"].as_u64().is_some_and(|n| n > 0), "the logs of the bodies it asks for: {synced}");
+    for _ in 0..100 {
+        let _ = lazy.sync_with(mac.id()).await;
+        if lazy.read(|lab: &Lab, me: SignerId| lab.stubs(me).is_empty()).await {
+            break;
+        }
+    }
+    let synced = lazy.synced().await;
+    assert!(lazy.read(|lab: &Lab, me: SignerId| lab.stubs(me).is_empty()).await, "every body came: {synced}");
+    assert_eq!(synced["behind"], 0, "{synced}");
+    assert_eq!(synced["lacked"][0]["bodies"], 0, "{synced}");
     mac.shutdown().await.expect("it stops");
     lazy.shutdown().await.expect("it stops");
 }

@@ -426,18 +426,29 @@ impl<V: Record> Clone for Spilled<V> {
 pub(crate) struct Held<V: Record> {
     mem: HashMap<V::Key, V>,
     spilled: Option<Spilled<V>>,
+    /// The sum of the keys it holds (`key_sum`): the same for the same keys, however they came.
+    sum: [u8; 32],
 }
 
 impl<V: Record> Default for Held<V> {
     fn default() -> Held<V> {
-        Held { mem: HashMap::new(), spilled: None }
+        Held { mem: HashMap::new(), spilled: None, sum: [0; 32] }
     }
 }
 
 impl<V: Record> Clone for Held<V> {
     fn clone(&self) -> Held<V> {
-        Held { mem: self.mem.clone(), spilled: self.spilled.clone() }
+        Held { mem: self.mem.clone(), spilled: self.spilled.clone(), sum: self.sum }
     }
+}
+
+/// Key `k`'s part of a set's sum: what a set of keys sums to is the XOR of its keys' parts, so it is the same for the
+/// same keys in any order, and a key in or out changes it.
+pub(crate) fn key_sum(sum: &mut [u8; 32], k: &[u8; 32]) {
+    let mut part = crate::hash::Hasher::new("avenDB held key sum 1");
+    part.update(k);
+    let part = part.finalize();
+    sum.iter_mut().zip(part).for_each(|(s, p)| *s ^= p);
 }
 
 impl<V: Record> Held<V> {
@@ -456,7 +467,7 @@ impl<V: Record> Held<V> {
         let spilled = self.spilled.as_ref().map(|s| {
             Spilled::new(&s.spill, s.what).unwrap_or_else(|e| panic!("avendb: no new spill of {}: {e}", s.what))
         });
-        Held { mem: HashMap::new(), spilled }
+        Held { mem: HashMap::new(), spilled, sum: [0; 32] }
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -478,6 +489,9 @@ impl<V: Record> Held<V> {
     }
 
     pub(crate) fn insert(&mut self, k: V::Key, v: V) {
+        if !self.contains_key(&k) {
+            key_sum(&mut self.sum, &V::key_bytes(&k));
+        }
         match &mut self.spilled {
             Some(s) => s.insert(k, v),
             None => {
@@ -489,6 +503,7 @@ impl<V: Record> Held<V> {
     /// Lets go of what it holds under `k`, which it returns.
     pub(crate) fn remove(&mut self, k: &V::Key) -> Option<V> {
         let was = self.get(k)?;
+        key_sum(&mut self.sum, &V::key_bytes(k));
         match &mut self.spilled {
             Some(s) => s.remove(k),
             None => {
@@ -496,6 +511,11 @@ impl<V: Record> Held<V> {
             }
         }
         Some(was)
+    }
+
+    /// The sum of the keys it holds (`key_sum`).
+    pub(crate) fn sum(&self) -> [u8; 32] {
+        self.sum
     }
 
     /// Every key it holds, in no order.
@@ -610,6 +630,7 @@ impl Signeds {
         }
         let spilled = self.held.spilled.as_mut().expect("spilled");
         spilled.insert_at(id, &placed.file, placed.at, placed.len, placed.sum);
+        key_sum(&mut self.held.sum, &<Arc<Signed> as Record>::key_bytes(&id));
     }
 
     pub(crate) fn remove(&mut self, id: &EditId) {

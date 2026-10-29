@@ -8,7 +8,7 @@ use avendb::{
     engine::{self, Approval, Refused, Then},
     id::{EditId, EntryId},
     lab::PreparedEntryBase,
-    policy::LogRevision,
+    log_head::Head,
     sealed::FileRoot,
     wire::{Reply, Wire},
 };
@@ -213,7 +213,7 @@ pub(crate) async fn answer(
         .read(move |lab, me| {
             let _preparing = preparing;
             (
-                lab.log(me).revision(),
+                lab.log(me).head(),
                 lab.entry_base_offer_for_root(me, requester, entry, known, compatible_root),
             )
         })
@@ -256,7 +256,7 @@ pub(crate) async fn answer(
     shared
         .read(move |lab, me| {
             let _permit = permit;
-            finish(lab.log(me).revision(), revision, body)
+            finish(lab.log(me).head(), revision, body)
         })
         .await
 }
@@ -266,7 +266,7 @@ fn take_base(lab: &mut avendb::lab::Lab, me: avendb::id::SignerId, snapshot: Edi
     if journal { lab.stage_owner_entry_base(me, snapshot, entry, sealed) } else { lab.adopt_owner_entry_base(me, snapshot, entry, sealed) }
 }
 
-fn finish(current: LogRevision, prepared: LogRevision, body: Vec<u8>) -> Result<Vec<u8>> {
+fn finish(current: Head, prepared: Head, body: Vec<u8>) -> Result<Vec<u8>> {
     ensure!(
         current == prepared,
         "checkpoint authorization changed during preparation"
@@ -522,17 +522,17 @@ mod tests {
         let revoked = w.lab.backup(w.mac_a).signed().to_vec();
         let mut provider = w.lab.split(w.mac_a, &[], [133; 32]);
         provider.restore_from(w.mac_a, before);
-        let revision = provider.log(w.mac_a).revision();
+        let revision = provider.log(w.mac_a).head();
         assert!(
             finish(
-                provider.log(w.mac_a).revision(),
+                provider.log(w.mac_a).head(),
                 revision.clone(),
                 body.clone()
             )
             .is_ok()
         );
         provider.receive_whose_now(w.mac_a, revoked, vec![], false);
-        assert!(finish(provider.log(w.mac_a).revision(), revision, body).is_err());
+        assert!(finish(provider.log(w.mac_a).head(), revision, body).is_err());
         assert!(
             provider
                 .entry_base_offer(w.mac_a, w.phone_a, entry)
@@ -642,7 +642,7 @@ mod tests {
         loop {
             // Hold every ordinary history pull, including the live lane. Checkpoint transport
             // has its own bounded page admission and must independently establish first view.
-            let mut permit = Box::pin(phone.shared.pulls.enter(false, None));
+            let mut permit = Box::pin(phone.shared.pulls.enter(false));
             let Some(permit) = future::poll_once(&mut permit).await else {
                 break;
             };
@@ -658,8 +658,8 @@ mod tests {
         let scope = "cd".repeat(16);
         let ack = phone
             .op(
-                json!({"op":"demand", "scope":scope,"revision":1,"entries":[],
-            "queries":[{"vault":vault.to_hex(), "types":["checkpoint-note"]}]}),
+                json!({"op":"interest", "scope":scope, "revision":1,
+            "wants":[{"tier":"now", "queries":[{"vault":vault.to_hex(), "types":["checkpoint-note"]}]}]}),
             )
             .await
             .unwrap();
@@ -749,8 +749,8 @@ mod tests {
         assert!(!node.shared.restore_view_checkpoint(entry, &scope, 1).await.unwrap(), "pin is not authority");
         node.shared.store.tags().set(tag(entry), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await.unwrap();
         drop(preserved);
-        let ack = node.op(json!({"op":"demand", "scope":scope, "revision":2, "entries":[],
-            "queries":[{"vault":vault.to_hex(),"types":["offline-note"]}]})).await.unwrap();
+        let ack = node.op(json!({"op":"interest", "scope":scope, "revision":2,
+            "wants":[{"tier":"now", "queries":[{"vault":vault.to_hex(),"types":["offline-note"]}]}]})).await.unwrap();
         assert_eq!(ack["ok"]["accepted"], true);
         let query = json!({"op":"query", "schema":"stored", "where":{"type":["offline-note"]}});
         let row = time::timeout(Duration::from_secs(5), async {
@@ -759,7 +759,7 @@ mod tests {
                 if answer["ok"]["rows"][0]["checkpoint"]["partial"] == true { break answer["ok"]["rows"][0].clone(); }
                 time::sleep(Duration::from_millis(5)).await;
             }
-        }).await.expect("offline manifest demand takes the pinned base again");
+        }).await.expect("an offline interest takes the pinned base again");
         assert_eq!(row["record"], expected);
         assert_eq!(row["readOnly"], true);
         assert_eq!(node.read(move |lab, me| lab.retained_base_hint(me, entry)).await, Some(snapshot));
