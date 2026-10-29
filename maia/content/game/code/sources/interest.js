@@ -46,7 +46,10 @@ export function schedule(works) {
 	return out;
 }
 
-/** Only bounded positive type hints cross to the node; never query code or predicates. */
+/**
+ * Only bounded positive type hints cross to the node, each with its window if it has one (`newest`, 1 to
+ * `MOST_ENTRIES`: the node asks only the newest it names, Lean `Window.keep`); never query code or predicates.
+ */
 export function normalizeDiscovery(selectors) {
 	if (!Array.isArray(selectors)) return [];
 	const encoder = new TextEncoder();
@@ -54,7 +57,8 @@ export function normalizeDiscovery(selectors) {
 		if (!query || !Array.isArray(query.types)) return [];
 		if (query.vault !== undefined && (typeof query.vault !== 'string' || !ENTRY.test(query.vault))) return [];
 		const types = [...new Set(query.types.slice(0, 8).filter((t) => typeof t === 'string' && t.length > 0 && t.length <= 64 && encoder.encode(t).length <= 64))];
-		return types.length ? [{ types, ...(query.vault === undefined ? {} : { vault: query.vault }) }] : [];
+		if (query.newest !== undefined && !(Number.isInteger(query.newest) && query.newest >= 1 && query.newest <= MOST_ENTRIES)) return [];
+		return types.length ? [{ types, ...(query.vault === undefined ? {} : { vault: query.vault }), ...(query.newest === undefined ? {} : { newest: query.newest }) }] : [];
 	});
 }
 

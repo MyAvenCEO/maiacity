@@ -71,6 +71,14 @@ test('wants go to the node in tiers, each entry once at its best tier, bounded',
 	expect(many[0].entries.length).toBe(512);
 });
 
+test('a window crosses to the node with its selector, bounded, and is its own selector', () => {
+	const got = normalizeWants([{ tier: 'now', queries: [
+		{ types: ['message'], vault: id(9), newest: 50 }, { types: ['message'], vault: id(9) },
+		{ types: ['message'], newest: 0 }, { types: ['message'], newest: 513 }, { types: ['message'], newest: 2.5 }
+	] }]);
+	expect(got).toEqual([{ tier: 'now', entries: [], queries: [{ types: ['message'], vault: id(9), newest: 50 }, { types: ['message'], vault: id(9) }] }]);
+});
+
 test('one handle: a burst of sets is one op, an unmount clears it, and nothing renews it', async () => {
 	const calls = [];
 	const h = createInterest(async (op) => (calls.push(op), { ok: { accepted: true } }), { scope: 'a'.repeat(32) });
