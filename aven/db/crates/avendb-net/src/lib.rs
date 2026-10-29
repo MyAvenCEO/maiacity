@@ -140,6 +140,7 @@ mod progress;
 mod proofs;
 mod peer_receipts;
 mod receipt_tracker;
+mod path_choice;
 mod pulls;
 mod live;
 mod ranges;
@@ -800,7 +801,9 @@ impl Node {
             .crypto_provider(provider())
             .address_lookup(lookup.clone())
             .transport_config(quic())
-            .add_custom_transport(Arc::new(packets.clone()));
+            .add_custom_transport(Arc::new(packets.clone()))
+            // the path that delivers soonest by what it measured, a relay's or a direct one alike (`path_choice`)
+            .path_selector(Arc::new(path_choice::Measured::new(None)));
         // iroh's own sockets, on every interface, and its port mapping, for a node that reaches out directly; else
         // the one socket it binds, if any
         #[cfg(not(target_arch = "wasm32"))]
@@ -823,7 +826,7 @@ impl Node {
                 .portmapper_config(PortmapperConfig::Disabled)
                 .clear_ip_transports()
                 .add_custom_transport(net.transport(SecretKey::from_bytes(&secret).public()))
-                .path_selector(Arc::new(sim::AsRelay));
+                .path_selector(Arc::new(path_choice::Measured::new(Some(sim::SIM))));
         }
         if let Some(relay) = &opts.relay {
             builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(relay_config(relay, &opts))));
@@ -904,6 +907,7 @@ impl Node {
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
             differed: Mutex::default(),
+            owed: Mutex::default(),
             went: Mutex::default(),
             held: Mutex::default(),
             told: Mutex::default(),
@@ -2024,6 +2028,7 @@ impl Node {
             "gone": gone,
             "recent": s.traffic.recent(),
             "lost": s.traffic.lost_json(),
+            "askings": s.traffic.askings_json(),
             "live": s.traffic.live_json(),
             "trace": s.traffic.trace_json(),
             "carriers": s.transport_control.json(),
@@ -2482,6 +2487,34 @@ struct Differed {
     sample: Vec<Value>,
 }
 
+/// The McEliece keys an asking's pages brought word of: those the peer named, which it holds and hands out (`backed`),
+/// and those its pages' edits name that it didn't name, by their edits' logs (`owed`). A peer sends an edit it took
+/// before the keys it names had come (they come after the edits, `bring_keys`), so a device that took it there would
+/// lack the key for good, as nothing it holds differs from any peer's: such keys are asked of every peer (`ask_owed`).
+#[derive(Default)]
+pub(crate) struct Keys {
+    backed: BTreeSet<BlobId>,
+    owed: BTreeMap<BlobId, BTreeSet<LogId>>,
+}
+
+impl Keys {
+    /// A page's edits and the keys the peer named with them.
+    fn page(&mut self, edits: &[Signed], named: Vec<BlobId>) {
+        self.backed.extend(named);
+        for s in edits {
+            for key in s.edit.blobs().into_iter().filter(|b| !self.backed.contains(b)) {
+                self.owed.entry(key).or_default().extend(log_of(&s.edit, s.edit.id()));
+            }
+        }
+        let backed = &self.backed;
+        self.owed.retain(|b, _| !backed.contains(b));
+    }
+
+    fn is_empty(&self) -> bool {
+        self.backed.is_empty() && self.owed.is_empty()
+    }
+}
+
 struct Shared {
     /// Admission remains open until the one owned shutdown finalizer closes it.
     lifecycle: Arc<lifecycle::Lifecycle>,
@@ -2527,6 +2560,9 @@ struct Shared {
     reach: Mutex<Arc<BTreeMap<SignerId, Reach>>>,
     /// What `differ` worked out last for each device, for when the Lab's turn can't be had, and what it told of it.
     differed: Mutex<HashMap<SignerId, (BTreeSet<LogId>, Differed)>>,
+    /// The McEliece keys its edits name that the peers it took them from didn't hand it, with their edits' logs: asked
+    /// of every peer, each at its next asking, until held (`Keys`, `ask_owed`).
+    owed: Mutex<BTreeMap<BlobId, BTreeSet<LogId>>>,
     /// When each known device's last connection closed (ms since 1970), as `Node::synced` keeps counting it a while,
     /// reconnecting (`counted`).
     went: Mutex<HashMap<SignerId, u64>>,
@@ -2991,7 +3027,7 @@ impl Shared {
         background: bool,
         catch_up: Option<&pulls::CatchUp>,
         expected: Option<SignerId>,
-        keys: Option<&mut BTreeSet<BlobId>>,
+        keys: Option<&mut Keys>,
         yielding: Option<&Yield>,
     ) -> Result<usize> {
         let _activity = self.admit()?;
@@ -3005,7 +3041,7 @@ impl Shared {
         // an asking of some logs among more to come (`ask_differing`) leaves the last bringing up to date to its caller
         let must = !matches!(scope, Scope::Logs(_));
         let device = peer.device;
-        let mut named = BTreeSet::new();
+        let mut named = Keys::default();
         let mut asked = self.pages(peer, scope, &mut job, admission, background, keys.unwrap_or(&mut named), yielding).await;
         if asked.is_ok() {
             if expected.is_some() {
@@ -3051,7 +3087,7 @@ impl Shared {
         job: &mut Running,
         admission: Arc<pulls::Admission>,
         background: bool,
-        keys: &mut BTreeSet<BlobId>,
+        keys: &mut Keys,
         yielding: Option<&Yield>,
     ) -> Result<usize> {
         // Only the authority-first background scheduler uses the optional payload pass. A refusal, unsupported
@@ -3406,7 +3442,7 @@ impl Shared {
             // the McEliece keys its edits name come after the last page, not with each: a device needs one only to seal
             // to its signer, each is a megabyte, and a page of a few edits waited ~10 s on them through a relay
             // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
-            keys.extend(blobs);
+            keys.page(&edits, blobs);
             let logged: Vec<(EditId, Option<LogId>)> = edits.iter().map(|s| (s.edit.id(), log_of(&s.edit, s.edit.id()))).collect();
             let ids: Vec<EditId> = logged.iter().map(|(id, _)| *id).collect();
             // a page that came whole is taken on a task of its own, so that it is kept even where the asking stops
@@ -3595,15 +3631,30 @@ impl Shared {
 
     /// The McEliece keys a pull's pages named that this device lacks, from `device` at `endpoint` in one request, once
     /// every page of the asking is taken: an asking of many logs (`ask_differing`) brings them after its last log, so
-    /// no log waits on another's keys (a new human's six keys, ~6 MB, held the next log ~40 s on a lossy link).
-    async fn bring_keys(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, keys: BTreeSet<BlobId>, background: bool) -> Result<()> {
+    /// no log waits on another's keys (a new human's six keys, ~6 MB, held the next log ~40 s on a lossy link). The keys
+    /// its edits name that it didn't name, still lacking then, are owed (`Keys`): every other peer is asked for them.
+    async fn bring_keys(self: &Arc<Self>, endpoint: EndpointId, device: SignerId, keys: Keys, background: bool) -> Result<()> {
         if keys.is_empty() {
             return Ok(());
         }
+        let Keys { backed, owed } = keys;
         let fetching = Instant::now();
-        let lacking =
-            move |lab: &Lab, me| -> Vec<BlobId> { keys.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect() };
-        let lacking = self.read(lacking).await;
+        let lacking = move |lab: &Lab, me| -> (Vec<BlobId>, BTreeMap<BlobId, BTreeSet<LogId>>) {
+            let lacks = |b: &BlobId| lab.blob(me, *b).is_none();
+            (backed.into_iter().filter(lacks).collect(), owed.into_iter().filter(|(b, _)| lacks(b)).collect())
+        };
+        let (lacking, owed) = self.read(lacking).await;
+        if !owed.is_empty() {
+            {
+                let mut all = self.owed.lock().expect("owed");
+                for (key, logs) in owed {
+                    all.entry(key).or_default().extend(logs);
+                }
+            }
+            let others: Vec<EndpointId> =
+                self.peers.lock().expect("peers").values().filter(|p| p.endpoint != endpoint).map(|p| p.endpoint).collect();
+            others.into_iter().for_each(|other| self.ask_soon(other));
+        }
         if lacking.is_empty() {
             return Ok(());
         }
@@ -3621,6 +3672,37 @@ impl Shared {
             }
         }
         Ok(())
+    }
+
+    /// The owed keys (`Shared::owed`) this device still lacks, asked of `endpoint`: an asking of their edits' logs, whose
+    /// request wants them (`Lab::request`), so the peer names those of them it holds and hands them out. What it doesn't
+    /// hand stays owed, for the next peer's asking; it owes nothing more itself, so no two peers that lack a key ask each
+    /// other for it on and on.
+    async fn ask_owed(self: &Arc<Self>, endpoint: EndpointId, device: SignerId) -> Result<()> {
+        let owed = self.owed.lock().expect("owed").clone();
+        if owed.is_empty() {
+            return Ok(());
+        }
+        let (held, logs) = self
+            .read(move |lab: &Lab, me| {
+                let (held, lacking): (Vec<_>, Vec<_>) = owed.into_iter().partition(|(b, _)| lab.blob(me, *b).is_some());
+                let held: BTreeSet<BlobId> = held.into_iter().map(|(b, _)| b).collect();
+                (held, lacking.into_iter().flat_map(|(_, logs)| logs).collect::<BTreeSet<LogId>>())
+            })
+            .await;
+        let lacked = {
+            let mut owed = self.owed.lock().expect("owed");
+            owed.retain(|b, _| !held.contains(b));
+            !owed.is_empty()
+        };
+        if !lacked {
+            return Ok(());
+        }
+        let mut keys = Keys::default();
+        let scope = if logs.is_empty() { Scope::All } else { Scope::Logs(logs) };
+        self.pull_expected(endpoint, scope, true, None, None, Some(&mut keys), None).await?;
+        keys.owed.clear();
+        self.bring_keys(endpoint, device, keys, true).await
     }
 
     /// Pure signature checks own their page, lifecycle ticket and caller context but never the Lab
@@ -4208,7 +4290,7 @@ impl Shared {
                 }
             });
         }
-        let (mut new, mut keys, mut stage) = (0, BTreeSet::new(), AskingStage::Manifests);
+        let (mut new, mut keys, mut stage) = (0, Keys::default(), AskingStage::Manifests);
         // a new device's views ask by selectors before they know an entry: the first asking waits a moment for what
         // peers name for them, Maia City's manifests first, else it would take every log at once and the views theirs
         // only at its end; a catch-up of a few logs asks for them at once
@@ -4225,17 +4307,36 @@ impl Shared {
                 };
                 let mut priority = bootstrap_dependencies::key_logs(&active, &key_waits);
                 priority.extend(active);
-                let logs = next_asking(&mut left, &wanted, &priority, &manifests, &mut stage);
+                let (logs, asked_as) = next_asking_as(&mut left, &wanted, &priority, &manifests, &mut stage);
                 wanted.retain(|l| !logs.contains(l));
-                logs
+                (logs, asked_as)
             };
+            let (logs, asked_as) = logs;
             if logs.is_empty() {
                 break Ok(new);
             }
             // an asking of every log left yields to what the open views come to want now while it runs (`Yield`):
             // a view opened, or peers named the entries a new device's view asks for by its selectors
-            let yielding = left.is_empty().then(|| Yield::new(logs.clone(), self.views_want()));
-            match self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, None, Some(&mut keys), yielding.as_ref()).await {
+            let wants = self.views_want();
+            let yielding = left.is_empty().then(|| Yield::new(logs.clone(), wants.clone()));
+            let (began, at) = (Instant::now(), jobs::now_ms());
+            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, None, Some(&mut keys), yielding.as_ref()).await;
+            // which logs it asked, and which of them the views want, before every other: whether a page's room came first
+            let wanted_first: Vec<&LogId> = logs.iter().filter(|l| wants.contains(l)).chain(logs.iter().filter(|l| !wants.contains(l))).take(8).collect();
+            self.traffic.asking(traffic::Asking {
+                device: peer.device,
+                at,
+                stage: asked_as,
+                logs: logs.len(),
+                first: wanted_first.into_iter().map(traffic::log_name).collect(),
+                wanted: logs.iter().filter(|l| wants.contains(l)).count(),
+                wants: wants.len(),
+                ms: began.elapsed().as_millis() as u64,
+                new: *got.as_ref().unwrap_or(&0) as u64,
+                yielded: yielding.as_ref().is_some_and(Yield::yielded),
+                failed: got.is_err(),
+            });
+            match got {
                 Ok(got) => new += got,
                 Err(e) => break Err(e),
             }
@@ -4266,10 +4367,12 @@ impl Shared {
         // the keys every log named, after the last log (`bring_keys`); after a failed asking only while its connection
         // lives, so no fetch waits out its timeouts on a dead one
         if asked.is_err() && self.live(endpoint).is_none() {
-            keys.clear();
+            keys = Keys::default();
         }
         let brought = self.bring_keys(endpoint, peer.device, keys, true).await;
-        let asked = asked.and_then(|new| brought.map(|()| new));
+        // and the keys this device's edits name that no peer it took them from handed it, asked of this one too
+        let owed = if asked.is_ok() { self.ask_owed(endpoint, peer.device).await } else { Ok(()) };
+        let asked = asked.and_then(|new| brought.and(owed).map(|()| new));
         // what every asking brought, brought up to date at last, however it ended
         self.catch_up_paced_class(true, lab_schedule::Class::Background).await;
         asked
@@ -4656,6 +4759,7 @@ enum AskingStage {
     Rest,
 }
 
+
 /// How long a connection's first asking waits for what peers name for the views' selectors (`Shared::first_finds`),
 /// at most: a find's round trip over the relay, the device's keys of the vaults found on the way.
 const FIRST_FINDS: Duration = Duration::from_millis(1500);
@@ -4669,14 +4773,21 @@ const FIRST_FINDS_LOGS: usize = 64;
 /// every vault's and share's log not asked yet, which say who may do what and are few, at most `VIEW_LOGS`; else, and
 /// then, every log left, in one asking. None once `left` is empty. Not every audience's log: those hold the keys and
 /// their wraps, most of a vault's edits (2026-10-27, with them in the first asking an iPhone's views never opened).
+#[cfg(test)]
 fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> BTreeSet<LogId> {
+    next_asking_as(left, wanted, active, manifests, stage).0
+}
+
+/// `next_asking`, and what it asked: `manifests`, `views` or `rest` (`traffic::Asking`).
+fn next_asking_as(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[LogId], manifests: &BTreeSet<LogId>, stage: &mut AskingStage) -> (BTreeSet<LogId>, &'static str) {
     let rules = |left: &BTreeSet<LogId>| left.iter().filter(|l| matches!(l, LogId::Vault(_) | LogId::Share(_))).copied().collect::<Vec<_>>();
-    let mut next = BTreeSet::new();
+    let (mut next, mut asked) = (BTreeSet::new(), "rest");
     if *stage == AskingStage::Manifests {
         *stage = AskingStage::Views;
         let first: Vec<LogId> = manifests.iter().filter(|l| left.contains(l)).copied().collect();
         if !first.is_empty() {
             next = first.into_iter().chain(rules(left)).take(VIEW_LOGS).collect();
+            asked = "manifests";
         }
     }
     if next.is_empty() && *stage == AskingStage::Views {
@@ -4684,6 +4795,7 @@ fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[L
         let viewed: Vec<LogId> = active.iter().chain(wanted).filter(|l| left.contains(l)).copied().collect();
         if !viewed.is_empty() {
             next = viewed.into_iter().chain(rules(left)).take(VIEW_LOGS).collect();
+            asked = "views";
         }
     }
     if next.is_empty() {
@@ -4691,7 +4803,7 @@ fn next_asking(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, active: &[L
         next = std::mem::take(left);
     }
     left.retain(|l| !next.contains(l));
-    next
+    (next, asked)
 }
 
 #[cfg(test)]
@@ -5023,3 +5135,4 @@ mod catch_up_budget_tests {
         assert_eq!(catch_up_budget(CATCH_UP_SLICE * 4, Duration::ZERO), CATCH_UP_SLICE * 4);
     }
 }
+

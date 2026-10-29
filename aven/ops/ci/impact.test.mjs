@@ -60,15 +60,31 @@ test('Bun package and container versions follow the pinned toolchain', () => {
 
 
 import { releasedBase } from './release-base.mjs';
-test('a queued, superseded, failed or unknown predecessor forces a full release', () => {
- const base='a'.repeat(40);
- expect(releasedBase(base,[{head_sha:base,status:'completed',conclusion:'success'}])).toBe(base);
- for(const run of [null,{head_sha:'b'.repeat(40),status:'completed',conclusion:'success'},{head_sha:base,status:'in_progress',conclusion:null},{head_sha:base,status:'completed',conclusion:'failure'},{head_sha:base,status:'completed',conclusion:'cancelled'}]) {
-  expect(releasedBase(base,run?[run]:[])).toBe('');
- }
- expect(releasedBase('0'.repeat(40),[])).toBe('');
+test('a release compares with the newest first parent that shipped: a red, cancelled or pending one shipped nothing', async () => {
+ const sha = c => c.repeat(40);
+ // main: a <- b <- c <- d (first parents); d is the release now running
+ const parents = { [sha('d')]: sha('c'), [sha('c')]: sha('b'), [sha('b')]: sha('a') };
+ const at = runs => async path => path.includes('/actions/workflows/release.yml/runs') ? { workflow_runs: runs }
+  : { parents: parents[path.split('/').pop()] ? [{ sha: parents[path.split('/').pop()] }, { sha: sha('9') }] : [] };
+ const ran = (c, conclusion, status = 'completed') => ({ head_sha: sha(c), status, conclusion });
+ const base = runs => releasedBase({ api: at(runs), repo: 'o/r', head: sha('d') });
+ expect(await base([ran('c', 'success'), ran('b', 'success')])).toBe(sha('c'));
+ // c's release failed (a red check, a red deploy): its changes are not out, so d ships them with its own
+ expect(await base([ran('c', 'failure'), ran('b', 'success'), ran('a', 'success')])).toBe(sha('b'));
+ for (const c of [ran('c', 'cancelled'), ran('c', null, 'in_progress')]) expect(await base([c, ran('a', 'success')])).toBe(sha('a'));
+ // a second parent (a merged branch's head) never counts as shipped main
+ expect(await base([ran('9', 'success')])).toBe('');
+ expect(await base([])).toBe('');
+ expect(await releasedBase({ api: at([ran('c', 'success')]), repo: 'o/r', head: sha('d'), reach: 0 })).toBe('');
+ expect(await releasedBase({ api: at([]), repo: 'o/r', head: '' })).toBe('');
 });
 
+import { verdictRefs } from './plan.mjs';
+test("a release's CI counts the verdicts of its merged pull request's ref, of this repository's pull requests alone", () => {
+ expect(verdictRefs('refs/heads/main', 'refs/pull/1379/merge')).toEqual(['refs/heads/main', 'refs/pull/1379/merge']);
+ expect(verdictRefs('refs/pull/7/merge', '')).toEqual(['refs/pull/7/merge', 'refs/heads/main']);
+ for (const odd of ['refs/heads/x', 'refs/pull/1/head', 'refs/pull/1/merge\nrefs/heads/y', undefined]) expect(verdictRefs('refs/heads/main', odd)).toEqual(['refs/heads/main']);
+});
 
 test('native tests and build helpers validate without publishing unchanged binaries', () => {
  for (const file of ['aven/db/crates/avendb/tests/all/properties.rs','aven/db/crates/avendb-device/tests/agent.rs','aven/db/scripts/test-browser.sh']) {
@@ -152,9 +168,10 @@ function github({ parents = ['p'], tree = 't', headTree = 't', pulls, compare = 
 }
 const run = (path, conclusion = 'success', extra = {}) => ({ id: 1, path: `.github/workflows/${path}`, head_sha: 'h', head_repository: { full_name: 'o/r' }, status: 'completed', conclusion, run_number: 1, run_attempt: 1, ...extra });
 const ask = (gh, base = 'p') => reusable({ api: gh.api, repo: 'o/r', sha: 'm', base, wait: 0, sleep: async () => {} });
-const none = { ci: false, run: '' };
+// a run that cannot stand for main's still names the merged pull request's ref: its verdicts count for main's own run
+const none = { ci: false, run: '', ref: 'refs/pull/7/merge' };
 test('main reuses CI only from a green run on the very files it holds, and names that run',async()=>{
- expect(await ask(github({ runs: [run('ci.yml', 'success', { id: 42 })] }))).toEqual({ ci: true, run: '42' });
+ expect(await ask(github({ runs: [run('ci.yml', 'success', { id: 42 })] }))).toEqual({ ci: true, run: '42', ref: 'refs/pull/7/merge' });
  expect(await ask(github({ runs: [run('ci.yml', 'failure')] }))).toEqual(none);
  // another workflow's green run is no evidence
  expect(await ask(github({ runs: [run('ops.yml')] }))).toEqual(none);
@@ -174,18 +191,30 @@ test('different files, a stale head, another base or no single pull request run 
  expect(await ask(github({ runs: all }), '')).toEqual(none);
  expect(await ask(github({ parents: ['p', 'q'], runs: all }))).toEqual(none);
  expect(await ask(github({ parents: ['p', 'h', 'q'], runs: all }))).toEqual(none);
- expect(await ask(github({ pulls: [], runs: all }))).toEqual(none);
- expect(await ask(github({ pulls: [{ number: 7, merged_at: 'x', merge_commit_sha: 'm', head: { sha: 'h', repo: { full_name: 'x/r' } } }], runs: all }))).toEqual(none);
+ expect(await ask(github({ pulls: [], runs: all }))).toEqual({ ...none, ref: '' });
+ expect(await ask(github({ pulls: [{ number: 7, merged_at: 'x', merge_commit_sha: 'm', head: { sha: 'h', repo: { full_name: 'x/r' } } }], runs: all }))).toEqual({ ...none, ref: '' });
 });
 test('a run still going on the same files is waited for, never taken as passed',async()=>{
  let n = 0;
  const runs = () => [run('ci.yml', n++ < 2 ? null : 'success', { status: n <= 2 ? 'in_progress' : 'completed' })];
  const gh = github({ runs });
- expect(await reusable({ api: gh.api, repo: 'o/r', sha: 'm', base: 'p', wait: 60000, sleep: async () => {} })).toEqual({ ci: true, run: '1' });
+ expect(await reusable({ api: gh.api, repo: 'o/r', sha: 'm', base: 'p', wait: 60000, sleep: async () => {} })).toEqual({ ci: true, run: '1', ref: 'refs/pull/7/merge' });
  expect(await ask(github({ runs: [run('ci.yml', null, { status: 'in_progress' })] }))).toEqual(none);
 });
 test('a suite marked off is never selected, not even by its own files or a full run', () => {
  expect(suites.find(s=>s.name==='physics').off).toBeTruthy();
  for (const run of [selected(['maia/content/sandbox-7/shed.ts']), selected(null), selected([], 'all')]) expect(run).not.toContain('physics');
  expect(inventory().physics.length).toBeGreaterThan(0);
+});
+
+test('every file the page device is built from ships a new site and API image', () => {
+ // #1377's release skipped the site: its fix was in avendb's Rust, which the page device is built from
+ for (const f of ['aven/db/crates/avendb/src/lab.rs', 'aven/db/crates/avendb-net/src/sync.rs', 'aven/db/crates/avendb-browser/src/lib.rs',
+  'aven/db/vendor/iroh/src/lib.rs', 'aven/db/spec/AvenDB/StoredReadings.lean', 'aven/db/scripts/build-web.sh']) {
+  expect([f, impact([f])]).toMatchObject([f, { site: true, api: true }]);
+ }
+ // its tests build no device; the server's crate is not in it
+ for (const f of ['aven/db/crates/avendb/tests/all/live.rs', 'aven/db/crates/avendb-server/src/main.rs']) {
+  expect([f, impact([f]).site]).toEqual([f, false]);
+ }
 });

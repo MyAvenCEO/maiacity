@@ -107,15 +107,19 @@ async fn a_live_edit_reaches_an_authorized_peer_while_its_background_pages_are_s
         time::timeout(Duration::from_secs(20), async {
             loop {
                 updates.borrow_and_update();
-                if let Some(body) = node.read(move |lab, me| lab.item(me, entry)
-                    .and_then(|item| item.read(avendb::lens::View::document_v1()))).await {
-                    break (began.elapsed(), body);
+                // in the same turn of the Lab as the body is read: whether the witness it rests on was replayed then
+                let read = node.read(move |lab, me| {
+                    let body = lab.item(me, entry).and_then(|item| item.read(avendb::lens::View::document_v1()));
+                    body.map(|body| (body, lab.state(me).entry(backlog_first).is_some()))
+                }).await;
+                if let Some((body, witnessed)) = read {
+                    break (began.elapsed(), body, witnessed);
                 }
                 updates.changed().await.expect("live view notifications remain open");
             }
         }).await.expect("a reactive consumer reads the live edit without polling")
     };
-    let ((local_readable, sender_body), (remote_readable, receiver_body)) =
+    let ((local_readable, sender_body, _), (remote_readable, receiver_body, witnessed)) =
         tokio::join!(observe(&mac, local_updates), observe(&phone, remote_updates));
     assert_eq!(receiver_body, sender_body, "the exact live body is decrypted");
     // The observations are upper bounds that include task scheduling and targeted
@@ -130,8 +134,10 @@ async fn a_live_edit_reaches_an_authorized_peer_while_its_background_pages_are_s
         "durable_ms": null, "remote_accept_ms": null,
         "durability": "in-memory fixture; no disk fence measured"
     }));
-    assert!(phone.read(move |lab, me| lab.item(me, backlog_first).is_some()).await,
-        "the first creation is the required audience-key witness");
+    // the live body is never readable before the witness it rests on is held and replayed, checked in the turn it
+    // was first read; the witness's own entry is shown by the catch-up's steps after the live edit's
+    // (`Lab::show_items`, new writes first), so whether that is shown yet is a race, not this rule
+    assert!(witnessed, "the first creation is the required audience-key witness");
     let unrelated = backlog[1..].to_vec();
     assert!(phone.read(move |lab, me| unrelated.iter().all(|entry| lab.item(me, *entry).is_none())).await,
         "unrelated history remains behind the blocked background lane");

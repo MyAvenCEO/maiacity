@@ -555,6 +555,17 @@ fn checked_refs(signed: &[&Signed]) -> Vec<bool> {
 /// of any.
 /// The count `refresh` adds to for how its replay went (`policy::replay_on_why`): where it replayed every edit again,
 /// why.
+/// The count a whole replay adds to for how far back the first edit it took since sorts (`Replay::back`): a replay
+/// that could rewind that far would step on instead.
+fn back_counted(back: usize) -> &'static str {
+    match back {
+        0..=64 => "replay whole: back 64 at most",
+        65..=1024 => "replay whole: back 1k at most",
+        1025..=8192 => "replay whole: back 8k at most",
+        _ => "replay whole: back more than 8k",
+    }
+}
+
 fn why_counted(why: Why) -> &'static str {
     match why {
         Why::Nothing => "replay: nothing new",
@@ -3407,7 +3418,12 @@ impl Lab {
             let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
             store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
             let was = std::mem::replace(&mut store.replay, replay(&[]));
+            let back = (store.replayed > 0 && store.replayed < store.log.edits().len())
+                .then(|| was.back(&store.log.edits()[..store.replayed], &store.log.edits()[store.replayed..]));
             let (replayed, why) = replay_on_why(was, store.log.edits(), store.replayed);
+            if let (Why::Whole(_), Some(back)) = (why, back) {
+                store.perf.count(back_counted(back), 1);
+            }
             // a whole replay a step at a time under way is of fewer edits than this one: it goes
             store.replaying = None;
             store.replay = replayed;
@@ -3612,6 +3628,7 @@ impl Lab {
                 let fresh = &store.log.edits()[store.replayed..to];
                 store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
                 let was = std::mem::replace(&mut store.replay, replay(&[]));
+                let back = (store.replayed > 0).then(|| was.back(&store.log.edits()[..store.replayed], fresh));
                 match replay_on_or(was, &store.log.edits()[..to], store.replayed) {
                     Ok((replayed, why)) => {
                         store.replay = replayed;
@@ -3625,6 +3642,9 @@ impl Lab {
                     // the replay it held, as it was, stays what it shows until the whole one, of every edit it holds
                     // (not of the slice: one whole replay, not one a slice), ends
                     Err((Some(was), why)) => {
+                        if let Some(back) = back {
+                            store.perf.count(back_counted(back), 1);
+                        }
                         store.replay = was;
                         store.reshow |= store.log.edits()[store.replayed..].iter().any(Edit::is_removal);
                         let begun = Perf::start();

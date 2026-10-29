@@ -271,6 +271,36 @@ theorem one_fetch_of_a_key (asked held : List Nat) (k : Nat) (first : k ∈ fetc
   intro _ _
   exact first
 
+/-! ## A key its sender couldn't hand is asked of every peer (sync build 3)
+
+A peer sends on edits it took before their keys came (those come after its pages), and names only the keys it holds:
+a device that took the edits there lacked their keys for good, as no log of its differed from any peer's, so no peer
+was asked again (`mceliece_keys_go_over_iroh_blobs_only_within_reach`, red on main for #1378 and #1379: 3 of 7 keys).
+The keys a page's edits name that its peer didn't are now owed; each peer's next asking asks for those still lacking
+(its request wants them), until held. An asking for owed keys owes nothing more, so two peers that both lack a key
+don't ask each other for it on and on. Rust: lib.rs `Keys`, `bring_keys`, `ask_owed`. -/
+
+/-- The keys a page's edits name that its peer didn't name: owed. -/
+def owedOf (named backed : List Nat) : List Nat := named.filter (fun k => !backed.contains k)
+
+/-- What an asking of any peer asks of the owed keys: those not held yet. -/
+def askOwed (owed held : List Nat) : List Nat := owed.filter (fun k => !held.contains k)
+
+/-- A key an edit names and its sender didn't hand is asked of the next peer, whichever it is, while it is lacking. -/
+theorem owed_key_asked_of_every_peer (named backed held : List Nat) (k : Nat)
+    (hn : k ∈ named) (hb : k ∉ backed) (hh : k ∉ held) : k ∈ askOwed (owedOf named backed) held := by
+  simp [askOwed, owedOf, List.mem_filter, hn, hb, hh]
+
+/-- A key held is asked of no peer again. -/
+theorem held_key_never_asked (owed held : List Nat) (k : Nat) (h : k ∈ held) : k ∉ askOwed owed held := by
+  simp [askOwed, List.mem_filter, h]
+
+/-- What an asking brings only shrinks what is asked next: the owed keys never grow by asking for them. -/
+theorem asking_owed_never_grows (owed held got : List Nat) (k : Nat) (h : k ∈ askOwed owed (held ++ got)) :
+    k ∈ askOwed owed held := by
+  simp only [askOwed, List.mem_filter, List.contains_append, Bool.not_or, Bool.and_eq_true] at *
+  exact ⟨h.1, h.2.1⟩
+
 /-! ## Small answers first on a connection (batch 5)
 
 A peer answers each request on its own stream of one connection. A catch-up's page (up to 4 MiB) and a live pull's few

@@ -13,19 +13,19 @@ name: CI
 #                 and the dependency audits
 #   probes        every way out of the asset box, a view and the math host, tried in Chromium and then in WebKit (theOS's
 #                 engine), and avenDB's page in both
-#   rust-archive  avenDB's Rust tests built once into one nextest archive (W4), and the doc tests
-#   rust          the archive's shards, each on a runner of its own, building nothing
+#   rust          avenDB's Rust tests in shards, each building its own crates' tests on a runner of its own
 #   proofs        the Lean spec, avenDB's SSOT (it proves, and the committed vectors are the model's), and the protocol
 #                 models (Verifpal) with their negative controls
 #   browser       avenDB's device as WebAssembly in a real Chromium, against a real relay and server
 #   images        the release's images (the peer's, the API's), built from this tree and pushed by digest from this
 #                 repository's branches: release.yml promotes them when main's files are this run's (B2)
-#   macos         on one Mac: theOS compiles and keeps its native contracts, and Lean runs locked down as theOS runs it
+#   mac           theOS compiles on a Mac and keeps its native contracts
+#   lean          Lean runs locked down as theOS runs it, on a Mac of its own
 #   site-same     the site builds byte for byte the same on macOS as the js job built it on Linux (what a Mac's witness of
 #                 a release rests on)
 #
 # A job folds the checks that share its runner, each a step the plan turns on: 28 jobs became 15 (Samuel, 2026-10-28:
-# more runners than GitHub's 20 at a time only queue).
+# more runners than GitHub's 20 at a time only queue), except where folding made a long job wait on another.
 #
 # Drafts run nothing (CLAUDE.md: one CI run per goal, on its PR once ready). release.yml calls it on main's commit when
 # the merged PR's run is not for main's very files. Weekly it runs everything; daily it runs the dependency audits,
@@ -51,6 +51,10 @@ on:
     inputs:
       base:
         description: The commit to compare with (release.yml's last released commit); none checks everything
+        type: string
+        default: ''
+      verdicts:
+        description: A merged pull request's ref (release.yml) whose verdicts count too, its jobs having run on the same files
         type: string
         default: ''
 
@@ -90,7 +94,6 @@ jobs:
       key_browser: ${{ steps.plan.outputs.key_browser }}
       run_images: ${{ steps.plan.outputs.run_images }}
       images: ${{ steps.plan.outputs.images }}
-      run_macos: ${{ steps.plan.outputs.run_macos }}
       run_mac: ${{ steps.plan.outputs.run_mac }}
       key_mac: ${{ steps.plan.outputs.key_mac }}
       run_lean: ${{ steps.plan.outputs.run_lean }}
@@ -113,6 +116,7 @@ jobs:
           SCHEDULE: ${{ github.event.schedule }}
           FULL: ${{ inputs.full || false }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || inputs.base }}
+          CI_VERDICTS_REF: ${{ inputs.verdicts }}
         run: |
           mode=changed
           [ "$FULL" != true ] || mode=full
@@ -322,15 +326,19 @@ jobs:
           node "$RUNNER_TEMP/avendb-opfs/node_modules/playwright/cli.js" install webkit
           AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" bun aven/db/scripts/test-avendb-store.mjs --browser webkit
 
-  # One build of every avenDB test program (W4: one program a crate), into one nextest archive the shards run from. Our
-  # own crates at opt-level 1, not dev's 2 (the dependencies keep theirs): they build in about half the time and run as
-  # fast. mold links them in a fraction of ld's time.
-  rust-archive:
+  # Each shard builds its own crates' tests on a runner of its own, beside the others, with a cache of its own build
+  # (rust-tests.mjs). Our own crates at opt-level 1, not dev's 2 (the dependencies keep theirs): they build in about
+  # half the time and run as fast. mold links them in a fraction of ld's time.
+  rust:
     needs: plan
     if: needs.plan.outputs.run_rust == 'true'
-    name: avenDB tests, built once
+    name: avenDB tests (${{ matrix.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.rust) }}
     env:
       CARGO_PROFILE_TEST_OPT_LEVEL: 1
     steps:
@@ -339,7 +347,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: . -> target
-          key: rust-tests
+          key: rust-tests-${{ matrix.shard }}
           cache-on-failure: true
       - uses: taiki-e/install-action@v2
         with:
@@ -348,42 +356,9 @@ jobs:
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
-      - run: bun aven/ops/ci/rust-tests.mjs archive "$RUNNER_TEMP/rust-tests.tar.zst"
-      - uses: actions/upload-artifact@v7.0.2
-        with:
-          name: rust-tests
-          path: ${{ runner.temp }}/rust-tests.tar.zst
-          retention-days: 1
-          compression-level: 0
-      # nextest runs no doc tests; they build here, after the shards have their archive
-      - run: bun aven/ops/ci/rust-tests.mjs doc
-
-  rust:
-    needs: [plan, rust-archive]
-    if: needs.plan.outputs.run_rust == 'true'
-    name: avenDB tests (${{ matrix.name }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(needs.plan.outputs.rust) }}
-    steps:
-      # the sources the tests read their fixtures from, as the archive's paths are remapped onto them
-      - uses: actions/checkout@v7.0.1
-      - uses: oven-sh/setup-bun@v2.2.0
-        with:
-          bun-version-file: .bun-version
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: rust-tests
-          path: ${{ runner.temp }}
       - env:
           SHARD: ${{ matrix.shard }}
-        run: bun aven/ops/ci/rust-tests.mjs run "$SHARD" "$RUNNER_TEMP/rust-tests.tar.zst"
+        run: bun aven/ops/ci/rust-tests.mjs run "$SHARD"
       - run: echo passed > .pass
       - uses: actions/cache/save@v6.1.0
         with:
@@ -592,14 +567,11 @@ jobs:
 
   # theOS (Tauri) compiles on a Mac runner, so a change learns here whether its Rust builds there, not by queueing behind
   # Samuel's Mac. A check only: it signs and ships nothing; theOS itself is built on the Mac. The Secure Enclave bridge
-  # needs macOS 26's SDK: where the runner's is older, build.rs builds without it and says so. Real Lean in theOS
-  # (avendb-device's lean.rs, N3), on the same Mac: the device gets the pinned Lean release, checks its SHA-256 and
-  # BLAKE3, compiles the spec's objective module and checks objectives, and its sandbox stops a file that got past the
-  # input wall from reading the person's files, writing or starting anything. Only when it changed: Lean is 570 MB.
-  macos:
+  # needs macOS 26's SDK: where the runner's is older, build.rs builds without it and says so.
+  mac:
     needs: plan
-    if: needs.plan.outputs.run_macos == 'true'
-    name: theOS and Lean on macOS
+    if: needs.plan.outputs.run_mac == 'true'
+    name: theOS on macOS
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -612,11 +584,9 @@ jobs:
           cache-on-failure: true
       # tauri::generate_context! reads the site's build folder (tauri.conf.json frontendDist): it needs to be there, not
       # what it holds
-      - if: needs.plan.outputs.run_mac == 'true'
-        run: mkdir -p build && echo '<!doctype html>' > build/index.html
+      - run: mkdir -p build && echo '<!doctype html>' > build/index.html
       - name: theOS compiles
         id: theos
-        if: needs.plan.outputs.run_mac == 'true'
         run: cargo check --locked -p maiacity-studio
       - name: Media reference contract
         id: media
@@ -639,10 +609,27 @@ jobs:
         with:
           path: .pass
           key: ${{ needs.plan.outputs.key_mac }}
-      # Lean runs whatever theOS's checks did, so one run names every failure
+
+  # Real Lean in theOS (avendb-device's lean.rs, N3), on a Mac of its own beside theOS's (on one Mac the two ran one
+  # after another, 7.5 + 10.8 min): the device gets the pinned Lean release, checks its SHA-256 and BLAKE3, compiles
+  # the spec's objective module and checks objectives, and its sandbox stops a file that got past the input wall from
+  # reading the person's files, writing or starting anything. Only when it changed: Lean is 570 MB.
+  lean:
+    needs: plan
+    if: needs.plan.outputs.run_lean == 'true'
+    name: Lean locked down on macOS
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: . -> target
+          key: lean
+          cache-on-failure: true
       - name: Lean got, checked and locked down
         id: lean
-        if: ${{ !cancelled() && needs.plan.outputs.run_lean == 'true' }}
         run: cargo test --locked -p avendb-device --lib lean::tests::lean_on_a_mac -- --ignored --nocapture
       # what the sandbox denied Lean, by operation and path, and why Lean stopped (its crash report: the reason and the
       # stopped thread's frames): Lean's own folder and the runner's, nothing of a person's
@@ -712,7 +699,7 @@ jobs:
 
   required:
     name: CI required
-    needs: [plan, wasm, js, probes, rust-archive, rust, proofs, browser, images, macos, site-same]
+    needs: [plan, wasm, js, probes, rust, proofs, browser, images, mac, lean, site-same]
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -724,6 +711,7 @@ jobs:
         with:
           sparse-checkout: |
             aven/ops/ci
+            aven/ops/devx/wasm.mjs
             .bun-version
           sparse-checkout-cone-mode: false
       - uses: oven-sh/setup-bun@v2.2.0

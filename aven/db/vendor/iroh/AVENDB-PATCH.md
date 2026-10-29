@@ -30,3 +30,14 @@ The reproducible tests are `avendb-server/tests/transport_activation.rs` and
 
 When upgrading iroh, remove this patch only after the existing-connection regression
 passes against the replacement. Keep the original connection alive during that test.
+
+## Path selection looks again every second
+
+Local source change: `src/socket/remote_map/remote_state.rs`, the actor loop: a `PATH_CHECK_INTERVAL` (1 s) tick
+runs `select_path` while the remote has connections. Upstream selects only when a path is established or abandoned,
+so a selected path whose round trip grew or that stopped delivering stayed selected until its idle timeout, however
+fast another path beside it was. The choice itself is avenDB's `PathSelector` (`avendb-net/src/path_choice.rs`,
+`PathChoice.lean`): the cheapest direct path whose cost (round trip over the share delivered) is at most twice
+the relay's and 5 ms more, else the relay; an unmeasured or stalled path never. Only
+the client closes redundant IP paths, as before; relay and custom paths stay open as backups, so a tick never closes
+a path it may choose later.

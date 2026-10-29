@@ -2,7 +2,7 @@ name: Release
 
 # Every push to main ships what it changed (stage 7 of the CI refactor), checked once and built once:
 #
-#   base     what changed since the last commit this workflow released (release-base.mjs, impact.mjs), and whether the
+#   base     what changed since the last commit this workflow shipped (release-base.mjs, impact.mjs), and whether the
 #            merged pull request's CI run passed on byte for byte main's files (reuse.mjs): then that run is the check,
 #            and what it built is what ships
 #   ci       otherwise ci.yml on main's commit itself
@@ -63,6 +63,8 @@ jobs:
       dev_cache: ${{ steps.base.outputs.dev_cache }}
       backups: ${{ steps.base.outputs.backups }}
       reuse_ci: ${{ steps.base.outputs.reuse_ci }}
+      # the merged pull request's ref, whose verdicts the release's own CI counts when it runs (plan.mjs)
+      verdicts: ${{ steps.base.outputs.verdicts_ref }}
       # the run whose artifacts ship: the merged pull request's, or this one's
       run: ${{ steps.base.outputs.reuse_ci == 'true' && steps.base.outputs.reuse_run || github.run_id }}
     steps:
@@ -73,7 +75,6 @@ jobs:
       - id: base
         env:
           GH_TOKEN: ${{ github.token }}
-          CI_BASE: ${{ github.event.before }}
           CI_HEAD: ${{ github.sha }}
         run: |
           CI_BASE=$(bun aven/ops/ci/release-base.mjs)
@@ -102,6 +103,7 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       base: ${{ needs.base.outputs.base }}
+      verdicts: ${{ needs.base.outputs.verdicts }}
 
   device:
     needs: [base, ci]
