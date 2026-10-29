@@ -894,7 +894,7 @@ pub(super) fn review(
         (a, lines)
     };
     if !lab.is_dry() {
-        lab.dry(|lab| answer(lab, me, actor, &a, &lines, verdict, &text))?;
+        lab.dry(me, |lab| answer(lab, me, actor, &a, &lines, verdict, &text))?;
     }
     answer(lab, me, actor, &a, &lines, verdict, &text)
 }

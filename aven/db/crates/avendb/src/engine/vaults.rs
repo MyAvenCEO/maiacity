@@ -478,7 +478,7 @@ pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Res
     let select = parent.and_then(|p| lab.slice(me, p)).map_or(Selector::All, |x| x.select.clone());
     let (name, ops) = ("Public".to_string(), vec![Op::Read]);
     let public = NewShare { over, who: Who::Everyone, name, select, ops, parent, issuer: actor, keep: None };
-    let share = verdict_of(lab.dry(|lab| issued(lab, me, public)));
+    let share = verdict_of(lab.dry(me, |lab| issued(lab, me, public)));
     let rows: Vec<Value> = rows
         .into_iter()
         .map(|(mut row, revoke)| {

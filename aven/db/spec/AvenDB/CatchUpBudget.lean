@@ -37,6 +37,11 @@ What a device takes in the middle of a catch-up (a page, the keys a pull brought
 and brings it one step on, not the whole of it (`take`, `taken_le`; `Lab::receive_now_prepared`). Until 2026-10-28 it
 brought the whole catch-up in one turn: 1.8 min on an iPhone, whose page's worker runs the Lab and answered no peer
 meanwhile, so every peer's asking of it waited out its connection.
+
+An ask in the middle of a catch-up (`may`, `shares`, run dry) needs every edit the device holds replayed: it steps the
+device's own replay on to them in place, from the rung or mark before the first it lacks, so the asks after it and the
+catch-up find it run (`asks_cost_once`); until 2026-10-29 each replayed them on a copy it threw away
+(`asks_now_le_before`).
 -/
 
 namespace AvenDB.CatchUpBudget
@@ -154,6 +159,31 @@ def take (k : Nat) (t more : Todo) : Todo := step k (t.add more)
 /-- What a device takes mid catch-up costs its turn one step's work at most, however much is left, and leaves the rest
 to the catch-up's steps, which end (`ends_within`). -/
 theorem taken_le (k : Nat) (t more : Todo) : (t.add more).left - (take k t more).left ≤ k := work_le k (t.add more)
+
+/-- What `n` asks in a row cost a device in the middle of a catch-up whose replay has `left` edits not run yet, as
+until 2026-10-29: each replayed them on a copy of the whole state it threw away (`Lab::latest`), so `n * left`, and a
+fresh browser's `may` asks held its worker 283.8 s in 12 turns (fresh9). -/
+def asksBefore (left n : Nat) : Nat := n * left
+
+/-- What they cost now: the first steps the device's own replay on to every edit it holds, in place (`Lab::dry`,
+`step_replay`), and those after it find it run. -/
+def asksNow (left : Nat) : Nat → Nat
+  | 0 => 0
+  | _ + 1 => left
+
+/-- However many asks come, the replay they need is run once. -/
+theorem asks_cost_once (left n : Nat) : asksNow left n ≤ left := by
+  cases n with
+  | zero => simp [asksNow]
+  | succ n => simp [asksNow]
+
+/-- And never more than each on a copy of its own. -/
+theorem asks_now_le_before (left n : Nat) : asksNow left n ≤ asksBefore left n := by
+  cases n with
+  | zero => simp [asksNow, asksBefore]
+  | succ n =>
+    simp only [asksNow, asksBefore, Nat.succ_mul]
+    omega
 
 namespace Examples
 
