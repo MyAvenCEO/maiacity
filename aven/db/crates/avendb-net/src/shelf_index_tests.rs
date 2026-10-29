@@ -464,3 +464,38 @@ async fn the_macs_folder_shelf_holds_an_index_across_a_restart() {
     owner.shutdown().await.unwrap();
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// An index of a device's own log (`policy::Log`): stamped with its one head, it opens current, catches up by the
+/// edits appended after its slot, and builds again once the log is rewritten at its stamp (a withdrawal).
+#[tokio::test]
+async fn an_index_of_a_device_log_steps_on_from_its_head() {
+    use avendb::id::{EditId, SignerId};
+    use avendb::policy::{Action, Kind, Principal};
+    let genesis = |log: &avendb::policy::Log, nonce: u64| {
+        let signer = SignerId::from_u64(1);
+        log.draft(signer, &[], Action::Genesis {
+            kind: Kind::Human, owners: vec![Principal::Signer(signer)], threshold: 1, root: Some(signer), nonce,
+            seal_to: vec![],
+        })
+    };
+    let by_id = |id: &EditId| vec![(id.0.to_vec(), Some(vec![1]))];
+    let mem = Memory::new();
+    let mut log = avendb::policy::Log::new();
+    for n in 0..3 {
+        log.receive([genesis(&log, n)]);
+    }
+    let (_, opened) = ShelfIndex::open(mem.shelf(), "device", 1 << 20, &log, by_id).await.unwrap();
+    assert_eq!(opened, Opened::Rebuilt, "no slot yet");
+    let (_, opened) = ShelfIndex::open(mem.shelf(), "device", 1 << 20, &log, by_id).await.unwrap();
+    assert_eq!(opened, Opened::Current);
+    let first = log.ids()[0];
+    log.receive([genesis(&log, 3), genesis(&log, 4)]);
+    let (ix, opened) = ShelfIndex::open(mem.shelf(), "device", 1 << 20, &log, by_id).await.unwrap();
+    assert_eq!(opened, Opened::CaughtUp(2));
+    assert_eq!(ix.stamp(), Stamp::from(log.head()));
+    log.let_go(&[first].into());
+    let (ix, opened) = ShelfIndex::open(mem.shelf(), "device", 1 << 20, &log, by_id).await.unwrap();
+    assert_eq!(opened, Opened::Rebuilt, "rewritten at its stamp");
+    assert_eq!(ix.get(&first.0).await.unwrap(), None);
+    assert_eq!(ix.stamp(), Stamp::from(log.head()));
+}

@@ -37,7 +37,6 @@
 	import Share from './Share.svelte';
 	import { server } from './server.js';
 	import { Here, here, session } from './session.svelte.js';
-	import { share, sync } from './sync.svelte.js';
 	import {
 		acting,
 		actsWords,
@@ -434,8 +433,9 @@
 	 * how the vault is governed, and never while the device still works on the last ask of it: a device busy with a
 	 * big vault answers slowly, and asking again on a timer only handed it the same dry runs again. An answer to what
 	 * changed meanwhile is asked again at once. A Remove doesn't wait for its answer (Samuel's Mac 2026-10-21: every
-	 * one on "checking" for good), only for a refusal. Removals aren't asked while the device syncs (`behind`): they
-	 * wait until it has caught up (`waits`). Nor are they on the person's own vault, where every Remove shows anyway
+	 * one on "checking" for good), only for a refusal. Nor is how far this device has synced asked here: the device
+	 * itself decides, as it makes the removal, whether it must hold more first (avendb-net `removal_waits`), and says
+	 * why. Removals aren't asked on the person's own vault, where every Remove shows anyway
 	 * and the device checks each as it makes it: a dry run of each, over the whole vault, kept Samuel's Mac at full CPU
 	 * (2026-10-21, every call answered 30-50 s late).
 	 */
@@ -454,8 +454,6 @@
 	let again = $state(0);
 	const MAY_AGAIN = 15000;
 	const MAY_LOST = 180000;
-	/** Whether this device still brings what its peers hold, as the app's sync pill reads it (./sync.svelte.js). */
-	const behind = $derived(sync.known && sync.behind > 0);
 	$effect(() => {
 		void again;
 		/** @type {Record<string, object>} */
@@ -465,7 +463,7 @@
 		if (own && backs != null) asks.backUp = { op: 'back_up', on: !backs };
 		const other = devices.find((d) => !d.me) ?? devices[0];
 		if (own && other) asks.copy = { op: 'copy', device: other.id, full: other.copy !== 'full' };
-		if (!behind && !own) {
+		if (!own) {
 			for (const o of owners)
 				asks[ownerKey(o)] = { op: 'revoke', vault, owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer } };
 			for (const d of devices) if (!d.me) asks[`device ${d.id}`] = { op: 'revoke', vault, device: d.id };
@@ -516,14 +514,13 @@
 	/** Whether the device would make `what` (`can`). @param {string} what */
 	const lets = (what) => allowed(can[what]);
 	/**
-	 * Why a Remove of `what` can't be, or waits, in words: as the device refuses it, or while this device still syncs;
-	 * '' where it may be pressed. One the device hasn't answered yet may: removing checks again that it has caught up
-	 * (`waits`), and the device checks the removal itself as it makes it. @param {string} what
+	 * Why a Remove of `what` can't be, in words, as the device refuses it; '' where it may be pressed. One the device
+	 * hasn't answered yet may: the device checks the removal itself as it makes it, what it must hold first included,
+	 * and the page never greys it out on how far it has synced. @param {string} what
 	 */
 	const whyNot = (what) => {
 		const verdict = /** @type {any} */ (can[what]);
 		if (verdict !== undefined && !allowed(verdict)) return verdict.why ?? verdict.refused ?? 'refused';
-		if (behind) return `Removing waits until ${here} has synced what your other devices hold: ${Math.floor(100 * share())}% so far`;
 		return '';
 	};
 
@@ -556,32 +553,17 @@
 
 	/**
 	 * Revokes share `id`, acting for vault `as`; a standing grant ("all my vaults, now and later") ends on every vault
-	 * it reached, and no vault founded later follows it. Like a removal, it waits until this device has caught up
-	 * (`waits`): it drops every edit resting on the share that never reached this device.
+	 * it reached, and no vault founded later follows it. Like a removal, the device makes it only once it holds what
+	 * it must (avendb-net `removal_waits`): it drops every edit resting on the share that never reached this device.
 	 * @param {string | null} id @param {string} as @param {boolean} [standing]
 	 */
 	async function revokeShare(id, as, standing = false) {
-		const wait = await waits();
-		if (wait) return void (session.error = `The share stays for now: ${wait}. Revoke it once it has caught up.`);
 		return api.run('Revoking', { op: 'revoke', share: id, as, ...(standing ? { standing: true } : {}) });
 	}
 	/** Revokes share row `r`: a keep share as its issuer, any other as the acting vault. @param {ShareRow} r */
 	const revoke = (r) =>
 		revokeShare(r.id, r.kind === 'keep' ? (r.issuer ?? world.mine) : actor, r.kind === 'grant' && isStanding(r.name));
 
-	/**
-	 * Why removing a key or a device waits, or '' where it needn't: a removal drops every edit resting on that key
-	 * which the device removing it doesn't hold, so this device first holds all its peers hold (the `synced` op):
-	 * reaching at least one, avenDB's server among them, and behind none. As the app's sync pill read it last, where
-	 * that was in `SYNC_FRESH`; else asked, as the device answers every ask in turn.
-	 */
-	async function waits() {
-		const s = sync.known && Date.now() - sync.at < SYNC_FRESH ? sync : await read(api, { op: 'synced' }, null);
-		if (!s) return `${Here} can’t tell yet how far it has synced`;
-		if (!s.peers) return `${Here} reaches neither avenDB’s server nor another device of yours right now`;
-		if (s.behind > 0) return `${Here} is still syncing ${count(s.behind, 'log')} from your other devices`;
-		return '';
-	}
 	/**
 	 * Where each Remove is, by its name in `can`: waiting for the person's yes, checking that this device has synced,
 	 * removing (`busy`), or how it ended, removed or why not, until the page goes (Samuel 2026-10-21: "zero UI feedback
@@ -590,11 +572,9 @@
 	let removing = $state(/** @type {Record<string, { busy: boolean, text: string, bad?: boolean }>} */ ({}));
 	/** whether a Remove is under way: the others wait for it */
 	const removingAny = $derived(Object.values(removing).some((r) => r.busy));
-	/** how old a reading of the sync pill `waits` takes as it is (ms) */
-	const SYNC_FRESH = 30000;
 	/**
-	 * Removes owner or device `name` from vault `of` by op `op`, once the person says yes and this device has caught
-	 * up (`waits`): its peers refuse it from then on. The vault's owners approve it. The question comes first and at
+	 * Removes owner or device `name` from vault `of` by op `op`, once the person says yes: its peers refuse it from
+	 * then on. The device refuses it, and says why, while it lacks what the removal would drop (`removal_waits`). The vault's owners approve it. The question comes first and at
 	 * once, the page's own, before anything the device answers (Samuel 2026-10-21: "those popups should be instant, we
 	 * are local first"); each step shows by its Remove, `what` (`removing`).
 	 * @param {string} what @param {string} name @param {string} of @param {object} op
@@ -615,12 +595,6 @@
 			if (!(await sure(sureOf))) {
 				console.warn(`avenDB: Settings removing ${what}: not confirmed`);
 				return stop();
-			}
-			step(true, `Checking that ${here} has synced`);
-			const wait = await waits();
-			if (wait) {
-				session.error = `${name} stays for now: ${wait}. Remove it once it has caught up.`;
-				return step(false, `Not removed: ${wait}`, true);
 			}
 			step(true, 'Removing');
 			const done = await api.run(`Removing ${name}`, op);

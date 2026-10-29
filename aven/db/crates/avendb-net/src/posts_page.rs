@@ -56,7 +56,7 @@ pub(crate) async fn page(
         let stamp = ix.stamp().await;
         let plan = {
             let lab = locked();
-            if !ix.of_prefix(stamp, lab.log(me)) {
+            if !lab.log(me).of_log(stamp.into()) {
                 return Ok(None);
             }
             let Some(named) = lab.shared_touched(me, stamp.at as usize) else { return Ok(None) };

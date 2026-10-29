@@ -306,7 +306,7 @@
 	const vaultName = (id) => (id ? nameOf(byId.get(id)) : 'a vault');
 
 	/** Who made edit `e`: its device by name, the vault it acted for and the owners it acted through. @param {EditView} e */
-	const who = (e) => actingWords(world, e.author, e.signer ?? e.actor, e.via);
+	const who = (e) => actingWords(world, e.author, e.signer, e.via);
 
 	/**
 	 * What edit `e` did where a note says it in its own words: renamed it, its text as it was. Elsewhere avenDB's

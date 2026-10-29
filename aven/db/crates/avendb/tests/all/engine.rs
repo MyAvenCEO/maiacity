@@ -924,8 +924,8 @@ fn the_rules_judge_each_op_by_the_caps_of_the_vault_it_acts_for() {
     let history = ok(run(&mut w, mac, json!({ "op": "history", "entry": door })));
     let last = history["edits"].as_array().unwrap().last().unwrap().clone();
     let doing = json!([{ "set": ["status"], "value": "doing" }]);
-    assert_eq!((last["actor"].clone(), last["changes"].clone()), (json!(bob), doing));
-    assert_eq!(last["signer"], last["actor"], "the signer, under its old name too for one release");
+    assert_eq!((last["signer"].clone(), last["changes"].clone()), (json!(bob), doing));
+    assert!(last.get("actor").is_none(), "the old name of the signer is gone");
 }
 
 #[test]

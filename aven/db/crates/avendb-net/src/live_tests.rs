@@ -814,6 +814,59 @@ async fn the_world_paints_from_local_entries_while_catching_up() {
     mac.shutdown().await.unwrap();
 }
 
+/// A read is behind only on the logs that may change what it shows (`engine::footprint`, `Lab::may_change`), never
+/// on its whole vault (Goal 8 D1): with the Mac's edits to the coop's 24 docs held back from the phone, a query of its
+/// notes and a read of one note are current, while a query of its docs is behind on exactly those docs' logs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_read_is_behind_only_on_the_logs_it_may_show() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let mac = Node::spawn(w.lab.split(sender, &[], [67; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(w.lab.split(receiver, &[], [68; 32]), receiver, Options::local()).await.unwrap();
+    let (docs, note) = mac.act(move |lab, me| {
+        let docs: Vec<EntryId> = (0..pulls::LIVE_LOGS + 8).map(|i| lab.create(me, coop, coop, "doc", &[],
+            document(&format!("Doc {i}"), "here", me)).unwrap()).collect();
+        (docs, lab.create(me, coop, coop, "note", &[], document("Note", "here", me)).unwrap())
+    }).await;
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.sync_with(mac.id()).await.unwrap();
+    wait_for(async || {
+        let all: Vec<EntryId> = docs.iter().copied().chain([note]).collect();
+        phone.read(move |lab, me| all.iter().all(|e| lab.item(me, *e).is_some())).await
+            && phone.shared.differ(sender).await.is_empty()
+    }).await;
+
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    let edited = docs.clone();
+    mac.act(move |lab, me| for d in &edited {
+        lab.edit(me, coop, *d, |item| item.set_text(2, "newer")).unwrap();
+    }).await;
+    // more logs at once than a live change carries, so they wait for the held pages
+    wait_for(async || phone.shared.differ(sender).await.len() == docs.len()).await;
+    let vault = coop.to_hex();
+    let state = async |op: serde_json::Value| {
+        let answer = phone.op(op.clone()).await.unwrap();
+        (answer["fresh"]["state"].as_str().unwrap_or_default().to_string(), answer["fresh"]["logs"].as_u64(), answer)
+    };
+    let (notes, _, answer) = state(serde_json::json!({"op": "query", "vault": vault, "where": {"type": ["note"]}})).await;
+    assert_eq!(notes, "current", "the docs' logs can't change a query of notes: {answer}");
+    let (one, _, answer) = state(serde_json::json!({"op": "get", "entry": note.to_hex()})).await;
+    assert_eq!(one, "current", "nor a read of one note: {answer}");
+    let (of_docs, logs, answer) = state(serde_json::json!({"op": "query", "vault": vault, "where": {"type": ["doc"]}})).await;
+    assert_eq!(of_docs, "behind", "{answer}");
+    assert_eq!(logs, Some(docs.len() as u64), "behind on the docs' logs alone: {answer}");
+    drop(stalled);
+    phone.shutdown().await.unwrap();
+    mac.shutdown().await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore]
 async fn probe_world_cost_holding_many() {

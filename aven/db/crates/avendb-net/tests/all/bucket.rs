@@ -11,14 +11,14 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use avendb_testkit::until;
 
 use anyhow::anyhow;
 use avendb::cast::*;
 use avendb::id::SignerId;
-use avendb::lab::Lab;
+use avendb::lab::{Lab, Spill};
 use avendb::sync::LogId;
 use avendb::wire::FileHold;
 use avendb_net::bucket::{self, Bucket, Fut, Sealed};
@@ -71,6 +71,30 @@ impl Bucket for Flaky {
 
     fn delete<'a>(&'a self, name: &'a str) -> Fut<'a, ()> {
         self.folder.delete(name)
+    }
+}
+
+/// A bucket in a folder that counts the parts of blobs it is asked for.
+struct Counting(bucket::Folder, Arc<AtomicU64>);
+
+impl Bucket for Counting {
+    fn put<'a>(&'a self, name: &'a str, bytes: Vec<u8>) -> Fut<'a, ()> {
+        self.0.put(name, bytes)
+    }
+
+    fn get<'a>(&'a self, name: &'a str) -> Fut<'a, Option<Vec<u8>>> {
+        if name.contains("/blobs/") {
+            self.1.fetch_add(1, Ordering::Relaxed);
+        }
+        self.0.get(name)
+    }
+
+    fn list<'a>(&'a self, prefix: &'a str) -> Fut<'a, Vec<String>> {
+        self.0.list(prefix)
+    }
+
+    fn delete<'a>(&'a self, name: &'a str) -> Fut<'a, ()> {
+        self.0.delete(name)
     }
 }
 
@@ -157,6 +181,64 @@ async fn a_node_whose_folder_is_lost_starts_again_from_its_bucket_alone() {
     }
     let journal = format!("g{}/journal/", FLOOR + 1);
     assert!(after.keys().any(|n| n.starts_with(&journal)), "and the new shelf keeps what the Mac takes");
+}
+
+/// The always-on peer starting again with its folder (Goal 8 row 12): its spill reads the edits of its head's packs
+/// where its folder's cache holds them, copying none of them, and the cache holds them pinned, so that a second start
+/// fetches no part of a blob from the bucket at all. Its McEliece keys, each a blob of its own, it still copies into
+/// its spill as it starts (row 19 keeps the spill across starts).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_spilled_node_reads_its_cached_packs_in_place() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (mac_a, passkey_a) = (w.mac_a, w.passkey_a);
+    let (cache, objects) = (Folder::new("pinned-cache"), Folder::new("pinned-bucket"));
+    let gets = Arc::new(AtomicU64::new(0));
+    let sealed = Sealed::new(Counting(bucket::Folder::new(objects.path()), gets.clone()), &SEAL);
+    let open = async |lab: Lab| {
+        let mut lab = lab;
+        let spill = Spill::new(cache.path().join("spill"), 64 << 10).expect("its spill");
+        lab.spill(mac_a, &spill).expect("spilled");
+        Node::spawn(lab, mac_a, on(&sealed, cache.path()).await.expect("its shelf")).await.expect("a node")
+    };
+    // the bytes of edits its spill holds in its own file: all it holds there but its keys, copied in whole
+    let spilled = async |node: &Node| {
+        let held = node.read(|lab, me| lab.perf(me)["held"].clone()).await;
+        let (spilled, keys) = (held["memory"]["spilled"].as_u64(), held["blob_bytes"].as_u64());
+        spilled.expect("its spill's bytes") - keys.expect("its keys' bytes")
+    };
+    let mac = open(w.lab.split(mac_a, &[passkey_a], [1; 32])).await;
+    // past a head of the shelf's, whose packs hold most of them: those of the journal after it it copies
+    let mut docs = vec![];
+    for n in 0..80 {
+        let write = move |lab: &mut Lab, me| lab.create(me, coop, coop, "doc", &[], document(&format!("Note {n}"), WELCOME_TEXT, me));
+        docs.push(mac.act(write).await.expect("Alice's Mac writes a note"));
+    }
+    until("the bucket holds all the Mac holds", || async { !mac.behind().await }).await;
+    let heads = objects.path().join(format!("g{FLOOR}/heads"));
+    until("a head of the shelf's", || async { fs::read_dir(&heads).is_ok_and(|mut d| d.next().is_some()) }).await;
+    let held = mac.read(|lab, me| lab.size(me)).await;
+    let copied = spilled(&mac).await;
+    mac.shutdown().await.expect("it stops");
+    drop(mac);
+
+    let again = async || {
+        let mut w = world();
+        handbook_ready(&mut w);
+        let mac = open(w.lab.split(mac_a, &[passkey_a], [1; 32])).await;
+        assert_eq!(mac.read(|lab, me| lab.size(me)).await, held, "every edit and every key came back");
+        let last = *docs.last().expect("a note");
+        assert_eq!(mac.read(move |lab, me| text(lab, me, last, 2)).await.as_deref(), Some(WELCOME_TEXT), "it shows the notes");
+        let now = spilled(&mac).await;
+        mac.shutdown().await.expect("it stops");
+        now
+    };
+    let first = again().await;
+    assert!(first * 2 < copied, "its head's edits read in place, not copied: {first} bytes of edits spilled, {copied} before");
+    gets.store(0, Ordering::Relaxed);
+    let second = again().await;
+    assert!(second * 2 < copied, "{second} bytes of edits spilled, {copied} before");
+    assert_eq!(gets.load(Ordering::Relaxed), 0, "its packs pinned in its folder's cache, no part fetched from the bucket");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

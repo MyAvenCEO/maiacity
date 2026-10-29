@@ -19,6 +19,13 @@
 //! bytes as they opened from the bucket, and a part is read from the cache only once its bytes there hash to it, the
 //! first time a server reads it after it starts. A part whose bytes don't (`reads`, `spoiled`) is fetched again.
 //!
+//! A finished blob is a file of the shelf's (`shelf::BlobFiles`, `PackFile`): its cached parts, held open, read in
+//! place by a spill (`avendb::lab::Placed`) as a folder's blobs are, and pinned in the cache while it is held, so that
+//! the cache never lets go of a part a spill reads, and never fetches it from the bucket again (Goal 8 row 12). A
+//! node's spill holds the packs of its head this way: what it holds of them it never copies, and its start takes them
+//! from its folder, not the bucket. Pinned parts count toward the cache's bytes, and may hold more than its budget:
+//! they are what the node holds.
+//!
 //! One server writes a bucket. It puts a named object only where the bucket holds none, and the bucket keeps every
 //! version of an object for 7 days (Object Lock). Nothing deletes an object but the files a node lets go of
 //! (`Call::Drop`), a blob's outboard first, then its parts.
@@ -266,14 +273,21 @@ struct BucketShelf {
     fetching: Mutex<HashMap<(Hash, u64), Arc<tokio::sync::Mutex<()>>>>,
 }
 
-/// The parts in a node's folder's cache, each by its blob and number, with its bytes and when it was read last, and
-/// those whose bytes it hashed since the server started.
+impl fmt::Debug for BucketShelf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BucketShelf").field("root", &self.root).field("cache", &self.cache).finish_non_exhaustive()
+    }
+}
+
+/// The parts in a node's folder's cache, each by its blob and number, with its bytes and when it was read last, those
+/// whose bytes it hashed since the server started, and those a file of the shelf's holds (`PackFile`), with how many.
 struct Cached {
     parts: HashMap<(Hash, u64), (u64, u64)>,
     bytes: u64,
     budget: u64,
     reads: u64,
     checked: HashSet<(Hash, u64)>,
+    pinned: HashMap<(Hash, u64), usize>,
 }
 
 impl Cached {
@@ -283,11 +297,13 @@ impl Cached {
         self.parts.get_mut(&part).map(|(_, read)| *read = reads).is_some()
     }
 
-    /// Makes room for `bytes` more: the parts read least lately go, which it returns, for their files to go.
+    /// Makes room for `bytes` more: the parts read least lately go, which it returns, for their files to go; a pinned
+    /// part never does.
     fn room(&mut self, bytes: u64) -> Vec<(Hash, u64)> {
         let mut gone = Vec::new();
         while self.bytes + bytes > self.budget {
-            let Some(oldest) = self.parts.iter().min_by_key(|(_, (_, read))| *read).map(|(p, _)| *p) else { break };
+            let free = self.parts.iter().filter(|(p, _)| !self.pinned.contains_key(p));
+            let Some(oldest) = free.min_by_key(|(_, (_, read))| *read).map(|(p, _)| *p) else { break };
             self.bytes -= self.parts.remove(&oldest).map_or(0, |(b, _)| b);
             self.checked.remove(&oldest);
             gone.push(oldest);
@@ -299,6 +315,19 @@ impl Cached {
         self.checked.remove(&part);
         if let Some((bytes, _)) = self.parts.remove(&part) {
             self.bytes -= bytes;
+        }
+    }
+
+    fn pin(&mut self, part: (Hash, u64)) {
+        *self.pinned.entry(part).or_default() += 1;
+    }
+
+    fn unpin(&mut self, part: (Hash, u64)) {
+        if let Some(n) = self.pinned.get_mut(&part) {
+            *n -= 1;
+            if *n == 0 {
+                self.pinned.remove(&part);
+            }
         }
     }
 }
@@ -331,7 +360,7 @@ pub(crate) fn shelf_at(bucket: Sealed, root: String, local: &Path, budget: u64) 
     }
     fs::create_dir_all(&staging)?;
     fs::create_dir_all(&cache)?;
-    let mut cached = Cached { parts: HashMap::new(), bytes: 0, budget, reads: 0, checked: HashSet::new() };
+    let mut cached = Cached { parts: HashMap::new(), bytes: 0, budget, reads: 0, checked: HashSet::new(), pinned: HashMap::new() };
     for blob in fs::read_dir(&cache)? {
         let blob = blob?;
         let Some(hash) = blob.file_name().to_str().and_then(hash_of) else { continue };
@@ -357,6 +386,7 @@ pub(crate) fn shelf_at(bucket: Sealed, root: String, local: &Path, budget: u64) 
         uncache(&on.cached_path(part));
     }
     let (shelf, mut calls) = Shelf::new();
+    let shelf = shelf.with_blob_files(Arc::new(Packs(on.clone())));
     tokio::spawn(async move {
         while let Some(call) = calls.recv().await {
             let on = on.clone();
@@ -364,6 +394,88 @@ pub(crate) fn shelf_at(bucket: Sealed, root: String, local: &Path, budget: u64) 
         }
     });
     Ok(shelf)
+}
+
+/// A bucket shelf's finished blobs, each the file its cached parts are (`PackFile`).
+#[derive(Debug)]
+struct Packs(Arc<BucketShelf>);
+
+impl shelf::BlobFiles for Packs {
+    fn open(&self, hash: Hash) -> n0_future::boxed::BoxFuture<Option<Arc<dyn avendb::pages::Space>>> {
+        let on = self.0.clone();
+        Box::pin(async move {
+            match PackFile::open(on, hash).await {
+                Ok(file) => Some(Arc::new(file) as Arc<dyn avendb::pages::Space>),
+                Err(e) => {
+                    tracing::warn!("avendb: blob {hash} isn't a file of the cache, so a spill copies it: {e:#}");
+                    None
+                }
+            }
+        })
+    }
+}
+
+/// A finished blob of a bucket shelf as one file: its parts in the cache, each checked against its hash once and held
+/// open, and pinned there while it is held (`Cached::pin`). A finished blob is never written again, and a part held
+/// open reads what it held even after the cache lets go of its name.
+#[derive(Debug)]
+struct PackFile {
+    on: Arc<BucketShelf>,
+    hash: Hash,
+    parts: Vec<fs::File>,
+    size: u64,
+}
+
+impl PackFile {
+    async fn open(on: Arc<BucketShelf>, hash: Hash) -> Result<PackFile> {
+        let size = on.size(hash).await?;
+        // pinned first, so that the cache lets go of none of its parts while it makes room for the others
+        let mut file = PackFile { on: on.clone(), hash, parts: Vec::new(), size };
+        for n in 0..parts(size) {
+            on.cached.lock().expect("cached").pin((hash, n));
+            // in the cache, and checked against its hash, or else fetched from the bucket once and cached
+            on.part(hash, n, 0..0).await?;
+            let path = on.cached_path((hash, n));
+            file.parts.push(blocking(move || fs::File::open(path)).await?);
+        }
+        Ok(file)
+    }
+}
+
+impl avendb::pages::Space for PackFile {
+    fn append(&self, _: &[u8]) -> io::Result<u64> {
+        Err(io::Error::other("a shelf's file takes nothing"))
+    }
+
+    fn read_at(&self, at: u64, bytes: &mut [u8]) -> io::Result<()> {
+        let end = at + bytes.len() as u64;
+        if end > self.size {
+            return Err(io::Error::new(ErrorKind::UnexpectedEof, format!("blob {} ends at {}", self.hash, self.size)));
+        }
+        let mut from = at;
+        while from < end {
+            let n = from / PART;
+            let to = end.min((n + 1) * PART);
+            let into = &mut bytes[(from - at) as usize..(to - at) as usize];
+            self.parts[n as usize].read_exact_at(into, from - n * PART)?;
+            from = to;
+        }
+        Ok(())
+    }
+
+    fn len(&self) -> u64 {
+        self.size
+    }
+}
+
+impl Drop for PackFile {
+    fn drop(&mut self) {
+        let mut cached = self.on.cached.lock().expect("cached");
+        // the parts it pinned: all of them, or those it pinned before one didn't open
+        for n in 0..parts(self.size).min(self.parts.len() as u64 + 1) {
+            cached.unpin((self.hash, n));
+        }
+    }
 }
 
 impl BucketShelf {
@@ -744,6 +856,68 @@ mod tests {
         let shelf = super::shelf(sealed, &folder, 64 << 20).await.expect("a shelf");
         assert_eq!(shelf.read_blob(hash, size).await.expect("read"), bytes, "the bucket's bytes");
         assert!(cached.with_extension("b3").exists(), "cached again with its hash");
+        fs::remove_dir_all(dir).ok();
+    }
+
+    /// A bucket in a folder that counts the parts of blobs it is asked for.
+    struct Counting(Folder, Arc<AtomicU64>);
+
+    impl Bucket for Counting {
+        fn put<'a>(&'a self, name: &'a str, bytes: Vec<u8>) -> Fut<'a, ()> {
+            self.0.put(name, bytes)
+        }
+        fn get<'a>(&'a self, name: &'a str) -> Fut<'a, Option<Vec<u8>>> {
+            if name.contains(BLOBS) {
+                self.1.fetch_add(1, Ordering::Relaxed);
+            }
+            self.0.get(name)
+        }
+        fn list<'a>(&'a self, prefix: &'a str) -> Fut<'a, Vec<String>> {
+            self.0.list(prefix)
+        }
+        fn delete<'a>(&'a self, name: &'a str) -> Fut<'a, ()> {
+            self.0.delete(name)
+        }
+    }
+
+    /// A finished blob is a file of a bucket shelf's: read in place across its parts as the bucket holds it, pinned
+    /// in the cache while it is held however small the cache, and, as the node starts again with its folder, read
+    /// from the cache without one part fetched from the bucket again (Goal 8 row 12).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_blob_is_a_pinned_file_of_the_cache() {
+        let dir = std::env::temp_dir().join(format!("avendb-pinned-{}", std::process::id()));
+        fs::remove_dir_all(&dir).ok();
+        let (objects, folder) = (dir.join("objects"), dir.join("folder"));
+        let gets = Arc::new(AtomicU64::new(0));
+        let sealed = || Sealed::new(Counting(Folder::new(&objects), gets.clone()), &[9; 32]);
+        // two parts, the second short, and another blob that takes the whole cache
+        let pack = Bytes::from((0..PART as u32 + 300_000).map(|i| (i % 251) as u8).collect::<Vec<u8>>());
+        let other = Bytes::from(vec![3u8; 1 << 20]);
+
+        let shelf = super::shelf(sealed(), &folder, 1 << 20).await.expect("a shelf");
+        let (hash, _) = shelf.put_blob(&pack).await.expect("put");
+        let (other_hash, other_size) = shelf.put_blob(&other).await.expect("put");
+        let file = shelf.blob_file(hash).await.expect("a file of the cache");
+        assert_eq!(file.len(), pack.len() as u64);
+        let mut across = vec![0; 1_000];
+        file.read_at(PART - 500, &mut across).expect("read across its parts");
+        assert_eq!(across, pack[PART as usize - 500..PART as usize + 500]);
+        assert_eq!(gets.swap(0, Ordering::Relaxed), 2, "each part fetched once");
+        // the other blob makes room in a cache of 1 MB: the pinned parts stay
+        assert_eq!(shelf.read_blob(other_hash, other_size).await.expect("read"), other);
+        let part = |n: u64| folder.join(format!("g{FLOOR}/cache/{}/{n:06x}", hash.to_hex()));
+        assert!(part(0).exists() && part(1).exists(), "pinned parts are never let go");
+        drop(file);
+        drop(shelf);
+
+        // the node starts again with its folder: the file is its cache's, nothing fetched
+        gets.store(0, Ordering::Relaxed);
+        let shelf = super::shelf(sealed(), &folder, 64 << 20).await.expect("a shelf");
+        let file = shelf.blob_file(hash).await.expect("a file of the cache");
+        let mut whole = vec![0; pack.len()];
+        file.read_at(0, &mut whole).expect("read whole");
+        assert_eq!(whole, pack);
+        assert_eq!(gets.load(Ordering::Relaxed), 0, "no part fetched from the bucket again");
         fs::remove_dir_all(dir).ok();
     }
 }
