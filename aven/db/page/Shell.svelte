@@ -69,14 +69,18 @@
 	import { acting, count, KINDS, nameOf, pillVaults } from './vaults.js';
 	import { wordsFilling } from './youtube.js';
 
+	/** The world before the device answered: no vault, no entry. @type {import('./vaults.js').WorldView} */
+	const UNREAD = { me: '', mine: '', recovery: null, vaults: [], shares: [], audiences: [], entries: [], groups: [],
+		kinds: [], ownsServer: false, backsUp: null, entriesComplete: false };
+
 	/**
-	 * @type {{ world: import('./vaults.js').WorldView, api: any, doing: string, error: string, thisName: string,
+	 * @type {{ world: import('./vaults.js').WorldView | null, api: any, doing: string, error: string, thisName: string,
 	 *   link: string, qr: string, sockets?: string[] | null,
 	 *   requests?: import('./vaults.js').AccessRequestView[], asks?: import('./vaults.js').Requests,
 	 *   drives?: import('./native.js').Drives | null }}
 	 */
 	let {
-		world,
+		world: answered,
 		api,
 		doing,
 		error,
@@ -88,6 +92,11 @@
 		asks = { asked: [], made: [] },
 		drives = null
 	} = $props();
+	/** whether the device answered its first read of the world yet: the layout never waits for it (Samuel 2026-10-29:
+	 *  "the core layout should be instantly there"); until then it paints with no vault in it, and each view's data
+	 *  comes as the device answers */
+	const ready = $derived(!!answered);
+	const world = $derived(answered ?? UNREAD);
 
 	/** the vault the person looks at: their own until they pick another, which every page of the tab shares (the
 	 *  session's `vault`), so a page that acts in avenDB elsewhere acts as the person does here */
@@ -185,6 +194,7 @@
 	// looks at the vault, where the acting vault may tag them; the same ops are never tried twice in a row
 	let tagged = '';
 	$effect(() => {
+		if (!ready) return;
 		const ops = retagging(world, context, actor);
 		if (busy || !ops.length) return;
 		const key = JSON.stringify([actor, ops]);
@@ -202,7 +212,7 @@
 	let filled = '';
 	$effect(() => {
 		const [w, vault, as] = [world, context, actor];
-		if (busy) return;
+		if (busy || !ready) return;
 		wordsFilling(w, vault, as, api).then((ops) => {
 			const key = JSON.stringify([as, ops]);
 			if (!ops.length || key === filled) return;
@@ -282,10 +292,12 @@
 
 {#snippet head()}
 	<header class="main-head">
-		<a class="crumb" href="#home" title="{nameOf(here)}'s apps"><Icon name="apps" size={14} /><span>{KINDS[here.kind]} · {nameOf(here)}</span></a>
+		{#if ready}<a class="crumb" href="#home" title="{nameOf(here)}'s apps"><Icon name="apps" size={14} /><span>{KINDS[here.kind]} · {nameOf(here)}</span></a>{/if}
 		<h2>{PAGES.find(([id]) => id === tab)?.[1]}</h2>
 		<p class="soft">
-			{#if context === world.mine}
+			{#if !ready}
+				Reading this view on this device.
+			{:else if context === world.mine}
 				As <b>{nameOf(mine)}</b>.
 			{:else if actor === context}
 				As <b>{nameOf(mine)}</b>, its owner: you see and change all of it.
@@ -302,7 +314,10 @@
 
 
 <div class="shell" class:reading={!!route.entry}>
-	{#if route.entry}
+	{#if !ready && tab !== 'home'}
+		<!-- the view's layout at once, before the device answered its first read; what it shows comes as it answers -->
+		<Frame />
+	{:else if route.entry}
 		{#key `${route.entry}${route.page}${route.edit}`}
 			{#if route.page === 'stories' && route.edit}
 				<Note {world} {actor} {api} {busy} entry={route.entry} back="#stories/{route.entry}/writing" backTo="The story" />
@@ -320,7 +335,7 @@
 		<section class="main home">
 		<Dashboard>
 			<div class="home-asks">
-				{#if !here.via}<button class="btn" onclick={() => (asking = true)}>Ask {nameOf(here)} for access</button>{/if}
+				{#if ready && !here.via}<button class="btn" onclick={() => (asking = true)}>Ask {nameOf(here)} for access</button>{/if}
 				<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
 			</div>
 		</Dashboard>
@@ -385,10 +400,10 @@
 		{#if error}<p class="toast bad" role="alert">{error}</p>{/if}
 	</div>
 
-	<Hitl {world} {api} vault={context} {busy} oncounts={(c) => (waiting = c)} />
+	{#if ready}<Hitl {world} {api} vault={context} {busy} oncounts={(c) => (waiting = c)} />{/if}
 
-	{#if adding}<NewVaults {world} {api} {busy} onclose={() => (adding = false)} />{/if}
-	{#if asking && !here.via}
+	{#if adding && ready}<NewVaults {world} {api} {busy} onclose={() => (adding = false)} />{/if}
+	{#if asking && ready && !here.via}
 		<Panel title="Ask for access" sub={nameOf(here)} onclose={() => (asking = false)}>
 			<p class="soft ask-lead">
 				Ask {nameOf(here)} to share with your aven or a vault of yours. Its owners answer on their consent screen, and
