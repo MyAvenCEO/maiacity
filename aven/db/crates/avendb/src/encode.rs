@@ -246,6 +246,10 @@ impl Encode for KeyName {
                 stay.encode(out);
                 epoch.encode(out);
             }
+            KeyName::Select(c) => {
+                out.push(3);
+                c.encode(out);
+            }
         }
     }
 }

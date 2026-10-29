@@ -278,16 +278,36 @@ def mayRevokeN (st : State) (a : VaultId) : Nat → Share → Bool
 def mayRevoke (st : State) (a : VaultId) (c : Share) : Bool :=
   if c.level.isKeep then c.issuer == a else mayRevokeN st a (st.shares.length + 1) c
 
+/-- The vaults that read share `c`'s selector where it is sealed: the vault it is over, its grantee unless the share
+    only relays, and its issuer. None where it is in the clear: a share to everyone or to an invite key, whose holder has
+    no vault until it claims the share. A keep share's grantee is a device, which reads it through its issuer. -/
+def selectReaders (c : Share) : List VaultId :=
+  match c.who with
+  | .everyone | .invite _ => []
+  | .vault g => if c.level.allows .read then [c.over, g, c.issuer] else [c.over, c.issuer]
+  | .device _ => [c.over, c.issuer]
+
+/-- The seals of `st` with share `c`'s selector key sealed to the current seed of each vault there is that reads it
+    (`selectReaders`): a box its edit lacks, for a seed whose key its issuer didn't hold, any reader's device adds later
+    by a `keys` edit. -/
+def selectSeals (st : State) (c : Share) : List Seal :=
+  ((selectReaders c).filter fun r => (st.vault? r).isSome).foldl
+    (fun ss r => addSealTo ss ⟨.select c.id, st.curKey (.seed r)⟩) st.seals
+
 /-- Signer `d` may box key `k`: the key of a family that exists, at an epoch it has reached, that `d` should be able to
     open; or the key of one of an entry's stays, when `d` should be able to open the key of the entry's audience. An
     entry key's epoch is its writes' to name (`apply`), and its boxes go only where the schedule seals it, which only
-    the entry's own writes and stays make it. -/
+    the entry's own writes and stays make it. Or a share's selector key, when `d` acts for a vault that reads it. -/
 def mayBox (st : State) (d : SignerId) : KeyName → Bool
   | .signer _ => false
   | .scoped k ε => (keyFams st).contains k && entitled st d k && decide (ε ≤ st.epochOf k)
   | .entry e s _ =>
     match st.entry? e with
     | some en => entitled st d (.audience en.vault en.audience) && (en.stayAudience s).isSome
+    | none => false
+  | .select c =>
+    match st.share? c with
+    | some x => (selectReaders x).any (actsFor st d ·)
     | none => false
 
 /-- Signer `d` may wrap key `w.1`, one of entry `e`'s own, under `w.2`: it may open the key, and the schedule seals it
@@ -402,7 +422,7 @@ def apply (st : State) (edit : Edit) : Option State :=
     else if !actsVia st edit.author via c.issuer || !restsOk st c then none
     -- making someone owner is governance
     else if c.level == Level.owner && !approves st sigs (.vault c.issuer) then none
-    else some { st with shares := st.shares ++ [c] }
+    else some { st with shares := st.shares ++ [c], seals := selectSeals st c }
   | .revoke (.grant cid actor keep via) =>
     match st.share? cid with
     | none => none

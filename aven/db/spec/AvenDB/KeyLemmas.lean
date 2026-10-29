@@ -151,7 +151,7 @@ inductive Change (st : State) : State → Prop where
       (∀ p ∈ vt'.owners, p ∈ vt.owners ∨ ownerFits st vt.kind p = true) → Change st (setVault st vt')
   | share (c : Share) : st.share? c.id = none → (st.vault? c.over).isSome = true →
       (∀ g, c.who = .vault g → (st.vault? g).isSome = true) →
-      Change st { st with shares := st.shares ++ [c] }
+      Change st { st with shares := st.shares ++ [c], seals := selectSeals st c }
   | revoke (rs : List ShareId) : Change st { st with revoked := st.revoked ++ rs }
   | create (en : Entry) (w : Write) (x : Audience) (u : List EditId) (df : List (EditId × CapGroup))
       (ad : List (EditId × List Ops.Loc)) :
@@ -1253,15 +1253,63 @@ theorem step_cases {st st' : State} {edit : Edit} (h : step st edit = some st') 
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   exact ⟨post, hpost, rfl⟩
 
-/-- An accepted edit leaves the key schedule alone: the epochs, the seals and what is published. -/
+/-- A seal of a share's selector key to the current seed of a vault there is (`selectSeals`). -/
+def SelectSeal (st : State) (s : Seal) : Prop :=
+  (∃ c, s.secret = .select c) ∧ ∃ r, (st.vault? r).isSome = true ∧ s.to = st.curKey (.seed r)
+
+/-- A new share's seals are the old ones and seals of its selector key. -/
+theorem selectSeals_mem {st : State} {c : Share} {s : Seal} (h : s ∈ selectSeals st c) :
+    s ∈ st.seals ∨ SelectSeal st s := by
+  unfold selectSeals at h
+  have key : ∀ (l : List VaultId) (ss : List Seal), (∀ r ∈ l, (st.vault? r).isSome = true) →
+      (∀ x ∈ ss, x ∈ st.seals ∨ SelectSeal st x) →
+      ∀ x ∈ l.foldl (fun ss r => addSealTo ss ⟨.select c.id, st.curKey (.seed r)⟩) ss,
+        x ∈ st.seals ∨ SelectSeal st x := by
+    intro l
+    induction l with
+    | nil => intro ss _ hss; exact hss
+    | cons r l ih =>
+      intro ss hl hss
+      rw [List.foldl_cons]
+      refine ih _ (fun r' hr' => hl r' (List.mem_cons_of_mem _ hr')) fun x hx => ?_
+      unfold addSealTo at hx
+      split at hx
+      · exact hss x hx
+      · rcases List.mem_append.1 hx with hx | hx
+        · exact hss x hx
+        · rw [List.mem_singleton] at hx
+          subst hx
+          exact .inr ⟨⟨c.id, rfl⟩, r, hl r (by simp), rfl⟩
+  exact key _ _ (fun r hr => (List.mem_filter.1 hr).2) (fun x hx => .inl hx) s h
+
+/-- An accepted edit leaves the key schedule alone but for a new share's selector key, which it seals to seeds: the
+    epochs and what is published stay, and every seal is one from before or of a selector key. -/
 theorem apply_keys {st post : State} {edit : Edit} (h : apply st edit = some post) :
-    post.epochs = st.epochs ∧ post.seals = st.seals ∧ post.published = st.published := by
+    post.epochs = st.epochs ∧ (∀ s ∈ post.seals, s ∈ st.seals ∨ SelectSeal st s) ∧ post.published = st.published := by
   unfold apply at h
   dsimp only at h
-  split at h <;> (repeat' split at h) <;> (try cases h) <;> (try exact ⟨rfl, rfl, rfl⟩)
+  split at h <;> (repeat' split at h) <;> (try cases h) <;> (try exact ⟨rfl, fun s hs => .inl hs, rfl⟩) <;>
+    (try exact ⟨rfl, fun s hs => selectSeals_mem hs, rfl⟩)
   -- a claim changes one share alone
   obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
-  exact ⟨rfl, rfl, rfl⟩
+  exact ⟨rfl, fun s hs => .inl hs, rfl⟩
+
+/-- Adding seals keeps those there were. -/
+theorem foldl_addSealTo_mono (f : VaultId → Seal) :
+    ∀ (l : List VaultId) (ss : List Seal), ∀ s ∈ ss, s ∈ l.foldl (fun ss r => addSealTo ss (f r)) ss
+  | [], _, _, h => h
+  | _ :: l, _, s, h => foldl_addSealTo_mono f l _ s (by dsimp only; unfold addSealTo; split <;> simp [h])
+
+/-- An accepted edit keeps every seal. -/
+theorem apply_seals_mono {st post : State} {edit : Edit} (h : apply st edit = some post) :
+    ∀ s ∈ st.seals, s ∈ post.seals := by
+  unfold apply at h
+  dsimp only at h
+  split at h <;> (repeat' split at h) <;> (try cases h) <;> (try exact fun s hs => hs) <;>
+    (try exact foldl_addSealTo_mono _ _ _)
+  -- a claim changes one share alone
+  obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
+  exact fun s hs => hs
 
 /-- A step raises the epoch of each stale family, by how often it is stale. -/
 theorem epochOf_step {pre post : State} {edit : Edit} (hpost : apply pre edit = some post) (k : KeyFam) :
@@ -2085,7 +2133,9 @@ structure KeyInv (st : State) : Prop where
   /-- A scoped key is sealed under a scoped key of an epoch its family has reached, or a signer's key, never under an
       entry key. -/
   sealedTo : ∀ s ∈ st.seals, ∀ k e, s.secret = .scoped k e →
-    (∀ f e', s.to = .scoped f e' → e' ≤ st.epochOf f) ∧ ∀ x σ g, s.to ≠ .entry x σ g
+    (∀ f e', s.to = .scoped f e' → e' ≤ st.epochOf f) ∧ (∀ x σ g, s.to ≠ .entry x σ g) ∧ ∀ c, s.to ≠ .select c
+  /-- A share's selector key is sealed to seeds alone. -/
+  selectTo : ∀ s ∈ st.seals, ∀ c, s.secret = .select c → ∃ u e, s.to = .scoped (.seed u) e
   /-- Nothing is sealed to the seed of a vault that doesn't exist. -/
   seedTo : ∀ s ∈ st.seals, ∀ u e, s.to = .scoped (.seed u) e → (st.vault? u).isSome = true
   /-- What is sealed to a share's or an audience's key is a key of a family within it, or an entry key. -/
@@ -2111,14 +2161,16 @@ theorem knows_cases {st : State} {start : List KeyName} {x : KeyName} (h : Knows
 
 /-- A key one opens is one it started with, an entry key, or a scoped key of an epoch its family has reached. -/
 theorem KeyInv.knows_old {st : State} (hinv : KeyInv st) {start : List KeyName} {x : KeyName}
-    (h : Knows st start x) : x ∈ start ∨ (∃ k e, x = .scoped k e ∧ e ≤ st.epochOf k) ∨ ∃ e σ g, x = .entry e σ g := by
+    (h : Knows st start x) :
+    x ∈ start ∨ (∃ k e, x = .scoped k e ∧ e ≤ st.epochOf k) ∨ (∃ e σ g, x = .entry e σ g) ∨ ∃ c, x = .select c := by
   rcases knows_cases h with hx | ⟨s, hs, rfl⟩ | hx
   · exact .inl hx
   · obtain ⟨hsig, hsc⟩ := hinv.secret s hs
     cases hsec : s.secret with
     | signer d => exact absurd hsec (hsig d)
     | «scoped» k e => exact .inr (.inl ⟨k, e, rfl, hsc k e hsec⟩)
-    | entry e σ g => exact .inr (.inr ⟨e, σ, g, rfl⟩)
+    | entry e σ g => exact .inr (.inr (.inl ⟨e, σ, g, rfl⟩))
+    | select c => exact .inr (.inr (.inr ⟨c, rfl⟩))
   · obtain ⟨⟨k, e, rfl, he⟩, -⟩ := hinv.published _ hx
     exact .inr (.inl ⟨k, e, rfl, he⟩)
 
@@ -2150,8 +2202,12 @@ theorem KeyInv.knows_within {st : State} (hinv : KeyInv st) {f : KeyFam} (hf : �
     · -- nothing scoped is sealed to an entry key
       cases hsec : s.secret with
       | signer d => exact absurd hsec ((hinv.secret s hs).1 d)
-      | «scoped» k e' => exact absurd hto ((hinv.sealedTo s hs k e' hsec).2 e σ g)
+      | «scoped» k e' => exact absurd hto ((hinv.sealedTo s hs k e' hsec).2.1 e σ g)
       | entry e' σ' g' => exact .inr (.inl ⟨e', σ', g', rfl⟩)
+      | select c =>
+        obtain ⟨u, e', hto'⟩ := hinv.selectTo s hs c hsec
+        rw [hto] at hto'
+        cases hto'
     · exact .inr (.inr (.unseal hs ih))
 
 /-- The signer holders are the signers some vault lists. -/
@@ -2201,11 +2257,12 @@ theorem not_stale {pre post : State} {k : KeyFam} (hk : k ∈ keyFams post) (hS 
 
 /-- A key name is a signer's key, a scoped key or an entry key. -/
 theorem keyName_cases (x : KeyName) :
-    (∃ d, x = .signer d) ∨ (∃ k e, x = .scoped k e) ∨ ∃ e σ g, x = .entry e σ g := by
+    (∃ d, x = .signer d) ∨ (∃ k e, x = .scoped k e) ∨ (∃ e σ g, x = .entry e σ g) ∨ ∃ c, x = .select c := by
   cases x with
   | signer d => exact .inl ⟨d, rfl⟩
   | «scoped» k e => exact .inr (.inl ⟨k, e, rfl⟩)
-  | entry e σ g => exact .inr (.inr ⟨e, σ, g, rfl⟩)
+  | entry e σ g => exact .inr (.inr (.inl ⟨e, σ, g, rfl⟩))
+  | select c => exact .inr (.inr (.inr ⟨c, rfl⟩))
 
 /-- A family that rotates is in use after the change. -/
 theorem mem_keyFams_of_stale {pre post : State} {k : KeyFam} (h : k ∈ staleKeys pre post) : k ∈ keyFams post := by
@@ -2299,13 +2356,13 @@ theorem KeyInv.closure_mayOpen {pre post : State} {edit : Edit} (hinv : KeyInv p
     key of a family it may open now opened before, the new keys of families it may open now, and entry keys. -/
 def MayKnow (pre st' : State) (h : Holder) (x : KeyName) : Prop :=
   Knows pre (h.start pre) x ∨ (∃ f, MayOpen st' h f ∧ Knows pre [pre.curKey f] x) ∨
-  (∃ k e, x = .scoped k e ∧ pre.epochOf k < e ∧ MayOpen st' h k) ∨ ∃ e σ g, x = .entry e σ g
+  (∃ k e, x = .scoped k e ∧ pre.epochOf k < e ∧ MayOpen st' h k) ∨ (∃ e σ g, x = .entry e σ g) ∨ ∃ c, x = .select c
 
 /-- A key newer than any before the step is one of a family the holder may open now. -/
 theorem KeyInv.mayKnow_new {pre st' : State} (hinv : KeyInv pre) {h : Holder} {k : KeyFam} {e : Nat}
     (hx : MayKnow pre st' h (.scoped k e)) (he : pre.epochOf k < e) : MayOpen st' h k := by
-  rcases hx with hx | ⟨f, -, hx⟩ | ⟨k', e', heq, -, hk⟩ | ⟨_, _, _, heq⟩
-  · rcases hinv.knows_old hx with hstart | ⟨k', e', heq, he'⟩ | ⟨_, _, _, heq⟩
+  rcases hx with hx | ⟨f, -, hx⟩ | ⟨k', e', heq, -, hk⟩ | ⟨_, _, _, heq⟩ | ⟨_, heq⟩
+  · rcases hinv.knows_old hx with hstart | ⟨k', e', heq, he'⟩ | ⟨_, _, _, heq⟩ | ⟨_, heq⟩
     · cases h with
       | signer s => simp [Holder.start] at hstart
       | vault v =>
@@ -2317,7 +2374,8 @@ theorem KeyInv.mayKnow_new {pre st' : State} (hinv : KeyInv pre) {h : Holder} {k
       obtain ⟨rfl, rfl⟩ := heq
       omega
     · cases heq
-  · rcases hinv.knows_old hx with hstart | ⟨k', e', heq, he'⟩ | ⟨_, _, _, heq⟩
+    · cases heq
+  · rcases hinv.knows_old hx with hstart | ⟨k', e', heq, he'⟩ | ⟨_, _, _, heq⟩ | ⟨_, heq⟩
     · simp only [List.mem_singleton, State.curKey, KeyName.scoped.injEq] at hstart
       obtain ⟨rfl, rfl⟩ := hstart
       omega
@@ -2325,9 +2383,11 @@ theorem KeyInv.mayKnow_new {pre st' : State} (hinv : KeyInv pre) {h : Holder} {k
       obtain ⟨rfl, rfl⟩ := heq
       omega
     · cases heq
+    · cases heq
   · simp only [KeyName.scoped.injEq] at heq
     obtain ⟨rfl, rfl⟩ := heq
     exact hk
+  · cases heq
   · cases heq
 
 /-- The current key of a family in use that the holder may know after the step is one of a family it may open. -/
@@ -2337,12 +2397,13 @@ theorem KeyInv.mayKnow_cur {pre post : State} {edit : Edit} (hinv : KeyInv pre) 
   by_cases hS : k ∈ staleKeys pre post
   · exact hinv.mayKnow_new hx (epochOf_step_lt hpost hS)
   · rw [curKey_step hpost hS] at hx
-    rcases hx with hx | ⟨f, hf, hx⟩ | ⟨k', e, heq, he, -⟩ | ⟨_, _, _, heq⟩
+    rcases hx with hx | ⟨f, hf, hx⟩ | ⟨k', e, heq, he, -⟩ | ⟨_, _, _, heq⟩ | ⟨_, heq⟩
     · exact hinv.base_mayOpen hk hS hx
     · exact hinv.closure_mayOpen hpost hk hS hf hx
     · simp only [State.curKey, KeyName.scoped.injEq] at heq
       obtain ⟨rfl, rfl⟩ := heq
       omega
+    · simp [State.curKey] at heq
     · simp [State.curKey] at heq
 
 /-- The current key of a family the holder may open is one it may know. -/
@@ -2357,8 +2418,8 @@ theorem mayKnow_of_mayOpen {pre post : State} {edit : Edit} (hpost : apply pre e
 /-- Only a signer may know its own key. -/
 theorem KeyInv.mayKnow_signer {pre st' : State} (hinv : KeyInv pre) {h : Holder} {d : SignerId}
     (hx : MayKnow pre st' h (.signer d)) : h = .signer d := by
-  rcases hx with hx | ⟨f, -, hx⟩ | ⟨k, e, heq, -, -⟩ | ⟨_, _, _, heq⟩
-  · rcases hinv.knows_old hx with hstart | ⟨_, _, heq, -⟩ | ⟨_, _, _, heq⟩
+  rcases hx with hx | ⟨f, -, hx⟩ | ⟨k, e, heq, -, -⟩ | ⟨_, _, _, heq⟩ | ⟨_, heq⟩
+  · rcases hinv.knows_old hx with hstart | ⟨_, _, heq, -⟩ | ⟨_, _, _, heq⟩ | ⟨_, heq⟩
     · cases h with
       | signer s =>
         simp only [Holder.start, List.mem_singleton, KeyName.signer.injEq] at hstart
@@ -2367,10 +2428,13 @@ theorem KeyInv.mayKnow_signer {pre st' : State} (hinv : KeyInv pre) {h : Holder}
       | everyone => simp [Holder.start] at hstart
     · cases heq
     · cases heq
-  · rcases hinv.knows_old hx with hstart | ⟨_, _, heq, -⟩ | ⟨_, _, _, heq⟩
+    · cases heq
+  · rcases hinv.knows_old hx with hstart | ⟨_, _, heq, -⟩ | ⟨_, _, _, heq⟩ | ⟨_, heq⟩
     · simp [State.curKey] at hstart
     · cases heq
     · cases heq
+    · cases heq
+  · cases heq
   · cases heq
   · cases heq
 
@@ -2400,17 +2464,21 @@ theorem KeyInv.mayKnow_closed {pre post : State} {edit : Edit} (hinv : KeyInv pr
     · exact mayKnow_of_mayOpen hpost (.inr (by rw [hkept.publicKey]; exact hpub))
   | @«unseal» s hs _ ih =>
     rcases settle_seals hs with hs | ⟨k, e, -, he, -, rfl⟩ | ⟨k, hk, t, ht, rfl⟩ | ⟨en, -, hl⟩
-    · -- an old seal: of an entry key, or of a scoped key to a scoped key of an epoch reached before
-      rw [hseals] at hs
-      rcases keyName_cases s.secret with ⟨d, hsec⟩ | ⟨a, e, hsec⟩ | ⟨e, σ, g, hsec⟩
-      · exact absurd hsec ((hinv.secret s hs).1 d)
-      · obtain ⟨hto, hent⟩ := hinv.sealedTo s hs a e hsec
-        rcases ih with ih | ⟨f, hf, ih⟩ | ⟨k, e', hto', he', -⟩ | ⟨x, σ, g, hto'⟩
-        · exact .inl (.unseal hs ih)
-        · exact .inr (.inl ⟨f, hf, .unseal hs ih⟩)
-        · exact absurd (hto k e' hto') (by omega)
-        · exact absurd hto' (hent x σ g)
-      · exact .inr (.inr (.inr ⟨e, σ, g, hsec⟩))
+    · -- an old seal: of an entry key, or of a scoped key to a scoped key of an epoch reached before; or a new
+      -- share's selector key, which opens nothing
+      rcases hseals s hs with hs | ⟨⟨c, hsec⟩, -⟩
+      · rcases keyName_cases s.secret with ⟨d, hsec⟩ | ⟨a, e, hsec⟩ | ⟨e, σ, g, hsec⟩ | ⟨c, hsec⟩
+        · exact absurd hsec ((hinv.secret s hs).1 d)
+        · obtain ⟨hto, hent, hsel⟩ := hinv.sealedTo s hs a e hsec
+          rcases ih with ih | ⟨f, hf, ih⟩ | ⟨k, e', hto', he', -⟩ | ⟨x, σ, g, hto'⟩ | ⟨c, hto'⟩
+          · exact .inl (.unseal hs ih)
+          · exact .inr (.inl ⟨f, hf, .unseal hs ih⟩)
+          · exact absurd (hto k e' hto') (by omega)
+          · exact absurd hto' (hent x σ g)
+          · exact absurd hto' (hsel c)
+        · exact .inr (.inr (.inr (.inl ⟨e, σ, g, hsec⟩)))
+        · exact .inr (.inr (.inr (.inr ⟨c, hsec⟩)))
+      · exact .inr (.inr (.inr (.inr ⟨c, hsec⟩)))
     · -- a rotated family: whoever may open its new key may open it, and so the previous one
       have hpe : post.epochOf k = pre.epochOf k := by simp only [State.epochOf, hepochs]
       rw [hpe] at he
@@ -2434,9 +2502,9 @@ theorem KeyInv.mayKnow_closed {pre post : State} {edit : Edit} (hinv : KeyInv pr
           (hinv.mayKnow_cur hpost (by rw [← hkept.keyFams]; exact hc) ih)
     · -- linking opens only entry keys
       rcases hl with rfl | ⟨w, -, -, rfl | ⟨-, rfl⟩⟩
-      · exact .inr (.inr (.inr ⟨_, _, _, rfl⟩))
-      · exact .inr (.inr (.inr ⟨_, _, _, rfl⟩))
-      · exact .inr (.inr (.inr ⟨_, _, _, rfl⟩))
+      · exact .inr (.inr (.inr (.inl ⟨_, _, _, rfl⟩)))
+      · exact .inr (.inr (.inr (.inl ⟨_, _, _, rfl⟩)))
+      · exact .inr (.inr (.inr (.inl ⟨_, _, _, rfl⟩)))
 
 /-- An entry with stays is in its current stay and its current audience, and its current stay's audience is that
     audience. -/
@@ -2490,16 +2558,17 @@ theorem KeyInv.step {st st' : State} {edit : Edit} (hinv : KeyInv st) (h : step 
     exact hvaults u hu
   have hshare : SharesKept st.shares (settle st post).shares := by rw [hkept.shares]; exact hshares
   have hfam : ∀ {k}, k ∈ keyFams post → k ∈ keyFams (settle st post) := fun hk => by rw [hkept.keyFams]; exact hk
-  refine ⟨hs', fun h k hk hx => ?_, fun s hs => ?_, fun s hs => ?_, fun s hs => ?_, fun s hs => ?_, fun x hx => ?_,
-    fun k hk hpub => ?_, fun s hs => ?_⟩
+  refine ⟨hs', fun h k hk hx => ?_, fun s hs => ?_, fun s hs => ?_, fun s hs => ?_, fun s hs => ?_, fun s hs => ?_,
+    fun x hx => ?_, fun k hk hpub => ?_, fun s hs => ?_⟩
   · -- T6
     rw [hkept.keyFams] at hk
     exact hinv.mayKnow_cur hpost hk (hinv.mayKnow_closed hpost hx)
   · -- what is sealed
     rcases settle_seals hs with hs | ⟨k, e, -, -, he, rfl⟩ | ⟨k, -, t, -, rfl⟩ | ⟨en, -, hl⟩
-    · rw [hseals] at hs
-      obtain ⟨hsig, hsc⟩ := hinv.secret s hs
-      exact ⟨hsig, fun k e hk => Nat.le_trans (hsc k e hk) (hle k)⟩
+    · rcases hseals s hs with hs | ⟨⟨c, hsec⟩, -⟩
+      · obtain ⟨hsig, hsc⟩ := hinv.secret s hs
+        exact ⟨hsig, fun k e hk => Nat.le_trans (hsc k e hk) (hle k)⟩
+      · exact ⟨fun d hd => (by rw [hsec] at hd; cases hd), fun k e hk => (by rw [hsec] at hk; cases hk)⟩
     · refine ⟨fun d hd => (by cases hd), fun k' e' hk => ?_⟩
       cases hk
       omega
@@ -2511,22 +2580,37 @@ theorem KeyInv.step {st st' : State} {edit : Edit} (hinv : KeyInv st) (h : step 
   · -- what a scoped key is sealed to
     intro k e hsec
     rcases settle_seals hs with hs | ⟨k', e', -, -, he, rfl⟩ | ⟨k', hk', t, ht, rfl⟩ | ⟨en, -, hl⟩
-    · rw [hseals] at hs
-      obtain ⟨hto, hent⟩ := hinv.sealedTo s hs k e hsec
-      exact ⟨fun f e' hf => Nat.le_trans (hto f e' hf) (hle f), hent⟩
-    · refine ⟨fun f e'' hf => ?_, fun x σ g hx => by cases hx⟩
+    · rcases hseals s hs with hs | ⟨⟨c, hsec'⟩, -⟩
+      · obtain ⟨hto, hent, hsel⟩ := hinv.sealedTo s hs k e hsec
+        exact ⟨fun f e' hf => Nat.le_trans (hto f e' hf) (hle f), hent, hsel⟩
+      · rw [hsec'] at hsec
+        cases hsec
+    · refine ⟨fun f e'' hf => ?_, fun x σ g hx => (by cases hx), fun c hc => (by cases hc)⟩
       cases hf
       omega
     · rcases mem_targets hs' (hfam hk') ht with ⟨d, rfl, -⟩ | ⟨o, rfl, -, -⟩ | ⟨v, c, x, -, rfl, -, -⟩
-      · exact ⟨fun f e' hf => (by cases hf), fun x σ g hx => by cases hx⟩
-      · exact ⟨fun f e' hf => by cases hf; exact Nat.le_refl _, fun x σ g hx => by cases hx⟩
-      · exact ⟨fun f e' hf => by cases hf; exact Nat.le_refl _, fun x σ g hx => by cases hx⟩
+      · exact ⟨fun f e' hf => (by cases hf), fun x σ g hx => (by cases hx), fun c hc => (by cases hc)⟩
+      · exact ⟨fun f e' hf => (by cases hf; exact Nat.le_refl _), fun x σ g hx => (by cases hx), fun c hc => (by cases hc)⟩
+      · exact ⟨fun f e' hf => (by cases hf; exact Nat.le_refl _), fun x σ g hx => (by cases hx), fun c hc => (by cases hc)⟩
+    · rcases hl with rfl | ⟨w, -, -, rfl | ⟨-, rfl⟩⟩ <;> cases hsec
+  · -- a share's selector key is sealed to seeds alone
+    intro c hsec
+    rcases settle_seals hs with hs | ⟨k, e', -, -, -, rfl⟩ | ⟨k, -, t, -, rfl⟩ | ⟨en, -, hl⟩
+    · rcases hseals s hs with hs | ⟨-, r, -, hto⟩
+      · exact hinv.selectTo s hs c hsec
+      · exact ⟨r, _, hto⟩
+    · cases hsec
+    · cases hsec
     · rcases hl with rfl | ⟨w, -, -, rfl | ⟨-, rfl⟩⟩ <;> cases hsec
   · -- nothing is sealed to the seed of a vault that doesn't exist
     intro u e hto
     rcases settle_seals hs with hs | ⟨k, e', hS, -, -, rfl⟩ | ⟨k, hk, t, ht, rfl⟩ | ⟨en, -, hl⟩
-    · rw [hseals] at hs
-      exact hvault u (hinv.seedTo s hs u e hto)
+    · rcases hseals s hs with hs | ⟨-, r, hr, hto'⟩
+      · exact hvault u (hinv.seedTo s hs u e hto)
+      · rw [hto'] at hto
+        simp only [State.curKey, KeyName.scoped.injEq, KeyFam.seed.injEq] at hto
+        obtain ⟨rfl, -⟩ := hto
+        exact hvault _ hr
     · cases hto
       rw [vault?_congr hkept.vaults]
       exact seed_mem_keyFams_iff (mem_keyFams_of_stale hS)
@@ -2539,10 +2623,13 @@ theorem KeyInv.step {st st' : State} {edit : Edit} (hinv : KeyInv st) (h : step 
   · -- what is sealed to a share's or an audience's key
     intro f e hto hf
     rcases settle_seals hs with hs | ⟨k, e', -, -, -, rfl⟩ | ⟨k, hk, t, ht, rfl⟩ | ⟨en, -, hl⟩
-    · rw [hseals] at hs
-      rcases hinv.within s hs f e hto hf with ⟨k, e', hsec, hfk⟩ | hent
-      · exact .inl ⟨k, e', hsec, hfk.mono hshare⟩
-      · exact .inr hent
+    · rcases hseals s hs with hs | ⟨-, r, -, hto'⟩
+      · rcases hinv.within s hs f e hto hf with ⟨k, e', hsec, hfk⟩ | hent
+        · exact .inl ⟨k, e', hsec, hfk.mono hshare⟩
+        · exact .inr hent
+      · rw [hto'] at hto
+        simp only [State.curKey, KeyName.scoped.injEq] at hto
+        exact absurd hto.1.symm (hf r)
     · cases hto
       exact .inl ⟨f, e', rfl, Within.refl _ _⟩
     · rcases mem_targets hs' (hfam hk) ht with ⟨d, rfl, -⟩ | ⟨o, rfl, -, -⟩ | ⟨v, c, x, rfl, rfl, -, hx⟩
@@ -2559,7 +2646,7 @@ theorem KeyInv.step {st st' : State} {edit : Edit} (hinv : KeyInv st) (h : step 
     rcases settle_published hx with hx | ⟨k, hk, hpub, rfl⟩
     · rw [hpubs] at hx
       obtain ⟨⟨k, e, rfl, he⟩, s, hs, hsec⟩ := hinv.published _ hx
-      exact ⟨⟨k, e, rfl, Nat.le_trans he (hle k)⟩, s, hmono.1 s (by rw [hseals]; exact hs), hsec⟩
+      exact ⟨⟨k, e, rfl, Nat.le_trans he (hle k)⟩, s, hmono.1 s (apply_seals_mono hpost s hs), hsec⟩
     · refine ⟨⟨k, _, rfl, Nat.le_refl _⟩, _, (settle_sealed hk).1 _ (seed_mem_targets _ fun v hv => ?_), rfl⟩
       subst hv
       simp [publicKey] at hpub
@@ -2570,7 +2657,10 @@ theorem KeyInv.step {st st' : State} {edit : Edit} (hinv : KeyInv st) (h : step 
   · -- entry keys
     intro e σ g hsec
     rcases settle_seals hs with hs | ⟨k, e', -, -, -, rfl⟩ | ⟨k, -, t, -, rfl⟩ | ⟨en, hen, hl⟩
-    · rw [hseals] at hs
+    · rcases hseals s hs with hs | ⟨⟨c, hsec'⟩, -⟩
+      rotate_left
+      · rw [hsec'] at hsec
+        cases hsec
       obtain ⟨hb, hall⟩ := hinv.entries s hs e σ g hsec
       refine ⟨by rw [hkept.born]; exact hborn e hb, fun en' hen' hid => ?_⟩
       have hen'' : en' ∈ post.entries := by rw [← hkept.entries]; exact hen'
@@ -2613,7 +2703,7 @@ theorem keyInv_empty : KeyInv {} := by
     fun _ h => (by cases h), List.nodup_nil, fun _ h => (by cases h), fun _ h => (by cases h),
     fun _ h => (by cases h), fun _ h => (by cases h), fun _ h => (by cases h), fun _ h => (by cases h)⟩
   refine ⟨hs, fun h k hk => ?_, fun _ h => (by cases h), fun _ h => (by cases h), fun _ h => (by cases h),
-    fun _ h => (by cases h), fun _ h => (by cases h), fun k hk => ?_, fun _ h => (by cases h)⟩ <;>
+    fun _ h => (by cases h), fun _ h => (by cases h), fun _ h => (by cases h), fun k hk => ?_, fun _ h => (by cases h)⟩ <;>
     simp [keyFams] at hk
 
 /-- What holds of a state and is kept by every accepted step holds after any replay from it. -/
