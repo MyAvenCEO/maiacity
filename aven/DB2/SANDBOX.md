@@ -1,8 +1,9 @@
 # avenSANDBOX: milestone 1
 
-avenSANDBOX is the network avenDB2 is built and tested in. Two browser devices, a native node and the server each run
-in their own container on one machine, started with one command. Milestone 1 builds the sandbox itself and one page, a
-"coming soon" landing page, as the starter every later primitive grows from. **No test scenarios yet.**
+avenSANDBOX is the network avenDB2 is built and tested in: two browser peers in one Chromium and two native peers, one
+of them the server with its relay on, in containers on one machine, started with one command. Milestone 1 builds the
+sandbox itself and one page, a "coming soon" landing page, as the starter every later primitive grows from. **No test
+scenarios yet.**
 
 ## The loop
 
@@ -23,13 +24,18 @@ Targets, measured in this milestone and reported on every run:
 
 | Node | What it is | Keeps its data in | Reaches the others |
 |---|---|---|---|
-| **Alice** | a browser device: Playwright's Chromium, page at `alice.localhost` | the OPFS of its origin | through the server's relay (browsers can't send UDP) |
-| **Bob** | a browser device in the same Chromium, page at `bob.localhost` | the OPFS of its origin, separate from Alice's (measured) | through the relay |
-| **Bob's Mac** | the native Rust node, the core of the future Mac app, as a Linux binary | a folder | iroh directly over UDP, the relay as fallback |
-| **server** | one Rust process: the iroh relay and the server's peer | a folder now, a local S3-compatible bucket later; never a real cloud bucket | it runs the relay |
+| **Alice** | a browser peer in Playwright's Chromium, page at `alice.localhost` | the OPFS of its origin | through the server's relay (browsers can't send UDP) |
+| **Bob** | a browser peer in the same Chromium, page at `bob.localhost` | the OPFS of its origin, separate from Alice's (measured) | through the relay |
+| **Bob's Mac** | the native peer, relay off: what the future Mac app embeds, here as a Linux binary | a folder | iroh directly over UDP, the relay as fallback |
+| **server** | the same native peer with `--relay`: the iroh relay runs in its process | a folder now, a local S3-compatible bucket later; never a real cloud bucket | it runs the relay |
 
-Each node is its own container. Both browser devices share one Chromium, as two origins with two separate storages.
-The cast is one list in the sandbox's config; adding a device is one line.
+There are only two kinds of peer, both built from one core. The **native peer** is one binary, and the server is that
+binary with its relay on. The **browser peer** is the same core compiled to wasm. They differ only at the edge: where
+they store, how they reach the network, and whether they run the relay. What the server keeps for others will come from
+caps, not from a code path of its own.
+
+The two native peers each run in their own container. Both browser peers share one Chromium, as two origins with two
+separate storages. The cast is one list in the sandbox's config; adding a peer is one line.
 
 ## The landing page
 
@@ -56,7 +62,7 @@ localhost:5173 · avenSANDBOX                         4 live · up 2 m
 │     avenDB2 coming soon      │ │     avenDB2 coming soon      │
 │  ● live · 4 on the network   │ │  ● live · 4 on the network   │
 └──────────────────────────────┘ └──────────────────────────────┘
-┌─ Bob's Mac · native node ────┐ ┌─ server · relay + peer ──────┐
+┌─ Bob's Mac · native peer ────┐ ┌─ server · peer + relay ──────┐
 │ ● live · direct to server    │ │ ● live · 4 connected         │
 │ key 7f3a… · data in /data    │ │ relay: 2 browsers · up 2 m   │
 └──────────────────────────────┘ └──────────────────────────────┘
@@ -81,10 +87,10 @@ One image holds every tool; every command runs in it.
   the box's files change and with every daily version bump. The repository is public, so the image is too, and it
   pulls without a token.
 - **Containers** (`box/compose.yml`):
-  - `server`: the relay and the peer;
-  - `mac`: the native node;
-  - `browsers`: Chromium, the Vite dev server and the control room;
-  - `builder`: compiles the Rust once for all of them, into one shared build folder.
+  - `server`: the native peer with `--relay`;
+  - `mac`: the same native peer, relay off;
+  - `browsers`: Chromium with the browser peers, the Vite dev server and the control room;
+  - `builder`: compiles the native peer and the browser peer's wasm once, into one shared build folder.
 - **Networks:** milestone 1 uses one, `wan`. The P2P lanes add homes behind routers ([below](#real-world-iroh-inside-the-box)).
 - **Commands**, from `aven/DB2`:
   - `bun run up`: starts the box and prints the control room's address;
@@ -179,9 +185,9 @@ aven/DB2/
   Cargo.toml       its own workspace, with Cargo.lock and target/
   package.json     its own JS, with bun.lock
   box/             Dockerfile, compose.yml, the cloud setup script
-  crates/server    the relay and the peer, one binary
-  crates/node      the native node, the core of the future Mac app
-  crates/device    the browser device: wasm in a worker
+  crates/core      the pure core every peer runs, without I/O
+  crates/peer      the native peer, one binary; --relay makes it the server
+  crates/web       the browser peer: the core as wasm in a worker, storing in OPFS
   spec/            Lean
   sandbox/         the runner: up, down, doctor, shot, the timeline
   app/             the landing page and the control room (Svelte 5 + Vite)
@@ -199,7 +205,7 @@ aven/DB2/
 ## Threads
 
 - **Box:** the image, compose, the setup script and hook, the workflow, `doctor`, `bump`.
-- **Rust:** the server, the native node and the browser device.
+- **Rust:** the core, the native peer and the browser peer.
 - **Page:** the landing page and the control room.
 
 The avenDB2 Goal thread leads them and collects their branches.

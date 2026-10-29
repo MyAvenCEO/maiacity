@@ -49,14 +49,15 @@ Each rule is held by a test or a check once there is code to hold.
 |---|---|
 | avenDB2 | the database, this rebuild |
 | `aven/DB2` | its folder. A Mac's disk ignores case, so a path spelled `aven/db2` works there and fails on Linux and CI; a check will reject any other spelling |
-| avenSANDBOX | the local network avenDB2 is built and tested in: browser devices, a native node and the server, each in its own container on one machine ([`SANDBOX.md`](SANDBOX.md)) |
+| avenSANDBOX | the local network avenDB2 is built and tested in: browser peers and native peers, the server among them, in containers on one machine ([`SANDBOX.md`](SANDBOX.md)) |
 
 ## Decisions so far
 
 - **A hard fork beside v1** in this monorepo, with its own Cargo workspace, lockfile and build folder and its own
   `package.json`. The root only excludes it.
-- **Devices:** browsers (Chromium, storing in OPFS) and a native Rust node, the core of the future Mac app. The server
-  is relay and peer in one process. No Mac app yet.
+- **Two kinds of peer, one core.** The native peer is one binary: the server is that binary with its relay on, and the
+  future Mac app will embed it. The browser peer is the same core compiled to wasm, storing in OPFS in Chromium. They
+  differ only at the edge: storage, network, relay or not. No Mac app yet.
 - **iroh everywhere.** Browsers can't send UDP, so they reach every peer through the server's relay.
 - **Encryption:** X-Wing (ML-KEM-768 with X25519) is the only key encapsulation. Every sealed box carries a suite byte,
   so a second scheme can join if lattices ever look weak: HQC, NIST's 2025 code-based backup, with keys of a few KB.
