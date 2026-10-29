@@ -237,6 +237,11 @@ impl Drives {
         self.hosted.lock().expect("hosted").contains_key(&drive)
     }
 
+    /// Whether a drive on volume `volume` is hosted now.
+    fn hosts_on(&self, volume: &Path) -> bool {
+        self.hosted.lock().expect("hosted").values().any(|h| h.volume == volume)
+    }
+
     /// Call while holding looking: publication/removal cannot race the fence.
     async fn close_one(&self, id: SignerId, node: &Arc<Node>) -> Result<()> {
         node.shutdown().await?;
@@ -467,6 +472,11 @@ impl Service {
         let fallback = volume.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let name = Some(name.trim()).filter(|n| !n.is_empty()).unwrap_or(&fallback).to_string();
         let _busy = self.drives.busy(&volume)?;
+        // one this Mac hosts is one of the person's devices, whether or not its join reached this Mac's view yet (the
+        // peer takes a join in the background): its store is its node's, never opened or put aside here
+        if self.drives.hosts_on(&volume) {
+            bail!("this drive is one of your devices already");
+        }
         let host = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
         let at = store(&volume);
         if at.is_dir() {
