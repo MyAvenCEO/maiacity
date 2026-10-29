@@ -39,8 +39,7 @@ artifact flows use it. Generic write completion is local acceptance, not complet
 of a whole-world UI redraw, peer acknowledgement, or a new fsync guarantee.
 
 Run `bun aven/db/scripts/test-avendb-local-write.mjs --browser chromium` or `--browser
-webkit`; both run in kernel CI. Unit tests are `local-write.test.js` and
-`reactive-read.test.js`. Lean checks are in `aven/db/spec/AvenDB/LocalWrite.lean`.
+webkit`; both run in kernel CI. The unit test is `reactive-read.test.js`. Lean checks are in `aven/db/spec/AvenDB/LocalWrite.lean`.
 The Lean model covers scheduling branch/acceptance independence only, not
 extracted JavaScript, Svelte, OS timing, engine authorization or durability.
 

@@ -9,6 +9,9 @@ and so was the opening of every body (1.7 s).
 Now a step does one of four kinds of work, each at most `k` units of it:
 
 - replay: the log's next `k` edits at most, stepped on from where the last step left (`step_replay`, `REPLAY_WORK`);
+  where new edits sort further back than a turn replays, from the rung or mark before the first of them (`rewind`,
+  `TailRun`, `TailRungs.lean`), the replay work being the edits from there on, not every edit (until 2026-10-29: a
+  replay of every edit a slice a step, 46 of them in one fresh browser's catch-up);
 - index: the replay's next `k` edits at most added to the key index, where a whole replay or a removal has it made
   again of every edit (`KeyIndexed::step`, `INDEX_WORK`; made whole in one step until 2026-10-28, 27.9 s on an iPhone);
 - read: the next `k` bodies at most, those of new edits first, then those a step left (`read`, `READ_WORK`);

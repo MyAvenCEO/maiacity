@@ -55,7 +55,6 @@
 	import AccessRequest from './AccessRequest.svelte';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
-	import { FLOW, FLOWS, FUNCTION, FUNCTIONS } from './flows.js';
 	import { answer, refs } from './ops.js';
 	import { beside, seeding, seedPieces, unseeded } from './seed.js';
 	import { capGroupOps } from './capgroups.js';
@@ -115,9 +114,6 @@
 	let carding = false;
 	let copying = false;
 	let profiling = false;
-	/** whether the device is writing avenCEO GmbH's standard schemas, and the companies whose it wrote */
-	let standardizing = false;
-	const standardized = new Set();
 
 	// the tab's device, loaded once for every page of the site, or taken up again where this tab opened it already, so
 	// one unlock lasts the tab (./session.svelte.js); the session lets this page go as it closes, and what watched the
@@ -288,7 +284,7 @@
 
 	/**
 	 * What this page keeps up as world `w` shows: the access requests as records; this device's card and copy setting;
-	 * the profiles of the person's vault, by their maiaCITY name `who`, and of the seed; avenCEO's standard schemas.
+	 * the profiles of the person's vault, by their maiaCITY name `who`, and of the seed.
 	 * @param {import('./vaults.js').WorldView} w @param {string} who
 	 */
 	function upkeep(w, who) {
@@ -335,24 +331,13 @@
 				.catch((/** @type {Error} */ e) => (session.error = `Naming your vaults failed: ${plain(e.message)}`))
 				.finally(() => (profiling = false));
 		}
-		// avenDB's standard schemas and lenses, each an entry of the seed's coop, Maia City, shared with everyone
-		// as it adds them, their JSON as avenDB has it, so the same ids; and the content flow and its functions, Public
-		// too: written once, by whichever device comes first
-		const company = seeded(w)[0]?.[0];
-		if (company && !standardizing && !standardized.has(company.id)) {
-			standardizing = true;
-			standardize(w, company.id)
-				.then(() => standardized.add(company.id))
-				.catch((/** @type {Error} */ e) => (session.error = `Adding avenCEO’s schemas failed: ${plain(e.message)}`))
-				.finally(() => (standardizing = false));
-		}
 		// the repo seed's top-up (./seed.js): the code, games, settings and recipes the repository adds that Maia
-		// City never held, deleted or not, written into it once it holds the standard schemas, by the person's first device
+		// City never held, deleted or not, by the person's first device
 		// alone: one that joins later might not have synced what the first wrote yet, and would write it all again
 		const city = seeded(w)[0]?.[0];
 		const first = mine?.devices[0]?.me === true;
 		const tried = seededInto.has(city?.id) || seedFailed.has(city?.id ?? '');
-		if (city && company && first && standardized.has(company.id) && !bringing && !tried) {
+		if (city && first && !bringing && !tried) {
 			bringing = true;
 			const left = unseeded(w, city.id, seedPieces());
 			// a background job (Samuel 2026-10-18): nothing waits for it, the setup is over without it, and the corner
@@ -415,35 +400,6 @@
 		}
 		if (failed.length)
 			throw new Error(`Maia City refused ${failed.length} of them: ${failed.join(', ')}. Why: ${[...reasons].slice(0, 3).join(' · ')}`);
-	}
-
-	/**
-	 * Each of avenDB's standard schemas and lenses that vault `company` doesn't hold an entry of yet, added as its own:
-	 * the schemas first, so each lens joins two it holds. Then the flows and functions every app knows (./flows.js)
-	 * that it doesn't hold yet, by their key and their name. It never writes over an entry, nor shares anything
-	 * (Samuel 2026-10-19: Maia City as it is is the truth): its flows and functions are Public already.
-	 * @param {import('./vaults.js').WorldView} w @param {string} company
-	 */
-	async function standardize(w, company) {
-		const send = session.ask;
-		/** @type {import('./db.js').Db} */
-		const db = answer(await send({ op: 'database', vault: company }));
-		const held = new Set([...db.schemas, ...db.lenses].map((x) => x.id));
-		const missing = [
-			...db.builtIn.schemas.filter((x) => !held.has(x.id)).map((x) => ['schema', x.json]),
-			...db.builtIn.lenses.filter((x) => !held.has(x.id)).map((x) => ['lens', x.json])
-		];
-		for (const [type, json] of missing) {
-			answer(await send({ op: 'create', vault: company, type, value: json, as: company }));
-		}
-		const own = (/** @type {string} */ type) =>
-			w.entries.filter((e) => e.vault === company && e.type === type && e.kind === 'record').map((e) => e.record);
-		const [flows, fns] = [own(FLOW).map((f) => f?.key), own(FUNCTION).map((f) => `${f?.flow}\n${f?.name}`)];
-		const made = [
-			...FLOWS.filter((f) => !flows.includes(f.key)).map((f) => [FLOW, f]),
-			...FUNCTIONS.filter((f) => !fns.includes(`${f.flow}\n${f.name}`)).map((f) => [FUNCTION, f])
-		];
-		for (const [type, value] of made) answer(await send({ op: 'create', vault: company, type, value, as: company }));
 	}
 
 	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through: the

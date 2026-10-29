@@ -1863,7 +1863,7 @@ impl Node {
         let lacked: Vec<Value> = {
             let differed = self.shared.differed.lock().expect("differed");
             heard.iter().filter_map(|(d, _)| differed.get(d).map(|(l, t)| json!({ "device": d.to_hex()[..8].to_string(),
-                "lacks": l.len(), "by_stub": t.by_stub, "stubs": t.stubs, "sample": t.sample }))).collect()
+                "lacks": l.logs.len(), "bodies": l.bodies.len(), "by_stub": t.by_stub, "stubs": t.stubs, "sample": t.sample }))).collect()
         };
         // per peer, what moves while a catch-up runs, long before a log is whole (Samuel 2026-10-28: "with zero visible
         // feedback the syncing UI doesn't reflect what is actually happening in real time"): whether a pull of it runs
@@ -2030,7 +2030,7 @@ impl Node {
         let mut out = BTreeMap::new();
         for device in live {
             let told = self.shared.held.lock().expect("held").contains_key(&device);
-            let lacks = if told { Some(self.shared.lacks_edits(device).await) } else { None };
+            let lacks = if told { Some(self.shared.differ(device).await.len()) } else { None };
             out.insert(device, lacks);
         }
         out
@@ -2468,8 +2468,18 @@ struct Differed {
     by_stub: usize,
     stubs: usize,
     sample: Vec<Value>,
-    /// Of the logs it lacks, those it lacks only keys of (`Logs::lacks_only_keys`): asked for the keys, though nothing
-    /// a read shows waits on them, nor a removal.
+}
+
+/// What a device holds that this node's device lacks (`Shared::lacked`): the logs where that may change what a read
+/// shows (`differ`), and those where it lacks only the bodies of boxes it holds stubs of, while it asks for them
+/// (`Lab::fetch_withheld`). A box's body changes nothing the device knows (`LazyBoxes.lean` S6): no read waits on
+/// `bodies`, and its askings bring them all the same. Nor does any wait on `keys`, the logs where it holds every edit
+/// and their past but lacks a McEliece key one names (`Logs::lacks_only_keys`): a key is needed only to seal to its
+/// owner, and comes with the asking of its log (`Lab::request`'s wants).
+#[derive(Clone, Debug, Default)]
+struct Lacked {
+    logs: BTreeSet<LogId>,
+    bodies: BTreeSet<LogId>,
     keys: BTreeSet<LogId>,
 }
 
@@ -2517,7 +2527,7 @@ struct Shared {
     /// Each device it may tell, by its device's view, and what of its holdings it tells it.
     reach: Mutex<Arc<BTreeMap<SignerId, Reach>>>,
     /// What `differ` worked out last for each device, for when the Lab's turn can't be had, and what it told of it.
-    differed: Mutex<HashMap<SignerId, (BTreeSet<LogId>, Differed)>>,
+    differed: Mutex<HashMap<SignerId, (Lacked, Differed)>>,
     /// When each known device's last connection closed (ms since 1970), as `Node::synced` keeps counting it a while,
     /// reconnecting (`counted`).
     went: Mutex<HashMap<SignerId, u64>>,
@@ -2966,7 +2976,7 @@ impl Shared {
     /// `ask`, of what `scope` names alone: once connected, a `pull` job of the peer's device, forgotten if it took
     /// nothing.
     async fn asking(self: &Arc<Self>, endpoint: EndpointId, scope: Scope) -> Result<usize> {
-        self.pull(endpoint, scope, false, None).await
+        self.pull(endpoint, scope, false).await
     }
 
     async fn pull(
@@ -2974,9 +2984,8 @@ impl Shared {
         endpoint: EndpointId,
         scope: Scope,
         background: bool,
-        catch_up: Option<&pulls::CatchUp>,
     ) -> Result<usize> {
-        self.pull_expected(endpoint, scope, background, catch_up, None, None, None).await
+        self.pull_expected(endpoint, scope, background, None, None, None).await
     }
 
     /// A live hint belongs to the authenticated identity that announced it. Fence that identity before building
@@ -2986,14 +2995,13 @@ impl Shared {
         endpoint: EndpointId,
         scope: Scope,
         background: bool,
-        catch_up: Option<&pulls::CatchUp>,
         expected: Option<SignerId>,
         keys: Option<&mut BTreeSet<BlobId>>,
         yielding: Option<&Yield>,
     ) -> Result<usize> {
         let _activity = self.admit()?;
         let turn = if expected.is_none() { Some(self.pulls.one_asking(endpoint).await) } else { None };
-        let admission = self.pulls.enter(background, catch_up).await?;
+        let admission = self.pulls.enter(background).await?;
         let peer = self.connection(endpoint).await?;
         if expected.is_some_and(|device| device != peer.device) {
             anyhow::bail!("sync peer identity changed before live pull");
@@ -3421,6 +3429,7 @@ impl Shared {
                 #[cfg(target_arch = "wasm32")]
                 let (prepared, permit, activity, ()) = shared.prepare_received_page(edits, permit, ()).await?;
                 let checked = taking.elapsed();
+                let spent = prepared.spent();
                 let (got, whose, held) = shared
                     .try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| {
                         let (_permit, _activity) = (permit, activity);
@@ -3437,7 +3446,7 @@ impl Shared {
                     shared.catch_up_paced_class(false, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
                 }
                 let took = taking.elapsed();
-                Ok::<_, anyhow::Error>((got, whose, [checked, kept - checked, took - kept, took]))
+                Ok::<_, anyhow::Error>((got, whose, [checked, kept - checked, took - kept, took], spent))
             });
             // the pages in flight land (and more are asked) while this one is taken
             let mut take = std::pin::pin!(async { take.await.context("a page's taking ended")? });
@@ -3451,7 +3460,7 @@ impl Shared {
                     }
                 }
             };
-            let (got, whose, [checked, kept, caught, took]) = taken?;
+            let (got, whose, [checked, kept, caught, took], (verified, yielded)) = taken?;
             let finished = Instant::now();
             // a claim holds on while its pages land (`Claims::landed`), as fast as they came lately
             let lately = self.rates.lock().expect("rates").get(&device).and_then(pulls::Rate::per_second);
@@ -3465,6 +3474,8 @@ impl Shared {
                 wait_ms: wait.as_millis() as u64,
                 take_ms: took.as_millis() as u64,
                 check_ms: checked.as_millis() as u64,
+                verify_ms: verified.as_millis() as u64,
+                yield_ms: yielded.as_millis() as u64,
                 lab_ms: kept.as_millis() as u64,
                 catch_ms: caught.as_millis() as u64,
                 ms: finished.duration_since(since).as_millis() as u64,
@@ -4117,32 +4128,44 @@ impl Shared {
     /// holds of it. A log the node holds nothing of, which its view can't place, it asks for naming nothing of it
     /// (`session::only`), as its request on a new connection does: else it would never learn of a new entry. A device
     ///
-    /// The stubs it holds of key boxes a peer held back count as held, as its request counts them (`Lab::held_stubs`):
-    /// else a log whose head on the peer is such a box read as lacked for good, its asking brought nothing new, and the
-    /// views waited on it (an iPhone lacking 2,577 of 3,090 logs, 2026-10-28, Fix D). Where the Lab's turn can't be had,
-    /// it answers what it worked out last for the device, not nothing, so the count the views wait on doesn't drop
-    /// to nothing and back.
+    /// The stubs it holds of key boxes a peer held back count as held (`Lab::held_stubs`), their bodies asked for or
+    /// not: a box's body changes nothing its device knows (`LazyBoxes.lean` S6). Else a log whose head on the peer is
+    /// such a box read as lacked, its asking brought nothing new, and the views waited on it (an iPhone lacking 2,577 of
+    /// 3,090 logs, 2026-10-28, Fix D); and once it asked for their bodies, 2,517 vault and share logs read as lacked
+    /// again, every read of their vaults behind while the bodies came (a fresh browser, 2026-10-29). Where the Lab's
+    /// turn can't be had, it answers what it worked out last for the device, not nothing, so the count the views wait
+    /// on doesn't drop to nothing and back.
     async fn differ(self: &Arc<Self>, device: SignerId) -> BTreeSet<LogId> {
+        self.lacked(device).await.logs
+    }
+
+    /// The logs where `device` holds an edit this node's device lacks (`differ`), and apart from them, while it asks
+    /// for the bodies of the boxes it holds stubs of, the logs where `device` holds no more than those (`Lacked`).
+    async fn lacked(self: &Arc<Self>, device: SignerId) -> Lacked {
         let Some(theirs) = self.held.lock().expect("held").get(&device).map(|h| h.logs.clone()) else {
-            return BTreeSet::new();
+            return Lacked::default();
         };
         let (shared, known) = (self.clone(), self.reach.lock().expect("reach").clone());
         let worked = self.try_lab(move |lab, me| {
             let mine = shared.logs_of(lab, me);
-            let stubs = mine.closed_stubs(&lab.held_stubs(me));
+            let (held_stubs, asks_bodies) = lab.held_stubs(me);
+            let stubs = mine.closed_stubs(&held_stubs);
             let mut now: Option<BTreeSet<LogId>> = None;
             let mut within = |l: &LogId| {
                 let reach = |lab: &mut Lab| lab.announce(me, device).into_iter().map(|(l, _)| l).collect();
                 known.get(&device).is_some_and(|r| r.logs.contains(l))
                     || now.get_or_insert_with(|| reach(lab)).contains(l)
             };
-            let (mut lacking, mut by_stub, mut sample, mut lacked) = (BTreeSet::new(), 0, Vec::new(), Vec::new());
+            let (mut lacking, mut bodies, mut by_stub, mut sample, mut lacked) = (BTreeSet::new(), BTreeSet::new(), 0, Vec::new(), Vec::new());
             for (l, f) in theirs {
                 if !mine.lacks(&f) {
                     continue;
                 }
                 if !mine.lacks_with(&f, &stubs) {
                     by_stub += 1;
+                    if asks_bodies {
+                        bodies.insert(l);
+                    }
                     continue;
                 }
                 if mine.of.contains_key(&l) && !within(&l) {
@@ -4163,26 +4186,19 @@ impl Shared {
             }
             drop(within);
             let edits = lab.log(me).edits();
-            let keys = lacked.into_iter().filter(|(_, f)| mine.lacks_only_keys(edits, f)).map(|(l, _)| l).collect();
-            (lacking, Differed { by_stub, stubs: stubs.len(), sample, keys })
+            let keys: BTreeSet<LogId> = lacked.into_iter().filter(|(_, f)| mine.lacks_only_keys(edits, f)).map(|(l, _)| l).collect();
+            lacking.retain(|l| !keys.contains(l));
+            (Lacked { logs: lacking, bodies, keys }, Differed { by_stub, stubs: stubs.len(), sample })
         });
         let worked = worked.await;
         let mut last = self.differed.lock().expect("differed");
         match worked {
-            Ok((lacking, told)) => {
-                last.insert(device, (lacking.clone(), told));
-                lacking
+            Ok((lacked, told)) => {
+                last.insert(device, (lacked.clone(), told));
+                lacked
             }
             Err(_) => last.get(&device).map(|(l, _)| l.clone()).unwrap_or_default(),
         }
-    }
-
-    /// How many logs `device` holds edits of that this node's device lacks (`differ`), leaving out those it lacks only
-    /// keys of (`Logs::lacks_only_keys`).
-    async fn lacks_edits(self: &Arc<Self>, device: SignerId) -> usize {
-        let lacking = self.differ(device).await;
-        let keys = self.differed.lock().expect("differed").get(&device).map(|(_, d)| d.keys.intersection(&lacking).count());
-        lacking.len() - keys.unwrap_or(0)
     }
 
     /// The endpoint of the live connection whose hellos proved `device`, if there is one.
@@ -4205,8 +4221,11 @@ impl Shared {
     async fn ask_differing(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
         let _activity = self.admit()?;
         let peer = self.connection(endpoint).await?;
-        // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends
-        let differing = self.differ(peer.device).await;
+        // the logs no other peer is asked for now (`Claims`), claimed until this asking ends, however it ends: those that
+        // may change a read, and the bodies of the boxes it holds stubs of and the keys it lacks, which no read waits on
+        let Lacked { logs: mut differing, bodies, keys: lacked_keys } = self.lacked(peer.device).await;
+        differing.extend(bodies);
+        differing.extend(lacked_keys);
         // how fast this peer's pages came lately, or as a new peer's are counted to (`pulls::Rate::start_per_second`)
         let rate = self.rates.lock().expect("rates").get(&peer.device).and_then(pulls::Rate::per_second);
         let rate = rate.unwrap_or_else(pulls::Rate::start_per_second);
@@ -4243,7 +4262,7 @@ impl Shared {
             let wants = self.views_want();
             let yielding = left.is_empty().then(|| Yield::new(logs.clone(), wants.clone(), *self.wants.borrow()));
             let (began, at) = (Instant::now(), jobs::now_ms());
-            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, None, Some(&mut keys), yielding.as_ref()).await;
+            let got = self.pull_expected(endpoint, Scope::Logs(logs.clone()), true, None, Some(&mut keys), yielding.as_ref()).await;
             // which logs it asked, and which of them the views want, before every other: whether a page's room came first
             let wanted_first: Vec<&LogId> = logs.iter().filter(|l| wants.contains(l)).chain(logs.iter().filter(|l| !wants.contains(l))).take(8).collect();
             self.traffic.asking(traffic::Asking {

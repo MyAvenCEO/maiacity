@@ -163,6 +163,43 @@ theorem vouched_covered {s : List Edit} {x : EditId} (h : x ∈ vouched s) :
 
 /-! ## Scenarios -/
 
+
+/-! ## A reply carries the word it asks the asker to take (A2, 2026-10-29)
+
+A peer that holds an edit bare can't hand its signatures on: the asker takes it only on a checkpoint's word, as the peer
+did. A reply cut to some logs (an asking of a view's entries alone) sent the bare edits of those logs and not the
+checkpoint, which is of a vault's log, so the asker dropped them on every asking and their logs read as lacked for good.
+A cut reply carries, beside what it is cut to, every checkpoint of what the asker may receive that covers a bare edit
+among it (`cutReply`, `cutReply_covering`): the checkpoint is a part of the bare edit's past, as its parents are. -/
+
+/-- The checkpoints among `answer` that cover `x`. -/
+def covering (answer : List Edit) (x : EditId) : List Edit :=
+  answer.filter fun o => match o.action with
+    | .checkpoint _ covers => covers.contains x
+    | _ => false
+
+/-- A reply of `answer` cut to what `cut` takes, `signed` saying which edits the peer holds with their signatures:
+    those, and each checkpoint of `answer` that covers a bare one among them. -/
+def cutReply (signed : EditId → Bool) (cut : Edit → Bool) (answer : List Edit) : List Edit :=
+  answer.filter cut ++ ((answer.filter cut).filter fun o => !signed o.id).flatMap fun o => covering answer o.id
+
+/-- Every checkpoint the asker may receive that covers a bare edit a cut reply sends comes with it. -/
+theorem cutReply_covering {signed : EditId → Bool} {cut : Edit → Bool} {answer : List Edit} {o c : Edit}
+    (ho : o ∈ answer) (hcut : cut o = true) (hbare : signed o.id = false) (hc : c ∈ covering answer o.id) :
+    c ∈ cutReply signed cut answer := by
+  unfold cutReply
+  refine List.mem_append_right _ (List.mem_flatMap.2 ⟨o, ?_, hc⟩)
+  exact List.mem_filter.2 ⟨List.mem_filter.2 ⟨ho, hcut⟩, by simp [hbare]⟩
+
+/-- And it sends no edit the asker may not receive: each is of `answer`. -/
+theorem cutReply_sub {signed : EditId → Bool} {cut : Edit → Bool} {answer : List Edit} {c : Edit}
+    (hc : c ∈ cutReply signed cut answer) : c ∈ answer := by
+  unfold cutReply at hc
+  rcases List.mem_append.1 hc with h | h
+  · exact (List.mem_filter.1 h).1
+  · obtain ⟨_, _, hc⟩ := List.mem_flatMap.1 h
+    exact (List.mem_filter.1 hc).1
+
 namespace Examples
 
 /-- Alice's vault with its two devices, and a checkpoint her passkey signs over both devices' edits. -/

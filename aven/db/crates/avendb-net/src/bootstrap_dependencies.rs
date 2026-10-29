@@ -288,7 +288,7 @@ mod network_tests {
             .unwrap();
         let mut stalled = Vec::new();
         loop {
-            let mut p = Box::pin(receiver.shared.pulls.enter(false, None));
+            let mut p = Box::pin(receiver.shared.pulls.enter(false));
             let Some(p) = future::poll_once(&mut p).await else {
                 break;
             };

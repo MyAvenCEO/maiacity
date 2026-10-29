@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use avendb::id::EntryId;
 use avendb::keys::KeyFam;
-use avendb::policy::{replay, replay_on_why, Action, Edit, Log, Proposal, Revoking, State, Why};
+use avendb::policy::{replay, replay_on_why, rewind, Action, Edit, Log, Proposal, Replay, Revoking, State, Why};
 use common::*;
 
 /// A write of `n` on entry `e`, by `by`, drafted on `log`.
@@ -165,4 +165,186 @@ fn catch_up(held: usize, away: usize) -> Vec<Why> {
 fn a_second_devices_pages_step_on_from_a_rung() {
     let whys = catch_up(6_000, 2_400);
     assert!(!whys.iter().any(|w| matches!(w, Why::Whole(_))), "no page replayed every edit: {whys:?}");
+}
+
+/// Alice's Mac writes `writes` edits over 20 entries, then takes a page of her iPhone's drafted on what it held `back`
+/// edits before: its log, its replay of what it held before the page, and how many that was.
+fn far_page(writes: usize, back: usize) -> (Log, Replay, usize) {
+    let mut c = cast();
+    let alice = c.alice;
+    for i in 0..20 {
+        c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+    }
+    let mut st = c.log.view();
+    let mut then = None;
+    for n in 0..writes as u32 {
+        if writes - n as usize == back {
+            then = Some((c.log.clone(), st.clone()));
+        }
+        let w = write(&c.log, &st, MAC_A, EntryId::from_u64(1000 + n as u64 % 20), n);
+        c.log.receive([w]);
+        if n % 500 == 499 {
+            st = c.log.view();
+        }
+    }
+    let was = replay(c.log.edits());
+    let held = c.log.edits().len();
+    let (then, then_st) = then.expect("what it held then");
+    let page: Vec<Edit> =
+        (0..5).map(|i| write(&then, &then_st, PHONE_A, EntryId::from_u64(1000 + i), 2_000_000 + i as u32)).collect();
+    c.log.receive(page);
+    (c.log, was, held)
+}
+
+/// `far_page`'s page, further back than a rung reaches, stepped on, from its replay or from its stored view of it: it
+/// replays from the mark before them (`Marks`), as the whole, and how each went.
+fn far_back(writes: usize, back: usize) -> (Why, Why) {
+    let (log, was, held) = far_page(writes, back);
+    let view = Replay::from_view(&was.to_view(held), log.edits(), log.ids()).expect("its stored view").0;
+    let whole = replay(log.edits());
+    let (stepped, why) = replay_on_why(was, log.edits(), held);
+    assert!(stepped == whole, "{why:?}: stepped on, it differs from the whole");
+    let (opened, opened_why) = replay_on_why(view, log.edits(), held);
+    assert!(opened == whole, "{opened_why:?}: stepped on from its stored view, it differs from the whole");
+    (why, opened_why)
+}
+
+/// A catch-up's step replays at most a slice of edits (`Lab::step_replay`): a page far back is replayed from the mark
+/// before it a slice a step (`rewind`), not every edit, and is the whole replayed.
+#[test]
+fn a_rewind_run_a_slice_a_step_is_the_whole_replay() {
+    let (log, mut was, held) = far_page(24_000, 14_000);
+    let whole = replay(log.edits());
+    let mut run = rewind(&mut was, log.edits(), held).expect("a rewind from a mark");
+    assert_eq!(run.of(), log.edits().len());
+    let mut steps = 1;
+    while !run.step(&was, log.edits(), 1_000) {
+        steps += 1;
+    }
+    assert!((14..=19).contains(&steps), "{steps} slices of 1,000 for a page 14,000 back");
+    let stepped = run.finish(was, log.edits()).unwrap_or_else(|(_, why)| panic!("{why}"));
+    assert!(stepped == whole, "rewound a slice a step, it differs from the whole");
+}
+
+#[test]
+fn a_page_drafted_further_back_than_a_rung_replays_from_a_mark() {
+    for back in [9_000, 14_000, 21_000] {
+        let (why, opened) = far_back(24_000, back);
+        assert_eq!((why, opened), (Why::Rung, Why::Rung), "a page {back} back, stepped on and from its stored view");
+    }
+}
+
+/// A replay that grew by pages sorting among its last edits keeps marks too: its rungs, as they fall further back
+/// than a rung reaches (`Tail::rung`), and a page drafted far behind replays from the mark before it.
+#[test]
+fn rungs_grown_old_are_marks_a_late_page_replays_from() {
+    let mut c = cast();
+    let alice = c.alice;
+    for i in 0..20 {
+        c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+    }
+    let mut st = c.log.view();
+    let mut was = replay(c.log.edits());
+    let mut held = c.log.edits().len();
+    let mut behind: Vec<(Log, State)> = vec![];
+    let mut whys = vec![];
+    for n in 0..30_000u32 {
+        let w = write(&c.log, &st, MAC_A, EntryId::from_u64(1000 + n as u64 % 20), n);
+        c.log.receive([w]);
+        if n % 500 == 499 {
+            st = c.log.view();
+            behind.push((c.log.clone(), st.clone()));
+            // a page of the iPhone's drafted 1,000 back, sorting among the last edits: the place moves on
+            let (back, back_st) = &behind[behind.len().saturating_sub(3)];
+            let page: Vec<Edit> = (0..3).map(|i| write(back, back_st, PHONE_A, EntryId::from_u64(1000 + i), 1_000_000 + n + i as u32)).collect();
+            c.log.receive(page);
+            let why;
+            (was, why) = replay_on_why(was, c.log.edits(), held);
+            held = c.log.edits().len();
+            whys.push(why);
+        }
+    }
+    assert!(!whys.iter().any(|w| matches!(w, Why::Whole(_))), "no page replayed every edit: {whys:?}");
+    // a page drafted on what it held 20,000 edits back
+    let (back, back_st) = &behind[behind.len() - 40];
+    let page: Vec<Edit> = (0..4).map(|i| write(back, back_st, PHONE_A, EntryId::from_u64(1000 + i), 3_000_000 + i as u32)).collect();
+    c.log.receive(page);
+    let (stepped, why) = replay_on_why(was, c.log.edits(), held);
+    assert_eq!(why, Why::Rung, "a page 20,000 back stepped on from a mark");
+    assert!(stepped == replay(c.log.edits()), "stepped on from a mark, it differs from the whole");
+}
+
+/// Alice's Mac writes `writes` edits over 20 entries: its log, and what it held `back` edits before, with its view.
+fn mac_log(writes: usize, back: usize) -> (Cast, Log, State) {
+    let mut c = cast();
+    let alice = c.alice;
+    for i in 0..20 {
+        c.log.append(MAC_A, &[], creation(alice, EntryId::from_u64(1000 + i), alice, &[])).expect("an entry");
+    }
+    let mut st = c.log.view();
+    let mut then = None;
+    for n in 0..writes as u32 {
+        if writes - n as usize == back {
+            then = Some((c.log.clone(), st.clone()));
+        }
+        let w = write(&c.log, &st, MAC_A, EntryId::from_u64(1000 + n as u64 % 20), n);
+        c.log.receive([w]);
+        if n % 500 == 499 {
+            st = c.log.view();
+        }
+    }
+    let (then, st) = then.expect("what it held then");
+    (c, then, st)
+}
+
+/// `edits` taken one after the other by `log`, its replay `was` of what it held: each stepped on as the whole, and
+/// how each went.
+fn take_each(log: &mut Log, mut was: Replay, edits: Vec<Edit>) -> Vec<Why> {
+    let mut whys = vec![];
+    for e in edits {
+        let held = log.edits().len();
+        log.receive([e]);
+        let why;
+        (was, why) = replay_on_why(was, log.edits(), held);
+        assert!(was == replay(log.edits()), "{why:?}: stepped on, it differs from the whole");
+        whys.push(why);
+    }
+    whys
+}
+
+/// An edit of her iPhone's drafted far behind comes after one that builds on it: the edits from the mark before it
+/// are replayed again with it, the one built on it among them, not every edit.
+#[test]
+fn an_edit_a_held_one_builds_on_replays_from_the_mark_before_it() {
+    let (mut c, mut then, then_st) = mac_log(12_000, 10_000);
+    let e = EntryId::from_u64(1003);
+    let first = write(&then, &then_st, PHONE_A, e, 4_000_000);
+    then.receive([first.clone()]);
+    let second = write(&then, &then.view(), PHONE_A, e, 4_000_001);
+    assert!(second.parents.contains(&first.id()), "the second builds on the first");
+    let was = replay(c.log.edits());
+    let whys = take_each(&mut c.log, was, vec![second, first]);
+    assert!(!whys.iter().any(|w| matches!(w, Why::Whole(_))), "none replayed every edit: {whys:?}");
+}
+
+/// A checkpoint of Alice's over edits her iPhone made far behind comes before them, or after them: either way the
+/// edits from the mark before the first it covers are replayed again, not every edit.
+#[test]
+fn a_checkpoint_and_the_edits_it_covers_replay_from_the_mark_before_them() {
+    for checkpoint_first in [true, false] {
+        let (mut c, mut then, then_st) = mac_log(12_000, 10_000);
+        let page: Vec<Edit> =
+            (0..3).map(|i| write(&then, &then_st, PHONE_A, EntryId::from_u64(1000 + i), 5_000_000 + i as u32)).collect();
+        then.receive(page.clone());
+        let covers = page.iter().map(Edit::id).collect();
+        then.append(PASSKEY_A, &[], Action::Checkpoint { vault: c.alice, covers }).expect("her passkey's checkpoint");
+        let checkpoint = then.edits().last().expect("the checkpoint").clone();
+        let was = replay(c.log.edits());
+        let edits = match checkpoint_first {
+            true => [vec![checkpoint], page].concat(),
+            false => [page, vec![checkpoint]].concat(),
+        };
+        let whys = take_each(&mut c.log, was, edits);
+        assert!(!whys.iter().any(|w| matches!(w, Why::Whole(_))), "checkpoint first {checkpoint_first}: {whys:?}");
+    }
 }

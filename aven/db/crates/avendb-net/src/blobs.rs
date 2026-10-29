@@ -117,12 +117,11 @@ impl Shared {
             hashes.iter().map(|h| (*h.as_bytes(), key(h), of(h))).collect()
         };
         let may = move |lab: &Lab, me| {
-            let files = lab.files(me);
             asked.iter().all(|(hash, key, pieced)| match key {
                 Some(b) => lab.may_fetch(me, device, *b, &follow),
                 None => {
-                    let mut roots = files.iter().filter(|f| f.hash == *hash).chain(pieced);
-                    roots.any(|f| lab.may_fetch_file(me, device, f, &follow))
+                    let mut roots = lab.files_hashed(me, hash).into_iter().chain(pieced.iter().copied());
+                    roots.any(|f| lab.may_fetch_file(me, device, &f, &follow))
                 }
             })
         };

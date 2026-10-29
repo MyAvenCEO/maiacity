@@ -94,7 +94,7 @@ fn a_move_after_everything_held_steps_on_as_a_write() {
 }
 
 #[test]
-fn a_move_that_keeps_less_replays_the_whole() {
+fn a_move_that_keeps_less_replays_from_before_the_write_it_keeps_not() {
     let (mut c, alice, bobs) = library();
     let e = EntryId::from_u64(1003);
     for n in 0..3 {
@@ -110,7 +110,7 @@ fn a_move_that_keeps_less_replays_the_whole() {
     keep.pop();
     c.log.receive([edit]);
     let (was, why) = replay_on_why(was, c.log.edits(), held);
-    assert_eq!(why, Why::Whole("replay whole: a move keeps not every write of its entry"));
+    assert!(!matches!(why, Why::Whole(_)), "the edits from before the write it keeps not replayed again: {why:?}");
     assert!(was == replay(c.log.edits()));
     // the next write steps on again
     let w = write(&c.log, &was.state, MAC_A, e, 9);

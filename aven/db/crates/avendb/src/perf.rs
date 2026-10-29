@@ -27,13 +27,13 @@ pub struct Started(u64);
 /// A steady clock in microseconds: the process's `Instant` natively, the page's `performance.now()` in a browser,
 /// where `std::time::Instant` has no clock.
 #[cfg(not(target_arch = "wasm32"))]
-fn now_us() -> u64 {
+pub(crate) fn now_us() -> u64 {
     static ORIGIN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
     ORIGIN.get_or_init(std::time::Instant::now).elapsed().as_micros() as u64
 }
 
 #[cfg(target_arch = "wasm32")]
-fn now_us() -> u64 {
+pub(crate) fn now_us() -> u64 {
     use js_sys::{Function, Reflect, global, wasm_bindgen::JsCast as _, wasm_bindgen::JsValue};
     let performance = Reflect::get(&global(), &JsValue::from_str("performance")).unwrap_or(JsValue::UNDEFINED);
     let ms = Reflect::get(&performance, &JsValue::from_str("now"))

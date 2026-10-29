@@ -433,9 +433,8 @@
 	 * how the vault is governed, and never while the device still works on the last ask of it: a device busy with a
 	 * big vault answers slowly, and asking again on a timer only handed it the same dry runs again. An answer to what
 	 * changed meanwhile is asked again at once. A Remove doesn't wait for its answer (Samuel's Mac 2026-10-21: every
-	 * one on "checking" for good), only for a refusal. Nor is how far this device has synced asked here: the device
-	 * itself decides, as it makes the removal, whether it must hold more first (avendb-net `removal_waits`), and says
-	 * why. Removals aren't asked on the person's own vault, where every Remove shows anyway
+	 * one on "checking" for good), only for a refusal. Nor is how far this device has synced asked anywhere: a removal goes on
+	 * what the device holds, at its own heads, and syncs on. Removals aren't asked on the person's own vault, where every Remove shows anyway
 	 * and the device checks each as it makes it: a dry run of each, over the whole vault, kept Samuel's Mac at full CPU
 	 * (2026-10-21, every call answered 30-50 s late).
 	 */
@@ -553,8 +552,8 @@
 
 	/**
 	 * Revokes share `id`, acting for vault `as`; a standing grant ("all my vaults, now and later") ends on every vault
-	 * it reached, and no vault founded later follows it. Like a removal, the device makes it only once it holds what
-	 * it must (avendb-net `removal_waits`): it drops every edit resting on the share that never reached this device.
+	 * it reached, and no vault founded later follows it. Like a removal, it goes on what the device holds, at its own
+	 * heads, and syncs on; it never waits on a peer.
 	 * @param {string | null} id @param {string} as @param {boolean} [standing]
 	 */
 	async function revokeShare(id, as, standing = false) {
@@ -574,7 +573,7 @@
 	const removingAny = $derived(Object.values(removing).some((r) => r.busy));
 	/**
 	 * Removes owner or device `name` from vault `of` by op `op`, once the person says yes: its peers refuse it from
-	 * then on. The device refuses it, and says why, while it lacks what the removal would drop (`removal_waits`). The vault's owners approve it. The question comes first and at
+	 * then on. It goes on what the device holds, at its own heads, and never waits on a peer. The vault's owners approve it. The question comes first and at
 	 * once, the page's own, before anything the device answers (Samuel 2026-10-21: "those popups should be instant, we
 	 * are local first"); each step shows by its Remove, `what` (`removing`).
 	 * @param {string} what @param {string} name @param {string} of @param {object} op

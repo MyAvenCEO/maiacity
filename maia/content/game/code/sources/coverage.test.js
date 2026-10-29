@@ -25,21 +25,20 @@ test('a view state follows coverage', () => {
 });
 
 // Freshness.lean's vectors, the same file the Rust engine replays (aven/db/crates/avendb/tests/all/freshness_vectors.rs).
-test('freshness and the action guard are what the model says', async () => {
- const { freshnessOf, actOf, opensOn, showsFinal } = await import('./coverage.js');
+test('freshness and the sheets are what the model says', async () => {
+ const { freshnessOf, opensOn, showsFinal } = await import('./coverage.js');
  const cases = await Bun.file(new URL('../../../../../aven/db/spec/vectors/freshness.json', import.meta.url)).json();
  expect(cases.length).toBe(20);
  for (const c of cases) {
   const f = freshnessOf({ ok: [], fresh: c.fresh });
   expect([c.name, f.state]).toEqual([c.name, c.fresh.state]);
-  expect([c.name, actOf(f)]).toEqual([c.name, c.act]);
   expect([c.name, opensOn(f, false)]).toEqual([c.name, c.pops]);
   expect([c.name, opensOn(f, true)]).toEqual([c.name, c.asked]);
   expect([c.name, showsFinal(f)]).toEqual([c.name, c.fresh.state !== 'behind']);
  }
- // The 27 Oct iPhone: three peers, 2,778 logs behind: never final, no sheet.
+ // The 27 Oct iPhone: three peers, 2,778 logs behind: never final, no sheet by itself; asked, it opens.
  const iphone = freshnessOf({ ok: [{ number: 29, stage: 'proposed' }], fresh: { state: 'behind', logs: 2778, waits: 0, unheard: 0 } });
- expect([showsFinal(iphone), opensOn(iphone), opensOn(iphone, true)]).toEqual([false, false, false]);
+ expect([showsFinal(iphone), opensOn(iphone), opensOn(iphone, true)]).toEqual([false, false, true]);
  // A device from before freshness: current, for one release.
  expect(freshnessOf({ ok: [] }).state).toBe('current');
 });
