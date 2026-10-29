@@ -382,7 +382,7 @@ theorem selectReaders_blind (c : Share) : selectReaders c.blind = selectReaders 
 
 /-- Where a share's selector key is sealed reads no selector. -/
 theorem selectSeals_ops (st : State) (c : Share) : selectSeals st.ops c.blind = selectSeals st c := by
-  simp only [selectSeals, selectReaders_blind, blind_id, ops_seals, curKey_ops]
+  simp only [selectSeals, selectReaders_blind, blind_id, ops_seals, curKey_ops, vault?_ops]
 
 /-- Who may box a key reads no selector, type or tag. -/
 theorem mayBox_ops (st : State) : mayBox st.ops = mayBox st := by

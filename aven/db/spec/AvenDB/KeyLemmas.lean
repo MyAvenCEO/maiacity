@@ -2829,7 +2829,9 @@ def SealsRead (sts : List State) (st : State) : Prop :=
       (∀ d, s.to ≠ .signer d) ∧
       (∀ b e', s.to = .scoped b e' → ∀ h, EverReads sts h b → EntryRead sts h x) ∧
       ∀ x' σ' g', s.to = .entry x' σ' g' → x' = x) ∧
-  ∀ x ∈ st.published, ∃ a e, x = .scoped a e ∧ ∃ st₀ ∈ sts, publicKey st₀ a = true
+  (∀ x ∈ st.published, ∃ a e, x = .scoped a e ∧ ∃ st₀ ∈ sts, publicKey st₀ a = true) ∧
+  -- nothing is sealed to a share's selector key, which opens nothing but its selector
+  ∀ s ∈ st.seals, ∀ c, s.to ≠ .select c
 
 /-- A step whose result is part of the history keeps every seal justified: a rotation seals a key under its family's
     next key, a current key goes only to those entitled to it then, and a link stays within one entry. -/
@@ -2840,9 +2842,12 @@ theorem SealsRead.step {sts : List State} {all : List Share} (hn : (all.map (·.
   obtain ⟨-, hseals, hpubs⟩ := apply_keys hpost
   have hkept := kept_settle st post
   have hs' : Sane (settle st post) := hkept.sane (hsane.of_apply hpost)
-  refine ⟨fun s hs => ?_, fun x hx => ?_⟩
+  refine ⟨fun s hs => ?_, fun x hx => ?_, fun s hs c => ?_⟩
   · rcases settle_seals hs with hs | ⟨k, e, -, -, -, rfl⟩ | ⟨k, hk, t, ht, rfl⟩ | ⟨en, hen, hl⟩
-    · exact hinv.1 s (hseals ▸ hs)
+    · rcases hseals s hs with hs | ⟨⟨c, hsec⟩, -⟩
+      · exact hinv.1 s hs
+      · exact ⟨fun d hd => (by rw [hsec] at hd; cases hd), fun a e ha => (by rw [hsec] at ha; cases ha),
+          fun x σ g hx => (by rw [hsec] at hx; cases hx)⟩
     · -- a rotation seals a family's key to its own next key
       refine ⟨fun d hd => (by cases hd), fun a e' ha => ?_, fun x σ g hx => (by cases hx)⟩
       cases ha
@@ -2891,8 +2896,19 @@ theorem SealsRead.step {sts : List State} {all : List Share} (hn : (all.map (·.
         simp only [entryKey, KeyName.entry.injEq] at hx'
         rw [← hx'.1, hwe]
   · rcases settle_published hx with hx | ⟨k, -, hpub, rfl⟩
-    · exact hinv.2 x (hpubs ▸ hx)
+    · exact hinv.2.1 x (hpubs ▸ hx)
     · exact ⟨k, _, rfl, _, hst', by rw [hkept.publicKey]; exact hpub⟩
+  · rcases settle_seals hs with hs | ⟨k, e, -, -, -, rfl⟩ | ⟨k, hk, t, ht, rfl⟩ | ⟨en, -, hl⟩
+    · rcases hseals s hs with hs | ⟨-, r, -, hto⟩
+      · exact hinv.2.2 s hs c
+      · rw [hto]
+        simp [State.curKey]
+    · intro hc
+      cases hc
+    · have hk' : k ∈ keyFams (settle st post) := by rw [hkept.keyFams]; exact hk
+      rcases mem_targets hs' hk' ht with ⟨d, rfl, -⟩ | ⟨o, rfl, -, -⟩ | ⟨v, c', x, -, rfl, -, -⟩ <;> intro hc <;>
+        cases hc
+    · rcases hl with rfl | ⟨w, -, -, rfl | ⟨-, rfl⟩⟩ <;> intro hc <;> cases hc
 
 /-- Along a replay whose states are all part of the history, every seal stays justified. -/
 theorem sealsRead_replay {sts : List State} {all : List Share} (hn : (all.map (·.id)).Nodup)
@@ -2917,7 +2933,7 @@ theorem sealsRead_replay {sts : List State} {all : List Share} (hn : (all.map (�
 /-- Every seal along a history from the empty state is justified by it. -/
 theorem sealsRead_trace (edits : List Edit) : SealsRead (trace {} edits) (replay {} edits) :=
   sealsRead_replay (keyInv_replay edits).sane.shareIds (shares_replay {} edits) edits {} (fun _ hx => hx)
-    keyInv_empty.sane ⟨fun _ h => (by cases h), fun _ h => (by cases h)⟩
+    keyInv_empty.sane ⟨fun _ h => (by cases h), fun _ h => (by cases h), fun _ h => (by cases h)⟩
 
 /-- With every seal justified, a holder opens a signer's key only if it is that signer, a key of a family only if it
     could read that family, and a key of an entry only if it could read an audience the entry was in. -/
@@ -2940,32 +2956,36 @@ theorem knows_everReads {sts : List State} {st : State} (hst : st ∈ sts) (hinv
       exact .entitled hst (by simp [Holder.entitled, entitledV, readsV])
     | everyone => simp [Holder.start] at hx
   | published hx =>
-    obtain ⟨a, e, rfl, st₀, hst₀, hpub⟩ := hinv.2 _ hx
+    obtain ⟨a, e, rfl, st₀, hst₀, hpub⟩ := hinv.2.1 _ hx
     refine ⟨fun d hd => (by cases hd), fun k e' hk => ?_, fun e σ g he => (by cases he)⟩
     cases hk
     exact .public hst₀ hpub
   | @«unseal» s hs _ ih =>
     obtain ⟨hsig, hsc, hent⟩ := hinv.1 s hs
-    rcases keyName_cases s.secret with ⟨d, hsec⟩ | ⟨a, e, hsec⟩ | ⟨y, σ, g, hsec⟩
+    rcases keyName_cases s.secret with ⟨d, hsec⟩ | ⟨a, e, hsec⟩ | ⟨y, σ, g, hsec⟩ | ⟨c, hsec⟩
     · exact absurd hsec (hsig d)
     · obtain ⟨hd, hb, hne⟩ := hsc a e hsec
       rw [hsec]
       refine ⟨fun d hd => (by cases hd), fun k e' hk => ?_, fun e σ g he => (by cases he)⟩
       cases hk
-      rcases keyName_cases s.to with ⟨d, hto⟩ | ⟨b, e'', hto⟩ | ⟨y, τ, g', hto⟩
+      rcases keyName_cases s.to with ⟨d, hto⟩ | ⟨b, e'', hto⟩ | ⟨y, τ, g', hto⟩ | ⟨c, hto⟩
       · rw [ih.1 d hto]
         exact hd d hto
       · exact hb b e'' hto h (ih.2.1 b e'' hto)
       · exact absurd hto (hne y τ g')
+      · exact absurd hto (hinv.2.2 s hs c)
     · obtain ⟨hd, hb, hy⟩ := hent y σ g hsec
       rw [hsec]
       refine ⟨fun d hd => (by cases hd), fun k e' hk => (by cases hk), fun e σ' g' he => ?_⟩
       cases he
-      rcases keyName_cases s.to with ⟨d, hto⟩ | ⟨b, e'', hto⟩ | ⟨z, τ, g', hto⟩
+      rcases keyName_cases s.to with ⟨d, hto⟩ | ⟨b, e'', hto⟩ | ⟨z, τ, g', hto⟩ | ⟨c, hto⟩
       · exact absurd hto (hd d)
       · exact hb b e'' hto h (ih.2.1 b e'' hto)
       · rw [← hy z τ g' hto]
         exact ih.2.2 z τ g' hto
+      · exact absurd hto (hinv.2.2 s hs c)
+    · rw [hsec]
+      exact ⟨fun d hd => (by cases hd), fun k e hk => (by cases hk), fun e σ g he => (by cases he)⟩
 
 /-- A holder that never reads anything of another vault through the vaults whose seeds it could read, and never could
     read the seed of a family's vault, reads that family only while it is public. -/
