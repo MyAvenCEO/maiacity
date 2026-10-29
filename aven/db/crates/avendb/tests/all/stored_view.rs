@@ -152,9 +152,9 @@ fn stored_views_preserve_cap_group_bindings_in_current_and_tail_states() {
 fn previous_derived_view_version_is_rejected_for_full_replay() {
     let c = cast();
     let mut bytes = replay(c.log.edits()).to_view(c.log.ids().len());
-    let current = b"avenDB view 3\n";
+    let current = b"avenDB view 4\n";
     assert!(bytes.starts_with(current));
-    bytes[..current.len()].copy_from_slice(b"avenDB view 2\n");
+    bytes[..current.len()].copy_from_slice(b"avenDB view 3\n");
     assert!(Replay::from_view(&bytes, c.log.edits(), c.log.ids()).is_none());
 }
 
@@ -186,7 +186,7 @@ fn pinned_views() -> String {
 }
 
 /// The replay rules' number (`viewRules`, `ViewRules.lean`) and the hash `pinned_views` gave under them.
-const PINNED: (&str, &str) = ("1", "5415ccaa46fc3c8925ef79196b9d5eaeab8efc6bcfa5531ec125c9b78f41ee66");
+const PINNED: (&str, &str) = ("1", "86adb6a0403e63f6b77695ce0f11d65e3853f14adcef9d78ca69c2e025516bec");
 
 /// A device opens a view sealed to the same rules number with any later build (VR1), so what the rules give must not
 /// change under one number. Where this fails: if the replay gives other views now (a rule changed, or a fix changed

@@ -150,8 +150,8 @@ use crate::perf::Perf;
 use crate::query_view::{self, QueryViews};
 use crate::policy::{
     Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal, Proposal,
-    Readings, Refusal, Replay, ReplayRun, Share, Sharing, State, Who, Why, Wrap, Write, covered,
-    mk_audience, replay, replay_on, replay_on_or, replay_on_why,
+    Readings, Refusal, Replay, ReplayRun, Share, Sharing, State, TailRun, Who, Why, Wrap, Write, covered,
+    mk_audience, replay, replay_on, replay_on_or, replay_on_why, rewind,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
@@ -563,6 +563,23 @@ fn back_counted(back: usize) -> &'static str {
         65..=1024 => "replay whole: back 1k at most",
         1025..=8192 => "replay whole: back 8k at most",
         _ => "replay whole: back more than 8k",
+    }
+}
+
+/// A replay of the edits a device holds run a slice a step (`Lab::step_replay`): of every edit, or of those from the
+/// rung or mark before the first it took since, as far back as that is (`policy::rewind`).
+enum Replaying {
+    Whole(ReplayRun),
+    From(TailRun),
+}
+
+impl Replaying {
+    /// How many of its log's edits it is the replay of: its first.
+    fn of(&self) -> usize {
+        match self {
+            Replaying::Whole(r) => r.of(),
+            Replaying::From(r) => r.of(),
+        }
     }
 }
 
@@ -1021,7 +1038,7 @@ struct Store {
     replayed: usize,
     /// A replay of every edit it held when it began, run a slice a step of a catch-up where stepping on would replay
     /// them all (`step_replay`): of a log of that lineage, the replay before it being of `replayed` edits then.
-    replaying: Option<(crate::policy::LogRevision, usize, crate::policy::ReplayRun)>,
+    replaying: Option<(crate::policy::LogRevision, usize, Replaying)>,
     /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
     /// holds now, not on every ask, announce and fetch. Empty while the replay is of every edit it holds and no entry is
     /// based, the replay then being `latest` itself.
@@ -3632,8 +3649,8 @@ impl Lab {
         let run = store.replaying.take().filter(|(l, from, run)| {
             *l == lineage && *from == store.replayed && run.of() <= store.log.edits().len()
         });
-        let (mut run, why) = match run {
-            Some((_, _, run)) => (run, None),
+        let mut run = match run {
+            Some((_, _, run)) => run,
             None => {
                 // stepped on over at most `most` of the edits it took since (one by one, or the last `TAIL` with them):
                 // a first sync's 130,000 stepped on at once took 10 s (2026-10-27)
@@ -3642,7 +3659,7 @@ impl Lab {
                 store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
                 let was = std::mem::replace(&mut store.replay, replay(&[]));
                 let back = (store.replayed > 0).then(|| was.back(&store.log.edits()[..store.replayed], fresh));
-                match replay_on_or(was, &store.log.edits()[..to], store.replayed) {
+                match replay_on_or(was, &store.log.edits()[..to], store.replayed, most) {
                     Ok((replayed, why)) => {
                         store.replay = replayed;
                         store.perf.count(why_counted(why), 1);
@@ -3652,18 +3669,28 @@ impl Lab {
                         store.perf.add("replay", at);
                         return;
                     }
-                    // the replay it held, as it was, stays what it shows until the whole one, of every edit it holds
-                    // (not of the slice: one whole replay, not one a slice), ends
+                    // the replay it held, as it was, stays what it shows until the one of every edit it holds (not of
+                    // the slice: one replay, not one a slice) ends: from the rung or mark before the first of them, as
+                    // far back as it is, else of every edit
                     Err((Some(was), why)) => {
-                        if let Some(back) = back {
-                            store.perf.count(back_counted(back), 1);
-                        }
                         store.replay = was;
                         store.reshow |= store.log.edits()[store.replayed..].iter().any(Edit::is_removal);
                         let begun = Perf::start();
-                        let run = ReplayRun::start(store.log.edits(), store.log.ids());
+                        let run = match rewind(&mut store.replay, store.log.edits(), store.replayed) {
+                            Ok(run) => {
+                                store.perf.count(why_counted(Why::Rung), 1);
+                                Replaying::From(run)
+                            }
+                            Err(_) => {
+                                if let Some(back) = back {
+                                    store.perf.count(back_counted(back), 1);
+                                }
+                                store.perf.count(why_counted(Why::Whole(why)), 1);
+                                Replaying::Whole(ReplayRun::start(store.log.edits(), store.log.ids()))
+                            }
+                        };
                         store.perf.add("replay: begun", begun);
-                        (run, Some(why))
+                        run
                     }
                     // a move found late to keep not every write: rare, replayed whole at once as before
                     Err((None, why)) => {
@@ -3677,25 +3704,42 @@ impl Lab {
                 }
             }
         };
-        if let Some(why) = why {
-            store.perf.count(why_counted(Why::Whole(why)), 1);
-        }
         let n = run.of();
         let edits = &store.log.edits()[..n];
         let ran = Perf::start();
-        let all = run.step(edits, most);
+        let all = match &mut run {
+            Replaying::Whole(r) => r.step(edits, most),
+            Replaying::From(r) => r.step(&store.replay, edits, most),
+        };
         store.perf.add("replay: run", ran);
-        if all {
-            let ended = Perf::start();
-            store.replay = run.finish(edits, &store.log.ids()[..n]);
-            store.perf.add("replay: ended", ended);
-            store.wholes += 1;
-            store.replayed = n;
-            #[cfg(not(avendb_no_replay_checks))]
-            debug_assert!(store.replay == replay(&store.log.edits()[..n]), "a replay run a slice a step differs from the whole");
-        } else {
+        if !all {
             store.replaying = Some((lineage, store.replayed, run));
+            store.perf.add("replay", at);
+            return;
         }
+        let ended = Perf::start();
+        match run {
+            Replaying::Whole(r) => {
+                store.replay = r.finish(edits, &store.log.ids()[..n]);
+                store.wholes += 1;
+            }
+            Replaying::From(r) => match r.finish(std::mem::replace(&mut store.replay, replay(&[])), edits) {
+                Ok(r) => store.replay = r,
+                // its moves stood not all: every edit replayed, a slice a step, from the next
+                Err((was, why)) => {
+                    store.replay = was;
+                    store.perf.count(why_counted(Why::Whole(why)), 1);
+                    let run = Replaying::Whole(ReplayRun::start(store.log.edits(), store.log.ids()));
+                    store.replaying = Some((lineage, store.replayed, run));
+                    store.perf.add("replay", at);
+                    return;
+                }
+            },
+        }
+        store.perf.add("replay: ended", ended);
+        store.replayed = n;
+        #[cfg(not(avendb_no_replay_checks))]
+        debug_assert!(store.replay == replay(&store.log.edits()[..n]), "a replay run a slice a step differs from the whole");
         store.perf.add("replay", at);
     }
 
@@ -6693,6 +6737,7 @@ impl Lab {
             store.view_read_due = true;
             match found {
                 Some((replay, held, older, read)) => {
+                    store.replaying = None;
                     store.replay = replay;
                     store.replayed = held;
                     // it reads on from what it read of them, opening each body it opened then only as it is asked for
@@ -7011,6 +7056,8 @@ impl Lab {
         let at = Perf::start();
         let took = match Replay::from_view(view, store.log.edits(), store.log.ids()) {
             Some((replay, held)) => {
+                // a run under way stepped on the replay it held: it goes with it
+                store.replaying = None;
                 store.replay = replay;
                 store.replayed = held;
                 store.perf.count("replay: from a handed view", 1);

@@ -222,7 +222,7 @@ fn materialized_replay(edits: &[Edit]) -> Replay {
         let passed = Passed::of(sorted(&edits, &ids, &stood, 0, at));
         let after = Passed::of(sorted(&edits, &ids, &stood, at, edits.len()));
         let grants = Grants::of(edits.iter().zip(ids.iter().copied()));
-        Tail { at, state, base, cands, tried, parents, covered, depths, passed, after, grants, rungs: vec![] }
+        Tail { at, state, base, cands, tried, parents, covered, depths, passed, after, grants, rungs: vec![], marks: Default::default() }
     });
     Replay { order, ids, stood, state, acts, tail }
 }
