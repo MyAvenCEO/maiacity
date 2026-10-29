@@ -332,6 +332,17 @@ once and merges.
 
 **Samuel's part,** the settings no agent can change:
 
-1. Create the cloud environment avenSANDBOX: the setup script above, Trusted network access, `AVEN_DB2=1`.
-2. In OrbStack's Docker engine config, set `"allow-direct-routing": true`.
-3. Once the first image is pushed, check that the `avensandbox` package on GitHub is public.
+1. **The cloud environment avenSANDBOX:** at claude.ai/code, the environment selector under the message box, then
+   **New environment**: Trusted network access, `AVEN_DB2=1`, and [`box/cloud-setup.sh`](box/cloud-setup.sh) as its
+   setup script.
+2. **OrbStack:** in its Docker engine config, `"allow-direct-routing": true`.
+3. **The `avensandbox` package public:** its settings on GitHub, **Danger Zone**, **Change visibility**.
+4. **`main`'s ruleset without "CI required"** (done 29 Oct 2026): v1's CI is parked, so that check never reports.
+5. **A `production` ruleset** (Settings, Rules, New branch ruleset): target `production`, Active, nobody on the bypass
+   list. Rules:
+   - restrict deletions, and block force pushes;
+   - require a pull request, with 0 approvals and merge commits only;
+   - require the status checks **Only from main** and **avenSANDBOX**, both from GitHub Actions.
+
+   Optionally, a tag ruleset `releases` on `??.??.??v*` that restricts updates and deletions (not creations), so a
+   release's tag never moves.
