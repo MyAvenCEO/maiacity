@@ -226,6 +226,11 @@ impl EditsVec {
         super::push_grown(&mut self.0, Slot::held(edit));
     }
 
+    /// An edit held by `place` alone, decoded as it is first read.
+    pub(crate) fn push_placed(&mut self, place: Place) {
+        super::push_grown(&mut self.0, Slot { edit: OnceLock::new(), place: Some(place) });
+    }
+
     /// Keeps the edits `keep` says, in order.
     pub fn retain_by(&mut self, mut keep: impl FnMut(usize) -> bool) {
         let mut i = 0;

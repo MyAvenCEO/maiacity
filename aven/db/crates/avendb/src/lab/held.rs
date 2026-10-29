@@ -692,6 +692,27 @@ impl Signeds {
         key_sum(&mut self.held.sum, &<Arc<Signed> as Record>::key_bytes(&id));
     }
 
+    /// `insert_placed`, of an edit it takes by its row (`log_rows`), never decoded: signed by `signers`, whose keys
+    /// `keys` says. Spilled only: an edit held in memory is held decoded.
+    pub(crate) fn insert_rowed(&mut self, id: EditId, signers: impl IntoIterator<Item = (SignerId, SignerKeys)>, placed: &Placed) -> bool {
+        let Some(spilled) = self.held.spilled.as_mut() else { return false };
+        if spilled.slot(&id).is_some() {
+            return true;
+        }
+        self.stripped.remove(&id);
+        for (s, keys) in signers {
+            self.signers.entry(s).or_insert((keys, 0)).1 += 1;
+        }
+        spilled.insert_at(id, &placed.file, placed.at, placed.len, placed.sum);
+        key_sum(&mut self.held.sum, &<Arc<Signed> as Record>::key_bytes(&id));
+        true
+    }
+
+    /// Whether it holds what it holds spilled, so that it takes an edit by its row (`insert_rowed`).
+    pub(crate) fn spilled(&self) -> bool {
+        self.held.spilled.is_some()
+    }
+
     pub(crate) fn remove(&mut self, id: &EditId) {
         let Some(signed) = self.held.get(id) else { return };
         for sig in &signed.sigs {

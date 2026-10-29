@@ -2290,6 +2290,31 @@ impl edits::Taker for Restorer {
         }
         Ok(())
     }
+
+    async fn rows(&mut self, sealed: &[u8]) -> Option<avendb::lab::LogRows> {
+        let (lab, r) = self.take();
+        // by rows only where its keys named the head they are of: else it checks each edit's signatures
+        let rows = if r.checks().0 { lab.open_rows(self.me, sealed) } else { None };
+        (self.lab, self.restoring) = (Some(lab), Some(r));
+        rows
+    }
+
+    async fn take_rows(
+        &mut self,
+        rows: avendb::lab::LogRows,
+        placed: Vec<avendb::lab::Placed>,
+        keys: Vec<Arc<[u8]>>,
+    ) -> Result<bool> {
+        let (n, began) = (rows.len(), n0_future::time::Instant::now());
+        let ((mut lab, mut r), me) = (self.take(), self.me);
+        let took = lab.restore_rows(me, &mut r, rows, placed, keys);
+        (self.lab, self.restoring) = (Some(lab), Some(r));
+        if took {
+            self.of_head += n;
+        }
+        self.taking += began.elapsed();
+        Ok(took)
+    }
 }
 
 /// `s` is an edit of a vault's log (`sync::log_of`), all that a card carries.

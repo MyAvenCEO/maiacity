@@ -100,6 +100,9 @@ fn view_replay(bytes: &[u8]) -> Option<&[u8]> {
 /// What a stored view holds beside its replay, behind a header: what its device read (`stored_readings`).
 const VIEW_READ: &[u8] = b"avenDB view and readings 1\n";
 
+/// What a pack's rows are sealed under (`Lab::log_rows`).
+const LOG_ROWS: &[u8] = b"avenDB pack rows";
+
 /// A stored view's replay, and what its device read where it holds that (`VIEW_READ`).
 fn view_parts(bytes: &[u8]) -> Option<(&[u8], Option<&[u8]>)> {
     let Some(rest) = bytes.strip_prefix(VIEW_READ) else { return Some((bytes, None)) };
@@ -114,6 +117,9 @@ mod blind_index;
 mod bodies;
 #[path = "lab/stored_readings.rs"]
 mod stored_readings;
+#[path = "lab/log_rows.rs"]
+mod log_rows;
+pub use log_rows::{LogRows, Row};
 pub(crate) use bodies::BodyOf;
 use bodies::{Bodies, Opener, StoreBodies};
 #[path = "lab/held.rs"]
@@ -1046,8 +1052,6 @@ struct Answers {
     /// What each asker is answered (`Lab::answered`), by the asker and the vaults it follows: stamped with the head of
     /// the log it was worked out of and how far the replay it was worked out by is.
     answered: std::sync::Mutex<HashMap<(SignerId, Vec<VaultId>), (crate::log_head::Head, usize, Arc<Answered>)>>,
-    /// Where the edits name each McEliece key and file (`Named`), stamped with the head of the log it indexes.
-    named: std::sync::Mutex<Option<Arc<Named>>>,
 }
 
 /// What a device answers one asker (`Lab::answered`): the places of the edits it sends, and their logs. It sends a log
@@ -1055,54 +1059,6 @@ struct Answers {
 struct Answered {
     places: Arc<Vec<usize>>,
     logs: HashSet<LogId>,
-}
-
-/// Where a device's edits name each McEliece key and each file (`Lab::may_fetch`, `Lab::may_fetch_file`), as places
-/// in its log, the first `head.at` of them: the key gate looks up the few edits that name what it is asked for, not
-/// every edit an asker may receive (2.3-2.5 s a call on the always-on peer, 2026-10-29). Kept as the log appends,
-/// worked out anew once its first `head.at` edits are no longer those it indexed (`Log::head_at`).
-#[derive(Clone)]
-struct Named {
-    head: crate::log_head::Head,
-    /// The edits that name each McEliece key (`Edit::blobs`).
-    blobs: HashMap<BlobId, Vec<usize>>,
-    /// The writes that bring each file (`Edit::files`).
-    files: HashMap<FileRoot, Vec<usize>>,
-    /// The snapshots whose state of an entry travels as each file (`Edit::stated`), with that entry.
-    stated: HashMap<FileRoot, Vec<(usize, EntryId)>>,
-    /// The files the writes bring, by their root's hash.
-    by_hash: HashMap<[u8; 32], BTreeSet<FileRoot>>,
-}
-
-impl Named {
-    fn of(log: &crate::policy::Log) -> Named {
-        let mut named = Named {
-            head: log.head_at(0).expect("an empty prefix"),
-            blobs: HashMap::new(),
-            files: HashMap::new(),
-            stated: HashMap::new(),
-            by_hash: HashMap::new(),
-        };
-        named.extend(log);
-        named
-    }
-
-    /// The same, of the edits `log` appended since.
-    fn extend(&mut self, log: &crate::policy::Log) {
-        for (i, edit) in log.edits().iter().enumerate().skip(self.head.at as usize) {
-            for b in edit.blobs() {
-                self.blobs.entry(b).or_default().push(i);
-            }
-            for f in edit.files() {
-                self.files.entry(*f).or_default().push(i);
-                self.by_hash.entry(f.hash).or_default().insert(*f);
-            }
-            for x in edit.stated() {
-                self.stated.entry(x.slice).or_default().push((i, x.entry));
-            }
-        }
-        self.head = log.head();
-    }
 }
 
 /// What the removals among a device's edits that its replay hasn't reached may take away from a peer it answers in
@@ -5978,23 +5934,9 @@ impl Lab {
         got
     }
 
-    /// Where device `d`'s edits name each McEliece key and file (`Named`), as its log is now.
-    fn named(&self, d: SignerId) -> Arc<Named> {
-        let log = &self.held(d).log;
-        let mut kept = self.held(d).answers.named.lock().expect("named");
-        let head = log.head();
-        if let Some(named) = kept.as_ref().filter(|n| n.head == head) {
-            return named.clone();
-        }
-        let named = match kept.take() {
-            Some(mut named) if log.head_at(named.head.at) == Some(named.head) => {
-                Arc::make_mut(&mut named).extend(log);
-                named
-            }
-            _ => Arc::new(Named::of(log)),
-        };
-        *kept = Some(named.clone());
-        named
+    /// Where device `d`'s edits name each McEliece key and file (`Named`), as its log keeps it.
+    fn named(&self, d: SignerId) -> &crate::policy::Named {
+        self.held(d).log.named()
     }
 
     /// Log append/new receive/withdrawal give another head; replacing a Store drops this basis. Signature,
@@ -6444,8 +6386,7 @@ impl Lab {
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
     pub fn files(&self, d: SignerId) -> Vec<FileRoot> {
-        let files: BTreeSet<FileRoot> =
-            self.held(d).log.edits().iter().flat_map(|e| e.files().iter().copied()).collect();
+        let files: BTreeSet<FileRoot> = self.named(d).files.keys().copied().collect();
         files.into_iter().collect()
     }
 
@@ -6689,9 +6630,8 @@ impl Lab {
         // replay still happen normally; only the otherwise unused full-history blob-name scan is omitted.
         if !blobs.is_empty() {
             let store = self.stores.get_mut(&self.at(d)).expect("a device");
-            let named: HashSet<BlobId> = store.log.edits().iter().flat_map(Edit::blobs).collect();
             for (b, bytes) in blobs {
-                if named.contains(&b) && !store.blobs.contains_key(&b) {
+                if store.log.named().blobs.contains_key(&b) && !store.blobs.contains_key(&b) {
                     store.blobs.insert(b, bytes);
                     changed = true;
                 }
@@ -6952,6 +6892,99 @@ impl Lab {
         self.restore_page_of(d, r, page, &blobs, true, Some(&placed));
     }
 
+    /// The rows of device `d`'s log's edits from place `from` on, whose records are `wire`, in order (`signed_wire`),
+    /// sealed for it alone: what its shelf keeps beside the pack of them (`log_rows`), for an open to take them back by.
+    /// None while it is locked, or where `wire` isn't of its edits there.
+    pub fn log_rows(&self, d: SignerId, from: usize, wire: &[Vec<u8>]) -> Option<Vec<u8>> {
+        let key = self.shelf_key(d)?;
+        let store = self.held(d);
+        let (ids, logs) = (store.log.ids(), store.log.logs());
+        let mut rows = LogRows::default();
+        let mut keys: HashMap<SignerId, u32> = HashMap::new();
+        for (k, record) in wire.iter().enumerate() {
+            // decoded from its record, not read from the log, which holds it by place where its shelf does
+            let signed = Signed::from_wire(record).ok()?;
+            let id = *ids.get(from + k)?;
+            if signed.edit.id() != id {
+                return None;
+            }
+            let signers = signed.sigs.iter().map(|sig| {
+                let s = sig.keys.id();
+                *keys.entry(s).or_insert_with(|| {
+                    rows.keys.push((s, sig.keys.clone()));
+                    rows.keys.len() as u32 - 1
+                })
+            }).collect();
+            rows.rows.push(log_rows::row(&signed.edit, id, logs[from + k], record, signers));
+        }
+        let bytes = rows.to_bytes();
+        // a nonce of what it seals: the same rows sealed again are the same bytes, telling nobody more
+        let mut rng = SeededRng::new("log rows", blake3::hash(&bytes).as_bytes());
+        Some(key.lock("log rows", &bytes, LOG_ROWS, &mut rng))
+    }
+
+    /// What `log_rows` sealed as `sealed` for device `d`, if it did.
+    pub fn open_rows(&self, d: SignerId, sealed: &[u8]) -> Option<LogRows> {
+        LogRows::from_bytes(&self.shelf_key(d)?.unlock("log rows", sealed, LOG_ROWS)?)
+    }
+
+    /// `restore_page_placed`, of a pack of the head its shelf named by its `checked` (`restore_start`), taken by its
+    /// rows `rows` (`open_rows`), each edit's record where `placed` says: never read, hashed or decoded, each held by
+    /// place and decoded as it is first read. False, taking nothing, where it can't take them so: its keys didn't name
+    /// that head, so it checks each edit's signatures, or it holds its edits in memory, not spilled; its caller reads
+    /// the pack then.
+    pub fn restore_rows(
+        &mut self,
+        d: SignerId,
+        r: &mut Restoring,
+        rows: LogRows,
+        placed: Vec<Placed>,
+        keys: impl IntoIterator<Item = Arc<[u8]>>,
+    ) -> bool {
+        let at = Perf::start();
+        let Some(store) = self.stores.get_mut(&self.at(d)) else { return false };
+        if !r.matched || !store.signed.spilled() || placed.len() != rows.len() {
+            return false;
+        }
+        let blobs: Blobs = keys.into_iter().map(|b| (BlobId::of(&b), b)).collect();
+        let n = rows.len();
+        (r.taken, r.vouched) = (r.taken + n, r.vouched + n);
+        r.vouch = r.taken;
+        let LogRows { keys, rows } = rows;
+        // what the checkpoints among them cover, as `keep_fresh_as` takes them
+        let more: HashSet<EditId> = rows.iter().flat_map(|row| row.covers.iter().copied()).collect();
+        store.bare.extend(more.iter().filter(|id| store.signed.contains_key(id)));
+        store.covers.extend(more);
+        for (row, placed) in rows.into_iter().zip(placed) {
+            if store.signed.contains_key(&row.id) {
+                continue;
+            }
+            if store.covers.contains(&row.id) {
+                store.bare.insert(row.id);
+            }
+            for b in &row.blobs {
+                match blobs.get(b) {
+                    Some(bytes) if !store.blobs.contains_key(b) => store.blobs.insert(*b, bytes.clone()),
+                    Some(_) => {}
+                    None if !store.blobs.contains_key(b) => {
+                        r.wanting.insert(*b);
+                    }
+                    None => {}
+                }
+            }
+            let signers = row.signers.iter().map(|&i| keys[i as usize].clone());
+            store.signed.insert_rowed(row.id, signers, &placed);
+            let place = store.signed.place(&row.id).expect("an edit it spilled");
+            store.log.receive_rowed(place, &row);
+        }
+        store.digests = None;
+        store.latest = OnceLock::new();
+        store.perf.add("keep", at);
+        store.perf.count("edits offered", n as u64);
+        store.perf.count("edits by rows", n as u64);
+        true
+    }
+
     /// `restore_page`: in the order they came where `in_order`, else as `fresh` orders them, held bare first.
     fn restore_page_of(
         &mut self,
@@ -7073,13 +7106,13 @@ impl Lab {
             && let Some(store) = self.stores.get_mut(&d)
         {
             let at = Perf::start();
-            let (edits, ids) = (store.log.edits(), store.log.ids());
+            let (log, edits, ids) = (&store.log, store.log.edits(), store.log.ids());
             let mut opened = 0;
             // its view's rows: its replay, and what it read of its edits, where its rows hold that
             let rows = warm.view.get(&key.replay_row()).and_then(|b| {
                 let view = key.unlock("view", b, VIEW_RULES.as_bytes())?;
                 opened += 1;
-                let (replay, held) = Replay::from_view(&view, edits, ids)?;
+                let (replay, held) = Replay::from_view_ordered(&view, edits, ids, |n| log.order_of(n))?;
                 let read = warm.view.get(&key.read_row()).and_then(|b| {
                     let rest = key.unlock("view read", b, READ_RULES.as_bytes())?;
                     let row = |k| key.unlock("view read", warm.view.get(&key.bodies_row(k))?, READ_RULES.as_bytes());
@@ -7460,7 +7493,8 @@ impl Lab {
             return false;
         };
         let at = Perf::start();
-        let took = match Replay::from_view(view, store.log.edits(), store.log.ids()) {
+        let log = &store.log;
+        let took = match Replay::from_view_ordered(view, log.edits(), log.ids(), |n| log.order_of(n)) {
             Some((replay, held)) => {
                 // a run under way stepped on the replay it held: it goes with it
                 store.replaying = None;
