@@ -18,7 +18,7 @@
 	import Frame from './Frame.svelte';
 	import { entryCollection } from './entry-collection.svelte.js';
 	import Icon from './Icon.svelte';
-	import { allowed, creatable, may } from './ops.js';
+	import { creatable, may, refused } from './ops.js';
 	import SparkRow from './SparkRow.svelte';
 	import { addingSpark, addingStory, fromLine, grownFrom, isOldNote, isSpark, linkIn, newId, placing, SPARK, sparkRecord, titleOf } from './sparks.js';
 	import { count, nameOf, reads, tagsIn, tagsOf, why } from './vaults.js';
@@ -99,8 +99,8 @@
 		let gone = false;
 		may(api, actor, ops).then(([a, b]) => {
 			if (gone) return;
-			unadded = allowed(a) ? '' : why(/** @type {any} */ (a));
-			nostory = !askedStory ? 'nothing shared with it lets it add a story' : allowed(b) ? '' : why(/** @type {any} */ (b));
+			unadded = refused(a) ? why(/** @type {any} */ (a)) : '';
+			nostory = !askedStory ? 'nothing shared with it lets it add a story' : refused(b) ? why(/** @type {any} */ (b)) : '';
 		});
 		return () => {
 			gone = true;

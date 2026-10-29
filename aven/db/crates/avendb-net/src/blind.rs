@@ -576,8 +576,12 @@ mod tests {
             .unwrap();
         assert_eq!(found["ok"]["entries"], serde_json::json!([room.to_hex()]), "{found}");
         assert_eq!((found["ok"]["asked"].as_u64(), found["ok"]["answered"].as_u64()), (Some(1), Some(1)));
-        let has = phone.shared.read(move |lab, me| lab.history(me, room).is_some()).await;
-        assert!(has, "find brought the room's log from the server");
+        // find answered before the room came: its log is asked as a now-tier want, and comes on its own
+        let until = Instant::now() + Duration::from_secs(30);
+        while !phone.shared.read(move |lab, me| lab.history(me, room).is_some()).await {
+            assert!(Instant::now() < until, "the room's log comes from the server after find");
+            n0_future::time::sleep(Duration::from_millis(20)).await;
+        }
         let tagged = phone
             .op(serde_json::json!({"op": "find", "vault": coop.to_hex(), "tags": ["chat"], "bring": false}))
             .await

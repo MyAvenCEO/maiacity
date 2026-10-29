@@ -17,7 +17,7 @@
 	reaches no further than it, nor beyond its ops.
 -->
 <script>
-	import { allowed, may, read, windowRead } from './ops.js';
+	import { may, read, windowRead, refused } from './ops.js';
 	import Ops from './Ops.svelte';
 	import {
 		count,
@@ -148,14 +148,14 @@
 		if (!o) return void (verdict = null);
 		let gone = false;
 		may(api, actor, [o, { ...o, what: 'everything' }]).then(([a, b]) => {
-			if (!gone) [verdict, whole] = [a, allowed(b)];
+			if (!gone) [verdict, whole] = [a, !refused(b)];
 		});
 		return () => {
 			gone = true;
 		};
 	});
 	/** why the device won't make the share: '' where it would, or hasn't said yet */
-	const unshared = $derived(verdict && !allowed(verdict) ? why(/** @type {any} */ (verdict)) : '');
+	const unshared = $derived(refused(verdict) ? why(/** @type {any} */ (verdict)) : '');
 
 	/** The ops on a list of records' rows, which name one list. */
 	const ROWS = ['insert', 'remove', 'move'];

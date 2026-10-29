@@ -35,7 +35,7 @@
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
 	import Mark from './Mark.svelte';
-	import { allowed, blockText, deleting, may } from './ops.js';
+	import { blockText, deleting, may, refused } from './ops.js';
 	import { at as atPath, changeWords, clashes, pathWords, valueWords } from './paths.js';
 	import Share from './Share.svelte';
 	import SparkCanvas from './SparkCanvas.svelte';
@@ -266,13 +266,13 @@
 		let gone = false;
 		may(api, actor, Object.values(asks)).then((answers) => {
 			/** what the device refuses, if it does @param {any} a @returns {string | null} */
-			const refused = (a) => a?.refused ?? null;
-			/** a copy where the device would make it; else all the ops allow @param {string} n @param {any} a */
+			const refusal = (a) => a?.refused ?? null;
+			/** a copy unless the device refused it; else all the ops allow @param {string} n @param {any} a */
 			const offers = (n, a) =>
-				allowed(a) || (!n.startsWith('fork ') && !['NotAllowed', 'NotAccepted'].includes(refused(a) ?? ''));
+				n.startsWith('fork ') ? !refused(a) : !['NotAllowed', 'NotAccepted'].includes(refusal(a) ?? '');
 			if (gone) return;
 			can = Object.fromEntries(names.map((n, i) => [n, offers(n, answers[i])]));
-			waits = Object.fromEntries(names.map((n, i) => [n, refused(answers[i]) === 'NotAccepted']));
+			waits = Object.fromEntries(names.map((n, i) => [n, refusal(answers[i]) === 'NotAccepted']));
 		});
 		return () => {
 			gone = true;
