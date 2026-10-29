@@ -9,7 +9,15 @@ fn cast() -> Tree {
     Tree::from_cast(CAST).expect("the cast is a well-formed tree")
 }
 
-const VAULTS: [&str; 7] = ["alice", "bob", "aven", "aven-peer", "alice-peer", "alice-peer-light", "bob-peer-light"];
+const VAULTS: [&str; 7] = [
+    "alice",
+    "bob",
+    "aven",
+    "aven-peer",
+    "alice-peer",
+    "alice-peer-light",
+    "bob-peer-light",
+];
 
 #[test]
 fn kinds() {
@@ -17,7 +25,12 @@ fn kinds() {
     assert_eq!(t.kind("alice"), Some(Kind::Person));
     assert_eq!(t.kind("bob"), Some(Kind::Person));
     assert_eq!(t.kind("aven"), Some(Kind::Network));
-    for d in ["aven-peer", "alice-peer", "alice-peer-light", "bob-peer-light"] {
+    for d in [
+        "aven-peer",
+        "alice-peer",
+        "alice-peer-light",
+        "bob-peer-light",
+    ] {
         assert_eq!(t.kind(d), Some(Kind::Device), "{d}");
     }
     assert_eq!(t.vault("aven-peer").unwrap().name, "Aven Peer");
@@ -29,7 +42,13 @@ fn owned() {
     assert_eq!(t.owned("alice"), ["aven", "alice-peer", "alice-peer-light"]);
     assert_eq!(t.owned("aven"), ["aven-peer"]);
     assert_eq!(t.owned("bob"), ["bob-peer-light"]);
-    for d in ["aven-peer", "alice-peer", "alice-peer-light", "bob-peer-light", "nobody"] {
+    for d in [
+        "aven-peer",
+        "alice-peer",
+        "alice-peer-light",
+        "bob-peer-light",
+        "nobody",
+    ] {
         assert!(t.owned(d).is_empty(), "{d}");
     }
 }
@@ -37,10 +56,18 @@ fn owned() {
 #[test]
 fn governs() {
     let t = cast();
-    assert_eq!(t.governs("alice"), ["aven", "aven-peer", "alice-peer", "alice-peer-light"]);
+    assert_eq!(
+        t.governs("alice"),
+        ["aven", "aven-peer", "alice-peer", "alice-peer-light"]
+    );
     assert_eq!(t.governs("aven"), ["aven-peer"]);
     assert_eq!(t.governs("bob"), ["bob-peer-light"]);
-    for d in ["aven-peer", "alice-peer", "alice-peer-light", "bob-peer-light"] {
+    for d in [
+        "aven-peer",
+        "alice-peer",
+        "alice-peer-light",
+        "bob-peer-light",
+    ] {
         assert!(t.governs(d).is_empty(), "a device governs nothing: {d}");
     }
 }
@@ -78,14 +105,20 @@ fn accounts() {
     assert_eq!(t.accounts(Some("alice-peer-light")), ["alice"]);
     assert_eq!(t.accounts(Some("alice-peer")), ["alice"]);
     assert_eq!(t.accounts(Some("bob-peer-light")), ["bob"]);
-    assert!(t.accounts(Some("aven-peer")).is_empty(), "the Aven Peer serves Aven, which is no account");
+    assert!(
+        t.accounts(Some("aven-peer")).is_empty(),
+        "the Aven Peer serves Aven, which is no account"
+    );
     assert!(t.accounts(Some("alice")).is_empty());
 }
 
 #[test]
 fn sees() {
     let t = cast();
-    assert_eq!(t.sees("alice"), ["aven-peer", "alice-peer", "alice-peer-light"]);
+    assert_eq!(
+        t.sees("alice"),
+        ["aven-peer", "alice-peer", "alice-peer-light"]
+    );
     assert_eq!(t.sees("bob"), ["bob-peer-light"]);
     assert_eq!(t.sees("aven"), ["aven-peer"]);
 }
@@ -96,13 +129,35 @@ fn may_act_on() {
     // each device, and the vaults it may act on; every other vault is refused
     let may = [
         ("aven-peer", &["aven", "aven-peer"][..]),
-        ("alice-peer", &["alice", "aven", "aven-peer", "alice-peer", "alice-peer-light"][..]),
-        ("alice-peer-light", &["alice", "aven", "aven-peer", "alice-peer", "alice-peer-light"][..]),
+        (
+            "alice-peer",
+            &[
+                "alice",
+                "aven",
+                "aven-peer",
+                "alice-peer",
+                "alice-peer-light",
+            ][..],
+        ),
+        (
+            "alice-peer-light",
+            &[
+                "alice",
+                "aven",
+                "aven-peer",
+                "alice-peer",
+                "alice-peer-light",
+            ][..],
+        ),
         ("bob-peer-light", &["bob", "bob-peer-light"][..]),
     ];
     for (device, allowed) in may {
         for v in VAULTS {
-            assert_eq!(t.may_act_on(device, v), allowed.contains(&v), "{device} on {v}");
+            assert_eq!(
+                t.may_act_on(device, v),
+                allowed.contains(&v),
+                "{device} on {v}"
+            );
         }
     }
     for v in VAULTS {
@@ -112,32 +167,60 @@ fn may_act_on() {
 
 #[test]
 fn refuses_trees_that_are_not_well_formed() {
-    let with = |vaults: &str| Tree::from_cast(&format!(r#"{{"keys":{{"k":"00"}},"vaults":{{{vaults}}}}}"#));
+    let with = |vaults: &str| {
+        Tree::from_cast(&format!(r#"{{"keys":{{"k":"00"}},"vaults":{{{vaults}}}}}"#))
+    };
     let invalid = |vaults: &str| match with(vaults) {
         Err(CastError::Invalid(why)) => why,
         other => panic!("{vaults}: {other:?}"),
     };
     assert!(with(r#""a":{"kind":"person","owners":["key:k"]}"#).is_ok());
-    assert_eq!(invalid(r#""a":{"kind":"person","owners":[]}"#), Invalid::Unowned("a".into()));
-    assert!(matches!(invalid(r#""a":{"kind":"person","owners":["key:x"]}"#), Invalid::Unknown { .. }));
-    assert!(matches!(invalid(r#""a":{"kind":"person","owners":["vault:x"]}"#), Invalid::Unknown { .. }));
     assert_eq!(
-        invalid(r#""a":{"kind":"person","owners":["key:k"]},"d":{"kind":"device","owners":["key:k"]}"#),
+        invalid(r#""a":{"kind":"person","owners":[]}"#),
+        Invalid::Unowned("a".into())
+    );
+    assert!(matches!(
+        invalid(r#""a":{"kind":"person","owners":["key:x"]}"#),
+        Invalid::Unknown { .. }
+    ));
+    assert!(matches!(
+        invalid(r#""a":{"kind":"person","owners":["vault:x"]}"#),
+        Invalid::Unknown { .. }
+    ));
+    assert_eq!(
+        invalid(
+            r#""a":{"kind":"person","owners":["key:k"]},"d":{"kind":"device","owners":["key:k"]}"#
+        ),
         Invalid::DeviceOwners("d".into())
     );
     assert_eq!(
-        invalid(r#""a":{"kind":"person","owners":["key:k"]},"d":{"kind":"device","owners":["vault:a","vault:a"]}"#),
+        invalid(
+            r#""a":{"kind":"person","owners":["key:k"]},"d":{"kind":"device","owners":["vault:a","vault:a"]}"#
+        ),
         Invalid::DeviceOwners("d".into())
     );
     assert!(matches!(
-        invalid(r#""a":{"kind":"person","owners":["key:k"]},"d":{"kind":"device","owners":["vault:a"]},"e":{"kind":"network","owners":["vault:d"]}"#),
+        invalid(
+            r#""a":{"kind":"person","owners":["key:k"]},"d":{"kind":"device","owners":["vault:a"]},"e":{"kind":"network","owners":["vault:d"]}"#
+        ),
         Invalid::DeviceOwns { .. }
     ));
     assert!(matches!(
-        invalid(r#""a":{"kind":"person","owners":["vault:b"]},"b":{"kind":"network","owners":["vault:a"]}"#),
+        invalid(
+            r#""a":{"kind":"person","owners":["vault:b"]},"b":{"kind":"network","owners":["vault:a"]}"#
+        ),
         Invalid::Cycle(_)
     ));
-    assert!(matches!(invalid(r#""a":{"kind":"person","owners":["vault:a"]}"#), Invalid::Cycle(_)));
-    assert!(matches!(with(r#""a":{"kind":"ghost","owners":["key:k"]}"#), Err(CastError::Format(_))));
-    assert!(matches!(with(r#""a":{"kind":"person","owners":["k"]}"#), Err(CastError::Format(_))));
+    assert!(matches!(
+        invalid(r#""a":{"kind":"person","owners":["vault:a"]}"#),
+        Invalid::Cycle(_)
+    ));
+    assert!(matches!(
+        with(r#""a":{"kind":"ghost","owners":["key:k"]}"#),
+        Err(CastError::Format(_))
+    ));
+    assert!(matches!(
+        with(r#""a":{"kind":"person","owners":["k"]}"#),
+        Err(CastError::Format(_))
+    ));
 }

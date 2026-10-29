@@ -27,17 +27,22 @@ impl fmt::Display for CastError {
 impl std::error::Error for CastError {}
 
 fn object<'a>(value: &'a Value, what: &str) -> Result<&'a Map<String, Value>, CastError> {
-    value.as_object().ok_or_else(|| CastError::Format(format!("{what} is not an object")))
+    value
+        .as_object()
+        .ok_or_else(|| CastError::Format(format!("{what} is not an object")))
 }
 
 fn text<'a>(value: &'a Value, what: &str) -> Result<&'a str, CastError> {
-    value.as_str().ok_or_else(|| CastError::Format(format!("{what} is not a string")))
+    value
+        .as_str()
+        .ok_or_else(|| CastError::Format(format!("{what} is not a string")))
 }
 
 impl Tree {
     /// The tree in a cast's JSON.
     pub fn from_cast(json: &str) -> Result<Tree, CastError> {
-        let cast: Value = serde_json::from_str(json).map_err(|e| CastError::Format(e.to_string()))?;
+        let cast: Value =
+            serde_json::from_str(json).map_err(|e| CastError::Format(e.to_string()))?;
         let cast = object(&cast, "the cast")?;
         let empty = Value::Object(Map::new());
         let mut keys = Vec::new();
@@ -47,22 +52,32 @@ impl Tree {
         let mut vaults = Vec::new();
         for (id, vault) in object(cast.get("vaults").unwrap_or(&empty), "vaults")? {
             let vault = object(vault, &format!("vault {id}"))?;
-            let kind = text(vault.get("kind").unwrap_or(&Value::Null), &format!("{id}'s kind"))?;
-            let kind = Kind::parse(kind).ok_or_else(|| CastError::Format(format!("{id}'s kind {kind} is unknown")))?;
+            let kind = text(
+                vault.get("kind").unwrap_or(&Value::Null),
+                &format!("{id}'s kind"),
+            )?;
+            let kind = Kind::parse(kind)
+                .ok_or_else(|| CastError::Format(format!("{id}'s kind {kind} is unknown")))?;
             let name = match vault.get("name") {
                 Some(name) => text(name, &format!("{id}'s name"))?.to_string(),
                 None => id.clone(),
             };
             let mut owners = Vec::new();
             let listed = vault.get("owners").and_then(Value::as_array);
-            for owner in listed.ok_or_else(|| CastError::Format(format!("{id}'s owners are not a list")))? {
+            for owner in
+                listed.ok_or_else(|| CastError::Format(format!("{id}'s owners are not a list")))?
+            {
                 let owner = text(owner, &format!("{id}'s owner"))?;
-                owners.push(
-                    Owner::parse(owner)
-                        .ok_or_else(|| CastError::Format(format!("{id}'s owner {owner} is neither key: nor vault:")))?,
-                );
+                owners.push(Owner::parse(owner).ok_or_else(|| {
+                    CastError::Format(format!("{id}'s owner {owner} is neither key: nor vault:"))
+                })?);
             }
-            vaults.push(Vault { id: id.clone(), name, kind, owners });
+            vaults.push(Vault {
+                id: id.clone(),
+                name,
+                kind,
+                owners,
+            });
         }
         Tree::new(keys, vaults).map_err(CastError::Invalid)
     }

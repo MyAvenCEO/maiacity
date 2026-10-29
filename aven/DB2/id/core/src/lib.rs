@@ -9,6 +9,8 @@ mod keys;
 mod query;
 mod sign;
 mod tree;
+#[cfg(target_arch = "wasm32")]
+mod wasm;
 
 pub use cast::CastError;
 pub use keys::{public_hex, test_signer};

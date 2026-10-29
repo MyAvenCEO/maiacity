@@ -41,7 +41,8 @@ impl Owner {
         if let Some(id) = s.strip_prefix("key:") {
             Some(Owner::Key(id.to_string()))
         } else {
-            s.strip_prefix("vault:").map(|id| Owner::Vault(id.to_string()))
+            s.strip_prefix("vault:")
+                .map(|id| Owner::Vault(id.to_string()))
         }
     }
 
@@ -99,7 +100,9 @@ impl fmt::Display for Invalid {
             Invalid::Duplicate(id) => write!(f, "two vaults are named {id}"),
             Invalid::Unowned(id) => write!(f, "{id} has no owner"),
             Invalid::Unknown { vault, owner } => write!(f, "{vault}'s owner {owner} is unknown"),
-            Invalid::DeviceOwners(id) => write!(f, "the device {id} must be owned by exactly one vault"),
+            Invalid::DeviceOwners(id) => {
+                write!(f, "the device {id} must be owned by exactly one vault")
+            }
             Invalid::DeviceOwns { device, vault } => write!(f, "the device {device} owns {vault}"),
             Invalid::Cycle(id) => write!(f, "{id} is above itself"),
         }
@@ -138,7 +141,10 @@ impl Tree {
                     Owner::Vault(v) => index.contains_key(v),
                 };
                 if !known {
-                    return Err(Invalid::Unknown { vault: vault.id.clone(), owner: owner.clone() });
+                    return Err(Invalid::Unknown {
+                        vault: vault.id.clone(),
+                        owner: owner.clone(),
+                    });
                 }
             }
             if vault.kind == Kind::Device && !matches!(vault.owners.as_slice(), [Owner::Vault(_)]) {
@@ -146,7 +152,10 @@ impl Tree {
             }
             for owner in vault.owner_vaults() {
                 if vaults[index[owner]].kind == Kind::Device {
-                    return Err(Invalid::DeviceOwns { device: owner.to_string(), vault: vault.id.clone() });
+                    return Err(Invalid::DeviceOwns {
+                        device: owner.to_string(),
+                        vault: vault.id.clone(),
+                    });
                 }
             }
         }
@@ -165,7 +174,12 @@ impl Tree {
         if let Some(at) = cycle(&children) {
             return Err(Invalid::Cycle(vaults[at].id.clone()));
         }
-        Ok(Tree { keys, vaults, index, children })
+        Ok(Tree {
+            keys,
+            vaults,
+            index,
+            children,
+        })
     }
 
     pub fn vaults(&self) -> &[Vault] {
@@ -182,11 +196,16 @@ impl Tree {
 
     /// The public half of a key, in hex. A device's key has its device vault's id.
     pub fn key(&self, id: &str) -> Option<&str> {
-        self.keys.iter().find(|(k, _)| k == id).map(|(_, public)| public.as_str())
+        self.keys
+            .iter()
+            .find(|(k, _)| k == id)
+            .map(|(_, public)| public.as_str())
     }
 
     pub fn keys(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.keys.iter().map(|(id, public)| (id.as_str(), public.as_str()))
+        self.keys
+            .iter()
+            .map(|(id, public)| (id.as_str(), public.as_str()))
     }
 }
 

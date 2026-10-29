@@ -60,28 +60,53 @@ fn message(device: &str, vault: &str, body: &[u8]) -> Vec<u8> {
 
 impl Tree {
     fn serves(&self, device: &str) -> Result<&str, SignError> {
-        self.acts_for(device).ok_or_else(|| SignError::NotDevice(device.to_string()))
+        self.acts_for(device)
+            .ok_or_else(|| SignError::NotDevice(device.to_string()))
     }
 
     /// `device` signs `body` for the vault it serves, with its own key.
-    pub fn sign(&self, device: &str, key: &SigningKey, body: &[u8]) -> Result<Statement, SignError> {
+    pub fn sign(
+        &self,
+        device: &str,
+        key: &SigningKey,
+        body: &[u8],
+    ) -> Result<Statement, SignError> {
         let vault = self.serves(device)?;
         if self.key(device) != Some(public_hex(&key.verifying_key()).as_str()) {
             return Err(SignError::WrongKey(device.to_string()));
         }
         let signature = key.sign(&message(device, vault, body)).to_bytes();
-        Ok(Statement { device: device.to_string(), vault: vault.to_string(), body: body.to_vec(), signature })
+        Ok(Statement {
+            device: device.to_string(),
+            vault: vault.to_string(),
+            body: body.to_vec(),
+            signature,
+        })
     }
 
     /// A statement holds when its device serves its vault and its device's key signed it.
     pub fn verify(&self, statement: &Statement) -> Result<(), SignError> {
-        let Statement { device, vault, body, signature } = statement;
+        let Statement {
+            device,
+            vault,
+            body,
+            signature,
+        } = statement;
         if self.serves(device)? != vault {
-            return Err(SignError::WrongVault { device: device.clone(), vault: vault.clone() });
+            return Err(SignError::WrongVault {
+                device: device.clone(),
+                vault: vault.clone(),
+            });
         }
-        let public = self.key(device).and_then(parse_public).ok_or_else(|| SignError::NoKey(device.clone()))?;
+        let public = self
+            .key(device)
+            .and_then(parse_public)
+            .ok_or_else(|| SignError::NoKey(device.clone()))?;
         public
-            .verify(&message(device, vault, body), &Signature::from_bytes(signature))
+            .verify(
+                &message(device, vault, body),
+                &Signature::from_bytes(signature),
+            )
             .map_err(|_| SignError::BadSignature)
     }
 
