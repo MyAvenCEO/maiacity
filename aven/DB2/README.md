@@ -5,7 +5,7 @@ with it. It grows one primitive at a time, each a package of its own and each pr
 and its theorems first, then Rust tests checked against that model, then the code. Everything it needs lives in this
 folder: its crates, its Lean spec, its pages and avenSANDBOX, the local network it is built and tested in.
 
-**Status (29 Oct 2026): planning, no code yet.** Milestone 1 is avenSANDBOX with a "coming soon" page:
+**Status (29 Oct 2026): planning, no code yet.** Milestone 1 is avenSANDBOX, with a simple chat as its example app:
 [`SANDBOX.md`](SANDBOX.md).
 
 ## Why a rebuild
@@ -34,7 +34,8 @@ Each rule is held by a test or a check once there is code to hold.
 7. **Status names its phase** (connecting, catching up with what is left, live, offline, stalled), from one record per
    snapshot and one clock.
 8. **The UI is pushed deltas.** It never re-queries.
-9. **One protocol, one ALPN,** no fallbacks for older peers.
+9. **One protocol of our own,** behind one ALPN, with no fallbacks for older peers. iroh's protocols (gossip, later
+   blobs) sit beside it on the same `Router`.
 10. **The Lean model runs.** It checks the Rust on random traces, so the model can never be simpler than the code.
 11. **Small packages in strict layers,** with a size limit per file.
 12. **Zero legacy.** Nothing here imports, copies or vendors code from `aven/db/` or its crates. Learnings come in as
@@ -62,8 +63,14 @@ Each rule is held by a test or a check once there is code to hold.
 - **Two kinds of peer, one core.** A Peer is the native Rust binary: the Aven Peer (the server) is a Peer with its relay
   on, and Alice Peer, the future Mac app's core, is one with it off. A Peer-Light is the same core compiled to wasm, in a
   browser. They differ only at the edge: storage, network, relay or not. No Mac app yet.
-- **iroh everywhere.** Browsers can't send UDP, so Peer-Lights reach every peer through the Aven Peer's relay. A
-  direct path between browsers (WebRTC, plugged in under iroh) can come later as a shortcut; nothing may depend on it.
+- **iroh everywhere.** Browsers can't send UDP, so Peer-Lights reach every peer through a relay. A direct path between
+  browsers (WebRTC, plugged in under iroh) can come later as a shortcut; nothing may depend on it.
+- **Invite-only, end to end.** Nothing about the network is public: no public discovery, no public gossip. A peer joins
+  only with an invite. From then on it takes part in the members' network, gossiping and connecting directly with other
+  members only. The door is checked twice: the relay admits only members' keys, and every peer's `after_handshake` hook
+  refuses unknown ones. Membership only opens the door; what a member may read or write inside is decided per document
+  by caps, and data stays sealed. A direct connection shows a member's IP address to the member it talks to; the relay
+  path hides it. Any member's Peer can run a relay, so the members' network doesn't depend on the Aven Peer.
 - **Pluggable storage.** The core defines one small, object-shaped contract, `Store`. Behind it: object storage for the
   Aven Peer, a folder for a Peer, OPFS for a Peer-Light, memory for tests. Apache OpenDAL provides the first backends;
   our own OPFS backend comes where speed needs it ([`SANDBOX.md`](SANDBOX.md#storage-one-contract-pluggable-backends)).
@@ -71,20 +78,38 @@ Each rule is held by a test or a check once there is code to hold.
   so a second scheme can join if lattices ever look weak: HQC, NIST's 2025 code-based backup, with keys of a few KB.
   No Classic McEliece: v1 derived a pair for every key, each with a 1 MB public half that took most of a second to
   make. Signatures: Ed25519 and passkeys now, ML-DSA later through the same suite byte.
-- **The server only ever sees ciphertext.**
+- **The Aven Peer only ever sees ciphertext.**
+
+## What we take from iroh
+
+iroh is built from pluggable protocols. Each peer has one endpoint, and a `Router` hands every incoming connection to
+the `ProtocolHandler` registered for its ALPN. avenDB2's own protocol plugs in the same way, beside iroh's.
+
+| Piece | Status (29 Oct 2026) | How we use it |
+|---|---|---|
+| iroh: endpoint, `Router`, `ProtocolHandler`, hooks | 1.4.1, stable | Every peer: its identity, encrypted connections, hole punching, relay fallback. The door: `after_handshake` admits members only. |
+| iroh-relay | 1.4.1, stable | Inside the Aven Peer, or any Peer with its relay on; admits members' keys only |
+| iroh-gossip | 0.101 | Chat and presence among members, from milestone 1 |
+| iroh-tickets | 1.0.0, stable | Invites |
+| iroh-metrics | 1.0.2 | The progress counters behind status and the stall alarm |
+| iroh-blobs | 0.104, "not yet production quality" (its README) | Files, later: its protocol and verified streaming, with a store written on our `Store`. Fallback: `bao-tree`, the library under it, used directly. |
+| iroh-docs | 0.101, last release in June | Not the crate: it is a last-writer-wins key-value table, without roles or revocation, with its own storage, pinned to an older iroh-blobs. Its patterns: range-based set reconciliation, entries signed by document and author, download policies, live events. |
+| iroh-willow | 0.0.1, February 2025 | Not the crate. Meadowcap's caps and areas of interest as a reference. |
+| `unstable-custom-transports` | outside iroh's semver | Later: a direct WebRTC path between browsers |
 
 ## Milestones
 
-1. **avenSANDBOX** with the coming-soon page ([`SANDBOX.md`](SANDBOX.md)).
-2. **Network:** iroh endpoints, our relay, one ALPN, the device handshake, presence.
+1. **avenSANDBOX** with a simple chat as its example app: live, over iroh-gossip ([`SANDBOX.md`](SANDBOX.md)).
+2. **Network:** the invite-only door (invites, the relay's allow-list, the device handshake) and members-only gossip.
 3. **Accounts and caps:** owner keys (passkeys), devices, roles, delegation, revocation.
 4. **Docs:** Loro documents in signed, sealed envelopes; the one writer and its snapshots; the store; one document
-   synced.
+   synced. The chat gets its history.
 5. **Version control:** history, versions, variants, proposals.
 6. **Schemas and lenses.**
 7. **Sync manifest and queries.**
 
-The mini app these build toward is a Google-Docs-like editor with history, variants and proposals.
+The chat is the first example app and grows with each milestone. The Google-Docs-like editor, with history, variants
+and proposals, follows it.
 
 ## How we work
 
