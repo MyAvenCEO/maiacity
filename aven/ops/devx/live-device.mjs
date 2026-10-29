@@ -604,6 +604,10 @@ async function roundtrip(name) {
 			gate.from.push(await message(fresh.page, home.page, `${tag} ← fresh ${i}`, `from-fresh-${i}`));
 		}
 		gate.freshPillAfter = await pill(fresh.page);
+		// the fresh device stays one of the vault's: name it so it's known in Devices, and record its id for the next --remove
+		await own(fresh.page);
+		gate.freshDevice = await fresh.page.evaluate(() => [...document.querySelectorAll('#settings-devices li.device')].find((li) => li.querySelector('.chip.accent'))?.querySelector('.soft.mono')?.textContent?.trim() ?? null);
+		gate.freshNamed = await nameDevice(fresh.page, `test-device roundtrip ${stamp.slice(5, 16)}`);
 	} catch (e) {
 		log.errors.push(`roundtrip: ${e instanceof Error ? e.message : e}`);
 		await shot((fresh ?? home).page, 'roundtrip-failed');
