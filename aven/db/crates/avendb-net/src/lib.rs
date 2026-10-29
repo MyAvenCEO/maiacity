@@ -903,7 +903,6 @@ impl Node {
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
             differed: Mutex::default(),
-            went: Mutex::default(),
             held: Mutex::default(),
             told: Mutex::default(),
             statements: Mutex::default(),
@@ -1837,12 +1836,14 @@ impl Node {
             let peers = self.shared.peers.lock().expect("peers");
             peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| p.device).collect()
         };
-        // and those whose connection closed a moment ago, by what they told last, marked reconnecting: else every short
-        // drop of a connection took its logs out of the counts and back, "behind" jumping 294, 2,504, 294 seconds
-        // apart (the iPhone, 2026-10-28), which reads as the UI lying
+        // and those whose connection closed, by what they told last, marked reconnecting, while the view names them:
+        // else every drop of a connection took its logs out of the counts and back ("behind" jumping 294, 2,504, 294
+        // seconds apart, the iPhone 2026-10-28), and a stalled peer gone a minute read as caught up (fresh7: lacked 0,
+        // behind 0 from about 90 s with 9.8k of 52k edits in)
         let counted = {
-            let mut went = self.shared.went.lock().expect("went");
-            counted(&live, &mut went, jobs::now_ms())
+            let reach = self.shared.reach.lock().expect("reach").clone();
+            let held = self.shared.held.lock().expect("held");
+            counted(held.keys().copied(), &live, &reach)
         };
         let heard: Vec<(SignerId, Vec<LogId>)> = {
             let held = self.shared.held.lock().expect("held");
@@ -2425,38 +2426,34 @@ struct Peer {
 }
 
 /// What a node's tasks share.
-/// How long a known device whose connection closed still counts in `Node::synced`, by what it told last, marked
-/// reconnecting: a phone's connections drop and come back within seconds as it moves between networks or sleeps.
-const RECONNECTING_MS: u64 = 60_000;
-
-/// The devices `Node::synced` counts at `now` (ms since 1970), each with whether it is reconnecting: those connected
-/// (`live`), and those whose last connection closed (`went`) less than `RECONNECTING_MS` ago. It lets go of those gone
-/// longer, and of those connected again.
-fn counted(live: &BTreeSet<SignerId>, went: &mut HashMap<SignerId, u64>, now: u64) -> BTreeMap<SignerId, bool> {
-    went.retain(|d, at| !live.contains(d) && now.saturating_sub(*at) < RECONNECTING_MS);
-    live.iter().map(|d| (*d, false)).chain(went.keys().map(|d| (*d, true))).collect()
+/// The devices `Node::synced` counts, each with whether it is reconnecting: every device whose holdings it heard
+/// (`heard`, `Shared::held`) that is connected (`live`) or that its device's view names (`reach`), by what it told
+/// last. No clock: a connection that drops and comes back moves no count, a peer that stalls counts what it holds till
+/// this device holds it, and a device the view no longer names leaves the counts once its connection closes.
+fn counted(heard: impl Iterator<Item = SignerId>, live: &BTreeSet<SignerId>, reach: &BTreeMap<SignerId, Reach>)
+    -> BTreeMap<SignerId, bool> {
+    heard.filter(|d| live.contains(d) || reach.contains_key(d)).map(|d| (d, !live.contains(&d))).collect()
 }
 
 #[cfg(test)]
 mod counted_tests {
     use super::*;
 
-    /// A device whose connection closes keeps counting, reconnecting, for `RECONNECTING_MS`, then not; once connected
-    /// again it counts as connected, and its closing a moment before is let go of.
+    /// A device whose connection closes counts on, reconnecting, for as long as the view names it, with no clock; one
+    /// connected counts connected; one the view no longer names counts no more once its connection closed.
     #[test]
-    fn a_device_that_drops_its_connection_a_moment_still_counts_reconnecting() {
-        let (mac, phone, peer) = (SignerId([1; 32]), SignerId([2; 32]), SignerId([3; 32]));
-        let mut went = HashMap::from([(peer, 1_000), (phone, 1_000)]);
-        let live = BTreeSet::from([mac]);
-        let now = counted(&live, &mut went, 1_000 + RECONNECTING_MS - 1);
-        assert_eq!(now, BTreeMap::from([(mac, false), (phone, true), (peer, true)]));
-        let later = counted(&live, &mut went, 1_000 + RECONNECTING_MS);
-        assert_eq!(later, BTreeMap::from([(mac, false)]), "gone a minute, it counts no more");
-        assert!(went.is_empty());
-        let mut went = HashMap::from([(peer, 1_000)]);
-        let back = counted(&BTreeSet::from([mac, peer]), &mut went, 2_000);
-        assert_eq!(back, BTreeMap::from([(mac, false), (peer, false)]), "connected again, it counts connected");
-        assert!(went.is_empty());
+    fn a_device_counts_by_what_it_told_while_the_view_names_it() {
+        let (mac, phone, peer, removed) = (SignerId([1; 32]), SignerId([2; 32]), SignerId([3; 32]), SignerId([4; 32]));
+        let named = |d: SignerId| (d, Reach { endpoint: EndpointId::from_bytes(&[0; 32]).expect("an endpoint id"),
+            logs: BTreeSet::new(), files: BTreeSet::new() });
+        let reach = BTreeMap::from([named(mac), named(phone), named(peer)]);
+        let heard = [mac, phone, peer, removed];
+        let now = counted(heard.into_iter(), &BTreeSet::from([mac]), &reach);
+        assert_eq!(now, BTreeMap::from([(mac, false), (phone, true), (peer, true)]), "gone, they count on, reconnecting");
+        let back = counted(heard.into_iter(), &BTreeSet::from([mac, peer, removed]), &reach);
+        assert_eq!(back, BTreeMap::from([(mac, false), (phone, true), (peer, false), (removed, false)]));
+        let gone = counted(heard.into_iter(), &BTreeSet::from([mac, peer]), &reach);
+        assert!(!gone.contains_key(&removed), "a device the view no longer names leaves once its connection closed");
     }
 }
 
@@ -2527,9 +2524,6 @@ struct Shared {
     reach: Mutex<Arc<BTreeMap<SignerId, Reach>>>,
     /// What `differ` worked out last for each device, for when the Lab's turn can't be had, and what it told of it.
     differed: Mutex<HashMap<SignerId, (Lacked, Differed)>>,
-    /// When each known device's last connection closed (ms since 1970), as `Node::synced` keeps counting it a while,
-    /// reconnecting (`counted`).
-    went: Mutex<HashMap<SignerId, u64>>,
     /// What each device told it it holds, on a connection whose hello proved that device.
     held: Mutex<HashMap<SignerId, Holdings>>,
     /// What each peer was last told, and on which connection (`Connection::stable_id`).
@@ -4114,8 +4108,6 @@ impl Shared {
         self.fresh.moved();
         if forget {
             held.remove(&peer.device);
-        } else {
-            self.went.lock().expect("went").insert(peer.device, jobs::now_ms());
         }
         self.ranges.lock().expect("ranges").gone(peer.conn.stable_id(), peer.device, forget);
         drop(held);
