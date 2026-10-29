@@ -3126,6 +3126,10 @@ impl Shared {
         // does it, bounded (`live::LIVE_VIEW`), where this would drain every catch-up pending
         if expected.is_none() {
             self.catch_up_paced_class(must, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
+            // and what its device holds now, as a peer's holdings are told against it (`lacked`): else, until the
+            // node's loop worked it out again, what these pages brought, and the stubs of the boxes held back, read
+            // as lacked by whoever asks `synced` next
+            self.own_logs().await;
         }
         if matches!(asked, Ok(0)) {
             job.forget()
