@@ -1,5 +1,5 @@
 <script>
-	// avenOS in the browser, "coming soon" for now. On a Peer-Light's origin, until the Peer-Light itself (crates/web) runs there, it also shows what
+	// avenOS in the browser, "coming soon" for now. On a Peer-Light's origin, until the Peer-Light itself (peer/light) runs there, it also shows what
 	// the box gives that peer: its place in the cast, its vault and signer, and its own OPFS, which keeps a mark across
 	// reloads. Without a peer, where the released avenOS is served, it shows avenOS alone.
 	let { id, peer, cast } = $props();

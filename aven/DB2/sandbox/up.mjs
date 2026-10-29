@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path';
 import { $ } from 'bun';
 
 const db2 = resolve(import.meta.dir, '..');
-const box = join(db2, 'box');
+const box = join(db2, 'sandbox', 'box');
 const tag = createHash('sha256').update(readFileSync(join(box, 'Dockerfile'))).digest('hex').slice(0, 16);
 const image = process.env.AVENSANDBOX_IMAGE ?? `ghcr.io/myavenceo/aven/sandbox:${tag}`;
 const port = process.env.AVENSANDBOX_PORT ?? '5173';
