@@ -14,7 +14,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use avendb::id::EditId;
+use avendb::id::{BlobId, EditId};
 use avendb::policy::{Edit, LogRevision};
 use avendb::sealed::FileRoot;
 use avendb::sync::{LogId, log_of};
@@ -93,8 +93,9 @@ pub(crate) struct Log {
     graph: Graph,
 }
 
-/// Incremental closed-part calculation for one log. Missing parents retain their children until they arrive;
-/// closing a gap visits only the waiting descendants, never unrelated logs or the already closed history.
+/// Incremental closed-part calculation for one log. Missing parents retain their children until they arrive, and so
+/// does a McEliece key an edit names that the device lacks (`Logs::extend`); closing a gap visits only the waiting
+/// descendants, never unrelated logs or the already closed history.
 #[derive(Clone, Default)]
 struct Graph {
     closed: HashSet<EditId>,
@@ -104,14 +105,28 @@ struct Graph {
 }
 
 impl Graph {
-    fn add(&mut self, id: EditId, edit: &Edit, edits: &[Edit], at: &HashMap<EditId, usize>) -> Vec<EditId> {
+    /// Edit `id`, waiting for its parents outside the closed part and for `keys` more, the keys it names that are
+    /// lacking: the edits it closes.
+    fn add(&mut self, id: EditId, edit: &Edit, keys: usize, edits: &[Edit], at: &HashMap<EditId, usize>) -> Vec<EditId> {
         let parents: HashSet<EditId> = edit.parents.iter().copied().collect();
         let missing: Vec<EditId> = parents.into_iter().filter(|p| !self.closed.contains(p)).collect();
-        self.waiting.insert(id, missing.len());
+        self.waiting.insert(id, missing.len() + keys);
         for parent in &missing {
             self.children.entry(*parent).or_default().push(id);
         }
-        let mut ready = if missing.is_empty() { vec![id] } else { vec![] };
+        let ready = if missing.is_empty() && keys == 0 { vec![id] } else { vec![] };
+        self.close(ready, edits, at)
+    }
+
+    /// A key edit `id` waited for came: the edits it closes.
+    fn keyed(&mut self, id: EditId, edits: &[Edit], at: &HashMap<EditId, usize>) -> Vec<EditId> {
+        let Some(count) = self.waiting.get_mut(&id) else { return vec![] };
+        *count -= 1;
+        let ready = if *count == 0 { vec![id] } else { vec![] };
+        self.close(ready, edits, at)
+    }
+
+    fn close(&mut self, mut ready: Vec<EditId>, edits: &[Edit], at: &HashMap<EditId, usize>) -> Vec<EditId> {
         let mut closed = vec![];
         while let Some(id) = ready.pop() {
             if !self.closed.insert(id) { continue; }
@@ -141,17 +156,27 @@ pub(crate) struct Logs {
     pub(crate) of: BTreeMap<LogId, Log>,
     pub(crate) at: HashMap<EditId, usize>,
     pub(crate) closed: HashSet<EditId>,
+    /// The McEliece keys edits name that the device lacks, each with the edits waiting for it and their logs: an edit
+    /// is held for good only with the keys it names, so a peer that holds one sees the log differ and is asked, and the
+    /// key comes with that asking (`Lab::request`'s wants).
+    keys: HashMap<BlobId, Vec<(LogId, EditId)>>,
     indexed: usize,
     revision: Option<LogRevision>,
     lineage: Option<LogRevision>,
 }
 
+/// Whether the device holds a McEliece key.
+pub(crate) type HoldsKey<'a> = &'a dyn Fn(&BlobId) -> bool;
+
 impl Logs {
     /// The logs of `edits`, `ids[i]` being `edits[i]`'s id, cut as `sync` cuts them: an edit is in its log's closed
-    /// part once each of its parents is, and a parent the log doesn't hold keeps it waiting.
-    pub(crate) fn of(edits: &[Edit], ids: &[EditId], size: (usize, usize)) -> Logs {
-        let mut logs = Logs { size, of: BTreeMap::new(), at: HashMap::new(), closed: HashSet::new(), indexed: 0, revision: None, lineage: None };
-        logs.extend(edits, ids, size);
+    /// part once each of its parents is and the device holds each key it names (`holds`); a parent the log doesn't
+    /// hold, or a key it lacks, keeps it waiting.
+    pub(crate) fn of(edits: &[Edit], ids: &[EditId], size: (usize, usize), holds: HoldsKey) -> Logs {
+        let mut logs = Logs {
+            size, of: BTreeMap::new(), at: HashMap::new(), closed: HashSet::new(), keys: HashMap::new(), indexed: 0, revision: None, lineage: None,
+        };
+        logs.extend(edits, ids, size, holds);
         logs
     }
 
@@ -161,39 +186,58 @@ impl Logs {
 
     /// Extend a real device log, rebuilding after a checkpoint withdrawal, replacement, or clone. Log length
     /// alone cannot detect a removal followed by an append of the same count.
-    pub(crate) fn update(&mut self, log: &avendb::policy::Log, size: (usize, usize)) {
+    pub(crate) fn update(&mut self, log: &avendb::policy::Log, size: (usize, usize), holds: HoldsKey) {
         let revision = log.revision();
         if self.revision.as_ref() != Some(&revision) {
             let lineage = log.lineage();
             if self.lineage.as_ref() == Some(&lineage) {
-                self.extend(log.edits(), log.ids(), size);
+                self.extend(log.edits(), log.ids(), size, holds);
             } else {
-                *self = Self::of(log.edits(), log.ids(), size);
+                *self = Self::of(log.edits(), log.ids(), size, holds);
             }
             self.revision = Some(revision);
             self.lineage = Some(lineage);
         }
+        self.keyed(log.edits(), holds);
         self.size = size;
     }
 
     /// `update` for the first `held` edits of a real device log, those its shelf holds (`edits::Edits::held`): while
     /// the log appends it extends as `held` grows, so a node whose shelf lags indexes each edit once, not its whole
     /// held past at every step (an iPhone's shelf lags most when it is busiest).
-    pub(crate) fn update_held(&mut self, log: &avendb::policy::Log, held: usize, size: (usize, usize)) {
+    pub(crate) fn update_held(&mut self, log: &avendb::policy::Log, held: usize, size: (usize, usize), holds: HoldsKey) {
         let lineage = log.lineage();
         let (edits, ids) = (&log.edits()[..held], &log.ids()[..held]);
         if self.lineage.as_ref() == Some(&lineage) && self.indexed <= held {
-            self.extend(edits, ids, size);
+            self.extend(edits, ids, size, holds);
         } else {
-            *self = Self::of(edits, ids, size);
+            *self = Self::of(edits, ids, size, holds);
             self.lineage = Some(lineage);
         }
+        self.keyed(edits, holds);
         self.revision = None;
+    }
+
+    /// The edits waiting for keys that came since (`holds`), and what they close, of `edits`.
+    fn keyed(&mut self, edits: &[Edit], holds: HoldsKey) {
+        let came: Vec<BlobId> = self.keys.keys().filter(|k| holds(k)).copied().collect();
+        let mut changed = BTreeSet::new();
+        for key in came {
+            for (l, id) in self.keys.remove(&key).into_iter().flatten() {
+                let log = self.of.get_mut(&l).expect("a log of a waiting edit");
+                self.closed.extend(log.graph.keyed(id, edits, &self.at));
+                changed.insert(l);
+            }
+        }
+        for l in changed {
+            let log = self.of.get_mut(&l).expect("a changed log");
+            log.frontier = log.graph.frontier();
+        }
     }
 
     /// Update an append-only sequence. Callers with a mutable device log must use `update` instead.
     /// `size` also includes keys, which require no re-indexing when no edit was appended.
-    pub(crate) fn extend(&mut self, edits: &[Edit], ids: &[EditId], size: (usize, usize)) {
+    pub(crate) fn extend(&mut self, edits: &[Edit], ids: &[EditId], size: (usize, usize), holds: HoldsKey) {
         assert_eq!(edits.len(), ids.len());
         assert!(self.indexed <= ids.len(), "a node's edit log is append-only");
         let mut changed = BTreeSet::new();
@@ -207,7 +251,11 @@ impl Logs {
             });
             log.edits.push(i);
             log.files.extend(edits[i].files().iter().copied());
-            self.closed.extend(log.graph.add(id, &edits[i], edits, &self.at));
+            let lacked: BTreeSet<BlobId> = edits[i].blobs().into_iter().filter(|k| !holds(k)).collect();
+            for key in &lacked {
+                self.keys.entry(*key).or_default().push((l, id));
+            }
+            self.closed.extend(log.graph.add(id, &edits[i], lacked.len(), edits, &self.at));
             changed.insert(l);
         }
         for l in changed {
@@ -338,6 +386,9 @@ mod tests {
     use avendb::sync::{closed_part, frontiers};
     use avendb::wire::Wire;
 
+    /// Every key held: the closed parts are sync's.
+    const ALL: HoldsKey = &|_| true;
+
     #[test]
     fn narrowing_announced_scope_replaces_previously_advertised_logs() {
         let a = LogId::Entry(EntryId([1; 32]));
@@ -375,9 +426,9 @@ mod tests {
             // Duplicate delivery must not alter the frontier or grow a log's positions.
             edits.push(edits[0].clone());
             let ids: Vec<_> = edits.iter().map(Edit::id).collect();
-            let mut incremental = Logs::of(&[], &[], (0, 0));
+            let mut incremental = Logs::of(&[], &[], (0, 0), ALL);
             for n in 1..=edits.len() {
-                incremental.extend(&edits[..n], &ids[..n], (n, 0));
+                incremental.extend(&edits[..n], &ids[..n], (n, 0), ALL);
                 let mut all_closed = HashSet::new();
                 for (l, log) in &incremental.of {
                     let places: Vec<_> = (0..n).filter(|&i| log_of(&edits[i], ids[i]) == Some(*l)).collect();
@@ -389,7 +440,7 @@ mod tests {
                 assert_eq!(incremental.closed, all_closed, "same closed part at every step");
             }
             let before = incremental.frontiers();
-            incremental.extend(&edits, &ids, (edits.len(), 8));
+            incremental.extend(&edits, &ids, (edits.len(), 8), ALL);
             assert_eq!(incremental.frontiers(), before, "keys alone change no frontier");
         }
     }
@@ -401,17 +452,17 @@ mod tests {
         w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).unwrap();
         let source = w.lab.log(w.mac_a).edits().to_vec();
         let mut log = avendb::policy::Log::from_edits(source[..source.len() - 1].to_vec());
-        let mut index = Logs::of(&[], &[], (0, 0));
+        let mut index = Logs::of(&[], &[], (0, 0), ALL);
         let size = (log.ids().len(), 0);
-        index.update(&log, size);
+        index.update(&log, size, ALL);
         let removed = log.ids()[0];
         log.let_go(&[removed].into());
         // A received edit replaces a withdrawn edit before the index next runs: the count stays the same.
         log.receive([source.last().unwrap().clone()]);
         assert_eq!(log.ids().len(), size.0);
         assert!(!index.current(&log, size));
-        index.update(&log, size);
-        let expected = Logs::of(log.edits(), log.ids(), size);
+        index.update(&log, size, ALL);
+        let expected = Logs::of(log.edits(), log.ids(), size, ALL);
         assert_eq!(index.frontiers(), expected.frontiers());
         assert_eq!(index.at, expected.at);
         assert_eq!(index.closed, expected.closed);
@@ -419,13 +470,13 @@ mod tests {
         // A restored sequence of the same length can have entirely different positions too.
         let restored = avendb::policy::Log::from_edits(source[..source.len() - 1].iter().rev().cloned().collect());
         assert!(!index.current(&restored, size));
-        index.update(&restored, size);
-        let expected = Logs::of(restored.edits(), restored.ids(), size);
+        index.update(&restored, size, ALL);
+        let expected = Logs::of(restored.edits(), restored.ids(), size, ALL);
         assert_eq!(index.frontiers(), expected.frontiers());
         assert_eq!(index.at, expected.at);
         // Shrinking to nothing is a valid recovery event, never an append-only assertion failure.
         log.let_go(&log.ids().iter().copied().collect());
-        index.update(&log, (0, 0));
+        index.update(&log, (0, 0), ALL);
         assert!(index.of.is_empty() && index.at.is_empty() && index.closed.is_empty());
     }
 
@@ -438,7 +489,7 @@ mod tests {
         }
         let source = w.lab.log(w.mac_a).edits().to_vec();
         let same = |index: &Logs, log: &avendb::policy::Log, held: usize| {
-            let expected = Logs::of(&log.edits()[..held], &log.ids()[..held], index.size);
+            let expected = Logs::of(&log.edits()[..held], &log.ids()[..held], index.size, ALL);
             assert_eq!(index.frontiers(), expected.frontiers(), "held {held}");
             assert_eq!((&index.at, &index.closed), (&expected.at, &expected.closed), "held {held}");
         };
@@ -447,22 +498,22 @@ mod tests {
         order.reverse();
         order.rotate_left(source.len() / 3);
         let mut log = avendb::policy::Log::new();
-        let mut index = Logs::of(&[], &[], (0, 0));
+        let mut index = Logs::of(&[], &[], (0, 0), ALL);
         for (n, edit) in order.iter().enumerate() {
             log.receive([edit.clone()]);
             for held in [n.saturating_sub(3), n.saturating_sub(1), n + 1] {
-                index.update_held(&log, held, (n + 1, 0));
+                index.update_held(&log, held, (n + 1, 0), ALL);
                 same(&index, &log, held);
             }
         }
         // a shelf written again from the start, a withdrawal, and a clone each build it anew
-        index.update_held(&log, 2, (log.ids().len(), 0));
+        index.update_held(&log, 2, (log.ids().len(), 0), ALL);
         same(&index, &log, 2);
         log.let_go(&[log.ids()[0]].into());
-        index.update_held(&log, log.ids().len(), (log.ids().len(), 0));
+        index.update_held(&log, log.ids().len(), (log.ids().len(), 0), ALL);
         same(&index, &log, log.ids().len());
         let copy = log.clone();
-        index.update_held(&copy, copy.ids().len() - 1, (copy.ids().len(), 0));
+        index.update_held(&copy, copy.ids().len() - 1, (copy.ids().len(), 0), ALL);
         same(&index, &copy, copy.ids().len() - 1);
     }
 
@@ -474,7 +525,7 @@ mod tests {
         w.lab.edit(w.mac_a, h.coop, h.welcome, |i| i.set_text(2, AFTER_TEXT)).expect("Alice edits Welcome");
         w.lab.sync_all(1);
         let (edits, ids) = (w.lab.log(w.mac_b).edits(), w.lab.log(w.mac_b).ids());
-        let logs = Logs::of(edits, ids, w.lab.size(w.mac_b));
+        let logs = Logs::of(edits, ids, w.lab.size(w.mac_b), ALL);
         assert!(logs.of.contains_key(&LogId::Entry(h.welcome)), "Welcome's log among them");
         let heads: BTreeMap<LogId, Vec<EditId>> = logs.of.iter().map(|(l, x)| (*l, x.frontier.heads.clone())).collect();
         assert_eq!(heads, frontiers(edits), "each log's heads are its frontier");
@@ -482,7 +533,7 @@ mod tests {
         let first = logs.of[&LogId::Entry(h.welcome)].edits[0];
         let rest: Vec<Edit> = edits.iter().enumerate().filter(|(i, _)| *i != first).map(|(_, e)| e.clone()).collect();
         let rest_ids: Vec<EditId> = rest.iter().map(Edit::id).collect();
-        let cut = Logs::of(&rest, &rest_ids, (0, 0));
+        let cut = Logs::of(&rest, &rest_ids, (0, 0), ALL);
         let welcome = &cut.of[&LogId::Entry(h.welcome)].frontier;
         assert!(welcome.heads.is_empty() && !welcome.waiting.is_empty(), "none of it closed");
         let closed = closed_part(&rest, LogId::Entry(h.welcome));
