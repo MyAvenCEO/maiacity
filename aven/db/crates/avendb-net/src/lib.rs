@@ -4234,8 +4234,12 @@ impl Shared {
                 if sample.len() < DIFFER_SAMPLE {
                     let held = |h: &EditId| mine.closed.contains(h) || stubs.contains(h);
                     let heads: Vec<String> = f.heads.iter().filter(|h| !held(h)).map(|h| h.to_hex()[..8].to_string()).collect();
+                    // of those, the heads it holds whose past it lacks: a peer that sends nothing more of them leaves
+                    // them so, as against heads it never took
+                    let unclosed: Vec<String> = f.heads.iter().filter(|h| !held(h) && mine.at.contains_key(h))
+                        .map(|h| h.to_hex()[..8].to_string()).collect();
                     sample.push(json!({ "log": format!("{l:?}"), "held": mine.of.contains_key(&l), "lacked_heads": heads,
-                        "waiting": f.waiting.len() }));
+                        "held_unclosed": unclosed, "waiting": f.waiting.len() }));
                 }
                 lacking.insert(l);
             }
