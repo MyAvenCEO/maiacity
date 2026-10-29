@@ -193,12 +193,6 @@ impl Interests {
         self.scopes.values().filter(|s| s.live())
             .any(|s| s.queries().iter().any(|q| selector(q).blind().is_some_and(|ls| ls.contains(&manifest))))
     }
-    /// Whether the live scopes name no entry yet, by id or by what peers named for their selectors, though some ask by
-    /// a selector: a new device's views, before its first find came back.
-    pub(crate) fn finding(&self) -> bool {
-        let live: Vec<_> = self.scopes.values().filter(|s| s.live()).collect();
-        live.iter().any(|s| !s.queries().is_empty()) && live.iter().all(|s| s.named() == 0) && self.manifests.is_empty()
-    }
 
     /// Every entry the scopes want, in the scheduler's order (Lean `schedule`).
     pub(crate) fn entries(&self) -> Vec<LogId> {
@@ -291,9 +285,7 @@ mod tests {
         let mut i = Interests::default();
         let manifests = vec![Query { types: vec![MANIFEST_TYPE.into()], vault: None }];
         i.replace("v".into(), 1, vec![Want { tier: Tier::Now, entries: vec![], queries: manifests }]).unwrap();
-        assert!(i.finding(), "a view that asks by selectors alone, before any find came back");
         i.found_manifests(&[log(7), log(8)]);
-        assert!(!i.finding());
         assert_eq!(i.manifests(), [log(7), log(8)].into());
         i.replace("v".into(), 2, vec![want(Tier::Now, &[1])]).unwrap();
         assert!(i.manifests().is_empty(), "no view asks for manifests now");
