@@ -137,7 +137,7 @@ fn measure(lab: &Lab, d: SignerId, label: &str) {
 }
 
 #[test]
-fn the_vault_a_device_belongs_to_is_of_every_edit_while_its_replay_is_under_way() {
+fn the_vault_a_device_belongs_to_read_dry_is_of_every_edit_while_its_replay_is_under_way() {
     let mut w = world();
     todos_on(&mut w);
     let d = w.mac_a;
@@ -149,5 +149,7 @@ fn the_vault_a_device_belongs_to_is_of_every_edit_while_its_replay_is_under_way(
     w.lab.step_replay(d, 1);
     let store = w.lab.held(d);
     assert!(store.replayed < store.log.edits().len(), "its replay is under way");
-    assert_eq!(w.lab.vault_of(d), Some(vault), "every edit it holds names its vault");
+    assert_eq!(w.lab.dry(d, |lab| lab.vault_of(d)), Some(vault), "read dry, every edit it holds names its vault");
+    let store = w.lab.held(d);
+    assert_eq!(store.replayed, store.log.edits().len(), "stepped on in place, once");
 }

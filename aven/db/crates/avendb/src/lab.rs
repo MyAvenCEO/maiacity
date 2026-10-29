@@ -2408,6 +2408,8 @@ impl Lab {
     /// signature doesn't verify, or one is missing or left over; otherwise why `d`'s view, with the logs the claim
     /// brings, refuses the edit.
     pub fn accept_claim(&mut self, d: SignerId, claim: Claim) -> Result<Join, Refusal> {
+        // of every edit it holds, not of a replay under way (`vault_of`)
+        self.step_replay(d, usize::MAX);
         if self.vault_of(d).is_some() {
             return Err(Refusal::AlreadyMember);
         }
@@ -2621,12 +2623,12 @@ impl Lab {
         Some(seed.child("avendb file convergence", b"").bytes())
     }
 
-    /// The vault device `d` belongs to, as every edit it holds says (`latest`): never by a replay still under way, whose
-    /// state is of the edits it replayed so far, none at all after a restore whose stored view didn't open. A device
-    /// that answered "no vault" from that put its shelf aside (theOS 296eefce on the Mac, 2026-10-29), and a server
-    /// mid replay would take a second claim.
+    /// The vault device `d` belongs to, by its replay: of every edit it holds, but while a replay is under way, of the
+    /// edits run so far, none at all after a restore whose stored view didn't open. Where "no vault" is acted on, it is
+    /// read dry (`dry`), its replay stepped on in place to every edit first: a Mac that asked mid replay put its shelf
+    /// aside (theOS 296eefce, 2026-10-29).
     pub fn vault_of(&self, d: SignerId) -> Option<VaultId> {
-        self.latest(d).vaults().iter().find(|v| v.devices.contains(&d)).map(|v| v.id)
+        self.held(d).view().vaults().iter().find(|v| v.devices.contains(&d)).map(|v| v.id)
     }
 
     /// Device `d`, a server, takes a new vault from its peers only where it welcomes it, or again any (`gate::takes`):
