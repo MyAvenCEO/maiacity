@@ -467,6 +467,7 @@ impl Decode for KeyName {
             0 => Ok(KeyName::Signer(SignerId::decode(r)?)),
             1 => Ok(KeyName::Scoped(KeyFam::decode(r)?, u64::decode(r)?)),
             2 => Ok(KeyName::Entry(EntryId::decode(r)?, r.option()?, u64::decode(r)?)),
+            3 => Ok(KeyName::Select(ShareId::decode(r)?)),
             _ => Err(WireError::Unknown),
         }
     }

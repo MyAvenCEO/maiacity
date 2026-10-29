@@ -71,13 +71,17 @@ impl KeyFam {
     }
 }
 
-/// A signer's own key, one epoch of a key family, or the key of an entry in one of its stays (`None` for the stay its
-/// creation began, else the move that began it) at an epoch of that stay's audience: what the schedule seals keys to.
+/// A signer's own key, one epoch of a key family, the key of an entry in one of its stays (`None` for the stay its
+/// creation began, else the move that began it) at an epoch of that stay's audience, or the key a share's selector is
+/// sealed under (`slice::Select`): what the schedule seals keys to. A selector's key is sealed to the seed of each vault
+/// that reads it as the share is issued, and boxed there by whoever holds it, then or later (`Lab::upkeep`), so a share
+/// never waits for the key of a vault its issuer can't seal to yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum KeyName {
     Signer(SignerId),
     Scoped(KeyFam, u64),
     Entry(EntryId, Option<EditId>, u64),
+    Select(ShareId),
 }
 
 /// `secret` sealed or wrapped to the key `to`, or derived from it: whoever can open `to` can open `secret`.

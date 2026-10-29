@@ -598,7 +598,7 @@ impl Edit {
     }
 
     /// Removals sort before anything else at the same depth.
-    fn rank(&self) -> u8 {
+    pub(crate) fn rank(&self) -> u8 {
         if self.is_removal() { 0 } else { 1 }
     }
 }
@@ -956,6 +956,8 @@ struct Seals {
     /// Each key sealed to a key of an entry's stay, with that entry and stay, by a hash of the three: what `link`
     /// checks for a move link.
     linked: Places,
+    /// The keys each share's selector key is sealed to, by the share: what upkeep boxes it to.
+    selects: HashMap<ShareId, Vec<KeyName>>,
 }
 
 /// Places in a list of seals, by a hash of what they are looked up by: the first under each hash, and any other there
@@ -1014,6 +1016,9 @@ impl Seals {
         }
         if let KeyName::Entry(e, stay, _) = s.to {
             self.linked.put(&(s.secret, e, stay), at);
+        }
+        if let KeyName::Select(c) = s.secret {
+            self.selects.entry(c).or_default().push(s.to);
         }
     }
 }
@@ -2229,7 +2234,20 @@ impl State {
                 }
                 en.stay_audience(s).map(drop).ok_or(Refusal::UnknownKey)
             }
+            KeyName::Select(c) => {
+                let cp = self.share(c).ok_or(Refusal::UnknownKey)?;
+                if !select_readers(&cp.share).into_iter().any(|r| self.acts_for(d, r)) {
+                    return Err(Refusal::NotEntitled);
+                }
+                Ok(())
+            }
         }
+    }
+
+    /// The keys share `c`'s selector key is sealed to: the seeds of its readers (`select_readers`) as they were when it
+    /// was made.
+    pub fn select_seals(&self, c: ShareId) -> &[KeyName] {
+        self.seals.selects.get(&c).map_or(&[], Vec::as_slice)
     }
 
     /* Steps */
@@ -2803,6 +2821,16 @@ impl State {
                 }
                 Arc::make_mut(&mut self.over).entry(v).or_default().push(i);
                 Arc::make_mut(&mut self.share_at).insert(c, i);
+                // its selector key, where it is sealed, to the seed of each of its readers there is now: a box the edit
+                // lacks, for a seed whose key its issuer didn't hold, any reader's device adds later (`Action::Keys`)
+                let readers: Vec<VaultId> =
+                    select_readers(&issued.share).into_iter().filter(|&r| self.vault(r).is_some()).collect();
+                for r in readers {
+                    let s = Seal { secret: KeyName::Select(c), to: self.current(KeyFam::Seed(r)) };
+                    if !self.seals.contains(&s) {
+                        Arc::make_mut(&mut self.seals).add(s);
+                    }
+                }
                 Arc::make_mut(&mut self.shares).push(issued);
                 Touch::Grew(grew)
             }
@@ -3178,6 +3206,22 @@ fn reach(by_to: &HashMap<KeyName, Vec<KeyName>>, start: impl Iterator<Item = Key
         }
     }
     open
+}
+
+/// The vaults that read share `share`'s selector where it is sealed (`slice::Select`), its key sealed to their seeds:
+/// the vault it is over, its grantee unless the share only relays, and its issuer. None where it is in the clear: a share
+/// to everyone or to an invite key, whose holder has no vault until it claims the share. A keep share's grantee is a
+/// device, which reads it through its issuer.
+pub fn select_readers(share: &Share) -> Vec<VaultId> {
+    let who = match share.who {
+        Who::Everyone | Who::Invite(_) => return vec![],
+        Who::Vault(g) if share.level.allows(Level::Read) => Some(g),
+        Who::Vault(_) | Who::Device(_) => None,
+    };
+    let mut readers = vec![share.over];
+    readers.extend(who.into_iter().chain([share.issuer]).filter(|v| *v != share.over));
+    readers.dedup();
+    readers
 }
 
 /// The model's `linkAll` for one entry `en` and its writes `ws`: its key in its current stay derives from its
@@ -5349,9 +5393,20 @@ pub struct Log {
     edits: EditsVec,
     /// Each edit's id, hashed once.
     ids: Vec<EditId>,
-    /// The same ids, to tell at once whether it holds an edit: a search of `ids` for each edit received made a restore
-    /// of n edits cost n²/2 compares.
-    held: HashSet<EditId>,
+    /// The same ids, each with its place, to tell at once whether it holds an edit and where: a search of `ids` for
+    /// each edit received made a restore of n edits cost n²/2 compares.
+    held: HashMap<EditId, usize>,
+    /// The one order of its edits a replay takes them in (`order_places`), kept as edits arrive, so a replay or a
+    /// stored view opened orders them with no walk of every edit (row 17): each edit by its depth, its rank and its
+    /// id; the edits that rest on an edit it holds as deep or deeper, each with the first place of such a parent,
+    /// which the order passes over for any of its first edits that hold that parent; each edit's depth; and the
+    /// edits that rest on edits it doesn't hold yet, by the edit they wait on.
+    order: BTreeMap<(u64, u8, EditId), usize>,
+    misplaced: HashMap<usize, usize>,
+    depths: Vec<u64>,
+    waiting: HashMap<EditId, Vec<usize>>,
+    /// Where its edits name each McEliece key and file (`Named`), kept as edits arrive.
+    named: Named,
     entry_order: BTreeMap<EntryId, BTreeMap<(u64, u8, EditId), usize>>,
     write_at: HashMap<EditId, usize>,
     /// Each edit's log (`sync::log_of`), by its place, and each log's places in order: kept as edits arrive, so a sync
@@ -5372,29 +5427,129 @@ pub struct Log {
     next_depth: u64,
 }
 
+/// What a log indexes of one of its edits (`Log::index`): read off the edit, or off its row (`lab::log_rows`).
+struct Facts<'a> {
+    id: EditId,
+    log: Option<crate::sync::LogId>,
+    depth: u64,
+    rank: u8,
+    entry: Option<EntryId>,
+    parents: &'a [EditId],
+    blobs: &'a [BlobId],
+    files: &'a [FileRoot],
+    stated: &'a [(FileRoot, EntryId)],
+}
+
+/// Where a log's edits name each McEliece key and each file (`Lab::may_fetch`, `Lab::may_fetch_file`), as places in
+/// it: the key gate looks up the few edits that name what it is asked for, not every edit an asker may receive (2.3-2.5
+/// s a call on the always-on peer, 2026-10-29). Kept as edits arrive, its edits' rows bringing it on an open (row 17),
+/// never a walk of every edit.
+#[derive(Clone, Debug, Default)]
+pub struct Named {
+    /// The edits that name each McEliece key (`Edit::blobs`).
+    pub(crate) blobs: HashMap<BlobId, Vec<usize>>,
+    /// The writes that bring each file (`Edit::files`).
+    pub(crate) files: HashMap<FileRoot, Vec<usize>>,
+    /// The snapshots whose state of an entry travels as each file (`Edit::stated`), with that entry.
+    pub(crate) stated: HashMap<FileRoot, Vec<(usize, EntryId)>>,
+    /// The files the writes bring, by their root's hash.
+    pub(crate) by_hash: HashMap<[u8; 32], std::collections::BTreeSet<FileRoot>>,
+}
+
+impl Named {
+    fn add(&mut self, at: usize, f: &Facts<'_>) {
+        for b in f.blobs {
+            self.blobs.entry(*b).or_default().push(at);
+        }
+        for r in f.files {
+            self.files.entry(*r).or_default().push(at);
+            self.by_hash.entry(r.hash).or_default().insert(*r);
+        }
+        for (slice, entry) in f.stated {
+            self.stated.entry(*slice).or_default().push((at, *entry));
+        }
+    }
+}
+
 impl Log {
     pub fn new() -> Self {
         Self::default()
     }
 
     fn index_write(&mut self, edit: &Edit, id: EditId, at: usize) {
+        let entry = match edit.action {
+            Action::Write { entry, .. } => Some(entry),
+            _ => None,
+        };
+        let stated: Vec<(FileRoot, EntryId)> = edit.stated().map(|x| (x.slice, x.entry)).collect();
         let log = crate::sync::log_of(edit, id);
-        self.next_depth = self.next_depth.max(edit.depth.saturating_add(1));
-        push_grown(&mut self.logs, log);
-        if let Some(l) = log {
+        let facts = Facts {
+            id,
+            log,
+            depth: edit.depth,
+            rank: edit.rank(),
+            entry,
+            parents: &edit.parents,
+            blobs: &edit.blobs(),
+            files: edit.files(),
+            stated: &stated,
+        };
+        self.index(at, facts);
+    }
+
+    /// Indexes the edit `facts` tell of at place `at`: what `index_write` reads of an edit, and its row says of it
+    /// (`receive_rowed`).
+    fn index(&mut self, at: usize, f: Facts<'_>) {
+        let (id, depth) = (f.id, f.depth);
+        self.held.entry(id).or_insert(at);
+        self.next_depth = self.next_depth.max(depth.saturating_add(1));
+        push_grown(&mut self.logs, f.log);
+        if let Some(l) = f.log {
             self.by_log.entry(l).or_default().push(at);
             if let crate::sync::LogId::Audience(v, x) = l {
                 self.audience_logs.entry(v).or_default().insert(x);
             }
         }
-        if let Action::Write { entry, .. } = edit.action {
+        if let Some(entry) = f.entry {
             self.write_at.entry(id).or_insert(at);
-            self.entry_order.entry(entry).or_default()
-                .entry((edit.depth, edit.rank(), id)).or_insert(at);
+            self.entry_order.entry(entry).or_default().entry((depth, f.rank, id)).or_insert(at);
         }
+        self.order.entry((depth, f.rank, id)).or_insert(at);
+        push_grown(&mut self.depths, depth);
+        for p in f.parents {
+            match self.held.get(p) {
+                Some(&q) if self.depths[q] >= depth => self.pass_over(at, q),
+                Some(_) => {}
+                None => self.waiting.entry(*p).or_default().push(at),
+            }
+        }
+        for c in self.waiting.remove(&id).unwrap_or_default() {
+            if depth >= self.depths[c] {
+                self.pass_over(c, at);
+            }
+        }
+        self.named.add(at, &f);
+    }
+
+    /// The order passes over the edit at place `c` among edits that hold the one at place `q`, a parent as deep.
+    fn pass_over(&mut self, c: usize, q: usize) {
+        let first = self.misplaced.entry(c).or_insert(q);
+        *first = (*first).min(q);
+    }
+
+    /// `order_places` of its first `n` edits, from what it keeps as edits arrive (`order`): no edit read.
+    pub fn order_of(&self, n: usize) -> Vec<usize> {
+        let passed = |p: &usize| self.misplaced.get(p).is_some_and(|&q| q < n);
+        self.order.values().copied().filter(|&p| p < n && !passed(&p)).collect()
     }
 
     fn rebuild_index(&mut self) {
+        self.held.clear();
+        self.named = Named::default();
+        self.order.clear();
+        self.misplaced.clear();
+        self.depths.clear();
+        self.waiting.clear();
         self.entry_order.clear();
         self.write_at.clear();
         self.logs.clear();
@@ -5485,7 +5640,7 @@ impl Log {
 
 
     /// It holds edit `id`.
-    pub fn has(&self, id: EditId) -> bool { self.held.contains(&id) }
+    pub fn has(&self, id: EditId) -> bool { self.held.contains_key(&id) }
 
     /// Head `h` is of it: the head of its first `h.at` edits, so what was worked out at `h` is of a prefix of it, and
     /// steps on by the edits after (`ShelfIndex.lean` I2). From the log's mark before them, never hashing its edits from
@@ -5510,8 +5665,7 @@ impl Log {
     pub fn from_edits(edits: impl Into<EditsVec>) -> Self {
         let edits: EditsVec = edits.into();
         let ids = ids(&edits);
-        let held = ids.iter().copied().collect();
-        let mut log = Self { edits, ids, held, ..Self::default() };
+        let mut log = Self { edits, ids, ..Self::default() };
         log.rebuild_index();
         log
     }
@@ -5652,7 +5806,6 @@ impl Log {
         self.index_write(&edit, id, self.edits.len());
         self.edits.push(edit);
         push_grown(&mut self.ids, id);
-        self.held.insert(id);
         self.head.on(&[id]);
         Ok(id)
     }
@@ -5670,7 +5823,7 @@ impl Log {
         let before = self.ids.len();
         for (edit, id) in edits {
             debug_assert_eq!(edit.id(), id, "an edit received with its own id");
-            if self.held.insert(id) {
+            if !self.held.contains_key(&id) {
                 self.index_write(&edit, id, self.edits.len());
                 self.edits.push(edit);
                 push_grown(&mut self.ids, id);
@@ -5679,6 +5832,36 @@ impl Log {
         if self.ids.len() != before {
             self.head.on(&self.ids[before..]);
         }
+    }
+
+    /// `receive_ids`, of an edit held where `place` says, never decoded: indexed by what its row says of it (its log,
+    /// its depth, the entry it writes and its rank), as its device worked them out of it when it took it
+    /// (`lab::log_rows`).
+    pub(crate) fn receive_rowed(&mut self, place: crate::bulk::Place, row: &crate::lab::Row) {
+        if self.held.contains_key(&row.id) {
+            return;
+        }
+        let at = self.edits.len();
+        let facts = Facts {
+            id: row.id,
+            log: row.log,
+            depth: row.depth,
+            rank: row.rank,
+            entry: row.entry,
+            parents: &row.parents,
+            blobs: &row.blobs,
+            files: &row.files,
+            stated: &row.stated,
+        };
+        self.index(at, facts);
+        self.edits.push_placed(place);
+        push_grown(&mut self.ids, row.id);
+        self.head.on(&self.ids[at..]);
+    }
+
+    /// Where its edits name each McEliece key and file (`Named`).
+    pub fn named(&self) -> &Named {
+        &self.named
     }
 
     /// Each edit held by where `place` says its record is, if it says (`policy::edits`): the same edits, the same ids,
@@ -5697,7 +5880,7 @@ impl Log {
         let keep: Vec<bool> = self.ids.iter().map(|id| !ids.contains(id)).collect();
         self.edits.retain_by(|i| keep[i]);
         self.ids.retain(|id| !ids.contains(id));
-        self.held.retain(|id| !ids.contains(id));
+        self.held.retain(|id, _| !ids.contains(id));
         if self.ids.len() != before {
             self.gone += 1;
             self.rebuild_index();
@@ -5779,6 +5962,41 @@ mod tests {
         let replacement = Log::from_edits(vec![write(entry, 50, vec![])]);
         check(&replacement, entry, &HashSet::new());
         assert!(replacement.entry_write(child.id()).is_none());
+    }
+
+    /// The order a log keeps as edits arrive (`Log::order_of`) is `order_places` of its first edits, whatever order
+    /// they came in: a parent after its child, a child claiming to be no deeper than its parent, an edit twice, and
+    /// after a let go.
+    #[test]
+    fn the_order_a_log_keeps_is_the_order_of_its_first_edits() {
+        fn write(entry: EntryId, depth: u64, parents: Vec<EditId>) -> Edit {
+            Edit { parents, depth, author: SignerId::from_u64(1), cosigners: vec![],
+                action: Action::Write { vault: VaultId::from_u64(1), entry,
+                    actor: VaultId::from_u64(1), stay: None, epoch: 0,
+                    deps: vec![], proposal: Proposal::Main, via: vec![], create: None,
+                    files: vec![], body: vec![depth as u8; 8].into() } }
+        }
+        let check = |log: &Log| {
+            for n in 0..=log.edits().len() {
+                assert_eq!(log.order_of(n), order_places(&log.edits()[..n], &log.ids()[..n]), "of the first {n}");
+            }
+        };
+        let (a, b) = (EntryId::from_u64(1), EntryId::from_u64(2));
+        let root = write(a, 3, vec![]);
+        let deep = write(a, 5, vec![root.id()]);
+        let shallow = write(a, 2, vec![root.id()]);
+        let same = write(b, 3, vec![root.id()]);
+        let grandchild = write(b, 1, vec![deep.id()]);
+        let mut log = Log::new();
+        log.receive([shallow.clone(), grandchild.clone(), same.clone()]);
+        check(&log);
+        log.receive([root.clone(), deep.clone(), shallow.clone()]);
+        check(&log);
+        log.receive((3..40).map(|n| write(EntryId::from_u64(n), n % 7, vec![if n % 2 == 0 { root.id() } else { deep.id() }])));
+        check(&log);
+        log.let_go(&HashSet::from([root.id()]));
+        check(&log);
+        check(&Log::from_edits(vec![deep.clone(), root.clone(), deep.clone(), grandchild]));
     }
 
     #[test]

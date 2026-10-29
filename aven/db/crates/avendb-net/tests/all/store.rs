@@ -222,6 +222,43 @@ async fn the_edits_its_keys_name_are_not_checked_again_and_forged_keys_vouch_for
     node.shutdown().await.expect("it stops");
 }
 
+/// Alice's Mac as `mac` starts it, its edits spilled into folder `spill`, as theOS holds them (`avendb_device`).
+async fn spilled_mac(dir: &Path, spill: &Path) -> (Node, World, VaultId) {
+    static STARTS: AtomicU8 = AtomicU8::new(101);
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let mut lab = w.lab.split(w.mac_a, &[w.passkey_a], [STARTS.fetch_add(1, Ordering::Relaxed); 32]);
+    lab.spill(w.mac_a, &avendb::lab::Spill::new(spill, 1 << 20).expect("a spill")).expect("spilled");
+    let opts = Options { shelf: Some(disk::open(dir).expect("the shelf")), ..Options::local() };
+    let node = Node::spawn(lab, w.mac_a, opts).await.expect("a node");
+    (node, w, coop)
+}
+
+/// A spilled node starting again takes the packs of its newest head back by their rows (`Lab::log_rows`): never
+/// reading, hashing or decoding their edits, each held where its pack holds it and decoded as it is first read. The
+/// same edits in the same order, and what they say reads the same.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_spilled_node_takes_its_packs_back_by_their_rows() {
+    let (dir, spill) = (Folder::new("by-rows"), Folder::new("by-rows-spill"));
+    let (node, _, coop) = spilled_mac(dir.path(), spill.path()).await;
+    let first = write(&node, coop, "Note first", "the first note").await;
+    for n in 0..140 {
+        write(&node, coop, &format!("Note {n}"), &format!("note number {n}")).await;
+    }
+    warmed(&node).await;
+    let held = node.read(|lab, me| lab.log(me).ids().to_vec()).await;
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    let rows = files(&dir.path().join(format!("g{FLOOR}")).join("rows")).len();
+    assert!(rows >= 1, "a pack's rows beside it");
+    let (node, _, _) = spilled_mac(dir.path(), spill.path()).await;
+    assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
+    let by_rows = node.read(|lab, me| counted(lab, me, "edits by rows")).await;
+    assert!(by_rows as usize * 3 > held.len() * 2, "the packs taken by their rows: {by_rows} of {}", held.len());
+    assert!(shows(&node, first, "the first note").await, "an edit by place reads as it did");
+    node.shutdown().await.expect("it stops");
+}
+
 /// A catch-up: many edits taken in a few saves, far fewer than the 64 a head follows. A head follows them all the
 /// same, once the journal holds `TAIL_EDITS` edits (64 with `test-fixtures`, a page without), and the next start checks
 /// only the edits after it, fewer than one save's, not every one.
@@ -499,10 +536,13 @@ async fn a_node_steps_on_its_stored_view_and_replays_every_edit_where_none_opens
     node.shutdown().await.expect("it stops");
     drop(node);
     let g = dir.path().join(format!("g{FLOOR}"));
-    let slots =
-        || files(&g.join("slots")).into_iter().filter(|(n, _)| n.starts_with("view-")).collect::<BTreeMap<_, _>>();
+    // its view's rows lie in the index `view`, whose root its two slots keep, in turn
+    let slots = || {
+        files(&g.join("slots")).into_iter().filter(|(n, _)| n.starts_with("index-view-")).collect::<BTreeMap<_, _>>()
+    };
     let first = slots();
-    assert_eq!(first.keys().collect::<Vec<_>>(), ["view-0"], "its view, kept");
+    assert_eq!(first.len(), 1, "its view, kept");
+    let (first_name, first_slot) = first.iter().next().map(|(n, b)| (n.clone(), b.clone())).expect("a slot");
     // started again: what its edits said comes from its view, with no replay of every edit, and a new edit steps on it
     let (node, _, coop) = mac(dir.path()).await;
     assert!(shows(&node, welcome, WELCOME_TEXT).await, "it shows Welcome again");
@@ -515,9 +555,9 @@ async fn a_node_steps_on_its_stored_view_and_replays_every_edit_where_none_opens
     node.shutdown().await.expect("it stops");
     drop(node);
     let closed = slots();
-    assert_eq!(closed.keys().collect::<Vec<_>>(), ["view-0", "view-1"], "clean close publishes the current frontier beside the older view");
-    assert_eq!(closed["view-0"], first["view-0"], "clean close preserves the older generation for fallback");
-    assert_ne!(closed["view-1"], closed["view-0"], "the new generation includes the latest edit");
+    assert_eq!(closed.len(), 2, "clean close publishes the current frontier beside the older view");
+    assert_eq!(closed[&first_name], first_slot, "clean close preserves the older generation for fallback");
+    let newest = closed.keys().find(|n| **n != first_name).cloned().expect("the newer slot");
     // and again: the clean-close view covers the latest durable edit.
     let (node, _, _) = mac(dir.path()).await;
     assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
@@ -526,11 +566,11 @@ async fn a_node_steps_on_its_stored_view_and_replays_every_edit_where_none_opens
     node.shutdown().await.expect("it stops");
     drop(node);
     assert_eq!(slots(), closed, "an unchanged reopen and close do not publish another view");
-    // Corrupt the newest payload while retaining its generation header. The older
-    // valid view must still open and replay the suffix containing Onboarding.
-    let mut damaged_newest = closed["view-1"].clone();
-    damaged_newest[b"avenDB slot 1\n".len() + 8..].fill(7);
-    fs::write(g.join("slots/view-1"), damaged_newest).expect("a forged newest view");
+    // Corrupt the newest slot while retaining its header. The older valid view, its rows and the blobs they name
+    // still on the shelf, must still open and replay the suffix containing Onboarding.
+    let mut damaged_newest = closed[&newest].clone();
+    damaged_newest[b"avenDB index slot 1\n".len() + 8..].fill(7);
+    fs::write(g.join("slots").join(&newest), damaged_newest).expect("a forged newest view");
     let (node, _, _) = mac(dir.path()).await;
     assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "older view retains every durable edit");
     assert!(shows(&node, welcome, WELCOME_TEXT).await && shows(&node, onboarding, ONBOARDING_TEXT).await);
@@ -551,12 +591,12 @@ async fn a_node_steps_on_its_stored_view_and_replays_every_edit_where_none_opens
     node.shutdown().await.expect("it stops");
     drop(node);
     let kept = slots();
-    assert_eq!(kept.keys().collect::<Vec<_>>(), ["view-0", "view-1"], "invalid generations remain on disk; the first is replaced by a valid view");
-    assert_ne!(kept["view-0"], [7u8; 80]);
-    assert_eq!(kept["view-1"], [7u8; 80], "recovery does not erase the other slot");
+    assert_eq!(kept.len(), 2, "invalid generations remain on disk; one is replaced by a valid view");
+    assert_eq!(kept.values().filter(|b| **b == [7u8; 80]).count(), 1, "recovery does not erase the other slot");
     // a newer view that doesn't open is passed for the older one that does
-    let newer = [&b"avenDB slot 1\n"[..], &9u64.to_be_bytes(), &[7u8; 80]].concat();
-    fs::write(g.join("slots/view-1"), newer).expect("a forged one");
+    let forged = kept.iter().find(|(_, b)| **b == [7u8; 80]).map(|(n, _)| n.clone()).expect("the forged slot");
+    let newer = [&b"avenDB index slot 1\n"[..], &9u64.to_be_bytes(), &[7u8; 80]].concat();
+    fs::write(g.join("slots").join(forged), newer).expect("a forged one");
     let (node, _, _) = mac(dir.path()).await;
     assert!(shows(&node, onboarding, ONBOARDING_TEXT).await);
     assert_eq!(replays(&node, VIEW).await, (1, wholes), "the newest view that opens");

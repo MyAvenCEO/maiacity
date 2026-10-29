@@ -1991,6 +1991,7 @@ def keyName : KeyName → String
   | .signer s    => obj [("signer", nat s)]
   | .scoped k ε  => obj [("key", keyFam k), ("epoch", nat ε)]
   | .entry e s g => obj [("entry", nat e), ("stay", opt nat s), ("epoch", nat g)]
+  | .select c    => obj [("selector", nat c)]
 
 def proposal : Proposal → String
   | .main => str "main"

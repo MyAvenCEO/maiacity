@@ -48,7 +48,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, EntryId, SignerId};
-use avendb::lab::{Checked, KeptPack, Lab, Placed, PackFile, ViewChanges, ViewRows, Warm, Warming};
+use avendb::lab::{Checked, KeptPack, Lab, LogRows, Placed, PackFile, ViewChanges, ViewRows, Warm, Warming};
 use avendb::log_head::Head as LogHead;
 use avendb::policy::Log;
 use avendb::sign::Signed;
@@ -85,6 +85,9 @@ const TAIL_EDITS: usize = if cfg!(feature = "test-fixtures") { 64 } else { PAGE_
 const PACKS: usize = 64;
 const HEADS: &str = "heads/";
 const JOURNAL: &str = "journal/";
+/// The rows of each pack, by its hash (`rows_name`): what an open takes the pack's edits back by, never reading the
+/// pack (`Lab::log_rows`).
+const ROWS: &str = "rows/";
 /// The two slots a device's keys are kept in, in turn, and what each starts with.
 const KEYS: ([&str; 2], &[u8]) = (["slots/keys-0", "slots/keys-1"], b"avenDB keys 1\n");
 /// The slots a device's stored view was kept in before its rows, each stamped with the head of the edits it is of
@@ -138,6 +141,9 @@ struct Book {
     /// The journal's entries from `mark` on whose records the next pack holds, read back from the shelf as it is put
     /// (`pack_of_entries`), not held: a catch-up's saves since a head held every edit they saved twice (F9).
     pending: Vec<u64>,
+    /// The rows of each of `pending`'s edits, sealed (`Lab::log_rows`), where it knows them: not of an entry it found
+    /// on its shelf as it started, nor of one a save cut short put, so the pack of those has no rows, and is read.
+    pending_rows: Vec<Option<Vec<u8>>>,
     anchors: Vec<u8>,
 }
 
@@ -170,6 +176,8 @@ struct Due {
     /// The head of the log's first `to` edits, as it took them.
     head: LogHead,
     records: Vec<u8>,
+    /// The rows of the edits of `records`, sealed (`Lab::log_rows`): none while its device is locked.
+    rows: Option<Vec<u8>>,
     keys: Vec<(BlobId, Arc<[u8]>)>,
     whole: bool,
 }
@@ -329,6 +337,11 @@ fn journal_name(n: u64) -> String {
     format!("{JOURNAL}{n:016x}")
 }
 
+/// The name of the rows of the pack whose hash is `pack`.
+fn rows_name(pack: Hash) -> String {
+    format!("{ROWS}{}", pack.to_hex())
+}
+
 /// The numbers of the objects on `shelf` named `<prefix><n>`, `n` in hex, in order, each with what follows it.
 async fn numbered(shelf: &Shelf, prefix: &str) -> Result<Vec<(u64, String)>> {
     let mut found: Vec<(u64, String)> = shelf
@@ -430,7 +443,8 @@ impl Edits {
         }
         let Taking { ids, keys, .. } = taking;
         let kept = Kept { anchor_stamp: Vec::new(), written: 0, head: None, keys: keys.keys().copied().collect(), whole: false };
-        let book = Book { packs: head.packs, keys, mark: head.journal, next, tail, head: next_head, pending, anchors: anchors.clone() };
+        let pending_rows = vec![None; pending.len()];
+        let book = Book { packs: head.packs, keys, mark: head.journal, next, tail, head: next_head, pending, pending_rows, anchors: anchors.clone() };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
         let (slots, checked) = (Mutex::new(slots), Mutex::new(None));
         let (shown, queries) = (tokio::sync::Mutex::new(packs.0), tokio::sync::Mutex::new(packs.1));
@@ -537,13 +551,16 @@ impl Edits {
             return Ok(None);
         }
         let mut records = Vec::new();
-        for bytes in lab.signed_wire(me, &ids[if whole { 0 } else { kept.written }..]).context("an edit the device holds")? {
+        let from = if whole { 0 } else { kept.written };
+        let wire = lab.signed_wire(me, &ids[from..]).context("an edit the device holds")?;
+        let rows = if wire.is_empty() { Some(Vec::new()) } else { lab.log_rows(me, from, &wire) };
+        for bytes in wire {
             records.extend((bytes.len() as u32).to_be_bytes());
             records.extend(bytes);
         }
         let anchors = lab.bootstrap_bytes(me).context("bootstrap anchor cannot be encoded within durable bounds; previous durable state retained")?;
         ensure!(anchors.len() <= MAX_ANCHORS, "bootstrap anchor save exceeds its bound");
-        Ok(Some(Due { anchors, anchor_stamp, to: ids.len(), head: lab.log(me).head(), records, keys, whole }))
+        Ok(Some(Due { anchors, anchor_stamp, to: ids.len(), head: lab.log(me).head(), records, rows, keys, whole }))
     }
 
     /// Puts `due` on the shelf: each new McEliece key as a blob, then the new edits and keys in the next journal
@@ -569,6 +586,7 @@ impl Edits {
         let ids: Vec<BlobId> = due.keys.iter().map(|(id, _)| *id).collect();
         if due.whole {
             let pack = self.pack_on(on, &due.records).await?;
+            self.put_rows_on(on, pack, due.rows.as_deref().map(|r| vec![r])).await?;
             book.keys.extend(brought);
             let head = Head { anchors: due.anchors.clone(), journal: book.next, packs: vec![pack], keys: book.keys.clone().into_iter().collect() };
             self.put_head_on(on, book, &head).await?;
@@ -583,27 +601,28 @@ impl Edits {
             return Ok(());
         }
         let (mut records, mut keys) = (&due.records[..], brought);
-        // a pack due with this save takes its edits straight, after those of the journal's entries since the newest
-        // head, read back: not through an entry of their own, put and read back again at once (a catch-up's page is a
-        // pack's worth of edits)
+        // a pack due with this save takes the records of its own entry straight, after those of the journal's entries
+        // since the newest head, read back: its entry is put all the same, so the journal holds every edit a head does
+        // and a start whose head doesn't read whole takes them from the journal alone, but never read back at once (a
+        // catch-up's page is a pack's worth of edits)
         let new = !records.is_empty() || !keys.is_empty() || book.anchors != due.anchors;
-        if book.next + u64::from(new) - book.mark >= JOURNALED || book.tail + records_in(records) >= TAIL_EDITS {
-            book.keys.extend(keys);
-            book.anchors = due.anchors.clone();
-            self.pack_head_on(on, book, records).await?;
-            let mut kept = self.kept.lock().expect("kept");
-            kept.written = due.to;
-            kept.anchor_stamp = due.anchor_stamp;
-            kept.head = Some(due.head);
-            kept.keys.extend(ids);
-            return Ok(());
-        }
+        let packing = book.next + u64::from(new) - book.mark >= JOURNALED || book.tail + records_in(records) >= TAIL_EDITS;
+        let mut straight: (&[u8], Option<&[u8]>) = (&[], Some(&[]));
+        // the rows of `records`, while they are all of them
+        let mut rows = due.rows.as_deref();
         while !records.is_empty() || !keys.is_empty() || book.anchors != due.anchors {
             let name = journal_name(book.next);
             let entry = Entry { anchors: due.anchors.clone(), keys: keys.clone(), records: records.to_vec() };
             match on.put(&name, entry.to_bytes()).await {
                 Ok(()) => {
-                    book.pending.push(book.next);
+                    let of = if records.is_empty() { Some(&[][..]) } else { rows.take() };
+                    match packing {
+                        true => straight = (records, of),
+                        false => {
+                            book.pending.push(book.next);
+                            book.pending_rows.push(of.map(<[u8]>::to_vec));
+                        }
+                    }
                     book.next += 1;
                     book.tail += records_in(records);
                     book.anchors = due.anchors.clone();
@@ -624,6 +643,8 @@ impl Edits {
                             keys.retain(|k| !there.keys.contains(k));
                             book.anchors = there.anchors;
                             book.pending.push(book.next - 1);
+                            book.pending_rows.push(None);
+                            rows = None;
                             book.keys.extend(there.keys);
                         }
                         _ => tracing::warn!("avendb: {name} on the shelf is none of this node's saves, and is passed"),
@@ -632,31 +653,49 @@ impl Edits {
                 Err(e) => return Err(e.into()),
             }
         }
-        {
-            let mut kept = self.kept.lock().expect("kept");
-            kept.written = due.to;
-            kept.anchor_stamp = due.anchor_stamp;
-            kept.head = Some(due.head);
-            kept.keys.extend(ids);
-        }
         // a save cut short put more entries than it knew of
-        if book.next - book.mark >= JOURNALED || book.tail >= TAIL_EDITS {
-            self.pack_head_on(on, book, &[]).await?;
+        if packing || book.next - book.mark >= JOURNALED || book.tail >= TAIL_EDITS {
+            self.pack_head_on(on, book, straight.0, straight.1).await?;
         }
+        let mut kept = self.kept.lock().expect("kept");
+        kept.written = due.to;
+        kept.anchor_stamp = due.anchor_stamp;
+        kept.head = Some(due.head);
+        kept.keys.extend(ids);
         Ok(())
     }
 
     /// Puts a pack of the records of the journal's entries since the newest head and then `records`, and a head that
     /// names it after the packs before, of the journal from its next entry on.
-    async fn pack_head_on(&self, on: &Shelf, book: &mut Book, records: &[u8]) -> Result<()> {
+    /// The pack's rows are those of the entries' edits, then `rows`, those of `records`, where it knows each.
+    async fn pack_head_on(&self, on: &Shelf, book: &mut Book, records: &[u8], rows: Option<&[u8]>) -> Result<()> {
         let pack = self.pack_of_entries(on, &book.pending, records).await?;
+        let of = book.pending_rows.iter().map(Option::as_deref).chain([rows]).collect::<Option<Vec<&[u8]>>>();
+        self.put_rows_on(on, pack, of).await?;
         let mut packs = book.packs.clone();
         packs.push(pack);
         let keys = book.keys.clone().into_iter().collect();
         self.put_head_on(on, book, &Head { anchors: book.anchors.clone(), journal: book.next, packs: packs.clone(), keys }).await?;
         (book.packs, book.mark, book.tail) = (packs, book.next, 0);
         book.pending.clear();
+        book.pending_rows.clear();
         Ok(())
+    }
+
+    /// Puts the rows of pack `pack`, each part of them sealed apart (`Lab::log_rows`), in the pack's order, where it
+    /// knows them all: each behind its 4-byte length.
+    async fn put_rows_on(&self, on: &Shelf, pack: Blob, rows: Option<Vec<&[u8]>>) -> Result<()> {
+        let Some(rows) = rows else { return Ok(()) };
+        let mut out = Vec::new();
+        for part in rows.into_iter().filter(|p| !p.is_empty()) {
+            out.extend((part.len() as u32).to_be_bytes());
+            out.extend_from_slice(part);
+        }
+        match on.put(&rows_name(pack.0), Bytes::from(out)).await {
+            // rows of the same pack, put before: the same edits
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(()),
+            r => Ok(r?),
+        }
     }
 
     /// A pack of `records`, on the shelf.
@@ -736,6 +775,11 @@ pub(crate) trait Taker {
     async fn page(&mut self, page: Vec<(Signed, Option<Placed>)>, keys: Vec<Arc<[u8]>>, of_head: bool) -> Result<()>;
     /// McEliece keys its edits named that came on the shelf after them.
     async fn keys(&mut self, keys: Vec<Arc<[u8]>>) -> Result<()>;
+    /// What a part of a pack's rows `sealed` says, if it opens and it takes edits by rows now (`Lab::open_rows`).
+    async fn rows(&mut self, sealed: &[u8]) -> Option<LogRows>;
+    /// A pack of the head `begin` named, taken by its rows: each edit where `placed` says, with the McEliece keys they
+    /// name that the shelf holds. False where it took none of them so (`Lab::restore_rows`), and the pack is read.
+    async fn take_rows(&mut self, rows: LogRows, placed: Vec<Placed>, keys: Vec<Arc<[u8]>>) -> Result<bool>;
 }
 
 /// Every edit, in one list (`Edits::open`).
@@ -757,6 +801,12 @@ impl Taker for Collect {
     }
     async fn keys(&mut self, _: Vec<Arc<[u8]>>) -> Result<()> {
         Ok(())
+    }
+    async fn rows(&mut self, _: &[u8]) -> Option<LogRows> {
+        None
+    }
+    async fn take_rows(&mut self, _: LogRows, _: Vec<Placed>, _: Vec<Arc<[u8]>>) -> Result<bool> {
+        Ok(false)
     }
 }
 
@@ -784,8 +834,15 @@ impl Taking {
             return Ok(());
         }
         self.ids.extend(page.iter().map(|(s, _)| s.edit.id()));
+        let want = self.wants(page.iter().flat_map(|(s, _)| s.edit.blobs()));
+        let keys = self.read_keys(shelf, want).await;
+        to.page(page, keys, of_head).await
+    }
+
+    /// Of the McEliece keys `blobs`, those the shelf holds, once each; it names the rest missing.
+    fn wants(&mut self, blobs: impl IntoIterator<Item = BlobId>) -> Vec<Key> {
         let mut want = Vec::new();
-        for b in page.iter().flat_map(|(s, _)| s.edit.blobs()) {
+        for b in blobs {
             match self.keys.get(&b) {
                 Some(&size) => want.push((b, size)),
                 None => {
@@ -795,8 +852,42 @@ impl Taking {
         }
         want.sort();
         want.dedup();
+        want
+    }
+
+    /// Gives `to` the edits of pack `pack` of its head, a file of `shelf`'s, by the pack's rows, if the shelf holds
+    /// them, they open, they tile the pack end to end and `to` takes edits so (`Taker::take_rows`): never reading the
+    /// pack. False where it gave nothing, and the pack is read.
+    async fn by_rows(&mut self, shelf: &Shelf, (hash, size): Blob, file: &Arc<dyn avendb::pages::Space>, to: &mut impl Taker) -> Result<bool> {
+        let Some(bytes) = shelf.get(&rows_name(hash)).await? else { return Ok(false) };
+        let mut rows = LogRows::default();
+        let mut rest = &bytes[..];
+        while !rest.is_empty() {
+            let Some((n, more)) = rest.split_first_chunk::<4>() else { return Ok(false) };
+            let Some((part, more)) = more.split_at_checked(u32::from_be_bytes(*n) as usize) else { return Ok(false) };
+            match to.rows(part).await {
+                Some(part) => rows.extend(part),
+                None => return Ok(false),
+            }
+            rest = more;
+        }
+        let Some(places) = rows.places(PACK.len() as u64, size) else {
+            tracing::warn!("avendb: the rows of its pack {hash} are of other records, so the pack is read");
+            return Ok(false);
+        };
+        let ids: Vec<EditId> = rows.ids().collect();
+        if ids.iter().any(|id| self.seen.contains(id)) {
+            return Ok(false);
+        }
+        let want = self.wants(rows.blobs().collect::<Vec<_>>());
         let keys = self.read_keys(shelf, want).await;
-        to.page(page, keys, of_head).await
+        let placed = places.into_iter().map(|(at, len, sum)| Placed { file: file.clone(), at, len, sum }).collect();
+        if !to.take_rows(rows, placed, keys).await? {
+            return Ok(false);
+        }
+        self.seen.extend(ids.iter().copied());
+        self.ids.extend(ids);
+        Ok(true)
     }
 
     /// Keys `want`, read from `shelf`: one that doesn't read whole it names no more.
@@ -827,6 +918,11 @@ async fn take_head(shelf: &Shelf, n: u64, warm: &Warm, taking: &mut Taking, to: 
     for &(hash, size) in &head.packs {
         // a pack that is a file of its shelf's: its edits are read from it in place from now on (`Placed`)
         let file = shelf.blob_file(hash).await;
+        if let Some(file) = &file
+            && taking.by_rows(shelf, (hash, size), file, to).await?
+        {
+            continue;
+        }
         let mut reader = shelf.blob_reader(hash, size);
         ensure!(reader.take(PACK.len()).await?.as_ref() == PACK, "its pack {hash} is no pack of edits");
         let mut page = Vec::new();
@@ -875,23 +971,25 @@ async fn read_warm(shelf: &Shelf) -> (Warm, u64, (PacksOnShelf, PacksOnShelf, Vi
 }
 
 /// A device's stored view on its shelf (`Warming::view`): the index of its rows, each naming the blob that holds it, by
-/// its hash and size, and the blob each row names, so that one a row no longer names goes.
+/// its hash and size; the blob each row names; and those the rows of its slot before named, which a node falls back to
+/// where the newer slot doesn't read whole: a blob goes once neither of its two slots names it.
 pub(crate) struct ViewOnShelf {
     index: ShelfIndex,
     blobs: HashMap<[u8; 32], Blob>,
+    before: HashSet<Blob>,
 }
 
 impl ViewOnShelf {
     /// None on `shelf`.
     fn none(shelf: &Shelf) -> ViewOnShelf {
         let index = ShelfIndex::empty(shelf.clone(), VIEW, PACKS_BUDGET, empty_head().head).expect("the name of an index");
-        ViewOnShelf { index, blobs: HashMap::new() }
+        ViewOnShelf { index, blobs: HashMap::new(), before: HashSet::new() }
     }
 
     /// Puts each row `view` gives anew on the shelf through `on` as a blob, then the rows in the index, each naming its
     /// blob in place of the one it named before, and those it takes away gone, stamped with the head of the edits the
-    /// view is of; and lets go of the blobs no row names then. A crash before the index's slot leaves the rows as they
-    /// were, each naming a blob the shelf holds still.
+    /// view is of; and lets go of the blobs neither its new slot nor the one before it names. A crash before the
+    /// index's slot leaves the rows as they were, each naming a blob the shelf holds still.
     async fn put(&mut self, on: &Shelf, view: ViewChanges) -> Result<()> {
         let mut changes = Vec::with_capacity(view.rows.len());
         let mut named = Vec::with_capacity(view.rows.len());
@@ -905,14 +1003,18 @@ impl ViewOnShelf {
             named.push((row, blob));
         }
         self.index.apply_on(on, changes, view.head.into()).await?;
+        let was: HashSet<Blob> = self.blobs.values().copied().collect();
         for (row, blob) in named {
-            let was = match blob {
+            match blob {
                 Some(blob) => self.blobs.insert(row, blob),
                 None => self.blobs.remove(&row),
             };
-            if let Some((hash, _)) = was.filter(|b| Some(*b) != blob) {
-                on.drop(&hash.to_hex()).await.ok();
-            }
+        }
+        let now: HashSet<Blob> = self.blobs.values().copied().collect();
+        let gone: Vec<Blob> = self.before.iter().filter(|b| !now.contains(*b) && !was.contains(*b)).copied().collect();
+        self.before = was;
+        for (hash, _) in gone {
+            on.drop(&hash.to_hex()).await.ok();
         }
         Ok(())
     }
@@ -1362,7 +1464,7 @@ mod tests {
         // Simulate a completed object write whose acknowledgement was lost.
         shelf.put(&journal_name(0), Entry { keys: vec![], records: records.clone(), anchors: anchors.clone() }.to_bytes()).await.unwrap();
         let mut book = edits.book.lock().await;
-        let due = Due { to: 1, head: log_lab.log(me).head(), records, keys: vec![], whole: false, anchors: anchors.clone(), anchor_stamp: vec![] };
+        let due = Due { to: 1, head: log_lab.log(me).head(), records, rows: None, keys: vec![], whole: false, anchors: anchors.clone(), anchor_stamp: vec![] };
         edits.put(&mut book, due).await.unwrap();
         drop(book);
         let (_, (saved, _, retained)) = Edits::open(shelf.clone()).await.unwrap();
@@ -1379,7 +1481,7 @@ mod tests {
         let mut book = edits.book.lock().await;
         let mut records = Vec::new();
         record(&mut records, &signed(0));
-        edits.put(&mut book, Due { to: 1, head: log_lab.log(me).head(), records, keys: vec![], whole: true, anchors: anchors.clone(), anchor_stamp: vec![] }).await.unwrap();
+        edits.put(&mut book, Due { to: 1, head: log_lab.log(me).head(), records, rows: None, keys: vec![], whole: true, anchors: anchors.clone(), anchor_stamp: vec![] }).await.unwrap();
         drop(book);
         let (_, (saved, _, retained)) = Edits::open(shelf.clone()).await.unwrap();
         assert_eq!(saved.len(), 1);

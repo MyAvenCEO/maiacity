@@ -399,6 +399,7 @@ fn a_fresh_device_replays_a_fraction_of_the_edits_before_its_first_view() {
                 KeyName::Scoped(KeyFam::Share(..), _) => "share",
                 KeyName::Scoped(KeyFam::Audience(..), _) => "audience",
                 KeyName::Entry(..) => "entry (legacy)",
+                KeyName::Select(_) => "selector",
             };
             let m = keys.entry((k, boxes.len().min(3), current)).or_insert((0usize, 0usize));
             m.0 += 1;
