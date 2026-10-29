@@ -4386,6 +4386,23 @@ impl Replay {
         &held[self.order[i]]
     }
 
+    /// How many of its edits, `held` being those it is the replay of, the first of `fresh` in the one order sorts
+    /// before: how far back a replay stepped on from its last edit would have to go for them (`Lab` counts it where it
+    /// replays every edit again).
+    pub fn back(&self, held: &[Edit], fresh: &[Edit]) -> usize {
+        let Some(first) = fresh.iter().zip(ids(fresh)).map(|(e, id)| (e.depth, e.rank(), id)).min() else { return 0 };
+        let before = |i: usize| {
+            let e = self.edit(held, i);
+            (e.depth, e.rank(), self.ids[i]) < first
+        };
+        let (mut lo, mut hi) = (0, self.len());
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if before(mid) { lo = mid + 1 } else { hi = mid }
+        }
+        self.len() - lo
+    }
+
     /// How many edits it orders.
     pub fn len(&self) -> usize {
         self.order.len()
