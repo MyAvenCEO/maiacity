@@ -1,7 +1,8 @@
-//! Which of its paths to a peer a node sends on (`Measured`, `PathChoice.lean`): the one that delivers soonest by what
-//! it measured, a relay's or a direct one alike. iroh's own choice ranks every direct path above the relay whatever
-//! its round trip, and the relay only for while none is up: a Mac's page kept a WebRTC path of a 10.8 s round trip
-//! that lost 4 of its 5 askings, with the relay at 715 ms beside it, and took nothing in 10 min (2026-10-28).
+//! Which of its paths to a peer a node sends on (`Measured`, `PathChoice.lean`): a direct one, which spares the relay
+//! its bandwidth and hop, while it delivers about as soon as the relay by what it measured, and the relay once none
+//! does. iroh's own choice ranks every direct path above the relay whatever its round trip, and the relay only for
+//! while none is up: a Mac's page kept a WebRTC path of a 10.8 s round trip that lost 4 of its 5 askings, with the relay
+//! at 715 ms beside it, and took nothing in 10 min (2026-10-28).
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -10,8 +11,8 @@ use std::time::Duration;
 use iroh::endpoint::transports::{AddrKind, FourTuple, PathSelection, PathSelectionContext, PathSelector};
 use n0_future::time::Instant;
 
-/// A relay's round trip counts this many times over (`cost`): a direct path is kept while it is at most this much
-/// slower, as it spares the relay and its hop (as `SLOWER` a claim's landing, `LivePriority.lean`).
+/// A direct path is sent on while its cost is at most this many times the relay's, and `STICK` more (`fit`): it spares
+/// the relay its bandwidth and hop (as `SLOWER` a claim's landing, `LivePriority.lean`).
 pub(crate) const RELAY_SLOWER: u128 = 2;
 
 /// Another path of a cost at least this much lower is taken: less is jitter, and flapping between two paths costs
@@ -46,10 +47,9 @@ pub(crate) fn stalled(sent_since: bool, since: Duration, rtt: Duration) -> bool 
     sent_since && since >= (rtt * STALL_RTTS).max(STALL_AT_LEAST)
 }
 
-/// What sending on a path costs, in nanoseconds: its round trip over the share of what it sent that arrived, a
-/// relay's `RELAY_SLOWER` times over. None for a path that received nothing yet, whose round trip is a guess, or that
-/// lost all it sent, or that stopped delivering.
-pub(crate) fn cost(relay: bool, m: Measure) -> Option<u128> {
+/// What sending on a path costs, in nanoseconds: its round trip over the share of what it sent that arrived. None for a
+/// path that received nothing yet, whose round trip is a guess, that lost all it sent, or that stopped delivering.
+pub(crate) fn cost(m: Measure) -> Option<u128> {
     if m.received == 0 || m.stalled {
         return None;
     }
@@ -58,27 +58,37 @@ pub(crate) fn cost(relay: bool, m: Measure) -> Option<u128> {
         return None;
     }
     let rtt = m.rtt.as_nanos();
-    let lossy = if m.sent == 0 { rtt } else { rtt.saturating_mul(m.sent as u128) / delivered as u128 };
-    Some(if relay { lossy.saturating_mul(RELAY_SLOWER) } else { lossy })
+    Some(if m.sent == 0 { rtt } else { rtt.saturating_mul(m.sent as u128) / delivered as u128 })
+}
+
+/// Whether a direct path of cost `c` is fit to send on beside the cheapest relay path, `relay`: at most `RELAY_SLOWER`
+/// times its cost and `STICK` more.
+pub(crate) fn fit(c: u128, relay: Option<u128>) -> bool {
+    relay.is_none_or(|r| c <= r.saturating_mul(RELAY_SLOWER).saturating_add(STICK.as_nanos()))
 }
 
 /// The path to send on, of `paths` (each with whether it is a relay's and what it measured), `current` the one sent
-/// on now: the cheapest measured, once at least `STICK` cheaper than the current; None keeps the current.
+/// on now; None keeps the current. The cheapest fit direct path (`fit`), else the cheapest relay path; the current is
+/// kept while it is fit and of the same kind as that, unless that is `STICK` cheaper.
 pub(crate) fn choose<K: PartialEq + Clone>(current: Option<&K>, paths: impl IntoIterator<Item = (K, bool, Measure)>) -> Option<K> {
-    let (mut best, mut now) = (None::<(K, u128)>, None::<u128>);
-    for (key, relay, m) in paths {
-        let Some(c) = cost(relay, m) else { continue };
-        if Some(&key) == current {
-            now = Some(now.map_or(c, |n| n.min(c)));
+    let measured: Vec<(K, bool, u128)> = paths.into_iter().filter_map(|(k, relay, m)| Some((k, relay, cost(m)?))).collect();
+    let cheapest = |relay: bool| {
+        measured.iter().filter(|(_, r, _)| *r == relay).min_by_key(|(_, _, c)| *c).map(|(k, _, c)| (k.clone(), *c))
+    };
+    let relay = cheapest(true).map(|(_, c)| c);
+    let direct = measured.iter().filter(|(_, r, c)| !r && fit(*c, relay)).min_by_key(|(_, _, c)| *c);
+    let (best, best_relay, best_cost) = match direct {
+        Some((k, _, c)) => (k.clone(), false, *c),
+        None => {
+            let (k, c) = cheapest(true)?;
+            (k, true, c)
         }
-        if best.as_ref().is_none_or(|(_, b)| c < *b) {
-            best = Some((key, c));
-        }
-    }
-    let (key, c) = best?;
+    };
+    // the current by its cheapest copy: one network path appears once a connection
+    let now = measured.iter().filter(|(k, _, _)| Some(k) == current).min_by_key(|(_, _, c)| *c);
     match now {
-        Some(n) if c.saturating_add(STICK.as_nanos()) > n => None,
-        _ => (Some(&key) != current).then_some(key),
+        Some((_, r, c)) if *r == best_relay && (*r || fit(*c, relay)) && best_cost.saturating_add(STICK.as_nanos()) > *c => None,
+        _ => (Some(&best) != current).then_some(best),
     }
 }
 
@@ -190,7 +200,7 @@ mod tests {
         // its round trip as it was, but what it sent since was lost
         assert_eq!(choose(Some(&"rtc"), [("rtc", false, m(100, 100, 85)), relay]), Some("relay"));
         assert_eq!(choose(Some(&"rtc"), [("rtc", false, m(100, 100, 100)), relay]), Some("relay"));
-        assert_eq!(cost(false, m(100, 100, 100)), None);
+        assert_eq!(cost(m(100, 100, 100)), None);
         // or it stopped delivering, its losses not declared yet: once it sent and received nothing for three of its
         // round trips, and a second at least, the relay is taken at the selector's next look
         assert!(!stalled(true, Duration::from_millis(900), Duration::from_millis(100)), "under a second");
@@ -205,9 +215,19 @@ mod tests {
     #[test]
     fn a_path_with_no_sample_is_never_preferred() {
         let guess = Measure { rtt: Duration::from_millis(1), sent: 3, lost: 0, received: 0, stalled: false };
-        assert_eq!(cost(false, guess), None);
+        assert_eq!(cost(guess), None);
         assert_eq!(choose(Some(&"relay"), [("rtc", false, guess), ("relay", true, m(700, 10, 0))]), None);
         assert_eq!(choose(None, [("rtc", false, guess), ("relay", true, m(700, 10, 0))]), Some("relay"));
+    }
+
+    /// On a loopback, as a relay on the same machine, a direct path a few milliseconds slower than the relay is taken:
+    /// what they differ by is jitter, and it spares the relay (a late WebRTC path over a local relay, avendb-server's
+    /// `transport_activation`).
+    #[test]
+    fn a_direct_path_a_few_milliseconds_slower_than_a_local_relay_is_taken() {
+        let paths = [("rtc", false, m(4, 50, 0)), ("relay", true, m(1, 500, 0))];
+        assert_eq!(choose(Some(&"relay"), paths), Some("rtc"));
+        assert_eq!(choose(Some(&"rtc"), paths), None);
     }
 
     /// Of two alike a cost under `STICK` lower is jitter: the current is kept.
