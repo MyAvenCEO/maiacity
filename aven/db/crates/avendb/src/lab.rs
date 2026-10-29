@@ -5704,7 +5704,10 @@ impl Lab {
     /// approves (its root signed, or its threshold of owners) and `from` cosigned. `d` keeps it, with the McEliece key
     /// it names, and from then on answers `from` as a device of that vault. `NotJoining` if the edit adds no device or
     /// another one than `from`, `BadSignature` if a signature doesn't verify, and otherwise why `d`'s view refuses it.
-    /// The same join sent again is accepted again.
+    /// The same join sent again is accepted again. What it needs in this turn is `d`'s replay stepped on over it, so
+    /// that `d` counts the new device and answers it as one (`step_replay`, the distance back at most); the rest of its
+    /// catch-up, keys, readings and showings, is left to the node's steps (`catch_up_step`), so an always-on peer's
+    /// store never waits a turn on one new device.
     pub fn accept_join(&mut self, d: SignerId, from: SignerId, join: Join) -> Result<EditId, Refusal> {
         if !matches!(join.edit.edit.action, Action::Share(Sharing::Device { device, .. }) if device == from) {
             return Err(Refusal::NotJoining);
@@ -5714,7 +5717,8 @@ impl Lab {
             return Ok(id);
         }
         self.held(d).view().step(&join.edit.edit)?;
-        self.receive(d, vec![join.edit], join.blobs.into_iter().map(Arc::from).collect());
+        self.receive_now(d, vec![join.edit], join.blobs.into_iter().map(Arc::from).collect(), false);
+        self.step_replay(d, usize::MAX);
         Ok(id)
     }
 
