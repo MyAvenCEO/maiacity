@@ -212,17 +212,13 @@ OrbStack runs it natively instead of through Rosetta, comes next.
 [`avensandbox-image.yml`](../../.github/workflows/avensandbox-image.yml) builds the box's image whenever its
 Dockerfile changes, on any branch, and tags main's as `latest`.
 
-v1's three workflows (`ci.yml`, `release.yml` and `ops.yml`) are to be parked: moved out of `.github/workflows/`,
-not deleted, so `main` runs no CI and deploys nothing. v1's site, API and peer keep running as they are; they just
-stop being redeployed, and uptime checks and rollbacks stop with them.
+**v1's three workflows are parked** in [`.github/workflows-v1/`](../../.github/workflows-v1/README.md) (Samuel, 29
+Oct 2026): moved, not deleted, so `main` runs no CI and deploys nothing. v1's site, API and peer keep running as they
+were last deployed; nothing redeploys them, checks that they are up, or rolls them back. Its README says how to
+switch one back on.
 
-The cloud environment's setup script, once the image exists:
-
-```bash
-dockerd --allow-direct-routing > /var/log/dockerd.log 2>&1 &
-for i in $(seq 1 60); do docker info > /dev/null 2>&1 && break; sleep 1; done
-docker pull ghcr.io/myavenceo/avensandbox:latest
-```
+The cloud environment's setup script is [`box/cloud-setup.sh`](box/cloud-setup.sh): it puts the box's image and the
+page's dependencies on disk, so the environment's snapshot keeps them for every new session.
 
 ## Real-world iroh inside the box
 
