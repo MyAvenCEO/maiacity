@@ -60,8 +60,9 @@ mkdirSync(out, { recursive: true });
 mkdirSync(profile, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** What a run must meet. */
-export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 1, view: 2 };
+/** What a run must meet. A view's first paint from the device's own data: 100 ms at every level (Samuel 2026-10-29,
+ *  "any actor and views should instantly open under 100ms any way"). */
+export const TARGETS = { unlock: 5, firstPaint: 0.5, message: 1, view: 0.1 };
 /** What the roundtrip gates at now (--gate, Samuel 2026-10-28: 3 s for this sync build), the 1 s target still reported. */
 const GATE = Number(option('--gate', '3'));
 
@@ -110,14 +111,48 @@ async function until(holds, seconds) {
 		await sleep(100);
 	}
 }
-/** Goes to `href` inside the app, as a tap on a link does (a full load would start the device again). */
-const go = (page, href) =>
-	page.evaluate((href) => {
-		const a = Object.assign(document.createElement('a'), { href });
-		document.body.append(a);
-		a.click();
-		a.remove();
-	}, href);
+/** Goes to `href` inside the app, as a tap on a link does (a full load would start the device again): the page's clock
+ *  at the tap. */
+const go = (page, href, spec = null) =>
+	page.evaluate(
+		([href, spec]) => {
+			const a = Object.assign(document.createElement('a'), { href });
+			document.body.append(a);
+			if (spec) window.__walkPaint?.arm(spec);
+			const at = performance.now();
+			a.click();
+			a.remove();
+			return at;
+		},
+		[href, spec]
+	);
+
+/** The walk's paint clock, in the page: `arm(spec)` just before a tap; from then on each change of the page is checked
+ *  as it lands (a MutationObserver runs before the frame is drawn), and the page's clock is kept the first time `spec`
+ *  (`{ sel, text, not }`) holds. `held` says whether it already held at the tap, where a time would be the old view's. */
+function walkPaint() {
+	let observer = null;
+	const holds = ({ sel, text, not }) =>
+		[...document.querySelectorAll(sel)].some((e) => (!text || e.textContent?.includes(text)) && (!not || !new RegExp(not).test(e.textContent ?? '')));
+	window.__walkPaint = {
+		at: null,
+		held: false,
+		arm(spec) {
+			observer?.disconnect();
+			this.at = null;
+			this.held = holds(spec);
+			observer = new MutationObserver(() => {
+				if (this.at == null && holds(spec)) {
+					this.at = performance.now();
+					observer.disconnect();
+				}
+			});
+			observer.observe(document, { subtree: true, childList: true, characterData: true, attributes: true });
+		}
+	};
+}
+/** Pages the walk's paint clock is set up on. */
+const clocked = new WeakSet();
 const open = (page) => until(async () => !(await page.$('.gate')) && !!(await page.$('nav.pill')), 2);
 
 /** Each page's profile, by which its samples and reports are paired. */
@@ -393,7 +428,7 @@ async function run() {
 	const line =
 		`${stamp} ${engine} load ${s.load}s gate ${s.gate}s unlock ${s.unlock}s (${s.ceremonies ?? 0} ceremony) ` +
 		`chat rooms ${s.chatRooms}s room ${s.chatRoom}s assets list ${s.assetsList}s asset ${s.asset}s ` +
-		`views ${Object.entries(log.views).map(([when, vs]) => `${when} ${vs.map((v) => `${v.app}/${v.level} ${v.paint ?? '-'}s`).join(' ')}`).join(', ')} ` +
+		`views (<${TARGETS.view}s, ! = missed) ${Object.entries(log.views).map(([when, vs]) => `${when} ${vs.map((v) => `${v.app}/${v.level} ${v.paint ?? '-'}s${v.met ? '' : '!'}`).join(' ')}`).join(', ')} ` +
 		`behind ${behind.length ? `${behind[0]}→${behind.at(-1)}` : 'n/a'} reports ${log.reports.length} errors ${log.errors.length} ` +
 		`device ${log.device ?? '-'} named ${log.named ?? '-'} removed ${log.removed.map((r) => `${r.id.slice(0, 8)} ${r.result}`).join(' ') || '-'} ` +
 		`memory free ${log.memory.length ? `${Math.min(...log.memory.map((m) => m.free ?? 100))}% min` : 'n/a'} ` +
@@ -419,7 +454,9 @@ async function openOn(page) {
  *  goes from an app's composite view down to a leaf, a click at a time, so each level's sub-interest is asked for
  *  (a slot binds on select: Chat's room, Assets' asset). A step goes to `go` or clicks `click` (the
  *  first element it matches), and has painted once `painted` matches, with `text` in it where given. A view's first
- *  paint is from the device's own data (local first): the 2 s target holds while the device still catches up. */
+ *  paint is from the device's own data (local first): the 100 ms target (`TARGETS.view`) holds while the device still
+ *  catches up. A level's time is the page's own clock, from just before its tap to the frame its view drew, so a
+ *  100 ms target is read to the frame, not to the script's polling. */
 const WALKS = [
 	{
 		app: 'chat',
@@ -467,42 +504,74 @@ const WALKS = [
  *  ends its walk: [{ app, level, paint (s or null), pill }]. */
 async function views(page, when) {
 	const seen = [];
-	const first = (sel) => page.evaluate((sel) => !!document.querySelector(sel)?.click() || !!document.querySelector(sel), sel);
+	if (!clocked.has(page)) {
+		clocked.add(page);
+		await page.addInitScript(walkPaint);
+	}
+	await page.evaluate(walkPaint);
+	// taps the first match of `sel`, the paint clock armed for `spec` where given: the page's clock at the tap, or null
+	// while there is none
+	const first = (sel, spec = null) =>
+		page.evaluate(
+			([sel, spec]) => {
+				const e = document.querySelector(sel);
+				if (!e) return null;
+				if (spec) window.__walkPaint?.arm(spec);
+				const at = performance.now();
+				e.click();
+				return at;
+			},
+			[sel, spec]
+		);
 	for (const w of WALKS) {
 		for (const step of w.steps) {
 			const t0 = Date.now();
 			const left = () => Math.max(0.1, 30 - (Date.now() - t0) / 1000);
-			let ready = true;
-			if (step.go) await go(page, step.go);
-			if (step.click) ready = !!(await until(() => first(step.click), left()));
-			if (ready && step.then) ready = !!(await until(() => first(step.then), left()));
+			// a level's time runs from the tap that opens it; the wait for something to tap is the level above's, kept apart
+			const spec = { sel: step.painted, text: step.text ?? '', not: step.not ?? '' };
+			// the clock is armed at the last tap, the one that opens this level
+			let tap = null;
+			if (step.go) tap = await go(page, step.go, step.click || step.room ? null : spec);
+			if (step.click) tap = await until(() => first(step.click, step.then ? null : spec), left());
+			if (tap != null && step.then) tap = await until(() => first(step.then, spec), left());
 			// a room the device doesn't know yet hasn't painted, whatever other room Chat shows
 			if (step.room)
-				ready = !!(await until(
+				tap = await until(
 					() =>
-						page.evaluate((name) => {
-							const b = [...document.querySelectorAll('.chat-page button.nav-item')].find((e) => e.textContent?.replace(/\s+/g, ' ').trim().replace(/^#\s*/, '') === name);
-							b?.click();
-							return !!b;
-						}, step.room),
+						page.evaluate(
+							([name, spec]) => {
+								const b = [...document.querySelectorAll('.chat-page button.nav-item')].find((e) => e.textContent?.replace(/\s+/g, ' ').trim().replace(/^#\s*/, '') === name);
+								if (!b) return null;
+								window.__walkPaint?.arm(spec);
+								const at = performance.now();
+								b.click();
+								return at;
+							},
+							[step.room, spec]
+						),
 					left()
-				));
-			const painted = () =>
-				page.evaluate(
-					({ sel, text, not }) => [...document.querySelectorAll(sel)].some((e) => (!text || e.textContent?.includes(text)) && (!not || !new RegExp(not).test(e.textContent ?? ''))),
-					{ sel: step.painted, text: step.text ?? '', not: step.not ?? '' }
 				);
-			let done = ready && (await until(painted, step.vault ? Math.min(5, left()) : left()));
+			const ready = tap != null;
+			const tapWait = Number(((Date.now() - t0) / 1000).toFixed(2));
+			// the page's clock when the view first held after the tap, or null
+			const painted = (seconds) =>
+				page
+					.waitForFunction(() => window.__walkPaint?.at ?? null, null, { polling: 100, timeout: seconds * 1000 })
+					.then((h) => h.jsonValue())
+					.catch(() => null);
+			let done = ready && (await painted(step.vault ? Math.min(5, left()) : left()));
 			// the recipes live in Maia City: where the vault picked holds none, pick it in the nav pill's vaults, as a person does
 			if (ready && !done && step.vault) {
 				await page.evaluate(() => document.querySelector('button.item.identity')?.click());
 				await sleep(300);
 				await page.evaluate((name) => [...document.querySelectorAll('button.acct[role=menuitemradio]')].find((b) => new RegExp(name).test(b.textContent?.replace(/\s+/g, ' ') ?? ''))?.click(), step.vault);
 				await sleep(300);
-				await go(page, step.go);
-				done = await until(painted, left());
+				tap = await go(page, step.go, spec);
+				done = await painted(left());
 			}
-			seen.push({ app: w.app, level: step.level, paint: done ? Number(((Date.now() - t0) / 1000).toFixed(2)) : null, pill: await pill(page), ...moment(page) });
+			const paint = done ? Number(((done - tap) / 1000).toFixed(3)) : null;
+			const held = await page.evaluate(() => window.__walkPaint?.held ?? null).catch(() => null);
+			seen.push({ app: w.app, level: step.level, paint, ...(held ? { held } : {}), tapWait: step.click || step.room ? tapWait : null, met: paint != null && paint < TARGETS.view, pill: await pill(page), ...moment(page) });
 			await shot(page, `view-${when}-${w.app}-${step.level.replace(/\W/g, '')}`);
 			if (!done) break;
 		}
