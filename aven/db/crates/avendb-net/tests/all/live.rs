@@ -248,6 +248,39 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
     }
 }
 
+/// A peer sends on edits it took before the McEliece keys they name came (those come after its pages), naming none of
+/// them: the device that took the edits there asks its other peers for those keys, and one that holds them hands them
+/// over, though no log differs between them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn keys_a_peer_sent_edits_without_come_from_another_peer() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (owners, nonce) = (vec![Principal::Vault(coop)], 7);
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+    let garden = w.lab.submit(w.mac_a, &[w.passkey_a, w.passkey_b], genesis).expect("the Garden");
+    relay_on(&mut w, VaultId::from(garden));
+    // of the new McEliece keys its seed brings, those of Alice's devices, which Bob's Mac lacks too
+    let held = [w.lab.blob_ids(w.server), w.lab.blob_ids(w.mac_b)].concat();
+    let new: Vec<BlobId> = w.lab.blob_ids(w.mac_a).into_iter().filter(|b| !held.contains(b)).collect();
+    assert!(!new.is_empty(), "the Garden's seed brings McEliece keys the server and Bob's Mac lack");
+    // Bob's Mac takes the Garden's edits from Alice's Mac, and none of their keys yet
+    let request = w.lab.request(w.mac_b, w.mac_a);
+    let (edits, _, more) = w.lab.reply(w.mac_a, w.mac_b, &request, usize::MAX);
+    assert!(!more, "in one reply");
+    w.lab.receive(w.mac_b, edits, Vec::new());
+    assert!(new.iter().all(|&b| w.lab.blob(w.mac_b, b).is_none()), "Bob's Mac holds the edits, not the keys");
+    let (mac_a, passkey_a, server_d, mac_b, passkey_b) = (w.mac_a, w.passkey_a, w.server, w.mac_b, w.passkey_b);
+    let server = node(&mut w, server_d, &[], 2).await;
+    let bob = node(&mut w, mac_b, &[passkey_b], 3).await;
+    meet(&[&server, &bob]);
+    let took = || server.read(move |lab, me| lab.log(me).ids().contains(&garden));
+    until("the server takes the Garden's log from Bob's Mac", took).await;
+    assert!(!holds(&server, new.clone()).await, "and none of its keys: Bob's Mac named none");
+    let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
+    meet(&[&mac, &server, &bob]);
+    until("the server brings them from Alice's Mac, of whose logs it lacks nothing", || holds(&server, new.clone())).await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_request_that_asks_for_its_reply_packed_gets_each_key_once() {
     let mut w = world();
