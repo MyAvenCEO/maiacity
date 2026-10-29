@@ -14,5 +14,11 @@ bytes = "=1.12.1"
 futures = { version = "=0.3.34", default-features = false, features = ["std", "async-await"] }
 thiserror = "=2.0.21"
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+opendal = { version = "=0.59.5", default-features = false, features = ["services-memory", "services-fs", "services-s3", "http-transport-reqwest"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+opendal = { version = "=0.59.5", default-features = false, features = ["services-memory", "services-opfs"] }
+
 [dev-dependencies]
 tokio = { version = "=1.54.1", features = ["macros", "rt-multi-thread"] }
