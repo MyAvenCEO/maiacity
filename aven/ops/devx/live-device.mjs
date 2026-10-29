@@ -400,7 +400,7 @@ const WALKS = [
 		steps: [
 			{ level: 'settings', go: `${base}/app/#settings`, painted: 'section.part' },
 			// the person's own devices are their human vault's, not the coop's the Assets walk picked
-			{ level: 'devices', go: `${base}/app/#settings/devices`, painted: '#settings-devices li.device', vault: '\\bYou\\b' }
+			{ level: 'devices', go: `${base}/app/#settings/devices`, painted: '#settings-devices li.device', vault: 'You\\s*$' }
 		]
 	}
 ];
