@@ -566,7 +566,7 @@ impl Replay {
 
     /// The replay `to_view` made `bytes` of, of the first edits of `edits`, `ids` being their ids, and how many: none
     /// where the bytes are no view, or of other edits.
-    pub fn from_view(bytes: &[u8], edits: &[Edit], ids: &[EditId]) -> Option<(Replay, usize)> {
+    pub fn from_view(bytes: &[u8], edits: &crate::policy::Edits, ids: &[EditId]) -> Option<(Replay, usize)> {
         // a view of version 3 is one whose tail keeps no rungs and no marks
         let (rest, laddered) = match bytes.strip_prefix(VIEW) {
             Some(rest) => (rest, true),

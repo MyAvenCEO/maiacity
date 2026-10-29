@@ -237,7 +237,7 @@ fn signers() -> Vec<SignerId> {
 }
 
 /// The ids that stand, but the boxes.
-fn standing_but_boxes(r: &Replay, held: &[Edit]) -> Vec<avendb::id::EditId> {
+fn standing_but_boxes(r: &Replay, held: &avendb::policy::Edits) -> Vec<avendb::id::EditId> {
     r.ids.iter().zip(r.edits(held)).zip(&r.stood).filter(|((_, e), s)| **s && !is_box(e)).map(|((id, _), _)| *id).collect()
 }
 
@@ -254,7 +254,7 @@ fn a_view_without_the_boxes_is_the_view_with_them() {
         let lazy = first_view(edits);
         // L1: the same state, every key schedule and audience in it, and the same edits standing but the boxes
         assert!(lazy.state == full.state, "seed {seed}: the state differs without the boxes");
-        let kept: Vec<Edit> = edits.iter().filter(|e| !is_box(e)).cloned().collect();
+        let kept: avendb::policy::EditsVec = edits.iter().filter(|e| !is_box(e)).cloned().collect();
         assert_eq!(standing_but_boxes(&lazy, &kept), standing_but_boxes(&full, edits), "seed {seed}");
         // and every box made stood: the history is no history of refused boxes
         let stood_boxes = full.edits(edits).zip(&full.stood).filter(|(e, s)| **s && is_box(e)).count();
@@ -292,13 +292,13 @@ fn boxes_fetched_later_check_as_if_they_came_first() {
         let full = replay(edits);
         let first = first_view(edits);
         let split = first_sync(edits, &first, NEW_DEVICE);
-        let now: Vec<Edit> = split.now.iter().map(|&i| edits[i].clone()).collect();
-        let later: Vec<Edit> =
+        let now: avendb::policy::EditsVec = split.now.iter().map(|&i| edits[i].clone()).collect();
+        let later: avendb::policy::EditsVec =
             split.with_history.iter().chain(&split.never).map(|&i| edits[i].clone()).collect();
         // what it takes now gives the view (L1)
-        assert!(replay(&now).state == full.state, "seed {seed}");
+        assert!(replay(&avendb::policy::EditsVec::from(&now[..])).state == full.state, "seed {seed}");
         // the rest, fetched later, each checked on the state before it (L3): the same boxes stand as in the replay of all
-        let fetched = with_fetched(&now, &replay(&now), &later);
+        let fetched = with_fetched(&now, &replay(&avendb::policy::EditsVec::from(&now[..])), &later);
         assert!(fetched.same, "seed {seed}: the state moved");
         let stood_full: HashSet<_> = full.standing().into_iter().collect();
         let later_ids: HashSet<_> = later.iter().map(Edit::id).collect();
@@ -358,8 +358,8 @@ fn an_edit_that_names_a_box_as_deep_as_itself_sends_the_device_back_to_every_edi
     assert!(!boxes_under(edits));
     let full = replay(edits);
     let first = first_view(edits);
-    let later: Vec<Edit> = edits.iter().filter(|e| is_box(e)).cloned().collect();
-    let held: Vec<Edit> = edits.iter().filter(|e| !is_box(e)).cloned().collect();
+    let later: avendb::policy::EditsVec = edits.iter().filter(|e| is_box(e)).cloned().collect();
+    let held: avendb::policy::EditsVec = edits.iter().filter(|e| !is_box(e)).cloned().collect();
     let fetched = with_fetched(&held, &first, &later);
     assert!(!fetched.same, "the device must see that its view no longer holds");
     assert!(fetched.replay.state == full.state);
@@ -425,6 +425,6 @@ fn a_fresh_device_replays_a_fraction_of_the_edits_before_its_first_view() {
         split.with_history.len(),
         split.never.len()
     );
-    assert!(replay(&split.now.iter().map(|&i| edits[i].clone()).collect::<Vec<_>>()).state == replay(edits).state);
+    assert!(replay(&split.now.iter().map(|&i| edits[i].clone()).collect::<avendb::policy::EditsVec>()).state == replay(edits).state);
     assert!(after.0 * 2 < before.0, "a first sync should replay well under half the edits");
 }

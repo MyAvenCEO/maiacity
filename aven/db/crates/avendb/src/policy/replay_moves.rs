@@ -14,7 +14,7 @@ const OTHER: EntryId = EntryId::from_u64(102);
 
 struct Fixture {
     state: State,
-    edits: Vec<Edit>,
+    edits: crate::policy::EditsVec,
     alice: VaultId,
     bob: VaultId,
     share: ShareId,
@@ -26,7 +26,7 @@ fn edit(at: usize, author: SignerId, action: Action) -> Edit {
 
 fn fixture(wide: bool) -> Fixture {
     let mut st = State::default();
-    let mut edits = vec![];
+    let mut edits = crate::policy::EditsVec::new();
     let mut at = 0;
     let mut add = |author, cosigners, action| {
         let e = Edit { cosigners, ..edit(at, author, action) };
@@ -83,9 +83,11 @@ fn moved(f: &Fixture, entry: EntryId, keep: Vec<EditId>) -> Action {
     Action::Mark { vault: f.alice, entry, caps: Some(vec![]), wants: None, keep, via: vec![] }
 }
 
-fn same_run(f: &Fixture, edits: &[Edit], rem: &HashSet<EditId>, snap: usize) -> Run {
+fn same_run(f: &Fixture, edits: &crate::policy::Edits, rem: &HashSet<EditId>, snap: usize) -> Run {
     let ids = ids(edits);
     let watch = watched(edits);
+    let edits: Vec<&Edit> = edits.iter().collect();
+    let edits = &edits[..];
     let run = |indexed| {
         if indexed {
             run_from_using::<true, _>(f.state.clone(), edits, &ids, rem, true, &watch, Some(snap))
@@ -156,12 +158,12 @@ fn every_action_reads_only_its_own_entry_move_facts() {
 fn indexed_moves_match_whole_runs_with_cuts_keeps_and_checkpoints() {
     for mask in 0..32 {
         let f = fixture(mask & 1 != 0);
-        let mut edits = vec![
+        let mut edits: crate::policy::EditsVec = crate::policy::EditsVec::from(vec![
             edit(0, DEVICE_B, write(&f, FIRST, f.bob)),
             edit(1, DEVICE_A, key(&f, FIRST)),
             edit(2, DEVICE_A, wraps(&f, OTHER)),
             edit(3, DEVICE_A, write(&f, OTHER, f.alice)),
-        ];
+        ]);
         let keep = if mask & 2 != 0 { vec![edits[0].id()] } else { vec![] };
         edits.push(edit(4, DEVICE_A, moved(&f, FIRST, keep)));
         edits.push(edit(5, DEVICE_A, moved(&f, OTHER, vec![])));
@@ -182,12 +184,12 @@ fn indexed_moves_match_whole_runs_with_cuts_keeps_and_checkpoints() {
 #[test]
 fn a_move_refusal_keeps_the_original_global_tail_boundary() {
     let f = fixture(false);
-    let edits = vec![
+    let edits = crate::policy::EditsVec::from(vec![
         edit(0, DEVICE_B, write(&f, FIRST, f.bob)),
         edit(1, DEVICE_A, moved(&f, FIRST, vec![])),
         edit(2, DEVICE_A, key(&f, OTHER)),
         edit(3, DEVICE_A, moved(&f, OTHER, vec![])),
-    ];
+    ]);
     let rem = edits.iter().filter(|e| e.is_removal()).map(Edit::id).collect();
     let run = same_run(&f, &edits, &rem, 2);
     assert_eq!(run.stood, [false, true, true, true]);
@@ -196,7 +198,7 @@ fn a_move_refusal_keeps_the_original_global_tail_boundary() {
 
 /// The pre-optimization replay/tail assembly, using the original materialized run. Resolution's standing-move
 /// choices are already compared by `same_run`; the trust-only removal pass contains no audience moves.
-fn materialized_replay(edits: &[Edit]) -> Replay {
+fn materialized_replay(edits: &crate::policy::Edits) -> Replay {
     let ids = ids(edits);
     let depths = ids.iter().copied().zip(edits.iter().map(|e| e.depth)).collect();
     let order = order_places(edits, &ids);

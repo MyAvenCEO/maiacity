@@ -310,7 +310,7 @@ async fn a_follower_fetches_the_files_of_what_it_follows() {
     let raw = by_hand(&w.lab, mac_d).await;
     let conn = hello(&w.lab, mac_d, &raw, &mac).await;
     assert_eq!(fetch(&raw, &mac, hash).await, None, "Dave's Mac, which follows nothing, may not fetch the photo");
-    let ask = |follow: Vec<_>| Request { ask: asks(&[], &follow), wants: vec![], after: None }.to_wire();
+    let ask = |follow: Vec<_>| Request { ask: asks(avendb::policy::Edits::empty(), &follow), wants: vec![], after: None }.to_wire();
     say(&conn, REQUEST, &ask(vec![coop])).await;
     let got = fetch(&raw, &mac, hash).await.expect("once it asks following the coop, it fetches the photo");
     assert_eq!(got.len() as u64, root.size, "all of it");

@@ -2530,7 +2530,7 @@ struct Mine {
 
 impl Default for Mine {
     fn default() -> Mine {
-        Mine { at: None, logs: Arc::new(Logs::of(&[], &[], (0, 0))), stubs: HashSet::new(), asks_bodies: false }
+        Mine { at: None, logs: Arc::new(Logs::of(avendb::policy::Edits::empty(), &[], (0, 0))), stubs: HashSet::new(), asks_bodies: false }
     }
 }
 
@@ -3990,7 +3990,7 @@ impl Shared {
             known.clone()
         } else {
             let log = lab.log(me);
-            let mut fresh = Logs::of(&[], &[], (0, 0));
+            let mut fresh = Logs::of(avendb::policy::Edits::empty(), &[], (0, 0));
             fresh.update(log, size);
             let fresh = Arc::new(fresh);
             *logs = Some(fresh.clone());
@@ -4025,7 +4025,7 @@ impl Shared {
                     true => shared.logs_of(lab, me).frontiers(),
                     false => {
                         let mut index = shared.held_logs.lock().expect("held logs");
-                        let index = index.get_or_insert_with(|| Logs::of(&[], &[], (0, 0)));
+                        let index = index.get_or_insert_with(|| Logs::of(avendb::policy::Edits::empty(), &[], (0, 0)));
                         index.update_held(lab.log(me), held, size);
                         index.frontiers()
                     }

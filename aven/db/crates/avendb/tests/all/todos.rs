@@ -7,7 +7,7 @@ use crate::common;
 
 use avendb::id::{AudienceId, EntryId, ShareId, VaultId};
 use avendb::keys::KeyFam;
-use avendb::policy::{mk_audience, view, Action, Edit, Level, Log, Refusal, Revoking, Share, Sharing, State};
+use avendb::policy::{mk_audience, view, Action, Level, Log, Refusal, Revoking, Share, Sharing, State};
 use avendb::sync::{entry_writes, log_of, receive, respond, LogId};
 use common::*;
 
@@ -25,7 +25,7 @@ fn audience_of(log: &Log, e: EntryId) -> Option<AudienceId> {
 }
 
 /// The entries whose logs `edits` hold edits of, in the order they first come.
-fn entries_in(edits: &[Edit]) -> Vec<EntryId> {
+fn entries_in(edits: &avendb::policy::Edits) -> Vec<EntryId> {
     let mut out = vec![];
     for o in edits {
         if let Some(LogId::Entry(e)) = log_of(o, o.id())
@@ -39,13 +39,13 @@ fn entries_in(edits: &[Edit]) -> Vec<EntryId> {
 
 /// What a peer holding the edits of every log of `logs` makes of them.
 fn met(logs: &[&Log]) -> State {
-    let mut all: Vec<Edit> = vec![];
+    let mut all = avendb::policy::EditsVec::new();
     for o in logs.iter().flat_map(|log| log.edits()) {
         if !all.contains(o) {
             all.push(o.clone());
         }
     }
-    view(&all)
+    view(&avendb::policy::EditsVec::from(&all[..]))
 }
 
 /// A share over vault `over` naming vault `who`, resting on `parent` and issued by `issuer`: what `Cast::issue_on`
@@ -165,7 +165,7 @@ fn sync_sends_only_what_shares_reach() {
     let edits = t.c.log.edits();
     // Alice's Mac answers Carol's Mac with the door todo's writes and its move, and nothing of the other two
     let to_carol = respond(edits, MAC_C, &[]);
-    assert_eq!(entries_in(&to_carol), [DOOR]);
+    assert_eq!(entries_in(&avendb::policy::EditsVec::from(&to_carol[..])), [DOOR]);
     // and with the shares of every audience the door todo was in, so Carol's Mac can check them
     let grants = to_carol.iter().filter(|o| matches!(o.action, Action::Share(Sharing::Grant(..))));
     let shares: Vec<ShareId> = grants.map(|o| ShareId::from(o.id())).collect();
@@ -179,7 +179,7 @@ fn sync_sends_only_what_shares_reach() {
     let revoke = Action::Revoke(Revoking::Grant { share, actor, keep: vec![], via: vec![] });
     let revoked = gone.c.log.append(PASSKEY_A, &[], revoke).unwrap();
     let to_dave = respond(gone.c.log.edits(), MAC_D, &[]);
-    assert!(entries_in(&to_dave).is_empty() && to_dave.iter().any(|o| o.id() == revoked));
+    assert!(entries_in(&avendb::policy::EditsVec::from(&to_dave[..])).is_empty() && to_dave.iter().any(|o| o.id() == revoked));
 }
 
 #[test]
@@ -187,7 +187,7 @@ fn entry_syncs_peer_to_peer_without_server() {
     let t = social_todo();
     let edits = t.c.log.edits();
     // each Mac starts with its own vault's edits and what Alice's Mac sent it
-    let own = |v: VaultId| -> Vec<Edit> {
+    let own = |v: VaultId| -> avendb::policy::EditsVec {
         edits.iter().filter(|o| log_of(o, o.id()) == Some(LogId::Vault(v))).cloned().collect()
     };
     let mut bob_mac = Log::from_edits(receive(&own(t.c.bob), &respond(edits, MAC_B, &[])));
@@ -199,10 +199,10 @@ fn entry_syncs_peer_to_peer_without_server() {
     let bob_after = receive(bob_mac.edits(), &respond(carol_mac.edits(), MAC_B, &[]));
     let carol_after = receive(carol_mac.edits(), &respond(bob_mac.edits(), MAC_C, &[]));
     // both hold Alice's and Bob's edits of the door todo, and Carol's Mac accepts Bob's
-    assert_eq!(entry_writes(&carol_after, DOOR).len(), 2);
-    assert_eq!(entry_writes(&carol_after, DOOR), entry_writes(&bob_after, DOOR));
+    assert_eq!(entry_writes(&avendb::policy::EditsVec::from(&carol_after[..]), DOOR).len(), 2);
+    assert_eq!(entry_writes(&avendb::policy::EditsVec::from(&carol_after[..]), DOOR), entry_writes(&avendb::policy::EditsVec::from(&bob_after[..]), DOOR));
     // and neither learned anything about the other todos
-    assert_eq!((entries_in(&carol_after), entries_in(&bob_after)), (vec![DOOR], vec![DOOR]));
+    assert_eq!((entries_in(&avendb::policy::EditsVec::from(&carol_after[..])), entries_in(&avendb::policy::EditsVec::from(&bob_after[..]))), (vec![DOOR], vec![DOOR]));
 }
 
 /// Examples.lean's `shared`: Alice's three todos, Carol writing all of them and Bob those tagged work, each moved into

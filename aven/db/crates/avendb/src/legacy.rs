@@ -263,7 +263,7 @@ impl Freezing {
         let frozen = Frozen::new(std::mem::take(&mut self.ids));
         let held = self.held;
         self.governing.sort_by_key(|e| (e.depth, e.id()));
-        let st = replay(&self.governing).state;
+        let st = replay(&crate::policy::EditsVec::from(&self.governing[..])).state;
         let suite = |s: &SignerId| self.suites.get(s).copied();
         let master = recovery::master();
         let signer = |s: SignerId| {

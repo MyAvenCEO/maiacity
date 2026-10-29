@@ -13,7 +13,7 @@ use avendb::keys::{KeyFam, KeyName};
 use avendb::lens::example::{DOCUMENT_LENS, DOCUMENT_V0};
 use avendb::lens::DOCUMENT_V1;
 use avendb::policy::{
-    mk_audience, replay, Action, Edit, KeepMode, Kind, Level, Log, Principal, Refusal, Revoking, Share, Sharing, State,
+    mk_audience, replay, Action, KeepMode, Kind, Level, Log, Principal, Refusal, Revoking, Share, Sharing, State,
     Who,
 };
 use avendb::slice::{Selector, LENS_TYPE, SCHEMA_TYPE};
@@ -88,7 +88,7 @@ fn reads(st: &State, d: SignerId, e: EntryId) -> bool {
 }
 
 /// The entries whose logs `edits` hold edits of, in the order they first come.
-fn entries_in(edits: &[Edit]) -> Vec<EntryId> {
+fn entries_in(edits: &avendb::policy::Edits) -> Vec<EntryId> {
     let mut out = vec![];
     for o in edits {
         if let Some(LogId::Entry(e)) = log_of(o, o.id())
@@ -286,7 +286,7 @@ fn a_revoked_owner_cannot_block_his_revocation() {
     // the vault the shares are over ranks first, wherever the revocations sort: both shares are gone, in either order
     // of arrival, and Dave's revocation falls with the share it rested on
     for (a, b) in [(&c.log, &daves), (&daves, &c.log)] {
-        let mut all = a.edits().to_vec();
+        let mut all: avendb::policy::EditsVec = a.edits().iter().cloned().collect();
         all.extend(b.edits().iter().filter(|o| !a.edits().contains(o)).cloned());
         let r = replay(&all);
         let at = |id| r.ids.iter().position(|&x| x == id);

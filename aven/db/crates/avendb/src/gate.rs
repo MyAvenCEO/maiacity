@@ -95,9 +95,9 @@ fn new_vaults(before: &State, after: &State) -> Vec<VaultId> {
 }
 
 /// What a peer knows holding `held` and `b`, and the cap groups in force there as `r` reads the writes that say them.
-fn view(held: &[Edit], b: &[Edit], r: &Readings) -> (State, Groups) {
+fn view(held: &crate::policy::Edits, b: &crate::policy::Edits, r: &Readings) -> (State, Groups) {
     let all: Vec<Edit> = held.iter().chain(b).cloned().collect();
-    let st = replay(&all).state;
+    let st = replay(&crate::policy::EditsVec::from(all)).state;
     let groups = st.read_groups(r);
     (st, groups)
 }
@@ -106,10 +106,10 @@ fn view(held: &[Edit], b: &[Edit], r: &Readings) -> (State, Groups) {
 /// the batch without the geneses of the vaults new to what it knows that it doesn't welcome there, pass after pass
 /// until one drops none (`admitN`, which stops there too, as a pass that drops nothing changes nothing), if it then
 /// welcomes every new vault; nothing otherwise (`takes`).
-pub fn takes(home: VaultId, held: &[Edit], before: &State, batch: Vec<Edit>, r: &Readings) -> Option<Vec<Edit>> {
+pub fn takes(home: VaultId, held: &crate::policy::Edits, before: &State, batch: Vec<Edit>, r: &Readings) -> Option<Vec<Edit>> {
     let mut b = batch;
     loop {
-        let (after, groups) = view(held, &b, r);
+        let (after, groups) = view(held, &crate::policy::EditsVec::from(&b[..]), r);
         let bad: Vec<VaultId> =
             new_vaults(before, &after).into_iter().filter(|&v| !welcomes(&after, &groups, home, v)).collect();
         if bad.is_empty() {

@@ -923,13 +923,13 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
         let (edits, standing) = (list(&case["edits"]), list(&case["standing"]));
         assert_eq!(edits.len(), standing.len(), "{name}");
         let mut names = Names::default();
-        let mut held = vec![];
+        let mut held = avendb::policy::EditsVec::new();
         for v in edits {
             let edit = names.edit_of(v, num(&v["depth"]));
             names.created(v, &edit, true);
             held.push(edit);
         }
-        let r = replay(&held);
+        let r = replay(&avendb::policy::EditsVec::from(&held[..]));
         let stood = r.standing();
         for (i, (edit, want)) in held.iter().zip(standing).enumerate() {
             assert_eq!(stood.contains(&edit.id()), want.as_bool().unwrap(), "{name}, edit {i}: {}", edits[i]);
@@ -946,9 +946,9 @@ fn each_edit_stands_or_is_cut_as_in_the_lean_models_view() {
             assert_eq!(stepped.standing(), stood, "{name}: the first {k} edits' view, the rest stepped on");
             names.check_state(&format!("{name}, stepped on after {k}"), case, &stepped.state);
         }
-        let mut handed = held.clone();
+        let mut handed = held.to_vec();
         handed.reverse();
-        let mut turned = replay(&handed).standing();
+        let mut turned = replay(&avendb::policy::EditsVec::from(&handed[..])).standing();
         turned.sort();
         let mut sorted = stood.clone();
         sorted.sort();
@@ -980,18 +980,18 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
             names.created(v, &edit, true);
             all.push(edit);
         }
-        let stood = replay(&all).standing();
+        let stood = replay(&avendb::policy::EditsVec::from(&all[..])).standing();
         for (i, want) in list(&case["standing"]).iter().enumerate() {
             assert_eq!(stood.contains(&names.edits[i]), want.as_bool().unwrap(), "{name}: edit {i} stands");
         }
         // every log, its closed part and its frontier
-        let fronts = frontiers(&all);
+        let fronts = frontiers(&avendb::policy::EditsVec::from(&all[..]));
         let logs: Vec<LogId> = list(&case["logs"]).iter().map(|l| names.log(&l["log"])).collect();
         let mut sorted = logs.clone();
         sorted.sort();
         assert_eq!(fronts.keys().copied().collect::<Vec<_>>(), sorted, "{name}: logs");
         for (l, v) in logs.iter().zip(list(&case["logs"])) {
-            let mut closed: Vec<EditId> = closed_part(&all, *l).into_iter().collect();
+            let mut closed: Vec<EditId> = closed_part(&avendb::policy::EditsVec::from(&all[..]), *l).into_iter().collect();
             closed.sort();
             assert_eq!(closed, names.edit_set(&v["closed"]), "{name}: closed part of {l:?}");
             assert_eq!(fronts[l], names.edit_set(&v["frontier"]), "{name}: frontier of {l:?}");
@@ -1004,7 +1004,7 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
             })
             .collect();
         want.sort();
-        assert_eq!(forks(&all), want, "{name}: forks");
+        assert_eq!(forks(&avendb::policy::EditsVec::from(&all[..])), want, "{name}: forks");
         // each device that asks: what it names, and what it is sent
         let at = |places: &Value| -> Vec<Edit> {
             let ids = names.edits(places);
@@ -1015,8 +1015,8 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
             let peer = if a["peer"].is_null() { all.clone() } else { at(&a["peer"]) };
             let what = format!("{name}: device {} holding {}", a["device"], a["held"]);
             let follow: Vec<VaultId> = list(&a["follow"]).iter().map(|v| names.vault(v)).collect();
-            let asked = asks(&held, &follow);
-            let fronts = frontiers(&held);
+            let asked = asks(&avendb::policy::EditsVec::from(&held[..]), &follow);
+            let fronts = frontiers(&avendb::policy::EditsVec::from(&held[..]));
             let sent: Vec<LogId> = list(&a["logs"]).iter().map(|l| names.log(&l["log"])).collect();
             let mut sorted = sent.clone();
             sorted.sort();
@@ -1026,17 +1026,17 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
                 assert_eq!(asked.haves[l], names.edit_set(&v["haves"]), "{what}: what it names of {l:?}");
             }
             assert_eq!(asked.loose, names.edit_set(&a["loose"]), "{what}: loose");
-            let ids = |edits: Vec<Edit>| edits.iter().map(Edit::id).collect::<Vec<_>>();
-            assert_eq!(ids(respond(&peer, d, &follow)), names.edits(&a["respond"]), "{what}: sent whole");
-            assert_eq!(ids(respond_since(&peer, d, &asked)), names.edits(&a["since"]), "{what}: sent");
+            let ids = |edits: avendb::policy::EditsVec| edits.iter().map(Edit::id).collect::<Vec<_>>();
+            assert_eq!(ids(respond(&avendb::policy::EditsVec::from(&peer[..]), d, &follow)), names.edits(&a["respond"]), "{what}: sent whole");
+            assert_eq!(ids(respond_since(&avendb::policy::EditsVec::from(&peer[..]), d, &asked)), names.edits(&a["since"]), "{what}: sent");
             // the files it may fetch: those an edit it is sent brings, or a snapshot's state of an entry it syncs (T27)
-            let fetch: Vec<&Value> = files.iter().filter(|f| may_fetch(&peer, d, &file(f), &follow)).collect();
+            let fetch: Vec<&Value> = files.iter().filter(|f| may_fetch(&avendb::policy::EditsVec::from(&peer[..]), d, &file(f), &follow)).collect();
             assert_eq!(fetch, list(&a["fetch"]).iter().collect::<Vec<_>>(), "{what}: files it may fetch");
             fetched += fetch.len();
         }
         // each passkey that proves itself to a peer holding every edit, to link a new device: the card it is handed
         for l in list(&case["links"]) {
-            let card: Vec<EditId> = link_card(&all, signer(&l["passkey"])).iter().map(Edit::id).collect();
+            let card: Vec<EditId> = link_card(&avendb::policy::EditsVec::from(&all[..]), signer(&l["passkey"])).iter().map(Edit::id).collect();
             assert_eq!(card, names.edits(&l["card"]), "{name}: the card for passkey {}", l["passkey"]);
             linked += 1;
         }
@@ -1071,8 +1071,8 @@ fn the_server_takes_of_each_batch_what_the_lean_models_gate_takes() {
                 break (held, batch);
             }
         };
-        let before = replay(&held).state;
-        let taken = gate::takes(names.vault(&case["home"]), &held, &before, batch.clone(), &names.readings);
+        let before = replay(&avendb::policy::EditsVec::from(&held[..])).state;
+        let taken = gate::takes(names.vault(&case["home"]), &avendb::policy::EditsVec::from(&held[..]), &before, batch.clone(), &names.readings);
         let ids = |b: &[Edit]| b.iter().map(Edit::id).collect::<Vec<_>>();
         let want = (!case["takes"].is_null()).then(|| list(&case["takes"]).iter().map(|i| batch[num(i) as usize].id()));
         assert_eq!(taken.as_deref().map(ids), want.map(Iterator::collect), "{name}");
@@ -1095,7 +1095,7 @@ fn the_server_says_of_each_device_what_the_lean_model_says() {
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let mut names = Names::default();
-        let held: Vec<Edit> = list(&case["held"])
+        let held: avendb::policy::EditsVec = list(&case["held"])
             .iter()
             .map(|v| {
                 let edit = names.edit_of(v, num(&v["depth"]));
@@ -1103,7 +1103,7 @@ fn the_server_says_of_each_device_what_the_lean_model_says() {
                 edit
             })
             .collect();
-        let st = replay(&held).state;
+        let st = replay(&avendb::policy::EditsVec::from(&held[..])).state;
         let groups = st.read_groups(&names.readings);
         let said = gate::device_standing(&st, &groups, names.vault(&case["home"]), signer(&case["device"]));
         let want = &case["standing"];
@@ -1120,9 +1120,9 @@ fn the_server_says_of_each_device_what_the_lean_model_says() {
 }
 
 /// The held edits of a case, each at the depth the model gives it, with the names of what they created.
-fn held_of(case: &Value) -> (Vec<Edit>, Names) {
+fn held_of(case: &Value) -> (avendb::policy::EditsVec, Names) {
     let mut names = Names::default();
-    let held: Vec<Edit> = list(&case["held"])
+    let held: avendb::policy::EditsVec = list(&case["held"])
         .iter()
         .map(|v| {
             let edit = names.edit_of(v, num(&v["depth"]));
@@ -1142,7 +1142,7 @@ fn the_server_keeps_for_each_person_what_the_lean_models_quota_keeps() {
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let (held, names) = held_of(case);
-        let st = replay(&held).state;
+        let st = replay(&avendb::policy::EditsVec::from(&held[..])).state;
         let groups = st.read_groups(&names.readings);
         let home = names.vault(&case["home"]);
         let limits: quota::Limits =
@@ -1178,7 +1178,7 @@ fn the_relay_honours_each_pass_the_lean_model_honours() {
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let (held, names) = held_of(case);
-        let st = replay(&held).state;
+        let st = replay(&avendb::policy::EditsVec::from(&held[..])).state;
         let signup = match case["signup"].as_str().unwrap() {
             "anyone" => admission::Signup::Anyone,
             "invited" => admission::Signup::Invited,
@@ -1257,9 +1257,9 @@ fn the_lens_vectors() {
 }
 
 /// The edits of a sync case, with its names.
-fn sync_case(case: &Value) -> (Names, Vec<Edit>) {
+fn sync_case(case: &Value) -> (Names, avendb::policy::EditsVec) {
     let mut names = Names::default();
-    let mut all = vec![];
+    let mut all = avendb::policy::EditsVec::new();
     for v in list(&case["edits"]) {
         let mut edit = names.edit_of(v, num(&v["depth"]));
         edit.parents = names.edits(&v["parents"]);
@@ -1280,7 +1280,7 @@ fn each_vault_s_snapshot_is_the_lean_model_s() {
         let (names, all) = sync_case(case);
         for s in list(&backups["snapshots"]).iter().filter(|s| s["case"] == name) {
             let v = names.vault(&s["vault"]);
-            let snap = avendb::backup::snapshot(&all, v);
+            let snap = avendb::backup::snapshot(&avendb::policy::EditsVec::from(&all[..]), v);
             let what = format!("{name}: the snapshot of vault {}", s["vault"]);
             assert_eq!(snap.iter().map(Edit::id).collect::<Vec<_>>(), names.edits(&s["edits"]), "{what}");
             let files: Vec<FileRoot> = list(&s["files"]).iter().map(file).collect();
@@ -1316,10 +1316,10 @@ fn each_backup_builds_on_its_folder_as_the_lean_model_s() {
             let what = format!("{name}, step {n}");
             if let Some(b) = step["step"].get("backup") {
                 let places: HashSet<u64> = list(&b["held"]).iter().map(num).collect();
-                let held: Vec<Edit> =
+                let held: avendb::policy::EditsVec =
                     all.iter().enumerate().filter(|(i, _)| places.contains(&(*i as u64))).map(|(_, e)| e.clone()).collect();
-                let snap = avendb::backup::snapshot_places(&held, &avendb::policy::view(&held), names.vault(&b["vault"]));
-                let snap_edits: Vec<Edit> = snap.iter().map(|&i| held[i].clone()).collect();
+                let snap = avendb::backup::snapshot_places(&held, &avendb::policy::view(&avendb::policy::EditsVec::from(&held[..])), names.vault(&b["vault"]));
+                let snap_edits: avendb::policy::EditsVec = snap.iter().map(|&i| held[i].clone()).collect();
                 let newest = manifests.last();
                 let compact = b["compact"].as_bool().unwrap() || newest.is_some_and(|m| avendb::backup::due(m.packs.len()));
                 let plan = avendb::backup::plan(&held, &snap, newest.map(|m| &m.ask), compact);

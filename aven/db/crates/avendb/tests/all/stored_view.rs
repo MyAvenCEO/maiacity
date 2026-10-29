@@ -83,7 +83,7 @@ fn a_view_of_other_edits_or_cut_short_is_no_view() {
     let mut ids = c.log.ids().to_vec();
     edits.swap(0, held - 1);
     ids[0] = ids[held - 1];
-    assert!(Replay::from_view(&bytes, &edits, &ids).is_none());
+    assert!(Replay::from_view(&bytes, &avendb::policy::EditsVec::from(edits), &ids).is_none());
     // cut short, or with a byte more
     assert!(Replay::from_view(&bytes[..bytes.len() - 1], c.log.edits(), c.log.ids()).is_none());
     let mut more = bytes.clone();
