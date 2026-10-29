@@ -1025,6 +1025,35 @@ theorem S5_lying_stub (N B : List Edit) (S : List Stub) (hn : (B.map Edit.id).No
   rw [h]
   exact ⟨fun _ => rfl, rfl, by rw [← h]; exact hv⟩
 
+/-! ### What a read waits on while the bodies come
+
+A device asks for its stubs' bodies once its first view is in (`Lab::fetch_withheld`). Taking them changes nothing it
+knows (`S6_bodies_change_no_view`), so a log where a peer holds no more than the boxes it holds stubs of may change no
+read: it counts a stub as held for what a read waits on (`Device.lacks`, avendb-net `differ`), whether it asks for the
+body or not, and asks for the bodies all the same. Counting them lacked once it asked put every read of their vaults
+behind for minutes, a fresh browser's 2,517 vault and share logs (2026-10-29). -/
+
+/-- **S6** (a body changes no view): whatever boxes `B` a device holding `H` takes, it knows what it knew, where neither
+    `H` nor `H ++ B` names a box as a parent as deep as itself and ids don't collide. -/
+theorem S6_bodies_change_no_view (H B : List Edit) (hB : ∀ b ∈ B, b.isBox = true)
+    (hH : ((order H).map Edit.id).Nodup) (hbH : boxesUnder H)
+    (hHB : ((order (H ++ B)).map Edit.id).Nodup) (hbHB : boxesUnder (H ++ B)) :
+    AvenDB.view (H ++ B) = AvenDB.view H := by
+  have hf : (H ++ B).filter nb = H.filter nb := by
+    rw [List.filter_append, List.filter_eq_nil_iff.2 (fun b hb' => by simp [nb, hB b hb']), List.append_nil]
+  rw [← (L1_lazy_view (H ++ B) hHB hbHB).1, hf, (L1_lazy_view H hH hbH).1]
+
+/-- The heads of a peer's log a device lacks, for what a read waits on: those it neither holds nor holds a stub of. -/
+def Device.lacks (d : Device) (heads : List EditId) : List EditId :=
+  heads.filter fun h => !(d.held.map Edit.id).contains h && !d.stubs.any (·.id == h)
+
+/-- A head the device holds a stub of is never lacked, its body asked for or not. -/
+theorem lacks_stub (d : Device) (heads : List EditId) {s : Stub} (hs : s ∈ d.stubs) : s.id ∉ d.lacks heads := by
+  intro hm
+  have := (List.mem_filter.1 hm).2
+  have hany : d.stubs.any (·.id == s.id) = true := List.any_eq_true.2 ⟨s, hs, beq_self_eq_true _⟩
+  simp [hany] at this
+
 end Lazy
 
 end AvenDB
